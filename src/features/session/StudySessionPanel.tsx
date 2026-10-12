@@ -1,3 +1,4 @@
+import { SessionCompletionPanel, type SessionCompletionPanelProps } from './SessionCompletionPanel';
 import { convertSentenceCharacters, effectiveSentenceCharacterPresentation, formatSentenceAnswer } from '../../domain/sentence-characters';
 import { SessionDesk, RecallChips, type SessionDeskHandle } from './SessionDesk';
 import { StudyStageBadge, studyStageCardClass } from './StudyStageBadge';
@@ -83,7 +84,7 @@ export type FrozenPureCueCard = {
   queuedCount: number;
 };
 
-type StudySessionPanelProps = Omit<Parameters<typeof StudySessionPanelContent>[0], 'completionGate'>;
+type StudySessionPanelProps = Omit<Parameters<typeof StudySessionPanelContent>[0], 'completionGate'> & { completionPanel?: Omit<SessionCompletionPanelProps, 'summary' | 'characterPresentation'> };
 
 // Retain the last committed card presentation, independently of the scheduler's
 // completed state. Undo still restores the controller's authoritative snapshot.
@@ -96,6 +97,12 @@ export function StudySessionPanel(props: StudySessionPanelProps) {
       lastCard.current = props;
     }
   });
+  if (completed && props.sessionSummary && props.completionPanel) {
+    const previous = lastCard.current;
+    return <SessionCompletionPanel {...props.completionPanel} summary={props.sessionSummary}
+      characterPresentation={props.characterPresentation ?? DEFAULT_CHARACTER_PRESENTATION}
+      lastAnswerText={props.completionPanel.lastAnswerText ?? previous?.activeAnswerText ?? previous?.frozenProductionCard?.answerText ?? null} />;
+  }
   if (completed && props.sessionFinalization.kind !== 'finalized' && lastCard.current
     && (lastCard.current.answerRevealed || props.frozenProductionCard || props.frozenPureCueCard || props.frozenContrastCard)) {
     const card = props.frozenProductionCard || props.frozenPureCueCard || props.frozenContrastCard ? props : lastCard.current;

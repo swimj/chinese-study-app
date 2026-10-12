@@ -27,6 +27,9 @@ export type DurableOwnershipEntry = {
  * new durable object cannot land without an explicit classification.
  */
 export const durableOwnershipManifest: readonly DurableOwnershipEntry[] = [
+  privateEntry('learner_session_completions', 'learner plus immutable staged session revision', 'create empty; no historical completion backfill', 'immutable intent and deadline; transactional close or cancellation'),
+  privateEntry('learner_session_word_outcomes', 'learner plus session word transition', 'create empty; only newly accepted transitions', 'immutable actual lifecycle transition and exact word snapshot'),
+  privateEntry('learner_session_reflection_dispatches', 'learner plus closed session revision', 'create empty; new durable reflection dispatches only', 'fenced dispatch and interruption without automatic replay'),
   operationalEntry('model_invocations', 'content-free operator invocation ledger; mandatory learner foreign key and persisted cost basis; new calls only'),
   privateEntry('learner_session_debrief_jobs', 'learner plus completed session summary', 'create empty; no historical inventory or provider backfill', 'immutable inventory and ready result with recoverable generation state'),
   privateEntry('learner_session_debrief_attempts', 'learner plus session debrief job', 'create empty; only new provider calls receive attempts', 'immutable concluded provider attempt and pricing basis'),

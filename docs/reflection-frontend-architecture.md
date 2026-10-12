@@ -12,9 +12,10 @@ the general React map remains
 App.tsx
 ├─ useStudySession
 │  ├─ session-reflection-evidence.ts   ephemeral capture and Undo snapshots
-│  ├─ session-finalization.ts          Finish, Close, generation state
-│  ├─ SessionSummaryPanel.tsx          finalization and generation feedback
-│  └─ services/api.ts                  generate-session-reflection request
+│  ├─ useSessionCompletionFlow.ts       acknowledgement, countdown, cancel, recovery
+│  ├─ session-finalization.ts          finalization state and study guards
+│  ├─ SessionCompletionPanel.tsx       deterministic report and final Undo
+│  └─ services/api.ts                  pending completion, cancel, close requests
 └─ useReflectionPageController
    ├─ ReflectionsPage.tsx              queue, history, detail, proposal cards
    ├─ reflection-page-model.ts         grouping, drafts, support, validation
@@ -24,30 +25,55 @@ App.tsx
 
 ## Completed-session finalization
 
-The last exercise stays visible after completion, with **See session summary**
-(Enter) and final Undo. `StudySessionPanel` retains the committed card presentation
-while the controller's scheduler state is completed; study action bars are
-replaced by entry controls. The final card skips departure motion.
+The study controller enters the completion screen automatically when the
+scheduler reaches completed state. It retains the last answered card and sends
+the final deferred action, summary, debrief inventory, and reflection supplement
+to backend pending-completion storage. The frontend shows saving until the
+backend acknowledges its fixed deadline, then displays the remaining portion
+of the 15-second final Undo window.
 
-Entry locks Undo during saving and calls `finishCompletedSession`. The same
-exclusive path protects programmatic in-app leave. It flushes the final deferred
-commit, records the durable summary, then opens the summary and starts qualifying
-reflection. Primary navigation stays hidden until successful finalization.
+Undo first cancels pending completion on the server. Only successful cancellation
+restores the frontend snapshot; a server response that completion already closed
+must never reopen study. Completing again prepares a fresh window. Browser
+timers display remaining time and trigger navigation, while backend expiry owns
+acceptance and closure. Refresh, backgrounding, tab close, and navigation to
+another URL therefore do not prevent an acknowledged completion from closing.
 
-If either write fails, the card remains visible for retry. Undo remains available
-if the final commit failed, but stays closed after an accepted commit.
-A summary-write retry does not reapply a successfully flushed commit. Active or
-draining leave, tab close, and refresh do not finalize a session.
+`useSessionCompletionFlow` uses the session completion endpoints centralized in
+`src/services/api.ts`: stage, read, cancel, and close, plus the current pending
+completion read for recovery. A browser session-storage snapshot allows same-tab
+refresh recovery to restore Undo after successful server cancellation; absence
+of that local snapshot must not fabricate restored study state. The backend
+stores each revision in `learner_session_completions`. Staging previews the final
+commit inside a rolled-back savepoint to report its provisional transition.
+Closure applies the stored final action and saves the summary, confirmed report,
+and reflection dispatch in one transaction. Migration `0036_session_completion`
+adds this storage without generating historical completion or outcomes.
+`server/session-completion/worker.ts` closes overdue revisions independently of
+its asynchronous reflection dispatch calls.
 
-Once finalized, **Close summary** is a separate action and remains available
-while reflection is generating. Provider or validation failure is displayed as
-best-effort failure without changing session correctness; the retained
-supplement supports an explicit retry. Session-id guards ignore late summary-UI
-updates after close or after another session starts. Same-tab in-flight
-generation still keeps the Reflections spinner until that request settles, then
-refreshes attention. Generation continues in the session controller even if Home
-is unmounted, so a later Reflections visit can see the artifact or its
-failed/retry state.
+**Return to Home now** and in-app navigation close pending completion early.
+The selected in-app destination is retained. Starting a new session first reads
+and closes any pending previous completion before fetching the fresh session
+queue; this also settles completion recovered after reload or created in
+another tab. **Keep summary open** stops automatic
+return while backend closure continues at the deadline. Session-id guards and
+canceled timers prevent stale completion work from navigating a later session
+or overriding a chosen destination. Failed saving or closure remains retryable.
+
+The immediate summary reports distinct first-study words entering Practice and
+actual Practice-to-Review transitions, with provisional wording during Undo.
+Automatic return opens the ordinary Home overview. Connections is a separate
+Home reader: asynchronous readiness does not open it automatically.
+
+Backend closure saves the summary and durably dispatches qualifying reflection.
+Provider or validation failure remains independent of study correctness, and
+Reflections supplies later result and retry access. The completion screen does
+not depend on a browser-owned generation request or wait for provider latency.
+See the authoritative lifecycle in
+[`session-covering-criteria.md`](../SPECS/session-covering-criteria.md#completed-session-reflection-boundary)
+and eligibility in
+[`session-reflection-generation.md`](../SPECS/session-reflection-generation.md#2-finalized-session-boundary).
 
 ## Staged generation
 
@@ -107,9 +133,9 @@ no-clue response are excluded. Later accepted attempt ids for a captured action 
 the supplement only so the backend can validate the complete durable attempt
 batch; attempt rows and summaries are not copied into the provider bundle.
 
-The accumulator is ephemeral by design, remains available through
-generation/retry, and is cleared when the completed session closes or a new
-session starts.
+The accumulator is ephemeral during study. Pending completion freezes its
+supplement durably before browser state is cleared, so server closure can
+validate it and dispatch reflection even after the browser disappears.
 
 The durable attempt snapshot also preserves the nullable post-reveal
 production supplement separately from the pre-reveal cue. New provider bundles
@@ -223,8 +249,8 @@ proposal removes it from the current queue when its new lifecycle state no
 longer matches that filter. By session can restore a learner-dismissed proposal
 to pending with **Undo dismiss**; second-opinion retirement cannot be undone.
 Questions remain informational and do not receive
-synthetic review state. Close summary returns Home; there is no post-session
-jump or Open-reflection deep link.
+synthetic review state. Completion returns to ordinary Home; learners open
+Feedback through the persistent Reflections navigation.
 
 Each proposal has a purpose-built editor for each registered operation family:
 
@@ -304,8 +330,9 @@ immutable artifact history.
 ## Ownership boundaries
 
 - Backend/API calls stay centralized in `src/services/api.ts`.
-- The frontend owns ephemeral cue/response evidence only until the generation
-  request is issued; the backend validates and enriches durable truth.
+- The frontend captures ephemeral cue/response evidence until pending completion
+  durably saves its supplement; the backend validates and enriches durable truth
+  at closure and owns generation dispatch.
 - Reflection artifacts, proposal reviews, invocations, application outcomes,
   and effects are backend-owned durable records.
 - Reflection operation validation and registry semantics are shared from

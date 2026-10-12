@@ -300,3 +300,26 @@ test('definition fallback migration preserves snapshots, encounters, ratings and
     assert.deepEqual(migrateDatabase(db), []);
   } finally { db.close(); }
 });
+
+test('durable session completion migration preserves historical progress and fabricates no intents or reporting jobs', () => {
+  const { db } = copy('session-completion-upgrade', true);
+  try {
+    const index = schemaMigrations.findIndex(item => item.id === 'app_schema:0036_session_completion');
+    assert.ok(index > 0);
+    migrateDatabase(db, schemaMigrations.slice(0, index));
+    db.exec(`INSERT INTO learners(learner_id,display_name,created_at) VALUES ('test','Test','2026-10-12');
+      INSERT INTO learner_owned_review_session_summaries
+        (learner_id,session_id,completed_at,day_key,completed_count,failed_count,active_duration_ms,learning_completed_count)
+        VALUES ('test','historical','2026-10-12T00:00:00.000Z','2026-10-12',4,1,120000,2);`);
+    const summaries = db.prepare('SELECT * FROM learner_owned_review_session_summaries').all();
+    const learners = db.prepare('SELECT * FROM learners').all();
+    migrateDatabase(db);
+    assertSchemaCurrent(db);
+    assert.deepEqual(db.prepare('SELECT * FROM learner_owned_review_session_summaries').all(), summaries);
+    assert.deepEqual(db.prepare('SELECT * FROM learners').all(), learners);
+    for (const table of ['learner_session_completions', 'learner_session_word_outcomes', 'learner_session_reflection_dispatches'])
+      assert.equal(db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get()?.n, 0);
+    assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), []);
+    assert.deepEqual(migrateDatabase(db), []);
+  } finally { db.close(); }
+});

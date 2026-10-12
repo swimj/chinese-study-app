@@ -7,12 +7,20 @@ Run full suite: `npm test` (Node test runner, `tests/*.test.ts`).
 With `npm run dev:frontend` running, open
 `/tests/browser/final-reinforcement.html` on the Vite server. This isolated fixture
 intercepts all HTTP and exercises the real session controller, HomePage, and
-retained completion card. It reports PASS after verifying that the final correct
+completion screen and retained final answer. It reports PASS after verifying that the final correct
 production reinforcement fills all three boxes, Undo restores two, skipping a
 revealed reinforcement keeps two, and a subsequent correct retry fills three.
-It leaves the completed card visible for visual inspection. These browser
+It leaves the completion screen visible for visual inspection. These browser
 assertions are separate from `npm test`; server rendering cannot exercise the
 retained card's layout-effect lifecycle.
+
+The isolated `/tests/browser/session-completion.html` fixture exercises the real
+completion hook and panel against intercepted HTTP with shortened deadlines. It
+checks acknowledgement failure and retry with one revision, final Undo,
+automatic return, keeping the summary open through backend closure, explicit
+return, and recovery after remount. Use `?preview=1` for visual inspection,
+`large=1` for enlarged text, and `empty=1` for empty report groups. The fixture verifies browser state;
+`durable-session-completion.test.ts` verifies persistence and server expiry.
 
 The isolated `/tests/browser/content-feedback.html` fixture exercises the real
 session controller and content-rating buttons: negative-rating feedback requests,
@@ -38,6 +46,8 @@ All HTTP is intercepted, so these fixtures do not modify learner data.
 | `diet-profile.test.ts` | Default diet selection, profile round-trip, nudge/jump behavior, and historical intake compatibility | `server/db/diet-profile.ts` + temporary SQLite |
 | `unstudied-admission.test.ts` | Experimental dual-pool unstudied admission selector, including stash-only source | `server/db/unstudied-admission.ts` |
 | `session-completion.test.ts` | Session completion commits | Dynamic `server/db.ts` |
+| `durable-session-completion.test.ts` | Fixed deadline, cancel/expiry, atomic final acceptance, outcome reporting, restart, and durable reflection dispatch | Completion persistence + worker with temporary SQLite |
+| `session-completion-panel.test.ts` | Saving, pending and confirmed completion report, controls and character presentation | Completion panel server render |
 | `session-bucket-scheduler.test.ts` | Bucket ordering helpers | `src/domain/study-actions.ts` |
 | `session-bucket-state.test.ts` | In-session bucket state | `src/domain/study-actions.ts` |
 | `session-selectors.test.ts` | Session UI selectors | `src/features/session/session-selectors.ts` |
@@ -115,7 +125,7 @@ All HTTP is intercepted, so these fixtures do not modify learner data.
 | --- | --- |
 | New-learner defaults / diet profile | `diet-profile.test.ts`, `diet-intake-placement-api.test.ts`, `learner-isolation.test.ts` |
 | Session composition / SQL scheduling | `session-composition.test.ts`, `unstudied-admission.test.ts` |
-| Session end / word lifecycle commits | `session-completion.test.ts` |
+| Session end / word lifecycle commits | `session-completion.test.ts`, `durable-session-completion.test.ts`, `session-finalization.test.ts`; browser completion and final reinforcement fixtures |
 | Contrast content | `contrast-content.test.ts` |
 | Study management / suppression | `study-management.test.ts` |
 | Priority / aliases | `user-priority.test.ts`, `priority-aliases.test.ts` |

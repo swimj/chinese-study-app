@@ -68,9 +68,12 @@ Do not wait for or depend on reflection generation. Empty results and retrieval
 failures add no learner-facing placeholder and never invalidate completion.
 Display a shared **Coming back more reliably** heading and a wrapping list of
 words, with Meaning / Word recall labels and the learner's character preference.
-Mandarin shows this independently above generated connections in the finalized
-debrief, including sessions reopened from Home; other profiles retain the summary
-placement. All words qualifying in that session may appear; no forced conversational copy.
+The completion screen can show this after backend closure when the learner
+chooses **Keep summary open**. Ordinary timer expiry returns to Home, so these
+optional highlights do not delay that return. Home Connections is a separate
+reader and does not reopen the immediate completion summary. This placement
+applies to each supported study profile. All words qualifying in that session
+may appear; no forced conversational copy.
 
 First read current-session results. If no candidates survive, return immediately.
 Fetch history only for the surviving word/skill pairs in one bounded SQL query,

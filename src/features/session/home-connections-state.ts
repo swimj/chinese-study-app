@@ -16,13 +16,13 @@ export function readHomeConnectionsPreference(raw: string | null): HomeConnectio
 }
 
 export function beginHomeConnectionsVisit(saved: HomeConnectionsPreference | null): HomeConnectionsView {
-  return { expanded: saved?.expanded ?? true, introduced: saved?.introduced ?? false,
-    promoteWhenReady: !(saved?.introduced ?? false) };
+  return { expanded: saved?.expanded ?? false, introduced: saved?.introduced ?? false,
+    promoteWhenReady: false };
 }
 
 export function receiveHomeConnections(view: HomeConnectionsView, debrief: SessionDebrief): HomeConnectionsView {
   if (debrief.status !== 'ready' || !debrief.notes?.length || view.introduced) return view;
-  if (view.expanded || view.promoteWhenReady) {
+  if (view.expanded) {
     return { expanded: true, introduced: true, promoteWhenReady: false };
   }
   return view;

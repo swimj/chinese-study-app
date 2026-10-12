@@ -1,11 +1,13 @@
 // Run with npm run dev:frontend, then open /tests/browser/final-reinforcement.html.
-// Real controller, HomePage, and retained card; all HTTP is intercepted here.
+// Real controller, HomePage, and completion screen; all HTTP is intercepted here.
 import { createRoot } from 'react-dom/client';
 import { HomePage } from '../../src/pages/HomePage';
 import { useStudySession, type StudySessionController } from '../../src/features/session/useStudySession';
 import type { SessionPayload } from '../../src/services/api';
+import type { SessionCompletion, StageSessionCompletionRequest } from '../../src/domain/session-completion';
 import '../../src/styles.css';
 import '../../src/features/session/session-desk.css';
+import '../../src/features/session/session-completion.css';
 
 const payload: SessionPayload = {
   buckets: {
@@ -30,8 +32,33 @@ const payload: SessionPayload = {
   },
 };
 
-window.fetch = async (input) => {
+let completion: SessionCompletion | null = null;
+let stageCount = 0;
+let undoCount = 0;
+window.fetch = async (input, init) => {
   const url = String(input);
+  if (url.includes('/recovery-highlights')) return Response.json({ highlights: [] });
+  if (url.endsWith('/api/session-completions/current')) return Response.json({ completion: null });
+  const completionMatch = url.match(/\/api\/study-sessions\/([^/]+)\/completion(\/undo|\/close)?$/);
+  if (completionMatch) {
+    const [, sessionId, action] = completionMatch;
+    if (!action && init?.method === 'POST') {
+      const request = JSON.parse(String(init.body)) as StageSessionCompletionRequest;
+      if (request.summary.activeDurationMs <= 0) throw new Error('Completion must retain actual study time before the finishing effect runs');
+      stageCount++;
+      completion = { sessionId, revisionId: request.revisionId, status: 'pending', canUndo: true,
+        closeAt: new Date(Date.now() + 15000).toISOString(), serverNow: new Date().toISOString(),
+        completedAt: request.summary.completedAt, report: { newWords: [], graduatedWords: [] }, error: null };
+    } else if (action === '/undo') {
+      if (!completion || completion.status !== 'pending') throw new Error('Undo requires pending completion');
+      undoCount++;
+      completion = { ...completion, status: 'cancelled', canUndo: false };
+    } else if (action === '/close') {
+      if (!completion) throw new Error('Close requires completion');
+      completion = { ...completion, status: 'closed', canUndo: false };
+    }
+    return Response.json(completion);
+  }
   if (url.includes('/api/session-payload')) return Response.json(payload);
   if (url.endsWith('/meanings')) return Response.json([]);
   if (url.endsWith('/content-quality/encounters')) return Response.json({ contentKey: 'fixture-cue', rating: null });
@@ -67,6 +94,14 @@ function assertChips(count: number) {
     throw new Error(`Expected ${count} filled boxes, saw ${group?.outerHTML}`);
   }
 }
+async function assertCompletion() {
+  await until(() => controller.homePageProps.completionPanel?.completion?.status === 'pending');
+  if (!document.querySelector('.session-completion') || document.querySelector('.desk-recall-progress')) {
+    throw new Error('Final answer must immediately show the completion screen');
+  }
+  if (!document.body.textContent?.includes('Returning to Home in')
+    || !document.body.textContent?.includes('Undo last action')) throw new Error('Missing acknowledged countdown or Undo');
+}
 async function submitCorrect() {
   // Submit via the actual input ref read by the production controller.
   controller.homePageProps.productionHanziInputRef.current!.value = '即';
@@ -98,8 +133,7 @@ async function run() {
   assertChips(2);
   await correct();
   if (controller.homePageProps.sessionPhase !== 'completed') throw new Error('Session did not complete');
-  assertChips(3);
-  if (!document.body.textContent?.includes('See session summary')) throw new Error('Missing completion gate');
+  await assertCompletion();
 
   controller.homePageProps.onUndoLastRating();
   await until(() => controller.homePageProps.sessionPhase !== 'completed');
@@ -107,13 +141,14 @@ async function run() {
   await submitCorrect();
   controller.homePageProps.onSkipReinforcement();
   await until(() => controller.homePageProps.sessionPhase === 'completed');
-  assertChips(2);
+  await assertCompletion();
   controller.homePageProps.onUndoLastRating();
   await until(() => controller.homePageProps.sessionPhase !== 'completed');
   assertChips(2);
   await correct();
-  assertChips(3);
-  document.getElementById('result')!.textContent = 'PASS: final correct fills 3; Undo and skip retain 2; retry fills 3.';
+  await assertCompletion();
+  if (stageCount !== 3 || undoCount !== 2) throw new Error(`Expected 3 staged completions and 2 cancellations; saw ${stageCount}/${undoCount}`);
+  document.getElementById('result')!.textContent = 'PASS: final correct and skip open completion immediately; Undo restores 2; retry opens a fresh window.';
 }
 void run().catch((error: unknown) => {
   document.getElementById('result')!.textContent = `FAIL: ${String(error)}`;

@@ -1,5 +1,6 @@
 import { getLatestWhatsNewPublicationSequence } from './whats-new.ts';
 import { WhatsNewInputError } from '../../src/domain/whats-new.ts';
+import { requireLearnerId } from './learner-context.ts';
 import { getDb } from './connection.ts';
 import { getLearnerParam, upsertLearnerParam } from './identity.ts';
 import { isCurrentReflectionArtifactContract } from '../../src/domain/reflection-contracts.ts';
@@ -14,6 +15,7 @@ export type ReflectionInboxSeenTarget =
 
 export type AttentionBadges = {
   reflectionUnseenCount: number;
+  reflectionGenerating: boolean;
   failedReflectionRunIds: string[];
   failedReflectionRunsSeenThroughAt: string | null;
   whatsNewSeenThroughDate: string | null;
@@ -24,6 +26,8 @@ export function getAttentionBadges(): AttentionBadges {
   const failedReflectionRunsSeenThroughAt = getFailedReflectionRunsSeenThroughAt();
   return {
     reflectionUnseenCount: countUnseenReflectionHelpItems(),
+    reflectionGenerating: Boolean(getDb().prepare(`SELECT 1 FROM learner_session_reflection_dispatches
+      WHERE learner_id = ? AND status IN ('queued','running') LIMIT 1`).get(requireLearnerId())),
     failedReflectionRunIds: listFailedReflectionRunIds(failedReflectionRunsSeenThroughAt),
     failedReflectionRunsSeenThroughAt,
     whatsNewSeenThroughDate: getWhatsNewSeenThroughDate(),
@@ -186,6 +190,8 @@ function markProposalInboxSeen(
   return {
     marked: existing.inbox_seen_at === null,
     reflectionUnseenCount: countUnseenReflectionHelpItems(),
+    reflectionGenerating: Boolean(getDb().prepare(`SELECT 1 FROM learner_session_reflection_dispatches
+      WHERE learner_id = ? AND status IN ('queued','running') LIMIT 1`).get(requireLearnerId())),
   };
 }
 
@@ -205,6 +211,8 @@ function markExplanationInboxSeen(
     return {
       marked: false,
       reflectionUnseenCount: countUnseenReflectionHelpItems(),
+    reflectionGenerating: Boolean(getDb().prepare(`SELECT 1 FROM learner_session_reflection_dispatches
+      WHERE learner_id = ? AND status IN ('queued','running') LIMIT 1`).get(requireLearnerId())),
     };
   }
   if (existing.inbox_seen_at === null) {
@@ -217,6 +225,8 @@ function markExplanationInboxSeen(
   return {
     marked: existing.inbox_seen_at === null,
     reflectionUnseenCount: countUnseenReflectionHelpItems(),
+    reflectionGenerating: Boolean(getDb().prepare(`SELECT 1 FROM learner_session_reflection_dispatches
+      WHERE learner_id = ? AND status IN ('queued','running') LIMIT 1`).get(requireLearnerId())),
   };
 }
 

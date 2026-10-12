@@ -784,6 +784,7 @@ describe('reflection HTTP API', { concurrency: false }, () => {
     assert.equal(listed.status, 200);
     assert.deepEqual(listed.json, {
       reflectionUnseenCount: 2,
+      reflectionGenerating: false,
       failedReflectionRunIds: [],
       failedReflectionRunsSeenThroughAt: null,
       whatsNewSeenThroughDate: null,

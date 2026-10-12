@@ -1,3 +1,4 @@
+import type { SessionCompletion, StageSessionCompletionRequest } from '../domain/session-completion';
 import type { StudyIntroductionOrder } from '../domain/introduction-order';
 import type { WhatsNewPost, WhatsNewWriteRequest } from '../domain/whats-new';
 import type { WhatsNewAttention } from '../domain/whats-new-attention';
@@ -1111,6 +1112,7 @@ export async function markFailedReflectionRunsSeen(request: {
 }
 
 export type AttentionBadgesDto = {
+  reflectionGenerating: boolean;
   reflectionUnseenCount: number;
   failedReflectionRunIds: string[];
   failedReflectionRunsSeenThroughAt: string | null;
@@ -1173,13 +1175,13 @@ export async function authorizeManualReflectionOperation(
   return response.json();
 }
 
-export async function completeLearningSession(wordId: string, success: boolean): Promise<Word> {
+export async function completeLearningSession(wordId: string, success: boolean, sessionId?: string): Promise<Word> {
   const response = await apiFetch(`${API_BASE}/api/words/${wordId}/complete-learning-session`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ success }),
+    body: JSON.stringify({ success, sessionId }),
   });
 
   if (!response.ok) {
@@ -1189,14 +1191,14 @@ export async function completeLearningSession(wordId: string, success: boolean):
   return response.json();
 }
 
-export async function completeUnstudiedSession(wordId: string): Promise<Word> {
+export async function completeUnstudiedSession(wordId: string, sessionId?: string): Promise<Word> {
   const studyDayKey = getCurrentStudyDayKey();
   const response = await apiFetch(`${API_BASE}/api/words/${wordId}/complete-unstudied-session`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ studyDayKey }),
+    body: JSON.stringify({ studyDayKey, sessionId }),
   });
 
   if (!response.ok) {
@@ -1528,3 +1530,32 @@ export const closeContentImprovement = (id: string, expectedRevision: number, re
   improvementRequest<import('../domain/content-improvement').ImprovementCase>(`/${encodeURIComponent(id)}/close`, 'POST', { expectedRevision, resolution });
 export const fetchContentImprovementHistory = (id: string) =>
   improvementRequest<import('../domain/content-improvement').ImprovementCase[]>(`/${encodeURIComponent(id)}/history`);
+
+
+async function requestSessionCompletion(sessionId: string, action: '' | '/undo' | '/close', body?: unknown): Promise<SessionCompletion> {
+  const response = await apiFetch(`${API_BASE}/api/study-sessions/${encodeURIComponent(sessionId)}/completion${action}`, {
+    method: body === undefined ? 'GET' : 'POST',
+    ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+  });
+  if (!response.ok) throw new Error(await readApiErrorMessage(response, 'Could not save session completion'));
+  return response.json();
+}
+
+export function stageSessionCompletion(sessionId: string, request: StageSessionCompletionRequest) {
+  return requestSessionCompletion(sessionId, '', request);
+}
+export function fetchSessionCompletion(sessionId: string) {
+  return requestSessionCompletion(sessionId, '');
+}
+export function undoSessionCompletion(sessionId: string, revisionId: string) {
+  return requestSessionCompletion(sessionId, '/undo', { revisionId });
+}
+export function closeSessionCompletion(sessionId: string, revisionId: string) {
+  return requestSessionCompletion(sessionId, '/close', { revisionId });
+}
+export async function fetchCurrentSessionCompletion(): Promise<SessionCompletion | null> {
+  const response = await apiFetch(`${API_BASE}/api/session-completions/current`);
+  if (!response.ok) throw new Error(await readApiErrorMessage(response, 'Could not load session completion'));
+  const result = await response.json() as { completion: SessionCompletion | null };
+  return result.completion;
+}

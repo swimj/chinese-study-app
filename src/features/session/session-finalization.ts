@@ -76,7 +76,7 @@ export function sessionHidesAppChrome({
   sessionPhase: SessionLeavePhase;
   finalizationKind: SessionFinalizationState['kind'];
 }): boolean {
-  return sessionStarted && sessionPhase !== null && (sessionPhase !== 'completed' || finalizationKind !== 'finalized');
+  return sessionStarted && sessionPhase !== null && sessionPhase !== 'completed';
 }
 
 export function shouldFinishSessionOnLeave({

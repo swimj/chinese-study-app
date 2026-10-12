@@ -342,8 +342,42 @@ match. The payload does not include the shared word catalog.
 | POST | `/api/study-sessions/:sessionId/accepted-contrast-selection-attempt` | `study-sessions` |
 | POST | `/api/study-sessions/:sessionId/manage-study-action` | `study-management` |
 | POST | `/api/study-sessions/:sessionId/reflections` | `reflection` |
+| GET | `/api/session-completions/current` | `session-completion` |
+| GET | `/api/study-sessions/:sessionId/completion` | `session-completion` |
+| POST | `/api/study-sessions/:sessionId/completion` | `session-completion` |
+| POST | `/api/study-sessions/:sessionId/completion/undo` | `session-completion` |
+| POST | `/api/study-sessions/:sessionId/completion/close` | `session-completion` |
 | POST | `/api/review-session-summaries` | `analytics` |
 | POST | `/api/client-incidents` | `client diagnostics` |
+
+Completion POST accepts the
+[`StageSessionCompletionRequest`](../src/domain/session-completion.ts):
+`revisionId`, canonical ISO UTC `startedAt`, UTC `studyDayKey`, `summary`,
+`pendingCommit` (a deferred final action or null), and `reflectionEvidence`
+(a supported evidence supplement or null). The summary requires canonical
+`completedAt`, non-negative integer completion/failure counts and
+`activeDurationMs`, and may include a learning count and exact debrief inventory.
+Completion cannot precede start, and failure count cannot exceed completion
+count. Final action validation uses the owning study persistence contract;
+review, contrast, and pure-cue commits must match the route session.
+
+Stage/read/cancel/close return `SessionCompletion`: session/revision IDs,
+`status` (`pending`, `cancelled`, `closed`, or `failed`), `closeAt`, `serverNow`,
+`completedAt`, `canUndo`, deterministic word `report`, and nullable `error`.
+Staging previews the final action without accepting it and freezes a 15-second
+server deadline. Repeating the exact revision preserves its deadline; changing
+its input conflicts. Undo and close POST accept `{ revisionId }`. Undo cancels
+only before expiry; close accepts the final action, summary, and generation work
+atomically and can close early or retry failed closure. Repeated cancellation or
+successful closure returns the existing result.
+
+Current GET returns `{ completion: SessionCompletion | null }` for the learner's
+pending/failed completion. Session GET returns its latest revision and may close
+an overdue pending revision. Every operation is learner-scoped. Explicit input
+errors return `400`, missing completion returns `404`, lifecycle or revision
+conflicts return `409`, and persistence failures return `500`. Browser unload is
+not required; server recovery closes acknowledged overdue completions. See the
+[completion contract](../SPECS/session-covering-criteria.md#completed-session-reflection-boundary).
 
 Accepted review production events must include their exact frozen
 `metadata.production` snapshot. The accepted-review batch transaction appends
@@ -416,7 +450,7 @@ Request/result types live in
 | PUT | `/api/reflection-quality` | Upsert the tag set on one reflection item |
 | DELETE | `/api/reflection-quality` | Clear quality tags for one reflection item |
 | GET | `/api/reflection-quality-stats` | Aggregate dogfood quality rates by model arm |
-| GET | `/api/attention-badges` | Unseen Help-queue count, unseen failed generation-run ids, failed-run seen-through cursor, and What’s New read cursors |
+| GET | `/api/attention-badges` | Unseen Help-queue count, durable reflection generation state, unseen failed generation-run ids, failed-run seen-through cursor, and What’s New read cursors |
 | POST | `/api/reflection-inbox-seen` | Stamp one Help card as displayed |
 | GET | `/api/whats-new` | Read shared published blog posts |
 | GET | `/api/operator/whats-new` | Operator-only current posts including drafts |
@@ -714,6 +748,7 @@ The second-opinion request accepts `helpInboxIds` alongside `proposalIds`.
 ```ts
 {
   reflectionUnseenCount: number;
+  reflectionGenerating: boolean;
   failedReflectionRunIds: string[];
   failedReflectionRunsSeenThroughAt: string | null;
   whatsNewSeenThroughDate: string | null;
@@ -723,6 +758,10 @@ The second-opinion request accepts `helpInboxIds` alongside `proposalIds`.
 
 `reflectionUnseenCount` is pending Help proposals plus open explanation-only
 inbox rows whose `inbox_seen_at` is still null. It is not the Help queue length.
+`reflectionGenerating` is true when this learner has a queued or running durable
+post-session reflection dispatch, including after browser navigation or reload.
+It becomes false for succeeded, skipped, or failed dispatches. The client uses it
+for the Reflections spinner; it does not count artifacts or pending proposals.
 `failedReflectionRunIds` are concluded generation runs whose durable `state` is
 `failed` and whose `completed_at` is later than the learner’s stored
 seen-through timestamp, newest completion first. A null cursor means every

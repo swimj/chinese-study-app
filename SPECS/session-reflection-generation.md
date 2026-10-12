@@ -42,30 +42,37 @@ It does not choose:
 
 ## 2. Finalized-Session Boundary
 
-After the last rating, the revealed exercise remains visible with its final
-Undo opportunity. **See session summary** (Enter) locks Undo and finalizes the
-session before opening the summary. Active/draining leave does not finish.
-Tab close and refresh are not reliable finish paths.
+Completing the last session unit immediately opens the completion screen and
+saves a pending completion. The backend acknowledges a fixed 15-second final
+Undo deadline. Ordinary active/draining leave does not finish a session.
+The completion lifecycle is defined in
+[`session-covering-criteria.md`](./session-covering-criteria.md#completed-session-reflection-boundary).
 
-Finalization proceeds in this order:
+Pending completion preserves the final deferred action and qualifying reflection
+supplement without accepting the study outcome. Undo must cancel it before the
+server deadline. Expiry, **Return to Home now**, or navigation to another page
+within the app closes it. Refresh, tab close, backgrounding, and navigation to
+another URL leave the acknowledged deadline intact; overdue completion closes
+on server recovery.
 
-1. close the final Undo window and flush any accepted deferred study commit;
+Closure proceeds in this order:
+
+1. close the final Undo window and accept the final deferred study action;
 2. record the durable completed-session summary;
-3. freeze the qualifying reflection supplement; and
-4. start reflection only when qualifying evidence exists.
+3. freeze the qualifying reflection supplement against the accepted attempts; and
+4. durably schedule reflection only when qualifying evidence exists.
 
-If the final study commit or session-summary write fails, reflection must not
-start. The learner may retry finalization without fabricating a completed
-session or duplicate attempt evidence. The last card stays visible for retry;
-Undo stays closed after the final commit succeeds; a failed commit retains it.
+If final acceptance or the summary write fails, reflection must not start.
+Retry does not fabricate a completed session or duplicate attempt evidence.
+The acknowledgement boundary is explicit: the backend can guarantee closure
+only after it has received pending completion.
 
-Once finalization succeeds, reflection is best-effort. Generation is kicked off
-after the durable finish writes succeed and does not require the summary page
-to remain mounted. The learner may leave the summary while generation
-continues. Provider failure, invalid output, timeout, or absence of qualifying
-evidence does not reopen the session, alter its completion, change covering, or
-affect scheduling projection. If they already left, retry remains available
-later from Reflections rather than as a blocking return to the summary.
+Once closure succeeds, reflection is best-effort. Durable dispatch does not
+require a mounted summary or a later browser request. Generation failure,
+invalid output, timeout, or absence of qualifying evidence does not reopen the
+session, change covering, or affect scheduling projection. The learner returns
+to ordinary Home while generation may continue; retry remains available from
+Reflections rather than blocking the completion screen.
 
 ## 3. Evidence Boundary
 

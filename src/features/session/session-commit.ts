@@ -9,7 +9,7 @@ import {
 
 export type DeferredSessionCommit = Exclude<BucketSessionCommitIntent, { type: 'none' }>;
 
-export async function applySessionCommit(commit: DeferredSessionCommit) {
+export async function applySessionCommit(commit: DeferredSessionCommit, sessionId?: string) {
   switch (commit.type) {
     case 'commit-review-action-session': {
       await recordAcceptedReviewAttemptBatch({
@@ -57,10 +57,10 @@ export async function applySessionCommit(commit: DeferredSessionCommit) {
       });
       return;
     case 'commit-learning-word-session':
-      await completeLearningSession(commit.wordId, commit.success);
+      await completeLearningSession(commit.wordId, commit.success, sessionId);
       return;
     case 'commit-unstudied-word-session':
-      await completeUnstudiedSession(commit.wordId);
+      await completeUnstudiedSession(commit.wordId, sessionId);
       return;
   }
 }

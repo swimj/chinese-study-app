@@ -1,3 +1,4 @@
+import { getSessionWordOutcome, recordSessionWordOutcome, assertSessionAcceptsNewWordOutcome } from './session-word-outcomes.ts';
 import { DEFAULT_INTRODUCTION_SPACING, isStudyIntroductionOrder, isStudyIntroductionSpacing, type StudyIntroductionOrder } from '../../src/domain/introduction-order.ts';
 import { enqueueSessionDebrief } from './session-debrief.ts';
 import { allocateSessionBucketSlots } from '../../src/domain/session-limits.ts';
@@ -1578,7 +1579,7 @@ export function recordAcceptedReviewAttemptBatch({
     return assigned?.event ?? event;
   });
   const terminalProductionAttempt = productionAttempts.at(-1) ?? null;
-  getDb().exec('BEGIN');
+  getDb().exec('SAVEPOINT recordAcceptedReviewAttemptBatch');
 
   try {
     ensureStudySessionExistsWithoutTransaction(sessionId, eventsToStore[0]?.occurredAt ?? reviewedAt);
@@ -1609,9 +1610,10 @@ export function recordAcceptedReviewAttemptBatch({
     });
     markStudyAttemptEventsProjectedWithoutTransaction(eventsToStore.map((event) => event.id), reviewedAt);
 
-    getDb().exec('COMMIT');
+    getDb().exec('RELEASE recordAcceptedReviewAttemptBatch');
   } catch (error) {
-    getDb().exec('ROLLBACK');
+    getDb().exec('ROLLBACK TO recordAcceptedReviewAttemptBatch');
+    getDb().exec('RELEASE recordAcceptedReviewAttemptBatch');
     throw error;
   }
 
@@ -1868,7 +1870,7 @@ export function recordAcceptedContrastSelectionAttempt({
 
   const reviewedAt = new Date().toISOString();
 
-  getDb().exec('BEGIN');
+  getDb().exec('SAVEPOINT recordAcceptedContrastSelectionAttempt');
 
   try {
     ensureStudySessionExistsWithoutTransaction(sessionId, event.occurredAt);
@@ -1879,9 +1881,10 @@ export function recordAcceptedContrastSelectionAttempt({
     });
     markStudyAttemptEventsProjectedWithoutTransaction([event.id], reviewedAt);
 
-    getDb().exec('COMMIT');
+    getDb().exec('RELEASE recordAcceptedContrastSelectionAttempt');
   } catch (error) {
-    getDb().exec('ROLLBACK');
+    getDb().exec('ROLLBACK TO recordAcceptedContrastSelectionAttempt');
+    getDb().exec('RELEASE recordAcceptedContrastSelectionAttempt');
     throw error;
   }
 
@@ -2364,7 +2367,13 @@ export function setSentenceCharacterPresentation(sentenceCharacterPresentation: 
   return { sentenceCharacterPresentation: getSentenceCharacterPresentation() };
 }
 
-export function completeUnstudiedWordSession(wordId: string, studyDayKey: string): Word {
+export function completeUnstudiedWordSession(wordId: string, studyDayKey: string, sessionId?: string, fromCompletion = false): Word {
+  if (sessionId !== undefined) {
+    if (!sessionId.trim()) throw new Error('Expected non-empty session id');
+    const previous = getSessionWordOutcome(sessionId, wordId, 'introduction');
+    if (previous) return previous;
+    if (!fromCompletion) assertSessionAcceptsNewWordOutcome(sessionId);
+  }
   assertStudyDayKey(studyDayKey);
   const existingWord = getDb()
     .prepare(`
@@ -2404,9 +2413,9 @@ export function completeUnstudiedWordSession(wordId: string, studyDayKey: string
     throw new Error('Unstudied word has unexpected learning progress');
   }
 
-  const today = getTodayKey();
+  const today = studyDayKey;
 
-  getDb().exec('BEGIN');
+  getDb().exec('SAVEPOINT completeUnstudiedWordSession');
 
   try {
     getDb().prepare(`
@@ -2430,9 +2439,15 @@ export function completeUnstudiedWordSession(wordId: string, studyDayKey: string
       enqueueWordPreparation(wordId, 'review');
       requestWordReserveReconciliation();
     }
-    getDb().exec('COMMIT');
+    if (sessionId !== undefined) {
+      const word = getWordById(wordId);
+      if (!word) throw new Error('Committed word disappeared');
+      recordSessionWordOutcome(sessionId, existingWord.status, word, 'introduction');
+    }
+    getDb().exec('RELEASE completeUnstudiedWordSession');
   } catch (error) {
-    getDb().exec('ROLLBACK');
+    getDb().exec('ROLLBACK TO completeUnstudiedWordSession');
+    getDb().exec('RELEASE completeUnstudiedWordSession');
     throw error;
   }
 
@@ -2592,7 +2607,7 @@ export function recordReviewSessionSummary({
 
   if (debriefInventory !== undefined) validateDebriefInventory(debriefInventory);
   const ownsTransaction = debriefInventory !== undefined;
-  if (ownsTransaction) getDb().exec('BEGIN IMMEDIATE');
+  if (ownsTransaction) getDb().exec('SAVEPOINT recordReviewSessionSummary');
   try {
     getDb().prepare(`
       INSERT INTO learner_owned_review_session_summaries (
@@ -2621,14 +2636,21 @@ export function recordReviewSessionSummary({
       completedLearningWordCount ?? null,
     );
     if (debriefInventory !== undefined && config.studyProfile === 'mandarin') enqueueSessionDebrief(normalizedSessionId, completedAt, debriefInventory);
-    if (ownsTransaction) getDb().exec('COMMIT');
+    if (ownsTransaction) getDb().exec('RELEASE recordReviewSessionSummary');
   } catch (error) {
-    if (ownsTransaction) getDb().exec('ROLLBACK');
+    if (ownsTransaction) { getDb().exec('ROLLBACK TO recordReviewSessionSummary'); getDb().exec('RELEASE recordReviewSessionSummary'); }
     throw error;
   }
 }
 
-export function completeLearningWordSession(wordId: string, success: boolean): Word {
+export function completeLearningWordSession(wordId: string, success: boolean, sessionId?: string, studyDayKey?: string, fromCompletion = false): Word {
+  if (studyDayKey !== undefined) assertStudyDayKey(studyDayKey);
+  if (sessionId !== undefined) {
+    if (!sessionId.trim()) throw new Error('Expected non-empty session id');
+    const previous = getSessionWordOutcome(sessionId, wordId, 'learning');
+    if (previous) return previous;
+    if (!fromCompletion) assertSessionAcceptsNewWordOutcome(sessionId);
+  }
   const existingWord = getDb()
     .prepare(`
       SELECT
@@ -2655,11 +2677,11 @@ export function completeLearningWordSession(wordId: string, success: boolean): W
     throw new Error('Word not found');
   }
 
-  const today = getTodayKey();
+  const today = studyDayKey ?? getTodayKey();
   const nextLearningStreak = success ? existingWord.learning_streak + 1 : 0;
   const nextStatus: WordStatus = nextLearningStreak >= 3 ? 'review' : 'learning';
 
-  getDb().exec('BEGIN');
+  getDb().exec('SAVEPOINT completeLearningWordSession');
 
   try {
     getDb().prepare(`
@@ -2684,9 +2706,15 @@ export function completeLearningWordSession(wordId: string, success: boolean): W
       upsertWordStudyAdmissionState(wordId, 'review', addHours(now, REVIEW_PHASE_RECENCY_GUARD_HOURS));
     }
 
-    getDb().exec('COMMIT');
+    if (sessionId !== undefined) {
+      const word = getWordById(wordId);
+      if (!word) throw new Error('Committed word disappeared');
+      recordSessionWordOutcome(sessionId, existingWord.status, word, 'learning');
+    }
+    getDb().exec('RELEASE completeLearningWordSession');
   } catch (error) {
-    getDb().exec('ROLLBACK');
+    getDb().exec('ROLLBACK TO completeLearningWordSession');
+    getDb().exec('RELEASE completeLearningWordSession');
     throw error;
   }
 

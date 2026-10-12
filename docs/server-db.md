@@ -30,7 +30,7 @@ encounters and ratings and requires the offline schema-upgrade procedure.
 | [`reflection-help-inbox.ts`](../server/db/reflection-help-inbox.ts) | Open explanation-only Help inbox rows, keyed by `(artifact_id, item_id)`; Done deletes the row |
 | [`whats-new.ts`](../server/db/whats-new.ts) | Shared blog posts, publication ordering, revision conflicts, and immutable attributable save history; see [What’s New](whats-new.md) |
 | [`whats-new-attention.ts`](../server/db/whats-new-attention.ts) | Learner-private per-post first badge exposure and read timestamps, twelve-hour expiry, and legacy cursor compatibility |
-| [`attention.ts`](../server/db/attention.ts) | Help `inbox_seen_at` stamps, unseen Help-queue count, unseen failed generation-run ids, failed-run seen-through cursor, and the What’s New seen-through cursor |
+| [`attention.ts`](../server/db/attention.ts) | Help `inbox_seen_at` stamps, unseen Help-queue count, durable queued/running reflection dispatch state, unseen failed generation-run ids, failed-run seen-through cursor, and the What’s New seen-through cursor |
 | [`intake-triage.ts`](../server/db/intake-triage.ts) | Dormant intake-triage schema creation and validation retained for database compatibility |
 | [`domain-commands.ts`](../server/db/domain-commands.ts) | Shared transaction-aware domain commands used by reflection and manual paths; definition-production suppression and contextual-selection eligibility |
 | [`production-cues.ts`](../server/db/production-cues.ts) | Default production tasks, strict target-only word cues, immutable lifecycle/evidence state, one immutable post-reveal supplement per definition cue or fallback, and cue/supplement application adapters |
@@ -41,6 +41,8 @@ encounters and ratings and requires the offline schema-upgrade procedure.
 | [`shared-content-bootstrap.ts`](../server/db/shared-content-bootstrap.ts) | Strict checksummed shared-only hosted Mandarin import and provenance validation |
 | [`hosted-operations.ts`](../server/db/hosted-operations.ts) | Persisted service controls, current service banner, attributable learner disablement, diagnostics, sentinels, and restore validation |
 | [`word-introductions.ts`](../server/db/word-introductions.ts) | Immutable shared bootstrap/teaching, publication leases, explicit shared reads, and private exact-package opening/completion |
+| [`session-completion.ts`](../server/db/session-completion.ts) | Fixed-deadline completion revisions, provisional final-action preview, atomic acceptance/summary/report/dispatch closure, cancellation and current-pending recovery |
+| [`session-word-outcomes.ts`](../server/db/session-word-outcomes.ts) | Immutable session-attributed introduction/Practice outcomes and deterministic distinct new/graduated word reports |
 | [`session-debrief.ts`](../server/db/session-debrief.ts) | Learner-private exact inventories and interests snapshots, debrief queue/results, attempt cost and latency records, fenced completion and explicit retry |
 | [`preparation-work.ts`](../server/db/preparation-work.ts) | Shared word/stage demand, three-attempt budget, restart recovery, failure diagnostics and audited operator retry; migration 0018 |
 | [`usage-pulse.ts`](../server/db/usage-pulse.ts) | Content-free daily cohort usage snapshots and live today pulse for the operator page |
@@ -411,6 +413,32 @@ process, polls every five seconds, and permits two concurrent stages. Existing
 introduction/review leases remain publication authority; the work journal does
 not replace them. Maintenance/provider controls and shutdown draining apply.
 No migration regenerates the corpus or invalidates compatible authored content.
+
+## Session completion persistence
+
+Migration `0036_session_completion` adds three learner-private tables:
+
+| Table | Responsibility |
+| --- | --- |
+| `learner_session_word_outcomes` | Immutable before/after word status and presentation snapshots keyed by learner/session/word/action kind; repeat accepted outcomes reuse the saved snapshot |
+| `learner_session_completions` | Frozen completion input, fixed deadline, provisional/confirmed report, and pending/cancelled/closed/failed state keyed by learner/session/revision |
+| `learner_session_reflection_dispatches` | Frozen reflection supplement and queued/running/succeeded/skipped/failed dispatch state, active token, lease and result; references its same-owner completion revision |
+
+The completion module uses explicit learner predicates; its unique partial index
+permits only one pending or failed completion per learner. Staging exercises the
+owning commit contract inside a rolled-back savepoint. Closure accepts the final
+action, writes the summary and debrief job, confirms word outcomes, and queues
+reflection in one transaction. Closed and canceled completion rows are terminal;
+new attributed word outcomes cannot mutate a closed session's report.
+
+[`server/session-completion/worker.ts`](../server/session-completion/worker.ts)
+closes overdue revisions independently of provider latency, restores learner
+context for dispatch, skips disabled learners, and fences running outcomes with
+an attempt token. Expired provider work preserves explicit failed-run retry;
+it does not replay unknown outcomes automatically. The worker also drives
+`attention.ts`'s `reflectionGenerating` read through queued/running dispatch
+storage. No historical completion or outcomes are backfilled. Existing databases
+require the [offline schema upgrade](ops/schema-migrations.md#durable-session-completion-0036).
 
 ## Session debrief persistence
 

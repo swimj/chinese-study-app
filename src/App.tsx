@@ -326,11 +326,12 @@ function App({ onSignOut, accountScope = 'trusted-local' }: { onSignOut?: () => 
       reflectionUnseenCount={attention.reflectionUnseenCount}
       hasUnseenReflectionFailure={attention.hasUnseenReflectionFailure}
       reflectionGenerating={
-        studySession.sessionReflectionGenerating
+        attention.reflectionGenerating
+        || studySession.sessionReflectionGenerating
         || reflectionPage.generationRetryStatus?.state === 'generating'
         || reflectionPage.deferredSecondOpinionStatus === 'generating'
       }
-      onOpenHomePage={() => setCurrentPage('home')}
+      onOpenHomePage={() => void leaveCompletedSessionThen(() => setCurrentPage('home'))}
       onOpenPriorityPage={() => void leaveCompletedSessionThen(() => {
         if (guideToStash) setWordsView('stash');
         return priorityPage.openPage();

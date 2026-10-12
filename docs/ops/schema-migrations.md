@@ -317,3 +317,37 @@ and acceptance totals from durable records. Historical practice and mean stash
 remain NULL; no attempts, word state, or debrief inventories are interpreted to
 reconstruct them. Legacy spend and median columns remain stored but are retired
 from the usage API. This release requires the offline schema upgrade procedure.
+
+## Durable session completion (0036)
+
+`0036_session_completion` adds learner-private pending completion revisions,
+word-outcome snapshots, and reflection dispatch storage. Existing databases
+require the stopped-writer offline upgrade above before this release starts;
+the app-only hosted upgrade cannot apply it. The migration creates empty tables
+and does not invent historical session completion, introduction or graduation
+outcomes, final Undo deadlines, or generation work.
+
+New introduction and Practice outcomes freeze the word presentation and its
+before/after status under their learner, session, word, and action kind. The
+completion report uses these snapshots; later word edits do not rewrite an old
+report. Completion revisions freeze the final action, timestamps, summary,
+debrief inventory, reflection supplement, and fixed 15-second server deadline.
+Cancellation is terminal. Successful closure accepts the final action and saves
+the completed summary, confirmed report, and reflection dispatch atomically.
+
+The completion worker closes overdue pending revisions after restart, including
+when provider work is disabled. Maintenance suspends closure and generation;
+overdues settle after maintenance ends. A closure failure preserves the exact
+intent for explicit retry. Queued reflection dispatch resumes when provider work
+is allowed and the learner is enabled. Expired running dispatches conclude any
+started generation runs as interrupted failures with retained evidence for
+explicit retry; an unknown provider outcome is not automatically replayed. A
+dispatch that never started a generation run can safely return to the queue.
+Recovery uses a token to prevent an older dispatch completion from replacing a
+later state. Provider failure does not reopen a closed study session.
+
+Rehearsal should cover a pending completion across database reopen, overdue
+closure with provider work disabled, cancel-before-expiry, failed closure and
+retry, and interrupted generation recovery. Preserve the source backup and its
+matching image: these records are not a replacement for release recovery
+artifacts or proof that the hosted upgrade has been performed.

@@ -228,8 +228,10 @@ selection scheduler state.
 
 ## Undo Semantics
 
-Undo is a frontend-only escape hatch for the most recent session-affecting
-transition that has not yet been durably committed to the backend.
+Undo restores the most recent session-affecting transition whose study outcome
+has not yet been durably accepted. Ordinary study Undo is frontend-only. During
+the final completion window, the backend also owns a pending completion that
+must be canceled before the frontend restores study state.
 
 The frontend may hold at most one undoable transition.
 
@@ -264,7 +266,9 @@ When undo is performed, the frontend must restore atomically:
 - pending backend commit, cleared
 - pending production mistake capture, cleared if it came from the undone transition
 
-Undo must not call the backend.
+Ordinary study Undo must not call the backend. Final-window Undo first cancels
+the backend pending completion atomically. Cancellation succeeds only before
+its deadline; after closure, the frontend must not restore the old study state.
 
 After undo, the user should see the card state from immediately before the
 undone session-affecting transition.
@@ -285,31 +289,53 @@ keyboard behavior, exposure semantics, and operator analytics.
 
 ## Completed-Session Reflection Boundary
 
-After the last rating, keep the last revealed exercise visible. Replace its
-study controls with **See session summary** (Enter) and the final Undo control.
-When the session ends on the third successful reinforcement, show all three
-completed recall steps on that retained card.
-The last card does not depart. This also applies when draining or a final
-contrast response completes the work; a frozen incorrect answer remains visible.
+Completing the last word or standalone exercise immediately opens the completion
+screen with the final answer and Undo opportunity. This applies to natural
+completion and completed drain mode. There is no intermediate confirmation to
+open a summary.
 
-Entering the summary locks Undo while saving and uses the existing finalization
-path: flush the final accepted deferred commit, then record the durable
-completed-session summary. Show the summary only after both writes succeed.
-Primary navigation returns at that point. There is no second Finish action;
-**Done** or **Home** leaves the finalized Mandarin debrief; French retains
-**Close summary**. The debrief inventory and display contract is defined in
+The frontend saves a pending completion containing the final deferred action,
+summary, exact debrief inventory, and reflection supplement. Show **Saving…**
+until the backend acknowledges this record, then display a 15-second countdown
+from its fixed server deadline. The final action remains unaccepted during this
+window. Undo cancels pending completion before the deadline and restores study;
+completing again creates a fresh window. Repeated requests and reopening the
+same pending completion preserve its original deadline.
+
+At expiry the backend accepts the final action, records the completed summary,
+and durably schedules Connections and qualifying reflection. The completion
+screen returns to ordinary Home when closure succeeds. **Return to Home now**
+closes early. Navigation to another page within the app uses the same closure
+operation and preserves the selected destination; an old timer must never pull
+the learner back from that destination. **Keep summary open** cancels automatic
+navigation while preserving backend closure at the deadline.
+
+The deterministic report lists distinct words that completed their first-study
+unit and entered Practice, and distinct words whose accepted work in this
+session graduated them from Practice to Review. Introductions merely opened
+are excluded. Practice units covered are not themselves graduation. Empty
+groups are omitted; during Undo the report is provisional. The countdown adds
+neither study duration nor time to the recorded study-completion timestamp.
+
+Once acknowledged, pending completion survives refresh, backgrounding, tab close,
+and navigation to another URL. Server recovery closes overdue records. A later
+visit after closure opens Home. Browser unload is not required for closure.
+Before acknowledgement, show saving/retry rather than promising a server deadline.
+The server resolves a cancellation-versus-expiry race atomically. Duplicate
+closure does not duplicate accepted attempts, completion, or generation work.
+
+Starting a new session first closes any previous pending completion, including
+after reload or when another tab created it. Only then select the refreshed
+study queue, so the final action from the previous session informs admission.
+If previous closure fails, starting remains retryable rather than selecting a
+queue from unaccepted progress.
+
+Leaving an active or still-draining session does not finish it. Failure to save
+or close completion remains retryable and does not fabricate accepted work or
+start generation. Reflection and Connections remain best-effort after closure;
+their latency does not delay Home or reopen study. Connections is read from Home,
+separately from this immediate deterministic report. See
 [`session-debrief.md`](./session-debrief.md).
-
-During saving, disable entry and Undo. Duplicate entries share one in-flight
-finalization. A save failure leaves the last card visible with a retry and does
-not start reflection. If the commit failed, Undo remains available; after an
-accepted commit it stays closed. If the commit succeeded but the summary
-write failed, retry only the remaining durable work. Reflection starts after
-successful finalization and remains best-effort.
-
-Leaving an active or draining session does not finish it. Refresh and tab close
-are not reliable finish paths. The in-app leave guard still shares finalization
-for any programmatic leave from a completed but unsaved session.
 
 An undone transition contributes no reflection evidence. Reflection generation,
 validation, or later review failure never changes covering, accepted attempts,
