@@ -28,7 +28,7 @@ test('acknowledged completion shows provisional report, countdown, and Undo with
   assert.match(html, /新/);
   assert.match(html, /provisional/);
   assert.match(html, /Undo last action/);
-  assert.match(html, /recall attempts \(including repeats\)/);
+  assert.doesNotMatch(html, /recall attempts|answers/);
   assert.doesNotMatch(html, /Graduated to Review|Connections|Feedback/);
 });
 

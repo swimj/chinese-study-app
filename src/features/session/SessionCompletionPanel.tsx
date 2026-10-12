@@ -100,7 +100,7 @@ export function SessionCompletionPanel({ summary, completion, saving, busy, erro
         <CompletionWords title="New words studied" words={completion.report.newWords} characterPresentation={characterPresentation} />
         <CompletionWords title="Graduated to Review" words={completion.report.graduatedWords} characterPresentation={characterPresentation} />
       </div> : null}
-      <p className="notes">{summary.answeredCount} recall attempts (including repeats) · {formatElapsed(summary.activeDurationMs)} of study</p>
+      <p className="notes">{formatElapsed(summary.activeDurationMs)} of study</p>
       {closed ? <SessionRecoveryHighlights sessionId={summary.sessionId} characterPresentation={characterPresentation} /> : null}
     </section>
   );

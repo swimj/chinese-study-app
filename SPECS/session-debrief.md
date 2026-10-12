@@ -132,9 +132,7 @@ provisional while Undo is available: staging previews the final action without
 accepting it. Closure confirms the report from persisted transitions rather than
 model-generated reporting or the number of Practice units covered.
 
-The footer labels rated recall attempts explicitly, including repeated recalls
-across new, Practice, and Review work. It does not present that number as a count
-of distinct words or completed session units. Undo restores the preceding count.
+The footer shows active study duration without an overall attempt or item count.
 When the learner keeps the summary open, successful closure fades the countdown
 and temporary notices over two seconds while retaining their layout space. Undo
 becomes disabled and leaves the keyboard and accessibility navigation without
