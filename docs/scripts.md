@@ -29,6 +29,51 @@ effective data directory before starting or resetting it: existing files under
 The [hosted runbook](ops/hosted-beta-deployment.md) owns deployment configuration
 and release procedures.
 
+## Preview a first-time learner
+
+Use `npm run dev:new-learner` to inspect the welcome path and empty learner
+experience. The command creates an isolated temporary database, imports the
+shared Mandarin bootstrap content, and starts both servers. Open the printed
+`http://localhost:4183/?reset-welcome=1` link to begin at Home with Getting
+Started highlighted. Local authentication skips hosted sign-in.
+
+The learner has no study history or stashed words. New words come from Stash by
+default, so Home initially has no study material ready. The small shared
+bootstrap corpus supports exploring the empty-state workflow; this is not a
+copy of hosted content or a prepared exercise fixture. For populated study
+scenarios, use the [UI annotation fixtures](#repeatable-ui-annotation-fixtures).
+Provider-backed generation still requires the usual provider configuration.
+
+Ctrl-C stops both servers. The printed database directory is retained for
+inspection. Each invocation creates a new database; no existing database is
+reset. To choose its location, pass `--data-dir=/absolute/new-directory` (the
+parent must exist). An existing directory is rejected. To avoid occupied ports:
+
+```sh
+npm run dev:new-learner -- --port=4193 --api-port=5194
+```
+
+### Replay only the welcome path
+
+Keep the preview running and request its reset link:
+
+```sh
+npm run dev:new-learner -- --reset-welcome=true
+```
+
+Open the printed link in the same browser. If using a custom frontend port,
+include the same `--port` here. This clears only the three welcome
+acknowledgements, returning to Home with Getting Started highlighted, followed
+by Words → Stash and then the settings gear on returning Home. Words, study
+history, settings, and other browser preferences remain intact. The reset flag
+is consumed, so ordinary reloads preserve subsequent progress.
+
+The reset link works only in the development preview launched by this command.
+Use the printed `localhost` origin consistently: `127.0.0.1` has separate browser
+storage. Hosted builds ignore the reset flag. Browser storage must be available.
+For database-only inspection, `--prepare-only=true` creates and prints the fresh
+database without starting servers.
+
 ## Inspect word content fixtures
 
 To inspect how source content becomes a teaching package and review presentation,
