@@ -124,3 +124,18 @@ test('failed application rolls back successor, content and evidence and can be r
   } finally { db.exec('DROP TRIGGER fail_improvement_evidence'); }
   assert.equal(api.applyImprovementCase(item.id,{expectedRevision:item.revision,approve:true,acceptAnswerSpaceChange:false},'editor').status,'applied');
 });
+
+test('discarding a saved draft removes it from unresolved cases while retaining evidence and source', () => {
+  prompt('discard');
+  let item = api.createImprovementCase({ kind: 'contrast_prompt', sourceId: 'discard' }, 'editor');
+  item = api.saveImprovementCase(item.id, revised(item), 'editor');
+  const closed = api.closeImprovementCase(item.id, { expectedRevision: item.revision, resolution: 'Draft discarded by operator without applying content changes.' }, 'editor');
+  assert.equal(closed.status, 'closed');
+  assert(!api.listImprovementCases({ status: 'draft' }, 'editor').items.some(entry => entry.id === item.id));
+  assert(api.listImprovementCases({ status: 'closed' }, 'editor').items.some(entry => entry.id === item.id));
+  const history = api.getImprovementHistory(item.id, 'editor');
+  assert.deepEqual(history.map(entry => entry.revision), [1, 2, 3]);
+  assert.equal(history[1].diagnosis, item.diagnosis);
+  assert.deepEqual(history[1].proposed, item.proposed);
+  assert.equal(db.prepare('SELECT prompt_text FROM scoped_contrast_prompts WHERE id=?').get('discard')!.prompt_text, '老师要____学生。');
+});

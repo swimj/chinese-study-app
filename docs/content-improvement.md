@@ -19,7 +19,9 @@ package corrections affect later selection and existing learner pins.
 ## Review and application
 
 Open a case from **Improve this item** in content triage, or select a content
-kind and source ID directly. A case records the current source and, when
+kind and source ID directly under **Open content by source ID**. The triage action
+opens the draft directly, with an unsaved-edit warning before switching cases.
+A case records the current source and, when
 selected from feedback, the exact rated snapshot separately. An older flag is
 evidence about what was served, not permission to overwrite newer material.
 
@@ -29,8 +31,28 @@ proposal remains labeled as agent-originated even when an operator accepts it.
 Saving a draft changes no study content. The workspace retains each saved
 revision with its actor and time.
 
-Before application, inspect the materialized preview, check the answers and
-reveal, and record both the problem and why the revision is better. Application
+For a rehearsal, the editor focuses on the selected exercise beside its original
+and a live materialized preview. The full source and teaching package remain
+available under **Advanced**; focused edits preserve the rest of the package.
+An example cloze can receive an optional English frame. Editorial evidence sits
+below the comparison. **Save and validate** retains an immutable draft revision
+before checking it; a validation failure leaves that saved revision available.
+The separate **Save draft** action remains available without validation.
+
+A draft chip exposes an × action on hover or keyboard focus (always visible on
+touch devices); the open editor also offers **Discard draft**. These actions
+close the case without applying it, remove it from unresolved drafts, and retain
+saved revisions under Closed cases. Discarding an open draft with unsaved edits
+requires confirmation. Applied and closed cases do not offer this action.
+**Application effects** discloses the content-specific consequences near review
+and approval.
+
+Exercise previews show the learner-facing cue followed by expected answers for
+editorial judgment. They do not include an answer-entry or matcher-testing flow.
+Unvalidated cues can use known source answers; changed answer identities require
+validation to resolve their written forms.
+
+Before application, inspect the materialized preview and expected answers, and record both the problem and why the revision is better. Application
 requires explicit approval of the saved revision. Changed answer space requires
 an additional acknowledgement. Validation runs again inside the application
 transaction; stale draft revisions or changed source/dependency state reject
