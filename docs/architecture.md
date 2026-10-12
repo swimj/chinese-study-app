@@ -60,6 +60,7 @@ Detail: [SPECS/frontend-architecture-map.md](../SPECS/frontend-architecture-map.
 
 | Variable | Where | Purpose |
 | --- | --- | --- |
+| `APP_HOST` | Backend | HTTP bind address (default `0.0.0.0`; new-learner preview uses `127.0.0.1`) |
 | `APP_MODE` | Backend | `dev` (seed) or `study` (explicit data dir) |
 | `APP_DATA_DIR` | Backend | SQLite directory |
 | `APP_LEARNER_ID` | Backend | Stable trusted-local learner selected for this process |

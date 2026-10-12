@@ -2494,7 +2494,7 @@ export type StartServerOptions = {
 };
 
 export function startServer(options: StartServerOptions = {}): Server {
-  const host = options.host ?? '0.0.0.0';
+  const host = options.host ?? process.env.APP_HOST ?? '0.0.0.0';
   const serverPort = options.port ?? port;
   const app = options.app ?? createApp();
   const server = app.listen(serverPort, host, () => {
