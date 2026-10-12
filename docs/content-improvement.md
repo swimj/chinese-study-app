@@ -74,6 +74,18 @@ and writes, including the domain entry points. The workspace exposes authored
 material and correction evidence, not learner responses or reflection bundles.
 
 Production cues, supplements, and contrast prompts use replacement identities.
+A production cue's learner activation preference remains separate from its
+replacement and publication records. Corrections copy that preference to the
+successor while retaining the original history. Serving and the Content Bin
+derive effective cue availability through the same typed policy: replacement takes
+precedence, withdrawn or unpublished shared cues are unavailable, and a pinned
+canonical source must remain published. Eligible shared cues default to active
+unless the learner has deactivated them; private cues require activation.
+The bin displays the reason for unavailability and the replacement cue ID, and
+word-level active counts use the same effective state. Database readers load
+availability facts in batches; the policy applies their precedence without
+querying storage or changing the retained records.
+
 A contrast correction replaces one prompt without withdrawing its cluster.
 Pure-cue corrections preserve cue identity, axis and accepted membership, with
 attributed before/after repair evidence; this preserves scheduling identity.

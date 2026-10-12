@@ -212,7 +212,7 @@ function CueDetail({ item }: { item: ProductionCueDiagnosticItem }) {
         eyebrow="Production cue"
         title={item.text}
         id={item.id}
-        state={item.active ? 'active' : 'inactive'}
+        state={humanize(item.availabilityStatus)}
       />
       <dl className="content-fact-grid">
         <Fact label="Type" value={humanize(item.cueType)} />
@@ -221,6 +221,7 @@ function CueDetail({ item }: { item: ProductionCueDiagnosticItem }) {
         <Fact label="Created" value={formatDate(item.createdAt)} />
       </dl>
       <DetailText label="Task id" value={item.taskId} code />
+      {item.replacementCueId ? <DetailText label="Replacement cue id" value={item.replacementCueId} code /> : null}
       {item.attribution.invocationId ? <DetailText label="Invocation id" value={item.attribution.invocationId} code /> : null}
       <section className="content-detail-section">
         <h3>Accepted words · {item.acceptedWords.length}</h3>
@@ -278,7 +279,7 @@ function itemSummary(item: ContentDiagnosticItem): string {
     return `${item.word.status} · ${item.word.meaning}${supplementNote}`;
   }
   if (item.kind === 'contrast_cluster') return `${item.members.length} members · ${item.prompts.length} prompts`;
-  return `${item.active ? 'active' : 'inactive'} · ${item.anchorWord.hanzi} · ${humanize(item.cueType)}`;
+  return `${humanize(item.availabilityStatus)} · ${item.anchorWord.hanzi} · ${humanize(item.cueType)}`;
 }
 
 function supplementAttachmentLabel(supplement: WordDiagnosticSupplement): string {

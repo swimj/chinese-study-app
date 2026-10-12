@@ -30,14 +30,14 @@ before(async () => {
 });
 after(() => { sql?.close(); if (dir)
     fs.rmSync(dir, { recursive: true, force: true }); });
-function publish(kind: string, id: string, purpose: string) {
-    sql.prepare(`INSERT INTO shared_content_publications VALUES (?,?,?,?,'available',?,?)`).run(`pub-${id}`, kind, id, purpose, now, now);
+function publish(kind: string, id: string, purpose: string, status = 'available') {
+    sql.prepare(`INSERT INTO shared_content_publications VALUES (?,?,?,?,?,?,?)`).run(`pub-${id}`, kind, id, purpose, status, now, now);
 }
-function cue(id: string, shared: boolean) {
+function cue(id: string, shared: boolean, status = 'available') {
     sql.prepare(`INSERT INTO scoped_production_cues VALUES (?,'production-task:a:default_production','definition_gloss','hello',?,'manual',NULL,?,?)`).run(id, now, shared ? 'shared' : 'learner', shared ? null : 'owner');
     sql.prepare('INSERT INTO scoped_production_cue_accepted_words VALUES (?,\'a\',0)').run(id);
     if (shared)
-        publish('production_cue', id, 'production-task:a:default_production');
+        publish('production_cue', id, 'production-task:a:default_production', status);
     else {
         sql.prepare(`INSERT INTO learner_owned_production_cue_lifecycle_events(learner_id,event_id,cue_id,task_id,lifecycle_kind,occurred_at,invocation_id) VALUES ('owner',?,?,'production-task:a:default_production','activated',?,NULL)`).run(`e-${id}`, id, now);
         sql.prepare(`INSERT INTO learner_owned_production_cue_activation_state VALUES ('owner',?,1,?,?)`).run(id, `e-${id}`, now);
@@ -61,6 +61,8 @@ test('private cue replacement preserves scope, target, activation disposition an
     assert.equal(api.getImprovementHistory(saved.id, 'editor').length, 3);
     assert.equal(db.runWithLearnerId('owner', () => db.getProductionCue('private'))!.active, false);
     assert.equal(db.runWithLearnerId('owner', () => db.getProductionCue(id))!.active, true);
+    assertCueAvailability('owner', 'private', 'replaced', id);
+    assertCueAvailability('owner', id, 'active');
     assert.equal(db.runWithLearnerId('other', () => db.getProductionCue(id)), null);
     assert.throws(() => api.createImprovementCase({ kind: 'production_cue', sourceId: id }, 'other'), /Operator access/);
 });
@@ -73,8 +75,57 @@ test('shared cue replacement retires original and preserves attached reveal cont
     assert.equal(sql.prepare('SELECT publication_status FROM shared_content_publications WHERE content_id=\'shared\'').get()!.publication_status, 'retired');
     assert.equal(sql.prepare('SELECT example_sentence FROM scoped_production_cue_supplements WHERE cue_id=?').get(id)!.example_sentence, '你好！');
     assert.equal(db.runWithLearnerId('other', () => db.getActiveProductionCuesForWord('a')).some(c => c.cueId === id), true);
+    assertCueAvailability('other', 'shared', 'replaced', id);
+    assertCueAvailability('other', id, 'active');
     const invalid = draft('production_cue', id, { cueText: 'Either greeting', acceptedWordIds: ['a', 'b'] });
     assert.match(api.validateImprovementCase(invalid.id, { expectedRevision: invalid.revision }, 'editor').errors.join(' '), /exactly their task target/);
+});
+function assertCueAvailability(learnerId: string, cueId: string,
+    status: import('../src/domain/content-diagnostics.ts').ProductionCueAvailabilityStatus,
+    replacementCueId: string | null = null) {
+    const item = db.runWithLearnerId(learnerId, () => db.getContentDiagnostics({ kind: 'production_cue', query: cueId }))
+        .items.find(item => item.id === cueId);
+    assert.ok(item?.kind === 'production_cue');
+    assert.equal(item.availabilityStatus, status);
+    assert.equal(item.replacementCueId, replacementCueId);
+    assert.equal(item.active, status === 'active');
+    assert.equal(db.runWithLearnerId(learnerId, () => db.getProductionCue(cueId))!.active, item.active);
+}
+test('cue availability combines publication, replacement and learner preference without changing history', () => {
+    cue('preference-original', true);
+    sql.prepare(`INSERT INTO learner_owned_production_cue_lifecycle_events
+        (learner_id,event_id,cue_id,task_id,lifecycle_kind,occurred_at,invocation_id)
+        VALUES ('owner','preference-event','preference-original','production-task:a:default_production','deactivated',?,NULL)`).run(now);
+    sql.prepare(`INSERT INTO learner_owned_production_cue_activation_state
+        VALUES ('owner','preference-original',0,'preference-event',?)`).run(now);
+    const corrected = apply(draft('production_cue', 'preference-original', { cueText: 'A corrected greeting', acceptedWordIds: ['a'] }));
+    const successor = corrected.outcome!.replacementSourceId!;
+    assertCueAvailability('owner', 'preference-original', 'replaced', successor);
+    assertCueAvailability('owner', successor, 'deactivated');
+    assertCueAvailability('other', successor, 'active');
+    assert.equal(sql.prepare(`SELECT active FROM learner_owned_production_cue_activation_state
+        WHERE learner_id='owner' AND cue_id='preference-original'`).get()!.active, 0);
+
+    for (const status of ['retired', 'quarantined'] as const) {
+        cue(`withdrawn-${status}`, true, status);
+        assertCueAvailability('owner', `withdrawn-${status}`, status);
+    }
+    sql.prepare(`INSERT INTO scoped_production_cues VALUES ('missing-publication','production-task:a:default_production','definition_gloss','hello',?,'manual',NULL,'shared',NULL)`).run(now);
+    sql.prepare("INSERT INTO scoped_production_cue_accepted_words VALUES ('missing-publication','a',0)").run();
+    assertCueAvailability('owner', 'missing-publication', 'unpublished');
+    cue('unactivated-private', false);
+    sql.prepare("UPDATE learner_owned_production_cue_activation_state SET active=0 WHERE cue_id='unactivated-private'").run();
+    assertCueAvailability('owner', 'unactivated-private', 'deactivated');
+    for (const learnerId of ['owner', 'other']) {
+        const visible = db.runWithLearnerId(learnerId, () => db.getProductionCuesForTask('production-task:a:default_production'));
+        const words = db.runWithLearnerId(learnerId, () => db.getContentDiagnostics({ kind: 'word', query: '你好' }));
+        const word = words.items.find(item => item.id === 'a');
+        assert.ok(word?.kind === 'word');
+        assert.equal(word.productionTask!.cueCount, visible.length);
+        assert.equal(word.productionTask!.activeCueCount, visible.filter(cue => cue.active).length);
+    }
+    const hidden = db.runWithLearnerId('other', () => db.getContentDiagnostics({ kind: 'production_cue', query: 'unactivated-private' }));
+    assert.equal(hidden.items.length, 0);
 });
 test('supplement successor frees only its live attachment slot and keeps prior bytes', () => {
     cue('supp-parent', true);

@@ -16,11 +16,11 @@ import {
 } from '../../src/domain/word-content/review-compat.ts';
 import { getDb } from './connection.ts';
 import { physicalLearnerTableName } from './learner-scoped-tables.ts';
+import { getProductionCueAvailability } from './production-cue-availability.ts';
 import {
   appendCanonicalReviewExercise,
   appendCanonicalReviewSupplement,
   getCanonicalReviewContent,
-  isCanonicalReviewSourceEligible,
 } from './review-content.ts';
 import {
   getSharedContentPublicationForContent,
@@ -115,7 +115,7 @@ type ProductionCueRow = {
   created_at: string;
   origin_kind: string;
   origin_invocation_id: string | null;
-  active: number;
+  content_scope: 'learner' | 'shared';
 };
 
 export type ProductionCueSupplementRow = {
@@ -535,7 +535,9 @@ export function getDefaultProductionTask(wordId: string): ProductionTaskV0 | nul
 export function getProductionCue(cueId: string): ProductionCueEntryV0 | null {
   const row = getDb().prepare(`${productionCueSelect()} AND production_cues.cue_id = ?`)
     .get(cueId) as ProductionCueRow | undefined;
-  return row ? mapCueRow(row) : null;
+  if (!row) return null;
+  const availability = getProductionCueAvailability([row]).get(row.cue_id)!;
+  return mapCueRow(row, availability.active);
 }
 
 export function getProductionCuesForTask(taskId: string): ProductionCueEntryV0[] {
@@ -544,13 +546,12 @@ export function getProductionCuesForTask(taskId: string): ProductionCueEntryV0[]
     AND production_cues.task_id = ?
     ORDER BY production_cues.created_at ASC, production_cues.cue_id ASC
   `).all(taskId) as ProductionCueRow[];
-  return rows.map(mapCueRow);
+  const availability = getProductionCueAvailability(rows);
+  return rows.map(row => mapCueRow(row, availability.get(row.cue_id)!.active));
 }
 
 export function getActiveProductionCuesForWord(wordId: string): ProductionCueEntryV0[] {
-  return getProductionCuesForTask(defaultProductionTaskId(wordId)).filter((cue) => (
-    cue.active && isCanonicalReviewSourceEligible('production_cue', cue.cueId)
-  ));
+  return getProductionCuesForTask(defaultProductionTaskId(wordId)).filter((cue) => cue.active);
 }
 
 export function getProductionCueSupplement(
@@ -1405,43 +1406,18 @@ function getAttemptEvidence(sourceAttemptId: string): CueAttemptEvidenceRow | nu
 }
 
 function productionCueSelect(): string {
-  const cueTable = scopedStorageTable('production_cues');
   return `
-    SELECT
-      production_cues.cue_id,
-      production_cues.task_id,
-      production_cues.cue_type,
-      production_cues.cue_text,
-      production_cues.created_at,
-      CASE
-        WHEN provenance.source_invocation_id IS NOT NULL THEN 'reflection'
-        ELSE production_cues.origin_kind
-      END AS origin_kind,
+    SELECT production_cues.cue_id, production_cues.task_id, production_cues.cue_type,
+      production_cues.cue_text, production_cues.created_at, production_cues.content_scope,
       provenance.source_invocation_id AS origin_invocation_id,
-      CASE
-        WHEN EXISTS (SELECT 1 FROM content_improvement_replacements r
-          WHERE r.kind = 'production_cue' AND r.source_id = production_cues.cue_id) THEN 0
-        WHEN production_cues.content_scope = 'shared' THEN
-          CASE
-            WHEN publication.publication_status IN ('shared_trial', 'available')
-              AND COALESCE(production_cue_activation_state.active, 1) != 0
-            THEN 1 ELSE 0
-          END
-        ELSE COALESCE(production_cue_activation_state.active, 0)
-      END AS active
-    FROM ${cueTable} AS production_cues
-    LEFT JOIN ${physicalLearnerTableName('production_cue_activation_state')} AS production_cue_activation_state
-      ON production_cue_activation_state.learner_id = current_learner_id()
-      AND production_cue_activation_state.cue_id = production_cues.cue_id
-    LEFT JOIN shared_content_publications AS publication
-      ON publication.content_kind = 'production_cue'
-      AND publication.content_id = production_cues.cue_id
-    LEFT JOIN shared_content_publication_provenance AS provenance
+      CASE WHEN provenance.source_invocation_id IS NOT NULL THEN 'reflection'
+        ELSE production_cues.origin_kind END AS origin_kind
+    FROM scoped_production_cues AS production_cues
+    LEFT JOIN shared_content_publications publication
+      ON publication.content_kind = 'production_cue' AND publication.content_id = production_cues.cue_id
+    LEFT JOIN shared_content_publication_provenance provenance
       ON provenance.publication_id = publication.publication_id
-    WHERE (
-      production_cues.content_scope = 'shared'
-      OR production_cues.owner_learner_id = current_learner_id()
-    )
+    WHERE (production_cues.content_scope = 'shared' OR production_cues.owner_learner_id = current_learner_id())
   `;
 }
 
@@ -1457,7 +1433,7 @@ function mapTaskRow(row: ProductionTaskRow): ProductionTaskV0 {
   };
 }
 
-function mapCueRow(row: ProductionCueRow): ProductionCueEntryV0 {
+function mapCueRow(row: ProductionCueRow, active: boolean): ProductionCueEntryV0 {
   if (!isProductionCueType(row.cue_type)) {
     throw new Error(`Unknown production cue type ${row.cue_type}.`);
   }
@@ -1507,7 +1483,7 @@ function mapCueRow(row: ProductionCueRow): ProductionCueEntryV0 {
       origin: row.origin_kind,
       invocationId: row.origin_invocation_id,
     },
-    active: row.active !== 0,
+    active,
   };
 }
 
