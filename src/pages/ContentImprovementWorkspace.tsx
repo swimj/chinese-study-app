@@ -68,6 +68,13 @@ function ContentPreview({ value, interactive = true }: { value: unknown; interac
   </> : <ReadableContent value={value} />}</div>;
 }
 
+export function ImprovementCaseChip({ item, selected, busy, onOpen, onDiscard }: { item: ImprovementCase; selected: boolean; busy: boolean; onOpen: () => void; onDiscard: () => void }) {
+  return <span className="improvement-case-chip">
+    <button type="button" className="secondary-button" disabled={busy} aria-pressed={selected} onClick={onOpen}>{item.source.title} · revision {item.revision}</button>
+    {item.status === 'draft' && <button type="button" className="improvement-case-remove" disabled={busy} aria-label={`Discard draft: ${item.source.title}`} title="Discard draft (retain evidence in Closed cases)" onClick={onDiscard}>×</button>}
+  </span>;
+}
+
 export function ContentImprovementWorkspace({ selection }: { selection: ImprovementSelection | null }) {
   const [source, setSource] = useState<ImprovementSelection>({ kind: 'production_cue', sourceId: '' });
   const [status, setStatus] = useState<ImprovementCase['status']>('draft');
@@ -126,6 +133,18 @@ export function ContentImprovementWorkspace({ selection }: { selection: Improvem
     finally { setBusy(false); }
   }
   function maySwitch() { return !dirty || window.confirm('Discard unsaved edits and open another case? Save the draft first to retain these edits.'); }
+  function discard(item: ImprovementCase) {
+    if (selected?.id === item.id && dirty && !window.confirm('Discard this draft and its unsaved edits? Saved evidence will remain in Closed cases.')) return;
+    void run(async () => {
+      await closeContentImprovement(item.id, item.revision, 'Draft discarded by operator without applying content changes.');
+      if (selected?.id === item.id) {
+        setSelected(null); setDraft(null); setCheck(null); setHistory(null);
+        setApproved(false); setAnswerApproved(false); setResolution(''); setImportText('');
+      }
+      setRefresh(value => value + 1);
+      setNotice('Draft discarded. Saved evidence remains in Closed cases; production content is unchanged.');
+    });
+  }
   const editable = selected?.status === 'draft';
   return <section id="content-improvement-workspace" className="improvement-workspace" aria-labelledby="improvement-heading">
     <h2 id="improvement-heading">Improve content</h2>
@@ -137,7 +156,7 @@ export function ContentImprovementWorkspace({ selection }: { selection: Improvem
       {source.contentKey && <p className="notes">Selected learner-rated version: <code>{source.contentKey}</code></p>}
     </form></details>
     <details open={!selected}><summary>Browse improvement cases</summary><label>Cases<select value={status} onChange={event => { setStatus(event.target.value as ImprovementCase['status']); setOffset(0); }}><option value="draft">Unresolved drafts</option><option value="applied">Applied corrections</option><option value="closed">Closed cases</option></select></label>
-    <div className="improvement-case-list">{list.items.map(item => <button key={item.id} type="button" className="secondary-button" disabled={busy} aria-pressed={selected?.id === item.id} onClick={() => { if (maySwitch()) void run(async () => accept(await fetchContentImprovement(item.id))); }}>{item.source.title} · revision {item.revision}</button>)}{!list.total && <p>No cases in this view.</p>}</div>
+    <div className="improvement-case-list">{list.items.map(item => <ImprovementCaseChip key={item.id} item={item} selected={selected?.id === item.id} busy={busy} onOpen={() => { if (maySwitch()) void run(async () => accept(await fetchContentImprovement(item.id))); }} onDiscard={() => discard(item)} />)}{!list.total && <p>No cases in this view.</p>}</div>
     {list.total > 25 && <nav aria-label="Improvement cases"><button type="button" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - 25))}>Previous</button><span>{offset + 1}–{Math.min(offset + 25, list.total)} of {list.total}</span><button type="button" disabled={offset + 25 >= list.total} onClick={() => setOffset(offset + 25)}>Next</button></nav>}
     </details>
     {error && <p role="alert">{error}</p>}{notice && <p role="status">{notice}</p>}{busy && <p role="status">Working…</p>}
@@ -145,7 +164,6 @@ export function ContentImprovementWorkspace({ selection }: { selection: Improvem
       <h3>{selected.source.title}</h3>
       <p>{selected.status} · revision {selected.revision} · <strong>{selected.source.scope === 'shared' ? 'Shared content: affects all eligible learners' : 'Private content: limited to its owner'}</strong></p>
       <details><summary>Generation provenance for the source</summary><dl><dt>Source</dt><dd>{selected.source.provenance?.source ?? 'Unknown'}</dd><dt>Model</dt><dd>{selected.source.provenance?.model ?? 'Unknown / not recorded'}</dd></dl></details>
-      <ul>{selected.source.impact.map((impact, index) => <li key={index}>{impact}</li>)}</ul>
       {selected.flagged && <details><summary>Exact learner-rated version and generation provenance</summary><ReadableContent value={selected.flagged.content} /><pre>{JSON.stringify(selected.flagged.provenance, null, 2)}</pre><p>This snapshot is retained separately from the source captured when the draft was opened.</p></details>}
       <div className="improvement-comparison">
         <section><h4>Original</h4>{selected.source.kind === 'rehearsal' ? <RehearsalPreview key={`${selected.id}-original`} value={selected.source.preview} sourceId={selected.source.sourceId} /> : <ContentPreview key={`${selected.id}-original`} value={selected.source.preview} interactive={false} />}</section>
@@ -175,7 +193,9 @@ export function ContentImprovementWorkspace({ selection }: { selection: Improvem
           setCheck(await validateContentImprovement(saved.id, saved.revision)); setApproved(false); setAnswerApproved(false);
         })}>{dirty ? 'Save and validate' : 'Validate saved draft'}</button></>}
         <button type="button" className="secondary-button" disabled={busy} onClick={() => { if (maySwitch()) void run(async () => accept(await fetchContentImprovement(selected.id))); }}>Load saved version</button>
+        {editable && <button type="button" className="secondary-button" disabled={busy} onClick={() => discard(selected)}>Discard draft</button>}
       </div>
+      <details><summary>Application effects</summary><ul>{selected.source.impact.map((impact, index) => <li key={index}>{impact}</li>)}</ul></details>
       {check && <section aria-label="Validation"><h4>Validation</h4>{check.errors.length ? <ul>{check.errors.map((message, index) => <li key={index}>{message}</li>)}</ul> : <p>Content checks passed.</p>}{check.sourceChanged && <p role="alert">The source has changed since this case was opened. Application is blocked; review the current source and open a new case.</p>}{check.sourceChanged && <details><summary>Current source</summary><ReadableContent value={check.currentSource.preview} /></details>}
         {editable && <fieldset disabled={busy || dirty || check.sourceChanged || check.errors.length > 0}><legend>Approve application</legend>{check.answerSpaceChanged && <label className="improvement-checkbox"><input type="checkbox" checked={answerApproved} onChange={event => setAnswerApproved(event.target.checked)} />I approve changing which answers this content accepts.</label>}<label className="improvement-checkbox"><input type="checkbox" checked={approved} onChange={event => setApproved(event.target.checked)} />I reviewed this revision and its scope and approve applying it to production.</label><button type="button" disabled={!approved || (check.answerSpaceChanged && !answerApproved)} onClick={() => void run(async () => { accept(await applyContentImprovement(selected.id, selected.revision, answerApproved)); setRefresh(value => value + 1); setNotice('Correction applied. Original evidence remains in this case.'); })}>Apply approved revision</button></fieldset>}
       </section>}

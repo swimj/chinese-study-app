@@ -48,3 +48,14 @@ test('focused form renders the selected cue and answers without unrelated teachi
   assert.match(preview, /____可见。/);
   assert.doesNotMatch(preview, /Preview unavailable/);
 });
+
+test('only unresolved draft chips expose an accessible discard action', async () => {
+  const { createElement } = await import('react');
+  const { renderToStaticMarkup } = await import('react-dom/server');
+  const { ImprovementCaseChip } = await import('../src/pages/ContentImprovementWorkspace.tsx');
+  const item = { status: 'draft', source: { title: 'Rehearsal: 由此' }, revision: 1 } as import('../src/domain/content-improvement.ts').ImprovementCase;
+  const render = (status: typeof item.status) => renderToStaticMarkup(createElement(ImprovementCaseChip, { item: { ...item, status }, selected: true, busy: false, onOpen: () => {}, onDiscard: () => {} }));
+  assert.match(render('draft'), /aria-label="Discard draft: Rehearsal: 由此"/);
+  assert.doesNotMatch(render('applied'), /Discard draft/);
+  assert.doesNotMatch(render('closed'), /Discard draft/);
+});

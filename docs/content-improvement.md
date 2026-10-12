@@ -39,6 +39,14 @@ below the comparison. **Save and validate** retains an immutable draft revision
 before checking it; a validation failure leaves that saved revision available.
 The separate **Save draft** action remains available without validation.
 
+A draft chip exposes an × action on hover or keyboard focus (always visible on
+touch devices); the open editor also offers **Discard draft**. These actions
+close the case without applying it, remove it from unresolved drafts, and retain
+saved revisions under Closed cases. Discarding an open draft with unsaved edits
+requires confirmation. Applied and closed cases do not offer this action.
+**Application effects** discloses the content-specific consequences near review
+and approval.
+
 Before application, inspect the materialized preview, check the answers and
 reveal, and record both the problem and why the revision is better. Application
 requires explicit approval of the saved revision. Changed answer space requires
