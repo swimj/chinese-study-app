@@ -1,9 +1,10 @@
 # Reflection Frontend Architecture
 
 Feature-specific navigation map for the learner-facing Feedback surface, backed
-by completed-session reflection and proposal review. Product and lifecycle behavior remains authoritative in
+by completed-session reflection and proposal review. Product and lifecycle
+behavior is defined in
 [`SPECS/reflection-proposals-and-handles.md`](../SPECS/reflection-proposals-and-handles.md);
-the general React map remains
+the general React map is in
 [`SPECS/frontend-architecture-map.md`](../SPECS/frontend-architecture-map.md).
 
 ## Component hierarchy
@@ -12,9 +13,10 @@ the general React map remains
 App.tsx
 ├─ useStudySession
 │  ├─ session-reflection-evidence.ts   ephemeral capture and Undo snapshots
-│  ├─ session-finalization.ts          Finish, Close, generation state
-│  ├─ SessionSummaryPanel.tsx          finalization and generation feedback
-│  └─ services/api.ts                  generate-session-reflection request
+│  ├─ useSessionCompletionFlow.ts       acknowledgement, countdown, cancel, close
+│  ├─ session-finalization.ts          finalization state and study guards
+│  ├─ SessionCompletionPanel.tsx       deterministic report and final Undo
+│  └─ services/api.ts                  pending completion, cancel, close requests
 └─ useReflectionPageController
    ├─ ReflectionsPage.tsx              queue, history, detail, proposal cards
    ├─ reflection-page-model.ts         grouping, drafts, support, validation
@@ -24,39 +26,87 @@ App.tsx
 
 ## Completed-session finalization
 
-The last exercise stays visible after completion, with **See session summary**
-(Enter) and final Undo. `StudySessionPanel` retains the committed card presentation
-while the controller's scheduler state is completed; study action bars are
-replaced by entry controls. The final card skips departure motion.
+The study controller enters the completion screen automatically when the
+scheduler reaches completed state. It sends
+the final deferred action, summary, debrief inventory, and reflection supplement
+to backend pending-completion storage. The frontend shows saving until the
+backend acknowledges its fixed deadline, then displays the remaining portion
+of the 15-second final Undo window.
 
-Entry locks Undo during saving and calls `finishCompletedSession`. The same
-exclusive path protects programmatic in-app leave. It flushes the final deferred
-commit, records the durable summary, then opens the summary and starts qualifying
-reflection. Primary navigation stays hidden until successful finalization.
+Undo first cancels pending completion on the server. Only successful cancellation
+restores the frontend snapshot; a server response that completion already closed
+must never reopen study. Completing again prepares a fresh window. Browser
+timers display remaining time and trigger navigation, while backend expiry owns
+acceptance and closure. Refresh, backgrounding, tab close, and navigation to
+another URL therefore do not prevent an acknowledged completion from closing.
 
-If either write fails, the card remains visible for retry. Undo remains available
-if the final commit failed, but stays closed after an accepted commit.
-A summary-write retry does not reapply a successfully flushed commit. Active or
-draining leave, tab close, and refresh do not finalize a session.
+`useSessionCompletionFlow` uses the session completion endpoints centralized in
+`src/services/api.ts`: stage, read, cancel, and close. The study controller also
+reads the current pending completion before starting another session. Reload leaves Home visible;
+there is no tab-local session snapshot or completion-view restoration. The server
+retains the staged revision and deadline independently. In-memory Undo is
+available only in the uninterrupted session view. The backend
+stores each revision in `learner_session_completions`. Staging previews the final
+commit inside a rolled-back savepoint to report its provisional transition.
+Closure applies the stored final action and saves the summary, confirmed report,
+and reflection dispatch in one transaction. Migration `0036_session_completion`
+adds this storage without generating historical completion or outcomes.
+`server/session-completion/worker.ts` closes overdue revisions independently of
+its asynchronous reflection dispatch calls.
 
-Once finalized, **Close summary** is a separate action and remains available
-while reflection is generating. Provider or validation failure is displayed as
-best-effort failure without changing session correctness; the retained
-supplement supports an explicit retry. Session-id guards ignore late summary-UI
-updates after close or after another session starts. Same-tab in-flight
-generation still keeps the Reflections spinner until that request settles, then
-refreshes attention. Generation continues in the session controller even if Home
-is unmounted, so a later Reflections visit can see the artifact or its
-failed/retry state.
+**Return to Home** and in-app navigation close pending completion early.
+The selected in-app destination is retained. Starting a new session first reads
+and closes any pending previous completion before fetching the fresh session
+queue; this also settles completion pending after reload or created in
+another tab. **Keep summary open** stops automatic
+return while backend closure continues at the deadline. On a held-open summary,
+the countdown and temporary notices fade over two seconds after closure; expired
+Undo is an inert layout placeholder so the summary content stays in place.
+Reduced-motion preferences disable the fade. Recovery highlights append
+after the summary statistics. Session-id guards and
+canceled timers prevent stale completion work from navigating a later session
+or overriding a chosen destination. Failed saving or closure has an explicit
+retry action.
+
+The immediate summary reports distinct first-study words entering Practice and
+actual Practice-to-Review transitions, with provisional wording during Undo.
+Automatic return opens Home. Connections is a Home reader with this presentation
+policy: a new batch starts expanded; explicitly
+minimizing pending content holds for that document visit, while an unseen ready
+batch may promote on a later visit. Once introduced, its saved expanded/compact
+choice persists.
+
+Backend closure saves the summary and durably dispatches qualifying reflection.
+Provider or validation failure is independent of study correctness, and
+Reflections supplies later result and retry access. The completion screen does
+not await providers. Pending completion survives backend restart and is closed
+when deadline processing resumes. A caught closure transaction failure rolls
+back the final action, summary, and job inserts together and marks completion
+failed; **Try saving again** or starting another session retries the same stored
+revision. The worker automatically closes pending revisions, not failed ones.
+If the database cannot store the failure marker, the original pending record
+is eligible for a later attempt.
+
+Reflection dispatch is queued in the closure transaction and claimed afterward.
+On an expired dispatch lease, recovery safely requeues work only if no provider
+run was started. A started run with an unknown outcome becomes an explicit failed
+run for the Feedback retry path, rather than silently replaying the
+provider request. Provider failures do not roll back a successfully closed
+session. Slow provider calls do not block the independent deadline cadence.
+
+See the authoritative lifecycle in
+[`session-covering-criteria.md`](../SPECS/session-covering-criteria.md#completed-session-reflection-boundary)
+and eligibility in
+[`session-reflection-generation.md`](../SPECS/session-reflection-generation.md#2-finalized-session-boundary).
 
 ## Staged generation
 
-New initial reflections and new second opinions run server-owned diagnosis and
+Initial reflections and second opinions run server-owned diagnosis and
 conditional production-cue cleanup stages. The client receives only the final V10
 artifact, never an intermediate diagnosis artifact. The run log retains each
 provider call separately; retry resolves its durable continuation and reuses
 saved diagnosis/promotion input within the current contract. Stored legacy
-artifacts remain readable, but obsolete retries, authorization,
+artifacts are readable, but obsolete retries, authorization,
 and application are rejected. No live session grading uses this pipeline.
 
 Diagnosis explicitly chooses ordinary feedback/proposals or a best-effort
@@ -64,13 +114,13 @@ ambiguous-pair handoff with an optional target-suppression recommendation.
 Routed items normally use stage two's final explanation and either coordinated
 cleanup or explanation only; composed suppression and withheld conflicts are
 described below.
-Cleanup without a pure destination remains a normal actionable proposal.
-Historical V8 disagreements remain non-actionable, without a manual override.
+Cleanup without a pure destination is an actionable proposal.
+Historical V8 disagreements are non-actionable, without a manual override.
 Unrelated ordinary items retain stage one's feedback/proposals, including
 contrast authoring in its separate content space.
 
 Bundle admission excludes overlapping target/response pairs in stable order
-before diagnosis. Omitted second-opinion originals remain deferred; only
+before diagnosis. Omitted second-opinion originals are deferred; only
 included originals retire after successful artifact materialization.
 
 The cleanup editor presents the optional shared stimulus/axis, holistic teaching
@@ -107,9 +157,9 @@ no-clue response are excluded. Later accepted attempt ids for a captured action 
 the supplement only so the backend can validate the complete durable attempt
 batch; attempt rows and summaries are not copied into the provider bundle.
 
-The accumulator is ephemeral by design, remains available through
-generation/retry, and is cleared when the completed session closes or a new
-session starts.
+The accumulator is ephemeral during study. Pending completion freezes its
+supplement durably before browser state is cleared, so server closure can
+validate it and dispatch reflection even after the browser disappears.
 
 The durable attempt snapshot also preserves the nullable post-reveal
 production supplement separately from the pre-reveal cue. New provider bundles
@@ -129,7 +179,7 @@ actions; leaving waits for the save before finalization. At the deferred commit
 boundary each accumulator receives
 the same complete accepted attempt batch as failure evidence. Finalization
 merges both accumulators into the V3 evidence supplement by action, so a marked
-mistake becomes one item and a marked correct response can still enter
+mistake becomes one item and a marked correct response can enter
 reflection. Cancellation, dismissal, and management remove the request.
 
 Both production-card views use `ReflectionRequestButton` to expose the marked
@@ -138,8 +188,8 @@ four edges over one second, revealing white text with the same boundary;
 unmarking reverses it. Reduced-motion preferences make the change immediate.
 Each action mounts its own button so navigating to another card does not animate
 a request carried over from the previous card. The learner-facing surface is
-named **Feedback**; internal reflection names and routes are unchanged. The R
-shortcut and busy/editor guards remain in place. Button shortcuts appear on
+named **Feedback**. Internal modules and routes use reflection terminology. The R
+shortcut uses busy/editor guards. Button shortcuts appear on
 hover or keyboard focus.
 
 ## Reflection review workspace
@@ -150,7 +200,7 @@ preserves the selected artifact when possible, and reuses already loaded
 details for ordinary navigation. Help membership is the union of pending
 proposal reviews and open explanation inbox rows; artifact JSON is fetched to
 render those cards. Proposal review, authorization withdrawal, and Help Done
-reload the affected artifact plus both lists so queues remain coherent without
+reload the affected artifact plus both lists so queues are coherent without
 a manual refresh. Successful deferred second opinion reloads source details and
 the new result artifact, so proposal and explanation-item retirement update the
 chip bank and deferred counts together.
@@ -158,7 +208,7 @@ chip bank and deferred counts together.
 **Refresh** is a full coherent reread of the reflection workspace from the
 backend. It reloads open/history summaries, generation runs, quality stats,
 the Help inbox, **and every currently scoped artifact detail**, bypassing the
-client detail cache. Selection is preserved when that artifact remains readable.
+client detail cache. Selection is preserved when that artifact is readable.
 Refresh does not start generation or mutate review state. Use it when durable
 state may have changed outside this page's mutations (another tab, another
 device, or a stale cache after an incomplete local update).
@@ -176,14 +226,14 @@ the app-chrome **Reflections** item in the persistent left gutter, so the
 default **Proposals** workspace can give most of the viewport to the current card.
 A refresh control overlays the active **Reflections** primary tab (gear-style
 affordance) for a full workspace reread. Help is a cross-session pager:
-one card at a time for pending proposals and for explanation-only items still
+one card at a time for pending proposals and for explanation-only items
 in Help. The grain is one proposal per card; empty proposal lists produce one
-explanation card while that item remains in Help. The current pager card is
+explanation card while that item is in Help. The current pager card is
 stamped `inbox_seen_at` so the primary Reflections badge can decrement without
 leaving `pending`. The primary count is hidden while Reflections is the current
 page. Same-tab generation (post-session, retry, or second opinion) can show a
 spinner on the tab instead of the count. A failed concluded generation run
-still takes priority over both until Run meta is opened, which
+takes priority over both until Run meta is opened, which
 durably acknowledges it and also marks the Run meta rail. Accept, Dismiss, Defer, and
 Done are durable and advance the pager; Done leaves Help (including a deferred
 explanation card shown via Show deferred) with no learner-facing undo. Prev/Next are ephemeral. Compact pager chrome stays above the reading
@@ -194,7 +244,7 @@ learner can pick a registered operation and edit it in place; Reset clears that
 draft; Defer stages the original evidence item for a second opinion; Accept authorizes the draft when one is present
 and otherwise marks the Help inbox item Done; Dismiss marks Done without
 applying a draft. Help does not show diagnosis tags or a dedicated dismissal-note field;
-dismiss records a null reason and the quality note remains the single note
+dismiss records a null reason and the quality note is the note
 surface. Evidence, explanation, questions, rationale, and the operation editor
 scroll inside the pane. Production evidence is a quiet tested-cue line
 (truncated, expandable) rather than a second identity card. **Second opinion**
@@ -213,7 +263,7 @@ Show deferred toggle) continues to require the current execution contract.
 The backend validates the composed diagnosis input before generation.
 When the daily spend cap has been surpassed, non-Luna model options are
 disabled and a tip names the next UTC reset in the browser timezone.
-**By session** retains the artifact-oriented dogfood view, including
+**By session** provides an artifact-oriented view, including
 explanation items already marked Done. In that view, items whose results carry no proposals are summarized in a
 compact **No durable change** gist derived from the persisted evidence and
 result (word, diagnosis tags, cue/response, learner feedback), so ordinary
@@ -222,9 +272,9 @@ item card. Reviewing a
 proposal removes it from the current queue when its new lifecycle state no
 longer matches that filter. By session can restore a learner-dismissed proposal
 to pending with **Undo dismiss**; second-opinion retirement cannot be undone.
-Questions remain informational and do not receive
-synthetic review state. Close summary returns Home; there is no post-session
-jump or Open-reflection deep link.
+Questions are informational and do not receive
+synthetic review state. Completion returns to Home; learners open
+Feedback through the persistent Reflections navigation.
 
 Each proposal has a purpose-built editor for each registered operation family:
 
@@ -235,26 +285,26 @@ Each proposal has a purpose-built editor for each registered operation family:
   target-language example, and English translation; and
 - directional production alternates.
 
-The page validates drafts locally for feedback, but the backend remains
+The page validates drafts locally for feedback; the backend is
 authoritative. Local validation uses the evidence-scoped allowed word set so
 Accept stays disabled for illegal word ids. It labels exact versus revised
 acceptance and apply support separately, then renders persisted application
 states, effect/satisfying references, and safe reasons or errors. Accepted
 `unsupported` or `pending` authorization may be withdrawn without rewriting the
 accepted proposal. Word fields for contrast members and suppression/alternate
-targets remain evidence comboboxes showing `hanzi · pinyin` surface labels; they
+targets use evidence comboboxes showing `hanzi · pinyin` surface labels; they
 do not offer global content-diagnostics search. V2 cue accepted words are
 toggle chips for the attempt's visible words, populated from the proposal and
 green when accepted. Clearing a submitted-response chip from every created or
 replacement accepted set drops a hidden `accepted_answer_space_omission`
-judgment so the target-only cue remains authorizable. V2 cue repair hides the restated target-word field, source-attempt
+judgment so the target-only cue is authorizable. V2 cue repair hides the restated target-word field, source-attempt
 judgments, production task ids, and raw cue ids. Cue lifecycle changes render
 as a compact list of cue texts (kind via color); a row expands for editing,
 replace's cue-to-be-replaced appears only in that detail, and rows can be
 added or deleted without expanding. Switching a change to replace or deactivate
 stamps the evidence served-cue id into that hidden payload field so a learner
 can authorize terminal deactivation without typing a raw id. Those hidden
-identifiers remain in the Accept payload.
+identifiers are included in the Accept payload.
 
 The **Token usage** view shows aggregate token and priced-run totals followed by
 a compact per-run table. It presents each attempt's provider/model, completion
@@ -263,11 +313,11 @@ counts, normalized token categories, and the persisted estimated cost or an
 explicit unavailable state. Successful and failed states use compact icons;
 only retained current-contract bundles have an interactive retry control. Clicking the compact
 retry icon opens a confirmation menu defaulting to the source model when that
-model is still a configured comparison arm; arrow keys move the highlight, and
+model is a configured comparison arm; arrow keys move the highlight, and
 Enter or a click starts the retry (including an explicit comparison-arm model
-when selected). If the source model is no longer configured, same-model retry
+when selected). If the source model is not configured, same-model retry
 is refused with a notice and the operator must choose a current model.
-This remains
+The run log provides
 observability for the initial reflection flow, not a learner correctness signal
 or a replacement for immutable artifact history.
 
@@ -275,7 +325,7 @@ The **Quality** view shows server-side model-arm rates derived from terminal
 proposal reviews plus item quality-tag overlays. Second-opinion retirement
 counts in the terminal total but is not a dismiss. Capture is a single tag-chip
 row on each reflection item. In Help and Deferred that row sits below the
-reading pane with the review actions; on other proposal cards it remains
+reading pane with the review actions; on other proposal cards it is
 immediately above accept/dismiss (and on no-proposal surfaces). Saved notes render as committed text and become editable
 on click. The Quality table defaults to the current reflection
 prompt version and can group by model, prompt, or both. Tags never rewrite
@@ -290,13 +340,12 @@ is rendered as unavailable rather than inferred for legacy rows.
 A failed current-contract run with a retained bundle and no successful artifact exposes a small
 retry action. Retrying reuses the exact backend-owned bundle, replaces the
 action with a concise generating/result indicator, appends a new concluded run,
-and opens the resulting artifact on success. Older run rows created before
-bundle retention remain visible without a retry action.
+and opens the resulting artifact on success. Run rows without a retained bundle are visible without a retry action.
 
 The surface intentionally has no generic JSON editor or standalone manual
-workbench. Explanation-only Help cards can still select a registered handle and
+workbench. Explanation-only Help cards can select a registered handle and
 authorize a `manual` invocation against that item's evidence, using the same
-editors as proposal review. Different-kind replacement remains available on
+editors as proposal review. Different-kind replacement is available on
 proposal cards. By session may show a compact no-durable-change gist for
 observability; that is not a learner correctness score or a replacement for
 immutable artifact history.
@@ -304,8 +353,9 @@ immutable artifact history.
 ## Ownership boundaries
 
 - Backend/API calls stay centralized in `src/services/api.ts`.
-- The frontend owns ephemeral cue/response evidence only until the generation
-  request is issued; the backend validates and enriches durable truth.
+- The frontend captures ephemeral cue/response evidence until pending completion
+  durably saves its supplement; the backend validates and enriches durable truth
+  at closure and owns generation dispatch.
 - Reflection artifacts, proposal reviews, invocations, application outcomes,
   and effects are backend-owned durable records.
 - Reflection operation validation and registry semantics are shared from

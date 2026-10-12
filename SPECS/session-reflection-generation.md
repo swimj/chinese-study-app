@@ -2,11 +2,11 @@
 
 Status: implemented canonical product contract for the initial post-session
 reflection flow. Evidence kinds, bundle/result schemas, and resource controls
-remain versioned extension points.
+are versioned extension points.
 
 This specification defines when post-session reflection may run, which learner
-evidence is eligible, how generation remains outside study correctness, and how
-failure and retry preserve truthful provenance. Proposal review, authorization,
+evidence is eligible, how generation operates independently of study correctness,
+and how failure and retry preserve truthful provenance. Proposal review, authorization,
 application, and effect attribution are owned by
 [`reflection-proposals-and-handles.md`](./reflection-proposals-and-handles.md).
 
@@ -42,37 +42,44 @@ It does not choose:
 
 ## 2. Finalized-Session Boundary
 
-After the last rating, the revealed exercise remains visible with its final
-Undo opportunity. **See session summary** (Enter) locks Undo and finalizes the
-session before opening the summary. Active/draining leave does not finish.
-Tab close and refresh are not reliable finish paths.
+Completing the last session unit immediately opens the completion screen and
+saves a pending completion. The backend acknowledges a fixed 15-second final
+Undo deadline. Ordinary active/draining leave does not finish a session.
+The completion lifecycle is defined in
+[`session-covering-criteria.md`](./session-covering-criteria.md#completed-session-reflection-boundary).
 
-Finalization proceeds in this order:
+Pending completion preserves the final deferred action and qualifying reflection
+supplement without accepting the study outcome. Undo must cancel it before the
+server deadline. Expiry, **Return to Home**, or navigation to another page
+within the app closes it. Refresh, tab close, backgrounding, and navigation to
+another URL leave the acknowledged deadline intact; overdue completion closes
+on server recovery.
 
-1. close the final Undo window and flush any accepted deferred study commit;
+Closure proceeds in this order:
+
+1. close the final Undo window and accept the final deferred study action;
 2. record the durable completed-session summary;
-3. freeze the qualifying reflection supplement; and
-4. start reflection only when qualifying evidence exists.
+3. freeze the qualifying reflection supplement against the accepted attempts; and
+4. durably schedule reflection only when qualifying evidence exists.
 
-If the final study commit or session-summary write fails, reflection must not
-start. The learner may retry finalization without fabricating a completed
-session or duplicate attempt evidence. The last card stays visible for retry;
-Undo stays closed after the final commit succeeds; a failed commit retains it.
+If final acceptance or the summary write fails, reflection must not start.
+Retry does not fabricate a completed session or duplicate attempt evidence.
+The acknowledgement boundary is explicit: the backend can guarantee closure
+only after it has received pending completion.
 
-Once finalization succeeds, reflection is best-effort. Generation is kicked off
-after the durable finish writes succeed and does not require the summary page
-to remain mounted. The learner may leave the summary while generation
-continues. Provider failure, invalid output, timeout, or absence of qualifying
-evidence does not reopen the session, alter its completion, change covering, or
-affect scheduling projection. If they already left, retry remains available
-later from Reflections rather than as a blocking return to the summary.
+Once closure succeeds, reflection is best-effort. Durable dispatch does not
+require a mounted summary or a later browser request. Generation failure,
+invalid output, timeout, or absence of qualifying evidence does not reopen the
+session, change covering, or affect scheduling projection. The learner returns
+to Home while generation may continue; retry is available from
+Reflections rather than blocking the completion screen.
 
 ## 3. Evidence Boundary
 
 Reflection input distinguishes three layers:
 
 1. ephemeral presentation and response evidence captured while the session UI
-   still knows exactly what the learner saw and typed;
+   holds exactly what the learner saw and typed;
 2. durable session, action, attempt, word, and content truth used by the backend
    to validate and enrich that supplement; and
 3. the exact validated, bounded bundle supplied to one generation attempt.
@@ -87,15 +94,15 @@ Pure-cue failures additionally use `pure_cue_post_session_reflection.v1` with
 reconstructed from durable assessments, separately from the word-production
 supplement, and receive a separate provider call and artifact. See
 [`pure-cue-elicitation.md`](pure-cue-elicitation.md#pure-cue-response-reflection).
-The existing generation endpoint can return additional artifact IDs and a
-partial-failure notice; successful artifacts remain available in the inbox.
+The generation endpoint can return additional artifact IDs and a
+partial-failure notice; successful artifacts are available in the inbox.
 
 The initial flow includes review-phase production failures that are either an
 explicit no-clue response or a non-empty typed response outside the accepted
 answer space snapshotted on the served cue. A learner may mark an otherwise
 accepted Hanzi response wrong because they recalled its pronunciation
-incorrectly; that remains a study mistake but is not reflection-eligible in the
-initial flow. Word-owned accepted space now contains only the target word,
+incorrectly; that is a study mistake but is not reflection-eligible in the
+initial flow. Word-owned accepted space contains only the target word,
 including all migrated durable cues and fallback. No-clue evidence preserves a null raw response and null submitted
 word with the explicit `no_clue` discriminator; it is not relabeled as a typed
 mistake. Each item preserves at least:
@@ -148,7 +155,7 @@ the V3 bundle has one item with both the original failure evidence and the
 marker.
 
 The marker and all learner-authored fields are hints, not strict content
-management directives. Backend reconstruction remains authoritative, and the
+management directives. Backend reconstruction is authoritative, and the
 prompt treats the marker only as a request for useful feedback. V4 retains that
 marker and pairs with the V7 diagnosis result contract; every item has a non-empty
 learner-facing explanation even when no proposal is warranted. V5 and V6
@@ -202,7 +209,7 @@ normal validation; unresolved or ambiguous aliases still fail, as do duplicate
 results after rewriting. This does not relax canonical database ids, durable
 word references, or operation-level `wordId` validation.
 
-Provider credentials and calls remain backend concerns. Provider/model identity,
+The backend owns provider credentials and calls. Provider/model identity,
 prompt version, bundle schema, result schema, and available response metadata are
 preserved so later review can distinguish what actually ran.
 
@@ -264,7 +271,7 @@ best-effort policy does not detect every shared destination conflict.
 
 The exact diagnosis, enriched final evidence, and bounded
 `pure_cue_promotion_bundle.v3` input are saved before the conditional cleanup call.
-The durable stage name remains `promotion`. It uses a separate strict
+The durable stage name is `promotion`. It uses a separate strict
 `pure_cue_promotion_result.v2` contract and Mandarin prompt, without model-facing
 study-profile configuration. It returns `reconcile` with both word plans and
 an optional shared destination, or `explanation_only`. A no-slot repair is a
@@ -381,7 +388,7 @@ explanation-inbox ids, while the provider envelope contains only its version, ge
 and remapped original evidence items. It never fabricates a session or sends
 prior proposal/review identifiers. It remaps provider item
 ids to avoid collisions between original artifacts. Model/provider/run/result
-validation now follows the same staged diagnosis/promotion flow. Its diagnosis
+validation follows the staged diagnosis/promotion flow. Its diagnosis
 envelope is `curated_reflection_diagnosis_bundle.v2`; final enriched evidence is
 `curated_reflection_bundle.v3`, with explicit study profile and no fabricated
 source session. Stored V1/V2 curated evidence remains readable. A provider or validation failure
@@ -438,9 +445,9 @@ formatted in the learner's timezone).
   state.
 - A successful artifact grants proposal-only authority; every durable effect
   still requires explicit authorization and a supported application adapter.
-- Reflection review remains available asynchronously after the source session
+- Reflection review is available asynchronously after the source session
   and its ephemeral UI state are gone.
-- Original evidence and generated conclusions remain distinguishable from later
+- Original evidence and generated conclusions are distinguishable from later
   user edits, authorization, application status, and effects.
 - Expanding reflection input must use versioned evidence contracts rather than
   scraping untyped frontend state or prose.

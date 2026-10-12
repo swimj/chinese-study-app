@@ -108,12 +108,12 @@ adds these prepared scenarios:
 | Home | Five Connections notes in a completed sample session, plus two published sample update posts |
 
 The three-day practice period is the learning phase. Successful practice
-completions increase the learning streak; reaching three graduates a word to review. Fixture coverage dates
-and review due times are relative to preparation time in UTC, so a newly created
-fixture remains useful in later months. Existing standard review and contrast
-examples remain available. The normal session composer chooses the study order
-and review action; due recognition and production do not imply two separate
-cards for the same word in one session.
+completions increase the learning streak; reaching three graduates a word to
+review. Fixture coverage dates and review due times are relative to preparation
+time in UTC. The fixture also includes standard review and contrast examples.
+The normal session composer chooses the study order and review action; due
+recognition and production do not imply two separate cards for the same word in
+one session.
 
 The command prints the backend startup command for the new directory. Start
 that backend and `npm run dev:frontend` in separate terminals, using the normal
@@ -135,6 +135,27 @@ update `server/seeds/ui-annotation-data.ts` (dated word states) and
 `server/seeds/ui-annotations.ts` (prepared content), then run
 `tests/ui-annotation-fixtures.test.ts`. That test checks actual session serving,
 scheduler invariants, repeat creation, and refusal to overwrite existing data.
+
+### Mixed-session summary walkthrough
+
+To inspect the session summary without manually completing the fixture, point a
+Vite frontend at its backend with `VITE_API_BASE=http://localhost:<backend-port>`
+and open `/tests/browser/mixed-session.html?prepare=1`. Use a fresh annotation
+database with the new and Practice words still available. The page checks that
+the backend is in development mode and its data directory is under
+`data/ui-fixtures/` before starting. It makes real HTTP requests, records the
+prepared introductions as completed, and submits successful exercises through
+the real study controller. It stages completion, checks that the report contains
+new words and a graduation, then cancels the final action through Undo and
+pauses for manual input. Finish that action to inspect the normal 15-second
+summary flow. The recorded attempts are scripted fixture activity, not learner
+history. Reloading the page does not reset the database; prepare a fresh directory
+for another initial run.
+
+This differs from `/tests/browser/final-reinforcement.html?interactive=1`, which
+has only one Review word and mocks HTTP, and
+`/tests/browser/session-completion.html?preview=1`, which renders sample report
+data without a study session.
 
 ## Safe in dev (repo-local data)
 

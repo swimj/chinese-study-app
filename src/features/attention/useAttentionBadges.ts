@@ -8,6 +8,7 @@ import {
 import { useWhatsNewAttention } from './useWhatsNewAttention';
 
 export function useAttentionBadges() {
+  const [reflectionGenerating, setReflectionGenerating] = useState(false);
   const [reflectionUnseenCount, setReflectionUnseenCount] = useState(0);
   const [failedReflectionRunIds, setFailedReflectionRunIds] = useState<string[]>([]);
   const updates = useWhatsNewAttention();
@@ -19,6 +20,7 @@ export function useAttentionBadges() {
     const attention = await fetchAttentionBadges();
     if (generation !== refreshGeneration.current) return;
     setReflectionUnseenCount(attention.reflectionUnseenCount);
+    setReflectionGenerating(attention.reflectionGenerating ?? false);
     if (!Array.isArray(attention.failedReflectionRunIds)) {
       throw new Error('Attention badges response is missing failedReflectionRunIds.');
     }
@@ -51,14 +53,20 @@ export function useAttentionBadges() {
     function onFocus() { void refreshAll().catch(() => undefined); }
     document.addEventListener('visibilitychange', onVisibility);
     window.addEventListener('focus', onFocus);
+    // Generation now belongs to the backend and can finish after the session UI leaves.
+    const poll = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void refresh().catch(() => undefined);
+    }, 5000);
     return () => {
       document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('focus', onFocus);
+      window.clearInterval(poll);
     };
   }, [refreshAll]);
 
   return {
     reflectionUnseenCount,
+    reflectionGenerating,
     hasUnseenReflectionFailure: failedReflectionRunIds.length > 0,
     whatsNewUnseenPostIds: updates.unseenPostIds,
     refresh: refreshAll,

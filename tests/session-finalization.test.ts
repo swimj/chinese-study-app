@@ -167,12 +167,12 @@ describe('completed-session finalization', () => {
     }), false);
   });
 
-  test('hides app chrome only while a live session has not reached the summary', () => {
+  test('shows app navigation throughout the completion Undo window', () => {
     assert.equal(sessionHidesAppChrome({ sessionStarted: true, sessionPhase: 'active', finalizationKind: 'finalized' }), true);
     assert.equal(sessionHidesAppChrome({ sessionStarted: true, sessionPhase: 'draining', finalizationKind: 'finalized' }), true);
     assert.equal(sessionHidesAppChrome({ sessionStarted: true, sessionPhase: 'completed', finalizationKind: 'finalized' }), false);
-    assert.equal(sessionHidesAppChrome({ sessionStarted: true, sessionPhase: 'completed', finalizationKind: 'unfinalized' }), true);
-    assert.equal(sessionHidesAppChrome({ sessionStarted: true, sessionPhase: 'completed', finalizationKind: 'finalizing' }), true);
+    assert.equal(sessionHidesAppChrome({ sessionStarted: true, sessionPhase: 'completed', finalizationKind: 'unfinalized' }), false);
+    assert.equal(sessionHidesAppChrome({ sessionStarted: true, sessionPhase: 'completed', finalizationKind: 'finalizing' }), false);
     assert.equal(sessionHidesAppChrome({ sessionStarted: false, sessionPhase: null, finalizationKind: 'finalized' }), false);
   });
 

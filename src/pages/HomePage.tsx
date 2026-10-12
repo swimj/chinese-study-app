@@ -1,3 +1,4 @@
+import type { SessionCompletionPanelProps } from '../features/session/SessionCompletionPanel';
 import type { StudyIntroductionOrder } from '../domain/introduction-order';
 import type { WhatsNewCatalog } from '../features/attention/useWhatsNewCatalog';
 import type { SessionDeskHandle } from '../features/session/SessionDesk';
@@ -60,6 +61,7 @@ export function HomePage({
   reviewedCount,
   sessionSummary,
   sessionFinalization,
+  completionPanel,
   activeItem,
   activePureCue,
   activeWord,
@@ -166,6 +168,7 @@ export function HomePage({
   reviewedCount: number;
   sessionSummary: SessionSummary | null;
   sessionFinalization: SessionFinalizationState;
+  completionPanel?: Omit<SessionCompletionPanelProps, 'summary' | 'characterPresentation'>;
   activeItem: SessionStudyItem | null;
   activePureCue: PureCueSessionReviewItem | null;
   activeWord: Word | null;
@@ -315,6 +318,7 @@ export function HomePage({
             sessionPhase={sessionPhase}
             sessionSummary={sessionSummary}
             sessionFinalization={sessionFinalization}
+            completionPanel={completionPanel}
             activeItem={activeItem}
             activePureCue={activePureCue}
             activeWord={activeWord}

@@ -197,6 +197,7 @@ describe('attention badges', { concurrency: false }, () => {
     assert.deepEqual(dbModule.listFailedReflectionRunIds(), ['failed-run']);
     assert.deepEqual(dbModule.getAttentionBadges(), {
       reflectionUnseenCount: 0,
+      reflectionGenerating: false,
       failedReflectionRunIds: ['failed-run'],
       failedReflectionRunsSeenThroughAt: null,
       whatsNewSeenThroughDate: null,

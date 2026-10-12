@@ -7,8 +7,9 @@ from reflection, its evidence, proposal authorization, and application.
 
 ## Completion and input
 
-After accepted deferred study commits succeed, the frontend supplies one exact
-inventory row per covered exercise with the durable session-summary write. Each
+The frontend saves one exact inventory row per covered exercise with pending
+completion. Closure accepts the deferred final study action before saving the
+durable session summary and using that inventory for generation. Each
 row contains only the encountered word text and pinyin; slash-separated
 alternatives stay together in their frozen accepted order, joined with ` / `.
 The encounter uses the selected card character presentation. Contrast rows use
@@ -17,16 +18,16 @@ exercises are included once their word unit is covered. Reinforcement attempts
 add no extra row; separate covered actions can repeat the same word.
 Undone or uncovered work contributes no row. An empty pinyin string truthfully
 preserves an encounter without a pronunciation cue. Pure-cue accepted-answer
-snapshots currently contain hanzi without pinyin, so their exact alternatives
-use empty pinyin; this feature does not expand those snapshots. The backend does not
-reinterpret or enrich this inventory from later lexical content.
+snapshots contain hanzi without pinyin, so their exact alternatives use empty
+pinyin. The backend does not reinterpret or enrich this inventory from later
+lexical content.
 
 Sessions admit at most 1000 units under the shared session cap; the supplied
 inventory accepts at most that same 1000 rows. Completion preserves every
 covered exercise rather than truncating the inventory to satisfy validation.
 
 The completed summary and first debrief job are saved in one transaction.
-Finalization failure permits the existing retry; successful completion is never
+Finalization failure permits retry; successful completion is never
 reopened by provider or debrief-result failure. Repeated finalization preserves
 the first job snapshot. Legacy callers that omit the optional inventory save
 only their summary. French does not enqueue this Mandarin provider flow.
@@ -76,7 +77,7 @@ Validate shape and known references before storing or displaying notes. An empty
 successful result is ready with zero notes. Apply the 15-item generation minimum
 to the eligible inventory after cooldown filtering. Fewer than 15 eligible rows
 become ready with zero notes without a provider call or generation attempt;
-15 or more queue generation. The displayed exercise count still records the
+15 or more queue generation. The displayed exercise count records the
 original covered inventory size.
 
 Jobs are learner-private and durable. Provider work continues when the learner
@@ -92,11 +93,11 @@ the database.
 
 Provider failure, invalid or truncated output, and interruption are retryable
 through a deliberate learner action. Retry applies only to failed jobs and
-never regenerates ready results. Existing queued or failed jobs below the
+never regenerates ready results. Queued or failed jobs below the
 15-eligible-row threshold settle to ready with zero notes during worker recovery,
 queue enumeration, claim, or explicit failed-job retry, without a new attempt.
-Already ready results and concluded attempts remain immutable; active calls
-retain their ordinary lease and completion handling. Persist concluded attempt timestamps, duration,
+Ready results and concluded attempts are immutable; active calls use their
+lease and completion handling. Persist concluded attempt timestamps, duration,
 normalized token usage, response and finish identifiers when available, and the
 versioned price basis and cost estimate. Cached writes replace their ordinary
 input charge. Missing usage or a context outside the known short-context price
@@ -117,48 +118,52 @@ databases require the ordinary stopped-writer offline migration before startup.
 
 ## Learner surface
 
-The last rated card and its Undo opportunity remain visible until **See session
-summary** (Enter) successfully finalizes the session. The Mandarin summary then
-uses the same paper deck as study, with completion date and covered-exercise
-count in place of study counters. It presents one exact provider paragraph per
-card, with **Next connection**, **Back**, and **Done** on the last card. It adds
-no note titles, subtitles, reference labels, follow-up questions, or chat UI.
-Space returns to Home from any summary state, including loading, failed, and
-empty results. Right arrow advances connections; left arrow goes back. Enter
-has no summary navigation shortcut. Native controls,
-typing, IME composition, repeated keys, modifiers, and the shortcut guide pause
-these shortcuts. The finalized study keyboard handler yields to this surface.
+Completing the last session unit immediately opens a compact completion screen
+with a deterministic word report. After pending completion
+is acknowledged, a fixed 15-second server deadline preserves final Undo. The
+completion lifecycle, cancellation race, early closure, and navigation rules are
+owned by [`session-covering-criteria.md`](session-covering-criteria.md#completed-session-reflection-boundary).
+No separate confirmation is needed to enter this screen.
 
-Queued and running summaries show a waiting state and may be left immediately.
-Home makes the latest completed session's connections available for focused
-reading, with a compact preview that lets learners return to the ordinary Home
-overview. Both use the existing note text rather than generating additional
-content. Learners can navigate the notes with pointer and keyboard controls;
-reading and navigation remain usable on narrow screens and with reduced motion.
+The report shows distinct new words studied (first-study units that entered
+Practice) and distinct words graduated from Practice to Review by accepted work
+in this session. It shows counts and word lists, omits empty groups, and is
+provisional while Undo is available: staging previews the final action without
+accepting it. Closure confirms the report from persisted transitions rather than
+model-generated reporting or the number of Practice units covered.
 
-A newly completed session introduces its connections in the focused view;
-starting a session does not reset the learner's choice. The learner can minimize
-or reopen connections, and that choice is remembered in the same browser for the
-completed session. Minimizing while generation is pending holds through polling
-and in-app navigation for that visit. On a later page reload, ready notes are
-introduced again unless the learner has already explicitly reopened that batch,
-even while pending. Once introduced, subsequent presentation choices persist
-until another completed session. Empty results show the ordinary Home overview
-without a connections section; pending and failed results remain accessible, with explicit recovery
-from generation failures or read errors.
+The footer shows active study duration without an overall attempt or item count.
+When the learner keeps the summary open, successful closure fades the countdown
+and temporary notices over two seconds while retaining their layout space. Undo
+becomes disabled and leaves the keyboard and accessibility navigation without
+moving the report or footer. Reduced-motion preferences skip the fade.
 
-Home presents connections rather than reopening the post-session summary.
-The immediate summary, including recovery highlights, remains available after
-completion. A visible summary reads its own immutable session id; latest
-retrieval cannot replace it.
-Only queued/running records poll. Requests and timers are cancelled on unmount,
-and old request completions cannot overwrite a retry or later surface. A lost
-retry response reads the durable job before allowing another retry. Read errors
-have a separate reload action; failed generation has deliberate **Try again**.
-Ready with zero notes is a successful empty result.
+Connections generation begins after backend closure and does not occupy the
+immediate completion screen. Automatic return and **Return to Home** open
+Home, where the latest session's Connections is accessible while queued, running,
+or failed. The learner can open its ready notes in the reader.
+Empty results omit the Connections section. Learners can explicitly open or
+minimize a batch. New batches start expanded. Minimizing pending content holds
+through readiness polling for that document visit; an unseen ready batch may
+promote on a later visit. Once introduced, a batch's saved expanded/compact choice
+persists across reload. The immediate completion summary may stay visible through **Keep summary open**; Home does
+not provide a history or reopen action for that deterministic summary.
 
-The optional interests textarea participates in existing settings draft, Save,
+The focused Connections reader uses one exact provider paragraph per card, with
+**Next connection**, **Back**, and **Done** on the last card. It adds no note
+titles, subtitles, reference labels, follow-up questions, or chat UI. Right arrow
+advances; left arrow goes back. Native controls, typing, IME composition,
+repeated keys, modifiers, and the shortcut guide pause reader shortcuts.
+Reading and navigation remain usable on narrow screens and with reduced motion.
+
+Only queued/running records poll. Requests and timers are canceled on unmount,
+and old completions cannot overwrite a retry or later surface. A lost retry
+response reads the durable job before allowing another retry. Read errors have
+a separate reload action; failed generation has deliberate **Try again**.
+Ready with zero notes is a successful empty result. Content-improvement
+reflection is independent of Connections.
+
+The optional interests textarea participates in settings draft, Save,
 and Cancel behavior, starts empty, and accepts at most 1000 characters. Enter
-inside it inserts a newline. French retains its existing completed summary and
-shows neither debrief entry nor interests. Content-improvement reflection remains
-independent; the live debrief offers its status/retry in a collapsed disclosure.
+inside it inserts a newline. French uses the same completion deadline and deterministic report, and shows
+neither Mandarin Connections nor interests.

@@ -1,3 +1,6 @@
+import { useSessionCompletionFlow } from './useSessionCompletionFlow';
+import type { SessionCompletionPanelProps } from './SessionCompletionPanel';
+import type { SessionCompletion, StageSessionCompletionRequest } from '../../domain/session-completion';
 import { DEFAULT_INTRODUCTION_SPACING, type StudyIntroductionOrder } from '../../domain/introduction-order';
 import { resolveContentExerciseResponse } from '../../domain/word-content/materialize';
 import { useIntroductionGate, type SessionIntroductionGate } from './useIntroductionGate';
@@ -21,11 +24,10 @@ import { matchServedCueAnswer } from '../../domain/cues';
 import { resolvePureCueResponse, type PureCueAssessmentEvent } from '../../domain/pure-cues';
 import {
   dismissWordFromStudy,
+  fetchCurrentSessionCompletion,
+  closeSessionCompletion,
   fetchWordMeanings,
-  generateSessionReflection,
-  NoQualifyingReflectionEvidenceError,
   recordStudyManagementAction,
-  recordReviewSessionSummary,
   updateWordMeaningVisibility,
   updateWordPersonalNotes,
 } from '../../services/api';
@@ -121,26 +123,10 @@ import {
   setContentRatingRequestedReview,
   type SessionReflectionEvidenceAccumulator,
   type LearnerRequestedReflectionAccumulator,
-  type SessionReflectionEvidenceSupplementV1,
 } from './session-reflection-evidence';
 import {
-  beginSessionFinalization,
-  addInFlightSessionReflection,
-  completeSessionFinalization,
-  completeSessionReflectionGeneration,
-  skipSessionReflectionGeneration,
   hasPureCueReflectionEvidence,
-  createInFlightSessionReflectionIds,
   createSessionFinalizationState,
-  hasInFlightSessionReflection,
-  failSessionReflectionGeneration,
-  removeInFlightSessionReflection,
-  finalizeSessionBeforeReflection,
-  isCurrentSessionReflectionRequest,
-  resetFailedSessionFinalization,
-  retrySessionReflectionGeneration,
-  shouldFinishSessionOnLeave,
-  runExclusiveAsync,
   type SessionFinalizationState,
 } from './session-finalization';
 
@@ -194,6 +180,7 @@ export type StudySessionHomePageProps = {
   reviewedCount: number;
   sessionSummary: SessionSummary | null;
   sessionFinalization: SessionFinalizationState;
+  completionPanel?: Omit<SessionCompletionPanelProps, 'summary' | 'characterPresentation'>;
   activeItem: SessionStudyItem | null;
   activePureCue: PureCueSessionReviewItem | null;
   activeWord: Word | null;
@@ -359,23 +346,15 @@ export function useStudySession({
   const contentRatingSaveBarrierRef = useRef<Promise<void>>(Promise.resolve());
   const releaseContentRatingSaveRef = useRef<(() => void) | null>(null);
   const [contentRatingSaving, setContentRatingSaving] = useState(false);
-  const pendingReflectionSupplementRef = useRef<unknown>(null);
   const hasCommittedPureCueReflectionRef = useRef(false);
-  const activeSessionIdRef = useRef<string | null>(null);
   const [sessionFinalization, setSessionFinalization] = useState<SessionFinalizationState>(
     createSessionFinalizationState,
-  );
-  const [inFlightSessionReflectionIds, setInFlightSessionReflectionIds] = useState(
-    createInFlightSessionReflectionIds,
   );
   const sessionFinalizationRef = useRef<SessionFinalizationState>(sessionFinalization);
   const pendingSessionCommitRef = useRef<DeferredSessionCommit | null>(pendingSessionCommit);
   const sessionStateRef = useRef<BucketSessionState | null>(sessionState);
-  const sessionStartedRef = useRef(sessionStarted);
-  const inFlightFinishRef = useRef<Promise<void> | null>(null);
   pendingSessionCommitRef.current = pendingSessionCommit;
   sessionStateRef.current = sessionState;
-  sessionStartedRef.current = sessionStarted;
 
   function updateSessionFinalization(
     updater: (current: SessionFinalizationState) => SessionFinalizationState,
@@ -648,7 +627,7 @@ export function useStudySession({
             sessionActionId: commit.sessionActionId, acceptedAttempts: commit.events,
           })
         : contentRatingRequestedReflectionRef.current;
-      await applySessionCommit(commit);
+      await applySessionCommit(commit, sessionStateRef.current?.sessionId);
       if (commit.type === 'commit-pure-cue-production-session') {
         hasCommittedPureCueReflectionRef.current ||= hasPureCueReflectionEvidence({
           [commit.sessionActionId]: { events: commit.events },
@@ -669,6 +648,14 @@ export function useStudySession({
     setError(null);
 
     try {
+      // A previous tab/reload can leave a durable completion pending on Home.
+      // Settle it before selecting another session against the old word state.
+      const previousCompletion = await fetchCurrentSessionCompletion();
+      if (previousCompletion && previousCompletion.status !== 'closed') {
+        const closed = await closeSessionCompletion(previousCompletion.sessionId, previousCompletion.revisionId);
+        if (closed.status !== 'closed') throw new Error('Finish saving your previous session before starting another.');
+        resetSessionPrefetchCache();
+      }
       const sessionPayload = await ensureSessionPrefetch(syncSessionPrefetchState);
       const sessionItemCount = getSessionPayloadItemCount(sessionPayload) ?? 0;
       if (sessionItemCount === 0) {
@@ -691,12 +678,10 @@ export function useStudySession({
       const startedAt = new Date().toISOString();
       const startedAtMs = new Date(startedAt).getTime();
       const sessionId = createFrontendSessionId();
-      activeSessionIdRef.current = sessionId;
       reflectionEvidenceRef.current = createSessionReflectionEvidenceAccumulator();
       hasCommittedPureCueReflectionRef.current = false;
       learnerRequestedReflectionRef.current = createLearnerRequestedReflectionAccumulator();
       contentRatingRequestedReflectionRef.current = createLearnerRequestedReflectionAccumulator();
-      pendingReflectionSupplementRef.current = null;
       updateSessionFinalization(() => createSessionFinalizationState());
       setSessionNow(startedAt);
       activeSessionClockRef.current = createActiveSessionClock({
@@ -737,11 +722,7 @@ export function useStudySession({
     }
 
     if (sessionState?.phase === 'completed') {
-      if (sessionFinalizationRef.current.kind === 'finalized') {
-        await closeCompletedSession();
-      } else if (sessionFinalizationRef.current.kind === 'unfinalized') {
-        await finishCompletedSession();
-      }
+      await completionFlow.finish();
       return;
     }
 
@@ -749,173 +730,78 @@ export function useStudySession({
 
   async function finishCompletedSessionIfLeaving(): Promise<boolean> {
     await contentRatingSaveBarrierRef.current;
-    if (!shouldFinishSessionOnLeave({
-      sessionStarted: sessionStartedRef.current,
-      sessionPhase: sessionStateRef.current?.phase ?? null,
-      finalizationKind: sessionFinalizationRef.current.kind,
-    })) {
-      return true;
-    }
-
-    await finishCompletedSession();
-    return sessionFinalizationRef.current.kind === 'finalized';
-  }
-
-  async function finishCompletedSession() {
-    if (contentRatingSavingRef.current) return;
-    if (sessionFinalizationRef.current.kind === 'finalized') {
-      return;
-    }
-
-    await runExclusiveAsync(inFlightFinishRef, runCompletedSessionFinish);
-  }
-
-  async function runCompletedSessionFinish() {
-    if (!sessionSummary || !sessionStateRef.current || sessionStateRef.current.phase !== 'completed') {
-      throw new Error('Session finalization invariant violated: expected a completed session summary.');
-    }
-    if (sessionFinalizationRef.current.kind !== 'unfinalized') {
-      return;
-    }
-
-    updateSessionFinalization(beginSessionFinalization);
-    setError(null);
-    const finalizingSummary = sessionSummary;
-    let evidence: SessionReflectionEvidenceAccumulator;
-
-    try {
-      evidence = await finalizeSessionBeforeReflection({
-        flushPendingCommit: applyPendingUndoClosure,
-        recordSummary: async () => {
-          const activeDurationMs = activeSessionClockRef.current
-            ? getActiveSessionDurationMs(activeSessionClockRef.current, Date.now())
-            : 0;
-          await recordReviewSessionSummary({
-            sessionId: finalizingSummary.sessionId,
-            completedAt: finalizingSummary.completedAt ?? new Date().toISOString(),
-            ...getCompletedExerciseCounts(finalizingSummary),
-            completedLearningWordCount: finalizingSummary.correctDayLearningWords,
-            activeDurationMs,
-            ...(studyProfile.id === 'mandarin' ? { debriefInventory: finalizingSummary.debriefInventory } : {}),
-          });
-        },
-      });
-    } catch (err) {
-      updateSessionFinalization(resetFailedSessionFinalization);
-      setError(err instanceof Error ? err.message : 'Unknown error');
-      return;
-    }
-
-    const hasReflectionEvidence = hasCommittedPureCueReflectionRef.current
-      || evidence.items.length > 0
-      || learnerRequestedReflectionRef.current.items.length > 0
-      || contentRatingRequestedReflectionRef.current.items.length > 0;
-    updateSessionFinalization((current) =>
-      completeSessionFinalization({
-        state: current,
-        hasReflectionEvidence,
-      }),
-    );
-
-    if (hasReflectionEvidence) {
-      try {
-        const supplement = learnerRequestedReflectionRef.current.items.length > 0 || contentRatingRequestedReflectionRef.current.items.length > 0
-          ? buildLearnerRequestedReflectionSupplement(evidence, learnerRequestedReflectionRef.current, contentRatingRequestedReflectionRef.current)
-          : buildSessionReflectionEvidenceSupplement(evidence);
-        pendingReflectionSupplementRef.current = supplement;
-        void runSessionReflectionGeneration(finalizingSummary.sessionId, supplement);
-      } catch (err) {
-        updateSessionFinalization((current) =>
-          failSessionReflectionGeneration(
-            current,
-            err instanceof Error ? err.message : 'Unknown feedback error',
-            { retryable: false },
-          ),
-        );
-      }
-    }
-  }
-
-  async function runSessionReflectionGeneration(
-    sessionId: string,
-    supplement: unknown,
-  ) {
-    setInFlightSessionReflectionIds((current) => addInFlightSessionReflection(current, sessionId));
-    try {
-      const result = await generateSessionReflection({
-        sessionId,
-        evidence: supplement,
-      });
-      if (isCurrentSessionReflectionRequest({
-        activeSessionId: activeSessionIdRef.current,
-        requestSessionId: sessionId,
-      })) {
-        updateSessionFinalization((current) =>
-          completeSessionReflectionGeneration(current, result),
-        );
-      }
-    } catch (err) {
-      if (isCurrentSessionReflectionRequest({
-        activeSessionId: activeSessionIdRef.current,
-        requestSessionId: sessionId,
-      })) {
-        if (err instanceof NoQualifyingReflectionEvidenceError) {
-          updateSessionFinalization(skipSessionReflectionGeneration);
-          return;
-        }
-        updateSessionFinalization((current) =>
-          failSessionReflectionGeneration(
-            current,
-            err instanceof Error ? err.message : 'Unknown feedback error',
-          ),
-        );
-      }
-    } finally {
-      setInFlightSessionReflectionIds((current) =>
-        removeInFlightSessionReflection(current, sessionId),
-      );
-      void Promise.resolve(onReflectionGenerated?.()).catch(() => undefined);
-    }
+    if (sessionStateRef.current?.phase !== 'completed') return true;
+    return completionFlow.finish();
   }
 
   function handleRetrySessionReflection() {
-    if (
-      sessionFinalizationRef.current.kind !== 'finalized'
-      || sessionFinalizationRef.current.reflection.kind !== 'failed'
-    ) {
-      return;
-    }
-    const sessionId = activeSessionIdRef.current;
-    const supplement = pendingReflectionSupplementRef.current;
-    if (!sessionId || !supplement) {
-      throw new Error('Session finalization invariant violated: reflection retry evidence is unavailable.');
-    }
-    updateSessionFinalization(retrySessionReflectionGeneration);
-    void runSessionReflectionGeneration(sessionId, supplement);
+    void onReflectionGenerated?.();
   }
 
   async function closeCompletedSession() {
-    activeSessionIdRef.current = null;
     setSessionStarted(false);
     setSessionState(null);
     setSessionSummary(null);
-    // Summary UI is gone; in-flight generation IDs stay so the Reflections spinner
-    // can keep running until that request settles.
     updateSessionFinalization(() => createSessionFinalizationState());
     activeSessionClockRef.current = null;
     reflectionEvidenceRef.current = createSessionReflectionEvidenceAccumulator();
     hasCommittedPureCueReflectionRef.current = false;
     learnerRequestedReflectionRef.current = createLearnerRequestedReflectionAccumulator();
     contentRatingRequestedReflectionRef.current = createLearnerRequestedReflectionAccumulator();
-    pendingReflectionSupplementRef.current = null;
     resetSessionScopedUi();
     setPendingSessionCommit(null);
     setLastUndoSnapshot(null);
     resetSessionPrefetchCache();
     setSessionPrefetch(getSessionPrefetchSnapshot());
-    await onSessionEnded();
+    await onSessionEnded().catch((reason) => setError(reason instanceof Error ? reason.message : 'Could not refresh Home'));
     void ensureSessionPrefetch(syncSessionPrefetchState).catch(() => undefined);
   }
+
+  function completedActiveDurationMs(): number {
+    const completedAtMs = sessionSummary?.completedAt ? Date.parse(sessionSummary.completedAt) : Date.now();
+    return activeSessionClockRef.current
+      ? getActiveSessionDurationMs(activeSessionClockRef.current, completedAtMs)
+      : sessionSummary?.activeDurationMs ?? 0;
+  }
+  function buildCompletionRequest(revisionId: string): StageSessionCompletionRequest {
+    if (!sessionSummary || !sessionState || sessionState.phase !== 'completed') {
+      throw new Error('Completion requires a completed session.');
+    }
+    const commit = pendingSessionCommitRef.current;
+    const acceptedEvidence = commit?.type === 'commit-review-action-session'
+      ? appendAcceptedProductionAttemptIds(reflectionEvidenceRef.current, { sessionActionId: commit.sessionActionId, acceptedAttempts: commit.events })
+      : reflectionEvidenceRef.current;
+    const acceptedRequests = commit?.type === 'commit-review-action-session'
+      ? appendAcceptedLearnerRequestedAttemptIds(learnerRequestedReflectionRef.current, { sessionActionId: commit.sessionActionId, acceptedAttempts: commit.events })
+      : learnerRequestedReflectionRef.current;
+    const acceptedRatings = commit?.type === 'commit-review-action-session'
+      ? appendAcceptedLearnerRequestedAttemptIds(contentRatingRequestedReflectionRef.current, { sessionActionId: commit.sessionActionId, acceptedAttempts: commit.events })
+      : contentRatingRequestedReflectionRef.current;
+    const pureEvidence = hasCommittedPureCueReflectionRef.current || (commit?.type === 'commit-pure-cue-production-session'
+      && hasPureCueReflectionEvidence({ [commit.sessionActionId]: { events: commit.events } }));
+    const qualifying = pureEvidence || acceptedEvidence.items.length > 0 || acceptedRequests.items.length > 0 || acceptedRatings.items.length > 0;
+    const reflectionEvidence = !qualifying ? null : acceptedRequests.items.length > 0 || acceptedRatings.items.length > 0
+      ? buildLearnerRequestedReflectionSupplement(acceptedEvidence, acceptedRequests, acceptedRatings)
+      : buildSessionReflectionEvidenceSupplement(acceptedEvidence);
+    const completedAt = sessionSummary.completedAt ?? new Date().toISOString();
+    return { revisionId, startedAt: sessionSummary.startedAt, studyDayKey: completedAt.slice(0, 10),
+      pendingCommit: commit, reflectionEvidence,
+      summary: { completedAt, ...getCompletedExerciseCounts(sessionSummary),
+        completedLearningWordCount: sessionSummary.correctDayLearningWords,
+        activeDurationMs: completedActiveDurationMs(),
+        ...(studyProfile.id === 'mandarin' ? { debriefInventory: sessionSummary.debriefInventory } : {}) } };
+  }
+  const completionFlow = useSessionCompletionFlow({
+    sessionId: sessionState?.phase === 'completed' && sessionSummary ? sessionState.sessionId : null,
+    surfaceVisible: sessionSurfaceVisible, buildRequest: buildCompletionRequest,
+    onCancelled: restoreLastRating, onReturnHome: closeCompletedSession,
+  });
+
+  useEffect(() => {
+    if (completionFlow.completion?.status === 'closed') {
+      updateSessionFinalization(() => ({ kind: 'finalized', reflection: { kind: 'skipped' } }));
+    }
+  }, [completionFlow.completion?.status]);
 
   async function handleRate(
     rating: ReviewRating | null,
@@ -1481,6 +1367,14 @@ export function useStudySession({
   }
 
   function handleUndoLastRating() {
+    if (sessionStateRef.current?.phase === 'completed') {
+      void completionFlow.undo();
+      return;
+    }
+    restoreLastRating();
+  }
+
+  function restoreLastRating() {
     if (contentRatingSavingRef.current || deskBusyRef.current || sessionFinalizationRef.current.kind !== 'unfinalized' || !lastUndoSnapshot || submittingRating !== null) {
       return;
     }
@@ -1496,6 +1390,9 @@ export function useStudySession({
     );
     setPendingSessionCommit(null);
     setLastUndoSnapshot(null);
+    if (activeSessionClockRef.current) {
+      activeSessionClockRef.current = updateActiveSessionClockForVisibility({ clock: activeSessionClockRef.current, nowMs: Date.now(), visibilityState: document.visibilityState });
+    }
     setError(null);
   }
 
@@ -1940,8 +1837,8 @@ export function useStudySession({
     }
 
     const completedSummary = sessionState.phase === 'completed';
-    // The debrief owns finalized Mandarin summary shortcuts and its own guide.
-    if (completedSummary && sessionFinalization.kind === 'finalized' && studyProfile.id === 'mandarin') return;
+    // The completion screen owns its shortcuts throughout saving, Undo, and closure.
+    if (completedSummary) return;
     const summaryFinalizationKind = sessionFinalization.kind;
 
     function handleKeyDown(event: KeyboardEvent) {
@@ -2131,7 +2028,7 @@ export function useStudySession({
 
   return {
     sessionStarted,
-    sessionReflectionGenerating: hasInFlightSessionReflection(inFlightSessionReflectionIds),
+    sessionReflectionGenerating: false,
     prefetchSession,
     refreshSessionPrefetch,
     invalidateSessionPrefetch,
@@ -2149,6 +2046,13 @@ export function useStudySession({
       reviewedCount,
       sessionSummary,
       sessionFinalization,
+      completionPanel: {
+        completion: completionFlow.completion, saving: completionFlow.saving, busy: completionFlow.busy,
+        error: completionFlow.error, hasUndo: lastUndoSnapshot !== null,
+        onUndo: handleUndoLastRating, onReturnHome: () => void completionFlow.finish(),
+        onKeepOpen: completionFlow.keepSummaryOpen, onRetry: () => void completionFlow.retry(),
+        keepOpen: completionFlow.keepOpen, remainingSeconds: completionFlow.remainingSeconds,
+      },
       activeItem,
       activePureCue,
       activeWord,

@@ -1,3 +1,6 @@
+import { SessionWordOutcomeConflictError } from './db/session-word-outcomes.ts';
+import { createSessionCompletionWorker } from './session-completion/worker.ts';
+import { stageSessionCompletion, undoSessionCompletion, closeSessionCompletion, getSessionCompletion, getCurrentSessionCompletion, SessionCompletionInputError, SessionCompletionConflictError, SessionCompletionNotFoundError } from './db/session-completion.ts';
 import { isStudyIntroductionOrder, isStudyIntroductionSpacing } from '../src/domain/introduction-order.ts';
 import { registerContentImprovementRoutes } from './content-improvement-routes.ts';
 import { listWhatsNewPosts, saveWhatsNewPost, WhatsNewConflictError } from './db/whats-new.ts';
@@ -194,6 +197,7 @@ export type CreateAppOptions = {
   wakeWordPreparation?: () => void;
   canPrepareWords?: () => boolean;
   wakeSessionDebriefs?: () => void;
+  wakeSessionCompletions?: () => void;
 };
 
 function parseMyWordsStatusQuery(value: unknown): MyWordsStatus[] | undefined | 'invalid' {
@@ -245,6 +249,7 @@ export function createApp(options: CreateAppOptions = {}) {
   app.use('/api/operator/content-improvements', express.json({ limit: '512kb' }));
   app.use('/api/operator/whats-new', express.json({ limit: '1mb' }));
   app.use('/api/whats-new-attention', express.json({ limit: '160kb' }));
+  app.use('/api/study-sessions/:sessionId/completion', express.json({ limit: '1mb' }));
   app.use(express.json({ limit: defaultJsonBodyLimit }));
 
   // Fly health checks and browser assets must remain available without a learner session.
@@ -1774,6 +1779,42 @@ export function createApp(options: CreateAppOptions = {}) {
     }
   });
 
+  function completionError(res: Response, error: unknown): void {
+    if (error instanceof SessionCompletionInputError) res.status(400).json({ error: error.message });
+    else if (error instanceof SessionCompletionConflictError) res.status(409).json({ error: error.message });
+    else if (error instanceof SessionCompletionNotFoundError) res.status(404).json({ error: error.message });
+    else res.status(500).json({ error: 'Failed to save session completion' });
+  }
+  app.get('/api/session-completions/current', (_req, res) => {
+    try { res.json({ completion: getCurrentSessionCompletion() }); }
+    catch (error) { completionError(res, error); }
+  });
+  app.get('/api/study-sessions/:sessionId/completion', (req, res) => {
+    try {
+      const completion = getSessionCompletion(req.params.sessionId);
+      if (!completion) throw new SessionCompletionNotFoundError('Session completion not found');
+      res.json(completion);
+    } catch (error) { completionError(res, error); }
+  });
+  app.post('/api/study-sessions/:sessionId/completion', (req, res) => {
+    try {
+      const completion = stageSessionCompletion(req.params.sessionId, req.body);
+      try { options.wakeSessionCompletions?.(); } catch { /* Deadline is durable. */ }
+      res.json(completion);
+    } catch (error) { completionError(res, error); }
+  });
+  app.post('/api/study-sessions/:sessionId/completion/undo', (req, res) => {
+    try { res.json(undoSessionCompletion(req.params.sessionId, req.body?.revisionId)); }
+    catch (error) { completionError(res, error); }
+  });
+  app.post('/api/study-sessions/:sessionId/completion/close', (req, res) => {
+    try {
+      const completion = closeSessionCompletion(req.params.sessionId, req.body?.revisionId);
+      try { options.wakeSessionCompletions?.(); options.wakeSessionDebriefs?.(); } catch { /* Jobs are durable. */ }
+      res.json(completion);
+    } catch (error) { completionError(res, error); }
+  });
+
   app.post('/api/review-session-summaries', (req, res) => {
     const sessionId = req.body?.sessionId;
     const completedAt = req.body?.completedAt;
@@ -1868,6 +1909,9 @@ export function createApp(options: CreateAppOptions = {}) {
   });
 
   app.post('/api/words/:id/complete-learning-session', (req, res) => {
+    if (req.body?.sessionId !== undefined && (typeof req.body.sessionId !== 'string' || !req.body.sessionId.trim())) {
+      res.status(400).json({ error: 'Expected non-empty sessionId when provided' }); return;
+    }
     const success = req.body?.success;
 
     if (typeof success !== 'boolean') {
@@ -1876,7 +1920,7 @@ export function createApp(options: CreateAppOptions = {}) {
     }
 
     try {
-      const updatedWord = completeLearningWordSession(req.params.id, success);
+      const updatedWord = completeLearningWordSession(req.params.id, success, req.body?.sessionId);
       res.json(updatedWord);
     } catch (error) {
       if (error instanceof Error && error.message === 'Word not found') {
@@ -1884,11 +1928,15 @@ export function createApp(options: CreateAppOptions = {}) {
         return;
       }
 
+      if (error instanceof SessionWordOutcomeConflictError) { res.status(409).json({ error: error.message }); return; }
       res.status(500).json({ error: 'Failed to complete learning session' });
     }
   });
 
   app.post('/api/words/:id/complete-unstudied-session', (req, res) => {
+    if (req.body?.sessionId !== undefined && (typeof req.body.sessionId !== 'string' || !req.body.sessionId.trim())) {
+      res.status(400).json({ error: 'Expected non-empty sessionId when provided' }); return;
+    }
     const studyDayKey = readStudyDayKeyFromBody(req.body?.studyDayKey);
     if (!studyDayKey) {
       res.status(400).json({ error: 'Expected YYYY-MM-DD studyDayKey in request body' });
@@ -1896,7 +1944,7 @@ export function createApp(options: CreateAppOptions = {}) {
     }
 
     try {
-      const updatedWord = completeUnstudiedWordSession(req.params.id, studyDayKey);
+      const updatedWord = completeUnstudiedWordSession(req.params.id, studyDayKey, req.body?.sessionId);
       res.json(updatedWord);
     } catch (error) {
       if (error instanceof Error && error.message === 'Word not found') {
@@ -1909,6 +1957,7 @@ export function createApp(options: CreateAppOptions = {}) {
         return;
       }
 
+      if (error instanceof SessionWordOutcomeConflictError) { res.status(409).json({ error: error.message }); return; }
       res.status(500).json({ error: 'Failed to complete unstudied session' });
     }
   });
@@ -2581,9 +2630,17 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   installModelInvocationLedger();
   const wordPreparation = startWordPreparationRuntime();
   const sessionDebriefs = startSessionDebriefRuntime();
+  const sessionCompletions = createSessionCompletionWorker({ wakeDebriefs: sessionDebriefs.wake,
+    reflectionService: createInitialReflectionGenerationService({
+      lifecycleLogger: createStdoutReflectionLifecycleLogger(),
+      failureArtifactSink: createFileReflectionFailureArtifactSink(dbConfig.dataDir),
+      providerDiagnosticSink: createFileReflectionProviderDiagnosticSink(dbConfig.dataDir),
+      getSpendCap: getReflectionSpendCap,
+    }), onError: () => console.error('Session completion worker failed') });
+  sessionCompletions.wake();
   startServer({
-    app: createApp({ serviceMetrics, wakeWordPreparation: wordPreparation.wake, canPrepareWords: wordPreparation.canPrepare, wakeSessionDebriefs: sessionDebriefs.wake }),
-    stopBackgroundWork: async () => { await Promise.all([wordPreparation.stop(), sessionDebriefs.stop()]); },
+    app: createApp({ serviceMetrics, wakeWordPreparation: wordPreparation.wake, canPrepareWords: wordPreparation.canPrepare, wakeSessionDebriefs: sessionDebriefs.wake, wakeSessionCompletions: sessionCompletions.wake }),
+    stopBackgroundWork: async () => { await Promise.all([wordPreparation.stop(), sessionDebriefs.stop(), sessionCompletions.stop()]); },
     additionalServers: metricsServer ? [metricsServer] : [],
     closeDatabase: () => {
       usagePulseScheduler.stop();

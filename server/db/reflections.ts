@@ -1570,6 +1570,34 @@ export function startReflectionGenerationRun(input: StartReflectionGenerationRun
   );
 }
 
+/** Conclude provider calls whose owning dispatch lease expired; never infer provider output. */
+export function recoverSessionReflectionDispatchRuns(sessionId: string, completedAt: string): 'not_started' | 'succeeded' | 'failed' {
+  const starts = getDb().prepare(`SELECT starts.* FROM reflection_generation_run_starts AS starts
+    WHERE source_session_id = ? AND NOT EXISTS (
+      SELECT 1 FROM reflection_generation_runs AS runs WHERE runs.run_id = starts.run_id)
+    ORDER BY started_at, run_id`).all(sessionId) as Array<{
+      run_id: string; source_session_id: string; reflection_flow_version: string; started_at: string;
+      provider: string; model: string; provider_model: string; prompt_version: string; client_request_id: string;
+      eligible_item_count: number; included_item_count: number; evidence_bundle_json: string; source_proposal_ids_json: string | null;
+    }>;
+  for (const start of starts) {
+    const evidenceBundle = parseReflectionGenerationProviderBundle(parseJson(start.evidence_bundle_json, 'interrupted reflection evidence'));
+    recordReflectionGenerationRun({ runId: start.run_id, sourceSessionId: start.source_session_id,
+      reflectionFlowVersion: start.reflection_flow_version, startedAt: start.started_at, completedAt,
+      provider: start.provider, model: start.model, providerModel: start.provider_model, promptVersion: start.prompt_version,
+      clientRequestId: start.client_request_id, responseId: null, finishReason: null, bundleSchemaVersion: evidenceBundle.schemaVersion,
+      resultSchemaVersion: null, diagnostic: null, state: 'failed', failureCode: 'interrupted',
+      eligibleItemCount: start.eligible_item_count, includedItemCount: start.included_item_count,
+      usage: { inputTokens: null, cachedInputTokens: null, cacheWriteInputTokens: null, outputTokens: null, reasoningTokens: null, totalTokens: null },
+      pricingSnapshotId: null, pricingAsOf: null, pricingBasis: null, estimatedCostUsd: null, evidenceBundle,
+      sourceProposalIds: start.source_proposal_ids_json === null ? null : JSON.parse(start.source_proposal_ids_json) as string[],
+    });
+  }
+  const runs = getDb().prepare('SELECT state FROM reflection_generation_runs WHERE source_session_id = ?').all(sessionId) as Array<{ state: string }>;
+  if (runs.length === 0) return 'not_started';
+  return runs.some(run => run.state === 'failed') ? 'failed' : 'succeeded';
+}
+
 export function listReflectionGenerationRuns(limit = 50): ReflectionGenerationRunRecord[] {
   if (!Number.isInteger(limit) || limit < 1 || limit > 200) {
     throw new Error('Reflection generation run list limit must be an integer from 1 to 200.');
