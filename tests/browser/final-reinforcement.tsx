@@ -78,6 +78,7 @@ function Harness() {
 
 const root = createRoot(document.getElementById('root')!);
 root.render(<Harness />);
+const interactive = new URLSearchParams(window.location.search).has('interactive');
 const delay = () => new Promise<void>((resolve) => setTimeout(resolve, 30));
 async function until(condition: () => boolean) {
   const deadline = Date.now() + 10000;
@@ -131,6 +132,10 @@ async function run() {
   assertChips(1);
   await correct();
   assertChips(2);
+  if (interactive) {
+    document.getElementById('result')!.textContent = 'Interactive demo: finish the last word to open the 15-second Undo window. Refresh to reset.';
+    return;
+  }
   await correct();
   if (controller.homePageProps.sessionPhase !== 'completed') throw new Error('Session did not complete');
   await assertCompletion();
