@@ -9,6 +9,9 @@
 }
 .session-completion h2 { margin: .75rem 0; }
 .session-completion-status { font-size: 1.15em; font-weight: 600; }
+.session-completion-transient { opacity: 1; transition: opacity 2s ease; }
+.session-completion-transient.is-expired { opacity: 0; pointer-events: none; }
+@media (prefers-reduced-motion: reduce) { .session-completion-transient { transition: none; } }
 .session-completion-report { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr)); gap: 1rem; }
 .session-completion-word-group h3 { display: flex; flex-wrap: wrap; align-items: baseline; gap: .5rem; }
 .session-completion-count { font-size: .85em; font-weight: 400; }

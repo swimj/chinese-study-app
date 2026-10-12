@@ -1,5 +1,5 @@
 import { SessionRecoveryHighlights } from './SessionSummaryPanel';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { formatCardCharacters, type CharacterPresentation } from '../../domain/card-characters';
 import type { SessionCompletion } from '../../domain/session-completion';
 import type { SessionSummary } from './session-summary';
@@ -37,6 +37,14 @@ export function SessionCompletionPanel({ summary, completion, saving, busy, erro
   const canUndo = hasUndo && pending && completion.canUndo && remainingSeconds !== null
     && remainingSeconds > 0 && !saving && !busy;
   const canReturn = !saving && !busy && (pending || closed);
+  const lastVisibleStatus = useRef('Undo window closed.');
+  const hadUndo = useRef(hasUndo);
+  useEffect(() => { if (hasUndo) hadUndo.current = true; }, [hasUndo]);
+  const homeButton = useRef<HTMLButtonElement>(null);
+  const undoButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (closed && document.activeElement === undoButton.current) homeButton.current?.focus();
+  }, [closed]);
 
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
@@ -54,29 +62,32 @@ export function SessionCompletionPanel({ summary, completion, saving, busy, erro
   }, [busy, saving, canUndo, canReturn, onUndo, onReturnHome]);
 
   let status = 'Saving…';
-  if (closed) status = keepOpen ? 'Session saved. Take your time reviewing it.' : 'Session saved. Returning to Home…';
+  if (closed) status = keepOpen ? lastVisibleStatus.current : 'Session saved. Returning to Home…';
   else if (pending && remainingSeconds !== null) {
-    status = remainingSeconds <= 0 ? 'Closing session…'
-      : keepOpen ? `Undo is available for ${remainingSeconds} more seconds.`
-        : `Returning to Home in ${remainingSeconds} seconds.`;
+    status = keepOpen ? `Undo is available for ${Math.max(0, remainingSeconds)} more seconds.`
+      : remainingSeconds <= 0 ? 'Closing session…' : `Returning to Home in ${remainingSeconds} seconds.`;
   }
   if (error || completion?.status === 'failed') status = 'Your session could not be saved. Try again to finish.';
+  useEffect(() => { if (!closed) lastVisibleStatus.current = status; }, [closed, status]);
+  const faded = closed && keepOpen && !error;
+  const transientClass = `session-completion-transient${faded ? ' is-expired' : ''}`;
 
   return (
     <section className="session-completion" aria-labelledby="session-completion-title" aria-busy={saving || busy}>
       <h2 id="session-completion-title">Session Summary</h2>
-      <p className="session-completion-status" aria-live="off">{status}</p>
+      <p className={`session-completion-status ${transientClass}`} aria-live="off" aria-hidden={faded || undefined}>{status}</p>
       <p className="session-completion-sr-only" role="status">
         {saving ? 'Saving the session.' : closed ? 'Session closed and saved.'
           : pending ? 'Completion saved. The final Undo window is open.' : ''}
       </p>
-      {pending ? <p className="notes">Your results are provisional until the Undo window closes.</p> : null}
+      {completion ? <p className={`notes ${transientClass}`} aria-hidden={closed || undefined}>Your results are provisional until the Undo window closes.</p> : null}
       {error || completion?.error ? <p className="session-completion-error" role="alert">{error ?? completion?.error}</p> : null}
       <div className="session-completion-actions">
-        <button type="button" className="primary-button" disabled={!canReturn} onClick={onReturnHome}>
+        <button ref={homeButton} type="button" className="primary-button" disabled={!canReturn} onClick={onReturnHome}>
           Return to Home <kbd>Space</kbd>
         </button>
-        {hasUndo && !closed ? <button type="button" className="secondary-button" disabled={!canUndo} onClick={onUndo}>
+        {hasUndo || (closed && hadUndo.current) ? <button ref={undoButton} type="button" className={`secondary-button ${transientClass}`} disabled={!canUndo}
+          aria-hidden={closed || undefined} tabIndex={closed ? -1 : undefined} onClick={onUndo}>
           Undo last action <kbd>U</kbd>
         </button> : null}
         {!keepOpen && !closed ? <button type="button" className="secondary-button" disabled={busy} onClick={onKeepOpen}>
@@ -84,13 +95,13 @@ export function SessionCompletionPanel({ summary, completion, saving, busy, erro
         </button> : null}
         {error || completion?.status === 'failed' ? <button type="button" className="secondary-button" disabled={saving || busy} onClick={onRetry}>Try saving again</button> : null}
       </div>
-      {keepOpen && pending ? <p className="notes">The session will still close automatically. This summary will stay open.</p> : null}
+      {keepOpen ? <p className={`notes ${transientClass}`} aria-hidden={closed || undefined}>The session will still close automatically. This summary will stay open.</p> : null}
       {completion ? <div className="session-completion-report">
         <CompletionWords title="New words studied" words={completion.report.newWords} characterPresentation={characterPresentation} />
         <CompletionWords title="Graduated to Review" words={completion.report.graduatedWords} characterPresentation={characterPresentation} />
       </div> : null}
+      <p className="notes">{summary.answeredCount} recall attempts (including repeats) · {formatElapsed(summary.activeDurationMs)} of study</p>
       {closed ? <SessionRecoveryHighlights sessionId={summary.sessionId} characterPresentation={characterPresentation} /> : null}
-      <p className="notes">{summary.answeredCount} answers · {formatElapsed(summary.activeDurationMs)} of study</p>
     </section>
   );
 }

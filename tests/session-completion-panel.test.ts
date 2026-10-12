@@ -28,6 +28,7 @@ test('acknowledged completion shows provisional report, countdown, and Undo with
   assert.match(html, /新/);
   assert.match(html, /provisional/);
   assert.match(html, /Undo last action/);
+  assert.match(html, /recall attempts \(including repeats\)/);
   assert.doesNotMatch(html, /Graduated to Review|Connections|Feedback/);
 });
 
@@ -39,11 +40,12 @@ test('saving cannot promise a countdown or allow Undo or returning before acknow
   assert.match(html, /disabled=""[^>]*>Undo last action/);
 });
 
-test('expiry disables Undo and saved completion has confirmed report without Undo', () => {
+test('expiry disables Undo and retains its inert layout space after closure', () => {
   assert.match(render({ remainingSeconds: 0 }), /disabled=""[^>]*>Undo last action/);
   const html = render({ completion: { ...completion, status: 'closed', canUndo: false }, keepOpen: true });
-  assert.match(html, /Session saved\. Take your time/);
-  assert.doesNotMatch(html, /provisional|Undo last action|Keep summary open/);
+  assert.match(html, /session-completion-status session-completion-transient is-expired/);
+  assert.match(html, /disabled="" aria-hidden="true" tabindex="-1"[^>]*>Undo last action/);
+  assert.doesNotMatch(html, /Keep summary open/);
 });
 
 test('keep open explains backend closure and failures expose saving retry', () => {

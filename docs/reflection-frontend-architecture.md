@@ -57,7 +57,11 @@ The selected in-app destination is retained. Starting a new session first reads
 and closes any pending previous completion before fetching the fresh session
 queue; this also settles completion recovered after reload or created in
 another tab. **Keep summary open** stops automatic
-return while backend closure continues at the deadline. Session-id guards and
+return while backend closure continues at the deadline. On a held-open summary,
+the countdown and temporary notices fade over two seconds after closure; expired
+Undo remains an inert layout placeholder so existing summary content stays in
+place. Reduced-motion preferences disable the fade. Recovery highlights append
+after the existing summary statistics. Session-id guards and
 canceled timers prevent stale completion work from navigating a later session
 or overriding a chosen destination. Failed saving or closure remains retryable.
 

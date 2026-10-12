@@ -119,7 +119,7 @@ databases require the ordinary stopped-writer offline migration before startup.
 ## Learner surface
 
 Completing the last session unit immediately opens a compact completion screen
-with the final answer and a deterministic word report. After pending completion
+with a deterministic word report. After pending completion
 is acknowledged, a fixed 15-second server deadline preserves final Undo. The
 completion lifecycle, cancellation race, early closure, and navigation rules are
 owned by [`session-covering-criteria.md`](session-covering-criteria.md#completed-session-reflection-boundary).
@@ -131,6 +131,14 @@ in this session. It shows counts and word lists, omits empty groups, and remains
 provisional while Undo is available: staging previews the final action without
 accepting it. Closure confirms the report from persisted transitions rather than
 model-generated reporting or the number of Practice units covered.
+
+The footer labels rated recall attempts explicitly, including repeated recalls
+across new, Practice, and Review work. It does not present that number as a count
+of distinct words or completed session units. Undo restores the preceding count.
+When the learner keeps the summary open, successful closure fades the countdown
+and temporary notices over two seconds while retaining their layout space. Undo
+becomes disabled and leaves the keyboard and accessibility navigation without
+moving the existing report or footer. Reduced-motion preferences skip the fade.
 
 Connections generation begins after backend closure and does not occupy the
 immediate completion screen. Automatic return and **Return to Home now** open
