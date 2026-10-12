@@ -118,7 +118,7 @@ function Preview() {
       <section className="panel" aria-hidden="true" />
       {returned ? <p>Home overview — reload to restore the completion preview.</p> : <SessionCompletionPanel
         summary={summary} completion={previewCompletion} saving={false} busy={false} error={null} hasUndo={!closed}
-        remainingSeconds={left} keepOpen={keepOpen} characterPresentation="both" lastAnswerText="复杂 / 複雜 — complex; complicated"
+        remainingSeconds={left} keepOpen={keepOpen} characterPresentation="both"
         onUndo={() => { setLeft(15); setClosed(false); }} onKeepOpen={() => setKeepOpen(true)}
         onReturnHome={() => { setClosed(true); setReturned(true); }} onRetry={() => {}} />}
     </div></div></main>

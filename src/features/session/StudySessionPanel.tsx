@@ -98,10 +98,8 @@ export function StudySessionPanel(props: StudySessionPanelProps) {
     }
   });
   if (completed && props.sessionSummary && props.completionPanel) {
-    const previous = lastCard.current;
     return <SessionCompletionPanel {...props.completionPanel} summary={props.sessionSummary}
-      characterPresentation={props.characterPresentation ?? DEFAULT_CHARACTER_PRESENTATION}
-      lastAnswerText={props.completionPanel.lastAnswerText ?? previous?.activeAnswerText ?? previous?.frozenProductionCard?.answerText ?? null} />;
+      characterPresentation={props.characterPresentation ?? DEFAULT_CHARACTER_PRESENTATION} />;
   }
   if (completed && props.sessionFinalization.kind !== 'finalized' && lastCard.current
     && (lastCard.current.answerRevealed || props.frozenProductionCard || props.frozenPureCueCard || props.frozenContrastCard)) {

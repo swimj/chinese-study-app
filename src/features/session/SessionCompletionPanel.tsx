@@ -19,7 +19,6 @@ export type SessionCompletionPanelProps = {
   keepOpen: boolean;
   remainingSeconds: number | null;
   characterPresentation: CharacterPresentation;
-  lastAnswerText?: string | null;
 };
 
 export function resolveCompletionKey(event: SessionKeyEvent & { repeat?: boolean; defaultPrevented?: boolean },
@@ -32,8 +31,7 @@ export function resolveCompletionKey(event: SessionKeyEvent & { repeat?: boolean
 }
 
 export function SessionCompletionPanel({ summary, completion, saving, busy, error, hasUndo,
-  onUndo, onReturnHome, onKeepOpen, onRetry, keepOpen, remainingSeconds, characterPresentation,
-  lastAnswerText }: SessionCompletionPanelProps) {
+  onUndo, onReturnHome, onKeepOpen, onRetry, keepOpen, remainingSeconds, characterPresentation }: SessionCompletionPanelProps) {
   const closed = completion?.status === 'closed';
   const pending = completion?.status === 'pending';
   const canUndo = hasUndo && pending && completion.canUndo && remainingSeconds !== null
@@ -66,9 +64,7 @@ export function SessionCompletionPanel({ summary, completion, saving, busy, erro
 
   return (
     <section className="session-completion" aria-labelledby="session-completion-title" aria-busy={saving || busy}>
-      <p className="badge">{summary.completionMode === 'drain' ? 'Remaining work complete' : 'Session complete'}</p>
-      <h2 id="session-completion-title">Nice work.</h2>
-      {lastAnswerText ? <p className="session-completion-answer">Last answer: <strong>{lastAnswerText}</strong></p> : null}
+      <h2 id="session-completion-title">Session Summary</h2>
       <p className="session-completion-status" aria-live="off">{status}</p>
       <p className="session-completion-sr-only" role="status">
         {saving ? 'Saving the session.' : closed ? 'Session closed and saved.'

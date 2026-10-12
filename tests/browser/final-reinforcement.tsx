@@ -6,6 +6,7 @@ import { useStudySession, type StudySessionController } from '../../src/features
 import type { SessionPayload } from '../../src/services/api';
 import type { SessionCompletion, StageSessionCompletionRequest } from '../../src/domain/session-completion';
 import '../../src/styles.css';
+import '../../src/features/content-quality/styles.css';
 import '../../src/features/session/session-desk.css';
 import '../../src/features/session/session-completion.css';
 

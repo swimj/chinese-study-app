@@ -2096,7 +2096,6 @@ export function useStudySession({
         onUndo: handleUndoLastRating, onReturnHome: () => void completionFlow.finish(),
         onKeepOpen: completionFlow.keepSummaryOpen, onRetry: () => void completionFlow.retry(),
         keepOpen: completionFlow.keepOpen, remainingSeconds: completionFlow.remainingSeconds,
-        lastAnswerText: lastUndoSnapshot?.ui.frozenProductionCard?.answerText ?? null,
       },
       activeItem,
       activePureCue,
