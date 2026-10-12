@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { resolveContentExerciseResponse, type ContentExerciseSnapshot, type TeachingPackageSnapshot, type WordContentDocument } from '../domain/word-content';
+import { type TeachingPackageSnapshot, type WordContentDocument } from '../domain/word-content';
 import { IntroductionPlayer } from '../features/introduction-lab/IntroductionPlayer';
 import { initialIntroductionPlayerState, reduceIntroductionPlayer } from '../features/introduction-lab/player';
 import type { ImprovementCase, ImprovementCheck, ImprovementDraftFields } from '../domain/content-improvement';
@@ -48,23 +48,26 @@ export function RehearsalPreview({ value, sourceId }: { value: unknown; sourceId
   catch (cause) { return <p role="status">Preview unavailable: {cause instanceof Error ? cause.message : String(cause)}. Save and validate to check the proposal.</p>; }
 }
 
-function ContentPreview({ value, interactive = true }: { value: unknown; interactive?: boolean }) {
-  const [revealed, setRevealed] = useState(false);
-  const [answer, setAnswer] = useState('');
-  const [result, setResult] = useState<string | null>(null);
+export function ContentPreview({ value, interactive = true, answerSource }: { value: unknown; interactive?: boolean; answerSource?: unknown }) {
   const record = value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  const source = answerSource && typeof answerSource === 'object' ? answerSource as Record<string, unknown> : {};
   const stimulus = record.stimulus && typeof record.stimulus === 'object' ? (record.stimulus as Record<string, unknown>).text : record.stimulus;
-  const exercise = record.responseMode === 'hanzi_entry' && Array.isArray(record.acceptedAnswers) ? record as ContentExerciseSnapshot : null;
   const prompt = record.cueText ?? stimulus ?? record.promptText ?? record.prompt_text;
   if (record.snapshot && record.content && !interactive) return <ReadableContent value={record.snapshot} />;
   if (record.snapshot && record.content) return <PackagePreview snapshot={record.snapshot as TeachingPackageSnapshot} content={record.content as WordContentDocument} />;
+  const requestedIds = Array.isArray(record.acceptedWordIds) ? record.acceptedWordIds : typeof record.targetWordId === 'string' ? [record.targetWordId] : null;
+  const available = Array.isArray(record.acceptedAnswers) ? record.acceptedAnswers : Array.isArray(source.acceptedAnswers) ? source.acceptedAnswers : [];
+  const answers = available.filter((entry): entry is { hanzi: string; traditional?: string | null; wordId?: string } => Boolean(entry && typeof entry === 'object' && typeof entry.hanzi === 'string' && (!requestedIds || requestedIds.includes(entry.wordId))));
+  const unresolved = requestedIds && requestedIds.some(id => !answers.some(answer => answer.wordId === id));
   return <div className="improvement-preview">{typeof prompt === 'string' ? <>
+    {typeof record.instruction === 'string' && record.instruction && <p>{record.instruction}</p>}
     <p className="improvement-prompt">{prompt}</p>
-    <label>Try an answer (preview only)<input value={answer} onChange={event => setAnswer(event.target.value)} /></label>
-    {exercise && <button type="button" className="secondary-button" onClick={() => { setResult(resolveContentExerciseResponse(exercise, answer).outcome === 'accepted' ? 'Accepted answer' : 'Answer not accepted'); setRevealed(true); }}>Check preview answer</button>}
-    {result && <p role="status">{result}</p>}
-    <button type="button" className="secondary-button" onClick={() => setRevealed(!revealed)}>{revealed ? 'Hide reveal' : 'Reveal content'}</button>
-    {revealed && <ReadableContent value={value} />}
+    <div className="improvement-expected-answers"><h5>Expected answers</h5>
+      {answers.length > 0 && <ul>{answers.map((answer, index) => <li key={index}>{answer.hanzi}{answer.traditional && answer.traditional !== answer.hanzi ? ` / ${answer.traditional}` : ''}</li>)}</ul>}
+      {(unresolved || !answers.length) && <p className="notes">Validate the draft to resolve expected answers.</p>}
+    </div>
+    {typeof record.teachingNote === 'string' && record.teachingNote && <p>{record.teachingNote}</p>}
+    {typeof record.explanation === 'string' && record.explanation && <p>{record.explanation}</p>}
   </> : <ReadableContent value={value} />}</div>;
 }
 
@@ -174,7 +177,7 @@ export function ContentImprovementWorkspace({ selection }: { selection: Improvem
           </> : <ContentFields value={draft.proposed} onChange={proposed => edit({ ...draft, proposed: proposed as ImprovementDraftFields['proposed'] })} />}
         </fieldset>
         <h4>{selected.status === 'applied' ? 'Applied preview' : check ? 'Validated preview' : 'Preview · not validated'}</h4>
-        {selected.source.kind === 'rehearsal' ? <RehearsalPreview key={`${selected.id}-${JSON.stringify(draft.proposed)}-${check?.revision}`} value={selected.outcome?.appliedSource?.preview ?? check?.preview ?? draft.proposed} sourceId={selected.source.sourceId} /> : <ContentPreview key={`${selected.id}-${JSON.stringify(draft.proposed)}-${check?.revision}`} value={selected.outcome?.appliedSource?.preview ?? check?.preview ?? draft.proposed} />}
+        {selected.source.kind === 'rehearsal' ? <RehearsalPreview key={`${selected.id}-${JSON.stringify(draft.proposed)}-${check?.revision}`} value={selected.outcome?.appliedSource?.preview ?? check?.preview ?? draft.proposed} sourceId={selected.source.sourceId} /> : <ContentPreview key={`${selected.id}-${JSON.stringify(draft.proposed)}-${check?.revision}`} value={selected.outcome?.appliedSource?.preview ?? check?.preview ?? draft.proposed} answerSource={selected.source.preview} />}
         </section>
       </div>
       <fieldset disabled={busy || !editable}><legend>Editorial evidence</legend>
@@ -184,7 +187,7 @@ export function ContentImprovementWorkspace({ selection }: { selection: Improvem
         <label>Proposal authored by<select value={draft.proposalOrigin} onChange={event => edit({ ...draft, proposalOrigin: event.target.value as 'operator' | 'agent' })}><option value="operator">Operator</option><option value="agent">Agent proposal</option></select></label>
         {draft.proposalOrigin === 'agent' && <p className="notes">{selected.status === 'applied' ? 'Agent proposal accepted by the applying operator.' : 'Agent proposals require your review and explicit approval before application.'}</p>}
       </fieldset>
-      <p className="notes">Preview does not record study attempts or change progress. Saved exercise previews use the learner answer matcher. Validate the saved draft to resolve source references and check its content contract.</p>
+      <p className="notes">Review the cue and expected answers together. Preview does not record study attempts or change progress. Validate the saved draft to resolve source references and check its content contract.</p>
       <div className="improvement-actions" aria-label="Draft actions">
         <strong role="status">{selected.status !== 'draft' ? selected.status : dirty ? 'Unsaved edits' : check ? check.sourceChanged || check.errors.length ? 'Needs attention' : 'Validated · ready for review' : 'Saved · needs validation'}</strong>
         {editable && <><button type="button" disabled={busy || !dirty} onClick={() => void run(async () => { accept(await saveContentImprovement(selected.id, selected.revision, draft)); setRefresh(value => value + 1); setNotice('Draft saved. Production content is unchanged.'); })}>Save draft</button><button type="button" className="secondary-button" disabled={busy} onClick={() => void run(async () => {

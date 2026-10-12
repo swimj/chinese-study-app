@@ -47,8 +47,12 @@ requires confirmation. Applied and closed cases do not offer this action.
 **Application effects** discloses the content-specific consequences near review
 and approval.
 
-Before application, inspect the materialized preview, check the answers and
-reveal, and record both the problem and why the revision is better. Application
+Exercise previews show the learner-facing cue followed by expected answers for
+editorial judgment. They do not include an answer-entry or matcher-testing flow.
+Unvalidated cues can use known source answers; changed answer identities require
+validation to resolve their written forms.
+
+Before application, inspect the materialized preview and expected answers, and record both the problem and why the revision is better. Application
 requires explicit approval of the saved revision. Changed answer space requires
 an additional acknowledgement. Validation runs again inside the application
 transaction; stale draft revisions or changed source/dependency state reject

@@ -25,3 +25,6 @@
 .improvement-case-chip:hover .improvement-case-remove, .improvement-case-chip:focus-within .improvement-case-remove { opacity: 1; }
 .improvement-case-remove:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 @media (hover: none) { .improvement-case-chip .improvement-case-remove { opacity: 1; } }
+.improvement-expected-answers { border-top: 1px solid var(--border, #d6d6d6); margin-top: 1rem; padding-top: .75rem; }
+.improvement-expected-answers h5 { margin: 0 0 .5rem; font: inherit; font-weight: 600; }
+.improvement-expected-answers ul { margin: 0; padding-left: 1.25rem; }

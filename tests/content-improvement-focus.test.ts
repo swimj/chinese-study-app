@@ -59,3 +59,30 @@ test('only unresolved draft chips expose an accessible discard action', async ()
   assert.doesNotMatch(render('applied'), /Discard draft/);
   assert.doesNotMatch(render('closed'), /Discard draft/);
 });
+
+test('exercise preview presents cue then expected forms without answer-testing controls', async () => {
+  const { createElement } = await import('react');
+  const { renderToStaticMarkup } = await import('react-dom/server');
+  const { ContentPreview, RehearsalPreview } = await import('../src/pages/ContentImprovementWorkspace.tsx');
+  const production = renderToStaticMarkup(createElement(ContentPreview, { value: { cueText: 'Squat (exercise).', acceptedWordIds: ['squat'] }, answerSource: { acceptedAnswers: [{ wordId: 'squat', hanzi: '深蹲', traditional: '深蹲' }] } }));
+  assert.match(production, /Expected answers/);
+  assert.match(production, /深蹲/);
+  assert(production.indexOf('Squat (exercise).') < production.indexOf('深蹲'));
+  assert.doesNotMatch(production, /<input|<button|Try an answer|Check preview answer|Reveal content/);
+  assert.doesNotMatch(production, /深蹲 \/ 深蹲/);
+  const rehearsal = renderToStaticMarkup(createElement(RehearsalPreview, { value: proposed, sourceId: 'package/r1' }));
+  assert.match(rehearsal, /Expected answers/);
+  assert.match(rehearsal, /由此/);
+  assert.doesNotMatch(rehearsal, /<input|<button/);
+});
+
+test('unvalidated changed answer identities do not display stale source answers', async () => {
+  const { createElement } = await import('react');
+  const { renderToStaticMarkup } = await import('react-dom/server');
+  const { ContentPreview } = await import('../src/pages/ContentImprovementWorkspace.tsx');
+  const markup = renderToStaticMarkup(createElement(ContentPreview, { value: { cueText: 'A different action.', acceptedWordIds: ['changed'] }, answerSource: { acceptedAnswers: [{ wordId: 'old', hanzi: '深蹲' }] } }));
+  assert.doesNotMatch(markup, /深蹲/);
+  assert.match(markup, /Validate the draft to resolve expected answers/);
+  const resolved = renderToStaticMarkup(createElement(ContentPreview, { value: { stimulus: { text: 'An idea you cannot let go of.' }, acceptedAnswers: [{ wordId: 'idea', hanzi: '执念', traditional: '執念' }] } }));
+  assert.match(resolved, /执念 \/ 執念/);
+});
