@@ -71,3 +71,8 @@
 .sharing-evidence-list { display: grid; gap: 1rem; margin-top: 1rem; }
 .sharing-evidence-list section + section { border-top: 1px solid var(--border); padding-top: 1rem; }
 .sharing-evidence-list h5 { font-size: 1rem; margin: 0; }
+.operator-banner-current, .operator-banner-preview { width: 100%; min-width: 0; overflow-wrap: anywhere; padding: 1rem; border: 1px solid var(--border); border-radius: 0.5rem; }
+.operator-banner-current p, .operator-banner-preview p { margin: 0.5rem 0; }
+.operator-service-banner details { margin-top: 0.75rem; }
+.operator-service-banner summary { cursor: pointer; }
+.operator-banner-action input, .operator-banner-action textarea { min-width: 0; box-sizing: border-box; }
