@@ -1,3 +1,5 @@
+import { selectBootstrapReveal } from '../src/domain/word-content/reveal.ts';
+import type { WordContentDocument } from '../src/domain/word-content/types.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -45,6 +47,7 @@ describe('initial reflection evidence enrichment', { concurrency: false }, () =>
 
   beforeEach(() => {
     sqlite.exec(`
+      DELETE FROM word_content_documents;
       DELETE FROM word_skill_relevance;
       DELETE FROM contrast_prompts;
       DELETE FROM contrast_cluster_members;
@@ -183,6 +186,26 @@ describe('initial reflection evidence enrichment', { concurrency: false }, () =>
     const bundle = buildInitialReflectionBundle('session-1', supplement('替代'), generatedAt);
     assert.deepEqual(bundle.items[0]?.servedCue.supplement, servedSupplement);
     assert.equal(bundle.items[0]?.servedCue.text, 'goal; objective');
+  });
+
+  test('preserves and verifies exact bootstrap teaching without changing the tested cue', () => {
+    const content: WordContentDocument = { schemaVersion: 1, id: 'bootstrap-target',
+      word: { wordId: 'target', hanzi: '目标', traditional: null, pinyin: 'mu biao' },
+      uses: [{ id: 'use', label: 'A project goal', notes: [], exampleIds: ['example'] }],
+      examples: [{ id: 'example', text: '这是我们的目标。', translation: 'This is our goal.', pronunciation: null }] };
+    sqlite.prepare('INSERT INTO word_content_documents (content_id, word_id, content_json) VALUES (?, ?, ?)').run(content.id, 'target', JSON.stringify(content));
+    const bootstrapReveal = selectBootstrapReveal(content, new Date(generatedAt));
+    const metadata = JSON.parse(productionAttemptMetadata({ submittedText: '替代', submittedWordId: null,
+      result: 'rejected', acceptedWordIds: ['target'] }));
+    metadata.production.bootstrapReveal = bootstrapReveal;
+    sqlite.prepare("UPDATE study_attempt_events SET metadata_json = ? WHERE id = 'attempt-1'").run(JSON.stringify(metadata));
+    const bundle = buildInitialReflectionBundle('session-1', supplement('替代'), generatedAt);
+    assert.deepEqual(bundle.items[0]?.servedCue.bootstrapReveal, bootstrapReveal);
+    assert.equal(bundle.items[0]?.servedCue.text, 'goal; objective');
+    assert.deepEqual(bundle.items[0]?.servedCue.acceptedWordIds, ['target']);
+    metadata.production.bootstrapReveal.exampleSentence = 'Fabricated teaching';
+    sqlite.prepare("UPDATE study_attempt_events SET metadata_json = ? WHERE id = 'attempt-1'").run(JSON.stringify(metadata));
+    assert.throws(() => buildInitialReflectionBundle('session-1', supplement('替代'), generatedAt), /immutable bootstrap source/);
   });
 
   test('reports the single eligible item included in an initial bundle', () => {
@@ -795,6 +818,8 @@ function createSchema() {
     CREATE VIEW review_content_records AS SELECT * FROM scoped_review_content_records;
     CREATE TABLE word_content_documents (
       content_id TEXT PRIMARY KEY,
+      word_id TEXT,
+      content_json TEXT,
       publication_id TEXT
     );
   `);

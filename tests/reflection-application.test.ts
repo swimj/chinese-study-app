@@ -71,6 +71,7 @@ describe('reflection application adapters', { concurrency: false }, () => {
       DROP TRIGGER IF EXISTS pure_cue_attempts_no_delete;
       DROP TRIGGER IF EXISTS pure_cue_teaching_revisions_no_delete;
       DROP TRIGGER IF EXISTS review_content_records_no_delete;
+      DROP TRIGGER IF EXISTS word_content_documents_no_delete;
       PRAGMA defer_foreign_keys = ON;
       BEGIN;
       DELETE FROM scoped_review_content_records;
@@ -109,6 +110,10 @@ describe('reflection application adapters', { concurrency: false }, () => {
       DELETE FROM word_skill_relevance;
       DELETE FROM study_events;
       DELETE FROM study_sessions;
+      DELETE FROM word_preparation_attempts;
+      DELETE FROM word_preparation_work;
+      DELETE FROM word_introduction_preparation;
+      DELETE FROM word_content_documents;
       DELETE FROM words;
       COMMIT;
     `);
@@ -842,6 +847,48 @@ describe('reflection application adapters', { concurrency: false }, () => {
     assert.match(JSON.stringify(successful.application.state), /strict target-only production lapse/);
   });
 
+  test('bootstrap requests enqueue only shared bootstrap and coalesce without changing exercises', () => {
+    const operation = { kind: 'request_word_bootstrap' as const, version: 1 as const, wordId: 'target' };
+    insertInvocation('bootstrap-request', operation);
+    const result = dbModule.applyReflectionInvocation('bootstrap-request', appliedAt);
+    assert.equal(result.application.state.kind, 'applied');
+    assert.equal(countRows('word_content_documents'), 0);
+    assert.equal(countRows('production_cues'), 0);
+    assert.equal(countRows('production_cue_supplements'), 0);
+    const rows = sqlite.prepare('SELECT work_id, word_id, stage, status FROM word_preparation_work').all();
+    assert.equal(rows.length, 1);
+    assert.deepEqual({ ...rows[0] }, {
+      work_id: result.application.state.kind === 'applied' ? result.application.state.effectRefs[0]!.id : null,
+      word_id: 'target', stage: 'bootstrap', status: 'queued',
+    });
+    assert.equal(result.application.state.kind === 'applied' && result.application.state.effectRefs[0]!.type, 'word_preparation_work');
+    assert.deepEqual(dbModule.applyReflectionInvocation('bootstrap-request', appliedAt), result);
+    insertInvocation('bootstrap-request-again', operation);
+    assert.equal(dbModule.applyReflectionInvocation('bootstrap-request-again', appliedAt).application.state.kind, 'already_satisfied');
+    assert.equal(countRows('word_preparation_work'), 1);
+    sqlite.prepare("UPDATE word_preparation_work SET status = 'paused', attempt_count = 3, last_error = 'Provider failed'").run();
+    insertInvocation('bootstrap-request-paused', operation);
+    dbModule.applyReflectionInvocation('bootstrap-request-paused', appliedAt);
+    assert.deepEqual({ ...sqlite.prepare('SELECT status, attempt_count FROM word_preparation_work').get() }, { status: 'paused', attempt_count: 3 });
+  });
+
+  test('bootstrap requests reuse eligible shared content without enqueueing any stage', async () => {
+    const shared = await import('../server/db/word-introductions.ts');
+    const word = sqlite.prepare('SELECT hanzi, traditional, pinyin FROM lexical_words WHERE id = ?').get('target') as { hanzi: string; traditional: string | null; pinyin: string };
+    const now = new Date().toISOString();
+    assert.equal(shared.claimSharedWordIntroductionStage('target', 'bootstrap', 'bootstrap-test', now, new Date(Date.now() + 60_000).toISOString()), 'claimed');
+    shared.finishSharedWordIntroductionBootstrap('target', 'bootstrap-test', {
+      schemaVersion: 1, id: 'bootstrap-content', word: { wordId: 'target', ...word },
+      uses: [{ id: 'use', label: 'a goal', notes: [], exampleIds: ['example'] }],
+      examples: [{ id: 'example', text: '这是我们的目标。', translation: 'This is our goal.', pronunciation: 'zhè shì wǒmen de mùbiāo' }],
+    }, 'test');
+    insertInvocation('bootstrap-reuse', { kind: 'request_word_bootstrap', version: 1, wordId: 'target' });
+    const result = dbModule.applyReflectionInvocation('bootstrap-reuse', appliedAt);
+    assert.deepEqual(result.application.state, { kind: 'already_satisfied', satisfyingEffectRefs: [{ type: 'word_content', id: 'bootstrap-content' }] });
+    assert.equal(countRows('word_preparation_work'), 0);
+    assert.equal(countRows('word_teaching_packages'), 0);
+  });
+
   test('adds one immutable fallback supplement without changing the cue or scheduler', () => {
     const operation = supplementOperation(null);
     insertInvocation('supplement-create', operation);
@@ -1509,7 +1556,7 @@ describe('reflection application adapters', { concurrency: false }, () => {
         assert.equal(input.items[0]?.responseKind, 'correct');
         return new Response(JSON.stringify({ id: 'correct-flow-response', model: 'gpt-5.6-luna',
           choices: [{ finish_reason: 'stop', message: { content: JSON.stringify({
-            schemaVersion: 'staged_reflection_diagnosis_result.v3',
+            schemaVersion: 'staged_reflection_diagnosis_result.v4',
             itemResults: [{ kind: 'ordinary', itemId: input.items[0]!.itemId,
               diagnosisTags: ['production_cue_overloaded'], learnerExplanation: 'Recall succeeded, but the cue needs a more precise situation.',
               proposals: [{ proposalGroupKey: null, rationale: 'Replace the broad fallback.', operation: {

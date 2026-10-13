@@ -1,3 +1,5 @@
+import { enqueueWordPreparation, getWordPreparationWork } from './preparation-work.ts';
+import { getSharedWordIntroductionContent } from './word-introductions.ts';
 import { normalizeMandarinHanziLookup } from './hanzi-lookup.ts';
 import type { PureCueAssessmentEvent } from '../../src/domain/pure-cues.ts';
 import type { RepairProductionCueOperationV2 } from '../../src/domain/reflection.ts';
@@ -1637,7 +1639,8 @@ export function listReflectionGenerationRuns(limit = 50): ReflectionGenerationRu
         ? 'pure_cue_reflection_result.v2'
         : isCompatiblePromptVersion(row.prompt_version, PURE_CUE_PROMOTION_PROMPT_VERSION)
         ? 'pure_cue_promotion_result.v2'
-        : isCompatiblePromptVersion(row.prompt_version, STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION)
+        : (isCompatiblePromptVersion(row.prompt_version, STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION)
+          || isCompatiblePromptVersion(row.prompt_version, 'reflection-staged-v4.2'))
           ? 'staged_reflection_diagnosis_result.v3'
           : 'session_reflection_result.v7',
       diagnostic: null,
@@ -2283,6 +2286,7 @@ export function buildStagedDeferredSecondOpinionBundle(
       servedCue: {
         ...diagnosisItem.servedCue,
         supplement: diagnosisItem.servedCue.supplement ?? null,
+        ...(diagnosisItem.servedCue.bootstrapReveal === undefined ? {} : { bootstrapReveal: diagnosisItem.servedCue.bootstrapReveal }),
       },
     });
     studyProfiles.add(
@@ -3630,6 +3634,18 @@ function applyPendingOperationWithoutTransaction(
         invocationId,
         appliedAt,
       );
+    case 'request_word_bootstrap': {
+      const content = getSharedWordIntroductionContent(operation.wordId);
+      if (content !== null) {
+        return { kind: 'already_satisfied', satisfyingEffectRefs: [{ type: 'word_content', id: content.id }] };
+      }
+      const existing = getWordPreparationWork(operation.wordId, 'bootstrap');
+      const work = enqueueWordPreparation(operation.wordId, 'bootstrap', appliedAt);
+      const refs = [{ type: 'word_preparation_work', id: work.workId }];
+      return existing === null
+        ? { kind: 'applied', appliedAt, effectRefs: refs }
+        : { kind: 'already_satisfied', satisfyingEffectRefs: refs };
+    }
     case 'add_production_cue_supplement':
       return applyProductionCueSupplementWithoutTransaction(
         operation,

@@ -14,8 +14,8 @@ import {
   pureCuePromotionResultV2WireSchema,
   SESSION_REFLECTION_RESULT_V7_WIRE_SCHEMA_NAME,
   sessionReflectionResultV7WireSchema,
-  STAGED_REFLECTION_DIAGNOSIS_RESULT_V3_WIRE_SCHEMA_NAME,
-  stagedReflectionDiagnosisResultV3WireSchema,
+  STAGED_REFLECTION_DIAGNOSIS_RESULT_V4_WIRE_SCHEMA_NAME,
+  stagedReflectionDiagnosisResultV4WireSchema,
 } from '../../src/domain/reflection-result-schema.js';
 import {
   normalizeStagedReflectionDiagnosisResultV3,
@@ -34,7 +34,7 @@ import {
   type SessionReflectionResultV7,
   type SessionReflectionResultV7Wire,
   type StagedReflectionDiagnosisResultV3,
-  type StagedReflectionDiagnosisResultV3Wire,
+  type StagedReflectionDiagnosisResultV4Wire,
   validatePureCuePromotionResultV2,
 } from '../../src/domain/reflection.js';
 import type { FetchImplementation } from '../llm/http.js';
@@ -250,6 +250,11 @@ function diagnosisModelInput(bundle: SessionReflectionBundleV4 | CuratedReflecti
           exampleTranslation: item.servedCue.supplement.exampleTranslation,
         },
       },
+      ...(item.servedCue.bootstrapReveal ? { postRevealWordContent: {
+        englishFrame: item.servedCue.bootstrapReveal.englishFrame,
+        exampleSentence: item.servedCue.bootstrapReveal.exampleSentence,
+        exampleTranslation: item.servedCue.bootstrapReveal.exampleTranslation,
+      } } : {}),
       rawResponse: item.rawResponse,
       responseKind: item.responseKind ?? 'correct',
       submittedWord: item.submittedWord,
@@ -477,8 +482,8 @@ export function createReflectionProvider(
         reasoningEffort: config.reasoningEffort,
         systemPrompt,
         userPrompt: JSON.stringify(modelInput),
-        outputSchemaName: STAGED_REFLECTION_DIAGNOSIS_RESULT_V3_WIRE_SCHEMA_NAME,
-        outputSchema: stagedReflectionDiagnosisResultV3WireSchema,
+        outputSchemaName: STAGED_REFLECTION_DIAGNOSIS_RESULT_V4_WIRE_SCHEMA_NAME,
+        outputSchema: stagedReflectionDiagnosisResultV4WireSchema,
         maxOutputTokens: config.maxOutputTokens,
         temperature: null,
         timeoutMs: config.timeoutMs,
@@ -519,7 +524,7 @@ export function createReflectionProvider(
       }
       const schemaIssues = validateJsonSchemaIssues(
         parsed,
-        stagedReflectionDiagnosisResultV3WireSchema,
+        stagedReflectionDiagnosisResultV4WireSchema,
       );
       if (schemaIssues.length > 0) {
         throw new LunaReflectionProviderError(
@@ -528,9 +533,9 @@ export function createReflectionProvider(
         );
       }
       const wireResult = {
-        ...parsed as StagedReflectionDiagnosisResultV3Wire,
+        ...parsed as StagedReflectionDiagnosisResultV4Wire,
         itemResults: canonicalizeProviderItemIds(
-          (parsed as StagedReflectionDiagnosisResultV3Wire).itemResults, bundle.items,
+          (parsed as StagedReflectionDiagnosisResultV4Wire).itemResults, bundle.items,
         ),
       };
       const unknownItemErrors = wireResult.itemResults
@@ -543,7 +548,7 @@ export function createReflectionProvider(
         );
       }
       const normalized = normalizeStagedReflectionDiagnosisResultV3(
-        wireResult,
+        { ...wireResult, schemaVersion: 'staged_reflection_diagnosis_result.v3' },
         bundle,
       );
       const contractErrors = validateStagedReflectionDiagnosisResultV3(normalized, bundle);

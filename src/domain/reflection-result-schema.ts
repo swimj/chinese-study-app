@@ -528,3 +528,25 @@ export const stagedReflectionDiagnosisResultV3WireSchema: JsonSchema = objectSch
   ] }),
 }, 'Ordinary results or ambiguous-pair handoffs with an explicit optional target suppression recommendation.');
 export const STAGED_REFLECTION_DIAGNOSIS_RESULT_V3_WIRE_SCHEMA_NAME = 'staged_reflection_diagnosis_result_v3';
+
+/** New provider output requests shared preparation; historical authored supplements remain readable. */
+export const stagedReflectionDiagnosisResultV4WireSchema: JsonSchema = objectSchema({
+  ...stagedReflectionDiagnosisResultV3WireSchema.properties,
+  schemaVersion: enumSchema(['staged_reflection_diagnosis_result.v4']),
+  itemResults: arraySchema({ anyOf: [
+    objectSchema({
+      ...stagedReflectionDiagnosisOrdinaryResultV1Wire.properties,
+      proposals: arraySchema(objectSchema({
+        ...stagedReflectionProposalV1Wire.properties,
+        operation: { anyOf: [
+          objectSchema({ kind: enumSchema(['suppress_definition_production']), version: enumSchema([1]) }),
+          createContrastClusterOperationV2,
+          stagedRepairCueOperationV1Wire,
+          objectSchema({ kind: enumSchema(['request_word_bootstrap']) }),
+        ] },
+      })),
+    }),
+    stagedReflectionDiagnosisResultV3WireSchema.properties!.itemResults!.items!.anyOf![1]!,
+  ] }),
+}, 'Diagnosis with bootstrap requests instead of model-authored post-reveal supplements.');
+export const STAGED_REFLECTION_DIAGNOSIS_RESULT_V4_WIRE_SCHEMA_NAME = 'staged_reflection_diagnosis_result_v4';

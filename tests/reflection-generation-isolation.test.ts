@@ -143,7 +143,7 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
       environment: { OPENAI_API_KEY: 'test-only-key' },
       systemPrompt: 'Test reflection prompt.',
       fetchImplementation: providerFetch(responseEnvelope({
-        schemaVersion: 'staged_reflection_diagnosis_result.v3',
+        schemaVersion: 'staged_reflection_diagnosis_result.v4',
         itemResults: [{
           kind: 'ordinary',
           itemId: 'unknown-item',

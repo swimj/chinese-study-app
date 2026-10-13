@@ -40,6 +40,10 @@ The user message contains the exercises and responses to review.
   never to narrow the original cue, resolve its ambiguity, or justify rejecting
   an alternate answer. You may teach from it, but distinguish its context from
   what the learner was asked to produce.
+- `postRevealWordContent`, when present, contains word usage and examples shown
+  after answering. Like a supplement, it may inform the learner explanation,
+  but cannot narrow the original cue, establish its fairness, or reinterpret
+  the learner's answer.
 - The response fields record what the learner supplied. For production,
   `rawResponse`, `responseKind`, and `submittedWord` distinguish an
   identified comparison word from unresolved text or no answer.
@@ -50,7 +54,7 @@ The user message contains the exercises and responses to review.
 - `learnerRequestedReview` means the learner wants feedback on this exercise.
   It is not proof of an error or an instruction to change content.
 
-Return only one `staged_reflection_diagnosis_result.v3`, containing each
+Return only one `staged_reflection_diagnosis_result.v4`, containing each
 supplied `itemId` exactly once. Each result has descriptive `diagnosisTags`
 and exactly one of these shapes:
 
@@ -258,31 +262,20 @@ mismatched cue, not evidence for suppression.
 
 ### Post-reveal definition reinforcement
 
-Use `add_production_cue_supplement` only when the exact served cue is
-`definition_gloss`, and that cue is a
-fair production prompt worth keeping unchanged. The supplement is revealed
-after the response, never used as another clue, and never changes accepted
-answers or grading.
+Use `request_word_bootstrap` when the served definition-based production
+prompt is fair and worth keeping, but examples of the word in natural use and
+usage notes would help the learner. The recommendation is for post-reveal
+reinforcement; it leaves the exercise, accepted answers, and grading unchanged.
 
-First assess the cue without the proposed supplement. Reinforcement enriches
-an already adequate meaning with a useful example or usage; it may not be
-treated as a restriction that refines away ambiguity in the visible cue. If
-the retrieval task needs that restriction, repair the cue instead. A correct
-response or an empty supplement field is not itself a reason to add reinforcement.
-Explanation only remains appropriate when the cue is sound and no durable
-reinforcement adds useful practice value.
+Reinforcement enriches an already adequate meaning; it cannot supply an absent
+constraint that the learner needed before answering. This recommendation is for
+definition-gloss evidence, including meaning-derived definitions, not
+minimal-context or circumstance exercises. An unfair cue needs repair.
 
-Draft all three parts:
-
-- `englishFrame`: a concise usage, register, relationship, or situation frame;
-- `exampleSentence`: one natural complete Mandarin sentence containing the
-  target expression visibly, not a cloze; and
-- `exampleTranslation`: a faithful English translation.
-
-Only propose it when `servedCue.supplement` is null. Do not use it for
-`minimal_context` or `circumstance`, for a definition cue that needs repair, or
-when a supplement already exists. Prefer one compact representative context
-over encyclopedic coverage.
+Do not request this reinforcement when `postRevealWordContent` is already
+provided. An existing fixed supplement alone does not preclude it: broader word
+usage and examples may still be useful. Explain that learning value in the
+proposal rationale.
 
 ### Contrast practice
 
@@ -394,15 +387,11 @@ the figurative restriction would leave the same retrieval problem in place.
 ### Keep coherent glosses; reinforce only when useful
 
 For correct `包庇` under “to shield or cover for someone who has done wrong,”
-the visible cue already supplies the central meaning. Keep it; a supplement
-can add a useful natural example such as:
-
-- `englishFrame`: `knowingly shielding a wrongdoer from responsibility or discovery`;
-- `exampleSentence`: `他明知儿子犯了罪，却包庇了他。`; and
-- `exampleTranslation`: `He knew his son had committed a crime but shielded him.`
-
-The sentence is post-reveal reinforcement, not a replacement cue. Explanation
-only is also appropriate if no useful durable reinforcement is needed. Under
+the visible cue already supplies the central meaning. Keep it. If examples of
+how the word is used to shield someone from responsibility would help, propose
+`request_word_bootstrap`. You only need to identify the value of that
+reinforcement, not write its content. Explanation only is also appropriate if
+no useful durable reinforcement is needed. Under
 the broader “to shield; to harbor; to cover up,” the missing wrongdoing context
 would instead warrant cue repair. Several glosses are acceptable when they
 already converge on the useful meaning; success on a broad list does not
@@ -433,14 +422,13 @@ independently reviewable proposals.
 - `suppress_definition_production` uses `version: 1`.
 - `create_contrast_cluster` uses `version: 2`, a title, nullable cluster note,
   at least two unique visible members, and at least two prompts per member.
-- `add_production_cue_supplement` provides
-  `englishFrame`, `exampleSentence`, and `exampleTranslation` as described above.
+- `request_word_bootstrap` supplies only `kind`.
 - `repair_production_cue` supplies a non-empty
   `replacementCues` array describing the improved exercise or exercises.
   Each cue contains `cueType` and non-empty `text`. Put a coordinated set of
   exercises in one repair proposal rather than competing separate repairs.
 
-Repair, suppression, and supplement operations apply to the containing item's
+Repair, suppression, and bootstrap requests apply to the containing item's
 target word; do not supply a `wordId` for these operations.
 
 A repair's `sourceAttemptJudgments` is an array. Include
@@ -460,8 +448,8 @@ Before returning, confirm that:
   the explanation nor a supplement was used to rescue missing cue meaning;
 - suppression reflects low production value under an ideal cue and is not
   paired with active cue repair for the same target;
-- a supplement keeps a fair definition cue unchanged, is absent when one was
-  already served, and contains a full target-bearing example;
+- a bootstrap request keeps a fair definition cue unchanged, supplies only its
+  kind, and is absent when `postRevealWordContent` is already provided;
 - contrast rests on a useful difference in natural usage;
 - cues evoke graspable meanings, situations, or expressive instincts rather
   than mere category membership;

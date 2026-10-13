@@ -501,6 +501,7 @@ export function cloneReflectionOperation(operation: ReflectionOperation): Reflec
       };
     case 'accept_production_alternate':
       return { ...operation };
+    case 'request_word_bootstrap':
     case 'add_production_cue_supplement':
       return { ...operation };
     case 'reconcile_production_cues':
@@ -1182,6 +1183,8 @@ export function createReplacementOperation(
         proposedCues: [],
         repairIntent: 'add_distinguishing_anchor',
       };
+    case 'request_word_bootstrap':
+      return { kind, version: 1, wordId: targetWordId };
     case 'add_production_cue_supplement':
       return {
         kind,
@@ -1268,6 +1271,8 @@ export function reflectionOperationLabel(operation: ReflectionOperation): string
       return 'Create contrast cluster';
     case 'repair_production_cue':
       return 'Repair production cue';
+    case 'request_word_bootstrap':
+      return 'Prepare word examples';
     case 'add_production_cue_supplement':
       return 'Add post-reveal context';
     case 'accept_production_alternate':
@@ -1288,6 +1293,7 @@ function primaryWordId(operation: ReflectionOperation): string {
       return operation.responseWordId;
     case 'suppress_definition_production':
     case 'repair_production_cue':
+    case 'request_word_bootstrap':
     case 'add_production_cue_supplement':
       return operation.wordId;
     case 'accept_production_alternate':
@@ -1314,6 +1320,7 @@ function secondaryWordId(operation: ReflectionOperation): string {
       return operation.members[1]?.wordId ?? '';
     case 'suppress_definition_production':
     case 'repair_production_cue':
+    case 'request_word_bootstrap':
     case 'add_production_cue_supplement':
       return '';
   }

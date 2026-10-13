@@ -1,3 +1,4 @@
+import type { BootstrapRevealSnapshot } from './word-content/reveal';
 import { validateReconcilePureCueResponseOperation, validateRepairPureCueStimulusOperation, type ReconcilePureCueResponseOperationV1, type RepairPureCueStimulusOperationV1, type PureCueReflectionBundleV1, type PureCueReflectionResultV1, type PureCueReflectionItemV1 } from './pure-cue-reflection';
 import { promptMajorVersion, STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION } from './reflection-contracts';
 
@@ -36,6 +37,8 @@ export type ReflectionServedCueSupplementSnapshotV1 = {
 
 export type ReflectionServedCueSnapshotV2 = ReflectionServedCueSnapshotV1 & {
   supplement: ReflectionServedCueSupplementSnapshotV1 | null;
+  /** Post-reveal teaching, never part of the retrieval prompt. */
+  bootstrapReveal?: BootstrapRevealSnapshot;
 };
 
 export type ReflectionExistingContentV0 = {
@@ -405,6 +408,12 @@ export type RepairProductionCueOperationV2Wire = Omit<
   sourceAttemptJudgments: CueEvidenceJudgmentV2Wire[];
 };
 
+export type RequestWordBootstrapOperationV1 = {
+  kind: 'request_word_bootstrap';
+  version: 1;
+  wordId: string;
+};
+
 export type AddProductionCueSupplementOperationV1 = {
   kind: 'add_production_cue_supplement';
   version: 1;
@@ -503,6 +512,18 @@ export type StagedReflectionDiagnosisResultV3Wire = {
   schemaVersion: 'staged_reflection_diagnosis_result.v3';
   itemResults: Array<StagedReflectionDiagnosisOrdinaryResultV1Wire | StagedReflectionDiagnosisAmbiguousPairResultV3>;
 };
+export type StagedReflectionDiagnosisResultV4Wire = {
+  schemaVersion: 'staged_reflection_diagnosis_result.v4';
+  itemResults: Array<
+    | StagedReflectionDiagnosisAmbiguousPairResultV3
+    | (Omit<StagedReflectionDiagnosisOrdinaryResultV1Wire, 'proposals'> & {
+      proposals: Array<Omit<StagedReflectionProposalV1Wire, 'operation'> & {
+        operation: Exclude<StagedReflectionOperationV1Wire, { kind: 'add_production_cue_supplement' }>;
+      }>;
+    })
+  >;
+};
+
 export type StagedReflectionDiagnosisResultV3 = {
   schemaVersion: 'staged_reflection_diagnosis_result.v3';
   itemResults: Array<StagedReflectionDiagnosisOrdinaryResultV1 | StagedReflectionDiagnosisAmbiguousPairResultV3>;
@@ -562,6 +583,7 @@ export type ReflectionOperation =
   | RepairProductionCueOperationV1
   | RepairProductionCueOperationV2
   | AddProductionCueSupplementOperationV1
+  | RequestWordBootstrapOperationV1
   | AcceptProductionAlternateOperationV1
   | PromotePureElicitationOperationV1
   | ReconcileProductionCuesOperationV1;
@@ -689,7 +711,8 @@ export type StagedReflectionOperationV1Wire =
   | Omit<SuppressDefinitionProductionOperationV1, 'wordId'>
   | CreateContrastClusterOperationV2
   | StagedRepairProductionCueOperationV1Wire
-  | Omit<AddProductionCueSupplementOperationV1Wire, 'wordId'>;
+  | Omit<AddProductionCueSupplementOperationV1Wire, 'wordId'>
+  | Pick<RequestWordBootstrapOperationV1, 'kind'>;
 
 export type StagedReflectionProposalV1Wire = Omit<ReflectionProposalV1, 'operation'> & {
   operation: StagedReflectionOperationV1Wire;
@@ -956,6 +979,7 @@ export type ReflectionOperationRegistration = {
 };
 
 export const REFLECTION_OPERATION_REGISTRY = [
+  { kind: 'request_word_bootstrap', version: 1, editorAvailable: true, applySupport: 'supported' },
   { kind: 'reconcile_pure_cue_response', version: 1, editorAvailable: true, applySupport: 'supported' },
   { kind: 'repair_pure_cue_stimulus', version: 1, editorAvailable: true, applySupport: 'supported' },
   {
@@ -1159,6 +1183,7 @@ export function reflectionOperationWordReferences(operation: ReflectionOperation
             : []
         )),
       ];
+    case 'request_word_bootstrap':
     case 'add_production_cue_supplement':
       return [operation.wordId];
     case 'create_contrast_cluster':
@@ -1316,6 +1341,11 @@ export function validateReflectionOperation(
       if (typeof value.repairIntent !== 'string' || !repairIntents.has(value.repairIntent)) {
         errors.push(`${path}.repairIntent: value is not in the allowed enum`);
       }
+      break;
+    }
+    case 'request_word_bootstrap': {
+      errors.push(...validateObjectFields(value, ['kind', 'version', 'wordId'], path));
+      errors.push(...validateWordReference(value.wordId, `${path}.wordId`, options));
       break;
     }
     case 'add_production_cue_supplement': {
@@ -2618,6 +2648,15 @@ export function validateReflectionOperationEvidenceContext(
       errors.push(`${path}: no-clue evidence cannot ground an alternate-answer claim`);
     }
   }
+  if (value.kind === 'request_word_bootstrap' && value.version === 1) {
+    if (value.wordId !== item.targetWord.wordId) {
+      errors.push(`${path}.wordId: must match the evidence target word`);
+    }
+    if (item.servedCue.cueType !== 'definition_gloss') {
+      errors.push(`${path}: bootstrap requests require definition-gloss evidence`);
+    }
+    return errors;
+  }
   if (value.kind === 'add_production_cue_supplement' && value.version === 1) {
     if (value.wordId !== item.targetWord.wordId) {
       errors.push(`${path}.wordId: must match the evidence target word`);
@@ -2870,6 +2909,9 @@ export function normalizeStagedReflectionDiagnosisResultV1(
               },
             };
           }
+          if (operation.kind === 'request_word_bootstrap') {
+            return { ...proposal, operation: { ...operation, version: 1 as const, wordId } };
+          }
           if (operation.kind === 'add_production_cue_supplement') {
             return {
               ...proposal,
@@ -2938,6 +2980,9 @@ export function normalizeStagedReflectionDiagnosisResultV2(
                     })),
               },
             };
+          }
+          if (operation.kind === 'request_word_bootstrap') {
+            return { ...proposal, operation: { ...operation, version: 1 as const, wordId } };
           }
           if (operation.kind === 'add_production_cue_supplement') {
             return {

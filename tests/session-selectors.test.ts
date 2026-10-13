@@ -7,7 +7,7 @@ import {
   getCompletedReinforcementStreak,
   getDisplayedReinforcementStreak,
   getStudySessionPanelView,
-  hasServedProductionCueSupplement,
+  hasServedProductionReveal,
   isPureCueReviewInReinforcement,
 } from '../src/features/session/session-selectors.ts';
 import type { Word } from '../src/types.ts';
@@ -228,8 +228,8 @@ describe('session selectors', () => {
   });
 
   test('detects a served production cue supplement snapshot', () => {
-    assert.equal(hasServedProductionCueSupplement(null), false);
-    assert.equal(hasServedProductionCueSupplement({
+    assert.equal(hasServedProductionReveal(null), false);
+    assert.equal(hasServedProductionReveal({
       taskId: 'production-task:cue-word:default_production',
       cueId: 'cue-1',
       cueType: 'definition_gloss',
@@ -237,7 +237,7 @@ describe('session selectors', () => {
       acceptedAnswers: [{ wordId: 'cue-word', hanzi: '包庇', traditional: null }],
       supplement: null,
     }), false);
-    assert.equal(hasServedProductionCueSupplement({
+    assert.equal(hasServedProductionReveal({
       taskId: 'production-task:cue-word:default_production',
       cueId: 'cue-1',
       cueType: 'definition_gloss',
@@ -250,6 +250,18 @@ describe('session selectors', () => {
         exampleTranslation: 'He knew his son had committed a crime but shielded him.',
       },
     }), true);
+  });
+
+  test('bootstrap reveal gives definition production the Continue stage without admitting other cue types', () => {
+    const production = {
+      taskId: 'task', cueId: null, cueType: 'definition_gloss' as const, text: 'to learn',
+      acceptedAnswers: [{ wordId: 'word', hanzi: '学习', traditional: null }], supplement: null,
+      bootstrapReveal: { contentId: 'content', useId: 'use', exampleId: 'example',
+        englishFrame: 'Learn a language', exampleSentence: '学习中文。', exampleTranslation: 'Study Chinese.' },
+    };
+    assert.equal(hasServedProductionReveal(production), true);
+    assert.equal(hasServedProductionReveal({ ...production, cueType: 'minimal_context' }), false);
+    assert.equal(hasServedProductionReveal({ ...production, bootstrapReveal: undefined }), false);
   });
 
   test('treats a lapsed pure cue as reinforcement without a word anchor', () => {

@@ -893,6 +893,7 @@ function buildProductionAttemptMetadata(
       acceptedWordIds: production.acceptedAnswers.map((word) => word.wordId),
       acceptedAnswers: production.acceptedAnswers.map((word) => ({ ...word })),
       supplement: production.supplement == null ? null : { ...production.supplement },
+      ...(production.bootstrapReveal ? { bootstrapReveal: { ...production.bootstrapReveal } } : {}),
       anchorWordId: item.targetWordId,
       ...(resolution.responseKind === 'no_clue' ? { responseKind: 'no_clue' } : {}),
       submittedText: resolution.submittedText,

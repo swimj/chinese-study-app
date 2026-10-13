@@ -5,8 +5,8 @@ import {
   pureCuePromotionResultV2WireSchema,
   SESSION_REFLECTION_RESULT_V7_WIRE_SCHEMA_NAME,
   sessionReflectionResultV7WireSchema,
-  STAGED_REFLECTION_DIAGNOSIS_RESULT_V3_WIRE_SCHEMA_NAME,
-  stagedReflectionDiagnosisResultV3WireSchema,
+  STAGED_REFLECTION_DIAGNOSIS_RESULT_V4_WIRE_SCHEMA_NAME,
+  stagedReflectionDiagnosisResultV4WireSchema,
 } from '../src/domain/reflection-result-schema.js';
 import type {
   PureCuePromotionBundleV3,
@@ -15,7 +15,7 @@ import type {
   SessionReflectionBundleV4,
   SessionReflectionResultV7,
   SessionReflectionResultV7Wire,
-  StagedReflectionDiagnosisResultV3Wire,
+  StagedReflectionDiagnosisResultV4Wire,
 } from '../src/domain/reflection.js';
 import {
   createLunaReflectionProvider,
@@ -152,8 +152,8 @@ const diagnosisBundle: SessionReflectionBundleV4 = {
   })),
 };
 
-const validStagedDiagnosisWireResult: StagedReflectionDiagnosisResultV3Wire = {
-  schemaVersion: 'staged_reflection_diagnosis_result.v3',
+const validStagedDiagnosisWireResult: StagedReflectionDiagnosisResultV4Wire = {
+  schemaVersion: 'staged_reflection_diagnosis_result.v4',
   itemResults: [{
     kind: 'ambiguous_pair',
     itemId: 'item-1',
@@ -546,12 +546,12 @@ describe('production Luna reflection provider', () => {
       assert.deepEqual(capture[0]!.body.response_format, {
         type: 'json_schema',
         json_schema: {
-          name: stage === 'diagnosis' ? STAGED_REFLECTION_DIAGNOSIS_RESULT_V3_WIRE_SCHEMA_NAME : PURE_CUE_PROMOTION_RESULT_V2_WIRE_SCHEMA_NAME,
+          name: stage === 'diagnosis' ? STAGED_REFLECTION_DIAGNOSIS_RESULT_V4_WIRE_SCHEMA_NAME : PURE_CUE_PROMOTION_RESULT_V2_WIRE_SCHEMA_NAME,
           strict: true,
-          schema: stage === 'diagnosis' ? stagedReflectionDiagnosisResultV3WireSchema : pureCuePromotionResultV2WireSchema,
+          schema: stage === 'diagnosis' ? stagedReflectionDiagnosisResultV4WireSchema : pureCuePromotionResultV2WireSchema,
         },
       });
-      assert.deepEqual(generated.result, wireResult);
+      assert.deepEqual(generated.result, stage === 'diagnosis' ? { ...wireResult, schemaVersion: 'staged_reflection_diagnosis_result.v3' } : wireResult);
       assert.equal(generated.metadata.modelConfig, 'gpt-6-sol-high');
       assert.equal(generated.metadata.providerModel, 'gpt-6-sol');
     }
@@ -611,9 +611,9 @@ describe('production Luna reflection provider', () => {
     assert.deepEqual(request.body.response_format, {
       type: 'json_schema',
       json_schema: {
-        name: STAGED_REFLECTION_DIAGNOSIS_RESULT_V3_WIRE_SCHEMA_NAME,
+        name: STAGED_REFLECTION_DIAGNOSIS_RESULT_V4_WIRE_SCHEMA_NAME,
         strict: true,
-        schema: stagedReflectionDiagnosisResultV3WireSchema,
+        schema: stagedReflectionDiagnosisResultV4WireSchema,
       },
     });
     const messages = request.body.messages;
@@ -644,7 +644,7 @@ describe('production Luna reflection provider', () => {
     assert.ok(diagnosisBundle.items[0]!.sourceAttemptId);
     assert.equal(diagnosisBundle.session.studyProfile, 'mandarin');
     assert.equal(String(systemMessage.content).includes('Every known visible word'), false);
-    assert.deepEqual(generated.result, validStagedDiagnosisWireResult);
+    assert.deepEqual(generated.result, { ...validStagedDiagnosisWireResult, schemaVersion: 'staged_reflection_diagnosis_result.v3' });
     assert.equal(generated.metadata.promptVersion, STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION);
   });
 
@@ -665,6 +665,10 @@ describe('production Luna reflection provider', () => {
     const capture: CapturedRequest[] = [];
     const item = structuredClone(diagnosisBundle.items[0]!);
     item.learnerRequestedReview = true;
+    item.servedCue.bootstrapReveal = {
+      contentId: 'private-content', useId: 'private-use', exampleId: 'private-example',
+      englishFrame: 'A bootstrap frame', exampleSentence: '这是目标。', exampleTranslation: 'This is a goal.',
+    };
     item.sessionNote = 'Please explain this usage.';
     item.servedCue.supplement = {
       supplementId: 'private-supplement', englishFrame: 'An everyday use',
@@ -687,6 +691,12 @@ describe('production Luna reflection provider', () => {
     assert.deepEqual(projected.items[0].servedCue.supplement, {
       englishFrame: 'An everyday use', exampleSentence: '目标', exampleTranslation: 'A goal',
     });
+    assert.deepEqual(projected.items[0].postRevealWordContent, {
+      englishFrame: 'A bootstrap frame', exampleSentence: '这是目标。', exampleTranslation: 'This is a goal.',
+    });
+    assert.equal(projected.items[0].servedCue.bootstrapReveal, undefined);
+    assert.equal(projected.items[0].servedCue.text, item.servedCue.text);
+    assert.doesNotMatch(JSON.stringify(projected), /private-content|private-use|private-example/);
     assert.equal(projected.items[0].learnerRequestedReview, true);
     assert.equal(projected.items[0].sessionNote, item.sessionNote);
     assert.deepEqual(projected.items[0].submittedWord, item.submittedWord);

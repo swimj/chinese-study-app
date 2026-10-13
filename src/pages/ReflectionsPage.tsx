@@ -60,6 +60,7 @@ type ReflectionRetryMenuOption = {
 const LUNA_REFLECTION_MODEL_CHOICE: ReflectionModelChoice = 'openai:gpt-5.6-luna-high';
 
 const REFLECTION_HANDLE_OPTIONS = [
+  { value: 'request_word_bootstrap@1', label: 'Prepare word examples' },
   { value: 'suppress_definition_production@1', label: 'Suppress definition production' },
   { value: 'create_contrast_cluster@1', label: 'Create contrast cluster (v1)' },
   { value: 'create_contrast_cluster@2', label: 'Create contrast cluster (v2)' },
@@ -450,6 +451,8 @@ function compactReflectionOperationLabel(operation: ReflectionOperation): string
       return 'Contrast';
     case 'repair_production_cue':
       return 'Cue';
+    case 'request_word_bootstrap':
+      return 'Word examples';
     case 'add_production_cue_supplement':
       return 'Context';
     case 'accept_production_alternate':
@@ -1808,7 +1811,7 @@ function ProposalCard({
                         />
                       </>
                     ) : null}
-              <ApplicationOutcome state={invocation.application.state} />
+              <ApplicationOutcome state={invocation.application.state} operation={invocation.invocation.operation} />
               {!readOnly && (invocation.application.state.kind === 'unsupported'
                 || invocation.application.state.kind === 'pending') ? (
                   <button
@@ -2262,7 +2265,7 @@ function ReviewOutcome({ disposition }: { disposition: ProposalReviewDisposition
   }
 }
 
-function ApplicationOutcome({ state }: { state: OperationApplicationState }) {
+function ApplicationOutcome({ state, operation }: { state: OperationApplicationState; operation: ReflectionOperation }) {
   switch (state.kind) {
     case 'unsupported':
       return <p className="reflection-outcome">Application unsupported: {state.reason}</p>;
@@ -2271,7 +2274,9 @@ function ApplicationOutcome({ state }: { state: OperationApplicationState }) {
     case 'applied':
       return (
         <div className="reflection-outcome">
-          <p>Applied {formatDateTime(state.appliedAt)}.</p>
+          <p>{operation.kind === 'request_word_bootstrap'
+            ? `Preparation requested ${formatDateTime(state.appliedAt)}. Examples become available after preparation completes.`
+            : `Applied ${formatDateTime(state.appliedAt)}.`}</p>
           <EffectRefs label="Caused effects" refs={state.effectRefs} />
         </div>
       );
@@ -2282,7 +2287,11 @@ function ApplicationOutcome({ state }: { state: OperationApplicationState }) {
     case 'already_satisfied':
       return (
         <div className="reflection-outcome">
-          <p>The exact postcondition was already satisfied elsewhere.</p>
+          <p>{operation.kind === 'request_word_bootstrap'
+            ? state.satisfyingEffectRefs.some((ref) => ref.type === 'word_content')
+              ? 'Existing shared word content satisfies this request.'
+              : 'Word preparation has already been requested. This does not confirm that examples are ready.'
+            : 'The exact postcondition was already satisfied elsewhere.'}</p>
           <EffectRefs label="Satisfying references" refs={state.satisfyingEffectRefs} />
         </div>
       );

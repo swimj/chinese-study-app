@@ -80,7 +80,7 @@ import {
   getCompletedReinforcementStreak,
   getActiveWordPersonalNotes,
   getPersonalNotesEditorTarget,
-  hasServedProductionCueSupplement,
+  hasServedProductionReveal,
   isProductionSessionItem,
   isPureCueReviewInReinforcement,
   isReviewInReinforcement,
@@ -996,7 +996,7 @@ export function useStudySession({
         setProductionSubmittedResponse(typedResponse);
         setProductionResponseResolution(resolution);
         setProductionUiPhase(
-          hasServedProductionCueSupplement(activeItem!.production) ? 'await-supplement' : 'await-rating',
+          hasServedProductionReveal(activeItem!.production) ? 'await-supplement' : 'await-rating',
         );
         setAnswerRevealed(true);
         return;
