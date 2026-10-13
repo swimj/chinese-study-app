@@ -95,7 +95,7 @@ provider request. Provider failures do not roll back a successfully closed
 session. Slow provider calls do not block the independent deadline cadence.
 
 See the authoritative lifecycle in
-[`session-covering-criteria.md`](../SPECS/session-covering-criteria.md#completed-session-reflection-boundary)
+[`session-progress-and-completion.md`](../SPECS/session-progress-and-completion.md#session-completion)
 and eligibility in
 [`session-reflection-generation.md`](../SPECS/session-reflection-generation.md#2-finalized-session-boundary).
 

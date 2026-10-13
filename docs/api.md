@@ -377,7 +377,7 @@ an overdue pending revision. Every operation is learner-scoped. Explicit input
 errors return `400`, missing completion returns `404`, lifecycle or revision
 conflicts return `409`, and persistence failures return `500`. Browser unload is
 not required; server recovery closes acknowledged overdue completions. See the
-[completion contract](../SPECS/session-covering-criteria.md#completed-session-reflection-boundary).
+[completion contract](../SPECS/session-progress-and-completion.md#session-completion).
 
 Accepted review production events must include their exact frozen
 `metadata.production` snapshot. The accepted-review batch transaction appends

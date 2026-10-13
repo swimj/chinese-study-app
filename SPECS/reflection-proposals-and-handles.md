@@ -21,7 +21,7 @@ or identity model.
 Related documents:
 
 - [`SPECS/study-action-model.md`](./study-action-model.md)
-- [`SPECS/session-covering-criteria.md`](./session-covering-criteria.md)
+- [`SPECS/session-progress-and-completion.md`](./session-progress-and-completion.md)
 - [`SPECS/session-reflection-generation.md`](./session-reflection-generation.md)
 - [`STABILITY_FRONTIER.md`](../STABILITY_FRONTIER.md)
 - [`notes/active/2026-07-10-session-evidence-bundle-design.md`](../notes/active/2026-07-10-session-evidence-bundle-design.md)

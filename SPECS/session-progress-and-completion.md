@@ -1,4 +1,6 @@
-# Session Covering Criteria
+# Session progress and completion
+
+<a id="session-covering-criteria"></a>
 
 This contract defines when study units count as covered, how Undo affects
 pending work, and when a finished session is durably accepted. Use it to reason

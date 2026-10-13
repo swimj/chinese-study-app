@@ -10,7 +10,7 @@ This document describes the study-action model, including current study
 actions, word-skill scheduler state, attempt-event projection, contrast
 selection, and accepted near-term production-cue behavior. It complements the
 word-lifecycle rules in `learning-review-model.md` and the in-session covering
-rules in `session-covering-criteria.md`.
+rules in `session-progress-and-completion.md`.
 
 For long-term product vision beyond the current PoC, see
 `adaptive_vocabulary_training_product_notes.md`.
@@ -24,7 +24,7 @@ impose a hidden target or member-word projection on pure cues.
 Related documents:
 
 - [`learning-review-model.md`](/Users/jw/dev/chinese-study-app/SPECS/learning-review-model.md)
-- [`session-covering-criteria.md`](/Users/jw/dev/chinese-study-app/SPECS/session-covering-criteria.md)
+- [`session-progress-and-completion.md`](session-progress-and-completion.md)
 - [`adaptive_vocabulary_training_product_notes.md`](/Users/jw/dev/chinese-study-app/SPECS/adaptive_vocabulary_training_product_notes.md)
 - [`milestone-7-8-relevance-aware-contrast-plan.md`](./archive/milestone-7-8-relevance-aware-contrast-plan.md)
 
