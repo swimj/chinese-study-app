@@ -121,6 +121,29 @@ test('recognition reuses supplement teaching only after reveal and retains dicti
     activeAnswerText: word.meaning, activeAnswerPinyin: word.pinyin,
     sessionSummary: createSessionSummary({ sessionId: 'recognition-session',
       startedAt: '2026-09-26T00:00:00.000Z', initialQueueLength: 1 }) };
+  const content = { schemaVersion: 1 as const, id: 'content',
+    word: { wordId: word.id, hanzi: word.hanzi, traditional: null, pinyin: word.pinyin },
+    uses: [
+      { id: 'a', label: 'First curated sense', notes: [], exampleIds: ['a'] },
+      { id: 'b', label: 'Second curated sense', notes: [], exampleIds: ['b'] },
+    ],
+    examples: [
+      { id: 'a', text: '他学习。', translation: 'He studies.', pronunciation: null },
+      { id: 'b', text: '她学习。', translation: 'She studies.', pronunciation: null },
+    ],
+  };
+  const bootstrap = { ...overrides, activeItem: { ...item, wordContent: content }, characterPresentation: 'traditional' as const };
+  assert.doesNotMatch(render(bootstrap), /curated sense|studies/);
+  const bootstrapHtml = render({ ...bootstrap, answerRevealed: true });
+  const primaryReveal = bootstrapHtml.split('<details class="desk-reference">')[0];
+  assert.equal((primaryReveal.match(/curated sense/g) ?? []).length, 1);
+  assert.match(primaryReveal, /production-supplement-frame/);
+  assert.match(primaryReveal, /「[他她]學習。」/);
+  assert.match(primaryReveal, /(?:He|She) studies\./);
+  assert.doesNotMatch(primaryReveal, /dictionary definition|Knowingly shielding/);
+  assert.match(bootstrapHtml, /<details class="desk-reference"><summary>Word reference/);
+  assert.match(bootstrapHtml, /First curated sense/);
+  assert.match(bootstrapHtml, /Second curated sense/);
   assert.doesNotMatch(render(overrides), /Knowingly shielding|He shielded|Supplement quality/);
   const revealed = render({ ...overrides, answerRevealed: true });
   assert.match(revealed, /Knowingly shielding someone/);

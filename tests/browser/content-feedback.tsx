@@ -1,5 +1,6 @@
 // Run with npm run dev:frontend, then open /tests/browser/content-feedback.html.
 // Add ?fallback=1 for the definition-fallback snapshot, or ?preview=1 to explore.
+// Add &bootstrap=1&recognition=1 for the daily source reveal.
 // Add &supplement=1 to check supplements, or &recognition=1 to check Reveal answer.
 // Real controller, HomePage, and retained card; all HTTP is intercepted here.
 import { createRoot } from 'react-dom/client';
@@ -72,6 +73,23 @@ let commits = 0;
 let ratingWrites = 0;
 let finishManagement: (() => void) | null = null;
 let encounterTargets: ContentQualityTarget[] = [];
+if (query.has('bootstrap')) {
+  const first = payload.buckets.review[0]!;
+  if (first.itemType === 'pure_cue_production') throw new Error('Expected word fixture');
+  first.wordContent = {
+    schemaVersion: 1, id: 'bootstrap-preview',
+    word: { wordId: 'namely', hanzi: '即', traditional: null, pinyin: 'jí' },
+    uses: [
+      { id: 'namely', label: 'Namely: specifying exactly who or what you mean', notes: [], exampleIds: ['capital'] },
+      { id: 'immediate', label: 'Immediately: something happens as soon as another action finishes', notes: [], exampleIds: ['reply'] },
+    ],
+    examples: [
+      { id: 'capital', text: '他出生于中国的首都，即北京。', translation: 'He was born in the capital of China, namely Beijing.', pronunciation: null },
+      { id: 'reply', text: '收到消息后，请即回复。', translation: 'Please reply immediately after receiving the message.', pronunciation: null },
+    ],
+  };
+}
+
 let previewCompletion: SessionCompletion | null = null;
 window.fetch = async (input, init) => {
   const url = String(input);
