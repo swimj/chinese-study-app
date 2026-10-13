@@ -12,7 +12,7 @@ progress. [Generation and publication](word-content-generation.md) produce the
 shared material; [data representation](word-content-representation.md) explains
 its source documents, packages, and exercise snapshots. The
 [feature contract](../SPECS/word-bootstrap-and-introduction.md),
-[covering contract](../SPECS/session-covering-criteria.md), and
+[covering contract](../SPECS/session-progress-and-completion.md), and
 [learning/review model](../SPECS/learning-review-model.md) define the intended
 learning rules that this implementation realizes.
 
@@ -121,7 +121,7 @@ Only completing both recall streaks covers the word through the deferred
 commit/Undo path. Finishing the teaching beats alone grants no study credit.
 The session walkthrough has no skip-to-cards control or Escape bypass; normal
 session controls allow leaving without completing teaching. The
-[covering contract](../SPECS/session-covering-criteria.md#unstudied-word-covering)
+[covering contract](../SPECS/session-progress-and-completion.md#unstudied-word-covering)
 defines that distinction and the effects of the durable first-study commit.
 
 ## Practice and the handoff to review
@@ -142,7 +142,7 @@ Practice uses the existing coverage and first-try success rules. Three
 consecutive successful study sessions graduate the word; calendar-day adjacency
 is irrelevant. Learning commits retain their existing word-level success result,
 with no durable per-rehearsal attempt ledger. The
-[learning covering rules](../SPECS/session-covering-criteria.md#learning-word-covering)
+[learning covering rules](../SPECS/session-progress-and-completion.md#learning-word-covering)
 and [graduation model](../SPECS/learning-review-model.md) own those promises.
 
 Ordinary review uses separately authored bootstrap-backed cues and its existing

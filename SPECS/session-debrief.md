@@ -122,7 +122,7 @@ Completing the last session unit immediately opens a compact completion screen
 with a deterministic word report. After pending completion
 is acknowledged, a fixed 15-second server deadline preserves final Undo. The
 completion lifecycle, cancellation race, early closure, and navigation rules are
-owned by [`session-covering-criteria.md`](session-covering-criteria.md#completed-session-reflection-boundary).
+owned by [`session-progress-and-completion.md`](session-progress-and-completion.md#session-completion).
 No separate confirmation is needed to enter this screen.
 
 The report shows distinct new words studied (first-study units that entered

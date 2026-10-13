@@ -9,7 +9,7 @@ Status: draft long-term roadmap, model-generated first cut. Not an implementatio
 - Long-term vision: [`docs/vision/agentic_adaptive_language_learning_vision.md`](../docs/vision/agentic_adaptive_language_learning_vision.md)
 - First product focus (milestone-1 sketch): [`docs/vision/initial_agentic_srs_product_focus.md`](../docs/vision/initial_agentic_srs_product_focus.md)
 - Hosted beta plan (folded into this roadmap): [`PLANS/beta-web-service-plan.md`](./beta-web-service-plan.md)
-- Canonical substrate specs: [`SPECS/learning-review-model.md`](../SPECS/learning-review-model.md), [`SPECS/session-covering-criteria.md`](../SPECS/session-covering-criteria.md), [`SPECS/study-action-model.md`](../SPECS/study-action-model.md)
+- Canonical substrate specs: [`SPECS/learning-review-model.md`](../SPECS/learning-review-model.md), [`SPECS/session-progress-and-completion.md`](../SPECS/session-progress-and-completion.md), [`SPECS/study-action-model.md`](../SPECS/study-action-model.md)
 
 This document captures the milestone sequencing agreed in roadmap discussion. Vision-level adjustments made directly to the `docs/vision/` docs; this file holds the milestone-level plan.
 

@@ -5,7 +5,7 @@ type: research
 created: 2026-09-19
 retire-when: remaining authoring and learning-transition questions are resolved and exploration history is no longer needed
 related:
-  - SPECS/session-covering-criteria.md
+  - SPECS/session-progress-and-completion.md
   - SPECS/learning-review-model.md
   - SPECS/study-action-model.md
   - SPECS/session-reflection-generation.md

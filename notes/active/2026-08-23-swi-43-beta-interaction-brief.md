@@ -7,7 +7,7 @@ retire-when: SWI-43 is dispositioned and its first implementation slice is accep
 related:
   - STABILITY_FRONTIER.md
   - SPECS/frontend-architecture-map.md
-  - SPECS/session-covering-criteria.md
+  - SPECS/session-progress-and-completion.md
   - SPECS/study-action-model.md
   - SPECS/session-reflection-generation.md
   - SPECS/reflection-proposals-and-handles.md

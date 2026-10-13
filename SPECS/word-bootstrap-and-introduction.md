@@ -24,7 +24,7 @@ This spec owns content boundaries, teaching intent, and the relationship to
 review reflection. It does not replace current lifecycle, covering, scheduling,
 Undo, or commit rules. Until explicitly revised, those remain in
 [learning-review-model](learning-review-model.md),
-[session-covering-criteria](session-covering-criteria.md), and
+[session-progress-and-completion](session-progress-and-completion.md), and
 [study-action-model](study-action-model.md). Existing review and pure-cue
 contracts remain authoritative for their exercises.
 

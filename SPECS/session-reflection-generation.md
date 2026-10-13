@@ -12,7 +12,7 @@ application, and effect attribution are owned by
 
 Related documents:
 
-- [`session-covering-criteria.md`](./session-covering-criteria.md)
+- [`session-progress-and-completion.md`](./session-progress-and-completion.md)
 - [`study-action-model.md`](./study-action-model.md)
 - [`reflection-proposals-and-handles.md`](./reflection-proposals-and-handles.md)
 - [`docs/reflection-frontend-architecture.md`](../docs/reflection-frontend-architecture.md)
@@ -46,7 +46,7 @@ Completing the last session unit immediately opens the completion screen and
 saves a pending completion. The backend acknowledges a fixed 15-second final
 Undo deadline. Ordinary active/draining leave does not finish a session.
 The completion lifecycle is defined in
-[`session-covering-criteria.md`](./session-covering-criteria.md#completed-session-reflection-boundary).
+[`session-progress-and-completion.md`](./session-progress-and-completion.md#session-completion).
 
 Pending completion preserves the final deferred action and qualifying reflection
 supplement without accepting the study outcome. Undo must cancel it before the

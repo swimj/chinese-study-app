@@ -12,7 +12,7 @@ Related documents:
 
 - [`study-action-model.md`](/Users/jw/dev/chinese-study-app/SPECS/study-action-model.md)
 - [`learning-review-model.md`](/Users/jw/dev/chinese-study-app/SPECS/learning-review-model.md)
-- [`session-covering-criteria.md`](/Users/jw/dev/chinese-study-app/SPECS/session-covering-criteria.md)
+- [`session-progress-and-completion.md`](../session-progress-and-completion.md)
 - [`milestone-7-8-implementation-slices.md`](./milestone-7-8-implementation-slices.md)
 
 ## Goal

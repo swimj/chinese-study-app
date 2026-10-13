@@ -9,7 +9,7 @@ related:
   - PLANS/agentic-roadmap-glm-5.2.md (M0 code-verification)
   - notes/active/2026-07-06-session-reflection-workflow.md
   - SPECS/study-action-model.md
-  - SPECS/session-covering-criteria.md
+  - SPECS/session-progress-and-completion.md
 
 ## Purpose
 

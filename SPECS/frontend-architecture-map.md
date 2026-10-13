@@ -5,7 +5,7 @@ ownership, controller wiring, and session interaction handling. Product behavior
 is defined by the canonical specs, especially:
 
 - `SPECS/learning-review-model.md`
-- `SPECS/session-covering-criteria.md`
+- `SPECS/session-progress-and-completion.md`
 - `SPECS/study-action-model.md`
 - `SPECS/reflection-proposals-and-handles.md`
 
