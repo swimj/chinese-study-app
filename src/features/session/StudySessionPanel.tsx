@@ -115,6 +115,7 @@ export function StudySessionPanel(props: StudySessionPanelProps) {
       completedReinforcementStreak={props.completedReinforcementStreak}
       hasUndo={props.hasUndo}
       submittingRating={props.submittingRating}
+      confirmingSessionAction={props.confirmingSessionAction}
       contentRatingSaving={props.contentRatingSaving}
       shortcutGuideOpen={props.shortcutGuideOpen}
       onEndSession={props.onEndSession}
@@ -160,6 +161,7 @@ function StudySessionPanelContent({
   queuedCount,
   hasUndo,
   submittingRating,
+  confirmingSessionAction = false,
   contentRatingSaving = false,
   personalNotesEditorOpen,
   personalNotesEditorSaving,
@@ -245,6 +247,7 @@ function StudySessionPanelContent({
   queuedCount: number;
   hasUndo: boolean;
   submittingRating: ReviewRating | null;
+  confirmingSessionAction?: boolean;
   contentRatingSaving?: boolean;
   personalNotesEditorOpen: boolean;
   personalNotesEditorSaving: boolean;
@@ -330,7 +333,7 @@ function StudySessionPanelContent({
   );
   const showProductionSupplementAside =
     answerRevealed && hasServedProductionCueSupplement(activeItem?.production);
-  const sessionInteractionPending = contentRatingSaving || submittingRating !== null;
+  const sessionInteractionPending = confirmingSessionAction || contentRatingSaving || submittingRating !== null;
   const qualityHotkeysActive = !personalNotesEditorOpen && !shortcutGuideOpen && !sessionInteractionPending && !studyManagementSubmitting;
   function qualityControls(target: ContentQualityTarget | null, actionId: string, count: number, label: string, hotkeys = true, onRatingChange?: (rating: 'up' | 'down' | null) => void) {
     if (completionGate || !target || !sessionSummary) return null;
@@ -391,7 +394,7 @@ function StudySessionPanelContent({
           <ShortcutHint shortcut={sessionFinalization.kind === 'finalizing' ? null : 'Enter'} />
         </button>
         <UndoButton hasUndo={hasUndo && sessionFinalization.kind === 'unfinalized'}
-          submittingRating={submittingRating} contentRatingSaving={contentRatingSaving} personalNotesEditorOpen={personalNotesEditorOpen}
+          submittingRating={submittingRating} contentRatingSaving={contentRatingSaving} transitionPending={confirmingSessionAction} personalNotesEditorOpen={personalNotesEditorOpen}
           onUndoLastRating={onUndoLastRating} />
         <KeyboardGuideButton onClick={onOpenShortcutGuide} />
       </SessionActionSection>
@@ -469,13 +472,13 @@ function StudySessionPanelContent({
             completionActions
           ) : (<div className="session-action-bar">
             <SessionActionSection>
-              <button type="button" onClick={onContinueAfterAutoForgot} disabled={personalNotesEditorOpen || sessionInteractionPending || studyManagementSubmitting}>
+              <button type="button" className={confirmingSessionAction ? 'is-confirming-action' : undefined} onClick={onContinueAfterAutoForgot} disabled={personalNotesEditorOpen || sessionInteractionPending || studyManagementSubmitting}>
                 Continue
                 <ShortcutHint shortcut={shortcutFor(primaryAction, 'continue_after_auto_forgot')} />
               </button>
               <UndoButton
                 hasUndo={hasUndo}
-                submittingRating={submittingRating} contentRatingSaving={contentRatingSaving}
+                submittingRating={submittingRating} contentRatingSaving={contentRatingSaving} transitionPending={confirmingSessionAction}
                 personalNotesEditorOpen={personalNotesEditorOpen}
                 onUndoLastRating={onUndoLastRating}
               />
@@ -544,13 +547,13 @@ function StudySessionPanelContent({
             completionActions
           ) : (<div className="session-action-bar">
             <SessionActionSection>
-              <button type="button" onClick={onContinueAfterAutoForgot} disabled={personalNotesEditorOpen || sessionInteractionPending || studyManagementSubmitting}>
+              <button type="button" className={confirmingSessionAction ? 'is-confirming-action' : undefined} onClick={onContinueAfterAutoForgot} disabled={personalNotesEditorOpen || sessionInteractionPending || studyManagementSubmitting}>
                 Continue
                 <ShortcutHint shortcut={shortcutFor(primaryAction, 'continue_after_auto_forgot')} />
               </button>
               <UndoButton
                 hasUndo={hasUndo}
-                submittingRating={submittingRating} contentRatingSaving={contentRatingSaving}
+                submittingRating={submittingRating} contentRatingSaving={contentRatingSaving} transitionPending={confirmingSessionAction}
                 personalNotesEditorOpen={personalNotesEditorOpen}
                 onUndoLastRating={onUndoLastRating}
               />
@@ -591,13 +594,13 @@ function StudySessionPanelContent({
             completionActions
           ) : (<div className="session-action-bar">
             <SessionActionSection>
-              <button type="button" onClick={onContinueAfterAutoContrastForgot} disabled={personalNotesEditorOpen || sessionInteractionPending || studyManagementSubmitting}>
+              <button type="button" className={confirmingSessionAction ? 'is-confirming-action' : undefined} onClick={onContinueAfterAutoContrastForgot} disabled={personalNotesEditorOpen || sessionInteractionPending || studyManagementSubmitting}>
                 Continue
                 <ShortcutHint shortcut={shortcutFor(primaryAction, 'continue_after_auto_forgot')} />
               </button>
               <UndoButton
                 hasUndo={hasUndo}
-                submittingRating={submittingRating} contentRatingSaving={contentRatingSaving}
+                submittingRating={submittingRating} contentRatingSaving={contentRatingSaving} transitionPending={confirmingSessionAction}
                 personalNotesEditorOpen={personalNotesEditorOpen}
                 onUndoLastRating={onUndoLastRating}
               />
@@ -663,7 +666,7 @@ function StudySessionPanelContent({
               </button>
               <UndoButton
                 hasUndo={hasUndo}
-                submittingRating={submittingRating} contentRatingSaving={contentRatingSaving}
+                submittingRating={submittingRating} contentRatingSaving={contentRatingSaving} transitionPending={confirmingSessionAction}
                 personalNotesEditorOpen={personalNotesEditorOpen}
                 onUndoLastRating={onUndoLastRating}
               />
@@ -673,7 +676,7 @@ function StudySessionPanelContent({
                 activeItem={null}
                 activeWord={activeWord}
                 personalNotesEditorSaving={personalNotesEditorSaving}
-                studyManagementSubmitting={studyManagementSubmitting || contentRatingSaving}
+                studyManagementSubmitting={studyManagementSubmitting || sessionInteractionPending}
                 onDismissCurrentWord={onDismissCurrentWord}
                 onManageStudyAction={onManageStudyAction}
                 onOpenPersonalNotesEditor={onOpenPersonalNotesEditor}
@@ -762,7 +765,7 @@ function StudySessionPanelContent({
                     <button
                       key={option.value}
                       type="button"
-                      className={`rating-button${(submittingRating === null ? option.isDefault : submittingRating === option.value) ? ' is-highlighted' : ''}${submittingRating === option.value ? ' is-submitting' : ''}`}
+                      className={`rating-button${(submittingRating === null ? option.isDefault : submittingRating === option.value) ? ' is-highlighted' : ''}${submittingRating === option.value ? ' is-submitting is-confirming-action' : ''}`}
                       title={option.note}
                       onClick={() => onRate(option.value, { restoreUi: 'production-input' })}
                       disabled={completionGate || sessionInteractionPending || personalNotesEditorOpen || studyManagementSubmitting}
@@ -799,7 +802,7 @@ function StudySessionPanelContent({
               {skipReinforcementButton}
               <UndoButton
                 hasUndo={hasUndo}
-                submittingRating={submittingRating} contentRatingSaving={contentRatingSaving}
+                submittingRating={submittingRating} contentRatingSaving={contentRatingSaving} transitionPending={confirmingSessionAction}
                 personalNotesEditorOpen={personalNotesEditorOpen}
                 onUndoLastRating={onUndoLastRating}
               />
@@ -825,7 +828,7 @@ function StudySessionPanelContent({
             <SessionActionSection>
               <UndoButton
                 hasUndo={hasUndo}
-                submittingRating={submittingRating} contentRatingSaving={contentRatingSaving}
+                submittingRating={submittingRating} contentRatingSaving={contentRatingSaving} transitionPending={confirmingSessionAction}
                 personalNotesEditorOpen={personalNotesEditorOpen}
                 onUndoLastRating={onUndoLastRating}
               />
@@ -1024,6 +1027,7 @@ function StudySessionPanelContent({
               ) : productionAwaitingSupplement ? (
                 <button
                   type="button"
+                  className={confirmingSessionAction ? 'is-confirming-action' : undefined}
                   onClick={onContinueAfterProductionSupplement}
                   disabled={personalNotesEditorOpen || sessionInteractionPending || studyManagementSubmitting}
                 >
@@ -1036,7 +1040,7 @@ function StudySessionPanelContent({
                     <button
                     key={option.value}
                     type="button"
-                    className={`rating-button${(submittingRating === null ? option.isDefault : submittingRating === option.value) ? ' is-highlighted' : ''}${submittingRating === option.value ? ' is-submitting' : ''}`}
+                    className={`rating-button${(submittingRating === null ? option.isDefault : submittingRating === option.value) ? ' is-highlighted' : ''}${submittingRating === option.value ? ' is-submitting is-confirming-action' : ''}`}
                     title={option.note}
                     onClick={() =>
                         onRate(option.value, {
@@ -1079,7 +1083,7 @@ function StudySessionPanelContent({
                   </button>
                 </div>
               ) : (
-                <button type="button" onClick={onRevealAnswer} disabled={personalNotesEditorOpen || sessionInteractionPending || studyManagementSubmitting}>
+                <button type="button" className={confirmingSessionAction ? 'is-confirming-action' : undefined} onClick={onRevealAnswer} disabled={personalNotesEditorOpen || sessionInteractionPending || studyManagementSubmitting}>
                   Reveal answer
                   <ShortcutHint shortcut={shortcutFor(primaryAction, 'reveal')} />
                 </button>
@@ -1087,7 +1091,7 @@ function StudySessionPanelContent({
               {skipReinforcementButton}
               <UndoButton
                 hasUndo={hasUndo}
-                submittingRating={submittingRating} contentRatingSaving={contentRatingSaving}
+                submittingRating={submittingRating} contentRatingSaving={contentRatingSaving} transitionPending={confirmingSessionAction}
                 personalNotesEditorOpen={personalNotesEditorOpen}
                 onUndoLastRating={onUndoLastRating}
               />
@@ -1110,7 +1114,7 @@ function StudySessionPanelContent({
                 activeItem={activeItem}
                 activeWord={activeWord}
                 personalNotesEditorSaving={personalNotesEditorSaving}
-                studyManagementSubmitting={studyManagementSubmitting || contentRatingSaving}
+                studyManagementSubmitting={studyManagementSubmitting || sessionInteractionPending}
                 onDismissCurrentWord={onDismissCurrentWord}
                 onManageStudyAction={onManageStudyAction}
                 onOpenPersonalNotesEditor={onOpenPersonalNotesEditor}
@@ -1323,6 +1327,7 @@ function ContrastSelectionDrill({
 }
 
 function UndoButton({
+  transitionPending = false,
   hasUndo,
   submittingRating,
   contentRatingSaving = false,
@@ -1330,6 +1335,7 @@ function UndoButton({
   onUndoLastRating,
 }: {
   hasUndo: boolean;
+  transitionPending?: boolean;
   submittingRating: ReviewRating | null;
   contentRatingSaving?: boolean;
   personalNotesEditorOpen: boolean;
@@ -1344,7 +1350,7 @@ function UndoButton({
       type="button"
       className="secondary-button"
       onClick={onUndoLastRating}
-      disabled={contentRatingSaving || submittingRating !== null || personalNotesEditorOpen}
+      disabled={transitionPending || contentRatingSaving || submittingRating !== null || personalNotesEditorOpen}
       aria-label="Undo last rating"
     >
       Undo

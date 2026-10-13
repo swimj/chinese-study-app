@@ -63,6 +63,8 @@ export const SessionDesk = forwardRef<SessionDeskHandle, {
         turn.className = 'desk-departure-turn';
         const front = card.cloneNode(true) as HTMLElement;
         front.querySelectorAll('[id]').forEach((node) => node.removeAttribute('id'));
+        // The action confirmation has already played before departure.
+        front.querySelectorAll('.is-confirming-action').forEach((node) => node.classList.remove('is-confirming-action'));
         front.removeAttribute('id');
         front.classList.add('desk-departure-front');
         const clonedScroll = front.querySelector('.session-card-scroll');

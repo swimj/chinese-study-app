@@ -73,6 +73,7 @@ export function HomePage({
   completedReinforcementStreak,
   hasUndo,
   submittingRating,
+  confirmingSessionAction = false,
   contentRatingSaving = false,
   personalNotesEditorOpen,
   personalNotesEditorSaving,
@@ -180,6 +181,7 @@ export function HomePage({
   completedReinforcementStreak: number | null;
   hasUndo: boolean;
   submittingRating: ReviewRating | null;
+  confirmingSessionAction?: boolean;
   contentRatingSaving?: boolean;
   personalNotesEditorOpen: boolean;
   personalNotesEditorSaving: boolean;
@@ -334,6 +336,7 @@ export function HomePage({
             queuedCount={displayedSessionItemCount}
             hasUndo={hasUndo}
             submittingRating={submittingRating}
+            confirmingSessionAction={confirmingSessionAction}
             contentRatingSaving={contentRatingSaving}
             personalNotesEditorOpen={personalNotesEditorOpen}
             personalNotesEditorSaving={personalNotesEditorSaving}
