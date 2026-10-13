@@ -1,4 +1,6 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
+import { TimestampDisplayControl } from './TimestampDisplayControl';
+import { createTimestampFormatter, defaultTimestampDisplay, timestampDisplayLabel, type TimestampDisplay } from './operator-timestamps';
 import type { ModelInvocationRow } from '../domain/model-invocations';
 import { fetchModelInvocations } from '../services/api';
 import { InvocationColumnDialog, INVOCATION_COLUMNS, columnHasFilter } from './InvocationColumnDialog';
@@ -10,6 +12,7 @@ import {
 } from './model-invocation-presentation';
 
 export function ModelInvocationsPanel() {
+  const [timestampDisplay, setTimestampDisplay] = useState(defaultTimestampDisplay);
   const [filters, setFilters] = useState(defaultInvocationFilters);
   const [rows, setRows] = useState<ModelInvocationRow[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -62,10 +65,11 @@ export function ModelInvocationsPanel() {
     const filtered = columnHasFilter(item.key, filters);
     const grouped = groupBy === item.group;
     const sorted = sortBy === item.key;
+    const label = item.key === 'timestamp' ? `Timestamp (${timestampDisplayLabel(timestampDisplay)})` : item.label;
     return <th key={item.key} scope="col" aria-sort={sorted ? direction === 'asc' ? 'ascending' : 'descending' : 'none'}>
       <button className="operator-column-button" type="button" aria-haspopup="dialog" aria-expanded={activeColumn === item.key}
-        onClick={() => setActiveColumn(item.key)} aria-label={`${item.label}: sort, group or filter${filtered ? '; filter active' : ''}${grouped ? '; grouped' : ''}`}>
-        <span>{item.label}{sorted ? direction === 'asc' ? ' ↑' : ' ↓' : ' ▾'}</span>
+        onClick={() => setActiveColumn(item.key)} aria-label={`${label}: sort, group or filter${filtered ? '; filter active' : ''}${grouped ? '; grouped' : ''}`}>
+        <span>{label}{sorted ? direction === 'asc' ? ' ↑' : ' ↓' : ' ▾'}</span>
         {(filtered || grouped) && <span className="operator-column-indicators">{filtered && 'Filtered'}{filtered && grouped && ' · '}{grouped && 'Grouped'}</span>}
       </button>
     </th>;
@@ -95,13 +99,14 @@ export function ModelInvocationsPanel() {
         </table>
       </div>
       <div className="operator-ledger-controls">
+        <TimestampDisplayControl value={timestampDisplay} onChange={setTimestampDisplay} />
         <label className="operator-ledger-checkbox"><input type="checkbox" checked={shadeFailures} onChange={(event) => setShadeFailures(event.target.checked)} />Shade failures</label>
         <button type="button" className="secondary-button" onClick={() => changeFilters({ from: '', to: '', discrete: {}, numeric: {} })}>Clear all filters</button>
         {groupBy && <button type="button" className="secondary-button" onClick={() => changeGroup('')}>Remove grouping</button>}
       </div>
       <p className="notes">Use column headers to sort, group or filter. Dates: {filters.from || 'beginning'} through {filters.to || 'latest'} (UTC).</p>
       <div className="operator-usage-table-wrap" tabIndex={0} role="region" aria-label="Model invocation results">
-        <ModelInvocationTable rows={ordered.slice(0, visibleCount)} headers={headers} groupBy={groupBy} allSelectedRows={selected} shadeFailures={shadeFailures} />
+        <ModelInvocationTable rows={ordered.slice(0, visibleCount)} headers={headers} groupBy={groupBy} allSelectedRows={selected} shadeFailures={shadeFailures} timestampDisplay={timestampDisplay} />
       </div>
       {selected.length === 0 && <p>No model invocations match these filters.</p>}
       <div ref={sentinel} className="operator-ledger-load-more">
@@ -114,9 +119,11 @@ export function ModelInvocationsPanel() {
   </section>;
 }
 
-export function ModelInvocationTable({ rows, headers, groupBy = '', allSelectedRows = rows, shadeFailures = false }: {
-  rows: ModelInvocationRow[]; headers?: ReactNode; groupBy?: InvocationGroup | ''; allSelectedRows?: ModelInvocationRow[]; shadeFailures?: boolean;
+export function ModelInvocationTable({ rows, headers, groupBy = '', allSelectedRows = rows, shadeFailures = false, timestampDisplay = defaultTimestampDisplay }: {
+  rows: ModelInvocationRow[]; headers?: ReactNode; groupBy?: InvocationGroup | ''; allSelectedRows?: ModelInvocationRow[]; shadeFailures?: boolean; timestampDisplay?: TimestampDisplay;
 }) {
+  const formatTimestamp = createTimestampFormatter(timestampDisplay);
+  const zoneLabel = timestampDisplayLabel(timestampDisplay);
   const groupSummaries = new Map<string, ReturnType<typeof summarizeInvocations>>();
   if (groupBy) {
     const grouped = new Map<string, ModelInvocationRow[]>();
@@ -134,8 +141,8 @@ export function ModelInvocationTable({ rows, headers, groupBy = '', allSelectedR
     return groupBy ? invocationGroupKey(row, groupBy).replaceAll('_', ' ') : '';
   }
   return <table className="operator-usage-table operator-ledger-table">
-    <caption>Model calls · timestamps in UTC{groupBy ? ` · grouped by ${INVOCATION_COLUMNS.find((item) => item.group === groupBy)?.label.toLowerCase()}` : ''}</caption>
-    <thead><tr>{headers ?? INVOCATION_COLUMNS.map((column) => <th key={column.key} scope="col">{column.label}</th>)}</tr></thead>
+    <caption>Model calls · timestamps in {zoneLabel}{groupBy ? ` · grouped by ${INVOCATION_COLUMNS.find((item) => item.group === groupBy)?.label.toLowerCase()}` : ''}</caption>
+    <thead><tr>{headers ?? INVOCATION_COLUMNS.map((column) => <th key={column.key} scope="col">{column.key === 'timestamp' ? `Timestamp (${zoneLabel})` : column.label}</th>)}</tr></thead>
     <tbody>{rows.map((row, index) => {
       const key = groupBy ? invocationGroupKey(row, groupBy) : '';
       const summary = groupSummaries.get(key);
@@ -145,7 +152,7 @@ export function ModelInvocationTable({ rows, headers, groupBy = '', allSelectedR
           {summary.count} calls · {summary.unknownCount === summary.count ? 'Unknown' : formatInvocationSpend(summary.knownSpendUsd)} known spend · {summary.unknownCount} unknown spend
         </span></th></tr>}
         <tr className={shadeFailures && isFailedInvocation(row) ? 'operator-ledger-failure' : undefined}>
-          <td><time dateTime={row.timestamp}>{row.timestamp.replace('T', ' ').replace(/\.\d+Z$/, '').replace(/Z$/, '')}</time></td>
+          <td><time dateTime={row.timestamp}>{formatTimestamp(row.timestamp)}</time></td>
           <td>{row.model}<span className="operator-ledger-secondary">{row.provider}</span></td>
           <td>{row.invocationType.replaceAll('_', ' ')}</td>
           <td>{formatInvocationSpend(row.spendUsd)}{row.spendUsd !== null && <span className="operator-ledger-secondary">{row.spendSource}</span>}</td>

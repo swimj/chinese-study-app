@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { TimestampDisplayControl } from './TimestampDisplayControl';
+import { createTimestampFormatter, defaultTimestampDisplay, timestampDisplayLabel } from './operator-timestamps';
 import {
   CONTENT_QUALITY_KINDS,
   type ContentQualityBreakdown,
@@ -39,6 +41,9 @@ function percent(numerator: number, denominator: number): string {
 }
 
 export function ContentQualityPanel() {
+  const [timestampDisplay, setTimestampDisplay] = useState(defaultTimestampDisplay);
+  const formatTimestamp = createTimestampFormatter(timestampDisplay);
+  const zoneLabel = timestampDisplayLabel(timestampDisplay);
   const [improvementSelection, setImprovementSelection] = useState<ImprovementSelection | null>(null);
   const [payload, setPayload] = useState<Awaited<ReturnType<typeof fetchContentQualityRatingLedger>> | null>(null);
   const [loading, setLoading] = useState(true);
@@ -116,6 +121,7 @@ export function ContentQualityPanel() {
     {loading && <p role="status">Loading content quality…</p>}
     {error && <p role="alert">{error} Use Refresh ratings to retry.</p>}
     {payload && <>
+      <div className="operator-ledger-controls"><TimestampDisplayControl value={timestampDisplay} onChange={setTimestampDisplay} /></div>
       <div className="operator-usage-tiles"><QualityMetric label="Ratings matching filters" value={String(selectedRatings.length)} /></div>
       <div className="operator-usage-table-wrap">
         <table className="operator-usage-table content-quality-table">
@@ -123,7 +129,7 @@ export function ContentQualityPanel() {
             <option value="ratings">Latest ratings</option><option value="snapshot">Aggregate by snapshot</option>
           </select></label></caption>
           <thead><tr>
-            <th scope="col" aria-sort={sortBy === 'updatedAt' ? direction === 'asc' ? 'ascending' : 'descending' : 'none'}><SortButton label={view === 'ratings' ? 'Changed (UTC)' : 'Latest rating (UTC)'} active={sortBy === 'updatedAt'} direction={direction} onClick={() => toggleSort('updatedAt', sortBy, direction, setSortBy, setDirection)} /></th>
+            <th scope="col" aria-sort={sortBy === 'updatedAt' ? direction === 'asc' ? 'ascending' : 'descending' : 'none'}><SortButton label={`${view === 'ratings' ? 'Changed' : 'Latest rating'} (${zoneLabel})`} active={sortBy === 'updatedAt'} direction={direction} onClick={() => toggleSort('updatedAt', sortBy, direction, setSortBy, setDirection)} /></th>
             <th scope="col" aria-sort={sortBy === 'title' ? direction === 'asc' ? 'ascending' : 'descending' : 'none'}><SortButton label="Item" active={sortBy === 'title'} direction={direction} onClick={() => toggleSort('title', sortBy, direction, setSortBy, setDirection)} /></th>
             <th scope="col" aria-sort={sortBy === 'kind' ? direction === 'asc' ? 'ascending' : 'descending' : 'none'}><SortButton label="Type" active={sortBy === 'kind'} direction={direction} onClick={() => toggleSort('kind', sortBy, direction, setSortBy, setDirection)} /></th>
             {view === 'ratings' ? <th scope="col" aria-sort={sortBy === 'rating' ? direction === 'asc' ? 'ascending' : 'descending' : 'none'}><SortButton label="Vote" active={sortBy === 'rating'} direction={direction} onClick={() => toggleSort('rating', sortBy, direction, setSortBy, setDirection)} /></th> : <>
@@ -144,8 +150,8 @@ export function ContentQualityPanel() {
             </select></td> : <td colSpan={3}><label className="content-quality-visually-hidden" htmlFor="quality-vote-filter">Filter ratings included in aggregate</label><select id="quality-vote-filter" value={rating} onChange={(event) => setRating(event.target.value as 'up' | 'down' | '')}>
               <option value="">All votes</option><option value="up">Helpful only</option><option value="down">Not helpful only</option>
             </select><span className="content-quality-filter-note">Filter which votes are counted.</span></td>}
-          </tr>{view === 'ratings' ? orderedRatings.map((entry, index) => <RatingRow key={`${entry.contentKey}:${entry.updatedAt}:${index}`} entry={entry} onImprove={improve} />)
-            : orderedSnapshots.map((item) => <SnapshotRow key={item.contentKey} item={item} onImprove={improve} />)}</tbody>
+          </tr>{view === 'ratings' ? orderedRatings.map((entry, index) => <RatingRow key={`${entry.contentKey}:${entry.updatedAt}:${index}`} entry={entry} onImprove={improve} formatTimestamp={formatTimestamp} />)
+            : orderedSnapshots.map((item) => <SnapshotRow key={item.contentKey} item={item} onImprove={improve} formatTimestamp={formatTimestamp} />)}</tbody>
         </table>
       </div>
       {view === 'ratings' ? orderedRatings.length === 0 && <p>No current ratings match these filters.</p> : orderedSnapshots.length === 0 && <p>No rated snapshots match these filters.</p>}
@@ -173,10 +179,10 @@ function SortButton({ label, active, direction, onClick }: { label: string; acti
   return <button type="button" className="operator-column-button" onClick={onClick}>{label}{active ? direction === 'asc' ? ' ↑' : ' ↓' : ' ▾'}</button>;
 }
 
-function RatingRow({ entry, onImprove }: { entry: ContentQualityRatingEntry; onImprove: (item: Pick<ContentQualityRatingEntry, 'kind' | 'sourceId' | 'contentKey'>) => void }) {
+function RatingRow({ entry, onImprove, formatTimestamp }: { formatTimestamp: (timestamp: string) => string; entry: ContentQualityRatingEntry; onImprove: (item: Pick<ContentQualityRatingEntry, 'kind' | 'sourceId' | 'contentKey'>) => void }) {
   const textBlocks = contentQualityTextBlocks(entry.content);
   return <tr>
-    <td><time dateTime={entry.updatedAt}>{entry.updatedAt.replace('T', ' ').replace(/\.\d+Z$/, '').replace(/Z$/, '')}</time></td>
+    <td><time dateTime={entry.updatedAt}>{formatTimestamp(entry.updatedAt)}</time></td>
     <th scope="row" className="content-quality-title"><details><summary>{entry.title}</summary>
       <dl className="content-quality-readable">{textBlocks.map((block, index) => <div key={index}><dt>{block.label}</dt><dd>{block.text}</dd></div>)}</dl>
       {entry.kind !== 'definition_fallback' && <button type="button" className="secondary-button" onClick={() => onImprove(entry)}>Improve this item</button>}
@@ -186,9 +192,9 @@ function RatingRow({ entry, onImprove }: { entry: ContentQualityRatingEntry; onI
   </tr>;
 }
 
-function SnapshotRow({ item, onImprove }: { item: ContentQualityRatedSnapshot; onImprove: (item: Pick<ContentQualityRatingEntry, 'kind' | 'sourceId' | 'contentKey'>) => void }) {
+function SnapshotRow({ item, onImprove, formatTimestamp }: { formatTimestamp: (timestamp: string) => string; item: ContentQualityRatedSnapshot; onImprove: (item: Pick<ContentQualityRatingEntry, 'kind' | 'sourceId' | 'contentKey'>) => void }) {
   const textBlocks = contentQualityTextBlocks(item.content);
-  return <tr><td><time dateTime={item.updatedAt}>{item.updatedAt.replace('T', ' ').replace(/\.\d+Z$/, '').replace(/Z$/, '')}</time></td><th scope="row" className="content-quality-title"><details><summary>{item.title}</summary>
+  return <tr><td><time dateTime={item.updatedAt}>{formatTimestamp(item.updatedAt)}</time></td><th scope="row" className="content-quality-title"><details><summary>{item.title}</summary>
     <dl className="content-quality-readable">{textBlocks.map((block, index) => <div key={index}><dt>{block.label}</dt><dd>{block.text}</dd></div>)}</dl>
     {item.kind !== 'definition_fallback' && <button type="button" className="secondary-button" onClick={() => onImprove(item)}>Improve this item</button>}
     <details><summary>Exact content snapshot (JSON)</summary><pre className="content-quality-snapshot">{JSON.stringify(item.content, null, 2)}</pre></details>
