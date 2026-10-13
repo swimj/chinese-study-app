@@ -85,9 +85,12 @@ because they contain a target. A full sentence is not a pure cue.
 
 Bootstrap is learner-independent in the first version. Scale surrounding
 language sensibly to the target without matching a learner's known lexicon.
-The corpus meaning list remains stored. The intended recognition reveal for
-bootstrapped words uses curated use labels and an example/translation;
-unbootstrapped words retain their existing reveal. This display improvement
+The corpus meaning list remains stored. The recognition reveal for
+bootstrapped words shows one curated use label, its first linked example, and
+the translation in the supplement layout. Selection cycles through uses in
+source order by UTC epoch day modulo the number of uses, held stable while
+the reveal is mounted. The full source reference is available in a collapsed
+disclosure; unbootstrapped words retain their existing reveal. This display improvement
 does not alter recognition grading or scheduling.
 
 ## 4. Introduction And Practice Form One Package

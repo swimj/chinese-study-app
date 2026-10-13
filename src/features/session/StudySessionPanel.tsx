@@ -2,6 +2,8 @@ import { SessionCompletionPanel, type SessionCompletionPanelProps } from './Sess
 import { convertSentenceCharacters, effectiveSentenceCharacterPresentation, formatSentenceAnswer } from '../../domain/sentence-characters';
 import { SessionDesk, RecallChips, type SessionDeskHandle } from './SessionDesk';
 import { StudyStageBadge, studyStageCardClass } from './StudyStageBadge';
+import { RecognitionSourceReveal } from './RecognitionSourceReveal';
+import { ProductionSupplementAside } from './ProductionSupplementAside';
 import { WordSourceExamples } from './WordSourceExamples';
 import { ClozePrompt } from './ClozePrompt';
 import { useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
@@ -16,7 +18,6 @@ import type {
   UnstudiedWordProgress,
 } from '../../lib/session-state';
 import type {
-  ProductionCueSupplementSnapshot,
   PureCueSessionReviewItem,
   SessionStudyItem,
 } from '../../domain/study-actions';
@@ -906,6 +907,11 @@ function StudySessionPanelContent({
                     {qualityControls({ kind: 'supplement', id: activeItem.production.supplement.supplementId },
                       activeItem.sessionActionId, reviewedCount, 'Supplement quality')}
                   </>
+                ) : activeItem.actionKind === 'recognition' && activeItem.wordContent ? (
+                  <>
+                    <span className="answer-pinyin">{activeAnswerPinyin}</span>
+                    <RecognitionSourceReveal key={activeItem.sessionActionId} content={activeItem.wordContent} sentenceCharacterPresentation={sentenceScript} />
+                  </>
                 ) : (
                   <>
                     <span className="prompt-label">Answer</span>
@@ -913,7 +919,7 @@ function StudySessionPanelContent({
                     <strong className="answer-value">{activeItem.actionKind === 'recognition' ? sentenceText(activeAnswerText ?? '') : activeAnswerText}</strong>
                   </>
                 )}
-                {!productionAwaitingSupplement ? <details className="desk-reference" open={!isProductionItem || activeWord.status !== 'review' || undefined}>
+                {!productionAwaitingSupplement ? <details key={activeItem.sessionActionId} className="desk-reference" open={(activeItem.actionKind === 'recognition' && activeItem.wordContent) ? undefined : (!isProductionItem || activeWord.status !== 'review' || undefined)}>
                   <summary>Word reference</summary>
                 {productionAwaitingSupplement ? null : activeItem.wordContent ? (
                   <WordSourceExamples content={activeItem.wordContent} sentenceCharacterPresentation={sentenceScript} />
@@ -1526,23 +1532,6 @@ function shortcutFor(
   command: SessionKeyCommand['type'],
 ) {
   return primaryAction?.command === command ? primaryAction.shortcut : null;
-}
-
-function ProductionSupplementAside({
-  supplement,
-  sentenceCharacterPresentation,
-}: {
-  supplement: ProductionCueSupplementSnapshot;
-  sentenceCharacterPresentation: SentenceCharacterPresentation;
-}) {
-  const sentenceText = (text: string) => convertSentenceCharacters(text, sentenceCharacterPresentation);
-  return (
-    <div className="production-supplement production-supplement-aside">
-      <p className="production-supplement-frame">{sentenceText(supplement.englishFrame)}</p>
-      <p className="production-supplement-sentence">{`「${sentenceText(supplement.exampleSentence)}」`}</p>
-      <p className="production-supplement-translation">{sentenceText(supplement.exampleTranslation)}</p>
-    </div>
-  );
 }
 
 function createSessionKeyboardContext({
