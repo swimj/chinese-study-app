@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { TimestampDisplayControl } from './TimestampDisplayControl';
+import { TimestampColumnDialog } from './TimestampColumnDialog';
 import { createTimestampFormatter, defaultTimestampDisplay, timestampDisplayLabel } from './operator-timestamps';
 import {
   CONTENT_QUALITY_KINDS,
@@ -41,6 +41,7 @@ function percent(numerator: number, denominator: number): string {
 }
 
 export function ContentQualityPanel() {
+  const [timestampOptionsOpen, setTimestampOptionsOpen] = useState(false);
   const [timestampDisplay, setTimestampDisplay] = useState(defaultTimestampDisplay);
   const formatTimestamp = createTimestampFormatter(timestampDisplay);
   const zoneLabel = timestampDisplayLabel(timestampDisplay);
@@ -121,7 +122,6 @@ export function ContentQualityPanel() {
     {loading && <p role="status">Loading content quality…</p>}
     {error && <p role="alert">{error} Use Refresh ratings to retry.</p>}
     {payload && <>
-      <div className="operator-ledger-controls"><TimestampDisplayControl value={timestampDisplay} onChange={setTimestampDisplay} /></div>
       <div className="operator-usage-tiles"><QualityMetric label="Ratings matching filters" value={String(selectedRatings.length)} /></div>
       <div className="operator-usage-table-wrap">
         <table className="operator-usage-table content-quality-table">
@@ -129,7 +129,7 @@ export function ContentQualityPanel() {
             <option value="ratings">Latest ratings</option><option value="snapshot">Aggregate by snapshot</option>
           </select></label></caption>
           <thead><tr>
-            <th scope="col" aria-sort={sortBy === 'updatedAt' ? direction === 'asc' ? 'ascending' : 'descending' : 'none'}><SortButton label={`${view === 'ratings' ? 'Changed' : 'Latest rating'} (${zoneLabel})`} active={sortBy === 'updatedAt'} direction={direction} onClick={() => toggleSort('updatedAt', sortBy, direction, setSortBy, setDirection)} /></th>
+            <th scope="col" aria-sort={sortBy === 'updatedAt' ? direction === 'asc' ? 'ascending' : 'descending' : 'none'}><button type="button" className="operator-column-button" aria-haspopup="dialog" aria-expanded={timestampOptionsOpen} aria-label={`${view === 'ratings' ? 'Changed' : 'Latest rating'} (${zoneLabel}): sort or change timestamp display`} onClick={() => setTimestampOptionsOpen(true)}>{`${view === 'ratings' ? 'Changed' : 'Latest rating'} (${zoneLabel})`}{sortBy === 'updatedAt' ? direction === 'asc' ? ' ↑' : ' ↓' : ' ▾'}</button></th>
             <th scope="col" aria-sort={sortBy === 'title' ? direction === 'asc' ? 'ascending' : 'descending' : 'none'}><SortButton label="Item" active={sortBy === 'title'} direction={direction} onClick={() => toggleSort('title', sortBy, direction, setSortBy, setDirection)} /></th>
             <th scope="col" aria-sort={sortBy === 'kind' ? direction === 'asc' ? 'ascending' : 'descending' : 'none'}><SortButton label="Type" active={sortBy === 'kind'} direction={direction} onClick={() => toggleSort('kind', sortBy, direction, setSortBy, setDirection)} /></th>
             {view === 'ratings' ? <th scope="col" aria-sort={sortBy === 'rating' ? direction === 'asc' ? 'ascending' : 'descending' : 'none'}><SortButton label="Vote" active={sortBy === 'rating'} direction={direction} onClick={() => toggleSort('rating', sortBy, direction, setSortBy, setDirection)} /></th> : <>
@@ -156,6 +156,8 @@ export function ContentQualityPanel() {
       </div>
       {view === 'ratings' ? orderedRatings.length === 0 && <p>No current ratings match these filters.</p> : orderedSnapshots.length === 0 && <p>No rated snapshots match these filters.</p>}
     </>}
+    {timestampOptionsOpen && <TimestampColumnDialog title={view === 'ratings' ? 'Changed' : 'Latest rating'} display={timestampDisplay} onDisplay={setTimestampDisplay}
+      sorted={sortBy === 'updatedAt'} direction={direction} onSort={(order) => { setSortBy('updatedAt'); setDirection(order); }} onClose={() => setTimestampOptionsOpen(false)} />}
     <ContentImprovementWorkspace selection={improvementSelection} />
   </section>;
 }

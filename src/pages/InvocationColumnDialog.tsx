@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
+import { TimestampDisplayControl } from './TimestampDisplayControl';
+import type { TimestampDisplay } from './operator-timestamps';
 import type { ModelInvocationRow } from '../domain/model-invocations';
 import { invocationStatusLabels, type DiscreteInvocationField, type InvocationFilters, type InvocationGroup, type InvocationSort, type NumericInvocationFilter } from './model-invocation-presentation';
 
@@ -19,12 +21,13 @@ export function columnHasFilter(column: InvocationSort, filters: InvocationFilte
   return filters.discrete[column] !== undefined || (column === 'model' && filters.discrete.provider !== undefined);
 }
 
-export function InvocationColumnDialog({ column, rows, filters, sortBy, direction, groupBy, onFilters, onSort, onGroup, onClose }: {
+export function InvocationColumnDialog({ column, rows, filters, sortBy, direction, groupBy, timestampDisplay, onTimestampDisplay, onFilters, onSort, onGroup, onClose }: {
   column: typeof INVOCATION_COLUMNS[number]; rows: ModelInvocationRow[]; filters: InvocationFilters;
   sortBy: InvocationSort; direction: 'asc' | 'desc'; groupBy: InvocationGroup | '';
   onFilters: (filters: InvocationFilters) => void;
   onSort: (sort: InvocationSort, direction: 'asc' | 'desc') => void;
   onGroup: (group: InvocationGroup | '') => void; onClose: () => void;
+  timestampDisplay: TimestampDisplay; onTimestampDisplay: (display: TimestampDisplay) => void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const [draft, setDraft] = useState<InvocationFilters>(filters);
@@ -97,7 +100,8 @@ export function InvocationColumnDialog({ column, rows, filters, sortBy, directio
     if (!event.currentTarget.open) onClose();
   }} onClick={(event) => { if (event.target === event.currentTarget) close(); }}>
     <div className="operator-column-dialog-body">
-      <div className="operator-column-title"><h3 id="operator-column-title">{column.label}</h3><button type="button" className="secondary-button" onClick={close} aria-label="Close column controls">Close</button></div>
+      <div className="operator-column-title"><h3 id="operator-column-title">{column.key === 'timestamp' ? 'Timestamp' : column.label}</h3><button type="button" className="secondary-button" onClick={close} aria-label="Close column controls">Close</button></div>
+      {column.key === 'timestamp' && <fieldset><legend>Display</legend><TimestampDisplayControl value={timestampDisplay} onChange={onTimestampDisplay} /></fieldset>}
       <fieldset><legend>Sort</legend><div className="operator-column-actions">
         <button type="button" className="secondary-button" aria-pressed={sortBy === column.key && direction === 'asc'} onClick={() => onSort(column.key, 'asc')}>Ascending ↑</button>
         <button type="button" className="secondary-button" aria-pressed={sortBy === column.key && direction === 'desc'} onClick={() => onSort(column.key, 'desc')}>Descending ↓</button>

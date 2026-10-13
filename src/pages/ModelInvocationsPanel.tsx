@@ -1,5 +1,4 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
-import { TimestampDisplayControl } from './TimestampDisplayControl';
 import { createTimestampFormatter, defaultTimestampDisplay, timestampDisplayLabel, type TimestampDisplay } from './operator-timestamps';
 import type { ModelInvocationRow } from '../domain/model-invocations';
 import { fetchModelInvocations } from '../services/api';
@@ -99,7 +98,6 @@ export function ModelInvocationsPanel() {
         </table>
       </div>
       <div className="operator-ledger-controls">
-        <TimestampDisplayControl value={timestampDisplay} onChange={setTimestampDisplay} />
         <label className="operator-ledger-checkbox"><input type="checkbox" checked={shadeFailures} onChange={(event) => setShadeFailures(event.target.checked)} />Shade failures</label>
         <button type="button" className="secondary-button" onClick={() => changeFilters({ from: '', to: '', discrete: {}, numeric: {} })}>Clear all filters</button>
         {groupBy && <button type="button" className="secondary-button" onClick={() => changeGroup('')}>Remove grouping</button>}
@@ -114,7 +112,7 @@ export function ModelInvocationsPanel() {
         {canLoadMore && <button type="button" className="secondary-button" onClick={() => setVisibleCount((current) => nextInvocationLimit(current, ordered.length))}>Load more calls</button>}
       </div>
       {column && <InvocationColumnDialog key={column.key} column={column} rows={rows} filters={filters} sortBy={sortBy} direction={direction} groupBy={groupBy}
-        onFilters={changeFilters} onSort={changeSort} onGroup={changeGroup} onClose={() => setActiveColumn(null)} />}
+        timestampDisplay={timestampDisplay} onTimestampDisplay={setTimestampDisplay} onFilters={changeFilters} onSort={changeSort} onGroup={changeGroup} onClose={() => setActiveColumn(null)} />}
     </>}
   </section>;
 }

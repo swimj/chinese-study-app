@@ -30,7 +30,8 @@ periods cover today and the last seven calendar days including today; the
 selection summary reflects the active filters. Refresh reloads the accounting
 snapshot. The view does not use server-side pagination.
 
-Model invocations and Content quality offer a Timestamp display control: UTC
+Model invocations and Content quality offer a Timestamp display control inside
+the timestamp column's options, opened by clicking its header: UTC
 (the default), Local time (the browser's time zone), or Specific time zone
 (a named zone selector). Each view keeps its choice while mounted. Timestamp
 cells show the date, time, and UTC offset at that instant, including daylight
