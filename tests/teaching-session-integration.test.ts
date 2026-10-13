@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { selectBootstrapReveal } from '../src/domain/word-content/reveal';
+import { selectBootstrapReveal, selectSequentialBootstrapReveal } from '../src/domain/word-content/reveal';
 import { buildWordLifecycleSessionStudyItems } from '../src/domain/study-actions.ts';
 import type { WordIntroductionResponse } from '../src/domain/word-content/application.ts';
 import type { Word } from '../src/types.ts';
@@ -121,7 +121,7 @@ test('teaching starts interleaved 3x3 recall without credit; Undo restores the i
   assert.equal(result.state.phase, 'active');
   assert.equal(result.state.answeredCount, 0);
   assert.deepEqual(result.state.progress.unstudied[word.id], {
-    introComplete: true, successStreaks: { recognition: 0, production: 0 },
+    introComplete: true, recognitionAttempts: 0, successStreaks: { recognition: 0, production: 0 },
   });
   assert.equal(state.scheduler.unstudiedTeaching, undefined);
   assert.equal(getActiveSessionUnit(before).type, 'unstudied_intro');
@@ -152,7 +152,7 @@ test('first encounter rotates taught production, trains recognition, and commits
     } else {
       assert.equal(item.actionKind, 'recognition');
       assert.equal(item.wordContent?.id, fixture.content.id);
-      assert.deepEqual(item.bootstrapReveal, item.actionKind === 'recognition' ? selectBootstrapReveal(fixture.content, new Date()) : undefined);
+      assert.deepEqual(item.bootstrapReveal, selectSequentialBootstrapReveal(fixture.content, successes.recognition));
       successes.recognition += 1;
     }
     const undo = cloneBucketSessionState(state);
@@ -173,7 +173,7 @@ test('first encounter rotates taught production, trains recognition, and commits
 test('first-encounter failure resets only that direction and survives draining', () => {
   let state = completeActiveUnstudiedTeaching(unstudiedState(), word.id).state;
   state = { ...state, progress: { ...state.progress, unstudied: {
-    [word.id]: { introComplete: true, successStreaks: { recognition: 2, production: 2 } },
+    [word.id]: { introComplete: true, recognitionAttempts: 0, successStreaks: { recognition: 2, production: 2 } },
   } } };
   const active = getActiveSessionUnit(state);
   if (active.type !== 'study' || 'itemType' in active.item) throw new Error('Expected word item');
@@ -368,4 +368,117 @@ test('paced sessions with no existing work finish all intros before recall; spac
   }
   assert.equal(getActiveSessionUnit(state).type, 'study');
   for (const spacing of [0, 11, 1.5, NaN]) assert.throws(() => pacedState(spacing), /spacing/);
+});
+
+function sequentialIntroduction(useCount: number) {
+  const content = { ...fixture.content, uses: Array.from({ length: useCount }, (_, index) => ({
+    ...fixture.content.uses[0]!, id: `use-${index}`, label: `Use ${index + 1}`,
+  })) };
+  const introduction: WordIntroductionResponse = { ...library,
+    contents: [{ content, createdAt: word.createdAt }],
+    packages: [{ teaching: { ...fixture.teaching,
+      beats: [{ id: 'intro', parts: [{ kind: 'text', text: 'Learn this word.' }] }],
+    }, createdAt: word.createdAt }],
+  };
+  const state = createBucketSessionState({ sessionId: 'sequential-intro', seed: 1, buckets: {
+    review: [], learning: [], unstudied: [{ ...word, status: 'unstudied' }],
+    introductions: { [word.id]: introduction },
+  } });
+  return { content, state: completeActiveUnstudiedTeaching(state, word.id).state };
+}
+
+for (const useCount of [1, 2, 5]) {
+  test(`new-word recognition traverses ${useCount} source uses in order without changing six-success completion`, () => {
+    let { state } = sequentialIntroduction(useCount);
+    const seen: string[] = [];
+    for (let count = 0; count < 6; count += 1) {
+      const active = getActiveSessionUnit(state);
+      if (active.type !== 'study' || 'itemType' in active.item) throw new Error('Expected word exercise');
+      assert.equal(state.progress.unstudied[word.id].recognitionAttempts, seen.length);
+      if (active.item.actionKind === 'recognition') {
+        assert.equal(active.item.bootstrapReveal?.useId, `use-${seen.length % useCount}`);
+        seen.push(active.item.bootstrapReveal!.useId);
+      } else {
+        assert.equal(active.item.bootstrapReveal, undefined);
+      }
+      const result = rateActiveSessionUnit(markActiveSessionUnitStarted(state), 'good');
+      assert.deepEqual(result.commit, count === 5
+        ? { type: 'commit-unstudied-word-session', wordId: word.id } : { type: 'none' });
+      state = result.state;
+    }
+    assert.deepEqual(seen, Array.from({ length: 3 }, (_, index) => `use-${index % useCount}`));
+    assert.equal(state.phase, 'completed');
+    assert.equal(state.answeredCount, 6);
+  });
+}
+
+test('new-word recognition misses advance the use independently of streaks and Undo restores the exact attempt', () => {
+  let { state } = sequentialIntroduction(2);
+  let recognitionAttempts = 0;
+  let productionAttempts = 0;
+  const useIds: string[] = [];
+  while (state.phase !== 'completed' && state.answeredCount < 12) {
+    const active = getActiveSessionUnit(state);
+    if (active.type !== 'study' || 'itemType' in active.item) throw new Error('Expected word exercise');
+    const beforeCount = state.progress.unstudied[word.id].recognitionAttempts;
+    assert.equal(beforeCount, recognitionAttempts);
+    const isRecognition = active.item.actionKind === 'recognition';
+    const rating = isRecognition && recognitionAttempts === 1 ? 'forgot' : 'good';
+    if (isRecognition) {
+      assert.equal(active.item.bootstrapReveal?.useId, `use-${recognitionAttempts % 2}`);
+      useIds.push(active.item.bootstrapReveal!.useId);
+      recognitionAttempts += 1;
+    } else productionAttempts += 1;
+    const undo = cloneBucketSessionState(state);
+    const result = rateActiveSessionUnit(markActiveSessionUnitStarted(state), rating);
+    assert.equal(undo.progress.unstudied[word.id].recognitionAttempts, beforeCount);
+    assert.deepEqual(getActiveSessionUnit(undo), active);
+    // Replaying after Undo must produce one increment, not advance the use twice.
+    assert.deepEqual(rateActiveSessionUnit(markActiveSessionUnitStarted(undo), rating), result);
+    if (result.state.phase !== 'completed') {
+      assert.equal(result.state.progress.unstudied[word.id].recognitionAttempts, recognitionAttempts);
+      if (rating === 'forgot') assert.equal(result.state.progress.unstudied[word.id].successStreaks.recognition, 0);
+    }
+    state = result.state;
+  }
+  assert.deepEqual(useIds, ['use-0', 'use-1', 'use-0', 'use-1', 'use-0']);
+  assert.equal(productionAttempts, 3);
+  assert.equal(state.answeredCount, 8);
+  assert.equal(state.phase, 'completed');
+});
+
+test('interleaved new words each start and advance their own recognition source sequence', () => {
+  const fixtures = wordContentFixtures.slice(0, 2);
+  const newWords = fixtures.map(({ content }) => ({ ...word,
+    id: content.word.wordId, hanzi: content.word.hanzi, traditional: content.word.traditional,
+    pinyin: content.word.pinyin, status: 'unstudied' as const,
+  }));
+  const introductions = Object.fromEntries(fixtures.map(({ content, teaching }) => [content.word.wordId, {
+    ...library, wordId: content.word.wordId, selectedPackageId: teaching.id,
+    contents: [{ content, createdAt: word.createdAt }], packages: [{ teaching, createdAt: word.createdAt }],
+  }]));
+  let state = createBucketSessionState({ sessionId: 'independent-sequences', seed: 1,
+    schedulerPolicy: { studyNewWordsFirst: true },
+    buckets: { review: [], learning: [], unstudied: newWords, introductions } });
+  for (let index = 0; index < 2; index += 1) {
+    const active = getActiveSessionUnit(state);
+    if (active.type !== 'unstudied_intro') throw new Error('Expected introduction');
+    state = completeActiveUnstudiedTeaching(state, active.word.id).state;
+  }
+  const seen = new Map<string, string[]>();
+  for (let count = 0; count < 12; count += 1) {
+    const active = getActiveSessionUnit(state);
+    if (active.type !== 'study' || 'itemType' in active.item) throw new Error('Expected word exercise');
+    const item = active.item;
+    if (item.actionKind === 'recognition') {
+      const content = fixtures.find(({ content }) => content.word.wordId === item.targetWordId)!.content;
+      const prior = seen.get(item.targetWordId) ?? [];
+      assert.equal(item.bootstrapReveal?.useId, content.uses[prior.length % content.uses.length].id);
+      seen.set(item.targetWordId, [...prior, item.bootstrapReveal!.useId]);
+    }
+    state = rateActiveSessionUnit(markActiveSessionUnitStarted(state), 'good').state;
+  }
+  assert.equal(seen.size, 2);
+  assert.ok([...seen.values()].every((uses) => uses.length === 3));
+  assert.equal(state.phase, 'completed');
 });

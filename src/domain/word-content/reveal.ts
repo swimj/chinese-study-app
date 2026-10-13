@@ -16,6 +16,18 @@ export function selectBootstrapReveal(content: WordContentDocument, date: Date):
     throw new Error('Bootstrap reveal requires a valid date and at least one source use.');
   }
   const index = ((day % content.uses.length) + content.uses.length) % content.uses.length;
+  return materializeBootstrapReveal(content, index);
+}
+
+/** New-word recognition walks source order, independently of recall success. */
+export function selectSequentialBootstrapReveal(content: WordContentDocument, completedRecognitionAttempts: number): BootstrapRevealSnapshot {
+  if (!Number.isSafeInteger(completedRecognitionAttempts) || completedRecognitionAttempts < 0 || content.uses.length === 0) {
+    throw new Error('Sequential bootstrap reveal requires a nonnegative attempt count and at least one source use.');
+  }
+  return materializeBootstrapReveal(content, completedRecognitionAttempts % content.uses.length);
+}
+
+function materializeBootstrapReveal(content: WordContentDocument, index: number): BootstrapRevealSnapshot {
   const use = content.uses[index];
   const example = content.examples.find((row) => row.id === use.exampleIds[0]);
   if (!example) throw new Error(`Bootstrap use ${use.id} has no linked example.`);

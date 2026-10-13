@@ -292,6 +292,7 @@ describe('bucket session state covering contract', () => {
         unstudied: {
           [touchedUnstudiedWord.id]: {
             introComplete: true,
+            recognitionAttempts: 0,
             successStreaks: { recognition: 0, production: 0 },
           },
         },
@@ -655,6 +656,7 @@ type BucketSessionStateApi = {
     }>;
     unstudied: Record<string, {
       introComplete: boolean;
+      recognitionAttempts: number;
       successStreaks: Record<'recognition' | 'production', number>;
     }>;
   };

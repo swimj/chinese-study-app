@@ -297,7 +297,9 @@ reconciliation is required to proceed with this work.
   target rehearsal according to this ordering policy. Both directions must
   reach three consecutive `Good` ratings before the first-encounter word unit
   completes through the existing deferred commit and Undo path. Recognition uses
-  curated source content. Production selects a rehearsal by its current streak
+  curated source content under the
+  [new-word recall policy](session-progress-and-completion.md#unstudied-word-covering).
+  Production selects a rehearsal by its current streak
   modulo the package rehearsal count, returning to the first on a streak reset.
   in-session walkthrough has no skip-to-cards or Escape bypass; leaving uses
   normal session controls and grants no teaching completion. Missing preparation excludes

@@ -1,6 +1,6 @@
 import type { LearningRehearsalSnapshot } from '../domain/study-actions';
 import type { WordContentDocument } from '../domain/word-content/types';
-import { selectBootstrapReveal } from '../domain/word-content/reveal';
+import { selectBootstrapReveal, selectSequentialBootstrapReveal } from '../domain/word-content/reveal';
 import type {
   SessionStudyItem,
   SessionReviewItem,
@@ -35,6 +35,8 @@ export type BucketSchedulerLearningProgress = {
 
 export type BucketSchedulerUnstudiedProgress = {
   introComplete: boolean;
+  /** Completed recognition exercises, including misses; independent of the success streak. */
+  recognitionAttempts: number;
   successStreaks: Record<ReviewStudySkillId, number>;
 };
 
@@ -436,6 +438,8 @@ function pickActiveBucketSchedulerUnit(
       bucket,
       word,
       skillId: pickOpenBucketWordSkill(progress, bucket, word.id, lcg(rngState)),
+      recognitionAttempts: bucket === 'unstudied'
+        ? (progress.unstudied[word.id] ?? createInitialBucketUnstudiedProgress()).recognitionAttempts : 0,
       rehearsal: bucket === 'learning' ? scheduler.learningRehearsals?.[word.id]
         : getUnstudiedRehearsal(scheduler, progress, word.id),
       wordContent: bucket === 'learning' ? scheduler.learningContent?.[word.id]
@@ -507,12 +511,14 @@ function buildBucketWordStudyItem({
   bucket,
   word,
   skillId,
+  recognitionAttempts,
   rehearsal,
   wordContent,
 }: {
   bucket: 'learning' | 'unstudied';
   word: Word;
   skillId: ReviewStudySkillId;
+  recognitionAttempts: number;
   rehearsal?: LearningRehearsalSnapshot;
   wordContent?: WordContentDocument;
 }): SessionStudyItem {
@@ -536,7 +542,9 @@ function buildBucketWordStudyItem({
     ...(skillId === 'production' && rehearsal ? { rehearsal } : {}),
     ...(wordContent ? { wordContent } : {}),
     ...(skillId === 'recognition' && wordContent
-      ? { bootstrapReveal: selectBootstrapReveal(wordContent, new Date()) } : {}),
+      ? { bootstrapReveal: bucket === 'unstudied'
+        ? selectSequentialBootstrapReveal(wordContent, recognitionAttempts)
+        : selectBootstrapReveal(wordContent, new Date()) } : {}),
   };
 }
 
@@ -560,6 +568,7 @@ export function createInitialBucketLearningProgress(): BucketSchedulerLearningPr
 export function createInitialBucketUnstudiedProgress(): BucketSchedulerUnstudiedProgress {
   return {
     introComplete: false,
+    recognitionAttempts: 0,
     successStreaks: {
       recognition: 0,
       production: 0,

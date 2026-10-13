@@ -108,8 +108,16 @@ scheduling. The cadence and preferences are frozen for the session, and Undo
 restores the pacing position alongside progress.
 
 Finishing the walkthrough makes recognition and production available according
-to that ordering policy. Recognition reveals curated source material;
-production asks for the taught expression using a package rehearsal. Each
+to that ordering policy. The
+[new-word recall policy](../SPECS/session-progress-and-completion.md#unstudied-word-covering)
+defines recognition cycling and completion. The implementation stores a per-word
+`recognitionAttempts` count in active session progress, initialized to zero.
+Each recognition rating increments it; production ratings leave it unchanged.
+The selector uses the count modulo the number of bootstrap uses and freezes the
+selected reveal on the served item. Undo restores both progress and that snapshot.
+A fresh session initializes a new count. Later Practice and review use UTC-day
+selection.
+Production asks for the taught expression using a package rehearsal. Each
 direction needs three consecutive `Good` ratings. A non-`Good` rating resets only
 that direction. Production selects the rehearsal at the current production
 streak modulo the rehearsal count, so a reset returns to the first rehearsal.

@@ -100,6 +100,10 @@ rating resets only the corresponding direction's streak.
 Recall appearances use the ordinary weighted bucket scheduler, interleaving with
 review, learning, and other new words when present. This is probabilistic
 interleaving, not a guaranteed minimum gap; a lone remaining word can repeat.
+Recognition starts with the first bootstrap use and cycles through uses in source
+order after each recognition rating, including misses, wrapping as needed. Undo
+restores the previous reveal and position. Completing recognition requires three
+consecutive `Good` ratings even when some uses have not been shown.
 Production selects the rehearsal at the current production streak modulo the
 package's rehearsal count. A reset therefore returns to the first rehearsal;
 coverage is per direction, not a requirement to complete every authored exercise.
