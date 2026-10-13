@@ -44,6 +44,15 @@ export type ContrastClusterDiagnosticItem = {
   }>;
 };
 
+export type ProductionCueAvailabilityStatus =
+  | 'active'
+  | 'deactivated'
+  | 'replaced'
+  | 'retired'
+  | 'quarantined'
+  | 'unpublished'
+  | 'source_unavailable';
+
 export type ProductionCueDiagnosticItem = {
   kind: 'production_cue';
   id: string;
@@ -54,6 +63,8 @@ export type ProductionCueDiagnosticItem = {
   acceptedWords: Word[];
   createdAt: string;
   active: boolean;
+  availabilityStatus: ProductionCueAvailabilityStatus;
+  replacementCueId: string | null;
   attribution: {
     origin: 'reflection' | 'manual';
     invocationId: string | null;

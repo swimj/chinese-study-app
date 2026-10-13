@@ -160,6 +160,16 @@ test('quarantining bootstrap source excludes future serving but preserves histor
   const publication = db.getSharedContentPublicationForContent('word_content', source.content.id)!;
   db.quarantineSharedContentPublication({ publicationId: publication.publicationId, operatorId: 'operator', reason: 'Incorrect source' });
   assert.equal(call(() => review.isCanonicalReviewSourceEligible('production_cue', source.cueId)), false);
+  const diagnostics = call(() => db.getContentDiagnostics({ kind: 'production_cue', query: source.cueId }));
+  const cue = diagnostics.items.find(item => item.id === source.cueId);
+  assert.ok(cue?.kind === 'production_cue');
+  assert.equal(cue.availabilityStatus, 'source_unavailable');
+  assert.equal(cue.active, false);
+  assert.equal(call(() => db.getProductionCue(source.cueId))!.active, false);
+  const words = call(() => db.getContentDiagnostics({ kind: 'word', query: source.wordId }));
+  const word = words.items.find(item => item.id === source.wordId);
+  assert.ok(word?.kind === 'word');
+  assert.equal(word.productionTask!.activeCueCount, 0);
   assert.equal(production(source.wordId).production?.cueId, null);
   assert.equal(frozen.cueId, source.cueId);
   const recognition = recognitionFor(source.wordId);

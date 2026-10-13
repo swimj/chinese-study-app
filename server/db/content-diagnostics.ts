@@ -6,6 +6,7 @@ import type {
   WordDiagnosticItem,
   WordDiagnosticSupplement,
 } from '../../src/domain/content-diagnostics.ts';
+import { getProductionCueAvailability } from './production-cue-availability.ts';
 import type { ProductionCueType } from '../../src/domain/study-actions.ts';
 import type { Word, WordRow, WordStatus } from './types.ts';
 import { getDb } from './connection.ts';
@@ -56,7 +57,7 @@ type CueDiagnosticRow = {
   created_at: string;
   origin_kind: string;
   origin_invocation_id: string | null;
-  active: number;
+  content_scope: 'learner' | 'shared';
 };
 
 type CueAcceptedWordRow = WordRow & {
@@ -149,19 +150,23 @@ function searchWordDiagnostics(query: string, limit: number): WordDiagnosticItem
     `),
     (row) => row.word_id,
   );
-  const taskByWordId = new Map(selectForIds<WordTaskSummaryRow>(wordIds, 'word_id', `
-    SELECT
-      production_tasks.word_id,
-      production_tasks.task_id,
-      COUNT(production_cues.cue_id) AS cue_count,
-      COALESCE(SUM(CASE WHEN production_cue_activation_state.active = 1 THEN 1 ELSE 0 END), 0) AS active_cue_count
-    FROM production_tasks
-    LEFT JOIN production_cues ON production_cues.task_id = production_tasks.task_id
-    LEFT JOIN production_cue_activation_state
-      ON production_cue_activation_state.cue_id = production_cues.cue_id
-    WHERE production_tasks.word_id IN (__IDS__)
-    GROUP BY production_tasks.word_id, production_tasks.task_id
-  `).map((row) => [row.word_id, row]));
+  const taskByWordId = new Map(selectForIds<Pick<WordTaskSummaryRow, 'word_id' | 'task_id'>>(wordIds, 'word_id', `
+    SELECT word_id, task_id FROM production_tasks WHERE word_id IN (__IDS__)
+  `).map(row => [row.word_id, { ...row, cue_count: 0, active_cue_count: 0 }]));
+  const taskCues = selectForIds<{ word_id: string; cue_id: string; content_scope: 'learner' | 'shared' }>(wordIds, 'word_id', `
+    SELECT task.word_id, cue.cue_id, cue.content_scope
+    FROM scoped_production_cues cue JOIN production_tasks task ON task.task_id = cue.task_id
+    WHERE task.word_id IN (__IDS__)
+      AND (cue.content_scope = 'shared' OR cue.owner_learner_id = current_learner_id())
+  `);
+  const availabilityByCueId = getProductionCueAvailability(taskCues);
+  // Count the same derived state used by cue detail and serving, while retaining
+  // replaced/inactive cues in the total so their history remains discoverable.
+  for (const cue of taskCues) {
+    const task = taskByWordId.get(cue.word_id)!;
+    task.cue_count += 1;
+    if (availabilityByCueId.get(cue.cue_id)!.active) task.active_cue_count += 1;
+  }
   const supplementsByWordId = groupBy(
     selectForIds<ProductionCueSupplementRow & { word_id: string; cue_type: string | null }>(wordIds, 'word_id', `
       SELECT
@@ -310,15 +315,19 @@ function searchCueDiagnostics(query: string, limit: number): ProductionCueDiagno
       production_cues.cue_type,
       production_cues.cue_text,
       production_cues.created_at,
-      production_cues.origin_kind,
-      production_cues.origin_invocation_id,
-      production_cue_activation_state.active
-    FROM production_cues
+      CASE WHEN provenance.source_invocation_id IS NOT NULL THEN 'reflection'
+        ELSE production_cues.origin_kind END AS origin_kind,
+      provenance.source_invocation_id AS origin_invocation_id,
+      production_cues.content_scope
+    FROM scoped_production_cues AS production_cues
     JOIN production_tasks ON production_tasks.task_id = production_cues.task_id
     JOIN words ON words.id = production_tasks.word_id
-    JOIN production_cue_activation_state
-      ON production_cue_activation_state.cue_id = production_cues.cue_id
-    WHERE production_cues.cue_id LIKE ? ESCAPE '\\'
+    LEFT JOIN shared_content_publications publication
+      ON publication.content_kind = 'production_cue' AND publication.content_id = production_cues.cue_id
+    LEFT JOIN shared_content_publication_provenance provenance
+      ON provenance.publication_id = publication.publication_id
+    WHERE (production_cues.content_scope = 'shared' OR production_cues.owner_learner_id = current_learner_id())
+      AND (production_cues.cue_id LIKE ? ESCAPE '\\'
        OR production_cues.task_id LIKE ? ESCAPE '\\'
        OR production_cues.cue_type LIKE ? ESCAPE '\\'
        OR production_cues.cue_text LIKE ? ESCAPE '\\'
@@ -339,7 +348,7 @@ function searchCueDiagnostics(query: string, limit: number): ProductionCueDiagno
              OR accepted_words.pinyin LIKE ? ESCAPE '\\'
              OR accepted_words.meaning LIKE ? ESCAPE '\\'
            )
-       )
+       ))
     ORDER BY
       CASE WHEN production_cues.cue_id = ? OR production_cues.task_id = ? THEN 0 ELSE 1 END,
       production_cues.created_at DESC,
@@ -352,6 +361,7 @@ function searchCueDiagnostics(query: string, limit: number): ProductionCueDiagno
     limit,
   ) as CueDiagnosticRow[];
   const cueIds = cues.map((cue) => cue.cue_id);
+  const availabilityByCueId = getProductionCueAvailability(cues);
   const acceptedWordsByCueId = groupBy(
     selectForIds<CueAcceptedWordRow>(cueIds, 'cue_id', `
       SELECT
@@ -387,6 +397,7 @@ function searchCueDiagnostics(query: string, limit: number): ProductionCueDiagno
     const anchorWord = anchorWordsById.get(cue.word_id);
     if (!anchorWord) throw new Error(`Production task ${cue.task_id} references missing word ${cue.word_id}.`);
     const evidence = evidenceByCueId.get(cue.cue_id) ?? null;
+    const availability = availabilityByCueId.get(cue.cue_id)!;
     if (!isProductionCueType(cue.cue_type)) {
       throw new Error(`Production cue ${cue.cue_id} has unknown type ${cue.cue_type}.`);
     }
@@ -402,7 +413,9 @@ function searchCueDiagnostics(query: string, limit: number): ProductionCueDiagno
       text: cue.cue_text,
       acceptedWords: (acceptedWordsByCueId.get(cue.cue_id) ?? []).map(mapWordRow),
       createdAt: cue.created_at,
-      active: cue.active !== 0,
+      active: availability.active,
+      availabilityStatus: availability.status,
+      replacementCueId: availability.replacementCueId,
       attribution: {
         origin: cue.origin_kind,
         invocationId: cue.origin_invocation_id,
