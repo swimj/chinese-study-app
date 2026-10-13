@@ -422,35 +422,5 @@ The following decisions are open:
 
 ## Homepage exercise failure rate
 
-The homepage pools completed word-review actions (recognition, production, and
-contrast selection) and standalone pure-cue assessments from finalized sessions.
-Each exercise counts once in the denominator. A word-review action with a lapse
-or a pure-cue assessment with any failure counts once in the numerator, even if
-reinforcement later succeeds. Learning and new-word practice are excluded.
-
-The 1-, 3-, and 7-day windows include today and use UTC session-completion dates.
-Sum failures and completions across each window before dividing; show no rate
-when there are no completions. Save combined exercise totals at session
-finalization; do not reconstruct them from attempt history on reads. Summary
-retries replace saved totals. Existing summaries remain as recorded, without a
-pure-cue backfill.
-
-The homepage headlines adjusted failure and compensation rates. For each window,
-let N be completed exercises, F recorded failures, and C actual scheduler
-compensations applied in that window across word production and pure cues.
-Adjusted failure is `max(0, F - C) / N`; compensation rate is `C / N`. Clamp only
-after summing the window. If N is zero, both rates are absent but counts remain
-available in the rate details. Compensation rate may exceed 100% when older proposals are applied.
-
-Increment a learner-private daily counter in the same transaction that first
-marks a scheduler snapshot restored, using its UTC application date regardless
-of the original failure date. The counter starts empty at rollout; historical
-restorations are not backfilled. Newly applied restorations of older failures
-still count. Rollout-spanning windows intentionally mix old and new coverage. Pending proposals, unavailable
-restorations, and already-restored retries add nothing. Include compensation-only
-days. Preserve recorded failure counts and attempt history; compensation neither
-removes an exercise from the denominator nor grants success credit. Show the
-recorded failure, compensation, and exercise counts in a collapsed-by-default
-“Rate details” disclosure, with a short explanation that compensations can correct
-an earlier period. Keep the two rates visible with shared period and metric labels;
-do not repeat calculation prose inside each period.
+See [Home exercise failure and compensation rates](home-exercise-rates.md) for
+counted exercises, UTC windows, compensation accounting, and the rate display.
