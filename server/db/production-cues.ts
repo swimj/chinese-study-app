@@ -1406,25 +1406,6 @@ function getAttemptEvidence(sourceAttemptId: string): CueAttemptEvidenceRow | nu
 
 function productionCueSelect(): string {
   const cueTable = scopedStorageTable('production_cues');
-  const cueColumns = new Set((getDb().prepare(`PRAGMA table_info(${cueTable})`).all() as Array<{ name: string }>)
-    .map((column) => column.name));
-  if (!cueColumns.has('content_scope')) {
-    return `
-      SELECT
-        production_cues.cue_id,
-        production_cues.task_id,
-        production_cues.cue_type,
-        production_cues.cue_text,
-        production_cues.created_at,
-        production_cues.origin_kind,
-        production_cues.origin_invocation_id,
-        production_cue_activation_state.active
-      FROM ${cueTable} AS production_cues
-      INNER JOIN production_cue_activation_state
-        ON production_cue_activation_state.cue_id = production_cues.cue_id
-      WHERE 1 = 1
-    `;
-  }
   return `
     SELECT
       production_cues.cue_id,

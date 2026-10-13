@@ -38,6 +38,7 @@ describe('initial reflection evidence enrichment', { concurrency: false }, () =>
 
     sqlite = new DatabaseSync(':memory:');
     sqlite.exec('PRAGMA foreign_keys = ON;');
+    sqlite.function('current_learner_id', () => 'test-learner');
     createSchema();
     setDb(sqlite);
   });
@@ -49,9 +50,9 @@ describe('initial reflection evidence enrichment', { concurrency: false }, () =>
       DELETE FROM contrast_cluster_members;
       DELETE FROM contrast_clusters;
       DELETE FROM production_cue_supplements;
-      DELETE FROM production_cue_activation_state;
+      DELETE FROM learner_owned_production_cue_activation_state;
       DELETE FROM production_cue_accepted_words;
-      DELETE FROM production_cues;
+      DELETE FROM scoped_production_cues;
       DELETE FROM production_tasks;
       DELETE FROM study_events;
       DELETE FROM study_attempt_events;
@@ -628,6 +629,8 @@ describe('initial reflection evidence enrichment', { concurrency: false }, () =>
   });
 });
 
+// Minimal read-only evidence fixture. Cue ownership/activation use the current
+// schema; cues without canonical content records remain a supported content case.
 function createSchema() {
   sqlite.exec(`
     CREATE TABLE words (
@@ -714,17 +717,24 @@ function createSchema() {
       task_kind TEXT NOT NULL,
       created_at TEXT NOT NULL
     );
-    CREATE TABLE production_cues (
+    CREATE TABLE scoped_production_cues (
       cue_id TEXT PRIMARY KEY,
       task_id TEXT NOT NULL REFERENCES production_tasks(task_id) ON DELETE CASCADE,
       cue_type TEXT NOT NULL,
       cue_text TEXT NOT NULL,
       created_at TEXT NOT NULL,
       origin_kind TEXT NOT NULL,
-      origin_invocation_id TEXT
+      origin_invocation_id TEXT,
+      content_scope TEXT NOT NULL DEFAULT 'learner' CHECK (content_scope IN ('learner', 'shared')),
+      owner_learner_id TEXT DEFAULT 'test-learner',
+      CHECK ((content_scope = 'learner' AND owner_learner_id IS NOT NULL)
+        OR (content_scope = 'shared' AND owner_learner_id IS NULL))
     );
+    CREATE VIEW production_cues AS
+      SELECT * FROM scoped_production_cues
+      WHERE content_scope = 'shared' OR owner_learner_id = current_learner_id();
     CREATE TABLE production_cue_accepted_words (
-      cue_id TEXT NOT NULL REFERENCES production_cues(cue_id) ON DELETE CASCADE,
+      cue_id TEXT NOT NULL REFERENCES scoped_production_cues(cue_id) ON DELETE CASCADE,
       word_id TEXT NOT NULL REFERENCES words(id),
       position INTEGER NOT NULL,
       PRIMARY KEY (cue_id, word_id)
@@ -732,22 +742,45 @@ function createSchema() {
     CREATE TABLE production_cue_supplements (
       supplement_id TEXT PRIMARY KEY,
       task_id TEXT NOT NULL REFERENCES production_tasks(task_id) ON DELETE CASCADE,
-      cue_id TEXT REFERENCES production_cues(cue_id),
+      cue_id TEXT REFERENCES scoped_production_cues(cue_id),
       english_frame TEXT NOT NULL,
       example_sentence TEXT NOT NULL,
       example_translation TEXT NOT NULL,
       created_at TEXT NOT NULL,
       origin_invocation_id TEXT NOT NULL
     );
-    CREATE TABLE production_cue_activation_state (
-      cue_id TEXT PRIMARY KEY REFERENCES production_cues(cue_id) ON DELETE CASCADE,
+    CREATE TABLE learner_owned_production_cue_activation_state (
+      learner_id TEXT NOT NULL DEFAULT 'test-learner',
+      cue_id TEXT NOT NULL REFERENCES scoped_production_cues(cue_id) ON DELETE CASCADE,
       active INTEGER NOT NULL,
       latest_lifecycle_event_id TEXT NOT NULL,
-      updated_at TEXT NOT NULL
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (learner_id, cue_id)
+    );
+    CREATE VIEW production_cue_activation_state AS
+      SELECT cue_id, active, latest_lifecycle_event_id, updated_at
+      FROM learner_owned_production_cue_activation_state
+      WHERE learner_id = current_learner_id();
+    CREATE TABLE shared_content_publications (
+      publication_id TEXT PRIMARY KEY,
+      content_kind TEXT NOT NULL,
+      content_id TEXT NOT NULL,
+      publication_status TEXT NOT NULL,
+      UNIQUE (content_kind, content_id)
+    );
+    CREATE TABLE shared_content_publication_provenance (
+      publication_id TEXT PRIMARY KEY,
+      source_invocation_id TEXT
+    );
+    CREATE TABLE content_improvement_replacements (
+      kind TEXT NOT NULL,
+      source_id TEXT NOT NULL,
+      replacement_source_id TEXT NOT NULL,
+      PRIMARY KEY (kind, source_id)
     );
     -- These fixtures intentionally model legacy cues with no canonical sidecar.
     -- The review-content reader must see an empty sidecar surface.
-    CREATE TABLE review_content_records (
+    CREATE TABLE scoped_review_content_records (
       record_id TEXT PRIMARY KEY,
       kind TEXT NOT NULL,
       content_id TEXT NOT NULL,
@@ -758,6 +791,11 @@ function createSchema() {
       document_json TEXT NOT NULL,
       created_at TEXT NOT NULL,
       model TEXT
+    );
+    CREATE VIEW review_content_records AS SELECT * FROM scoped_review_content_records;
+    CREATE TABLE word_content_documents (
+      content_id TEXT PRIMARY KEY,
+      publication_id TEXT
     );
   `);
 }
@@ -979,7 +1017,7 @@ function insertProductionCue({
   acceptedWordIds: string[];
 }) {
   sqlite.prepare(`
-    INSERT INTO production_cues (
+    INSERT INTO scoped_production_cues (
       cue_id, task_id, cue_type, cue_text, created_at, origin_kind, origin_invocation_id
     ) VALUES (?, 'production-task:target:default_production', ?, ?, ?, 'manual', NULL)
   `).run(cueId, cueType, text, `${completedAt}:${cueId}`);
@@ -990,7 +1028,7 @@ function insertProductionCue({
     `).run(cueId, wordId, position);
   });
   sqlite.prepare(`
-    INSERT INTO production_cue_activation_state (
+    INSERT INTO learner_owned_production_cue_activation_state (
       cue_id, active, latest_lifecycle_event_id, updated_at
     ) VALUES (?, ?, ?, ?)
   `).run(cueId, active ? 1 : 0, `lifecycle:${cueId}`, completedAt);
