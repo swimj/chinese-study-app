@@ -32,6 +32,7 @@ contracts that refine it to those definitions.
 | Area | Current sources and subject |
 | --- | --- |
 | Word lifecycle, scheduling, and in-session behavior | The three sources above, pending reconciliation of shared versus area-specific ownership |
+| Session completion | [Completion lifecycle](session-covering-criteria.md#session-completion): final Undo window, durable acceptance, completion report, navigation, and retry; [persistence explanation](../docs/server-db.md#session-completion-persistence) for the current storage and worker mechanisms |
 | Introduction and preparation | [word-bootstrap-and-introduction.md](word-bootstrap-and-introduction.md): content, preparation, pinned packages, and review-reflection lifecycle; [generation](../docs/word-content-generation.md) and [serving](../docs/word-content-serving.md) explanations |
 | Pure-cue practice | [pure-cue-elicitation.md](pure-cue-elicitation.md): independent scheduling, sampling, promotion, and compensation |
 | Session debrief | [session-debrief.md](session-debrief.md): inventory, durable generation, interests, failure, and retry |

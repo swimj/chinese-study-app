@@ -1,12 +1,14 @@
 # Session Covering Criteria
 
-This document defines what it means for a study unit to be considered covered within a live session.
+This contract defines when study units count as covered, how Undo affects
+pending work, and when a finished session is durably accepted. Use it to reason
+about in-session progress and the boundary between pending and accepted study.
 
 The accepted [word bootstrap and introduction design](word-bootstrap-and-introduction.md)
 defines pinned teaching/rehearsal content. The covering rules below apply to
 both prepared teaching and the legacy card path.
 
-It complements [`SPECS/learning-review-model.md`](/Users/jw/dev/chinese-study-app/SPECS/learning-review-model.md).
+It complements the [word lifecycle and review model](learning-review-model.md).
 
 The accepted [pure-cue contract](./pure-cue-elicitation.md) extends review
 covering to standalone elicitations. Any accepted member is success; one
@@ -287,7 +289,9 @@ publication, or reflection generation. Feedback failures must not block study.
 See [content quality](../docs/content-quality.md) for supported surfaces,
 keyboard behavior, exposure semantics, and operator analytics.
 
-## Completed-Session Reflection Boundary
+<a id="completed-session-reflection-boundary"></a>
+
+## Session completion
 
 Completing the last word or standalone exercise immediately opens the completion
 screen with the final answer and Undo opportunity. This applies to natural
@@ -350,6 +354,9 @@ validation, or later review failure never changes covering, accepted attempts,
 the completed-session record, or scheduler projection. The detailed evidence,
 generation, failure, and retry contract is defined in
 [`session-reflection-generation.md`](./session-reflection-generation.md).
+
+For the current storage and worker mechanisms, see
+[session completion persistence](../docs/server-db.md#session-completion-persistence).
 
 ## Commit Payload Intent
 
