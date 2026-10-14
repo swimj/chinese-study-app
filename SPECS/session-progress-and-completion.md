@@ -418,9 +418,3 @@ The following decisions are open:
 - how repeated exposures are spaced relative to other items in the session
 - whether reinforcement of a failed review item should ever surface the opposite direction too
 - how an interrupted session should affect partial progress
-
-
-## Homepage exercise failure rate
-
-See [Home exercise failure and compensation rates](home-exercise-rates.md) for
-counted exercises, UTC windows, compensation accounting, and the rate display.
