@@ -71,7 +71,7 @@ export function ContentDiagnosticsPage({
       {connection && selectedItem ? (
         <ConnectedDetail connection={connection} originLabel={itemLabel(selectedItem)} onBack={returnToOrigin} />
       ) : null}
-      <div hidden={connection !== null}>
+      <div className="content-origin-view" hidden={connection !== null}>
         <div className="content-kind-tabs" role="tablist" aria-label="Content primitive kinds">
           {(Object.keys(KIND_LABELS) as ContentDiagnosticKind[]).map((candidateKind) => (
             <button
@@ -170,7 +170,7 @@ function ConnectedDetail({ connection, originLabel, onBack }: {
     return () => { cancelled = true; };
   }, [connection]);
   return <article className="panel content-item-detail">
-    <button ref={backButton} type="button" onClick={onBack}>← Back to {originLabel}</button>
+    <button ref={backButton} className="content-connection-link" type="button" onClick={onBack}>← Back to {originLabel}</button>
     <p className="notes">Connected item · Return to the originating item before opening another connection.</p>
     {error ? <p role="alert">{error}</p> : item ? <DiagnosticDetail item={item} /> : <p role="status">Loading connected item…</p>}
   </article>;

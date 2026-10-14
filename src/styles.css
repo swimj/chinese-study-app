@@ -4619,3 +4619,8 @@ input::placeholder, textarea::placeholder { color: var(--text-muted); opacity: 1
   overflow-wrap: anywhere;
   max-width: 100%;
 }
+
+.content-origin-view:not([hidden]) {
+  display: grid;
+  gap: 1rem;
+}
