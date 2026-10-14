@@ -952,6 +952,7 @@ function handleBucketUnstudiedAttempt(
   const currentProgress = state.progress.unstudied[wordId] ?? createInitialBucketUnstudiedProgress();
   const nextProgress: BucketSchedulerUnstudiedProgress = {
     introComplete: currentProgress.introComplete,
+    recognitionAttempts: currentProgress.recognitionAttempts + (skillId === 'recognition' ? 1 : 0),
     successStreaks: { ...currentProgress.successStreaks },
   };
 

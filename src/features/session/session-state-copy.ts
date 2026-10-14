@@ -22,6 +22,7 @@ export function cloneBucketSessionState(state: BucketSessionState): BucketSessio
           wordId,
           {
             introComplete: progress.introComplete,
+            recognitionAttempts: progress.recognitionAttempts,
             successStreaks: { ...progress.successStreaks },
           },
         ]),
