@@ -27,6 +27,12 @@ test('session teaching has no close callback for its button or Escape; completio
   assert.equal(experience.props.qualityEncounterId, gate.key);
   const markup = renderToStaticMarkup(panel);
   assert.match(markup, /Helpful: Introduction quality/);
+  // Visibility belongs to the standard wrapper, insulated from intro-lab's
+  // always-visible kbd styling; shortcut metadata stays on the feedback buttons.
+  assert.match(markup, /aria-keyshortcuts="\["/);
+  assert.match(markup, /aria-keyshortcuts="\]"/);
+  assert.match(markup, /<span class="session-shortcut-hints"><kbd class="session-shortcut-hint">\[<\/kbd><\/span>/);
+  assert.match(markup, /<span class="session-shortcut-hints"><kbd class="session-shortcut-hint">\]<\/kbd><\/span>/);
   assert.doesNotMatch(markup, /Helpful: Rehearsal quality/);
   assert.doesNotMatch(markup, /Continue with study cards|Back to word|Begin recall drills/);
   assert.match(markup, /Continue|Finish walkthrough/);

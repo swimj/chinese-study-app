@@ -625,6 +625,8 @@ button:where(:hover:not(:disabled)) {
 
 .session-action-bar button:hover .session-shortcut-hints,
 .session-action-bar button:focus-visible .session-shortcut-hints,
+.content-quality-vote:hover .session-shortcut-hints,
+.content-quality-vote:focus-visible .session-shortcut-hints,
 .keyboard-shortcuts-card button:hover .session-shortcut-hints,
 .keyboard-shortcuts-card button:focus-visible .session-shortcut-hints {
   opacity: 1;

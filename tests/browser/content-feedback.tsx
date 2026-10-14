@@ -94,11 +94,15 @@ let previewCompletion: SessionCompletion | null = null;
 window.fetch = async (input, init) => {
   const url = String(input);
   if (url.endsWith('/api/session-completions/current')) return Response.json({ completion: null });
-  // Rating previews also allow finishing the fixture without a real server write.
-  const completionMatch = query.has('preview') && url.match(/\/study-sessions\/([^/]+)\/completion(\/close)?$/);
+  // Completion stages the final attempt and reflection evidence in one request.
+  const completionMatch = url.match(/\/study-sessions\/([^/]+)\/completion(\/close)?$/);
   if (completionMatch) {
     if (!completionMatch[2] && init?.method === 'POST') {
       const body = JSON.parse(String(init.body)) as StageSessionCompletionRequest;
+      if (!query.has('preview')) {
+        if (body.pendingCommit?.type === 'commit-review-action-session') commits += 1;
+        evidence = body.reflectionEvidence;
+      }
       const now = new Date().toISOString();
       previewCompletion = { sessionId: completionMatch[1]!, revisionId: body.revisionId,
         status: 'closed', canUndo: false, closeAt: now, serverNow: now,
@@ -194,7 +198,6 @@ async function finish(expected: boolean) {
   await endAndCheck(expected);
 }
 async function endAndCheck(expected: boolean) {
-  controller.homePageProps.onEndSession();
   await until(() => controller.homePageProps.sessionFinalization.kind === 'finalized');
   await delay();
   check(commits === 1, 'Expected exactly one accepted attempt batch');
@@ -207,6 +210,16 @@ async function endAndCheck(expected: boolean) {
 }
 async function run() {
   await start();
+  for (const value of query.has('recognition') ? [] : ['down', 'up'] as const) {
+    const button = voteButton(value);
+    const hint = button.querySelector<HTMLElement>('.session-shortcut-hints')!;
+    check(getComputedStyle(hint).opacity === '0', 'Feedback shortcut must be hidden at rest');
+    button.focus();
+    check(button.matches(':focus-visible'), 'Fixture must exercise keyboard-visible focus');
+    check(getComputedStyle(hint).opacity === '1', 'Feedback shortcut must appear on keyboard focus');
+    button.blur();
+    check(getComputedStyle(hint).opacity === '0', 'Feedback shortcut must hide after focus leaves');
+  }
   if (query.has('preview')) {
     document.getElementById('result')!.textContent = 'Interactive preview: real study session with isolated fixture data.';
     return;

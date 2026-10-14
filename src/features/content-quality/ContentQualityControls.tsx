@@ -89,13 +89,13 @@ function QualityControls({ target, encounterId, label, hotkeysActive = false, di
       aria-pressed={state?.rating === 'down'} disabled={disabled || !state || busy}
       title={`Unhelpful content${hotkeysActive ? ' ([)' : ''}. Click again to clear.`}
       onClick={() => void vote('down')}>
-      <span>Not helpful</span>{hotkeysActive && <kbd>[</kbd>}
+      <span>Not helpful</span>{hotkeysActive && <span className="session-shortcut-hints"><kbd className="session-shortcut-hint">[</kbd></span>}
     </button>
     <button type="button" className="content-quality-vote" aria-keyshortcuts={hotkeysActive ? ']' : undefined} aria-label={`Helpful: ${label}`}
       aria-pressed={state?.rating === 'up'} disabled={disabled || !state || busy}
       title={`Helpful content${hotkeysActive ? ' (])' : ''}. Click again to clear.`}
       onClick={() => void vote('up')}>
-      <span>Helpful</span>{hotkeysActive && <kbd>]</kbd>}
+      <span>Helpful</span>{hotkeysActive && <span className="session-shortcut-hints"><kbd className="session-shortcut-hint">]</kbd></span>}
     </button>
     <span className="content-quality-status" role="status">{busy ? 'Saving…' : state?.rating ? 'Feedback saved' : ''}</span>
     {error && <span className="content-quality-error" role="alert">{error} {!state &&
