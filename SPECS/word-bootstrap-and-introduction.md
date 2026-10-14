@@ -85,13 +85,22 @@ because they contain a target. A full sentence is not a pure cue.
 
 Bootstrap is learner-independent in the first version. Scale surrounding
 language sensibly to the target without matching a learner's known lexicon.
-The corpus meaning list remains stored. The recognition reveal for
-bootstrapped words shows one curated use label, its first linked example, and
-the translation in the supplement layout. Selection cycles through uses in
-source order by UTC epoch day modulo the number of uses, held stable while
-the reveal is mounted. The full source reference is available in a collapsed
-disclosure; unbootstrapped words retain their existing reveal. This display improvement
-does not alter recognition grading or scheduling.
+The corpus meaning list remains stored. Recognition review and definition-based
+production review use the same bootstrap reveal, regardless of how the source
+was prepared. It shows one curated use label, its first linked example, and the
+translation in the supplement layout. Selection cycles through uses in source
+order by UTC epoch day modulo the number of uses and is frozen when the action
+is composed. The full source reference is available in a collapsed disclosure.
+Production retains its target answer and response/Continue/rating sequence.
+Contextual production cues do not gain this reveal.
+
+Eligible bootstrap takes precedence over fixed supplements. Without it, existing
+supplements and dictionary fallback remain usable. The reveal teaches the word
+as a whole; it does not map the tested cue to a particular sense, alter accepted
+answers, or provide missing constraints for judging the original exercise.
+Reflection may request bootstrap-only preparation after learner authorization;
+that request creates no teaching package or study credit. Other preparation
+paths reuse the same source. A pending or failed request does not block study.
 
 ## 4. Introduction And Practice Form One Package
 

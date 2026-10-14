@@ -1,3 +1,5 @@
+import { assertBootstrapRevealSource } from './word-introductions.ts';
+import { selectBootstrapReveal } from '../../src/domain/word-content/reveal.ts';
 import { getSessionWordOutcome, recordSessionWordOutcome, assertSessionAcceptsNewWordOutcome } from './session-word-outcomes.ts';
 import { DEFAULT_INTRODUCTION_SPACING, isStudyIntroductionOrder, isStudyIntroductionSpacing, type StudyIntroductionOrder } from '../../src/domain/introduction-order.ts';
 import { enqueueSessionDebrief } from './session-debrief.ts';
@@ -1646,6 +1648,12 @@ function parseProductionAttemptEvidence(event: StudyAttemptEvent): ParsedProduct
     || (responseKind === 'no_clue' && production.submittedText !== null)
   ) {
     throw new Error(`Production attempt ${event.id} has invalid production evidence metadata.`);
+  }
+  if (production.bootstrapReveal !== undefined) {
+    if (production.cueType !== 'definition_gloss' || production.supplement != null) {
+      throw new Error('Bootstrap reveal requires definition production without a legacy supplement');
+    }
+    assertBootstrapRevealSource(event.targetWordId, production.bootstrapReveal);
   }
   if ('recheckDemandId' in production || event.sessionActionId.includes('/production/recheck/')) {
     throw new Error(`Production attempt ${event.id} uses retired production recheck state.`);
@@ -5771,10 +5779,18 @@ function mapReviewSessionItemWithSkillRow(
     contrastSelection: content.contrastSelection,
     production: content.production,
   });
-  if (row.skill_id === 'recognition' && getConfig().studyProfile === 'mandarin') {
+  const bootstrapRevealEligible = row.skill_id === 'recognition'
+    || (row.skill_id === 'production' && item.production?.cueType === 'definition_gloss');
+  if (bootstrapRevealEligible && getConfig().studyProfile === 'mandarin') {
     const sourceId = getWordIntroductionPreparation(row.id)?.contentId;
     const source = getWordIntroductionLibrary(row.id)?.contents.find((entry) => entry.content.id === sourceId)?.content;
-    if (source) return { ...item, wordContent: source };
+    if (source) {
+      const bootstrapReveal = selectBootstrapReveal(source, new Date());
+      return { ...item, wordContent: source, bootstrapReveal,
+        ...(item.production ? { production: { ...item.production, supplement: null, bootstrapReveal } } : {}),
+      };
+    }
+    if (row.skill_id !== 'recognition') return item;
     // Reuse existing visible teaching only; recognition never requests generation.
     const taskId = defaultProductionTaskId(row.id);
     const cueIds = [null, ...getActiveProductionCuesForWord(row.id)

@@ -1,3 +1,4 @@
+import type { BootstrapRevealSnapshot } from './word-content/reveal';
 import type { ContentExerciseSnapshot, WordContentDocument } from './word-content/types';
 import type { WordIntroductionResponse } from './word-content/application';
 import type { ReviewRating, Word } from '../types';
@@ -40,6 +41,8 @@ export type ProductionExerciseSnapshot = {
   text: string;
   acceptedAnswers: ProductionAnswerWord[];
   supplement: ProductionCueSupplementSnapshot | null;
+  /** Frozen word teaching shown only after the response. */
+  bootstrapReveal?: BootstrapRevealSnapshot;
 };
 
 export type ProductionAnswerWord = AcceptedCueAnswer;
@@ -75,6 +78,7 @@ export function cloneProductionExerciseSnapshot(
     ...production,
     acceptedAnswers: production.acceptedAnswers.map((word) => ({ ...word })),
     supplement: production.supplement == null ? null : { ...production.supplement },
+    ...(production.bootstrapReveal ? { bootstrapReveal: { ...production.bootstrapReveal } } : {}),
   };
 }
 
@@ -143,6 +147,7 @@ export type SessionStudyItem = {
   /** Frozen target rehearsal, separate from review cues and reflection evidence. */
   rehearsal?: LearningRehearsalSnapshot;
   wordContent?: WordContentDocument;
+  bootstrapReveal?: BootstrapRevealSnapshot;
   /** Existing eligible teaching shown only after a recognition review is revealed. */
   recognitionSupplement?: ProductionCueSupplementSnapshot;
 };

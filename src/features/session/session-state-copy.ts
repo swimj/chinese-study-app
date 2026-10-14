@@ -61,6 +61,7 @@ function cloneAttemptMetadata(metadata: Record<string, unknown>): Record<string,
     return { ...metadata };
   }
   const acceptedAnswers = (production as Record<string, unknown>).acceptedAnswers;
+  const bootstrapReveal = (production as Record<string, unknown>).bootstrapReveal;
   const supplement = (production as Record<string, unknown>).supplement;
   return {
     ...metadata,
@@ -73,6 +74,10 @@ function cloneAttemptMetadata(metadata: Record<string, unknown>): Record<string,
             : word
         ))
         : acceptedAnswers,
+      ...(bootstrapReveal === undefined ? {} : {
+        bootstrapReveal: typeof bootstrapReveal === 'object' && bootstrapReveal !== null && !Array.isArray(bootstrapReveal)
+          ? { ...bootstrapReveal } : bootstrapReveal,
+      }),
       supplement: typeof supplement === 'object' && supplement !== null && !Array.isArray(supplement)
         ? { ...supplement }
         : supplement,

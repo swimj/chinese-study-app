@@ -7,10 +7,11 @@ import {
 import type { SessionStudyItem } from '../../domain/study-actions';
 import type { ReviewRating, Word, WordMeaning } from '../../types';
 
-export function hasServedProductionCueSupplement(
+export function hasServedProductionReveal(
   production: SessionStudyItem['production'] | null | undefined,
 ) {
-  return production?.supplement != null;
+  return production?.cueType === 'definition_gloss'
+    && (production.bootstrapReveal != null || production.supplement != null);
 }
 
 export function getActiveWordPersonalNotes({

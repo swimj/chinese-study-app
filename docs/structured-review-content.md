@@ -24,14 +24,22 @@ transaction. Generated cues enter the existing shared-trial registry under an
 explicit application publication policy. No reflection invocation or learner
 approval is fabricated. Ordinary session composition selects them through the
 existing active-cue path instead of falling back to corpus dictionary meanings.
-Recognition reveals prefer eligible bootstrap uses/examples. Without bootstrap
-content, recognition reviews reuse an existing visible, eligible production
-supplement: the default definition's supplement first, then the first active
-definition cue with one in stable creation order. The explanation and translated
-example replace the dictionary detail on reveal and retain supplement quality
-feedback. Selection is snapshotted during session composition; it requests no
-generation and preserves ordinary dictionary fallback when none is available.
-Retired cues and withdrawn sources cannot supply this fallback. Existing
+Recognition and definition-based production reveals prefer eligible bootstrap
+uses/examples regardless of the preparation trigger. Composition freezes the
+same daily use/example selection for both action types. The word reference
+exposes the remaining uses. Contextual production retains its existing reveal.
+Without bootstrap, recognition reuses an eligible production supplement: the
+default definition's supplement first, then the first active definition cue with
+one in stable creation order. Production retains its exact cue/fallback supplement.
+Legacy supplement feedback remains attached to the displayed legacy supplement;
+bootstrap reveals have the same presentation and feedback capabilities in both
+action types. Withdrawn sources cannot supply a new reveal.
+
+The authorized reflection `request_word_bootstrap@1` handle enqueues only shared
+bootstrap preparation. It authors no sentence and attaches nothing to a specific
+cue. Existing ready source satisfies the request; otherwise the work reference
+means preparation was requested, not that content is ready. Normal worker
+retry/paused behavior applies. Serving never starts provider work. Existing
 legacy cues remain in the pool; there is no rewrite of past material.
 
 The new reviewer still answers a normal review task. Rejections produce ordinary

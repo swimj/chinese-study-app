@@ -1,3 +1,5 @@
+import { isBootstrapRevealSnapshot, type BootstrapRevealSnapshot } from '../../src/domain/word-content/reveal.ts';
+import { assertBootstrapRevealSource } from '../db/word-introductions.ts';
 import type {
   ReflectionExistingContentV0,
   ReflectionServedCueSnapshotV2,
@@ -446,6 +448,7 @@ function productionServedCue(
       text: metadata.text,
       acceptedWordIds: [...metadata.acceptedWordIds],
       supplement: metadata.supplement,
+      ...(metadata.bootstrapReveal ? { bootstrapReveal: { ...metadata.bootstrapReveal } } : {}),
     };
   }
   if (suppliedCue.cueId !== null) {
@@ -464,6 +467,7 @@ function productionServedCue(
 }
 
 type ProductionAttemptMetadataV0 = {
+  bootstrapReveal?: BootstrapRevealSnapshot;
   taskId: string;
   cueId: string | null;
   cueType: 'definition_gloss' | 'minimal_context' | 'circumstance';
@@ -494,7 +498,9 @@ function parseProductionAttemptMetadata(raw: string): ProductionAttemptMetadataV
   const supplement = production.supplement === undefined ? null : production.supplement;
   const responseKind = production.responseKind === undefined ? 'typed' : production.responseKind;
   if (
-    typeof production.taskId !== 'string'
+    (production.bootstrapReveal !== undefined && (!isBootstrapRevealSnapshot(production.bootstrapReveal)
+      || production.cueType !== 'definition_gloss' || supplement !== null))
+    || typeof production.taskId !== 'string'
     || (production.cueId !== null && typeof production.cueId !== 'string')
     || (
       production.cueType !== 'definition_gloss'
@@ -560,6 +566,10 @@ function validateProductionAttemptMetadata(
     throw invalidReference('The production attempt snapshot does not match its durable attempt.');
   }
 
+  if (metadata.bootstrapReveal) {
+    try { assertBootstrapRevealSource(attempt.target_word_id, metadata.bootstrapReveal); }
+    catch { throw invalidReference('Production post-reveal content differs from its immutable bootstrap source.'); }
+  }
   const contentRef = parseNullableObjectJson(attempt.content_ref_json);
   const durableSupplement = metadata.supplement === null ? null
     : getProductionCueSupplement(metadata.taskId, metadata.cueId, metadata.supplement.supplementId);

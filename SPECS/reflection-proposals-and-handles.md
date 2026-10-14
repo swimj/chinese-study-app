@@ -4,9 +4,10 @@ Status: accepted canonical product contract. The core V1 proposal, review,
 authorization, application, and provenance lifecycle is implemented.
 `repair_production_cue@1` and `accept_production_alternate@1` remain
 intentionally unsupported. The V2 production-cue repair behavior is accepted
-and implemented current behavior. `add_production_cue_supplement@1` is the
-accepted bounded path for adding post-reveal contextual reinforcement without
-replacing a fair definition-based production cue.
+and implemented current behavior. `request_word_bootstrap@1` requests bootstrap
+content (word uses and examples) without replacing a fair definition-based
+production cue. Legacy
+`add_production_cue_supplement@1` operations remain readable and applicable.
 `promote_pure_elicitation@1` is the atomic path from an overbroad word cue to
 a standalone pure cue; its policy is defined in
 [`pure-cue-elicitation.md`](./pure-cue-elicitation.md).
@@ -187,10 +188,18 @@ item-level text surface, and removes `unhandledNeeds` because the current model
 and product do not use them reliably. V7 retains that item shape and adds the
 strict `add_production_cue_supplement@1` wire operation. New generation uses
 V10 through staged diagnosis/cleanup; stage one uses the
-`staged_reflection_diagnosis_result.v3` ordinary/ambiguous-pair contract with an
+`staged_reflection_diagnosis_result.v4` provider wire with kind-only bootstrap
+requests, normalized to the canonical V3 ordinary/ambiguous-pair contract with an
 optional target-suppression recommendation (required nullable handoff field). V7 is the
 legacy one-shot result contract. Stored V4/V5/V6/V7 artifacts
-remain immutable. Execution requires the current staged flow and prompt contract:
+remain immutable. Saved results using `session_reflection_result.v10` and
+generated with diagnosis
+prompts `reflection-staged-v4` (v4.0), v4.1, or v4.2 remain reviewable and
+applicable, including their legacy supplement proposals. These are separate
+versions: V10 identifies the saved result schema; v4.0–v4.2 identifies the
+diagnosis prompt that produced it. Unfinished provider runs using those older
+prompts cannot be retried. Other execution requires the supported staged flow
+and prompt contract:
 obsolete proposals cannot be accepted, revised, replaced, used as manual-operation
 evidence, or applied. Second opinions may reuse compatible original diagnosis
 evidence under the eligibility rules in `session-reflection-generation.md`,
@@ -599,7 +608,27 @@ New reflection generation emits V2 directly. V1 remains readable and
 unsupported; any later V1-to-V2 migration uses a newly authorized V2 invocation
 and supersession rather than reinterpreting the stored V1 payload.
 
-### `add_production_cue_supplement` version 1
+### `request_word_bootstrap` version 1
+
+The diagnosis model recommends reusable word teaching when an otherwise fair
+definition-based production exercise would benefit from post-reveal examples.
+Its wire operation is `{kind: 'request_word_bootstrap'}`; the backend binds
+`wordId` to the evidence target and adds `version: 1`. The containing proposal
+provides the rationale. The model authors no sentence, translation, or frame.
+
+Learner authorization applies this preparation request. An eligible existing
+bootstrap satisfies it; otherwise application enqueues the shared `bootstrap`
+stage only. Its work effect identifies the request, not completed content.
+Duplicates reuse the existing work and ordinary demand does not reset exhausted
+attempts or replace withdrawn content. Preparation neither creates teaching or
+review packages nor changes scheduling, answers, cue lifecycle, or study credit.
+
+Once available, the source participates in the same recognition and
+definition-production reveal policy as any other bootstrap. No per-cue attachment
+or sense selection is required. Legacy supplements remain readable and usable as
+fallback; new diagnosis generation does not author them.
+
+### `add_production_cue_supplement` version 1 (legacy)
 
 ```ts
 type AddProductionCueSupplementOperationV1 = {

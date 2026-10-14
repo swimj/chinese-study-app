@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { selectBootstrapReveal } from '../src/domain/word-content/reveal';
 import { buildWordLifecycleSessionStudyItems } from '../src/domain/study-actions.ts';
 import type { WordIntroductionResponse } from '../src/domain/word-content/application.ts';
 import type { Word } from '../src/types.ts';
@@ -41,11 +42,13 @@ test('learning uses curated recognition and frozen target exercise with unchange
     if (item.actionKind === 'recognition') {
       assert.equal(item.rehearsal, undefined);
       assert.equal(item.wordContent?.id, fixture.content.id);
+      assert.deepEqual(item.bootstrapReveal, item.actionKind === 'recognition' ? selectBootstrapReveal(fixture.content, new Date()) : undefined);
       assert.equal(getActiveAnswerText({ item, word, allMeanings: word.meanings }), fixture.content.uses[0]!.label);
     } else {
       assert.equal(item.production, null);
       assert.equal(item.rehearsal?.contract.kind, 'target_rehearsal');
       assert.equal(item.wordContent?.id, fixture.content.id);
+      assert.deepEqual(item.bootstrapReveal, item.actionKind === 'recognition' ? selectBootstrapReveal(fixture.content, new Date()) : undefined);
       assert.equal(getActivePrompt({ item, word, allMeanings: word.meanings, promptDisplayedMeanings: word.meanings }),
         `${rehearsal.instruction}\n${rehearsal.stimulus.text}`);
       assert.equal(resolveContentExerciseResponse(item.rehearsal!, '通知').outcome, 'rejected');
@@ -149,6 +152,7 @@ test('first encounter rotates taught production, trains recognition, and commits
     } else {
       assert.equal(item.actionKind, 'recognition');
       assert.equal(item.wordContent?.id, fixture.content.id);
+      assert.deepEqual(item.bootstrapReveal, item.actionKind === 'recognition' ? selectBootstrapReveal(fixture.content, new Date()) : undefined);
       successes.recognition += 1;
     }
     const undo = cloneBucketSessionState(state);

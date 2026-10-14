@@ -154,6 +154,8 @@ export function ReflectionOperationEditor({
           </Field>
         </div>
       );
+    case 'request_word_bootstrap':
+      return <p>Request bootstrap generation for this word. No-op if the word is already bootstrapped.</p>;
     case 'add_production_cue_supplement':
       return (
         <div className="reflection-operation-fields">

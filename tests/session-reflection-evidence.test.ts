@@ -24,6 +24,25 @@ import {
 import type { Word } from '../src/types.ts';
 
 describe('completed-session reflection evidence', () => {
+  test('freezes bootstrap teaching separately from the production prompt and answer set', () => {
+    const item = createStudyItem({ actionKind: 'production', status: 'review' });
+    const bootstrapReveal = { contentId: 'content', useId: 'use', exampleId: 'example',
+      englishFrame: 'A usage', exampleSentence: '目标。', exampleTranslation: 'A goal.' };
+    item.production = { ...item.production!, bootstrapReveal };
+    const state = markActiveSessionUnitStarted(createBucketSessionState({
+      buckets: { review: [item], learning: [], unstudied: [] }, sessionId: 'bootstrap-evidence',
+      schedulerPolicy: { bucketWeights: { review: 1, learning: 0, unstudied: 0 } }, seed: 1,
+    }));
+    const result = rateActiveSessionUnit(state, 'forgot', { response: '替代',
+      productionResponse: { submittedText: '替代', result: 'rejected' } });
+    const metadata = result.state.reviewProgress[item.sessionActionId]!.attempts[0]!.metadata.production as Record<string, unknown>;
+    assert.deepEqual(metadata.bootstrapReveal, bootstrapReveal);
+    assert.notEqual(metadata.bootstrapReveal, bootstrapReveal);
+    assert.equal(metadata.text, 'target');
+    assert.deepEqual(metadata.acceptedWordIds, ['review-word']);
+    assert.equal(metadata.result, 'rejected');
+  });
+
   test('review production attempt batches retain the raw typed response without changing rating behavior', () => {
     const item = createStudyItem({ actionKind: 'production', status: 'review' });
     let state = markActiveSessionUnitStarted(createBucketSessionState({

@@ -2,7 +2,7 @@ import { SessionCompletionPanel, type SessionCompletionPanelProps } from './Sess
 import { convertSentenceCharacters, effectiveSentenceCharacterPresentation, formatSentenceAnswer } from '../../domain/sentence-characters';
 import { SessionDesk, RecallChips, type SessionDeskHandle } from './SessionDesk';
 import { StudyStageBadge, studyStageCardClass } from './StudyStageBadge';
-import { RecognitionSourceReveal } from './RecognitionSourceReveal';
+import { BootstrapSourceReveal } from './BootstrapSourceReveal';
 import { ProductionSupplementAside } from './ProductionSupplementAside';
 import { WordSourceExamples } from './WordSourceExamples';
 import { ClozePrompt } from './ClozePrompt';
@@ -33,7 +33,7 @@ import { studyProfile } from '../../study-profile';
 import type { RatingOption } from './session-rating';
 import type { SessionSummary } from './session-summary';
 import type { SessionFinalizationState } from './session-finalization';
-import { getDisplayedReinforcementStreak, getStudySessionPanelView, hasServedProductionCueSupplement } from './session-selectors';
+import { getDisplayedReinforcementStreak, getStudySessionPanelView, hasServedProductionReveal } from './session-selectors';
 import {
   isImeComposingEvent,
   getSessionPrimaryAction,
@@ -333,7 +333,12 @@ function StudySessionPanelContent({
     (!activeItem || activeItem.actionKind !== 'contrast_selection' || contrastAwaitingRating)
   );
   const showProductionSupplementAside =
-    answerRevealed && hasServedProductionCueSupplement(activeItem?.production);
+    answerRevealed && hasServedProductionReveal(activeItem?.production);
+  const activeBootstrapReveal = activeItem?.actionKind === 'recognition'
+    ? activeItem.bootstrapReveal
+    : activeItem?.production?.cueType === 'definition_gloss' ? activeItem.production.bootstrapReveal : undefined;
+  const frozenBootstrapReveal = frozenProductionCard?.production?.cueType === 'definition_gloss'
+    ? frozenProductionCard.production.bootstrapReveal : undefined;
   const sessionInteractionPending = confirmingSessionAction || contentRatingSaving || submittingRating !== null;
   const qualityHotkeysActive = !personalNotesEditorOpen && !shortcutGuideOpen && !sessionInteractionPending && !studyManagementSubmitting;
   function qualityControls(target: ContentQualityTarget | null, actionId: string, count: number, label: string, hotkeys = true, onRatingChange?: (rating: 'up' | 'down' | null) => void) {
@@ -439,8 +444,9 @@ function StudySessionPanelContent({
               <span className="prompt-label">Answer</span>
               <span className="answer-pinyin">{frozenProductionCard.answerPinyin}</span>
               <strong className="answer-value">{frozenProductionCard.answerText}</strong>
-              <details className="desk-reference" open={frozenProductionCard.status !== 'review' || undefined}><summary>Word reference</summary>{frozenProductionCard.wordContent ? <WordSourceExamples content={frozenProductionCard.wordContent} sentenceCharacterPresentation={sentenceScript} /> : <MeaningList meanings={frozenProductionCard.allMeanings.map(sentenceText)} />}</details>
-              {frozenProductionCard.production?.supplement ? (
+              {frozenBootstrapReveal ? <BootstrapSourceReveal reveal={frozenBootstrapReveal} sentenceCharacterPresentation={sentenceScript} /> : null}
+              <details className="desk-reference" open={frozenBootstrapReveal ? undefined : (frozenProductionCard.status !== 'review' || undefined)}><summary>Word reference</summary>{frozenProductionCard.wordContent ? <WordSourceExamples content={frozenProductionCard.wordContent} sentenceCharacterPresentation={sentenceScript} /> : <MeaningList meanings={frozenProductionCard.allMeanings.map(sentenceText)} />}</details>
+              {!frozenBootstrapReveal && frozenProductionCard.production?.supplement ? (
                 <div className="production-supplement">
                   <span className="prompt-label">In context</span>
                   <span className="prompt-meta">
@@ -487,7 +493,7 @@ function StudySessionPanelContent({
             {qualityControls(getSessionContentQualityTarget({ ...frozenProductionCard, production: frozenProductionCard.production ?? null },
               { wordId: frozenProductionCard.targetWordId, displayedMeanings: frozenProductionCard.promptDisplayedMeanings }),
               frozenProductionCard.sessionActionId, frozenProductionCard.reviewedCount,
-              frozenProductionCard.rehearsal ? 'Practice quality' : 'Cue quality', !frozenProductionCard.production?.supplement,
+              frozenProductionCard.rehearsal ? 'Practice quality' : 'Cue quality', !!frozenBootstrapReveal || !frozenProductionCard.production?.supplement,
               frozenProductionCard.status === 'review' ? onFrozenProductionContentRatingChange : undefined)}
             {frozenProductionCard.status === 'review' ? (
               <SessionActionSection>
@@ -899,18 +905,19 @@ function StudySessionPanelContent({
               />
             ) : answerRevealed ? (
               <div className="answer-block">
-                {showProductionSupplementAside && activeItem.production?.supplement ? (
+                {activeBootstrapReveal ? (
+                  <>
+                    {isProductionItem ? <strong className="production-supplement-target">{activeAnswerText}</strong> : null}
+                    <span className="answer-pinyin">{activeAnswerPinyin}</span>
+                    <BootstrapSourceReveal reveal={activeBootstrapReveal} sentenceCharacterPresentation={sentenceScript} />
+                  </>
+                ) : showProductionSupplementAside && activeItem.production?.supplement ? (
                   <>
                     <strong className="production-supplement-target">{activeAnswerText}</strong>
                     <span className="answer-pinyin">{activeAnswerPinyin}</span>
                     <ProductionSupplementAside supplement={activeItem.production.supplement} sentenceCharacterPresentation={sentenceScript} />
                     {qualityControls({ kind: 'supplement', id: activeItem.production.supplement.supplementId },
                       activeItem.sessionActionId, reviewedCount, 'Supplement quality')}
-                  </>
-                ) : activeItem.actionKind === 'recognition' && activeItem.wordContent ? (
-                  <>
-                    <span className="answer-pinyin">{activeAnswerPinyin}</span>
-                    <RecognitionSourceReveal key={activeItem.sessionActionId} content={activeItem.wordContent} sentenceCharacterPresentation={sentenceScript} />
                   </>
                 ) : (
                   <>
@@ -919,9 +926,9 @@ function StudySessionPanelContent({
                     <strong className="answer-value">{activeItem.actionKind === 'recognition' ? sentenceText(activeAnswerText ?? '') : activeAnswerText}</strong>
                   </>
                 )}
-                {!productionAwaitingSupplement ? <details key={activeItem.sessionActionId} className="desk-reference" open={(activeItem.actionKind === 'recognition' && activeItem.wordContent) ? undefined : (!isProductionItem || activeWord.status !== 'review' || undefined)}>
+                {!productionAwaitingSupplement || activeBootstrapReveal ? <details key={activeItem.sessionActionId} className="desk-reference" open={activeBootstrapReveal ? undefined : (!isProductionItem || activeWord.status !== 'review' || undefined)}>
                   <summary>Word reference</summary>
-                {productionAwaitingSupplement ? null : activeItem.wordContent ? (
+                {activeItem.wordContent ? (
                   <WordSourceExamples content={activeItem.wordContent} sentenceCharacterPresentation={sentenceScript} />
                 ) : activeItem.actionKind === 'recognition' && activeItem.recognitionSupplement ? (
                   <>
@@ -1103,7 +1110,7 @@ function StudySessionPanelContent({
               />
             </SessionActionSection>
             {qualityControls(getSessionContentQualityTarget(activeItem, { wordId: activeItem.targetWordId, displayedMeanings: activePromptDisplayedMeanings }), activeItem.sessionActionId, reviewedCount,
-              activeItem.rehearsal ? 'Practice quality' : 'Cue quality', !showProductionSupplementAside,
+              activeItem.rehearsal ? 'Practice quality' : 'Cue quality', !!activeBootstrapReveal || !showProductionSupplementAside,
               activeItem.actionKind === 'production' && activeWord.status === 'review' ? onContentRatingChange : undefined)}
             <SessionActionSection>
               {activeItem.actionKind === 'production' && activeWord.status === 'review' ? (

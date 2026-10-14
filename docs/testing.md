@@ -4,6 +4,14 @@ Run full suite: `npm test` (Node test runner, `tests/*.test.ts`).
 
 ## Browser regression checks
 
+`/tests/browser/bootstrap-reveal.html` checks the shared bootstrap teaching
+reveal with the actual session controller. Use `?recognition=1` for recognition,
+`?frozen=1` for the frozen production correction, and the default for accepted
+definition production. It supplies long labels/examples and legacy fallback
+content to verify bootstrap precedence, keyboard progression, and reference
+wrapping. `bootstrap-reveal-serving.test.ts` checks source eligibility and exact
+snapshots without provider calls.
+
 With `npm run dev:frontend` running, open
 `/tests/browser/final-reinforcement.html` on the Vite server. This isolated fixture
 intercepts all HTTP and exercises the real session controller, HomePage, and

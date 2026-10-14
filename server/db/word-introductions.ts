@@ -1,3 +1,4 @@
+import { isBootstrapRevealSnapshot } from '../../src/domain/word-content/reveal.ts';
 import { randomUUID } from 'node:crypto';
 import type { SavedTeachingPackage, SavedWordContent, WordIntroductionLibrary } from '../../src/domain/word-content/application.ts';
 import { materializeTeachingPackage } from '../../src/domain/word-content/materialize.ts';
@@ -539,4 +540,20 @@ export function getSharedWordIntroductionContent(wordId: string): WordContentDoc
 }
 export function getSharedWordTeachingPackageId(wordId: string): string | null {
   return eligiblePackageRows(wordId)[0]?.package_id ?? null;
+}
+
+/** Validate historical post-reveal material against its immutable source, even after withdrawal. */
+export function assertBootstrapRevealSource(wordId: string, value: unknown): void {
+  if (!isBootstrapRevealSnapshot(value)) throw new Error('Invalid bootstrap reveal snapshot');
+  const row = getDb().prepare('SELECT content_json FROM word_content_documents WHERE content_id = ? AND word_id = ?')
+    .get(value.contentId, wordId) as { content_json: string } | undefined;
+  if (!row) throw new Error('Bootstrap reveal source does not belong to the target word');
+  const content = parseWordContent(JSON.parse(row.content_json));
+  const use = content.uses.find((entry) => entry.id === value.useId);
+  const example = content.examples.find((entry) => entry.id === value.exampleId);
+  if (!use || !example || use.exampleIds[0] !== example.id
+    || value.englishFrame !== use.label || value.exampleSentence !== example.text
+    || value.exampleTranslation !== example.translation) {
+    throw new Error('Bootstrap reveal differs from its immutable source');
+  }
 }

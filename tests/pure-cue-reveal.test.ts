@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { test } from 'node:test';
 import { StudySessionPanel } from '../src/features/session/StudySessionPanel.tsx';
 import { createSessionSummary } from '../src/features/session/session-summary.ts';
+import { selectBootstrapReveal } from '../src/domain/word-content/reveal';
 import type { PureCueSessionReviewItem } from '../src/domain/study-actions.ts';
 
 const cue: PureCueSessionReviewItem = {
@@ -132,7 +133,8 @@ test('recognition reuses supplement teaching only after reveal and retains dicti
       { id: 'b', text: '她学习。', translation: 'She studies.', pronunciation: null },
     ],
   };
-  const bootstrap = { ...overrides, activeItem: { ...item, wordContent: content }, characterPresentation: 'traditional' as const };
+  const bootstrapReveal = selectBootstrapReveal(content, new Date('2026-10-13T00:00:00Z'));
+  const bootstrap = { ...overrides, activeItem: { ...item, wordContent: content, bootstrapReveal }, characterPresentation: 'traditional' as const };
   assert.doesNotMatch(render(bootstrap), /curated sense|studies/);
   const bootstrapHtml = render({ ...bootstrap, answerRevealed: true });
   const primaryReveal = bootstrapHtml.split('<details class="desk-reference">')[0];
@@ -144,6 +146,37 @@ test('recognition reuses supplement teaching only after reveal and retains dicti
   assert.match(bootstrapHtml, /<details class="desk-reference"><summary>Word reference/);
   assert.match(bootstrapHtml, /First curated sense/);
   assert.match(bootstrapHtml, /Second curated sense/);
+  const production = { taskId: 'task', cueId: null, cueType: 'definition_gloss' as const,
+    text: word.meaning, acceptedAnswers: [{ wordId: word.id, hanzi: word.hanzi, traditional: null }],
+    supplement: item.recognitionSupplement, bootstrapReveal };
+  const productionItem = { ...bootstrap.activeItem, actionKind: 'production' as const,
+    sampledSkillIds: ['production' as const], production };
+  const productionProps = { ...bootstrap, activeItem: productionItem, isProductionItem: true,
+    activePrompt: word.meaning, activeAnswerText: word.hanzi };
+  assert.doesNotMatch(render(productionProps), /curated sense|studies/);
+  const productionHtml = render({ ...productionProps, answerRevealed: true, productionAwaitingSupplement: true });
+  const revealedExample = (html: string) => html.match(/<div class="production-supplement production-supplement-aside">.*?<\/div>/)?.[0];
+  assert.equal(revealedExample(productionHtml), revealedExample(bootstrapHtml));
+  assert.match(productionHtml, /<details class="desk-reference"><summary>Word reference/);
+  assert.doesNotMatch(productionHtml, /Knowingly shielding|Supplement quality/);
+  assert.match(productionHtml, /Continue/);
+  const frozenHtml = render({ ...productionProps, productionAwaitingNext: true,
+    frozenProductionCard: {
+      sessionActionId: productionItem.sessionActionId, targetWordId: word.id, actionKind: 'production', sampledSkillIds: ['production'],
+      contentRef: null, attemptedHanzi: '错', status: 'review', reviewedCount: 0, queuedCount: 1,
+      promptDisplayedMeanings: [], fallbackPrompt: word.meaning, answerPinyin: word.pinyin,
+      answerText: word.hanzi, answerForms: { hanzi: word.hanzi, traditional: null },
+      allMeanings: word.meanings, personalNotes: '', intervalHours: 24, example: '', production, wordContent: content,
+    },
+  });
+  assert.equal(revealedExample(frozenHtml), revealedExample(bootstrapHtml));
+  assert.doesNotMatch(frozenHtml, /Knowingly shielding|Supplement quality/);
+  assert.match(frozenHtml, /Your response/);
+  const clozeHtml = render({ ...productionProps, answerRevealed: true,
+    activeItem: { ...productionItem, production: { ...production, cueType: 'minimal_context', supplement: null } },
+  });
+  assert.equal(revealedExample(clozeHtml), undefined);
+
   assert.doesNotMatch(render(overrides), /Knowingly shielding|He shielded|Supplement quality/);
   const revealed = render({ ...overrides, answerRevealed: true });
   assert.match(revealed, /Knowingly shielding someone/);

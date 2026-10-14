@@ -22,7 +22,7 @@ does not require new targeted cues, and distinctive cues aim for natural strong
 evocation rather than absolute exclusivity.
 
 `staged-diagnosis.md` is the current first-stage prompt, stamped
-`reflection-staged-v4.2`. `pure-cue-promotion.md` is stamped
+`reflection-staged-v5.0`. `pure-cue-promotion.md` is stamped
 `pure-cue-promotion-v3.0`. `reflection.md` retains the shipped one-shot guidance
 for historical/provider-contract coverage; new staged generation does not append
 overrides to that older prompt.
@@ -48,6 +48,15 @@ exercise: related meanings can call for distinct sentence roles or
 constructions worth practicing separately. Grammatical labels alone do not
 require a split.
 
+Diagnosis v5.0 replaces newly authored post-reveal supplements with a kind-only
+`request_word_bootstrap` operation in provider wire V4. The server binds its word
+from the evidence and normalizes into the existing canonical diagnosis V3 and
+final V10 envelopes. Application reuses eligible shared content or requests only
+bootstrap preparation, without claiming generation has completed. Exact
+`postRevealWordContent` may inform an explanation but never the original cue's
+fairness. Shipped v4 proposals remain reviewable/applicable; old-major in-flight
+provider runs cannot be retried through the new wire contract.
+
 Prompt versions use `<prompt-family>-v<major>.<minor>`. Existing whole-number
 versions are minor zero: `reflection-staged-v3` means `reflection-staged-v3.0`.
 Only shipped text establishes a versioning baseline; edits before shipping do
@@ -61,7 +70,9 @@ previously shipped prompt in `archive/`. Never rewrite an archived prompt.
 Update the active provider stamp with every shipped edit; persisted runs keep
 the full version for provenance. Quality reporting combines minor versions
 within a major, while current contract checks accept earlier minors of the
-current major. Future minors and earlier majors are not current contracts.
+current major. Future minors and earlier majors are not current generation contracts. Historical
+artifact application compatibility is explicitly retained where its operations
+still have faithful adapters, including diagnosis v4 authored supplements.
 
 Staged diagnosis V3 has an ordinary/ambiguous-pair output contract. The
 handoff supplies an ambiguity reason and a nullable target-suppression

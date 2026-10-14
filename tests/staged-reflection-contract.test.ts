@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
   normalizeStagedReflectionDiagnosisResultV2,
+  normalizeStagedReflectionDiagnosisResultV3,
+  validateStagedReflectionDiagnosisResultV3,
   validatePureCuePromotionResultV2,
   validateStagedReflectionDiagnosisResultV2,
   type PureCuePromotionBundleV2,
@@ -12,6 +14,7 @@ import {
 import {
   pureCuePromotionResultV2WireSchema,
   stagedReflectionDiagnosisResultV2WireSchema,
+  stagedReflectionDiagnosisResultV4WireSchema,
 } from '../src/domain/reflection-result-schema.ts';
 import { validateJsonSchema } from '../server/llm/json-schema-validator.ts';
 import {
@@ -42,6 +45,9 @@ test('prompt minor versions share a major and preserve current contract compatib
     ['reflection-staged-v4.1', true],
     ['reflection-staged-v4.2', true],
     ['reflection-staged-v4.3', false],
+    ['reflection-staged-v5.0', true],
+    ['reflection-staged-v5.1', false],
+    ['reflection-staged-v4.4', false],
     ['reflection-staged-v3.2', false],
   ] as const) {
     assert.equal(isCurrentReflectionArtifactContract({
@@ -376,4 +382,38 @@ describe('promotion reconciliation contract', () => {
     };
     assert.notDeepEqual(validateJsonSchema(retiredNoPromotion, pureCuePromotionResultV2WireSchema), []);
   });
+});
+
+
+test('current bootstrap request binds its target from definition evidence and authors no supplement', () => {
+  const evidence = bundle(item({ servedCue: { ...item().servedCue, supplement: {
+    supplementId: 'legacy', englishFrame: 'Old frame', exampleSentence: 'Old example', exampleTranslation: 'Old translation',
+  } } }));
+  const wire = {
+    schemaVersion: 'staged_reflection_diagnosis_result.v4' as const,
+    itemResults: [{
+      kind: 'ordinary' as const, itemId: 'item-1', diagnosisTags: [], learnerExplanation: 'An example could help.',
+      proposals: [{ proposalGroupKey: null, rationale: 'General usage examples would help.', operation: { kind: 'request_word_bootstrap' as const } }],
+      questions: [],
+    }],
+  };
+  assert.deepEqual(validateJsonSchema(wire, stagedReflectionDiagnosisResultV4WireSchema), []);
+  const normalized = normalizeStagedReflectionDiagnosisResultV3({ ...wire, schemaVersion: 'staged_reflection_diagnosis_result.v3' }, evidence);
+  const result = normalized.itemResults[0]!;
+  assert.equal(result.kind, 'ordinary');
+  if (result.kind !== 'ordinary') throw new Error('Expected ordinary');
+  assert.deepEqual(result.proposals[0]!.operation, { kind: 'request_word_bootstrap', version: 1, wordId: 'target' });
+  assert.deepEqual(validateStagedReflectionDiagnosisResultV3(normalized, evidence), []);
+  const otherCue = bundle(item({ servedCue: { ...item().servedCue, cueType: 'minimal_context' } }));
+  assert.match(validateStagedReflectionDiagnosisResultV3(normalized, otherCue).join(' '), /definition-gloss/);
+  for (const added of [{ wordId: 'response' }, { exampleSentence: 'sentence' }, { version: 1 }]) {
+    const injected = structuredClone(wire);
+    Object.assign(injected.itemResults[0]!.proposals[0]!.operation, added);
+    assert.notDeepEqual(validateJsonSchema(injected, stagedReflectionDiagnosisResultV4WireSchema), []);
+  }
+  const legacy = structuredClone(wire);
+  Object.assign(legacy.itemResults[0]!.proposals[0]!.operation, {
+    kind: 'add_production_cue_supplement', englishFrame: 'frame', exampleSentence: 'sentence', exampleTranslation: 'translation',
+  });
+  assert.notDeepEqual(validateJsonSchema(legacy, stagedReflectionDiagnosisResultV4WireSchema), []);
 });

@@ -1,3 +1,4 @@
+import { isBootstrapRevealSnapshot } from './word-content/reveal';
 import { parsePureCueReflectionBundle } from './pure-cue-reflection';
 import type {
   ContrastSelectionReflectionItemV1,
@@ -365,7 +366,7 @@ function validateSessionReflectionBundleV4WithOptions(
   if (!isRecord(value)) return validateSessionReflectionBundleV3(value);
   const items = Array.isArray(value.items) ? value.items.map((item) => {
     if (!isRecord(item) || !isRecord(item.servedCue)) return item;
-    const { supplement: _supplement, ...servedCue } = item.servedCue;
+    const { supplement: _supplement, bootstrapReveal: _bootstrapReveal, ...servedCue } = item.servedCue;
     return { ...item, servedCue };
   }) : value.items;
   const errors = validateSessionReflectionBundleV3WithOptions(
@@ -381,6 +382,9 @@ function validateSessionReflectionBundleV4WithOptions(
   }
   if (Array.isArray(value.items)) value.items.forEach((item, index) => {
     if (!isRecord(item) || !isRecord(item.servedCue)) return;
+    if (item.servedCue.bootstrapReveal !== undefined && !isBootstrapRevealSnapshot(item.servedCue.bootstrapReveal)) {
+      errors.push(`$.items[${index}].servedCue.bootstrapReveal: invalid post-reveal content`);
+    }
     errors.push(...validateServedCueSupplement(
       item.servedCue.supplement,
       `$.items[${index}].servedCue.supplement`,
@@ -1008,10 +1012,11 @@ function validateServedCueSnapshotV2(
   targetWordId: unknown,
 ): string[] {
   if (!isRecord(value)) return [`${path}: expected object`];
-  const { supplement, ...base } = value;
+  const { supplement, bootstrapReveal, ...base } = value;
   return [
     ...validateServedCueSnapshot(base, path, targetWordId),
     ...validateServedCueSupplement(supplement, `${path}.supplement`),
+    ...(bootstrapReveal === undefined || isBootstrapRevealSnapshot(bootstrapReveal) ? [] : [`${path}.bootstrapReveal: invalid post-reveal content`]),
   ];
 }
 

@@ -1,5 +1,6 @@
 import type { LearningRehearsalSnapshot } from '../domain/study-actions';
 import type { WordContentDocument } from '../domain/word-content/types';
+import { selectBootstrapReveal } from '../domain/word-content/reveal';
 import type {
   SessionStudyItem,
   SessionReviewItem,
@@ -304,6 +305,7 @@ function cloneSessionStudyItem(item: SessionReviewItem): SessionReviewItem {
     ...item,
     ...(item.rehearsal ? { rehearsal: structuredClone(item.rehearsal) } : {}),
     ...(item.wordContent ? { wordContent: structuredClone(item.wordContent) } : {}),
+    ...(item.bootstrapReveal ? { bootstrapReveal: { ...item.bootstrapReveal } } : {}),
     ...(item.recognitionSupplement ? { recognitionSupplement: { ...item.recognitionSupplement } } : {}),
     sampledSkillIds: [...item.sampledSkillIds],
     contentRef: item.contentRef ? { ...item.contentRef } : null,
@@ -533,6 +535,8 @@ function buildBucketWordStudyItem({
   return { ...item,
     ...(skillId === 'production' && rehearsal ? { rehearsal } : {}),
     ...(wordContent ? { wordContent } : {}),
+    ...(skillId === 'recognition' && wordContent
+      ? { bootstrapReveal: selectBootstrapReveal(wordContent, new Date()) } : {}),
   };
 }
 

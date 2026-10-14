@@ -247,14 +247,17 @@ The durable V0 production-cue model separates:
 - the current meaning-derived gloss prompt as base fallback content rather than
   a cue row; it serves only when no durable cue is active, while a durable
   `definition_gloss` cue remains distinct enriched content;
-- at most one immutable V1 post-reveal supplement for an exact durable
+- eligible shared bootstrap teaching for definition-based production, using the
+  same daily use/example reveal as recognition, frozen at composition and
+  independent of the source generation trigger;
+- at most one immutable legacy V1 post-reveal supplement for an exact durable
   `definition_gloss` cue or for the meaning-derived fallback of a default task;
   it contains an English usage frame, a complete natural target-language
   example, and an English translation, and is never shown as part of the
   pre-reveal production clue; when an accepted definition-based production
-  response has a served supplement, the session presents that supplement as a
+  response has served bootstrap teaching or a legacy supplement, the session presents it as a
   spoken usage note and requires Continue before rating; cards without a
-  supplement, and automatic Forgot correction cards, keep a one-step reveal;
+  post-reveal teaching, and automatic Forgot correction cards, keep a one-step reveal;
   the extra beat does not change grading, covering, scheduling, or supplement
   content;
 - one answer-checking rule for every V0 cue: accept the submission only when it

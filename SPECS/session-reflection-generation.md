@@ -130,6 +130,14 @@ is distinct from the pre-reveal cue text because it did not influence recall or
 grading. Supplying it prevents reflection from proposing a second V1 supplement
 for an exercise that already has one.
 
+The served cue may additionally retain `bootstrapReveal`: immutable source, use,
+and example identities plus the exact displayed frame, sentence, and translation.
+The backend validates this snapshot against its historical source even if that
+source has since been withdrawn. Diagnosis receives the text as
+`postRevealWordContent`, separate from the tested cue. It may inform a learner
+explanation, but cannot establish cue fairness, constrain the answer space, or
+reinterpret the response using information unavailable before reveal.
+
 Attempt references prove that the captured mistake belongs to the finalized,
 durably accepted action batch. Workflow-only reinforcement attempts need not be
 copied into the model-facing bundle.
@@ -219,14 +227,17 @@ New initial requests use `initial_post_session_reflection.v6`; new deferred
 second opinions use `deferred_second_opinion.v5`. Only the current staged
 generation contract and prompt major identities can execute. Earlier minor
 versions of the current prompt major remain compatible with the current
-contract; future minors and earlier majors do not. Older-major artifacts remain
-readable, but their runs cannot be retried. Second opinions may reuse compatible
+contract; future minors and earlier majors do not support provider retries.
+Saved diagnosis-v4.0–v4.2 artifacts retain proposal application compatibility
+under the canonical V10 contract, including legacy supplement operations.
+Other obsolete artifacts remain readable. Second opinions may reuse compatible
 original diagnosis evidence regardless of the source flow, prompt, or result
 version. Pending obsolete proposals cannot be authorized or applied.
 There is no one-shot retry compatibility path and no silent evidence upgrade.
 
 The server persists a continuation and exact diagnosis input before calling the
-provider. Diagnosis uses `staged_reflection_diagnosis_result.v3`: each item is
+provider. Diagnosis uses provider wire `staged_reflection_diagnosis_result.v4`, normalized
+to canonical `staged_reflection_diagnosis_result.v3`: each item is
 either ordinary explanation/proposals or an `ambiguous_pair` handoff, never both.
 The handoff includes required nullable `targetSuppression: { reason } | null`.
 A non-null value is stage one's recommendation that deliberate production of
@@ -249,7 +260,7 @@ stored with a null response kind, is shown to the model as
 `responseKind: correct`. The full evidence remains available internally for validation,
 normalization, and exact continuation checkpoints.
 
-Stage-one repair, suppression, and supplement wire operations omit `wordId`.
+Stage-one repair, suppression, and bootstrap-request wire operations omit `wordId`.
 Normalization resolves the containing `itemId` against that retained bundle
 and uses its `targetWord.wordId`; contrast membership remains model-authored.
 
