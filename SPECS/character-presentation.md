@@ -8,8 +8,9 @@ the current mechanisms contributors need to understand when changing it.
 The distinction is between **word labels**, which identify a word on its own,
 and **sentences and explanations**, which use words in context. Word labels can
 show both forms. Ordinary Chinese in the content, including Chinese quoted
-inside English explanations, follows one chosen script. Deliberate comparisons
-retain both forms so the explanation keeps its meaning.
+inside English explanations, follows one chosen script. Comparison protection
+preserves paired spellings in recognized written formats; it does not interpret
+comparative prose in general.
 
 This account covers introductions, learning, review, contrast selection, and
 pure cues in study sessions. Vocabulary browsing and reflection reports are
@@ -47,10 +48,15 @@ For example, with Both cards and Traditional sentences, a word label can show
 
 Ordinary Chinese prose uses the effective sentence script, including existing
 content authored in Traditional or mixed script. Traditional output uses Taiwan
-character conventions without substituting regional vocabulary. Explicit
-comparisons retain both forms. For example, `Simplified 学习; Traditional 學習`
-must keep that distinction even when the learner chooses Traditional for
-ordinary text.
+character conventions without substituting regional vocabulary.
+
+Comparison protection is a format-based exception to ordinary conversion. It
+preserves distinct forms when they match a recognized comparison pattern and
+convert to the same Simplified spelling. For example, `学习 / 學習` and
+`Simplified 学习; Traditional 學習` retain both forms. This is a rule about
+written patterns and spelling, not a judgment about what the prose means.
+Other ways of discussing script differences can be converted normally and
+lose the distinction.
 
 A **cloze** is a sentence with a blank for the learner to complete. On reveal,
 the blank contains one canonical answer form: the target word's selected form
@@ -77,11 +83,16 @@ applies to published lessons without rewriting or regenerating them.
 Initial word-content creation (bootstrap), teaching, and review generation
 request Simplified Chinese for newly authored sentences and inline Chinese
 explanations. The generation instructions allow deliberate comparisons of
-Simplified and Traditional forms in that text. Referenced examples retain their
-source text, including Traditional Chinese. This editorial guidance and the
-display preference serve different purposes: presentation makes output
-consistent even when sources use mixed scripts. Character preferences do not
-change requirements for English explanations or pinyin.
+Simplified and Traditional forms, but do not require the formats recognized by
+the converter. Generated prose therefore has the same bounded protection as
+other content; the fact that it discusses a comparison does not ensure both
+forms survive display conversion.
+
+Referenced examples retain their source text, including Traditional Chinese.
+This editorial guidance and the display preference serve different purposes:
+presentation makes output consistent even when sources use mixed scripts.
+Character preferences do not change requirements for English explanations or
+pinyin.
 
 ## Current implementation
 
@@ -107,12 +118,18 @@ sentences and explanations also needs phrase context.
   from the canonical answer. Only the surrounding text and blank markers are
   rendered before reveal.
 
-The converter recognizes a few written comparison patterns, such as
-`学习 / 學習` or `Simplified 学习; Traditional 學習`. It checks that the distinct
-forms convert to the same Simplified spelling, then leaves that span unchanged.
-This check runs on all text passed through the converter, including teaching
-prose, cues, and explanations. It does not interpret what a lesson means: a
-deliberate comparison phrased differently can be missed and lose its distinction.
+The converter checks each supplied string for the supported comparison patterns
+before converting the other text, and copies recognized pairs unchanged. The
+same check runs on teaching prose, cues, and explanations. It receives text
+rather than an authoring marker that identifies a comparison.
+
+## Possible extension: an explicit comparison representation
+
+Stronger protection for generated comparisons could come from an explicit
+contract between authoring and display. Options include marking comparison
+spans in the content structure, or requiring and validating supported written
+formats before publication. These are unsettled alternatives, not accepted
+requirements or delivery commitments.
 
 ## Verification
 
