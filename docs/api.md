@@ -67,13 +67,18 @@ Invalid parameters, including unknown status or lapses values, return 400. See [
 The diagnostic query requires non-empty `q` input and applies the bound in SQL
 before hydrating the selected records. It returns only the selected kind and a
 `hasMore` signal; it does not read or count the corpus before a user query.
-Word items include
+Word items include the latest eligible bootstrap teaching package (ordered by
+creation time, then package id), materialized with its source content, as well as
 cluster membership, production-task cue counts, and any post-reveal production
 cue supplements (english frame, example sentence, translation, and whether
 the supplement is attached to a durable cue or the meaning-derived fallback);
 cluster items include
 members and prompts; durable production-cue items include their anchor and
 accepted words, lifecycle state, provenance, and current evidence projection.
+Content Bin displays that package before other word content and keeps meanings
+in a collapsed disclosure. Words without an eligible package display meanings
+expanded. Connected content is available in either case. This view does not
+change the learner's introduction pin or completion state.
 It does not expose a content mutation path.
 
 ## Shared content reports

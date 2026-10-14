@@ -114,7 +114,7 @@ export function ContentDiagnosticsPage({
           </aside>
 
           <article className="panel content-item-detail">
-            {selectedItem ? <DiagnosticDetail item={selectedItem} /> : (
+            {selectedItem ? <DiagnosticDetail key={selectedItem.id} item={selectedItem} /> : (
               <p className="notes">Select a primitive to inspect its details.</p>
             )}
           </article>
@@ -130,21 +130,48 @@ function DiagnosticDetail({ item }: { item: ContentDiagnosticItem }) {
   return <CueDetail item={item} />;
 }
 
-function WordDetail({ item }: { item: WordDiagnosticItem }) {
-  const { word } = item;
+export function WordDetail({ item }: { item: WordDiagnosticItem }) {
+  const { word, latestBootstrapPackage } = item;
   return (
     <>
       <DetailHeading eyebrow="Word" title={word.hanzi} id={word.id} state={word.status} />
+      {latestBootstrapPackage ? (
+        <section className="content-detail-section">
+          <h3>Bootstrap package</h3>
+          <code>{latestBootstrapPackage.snapshot.packageId}</code>
+          <p className="notes">Created {formatDate(latestBootstrapPackage.createdAt)}</p>
+          {latestBootstrapPackage.snapshot.beats.map((beat) => (
+            <div className="content-connection" key={beat.id}>
+              {beat.parts.map((part, index) => <p key={index}>{part.text}</p>)}
+            </div>
+          ))}
+          <h4>Rehearsals</h4>
+          {latestBootstrapPackage.snapshot.rehearsals.map((exercise) => (
+            <div className="content-connection" key={exercise.exerciseId}>
+              {exercise.instruction ? <p>{exercise.instruction}</p> : null}
+              <p>{exercise.stimulus.text}</p>
+              <p>Expected answers: {exercise.acceptedAnswers.map((answer) => answer.hanzi).join(' / ')}</p>
+            </div>
+          ))}
+        </section>
+      ) : null}
+      {latestBootstrapPackage ? (
+        <details className="content-meanings">
+          <summary>Meanings</summary>
+          <MeaningList meanings={word.meanings} />
+        </details>
+      ) : (
+        <section className="content-detail-section">
+          <h3>Meanings</h3>
+          <MeaningList meanings={word.meanings} />
+        </section>
+      )}
       <dl className="content-fact-grid">
         <Fact label="Pronunciation" value={word.pinyin} />
         <Fact label="Priority" value={String(word.priority)} />
         <Fact label="Practice streak" value={String(word.learningStreak)} />
         <Fact label="Created" value={formatDate(word.createdAt)} />
       </dl>
-      <section className="content-detail-section">
-        <h3>Meanings</h3>
-        <MeaningList meanings={word.meanings} />
-      </section>
       {word.personalNotes ? <DetailText label="Personal notes" value={word.personalNotes} /> : null}
       <section className="content-detail-section">
         <h3>Supplemental info</h3>

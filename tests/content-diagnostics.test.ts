@@ -1,3 +1,8 @@
+import type { TeachingPackage } from '../src/domain/word-content/types.ts';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { WordDetail } from '../src/pages/ContentDiagnosticsPage.tsx';
+import { wordContentFixtures } from './fixtures/word-content.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -62,6 +67,44 @@ describe('content diagnostics', { concurrency: false }, () => {
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
 
+  test('shows the latest eligible bootstrap first, with auxiliary meanings and unchanged connections', (t) => {
+    t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-01-01T00:00:00.000Z') });
+    const fixture = wordContentFixtures[0];
+    const content = { ...fixture.content, id: 'diagnostic-content', word: {
+      wordId: 'check', hanzi: '考查', traditional: null, pinyin: 'kǎochá',
+    } };
+    dbModule.saveWordContentDocument(content, 'fixture');
+    const teaching: TeachingPackage = {
+      ...fixture.teaching,
+      wordContentId: content.id,
+      rehearsals: [{
+        id: 'diagnostic-rehearsal', responseMode: 'hanzi_entry',
+        contract: { kind: 'target_rehearsal', wordId: 'check' },
+        instruction: 'Recall the word.',
+        stimulus: { kind: 'direct_text', text: 'to check' },
+        acceptedAnswers: [{ wordId: 'check', hanzi: '考查', traditional: null }],
+      }],
+    };
+    dbModule.saveWordTeachingPackage({ ...teaching, id: 'diagnostic-old' }, 'fixture');
+    t.mock.timers.setTime(new Date('2026-01-02T00:00:00.000Z').getTime());
+    dbModule.saveWordTeachingPackage({ ...teaching, id: 'diagnostic-new' }, 'fixture');
+    const item = dbModule.getContentDiagnostics({ kind: 'word', query: '考查' }).items[0];
+    assert.equal(item.kind, 'word');
+    if (item.kind !== 'word') throw new Error('Expected word');
+    assert.equal(item.latestBootstrapPackage?.snapshot.packageId, 'diagnostic-new');
+    assert.ok(item.latestBootstrapPackage?.snapshot.beats[0].parts[0].text);
+    const html = renderToStaticMarkup(createElement(WordDetail, { item }));
+    assert.ok(html.indexOf('Bootstrap package') < html.indexOf('Meanings'));
+    assert.match(html, /<details class="content-meanings"><summary>Meanings<\/summary>/);
+    assert.match(html, /Connected content/);
+    assert.match(html, /kaocha-cluster/);
+    const without = { ...item, latestBootstrapPackage: null };
+    const fallback = renderToStaticMarkup(createElement(WordDetail, { item: without }));
+    assert.match(fallback, /<h3>Meanings<\/h3>/);
+    assert.doesNotMatch(fallback, /<details/);
+    assert.equal(dbModule.getWordIntroductionLibrary('check')?.selectedPackageId, 'diagnostic-old');
+  });
+
   test('projects searchable word, cluster, and cue primitives without mutation affordances', () => {
     assert.throws(
       () => dbModule.getContentDiagnostics({ kind: 'word', query: '  ' }),
@@ -97,6 +140,7 @@ describe('content diagnostics', { concurrency: false }, () => {
 
     const inspect = dbModule.getContentDiagnostics({ kind: 'word', query: '考察' });
     assert.equal(inspect.items[0]?.kind, 'word');
+    assert.equal(inspect.items[0]?.latestBootstrapPackage, null);
     assert.deepEqual(inspect.items[0]?.productionCueSupplements, []);
 
     const clusters = dbModule.getContentDiagnostics({ kind: 'contrast_cluster', query: 'inspect' });
