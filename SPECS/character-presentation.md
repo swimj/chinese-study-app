@@ -6,15 +6,16 @@ one writing system. This document explains the intended display behavior and
 the current mechanisms contributors need to understand when changing it.
 
 The distinction is between **word labels**, which identify a word on its own,
-and **sentence text**, which presents Chinese in context. Showing both forms is
-useful for a word label; sentences use one script so that the learner can read
-continuous prose. This account covers introductions, learning, review, contrast
-selection, and pure cues in study sessions. Vocabulary browsing and reflection
-reports are outside its scope.
+and **sentences and explanations**, which use words in context. Word labels can
+show both forms. Ordinary Chinese in the content, including Chinese quoted
+inside English explanations, follows one chosen script. Deliberate comparisons
+retain both forms so the explanation keeps its meaning.
+
+This account covers introductions, learning, review, contrast selection, and
+pure cues in study sessions. Vocabulary browsing and reflection reports are
+outside its scope.
 
 ## Intended behavior
-
-Acceptance recorded on 2026-10-05.
 
 ### Learner settings
 
@@ -23,8 +24,9 @@ headings, recognition prompts, contrast choices, and standalone answer labels.
 Both shows a distinct stored traditional form beside the simplified form.
 
 **Sentences and examples** offers Simplified and Traditional, and appears only
-when Card characters is Both. It controls authored Chinese sentences, clozes,
-examples, supplements, and Chinese phrases embedded in explanations and cues.
+when Card characters is Both. It controls Chinese in examples, cloze prompts,
+cues, and explanatory text, including phrases embedded in otherwise English
+meanings, translations, or explanations.
 
 | Card characters | Effective sentences and examples |
 | --- | --- |
@@ -46,7 +48,9 @@ For example, with Both cards and Traditional sentences, a word label can show
 Ordinary Chinese prose uses the effective sentence script, including existing
 content authored in Traditional or mixed script. Traditional output uses Taiwan
 character conventions without substituting regional vocabulary. Explicit
-comparisons of simplified and traditional forms remain comparisons.
+comparisons retain both forms. For example, `Simplified 学习; Traditional 學習`
+must keep that distinction even when the learner chooses Traditional for
+ordinary text.
 
 A **cloze** is a sentence with a blank for the learner to complete. On reveal,
 the blank contains one canonical answer form: the target word's selected form
@@ -55,10 +59,10 @@ show both forms. Repeated blanks each receive the same target. Other accepted
 words remain separate alternatives; conversion does not combine their identities.
 
 Conversion must keep the intended blank hidden before reveal, use phrase context
-where available, and preserve the canonical inserted answer. Source offsets must
-never be reused against converted text. The hidden and revealed versions must
-use the same surrounding sentence text. Stored answer forms take precedence for
-the target; conversion supplies a missing traditional sentence form.
+where available, and preserve the canonical inserted answer. The hidden and
+revealed versions must use the same surrounding sentence text. Stored answer
+forms take precedence for the target; conversion supplies a missing traditional
+sentence form.
 
 ### Content and evidence
 
@@ -68,22 +72,21 @@ packages, served snapshots, raw responses, identifiers used for content-quality
 feedback, and reflection evidence retain their source values. The
 [word-content representation guide](../docs/word-content-representation.md)
 explains the content objects and frozen snapshots. The display preference
-applies to published lessons without rewriting or regenerating them. The
-authoring lab keeps its source preview unless preferences are supplied by the
-session.
+applies to published lessons without rewriting or regenerating them.
 
 Initial word-content creation (bootstrap), teaching, and review generation
 request Simplified Chinese for newly authored sentences and inline Chinese
-explanations. Referenced examples retain their source text, including Traditional
-Chinese. This editorial guidance and the display preference serve different
-purposes: presentation makes output consistent even when sources use mixed
-scripts. Character preferences do not change requirements for English
-explanations or pinyin.
+explanations. The generation instructions allow deliberate comparisons of
+Simplified and Traditional forms in that text. Referenced examples retain their
+source text, including Traditional Chinese. This editorial guidance and the
+display preference serve different purposes: presentation makes output
+consistent even when sources use mixed scripts. Character preferences do not
+change requirements for English explanations or pinyin.
 
 ## Current implementation
 
-Word labels and sentences take different paths because a stored word form
-identifies a particular word, while prose conversion needs surrounding context.
+Word-label formatting uses the stored forms for a particular word. Converting
+sentences and explanations also needs phrase context.
 
 - [Card-character formatting](../src/domain/card-characters.ts) uses the stored
   simplified and traditional forms. Traditional mode falls back to the stored
@@ -102,18 +105,14 @@ identifies a particular word, while prose conversion needs surrounding context.
   as the answer on reveal. The converter temporarily fills blanks with that
   form to obtain phrase context, then separates the converted surrounding text
   from the canonical answer. Only the surrounding text and blank markers are
-  rendered before reveal. Unicode-character alignment avoids applying source
-  offsets to converted text. If conversion changes the character count, the
-  converter falls back to converting visible fragments separately, which gives
-  up phrase context across the blank.
+  rendered before reveal.
 
-Comparison preservation is pattern-based. The converter protects distinct
-Hanzi forms that normalize to the same Simplified text, paired on one line with
-`/`, `→`, `↔`, `vs` (with an optional period), or `versus`, or labeled with
-English `Simplified` and `Traditional`. English matching is case-insensitive.
-It does not recognize arbitrary explanations as comparisons. This is a
-limitation of the current mechanism, not a narrower definition of the intended
-comparison-preservation behavior above.
+The converter recognizes a few written comparison patterns, such as
+`学习 / 學習` or `Simplified 学习; Traditional 學習`. It checks that the distinct
+forms convert to the same Simplified spelling, then leaves that span unchanged.
+This check runs on all text passed through the converter, including teaching
+prose, cues, and explanations. It does not interpret what a lesson means: a
+deliberate comparison phrased differently can be missed and lose its distinction.
 
 ## Verification
 

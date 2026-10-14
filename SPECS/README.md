@@ -41,7 +41,7 @@ contracts that refine it to those definitions.
 | Reflection generation | [session-reflection-generation.md](session-reflection-generation.md): completed-session boundary, evidence, attempts, isolation, retry, and bounds |
 | Reflection effects and handles | [reflection-proposals-and-handles.md](reflection-proposals-and-handles.md): proposals, review, authorization, application, provenance, and handles |
 | Deferred reflection | [deferred-reflection-second-opinion.md](deferred-reflection-second-opinion.md): selected deferred evidence and replacement in active review |
-| Character presentation | [character-presentation.md](character-presentation.md): word labels versus sentence scripts, intended display behavior, and current conversion mechanisms and limits |
+| Character presentation | [character-presentation.md](character-presentation.md): word labels and Chinese in sentences/explanations, intended display behavior, and current conversion mechanisms and limits |
 | My Words | [my-words.md](my-words.md): personal collections, browsing, and word details |
 | New-word intake | [diet-deck-distribution.md](diet-deck-distribution.md): deck distribution and intake decisions alongside original delivery planning |
 
