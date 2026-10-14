@@ -146,6 +146,13 @@ conclusions should graduate into the appropriate explanation. The task or PR
 can retain execution detail, while the maintained documentation tells readers
 what is true, what is promised, and why.
 
+A specification can discuss possible extensions or unresolved choices when
+they clarify a current boundary, tradeoff, or constraint. Keep them near the
+relevant explanation and distinguish them from accepted promises and delivery
+commitments. State what is undecided, and update or remove the discussion as
+decisions change. Broader exploration and task planning belong in supporting
+documents rather than an accumulating list of speculative work in the spec.
+
 ### Current-state language
 
 Maintained explanations describe the model directly for readers who do not know

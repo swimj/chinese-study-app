@@ -87,6 +87,13 @@ destination. Reorganize material when the target structure calls for a clearer
 boundary. Retain useful decision rationale and label historical context so
 readers can follow the current account.
 
+Specifications should explain the current model and its promises without
+incidental approval dates. Include a date or version when it changes how a
+reader interprets behavior, applicability, or migration instructions. Keep
+acceptance timestamps and other provenance that do not serve those questions
+in Git or PR history; preserving useful rationale does not require carrying
+those timestamps into a specification.
+
 ## Review the resulting explanation
 
 Read the revised text as a reader who has the relevant technical background but

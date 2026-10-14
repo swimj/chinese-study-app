@@ -1,20 +1,33 @@
 # Character presentation in study sessions
 
-Accepted on 2026-10-05. This preference lets learners use Simplified, Traditional,
-or both word forms while keeping sentences consistent in one writing system.
-It applies to the main study session surfaces: introductions, learning, review,
-contrast selection, and pure cues. Vocabulary browsing and reflection reports
-are outside this first implementation.
+Character preferences let learners read study material in Simplified or
+Traditional Chinese, or compare both forms of a word while reading sentences in
+one writing system. This document explains the intended display behavior and
+the current mechanisms contributors need to understand when changing it.
 
-## Learner settings
+The distinction is between **word labels**, which identify a word on its own,
+and **sentences and explanations**, which use words in context. Word labels can
+show both forms. Ordinary Chinese in the content, including Chinese quoted
+inside English explanations, follows one chosen script. Comparison protection
+preserves paired spellings in recognized written formats; it does not interpret
+comparative prose in general.
+
+This account covers introductions, learning, review, contrast selection, and
+pure cues in study sessions. Vocabulary browsing and reflection reports are
+outside its scope.
+
+## Intended behavior
+
+### Learner settings
 
 **Card characters** offers Simplified, Traditional, and Both. It controls word
 headings, recognition prompts, contrast choices, and standalone answer labels.
 Both shows a distinct stored traditional form beside the simplified form.
 
 **Sentences and examples** offers Simplified and Traditional, and appears only
-when Card characters is Both. It controls authored Chinese sentences, clozes,
-examples, supplements, and Chinese phrases embedded in explanations and cues.
+when Card characters is Both. It controls Chinese in examples, cloze prompts,
+cues, and explanatory text, including phrases embedded in otherwise English
+meanings, translations, or explanations.
 
 | Card characters | Effective sentences and examples |
 | --- | --- |
@@ -28,49 +41,121 @@ the learner and saved with the existing session settings. They do not change
 scheduling, assessment, or which typed answer forms are accepted. Raw typed
 responses and personal notes retain the learner's spelling.
 
-## Sentence and cloze display
+For example, with Both cards and Traditional sentences, a word label can show
+`学习 / 學習` while an example sentence uses `學習` alone.
+
+### Sentence and cloze display
 
 Ordinary Chinese prose uses the effective sentence script, including existing
 content authored in Traditional or mixed script. Traditional output uses Taiwan
-character conventions without substituting regional vocabulary. Explicit
-comparisons of simplified and traditional forms remain comparisons.
+character conventions without substituting regional vocabulary.
 
-A revealed cloze inserts one canonical answer form in the sentence's script.
-A standalone answer still follows Card characters and may show both forms.
-Repeated blanks each receive the same target. Other accepted words remain
-separate alternatives; conversion does not combine their identities.
+Comparison protection is a format-based exception to ordinary conversion. It
+preserves distinct forms when they match a recognized comparison pattern and
+convert to the same Simplified spelling. For example, `学习 / 學習` and
+`Simplified 学习; Traditional 學習` retain both forms. This is a rule about
+written patterns and spelling, not a judgment about what the prose means.
+Other ways of discussing script differences can be converted normally and
+lose the distinction.
+
+A **cloze** is a sentence with a blank for the learner to complete. On reveal,
+the blank contains one canonical answer form: the target word's selected form
+in the sentence's script. A standalone answer follows Card characters and may
+show both forms. Repeated blanks each receive the same target. Other accepted
+words remain separate alternatives; conversion does not combine their identities.
 
 Conversion must keep the intended blank hidden before reveal, use phrase context
-where available, and preserve the canonical inserted answer. Source offsets must
-never be reused against converted text. The hidden and revealed versions must
-use the same surrounding sentence text. Stored answer forms take precedence for
-the target; conversion supplies a missing traditional sentence form.
+where available, and preserve the canonical inserted answer. The hidden and
+revealed versions must use the same surrounding sentence text. Stored answer
+forms take precedence for the target; conversion supplies a missing traditional
+sentence form.
 
-## Content and evidence
+### Content and evidence
 
-Script conversion is a presentation step. Immutable authored documents, teaching
-packages, served snapshots, raw responses, content-quality identities, and
-reflection evidence keep their existing source values. Already-published lessons
-benefit without a rewrite or regeneration. The authoring lab keeps its source
-preview unless preferences are supplied by the session.
+Script conversion changes the displayed text while preserving the stored
+material and records of the learner's activity. Authored documents, teaching
+packages, served snapshots, raw responses, identifiers used for content-quality
+feedback, and reflection evidence retain their source values. The
+[word-content representation guide](../docs/word-content-representation.md)
+explains the content objects and frozen snapshots. The display preference
+applies to published lessons without rewriting or regenerating them.
 
-New bootstrap, teaching, and review generation requests Simplified Chinese in
-sentences and inline Chinese explanations. This is editorial guidance; learner
-presentation remains responsible for consistent output from existing or mixed
-sources. English explanation and pinyin requirements remain unchanged.
+Initial word-content creation (bootstrap), teaching, and review generation
+request Simplified Chinese for newly authored sentences and inline Chinese
+explanations. The generation instructions allow deliberate comparisons of
+Simplified and Traditional forms, but do not require the formats recognized by
+the converter. Generated prose therefore has the same bounded protection as
+other content; the fact that it discusses a comparison does not ensure both
+forms survive display conversion.
 
-Use a pinned OpenCC JavaScript release with phrase-aware dictionaries. Derive
-normalized display text without rewriting persisted content. Script detection
-is not a prerequisite: shared characters can belong to either system.
+Referenced examples retain their source text, including Traditional Chinese.
+This editorial guidance and the display preference serve different purposes:
+presentation makes output consistent even when sources use mixed scripts.
+Character preferences do not change requirements for English explanations or
+pinyin.
+
+## Current implementation
+
+Word-label formatting uses the stored forms for a particular word. Converting
+sentences and explanations also needs phrase context.
+
+- [Card-character formatting](../src/domain/card-characters.ts) uses the stored
+  simplified and traditional forms. Traditional mode falls back to the stored
+  simplified form when no distinct traditional form exists; Both then shows
+  only that one form. Word labels do not trigger sentence conversion.
+- [Sentence conversion](../src/domain/sentence-characters.ts) uses OpenCC
+  JavaScript, pinned in [package.json](../package.json). It normalizes text to
+  Simplified before producing the requested script, so mixed sources need no
+  preliminary script detection. Phrase dictionaries distinguish uses such as
+  `发展 → 發展` and `头发 → 頭髮`. The Traditional path uses Taiwan character
+  variants without regional vocabulary substitution.
+- [Cloze rendering](../src/features/session/ClozePrompt.tsx) finds blanks in the
+  source text before conversion. The
+  [study panel](../src/features/session/StudySessionPanel.tsx) supplies the same
+  canonical form as private conversion context while the answer is hidden and
+  as the answer on reveal. The converter temporarily fills blanks with that
+  form to obtain phrase context, then separates the converted surrounding text
+  from the canonical answer. Only the surrounding text and blank markers are
+  rendered before reveal.
+
+The converter checks each supplied string for the supported comparison patterns
+before converting the other text, and copies recognized pairs unchanged. The
+same check runs on teaching prose, cues, and explanations. It receives text
+rather than an authoring marker that identifies a comparison.
+
+## Possible extension: an explicit comparison representation
+
+Stronger protection for generated comparisons could come from an explicit
+contract between authoring and display. Options include marking comparison
+spans in the content structure, or requiring and validating supported written
+formats before publication. These are unsettled alternatives, not accepted
+requirements or delivery commitments.
 
 ## Verification
 
-Verify all setting combinations, learner isolation, saving/canceling, and restored
-preferences. Exercise teaching beats, recognition references, direct cues,
-production/contrast/pure-cue content, supplements, and frozen failure cards.
+Focused automated coverage includes:
 
-Cloze checks cover traditional and mixed sources, ambiguous phrase conversions,
-multiple blank shapes, repeated blanks, Unicode spans, and canonical answers.
+- [Card characters](../tests/card-characters.test.ts): stored forms, missing or
+  identical traditional forms, and invalid settings.
+- [Sentence characters](../tests/sentence-characters.test.ts): effective
+  preferences, mixed sources, phrase conversion, recognized comparisons, and
+  the cloze conversion helper's alignment and canonical-answer handling.
+- [Cloze rendering](../tests/cloze-prompt.test.ts): blank shapes, repeated
+  blanks, mixed sources, Unicode prefixes, and hidden/revealed component output.
+- [Saved settings](../tests/sentence-character-settings.test.ts) and
+  [settings panel](../tests/session-character-settings-panel.test.ts): learner
+  isolation, retained sentence preferences, validation, and static rendering of
+  the conditional sentence selector.
+
+These focused tests do not establish full session integration or visual quality.
+When changing this feature, also verify all setting combinations,
+saving/canceling, and restored preferences in the browser. Exercise teaching
+beats, recognition references, direct cues, production/contrast/pure-cue content,
+supplements, and frozen failure cards.
+
+Include cloze cases with traditional and mixed sources, ambiguous phrase
+conversions, multiple blank shapes, repeated blanks, Unicode spans, and canonical
+answers.
 Verify raw source data and accepted-answer matching are unaffected. Check the
 rendered settings and representative session cards at narrow desktop widths and
 enlarged text, including keyboard access.
