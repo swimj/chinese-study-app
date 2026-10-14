@@ -207,6 +207,16 @@ async function endAndCheck(expected: boolean) {
 }
 async function run() {
   await start();
+  for (const value of query.has('recognition') ? [] : ['down', 'up'] as const) {
+    const button = voteButton(value);
+    const hint = button.querySelector<HTMLElement>('.session-shortcut-hints')!;
+    check(getComputedStyle(hint).opacity === '0', 'Feedback shortcut must be hidden at rest');
+    button.focus();
+    check(button.matches(':focus-visible'), 'Fixture must exercise keyboard-visible focus');
+    check(getComputedStyle(hint).opacity === '1', 'Feedback shortcut must appear on keyboard focus');
+    button.blur();
+    check(getComputedStyle(hint).opacity === '0', 'Feedback shortcut must hide after focus leaves');
+  }
   if (query.has('preview')) {
     document.getElementById('result')!.textContent = 'Interactive preview: real study session with isolated fixture data.';
     return;
