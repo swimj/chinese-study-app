@@ -94,6 +94,13 @@ hosted operations, and contributor development clearly separated.
 - Contributor environments: [scripts](scripts.md) and the
   [local introduction development aid](word-introduction-lab.md).
 
+For content that has already reached learners, choose the route by the problem:
+
+| Reader's question | Procedure |
+| --- | --- |
+| How do I review and correct existing study content? | [Operator content improvement](content-improvement.md#review-and-application): draft, validate, and explicitly approve a correction, with content-specific effects and retained history |
+| How do I recover an accepted fallback cue repair that failed to apply after the learner answered correctly and requested review? | [Failed cue-repair recovery](ops/hosted-beta-deployment.md#recover-failed-cue-repairs-from-correct-requested-reviews): preview the eligible repairs for one learner and confirm the plan under maintenance; limited to the documented historical failure and eligibility conditions |
+
 The hosted service is the current learner path. These guides provide the
 existing operational references; their coverage and accuracy need verification
 for the operation being performed.
