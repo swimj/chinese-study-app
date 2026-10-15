@@ -60,6 +60,10 @@ Invalid parameters, including unknown status or lapses values, return 400. See [
 
 ## Content diagnostics
 
+Content Bin uses this read-only API to inspect words, contrast clusters, and
+durable word-owned production cues. The [frontend map](../SPECS/frontend-architecture-map.md#content-bin-connected-details)
+explains navigation between connected items.
+
 | Method | Path | Handler domain |
 | --- | --- | --- |
 | GET | `/api/content-diagnostics?kind=word\|contrast_cluster\|production_cue&q=<query>&limit=50` | Read-only content projection |
@@ -70,12 +74,24 @@ before hydrating the selected records. It returns only the selected kind and a
 Word items include `latestBootstrapContent`: `{ createdAt, content }` for the
 latest eligible [bootstrap document](word-content-representation.md#source-documents-and-teaching-packages),
 ordered by creation time then content id, or `null` when none is available,
-as well as cluster membership, production-task cue counts, and any post-reveal
-production cue supplements (english frame, example sentence, translation, and whether
-the supplement is attached to a durable cue or the meaning-derived fallback);
-cluster items include
-members and prompts; durable production-cue items include their anchor and
-accepted words, lifecycle state, provenance, and current evidence projection.
+as well as cluster membership.
+
+Word details separate the exercise cue from optional material shown after reveal:
+
+- `productionTask` contains the task id and total/active durable cue counts for
+  the current learner, or is `null` when the word has no production task.
+- `productionCues` lists durable cues as `{ id, text, cueType, availabilityStatus }`,
+  including inactive cues and cues without supplements. Use these identities to
+  open cue details; a cue's presence in the list does not mean it can serve.
+- `productionCueSupplements` contains post-reveal English frames, example
+  sentences, and translations. Its `cueId` identifies the attached durable cue,
+  or is `null` for a task-level meaning-derived supplement. That fallback
+  supplement is not itself a durable cue.
+
+The [response types](../src/domain/content-diagnostics.ts) define these fields.
+Cluster items include members and prompts; durable production-cue items include
+their anchor and accepted words, lifecycle state, provenance, and current evidence
+projection.
 It does not expose a content mutation path.
 
 ## Shared content reports
