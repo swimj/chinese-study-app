@@ -4614,7 +4614,7 @@ input::placeholder, textarea::placeholder { color: var(--text-muted); opacity: 1
   }
 }
 
-@container (max-width: 44rem) {
+@container (max-width: 44em) {
   .content-diagnostic-layout,
   .content-fact-grid,
   .content-search {
