@@ -154,13 +154,15 @@ function searchWordDiagnostics(query: string, limit: number): WordDiagnosticItem
   const taskByWordId = new Map(selectForIds<Pick<WordTaskSummaryRow, 'word_id' | 'task_id'>>(wordIds, 'word_id', `
     SELECT word_id, task_id FROM production_tasks WHERE word_id IN (__IDS__)
   `).map(row => [row.word_id, { ...row, cue_count: 0, active_cue_count: 0 }]));
-  const taskCues = selectForIds<{ word_id: string; cue_id: string; content_scope: 'learner' | 'shared' }>(wordIds, 'word_id', `
-    SELECT task.word_id, cue.cue_id, cue.content_scope
+  const taskCues = selectForIds<{ word_id: string; cue_id: string; cue_text: string; cue_type: string; content_scope: 'learner' | 'shared' }>(wordIds, 'word_id', `
+    SELECT task.word_id, cue.cue_id, cue.cue_text, cue.cue_type, cue.content_scope
     FROM scoped_production_cues cue JOIN production_tasks task ON task.task_id = cue.task_id
     WHERE task.word_id IN (__IDS__)
       AND (cue.content_scope = 'shared' OR cue.owner_learner_id = current_learner_id())
+    ORDER BY cue.created_at DESC, cue.cue_id ASC
   `);
   const availabilityByCueId = getProductionCueAvailability(taskCues);
+  const cuesByWordId = groupBy(taskCues, (cue) => cue.word_id);
   // Count the same derived state used by cue detail and serving, while retaining
   // replaced/inactive cues in the total so their history remains discoverable.
   for (const cue of taskCues) {
@@ -212,6 +214,17 @@ function searchWordDiagnostics(query: string, limit: number): WordDiagnosticItem
         cueCount: task.cue_count,
         activeCueCount: task.active_cue_count,
       } : null,
+      productionCues: (cuesByWordId.get(row.id) ?? []).map((cue) => {
+        if (!isProductionCueType(cue.cue_type)) {
+          throw new Error(`Production cue ${cue.cue_id} has unknown type ${cue.cue_type}.`);
+        }
+        return {
+          id: cue.cue_id,
+          text: cue.cue_text,
+          cueType: cue.cue_type,
+          availabilityStatus: availabilityByCueId.get(cue.cue_id)!.status,
+        };
+      }),
       productionCueSupplements: (supplementsByWordId.get(row.id) ?? []).map(mapWordSupplementRow),
     };
   });

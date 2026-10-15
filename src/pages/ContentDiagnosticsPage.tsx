@@ -258,6 +258,13 @@ export function WordDetail({ item, onOpen }: { item: WordDiagnosticItem; onOpen?
         ))}
         <p>{item.productionTask ? `${item.productionTask.activeCueCount} active of ${item.productionTask.cueCount} durable cues` : 'No production task'}</p>
         {item.productionTask ? <code>{item.productionTask.taskId}</code> : null}
+        {item.productionCues.map((cue) => (
+          <div className="content-connection" key={cue.id}>
+            <ConnectionLink kind="production_cue" id={cue.id} onOpen={onOpen}>{cue.text}</ConnectionLink>
+            <span>{humanize(cue.cueType)} · {humanize(cue.availabilityStatus)}</span>
+            <code>{cue.id}</code>
+          </div>
+        ))}
       </section>
     </>
   );

@@ -25,6 +25,7 @@ export type WordDiagnosticItem = {
     cueCount: number;
     activeCueCount: number;
   } | null;
+  productionCues: Array<Pick<ProductionCueDiagnosticItem, 'id' | 'text' | 'cueType' | 'availabilityStatus'>>;
   productionCueSupplements: WordDiagnosticSupplement[];
 };
 

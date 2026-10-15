@@ -42,14 +42,6 @@ For how authenticated identity reaches private SQLite reads and writes, see
 | Client transport diagnostics | `domain/client-incidents.ts`, `services/client-incident-diagnostics.ts` | Bounded commit-failure capture and pending upload |
 | Study profile | `study-profile.ts` | Mandarin vs French client behavior |
 
-The Content Bin opens linked cues, contrast clusters, and words in one connected
-detail view. Its labeled Back action restores the originating item, search
-kind and query, result selection, scroll position, and keyboard focus. The
-originating view stays mounted while the connected item loads; unavailable or
-failed connections retain the return action. Connections in that view are
-read-only labels: return before following another connection. This bounded
-one-level navigation lasts within the mounted Content Bin page.
-
 Detail: [SPECS/frontend-architecture-map.md](../SPECS/frontend-architecture-map.md).
 
 ## Backend (`server/`)
