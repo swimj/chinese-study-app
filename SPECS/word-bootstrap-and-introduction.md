@@ -102,6 +102,13 @@ Reflection may request bootstrap-only preparation after learner authorization;
 that request creates no teaching package or study credit. Other preparation
 paths reuse the same source. A pending or failed request does not block study.
 
+Content Bin presents the latest eligible bootstrap document as reference content:
+use labels, usage notes, and linked example sentences with translations and any
+pronunciation. Corpus meanings are available in a collapsed auxiliary section;
+words without bootstrap content show their meanings directly. Connected content
+is accessible in either case. This reference view does not require a teaching
+package and does not present lesson beats or rehearsal exercises.
+
 ## 4. Introduction And Practice Form One Package
 
 A teaching package identifies exact word content, an ordered introduction,

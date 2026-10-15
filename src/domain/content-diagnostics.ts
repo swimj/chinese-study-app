@@ -1,4 +1,4 @@
-import type { TeachingPackageSnapshot } from './word-content/types';
+import type { SavedWordContent } from './word-content/application';
 import type { ProductionCueSupplementSnapshot, ProductionCueType } from './study-actions';
 import type { Word } from '../types';
 
@@ -14,7 +14,7 @@ export type WordDiagnosticItem = {
   kind: 'word';
   id: string;
   word: Word;
-  latestBootstrapPackage: { createdAt: string; snapshot: TeachingPackageSnapshot } | null;
+  latestBootstrapContent: SavedWordContent | null;
   contrastClusters: Array<{
     clusterId: string;
     title: string;

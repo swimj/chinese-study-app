@@ -4624,3 +4624,7 @@ input::placeholder, textarea::placeholder { color: var(--text-muted); opacity: 1
   min-width: 0;
   overflow-wrap: anywhere;
 }
+
+.content-bootstrap-use h4 {
+  margin: 0;
+}

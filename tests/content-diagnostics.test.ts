@@ -73,10 +73,11 @@ describe('content diagnostics', { concurrency: false }, () => {
     const content = { ...fixture.content, id: 'diagnostic-content', word: {
       wordId: 'check', hanzi: '考查', traditional: null, pinyin: 'kǎochá',
     } };
-    dbModule.saveWordContentDocument(content, 'fixture');
+    dbModule.saveWordContentDocument({ ...content, id: 'diagnostic-old-content' }, 'fixture');
     const teaching: TeachingPackage = {
       ...fixture.teaching,
-      wordContentId: content.id,
+      wordContentId: 'diagnostic-old-content',
+      beats: [{ id: 'lesson', parts: [{ kind: 'text', text: 'Lesson narration must stay in the player.' }] }],
       rehearsals: [{
         id: 'diagnostic-rehearsal', responseMode: 'hanzi_entry',
         contract: { kind: 'target_rehearsal', wordId: 'check' },
@@ -87,18 +88,33 @@ describe('content diagnostics', { concurrency: false }, () => {
     };
     dbModule.saveWordTeachingPackage({ ...teaching, id: 'diagnostic-old' }, 'fixture');
     t.mock.timers.setTime(new Date('2026-01-02T00:00:00.000Z').getTime());
-    dbModule.saveWordTeachingPackage({ ...teaching, id: 'diagnostic-new' }, 'fixture');
+    dbModule.saveWordContentDocument(content, 'fixture');
     const item = dbModule.getContentDiagnostics({ kind: 'word', query: '考查' }).items[0];
     assert.equal(item.kind, 'word');
     if (item.kind !== 'word') throw new Error('Expected word');
-    assert.equal(item.latestBootstrapPackage?.snapshot.packageId, 'diagnostic-new');
-    assert.ok(item.latestBootstrapPackage?.snapshot.beats[0].parts[0].text);
+    assert.equal(item.latestBootstrapContent?.content.id, 'diagnostic-content');
+    assert.deepEqual(item.latestBootstrapContent?.content.uses, content.uses);
+    assert.deepEqual(item.latestBootstrapContent?.content.examples, content.examples);
+    // The latest bootstrap has no teaching package; an older lesson must not displace it.
+    assert.equal(dbModule.getWordIntroductionLibrary('check')?.packages.length, 1);
     const html = renderToStaticMarkup(createElement(WordDetail, { item }));
-    assert.ok(html.indexOf('Bootstrap package') < html.indexOf('Meanings'));
-    assert.match(html, /<details class="content-meanings"><summary>Meanings<\/summary>/);
+    assert.ok(html.indexOf('Uses and examples') < html.indexOf('Corpus meanings'));
+    for (const use of content.uses) {
+      assert.ok(html.includes(renderToStaticMarkup(createElement('h4', null, use.label))));
+      for (const note of use.notes) {
+        assert.ok(html.includes(renderToStaticMarkup(createElement('p', null, note))));
+      }
+    }
+    for (const example of content.examples) {
+      assert.ok(html.includes(example.text));
+      assert.ok(html.includes(example.translation.replaceAll("'", '&#x27;')));
+      if (example.pronunciation) assert.ok(html.includes(example.pronunciation));
+    }
+    assert.doesNotMatch(html, /Lesson narration|Rehearsals|Recall the word/);
+    assert.match(html, /<details class="content-meanings"><summary>Corpus meanings<\/summary>/);
     assert.match(html, /Connected content/);
     assert.match(html, /kaocha-cluster/);
-    const without = { ...item, latestBootstrapPackage: null };
+    const without = { ...item, latestBootstrapContent: null };
     const fallback = renderToStaticMarkup(createElement(WordDetail, { item: without }));
     assert.match(fallback, /<h3>Meanings<\/h3>/);
     assert.doesNotMatch(fallback, /<details/);
@@ -140,7 +156,7 @@ describe('content diagnostics', { concurrency: false }, () => {
 
     const inspect = dbModule.getContentDiagnostics({ kind: 'word', query: '考察' });
     assert.equal(inspect.items[0]?.kind, 'word');
-    assert.equal(inspect.items[0]?.latestBootstrapPackage, null);
+    assert.equal(inspect.items[0]?.latestBootstrapContent, null);
     assert.deepEqual(inspect.items[0]?.productionCueSupplements, []);
 
     const clusters = dbModule.getContentDiagnostics({ kind: 'contrast_cluster', query: 'inspect' });

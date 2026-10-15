@@ -1,5 +1,4 @@
 import { getWordIntroductionLibrary } from './word-introductions.ts';
-import { materializeTeachingPackage } from '../../src/domain/word-content/materialize.ts';
 import type {
   ContentDiagnosticKind,
   ContentDiagnosticsResponse,
@@ -196,16 +195,13 @@ function searchWordDiagnostics(query: string, limit: number): WordDiagnosticItem
   return rows.map((row) => {
     const task = taskByWordId.get(row.id) ?? null;
     const library = getWordIntroductionLibrary(row.id);
-    const latest = library?.packages.at(-1);
+    const latest = library?.contents.at(-1);
 
     return {
       kind: 'word',
       id: row.id,
       word: mapWordRow(row),
-      latestBootstrapPackage: latest && library ? {
-        createdAt: latest.createdAt,
-        snapshot: materializeTeachingPackage(latest.teaching, library.contents.map(({ content }) => content)),
-      } : null,
+      latestBootstrapContent: latest ?? null,
       contrastClusters: (connectionsByWordId.get(row.id) ?? []).map((connection) => ({
         clusterId: connection.cluster_id,
         title: connection.title,

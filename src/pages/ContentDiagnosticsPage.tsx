@@ -131,33 +131,35 @@ function DiagnosticDetail({ item }: { item: ContentDiagnosticItem }) {
 }
 
 export function WordDetail({ item }: { item: WordDiagnosticItem }) {
-  const { word, latestBootstrapPackage } = item;
+  const { word, latestBootstrapContent } = item;
   return (
     <>
       <DetailHeading eyebrow="Word" title={word.hanzi} id={word.id} state={word.status} />
-      {latestBootstrapPackage ? (
+      {latestBootstrapContent ? (
         <section className="content-detail-section">
-          <h3>Bootstrap package</h3>
-          <code>{latestBootstrapPackage.snapshot.packageId}</code>
-          <p className="notes">Created {formatDate(latestBootstrapPackage.createdAt)}</p>
-          {latestBootstrapPackage.snapshot.beats.map((beat) => (
-            <div className="content-connection" key={beat.id}>
-              {beat.parts.map((part, index) => <p key={index}>{part.text}</p>)}
-            </div>
-          ))}
-          <h4>Rehearsals</h4>
-          {latestBootstrapPackage.snapshot.rehearsals.map((exercise) => (
-            <div className="content-connection" key={exercise.exerciseId}>
-              {exercise.instruction ? <p>{exercise.instruction}</p> : null}
-              <p>{exercise.stimulus.text}</p>
-              <p>Expected answers: {exercise.acceptedAnswers.map((answer) => answer.hanzi).join(' / ')}</p>
-            </div>
+          <h3>Uses and examples</h3>
+          {latestBootstrapContent.content.uses.map((use) => (
+            <section className="content-detail-section content-bootstrap-use" key={use.id}>
+              <h4>{use.label}</h4>
+              {use.notes.map((note, index) => <p key={index}>{note}</p>)}
+              {use.exampleIds.map((exampleId) => {
+                const example = latestBootstrapContent.content.examples.find((candidate) => candidate.id === exampleId);
+                if (!example) throw new Error(`Missing bootstrap example: ${exampleId}`);
+                return (
+                  <div className="content-connection" key={example.id}>
+                    <p>{example.text}</p>
+                    {example.pronunciation ? <p>{example.pronunciation}</p> : null}
+                    <p>{example.translation}</p>
+                  </div>
+                );
+              })}
+            </section>
           ))}
         </section>
       ) : null}
-      {latestBootstrapPackage ? (
+      {latestBootstrapContent ? (
         <details className="content-meanings">
-          <summary>Meanings</summary>
+          <summary>Corpus meanings</summary>
           <MeaningList meanings={word.meanings} />
         </details>
       ) : (
