@@ -120,6 +120,21 @@ Home, rather than completing signup on Clerk Account Portal.
 
 Page-specific state should not drift back into `App.tsx`. Use a page controller hook or keep state inside the page component when it is purely local UI.
 
+## Content Bin connected details
+
+The Content Bin opens linked cues, contrast clusters, and words in one connected
+detail view. Its labeled Back action restores the originating item, search
+kind and query, result selection, scroll position, and keyboard focus. The
+originating view stays mounted while the connected item loads; unavailable or
+failed connections retain the return action. Connections in that view are
+read-only labels: return before following another connection. This bounded
+one-level navigation lasts within the mounted Content Bin page.
+
+Word details list the durable cues belonging to the word's production task,
+including cues without supplements and inactive cues. Each entry opens that
+cue's diagnostic information. Supplements are optional post-reveal material;
+a task-level meaning-derived supplement is not a cue.
+
 ## Primary navigation
 
 `AppChrome` is a persistent left gutter, not a top tab bar. The four primary

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type {
   ContentDiagnosticItem,
   ContentDiagnosticKind,
@@ -8,6 +8,7 @@ import type {
   WordDiagnosticItem,
   WordDiagnosticSupplement,
 } from '../domain/content-diagnostics';
+import { fetchContentDiagnostics } from '../services/api';
 import { MeaningList } from '../components/MeaningList';
 
 const KIND_LABELS: Record<ContentDiagnosticKind, string> = {
@@ -34,6 +35,22 @@ export function ContentDiagnosticsPage({
   onSearch: () => void;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [connection, setConnection] = useState<{ kind: ContentDiagnosticKind; id: string } | null>(null);
+  const originFocus = useRef<HTMLElement | null>(null);
+  const originScroll = useRef(0);
+  function openConnection(kind: ContentDiagnosticKind, id: string) {
+    originFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    originScroll.current = window.scrollY;
+    setConnection({ kind, id });
+    window.scrollTo(0, 0);
+  }
+  function returnToOrigin() {
+    setConnection(null);
+    requestAnimationFrame(() => {
+      originFocus.current?.focus({ preventScroll: true });
+      window.scrollTo(0, originScroll.current);
+    });
+  }
   const items = data?.kind === kind ? data.items : [];
 
   useEffect(() => {
@@ -51,86 +68,127 @@ export function ContentDiagnosticsPage({
         </div>
       </header>
 
-      <div className="content-kind-tabs" role="tablist" aria-label="Content primitive kinds">
-        {(Object.keys(KIND_LABELS) as ContentDiagnosticKind[]).map((candidateKind) => (
-          <button
-            key={candidateKind}
-            type="button"
-            role="tab"
-            aria-selected={kind === candidateKind}
-            className={kind === candidateKind ? 'content-kind-tab active' : 'content-kind-tab'}
-            disabled={isLoading}
-            onClick={() => void onSelectKind(candidateKind)}
-          >
-            {KIND_LABELS[candidateKind]}
-          </button>
-        ))}
-      </div>
-
-      <form className="content-search" onSubmit={(event) => { event.preventDefault(); onSearch(); }}>
-        <input
-          type="search"
-          value={query}
-          placeholder={`Search ${KIND_LABELS[kind].toLocaleLowerCase()} by text or id`}
-          aria-label={`Search ${KIND_LABELS[kind]}`}
-          onChange={(event) => onQueryChange(event.target.value)}
-        />
-        <button type="submit" disabled={isLoading || query.trim().length === 0}>
-          {isLoading ? 'Loading…' : 'Search'}
-        </button>
-      </form>
-
-      {data?.kind === kind ? (
-        <p className="content-result-note notes">
-          {data.items.length} matching {KIND_LABELS[kind].toLocaleLowerCase()}
-          {data.hasMore ? ` shown · refine the query to see beyond the first ${data.limit}` : ''}
-        </p>
+      {connection && selectedItem ? (
+        <ConnectedDetail connection={connection} originLabel={itemLabel(selectedItem)} onBack={returnToOrigin} />
       ) : null}
-
-      {!data ? (
-        <div className="panel content-empty-state">
-          <h2>Search when you have a primitive in mind</h2>
-          <p className="notes">No content is loaded until you submit a word, text fragment, or known id.</p>
-        </div>
-      ) : items.length === 0 ? (
-        <div className="panel content-empty-state">
-          <h2>No matching content</h2>
-          <p className="notes">Try a different text fragment or id.</p>
-        </div>
-      ) : (
-        <div className="content-diagnostic-layout">
-          <aside className="panel content-item-list" aria-label={`${KIND_LABELS[kind]} results`}>
-            {items.map((item) => (
+      <div className="content-origin-view" hidden={connection !== null}>
+        <div className="content-kind-tabs" role="tablist" aria-label="Content primitive kinds">
+          {(Object.keys(KIND_LABELS) as ContentDiagnosticKind[]).map((candidateKind) => (
             <button
+              key={candidateKind}
               type="button"
-              key={item.id}
-              className={item.id === selectedId ? 'content-item-button active' : 'content-item-button'}
-              onClick={() => setSelectedId(item.id)}
+              role="tab"
+              aria-selected={kind === candidateKind}
+              className={kind === candidateKind ? 'content-kind-tab active' : 'content-kind-tab'}
+              disabled={isLoading}
+              onClick={() => void onSelectKind(candidateKind)}
             >
-              <strong>{itemLabel(item)}</strong>
-              <span>{itemSummary(item)}</span>
+              {KIND_LABELS[candidateKind]}
             </button>
-            ))}
-          </aside>
-
-          <article className="panel content-item-detail">
-            {selectedItem ? <DiagnosticDetail key={selectedItem.id} item={selectedItem} /> : (
-              <p className="notes">Select a primitive to inspect its details.</p>
-            )}
-          </article>
+          ))}
         </div>
-      )}
+
+        <form className="content-search" onSubmit={(event) => { event.preventDefault(); onSearch(); }}>
+          <input
+            type="search"
+            value={query}
+            placeholder={`Search ${KIND_LABELS[kind].toLocaleLowerCase()} by text or id`}
+            aria-label={`Search ${KIND_LABELS[kind]}`}
+            onChange={(event) => onQueryChange(event.target.value)}
+          />
+          <button type="submit" disabled={isLoading || query.trim().length === 0}>
+            {isLoading ? 'Loading…' : 'Search'}
+          </button>
+        </form>
+
+        {data?.kind === kind ? (
+          <p className="content-result-note notes">
+            {data.items.length} matching {KIND_LABELS[kind].toLocaleLowerCase()}
+            {data.hasMore ? ` shown · refine the query to see beyond the first ${data.limit}` : ''}
+          </p>
+        ) : null}
+
+        {!data ? (
+          <div className="panel content-empty-state">
+            <h2>Search when you have a primitive in mind</h2>
+            <p className="notes">No content is loaded until you submit a word, text fragment, or known id.</p>
+          </div>
+        ) : items.length === 0 ? (
+          <div className="panel content-empty-state">
+            <h2>No matching content</h2>
+            <p className="notes">Try a different text fragment or id.</p>
+          </div>
+        ) : (
+          <div className="content-diagnostic-layout">
+            <aside className="panel content-item-list" aria-label={`${KIND_LABELS[kind]} results`}>
+              {items.map((item) => (
+              <button
+                type="button"
+                key={item.id}
+                className={item.id === selectedId ? 'content-item-button active' : 'content-item-button'}
+                onClick={() => setSelectedId(item.id)}
+              >
+                <strong>{itemLabel(item)}</strong>
+                <span>{itemSummary(item)}</span>
+              </button>
+              ))}
+            </aside>
+
+            <article className="panel content-item-detail">
+              {selectedItem ? <DiagnosticDetail key={selectedItem.id} item={selectedItem} onOpen={openConnection} /> : (
+                <p className="notes">Select a primitive to inspect its details.</p>
+              )}
+            </article>
+          </div>
+        )}
+      </div>
     </section>
   );
 }
 
-function DiagnosticDetail({ item }: { item: ContentDiagnosticItem }) {
-  if (item.kind === 'word') return <WordDetail item={item} />;
-  if (item.kind === 'contrast_cluster') return <ClusterDetail item={item} />;
-  return <CueDetail item={item} />;
+type OpenConnection = (kind: ContentDiagnosticKind, id: string) => void;
+
+function ConnectedDetail({ connection, originLabel, onBack }: {
+  connection: { kind: ContentDiagnosticKind; id: string };
+  originLabel: string;
+  onBack: () => void;
+}) {
+  const [item, setItem] = useState<ContentDiagnosticItem | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const backButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    let cancelled = false;
+    backButton.current?.focus({ preventScroll: true });
+    void fetchContentDiagnostics(connection.kind, connection.id).then((response) => {
+      if (cancelled) return;
+      const match = response.items.find((candidate) => candidate.kind === connection.kind && candidate.id === connection.id);
+      if (match) setItem(match);
+      else setError('This connected item is unavailable.');
+    }).catch(() => {
+      if (!cancelled) setError('Could not load this connected item. Return and try again.');
+    });
+    return () => { cancelled = true; };
+  }, [connection]);
+  return <article className="panel content-item-detail">
+    <button ref={backButton} className="content-connection-link" type="button" onClick={onBack}>← Back to {originLabel}</button>
+    <p className="notes">Connected item · Return to the originating item before opening another connection.</p>
+    {error ? <p role="alert">{error}</p> : item ? <DiagnosticDetail item={item} /> : <p role="status">Loading connected item…</p>}
+  </article>;
 }
 
-export function WordDetail({ item }: { item: WordDiagnosticItem }) {
+function ConnectionLink({ kind, id, children, onOpen }: {
+  kind: ContentDiagnosticKind; id: string; children: React.ReactNode; onOpen?: OpenConnection;
+}) {
+  return onOpen ? <button type="button" className="content-connection-link" onClick={() => onOpen(kind, id)}>{children}</button> : <span>{children}</span>;
+}
+
+function DiagnosticDetail({ item, onOpen }: { item: ContentDiagnosticItem; onOpen?: OpenConnection }) {
+  if (item.kind === 'word') return <WordDetail item={item} onOpen={onOpen} />;
+  if (item.kind === 'contrast_cluster') return <ClusterDetail item={item} onOpen={onOpen} />;
+  return <CueDetail item={item} onOpen={onOpen} />;
+}
+
+export function WordDetail({ item, onOpen }: { item: WordDiagnosticItem; onOpen?: OpenConnection }) {
   const { word, latestBootstrapContent } = item;
   return (
     <>
@@ -184,7 +242,7 @@ export function WordDetail({ item }: { item: WordDiagnosticItem }) {
             <strong>{supplement.englishFrame}</strong>
             <span>{supplement.exampleSentence}</span>
             <span>{supplement.exampleTranslation}</span>
-            <code>{supplementAttachmentLabel(supplement)}</code>
+            {supplement.cueId ? <ConnectionLink kind="production_cue" id={supplement.cueId} onOpen={onOpen}>{onOpen ? 'Open cue · ' : ''}{supplementAttachmentLabel(supplement)}</ConnectionLink> : <code>{supplementAttachmentLabel(supplement)}</code>}
           </div>
         ))}
       </section>
@@ -193,19 +251,26 @@ export function WordDetail({ item }: { item: WordDiagnosticItem }) {
         <p>{item.contrastClusters.length} contrast cluster{item.contrastClusters.length === 1 ? '' : 's'}</p>
         {item.contrastClusters.map((cluster) => (
           <div className="content-connection" key={cluster.clusterId}>
-            <strong>{cluster.title}</strong>
+            <ConnectionLink kind="contrast_cluster" id={cluster.clusterId} onOpen={onOpen}>{cluster.title}</ConnectionLink>
             <code>{cluster.clusterId}</code>
             {cluster.nuanceNote ? <span>{cluster.nuanceNote}</span> : null}
           </div>
         ))}
         <p>{item.productionTask ? `${item.productionTask.activeCueCount} active of ${item.productionTask.cueCount} durable cues` : 'No production task'}</p>
         {item.productionTask ? <code>{item.productionTask.taskId}</code> : null}
+        {item.productionCues.map((cue) => (
+          <div className="content-connection" key={cue.id}>
+            <ConnectionLink kind="production_cue" id={cue.id} onOpen={onOpen}>{cue.text}</ConnectionLink>
+            <span>{humanize(cue.cueType)} · {humanize(cue.availabilityStatus)}</span>
+            <code>{cue.id}</code>
+          </div>
+        ))}
       </section>
     </>
   );
 }
 
-function ClusterDetail({ item }: { item: ContrastClusterDiagnosticItem }) {
+function ClusterDetail({ item, onOpen }: { item: ContrastClusterDiagnosticItem; onOpen?: OpenConnection }) {
   return (
     <>
       <DetailHeading eyebrow="Contrast cluster" title={item.title} id={item.id} />
@@ -214,7 +279,7 @@ function ClusterDetail({ item }: { item: ContrastClusterDiagnosticItem }) {
         <h3>Members · {item.members.length}</h3>
         {item.members.map(({ word, nuanceNote }) => (
           <div className="content-connection" key={word.id}>
-            <strong>{word.hanzi} <small>{word.pinyin}</small></strong>
+            <ConnectionLink kind="word" id={word.id} onOpen={onOpen}>{word.hanzi} · {word.pinyin}</ConnectionLink>
             <span>{word.meaning}</span>
             {nuanceNote ? <span>{nuanceNote}</span> : null}
           </div>
@@ -234,7 +299,7 @@ function ClusterDetail({ item }: { item: ContrastClusterDiagnosticItem }) {
   );
 }
 
-function CueDetail({ item }: { item: ProductionCueDiagnosticItem }) {
+function CueDetail({ item, onOpen }: { item: ProductionCueDiagnosticItem; onOpen?: OpenConnection }) {
   return (
     <>
       <DetailHeading
@@ -245,17 +310,17 @@ function CueDetail({ item }: { item: ProductionCueDiagnosticItem }) {
       />
       <dl className="content-fact-grid">
         <Fact label="Type" value={humanize(item.cueType)} />
-        <Fact label="Anchor" value={`${item.anchorWord.hanzi} · ${item.anchorWord.pinyin}`} />
+        <div><dt>Anchor</dt><dd><ConnectionLink kind="word" id={item.anchorWord.id} onOpen={onOpen}>{item.anchorWord.hanzi} · {item.anchorWord.pinyin}</ConnectionLink></dd></div>
         <Fact label="Origin" value={item.attribution.origin} />
         <Fact label="Created" value={formatDate(item.createdAt)} />
       </dl>
       <DetailText label="Task id" value={item.taskId} code />
-      {item.replacementCueId ? <DetailText label="Replacement cue id" value={item.replacementCueId} code /> : null}
+      {item.replacementCueId ? <section className="content-detail-section"><h3>Replacement cue</h3><ConnectionLink kind="production_cue" id={item.replacementCueId} onOpen={onOpen}>{item.replacementCueId}</ConnectionLink></section> : null}
       {item.attribution.invocationId ? <DetailText label="Invocation id" value={item.attribution.invocationId} code /> : null}
       <section className="content-detail-section">
         <h3>Accepted words · {item.acceptedWords.length}</h3>
         <div className="content-token-list">
-          {item.acceptedWords.map((word) => <span key={word.id}>{word.hanzi} · {word.meaning}</span>)}
+          {item.acceptedWords.map((word) => <ConnectionLink key={word.id} kind="word" id={word.id} onOpen={onOpen}>{word.hanzi} · {word.meaning}</ConnectionLink>)}
         </div>
       </section>
       <section className="content-detail-section">

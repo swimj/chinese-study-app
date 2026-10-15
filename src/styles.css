@@ -3952,6 +3952,7 @@ button:disabled:hover {
 }
 
 .content-diagnostics-page {
+  container-type: inline-size;
   display: grid;
   gap: 1rem;
 }
@@ -4611,6 +4612,30 @@ input::placeholder, textarea::placeholder { color: var(--text-muted); opacity: 1
   .session-start-shell:has(.session-settings-gear:hover) .session-settings-gear.getting-started-attention {
     animation: none;
   }
+}
+
+@container (max-width: 44em) {
+  .content-diagnostic-layout,
+  .content-fact-grid,
+  .content-search {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .content-detail-heading {
+    flex-direction: column;
+  }
+}
+
+.content-connection-link {
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+}
+
+.content-origin-view:not([hidden]) {
+  display: grid;
+  gap: 1rem;
 }
 
 .content-meanings summary {

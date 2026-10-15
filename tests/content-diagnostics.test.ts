@@ -121,6 +121,24 @@ describe('content diagnostics', { concurrency: false }, () => {
     assert.equal(dbModule.getWordIntroductionLibrary('check')?.selectedPackageId, 'diagnostic-old');
   });
 
+  test('keeps a cue discoverable without any supplement and when deactivated', () => {
+    sqlite.exec("UPDATE production_cue_activation_state SET active = 0 WHERE cue_id = 'check-cue'");
+    try {
+      const item = dbModule.getContentDiagnostics({ kind: 'word', query: 'check' }).items.find((item) => item.id === 'check');
+      if (item?.kind !== 'word') throw new Error('Expected word');
+      assert.equal(item.productionCues[0]?.id, 'check-cue');
+      assert.equal(item.productionCues[0]?.availabilityStatus, 'deactivated');
+      assert.equal(item.productionTask?.activeCueCount, 0);
+      const html = renderToStaticMarkup(createElement(WordDetail, {
+        item: { ...item, productionCueSupplements: [] }, onOpen: () => {},
+      }));
+      assert.match(html, /<button[^>]*>In a classroom checking-understanding context<\/button>/);
+      assert.match(html, /No post-reveal production supplement/);
+    } finally {
+      sqlite.exec("UPDATE production_cue_activation_state SET active = 1 WHERE cue_id = 'check-cue'");
+    }
+  });
+
   test('projects searchable word, cluster, and cue primitives without mutation affordances', () => {
     assert.throws(
       () => dbModule.getContentDiagnostics({ kind: 'word', query: '  ' }),
@@ -154,10 +172,23 @@ describe('content diagnostics', { concurrency: false }, () => {
       createdAt: '2026-08-03T00:00:00.000Z',
     }]);
 
+    // Durable cue navigation does not depend on a cue-attached supplement.
+    assert.deepEqual(words.items[0]?.productionCues, [{
+      id: 'check-cue', text: 'In a classroom checking-understanding context',
+      cueType: 'minimal_context', availabilityStatus: 'active',
+    }]);
+    const item = words.items[0];
+    if (item.kind !== 'word') throw new Error('Expected word');
+    const html = renderToStaticMarkup(createElement(WordDetail, { item, onOpen: () => {} }));
+    assert.match(html, /<button[^>]*>In a classroom checking-understanding context<\/button>/);
+    assert.match(html, /Meaning-derived fallback/);
+    assert.doesNotMatch(html, /Open cue · Meaning-derived fallback/);
+
     const inspect = dbModule.getContentDiagnostics({ kind: 'word', query: '考察' });
     assert.equal(inspect.items[0]?.kind, 'word');
     assert.equal(inspect.items[0]?.latestBootstrapContent, null);
     assert.deepEqual(inspect.items[0]?.productionCueSupplements, []);
+    assert.deepEqual(inspect.items[0]?.productionCues, []);
 
     const clusters = dbModule.getContentDiagnostics({ kind: 'contrast_cluster', query: 'inspect' });
     assert.equal(clusters.hasMore, false);
