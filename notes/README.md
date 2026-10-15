@@ -85,6 +85,7 @@ may retain superseded plans; check the task context and owning docs before use.
 
 | Note | Type | Retire by |
 | --- | --- | --- |
+| [2026-10-15-adaptive-vocabulary-practice-plan.md](active/2026-10-15-adaptive-vocabulary-practice-plan.md) | research | when consolidated into an agreed product model and delivery plan, or declined |
 | [2026-09-30-reflection-items-and-batches.md](active/2026-09-30-reflection-items-and-batches.md) | research | when consolidated into an accepted implementation spec, or declined |
 | [2026-09-26-reflection-ambiguity-cleanup.md](active/2026-09-26-reflection-ambiguity-cleanup.md) | research | when motivating examples are no longer needed |
 | [2026-09-24-word-introduction-prompt-draft.md](active/2026-09-24-word-introduction-prompt-draft.md) | research | when replaced by a tested generation prompt or declined |
