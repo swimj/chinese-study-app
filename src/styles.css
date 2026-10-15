@@ -3952,6 +3952,7 @@ button:disabled:hover {
 }
 
 .content-diagnostics-page {
+  container-type: inline-size;
   display: grid;
   gap: 1rem;
 }
@@ -4610,6 +4611,18 @@ input::placeholder, textarea::placeholder { color: var(--text-muted); opacity: 1
 @media (prefers-reduced-motion: reduce) {
   .session-start-shell:has(.session-settings-gear:hover) .session-settings-gear.getting-started-attention {
     animation: none;
+  }
+}
+
+@container (max-width: 44rem) {
+  .content-diagnostic-layout,
+  .content-fact-grid,
+  .content-search {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .content-detail-heading {
+    flex-direction: column;
   }
 }
 
