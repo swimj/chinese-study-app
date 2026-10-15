@@ -197,6 +197,45 @@ test('a withdrawn learner pin does not silently switch to another eligible packa
     'package-3');
 });
 
+test('library orders documents and packages by creation time then id, independently of the learner pin', (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-01-01T00:00:00.000Z') });
+  const wordId = 'ordering-word';
+  sqlite.prepare(`
+    INSERT INTO lexical_words
+      (id, hanzi, traditional, pinyin, meaning, meanings_json, examples_json, priority, created_at)
+    VALUES (?, '你好', NULL, 'nǐ hǎo', 'hello', '["hello"]', '[]', 10, ?)
+  `).run(wordId, new Date().toISOString());
+  const call = <T>(fn: () => T) => db.runWithLearnerId('learner-a', fn);
+  assert.deepEqual(call(() => db.getWordIntroductionLibrary(wordId))?.contents, []);
+  const save = (suffix: string) => call(() => {
+    const document = { ...content, id: `ordering-content-${suffix}`, word: { ...content.word, wordId } };
+    db.saveWordContentDocument(document, 'fixture');
+    db.saveWordTeachingPackage({
+      ...teaching, id: `ordering-package-${suffix}`, wordContentId: document.id,
+      rehearsals: [{ ...teaching.rehearsals[0],
+        contract: { kind: 'target_rehearsal', wordId },
+        acceptedAnswers: [{ wordId, hanzi: '你好', traditional: null }],
+      }],
+    }, 'fixture');
+  });
+  save('z-old');
+  call(() => db.pinWordTeachingPackage(wordId, 'ordering-package-z-old'));
+  t.mock.timers.setTime(new Date('2026-01-02T00:00:00.000Z').getTime());
+  // Reverse ID insertion order at the same timestamp to exercise the tie-break.
+  save('c-new');
+  save('b-new');
+  const library = call(() => db.getWordIntroductionLibrary(wordId));
+  assert.ok(library);
+  assert.deepEqual(library.contents.map(({ content }) => content.id), [
+    'ordering-content-z-old', 'ordering-content-b-new', 'ordering-content-c-new',
+  ]);
+  assert.deepEqual(library.packages.map(({ teaching }) => teaching.id), [
+    'ordering-package-z-old', 'ordering-package-b-new', 'ordering-package-c-new',
+  ]);
+  assert.equal(library.selectedPackageId, 'ordering-package-z-old');
+  assert.equal(library.contents.at(-1)?.content.id, 'ordering-content-c-new');
+});
+
 test('0015 database migrates to 0016 preserving existing shared publications and fingerprints', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'word-intro-upgrade-'));
   try {

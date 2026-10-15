@@ -411,6 +411,11 @@ function eligiblePackageRows(wordId: string, retainedPin: string | null = null):
   `).all(wordId, retainedPin) as PackageRow[];
 }
 
+/**
+ * Contents and packages are ordered by creation time ascending, then by their
+ * content/package ID ascending. The last entry is the newest eligible artifact.
+ * Array order is independent of the learner's selectedPackageId.
+ */
 export function getWordIntroductionLibrary(wordId: string): WordIntroductionLibrary | null {
   const learnerId = requireLearnerId();
   if (!lexicalRow(wordId)) return null;
