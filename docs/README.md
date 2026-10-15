@@ -58,8 +58,6 @@ linking to the intended guarantees they realize and any known gaps.
   [reflection frontend](reflection-frontend-architecture.md), and
   [content quality](content-quality.md): related feature realization and operator
   material.
-- [Operator content improvement](content-improvement.md): correction review,
-  safe application, agent API, and retained evidence for generation improvements.
 - [Test coverage map](testing.md): test files and the domains they exercise.
 
 The maps provide useful navigation. The target also calls for explanatory
@@ -89,6 +87,9 @@ hosted operations, and contributor development clearly separated.
   [schema migrations](ops/schema-migrations.md).
 - Operator interface: [operator panel guide](operator-panel.md), with the
   [API reference](api.md#operator-view) describing its HTTP contracts.
+- Content correction: [operator content improvement](content-improvement.md#review-and-application)
+  explains how to draft, validate, and explicitly approve corrections, with
+  content-specific effects and retained history.
 - Blog publication: [manual editor and operator command](whats-new.md#manual-operator-editor),
   including the skill’s interactive draft-review procedure.
 - Contributor environments: [scripts](scripts.md) and the
