@@ -1,3 +1,4 @@
+import { getWordIntroductionLibrary } from './word-introductions.ts';
 import type {
   ContentDiagnosticKind,
   ContentDiagnosticsResponse,
@@ -193,10 +194,14 @@ function searchWordDiagnostics(query: string, limit: number): WordDiagnosticItem
 
   return rows.map((row) => {
     const task = taskByWordId.get(row.id) ?? null;
+    const library = getWordIntroductionLibrary(row.id);
+    const latest = library?.contents.at(-1);
+
     return {
       kind: 'word',
       id: row.id,
       word: mapWordRow(row),
+      latestBootstrapContent: latest ?? null,
       contrastClusters: (connectionsByWordId.get(row.id) ?? []).map((connection) => ({
         clusterId: connection.cluster_id,
         title: connection.title,

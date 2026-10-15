@@ -114,7 +114,7 @@ export function ContentDiagnosticsPage({
           </aside>
 
           <article className="panel content-item-detail">
-            {selectedItem ? <DiagnosticDetail item={selectedItem} /> : (
+            {selectedItem ? <DiagnosticDetail key={selectedItem.id} item={selectedItem} /> : (
               <p className="notes">Select a primitive to inspect its details.</p>
             )}
           </article>
@@ -130,21 +130,50 @@ function DiagnosticDetail({ item }: { item: ContentDiagnosticItem }) {
   return <CueDetail item={item} />;
 }
 
-function WordDetail({ item }: { item: WordDiagnosticItem }) {
-  const { word } = item;
+export function WordDetail({ item }: { item: WordDiagnosticItem }) {
+  const { word, latestBootstrapContent } = item;
   return (
     <>
       <DetailHeading eyebrow="Word" title={word.hanzi} id={word.id} state={word.status} />
+      {latestBootstrapContent ? (
+        <section className="content-detail-section">
+          <h3>Uses and examples</h3>
+          {latestBootstrapContent.content.uses.map((use) => (
+            <section className="content-detail-section content-bootstrap-use" key={use.id}>
+              <h4>{use.label}</h4>
+              {use.notes.map((note, index) => <p key={index}>{note}</p>)}
+              {use.exampleIds.map((exampleId) => {
+                const example = latestBootstrapContent.content.examples.find((candidate) => candidate.id === exampleId);
+                if (!example) throw new Error(`Missing bootstrap example: ${exampleId}`);
+                return (
+                  <div className="content-connection" key={example.id}>
+                    <p>{example.text}</p>
+                    {example.pronunciation ? <p>{example.pronunciation}</p> : null}
+                    <p>{example.translation}</p>
+                  </div>
+                );
+              })}
+            </section>
+          ))}
+        </section>
+      ) : null}
+      {latestBootstrapContent ? (
+        <details className="content-meanings">
+          <summary>Corpus meanings</summary>
+          <MeaningList meanings={word.meanings} />
+        </details>
+      ) : (
+        <section className="content-detail-section">
+          <h3>Meanings</h3>
+          <MeaningList meanings={word.meanings} />
+        </section>
+      )}
       <dl className="content-fact-grid">
         <Fact label="Pronunciation" value={word.pinyin} />
         <Fact label="Priority" value={String(word.priority)} />
         <Fact label="Practice streak" value={String(word.learningStreak)} />
         <Fact label="Created" value={formatDate(word.createdAt)} />
       </dl>
-      <section className="content-detail-section">
-        <h3>Meanings</h3>
-        <MeaningList meanings={word.meanings} />
-      </section>
       {word.personalNotes ? <DetailText label="Personal notes" value={word.personalNotes} /> : null}
       <section className="content-detail-section">
         <h3>Supplemental info</h3>

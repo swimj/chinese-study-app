@@ -67,9 +67,11 @@ Invalid parameters, including unknown status or lapses values, return 400. See [
 The diagnostic query requires non-empty `q` input and applies the bound in SQL
 before hydrating the selected records. It returns only the selected kind and a
 `hasMore` signal; it does not read or count the corpus before a user query.
-Word items include
-cluster membership, production-task cue counts, and any post-reveal production
-cue supplements (english frame, example sentence, translation, and whether
+Word items include `latestBootstrapContent`: `{ createdAt, content }` for the
+latest eligible [bootstrap document](word-content-representation.md#source-documents-and-teaching-packages),
+ordered by creation time then content id, or `null` when none is available,
+as well as cluster membership, production-task cue counts, and any post-reveal
+production cue supplements (english frame, example sentence, translation, and whether
 the supplement is attached to a durable cue or the meaning-derived fallback);
 cluster items include
 members and prompts; durable production-cue items include their anchor and
