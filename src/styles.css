@@ -4624,3 +4624,19 @@ input::placeholder, textarea::placeholder { color: var(--text-muted); opacity: 1
   display: grid;
   gap: 1rem;
 }
+
+.content-meanings summary {
+  cursor: pointer;
+  font-weight: 600;
+  margin-bottom: 0.6rem;
+}
+
+.content-item-detail > *,
+.content-item-detail .content-connection {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.content-bootstrap-use h4 {
+  margin: 0;
+}
