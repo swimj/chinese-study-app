@@ -106,8 +106,7 @@ Content Bin presents the latest eligible bootstrap document as reference content
 use labels, usage notes, and linked example sentences with translations and any
 pronunciation. Corpus meanings are available in a collapsed auxiliary section;
 words without bootstrap content show their meanings directly. Connected content
-is accessible in either case. This reference view does not require a teaching
-package and does not present lesson beats or rehearsal exercises.
+is accessible in either case.
 
 ## 4. Introduction And Practice Form One Package
 
