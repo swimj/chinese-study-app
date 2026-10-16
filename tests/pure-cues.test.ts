@@ -294,6 +294,90 @@ describe('pure cue persistence', { concurrency: false }, () => {
     }), /Unknown or invisible/);
   });
 
+  test('a second accepted word graduating to Review preserves the full adopted cue schedule', () => {
+    const learnerId = 'second-member-graduation';
+    const cueId = 'pure-second-member-graduation';
+    sqlite.prepare('INSERT INTO learners (learner_id, display_name, created_at) VALUES (?, ?, ?)')
+      .run(learnerId, learnerId, now);
+    for (const [id, hanzi] of [['graduation-word-a', '撒谎'], ['graduation-word-b', '说谎']]) {
+      sqlite.prepare(`INSERT INTO lexical_words
+        (id, hanzi, traditional, pinyin, meaning, meanings_json, examples_json, priority, created_at)
+        VALUES (?, ?, ?, 'pinyin', 'meaning', '[]', '[]', 1, ?)`).run(id, hanzi, hanzi, now);
+    }
+    dbModule.createPureCueWithoutTransaction({
+      id: cueId, stimulus: 'to tell an untruth',
+      acceptedWordIds: ['graduation-word-a', 'graduation-word-b'], createdAt: now,
+    });
+    publishFixture(cueId);
+
+    dbModule.runWithLearnerId(learnerId, () => {
+      const readStates = () => sqlite.prepare(`
+        SELECT * FROM learner_pure_cue_state WHERE learner_id = ? AND pure_cue_id = ?
+      `).all(learnerId, cueId);
+      const selectSessionCues = () => dbModule.selectStoredPureCuesForSession({
+        ordinaryReviewCount: 20, now: '2026-10-01T00:00:00.000Z', random: () => 0,
+      });
+
+      for (const wordId of ['graduation-word-a', 'graduation-word-b']) {
+        sqlite.prepare(`INSERT INTO learner_word_state (learner_id, word_id, status, learning_streak)
+          VALUES (?, ?, 'learning', 2)`).run(learnerId, wordId);
+        sqlite.prepare(`INSERT INTO learner_owned_word_study_admission_state
+          (learner_id, word_id, study_phase, earliest_next_study_at)
+          VALUES (?, ?, 'learning', NULL)`).run(learnerId, wordId);
+      }
+      selectSessionCues();
+      assert.deepEqual(readStates(), [], 'Practice membership alone does not adopt a cue');
+
+      sqlite.prepare(`UPDATE learner_word_state SET status = 'review'
+        WHERE learner_id = ? AND word_id = 'graduation-word-a'`).run(learnerId);
+      selectSessionCues();
+      assert.deepEqual(readStates(), [], 'Review status also requires Review admission');
+      sqlite.prepare(`UPDATE learner_word_state SET status = 'learning'
+        WHERE learner_id = ? AND word_id = 'graduation-word-a'`).run(learnerId);
+      sqlite.prepare(`UPDATE learner_owned_word_study_admission_state SET study_phase = 'review'
+        WHERE learner_id = ? AND word_id = 'graduation-word-a'`).run(learnerId);
+      selectSessionCues();
+      assert.deepEqual(readStates(), [], 'Review admission also requires Review status');
+
+      reviewMember(learnerId, 'graduation-word-a');
+      dbModule.adoptEligiblePureCuesForCurrentLearner(now);
+      // Advance the cue's own scheduler, rather than either member's word scheduler.
+      for (let index = 0; index < 6; index += 1) {
+        const studiedAt = `2026-09-${19 + index}T00:00:00.000Z`;
+        const snapshot = dbModule.issuePureCueServedSnapshot({
+          snapshotId: `${cueId}:snapshot:${index}`, pureCueId: cueId, servedAt: studiedAt,
+        });
+        dbModule.recordPureCueAssessment({
+          attemptId: `${cueId}:attempt:${index}`, snapshotId: snapshot.snapshotId,
+          sessionId: `${cueId}:session:${index}`, sessionActionId: `${cueId}:action:${index}`,
+          committedAt: studiedAt,
+          events: [{ eventId: `${cueId}:event:${index}`, occurredAt: studiedAt,
+            response: '撒谎', outcome: 'accepted', submittedWordId: 'graduation-word-a', rating: 'easy' }],
+        }, () => 0.5);
+      }
+      const before = readStates();
+      assert.equal(before.length, 1);
+      assert.ok(Number(before[0]!.interval_hours) > 24);
+      assert.ok(Number(before[0]!.ease_factor) > 2.5);
+      assert.ok(before[0]!.last_studied_at);
+      assert.ok(before[0]!.strong_since);
+      assert.ok(Number(before[0]!.strong_successes) > 0);
+      assert.equal(before[0]!.adopted_at, now);
+
+      const graduated = dbModule.completeLearningWordSession('graduation-word-b', true, undefined, '2026-09-25');
+      assert.equal(graduated.status, 'review');
+      assert.equal(graduated.learningStreak, 3);
+      assert.equal(sqlite.prepare(`SELECT study_phase FROM learner_owned_word_study_admission_state
+        WHERE learner_id = ? AND word_id = 'graduation-word-b'`).get(learnerId)?.study_phase, 'review');
+      assert.deepEqual(readStates(), before, 'graduation preserves every persisted cue field');
+
+      selectSessionCues();
+      assert.deepEqual(readStates(), before, 'session selection preserves the single adopted state');
+      dbModule.adoptEligiblePureCuesForCurrentLearner('2026-10-02T00:00:00.000Z');
+      assert.deepEqual(readStates(), before, 'repeat adoption preserves schedule and adoption timestamp');
+    });
+  });
+
   test('derives production proxy coverage without writing learner relevance', () => {
     assert.equal(dbModule.isWordProductionProxied('word-a'), true);
     assert.equal(dbModule.isWordProductionProxied('word-d'), false);
