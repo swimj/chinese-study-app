@@ -1,6 +1,7 @@
+import { useTimestampDisplay } from './useTimestampDisplay';
 import { useEffect, useState } from 'react';
 import { TimestampColumnDialog } from './TimestampColumnDialog';
-import { createTimestampFormatter, defaultTimestampDisplay, timestampDisplayLabel } from './operator-timestamps';
+import { createTimestampFormatter, timestampDisplayLabel } from './operator-timestamps';
 import {
   CONTENT_QUALITY_KINDS,
   type ContentQualityBreakdown,
@@ -42,7 +43,7 @@ function percent(numerator: number, denominator: number): string {
 
 export function ContentQualityPanel() {
   const [timestampOptionsOpen, setTimestampOptionsOpen] = useState(false);
-  const [timestampDisplay, setTimestampDisplay] = useState(defaultTimestampDisplay);
+  const [timestampDisplay, setTimestampDisplay] = useTimestampDisplay('content-quality');
   const formatTimestamp = createTimestampFormatter(timestampDisplay);
   const zoneLabel = timestampDisplayLabel(timestampDisplay);
   const [improvementSelection, setImprovementSelection] = useState<ImprovementSelection | null>(null);

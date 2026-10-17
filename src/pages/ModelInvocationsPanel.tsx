@@ -1,3 +1,4 @@
+import { useTimestampDisplay } from './useTimestampDisplay';
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import { createTimestampFormatter, defaultTimestampDisplay, timestampDisplayLabel, type TimestampDisplay } from './operator-timestamps';
 import type { ModelInvocationRow } from '../domain/model-invocations';
@@ -11,7 +12,7 @@ import {
 } from './model-invocation-presentation';
 
 export function ModelInvocationsPanel() {
-  const [timestampDisplay, setTimestampDisplay] = useState(defaultTimestampDisplay);
+  const [timestampDisplay, setTimestampDisplay] = useTimestampDisplay('model-invocations');
   const [filters, setFilters] = useState(defaultInvocationFilters);
   const [rows, setRows] = useState<ModelInvocationRow[] | null>(null);
   const [loading, setLoading] = useState(true);

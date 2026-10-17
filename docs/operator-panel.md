@@ -33,7 +33,10 @@ snapshot. The view does not use server-side pagination.
 Model invocations and Content quality offer a Timestamp display control inside
 the timestamp column's options, opened by clicking its header: UTC
 (the default), Local time (the browser's time zone), or Specific time zone
-(a named zone selector). Each view keeps its choice while mounted. Timestamp
+(a named zone selector). Each view independently remembers its display mode and
+named zone in browser local storage across reloads. Missing or invalid saved choices and unavailable storage
+use the UTC default; a selection remains usable if saving fails. Preferences are
+local to this browser, without account-level sync. Timestamp
 cells show the date, time, and UTC offset at that instant, including daylight
 saving changes. Display choices leave date filters, day grouping, summary
 periods, and stored timestamps on their UTC boundaries.
