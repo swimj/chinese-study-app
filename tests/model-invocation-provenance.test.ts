@@ -5,6 +5,7 @@ import path from 'node:path';
 import { after, before, test } from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
 import { createOpenAiCompatibleAdapter } from '../server/llm/openai-compatible.ts';
+import { getReflectionSpendCap } from '../server/db/reflections.ts';
 import { getDb } from '../server/db/connection.ts';
 import { runWithLearnerId } from '../server/db/learner-context.ts';
 import {
@@ -161,4 +162,16 @@ test('common transport uses explicit service attribution while missing learner s
   assert.ok(row.spend_usd !== null); assert.ok(row.response_snapshot_json); assert.ok(row.request_snapshot_json);
   assert.ok(!JSON.stringify(row).includes('service-secret'));
   assert.ok(!String(row.request_snapshot_json).includes('invocationActor'));
+});
+
+test('shared reflection spend metric includes service-owned vocabulary calls once and isolates requesters',()=>{
+  const before=learner(()=>getReflectionSpendCap()).spentUsd;
+  const id=startServiceModelInvocation({...input,invocationType:'vocabulary_reflection_feedback_v1',serviceId:'vocabulary-reflection',requestingLearnerId:'provenance-a'});
+  recordServiceModelInvocationSpend(id,'vocabulary-reflection',{spendUsd:0.25,spendSource:'reported',pricing:{basis:'provider'}});
+  finishServiceModelInvocation(id,'vocabulary-reflection','completed',1);
+  assert.equal(learner(()=>getReflectionSpendCap()).spentUsd,before+0.25);
+  const other=startServiceModelInvocation({...input,invocationType:'vocabulary_reflection_improvement_v1',serviceId:'vocabulary-reflection',requestingLearnerId:'provenance-b'});
+  recordServiceModelInvocationSpend(other,'vocabulary-reflection',{spendUsd:0.5,spendSource:'reported',pricing:{basis:'provider'}});
+  finishServiceModelInvocation(other,'vocabulary-reflection','completed',1);
+  assert.equal(learner(()=>getReflectionSpendCap()).spentUsd,before+0.25);
 });

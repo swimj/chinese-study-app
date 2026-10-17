@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import type http from 'node:http';
 import { after, before, test } from 'node:test';
+import express from 'express';
 import type { ImprovementCase, ImprovementCheck } from '../src/domain/content-improvement.ts';
 
 let dir: string, server: http.Server, base: string;
@@ -15,16 +16,23 @@ const previous = Object.fromEntries(keys.map(key => [key,process.env[key]]));
 before(async () => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(),'content-improvement-'));
   Object.assign(process.env,{APP_MODE:'study',APP_DATA_DIR:dir,APP_LEARNER_ID:'editor',APP_AUTH_MODE:'trusted_local',APP_OPERATOR_CLERK_USER_IDS:'editor'});
-  const {createApp} = await import('../server/index.ts');
+  appDb = await import('../server/db.ts');
+  const {registerContentImprovementRoutes} = await import('../server/content-improvement-routes.ts');
+  const {runWithLearnerId} = await import('../server/db/learner-context.ts');
   db = (await import('../server/db/connection.ts')).getDb();
   api = await import('../server/db/content-improvements.ts');
-  appDb = await import('../server/db.ts');
   for (const [id,hanzi] of [['w1','考查'],['w2','考察']]) {
     db.prepare(`INSERT INTO lexical_words (id,hanzi,pinyin,meaning,meanings_json,examples_json,priority,created_at) VALUES (?,?,?,'inspect','[]','[]',10,'now')`).run(id,hanzi,'kǎochá');
   }
   db.exec(`INSERT INTO scoped_contrast_clusters VALUES ('cluster','Contrast','', 'learner','editor');
     INSERT INTO scoped_contrast_cluster_members VALUES ('cluster','w1','',1),('cluster','w2','',2);`);
-  server = createApp({frontendDistPath:null}).listen(0,'127.0.0.1');
+  // Preserve the legacy editor's domain/HTTP contract in isolation. The active
+  // Mandarin application's cutover fence is covered in hosted-runtime tests.
+  const app = express();
+  app.use(express.json());
+  app.use((_req,_res,next) => runWithLearnerId('editor',next));
+  registerContentImprovementRoutes(app);
+  server = app.listen(0,'127.0.0.1');
   await new Promise<void>((resolve,reject) => {server.once('listening',resolve);server.once('error',reject);});
   const address = server.address(); assert(address && typeof address === 'object');
   base = `http://127.0.0.1:${address.port}/api/operator/content-improvements`;
@@ -46,11 +54,14 @@ function revised(item:ImprovementCase) {
 
 test('operator authorization protects reads, drafts, application and direct domain calls', async () => {
   process.env.APP_OPERATOR_CLERK_USER_IDS = '';
-  for(const [route,body,method] of [['',undefined,'GET'],['',{kind:'contrast_prompt',sourceId:'p'},'POST'],['/missing/apply',{expectedRevision:1,approve:true,acceptAnswerSpaceChange:false},'POST']] as const) {
-    assert.equal((await request(route,body,method)).status,403);
+  try {
+    for(const [route,body,method] of [['',undefined,'GET'],['',{kind:'contrast_prompt',sourceId:'p'},'POST'],['/missing/apply',{expectedRevision:1,approve:true,acceptAnswerSpaceChange:false},'POST']] as const) {
+      assert.equal((await request(route,body,method)).status,403);
+    }
+    assert.throws(() => api.listImprovementCases({},'intruder'),/Operator access/);
+  } finally {
+    process.env.APP_OPERATOR_CLERK_USER_IDS = 'editor';
   }
-  assert.throws(() => api.listImprovementCases({},'intruder'),/Operator access/);
-  process.env.APP_OPERATOR_CLERK_USER_IDS = 'editor';
 });
 
 test('flagged correction retains evidence, requires approval, replaces future selection and preserves old content', async () => {

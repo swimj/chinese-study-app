@@ -1,25 +1,32 @@
+import { experimentOutputSchema,projectExperimentInput,validateExperimentOutput } from '../word-content-lab/vocabulary-experiments/contracts.ts';
+import type { ExperimentInput } from '../word-content-lab/vocabulary-experiments/contracts.ts';
 import { createHash } from 'node:crypto';
-import { invalidateInvocation } from '../llm/invocation-ledger.ts';
+import { invalidateInvocation,invalidateServiceInvocation } from '../llm/invocation-ledger.ts';
 import { readFile } from 'node:fs/promises';
 import type { WordBootstrapInput } from '../../src/domain/word-content/application.ts';
-import type { WordContentDocument } from '../../src/domain/word-content/types.ts';
+import type { TeachingPackage,WordContentDocument } from '../../src/domain/word-content/types.ts';
 import type { JsonSchema } from '../../src/domain/reflection-result-schema.ts';
 import { validateJsonSchema } from '../llm/json-schema-validator.ts';
 import { createOpenAiCompatibleAdapter } from '../llm/openai-compatible.ts';
 import { fetchImplementationForProvider } from '../llm/proxy-fetch.ts';
 import { isOutputTruncationFinishReason } from '../llm/types.ts';
 import type { FetchImplementation } from '../llm/http.ts';
+import { materializeTeachingPart } from '../../src/domain/word-content/materialize.ts';
+import type { ProviderRunRequest } from '../llm/types.ts';
 
 export const WORD_INTRODUCTION_MODEL = 'gpt-5.6-luna';
 const TIMEOUT_MS = 180_000;
 const MAX_OUTPUT_TOKENS = 16_000;
+const TEACHING_EXERCISE_PROMPT = new URL('../word-content-lab/vocabulary-experiments/prompts/teaching-exercises-v2.md',import.meta.url);
 
-export type WordGenerationOptions = { onInvocation?: (id: string | null | undefined) => void };
+export type TeachingCoherenceSource = Pick<TeachingPackage,'id' | 'wordContentId' | 'beats'>;
+export type WordGenerationOptions = { onInvocation?: (id: string | null | undefined) => void;
+  teaching?: TeachingCoherenceSource; workflowId?: string; invocationActor?: ProviderRunRequest['invocationActor'] };
 
 /** Keep validation accounting separate from publication and storage failures. */
-export function validateWordProviderOutput<T>(invocationId: string | null | undefined, validate: () => T): T {
+export function validateWordProviderOutput<T>(invocationId: string | null | undefined, validate: () => T,serviceId?: string): T {
   try { return validate(); }
-  catch (error) { invalidateInvocation(invocationId); throw error; }
+  catch (error) { if (serviceId) invalidateServiceInvocation(invocationId,serviceId); else invalidateInvocation(invocationId); throw error; }
 }
 
 export type WordIntroductionProvider = {
@@ -28,7 +35,7 @@ export type WordIntroductionProvider = {
   generateBootstrap(input: WordBootstrapInput, options?: WordGenerationOptions): Promise<unknown>;
   generateTeaching(content: WordContentDocument, options?: WordGenerationOptions): Promise<unknown>;
   generatePractice(content: WordContentDocument, options?: WordGenerationOptions): Promise<unknown>;
-  generationKey(stage: 'teaching' | 'practice'): Promise<string>;
+  generationKey(stage: 'teaching' | 'practice',teaching?: TeachingCoherenceSource): Promise<string>;
   generateReview(content: WordContentDocument, options?: WordGenerationOptions): Promise<unknown>;
 };
 
@@ -73,8 +80,13 @@ const practiceSchema = object({
   ] } }), 1),
 });
 
-/** Practice uses lexical notes but not teaching sentences or their lookup IDs. */
-export function practiceInput(content: WordContentDocument) {
+/** Standalone legacy experiments retain reduced input; runtime teaching exercises bind the actual introduction. */
+export function practiceInput(content: WordContentDocument,teaching?: TeachingCoherenceSource) {
+  if (teaching) {
+    if (teaching.wordContentId !== content.id) throw new Error('Teaching source names another bootstrap');
+    return { ...content,deliveredIntroduction: { id: teaching.id,beats: teaching.beats.map((beat) => ({ id: beat.id,
+      parts: beat.parts.map((part) => ({ text: materializeTeachingPart(part,content),source: part })) })) } };
+  }
   const { examples: _examples, ...source } = content;
   return { ...source, uses: content.uses.map(({ exampleIds: _exampleIds, ...use }) => use) };
 }
@@ -121,19 +133,25 @@ export function createWordIntroductionProvider(options: {
   ): Promise<unknown> {
     const apiKey = environment.OPENAI_API_KEY?.trim();
     if (!apiKey) throw new Error('Introduction generation is not configured.');
-    const schema = schemaFor(stage);
-    const prompt = await readFile(new URL(`./prompts/${stage}.md`, import.meta.url), 'utf8');
+    const trial: ExperimentInput | null = stage === 'practice' && generationOptions.teaching
+      ? { role:'teaching_exercises',content:input as WordContentDocument,introduction:generationOptions.teaching } : null;
+    const schema = trial ? experimentOutputSchema(trial) : schemaFor(stage);
+    const prompt = await readFile(trial ? TEACHING_EXERCISE_PROMPT : new URL(`./prompts/${stage}.md`,import.meta.url),'utf8');
     const result = await adapter.run({
       model: WORD_INTRODUCTION_MODEL,
       reasoningEffort: 'high',
       systemPrompt: prompt,
-      userPrompt: JSON.stringify(stage === 'practice' ? practiceInput(input as WordContentDocument) : input),
-      outputSchemaName: `intro_lab_${stage}_${stage === 'teaching' ? 'v2' : 'v1'}`,
+      userPrompt: JSON.stringify(trial ? projectExperimentInput(trial) : stage === 'practice' ? practiceInput(input as WordContentDocument) : input),
+      outputSchemaName: trial ? 'vocabulary_teaching_exercises_v1' : `intro_lab_${stage}_${stage === 'teaching' ? 'v2' : 'v1'}`,
       outputSchema: schema,
       maxOutputTokens: MAX_OUTPUT_TOKENS,
       temperature: null,
       timeoutMs: TIMEOUT_MS,
       cachePrompt: true,
+      invocationActor: generationOptions.invocationActor,
+      provenance: { workflowId: generationOptions.workflowId,stepName: trial ? 'teaching_exercises' : stage==='teaching' ? 'introduction' : stage,
+        promptName: trial ? 'vocabulary-teaching-exercises' : stage==='teaching' ? 'vocabulary-introduction' : `vocabulary-${stage}`,promptVersion: trial ? 'v2' : 'v1',
+        schemaVersion: stage === 'teaching' ? '2' : '1',inputProjectionVersion: trial ? 'delivered-introduction-v1' : 'full-v1' },
     }, {
       apiKey,
       baseUrl: environment.OPENAI_BASE_URL?.trim() || null,
@@ -150,8 +168,15 @@ export function createWordIntroductionProvider(options: {
       if (validateJsonSchema(parsed, schema).length > 0) {
         throw new Error('Introduction generation returned an invalid structure.');
       }
+      if (trial) {
+        if (validateExperimentOutput(trial,parsed).structuralErrors.length) throw new Error('Teaching exercises failed source or stimulus validation.');
+        const wire = parsed as {exercises:Array<{id:string;stimulus:unknown}>};
+        // Original use hints and teaching notes remain in the exact invocation output. The
+        // existing teaching-package wire cannot yet represent them as live authored fields.
+        return {rehearsals:wire.exercises.map(({id,stimulus})=>({id,stimulus}))};
+      }
       return parsed;
-    });
+    },generationOptions.invocationActor?.serviceId);
   }
   return {
     model: WORD_INTRODUCTION_MODEL,
@@ -159,10 +184,12 @@ export function createWordIntroductionProvider(options: {
     generateBootstrap: (input, generationOptions) => generate('bootstrap', input, generationOptions),
     generateTeaching: (content, generationOptions) => generate('teaching', content, generationOptions),
     generatePractice: (content, generationOptions) => generate('practice', content, generationOptions),
-    generationKey: async (stage) => createHash('sha256').update(JSON.stringify({
-      prompt: await readFile(new URL(`./prompts/${stage}.md`, import.meta.url), 'utf8'),
-      schema: schemaFor(stage), model: WORD_INTRODUCTION_MODEL, reasoning: 'high',
-      maxOutputTokens: MAX_OUTPUT_TOKENS, inputVersion: stage === 'practice' ? 'without-examples-v1' : 'full-v1',
+    generationKey: async (stage,teaching) => createHash('sha256').update(JSON.stringify({
+      prompt: await readFile(stage==='practice'&&teaching ? TEACHING_EXERCISE_PROMPT : new URL(`./prompts/${stage}.md`,import.meta.url),'utf8'),
+      promptVersion:stage==='practice'&&teaching?'v2':'v1',
+      schema:stage==='practice'&&teaching?'vocabulary-exercises-schema-v1':schemaFor(stage), model: WORD_INTRODUCTION_MODEL, reasoning: 'high',
+      maxOutputTokens: MAX_OUTPUT_TOKENS, inputVersion: stage === 'practice' ? teaching ? 'delivered-introduction-v1' : 'without-examples-v1' : 'full-v1',
+      deliveredIntroduction: stage === 'practice' ? teaching ?? null : null,
     })).digest('hex'),
     generateReview: (content, generationOptions) => generate('review', content, generationOptions),
   };

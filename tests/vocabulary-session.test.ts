@@ -21,10 +21,11 @@ const present = (encounterId: string, wordId = 'a', content = snapshot(encounter
 const respond = (encounterId: string, outcome: 'accepted' | 'rejected' = 'accepted'): Input => ({ kind: 'response', payload: { encounterId, response: outcome === 'accepted' ? '字' : null, outcome } });
 const wrap = (wordId = 'a', reason: 'enough' | 'policy' = 'policy'): Input => ({ kind: 'word_wrap', payload: { wordId, reason } });
 
-test('two production responses cover work without manufacturing successful recall', () => {
+test('one accepted production response covers work while rejected-only work stays uncovered', () => {
   const result = projectVocabularySession(context, log(present('one'), respond('one', 'rejected'), present('two'), respond('two')));
   assert.equal(result.words.a.covered, true);
-  assert.equal(result.words.a.successfulRecall, false);
+  assert.equal(result.words.a.successfulRecall, true);
+  assert.equal(projectVocabularySession(context,log(present('miss'),respond('miss','rejected'))).words.a.covered,false);
   assert.equal(result.words.a.hasRejectedResponse, true);
   assert.equal(result.words.a.recommendedMode, null);
   assert.deepEqual(result.coveredWordIds, ['a']);
@@ -59,7 +60,7 @@ test('Undo reverses the latest contribution without deleting raw response or fee
     { kind: 'undo', payload: { undoesActionId: 'action-4' } }));
   assert.equal(result.words.a.productionResponses, 1);
   assert.equal(result.words.a.hasRejectedResponse, false);
-  assert.equal(result.words.a.covered, false);
+  assert.equal(result.words.a.covered, true);
   assert.equal(result.encounters[1].responses.length, 1);
   assert.equal(result.encounters[1].feedback.length, 1);
   assert.deepEqual(result.undoneActionIds, ['action-4']);
@@ -178,4 +179,31 @@ test('pending pure cues keep finishing open until answered or skipped', () => {
   assert.equal(projectVocabularySession(context, log(...prefix)).phase, 'finishing');
   assert.equal(projectVocabularySession(context, log(...prefix, respond('cue'))).finishReason, 'wrapped_up');
   assert.equal(projectVocabularySession(context, log(...prefix, { kind: 'exercise_skip', payload: { encounterId: 'cue' } })).finishReason, 'wrapped_up');
+});
+
+test('resuming completed work preserves prior responses and allows a fresh word work cycle', () => {
+  const result = projectVocabularySession(context, log(present('one'), respond('one'), present('two'), respond('two'), wrap(),
+    {kind:'finish_for_now',payload:{}},{kind:'resume',payload:{}},{kind:'word_more',payload:{wordId:'a'}},present('three')));
+  assert.equal(result.phase,'active');assert.equal(result.words.a.workNumber,2);assert.equal(result.words.a.covered,true);
+  assert.equal(result.encounters[0].effectiveResponses.length,1);assert.equal(result.encounters[1].effectiveResponses.length,1);
+});
+
+test('reaction withdrawal preserves history and comments without an effective negative reaction', () => {
+  const result = projectVocabularySession(context, log(present('one'),
+    {kind:'feedback',payload:{encounterId:'one',feedback:'negative'}},
+    {kind:'feedback',payload:{encounterId:'one',feedback:'comment',comment:'Keep this note.'}},
+    {kind:'feedback',payload:{encounterId:'one',feedback:'withdrawn'}}));
+  assert.equal(result.encounters[0].feedback.length,3);
+  assert.deepEqual(result.encounters[0].effectiveFeedback.map((action)=>action.payload.feedback),['comment']);
+});
+
+test('mode reset defers teaching and Undo restores the previous open work', () => {
+  const prefix:Input[]=[present('one'),respond('one'),{kind:'mode_change',payload:{wordId:'a',mode:'unstudied'}}];
+  const result=projectVocabularySession(context,log(...prefix));
+  assert.equal(result.words.a.mode,'unstudied');assert.equal(result.words.a.workStatus,'skipped');
+  assert.equal(result.words.a.teachingDeferred,true);assert.equal(result.words.a.teachingCompleted,false);
+  assert.equal(result.encounters[0].effectiveResponses.length,1);
+  assert.throws(()=>projectVocabularySession(context,log(...prefix,{kind:'word_more',payload:{wordId:'a'}})),/fresh session/);
+  const undone=projectVocabularySession(context,log(...prefix,{kind:'undo',payload:{undoesActionId:'action-3'}}));
+  assert.equal(undone.words.a.mode,'solidify');assert.equal(undone.words.a.workStatus,'open');assert.equal(undone.words.a.teachingDeferred,false);
 });

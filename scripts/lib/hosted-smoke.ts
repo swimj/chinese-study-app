@@ -1,7 +1,7 @@
 import { isRecord, sanitizeHostedOutput } from './hosted-json.ts';
 
 export const HOSTED_SMOKE_SESSION_TTL_SECONDS = 60;
-export const HOSTED_SMOKE_ENDPOINT = '/api/session-payload';
+export const HOSTED_SMOKE_ENDPOINT = '/api/vocabulary/statistics';
 
 export type ClerkSmokeDirectory = {
   getUserIdByEmail(email: string): Promise<string>;
@@ -70,11 +70,9 @@ export async function runHostedSmoke(options: {
   clerkUserId?: string;
   clerkEmail?: string;
   apiBase: string;
-  studyDayKey?: string;
   clerk: ClerkSmokeDirectory;
   learners: HostedSmokeLearnerLookup;
   fetchImpl?: typeof fetch;
-  now?: () => Date;
 }): Promise<HostedSmokeResult> {
   const fetchImpl = options.fetchImpl ?? fetch;
   let sessionId: string | undefined;
@@ -108,8 +106,8 @@ export async function runHostedSmoke(options: {
       throw new Error('Clerk did not return a smoke session token.');
     }
 
-    const studyDayKey = options.studyDayKey ?? utcDateKey(options.now?.() ?? new Date());
-    const url = `${trimTrailingSlash(options.apiBase)}${HOSTED_SMOKE_ENDPOINT}?studyDayKey=${encodeURIComponent(studyDayKey)}`;
+    // Read current learner state without reserving words, creating a study session, or queuing generation.
+    const url = `${trimTrailingSlash(options.apiBase)}${HOSTED_SMOKE_ENDPOINT}`;
     const response = await fetchImpl(url, {
       method: 'GET',
       headers: { Authorization: `Bearer ${token}` },
@@ -126,7 +124,7 @@ export async function runHostedSmoke(options: {
       });
       return result;
     }
-    assertSessionPayloadShape(body);
+    assertVocabularyStatisticsShape(body);
     result = {
       status: 'ok',
       endpoint: HOSTED_SMOKE_ENDPOINT,
@@ -220,19 +218,15 @@ function smokeFailureMessage(error: unknown): string {
   return sanitizeHostedOutput(error instanceof Error ? error.message : 'Hosted smoke failed.');
 }
 
-function assertSessionPayloadShape(value: unknown): void {
-  if (!isRecord(value) || !isRecord(value.buckets)) {
-    throw new Error('Smoke session-payload was not a valid bucketed session response.');
+function assertVocabularyStatisticsShape(value: unknown): void {
+  const count = (n: unknown): boolean => typeof n === 'number' && Number.isSafeInteger(n) && n >= 0;
+  const modes = isRecord(value) && isRecord(value.modes) ? value.modes : null;
+  if (!isRecord(value) || modes === null || !['unstudied','solidify','practice','maintain'].every(mode => count(modes[mode]))
+    || !Array.isArray(value.days) || value.days.length !== 14 || !value.days.every(day => isRecord(day)
+      && typeof day.dayKey === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(day.dayKey)
+      && ['sessions','coveredWords','unknownCoverageSessions','acceptedResponses','rejectedResponses','activeDurationMs','unknownDurationSessions'].every(key => count(day[key])))) {
+    throw new Error('Smoke vocabulary statistics was not a valid learner statistics response.');
   }
-  for (const key of ['review', 'learning', 'unstudied'] as const) {
-    if (!Array.isArray(value.buckets[key])) {
-      throw new Error('Smoke session-payload was not a valid bucketed session response.');
-    }
-  }
-}
-
-function utcDateKey(now: Date): string {
-  return now.toISOString().slice(0, 10);
 }
 
 function trimTrailingSlash(value: string): string {

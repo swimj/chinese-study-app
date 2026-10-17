@@ -470,7 +470,7 @@ export function getPrioritizedUnstudiedWords(): PriorityWordsPayload {
         words.meanings_json,
         words.personal_notes,
         words.examples_json,
-        words.status,
+        'unstudied' AS status,
         words.priority,
         words.created_at,
         words.learning_streak,
@@ -483,7 +483,8 @@ export function getPrioritizedUnstudiedWords(): PriorityWordsPayload {
         user_word_priority.updated_at AS overlay_updated_at
       FROM user_word_priority
       JOIN words ON words.id = user_word_priority.word_id
-      WHERE words.status = 'unstudied'
+      WHERE ${unstudiedPriorityPredicate('words')}
+        AND ${priorityMembershipPredicate('words')}
         AND user_word_priority.priority_tier >= ${PRIORITY_TIER_REGULAR}
         AND (
           user_word_priority.bump_count > 0
@@ -552,17 +553,17 @@ export function updateWordUserPriority(wordId: string, patch: UserWordPriorityPa
     .prepare(`
       SELECT
         id,
-        status
+        CASE WHEN ${unstudiedPriorityPredicate('words')} THEN 1 ELSE 0 END AS is_unstudied
       FROM words
       WHERE id = ?
     `)
-    .get(wordId) as { id: string; status: WordStatus } | undefined;
+    .get(wordId) as { id: string; is_unstudied: number } | undefined;
 
   if (!existingWord) {
     throw new Error('Word not found');
   }
 
-  if (existingWord.status !== 'unstudied') {
+  if (existingWord.is_unstudied !== 1) {
     throw new Error('Expected unstudied word');
   }
 
@@ -654,7 +655,7 @@ export function addUnstudiedUserPriorityByHanzi(
 
   const matchesToAdd = selectPriorityMatchesByWordIds(matches, wordIds);
 
-  getDb().exec('BEGIN');
+  getDb().exec('SAVEPOINT add_unstudied_priority');
 
   try {
     for (const match of matchesToAdd) {
@@ -695,9 +696,10 @@ export function addUnstudiedUserPriorityByHanzi(
       `).run(match.id, nextBumpCount, nextForceTop, nextPriorityTier, nextRequiredForNextSession, new Date().toISOString());
     }
 
-    getDb().exec('COMMIT');
+    getDb().exec('RELEASE add_unstudied_priority');
   } catch (error) {
-    getDb().exec('ROLLBACK');
+    getDb().exec('ROLLBACK TO add_unstudied_priority');
+    getDb().exec('RELEASE add_unstudied_priority');
     throw error;
   }
 
@@ -743,6 +745,18 @@ function selectPriorityMatchesByWordIds(
   return uniqueWordIds.map((id) => ({ id }));
 }
 
+/** Stash APIs follow the new Mandarin mode once enrolled; other profiles retain their lifecycle. */
+function unstudiedPriorityPredicate(alias: 'words'): string {
+  if (config.studyProfile !== 'mandarin') return `${alias}.status='unstudied'`;
+  return `COALESCE((SELECT CASE WHEN vocabulary.mode='unstudied' THEN 1 ELSE 0 END FROM learner_words vocabulary
+    WHERE vocabulary.learner_id=current_learner_id() AND vocabulary.word_id=${alias}.id),CASE WHEN ${alias}.status='unstudied' THEN 1 ELSE 0 END)=1`;
+}
+function priorityMembershipPredicate(alias: 'words'): string {
+  if (config.studyProfile !== 'mandarin') return '1=1';
+  return `COALESCE((SELECT CASE WHEN vocabulary.in_stash=1 AND vocabulary.dismissed_at IS NULL THEN 1 ELSE 0 END
+    FROM learner_words vocabulary WHERE vocabulary.learner_id=current_learner_id() AND vocabulary.word_id=${alias}.id),1)=1`;
+}
+
 function resolveUnstudiedPriorityWordIdsByTarget(targetText: string): Array<{ id: string }> {
   const submittedText = targetText.trim();
   const exactMatches = getDb()
@@ -750,7 +764,7 @@ function resolveUnstudiedPriorityWordIdsByTarget(targetText: string): Array<{ id
       SELECT
         id
       FROM words
-      WHERE status = 'unstudied'
+      WHERE ${unstudiedPriorityPredicate('words')}
         AND hanzi = ?
       ORDER BY priority DESC, created_at ASC
     `)
@@ -769,7 +783,7 @@ function resolveUnstudiedPriorityWordIdsByTarget(targetText: string): Array<{ id
             words.created_at
           FROM words
           JOIN lexical_words ON lexical_words.id = words.id
-          WHERE words.status = 'unstudied'
+          WHERE ${unstudiedPriorityPredicate('words')}
             AND lexical_words.normalized_hanzi <> ''
             AND lexical_words.normalized_hanzi = ?
           ORDER BY words.priority DESC, words.created_at ASC
@@ -790,7 +804,7 @@ function resolveUnstudiedPriorityWordIdsByTarget(targetText: string): Array<{ id
           words.created_at
         FROM word_lookup_aliases
         JOIN words ON words.id = word_lookup_aliases.word_id
-        WHERE words.status = 'unstudied'
+        WHERE ${unstudiedPriorityPredicate('words')}
           AND word_lookup_aliases.normalized_alias = ?
         ORDER BY words.priority DESC, words.created_at ASC
       `)
@@ -6020,7 +6034,7 @@ function getUnstudiedPriorityWordById(wordId: string): PriorityWord {
         words.meanings_json,
         words.personal_notes,
         words.examples_json,
-        words.status,
+        'unstudied' AS status,
         words.priority,
         words.created_at,
         words.learning_streak,
@@ -6034,7 +6048,7 @@ function getUnstudiedPriorityWordById(wordId: string): PriorityWord {
       FROM words
       LEFT JOIN user_word_priority ON user_word_priority.word_id = words.id
       WHERE words.id = ?
-        AND words.status = 'unstudied'
+        AND ${unstudiedPriorityPredicate('words')}
     `)
     .get(wordId) as PriorityWordRow | undefined;
 

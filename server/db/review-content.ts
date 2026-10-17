@@ -1,3 +1,5 @@
+import { importLegacyVocabularyWord } from './vocabulary-import.ts';
+import { linkVocabularyPublicationOutput } from './vocabulary-provenance.ts';
 import { randomUUID } from 'node:crypto';
 import type { ContentExercise, WordContentDocument } from '../../src/domain/word-content/types.ts';
 import type { ReviewSupplementSource } from '../../src/domain/word-content/review-compat.ts';
@@ -357,7 +359,7 @@ function publishReviewProjection(kind: 'production_cue' | 'production_cue_supple
 }
 
 export function finishSharedWordReviewPreparation(
-  wordId: string, token: string, exercises: readonly AuthoredReviewExercise[], model: string,
+  wordId: string, token: string, exercises: readonly AuthoredReviewExercise[], model: string, invocationId?: string | null,
 ): { cueIds: string[]; supplementIds: string[] } {
   if (!Array.isArray(exercises) || exercises.length < 1 || exercises.length > 3) {
     throw new Error('Review preparation needs one to three authored exercises');
@@ -437,6 +439,9 @@ export function finishSharedWordReviewPreparation(
       UPDATE word_review_preparation
       SET ready_at = ?, lease_token = NULL, lease_expires_at = NULL WHERE word_id = ?
     `).run(now, wordId);
+    importLegacyVocabularyWord(getDb(),wordId,{ originKind: 'model' });
+    for (const cueId of cueIds) linkVocabularyPublicationOutput(getDb(),invocationId,'production_cue',cueId);
+    for (const supplementId of supplementIds) linkVocabularyPublicationOutput(getDb(),invocationId,'production_cue_supplement',supplementId);
     return { cueIds, supplementIds };
   });
 }
