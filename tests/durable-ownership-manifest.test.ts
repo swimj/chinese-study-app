@@ -73,7 +73,13 @@ test('classifies every steady-state application table exactly once', async () =>
       for (const entry of durableOwnershipManifest.filter(
         (item) => item.ownershipClass === 'mixed_requires_separation',
       )) {
-        assertViewUsesLearnerContext(database, entry.table.replace(/^scoped_/, ''));
+        if (entry.table === 'content_items') {
+          // New content uses explicit module-level learner reads, not legacy compatibility views.
+          // vocabulary-content.test.ts exercises private reads and selection across two learners.
+          const schema = database.prepare("SELECT sql FROM sqlite_master WHERE name = 'content_items'").get() as {sql: string};
+          assert.match(schema.sql, /owner_learner_id TEXT REFERENCES learners/);
+          assert.match(schema.sql, /access_scope = 'shared' AND owner_learner_id IS NULL/);
+        } else assertViewUsesLearnerContext(database, entry.table.replace(/^scoped_/, ''));
       }
     } finally {
       database.close();
