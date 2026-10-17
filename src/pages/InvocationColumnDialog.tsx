@@ -78,7 +78,7 @@ export function InvocationColumnDialog({ column, rows, filters, sortBy, directio
     return field === 'invocationType' ? value.replaceAll('_', ' ') : value;
   }
   function choices(field: DiscreteInvocationField, label: string) {
-    const values = [...new Set([...rows.map((row) => row[field]), ...(draft.discrete[field] ?? [])])].sort();
+    const values = [...new Set([...rows.map((row) => row[field] ?? 'Service'), ...(draft.discrete[field] ?? [])])].sort();
     const selected = draft.discrete[field];
     return <fieldset className="operator-column-choices"><legend>{label}</legend>
       <div className="operator-column-actions">

@@ -1,3 +1,4 @@
+import type { ModelInvocationProvenance } from '../../src/domain/model-invocations.ts';
 import type { JsonSchema } from '../../src/domain/reflection-result-schema.js';
 
 /** Shared wall-clock bound for production provider requests. */
@@ -29,6 +30,9 @@ export type ProviderRunRequest = {
   timeoutMs: number;
   cachePrompt: boolean;
   clientRequestId?: string | null;
+  provenance?: ModelInvocationProvenance;
+  /** Trusted backend attribution; never inferred from absent learner context. */
+  invocationActor?: { kind: 'service'; serviceId: string; requestingLearnerId?: string };
 };
 
 export type ProviderRunConfig = {
