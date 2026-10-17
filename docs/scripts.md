@@ -29,6 +29,14 @@ effective data directory before starting or resetting it: existing files under
 The [hosted runbook](ops/hosted-beta-deployment.md) owns deployment configuration
 and release procedures.
 
+For the adaptive vocabulary runtime, `scripts/prepare-vocabulary-fixtures.ts`
+creates a fresh, provider-disabled fixture directory. See the
+[vocabulary verification guide](vocabulary-learning.md#conversion-and-local-verification).
+`scripts/vocabulary-prompt-experiment.ts` prepares and inspects offline authoring
+experiments; the separate `vocabulary-prompt-trial.ts` live runner requires explicit
+provider-call authorization. The [prompt handoff](implementation/vocabulary-prompt-handoff.md)
+describes retained evidence and commands.
+
 ## Preview a first-time learner
 
 Use `npm run dev:new-learner` to inspect the welcome path and empty learner

@@ -1,0 +1,7 @@
+.vocabulary-word-row{display:flex;justify-content:space-between;gap:1.5rem;padding:1rem 0;border-bottom:1px solid var(--border-color,#ddd)}
+.vocabulary-word-row p{margin:.35rem 0;overflow-wrap:anywhere}.vocabulary-word-row strong{font-size:1.4rem}
+.vocabulary-word-actions{display:flex;align-items:center;gap:1rem;flex-wrap:wrap}.vocabulary-word-actions select{max-width:100%;font:inherit;padding:.45rem}
+.vocabulary-feedback-message{padding:1.2rem 0;border-bottom:1px solid var(--border-color,#ddd);overflow-wrap:anywhere}
+@media(max-width:600px){.vocabulary-word-row{flex-direction:column}.vocabulary-word-actions{align-items:flex-start;gap:.6rem}}
+
+.vocabulary-home-stats dl{display:flex;flex-wrap:wrap;gap:1rem}.vocabulary-home-stats dd{margin:0;font-size:1.5rem}.vocabulary-home-stats dt{font-size:.85rem}

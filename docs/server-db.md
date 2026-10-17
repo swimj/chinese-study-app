@@ -1,5 +1,9 @@
 # Server database module map
 
+The Mandarin learner runtime is defined by the [adaptive vocabulary contract](../SPECS/vocabulary-learning.md)
+and [implementation guide](vocabulary-learning.md), including modes, action logs, internal reflection,
+content provenance, and the operator review surface.
+
 Use this map to locate persistence responsibilities and understand the current
 storage boundaries, initialization, and domain-specific write paths. Persistence
 lives under [`server/db/`](../server/db/); callers and tests use the stable
@@ -450,13 +454,17 @@ require the [offline schema upgrade](ops/schema-migrations.md#durable-session-co
 
 Migration `0023_session_debrief` adds `learner_session_debrief_jobs` and
 `learner_session_debrief_attempts`, both with required learner identities and
-composite same-owner foreign keys. Jobs reference completed summary rows;
-learning-only sessions need no accepted review-attempt record. All learner
+composite same-owner foreign keys. Migration `0046_vocabulary_connections`
+preserves historical summary-backed jobs and adds exact vocabulary completion
+sources. Each job references either its historical summary or its same-learner,
+same-session closed vocabulary completion; it cannot mix both sources. All learner
 operations use explicit current-learner predicates. Operational worker routing
 reads only due identities before restoring each learner context.
 
-The optional summary inventory freezes exact encountered word/pinyin rows and
-the learner's `debrief_interests` setting. Missing interests read as empty text.
+Vocabulary closure freezes encountered word/pinyin rows and the learner's
+`debrief_interests` setting in the same transaction as the closed completion.
+The adapter in `server/vocabulary/connections.ts` reads the exact projection and
+served content revisions; it writes no legacy summary or learning state. Missing interests read as empty text.
 Inventories with fewer than 15 eligible rows after filtering persist as
 ready-empty without an attempt; larger eligible inventories queue generation up
 to the shared 1000-unit session cap. At enqueue, recent ready jobs serve as the connection

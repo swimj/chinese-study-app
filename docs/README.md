@@ -1,5 +1,9 @@
 # Documentation index
 
+The Mandarin learner runtime is defined by the [adaptive vocabulary contract](../SPECS/vocabulary-learning.md)
+and [implementation guide](vocabulary-learning.md), including modes, action logs, internal reflection,
+content provenance, and the operator review surface.
+
 Use this index to find the document or section that answers your question. The
 [documentation principles](documentation-principles.md#documentation-map)
 define the target hierarchy independently of today's folders and labels.

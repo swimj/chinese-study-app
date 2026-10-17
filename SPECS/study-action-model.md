@@ -1,5 +1,9 @@
 # Study Action Model
 
+The Mandarin study runtime follows [Adaptive vocabulary study](vocabulary-learning.md).
+This document describes the retained legacy implementation and historical records;
+its learner-write flow is not the Mandarin entry point.
+
 Status: accepted canonical product contract. The scheduling, attempt-event,
 contrast-selection, and bounded V0 production-task/cue sections describe
 implemented behavior. The dual-pool unstudied admission policy below is an

@@ -4,6 +4,15 @@ Run full suite: `npm test` (Node test runner, `tests/*.test.ts`).
 
 ## Browser regression checks
 
+The current Mandarin flow uses `/tests/browser/vocabulary-controller.html`
+(and `?mode=undo`) to exercise cancellation and delayed acknowledgements through
+the real hook. `/tests/browser/vocabulary-ui.html` provides presentation scenarios;
+`/tests/browser/vocabulary-operator.html` exercises the internal review surface
+with intercepted HTTP (`?empty=1` for empty lists). These fixtures are separate
+from `npm test`. Use the [disposable vocabulary fixture](vocabulary-learning.md#conversion-and-local-verification)
+for end-to-end study against the actual API and SQLite. The older session fixtures
+below retain coverage of the previous controller, not the current Mandarin path.
+
 `/tests/browser/bootstrap-reveal.html` checks the shared bootstrap teaching
 reveal with the actual session controller. Use `?recognition=1` for recognition,
 `?frozen=1` for the frozen production correction, and the default for accepted
@@ -44,6 +53,10 @@ All HTTP is intercepted, so these fixtures do not modify learner data.
 
 | Test file | Domain | Imports |
 | --- | --- | --- |
+| `vocabulary-session*.test.ts`, `vocabulary-study*.test.ts`, `vocabulary-composition.test.ts` | Commands, independent skills, coverage, exact evidence, retry, closure, and bounded selection | Pure reducer + temporary SQLite + HTTP boundaries |
+| `vocabulary-content.test.ts`, `vocabulary-import.test.ts`, `vocabulary-cutover.test.ts` | Identity/history, teaching bindings, legacy conversion and cutover refusal | Temporary SQLite |
+| `vocabulary-reflection*.test.ts`, `vocabulary-processing.test.ts`, `vocabulary-preparation.test.ts` | Private feedback, manual authority, worker fencing, compensation and generation retry | Temporary SQLite + injected providers |
+| `vocabulary-prompt-experiments.test.ts` | Retained experimental inputs/outputs and structural validation | Offline archive; no paid calls |
 | `word-content-lab-provider.test.ts` | Real request shape, strict teaching output, truncation and malformed output | Provider with injected fetch |
 | `word-content-lab-service.test.ts` | Two-stage local generation, immutable archive, exact references, invalid output and identity conflicts | Injected lab provider + temporary draft archive |
 | `word-content-lab-api.test.ts` | Local opt-in, host/origin gates, route response contracts | Express lab router |

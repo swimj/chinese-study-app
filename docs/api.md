@@ -1,5 +1,9 @@
 # HTTP API index
 
+The Mandarin learner runtime is defined by the [adaptive vocabulary contract](../SPECS/vocabulary-learning.md)
+and [implementation guide](vocabulary-learning.md), including modes, action logs, internal reflection,
+content provenance, and the operator review surface.
+
 Routes are defined in [server/index.ts](../server/index.ts). Frontend client: [src/services/api.ts](../src/services/api.ts).
 
 Base URL: `http://localhost:5174` in development (override with
@@ -26,6 +30,44 @@ server-side Clerk-subject mapping, and returns `401 AUTH_REQUIRED` or
 a learner id. The frontend obtains a short-lived Clerk session token and sends
 it as a bearer token; local setup is documented in the README's Clerk fixture
 section.
+
+## Adaptive vocabulary
+
+Mandarin study uses the authenticated `/api/vocabulary` family. Commands are
+validated in `server/vocabulary/study-routes.ts`; the server derives the learner.
+
+| Method/path | Result or effect |
+| --- | --- |
+| `POST /sessions` | Compose ready work and return its first encounter |
+| `GET /sessions/:id` | Current owned projection and exact material |
+| `POST /sessions/:id/next` | Select ready material; stable `clientActionId` retries |
+| `POST /sessions/:id/commands` | Response, feedback, skip, coverage, more, mode, Undo, resume, finish |
+| `POST /sessions/:id/completion` | Freeze `throughSequence` after flush, with optional reported active duration |
+| `GET /sessions/:id/completion` | Current completion and server deadline |
+| `POST /sessions/:id/completion/cancel` | Cancel exact `completionId` before closure |
+| `POST /sessions/:id/completion/close` | Apply exact completion idempotently |
+| `GET /completion/current` | Pending/failed completion, without active-session restoration |
+| `GET /words` | Owned words and current modes/schedule hints |
+| `POST /words/:id`, `/mode`, `/refresh`, `/dismiss` | Explicit enrollment and word controls |
+| `GET /feedback`, `/feedback/attention` | Read-only own lessons and lightweight attention |
+| `GET /statistics` | UTC daily session/response/coverage totals, active-time availability, and current modes |
+| `POST /feedback/:id/seen`, `/feedback/jobs/:id/retry` | Acknowledge lesson or explicitly retry own failed feedback |
+
+`/api/operator/vocabulary` provides allowlisted cases, drafts, preview, approval,
+application, closure, and failed-work retries. Proposal mutations carry expected
+versions; application requires exact approval and an idempotency key. See
+[the implementation guide](vocabulary-learning.md) for content authority.
+`GET /api/operator/vocabulary/practice-preparation/failures` lists retained failed
+authoring work. `POST /api/operator/vocabulary/practice-preparation/:id/retry`
+queues an explicitly authorized retry within the attempt limit; worker gates
+still govern provider execution.
+
+Mandarin legacy `/api/study-sessions/*` writes, legacy word completion/dismissal,
+introduction open/complete, review-summary commits, learner proposal/application,
+and old operator content-editor writes return `409 VOCABULARY_CUTOVER`.
+Both methods of `/api/session-payload` are retired because even GET composed
+and reserved work. Reload into the new client. Historical read endpoints
+below remain useful for retained records; they do not define the new study flow.
 
 ## My words
 
@@ -966,17 +1008,18 @@ interpretation; the shared wire types live in `src/domain/content-quality.ts`.
 
 ## Session debrief
 
-`POST /api/review-session-summaries` optionally accepts `debriefInventory`, an
-array of `{word,pinyin}` encounter snapshots (at most 1000 rows; nonempty word
-text and a pinyin string, which may be empty). The first Mandarin inventory and interests snapshot enqueue atomically
-with the completed summary; response remains 204. Missing inventory creates no
-job. Inventories with 0–14 eligible rows after the
+Vocabulary session closure enqueues Connections atomically from its retained
+server projection; callers do not supply an inventory. The first inventory and
+learner interests snapshot remain immutable across retries. The retired
+`POST /api/review-session-summaries` returns 409 without effects. Historical
+Connections remain readable through the same endpoints.
+
+Inventories with 0–14 eligible rows after the
 [recent connection cooldown](../SPECS/session-debrief.md#recent-connection-cooldown)
-are ready with zero notes and no provider call or generation attempt;
-15–1000 eligible rows queue generation. The exercise count remains the original
-covered inventory size. The existing 100kb JSON
-request-body limit also applies. Duplicate finalization preserves the first
-snapshot. No historical job is inferred.
+are ready with zero notes and no provider attempt; 15–1000 eligible rows queue
+generation. The exercise count records the admitted inventory before cooldown.
+See the [Connections input contract](../SPECS/session-debrief.md#completion-and-input)
+for encounter membership and the provider input bound.
 
 | Method | Path | Response |
 | --- | --- | --- |

@@ -1,0 +1,33 @@
+import React from 'react';
+import {createRoot} from 'react-dom/client';
+import {VocabularyOperatorPage} from '../../src/pages/VocabularyOperatorPage';
+import type {VocabularyOperatorApi,VocabularyProposalPreview} from '../../src/features/vocabulary-operator/api';
+import type {VocabularyContent,VocabularyContentDraft} from '../../src/domain/vocabulary-content';
+import type {VocabularyContentProposal,VocabularyProposalDraft,VocabularyReflectionCase} from '../../src/domain/vocabulary-reflection';
+import '../../src/styles.css';
+const at='2026-10-17T12:00:00.000Z';
+const general:VocabularyContent={contentId:'exercise-general-with-a-long-identity-for-narrow-panels',kind:'exercise',payloadVersion:1,
+  body:{prompt:'Notify the relevant people in advance so your planned absence is on record.',reveal:{example:'明天我想调休，先向主管报备一下。',translation:'I want to take time off tomorrow, so I will let my supervisor know first.'}},
+  exerciseType:'circumstance',skill:'production',exerciseRole:'general',assessment:{match:'prepared_answer_membership'},accessScope:'shared',availability:'active',originKind:'human',
+  words:[{wordId:'word-baobei',relation:'target'}],answers:[{wordId:'word-baobei',acceptedForms:['报备','報備']}],version:1,createdAt:at,updatedAt:at};
+const teaching:VocabularyContent={...general,contentId:'teaching-exercise',exerciseRole:'teaching'};
+const intro:VocabularyContent={contentId:'introduction',kind:'introduction',payloadVersion:1,body:{beats:[{heading:'Before a plan changes',parts:['报备 means to report a plan or change in advance so the relevant people have it on record.','明天我想调休，先向主管报备一下。']}]},
+  accessScope:'shared',availability:'active',originKind:'human',words:[{wordId:'word-baobei',relation:'target'}],teachingExercises:[{exerciseId:teaching.contentId,exerciseVersion:1}],version:1,createdAt:at,updatedAt:at};
+function evidence(content:VocabularyContent,role:'general'|'teaching',id:string){return {encounterId:id,wordId:'word-baobei',workNumber:1,presentedActionId:`present-${id}`,presentedAt:at,mode:role==='general'?'practice' as const:'unstudied' as const,
+  snapshot:{contentId:content.contentId,contentVersion:1,kind:content.kind==='introduction'?'introduction' as const:'production' as const,role,body:{prompt:content.kind==='introduction'?'Introduction':String((content.body as Record<string,unknown>).prompt),material:content.body},assessment:content.kind==='exercise'?{acceptedAnswers:['报备','報備']}:null},
+  responses:[],effectiveResponses:[],feedback:[],effectiveFeedback:[],skipped:true,presentationUndone:false};}
+const exerciseCase:VocabularyReflectionCase={caseId:'general-case',completionId:'completion',learnerId:'learner-with-a-long-private-identity',kind:'exercise_improvement',wordId:'报备',contentId:general.contentId,status:'open',evidence:[evidence(general,'general','encounter-general')],createdAt:at};
+const teachingCase:VocabularyReflectionCase={...exerciseCase,caseId:'teaching-case',kind:'teaching_review',contentId:teaching.contentId,evidence:[evidence(intro,'teaching','encounter-intro'),evidence(teaching,'teaching','encounter-teaching')]};
+const {version:_v,createdAt:_c,updatedAt:_u,...draft}=general;
+let current:VocabularyContentProposal={proposalId:'proposal',caseId:'general-case',version:1,status:'awaiting_review',operations:[{operationKey:'repair',strategy:'update_existing',sourceContentId:general.contentId,expectedVersion:1,scope:{kind:'shared'},rationale:'Preserve this useful exercise identity while clarifying the everyday reporting intention.',content:{...draft,body:{prompt:'Let your supervisor know about planned time off beforehand, so they have it on record.'}}}],rationale:'Clarify the practical intention without making the exercise a bureaucratic definition puzzle.',bases:[{contentId:general.contentId,expectedVersion:1}],invocationId:null,authorKind:'service',authorId:'vocabulary-reflection'};
+let dispatches=[{dispatchId:'dispatch',learnerId:'learner-with-a-long-private-identity',sessionId:'session-with-a-long-retained-evidence-identity',error:'evidence_ingestion_failed'}];
+const empty=new URLSearchParams(location.search).has('empty');
+if(new URLSearchParams(location.search).has('large')) document.documentElement.style.fontSize='125%';
+const api:VocabularyOperatorApi={cases:async kind=>({items:empty?[]:kind==='teaching_review'?[teachingCase]:kind==='exercise_improvement'?[exerciseCase]:[]}),workspace:async id=>({case:id==='teaching-case'?teachingCase:exerciseCase,sources:id==='teaching-case'?[intro,teaching]:[general],jobs:id==='teaching-case'?[]:[{jobId:'failed-job',kind:'exercise_improvement',status:'failed',attemptNumber:2,error:'provider_outcome_unknown'}],proposals:current.caseId===id?[current]:[]}),
+  preparationFailures:async()=>({items:empty?[]:[{workId:'failed-practice',wordId:'word-one',sourceContentId:'source-one',attemptCount:1,invocationId:'retained-call',lastError:'interrupted_unknown_outcome',retryable:true}]}),retryPreparation:async()=>({ok:true}),
+  proposals:async()=>({items:empty?[]:[current]}),proposal:async()=>current,dispatches:async()=>({items:empty?[]:dispatches}),retryDispatch:async()=>{dispatches=[];return {ok:true};},retryJob:async()=>({ok:true}),closeCase:async()=>({ok:true}),
+  create:async value=>{current={...current,proposalId:'manual',version:1,caseId:value.caseId??null,operations:value.operations,rationale:value.rationale,status:'awaiting_review'};return current;},
+  save:async(_id,version,value)=>{current={...current,version:version+1,operations:value.operations,rationale:value.rationale,status:'awaiting_review'};return current;},
+  preview:async()=>({proposal:current,previews:current.operations.map(operation=>({operationKey:operation.operationKey,source:operation.strategy==='create'?null:general,result:{...general,...operation.content,version:2} as VocabularyContent})),operations:current.operations.map(operation=>({operationKey:operation.operationKey,strategy:operation.strategy,scope:operation.scope,schedulesRemainOnSource:12345,deactivationsRemainOnSource:200,teachingBindingsRemainOnSource:3,sourceSenseMappings:4,sourceCurations:2,sourceIntroductionExercises:0,transfersRelationships:false}))}),
+  approve:async()=>{current={...current,status:'approved'};return {reviewId:'approved-review'};},apply:async()=>{current={...current,status:'applied'};return {applicationId:'application-receipt',proposalId:current.proposalId,proposalVersion:current.version,reviewId:'approved-review',changes:[]};},close:async()=>{current={...current,status:'closed'};return {ok:true};}};
+createRoot(document.getElementById('root')!).render(<React.StrictMode><VocabularyOperatorPage api={api}/></React.StrictMode>);

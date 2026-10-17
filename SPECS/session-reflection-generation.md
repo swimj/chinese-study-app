@@ -1,5 +1,9 @@
 # Session Reflection Generation
 
+The Mandarin study runtime follows [Adaptive vocabulary study](vocabulary-learning.md).
+This document describes the retained legacy implementation and historical records;
+its learner-write flow is not the Mandarin entry point.
+
 Status: implemented canonical product contract for the initial post-session
 reflection flow. Evidence kinds, bundle/result schemas, and resource controls
 are versioned extension points.
