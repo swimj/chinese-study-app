@@ -99,7 +99,7 @@ exposed as a learner-controlled HTTP endpoint.
 
 `GET /api/status?studyDayKey=YYYY-MM-DD` also returns `sessionActiveTimeMetrics`: today's completed active-session duration, plus 3-day and 7-day calendar-day averages in milliseconds. Averages include zero-activity days.
 
-The status payload also returns `serviceBanner`: `null`, or `{ message, postedAt, expiresAt }`
+The status payload also returns `serviceBanner`: `null`, or `{ message, postedAt, expiresAt, kickoffAt? }`
 for the current unexpired operator-posted signed-in notice. Expired and cleared
 notices are omitted. Operators can also read and manage the banner through the
 operator API below.
@@ -163,7 +163,7 @@ accepts a client-selected learner; writes use the authenticated learner context.
 | GET | `/api/operator/word-preparation/failures` | Shared preparation failures and attempt history |
 | POST | `/api/operator/word-preparation/:workId/retry` | Retry paused work; empty `{}` body and operator actor audit |
 | GET | `/api/operator/service-banner` | Current active banner |
-| PUT | `/api/operator/service-banner` | Set a banner with `{ message, expiresAt? }` |
+| PUT | `/api/operator/service-banner` | Set a custom banner with `{ message, expiresAt? }` or a planned update with `{ kickoffAt }` |
 | DELETE | `/api/operator/service-banner` | Clear the current banner |
 
 Operator routes require the caller’s Clerk user id (or trusted-local learner id /
@@ -209,11 +209,19 @@ rather than per-request USD charges; estimates use pinned pricing snapshots.
 Existing usage-pulse spend snapshots retain their reflection/intake scope. No
 historical invocation rows or missing user attribution are fabricated.
 
-Service-banner messages are single-line text up to 280 characters. Omitting
-`expiresAt` uses the 24-hour default. `PUT` returns
-`{ serviceBanner: { message, postedAt, expiresAt } }`; `GET` returns that shape or
+Planned service updates accept `{ kickoffAt }`, an ISO timestamp with an explicit
+time zone, normalized to UTC. Kickoff must be after posting; expiry is 24 hours
+after kickoff. Do not combine kickoff with a custom message or expiry. The
+response includes `kickoffAt` for planned updates; clients format the standard
+notice in the viewer's browser zone. `message` supplies generic fallback text.
+Custom and pre-existing notices omit `kickoffAt` and render their authored text.
+Replacing a planned update with a custom notice clears its kickoff.
+
+Custom service-banner messages are single-line text up to 280 characters.
+Omitting `expiresAt` for a custom message uses the 24-hour default. `PUT` returns
+`{ serviceBanner: { message, postedAt, expiresAt, kickoffAt? } }`; `GET` returns that shape or
 `{ serviceBanner: null }`, and `DELETE` returns `{ status }` with `cleared` or
-`noop`. Invalid messages or expiry timestamps return `400`. Writes use the
+`noop`. Invalid messages, kickoff timestamps, or expiry timestamps return `400`. Writes use the
 authenticated operator as the audit actor. Preparation retry preserves
 successful earlier stages; ordinary learner requests do not reset exhausted
 budgets.

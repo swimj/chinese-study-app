@@ -118,7 +118,8 @@ performs.
 
 Hours before a planned window, use the operator **Service banner** panel in the
 **currently running** app. Enter the estimated update kickoff in your local
-time to preview and publish the standardized update notice. This time describes
+time, or select UTC, to preview and publish the standardized update notice.
+Learners see the kickoff formatted in their browser time zone. This time describes
 when the update is expected to start; the notice expires 24 hours after that
 kickoff. The panel shows the actual expiry separately.
 

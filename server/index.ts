@@ -459,17 +459,20 @@ export function createApp(options: CreateAppOptions = {}) {
     res.json({ serviceBanner: banner ? toPublicServiceBanner(banner) : null });
   });
   app.put('/api/operator/service-banner', createOperatorAllowlistMiddleware(), (req, res) => {
-    const message = req.body?.message;
-    const expiresAt = req.body?.expiresAt;
-    if (typeof message !== 'string' || (expiresAt !== undefined && typeof expiresAt !== 'string')) {
-      res.status(400).json({ error: 'Expected a message and optional ISO expiry timestamp.' });
+    const { message, expiresAt, kickoffAt } = req.body ?? {};
+    const planned = typeof kickoffAt === 'string' && message === undefined && expiresAt === undefined;
+    const custom = kickoffAt === undefined && typeof message === 'string'
+      && (expiresAt === undefined || typeof expiresAt === 'string');
+    if (!planned && !custom) {
+      res.status(400).json({ error: 'Expected either an ISO kickoff timestamp, or a message with optional ISO expiry timestamp.' });
       return;
     }
     try {
-      const banner = setServiceBanner({ message, expiresAt, actorId: res.locals.operatorSubject });
+      const request = planned ? { kickoffAt } : { message, expiresAt };
+      const banner = setServiceBanner({ ...request, actorId: res.locals.operatorSubject });
       res.json({ serviceBanner: toPublicServiceBanner(banner) });
     } catch (error) {
-      if (error instanceof Error && /service banner message|service banner expiry|expires at/i.test(error.message)) {
+      if (error instanceof Error && /service banner message|service banner expiry|service banner kickoff|expires at/i.test(error.message)) {
         res.status(400).json({ error: error.message });
         return;
       }

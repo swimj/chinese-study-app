@@ -108,15 +108,20 @@ identities, submitted answers, personal notes, or reflection payloads.
 
 ## Service banner workflow
 
-The Service banner view shows the current active notice and its expiry. The
-planned-downtime action accepts a local end date and time, converts that value to
-an ISO timestamp, and saves it as the banner expiry. Choose a future time. It
-uses the text in the message editor, so enter a message there if no current
-banner supplied one. The custom-message editor starts with the current banner
-message when one exists; save it to post or replace the notice using the standard
-24-hour expiry. Messages are single-line and limited to 280 characters. Clear
-banner removes the active notice; clearing when no notice exists reports that no
-banner was active.
+The Service banner view shows the current active notice, posting time, and
+expiry. For a planned update, enter a future estimated kickoff using either
+UTC or your browser's local time zone. Switching the entry perspective preserves
+the selected instant. The preview uses your local time zone; each learner sees
+the kickoff in their own browser's zone, with a date and zone label.
+
+Kickoff is distinct from posting time and notice expiry. Planned notices expire
+24 hours after kickoff; the preview's Notice expiry disclosure shows that time
+as an operator helper. A successful service update also clears the notice.
+Custom-message saving replaces the notice with authored text and a standard
+24-hour expiry from posting. The editor starts with the current rendered message;
+custom text has no structured kickoff and is displayed verbatim. Messages are
+single-line and limited to 280 characters. Clear removes the active notice;
+clearing when none exists reports that no banner was active.
 
 Banner changes are attributed to the authenticated operator. Operators can also
 post or clear banners with the
