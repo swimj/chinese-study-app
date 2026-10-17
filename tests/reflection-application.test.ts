@@ -49,9 +49,11 @@ describe('reflection application adapters', { concurrency: false }, () => {
   beforeEach(() => {
     const deleteGuards = sqlite.prepare(`
       SELECT name, sql FROM sqlite_schema
-      WHERE type = 'trigger' AND name LIKE '%_no_delete'
+      WHERE type = 'trigger' AND (name LIKE '%_no_delete' OR name IN ('legacy_sense_imports_retained','sense_revision_history_retained'))
     `).all() as Array<{ name: string; sql: string }>;
     sqlite.exec(`
+      DROP TRIGGER IF EXISTS legacy_sense_imports_retained;
+      DROP TRIGGER IF EXISTS sense_revision_history_retained;
       DROP TRIGGER IF EXISTS fail_reflection_prompt_insert;
       DROP TRIGGER IF EXISTS fail_production_cue_lifecycle_insert;
       DROP TRIGGER IF EXISTS fail_promotion_second_cue_insert;
@@ -74,6 +76,12 @@ describe('reflection application adapters', { concurrency: false }, () => {
       DROP TRIGGER IF EXISTS word_content_documents_no_delete;
       PRAGMA defer_foreign_keys = ON;
       BEGIN;
+      -- Shared bootstrap publication now materializes its catalog. This disposable
+      -- legacy-adapter fixture removes those children before its source documents.
+      DELETE FROM legacy_sense_imports;
+      DELETE FROM sense_revision_history;
+      DELETE FROM senses;
+      DELETE FROM vocabulary_word_catalogs;
       DELETE FROM scoped_review_content_records;
       DELETE FROM shared_content_publication_events;
       DELETE FROM shared_content_reports;

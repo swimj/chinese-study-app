@@ -291,7 +291,7 @@ test('unattributed historical demand waits for a real requester', async () => {
 });
 
 for (const failing of ['teaching', 'practice'] as const) {
-  test(`retains successful companion across ${failing} failure and fresh worker retry`, async () => {
+  test(`retains successful introduction and waits for it across ${failing} failure and fresh worker retry`, async () => {
     const id = `component-retry-${failing}`; word(id);
     let clock = Date.now(); let fail = true;
     const calls = { teaching: 0, practice: 0 };
@@ -304,7 +304,7 @@ for (const failing of ['teaching', 'practice'] as const) {
     enqueueWordPreparation(id, 'teaching', new Date(clock).toISOString());
     await first.drain(); await first.stop();
     assert.equal(getSharedWordIntroductionPreparation(id)?.packageId, null);
-    assert.deepEqual(calls, { teaching: 1, practice: 1 });
+    assert.deepEqual(calls, { teaching: 1, practice: failing === 'teaching' ? 0 : 1 });
     fail = false; clock += 120_000;
     const second = createWordPreparationWorker({ controls, providerWork, provider, now: () => clock });
     await second.drain(); await second.stop();
@@ -315,18 +315,19 @@ for (const failing of ['teaching', 'practice'] as const) {
 }
 
 
-test('a companion provider outage takes precedence over a teaching validation error', async () => {
+test('invalid teaching prevents speculative calls to the exercise provider', async () => {
   word('dual-failure');
-  const { WordPreparationProviderError } = await import('../server/word-content/shared-preparation.ts');
   const { ProviderHttpError } = await import('../server/llm/types.ts');
+  let practiceCalls=0;
   const prep = createSharedWordPreparation(fake({
     generateTeaching: async () => ({ beats: [] }),
-    generatePractice: async () => { throw new ProviderHttpError('test', 429, 'rate limited', new Headers()); },
+    generatePractice: async () => { practiceCalls++;throw new ProviderHttpError('test', 429, 'rate limited', new Headers()); },
   }));
   const now = new Date(); const expiry = new Date(Date.now() + 300_000).toISOString();
   prep.claim('dual-failure','bootstrap','b',now.toISOString(),expiry);
   await prep.generate('dual-failure','bootstrap','b');
   prep.claim('dual-failure','teaching','t',now.toISOString(),expiry);
-  await assert.rejects(prep.generate('dual-failure','teaching','t'), error => error instanceof WordPreparationProviderError && error.providerWide);
+  await assert.rejects(prep.generate('dual-failure','teaching','t'),/beats/);
+  assert.equal(practiceCalls,0);
   prep.release('dual-failure','teaching','t');
 });

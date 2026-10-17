@@ -1,3 +1,10 @@
+import { registerVocabularyStatisticsRoutes } from './vocabulary/statistics-routes.ts';
+import { createVocabularyCutoverFence } from './vocabulary/cutover-routes.ts';
+import { addVocabularyStashByHanzi, updateVocabularyStashPriority } from './db/vocabulary-stash.ts';
+import { registerVocabularyStudyRoutes } from './vocabulary/study-routes.ts';
+import { registerVocabularyReflectionRoutes } from './vocabulary/reflection-routes.ts';
+import { createVocabularyProcessingWorker } from './vocabulary/processing-worker.ts';
+import { createVocabularyPracticeWorker } from './vocabulary/preparation-worker.ts';
 import { SessionWordOutcomeConflictError } from './db/session-word-outcomes.ts';
 import { createSessionCompletionWorker } from './session-completion/worker.ts';
 import { stageSessionCompletion, undoSessionCompletion, closeSessionCompletion, getSessionCompletion, getCurrentSessionCompletion, SessionCompletionInputError, SessionCompletionConflictError, SessionCompletionNotFoundError } from './db/session-completion.ts';
@@ -198,6 +205,7 @@ export type CreateAppOptions = {
   canPrepareWords?: () => boolean;
   wakeSessionDebriefs?: () => void;
   wakeSessionCompletions?: () => void;
+  wakeVocabulary?: () => void;
 };
 
 function parseMyWordsStatusQuery(value: unknown): MyWordsStatus[] | undefined | 'invalid' {
@@ -282,6 +290,7 @@ export function createApp(options: CreateAppOptions = {}) {
     next();
   });
 
+  app.use('/api', createVocabularyCutoverFence(dbConfig.studyProfile));
   if (dbConfig.studyProfile === 'mandarin') {
     app.use('/api/words', createWordIntroductionRouter(
       options.wordIntroductionService ?? createWordIntroductionService(),
@@ -388,6 +397,9 @@ export function createApp(options: CreateAppOptions = {}) {
     }
   });
   registerContentImprovementRoutes(app);
+  registerVocabularyStudyRoutes(app, options.wakeVocabulary);
+  registerVocabularyStatisticsRoutes(app);
+  registerVocabularyReflectionRoutes(app, {wake: options.wakeVocabulary});
   app.get('/api/operator/content-quality', createOperatorAllowlistMiddleware(), (req, res) => {
     if (Object.values(req.query).some(value => typeof value !== 'string')) {
       res.status(400).json({ error: 'Expected string quality filters' }); return;
@@ -608,11 +620,12 @@ export function createApp(options: CreateAppOptions = {}) {
         return;
       }
 
-      const addedWords = addUnstudiedUserPriorityByHanzi(
+      const addedWords = addVocabularyStashByHanzi(
         normalizedHanzi,
         requiredForNextSession === true,
         wordIds,
       );
+      options.wakeWordPreparation?.();
       res.json({
         addedCount: addedWords.length,
         words: addedWords,
@@ -2034,7 +2047,8 @@ export function createApp(options: CreateAppOptions = {}) {
     }
 
     try {
-      const updatedWord = updateWordUserPriority(req.params.id, { bumpDelta, forceTop, reset, requiredForNextSession });
+      const updatedWord = updateVocabularyStashPriority(req.params.id, { bumpDelta, forceTop, reset, requiredForNextSession });
+      options.wakeWordPreparation?.();
       res.json(updatedWord);
     } catch (error) {
       if (error instanceof Error && error.message === 'Word not found') {
@@ -2616,7 +2630,7 @@ function closeServers(servers: Server[], done: (error?: Error) => void): void {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  recoverPendingReflectionApplicationsAtStartup();
+  if (dbConfig.studyProfile !== 'mandarin') recoverPendingReflectionApplicationsAtStartup();
   const serviceMetrics = createServiceMetrics();
   const metricsPort = readMetricsPort(process.env.APP_METRICS_PORT);
   const metricsServer = metricsPort === null
@@ -2637,10 +2651,14 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       providerDiagnosticSink: createFileReflectionProviderDiagnosticSink(dbConfig.dataDir),
       getSpendCap: getReflectionSpendCap,
     }), onError: () => console.error('Session completion worker failed') });
-  sessionCompletions.wake();
+  if (dbConfig.studyProfile !== 'mandarin') sessionCompletions.wake();
+  const vocabularyProcessing = createVocabularyProcessingWorker({onError: error => console.error(error)});
+  const vocabularyPreparation = createVocabularyPracticeWorker({onError: error => console.error(error)});
+  const wakeVocabulary = () => { vocabularyProcessing.wake(); vocabularyPreparation.wake(); sessionDebriefs.wake(); };
+  if (dbConfig.studyProfile === 'mandarin') wakeVocabulary();
   startServer({
-    app: createApp({ serviceMetrics, wakeWordPreparation: wordPreparation.wake, canPrepareWords: wordPreparation.canPrepare, wakeSessionDebriefs: sessionDebriefs.wake, wakeSessionCompletions: sessionCompletions.wake }),
-    stopBackgroundWork: async () => { await Promise.all([wordPreparation.stop(), sessionDebriefs.stop(), sessionCompletions.stop()]); },
+    app: createApp({ serviceMetrics, wakeWordPreparation: wordPreparation.wake, canPrepareWords: wordPreparation.canPrepare, wakeSessionDebriefs: sessionDebriefs.wake, wakeSessionCompletions: sessionCompletions.wake, wakeVocabulary }),
+    stopBackgroundWork: async () => { await Promise.all([wordPreparation.stop(), sessionDebriefs.stop(), sessionCompletions.stop(), vocabularyProcessing.stop(), vocabularyPreparation.stop()]); },
     additionalServers: metricsServer ? [metricsServer] : [],
     closeDatabase: () => {
       usagePulseScheduler.stop();
