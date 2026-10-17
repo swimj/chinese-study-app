@@ -84,9 +84,12 @@ encounters retain what was actually presented. Words and exercises remain usable
 while sense associations are unresolved. Known associations can support more
 specific selection without treating unknown ones as evidence of coverage.
 
-Exercises form one logical pool, with traits and sense relationships supporting
-selection across modes. Auxiliary indexes support lookup. An exercise can suit
-several experiences without being copied into separate mode-specific catalogs.
+General practice exercises form one logical pool, with traits and sense
+relationships supporting selection across modes. Teaching exercises have an
+exclusive serving role: teaching and Solidify priming use their curated repertoire,
+while general practice selection excludes them. They can share physical storage;
+reuse between the two roles is not required. This also prevents Solidify from
+serving its priming exercises again as general practice later in the session.
 Exercise content is self-contained presented material. Reusing a sentence does
 not couple exercises through a shared mutable sentence reference. Source
 provenance can be retained without requiring synchronized edits. Teaching exercises
@@ -274,6 +277,8 @@ Every session action → Append-only session log
 ```
 
 The log preserves what happened; undo adds a record rather than erasing history.
+Ordinary Undo retains its existing scope: the latest undoable transition. Returning
+to an earlier word creates fresh practice, not a rewind of intervening work.
 Generation can run best-effort during study, with latency naturally covered by
 other exercises or interactions. Ready results can enrich the ongoing session.
 When a result would otherwise block progress, the app falls back to pre-existing
@@ -286,26 +291,38 @@ session; logging and the independent content-feedback channel do not depend on
 successful covering. Application must be safe to retry without duplicating effects.
 
 A default policy identifies Solidify → Practice and Practice → Maintain
-candidates at summary time. The learner can easily undo those choices. Mode can
-also be changed explicitly; the transition itself changes only mode. Supporting material may remain unused
-after a reversal. Changes made during study participate in the session log.
+candidates at summary time. The learner can easily reverse those choices. Mode
+can also be changed explicitly; the transition itself changes only mode. Changes
+made during study participate in the session log. After closure, reversing a
+recommendation is a new mode choice rather than reopening the session.
 
-Session finalization follows the existing product approach, adapted to this
-model. Integration details can be resolved later.
+“Finish for now” stops admitting new work and wraps up in-flight work. During
+that phase, “Finish immediately” allows the learner to end without completing
+it, warning that unfinished words remain due for the next session. The frontend
+sends remaining actions before finalization; the backend retains the evidence.
+Post-session processing includes uncovered words, without manufacturing covering
+or teaching completion. The warning concerns unfinished work, not erased history.
+Session finalization retains the existing deadline and cancellable revision model.
 
-## Post-session teaching judgment
+In-session controls support skipping, trying another exercise, stopping work on
+a word, and changing mode. Skipping does not erase responses or feedback, establish
+successful recall, or imply permanent dismissal or suppression. Dismiss/suppress
+are outside the live session UI; skipped words can be dismissed from the summary
+or Words panel. Broader recovery options can build on the persisted log later.
+
+## Post-session feedback and improvement
 
 ```text
-Session evidence
-  ├─ mistakes + associated feedback → Teacher judgment on fairness and difficulty
-  ├─ dissatisfaction / skips / comments → Quality and personal-fit consideration
-  └─ targeted nudges → Preference adjustment
-                              │
-                              ▼
-                     Decisions and their effects
-                       ├─ learner state and exercise selection
-                       ├─ exercise state and content improvement
-                       └─ feedback to the learner
+Retained session evidence, including uncovered words
+  ├─ learner + word → Feedback across the exercises encountered
+  │                    └─ read-only lesson for the learner
+  ├─ interaction / general exercise → Internal content improvement
+  │                                    └─ manually reviewed repair proposal
+  └─ teaching content → Separate teaching inbox
+                          └─ manual review alongside the introduction
+
+Teacher judgment → Backend learner-state adjustment
+                    independent of reading feedback or approving content repairs
 ```
 
 Every mistake receives teacher judgment, incorporating the learner's thoughts
@@ -317,15 +334,27 @@ whether content is correct or generally useful.
 
 Mistakes receive learner-facing feedback. Explicit comments normally warrant a
 response; dissatisfaction, skips, and nudges can influence future experience
-without generating individual replies. Call grouping and workflow dependencies
-are implementation choices, separate from these responsibilities.
+without generating individual replies. Learner feedback can synthesize a lesson
+across a word's exercises. Its generation is independent of internal content
+improvement, whose unit is an interaction or exercise. The paths share evidence;
+linguistic reasoning is preserved while their contracts can evolve separately.
+
+Feedback is read-only. Compensation is backend policy, applied once from its
+designated judgment without requiring learner approval or attention to an inbox.
+Content approval does not gate learner feedback or compensation. Scheduling
+adjustments can remain simple and comprehensible even when intervening practice
+makes perfect reconstruction impractical. Explicit learner mode choices remain
+separate from those adjustments.
 
 ## Shared content improvement
 
 Content is predominantly shared; reflection runs behind the scenes. Ordinary
 exercises can be added, corrected, or retired independently. Future selection
 uses eligible content while past encounters retain exactly what was served.
-Teaching and Maintain repertoires receive more deliberate curation.
+Justin initially reviews general content proposals. Teaching repair uses a
+separate inbox pairing the issue and exercises with their introduction. It starts
+as a manual operator workflow, outside ordinary reflection repair. Maintain suitability also receives deliberate curation. Shared content
+changes and learner-only management effects have explicit, separate scopes.
 
 Learners can work around poor-fit content during study. Their choices and
 feedback inform subsequent selection and improvement, reducing the cost of
@@ -347,8 +376,7 @@ specifications. Adjust them as the experience develops.
 | Exercise selection | Tune variety, revisits, nudge strength/persistence, and mode suitability; add difficulty signals when useful. |
 | Session composition | Balance limited learner time, useful repetition, variety, and neglected material; decide how scheduling signals compete without promising exhaustive due coverage. |
 | Ready content exhausted | Choose repeat/wrap behavior when another exercise or requested material is unavailable; never make continuation wait on generation. |
-| Judgment timing | Decide which post-session effects can apply before model judgment and how later judgments revise them, including summary recommendations. |
-| Content approval | Justin may adjudicate backend proposals while trust develops; teaching and Maintain content require more explicit management until their curation can be automated. |
+| Judgment timing | Choose simple immediate scheduling and later automatic compensation policies, including mixed outcomes across exercises. Apply compensation once, independently of content approval; full scheduler replay is not required. |
 
 ## Future extensions
 

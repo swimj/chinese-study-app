@@ -19,6 +19,24 @@ controls, sense-override surfaces, and sophisticated adaptive policies are later
 extensions. Sense records grow through bootstrap and useful enrichment; incomplete
 sense associations do not block ordinary study or content repair.
 
+## Session controls and completion
+
+Replace Drain with “Finish for now”: stop admitting new work and wrap up what is
+in flight. In that phase, offer “Finish immediately” with a warning that unfinished
+words remain due for the next session. Send remaining frontend actions before
+finalization and retain them on the backend. Finalization and post-session work
+include uncovered words; incomplete teaching does not create a completion, and
+unfinished practice does not receive fabricated covering credit. Keep the existing
+completion deadline and cancellation mechanism. Richer interrupted-session
+recovery and restart options can follow on the persisted log.
+
+Remove dismiss/suppress from the live session UI. Skip, try another, and stop work
+on this word provide immediate ways out while preserving responses and feedback.
+Offer dismissal for skipped words from the summary or Words panel. A fuller
+production-suppression experience is follow-up work; existing deactivations remain
+effective. Retain current Undo scope. Returning to an earlier word adds practice;
+changing mode after session closure is a new command, not an undo of that session.
+
 ## Content authoring and prompt evaluation
 
 Bootstrap, teaching, and exercise generation can evolve during implementation,
@@ -49,6 +67,12 @@ Prompt review cannot settle that in advance. Evaluate exploratory content for
 the flexible practice experience, where learners can skip or try another way,
 rather than imposing the old compulsory-recall standard on every candidate.
 
+Teaching exercises are exclusively marked for teaching/priming and excluded from
+general practice APIs, including after Solidify priming. Shared physical storage
+is convenient, but cross-role reuse is not a requirement. Teaching feedback goes
+to a separate manual inbox with the introduction and associated exercises;
+teaching repair does not pass through the ordinary reflection improvement loop.
+
 Provide implementation with a prompt-evaluation loop: run variants against the
 same retained inputs, save prompt/model provenance and generated outputs, render
 the learner-facing experience, and retain comparisons and review notes. The
@@ -62,23 +86,39 @@ cases can be developed during implementation within these targets.
 
 ## Internal reflection
 
-Reflection becomes backend work. Learners supply evidence and receive useful
-feedback without having to approve repair proposals. Content proposals remain
-manually reviewed by Justin initially. Proposal generation, judgment, authorization,
-and application remain distinguishable, so a later decision policy can take on
-bounded authority without changing what a proposal or an applied repair means.
+Reflection has independent learner-feedback and internal-improvement paths.
+Learner feedback is generated per word, drawing a lesson across the exercises
+encountered. Internal improvement works per interaction or general exercise and
+produces proposals for manual review by Justin. Neither path waits for the other
+to finish or for the learner to work through a maintenance backlog. Teaching
+issues use the separate manual inbox described above.
 
-Fit existing reflection into the new schemas primarily through evidence and
-operation adapters. Strive to preserve its prompts; small changes at the edges
-are acceptable. Changes to the core linguistic guidance, framing, or workflow
-require hands-on experimentation before adoption. New reflection content may
-have unresolved sense associations and remain fully usable at word level.
+Preserve the core linguistic reasoning while allowing decomposition of calls,
+evidence contracts, and reporting. Those orchestration changes are in scope;
+changes to core linguistic guidance or framing require hands-on experimentation.
+Adapters supply the actual exercise purpose and teaching/priming context. New
+reflection content may have unresolved sense associations and remain fully usable
+at word level; comprehensive sense enrichment is not a prerequisite.
 
-Service ownership remains separate from evidence ownership. Reflection may use
-private learner evidence while proposing shared content. Shared publication does
-not publish that evidence. Shared repair approval, learner-state adjustment, and
-learner-facing explanation have different effects; their authorization and timing
-need explicit treatment during refinement.
+Encounters and explicit feedback determine processing eligibility, including
+skips before an answer and work on uncovered words. Do not carry forward old
+review-only, covered-attempt, or overlapping-word filters as reasons to lose this
+evidence. Work can be grouped or deferred between calls; feedback without an
+answer is not a fabricated mistake. Preserve attribution to the source encounters.
+
+Learner feedback is read-only. Backend policy applies compensation automatically
+from a designated judgment, independently of reading feedback or approving a
+content proposal. Apply each adjustment once. Prefer a simple, comprehensible
+initial policy, including for delayed judgment and mixed outcomes across a word's
+exercises; full scheduling replay and linguistically perfect compensation are
+not launch requirements. Scheduling compensation does not reverse explicit mode
+choices. Exact adjustment amounts and timing remain implementation policy.
+
+Service ownership remains separate from evidence ownership. Shared publication
+does not publish private learner evidence. Operator previews distinguish shared
+creation/update/retirement from learner-only deactivation or suppression. Legacy
+operations retain explicit effect scope rather than silently acquiring a global
+meaning. Learner-state correction is independent of content application.
 
 The operator can update an existing content item or replace it with a new one,
 retiring the previous item. Preview the consequences for identity-bound learner
@@ -240,8 +280,9 @@ own broader enrichment pass.
 
 Keep existing word identities and import usable content by default. Imported
 content retains provenance and a traceable old-to-new identity mapping, including
-package-scoped exercise IDs. Flatten exercise
-material where needed while preserving its presented meaning and answer criteria.
+package-scoped exercise IDs. Preserve the exclusive teaching role for imported
+teaching exercises. Flatten exercise material where needed while preserving its
+presented meaning and answer criteria.
 Pure-cue accepted answers and contrast choices/explanations remain explicit.
 
 Preserve access scope, publication/withdrawal state, and explicit learner

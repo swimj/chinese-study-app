@@ -29,14 +29,14 @@ flowchart LR
   CW -->|optional single sense| S
   C --> A[Accepted answer words]
   A --> W
-  I[Introduction] -->|ordered teaching exercises| E[Exercises]
+  I[Introduction] -->|ordered repertoire| E[Teaching exercises]
 ```
 
 An exercise is a complete content object: identity, authored material, answer
 contract, and serving metadata. An introduction is another content kind with its
-own complete teaching material. They share a logical content pool; ordinary reads
-use the current objects directly. History is a separate account of changes to
-those objects, rather than the container in which all authored content lives.
+own complete teaching material. They share storage, with teaching exercises
+explicitly excluded from the general practice pool. Ordinary reads use current
+objects directly; history separately records changes to those objects.
 
 ### Complete objects and their change history
 
@@ -61,6 +61,7 @@ content_items
   payload_version
   body_json                          authored presentation/reveal material
   exercise_type?, skill?              required for exercises; production is focus here
+  exercise_role?                      teaching | general; required for exercises
   assessment_json?                   response format and deterministic matching rules
   access_scope                       shared | private
   owner_learner_id? → learners        required only for private content
@@ -208,15 +209,21 @@ sense for a word, retain word-level fallback rather than force a false match.
 A later demonstrated need can justify a schema change; no linking table or
 independent mapping entity is reserved for it now.
 
-Mode suitability is eligibility metadata, not a second content catalog. Teaching
-uses an introduction's explicit repertoire. Maintain curation attaches to the
-assessed content version, so an edit cannot silently inherit trusted status.
-An introduction is the special case that binds particular exercise versions for
-coherence; those can resolve through history after a repair. A historical binding
-does not bypass current quarantine, retirement, or access restrictions. Historical
-encounters remain readable as evidence; fresh teaching requires an eligible
-repertoire or the ordinary nonblocking fallback. Updating the repertoire is an
-explicit introduction change. Ordinary exercise selection uses current content.
+General exercise selection requires `exercise_role = general` before applying
+mode suitability, availability, and access rules. Teaching exercises belong to an
+introduction's explicit repertoire; its writer validates the teaching role.
+Teaching and Solidify priming use that repertoire, while later general practice
+excludes it. A suitability row cannot override this role boundary. Cross-role
+reuse is not required.
+
+Maintain curation attaches to the assessed content version, so an edit cannot
+silently inherit trusted status. An introduction binds particular teaching
+exercise versions for coherence. Teaching repairs are manually reviewed alongside
+the introduction and update the intended exercise bindings explicitly. A
+historical binding does not bypass current quarantine, retirement, or access
+restrictions. Historical encounters remain readable; fresh teaching requires an
+eligible repertoire or the ordinary nonblocking fallback. General selection uses
+current content.
 
 Authored changes to answers, target/context membership, or the teaching repertoire
 are saved with the content update and its history snapshot. Establishing
@@ -257,10 +264,11 @@ Sense-level cluster links can be added when a concrete policy needs them.
 | Read | Index beyond the primary/unique keys |
 | --- | --- |
 | Current senses for a word | `senses(word_id, status)` |
-| Candidate exercises for a word | `content_words(word_id, relation, content_id)`; join eligible content objects |
+| Candidate exercises for a word | `content_words(word_id, relation, content_id)`; join content and require general exercise role plus availability/access |
 | Exercises mapped to a sense | `content_words(sense_id, content_id)` where sense is non-null; join the current sense |
-| Exercises accepting a word, including pure cues | `exercise_answer_words(word_id, exercise_id)`; join `content_items` and filter by `exercise_type` for pure cues, plus availability/access scope |
-| Mode repertoire | `content_mode_suitability(mode, suitability, content_id)`; check assessed version |
+| Exercises accepting a word, including pure cues | `exercise_answer_words(word_id, exercise_id)`; join `content_items` and filter by `exercise_type` for pure cues, plus general role and availability/access scope |
+| Mode repertoire | `content_mode_suitability(mode, suitability, content_id)`; require general role and check assessed version |
+| Teaching repertoire | `introduction_exercises` primary key; resolve bound versions and validate teaching role/availability |
 | Associated legacy content awaiting mapping | `content_words(word_id, sense_mapping_established_at, content_id)` |
 | Contrast clusters involving a word | `contrast_members(word_id, cluster_id)` |
 | Any retained content/sense object version, including current | Unique `(content_id, version)` and sense equivalent in history |
@@ -356,9 +364,14 @@ flowchart TD
   P --> C[Frozen completion revision]
   C -->|one transaction| S[Learner effects and confirmed summary]
   C -->|same transaction| D[Durable post-session dispatch]
-  D --> J[Teacher judgment]
-  J --> F[Later learner correction or explanation]
-  J --> R[Content repair proposal]
+  D --> F[Per-word learner feedback]
+  D --> R[General exercise improvement]
+  D --> T[Teaching review inbox]
+  F --> M[Read-only learner lesson]
+  R --> O[Operator content approval]
+  T --> O
+  D --> J[Designated teacher judgment]
+  J --> L[Automatic learner adjustment]
 ```
 
 ```text
@@ -415,6 +428,7 @@ session_completions                  adapted existing finalization revision
   staged_at, close_at
   status                             pending | cancelled | closed | failed
   input_json, report_json, policy_version
+                                     includes finish reason and covered/uncovered word outcomes
   closed_at?, last_error?
 
 learner_state_effects                 attributed, idempotent durable effects
@@ -429,24 +443,36 @@ learner_state_effects                 attributed, idempotent durable effects
   kind, before_json, after_json, applied_at
 ```
 
-Answers, immediate assessments, skip, more practice, wrap, teaching completion,
-mode choices, and undo are session actions. Encounter and in-session feedback
-rows are typed extensions written with their originating action; they are not
-independent alternative accounts. A retry reuses the client action ID. Undo
-references an earlier action; it does not delete evidence. Effective-state rules
-define which actions still contribute to learning outcomes.
+Answers, immediate assessments, skip, more practice, word wrap, teaching
+completion, finish requests, mode choices, and undo are session actions. Encounter
+and in-session feedback rows are typed extensions written with their originating
+action. A retry reuses the client action ID. Ordinary Undo references the latest
+undoable transition and changes its contribution without deleting evidence.
+Returning to an earlier word creates fresh practice. Skip changes continuation;
+it neither fabricates recall success nor deletes the miss or feedback. Dismiss
+and suppress controls live outside the session UI.
 
-Finalization retains the existing fixed deadline and cancellable completion
-revision approach. It freezes the effective action boundary, then applies learner
-effects, confirms the report, and queues work in one transaction. Resuming study
-requires cancelling the pending revision before accepting new actions; closed
-sessions reject late mutations. Incomplete teaching creates no teaching completion,
-while its raw actions and independently submitted feedback remain available.
+“Finish for now” stops new admission and wraps in-flight work. “Finish immediately”
+is available during that phase and ends without requiring remaining coverage.
+Before staging completion, the frontend sends its remaining actions and confirms
+the recorded boundary; save failures remain retryable. Finalization retains the
+existing fixed deadline and cancellable revision approach. It freezes that
+boundary, applies learner effects, confirms the report, and queues work atomically.
+Uncovered words remain due for subsequent selection and participate in post-session
+processing. Incomplete teaching creates no teaching completion, but its evidence
+is retained. Richer active-session recovery can be added later.
 
-Later judgments create their own effect keys. They must reconcile against current
-state/version rather than replaying an old snapshot over a newer user mode choice
-or later practice. The exact provisional-versus-judged scheduling policy remains
-an explicit refinement choice; these records support either timing.
+Resuming before closure requires cancelling the pending revision before accepting
+new actions. Closed sessions reject late mutations. A later reversal of a mode
+recommendation is a new mode command, not a reopened completion.
+
+Compensation is automatic backend work from a designated judgment. Effect keys
+identify the source outcome and adjustment, so separate calls or retries cannot
+compensate it twice. It does not depend on message viewing or content approval.
+Use an explicit, simple policy against the schedule at application time; delayed
+judgments and mixed exercise outcomes do not require full historical replay.
+Retain before/after values and provenance. Scheduling adjustments do not overwrite
+explicit learner mode choices.
 
 | Read / guarantee | Index or constraint |
 | --- | --- |
@@ -471,9 +497,13 @@ backend_jobs                         adapt existing preparation/dispatch job rec
   status, next_attempt_at, attempt_number
   lease_token?, lease_expires_at?, last_error?
 
-reflection_cases                     internal service-owned work; evidence remains private
+reflection_cases                     internal work; evidence remains private
   case_id PK
+  kind                               learner_feedback | exercise_improvement | teaching_review
   source_job_id? → backend_jobs
+  learner_id? → learners              required for per-learner feedback
+  word_id? → words                    required for per-word feedback
+  content_id? → content_items         exercise/teaching review subject
   status, evidence_snapshot_json, created_at
 
 reflection_case_evidence
@@ -535,9 +565,10 @@ application_content_changes
   source_history_change_id? → content_revision_history (same source content)
   PK(application_id, operation_key)
 
-learner_messages
+learner_messages                     read-only feedback, no approval/compensation controls
   message_id PK
   learner_id → learners
+  case_id? → reflection_cases         feedback case for this learner and word
   judgment_id? → teacher_judgments
   source_key UQ
   body_json, created_at, seen_at?
@@ -549,24 +580,39 @@ sense establishment, reflection, and retries need durable inputs and fenced
 execution. Job kind plus an appropriately scoped dedupe key identifies logical
 work; provider invocation rows record its individual call attempts.
 
-Reflection initially fits these records through adapters around its existing
-reasoning and flow. Newly generated content can have unresolved sense associations;
-sense establishment and comprehensive mapping are not prerequisites for repair.
-The delivery plan reserves core prompt/flow changes for hands-on experimentation.
+Learner-feedback cases group a word's encounters into a lesson, generated in a
+call independent of internal improvement. General improvement cases investigate
+an interaction or exercise. Teaching issues route to a separate manual inbox,
+paired with the introduction and teaching exercises, outside ordinary reflection
+repair. These work kinds can share job and evidence infrastructure without sharing
+approval or completion gates. Core linguistic reasoning is preserved; call
+boundaries and evidence/output contracts can change to support these roles.
+New content remains usable with unresolved sense associations.
 
-Cases collect negative feedback with or without rejected answers. A judgment may
-produce learner correction, a message, and zero or more content proposals. Each
-has independent application semantics. Manual approval refers to the exact
-proposal version; changing it requires review again. Creating or editing a proposal
-retains its resulting complete state and bases in history, just as content writes
-do. Workflow status changes are recorded through reviews/applications without
-revising the proposal's authored contents. Applying a proposal checks its base versions and records the
-content change with its application receipt atomically. Stale approvals cannot
-overwrite newer repairs. New-content operations need no existing base row and
-produce an initial history snapshot. Retries reuse the application record for
-the approved proposal version. Typed change links connect published content states
-back to their approval; `effects_json` retains other effects such
-as availability changes.
+Case evidence includes feedback without an answer and uncovered work. A case can
+link multiple encounters; grouping or deferral for a model call does not discard
+its pending evidence. Do not reuse legacy review-only or overlapping-word admission
+filters as eligibility rules. Preserve actual exercise purpose, priming, responses,
+and learner comments without inventing attempts for skipped exercises.
+
+Learner messages, automatic compensation, and content proposals have independent
+application semantics. The backend designates the judgment that drives a scheduling
+adjustment rather than allowing both feedback and improvement calls to apply it.
+This does not require a third model call; the owning workflow is an implementation
+choice. Reading a message neither authorizes nor triggers compensation. Internal improvement
+may proceed independently of feedback generation. Shared content and learner-only
+effects are explicitly scoped in the operator preview; legacy operation names do
+not implicitly authorize global retirement or change a word's mode.
+
+Manual approval refers to the exact proposal version; editing requires review
+again. Proposal history retains resulting authored state and bases; workflow
+status is recorded through reviews/applications. Applying a proposal checks its
+bases and records the content change with its receipt atomically. Stale approvals
+cannot overwrite newer repairs. New-content operations create an initial history
+snapshot; retries reuse the application for the approved version. Typed change
+links connect published states to approval; `effects_json` retains other effects
+such as availability changes. Teaching review uses this same approval machinery
+with its introduction/repertoire context.
 
 ### Operator choice of update strategy
 
@@ -611,7 +657,9 @@ roles rather than retained as parallel proposal systems.
 | --- | --- |
 | Claim eligible jobs / recover expired work | `(status, next_attempt_at)`; running jobs by `lease_expires_at` |
 | Find case handling feedback | Unique evidence edges; reverse `(feedback_id, case_id)` and `(encounter_id, case_id)` |
-| Manual review queue | `content_proposals(status, proposal_id)` |
+| Manual proposal review | `content_proposals(status, proposal_id)`; join case kind |
+| Teaching issue inbox | `reflection_cases(kind, status, created_at)`; include issues without proposals |
+| Feedback for a learner/word | `reflection_cases(learner_id, word_id, kind, created_at)` |
 | Inspect review history | `proposal_reviews(proposal_id, proposal_version, reviewed_at)` |
 | Find competing repairs | `proposal_content_bases(content_id, proposal_id)` |
 | Trace a published repair to its approval | `application_content_changes(result_content_id, result_version, application_id)` |
@@ -728,8 +776,10 @@ The main design choices to review before implementation are:
 - **Sense evolution:** how new/split/merged senses affect an established learner
   scope and when to explicitly reassess relationships. References preserve evidence
   without settling those policies.
-- **Judgment timing:** which learner effects finalization applies immediately and
-  how later teacher judgments adjust them without overwriting newer learning.
+- **Compensation policy:** choose the authoritative judgment output, initial
+  scheduling effects, and simple delayed adjustments for mixed exercise outcomes.
+  Application is automatic and independent of feedback viewing/content approval;
+  full scheduler replay is not required.
 - **Physical consolidation:** which existing finalization, preparation, reflection,
   and operator-review tables take these roles; exact constraints, retention, and
   event-write failure behavior.
