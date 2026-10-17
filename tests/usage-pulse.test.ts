@@ -523,6 +523,20 @@ describe('operator usage pulse API', { concurrency: false }, () => {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: ' '.repeat(1) }),
     })).status, 400);
+    for (const payload of [
+      { kickoffAt: 'invalid' }, { kickoffAt: '2099-02-30T00:30:00Z' }, { kickoffAt: 42 }, { kickoffAt: '2020-01-01T00:00:00Z' },
+      { kickoffAt: '2099-07-02T00:30:00' }, { kickoffAt: '2099-07-02T00:30:00Z', message: 'conflicting' },
+      { kickoffAt: '2099-07-02T00:30:00Z', expiresAt: '2099-07-05T00:00:00Z' },
+    ]) {
+      assert.equal((await fetch(endpoint, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })).status, 400);
+    }
+    const plannedResponse = await fetch(endpoint, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kickoffAt: '2099-07-02T00:30:00Z' }) });
+    assert.equal(plannedResponse.status, 200);
+    const planned = await plannedResponse.json() as { serviceBanner: { kickoffAt: string; postedAt: string; expiresAt: string } };
+    assert.equal(planned.serviceBanner.kickoffAt, '2099-07-02T00:30:00.000Z');
+    assert.equal(planned.serviceBanner.expiresAt, '2099-07-03T00:30:00.000Z');
+    assert.notEqual(planned.serviceBanner.postedAt, planned.serviceBanner.kickoffAt);
+    assert.deepEqual(await (await fetch(endpoint)).json(), planned);
     assert.equal((await fetch(endpoint, { method: 'DELETE' })).status, 200);
     assert.deepEqual(await (await fetch(endpoint)).json(), { serviceBanner: null });
   });

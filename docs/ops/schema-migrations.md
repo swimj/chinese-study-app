@@ -117,6 +117,12 @@ and immutable-update trigger. The populated upgrade regression lives in
 `tests/schema-migrations.test.ts`. Use the offline upgrade procedure for this
 change; the app-only upgrade path is insufficient.
 
+Migration `0037_service_banner_kickoff` adds a nullable kickoff instant to the
+current service banner. Existing messages and lifecycle timestamps are preserved;
+no kickoff is inferred from authored text, posting time, or expiry. This change
+requires the offline migration procedure; the app-only upgrade route cannot
+apply it. Populated upgrade coverage is in `tests/schema-migrations.test.ts`.
+
 ## Writing the next migration
 
 Add a SQL file under `server/db/migrations/` and append its definition to
