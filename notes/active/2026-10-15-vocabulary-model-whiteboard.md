@@ -1,6 +1,13 @@
-# Vocabulary model whiteboard
+# Vocabulary learning model early specification
 
-Current design focus: production. Other skills are outside this pass.
+This early specification describes the intended vocabulary learning model,
+focused on production. Its diagrams and relationships guide implementation;
+policy candidates, future extensions, and open questions remain separate below.
+It describes the fuller intended experience, not current shipped behavior or a
+requirement to deliver every capability at once. The [first delivery plan](2026-10-16-vocabulary-first-deliverable-plan.md)
+sets the initial scope, including simpler policies and incremental sense adoption;
+the [storage sketch](2026-10-16-vocabulary-storage-sketch.md) develops that scope's
+records and relationships. Delivery and cutover choices belong in the plan.
 
 ## Word lifecycle
 
@@ -57,7 +64,7 @@ Introduction
   └─ contains → Teaching material (explanations, examples, …)
 
 Exercise
-  ├─ relates to → Word-senses (target or pure-cue overlap)
+  ├─ relates to → Word-senses (targets or supporting context)
   ├─ practises → Skill (recognition, production, …)
   ├─ has → Exercise type (definition production, cloze, …)
   ├─ has → Selection traits (mode suitability, …)
@@ -71,16 +78,25 @@ or combined through deliberate maintenance that preserves interpretable history
 and references. Examples can support several alternative or overlapping readings.
 An introduction can teach several senses together.
 
+Content–word–sense relationships connect identities and outlive changes to their
+representations. Live relationships use current sense descriptions; historical
+encounters retain what was actually presented. Words and exercises remain usable
+while sense associations are unresolved. Known associations can support more
+specific selection without treating unknown ones as evidence of coverage.
+
 Exercises form one logical pool, with traits and sense relationships supporting
 selection across modes. Auxiliary indexes support lookup. An exercise can suit
 several experiences without being copied into separate mode-specific catalogs.
 Exercise content is self-contained presented material. Reusing a sentence does
 not couple exercises through a shared mutable sentence reference. Source
-provenance can be retained without requiring synchronized edits. Teaching and
-its priming exercises can use special coherence relationships where useful.
-Skill describes the capability practised; type describes
-the task form. Teaching exercises directly target a word-sense. Pure cues can
-overlap several senses; overlap does not itself define acceptable answers.
+provenance can be retained without requiring synchronized edits. Teaching exercises
+reinforce the introduction actually delivered, without needing to reuse its exact
+sentences. Skill describes the capability practised; type describes the task form.
+Teaching exercises directly target a word-sense. Pure cues can have several target
+words; targeting does not imply exclusivity. Exercise type and response criteria
+define acceptable answers. Selecting a pure cue through
+one target does not restrict its answer set or confer learning credit on every
+target word.
 
 ## Learner state at rest
 
@@ -141,9 +157,10 @@ Teaching complete
 Teaching history ── informs → Familiar starting material for Solidify
 ```
 
-Sense resolution and necessary content preparation complete before that material
-is presented. Preparation can run ahead of or during the session; unavailable
-material does not block the learner from continuing with other content or behavior.
+Explicitly sense-scoped teaching requires those senses and its material to be
+ready before presentation. Word-level teaching remains possible when structured
+sense associations are unresolved. Preparation can run ahead of or during the
+session; unavailable material does not block other content or behavior.
 
 A requested use can resolve to an existing sense, lead to a new sense, or
 require clarification of a misunderstanding. The introduction surface remains
@@ -155,13 +172,13 @@ teaching completion is all-or-nothing within the session. Incomplete teaching
 creates no partial teaching state or dedicated aborted-teaching record. Content
 quality feedback is independent of teaching completion.
 
-Teach uses a bounded, trusted repertoire. Production starts with definitions
-drawn directly from the selected senses, asking for the taught word without
-adjudicating other linguistically valid answers. Clozes belong here when their
-quality supports that same structured recall purpose. The dictionary-style
-sense and example list is the baseline teaching material.
+Teaching uses a bounded, trusted repertoire that reinforces the meanings and
+associations just introduced. Direct definitions and well-framed clozes can serve
+that purpose; an elaborate circumstance is not inherently better. Exercises ask
+for the taught word without adjudicating every linguistically valid alternative.
+The dictionary-style sense and example list is the baseline teaching material.
 
-Learners can report dissatisfaction or skip an exercise. Teach does not promise
+Learners can report dissatisfaction or skip an exercise. Teaching does not promise
 a better alternative in response; its material is a deliberate content-quality
 target. Reporting and skipping do not establish successful recall.
 
@@ -185,6 +202,11 @@ Exercises explore the learner's active senses. Warmup design, generation, and
 selection are black boxes here. Session composition is orthogonal: this flow
 starts once a word is included, without assuming daily inclusion. Covering is
 a default recommendation that the learner can shorten or extend.
+
+The exercise pool can offer many options for a single use. Generation explores
+different retrieval experiences while retaining straightforward options. Basic
+curation supports usefulness, but apparent similarity is not sufficient reason
+to discard an option: small wording differences may matter in actual use.
 
 Practice includes spacing between encounters to develop and assess retention.
 Scheduling policy is separate from this flow; it needs retained encounter times
@@ -227,9 +249,9 @@ Response → Immediate assessment → Live continuation policy + learner choice
                                 └─ content research and improvement
 ```
 
-Post-session judgment is treated as an oracle for this design discussion;
-its implementation comes later. Negative feedback can warrant investigation
-even when the answer was accepted. Mistakes can inform research on strengths,
+The flow describes the responsibilities of teacher judgment; its implementation
+and the timing of its effects are separate choices. Negative feedback can warrant
+investigation even when the answer was accepted. Mistakes can inform research on strengths,
 weaknesses, and new exercises independently of lifecycle consequences.
 
 ## Session log and durable changes
@@ -257,15 +279,15 @@ other exercises or interactions. Ready results can enrich the ongoing session.
 When a result would otherwise block progress, the app falls back to pre-existing
 content or behavior. Live responses use available assessment criteria and
 learner controls without waiting for model judgment.
+
 Session state is derived from the log, allowing the learner to return to any
 earlier word and keep studying. Durable learning changes are applied after the
 session; logging and the independent content-feedback channel do not depend on
 successful covering. Application must be safe to retry without duplicating effects.
 
 A default policy identifies Solidify → Practice and Practice → Maintain
-candidates at summary time.
-The learner can easily undo those choices. Mode can also be changed explicitly;
-the transition itself changes only mode. Supporting material may remain unused
+candidates at summary time. The learner can easily undo those choices. Mode can
+also be changed explicitly; the transition itself changes only mode. Supporting material may remain unused
 after a reversal. Changes made during study participate in the session log.
 
 Session finalization follows the existing product approach, adapted to this
@@ -336,6 +358,7 @@ conversation surfaces could also contribute performance evidence to study
 scheduling and state. These are sibling extensions beyond this lifecycle model.
 More demanding Maintain tests could probe deeper retention; they are deferred
 from the first rollout.
+
 Corrections to previously taught misinformation could reach affected learners
 through post-session feedback or notifications, potentially interleaved into
 later study. This corrective-teaching mechanism is deferred.

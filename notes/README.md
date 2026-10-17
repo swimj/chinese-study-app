@@ -85,7 +85,9 @@ may retain superseded plans; check the task context and owning docs before use.
 
 | Note | Type | Retire by |
 | --- | --- | --- |
-| [2026-10-15-vocabulary-model-whiteboard.md](active/2026-10-15-vocabulary-model-whiteboard.md) | research | when incorporated into the agreed domain model |
+| [Vocabulary learning storage sketch](active/2026-10-16-vocabulary-storage-sketch.md) | research | when refined into implementation schemas |
+| [Vocabulary learning first deliverable plan](active/2026-10-16-vocabulary-first-deliverable-plan.md) | work-bundle | when the first delivery is completed or superseded |
+| [Vocabulary learning model early specification](active/2026-10-15-vocabulary-model-whiteboard.md) | research | when refined into the owning implementation contracts |
 | [2026-10-15-adaptive-vocabulary-practice-plan.md](active/2026-10-15-adaptive-vocabulary-practice-plan.md) | research | when consolidated into an agreed product model and delivery plan, or declined |
 | [2026-09-30-reflection-items-and-batches.md](active/2026-09-30-reflection-items-and-batches.md) | research | when consolidated into an accepted implementation spec, or declined |
 | [2026-09-26-reflection-ambiguity-cleanup.md](active/2026-09-26-reflection-ambiguity-cleanup.md) | research | when motivating examples are no longer needed |
