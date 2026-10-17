@@ -22,9 +22,9 @@ Private metrics listener (server/observability.ts, :9091 hosted only)
 | Concern | Owner |
 | --- | --- |
 | Durable words, scheduler, contrast content, study events | Backend `server/db/` |
-| Active session snapshot, covering, undo, rating UI | Frontend `src/lib/session-state.ts` + `useStudySession` |
-| Session composition (what is due today) | Backend `getSessionPayload` |
-| API contract | `server/index.ts` routes + `src/services/api.ts` |
+| Session evidence and covering projection | Shared `domain/vocabulary-session.ts`, backend `vocabulary-sessions.ts`, frontend `useVocabularyStudy` |
+| Session composition | Backend `server/vocabulary/composition.ts` and `study.ts` |
+| API contract | `server/vocabulary/*-routes.ts`, registered in `server/index.ts`, plus `src/services/api.ts` |
 
 For how authenticated identity reaches private SQLite reads and writes, see
 [learner context, query scoping, and relationship checks](server-db.md#learner-and-content-scope).
@@ -33,12 +33,12 @@ For how authenticated identity reaches private SQLite reads and writes, see
 
 | Area | Path | Notes |
 | --- | --- | --- |
-| App shell | `App.tsx`, `components/AppChrome.tsx` | Page routing, global errors, backend status |
-| Home / study | `pages/HomePage.tsx`, `features/session/*` | Session runtime |
+| App shell | `App.tsx`, `VocabularyApp.tsx`, `components/AppChrome.tsx` | Profile entry, routing, global errors, backend status |
+| Home / study | `pages/VocabularyHomePage.tsx`, `features/vocabulary-study/*`, `features/vocabulary-ui/*` | Controller and presentation; shared Connections remains in `features/session` |
 | Priority | `pages/PriorityPage.tsx`, `features/priority/*` | Unstudied queue management |
-| Reflections | `pages/ReflectionsPage.tsx`, `features/reflection/*` | Artifact history and proposal review |
+| Feedback / internal review | `pages/VocabularyFeedbackPage.tsx`, `pages/VocabularyOperatorPage.tsx` | Read-only learner lessons; separately allowlisted operator application |
 | Content diagnostics | `pages/ContentDiagnosticsPage.tsx`, `features/content/*` | Read-only primitive content browser |
-| Shared domain types | `domain/study-actions.ts`, `types.ts` | Used by FE and imported by server |
+| Shared domain types | `domain/vocabulary-*.ts`, `types.ts` | Content, session commands/projection and API contracts |
 | Client transport diagnostics | `domain/client-incidents.ts`, `services/client-incident-diagnostics.ts` | Bounded commit-failure capture and pending upload |
 | Study profile | `study-profile.ts` | Mandarin vs French client behavior |
 

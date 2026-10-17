@@ -1559,3 +1559,44 @@ export async function fetchCurrentSessionCompletion(): Promise<SessionCompletion
   const result = await response.json() as { completion: SessionCompletion | null };
   return result.completion;
 }
+
+// Vocabulary commands ship incrementally; finalization freezes the acknowledged boundary.
+async function vocabularyRequest<T>(path: string, body?: unknown): Promise<T> {
+  const response = await apiFetch(`${API_BASE}/api/vocabulary${path}`, body === undefined ? undefined : {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  });
+  if (!response.ok) throw new Error(await readApiErrorMessage(response, 'Could not save vocabulary work'));
+  return response.json() as Promise<T>;
+}
+export const startVocabularySession = () => vocabularyRequest<import('../domain/vocabulary-study-api').VocabularyStudy>('/sessions', {});
+export const fetchVocabularyStudy = (id: string) => vocabularyRequest<import('../domain/vocabulary-study-api').VocabularyStudy>(`/sessions/${encodeURIComponent(id)}`);
+export const nextVocabularyStudy = (id: string, clientActionId: string, options: {wordId?: string; another?: boolean} = {}) =>
+  vocabularyRequest<import('../domain/vocabulary-study-api').VocabularyStudy>(`/sessions/${encodeURIComponent(id)}/next`, {clientActionId,...options});
+export const commandVocabularyStudy = (id: string, clientActionId: string, command: import('../domain/vocabulary-study-api').VocabularyStudyCommand) =>
+  vocabularyRequest<import('../domain/vocabulary-study-api').VocabularyStudy>(`/sessions/${encodeURIComponent(id)}/commands`, {clientActionId,command});
+export const stageVocabularyCompletion = (id: string, throughSequence: number, activeDurationMs?: number) => vocabularyRequest<import('../domain/vocabulary-session-api').VocabularySessionCompletion>(`/sessions/${encodeURIComponent(id)}/completion`, {throughSequence,...(activeDurationMs === undefined ? {} : {activeDurationMs})});
+export const fetchVocabularyCompletion = (id: string) => vocabularyRequest<import('../domain/vocabulary-session-api').VocabularySessionCompletion | null>(`/sessions/${encodeURIComponent(id)}/completion`);
+export const cancelVocabularyCompletion = (id: string, completionId: string) => vocabularyRequest<import('../domain/vocabulary-session-api').VocabularySessionCompletion>(`/sessions/${encodeURIComponent(id)}/completion/cancel`, {completionId});
+export const closeVocabularyCompletion = (id: string, completionId: string) => vocabularyRequest<import('../domain/vocabulary-session-api').VocabularySessionCompletion>(`/sessions/${encodeURIComponent(id)}/completion/close`, {completionId});
+export const fetchCurrentVocabularyCompletion = () => vocabularyRequest<import('../domain/vocabulary-study-api').VocabularyStudy | null>('/completion/current');
+export const dismissVocabularyWord = (id: string) => vocabularyRequest<unknown>(`/words/${encodeURIComponent(id)}/dismiss`, {});
+export type VocabularyWordRow = import('../domain/vocabulary-study-api').VocabularyStudyWord & {mode: import('../domain/vocabulary-session').VocabularyWordMode; inStash: number; stateVersion: number; nextEligibleAt: string | null; refreshUntil: string | null};
+export const fetchVocabularyWords = () => vocabularyRequest<{words:VocabularyWordRow[]}>('/words');
+export const setVocabularyWordMode = (id: string, mode: import('../domain/vocabulary-session').VocabularyWordMode, expectedVersion: number) => vocabularyRequest<unknown>(`/words/${encodeURIComponent(id)}/mode`, {mode,expectedVersion});
+export const refreshVocabularyWord = (id: string) => vocabularyRequest<unknown>(`/words/${encodeURIComponent(id)}/refresh`, {});
+
+/** Shared authenticated transport for feature-specific API contracts. */
+export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await apiFetch(`${API_BASE}${path}`, init);
+  if (!response.ok) throw new Error(await readApiErrorMessage(response, 'The request could not be completed.'));
+  return response.json() as Promise<T>;
+}
+export type VocabularyFeedbackMessage = {messageId:string; caseId:string; body: import('../domain/vocabulary-content').VocabularyJson; createdAt:string; seenAt:string|null};
+export type VocabularyFeedbackInbox = {messages:VocabularyFeedbackMessage[]; failures:{jobId:string; error:string}[]};
+export const fetchVocabularyFeedback = () => vocabularyRequest<VocabularyFeedbackInbox>('/feedback');
+export const markVocabularyFeedbackSeen = (id:string) => vocabularyRequest<unknown>(`/feedback/${encodeURIComponent(id)}/seen`, {});
+export const retryVocabularyFeedback = (id:string) => vocabularyRequest<unknown>(`/feedback/jobs/${encodeURIComponent(id)}/retry`, {});
+
+export const fetchVocabularyAttention = () => vocabularyRequest<{unseenCount:number;hasFailure:boolean;generating:boolean}>('/feedback/attention');
+
+export const fetchVocabularyStatistics = () => vocabularyRequest<import('../domain/vocabulary-statistics').VocabularyStatistics>('/statistics');

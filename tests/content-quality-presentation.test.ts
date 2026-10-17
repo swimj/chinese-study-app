@@ -3,7 +3,16 @@ import { test } from 'node:test';
 import { contentQualityTextBlocks } from '../src/pages/content-quality-presentation.ts';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { ContentQualityBreakdowns } from '../src/pages/ContentQualityPanel.tsx';
+import { ContentQualityBreakdowns, ContentQualityPanel } from '../src/pages/ContentQualityPanel.tsx';
+
+test('historical Mandarin quality view links current repair instead of mounting the retired editor', () => {
+  const html = renderToStaticMarkup(createElement(ContentQualityPanel,{ legacyContentEditing: false }));
+  assert.match(html,/historical content ratings/);
+  assert.match(html,/href="#operator-vocabulary"/);
+  assert.doesNotMatch(html,/id="content-improvement-workspace"|Open content by source ID|Apply approved revision/);
+  const legacy = renderToStaticMarkup(createElement(ContentQualityPanel));
+  assert.match(legacy,/id="content-improvement-workspace"/);
+});
 
 test('quality inspection shows teaching order, rendered rehearsal and accepted forms without repeating source text', () => {
   const blocks = contentQualityTextBlocks({

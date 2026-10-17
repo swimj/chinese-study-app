@@ -1,5 +1,9 @@
 # Product documentation routes
 
+The Mandarin learner runtime is defined by the [adaptive vocabulary contract](vocabulary-learning.md)
+and [implementation guide](../docs/vocabulary-learning.md), including modes, action logs, internal reflection,
+content provenance, and the operator review surface.
+
 This is a retrieval map for existing material under `SPECS/`, not a definition
 of the target taxonomy. The [documentation hierarchy](../docs/documentation-principles.md#documentation-map)
 defines ownership independently of this folder. The

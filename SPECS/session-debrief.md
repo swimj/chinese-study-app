@@ -7,30 +7,27 @@ from reflection, its evidence, proposal authorization, and application.
 
 ## Completion and input
 
-The frontend saves one exact inventory row per covered exercise with pending
-completion. Closure accepts the deferred final study action before saving the
-durable session summary and using that inventory for generation. Each
-row contains only the encountered word text and pinyin; slash-separated
-alternatives stay together in their frozen accepted order, joined with ` / `.
-The encounter uses the selected card character presentation. Contrast rows use
-the actual prompt target rather than the scheduled anchor. Learning and new-word
-exercises are included once their word unit is covered. Reinforcement attempts
-add no extra row; separate covered actions can repeat the same word.
-Undone or uncovered work contributes no row. An empty pinyin string truthfully
-preserves an encounter without a pronunciation cue. Pure-cue accepted-answer
-snapshots contain hanzi without pinyin, so their exact alternatives use empty
-pinyin. The backend does not reinterpret or enrich this inventory from later
-lexical content.
+The server closes a vocabulary session against its retained completion projection.
+In that same transaction, it freezes one inventory row for every presented
+encounter, including skipped, unanswered, and uncovered encounters. Repeated
+encounters may repeat a word. Each row contains word text and pinyin resolved
+at closure. Ordinary word encounters use their word identity; contextual choice
+encounters use the authored correct target in the exact served assessment.
+Independent pure cues contribute their complete accepted member set from the
+exact content revision, joined with ` / `, without inventing a selected target.
+The frozen inventory is never enriched from later lexical edits.
 
-Sessions admit at most 1000 units under the shared session cap; the supplied
-inventory accepts at most that same 1000 rows. Completion preserves every
-covered exercise rather than truncating the inventory to satisfy validation.
+The retained completion preserves all encounters. Connections input admits the
+first 1000 rows under its existing provider bound; an operational event records
+any omitted count. This bound does not reject session closure. An empty pinyin
+string truthfully preserves an encounter without a pronunciation cue.
 
-The completed summary and first debrief job are saved in one transaction.
-Finalization failure permits retry; successful completion is never
-reopened by provider or debrief-result failure. Repeated finalization preserves
-the first job snapshot. Legacy callers that omit the optional inventory save
-only their summary. French does not enqueue this Mandarin provider flow.
+The closed completion and first debrief job are saved in one transaction.
+Finalization failure permits retry; successful completion is never reopened by
+provider or debrief-result failure. Repeated finalization preserves the first
+job snapshot. Historical legacy jobs remain available through the same queue
+and read API. The retired summary submission endpoint returns 409 and creates
+no job. French does not enqueue this Mandarin provider flow.
 
 The immutable input records the UTC completion timestamp, sequential `w1`, `w2`
 references, exact inventory strings, and the learner's interests at completion.
@@ -78,7 +75,7 @@ successful result is ready with zero notes. Apply the 15-item generation minimum
 to the eligible inventory after cooldown filtering. Fewer than 15 eligible rows
 become ready with zero notes without a provider call or generation attempt;
 15 or more queue generation. The displayed exercise count records the
-original covered inventory size.
+original admitted inventory size.
 
 Jobs are learner-private and durable. Provider work continues when the learner
 leaves the summary, navigates away, refreshes, or closes the browser. A serial

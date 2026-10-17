@@ -1,5 +1,9 @@
 # Learning And Review Model
 
+The Mandarin study runtime follows [Adaptive vocabulary study](vocabulary-learning.md).
+This document describes the retained legacy implementation and historical records;
+its learner-write flow is not the Mandarin entry point.
+
 Status: current contract for word lifecycle and established session behavior.
 Its direction-oriented scheduling language also documents existing behavior and
 is under renovation; it may not express the desired longer-term architecture in
