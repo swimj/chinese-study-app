@@ -1,6 +1,8 @@
+import { assertVocabularyCutoverReady } from './vocabulary-cutover.ts';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import type { DatabaseSync } from 'node:sqlite';
+import { importLegacyVocabulary } from './vocabulary-import.ts';
 import { fillMissingNormalizedHanzi } from './hanzi-lookup.ts';
 
 const PREFIX = 'app_schema:';
@@ -12,6 +14,7 @@ const deployedBaseline = { ...baseline, ...deployedOverrides };
 export type SchemaMigration = {
   id: string;
   sql: string;
+  before?: (db: DatabaseSync) => void;
   after?: (db: DatabaseSync) => void;
 };
 // Append migrations here in order. Never edit an applied migration or the baseline.
@@ -138,7 +141,30 @@ export const schemaMigrations: readonly SchemaMigration[] = [{
   sql: fs.readFileSync(new URL('./migrations/0038_model_provenance.sql', import.meta.url), 'utf8'),
 }, {
   id: 'app_schema:0039_vocabulary_learner_state',
+  before: assertVocabularyCutoverReady,
   sql: fs.readFileSync(new URL('./migrations/0039_vocabulary_learner_state.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0040_vocabulary_sessions',
+  sql: fs.readFileSync(new URL('./migrations/0040_vocabulary_sessions.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0041_vocabulary_import',
+  sql: fs.readFileSync(new URL('./migrations/0041_vocabulary_import.sql', import.meta.url), 'utf8'),
+  after: (db) => { importLegacyVocabulary(db); },
+}, {
+  id: 'app_schema:0042_vocabulary_reflection',
+  sql: fs.readFileSync(new URL('./migrations/0042_vocabulary_reflection.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0043_vocabulary_provenance_links',
+  sql: fs.readFileSync(new URL('./migrations/0043_vocabulary_provenance_links.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0044_vocabulary_pure_cue_guards',
+  sql: fs.readFileSync(new URL('./migrations/0044_vocabulary_pure_cue_guards.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0045_vocabulary_dismissal',
+  sql: fs.readFileSync(new URL('./migrations/0045_vocabulary_dismissal.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0046_vocabulary_connections',
+  sql: fs.readFileSync(new URL('./migrations/0046_vocabulary_connections.sql', import.meta.url), 'utf8'),
 }];
 
 function checksum(value: string): string {
@@ -236,6 +262,7 @@ export function migrateDatabase(db: DatabaseSync, migrations = schemaMigrations)
         let baselineVariant: 'fresh' | 'fly_3ad618b' | undefined;
         if (migration.id === BASELINE_ID) baselineVariant = adoptBaseline(db);
         else {
+          migration.before?.(db);
           db.exec(migration.sql);
           migration.after?.(db);
         }

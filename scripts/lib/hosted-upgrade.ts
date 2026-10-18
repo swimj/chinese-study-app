@@ -2,6 +2,7 @@ import { execFile, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
+import { HOSTED_SMOKE_ENDPOINT } from './hosted-smoke.ts';
 import { isRecord, parseJsonValue, sanitizeHostedOutput } from './hosted-json.ts';
 
 const execFileAsync = promisify(execFile);
@@ -284,7 +285,7 @@ export async function runHostedUpgrade(
       throw new Error(readFailureDetail(smoke) ?? 'Hosted smoke failed.');
     }
     recordStage('smoke', 'ok', {
-      endpoint: smoke.endpoint ?? '/api/session-payload',
+      endpoint: smoke.endpoint ?? HOSTED_SMOKE_ENDPOINT,
       httpStatus: smoke.httpStatus ?? null,
       sessionRevoked: smoke.sessionRevoked === true,
     });

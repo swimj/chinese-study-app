@@ -1721,7 +1721,12 @@ export function getReflectionSpendCap(now = new Date()): ReflectionSpendCap {
     FROM reflection_generation_runs
     WHERE completed_at >= ? AND completed_at < ?
   `).get(start, end) as { spent_usd: number };
-  return buildReflectionSpendCap(row.spent_usd, now);
+  // New service-owned vocabulary calls retain accounting in the common ledger.
+  // The prefix excludes legacy calls already counted by their run records.
+  const vocabulary = getDb().prepare(`SELECT COALESCE(SUM(spend_usd),0) AS spent_usd FROM model_invocations
+    WHERE requesting_learner_id=? AND invocation_type GLOB 'vocabulary_reflection_*' AND timestamp>=? AND timestamp<?`)
+    .get(requireLearnerId(),start,end) as {spent_usd:number};
+  return buildReflectionSpendCap(row.spent_usd+vocabulary.spent_usd, now);
 }
 
 function getReflectionGenerationRun(runId: string): ReflectionGenerationRunRecord {

@@ -1,9 +1,9 @@
 /** Shared, side-effect-free interpretation of the authoritative vocabulary session log. */
 export const VOCABULARY_SESSION_PROTOCOL_VERSION = 1 as const;
 export const VOCABULARY_SESSION_POLICY = {
-  version: 'vocabulary-session.v1',
-  /** Responses, including rejected responses, cover work; coverage is not recall success. */
-  productionResponsesToCover: 2,
+  version: 'vocabulary-session.v2',
+  /** One accepted general production response covers default work; Enough is an explicit separate choice. */
+  productionResponsesToCover: 1,
   solidifyCleanCoveredSessionsToRecommendPractice: 3,
   /** Maintain promotion is deliberately disabled in the first delivery. */
   practiceCleanCoveredSessionsToRecommendMaintain: Infinity,
@@ -21,11 +21,15 @@ export type VocabularySessionWordContext = {
   wordId: string;
   mode: VocabularyWordMode;
   cleanCoveredSessions?: number;
+  /** Scheduling can admit recognition without admitting the production objective. */
+  recognitionOnly?: boolean;
+  contextualOnly?: boolean;
   teachingRequirements?: VocabularyTeachingRequirements;
 };
 export type VocabularySessionInitialContext = {
   sessionId: string;
   words: readonly VocabularySessionWordContext[];
+  composition?: { introductionOrder: 'random' | 'first' | 'paced'; introductionSpacing: number };
 };
 
 /** Snapshots contain the served material, never a mutable content lookup. */
@@ -55,14 +59,15 @@ export type VocabularyEncounterSnapshot = {
 
 type VocabularySessionActionPayload =
   | { kind: 'presentation'; payload: { encounterId: string; wordId: string | null; snapshot: VocabularyEncounterSnapshot } }
-  | { kind: 'response'; payload: { encounterId: string; response: string | null; outcome: 'accepted' | 'rejected'; selfAssessment?: 'accepted' | 'rejected'; helpUsed?: boolean } }
-  | { kind: 'feedback'; payload: { encounterId: string; feedback: 'positive' | 'negative' | 'comment'; comment?: string } }
+  | { kind: 'response'; payload: { encounterId: string; response: string | null; outcome: 'accepted' | 'rejected'; selfAssessment?: 'accepted' | 'rejected'; selectedWordId?: string; helpUsed?: boolean } }
+  | { kind: 'feedback'; payload: { encounterId: string; feedback: 'positive' | 'negative' | 'comment' | 'withdrawn'; comment?: string } }
   | { kind: 'teaching_complete'; payload: { wordId: string } }
   | { kind: 'word_wrap'; payload: { wordId: string; reason: 'enough' | 'policy' } }
   | { kind: 'word_more'; payload: { wordId: string } }
   | { kind: 'word_skip'; payload: { wordId: string } }
   | { kind: 'exercise_skip'; payload: { encounterId: string } }
   | { kind: 'mode_change'; payload: { wordId: string; mode: VocabularyWordMode } }
+  | { kind: 'resume'; payload: Record<string, never> }
   | { kind: 'finish_for_now'; payload: Record<string, never> }
   | { kind: 'finish_immediately'; payload: Record<string, never> }
   | { kind: 'undo'; payload: { undoesActionId: string } };
@@ -72,6 +77,10 @@ export type VocabularySessionAction = VocabularySessionActionPayload & {
   clientActionId: string;
   sequence: number;
   occurredAt: string;
+  /** Trusted command provenance makes multi-action command retries unambiguous. */
+  commandInput?: VocabularySessionJson;
+  /** Server-generated companion actions belong to the same learner transition. */
+  transitionId?: string;
 };
 export type VocabularyEncounterEvidence = {
   encounterId: string;
@@ -86,6 +95,7 @@ export type VocabularyEncounterEvidence = {
   /** Only these responses contribute to finalization; responses above preserve all observations. */
   effectiveResponses: Extract<VocabularySessionAction, { kind: 'response' }>[];
   feedback: Extract<VocabularySessionAction, { kind: 'feedback' }>[];
+  effectiveFeedback: Extract<VocabularySessionAction, { kind: 'feedback' }>[];
   skipped: boolean;
   presentationUndone: boolean;
 };
@@ -102,6 +112,8 @@ export type VocabularySessionWordProjection = {
   covered: boolean;
   successfulRecall: boolean;
   teachingCompleted: boolean;
+  /** A mode reset stops current work; a fresh session must establish new teaching requirements. */
+  teachingDeferred: boolean;
   hasRejectedResponse: boolean;
   recommendedMode: VocabularyWordMode | null;
 };
@@ -123,7 +135,7 @@ export type VocabularySessionProjection = {
 
 const UNDOABLE_KINDS = new Set<VocabularySessionAction['kind']>([
   'response', 'teaching_complete', 'word_wrap', 'word_more', 'word_skip', 'exercise_skip', 'mode_change',
-  'finish_for_now', 'finish_immediately',
+  'finish_for_now', 'finish_immediately', 'resume',
 ]);
 function invariant(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(`Vocabulary session invariant violated: ${message}`);
@@ -175,7 +187,8 @@ export function projectVocabularySession(
     ids.add(action.actionId); clients.add(action.clientActionId);
     if (action.kind === 'undo') {
       invariant(latestUndoable !== null && action.payload.undoesActionId === latestUndoable, 'Undo must reference the latest undoable transition');
-      undone.add(latestUndoable); latestUndoable = null;
+      for (const id of undoTargets(prefix.slice(0, index), latestUndoable)) undone.add(id);
+      latestUndoable = null;
     } else if (UNDOABLE_KINDS.has(action.kind)) latestUndoable = action.actionId;
   }
 
@@ -187,7 +200,7 @@ export function projectVocabularySession(
   const appliedUndone = new Set<string>();
   for (const action of prefix) {
     if (action.kind === 'undo') {
-      appliedUndone.add(action.payload.undoesActionId);
+      for (const id of undoTargets(accepted, action.payload.undoesActionId)) appliedUndone.add(id);
       result = replay(context, accepted, appliedUndone);
     } else {
       applyAction(result, action, context);
@@ -221,12 +234,13 @@ export function projectVocabularySession(
   result.encounters = prefix.filter((action): action is Extract<VocabularySessionAction, { kind: 'presentation' }> => action.kind === 'presentation')
     .map((presentation) => {
       const effective = result.encounters.find((encounter) => encounter.encounterId === presentation.payload.encounterId);
-      invariant(effective, 'presentation evidence lost');
-      const observed = observations.get(effective.encounterId);
+      const observed = observations.get(presentation.payload.encounterId);
       invariant(observed, 'missing original presentation context');
-      return { ...effective, mode: observed.mode, workNumber: observed.workNumber, effectiveResponses: [...effective.responses],
-        responses: prefix.filter((action): action is Extract<VocabularySessionAction, { kind: 'response' }> => action.kind === 'response' && action.payload.encounterId === effective.encounterId),
-        feedback: prefix.filter((action): action is Extract<VocabularySessionAction, { kind: 'feedback' }> => action.kind === 'feedback' && action.payload.encounterId === effective.encounterId),
+      const evidence = effective ?? observed;
+      const feedback = prefix.filter((action): action is Extract<VocabularySessionAction, { kind: 'feedback' }> => action.kind === 'feedback' && action.payload.encounterId === evidence.encounterId);
+      return { ...evidence, effectiveFeedback: effectiveVocabularyFeedback(feedback), mode: observed.mode, workNumber: observed.workNumber, presentationUndone: !effective, effectiveResponses: [...(effective?.responses ?? [])],
+        responses: prefix.filter((action): action is Extract<VocabularySessionAction, { kind: 'response' }> => action.kind === 'response' && action.payload.encounterId === evidence.encounterId),
+        feedback: prefix.filter((action): action is Extract<VocabularySessionAction, { kind: 'feedback' }> => action.kind === 'feedback' && action.payload.encounterId === evidence.encounterId),
       };
     });
   for (const word of Object.values(result.words)) {
@@ -250,7 +264,7 @@ function emptyProjection(context: VocabularySessionInitialContext, sequence: num
     }
     words[word.wordId] = { wordId: word.wordId, initialMode: word.mode, mode: word.mode, explicitModeChoice: null,
       admitted: false, workNumber: 0, workStatus: 'not_started', productionResponses: 0, successfulProductionResponses: 0,
-      covered: false, successfulRecall: false, teachingCompleted: false, hasRejectedResponse: false, recommendedMode: null };
+      covered: false, successfulRecall: false, teachingCompleted: false, teachingDeferred: false, hasRejectedResponse: false, recommendedMode: null };
   }
   return { sessionId: context.sessionId, protocolVersion: VOCABULARY_SESSION_PROTOCOL_VERSION,
     policyVersion: VOCABULARY_SESSION_POLICY.version, throughSequence: sequence, phase: 'active', finishReason: null,
@@ -265,7 +279,7 @@ function replay(context: VocabularySessionInitialContext, actions: readonly Voca
   return result;
 }
 function applyAction(state: VocabularySessionProjection, action: VocabularySessionAction, context: VocabularySessionInitialContext, replaying = false): void {
-  invariant(state.phase !== 'completed' || action.kind === 'feedback', 'cannot mutate a completed session');
+  invariant(state.phase !== 'completed' || action.kind === 'feedback' || action.kind === 'resume', 'cannot mutate a completed session');
   const wordFor = (wordId: string) => {
     const word = state.words[wordId]; invariant(word, `unknown word ${wordId}`); return word;
   };
@@ -281,7 +295,7 @@ function applyAction(state: VocabularySessionProjection, action: VocabularySessi
         invariant(snapshot.schedulingScope === 'pure_cue' && snapshot.role === 'general' && snapshot.kind === 'production' && snapshot.assessment !== null, 'independent encounters require a general pure cue');
         invariant(state.phase === 'active' || state.encounters.some((entry) => entry.snapshot.schedulingScope === 'pure_cue' && entry.snapshot.contentId === snapshot.contentId), 'cannot admit a pure cue while finishing');
         invariant(encounterId.trim() && !state.encounters.some((entry) => entry.encounterId === encounterId), 'duplicate or empty encounter');
-        state.encounters.push({ encounterId, wordId: null, workNumber: 1, presentedActionId: action.actionId, presentedAt: action.occurredAt, mode: null, snapshot, responses: [], effectiveResponses: [], feedback: [], skipped: false, presentationUndone: false });
+        state.encounters.push({ encounterId, wordId: null, workNumber: 1, presentedActionId: action.actionId, presentedAt: action.occurredAt, mode: null, snapshot, responses: [], effectiveResponses: [], feedback: [], effectiveFeedback: [], skipped: false, presentationUndone: false });
         return;
       }
       const word = wordFor(wordId);
@@ -293,11 +307,11 @@ function applyAction(state: VocabularySessionProjection, action: VocabularySessi
       invariant(replaying || word.workStatus === 'open', 'returning to a word requires word_more');
       invariant(snapshot.contentId.trim() && Number.isInteger(snapshot.contentVersion) && snapshot.contentVersion > 0, 'invalid content identity');
       invariant(snapshot.kind === 'introduction' ? snapshot.assessment === null : snapshot.assessment !== null, 'assessment does not match presentation kind');
-      invariant(replaying || snapshot.role !== 'teaching' || word.mode === 'unstudied', 'teaching role requires unstudied mode');
+      invariant(replaying || snapshot.role !== 'teaching' || (word.mode === 'unstudied' && !word.teachingDeferred), 'teaching role requires current teaching requirements');
       invariant(replaying || snapshot.role !== 'priming' || word.mode === 'solidify', 'priming requires Solidify mode');
       invariant(replaying || snapshot.role !== 'general' || word.mode !== 'unstudied', 'unstudied work requires teaching');
       state.encounters.push({ encounterId, wordId, workNumber: word.workNumber, presentedActionId: action.actionId,
-        presentedAt: action.occurredAt, mode: word.mode, snapshot, responses: [], effectiveResponses: [], feedback: [], skipped: false, presentationUndone: false });
+        presentedAt: action.occurredAt, mode: word.mode, snapshot, responses: [], effectiveResponses: [], feedback: [], effectiveFeedback: [], skipped: false, presentationUndone: false });
       return;
     }
     case 'response': {
@@ -306,6 +320,8 @@ function applyAction(state: VocabularySessionProjection, action: VocabularySessi
       invariant(word === null || (word.workStatus === 'open' && encounter.workNumber === word.workNumber), 'response belongs to closed word work');
       invariant(encounter.snapshot.kind !== 'introduction' && !encounter.skipped, 'cannot answer introduction or skipped exercise');
       invariant(encounter.responses.length === 0, 'another response requires a fresh encounter');
+      invariant(action.payload.selectedWordId === undefined || encounter.snapshot.kind === 'contrast', 'word choice requires contrast');
+      invariant(encounter.snapshot.kind !== 'contrast' || typeof action.payload.selectedWordId === 'string', 'contrast requires selected word identity');
       invariant(action.payload.selfAssessment === undefined || encounter.snapshot.kind === 'recognition', 'self assessment requires recognition');
       invariant(action.payload.selfAssessment === undefined || action.payload.selfAssessment === action.payload.outcome, 'self assessment outcome mismatch');
       encounter.responses.push(action);
@@ -314,14 +330,17 @@ function applyAction(state: VocabularySessionProjection, action: VocabularySessi
       if (encounter.snapshot.kind === 'production' && encounter.snapshot.role === 'general') {
         word.productionResponses++;
         if (action.payload.outcome === 'accepted') word.successfulProductionResponses++;
-        if (word.productionResponses >= VOCABULARY_SESSION_POLICY.productionResponsesToCover) {
+        if (word.successfulProductionResponses >= VOCABULARY_SESSION_POLICY.productionResponsesToCover) {
           word.covered = true;
           word.successfulRecall ||= word.successfulProductionResponses >= VOCABULARY_SESSION_POLICY.productionResponsesToCover;
         }
       }
       return;
     }
-    case 'feedback': encounterFor(action.payload.encounterId).feedback.push(action); return;
+    case 'feedback': {
+      if (replaying && !state.encounters.some((entry) => entry.encounterId === action.payload.encounterId)) return;
+      encounterFor(action.payload.encounterId).feedback.push(action); return;
+    }
     case 'exercise_skip': {
       const encounter = encounterFor(action.payload.encounterId);
       const word = encounter.wordId === null ? null : wordFor(encounter.wordId);
@@ -344,7 +363,7 @@ function applyAction(state: VocabularySessionProjection, action: VocabularySessi
       const word = wordFor(action.payload.wordId);
       invariant(word.admitted && word.workStatus === 'open', 'cannot wrap unopened word');
       invariant(word.mode !== 'unstudied', 'incomplete teaching must be skipped, not wrapped');
-      invariant(action.payload.reason !== 'policy' || word.productionResponses >= VOCABULARY_SESSION_POLICY.productionResponsesToCover, 'default covering requirement unmet');
+      invariant(action.payload.reason !== 'policy' || word.successfulProductionResponses >= VOCABULARY_SESSION_POLICY.productionResponsesToCover, 'default covering requirement unmet');
       word.covered = true; word.workStatus = 'wrapped'; return;
     }
     case 'word_skip': {
@@ -355,13 +374,19 @@ function applyAction(state: VocabularySessionProjection, action: VocabularySessi
     case 'word_more': {
       const word = wordFor(action.payload.wordId);
       invariant(word.admitted && (word.workStatus === 'wrapped' || word.workStatus === 'skipped'), 'more requires previously stopped work');
+      invariant(word.mode !== 'unstudied' || !word.teachingDeferred, 'reset teaching starts in a fresh session');
       word.workNumber++; word.workStatus = 'open'; word.productionResponses = 0; word.successfulProductionResponses = 0; return;
     }
     case 'mode_change': {
       const word = wordFor(action.payload.wordId);
       invariant(word.admitted, 'session mode choice requires an encountered word');
+      if (action.payload.mode === 'unstudied' && word.mode !== 'unstudied') {
+        word.teachingDeferred = true;
+        if (word.workStatus === 'open') word.workStatus = 'skipped';
+      } else if (action.payload.mode !== 'unstudied') word.teachingDeferred = false;
       word.mode = action.payload.mode; word.explicitModeChoice = action.payload.mode; return;
     }
+    case 'resume': invariant(state.phase === 'completed', 'resume requires completed work and cancellation of its pending revision'); state.phase = 'active'; state.finishReason = null; return;
     case 'finish_for_now': invariant(state.phase === 'active', 'finish requested outside active phase'); state.phase = 'finishing'; return;
     case 'finish_immediately': invariant(state.phase === 'finishing', 'immediate finish requires finishing phase'); state.phase = 'completed'; state.finishReason = 'finish_immediately'; return;
     case 'undo': throw new Error('Vocabulary session invariant violated: Undo must be interpreted by replay');
@@ -373,4 +398,17 @@ function settleFinishedWork(state: VocabularySessionProjection): void {
   const openWord = Object.values(state.words).some((word) => word.admitted && word.workStatus === 'open');
   const pendingPureCue = state.encounters.some((encounter) => encounter.snapshot.schedulingScope === 'pure_cue' && !encounter.skipped && encounter.responses.length === 0);
   if (!openWord && !pendingPureCue) { state.phase = 'completed'; state.finishReason = 'wrapped_up'; }
+}
+
+function undoTargets(actions: readonly VocabularySessionAction[], targetId: string): string[] {
+  const target = actions.find((action) => action.actionId === targetId);
+  invariant(target, 'missing Undo target');
+  if (!target.transitionId) return [targetId];
+  return actions.filter((action) => action.transitionId === target.transitionId && action.kind !== 'feedback' && action.kind !== 'undo').map((action) => action.actionId);
+}
+
+/** Comments accumulate; reaction changes replace the current disposition without deleting history. */
+export function effectiveVocabularyFeedback(feedback: readonly Extract<VocabularySessionAction, { kind: 'feedback' }>[]): Extract<VocabularySessionAction, { kind: 'feedback' }>[] {
+  const latestReaction = feedback.filter((action) => action.payload.feedback !== 'comment').at(-1);
+  return feedback.filter((action) => action.payload.feedback === 'comment' || (action === latestReaction && action.payload.feedback !== 'withdrawn'));
 }

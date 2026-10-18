@@ -127,7 +127,7 @@ describe('hosted application runtime', { concurrency: false }, () => {
     assert.deepEqual(loggedErrors.map((entry) => entry.metadata.status), ['413', '400']);
   });
 
-  test('blocks writes in maintenance and independently disables provider work', async () => {
+  test('blocks maintenance writes and fences legacy study writes at the Mandarin cutover', async () => {
     const dbModule = await import('../server/db.ts');
     dbModule.setHostedServiceControl({
       key: 'maintenance_mode',
@@ -160,16 +160,33 @@ describe('hosted application runtime', { concurrency: false }, () => {
       headers: { 'content-type': 'application/json' },
       body: '{}',
     });
-    assert.equal(blockedProvider.status, 503);
+    assert.equal(blockedProvider.status, 409);
     assert.deepEqual(await blockedProvider.json(), {
-      error: 'Provider work is temporarily disabled.',
-      code: 'PROVIDER_WORK_DISABLED',
+      error: 'Study has been updated. Reload the app to continue.',
+      code: 'VOCABULARY_CUTOVER',
     });
+    // Provider controls remain observable independently; new session closure is local work.
+    const health = await (await fetch(`${baseUrl}/healthz`)).json();
+    assert.equal(health.providerWorkEnabled, false);
     dbModule.setHostedServiceControl({
       key: 'provider_work_enabled',
       enabled: true,
       actorId: 'runtime-test',
     });
+  });
+
+  test('retired Mandarin introduction, composition and editor calls reject before domain handlers', async () => {
+    for (const [method,route] of [
+      ['POST','/api/words/missing/introduction/open'],
+      ['POST','/api/words/missing/introduction/complete'],
+      ['POST','/api/session-payload'],
+      ['GET','/api/session-payload'],
+      ['POST','/api/operator/content-improvements/missing/apply'],
+    ]) {
+      const response = await fetch(`${baseUrl}${route}`,{ method });
+      assert.equal(response.status,409,`${method} ${route}`);
+      assert.equal((await response.json()).code,'VOCABULARY_CUTOVER');
+    }
   });
 
   test('returns the active service banner on authenticated status and omits expired notices', async () => {

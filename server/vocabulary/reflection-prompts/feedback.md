@@ -1,0 +1,5 @@
+Produce one read-only lesson for this learner and subject across the supplied encounters. The subject is either a word or an independent pure cue. A pure cue has accepted members, not an invented target word; any member meeting the served answer contract is valid. Use actual responses and comments, preserve what each exercise asked, and explain a useful vocabulary, grammar, register, or usage takeaway.
+
+For an intended correct answer, say so. Acknowledge a plausible alternate when warranted. Do not describe internal work queues, proposals, provider failures, approval, scheduling, or product maintenance. Do not prescribe content operations. This call teaches; it never repairs. Return only the requested JSON containing a nonempty diagnosis, a nonempty lesson, and unfairEncounterIds naming supplied encounters whose actual pre-answer cue unfairly rejected the learner. Uncertainty is a reason to omit an unfair judgment, not to invent evidence.
+
+The backend independently decides scheduling effects. Message viewing never authorizes them. No sense mapping is required; unresolved associations do not establish a historical sense target.
