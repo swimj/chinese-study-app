@@ -323,3 +323,24 @@ test('durable session completion migration preserves historical progress and fab
     assert.deepEqual(migrateDatabase(db), []);
   } finally { db.close(); }
 });
+
+
+test('service kickoff migration preserves authored notices without inferring kickoff', () => {
+  const { db } = copy('service-kickoff-upgrade', true);
+  try {
+    const index = schemaMigrations.findIndex(item => item.id === 'app_schema:0037_service_banner_kickoff');
+    assert.ok(index > 0);
+    migrateDatabase(db, schemaMigrations.slice(0, index));
+    db.exec(`INSERT INTO service_banner VALUES (1, 'Update around 6 PM EDT', '2030-07-01T00:00:00.000Z', '2030-07-03T00:00:00.000Z', 'operator');`);
+    const before = db.prepare('SELECT * FROM service_banner').get();
+    migrateDatabase(db);
+    assert.deepEqual({ ...db.prepare('SELECT * FROM service_banner').get() }, { ...before, kickoff_at: null });
+    assertSchemaCurrent(db);
+    assert.deepEqual(migrateDatabase(db), []);
+    const { db: fresh } = copy('service-kickoff-fresh', true);
+    try {
+      migrateDatabase(fresh);
+      assert.deepEqual(snapshot(db), snapshot(fresh));
+    } finally { fresh.close(); }
+  } finally { db.close(); }
+});
