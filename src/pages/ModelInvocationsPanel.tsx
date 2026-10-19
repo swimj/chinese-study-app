@@ -162,6 +162,6 @@ export function ModelInvocationTable({ rows, headers, groupBy = '', allSelectedR
   </table>;
 }
 
-function InvocationUser({ learnerId, displayName }: { learnerId: string; displayName: string | null }) {
-  return <>{displayName || learnerId}{displayName && <span className="operator-ledger-secondary">{learnerId}</span>}</>;
+function InvocationUser({ learnerId, displayName }: { learnerId: string | null; displayName: string | null }) {
+  return <>{displayName || learnerId || 'Service'}{displayName && <span className="operator-ledger-secondary">{learnerId}</span>}</>;
 }
