@@ -38,16 +38,14 @@ For how authenticated identity reaches private SQLite reads and writes, see
 | --- | --- | --- |
 | App shell | `App.tsx`, `components/AppChrome.tsx` | Page routing, global errors, backend status |
 | Home / study | `pages/HomePage.tsx`, `features/session/*` | Session runtime |
-| Words / Stash | [`pages/PriorityPage.tsx`](../src/pages/PriorityPage.tsx), [`features/priority/`](../src/features/priority/) | Add, prioritize, and remove unstudied words |
-| Words / My words | [`pages/MyWordsPage.tsx`](../src/pages/MyWordsPage.tsx), [`features/words/useMyWordsController.ts`](../src/features/words/useMyWordsController.ts) | Browse learner collections and word details |
+| Words / Stash | [`pages/PriorityPage.tsx`](../src/pages/PriorityPage.tsx), [`features/priority/`](../src/features/priority/) | Add, prioritize, and remove unstudied words; [Stash contract](../SPECS/my-words.md#information-architecture) |
+| Words / My words | [`pages/MyWordsPage.tsx`](../src/pages/MyWordsPage.tsx), [`features/words/useMyWordsController.ts`](../src/features/words/useMyWordsController.ts) | Browse learner collections and word details; [My words contract](../SPECS/my-words.md#information-architecture) |
 | Reflections | `pages/ReflectionsPage.tsx`, `features/reflection/*` | Artifact history and proposal review |
 | Content diagnostics | `pages/ContentDiagnosticsPage.tsx`, `features/content/*` | Read-only primitive content browser |
 | Shared domain types | `domain/study-actions.ts`, `types.ts` | Used by FE and imported by server |
 | Client transport diagnostics | `domain/client-incidents.ts`, `services/client-incident-diagnostics.ts` | Bounded commit-failure capture and pending upload |
 | Study profile | `study-profile.ts` | Mandarin vs French client behavior |
 
-The [Words contract](../SPECS/my-words.md#information-architecture) explains the
-two views. `App.tsx` selects between them within the Words destination.
 For more frontend code navigation, see the
 [frontend architecture map](../SPECS/frontend-architecture-map.md).
 
