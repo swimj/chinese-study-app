@@ -77,7 +77,7 @@ function qualifyingRestorationId(prefix: string): string {
       cues: [{
         kind: 'pure', id, stimulus: 'to tell an untruth', axisNote: '', teachingNote: '',
         acceptedWordIds: ['a', 'b'], active: true, intervalHours: 900, easeFactor: 2.65,
-        lastStudiedAt: '2026-09-10T00:00:00.000Z', nextDueAt: '2026-09-18T08:00:00.000Z',
+        lastStudiedAt: '2026-09-10T00:00:00.000Z', nextDueAt: now,
         strongSince: '2026-09-01T00:00:00.000Z', strongSuccesses: 7,
       }],
     });
@@ -102,7 +102,7 @@ test('restores the whole pre-lapse cue schedule once despite invalid reinforceme
   assert.equal(result.kind, 'restored');
   const cue = db.getPureCue(cueId)!;
   assert.deepEqual([cue.intervalHours, cue.easeFactor, cue.strongSince, cue.strongSuccesses, cue.lastStudiedAt, cue.nextDueAt],
-    [900, 2.65, '2026-09-01T00:00:00.000Z', 7, '2026-09-10T00:00:00.000Z', '2026-09-18T08:00:00.000Z']);
+    [900, 2.65, '2026-09-01T00:00:00.000Z', 7, '2026-09-10T00:00:00.000Z', now]);
   assert.equal(db.restorePureCueSchedulerSnapshotWithoutTransaction({ ...input,
     restoredAt: '2026-09-20T02:00:00.000Z' }).kind, 'already_restored');
   assert.deepEqual(db.getPureCue(cueId), cue);

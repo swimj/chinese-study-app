@@ -52,7 +52,7 @@ function servedSnapshot(): PureCueServedSnapshot {
 }
 
 describe('pure cue domain policy', () => {
-  test('uses existing SRS multipliers and applies strong crossing, success, lapse, and re-entry rules', () => {
+  test('uses fragile SRS to enter strong maintenance and returns to fragile SRS after a lapse', () => {
     const crossed = schedulePureCueAssessment(
       cue({ intervalHours: 300 }),
       { failureCount: 0, terminalRating: 'good' },
@@ -63,24 +63,21 @@ describe('pure cue domain policy', () => {
     assert.equal(crossed.strongSince, now);
     assert.equal(crossed.strongSuccesses, 0);
 
-    const strongSuccess = schedulePureCueAssessment(
-      crossed,
-      { failureCount: 0, terminalRating: 'hard' },
-      '2026-09-19T00:00:00.000Z',
-      () => 0.5,
-    );
-    assert.equal(strongSuccess.intervalHours, 1125);
-    assert.equal(strongSuccess.easeFactor, 2.35);
-    assert.equal(strongSuccess.strongSince, now);
-    assert.equal(strongSuccess.strongSuccesses, 1);
+    const assessedAt = '2026-09-19T00:00:00.000Z';
+    const expectedStrong = { ...crossed, lastStudiedAt: assessedAt, strongSuccesses: 1 };
+    for (const terminalRating of ['hard', 'good', 'easy'] as const) {
+      assert.deepEqual(schedulePureCueAssessment(crossed, { failureCount: 0, terminalRating }, assessedAt,
+        () => { throw new Error('Strong success must not consume interval-fuzz randomness'); }), expectedStrong);
+    }
 
     const lapsed = schedulePureCueAssessment(
-      strongSuccess,
+      expectedStrong,
       { failureCount: 2, terminalRating: null },
       '2026-09-20T00:00:00.000Z',
     );
     assert.equal(lapsed.intervalHours, 6);
-    assert.equal(lapsed.easeFactor, 2.05);
+    assert.equal(lapsed.easeFactor, 2.2);
+    assert.equal(lapsed.nextDueAt, '2026-09-20T06:00:00.000Z');
     assert.equal(lapsed.strongSince, null);
     assert.equal(lapsed.strongSuccesses, 0);
 
@@ -94,6 +91,7 @@ describe('pure cue domain policy', () => {
       '2026-09-21T00:00:00.000Z',
       () => 0.5,
     );
+    assert.equal(reentered.intervalHours, 16, 'fragile recovery resumes ordinary rating growth');
     assert.equal(reentered.strongSince, null);
     assert.equal(reentered.strongSuccesses, 0);
   });
@@ -115,7 +113,7 @@ describe('pure cue domain policy', () => {
 
   test('admits due fragile cues independently and lets strong maintenance underfill its ceiling', () => {
     assert.ok(passingStrong.length >= 30 && passingStrong.length <= 90,
-      'a 30-day interval gives roughly a 1-in-90 daily chance across 5,000 independent cues');
+      'new strong cues have roughly a 1-in-90 daily chance across 5,000 independent cues');
     const failed = strongPool.find(item => !passingIds.has(item.id))!;
     assert.equal(selectStrong([failed]).length, 0, 'a large ceiling creates no entitlement');
     const selection = selectPureCuesForSession({
@@ -149,12 +147,28 @@ describe('pure cue domain policy', () => {
     assert.throws(() => selectStrong([], { learnerId: ' ' }), /learner id/);
   });
 
-  test('greater success and interval independently quiet maintenance without rerolling daily qualification', () => {
-    for (const change of [{ strongSuccesses: 1 }, { intervalHours: 1_440 }, { strongSuccesses: 9 }]) {
-      const selected = selectStrong(strongPool.map(item => ({ ...item, ...change })));
+  test('success count alone quiets maintenance without rerolling daily qualification', () => {
+    for (const strongSuccesses of [1, 9]) {
+      const selected = selectStrong(strongPool.map(item => ({ ...item, strongSuccesses })));
       assert.ok(selected.length < passingStrong.length, 'a quieter state removes some qualifying cues');
       assert.ok(selected.every(item => passingIds.has(item.id)), 'a quieter state cannot introduce qualifying cues');
+      if (strongSuccesses === 1) {
+        assert.ok(selected.length >= 12 && selected.length <= 45,
+          'one success gives roughly a 1-in-180 daily chance across 5,000 independent cues');
+      }
     }
+  });
+
+  test('dormant interval, ease, and due date do not influence strong qualification or ceiling selection', () => {
+    const changeLegacyFields = (item: PureCue, index: number): PureCue => ({
+      ...item, intervalHours: index % 2 ? 720 : 720_000, easeFactor: index % 2 ? 1.8 : 9,
+      nextDueAt: index % 2 ? '2027-01-01T00:00:00.000Z' : '2020-01-01T00:00:00.000Z',
+    });
+    assert.deepEqual(selectStrong(strongPool.map(changeLegacyFields)).map(item => item.id).sort(), [...passingIds].sort());
+    const candidates = passingStrong.slice(0, 4);
+    const options = { ordinaryReviewCount: 20, random: () => 0.5 };
+    assert.deepEqual(selectStrong(candidates.map(changeLegacyFields), options).map(item => item.id),
+      selectStrong(candidates, options).map(item => item.id));
   });
 
   test('strong assessments and tier entry have a seven-day quiet period', () => {
@@ -759,6 +773,37 @@ describe('pure cue persistence', { concurrency: false }, () => {
     assert.equal(Date.parse(result.scheduledCue.nextDueAt) - Date.parse(now), 6 * 60 * 60 * 1000);
     assert.deepEqual(dbModule.recordPureCueAssessment(input, () => 0.5), result);
     assert.throws(() => dbModule.recordPureCueAssessment({ ...input, reinforcementSkipped: false }), /covered assessment/);
+  });
+
+  test('clean strong commits advance count and recency once while preserving dormant SRS fields', () => {
+    const cueId = 'strong-maintenance-commit';
+    dbModule.createPureCueWithoutTransaction({
+      id: cueId, stimulus: 'maintenance fixture', acceptedWordIds: ['word-b', 'word-c'], createdAt: now,
+    });
+    publishFixture(cueId);
+    reviewMember('test-learner', 'word-b');
+    dbModule.adoptEligiblePureCuesForCurrentLearner(now);
+    sqlite.prepare(`UPDATE learner_pure_cue_state SET interval_hours = 1_234, ease_factor = 2.65,
+      next_due_at = '2027-01-01T00:00:00.000Z', last_studied_at = '2026-09-10T00:00:00.000Z',
+      strong_since = '2026-09-01T00:00:00.000Z', strong_successes = 7
+      WHERE learner_id = 'test-learner' AND pure_cue_id = ?`).run(cueId);
+    const before = dbModule.getPureCue(cueId)!;
+    const snapshot = dbModule.issuePureCueServedSnapshot({ pureCueId: cueId, servedAt: now });
+    const input = {
+      attemptId: 'strong-maintenance-attempt', snapshotId: snapshot.snapshotId,
+      sessionId: 'strong-maintenance-session', sessionActionId: cueId, committedAt: now,
+      events: [{ eventId: 'strong-maintenance-event', occurredAt: now, response: '说谎',
+        outcome: 'accepted' as const, submittedWordId: 'word-b', rating: 'easy' as const }],
+    };
+    const noFuzz = () => { throw new Error('Strong commit must not consume interval-fuzz randomness'); };
+    const result = dbModule.recordPureCueAssessment(input, noFuzz);
+    const expected = { ...before, lastStudiedAt: now, strongSuccesses: 8 };
+    assert.deepEqual(result.scheduledCue, expected);
+    assert.deepEqual(dbModule.getPureCue(cueId), expected);
+    assert.deepEqual(dbModule.recordPureCueAssessment(input, noFuzz), result);
+    assert.deepEqual(dbModule.getPureCue(cueId), expected);
+    assert.equal(sqlite.prepare(`SELECT COUNT(*) AS count FROM pure_cue_attempts
+      WHERE learner_id = 'test-learner' AND pure_cue_id = ?`).get(cueId)?.count, 1);
   });
 
 
