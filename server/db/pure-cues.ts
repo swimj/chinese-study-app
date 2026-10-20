@@ -446,7 +446,7 @@ export function selectStoredPureCuesForSession(input: {
   const resetUntil = new Map(restorations.map((row) => [row.pure_cue_id, dueAtWithResetDelay(row.restored_at)]));
   const eligible = rows.filter((row) => row.strong_since === null
     || !resetUntil.has(row.id) || resetUntil.get(row.id)! <= input.now);
-  return selectPureCuesForSession({ ...input, cues: eligible.map(mapPureCueRow) });
+  return selectPureCuesForSession({ ...input, learnerId: requireLearnerId(), cues: eligible.map(mapPureCueRow) });
 }
 
 export function issuePureCueServedSnapshot(

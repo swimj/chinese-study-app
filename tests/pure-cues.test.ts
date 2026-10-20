@@ -98,39 +98,100 @@ describe('pure cue domain policy', () => {
     assert.equal(reentered.strongSuccesses, 0);
   });
 
-  test('admits all due fragile cues and budgeted strong cues with recency and reciprocal weighting', () => {
+  const learnerId = 'maintenance-learner';
+  const strongPool = Array.from({ length: 5_000 }, (_, index) => cue({
+    id: `maintenance-${index}`, intervalHours: 720,
+    strongSince: '2026-08-01T00:00:00.000Z',
+    lastStudiedAt: '2026-09-10T00:00:00.000Z',
+    nextDueAt: '2027-01-01T00:00:00.000Z',
+  }));
+  function selectStrong(cues: readonly PureCue[], overrides: Partial<Parameters<typeof selectPureCuesForSession>[0]> = {}) {
+    return selectPureCuesForSession({
+      learnerId, cues, ordinaryReviewCount: strongPool.length * 10, now, random: () => 0, ...overrides,
+    }).strong;
+  }
+  const passingStrong = selectStrong(strongPool);
+  const passingIds = new Set(passingStrong.map(item => item.id));
+
+  test('admits due fragile cues independently and lets strong maintenance underfill its ceiling', () => {
+    assert.ok(passingStrong.length >= 30 && passingStrong.length <= 90,
+      'a 30-day interval gives roughly a 1-in-90 daily chance across 5,000 independent cues');
+    const failed = strongPool.find(item => !passingIds.has(item.id))!;
+    assert.equal(selectStrong([failed]).length, 0, 'a large ceiling creates no entitlement');
     const selection = selectPureCuesForSession({
+      learnerId,
       cues: [
         cue({ id: 'fragile-due' }),
         cue({ id: 'fragile-later', nextDueAt: '2026-09-19T00:00:00.000Z' }),
-        cue({ id: 'strong-fresh', strongSince: '2026-08-01T00:00:00.000Z', lastStudiedAt: '2026-09-17T23:00:00.000Z' }),
-        cue({ id: 'strong-zero', strongSince: '2026-08-01T00:00:00.000Z', strongSuccesses: 0 }),
-        cue({ id: 'strong-nine', strongSince: '2026-08-01T00:00:00.000Z', strongSuccesses: 9 }),
+        cue({ id: 'fragile-inactive', active: false }),
+        passingStrong[0]!, failed,
       ],
-      ordinaryReviewCount: 19,
-      now,
-      random: () => 0,
+      ordinaryReviewCount: 99, now, random: () => 0,
     });
-    assert.deepEqual(selection.fragile.map((item) => item.id), ['fragile-due']);
-    assert.deepEqual(selection.strong.map((item) => item.id), ['strong-nine', 'strong-zero']);
-    assert.deepEqual(selection.selected.map((item) => item.id), ['fragile-due', 'strong-nine', 'strong-zero']);
+    assert.deepEqual(selection.fragile.map(item => item.id), ['fragile-due']);
+    assert.deepEqual(selection.strong.map(item => item.id), [passingStrong[0]!.id]);
+    assert.equal(selection.strong[0]!.nextDueAt, '2027-01-01T00:00:00.000Z', 'strong due dates do not gate maintenance');
   });
 
-  test('rounds fractional budgets probabilistically without a minimum daily entitlement', () => {
-    const strong = Array.from({ length: 4 }, (_, index) => cue({
-      id: `strong-${index}`, intervalHours: 1000, strongSince: now,
-      nextDueAt: '2027-01-01T00:00:00.000Z',
-    }));
-    for (const [count, roll, expected] of [[0, 0, 0], [6, 0.59, 1], [6, 0.6, 0], [25, 0.49, 3], [25, 0.5, 2]]) {
-      const selected = selectPureCuesForSession({
-        cues: strong, ordinaryReviewCount: count!, now, random: () => roll!,
-      }).strong;
-      assert.equal(selected.length, expected);
-      assert.equal(new Set(selected.map((item) => item.id)).size, selected.length);
+  test('daily qualification cannot be rerolled by preparing sessions, pool changes, or review capacity', () => {
+    const expected = [...passingIds].sort();
+    for (const random of [() => 0, () => 0.5, () => 0.999999]) {
+      const selected = selectStrong([...strongPool].reverse(), {
+        now: '2026-09-18T23:59:59.999Z', ordinaryReviewCount: 100_000, random,
+      });
+      assert.deepEqual(selected.map(item => item.id).sort(), expected);
+    }
+    const failed = strongPool.find(item => !passingIds.has(item.id))!;
+    assert.deepEqual(selectStrong([failed], { ordinaryReviewCount: 100_000, random: () => 0 }).map(item => item.id), []);
+    assert.deepEqual(selectStrong([passingStrong[0]!, failed]).map(item => item.id), [passingStrong[0]!.id]);
+    assert.notDeepEqual(selectStrong(strongPool, { learnerId: 'another-learner' }).map(item => item.id).sort(), expected);
+    assert.notDeepEqual(selectStrong(strongPool, { now: '2026-09-19T00:00:00.000Z' }).map(item => item.id).sort(), expected);
+    assert.throws(() => selectStrong([], { learnerId: ' ' }), /learner id/);
+  });
+
+  test('greater success and interval independently quiet maintenance without rerolling daily qualification', () => {
+    for (const change of [{ strongSuccesses: 1 }, { intervalHours: 1_440 }, { strongSuccesses: 9 }]) {
+      const selected = selectStrong(strongPool.map(item => ({ ...item, ...change })));
+      assert.ok(selected.length < passingStrong.length, 'a quieter state removes some qualifying cues');
+      assert.ok(selected.every(item => passingIds.has(item.id)), 'a quieter state cannot introduce qualifying cues');
     }
   });
 
-  test('reentry resets strong weight and a repeated accepted member remains successful', () => {
+  test('strong assessments and tier entry have a seven-day quiet period', () => {
+    const eligible = passingStrong[0]!;
+    for (const recent of [
+      { lastStudiedAt: '2026-09-17T00:00:00.000Z' },
+      { lastStudiedAt: '2026-09-11T00:00:00.001Z' },
+      { lastStudiedAt: null, strongSince: '2026-09-11T00:00:00.001Z' },
+    ]) {
+      assert.deepEqual(selectStrong([{ ...eligible, ...recent }]), []);
+    }
+    for (const boundary of [
+      { lastStudiedAt: '2026-09-11T00:00:00.000Z' },
+      { lastStudiedAt: null, strongSince: '2026-09-11T00:00:00.000Z' },
+    ]) {
+      assert.deepEqual(selectStrong([{ ...eligible, ...boundary }]).map(item => item.id), [eligible.id]);
+    }
+    assert.deepEqual(selectStrong([{ ...eligible, active: false }]), []);
+  });
+
+  test('rounds only the outer ceiling probabilistically and samples qualifying cues uniformly without replacement', () => {
+    const strong = passingStrong.slice(0, 4);
+    for (const [count, roll, expected] of [[0, 0, 0], [6, 0.59, 1], [6, 0.6, 0], [25, 0.49, 3], [25, 0.5, 2]]) {
+      const selected = selectStrong(strong, { ordinaryReviewCount: count!, random: () => roll! });
+      assert.equal(selected.length, expected);
+      assert.equal(new Set(selected.map(item => item.id)).size, selected.length);
+    }
+    const stillPassing = selectStrong(strongPool.map(item => ({ ...item, strongSuccesses: 9 })));
+    assert.ok(stillPassing.length >= 2, 'fixture pool supplies cues qualifying even after nine successes');
+    const [first, second] = stillPassing.sort((a, b) => a.id.localeCompare(b.id));
+    const mixedSuccesses = [first!, { ...second!, strongSuccesses: 0 }];
+    assert.equal(selectStrong(mixedSuccesses, { ordinaryReviewCount: 10, random: () => 0.25 })[0]!.id, first!.id,
+      'success affects qualification, not a second relative weight at the ceiling');
+    assert.equal(selectStrong(mixedSuccesses, { ordinaryReviewCount: 10, random: () => 0.75 })[0]!.id, second!.id);
+  });
+
+  test('reentry resets strong success count and a repeated accepted member remains successful', () => {
     const reentered = schedulePureCueAssessment(cue({ intervalHours: 300, strongSuccesses: 9 }),
       { failureCount: 0, terminalRating: 'good' }, now, () => 0.5);
     assert.equal(reentered.strongSince, now);

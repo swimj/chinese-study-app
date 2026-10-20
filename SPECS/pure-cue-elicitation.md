@@ -75,17 +75,31 @@ recovery requires three consecutive successful responses. Reinforcement is
 part of the same assessment, not additional budget or growth credit.
 
 Crossing a 720-hour interval enters the strong tier with `strongSuccesses = 0`.
-Strong cues are sampled independently of due date, with a six-hour exclusion
-after their last study. Each successful completed strong assessment increments
-the counter once. A lapse exits the strong tier; later reentry resets it.
+Strong cues receive occasional maintenance independently of due date. After a
+seven-day quiet period following their last study, each cue has an independent
+daily inclusion probability of `24 / (3 * intervalHours * (1 + strongSuccesses))`.
+For example, a 30-day interval with zero strong successes gives a 1-in-90 daily
+chance after the quiet period. Longer intervals and more demonstrated successes
+reduce that cue's absolute chance, even when it is the only strong cue available.
+Each successful completed strong assessment increments the counter once and
+restarts the quiet period. A lapse exits the strong tier; later reentry resets
+the counter.
 
-For N admitted ordinary review items, including due fragile pure cues but
+The daily draw is stable for the learner, cue, and UTC date. Preparing additional
+sessions that day does not grant additional chances. The policy uses existing
+scheduler state and requires no persisted daily lottery or missed-review debt.
+There is no maximum wait or date on which maintenance becomes mandatory.
+
+For N ordinary review candidates, including due fragile pure cues but
 excluding strong cues, reinforcement, learning, and new-word work, allocate
 `floor(N / 10)` strong slots plus one with probability `(N % 10) / 10`.
-Sample eligible strong cues without replacement with weight
-`1 / (1 + strongSuccesses)`, capped by available candidates. This is a
-per-payload proportional policy, not a daily entitlement or debt. Interleave
-the resulting cards with ordinary review rather than frontloading them.
+This is an outer ceiling: sample uniformly without replacement from cues that
+passed their independent daily draw, leaving unused capacity empty. For example,
+20 ordinary reviews permit at most two strong cues; zero passing cues means zero
+strong reviews. This is a per-payload proportional ceiling, not a daily
+entitlement or debt. Interleave the resulting cards with ordinary review rather
+than frontloading them. The overall session item limit may further trim this
+combined review inventory.
 
 The frontend owns covering, reinforcement, drain, and Undo. A covered pure-cue
 assessment uses its own deferred commit intent, independent attempt history,

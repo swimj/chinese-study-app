@@ -14,7 +14,7 @@ export const PURE_CUE_LAPSE_INTERVAL_HOURS = 6;
 /** Same length as a lapse reset: new adoptions and compensated production due dates. */
 export const PURE_CUE_DUE_DELAY_HOURS = PURE_CUE_LAPSE_INTERVAL_HOURS;
 export const PURE_CUE_STRONG_INTERVAL_HOURS = 720;
-export const PURE_CUE_STRONG_RECENCY_HOURS = 6;
+export const PURE_CUE_STRONG_RECENCY_HOURS = 7 * 24;
 
 export type PureCueRating = 'forgot' | 'hard' | 'good' | 'easy';
 export type PureCueAttemptOutcome = 'accepted' | 'rejected';
@@ -130,16 +130,19 @@ export function schedulePureCueAssessment(
 }
 
 export function selectPureCuesForSession({
+  learnerId,
   cues,
   ordinaryReviewCount,
   now,
   random = Math.random,
 }: {
+  learnerId: string;
   cues: readonly PureCue[];
   ordinaryReviewCount: number;
   now: string;
   random?: () => number;
 }): PureCueSelection {
+  if (!learnerId.trim()) throw new Error('Pure cue selection requires a learner id.');
   assertNonNegativeInteger(ordinaryReviewCount, 'Ordinary review count');
   assertCanonicalIsoTimestamp(now, 'Pure cue selection clock');
 
@@ -147,7 +150,8 @@ export function selectPureCuesForSession({
     .filter((cue) => cue.active && cue.strongSince === null && cue.nextDueAt <= now)
     .sort(comparePureCues);
   const strongCandidates = cues
-    .filter((cue) => cue.active && cue.strongSince !== null && isOutsideStrongRecency(cue, now))
+    .filter((cue) => cue.active && cue.strongSince !== null && isOutsideStrongRecency(cue, now)
+      && strongCueDailyRoll(learnerId, cue.id, now) < 24 / (3 * cue.intervalHours * (1 + cue.strongSuccesses)))
     .sort(comparePureCues);
   const rawStrongSlots = (ordinaryReviewCount + fragile.length) / 10;
   let strongSlots = Math.floor(rawStrongSlots);
@@ -244,25 +248,28 @@ function sampleStrongCuesWithoutReplacement(
   const remaining = [...candidates];
   const selected: PureCue[] = [];
   while (selected.length < count) {
-    const totalWeight = remaining.reduce((total, cue) => total + 1 / (1 + cue.strongSuccesses), 0);
-    let cursor = sampleUnitInterval(random) * totalWeight;
-    let selectedIndex = remaining.length - 1;
-    for (const [index, cue] of remaining.entries()) {
-      cursor -= 1 / (1 + cue.strongSuccesses);
-      if (cursor < 0) {
-        selectedIndex = index;
-        break;
-      }
-    }
+    const selectedIndex = Math.floor(sampleUnitInterval(random) * remaining.length);
     selected.push(remaining.splice(selectedIndex, 1)[0]!);
   }
   return selected;
 }
 
 function isOutsideStrongRecency(cue: PureCue, now: string): boolean {
-  if (cue.lastStudiedAt === null) return true;
-  return Date.parse(now) - Date.parse(cue.lastStudiedAt)
+  return Date.parse(now) - Date.parse(cue.lastStudiedAt ?? cue.strongSince!)
     >= PURE_CUE_STRONG_RECENCY_HOURS * 60 * 60 * 1_000;
+}
+
+/** Stable per learner/cue/UTC day, so preparing more sessions cannot reroll eligibility. */
+function strongCueDailyRoll(learnerId: string, cueId: string, now: string): number {
+  const seed = JSON.stringify(['strong-pure-cue-maintenance-v1', learnerId, cueId, now.slice(0, 10)]);
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < seed.length; index += 1) {
+    hash = Math.imul(hash ^ seed.charCodeAt(index), 0x01000193);
+  }
+  // Mix the full seed before scaling; neighboring dates/IDs should have unrelated rolls.
+  hash = Math.imul(hash ^ (hash >>> 16), 0x85ebca6b);
+  hash = Math.imul(hash ^ (hash >>> 13), 0xc2b2ae35);
+  return ((hash ^ (hash >>> 16)) >>> 0) / 0x100000000;
 }
 
 function comparePureCues(left: PureCue, right: PureCue): number {
