@@ -159,7 +159,8 @@ export function restorePureCueSchedulerSnapshotWithoutTransaction(input: {
     SET interval_hours = ?, ease_factor = ?, last_studied_at = ?, next_due_at = ?,
       strong_since = ?, strong_successes = ? WHERE learner_id = ? AND pure_cue_id = ?`)
     .run(state.intervalHours, state.easeFactor, state.lastStudiedAt,
-      dueAtWithResetDelay(input.restoredAt, state.nextDueAt), state.strongSince, state.strongSuccesses,
+      state.strongSince === null ? dueAtWithResetDelay(input.restoredAt, state.nextDueAt) : state.nextDueAt,
+      state.strongSince, state.strongSuccesses,
       learnerId, row.pure_cue_id);
   if (updated.changes !== 1) throw new Error('Pure cue scheduler state is unavailable.');
   const marked = getDb().prepare(`UPDATE pure_cue_assessment_scheduler_snapshots
@@ -446,7 +447,7 @@ export function selectStoredPureCuesForSession(input: {
   const resetUntil = new Map(restorations.map((row) => [row.pure_cue_id, dueAtWithResetDelay(row.restored_at)]));
   const eligible = rows.filter((row) => row.strong_since === null
     || !resetUntil.has(row.id) || resetUntil.get(row.id)! <= input.now);
-  return selectPureCuesForSession({ ...input, cues: eligible.map(mapPureCueRow) });
+  return selectPureCuesForSession({ ...input, learnerId: requireLearnerId(), cues: eligible.map(mapPureCueRow) });
 }
 
 export function issuePureCueServedSnapshot(
@@ -575,21 +576,28 @@ export function recordPureCueAssessmentWithoutTransaction(
       VALUES (?, ?, ?, ?, ?)`)
       .run(learnerId, input.attemptId, cue.id, input.committedAt, JSON.stringify(state));
   }
-  getDb().prepare(`
-    UPDATE learner_pure_cue_state
-    SET interval_hours = ?, ease_factor = ?, last_studied_at = ?, next_due_at = ?,
-        strong_since = ?, strong_successes = ?
-    WHERE learner_id = ? AND pure_cue_id = ?
-  `).run(
-    scheduledCue.intervalHours,
-    scheduledCue.easeFactor,
-    scheduledCue.lastStudiedAt,
-    scheduledCue.nextDueAt,
-    scheduledCue.strongSince,
-    scheduledCue.strongSuccesses,
-    learnerId,
-    cue.id,
-  );
+  if (cue.strongSince !== null && summary.failureCount === 0) {
+    getDb().prepare(`UPDATE learner_pure_cue_state
+      SET last_studied_at = ?, strong_successes = ?
+      WHERE learner_id = ? AND pure_cue_id = ?`)
+      .run(scheduledCue.lastStudiedAt, scheduledCue.strongSuccesses, learnerId, cue.id);
+  } else {
+    getDb().prepare(`
+      UPDATE learner_pure_cue_state
+      SET interval_hours = ?, ease_factor = ?, last_studied_at = ?, next_due_at = ?,
+          strong_since = ?, strong_successes = ?
+      WHERE learner_id = ? AND pure_cue_id = ?
+    `).run(
+      scheduledCue.intervalHours,
+      scheduledCue.easeFactor,
+      scheduledCue.lastStudiedAt,
+      scheduledCue.nextDueAt,
+      scheduledCue.strongSince,
+      scheduledCue.strongSuccesses,
+      learnerId,
+      cue.id,
+    );
+  }
   const consumed = getDb().prepare(`
     UPDATE pure_cue_served_snapshots
     SET consumed_attempt_id = ?, consumed_at = ?

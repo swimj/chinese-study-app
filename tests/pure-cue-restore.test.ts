@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { after, before, test } from 'node:test';
-import type { PureCueAssessmentEvent } from '../src/domain/pure-cues.ts';
+import { selectPureCuesForSession, type PureCueAssessmentEvent } from '../src/domain/pure-cues.ts';
 
 const now = '2026-09-18T00:00:00.000Z';
 let dataDir: string;
@@ -67,10 +67,30 @@ function authorize(id: string, attemptId: string, cueId: string): void {
     .run(id, now, JSON.stringify({ operation: { sourceAttemptId: attemptId, pureCueId: cueId } }), now);
 }
 
+// Find a cue that passes the daily maintenance gate using the actual restored
+// state. Admission then proves the restoration delay rather than a lucky draw.
+function qualifyingRestorationId(prefix: string): string {
+  for (let index = 0; index < 10_000; index += 1) {
+    const id = `${prefix}-${index}`;
+    const selected = selectPureCuesForSession({
+      learnerId: 'restore-learner', ordinaryReviewCount: 10, now, random: () => 0,
+      cues: [{
+        kind: 'pure', id, stimulus: 'to tell an untruth', axisNote: '', teachingNote: '',
+        acceptedWordIds: ['a', 'b'], active: true, intervalHours: 900, easeFactor: 2.65,
+        lastStudiedAt: '2026-09-10T00:00:00.000Z', nextDueAt: now,
+        strongSince: '2026-09-01T00:00:00.000Z', strongSuccesses: 7,
+      }],
+    });
+    if (selected.strong.length === 1) return id;
+  }
+  throw new Error('Fixture search did not find a qualifying restored strong cue');
+}
+
 test('restores the whole pre-lapse cue schedule once despite invalid reinforcement; preserves history and owner boundary', () => {
-  const sourceAttemptId = fixture('restore');
-  assert.equal(db.getPureCue('restore')?.strongSince, null);
-  authorize('restore-op', sourceAttemptId, 'restore');
+  const cueId = qualifyingRestorationId('restore');
+  const sourceAttemptId = fixture(cueId);
+  assert.equal(db.getPureCue(cueId)?.strongSince, null);
+  authorize('restore-op', sourceAttemptId, cueId);
   const input = { sourceAttemptId, compensationInvocationId: 'restore-op', restoredAt: '2026-09-18T02:00:00.000Z' };
   const history = sqlite.prepare('SELECT * FROM pure_cue_attempts').all();
   getDb().exec('BEGIN');
@@ -80,18 +100,18 @@ test('restores the whole pre-lapse cue schedule once despite invalid reinforceme
   assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM learner_exercise_compensation_days').get()?.n, 0);
   const result = db.restorePureCueSchedulerSnapshotWithoutTransaction(input);
   assert.equal(result.kind, 'restored');
-  const cue = db.getPureCue('restore')!;
+  const cue = db.getPureCue(cueId)!;
   assert.deepEqual([cue.intervalHours, cue.easeFactor, cue.strongSince, cue.strongSuccesses, cue.lastStudiedAt, cue.nextDueAt],
-    [900, 2.65, '2026-09-01T00:00:00.000Z', 7, '2026-09-10T00:00:00.000Z', '2026-09-18T08:00:00.000Z']);
+    [900, 2.65, '2026-09-01T00:00:00.000Z', 7, '2026-09-10T00:00:00.000Z', now]);
   assert.equal(db.restorePureCueSchedulerSnapshotWithoutTransaction({ ...input,
     restoredAt: '2026-09-20T02:00:00.000Z' }).kind, 'already_restored');
-  assert.deepEqual(db.getPureCue('restore'), cue);
+  assert.deepEqual(db.getPureCue(cueId), cue);
   assert.deepEqual(sqlite.prepare('SELECT learner_id, day_key, compensated_count FROM learner_exercise_compensation_days').all()
     .map(row => ({ ...row })), [{ learner_id: 'restore-learner', day_key: '2026-09-18', compensated_count: 1 }]);
   assert.equal(db.selectStoredPureCuesForSession({ ordinaryReviewCount: 10,
-    now: '2026-09-18T07:59:00.000Z' }).selected.some(item => item.id === 'restore'), false);
+    now: '2026-09-18T07:59:00.000Z' }).selected.some(item => item.id === cueId), false);
   assert.equal(db.selectStoredPureCuesForSession({ ordinaryReviewCount: 10,
-    now: '2026-09-18T08:00:00.000Z' }).selected.some(item => item.id === 'restore'), true);
+    now: '2026-09-18T08:00:00.000Z' }).selected.some(item => item.id === cueId), true);
   assert.deepEqual(sqlite.prepare('SELECT * FROM pure_cue_attempts').all(), history);
   assert.throws(() => db.runWithLearnerId('other', () => db.restorePureCueSchedulerSnapshotWithoutTransaction(input)), /current learner/);
 });
@@ -106,13 +126,14 @@ for (const scenario of [
     t.mock.timers.enable({ apis: ['Date'], now: new Date(restoredAt) });
     // Isolate sampling from cues created by earlier tests.
     sqlite.prepare(`UPDATE learner_pure_cue_state SET strong_since = NULL, next_due_at = '2027-01-01T00:00:00.000Z'`).run();
-    const sourceAttemptId = fixture(scenario.id, false, scenario);
-    authorize(`op-${scenario.id}`, sourceAttemptId, scenario.id);
+    const cueId = scenario.strong ? qualifyingRestorationId(scenario.id) : scenario.id;
+    const sourceAttemptId = fixture(cueId, false, scenario);
+    authorize(`op-${scenario.id}`, sourceAttemptId, cueId);
     db.restorePureCueSchedulerSnapshotWithoutTransaction({ sourceAttemptId,
       compensationInvocationId: `op-${scenario.id}`, restoredAt });
 
     // A due fragile control both proves composition works and supplies a strong
-    // sampling slot with random=0, so absence cannot be a sampling false positive.
+    // ceiling slot with random=0; the strong fixture already passes its daily gate.
     const controlId = `control-${scenario.id}`;
     fixture(controlId);
     sqlite.prepare(`UPDATE learner_pure_cue_state SET next_due_at = ? WHERE pure_cue_id = ?`)
@@ -122,7 +143,7 @@ for (const scenario of [
       const items = db.getSessionPayload(at.slice(0, 10), { random: () => 0 }).buckets.review;
       const cueIds = items.flatMap(item => item.itemType === 'pure_cue_production' ? [item.snapshot.pureCueId] : []);
       assert.ok(cueIds.includes(controlId), 'due control must be served');
-      assert.equal(cueIds.includes(scenario.id), expected, `restored cue admission at ${at}`);
+      assert.equal(cueIds.includes(cueId), expected, `restored cue admission at ${at}`);
     };
     assertAdmission(restoredAt, false);
     assertAdmission(new Date(new Date(scenario.deadline).getTime() - 1).toISOString(), false);
