@@ -1,17 +1,15 @@
 # Hosted observability
 
-This runbook owns the first production performance-observability surface for
-the hosted beta. The view is Fly's managed Grafana, separate from the learner
-application and protected by Fly organization access. The application exposes
-content-free Prometheus metrics only on the private metrics listener; it does
-not add an `/admin` route, a learner-facing page, or a public `/metrics`
-endpoint.
+This runbook helps operators configure private metrics, open the hosted
+performance dashboard, and investigate latency. Fly's managed Grafana is
+protected by Fly organization access, separate from the application's
+[operator panel](../operator-panel.md). The application exposes content-free
+Prometheus metrics on a private listener, without a public `/metrics` endpoint.
 
-The initial slice is deliberately small. It is intended to identify where
-hosted latency is being introduced and to provide a stable seam for adding
-deeper measurements after a hotspot is observed. It does not introduce a
-second telemetry vendor, distributed tracing, long-retention analytics, or
-large-scale alerting infrastructure.
+Start with a representative slow action and compare the dashboard's request,
+process, and storage measurements. These measurements help locate a hotspot
+before adding deeper instrumentation; they do not provide distributed tracing
+or long-retention analytics.
 
 A separate operator **usage pulse** page (`#operator-usage`, gated by
 `APP_OPERATOR_CLERK_USER_IDS`) provides content-free cohort product-usage
@@ -122,14 +120,17 @@ failed write of each UTC day, the application removes valid records older than
 30 days. Malformed lines are preserved for manual diagnosis rather than silently
 discarded.
 
-## Deploy and open the admin view
+<a id="deploy-and-open-the-admin-view"></a>
 
-Merging this change does not alter the running Fly app. The repository has no
-automatic Fly deployment workflow, and the ignored generated Fly configuration
-does not update when its tracked template changes.
+## Configure metrics and open Grafana
 
-When the operator is ready to activate observability, update
-`deploy/fly/.generated/fly.toml` from the tracked template while preserving its
+Merging metrics code or configuration changes does not deploy them. The
+repository has no automatic Fly deployment workflow, and the ignored generated
+Fly configuration does not update when its tracked template changes.
+
+To enable or verify metrics collection, compare
+`deploy/fly/.generated/fly.toml` with the
+[tracked template](../../deploy/fly/fly.template.toml). When updating it, preserve
 app-specific values, including the live Machine memory setting. Confirm it
 contains both `APP_METRICS_PORT = "9091"` and:
 
@@ -150,7 +151,8 @@ is not declared as an HTTP service, so the Fly proxy does not publish it. Fly's
 metrics collector scrapes it every 15 seconds. The learner application remains
 on port 5174.
 
-Deploy through the normal hosted release runbook. Then:
+Deploy configuration changes through the
+[hosted release runbook](hosted-beta-deployment.md). To open the dashboard:
 
 1. Sign in to [Fly managed Grafana](https://fly-metrics.net) with an account
    that has access to the Fly organization.
