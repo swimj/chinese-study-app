@@ -1300,6 +1300,9 @@ describe('session completion', { concurrency: false }, () => {
       insertWordSkillState(wordId, 'production', {
         intervalHours: 24, easeFactor: 2.5, lastStudiedAt: isoHoursAgo(48), nextDueAt: isoHoursAgo(1),
       });
+      if (voted) insertWordSkillState(wordId, 'recognition', {
+        intervalHours: 24, easeFactor: 2.5, lastStudiedAt: isoHoursAgo(48), nextDueAt: isoHoursAgo(1),
+      });
       const target = { kind: 'definition_fallback' as const, wordId,
         expected: { promptText: 'word', displayedMeanings: [] as string[] } };
       const quality = dbModule.recordContentQualityEncounter(target, `${wordId}-encounter`);
@@ -1320,6 +1323,11 @@ describe('session completion', { concurrency: false }, () => {
     assert.deepEqual(productionIds(), []);
     t.mock.timers.setTime(Date.parse('2026-10-21T12:00:00.000Z') + 7 * 3600000);
     assert.deepEqual(productionIds(), []);
+    assert.ok(dbModule.getSessionPayload(studyDayKey).buckets.review.some((item) =>
+      item.targetWordId === 'correct-unhelpful' && item.actionKind === 'recognition'));
+    // Isolate production eligibility from the more overdue sibling skill's selection priority.
+    sqlite.prepare("UPDATE word_skill_state SET enabled = 0 WHERE word_id = ? AND skill_id = 'recognition'")
+      .run('correct-unhelpful');
     t.mock.timers.setTime(Math.max(...states.map((state) => Date.parse(state.nextDueAt!))) + 1);
     assert.deepEqual(productionIds(), ['correct-unhelpful', 'correct-unrated']);
   });
