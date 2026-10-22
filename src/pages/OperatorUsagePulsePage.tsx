@@ -92,10 +92,14 @@ function UsagePulsePanel() {
     <section>
       <h2>Usage pulse</h2>
       <p className="notes">
-        Operator-only cohort view. Historical days are daily snapshots; today is live.
+        Operator-only cohort view. Days use UTC. Historical days are daily snapshots; today is live.
         Mean stash is as-of each snapshot&apos;s capture time.
       </p>
       <details><summary>Metric definitions</summary><p className="notes">
+        New words counts accepted first-study transitions on their UTC commit day, including
+        accepted words in unfinished sessions. Repeated Practice adds no new words.
+        Historical new-word totals are reconstructed; older intake without a timestamped
+        transition retains its original study-day attribution.
         Practice sums recorded correct-day gains in completed sessions. Missing counts
         contribute zero, so Practice is a lower bound when records are missing. Review correct and wrong count completed
         exercises without and with a lapse, including contrast and pure cues; reinforcement attempts

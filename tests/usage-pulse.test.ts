@@ -227,6 +227,119 @@ describe('usage pulse snapshots', { concurrency: false }, () => {
     assert.equal(totals.meanStashSize, 0.75);
   });
 
+  test('attributes three evening EDT new words to their UTC commit day, not the admission day', (t) => {
+    // Production-shaped case: Oct 21, 9 p.m. EDT is Oct 22 UTC. Admission
+    // uses the client's local study day; Usage displays UTC calendar days.
+    t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-22T01:07:31.534Z') });
+    const admissionDay = '2026-10-21';
+    const reportingDay = '2026-10-22';
+    usagePulse.captureUsagePulseDay({ dayKey: admissionDay });
+    usagePulse.captureUsagePulseDay({ dayKey: reportingDay });
+    const savedCapture = usagePulse.listUsageDailySnapshots([admissionDay])[0]!.capturedAt;
+    dbModule.runWithLearnerId('learner-a', () => {
+      for (const id of ['evening-a', 'evening-b', 'evening-c']) {
+        insertLexicalWord(id);
+        dbModule.completeUnstudiedWordSession(id, admissionDay, 'evening');
+        // A retry returns the existing transition and contributes no new intake.
+        dbModule.completeUnstudiedWordSession(id, admissionDay, 'evening');
+      }
+      insertSessionSummary({ sessionId: 'evening', dayKey: reportingDay,
+        completedAt: '2026-10-22T02:12:41.686Z', activeDurationMs: 1000 });
+      getDb().prepare(`UPDATE review_session_summaries SET learning_completed_count = 11
+        WHERE session_id = 'evening'`).run();
+      assert.equal(getDb().prepare(`SELECT new_study_count FROM daily_new_word_intake WHERE day_key = ?`)
+        .get(admissionDay)?.new_study_count, 3);
+      assert.equal(getDb().prepare(`SELECT new_study_count FROM daily_new_word_intake WHERE day_key = ?`)
+        .get(reportingDay), undefined);
+    });
+    const today = usagePulse.computeUsagePulseDay({ dayKey: reportingDay });
+    assert.equal(today.newWords, 3);
+    assert.equal(today.sessionsCompleted, 1);
+    assert.equal(today.practiceCompleted, 11);
+    assert.equal(usagePulse.computeUsagePulseDay({ dayKey: admissionDay }).newWords, 0);
+    assert.equal(usagePulse.listUsageDailySnapshots([reportingDay])[0]?.newWords, 3);
+
+    // The three new words remain three after later Practice.
+    t.mock.timers.setTime(new Date('2026-10-23T16:00:00.000Z').getTime());
+    dbModule.runWithLearnerId('learner-a', () => {
+      dbModule.completeLearningWordSession('evening-a', true, 'later-practice', '2026-10-23');
+    });
+    assert.equal(usagePulse.computeUsagePulseDay({ dayKey: reportingDay }).newWords, 3);
+    assert.equal(usagePulse.computeUsagePulseDay({ dayKey: '2026-10-23' }).newWords, 0);
+
+    // Reading an old snapshot repairs this metric without changing capture-time data.
+    getDb().prepare(`UPDATE usage_daily_snapshots SET new_words = 3, mean_stash_size = 42 WHERE day_key = ?`)
+      .run(admissionDay);
+    const historical = usagePulse.listUsageDailySnapshots([admissionDay])[0]!;
+    assert.equal(historical.newWords, 0);
+    assert.equal(historical.capturedAt, savedCapture);
+    assert.equal(historical.meanStashSize, 42);
+    assert.equal(getDb().prepare('SELECT new_words FROM usage_daily_snapshots WHERE day_key = ?')
+      .get(admissionDay)?.new_words, 3);
+    const pulse = usagePulse.getUsagePulse({ now: new Date('2026-10-23T18:00:00.000Z'), windowDays: 2 });
+    assert.deepEqual(pulse.days.map((day) => day.newWords), [0, 3]);
+  });
+
+  test('keeps same-day and midnight events once each, with learner-scoped legacy residual counts', (t) => {
+    t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-01T17:00:00.000Z') });
+    dbModule.runWithLearnerId('learner-a', () => {
+      insertLexicalWord('normal-day');
+      dbModule.completeUnstudiedWordSession('normal-day', '2026-11-01', 'normal-session');
+      // A sessionless legacy commit has intake evidence but no outcome timestamp.
+      insertLexicalWord('legacy-day');
+      dbModule.completeUnstudiedWordSession('legacy-day', '2026-11-01');
+      t.mock.timers.setTime(new Date('2026-11-01T23:59:59.999Z').getTime());
+      insertLexicalWord('before-midnight');
+      dbModule.completeUnstudiedWordSession('before-midnight', '2026-11-01', 'midnight-session');
+      t.mock.timers.setTime(new Date('2026-11-02T00:00:00.000Z').getTime());
+      insertLexicalWord('at-midnight');
+      dbModule.completeUnstudiedWordSession('at-midnight', '2026-11-01', 'midnight-session');
+      insertSessionSummary({ sessionId: 'midnight-session', dayKey: '2026-11-02',
+        completedAt: '2026-11-02T00:10:00.000Z', activeDurationMs: 1000 });
+    });
+    dbModule.runWithLearnerId('learner-b', () => {
+      // Same lexical identity for another learner is a separate new-word event.
+      dbModule.completeUnstudiedWordSession('at-midnight', '2026-11-01', 'midnight-session');
+      insertNewWordIntake('2026-11-01', 3); // two older, untimestamped contributions
+    });
+    assert.equal(usagePulse.computeUsagePulseDay({ dayKey: '2026-10-31' }).newWords, 0);
+    assert.equal(usagePulse.computeUsagePulseDay({ dayKey: '2026-11-01' }).newWords, 5);
+    assert.equal(usagePulse.computeUsagePulseDay({ dayKey: '2026-11-02' }).newWords, 2);
+    assert.equal(usagePulse.computeUsagePulseDay({ dayKey: '2026-11-03' }).newWords, 0);
+    usagePulse.captureUsagePulseDay({ dayKey: '2026-11-01' });
+    usagePulse.captureUsagePulseDay({ dayKey: '2026-11-02' });
+    assert.deepEqual(usagePulse.listUsageDailySnapshots(['2026-11-01', '2026-11-02'])
+      .map((day) => day.newWords), [5, 2]);
+  });
+
+  test('counts a final new word only after acceptance, including closure across UTC midnight', async (t) => {
+    const { stageSessionCompletion, undoSessionCompletion, closeSessionCompletion } =
+      await import('../server/db/session-completion.ts');
+    const stagedAt = '2026-12-01T23:59:55.000Z';
+    const closedAt = '2026-12-02T00:00:10.000Z';
+    t.mock.timers.enable({ apis: ['Date'], now: new Date(stagedAt) });
+    dbModule.runWithLearnerId('learner-a', () => {
+      const stage = (id: string) => {
+        insertLexicalWord(id);
+        return stageSessionCompletion(id, {
+          revisionId: 'r1', startedAt: '2026-12-01T23:50:00.000Z', studyDayKey: '2026-12-01',
+          summary: { completedAt: stagedAt, completedReviewActionCount: 0,
+            failedReviewActionCount: 0, activeDurationMs: 1000 },
+          pendingCommit: { type: 'commit-unstudied-word-session', wordId: id }, reflectionEvidence: null,
+        }, stagedAt);
+      };
+      assert.equal(stage('usage-undo').report.newWords.length, 1);
+      assert.equal(usagePulse.computeUsagePulseDay({ dayKey: '2026-12-01' }).newWords, 0);
+      undoSessionCompletion('usage-undo', 'r1', stagedAt);
+      assert.equal(stage('usage-final').report.newWords.length, 1);
+      t.mock.timers.setTime(new Date(closedAt).getTime());
+      closeSessionCompletion('usage-final', 'r1', closedAt);
+      closeSessionCompletion('usage-final', 'r1', closedAt);
+    });
+    assert.equal(usagePulse.computeUsagePulseDay({ dayKey: '2026-12-01' }).newWords, 0);
+    assert.equal(usagePulse.computeUsagePulseDay({ dayKey: '2026-12-02' }).newWords, 1);
+  });
+
   test('counts proposal acceptance events by creation day regardless of application state', () => {
     const dayKey = '2026-10-03';
     dbModule.runWithLearnerId('learner-a', () => {

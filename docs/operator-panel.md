@@ -54,6 +54,22 @@ reinforcement after a lapse adds no exercise and does not turn that exercise int
 a correct review. These counts and total active session time come from completed
 session summaries; work in incomplete sessions is not included.
 
+**New words** counts accepted `unstudied → learning` transitions on the UTC day
+of their persisted commit timestamp. Opening a teaching package, previewing an
+undoable final action, and repeating Practice do not add new words. Accepted
+word transitions can count before the containing session finishes. The daily
+admission counter uses the client's study-day key, which can differ from the
+UTC reporting date; Usage reattributes timestamped transitions without changing
+admission or scheduling. The word snapshot saved with each transition retains
+the admission key used for that counter, so Usage can remove its original
+contribution before adding it to the reporting day.
+
+Legacy or sessionless intake without a timestamped word outcome retains its
+count under the original admission key. Its exact UTC attribution cannot be
+reconstructed. Historical **New words** totals are reconstructed when read,
+including saved snapshots that originally counted admission keys as UTC dates.
+Capture-time metrics such as **Mean stash** retain their saved values.
+
 **Proposals accepted** counts durable proposal-acceptance invocations on their UTC
 creation day, including exact and revised acceptances, regardless of later
 application outcome or withdrawn authorization. Manual operations and replacement

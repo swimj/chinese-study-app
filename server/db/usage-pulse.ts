@@ -101,11 +101,7 @@ export function computeUsagePulseDay(input: {
     WHERE day_key = ?
   `).get(dayKey) as { value: number };
 
-  const newWordsRow = getDb().prepare(`
-    SELECT COALESCE(SUM(new_study_count), 0) AS value
-    FROM learner_owned_daily_new_word_intake
-    WHERE day_key = ?
-  `).get(dayKey) as { value: number };
+  const newWords = getUsageNewWordsByDay([dayKey]).get(dayKey) ?? 0;
 
   const totals = getDb().prepare(`
     SELECT COALESCE(SUM(completed_count - failed_count), 0) AS review_correct,
@@ -195,7 +191,7 @@ export function computeUsagePulseDay(input: {
     capturedAt,
     dau: Number(dauRow.value),
     sessionsCompleted: Number(sessionsCompletedRow.value),
-    newWords: Number(newWordsRow.value),
+    newWords,
     practiceCompleted: totals.practice_completed,
     reviewCorrect: totals.review_correct,
     reviewWrong: totals.review_wrong,
@@ -291,7 +287,42 @@ export function listUsageDailySnapshots(dayKeys: readonly string[]): UsageDailyS
     WHERE day_key IN (${placeholders})
     ORDER BY day_key ASC
   `).all(...dayKeys) as SnapshotRow[];
-  return rows.map(mapSnapshotRow);
+  // Saved intake-based totals can have put a transition on the wrong reporting day.
+  // Reconstruct only this metric; capture-time metrics such as stash stay frozen.
+  const newWords = getUsageNewWordsByDay(dayKeys);
+  return rows.map((row) => ({ ...mapSnapshotRow(row), newWords: newWords.get(row.day_key) ?? 0 }));
+}
+
+function getUsageNewWordsByDay(dayKeys: readonly string[]): Map<string, number> {
+  const placeholders = dayKeys.map(() => '?').join(', ');
+  const rows = getDb().prepare(`
+    WITH new_word_outcomes AS (
+      SELECT learner_id, word_id, committed_at,
+        json_extract(word_json, '$.lastLearningCoveredOn') AS intake_day
+      FROM learner_session_word_outcomes
+      WHERE kind = 'introduction' AND before_status = 'unstudied' AND after_status = 'learning'
+    )
+    SELECT intake.day_key, intake.new_study_count - COUNT(outcomes.word_id) AS value
+    FROM learner_owned_daily_new_word_intake AS intake
+    LEFT JOIN new_word_outcomes AS outcomes
+      ON outcomes.learner_id = intake.learner_id AND outcomes.intake_day = intake.day_key
+    WHERE intake.day_key IN (${placeholders})
+    GROUP BY intake.learner_id, intake.day_key, intake.new_study_count
+    UNION ALL
+    SELECT substr(committed_at, 1, 10) AS day_key, COUNT(*) AS value
+    FROM new_word_outcomes
+    WHERE substr(committed_at, 1, 10) IN (${placeholders})
+    GROUP BY substr(committed_at, 1, 10)
+  `).all(...dayKeys, ...dayKeys) as Array<{ day_key: string; value: number }>;
+  const totals = new Map<string, number>();
+  for (const row of rows) {
+    if (row.value < 0) throw new Error('New-word outcomes exceed their daily intake counter');
+    totals.set(row.day_key, (totals.get(row.day_key) ?? 0) + row.value);
+  }
+  // Each timestamped transition replaces its contribution to the admission counter.
+  // Legacy/sessionless commits have no timestamped outcome: preserve their count
+  // under its original key rather than invent a reporting instant or discard it.
+  return totals;
 }
 
 export function captureUsagePulseDay(input: {

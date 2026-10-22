@@ -341,7 +341,12 @@ The `learner_settings` row keyed by `(learner_id, daily_new_word_limit)` stores
 the learner's configured limit as JSON. The row keyed by
 `(learner_id, unstudied_admission_source)` stores `"mixed"` or `"stash_only"`.
 These settings are independent of `daily_new_word_intake.new_study_count`, the
-per-UTC-day counter incremented only when an unstudied word is completed.
+per-study-day counter incremented only when an unstudied word is completed.
+Study callers supply this key: ordinary client commits use a 04:00 local
+boundary, while a deferred final commit uses the UTC date frozen at summary
+entry. The key need not equal the UTC commit date. Usage uses timestamped word outcomes
+to reattribute these counts to UTC reporting days, retaining unmatched legacy
+intake under its original key; see [Usage metrics](operator-panel.md#usage-metrics).
 The [new-learner policy](../SPECS/diet-deck-distribution.md#25-new-user-defaults-and-retired-placement-intake)
 owns their initial values.
 
