@@ -55,6 +55,21 @@ material against the learner-accessible word and current definition selection;
 stale or invented text is rejected rather than attributed to different content.
 Previously recorded snapshots and their ratings remain intact.
 
+## Recall and recurrence
+
+A content downvote and an incorrect recall are separate records. The downvote
+updates the exact content's rating ledger and, for eligible review production,
+adds a learner-requested Feedback evidence item. Recall attempts retain their
+own outcome and recall rating; the request marker does not imply failure.
+
+A correct response during reinforcement does not erase an earlier lapse in the
+same review action. Completing three consecutive successful recalls covers that
+action, while its ordinary lapse projection sets a six-hour interval. It can be
+due again in a later session. See [review covering](../SPECS/session-progress-and-completion.md#review-item-covering).
+A word can also have another due skill: recognizing a word and producing it are
+separately scheduled actions. Seeing the same word again is therefore insufficient
+evidence that a correct answer was recorded as wrong.
+
 ## Evidence and interpretation
 
 The server resolves content references inside the learner's existing access
