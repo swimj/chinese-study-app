@@ -31,7 +31,8 @@ return, and Home after remount without restoring the pending completion view. Us
 `durable-session-completion.test.ts` verifies persistence and server expiry.
 
 The isolated `/tests/browser/content-feedback.html` fixture exercises the real
-session controller and content-rating buttons: negative-rating feedback requests,
+session controller and content-rating buttons: correct recall with and without a
+downvote, unchanged incorrect/no-clue outcomes, negative-rating feedback requests,
 independent explicit requests, clear/switch behavior, failed saves, durable attempt
 links, deduplication, and delayed-save navigation. It leaves a production card
 visible after PASS; `?preview=1` opens that card directly for layout inspection.

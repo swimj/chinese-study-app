@@ -1289,6 +1289,76 @@ describe('session completion', { concurrency: false }, () => {
       /Word not found/,
     );
   });
+  test('content helpfulness stays independent of correct production and next-session admission', (t) => {
+    t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-21T12:00:00.000Z') });
+    const states = [];
+    for (const voted of [false, true]) {
+      const wordId = voted ? 'correct-unhelpful' : 'correct-unrated';
+      insertReviewWordWithItem({ wordId, sessionActionId: wordId, direction: 'reverse',
+        intervalHours: 24, easeFactor: 2.5, nextDueAt: isoHoursAgo(1) });
+      insertWordStudyAdmissionState(wordId, null);
+      insertWordSkillState(wordId, 'production', {
+        intervalHours: 24, easeFactor: 2.5, lastStudiedAt: isoHoursAgo(48), nextDueAt: isoHoursAgo(1),
+      });
+      if (voted) insertWordSkillState(wordId, 'recognition', {
+        intervalHours: 24, easeFactor: 2.5, lastStudiedAt: isoHoursAgo(48), nextDueAt: isoHoursAgo(1),
+      });
+      const target = { kind: 'definition_fallback' as const, wordId,
+        expected: { promptText: 'word', displayedMeanings: [] as string[] } };
+      const quality = dbModule.recordContentQualityEncounter(target, `${wordId}-encounter`);
+      if (voted) dbModule.setContentQualityRating(quality.contentKey, 'down');
+      const result = recordAcceptedReviewBatch({ sessionActionId: wordId, wordId,
+        actionKind: 'production', skillId: 'production', rating: 'good', outcome: 'correct',
+        failureCount: 0, terminalRating: 'good' });
+      assert.equal(result.events[0]?.outcome, 'correct');
+      assert.equal(result.events[0]?.rating, 'good');
+      assert.equal(result.events[0]?.metadata.production?.result, 'accepted_anchor');
+      assertIntervalHoursNear(result.state.intervalHours, 60);
+      assert.equal(result.state.easeFactor, 2.5);
+      assert.equal(dbModule.recordContentQualityEncounter(target, `${wordId}-later`).rating, voted ? 'down' : null);
+      states.push(result.state);
+    }
+    const productionIds = () => dbModule.getSessionPayload(studyDayKey).buckets.review
+      .filter((item) => item.actionKind === 'production').map((item) => item.targetWordId).sort();
+    assert.deepEqual(productionIds(), []);
+    t.mock.timers.setTime(Date.parse('2026-10-21T12:00:00.000Z') + 7 * 3600000);
+    assert.deepEqual(productionIds(), []);
+    assert.ok(dbModule.getSessionPayload(studyDayKey).buckets.review.some((item) =>
+      item.targetWordId === 'correct-unhelpful' && item.actionKind === 'recognition'));
+    // Isolate production eligibility from the more overdue sibling skill's selection priority.
+    sqlite.prepare("UPDATE word_skill_state SET enabled = 0 WHERE word_id = ? AND skill_id = 'recognition'")
+      .run('correct-unhelpful');
+    t.mock.timers.setTime(Math.max(...states.map((state) => Date.parse(state.nextDueAt!))) + 1);
+    assert.deepEqual(productionIds(), ['correct-unhelpful', 'correct-unrated']);
+  });
+
+  test('incorrect production retains its lapse across correct reinforcement and returns after six hours', (t) => {
+    t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-21T12:00:00.000Z') });
+    for (const responseKind of ['typed', 'no_clue'] as const) {
+      const wordId = `lapse-${responseKind}`;
+      insertReviewWordWithItem({ wordId, sessionActionId: wordId, direction: 'reverse',
+        intervalHours: 24, easeFactor: 2.5, nextDueAt: isoHoursAgo(1) });
+      insertWordStudyAdmissionState(wordId, null);
+      insertWordSkillState(wordId, 'production', {
+        intervalHours: 24, easeFactor: 2.5, lastStudiedAt: isoHoursAgo(48), nextDueAt: isoHoursAgo(1),
+      });
+      const result = recordAcceptedReviewBatch({ sessionActionId: wordId, wordId,
+        actionKind: 'production', skillId: 'production', failureCount: 1, terminalRating: null,
+        attempts: [{ rating: 'forgot', outcome: 'incorrect', responseKind },
+          ...Array.from({ length: 3 }, () => ({ rating: 'good' as const, outcome: 'correct' as const }))] });
+      assert.equal(result.events[0]?.outcome, 'incorrect');
+      assert.equal(result.events.at(-1)?.outcome, 'correct');
+      assert.equal(result.state.intervalHours, 6);
+      assert.equal(result.state.easeFactor, 2.35);
+      assert.equal(result.state.nextDueAt, addHours(result.state.lastStudiedAt, 6));
+    }
+    assert.equal(dbModule.getSessionPayload(studyDayKey).buckets.review.length, 0);
+    t.mock.timers.setTime(Date.parse('2026-10-21T18:00:00.001Z'));
+    assert.deepEqual(dbModule.getSessionPayload(studyDayKey).buckets.review.map((item) => item.targetWordId).sort(),
+      ['lapse-no_clue', 'lapse-typed']);
+  });
+
+
 });
 
 function insertReviewWordWithItem(options: {

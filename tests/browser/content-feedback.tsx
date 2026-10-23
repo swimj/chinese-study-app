@@ -70,6 +70,7 @@ let delaySave = false;
 let finishSave: (() => void) | null = null;
 let evidence: { items: Array<{ sessionActionId: string; learnerRequestedReview?: boolean; attemptIds: string[] }> } | null = null;
 let commits = 0;
+let acceptedCommit: StageSessionCompletionRequest['pendingCommit'] = null;
 let ratingWrites = 0;
 let finishManagement: (() => void) | null = null;
 let encounterTargets: ContentQualityTarget[] = [];
@@ -100,7 +101,10 @@ window.fetch = async (input, init) => {
     if (!completionMatch[2] && init?.method === 'POST') {
       const body = JSON.parse(String(init.body)) as StageSessionCompletionRequest;
       if (!query.has('preview')) {
-        if (body.pendingCommit?.type === 'commit-review-action-session') commits += 1;
+        if (body.pendingCommit?.type === 'commit-review-action-session') {
+          commits += 1;
+          acceptedCommit = body.pendingCommit;
+        }
         evidence = body.reflectionEvidence;
       }
       const now = new Date().toISOString();
@@ -170,7 +174,7 @@ async function vote(value: Exclude<Rating, null>) {
 let scenario = 0;
 async function start() {
   rating = null; evidence = null; commits = 0; ratingWrites = 0; failure = null; saveFailure = false; delaySave = false;
-  encounterTargets = [];
+  encounterTargets = []; acceptedCommit = null;
   root.render(<Harness key={++scenario} />);
   await delay();
   controller.homePageProps.onStartSession();
@@ -197,10 +201,17 @@ async function finish(expected: boolean) {
   await until(() => controller.homePageProps.sessionPhase === 'completed' && controller.homePageProps.submittingRating === null);
   await endAndCheck(expected);
 }
-async function endAndCheck(expected: boolean) {
+async function endAndCheck(expected: boolean, incorrect = false) {
   await until(() => controller.homePageProps.sessionFinalization.kind === 'finalized');
   await delay();
   check(commits === 1, 'Expected exactly one accepted attempt batch');
+  check(acceptedCommit?.type === 'commit-review-action-session', 'Expected durable review commit');
+  if (acceptedCommit?.type === 'commit-review-action-session') {
+    check(acceptedCommit.failureCount === (incorrect ? 1 : 0), 'Helpfulness must not change recall failure count');
+    check(acceptedCommit.events.length === 1, 'Expected exactly one recorded answer');
+    check(acceptedCommit.events[0]?.outcome === (incorrect ? 'incorrect' : 'correct'), 'Helpfulness must not change recorded correctness');
+    check(acceptedCommit.events[0]?.rating === (incorrect ? 'forgot' : 'good'), 'Helpfulness must not change recall rating');
+  }
   check(Boolean(evidence) === expected, `Expected reflection request: ${expected}`);
   if (evidence) {
     check(evidence.items.length === 1, 'Requests must deduplicate');
@@ -224,9 +235,12 @@ async function run() {
     document.getElementById('result')!.textContent = 'Interactive preview: real study session with isolated fixture data.';
     return;
   }
+  await finish(false); // Correct recall without feedback is the control.
+  await start();
   await vote('down');
   check(!controller.homePageProps.learnerRequestedReview, 'Implicit request must not select explicit toggle');
   await finish(true);
+  check(rating === 'down', 'Correct-answer acceptance must preserve the downvote');
 
   await start(); await vote('down'); await vote('down'); await finish(false);
   await start(); await vote('down'); await vote('up'); await finish(false);
@@ -253,7 +267,17 @@ async function run() {
   await until(() => !controller.homePageProps.frozenProductionCard && controller.homePageProps.submittingRating === null);
   controller.homePageProps.onSkipReinforcement();
   await until(() => controller.homePageProps.sessionPhase === 'completed' && controller.homePageProps.submittingRating === null);
-  await endAndCheck(true);
+  await endAndCheck(true, true);
+
+  await start(); await vote('down');
+  controller.homePageProps.productionHanziInputRef.current!.value = '错';
+  controller.homePageProps.onSubmitProductionHanzi();
+  await until(() => Boolean(controller.homePageProps.frozenProductionCard) && controller.homePageProps.submittingRating === null);
+  controller.homePageProps.onContinueAfterAutoForgot();
+  await until(() => !controller.homePageProps.frozenProductionCard && controller.homePageProps.submittingRating === null);
+  controller.homePageProps.onSkipReinforcement();
+  await until(() => controller.homePageProps.sessionPhase === 'completed' && controller.homePageProps.submittingRating === null);
+  await endAndCheck(true, true);
 
   await start(); await submitCorrect(); delaySave = true; voteButton('down').click();
   await until(() => finishSave !== null);
@@ -280,7 +304,7 @@ async function run() {
   await until(() => !controller.homePageProps.studyManagementSubmitting);
 
   await start();
-  document.getElementById('result')!.textContent = `PASS (${fallback ? 'definition fallback' : 'authored cue'}): implicit feedback, independent requests, clear/switch, failed save, frozen no-clue feedback, durable links, deduplication, pending-save navigation, and management-first race.`;
+  document.getElementById('result')!.textContent = `PASS (${fallback ? 'definition fallback' : 'authored cue'}): correct/wrong/no-clue outcomes independent of helpfulness, implicit feedback, independent requests, clear/switch, failed save, frozen no-clue feedback, durable links, deduplication, pending-save navigation, and management-first race.`;
 }
 void run().catch((error: unknown) => {
   document.getElementById('result')!.textContent = `FAIL: ${String(error)}`;
