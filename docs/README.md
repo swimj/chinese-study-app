@@ -54,6 +54,8 @@ linking to the intended guarantees they realize and any known gaps.
 
 - [Architecture map](architecture.md): runtime layout and code navigation;
   currently identifies itself as navigation-only.
+- [Vocabulary content-improvement architecture](implementation/vocabulary-content-improvement.md):
+  rendered provider-call flow, sense admission, and optional pure-cue promotion.
 - [API map](api.md), [database map](server-db.md), and
   [frontend map](../SPECS/frontend-architecture-map.md): focused code references.
 - [Operator panel guide](operator-panel.md): how to reach and use the
