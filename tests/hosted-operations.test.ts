@@ -151,6 +151,26 @@ describe('hosted operational controls', { concurrency: false }, () => {
     assert.equal(dbModule.getHostedOperationalDiagnostics().serviceBanner, null);
   });
 
+  test('planned kickoff persists separately from posting and expiry; custom replacement clears it', () => {
+    const planned = dbModule.setServiceBanner({
+      kickoffAt: '2099-07-02T02:30:00+02:00', actorId: 'operator-test', postedAt: '2099-07-01T08:00:00.000Z',
+    });
+    assert.equal(planned.kickoffAt, '2099-07-02T00:30:00.000Z');
+    assert.equal(planned.postedAt, '2099-07-01T08:00:00.000Z');
+    assert.equal(planned.expiresAt, '2099-07-03T00:30:00.000Z');
+    assert.deepEqual(dbModule.getActiveServiceBanner(new Date('2099-07-02T01:00:00Z')), planned);
+    assert.equal(dbModule.toPublicServiceBanner(planned).kickoffAt, planned.kickoffAt);
+    assert.equal(dbModule.getActiveServiceBanner(new Date(planned.expiresAt)), null);
+    for (const kickoffAt of ['invalid', '2099-07-02T00:30:00', '2099-06-30T00:00:00Z']) {
+      assert.throws(() => dbModule.setServiceBanner({ kickoffAt, actorId: 'operator-test', postedAt: planned.postedAt }), /kickoff/);
+    }
+    const custom = dbModule.setServiceBanner({ message: 'Custom notice', actorId: 'operator-test', postedAt: planned.postedAt });
+    assert.equal(custom.kickoffAt, undefined);
+    assert.equal(dbModule.getActiveServiceBanner(new Date(planned.postedAt))?.kickoffAt, undefined);
+    assert.equal(custom.expiresAt, '2099-07-02T08:00:00.000Z');
+    dbModule.clearServiceBanner({ actorId: 'operator-test' });
+  });
+
   test('provisions one untouched shared word as an immediately due private production review', () => {
     dbModule.bootstrapLearner({ learnerId: 'learner-review-test' });
     const action = dbModule.provisionHostedBetaReviewTest({

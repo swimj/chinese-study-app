@@ -1,3 +1,4 @@
+import { serviceBannerMessage } from '../features/operator/service-banner';
 import { createContext, useContext, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { reflectionNavBadge } from '../features/attention/reflection-attention';
@@ -55,7 +56,7 @@ export function AppChrome({
   guideToStash?: boolean;
   onOpenGettingStarted?: () => void;
   error: string | null;
-  serviceBanner: { message: string } | null;
+  serviceBanner: { message: string; kickoffAt?: string } | null;
   sessionActive: boolean;
   priorityPageLoading: boolean;
   reflectionPageLoading: boolean;
@@ -202,7 +203,7 @@ export function AppChrome({
         <div className="app-chrome-main">
           {serviceBanner && !sessionActive ? (
             <div className="service-banner" role="status">
-              {serviceBanner.message}
+              {serviceBannerMessage(serviceBanner)}
             </div>
           ) : null}
 

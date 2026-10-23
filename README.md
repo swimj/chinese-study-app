@@ -76,29 +76,15 @@ The current implementation includes:
 
 ## Getting Started
 
-1. Install packages:
+For local development, follow
+[Contributor setup and local checks](docs/scripts.md#contributor-setup-and-local-checks)
+to install dependencies, start the backend and frontend, and run tests or a
+build. That guide includes development database precautions and configuration
+references. Run the servers in separate terminals, then open
+<http://localhost:4173>.
 
-   ```bash
-   npm install
-   ```
-
-2. Start the backend:
-
-   ```bash
-   npm run dev:backend
-   ```
-
-   This runs the backend in `dev` mode and uses the repo-local database at `data/app.db`.
-
-3. In a second terminal, start the frontend:
-
-   ```bash
-   npm run dev:frontend
-   ```
-
-4. Open the app in your browser at `http://localhost:4173`.
-
-The frontend calls the backend at `http://localhost:5174` by default. You can override that with `VITE_API_BASE`.
+During local development, the frontend calls the backend at `http://localhost:5174`
+by default. You can override that with `VITE_API_BASE`.
 Production builds use their serving origin by default, so a separate frontend
 server and `VITE_API_BASE` are not required for the hosted beta.
 

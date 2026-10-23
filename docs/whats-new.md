@@ -111,11 +111,13 @@ The API queries current database content. The operator command opens the same
 existing database directly, checks its schema version, and performs one short
 transaction. WAL allows the running API to read while another connection saves.
 Routine content updates require no build, deployment, maintenance mode, or app
-restart. The blog fetches current posts when opened, when the browser regains
-focus or visibility, and on an explicit retry after a loading error. Attention
-refreshes provide active unread post IDs to Home so aggregate and per-post
-markers follow each post’s independent exposure window. There is no push
-notification or continuous polling of open tabs.
+restart. The [app-owned catalog](../src/features/attention/useWhatsNewCatalog.ts)
+loads posts when the app opens or a failed load is explicitly retried. Home and
+About navigation reuse that catalog; reload the browser page to load current
+content. [Attention refreshes](../src/features/attention/useAttentionBadges.ts)
+independently when the browser regains focus or visibility, providing active
+unread post IDs to Home for each post’s independent exposure window. Blog
+content is not pushed to open tabs or continuously polled.
 
 Migration `0028_whats_new_blog` creates the tables and seeds the former bundled
 notes without changing their wording. The **first rollout is a schema-changing

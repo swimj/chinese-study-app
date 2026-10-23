@@ -68,24 +68,44 @@ word admission, or word-learning counts.
 ## Scheduler and strong-cue budget
 
 New learner adoptions start at a 24-hour interval, ease 2.5, and become due
-after a six-hour delay. Fragile cues use ordinary due-date SRS. A clean Hard/Good/Easy grows
-the cue's interval using the ordinary rating multipliers and interval fuzz.
+after a six-hour delay. Fragile cues use ordinary due-date SRS. A clean fragile
+Hard/Good/Easy grows the cue's interval using the ordinary rating multipliers
+and interval fuzz.
 A miss produces a six-hour interval and the ordinary ease penalty; in-session
 recovery requires three consecutive successful responses. Reinforcement is
 part of the same assessment, not additional budget or growth credit.
 
 Crossing a 720-hour interval enters the strong tier with `strongSuccesses = 0`.
-Strong cues are sampled independently of due date, with a six-hour exclusion
-after their last study. Each successful completed strong assessment increments
-the counter once. A lapse exits the strong tier; later reentry resets it.
+Strong cues use probability-based maintenance in place of interval scheduling.
+After a seven-day quiet period following their last study, each cue has an
+independent daily inclusion probability of `1 / (90 * (1 + strongSuccesses))`.
+It starts at 1-in-90 per day, becomes 1-in-180 after one strong success, and
+1-in-270 after two. The counter is the sole control on that cue's absolute
+probability, even when it is the only strong cue available.
 
-For N admitted ordinary review items, including due fragile pure cues but
+Every clean completed strong assessment (Hard, Good, or Easy) increments the
+counter once, updates last-study time, and restarts the quiet period. Strong
+maintenance leaves interval, ease, and due-date fields dormant: their stored
+values are retained for compatibility and do not affect qualification or
+selection order. A lapse exits the strong tier, resets the counter, and starts
+fragile SRS at a six-hour interval with the ordinary ease penalty. Later reentry
+starts strong maintenance with zero successes again.
+
+The daily draw is stable for the learner, cue, and UTC date. Preparing additional
+sessions that day does not grant additional chances. The policy uses existing
+scheduler state and requires no persisted daily lottery or missed-review debt.
+There is no maximum wait or date on which maintenance becomes mandatory.
+
+For N ordinary review candidates, including due fragile pure cues but
 excluding strong cues, reinforcement, learning, and new-word work, allocate
 `floor(N / 10)` strong slots plus one with probability `(N % 10) / 10`.
-Sample eligible strong cues without replacement with weight
-`1 / (1 + strongSuccesses)`, capped by available candidates. This is a
-per-payload proportional policy, not a daily entitlement or debt. Interleave
-the resulting cards with ordinary review rather than frontloading them.
+This is an outer ceiling: sample uniformly without replacement from cues that
+passed their independent daily draw, leaving unused capacity empty. For example,
+20 ordinary reviews permit at most two strong cues; zero passing cues means zero
+strong reviews. This is a per-payload proportional ceiling, not a daily
+entitlement or debt. Interleave the resulting cards with ordinary review rather
+than frontloading them. The overall session item limit may further trim this
+combined review inventory.
 
 The frontend owns covering, reinforcement, drain, and Undo. A covered pure-cue
 assessment uses its own deferred commit intent, independent attempt history,
@@ -256,7 +276,9 @@ recency, due time, strong-tier entry, and strong-success count. Accepted extensi
 restores that snapshot once without rewriting attempt history or granting success
 credit. The first response governs restoration even if later reinforcement was
 also wrong. Fragile cues receive a due date no earlier than six hours after
-restoration; restored strong cues cannot be sampled during that six-hour window.
+restoration; restored strong cues regain their pre-lapse maintenance state and
+cannot be sampled during that six-hour window. Their dormant SRS values are
+restored as captured, with the exclusion tracked separately from due dates.
 Intervening study may be overwritten, matching existing asynchronous word
 compensation. Historical assessments lacking a snapshot report unavailable.
 Accepted stimulus repair for an unfair source response uses this same

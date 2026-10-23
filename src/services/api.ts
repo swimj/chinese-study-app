@@ -1,3 +1,4 @@
+import type { ServiceBannerRequest } from '../domain/service-banner';
 import type { SessionCompletion, StageSessionCompletionRequest } from '../domain/session-completion';
 import type { StudyIntroductionOrder } from '../domain/introduction-order';
 import type { WhatsNewPost, WhatsNewWriteRequest } from '../domain/whats-new';
@@ -244,6 +245,7 @@ export async function flushPendingClientTransportIncidents(): Promise<void> {
 }
 
 type ServiceBanner = {
+  kickoffAt?: string;
   message: string;
   postedAt: string;
   expiresAt: string;
@@ -1475,7 +1477,7 @@ export async function fetchOperatorServiceBanner(): Promise<{ serviceBanner: Ser
   return response.json();
 }
 
-export async function saveOperatorServiceBanner(request: { message: string; expiresAt?: string }): Promise<{ serviceBanner: ServiceBanner }> {
+export async function saveOperatorServiceBanner(request: ServiceBannerRequest): Promise<{ serviceBanner: ServiceBanner }> {
   const response = await apiFetch(`${API_BASE}/api/operator/service-banner`, {
     method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request),
   });

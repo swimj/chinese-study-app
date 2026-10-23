@@ -60,6 +60,10 @@ Invalid parameters, including unknown status or lapses values, return 400. See [
 
 ## Content diagnostics
 
+Content Bin uses this read-only API to inspect words, contrast clusters, and
+durable word-owned production cues. The [frontend map](../SPECS/frontend-architecture-map.md#content-bin-connected-details)
+explains navigation between connected items.
+
 | Method | Path | Handler domain |
 | --- | --- | --- |
 | GET | `/api/content-diagnostics?kind=word\|contrast_cluster\|production_cue&q=<query>&limit=50` | Read-only content projection |
@@ -70,12 +74,24 @@ before hydrating the selected records. It returns only the selected kind and a
 Word items include `latestBootstrapContent`: `{ createdAt, content }` for the
 latest eligible [bootstrap document](word-content-representation.md#source-documents-and-teaching-packages),
 ordered by creation time then content id, or `null` when none is available,
-as well as cluster membership, production-task cue counts, and any post-reveal
-production cue supplements (english frame, example sentence, translation, and whether
-the supplement is attached to a durable cue or the meaning-derived fallback);
-cluster items include
-members and prompts; durable production-cue items include their anchor and
-accepted words, lifecycle state, provenance, and current evidence projection.
+as well as cluster membership.
+
+Word details separate the exercise cue from optional material shown after reveal:
+
+- `productionTask` contains the task id and total/active durable cue counts for
+  the current learner, or is `null` when the word has no production task.
+- `productionCues` lists durable cues as `{ id, text, cueType, availabilityStatus }`,
+  including inactive cues and cues without supplements. Use these identities to
+  open cue details; a cue's presence in the list does not mean it can serve.
+- `productionCueSupplements` contains post-reveal English frames, example
+  sentences, and translations. Its `cueId` identifies the attached durable cue,
+  or is `null` for a task-level meaning-derived supplement. That fallback
+  supplement is not itself a durable cue.
+
+The [response types](../src/domain/content-diagnostics.ts) define these fields.
+Cluster items include members and prompts; durable production-cue items include
+their anchor and accepted words, lifecycle state, provenance, and current evidence
+projection.
 It does not expose a content mutation path.
 
 ## Shared content reports
@@ -99,7 +115,7 @@ exposed as a learner-controlled HTTP endpoint.
 
 `GET /api/status?studyDayKey=YYYY-MM-DD` also returns `sessionActiveTimeMetrics`: today's completed active-session duration, plus 3-day and 7-day calendar-day averages in milliseconds. Averages include zero-activity days.
 
-The status payload also returns `serviceBanner`: `null`, or `{ message, postedAt, expiresAt }`
+The status payload also returns `serviceBanner`: `null`, or `{ message, postedAt, expiresAt, kickoffAt? }`
 for the current unexpired operator-posted signed-in notice. Expired and cleared
 notices are omitted. Operators can also read and manage the banner through the
 operator API below.
@@ -163,7 +179,7 @@ accepts a client-selected learner; writes use the authenticated learner context.
 | GET | `/api/operator/word-preparation/failures` | Shared preparation failures and attempt history |
 | POST | `/api/operator/word-preparation/:workId/retry` | Retry paused work; empty `{}` body and operator actor audit |
 | GET | `/api/operator/service-banner` | Current active banner |
-| PUT | `/api/operator/service-banner` | Set a banner with `{ message, expiresAt? }` |
+| PUT | `/api/operator/service-banner` | Set a custom banner with `{ message, expiresAt? }` or a planned update with `{ kickoffAt }` |
 | DELETE | `/api/operator/service-banner` | Clear the current banner |
 
 Operator routes require the caller’s Clerk user id (or trusted-local learner id /
@@ -209,11 +225,19 @@ rather than per-request USD charges; estimates use pinned pricing snapshots.
 Existing usage-pulse spend snapshots retain their reflection/intake scope. No
 historical invocation rows or missing user attribution are fabricated.
 
-Service-banner messages are single-line text up to 280 characters. Omitting
-`expiresAt` uses the 24-hour default. `PUT` returns
-`{ serviceBanner: { message, postedAt, expiresAt } }`; `GET` returns that shape or
+Planned service updates accept `{ kickoffAt }`, an ISO timestamp with an explicit
+time zone, normalized to UTC. Kickoff must be after posting; expiry is 24 hours
+after kickoff. Do not combine kickoff with a custom message or expiry. The
+response includes `kickoffAt` for planned updates; clients format the standard
+notice in the viewer's browser zone. `message` supplies generic fallback text.
+Custom and pre-existing notices omit `kickoffAt` and render their authored text.
+Replacing a planned update with a custom notice clears its kickoff.
+
+Custom service-banner messages are single-line text up to 280 characters.
+Omitting `expiresAt` for a custom message uses the 24-hour default. `PUT` returns
+`{ serviceBanner: { message, postedAt, expiresAt, kickoffAt? } }`; `GET` returns that shape or
 `{ serviceBanner: null }`, and `DELETE` returns `{ status }` with `cleared` or
-`noop`. Invalid messages or expiry timestamps return `400`. Writes use the
+`noop`. Invalid messages, kickoff timestamps, or expiry timestamps return `400`. Writes use the
 authenticated operator as the audit actor. Preparation retry preserves
 successful earlier stages; ordinary learner requests do not reset exhausted
 budgets.

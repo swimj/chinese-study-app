@@ -12,7 +12,7 @@ function renderChrome(
   extras: {
     gettingStartedUnseen?: boolean;
     guideToStash?: boolean;
-    serviceBanner?: { message: string } | null;
+    serviceBanner?: { message: string; kickoffAt?: string } | null;
     sessionActive?: boolean;
     reflectionUnseenCount?: number;
     hasUnseenReflectionFailure?: boolean;
@@ -127,6 +127,13 @@ describe('AppChrome primary navigation', () => {
       })),
       /class="reflections-nav-refresh"/,
     );
+  });
+
+  test('planned notice displays kickoff instead of its fallback message', () => {
+    const markup = renderChrome('home', null, { serviceBanner: { message: 'Fallback announcement', kickoffAt: '2030-07-02T00:30:00.000Z' } });
+    assert.match(markup, /service update is planned to start around/);
+    assert.doesNotMatch(markup, /Fallback announcement/);
+    assert.doesNotMatch(renderChrome('home', null, { serviceBanner: { message: 'Fallback', kickoffAt: '2030-07-02T00:30:00.000Z' }, sessionActive: true }), /service update is planned/);
   });
 
   test('shows a service banner outside an active session and hides it during one', () => {

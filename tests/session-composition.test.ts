@@ -2008,6 +2008,24 @@ describe('session composition', { concurrency: false }, () => {
     assert.equal(included.review[0].itemType, 'pure_cue_production');
     assert.equal(Number(snapshotCount()), Number(before) + 1);
     assert.equal(sqlite.prepare('SELECT last_studied_at FROM learner_pure_cue_state WHERE pure_cue_id = ?').get('cap-pure-cue')?.last_studied_at, null);
+
+    // Reproduce a later session after a success crossed into the strong tier.
+    // Even abundant ordinary work and favorable composition rolls cannot refill
+    // the strong allowance with a cue studied only seven hours ago.
+    const studiedAt = isoHoursAgo(7);
+    sqlite.prepare(`UPDATE learner_pure_cue_state
+      SET interval_hours = 750, last_studied_at = ?, strong_since = ?
+      WHERE learner_id = 'test-learner' AND pure_cue_id = 'cap-pure-cue'`)
+      .run(studiedAt, studiedAt);
+    const beforeStrongPreparation = snapshotCount();
+    for (const roll of [0, 0.5, 0.999999]) {
+      const review = dbModule.getSessionPayload(studyDayKey, { random: () => roll }).buckets.review;
+      assert.equal(review.length, 1000);
+      assert.equal(review.some((item) => item.itemType === 'pure_cue_production'), false);
+    }
+    assert.equal(snapshotCount(), beforeStrongPreparation);
+    assert.equal(sqlite.prepare('SELECT last_studied_at FROM learner_pure_cue_state WHERE pure_cue_id = ?')
+      .get('cap-pure-cue')?.last_studied_at, studiedAt);
   });
 
 });
