@@ -351,3 +351,25 @@ closure with provider work disabled, cancel-before-expiry, failed closure and
 retry, and interrupted generation recovery. Preserve the source backup and its
 matching image: these records are not a replacement for release recovery
 artifacts or proof that the hosted upgrade has been performed.
+
+## Adaptive vocabulary cutover
+
+The vocabulary delivery is one schema-changing release. Before taking the final
+quiesced backup, settle pending/failed legacy session completions and pending
+authorized reflection applications under the old runtime. Migration 0039 refuses
+learner-state conversion if either remains; the migration transaction rolls back.
+Queued proposals that were never authorized are retained historical records, not
+new-runtime application authority.
+
+Run the normal stopped-writer migration procedure through the entire delivery's
+migration sequence. Conversion makes no model calls. Inspect `legacy_content_imports` and `legacy_sense_imports`
+and `vocabulary.content.import_excluded` backend events for imported identities
+and unsupported legacy answer spaces. Rehearse with a disposable copy before
+operating the hosted database. Do not use the app-only upgrade route.
+
+The new runtime fences legacy Mandarin session/proposal writes and does not run
+legacy application recovery. New completion closure is local durable work even
+with provider work disabled; lessons, repair proposals, Connections, and exercise
+authoring resume through their separate controlled workers. Rollback after new
+writes requires the identified pre-cutover backup and the previous application,
+not a downgrade of the converted live database.

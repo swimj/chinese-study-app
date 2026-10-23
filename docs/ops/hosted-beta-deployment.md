@@ -102,7 +102,9 @@ The designated smoke account is the pre-existing Clerk user
 `x6nscl63n@mozmail.com`. It must already map to a hosted learner; first-time
 authentication bootstraps a learner even on GET and would violate the no-write
 boundary. A password is not used: `hosted:smoke` mints a short-lived Clerk
-session with `CLERK_SECRET_KEY` and revokes it. Never print the token.
+session with `CLERK_SECRET_KEY`, reads `GET /api/vocabulary/statistics`, validates
+the learner statistics response, and revokes the session. This probe does not
+reserve words or create a study session. Never print the token.
 
 Protected hosted configuration, in ignored
 `deploy/fly/.generated/fly.toml` `[env]` or a Fly secret:

@@ -1,5 +1,9 @@
 # Home exercise failure and compensation rates
 
+The Mandarin study runtime follows [Adaptive vocabulary study](vocabulary-learning.md).
+This document describes the retained legacy implementation and historical records;
+its learner-write flow is not the Mandarin entry point.
+
 Home's **Exercise failure rate** panel summarizes failures in completed review
 exercises and later corrections for unfair exercises. This document explains
 what contributes to those counts and how to interpret the **Adjusted failure**

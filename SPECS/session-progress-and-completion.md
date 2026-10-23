@@ -1,5 +1,9 @@
 # Session progress and completion
 
+The Mandarin study runtime follows [Adaptive vocabulary study](vocabulary-learning.md).
+This document describes the retained legacy implementation and historical records;
+its learner-write flow is not the Mandarin entry point.
+
 <a id="session-covering-criteria"></a>
 
 This contract defines when study units count as covered, how Undo affects

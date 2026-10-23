@@ -2,8 +2,8 @@ import { createContext, useContext, useLayoutEffect, useRef, useState, type Reac
 import { createPortal } from 'react-dom';
 import { reflectionNavBadge } from '../features/attention/reflection-attention';
 
-export type AppPageKey = 'home' | 'priority' | 'reflections' | 'content' | 'about' | 'operator-usage';
-export type PrimaryAppPageKey = Exclude<AppPageKey, 'operator-usage'>;
+export type AppPageKey = 'home' | 'priority' | 'reflections' | 'content' | 'about' | 'operator-usage' | 'operator-vocabulary';
+export type PrimaryAppPageKey = Exclude<AppPageKey, 'operator-usage' | 'operator-vocabulary'>;
 
 const NestedNavContext = createContext<HTMLElement | null>(null);
 
