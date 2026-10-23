@@ -344,9 +344,10 @@ These settings are independent of `daily_new_word_intake.new_study_count`, the
 per-study-day counter incremented only when an unstudied word is completed.
 Study callers supply this key: ordinary client commits use a 04:00 local
 boundary, while a deferred final commit uses the UTC date frozen at summary
-entry. The key need not equal the UTC commit date. Usage uses timestamped word outcomes
-to reattribute these counts to UTC reporting days, retaining unmatched legacy
-intake under its original key; see [Usage metrics](operator-panel.md#usage-metrics).
+entry. The key need not equal the UTC reporting date. Usage independently sums
+`review_session_summaries.new_word_count`, persisted from accepted session word
+outcomes when the summary is written. The summary's UTC completion day owns the
+whole session's Usage count; see [Usage metrics](operator-panel.md#usage-metrics).
 The [new-learner policy](../SPECS/diet-deck-distribution.md#25-new-user-defaults-and-retired-placement-intake)
 owns their initial values.
 

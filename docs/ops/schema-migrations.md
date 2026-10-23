@@ -357,3 +357,23 @@ closure with provider work disabled, cancel-before-expiry, failed closure and
 retry, and interrupted generation recovery. Preserve the source backup and its
 matching image: these records are not a replacement for release recovery
 artifacts or proof that the hosted upgrade has been performed.
+
+## Usage new-word totals (0038)
+
+`0038_usage_new_word_totals` adds nullable `new_word_count` to completed-session
+summaries and the learner-scoped view. It backfills accepted new-word counts
+from confirmed completion reports or recorded word outcomes, using the summary's
+UTC completion day for the entire session. Sessions without either source retain
+NULL; admission rows cannot establish completed-session counts. Usage treats
+missing counts as zero and documents this historical lower bound.
+
+The migration rewrites only `new_words` in existing cohort daily snapshots from
+the persisted summary totals. It preserves other snapshot values, timestamps,
+word state, and the daily admission counters. Subsequent summary writes persist
+their new-word count and refresh affected snapshots atomically, including late
+completion after midnight. Panel reads do not reconstruct word events.
+
+This is a schema and data migration requiring the stopped-writer procedure above;
+the hosted app-only upgrade route cannot apply it. Retain the pre-migration
+backup and matching application image for rollback. Implementation verification
+is not evidence that this migration has been applied to production.

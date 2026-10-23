@@ -232,7 +232,7 @@ test('exercise compensation migration starts empty and preserves existing summar
     migrateDatabase(db);
     assertSchemaCurrent(db);
     assert.equal(db.prepare('SELECT COUNT(*) AS n FROM learner_exercise_compensation_days').get()?.n, 0);
-    assert.deepEqual(db.prepare('SELECT * FROM learner_owned_review_session_summaries').all().map(row => ({ ...row })), summary.map(row => ({ ...row, learning_completed_count: null })));
+    assert.deepEqual(db.prepare('SELECT * FROM learner_owned_review_session_summaries').all().map(row => ({ ...row })), summary.map(row => ({ ...row, learning_completed_count: null, new_word_count: null })));
     assert.deepEqual(db.prepare('SELECT * FROM pure_cue_scheduler_compensation_snapshots').all(), restorations);
     assert.deepEqual(migrateDatabase(db), []);
   } finally { db.close(); }
@@ -250,7 +250,7 @@ test('session debrief migration preserves valued completion rows and starts with
     assert.deepEqual(migrateDatabase(db), schemaMigrations
       .filter((migration) => migration.id >= 'app_schema:0023_session_debrief')
       .map((migration) => migration.id));
-    assert.deepEqual(db.prepare('SELECT * FROM learner_owned_review_session_summaries').all().map(row => ({ ...row })), old.map(row => ({ ...row, learning_completed_count: null })));
+    assert.deepEqual(db.prepare('SELECT * FROM learner_owned_review_session_summaries').all().map(row => ({ ...row })), old.map(row => ({ ...row, learning_completed_count: null, new_word_count: null })));
     assert.equal(db.prepare('SELECT COUNT(*) AS count FROM learner_session_debrief_jobs').get()?.count, 0);
     assert.equal(db.prepare('SELECT COUNT(*) AS count FROM learner_session_debrief_attempts').get()?.count, 0);
     assert.deepEqual(migrateDatabase(db), []);
@@ -315,7 +315,7 @@ test('durable session completion migration preserves historical progress and fab
     const learners = db.prepare('SELECT * FROM learners').all();
     migrateDatabase(db);
     assertSchemaCurrent(db);
-    assert.deepEqual(db.prepare('SELECT * FROM learner_owned_review_session_summaries').all(), summaries);
+    assert.deepEqual(db.prepare('SELECT * FROM learner_owned_review_session_summaries').all().map(row => ({ ...row })), summaries.map(row => ({ ...row, new_word_count: null })));
     assert.deepEqual(db.prepare('SELECT * FROM learners').all(), learners);
     for (const table of ['learner_session_completions', 'learner_session_word_outcomes', 'learner_session_reflection_dispatches'])
       assert.equal(db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get()?.n, 0);

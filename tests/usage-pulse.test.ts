@@ -114,7 +114,8 @@ describe('usage pulse snapshots', { concurrency: false }, () => {
         completedAt: `${dayKey}T12:00:00.000Z`,
         activeDurationMs: 120_000,
       });
-      insertNewWordIntake(dayKey, 2);
+      insertNewWordIntake(dayKey, 9); // admission totals are independent of Usage
+      getDb().prepare("UPDATE review_session_summaries SET new_word_count = 2 WHERE session_id = 'session-a1'").run();
       insertReflectionSpend({
         runId: 'run-a',
         completedAt: `${dayKey}T13:00:00.000Z`,
@@ -227,7 +228,7 @@ describe('usage pulse snapshots', { concurrency: false }, () => {
     assert.equal(totals.meanStashSize, 0.75);
   });
 
-  test('attributes three evening EDT new words to their UTC commit day, not the admission day', (t) => {
+  test('persists three evening EDT new words on the UTC session day, independent of admission', (t) => {
     // Production-shaped case: Oct 21, 9 p.m. EDT is Oct 22 UTC. Admission
     // uses the client's local study day; Usage displays UTC calendar days.
     t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-22T01:07:31.534Z') });
@@ -236,6 +237,7 @@ describe('usage pulse snapshots', { concurrency: false }, () => {
     usagePulse.captureUsagePulseDay({ dayKey: admissionDay });
     usagePulse.captureUsagePulseDay({ dayKey: reportingDay });
     const savedCapture = usagePulse.listUsageDailySnapshots([admissionDay])[0]!.capturedAt;
+    getDb().prepare('UPDATE usage_daily_snapshots SET mean_stash_size = 42 WHERE day_key = ?').run(admissionDay);
     dbModule.runWithLearnerId('learner-a', () => {
       for (const id of ['evening-a', 'evening-b', 'evening-c']) {
         insertLexicalWord(id);
@@ -243,10 +245,10 @@ describe('usage pulse snapshots', { concurrency: false }, () => {
         // A retry returns the existing transition and contributes no new intake.
         dbModule.completeUnstudiedWordSession(id, admissionDay, 'evening');
       }
-      insertSessionSummary({ sessionId: 'evening', dayKey: reportingDay,
-        completedAt: '2026-10-22T02:12:41.686Z', activeDurationMs: 1000 });
-      getDb().prepare(`UPDATE review_session_summaries SET learning_completed_count = 11
-        WHERE session_id = 'evening'`).run();
+      assert.equal(usagePulse.computeUsagePulseDay({ dayKey: reportingDay }).newWords, 0);
+      completeUsageSession('evening', '2026-10-22T02:12:41.686Z', 11);
+      completeUsageSession('evening', '2026-10-22T02:12:41.686Z', 11);
+      assert.equal(getDb().prepare("SELECT new_word_count FROM review_session_summaries WHERE session_id = 'evening'").get()?.new_word_count, 3);
       assert.equal(getDb().prepare(`SELECT new_study_count FROM daily_new_word_intake WHERE day_key = ?`)
         .get(admissionDay)?.new_study_count, 3);
       assert.equal(getDb().prepare(`SELECT new_study_count FROM daily_new_word_intake WHERE day_key = ?`)
@@ -263,28 +265,28 @@ describe('usage pulse snapshots', { concurrency: false }, () => {
     t.mock.timers.setTime(new Date('2026-10-23T16:00:00.000Z').getTime());
     dbModule.runWithLearnerId('learner-a', () => {
       dbModule.completeLearningWordSession('evening-a', true, 'later-practice', '2026-10-23');
+      completeUsageSession('later-practice', '2026-10-23T16:00:00.000Z', 1);
     });
     assert.equal(usagePulse.computeUsagePulseDay({ dayKey: reportingDay }).newWords, 3);
     assert.equal(usagePulse.computeUsagePulseDay({ dayKey: '2026-10-23' }).newWords, 0);
 
-    // Reading an old snapshot repairs this metric without changing capture-time data.
-    getDb().prepare(`UPDATE usage_daily_snapshots SET new_words = 3, mean_stash_size = 42 WHERE day_key = ?`)
-      .run(admissionDay);
+    // Summary writes refresh persisted totals; panel reads preserve capture-time data.
     const historical = usagePulse.listUsageDailySnapshots([admissionDay])[0]!;
     assert.equal(historical.newWords, 0);
     assert.equal(historical.capturedAt, savedCapture);
     assert.equal(historical.meanStashSize, 42);
     assert.equal(getDb().prepare('SELECT new_words FROM usage_daily_snapshots WHERE day_key = ?')
-      .get(admissionDay)?.new_words, 3);
+      .get(admissionDay)?.new_words, 0);
     const pulse = usagePulse.getUsagePulse({ now: new Date('2026-10-23T18:00:00.000Z'), windowDays: 2 });
     assert.deepEqual(pulse.days.map((day) => day.newWords), [0, 3]);
   });
 
-  test('keeps same-day and midnight events once each, with learner-scoped legacy residual counts', (t) => {
+  test('counts a whole session on its UTC completion day, with retries and cohort aggregation', (t) => {
     t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-01T17:00:00.000Z') });
     dbModule.runWithLearnerId('learner-a', () => {
       insertLexicalWord('normal-day');
       dbModule.completeUnstudiedWordSession('normal-day', '2026-11-01', 'normal-session');
+      completeUsageSession('normal-session', '2026-11-01T17:00:00.000Z');
       // A sessionless legacy commit has intake evidence but no outcome timestamp.
       insertLexicalWord('legacy-day');
       dbModule.completeUnstudiedWordSession('legacy-day', '2026-11-01');
@@ -294,25 +296,27 @@ describe('usage pulse snapshots', { concurrency: false }, () => {
       t.mock.timers.setTime(new Date('2026-11-02T00:00:00.000Z').getTime());
       insertLexicalWord('at-midnight');
       dbModule.completeUnstudiedWordSession('at-midnight', '2026-11-01', 'midnight-session');
-      insertSessionSummary({ sessionId: 'midnight-session', dayKey: '2026-11-02',
-        completedAt: '2026-11-02T00:10:00.000Z', activeDurationMs: 1000 });
+      assert.equal(usagePulse.computeUsagePulseDay({ dayKey: '2026-11-02' }).newWords, 0);
+      completeUsageSession('midnight-session', '2026-11-02T00:10:00.000Z');
+      completeUsageSession('midnight-session', '2026-11-02T00:10:00.000Z');
     });
     dbModule.runWithLearnerId('learner-b', () => {
       // Same lexical identity for another learner is a separate new-word event.
       dbModule.completeUnstudiedWordSession('at-midnight', '2026-11-01', 'midnight-session');
-      insertNewWordIntake('2026-11-01', 3); // two older, untimestamped contributions
+      insertNewWordIntake('2026-11-01', 3); // admission evidence does not supply Usage totals
+      completeUsageSession('midnight-session', '2026-11-02T00:12:00.000Z');
     });
     assert.equal(usagePulse.computeUsagePulseDay({ dayKey: '2026-10-31' }).newWords, 0);
-    assert.equal(usagePulse.computeUsagePulseDay({ dayKey: '2026-11-01' }).newWords, 5);
-    assert.equal(usagePulse.computeUsagePulseDay({ dayKey: '2026-11-02' }).newWords, 2);
+    assert.equal(usagePulse.computeUsagePulseDay({ dayKey: '2026-11-01' }).newWords, 1);
+    assert.equal(usagePulse.computeUsagePulseDay({ dayKey: '2026-11-02' }).newWords, 3);
     assert.equal(usagePulse.computeUsagePulseDay({ dayKey: '2026-11-03' }).newWords, 0);
     usagePulse.captureUsagePulseDay({ dayKey: '2026-11-01' });
     usagePulse.captureUsagePulseDay({ dayKey: '2026-11-02' });
     assert.deepEqual(usagePulse.listUsageDailySnapshots(['2026-11-01', '2026-11-02'])
-      .map((day) => day.newWords), [5, 2]);
+      .map((day) => day.newWords), [1, 3]);
   });
 
-  test('counts a final new word only after acceptance, including closure across UTC midnight', async (t) => {
+  test('counts the final word only after acceptance on the summary day, even when closure crosses UTC midnight', async (t) => {
     const { stageSessionCompletion, undoSessionCompletion, closeSessionCompletion } =
       await import('../server/db/session-completion.ts');
     const stagedAt = '2026-12-01T23:59:55.000Z';
@@ -332,12 +336,64 @@ describe('usage pulse snapshots', { concurrency: false }, () => {
       assert.equal(usagePulse.computeUsagePulseDay({ dayKey: '2026-12-01' }).newWords, 0);
       undoSessionCompletion('usage-undo', 'r1', stagedAt);
       assert.equal(stage('usage-final').report.newWords.length, 1);
+      usagePulse.captureUsagePulseDay({ dayKey: '2026-12-01' });
       t.mock.timers.setTime(new Date(closedAt).getTime());
       closeSessionCompletion('usage-final', 'r1', closedAt);
       closeSessionCompletion('usage-final', 'r1', closedAt);
     });
-    assert.equal(usagePulse.computeUsagePulseDay({ dayKey: '2026-12-01' }).newWords, 0);
-    assert.equal(usagePulse.computeUsagePulseDay({ dayKey: '2026-12-02' }).newWords, 1);
+    assert.equal(usagePulse.computeUsagePulseDay({ dayKey: '2026-12-01' }).newWords, 1);
+    assert.equal(usagePulse.computeUsagePulseDay({ dayKey: '2026-12-02' }).newWords, 0);
+    assert.equal(usagePulse.listUsageDailySnapshots(['2026-12-01'])[0]?.newWords, 1);
+  });
+
+  test('a Usage snapshot write failure rolls back final acceptance and can be retried exactly once', async (t) => {
+    const { stageSessionCompletion, closeSessionCompletion } = await import('../server/db/session-completion.ts');
+    const at = '2026-12-05T12:00:00.000Z';
+    t.mock.timers.enable({ apis: ['Date'], now: new Date(at) });
+    usagePulse.captureUsagePulseDay({ dayKey: '2026-12-05' });
+    dbModule.runWithLearnerId('learner-a', () => {
+      insertLexicalWord('usage-write-failure');
+      stageSessionCompletion('usage-write-failure', {
+        revisionId: 'r1', startedAt: at, studyDayKey: '2026-12-05',
+        summary: { completedAt: at, completedReviewActionCount: 0, failedReviewActionCount: 0, activeDurationMs: 0 },
+        pendingCommit: { type: 'commit-unstudied-word-session', wordId: 'usage-write-failure' }, reflectionEvidence: null,
+      }, at);
+      getDb().exec(`CREATE TEMP TRIGGER fail_usage_snapshot BEFORE UPDATE ON usage_daily_snapshots
+        WHEN NEW.day_key = '2026-12-05' BEGIN SELECT RAISE(ABORT, 'test snapshot failure'); END`);
+      try {
+        assert.throws(() => closeSessionCompletion('usage-write-failure', 'r1', at), /test snapshot failure/);
+        assert.equal(getDb().prepare("SELECT status FROM words WHERE id = 'usage-write-failure'").get()?.status, 'unstudied');
+        assert.equal(getDb().prepare("SELECT new_study_count FROM daily_new_word_intake WHERE day_key = '2026-12-05'").get(), undefined);
+        assert.equal(getDb().prepare("SELECT new_word_count FROM review_session_summaries WHERE session_id = 'usage-write-failure'").get(), undefined);
+        assert.equal(usagePulse.listUsageDailySnapshots(['2026-12-05'])[0]?.newWords, 0);
+      } finally {
+        getDb().exec('DROP TRIGGER fail_usage_snapshot');
+      }
+      closeSessionCompletion('usage-write-failure', 'r1', at);
+      closeSessionCompletion('usage-write-failure', 'r1', at);
+      assert.equal(getDb().prepare("SELECT new_study_count FROM daily_new_word_intake WHERE day_key = '2026-12-05'").get()?.new_study_count, 1);
+      assert.equal(getDb().prepare("SELECT new_word_count FROM review_session_summaries WHERE session_id = 'usage-write-failure'").get()?.new_word_count, 1);
+    });
+    assert.equal(usagePulse.listUsageDailySnapshots(['2026-12-05'])[0]?.newWords, 1);
+  });
+
+  test('summary retries preserve confirmed report-only history and refresh both days when moved', () => {
+    usagePulse.captureUsagePulseDay({ dayKey: '2026-12-06' });
+    usagePulse.captureUsagePulseDay({ dayKey: '2026-12-07' });
+    dbModule.runWithLearnerId('learner-a', () => {
+      // Same evidence as a migrated report-only summary: no individual outcomes.
+      getDb().prepare(`INSERT INTO learner_session_completions
+        (learner_id,session_id,revision_id,staged_at,close_at,input_json,report_json,status,closed_at)
+        VALUES (?, 'report-only-usage', 'r1', 'now', 'now', '{}', ?, 'closed', 'now')`)
+        .run('learner-a', JSON.stringify({ newWords: [{ id: 'a' }, { id: 'b' }], graduatedWords: [] }));
+      completeUsageSession('report-only-usage', '2026-12-06T12:00:00.000Z');
+      assert.equal(usagePulse.listUsageDailySnapshots(['2026-12-06'])[0]?.newWords, 2);
+      completeUsageSession('report-only-usage', '2026-12-07T12:00:00.000Z');
+      completeUsageSession('report-only-usage', '2026-12-07T12:00:00.000Z');
+      assert.equal(getDb().prepare("SELECT new_word_count FROM review_session_summaries WHERE session_id = 'report-only-usage'").get()?.new_word_count, 2);
+    });
+    assert.deepEqual(usagePulse.listUsageDailySnapshots(['2026-12-06', '2026-12-07'])
+      .map(day => day.newWords), [0, 2]);
   });
 
   test('counts proposal acceptance events by creation day regardless of application state', () => {
@@ -435,6 +491,11 @@ describe('usage pulse snapshots', { concurrency: false }, () => {
     assert.equal(pulse.days.length, 3);
     assert.equal(pulse.days.at(-1)?.dayKey, usagePulse.addUtcDays(usagePulse.utcDayKey(now), -1));
   });
+
+  function completeUsageSession(sessionId: string, completedAt: string, practice = 0): void {
+    dbModule.recordReviewSessionSummary({ sessionId, completedAt, completedReviewActionCount: 1,
+      failedReviewActionCount: 0, activeDurationMs: 1000, completedLearningWordCount: practice });
+  }
 
   function insertLexicalWord(wordId: string): void {
     getDb().prepare(`

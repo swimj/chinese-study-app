@@ -39,7 +39,9 @@ test('usage migration preserves history, backfills only durable totals, and keep
     assert.equal(db.prepare('SELECT learning_completed_count FROM review_session_summaries').get()?.learning_completed_count, null);
     learner = 'other';
     assert.deepEqual(db.prepare('SELECT * FROM review_session_summaries').all(), []);
-    db.exec(`INSERT INTO review_session_summaries VALUES ('session', '2026-10-01T11:00:00.000Z', '2026-10-01', 1, 0, 1000, 4);
+    db.exec(`INSERT INTO review_session_summaries
+      (session_id, completed_at, day_key, completed_count, failed_count, active_duration_ms, learning_completed_count)
+      VALUES ('session', '2026-10-01T11:00:00.000Z', '2026-10-01', 1, 0, 1000, 4);
       UPDATE review_session_summaries SET learning_completed_count = 5 WHERE session_id = 'session';`);
     assert.equal(db.prepare('SELECT learning_completed_count FROM review_session_summaries').get()?.learning_completed_count, 5);
     assert.throws(() => db.exec('UPDATE review_session_summaries SET learning_completed_count = -1'), /CHECK/);

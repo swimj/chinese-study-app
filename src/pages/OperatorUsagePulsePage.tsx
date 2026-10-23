@@ -96,10 +96,9 @@ function UsagePulsePanel() {
         Mean stash is as-of each snapshot&apos;s capture time.
       </p>
       <details><summary>Metric definitions</summary><p className="notes">
-        New words counts accepted first-study transitions on their UTC commit day, including
-        accepted words in unfinished sessions. Repeated Practice adds no new words.
-        Historical new-word totals are reconstructed; older intake without a timestamped
-        transition retains its original study-day attribution.
+        New words sums accepted first-study counts in completed sessions on their UTC
+        completion day. Repeated Practice adds no new words. Missing historical counts
+        contribute zero, so New words is a lower bound when evidence is missing.
         Practice sums recorded correct-day gains in completed sessions. Missing counts
         contribute zero, so Practice is a lower bound when records are missing. Review correct and wrong count completed
         exercises without and with a lapse, including contrast and pure cues; reinforcement attempts
