@@ -1,6 +1,6 @@
 import { assertBootstrapRevealSource } from './word-introductions.ts';
 import { selectBootstrapReveal } from '../../src/domain/word-content/reveal.ts';
-import { getSessionWordOutcome, recordSessionWordOutcome, assertSessionAcceptsNewWordOutcome } from './session-word-outcomes.ts';
+import { getSessionWordOutcome, getSessionWordReport, recordSessionWordOutcome, assertSessionAcceptsNewWordOutcome } from './session-word-outcomes.ts';
 import { DEFAULT_INTRODUCTION_SPACING, isStudyIntroductionOrder, isStudyIntroductionSpacing, type StudyIntroductionOrder } from '../../src/domain/introduction-order.ts';
 import { enqueueSessionDebrief } from './session-debrief.ts';
 import { allocateSessionBucketSlots } from '../../src/domain/session-limits.ts';
@@ -2614,9 +2614,16 @@ export function recordReviewSessionSummary({
   }
 
   if (debriefInventory !== undefined) validateDebriefInventory(debriefInventory);
-  const ownsTransaction = debriefInventory !== undefined;
-  if (ownsTransaction) getDb().exec('SAVEPOINT recordReviewSessionSummary');
+  getDb().exec('SAVEPOINT recordReviewSessionSummary');
   try {
+    const previous = getDb().prepare('SELECT day_key FROM review_session_summaries WHERE session_id = ?')
+      .get(normalizedSessionId) as { day_key: string } | undefined;
+    const dayKey = completedAt.slice(0, 10);
+    const closedReport = getDb().prepare(`SELECT json_array_length(report_json, '$.newWords') AS count
+      FROM learner_session_completions WHERE learner_id = ? AND session_id = ? AND status = 'closed'`)
+      .get(requireLearnerId(), normalizedSessionId) as { count: number } | undefined;
+    // Migration can retain a confirmed report even when individual outcomes are absent.
+    const newWordCount = closedReport?.count ?? getSessionWordReport(normalizedSessionId).newWords.length;
     getDb().prepare(`
       INSERT INTO learner_owned_review_session_summaries (
         session_id,
@@ -2625,15 +2632,17 @@ export function recordReviewSessionSummary({
         completed_count,
         failed_count,
         active_duration_ms,
-        learning_completed_count
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        learning_completed_count,
+        new_word_count
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(learner_id, session_id) DO UPDATE SET
         completed_at = excluded.completed_at,
         day_key = excluded.day_key,
         completed_count = excluded.completed_count,
         failed_count = excluded.failed_count,
         active_duration_ms = excluded.active_duration_ms,
-        learning_completed_count = COALESCE(excluded.learning_completed_count, learner_owned_review_session_summaries.learning_completed_count)
+        learning_completed_count = COALESCE(excluded.learning_completed_count, learner_owned_review_session_summaries.learning_completed_count),
+        new_word_count = excluded.new_word_count
     `).run(
       normalizedSessionId,
       completedAt,
@@ -2642,11 +2651,18 @@ export function recordReviewSessionSummary({
       failedReviewActionCount,
       activeDurationMs,
       completedLearningWordCount ?? null,
+      newWordCount,
     );
+    // A completion can arrive after midnight's snapshot. Refresh persisted totals
+    // on write (also on summary retries/moves), never reconstruct them on panel load.
+    getDb().prepare(`UPDATE usage_daily_snapshots SET new_words = (
+      SELECT COALESCE(SUM(new_word_count), 0) FROM learner_owned_review_session_summaries
+      WHERE day_key = usage_daily_snapshots.day_key
+    ) WHERE day_key IN (?, ?)`).run(previous?.day_key ?? dayKey, dayKey);
     if (debriefInventory !== undefined && config.studyProfile === 'mandarin') enqueueSessionDebrief(normalizedSessionId, completedAt, debriefInventory);
-    if (ownsTransaction) getDb().exec('RELEASE recordReviewSessionSummary');
+    getDb().exec('RELEASE recordReviewSessionSummary');
   } catch (error) {
-    if (ownsTransaction) { getDb().exec('ROLLBACK TO recordReviewSessionSummary'); getDb().exec('RELEASE recordReviewSessionSummary'); }
+    getDb().exec('ROLLBACK TO recordReviewSessionSummary'); getDb().exec('RELEASE recordReviewSessionSummary');
     throw error;
   }
 }

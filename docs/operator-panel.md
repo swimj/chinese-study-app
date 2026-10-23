@@ -54,6 +54,29 @@ reinforcement after a lapse adds no exercise and does not turn that exercise int
 a correct review. These counts and total active session time come from completed
 session summaries; work in incomplete sessions is not included.
 
+**New words** sums the persisted new-word counts in completed session summaries
+on each summary's UTC completion day, alongside Sessions and Practice. The
+count comes from accepted `unstudied → learning` outcomes in that session,
+including the final action after acceptance. Opening a teaching package,
+previewing an undoable final action, and repeating Practice add no new words.
+An unfinished session contributes no Usage count. A session spanning UTC
+midnight belongs wholly to its summary's completion day.
+
+The learner's daily admission count is separate: it updates as new words are
+accepted and uses the study caller's day key for respecting the daily limit.
+Usage does not change that key or scheduling. Summary writes persist the
+new-word total and refresh affected daily snapshots, including a summary saved
+after its reporting day's snapshot was captured. Retrying a summary replaces
+its total rather than incrementing it. The panel reads persisted counts.
+
+Migration `0038_usage_new_word_totals` backfills completed summaries from saved
+word outcomes or confirmed completion reports and corrects saved daily totals.
+Older sessions without this evidence retain an unknown count. Usage sums known
+counts, treating missing counts as zero, so New words is a lower bound when
+historical evidence is missing. Admission counts alone cannot reconstruct
+completed-session Usage. Capture-time metrics such as **Mean stash** retain
+their saved values.
+
 **Proposals accepted** counts durable proposal-acceptance invocations on their UTC
 creation day, including exact and revised acceptances, regardless of later
 application outcome or withdrawn authorization. Manual operations and replacement

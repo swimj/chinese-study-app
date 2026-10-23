@@ -206,3 +206,10 @@ request ID.
 `usage-exercise-totals-migration.test.ts` covers populated upgrade preservation,
 unknown historical values, learner-scoped writes, repeat migration, fresh schema
 equivalence, and the acceptance time index.
+
+`usage-new-word-totals-migration.test.ts` covers populated new-word backfill,
+learner-scoped summary counts, unknown legacy history, completed-session UTC
+attribution, saved snapshot correction, admission preservation, repeated
+migration, and fresh/upgrade schema equivalence. `usage-pulse.test.ts` exercises
+write-time totals, evening EDT, midnight sessions, retries, Undo, and late
+completion snapshot refresh.

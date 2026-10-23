@@ -101,22 +101,17 @@ export function computeUsagePulseDay(input: {
     WHERE day_key = ?
   `).get(dayKey) as { value: number };
 
-  const newWordsRow = getDb().prepare(`
-    SELECT COALESCE(SUM(new_study_count), 0) AS value
-    FROM learner_owned_daily_new_word_intake
-    WHERE day_key = ?
-  `).get(dayKey) as { value: number };
-
   const totals = getDb().prepare(`
     SELECT COALESCE(SUM(completed_count - failed_count), 0) AS review_correct,
       COALESCE(SUM(failed_count), 0) AS review_wrong,
       COALESCE(SUM(active_duration_ms), 0) AS session_active_ms,
-      COALESCE(SUM(learning_completed_count), 0) AS practice_completed
+      COALESCE(SUM(learning_completed_count), 0) AS practice_completed,
+      COALESCE(SUM(new_word_count), 0) AS new_words
     FROM learner_owned_review_session_summaries
     WHERE day_key = ?
   `).get(dayKey) as {
     review_correct: number; review_wrong: number; session_active_ms: number;
-    practice_completed: number;
+    practice_completed: number; new_words: number;
   };
   const proposals = getDb().prepare(`
     SELECT COUNT(*) AS value FROM learner_owned_reflection_operation_invocations
@@ -195,7 +190,7 @@ export function computeUsagePulseDay(input: {
     capturedAt,
     dau: Number(dauRow.value),
     sessionsCompleted: Number(sessionsCompletedRow.value),
-    newWords: Number(newWordsRow.value),
+    newWords: totals.new_words,
     practiceCompleted: totals.practice_completed,
     reviewCorrect: totals.review_correct,
     reviewWrong: totals.review_wrong,
