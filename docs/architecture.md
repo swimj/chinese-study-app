@@ -71,7 +71,7 @@ For more frontend code navigation, see the
 | `APP_LEARNER_ID` | Backend | Stable trusted-local learner selected for this process |
 | `APP_STUDY_PROFILE` | Backend | `mandarin` or `french` |
 | `APP_SEED_DATA_PATH` | Backend | Required in dev mode; seed JSON path |
-| `VITE_API_BASE` | Frontend | API origin (default `http://localhost:5174`) |
+| `VITE_API_BASE` | Frontend | API base override; defaults to `http://localhost:5174` in Vite development and the serving origin in production builds |
 | `APP_USE_LOCAL_PROVIDER_PROXY` | Backend | Exact `true` opts local OpenAI/OpenRouter calls into `127.0.0.1:7897`; hosted default is direct |
 | `APP_METRICS_PORT` | Backend | Optional private Prometheus listener; hosted Fly config uses `9091` |
 | `VITE_STUDY_PROFILE` | Frontend | Client study profile |
