@@ -14,7 +14,6 @@ can and cannot prove. Deployment and Grafana setup remain in the
 | An HTTP error without an ID | Service metrics, `fly logs`, then the relevant domain store | The browser received an HTTP response. Existing route-specific logging varies. |
 | A word introduction or review preparation failure | Operator view's [Preparation failures tab](#shared-word-preparation-failures) | The shared word/stage status, last error, and recorded attempt history. |
 | A reflection-generation failure | Reflections run log, reflection lifecycle logs, then the provider diagnostics sidecar | The durable run state and safe provider classification; transport metadata is available for provider failures. |
-| An intake-triage generation failure | Intake-triage run rows in SQLite | Expected provider/domain failures are durable, but there is no user-facing run-history inspector yet. |
 | A generic aborted request in Grafana | Prometheus route/method/outcome metrics | A response closed before completion. It is aggregate telemetry, not a per-request log, and `GET /api/*` may be unresolved to a specific route. |
 
 ## Client transport incidents
@@ -206,14 +205,19 @@ bounded stderr record.
 
 ## Intake-triage diagnostics
 
-Expected intake-triage provider, schema, and domain failures write immutable
-terminal run rows to SQLite with learner, timing, provider/model/prompt,
-included-count, safe failure code, request/response identifiers, token use, and
-cost metadata. They exclude request bodies, raw provider output, and stacks.
-There is no retention policy and no run-history API, UI, or inspector; operators
-currently need direct database access. Unexpected errors can escape without a
-run row, and provider transport causes are collapsed to a safe upstream-failure
-classification.
+The intake-triage advisor is retired; its generation and HTTP paths are removed.
+For an investigation of an old run, the retained SQLite tables provide
+[historical provenance](../server-db.md#retired-intake-triage-storage). The
+[archived advisor contract](../../SPECS/archive/intake-triage-advisor.md)
+explains the former workflow and its retirement.
+
+Historical terminal run rows recorded expected provider, schema, and domain
+failures with learner, timing, provider/model/prompt, included-count, safe failure
+code, request/response identifiers, token use, and cost metadata. They excluded
+request bodies, raw provider output, and stacks. Unexpected errors could escape
+without a run row, and provider transport causes were collapsed to a safe
+upstream-failure classification. No retention policy is defined for these
+tables, and there is no run-history API, UI, or inspector.
 
 ## Generic server and frontend errors
 
