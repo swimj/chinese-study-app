@@ -268,7 +268,13 @@ test('model invocation outcome migration preserves old accounting without invent
       VALUES ('old-call','2026-10-06T12:00:00.000Z','openrouter','old-model','reflection','ledger-history',0.25,'reported','completed','{"source":"provider"}')`).run();
     const old = db.prepare('SELECT * FROM model_invocations').get();
     migrateDatabase(db);
-    assert.deepEqual({ ...db.prepare('SELECT * FROM model_invocations').get() }, { ...old, latency_ms: null });
+    const migrated = db.prepare('SELECT * FROM model_invocations').get()!;
+    for (const [key, value] of Object.entries(old!)) assert.deepEqual(migrated[key], value);
+    assert.equal(migrated.latency_ms, null);
+    assert.equal(migrated.actor_kind, 'learner');
+    assert.equal(migrated.actor_id, 'ledger-history');
+    assert.equal(migrated.prompt_hash, null);
+    assert.equal(migrated.request_snapshot_json, null);
     assert.deepEqual(migrateDatabase(db), []);
     assertSchemaCurrent(db);
   } finally { db.close(); }

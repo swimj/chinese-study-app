@@ -136,6 +136,15 @@ export const schemaMigrations: readonly SchemaMigration[] = [{
 }, {
   id: 'app_schema:0038_usage_new_word_totals',
   sql: fs.readFileSync(new URL('./migrations/0038_usage_new_word_totals.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0039_vocabulary_content',
+  sql: fs.readFileSync(new URL('./migrations/0039_vocabulary_content.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0040_model_provenance',
+  sql: fs.readFileSync(new URL('./migrations/0040_model_provenance.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0041_vocabulary_learner_state',
+  sql: fs.readFileSync(new URL('./migrations/0041_vocabulary_learner_state.sql', import.meta.url), 'utf8'),
 }];
 
 function checksum(value: string): string {

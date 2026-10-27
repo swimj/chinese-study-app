@@ -80,7 +80,7 @@ export function filterInvocations(rows: ModelInvocationRow[], filters: Invocatio
     const day = row.timestamp.slice(0, 10);
     if ((filters.from && day < filters.from) || (filters.to && day > filters.to)) return false;
     for (const [field, selected] of Object.entries(filters.discrete)) {
-      if (!selected.includes(row[field as DiscreteInvocationField])) return false;
+      if (!selected.includes(row[field as DiscreteInvocationField] ?? 'Service')) return false;
     }
     for (const [field, range] of Object.entries(filters.numeric)) {
       const rawValue = row[field as NumericInvocationField];
@@ -104,6 +104,7 @@ export function invocationWindowSummaries(rows: ModelInvocationRow[], selected: 
 }
 
 export function invocationGroupKey(row: ModelInvocationRow, by: InvocationGroup): string {
+  if (by === 'learnerId' && row.learnerId === null) return 'Service';
   return by === 'day' ? row.timestamp.slice(0, 10) : String(row[by] ?? 'Unknown');
 }
 
