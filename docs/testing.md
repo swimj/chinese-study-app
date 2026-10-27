@@ -1,6 +1,41 @@
 # Testing map
 
+This map helps contributors select checks for affected behavior and understand
+what those checks exercise. The [development and review workflow](stacked-feature-development-and-review.md#preserve-behavior-across-implementation-changes)
+describes how to preserve implementation and regression evidence during a change.
+
 Run full suite: `npm test` (Node test runner, `tests/*.test.ts`).
+
+## Verify coverage through the current application path
+
+Select tests by the behavior and execution path they exercise, as well as by
+filename or subsystem. For each important retained behavior, inspect the test's
+imports, setup, mocks, and assertions alongside the current application's callers.
+Establish whether the test reaches shared production code, a replacement adapter,
+or only an earlier implementation.
+
+Use complementary checks at the boundaries affected by the change:
+
+- Shared policy and component tests preserve the applicable input cases and
+  expected outcomes. Adapt setup when an interface changes without weakening
+  those expectations to match the replacement.
+- Adapter tests exercise the new request, persistence, and lifecycle translation,
+  including relevant failures, retries, and ordering constraints.
+- Focused integration or mounted-controller tests exercise the application's
+  actual composition of those parts. Mock external transport where needed, while
+  retaining the wiring whose correctness is in question. Calling a helper directly
+  does not establish that the current controller calls it.
+- Browser checks exercise affected interactions and rendered behavior. Static
+  rendering cannot establish event handling, focus, or asynchronous transitions;
+  use the real component/controller in fixtures and verify visual changes in their
+  actual container as required by `AGENTS.md`.
+
+These are complementary sources of evidence, not a requirement to add every kind
+of test for every change. Reuse existing cases and fixtures where their semantics
+fit, and add the smallest meaningful check for an uncovered boundary. When a
+regression escapes, reproduce it through the active path and retain that case as
+coverage; adding an assertion only to an unused helper leaves the gap open.
+Report manual fixture results separately from automated suite results.
 
 ## Coverage retained across the vocabulary cutover
 

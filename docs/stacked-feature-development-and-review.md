@@ -1,7 +1,8 @@
 # Feature Development And Review
 
-This document defines the default delivery and review model for implementation
-work. Use it alongside the initiating prompt or a task spec; it is not itself a
+This document guides contributors through orienting a change, preserving existing
+behavior and coverage, and delivering reviewable implementation work. Use it
+alongside the initiating prompt or a task spec; it is not itself a
 task spec, a source of product behavior, or authorization to dispatch work.
 
 Every implementation should be organized for review and normally finish as a
@@ -28,8 +29,8 @@ The initiating prompt or task spec must provide the task-specific contract:
 - any reason to depart from the normal review-delivery default, including a
   draft pull request, an existing review boundary, or no pull request.
 
-This document owns the delivery and review mechanics: orientation, review-unit
-design, stack evolution where needed, feedback placement, validation,
+This document owns the development and review procedure: orientation, behavior
+continuity, review-unit design, stack evolution where needed, feedback placement, validation,
 publication mechanics, and handoff. Graphite-specific setup and commands apply
 only to a multi-branch stack.
 
@@ -62,6 +63,44 @@ understand. A branch boundary is useful when it separates a coherent foundation,
 behavior, integration concern, or other independently meaningful delta. Keep a
 cohesive change in one pull request; do not manufacture branches merely because
 this is the default delivery model.
+
+## Preserve behavior across implementation changes
+
+Existing implementations and regression tests contain accumulated knowledge about
+edge cases and interactions. When replacing a backend, controller, API, or UI,
+use that knowledge to preserve the behavior the task leaves unchanged.
+
+Before designing the replacement, trace the affected user action through its
+components, policy, controller, and backend. Read the relevant tests, including
+browser fixtures, for the scenarios and expectations they protect. Distinguish
+authorized semantic changes from changes to transport, storage, or orchestration.
+Reconcile disputed expectations with the owning contract and task rather than
+treating either existing code or tests as unquestionable intent.
+
+Keep unchanged behavior in its existing owner where the boundary fits. Adapt new
+machinery behind an established interface, or extract the shared policy or
+component when doing so preserves a coherent responsibility. For example, a new
+save endpoint can use the existing action control and keyboard rules while its
+adapter handles the new request and acknowledgement protocol. Different lifecycle
+or learning semantics can require separate controllers; share only the behavior
+whose meaning is actually the same. Explain material duplication in terms of
+those differences, rather than the mere presence of a new backend.
+
+Carry applicable regression scenarios and assertions into the replacement's
+coverage. Adapt fixtures and invocation to the new boundary; preserve expected
+outcomes unless the task authorizes changing them. Where separate implementations
+share a contract, consider running the same behavioral cases against each adapter.
+Retire obsolete API-specific checks when appropriate, accounting for the behavior
+they protected. A test that only reaches a superseded implementation is evidence
+about that implementation, not its replacement.
+
+Use the testing map's [coverage guidance](testing.md#verify-coverage-through-the-current-application-path)
+to verify both the shared behavior and its connection to the current application.
+Scale this work to the affected risks. In the review description, identify the
+behavior retained, the existing cases reused or adapted, and the checks that
+exercise the replacement's wiring. Explain intentionally changed or retired
+expectations and material gaps with concrete test or code references. A short
+paragraph is sufficient for a narrow change.
 
 ## Direct Graphite CLI policy for stacks
 
@@ -194,6 +233,11 @@ The companion task spec and repository guidance own the exact verification
 matrix. For a single pull request, run the normal focused and broader checks
 that apply to its change, inspect its one diff, and leave the worktree clean.
 That is one ordinary testing pass, not stack validation multiplied by one.
+
+For replacement paths, check the behavior continuity evidence above: applicable
+regression cases must reach the current implementation, and integration checks
+must establish the relevant application wiring. Report any uncovered boundary
+explicitly; aggregate passing test counts do not establish this connection.
 
 For a stack, in addition:
 

@@ -58,6 +58,13 @@ does not establish current priority, unfinished work, or authorization.
 - Use the existing architecture where it fits. Add dependencies, global state
   machinery, or new abstractions when the task warrants them; explain material
   additions. Avoid introducing single-machine assumptions into hosted behavior.
+- When implementation machinery changes but semantics are shared, preserve the
+  existing components, policy functions, and interfaces that protect that behavior.
+  Read their regression cases before designing a replacement, carry applicable
+  expectations forward, and verify that the current application path exercises
+  them. Reuse should preserve quality; distinct semantics can warrant separate
+  implementations. Follow the development workflow's
+  [behavior continuity procedure](docs/stacked-feature-development-and-review.md#preserve-behavior-across-implementation-changes).
 - Keep strict TypeScript types. Use `any` only with a concrete justification.
 - In domain and state transitions, fail loudly when a programmer invariant is
   violated. Tolerant no-ops belong to explicitly user-driven or externally
