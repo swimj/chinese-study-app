@@ -36,6 +36,7 @@ read before every edit.
 | --- | --- |
 | Write or maintain documentation | [Authoring procedure](docs/documentation-authoring.md), following the [documentation principles](docs/documentation-principles.md) |
 | Implement or review a change | [Development and review workflow](docs/stacked-feature-development-and-review.md); [testing map](docs/testing.md) for affected coverage |
+| Create, adapt, or review a model prompt | [Prompt development](docs/prompt-development.md): working lineage, contract adaptation, and behavioral comparisons |
 | Set up a contributor environment or find a command | [Contributor setup and scripts](docs/scripts.md#contributor-setup-and-local-checks); [package.json](package.json) for command definitions |
 | Understand product behavior or current implementation | [Documentation index](docs/README.md), then the owning contracts, implementation explanations, relevant code, and tests |
 | Work affecting architectural assumptions or invariants | [Stability frontier](STABILITY_FRONTIER.md) for preserved assumptions and unresolved decisions, then the relevant contracts |
@@ -50,6 +51,10 @@ does not establish current priority, unfinished work, or authorization.
 
 ## Working preferences
 
+- For prompt work, read the closest working prompt in full and preserve its
+  linguistic reasoning, examples, and teaching strategy while adapting the
+  call contract. Narrower responsibilities do not justify compressing proven
+  guidance; identify substantive removals and validate behavioral changes.
 - Use the existing architecture where it fits. Add dependencies, global state
   machinery, or new abstractions when the task warrants them; explain material
   additions. Avoid introducing single-machine assumptions into hosted behavior.
@@ -88,6 +93,14 @@ calculation details and technical explanations in accessible disclosures. Avoid
 repeated prose in compact cards; use shared labels or tables when they make
 comparisons clearer. Preserve readable text and wrapping rather than shrinking
 or clipping content to fit.
+
+Do not add instructional filler or explanatory helper copy to preempt hypothetical
+confusion. Labels, controls, layout, and interaction should carry the flow. Avoid
+lines such as “Read this familiar example” or “Give the Mandarin word” when the
+content and controls already establish the action. If an interaction proves
+confusing, improve its design with Justin rather than automatically adding prose.
+Keep actual learning content, actionable errors, and necessary consequences;
+this is a rule against redundant UI narration, not against useful content.
 
 ## Data and operational boundaries
 

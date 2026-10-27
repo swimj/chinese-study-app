@@ -360,7 +360,7 @@ an introduction object or a new-model session completion.
 ```mermaid
 flowchart TD
   A[Ordered session actions] --> P[Effective session state and summary]
-  A --> E[Exact encounters and feedback]
+  A --> E[Exact encounters and reactions]
   P --> C[Frozen completion revision]
   C -->|one transaction| S[Learner effects and confirmed summary]
   C -->|same transaction| D[Durable post-session dispatch]
@@ -409,14 +409,14 @@ encounter_words
   role                               selected_through | target | context
   PK(encounter_id, word_id, role)
 
-learner_feedback                     dissatisfaction/comments, including outside sessions
+learner_feedback                     learner reactions; retained physical table name
   feedback_id PK
   learner_id → learners
   source_action_id? UQ → session_actions (same learner)
   encounter_id? → exercise_encounters (same learner)
   content_id? → content_items
   content_version?
-  target_snapshot_json?              exact content for feedback outside an encounter
+  target_snapshot_json?              exact content for reactions outside an encounter
   word_id? → words
   kind, payload_json, created_at
 
@@ -445,11 +445,11 @@ learner_state_effects                 attributed, idempotent durable effects
 
 Answers, immediate assessments, skip, more practice, word wrap, teaching
 completion, finish requests, mode choices, and undo are session actions. Encounter
-and in-session feedback rows are typed extensions written with their originating
+and in-session reaction rows are typed extensions written with their originating
 action. A retry reuses the client action ID. Ordinary Undo references the latest
 undoable transition and changes its contribution without deleting evidence.
 Returning to an earlier word creates fresh practice. Skip changes continuation;
-it neither fabricates recall success nor deletes the miss or feedback. Dismiss
+it neither fabricates recall success nor deletes the miss or reaction. Dismiss
 and suppress controls live outside the session UI.
 
 “Finish for now” stops new admission and wraps in-flight work. “Finish immediately”
@@ -480,7 +480,7 @@ explicit learner mode choices.
 | Responses and controls for an encounter | `session_actions(encounter_id, sequence_number)` where encounter is non-null |
 | Inspect an exercise's encounters, optionally by version | `exercise_encounters(content_id, content_version, presented_at)` |
 | History relevant to a learner's word | `encounter_words(learner_id, word_id, encounter_id)`; join encounters for time and session |
-| Content feedback queue | `learner_feedback(content_id, created_at)` |
+| Content reaction queue | `learner_feedback(content_id, created_at)` |
 | Close overdue completions | `session_completions(status, close_at)` |
 | One pending/failed completion per learner | Unique partial `session_completions(learner_id)` for those statuses; retain existing finalization contract |
 | Explain learner state changes | `learner_state_effects(learner_id, word_id, applied_at)` and cue equivalent |
@@ -589,7 +589,7 @@ approval or completion gates. Core linguistic reasoning is preserved; call
 boundaries and evidence/output contracts can change to support these roles.
 New content remains usable with unresolved sense associations.
 
-Case evidence includes feedback without an answer and uncovered work. A case can
+Case evidence includes reactions without an answer and uncovered work. A case can
 link multiple encounters; grouping or deferral for a model call does not discard
 its pending evidence. Do not reuse legacy review-only or overlapping-word admission
 filters as eligibility rules. Preserve actual exercise purpose, priming, responses,
@@ -642,7 +642,7 @@ create a second replacement.
 Initially, these are operator decisions rather than a hard-coded taxonomy of
 which edits deserve which strategy. Retain the proposed edit, selected strategy,
 operator rationale, and application effects together. Subsequent encounters and
-feedback can join through the source/result IDs, allowing later analysis to compare
+reactions can join through the source/result IDs, allowing later analysis to compare
 the choice with what happened. These cases form evidence for concrete agent
 guidance as intuition develops; no decision-model evaluation framework is needed.
 
@@ -656,7 +656,7 @@ roles rather than retained as parallel proposal systems.
 | Read / guarantee | Index |
 | --- | --- |
 | Claim eligible jobs / recover expired work | `(status, next_attempt_at)`; running jobs by `lease_expires_at` |
-| Find case handling feedback | Unique evidence edges; reverse `(feedback_id, case_id)` and `(encounter_id, case_id)` |
+| Find case handling a reaction | Unique evidence edges; reverse `(feedback_id, case_id)` and `(encounter_id, case_id)` |
 | Manual proposal review | `content_proposals(status, proposal_id)`; join case kind |
 | Teaching issue inbox | `reflection_cases(kind, status, created_at)`; include issues without proposals |
 | Feedback for a learner/word | `reflection_cases(learner_id, word_id, kind, created_at)` |
