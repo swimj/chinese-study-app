@@ -122,6 +122,7 @@ All HTTP is intercepted, so these fixtures do not modify learner data.
 | `hosted-upgrade.test.ts` | App-only upgrade command: identity confirmation, dirty-tree refusal, deploy build-arg, smoke-failure stays closed, reopen banner clear | `scripts/lib/hosted-upgrade.ts` |
 | `hosted-smoke.test.ts` | Read-only Clerk smoke: existing-learner gate, token mint/revoke, no token leakage | `scripts/lib/hosted-smoke.ts` |
 | `observability.test.ts` | Bounded route labels, request/response histograms, private Prometheus listener, and metrics-port validation | `server/observability.ts` |
+| `request-timing.test.ts` | Exclusive request phases, SQLite statement and transaction attribution, context across body parsing, `Server-Timing`, slow-request events, and phase metrics | `server/request-timing.ts`, `server/db/statement-timing.ts` |
 | `content-sharing.test.ts`, `content-sharing-api.test.ts` | UTC weekly second-learner milestones, exact frozen revisions, repeat deduplication, shared-only review content, cross-origin cue attempts, and operator access/input validation | SQL reporting module + temporary SQLite/Express API |
 | `content-sharing-page.test.ts` | UTC week navigation, reuse evidence, current overlap distinction, missing generation data, safe labels, and empty weeks | Presentation helpers + React server render |
 | `usage-pulse.test.ts` | Daily cohort exercise/time totals, lower-bound practice with missing records, mean stash, snapshot idempotency, smoke-learner inactive exclusion, operator allowlist, and usage-pulse, preparation-retry, model-invocation, and service-banner API behavior | `server/db/usage-pulse.ts`, operator routes and access control |
@@ -147,7 +148,7 @@ All HTTP is intercepted, so these fixtures do not modify learner data.
 | Reflection persistence / application | `reflection-store.test.ts`, `reflection-application.test.ts`, `reflection-persistence-reload.test.ts`, `reflection-quality.test.ts`, `reflection-help-inbox.test.ts` |
 | Reflection HTTP / review UI model | `reflection-api.test.ts`, `reflection-page-model.test.ts`, `reflection-operation-editor.test.ts`, `reflections-page-run-log.test.ts` |
 | Schema or bootstrap | `dev-db-bootstrap.test.ts` + any db-touching tests above |
-| Hosted metrics / Grafana export | `observability.test.ts`, `hosted-runtime.test.ts` |
+| Hosted metrics / Grafana export | `observability.test.ts`, `request-timing.test.ts`, `hosted-runtime.test.ts` |
 | Hosted app-only upgrade pipeline | `hosted-upgrade.test.ts`, `hosted-smoke.test.ts` |
 | Hosted service banner | `hosted-operations.test.ts`, `hosted-runtime.test.ts`, `app-chrome-nav.test.ts` |
 | Hosted study-commit failures | `study-commit-diagnostics.test.ts` |

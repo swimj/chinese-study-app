@@ -1,6 +1,13 @@
 import type { Request, RequestHandler } from 'express';
 import { createServer, type Server } from 'node:http';
 import { monitorEventLoopDelay, performance } from 'node:perf_hooks';
+import {
+  readSqliteTimingTotals,
+  readTransactionHoldHistogram,
+  requestTimingPhases,
+  transactionHoldBuckets,
+  type RequestTimingSummary,
+} from './request-timing.ts';
 
 const requestDurationBuckets = [
   0.005,
@@ -50,6 +57,7 @@ export type ServiceOperationalMetrics = {
 
 export type ServiceMetrics = {
   requestMiddleware: RequestHandler;
+  observeRequestTiming(summary: RequestTimingSummary, slow: boolean): void;
   render(operational: ServiceOperationalMetrics): string;
   dispose(): void;
 };
@@ -64,6 +72,9 @@ export function createServiceMetrics(options: {
   const requestCounts = new Map<string, number>();
   const requestDurations = new Map<string, HistogramState>();
   const responseSizes = new Map<string, HistogramState>();
+  const phaseSeconds = new Map<string, number>();
+  const sqliteStatementCounts = new Map<string, number>();
+  const slowRequestCounts = new Map<string, number>();
   const buildInfo = {
     version: normalizeBuildLabel(options.buildInfo?.version ?? process.env.npm_package_version),
     deployment: normalizeBuildLabel(options.buildInfo?.deployment ?? firstBuildIdentifier([
@@ -135,8 +146,19 @@ export function createServiceMetrics(options: {
     }
   }
 
+  function observeRequestTiming(summary: RequestTimingSummary, slow: boolean): void {
+    for (const phase of requestTimingPhases) {
+      const key = JSON.stringify([summary.method, summary.route, phase]);
+      phaseSeconds.set(key, (phaseSeconds.get(key) ?? 0) + summary.phasesMs[phase] / 1_000);
+    }
+    const routeKey = JSON.stringify([summary.method, summary.route]);
+    sqliteStatementCounts.set(routeKey, (sqliteStatementCounts.get(routeKey) ?? 0) + summary.sqlite.statements);
+    if (slow) slowRequestCounts.set(routeKey, (slowRequestCounts.get(routeKey) ?? 0) + 1);
+  }
+
   return {
     requestMiddleware,
+    observeRequestTiming,
     render(operational) {
       const lines: string[] = [];
       appendHelpAndType(
@@ -199,6 +221,71 @@ export function createServiceMetrics(options: {
         lines.push(metricLine('chinese_study_http_response_size_bytes_sum', histogram.sum, labels));
         lines.push(metricLine('chinese_study_http_response_size_bytes_count', histogram.count, labels));
       }
+
+      appendHelpAndType(
+        lines,
+        'chinese_study_http_request_phase_seconds_total',
+        'Exclusive request time by phase: sqlite, provider, auth, response, and other.',
+        'counter',
+      );
+      for (const [key, seconds] of sortedEntries(phaseSeconds)) {
+        const [method, route, phase] = JSON.parse(key) as [string, string, string];
+        lines.push(metricLine('chinese_study_http_request_phase_seconds_total', seconds, { method, route, phase }));
+      }
+      appendHelpAndType(
+        lines,
+        'chinese_study_http_request_sqlite_statements_total',
+        'SQLite statements executed inside requests.',
+        'counter',
+      );
+      for (const [key, count] of sortedEntries(sqliteStatementCounts)) {
+        const [method, route] = JSON.parse(key) as [string, string];
+        lines.push(metricLine('chinese_study_http_request_sqlite_statements_total', count, { method, route }));
+      }
+      appendHelpAndType(
+        lines,
+        'chinese_study_http_slow_requests_total',
+        'Requests whose local time (excluding provider waits) reached the slow-request threshold.',
+        'counter',
+      );
+      for (const [key, count] of sortedEntries(slowRequestCounts)) {
+        const [method, route] = JSON.parse(key) as [string, string];
+        lines.push(metricLine('chinese_study_http_slow_requests_total', count, { method, route }));
+      }
+      const sqliteTotals = readSqliteTimingTotals();
+      appendHelpAndType(
+        lines,
+        'chinese_study_sqlite_seconds_total',
+        'Synchronous SQLite time on the event loop, inside requests or in background work.',
+        'counter',
+      );
+      lines.push(metricLine('chinese_study_sqlite_seconds_total', sqliteTotals.backgroundMs / 1_000, { context: 'background' }));
+      lines.push(metricLine('chinese_study_sqlite_seconds_total', sqliteTotals.requestMs / 1_000, { context: 'request' }));
+      appendHelpAndType(
+        lines,
+        'chinese_study_sqlite_statements_total',
+        'SQLite statements executed, inside requests or in background work.',
+        'counter',
+      );
+      lines.push(metricLine('chinese_study_sqlite_statements_total', sqliteTotals.backgroundStatements, { context: 'background' }));
+      lines.push(metricLine('chinese_study_sqlite_statements_total', sqliteTotals.requestStatements, { context: 'request' }));
+      const transactionHold = readTransactionHoldHistogram();
+      appendHelpAndType(
+        lines,
+        'chinese_study_sqlite_transaction_hold_seconds',
+        'Time between a SQLite transaction opening and closing on the single connection.',
+        'histogram',
+      );
+      transactionHoldBuckets.forEach((upperBound, index) => {
+        lines.push(metricLine(
+          'chinese_study_sqlite_transaction_hold_seconds_bucket',
+          transactionHold.bucketCounts[index] ?? 0,
+          { le: String(upperBound) },
+        ));
+      });
+      lines.push(metricLine('chinese_study_sqlite_transaction_hold_seconds_bucket', transactionHold.count, { le: '+Inf' }));
+      lines.push(metricLine('chinese_study_sqlite_transaction_hold_seconds_sum', transactionHold.sum));
+      lines.push(metricLine('chinese_study_sqlite_transaction_hold_seconds_count', transactionHold.count));
 
       appendGauge(lines, 'chinese_study_http_requests_in_flight', 'HTTP requests currently in flight.', requestsInFlight);
       const cpuUsage = process.cpuUsage();
@@ -364,7 +451,7 @@ export function readMetricsPort(value: string | undefined): number | null {
   return port;
 }
 
-function resolveRouteLabel(request: Request): string {
+export function resolveRouteLabel(request: Request): string {
   const route = (request as Request & { route?: { path?: unknown } }).route;
   if (typeof route?.path === 'string') return route.path;
   if (route?.path instanceof RegExp) return '/frontend/*';
@@ -377,7 +464,7 @@ function resolveRouteLabel(request: Request): string {
   return '/unmatched';
 }
 
-function readResponseSize(response: import('express').Response): number | null {
+export function readResponseSize(response: import('express').Response): number | null {
   const contentLength = response.getHeader('content-length');
   const value = typeof contentLength === 'number'
     ? contentLength
@@ -387,7 +474,7 @@ function readResponseSize(response: import('express').Response): number | null {
   return value !== null && Number.isSafeInteger(value) && value >= 0 ? value : null;
 }
 
-function normalizeMethod(method: string): string {
+export function normalizeMethod(method: string): string {
   const normalized = method.toUpperCase();
   return ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'].includes(normalized)
     ? normalized
