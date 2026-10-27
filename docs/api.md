@@ -1,5 +1,9 @@
 # HTTP API index
 
+The Mandarin learner runtime is defined by the [adaptive vocabulary contract](../SPECS/vocabulary-learning.md)
+and [implementation guide](vocabulary-learning.md), including modes, action logs, internal reflection,
+content provenance, and the operator review surface.
+
 Routes are defined in [server/index.ts](../server/index.ts). Frontend client: [src/services/api.ts](../src/services/api.ts).
 
 Base URL: `http://localhost:5174` in development (override with
@@ -26,6 +30,66 @@ server-side Clerk-subject mapping, and returns `401 AUTH_REQUIRED` or
 a learner id. The frontend obtains a short-lived Clerk session token and sends
 it as a bearer token; local setup is documented in the README's Clerk fixture
 section.
+
+## Adaptive vocabulary
+
+Mandarin study uses the authenticated `/api/vocabulary` family. Commands are
+validated in `server/vocabulary/study-routes.ts`; the server derives the learner.
+
+| Method/path | Result or effect |
+| --- | --- |
+| `GET /session-preview` | Prospective ready item count, preparation status, and opaque sampling seed; queues bounded missing teaching preparation |
+| `POST /sessions` | Compose ready work and return its first encounter; optional `previewSeed` reuses the preview's pure-cue sampling draw |
+| `GET /sessions/:id` | Current owned projection and exact material |
+| `POST /sessions/:id/next` | Select ready material; stable `clientActionId` retries |
+| `POST /sessions/:id/commands` | Response, exercise reaction (v1 command `feedback`), skip, coverage, more, mode, Undo, resume, finish |
+| `POST /sessions/:id/completion` | Freeze `throughSequence` after flush, with optional reported active duration |
+| `GET /sessions/:id/completion` | Current completion and server deadline |
+| `POST /sessions/:id/completion/cancel` | Cancel exact `completionId` before closure |
+| `POST /sessions/:id/completion/close` | Apply exact completion idempotently |
+| `GET /completion/current` | Pending/failed completion, without active-session restoration |
+| `GET /words` | Owned words and current modes/schedule hints |
+| `POST /words/:id`, `/mode`, `/refresh`, `/dismiss` | Explicit enrollment and word controls |
+| `GET /feedback`, `/feedback/attention` | Read-only own lessons and lightweight attention |
+| `GET /statistics` | UTC daily session/response/coverage totals, active-time availability, and current modes |
+| `POST /feedback/:id/seen`, `/feedback/jobs/:id/retry` | Acknowledge lesson or explicitly retry own failed feedback |
+
+`/api/operator/vocabulary` provides allowlisted cases, drafts, preview, approval,
+application, closure, and failed-work retries. Proposal mutations carry expected
+versions; application requires exact approval and an idempotency key. See
+[the implementation guide](vocabulary-learning.md) for content authority.
+
+Single-word improvement results can include `pureCueReferral` (null or
+`{candidateWords: string[], sharedPurpose: string, rationale: string}`) and a
+`pureCuePromotion` assessment. Referral forms are advisory. Promotion records
+`reject`, `reuse`, `extend`, `create`, or `needs_operator` when identities cannot
+be resolved unambiguously. Creation and extension require complete teaching notes
+and join any local edits in the existing reviewed proposal; there is no separate
+automatic publication route.
+The [implementation guide](vocabulary-learning.md) describes scope, retained
+answers, and same-job stage reuse.
+
+Existing pure-cue improvement uses a dedicated assessment with `extend`, `repair`,
+or `explanation_only`. Extension preserves stimulus, axis and existing answers
+while replacing the integrated teaching note; repair changes only the stimulus.
+Both await operator application. Raw response evidence remains available when
+lexical resolution is missing or ambiguous, but extension requires a uniquely
+resolved ID from an effective rejected response. Learner feedback is independent.
+Only general production encounters enter provider jobs; recognition and contrast
+remain in session evidence and are excluded from provider feedback aggregation
+and improvement dispatch.
+
+`GET /api/operator/vocabulary/practice-preparation/failures` lists retained failed
+authoring work. `POST /api/operator/vocabulary/practice-preparation/:id/retry`
+queues an explicitly authorized retry within the attempt limit; worker gates
+still govern provider execution.
+
+Mandarin legacy `/api/study-sessions/*` writes, legacy word completion/dismissal,
+introduction open/complete, review-summary commits, learner proposal/application,
+and old operator content-editor writes return `409 VOCABULARY_CUTOVER`.
+Both methods of `/api/session-payload` are retired because even GET composed
+and reserved work. Reload into the new client. Historical read endpoints
+below remain useful for retained records; they do not define the new study flow.
 
 ## My words
 
@@ -966,17 +1030,18 @@ interpretation; the shared wire types live in `src/domain/content-quality.ts`.
 
 ## Session debrief
 
-`POST /api/review-session-summaries` optionally accepts `debriefInventory`, an
-array of `{word,pinyin}` encounter snapshots (at most 1000 rows; nonempty word
-text and a pinyin string, which may be empty). The first Mandarin inventory and interests snapshot enqueue atomically
-with the completed summary; response remains 204. Missing inventory creates no
-job. Inventories with 0–14 eligible rows after the
+Vocabulary session closure enqueues Connections atomically from its retained
+server projection; callers do not supply an inventory. The first inventory and
+learner interests snapshot remain immutable across retries. The retired
+`POST /api/review-session-summaries` returns 409 without effects. Historical
+Connections remain readable through the same endpoints.
+
+Inventories with 0–14 eligible rows after the
 [recent connection cooldown](../SPECS/session-debrief.md#recent-connection-cooldown)
-are ready with zero notes and no provider call or generation attempt;
-15–1000 eligible rows queue generation. The exercise count remains the original
-covered inventory size. The existing 100kb JSON
-request-body limit also applies. Duplicate finalization preserves the first
-snapshot. No historical job is inferred.
+are ready with zero notes and no provider attempt; 15–1000 eligible rows queue
+generation. The exercise count records the admitted inventory before cooldown.
+See the [Connections input contract](../SPECS/session-debrief.md#completion-and-input)
+for encounter membership and the provider input bound.
 
 | Method | Path | Response |
 | --- | --- | --- |
@@ -1004,3 +1069,28 @@ under `/api/operator/content-improvements` are described in the
 [workspace API contract](content-improvement.md#agent-api). All require operator
 access. Application is an explicit, revision-checked transaction, independent
 of learner feedback and study commits.
+
+### Vocabulary word collection
+
+`GET /api/vocabulary/word-collection` supplies the shared Words browser. Query
+parameters are `view=recent|personal|deck`, `q`, comma-separated `mode` values,
+`lapses=0|1`, `limit` (1–100), and nonnegative `offset`. It returns `words`,
+`total`, `hasMore`, and `currentDeck`. Current vocabulary state owns modes and
+enrollment; retained study history supplies compatible dates. Closed effective
+responses respect Undo and exclude pure-cue responses from word lapse evidence.
+
+### Vocabulary learner feedback inbox
+
+`GET /api/vocabulary/feedback` returns owner-scoped `messages`, `jobs`, and
+legacy-compatible `failures`. Messages include `subjectLabel`, `caseId`, body,
+creation time and seen time. Jobs expose queued/running/failed status, subject
+label, case identity, creation time and a learner-safe error. Completed jobs are
+represented by their messages; operator proposals and provider diagnostics are
+not included. `POST /api/vocabulary/feedback/:messageId/seen` marks only that
+message read. The existing job retry endpoint requeues the selected failed item.
+
+Feedback messages also expose nullable `dismissedAt`. Owner-only POST actions
+`/api/vocabulary/feedback/:messageId/dismiss` and `/restore` are idempotent.
+Dismissal excludes a message from unread attention without changing its body,
+seen time, scheduling or content-improvement state. GET retains dismissed
+messages for the learner’s history.

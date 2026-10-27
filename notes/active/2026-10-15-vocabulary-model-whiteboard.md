@@ -173,7 +173,7 @@ and examples while allowing the teaching to improve.
 Teaching is session behavior, not a persisted mode. The word begins Unstudied;
 teaching completion is all-or-nothing within the session. Incomplete teaching
 creates no partial teaching state or dedicated aborted-teaching record. Content
-quality feedback is independent of teaching completion.
+quality reactions are independent of teaching completion.
 
 Teaching uses a bounded, trusted repertoire that reinforces the meanings and
 associations just introduced. Direct definitions and well-framed clozes can serve
@@ -195,7 +195,7 @@ Word admitted to session
   ▼
 Select exercise ← Shared pool, active senses, selection traits
   ▼
-Practise + give content feedback
+Practise + react to content
   ├─ continue → Select another exercise
   └─ wrap → Default covering policy or learner's choice
                 └─ more practice → Resume work on the word
@@ -253,7 +253,7 @@ Response → Immediate assessment → Live continuation policy + learner choice
 ```
 
 The flow describes the responsibilities of teacher judgment; its implementation
-and the timing of its effects are separate choices. Negative feedback can warrant
+and the timing of its effects are separate choices. Negative reactions can warrant
 investigation even when the answer was accepted. Mistakes can inform research on strengths,
 weaknesses, and new exercises independently of lifecycle consequences.
 
@@ -263,7 +263,7 @@ weaknesses, and new exercises independently of lifecycle consequences.
 Every session action → Append-only session log
                          ├─ exact served exercises, assessment criteria, responses
                          ├─ mode/sense context, priming, help, and immediate results
-                         ├─ feedback and learner choices
+                         ├─ reactions and learner choices
                          └─ undo records referencing earlier actions
                                   │
                                   ▼
@@ -287,7 +287,7 @@ learner controls without waiting for model judgment.
 
 Session state is derived from the log, allowing the learner to return to any
 earlier word and keep studying. Durable learning changes are applied after the
-session; logging and the independent content-feedback channel do not depend on
+session; logging and the independent reaction channel do not depend on
 successful covering. Application must be safe to retry without duplicating effects.
 
 A default policy identifies Solidify → Practice and Practice → Maintain
@@ -305,7 +305,7 @@ or teaching completion. The warning concerns unfinished work, not erased history
 Session finalization retains the existing deadline and cancellable revision model.
 
 In-session controls support skipping, trying another exercise, stopping work on
-a word, and changing mode. Skipping does not erase responses or feedback, establish
+a word, and changing mode. Skipping does not erase responses or reactions, establish
 successful recall, or imply permanent dismissal or suppression. Dismiss/suppress
 are outside the live session UI; skipped words can be dismissed from the summary
 or Words panel. Broader recovery options can build on the persisted log later.
@@ -326,7 +326,7 @@ Teacher judgment → Backend learner-state adjustment
 ```
 
 Every mistake receives teacher judgment, incorporating the learner's thoughts
-where provided. Feedback about the same encounter is considered together.
+where provided. Reactions to the same encounter is considered together.
 Content quality and personal fit can be considered even without a mistake;
 both can matter in the same case. Nudges normally express preferences, with
 their target defining scope. Learner reports inform judgment without determining
@@ -357,7 +357,7 @@ as a manual operator workflow, outside ordinary reflection repair. Maintain suit
 changes and learner-only management effects have explicit, separate scopes.
 
 Learners can work around poor-fit content during study. Their choices and
-feedback inform subsequent selection and improvement, reducing the cost of
+reactions inform subsequent selection and improvement, reducing the cost of
 trying varied material without making learner preference a correctness verdict.
 
 ## Implementation policy candidates

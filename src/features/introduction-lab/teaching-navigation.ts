@@ -7,6 +7,7 @@ export function teachingNavigationKeyAction(
   browsing: boolean,
 ) {
   const action = introductionPlayerKeyAction(event, phase);
+  if (browsing && phase === 'introduction' && action?.type === 'back') return null;
   if (browsing && phase === 'introduction' && action?.type === 'advance') {
     return { type: 'focus-current' } as const;
   }

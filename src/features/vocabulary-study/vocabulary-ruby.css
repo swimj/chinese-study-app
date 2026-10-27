@@ -1,0 +1,19 @@
+.vocab-character-ruby { ruby-align: center; ruby-position: over; }
+.vocab-character-ruby rt { font-size: .43em; font-weight: 450; letter-spacing: 0; text-align: center; }
+.vocab-ruby-target { color: var(--accent); font-weight: 750; }
+.vocab-warmup-sentence.is-revealed .vocab-ruby-target { color: var(--text); text-decoration: underline; text-decoration-color: var(--accent); text-decoration-thickness: .08em; text-underline-offset: .15em; }
+.vocab-ruby-on-demand rt { visibility: hidden; }
+.vocab-ruby-on-demand:hover rt, .vocab-ruby-on-demand:focus rt { visibility: visible; }
+.vocab-ruby-on-demand:focus-visible { outline: 2px solid var(--accent); outline-offset: .12em; }
+
+.vocab-warmup-sentence .vocab-ruby-on-demand { color: var(--text-muted); font-weight: 400; }
+.vocab-warmup-sentence .vocab-ruby-target rt { color: var(--text); font-weight: 600; }
+/* Reserve the pronunciation line without putting an unrevealed reading in the DOM.
+   Absolute annotations cannot change either the character baseline or its width. */
+.vocab-recognition-ruby { display: inline-block; padding-block-start: .34em; }
+.vocab-recognition-ruby .vocab-character-ruby { display: inline-block; position: relative; }
+.vocab-recognition-ruby .vocab-character-ruby rp { display: none; }
+.vocab-recognition-ruby .vocab-character-ruby rt {
+  display: block; position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%);
+  font-size: .25em; line-height: 1.3; white-space: nowrap;
+}

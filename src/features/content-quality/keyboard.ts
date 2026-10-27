@@ -1,3 +1,4 @@
+import { shortcutEventBlocked, type ShortcutKeyEvent } from '../../lib/keyboard';
 export type QualityKeyEvent = {
   key: string;
   code: string;
@@ -12,9 +13,8 @@ export type QualityKeyEvent = {
 };
 
 /** Brackets leave the existing study ratings and text entry untouched. */
-export function qualityVoteForKey(event: QualityKeyEvent, editable: boolean): 'up' | 'down' | null {
-  if (editable || event.defaultPrevented || event.repeat || event.isComposing || event.keyCode === 229
-    || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return null;
+export function qualityVoteForKey(event: ShortcutKeyEvent, editable: boolean): 'up' | 'down' | null {
+  if (editable || shortcutEventBlocked(event) || event.shiftKey) return null;
   // Pinyin input sources can emit localized punctuation for these physical keys.
   if (event.code === 'BracketLeft') return 'down';
   if (event.code === 'BracketRight') return 'up';

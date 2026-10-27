@@ -1,8 +1,9 @@
 # In-session content quality
 
-Content feedback is a descriptive overlay. A learner has one optional thumbs-up
+A content reaction is learner input about an exercise; feedback is the app's
+teaching response. Reactions form a descriptive overlay. A learner has one optional thumbs-up
 or thumbs-down rating for an exact content item/revision, reused on later
-encounters. Clicking the selected feedback button clears it. This is a judgment
+encounters. Clicking the selected reaction button clears it. This is a judgment
 of the material, separate from whether the learner recalled the answer.
 
 Ratings cover authored production cues, definition fallback production exercises,
@@ -13,9 +14,9 @@ throughout playback. Rehearsal ratings appear on the subsequent study cards.
 The local authoring lab is outside this scope. Definition fallback ratings use
 the same controls as authored cues; provenance does not change the learner action.
 
-Study-card cue and practice feedback sits in the action area beside the session
-controls. Supplement feedback stays beside its corresponding content. Feedback
-uses a “Helpful?” label with “Not helpful” and “Helpful” text buttons, with the selected vote highlighted
+Study-card cue and practice reactions sit in the action area beside the session
+controls. Supplement reactions stay beside its corresponding content. Reactions
+use a “Helpful?” label with “Not helpful” and “Helpful” text buttons, with the selected vote highlighted
 in the app accent color.
 
 Controls use `]` for Helpful and `[` for Not helpful outside editable fields.
@@ -26,12 +27,12 @@ IME composition, modifier combinations, and held-key repeats do not vote.
 The [frontend interaction section](../SPECS/frontend-architecture-map.md#session-keyboard-interactions)
 explains how session commands and focused controls share keyboard input.
 
-Feedback saves immediately and independently of study commits and Undo. Ending
+A reaction saves immediately and independently of study commits and Undo. Ending
 or abandoning a session does not remove it. Rating never suppresses content, changes publication, schedules a word, or
 affects grading. A newly saved “Not helpful” rating on an eligible review
 production exercise, including its definition fallback, also requests post-session feedback through the existing
 reflection workflow. Other content ratings remain available for operator review.
-The acknowledgment is “Feedback saved”; it does not promise an individual reply
+The acknowledgment is “Reaction saved”; it does not promise an individual reply
 or a content change. Previously saved ratings do not request feedback merely
 because an exercise is shown again.
 A save failure is shown next to the controls and does not block study.
@@ -64,7 +65,7 @@ teaching, or answer content is distinguishable from an earlier revision. Rating
 writes require that learner's prior recorded encounter with the exact content.
 Requests do not choose a learner identity. Mutable contrast prompts carry the
 frozen text, explanation, and target for a server comparison: if the prompt has
-changed before an encounter can be recorded, feedback is rejected with a request
+changed before an encounter can be recorded, the reaction is rejected with a request
 to open a fresh session rather than attributed to unseen content. These supplied
 fields are validation expectations, not trusted snapshot uploads.
 
@@ -96,7 +97,7 @@ Quality evidence is not fed to any model provider.
 
 The [operator content-improvement workspace](content-improvement.md) opens a
 revisioned correction case from an inspected item or a directly selected source.
-Feedback remains a descriptive overlay; only a separately reviewed, explicitly
+A reaction remains a descriptive overlay; only a separately reviewed, explicitly
 approved correction changes future content selection. Definition fallback ratings
 are inspectable in the ledger but do not expose the authored-content correction
 editor; review production can already request feedback and a proposed cue repair

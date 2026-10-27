@@ -17,7 +17,8 @@ mode-level behavior. Include internal reflection with manual repair approval,
 a basic backend event log, and consistent content/model provenance. Rich preference
 controls, sense-override surfaces, and sophisticated adaptive policies are later
 extensions. Sense records grow through bootstrap and useful enrichment; incomplete
-sense associations do not block ordinary study or content repair.
+sense associations do not block ordinary study or learner feedback. Single-word
+automatic improvement establishes sense context before proposing repairs.
 
 ## Session controls and completion
 
@@ -31,7 +32,7 @@ completion deadline and cancellation mechanism. Richer interrupted-session
 recovery and restart options can follow on the persisted log.
 
 Remove dismiss/suppress from the live session UI. Skip, try another, and stop work
-on this word provide immediate ways out while preserving responses and feedback.
+on this word provide immediate ways out while preserving responses and reactions.
 Offer dismissal for skipped words from the summary or Words panel. A fuller
 production-suppression experience is follow-up work; existing deactivations remain
 effective. Retain current Undo scope. Returning to an earlier word adds practice;
@@ -69,7 +70,7 @@ rather than imposing the old compulsory-recall standard on every candidate.
 
 Teaching exercises are exclusively marked for teaching/priming and excluded from
 general practice APIs, including after Solidify priming. Shared physical storage
-is convenient, but cross-role reuse is not a requirement. Teaching feedback goes
+is convenient, but cross-role reuse is not a requirement. Teaching reactions go
 to a separate manual inbox with the introduction and associated exercises;
 teaching repair does not pass through the ordinary reflection improvement loop.
 
@@ -81,7 +82,7 @@ point. Check structural validity separately from editorial quality. Review
 teaching exercises alongside their actual introduction, and Solidify/Practice
 options both individually and as a pool. Model critique can assist; it does not
 establish learner effectiveness or replace hands-on judgment. Actual encounters
-and feedback provide the subsequent evidence. Concrete prompts and evaluation
+and reactions provide the subsequent evidence. Concrete prompts and evaluation
 cases can be developed during implementation within these targets.
 
 ## Internal reflection
@@ -96,14 +97,28 @@ issues use the separate manual inbox described above.
 Preserve the core linguistic reasoning while allowing decomposition of calls,
 evidence contracts, and reporting. Those orchestration changes are in scope;
 changes to core linguistic guidance or framing require hands-on experimentation.
-Adapters supply the actual exercise purpose and teaching/priming context. New
-reflection content may have unresolved sense associations and remain fully usable
-at word level; comprehensive sense enrichment is not a prerequisite.
+Adapters supply the actual exercise purpose and teaching/priming context. The
+single-word improvement path ensures a sense inventory, then assesses the authored
+cue and maps a single intended use before drafting a repair. This local prerequisite does
+not require comprehensive remapping at cutover. Learner feedback still reasons
+from exact encounters independently of improvement readiness.
 
-Encounters and explicit feedback determine processing eligibility, including
+Mapping admits an exercise with a defensible single intended sense to local
+improvement. A gloss laundry list spanning distinct senses instead automatically
+generates a fresh, sense-based repertoire for operator review. Applying that
+proposal replaces the laundry-list exercise and retains any other existing cues;
+it does not reset the word's content pool or learner state. The discarded list
+needs no sense association; replacement draws on the word's inventory without
+preserving or accounting for every old gloss. Uninterpretable intent
+and an apparent inventory gap for a single intended use remain visible operator findings, with
+no subsequent automatic repair, inventory expansion, or repertoire generation.
+These routing decisions concern single-word exercises; pure-cue policy remains
+separate. Sense intent does not retroactively establish the fairness of a cue.
+
+Encounters and explicit reactions determine processing eligibility, including
 skips before an answer and work on uncovered words. Do not carry forward old
 review-only, covered-attempt, or overlapping-word filters as reasons to lose this
-evidence. Work can be grouped or deferred between calls; feedback without an
+evidence. Work can be grouped or deferred between calls; reactions without an
 answer is not a fabricated mistake. Preserve attribution to the source encounters.
 
 Learner feedback is read-only. Backend policy applies compensation automatically
@@ -256,7 +271,7 @@ Establishment is per content–word pair: resolving one member of a pure cue say
 nothing about the others. Considered versions and invocation provenance belong
 in job/model evidence and events, rather than on `content_words`.
 
-Word-level selection, answer assessment, and exact-content feedback remain useful
+Word-level selection, answer assessment, and exact-content reactions remain useful
 without sense associations. Sense-specific interpretation must not claim links
 that have not been established. Historical encounters retain their original
 meaning; later interpretation cannot fabricate a historical sense target or
@@ -264,9 +279,11 @@ per-sense mastery.
 
 ### Incremental enrichment
 
-When a workflow benefits from structured sense context, it can reuse or establish
-the word's senses and map relevant content. This is independent of delivering
-useful reflection repairs. Core sense-aware reflection design and prompt changes
+Single-word improvement reuses or establishes the word's senses and maps the
+relevant exercise. Sense establishment is independent of fresh exercise generation;
+existing authored bootstrap uses can establish an inventory without a provider
+call. Mapping records the content and catalog examined as workflow evidence.
+The stable association remains separate from those versions. Prompt refinements
 remain subject to the experimentation boundary above.
 
 Enrichment changes associations without implicitly rewriting content, answers,

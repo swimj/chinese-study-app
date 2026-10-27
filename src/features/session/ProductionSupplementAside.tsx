@@ -12,9 +12,9 @@ export function ProductionSupplementAside({
   const sentenceText = (text: string) => convertSentenceCharacters(text, sentenceCharacterPresentation);
   return (
     <div className="production-supplement production-supplement-aside">
-      <p className="production-supplement-frame">{sentenceText(supplement.englishFrame)}</p>
-      <p className="production-supplement-sentence">{`「${sentenceText(supplement.exampleSentence)}」`}</p>
-      <p className="production-supplement-translation">{sentenceText(supplement.exampleTranslation)}</p>
+      {supplement.englishFrame.trim() && <p className="production-supplement-frame">{sentenceText(supplement.englishFrame)}</p>}
+      {supplement.exampleSentence.trim() && <p className="production-supplement-sentence">{`「${sentenceText(supplement.exampleSentence)}」`}</p>}
+      {supplement.exampleTranslation.trim() && <p className="production-supplement-translation">{sentenceText(supplement.exampleTranslation)}</p>}
     </div>
   );
 }

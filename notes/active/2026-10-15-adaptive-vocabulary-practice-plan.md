@@ -22,12 +22,12 @@ readiness, interests, or way of understanding the word.
 
 Content and scheme amplify each other's limitations. Repetition makes an
 unhelpful cue costly; improving the cue leaves the prescribed repetition and
-success criteria largely unquestioned. Teaching and Practice feedback can be
+success criteria largely unquestioned. Teaching and Practice reactions can be
 recorded, but ordinary selection retains existing learners' package pins even
 after an operator publishes a correction. The people who expose a problem can
 therefore remain attached to it. See the current
 [serving model](../../docs/word-content-serving.md),
-[feedback behavior](../../docs/content-quality.md), and
+[reaction behavior](../../docs/content-quality.md), and
 [correction boundaries](../../docs/content-improvement.md#content-boundaries).
 
 These tensions motivate a broader question: how can the app help learners find
@@ -42,7 +42,7 @@ contexts, different demands, renewed teaching, or an unexpected route into
 material they have encountered many times.
 
 Structure is valuable, especially during the first encounter. The app's chosen
-structure is a revisable hypothesis about what will help a learner. Feedback
+structure is a revisable hypothesis about what will help a learner. Reactions
 can inform the content, the activity, the amount of work, and the timing of the
 next encounter. Content and practice arrangements develop together.
 
@@ -99,7 +99,7 @@ demands develop additional dimensions of the word, while encounters separated
 in time help reveal whether recall persists. Difficulty may increase where the
 app has a useful basis for judging it.
 
-The learner has the same control over approach, daily amount, and feedback as
+The learner has the same control over approach, daily amount, and reactions as
 in Solidify. Possible activities include ordinary production, contrasts, and
 pure-cue-like tasks. These are directions to explore, not a fixed catalog.
 
@@ -172,7 +172,7 @@ responded to rather than tasked with sorting through generated inventory.
 
 Shared material can support many learners, while individual preferences and
 experience influence selection. General corrections, broadly useful additions,
-and personal preferences have different scopes. Feedback can reveal approaches
+and personal preferences have different scopes. Reactions can reveal approaches
 that work widely as well as approaches that work particularly well for a subset
 of learners. A single popularity ranking would lose that distinction.
 
@@ -191,7 +191,7 @@ of model-based linguistic judgment. Prepared alternatives and interleaving other
 work while an alternative is generated are possible mechanisms; neither is
 selected yet. The learner can stop without waiting for a diagnosis.
 
-Between sessions, the system can use feedback and practice evidence to revise
+Between sessions, the system can use reactions and practice evidence to revise
 several aspects of the experience:
 
 | Aspect | Possible adaptation |
@@ -202,7 +202,7 @@ several aspects of the experience:
 | Guidance | Recommend a mode or a capability worth exploring next |
 
 An unhelpful experience can reflect incorrect material, poor task fit, personal
-taste, or a need for teaching. Feedback need not immediately establish which
+taste, or a need for teaching. A reaction need not immediately establish which
 one applies for the learner to receive a different experience. Deeper diagnosis
 and content improvement can proceed on a slower cycle.
 
@@ -214,7 +214,7 @@ through additions, corrections, and personalized selection.
 The system should distinguish delivery of a change, the learner's perception of
 improvement, and evidence of learning. Success after an easier or better-fitting
 prompt is informative without proving durable, transferable ability. Exact
-encounters and subsequent feedback should remain interpretable as the material
+encounters and subsequent reactions should remain interpretable as the material
 and arrangement evolve.
 
 ## Related future ideas

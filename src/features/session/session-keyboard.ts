@@ -19,7 +19,6 @@ export type SessionKeyCommand =
   | { type: 'toggle_production_input_focus' }
   | { type: 'submit_production' }
   | { type: 'no_clue_production' }
-  | { type: 'open_notes' }
   | { type: 'toggle_reflection_review' }
   | { type: 'reveal' }
   | { type: 'begin_unstudied_drill' }
@@ -203,11 +202,6 @@ export function getSessionShortcutGuide(
       available: context.hasUndo,
     },
     {
-      key: 'E',
-      description: 'Open personal notes',
-      available: context.hasActiveWord,
-    },
-    {
       key: '?',
       description: 'Open or close the shortcut guide',
       available: true,
@@ -294,10 +288,6 @@ export function resolveSessionKey(
 
   if (event.key === ' ' && event.shiftKey) {
     return !composing && context.canSkipReinforcement ? { type: 'skip_reinforcement' } : null;
-  }
-
-  if ((event.key === 'e' || event.key === 'E') && context.hasActiveWord) {
-    return { type: 'open_notes' };
   }
 
   if (context.completedSummary) {

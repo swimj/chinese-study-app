@@ -157,37 +157,31 @@ overlays cannot reactivate a retired publication.
 
 ## Shared Content Contract
 
-The beta has no canonical or blessed content tier. Imported corpus content is
-a reproducible bootstrap snapshot, not a quality claim.
+The current Mandarin content authority is described by the
+[vocabulary contract](../SPECS/vocabulary-learning.md). Complete current objects
+and immutable full revision history preserve identity separately from authored
+representation. Content can be shared or learner-private; import retains that
+scope. Active, quarantined, and retired availability is separate from curation
+and learner-specific deactivation.
 
-Reusable generated content normally enters `shared_trial` after the source
-learner explicitly approves its durable effect and the artifact passes strict
-local validation and sanitization. Private evidence, notes, analysis, and
-learner identity are never published with it. Publication states are:
+Backend authoring can publish structurally validated shared material under its
+bounded preparation policy. Internal reflection proposes changes; an allowlisted
+operator previews, approves, and applies the exact version. Learners receive
+separate private read-only lessons. Their evidence is not published as shared
+content. Scheduling compensation has bounded backend authority independent of
+content approval.
 
-- `shared_trial` — eligible for ordinary serving under optimistic publication;
-- `available` — eligible service-visible content, including imported content;
-- `quarantined` — immediately ineligible while a problem is investigated; and
-- `retired` — historically retained but no longer eligible.
+Teaching has an explicitly bound repertoire; general practice draws from eligible
+standalone exercises. Maintain prefers curated versions with a dictionary fallback.
+Pure cues retain independent schedules and sparse strong-cue sampling, adopted
+from relevant Practice/Maintain vocabulary without learner proposal review.
+Neither word mode nor a due date promises exhaustive session inclusion.
 
-For targeted content in the first beta, selection is uniform random across all eligible artifacts
-for the same learning purpose, including imported and trial content. The
-randomness is injectable in tests. Later ranking, personalization, feedback,
-or embedding-based policy is a refinement of the probability distribution,
-not a reason to weaken identity or provenance.
-
-Pure cues instead use their own learner-private scheduler and proportional
-strong-cue sampling. They are automatically adopted when at least one accepted
-word is in the learner's review vocabulary, without a separate approval or
-intake cap. `proxied` describes derived shared production coverage of a word;
-it is not learner suppression or another stored relevance preference. See
-[`pure-cue-elicitation.md`](../SPECS/pure-cue-elicitation.md).
-
-Learner suppression remains private relevance/curriculum state. Reporting a
-bad artifact may cause a shared quarantine or retirement, and a future shared
-task-level disposition is a separate operation. A possible "commonly
-suppressed" prior is deferred; explicit learner admission or prioritization
-must override such a default if it is introduced.
+The legacy source-table descriptions above explain retained imported/history
+records. Their old pinning, learner-approval, and successor-only rules do not
+control current vocabulary writes. Historical served snapshots remain immutable;
+updates affect fresh encounters. Identity replacement does not silently transfer
+schedules, deactivations, or teaching bindings.
 
 ## Persistence And Reconsideration
 

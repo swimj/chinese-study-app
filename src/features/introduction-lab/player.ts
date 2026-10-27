@@ -60,7 +60,7 @@ export function introductionPlayerKeyAction(
 export function reduceIntroductionPlayer(
   state: IntroductionPlayerState,
   action: IntroductionPlayerAction,
-  packageSnapshot: TeachingPackageSnapshot,
+  packageSnapshot: Pick<TeachingPackageSnapshot, 'beats' | 'rehearsals'>,
   mode: 'full' | 'teaching-only' = 'full',
 ): IntroductionPlayerState {
   switch (action.type) {

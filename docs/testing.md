@@ -2,7 +2,71 @@
 
 Run full suite: `npm test` (Node test runner, `tests/*.test.ts`).
 
+## Coverage retained across the vocabulary cutover
+
+Legacy tests remain in the top-level test glob, but a legacy-only test does not
+establish coverage of the new Mandarin path. Preserve shared semantic cases at
+the common policy/component boundary, and exercise new persistence adapters
+separately. Changed lifecycle rules are not forced through legacy controllers.
+
+| Shared or adapted boundary | Coverage |
+| --- | --- |
+| Review interval/ease and urgency/ranking | `review-policy.test.ts` plus old `study-actions` / `session-composition` tests and new `vocabulary-selected-skill-scheduling` / `vocabulary-composition` tests |
+| Physical bracket reactions and event guards | `content-quality-keyboard.test.ts`, `vocabulary-keyboard.test.ts`; Chinese punctuation vectors exercise both resolvers |
+| Home start, card inbox chrome, summary disclosures, deadline | Existing Home/completion tests, vocabulary Home/completion tests, and `shared-inbox-chrome.test.ts` |
+| Words collections and shared page | `my-words-page.test.ts`, legacy `my-words.test.ts`, and `vocabulary-words.test.ts`; vocabulary mode authority requires the new adapter suite |
+| Preparation-wide outage classification and pause | `preparation-provider-failure.test.ts`, old `word-preparation-worker.test.ts`, new `vocabulary-preparation.test.ts`; item budgets and running sibling publication remain separate |
+| Pure-cue stimulus repair | Old repair tests and `vocabulary-pure-cue-improvement.test.ts` use the shared nonempty/changed/trimmed stimulus invariant |
+| Durable completion and proposal receipts | `vocabulary-session-persistence.test.ts` and `vocabulary-reflection.test.ts` include pending/approved and applied database-reopen cases with idempotent replay |
+
+Do not infer full hook or browser coverage from shared chrome tests. The old and
+new completion protocols, feedback selection identities and content application
+models remain separate. Manual browser fixtures still cover their interaction
+wiring; full automated mounted-controller/fetch-race coverage is not implied.
+
 ## Browser regression checks
+
+
+### Comparing a replacement UI with the earlier app
+
+For vocabulary UI parity work, boot the pre-cutover application as well as the
+current application. Record the baseline commit, run each against its own
+version-compatible disposable fixture, and keep provider work disabled. Never
+point the earlier server at a current or valued database.
+
+Capture matching viewport screenshots for normal Home, expanded Connections,
+collapsed Connections, and Session Settings, plus each changed study interaction.
+Match updates visibility and fixture content before comparing layout. Check the
+Start card's ready count in both normal and compact states, loading/empty states,
+settings controls, keyboard order, and scrolling at narrow/enlarged sizes.
+Compare the screenshots directly: a test/build pass or a newly written snapshot
+is not evidence that an omitted control was intentional. Record intended model
+changes separately from regressions and unresolved differences; fix regressions
+before declaring parity. Keep the screenshots and baseline identity with the
+review evidence so the next iteration can use the same comparison.
+
+
+### Current browser fixtures
+
+The current Mandarin flow uses `/tests/browser/vocabulary-controller.html`
+(and `?mode=undo`) to exercise cancellation and delayed acknowledgements through
+the real hook. `/tests/browser/vocabulary-recognition-motion.html` uses the real
+controller and card surface: reveal, then Correct or Forgot. Its PASS result checks
+that the rating is saved and the outgoing card reflects the acknowledged recall
+before requesting the successor. `?covered=1` checks the covered card's rightward
+departure; `?retry=1` fails the first save so Retry save must retain the departure.
+`/tests/browser/vocabulary-ui.html` provides presentation scenarios;
+`/tests/browser/vocabulary-operator.html` exercises the proposal-first internal review surface (ready suggestions, history, manual edits, and `?second=pending|failed|result`; `?narrow=1&large=1` checks compact enlarged-text layout)
+with intercepted HTTP (`?empty=1` for empty lists). These fixtures are separate
+from `npm test`. The separate `/tests/browser/vocabulary-operator-production.html`
+preview reads a locally installed sanitized excerpt from
+`tests/browser/.local/operator-production-preview.json` (gitignored). It replays
+historical proposals with their original acceptance/application provenance;
+actions only mutate browser memory, not production. Missing excerpts produce an
+explicit error. Keep retrieved records out of source control and distinguish
+legacy operation schema versions from local proposal revisions. Use the [disposable vocabulary fixture](vocabulary-learning.md#conversion-and-local-verification)
+for end-to-end study against the actual API and SQLite. The older session fixtures
+below retain coverage of the previous controller, not the current Mandarin path.
 
 `/tests/browser/bootstrap-reveal.html` checks the shared bootstrap teaching
 reveal with the actual session controller. Use `?recognition=1` for recognition,
@@ -44,12 +108,18 @@ All HTTP is intercepted, so these fixtures do not modify learner data.
 
 | Test file | Domain | Imports |
 | --- | --- | --- |
+| `vocabulary-session*.test.ts`, `vocabulary-study*.test.ts`, `vocabulary-composition.test.ts` | Commands, independent skills, coverage, exact evidence, retry, closure, and bounded selection | Pure reducer + temporary SQLite + HTTP boundaries |
+| `vocabulary-content.test.ts`, `vocabulary-import.test.ts`, `vocabulary-cutover.test.ts` | Identity/history, teaching bindings, legacy conversion and cutover refusal | Temporary SQLite |
+| `vocabulary-reflection*.test.ts`, `vocabulary-processing.test.ts`, `vocabulary-preparation.test.ts` | Private feedback, manual authority, worker fencing, compensation and generation retry | Temporary SQLite + injected providers |
+| `vocabulary-sense-readiness.test.ts`, `vocabulary-improvement-admission.test.ts`, `vocabulary-pure-cue-promotion.test.ts`, `vocabulary-pure-cue-improvement.test.ts` | Sense admission, local repair/repertoire routing, pure-cue promotion and review, teaching-note preservation, production-only provider eligibility, retained stages and stale evidence fences | Temporary SQLite + injected providers; linguistic eval seams in [prompt README](../server/vocabulary/reflection-prompts/README.md#local-evaluation-seams) |
+| `vocabulary-prompt-experiments.test.ts` | Retained experimental inputs/outputs and structural validation | Offline archive; no paid calls |
 | `word-content-lab-provider.test.ts` | Real request shape, strict teaching output, truncation and malformed output | Provider with injected fetch |
 | `word-content-lab-service.test.ts` | Two-stage local generation, immutable archive, exact references, invalid output and identity conflicts | Injected lab provider + temporary draft archive |
 | `word-content-lab-api.test.ts` | Local opt-in, host/origin gates, route response contracts | Express lab router |
 | `introduction-player.test.ts` | Paced navigation, rehearsal matching, retry/finish, IME and keyboard guards | Pure local player |
 | `new-learner-preview.test.ts` | Fresh learner setup, existing-data protection, reset-link output, and welcome-only browser marker reset | Preview command + temporary SQLite |
 | `ui-annotation-fixtures.test.ts` | Fresh annotation setup, relative UTC dates, prepared stash/learning/review serving, Home content, and existing-data protection | Fixture command + temporary SQLite |
+| `vocabulary-session-fixtures.test.ts` | Full 12-word vocabulary composition, Solidify threshold range, persisted prior override, and summary choice through real finalization | Fresh fixture command + temporary SQLite |
 | `session-composition.test.ts` | Session payload / scheduling composition | Dynamic `server/db.ts` |
 | `diet-intake-placement-api.test.ts` | Retired placement endpoints and removed intake status gate | `server/index.ts` registered routes + temporary SQLite |
 | `diet-profile.test.ts` | Default diet selection, profile round-trip, nudge/jump behavior, and historical intake compatibility | `server/db/diet-profile.ts` + temporary SQLite |
@@ -127,6 +197,25 @@ All HTTP is intercepted, so these fixtures do not modify learner data.
 | `usage-pulse.test.ts` | Daily cohort exercise/time totals, lower-bound practice with missing records, mean stash, snapshot idempotency, smoke-learner inactive exclusion, operator allowlist, and usage-pulse, preparation-retry, model-invocation, and service-banner API behavior | `server/db/usage-pulse.ts`, operator routes and access control |
 | `client-incident-diagnostics.test.ts` | Account-scoped client queue bounds/retention, visible IDs, private sidecar deduplication/pruning, and inspection | Client/server incident diagnostic modules |
 | `study-commit-diagnostics.test.ts` | Success/failure correlation, exact private payload/error retention, 30-day pruning, diagnostic-id responses, contrast routing, and logging isolation | `server/study-commit-diagnostics.ts`, study-commit API handlers |
+
+## Vocabulary backend provider trials
+
+[`scripts/vocabulary-reflection-trial.ts`](../scripts/vocabulary-reflection-trial.ts)
+replays supplied session-log fixtures in a new, isolated archive. `prepare --archive
+ABSOLUTE_NEW_DIRECTORY --cases FILE` exercises the completion HTTP API, waits for
+closure, ingests evidence and checks expected routing without provider calls.
+`run --archive ABSOLUTE_DIRECTORY --allow-provider-calls --max-provider-calls 80`
+uses configured credentials and the real reflection/sense providers. Live runs
+require authorization for the external calls; the numeric limit caps provider
+calls, not jobs. Each job gets one attempt, and proposals remain unapplied.
+
+Preparation preserves the fixture and hashes current source files, including
+uncommitted edits. Execution retains per-stage requests/results, invocation
+provenance, sense inventories, admission stages, feedback and state effects.
+`inspect --archive ABSOLUTE_DIRECTORY` refreshes exported evidence without calls.
+Keep historical fixtures/results intact, record input adaptations, and separate
+backend execution checks from linguistic judgments. Synthetic actions over real
+cue snapshots establish flow coverage, not replay of actual learner sessions.
 
 ## When changing…
 
@@ -213,3 +302,17 @@ attribution, saved snapshot correction, admission preservation, repeated
 migration, and fresh/upgrade schema equivalence. `usage-pulse.test.ts` exercises
 write-time totals, evening EDT, midnight sessions, retries, Undo, and late
 completion snapshot refresh.
+
+### Learner feedback preview
+
+`/tests/browser/vocabulary-feedback.html` uses the actual learner Feedback page
+and app navigation with an in-memory API. Its scenario picker covers correction,
+unfair rejection, a comment after a correct answer, shared-expression feedback,
+generation in progress, partial failure with retry, and an empty inbox. Copy is
+illustrative, not a retained provider result. The single-card inbox uses previous/next navigation and marks only the displayed
+lesson read. Queued and failed items occupy cards in the same queue. Retries simulate
+success without provider calls or database writes.
+
+The learner feedback preview also supports Dismiss/Restore and Left/Right/D
+shortcuts. Verify dismissal advances to the next card, survives Refresh, and
+remains restorable under Dismissed; dropdowns retain their native keyboard input.

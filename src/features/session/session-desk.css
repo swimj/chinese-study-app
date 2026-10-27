@@ -7,8 +7,14 @@
 .desk-overview summary { cursor: pointer; }
 .desk-overview > div { position: absolute; right: 0; top: 1.8rem; padding: 1rem; width: 210px; background: var(--surface); box-shadow: var(--shadow-card); border-radius: 12px; z-index: 20; display: grid; gap: .6rem; }
 .desk-stack { position: relative; min-height: 0; isolation: isolate; }
-.desk-under-card { position: absolute; inset: 7px 4px -8px; border-radius: 20px; background: color-mix(in srgb, var(--surface-muted) 85%, black); box-shadow: 0 3px 0 var(--desk-card-edge), 0 12px 20px #00000014; transform: translate(4px, 3px) rotate(-2.2deg); pointer-events: none; }
+.desk-under-card { position: absolute; inset: 7px 4px -8px; border-radius: 20px; background: color-mix(in srgb, var(--surface-muted) 85%, black); box-shadow: 0 3px 0 var(--desk-card-edge, color-mix(in srgb, var(--surface-muted) 90%, black)), 0 12px 20px #00000014; transform: translate(4px, 3px) rotate(-2.2deg); pointer-events: none; }
 .desk-front { height: 100%; position: relative; }
+.desk-stack.is-tucking > .desk-front { z-index: 1; }
+.vocab-layout.is-tucking { isolation: isolate; }
+.vocab-layout.is-tucking > .vocab-layout-session { position: relative; z-index: 1; }
+.desk-tuck.vocab-session { position: absolute; display: block; margin: 0; overflow: visible; container-type: normal; z-index: 2; pointer-events: none; }
+.desk-tuck > .vocab-paper, .desk-tuck > .vocab-word-tile { width: 100%; height: 100%; margin: 0; }
+.desk-tuck > .vocab-word-tile { min-width: 0; text-align: left; padding: .65rem .9rem; display: grid; gap: .2rem; overflow-wrap: anywhere; }
 .session-desk .session-card-shell { height: 100%; border: 0; border-radius: 20px; background: var(--surface); box-shadow: var(--desk-card-shadow); display: grid; grid-template-columns: minmax(0,1fr); grid-template-rows: minmax(0,1fr) auto; gap: 0; padding: 0; overflow: visible; }
 .session-desk .session-card-scroll { padding: clamp(1.2rem,3vw,2.5rem) clamp(1.2rem,4vw,3rem) 1.2rem; gap: 1.1rem; border-radius: 20px 20px 0 0; }
 .session-desk .session-card-scroll > .desk-legacy-counts { display: none; }

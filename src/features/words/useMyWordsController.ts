@@ -1,20 +1,23 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  toggleMyWordsStatus,
+  ALL_MY_WORDS_STATUSES,
   type MyWord,
   type MyWordsResponse,
   type MyWordsStatus,
   type MyWordsView,
 } from '../../domain/my-words';
 import { fetchMyWords } from '../../services/api';
+import type { WordBrowserEntry } from '../../domain/my-words';
 
-export function useMyWordsController(active: boolean) {
+export type WordsLoader<Stage extends string, Entry extends WordBrowserEntry<Stage>> = (view: MyWordsView, query: string, offset: number, signal: AbortSignal, statuses: readonly Stage[], recentLapses: boolean) => Promise<{words: Entry[]; currentDeck: MyWordsResponse['currentDeck']; hasMore: boolean; total: number}>;
+
+export function useWordBrowserController<Stage extends string, Entry extends WordBrowserEntry<Stage>>(active: boolean, fetchWords: WordsLoader<Stage, Entry>, allStages: readonly Stage[]) {
   const [view, setView] = useState<MyWordsView>('recent');
   const [query, setQuery] = useState('');
   // Empty = all stages (no chips pressed).
-  const [statuses, setStatuses] = useState<MyWordsStatus[]>([]);
+  const [statuses, setStatuses] = useState<Stage[]>([]);
   const [recentLapses, setRecentLapses] = useState(false);
-  const [words, setWords] = useState<MyWord[]>([]);
+  const [words, setWords] = useState<Entry[]>([]);
   const [currentDeck, setCurrentDeck] = useState<MyWordsResponse['currentDeck']>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
@@ -37,7 +40,7 @@ export function useMyWordsController(active: boolean) {
     setError(null);
     fetchingMore.current = false;
     const timer = window.setTimeout(() => {
-      void fetchMyWords(view, query, 0, controller.signal, statuses, recentLapses).then((result) => {
+      void fetchWords(view, query, 0, controller.signal, statuses, recentLapses).then((result) => {
         if (generation.current !== current || controller.signal.aborted) return;
         setCurrentDeck(result.currentDeck);
         setWords(result.words);
@@ -59,7 +62,7 @@ export function useMyWordsController(active: boolean) {
       request.current?.abort();
       generation.current += 1;
     };
-  }, [active, view, query, statuses, recentLapses, revision]);
+  }, [active, view, query, statuses, recentLapses, revision, fetchWords]);
 
   function resetList() {
     request.current?.abort();
@@ -82,7 +85,7 @@ export function useMyWordsController(active: boolean) {
     setLoading(true);
     setError(null);
     try {
-      const result = await fetchMyWords(view, query, words.length, controller.signal, statuses, recentLapses);
+      const result = await fetchWords(view, query, words.length, controller.signal, statuses, recentLapses);
       if (generation.current !== current || controller.signal.aborted) return;
       setCurrentDeck(result.currentDeck);
       setWords((existing) => {
@@ -108,9 +111,9 @@ export function useMyWordsController(active: boolean) {
     scrollTop: scrollTop.current,
     onViewChange: (next: MyWordsView) => { resetList(); setView(next); },
     onQueryChange: (next: string) => { resetList(); setQuery(next); },
-    onToggleStatus: (status: MyWordsStatus) => {
+    onToggleStatus: (status: Stage) => {
       resetList();
-      setStatuses((current) => toggleMyWordsStatus(current, status));
+      setStatuses((current) => current.length === 0 || current.length === allStages.length ? [status] : allStages.filter((stage) => stage === status ? !current.includes(stage) : current.includes(stage)));
     },
     onToggleRecentLapses: () => {
       resetList();
@@ -118,7 +121,12 @@ export function useMyWordsController(active: boolean) {
     },
     onSelect: setSelectedId,
     onLoadMore: () => void loadMore(),
+    reload: () => setRevision((value) => value + 1),
     onRetry: () => { resetList(); setRevision((value) => value + 1); },
     onScroll: (top: number) => { scrollTop.current = top; },
   };
+}
+
+export function useMyWordsController(active: boolean) {
+  return useWordBrowserController<MyWordsStatus, MyWord>(active, fetchMyWords, ALL_MY_WORDS_STATUSES);
 }

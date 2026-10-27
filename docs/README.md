@@ -1,5 +1,9 @@
 # Documentation index
 
+The Mandarin learner runtime is defined by the [adaptive vocabulary contract](../SPECS/vocabulary-learning.md)
+and [implementation guide](vocabulary-learning.md), including modes, action logs, internal reflection,
+content provenance, and the operator review surface.
+
 Use this index to find the document or section that answers your question. The
 [documentation principles](documentation-principles.md#documentation-map)
 define the target hierarchy independently of today's folders and labels.
@@ -50,6 +54,8 @@ linking to the intended guarantees they realize and any known gaps.
 
 - [Architecture map](architecture.md): runtime layout and code navigation;
   currently identifies itself as navigation-only.
+- [Vocabulary content-improvement architecture](implementation/vocabulary-content-improvement.md):
+  rendered provider-call flow, sense admission, and optional pure-cue promotion.
 - [API map](api.md), [database map](server-db.md), and
   [frontend map](../SPECS/frontend-architecture-map.md): focused code references.
 - [Operator panel guide](operator-panel.md): how to reach and use the
@@ -94,6 +100,8 @@ hosted operations, and contributor development clearly separated.
   including the skill’s interactive draft-review procedure.
 - Contributor environments: [scripts](scripts.md) and the
   [local introduction development aid](word-introduction-lab.md).
+- Prompt development: [preserving working behavior while adapting model calls](prompt-development.md),
+  including prompt lineage, contract changes, and retained comparison evidence.
 
 The hosted service is the current learner path. These guides provide the
 existing operational references; their coverage and accuracy need verification

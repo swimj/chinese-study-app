@@ -54,6 +54,15 @@ function key(value: string, extras: Partial<{ code: string; isComposing: boolean
 }
 
 describe('session keyboard contract', () => {
+  test('personal-note authoring has no shortcut or advertised entry while paused', () => {
+    for (const answerRevealed of [false,true]) {
+      const context = createContext({ answerRevealed });
+      assert.equal(resolveSessionKey(key('e'), context), null);
+      assert.equal(resolveSessionKey(key('E'), context), null);
+      const rows = getSessionShortcutGuide(context).flatMap(section => section.rows);
+      assert.ok(rows.every(row => row.key !== 'E' && !/personal notes/i.test(row.description)));
+    }
+  });
   test('unrevealed recognition uses Space to reveal', () => {
     const context = createContext();
     assert.equal(getSessionInteractionKind(context), 'recognition_unrevealed');

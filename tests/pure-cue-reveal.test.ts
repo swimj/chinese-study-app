@@ -118,6 +118,7 @@ test('recognition reuses supplement teaching only after reveal and retains dicti
     recognitionSupplement: { supplementId: 'supplement', englishFrame: 'Knowingly shielding someone.',
       exampleSentence: '他包庇了他。', exampleTranslation: 'He shielded him.' } };
   const overrides = { activePureCue: null, activeItem: item, activeWord: word,
+    activeWordPersonalNotes: 'My existing learner note',
     isProductionItem: false, activePrompt: word.hanzi, activeAllMeanings: word.meanings,
     activeAnswerText: word.meaning, activeAnswerPinyin: word.pinyin,
     sessionSummary: createSessionSummary({ sessionId: 'recognition-session',
@@ -137,6 +138,8 @@ test('recognition reuses supplement teaching only after reveal and retains dicti
   const bootstrap = { ...overrides, activeItem: { ...item, wordContent: content, bootstrapReveal }, characterPresentation: 'traditional' as const };
   assert.doesNotMatch(render(bootstrap), /curated sense|studies/);
   const bootstrapHtml = render({ ...bootstrap, answerRevealed: true });
+  assert.match(bootstrapHtml, /My existing learner note/);
+  assert.doesNotMatch(bootstrapHtml, /Edit notes|Open personal notes/);
   const primaryReveal = bootstrapHtml.split('<details class="desk-reference">')[0];
   assert.equal((primaryReveal.match(/curated sense/g) ?? []).length, 1);
   assert.match(primaryReveal, /production-supplement-frame/);

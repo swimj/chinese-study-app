@@ -1,6 +1,6 @@
 # Stability frontier
 
-Reconciled with Justin's current direction on 2026-10-03.
+Current implementation boundary for adaptive vocabulary delivery.
 
 ## Purpose and current direction
 
@@ -10,12 +10,12 @@ judgment. It is not a task queue, a release certificate, or a complete system ma
 The direct task instruction supplies execution scope; older planning prose does
 not silently override it. See [AGENTS.md](AGENTS.md) for source reconciliation.
 
-Pure-cue modeling, staged reflection, and new-word introduction have brought the
-core product to a reasonably self-consistent milestone. The emphasis is now
-polish, maturity, and debt in the existing experience: make Justin comfortable
-inviting test learners, obtain more useful product-discovery and business
-feedback, and establish a steadier base for future additions. This does not
-certify operational readiness or prohibit all new functionality.
+The Mandarin product uses adaptive vocabulary modes and a flexible exercise pool.
+The [vocabulary contract](SPECS/vocabulary-learning.md) owns the current learner
+loop; [its implementation guide](docs/vocabulary-learning.md) owns the runtime
+and cutover. Word mode, exercise selection, scheduling, and content repair have
+separate authority. Simple initial policies can evolve without replacing those
+boundaries. This snapshot does not certify deployment or operational readiness.
 
 The persistent steward at `/Users/jw/dev/chinese-study-steward` holds the product
 north star in `vision.md`, weekly priorities in `outlook.md`, and unresolved
@@ -26,21 +26,15 @@ belong there and in task instructions, not in this frontier.
 
 ## Safe implementation assumptions
 
-- **Existing study loop:** preserve word lifecycle, scheduling, session covering,
-  Undo, completion, and exact accepted-attempt evidence. The frontend owns the
-  in-flight session snapshot; the backend owns durable state. The
-  [canonical specs](SPECS/README.md) own the detailed behavior.
-- **Distinct practice models:** word production tasks and their cues sit beneath
-  word scheduling. Pure cues have independent learner-private scheduling and
-  assessment history under [their feature contract](SPECS/pure-cue-elicitation.md).
-  Neither model should be collapsed into the other during polish.
-- **Introduction and reflection:** shared preparation, pinned introduction and
-  rehearsal packages, and review content have distinct lifecycles. Use the
-  [generation](docs/word-content-generation.md),
-  [serving](docs/word-content-serving.md), and
-  [structured review guide](docs/structured-review-content.md) for the implemented
-  boundary. Staged reflection is part of the existing experience; it is optional
-  and failure-isolated from session correctness.
+- **Study loop:** interactions append exact evidence; finalization applies durable
+  learning effects once. Coverage and recall are distinct. Mode belongs to a word,
+  while recognition, contrast, and pure cues retain their appropriate scheduling.
+- **Content:** complete current objects and full version history support shared
+  repair. Teaching has an exclusive repertoire bound to its introduction; ordinary
+  practice uses a fluid pool. Unresolved sense associations allow word fallback.
+- **Reflection:** private learner lessons and internal content proposals run
+  independently. Operators approve content applications. Backend judgment can
+  compensate scheduling without learner approval or content publication.
 - **Hosted boundary:** Mandarin, invite-only desktop web, one-origin frontend
   and Express API, shared SQLite, Clerk identity, and Fly/Litestream are the
   current beta baseline. Hosted dogfood history is valued data; the preserved
@@ -63,15 +57,14 @@ belong there and in task instructions, not in this frontier.
   and attributable.
 - Shared content, publication status and provenance, private evidence and
   suppressions, authorized operations, applied effects, and historical served
-  snapshots remain distinguishable. Shared content is immutable by default;
-  narrow authorized repair exceptions preserve attributed before/after history
-  and the original served exercise. Do not generalize those exceptions or
-  infer a universal content-version identity. See the service and feature specs
+  snapshots remain distinguishable. Current content can be updated or replaced through explicit operator authority;
+  immutable full history preserves attributed before/after material and every
+  original served exercise. Identity-bound relationships do not silently transfer. See the service and feature specs
   for publication, preparation, and repair rules.
 - Reflection/provider failure cannot invalidate a completed study session.
   Model output is untrusted. Reflection-proposed durable effects require strict
-  validation, explicit learner authorization, supported application, and truthful
-  attribution. Shared word preparation instead uses its explicit validated
+  validation, explicit operator authorization for content application, and truthful
+  attribution. Scheduling compensation has separate bounded backend authority. Shared word preparation instead uses its explicit validated
   application-publication policy; it does not fabricate learner approval. Model
   judgment does not enter live-session grading.
 - Provider calls and secrets stay on the backend. Provider evidence follows the

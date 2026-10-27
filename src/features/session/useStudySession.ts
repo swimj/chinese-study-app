@@ -1958,9 +1958,6 @@ export function useStudySession({
           if (productionAwaitingNext) handleToggleFrozenProductionLearnerRequestedReview();
           else handleToggleLearnerRequestedReview();
           return;
-        case 'open_notes':
-          handleOpenPersonalNotesEditor();
-          return;
         case 'reveal':
           void handleRevealAnswer();
           return;

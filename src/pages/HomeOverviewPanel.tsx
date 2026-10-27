@@ -1,3 +1,5 @@
+import { SessionStartCard } from '../components/SessionStartCard';
+export { SettingsGearIcon } from '../components/SessionStartCard';
 import { useEffect, useRef, useState } from 'react';
 import { DEFAULT_INTRODUCTION_SPACING, MAX_INTRODUCTION_SPACING, isStudyIntroductionOrder, type StudyIntroductionOrder } from '../domain/introduction-order';
 import type { BackendStatus, UnstudiedAdmissionSource } from '../services/api';
@@ -111,38 +113,19 @@ export function HomeOverviewPanel({
   return (
     <div className={`panel home-overview${compact ? ' is-compact' : ''}`}>
       {!sessionStarted ? (
-        <div className={`session-start-shell${sessionSettingsOpen ? ' is-settings-open' : ''}`}>
-          <button
-            type="button"
-            className="session-start-card"
-            onClick={onStartSession}
-            disabled={sessionSettingsOpen || sessionLoading || !canStartSession}
-          >
-            <span className="session-start-card-label">
-              {sessionLoading || entryWaiting ? 'Preparing session...'
-                : prefetchedSessionItemCount === 0 ? 'Check again' : 'Start session'}
-            </span>
-            <span className="session-start-card-helper">
-              {entryWaiting ? 'Getting your study material ready. This may take about 30 seconds.'
-                : preparationPending && prefetchedSessionItemCount === 0
-                ? 'Preparing your session. You can check again shortly.'
-                : prefetchedSessionItemCount === 0 ? 'No study material is ready right now. You can check again or return later.'
+        <SessionStartCard
+          disabled={sessionSettingsOpen || sessionLoading || !canStartSession}
+          onStart={onStartSession} settingsOpen={sessionSettingsOpen} settingsSaving={sessionSettingsSaving}
+          guideToSettings={guideToSettings} onToggleSettings={onToggleSessionSettings}
+          settingsTitle={guideToSettings ? 'Make it yours: explore session settings' : 'Session settings'}
+          label={sessionLoading || entryWaiting ? 'Preparing session...'
+            : prefetchedSessionItemCount === 0 ? 'Check again' : 'Start session'}
+          helper={entryWaiting ? 'Getting your study material ready. This may take about 30 seconds.'
+            : preparationPending && prefetchedSessionItemCount === 0
+              ? 'Preparing your session. You can check again shortly.'
+              : prefetchedSessionItemCount === 0 ? 'No study material is ready right now. You can check again or return later.'
                 : <>{prefetchedSessionItemCount ?? '...'} study items ready</>}
-            </span>
-          </button>
-          <button
-            type="button"
-            className={`session-settings-gear${guideToSettings && !sessionSettingsOpen ? ' getting-started-attention' : ''}`}
-            title={guideToSettings ? 'Make it yours: explore session settings' : 'Session settings'}
-            aria-label="Session settings"
-            aria-expanded={sessionSettingsOpen}
-            aria-controls="session-settings-panel"
-            disabled={sessionSettingsSaving}
-            onClick={onToggleSessionSettings}
-          >
-            <SettingsGearIcon />
-          </button>
-        </div>
+        />
       ) : (
         <div className="stack">
           <div className="stat-card">
@@ -560,25 +543,8 @@ export function SessionSettingsPanel({
   );
 }
 
-function SettingsGearIcon() {
-  return (
-    <svg
-      className="session-settings-gear-icon"
-      viewBox="0 0 24 24"
-      width="16"
-      height="16"
-      aria-hidden="true"
-      focusable="false"
-    >
-      <path
-        fill="currentColor"
-        d="M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.06-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.1 7.1 0 0 0-1.63-.94l-.36-2.54a.5.5 0 0 0-.5-.42h-3.84a.5.5 0 0 0-.5.42l-.36 2.54c-.58.23-1.12.54-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.71 8.84a.5.5 0 0 0 .12.64l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94L2.83 14.52a.5.5 0 0 0-.12.64l1.92 3.32c.14.24.43.34.68.22l2.39-.96c.5.4 1.05.71 1.63.94l.36 2.54c.05.24.26.42.5.42h3.84c.24 0 .45-.18.5-.42l.36-2.54c.58-.23 1.12-.54 1.63-.94l2.39.96c.25.12.54.02.68-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58ZM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2Z"
-      />
-    </svg>
-  );
-}
 
-function ActiveTimeMetric({ label, value }: { label: string; value: number }) {
+export function ActiveTimeMetric({ label, value }: { label: string; value: number }) {
   return (
     <div className="failure-rate-period">
       <span>{label}</span>

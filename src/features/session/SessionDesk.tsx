@@ -1,7 +1,11 @@
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, type ReactNode } from 'react';
 
 import type { SessionDeskOutcome } from './session-desk-model';
-export type SessionDeskHandle = { depart: (outcome: SessionDeskOutcome, showNext: () => void) => Promise<void> };
+import { tuckBehind } from './tuck-behind';
+export type SessionDeskHandle = {
+  depart: (outcome: SessionDeskOutcome, showNext: () => void, options?: { projectedRecall?: boolean; shuffle?: boolean }) => Promise<void>;
+  tuckFrom: (source: HTMLElement) => Promise<void>;
+};
 
 /** Presentation only: the controller owns when the study transition is applied. */
 export const SessionDesk = forwardRef<SessionDeskHandle, {
@@ -13,7 +17,11 @@ export const SessionDesk = forwardRef<SessionDeskHandle, {
   answered: number;
   elapsed: string;
   summaryDate?: string;
-}>(function SessionDesk({ children, enabled, mistakeKey, remaining, again, answered, elapsed, summaryDate }, ref) {
+  /** Reuse card motion inside another session surface without the legacy desk chrome. */
+  embedded?: boolean;
+  /** Async controllers may rerender saving state before the successor arrives. */
+  cardKey?: string;
+}>(function SessionDesk({ children, enabled, mistakeKey, remaining, again, answered, elapsed, summaryDate, embedded = false, cardKey }, ref) {
   const surface = useRef<HTMLDivElement>(null);
   const pile = useRef<HTMLDivElement>(null);
   const cleanup = useRef<(() => void) | null>(null);
@@ -28,14 +36,14 @@ export const SessionDesk = forwardRef<SessionDeskHandle, {
     const host = surface.current;
     host?.classList.remove('is-departing');
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    host?.querySelectorAll('.session-card-scroll, .session-action-bar').forEach((content) => content.animate([
+    host?.querySelectorAll('.session-card-scroll, .session-action-bar, .vocab-card-main, .vocab-card-footer').forEach((content) => content.animate([
       { opacity: 0, transform: 'translateY(5px)' },
       { opacity: 1, transform: 'translateY(0)' },
     ], { duration: 360, easing: 'ease-out' }));
-  }, [children]);
+  }, [cardKey ?? children]);
   useEffect(() => {
     if (!mistakeKey || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    const card = surface.current?.querySelector<HTMLElement>('.session-card-shell');
+    const card = surface.current?.querySelector<HTMLElement>('.session-card-shell, .vocab-paper');
     const animation = card?.animate([
       { transform: 'translateX(0)' }, { transform: 'translateX(-7px) rotate(-.5deg)' },
       { transform: 'translateX(6px) rotate(.5deg)' }, { transform: 'translateX(-3px)' },
@@ -44,18 +52,34 @@ export const SessionDesk = forwardRef<SessionDeskHandle, {
     return () => animation?.cancel();
   }, [mistakeKey]);
   useImperativeHandle(ref, () => ({
-    depart(outcome, showNext) {
+    tuckFrom(source) {
       if (running.current) return running.current;
       const host = surface.current;
-      const card = host?.querySelector<HTMLElement>('.session-card-shell');
+      if (!host || !embedded || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return Promise.resolve();
+      const motion = tuckBehind(host, source, true);
+      cleanup.current = motion.cancel;
+      running.current = motion.finished.finally(() => { cleanup.current = null; running.current = null; });
+      return running.current;
+    },
+    depart(outcome, showNext, options) {
+      if (running.current) return running.current;
+      const host = surface.current;
+      const card = host?.querySelector<HTMLElement>('.session-card-shell, .vocab-paper');
       if (!host || !card || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
         showNext();
         return Promise.resolve();
       }
+      if (embedded && (outcome === 'wrong' || options?.shuffle)) {
+        const motion = tuckBehind(host, card, false, outcome === 'wrong' && host.dataset.mistake !== 'true');
+        cleanup.current = motion.cancel;
+        running.current = motion.finished.finally(() => { cleanup.current = null; running.current = null; });
+        try { showNext(); } catch (error) { motion.cancel(); throw error; }
+        return running.current;
+      }
       const pending = new Promise<void>((resolve) => {
         const rect = card.getBoundingClientRect();
         const ghost = document.createElement('div');
-        ghost.className = 'desk-departure session-desk';
+        ghost.className = `desk-departure session-desk${embedded ? ' vocab-session' : ''}`;
         ghost.setAttribute('aria-hidden', 'true');
         ghost.inert = true;
         Object.assign(ghost.style, { left: `${rect.left}px`, top: `${rect.top}px`, width: `${rect.width}px`, height: `${rect.height}px` });
@@ -72,7 +96,7 @@ export const SessionDesk = forwardRef<SessionDeskHandle, {
         const back = document.createElement('div');
         back.className = 'desk-departure-back';
         // Show the earned recall on the outgoing card without changing study state.
-        if (outcome === 'ongoing' || outcome === 'done') {
+        if (!options?.projectedRecall && (outcome === 'ongoing' || outcome === 'done')) {
           front.querySelector('.desk-chips > span:not(.is-filled)')?.classList.add('is-filled');
         }
         turn.append(front, back);
@@ -85,6 +109,7 @@ export const SessionDesk = forwardRef<SessionDeskHandle, {
           if (finished) return;
           finished = true;
           ghost.remove();
+          host.classList.remove('is-departing');
           cleanup.current = null;
           running.current = null;
           resolve();
@@ -120,8 +145,12 @@ export const SessionDesk = forwardRef<SessionDeskHandle, {
       running.current = pending;
       return pending;
     },
-  }), []);
+  }), [embedded]);
   if (!enabled) return <>{children}</>;
+  if (embedded) return <div className="desk-stack" ref={surface} data-mistake={Boolean(mistakeKey)}>
+    <div className="desk-under-card" aria-hidden="true" />
+    <div className="desk-front">{children}</div>
+  </div>;
   return <div className="session-desk">
     <header className="desk-heading">
       {summaryDate !== undefined ? <><span>Session summary</span><span>{summaryDate}</span></> : <><span className="desk-remaining">{remaining} remaining</span>

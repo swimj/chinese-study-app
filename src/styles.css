@@ -4305,6 +4305,7 @@ textarea {
 
 /* Personal vocabulary browsing keeps the list stationary beside word details. */
 .my-words-page {
+  container-type: inline-size;
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -4393,6 +4394,15 @@ textarea {
   .my-words-toolbar { flex-direction: column; }
   .my-words-browser.has-detail { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(8rem, 1fr) minmax(10rem, 1fr); }
   .my-word-detail { border-left: 0; border-top: 1px solid var(--border); }
+}
+
+@container (max-width: 46rem) {
+  .my-words-toolbar { flex-direction: column; }
+  .my-words-browser.has-detail { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto; }
+  .my-word-detail { border-left: 0; border-top: 1px solid var(--border); }
+  .my-word-row { flex-wrap: wrap; }
+  .my-word-summary { text-align: left; }
+  .my-word-gloss { white-space: normal; overflow-wrap: anywhere; }
 }
 
 .about-page {
