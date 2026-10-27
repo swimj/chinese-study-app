@@ -155,6 +155,9 @@ for (const variant of ['fresh', 'fly'] as const) {
         /CHECK constraint failed/,
       );
 
+      // The new learner-state cutover refuses unapplied authorized legacy effects.
+      assert.throws(() => migrateDatabase(db), /settling legacy effects first/);
+      db.prepare("UPDATE learner_owned_reflection_operation_invocations SET application_state='authorization_withdrawn' WHERE invocation_id='invocation-a'").run();
       assert.deepEqual(migrateDatabase(db), schemaMigrations.slice(1).map((migration) => migration.id));
       assertSchemaCurrent(db);
 

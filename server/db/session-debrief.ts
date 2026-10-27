@@ -63,8 +63,14 @@ export function setDebriefInterests(value: unknown): { debriefInterests: string 
 
 /** Called within the durable summary transaction. First inventory wins on repeat finalization. */
 export function enqueueSessionDebrief(sessionId: string, completedAt: string, inventory: SessionDebriefInventoryItem[],
-  now = new Date().toISOString()): void {
+  now = new Date().toISOString(), source: {kind:'legacy'} | {kind:'vocabulary';completionId:string} = {kind:'legacy'}): void {
   validateDebriefInventory(inventory);
+  const previous=getDb().prepare('SELECT source_kind,vocabulary_completion_id FROM learner_session_debrief_jobs WHERE learner_id=? AND session_id=?')
+    .get(requireLearnerId(),sessionId) as {source_kind:string;vocabulary_completion_id:string|null}|undefined;
+  if(previous) {
+    if(previous.source_kind!==source.kind||(source.kind==='vocabulary'&&previous.vocabulary_completion_id!==source.completionId))throw new Error('Connections source identity conflict');
+    return;
+  }
   const interests = getDebriefInterests();
   const input: StoredDebriefInput = {
     schemaVersion: 'session_debrief_input.v1', sessionDate: new Date(completedAt).toISOString(),
@@ -76,10 +82,10 @@ export function enqueueSessionDebrief(sessionId: string, completedAt: string, in
     .map((item) => item.ref);
   const generate = providerInput(input).items.length >= MIN_SESSION_DEBRIEF_ITEMS;
   getDb().prepare(`INSERT INTO learner_session_debrief_jobs
-    (learner_id, session_id, completed_at, exercise_count, input_json, status, result_json, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(learner_id, session_id) DO NOTHING`)
+    (learner_id, session_id, completed_at, exercise_count, input_json, status, result_json, updated_at,source_kind,vocabulary_completion_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?,?,?) ON CONFLICT(learner_id, session_id) DO NOTHING`)
     .run(requireLearnerId(), sessionId, input.sessionDate, inventory.length, JSON.stringify(input),
-      generate ? 'queued' : 'ready', generate ? null : '{"notes":[]}', now);
+      generate ? 'queued' : 'ready', generate ? null : '{"notes":[]}', now,source.kind,source.kind==='vocabulary'?source.completionId:null);
 }
 
 /** Apply the current threshold to pending legacy jobs without touching ready results or attempts. */
@@ -139,7 +145,7 @@ export function claimSessionDebrief(sessionId: string, token: string, startedAt:
     if (changed !== 1) return null;
     getDb().prepare(`INSERT INTO learner_session_debrief_attempts
       (learner_id, attempt_id, session_id, started_at, provider, model, reasoning_effort, prompt_version)
-      VALUES (?, ?, ?, ?, 'openai', 'gpt-6.1-sol', 'low', 'session-debrief-v6')`)
+      VALUES (?, ?, ?, ?, 'openai', 'gpt-6.1-sol', 'low', 'session-debrief-v7')`)
       .run(requireLearnerId(), token, sessionId, startedAt);
     const row = getDb().prepare(`SELECT input_json FROM learner_session_debrief_jobs WHERE learner_id = ? AND session_id = ?`)
       .get(requireLearnerId(), sessionId) as { input_json: string };

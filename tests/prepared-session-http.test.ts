@@ -5,7 +5,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { wordContentFixtures } from './fixtures/word-content.ts';
 
-test('session entry hydrates lessons; open and complete stay model-free and defer study credit', async () => {
+test('retired Mandarin session entry and introduction actions cannot prepare content or record progress', async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'prepared-session-http-'));
   process.env.APP_MODE = 'study'; process.env.APP_AUTH_MODE = 'trusted_local';
   process.env.APP_LEARNER_ID = 'prepared-session'; process.env.APP_DATA_DIR = directory;
@@ -39,30 +39,23 @@ test('session entry hydrates lessons; open and complete stay model-free and defe
   const base = `http://127.0.0.1:${address.port}`;
   const post = (url: string, body: object) => fetch(`${base}${url}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   try {
-    assert.equal((await post('/api/session-payload', { studyDayKey: 'bad' })).status, 400);
+    assert.equal((await post('/api/session-payload', { studyDayKey: 'bad' })).status, 409);
     assert.equal((await fetch(`${base}/api/learning-policy/daily-new-word-limit`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dailyNewWordLimit: 21 }) })).status, 400);
     const response = await post('/api/session-payload', { studyDayKey: '2026-10-01' });
-    assert.equal(response.status, 200);
-    const payload = await response.json();
-    assert.deepEqual(payload.buckets.unstudied.map((word: { id: string }) => word.id), [id]);
-    assert.equal(payload.preparation.pending, false);
-    const introduction = payload.buckets.introductions[id];
-    assert.ok(introduction.selectedPackageId);
-    assert.equal(calls, 3);
-    assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM learner_word_introduction_events').get()!.n, 0);
+    assert.equal(response.status, 409);
+    assert.equal((await response.json()).code,'VOCABULARY_CUTOVER');
+    assert.equal((await fetch(`${base}/api/session-payload?studyDayKey=2026-10-01`)).status,409);
     for (const action of ['open', 'complete']) {
-      const result = await post(`/api/words/${id}/introduction/${action}`, { packageId: introduction.selectedPackageId });
-      assert.equal(result.status, 200);
+      const result = await post(`/api/words/${id}/introduction/${action}`, { packageId: 'stale-package' });
+      assert.equal(result.status, 409);
+      assert.equal((await result.json()).code,'VOCABULARY_CUTOVER');
     }
-    assert.equal(calls, 3);
+    assert.equal(calls, 0);
+    assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM learner_word_introduction_events').get()!.n, 0);
+    assert.equal(getWordPreparationWork(id, 'bootstrap'), null);
+    assert.equal(getWordPreparationWork(id, 'teaching'), null);
     assert.equal(getWordPreparationWork(id, 'review'), null);
     assert.equal(sql.prepare('SELECT status FROM words WHERE id = ?').get(id)!.status, 'unstudied');
-    const again = await post('/api/session-payload', { studyDayKey: '2026-10-01' });
-    assert.equal((await again.json()).buckets.introductions[id].selectedPackageId, introduction.selectedPackageId);
-    assert.equal(calls, 3);
-    await worker.stop();
-    db.completeUnstudiedWordSession(id, '2026-10-01');
-    assert.equal(getWordPreparationWork(id, 'review')?.status, 'queued');
   } finally {
     await worker.stop();
     await new Promise<void>((resolve) => server.close(() => resolve()));

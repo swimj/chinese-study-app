@@ -1,3 +1,4 @@
+import { pureCueStimulusRepairErrors } from './pure-cue-repair';
 import type { PureCueServedSnapshot } from './pure-cues';
 import type { JsonSchema } from './reflection-result-schema';
 import type {
@@ -106,8 +107,7 @@ export function validateRepairPureCueStimulusOperation(value: unknown): string[]
   if (typeof value.expectedAxisNote !== 'string' || typeof value.expectedTeachingNote !== 'string') errors.push('operation: invalid expected content');
   if (!strings(value.expectedAcceptedWordIds) || value.expectedAcceptedWordIds.length < 2) errors.push('operation.expectedAcceptedWordIds: expected at least two members');
   else if (value.expectedAcceptedWordIds.includes(String(value.responseWordId))) errors.push('operation: response already accepted');
-  if (typeof value.stimulus === 'string' && value.stimulus.trim() === value.expectedStimulus) errors.push('operation: stimulus must change');
-  if (typeof value.stimulus === 'string' && value.stimulus !== value.stimulus.trim()) errors.push('operation.stimulus: trim surrounding whitespace');
+  errors.push(...pureCueStimulusRepairErrors(value.expectedStimulus, value.stimulus).map(error => `operation: ${error}`));
   return errors;
 }
 export function validateRepairPureCueStimulusEvidenceContext(operation: RepairPureCueStimulusOperationV1, item: PureCueReflectionItemV1): string[] {

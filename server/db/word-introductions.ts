@@ -1,3 +1,5 @@
+import { importLegacyVocabularyWord } from './vocabulary-import.ts';
+import { linkVocabularyPublicationOutput } from './vocabulary-provenance.ts';
 import { isBootstrapRevealSnapshot } from '../../src/domain/word-content/reveal.ts';
 import { randomUUID } from 'node:crypto';
 import type { SavedTeachingPackage, SavedWordContent, WordIntroductionLibrary } from '../../src/domain/word-content/application.ts';
@@ -321,7 +323,7 @@ export function saveSharedWordIntroductionComponent(
 }
 
 export function finishSharedWordIntroductionBootstrap(
-  wordId: string, token: string, input: WordContentDocument, model: string,
+  wordId: string, token: string, input: WordContentDocument, model: string, invocationId?: string | null,
 ): SavedWordContent {
   const content = parseWordContent(input);
   const sourceModel = modelName(model);
@@ -338,6 +340,8 @@ export function finishSharedWordIntroductionBootstrap(
       SET content_id = ?, active_stage = NULL, lease_token = NULL, lease_expires_at = NULL
       WHERE word_id = ?
     `).run(content.id, wordId);
+    importLegacyVocabularyWord(getDb(),wordId,{ originKind: 'model' });
+    linkVocabularyPublicationOutput(getDb(),invocationId,'bootstrap',content.id);
     return saved;
   });
 }
@@ -375,6 +379,18 @@ export function finishSharedWordIntroductionTeaching(
       SET package_id = ?, active_stage = NULL, lease_token = NULL, lease_expires_at = NULL
       WHERE word_id = ?
     `).run(teaching.id, wordId);
+    importLegacyVocabularyWord(getDb(),wordId,{ originKind: 'model' });
+    if (componentKeys) {
+      const lesson = readComponent(row.content_id,'teaching',componentKeys.teaching)!;
+      const practice = readComponent(row.content_id,'practice',componentKeys.practice)!;
+      linkVocabularyPublicationOutput(getDb(),lesson.invocationId,'teaching_package',teaching.id,'',{ allowUnresolvedLegacy: true });
+      for (const exercise of teaching.rehearsals) linkVocabularyPublicationOutput(getDb(),practice.invocationId,'teaching_exercise',teaching.id,exercise.id,{ allowUnresolvedLegacy: true });
+      if (practice.invocationId && getDb().prepare('SELECT 1 FROM model_invocations WHERE id=?').get(practice.invocationId)) {
+        const intro = getDb().prepare("SELECT content_id,imported_content_version FROM legacy_content_imports WHERE source_kind='teaching_package' AND source_id=? AND source_sub_id=''")
+          .get(teaching.id) as { content_id: string; imported_content_version: number };
+        getDb().prepare("INSERT OR IGNORE INTO invocation_content_links VALUES (?,?,?,'input')").run(practice.invocationId,intro.content_id,intro.imported_content_version);
+      }
+    }
     return saved;
   });
 }

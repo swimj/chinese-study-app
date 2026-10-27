@@ -47,7 +47,9 @@ export function createSessionDebriefProvider(options: { environment?: NodeJS.Pro
       try {
         raw = await adapter.run({ model: 'gpt-6.1-sol', reasoningEffort: 'low', systemPrompt,
           userPrompt: JSON.stringify(modelInput), outputSchemaName: 'session_debrief', outputSchema: DEBRIEF_RESULT_SCHEMA,
-          maxOutputTokens: 4096, temperature: null, timeoutMs: DEBRIEF_TIMEOUT_MS, cachePrompt: true, clientRequestId: token },
+          maxOutputTokens: 4096, temperature: null, timeoutMs: DEBRIEF_TIMEOUT_MS, cachePrompt: true, clientRequestId: token,
+          provenance: { workflowId: token,stepName: 'connections',promptName: 'session-debrief',promptVersion: 'v7',
+            schemaVersion: 'session_debrief_result.v1',inputProjectionVersion: input.schemaVersion } },
           { apiKey, baseUrl: environment.OPENAI_BASE_URL?.trim() || null });
       } catch { throw new SessionDebriefProviderError('upstream_failure', 'Debrief generation could not finish. You can retry.'); }
       // OpenAI prompt_tokens includes both hits and writes. A write replaces the ordinary input charge;

@@ -53,6 +53,7 @@ import {
 } from '../../src/domain/reflection-contracts.ts';
 import { createReflectionProvider } from './luna-provider.ts';
 import { createGlmReflectionProvider } from './glm-provider.ts';
+import { reflectionConfigForChoice as reflectionProviderConfigForChoice, routeBatchedReflectionModel } from './model-routing.ts';
 import { GLM_REFLECTION_MODEL_CONFIG } from './glm-provider.ts';
 import {
   REFLECTION_MODEL_ARMS,
@@ -93,16 +94,6 @@ export function choiceForStoredModel(model: string): ReflectionModelChoice | nul
 function offeredChoiceForStoredModel(model: string): ReflectionModelChoice | null {
   const match = choiceForStoredModel(model);
   return match !== null && isOfferedReflectionModelChoice(match) ? match : null;
-}
-
-function reflectionProviderConfigForChoice(choice: ReflectionModelChoice): ReflectionProviderConfig {
-  if (choice === 'openai:gpt-5.6-luna-high') return LUNA_REFLECTION_MODEL_CONFIG;
-  if (choice === 'zai:glm-5.3-flash-max') return GLM_REFLECTION_MODEL_CONFIG;
-  const arm = REFLECTION_MODEL_ARMS.find((candidate) => candidate.choice === choice);
-  if (arm?.config === null || arm === undefined) {
-    throw new Error(`Unsupported reflection model choice: ${choice}`);
-  }
-  return arm.config;
 }
 
 export class RetiredReflectionSourceModelError extends Error {
@@ -263,37 +254,9 @@ export function createInitialReflectionGenerationService(
       }
       return { provider: selected.provider, config: reflectionProviderConfigForChoice(choice) };
     }
-    if (spendCap.lunaOnly) {
-      const luna = comparisonArms.find((arm) => arm.choice === LUNA_REFLECTION_MODEL_CHOICE);
-      if (luna === undefined) {
-        throw new Error('Luna is not a configured reflection comparison arm.');
-      }
-      return { provider: luna.provider, config: reflectionProviderConfigForChoice(LUNA_REFLECTION_MODEL_CHOICE) };
-    }
-    if (initialItemCount === undefined || !Number.isInteger(initialItemCount) || initialItemCount < 1) {
-      throw new Error('Automatic reflection routing requires a positive initial bundle item count.');
-    }
-    const defaultComparisonArms = comparisonArms.flatMap((arm) => {
-      const registry = REFLECTION_MODEL_ARMS.find((entry) => entry.choice === arm.choice)!;
-      if (!registry.enabledByDefault) return [];
-      const weight = initialItemCount <= 10
-        ? registry.dogfoodSelectionWeight.smallBundle
-        : registry.dogfoodSelectionWeight.largeBundle;
-      return weight > 0 ? [{ ...arm, weight }] : [];
-    });
-    const totalWeight = defaultComparisonArms.reduce((sum, arm) => sum + arm.weight, 0);
-    if (totalWeight <= 0 || defaultComparisonArms.length === 0) {
-      throw new Error('No offered reflection comparison arms have a positive selection weight.');
-    }
-    let ticket = random() * totalWeight;
-    for (const arm of defaultComparisonArms) {
-      if (ticket < arm.weight) {
-        return { provider: arm.provider, config: reflectionProviderConfigForChoice(arm.choice) };
-      }
-      ticket -= arm.weight;
-    }
-    const selected = defaultComparisonArms[defaultComparisonArms.length - 1]!;
-    return { provider: selected.provider, config: reflectionProviderConfigForChoice(selected.choice) };
+    const selectedChoice = routeBatchedReflectionModel(initialItemCount ?? 0, spendCap, random);
+    const selected = comparisonArms.find(arm => arm.choice === selectedChoice)!;
+    return { provider: selected.provider, config: reflectionProviderConfigForChoice(selectedChoice) };
   }
 
   async function runCoalesced(

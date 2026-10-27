@@ -7,7 +7,8 @@ import {
 } from '../db/preparation-work.ts';
 import { getHostedServiceControls } from '../db/hosted-operations.ts';
 import { HostedProviderWorkUnavailableError, runHostedProviderWork } from '../hosted-runtime-controls.ts';
-import { createSharedWordPreparation, WordPreparationProviderError } from './shared-preparation.ts';
+import { createSharedWordPreparation } from './shared-preparation.ts';
+import { WordPreparationProviderError, PREPARATION_PROVIDER_BACKOFF_MS } from './provider-failure.ts';
 import type { WordIntroductionProvider } from './provider.ts';
 
 export function createWordPreparationWorker(options: {
@@ -74,7 +75,7 @@ export function createWordPreparationWorker(options: {
           } catch (error) {
             failWordPreparationAttempt(work.workId, token,
               error instanceof Error ? error.message : 'Shared preparation failed.', isoNow());
-            if (error instanceof WordPreparationProviderError && error.providerWide) providerBackoffUntil = now() + 60_000;
+            if (error instanceof WordPreparationProviderError && error.providerWide) providerBackoffUntil = now() + PREPARATION_PROVIDER_BACKOFF_MS;
           }
           return true;
         } finally { preparation.release(work.wordId, work.stage, token); }

@@ -129,9 +129,9 @@ test('shared teaching and review domain validation invalidate calls after schema
   await assert.rejects(() => owner(() => shared.generate('validation-bootstrap', 'teaching', 'teaching-token')));
   shared.release('validation-bootstrap', 'teaching', 'teaching-token');
   const added = listModelInvocations().rows.filter(row => !existing.has(row.id));
-  assert.equal(added.length, 2);
+  assert.equal(added.length, 1, 'invalid introduction prevents an incoherent speculative practice call');
   assert.equal(added.find(row => row.invocationType === 'intro_lab_teaching_v2')?.status, 'invalid_response');
-  assert.equal(added.find(row => row.invocationType === 'intro_lab_practice_v1')?.status, 'completed');
+  assert.equal(added.some(row => row.invocationType === 'intro_lab_practice_v1'), false);
   assert.ok(added.every(row => row.spendUsd! > 0));
   const invalidReview = { exercises: [{ ...validReview.exercises[0], cueType: 'minimal_context', stimulus: {
     kind: 'example_cloze', exampleId: 'missing', occurrenceIndexes: [0], frame: null,
