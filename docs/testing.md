@@ -58,6 +58,16 @@ review evidence so the next iteration can use the same comparison.
 
 ### Current browser fixtures
 
+`/tests/browser/service-access.html` exercises the real service-access boundary
+with mocked API responses. Use `?restricted` to verify the study app never mounts
+for a restricted learner; `?restricted&compact` renders the boundary in a 380px
+container with enlarged text. Restrict an already-open app, issue a learner
+request, and inspect lifecycle counts to verify it unmounts. Reopen and retry,
+then restrict and switch to operator to verify access is rechecked for the new
+account. The HTTP gate, no-bootstrap probe, migration preservation, and stale
+account response fencing are covered by `operator-only-access.test.ts`,
+`schema-migrations.test.ts`, and `service-access-client.test.ts`.
+
 The current Mandarin flow uses `/tests/browser/vocabulary-controller.html`
 (and `?mode=undo`) to exercise cancellation and delayed acknowledgements through
 the real hook. `/tests/browser/vocabulary-recognition-motion.html` uses the real

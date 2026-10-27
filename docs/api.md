@@ -12,24 +12,37 @@ frontend.
 
 ## Public health and frontend
 
-`GET /healthz` is the only public operational endpoint. It verifies database
-access and returns `status`, persisted maintenance/provider-work flags, and the
-active provider-work count without learner data. In production, Express serves
-the built frontend and applies an SPA fallback outside `/api`; `/api/*` remains
-authenticated. Mutating API requests return `503 MAINTENANCE_MODE` while
-maintenance is active. Provider-backed requests additionally return
-`503 PROVIDER_WORK_DISABLED` when that control is off.
+`GET /healthz` verifies database access and returns `status`, persisted service
+controls, and the active provider-work count without learner data. In production,
+Express serves the built frontend and applies an SPA fallback outside `/api`.
 
-## Authentication
+`GET /api/service-access` returns `{ allowed: boolean }` with `Cache-Control:
+no-store`. It checks operator-only access using the verified Clerk subject when
+present, without resolving or bootstrapping a learner. Anonymous callers can
+use this probe; it grants no application-data access.
+
+## Authentication and service access
 
 Normal local dogfood uses `APP_AUTH_MODE=trusted_local` (the default) and its
-configured `APP_LEARNER_ID`. The hosted-style path uses `APP_AUTH_MODE=clerk`:
-every API route requires a verified Clerk session, derives the learner from the
-server-side Clerk-subject mapping, and returns `401 AUTH_REQUIRED` or
-`403 ACCOUNT_DISABLED` before domain work when applicable. Clients never send
-a learner id. The frontend obtains a short-lived Clerk session token and sends
-it as a bearer token; local setup is documented in the README's Clerk fixture
-section.
+configured `APP_LEARNER_ID`. The hosted-style path uses `APP_AUTH_MODE=clerk`.
+Except for the access-status probe, API routes require a verified Clerk session,
+derive the learner from the server-side Clerk-subject mapping, and return
+`401 AUTH_REQUIRED` or `403 ACCOUNT_DISABLED` before domain work when applicable.
+Clients never send a learner id. The frontend obtains a short-lived Clerk
+session token and sends it as a bearer token; local setup is documented in the
+README's Clerk fixture section.
+
+When the persisted operator-only control is enabled, non-operators receive
+`503 OPERATOR_ONLY` on application API reads and writes before learner resolution
+or bootstrap. Responses are not cacheable. Operators are identified by
+`APP_OPERATOR_CLERK_USER_IDS`; trusted-local mode retains the same explicit
+operator allowlist/sentinel rules as operator endpoints. An empty allowlist
+admits nobody while operator-only access is enabled.
+
+Maintenance independently rejects mutating API requests with
+`503 MAINTENANCE_MODE`, including operator requests. Provider-backed work also
+respects `503 PROVIDER_WORK_DISABLED`. Operator-only access does not pause
+background jobs or override either control.
 
 ## Adaptive vocabulary
 

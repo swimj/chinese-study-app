@@ -269,6 +269,48 @@ fly ssh console --app <app-name> --command \
   'npm run hosted:banner -- --data-dir=/data --clear=true --actor-id=<operator>'
 ```
 
+## Operator-only access
+
+Use operator-only access to run the application for diagnostics while blocking
+other learners. It preserves normal operator application behavior, subject to
+the independent maintenance and provider-work controls. The configured
+`APP_OPERATOR_CLERK_USER_IDS` allowlist determines access; an empty allowlist
+blocks everyone. Confirm your Clerk user is already in that configuration
+before enabling the control.
+
+This control requires migration `0056_operator_only_access`. Its initial release
+uses the [offline migration procedure](schema-migrations.md); it is not an
+application-only upgrade. Later control changes do not require restarting the
+service:
+
+```bash
+fly ssh console --app <app-name> --command \
+  'npm run --silent hosted:control -- --data-dir=/data --control=operator-only --enabled=true --actor-id=<operator>'
+```
+
+Verify `GET /api/service-access` reports `allowed: false` without an operator
+session and `allowed: true` with your verified operator session. Verify a
+non-operator application request returns `503 OPERATOR_ONLY` and your browser
+can enter. The probe does not bootstrap accounts. Ordinary smoke-account checks
+are blocked unless that account is explicitly an operator; do not expand the
+allowlist just to make a smoke check pass.
+
+For normal interactive operator diagnostics, maintenance must be off. Choose
+provider work independently: leaving it enabled retains the background workload
+for all learners, while disabling it pauses new provider dispatch globally.
+Operator-only access does not stop local background processing, cancel running
+requests, or create a separate diagnostic database. Operator actions use the
+live database and retain their normal effects.
+
+Non-operators see a maintenance screen in the updated frontend. Existing tabs
+switch when an API call is rejected; older frontend bundles may display their
+usual request error, but the backend blocks their access. Frontend assets and
+health checks remain reachable. To reopen learner access, run the same command
+with `--enabled=false`, then verify access with an ordinary existing account.
+The setting survives restarts and deployments; release automation must not
+implicitly clear it. Keep a service offline at the infrastructure level when
+no public access at all is wanted.
+
 ## Learner access
 
 To disable or re-enable local service access for a learner, also disable or

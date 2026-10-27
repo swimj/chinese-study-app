@@ -105,12 +105,30 @@ let clientIncidentStorageScope: string | null = import.meta.env?.VITE_AUTH_MODE 
   ? null
   : 'trusted-local';
 let clientIncidentUpload: Promise<void> | null = null;
+let authenticationGeneration = 0;
+const serviceAccessDeniedListeners = new Set<() => void>();
+
+export function subscribeServiceAccessDenied(listener: () => void): () => void {
+  serviceAccessDeniedListeners.add(listener);
+  return () => { serviceAccessDeniedListeners.delete(listener); };
+}
+
+export async function fetchServiceAccess(signal?: AbortSignal): Promise<{ allowed: boolean }> {
+  const response = await apiFetch(`${API_BASE}/api/service-access`, { signal });
+  if (!response.ok) throw new Error('Could not check service availability.');
+  const body: unknown = await response.json();
+  if (!body || typeof body !== 'object' || !('allowed' in body) || typeof body.allowed !== 'boolean') {
+    throw new Error('Invalid service availability response.');
+  }
+  return { allowed: body.allowed };
+}
 
 export function setApiAuthenticationTokenProvider(provider: ApiAuthenticationTokenProvider | null): void {
   apiAuthenticationTokenProvider = provider;
 }
 
 export function setClientIncidentStorageScope(scope: string | null): void {
+  if (clientIncidentStorageScope !== scope) authenticationGeneration += 1;
   clientIncidentStorageScope = scope;
 }
 
@@ -120,6 +138,7 @@ async function apiFetch(
   incidentContext?: ClientTransportIncidentContext,
 ): Promise<Response> {
   const startedAtMs = Date.now();
+  const requestAuthenticationGeneration = authenticationGeneration;
   let token: string | null;
   try {
     token = await apiAuthenticationTokenProvider?.() ?? null;
@@ -138,7 +157,15 @@ async function apiFetch(
   const headers = new Headers(init.headers);
   if (token) headers.set('Authorization', `Bearer ${token}`);
   try {
-    return await fetch(input, { ...init, headers });
+    const response = await fetch(input, { ...init, headers });
+    if (response.status === 503) {
+      const body: unknown = await response.clone().json().catch(() => null);
+      if (requestAuthenticationGeneration === authenticationGeneration
+        && body && typeof body === 'object' && 'code' in body && body.code === 'OPERATOR_ONLY') {
+        for (const listener of serviceAccessDeniedListeners) listener();
+      }
+    }
+    return response;
   } catch (error) {
     if (!incidentContext) throw error;
     throw captureClientTransportFailure({
@@ -1161,7 +1188,7 @@ export async function deferReflectionHelpInboxItem(
 export async function authorizeManualReflectionOperation(
   request: AuthorizeManualReflectionOperationRequest,
 ): Promise<unknown> {
-  const response = await fetch(
+  const response = await apiFetch(
     `${API_BASE}/api/reflection-artifacts/${encodeURIComponent(request.artifactId)}/items/${encodeURIComponent(request.itemId)}/manual-invocations`,
     {
       method: 'POST',

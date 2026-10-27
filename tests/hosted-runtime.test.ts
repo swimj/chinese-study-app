@@ -77,6 +77,7 @@ describe('hosted application runtime', { concurrency: false }, () => {
     assert.deepEqual(await health.json(), {
       status: 'ok',
       maintenanceMode: false,
+      operatorOnly: false,
       providerWorkEnabled: true,
       activeProviderWorkCount: 0,
     });

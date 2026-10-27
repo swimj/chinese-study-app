@@ -7,6 +7,8 @@ import {
   runWithLearnerId,
 } from './db.ts';
 
+import { createServiceAccessMiddleware } from './service-access.ts';
+
 export type ProviderSubjectResolver = (request: Request) => string | null;
 
 export function createClerkRequestAuthentication(
@@ -22,11 +24,21 @@ export function createClerkRequestAuthentication(
       // that option is set. Origin checking for tokens that do include azp is
       // in clerkUserIdFromAuth.
       clerkMiddleware({ publishableKey }),
-      createLearnerContextMiddleware((request) => clerkUserIdFromAuth(getAuth(request), authorizedParty)),
+      createServiceAndLearnerMiddleware((request) => clerkUserIdFromAuth(getAuth(request), authorizedParty)),
     ];
   }
 
-  return [createLearnerContextMiddleware(resolveProviderSubject)];
+  return [createServiceAndLearnerMiddleware(resolveProviderSubject)];
+}
+
+function createServiceAndLearnerMiddleware(resolveProviderSubject: ProviderSubjectResolver): RequestHandler {
+  return (request, response, next) => {
+    const subject = resolveProviderSubject(request);
+    createServiceAccessMiddleware(() => subject)(request, response, (error) => {
+      if (error) { next(error); return; }
+      createLearnerContextMiddleware(() => subject)(request, response, next);
+    });
+  };
 }
 
 export function clerkUserIdFromAuth(

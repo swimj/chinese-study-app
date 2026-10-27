@@ -374,3 +374,21 @@ test('automatic graduation pause migration preserves existing words and defaults
     assertSchemaCurrent(db);
   } finally {db.close();}
 });
+
+test('operator-only migration preserves both existing controls and defaults access open', () => {
+  const { db } = copy('operator-only-upgrade', true);
+  try {
+    const prior = schemaMigrations.filter((entry) => entry.id !== 'app_schema:0056_operator_only_access');
+    migrateDatabase(db, prior);
+    db.exec("UPDATE service_controls SET enabled = CASE control_key WHEN 'maintenance_mode' THEN 1 ELSE 0 END, updated_at = '2026-10-27T00:00:00.000Z', actor_id = 'incident-operator'");
+    const before = db.prepare('SELECT * FROM service_controls ORDER BY control_key').all();
+    assert.deepEqual(migrateDatabase(db), ['app_schema:0056_operator_only_access']);
+    assert.deepEqual(db.prepare("SELECT * FROM service_controls WHERE control_key != 'operator_only' ORDER BY control_key").all(), before);
+    assert.deepEqual({ ...db.prepare("SELECT * FROM service_controls WHERE control_key = 'operator_only'").get() }, {
+      control_key: 'operator_only', enabled: 0, updated_at: '1970-01-01T00:00:00.000Z', actor_id: 'system_default',
+    });
+    assert.deepEqual(migrateDatabase(db), []);
+    assert.throws(() => db.exec("INSERT INTO service_controls VALUES ('invalid', 1, 'now', 'operator')"), /CHECK constraint/);
+    assertSchemaCurrent(db);
+  } finally { db.close(); }
+});

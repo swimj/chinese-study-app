@@ -15,8 +15,10 @@ const key = control === 'maintenance'
   ? 'maintenance_mode'
   : control === 'provider-work'
     ? 'provider_work_enabled'
-    : null;
-if (key === null) throw new Error('--control must be maintenance or provider-work.');
+    : control === 'operator-only'
+      ? 'operator_only'
+      : null;
+if (key === null) throw new Error('--control must be maintenance, provider-work, or operator-only.');
 
 const dbModule = await import(pathToFileURL(path.resolve('server/db.ts')).href);
 const updated = dbModule.setHostedServiceControl({
