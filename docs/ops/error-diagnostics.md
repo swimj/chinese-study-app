@@ -203,22 +203,6 @@ reflection internal failures have only safe lifecycle information; unexpected
 deferred second-opinion failures additionally receive a diagnostic ID and a
 bounded stderr record.
 
-## Intake-triage diagnostics
-
-The intake-triage advisor is retired; its generation and HTTP paths are removed.
-For an investigation of an old run, the retained SQLite tables provide
-[historical provenance](../server-db.md#retired-intake-triage-storage). The
-[archived advisor contract](../../SPECS/archive/intake-triage-advisor.md)
-explains the former workflow and its retirement.
-
-Historical terminal run rows recorded expected provider, schema, and domain
-failures with learner, timing, provider/model/prompt, included-count, safe failure
-code, request/response identifiers, token use, and cost metadata. They excluded
-request bodies, raw provider output, and stacks. Unexpected errors could escape
-without a run row, and provider transport causes were collapsed to a safe
-upstream-failure classification. No retention policy is defined for these
-tables, and there is no run-history API, UI, or inspector.
-
 ## Generic server and frontend errors
 
 Many route-local server catches intentionally return a generic 500 response and
