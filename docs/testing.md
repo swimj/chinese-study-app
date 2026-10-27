@@ -17,7 +17,17 @@ separately. Changed lifecycle rules are not forced through legacy controllers.
 | Words collections and shared page | `my-words-page.test.ts`, legacy `my-words.test.ts`, and `vocabulary-words.test.ts`; vocabulary mode authority requires the new adapter suite |
 | Preparation-wide outage classification and pause | `preparation-provider-failure.test.ts`, old `word-preparation-worker.test.ts`, new `vocabulary-preparation.test.ts`; item budgets and running sibling publication remain separate |
 | Pure-cue stimulus repair | Old repair tests and `vocabulary-pure-cue-improvement.test.ts` use the shared nonempty/changed/trimmed stimulus invariant |
+| Pure-cue proxy admission | `production-proxy.test.ts` and `vocabulary-import.test.ts` run shared cases through the common policy and both storage adapters; `pure-cues.test.ts` exercises the legacy composer; `vocabulary-composition.test.ts` covers current content eligibility and `vocabulary-study.test.ts` covers preview/Start and persisted fallback serving |
 | Durable completion and proposal receipts | `vocabulary-session-persistence.test.ts` and `vocabulary-reflection.test.ts` include pending/approved and applied database-reopen cases with idempotent replay |
+
+When replacing an admission path, inventory its eligibility gates as well as its
+ranking and schedule calculations. For each preserved gate, identify the owning
+contract, the old behavioral test, and an assertion through the replacement
+selector or controller. Derived content policies need populated-content fixtures;
+copied schedule fields alone cannot establish admission equivalence. In particular,
+the proxy migration tests compare legacy adapters with new selection, while the
+legacy composer test separately covers their old orchestration. A passing legacy
+suite is not evidence that the new path invokes those gates.
 
 Do not infer full hook or browser coverage from shared chrome tests. The old and
 new completion protocols, feedback selection identities and content application

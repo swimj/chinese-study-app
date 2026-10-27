@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { vocabularyAuthoredPromptBody } from '../../src/domain/vocabulary-production-coverage.ts';
 import type { VocabularyActor, VocabularyBackendEvent, VocabularyContent, VocabularyContentDraft,
   VocabularyJson, VocabularyMode, VocabularySense, VocabularySenseCatalog, VocabularyTeachingBinding,
   VocabularyWordRelationship } from '../../src/domain/vocabulary-content.ts';
@@ -224,6 +225,7 @@ export function createVocabularyContent(draft: VocabularyContentDraft, actor: Vo
 function update(id: string, expectedVersion: number, draft: VocabularyContentDraft, actor: VocabularyActor,
   strategy: 'update_existing' | 'replace'): VocabularyContent {
   const old = requiredContent(id); expectVersion(old, expectedVersion); validateDraft(draft);
+  draft = { ...draft, body: vocabularyAuthoredPromptBody(old.body, draft.body) };
   if ((draft.contentId !== undefined && draft.contentId !== id) || old.kind !== draft.kind
     || old.accessScope !== draft.accessScope || (old.ownerLearnerId ?? null) !== (draft.ownerLearnerId ?? null)
     || old.originKind !== draft.originKind || (old.authorKind ?? null) !== (draft.authorKind ?? null)
@@ -260,7 +262,7 @@ export function replaceVocabularyContent(contentId: string, expectedVersion: num
     if (replacement.accessScope !== old.accessScope || (replacement.ownerLearnerId ?? null) !== (old.ownerLearnerId ?? null)) {
       throw new Error('Replacement preserves ownership and access scope');
     }
-    const next = create(replacement,actor,'replace');
+    const next = create({ ...replacement, body: vocabularyAuthoredPromptBody(old.body, replacement.body) },actor,'replace');
     const previous = update(contentId,expectedVersion,{ ...old, availability: 'retired' },actor,'replace');
     effect('vocabulary.content.replaced','content',contentId,{ replacementId: next.contentId, previousVersion: previous.version },actor);
     return { previous, replacement: next };

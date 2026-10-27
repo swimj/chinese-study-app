@@ -4,7 +4,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { beforeEach,afterEach,test } from 'node:test';
 import { setDb } from '../server/db/connection.ts';
 import { runWithLearnerId } from '../server/db/learner-context.ts';
-import { createVocabularyContent,createVocabularySense,establishVocabularySenseCatalog,getVocabularySenseCatalog,getVocabularySenses } from '../server/db/vocabulary-content.ts';
+import { createVocabularyContent,createVocabularySense,establishVocabularySenseCatalog,getVocabularySenseCatalog,getVocabularySenses,getVocabularyContent } from '../server/db/vocabulary-content.ts';
 import { createVocabularySession,appendVocabularySessionActions,stageVocabularySessionCompletion } from '../server/db/vocabulary-sessions.ts';
 import { claimVocabularyReflectionJob,retryOwnVocabularyFeedback,retryVocabularyPostSessionDispatch,listOwnVocabularyMessages,recordVocabularyFeedbackJudgment } from '../server/db/vocabulary-reflection.ts';
 import { createVocabularyProcessingWorker } from '../server/vocabulary/processing-worker.ts';
@@ -45,12 +45,12 @@ beforeEach(()=>{
     accessScope:'shared',availability:'active',originKind:'human',words:[{wordId:'a',relation:'target'}],answers:[{wordId:'a',acceptedForms:['字']}]},{kind:'operator',id:'editor'});
 });
 afterEach(()=>{sql.close();for(const [key,value]of Object.entries(env)){if(value===undefined)delete process.env[key];else process.env[key]=value;}});
-function pending(sessionId='session',two=false) {
+function pending(sessionId='session',two=false,contentId='one') {
   return alice(()=>{
     const started=new Date(clock-16_000).toISOString();
     createVocabularySession({sessionId,words:[{wordId:'a',mode:'practice'}]},started);
     const inputs:({kind:VocabularySessionAction['kind'];payload:unknown})[]=[];
-    for(const id of two?['one','two']:['one'])inputs.push({kind:'presentation',payload:{encounterId:`${sessionId}-${id}`,wordId:'a',snapshot:{contentId:id,contentVersion:1,kind:'production',role:'general',body:{prompt:`Prompt ${id}`,material:{prompt:`Prompt ${id}`}},assessment:{acceptedAnswers:['字'],criteria:{match:'exact'}}}}},
+    for(const id of two?['one','two']:[contentId])inputs.push({kind:'presentation',payload:{encounterId:`${sessionId}-${id}`,wordId:'a',snapshot:{contentId:id,contentVersion:1,kind:'production',role:'general',body:{prompt:`Prompt ${id}`,material:getVocabularyContent(id)!.body},assessment:{acceptedAnswers:['字'],criteria:{match:'exact'}}}}},
       {kind:'response',payload:{encounterId:`${sessionId}-${id}`,response:'wrong',outcome:'rejected'}});
     inputs.push({kind:'finish_for_now',payload:{}},{kind:'finish_immediately',payload:{}});
     const actions=inputs.map((input,index)=>({...input,protocolVersion:1,actionId:`${sessionId}-a-${index}`,clientActionId:`${sessionId}-c-${index}`,sequence:index+1,occurredAt:started})) as VocabularySessionAction[];
@@ -174,6 +174,39 @@ test('ingestion faults preserve closed sessions and expose an explicit safe disp
   sql.exec('DROP TRIGGER fail_case');retryVocabularyPostSessionDispatch(String(dispatch.dispatch_id),'editor',new Date(clock).toISOString());
   await processing.step();assert.equal(sql.prepare('SELECT status FROM vocabulary_post_session_dispatches').get()!.status,'succeeded');
   assert.equal(Number(sql.prepare('SELECT count(*) n FROM reflection_cases').get()!.n),2);await processing.stop();
+});
+
+for(const source of [
+  {kind:'dictionary_baseline',wordId:'a'},
+  {kind:'production_cue_supplement',supplementId:'legacy-explanation',cueId:null,taskId:'production-task:a:default_production'},
+] as const)test(`single improvement authors targeted prompts from ${source.kind} for every proposal strategy`,async()=>{
+  createVocabularyContent({contentId:'fallback',kind:'exercise',payloadVersion:1,
+    body:{prompt:'Prompt fallback',source,reveal:{explanation:'Retained teaching'}},exerciseType:'definition',skill:'production',exerciseRole:'general',
+    assessment:{match:'exact'},accessScope:'private',ownerLearnerId:'alice',availability:'active',originKind:'human',
+    words:[{wordId:'a',relation:'target'}],answers:[{wordId:'a',acceptedForms:['字']}]},{kind:'operator',id:'editor'});
+  pending('fallback-session',false,'fallback');
+  const ingestOnly=worker({isConfigured:()=>false,run:async job=>result(job)});
+  await ingestOnly.step();await ingestOnly.stop();
+  const job=claimVocabularyReflectionJob({kind:'exercise_improvement',now:new Date(clock).toISOString()})!;
+  for(const strategy of ['create','update_existing','replace'] as const) {
+    const proposal=normalizeVocabularyReflectionOutput(job,{diagnosis:'Clarify the productive use',pureCueReferral:null,
+      operations:[{sourceContentId:'fallback',strategy,rationale:'Use a concrete context',prompt:'A single written symbol in this sentence',acceptedAnswers:['字']}]},null,true);
+    assert.equal(proposal.kind,'exercise_improvement');
+    if(proposal.kind!=='exercise_improvement'||!proposal.result.proposal)throw new Error('Expected improvement proposal');
+    const operation=proposal.result.proposal.operations[0]!;
+    assert.equal(operation.strategy,strategy);
+    assert.deepEqual(operation.content.body,{prompt:'A single written symbol in this sentence',
+      source:{kind:'authored_prompt',previous:source},reveal:{explanation:'Retained teaching'}});
+    assert.equal(operation.content.accessScope,'private');assert.equal(operation.content.ownerLearnerId,'alice');
+    assert.deepEqual(operation.content.answers,[{wordId:'a',acceptedForms:['字']}]);
+  }
+  const unchanged=normalizeVocabularyReflectionOutput(job,{diagnosis:'Retain the existing prompt',pureCueReferral:null,
+    operations:[{sourceContentId:'fallback',strategy:'create',rationale:'Keep wording',prompt:'Prompt fallback',acceptedAnswers:['字']}]},null,true);
+  if(unchanged.kind!=='exercise_improvement'||!unchanged.result.proposal)throw new Error('Expected unchanged fixture proposal');
+  assert.deepEqual(unchanged.result.proposal.operations[0]!.content.body,
+    {prompt:'Prompt fallback',source,reveal:{explanation:'Retained teaching'}},'a proposed copy alone does not author a distinctive cue');
+  assert.deepEqual(JSON.parse(String(sql.prepare("SELECT body_json FROM content_items WHERE content_id='fallback'").get()!.body_json)),
+    {prompt:'Prompt fallback',source,reveal:{explanation:'Retained teaching'}},'normalizing proposals leaves source evidence unchanged');
 });
 
 test('incomplete teaching reactions enter manual inbox without model work',async()=>{

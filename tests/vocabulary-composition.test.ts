@@ -1,3 +1,4 @@
+import { isVocabularyProductionProxied } from '../server/vocabulary/production-coverage.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {DatabaseSync} from 'node:sqlite';
@@ -155,4 +156,76 @@ test('Solidify admits any word with an enabled recall direction, including recog
     canUseSkill:(id,kind)=>(id==='recognition-only'&&kind==='recognition')||(id==='production-only'&&kind==='production')});
   assert.deepEqual(new Set(plan.dueWordIds),new Set(['recognition-only','production-only']));
   assert.deepEqual(plan.reviewSelections,[]);
+}));
+
+
+function coverageExercise(id:string,wordId:string,options:{pure?:boolean;scope?:'shared'|'private';owner?:string;
+  availability?:'active'|'quarantined'|'retired';role?:'teaching'|'general';fallback?:boolean}={}) {
+  return createVocabularyContent({contentId:id,kind:'exercise',payloadVersion:1,
+    body:options.fallback?{prompt:'dictionary gloss',source:{kind:'production_cue_supplement',cueId:null}}:{prompt:'distinctive authored use'},
+    exerciseType:options.pure?'pure_cue':'definition_gloss',skill:'production',exerciseRole:options.role??'general',
+    accessScope:options.scope??'shared',ownerLearnerId:options.scope==='private'?(options.owner??'alice'):undefined,
+    availability:options.availability??'active',originKind:'human',words:[{wordId,relation:'target'}],
+    assessment:{match:'prepared'},answers:[{wordId,acceptedForms:[wordId]}]},{kind:'operator',id:'test'});
+}
+
+test('shared pure repertoire proxies production before capacity allocation, without requiring cue adoption',()=>owner(()=>{
+  reviewWord('proxied',96);reviewWord('ordinary',48);
+  coverageExercise('shared-pure','proxied',{pure:true});
+  assert.equal(isVocabularyProductionProxied('proxied'),true);
+  assert.deepEqual(compose().reviewSelections,[{wordId:'ordinary',skillId:'production'}]);
+  assert.equal(db.prepare('SELECT count(*) AS n FROM learner_pure_cue_schedules').get()?.n,0);
+  // Recognition remains independently due; proxy does not write suppression.
+  skill('proxied','recognition',72);
+  assert.deepEqual(compose().reviewSelections,[{wordId:'proxied',skillId:'recognition'},{wordId:'ordinary',skillId:'production'}]);
+  assert.equal(db.prepare('SELECT count(*) AS n FROM learner_owned_word_skill_relevance').get()?.n,0);
+  db.prepare("UPDATE learner_words SET mode='maintain' WHERE word_id='proxied'").run();
+  assert.equal(compose().reviewSelections.find(item=>item.wordId==='proxied')?.skillId,'recognition');
+}));
+
+for(const availability of ['quarantined','retired'] as const)test(`${availability} pure content does not proxy production`,()=>owner(()=>{
+  reviewWord('word',48);coverageExercise('pure','word',{pure:true,availability});
+  assert.equal(isVocabularyProductionProxied('word'),false);
+  assert.deepEqual(compose().reviewSelections,[{wordId:'word',skillId:'production'}]);
+}));
+
+test('private pure content does not change shared proxy coverage',()=>owner(()=>{
+  reviewWord('word',48);coverageExercise('private-pure','word',{pure:true,scope:'private'});
+  assert.equal(isVocabularyProductionProxied('word'),false);
+  assert.deepEqual(compose().dueWordIds,['word']);
+}));
+
+test('only active shared general targeted content removes proxy coverage; fallback supplements do not',()=>owner(()=>{
+  reviewWord('word',48);lexical('unrelated');coverageExercise('pure','word',{pure:true});
+  coverageExercise('unrelated-targeted','unrelated');
+  coverageExercise('teaching','word',{role:'teaching'});
+  coverageExercise('retired','word',{availability:'retired'});
+  coverageExercise('quarantined','word',{availability:'quarantined'});
+  coverageExercise('enriched-fallback','word',{fallback:true});
+  assert.equal(isVocabularyProductionProxied('word'),true);
+  assert.deepEqual(compose().dueWordIds,[]);
+  coverageExercise('targeted','word');
+  assert.equal(isVocabularyProductionProxied('word'),false);
+  assert.deepEqual(compose().dueWordIds,['word']);
+  db.prepare("UPDATE content_items SET availability='retired' WHERE content_id='targeted'").run();
+  assert.equal(isVocabularyProductionProxied('word'),true);
+  assert.deepEqual(compose().dueWordIds,[]);
+}));
+
+test('private targeted exception is learner-scoped, respects deactivation and preserves explicit suppression',()=>owner(()=>{
+  reviewWord('word',48);coverageExercise('pure','word',{pure:true});
+  coverageExercise('other-owner','word',{scope:'private',owner:'bob'});
+  assert.deepEqual(compose().dueWordIds,[]);
+  coverageExercise('own','word',{scope:'private'});
+  assert.equal(isVocabularyProductionProxied('word'),true);
+  assert.deepEqual(compose().dueWordIds,['word']);
+  db.prepare("INSERT INTO learner_owned_word_skill_relevance VALUES('alice','word','production','suppressed')").run();
+  assert.deepEqual(compose().dueWordIds,[]);
+  assert.equal(isVocabularyProductionProxied('word'),true);
+  db.prepare("DELETE FROM learner_owned_word_skill_relevance WHERE learner_id='alice'").run();
+  db.prepare("INSERT INTO learner_content_deactivations VALUES('alice','own',?)").run(now);
+  assert.deepEqual(compose().dueWordIds,[]);
+  db.prepare("INSERT INTO learner_content_deactivations VALUES('alice','pure',?)").run(now);
+  assert.equal(isVocabularyProductionProxied('word'),true,'learner deactivation does not rewrite shared repertoire coverage');
+  assert.deepEqual(compose().dueWordIds,[]);
 }));

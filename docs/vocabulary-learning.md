@@ -64,6 +64,25 @@ a direct dictionary baseline is an explicit fallback when curated material is
 unavailable, not a claim of curation. Sense mapping and curation changes emit
 transactional retained events.
 
+`src/domain/production-proxy.ts` owns the shared proxy decision and the usable
+targeted-cue exception. Both the legacy composer and vocabulary runtime invoke
+that policy. Their adapters read different authoritative storage:
+`server/db/pure-cues.ts` reads legacy publications, while
+`server/vocabulary/production-coverage.ts` reads accepted-answer membership and
+the current vocabulary targeted repertoire.
+`review-selection.ts` applies it before objective ranking and session capacity;
+`study.ts` also filters definition fallback when serving Practice or Maintain,
+including baselines already stored as private content. A usable owned targeted
+exercise remains eligible. Explicit prompt edits and replacements record authored
+prompt provenance while retaining the dictionary source as ancestry; editing only
+an explanation leaves fallback classification intact. This also applies to
+single-improvement proposals that create an additional cue from a fallback.
+The predicate reads current vocabulary content rather
+than the retained legacy publication tables, so subsequent repairs affect it.
+Pure-cue due dates and learner deactivation do not change shared proxy coverage.
+The [selection contract](../SPECS/vocabulary-learning.md#learner-mode-and-selection)
+defines its boundaries with suppression, recognition and Solidify.
+
 `vocabulary-learners.ts` owns word modes, stash membership, dismissal, and separate
 scheduler records. Mode changes preserve schedules. Recognition and contextual
 selection retain their independent skill scheduling. Pure cues retain independent

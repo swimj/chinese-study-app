@@ -1,12 +1,13 @@
 import { getDb } from '../db/connection.ts';
 import { requireLearnerId } from '../db/learner-context.ts';
 import { reviewUrgency, compareReviewCandidates } from '../db/review-policy.ts';
+import { canServeVocabularyReviewProduction } from './production-coverage.ts';
 
 export type VocabularyReviewSkill = 'recognition' | 'production' | 'contextual_selection';
 export type VocabularyReviewSelection = { wordId: string; skillId: VocabularyReviewSkill };
 type Candidate = VocabularyReviewSelection & { urgency: number; nextDueAt: string | null };
 type ScheduleRow = {
-  word_id: string; skill_id: VocabularyReviewSkill; interval_hours: number;
+  word_id: string; mode: 'practice' | 'maintain'; skill_id: VocabularyReviewSkill; interval_hours: number;
   last_studied_at: string | null; next_due_at: string | null; enabled: number;
 };
 
@@ -29,7 +30,7 @@ export function selectVocabularyReviewSkills(options: {
       SELECT word_id, skill_id, interval_hours, last_studied_at, next_due_at, enabled
       FROM learner_owned_word_skill_state WHERE learner_id = ? AND skill_id IN ('recognition', 'contextual_selection')
     )
-    SELECT s.* FROM schedules s
+    SELECT s.*, w.mode FROM schedules s
     JOIN learner_words w ON w.word_id = s.word_id AND w.learner_id = ?
     LEFT JOIN learner_owned_word_study_admission_state a ON a.word_id = s.word_id AND a.learner_id = w.learner_id
     LEFT JOIN learner_owned_word_skill_relevance r ON r.word_id = s.word_id AND r.learner_id = w.learner_id AND r.skill_id = s.skill_id
@@ -45,6 +46,7 @@ export function selectVocabularyReviewSkills(options: {
     // A newly enabled objective has no recall evidence and is immediately eligible.
     const urgency = reviewUrgency(row.interval_hours, row.last_studied_at || null, options.now);
     if (urgency < 1 || (row.next_due_at !== null && row.next_due_at > options.now)) continue;
+    if (row.skill_id === 'production' && !canServeVocabularyReviewProduction(row.word_id, row.mode)) continue;
     const candidate: Candidate = { wordId: row.word_id, skillId: row.skill_id, urgency, nextDueAt: row.next_due_at };
     const previous = best.get(candidate.wordId);
     if (!previous || compareReviewCandidates(candidate, previous) < 0) best.set(candidate.wordId, candidate);

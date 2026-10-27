@@ -5,6 +5,7 @@ import { DEFAULT_INTRODUCTION_SPACING, isStudyIntroductionOrder, isStudyIntroduc
 import { enqueueSessionDebrief } from './session-debrief.ts';
 import { allocateSessionBucketSlots } from '../../src/domain/session-limits.ts';
 import type { PureCue } from '../../src/domain/pure-cues.ts';
+import { allowsProductionUnderProxyPolicy } from '../../src/domain/production-proxy.ts';
 import { validateDebriefInventory, type SessionDebriefInventoryItem } from '../../src/domain/session-debrief.ts';
 import { validateContentQualitySchema } from './content-quality.ts';
 import fs from 'node:fs';
@@ -5510,7 +5511,10 @@ function isReviewSkillCandidateAllowedByRelevancePolicy(
   row: ReviewSessionItemWithSkillRow,
   hasDurableProductionCue: boolean,
 ) {
-  if (row.skill_id === 'production' && !hasDurableProductionCue && isWordProductionProxied(row.id)) {
+  if (row.skill_id === 'production' && !allowsProductionUnderProxyPolicy({
+    proxied: isWordProductionProxied(row.id),
+    hasUsableTargetedCue: hasDurableProductionCue,
+  })) {
     return false;
   }
   return row.skill_relevance_state !== 'suppressed' || hasDurableProductionCue;

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { isProductionProxied } from '../../src/domain/production-proxy.ts';
 import type { ContentExercise } from '../../src/domain/word-content/types.ts';
 import { materializeExercise } from '../../src/domain/word-content/materialize.ts';
 import {
@@ -391,16 +392,19 @@ export function isWordProductionProxied(wordId: string): boolean {
       JOIN shared_content_publications AS publication
         ON publication.content_kind = 'pure_cue' AND publication.content_id = membership.pure_cue_id
       WHERE membership.word_id = ? AND publication.publication_status IN ('shared_trial', 'available')
-    ) AND NOT EXISTS (
+    ) AS has_shared_pure_cue, EXISTS (
       SELECT 1 FROM ${scopedContentStorageTableName('production_cues')} AS cue
       JOIN production_tasks AS task ON task.task_id = cue.task_id
       JOIN shared_content_publications AS publication
         ON publication.content_kind = 'production_cue' AND publication.content_id = cue.cue_id
       WHERE task.word_id = ? AND cue.content_scope = 'shared'
         AND publication.publication_status IN ('shared_trial', 'available')
-    ) AS proxied
-  `).get(wordId, wordId) as { proxied: number };
-  return row.proxied === 1;
+    ) AS has_shared_targeted_cue
+  `).get(wordId, wordId) as { has_shared_pure_cue: number; has_shared_targeted_cue: number };
+  return isProductionProxied({
+    hasSharedPureCue: row.has_shared_pure_cue === 1,
+    hasSharedTargetedCue: row.has_shared_targeted_cue === 1,
+  });
 }
 
 /** Idempotent automatic adoption; existing practice progress is never reset. */
