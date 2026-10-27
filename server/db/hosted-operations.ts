@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { config, getDb } from './connection.ts';
 import { INITIAL_REVIEW_EASE_FACTOR } from './types.ts';
 
-export const HOSTED_SERVICE_CONTROL_KEYS = ['maintenance_mode', 'provider_work_enabled'] as const;
+export const HOSTED_SERVICE_CONTROL_KEYS = ['maintenance_mode', 'provider_work_enabled', 'operator_only'] as const;
 export type HostedServiceControlKey = (typeof HOSTED_SERVICE_CONTROL_KEYS)[number];
 
 export type HostedServiceControl = {
@@ -16,6 +16,7 @@ export type HostedServiceControl = {
 
 export type HostedServiceControlState = {
   maintenanceMode: boolean;
+  operatorOnly: boolean;
   providerWorkEnabled: boolean;
 };
 
@@ -70,6 +71,7 @@ export function createHostedOperationsSchema(): void {
 export function getHostedServiceControls(): HostedServiceControlState {
   return {
     maintenanceMode: readHostedServiceControl('maintenance_mode').enabled,
+    operatorOnly: readHostedServiceControl('operator_only').enabled,
     providerWorkEnabled: readHostedServiceControl('provider_work_enabled').enabled,
   };
 }

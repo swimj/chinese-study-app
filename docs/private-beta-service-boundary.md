@@ -49,6 +49,26 @@ SQLite is the permanent service database.
   read-only access by default, and registered repair commands rather than
   learner impersonation or improvised database edits.
 
+### Operator-only service access
+
+A persisted operator-only control restricts application API access to the
+configured operator allowlist. The server checks verified external identity
+before resolving or creating a learner. Non-operators cannot read application
+data, submit commands, or bootstrap a learner while the control is enabled.
+The access-status probe reveals only whether the caller may enter; it does not
+create learner state. Health checks and frontend assets remain available.
+
+The browser checks access before mounting the learner application. An existing
+tab that receives an operator-only rejection replaces the application with a
+maintenance screen. This restriction does not erase data already loaded in a
+tab or revoke a request admitted before the control changed.
+
+Operator-only access, maintenance, and provider-work controls have independent
+purposes. Operators remain subject to maintenance write restrictions. Restricting
+interactive access does not pause background work for other learners; the
+existing global provider-work control governs provider dispatch. No per-learner
+worker exemption is implied by operator access.
+
 Public signup, organizations, billing identities, a general role hierarchy,
 and a self-service recovery product are outside this beta contract.
 

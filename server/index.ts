@@ -110,6 +110,7 @@ import {
   type ReviewAttemptCommitIntent,
 } from './db.ts';
 import { isMyWordsStatus, type MyWordsStatus } from '../src/domain/my-words.ts';
+import { createServiceAccessMiddleware } from './service-access.ts';
 import { createOperatorAllowlistMiddleware } from './operator-access.ts';
 import { startUsagePulseScheduler } from './usage-pulse-scheduler.ts';
 import {
@@ -266,6 +267,7 @@ export function createApp(options: CreateAppOptions = {}) {
     res.json({
       status: 'ok',
       maintenanceMode: controls.maintenanceMode,
+      operatorOnly: controls.operatorOnly,
       providerWorkEnabled: controls.providerWorkEnabled,
       activeProviderWorkCount: getActiveProviderWorkCount(),
     });
@@ -275,6 +277,7 @@ export function createApp(options: CreateAppOptions = {}) {
   }
 
   if (dbConfig.authMode === 'trusted_local') {
+    app.use('/api', createServiceAccessMiddleware(() => null));
     app.use('/api', (_req, _res, next) => runWithLearnerId(dbConfig.learnerId, next));
   } else {
     app.use('/api', ...createClerkRequestAuthentication(options.resolveClerkProviderSubject));

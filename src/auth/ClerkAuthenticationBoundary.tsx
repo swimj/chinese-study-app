@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
+  fetchServiceAccess,
   setApiAuthenticationTokenProvider,
   setClientIncidentStorageScope,
 } from '../services/api';
@@ -9,6 +10,7 @@ import {
   resolveClerkAuthGatePhase,
   resolveClerkAuthMountedComponent,
 } from './clerk-auth-gate';
+import { ServiceAccessBoundary } from './ServiceAccessBoundary';
 import { ClerkAuthLoadingView, ClerkAuthSignInView, ClerkAuthSignUpView } from './ClerkAuthGateViews';
 
 type ClerkSession = {
@@ -47,6 +49,7 @@ export function ClerkAuthenticationBoundary({ children }: { children: (signOut?:
   const [client, setClient] = useState<ClerkClient | null>(null);
   const [clerkReady, setClerkReady] = useState(false);
   const [signedIn, setSignedIn] = useState(false);
+  const [anonymousRestricted, setAnonymousRestricted] = useState(false);
   const [accountScope, setAccountScope] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | null>(() => (
     enabled && !publishableKey
@@ -127,6 +130,15 @@ export function ClerkAuthenticationBoundary({ children }: { children: (signOut?:
     window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
   }, [signedIn, invitationTicket]);
 
+  useEffect(() => {
+    if (!enabled || !clerkReady || signedIn) return;
+    const controller = new AbortController();
+    void fetchServiceAccess(controller.signal).then(({ allowed }) => {
+      if (!controller.signal.aborted) setAnonymousRestricted(!allowed);
+    }).catch(() => { /* Sign-in remains available when the service cannot be reached. */ });
+    return () => controller.abort();
+  }, [clerkReady, signedIn]);
+
   const phase = resolveClerkAuthGatePhase({
     enabled,
     clerkReady,
@@ -135,15 +147,17 @@ export function ClerkAuthenticationBoundary({ children }: { children: (signOut?:
     invitationTicket,
   });
   if (phase === 'app') {
-    return <>{children(enabled && client ? () => client.signOut({ redirectUrl: window.location.origin }) : undefined, enabled ? accountScope : 'trusted-local')}</>;
+    const signOut = enabled && client ? () => client.signOut({ redirectUrl: window.location.origin }) : undefined;
+    const scope = enabled ? accountScope : 'trusted-local';
+    return <ServiceAccessBoundary key={scope} onSignOut={signOut}>{children(signOut, scope)}</ServiceAccessBoundary>;
   }
   if (phase === 'loading') {
     return <ClerkAuthLoadingView />;
   }
   if (phase === 'sign-up') {
-    return <ClerkAuthSignUpView error={error} signUpTargetRef={authTarget} />;
+    return <ClerkAuthSignUpView serviceRestricted={anonymousRestricted} error={error} signUpTargetRef={authTarget} />;
   }
-  return <ClerkAuthSignInView error={error} signInTargetRef={authTarget} />;
+  return <ClerkAuthSignInView serviceRestricted={anonymousRestricted} error={error} signInTargetRef={authTarget} />;
 }
 
 async function loadClerkClient(key: string): Promise<ClerkClient> {

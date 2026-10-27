@@ -37,6 +37,7 @@ describe('hosted operational controls', { concurrency: false }, () => {
   test('starts with safe hosted service-control defaults', () => {
     assert.deepEqual(dbModule.getHostedServiceControls(), {
       maintenanceMode: false,
+      operatorOnly: false,
       providerWorkEnabled: true,
     });
   });
