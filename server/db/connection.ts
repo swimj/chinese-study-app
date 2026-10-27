@@ -39,8 +39,8 @@ export function getDb(): DatabaseSync {
   return dbInstance;
 }
 
-export function setDb(database: DatabaseSync): void {
-  dbInstance = instrumentDatabase(database);
+export function setDb(database: DatabaseSync | null): void {
+  dbInstance = database === null ? null : instrumentDatabase(database);
 }
 
 export function closeDbConnection(): void {
