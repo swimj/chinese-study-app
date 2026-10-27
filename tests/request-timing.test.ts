@@ -7,6 +7,7 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { after, afterEach, before, describe, test } from 'node:test';
 import { pathToFileURL } from 'node:url';
+import { getDb, setDb } from '../server/db/connection.ts';
 import { instrumentDatabase } from '../server/db/statement-timing.ts';
 import { createServiceMetrics, type ServiceOperationalMetrics } from '../server/observability.ts';
 import {
@@ -227,6 +228,18 @@ describe('request timing', () => {
     assert.match(rendered, /chinese_study_sqlite_transaction_hold_seconds_count /);
     assert.equal(rendered.includes('learner-under-test'), false);
     metrics.dispose();
+  });
+
+  test('setDb instruments a connection once and clears it with null', () => {
+    const raw = new DatabaseSync(':memory:');
+    setDb(raw);
+    const live = getDb();
+    assert.notEqual(live, raw);
+    setDb(live);
+    assert.equal(getDb(), live);
+    setDb(null);
+    assert.throws(() => getDb(), /Database not initialized/);
+    raw.close();
   });
 
   test('validates the slow-request threshold configuration', () => {
