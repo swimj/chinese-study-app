@@ -31,7 +31,10 @@ export type PureCueStudyState = {
   strongSuccesses: number;
 };
 
-export type PureCue = PureCueContent & PureCueStudyState;
+export type PureCue = PureCueContent & PureCueStudyState & {
+  /** Imported content retains its prior daily draw; replacements use their own identity. */
+  maintenanceIdentity?: string;
+};
 
 export type PureCueAcceptedAnswer = AcceptedCueAnswer;
 
@@ -161,7 +164,7 @@ export function selectPureCuesForSession({
     .sort(comparePureCues);
   const strongCandidates = cues
     .filter((cue) => cue.active && cue.strongSince !== null && isOutsideStrongRecency(cue, now)
-      && strongCueDailyRoll(learnerId, cue.id, now) < PURE_CUE_STRONG_DAILY_CHANCE / (1 + cue.strongSuccesses))
+      && strongCueDailyRoll(learnerId, cue.maintenanceIdentity ?? cue.id, now) < PURE_CUE_STRONG_DAILY_CHANCE / (1 + cue.strongSuccesses))
     .sort((a, b) => a.id.localeCompare(b.id));
   const rawStrongSlots = (ordinaryReviewCount + fragile.length) / 10;
   let strongSlots = Math.floor(rawStrongSlots);

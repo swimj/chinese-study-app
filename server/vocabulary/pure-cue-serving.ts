@@ -20,8 +20,8 @@ export function adoptVocabularyPureCues(now=new Date().toISOString()):void {
     ON CONFLICT(learner_id,content_id) DO NOTHING`).run({learner:requireLearnerId(),due:dueAtWithResetDelay(now),
       state:JSON.stringify({intervalHours:24,easeFactor:2.5,enabled:1,cleanCoveredSessions:0,strongSince:null,strongSuccesses:0,adoptedAt:now})});
 }
-export function selectVocabularyPureCueCandidates(input:{ordinaryReviewCount:number;sessionSeed:string;now?:string}):VocabularyContent[] {
-  const now=input.now??new Date().toISOString();adoptVocabularyPureCues(now);
+export function selectVocabularyPureCueCandidates(input:{ordinaryReviewCount:number;sessionSeed:string;now?:string;adopt?:boolean}):VocabularyContent[] {
+  const now=input.now??new Date().toISOString();if(input.adopt!==false)adoptVocabularyPureCues(now);
   const rows=getDb().prepare(`SELECT c.content_id,s.scheduler_state_json,s.last_practised_at,s.next_eligible_at
     FROM learner_pure_cue_schedules s JOIN content_items c USING(content_id)
     WHERE s.learner_id=:learner AND COALESCE(json_extract(s.scheduler_state_json,'$.enabled'),1)=1 AND ${eligibleContent}
@@ -29,12 +29,12 @@ export function selectVocabularyPureCueCandidates(input:{ordinaryReviewCount:num
   const contents=new Map<string,VocabularyContent>();
   const cues=rows.map((row):PureCue=>{
     const content=getVocabularyContent(row.content_id);if(!content||content.kind!=='exercise')throw new Error('Eligible pure cue disappeared');contents.set(content.contentId,content);
-    const state=JSON.parse(row.scheduler_state_json) as {intervalHours:number;easeFactor:number;strongSince?:string|null;strongSuccesses?:number;resetUntil?:string|null};
+    const state=JSON.parse(row.scheduler_state_json) as {intervalHours:number;easeFactor:number;strongSince?:string|null;strongSuccesses?:number;resetUntil?:string|null;maintenanceIdentity?:string};
     const active=state.resetUntil==null||state.resetUntil<=now;
-    return {id:content.contentId,kind:'pure',stimulus:'',axisNote:'',teachingNote:'',acceptedWordIds:content.answers.map((answer)=>answer.wordId),active,
+    return {id:content.contentId,maintenanceIdentity:state.maintenanceIdentity,kind:'pure',stimulus:'',axisNote:'',teachingNote:'',acceptedWordIds:content.answers.map((answer)=>answer.wordId),active,
       intervalHours:state.intervalHours,easeFactor:state.easeFactor,lastStudiedAt:row.last_practised_at,nextDueAt:row.next_eligible_at??now,
       strongSince:state.strongSince??null,strongSuccesses:state.strongSuccesses??0};
   });
   let draw=0;const random=()=>parseInt(createHash('sha256').update(`${input.sessionSeed}/${draw++}`).digest('hex').slice(0,8),16)/0x100000000;
-  return selectPureCuesForSession({cues,ordinaryReviewCount:input.ordinaryReviewCount,now,random}).selected.slice(0,4).map((cue)=>contents.get(cue.id)!);
+  return selectPureCuesForSession({learnerId:requireLearnerId(),cues,ordinaryReviewCount:input.ordinaryReviewCount,now,random}).selected.map((cue)=>contents.get(cue.id)!);
 }

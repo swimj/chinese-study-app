@@ -20,7 +20,7 @@ beforeEach(()=>{
  CREATE TABLE learner_owned_study_sessions(learner_id TEXT,id TEXT,started_at TEXT);
  CREATE TABLE learner_owned_reflection_generation_runs(learner_id TEXT,estimated_cost_usd REAL,completed_at TEXT);
  CREATE TABLE learner_owned_reflection_proposal_reviews(learner_id TEXT,disposition TEXT,updated_at TEXT);
- CREATE TABLE learner_owned_review_session_summaries(learner_id TEXT,session_id TEXT,day_key TEXT,completed_count INTEGER,failed_count INTEGER,active_duration_ms INTEGER,learning_completed_count INTEGER DEFAULT 0);`);
+ CREATE TABLE learner_owned_review_session_summaries(learner_id TEXT,session_id TEXT,day_key TEXT,completed_count INTEGER,failed_count INTEGER,active_duration_ms INTEGER,learning_completed_count INTEGER DEFAULT 0,new_word_count INTEGER DEFAULT 0);`);
 });
 afterEach(()=>{db.close();if(mode===undefined)delete process.env.APP_MODE;else process.env.APP_MODE=mode;if(dataDir===undefined)delete process.env.APP_DATA_DIR;else process.env.APP_DATA_DIR=dataDir;if(auth===undefined)delete process.env.APP_AUTH_MODE;else process.env.APP_AUTH_MODE=auth;});
 function completion(id:string,learner='a',closed='2026-10-17T00:00:01.000Z',duration:number|null=1200,status='closed'){
@@ -63,4 +63,24 @@ test('operator usage unions new activity, disposition-aware stash and abandonmen
  assert.equal(pulse.sessionActiveMs,1200);assert.equal(pulse.learnersInactive7d,1);assert.equal(pulse.sessionsAbandoned,1);
  assert.equal(pulse.meanStashSize,0.5);assert.equal(pulse.proposalsAccepted,0);
  assert.equal(db.prepare('SELECT COUNT(*) n FROM learner_owned_review_session_summaries').get()!.n,0);
+});
+
+
+test('operator new-word totals use closed summaries, add vocabulary teaching and deduplicate session identities',()=>{
+ completion('new');
+ completion('pending','a','2026-10-17T12:00:00.000Z',50,'pending');
+ completion('tomorrow','a','2026-10-18T00:00:00.000Z');
+ db.exec(`INSERT INTO learner_owned_review_session_summaries
+   (learner_id,session_id,day_key,completed_count,failed_count,active_duration_ms,learning_completed_count,new_word_count)
+   VALUES ('a','old','2026-10-17',3,1,2000,4,2),
+          ('a','new','2026-10-17',99,99,99000,99,99),
+          ('a','yesterday','2026-10-16',20,0,20000,20,20);
+   INSERT INTO learner_owned_daily_new_word_intake VALUES ('2026-10-17',500);`);
+ const pulse=computeUsagePulseDay({dayKey:'2026-10-17',studyCommitFailures:[],smokeClerkUserId:null});
+ assert.equal(pulse.newWords,3);
+ assert.equal(pulse.sessionsCompleted,2);
+ assert.equal(pulse.practiceCompleted,5);
+ assert.equal(pulse.reviewCorrect,3);
+ assert.equal(pulse.reviewWrong,2);
+ assert.equal(pulse.sessionActiveMs,3200);
 });

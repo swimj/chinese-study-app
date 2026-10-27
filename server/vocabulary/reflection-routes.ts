@@ -4,9 +4,9 @@ import type { VocabularyProposalDraft, VocabularyProposalOperation, VocabularyCo
 import { createVocabularyPracticePreparation } from './preparation.ts';
 import { createOperatorAllowlistMiddleware } from '../operator-access.ts';
 import { getVocabularyCaseWorkspace, listVocabularyReflectionCases, listVocabularyProposals, getVocabularyProposal,
-  createVocabularyProposal, saveVocabularyProposal, previewVocabularyProposal, approveVocabularyProposal,
-  applyVocabularyProposal, closeVocabularyProposal, closeVocabularyTeachingCase, listOwnVocabularyMessages,
-  getOwnVocabularyFeedbackAttention,listOwnVocabularyFeedbackFailures, markOwnVocabularyMessageSeen, retryOwnVocabularyFeedback,
+  requestVocabularySecondOpinion, listVocabularySecondOpinions, createVocabularyProposal, saveVocabularyProposal, previewVocabularyProposal, approveVocabularyProposal,
+  applyVocabularyProposal, closeVocabularyProposal, closeVocabularyCase, listOwnVocabularyMessages,
+  getOwnVocabularyFeedbackAttention,listOwnVocabularyFeedbackFailures,listOwnVocabularyFeedbackJobs, markOwnVocabularyMessageSeen, dismissOwnVocabularyMessage, restoreOwnVocabularyMessage, retryOwnVocabularyFeedback,
   retryVocabularyReflectionJob, listVocabularyFailedDispatches, retryVocabularyPostSessionDispatch, VocabularyReflectionConflict } from '../db/vocabulary-reflection.ts';
 
 export class VocabularyReflectionRequestError extends Error {}
@@ -81,8 +81,10 @@ export function registerVocabularyReflectionRoutes(app:Express,options:{wake?:()
     try{res.json(work(req,res.locals.operatorSubject as string));}catch(error){failure(error,res);}
   };
   app.get(`${feedback}/attention`,handle(()=>getOwnVocabularyFeedbackAttention()));
-  app.get(feedback,handle(()=>({messages:listOwnVocabularyMessages(),failures:listOwnVocabularyFeedbackFailures()})));
+  app.get(feedback,handle(()=>({messages:listOwnVocabularyMessages(),failures:listOwnVocabularyFeedbackFailures(),jobs:listOwnVocabularyFeedbackJobs()})));
   app.post(`${feedback}/:messageId/seen`,handle(req=>{noBody(req);markOwnVocabularyMessageSeen(text(req.params.messageId));return {ok:true};}));
+  app.post(`${feedback}/:messageId/dismiss`,handle(req=>{noBody(req);dismissOwnVocabularyMessage(text(req.params.messageId));return {ok:true};}));
+  app.post(`${feedback}/:messageId/restore`,handle(req=>{noBody(req);restoreOwnVocabularyMessage(text(req.params.messageId));return {ok:true};}));
   app.post(`${feedback}/jobs/:jobId/retry`,handle(req=>{noBody(req);retryOwnVocabularyFeedback(text(req.params.jobId));options.wake?.();return {ok:true};}));
   const practicePreparation=createVocabularyPracticePreparation();
   app.get(`${base}/practice-preparation/failures`,gate,handle(req=>{object(req.query,[]);return {items:practicePreparation.listFailed()};}));
@@ -96,13 +98,20 @@ export function registerVocabularyReflectionRoutes(app:Express,options:{wake?:()
     return {items:listVocabularyReflectionCases(kind,actor)};
   }));
   app.get(`${base}/cases/:id`,gate,handle((req,actor)=>getVocabularyCaseWorkspace(text(req.params.id),actor)));
-  app.post(`${base}/cases/:id/close`,gate,handle((req,actor)=>{const input=object(req.body,['reason']);closeVocabularyTeachingCase(text(req.params.id),actor,text(input.reason));return {ok:true};}));
+  app.post(`${base}/cases/:id/close`,gate,handle((req,actor)=>{const input=object(req.body,['reason']);closeVocabularyCase(text(req.params.id),actor,text(input.reason));return {ok:true};}));
   app.get(`${base}/proposals`,gate,handle((req,actor)=>{
     object(req.query,['status']);const status=req.query.status===undefined?undefined:choice(req.query.status,['draft','awaiting_review','approved','applied','closed'] as const);
     return {items:listVocabularyProposals(actor,status)};
   }));
   app.post(`${base}/proposals`,gate,handle((req,actor)=>createVocabularyProposal(parseVocabularyProposalDraft(req.body),actor)));
   app.get(`${base}/proposals/:id`,gate,handle((req,actor)=>getVocabularyProposal(text(req.params.id),actor)));
+  app.get(`${base}/proposals/:id/second-opinions`,gate,handle((req,actor)=>({items:listVocabularySecondOpinions(text(req.params.id),actor)})));
+  app.post(`${base}/proposals/:id/second-opinions`,gate,handle((req,actor)=>{
+    const input=object(req.body,['expectedVersion','notes']);
+    if(input.notes!==undefined&&typeof input.notes!=='string')throw new VocabularyReflectionRequestError('Expected text notes');
+    const result=requestVocabularySecondOpinion(text(req.params.id),version(input.expectedVersion),actor,input.notes as string|undefined);
+    options.wake?.();return result;
+  }));
   app.put(`${base}/proposals/:id`,gate,handle((req,actor)=>{const input=object(req.body,['expectedVersion','draft']);
     return saveVocabularyProposal(text(req.params.id),version(input.expectedVersion),parseVocabularyProposalDraft(input.draft),actor);
   }));

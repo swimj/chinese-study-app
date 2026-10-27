@@ -104,10 +104,10 @@ import {
   PRIORITY_TIER_REGULAR,
   PRIORITY_TIER_SUNK,
   REVIEW_PHASE_RECENCY_GUARD_HOURS,
-  REVIEW_SKILL_URGENCY_TIE_EPSILON,
 } from './types.ts';
 import { queryManifestDeckWords, invalidateDeckWordIds, queryDeckWordStudyDates } from './deck-words.ts';
 import { applyIntervalHourFuzz } from './interval-schedule.ts';
+import { nextReviewSchedule, reviewUrgency, compareReviewCandidates } from './review-policy.ts';
 import {
   buildUnstudiedAdmissionSeedSource,
   DEFAULT_UNSTUDIED_ADMISSION_SOURCE,
@@ -5454,8 +5454,7 @@ function getReviewSessionStudyItems(now: string, random: () => number): SessionS
       );
     }
 
-    const elapsedHours = getElapsedHours(row.skill_last_studied_at, now);
-    const urgency = elapsedHours / row.skill_interval_hours;
+    const urgency = reviewUrgency(row.skill_interval_hours, row.skill_last_studied_at, now);
     if (urgency < 1) {
       continue;
     }
@@ -5472,13 +5471,13 @@ function getReviewSessionStudyItems(now: string, random: () => number): SessionS
     };
     const currentBest = bestCandidateByWordId.get(candidate.wordId);
 
-    if (!currentBest || compareReviewSessionItemCandidates(candidate, currentBest) < 0) {
+    if (!currentBest || compareReviewCandidates(candidate, currentBest) < 0) {
       bestCandidateByWordId.set(candidate.wordId, candidate);
     }
   }
 
   return dedupeContrastChoiceSets([...bestCandidateByWordId.values()]
-    .sort(compareReviewSessionItemCandidates))
+    .sort(compareReviewCandidates))
     .map((candidate) => candidate.item);
 }
 
@@ -5838,55 +5837,6 @@ function mapReviewSessionItemWithSkillRow(
   return item;
 }
 
-function compareReviewSessionItemCandidates(
-  left: ReviewSessionItemCandidate,
-  right: ReviewSessionItemCandidate,
-) {
-  const urgencyComparison = right.urgency - left.urgency;
-  if (Math.abs(urgencyComparison) > REVIEW_SKILL_URGENCY_TIE_EPSILON) {
-    return urgencyComparison;
-  }
-
-  const dueComparison = compareNullableIsoTimestamps(left.nextDueAt, right.nextDueAt);
-  if (dueComparison !== 0) {
-    return dueComparison;
-  }
-
-  const wordComparison = left.wordId.localeCompare(right.wordId);
-  if (wordComparison !== 0) {
-    return wordComparison;
-  }
-
-  return left.skillId.localeCompare(right.skillId);
-}
-
-function compareNullableIsoTimestamps(left: string | null, right: string | null) {
-  if (left === right) {
-    return 0;
-  }
-
-  if (left === null) {
-    return 1;
-  }
-
-  if (right === null) {
-    return -1;
-  }
-
-  return left.localeCompare(right);
-}
-
-function getElapsedHours(fromIso: string, toIso: string) {
-  const fromTime = Date.parse(fromIso);
-  const toTime = Date.parse(toIso);
-
-  if (!Number.isFinite(fromTime) || !Number.isFinite(toTime)) {
-    throw new Error(`Session composition invariant violated: expected valid ISO timestamps, got "${fromIso}" and "${toIso}".`);
-  }
-
-  return (toTime - fromTime) / (60 * 60 * 1000);
-}
-
 function scheduleWordSkillStateFromReviewAttempt(
   state: WordSkillState,
   failureCount: number,
@@ -5894,14 +5844,13 @@ function scheduleWordSkillStateFromReviewAttempt(
   reviewedAt: string,
 ): WordSkillState {
   if (failureCount > 0) {
-    const penaltyEase = Math.max(1.8, Number((state.easeFactor - 0.15 * failureCount).toFixed(2)));
+    const scheduled = nextReviewSchedule(state, { failureCount, successful: false });
 
     return {
       ...state,
-      intervalHours: 6,
+      ...scheduled,
       lastStudiedAt: reviewedAt,
-      nextDueAt: addHours(reviewedAt, 6),
-      easeFactor: penaltyEase,
+      nextDueAt: addHours(reviewedAt, scheduled.intervalHours),
     };
   }
 
@@ -5918,7 +5867,7 @@ function scheduleWordSkillStateFromReviewAttempt(
   }
 
   if (terminalRating === 'good') {
-    const nextInterval = applyIntervalHourFuzz(ceilIntervalHours(state.intervalHours * state.easeFactor));
+    const { intervalHours: nextInterval } = nextReviewSchedule(state, { failureCount: 0, successful: true });
 
     return {
       ...state,

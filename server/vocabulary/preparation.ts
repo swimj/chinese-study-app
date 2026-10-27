@@ -1,3 +1,5 @@
+import { preparationProviderFailure, WordPreparationProviderError } from '../word-content/provider-failure.ts';
+import { recordPreparationAttempt,linkPreparationInvocation,completePreparationAttempt,failPreparationAttempt } from './preparation-retry.ts';
 import { createHash,randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import type { WordContentDocument } from '../../src/domain/word-content/types.ts';
@@ -24,9 +26,9 @@ export type VocabularyPracticeProvider = {
 };
 export type VocabularyPracticeWork = { workId: string; wordId: string; sourceContentId: string; generationKey: string;
   status: 'queued' | 'running' | 'ready' | 'failed'; attemptCount: number; activeToken: string | null; expiresAt: string | null;
-  invocationId: string | null; lastError: string | null };
+  invocationId: string | null; lastError: string | null; nextAttemptAt:string; totalAttemptCount:number };
 const projection = `work_id AS workId,word_id AS wordId,source_content_id AS sourceContentId,generation_key AS generationKey,
-  status,attempt_count AS attemptCount,active_token AS activeToken,expires_at AS expiresAt,invocation_id AS invocationId,last_error AS lastError`;
+  status,attempt_count AS attemptCount,active_token AS activeToken,expires_at AS expiresAt,invocation_id AS invocationId,last_error AS lastError,next_attempt_at AS nextAttemptAt,total_attempt_count AS totalAttemptCount`;
 const actor = { kind: 'service' as const,id: VOCABULARY_PRACTICE_SERVICE };
 
 /** The v4 brief is a replaceable editorial candidate; structural validity does not certify learning quality. */
@@ -74,7 +76,7 @@ type Wire = { exercises: Array<{ id: string; sourceUseId: string | null; stimulu
   | { kind: 'phrase_cloze'; frame: string; text: string }; teachingNote: string | null }> };
 
 /** Shared bounded authoring, invoked asynchronously by the backend worker. No session path awaits it.
- * A source/brief is prepared once. Failed or interrupted calls require explicit operator retry. */
+ * A source/brief is prepared once. Failures retry after 30 and 60 seconds; exhausted cycles require an operator restart. */
 export function createVocabularyPracticePreparation(options: { provider?: VocabularyPracticeProvider; now?: () => string; canPublish?: () => boolean } = {}) {
   const provider = options.provider ?? createVocabularyPracticeProvider();
   const now = options.now ?? (() => new Date().toISOString());
@@ -92,36 +94,47 @@ export function createVocabularyPracticePreparation(options: { provider?: Vocabu
   function claim(workId: string): string | null {
     if (!provider.isConfigured()) return null;
     const token = randomUUID(); const timestamp = now();
-    const changed = getDb().prepare(`UPDATE vocabulary_practice_preparation SET status='running',attempt_count=attempt_count+1,
-      active_token=?,expires_at=?,updated_at=? WHERE work_id=? AND status='queued' AND attempt_count<3`)
-      .run(token,new Date(Date.parse(timestamp)+5*60_000).toISOString(),timestamp,workId);
-    return Number(changed.changes) === 1 ? token : null;
+    return atomic(() => {
+    const changed = getDb().prepare(`UPDATE vocabulary_practice_preparation SET status='running',attempt_count=attempt_count+1,total_attempt_count=total_attempt_count+1,invocation_id=NULL,
+      active_token=?,expires_at=?,updated_at=? WHERE work_id=? AND status='queued' AND attempt_count<3 AND next_attempt_at<=?`)
+      .run(token,new Date(Date.parse(timestamp)+5*60_000).toISOString(),timestamp,workId,timestamp);
+    if(Number(changed.changes)!==1)return null;
+    recordPreparationAttempt('practice',workId,token,timestamp);
+    return token;
+    });
   }
   async function run(workId: string,token: string): Promise<VocabularyContent[]> {
     const work = readWork(workId);
     if (!work || work.status !== 'running' || work.activeToken !== token || work.expiresAt! <= now()) throw new Error('Vocabulary preparation lease is not active');
     let invocationId: string | null | undefined;
     let source: WordContentDocument | null = null;
+    let retryable=false;
     const catalogue = getVocabularySenseCatalog(work.wordId);
     const sourceSenses = getDb().prepare(`SELECT sense_id,imported_sense_version,source_use_id FROM legacy_sense_imports WHERE source_content_id=?`)
       .all(work.sourceContentId) as Array<{ sense_id: string; imported_sense_version: number; source_use_id: string }>;
     try {
       source = getSharedWordIntroductionContent(work.wordId);
       if (!source || source.id !== work.sourceContentId || provider.generationKey(source) !== work.generationKey) throw new Error('Vocabulary preparation source changed');
-      const output = await provider.generate(source,{ workflowId: workId,attemptNumber: work.attemptCount,onInvocation: (id) => {
-        invocationId = id;
-        if (id != null) {
-          getDb().prepare("UPDATE vocabulary_practice_preparation SET invocation_id=? WHERE work_id=? AND status='running' AND active_token=?").run(id,workId,token);
-          for (const sense of sourceSenses) linkVocabularyInvocationSense({ invocationId: id,senseId: sense.sense_id,
-            senseVersion: sense.imported_sense_version,role: 'input' },actor);
-        }
-      } });
+      retryable=true;
+      let output: unknown;
+      try {
+        output = await provider.generate(source,{ workflowId: workId,attemptNumber: work.totalAttemptCount,onInvocation: (id) => {
+          invocationId = id;
+          if (id != null) {
+            linkPreparationInvocation(token,id);
+            getDb().prepare("UPDATE vocabulary_practice_preparation SET invocation_id=? WHERE work_id=? AND status='running' AND active_token=?").run(id,workId,token);
+            for (const sense of sourceSenses) linkVocabularyInvocationSense({ invocationId: id,senseId: sense.sense_id,
+              senseVersion: sense.imported_sense_version,role: 'input' },actor);
+          }
+        } });
+      } catch (error) { throw preparationProviderFailure(error); }
       const validation = validateExperimentOutput({ role: 'general_exercises',content: source },output);
       if (validation.structuralErrors.length) {
         invalidateServiceInvocation(invocationId,VOCABULARY_PRACTICE_SERVICE);
         throw new Error('Vocabulary practice output failed validation');
       }
       const wire = output as Wire;
+      retryable=false;
       return atomic(() => {
         if (options.canPublish && !options.canPublish()) throw new Error('Vocabulary preparation publication is currently blocked');
         const current = readWork(workId);
@@ -146,12 +159,13 @@ export function createVocabularyPracticePreparation(options: { provider?: Vocabu
         });
         getDb().prepare(`UPDATE vocabulary_practice_preparation SET status='ready',active_token=NULL,expires_at=NULL,updated_at=?,last_error=NULL
           WHERE work_id=? AND status='running' AND active_token=?`).run(now(),workId,token);
+        completePreparationAttempt(token,now());
         return content;
       });
     } catch (error) {
       // Provider bodies and transport failures may contain secrets; retain only a safe workflow code.
-      getDb().prepare(`UPDATE vocabulary_practice_preparation SET status='failed',active_token=NULL,expires_at=NULL,updated_at=?,last_error='generation_failed'
-        WHERE work_id=? AND status='running' AND active_token=?`).run(now(),workId,token);
+      failPreparationAttempt('practice',workId,token,now(),'generation_failed',{retryable});
+      if (error instanceof WordPreparationProviderError) throw error;
       if (error instanceof Error && /^Vocabulary (practice|preparation)/.test(error.message)) throw error;
       throw new Error('Vocabulary practice generation failed; inspect its retained invocation');
     }
@@ -160,7 +174,7 @@ export function createVocabularyPracticePreparation(options: { provider?: Vocabu
     isConfigured: () => provider.isConfigured(),ensure,claim,run,
     listQueued(limit = 20): VocabularyPracticeWork[] {
       if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new Error('Invalid preparation batch size');
-      return getDb().prepare(`SELECT ${projection} FROM vocabulary_practice_preparation WHERE status='queued' ORDER BY created_at,work_id LIMIT ?`).all(limit) as VocabularyPracticeWork[];
+      return getDb().prepare(`SELECT ${projection} FROM vocabulary_practice_preparation WHERE status='queued' AND next_attempt_at<=? ORDER BY next_attempt_at,created_at,work_id LIMIT ?`).all(now(),limit) as VocabularyPracticeWork[];
     },
     /** Operator diagnostics omit lease tokens and retained source/provider bodies. */
     listFailed(limit = 50): Array<Pick<VocabularyPracticeWork,'workId'|'wordId'|'sourceContentId'|'attemptCount'|'invocationId'|'lastError'> & {retryable:boolean}> {
@@ -168,17 +182,17 @@ export function createVocabularyPracticePreparation(options: { provider?: Vocabu
       const rows = getDb().prepare(`SELECT work_id AS workId,word_id AS wordId,source_content_id AS sourceContentId,
         attempt_count AS attemptCount,invocation_id AS invocationId,last_error AS lastError
         FROM vocabulary_practice_preparation WHERE status='failed' ORDER BY updated_at DESC,work_id LIMIT ?`).all(limit) as Array<Pick<VocabularyPracticeWork,'workId'|'wordId'|'sourceContentId'|'attemptCount'|'invocationId'|'lastError'>>;
-      return rows.map(row => ({...row,retryable:row.attemptCount<3}));
+      return rows.map(row => ({...row,retryable:true}));
     },
     recoverExpired(): void {
-      getDb().prepare(`UPDATE vocabulary_practice_preparation SET status='failed',active_token=NULL,expires_at=NULL,updated_at=?,last_error='interrupted_unknown_outcome'
-        WHERE status='running' AND expires_at<=?`).run(now(),now());
+      const rows=getDb().prepare(`SELECT work_id,active_token FROM vocabulary_practice_preparation WHERE status='running' AND expires_at<=?`).all(now()) as Array<{work_id:string;active_token:string}>;
+      for(const row of rows)failPreparationAttempt('practice',row.work_id,row.active_token,now(),'interrupted_unknown_outcome',{interrupted:true});
     },
     retry(workId: string,operatorId: string): void {
       if (!operatorId.trim()) throw new Error('Operator authority is required');
       atomic(() => {
-        const changed = getDb().prepare(`UPDATE vocabulary_practice_preparation SET status='queued',last_error=NULL,invocation_id=NULL,updated_at=?
-          WHERE work_id=? AND status='failed' AND attempt_count<3`).run(now(),workId);
+        const changed = getDb().prepare(`UPDATE vocabulary_practice_preparation SET status='queued',attempt_count=0,last_error=NULL,invocation_id=NULL,updated_at=?,next_attempt_at=?
+          WHERE work_id=? AND status='failed'`).run(now(),now(),workId);
         if (Number(changed.changes) !== 1) throw new Error('Preparation is not retryable');
         emitBackendEvent({ name: 'vocabulary.practice_preparation.retry_requested',data: { workId },
           actorKind: 'operator',actorId: operatorId,entityKind: 'vocabulary_practice_preparation',entityId: workId });

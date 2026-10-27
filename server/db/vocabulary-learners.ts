@@ -6,6 +6,7 @@ import type { VocabularyWordMode } from '../../src/domain/vocabulary-session.ts'
 export type VocabularyLearnerWord = {
   learnerId: string; wordId: string; inStash: boolean; addedAt: string;
   intendedUseText: string | null; mode: VocabularyWordMode; modeChangedAt: string;
+  automaticPromotionPaused: boolean;
   stateVersion: number; scopeEstablishedAt: string | null; dismissedAt: string | null;
 };
 export type VocabularySchedulerState = {
@@ -42,9 +43,9 @@ function requireWord(wordId: string): VocabularyLearnerWord {
 export function getVocabularyLearnerWord(wordId: string): VocabularyLearnerWord | null {
   const row = getDb().prepare(`SELECT learner_id AS learnerId, word_id AS wordId, in_stash AS inStash,
     added_at AS addedAt, intended_use_text AS intendedUseText, mode, mode_changed_at AS modeChangedAt,
-    state_version AS stateVersion, scope_established_at AS scopeEstablishedAt, dismissed_at AS dismissedAt
-    FROM learner_words WHERE learner_id = ? AND word_id = ?`).get(requireLearnerId(), wordId) as (Omit<VocabularyLearnerWord, 'inStash'> & { inStash: number }) | undefined;
-  return row ? { ...row, inStash: row.inStash === 1 } : null;
+    automatic_promotion_paused AS automaticPromotionPaused, state_version AS stateVersion, scope_established_at AS scopeEstablishedAt, dismissed_at AS dismissedAt
+    FROM learner_words WHERE learner_id = ? AND word_id = ?`).get(requireLearnerId(), wordId) as (Omit<VocabularyLearnerWord, 'inStash' | 'automaticPromotionPaused'> & { inStash: number; automaticPromotionPaused: number }) | undefined;
+  return row ? { ...row, inStash: row.inStash === 1, automaticPromotionPaused: row.automaticPromotionPaused === 1 } : null;
 }
 export function getVocabularyWordSchedule(wordId: string): VocabularyWordSchedule | null {
   const row = getDb().prepare(`SELECT word_id AS wordId, next_eligible_at AS nextEligibleAt,
@@ -137,26 +138,26 @@ export function dismissVocabularyWord(wordId: string,expectedVersion?: number): 
     checkVersion(before,expectedVersion);
     if (!before.inStash && before.mode==='unstudied' && before.dismissedAt!==null) return before;
     const changedAt = before.mode==='unstudied' ? before.modeChangedAt : new Date().toISOString();
-    getDb().prepare(`UPDATE learner_words SET in_stash=0,mode='unstudied',dismissed_at=?,mode_changed_at=?,state_version=state_version+1
+    getDb().prepare(`UPDATE learner_words SET in_stash=0,mode='unstudied',automatic_promotion_paused=0,dismissed_at=?,mode_changed_at=?,state_version=state_version+1
       WHERE learner_id=? AND word_id=?`).run(new Date().toISOString(),changedAt,before.learnerId,wordId);
     emitBackendEvent({ name: 'vocabulary.word.dismissed',learnerId: before.learnerId,actorKind: 'learner',actorId: before.learnerId,
       entityKind: 'word',entityId: wordId,data: { before: { mode: before.mode,inStash: before.inStash },after: { mode: 'unstudied',inStash: false } } });
     return requireWord(wordId);
   });
 }
-/** A mode choice changes mode only; scheduling and historical evidence are independent. */
+/** Explicit Solidify keeps that mode until another choice; scheduling and history are independent. */
 export function changeVocabularyMode(wordId: string, mode: VocabularyWordMode, expectedVersion: number): VocabularyLearnerWord {
   if (!modes.includes(mode)) throw new VocabularyStateInputError('Unknown vocabulary mode');
   return atomic(() => {
     const before = requireWord(wordId);
     if (before.stateVersion !== expectedVersion) throw new VocabularyStateConflict('Word state changed; reload before choosing mode');
-    if (before.mode === mode && before.dismissedAt===null) return before;
+    const automaticPromotionPaused = mode === 'solidify';
     const now = new Date().toISOString();
-    getDb().prepare(`UPDATE learner_words SET mode = ?, dismissed_at=NULL, mode_changed_at = ?, state_version = state_version + 1
-      WHERE learner_id = ? AND word_id = ?`).run(mode, now, requireLearnerId(), wordId);
+    getDb().prepare(`UPDATE learner_words SET mode = ?, automatic_promotion_paused = ?, dismissed_at=NULL, mode_changed_at = ?, state_version = state_version + 1
+      WHERE learner_id = ? AND word_id = ?`).run(mode, automaticPromotionPaused ? 1 : 0, before.mode === mode ? before.modeChangedAt : now, requireLearnerId(), wordId);
     emitBackendEvent({ name: 'vocabulary.mode.changed', learnerId: before.learnerId, actorKind: 'learner',
       actorId: before.learnerId, entityKind: 'word', entityId: wordId,
-      data: { before: before.mode, after: mode, source: 'explicit_choice' } });
+      data: { before: before.mode, after: mode, automaticPromotionPaused, source: 'explicit_choice' } });
     return requireWord(wordId);
   });
 }

@@ -25,12 +25,13 @@ beforeEach(()=>{
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0039_vocabulary_content.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0041_vocabulary_learner_state.sql',import.meta.url),'utf8').split('-- Do not use the words view')[0]!);
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0047_vocabulary_dismissal.sql',import.meta.url),'utf8'));
+  sql.exec(fs.readFileSync(new URL('../server/db/migrations/0052_vocabulary_automatic_promotion_pause.sql',import.meta.url),'utf8'));
   sql.exec(`CREATE TABLE learner_settings(learner_id TEXT,setting_key TEXT,value_json TEXT,updated_at TEXT,PRIMARY KEY(learner_id,setting_key));
     CREATE TABLE learner_owned_review_session_summaries(learner_id TEXT,session_id TEXT,PRIMARY KEY(learner_id,session_id));`);
   sql.exec("ALTER TABLE lexical_words ADD COLUMN hanzi TEXT NOT NULL DEFAULT '字';ALTER TABLE lexical_words ADD COLUMN pinyin TEXT NOT NULL DEFAULT 'zì';");
 
-  for(const name of ['0042_vocabulary_sessions.sql','0044_vocabulary_reflection.sql'])sql.exec(fs.readFileSync(new URL(`../server/db/migrations/${name}`,import.meta.url),'utf8'));
-  for(const name of ['0023_session_debrief.sql','0048_vocabulary_connections.sql'])sql.exec(fs.readFileSync(new URL(`../server/db/migrations/${name}`,import.meta.url),'utf8'));
+  for(const name of ['0042_vocabulary_sessions.sql','0044_vocabulary_reflection.sql','0055_vocabulary_feedback_dismissal.sql'])sql.exec(fs.readFileSync(new URL(`../server/db/migrations/${name}`,import.meta.url),'utf8'));
+  for(const name of ['0023_session_debrief.sql','0048_vocabulary_connections.sql','0049_vocabulary_sense_readiness.sql','0050_vocabulary_improvement_admission.sql','0051_vocabulary_pure_cue_promotion.sql','0053_vocabulary_second_opinions.sql'])sql.exec(fs.readFileSync(new URL(`../server/db/migrations/${name}`,import.meta.url),'utf8'));
   sql.exec(`INSERT INTO learner_words(learner_id,word_id,in_stash,added_at,mode,mode_changed_at) VALUES ('alice','a',1,'2026-01-01','practice','2026-01-01');
     INSERT INTO learner_word_schedules(learner_id,word_id,next_eligible_at,policy_version,scheduler_state_json) VALUES
     ('alice','a','2026-10-20T10:00:00.000Z','test','{"intervalHours":24,"easeFactor":2.5,"enabled":1,"cleanCoveredSessions":0}');`);
@@ -78,6 +79,38 @@ test('feedback is private and read-only; only own failed feedback can be retried
   assert.equal(call('post',`${feedback}/:messageId/seen`,{params:{messageId:result.messageId!},body:{approve:true}}).status,400);
   assert.equal(call('post',`${feedback}/jobs/:jobId/retry`,{params:{jobId:improvementJob}}).status,403);
   process.env.APP_AUTH_MODE='clerk';assert.equal(call('get',feedback,{learner:null}).status,403);
+});
+
+test('feedback inbox labels own pending and completed items without exposing case evidence',()=>{
+  const queued=call('get',feedback).body.jobs as Record<string,unknown>[];
+  assert.equal(queued.length,1);
+  const feedbackCase=String(sql.prepare('SELECT case_id FROM vocabulary_reflection_jobs WHERE job_id=?').get(feedbackJob)!.case_id);
+  assert.deepEqual(queued[0],{jobId:feedbackJob,caseId:feedbackCase,subjectLabel:'字',status:'queued',createdAt:later,error:null});
+  assert.deepEqual(call('get',feedback,{learner:'bob'}).body.jobs,[]);
+  const job=claimVocabularyReflectionJob({kind:'learner_feedback',now:later})!;
+  assert.equal((call('get',feedback).body.jobs as Record<string,unknown>[])[0]!.status,'running');
+  recordVocabularyFeedbackJudgment(job.jobId,job.leaseToken,{diagnosis:'Fair exercise',message:'Your lesson',unfairEncounterIds:[]},later);
+  const finished=call('get',feedback).body;
+  assert.deepEqual(finished.jobs,[]);
+  assert.equal((finished.messages as Record<string,unknown>[])[0]!.subjectLabel,'字');
+  assert.equal((finished.messages as Record<string,unknown>[])[0]!.caseId,feedbackCase);
+  assert.ok(!JSON.stringify(finished).includes('Private learner comment'));
+});
+
+test('shared-expression feedback uses its served cue and sanitizes failed job errors',()=>{
+  sql.prepare(`INSERT INTO reflection_cases SELECT 'pure-feedback-case',completion_id,learner_id,kind,'pure-cue/one',NULL,'one',status,evidence_snapshot_json,created_at
+    FROM reflection_cases WHERE case_id=(SELECT case_id FROM vocabulary_reflection_jobs WHERE job_id=?)`).run(feedbackJob);
+  sql.prepare(`INSERT INTO vocabulary_reflection_jobs(job_id,case_id,kind,dedupe_key,status,next_attempt_at,created_at,last_error)
+    VALUES ('pure-feedback-job','pure-feedback-case','learner_feedback','pure-feedback','failed',?,?,'PRIVATE_PROVIDER_TEXT')`).run(later,later);
+  const own=call('get',feedback).body;
+  const pending=(own.jobs as Record<string,unknown>[]).filter(job=>job.jobId==='pure-feedback-job');
+  assert.equal(pending[0]!.subjectLabel,'A written character');
+  assert.equal(pending[0]!.status,'failed');
+  assert.equal(pending[0]!.error,'Feedback could not finish. You can retry.');
+  assert.equal((own.failures as unknown[]).length,1);
+  assert.ok(!JSON.stringify(own).includes('PRIVATE_PROVIDER_TEXT'));
+  assert.ok(!JSON.stringify(own).includes('private response'));
+  assert.deepEqual(call('get',feedback,{learner:'bob'}).body.jobs,[]);
 });
 
 test('failed feedback retry is explicit, private, fenced, and contains no raw provider failure',()=>{
@@ -145,8 +178,8 @@ test('feedback attention counts only own unread messages and independent feedbac
 });
 
 test('practice preparation diagnostics and explicit retry require allowlisted authority and audit the actor',()=>{
-  sql.exec(`CREATE TABLE vocabulary_practice_preparation(work_id TEXT PRIMARY KEY,word_id TEXT,source_content_id TEXT,attempt_count INTEGER,invocation_id TEXT,last_error TEXT,status TEXT,updated_at TEXT);
-    INSERT INTO vocabulary_practice_preparation VALUES ('work','a','source',1,'invocation','interrupted_unknown_outcome','failed','2026-10-17');`);
+  sql.exec(`CREATE TABLE vocabulary_practice_preparation(work_id TEXT PRIMARY KEY,word_id TEXT,source_content_id TEXT,attempt_count INTEGER,invocation_id TEXT,last_error TEXT,status TEXT,updated_at TEXT,next_attempt_at TEXT);
+    INSERT INTO vocabulary_practice_preparation VALUES ('work','a','source',3,'invocation','interrupted_unknown_outcome','failed','2026-10-17','2026-10-17');`);
   const path=`${base}/practice-preparation`;
   process.env.APP_OPERATOR_CLERK_USER_IDS='someone-else';
   assert.equal(call('get',`${path}/failures`).status,403);
@@ -158,7 +191,43 @@ test('practice preparation diagnostics and explicit retry require allowlisted au
   assert.equal(call('post',`${path}/:id/retry`,{params:{id:'work'},body:{operatorId:'forged'}}).status,400);
   assert.equal(call('post',`${path}/:id/retry`,{params:{id:'work'}}).status,200);
   assert.equal(wakes,1);assert.equal(sql.prepare('SELECT status FROM vocabulary_practice_preparation').get()!.status,'queued');
+  assert.equal(sql.prepare('SELECT attempt_count FROM vocabulary_practice_preparation').get()!.attempt_count,0);
   const audit=sql.prepare("SELECT actor_kind,actor_id FROM backend_events WHERE name='vocabulary.practice_preparation.retry_requested'").get()!;
   assert.equal(audit.actor_kind,'operator');assert.equal(audit.actor_id,'editor');
   assert.notEqual(call('post',`${path}/:id/retry`,{params:{id:'work'}}).status,200);assert.equal(wakes,1);
+});
+
+test('second opinion endpoints require operator authority, current version, and strict request fields',()=>{
+  const created=call('post',`${base}/proposals`,{body:{...proposal(),caseId}});
+  const id=String(created.body.proposalId),route=`${base}/proposals/:id/second-opinions`;
+  assert.equal(call('post',route,{params:{id},body:{expectedVersion:2}}).status,409);
+  assert.equal(call('post',route,{params:{id},body:{expectedVersion:1,notes:{}}}).status,400);
+  assert.equal(call('post',route,{params:{id},body:{expectedVersion:1,force:true}}).status,400);
+  process.env.APP_OPERATOR_CLERK_USER_IDS='someone-else';
+  assert.equal(call('get',route,{params:{id}}).status,403);
+  assert.equal(call('post',route,{params:{id},body:{expectedVersion:1}}).status,403);
+  process.env.APP_OPERATOR_CLERK_USER_IDS='editor';
+  const requested=call('post',route,{params:{id},body:{expectedVersion:1,notes:'Check naturalness'}});
+  assert.equal(requested.status,200);assert.equal(requested.body.status,'queued');assert.equal(wakes,1);
+  assert.deepEqual(call('post',route,{params:{id},body:{expectedVersion:1}}).body,requested.body);
+  assert.equal((call('get',route,{params:{id}}).body.items as unknown[]).length,1);
+});
+
+
+test('feedback dismiss and restore are owner-only empty-body commands and retain the lesson',()=>{
+  const job=claimVocabularyReflectionJob({kind:'learner_feedback',now:later})!;
+  const result=recordVocabularyFeedbackJudgment(job.jobId,job.leaseToken,{diagnosis:'Fair',message:'Keep this lesson',unfairEncounterIds:[]},later);
+  const params={messageId:result.messageId!};
+  for(const action of ['dismiss','restore']) {
+    const route=`${feedback}/:messageId/${action}`;
+    assert.equal(call('post',route,{params,learner:'bob'}).status,403);
+    assert.equal(call('post',route,{params,body:{learnerId:'bob'}}).status,400);
+    assert.equal(call('post',route,{params}).status,200);
+    assert.equal(call('post',route,{params}).status,200);
+    const messages=call('get',feedback).body.messages as Record<string,unknown>[];
+    assert.equal(messages.length,1);
+    assert.equal(messages[0]!.seenAt,null);
+    assert.equal(messages[0]!.dismissedAt===null,action==='restore');
+    assert.equal(call('get',`${feedback}/attention`).body.unseenCount,action==='restore'?1:0);
+  }
 });

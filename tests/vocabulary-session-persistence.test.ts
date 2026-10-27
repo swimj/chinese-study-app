@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { DatabaseSync } from 'node:sqlite';
+import { DatabaseSync, backup } from 'node:sqlite';
+import os from 'node:os';
+import path from 'node:path';
 import { afterEach, beforeEach, test } from 'node:test';
 import { setDb } from '../server/db/connection.ts';
 import { runWithLearnerId } from '../server/db/learner-context.ts';
 import { createVocabularyContent } from '../server/db/vocabulary-content.ts';
-import { getVocabularyLearnerWord, getVocabularyWordSchedule } from '../server/db/vocabulary-learners.ts';
+import { changeVocabularyMode, getVocabularyLearnerWord, getVocabularyWordSchedule } from '../server/db/vocabulary-learners.ts';
 import { createVocabularySession, appendVocabularySessionActions, getVocabularySession, stageVocabularySessionCompletion,
   cancelVocabularySessionCompletion, closeVocabularySessionCompletion, listDueVocabularySessionCompletions } from '../server/db/vocabulary-sessions.ts';
 import type { VocabularyContent } from '../src/domain/vocabulary-content.ts';
@@ -26,18 +28,19 @@ beforeEach(() => {
     CREATE TABLE learner_owned_user_word_priority(learner_id TEXT,word_id TEXT,priority_tier INTEGER,updated_at TEXT);
     CREATE TABLE learner_owned_word_skill_state(learner_id TEXT,word_id TEXT,skill_id TEXT,interval_hours REAL,ease_factor REAL,enabled INTEGER,next_due_at TEXT,last_studied_at TEXT,PRIMARY KEY(learner_id,word_id,skill_id));
     CREATE TABLE learner_owned_word_skill_relevance(learner_id TEXT,word_id TEXT,skill_id TEXT,relevance_state TEXT,PRIMARY KEY(learner_id,word_id,skill_id));
-    CREATE TABLE learner_owned_word_study_admission_state(learner_id TEXT,word_id TEXT,earliest_next_study_at TEXT);
+    CREATE TABLE learner_owned_word_study_admission_state(learner_id TEXT,word_id TEXT,study_phase TEXT,earliest_next_study_at TEXT,PRIMARY KEY(learner_id,word_id));
     INSERT INTO learners VALUES ('alice'),('bob');
     INSERT INTO lexical_words(id,created_at) VALUES ('a','2026-01-01T00:00:00.000Z'),('b','2026-01-01T00:00:00.000Z'),('new','2026-01-01T00:00:00.000Z');
     INSERT INTO learner_word_state VALUES ('alice','a','learning',2,NULL),('alice','b','review',0,NULL),('alice','new','unstudied',0,NULL);
   `);
-  for (const name of ['0039_vocabulary_content.sql','0041_vocabulary_learner_state.sql','0042_vocabulary_sessions.sql','0047_vocabulary_dismissal.sql','0023_session_debrief.sql','0048_vocabulary_connections.sql']) {
+  for (const name of ['0039_vocabulary_content.sql','0041_vocabulary_learner_state.sql','0042_vocabulary_sessions.sql','0047_vocabulary_dismissal.sql','0052_vocabulary_automatic_promotion_pause.sql','0023_session_debrief.sql','0048_vocabulary_connections.sql']) {
     sql.exec(fs.readFileSync(new URL(`../server/db/migrations/${name}`,import.meta.url),'utf8'));
   }
   contents = {};
   alice(() => {
     for (const [id, word, skill, role, type] of [
       ['one','a','production','general','word'], ['two','a','production','general','word'],
+      ['recognize-a','a','recognition','general','recognition'], ['recognize-b','b','recognition','general','recognition'],
       ['b','b','production','general','word'], ['cue','b','production','general','pure_cue'],
       ['recognize','new','recognition','teaching','recognition'], ['produce','new','production','teaching','word'],
     ] as const) {
@@ -67,10 +70,11 @@ function snapshot(id: string, role?: VocabularyEncounterSnapshot['role']): Vocab
     ...(content.kind==='exercise'&&content.exerciseType==='pure_cue'?{schedulingScope:'pure_cue' as const}:{}),};
 }
 function present(id: string,wordId: string|null='a'): Input {return {kind:'presentation',payload:{encounterId:id,wordId,snapshot:snapshot(id)}};}
+function recognitionResponse(id: string,accepted=true): Input {return {kind:'response',payload:{encounterId:id,response:null,selfAssessment:accepted?'accepted':'rejected',outcome:accepted?'accepted':'rejected'}};}
 function response(id: string,accepted=true): Input {return {kind:'response',payload:{encounterId:id,response:accepted?'字':'wrong',outcome:accepted?'accepted':'rejected'}};}
 const finish: Input={kind:'finish_for_now',payload:{}};
 const immediate: Input={kind:'finish_immediately',payload:{}};
-function coveredActions(): VocabularySessionAction[] {return actions(present('one'),response('one'),present('two'),response('two'),{kind:'word_wrap',payload:{wordId:'a',reason:'policy'}},finish);}
+function coveredActions(): VocabularySessionAction[] {return actions(present('recognize-a'),recognitionResponse('recognize-a'),present('two'),response('two'),{kind:'word_wrap',payload:{wordId:'a',reason:'policy'}},finish);}
 function count(table: string): number {return (sql.prepare(`SELECT count(*) AS n FROM ${table}`).get() as {n:number}).n;}
 
 test('log persistence and staging have zero learning effects; close applies all effects once',()=>alice(()=>{
@@ -153,8 +157,8 @@ test('uncovered response and feedback persist into dispatch without fabricated s
 
 test('explicit Maintain mode wins and a lapse requests bounded refresh without demotion',()=>alice(()=>{
   createVocabularySession(context(),now);
-  const log=actions(present('one'),response('one',false),present('two'),response('two'),{kind:'mode_change',payload:{wordId:'a',mode:'maintain'}},
-    {kind:'word_wrap',payload:{wordId:'a',reason:'policy'}},finish);
+  const log=actions(present('recognize-a'),recognitionResponse('recognize-a'),present('one'),response('one',false),present('two'),response('two'),{kind:'word_wrap',payload:{wordId:'a',reason:'policy'}},
+    {kind:'mode_change',payload:{wordId:'a',mode:'maintain'}},finish);
   appendVocabularySessionActions('session',log,now);const staged=stageVocabularySessionCompletion('session',log.length,now);
   closeVocabularySessionCompletion('session',staged.completionId,later);
   assert.equal(getVocabularyLearnerWord('a')?.mode,'maintain');
@@ -188,11 +192,19 @@ test('owner checks and exact snapshot/assessment validation reject cross-learner
 
 test('teaching requires explicit completion and recognition self-assessment retains null response',()=>alice(()=>{
   createVocabularySession(context(),now);
-  const log=actions(present('intro','new'),present('recognize','new'),{kind:'response',payload:{encounterId:'recognize',response:null,selfAssessment:'accepted',outcome:'accepted'}},
-    present('produce','new'),response('produce'),{kind:'teaching_complete',payload:{wordId:'new'}},finish);
+  const teaching: Input[]=[present('intro','new')];
+  for(let index=0;index<3;index++)for(const contentId of ['recognize','produce']) {
+    const encounterId=index===0?contentId:`${contentId}-${index}`;
+    teaching.push({kind:'presentation',payload:{encounterId,wordId:'new',snapshot:snapshot(contentId)}});
+    teaching.push(contentId==='recognize'?recognitionResponse(encounterId):response(encounterId));
+  }
+  const log=actions(...teaching,{kind:'teaching_complete',payload:{wordId:'new'}},finish);
   appendVocabularySessionActions('session',log,now);assert.equal(count('teaching_completions'),0);
   const staged=stageVocabularySessionCompletion('session',log.length,now);closeVocabularySessionCompletion('session',staged.completionId,later);
   assert.equal(count('teaching_completions'),1);assert.equal(getVocabularyLearnerWord('new')?.mode,'solidify');
+  assert.equal(getVocabularyWordSchedule('new')?.schedulerState.cleanCoveredSessions,0);
+  assert.equal(getVocabularyLearnerWord('new')?.automaticPromotionPaused,false);
+  assert.equal(getVocabularyWordSchedule('new')?.nextEligibleAt,'2026-10-18T00:00:00.000Z');
   const stored=getVocabularySession('session');assert.equal(stored.projection.encounters[1].effectiveResponses[0].payload.response,null);
   assert.equal(sql.prepare("SELECT count(*) AS n FROM learner_state_effects WHERE kind='recognition_outcome'").get()?.n,1);
 }));
@@ -234,4 +246,209 @@ test('bounded client active duration is frozen with completion input and does no
   const closed=closeVocabularySessionCompletion('session',staged.completionId,'2026-10-17T11:00:00.000Z');
   assert.equal(closed.metadata.activeDurationMs,12000);
   const input=JSON.parse(String(sql.prepare('SELECT input_json FROM vocabulary_session_completions').get()?.input_json));assert.equal(input.activeDurationMs,12000);
+}));
+
+function closeLog(sessionId: string, inputs: Input[], at = now, closedAt = later) {
+  createVocabularySession(context(sessionId),at);
+  const log=actions(...inputs).map((action): VocabularySessionAction => {
+    const retained={...action,actionId:`${sessionId}/${action.actionId}`,clientActionId:`${sessionId}/${action.clientActionId}`};
+    if(retained.kind==='undo')return {...retained,payload:{undoesActionId:`${sessionId}/${retained.payload.undoesActionId}`}};
+    if('encounterId' in retained.payload)return {...retained,payload:{...retained.payload,encounterId:`${sessionId}/${retained.payload.encounterId}`}} as VocabularySessionAction;
+    return retained;
+  });
+  const session=appendVocabularySessionActions(sessionId,log,at);
+  const staged=stageVocabularySessionCompletion(sessionId,log.length,at);
+  closeVocabularySessionCompletion(sessionId,staged.completionId,closedAt);
+  return session;
+}
+const cleanWork = (): Input[] => [present('recognize-a'),recognitionResponse('recognize-a'),present('one'),response('one'),{kind:'word_wrap',payload:{wordId:'a',reason:'policy'}}];
+
+test('three clean Solidify sessions graduate automatically while each earlier coverage is next UTC day',()=>alice(()=>{
+  const schedule=getVocabularyWordSchedule('a')!;
+  sql.prepare("UPDATE learner_word_schedules SET scheduler_state_json=? WHERE learner_id='alice' AND word_id='a'")
+    .run(JSON.stringify({...schedule.schedulerState,cleanCoveredSessions:0}));
+  for(let index=0;index<3;index++) {
+    const session=closeLog(`clean-${index}`,[...cleanWork(),finish],`2026-10-${17+index}T10:00:00.000Z`,`2026-10-${17+index}T10:00:16.000Z`);
+    assert.equal(session.projection.words.a.recommendedMode,index===2?'practice':null);
+    assert.equal(getVocabularyWordSchedule('a')!.schedulerState.cleanCoveredSessions,index+1);
+    assert.equal(getVocabularyLearnerWord('a')!.mode,index===2?'practice':'solidify');
+    if(index<2)assert.equal(getVocabularyWordSchedule('a')!.nextEligibleAt,`2026-10-${18+index}T00:00:00.000Z`);
+  }
+}));
+
+test('same-mode session choice is durable across later sessions and manual advancement clears it',()=>alice(()=>{
+  createVocabularySession(context(),now);
+  const log=actions(...cleanWork(),{kind:'mode_change',payload:{wordId:'a',mode:'solidify'}},finish);
+  appendVocabularySessionActions('session',log,now);
+  const staged=stageVocabularySessionCompletion('session',log.length,now);
+  assert.equal(getVocabularyLearnerWord('a')!.automaticPromotionPaused,false);
+  closeVocabularySessionCompletion('session',staged.completionId,later);
+  assert.equal(getVocabularyLearnerWord('a')!.mode,'solidify');
+  assert.equal(getVocabularyLearnerWord('a')!.automaticPromotionPaused,true);
+  for(let index=0;index<4;index++) {
+    const session=closeLog(`held-${index}`,[...cleanWork(),finish]);
+    assert.equal(session.context.words[0].automaticPromotionPaused,true);
+    assert.equal(session.projection.words.a.recommendedMode,null);
+    assert.equal(getVocabularyLearnerWord('a')!.mode,'solidify');
+    assert.equal(getVocabularyWordSchedule('a')!.nextEligibleAt,'2026-10-18T00:00:00.000Z');
+  }
+  closeLog('manual-practice',[...cleanWork(),{kind:'mode_change',payload:{wordId:'a',mode:'practice'}},finish]);
+  assert.equal(getVocabularyLearnerWord('a')!.mode,'practice');
+  assert.equal(getVocabularyLearnerWord('a')!.automaticPromotionPaused,false);
+}));
+
+test('pending cancellation leaves the hold uncommitted and a revised choice commits only at closure',()=>alice(()=>{
+  createVocabularySession(context(),now);
+  const log=actions(...cleanWork(),{kind:'mode_change',payload:{wordId:'a',mode:'solidify'}},finish);
+  appendVocabularySessionActions('session',log,now);
+  const staged=stageVocabularySessionCompletion('session',log.length,now);
+  cancelVocabularySessionCompletion('session',staged.completionId,'2026-10-17T10:00:01.000Z');
+  assert.equal(getVocabularyLearnerWord('a')!.automaticPromotionPaused,false);
+  const continuation=actions({kind:'resume',payload:{}},{kind:'mode_change',payload:{wordId:'a',mode:'practice'}},finish)
+    .map((action,index)=>({...action,sequence:log.length+1+index,actionId:`revised-${index}`,clientActionId:`revised-${index}`}));
+  appendVocabularySessionActions('session',continuation,now);
+  const revised=stageVocabularySessionCompletion('session',log.length+3,now);
+  assert.equal(getVocabularyLearnerWord('a')!.mode,'solidify');
+  closeVocabularySessionCompletion('session',revised.completionId,later);
+  assert.equal(getVocabularyLearnerWord('a')!.mode,'practice');
+  assert.equal(getVocabularyLearnerWord('a')!.automaticPromotionPaused,false);
+}));
+
+test('an undone in-session Solidify choice permits automatic graduation at closure',()=>alice(()=>{
+  const session=closeLog('undone',[...cleanWork(),{kind:'mode_change',payload:{wordId:'a',mode:'solidify'}},
+    {kind:'undo',payload:{undoesActionId:'action-6'}},finish]);
+  assert.equal(session.projection.words.a.explicitModeChoice,null);
+  assert.equal(session.projection.words.a.recommendedMode,'practice');
+  assert.equal(getVocabularyLearnerWord('a')!.mode,'practice');
+  assert.equal(getVocabularyLearnerWord('a')!.automaticPromotionPaused,false);
+}));
+
+test('a late external same-mode Solidify choice fences a frozen in-session Practice choice',()=>alice(()=>{
+  const held=changeVocabularyMode('a','solidify',getVocabularyLearnerWord('a')!.stateVersion);
+  createVocabularySession(context(),now);
+  const log=actions(...cleanWork(),{kind:'mode_change',payload:{wordId:'a',mode:'practice'}},finish);
+  appendVocabularySessionActions('session',log,now);
+  const staged=stageVocabularySessionCompletion('session',log.length,now);
+  const latest=changeVocabularyMode('a','solidify',held.stateVersion);
+  assert.equal(latest.stateVersion,held.stateVersion+1);
+  closeVocabularySessionCompletion('session',staged.completionId,later);
+  assert.equal(getVocabularyLearnerWord('a')!.mode,'solidify');
+  assert.equal(getVocabularyLearnerWord('a')!.automaticPromotionPaused,true);
+}));
+
+test('a late external Practice choice clears a hold and fences a frozen session Solidify choice',()=>alice(()=>{
+  changeVocabularyMode('a','solidify',getVocabularyLearnerWord('a')!.stateVersion);
+  createVocabularySession(context(),now);
+  const log=actions(...cleanWork(),{kind:'mode_change',payload:{wordId:'a',mode:'solidify'}},finish);
+  appendVocabularySessionActions('session',log,now);
+  const staged=stageVocabularySessionCompletion('session',log.length,now);
+  changeVocabularyMode('a','practice',getVocabularyLearnerWord('a')!.stateVersion);
+  closeVocabularySessionCompletion('session',staged.completionId,later);
+  assert.equal(getVocabularyLearnerWord('a')!.mode,'practice');
+  assert.equal(getVocabularyLearnerWord('a')!.automaticPromotionPaused,false);
+}));
+
+
+test('Practice successes do not accumulate a Solidify graduation count when the learner returns manually',()=>alice(()=>{
+  const schedule=getVocabularyWordSchedule('b')!;
+  sql.prepare("UPDATE learner_word_schedules SET scheduler_state_json=? WHERE learner_id='alice' AND word_id='b'")
+    .run(JSON.stringify({...schedule.schedulerState,cleanCoveredSessions:99}));
+  closeLog('practice-work',[present('b','b'),response('b'),{kind:'word_wrap',payload:{wordId:'b',reason:'policy'}},finish]);
+  assert.equal(getVocabularyWordSchedule('b')!.schedulerState.cleanCoveredSessions,0);
+  const returned=changeVocabularyMode('b','solidify',getVocabularyLearnerWord('b')!.stateVersion);
+  assert.equal(returned.automaticPromotionPaused,true);
+  const session=closeLog('return-work',[present('recognize-b','b'),recognitionResponse('recognize-b'),present('b','b'),response('b'),{kind:'word_wrap',payload:{wordId:'b',reason:'policy'}},finish]);
+  assert.equal(getVocabularyWordSchedule('b')!.schedulerState.cleanCoveredSessions,1);
+  assert.equal(session.projection.words.b.recommendedMode,null);
+  assert.equal(getVocabularyLearnerWord('b')!.mode,'solidify');
+}));
+
+test('covered Solidify with a rejection or without successful recall resets its clean-session count',()=>alice(()=>{
+  closeLog('rejected',[present('recognize-a'),recognitionResponse('recognize-a'),present('one'),response('one',false),present('two'),response('two'),
+    {kind:'word_wrap',payload:{wordId:'a',reason:'policy'}},finish]);
+  assert.equal(getVocabularyWordSchedule('a')!.schedulerState.cleanCoveredSessions,0);
+  closeLog('clean-again',[...cleanWork(),finish]);
+  assert.equal(getVocabularyWordSchedule('a')!.schedulerState.cleanCoveredSessions,1);
+  closeLog('enough',[present('one'),{kind:'word_wrap',payload:{wordId:'a',reason:'enough'}},finish]);
+  assert.equal(getVocabularyWordSchedule('a')!.schedulerState.cleanCoveredSessions,0);
+  assert.equal(getVocabularyLearnerWord('a')!.mode,'solidify');
+}));
+
+test('selected recognition completion advances only recognition and applies shared word recency once',()=>alice(()=>{
+  sql.prepare("INSERT INTO learner_owned_word_skill_state VALUES('alice','b','recognition',24,2.5,1,'2026-10-16T10:00:00.000Z','2026-10-15T10:00:00.000Z')").run();
+  const productionBefore=getVocabularyWordSchedule('b');
+  const recognitionBefore=sql.prepare("SELECT * FROM learner_owned_word_skill_state WHERE learner_id='alice' AND word_id='b' AND skill_id='recognition'").get();
+  createVocabularySession({sessionId:'selected-recognition',words:[{wordId:'b',mode:'practice',selectedSkill:'recognition'}]},now);
+  const log=actions(present('recognize-b','b'),recognitionResponse('recognize-b'),{kind:'word_wrap',payload:{wordId:'b',reason:'policy'}},finish);
+  const active=appendVocabularySessionActions('selected-recognition',log,now);
+  assert.deepEqual(active.projection.coveredWordIds,['b']);
+  assert.equal(active.projection.words.b.successfulRecall,true);
+  assert.deepEqual(getVocabularyWordSchedule('b'),productionBefore);
+  const staged=stageVocabularySessionCompletion('selected-recognition',log.length,now);
+  closeVocabularySessionCompletion('selected-recognition',staged.completionId,later);
+  assert.deepEqual(getVocabularyWordSchedule('b'),productionBefore);
+  const recognitionAfter=sql.prepare("SELECT * FROM learner_owned_word_skill_state WHERE learner_id='alice' AND word_id='b' AND skill_id='recognition'").get();
+  assert.notDeepEqual(recognitionAfter,recognitionBefore);
+  assert.equal(recognitionAfter?.last_studied_at,later);
+  assert.equal(sql.prepare("SELECT count(*) AS n FROM learner_state_effects WHERE kind='production_schedule_applied'").get()?.n,0);
+  const recency=sql.prepare("SELECT * FROM learner_owned_word_study_admission_state WHERE learner_id='alice' AND word_id='b'").get();
+  assert.equal(recency?.study_phase,'review');
+  assert.ok(String(recency?.earliest_next_study_at)>later);
+  closeVocabularySessionCompletion('selected-recognition',staged.completionId,'2026-10-18T10:00:00.000Z');
+  assert.deepEqual(sql.prepare("SELECT * FROM learner_owned_word_skill_state WHERE learner_id='alice' AND word_id='b' AND skill_id='recognition'").get(),recognitionAfter);
+  assert.deepEqual(sql.prepare("SELECT * FROM learner_owned_word_study_admission_state WHERE learner_id='alice' AND word_id='b'").get(),recency);
+  assert.equal(sql.prepare("SELECT count(*) AS n FROM learner_state_effects WHERE kind='review_recency_guard_applied'").get()?.n,1);
+}));
+
+// Port the durable-session-completion reopen contract to the action-log backend.
+test('pending and closed completion survive database reopen without moving the deadline or applying twice',async()=>alice(async()=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'vocabulary-completion-reopen-'));
+  const file=path.join(dir,'session.db');
+  try {
+    createVocabularySession(context(),now);
+    appendVocabularySessionActions('session',coveredActions(),now);
+    const staged=stageVocabularySessionCompletion('session',6,now);
+    const before=getVocabularyWordSchedule('a');
+    await backup(sql,file);
+    sql.close();sql=new DatabaseSync(file);sql.exec('PRAGMA foreign_keys=ON');setDb(sql);
+    assert.equal(getVocabularySession('session',now).completion?.closeAt,staged.closeAt);
+    assert.deepEqual(getVocabularyWordSchedule('a'),before);
+    assert.equal(stageVocabularySessionCompletion('session',6,later).closeAt,staged.closeAt);
+    const closed=closeVocabularySessionCompletion('session',staged.completionId,later);
+    const after=getVocabularyWordSchedule('a'),effects=count('learner_state_effects');
+    sql.close();sql=new DatabaseSync(file);sql.exec('PRAGMA foreign_keys=ON');setDb(sql);
+    assert.equal(getVocabularySession('session',later).completion?.status,'closed');
+    assert.equal(closeVocabularySessionCompletion('session',staged.completionId,'2026-10-18T00:00:00.000Z').completionId,closed.completionId);
+    assert.deepEqual(getVocabularyWordSchedule('a'),after);
+    assert.equal(count('learner_state_effects'),effects);
+    assert.equal(count('vocabulary_post_session_dispatches'),1);
+  } finally { fs.rmSync(dir,{recursive:true,force:true}); }
+}));
+
+for(const lapse of [false,true]) test(`strong pure-cue closure ${lapse?'returns to fragile SRS':'preserves dormant SRS fields'} exactly once`,()=>alice(()=>{
+  const state={intervalHours:1234,easeFactor:2.65,strongSince:'2026-09-01T00:00:00.000Z',strongSuccesses:7,maintenanceIdentity:'legacy-cue'};
+  const due='2030-01-01T00:00:00.000Z';
+  sql.prepare(`INSERT INTO learner_pure_cue_schedules(learner_id,content_id,next_eligible_at,last_practised_at,policy_version,scheduler_state_json)
+    VALUES('alice','cue',?,'2026-10-01T00:00:00.000Z','test',?)`).run(due,JSON.stringify(state));
+  createVocabularySession({sessionId:'strong-session',words:[]},now);
+  const inputs:Input[]=(lapse?[false,true,true,true]:[true]).flatMap((accepted,index)=>[
+    {kind:'presentation',payload:{encounterId:`cue-${index}`,wordId:null,snapshot:snapshot('cue')}},
+    {kind:'response',payload:{encounterId:`cue-${index}`,response:accepted?'字':'wrong',outcome:accepted?'accepted':'rejected'}},
+  ] as Input[]);
+  const log=actions(...inputs,finish);
+  appendVocabularySessionActions('strong-session',log,now);
+  const staged=stageVocabularySessionCompletion('strong-session',log.length,now);
+  closeVocabularySessionCompletion('strong-session',staged.completionId,later);
+  const row=sql.prepare("SELECT * FROM learner_pure_cue_schedules WHERE learner_id='alice' AND content_id='cue'").get()!;
+  const next=JSON.parse(String(row.scheduler_state_json));
+  assert.equal(next.intervalHours,lapse?6:1234);
+  assert.equal(next.easeFactor,lapse?2.5:2.65);
+  assert.equal(next.strongSince,lapse?null:state.strongSince);
+  assert.equal(next.strongSuccesses,lapse?0:8);
+  assert.equal(next.maintenanceIdentity,'legacy-cue');
+  assert.equal(row.next_eligible_at,lapse?'2026-10-17T16:00:16.000Z':due);
+  assert.equal(row.last_practised_at,later);
+  closeVocabularySessionCompletion('strong-session',staged.completionId,'2026-10-18T00:00:00.000Z');
+  assert.deepEqual(sql.prepare("SELECT * FROM learner_pure_cue_schedules WHERE learner_id='alice' AND content_id='cue'").get(),row);
+  assert.equal(sql.prepare("SELECT count(*) n FROM learner_state_effects WHERE kind='pure_cue_schedule_applied'").get()!.n,1);
 }));

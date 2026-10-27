@@ -79,26 +79,36 @@ test('generous general generation retains service invocation, exact prompt/sourc
   assert.equal(db.prepare('SELECT status FROM vocabulary_practice_preparation').get()!.status,'ready');
 });
 
-test('unknown use IDs and invented answer sets fail validation and require explicit retry', async () => {
-  const bad = output(1);bad.exercises[0]!.sourceUseId='invented-use';let calls=0;
-  const provider = createVocabularyPracticeProvider({ environment: { OPENAI_API_KEY: 'test-key' },fetchImplementation: (async () => { calls++;return response(bad); }) as typeof fetch });
-  const preparation = createVocabularyPracticePreparation({ provider });
+test('invalid preparation retries after 30 and 60 seconds, then an operator starts a new bounded cycle retaining history', async () => {
+  let now=Date.now(),calls=0;
+  const bad=output(1);bad.exercises[0]!.sourceUseId='invented-use';
+  const provider=createVocabularyPracticeProvider({environment:{OPENAI_API_KEY:'test-key'},fetchImplementation:(async()=>{calls++;return response(bad);})as typeof fetch});
+  let preparation=createVocabularyPracticePreparation({provider,now:()=>new Date(now).toISOString()});
   await assert.rejects(preparation.prepare('w1'),/failed validation/);
+  const work=preparation.ensure('w1')!;
+  assert.equal(work.status,'queued');assert.equal(preparation.listFailed().length,0);
+  assert.equal(work.nextAttemptAt,new Date(now+30_000).toISOString());
   assert.equal(db.prepare('SELECT status FROM model_invocations').get()!.status,'invalid_response');
-  const work = db.prepare('SELECT work_id,status FROM vocabulary_practice_preparation').get()!;
-  assert.equal(work.status,'failed');await preparation.prepare('w1');assert.equal(calls,1);
+  // A fresh service instance honors the durable due time.
+  preparation=createVocabularyPracticePreparation({provider,now:()=>new Date(now).toISOString()});
+  now+=29_999;await preparation.prepare('w1');assert.equal(calls,1);assert.equal(preparation.listQueued().length,0);
+  now++;await assert.rejects(preparation.prepare('w1'));assert.equal(calls,2);
+  assert.equal(preparation.ensure('w1')!.nextAttemptAt,new Date(now+60_000).toISOString());
+  now+=59_999;await preparation.prepare('w1');assert.equal(calls,2);
+  now++;await assert.rejects(preparation.prepare('w1'));assert.equal(calls,3);
+  const failed=preparation.listFailed();assert.equal(failed.length,1);assert.equal(failed[0]!.attemptCount,3);assert.equal(failed[0]!.retryable,true);
+  now+=600_000;await preparation.prepare('w1');assert.equal(calls,3);
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM content_items WHERE exercise_role='general'").get()!.n,0);
-  assert.throws(() => preparation.retry(work.work_id as string,''),/Operator/);
-  const failed = preparation.listFailed();assert.equal(failed.length,1);assert.equal(failed[0]!.retryable,true);
-  assert.equal(failed[0]!.lastError,'generation_failed');assert.ok(!('activeToken' in failed[0]!));
-  preparation.retry(work.work_id as string,'operator');assert.equal(preparation.listQueued().length,1);assert.equal(preparation.listFailed().length,0);
-  assert.throws(()=>preparation.retry(work.work_id as string,'operator'),/not retryable/);
-  db.prepare("UPDATE vocabulary_practice_preparation SET status='failed',attempt_count=3 WHERE work_id=?").run(work.work_id);
-  assert.equal(preparation.listFailed()[0]!.retryable,false);
-  assert.throws(()=>preparation.retry(work.work_id as string,'operator'),/not retryable/);
+  assert.throws(()=>preparation.retry(work.workId,''),/Operator/);
+  preparation.retry(work.workId,'operator');assert.equal(preparation.ensure('w1')!.attemptCount,0);
+  await assert.rejects(preparation.prepare('w1'));assert.equal(calls,4);
+  const attempts=db.prepare('SELECT attempt_number,cycle_attempt,outcome,invocation_id FROM vocabulary_preparation_attempts ORDER BY attempt_number').all();
+  assert.deepEqual(attempts.map(row=>[row.attempt_number,row.cycle_attempt,row.outcome]),[[1,1,'failed'],[2,2,'failed'],[3,3,'failed'],[4,1,'failed']]);
+  assert.ok(attempts.every(row=>typeof row.invocation_id==='string'));
+  assert.equal(preparation.ensure('w1')!.totalAttemptCount,4);
 });
 
-test('expired work cannot publish and unknown interrupted outcomes do not requeue themselves', async () => {
+test('expired work cannot publish and interrupted outcomes retry only after the old lease is fenced', async () => {
   let now = new Date().toISOString();
   const provider = createVocabularyPracticeProvider({ environment: { OPENAI_API_KEY: 'test-key' },fetchImplementation: (async () => {
     now = new Date(Date.parse(now)+6*60_000).toISOString();return response(output());
@@ -107,12 +117,13 @@ test('expired work cannot publish and unknown interrupted outcomes do not requeu
   await assert.rejects(preparation.prepare('w1'),/lease changed/);
   assert.equal(preparation.listQueued().length,0);
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM content_items WHERE exercise_role='general'").get()!.n,0);
-  // A second brief creates a distinct queued job; recovery marks an expired running call failed.
+  // A second brief creates a distinct queued job; recovery fences and schedules its expired call.
   const second = createVocabularyPracticePreparation({ provider: { ...provider,generationKey: () => 'changed-brief' },now: () => now });
   const work = second.ensure('w1')!;assert.ok(second.claim(work.workId));
   now = new Date(Date.parse(now)+6*60_000).toISOString();second.recoverExpired();
   assert.equal(db.prepare('SELECT last_error FROM vocabulary_practice_preparation WHERE work_id=?').get(work.workId)!.last_error,'interrupted_unknown_outcome');
   assert.equal(second.claim(work.workId),null);
+  now=new Date(Date.parse(now)+30_000).toISOString();assert.ok(second.claim(work.workId));
 });
 
 test('provenance enforces exact versions, ownership and private-input publication boundaries', () => {
@@ -214,7 +225,7 @@ test('bootstrap publication links its actual invocation to seeded sense versions
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM invocation_sense_links WHERE invocation_id=? AND role='output'").get(invocationId)!.n,1);
 });
 
-test('background worker discovers admitted active-session demand, fences provider calls and leaves failed work explicit', async () => {
+test('background worker discovers admitted active-session demand, fences provider calls and publishes ready work', async () => {
   runWithLearnerId('a',()=>{const word=addVocabularyWord('w1');changeVocabularyMode('w1','practice',word.stateVersion);
     createVocabularySession({sessionId:'active-demand',words:[{wordId:'w1',mode:'practice'}]});});
   let calls=0;let failures=0;
@@ -284,4 +295,87 @@ test('teaching trial rejects invented source-use hints before adapting rehearsal
  await assert.rejects(provider.generatePractice(content,{teaching,invocationActor:{kind:'service',serviceId:'teaching-test'}}),/invalid structure/);
  assert.equal(db.prepare("SELECT status FROM model_invocations WHERE actor_id='teaching-test'").get()!.status,'invalid_response');
  assert.equal(db.prepare("SELECT COUNT(*) n FROM content_items WHERE exercise_role='teaching'").get()!.n,0);
+});
+
+test('worker polls delayed retries automatically and maintenance prevents dispatch until lifted',async()=>{
+  let now=Date.now(),calls=0,maintenance=false;
+  const provider=createVocabularyPracticeProvider({environment:{OPENAI_API_KEY:'test'},fetchImplementation:(async()=>{
+    calls++;if(calls<3)throw new Error('transient transport');return response(output());
+  })as typeof fetch});
+  const worker=createVocabularyPracticeWorker({provider,now:()=>now,demand:()=>['w1'],controls:()=>({maintenanceMode:maintenance,providerWorkEnabled:true}),providerWork:async work=>work()});
+  await worker.step();assert.equal(calls,1);
+  now+=29_999;assert.equal(await worker.step(),false);assert.equal(calls,1);
+  now++;assert.equal(await worker.step(),false);assert.equal(calls,1);
+  now+=30_000;await worker.step();assert.equal(calls,2);
+  now+=60_000;maintenance=true;assert.equal(await worker.step(),false);assert.equal(calls,2);
+  maintenance=false;await worker.step();assert.equal(calls,3);
+  assert.equal(db.prepare('SELECT status FROM vocabulary_practice_preparation').get()!.status,'ready');
+  assert.equal(db.prepare('SELECT COUNT(*) n FROM vocabulary_preparation_attempts').get()!.n,3);
+  await worker.stop();
+});
+
+function seedSecondPreparationWord() {
+  const timestamp = new Date().toISOString();
+  db.prepare(`INSERT INTO lexical_words(id,hanzi,traditional,pinyin,meaning,meanings_json,examples_json,priority,created_at)
+    VALUES ('w2','你好',NULL,'nǐ hǎo','hello','["hello"]','[]',1,?)`).run(timestamp);
+  assert.equal(claimSharedWordIntroductionStage('w2','bootstrap','second-bootstrap',timestamp,new Date(Date.now()+300_000).toISOString()),'claimed');
+  finishSharedWordIntroductionBootstrap('w2','second-bootstrap',{...content,id:'bootstrap2',word:{...content.word,wordId:'w2'}},'test-model');
+}
+
+test('provider outage pauses other practice words for 60 seconds without spending their attempts or exposing errors', async () => {
+  seedSecondPreparationWord();
+  let now = Date.now(), calls = 0, enabled = false;
+  const errors: unknown[] = [];
+  const provider = createVocabularyPracticeProvider({environment:{OPENAI_API_KEY:'test'},fetchImplementation:(async()=>{
+    calls++;return new Response('secret bearer abc123',{status:503});
+  }) as typeof fetch});
+  const worker = createVocabularyPracticeWorker({provider,concurrency:1,now:()=>now,demand:()=>['w1','w2'],
+    controls:()=>({maintenanceMode:false,providerWorkEnabled:enabled}),providerWork:async work=>work(),onError:error=>errors.push(error)});
+  await worker.drain();assert.equal(calls,0);
+  enabled = true;
+  await worker.drain();assert.equal(calls,1);
+  const attempts = () => db.prepare('SELECT attempt_count FROM vocabulary_practice_preparation ORDER BY attempt_count').all().map(row=>row.attempt_count);
+  assert.deepEqual(attempts(),[0,1]);
+  now+=59_999;assert.equal(await worker.step(),false);assert.equal(calls,1);assert.deepEqual(attempts(),[0,1]);
+  now++;await worker.step();assert.equal(calls,2);assert.deepEqual(attempts(),[1,1]);
+  assert.doesNotMatch(errors.map(String).join('\n'),/abc123/);
+  assert.doesNotMatch(JSON.stringify(db.prepare('SELECT last_error FROM vocabulary_practice_preparation').all()),/abc123/);
+  assert.equal(db.prepare('SELECT COUNT(*) n FROM vocabulary_preparation_attempts').get()!.n,2);
+  await worker.stop();
+});
+
+for (const failure of ['invalid-json','invalid-structure'] as const) test(`${failure} retries its own job without pausing another practice word`, async () => {
+  seedSecondPreparationWord();let calls=0;
+  const provider=createVocabularyPracticeProvider({environment:{OPENAI_API_KEY:'test'},fetchImplementation:(async()=>{
+    calls++;
+    if(calls>1)return response(output());
+    if(failure==='invalid-structure')return response(output(0));
+    return new Response(JSON.stringify({choices:[{message:{content:'not JSON'},finish_reason:'stop'}]}),{status:200,headers:{'content-type':'application/json'}});
+  })as typeof fetch});
+  const worker=createVocabularyPracticeWorker({provider,concurrency:1,demand:()=>['w1','w2'],
+    controls:()=>({maintenanceMode:false,providerWorkEnabled:true}),providerWork:async work=>work()});
+  await worker.drain();assert.equal(calls,2);
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM vocabulary_practice_preparation WHERE status='ready'").get()!.n,1);
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM vocabulary_practice_preparation WHERE status='queued' AND attempt_count=1").get()!.n,1);
+  await worker.stop();
+});
+
+test('an outage pauses new dispatch without rejecting a running sibling publication', async () => {
+  seedSecondPreparationWord();let calls=0;
+  let releaseSibling!: (value: unknown) => void;
+  const sibling = new Promise<unknown>(resolve => {releaseSibling=resolve;});
+  const provider = {model:'test',isConfigured:()=>true,generationKey:()=> 'outage-sibling-test',
+    async generate() {
+      calls++;
+      if(calls===1) {await Promise.resolve();throw new Error('connection unavailable');}
+      return sibling;
+    }};
+  const worker=createVocabularyPracticeWorker({provider,concurrency:2,demand:()=>['w1','w2'],
+    controls:()=>({maintenanceMode:false,providerWorkEnabled:true}),providerWork:async work=>work(),
+    onError:()=>releaseSibling(output())});
+  assert.equal(await worker.step(),true);assert.equal(calls,2);
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM vocabulary_practice_preparation WHERE status='ready'").get()!.n,1);
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM vocabulary_practice_preparation WHERE status='queued'").get()!.n,1);
+  assert.equal(await worker.step(),false);assert.equal(calls,2);
+  await worker.stop();
 });

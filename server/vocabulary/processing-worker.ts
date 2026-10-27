@@ -1,9 +1,10 @@
+import { VocabularySenseReadinessPending } from './sense-readiness.ts';
 import { randomUUID } from 'node:crypto';
 import { getDb } from '../db/connection.ts';
 import { runWithLearnerId } from '../db/learner-context.ts';
 import { listDueVocabularySessionCompletions, closeVocabularySessionCompletion } from '../db/vocabulary-sessions.ts';
 import { ingestVocabularySessionEvidence, claimVocabularyReflectionJob, recoverVocabularyReflectionJobs,
-  finishVocabularyReflectionJob, failVocabularyReflectionJob, VocabularyReflectionConflict } from '../db/vocabulary-reflection.ts';
+  finishVocabularyReflectionJob, failVocabularyReflectionJob, deferVocabularyReflectionForSense, recoverVocabularySenseDependencies, VocabularyReflectionConflict } from '../db/vocabulary-reflection.ts';
 import { getHostedServiceControls } from '../db/hosted-operations.ts';
 import { runHostedProviderWork, HostedProviderWorkUnavailableError } from '../hosted-runtime-controls.ts';
 import type { VocabularySessionProjection } from '../../src/domain/vocabulary-session.ts';
@@ -30,6 +31,7 @@ export function createVocabularyProcessingWorker(options:{provider?:VocabularyRe
     const expired=getDb().prepare(`UPDATE vocabulary_post_session_dispatches SET status='failed',active_token=NULL,expires_at=NULL,
       last_error='ingestion_interrupted' WHERE status='running' AND expires_at<=?`).run(iso());
     changed||=expired.changes>0;
+    const senseRecovered=recoverVocabularySenseDependencies(iso());changed=senseRecovered>0||changed;
     const recovered=recoverVocabularyReflectionJobs(iso());changed=recovered>0||changed;
     const dispatches=getDb().prepare(`SELECT d.* FROM vocabulary_post_session_dispatches d JOIN learners l ON l.learner_id=d.learner_id
       WHERE d.status='queued' AND l.disabled_at IS NULL ORDER BY d.created_at,d.dispatch_id`).all() as {
@@ -56,17 +58,28 @@ export function createVocabularyProcessingWorker(options:{provider?:VocabularyRe
       const work=claimVocabularyReflectionJob({kind,now:iso(),leaseMs:30*60_000});
       if(!work)return false;
       try {
-        const result=await provider.run(work);
+        const canPublish=()=>{
+          const state=controls();
+          if(stopped||state.maintenanceMode||!state.providerWorkEnabled)return false;
+          const lease=getDb().prepare(`SELECT 1 FROM vocabulary_reflection_jobs j JOIN reflection_cases c ON c.case_id=j.case_id
+            JOIN learners l ON l.learner_id=c.learner_id WHERE j.job_id=? AND j.status='running'
+            AND j.lease_token=? AND j.lease_expires_at>? AND l.disabled_at IS NULL`).get(work.jobId,work.leaseToken,iso());
+          return !!lease;
+        };
+        const result=await provider.run(work,{canPublish});
         if(result.kind!==work.kind)throw new VocabularyReflectionOutputError('Reflection result kind mismatch');
         // A maintenance window freezes domain mutations even if an earlier call returns.
         const learner=getDb().prepare('SELECT disabled_at FROM learners WHERE learner_id=?').get(work.learnerId) as {disabled_at:string|null}|undefined;
-        if(stopped||controls().maintenanceMode||!learner||learner.disabled_at!==null) {
+        if(!canPublish()||!learner||learner.disabled_at!==null) {
           failVocabularyReflectionJob(work.jobId,work.leaseToken,'provider_result_deferred',iso(),iso());return true;
         }
         finishVocabularyReflectionJob(work.jobId,work.leaseToken,result,iso());
       }catch(error){
         // Expired leases have already been fenced as unknown outcome. Never revive them.
-        try{failVocabularyReflectionJob(work.jobId,work.leaseToken,error instanceof VocabularyReflectionOutputError?'invalid_output':'provider_failed',iso(),iso());}
+        try{
+          if(error instanceof VocabularySenseReadinessPending)deferVocabularyReflectionForSense(work.jobId,work.leaseToken,error.retryAt,iso());
+          else failVocabularyReflectionJob(work.jobId,work.leaseToken,error instanceof VocabularyReflectionOutputError?'invalid_output':'provider_failed',iso(),iso());
+        }
         catch(stale){if(!(stale instanceof VocabularyReflectionConflict))throw stale;}
       }
       return true;

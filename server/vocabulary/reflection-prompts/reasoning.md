@@ -15,12 +15,14 @@ a clear idea, intention, or situation, not necessarily a physical scene.
 The learner should be able to respond by feel rather than search an
 excessively broad space of possible meanings.
 
-Most word-targeted exercises aim to evoke one particular word. An independent
-pure cue instead has accepted members; do not invent a single intended target.
-When a rejected known word plausibly answers the cue as shown, identify the
-ambiguity. You are a best-effort filter, not the authority on whether useful
-shared practice exists. A broad or overloaded gloss can merit investigation even
-when the best future exercises will be separate word-specific cues.
+Most word-targeted exercises aim to evoke a particular productive use of one
+word. An independent pure cue instead has accepted members and a shared
+expressive purpose; do not invent a single intended target. This purpose is the
+exercise's semantic axis: a meaning, intention, construction, or situation to
+express, not merely a topic or a list of words that fit a blank. Distinguish that
+purpose from what the visible cue actually communicates. A broad or overloaded
+gloss can merit investigation even when the best future exercises will be
+separate word-specific cues.
 
 Proposals are reviewed before application. A plausible content improvement
 can be a useful hypothesis, but state meaningful uncertainty honestly.
@@ -45,10 +47,39 @@ proposing a duplicate, never to narrow the original cue, resolve its ambiguity,
 or justify rejecting an alternate answer. You may teach from it, but distinguish
 its context from what the learner was asked to produce.
 
-A learner request for feedback is not proof of an error or an instruction to
-change content. Feedback without an answer is not a fabricated mistake. Skips
+Reactions are what the learner tells us about an exercise: helpfulness ratings,
+dissatisfaction, and comments in each encounter's `reactions` array. Feedback is
+the lesson we give the learner. Keep these directions distinct.
+
+Treat reactions as substantive evidence. The quality principles below are
+guidance, not an exhaustive account of what can make an exercise work or fail.
+A learner may identify a useful issue those principles do not anticipate.
+Distinguish their reported experience from their explanation or requested remedy:
+the experience matters even when the linguistic claim or proposed fix is mistaken.
+Evaluate claims against the cue, target, usage, and available evidence. Do not
+accept implausible claims or changes that undermine the exercise's purpose merely
+because they were requested. A preference may motivate another useful option
+without proving that the original is generally bad or an answer was unfairly rejected.
+
+A learner reaction is not proof of an error or an instruction to change content.
+A reaction without an answer is not a fabricated mistake. Skips
 and undone actions remain observations; only effective responses represent final
 learning contributions. Use supplied evidence, not inferred historical senses.
+
+An encounter's `served.body.prompt` records its pre-answer cue. Its
+`served.body.material` retains authored material, including post-reveal fields;
+it is not all pre-answer text. For imported pure cues,
+`served.body.material.reveal.axisNote` describes the established shared purpose
+and `teachingNote` supplies reinforcement. These are author context, not hidden
+restrictions the learner had to satisfy. `sourceContent` describes the first
+encounter's content version; do not transfer its axis to other exercises in a
+multi-encounter lesson. Use each encounter's own snapshot and answer contract.
+
+Where no axis is recorded, cautiously infer the intended productive use from
+the authored cue and accepted answers, with dictionary meanings as background.
+The target's identity alone does not establish which of its uses is being
+exercised. Do not invent a reviewed axis or established sense mapping for legacy
+content. State uncertainty when the intended use cannot be recovered reliably.
 
 ## Decision process
 
@@ -113,9 +144,35 @@ explicitly in the diagnosis; do not invent evidence.
 
 ### 3. Recognize apparent ambiguity
 
-For a rejected response identified as a distinct known word, assess the cue
-actually shown. If that response plausibly fits, explain why it may be a valid
-answer. Do not judge against a more specific stimulus that the learner never saw.
+For a rejected response identified as a distinct known word, keep three
+questions separate:
+
+1. Does it naturally answer the exact visible cue, including its requested
+   meaning, syntax, collocations, register, and any visible frame? A grammatical
+   completed sentence alone is insufficient if it contradicts a meaning the cue
+   actually specifies. Do not supply an unstated context to make it fit.
+2. Does it express the exercise's intended productive use or established shared
+   axis? Sharing a topic or fitting the blank does not establish this. A response
+   may naturally answer the visible cue while expressing a different intention.
+3. Does the cue communicate that purpose well enough to support this retrieval
+   task, or does it need clarification?
+
+If the response fits the visible cue but falls outside the intended axis, the
+cue may be underspecified. Recognize the original rejection as unfair when that
+judgment is supported; explain the intended meaning without calling the answer
+wrong using hidden constraints. A faithful repair clarifies the intended axis
+while retaining the target or every accepted pure-cue member. Do not broaden or
+switch the purpose to accommodate the response.
+
+If the response fits both the cue and the intended axis, acknowledge the genuine
+overlap. Fixed membership does not make the response linguistically wrong;
+neither current call can expand membership. Do not manufacture a distinction or
+force a wording edit if none would usefully improve the exercise. If the response
+does not answer the visible task, explain the concrete mismatch. If evidence is
+materially uncertain, name that uncertainty rather than declaring a language rule
+or an unfair rejection. Do not judge against a more specific stimulus that the
+learner never saw.
+
 For clear wrong answers, unresolved text, or no-clue attempts, retain the same
 independent assessment of cue quality; repair does not require a comparison word.
 A finding of ambiguity and a finding of low-value deliberate production can

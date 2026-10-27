@@ -13,14 +13,31 @@ export type VocabularyReflectionJob = {
   kind: 'learner_feedback' | 'exercise_improvement';
   attemptNumber: number; leaseToken: string; leaseExpiresAt: string;
   evidence: VocabularyReflectionCase;
+  secondOpinion?: { requestId: string; proposal: VocabularyContentProposal; notes: string };
 };
 export type VocabularyFeedbackJudgmentInput = {
   diagnosis: VocabularyJson; message: VocabularyJson | null;
   /** Refers to actual encounters; only effective rejected responses can compensate scheduling. */
   unfairEncounterIds: string[]; invocationId?: string;
 };
+export type VocabularyImprovementAdmission = {
+  outcome: 'single_sense' | 'laundry_list' | 'unmappable' | 'inventory_gap';
+  rationale: string; wordId: string; sourceContentId: string; sourceContentVersion: number;
+  catalogVersion: number; senseIds: string[]; invocationId?: string;
+  sourceMapping: { senseId: string | null; establishedAt: string | null };
+};
+export type VocabularyPureCueReferral = { candidateWords: string[]; sharedPurpose: string; rationale: string };
+export type VocabularyPureCuePromotion = {
+  outcome: 'reject' | 'reuse' | 'extend' | 'create' | 'needs_operator';
+  rationale: string; candidateWordIds: string[]; existingContentId: string | null;
+  invocationId?: string;
+};
 export type VocabularyImprovementResultInput = {
   diagnosis: VocabularyJson; proposal: Omit<VocabularyProposalDraft,'caseId'> | null; invocationId?: string;
+  secondOpinion?: VocabularySecondOpinionVerdict;
+  admission?: VocabularyImprovementAdmission;
+  pureCueReferral?: VocabularyPureCueReferral | null;
+  pureCuePromotion?: VocabularyPureCuePromotion;
 };
 export type VocabularyReflectionResult = { kind: 'learner_feedback'; judgment: VocabularyFeedbackJudgmentInput }
   | { kind: 'exercise_improvement'; result: VocabularyImprovementResultInput };
@@ -50,3 +67,10 @@ export const VOCABULARY_COMPENSATION_POLICY = {
   /** Relax the current due time by one day only when every effective rejection was unfair. Never replay an old schedule. */
   maximumDelayMs: 24 * 60 * 60 * 1000,
 } as const;
+
+export type VocabularySecondOpinionVerdict = { verdict: 'support' | 'revise' | 'reject'; rationale: string };
+export type VocabularySecondOpinion = {
+  requestId: string; proposalId: string; proposalVersion: number; jobId: string;
+  status: 'queued' | 'running' | 'succeeded' | 'failed'; attemptNumber: number;
+  error: string | null; requestedAt: string; result: VocabularySecondOpinionVerdict | null;
+};

@@ -1,6 +1,5 @@
 import { getDb } from '../db/connection.ts';
 import { requireLearnerId } from '../db/learner-context.ts';
-import { listVocabularyCandidates } from '../db/vocabulary-learners.ts';
 import { getDietProfile, getStashDietSplit, resolveEffectiveDietWeights } from '../db/diet-profile.ts';
 import { getResolvedDeckWordIds } from '../db/deck-words.ts';
 import { loadDeckManifest, getTailDeckId, type DeckManifest } from '../decks/manifest.ts';
@@ -8,10 +7,12 @@ import { buildUnstudiedAdmissionSeedSource, assertUnstudiedAdmissionSource, plan
   selectAdmittedUnstudiedWordIds, planDeckDietTargets, selectDeckDietWordIds, type UnstudiedStashCandidate } from '../db/unstudied-admission.ts';
 import { DEFAULT_DAILY_NEW_WORD_LIMIT, PRIORITY_TIER_TOP } from '../db/types.ts';
 import { isStudyIntroductionOrder, isStudyIntroductionSpacing, DEFAULT_INTRODUCTION_SPACING, type StudyIntroductionOrder } from '../../src/domain/introduction-order.ts';
+import { allocateSessionBucketSlots, MAX_SESSION_ITEMS } from '../../src/domain/session-limits.ts';
+import { selectVocabularyReviewSkills, type VocabularyReviewSelection, type VocabularyReviewSkill } from './review-selection.ts';
 
-export const VOCABULARY_COMPOSITION_POLICY = { maxSessionWords: 12, maxNewWordsAlongsideDue: 6, maxPreparationDemand: 40 } as const;
+export const VOCABULARY_COMPOSITION_POLICY = { maxSessionWords: MAX_SESSION_ITEMS, maxPreparationDemand: 40 } as const;
 export type VocabularyCompositionSettings = { introductionOrder: StudyIntroductionOrder; introductionSpacing: number };
-export type VocabularyComposition = { newWordIds: string[]; dueWordIds: string[]; settings: VocabularyCompositionSettings; requestedPreparationWordIds: string[]; remainingNewWordQuota: number };
+export type VocabularyComposition = { newWordIds: string[]; dueWordIds: string[]; reviewSelections: VocabularyReviewSelection[]; settings: VocabularyCompositionSettings; requestedPreparationWordIds: string[]; remainingNewWordQuota: number };
 function setting(name: string): unknown {
   const row = getDb().prepare('SELECT value_json FROM learner_settings WHERE learner_id=? AND setting_key=?').get(requireLearnerId(), name) as {value_json:string}|undefined;
   return row ? JSON.parse(row.value_json) as unknown : undefined;
@@ -35,6 +36,7 @@ export function remainingVocabularyNewWordQuota(now=new Date().toISOString()):nu
 /** New-model state is the only lifecycle predicate; source material and lexical deck identities can be shared. */
 export function composeVocabularyStudy(options:{
   teachingReady:(wordId:string)=>boolean; requestTeaching:(wordId:string)=>void; now?:string; manifest?:DeckManifest|null;
+  canUseSkill?: (wordId: string, skillId: VocabularyReviewSkill) => boolean;
 }):VocabularyComposition {
   const now=options.now??new Date().toISOString(),learner=requireLearnerId();
   const settings=vocabularyCompositionSettings();const remaining=remainingVocabularyNewWordQuota(now);
@@ -88,13 +90,17 @@ export function composeVocabularyStudy(options:{
     }
   }
   const newIds=selectAdmittedUnstudiedWordIds({stash,dietIds,remainingQuota:remaining,seedSource:seed,stashRatio,source,eligibleIds:readyIds});
-  const dueByMode=['solidify','practice','maintain'].map((mode)=>listVocabularyCandidates(12,now,{modes:[mode as 'solidify'|'practice'|'maintain']}));
-  const dueWordIds:string[]=[];
-  for(let index=0;index<12;index++)for(const lane of dueByMode)if(lane[index])dueWordIds.push(lane[index].wordId);
-  const newCapacity=dueWordIds.length?VOCABULARY_COMPOSITION_POLICY.maxNewWordsAlongsideDue:VOCABULARY_COMPOSITION_POLICY.maxSessionWords;
-  const newWordIds=newIds.slice(0,newCapacity);
-  const selectedDue=dueWordIds.slice(0,VOCABULARY_COMPOSITION_POLICY.maxSessionWords-newWordIds.length);
+  const learningWordIds=(getDb().prepare(`SELECT w.word_id FROM learner_words w JOIN learner_word_schedules s USING(learner_id,word_id)
+    WHERE w.learner_id=? AND w.mode='solidify' AND w.dismissed_at IS NULL
+      AND (s.next_eligible_at IS NULL OR s.next_eligible_at<=?)
+    ORDER BY w.added_at,w.word_id`).all(learner,now) as {word_id:string}[]).map((row)=>row.word_id)
+    .filter((wordId)=>!options.canUseSkill||options.canUseSkill(wordId,'recognition')||options.canUseSkill(wordId,'production'));
+  const reviewCandidates=selectVocabularyReviewSkills({now,canUseSkill:options.canUseSkill});
+  const slots=allocateSessionBucketSlots({review:reviewCandidates.length,learning:learningWordIds.length,unstudied:newIds.length});
+  const newWordIds=newIds.slice(0,slots.unstudied);
+  const reviewSelections=reviewCandidates.slice(0,slots.review);
+  const selectedDue=[...learningWordIds.slice(0,slots.learning),...reviewSelections.map((entry)=>entry.wordId)];
   const requestedPreparationWordIds=[...requested].slice(0,VOCABULARY_COMPOSITION_POLICY.maxPreparationDemand);
   for(const wordId of requestedPreparationWordIds)options.requestTeaching(wordId);
-  return {newWordIds,dueWordIds:selectedDue,settings,requestedPreparationWordIds,remainingNewWordQuota:remaining};
+  return {newWordIds,dueWordIds:selectedDue,reviewSelections,settings,requestedPreparationWordIds,remainingNewWordQuota:remaining};
 }

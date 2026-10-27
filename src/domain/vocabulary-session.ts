@@ -1,15 +1,23 @@
+import type { BootstrapRevealSnapshot } from './word-content/reveal';
+import type { WordContentDocument } from './word-content/types';
+
 /** Shared, side-effect-free interpretation of the authoritative vocabulary session log. */
 export const VOCABULARY_SESSION_PROTOCOL_VERSION = 1 as const;
 export const VOCABULARY_SESSION_POLICY = {
-  version: 'vocabulary-session.v2',
-  /** One accepted general production response covers default work; Enough is an explicit separate choice. */
+  version: 'vocabulary-session.v5',
+  interveningExercisesBeforeWordReturn: 2,
+  /** Compatibility constant; word coverage is determined by the mode-specific skill policy below. */
   productionResponsesToCover: 1,
   solidifyCleanCoveredSessionsToRecommendPractice: 3,
   /** Maintain promotion is deliberately disabled in the first delivery. */
   practiceCleanCoveredSessionsToRecommendMaintain: Infinity,
 } as const;
 
+export type VocabularySolidifySkill = 'recognition' | 'production';
+export type VocabularySkill = 'recognition' | 'production' | 'contextual_selection';
+export type VocabularySkillProgress = { acceptedResponses: number; rejectedResponses: number; consecutiveAccepted: number };
 export type VocabularyWordMode = 'unstudied' | 'solidify' | 'practice' | 'maintain';
+export type VocabularyReactionKind = 'positive' | 'negative' | 'comment' | 'withdrawn';
 export type VocabularySessionJson = null | boolean | number | string | VocabularySessionJson[] | { [key: string]: VocabularySessionJson };
 export type VocabularyTeachingRequirements = {
   introductionContentId: string;
@@ -21,7 +29,12 @@ export type VocabularySessionWordContext = {
   wordId: string;
   mode: VocabularyWordMode;
   cleanCoveredSessions?: number;
+  /** Frozen learner choice to remain in Solidify until a later explicit mode change. */
+  automaticPromotionPaused?: boolean;
   /** Scheduling can admit recognition without admitting the production objective. */
+  selectedSkill?: VocabularySkill;
+  /** Frozen enabled recall directions; omitted legacy contexts practise both. */
+  solidifySkills?: readonly VocabularySolidifySkill[];
   recognitionOnly?: boolean;
   contextualOnly?: boolean;
   teachingRequirements?: VocabularyTeachingRequirements;
@@ -29,6 +42,8 @@ export type VocabularySessionWordContext = {
 export type VocabularySessionInitialContext = {
   sessionId: string;
   words: readonly VocabularySessionWordContext[];
+  /** Frozen review order interleaves independent cues with selected word objectives. */
+  reviewOrder?: readonly { kind: 'word' | 'pure_cue'; id: string }[];
   composition?: { introductionOrder: 'random' | 'first' | 'paced'; introductionSpacing: number };
 };
 
@@ -45,6 +60,15 @@ export type VocabularyEncounterSnapshot = {
     choices?: readonly { id: string; text: string }[];
     /** Additional rendered structure, retained exactly for content kinds with richer material. */
     material?: VocabularySessionJson;
+    /** Exact published source used for the introduction recap. */
+    teachingSource?: VocabularySessionJson;
+    /** Post-answer lexical and mapped-sense facts frozen when this encounter is served. */
+    revealWords?: readonly {
+      wordId: string; hanzi: string; traditional: string | null; pinyin: string; meaning: string;
+      sense?: { senseId: string; version: number; description: VocabularySessionJson };
+    }[];
+    bootstrapReveal?: BootstrapRevealSnapshot;
+    wordReference?: WordContentDocument;
   };
   assessment: {
     acceptedAnswers: readonly string[];
@@ -60,12 +84,14 @@ export type VocabularyEncounterSnapshot = {
 type VocabularySessionActionPayload =
   | { kind: 'presentation'; payload: { encounterId: string; wordId: string | null; snapshot: VocabularyEncounterSnapshot } }
   | { kind: 'response'; payload: { encounterId: string; response: string | null; outcome: 'accepted' | 'rejected'; selfAssessment?: 'accepted' | 'rejected'; selectedWordId?: string; helpUsed?: boolean } }
-  | { kind: 'feedback'; payload: { encounterId: string; feedback: 'positive' | 'negative' | 'comment' | 'withdrawn'; comment?: string } }
+  /** Learner reaction. Protocol v1 retains its historical `feedback` wire spelling. */
+  | { kind: 'feedback'; payload: { encounterId: string; feedback: VocabularyReactionKind; comment?: string } }
   | { kind: 'teaching_complete'; payload: { wordId: string } }
   | { kind: 'word_wrap'; payload: { wordId: string; reason: 'enough' | 'policy' } }
   | { kind: 'word_more'; payload: { wordId: string } }
   | { kind: 'word_skip'; payload: { wordId: string } }
   | { kind: 'exercise_skip'; payload: { encounterId: string } }
+  | { kind: 'exercise_exclude'; payload: { encounterId: string } }
   | { kind: 'mode_change'; payload: { wordId: string; mode: VocabularyWordMode } }
   | { kind: 'resume'; payload: Record<string, never> }
   | { kind: 'finish_for_now'; payload: Record<string, never> }
@@ -82,6 +108,7 @@ export type VocabularySessionAction = VocabularySessionActionPayload & {
   /** Server-generated companion actions belong to the same learner transition. */
   transitionId?: string;
 };
+export type VocabularyReactionAction = Extract<VocabularySessionAction, { kind: 'feedback' }>;
 export type VocabularyEncounterEvidence = {
   encounterId: string;
   wordId: string | null;
@@ -94,8 +121,10 @@ export type VocabularyEncounterEvidence = {
   responses: Extract<VocabularySessionAction, { kind: 'response' }>[];
   /** Only these responses contribute to finalization; responses above preserve all observations. */
   effectiveResponses: Extract<VocabularySessionAction, { kind: 'response' }>[];
-  feedback: Extract<VocabularySessionAction, { kind: 'feedback' }>[];
-  effectiveFeedback: Extract<VocabularySessionAction, { kind: 'feedback' }>[];
+  /** Persisted v1 reaction history; use the reaction accessors outside log projection. */
+  feedback: VocabularyReactionAction[];
+  /** Persisted v1 effective reactions. This is not app-generated learner feedback. */
+  effectiveFeedback: VocabularyReactionAction[];
   skipped: boolean;
   presentationUndone: boolean;
 };
@@ -107,6 +136,12 @@ export type VocabularySessionWordProjection = {
   admitted: boolean;
   workNumber: number;
   workStatus: 'not_started' | 'open' | 'wrapped' | 'skipped';
+  selectedSkill: VocabularySkill;
+  solidifySkills: readonly VocabularySolidifySkill[];
+  skillProgress: Record<VocabularySkill, VocabularySkillProgress>;
+  teachingIntroductionPresented: boolean;
+  /** Session-wide evidence survives a request for more work. */
+  solidifyRecallCompleted: boolean;
   productionResponses: number;
   successfulProductionResponses: number;
   covered: boolean;
@@ -126,7 +161,8 @@ export type VocabularySessionProjection = {
   finishReason: 'finish_immediately' | 'wrapped_up' | null;
   words: Record<string, VocabularySessionWordProjection>;
   encounters: VocabularyEncounterEvidence[];
-  pureCueOutcomes: { contentId: string; contentVersion: number; encounterIds: string[]; acceptedResponses: number; rejectedResponses: number; covered: boolean }[];
+  excludedContentIds: string[];
+  pureCueOutcomes: { contentId: string; contentVersion: number; encounterIds: string[]; acceptedResponses: number; rejectedResponses: number; consecutiveAccepted: number; covered: boolean }[];
   coveredWordIds: string[];
   uncoveredWordIds: string[];
   undoneActionIds: string[];
@@ -134,7 +170,7 @@ export type VocabularySessionProjection = {
 };
 
 const UNDOABLE_KINDS = new Set<VocabularySessionAction['kind']>([
-  'response', 'teaching_complete', 'word_wrap', 'word_more', 'word_skip', 'exercise_skip', 'mode_change',
+  'response', 'teaching_complete', 'word_wrap', 'word_more', 'word_skip', 'exercise_skip', 'exercise_exclude', 'mode_change',
   'finish_for_now', 'finish_immediately', 'resume',
 ]);
 function invariant(condition: unknown, message: string): asserts condition {
@@ -147,7 +183,41 @@ export function recommendVocabularyMode(mode: VocabularyWordMode, cleanCoveredSe
   return null;
 }
 
-/** The latest effective transition alone is undoable; feedback and presentation do not erase that scope. */
+/** Teaching completion and work in other modes do not count toward Solidify graduation. */
+export function isCleanSolidifySession(word: VocabularySessionWordProjection): boolean {
+  return word.initialMode === 'solidify' && word.mode === 'solidify' && !word.teachingCompleted
+    && word.covered && word.successfulRecall && !word.hasRejectedResponse
+    && word.solidifySkills.includes('recognition') && word.solidifySkills.includes('production')
+    && word.solidifyRecallCompleted;
+}
+
+/** Pending objectives in the current work cycle; persisted flags supply defaults for old logs. */
+export function getPendingVocabularySkills(word: VocabularySessionWordProjection): VocabularySkill[] {
+  if (word.mode === 'unstudied') return (['recognition', 'production'] as const)
+    .filter((skill) => word.skillProgress[skill].consecutiveAccepted < 3);
+  if (word.mode === 'solidify') return word.solidifySkills
+    .filter((skill) => word.skillProgress[skill].acceptedResponses < 1);
+  const progress = word.skillProgress[word.selectedSkill];
+  return progress.consecutiveAccepted >= (progress.rejectedResponses > 0 ? 3 : 1) ? [] : [word.selectedSkill];
+}
+
+export function isVocabularyTeachingComplete(word: VocabularySessionWordProjection): boolean {
+  return word.mode === 'unstudied' && !word.teachingDeferred && word.teachingIntroductionPresented
+    && getPendingVocabularySkills(word).length === 0;
+}
+
+/** Enough marks coverage separately and never supplies successful recall evidence. */
+export function isVocabularyWordReadyToCover(word: VocabularySessionWordProjection): boolean {
+  return word.mode === 'unstudied' ? isVocabularyTeachingComplete(word) : getPendingVocabularySkills(word).length === 0;
+}
+
+function emptySkillProgress(): Record<VocabularySkill, VocabularySkillProgress> {
+  return { recognition: { acceptedResponses: 0, rejectedResponses: 0, consecutiveAccepted: 0 },
+    production: { acceptedResponses: 0, rejectedResponses: 0, consecutiveAccepted: 0 },
+    contextual_selection: { acceptedResponses: 0, rejectedResponses: 0, consecutiveAccepted: 0 } };
+}
+
+/** The latest effective transition alone is undoable; reactions and presentation do not erase that scope. */
 export function latestVocabularyUndoableActionId(actions: readonly VocabularySessionAction[]): string | null {
   let latest: string | null = null;
   for (const action of actions) {
@@ -216,20 +286,7 @@ export function projectVocabularySession(
   result.throughSequence = throughSequence;
   result.undoneActionIds = [...undone];
   result.latestUndoableActionId = latestUndoable;
-  for (const encounter of result.encounters) {
-    if (encounter.snapshot.schedulingScope !== 'pure_cue') continue;
-    let outcome = result.pureCueOutcomes.find((entry) => entry.contentId === encounter.snapshot.contentId);
-    if (!outcome) {
-      outcome = { contentId: encounter.snapshot.contentId, contentVersion: encounter.snapshot.contentVersion, encounterIds: [], acceptedResponses: 0, rejectedResponses: 0, covered: false };
-      result.pureCueOutcomes.push(outcome);
-    }
-    outcome.encounterIds.push(encounter.encounterId);
-    for (const response of encounter.responses) {
-      if (response.payload.outcome === 'accepted') outcome.acceptedResponses++;
-      else outcome.rejectedResponses++;
-    }
-    outcome.covered ||= encounter.responses.length > 0;
-  }
+  result.pureCueOutcomes = projectPureCueOutcomes(result.encounters);
   // Original observations survive Undo; only their effective contribution changes.
   result.encounters = prefix.filter((action): action is Extract<VocabularySessionAction, { kind: 'presentation' }> => action.kind === 'presentation')
     .map((presentation) => {
@@ -237,8 +294,8 @@ export function projectVocabularySession(
       const observed = observations.get(presentation.payload.encounterId);
       invariant(observed, 'missing original presentation context');
       const evidence = effective ?? observed;
-      const feedback = prefix.filter((action): action is Extract<VocabularySessionAction, { kind: 'feedback' }> => action.kind === 'feedback' && action.payload.encounterId === evidence.encounterId);
-      return { ...evidence, effectiveFeedback: effectiveVocabularyFeedback(feedback), mode: observed.mode, workNumber: observed.workNumber, presentationUndone: !effective, effectiveResponses: [...(effective?.responses ?? [])],
+      const reactions = prefix.filter((action): action is VocabularyReactionAction => action.kind === 'feedback' && action.payload.encounterId === evidence.encounterId);
+      return { ...evidence, effectiveFeedback: effectiveVocabularyReactions(reactions), mode: observed.mode, workNumber: observed.workNumber, presentationUndone: !effective, effectiveResponses: [...(effective?.responses ?? [])],
         responses: prefix.filter((action): action is Extract<VocabularySessionAction, { kind: 'response' }> => action.kind === 'response' && action.payload.encounterId === evidence.encounterId),
         feedback: prefix.filter((action): action is Extract<VocabularySessionAction, { kind: 'feedback' }> => action.kind === 'feedback' && action.payload.encounterId === evidence.encounterId),
       };
@@ -246,9 +303,9 @@ export function projectVocabularySession(
   for (const word of Object.values(result.words)) {
     if (!word.admitted) continue;
     (word.covered ? result.coveredWordIds : result.uncoveredWordIds).push(word.wordId);
-    const clean = word.covered && word.successfulRecall && !word.hasRejectedResponse;
-    word.recommendedMode = word.explicitModeChoice === null && clean
-      ? recommendVocabularyMode(word.mode, (context.words.find((entry) => entry.wordId === word.wordId)?.cleanCoveredSessions ?? 0) + 1)
+    const initial = context.words.find((entry) => entry.wordId === word.wordId);
+    word.recommendedMode = word.explicitModeChoice === null && !initial?.automaticPromotionPaused && isCleanSolidifySession(word)
+      ? recommendVocabularyMode(word.mode, (initial?.cleanCoveredSessions ?? 0) + 1)
       : null;
   }
   return result;
@@ -258,17 +315,25 @@ function emptyProjection(context: VocabularySessionInitialContext, sequence: num
   const words: VocabularySessionProjection['words'] = {};
   for (const word of context.words) {
     invariant(word.wordId.trim() && !words[word.wordId], 'duplicate or empty word context');
+    if (word.solidifySkills !== undefined) {
+      invariant(word.solidifySkills.length > 0
+        && word.solidifySkills.every((skill) => skill === 'recognition' || skill === 'production')
+        && new Set(word.solidifySkills).size === word.solidifySkills.length, 'invalid Solidify skill configuration');
+    }
     if (word.teachingRequirements) {
       invariant(word.teachingRequirements.minimumRecognitionResponses >= 0 && Number.isInteger(word.teachingRequirements.minimumRecognitionResponses), 'invalid teaching recognition requirement');
       invariant(word.teachingRequirements.minimumProductionResponses >= 0 && Number.isInteger(word.teachingRequirements.minimumProductionResponses), 'invalid teaching production requirement');
     }
     words[word.wordId] = { wordId: word.wordId, initialMode: word.mode, mode: word.mode, explicitModeChoice: null,
-      admitted: false, workNumber: 0, workStatus: 'not_started', productionResponses: 0, successfulProductionResponses: 0,
+      admitted: false, workNumber: 0, workStatus: 'not_started',
+      selectedSkill: word.selectedSkill ?? (word.contextualOnly ? 'contextual_selection' : word.recognitionOnly ? 'recognition' : 'production'),
+      solidifySkills: [...(word.solidifySkills ?? ['recognition', 'production'])],
+      skillProgress: emptySkillProgress(), teachingIntroductionPresented: false, solidifyRecallCompleted: false, productionResponses: 0, successfulProductionResponses: 0,
       covered: false, successfulRecall: false, teachingCompleted: false, teachingDeferred: false, hasRejectedResponse: false, recommendedMode: null };
   }
   return { sessionId: context.sessionId, protocolVersion: VOCABULARY_SESSION_PROTOCOL_VERSION,
     policyVersion: VOCABULARY_SESSION_POLICY.version, throughSequence: sequence, phase: 'active', finishReason: null,
-    words, encounters: [], pureCueOutcomes: [], coveredWordIds: [], uncoveredWordIds: [], undoneActionIds: [], latestUndoableActionId: null };
+    words, encounters: [], excludedContentIds: [], pureCueOutcomes: [], coveredWordIds: [], uncoveredWordIds: [], undoneActionIds: [], latestUndoableActionId: null };
 }
 function replay(context: VocabularySessionInitialContext, actions: readonly VocabularySessionAction[], undone: ReadonlySet<string>) {
   const result = emptyProjection(context, 0);
@@ -310,6 +375,8 @@ function applyAction(state: VocabularySessionProjection, action: VocabularySessi
       invariant(replaying || snapshot.role !== 'teaching' || (word.mode === 'unstudied' && !word.teachingDeferred), 'teaching role requires current teaching requirements');
       invariant(replaying || snapshot.role !== 'priming' || word.mode === 'solidify', 'priming requires Solidify mode');
       invariant(replaying || snapshot.role !== 'general' || word.mode !== 'unstudied', 'unstudied work requires teaching');
+      if (snapshot.role === 'teaching' && snapshot.kind === 'introduction'
+        && snapshot.contentId === context.words.find((entry) => entry.wordId === wordId)?.teachingRequirements?.introductionContentId) word.teachingIntroductionPresented = true;
       state.encounters.push({ encounterId, wordId, workNumber: word.workNumber, presentedActionId: action.actionId,
         presentedAt: action.occurredAt, mode: word.mode, snapshot, responses: [], effectiveResponses: [], feedback: [], effectiveFeedback: [], skipped: false, presentationUndone: false });
       return;
@@ -330,9 +397,20 @@ function applyAction(state: VocabularySessionProjection, action: VocabularySessi
       if (encounter.snapshot.kind === 'production' && encounter.snapshot.role === 'general') {
         word.productionResponses++;
         if (action.payload.outcome === 'accepted') word.successfulProductionResponses++;
-        if (word.successfulProductionResponses >= VOCABULARY_SESSION_POLICY.productionResponsesToCover) {
-          word.covered = true;
-          word.successfulRecall ||= word.successfulProductionResponses >= VOCABULARY_SESSION_POLICY.productionResponsesToCover;
+      }
+      if ((word.mode === 'unstudied' && encounter.snapshot.role === 'teaching')
+        || (word.mode !== 'unstudied' && encounter.snapshot.role === 'general')) {
+        const skill: VocabularySkill = encounter.snapshot.kind === 'contrast' ? 'contextual_selection' : encounter.snapshot.kind;
+        const progress = word.skillProgress[skill];
+        if (action.payload.outcome === 'accepted') {
+          progress.acceptedResponses++; progress.consecutiveAccepted++;
+        } else {
+          progress.rejectedResponses++; progress.consecutiveAccepted = 0;
+        }
+        if (word.mode !== 'unstudied' && isVocabularyWordReadyToCover(word)) {
+          word.covered = true; word.successfulRecall = true;
+          if (word.mode === 'solidify' && word.skillProgress.recognition.acceptedResponses > 0
+            && word.skillProgress.production.acceptedResponses > 0) word.solidifyRecallCompleted = true;
         }
       }
       return;
@@ -340,6 +418,12 @@ function applyAction(state: VocabularySessionProjection, action: VocabularySessi
     case 'feedback': {
       if (replaying && !state.encounters.some((entry) => entry.encounterId === action.payload.encounterId)) return;
       encounterFor(action.payload.encounterId).feedback.push(action); return;
+    }
+    case 'exercise_exclude': {
+      const encounter = encounterFor(action.payload.encounterId);
+      invariant(encounter.snapshot.role !== 'teaching' && encounter.snapshot.kind !== 'introduction' && encounter.snapshot.kind !== 'recognition', 'exercise does not support another way');
+      if (!state.excludedContentIds.includes(encounter.snapshot.contentId)) state.excludedContentIds.push(encounter.snapshot.contentId);
+      return;
     }
     case 'exercise_skip': {
       const encounter = encounterFor(action.payload.encounterId);
@@ -351,19 +435,14 @@ function applyAction(state: VocabularySessionProjection, action: VocabularySessi
       const word = wordFor(action.payload.wordId);
       const requirement = context.words.find((entry) => entry.wordId === word.wordId)?.teachingRequirements;
       invariant(word.admitted && word.workStatus === 'open' && word.mode === 'unstudied' && requirement, 'teaching completion requires open teaching and requirements');
-      const teaching = state.encounters.filter((entry) => entry.wordId === word.wordId && entry.workNumber === word.workNumber && entry.snapshot.role === 'teaching');
-      invariant(teaching.some((entry) => entry.snapshot.kind === 'introduction' && entry.snapshot.contentId === requirement.introductionContentId), 'required introduction was not presented');
-      const successful = teaching.filter((entry) => !entry.skipped && entry.responses.some((response) => response.payload.outcome === 'accepted'));
-      invariant(requirement.requiredExerciseContentIds.every((id) => successful.some((entry) => entry.snapshot.contentId === id)), 'required teaching exercise was not completed');
-      invariant(successful.filter((entry) => entry.snapshot.kind === 'recognition').length >= requirement.minimumRecognitionResponses, 'recognition teaching requirement unmet');
-      invariant(successful.filter((entry) => entry.snapshot.kind === 'production').length >= requirement.minimumProductionResponses, 'production teaching requirement unmet');
+      invariant(isVocabularyTeachingComplete(word), 'teaching skill streak or introduction requirement unmet');
       word.teachingCompleted = true; word.covered = true; word.successfulRecall = true; word.mode = 'solidify'; word.workStatus = 'wrapped'; return;
     }
     case 'word_wrap': {
       const word = wordFor(action.payload.wordId);
       invariant(word.admitted && word.workStatus === 'open', 'cannot wrap unopened word');
       invariant(word.mode !== 'unstudied', 'incomplete teaching must be skipped, not wrapped');
-      invariant(action.payload.reason !== 'policy' || word.successfulProductionResponses >= VOCABULARY_SESSION_POLICY.productionResponsesToCover, 'default covering requirement unmet');
+      invariant(action.payload.reason !== 'policy' || isVocabularyWordReadyToCover(word), 'default covering requirement unmet');
       word.covered = true; word.workStatus = 'wrapped'; return;
     }
     case 'word_skip': {
@@ -375,7 +454,8 @@ function applyAction(state: VocabularySessionProjection, action: VocabularySessi
       const word = wordFor(action.payload.wordId);
       invariant(word.admitted && (word.workStatus === 'wrapped' || word.workStatus === 'skipped'), 'more requires previously stopped work');
       invariant(word.mode !== 'unstudied' || !word.teachingDeferred, 'reset teaching starts in a fresh session');
-      word.workNumber++; word.workStatus = 'open'; word.productionResponses = 0; word.successfulProductionResponses = 0; return;
+      word.workNumber++; word.workStatus = 'open'; word.productionResponses = 0; word.successfulProductionResponses = 0;
+      word.skillProgress = emptySkillProgress(); word.teachingIntroductionPresented = false; return;
     }
     case 'mode_change': {
       const word = wordFor(action.payload.wordId);
@@ -393,10 +473,40 @@ function applyAction(state: VocabularySessionProjection, action: VocabularySessi
   }
 }
 
+/** Effective responses remain ordered by the log even when encounters overlap. */
+function projectPureCueOutcomes(encounters: readonly VocabularyEncounterEvidence[]): VocabularySessionProjection['pureCueOutcomes'] {
+  const outcomes: VocabularySessionProjection['pureCueOutcomes'] = [];
+  for (const encounter of encounters) {
+    if (encounter.snapshot.schedulingScope !== 'pure_cue') continue;
+    let outcome = outcomes.find((entry) => entry.contentId === encounter.snapshot.contentId);
+    if (!outcome) {
+      outcome = { contentId: encounter.snapshot.contentId, contentVersion: encounter.snapshot.contentVersion,
+        encounterIds: [], acceptedResponses: 0, rejectedResponses: 0, consecutiveAccepted: 0, covered: false };
+      outcomes.push(outcome);
+    }
+    outcome.encounterIds.push(encounter.encounterId);
+  }
+  for (const { encounter, response } of encounters.filter((entry) => entry.snapshot.schedulingScope === 'pure_cue')
+    .flatMap((encounter) => encounter.responses.map((response) => ({encounter, response})))
+    .sort((a,b) => a.response.sequence - b.response.sequence)) {
+    const outcome = outcomes.find((entry) => entry.contentId === encounter.snapshot.contentId);
+    invariant(outcome, 'missing pure cue outcome');
+    if (response.payload.outcome === 'accepted') {
+      outcome.acceptedResponses++; outcome.consecutiveAccepted++;
+    } else {
+      outcome.rejectedResponses++; outcome.consecutiveAccepted = 0;
+    }
+    outcome.covered ||= outcome.consecutiveAccepted >= (outcome.rejectedResponses > 0 ? 3 : 1);
+  }
+  return outcomes;
+}
+
 function settleFinishedWork(state: VocabularySessionProjection): void {
   if (state.phase !== 'finishing') return;
   const openWord = Object.values(state.words).some((word) => word.admitted && word.workStatus === 'open');
-  const pendingPureCue = state.encounters.some((encounter) => encounter.snapshot.schedulingScope === 'pure_cue' && !encounter.skipped && encounter.responses.length === 0);
+  const pendingPureCue = projectPureCueOutcomes(state.encounters).some((outcome) => !outcome.covered
+    && !state.excludedContentIds.includes(outcome.contentId)
+    && !state.encounters.some((encounter) => outcome.encounterIds.includes(encounter.encounterId) && encounter.skipped));
   if (!openWord && !pendingPureCue) { state.phase = 'completed'; state.finishReason = 'wrapped_up'; }
 }
 
@@ -408,7 +518,15 @@ function undoTargets(actions: readonly VocabularySessionAction[], targetId: stri
 }
 
 /** Comments accumulate; reaction changes replace the current disposition without deleting history. */
-export function effectiveVocabularyFeedback(feedback: readonly Extract<VocabularySessionAction, { kind: 'feedback' }>[]): Extract<VocabularySessionAction, { kind: 'feedback' }>[] {
-  const latestReaction = feedback.filter((action) => action.payload.feedback !== 'comment').at(-1);
-  return feedback.filter((action) => action.payload.feedback === 'comment' || (action === latestReaction && action.payload.feedback !== 'withdrawn'));
+export function effectiveVocabularyReactions(reactions: readonly VocabularyReactionAction[]): VocabularyReactionAction[] {
+  const latestReaction = reactions.filter((action) => action.payload.feedback !== 'comment').at(-1);
+  return reactions.filter((action) => action.payload.feedback === 'comment' || (action === latestReaction && action.payload.feedback !== 'withdrawn'));
+}
+
+/** Read reaction history without spreading historical persistence names into callers. */
+export function getVocabularyEncounterReactions(encounter: VocabularyEncounterEvidence): VocabularyReactionAction[] {
+  return encounter.feedback;
+}
+export function getEffectiveVocabularyEncounterReactions(encounter: VocabularyEncounterEvidence): VocabularyReactionAction[] {
+  return encounter.effectiveFeedback ?? effectiveVocabularyReactions(encounter.feedback);
 }

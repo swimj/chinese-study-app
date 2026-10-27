@@ -32,6 +32,7 @@ beforeEach(() => {
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0041_vocabulary_learner_state.sql', import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0046_vocabulary_pure_cue_guards.sql', import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0047_vocabulary_dismissal.sql', import.meta.url),'utf8'));
+  sql.exec(fs.readFileSync(new URL('../server/db/migrations/0052_vocabulary_automatic_promotion_pause.sql',import.meta.url),'utf8'));
 });
 afterEach(() => sql.close());
 test('conversion enrolls only explicit learner state/stash and preserves recognition', () => alice(() => {
@@ -166,4 +167,24 @@ test('unfinished diet enrollment and explicit dismissal retain different disposi
   const dismissed=dismissVocabularyWord('untouched');assert.ok(dismissed.dismissedAt);
   assert.equal(setVocabularyStashMembership('untouched',false).dismissedAt,dismissed.dismissedAt);
   const restored=changeVocabularyMode('untouched','practice',dismissed.stateVersion);assert.equal(restored.dismissedAt,null);
+}));
+
+test('explicit same-mode Solidify choice holds graduation, and other mode choices or dismissal clear it',()=>alice(()=>{
+  assert.equal(getVocabularyLearnerWord('learning')!.automaticPromotionPaused,false);
+  const schedule=getVocabularyWordSchedule('learning');
+  const first=changeVocabularyMode('learning','solidify',1);
+  assert.equal(first.automaticPromotionPaused,true);assert.equal(first.stateVersion,2);
+  assert.deepEqual(getVocabularyWordSchedule('learning'),schedule);
+  const repeated=changeVocabularyMode('learning','solidify',first.stateVersion);
+  assert.equal(repeated.automaticPromotionPaused,true);assert.equal(repeated.stateVersion,3);
+  assert.equal(repeated.modeChangedAt,first.modeChangedAt);
+  const practice=changeVocabularyMode('learning','practice',repeated.stateVersion);
+  assert.equal(practice.automaticPromotionPaused,false);
+  const returned=changeVocabularyMode('learning','solidify',practice.stateVersion);
+  assert.equal(returned.automaticPromotionPaused,true);
+  const teachAgain=changeVocabularyMode('learning','unstudied',returned.stateVersion);
+  assert.equal(teachAgain.automaticPromotionPaused,false);
+  const held=changeVocabularyMode('learning','solidify',teachAgain.stateVersion);
+  assert.equal(dismissVocabularyWord('learning',held.stateVersion).automaticPromotionPaused,false);
+  assert.deepEqual(getVocabularyWordSchedule('learning'),schedule);
 }));

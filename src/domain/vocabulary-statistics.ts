@@ -16,3 +16,10 @@ export type VocabularyStatistics = {
   days:VocabularyStatisticsDay[];
   modes:Record<'unstudied'|'solidify'|'practice'|'maintain',number>;
 };
+
+/** The server supplies consecutive UTC days, including zero-activity days. */
+export function vocabularyActiveTimeMetrics(days:readonly VocabularyStatisticsDay[]) {
+  const total=(count:number)=>days.slice(-count).reduce((sum,day)=>sum+day.activeDurationMs,0);
+  return {today:days.at(-1)?.activeDurationMs??0,average3:total(3)/3,average7:total(7)/7,
+    unknownDurationSessions:days.slice(-7).reduce((sum,day)=>sum+day.unknownDurationSessions,0)};
+}

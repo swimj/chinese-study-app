@@ -350,3 +350,27 @@ test('service kickoff migration preserves authored notices without inferring kic
     } finally { fresh.close(); }
   } finally { db.close(); }
 });
+
+test('automatic graduation pause migration preserves existing words and defaults to ordinary automatic progression',()=>{
+  const {db}=copy('automatic-graduation-pause',true);
+  try {
+    const index=schemaMigrations.findIndex((migration)=>migration.id==='app_schema:0052_vocabulary_automatic_promotion_pause');
+    assert.ok(index>0);
+    migrateDatabase(db,schemaMigrations.slice(0,index));
+    db.exec(`INSERT INTO learners(learner_id,display_name,created_at) VALUES ('pause-test','Pause test','2026-10-23');
+      INSERT INTO lexical_words(id,hanzi,pinyin,meaning,meanings_json,examples_json,priority,created_at)
+        VALUES ('pause-word','字','zi','character','[]','[]',1,'2026-10-23');
+      INSERT INTO learner_words(learner_id,word_id,in_stash,added_at,mode,mode_changed_at)
+        VALUES ('pause-test','pause-word',1,'2026-10-23','solidify','2026-10-23');`);
+    const before=db.prepare("SELECT * FROM learner_words WHERE learner_id='pause-test'").get()!;
+    assert.deepEqual(migrateDatabase(db),schemaMigrations.slice(index).map(migration=>migration.id));
+    const after=db.prepare("SELECT * FROM learner_words WHERE learner_id='pause-test'").get()!;
+    assert.deepEqual({...after},{...before,automatic_promotion_paused:0});
+    assert.throws(()=>db.exec("UPDATE learner_words SET automatic_promotion_paused=2 WHERE learner_id='pause-test'"),/CHECK/);
+    db.exec("UPDATE learner_words SET automatic_promotion_paused=1 WHERE learner_id='pause-test'");
+    assert.deepEqual(migrateDatabase(db),[]);
+    assert.equal(db.prepare("SELECT automatic_promotion_paused FROM learner_words WHERE learner_id='pause-test'").get()!.automatic_promotion_paused,1);
+    assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
+    assertSchemaCurrent(db);
+  } finally {db.close();}
+});

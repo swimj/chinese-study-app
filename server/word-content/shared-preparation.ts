@@ -1,7 +1,8 @@
 import { getDb } from '../db/connection.ts';
 import { linkVocabularyInvocationSense } from '../db/vocabulary-provenance.ts';
 import { randomUUID } from 'node:crypto';
-import { ProviderHttpError } from '../llm/types.ts';
+import { preparationProviderFailure } from './provider-failure.ts';
+export { WordPreparationProviderError } from './provider-failure.ts';
 import {
   getSharedIntroductionLexicalWord, getSharedWordIntroductionContent,
   claimSharedWordIntroductionStage,
@@ -24,27 +25,6 @@ function linkSourceSenses(invocationId: string | null | undefined,contentId: str
   const senses = getDb().prepare('SELECT sense_id,imported_sense_version FROM legacy_sense_imports WHERE source_content_id=?').all(contentId) as Array<{ sense_id: string; imported_sense_version: number }>;
   for (const sense of senses) linkVocabularyInvocationSense({ invocationId,senseId: sense.sense_id,senseVersion: sense.imported_sense_version,role: 'input' },
     { kind: 'service',id: SERVICE_ID });
-}
-export class WordPreparationProviderError extends Error {
-  constructor(message: string, readonly providerWide: boolean) { super(message); }
-}
-function providerFailure(error: unknown): WordPreparationProviderError {
-  const safeMessages = new Set([
-    'Introduction generation output was truncated.',
-    'Introduction generation returned invalid JSON.',
-    'Introduction generation returned an invalid structure.',
-  ]);
-  if (error instanceof Error && safeMessages.has(error.message)) {
-    return new WordPreparationProviderError(error.message, false);
-  }
-  if (error instanceof ProviderHttpError) {
-    return new WordPreparationProviderError(`Provider returned HTTP ${error.status}.`,
-      error.status === 401 || error.status === 403 || error.status === 429 || error.status >= 500);
-  }
-  if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) {
-    return new WordPreparationProviderError('Provider request timed out or was interrupted.', true);
-  }
-  return new WordPreparationProviderError('Provider request failed (transport or response error).', true);
 }
 /** No learner context or private writes: background generation publishes only shared content. */
 export function createSharedWordPreparation(provider: WordIntroductionProvider = createWordIntroductionProvider()) {
@@ -74,7 +54,7 @@ export function createSharedWordPreparation(provider: WordIntroductionProvider =
         try {
           output = await provider.generateBootstrap({ hanzi: lexical.hanzi, traditional: lexical.traditional,
             pinyin: lexical.pinyin, guidance: `Corpus meanings: ${lexical.meanings.join('; ')}`.slice(0, 2_000) }, generationOptions);
-        } catch (error) { throw providerFailure(error); }
+        } catch (error) { throw preparationProviderFailure(error); }
         const content = validateWordProviderOutput(invocationId, () => normalizeWordContent(output, { wordId, hanzi: lexical.hanzi, traditional: lexical.traditional, pinyin: lexical.pinyin }, `word-content:${randomUUID()}`),SERVICE_ID);
         finishSharedWordIntroductionBootstrap(wordId, token, content, provider.model,invocationId);
         return;
@@ -92,7 +72,7 @@ export function createSharedWordPreparation(provider: WordIntroductionProvider =
           let output: unknown;
           try {
             output = await (part === 'teaching' ? provider.generateTeaching(content!, options) : provider.generatePractice(content!, options));
-          } catch (error) { throw providerFailure(error); }
+          } catch (error) { throw preparationProviderFailure(error); }
           linkSourceSenses(componentInvocation,content!.id);
           const payload = validateWordProviderOutput(componentInvocation, () => part === 'teaching'
             ? { beats: normalizeTeachingBeats(output, content!) }
@@ -117,7 +97,7 @@ export function createSharedWordPreparation(provider: WordIntroductionProvider =
       } else {
         let output: unknown;
         try { output = await provider.generateReview(content, generationOptions); }
-        catch (error) { throw providerFailure(error); }
+        catch (error) { throw preparationProviderFailure(error); }
         linkSourceSenses(invocationId,content.id);
         const batch = randomUUID();
         const exercises = validateWordProviderOutput(invocationId, () => normalizeReviewExercises(output, content, (id) => `word-review:${batch}:${id}`),SERVICE_ID);

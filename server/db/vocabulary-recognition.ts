@@ -1,6 +1,6 @@
 import { getDb } from './connection.ts';
 import { requireLearnerId } from './learner-context.ts';
-import { applyIntervalHourFuzz } from './interval-schedule.ts';
+import { nextReviewSchedule } from './review-policy.ts';
 
 type RecognitionSchedule = {
   interval_hours: number; ease_factor: number; enabled: number;
@@ -17,11 +17,12 @@ export function applyVocabularyRecognition(wordId: string, rejectedCount: number
     FROM learner_owned_word_skill_state WHERE learner_id = ? AND word_id = ? AND skill_id = 'recognition'`)
     .get(learnerId, wordId) as RecognitionSchedule | undefined;
   const previous = before ?? { interval_hours: 24, ease_factor: 2.5, enabled: 1, last_studied_at: now, next_due_at: null };
-  const interval = rejectedCount > 0 ? 6 : before
-    ? applyIntervalHourFuzz(Math.ceil(previous.interval_hours * previous.ease_factor)) : 24;
+  const scheduled = nextReviewSchedule({ intervalHours: previous.interval_hours, easeFactor: previous.ease_factor },
+    { failureCount: rejectedCount, successful: Boolean(before) });
+  const interval = scheduled.intervalHours;
   const after: RecognitionSchedule = {
     ...previous, interval_hours: interval,
-    ease_factor: rejectedCount > 0 ? Math.max(1.8, Number((previous.ease_factor - 0.15 * rejectedCount).toFixed(2))) : previous.ease_factor,
+    ease_factor: scheduled.easeFactor,
     last_studied_at: now, next_due_at: new Date(Date.parse(now) + interval * 3_600_000).toISOString(),
   };
   getDb().prepare(`INSERT INTO learner_owned_word_skill_state

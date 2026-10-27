@@ -1,3 +1,4 @@
+import { dueAtWithResetDelay } from '../../src/domain/pure-cues.ts';
 import { createHash } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import type { VocabularyContent, VocabularyContentDraft, VocabularyJson, VocabularyWordRelationship } from '../../src/domain/vocabulary-content.ts';
@@ -248,10 +249,16 @@ export function importLegacyVocabulary(db: DatabaseSync, options: { wordId?: str
     const states = db.prepare('SELECT * FROM learner_pure_cue_state WHERE pure_cue_id=?').all(pure.id) as Array<{ learner_id: string; interval_hours: number; ease_factor: number; last_studied_at: string | null; next_due_at: string;
         strong_since: string | null; strong_successes: number; adopted_at: string }>;
     for (const state of states) {
+      // Strong maintenance ignores its dormant due date; preserve the separate
+      // post-restoration guard without inventing a study or rerolling eligibility.
+      const restored = db.prepare(`SELECT MAX(compensated_at) AS at FROM pure_cue_assessment_scheduler_snapshots
+        WHERE learner_id=? AND pure_cue_id=? AND compensated_at IS NOT NULL`).get(state.learner_id,pure.id) as { at: string | null };
+      const resetUntil = state.strong_since !== null && restored.at !== null ? dueAtWithResetDelay(restored.at) : null;
       report.importedPureSchedules += Number(db.prepare(`INSERT OR IGNORE INTO learner_pure_cue_schedules
         (learner_id,content_id,next_eligible_at,last_practised_at,policy_version,scheduler_state_json) VALUES (?,?,?,?,'legacy-import-v1',?)`)
         .run(state.learner_id,contentId,state.next_due_at,state.last_studied_at,JSON.stringify({ intervalHours: state.interval_hours,easeFactor: state.ease_factor,
-          strongSince: state.strong_since,strongSuccesses: state.strong_successes,adoptedAt: state.adopted_at })).changes);
+          strongSince: state.strong_since,strongSuccesses: state.strong_successes,adoptedAt: state.adopted_at,maintenanceIdentity:pure.id,
+          ...(resetUntil ? {resetUntil} : {}) })).changes);
     }
   }
   const contrast = db.prepare(`SELECT p.*,c.content_scope,c.owner_learner_id,c.title,c.note FROM scoped_contrast_prompts p

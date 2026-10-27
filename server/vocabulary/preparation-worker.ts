@@ -1,3 +1,4 @@
+import { WordPreparationProviderError, PREPARATION_PROVIDER_BACKOFF_MS } from '../word-content/provider-failure.ts';
 import { getDb } from '../db/connection.ts';
 import { getHostedServiceControls } from '../db/hosted-operations.ts';
 import { HostedProviderWorkUnavailableError,runHostedProviderWork } from '../hosted-runtime-controls.ts';
@@ -31,15 +32,21 @@ export function createVocabularyPracticeWorker(options: {
   if(!Number.isSafeInteger(concurrency)||concurrency<1||concurrency>3)throw new Error('Practice preparation concurrency must be 1–3');
   if(!Number.isSafeInteger(pollMs)||pollMs<10)throw new Error('Invalid preparation poll interval');
   let stopped=false,timer:ReturnType<typeof setTimeout>|undefined,stepping:Promise<boolean>|null=null,draining:Promise<void>|null=null;
+  let providerBackoffUntil = 0;
   function allowed():boolean {const state=controls();return !stopped&&!state.maintenanceMode&&state.providerWorkEnabled;}
+  // Pausing new dispatch must not reject an already-running sibling's valid publication.
+  function canDispatch(): boolean { return allowed() && now() >= providerBackoffUntil; }
   const preparation=createVocabularyPracticePreparation({provider:options.provider,now:()=>new Date(now()).toISOString(),canPublish:allowed});
   async function process(workId:string):Promise<boolean> {
     try {
       return await providerWork(async()=>{
-        if(!allowed()||!preparation.isConfigured())return false;
+        if(!canDispatch()||!preparation.isConfigured())return false;
         const token=preparation.claim(workId);if(!token)return false;
         try{await preparation.run(workId,token);}
-        catch{options.onError?.(new Error('Vocabulary practice preparation failed; inspect its durable job and invocation'));}
+        catch(error){
+          if(error instanceof WordPreparationProviderError && error.providerWide) providerBackoffUntil = now() + PREPARATION_PROVIDER_BACKOFF_MS;
+          options.onError?.(new Error('Vocabulary practice preparation failed; inspect its durable job and invocation'));
+        }
         return true;
       });
     }catch(error){if(error instanceof HostedProviderWorkUnavailableError)return false;throw error;}
@@ -48,7 +55,7 @@ export function createVocabularyPracticeWorker(options: {
     if(stopped||controls().maintenanceMode)return false;
     preparation.recoverExpired();
     for(const wordId of demand())preparation.ensure(wordId);
-    if(!allowed()||!preparation.isConfigured())return false;
+    if(!canDispatch()||!preparation.isConfigured())return false;
     const batch=preparation.listQueued(concurrency);
     const results=await Promise.allSettled(batch.map((work)=>process(work.workId)));
     let changed=false;
@@ -64,7 +71,7 @@ export function createVocabularyPracticeWorker(options: {
   }
   function drain():Promise<void> {
     if(draining)return draining;
-    draining=(async()=>{while(!stopped&&await step()){/* Only queued work; failed calls remain failed. */}})().finally(()=>{draining=null;});
+    draining=(async()=>{while(!stopped&&await step()){/* Only due queued work; delayed retries wait for the next poll. */}})().finally(()=>{draining=null;});
     return draining;
   }
   function wake():void {

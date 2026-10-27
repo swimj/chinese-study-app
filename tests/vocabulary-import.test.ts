@@ -1,3 +1,8 @@
+import { selectPureCuesForSession, type PureCue } from '../src/domain/pure-cues.ts';
+import { setDb } from '../server/db/connection.ts';
+import { runWithLearnerId } from '../server/db/learner-context.ts';
+import { createVocabularyContent } from '../server/db/vocabulary-content.ts';
+import { selectVocabularyPureCueCandidates, adoptVocabularyPureCues } from '../server/vocabulary/pure-cue-serving.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -13,10 +18,10 @@ let root: string;
 let baseline: string;
 let db: DatabaseSync;
 const timestamp = '2026-10-15T00:00:00.000Z';
-const earlier = schemaMigrations.filter((migration) => migration.id < 'app_schema:0039');
+const earlier = schemaMigrations.filter((migration) => migration.id < 'app_schema:0041');
 const additions: SchemaMigration[] = ['0041_vocabulary_learner_state','0042_vocabulary_sessions','0043_vocabulary_import'].map((name) => ({
   id: `app_schema:${name}`,sql: fs.readFileSync(new URL(`../server/db/migrations/${name}.sql`,import.meta.url),'utf8'),
-  ...(name.startsWith('0041') ? { after: (database: DatabaseSync) => { importLegacyVocabulary(database); } } : {}),
+  ...(name.startsWith('0043') ? { after: (database: DatabaseSync) => { importLegacyVocabulary(database); } } : {}),
 }));
 before(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(),'vocabulary-import-'));
@@ -196,12 +201,12 @@ test('incremental word materialization imports only the requested authored sourc
 
 test('failed conversion rolls back the entire migration batch and keeps original evidence', () => {
   const content = bootstrap(); teaching(content,'retained'); cue('valid','shared');
-  const failing=additions.map((migration)=>migration.id.includes('0041')?{...migration,after:(database:DatabaseSync)=>{importLegacyVocabulary(database);throw new Error('simulated offline failure');}}:migration);
+  const failing=additions.map((migration)=>migration.id.includes('0043')?{...migration,after:(database:DatabaseSync)=>{importLegacyVocabulary(database);throw new Error('simulated offline failure');}}:migration);
   assert.throws(() => migrateDatabase(db,[...earlier,...failing]),/simulated offline failure/);
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM sqlite_schema WHERE name='legacy_sense_imports'").get()!.n,0);
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM content_items').get()!.n,0);
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM word_teaching_packages').get()!.n,1);
-  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM schema_migrations WHERE migration_id LIKE 'app_schema:%' AND migration_id >= 'app_schema:0039'").get()!.n,0);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM schema_migrations WHERE migration_id LIKE 'app_schema:%' AND migration_id >= 'app_schema:0041'").get()!.n,0);
 });
 
 
@@ -211,4 +216,56 @@ test('unservable legacy cues without answer space remain retained with explicit 
   assert.equal(db.prepare("SELECT count(*) AS n FROM scoped_production_cues WHERE cue_id='unservable'").get()!.n,1);
   assert.equal(db.prepare("SELECT count(*) AS n FROM legacy_content_imports WHERE source_kind='production_cue' AND source_id='unservable'").get()!.n,0);
   assert.equal(db.prepare("SELECT count(*) AS n FROM backend_events WHERE name='vocabulary.content.import_excluded'").get()!.n,1);
+});
+
+// Exercise the real post-import serving adapter, not just the copied JSON.
+test('import retains strong maintenance identity and the separate restoration quiet guard', () => {
+  setDb(db);
+  const cueBase: PureCue = {id:'',kind:'pure',stimulus:'a greeting',axisNote:'',teachingNote:'',acceptedWordIds:['w1','w2'],active:true,
+    intervalHours:1234,easeFactor:2.65,lastStudiedAt:'2026-10-01T00:00:00.000Z',nextDueAt:'2030-01-01T00:00:00.000Z',
+    strongSince:'2026-09-01T00:00:00.000Z',strongSuccesses:0};
+  let legacyId='';
+  for(let index=0;index<10000;index++) {
+    const candidate=`legacy-strong-${index}`;
+    if(selectPureCuesForSession({learnerId:'a',cues:[{...cueBase,id:candidate}],ordinaryReviewCount:10,now:timestamp,random:()=>0}).strong.length) {legacyId=candidate;break;}
+  }
+  assert.ok(legacyId,'fixture must qualify on this UTC day');
+  publication('pure_cue',legacyId);
+  db.prepare('INSERT INTO pure_cues(id,stimulus,axis_note,teaching_note,created_at) VALUES (?,?,?,?,?)').run(legacyId,'a greeting','','',timestamp);
+  db.prepare("INSERT INTO pure_cue_accepted_words VALUES (?,'w1',0),(?,'w2',1)").run(legacyId,legacyId);
+  db.prepare(`INSERT INTO learner_pure_cue_state VALUES ('a',?,?,?,?,?,?,?,?)`).run(legacyId,1234,2.65,cueBase.lastStudiedAt,cueBase.nextDueAt,cueBase.strongSince,0,timestamp);
+  db.prepare("UPDATE learner_word_state SET status='review' WHERE learner_id='a' AND word_id='w1'").run();
+  db.prepare(`INSERT INTO pure_cue_served_snapshots(learner_id,snapshot_id,pure_cue_id,served_at,stimulus,axis_note,accepted_answers_json)
+    VALUES ('a','served',?,?,'a greeting','','[]')`).run(legacyId,timestamp);
+  db.prepare(`INSERT INTO pure_cue_attempts VALUES ('a','attempt',?,'served','old-session','old-action',?,'[]',1,NULL)`).run(legacyId,timestamp);
+  db.prepare(`INSERT INTO learner_owned_reflection_operation_invocations(learner_id,invocation_id,created_at,origin_kind,operation_kind,operation_version,operation_json,
+    application_state,application_updated_at,effect_refs_json,satisfying_effect_refs_json)
+    VALUES ('a','restore',?,'manual','reconcile_pure_cue_response',1,'{}','pending',?,'[]','[]')`).run(timestamp,timestamp);
+  db.prepare(`INSERT INTO pure_cue_assessment_scheduler_snapshots VALUES ('a','attempt',?,?,?,'restore',?)`)
+    .run(legacyId,timestamp,JSON.stringify(cueBase),timestamp);
+  convert();migrateDatabase(db);
+  const imported=lookup('pure_cue',legacyId);
+  const row=db.prepare("SELECT * FROM learner_pure_cue_schedules WHERE learner_id='a'").get()!;
+  const state=JSON.parse(String(row.scheduler_state_json));
+  assert.equal(state.maintenanceIdentity,legacyId);
+  assert.equal(state.resetUntil,'2026-10-15T06:00:00.000Z');
+  assert.equal(row.next_eligible_at,cueBase.nextDueAt,'strong due date stays dormant, not replaced by the guard');
+  const select=(at:string,seed='same')=>runWithLearnerId('a',()=>selectVocabularyPureCueCandidates({ordinaryReviewCount:10,sessionSeed:seed,now:at,adopt:false})).map(item=>item.contentId);
+  assert.deepEqual(select('2026-10-15T05:59:59.999Z'),[]);
+  assert.deepEqual(select('2026-10-15T06:00:00.000Z'),[imported.contentId]);
+  assert.deepEqual(select('2026-10-15T06:00:00.000Z','another session'),[imported.contentId]);
+  db.prepare("UPDATE learner_pure_cue_schedules SET last_practised_at='2026-10-08T06:00:00.001Z' WHERE content_id=?").run(imported.contentId);
+  assert.deepEqual(select('2026-10-15T06:00:00.000Z'),[],'seven-day quiet period still applies after restoration guard expires');
+  db.prepare("UPDATE learner_pure_cue_schedules SET last_practised_at='2026-10-08T06:00:00.000Z',next_eligible_at='2040-01-01T00:00:00.000Z',scheduler_state_json=json_set(scheduler_state_json,'$.intervalHours',720000,'$.easeFactor',9) WHERE content_id=?").run(imported.contentId);
+  assert.deepEqual(select('2026-10-15T06:00:00.000Z'),[imported.contentId],'quiet-period boundary is inclusive and dormant SRS fields do not affect maintenance');
+  // A copied source field on replacement content must not inherit the old daily draw.
+  runWithLearnerId('a',()=>{
+    assert.equal(imported.kind,'exercise');if(imported.kind!=='exercise')throw new Error('fixture');
+    const {version,createdAt,updatedAt,...draft}=imported;
+    createVocabularyContent({...draft,contentId:'replacement',originKind:'human'},{kind:'operator',id:'test'});
+    adoptVocabularyPureCues(timestamp);
+  });
+  const replacement=JSON.parse(String(db.prepare("SELECT scheduler_state_json FROM learner_pure_cue_schedules WHERE content_id='replacement'").get()!.scheduler_state_json));
+  assert.equal(replacement.maintenanceIdentity,undefined);
+  assert.equal(replacement.strongSince,null);
 });

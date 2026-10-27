@@ -171,6 +171,27 @@ export const schemaMigrations: readonly SchemaMigration[] = [{
 }, {
   id: 'app_schema:0048_vocabulary_connections',
   sql: fs.readFileSync(new URL('./migrations/0048_vocabulary_connections.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0049_vocabulary_sense_readiness',
+  sql: fs.readFileSync(new URL('./migrations/0049_vocabulary_sense_readiness.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0050_vocabulary_improvement_admission',
+  sql: fs.readFileSync(new URL('./migrations/0050_vocabulary_improvement_admission.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0051_vocabulary_pure_cue_promotion',
+  sql: fs.readFileSync(new URL('./migrations/0051_vocabulary_pure_cue_promotion.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0052_vocabulary_automatic_promotion_pause',
+  sql: fs.readFileSync(new URL('./migrations/0052_vocabulary_automatic_promotion_pause.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0053_vocabulary_second_opinions',
+  sql: fs.readFileSync(new URL('./migrations/0053_vocabulary_second_opinions.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0054_vocabulary_provider_retry_routing',
+  sql: fs.readFileSync(new URL('./migrations/0054_vocabulary_provider_retry_routing.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0055_vocabulary_feedback_dismissal',
+  sql: fs.readFileSync(new URL('./migrations/0055_vocabulary_feedback_dismissal.sql', import.meta.url), 'utf8'),
 }];
 
 function checksum(value: string): string {
