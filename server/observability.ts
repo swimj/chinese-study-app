@@ -8,6 +8,7 @@ import {
   transactionHoldBuckets,
   type RequestTimingSummary,
 } from './request-timing.ts';
+import { parseRequestTimingQuery, type RequestFlightRecorder } from './request-flight-recorder.ts';
 
 const requestDurationBuckets = [
   0.005,
@@ -408,10 +409,21 @@ export function startMetricsServer(options: {
   port: number;
   host?: string;
   readOperationalMetrics: () => Promise<ServiceOperationalMetrics>;
+  flightRecorder?: RequestFlightRecorder;
   logError?: (message: string, metadata: Record<string, string>) => void;
 }): Server {
   const logError = options.logError ?? ((message, metadata) => console.error(message, metadata));
   const server = createServer(async (request, response) => {
+    const url = new URL(request.url ?? '/', 'http://metrics.invalid');
+    if (
+      request.method === 'GET'
+      && url.pathname === requestTimingsPath
+      && options.flightRecorder
+      && isLoopbackAddress(request.socket.remoteAddress)
+    ) {
+      respondWithFlightRecorder(options.flightRecorder, url.searchParams, response);
+      return;
+    }
     if (request.method !== 'GET' || request.url !== '/metrics') {
       response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
       response.end('Not found\n');
@@ -440,6 +452,33 @@ export function startMetricsServer(options: {
   });
   server.listen(options.port, options.host ?? '0.0.0.0');
   return server;
+}
+
+/**
+ * Recent request summaries include learner ids, so unlike `/metrics` they are
+ * served only to callers inside the Machine (for example `fly ssh console`).
+ */
+export const requestTimingsPath = '/debug/request-timings';
+
+function respondWithFlightRecorder(
+  recorder: RequestFlightRecorder,
+  searchParams: URLSearchParams,
+  response: import('node:http').ServerResponse,
+): void {
+  let query: ReturnType<typeof parseRequestTimingQuery>;
+  try {
+    query = parseRequestTimingQuery(searchParams);
+  } catch (error) {
+    response.writeHead(400, { 'content-type': 'application/json; charset=utf-8' });
+    response.end(JSON.stringify({ error: error instanceof Error ? error.message : 'Invalid query' }));
+    return;
+  }
+  response.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+  response.end(JSON.stringify(recorder.snapshot(query)));
+}
+
+export function isLoopbackAddress(address: string | undefined): boolean {
+  return address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1';
 }
 
 export function readMetricsPort(value: string | undefined): number | null {

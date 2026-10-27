@@ -210,6 +210,7 @@ automated terminal-driver procedures are in the
 | `npm run hosted:inspect -- --data-dir=/data --litestream-socket=/data/litestream.sock` | Print bounded database, backup-freshness, and baked release-identity diagnostics |
 | `npm run hosted:inspect-client-incidents -- --data-dir=/data --limit=20` | Read uploaded client transport incidents; optionally select one with `--diagnostic-id=<id>` |
 | `npm run hosted:inspect-study-commits -- --data-dir=/data --limit=20` | Read recent private study-commit failure records; optionally select one with `--diagnostic-id=<id>` |
+| `npm run hosted:inspect-request-timings -- --port=9091 --limit=20` | Read the in-memory request flight recorder from inside the Machine; filter with `--route`, `--min-local-ms`, or `--since` ([guide](ops/hosted-observability.md#read-recent-request-timings)) |
 | `npm run hosted:smoke -- --data-dir=/data` | Mint a short-lived Clerk session for the designated smoke user and perform a read-only authenticated GET |
 | `npm run hosted:upgrade -- --app=<app> --actor-id=<id> --confirm-source-revision=<sha> --confirm-eligible-release=true` | Drive one app-only hosted upgrade from quiesce through smoke and reopen |
 | `npm run hosted:verify-restore -- --data-dir=<isolated-dir> --sentinel-id=<id> --minimum-learners=2` | Validate an isolated restored database |

@@ -170,6 +170,7 @@ import {
   createSlowRequestLogger,
   readSlowRequestThresholdMs,
 } from './request-timing.ts';
+import { createRequestFlightRecorder, type RequestFlightRecorder } from './request-flight-recorder.ts';
 import {
   createStudyCommitDiagnosticSink,
   describeStudyCommitFailure,
@@ -208,6 +209,7 @@ export type CreateAppOptions = {
     clockMs?: () => number;
     slowRequestThresholdMs?: number;
     logSlowRequest?: (line: string) => void;
+    flightRecorder?: RequestFlightRecorder;
   };
   studyCommitDiagnosticSink?: StudyCommitDiagnosticSink;
   clientIncidentDiagnosticSink?: ClientIncidentDiagnosticSink;
@@ -268,6 +270,7 @@ export function createApp(options: CreateAppOptions = {}) {
     onSummary: (summary) => {
       const slow = logSlowRequest(summary);
       options.serviceMetrics?.observeRequestTiming(summary, slow);
+      options.requestTiming?.flightRecorder?.record(summary);
     },
   });
 
@@ -2667,12 +2670,14 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   if (dbConfig.studyProfile !== 'mandarin') recoverPendingReflectionApplicationsAtStartup();
   const serviceMetrics = createServiceMetrics();
   const metricsPort = readMetricsPort(process.env.APP_METRICS_PORT);
+  const flightRecorder = metricsPort === null ? null : createRequestFlightRecorder();
   const metricsServer = metricsPort === null
     ? null
     : startMetricsServer({
         metrics: serviceMetrics,
         port: metricsPort,
         readOperationalMetrics: () => readServiceOperationalMetrics(),
+        flightRecorder: flightRecorder ?? undefined,
       });
   const usagePulseScheduler = startUsagePulseScheduler();
   installModelInvocationLedger();
@@ -2691,12 +2696,13 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const wakeVocabulary = () => { vocabularyProcessing.wake(); vocabularyPreparation.wake(); sessionDebriefs.wake(); };
   if (dbConfig.studyProfile === 'mandarin') wakeVocabulary();
   startServer({
-    app: createApp({ serviceMetrics, wakeWordPreparation: wordPreparation.wake, canPrepareWords: wordPreparation.canPrepare, wakeSessionDebriefs: sessionDebriefs.wake, wakeSessionCompletions: sessionCompletions.wake, wakeVocabulary }),
+    app: createApp({ serviceMetrics, requestTiming: { flightRecorder: flightRecorder ?? undefined }, wakeWordPreparation: wordPreparation.wake, canPrepareWords: wordPreparation.canPrepare, wakeSessionDebriefs: sessionDebriefs.wake, wakeSessionCompletions: sessionCompletions.wake, wakeVocabulary }),
     stopBackgroundWork: async () => { await Promise.all([wordPreparation.stop(), sessionDebriefs.stop(), sessionCompletions.stop(), vocabularyProcessing.stop(), vocabularyPreparation.stop()]); },
     additionalServers: metricsServer ? [metricsServer] : [],
     closeDatabase: () => {
       usagePulseScheduler.stop();
       serviceMetrics.dispose();
+      flightRecorder?.stop();
       closeDbConnection();
     },
   });
