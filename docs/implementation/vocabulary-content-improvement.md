@@ -1,8 +1,8 @@
 # Vocabulary content-improvement architecture
 
 The adaptive vocabulary content-improvement pipeline separates sense admission,
-local exercise repair, and optional pure-cue promotion. This architecture reference
-shows provider-call boundaries and the authority of their outputs. Implementation
+local exercise repair, optional pure-cue promotion, and existing pure-cue review.
+This architecture reference shows provider-call boundaries and the authority of their outputs. Implementation
 and release readiness are tracked separately.
 
 ![Provider-call flow for backend vocabulary content improvement. Blue boxes are model calls; other nodes are backend decisions and persistence.](../diagrams/content-improvement-provider-flow.png)
@@ -21,8 +21,9 @@ and release readiness are tracked separately.
   and learner reactions inform assessment without dictating the result.
 - **Promotion** resolves referral words to lexical identities and examines
   overlapping pure cues in the same publication scope. It can reject the referral,
-  reuse a suitable cue, extend membership while retaining its stimulus, axis and
-  existing answers, or propose a new cue. It does not reconcile individual words'
+  reuse a suitable cue, extend membership and update its integrated teaching note,
+  or propose a new cue. Extension preserves the stimulus, axis and existing answers.
+  Promotion does not reconcile individual words'
   exercise collections. Unresolved identities retain an operator finding and any
   local drafts.
 - **Application** remains operator-controlled. New or extended pure cues join any
@@ -32,12 +33,30 @@ and release readiness are tracked separately.
 The ordinary single-sense path makes two calls, or three with promotion, plus one
 if sense generation is necessary. Completed admission stages are retained by exact
 input and contract, so an unchanged retry reuses their outputs. Failed provider
-work requires explicit retry; source and sense changes fence stale results.
+work requires explicit retry, except sense preparation, which retries automatically
+within its three-attempt cycle. Source and sense changes fence stale results.
 
-Teaching issues go to a manual inbox. Existing pure-cue repairs, recognition,
-contrast, and other exercises outside single-word admission use the general
-improvement call. Learner-facing feedback and scheduling compensation run through
-an independent feedback job.
+Only general production encounters enter provider work. Recognition and contrast
+remain fully recorded in the session log but create no provider calls, including
+within mixed-word feedback aggregation. Teaching issues go to a manual inbox.
+The old generic improvement fallback is no longer dispatched.
+
+An existing pure cue uses one dedicated `pure-cue-improvement.md` call. It receives
+complete authored content, original current members, projected encounter evidence,
+and lexical resolutions of effective rejected responses. Missing or ambiguous
+identities remain useful raw-response evidence but cannot supply extension IDs.
+It proposes extension, stimulus repair, or explanation-only. Extension preserves
+the stimulus, axis and existing answers, and replaces the accumulated teaching
+note; repair preserves the axis, membership and note. Both pure-cue paths require
+manual application and leave individual word repertoires alone. Shared teaching
+notes are mostly English, with Chinese where useful to illustrate the point.
+
+Existing pure-cue review uses prompt/schema version 1 and input projection
+`vocabulary-admission.v1`; promotion uses prompt version 3 and schema version 2 with that same
+projection and requires teaching notes for creation and extension. Admission and
+promotion retain stage results for unchanged retries; existing pure-cue review
+retains invocation provenance without that stage-result cache. Learner-facing
+feedback and scheduling compensation run through an independent feedback job.
 
 See the [vocabulary contract](../../SPECS/vocabulary-learning.md) for learning and
 review authority, and the [implementation guide](../vocabulary-learning.md) for

@@ -1,8 +1,8 @@
 import { apiRequest } from '../../services/api';
 import type { VocabularyContent } from '../../domain/vocabulary-content';
-import type { VocabularyContentProposal, VocabularyProposalDraft, VocabularyProposalApplication, VocabularyProposalOperation, VocabularyReflectionCase } from '../../domain/vocabulary-reflection';
+import type { VocabularySecondOpinion, VocabularyContentProposal, VocabularyProposalDraft, VocabularyProposalApplication, VocabularyProposalOperation, VocabularyReflectionCase, VocabularyImprovementAdmission, VocabularyPureCueReferral, VocabularyPureCuePromotion } from '../../domain/vocabulary-reflection';
 
-export type VocabularyCaseWorkspace={case:VocabularyReflectionCase;sources:VocabularyContent[];
+export type VocabularyCaseWorkspace={case:VocabularyReflectionCase;sources:VocabularyContent[];admission?:VocabularyImprovementAdmission;pureCueReferral?:VocabularyPureCueReferral|null;pureCuePromotion?:VocabularyPureCuePromotion;
   jobs:{jobId:string;kind:string;status:string;attemptNumber:number;error:string|null}[];proposals:VocabularyContentProposal[]};
 export type VocabularyProposalPreview={proposal:VocabularyContentProposal;
   previews:{operationKey:string;source:VocabularyContent|null;result:VocabularyContent}[];
@@ -19,6 +19,8 @@ export const vocabularyOperatorApi={
   workspace:(caseId:string)=>apiRequest<VocabularyCaseWorkspace>(`${root}/cases/${id(caseId)}`),
   proposals:()=>apiRequest<{items:VocabularyContentProposal[]}>(`${root}/proposals`),
   proposal:(proposalId:string)=>apiRequest<VocabularyContentProposal>(`${root}/proposals/${id(proposalId)}`),
+  secondOpinions:(proposalId:string)=>apiRequest<{items:VocabularySecondOpinion[]}>(`${root}/proposals/${id(proposalId)}/second-opinions`),
+  requestSecondOpinion:(proposalId:string,expectedVersion:number,notes='')=>write<VocabularySecondOpinion>(`/proposals/${id(proposalId)}/second-opinions`,{expectedVersion,notes}),
   dispatches:()=>apiRequest<{items:VocabularyFailedDispatch[]}>(`${root}/dispatches`),
   preparationFailures:()=>apiRequest<{items:VocabularyFailedPreparation[]}>(`${root}/practice-preparation/failures`),
   retryPreparation:(workId:string)=>write<{ok:true}>(`/practice-preparation/${id(workId)}/retry`,{}),

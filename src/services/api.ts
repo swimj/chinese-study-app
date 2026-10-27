@@ -1570,7 +1570,8 @@ async function vocabularyRequest<T>(path: string, body?: unknown): Promise<T> {
   if (!response.ok) throw new Error(await readApiErrorMessage(response, 'Could not save vocabulary work'));
   return response.json() as Promise<T>;
 }
-export const startVocabularySession = () => vocabularyRequest<import('../domain/vocabulary-study-api').VocabularyStudy>('/sessions', {});
+export const fetchVocabularySessionPreview = () => vocabularyRequest<import('../domain/vocabulary-study-api').VocabularySessionPreview>('/session-preview');
+export const startVocabularySession = (previewSeed?:string) => vocabularyRequest<import('../domain/vocabulary-study-api').VocabularyStudy>('/sessions', previewSeed?{previewSeed}:{});
 export const fetchVocabularyStudy = (id: string) => vocabularyRequest<import('../domain/vocabulary-study-api').VocabularyStudy>(`/sessions/${encodeURIComponent(id)}`);
 export const nextVocabularyStudy = (id: string, clientActionId: string, options: {wordId?: string; another?: boolean} = {}) =>
   vocabularyRequest<import('../domain/vocabulary-study-api').VocabularyStudy>(`/sessions/${encodeURIComponent(id)}/next`, {clientActionId,...options});
@@ -1593,12 +1594,23 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T
   if (!response.ok) throw new Error(await readApiErrorMessage(response, 'The request could not be completed.'));
   return response.json() as Promise<T>;
 }
-export type VocabularyFeedbackMessage = {messageId:string; caseId:string; body: import('../domain/vocabulary-content').VocabularyJson; createdAt:string; seenAt:string|null};
-export type VocabularyFeedbackInbox = {messages:VocabularyFeedbackMessage[]; failures:{jobId:string; error:string}[]};
+export type VocabularyFeedbackMessage = {messageId:string; caseId:string; subjectLabel?:string; body: import('../domain/vocabulary-content').VocabularyJson; createdAt:string; seenAt:string|null; dismissedAt:string|null};
+export type VocabularyFeedbackJob = {jobId:string; caseId:string; subjectLabel:string; status:'queued'|'running'|'failed'; createdAt:string; error:string|null};
+export type VocabularyFeedbackInbox = {messages:VocabularyFeedbackMessage[]; failures:{jobId:string; error:string}[]; jobs?:VocabularyFeedbackJob[]};
 export const fetchVocabularyFeedback = () => vocabularyRequest<VocabularyFeedbackInbox>('/feedback');
 export const markVocabularyFeedbackSeen = (id:string) => vocabularyRequest<unknown>(`/feedback/${encodeURIComponent(id)}/seen`, {});
+export const dismissVocabularyFeedback = (id:string) => vocabularyRequest<unknown>(`/feedback/${encodeURIComponent(id)}/dismiss`, {});
+export const restoreVocabularyFeedback = (id:string) => vocabularyRequest<unknown>(`/feedback/${encodeURIComponent(id)}/restore`, {});
 export const retryVocabularyFeedback = (id:string) => vocabularyRequest<unknown>(`/feedback/jobs/${encodeURIComponent(id)}/retry`, {});
 
 export const fetchVocabularyAttention = () => vocabularyRequest<{unseenCount:number;hasFailure:boolean;generating:boolean}>('/feedback/attention');
 
 export const fetchVocabularyStatistics = () => vocabularyRequest<import('../domain/vocabulary-statistics').VocabularyStatistics>('/statistics');
+
+export async function fetchVocabularyWordCollection(view: MyWordsView, query: string, offset=0, signal?:AbortSignal,
+  modes:readonly import('../domain/vocabulary-session').VocabularyWordMode[]=[], recentLapses=false):Promise<import('../domain/vocabulary-words').VocabularyWordsCollection> {
+  const params=new URLSearchParams({view,q:query,offset:String(offset),limit:'50',mode:modes.join(','),lapses:recentLapses?'1':'0'});
+  return apiRequest(`/api/vocabulary/word-collection?${params}`,{signal});
+}
+
+export const enrollVocabularyWord = (id:string) => vocabularyRequest<unknown>(`/words/${encodeURIComponent(id)}`, {});

@@ -1,8 +1,9 @@
-import type { ReactNode } from 'react';
+import type { ReactNode, Ref } from 'react';
+import type { SessionDeskHandle } from '../session/SessionDesk';
 
 /** Presentation contracts only. Eligibility and learning effects belong to the controller. */
 export type VocabularyMode = 'unstudied' | 'solidify' | 'practice' | 'maintain';
-export type VocabularyControl = { visible: boolean; enabled: boolean; reason?: string };
+export type VocabularyControl = { visible: boolean; enabled: boolean; reason?: string; shortcut?: string };
 export type VocabularyModeChoice = {
   value: VocabularyMode;
   label: string;
@@ -15,11 +16,13 @@ export type VocabularySessionHistoryWord = {
   word: VocabularyWordDisplay;
   status: 'covered' | 'left' | 'open';
   active: boolean;
+  queued?: boolean;
   canResume: boolean;
 };
 export type VocabularyWordOutcome = {
   word: VocabularyWordDisplay;
   detail: string;
+  group?: 'new' | 'graduated' | 'covered' | 'unfinished';
   canPractise: boolean;
   canDismiss: boolean;
   mode?: VocabularyMode;
@@ -29,6 +32,7 @@ export type VocabularyWordOutcome = {
 export type VocabularyCompletionView = {
   status: 'saving' | 'pending' | 'closed' | 'failed';
   remainingSeconds: number | null;
+  keepOpen?: boolean;
   elapsedLabel: string;
   covered: number;
   encountered: number;
@@ -45,10 +49,17 @@ export type VocabularySessionViewProps = {
   modeChoices: VocabularyModeChoice[];
   /** Supply only identity safe to display now. A concealed production target must be null. */
   visibleWord: VocabularyWordDisplay | null;
+  teachingContent?: ReactNode;
+  recallProgress?: Array<{ key: string; label: string; count: number; total: number }>;
+  cardMotion?: { ref: Ref<SessionDeskHandle>; confirmingPrimary: boolean };
+  stopWord?: VocabularyControl;
+  onStopWord?: () => void;
+  onShowShortcuts?: () => void;
   presentation: {
     key: string;
     kind: 'introduction' | 'warmup' | 'exercise' | 'empty';
     label: string;
+    recognition?: boolean;
     prompt: ReactNode;
     supportingContent?: ReactNode;
   };
@@ -60,17 +71,22 @@ export type VocabularySessionViewProps = {
     revealed: boolean;
     assessment: 'accepted' | 'rejected' | 'unassessed';
     answer: ReactNode;
+    /** Rating controls remain reachable while long reveal content scrolls. */
+    revealActions?: ReactNode;
     message?: string;
+    /** Completed-word continuation sits beside the word-level controls. */
+    primaryPlacement?: 'response' | 'footer';
     primaryLabel: string;
     primaryEnabled: boolean;
+    shortcuts?: string[];
   };
-  /** Full session history, most recently used first. Do not truncate older entries. */
+  /** Covered words in this session, most recently used first. Do not truncate older entries. */
   history?: VocabularySessionHistoryWord[];
   wordWork?: { extraPractice: boolean; enoughLabel?: string };
-  leaveForToday?: VocabularyControl;
-  progress: { encountered: number; covered: number; elapsedLabel: string };
+  progress: { encountered: number; covered: number; remaining: number; elapsedLabel: string };
   controls: Record<'skip' | 'another' | 'enough' | 'more' | 'undo' | 'finishForNow' | 'finishImmediately' | 'changeMode', VocabularyControl>;
-  feedback: {
+  reactionInput: {
+    open?: boolean;
     visible: boolean;
     reaction: 'helpful' | 'not-helpful' | null;
     comment: string;
@@ -84,7 +100,6 @@ export type VocabularySessionViewProps = {
   onSkip: () => void;
   onAnother: () => void;
   onEnough: () => void;
-  onLeaveForToday?: () => void;
   onMore: () => void;
   onUndo: () => void;
   onFinishForNow: () => void;
@@ -94,11 +109,13 @@ export type VocabularySessionViewProps = {
   onModeChange: (mode: VocabularyMode) => void;
   onWordModeChange?: (wordId: string, mode: VocabularyMode) => void;
   onReaction: (reaction: 'helpful' | 'not-helpful' | null) => void;
+  onReactionOpenChange?: (open: boolean) => void;
   onCommentChange: (comment: string) => void;
   onCommentSubmit: () => void;
+  onKeepSummaryOpen?: () => void;
   onCancelCompletion: () => void;
   onRetryCompletion: () => void;
   onReturnHome: () => void;
-  onPractiseWord: (wordId: string) => void;
+  onPractiseWord: (wordId: string, source?: HTMLElement) => void;
   onDismissWord: (wordId: string) => void;
 };

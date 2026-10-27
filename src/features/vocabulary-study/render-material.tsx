@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import type { VocabularySessionJson } from '../../domain/vocabulary-session';
 import { convertSentenceCharacters } from '../../domain/sentence-characters';
 import type { SentenceCharacterPresentation } from '../../domain/card-characters';
+import { ProductionSupplementAside } from '../session/ProductionSupplementAside';
 
 type MaterialObject = { [key: string]: VocabularySessionJson };
 function object(value: VocabularySessionJson | undefined): MaterialObject {
@@ -42,16 +43,24 @@ export function renderVocabularyTeaching(material: VocabularySessionJson | undef
 export function renderVocabularyReveal(material: VocabularySessionJson | undefined,
   sentencePresentation: SentenceCharacterPresentation = 'simplified'): ReactNode {
   const body = object(material); const reveal = object(body.reveal);
-  const rows = [reveal.englishFrame, reveal.exampleSentence, reveal.exampleTranslation, reveal.axisNote, reveal.teachingNote, reveal.explanation, body.explanation]
-    .filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
-  return rows.length ? <div>{rows.map((text, index) => <p key={index}>{convertSentenceCharacters(text, sentencePresentation)}</p>)}</div> : null;
+  const text = (value: VocabularySessionJson | undefined) => typeof value === 'string' ? value.trim() : '';
+  const frame = text(reveal.englishFrame), sentence = text(reveal.exampleSentence), translation = text(reveal.exampleTranslation);
+  const note = text(reveal.teachingNote);
+  const explanations = [...new Set([text(reveal.explanation), text(body.explanation)].filter(Boolean))];
+  return <>
+    {(frame || sentence || translation) && <ProductionSupplementAside supplement={{englishFrame:frame,exampleSentence:sentence,exampleTranslation:translation}} sentenceCharacterPresentation={sentencePresentation} />}
+    {note && <div className="vocab-usage-note"><p className="vocab-eyebrow">Usage note</p><p>{convertSentenceCharacters(note, sentencePresentation)}</p></div>}
+    {explanations.map((value) => <p key={value}>{convertSentenceCharacters(value, sentencePresentation)}</p>)}
+  </>;
 }
 export function vocabularyMaterialInstruction(material: VocabularySessionJson | undefined): string {
   const instruction = object(material).instruction;
-  return typeof instruction === 'string' ? instruction : '';
+  if (typeof instruction !== 'string') return '';
+  // Remove known input mechanics, while retaining authored context that is part of the cue.
+  return instruction.replace(/(?:Give the Mandarin word\.|Fill the gap with the Mandarin expression\.|Fill it (?:into the sentence in|in with) Chinese characters\.|Write in Chinese characters\.)/g, '').trim();
 }
 
-/** Recognition tests Hanzi-to-meaning: pronunciation is reveal material, never a pre-answer hint. */
+/** Recognition tests Hanzi-to-sound: pronunciation is reveal material, never a pre-answer hint. */
 export function vocabularyPresentationWord<T>(word:T,kind:'introduction'|'recognition'|'production'|'contrast',revealed:boolean):T|null {
   return kind==='recognition'||(kind!=='introduction'&&!revealed)?null:word;
 }

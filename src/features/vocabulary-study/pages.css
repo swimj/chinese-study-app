@@ -5,3 +5,11 @@
 @media(max-width:600px){.vocabulary-word-row{flex-direction:column}.vocabulary-word-actions{align-items:flex-start;gap:.6rem}}
 
 .vocabulary-home-stats dl{display:flex;flex-wrap:wrap;gap:1rem}.vocabulary-home-stats dd{margin:0;font-size:1.5rem}.vocabulary-home-stats dt{font-size:.85rem}
+
+.vocabulary-feedback-inbox{display:grid;grid-template-rows:auto auto minmax(0,1fr);gap:1rem;min-width:0;min-height:0}
+.vocabulary-feedback-inbox h1{margin:0}
+.vocabulary-feedback-shell{min-height:24rem;max-height:calc(100vh - 15rem);grid-template-rows:auto minmax(0,1fr) auto}
+.vocabulary-feedback-shell .reflection-analysis p{line-height:1.7}
+@media(max-width:760px){.vocabulary-feedback-shell{min-height:20rem;max-height:none}}
+
+.vocabulary-feedback-views{display:flex;gap:.4rem}

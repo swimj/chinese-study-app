@@ -1,7 +1,7 @@
 import { formatCardCharacters, type CharacterPresentation, type SentenceCharacterPresentation } from '../../domain/card-characters';
 import { convertSentenceCharacters, sentenceCharacterLanguage } from '../../domain/sentence-characters';
 import { getRehearsalInstruction } from '../rehearsal-presentation';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import type { TeachingPackageSnapshot, WordContentDocument } from '../../domain/word-content';
 import {
   type IntroductionPlayerAction,
@@ -9,6 +9,7 @@ import {
 } from './player';
 
 import { teachingNavigationKeyAction } from './teaching-navigation';
+import { ShortcutHint } from '../../components/ShortcutHint';
 
 function isInteractiveTarget(target: EventTarget | null): boolean {
   return target instanceof HTMLElement && (
@@ -16,18 +17,23 @@ function isInteractiveTarget(target: EventTarget | null): boolean {
   );
 }
 
-export function IntroductionPlayer({ snapshot, content, state, onAction, onRestart, onFinish, finishing, mode = 'full', characterPresentation, sentenceCharacterPresentation }: {
-  snapshot: TeachingPackageSnapshot;
-  content: WordContentDocument;
+export function IntroductionPlayer({ snapshot, content, state, onAction, onRestart, onFinish, finishing, mode = 'full', characterPresentation, sentenceCharacterPresentation, renderTeachingActions }: {
+  snapshot: Pick<TeachingPackageSnapshot, 'beats' | 'rehearsals'>;
+  content: Pick<WordContentDocument, 'word' | 'uses' | 'examples'>;
   state: IntroductionPlayerState;
   onAction: (action: IntroductionPlayerAction) => void;
   onRestart: () => void;
   onFinish?: () => void;
   finishing?: boolean;
   mode?: 'full' | 'teaching-only';
+  renderTeachingActions?: (primary: ReactNode, secondary: ReactNode) => ReactNode;
   characterPresentation?: CharacterPresentation;
   sentenceCharacterPresentation?: SentenceCharacterPresentation;
 }) {
+  function teachingActions(primary: ReactNode, secondary: ReactNode, primaryFirst = false) {
+    if (renderTeachingActions) return renderTeachingActions(primary, secondary);
+    return <div className="intro-lab-player-actions">{primaryFirst ? primary : secondary}{primaryFirst ? secondary : primary}</div>;
+  }
   const [browsing, setBrowsing] = useState(false);
   const viewportRef = useRef<HTMLDivElement>(null);
   const scrollTimerRef = useRef<ReturnType<typeof setTimeout>>();
@@ -70,7 +76,7 @@ export function IntroductionPlayer({ snapshot, content, state, onAction, onResta
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.defaultPrevented) return;
+      if (event.defaultPrevented || document.querySelector('dialog[open], [role="dialog"][aria-modal="true"]')) return;
       const action = teachingNavigationKeyAction({
         key: event.key,
         repeat: event.repeat,
@@ -131,12 +137,12 @@ export function IntroductionPlayer({ snapshot, content, state, onAction, onResta
       </div>
       </div>
       <div className="intro-teaching-location" aria-live="polite">{state.beatIndex > 0 ? '↑ Earlier steps' : ''}</div>
-      <div className="intro-lab-player-actions">
-        <button type="button" className="intro-lab-button outline" disabled={state.beatIndex === 0} onClick={() => act({ type: 'back' })}>Back</button>
-        <button type="button" className="intro-lab-button primary" onClick={() => browsing ? focusCurrent() : act({ type: 'advance' })}>
-          {browsing ? 'Back to current step' : state.beatIndex === snapshot.beats.length - 1 ? mode === 'teaching-only' ? 'Finish walkthrough' : 'Try the expression' : 'Continue'} <kbd>Space</kbd>
-        </button>
-      </div>
+      {teachingActions(
+        <button type="button" className={renderTeachingActions ? 'vocab-primary' : 'intro-lab-button primary'} aria-keyshortcuts="Space" disabled={finishing} onClick={() => browsing ? focusCurrent() : act({ type: 'advance' })}>
+          {browsing ? 'Back to current step' : state.beatIndex === snapshot.beats.length - 1 ? mode === 'teaching-only' ? 'Finish walkthrough' : 'Try the expression' : 'Continue'}<ShortcutHint shortcut="Space" />
+        </button>,
+        !browsing && <button type="button" className={renderTeachingActions ? 'vocab-secondary' : 'intro-lab-button outline'} disabled={finishing || state.beatIndex === 0} aria-keyshortcuts="ArrowLeft" onClick={() => act({ type: 'back' })}>Back<ShortcutHint shortcut="←" /></button>,
+      )}
     </>}
     {state.phase === 'rehearsal' && exercise && <>
       <div className="intro-lab-progress"><span>Target rehearsal</span><span>{state.exerciseIndex + 1} of {snapshot.rehearsals.length}</span></div>
@@ -175,7 +181,7 @@ export function IntroductionPlayer({ snapshot, content, state, onAction, onResta
       <div className="intro-lab-player-actions">
         <button type="button" className="intro-lab-button outline" onClick={() => act({ type: 'retry' })}>Try again</button>
         <button type="button" className="intro-lab-button primary" onClick={() => act({ type: 'next' })}>
-          {state.exerciseIndex < snapshot.rehearsals.length - 1 ? 'Next rehearsal' : 'Finish introduction'} <kbd>Space</kbd>
+          {state.exerciseIndex < snapshot.rehearsals.length - 1 ? 'Next rehearsal' : 'Finish introduction'} <ShortcutHint shortcut="Space" />
         </button>
       </div>
     </div>}
@@ -193,11 +199,11 @@ export function IntroductionPlayer({ snapshot, content, state, onAction, onResta
           })}
         </div>
       </div>
-      <div className="intro-lab-player-actions">
-        {onFinish && <button type="button" className="intro-lab-button primary" disabled={finishing}
-          onClick={onFinish}>{finishing ? 'Saving…' : <>Continue <kbd>Enter</kbd></>}</button>}
-        <button type="button" className={`intro-lab-button ${onFinish ? 'outline' : 'primary'}`} onClick={onRestart}>Start again</button>
-      </div>
+      {teachingActions(
+        onFinish && <button type="button" className={renderTeachingActions ? 'vocab-primary' : 'intro-lab-button primary'} disabled={finishing} aria-keyshortcuts="Enter" onClick={onFinish}>{finishing ? 'Saving…' : <>Continue<ShortcutHint shortcut="Enter" /></>}</button>,
+        <button type="button" className={renderTeachingActions ? 'vocab-secondary' : 'intro-lab-button outline'} disabled={finishing} onClick={onRestart}>Start again</button>,
+        true,
+      )}
     </div>}
     {mode === 'full' && <p className="intro-lab-preview-note">No mastery grade is recorded here.</p>}
   </div>;

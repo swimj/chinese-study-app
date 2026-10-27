@@ -36,7 +36,7 @@ function QualityControls({ target, encounterId, label, hotkeysActive = false, di
     void recordContentQualityEncounter(JSON.parse(targetKey) as ContentQualityTarget, encounterId)
       .then((value) => { if (current) setState(value); })
       .catch((cause: unknown) => {
-        if (current) setError(cause instanceof Error ? cause.message : 'Could not load content feedback.');
+        if (current) setError(cause instanceof Error ? cause.message : 'Could not load content reactions.');
       });
     return () => { current = false; mounted.current = false; };
   }, [targetKey, encounterId, retry]);
@@ -61,7 +61,7 @@ function QualityControls({ target, encounterId, label, hotkeysActive = false, di
       onRatingChange?.(next.rating);
       window.dispatchEvent(new Event(QUALITY_UPDATED_EVENT));
     } catch {
-      if (mounted.current) setError('Feedback was not saved. Please try again.');
+      if (mounted.current) setError('Reaction was not saved. Please try again.');
     } finally {
       pending.current = false;
       onSavingChange?.(false);
@@ -97,7 +97,7 @@ function QualityControls({ target, encounterId, label, hotkeysActive = false, di
       onClick={() => void vote('up')}>
       <span>Helpful</span>{hotkeysActive && <span className="session-shortcut-hints"><kbd className="session-shortcut-hint">]</kbd></span>}
     </button>
-    <span className="content-quality-status" role="status">{busy ? 'Saving…' : state?.rating ? 'Feedback saved' : ''}</span>
+    <span className="content-quality-status" role="status">{busy ? 'Saving…' : state?.rating ? 'Reaction saved' : ''}</span>
     {error && <span className="content-quality-error" role="alert">{error} {!state &&
       <button type="button" onClick={() => setRetry((value) => value + 1)}>Retry</button>}</span>}
   </div>;

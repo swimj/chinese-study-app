@@ -388,7 +388,11 @@ Queued proposals that were never authorized are retained historical records, not
 new-runtime application authority.
 
 Run the normal stopped-writer migration procedure through the entire delivery's
-migration sequence. Conversion makes no model calls. Inspect `legacy_content_imports` and `legacy_sense_imports`
+migration sequence (0039–0055, following released migrations 0037/0038).
+Earlier local vocabulary fixtures used colliding unreleased migration numbers.
+Preserve those databases as development evidence and create fresh fixtures from
+the rebased code; do not rewrite their migration ledger to make them appear current.
+Conversion makes no model calls. Inspect `legacy_content_imports` and `legacy_sense_imports`
 and `vocabulary.content.import_excluded` backend events for imported identities
 and unsupported legacy answer spaces. Rehearse with a disposable copy before
 operating the hosted database. Do not use the app-only upgrade route.
@@ -399,3 +403,66 @@ with provider work disabled; lessons, repair proposals, Connections, and exercis
 authoring resume through their separate controlled workers. Rollback after new
 writes requires the identified pre-cutover backup and the previous application,
 not a downgrade of the converted live database.
+
+### Vocabulary scheduling rehearsal acceptance
+
+Run this rehearsal on isolated copies of a coherent current production backup,
+never on the hosted learner's live state. Retain an untouched source copy and a
+separate migrated copy, source/target revisions, migration output, and a fixed
+UTC comparison time. Keep provider work disabled and prevent either copy from
+contacting production services. Record results per learner and stable word or
+legacy cue identity; totals alone can hide lost or misassigned state.
+
+The following bounded checks establish scheduling continuity. They are acceptance
+criteria for the release rehearsal, not a claim that it has already run:
+
+| Invariant | Comparison |
+| --- | --- |
+| Learner ownership and enrollment | Every explicit legacy learner-word row and active stash entry maps to the same learner and word. Untouched lexical entries are not enrolled merely by conversion. |
+| Lifecycle continuity | Legacy learning maps to Solidify, review to Practice, and remaining enrolled states to Unstudied. Stash membership is preserved. Existing learning streak becomes the clean-covered-session counter. |
+| Production scheduling continuity | For existing production skill rows, interval, ease, enablement and nonempty last-study timestamp match the new schedule. Next eligibility matches the old due date, falling back to the admission date when absent. The documented exception is Solidify with prior daily coverage: next eligibility is midnight UTC after the last covered day. Missing skill rows receive the migration's explicit defaults, reported separately rather than counted as preserved values. |
+| Other skill state unchanged | Recognition and contextual-selection schedules, skill relevance/suppression, and word admission guards are unchanged by conversion. |
+| Independent cue continuity | Each supported imported pure cue retains learner ownership, due date, last-study timestamp, interval, ease, strong-since timestamp, strong-success count and adoption timestamp through its legacy-to-new content mapping. Imported originals retain their daily-maintenance identity and any active six-hour restoration guard. Excluded content is listed with a reason; it must not disappear silently from the comparison. |
+| Eligibility boundaries | At the fixed comparison time, sample overdue and future-due review objectives, a word blocked by recency, a disabled/suppressed objective, a Solidify word already covered that day, and ordinary/strong pure cues where present. No blocked objective becomes ready merely from migration. Ordinary review remains due-gated; strong pure cues use the same learner/cue/UTC-day maintenance draw and seven-day quiet period on both sides, independently of dormant interval/due fields. Explain any candidate difference caused by content readiness or availability. |
+
+Report full-row mismatches for the persisted-state comparisons. For composition,
+compare eligible objectives before random sampling and capacity limits first.
+Then inspect a bounded first-session plan, recording its time, settings and random
+seed where supported. Exact sampled order is not an invariant. Account for every
+observed inclusion/exclusion difference in that sample; unresolved differences
+block treating the transition as seamless.
+
+After retaining these comparison results, use another working copy of the
+migrated database to complete a session as an existing copied learner. Local
+trusted authentication may select that identity without using production login.
+Exercise a clean review outcome, a rejection followed by completion, and a
+Solidify completion when the copied inventory permits. Verify that closure:
+
+- updates only the exercised review skill plus the intended word recency guard;
+- carries the prior interval/ease into the outcome calculation instead of
+  initializing a fresh schedule;
+- applies next-UTC-day eligibility for covered Solidify work;
+- leaves unexercised words and independent cue schedules unchanged;
+- retains the result after restart and does not apply it twice on repeated closure.
+
+Keep model work disabled for this scheduling check; provider-generated feedback
+is a separate test. Record missing cases rather than modifying the source
+snapshot to conceal gaps. Optional synthetic cases belong in a separate fixture.
+
+The existing hosted smoke account is useful for authenticated deployment checks,
+but `hosted:smoke` only reads vocabulary statistics. It does not exercise session
+completion. The legacy `hosted:provision-review-test` helper writes old learner
+state and must not be used to provision a new-runtime rehearsal session after
+cutover. A scripted end-to-end migrated-copy session rehearsal is not yet supplied;
+the checks above currently require a dedicated harness or a recorded manual run.
+
+Migration `0054_vocabulary_provider_retry_routing` retains preparation retry
+deadlines, lifetime attempt counts and attempt history, and pins reflection jobs
+to their selected model. Jobs with existing vocabulary reflection invocations
+retain their original Luna routing. Existing failed preparation stays available
+for operator retry. This requires the stopped-writer migration procedure above;
+it is not eligible for an app-only upgrade.
+
+Migration `0055_vocabulary_feedback_dismissal` adds nullable learner-message
+dismissal timestamps. Existing messages remain active. Apply with the same
+stopped-writer procedure before restarting the updated backend.

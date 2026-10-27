@@ -454,7 +454,7 @@ require the [offline schema upgrade](ops/schema-migrations.md#durable-session-co
 
 Migration `0023_session_debrief` adds `learner_session_debrief_jobs` and
 `learner_session_debrief_attempts`, both with required learner identities and
-composite same-owner foreign keys. Migration `0046_vocabulary_connections`
+composite same-owner foreign keys. Migration `0048_vocabulary_connections`
 preserves historical summary-backed jobs and adds exact vocabulary completion
 sources. Each job references either its historical summary or its same-learner,
 same-session closed vocabulary completion; it cannot mix both sources. All learner

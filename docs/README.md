@@ -100,6 +100,8 @@ hosted operations, and contributor development clearly separated.
   including the skill’s interactive draft-review procedure.
 - Contributor environments: [scripts](scripts.md) and the
   [local introduction development aid](word-introduction-lab.md).
+- Prompt development: [preserving working behavior while adapting model calls](prompt-development.md),
+  including prompt lineage, contract changes, and retained comparison evidence.
 
 The hosted service is the current learner path. These guides provide the
 existing operational references; their coverage and accuracy need verification

@@ -1,3 +1,4 @@
+import { CompletionWordGroup } from './CompletionWordGroup';
 import { SessionRecoveryHighlights } from './SessionSummaryPanel';
 import { useEffect, useRef } from 'react';
 import { formatCardCharacters, type CharacterPresentation } from '../../domain/card-characters';
@@ -116,10 +117,7 @@ function CompletionWords({ title, words, characterPresentation }: {
     <strong>{formatCardCharacters(word, characterPresentation)}</strong>
     <span>{word.pinyin}</span><span>{word.meaning}</span>
   </li>)}</ul>;
-  return <section className="session-completion-word-group" aria-label={title}>
-    <h3>{title} <span className="session-completion-count">{words.length}</span></h3>
-    {words.length > 6 ? <details><summary>View words</summary>{wordList}</details> : wordList}
-  </section>;
+  return <CompletionWordGroup title={title} count={words.length} variant="session">{wordList}</CompletionWordGroup>;
 }
 
 function formatElapsed(ms: number) {

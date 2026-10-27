@@ -1,3 +1,4 @@
+import { CardInbox } from '../components/CardInbox';
 import type { PureCueReflectionItemV1 } from '../domain/pure-cue-reflection';
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
 import type {
@@ -530,7 +531,6 @@ function HelpQueueView({
   const safeIndex = cards.length === 0 ? 0 : Math.min(index, cards.length - 1);
   const card = cards[safeIndex] ?? null;
   const cardKey = card?.cardKey ?? 'empty';
-  const Shell = 'main';
 
   useEffect(() => {
     setIndex((current) => (cards.length === 0 ? 0 : Math.min(current, cards.length - 1)));
@@ -548,15 +548,7 @@ function HelpQueueView({
     onCardDisplayed(helpCardSeenRequest(current));
   }, [cardKey]);
 
-  if (cards.length === 0) {
-    return (
-      <Shell className="reflection-help-shell is-empty">
-        <section className="panel reflection-empty-state">
-          <p className="notes">{emptyCopy}</p>
-        </section>
-      </Shell>
-    );
-  }
+  if (cards.length === 0) return <CardInbox count={0} index={0} itemLabel={itemLabel} emptyCopy={emptyCopy} onSelect={setIndex} />;
 
   if (card === null) {
     throw new Error(`Invariant violated: ${itemLabel} queue has cards but no current card.`);
@@ -569,36 +561,8 @@ function HelpQueueView({
   );
 
   return (
-    <Shell className="reflection-help-shell">
-      <header className="reflection-help-chrome">
-        <div className="reflection-help-pager">
-          <button
-            type="button"
-            className="secondary-button reflection-help-pager-button"
-            disabled={safeIndex === 0}
-            aria-label={`Previous ${itemLabel}`}
-            onClick={() => setIndex((current) => Math.max(0, current - 1))}
-          >
-            ‹
-          </button>
-          <span className="reflection-help-pager-index" aria-live="polite">
-            {safeIndex + 1} / {cards.length}
-          </span>
-          <button
-            type="button"
-            className="secondary-button reflection-help-pager-button"
-            disabled={safeIndex >= cards.length - 1}
-            aria-label={`Next ${itemLabel}`}
-            onClick={() => setIndex((current) => Math.min(cards.length - 1, current + 1))}
-          >
-            ›
-          </button>
-        </div>
-        <div className="reflection-help-chrome-meta">
-          <ItemIdentityHeading evidence={card.evidence} />
-          <p className="notes">{sessionDate}</p>
-        </div>
-      </header>
+    <CardInbox count={cards.length} index={safeIndex} itemLabel={itemLabel} emptyCopy={emptyCopy} onSelect={setIndex}
+      metadata={<><ItemIdentityHeading evidence={card.evidence} /><p className="notes">{sessionDate}</p></>}>
       {card.kind === 'explanation' ? (
         <HelpExplanationCard
           key={card.cardKey}
@@ -614,7 +578,7 @@ function HelpQueueView({
           scrollRef={scrollRef}
         />
       )}
-    </Shell>
+    </CardInbox>
   );
 }
 

@@ -1,6 +1,6 @@
 import type { VocabularyStudy, VocabularyStudyWord } from '../../domain/vocabulary-study-api';
 
-/** Full visible history, with recency taken from the acknowledged, effective session log. */
+/** Covered words only, with recency taken from the acknowledged, effective session log. */
 export function vocabularySessionHistory(study: VocabularyStudy, currentRevealed: boolean): VocabularyStudyWord[] {
   const projection = study.session.projection;
   const undone = new Set(projection.undoneActionIds);
@@ -13,7 +13,7 @@ export function vocabularySessionHistory(study: VocabularyStudy, currentRevealed
     if (wordId) recency.set(wordId, action.sequence);
   }
   const concealedCurrent = study.currentEncounter?.snapshot.kind === 'production' || study.currentEncounter?.snapshot.kind === 'contrast';
-  return study.words.filter((word) => projection.words[word.wordId]?.admitted
+  return study.words.filter((word) => projection.words[word.wordId]?.covered
     && (word.wordId !== study.currentWordId || !concealedCurrent || currentRevealed)
     && [...encounters.values()].some((entry) => entry.wordId === word.wordId
       && (entry.snapshot.kind === 'introduction' || entry.snapshot.kind === 'recognition' || entry.effectiveResponses.length > 0)))

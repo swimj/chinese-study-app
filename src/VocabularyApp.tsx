@@ -259,7 +259,7 @@ function App({ onSignOut, accountScope = 'trusted-local' }: { onSignOut?: () => 
           onViewAllUpdates={() => { setSelectedUpdateId(null); setAboutView('whats-new'); setCurrentPage('about'); }}
           backendStatus={backendStatus}
           onSaveSessionSettings={saveSessionSettings}
-          active={studySession.active} busy={studySession.busy} onStart={() => void studySession.start()}
+          active={studySession.active} busy={studySession.busy} onStart={(previewSeed) => void studySession.start(previewSeed)}
           studySurface={<VocabularyStudy controller={studySession} hideStartButton characterPresentation={backendStatus?.characterPresentation ?? DEFAULT_CHARACTER_PRESENTATION} sentenceCharacterPresentation={backendStatus?.sentenceCharacterPresentation ?? 'simplified'}/> }
         />
       ) : currentPage === 'priority' ? (

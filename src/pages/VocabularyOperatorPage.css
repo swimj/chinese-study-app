@@ -49,3 +49,27 @@
 
 @container (max-width: 800px) { .vocabulary-operator-layout { grid-template-columns: 1fr; gap: 0; } .vocabulary-operator-layout aside { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; } }
 @container (max-width: 540px) { .vocabulary-operator-layout aside, .vocabulary-operator-comparison { grid-template-columns: 1fr; } .vocabulary-operator-actions { flex-direction: column; } }
+
+.vocabulary-operator-page > header { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+.vocabulary-operator-page > header p { margin: 0; }
+.vocabulary-operator-tabs { display: flex; flex-wrap: wrap; gap: .5rem; margin: 0 0 1.5rem; }
+.vocabulary-operator-tabs button { background: transparent; color: var(--text-secondary); border: 1px solid var(--border); padding: .55rem .9rem; border-radius: .6rem; }
+.vocabulary-operator-tabs button[aria-pressed=true] { background: var(--accent); color: white; border-color: var(--accent); }
+.vocabulary-operator-tabs span { margin-left: .4rem; font-variant-numeric: tabular-nums; }
+.vocabulary-operator-list strong { font-size: 1.2rem; }
+.vocabulary-operator-list small { display: block; margin-top: .7rem; color: var(--text-secondary); }
+.vocabulary-operator-list span { font-size: .88rem; }
+.vocabulary-operator-preview > article { margin: 1rem 0 1.5rem; }
+.vocabulary-operator-preview .vocabulary-scope { background: transparent; padding: 0; font-size: .85rem; color: var(--text-secondary); margin: .3rem 0; }
+.vocabulary-operator-comparison > div:last-child { background: color-mix(in srgb, var(--accent) 6%, var(--surface)); border-color: color-mix(in srgb, var(--accent) 35%, var(--border)); }
+.vocabulary-review-actions { position: sticky; bottom: 0; padding: .8rem 0; background: var(--surface); border-top: 1px solid var(--border); z-index: 1; }
+.vocabulary-evidence > summary { padding: 1rem; border: 1px solid var(--border); border-radius: .6rem; }
+@container (max-width: 800px) { .vocabulary-operator-layout aside { display: block; } .vocabulary-operator-list { grid-template-columns: repeat(auto-fit,minmax(min(100%,12rem),1fr)); } }
+@container (max-width: 540px) { .vocabulary-operator-page > header { align-items: flex-start; } .vocabulary-review-actions { position: static; } }
+.vocabulary-operator-detail p { margin: .6rem 0; }
+.vocabulary-operator-detail h3 { margin-top: 1rem; }
+.vocabulary-operator-detail > section > h2 { margin-bottom: .6rem; }
+.vocabulary-operator-preview > article > h3 { margin-bottom: .25rem; }
+.vocabulary-operator-preview > article > .vocabulary-scope { margin-bottom: .6rem; }
+.vocabulary-second-opinion { border-top: 1px solid var(--border); padding-top: .75rem; }
+.vocabulary-second-opinion .vocabulary-operator-actions { margin: .6rem 0; }

@@ -1418,15 +1418,6 @@ function CardActions({
           }}
         />
       ) : null}
-      <button
-        type="button"
-        className="secondary-button"
-        onClick={onOpenPersonalNotesEditor}
-        disabled={personalNotesEditorSaving}
-      >
-        Edit notes
-        <ShortcutHint shortcut="E" />
-      </button>
     </div>
   );
 }

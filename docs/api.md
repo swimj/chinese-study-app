@@ -38,10 +38,11 @@ validated in `server/vocabulary/study-routes.ts`; the server derives the learner
 
 | Method/path | Result or effect |
 | --- | --- |
-| `POST /sessions` | Compose ready work and return its first encounter |
+| `GET /session-preview` | Prospective ready item count, preparation status, and opaque sampling seed; queues bounded missing teaching preparation |
+| `POST /sessions` | Compose ready work and return its first encounter; optional `previewSeed` reuses the preview's pure-cue sampling draw |
 | `GET /sessions/:id` | Current owned projection and exact material |
 | `POST /sessions/:id/next` | Select ready material; stable `clientActionId` retries |
-| `POST /sessions/:id/commands` | Response, feedback, skip, coverage, more, mode, Undo, resume, finish |
+| `POST /sessions/:id/commands` | Response, exercise reaction (v1 command `feedback`), skip, coverage, more, mode, Undo, resume, finish |
 | `POST /sessions/:id/completion` | Freeze `throughSequence` after flush, with optional reported active duration |
 | `GET /sessions/:id/completion` | Current completion and server deadline |
 | `POST /sessions/:id/completion/cancel` | Cancel exact `completionId` before closure |
@@ -57,6 +58,27 @@ validated in `server/vocabulary/study-routes.ts`; the server derives the learner
 application, closure, and failed-work retries. Proposal mutations carry expected
 versions; application requires exact approval and an idempotency key. See
 [the implementation guide](vocabulary-learning.md) for content authority.
+
+Single-word improvement results can include `pureCueReferral` (null or
+`{candidateWords: string[], sharedPurpose: string, rationale: string}`) and a
+`pureCuePromotion` assessment. Referral forms are advisory. Promotion records
+`reject`, `reuse`, `extend`, `create`, or `needs_operator` when identities cannot
+be resolved unambiguously. Creation and extension require complete teaching notes
+and join any local edits in the existing reviewed proposal; there is no separate
+automatic publication route.
+The [implementation guide](vocabulary-learning.md) describes scope, retained
+answers, and same-job stage reuse.
+
+Existing pure-cue improvement uses a dedicated assessment with `extend`, `repair`,
+or `explanation_only`. Extension preserves stimulus, axis and existing answers
+while replacing the integrated teaching note; repair changes only the stimulus.
+Both await operator application. Raw response evidence remains available when
+lexical resolution is missing or ambiguous, but extension requires a uniquely
+resolved ID from an effective rejected response. Learner feedback is independent.
+Only general production encounters enter provider jobs; recognition and contrast
+remain in session evidence and are excluded from provider feedback aggregation
+and improvement dispatch.
+
 `GET /api/operator/vocabulary/practice-preparation/failures` lists retained failed
 authoring work. `POST /api/operator/vocabulary/practice-preparation/:id/retry`
 queues an explicitly authorized retry within the attempt limit; worker gates
@@ -1047,3 +1069,28 @@ under `/api/operator/content-improvements` are described in the
 [workspace API contract](content-improvement.md#agent-api). All require operator
 access. Application is an explicit, revision-checked transaction, independent
 of learner feedback and study commits.
+
+### Vocabulary word collection
+
+`GET /api/vocabulary/word-collection` supplies the shared Words browser. Query
+parameters are `view=recent|personal|deck`, `q`, comma-separated `mode` values,
+`lapses=0|1`, `limit` (1–100), and nonnegative `offset`. It returns `words`,
+`total`, `hasMore`, and `currentDeck`. Current vocabulary state owns modes and
+enrollment; retained study history supplies compatible dates. Closed effective
+responses respect Undo and exclude pure-cue responses from word lapse evidence.
+
+### Vocabulary learner feedback inbox
+
+`GET /api/vocabulary/feedback` returns owner-scoped `messages`, `jobs`, and
+legacy-compatible `failures`. Messages include `subjectLabel`, `caseId`, body,
+creation time and seen time. Jobs expose queued/running/failed status, subject
+label, case identity, creation time and a learner-safe error. Completed jobs are
+represented by their messages; operator proposals and provider diagnostics are
+not included. `POST /api/vocabulary/feedback/:messageId/seen` marks only that
+message read. The existing job retry endpoint requeues the selected failed item.
+
+Feedback messages also expose nullable `dismissedAt`. Owner-only POST actions
+`/api/vocabulary/feedback/:messageId/dismiss` and `/restore` are idempotent.
+Dismissal excludes a message from unread attention without changing its body,
+seen time, scheduling or content-improvement state. GET retains dismissed
+messages for the learner’s history.

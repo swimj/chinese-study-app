@@ -11,6 +11,7 @@ test('Space returns from lesson browsing, then a distinct press advances the who
   const { content, teaching } = wordContentFixtures[0]!;
   const snapshot = materializeTeachingPackage(teaching, [content]);
   const state = initialIntroductionPlayerState();
+  assert.equal(teachingNavigationKeyAction({ ...space, key: 'ArrowLeft' }, state.phase, true), null);
   assert.deepEqual(teachingNavigationKeyAction(space, state.phase, true), { type: 'focus-current' });
   assert.equal(teachingNavigationKeyAction({ ...space, repeat: true }, state.phase, false), null);
   const next = teachingNavigationKeyAction(space, state.phase, false);
@@ -75,7 +76,8 @@ test('finished teaching shows pinned word uses and examples, with Enter continui
       }
     }
     assert.doesNotMatch(markup, /Introduction complete/);
-    assert.match(markup, /Continue <kbd>Enter<\/kbd>/);
+    assert.match(markup, /aria-keyshortcuts="Enter"/);
+    assert.match(markup, /<kbd class="session-shortcut-hint">Enter<\/kbd>/);
   }
 });
 

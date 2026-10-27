@@ -1,20 +1,15 @@
 .vocab-session { width: min(100%, 850px); margin: 0 auto; color: var(--text); display: grid; gap: 1rem; min-width: 0; font-size: 1rem; container-type: inline-size; }
-.vocab-session button, .vocab-session input, .vocab-session textarea { font: inherit; }
-.vocab-session button { white-space: normal; line-height: 1.4; }
-.vocab-session button:disabled { cursor: default; opacity: .48; transform: none; }
-.vocab-session button:focus-visible, .vocab-session summary:focus-visible, .vocab-session input:focus-visible, .vocab-session textarea:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 60%, transparent); outline-offset: 3px; }
+:is(.vocab-session, .vocabulary-feedback-inbox) button, :is(.vocab-session, .vocabulary-feedback-inbox) input, :is(.vocab-session, .vocabulary-feedback-inbox) textarea { font: inherit; }
+:is(.vocab-session, .vocabulary-feedback-inbox) button { white-space: normal; line-height: 1.4; }
+:is(.vocab-session, .vocabulary-feedback-inbox) button:disabled { cursor: default; opacity: .48; transform: none; }
+:is(.vocab-session, .vocabulary-feedback-inbox) button:focus-visible, :is(.vocab-session, .vocabulary-feedback-inbox) summary:focus-visible, :is(.vocab-session, .vocabulary-feedback-inbox) input:focus-visible, :is(.vocab-session, .vocabulary-feedback-inbox) textarea:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 60%, transparent); outline-offset: 3px; }
 .vocab-session-topline, .vocab-session-bottomline { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: .65rem 1rem; color: var(--text-muted); font-size: .8rem; padding: 0 .4rem; }
 .vocab-session-bottomline { padding: 0 .65rem; }
-.vocab-session .vocab-text-button { background: transparent; color: var(--text-secondary); border-radius: .5rem; padding: .45rem .55rem; min-height: 2.35rem; box-shadow: none; }
-.vocab-session .vocab-text-button:hover:not(:disabled) { background: var(--surface-muted); color: var(--accent); transform: none; }
-.vocab-overview { position: relative; }
-.vocab-overview summary { cursor: pointer; list-style: none; padding: .45rem .2rem; }
-.vocab-overview summary::-webkit-details-marker { display: none; }
-.vocab-overview summary span { margin-left: .35rem; }
-.vocab-overview dl { position: absolute; left: 0; top: 100%; margin: .3rem 0 0; padding: 1rem; width: 240px; z-index: 5; background: var(--surface); border: 1px solid var(--border); border-radius: .8rem; box-shadow: var(--shadow-card); }
-.vocab-overview dl > div { display: flex; justify-content: space-between; gap: 1rem; padding: .35rem 0; }
-.vocab-overview dd { margin: 0; font-variant-numeric: tabular-nums; color: var(--text); }
+:is(.vocab-session, .vocabulary-feedback-inbox) .vocab-text-button { background: transparent; color: var(--text-secondary); border-radius: .5rem; padding: .45rem .55rem; min-height: 2.35rem; box-shadow: none; }
+:is(.vocab-session, .vocabulary-feedback-inbox) .vocab-text-button:hover:not(:disabled) { background: var(--surface-muted); color: var(--accent); transform: none; }
+.vocab-session-actions { justify-content: flex-end; }
 .vocab-paper { background: var(--surface); border-radius: 18px; border: 1px solid color-mix(in srgb, var(--border) 70%, transparent); box-shadow: 0 3px 0 color-mix(in srgb, var(--surface-muted) 85%, black), 0 14px 28px #2d3b2f0c; min-width: 0; overflow-wrap: anywhere; }
+.vocab-recall-progress { display: flex; flex-wrap: wrap; gap: .65rem 1.5rem; padding: 1rem clamp(1rem, 3vw, 2rem) 0; }
 .vocab-card-main { padding: clamp(1.2rem, 5cqi, 2.75rem); padding-bottom: 1.5rem; display: flex; flex-direction: column; min-height: 26rem; gap: 1.5rem; }
 .vocab-card-topline { display: flex; justify-content: space-between; align-items: center; gap: .75rem; flex-wrap: wrap; }
 .vocab-eyebrow { font-size: .75rem; font-weight: 550; letter-spacing: .055em; text-transform: uppercase; color: var(--text-muted); margin: 0; }
@@ -23,6 +18,7 @@
 .vocab-prompt > p:last-child { margin-bottom: 0; }
 .vocab-prompt-warmup, .vocab-prompt-introduction { font-size: 1.05rem; line-height: 1.8; }
 .vocab-prompt-empty { font-size: 1.15rem; color: var(--text-secondary); }
+.vocab-prompt-recognition { font-size: clamp(3rem, 8cqi, 4.5rem); line-height: 1.4; }
 .vocab-supporting { color: var(--text-secondary); line-height: 1.8; }
 .vocab-supporting p { margin: .5rem 0; }
 .vocab-visible-word { display: flex; align-items: baseline; gap: .9rem; }
@@ -45,34 +41,48 @@
 .vocab-input-wrap input { width: 100%; min-height: 3.3rem; padding: .7rem .9rem; font-size: 1.25rem; border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: .65rem; }
 .vocab-input-wrap input::placeholder { color: var(--text-muted); font-size: 1rem; opacity: .8; }
 .vocab-main-actions { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem .65rem; }
-.vocab-session .vocab-primary { min-height: 2.75rem; background: var(--accent); color: white; padding: .7rem 1.35rem; border: 1px solid var(--accent); border-radius: .65rem; }
-.vocab-session .vocab-primary:hover:not(:disabled) { background: var(--accent-hover); }
-.vocab-session .vocab-secondary { min-height: 2.75rem; border: 1px solid var(--border); color: var(--text); background: var(--surface); padding: .7rem 1rem; border-radius: .65rem; }
-.vocab-session .vocab-secondary:hover:not(:disabled) { background: var(--surface-hover); }
+:is(.vocab-session, .vocabulary-feedback-inbox) .vocab-primary { min-height: 2.75rem; background: var(--accent); color: white; padding: .7rem 1.35rem; border: 1px solid var(--accent); border-radius: .65rem; }
+:is(.vocab-session, .vocabulary-feedback-inbox) .vocab-primary:hover:not(:disabled) { background: var(--accent-hover); }
+:is(.vocab-session, .vocabulary-feedback-inbox) .vocab-secondary { min-height: 2.75rem; border: 1px solid var(--border); color: var(--text); background: var(--surface); padding: .7rem 1rem; border-radius: .65rem; }
+:is(.vocab-session, .vocabulary-feedback-inbox) .vocab-secondary:hover:not(:disabled) { background: var(--surface-hover); }
 .vocab-answer { padding: 1.15rem 1.3rem; border-radius: .8rem; background: color-mix(in srgb, var(--accent-soft) 65%, var(--surface)); display: grid; gap: .6rem; }
 .vocab-answer > p { margin: 0; }
 .vocab-answer-rejected { background: color-mix(in srgb, var(--danger-soft) 55%, var(--surface)); border-left: 3px solid var(--danger); }
 .vocab-answer-rejected > .vocab-eyebrow { color: var(--danger); }
-.vocab-answer-word { display: flex; flex-wrap: wrap; gap: .4rem .9rem; align-items: baseline; }
+.vocab-answer-word { display: grid; gap: .35rem; }
+.vocab-answer-word p { margin: 0; }
+.vocab-usage-note { border-top: 1px solid var(--border); padding-top: .75rem; }
+.vocab-usage-note > p:last-child { margin: .4rem 0 0; line-height: 1.7; }
+.vocab-contrast-comparison { display: grid; gap: .7rem; }
+.vocab-contrast-comparison > div { padding: .7rem; border: 1px solid var(--border); border-radius: .5rem; }
+.vocab-contrast-comparison .is-correct-choice { border-color: var(--accent); }
+.vocab-contrast-comparison .is-selected-choice { border-color: var(--danger); }
+.vocab-contrast-comparison p { margin: .35rem 0 0; }
 .vocab-answer-word strong { font-weight: 500; font-size: 2rem; }
 .vocab-answer-word span { color: var(--text-secondary); }
 .vocab-answer-meaning { line-height: 1.6; }
 .vocab-answer .vocab-answer-message { font-size: .85rem; color: var(--text-secondary); line-height: 1.7; }
-.vocab-card-footer { border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent); background: color-mix(in srgb, var(--surface-muted) 28%, var(--surface)); border-radius: 0 0 18px 18px; padding: .8rem clamp(1rem, 4cqi, 2.25rem); display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: .5rem 1rem; }
-.vocab-word-controls { display: flex; flex-wrap: wrap; gap: .4rem; font-size: .8rem; }
+.vocab-recognition-actions { display: flex; flex-wrap: wrap; gap: .65rem; }
+.vocab-card-footer { border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent); background: color-mix(in srgb, var(--surface-muted) 28%, var(--surface)); border-radius: 0 0 18px 18px; padding: .35rem clamp(1rem, 4cqi, 2.25rem); display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: .5rem 1rem; }
+.vocab-word-controls { display: flex; align-items: center; flex-wrap: wrap; gap: .4rem; font-size: .8rem; }
 .vocab-word-controls { grid-column: 1; }
-.vocab-session .vocab-feedback-toggle { grid-column: 2; grid-row: 1; justify-self: end; font-size: .8rem; background: transparent; color: var(--text-muted); padding: .45rem 0; min-height: 2.35rem; border-radius: .4rem; }
-.vocab-session .vocab-feedback-toggle:hover { transform: none; color: var(--accent); }
-.vocab-feedback-toggle > span { display: inline-block; width: .8rem; margin-left: .25rem; }
-.vocab-feedback-body { grid-column: 1 / -1; padding: .7rem 0 .4rem; display: grid; gap: .8rem; font-size: .8rem; }
+.vocab-word-controls > .vocab-primary, .vocab-word-controls > .vocab-secondary { font-size: 1rem; }
+.vocab-session .vocab-reaction-toggle { grid-column: 2; grid-row: 1; justify-self: end; font-size: .8rem; background: transparent; color: var(--text-muted); padding: .45rem 0; min-height: 2.35rem; border-radius: .4rem; }
+.vocab-session .vocab-reaction-toggle:hover { transform: none; color: var(--accent); }
+.vocab-reaction-toggle > span { display: inline-block; width: .8rem; margin-left: .25rem; }
+.vocab-reaction-drawer { grid-column: 1 / -1; display: grid; grid-template-rows: 0fr; opacity: 0; visibility: hidden; transition: grid-template-rows 220ms ease, opacity 180ms ease, visibility 0s 220ms; }
+.vocab-reaction-drawer.is-open { grid-template-rows: 1fr; opacity: 1; visibility: visible; transition-delay: 0s; }
+.vocab-reaction-clip { min-height: 0; overflow: hidden; }
+.vocab-reaction-body { padding: .35rem .25rem .25rem; display: grid; gap: .55rem; font-size: .8rem; transform: translateY(-.5rem); transition: transform 220ms ease; }
+.vocab-reaction-drawer.is-open .vocab-reaction-body { transform: translateY(0); }
 .vocab-reactions { display: flex; flex-wrap: wrap; gap: .5rem; }
 .vocab-reactions button { padding: .4rem .75rem; background: var(--surface); color: var(--text-secondary); border: 1px solid var(--border); font-size: .8rem; border-radius: .5rem; }
 .vocab-reactions button[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
-.vocab-feedback-body label { display: grid; gap: .5rem; color: var(--text-secondary); }
-.vocab-feedback-body textarea { width: 100%; min-height: 5rem; resize: vertical; border: 1px solid var(--border); border-radius: .6rem; background: var(--surface); padding: .75rem; color: var(--text); line-height: 1.6; }
-.vocab-feedback-send { display: flex; align-items: center; flex-wrap: wrap; gap: .75rem; }
-.vocab-feedback-send button { font-size: .8rem; padding: .5rem .8rem; }
-.vocab-feedback-send span { color: var(--text-muted); }
+.vocab-reaction-body label { display: grid; gap: .5rem; color: var(--text-secondary); }
+.vocab-reaction-body textarea { width: 100%; min-height: 0; resize: vertical; border: 1px solid var(--border); border-radius: .6rem; background: var(--surface); padding: .4rem .75rem; color: var(--text); line-height: 1.6; }
+.vocab-reaction-send { display: flex; align-items: center; flex-wrap: wrap; gap: .75rem; }
+.vocab-reaction-send button { font-size: .8rem; padding: .5rem .8rem; }
+.vocab-reaction-send span { color: var(--text-muted); }
 .vocab-finishing { padding: .85rem 1.1rem; border: 1px solid var(--border); background: var(--surface-muted); border-radius: .8rem; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .65rem 1rem; font-size: .8rem; }
 .vocab-finishing > div { display: grid; gap: .2rem; }
 .vocab-finishing strong { font-weight: 600; }
@@ -111,8 +121,8 @@
   .vocab-main-actions > .vocab-primary { flex: 1 0 100%; }
   .vocab-main-actions > .vocab-text-button { padding-left: 0; margin-right: .75rem; font-size: .85rem; }
   .vocab-card-footer { grid-template-columns: minmax(0, 1fr); }
-  .vocab-session .vocab-feedback-toggle { grid-column: 1; grid-row: 2; justify-self: start; }
-  .vocab-feedback-body { grid-row: 3; }
+  .vocab-session .vocab-reaction-toggle { grid-column: 1; grid-row: 2; justify-self: start; }
+  .vocab-reaction-drawer { grid-row: 3; }
   .vocab-finish-dialog > div { flex-direction: column-reverse; }
   .vocab-finish-dialog button { width: 100%; }
 }
@@ -135,3 +145,132 @@
 .vocab-tray-navigation > span { margin-right: .4rem; }
 .vocab-session .vocab-tray-navigation button { background: var(--surface); border: 1px solid var(--border); color: var(--text-secondary); padding: .2rem .45rem; min-width: 1.8rem; min-height: 1.65rem; border-radius: .4rem; font-size: .85rem; line-height: 1; }
 .vocab-session .vocab-tray-navigation button:hover:not(:disabled) { background: var(--surface-hover); transform: none; }
+
+/* Keycaps follow the existing session hover/focus convention. */
+:is(.vocab-session, .vocabulary-feedback-inbox) button, .word-intro-experience button { position: relative; }
+:is(.vocab-session, .vocabulary-feedback-inbox) button:hover .session-shortcut-hints,
+:is(.vocab-session, .vocabulary-feedback-inbox) button:focus-visible .session-shortcut-hints,
+.word-intro-experience button:hover .session-shortcut-hints,
+.word-intro-experience button:focus-visible .session-shortcut-hints { opacity: 1; }
+.vocab-session button.is-confirming-action { outline: 3px solid var(--accent); outline-offset: 3px; filter: brightness(1.2); }
+.vocab-session button.is-selected-choice { outline: 2px solid var(--accent); outline-offset: 2px; }
+.vocab-paper > .word-intro-experience { padding: clamp(1rem, 3vw, 2rem); min-width: 0; }
+.vocab-paper .word-intro-shell { width: 100%; }
+.vocab-shortcut-dialog { width: min(40rem, calc(100vw - 2rem)); border: 1px solid var(--border); border-radius: 1rem; padding: 1.5rem; color: var(--text-primary); background: var(--surface); }
+.vocab-shortcut-dialog::backdrop { background: #14282066; }
+.vocab-shortcut-dialog header { display: flex; justify-content: space-between; align-items: start; gap: 1rem; }
+.vocab-shortcut-dialog h2 { margin: 0; }
+.vocab-shortcut-dialog h3 { margin-bottom: .5rem; }
+.vocab-shortcut-dialog dl { display: grid; gap: .6rem; }
+.vocab-shortcut-dialog dl > div { display: grid; grid-template-columns: minmax(5rem, 7rem) minmax(0, 1fr); gap: 1rem; }
+.vocab-shortcut-dialog dt, .vocab-shortcut-dialog dd { margin: 0; overflow-wrap: anywhere; }
+
+.intro-lab.word-intro-experience .intro-lab-button .session-shortcut-hint {
+  color: var(--text-secondary); border-color: var(--border); background: var(--surface); opacity: 1;
+}
+
+.vocab-mode-label { display: inline-flex; align-items: center; gap: .4rem; flex: none; white-space: nowrap; }
+.vocab-mode-label .study-stage-icon { width: 1.1em; height: 1.1em; flex: none; }
+
+/* Completion keeps the established report order: actions, word groups, elapsed study. */
+.vocab-completion .vocab-summary-actions { padding: .35rem 0; }
+.vocab-summary-report:empty { display: none; }
+.vocab-completion .vocab-outcomes:first-child { margin-top: .65rem; }
+.vocab-summary-count { display: inline-block; margin-left: .35rem; color: var(--text); }
+.vocab-summary-word-disclosure > summary { cursor: pointer; font-size: .9rem; padding: .25rem 0 .65rem; }
+.vocab-completion .vocab-outcome-word { min-width: 0; overflow-wrap: anywhere; }
+.vocab-completion .vocab-outcome-meaning { color: var(--text); }
+.vocab-completion .vocab-summary-facts { margin-top: .5rem; }
+.vocab-completion .vocab-expired-action { opacity: .35; pointer-events: none; }
+.vocab-completion-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+.vocab-personal-notes { margin-top: .75rem; padding-top: .5rem; border-top: 1px solid var(--border); }
+.vocab-personal-notes > p { margin: 0; font-size: .85rem; line-height: 1.7; }
+.vocab-personal-notes > p > strong { display: block; font-weight: 550; }
+.vocab-personal-notes > p > span { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* Continue the app shell's bounded height through the session, as the legacy
+   session panel does. Reading scrolls; the next action and history stay in reach. */
+.vocab-study-surface { display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0; overflow: hidden; }
+.vocab-study-surface > .vocab-session { flex: 1; }
+.vocab-session { display: flex; flex-direction: column; height: 100%; min-height: 0; gap: .65rem; overflow-y: auto; }
+.vocab-session > .vocab-session-topline,
+.vocab-session > .vocab-finishing,
+.vocab-session > .vocab-error,
+.vocab-session > .vocab-word-tray,
+.vocab-session > .vocab-session-bottomline { flex: none; margin-top: 1rem; }
+.vocab-session > .desk-stack { flex: 1; min-height: 0; }
+.vocab-session > .vocab-paper { flex: 1; min-height: 0; }
+.vocab-session > .desk-stack > .desk-front { min-height: 0; }
+.vocab-session .vocab-paper { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; }
+.vocab-session .vocab-recall-progress { flex: none; }
+.vocab-session .vocab-card-main { flex: 1; min-height: 0; padding: 0; gap: 0; }
+.vocab-card-content { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable;
+  padding: 1.5rem clamp(1.2rem, 5cqi, 2.75rem) 1rem; display: flex; flex-direction: column; gap: 1rem; }
+.vocab-card-content > * { flex-shrink: 0; }
+.vocab-card-content:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
+.vocab-session .vocab-response { flex: none; margin: 0; padding: .75rem clamp(1.2rem, 5cqi, 2.75rem) 1rem; }
+.vocab-card-footer { flex: none; }
+.vocab-reaction-clip { max-height: min(25dvh, 15rem); overflow-y: auto; overscroll-behavior: contain; }
+
+/* The existing teaching player already owns its scroll position and keyboard
+   navigation. Give its reading viewport the available space instead of 42vh. */
+.vocab-session .vocab-paper > .word-intro-experience { flex: 1; min-height: 0; overflow: hidden; }
+.vocab-session .vocab-paper .word-intro-shell { height: 100%; min-height: 0; display: flex; flex-direction: column; }
+.vocab-session .vocab-paper .word-intro-heading { flex: none; margin-top: .35rem; }
+.vocab-session .vocab-paper .intro-lab-player { flex: 1; min-height: 0; width: 100%; display: flex; flex-direction: column; }
+.vocab-session .vocab-paper .intro-lab-progress,
+.vocab-session .vocab-paper .intro-teaching-location,
+.vocab-session .vocab-paper .intro-lab-player-actions { flex: none; }
+.vocab-session .vocab-paper .intro-teaching-viewport { flex: 1; height: auto; min-height: 0; }
+.vocab-session .vocab-paper .intro-lab-finished { flex: 1; min-height: 0; margin-top: 0; display: flex; flex-direction: column; overflow: hidden; }
+.vocab-session .vocab-paper .intro-lab-word-recap { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+
+/* Completion shares the bounded paper. Its actions stick while the report
+   scrolls, and mode choices expand in-flow so the scroll boundary cannot clip them. */
+.vocab-completion > .vocab-paper { flex: 1; }
+.vocab-completion .vocab-card-main { overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable;
+  padding: clamp(1.2rem, 5cqi, 2.75rem); gap: .8rem; }
+.vocab-completion .vocab-card-main > * { flex-shrink: 0; }
+.vocab-completion .vocab-summary-actions { position: sticky; top: 0; z-index: 7; background: var(--surface); padding: .65rem 0; }
+.vocab-completion .vocab-mode-options { position: static; margin-top: .4rem; max-width: 100%; }
+
+@container (max-width: 540px) {
+  .vocab-card-content { gap: .8rem; }
+  /* The controls can consume most of a narrow enlarged panel. Retain a real
+     reading area and let the session scroll instead of overlapping the footer. */
+  .vocab-session:not(.vocab-completion) .vocab-paper:not(.desk-departure-front):not(.desk-tuck-paper) { flex-shrink: 0; height: auto; min-height: min-content; }
+  .vocab-paper > .vocab-card-main:has(> .vocab-card-content) { flex: 1 0 auto; min-height: min-content; }
+  .vocab-paper .vocab-card-content { flex: 1 0 10rem; height: 10rem; min-height: 10rem; }
+  .vocab-session > .desk-stack { flex: 1 0 auto; min-height: min-content; }
+  .desk-stack > .desk-front { height: auto; min-height: 100%; }
+}
+/* At very short viewport heights the controls themselves need more room.
+   Permit outer scrolling rather than clipping text or reducing its size. */
+@media (max-height: 560px) {
+  .vocab-study-surface { overflow-y: auto; }
+  .vocab-study-surface > .vocab-session { flex: none; height: max(100%, 34rem); }
+}
+
+/* Native ruby keeps the word pronunciation attached during wrapping and zoom. */
+.vocab-warmup-sentence.is-revealed { color: var(--text-muted); }
+.vocab-warmup-sentence ruby { ruby-position: over; ruby-align: center; white-space: nowrap; color: var(--text); }
+.vocab-warmup-sentence strong { font-weight: 700; }
+.vocab-warmup-sentence rt { font-family: var(--font-sans, sans-serif); font-size: .45em; font-weight: 400; line-height: 1.2; color: var(--text-secondary); }
+.vocab-warmup-pinyin { font-size: .9rem; }
+.vocab-warmup-pinyin summary { width: fit-content; cursor: pointer; color: var(--text-muted); }
+.vocab-warmup-pinyin summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.vocab-supporting .vocab-warmup-sense { margin-top: 1.2rem; }
+
+.vocab-recognition-ruby { ruby-position: over; ruby-align: center; }
+.vocab-recognition-ruby rt { font-family: var(--font-sans, sans-serif); font-size: .25em; font-weight: 400; line-height: 1.3; color: var(--text-secondary); }
+.vocab-answer-recognition > .production-supplement:first-child { border-top: 0; padding-top: 0; margin-top: 0; }
+
+.vocab-prompt-recognition { margin: .2rem 0; line-height: 1.2; }
+
+/* Continuation controls share the footer across exercises, warmups, and teaching. */
+.vocab-continuation-slot { display: contents; }
+.vocab-card-footer .vocab-response { padding: 0; }
+.vocab-card-footer .vocab-main-actions { font-size: 1rem; }
+.vocab-action-label { display: inline-grid; }
+.vocab-action-label > span { grid-area: 1 / 1; }
+.vocab-action-width { visibility: hidden; pointer-events: none; }

@@ -102,6 +102,11 @@ and compatibility boundary being inspected.
 
 ## Repeatable UI annotation fixtures
 
+For the adaptive vocabulary session, use the
+[full vocabulary walkthrough fixture](vocabulary-learning.md#conversion-and-local-verification).
+It includes 12 words, Solidify graduation boundaries and a persisted manual
+override. The command below prepares the retained legacy annotation scenarios.
+
 Use `npm run prepare:ui-fixtures -- --data-dir=data/ui-fixtures/<new-run-name>`
 to create a fresh Mandarin annotation database. The directory must not already
 exist, even if empty. This keeps earlier annotation sessions and other local

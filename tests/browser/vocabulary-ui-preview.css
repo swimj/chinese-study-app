@@ -1,11 +1,11 @@
-.vocab-preview { min-height: 100vh; background: var(--canvas); padding-bottom: 2rem; }
+.vocab-preview { height: 100dvh; min-height: 0; display: flex; flex-direction: column; background: var(--canvas); }
 .vocab-preview-toolbar { padding: .75rem 1.2rem; border-bottom: 1px solid var(--border); display: flex; flex-wrap: wrap; align-items: center; gap: .65rem 1.25rem; background: var(--surface); font-size: .75rem; color: var(--text-muted); }
 .vocab-preview-toolbar > div { margin-right: auto; display: grid; gap: .2rem; }
 .vocab-preview-toolbar strong { color: var(--text); font-weight: 600; }
 .vocab-preview-toolbar label { display: flex; gap: .5rem; align-items: center; }
 .vocab-preview-toolbar select { max-width: 12rem; border: 1px solid var(--border); border-radius: .4rem; background: var(--surface); color: var(--text); padding: .35rem; }
 .vocab-preview-check input { accent-color: var(--accent); }
-.vocab-preview main { padding: 1.5rem 1.4rem 1rem; margin: 0 auto; }
+.vocab-preview main { flex: 1; min-height: 0; width: 100%; padding: 1.5rem 1.4rem 1rem; margin: 0 auto; }
 .vocab-preview.is-narrow main { max-width: 460px; padding-left: 1rem; padding-right: 1rem; }
 .vocab-preview-notice { margin: .5rem auto; max-width: 850px; padding: 0 1rem; color: var(--text-muted); font-size: .8rem; line-height: 1.6; }
 @media (max-width: 540px) { .vocab-preview main { padding: 1.25rem .8rem; } .vocab-preview-toolbar { padding: .75rem; gap: .65rem; } .vocab-preview-toolbar > div { flex-basis: 100%; } }

@@ -1,11 +1,11 @@
+import { completionDeadline } from './completion-deadline';
+export { completionDeadline } from './completion-deadline';
 import { useEffect, useRef, useState } from 'react';
 import type { SessionCompletion, StageSessionCompletionRequest } from '../../domain/session-completion';
 import { closeSessionCompletion, fetchSessionCompletion,
   stageSessionCompletion, undoSessionCompletion } from '../../services/api';
 
-export function completionDeadline(completion: SessionCompletion, receivedAt = Date.now()): number {
-  return receivedAt + Math.max(0, Date.parse(completion.closeAt) - Date.parse(completion.serverNow));
-}
+
 
 /** The browser displays the deadline; only the server can cancel or close it. */
 export function useSessionCompletionFlow(options: {

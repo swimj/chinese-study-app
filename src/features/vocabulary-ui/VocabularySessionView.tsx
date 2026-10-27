@@ -1,7 +1,13 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import type { VocabularyCompletionView, VocabularyControl, VocabularySessionViewProps, VocabularyWordOutcome } from './types';
+import type { VocabularyControl, VocabularySessionViewProps } from './types';
 import './vocabulary-ui.css';
+import { VocabularySessionLayout } from './VocabularySessionLayout';
 import { WordHistoryTray } from './WordHistoryTray';
+import { StudyStageIcon } from '../session/StudyStageBadge';
+import { ShortcutHint } from '../../components/ShortcutHint';
+import { RecallChips, SessionDesk } from '../session/SessionDesk';
+import { VocabularyCardActionTarget } from './VocabularyCardActions';
+import { VocabularyCompletionPanel } from './VocabularyCompletionPanel';
 
 function Action({ control, onClick, children }: {
   control: VocabularyControl;
@@ -10,21 +16,48 @@ function Action({ control, onClick, children }: {
 }) {
   if (!control.visible) return null;
   return <button type="button" className="vocab-text-button" disabled={!control.enabled}
-    title={control.reason} onClick={onClick}>{children}</button>;
+    title={control.reason} aria-keyshortcuts={control.enabled ? control.shortcut : undefined} onClick={onClick}>{children}<ShortcutHint shortcut={control.shortcut} /></button>;
+}
+
+/** Focus once when this input becomes usable, including after an animated arrival. */
+function ResponseInput({ blocked, ...props }: React.InputHTMLAttributes<HTMLInputElement> & { blocked: boolean }) {
+  const input = useRef<HTMLInputElement>(null);
+  const focused = useRef(false);
+  useEffect(() => {
+    if (focused.current || props.disabled || blocked) return;
+    input.current?.focus({ preventScroll: true });
+    focused.current = document.activeElement === input.current;
+  }, [props.disabled, blocked]);
+  return <input {...props} ref={input} />;
 }
 
 /** A controlled presentation surface. Session rules and keyboard shortcuts live outside it. */
 export function VocabularySessionView(props: VocabularySessionViewProps) {
+  return <VocabularySessionLayout props={props}><VocabularySessionContent {...props} history={undefined} /></VocabularySessionLayout>;
+}
+
+/** Unplaced content is also used by the layout comparison preview. */
+export function VocabularySessionContent(props: VocabularySessionViewProps) {
   const { controls, response, presentation } = props;
+  const primaryInFooter = response.primaryPlacement === 'footer' && !response.revealActions;
+  const primaryButton = <button type={primaryInFooter ? 'button' : 'submit'}
+    className={`${response.shortcuts?.includes('Space') ? 'vocab-primary' : 'vocab-secondary'}${props.cardMotion?.confirmingPrimary ? ' is-confirming-action' : ''}`}
+    aria-keyshortcuts={response.primaryEnabled ? response.shortcuts?.join(' ') : undefined}
+    disabled={!response.primaryEnabled || props.busy} onClick={primaryInFooter ? props.onPrimary : undefined}>
+    {response.visible && !response.revealed ? <span className="vocab-action-label"><span>{response.primaryLabel}</span><span className="vocab-action-width" aria-hidden="true">Check answer</span><span className="vocab-action-width" aria-hidden="true">No clue</span></span> : response.primaryLabel}<ShortcutHint shortcuts={response.shortcuts} /></button>;
+  const showResponse = !primaryInFooter || (response.visible && !response.revealed) || controls.another.visible;
+  const [actionTarget, setActionTarget] = useState<HTMLDivElement | null>(null);
   const answerId = useId();
   const dialogTitleId = useId();
   const dialogDescriptionId = useId();
   const finishDialog = useRef<HTMLDialogElement>(null);
   const cancelFinish = useRef<HTMLButtonElement>(null);
   const [confirmFinish, setConfirmFinish] = useState(false);
-  const [feedbackOpen, setFeedbackOpen] = useState(false);
-  const feedbackId = useId();
-  useEffect(() => { setFeedbackOpen(false); }, [presentation.key]);
+  const [localReactionOpen, setLocalReactionOpen] = useState(false);
+  const reactionOpen = props.reactionInput.open ?? localReactionOpen;
+  const setReactionOpen = props.onReactionOpenChange ?? setLocalReactionOpen;
+  const reactionId = useId();
+  useEffect(() => { setReactionOpen(false); }, [presentation.key]);
 
   useEffect(() => {
     if (!confirmFinish) return;
@@ -41,15 +74,10 @@ export function VocabularySessionView(props: VocabularySessionViewProps) {
     setConfirmFinish(false);
   };
 
-  if (props.completion) return <Completion props={props} completion={props.completion} />;
+  if (props.completion) return <VocabularyCompletionPanel props={props} completion={props.completion} />;
 
   return <section className="vocab-session" aria-label="Study session" aria-busy={props.busy}>
-    <header className="vocab-session-topline">
-      <details className="vocab-overview"><summary>This session <span aria-hidden="true">⌄</span></summary>
-        <dl><div><dt>Words encountered</dt><dd>{props.progress.encountered}</dd></div>
-          <div><dt>Covered for today</dt><dd>{props.progress.covered}</dd></div>
-          <div><dt>Study time</dt><dd>{props.progress.elapsedLabel}</dd></div></dl>
-      </details>
+    <header className="vocab-session-topline vocab-session-actions">
       <Action control={controls.finishForNow} onClick={props.onFinishForNow}>Finish for now</Action>
     </header>
 
@@ -59,137 +87,102 @@ export function VocabularySessionView(props: VocabularySessionViewProps) {
     </div>}
     {props.error && <div className="vocab-error" role="alert">{props.error}</div>}
 
+    <SessionDesk ref={props.cardMotion?.ref} embedded enabled={Boolean(props.cardMotion)} cardKey={presentation.key}
+      mistakeKey={response.revealed && response.assessment === 'rejected' ? presentation.key : null}
+      remaining={0} again={0} answered={0} elapsed={props.progress.elapsedLabel}>
+    <VocabularyCardActionTarget.Provider value={actionTarget}>
     <article className="vocab-paper" key={presentation.key}>
-      <div className="vocab-card-main">
+      {props.recallProgress && props.recallProgress.length > 0 && <div className="vocab-recall-progress">
+        {props.recallProgress.map((row) => <RecallChips key={row.key} label={row.label} count={row.count} total={row.total} />)}
+      </div>}
+      {props.teachingContent ?? <div className="vocab-card-main">
+        <div className="vocab-card-content" tabIndex={0} role="region" aria-label="Exercise content">
         <div className="vocab-card-topline">
           <span className="vocab-eyebrow">{presentation.label}</span>
-          <span className="vocab-mode-label">{props.modeLabel}</span>
+          <span className="vocab-mode-label"><StudyStageIcon status={props.mode === 'unstudied' ? 'unstudied' : props.mode === 'maintain' ? 'review' : 'learning'} />{props.modeLabel}</span>
         </div>
         {props.visibleWord && !response.revealed && <div className="vocab-visible-word">
           <strong lang="zh">{props.visibleWord.hanzi}</strong><span>{props.visibleWord.pinyin}</span>
         </div>}
-        <div className={`vocab-prompt vocab-prompt-${presentation.kind}`}>{presentation.prompt}</div>
+        <div className={`vocab-prompt vocab-prompt-${presentation.kind}${presentation.recognition ? ' vocab-prompt-recognition' : ''}`}>{presentation.prompt}</div>
         {presentation.supportingContent && <div className="vocab-supporting">{presentation.supportingContent}</div>}
 
-        {response.revealed && <section className={`vocab-answer vocab-answer-${response.assessment}`} aria-label="Answer">
-          <p className="vocab-eyebrow">{response.assessment === 'accepted' ? 'That works' : response.assessment === 'rejected' ? 'Not quite — expected answer' : 'Answer'}</p>
+        {response.revealed && <section className={`vocab-answer vocab-answer-${response.assessment}${presentation.recognition ? ' vocab-answer-recognition' : ''}`} aria-label="Answer">
+          {!presentation.recognition && <p className="vocab-eyebrow">{response.assessment === 'accepted' ? 'That works' : response.assessment === 'rejected' ? 'Not quite — expected answer' : 'Answer'}</p>}
           {response.answer}
           {response.message && <p className="vocab-answer-message">{response.message}</p>}
         </section>}
+        </div>
 
-        <form className="vocab-response" onSubmit={(event) => {
+        {showResponse && <form className="vocab-response" onSubmit={(event) => {
           event.preventDefault();
           if (response.primaryEnabled && !props.busy) props.onPrimary();
         }}>
           {response.visible && !response.revealed && <div className="vocab-input-wrap">
-            <label htmlFor={answerId}>Your answer</label>
-            <input id={answerId} value={response.value} placeholder={response.placeholder} autoComplete="off"
+            <ResponseInput blocked={reactionOpen || confirmFinish} id={answerId} aria-label="Your answer" value={response.value} placeholder={response.placeholder} autoComplete="off"
               disabled={response.disabled || props.busy} onChange={(event) => props.onResponseChange(event.target.value)} />
           </div>}
           <div className="vocab-main-actions">
-            <button type="submit" className="vocab-primary" disabled={!response.primaryEnabled || props.busy}>{response.primaryLabel}</button>
+            {response.revealed && response.revealActions}
+            {!response.revealActions && !primaryInFooter && primaryButton}
             <Action control={controls.another} onClick={props.onAnother}>Try another way</Action>
-            <Action control={controls.skip} onClick={props.onSkip}>Skip exercise</Action>
+            {!primaryInFooter && <Action control={controls.skip} onClick={props.onSkip}>Skip exercise</Action>}
           </div>
-        </form>
-      </div>
+        </form>}
+      </div>}
 
       <footer className="vocab-card-footer">
         <div className="vocab-word-controls">
+          <div className="vocab-continuation-slot" ref={setActionTarget} />
+          {primaryInFooter && primaryButton}
+          {primaryInFooter && <Action control={controls.skip} onClick={props.onSkip}>Skip exercise</Action>}
+          {props.stopWord && props.onStopWord && <Action control={props.stopWord} onClick={props.onStopWord}>Come back later</Action>}
           <Action control={controls.enough} onClick={props.onEnough}>{props.wordWork?.enoughLabel ?? (props.wordWork?.extraPractice ? "I’m satisfied" : "Enough for today")}</Action>
-          {props.leaveForToday && props.onLeaveForToday && <Action control={props.leaveForToday} onClick={props.onLeaveForToday}>Leave for today</Action>}
           <Action control={controls.more} onClick={props.onMore}>More practice</Action>
         </div>
-        {props.feedback.visible && <button type="button" className="vocab-feedback-toggle" aria-expanded={feedbackOpen} aria-controls={feedbackId}
-          onClick={() => setFeedbackOpen((open) => !open)}>How was this exercise? <span aria-hidden="true">{feedbackOpen ? "−" : "+"}</span></button>}
-        {props.feedback.visible && feedbackOpen && <div id={feedbackId} className="vocab-feedback-body">
-            <div className="vocab-reactions" role="group" aria-label="Exercise feedback">
-              <button type="button" aria-pressed={props.feedback.reaction === 'helpful'} disabled={props.feedback.status === 'saving'}
-                onClick={() => props.onReaction(props.feedback.reaction === 'helpful' ? null : 'helpful')}>Helpful</button>
-              <button type="button" aria-pressed={props.feedback.reaction === 'not-helpful'} disabled={props.feedback.status === 'saving'}
-                onClick={() => props.onReaction(props.feedback.reaction === 'not-helpful' ? null : 'not-helpful')}>Not helpful</button>
+        {props.reactionInput.visible && <button type="button" className="vocab-reaction-toggle" aria-expanded={reactionOpen} aria-controls={reactionId}
+          aria-keyshortcuts="R" onClick={() => setReactionOpen(!reactionOpen)}>How was this exercise? <span aria-hidden="true">{reactionOpen ? "−" : "+"}</span><ShortcutHint shortcut="R" /></button>}
+        {props.reactionInput.visible && <div id={reactionId} className={`vocab-reaction-drawer${reactionOpen ? ' is-open' : ''}`}
+          aria-hidden={!reactionOpen} ref={(node) => { node?.toggleAttribute('inert', !reactionOpen); }}>
+          <div className="vocab-reaction-clip"><div className="vocab-reaction-body">
+            <div className="vocab-reactions" role="group" aria-label="Exercise reactions">
+              <button type="button" aria-keyshortcuts="[" aria-pressed={props.reactionInput.reaction === 'not-helpful'} disabled={props.reactionInput.status === 'saving'}
+                onClick={() => props.onReaction(props.reactionInput.reaction === 'not-helpful' ? null : 'not-helpful')}>Not helpful<ShortcutHint shortcut="[" /></button>
+              <button type="button" aria-keyshortcuts="]" aria-pressed={props.reactionInput.reaction === 'helpful'} disabled={props.reactionInput.status === 'saving'}
+                onClick={() => props.onReaction(props.reactionInput.reaction === 'helpful' ? null : 'helpful')}>Helpful<ShortcutHint shortcut="]" /></button>
             </div>
-            <label>Anything you want to add?<textarea value={props.feedback.comment} placeholder="What felt off, or what might help?"
-              disabled={props.feedback.status === 'saving'} onChange={(event) => props.onCommentChange(event.target.value)} /></label>
-            <div className="vocab-feedback-send"><button type="button" disabled={!props.feedback.comment.trim() || props.feedback.status === 'saving'}
-              onClick={props.onCommentSubmit}>{props.feedback.status === 'saving' ? 'Sending…' : 'Send note'}</button>
-              <span role="status">{props.feedback.status === 'saved' ? 'Feedback saved' : ''}</span></div>
-          </div>}
+            <label>Anything you want to add?<textarea rows={2} onKeyDown={(event) => {
+              if (event.key === 'Escape' && !event.nativeEvent.isComposing && event.keyCode !== 229) {
+                event.preventDefault(); event.stopPropagation(); event.currentTarget.blur();
+              }
+            }} value={props.reactionInput.comment} placeholder="What felt off, or what might help?"
+              disabled={props.reactionInput.status === 'saving'} onChange={(event) => props.onCommentChange(event.target.value)} /></label>
+            <div className="vocab-reaction-send"><button type="button" className="vocab-secondary" disabled={!props.reactionInput.comment.trim() || props.reactionInput.status === 'saving'}
+              onClick={props.onCommentSubmit}>{props.reactionInput.status === 'saving' ? 'Sending…' : 'Send note'}</button>
+              <span role="status">{props.reactionInput.status === 'saved' ? 'Reaction saved' : ''}</span></div>
+          </div></div></div>}
       </footer>
     </article>
+    </VocabularyCardActionTarget.Provider>
+    </SessionDesk>
 
     {props.history && props.history.length > 0 && <WordHistoryTray words={props.history} busy={props.busy} onResume={props.onPractiseWord} />}
 
     <div className="vocab-session-bottomline">
       <Action control={controls.undo} onClick={props.onUndo}>Undo last action</Action>
-      <span>{props.progress.covered} covered <span className="vocab-dot">·</span> {props.progress.elapsedLabel}</span>
+      {props.onShowShortcuts && <button type="button" className="vocab-text-button" aria-keyshortcuts="?" onClick={props.onShowShortcuts}>Shortcuts<ShortcutHint shortcut="?" /></button>}
+      <span>{props.progress.remaining} remaining <span className="vocab-dot">·</span> {props.progress.covered} covered <span className="vocab-dot">·</span> {props.progress.elapsedLabel}</span>
     </div>
 
     {confirmFinish && <dialog ref={finishDialog} className="vocab-finish-dialog" aria-labelledby={dialogTitleId}
       aria-describedby={dialogDescriptionId} onCancel={(event) => { event.preventDefault(); closeFinishDialog(); }} onClose={() => setConfirmFinish(false)}>
       <h2 id={dialogTitleId}>Finish here?</h2>
-      <p id={dialogDescriptionId}>Unfinished words will stay due for your next session. Your answers and feedback will be saved.</p>
+      <p id={dialogDescriptionId}>Unfinished words will stay due for your next session. Your answers and reactions will be saved.</p>
       <div><button ref={cancelFinish} type="button" className="vocab-secondary" onClick={closeFinishDialog}>Keep wrapping up</button>
-        <button type="button" className="vocab-primary" disabled={!controls.finishImmediately.enabled || props.busy} onClick={() => {
+        <button type="button" className="vocab-secondary" disabled={!controls.finishImmediately.enabled || props.busy} onClick={() => {
           closeFinishDialog();
           props.onFinishImmediately();
         }}>Finish immediately</button></div>
     </dialog>}
-  </section>;
-}
-
-function OutcomeModeControl({ props, outcome }: { props: VocabularySessionViewProps; outcome: VocabularyWordOutcome }) {
-  if (!props.onWordModeChange || !outcome.modeChoices?.length) return null;
-  return <details className="vocab-mode-picker"><summary>{outcome.modeLabel ?? outcome.mode} <span aria-hidden="true">⌄</span></summary>
-    <div className="vocab-mode-options" role="group" aria-label={`Learning mode for ${outcome.word.hanzi}`}>
-      <p>Learning mode</p>
-      {outcome.modeChoices.map((choice) => <button key={choice.value} type="button" aria-label={`${choice.label}. ${choice.description}`} aria-pressed={choice.value === outcome.mode}
-        disabled={!choice.enabled || props.busy} onClick={(event) => {
-          props.onWordModeChange?.(outcome.word.id, choice.value);
-          const details = event.currentTarget.closest('details');
-          details?.removeAttribute('open');
-          details?.querySelector('summary')?.focus();
-        }}><strong>{choice.label}</strong><span>{choice.description}</span></button>)}
-    </div>
-  </details>;
-}
-
-function Completion({ props, completion }: { props: VocabularySessionViewProps; completion: VocabularyCompletionView }) {
-  const pending = completion.status === 'pending';
-  const failed = completion.status === 'failed';
-  const status = completion.status === 'saving' ? 'Saving your session…'
-    : failed ? 'Your session still needs to be saved.'
-      : pending ? `Session closes in ${completion.remainingSeconds ?? 'a few'} seconds.` : 'Session saved.';
-  return <section className="vocab-session vocab-completion" aria-labelledby="vocab-summary-heading" aria-busy={props.busy}>
-    <header className="vocab-session-topline"><span>Session summary</span><span>{completion.elapsedLabel} of study</span></header>
-    <article className="vocab-paper">
-      <div className="vocab-card-main">
-        <p className="vocab-eyebrow">{pending ? 'Wrapping up' : 'For today'}</p>
-        <h1 id="vocab-summary-heading">Your session</h1>
-        <p className="vocab-summary-facts"><strong>{completion.covered}</strong> words covered <span className="vocab-dot">·</span> {completion.encountered} encountered</p>
-        <div className={`vocab-save-status${failed ? ' vocab-error' : ''}`} role="status"><span className="vocab-status-dot" aria-hidden="true" />{status}</div>
-        {props.error && <p className="vocab-error" role="alert">{props.error}</p>}
-        {pending && <p className="vocab-summary-hint">You can still undo the last action or return to study before this closes.</p>}
-
-        {completion.outcomes.length > 0 && <section className="vocab-outcomes" aria-label="Words from this session">
-          <h2>Words from this session</h2>
-          <ul>{completion.outcomes.map((outcome) => <li key={outcome.word.id}>
-            <div className="vocab-outcome-word"><strong lang="zh">{outcome.word.hanzi}</strong><span>{outcome.word.pinyin}</span><p>{outcome.detail}</p></div>
-            <div><OutcomeModeControl props={props} outcome={outcome} />{outcome.canPractise && <button type="button" className="vocab-text-button" disabled={props.busy} onClick={() => props.onPractiseWord(outcome.word.id)}>Practise more</button>}
-              {outcome.canDismiss && <button type="button" className="vocab-text-button" disabled={props.busy} onClick={() => props.onDismissWord(outcome.word.id)}>Dismiss word</button>}</div>
-          </li>)}</ul>
-        </section>}
-        {completion.feedback.length > 0 && <section className="vocab-lessons" aria-label="Study feedback">
-          <h2>A note on your practice</h2>
-          {completion.feedback.map((message) => <article key={message.id}><h3>{message.title}</h3><div>{message.body}</div></article>)}
-        </section>}
-      </div>
-      <footer className="vocab-summary-actions">
-        <button type="button" className="vocab-primary" disabled={!completion.canReturnHome || props.busy} onClick={props.onReturnHome}>Return home</button>
-        {pending && completion.canUndo && <button type="button" className="vocab-text-button" disabled={props.busy} onClick={props.onUndo}>Undo last action</button>}
-        {pending && completion.canCancel && <button type="button" className="vocab-text-button" disabled={props.busy} onClick={props.onCancelCompletion}>Return to study</button>}
-        {failed && <button type="button" className="vocab-secondary" disabled={props.busy} onClick={props.onRetryCompletion}>Try saving again</button>}
-      </footer>
-    </article>
   </section>;
 }

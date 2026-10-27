@@ -21,3 +21,6 @@ deploy/fly/.generated/
 data/intro-lab/
 data/word-content-workbench/
 data/ui-fixtures/
+
+# Read-only production excerpts for local operator review; never publish.
+tests/browser/.local/
