@@ -697,6 +697,7 @@ test('teaching rejection resets only that direction and requires three subsequen
 test('independent pure cue shares the review queue and completes lapse reinforcement while finishing',()=>owner(()=>{
   db.prepare("UPDATE learner_words SET dismissed_at='2026-10-17T00:00:00.000Z' WHERE word_id IN ('a','new')").run();
   exercise('queue-pure','b','general',true);
+  exercise('queue-targeted','b'); // Both queues require a real word-specific cue, not proxied fallback.
   db.prepare("INSERT INTO learner_pure_cue_schedules(learner_id,content_id,policy_version,scheduler_state_json) VALUES('alice','queue-pure','test',?)")
     .run(JSON.stringify({intervalHours:24,easeFactor:2.5,enabled:1,cleanCoveredSessions:0}));
   const before=getVocabularyWordSchedule('b');
@@ -814,4 +815,62 @@ test('Solidify with both recall directions disabled is excluded instead of creat
   db.prepare("INSERT INTO learner_owned_word_skill_state VALUES('alice','a','recognition',24,2.5,0,NULL,NULL),('alice','a','production',24,2.5,0,NULL,NULL)").run();
   const view=startVocabularyStudy();
   assert.equal(view.session.context.words.some((word)=>word.wordId==='a'),false);
+}));
+
+
+test('pure coverage excludes dictionary production from preview and Start even while the cue is not due',()=>owner(()=>{
+  db.prepare("UPDATE learner_words SET dismissed_at='2026-10-01' WHERE word_id!='b'").run();
+  // First materialize the fallback, then add coverage: existing baseline content
+  // must not become an apparent private targeted cue.
+  const initial=startVocabularyStudy();
+  assert.equal(initial.currentEncounter?.snapshot.contentId,'vocabulary:baseline:v1:alice:production:general:b');
+  exercise('proxy-pure','b','general',true);
+  adoptVocabularyPureCues();
+  db.prepare("UPDATE learner_pure_cue_schedules SET next_eligible_at='2999-01-01T00:00:00.000Z'").run();
+  const schedules=db.prepare('SELECT * FROM learner_word_schedules ORDER BY learner_id,word_id').all();
+  assert.equal(previewVocabularyStudy().itemCount,0);
+  assert.throws(()=>startVocabularyStudy(),/No ready study material is available/);
+  // Also guard serving in a session admitted before coverage changed.
+  const continued=nextVocabularyExercise(initial.session.sessionId,'retry-after-proxy',{wordId:'b'});
+  assert.equal(continued.session.projection.encounters.length,initial.session.projection.encounters.length,'no new fallback is presented after proxy coverage changes');
+  assert.equal(continued.session.projection.words.b.covered,false);
+  assert.deepEqual(db.prepare('SELECT * FROM learner_word_schedules ORDER BY learner_id,word_id').all(),schedules);
+  assert.equal(db.prepare("SELECT count(*) AS n FROM learner_owned_word_skill_relevance WHERE relevance_state='proxied'").get()?.n,0);
+}));
+
+test('pure coverage preserves independently due recognition and usable private production',()=>owner(()=>{
+  db.prepare("UPDATE learner_words SET dismissed_at='2026-10-01' WHERE word_id!='b'").run();
+  exercise('proxy-pure','b','general',true);
+  db.prepare("INSERT INTO learner_owned_word_skill_state VALUES('alice','b','recognition',24,2.5,1,'2026-01-02T00:00:00.000Z','2026-01-01T00:00:00.000Z')").run();
+  let view=startVocabularyStudy();
+  assert.equal(view.session.context.words[0].selectedSkill,'recognition');
+  assert.equal(view.currentEncounter?.snapshot.kind,'recognition');
+  db.prepare("UPDATE learner_owned_word_skill_state SET enabled=0 WHERE skill_id='recognition'").run();
+  createVocabularyContent({contentId:'private-targeted-b',kind:'exercise',payloadVersion:1,body:{prompt:'A distinctive private use'},
+    accessScope:'private',ownerLearnerId:'alice',availability:'active',originKind:'human',words:[{wordId:'b',relation:'target'}],
+    exerciseType:'word',skill:'production',exerciseRole:'general',assessment:{match:'prepared'},answers:[{wordId:'b',acceptedForms:['乙']}]},actor);
+  view=startVocabularyStudy();
+  assert.equal(view.currentEncounter?.snapshot.contentId,'private-targeted-b');
+  assert.equal(view.session.context.words[0].selectedSkill,'production');
+  db.prepare("INSERT INTO learner_content_deactivations VALUES('alice','private-targeted-b','2026-10-27T00:00:00.000Z')").run();
+  assert.equal(previewVocabularyStudy().itemCount,0);
+}));
+
+
+for(const strategy of ['update','replace'] as const)test(`explicit ${strategy} of a fallback prompt restores usable private production under pure coverage`,()=>owner(()=>{
+  db.prepare("UPDATE learner_words SET dismissed_at='2026-10-01' WHERE word_id!='b'").run();
+  const initial=startVocabularyStudy();
+  const id=initial.currentEncounter!.snapshot.contentId;
+  const baseline=getVocabularyContent(id)!;
+  assert.equal(baseline.kind,'exercise');
+  exercise('proxy-pure','b','general',true);
+  const enriched=updateVocabularyContent(id,baseline.version,{...baseline,body:{...(baseline.body as object),explanation:'Additional usage note'}},actor);
+  assert.equal(previewVocabularyStudy().itemCount,0,'explanation alone does not create a targeted prompt');
+  const draft={...enriched,body:{...(enriched.body as object),prompt:'Name the second heavenly stem.'}};
+  const authored=strategy==='update'?updateVocabularyContent(id,enriched.version,draft,actor)
+    :replaceVocabularyContent(id,enriched.version,{...draft,contentId:'authored-replacement'},actor).replacement;
+  assert.deepEqual((authored.body as {source:unknown}).source,{kind:'authored_prompt',previous:{kind:'dictionary_baseline',wordId:'b'}});
+  const started=startVocabularyStudy();
+  assert.equal(started.currentEncounter?.snapshot.contentId,authored.contentId);
+  assert.equal(started.session.context.words[0].selectedSkill,'production');
 }));

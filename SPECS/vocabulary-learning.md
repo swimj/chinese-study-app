@@ -58,6 +58,21 @@ not provide production coverage. Contrast selection has its own assessment and
 schedule. Pure cues accept several words, have independent learner scheduling,
 and do not award word progress to every accepted member.
 
+For Practice and Maintain, the [pure-cue proxy policy](pure-cue-elicitation.md)
+also governs production admission. A word is **proxied** when active shared pure
+content accepts it and no active shared general word-specific production cue
+remains. Its production objective cannot enter through dictionary fallback,
+including a previously materialized baseline or an enriched fallback supplement.
+A usable private word-specific cue can still serve; recognition and contrast
+remain independently eligible. Adding active shared targeted content removes
+proxy coverage. Teaching and Solidify requirements are unchanged.
+
+Proxy coverage derives from the shared repertoire, independently of pure-cue
+adoption, due dates, sampling and learner deactivation. It neither changes word
+schedules nor writes learner suppression. A pure cue not selected today does not
+restore a proxied word's fallback. Preview and session admission apply the same
+rule before allocating capacity.
+
 Dismissal removes a word from study while retaining its history. Stash membership,
 dismissal, and study mode are distinct. Re-adding a word or choosing a mode is an
 explicit way to resume it. Existing content deactivation remains effective.

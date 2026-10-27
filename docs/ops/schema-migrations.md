@@ -425,6 +425,14 @@ criteria for the release rehearsal, not a claim that it has already run:
 | Independent cue continuity | Each supported imported pure cue retains learner ownership, due date, last-study timestamp, interval, ease, strong-since timestamp, strong-success count and adoption timestamp through its legacy-to-new content mapping. Imported originals retain their daily-maintenance identity and any active six-hour restoration guard. Excluded content is listed with a reason; it must not disappear silently from the comparison. |
 | Eligibility boundaries | At the fixed comparison time, sample overdue and future-due review objectives, a word blocked by recency, a disabled/suppressed objective, a Solidify word already covered that day, and ordinary/strong pure cues where present. No blocked objective becomes ready merely from migration. Ordinary review remains due-gated; strong pure cues use the same learner/cue/UTC-day maintenance draw and seven-day quiet period on both sides, independently of dormant interval/due fields. Explain any candidate difference caused by content readiness or availability. |
 
+Include derived pure-cue proxy admission in the eligibility comparison: a due
+production objective with active shared pure coverage and no shared targeted cue
+must remain excluded from dictionary fallback, even when the pure cue is not due.
+Where present, include an independently due recognition objective, a usable private
+targeted cue, and shared targeted content that restores ordinary admission. Proxy
+status is not persisted, so equal schedule rows do not establish this invariant.
+Record missing source cases and exercise them separately in synthetic fixtures.
+
 Report full-row mismatches for the persisted-state comparisons. For composition,
 compare eligible objectives before random sampling and capacity limits first.
 Then inspect a bounded first-session plan, recording its time, settings and random

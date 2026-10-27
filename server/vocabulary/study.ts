@@ -12,6 +12,8 @@ import { getDb } from '../db/connection.ts';
 import { allocateSessionBucketSlots, DEFAULT_SESSION_BUCKET_WEIGHTS } from '../../src/domain/session-limits.ts';
 import { composeVocabularyStudy, type VocabularyComposition } from './composition.ts';
 import { selectVocabularyPureCueCandidates } from './pure-cue-serving.ts';
+import { isVocabularyProductionProxied } from './production-coverage.ts';
+import { isVocabularyDefinitionFallback } from '../../src/domain/vocabulary-production-coverage.ts';
 import { enqueueWordPreparation } from '../db/preparation-work.ts';
 import { ensureVocabularySensesFromBootstrap, canEnsureVocabularySensesFromBootstrap } from './sense-readiness.ts';
 import { requireLearnerId } from '../db/learner-context.ts';
@@ -96,18 +98,21 @@ function contrastEligible(content:VocabularyContent,wordId:string):boolean {
   });
 }
 function availableGeneral(wordId:string,mode:'solidify'|'practice'|'maintain'):VocabularyContent[] {
-  const pool=listVocabularyExercises({wordId,mode}).filter((entry)=>eligible(entry)&&entry.kind==='exercise'&&entry.exerciseType!=='pure_cue'&&(isContrast(entry)?contrastEligible(entry,wordId):entry.skill==='recognition'?skillEnabled(wordId,'recognition'):skillEnabled(wordId,'production')));
+  const allowFallback=mode==='solidify'||!isVocabularyProductionProxied(wordId);
+  const pool=listVocabularyExercises({wordId,mode}).filter((entry)=>eligible(entry)&&entry.kind==='exercise'&&entry.exerciseType!=='pure_cue'
+    &&(allowFallback||entry.skill!=='production'||!isVocabularyDefinitionFallback(entry))
+    &&(isContrast(entry)?contrastEligible(entry,wordId):entry.skill==='recognition'?skillEnabled(wordId,'recognition'):skillEnabled(wordId,'production')));
   // Recognition remains its own self-assessed objective and never supplies production coverage.
   const recognize=baseline(wordId,'recognition','general');
   if(mode==='maintain') {
     if(pool.length)return pool;
-    const direct=baseline(wordId,'production','general');
+    const direct=allowFallback?baseline(wordId,'production','general'):null;
     if(direct)emitBackendEvent({name:'vocabulary.maintain.baseline_selected',learnerId:requireLearnerId(),entityKind:'word',entityId:wordId,
       data:{contentId:direct.contentId,reason:'no eligible curated current exercise',curated:false}});
     return direct?[direct]:[];
   }
   if(!pool.some((entry)=>entry.kind==='exercise'&&entry.skill==='production'&&!isContrast(entry))) {
-    const direct=baseline(wordId,'production','general');if(direct)pool.push(direct);
+    const direct=allowFallback?baseline(wordId,'production','general'):null;if(direct)pool.push(direct);
   }
   if(recognize&&!pool.some((entry)=>entry.contentId===recognize.contentId))pool.push(recognize);
   return pool;

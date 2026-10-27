@@ -1,8 +1,11 @@
 import { selectPureCuesForSession, type PureCue } from '../src/domain/pure-cues.ts';
 import { setDb } from '../server/db/connection.ts';
 import { runWithLearnerId } from '../server/db/learner-context.ts';
+import { isWordProductionProxied } from '../server/db/pure-cues.ts';
+import { getActiveProductionCuesForWord } from '../server/db/production-cues.ts';
 import { createVocabularyContent } from '../server/db/vocabulary-content.ts';
 import { selectVocabularyPureCueCandidates, adoptVocabularyPureCues } from '../server/vocabulary/pure-cue-serving.ts';
+import { selectVocabularyReviewSkills } from '../server/vocabulary/review-selection.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -141,6 +144,72 @@ test('pure cue answer space and independent schedule carry forward even without 
   assert.equal(JSON.parse(schedule.scheduler_state_json as string).strongSuccesses,4);
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM learner_words WHERE learner_id='b'").get()!.n,0);
 });
+
+for (const scenario of [
+  { name: 'shared pure coverage excludes dictionary production', targeted: null, recognition: false, proxied: true, skills: [] },
+  { name: 'shared targeted content restores production', targeted: 'shared', recognition: false, proxied: false, skills: ['production'] },
+  { name: 'usable private targeted content serves while shared coverage remains proxied', targeted: 'learner', recognition: false, proxied: true, skills: ['production'] },
+  { name: 'proxied production leaves due recognition eligible', targeted: null, recognition: true, proxied: true, skills: ['recognition'] },
+] as const) {
+  test(`offline migration preserves proxy admission: ${scenario.name}`, () => {
+    setDb(db);
+    publication('pure_cue','proxy-greeting');
+    db.prepare(`INSERT INTO pure_cues(id,stimulus,axis_note,teaching_note,created_at)
+      VALUES ('proxy-greeting','a greeting','politeness','compare forms',?)`).run(timestamp);
+    db.exec("INSERT INTO pure_cue_accepted_words VALUES ('proxy-greeting','w1',0),('proxy-greeting','w2',1)");
+    // Proxy coverage is independent of whether the standalone cue is due today.
+    db.prepare(`INSERT INTO learner_pure_cue_state(learner_id,pure_cue_id,interval_hours,ease_factor,last_studied_at,next_due_at,strong_since,strong_successes,adopted_at)
+      VALUES ('a','proxy-greeting',72,2.8,?,'2026-10-18T00:00:00.000Z',NULL,0,?)`).run(timestamp,timestamp);
+    db.exec("UPDATE learner_word_state SET status='review' WHERE learner_id='a' AND word_id='w1'");
+    db.prepare(`INSERT INTO learner_owned_word_skill_state
+      (learner_id,word_id,skill_id,enabled,interval_hours,last_studied_at,next_due_at,ease_factor)
+      VALUES ('a','w1','production',1,24,'2026-10-01T00:00:00.000Z',?,2.65)`).run(timestamp);
+    if (scenario.recognition) db.prepare(`INSERT INTO learner_owned_word_skill_state
+      (learner_id,word_id,skill_id,enabled,interval_hours,last_studied_at,next_due_at,ease_factor)
+      VALUES ('a','w1','recognition',1,24,'2026-10-01T00:00:00.000Z',?,2.5)`).run(timestamp);
+    db.prepare(`INSERT INTO learner_owned_word_skill_relevance
+      (learner_id,word_id,skill_id,relevance_state,updated_at,source_event_id)
+      VALUES ('a','w1','production','normal',?,NULL)`).run(timestamp);
+    if (scenario.targeted) cue('distinct-greeting',scenario.targeted);
+    if (scenario.targeted === 'learner') {
+      db.prepare(`INSERT INTO learner_owned_production_cue_lifecycle_events
+        (event_id,learner_id,cue_id,task_id,lifecycle_kind,occurred_at)
+        VALUES ('activate-private','a','distinct-greeting','production-task:w1:default_production','activated',?)`).run(timestamp);
+      db.prepare(`INSERT INTO learner_owned_production_cue_activation_state
+        (learner_id,cue_id,active,latest_lifecycle_event_id,updated_at)
+        VALUES ('a','distinct-greeting',1,'activate-private',?)`).run(timestamp);
+    }
+
+    const legacyState = () => ({
+      skills: db.prepare('SELECT * FROM learner_owned_word_skill_state ORDER BY learner_id,word_id,skill_id').all(),
+      relevance: db.prepare('SELECT * FROM learner_owned_word_skill_relevance ORDER BY learner_id,word_id,skill_id').all(),
+      pure: db.prepare('SELECT * FROM learner_pure_cue_state ORDER BY learner_id,pure_cue_id').all(),
+    });
+    const before = legacyState();
+    // These are the actual legacy coverage and usable-cue adapters used by
+    // persistence.ts's review relevance gate, before any vocabulary conversion.
+    const legacy = runWithLearnerId('a',() => ({
+      proxied: isWordProductionProxied('w1'),
+      targeted: getActiveProductionCuesForWord('w1').length > 0,
+    }));
+    assert.equal(legacy.proxied,scenario.proxied);
+    const legacyProductionAdmitted = !legacy.proxied || legacy.targeted;
+    assert.equal(legacyProductionAdmitted,scenario.skills.some(skill => skill === 'production'));
+
+    convert(); migrateDatabase(db);
+    assert.deepEqual(legacyState(),before,'conversion preserves scheduler evidence and explicit relevance');
+    const currentState = () => ({
+      words: db.prepare('SELECT * FROM learner_word_schedules ORDER BY learner_id,word_id').all(),
+      pure: db.prepare('SELECT * FROM learner_pure_cue_schedules ORDER BY learner_id,content_id').all(),
+    });
+    const imported = currentState();
+    const selected = runWithLearnerId('a',() => selectVocabularyReviewSkills({now:timestamp}));
+    assert.deepEqual(selected,scenario.skills.map(skillId => ({wordId:'w1',skillId})),
+      'the migrated selector must preserve content-derived eligibility, not only copied due dates');
+    assert.deepEqual(currentState(),imported,'admission does not rewrite schedules or adopt cues');
+    assert.deepEqual(legacyState(),before,'derived proxy coverage never becomes stored learner relevance');
+  });
+}
 
 test('contrast preserves choices, correct answer, explanations and supporting relationships', () => {
   publication('contrast_cluster','cluster');

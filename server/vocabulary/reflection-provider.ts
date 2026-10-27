@@ -1,3 +1,4 @@
+import { vocabularyAuthoredPromptBody } from '../../src/domain/vocabulary-production-coverage.ts';
 import { readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
@@ -96,7 +97,7 @@ export function normalizeVocabularyReflectionOutput(job:VocabularyReflectionJob,
     const body:Record<string,VocabularyJson>={...previousBody,prompt:operation.prompt};
     if('stimulus' in body)body.stimulus={kind:'direct_text',text:operation.prompt};
     const {contentId:_id,version:_version,createdAt:_created,updatedAt:_updated,...draft}=original;
-    const content={...draft,body,...(operation.strategy==='update_existing'?{contentId:original.contentId}
+    const content={...draft,body:vocabularyAuthoredPromptBody(original.body,body),...(operation.strategy==='update_existing'?{contentId:original.contentId}
       :{contentId:randomUUID(),originKind:'model' as const,authorKind:'service',authorId:VOCABULARY_REFLECTION_SERVICE_ID})};
     const common={operationKey:`repair-${index+1}`,scope:original.accessScope==='shared'?{kind:'shared' as const}
       :{kind:'learner' as const,learnerId:original.ownerLearnerId!},rationale:operation.rationale,content};
