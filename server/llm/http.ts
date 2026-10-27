@@ -1,3 +1,4 @@
+import { timeProviderCall } from '../request-timing.ts';
 import { ProviderHttpError, ProviderTimeoutError, ProviderInvalidResponseError, type JsonValue } from './types.js';
 
 export type FetchImplementation = typeof globalThis.fetch;
@@ -18,15 +19,18 @@ export async function postJson(
   let response: Response;
   let responseText: string;
   try {
-    response = await fetchImplementation(url, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', ...headers },
-      body: JSON.stringify(body),
-      signal,
-    });
-    signal.throwIfAborted();
-    responseText = await response.text();
-    signal.throwIfAborted();
+    ({ response, responseText } = await timeProviderCall(async () => {
+      const received = await fetchImplementation(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...headers },
+        body: JSON.stringify(body),
+        signal,
+      });
+      signal.throwIfAborted();
+      const text = await received.text();
+      signal.throwIfAborted();
+      return { response: received, responseText: text };
+    }));
   } catch (error) {
     // Our deadline and explicit transport deadline codes prove timeouts; unrelated aborts do not.
     if (signal.aborted || isTransportTimeout(error)) throw new ProviderTimeoutError(provider, timeoutMs);

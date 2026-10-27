@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import type { AppConfig } from '../config.ts';
 import { getAppConfig } from '../config.ts';
+import { instrumentDatabase } from './statement-timing.ts';
 
 let configCache: AppConfig | null = null;
 let dbInstance: DatabaseSync | null = null;
@@ -39,7 +40,7 @@ export function getDb(): DatabaseSync {
 }
 
 export function setDb(database: DatabaseSync): void {
-  dbInstance = database;
+  dbInstance = instrumentDatabase(database);
 }
 
 export function closeDbConnection(): void {

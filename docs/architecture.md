@@ -56,6 +56,7 @@ For more frontend code navigation, see the
 | `index.ts` | Express app, route handlers (thin) |
 | `config.ts` | `APP_MODE`, learner id, data dir, study profile, port |
 | `observability.ts`, `hosted-observability.ts` | Content-free HTTP/runtime/SQLite/backup metrics and private Prometheus listener |
+| `request-timing.ts`, `db/statement-timing.ts` | Per-request phase accounting (SQLite, provider, auth, response), `Server-Timing` header, and slow-request log |
 | `client-incident-diagnostics.ts`, `study-commit-diagnostics.ts` | Private bounded client-transport and server commit diagnostic sidecars |
 | `db.ts` | Barrel: init DB on import, re-export `server/db/*` |
 | `db/` | Split persistence and domain logic — see [server-db.md](./server-db.md) |
@@ -74,6 +75,7 @@ For more frontend code navigation, see the
 | `VITE_API_BASE` | Frontend | API base override; defaults to `http://localhost:5174` in Vite development and the serving origin in production builds |
 | `APP_USE_LOCAL_PROVIDER_PROXY` | Backend | Exact `true` opts local OpenAI/OpenRouter calls into `127.0.0.1:7897`; hosted default is direct |
 | `APP_METRICS_PORT` | Backend | Optional private Prometheus listener; hosted Fly config uses `9091` |
+| `APP_SLOW_REQUEST_MS` | Backend | Local-time threshold (excluding provider waits) for `request.slow` log events; default `500` |
 | `VITE_STUDY_PROFILE` | Frontend | Client study profile |
 
 ## Data directories

@@ -23,6 +23,7 @@ encounters and ratings and requires the offline schema-upgrade procedure.
 | Module | Responsibility |
 | --- | --- |
 | [`connection.ts`](../server/db/connection.ts) | Config resolution per `initDbConnection()`, SQLite singleton (`getDb` / `setDb`) |
+| [`statement-timing.ts`](../server/db/statement-timing.ts) | `setDb` wraps the live connection so every statement and transaction is timed for [request timing](ops/hosted-observability.md#diagnose-a-slow-request) |
 | [`types.ts`](../server/db/types.ts) | Row/DTO types, scheduling constants, public type re-exports |
 | [`persistence.ts`](../server/db/persistence.ts) | Existing query/domain functions (words, priority, sessions, contrast, scheduler, analytics, durable learning-policy metadata) and `initializeDatabase` |
 | [`unstudied-admission.ts`](../server/db/unstudied-admission.ts) | Experimental diet/stash unstudied admission selector |

@@ -21,6 +21,10 @@ export function requireLearnerId(): string {
   return learnerId;
 }
 
+export function currentLearnerIdOrNull(): string | null {
+  return learnerContext.getStore() ?? null;
+}
+
 export function installLearnerContextSqlFunction(): void {
   getDb().function('current_learner_id', { deterministic: false }, requireLearnerId);
 }

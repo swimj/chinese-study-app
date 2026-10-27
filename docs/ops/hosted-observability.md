@@ -7,9 +7,11 @@ protected by Fly organization access, separate from the application's
 Prometheus metrics on a private listener, without a public `/metrics` endpoint.
 
 Start with a representative slow action and compare the dashboard's request,
-process, and storage measurements. These measurements help locate a hotspot
-before adding deeper instrumentation; they do not provide distributed tracing
-or long-retention analytics.
+process, and storage measurements. Every request also records where its time
+went (SQLite, model provider, authentication, response serialization, and the
+remainder), so the first occurrence of a slow request leaves evidence without
+new instrumentation or a reproduction. These measurements do not provide
+distributed tracing, CPU profiles, or long-retention analytics.
 
 A separate operator **usage pulse** page (`#operator-usage`, gated by
 `APP_OPERATOR_CLERK_USER_IDS`) provides content-free cohort product-usage
@@ -25,6 +27,11 @@ The metrics contain only bounded operational dimensions:
 
 - normalized Express route templates, HTTP methods, and status codes;
 - request latency, response sizes, and in-flight counts;
+- per-route request time split into the fixed phases `sqlite`, `provider`,
+  `auth`, `response`, and `other`, plus per-route SQLite statement and
+  slow-request counts;
+- process-wide SQLite time and statement counts split into `request` and
+  `background` context, and SQLite transaction hold time;
 - process CPU, memory, uptime, and event-loop delay;
 - bounded application version and Fly deployment identifier labels;
 - SQLite database and WAL file sizes;
@@ -47,6 +54,14 @@ stack and cause chain, and runtime release identity. Those details are
 deliberately retained because omitting them makes deterministic commit failures
 impossible to diagnose after the browser session is gone. Authorization headers,
 credentials, cookies, and unrelated request headers are never recorded.
+
+Slow-request log events are not metrics. A `request.slow` event records the
+route template, phase totals, statement count, transaction count, the five
+most expensive statements, and the server-derived learner id. Statements are
+identified by a fingerprint and a normalized prefix of their SQL text: quoted
+literals become `'?'`, numbers become `N`, and placeholder lists collapse, so
+bound parameter values, answers, and other learner content never appear.
+Statement fingerprints must not become metric labels.
 
 Fly adds its own `app`, `instance`, `host`, and `region` labels when scraping.
 Do not emit those labels from the application.
@@ -201,19 +216,58 @@ comparison.
 4. Compare response size by route. A large `/api/session-payload` or static
    response can make transfer and serialization visible even when handler work
    is otherwise healthy.
-5. Check CPU, event-loop delay, and memory over the same interval. High CPU or
+5. Read **Mean API time by phase**, **SQLite time per request by route**, and
+   **SQLite statements per request by route**. They show whether a slow route
+   spends its time in SQLite, an upstream provider, authentication, response
+   serialization, or `other` (handler JavaScript and waiting behind other work
+   on the event loop). Many statements at low per-statement cost point to
+   repeated per-item queries rather than one slow query.
+6. Check CPU, event-loop delay, and memory over the same interval. High CPU or
    event-loop delay indicates process saturation or blocking work. Low CPU and
    event-loop delay with one slow route points instead toward I/O, SQLite, or
-   an upstream provider.
-6. Check database/WAL size, volume use, and backup age for operational context.
+   an upstream provider. **SQLite event-loop load** shows whether background
+   work (workers, schedulers, and metrics reads) is occupying the single
+   SQLite connection and event loop while requests wait.
+7. Check database/WAL size, volume use, and backup age for operational context.
    Backup age approaching 3,600 seconds is already a stop-writes condition in
    the hosted deployment runbook. Treat any red availability indicator as an
    operational fault rather than a fresh backup.
 
-This first slice deliberately does not label individual SQL statements or
-provider calls. Once a repeatable slow route is identified, add a bounded
-timer around the relevant persistence or provider boundary rather than adding
-unbounded tracing everywhere.
+Metrics stop at the fixed phase labels. Individual statements appear only in
+slow-request events, described next.
+
+## Diagnose a slow request
+
+Every response carries a `Server-Timing` header with SQLite time and statement
+count, authentication time, provider wait, and total application time until
+headers were sent. Open the request in browser DevTools (**Network**, then
+**Timing**) to see the server's breakdown for that exact request.
+
+A request whose local time (wall time excluding provider waits) reaches
+`APP_SLOW_REQUEST_MS` (default 500) writes one compact JSON line to stdout:
+
+```bash
+fly logs --app <app-name> | grep '"request.slow"'
+```
+
+Read the event in this order:
+
+1. `phasesMs` splits `durationMs` into exclusive buckets. `other` is the
+   remainder: handler JavaScript plus time spent waiting for the event loop.
+2. `sqlite.statements` and `sqlite.topStatements` identify the statements
+   that consumed SQLite time. A high `count` on one fingerprint means a
+   per-item query inside a loop; a high `maxMs` means one expensive statement.
+   Run `EXPLAIN QUERY PLAN` on that statement against a restored copy.
+3. `sqlite.maxTransactionMs` is the longest transaction this request held.
+   Other writers wait for it.
+4. `otherSqliteMs` and `concurrentRequestsAtStart` indicate contention. A
+   large `otherSqliteMs` with a small own `sqlite` phase means other requests
+   or background work held the event loop while this request waited.
+5. `learnerId` correlates the event with a learner whose data volume may
+   explain the cost.
+
+Background SQLite work and work that continues after a response has been sent
+count toward the `background` context rather than toward any request.
 
 ## Retention and follow-up threshold
 
@@ -225,8 +279,8 @@ true:
 - performance regressions need comparison across release windows longer than
   15 days;
 - an operational threshold needs unattended notification;
-- a route-level hotspot cannot be explained without bounded SQL/provider
-  spans; or
+- a slow request cannot be explained by its phase breakdown and statement
+  summary, for example CPU-bound JavaScript inside `other`; or
 - the managed dashboard cannot support the beta's routine diagnosis needs.
 
 If longer retention or alerting becomes necessary, federate the Fly Prometheus

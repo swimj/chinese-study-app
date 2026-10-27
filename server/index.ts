@@ -74,6 +74,7 @@ import {
   recoverPendingReflectionInvocations,
   requireLearnerId,
   runWithLearnerId,
+  currentLearnerIdOrNull,
   getAttentionBadges,
   markReflectionInboxSeen,
   markFailedReflectionRunsSeen,
@@ -165,6 +166,11 @@ import {
 } from './observability.ts';
 import { readServiceOperationalMetrics } from './hosted-observability.ts';
 import {
+  createRequestTimingMiddleware,
+  createSlowRequestLogger,
+  readSlowRequestThresholdMs,
+} from './request-timing.ts';
+import {
   createStudyCommitDiagnosticSink,
   describeStudyCommitFailure,
   describeStudyCommitSuccess,
@@ -198,6 +204,11 @@ export type CreateAppOptions = {
   frontendDistPath?: string | null;
   logError?: (message: string, metadata: Record<string, string>) => void;
   serviceMetrics?: ServiceMetrics | null;
+  requestTiming?: {
+    clockMs?: () => number;
+    slowRequestThresholdMs?: number;
+    logSlowRequest?: (line: string) => void;
+  };
   studyCommitDiagnosticSink?: StudyCommitDiagnosticSink;
   clientIncidentDiagnosticSink?: ClientIncidentDiagnosticSink;
   introductionLabService?: IntroductionLabService;
@@ -247,7 +258,21 @@ export function createApp(options: CreateAppOptions = {}) {
   const clientIncidentDiagnosticSink = options.clientIncidentDiagnosticSink
     ?? createClientIncidentDiagnosticSink(dbConfig.dataDir);
 
+  const logSlowRequest = createSlowRequestLogger({
+    thresholdMs: options.requestTiming?.slowRequestThresholdMs
+      ?? readSlowRequestThresholdMs(process.env.APP_SLOW_REQUEST_MS),
+    logLine: options.requestTiming?.logSlowRequest,
+  });
+  const requestTiming = createRequestTimingMiddleware({
+    clockMs: options.requestTiming?.clockMs,
+    onSummary: (summary) => {
+      const slow = logSlowRequest(summary);
+      options.serviceMetrics?.observeRequestTiming(summary, slow);
+    },
+  });
+
   app.disable('x-powered-by');
+  app.use(requestTiming.begin);
   if (options.serviceMetrics) app.use(options.serviceMetrics.requestMiddleware);
   app.use(cors(dbConfig.authMode === 'clerk'
     ? {
@@ -260,6 +285,7 @@ export function createApp(options: CreateAppOptions = {}) {
   app.use('/api/whats-new-attention', express.json({ limit: '160kb' }));
   app.use('/api/study-sessions/:sessionId/completion', express.json({ limit: '1mb' }));
   app.use(express.json({ limit: defaultJsonBodyLimit }));
+  app.use(requestTiming.resume);
 
   // Fly health checks and browser assets must remain available without a learner session.
   app.get('/healthz', (_req, res) => {
@@ -276,12 +302,14 @@ export function createApp(options: CreateAppOptions = {}) {
     app.use(express.static(frontendDistPath, { index: false }));
   }
 
+  app.use('/api', requestTiming.authStarted);
   if (dbConfig.authMode === 'trusted_local') {
     app.use('/api', createServiceAccessMiddleware(() => null));
     app.use('/api', (_req, _res, next) => runWithLearnerId(dbConfig.learnerId, next));
   } else {
     app.use('/api', ...createClerkRequestAuthentication(options.resolveClerkProviderSubject));
   }
+  app.use('/api', requestTiming.authFinished(currentLearnerIdOrNull));
   app.use('/api', (req, res, next) => {
     if (
       !['GET', 'HEAD', 'OPTIONS'].includes(req.method)
