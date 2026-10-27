@@ -64,8 +64,12 @@ a direct dictionary baseline is an explicit fallback when curated material is
 unavailable, not a claim of curation. Sense mapping and curation changes emit
 transactional retained events.
 
-`server/vocabulary/production-coverage.ts` derives shared pure-cue proxy coverage
-from accepted-answer membership and the current shared targeted repertoire.
+`src/domain/production-proxy.ts` owns the shared proxy decision and the usable
+targeted-cue exception. Both the legacy composer and vocabulary runtime invoke
+that policy. Their adapters read different authoritative storage:
+`server/db/pure-cues.ts` reads legacy publications, while
+`server/vocabulary/production-coverage.ts` reads accepted-answer membership and
+the current vocabulary targeted repertoire.
 `review-selection.ts` applies it before objective ranking and session capacity;
 `study.ts` also filters definition fallback when serving Practice or Maintain,
 including baselines already stored as private content. A usable owned targeted

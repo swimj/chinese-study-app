@@ -17,7 +17,7 @@ separately. Changed lifecycle rules are not forced through legacy controllers.
 | Words collections and shared page | `my-words-page.test.ts`, legacy `my-words.test.ts`, and `vocabulary-words.test.ts`; vocabulary mode authority requires the new adapter suite |
 | Preparation-wide outage classification and pause | `preparation-provider-failure.test.ts`, old `word-preparation-worker.test.ts`, new `vocabulary-preparation.test.ts`; item budgets and running sibling publication remain separate |
 | Pure-cue stimulus repair | Old repair tests and `vocabulary-pure-cue-improvement.test.ts` use the shared nonempty/changed/trimmed stimulus invariant |
-| Pure-cue proxy admission | `pure-cues.test.ts` exercises the legacy composer; `vocabulary-composition.test.ts` covers current content eligibility, `vocabulary-study.test.ts` covers preview/Start and persisted fallback serving, and `vocabulary-import.test.ts` compares legacy coverage/usable-cue adapters with actual migrated review selection |
+| Pure-cue proxy admission | `production-proxy.test.ts` and `vocabulary-import.test.ts` run shared cases through the common policy and both storage adapters; `pure-cues.test.ts` exercises the legacy composer; `vocabulary-composition.test.ts` covers current content eligibility and `vocabulary-study.test.ts` covers preview/Start and persisted fallback serving |
 | Durable completion and proposal receipts | `vocabulary-session-persistence.test.ts` and `vocabulary-reflection.test.ts` include pending/approved and applied database-reopen cases with idempotent replay |
 
 When replacing an admission path, inventory its eligibility gates as well as its

@@ -1,3 +1,5 @@
+import { allowsProductionUnderProxyPolicy } from '../src/domain/production-proxy.ts';
+import { productionProxyCases } from './helpers/production-proxy-cases.ts';
 import { selectPureCuesForSession, type PureCue } from '../src/domain/pure-cues.ts';
 import { setDb } from '../server/db/connection.ts';
 import { runWithLearnerId } from '../server/db/learner-context.ts';
@@ -145,21 +147,18 @@ test('pure cue answer space and independent schedule carry forward even without 
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM learner_words WHERE learner_id='b'").get()!.n,0);
 });
 
-for (const scenario of [
-  { name: 'shared pure coverage excludes dictionary production', targeted: null, recognition: false, proxied: true, skills: [] },
-  { name: 'shared targeted content restores production', targeted: 'shared', recognition: false, proxied: false, skills: ['production'] },
-  { name: 'usable private targeted content serves while shared coverage remains proxied', targeted: 'learner', recognition: false, proxied: true, skills: ['production'] },
-  { name: 'proxied production leaves due recognition eligible', targeted: null, recognition: true, proxied: true, skills: ['recognition'] },
-] as const) {
+for (const scenario of productionProxyCases) {
   test(`offline migration preserves proxy admission: ${scenario.name}`, () => {
     setDb(db);
-    publication('pure_cue','proxy-greeting');
-    db.prepare(`INSERT INTO pure_cues(id,stimulus,axis_note,teaching_note,created_at)
-      VALUES ('proxy-greeting','a greeting','politeness','compare forms',?)`).run(timestamp);
-    db.exec("INSERT INTO pure_cue_accepted_words VALUES ('proxy-greeting','w1',0),('proxy-greeting','w2',1)");
-    // Proxy coverage is independent of whether the standalone cue is due today.
-    db.prepare(`INSERT INTO learner_pure_cue_state(learner_id,pure_cue_id,interval_hours,ease_factor,last_studied_at,next_due_at,strong_since,strong_successes,adopted_at)
-      VALUES ('a','proxy-greeting',72,2.8,?,'2026-10-18T00:00:00.000Z',NULL,0,?)`).run(timestamp,timestamp);
+    if (scenario.pure) {
+      publication('pure_cue','proxy-greeting');
+      db.prepare(`INSERT INTO pure_cues(id,stimulus,axis_note,teaching_note,created_at)
+        VALUES ('proxy-greeting','a greeting','politeness','compare forms',?)`).run(timestamp);
+      db.exec("INSERT INTO pure_cue_accepted_words VALUES ('proxy-greeting','w1',0),('proxy-greeting','w2',1)");
+      // Proxy coverage is independent of whether the standalone cue is due today.
+      db.prepare(`INSERT INTO learner_pure_cue_state(learner_id,pure_cue_id,interval_hours,ease_factor,last_studied_at,next_due_at,strong_since,strong_successes,adopted_at)
+        VALUES ('a','proxy-greeting',72,2.8,?,'2026-10-18T00:00:00.000Z',NULL,0,?)`).run(timestamp,timestamp);
+    }
     db.exec("UPDATE learner_word_state SET status='review' WHERE learner_id='a' AND word_id='w1'");
     db.prepare(`INSERT INTO learner_owned_word_skill_state
       (learner_id,word_id,skill_id,enabled,interval_hours,last_studied_at,next_due_at,ease_factor)
@@ -193,7 +192,7 @@ for (const scenario of [
       targeted: getActiveProductionCuesForWord('w1').length > 0,
     }));
     assert.equal(legacy.proxied,scenario.proxied);
-    const legacyProductionAdmitted = !legacy.proxied || legacy.targeted;
+    const legacyProductionAdmitted = allowsProductionUnderProxyPolicy({ proxied: legacy.proxied, hasUsableTargetedCue: legacy.targeted });
     assert.equal(legacyProductionAdmitted,scenario.skills.some(skill => skill === 'production'));
 
     convert(); migrateDatabase(db);
