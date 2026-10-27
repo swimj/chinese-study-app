@@ -212,6 +212,7 @@ All HTTP is intercepted, so these fixtures do not modify learner data.
 | `hosted-upgrade.test.ts` | App-only upgrade command: identity confirmation, dirty-tree refusal, deploy build-arg, smoke-failure stays closed, reopen banner clear | `scripts/lib/hosted-upgrade.ts` |
 | `hosted-smoke.test.ts` | Read-only Clerk smoke: existing-learner gate, token mint/revoke, no token leakage | `scripts/lib/hosted-smoke.ts` |
 | `observability.test.ts` | Bounded route labels, request/response histograms, private Prometheus listener, and metrics-port validation | `server/observability.ts` |
+| `request-flight-recorder.test.ts` | Ring retention and filters, per-route aggregation, process samples, query validation, and loopback-only endpoint | `server/request-flight-recorder.ts` |
 | `request-timing.test.ts` | Exclusive request phases, SQLite statement and transaction attribution, context across body parsing, `Server-Timing`, slow-request events, and phase metrics | `server/request-timing.ts`, `server/db/statement-timing.ts` |
 | `content-sharing.test.ts`, `content-sharing-api.test.ts` | UTC weekly second-learner milestones, exact frozen revisions, repeat deduplication, shared-only review content, cross-origin cue attempts, and operator access/input validation | SQL reporting module + temporary SQLite/Express API |
 | `content-sharing-page.test.ts` | UTC week navigation, reuse evidence, current overlap distinction, missing generation data, safe labels, and empty weeks | Presentation helpers + React server render |

@@ -57,6 +57,7 @@ For more frontend code navigation, see the
 | `config.ts` | `APP_MODE`, learner id, data dir, study profile, port |
 | `observability.ts`, `hosted-observability.ts` | Content-free HTTP/runtime/SQLite/backup metrics and private Prometheus listener |
 | `request-timing.ts`, `db/statement-timing.ts` | Per-request phase accounting (SQLite, provider, auth, response), `Server-Timing` header, and slow-request log |
+| `request-flight-recorder.ts` | In-memory recent request summaries and process samples, served to loopback callers on the metrics listener |
 | `client-incident-diagnostics.ts`, `study-commit-diagnostics.ts` | Private bounded client-transport and server commit diagnostic sidecars |
 | `db.ts` | Barrel: init DB on import, re-export `server/db/*` |
 | `db/` | Split persistence and domain logic — see [server-db.md](./server-db.md) |
