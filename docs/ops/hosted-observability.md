@@ -269,6 +269,38 @@ Read the event in this order:
 Background SQLite work and work that continues after a response has been sent
 count toward the `background` context rather than toward any request.
 
+## Read recent request timings
+
+When a report arrives after the fact ("it was slow ten minutes ago"), read the
+in-memory flight recorder instead of waiting for a reproduction. While the
+metrics listener is enabled, the process keeps the last 2,000 request
+summaries (the same shape as a `request.slow` event, recorded for every
+request regardless of threshold) and one process sample every 10 seconds for
+the last hour:
+
+```bash
+fly ssh console --app <app-name> --command \
+  'npm run --silent hosted:inspect-request-timings -- --port=9091 --limit=20'
+```
+
+Narrow the read with `--route=/api/session-payload`, `--min-local-ms=250`, or
+`--since=<ISO timestamp>`. The output contains:
+
+- `routes`: per-route count, p50/p95/max of total and local time, mean phase
+  times, and statement counts across every matching retained request, slowest
+  p95 first;
+- `requests`: the newest matching summaries, up to `--limit`; and
+- `samples`: newest-first 10-second process samples with completed requests,
+  event-loop delay p95 and max, CPU percent of one core, memory, and SQLite
+  time inside requests and in background work.
+
+`oldestRetainedAt` shows how far back the request buffer reaches; on a busy
+Machine it may cover less than the sample hour. The recorder lives in process
+memory, so a restart or deploy clears it. Its endpoint,
+`/debug/request-timings` on the metrics port, answers only loopback callers
+because summaries include learner ids; reach it from `fly ssh console`, not
+from another Machine.
+
 ## Retention and follow-up threshold
 
 Fly currently retains managed metrics for approximately 15 days and does not
