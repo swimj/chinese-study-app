@@ -160,7 +160,7 @@ export function ContentQualityPanel({ legacyContentEditing = true }: { legacyCon
     {timestampOptionsOpen && <TimestampColumnDialog title={view === 'ratings' ? 'Changed' : 'Latest rating'} display={timestampDisplay} onDisplay={setTimestampDisplay}
       sorted={sortBy === 'updatedAt'} direction={direction} onSort={(order) => { setSortBy('updatedAt'); setDirection(order); }} onClose={() => setTimestampOptionsOpen(false)} />}
     {legacyContentEditing ? <ContentImprovementWorkspace selection={improvementSelection} />
-      : <p className="notes">These are historical content ratings. Use <a href="#operator-vocabulary">Vocabulary content review</a> to review and repair current study content.</p>}
+      : <p className="notes">These are historical content ratings.</p>}
   </section>;
 }
 

@@ -8,7 +8,7 @@ import { ContentQualityBreakdowns, ContentQualityPanel } from '../src/pages/Cont
 test('historical Mandarin quality view links current repair instead of mounting the retired editor', () => {
   const html = renderToStaticMarkup(createElement(ContentQualityPanel,{ legacyContentEditing: false }));
   assert.match(html,/historical content ratings/);
-  assert.match(html,/href="#operator-vocabulary"/);
+  assert.doesNotMatch(html,/href="#operator-vocabulary"/);
   assert.doesNotMatch(html,/id="content-improvement-workspace"|Open content by source ID|Apply approved revision/);
   const legacy = renderToStaticMarkup(createElement(ContentQualityPanel));
   assert.match(legacy,/id="content-improvement-workspace"/);

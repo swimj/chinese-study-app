@@ -311,7 +311,7 @@ function App({ onSignOut, accountScope = 'trusted-local' }: { onSignOut?: () => 
           }}
         />
       ) : currentPage === 'content' ? (
-        <><p><a href="#operator-vocabulary" onClick={()=>setCurrentPage('operator-vocabulary')}>Vocabulary content review</a></p><ContentDiagnosticsPage
+        <ContentDiagnosticsPage
           data={contentPage.data}
           kind={contentPage.kind}
           query={contentPage.query}
@@ -319,7 +319,7 @@ function App({ onSignOut, accountScope = 'trusted-local' }: { onSignOut?: () => 
           onQueryChange={contentPage.setQuery}
           onSelectKind={(kind) => void contentPage.selectKind(kind)}
           onSearch={() => void contentPage.submitSearch()}
-        /></>
+        />
       ) : currentPage === 'operator-vocabulary' ? (
         <VocabularyOperatorPage />
       ) : currentPage === 'operator-usage' ? (
