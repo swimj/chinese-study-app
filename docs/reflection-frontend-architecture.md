@@ -261,8 +261,6 @@ and deferred explanation-only items
 appear in the Second opinion queue, while the Proposals view (including its
 Show deferred toggle) continues to require the current execution contract.
 The backend validates the composed diagnosis input before generation.
-When the daily spend cap has been surpassed, non-Luna model options are
-disabled and a tip names the next UTC reset in the browser timezone.
 **By session** provides an artifact-oriented view, including
 explanation items already marked Done. In that view, items whose results carry no proposals are summarized in a
 compact **No durable change** gist derived from the persisted evidence and

@@ -354,17 +354,8 @@ export type ReflectionModelChoice =
   | 'openai:gpt-5.6-terra-high'
   | 'openai:gpt-6-sol-high';
 
-export type ReflectionSpendCapDto = {
-  lunaOnly: boolean;
-  spentUsd: number;
-  capUsd: number;
-  dayKey: string;
-  resetsAt: string;
-};
-
 export type ReflectionGenerationRunsResponse = {
   runs: ReflectionGenerationRunDto[];
-  spendCap: ReflectionSpendCapDto;
 };
 
 export type ReflectionTokenUsageDto = {

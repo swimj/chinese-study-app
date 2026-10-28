@@ -25,7 +25,6 @@ describe('reflection run log presentation', () => {
       artifactDetails: [],
       unreadableArtifactIds: new Set([artifactId]),
       generationRuns: [],
-      spendCap: null,
       qualityStats: { arms: [] },
       selectedArtifact: null,
       selectedArtifactId: null,
@@ -192,19 +191,19 @@ describe('reflection run log presentation', () => {
     assert.doesNotMatch(markup, />Proposal details</);
   });
 
-  test('second-opinion model selector blocks non-Luna arms after the daily spend cap', () => {
+  test('second-opinion model selector offers all currently available models', () => {
     const markup = renderToStaticMarkup(createElement(DeferredSecondOpinionQueue, {
       cards: deferredSecondOpinionCards(),
-      controller: idleController({ spendCap: cappedSpendCap() }),
+      controller: idleController(),
     }));
 
-    assert.match(markup, /Luna is the only available model until/);
+    assert.doesNotMatch(markup, /Luna is the only available model until/);
     assert.match(markup, /value="openai:gpt-5.6-luna-high"/);
     assert.doesNotMatch(markup, /value="openai:gpt-5.6-luna-high" disabled=""/);
     assert.doesNotMatch(markup, /value="zai:glm-5.3-flash-max"/);
-    assert.match(markup, /value="zai:glm-5.3-flash-high" disabled=""/);
+    assert.match(markup, /<option value="zai:glm-5.3-flash-high">GLM-5.3 Flash high<\/option>/);
     assert.doesNotMatch(markup, /value="openai:gpt-5.6-terra-high"/);
-    assert.match(markup, /value="openai:gpt-6-sol-high" disabled=""/);
+    assert.match(markup, /<option value="openai:gpt-6-sol-high" selected="">GPT-6 Sol high<\/option>/);
   });
 
   test('second-opinion empty state stays compact', () => {
@@ -294,9 +293,9 @@ describe('reflection run log presentation', () => {
     assert.doesNotMatch(markup, /Choose model for reflection retry/);
   });
 
-  test('run-meta view explains the Luna-only spend cap', () => {
-    const markup = renderRuns([], null, cappedSpendCap());
-    assert.match(markup, /Luna is the only available model until/);
+  test('empty run-meta view has no spend-policy notice', () => {
+    const markup = renderRuns([]);
+    assert.doesNotMatch(markup, /Luna is the only available model until/);
     assert.match(markup, /No feedback generation attempts yet/);
   });
 
@@ -345,7 +344,6 @@ function idleController(
     artifactDetails: [],
     unreadableArtifactIds: new Set(),
     generationRuns: [],
-    spendCap: null,
     qualityStats: { arms: [] },
     selectedArtifact: null,
     selectedArtifactId: null,
@@ -597,24 +595,12 @@ function deferredProposalArtifact(
 function renderRuns(
   runs: ReflectionPageController['generationRuns'],
   retryStatus: ReflectionPageController['generationRetryStatus'] = null,
-  spendCap: ReflectionPageController['spendCap'] = null,
 ): string {
   return renderToStaticMarkup(createElement(TokenUsageView, {
     runs,
-    spendCap,
     retryStatus,
     onRetry: async () => {},
   }));
-}
-
-function cappedSpendCap(): NonNullable<ReflectionPageController['spendCap']> {
-  return {
-    lunaOnly: true,
-    spentUsd: 0.62,
-    capUsd: 0.5,
-    dayKey: '2026-09-10',
-    resetsAt: '2026-09-11T00:00:00.000Z',
-  };
 }
 
 function run(overrides: {

@@ -303,10 +303,8 @@ Individual reflection jobs select Luna, GLM, or Sol with equal probability,
 regardless of how many encounters their evidence contains. The separate batched
 policy retains GLM/Luna at 70/30 for up to ten items and Sol/GLM/Luna at 60/20/20
 for larger bundles; vocabulary jobs do not currently batch unrelated cases. Selection is
-retained across stages and retries. The spend guard restricts new routing to Luna
-and rejects retries of disallowed arms rather than silently changing models.
-This applies to learner feedback, improvements, and AI second opinions; practice
-and sense authoring keep their independently configured model.
+retained across stages and retries for learner feedback, improvements, and AI
+second opinions. Practice and sense authoring keep their independently configured model.
 
 ### Teaching reserve
 

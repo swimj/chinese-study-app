@@ -5,7 +5,6 @@ import path from 'node:path';
 import { after, before, test } from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
 import { createOpenAiCompatibleAdapter } from '../server/llm/openai-compatible.ts';
-import { getReflectionSpendCap } from '../server/db/reflections.ts';
 import { getDb } from '../server/db/connection.ts';
 import { runWithLearnerId } from '../server/db/learner-context.ts';
 import {
@@ -164,14 +163,16 @@ test('common transport uses explicit service attribution while missing learner s
   assert.ok(!String(row.request_snapshot_json).includes('invocationActor'));
 });
 
-test('shared reflection spend metric includes service-owned vocabulary calls once and isolates requesters',()=>{
-  const before=learner(()=>getReflectionSpendCap()).spentUsd;
+test('service vocabulary spend retains requesting context and separate truthful costs',()=>{
   const id=startServiceModelInvocation({...input,invocationType:'vocabulary_reflection_feedback_v1',serviceId:'vocabulary-reflection',requestingLearnerId:'provenance-a'});
   recordServiceModelInvocationSpend(id,'vocabulary-reflection',{spendUsd:0.25,spendSource:'reported',pricing:{basis:'provider'}});
   finishServiceModelInvocation(id,'vocabulary-reflection','completed',1);
-  assert.equal(learner(()=>getReflectionSpendCap()).spentUsd,before+0.25);
   const other=startServiceModelInvocation({...input,invocationType:'vocabulary_reflection_improvement_v1',serviceId:'vocabulary-reflection',requestingLearnerId:'provenance-b'});
-  recordServiceModelInvocationSpend(other,'vocabulary-reflection',{spendUsd:0.5,spendSource:'reported',pricing:{basis:'provider'}});
+  recordServiceModelInvocationSpend(other,'vocabulary-reflection',{spendUsd:0.75,spendSource:'reported',pricing:{basis:'provider'}});
   finishServiceModelInvocation(other,'vocabulary-reflection','completed',1);
-  assert.equal(learner(()=>getReflectionSpendCap()).spentUsd,before+0.25);
+  const rows=listModelInvocations().rows;
+  assert.equal(rows.find(row=>row.id===id)?.spendUsd,0.25);
+  assert.equal(rows.find(row=>row.id===other)?.spendUsd,0.75);
+  assert.equal(getDb().prepare('SELECT requesting_learner_id FROM model_invocations WHERE id=?').get(id)?.requesting_learner_id,'provenance-a');
+  assert.equal(getDb().prepare('SELECT requesting_learner_id FROM model_invocations WHERE id=?').get(other)?.requesting_learner_id,'provenance-b');
 });

@@ -17,7 +17,6 @@ import { ReflectionEvidenceError } from '../server/reflection/evidence.ts';
 import {
   createInitialReflectionGenerationService as createProductionReflectionGenerationService,
   RetiredReflectionSourceModelError,
-  ReflectionSpendCapError,
   type InitialReflectionGenerationDependencies,
 } from '../server/reflection/generation.ts';
 import {
@@ -795,7 +794,7 @@ describe('initial reflection generation orchestration', () => {
     assert.deepEqual(selected, ['luna']);
   });
 
-  test('routes unselected initial generation to Luna after the daily spend cap', async () => {
+  test('routes unselected initial generation using bundle weights', async () => {
     const selected: string[] = [];
     const makeArm = (label: string) => stagedProvider(
       async () => {
@@ -812,25 +811,25 @@ describe('initial reflection generation orchestration', () => {
         'openrouter:gemini-3.6-flash': makeArm('gemini'),
         'openai:gpt-5.6-terra-high': makeArm('terra'),
         'openai:gpt-6-sol-high': makeArm('sol'),
+        'zai:glm-5.3-flash-high': makeArm('glm'),
       },
-      getSpendCap: () => cappedSpendCap(),
       random: () => 0.99,
       materializeArtifact: () => ({
         created: true,
-        artifact: artifactDetail('capped-artifact', 1),
+        artifact: artifactDetail('weighted-artifact', 1),
       }),
       recordRun: () => {},
     });
 
     assert.deepEqual(await service.generate('session-1', {}), {
-      artifactId: 'capped-artifact',
+      artifactId: 'weighted-artifact',
       proposalCount: 1,
       status: 'created',
     });
-    assert.deepEqual(selected, ['luna']);
+    assert.deepEqual(selected, ['glm']);
   });
 
-  test('refuses an explicit non-Luna choice after the daily spend cap', async () => {
+  test('runs an explicit non-Luna choice', async () => {
     const selected: string[] = [];
     const service = createInitialReflectionGenerationService({
       findExistingArtifact: () => null,
@@ -847,22 +846,18 @@ describe('initial reflection generation orchestration', () => {
           return diagnosisSuccess();
         },
       ),
-      getSpendCap: () => cappedSpendCap(),
       materializeArtifact: () => ({
         created: true,
-        artifact: artifactDetail('blocked-artifact', 1),
+        artifact: artifactDetail('explicit-artifact', 1),
       }),
       recordRun: () => {},
     });
 
-    await assert.rejects(
-      () => service.generate('session-1', {}, 'zai:glm-5.3-flash-max'),
-      ReflectionSpendCapError,
-    );
-    assert.deepEqual(selected, []);
+    await service.generate('session-1', {}, 'zai:glm-5.3-flash-max');
+    assert.deepEqual(selected, ['glm']);
   });
 
-  test('allows explicit Luna after the daily spend cap', async () => {
+  test('retains the stored model on retry and honors an explicit replacement', async () => {
     const selected: string[] = [];
     const service = createInitialReflectionGenerationService({
       findExistingArtifact: () => null,
@@ -879,7 +874,7 @@ describe('initial reflection generation orchestration', () => {
           return diagnosisSuccess();
         },
       ),
-      getSpendCap: () => cappedSpendCap(),
+      comparisonProviders: { 'zai:glm-5.3-flash-high': stagedProvider(async () => { selected.push('glm'); return diagnosisSuccess(); }) },
       getContinuationRetrySource: () => currentDiagnosisRetrySource('failed-run', bundle(), {
         provider: 'zai',
         model: 'glm-5.3-flash-high',
@@ -892,10 +887,10 @@ describe('initial reflection generation orchestration', () => {
       recordRun: () => {},
     });
 
-    await assert.rejects(() => service.retry('failed-run'), ReflectionSpendCapError);
+    await service.retry('failed-run');
     await service.generate('session-1', {}, 'openai:gpt-5.6-luna-high');
     await service.retry('failed-run', 'openai:gpt-5.6-luna-high');
-    assert.deepEqual(selected, ['luna', 'luna']);
+    assert.deepEqual(selected, ['glm', 'luna', 'luna']);
   });
 
   test('refuses same-model retry when the stored model is no longer a current choice', async () => {
@@ -1136,15 +1131,5 @@ function operation(): ReflectionOperation {
     kind: 'suppress_definition_production',
     version: 1,
     wordId: 'target',
-  };
-}
-
-function cappedSpendCap() {
-  return {
-    lunaOnly: true,
-    spentUsd: 0.62,
-    capUsd: 0.5,
-    dayKey: '2026-07-29',
-    resetsAt: '2026-07-30T00:00:00.000Z',
   };
 }

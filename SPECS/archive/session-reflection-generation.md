@@ -199,8 +199,7 @@ model randomly after building each bundle: at most 10 included items use
 GLM-5.3 Flash high / GPT-5.6 Luna high at 70/30; more than 10 use GPT-6 Sol
 high / GLM / Luna at 60/20/20. Ordinary and pure-cue initial bundles are routed
 independently. Terra is not offered by default. Explicit model choices and
-manual second opinions bypass these weights; the Luna-only daily spend cap
-still takes precedence. A deliberate retry reuses the exact stored bundle and defaults
+manual second opinions bypass these weights. A deliberate retry reuses the exact stored bundle and defaults
 to the source run's model when that model is still a configured comparison arm.
 Same-model retry of a retired model is refused; the operator must select another
 configured model. Each candidate retains its originating generation-run identity.
@@ -433,27 +432,6 @@ Token categories, finish/stop metadata, and cost estimates may be exposed for
 dogfood observability. Price estimates must identify or preserve the rate
 snapshot used; they are operational intuition, not learning evidence or a
 correctness signal.
-
-### Daily spend cap
-
-Each learner has a provisional **$0.50 UTC-day** spend cap on persisted
-reflection generation estimates. The UTC day is taken from `completed_at`.
-Null estimates count as zero. Intake triage is out of scope.
-
-Once same-day estimated spend **surpasses** $0.50:
-
-- unselected initial generation routes only to Luna;
-- explicit non-Luna choices (retry and second opinion) are refused rather than
-  silently rewritten;
-- Luna remains available with no second cap.
-
-The run that first crosses the threshold still completes on the model that
-started. Overlapping in-flight expensive runs are not reserved against the cap.
-This is a generous beta guardrail, not a billing product.
-
-The generation-run log returns the current cap state so selectors can disable
-non-Luna arms and show when Luna-only routing resets (next UTC midnight,
-formatted in the learner's timezone).
 
 ## 7. Integration Invariants
 

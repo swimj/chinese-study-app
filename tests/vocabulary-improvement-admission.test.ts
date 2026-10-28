@@ -2,13 +2,13 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { beforeEach,afterEach,test } from 'node:test';
+import { runWithLearnerId } from '../server/db/learner-context.ts';
 import { setDb } from '../server/db/connection.ts';
 import { createVocabularyContent,createVocabularySense,establishVocabularySenseCatalog,getVocabularyContentForMaintenance,getVocabularySenseCatalog,getVocabularySenses,mapVocabularyContentSense,updateVocabularyContent,updateVocabularySense } from '../server/db/vocabulary-content.ts';
 import { createVocabularyPracticeProvider } from '../server/vocabulary/preparation.ts';
 import type { WordContentDocument } from '../src/domain/word-content/types.ts';
 import { createVocabularyReflectionProvider } from '../server/vocabulary/reflection-provider.ts';
 import type { VocabularySenseEnsurer } from '../server/vocabulary/improvement-admission.ts';
-import { buildReflectionSpendCap } from '../server/reflection/spend-cap.ts';
 import type { VocabularyContent } from '../src/domain/vocabulary-content.ts';
 import type { VocabularyReflectionJob } from '../src/domain/vocabulary-reflection.ts';
 import type { ProviderAdapter,ProviderRunRequest } from '../server/llm/types.ts';
@@ -24,7 +24,7 @@ beforeEach(()=>{
     CREATE TABLE learners(learner_id TEXT PRIMARY KEY); INSERT INTO learners VALUES ('learner');
     CREATE TABLE lexical_words(id TEXT PRIMARY KEY,hanzi TEXT,traditional TEXT,pinyin TEXT,meaning TEXT);
     INSERT INTO lexical_words VALUES ('word','放大',NULL,'fang4 da4','enlarge; amplify');
-    CREATE TABLE model_invocations(id TEXT PRIMARY KEY,actor_kind TEXT,actor_id TEXT,learner_id TEXT,status TEXT);
+    CREATE TABLE model_invocations(id TEXT PRIMARY KEY,actor_kind TEXT,actor_id TEXT,learner_id TEXT,status TEXT,spend_usd REAL,requesting_learner_id TEXT,timestamp TEXT,invocation_type TEXT);
     CREATE TABLE vocabulary_reflection_jobs(job_id TEXT PRIMARY KEY,model_choice TEXT); INSERT INTO vocabulary_reflection_jobs VALUES ('job',NULL);`);
   for(const name of ['0039_vocabulary_content','0045_vocabulary_provenance_links','0050_vocabulary_improvement_admission','0051_vocabulary_pure_cue_promotion'])
     db.exec(readFileSync(new URL(`../server/db/migrations/${name}.sql`,import.meta.url),'utf8'));
@@ -40,15 +40,15 @@ function job(kind:VocabularyReflectionJob['kind']='exercise_improvement'):Vocabu
     evidence:[{encounterId:'encounter',wordId:'word',workNumber:1,presentedActionId:'presented',presentedAt:at,mode:'practice',snapshot:{contentId:'original',contentVersion:1,kind:'production',role:'general',body:{prompt:'请把这张照片____后再打印。'},assessment:{acceptedAnswers:['放大']}},responses:[],effectiveResponses:[],feedback:[],effectiveFeedback:[],skipped:false,presentationUndone:false}]}};
 }
 const readiness:VocabularySenseEnsurer=async()=>({catalog:getVocabularySenseCatalog('word'),senses:getVocabularySenses('word'),source:'existing'});
-function provider(reply:(request:ProviderRunRequest,index:number)=>unknown|Promise<unknown>,options:{ensureSenses?:VocabularySenseEnsurer;ledger?:boolean;adapterId?:string;spend?:number}={}) {
+function provider(reply:(request:ProviderRunRequest,index:number)=>unknown|Promise<unknown>,options:{ensureSenses?:VocabularySenseEnsurer;ledger?:boolean;adapterId?:string}={}) {
   const requests:ProviderRunRequest[]=[];
   const adapter:ProviderAdapter={id:options.adapterId??'fake',defaultBaseUrl:'https://unused.invalid',apiKeyEnvironmentVariable:'KEY',structuredOutputMode:'json_schema',async run(request){
     requests.push(request);const value=await reply(request,requests.length);
     const invocationId=options.ledger?`invocation-${requests.length}`:null;
-    if(invocationId)db.prepare("INSERT INTO model_invocations VALUES (?,'service','vocabulary-reflection',NULL,'completed')").run(invocationId);
+    if(invocationId)db.prepare("INSERT INTO model_invocations(id,actor_kind,actor_id,learner_id,status) VALUES (?,'service','vocabulary-reflection',NULL,'completed')").run(invocationId);
     return {provider:'fake',model:'fake',responseId:null,structuredOutputMode:'json_schema',rawText:JSON.stringify(value),finishReason:'stop',rawResponse:null,usage:{inputTokens:null,cachedInputTokens:null,cacheWriteInputTokens:null,outputTokens:null,reasoningTokens:null,totalTokens:null},invocationId};
   }};
-  return {requests,provider:createVocabularyReflectionProvider({environment:{OPENAI_API_KEY:'fake'},adapter,ensureSenses:options.ensureSenses??readiness,spendCap:()=>buildReflectionSpendCap(options.spend??1,new Date(at))})};
+  return {requests,provider:createVocabularyReflectionProvider({random:()=>0,environment:{OPENAI_API_KEY:'fake'},adapter,ensureSenses:options.ensureSenses??readiness})};
 }
 const single={outcome:'single_sense',rationale:'Photo enlargement is the intended use, though direction is missing.',senseIds:['size']};
 const repair={pureCueReferral:null,diagnosis:'Make the intended direction explicit.',operations:[{sourceContentId:'original',strategy:'replace',rationale:'Clarifies larger.',prompt:'Make this image larger before printing it.',acceptedAnswers:['放大']}]};
@@ -349,11 +349,28 @@ test('promotion migration retains stage evidence and immutability while admittin
   }finally{migrationDb.close();}
 });
 
+for (const spend of [0.1, 100]) {
+  test(`internal content improvement runs all stages with inherited learner context and $${spend} recorded spend`,async()=>{
+    db.prepare(`INSERT INTO model_invocations(id,actor_kind,actor_id,status,spend_usd,requesting_learner_id,timestamp,invocation_type)
+      VALUES ('historical','service','vocabulary-reflection','completed',?,'learner',?,'vocabulary_reflection_improvement')`)
+      .run(spend,new Date().toISOString());
+    const trial=provider((_request,index)=>index===1?single:repair);
+    const result=await runWithLearnerId('learner',()=>trial.provider.run(job()));
+    assert.equal(result.kind,'exercise_improvement');
+    if(result.kind!=='exercise_improvement')return;
+    assert.equal(result.result.admission?.outcome,'single_sense');
+    assert.equal(result.result.proposal?.operations.length,1);
+    assert.equal(trial.requests.length,2);
+    assert.deepEqual(trial.requests.map(request=>request.provenance?.stepName),['sense_mapping','single_improvement']);
+    assert.ok(trial.requests.every(request=>request.invocationActor?.kind==='service'));
+    assert.equal(db.prepare("SELECT spend_usd FROM model_invocations WHERE id='historical'").get()!.spend_usd,spend);
+  });
+}
 
 test('reflection repertoire reaches the same general invocation as preparation while retaining its selected model',async()=>{
   db.prepare("UPDATE vocabulary_reflection_jobs SET model_choice='openai:gpt-6-sol-high'").run();
   for(const senseId of ['size','effect'])updateVocabularySense(senseId,1,{status:'active',description:{label:senseId,notes:[],examples:[{text:'把图片放大。',translation:'Enlarge the image.',pronunciation:null}]}},actor);
-  const trial=provider((_request,index)=>index===1?laundry:repertoire,{spend:0});
+  const trial=provider((_request,index)=>index===1?laundry:repertoire);
   await trial.provider.run(job());
   const reflected=trial.requests[1]!;
   let sent:{messages:Array<{content:string}>;response_format:{json_schema:{name:string;schema:unknown}}}|undefined;

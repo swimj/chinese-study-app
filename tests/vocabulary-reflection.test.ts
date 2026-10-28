@@ -10,7 +10,6 @@ import { requestVocabularyRefresh } from '../server/db/vocabulary-learners.ts';
 import { createVocabularyContent, emitBackendEvent, getVocabularyContentForMaintenance, listVocabularyExercises, updateVocabularyContent,createVocabularySense,getVocabularySenseCatalog,getVocabularySenses,establishVocabularySenseCatalog,mapVocabularyContentSense,updateVocabularySense } from '../server/db/vocabulary-content.ts';
 import { migrateSharedDictionaryBaselines } from '../server/db/dictionary-baseline-sharing.ts';
 import { createVocabularyReflectionProvider, projectVocabularyReflectionInput } from '../server/vocabulary/reflection-provider.ts';
-import { buildReflectionSpendCap } from '../server/reflection/spend-cap.ts';
 import type { ProviderAdapter } from '../server/llm/types.ts';
 import { createVocabularySession, appendVocabularySessionActions, stageVocabularySessionCompletion, closeVocabularySessionCompletion } from '../server/db/vocabulary-sessions.ts';
 import { ingestVocabularySessionEvidence, getVocabularyReflectionCase, listVocabularyReflectionCases,
@@ -143,7 +142,7 @@ function dictionaryRepertoireProvider(accessScope:'shared'|'private',version:num
     return {provider:'fake',model:'fake',responseId:null,structuredOutputMode:'json_schema',rawText:JSON.stringify(value),finishReason:'stop',rawResponse:null,
       usage:{inputTokens:null,cachedInputTokens:null,cacheWriteInputTokens:null,outputTokens:null,reasoningTokens:null,totalTokens:null},invocationId:null};
   }};
-  const provider=createVocabularyReflectionProvider({environment:{OPENAI_API_KEY:'fake'},adapter,spendCap:()=>buildReflectionSpendCap(1,new Date(judgedAt)),
+  const provider=createVocabularyReflectionProvider({random:()=>0,environment:{OPENAI_API_KEY:'fake'},adapter,
     ensureSenses:async()=>({catalog:getVocabularySenseCatalog('a'),senses:getVocabularySenses('a'),source:'existing'})});
   return {provider,get calls(){return calls;}};
 }
@@ -210,7 +209,7 @@ test('scope migration does not authorize admission against later substantive dic
   const adapter:ProviderAdapter={id:'fake',defaultBaseUrl:'https://unused.invalid',apiKeyEnvironmentVariable:'KEY',structuredOutputMode:'json_schema',async run(){
     assert.fail('Substantive source drift must be fenced before a model call');
   }};
-  const provider=createVocabularyReflectionProvider({environment:{OPENAI_API_KEY:'fake'},adapter,spendCap:()=>buildReflectionSpendCap(1,new Date(judgedAt)),
+  const provider=createVocabularyReflectionProvider({random:()=>0,environment:{OPENAI_API_KEY:'fake'},adapter,
     ensureSenses:async()=>({catalog:getVocabularySenseCatalog('a'),senses:getVocabularySenses('a'),source:'existing'})});
   await assert.rejects(()=>provider.run(work),/source changed before admission/);
   const admission={outcome:'laundry_list' as const,rationale:'Review',wordId:'a',sourceContentId:id,sourceContentVersion:3,

@@ -7,9 +7,6 @@ import type { VocabularyContent, VocabularyJson } from '../../src/domain/vocabul
 import type { VocabularyReflectionJob, VocabularyReflectionResult, VocabularyProposalOperation } from '../../src/domain/vocabulary-reflection.ts';
 import type { JsonSchema } from '../../src/domain/reflection-result-schema.ts';
 import { getEffectiveVocabularyEncounterReactions, getVocabularyEncounterReactions } from '../../src/domain/vocabulary-session.ts';
-import { runWithLearnerId } from '../db/learner-context.ts';
-import { getReflectionSpendCap } from '../db/reflections.ts';
-import { assertReflectionModelAllowedUnderSpendCap, type ReflectionSpendCap } from '../reflection/spend-cap.ts';
 import { REFLECTION_MODEL_ARMS, isOfferedReflectionModelChoice, type ReflectionModelChoice } from '../reflection/model-arms.ts';
 import { reflectionConfigForChoice, routeIndividualReflectionModel } from '../reflection/model-routing.ts';
 import { vocabularyReflectionModelChoice } from '../db/vocabulary-reflection-routing.ts';
@@ -109,9 +106,8 @@ export function normalizeVocabularyReflectionOutput(job:VocabularyReflectionJob,
   return {kind:'exercise_improvement',result:{diagnosis:result.diagnosis,...(withReferral?{pureCueReferral:referral}:{}),proposal:operations.length?{operations,rationale:result.diagnosis,
     bases:[{contentId:original.contentId,expectedVersion:original.version}],...(invocationId?{invocationId}:{})}:null,...(invocationId?{invocationId}:{})}};
 }
-export function createVocabularyReflectionProvider(options:{environment?:NodeJS.ProcessEnv;adapter?:ProviderAdapter;adapters?:Partial<Record<ReflectionModelChoice,ProviderAdapter>>;random?:()=>number;fetchImplementation?:typeof globalThis.fetch;spendCap?:(learnerId:string)=>ReflectionSpendCap;ensureSenses?:VocabularySenseEnsurer}={}):VocabularyReflectionProvider {
+export function createVocabularyReflectionProvider(options:{environment?:NodeJS.ProcessEnv;adapter?:ProviderAdapter;adapters?:Partial<Record<ReflectionModelChoice,ProviderAdapter>>;random?:()=>number;fetchImplementation?:typeof globalThis.fetch;ensureSenses?:VocabularySenseEnsurer}={}):VocabularyReflectionProvider {
   const environment=options.environment??process.env;
-  const spendCap=options.spendCap??((learnerId:string)=>runWithLearnerId(learnerId,()=>getReflectionSpendCap()));
   const adapters=new Map<ReflectionModelChoice,ProviderAdapter>();
   const adapterFor=(choice:ReflectionModelChoice)=>{
     const existing=options.adapters?.[choice]??options.adapter??adapters.get(choice);
@@ -132,7 +128,7 @@ export function createVocabularyReflectionProvider(options:{environment?:NodeJS.
         :{kind:'exercise_improvement',result:{diagnosis,proposal:null}};
     }
     if(context?.canPublish&&!context.canPublish())throw new Error('Reflection lost publication authority');
-    const choice=vocabularyReflectionModelChoice(job.jobId,()=>routeIndividualReflectionModel(spendCap(job.learnerId),options.random));
+    const choice=vocabularyReflectionModelChoice(job.jobId,()=>routeIndividualReflectionModel(options.random));
     if(!isOfferedReflectionModelChoice(choice))throw new Error(`Stored reflection model is no longer offered: ${choice}`);
     const config=reflectionConfigForChoice(choice);
     const adapter=adapterFor(choice);
@@ -140,7 +136,6 @@ export function createVocabularyReflectionProvider(options:{environment?:NodeJS.
     const baseUrl=config.baseUrlEnvironmentVariable?environment[config.baseUrlEnvironmentVariable]?.trim()||null:null;
     if(!apiKey)throw new Error(`Vocabulary reflection provider ${config.provider} is not configured`);
     if(job.evidence.kind==='teaching_review'||job.evidence.evidence.some(item=>item.snapshot.role!=='general'))throw new VocabularyReflectionOutputError('Teaching belongs to the manual inbox');
-    assertReflectionModelAllowedUnderSpendCap(choice,spendCap(job.learnerId));
     const kind=job.kind==='learner_feedback'?'feedback':'improvement';
     const prompts=new Map<string,string>();
     const promptFor=async(promptFile:string)=>{
@@ -158,7 +153,6 @@ export function createVocabularyReflectionProvider(options:{environment?:NodeJS.
       :step==='single_improvement'?'vocabulary-admission.v2':'vocabulary-admission.v1';
     const runCall=async (step:string,input:unknown,schema:JsonSchema,promptFile:string,promptVersion:string)=>{
       if(context?.canPublish&&!context.canPublish())throw new Error('Reflection lost publication authority');
-      assertReflectionModelAllowedUnderSpendCap(choice,spendCap(job.learnerId));
       const shared=step==='repertoire'?generalExerciseInvocation(input as GeneralExerciseSource):null;
       const systemPrompt=shared?.systemPrompt??await promptFor(promptFile);
       const result=await adapter.run({model:config.providerModel,reasoningEffort:config.reasoningEffort,

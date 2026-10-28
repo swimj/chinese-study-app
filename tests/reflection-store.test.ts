@@ -177,22 +177,17 @@ describe('reflection durable store', { concurrency: false }, () => {
     assert.deepEqual(dbModule.listReflectionGenerationRuns(), [recorded]);
   });
 
-  test('sums same-UTC-day estimated spend and ignores null estimates and other days', () => {
+  test('retains priced and unknown-cost history above the former daily threshold', () => {
     materializationInput('run-session', suppressOperation('target'));
     recordPricedRun('today-priced', '2026-09-10T08:00:00.000Z', 0.4);
     recordPricedRun('today-more', '2026-09-10T23:59:59.000Z', 0.2);
     recordPricedRun('previous-day', '2026-09-09T23:59:59.000Z', 9);
     recordUnpricedRun('today-null', '2026-09-10T12:00:00.000Z');
-
-    const now = new Date('2026-09-10T15:00:00.000Z');
-    const spendCap = dbModule.getReflectionSpendCap(now);
-    assert.equal(spendCap.lunaOnly, true);
-    assert.equal(spendCap.capUsd, 0.5);
-    assert.equal(spendCap.dayKey, '2026-09-10');
-    assert.equal(spendCap.resetsAt, '2026-09-11T00:00:00.000Z');
-    assert.ok(Math.abs(spendCap.spentUsd - 0.6) < 1e-9);
-    assert.equal(dbModule.getReflectionSpendCap(new Date('2026-09-11T00:00:00.000Z')).lunaOnly, false);
-    assert.equal(dbModule.getReflectionSpendCap(new Date('2026-09-11T00:00:00.000Z')).spentUsd, 0);
+    const costs = new Map(dbModule.listReflectionGenerationRuns().map(run => [run.runId, run.estimatedCostUsd]));
+    assert.equal(costs.get('today-priced'), 0.4);
+    assert.equal(costs.get('today-more'), 0.2);
+    assert.equal(costs.get('previous-day'), 9);
+    assert.equal(costs.get('today-null'), null);
   });
 
   test('lists a durable in-flight provider hand-off until its terminal run is recorded', () => {

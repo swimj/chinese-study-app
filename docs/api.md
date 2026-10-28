@@ -620,8 +620,7 @@ A successful response is exactly:
 `(sessionId, initial_post_session_reflection.v2)` returns `200` and does not
 call the provider again. Evidence validation errors return `400`, missing
 sessions or referenced entities return `404`, missing provider configuration
-returns `503`, provider/structured-output failures return `502`, explicit
-non-Luna requests after the daily spend cap return `409`, and
+returns `503`, provider/structured-output failures return `502`, and
 unexpected persistence failures return `500`. Typed generation failures use
 `{ error, code }`; internal failures expose only a safe `{ error }`.
 
@@ -631,18 +630,11 @@ are durable. It never rewrites study attempts, completion, or scheduling state.
 ### Generation run log
 
 `GET /api/reflection-generation-runs` returns the most recent concluded
-provider attempts, newest first, plus the current UTC-day spend-cap state:
+provider attempts, newest first:
 
 ```ts
 {
   runs: ReflectionGenerationRunDto[];
-  spendCap: {
-    lunaOnly: boolean;
-    spentUsd: number;
-    capUsd: number;
-    dayKey: string;
-    resetsAt: string; // next UTC midnight
-  };
 }
 ```
 
@@ -679,10 +671,8 @@ GPT-5.6 Luna high at 30%. Larger bundles sample GPT-6 Sol high at 60%, GLM at
 20%, and Luna at 20%. Ordinary and pure-cue bundles are routed independently
 using their actual item counts. Explicit choices and manual second opinions
 do not use these weights. Terra, GLM Flash max, and Gemini remain registered
-but are withdrawn from the default pool and learner-facing pickers. Once that learner's
-UTC-day estimated spend surpasses $0.50, unselected initial generation uses only
-Luna. OpenRouter arms require
-`OPENROUTER_API_KEY` and use OpenRouter's normal eligible-provider routing;
+but are withdrawn from the default pool and learner-facing pickers. OpenRouter
+arms require `OPENROUTER_API_KEY` and use OpenRouter's normal eligible-provider routing;
 they do not pin one upstream host or disable fallbacks. Missing credentials fail
 only the selected arm with the existing `503` typed failure; they never affect
 finalization or other arms. OpenRouter's returned cost is preserved for a
@@ -694,10 +684,8 @@ saved bundle and returns the same response shape and `201`/`200` semantics as
 initial generation. The retry is a new append-only generation run; it never
 rewrites the failed attempt. Missing runs return `404`. Concluded runs that
 cannot be retried, same-model retries whose source model is no longer a
-configured comparison arm, and non-Luna retries after the daily spend cap,
-return `409`. An explicit current model may still
-retry a retained bundle whose source model has been retired, unless the spend
-cap has restricted the learner to Luna.
+configured comparison arm return `409`. An explicit current model may
+retry a retained bundle whose source model has been retired.
 
 ### Queue and detail
 
