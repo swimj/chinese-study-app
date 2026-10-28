@@ -19,6 +19,7 @@ An empty allowlist denies access.
 | Model invocations | Inspect attributed provider calls, filter and group rows, compare spend summaries, and refresh the ledger | [Operator API](api.md#operator-view) |
 | Content sharing | Weekly exact-content reuse counts, learner-originated cue reuse, and inspectable examples | [Sharing metrics](#content-sharing) |
 | Content quality | Review content-quality signals and filter the triage queue | [Content quality](content-quality.md) |
+| Content improvement | Review vocabulary judgments and proposals, request second opinions, and apply approved corrections | [Vocabulary reflection](vocabulary-learning.md#background-work-and-operator-repair) |
 | Preparation failures | Inspect paused shared preparation work and retry eligible stages | [Error diagnostics](ops/error-diagnostics.md#shared-word-preparation-failures) |
 | What’s New | Edit and publish learner-facing update posts | [What’s New](whats-new.md#manual-operator-editor) |
 | Service banner | Set planned downtime, edit a custom message, or clear the active banner | [Banner API](api.md#operator-view) and [hosted upgrade runbook](ops/hosted-beta-deployment.md#post-a-pre-upgrade-banner) |

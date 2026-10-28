@@ -3,7 +3,7 @@
 This guide describes the retained revision-checked operator API for correcting
 older study content, including validation, application effects, and retained
 evidence. The content quality panel shows historical ratings; it no longer
-provides a correction editor. The current vocabulary operator page handles
+provides a correction editor. The operator panel's Content improvement tab handles
 vocabulary reflection review separately.
 
 ## Review and application

@@ -434,8 +434,8 @@ a restore action. Dismissal is learner-owned and does not affect scheduling or
 content repair. Left/Right navigate cards and D dismisses the displayed active
 lesson; typing, composition and modified keys retain their normal behavior.
 
-Operators open `#operator-vocabulary` directly. It is unlisted in learner
-navigation and Content Bin, and protected by the existing operator allowlist.
+Operators open `#operator-usage` and select **Content improvement**. The operator
+panel is unlisted in learner navigation and protected by the existing allowlist.
 For now, hosted operator access is restricted to the dogfood account. The
 cross-learner inbox starts with proposals awaiting review. Previous and next controls
 navigate one proposal at a time; applying or dismissing a proposal advances to

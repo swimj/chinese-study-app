@@ -1,6 +1,7 @@
 import React from 'react';
 import {createRoot} from 'react-dom/client';
 import {VocabularyOperatorPage} from '../../src/pages/VocabularyOperatorPage';
+import {OperatorUsagePulsePage} from '../../src/pages/OperatorUsagePulsePage';
 import type {VocabularyOperatorApi} from '../../src/features/vocabulary-operator/api';
 import type {VocabularyContent} from '../../src/domain/vocabulary-content';
 import type {VocabularyContentProposal,VocabularyReflectionCase,VocabularySecondOpinion} from '../../src/domain/vocabulary-reflection';
@@ -57,4 +58,4 @@ const api:VocabularyOperatorApi={cases:async kind=>({items:empty?[]:kind==='teac
   save:async(id,version,value)=>update(id,{version:version+1,operations:value.operations,rationale:value.rationale,status:'awaiting_review'}),
   preview:async id=>{const current=proposal(id);return {proposal:current,previews:current.operations.map(operation=>({operationKey:operation.operationKey,source:operation.strategy==='create'?null:contents.get(operation.sourceContentId)!,result:{...general,...operation.content,version:2} as VocabularyContent})),operations:current.operations.map(operation=>({operationKey:operation.operationKey,strategy:operation.strategy,scope:operation.scope,schedulesRemainOnSource:operation.scope.kind==='shared'?12:1,deactivationsRemainOnSource:0,teachingBindingsRemainOnSource:0,sourceSenseMappings:1,sourceCurations:0,sourceIntroductionExercises:0,transfersRelationships:false}))};},
   approve:async id=>{update(id,{status:'approved'});return {reviewId:`approved-${id}`};},apply:async id=>{const current=update(id,{status:'applied'});return {applicationId:`application-${id}`,proposalId:id,proposalVersion:current.version,reviewId:`approved-${id}`,changes:[]};},close:async id=>{update(id,{status:'closed'});return {ok:true};}};
-createRoot(document.getElementById('root')!).render(<React.StrictMode><VocabularyOperatorPage api={api}/></React.StrictMode>);
+createRoot(document.getElementById('root')!).render(<React.StrictMode>{new URLSearchParams(location.search).has('usage')?<OperatorUsagePulsePage initialTab="improvement" improvementApi={api}/>:<VocabularyOperatorPage api={api}/>}</React.StrictMode>);

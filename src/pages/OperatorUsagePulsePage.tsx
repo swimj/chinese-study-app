@@ -6,6 +6,8 @@ import { ModelInvocationsPanel } from './ModelInvocationsPanel';
 import './OperatorUsagePulsePage.css';
 import { PreparationFailuresPanel } from './PreparationFailuresPanel';
 import { ContentQualityPanel } from './ContentQualityPanel';
+import { VocabularyOperatorPage } from './VocabularyOperatorPage';
+import type { VocabularyOperatorApi } from '../features/vocabulary-operator/api';
 import {
   fetchOperatorUsagePulse,
   type UsageDailySnapshot,
@@ -17,14 +19,20 @@ const OPERATOR_TABS = [
   { id: 'invocations', label: 'Model invocations' },
   { id: 'sharing', label: 'Content sharing' },
   { id: 'quality', label: 'Content quality' },
+  { id: 'improvement', label: 'Content improvement' },
   { id: 'failures', label: 'Preparation failures' },
   { id: 'whats-new', label: 'What’s new' },
   { id: 'banner', label: 'Service banner' },
 ] as const;
 type OperatorTab = typeof OPERATOR_TABS[number]['id'];
 
-export function OperatorUsagePulsePage() {
-  const [tab, setTab] = useState<OperatorTab>('usage');
+export function OperatorUsagePulsePage({ initialTab = 'usage', improvementApi }: { initialTab?: OperatorTab; improvementApi?: VocabularyOperatorApi } = {}) {
+  const [tab, setTab] = useState<OperatorTab>(initialTab);
+  const [openedImprovement, setOpenedImprovement] = useState(initialTab === 'improvement');
+  function selectTab(next: OperatorTab) {
+    if (next === 'improvement') setOpenedImprovement(true);
+    setTab(next);
+  }
   return <section className="panel operator-usage-pulse">
     <h2>Operator</h2>
     <div className="operator-tabs" role="tablist" aria-label="Operator views">
@@ -32,7 +40,7 @@ export function OperatorUsagePulsePage() {
         key={item.id} type="button" role="tab" id={`operator-tab-${item.id}`}
         aria-controls={`operator-panel-${item.id}`} aria-selected={tab === item.id}
         tabIndex={tab === item.id ? 0 : -1}
-        className="secondary-button" onClick={() => setTab(item.id)}
+        className="secondary-button" onClick={() => selectTab(item.id)}
         onKeyDown={(event) => {
           const nextIndex = event.key === 'ArrowRight' ? (index + 1) % OPERATOR_TABS.length
             : event.key === 'ArrowLeft' ? (index + OPERATOR_TABS.length - 1) % OPERATOR_TABS.length
@@ -40,12 +48,12 @@ export function OperatorUsagePulsePage() {
           if (nextIndex === null) return;
           event.preventDefault();
           const next = OPERATOR_TABS[nextIndex].id;
-          setTab(next);
+          selectTab(next);
           document.getElementById(`operator-tab-${next}`)?.focus();
         }}
       >{item.label}</button>)}
     </div>
-    <div role="tabpanel" id={`operator-panel-${tab}`} aria-labelledby={`operator-tab-${tab}`} tabIndex={0}>
+    {tab !== 'improvement' && <div role="tabpanel" id={`operator-panel-${tab}`} aria-labelledby={`operator-tab-${tab}`} tabIndex={0}>
       {tab === 'usage' && <UsagePulsePanel />}
       {tab === 'invocations' && <ModelInvocationsPanel />}
       {tab === 'sharing' && <ContentSharingPanel />}
@@ -53,7 +61,10 @@ export function OperatorUsagePulsePage() {
       {tab === 'failures' && <PreparationFailuresPanel />}
       {tab === 'whats-new' && <WhatsNewEditor />}
       {tab === 'banner' && <ServiceBannerPanel />}
-    </div>
+    </div>}
+    {openedImprovement && <div role="tabpanel" id="operator-panel-improvement" aria-labelledby="operator-tab-improvement" tabIndex={0} hidden={tab !== 'improvement'}>
+      <VocabularyOperatorPage api={improvementApi} />
+    </div>}
   </section>;
 }
 

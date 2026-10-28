@@ -1,7 +1,7 @@
-.vocabulary-operator-page { max-width: 1320px; margin: 0 auto; padding: 24px; line-height: 1.55; color: var(--text, #172b32); container-type: inline-size; }
+.vocabulary-operator-page { max-width: 1320px; margin: 0 auto; padding: 0; line-height: 1.55; color: var(--text, #172b32); container-type: inline-size; }
 .vocabulary-operator-page * { box-sizing: border-box; }
 .vocabulary-operator-page header { margin-bottom: 24px; }
-.vocabulary-operator-page h1 { margin: 0 0 8px; font-size: 1.8rem; }
+.vocabulary-operator-page header h2 { margin: 0 0 8px; font-size: 1.8rem; }
 .vocabulary-operator-page h2 { font-size: 1.25rem; margin: 0 0 16px; }
 .vocabulary-operator-page h3 { font-size: 1.1rem; margin-top: 24px; }
 .vocabulary-operator-page h4, .vocabulary-operator-page h5 { font-size: 1rem; margin: 8px 0; }
@@ -45,7 +45,7 @@
 .vocabulary-operator-page dt { font-weight: 600; }
 .vocabulary-operator-page dd { margin: 4px 0 8px 16px; }
 @media (max-width: 900px) { .vocabulary-operator-layout { grid-template-columns: 1fr; gap: 0; } .vocabulary-operator-layout aside { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; } }
-@media (max-width: 620px) { .vocabulary-operator-page { padding: 16px; } .vocabulary-operator-page section { padding: 16px; } .vocabulary-operator-layout aside, .vocabulary-operator-comparison { grid-template-columns: 1fr; } .vocabulary-operator-actions { flex-direction: column; } .vocabulary-operator-job button { margin: 10px 0 0; } }
+@media (max-width: 620px) { .vocabulary-operator-page section { padding: 16px; } .vocabulary-operator-layout aside, .vocabulary-operator-comparison { grid-template-columns: 1fr; } .vocabulary-operator-actions { flex-direction: column; } .vocabulary-operator-job button { margin: 10px 0 0; } }
 
 @container (max-width: 800px) { .vocabulary-operator-layout { grid-template-columns: 1fr; gap: 0; } .vocabulary-operator-layout aside { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; } }
 @container (max-width: 540px) { .vocabulary-operator-layout aside, .vocabulary-operator-comparison { grid-template-columns: 1fr; } .vocabulary-operator-actions { flex-direction: column; } }

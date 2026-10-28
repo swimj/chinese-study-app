@@ -95,7 +95,7 @@ Quality evidence is not fed to any model provider.
 
 ## Improving content
 
-Ratings are historical observations. The current vocabulary operator page
+Ratings are historical observations. The operator panel's Content improvement tab
 supports review of vocabulary reflection; the retained
 [correction API](content-improvement.md) provides revision-checked access to
 older content correction cases.

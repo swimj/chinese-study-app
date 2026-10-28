@@ -78,8 +78,10 @@ departure; `?retry=1` fails the first save so Retry save must retain the departu
 `/tests/browser/vocabulary-ui.html` provides presentation scenarios;
 `/tests/browser/vocabulary-operator.html` exercises the proposal-first internal review surface (ready suggestions, history, manual edits, and `?second=pending|failed|result`; `?narrow=1&large=1` checks compact enlarged-text layout)
 with intercepted HTTP (`?empty=1` for empty lists). These fixtures are separate
-from `npm test`. The separate `/tests/browser/vocabulary-operator-production.html`
-preview reads a locally installed sanitized excerpt from
+from `npm test`. Add `?usage=1` to place the review in the operator panel's
+Content improvement tab, including its narrow and enlarged-text variants. The
+separate `/tests/browser/vocabulary-operator-production.html` preview reads a
+locally installed sanitized excerpt from
 `tests/browser/.local/operator-production-preview.json` (gitignored). It replays
 historical proposals with their original acceptance/application provenance;
 actions only mutate browser memory, not production. Missing excerpts produce an
