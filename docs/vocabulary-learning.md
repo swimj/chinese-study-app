@@ -55,10 +55,13 @@ single frontend transition so an automatic staging effect cannot race them.
 The immutable `vocabulary_sessions.context_json` includes the versioned payload:
 lexical facts, all mode-dependent exercise pools for admitted words, teaching and
 priming material, selected pure cues, and complete encounter templates with
-answer and reveal facts. Mode changes and More choose within those pools.
-Teaching recognition rotates examples within its retained source. Edits,
-retirement, skill suppression and proxy changes take effect at the next Start.
-The current card's personal notes remain a separate indexed learner lookup.
+answer and reveal facts. The player selects dynamically within those pools as
+the learner answers, skips, changes modes, requests More or undoes an action.
+Teaching recognition rotates examples within its retained source. Publication,
+edits, retirement, deactivation and external skill or proxy changes affect
+subsequent sessions; admission to a new session does not guarantee an exercise
+will be shown. Account and private-content access checks remain live. The current
+card's personal notes remain a separate indexed learner lookup.
 
 A connection-scoped cache holds at most 64 session runtimes, keyed by learner
 and session. SQLite remains authoritative. Every access probes session ownership,
@@ -145,9 +148,9 @@ available. Unenrolled deck words can be inspected without creating learner state
 Add to study is explicit. Mode, refresh and removal use vocabulary commands.
 Current modes and dismissal take precedence over retained legacy state.
 
-Serving reads existing learner-owned production skill enablement and relevance
-records. Production relevance `suppressed` blocks all individual-word production,
-including authored exercises, despite the legacy command name
+Session composition reads existing learner-owned production skill enablement and
+relevance records. At composition, production relevance `suppressed` excludes
+individual-word production, including authored exercises, despite the legacy command name
 `suppress_definition_production`. This is the intended skill-level meaning in
 the vocabulary runtime. Mode changes, refresh and content repair leave that flag
 intact. Pure-cue adoption and selection require at least one unsuppressed eligible
@@ -159,8 +162,9 @@ Solidify freezes its enabled recognition/production directions in `solidifySkill
 when the session starts. Daily coverage requires that subset, and ordinary warmup
 still uses the introduction. A single enabled direction can cover the day but
 cannot qualify for automatic graduation; both disabled excludes the word from
-admission. Serving continues to respect any later disable without fabricating
-completion of the frozen requirements.
+admission. A later skill-setting change affects subsequent sessions, not the
+active session's frozen directions or coverage requirements; see the
+[retained payload](#retained-session-payload-and-hot-path-work).
 
 Initial policies are deliberately simple: ordinary Solidify covering is daily,
 Practice uses spacing and shortens after a lapse, Maintain receives temporary
