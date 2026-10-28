@@ -75,5 +75,6 @@ Connections, and What's New components.
 The [testing map](../docs/testing.md) separates the real-hook cancellation fixture,
 standalone visual scenarios, operator fixture, and disposable API-backed study
 fixture. Server-rendered checks do not establish focus, scrolling, or live timing.
-The UI and prompt [handoffs](../docs/implementation/vocabulary-ui-handoff.md)
-retain iteration context; current behavior is owned by the feature contract.
+The [study UI guide](../docs/implementation/vocabulary-ui.md) describes current
+presentation and input behavior. The [prompt experiments](../docs/implementation/vocabulary-prompt-handoff.md)
+retain trial context; the product and architecture contracts own requirements.

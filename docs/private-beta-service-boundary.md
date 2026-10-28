@@ -74,15 +74,20 @@ and a self-service recovery product are outside this beta contract.
 
 ## Durable Ownership Inventory
 
-The ownership manifest enumerates the steady-state application tables. Temporary migration
-tables and SQLite internals are excluded. Existing mixed tables must be split
-or given an equivalently explicit ownership/scope boundary before real hosted
-learner data is accepted.
+The [ownership manifest](../server/db/ownership-manifest.ts) classifies every
+steady-state application table; its schema-completeness test requires new tables
+to be classified. Temporary migration tables and SQLite internals are excluded.
+Mixed tables require an explicit ownership/scope boundary before accepting
+hosted learner data.
 
-The machine-auditable inventory is
-[`server/db/ownership-manifest.ts`](../server/db/ownership-manifest.ts). Its
-schema-completeness test requires every new steady-state table to be classified
-before it can land.
+The [vocabulary architecture contract](../SPECS/vocabulary-architecture.md#content-identity-ownership-and-revision)
+owns current vocabulary content/evidence boundaries; the
+[implementation guide](vocabulary-learning.md#content-identity-and-eligibility)
+describes their storage. The learner and content inventory below retains earlier
+source-table names and correction semantics. Those source-table mutation rules
+explain the historical design, not current vocabulary writes. Retained records
+remain subject to their ownership boundaries; service metadata has its separate
+role below.
 
 ### Learner-owned state, evidence, and history
 

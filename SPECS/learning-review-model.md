@@ -1,20 +1,15 @@
 # Learning And Review Model
 
-The Mandarin study runtime follows [Adaptive vocabulary study](vocabulary-learning.md).
-This document describes the retained legacy implementation and historical records;
-its learner-write flow is not the Mandarin entry point.
+This document preserves the word lifecycle and learning/review design used by
+the earlier study runtime. It helps contributors interpret historical records
+and recover the reasoning behind direction-level scheduling and learner overrides.
 
-Status: current contract for word lifecycle and established session behavior.
-Its direction-oriented scheduling language also documents existing behavior and
-is under renovation; it may not express the desired longer-term architecture in
-full. `study-action-model.md` owns the implemented word/skill/action scheduling
-architecture while this document continues to own lifecycle semantics.
-
-This document captures the established product model for word lifecycle and
-session behavior. It remains authoritative for those semantics even where the
-current codebase reflects older mechanics. Direction-oriented scheduling detail
-is transitional context and defers to `study-action-model.md` when the two use
-different architectural vocabulary.
+[Adaptive vocabulary study](vocabulary-learning.md) owns current Mandarin modes,
+session behavior and learner effects. The rules below are scoped to the earlier
+model; their original terminology does not assign present-day authority.
+The current product and [architecture contracts](vocabulary-architecture.md)
+maintain vocabulary requirements; historical guarantees remain evidence when
+reconciling an unresolved difference.
 
 ## Scope
 

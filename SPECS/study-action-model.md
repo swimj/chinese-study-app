@@ -1,20 +1,14 @@
 # Study Action Model
 
-The Mandarin study runtime follows [Adaptive vocabulary study](vocabulary-learning.md).
-This document describes the retained legacy implementation and historical records;
-its learner-write flow is not the Mandarin entry point.
+This document preserves the earlier study-action design: word skills,
+scheduling, attempt events, contrast selection, and production tasks and cues.
+Use it to interpret retained records and the rationale behind those mechanisms.
 
-Status: accepted canonical product contract. The scheduling, attempt-event,
-contrast-selection, and bounded V0 production-task/cue sections describe
-implemented behavior. The dual-pool unstudied admission policy below is an
-experimental implementation contract for current code and tests; it is
-throwaway-tolerant relative to a future session-composition rewrite.
-
-This document describes the study-action model, including current study
-actions, word-skill scheduler state, attempt-event projection, contrast
-selection, and accepted near-term production-cue behavior. It complements the
-word-lifecycle rules in `learning-review-model.md` and the in-session covering
-rules in `session-progress-and-completion.md`.
+[Adaptive vocabulary study](vocabulary-learning.md) defines current Mandarin
+behavior; the [implementation guide](../docs/vocabulary-learning.md) explains
+current admission, scheduling and persistence. The contracts below apply to the
+earlier runtime. Experimental policies retain that qualification and do not
+create delivery commitments for the vocabulary runtime.
 
 For long-term product vision beyond the current PoC, see
 `adaptive_vocabulary_training_product_notes.md`.
@@ -27,9 +21,9 @@ impose a hidden target or member-word projection on pure cues.
 
 Related documents:
 
-- [`learning-review-model.md`](/Users/jw/dev/chinese-study-app/SPECS/learning-review-model.md)
+- [`learning-review-model.md`](learning-review-model.md)
 - [`session-progress-and-completion.md`](session-progress-and-completion.md)
-- [`adaptive_vocabulary_training_product_notes.md`](/Users/jw/dev/chinese-study-app/SPECS/adaptive_vocabulary_training_product_notes.md)
+- [`adaptive_vocabulary_training_product_notes.md`](adaptive_vocabulary_training_product_notes.md)
 - [`milestone-7-8-relevance-aware-contrast-plan.md`](./archive/milestone-7-8-relevance-aware-contrast-plan.md)
 
 ## 1. Product Direction

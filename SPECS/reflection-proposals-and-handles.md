@@ -1,27 +1,15 @@
 # Reflection Proposals And Handles
 
-The Mandarin study runtime follows [Adaptive vocabulary study](vocabulary-learning.md).
-This document describes the retained legacy implementation and historical records;
-its learner-write flow is not the Mandarin entry point.
+This document preserves the earlier reflection proposal and operation contract,
+including result artifacts, review, authorization, application and attribution.
+It helps contributors interpret historical operation versions and their adapters.
 
-Status: accepted canonical product contract. The core V1 proposal, review,
-authorization, application, and provenance lifecycle is implemented.
-`repair_production_cue@1` and `accept_production_alternate@1` remain
-intentionally unsupported. The V2 production-cue repair behavior is accepted
-and implemented current behavior. `request_word_bootstrap@1` requests bootstrap
-content (word uses and examples) without replacing a fair definition-based
-production cue. Legacy
-`add_production_cue_supplement@1` operations remain readable and applicable.
-`promote_pure_elicitation@1` is the atomic path from an overbroad word cue to
-a standalone pure cue; its policy is defined in
-[`pure-cue-elicitation.md`](./pure-cue-elicitation.md).
-
-This specification defines how learner-facing reflection describes bounded
-changes, how a user reviews or revises those proposals, and how an authorized
-operation is applied with truthful provenance. It is intentionally independent
-of one milestone: later implementations should extend this contract through
-explicit operation and result-schema versions rather than replace its lifecycle
-or identity model.
+The [vocabulary product contract](vocabulary-learning.md#reactions-feedback-content-repair-and-authority)
+owns current Mandarin review authority. Content changes require operator approval;
+a designated judgment can separately authorize bounded scheduling compensation.
+The proposal-only authority described below applies to the earlier reflection
+flow. Its operation descriptions are historical contracts, not a list of currently
+available Mandarin write APIs; see the [cutover boundary](../docs/vocabulary-learning.md#cutover-compatibility).
 
 Related documents:
 
@@ -34,7 +22,7 @@ Related documents:
 
 ## 1. Scope And Authority
 
-This specification owns:
+For the earlier runtime, this specification defines:
 
 - the boundary among reflection results, proposals, authorized invocations, and
   applied effects;

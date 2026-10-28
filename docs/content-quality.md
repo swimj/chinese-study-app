@@ -24,7 +24,7 @@ The physical bracket keys also work with Chinese/Pinyin punctuation enabled.
 Shortcuts appear on button hover or keyboard focus; the keyboard guide remains available. A visible
 supplement takes shortcut priority over its cue; both remain clickable. Typing,
 IME composition, modifier combinations, and held-key repeats do not vote.
-The [frontend interaction section](../SPECS/frontend-architecture-map.md#session-keyboard-interactions)
+The [frontend interaction section](implementation/vocabulary-ui.md#keyboard-and-focus)
 explains how session commands and focused controls share keyboard input.
 
 A reaction saves immediately and independently of study commits and Undo. Ending
@@ -97,7 +97,7 @@ Quality evidence is not fed to any model provider.
 
 Ratings are historical observations. The operator panel's Content improvement tab
 supports review of vocabulary reflection; the retained
-[correction API](content-improvement.md) provides revision-checked access to
+[historical correction reference](content-improvement.md) describes retained evidence for
 older content correction cases.
 
 ## Deployment

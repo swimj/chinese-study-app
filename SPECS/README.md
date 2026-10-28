@@ -16,50 +16,53 @@ canonical label does not certify every sentence as deliberate or current.
 Distinguish promises from implementation details, and surface consequential
 conflicts rather than changing a promise solely to match the code.
 
-## Shared product-model sources
+## Current Mandarin product and architecture
 
-- [learning-review-model.md](learning-review-model.md): word lifecycle,
-  direction-level rules, and word-level session inclusion.
-- [study-action-model.md](study-action-model.md): skills, study actions,
-  scheduling, attempt events, contrast selection, and production tasks/cues.
-- [session-progress-and-completion.md](session-progress-and-completion.md): active-session
-  covering, Undo, and commit intent.
-
-These explain related parts of the product and currently carry both shared and
-area-specific concepts. The boundaries between shared definitions in these
-files and feature-specific contracts remain to be reconciled. Identify the
-document or section that maintains each shared concept, then link the feature
-contracts that refine it to those definitions.
-
-## Existing feature and domain sources
-
-| Area | Current sources and subject |
+| Reader's question | Owner |
 | --- | --- |
-| Word lifecycle, scheduling, and in-session behavior | The three sources above, pending reconciliation of shared versus area-specific ownership |
-| Session completion | [Completion lifecycle](session-progress-and-completion.md#session-completion): final Undo window, durable acceptance, completion report, navigation, and retry; [persistence explanation](../docs/server-db.md#session-completion-persistence) for the current storage and worker mechanisms |
-| Home exercise rates | [Failure and compensation rates](home-exercise-rates.md): counted exercises, UTC windows, delayed compensation, and display semantics |
-| Introduction and preparation | [word-bootstrap-and-introduction.md](word-bootstrap-and-introduction.md): content, preparation, pinned packages, and review-reflection lifecycle; [generation](../docs/word-content-generation.md) and [serving](../docs/word-content-serving.md) explanations |
-| Pure-cue practice | [pure-cue-elicitation.md](pure-cue-elicitation.md): independent scheduling, sampling, promotion, and compensation |
-| Session debrief | [session-debrief.md](session-debrief.md): inventory, durable generation, interests, failure, and retry |
-| Recovery highlights | [session-recovery-highlights.md](session-recovery-highlights.md): repeated trouble followed by reliable recall |
-| Reflection generation | [session-reflection-generation.md](session-reflection-generation.md): completed-session boundary, evidence, attempts, isolation, retry, and bounds |
-| Reflection effects and handles | [reflection-proposals-and-handles.md](reflection-proposals-and-handles.md): proposals, review, authorization, application, provenance, and handles |
-| Deferred reflection | [deferred-reflection-second-opinion.md](deferred-reflection-second-opinion.md): selected deferred evidence and replacement in active review |
-| Character presentation | [character-presentation.md](character-presentation.md): word labels and Chinese in sentences/explanations, intended display behavior, and current conversion mechanisms and limits |
-| My Words | [my-words.md](my-words.md): personal collections, browsing, and word details |
-| New-word intake | [diet-deck-distribution.md](diet-deck-distribution.md): deck distribution and intake decisions alongside original delivery planning |
+| What do words, modes, exercises, coverage and completion mean? | [Adaptive vocabulary study](vocabulary-learning.md): product model and intended learner behavior |
+| What can feedback, repair and operator review change? | [Review and content authority](vocabulary-learning.md#reactions-feedback-content-repair-and-authority) |
+| What structural constraints must an implementation preserve? | [Vocabulary architecture](vocabulary-architecture.md): state ownership, retained evidence, completion and application authority |
+| How do independent pure cues work? | [Pure-cue elicitation](pure-cue-elicitation.md), with current vocabulary admission in [mode and selection](vocabulary-learning.md#learner-mode-and-selection) |
+| What does Connections promise? | [Session debrief](session-debrief.md): input, durable generation, interests, failure and retry |
+| How are Chinese characters presented? | [Character presentation](character-presentation.md): display intent and explicitly described conversion mechanisms |
 
-For an area being reconciled, identify the document or section for its model
-and promises, link or clearly separate its current realization, explain
-important decisions, and identify concrete gaps. The table locates material
-available today. Choose future boundaries according to the concepts and reader
-questions described in the target hierarchy.
+The [implementation guide](../docs/vocabulary-learning.md) explains current
+mechanisms. [Study UI](../docs/implementation/vocabulary-ui.md) and the
+[operator workflow](../docs/operator-panel.md#content-improvement-workflow) describe
+current interfaces. These descriptions do not make every layout or algorithm an
+architectural requirement.
+
+## Earlier runtime contracts and design rationale
+
+These documents help interpret historical records and recover design reasoning.
+Their earlier-runtime authority is explicitly scoped in their openings. Current
+vocabulary requirements are maintained in the contracts above; a surviving
+principle is not lost merely because its original realization was replaced.
+
+- [Learning and review](learning-review-model.md): earlier lifecycle and direction-level scheduling.
+- [Study actions](study-action-model.md): earlier skill state, attempt events and production primitives.
+- [Session progress and completion](session-progress-and-completion.md): earlier covering and deferred-commit model.
+- [Reflection generation](session-reflection-generation.md) and
+  [proposals and handles](reflection-proposals-and-handles.md): earlier evidence and authorization flow.
+- [Home exercise rates](home-exercise-rates.md) and [My Words](my-words.md): earlier metrics and browsing terminology.
+- [Word bootstrap and introduction](word-bootstrap-and-introduction.md): teaching rationale and earlier package-based design, with current preparation owned by the vocabulary guides.
+
+## Other feature sources
+
+The following routes retain useful domain material. Their full applicability was
+not established by the vocabulary documentation reconciliation; consult their
+scope and implementation before carrying a rule into the current runtime.
+
+- [Recovery highlights](session-recovery-highlights.md).
+- [Deferred reflection](deferred-reflection-second-opinion.md).
+- [New-word intake](diet-deck-distribution.md).
 
 ## Material with other destination roles
 
 - [frontend-architecture-map.md](frontend-architecture-map.md) is a technical
   navigation source. Its placement under `SPECS/` does not make current React
-  structure a product guarantee. See the [technical routes](../docs/README.md#current-architecture-and-implementation).
+  structure a product guarantee. See the [technical routes](../docs/README.md#descriptive-architecture-and-implementation).
 - [study-db-setup.md](study-db-setup.md) describes older study-mode setup and
   restore. Assess current applicability for the task; it is not the default
   hosted-service workflow. See the [operations routes](../docs/README.md#operations-guides).

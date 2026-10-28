@@ -1,25 +1,21 @@
 # Session progress and completion
 
-The Mandarin study runtime follows [Adaptive vocabulary study](vocabulary-learning.md).
-This document describes the retained legacy implementation and historical records;
-its learner-write flow is not the Mandarin entry point.
+This document preserves the earlier runtime's in-session covering, Undo and
+deferred-commit contract. It explains the relationship between pending work
+and durably accepted study in that model.
+
+[Adaptive vocabulary study](vocabulary-learning.md#live-session-and-completion)
+owns current Mandarin completion behavior; the
+[architecture contract](vocabulary-architecture.md#completion-and-failure-boundaries)
+owns durable acceptance constraints. The rules below describe the earlier
+runtime and support interpretation of historical evidence.
 
 <a id="session-covering-criteria"></a>
 
-This contract defines when study units count as covered, how Undo affects
-pending work, and when a finished session is durably accepted. Use it to reason
-about in-session progress and the boundary between pending and accepted study.
-
-The accepted [word bootstrap and introduction design](word-bootstrap-and-introduction.md)
-defines pinned teaching/rehearsal content. The covering rules below apply to
-both prepared teaching and the legacy card path.
-
-It complements the [word lifecycle and review model](learning-review-model.md).
-
-The accepted [pure-cue contract](./pure-cue-elicitation.md) extends review
-covering to standalone elicitations. Any accepted member is success; one
-covered assessment commits to the elicitation, never to a representative word.
-The same Undo and deferred-commit boundary applies.
+Related design sources are the [earlier lifecycle](learning-review-model.md),
+[teaching design](word-bootstrap-and-introduction.md), and
+[pure-cue contract](pure-cue-elicitation.md). These links retain the earlier
+model's relationships; current vocabulary requirements have their own owners above.
 
 ## Scope
 

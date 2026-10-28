@@ -17,10 +17,11 @@ Independent pure cues contribute their complete accepted member set from the
 exact content revision, joined with ` / `, without inventing a selected target.
 The frozen inventory is never enriched from later lexical edits.
 
-The retained completion preserves all encounters. Connections input admits the
-first 1000 rows under its existing provider bound; an operational event records
-any omitted count. This bound does not reject session closure. An empty pinyin
-string truthfully preserves an encounter without a pronunciation cue.
+The retained completion preserves all encounters. The current implementation
+limits Connections provider input to the first 1000 rows and records the omitted
+count in an operational event. This is a provider-input limitation, not a
+promise of exhaustive Connections coverage, and does not reject session closure.
+An empty pinyin string truthfully preserves an encounter without a pronunciation cue.
 
 The closed completion and first debrief job are saved in one transaction.
 Finalization failure permits retry; successful completion is never reopened by

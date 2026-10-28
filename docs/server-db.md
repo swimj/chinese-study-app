@@ -1,8 +1,10 @@
 # Server database module map
 
-The Mandarin learner runtime is defined by the [adaptive vocabulary contract](../SPECS/vocabulary-learning.md)
-and [implementation guide](vocabulary-learning.md), including modes, action logs, internal reflection,
-content provenance, and the operator review surface.
+The [vocabulary product contract](../SPECS/vocabulary-learning.md) defines intended
+behavior; the [architecture contract](../SPECS/vocabulary-architecture.md) defines
+structural constraints. The [implementation guide](vocabulary-learning.md) explains
+the current runtime. Earlier-runtime entries below support retained records and
+compatibility; they do not reopen retired Mandarin write paths.
 
 Use this map to locate persistence responsibilities and understand the current
 storage boundaries, initialization, and domain-specific write paths. Persistence

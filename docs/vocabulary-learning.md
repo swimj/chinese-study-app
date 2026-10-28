@@ -1,9 +1,18 @@
 # Vocabulary learning implementation
 
-This guide explains the Mandarin vocabulary runtime and its operational boundary.
-The [feature contract](../SPECS/vocabulary-learning.md) owns learner-visible
-promises; the [first delivery plan](../notes/active/2026-10-16-vocabulary-first-deliverable-plan.md)
-records the product rationale and conversion scope.
+This guide describes how the Mandarin vocabulary runtime realizes the
+[product contract](../SPECS/vocabulary-learning.md) and
+[architecture contract](../SPECS/vocabulary-architecture.md). It owns persistence,
+selection, session execution, background preparation, and compatibility mechanisms.
+Its implementation policies and measured limits describe current code.
+
+For presentation and input behavior, use [Vocabulary study UI](implementation/vocabulary-ui.md).
+For model-call stages and publication fences, use the
+[content-improvement pipeline](implementation/vocabulary-content-improvement.md).
+The [operator workflow](operator-panel.md#content-improvement-workflow) explains
+review and application; the [migration guide](ops/schema-migrations.md#adaptive-vocabulary-cutover)
+owns cutover procedures. The [first delivery plan](../notes/active/2026-10-16-vocabulary-first-deliverable-plan.md)
+retains design rationale and original conversion scope.
 
 **Reactions** are learner input about exercises: helpfulness ratings, dissatisfaction,
 and comments. **Feedback** is the app's read-only teaching response to the learner.
@@ -47,7 +56,7 @@ cannot submit their own grades, arbitrary encounter snapshots, or learner IDs.
 A volatile ordered queue sends interactions incrementally while reveal content
 is visible. Failed work keeps the same client ID for retry; Next and finalization
 wait for outstanding saves. Pending/failed completion is recoverable, while active
-session restoration is outside this release. Cancellation and resume form a
+session restoration after reload is unsupported. Cancellation and resume form a
 single frontend transition so an automatic staging effect cannot race them.
 
 ## Retained session payload and hot-path work
@@ -74,8 +83,8 @@ Ordinary appends validate the served version/access and response, write the log
 and related evidence transactionally, then advance the projection using only new
 actions. The next exercise is selected from the payload. Responses omit the
 unserved repertoire. Existing sessions without a payload cannot continue study;
-their evidence and completion records remain readable. This requires no schema
-migration; active sessions are not carried through this upgrade.
+their evidence and completion records remain readable. The payload format was introduced without a schema migration. Compatibility is
+determined by payload presence; an older active session without one cannot resume.
 
 This focused implementation still copies and scans in-memory session evidence
 and returns full action/encounter history. Undo and completion replay the log;
@@ -102,7 +111,7 @@ See the [state ownership](diagrams/vocabulary-session-state.svg),
 [transition work](diagrams/vocabulary-session-transitions.svg), and
 [content improvement](diagrams/vocabulary-session-improvement.svg) diagrams.
 
-## Content and learner persistence
+## Content identity and eligibility
 
 `vocabulary-content.ts` owns complete current content and immutable full history,
 including initial and current versions. Update preserves identity; replacement
@@ -140,17 +149,12 @@ Pure-cue due dates and learner deactivation do not change shared proxy coverage.
 The [selection contract](../SPECS/vocabulary-learning.md#learner-mode-and-selection)
 defines its boundaries with suppression, recognition and Solidify.
 
+## Learner state and composition
+
 `vocabulary-learners.ts` owns word modes, stash membership, dismissal, and separate
 scheduler records. Mode changes preserve schedules. Recognition and contextual
 selection retain their independent skill scheduling. Pure cues retain independent
 learner schedules. Learner reactions do not implicitly deactivate an exercise.
-
-My words reuses the existing collection browser and controller with vocabulary
-mode and data adapters. Recently studied, personal words, current deck, search,
-stage filters, recent lapses, pagination, private notes and study dates remain
-available. Unenrolled deck words can be inspected without creating learner state;
-Add to study is explicit. Mode, refresh and removal use vocabulary commands.
-Current modes and dismissal take precedence over retained legacy state.
 
 Session composition reads existing learner-owned production skill enablement and
 relevance records. At composition, production relevance `suppressed` excludes
@@ -188,13 +192,13 @@ and a newer external choice takes precedence when an older session closes.
 Automatic Maintain is disabled. Refresh gives a bounded three-day priority window.
 These are versioned policy choices, not claims of measured mastery.
 
-Session requirements preserve the established learning flow under the new modes:
+The reducer implements these requirements from the product contract:
 
-| Existing flow | Vocabulary mode | Ordinary completion |
-| --- | --- | --- |
-| New | Unstudied / teaching | Introduction and three consecutive successes per skill, recognition and production. A rejection resets only that skill's streak. |
-| Practice | Solidify | Warmup, then successful recognition and production. |
-| Review | Practice (also used by Maintain) | One selected due skill per word; first success completes it, or three consecutive successes after a rejection. |
+| Mode | Ordinary completion |
+| --- | --- |
+| Unstudied / teaching | Introduction and three consecutive successes per skill, recognition and production. A rejection resets only that skill's streak. |
+| Solidify | Warmup, then successful recognition and production. |
+| Practice / Maintain | One selected due skill per word; first success completes it, or three consecutive successes after a rejection. |
 
 Explicit Enough also covers learned words without granting successful recall.
 Teaching, recognition, production and Solidify
@@ -215,6 +219,8 @@ also applies the shared six-hour word recency guard, preventing another due skil
 from immediately bringing that word back. Production lapses shorten its interval
 to six hours; Maintain retains its temporary-refresh policy.
 
+### Preview and admission
+
 Home previews the same final admission plan as Start, counting each selected word
 objective and independent pure cue once, rather than counting repeated exercises
 or dictionary entries. The ready count remains visible in the compact Connections
@@ -230,6 +236,8 @@ Home's active-time section shows Today and 3-/7-day averages from consecutive UT
 daily totals, including zero-activity days. Unmeasured sessions are disclosed and
 never filled with estimated durations.
 
+## Session actions and completion
+
 Before the answer is revealed, Try another way logs an `exercise_exclude` alongside the skipped encounter and
 next presentation. Its content identity is excluded for the session, across
 versions and manual revisits; Undo reverses the transition. Teaching and recognition
@@ -242,92 +250,6 @@ without new coverage; recognition is not repeated as a substitute for production
 Recognition self-ratings advance after saving, including successful save retries.
 Production retains the answer reveal before continuation.
 
-`vocabulary/reveal-snapshot.ts` freezes the exercise's answer words, mapped
-sense descriptions, selected source reveal, and available full word reference
-with each encounter. `VocabularyAnswer` renders those retained facts after the
-answer is revealed: mapped sense labels take precedence over lexical meaning,
-source-backed examples and usage explanations retain their authored structure,
-and Word reference expands the full teaching source. Older encounters without
-these fields use available lexical facts and their material's known reveal
-fields. Rejected production also displays the submitted response; contrast
-answers identify the selected and expected choices.
-
-Cloze answer rendering uses the same blank parser as the prompt. This also
-recognizes direct-text teaching clozes imported with a definition exercise type.
-Those prompts do not acquire rotating bootstrap examples, and the renderer
-omits them from older retained snapshots. Mapped senses and lexical fallback
-remain available; a supplement translation is shown only when its example
-sentence exactly matches a completed cloze line (after character conversion).
-Authored usage notes and explanations remain visible.
-
-Personal notes use a separate current-learner lookup in the study response.
-`VocabularyPersonalNotes` displays existing notes after reveal. Personal-note
-creation and editing entry points are paused across learner study surfaces,
-including the legacy notes button and keyboard shortcut, while the relationship
-to words, exercises, and senses is being decided. Storage and the save endpoint
-remain available; learner reactions remain editable. Notes are not frozen into
-exercise content. Before reveal, the study surface conceals answer details and notes.
-
-`session-presentation.tsx` derives progress chips from the effective projection:
-teaching has a three-success streak for each direction; review and pure cues
-have a three-success reinforcement streak after a mistake. The UI omits
-single-success chip rows. The retained final card
-and Undo use the same projection, so the chips reflect accepted evidence rather
-than an extra local success counter.
-
-Introductions reuse the progressive teaching player: formatted teaching steps,
-back-navigation, and a recap of the pinned source's uses and examples. Typed
-teaching sentences and recap examples use the warmup's character ruby: target
-readings stay visible, while other reliably aligned readings appear on hover or
-keyboard focus. Uncertain alignment shows only target readings, and teaching
-omits the separate sentence-pinyin row. Introduction
-steps have no exercise-level Skip; stopping the whole unstudied word remains a
-footer control. Teaching exercises still interleave with other words. Selection
-balances use within each skill’s teaching pool; small pools may repeat identical
-prompts to reach the required successes. Solidify warmup instead
-uses a single familiar example with cumulative reveals: target contrast and
-pronunciation, then sentence translation, then sense, then Continue. Space, Enter,
-and the Reveal button each advance one beat; a missing translation skips its beat.
-The first reveal emphasizes exact target occurrences and places the word pronunciation above them
-with native character-level ruby text. The authored sentence pinyin is aligned
-only when syllable boundaries and character counts match unambiguously. Target
-readings stay visible after Reveal; other characters show readings on hover or
-keyboard focus. Uncertain alignment retains the Pinyin disclosure. The sentence
-translation comes first, then the word-prefixed example-linked sense (with lexical
-meaning as fallback). An absent target keeps standalone word pronunciation. The warmup
-records no assessment or recall success. The session chooses words and skills, not a
-per-sense coverage plan.
-
-`VocabularyWarmup` selects an example from the retained teaching source, or an
-explicit authored example beat. Source-less material without an example falls
-back to a word reminder with the same pronunciation and sense beats, rather than inventing a
-sentence or replaying the introduction. The session reading region and summary
-scroll within the available viewport; response controls remain
-outside the reading region. Small panels may scroll the outer surface when the
-controls and readable content cannot fit together.
-
-Continuation controls sit first in the card footer, including warmup reveals,
-teaching steps, Next exercise, and Next word. More practice remains beside the
-completed-word continuation. Desktop sessions reserve the covered-word rail before
-the first word is covered, keeping card width stable. Recognition reserves space
-for pronunciation before reveal without exposing the hidden reading in the DOM.
-
-The session bottom line counts remaining words and pure cues, rather than the
-number of exercises or reinforcement repetitions. Open extra practice counts as
-remaining work; deferred, skipped, and completed items do not. During wrap-up,
-unstarted items are excluded. There is one remaining-work count, with no separate
-mistake pile. Sidebar returns, Try another way, and mistake departures share a
-slow tuck-behind motion (about 1.3 seconds). Sidebar returns animate a copy while
-preserving the current card and input. Mistakes retain their immediate rattle;
-their departure tucks back into the same stack. Reduced motion skips the movement.
-
-Covered words sit in a scrollable “Covered in this session” rail. Narrow panels
-expose it through a Covered drawer with the same count; Escape closes the drawer
-and restores focus to its toggle. The recent-first list retains its scroll
-position when new activity is added, and unrevealed production targets remain
-concealed. Partial recall success does not add an uncovered word to the rail.
-Available tiles show just the word; the accessible name retains the queue action.
-
 Selecting a covered word sends `requeue`, which records the existing `word_more`
 transition without serving another exercise. The current encounter and input
 remain in place; ordinary selection later interleaves the reopened work. Queued
@@ -338,39 +260,9 @@ until the learner ends it with “I’m satisfied” or leaves it. Finish for no
 for that explicitly queued work, including requests made while finishing;
 Finish immediately can end the session before extra practice is finished.
 
-Keyboard controls follow the available action. Space reveals/continues; Enter
-submits production; Shift+Enter records No clue. Escape toggles focus into or
-out of the open reaction note; when that panel is closed, it toggles answer focus.
-Recognition reveals pronunciation as ruby above each character when the authored
-pinyin aligns safely, leaving the answer
-panel for meaning and examples without an Answer heading or duplicate pronunciation.
-Recognition uses 1 for Forgot and 2 or Space for Correct, with a brief visible
-confirmation before advancing. Ratings save before card departure: an ongoing
-correct answer moves left, a covered word moves right. A save retry retains that
-departure after acknowledgement. Contrast choices use 1–9, then 0 for the tenth option, with Enter to
-confirm the selected choice.
-U (also Z) undoes, A tries another way, S skips an exercise, D covers for today,
-M requests more practice, and F finishes for now. R opens reactions; [ and ] vote
-Not helpful and Helpful. ? opens the shortcut guide. Teaching retains Space for
-the next step, left arrow for the previous step, and Enter from the final recap.
-Buttons show keycaps on hover or keyboard focus. Dark emphasis marks the action
-mapped to Space; other actions use plain buttons. Answer inputs take focus once
-when they appear and become enabled, including after card motion or Undo. Opening
-reactions leaves the comment field unfocused; Escape blurs it without closing the
-reaction panel. Typing, IME composition, native
-button activation, and modal dialogs retain their own keyboard behavior.
-
 Extra practice retains prior coverage and rejoins the ordinary queue when finished. Summary
 mode edits cancel and restage pending completion; closed-session edits are new
 learner commands. Unstudied defers fresh teaching to the next session.
-
-`VocabularyCompletionPanel` follows the completion report layout: save status
-and immediate actions precede counted word groups and elapsed study time. Groups
-distinguish completed introductions, forward mode changes, other covered words,
-and unfinished work. Lists longer than six words expand through native
-disclosures; each word retains its meaning, pronunciation, learning-mode control,
-and eligible practice or dismissal actions. App-generated feedback is read-only
-when supplied to the panel; learner reactions are separate session evidence.
 
 The controller closes the pending revision at its 15-second deadline and
 returns to Home after successful closure. “Keep summary open” and summary edits
@@ -381,6 +273,13 @@ active study duration across visibility and focus changes, freezing that value
 at the acknowledged completion boundary.
 
 ## Background work and operator repair
+
+This section describes worker execution and preparation. The
+[operator workflow](operator-panel.md#content-improvement-workflow) owns review
+controls; the [provider pipeline](implementation/vocabulary-content-improvement.md)
+explains repair stages.
+
+### Dispatch and model routing
 
 `processing-worker.ts` closes due completions and ingests evidence even when
 provider work is disabled. Learner-feedback and exercise-improvement jobs have
@@ -398,6 +297,8 @@ and rejects retries of disallowed arms rather than silently changing models.
 This applies to learner feedback, improvements, and AI second opinions; practice
 and sense authoring keep their independently configured model.
 
+### Teaching reserve
+
 `preparation-reserve.ts` maintains up to twice the configured daily new-word
 limit (maximum 40), independent of the remaining intake today. It shares the
 stash/diet admission planner, prefers existing members, and uses a stable reserve
@@ -408,9 +309,12 @@ and closure writes request reconciliation; the periodic word-preparation runtime
 reconciles pending learners. Preview and Start also reconcile before composition.
 Only bootstrap and teaching jobs are queued for reserve candidates.
 
+### Preparation compatibility
+
 Migration `0057_preparation_compatibility` records an explicit preparation epoch
 on the shared preparation pointer; existing rows start at zero, with no eager
-queueing. The current boundary is epoch 1. Reserve reconciliation clears old
+queueing. The current boundary is epoch 1. Prompt or model revisions alone do not change
+this compatibility epoch or invalidate prepared teaching. Reserve reconciliation clears old
 source/package pointers and requeues bounded bootstrap/teaching work while
 retaining artifact and attempt history. Active provider work defers refresh;
 paused failures retain their operator retry boundary. Repeated reconciliation
@@ -423,7 +327,10 @@ identities. Refreshed source uses have unresolved mappings until explicitly
 mapped; no text-based identity merge is inferred. Cold words can establish their
 initial inventory. Historical reviewed words are not scanned or regenerated;
 existing material remains usable and shared improvements can enter later sessions.
-This change requires the stopped-writer migration route, not an app-only upgrade.
+Applying migration `0057_preparation_compatibility` requires the stopped-writer
+procedure. Later code-only changes are classified separately by the release runbook.
+
+### Post-teaching practice preparation
 
 Successful session closure queues general practice for completed teaching in the
 same transaction as learning effects. Undo before closure and failed closure
@@ -445,126 +352,9 @@ per-learner or per-session calls. The starting general v4 and teaching-exercise 
 briefs come from the retained [editorial trials](implementation/vocabulary-prompt-handoff.md).
 Existing artifacts are reused; retry creates additional attributable attempts.
 
-Learners read lessons in a Feedback inbox using the proposal inbox’s single-card
-layout, subject/date header and previous/next pager. Lessons appear recent first;
-only the displayed lesson is marked read. Queued, generating and failed feedback
-occupy cards in the same queue, with retry on failed cards. Pending items refresh
-automatically and retain selection when the lesson arrives. There is no secondary
-rail or proposal editing, approval or application UI. Dismiss removes a lesson
-from the active inbox without deleting it; Dismissed retains those lessons with
-a restore action. Dismissal is learner-owned and does not affect scheduling or
-content repair. Left/Right navigate cards and D dismisses the displayed active
-lesson; typing, composition and modified keys retain their normal behavior.
+### Preparation retries
 
-Operators open `#operator-usage` and select **Content improvement**. The operator
-panel is unlisted in learner navigation and protected by the existing allowlist.
-For now, hosted operator access is restricted to the dogfood account. The
-cross-learner inbox starts with proposals awaiting review. Previous and next controls
-navigate one proposal at a time; applying or dismissing a proposal advances to
-the next available item. Opening a proposal validates its saved version and shows current and proposed content, accepted
-answers, and shared or learner-only scope. Changed answer criteria and retained
-teaching are expanded in the comparison. Evidence, processing details, relationship
-effects, and manual editing are available on drill-in; Archive and issues needing
-attention have separate views.
-
-“Approve and apply” records approval for the displayed version and applies it
-with an idempotent receipt. Preview runs the real writers under rollback;
-approval and application revalidate current bases. A failed application can be
-retried without losing the approval or application key in the current view.
-Manual edits create a new version and invalidate the previous preview and review.
-Teaching repairs can update an exercise and explicitly bind its resulting version
-in the same ordered proposal. Failed jobs and dispatches have explicit retry controls.
-
-Case-backed exercise-improvement proposals can request a second opinion on the
-exact saved proposal version, with an optional question. This is a fresh invocation
-of the configured review model, retaining the proposal snapshot, source versions,
-and learner evidence. Its support/revise/reject opinion is advisory: it neither
-rewrites the proposal nor applies content. Earlier opinions remain labeled with
-their proposal version after edits. Failed reviews require explicit retry; teaching
-cases and standalone manual proposals do not yet support this review path.
-Completed exercise judgments that propose no change also appear in Awaiting
-review, including retained historical judgments. The operator can inspect the
-served exercise and rationale, draft a correction from current content, request
-an advisory second opinion with a question, or close the review with an optional reason.
-The second opinion reviews the no-change judgment; it does not create or apply a
-proposal. Closed reviews remain in Archive, with their retained jobs and results in the case evidence.
-
-Single-word local improvement drafts wording changes and additional variants of
-the supplied exercise while preserving its accepted-answer membership. Operators can
-edit the full authored draft, including its answer relationships, before preview.
-Automatic proposals for new contrast clusters or learner suppression are not
-supplied by this adapter. Single-word admission can additionally propose pure-cue
-creation or membership extension through the separate shared-practice assessment
-below.
-
-Single-word production improvement first establishes the word's sense inventory
-and separately assesses the authored cue before attempting a sense association.
-A defensible single sense admits a sense-specific local assessment with
-independently optional local operations and a shared-practice referral. A gloss
-laundry list spanning distinct senses automatically generates a fresh repertoire proposal: one replacement retires the laundry list
-and additional exercises extend the pool, without retiring other cues. The
-repertoire draws on the word's active inventory; the discarded list has no sense
-association or requirement to preserve its old glosses. Reflection invokes the same
-general-exercise authoring contract as ordinary preparation, retaining the complete
-general v4 brief, structured direct/cloze stimuli, optional teaching notes, and
-output validation. It keeps the reflection job's selected model. Established
-senses supply the lexical uses and any retained examples; missing examples are
-not invented. The response adapter preserves the source's accepted answers and
-publication scope and creates proposal operations instead of publishing exercises.
-All content
-application still requires operator approval. An uninterpretable exercise or an
-apparent inventory gap for a single intended use stays in the operator inbox
-with its mapping rationale;
-neither triggers automatic repair or sense expansion. Operators can close these
-findings after inspection. Learner feedback and compensation remain independent.
-Existing pure cues use a dedicated standalone `pure-cue-improvement.md` call,
-not the generic improvement fallback. Its input supplies complete original
-content and current members, projected encounters, and lexical resolutions of
-effective rejected responses. Missing or ambiguous lexical identities do not
-remove raw-response evidence, but cannot authorize new member IDs. The result
-is extension, stimulus repair, or explanation-only. Extension preserves the
-stimulus, axis, current members and accepted forms while replacing the complete
-teaching note; repair changes only the stimulus. The accumulated teaching note
-integrates all members, mostly in English with Chinese where helpful. Both
-changes require manual application and leave individual word repertoires alone.
-The call uses prompt/schema version 1 and projection `vocabulary-admission.v1`,
-retains invocation provenance and source/lexical fences, and does not use the
-admission stage-result cache.
-
-A referral supplies advisory written forms, a shared purpose, and rationale;
-local operations retain their original answer contract. Raw responses can suggest
-an alternative even without a resolved lexical record. `pure-cue-promotion.ts`
-resolves the forms to lexical identities, using the source to disambiguate its own
-target. Missing or ambiguous candidates remain an operator-attention finding.
-Resolved candidates lead to a same-job assessment of active, overlapping pure
-cues in the source's publication scope and owner. It can reject, reuse, extend,
-or create. Extension preserves the existing prompt, reveal axis, all answer
-members and their accepted forms; every added member must suit that same task.
-Creation and extension author complete, mostly English teaching notes, preserving
-useful accumulated nuance on extension. Creation authors a new shared-purpose
-cue from resolved candidates. Both become operations alongside any local edits in one manual proposal; rejection and reuse
-remain recorded assessments. Private reactions inform judgment without becoming
-shared authored text. This stage does not reconcile the participating words'
-exercise repertoires or change scheduling and compensation.
-
-The standalone r5 `single-improvement.md` uses prompt version 3 and schema
-version 2; mapping retains prompt version 2 and schema version 1. Repertoire uses
-the shared general-exercise prompt v4 and schema version 1. Its retained stage
-identity includes that authoring contract, so older repertoire stage results do
-not satisfy a new invocation. Existing saved proposals and second opinions remain
-bound to their original versions; an upgrade does not regenerate them.
-Promotion uses its own prompt/schema version 2 and projection
-`vocabulary-admission.v1`. Admission stages retain and reuse
-results by exact contract/input within the same job, with publication fences for
-source and sense state and, for promotion, resolved identities and inspected cues.
-
-Sense establishment reuses existing inventories or authored bootstrap uses before
-requesting a sense-only generation call. It does not regenerate teaching or
-practice content as a side effect. Mapping and generation retain evaluated source
-versions and invocation provenance; publication is fenced against changed sources
-and maintenance controls. A mapped sense explains authorial intent, not what the
-learner was necessarily told by the original cue.
-Failed practice preparation also appears here with its retained invocation and
+Failed practice preparation appears in operator review with its retained invocation and
 attempt count after its automatic retry cycle is exhausted. Practice and sense
 preparation make up to three attempts per cycle, retrying after 30 and 60 seconds.
 Operator retry starts a new cycle while retaining earlier attempt provenance.
@@ -573,6 +363,8 @@ the shared preparation error classification. Per-job retry deadlines and budgets
 remain intact; invalid generated content stays an item-local failure. Calls already
 in flight may still publish if their ordinary control and lease checks pass.
 Retries do not bypass provider-work or maintenance controls.
+
+## Feedback and scheduling compensation
 
 Automatic scheduling compensation is independent of content application. The
 initial policy compensates general production and independent pure-cue scheduling,
@@ -602,14 +394,13 @@ Content/sense links point to the exact versions consumed or produced. Human edit
 and imports retain their own origins. Missing legacy provenance stays unknown;
 credentials and transport headers are not retained.
 
-## Conversion and local verification
+## Cutover compatibility
 
 Migrations 0039–0048 introduce content/provenance, learner state, session evidence,
 legacy import, internal reflection, authoring links, integrity guards, dismissal,
 and Connections sources. Migrations 0049–0055 add sense readiness, improvement
 admission, pure-cue promotion, promotion controls, second opinions, provider
-retry/routing state, and feedback dismissal. Released migrations 0037/0038
-remain unchanged ahead of this unreleased sequence. The migration runner refuses to copy learner state while
+retry/routing state, and feedback dismissal. This vocabulary cutover sequence follows migrations 0037/0038. The migration runner refuses to copy learner state while
 legacy completion or authorized reflection effects remain pending. Settle them
 under the previous runtime; the failed migration rolls back. Preserve other old
 records as history. Mandarin legacy session/proposal, introduction open/complete,
@@ -624,9 +415,13 @@ original tables with an exclusion record. Sense associations can be enriched
 incrementally. Import identity and source mappings make repeats safe without
 overwriting subsequent authored improvements.
 
-Use the [offline migration procedure](ops/schema-migrations.md). This release
-cannot use app-only hosted upgrade. No hosted migration or deployment is implied
-by passing tests or creating a review PR.
+Applying the vocabulary cutover migrations requires the
+[offline migration procedure](ops/schema-migrations.md#adaptive-vocabulary-cutover).
+Subsequent releases are classified against their own pending schema and data
+changes; the cutover does not make every later release schema-changing.
+Migration and deployment status require operation-specific evidence.
+
+## Contributor verification
 
 For a disposable, provider-disabled local fixture:
 

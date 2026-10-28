@@ -1,12 +1,20 @@
 # Operator content improvement
 
-This guide describes the retained revision-checked operator API for correcting
-older study content, including validation, application effects, and retained
-evidence. The content quality panel shows historical ratings; it no longer
-provides a correction editor. The operator panel's Content improvement tab handles
-vocabulary reflection review separately.
+This reference explains retained correction cases and the earlier operator
+correction design. For current Mandarin corrections, use the
+[Content improvement workflow](operator-panel.md#content-improvement-workflow)
+and `/api/operator/vocabulary`.
+
+The Mandarin cutover fence rejects every write under
+`/api/operator/content-improvements` with `409 VOCABULARY_CUTOVER`, including
+create, save, validate, apply and close. Authenticated operator GET routes retain
+case and history access. The sections below describe the earlier workflow and
+stored evidence; they are not an executable correction procedure for Mandarin.
+See [cutover compatibility](vocabulary-learning.md#cutover-compatibility).
 
 ## Review and application
+
+The following application semantics describe the earlier correction workflow.
 
 An authenticated operator or agent can create a correction case through the API
 from a content kind and source ID, optionally attaching an exact rated snapshot.
@@ -62,12 +70,15 @@ retirement remain separate publication decisions.
 
 ## Agent API
 
-All routes live under `/api/operator/content-improvements`, use the existing
+These earlier route contracts live under `/api/operator/content-improvements`, use the existing
 operator authentication/allowlist, and return JSON. Agents must use an
 authenticated operator session. There is no unauthenticated agent
 backdoor and no provider invocation or automatic generation in this workflow.
 
-| Method and suffix | Contract |
+Only GET operations are available through the current Mandarin API. The write
+shapes are retained to interpret earlier clients and audit records.
+
+| Method and suffix | Earlier contract |
 | --- | --- |
 | `GET /` | List cases by `status=draft|applied|closed`, `limit` (1–100), and `offset`; returns `{items,total}`. |
 | `POST /` | Create from `{kind,sourceId,contentKey? ,id?}`. Optional client-generated `id` makes creation safely retryable for the same selection. |
@@ -104,11 +115,10 @@ future generation does not automatically rewrite existing content. The
 API implements evidence capture for this second loop, not an automated
 prompt optimizer or evaluation service.
 
-## Delivery and migration
+## Storage and migration history
 
-The correction workflow uses versioned schema migrations for correction drafts, immutable
-revision evidence and content-specific replacement/repair records. Deploy via
-the [offline migration procedure](ops/schema-migrations.md), with stopped writers
-and a verified backup. The app-only hosted upgrade route is insufficient.
-Implementation and review publication do not apply any correction or migrate
-production.
+The earlier workflow introduced correction drafts, immutable revision evidence,
+and content-specific replacement and repair records through migrations 0032 and
+0033. Those stored records remain useful after vocabulary cutover; applying the
+old migrations does not reopen retired writes. New schema or data changes follow
+the [migration procedure](ops/schema-migrations.md) for their specific versions.

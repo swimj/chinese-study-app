@@ -1,10 +1,12 @@
 # Words And My Words
 
-The Mandarin study runtime follows [Adaptive vocabulary study](vocabulary-learning.md).
-This document describes the retained legacy implementation and historical records;
-its learner-write flow is not the Mandarin entry point.
+This document preserves the earlier runtime's design and terminology for
+interpreting retained records. The description below is scoped to that runtime.
+[Adaptive vocabulary study](vocabulary-learning.md) owns current Mandarin
+behavior; [Vocabulary study UI](../docs/implementation/vocabulary-ui.md) describes
+the current frontend.
 
-Status: initial read-only vocabulary browsing contract.
+## Earlier browsing contract
 
 ## Information architecture
 

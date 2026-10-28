@@ -1,8 +1,10 @@
 # HTTP API index
 
-The Mandarin learner runtime is defined by the [adaptive vocabulary contract](../SPECS/vocabulary-learning.md)
-and [implementation guide](vocabulary-learning.md), including modes, action logs, internal reflection,
-content provenance, and the operator review surface.
+The [vocabulary product contract](../SPECS/vocabulary-learning.md) defines intended
+behavior; the [architecture contract](../SPECS/vocabulary-architecture.md) defines
+structural constraints. The [implementation guide](vocabulary-learning.md) explains
+the current runtime. Earlier-runtime entries below support retained records and
+compatibility; they do not reopen retired Mandarin write paths.
 
 Routes are defined in [server/index.ts](../server/index.ts). Frontend client: [src/services/api.ts](../src/services/api.ts).
 
@@ -155,7 +157,7 @@ Invalid parameters, including unknown status or lapses values, return 400. See [
 ## Content diagnostics
 
 Content Bin uses this read-only API to inspect words, contrast clusters, and
-durable word-owned production cues. The [frontend map](../SPECS/frontend-architecture-map.md#content-bin-connected-details)
+durable word-owned production cues. The [frontend map](../SPECS/frontend-architecture-map.md#entry-and-navigation)
 explains navigation between connected items.
 
 | Method | Path | Handler domain |
@@ -1094,11 +1096,13 @@ jobs resume after restart. See [the contract](../SPECS/session-debrief.md).
 
 ## Operator content improvement
 
-The revisioned draft, validation, application and evidence-history endpoints
-under `/api/operator/content-improvements` are described in the
-[correction API contract](content-improvement.md#agent-api). All require operator
-access. Application is an explicit, revision-checked transaction, independent
-of learner feedback and study commits.
+Current review and application use `/api/operator/vocabulary`; see
+[Adaptive vocabulary](#adaptive-vocabulary) and the
+[operator workflow](operator-panel.md#content-improvement-workflow).
+`/api/operator/content-improvements` retains authenticated operator GET access to
+historical cases and evidence. Mandarin writes, including validation and closure,
+return `409 VOCABULARY_CUTOVER`. The [earlier API reference](content-improvement.md#agent-api)
+documents stored case semantics and retired write shapes.
 
 ### Vocabulary word collection
 
