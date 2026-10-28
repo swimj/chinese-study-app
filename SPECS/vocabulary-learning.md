@@ -316,11 +316,17 @@ exercise collections.
 ### Operator review
 
 The operator's default surface is a cross-learner proposal inbox for scanning
-suggestions and approving changes. Current versus proposed learning content and
-recipient scope are visible before approval; evidence and manual editing are
-available on drill-in. Operational failures and unresolved cases are separate
-from ready suggestions. Second opinions are retained, advisory reviews bound to
-an exact proposal version; they do not replace edits or authorize application.
+suggestions and approving changes. Each entry leads with the served content
+retained from the learner's encounters: the cue and accepted answers, in
+encounter order. An encounter without a retained snapshot is labeled
+unavailable. Diagnosis, current versus proposed learning content, and recipient
+scope follow, and are visible before approval. When the entry has no retained
+served snapshot, it states that the original served content is unavailable and
+does not present current or proposed content as the original. Evidence and
+manual editing are available on drill-in. Operational failures and unresolved
+cases are separate from ready suggestions. Second opinions are retained,
+advisory reviews bound to an exact proposal version; they do not replace edits
+or authorize application.
 
 Operators can inspect supporting evidence and edit proposals before approval.
 Dismissal and closing a completed no-change review accept an optional reason;
