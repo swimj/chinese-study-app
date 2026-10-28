@@ -11,7 +11,7 @@ product spec can remain useful after the initial implementation is complete.
 Related documents:
 
 - [`milestone-7-8-relevance-aware-contrast-plan.md`](./milestone-7-8-relevance-aware-contrast-plan.md)
-- [`study-action-model.md`](/Users/jw/dev/chinese-study-app/SPECS/study-action-model.md)
+- [`study-action-model.md`](study-action-model.md)
 
 ## Development Order
 

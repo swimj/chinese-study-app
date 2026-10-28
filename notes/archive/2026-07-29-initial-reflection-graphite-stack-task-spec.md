@@ -10,7 +10,7 @@ related:
 
 - SWI-16
 - [`PLANS/initial-reflection-steel-thread.md`](../../PLANS/initial-reflection-steel-thread.md)
-- [`SPECS/reflection-proposals-and-handles.md`](../../SPECS/reflection-proposals-and-handles.md)
+- [`SPECS/reflection-proposals-and-handles.md`](../../SPECS/archive/reflection-proposals-and-handles.md)
 
 ## Purpose and authority
 

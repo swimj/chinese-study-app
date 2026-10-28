@@ -208,7 +208,7 @@ Source inspection found useful pieces to extend:
   same direct invocation link in their publication path.
 - [Reflection records](../../docs/server-db.md) retain evidence, results, prompt
   metadata, provider attempts, proposal reviews, and authorized operations, but
-  these records are learner-owned. The [operator content-improvement workspace](../../docs/content-improvement.md)
+  these records are learner-owned. The [operator content-improvement workspace](https://github.com/swimj/chinese-study-app/blob/a46f0cde602ab72e78105ba4b920b3e47d4a406c/docs/content-improvement.md)
   already supports manual revision, approval, and application of repairs.
 
 These findings are source-based. They identify reusable pieces, not verified

@@ -11,8 +11,8 @@ related:
 - SWI-26
 - SWI-24
 - [`PLANS/swi-24-production-task-cue-contract.md`](../../PLANS/swi-24-production-task-cue-contract.md)
-- [`SPECS/study-action-model.md`](../../SPECS/study-action-model.md)
-- [`SPECS/reflection-proposals-and-handles.md`](../../SPECS/reflection-proposals-and-handles.md)
+- [`SPECS/study-action-model.md`](../../SPECS/archive/study-action-model.md)
+- [`SPECS/reflection-proposals-and-handles.md`](../../SPECS/archive/reflection-proposals-and-handles.md)
 - [`STABILITY_FRONTIER.md`](../../STABILITY_FRONTIER.md)
 
 ## Purpose and authority

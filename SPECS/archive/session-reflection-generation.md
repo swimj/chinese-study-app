@@ -1,29 +1,30 @@
-# Session Reflection Generation
+# Archived: Session Reflection Generation
 
-The Mandarin study runtime follows [Adaptive vocabulary study](vocabulary-learning.md).
-This document describes the retained legacy implementation and historical records;
-its learner-write flow is not the Mandarin entry point.
+Archived after the Mandarin vocabulary cutover. This is a historical design
+record; current requirements are maintained in the [product contract](../vocabulary-learning.md)
+and [architecture contract](../vocabulary-architecture.md).
 
-Status: implemented canonical product contract for the initial post-session
-reflection flow. Evidence kinds, bundle/result schemas, and resource controls
-are versioned extension points.
+This document preserves the earlier post-session reflection contract: eligible
+evidence, completed-session boundaries, failure isolation, retries and provenance.
+Use it to interpret historical reflection artifacts and understand that design.
 
-This specification defines when post-session reflection may run, which learner
-evidence is eligible, how generation operates independently of study correctness,
-and how failure and retry preserve truthful provenance. Proposal review, authorization,
-application, and effect attribution are owned by
-[`reflection-proposals-and-handles.md`](./reflection-proposals-and-handles.md).
+The current Mandarin model separates learner lessons, internal content improvement
+and bounded scheduling correction. The
+[vocabulary product contract](../vocabulary-learning.md#reactions-feedback-content-repair-and-authority)
+and [architecture contract](../vocabulary-architecture.md#generation-review-and-application-authority)
+define those responsibilities. The evidence filters and lifecycle below apply
+to the earlier reflection flow.
 
 Related documents:
 
-- [`session-progress-and-completion.md`](./session-progress-and-completion.md)
-- [`study-action-model.md`](./study-action-model.md)
-- [`reflection-proposals-and-handles.md`](./reflection-proposals-and-handles.md)
-- [`docs/reflection-frontend-architecture.md`](../docs/reflection-frontend-architecture.md)
+- [`session-progress-and-completion.md`](session-progress-and-completion.md)
+- [`study-action-model.md`](study-action-model.md)
+- [`reflection-proposals-and-handles.md`](reflection-proposals-and-handles.md)
+- [`docs/reflection-frontend-architecture.md`](../../docs/reflection-frontend-architecture.md)
 
 ## 1. Scope And Authority
 
-This specification owns:
+For the earlier runtime, this specification defines:
 
 - the completed-session boundary at which reflection becomes eligible;
 - the relationship among Undo, durable attempt acceptance, and reflection
@@ -50,7 +51,7 @@ Completing the last session unit immediately opens the completion screen and
 saves a pending completion. The backend acknowledges a fixed 15-second final
 Undo deadline. Ordinary active/draining leave does not finish a session.
 The completion lifecycle is defined in
-[`session-progress-and-completion.md`](./session-progress-and-completion.md#session-completion).
+[`session-progress-and-completion.md`](session-progress-and-completion.md#session-completion).
 
 Pending completion preserves the final deferred action and qualifying reflection
 supplement without accepting the study outcome. Undo must cancel it before the
@@ -97,7 +98,7 @@ Pure-cue failures additionally use `pure_cue_post_session_reflection.v1` with
 `pure_cue_reflection_bundle.v1` and `pure_cue_reflection_result.v1`. They are
 reconstructed from durable assessments, separately from the word-production
 supplement, and receive a separate provider call and artifact. See
-[`pure-cue-elicitation.md`](pure-cue-elicitation.md#pure-cue-response-reflection).
+[`pure-cue-elicitation.md`](../pure-cue-elicitation.md#pure-cue-response-reflection).
 The generation endpoint can return additional artifact IDs and a
 partial-failure notice; successful artifacts are available in the inbox.
 
@@ -334,7 +335,7 @@ eligible and included counts are the items in its retained promotion input,
 not the diagnosis bundle size. The final artifact
 links to the completing run; its continuation retains the chain.
 
-See [`pure-cue-elicitation.md`](./pure-cue-elicitation.md) for cleanup,
+See [`pure-cue-elicitation.md`](../pure-cue-elicitation.md) for cleanup,
 compensation, and standalone scheduling policy.
 
 ## 5. Failure And Deliberate Retry
@@ -343,7 +344,7 @@ Failed provider runs additionally produce best-effort private diagnostic files
 with exact evidence and full rejected output. These are operational artifacts,
 not successful reflection artifacts or proposal authority. Files expire after
 seven days and are collected on server startup; see the
-[diagnostics runbook](../docs/ops/error-diagnostics.md#reflection-diagnostics)
+[diagnostics runbook](../../docs/ops/error-diagnostics.md#reflection-diagnostics)
 for storage, privacy, and failure-isolation details.
 
 Every generation failure is isolated from session correctness. A failure may be

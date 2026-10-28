@@ -1,9 +1,5 @@
 # Documentation index
 
-The Mandarin learner runtime is defined by the [adaptive vocabulary contract](../SPECS/vocabulary-learning.md)
-and [implementation guide](vocabulary-learning.md), including modes, action logs, internal reflection,
-content provenance, and the operator review surface.
-
 Use this index to find the document or section that answers your question. The
 [documentation principles](documentation-principles.md#documentation-map)
 define the target hierarchy independently of today's folders and labels.
@@ -30,28 +26,39 @@ models and contracts. Several documents can explain the shared model.
 Readers should recover the vocabulary, relationships, learner lifecycle, and
 promises without first reconstructing the current implementation.
 
-**Existing sources:** [product and feature routes](../SPECS/README.md) lead to
-word lifecycle, scheduling, session behavior, introduction, debrief, reflection,
-and other areas. [STABILITY_FRONTIER.md](../STABILITY_FRONTIER.md) collects
-cross-cutting constraints and unsettled decisions. The
-[service-boundary document](private-beta-service-boundary.md) contains ownership,
-identity, persistence, and operational-trust guarantees.
-
-These sources remain to be reconciled into the target hierarchy. In particular,
-the frontier and service-boundary document mix several roles. Their existing
-guarantees remain relevant while the documentation is reorganized.
+**Current Mandarin entry point:** [Adaptive vocabulary study](../SPECS/vocabulary-learning.md)
+owns modes, selection, session behavior and content-review promises. The
+[product routes](../SPECS/README.md) distinguish current contracts from earlier
+runtime designs retained for interpretation and rationale.
 
 [What’s New](whats-new.md#content-and-publication) defines the blog’s publication
 and unread-update contract; its persistence and operator sections explain how
 the application realizes those promises.
 
-## Current architecture and implementation
+## Prescriptive architecture
+
+**Target:** accepted structural constraints and their reasons, independent of
+particular components or algorithms.
+
+- [Vocabulary architecture contract](../SPECS/vocabulary-architecture.md): session
+  authority, retained evidence, atomic completion, content identity and application.
+- [Stability frontier](../STABILITY_FRONTIER.md): cross-cutting constraints and
+  unsettled decisions; it summarizes boundaries rather than replacing their owners.
+- [Service boundary](private-beta-service-boundary.md): identity, ownership,
+  persistence and operational trust. Its historical storage inventory is explicitly
+  scoped; other mixed responsibilities remain in the gap inventory below.
+
+## Descriptive architecture and implementation
 
 **Target:** explain actual components, data flow, mechanisms, and limitations,
 linking to the intended guarantees they realize and any known gaps.
 
 **Existing starting points:**
 
+- [Vocabulary runtime](vocabulary-learning.md): persistence, selection, session
+  execution, background preparation and compatibility.
+- [Vocabulary study UI](implementation/vocabulary-ui.md): controller/view integration,
+  rendering, input behavior and verification surfaces.
 - [Architecture map](architecture.md): runtime layout and code navigation;
   currently identifies itself as navigation-only.
 - [Vocabulary content-improvement architecture](implementation/vocabulary-content-improvement.md):
@@ -73,14 +80,15 @@ accounts of the mechanisms and causal relationships behind that structure.
 
 | Reader's question | Explanation |
 | --- | --- |
-| How are the meanings, examples, introductions, and recall exercises that learners see represented? | [Word content data representation](word-content-representation.md): source/package identity, stimuli, answer contracts, snapshots, and compatibility |
-| How does the application generate that content and make a complete package available? | [Generating and publishing word content](word-content-generation.md): authoring, validation, retained work, retries, and publication |
-| How does a learner receive prepared content, and how does using it affect study progress? | [Serving word content during study](word-content-serving.md): preparation demand, private association, session selection, and first-encounter/Practice integration |
+| How are current content identities and learner eligibility represented? | [Content identity and eligibility](vocabulary-learning.md#content-identity-and-eligibility) |
+| How does teaching become ready and lead to general practice? | [Background preparation](vocabulary-learning.md#background-work-and-operator-repair) |
+| How do reactions produce reviewable content changes? | [Content-improvement pipeline](implementation/vocabulary-content-improvement.md) |
+| How do I interpret earlier package records and source artifacts? | [Representation](word-content-representation.md), [generation](word-content-generation.md), and [serving](word-content-serving.md) retain the earlier package account and shared preparation context; current vocabulary selection is owned above. |
 
-The [word bootstrap and introduction contract](../SPECS/word-bootstrap-and-introduction.md)
-defines the intended content model and feature guarantees. The
-[local introduction aid](word-introduction-lab.md) retains the launch reference
-for the original teaching-prompt exploration.
+The [bootstrap and introduction design](../SPECS/word-bootstrap-and-introduction.md)
+retains teaching rationale and earlier package-based realization. The
+[local introduction aid](word-introduction-lab.md) supports authoring experiments.
+These routes do not certify full reconciliation of the older package guides.
 
 ## Operations guides
 
@@ -93,9 +101,9 @@ hosted operations, and contributor development clearly separated.
   [schema migrations](ops/schema-migrations.md).
 - Operator interface: [operator panel guide](operator-panel.md), with the
   [API reference](api.md#operator-view) describing its HTTP contracts.
-- Content correction: [operator content improvement](content-improvement.md#review-and-application)
-  explains the retained correction API, including validation and explicit approval, with
-  content-specific effects and retained history.
+- Content correction: [Content improvement workflow](operator-panel.md#content-improvement-workflow)
+  explains current vocabulary review and application. The
+  [API map](api.md#operator-content-improvement) identifies retained historical reads.
 - Blog publication: [manual editor and operator command](whats-new.md#manual-operator-editor),
   including the skill’s interactive draft-review procedure.
 - Contributor environments: [scripts](scripts.md) and the
@@ -136,7 +144,7 @@ and the referenced documents.
 | Date added | Outstanding description |
 | --- | --- |
 | 2026-10-07 | The root README mixes product/repository orientation with former local-study clone advice and French try-out instructions. Its retained material needs appropriate current guides or an explicit historical role. |
-| 2026-10-07 | Shared product concepts and guarantees are spread across word/session/scheduling specifications and the frontier. Their explanatory boundaries, duplicated accounts, and links from feature contracts need reconciliation. |
+| 2026-10-28 | Vocabulary product and architecture contracts have separate owners, and the earlier lifecycle/reflection contracts are archived. The older word-content representation/generation/serving guides and other feature sources listed in SPECS/README.md still need their retained mechanisms and current applicability reconciled; closure requires explicit current versus historical ownership in those sources. |
 | 2026-10-07 | `architecture.md` is primarily a navigation map. The system-level explanation of components, data flow, state boundaries, and mechanisms remains missing. |
 | 2026-10-07 | The service-boundary document mixes guarantees, alternatives, the hosted package, one-time migration, and acceptance scenarios. The frontier combines direction, constraints, and unresolved decisions. These documents still need clearer responsibilities. |
 | 2026-10-07 | Legacy in-repo plans and vision copies need a retention decision: useful conclusions need current explanatory homes, and retained historical material needs a deliberate reference role alongside the Steward workspace. |

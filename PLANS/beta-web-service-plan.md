@@ -18,9 +18,9 @@ into authority, when the service-boundary design is accepted.
 
 Related documents:
 
-- [`study-action-model.md`](/Users/jw/dev/chinese-study-app/SPECS/study-action-model.md)
-- [`learning-review-model.md`](/Users/jw/dev/chinese-study-app/SPECS/learning-review-model.md)
-- [`session-progress-and-completion.md`](../SPECS/session-progress-and-completion.md)
+- [`study-action-model.md`](../SPECS/archive/study-action-model.md)
+- [`learning-review-model.md`](../SPECS/archive/learning-review-model.md)
+- [`session-progress-and-completion.md`](../SPECS/archive/session-progress-and-completion.md)
 
 ## 1. Goal
 

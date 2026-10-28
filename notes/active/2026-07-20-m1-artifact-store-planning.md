@@ -103,7 +103,7 @@ implement it. The current shape is:
 The artifact body remains the source for original proposal content. Proposal
 reviews do not duplicate operation payloads, and informational item results
 with no proposals receive no lifecycle row. See
-[`SPECS/reflection-proposals-and-handles.md`](../../SPECS/reflection-proposals-and-handles.md)
+[`SPECS/reflection-proposals-and-handles.md`](../../SPECS/archive/reflection-proposals-and-handles.md)
 and [`PLANS/initial-reflection-steel-thread.md`](../../PLANS/initial-reflection-steel-thread.md).
 
 ## Historical storage shape — superseded

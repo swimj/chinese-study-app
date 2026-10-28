@@ -1,8 +1,10 @@
 # HTTP API index
 
-The Mandarin learner runtime is defined by the [adaptive vocabulary contract](../SPECS/vocabulary-learning.md)
-and [implementation guide](vocabulary-learning.md), including modes, action logs, internal reflection,
-content provenance, and the operator review surface.
+The [vocabulary product contract](../SPECS/vocabulary-learning.md) defines intended
+behavior; the [architecture contract](../SPECS/vocabulary-architecture.md) defines
+structural constraints. The [implementation guide](vocabulary-learning.md) explains
+the current runtime. Earlier-runtime entries below support retained records and
+compatibility; they do not reopen retired Mandarin write paths.
 
 Routes are defined in [server/index.ts](../server/index.ts). Frontend client: [src/services/api.ts](../src/services/api.ts).
 
@@ -150,12 +152,13 @@ The lapses predicate is independent of the selected stages. Results are ordered
 learning (last study date descending, missing last), unstudied (pronunciation),
 review (last study date descending, missing last), then word id. For
 paged views, limit is 1–100; offset is a nonnegative integer.
-Invalid parameters, including unknown status or lapses values, return 400. See [the product contract](../SPECS/my-words.md).
+Invalid parameters, including unknown status or lapses values, return 400. These legacy query semantics are distinct from the current
+[vocabulary word collection](#vocabulary-word-collection).
 
 ## Content diagnostics
 
 Content Bin uses this read-only API to inspect words, contrast clusters, and
-durable word-owned production cues. The [frontend map](../SPECS/frontend-architecture-map.md#content-bin-connected-details)
+durable word-owned production cues. The [frontend map](../SPECS/frontend-architecture-map.md#entry-and-navigation)
 explains navigation between connected items.
 
 | Method | Path | Handler domain |
@@ -440,7 +443,7 @@ items freeze their selected durable cue or meaning-derived fallback, the canonic
 `{ wordId, hanzi, traditional }` rows whose ids define the accepted set used for
 client grading, and nullable recheck-demand id. Unstudied membership is the
 experimental dual-pool admitted set from
-[`SPECS/study-action-model.md`](../SPECS/study-action-model.md#experimental-dual-pool-unstudied-admission)
+[`SPECS/study-action-model.md`](../SPECS/archive/study-action-model.md#experimental-dual-pool-unstudied-admission)
 (mixed stash/diet split of remaining daily new-word quota, or stash-only when
 that source is selected). Mandarin applies readiness within those pools without
 a require bypass; legacy non-Mandarin selection remains unchanged. Entry waits
@@ -497,7 +500,7 @@ an overdue pending revision. Every operation is learner-scoped. Explicit input
 errors return `400`, missing completion returns `404`, lifecycle or revision
 conflicts return `409`, and persistence failures return `500`. Browser unload is
 not required; server recovery closes acknowledged overdue completions. See the
-[completion contract](../SPECS/session-progress-and-completion.md#session-completion).
+[earlier completion contract](../SPECS/archive/session-progress-and-completion.md#session-completion).
 
 Accepted review production events must include their exact frozen
 `metadata.production` snapshot. The accepted-review batch transaction appends
@@ -551,8 +554,9 @@ study commit. See [error logging and diagnostics](./ops/error-diagnostics.md#cli
 
 ## Post-session reflection
 
-The durable contract is
-[`SPECS/reflection-proposals-and-handles.md`](../SPECS/reflection-proposals-and-handles.md).
+This section describes the retained earlier reflection API. Its historical
+contract is
+[`SPECS/archive/reflection-proposals-and-handles.md`](../SPECS/archive/reflection-proposals-and-handles.md).
 Request/result types live in
 [`src/domain/reflection-evidence.ts`](../src/domain/reflection-evidence.ts) and
 [`src/domain/reflection.ts`](../src/domain/reflection.ts).
@@ -1094,11 +1098,14 @@ jobs resume after restart. See [the contract](../SPECS/session-debrief.md).
 
 ## Operator content improvement
 
-The revisioned draft, validation, application and evidence-history endpoints
-under `/api/operator/content-improvements` are described in the
-[correction API contract](content-improvement.md#agent-api). All require operator
-access. Application is an explicit, revision-checked transaction, independent
-of learner feedback and study commits.
+Current review and application use `/api/operator/vocabulary`; see
+[Adaptive vocabulary](#adaptive-vocabulary) and the
+[operator workflow](operator-panel.md#content-improvement-workflow).
+`/api/operator/content-improvements` retains authenticated operator GET access to
+historical cases and evidence. Mandarin writes, including validation and closure,
+return `409 VOCABULARY_CUTOVER`. GET `/`, `/:id` and `/:id/history` expose
+retained cases and revision evidence; the [route implementation](../server/content-improvement-routes.ts)
+defines their read shapes.
 
 ### Vocabulary word collection
 

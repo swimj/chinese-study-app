@@ -104,7 +104,7 @@ locally installed sanitized excerpt from
 historical proposals with their original acceptance/application provenance;
 actions only mutate browser memory, not production. Missing excerpts produce an
 explicit error. Keep retrieved records out of source control and distinguish
-legacy operation schema versions from local proposal revisions. Use the [disposable vocabulary fixture](vocabulary-learning.md#conversion-and-local-verification)
+legacy operation schema versions from local proposal revisions. Use the [disposable vocabulary fixture](vocabulary-learning.md#contributor-verification)
 for end-to-end study against the actual API and SQLite. The older session fixtures
 below retain coverage of the previous controller, not the current Mandarin path.
 

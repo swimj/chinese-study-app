@@ -38,8 +38,8 @@ For how authenticated identity reaches private SQLite reads and writes, see
 | --- | --- | --- |
 | App shell | `App.tsx`, `VocabularyApp.tsx`, `components/AppChrome.tsx` | Profile entry, routing, global errors, backend status |
 | Home / study | `pages/VocabularyHomePage.tsx`, `features/vocabulary-study/*`, `features/vocabulary-ui/*` | Controller and presentation; shared Connections remains in `features/session` |
-| Words / Stash | [`pages/PriorityPage.tsx`](../src/pages/PriorityPage.tsx), [`features/priority/`](../src/features/priority/) | Add, prioritize, and remove unstudied words; [Stash contract](../SPECS/my-words.md#information-architecture) |
-| Words / My words | [`pages/MyWordsPage.tsx`](../src/pages/MyWordsPage.tsx), [`features/words/useMyWordsController.ts`](../src/features/words/useMyWordsController.ts) | Browse learner collections and word details; [My words contract](../SPECS/my-words.md#information-architecture) |
+| Words / Stash | [`pages/PriorityPage.tsx`](../src/pages/PriorityPage.tsx), [`features/priority/`](../src/features/priority/) | Add, prioritize, and remove unstudied words; [Word collections](implementation/vocabulary-ui.md#word-collections) |
+| Words / My words | [`pages/MyWordsPage.tsx`](../src/pages/MyWordsPage.tsx), [`features/words/useMyWordsController.ts`](../src/features/words/useMyWordsController.ts) | Browse learner collections and word details; [Word collections](implementation/vocabulary-ui.md#word-collections) |
 | Feedback / internal review | `pages/VocabularyFeedbackPage.tsx`, `pages/VocabularyOperatorPage.tsx` | Read-only learner lessons; separately allowlisted operator application |
 | Content diagnostics | `pages/ContentDiagnosticsPage.tsx`, `features/content/*` | Read-only primitive content browser |
 | Shared domain types | `domain/vocabulary-*.ts`, `types.ts` | Content, session commands/projection and API contracts |
