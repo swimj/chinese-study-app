@@ -101,12 +101,6 @@ import {
   isCurrentReflectionFlowVersion,
   isCurrentReflectionGenerationStage,
 } from '../../src/domain/reflection-contracts.ts';
-import {
-  buildReflectionSpendCap,
-  utcDayKey,
-  utcDayRange,
-  type ReflectionSpendCap,
-} from '../reflection/spend-cap.ts';
 import { dbPath, getConfig, getDb } from './connection.ts';
 import { requireLearnerId } from './learner-context.ts';
 import {
@@ -1711,22 +1705,6 @@ export function listReflectionGenerationRuns(limit = 50): ReflectionGenerationRu
     LIMIT ?
   `).all(limit - inFlight.length) as unknown as ReflectionGenerationRunRow[];
   return [...inFlight, ...concludedRows.map(mapReflectionGenerationRunRow)];
-}
-
-export function getReflectionSpendCap(now = new Date()): ReflectionSpendCap {
-  const dayKey = utcDayKey(now);
-  const { start, end } = utcDayRange(dayKey);
-  const row = getDb().prepare(`
-    SELECT COALESCE(SUM(estimated_cost_usd), 0) AS spent_usd
-    FROM reflection_generation_runs
-    WHERE completed_at >= ? AND completed_at < ?
-  `).get(start, end) as { spent_usd: number };
-  // New service-owned vocabulary calls retain accounting in the common ledger.
-  // The prefix excludes legacy calls already counted by their run records.
-  const vocabulary = getDb().prepare(`SELECT COALESCE(SUM(spend_usd),0) AS spent_usd FROM model_invocations
-    WHERE requesting_learner_id=? AND invocation_type GLOB 'vocabulary_reflection_*' AND timestamp>=? AND timestamp<?`)
-    .get(requireLearnerId(),start,end) as {spent_usd:number};
-  return buildReflectionSpendCap(row.spent_usd+vocabulary.spent_usd, now);
 }
 
 function getReflectionGenerationRun(runId: string): ReflectionGenerationRunRecord {

@@ -9,7 +9,6 @@ import { createVocabularySession,appendVocabularySessionActions,stageVocabularyS
 import { claimVocabularyReflectionJob,retryOwnVocabularyFeedback,retryVocabularyPostSessionDispatch,listOwnVocabularyMessages,recordVocabularyFeedbackJudgment } from '../server/db/vocabulary-reflection.ts';
 import { createVocabularyProcessingWorker } from '../server/vocabulary/processing-worker.ts';
 import { createVocabularyReflectionProvider,normalizeVocabularyReflectionOutput } from '../server/vocabulary/reflection-provider.ts';
-import { buildReflectionSpendCap } from '../server/reflection/spend-cap.ts';
 import { createOpenAiCompatibleAdapter } from '../server/llm/openai-compatible.ts';
 import { installModelInvocationLedger } from '../server/llm/invocation-ledger.ts';
 import type { VocabularyReflectionJob,VocabularyReflectionResult } from '../src/domain/vocabulary-reflection.ts';
@@ -130,7 +129,7 @@ test('strict real injected provider retains service provenance and rejects forge
       const value=request.response_format.json_schema.name.includes('sense_mapping')?{outcome:'single_sense',rationale:'A written character.',senseIds:[sense.senseId]}:payload;
       return new Response(JSON.stringify({id:'provider-1',model:'resolved',choices:[{message:{content:JSON.stringify(value)},finish_reason:'stop'}],usage:{prompt_tokens:100,completion_tokens:10}}),{status:200});
     }});
-  const provider=createVocabularyReflectionProvider({environment:{OPENAI_API_KEY:'never-save-token'},adapter,spendCap:()=>buildReflectionSpendCap(1,new Date(at)),
+  const provider=createVocabularyReflectionProvider({random:()=>0,environment:{OPENAI_API_KEY:'never-save-token'},adapter,
     ensureSenses:async()=>({catalog:getVocabularySenseCatalog('a'),senses:getVocabularySenses('a'),source:'existing'})});
   const output=await provider.run(job);assert.equal(output.kind,'learner_feedback');
   const invocation=sql.prepare('SELECT * FROM model_invocations').get()!;assert.equal(invocation.actor_kind,'service');assert.equal(invocation.learner_id,null);
@@ -236,7 +235,7 @@ test('incomplete teaching reactions enter manual inbox without model work',async
   assert.equal(Number(sql.prepare('SELECT count(*) n FROM vocabulary_reflection_jobs').get()!.n),0);await processing.stop();
 });
 
-test('reflection routes a case once, retains GLM after failure/recreation, and enforces spend cap without failover',async()=>{
+test('reflection retains GLM after failure and recreation regardless of recorded learner spend',async()=>{
   pending();const ingestOnly=worker({isConfigured:()=>false,run:async job=>result(job)});await ingestOnly.step();await ingestOnly.stop();
   const job=claimVocabularyReflectionJob({kind:'learner_feedback',now:new Date(clock).toISOString()})!;
   const requests:import('../server/llm/types.ts').ProviderRunRequest[]=[];
@@ -246,19 +245,24 @@ test('reflection routes a case once, retains GLM after failure/recreation, and e
     return {provider:'zai',model:request.model,responseId:null,structuredOutputMode:'json_object',rawText:JSON.stringify({diagnosis:'Fair cue',lesson:'Lesson',unfairEncounterIds:[]}),finishReason:'stop',rawResponse:null,usage:{inputTokens:null,cachedInputTokens:null,cacheWriteInputTokens:null,outputTokens:null,reasoningTokens:null,totalTokens:null},invocationId:null};
   }};
   const environment={ZAI_API_KEY:'test'};
-  const low=()=>buildReflectionSpendCap(0,new Date(at));
-  const first=createVocabularyReflectionProvider({environment,adapter,random:()=>0.5,spendCap:low});
+  sql.prepare(`INSERT INTO model_invocations(id,timestamp,provider,model,invocation_type,spend_usd,spend_source,status,actor_kind,actor_id,requesting_learner_id)
+    VALUES ('prior-spend',?,'zai','glm-5.3-flash','vocabulary_reflection_improvement',0.1,'estimated','completed','service','vocabulary-reflection','alice')`).run(new Date().toISOString());
+  const first=createVocabularyReflectionProvider({environment,adapter,random:()=>0.5});
   assert.equal(first.isConfigured(),true);
   await assert.rejects(()=>first.run(job),/temporary failure/);
   assert.equal(sql.prepare('SELECT model_choice FROM vocabulary_reflection_jobs WHERE job_id=?').get(job.jobId)!.model_choice,'zai:glm-5.3-flash-high');
   fail=false;
-  const retry=createVocabularyReflectionProvider({environment,adapter,random:()=>{throw new Error('Must not reroll');},spendCap:low});
+  const retry=createVocabularyReflectionProvider({environment,adapter,random:()=>{throw new Error('Must not reroll');}});
   await retry.run({...job,attemptNumber:2});
   assert.deepEqual(requests.map(request=>request.model),['glm-5.3-flash','glm-5.3-flash']);
   assert.equal(requests[1]!.provenance!.attemptNumber,2);
-  const capped=createVocabularyReflectionProvider({environment,adapter,spendCap:()=>buildReflectionSpendCap(1,new Date(at))});
-  await assert.rejects(()=>capped.run(job),/Only Luna/);
-  assert.equal(requests.length,2);
+  sql.prepare("UPDATE model_invocations SET spend_usd=100 WHERE id='prior-spend'").run();
+  const highSpend=createVocabularyReflectionProvider({environment,adapter,random:()=>{throw new Error('Must not reroll');}});
+  await alice(()=>highSpend.run(job));
+  assert.equal(requests.length,3);
+  assert.equal(requests[2]!.model,'glm-5.3-flash');
+  assert.deepEqual(requests[2]!.invocationActor,{kind:'service',serviceId:'vocabulary-reflection',requestingLearnerId:'alice'});
+  assert.equal(sql.prepare("SELECT spend_usd FROM model_invocations WHERE id='prior-spend'").get()!.spend_usd,100);
 });
 
 
@@ -266,7 +270,7 @@ test('routed GLM transport uses its credentials, endpoint and JSON-object protoc
   pending();const ingestOnly=worker({isConfigured:()=>false,run:async job=>result(job)});await ingestOnly.step();await ingestOnly.stop();
   const job=claimVocabularyReflectionJob({kind:'learner_feedback',now:new Date(clock).toISOString()})!;
   installModelInvocationLedger();
-  const provider=createVocabularyReflectionProvider({environment:{ZAI_API_KEY:'zai-test'},random:()=>0.5,spendCap:()=>buildReflectionSpendCap(0,new Date(at)),
+  const provider=createVocabularyReflectionProvider({environment:{ZAI_API_KEY:'zai-test'},random:()=>0.5,
     fetchImplementation:async(url,init)=>{
       assert.equal(String(url),'https://api.z.ai/api/paas/v4/chat/completions');
       assert.equal(new Headers(init?.headers).get('authorization'),'Bearer zai-test');

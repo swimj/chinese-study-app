@@ -344,9 +344,9 @@ ownership. Provider input and output are untrusted and validated. Prompt version
 exact retained requests/results, model settings, and content links support later
 analysis without turning provenance into live dependency propagation.
 
-Reflection model routing and spend controls apply independently of the content
-improvement stages. Individual jobs use equal-probability selection among the
-three offered arms (Luna, GLM, Sol), subject to the spend guard. The size-weighted
+Reflection model routing applies independently of the content-improvement
+stages. Individual jobs use equal-probability selection among the three offered
+arms (Luna, GLM, Sol), independent of accumulated spend. The size-weighted
 batched policy remains separate. A job retains its selected model across stages
 and retries.
 Preparation failures use bounded automatic retries before requiring operator

@@ -62,11 +62,6 @@ import {
   LUNA_REFLECTION_MODEL_CHOICE,
   type ReflectionModelChoice,
 } from './model-arms.ts';
-import {
-  assertReflectionModelAllowedUnderSpendCap,
-  buildReflectionSpendCap,
-  type ReflectionSpendCap,
-} from './spend-cap.ts';
 import { randomUUID } from 'node:crypto';
 import type { ReflectionLifecycleLogger } from './lifecycle-log.ts';
 import type { ReflectionProviderDiagnosticSink } from './provider-diagnostics.ts';
@@ -81,7 +76,6 @@ export type InitialReflectionGenerationResult = {
 };
 
 export { isReflectionModelChoice, type ReflectionModelChoice } from './model-arms.ts';
-export { ReflectionSpendCapError } from './spend-cap.ts';
 
 export function choiceForStoredModel(model: string): ReflectionModelChoice | null {
   const match = REFLECTION_MODEL_ARMS.map((arm) => arm.choice).find((choice) => {
@@ -159,7 +153,6 @@ export type InitialReflectionGenerationDependencies = {
   lifecycleLogger?: ReflectionLifecycleLogger;
   providerDiagnosticSink?: ReflectionProviderDiagnosticSink;
   failureArtifactSink?: ReflectionFailureArtifactSink;
-  getSpendCap?: () => ReflectionSpendCap;
 };
 
 /**
@@ -209,8 +202,6 @@ export function createInitialReflectionGenerationService(
     ?? linkReflectionGenerationContinuationRun;
   const continuationRetrySource = dependencies.getContinuationRetrySource
     ?? getReflectionGenerationContinuationRetrySource;
-  const getSpendCap = dependencies.getSpendCap
-    ?? (() => buildReflectionSpendCap(0, new Date(now())));
   const lifecycleLogger = dependencies.lifecycleLogger;
   const inFlight = new Map<string, Promise<InitialReflectionGenerationResult>>();
   const configuredProviders: Partial<Record<ReflectionModelChoice, LunaReflectionProvider>> = {
@@ -245,16 +236,14 @@ export function createInitialReflectionGenerationService(
     ) {
       return { provider, config: LUNA_REFLECTION_MODEL_CONFIG };
     }
-    const spendCap = getSpendCap();
     if (choice !== undefined) {
-      assertReflectionModelAllowedUnderSpendCap(choice, spendCap);
       const selected = comparisonArms.find((arm) => arm.choice === choice);
       if (selected === undefined) {
         throw new Error(`Unsupported reflection model choice: ${choice}`);
       }
       return { provider: selected.provider, config: reflectionProviderConfigForChoice(choice) };
     }
-    const selectedChoice = routeBatchedReflectionModel(initialItemCount ?? 0, spendCap, random);
+    const selectedChoice = routeBatchedReflectionModel(initialItemCount ?? 0, random);
     const selected = comparisonArms.find(arm => arm.choice === selectedChoice)!;
     return { provider: selected.provider, config: reflectionProviderConfigForChoice(selectedChoice) };
   }

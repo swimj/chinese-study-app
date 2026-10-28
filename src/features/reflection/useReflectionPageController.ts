@@ -8,7 +8,7 @@ import type {
   MarkReflectionHelpInboxDoneRequest,
   AuthorizeManualReflectionOperationRequest,
 } from '../../domain/reflection';
-import type { ReflectionModelChoice, ReflectionSpendCapDto } from '../../services/api';
+import type { ReflectionModelChoice } from '../../services/api';
 import { artifactDetailIdsToFetch } from './reflection-page-model';
 import type {
   ReflectionArtifactDetailDto,
@@ -26,7 +26,6 @@ export type ReflectionPageController = {
   artifactDetails: ReflectionArtifactDetailDto[];
   unreadableArtifactIds: ReadonlySet<string>;
   generationRuns: ReflectionGenerationRunDto[];
-  spendCap: ReflectionSpendCapDto | null;
   qualityStats: ReflectionQualityStatsDto | null;
   selectedArtifact: ReflectionArtifactDetailDto | null;
   selectedArtifactId: string | null;
@@ -93,7 +92,6 @@ export function useReflectionPageController({
     new Set(),
   );
   const [generationRuns, setGenerationRuns] = useState<ReflectionGenerationRunDto[]>([]);
-  const [spendCap, setSpendCap] = useState<ReflectionSpendCapDto | null>(null);
   const [qualityStats, setQualityStats] = useState<ReflectionQualityStatsDto | null>(null);
   const [selectedArtifact, setSelectedArtifact] = useState<ReflectionArtifactDetailDto | null>(null);
   const [submittingProposalId, setSubmittingProposalId] = useState<string | null>(null);
@@ -138,7 +136,6 @@ export function useReflectionPageController({
       reviewApi.listHelpInbox(),
     ]);
     const nextGenerationRuns = generationRunsPayload.runs;
-    setSpendCap(generationRunsPayload.spendCap);
     setQualityStats(nextQualityStats);
     const orderedArtifacts = [
       ...nextRecentArtifacts,
@@ -305,7 +302,6 @@ export function useReflectionPageController({
       try {
         const payload = await requireApi().listGenerationRuns();
         setGenerationRuns(payload.runs);
-        setSpendCap(payload.spendCap);
       } catch {
         // Preserve the retry failure as the actionable error.
       }
@@ -477,7 +473,6 @@ export function useReflectionPageController({
     artifactDetails,
     unreadableArtifactIds,
     generationRuns,
-    spendCap,
     qualityStats,
     selectedArtifact,
     selectedArtifactId: selectedArtifact?.artifactId ?? null,

@@ -69,7 +69,6 @@ import {
   getReviewFailureRateDays,
   listReflectionArtifacts,
   listReflectionGenerationRuns,
-  getReflectionSpendCap,
   listReflectionHelpInbox,
   recoverPendingReflectionInvocations,
   requireLearnerId,
@@ -147,7 +146,6 @@ import {
   createInitialReflectionGenerationService,
   isReflectionModelChoice,
   RetiredReflectionSourceModelError,
-  ReflectionSpendCapError,
   type InitialReflectionGenerationService,
 } from './reflection/generation.ts';
 import { ReflectionEvidenceError } from './reflection/evidence.ts';
@@ -253,7 +251,6 @@ export function createApp(options: CreateAppOptions = {}) {
       lifecycleLogger: reflectionLifecycleLogger,
       failureArtifactSink,
       providerDiagnosticSink: createFileReflectionProviderDiagnosticSink(dbConfig.dataDir),
-      getSpendCap: getReflectionSpendCap,
     });
   const studyCommitDiagnosticSink = options.studyCommitDiagnosticSink
     ?? createStudyCommitDiagnosticSink(dbConfig.dataDir);
@@ -1216,18 +1213,6 @@ export function createApp(options: CreateAppOptions = {}) {
         });
         return;
       }
-      if (isReflectionSpendCapError(error)) {
-        reflectionLifecycleLogger.emit({
-          event: 'reflection.generation_failed',
-          sessionId: normalizedSessionId,
-          failure: 'internal',
-          code: 'spend_cap',
-          clientRequestId: null,
-          elapsedMs: Date.now() - generationStartedAt,
-        });
-        res.status(409).json({ error: error.message });
-        return;
-      }
       if (error instanceof LunaReflectionProviderError) {
         reflectionLifecycleLogger.emit({
           event: 'reflection.generation_failed',
@@ -1273,7 +1258,6 @@ export function createApp(options: CreateAppOptions = {}) {
     try {
       res.json({
         runs: listReflectionGenerationRuns(),
-        spendCap: getReflectionSpendCap(),
       });
     } catch {
       res.status(500).json({ error: 'Failed to load reflection generation runs' });
@@ -1307,10 +1291,6 @@ export function createApp(options: CreateAppOptions = {}) {
         error instanceof RetiredReflectionSourceModelError
         || (error instanceof Error && error.name === 'RetiredReflectionSourceModelError')
       ) {
-        res.status(409).json({ error: error.message });
-        return;
-      }
-      if (isReflectionSpendCapError(error)) {
         res.status(409).json({ error: error.message });
         return;
       }
@@ -1389,18 +1369,6 @@ export function createApp(options: CreateAppOptions = {}) {
           elapsedMs: Date.now() - generationStartedAt,
         });
         res.status(400).json({ error: error.message });
-        return;
-      }
-      if (isReflectionSpendCapError(error)) {
-        reflectionLifecycleLogger.emit({
-          event: 'reflection.generation_failed',
-          sessionId: null,
-          failure: 'internal',
-          code: 'spend_cap',
-          clientRequestId: null,
-          elapsedMs: Date.now() - generationStartedAt,
-        });
-        res.status(409).json({ error: error.message });
         return;
       }
       if (error instanceof LunaReflectionProviderError) {
@@ -2367,11 +2335,6 @@ function isReflectionNotFoundError(error: unknown, message: string): error is Er
   return error instanceof Error && error.message === message;
 }
 
-function isReflectionSpendCapError(error: unknown): error is ReflectionSpendCapError {
-  return error instanceof ReflectionSpendCapError
-    || (error instanceof Error && error.name === 'ReflectionSpendCapError');
-}
-
 function isReflectionReviewClientError(error: unknown): error is Error {
   if (!(error instanceof Error)) return false;
   return (
@@ -2688,7 +2651,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       lifecycleLogger: createStdoutReflectionLifecycleLogger(),
       failureArtifactSink: createFileReflectionFailureArtifactSink(dbConfig.dataDir),
       providerDiagnosticSink: createFileReflectionProviderDiagnosticSink(dbConfig.dataDir),
-      getSpendCap: getReflectionSpendCap,
     }), onError: () => console.error('Session completion worker failed') });
   if (dbConfig.studyProfile !== 'mandarin') sessionCompletions.wake();
   const vocabularyProcessing = createVocabularyProcessingWorker({onError: error => console.error(error)});

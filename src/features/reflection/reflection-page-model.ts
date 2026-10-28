@@ -1563,21 +1563,6 @@ export function servedCueId(
   return evidence.servedCue.cueId;
 }
 
-export function formatReflectionSpendCapResetAt(resetsAt: string): string {
-  return new Intl.DateTimeFormat(undefined, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-    timeZoneName: 'short',
-  }).format(new Date(resetsAt));
-}
-
-export function reflectionSpendCapTip(resetsAt: string): string {
-  return `Luna is the only available model until ${formatReflectionSpendCapResetAt(resetsAt)}.`;
-}
-
 export type {
   ReflectionArtifactDetailDto,
   ReflectionArtifactSummaryDto,
@@ -1585,7 +1570,6 @@ export type {
   ReflectionProposalDetailDto,
   ReflectionQualityStatsDto,
   ReflectionReviewApi,
-  ReflectionSpendCapDto,
 } from '../../services/api';
 export type { AcceptProductionAlternateOperationV1 };
 

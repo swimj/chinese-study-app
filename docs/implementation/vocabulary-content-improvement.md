@@ -62,6 +62,17 @@ See the [vocabulary contract](../../SPECS/vocabulary-learning.md) for learning a
 review authority, and the [implementation guide](../vocabulary-learning.md) for
 runtime details.
 
+## Invocation policy
+
+Accumulated spend does not gate backend content-improvement calls or change their
+selected model, including when work carries a requesting learner's context.
+Individual reflection jobs retain their selected arm across stages and retries.
+Provider invocation records retain usage, reported or estimated cost, and unknown
+costs for inspection. Operator authorization, validation, explicit failure retry,
+worker concurrency and leases, and provider request/output limits apply independently
+of spend. The manual correction API described in [Operator content improvement](../content-improvement.md)
+does not invoke a model.
+
 ## Dictionary fallback publication scope
 
 Corpus dictionary fallbacks and the repertoires generated from them are shared

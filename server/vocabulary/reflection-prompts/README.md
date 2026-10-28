@@ -187,7 +187,7 @@ bypass this admission path. Recognition and contrast make no provider calls.
 
 Use `tests/vocabulary-improvement-admission.test.ts` for an isolated SQLite
 fixture and `createVocabularyReflectionProvider({adapter, ensureSenses,
-spendCap, environment})` to capture exact provider requests. The injected
+environment})` to capture exact provider requests. The injected
 `ensureSenses` must agree with the fixture's persisted sense catalog: publication
 checks read it from SQLite. Mapping and repertoire schemas are exported from
 `improvement-admission.ts`. Mapping validates ID membership, uniqueness, and
