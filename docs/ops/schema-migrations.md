@@ -130,6 +130,17 @@ preparation; no historical backfill runs during migration. Use the stopped-write
 procedure above. Coverage includes a populated prior-version preparation row and
 lease preservation in `tests/schema-migrations.test.ts`.
 
+Migration `0058_shared_dictionary_baselines` corrects stock corpus-derived
+fallbacks from learner-private to shared through new content revisions, preserving
+identity, original snapshots and learner state. It revises matching unresolved
+service-generated repertoire proposals as shared, updates their source bases and
+requires fresh approval. Original revisions, reviews, opinions and generation
+evidence remain intact. Operator-edited proposal revisions, edited or unrelated private records and resolved
+proposals are outside this repair. No provider work or content application runs.
+This data migration requires the stopped-writer procedure above; the app-only
+upgrade route is insufficient. Populated preservation, rollback, repeat and
+fresh-schema coverage live in `tests/shared-dictionary-baselines-migration.test.ts`.
+
 ## Writing the next migration
 
 Add a SQL file under `server/db/migrations/` and append its definition to

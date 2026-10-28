@@ -7,7 +7,11 @@ import { beforeEach, afterEach, test } from 'node:test';
 import { setDb } from '../server/db/connection.ts';
 import { runWithLearnerId } from '../server/db/learner-context.ts';
 import { requestVocabularyRefresh } from '../server/db/vocabulary-learners.ts';
-import { createVocabularyContent, emitBackendEvent, getVocabularyContentForMaintenance, updateVocabularyContent,createVocabularySense,getVocabularySenseCatalog,mapVocabularyContentSense,updateVocabularySense } from '../server/db/vocabulary-content.ts';
+import { createVocabularyContent, emitBackendEvent, getVocabularyContentForMaintenance, listVocabularyExercises, updateVocabularyContent,createVocabularySense,getVocabularySenseCatalog,getVocabularySenses,establishVocabularySenseCatalog,mapVocabularyContentSense,updateVocabularySense } from '../server/db/vocabulary-content.ts';
+import { migrateSharedDictionaryBaselines } from '../server/db/dictionary-baseline-sharing.ts';
+import { createVocabularyReflectionProvider, projectVocabularyReflectionInput } from '../server/vocabulary/reflection-provider.ts';
+import { buildReflectionSpendCap } from '../server/reflection/spend-cap.ts';
+import type { ProviderAdapter } from '../server/llm/types.ts';
 import { createVocabularySession, appendVocabularySessionActions, stageVocabularySessionCompletion, closeVocabularySessionCompletion } from '../server/db/vocabulary-sessions.ts';
 import { ingestVocabularySessionEvidence, getVocabularyReflectionCase, listVocabularyReflectionCases,
   claimVocabularyReflectionJob, recoverVocabularyReflectionJobs, failVocabularyReflectionJob, retryOwnVocabularyFeedback,
@@ -104,6 +108,116 @@ function op(strategy: VocabularyProposalOperation['strategy']='update_existing',
   return { operationKey: 'repair',scope: { kind: 'shared' },rationale: 'Improve this exact cue',content: draft(next),
     ...(strategy === 'create' ? { strategy } : { strategy,sourceContentId: source,expectedVersion: 1 }) };
 }
+
+function historicalDictionaryBaselineJob(migrate=true) {
+  sql.exec("ALTER TABLE lexical_words ADD COLUMN traditional TEXT; ALTER TABLE lexical_words ADD COLUMN meaning TEXT NOT NULL DEFAULT 'written character; writing system'; ALTER TABLE vocabulary_reflection_jobs ADD COLUMN model_choice TEXT;");
+  const id='vocabulary:baseline:v1:alice:production:general:a';
+  contents[id]=createVocabularyContent({contentId:id,kind:'exercise',payloadVersion:1,
+    body:{prompt:'written character; writing system',instruction:'Give the Mandarin word.',source:{kind:'dictionary_baseline',wordId:'a'}},
+    accessScope:'private',ownerLearnerId:'alice',availability:'active',originKind:'human',authorKind:'service',authorId:'vocabulary-dictionary-baseline-v1',
+    exerciseType:'definition',skill:'production',exerciseRole:'general',assessment:{match:'prepared_answer_membership'},
+    words:[{wordId:'a',relation:'target'}],answers:[{wordId:'a',acceptedForms:['字']}]},actor);
+  for(const senseId of ['character','script'])createVocabularySense({senseId,wordId:'a',description:{label:senseId}},actor);
+  establishVocabularySenseCatalog('a',getVocabularySenseCatalog('a').version,actor);
+  ingest([present(id),response(id)]);
+  const work=claimVocabularyReflectionJob({kind:'exercise_improvement',now:judgedAt})!;
+  if(migrate)migrateDictionaryBaselines();
+  sql.prepare("UPDATE vocabulary_reflection_jobs SET model_choice='openai:gpt-5.6-luna-high' WHERE job_id=?").run(work.jobId);
+  return {id,work};
+}
+
+function migrateDictionaryBaselines() {
+  sql.exec('BEGIN IMMEDIATE');
+  try { migrateSharedDictionaryBaselines(sql);sql.exec('COMMIT'); }
+  catch(error) { sql.exec('ROLLBACK');throw error; }
+}
+function dictionaryRepertoireProvider(accessScope:'shared'|'private',version:number) {
+  let calls=0;
+  const adapter:ProviderAdapter={id:'fake',defaultBaseUrl:'https://unused.invalid',apiKeyEnvironmentVariable:'KEY',structuredOutputMode:'json_schema',async run(request){
+    calls++;
+    const input=JSON.parse(request.userPrompt) as {sourceContent:VocabularyContent};
+    assert.equal(input.sourceContent.accessScope,accessScope);assert.equal(input.sourceContent.version,version);
+    const value=calls===1?{outcome:'laundry_list',rationale:'The corpus gloss bundles useful meanings.',senseIds:[]}
+      :{diagnosis:'Give each meaning a fair prompt.',exercises:[{senseId:'character',prompt:'A single written unit in a text.',rationale:'Written unit.'},
+        {senseId:'script',prompt:'A system of signs used for writing.',rationale:'Writing system.'}]};
+    return {provider:'fake',model:'fake',responseId:null,structuredOutputMode:'json_schema',rawText:JSON.stringify(value),finishReason:'stop',rawResponse:null,
+      usage:{inputTokens:null,cachedInputTokens:null,cacheWriteInputTokens:null,outputTokens:null,reasoningTokens:null,totalTokens:null},invocationId:null};
+  }};
+  const provider=createVocabularyReflectionProvider({environment:{OPENAI_API_KEY:'fake'},adapter,spendCap:()=>buildReflectionSpendCap(1,new Date(judgedAt)),
+    ensureSenses:async()=>({catalog:getVocabularySenseCatalog('a'),senses:getVocabularySenses('a'),source:'existing'})});
+  return {provider,get calls(){return calls;}};
+}
+
+test('historical private dictionary encounters generate shared repertoires after scope migration and remain applicable',async()=>{
+  const {id,work}=historicalDictionaryBaselineJob();
+  const evidenceBefore=JSON.stringify(getVocabularyReflectionCase(work.caseId).evidence);
+  const projected=projectVocabularyReflectionInput(work) as {sourceContent:VocabularyContent};
+  assert.equal(projected.sourceContent.version,2);assert.equal(projected.sourceContent.accessScope,'shared');
+  assert.throws(()=>projectVocabularyReflectionInput({...work,learnerId:'bob'}),/source access mismatch/);
+  const trial=dictionaryRepertoireProvider('shared',2);
+  const result=await trial.provider.run(work);if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
+  assert.equal(trial.calls,2);assert.equal(result.result.admission?.sourceContentVersion,2);
+  assert.deepEqual(result.result.proposal!.operations.map(operation=>operation.scope),[{kind:'shared'},{kind:'shared'}]);
+  const recorded=recordVocabularyImprovementResult(work.jobId,work.leaseToken,result.result,judgedAt);
+  const review=approveVocabularyProposal(recorded.proposalId!,1,'editor');
+  applyVocabularyProposal(recorded.proposalId!,1,review,'migrated-repertoire','editor');
+  const proposal=getVocabularyProposal(recorded.proposalId!,'editor');
+  for(const operation of proposal.operations)assert.equal(getVocabularyContentForMaintenance(operation.content.contentId!)!.accessScope,'shared');
+  assert.equal(getVocabularyContentForMaintenance(id)!.availability,'retired');
+  assert.equal(JSON.stringify(getVocabularyReflectionCase(work.caseId).evidence),evidenceBefore);
+  assert.equal(work.evidence.evidence[0]!.snapshot.contentVersion,1);
+  assert.deepEqual(sql.prepare('PRAGMA foreign_key_check').all(),[]);
+});
+
+test('scope migration rebases a retained private repertoire and requires approval of its new shared version',async()=>{
+  const {id,work}=historicalDictionaryBaselineJob(false);
+  const trial=dictionaryRepertoireProvider('private',1);
+  const result=await trial.provider.run(work);if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
+  const recorded=recordVocabularyImprovementResult(work.jobId,work.leaseToken,result.result,judgedAt);
+  const oldReview=approveVocabularyProposal(recorded.proposalId!,1,'editor');
+  const before=getVocabularyProposal(recorded.proposalId!,'editor');
+  assert.ok(before.operations.every(operation=>operation.scope.kind==='learner'&&operation.content.accessScope==='private'));
+  migrateDictionaryBaselines();
+  const migrated=getVocabularyProposal(recorded.proposalId!,'editor');
+  assert.equal(migrated.version,2);assert.equal(migrated.status,'awaiting_review');
+  assert.deepEqual(migrated.bases.map(base=>({...base})),[{contentId:id,expectedVersion:2}]);
+  assert.ok(migrated.operations.every(operation=>operation.scope.kind==='shared'&&operation.content.accessScope==='shared'&&operation.content.ownerLearnerId===null));
+  assert.throws(()=>applyVocabularyProposal(migrated.proposalId,2,oldReview,'old-private-approval','editor'),/Exact proposal version requires manual approval/);
+  assert.equal(sql.prepare('SELECT count(*) n FROM proposal_applications').get()!.n,0);
+  const review=approveVocabularyProposal(migrated.proposalId,2,'editor');
+  assert.throws(()=>applyVocabularyProposal(migrated.proposalId,2,oldReview,'old-private-approval','editor'),/Approval does not authorize this exact proposal version/);
+  applyVocabularyProposal(migrated.proposalId,2,review,'migrated-existing-repertoire','editor');
+  assert.equal(getVocabularyProposal(migrated.proposalId,'editor').status,'applied');
+  for(const operation of migrated.operations) {
+    const applied=getVocabularyContentForMaintenance(operation.content.contentId!)!;
+    assert.equal(applied.accessScope,'shared');assert.equal(applied.ownerLearnerId,null);
+    assert.deepEqual(applied.body,operation.content.body);
+  }
+  const bobExercises=runWithLearnerId('bob',()=>listVocabularyExercises({wordId:'a',mode:'practice'}));
+  for(const operation of migrated.operations)assert.ok(bobExercises.some(content=>content.contentId===operation.content.contentId));
+  assert.equal(getVocabularyContentForMaintenance(id)!.availability,'retired');
+  assert.equal(sql.prepare('SELECT count(*) n FROM proposal_applications').get()!.n,1);
+  assert.deepEqual(sql.prepare('PRAGMA foreign_key_check').all(),[]);
+});
+
+test('scope migration does not authorize admission against later substantive dictionary edits',async()=>{
+  const {id,work}=historicalDictionaryBaselineJob();
+  const shared=getVocabularyContentForMaintenance(id)!;
+  updateVocabularyContent(id,shared.version,{...shared,body:{...(shared.body as object),prompt:'An operator authored a distinct prompt.'}},actor);
+  const projected=projectVocabularyReflectionInput(work) as {sourceContent:VocabularyContent};
+  assert.equal(projected.sourceContent.version,1,'historical content cannot resolve through a substantive edit');
+  assert.equal(projected.sourceContent.accessScope,'private');
+  const adapter:ProviderAdapter={id:'fake',defaultBaseUrl:'https://unused.invalid',apiKeyEnvironmentVariable:'KEY',structuredOutputMode:'json_schema',async run(){
+    assert.fail('Substantive source drift must be fenced before a model call');
+  }};
+  const provider=createVocabularyReflectionProvider({environment:{OPENAI_API_KEY:'fake'},adapter,spendCap:()=>buildReflectionSpendCap(1,new Date(judgedAt)),
+    ensureSenses:async()=>({catalog:getVocabularySenseCatalog('a'),senses:getVocabularySenses('a'),source:'existing'})});
+  await assert.rejects(()=>provider.run(work),/source changed before admission/);
+  const admission={outcome:'laundry_list' as const,rationale:'Review',wordId:'a',sourceContentId:id,sourceContentVersion:3,
+    catalogVersion:getVocabularySenseCatalog('a').version,senseIds:[],sourceMapping:{senseId:null,establishedAt:null}};
+  assert.throws(()=>recordVocabularyImprovementResult(work.jobId,work.leaseToken,{diagnosis:'Review',proposal:null,admission},judgedAt),/must describe the source encounter/);
+  assert.equal(sql.prepare('SELECT count(*) n FROM teacher_judgments').get()!.n,0);
+});
 
 test('ingestion retains uncovered/no-answer/overlapping-word evidence and routes teaching issues separately', () => {
   const { completion,cases } = ingest([present('one'),response('one'),present('two'),{ kind: 'feedback',payload: { encounterId: 'two',feedback: 'comment',comment: 'No answer yet' } },

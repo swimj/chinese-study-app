@@ -98,6 +98,15 @@ legacy operation schema versions from local proposal revisions. Use the [disposa
 for end-to-end study against the actual API and SQLite. The older session fixtures
 below retain coverage of the previous controller, not the current Mandarin path.
 
+`shared-dictionary-baselines-migration.test.ts` verifies populated stock-baseline
+scope correction, new proposal revisions with prior approvals retained, immutable
+evidence, learner control preservation, rollback, repeat execution and fresh/upgrade
+schema equivalence. `vocabulary-study.test.ts` exercises shared baselines across
+two learners and legacy identity/deactivation/retirement compatibility;
+`vocabulary-reflection.test.ts` covers review and application from an old
+encounter across the audited scope-only revision, and substantive drift rejection.
+
+
 `/tests/browser/bootstrap-reveal.html` checks the shared bootstrap teaching
 reveal with the actual session controller. Use `?recognition=1` for recognition,
 `?frozen=1` for the frozen production correction, and the default for accepted

@@ -180,8 +180,11 @@ overlays cannot reactivate a retired publication.
 The current Mandarin content authority is described by the
 [vocabulary contract](../SPECS/vocabulary-learning.md). Complete current objects
 and immutable full revision history preserve identity separately from authored
-representation. Content can be shared or learner-private; import retains that
-scope. Active, quarantined, and retired availability is separate from curation
+representation. The current product's authored study content is shared. The
+model can represent learner-private authored content, but no current product
+feature defines such content. Imports preserve legacy labels for compatibility;
+source-bounded corrections use explicit migrations. Learner evidence, personal
+notes and progress remain private. Active, quarantined, and retired availability is separate from curation
 and learner-specific deactivation.
 
 Backend authoring can publish structurally validated shared material under its

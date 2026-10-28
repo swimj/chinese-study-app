@@ -99,9 +99,9 @@ test('Home preview refreshes zero readiness and current settings, retaining boun
 test('preview does not count teaching whose generated recognition baseline is deactivated',()=>owner(()=>{
   addVocabularyWord('new');
   db.prepare("UPDATE learner_word_schedules SET next_eligible_at='2999-01-01T00:00:00.000Z' WHERE word_id!='new'").run();
-  const id='vocabulary:baseline:v1:alice:recognition:teaching:new';
+  const id='vocabulary:baseline:v1:shared:recognition:teaching:new';
   createVocabularyContent({contentId:id,kind:'exercise',payloadVersion:1,body:{prompt:'新'},exerciseType:'recognition',skill:'recognition',exerciseRole:'teaching',
-    accessScope:'private',ownerLearnerId:'alice',availability:'active',originKind:'human',assessment:{responseMode:'self_assessment'},
+    accessScope:'shared',availability:'active',originKind:'human',assessment:{responseMode:'self_assessment'},
     words:[{wordId:'new',relation:'target'}],answers:[{wordId:'new',acceptedForms:['新']}]},actor);
   db.prepare("INSERT INTO learner_content_deactivations VALUES('alice',?,'2026-10-24T00:00:00.000Z')").run(id);
   const preview=previewVocabularyStudy({requestTeaching:()=>{}});
@@ -238,9 +238,53 @@ test('word-level baseline keeps Maintain usable without inventing curation or us
   assert.equal(view.session.projection.words.b.mode,'practice');assert.equal(getVocabularyLearnerWord('b')?.mode,'maintain');
 }));
 
+test('dictionary baselines are shared across learners without duplicating the repertoire or sharing learner controls',()=>{
+  const context=(sessionId:string):VocabularySessionInitialContext=>({sessionId,words:[{wordId:'b',mode:'practice'}]});
+  const schedules=db.prepare('SELECT * FROM learner_word_schedules ORDER BY learner_id,word_id').all();
+  const alice=owner(()=>composeVocabularySessionPayload(context('alice-baseline')));
+  const bob=runWithLearnerId('bob',()=>composeVocabularySessionPayload(context('bob-baseline')));
+  const productionId='vocabulary:baseline:v1:shared:production:general:b';
+  const recognitionId='vocabulary:baseline:v1:shared:recognition:general:b';
+  for(const payload of [alice,bob]) {
+    const exercises=payload.words.b.general.practice;
+    assert.deepEqual(exercises.map(content=>content.contentId).sort(),[productionId,recognitionId]);
+    assert.ok(exercises.every(content=>content.accessScope==='shared'&&content.ownerLearnerId===null));
+  }
+  assert.equal(db.prepare("SELECT count(*) AS n FROM content_items WHERE json_extract(body_json,'$.source.kind')='dictionary_baseline'").get()?.n,2);
+  db.prepare("INSERT INTO learner_content_deactivations VALUES('alice',?,'2026-10-28T00:00:00.000Z')").run(productionId);
+  db.prepare("INSERT INTO learner_owned_word_skill_state VALUES('alice','b','recognition',24,2.5,0,NULL,NULL)").run();
+  const aliceAfter=owner(()=>composeVocabularySessionPayload(context('alice-disabled')));
+  const bobAfter=runWithLearnerId('bob',()=>composeVocabularySessionPayload(context('bob-unchanged')));
+  assert.deepEqual(aliceAfter.words.b.general.practice,[]);
+  assert.deepEqual(bobAfter.words.b.general.practice.map(content=>content.contentId).sort(),[productionId,recognitionId]);
+  assert.deepEqual(db.prepare('SELECT * FROM learner_word_schedules ORDER BY learner_id,word_id').all(),schedules);
+});
+
+test('migrated baseline identities preserve deactivation and do not duplicate shared fallback copies',()=>owner(()=>{
+  const legacyId='vocabulary:baseline:v1:alice:production:general:b';
+  const canonicalId='vocabulary:baseline:v1:shared:production:general:b';
+  const draft={kind:'exercise' as const,payloadVersion:1,body:{prompt:'second',source:{kind:'dictionary_baseline',wordId:'b'}},
+    accessScope:'shared' as const,availability:'active' as const,originKind:'human' as const,exerciseType:'definition',skill:'production' as const,
+    exerciseRole:'general' as const,assessment:{match:'prepared_answer_membership'},words:[{wordId:'b',relation:'target' as const}],answers:[{wordId:'b',acceptedForms:['乙']}]};
+  createVocabularyContent({...draft,contentId:legacyId},actor);
+  createVocabularyContent({...draft,contentId:canonicalId},actor);
+  const context:VocabularySessionInitialContext={sessionId:'migrated-baselines',words:[{wordId:'b',mode:'practice'}]};
+  const payload=composeVocabularySessionPayload(context);
+  assert.deepEqual(payload.words.b.general.practice.filter(content=>content.kind==='exercise'&&content.skill==='production').map(content=>content.contentId),[legacyId]);
+  db.prepare("INSERT INTO learner_content_deactivations VALUES('alice',?,'2026-10-28T00:00:00.000Z')").run(legacyId);
+  const disabled=composeVocabularySessionPayload({...context,sessionId:'migrated-disabled'});
+  assert.equal(disabled.words.b.general.practice.some(content=>content.kind==='exercise'&&content.skill==='production'),false);
+  const bob=runWithLearnerId('bob',()=>composeVocabularySessionPayload({...context,sessionId:'canonical-bob'}));
+  assert.deepEqual(bob.words.b.general.practice.filter(content=>content.kind==='exercise'&&content.skill==='production').map(content=>content.contentId),[canonicalId]);
+  db.prepare("DELETE FROM learner_content_deactivations WHERE learner_id='alice' AND content_id=?").run(legacyId);
+  db.prepare("UPDATE content_items SET availability='retired' WHERE content_id=?").run(legacyId);
+  const retired=composeVocabularySessionPayload({...context,sessionId:'migrated-retired'});
+  assert.equal(retired.words.b.general.practice.some(content=>content.kind==='exercise'&&content.skill==='production'),false);
+}));
+
 test('Unstudied teaching requires delivered introduction, self-assessed recognition and successful teaching production',()=>owner(()=>{
   // Limit this session to the new word while retaining real learner state.
-  const recognitionId='vocabulary:baseline:v1:alice:recognition:teaching:new';
+  const recognitionId='vocabulary:baseline:v1:shared:recognition:teaching:new';
   createVocabularySession({sessionId:'new-session',words:[{wordId:'new',mode:'unstudied',teachingRequirements:{introductionContentId:'intro-new',
     requiredExerciseContentIds:[recognitionId,'teach-new'],minimumRecognitionResponses:1,minimumProductionResponses:1}}]});
   let view=nextVocabularyExercise('new-session','intro');assert.equal(view.currentEncounter?.snapshot.kind,'introduction');
@@ -842,9 +886,9 @@ test('Solidify with both recall directions disabled is excluded instead of creat
 test('pure coverage excludes dictionary production from preview and Start even while the cue is not due',()=>owner(()=>{
   db.prepare("UPDATE learner_words SET dismissed_at='2026-10-01' WHERE word_id!='b'").run();
   // First materialize the fallback, then add coverage: existing baseline content
-  // must not become an apparent private targeted cue.
+  // must not become an apparent authored targeted cue.
   const initial=startVocabularyStudy();
-  assert.equal(initial.currentEncounter?.snapshot.contentId,'vocabulary:baseline:v1:alice:production:general:b');
+  assert.equal(initial.currentEncounter?.snapshot.contentId,'vocabulary:baseline:v1:shared:production:general:b');
   exercise('proxy-pure','b','general',true);
   adoptVocabularyPureCues();
   db.prepare("UPDATE learner_pure_cue_schedules SET next_eligible_at='2999-01-01T00:00:00.000Z'").run();
@@ -879,7 +923,7 @@ test('pure coverage preserves independently due recognition and usable private p
 }));
 
 
-for(const strategy of ['update','replace'] as const)test(`explicit ${strategy} of a fallback prompt restores usable private production under pure coverage`,()=>owner(()=>{
+for(const strategy of ['update','replace'] as const)test(`explicit ${strategy} of a fallback prompt restores usable production under pure coverage`,()=>owner(()=>{
   db.prepare("UPDATE learner_words SET dismissed_at='2026-10-01' WHERE word_id!='b'").run();
   const initial=startVocabularyStudy();
   const id=initial.currentEncounter!.snapshot.contentId;

@@ -12,6 +12,7 @@ import { isVocabularyProviderEncounter } from '../vocabulary/reflection-eligibil
 import { retryVocabularySenseReadiness } from '../vocabulary/sense-readiness.ts';
 import { createVocabularyContent, updateVocabularyContent, replaceVocabularyContent, getVocabularySenseCatalog,
   getVocabularyContentForMaintenance, emitBackendEvent } from './vocabulary-content.ts';
+import { resolveSharedDictionaryBaselineRevision } from './dictionary-baseline-sharing.ts';
 
 export class VocabularyReflectionConflict extends Error {}
 function atomic<T>(work: () => T): T {
@@ -427,8 +428,17 @@ export function recordVocabularyImprovementResult(jobId: string, token: string, 
     const needsAttention = input.admission?.outcome === 'unmappable' || input.admission?.outcome === 'inventory_gap';
     if (input.admission) {
       const evidence = getVocabularyReflectionCase(row.case_id), admission = input.admission;
-      if (admission.wordId !== evidence.wordId || !evidence.evidence.some(item =>
-        item.snapshot.contentId === admission.sourceContentId && item.snapshot.contentVersion === admission.sourceContentVersion)) {
+      if (admission.wordId !== evidence.wordId || !evidence.evidence.some(item => {
+        if (item.snapshot.contentId !== admission.sourceContentId) return false;
+        if (item.snapshot.contentVersion === admission.sourceContentVersion) return true;
+        const historical = getDb().prepare('SELECT snapshot_json FROM content_revision_history WHERE content_id=? AND version=?')
+          .get(item.snapshot.contentId,item.snapshot.contentVersion) as {snapshot_json:string}|undefined;
+        if (!historical) return false;
+        const content = JSON.parse(historical.snapshot_json) as VocabularyContent;
+        if (content.accessScope === 'private' && content.ownerLearnerId !== evidence.learnerId) return false;
+        const resolved = resolveSharedDictionaryBaselineRevision(getDb(),content);
+        return resolved.contentId === admission.sourceContentId && resolved.version === admission.sourceContentVersion;
+      })) {
         throw new Error('Improvement admission must describe the source encounter');
       }
       if (needsAttention && input.proposal !== null) throw new Error('Unresolved sense admission cannot propose automatic repairs');

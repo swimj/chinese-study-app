@@ -113,8 +113,10 @@ identity-level sense mappings. Later serving uses that retained material.
 `content_words` describes targets and contextual relationships. Accepted-answer
 membership is separate; an answer word must also have a content relationship.
 General selectors exclude teaching. Maintain prefers current curated versions;
-a direct dictionary baseline is an explicit fallback when curated material is
-unavailable, not a claim of curation. Sense mapping and curation changes emit
+a shared dictionary baseline is an explicit fallback when curated material is
+unavailable, not a claim of curation. Its learner-independent identity is reused
+across learners. Migrated legacy identities retain their original controls;
+composition excludes duplicate stock fallback copies. Sense mapping and curation changes emit
 transactional retained events.
 
 `src/domain/production-proxy.ts` owns the shared proxy decision and the usable

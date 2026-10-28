@@ -4,6 +4,7 @@ import { getDb } from '../db/connection.ts';
 import { requireLearnerId } from '../db/learner-context.ts';
 import { getVocabularyContent, getVocabularyTeachingExercises } from '../db/vocabulary-content.ts';
 import { canEnsureVocabularySensesFromBootstrap } from './sense-readiness.ts';
+import { getDictionaryBaseline } from './dictionary-baseline.ts';
 
 export function skillEnabled(wordId:string,skill:'recognition'|'production'|'contextual_selection'):boolean {
   const disabled=getDb().prepare('SELECT enabled FROM learner_owned_word_skill_state WHERE learner_id=? AND word_id=? AND skill_id=?')
@@ -28,7 +29,7 @@ export function compatibleIntroductions(wordId:string):VocabularyContent[] {
 }
 export function teachingReady(wordId:string):boolean {
   if(!skillEnabled(wordId,'recognition')||suppressed(wordId))return false;
-  const baselineRecognition=getVocabularyContent(`vocabulary:baseline:v1:${requireLearnerId()}:recognition:teaching:${wordId}`);
+  const baselineRecognition=getDictionaryBaseline(wordId,'recognition','teaching');
   const contentReady=compatibleIntroductions(wordId).some((intro)=>{
     const exercises=getVocabularyTeachingExercises(intro.contentId).filter((entry)=>eligible(entry)&&entry.kind==='exercise'&&skillEnabled(wordId,entry.skill));
     return exercises.some((entry)=>entry.kind==='exercise'&&entry.skill==='production')

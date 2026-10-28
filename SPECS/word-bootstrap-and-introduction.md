@@ -83,6 +83,9 @@ Examples should be good language examples first. They do not need to uniquely
 elicit their associated word when blanked. They have no answer sets merely
 because they contain a target. A full sentence is not a pure cue.
 
+Bootstrap and its authored teaching/practice repertoire are shared in the current
+product. Private authored content is a conceptual capability without a current
+product workflow; learner history and progress retain their separate privacy.
 Bootstrap is learner-independent in the first version. Scale surrounding
 language sensibly to the target without matching a learner's known lexicon.
 The corpus meaning list remains stored. Recognition review and definition-based
