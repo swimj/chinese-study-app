@@ -315,6 +315,7 @@ for units and historical availability.
 
 `GET /api/operator/model-invocations` returns `{ rows }`: timestamp,
 provider/model identifier, invocation type, learner identity and display name,
+`initiator` (learner ID, `Operator`, or `Service`) and `initiatorDisplayName`,
 `latencyMs`, status, USD spend, and its reported/estimated/unknown basis. Optional
 dates are validated; omitting them returns the full ledger without silent
 truncation. Unknown costs remain unknown and are counted separately.

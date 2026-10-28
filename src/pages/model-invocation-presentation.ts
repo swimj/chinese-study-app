@@ -1,7 +1,7 @@
 import type { ModelInvocationRow } from '../domain/model-invocations';
 
-export type InvocationGroup = 'day' | 'model' | 'invocationType' | 'learnerId' | 'status' | 'spendUsd' | 'latencyMs';
-export type InvocationSort = 'timestamp' | 'model' | 'invocationType' | 'spendUsd' | 'latencyMs' | 'learnerId' | 'status';
+export type InvocationGroup = 'day' | 'model' | 'invocationType' | 'initiator' | 'status' | 'spendUsd' | 'latencyMs';
+export type InvocationSort = 'timestamp' | 'model' | 'invocationType' | 'spendUsd' | 'latencyMs' | 'initiator' | 'status';
 export type SpendSummary = { count: number; knownSpendUsd: number; unknownCount: number; estimatedCount: number; reportedCount: number };
 
 export function summarizeInvocations(rows: ModelInvocationRow[]): SpendSummary {
@@ -27,8 +27,8 @@ export function groupInvocations(rows: ModelInvocationRow[], by: InvocationGroup
 
 export function sortInvocations(rows: ModelInvocationRow[], by: InvocationSort, direction: 'asc' | 'desc') {
   return [...rows].sort((a, b) => {
-    const av = a[by];
-    const bv = b[by];
+    const av = by === 'initiator' ? invocationInitiator(a) : a[by];
+    const bv = by === 'initiator' ? invocationInitiator(b) : b[by];
     // Unknown values stay last in either direction, rather than looking like zero.
     if (av === null) return bv === null ? a.id.localeCompare(b.id) : 1;
     if (bv === null) return -1;
@@ -61,7 +61,7 @@ export const invocationStatusLabels: Record<ModelInvocationRow['status'], string
   timed_out: 'Timed out', invalid_response: 'Invalid response',
 };
 
-export type DiscreteInvocationField = 'model' | 'invocationType' | 'learnerId' | 'status' | 'provider' | 'spendSource';
+export type DiscreteInvocationField = 'model' | 'invocationType' | 'initiator' | 'status' | 'provider' | 'spendSource';
 export type NumericInvocationField = 'spendUsd' | 'latencyMs';
 export type NumericInvocationFilter = { min: string; max: string; unknown: 'include' | 'exclude' | 'only' };
 export type InvocationFilters = {
@@ -80,7 +80,7 @@ export function filterInvocations(rows: ModelInvocationRow[], filters: Invocatio
     const day = row.timestamp.slice(0, 10);
     if ((filters.from && day < filters.from) || (filters.to && day > filters.to)) return false;
     for (const [field, selected] of Object.entries(filters.discrete)) {
-      if (!selected.includes(row[field as DiscreteInvocationField] ?? 'Service')) return false;
+      if (!selected.includes(invocationFieldValue(row, field as DiscreteInvocationField))) return false;
     }
     for (const [field, range] of Object.entries(filters.numeric)) {
       const rawValue = row[field as NumericInvocationField];
@@ -104,7 +104,7 @@ export function invocationWindowSummaries(rows: ModelInvocationRow[], selected: 
 }
 
 export function invocationGroupKey(row: ModelInvocationRow, by: InvocationGroup): string {
-  if (by === 'learnerId' && row.learnerId === null) return 'Service';
+  if (by === 'initiator') return invocationInitiator(row);
   return by === 'day' ? row.timestamp.slice(0, 10) : String(row[by] ?? 'Unknown');
 }
 
@@ -134,4 +134,11 @@ export function nextInvocationLimit(current: number, total: number): number {
 
 export function isFailedInvocation(row: ModelInvocationRow): boolean {
   return row.status === 'failed' || row.status === 'timed_out' || row.status === 'invalid_response';
+}
+
+export function invocationInitiator(row: ModelInvocationRow): string {
+  return row.initiator ?? row.learnerId ?? 'Service';
+}
+export function invocationFieldValue(row: ModelInvocationRow, field: DiscreteInvocationField): string {
+  return field === 'initiator' ? invocationInitiator(row) : row[field];
 }

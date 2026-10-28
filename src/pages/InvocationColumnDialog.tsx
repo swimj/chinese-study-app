@@ -3,14 +3,14 @@ import { createPortal } from 'react-dom';
 import { TimestampDisplayControl } from './TimestampDisplayControl';
 import type { TimestampDisplay } from './operator-timestamps';
 import type { ModelInvocationRow } from '../domain/model-invocations';
-import { invocationStatusLabels, type DiscreteInvocationField, type InvocationFilters, type InvocationGroup, type InvocationSort, type NumericInvocationFilter } from './model-invocation-presentation';
+import { invocationStatusLabels, invocationInitiator, invocationFieldValue, type DiscreteInvocationField, type InvocationFilters, type InvocationGroup, type InvocationSort, type NumericInvocationFilter } from './model-invocation-presentation';
 
 export const INVOCATION_COLUMNS: { key: InvocationSort; label: string; group: InvocationGroup }[] = [
   { key: 'timestamp', label: 'Timestamp (UTC)', group: 'day' },
   { key: 'model', label: 'Model', group: 'model' },
   { key: 'invocationType', label: 'Invocation type', group: 'invocationType' },
   { key: 'spendUsd', label: 'Spend (USD)', group: 'spendUsd' },
-  { key: 'learnerId', label: 'User', group: 'learnerId' },
+  { key: 'initiator', label: 'Initiator', group: 'initiator' },
   { key: 'latencyMs', label: 'Latency', group: 'latencyMs' },
   { key: 'status', label: 'Status', group: 'status' },
 ];
@@ -71,14 +71,14 @@ export function InvocationColumnDialog({ column, rows, filters, sortBy, directio
   }
   function choiceLabel(field: DiscreteInvocationField, value: string) {
     if (field === 'status') return invocationStatusLabels[value as ModelInvocationRow['status']];
-    if (field === 'learnerId') {
-      const name = rows.find((row) => row.learnerId === value)?.userDisplayName;
+    if (field === 'initiator') {
+      const name = rows.find((row) => invocationInitiator(row) === value)?.initiatorDisplayName;
       return name ? `${name} · ${value}` : value;
     }
     return field === 'invocationType' ? value.replaceAll('_', ' ') : value;
   }
   function choices(field: DiscreteInvocationField, label: string) {
-    const values = [...new Set([...rows.map((row) => row[field] ?? 'Service'), ...(draft.discrete[field] ?? [])])].sort();
+    const values = [...new Set([...rows.map((row) => invocationFieldValue(row, field)), ...(draft.discrete[field] ?? [])])].sort();
     const selected = draft.discrete[field];
     return <fieldset className="operator-column-choices"><legend>{label}</legend>
       <div className="operator-column-actions">
@@ -124,7 +124,7 @@ export function InvocationColumnDialog({ column, rows, filters, sortBy, directio
         </fieldset>}
         {column.key === 'model' && <>{choices('model', 'Models')}{choices('provider', 'Providers')}</>}
         {column.key === 'invocationType' && choices('invocationType', 'Invocation types')}
-        {column.key === 'learnerId' && choices('learnerId', 'Users')}
+        {column.key === 'initiator' && choices('initiator', 'Initiators')}
         {column.key === 'status' && choices('status', 'Statuses')}
         {column.key === 'spendUsd' && choices('spendSource', 'Spend sources')}
         {invalid && <p role="alert">{column.key === 'timestamp' ? 'The start date must be on or before the end date.' : 'The minimum must not exceed the maximum; numeric bounds must be nonnegative.'}</p>}

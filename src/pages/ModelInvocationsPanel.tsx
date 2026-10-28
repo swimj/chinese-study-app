@@ -5,7 +5,7 @@ import type { ModelInvocationRow } from '../domain/model-invocations';
 import { fetchModelInvocations } from '../services/api';
 import { InvocationColumnDialog, INVOCATION_COLUMNS, columnHasFilter } from './InvocationColumnDialog';
 import {
-  defaultInvocationFilters, filterInvocations, formatInvocationLatency, invocationStatusLabels,
+  invocationInitiator, defaultInvocationFilters, filterInvocations, formatInvocationLatency, invocationStatusLabels,
   formatInvocationSpend, groupedInvocationRows, invocationGroupKey, invocationWindowSummaries,
   isFailedInvocation, nextInvocationLimit, INVOCATION_BATCH_SIZE, sortInvocations, summarizeInvocations,
   type InvocationFilters, type InvocationGroup, type InvocationSort,
@@ -82,7 +82,7 @@ export function ModelInvocationsPanel() {
     </div>
     <details className="operator-spend-notes"><summary>Coverage and spend</summary><p className="notes">
       Production calls recorded since the ledger was introduced; older calls are not backfilled.
-      Each invocation belongs to the user who initiated the work, including shared content preparation.
+      Initiator identifies the learner whose session triggered the work, Operator for requested second opinions or reassessments, and Service for independent automation.
       Spend is in USD: provider-reported cost takes precedence over token-based estimates. Unknown spend is excluded from sums.
       Today and Last 7 days use UTC calendar days including today, regardless of column filters. Current selection includes every filtered call, including calls not yet shown.
       Latency measures the provider request through response receipt; timed-out calls show the configured timeout. Historical calls have no recorded latency.
@@ -133,7 +133,7 @@ export function ModelInvocationTable({ rows, headers, groupBy = '', allSelectedR
     for (const [key, values] of grouped) groupSummaries.set(key, summarizeInvocations(values));
   }
   function groupLabel(row: ModelInvocationRow): ReactNode {
-    if (groupBy === 'learnerId') return <InvocationUser learnerId={row.learnerId} displayName={row.userDisplayName} />;
+    if (groupBy === 'initiator') return <InvocationInitiator row={row} />;
     if (groupBy === 'status') return invocationStatusLabels[row.status];
     if (groupBy === 'spendUsd') return row.spendUsd === null ? 'Unknown spend' : `$${row.spendUsd} USD`;
     if (groupBy === 'latencyMs') return row.latencyMs === null ? 'Unknown latency' : `${row.latencyMs} ms`;
@@ -155,13 +155,15 @@ export function ModelInvocationTable({ rows, headers, groupBy = '', allSelectedR
           <td>{row.model}<span className="operator-ledger-secondary">{row.provider}</span></td>
           <td>{row.invocationType.replaceAll('_', ' ')}</td>
           <td>{formatInvocationSpend(row.spendUsd)}{row.spendUsd !== null && <span className="operator-ledger-secondary">{row.spendSource}</span>}</td>
-          <td><InvocationUser learnerId={row.learnerId} displayName={row.userDisplayName} /></td><td>{formatInvocationLatency(row.latencyMs)}</td><td>{invocationStatusLabels[row.status]}</td>
+          <td><InvocationInitiator row={row} /></td><td>{formatInvocationLatency(row.latencyMs)}</td><td>{invocationStatusLabels[row.status]}</td>
         </tr>
       </Fragment>;
     })}</tbody>
   </table>;
 }
 
-function InvocationUser({ learnerId, displayName }: { learnerId: string | null; displayName: string | null }) {
-  return <>{displayName || learnerId || 'Service'}{displayName && <span className="operator-ledger-secondary">{learnerId}</span>}</>;
+function InvocationInitiator({ row }: { row: ModelInvocationRow }) {
+  const identity = invocationInitiator(row);
+  const name = row.initiatorDisplayName ?? (identity === row.learnerId ? row.userDisplayName : null);
+  return <>{name || identity}{name && <span className="operator-ledger-secondary">{identity}</span>}</>;
 }

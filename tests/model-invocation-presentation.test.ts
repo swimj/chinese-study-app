@@ -14,7 +14,7 @@ function row(id: string, overrides: Partial<ModelInvocationRow> = {}): ModelInvo
 test('group totals preserve unknown spend and reported zero-cost calls', () => {
   const rows = [row('a'), row('b', { spendUsd: 0, spendSource: 'reported' }), row('c', { spendUsd: null, spendSource: 'unknown', status: 'failed' }), row('d', { learnerId: 'learner-2', spendUsd: null, spendSource: 'unknown' })];
   assert.deepEqual(summarizeInvocations(rows), { count: 4, knownSpendUsd: 0.1, unknownCount: 2, estimatedCount: 1, reportedCount: 1 });
-  assert.deepEqual(groupInvocations(rows, 'learnerId'), [
+  assert.deepEqual(groupInvocations(rows, 'initiator'), [
     { key: 'learner-1', count: 3, knownSpendUsd: 0.1, unknownCount: 1, estimatedCount: 1, reportedCount: 1 },
     { key: 'learner-2', count: 1, knownSpendUsd: 0, unknownCount: 1, estimatedCount: 0, reportedCount: 0 },
   ]);
@@ -89,7 +89,7 @@ test('discrete multiselect All includes newly loaded values, None excludes all, 
   assert.equal(filterInvocations(rows, allHistory()).length, 3);
   assert.equal(filterInvocations(rows, { ...allHistory(), discrete: { model: [] } }).length, 0);
   assert.deepEqual(filterInvocations(rows, { ...allHistory(), discrete: { model: ['model-b'], status: ['failed'], provider: ['openrouter'] } }).map((item) => item.id), ['b']);
-  assert.deepEqual(filterInvocations(rows, { ...allHistory(), discrete: { learnerId: ['learner-2'], invocationType: ['reflection'], spendSource: ['estimated'] } }).map((item) => item.id), ['c']);
+  assert.deepEqual(filterInvocations(rows, { ...allHistory(), discrete: { initiator: ['learner-2'], invocationType: ['reflection'], spendSource: ['estimated'] } }).map((item) => item.id), ['c']);
   assert.equal(filterInvocations([...rows, row('new-model', { model: 'fresh-model' })], allHistory()).length, 4);
 });
 
@@ -111,7 +111,7 @@ test('filtering precedes grouping, grouped rows retain within-group sort, and pa
   assert.match(markup, /2 calls/);
   assert.match(markup, /\$6\.0000 known spend/);
   assert.ok(!markup.includes('excluded'));
-  for (const label of ['Timestamp (UTC)', 'Model', 'Invocation type', 'Spend (USD)', 'User', 'Latency', 'Status']) assert.ok(markup.includes(label));
+  for (const label of ['Timestamp (UTC)', 'Model', 'Invocation type', 'Spend (USD)', 'Initiator', 'Latency', 'Status']) assert.ok(markup.includes(label));
 });
 
 test('numeric grouping is numeric, unknown last, and progressive rendering stops at total', () => {
@@ -146,4 +146,15 @@ test('exact numeric group labels distinguish values that round to the same table
   const latency = renderToStaticMarkup(createElement(ModelInvocationTable, { rows: [row('a', { latencyMs: 10.1 }), row('b', { latencyMs: 10.2 })], groupBy: 'latencyMs' }));
   assert.match(latency, /10\.1 ms/);
   assert.match(latency, /10\.2 ms/);
+});
+
+test('initiator drives labels, filtering, sorting and grouping independently of execution owner', () => {
+  const rows = [row('learner', { learnerId: null, initiator: 'learner-1', initiatorDisplayName: 'Avery' }),
+    row('operator', { learnerId: null, initiator: 'Operator' }),
+    row('service', { learnerId: null, initiator: 'Service' })];
+  const markup = renderToStaticMarkup(createElement(ModelInvocationTable, { rows, groupBy: 'initiator' }));
+  for (const label of ['Initiator', 'Avery', 'learner-1', 'Operator', 'Service']) assert.ok(markup.includes(label), label);
+  assert.deepEqual(filterInvocations(rows, { ...allHistory(), discrete: { initiator: ['Operator'] } }).map(row => row.id), ['operator']);
+  assert.deepEqual(groupInvocations(rows, 'initiator').map(group => group.key), ['learner-1', 'Operator', 'Service']);
+  assert.deepEqual(sortInvocations(rows, 'initiator', 'asc').map(row => row.id), ['learner', 'operator', 'service']);
 });
