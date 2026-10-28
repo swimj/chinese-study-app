@@ -62,6 +62,35 @@ See the [vocabulary contract](../../SPECS/vocabulary-learning.md) for learning a
 review authority, and the [implementation guide](../vocabulary-learning.md) for
 runtime details.
 
+## Dictionary fallback publication scope
+
+Corpus dictionary fallbacks and the repertoires generated from them are shared
+authored study content. New fallbacks use a stable shared identity per word, skill
+and role. Existing learner-specific fallback identities remain usable to preserve
+deactivation and retirement. Composition chooses one stock fallback for each
+objective and excludes duplicate stock copies from the shared pool. Authored
+variants remain ordinary candidates.
+
+Migration `0058_shared_dictionary_baselines` positively identifies stock
+dictionary fallbacks by their service origin, original identity and unchanged
+authored body, assessment and answers. It appends a scope-only shared content
+revision while retaining the original identity and historical snapshots.
+Unresolved service-generated repertoires whose entire proposal still matches
+those source versions receive a new shared proposal revision and updated bases.
+Operator-edited proposal revisions are retained for manual reassessment.
+Prior approvals and opinions remain bound to the earlier revision; fresh review
+is required. Assessed-source provenance retains the version actually examined.
+Resolved proposals, edited fallbacks, private imports and unrelated proposals
+are retained as recorded. Skipped or substantively stale proposals still require
+manual reassessment.
+
+An old encounter can resolve to the audited scope-only successor during review.
+This permission requires the migration's revision attribution and unchanged
+authored material; a subsequent authored edit retains the normal drift fence.
+Encounter evidence, learner state, provider results and stage caches remain
+immutable. A second opinion is advisory and does not regenerate a proposal.
+The migration makes no provider calls and applies no proposed content.
+
 ## Operator review
 
 The operator panel's Content improvement tab presents an Awaiting review queue,

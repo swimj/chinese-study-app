@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import type { DatabaseSync } from 'node:sqlite';
 import { importLegacyVocabulary } from './vocabulary-import.ts';
+import { migrateSharedDictionaryBaselines } from './dictionary-baseline-sharing.ts';
 import { fillMissingNormalizedHanzi } from './hanzi-lookup.ts';
 
 const PREFIX = 'app_schema:';
@@ -198,6 +199,10 @@ export const schemaMigrations: readonly SchemaMigration[] = [{
 }, {
   id: 'app_schema:0057_preparation_compatibility',
   sql: fs.readFileSync(new URL('./migrations/0057_preparation_compatibility.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0058_shared_dictionary_baselines',
+  sql: fs.readFileSync(new URL('./migrations/0058_shared_dictionary_baselines.sql', import.meta.url), 'utf8'),
+  after: migrateSharedDictionaryBaselines,
 }];
 
 function checksum(value: string): string {

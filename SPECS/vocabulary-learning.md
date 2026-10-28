@@ -20,9 +20,16 @@ use. Teaching exercises belong exclusively to teaching and familiar priming;
 the general practice pool excludes them. An introduction binds exact authored
 teaching exercise versions so its repertoire remains coherent.
 
-Shared content carries no authority to expose a learner's private history.
-Privately imported content remains private. An exact encounter retains the
-material, answer space, criteria, and mapping context actually served.
+Authored study content is shared in the current product, including corpus-based
+dictionary fallbacks, bootstrap teaching, and generated practice repertoires.
+Learner-private authored content remains a conceptual and storage capability;
+the current product defines no private-content authoring feature. Legacy records
+with private labels remain readable for compatibility and require an explicit,
+source-bounded correction before their publication scope changes.
+
+Learner encounters, reactions, personal notes and progress remain private. Shared
+content carries no authority to expose that history. An exact encounter retains
+the material, answer space, criteria, and mapping context actually served.
 
 ## Learner mode and selection
 

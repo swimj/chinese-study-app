@@ -1,6 +1,7 @@
 import type { VocabularySessionPayload } from '../../src/domain/vocabulary-session-payload.ts';
 import { selectSequentialBootstrapReveal } from '../../src/domain/word-content/reveal.ts';
 import { reconcileVocabularyPreparationReserve } from './preparation-reserve.ts';
+import { getDictionaryBaseline, sharedDictionaryBaselineId } from './dictionary-baseline.ts';
 import { skillEnabled, eligible, introductions, compatibleIntroductions, teachingReady } from './teaching-readiness.ts';
 import { vocabularyTeachingSource } from './teaching-source.ts';
 import { vocabularyRevealSnapshot } from './reveal-snapshot.ts';
@@ -43,15 +44,15 @@ function lexical(wordId:string):VocabularyStudyWord {
 }
 function baseline(wordId:string,kind:'recognition'|'production',role:'teaching'|'general'):VocabularyContent|null {
   if(!skillEnabled(wordId,kind))return null;
-  const word=lexical(wordId);const id=`vocabulary:baseline:v1:${requireLearnerId()}:${kind}:${role}:${wordId}`;
-  const existing=getVocabularyContent(id);if(existing)return eligible(existing)?existing:null;
+  const existing=getDictionaryBaseline(wordId,kind,role);if(existing)return eligible(existing)?existing:null;
+  const word=lexical(wordId);const id=sharedDictionaryBaselineId(wordId,kind,role);
   const content=createVocabularyContent({contentId:id,kind:'exercise',payloadVersion:1,
     body:kind==='recognition'?{prompt:word.hanzi,answer:word.meaning,pinyin:word.pinyin,source:{kind:'dictionary_baseline',wordId}}
       :{prompt:word.meaning,instruction:'Give the Mandarin word.',source:{kind:'dictionary_baseline',wordId}},
     exerciseType:kind==='recognition'?'recognition':'definition',skill:kind,exerciseRole:role,
     assessment:kind==='recognition'?{responseMode:'self_assessment'}:{match:'prepared_answer_membership'},
     answers:[{wordId,acceptedForms:[...new Set([word.hanzi,word.traditional].filter((value):value is string=>Boolean(value)))]}],
-    accessScope:'private',ownerLearnerId:requireLearnerId(),availability:'active',originKind:'human',authorKind:'service',authorId:'vocabulary-dictionary-baseline-v1',
+    accessScope:'shared',availability:'active',originKind:'human',authorKind:'service',authorId:'vocabulary-dictionary-baseline-v1',
     words:[{wordId,relation:'target'}]}, {kind:'service',id:'vocabulary-dictionary-baseline-v1',reason:{source:'existing lexical dictionary facts',senseMapping:'unresolved'}});
   return eligible(content)?content:null;
 }
@@ -85,6 +86,10 @@ function contrastEligible(content:VocabularyContent,wordId:string):boolean {
 function availableGeneral(wordId:string,mode:'solidify'|'practice'|'maintain'):VocabularyContent[] {
   const allowFallback=mode==='solidify'||!isVocabularyProductionProxied(wordId);
   const pool=listVocabularyExercises({wordId,mode}).filter((entry)=>eligible(entry)&&entry.kind==='exercise'&&entry.exerciseType!=='pure_cue'
+    // Scope repair retains old baseline identities. Only serve this learner's
+    // selected baseline, rather than every migrated copy for the same word.
+    &&(object(object(entry.body).source).kind!=='dictionary_baseline'
+      ||entry.contentId===getDictionaryBaseline(wordId,entry.skill==='recognition'?'recognition':'production','general')?.contentId)
     &&(allowFallback||entry.skill!=='production'||!isVocabularyDefinitionFallback(entry))
     &&(isContrast(entry)?contrastEligible(entry,wordId):entry.skill==='recognition'?skillEnabled(wordId,'recognition'):skillEnabled(wordId,'production')));
   // Recognition remains its own self-assessed objective and never supplies production coverage.

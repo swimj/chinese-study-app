@@ -13,6 +13,7 @@ import { REFLECTION_MODEL_ARMS, isOfferedReflectionModelChoice, type ReflectionM
 import { reflectionConfigForChoice, routeIndividualReflectionModel } from '../reflection/model-routing.ts';
 import { vocabularyReflectionModelChoice } from '../db/vocabulary-reflection-routing.ts';
 import { getDb } from '../db/connection.ts';
+import { resolveSharedDictionaryBaselineRevision } from '../db/dictionary-baseline-sharing.ts';
 import { createOpenAiCompatibleAdapter } from '../llm/openai-compatible.ts';
 import { invalidateServiceInvocation } from '../llm/invocation-ledger.ts';
 import { validateJsonSchema } from '../llm/json-schema-validator.ts';
@@ -41,7 +42,7 @@ function source(job:VocabularyReflectionJob):VocabularyContent|null {
   if(!row)throw new VocabularyReflectionOutputError('Reflection source version is unavailable');
   const content=JSON.parse(row.snapshot_json) as VocabularyContent;
   if(content.accessScope==='private'&&content.ownerLearnerId!==job.learnerId)throw new VocabularyReflectionOutputError('Reflection source access mismatch');
-  return content;
+  return resolveSharedDictionaryBaselineRevision(getDb(),content);
 }
 /** Excludes unrelated learners, live interpretation, and inferred sense targets. */
 export function projectVocabularyReflectionInput(job:VocabularyReflectionJob):unknown {
