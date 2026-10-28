@@ -19,7 +19,7 @@ An empty allowlist denies access.
 | Model invocations | Inspect attributed provider calls, filter and group rows, compare spend summaries, and refresh the ledger | [Operator API](api.md#operator-view) |
 | Content sharing | Weekly exact-content reuse counts, learner-originated cue reuse, and inspectable examples | [Sharing metrics](#content-sharing) |
 | Content quality | Review content-quality signals and filter the triage queue | [Content quality](content-quality.md) |
-| Content improvement | Review vocabulary judgments and proposals, request second opinions, and apply approved corrections | [Vocabulary reflection](vocabulary-learning.md#background-work-and-operator-repair) |
+| Content improvement | Review vocabulary judgments and proposals, request second opinions, and apply approved corrections | [Content improvement workflow](#content-improvement-workflow) |
 | Preparation failures | Inspect paused shared preparation work and retry eligible stages | [Error diagnostics](ops/error-diagnostics.md#shared-word-preparation-failures) |
 | What’s New | Edit and publish learner-facing update posts | [What’s New](whats-new.md#manual-operator-editor) |
 | Service banner | Set planned downtime, edit a custom message, or clear the active banner | [Banner API](api.md#operator-view) and [hosted upgrade runbook](ops/hosted-beta-deployment.md#post-a-pre-upgrade-banner) |
@@ -93,6 +93,73 @@ Counts submitted by older clients before this qualification change measured
 covered practice encounters; those saved counts are not reclassified. A day
 with no completed sessions has zero practice. Spend accounting is available in
 Model invocations; the existing sparse spend-without-accepts signal remains.
+
+## Content improvement workflow
+
+This workflow describes current vocabulary review. The
+[product contract](../SPECS/vocabulary-learning.md#operator-review) owns its
+approval and evidence guarantees, and the
+[provider pipeline](implementation/vocabulary-content-improvement.md) explains
+how judgments and proposals are produced.
+
+Open `#operator-usage` and select **Content improvement** using the
+[operator allowlist](#access). Opening a proposal validates its saved version.
+The entry leads with **Original served content**: each encounter that retains
+a snapshot shows its cue and accepted answers, in encounter order. An encounter
+without a snapshot says that snapshot is unavailable. Diagnosis, current and
+proposed content, accepted answers, and recipient scope follow. A case with no
+retained snapshot states that the original served content is unavailable.
+Changed answer criteria and retained teaching are expanded in the comparison.
+
+“Approve and apply” records approval for the displayed version and applies it
+with an idempotent receipt. Preview runs the real writers under rollback;
+approval and application revalidate current bases. A failed application can be
+retried without losing the approval or application key in the current view.
+Manual edits create a new version and invalidate the previous preview and review.
+Teaching repairs can update an exercise and explicitly bind its resulting version
+in the same ordered proposal. Failed jobs and dispatches have explicit retry controls.
+
+Case-backed exercise-improvement proposals can request a second opinion on the
+exact saved proposal version, with an optional question. This is a fresh invocation
+of the configured review model, retaining the proposal snapshot, source versions,
+and learner evidence. Its support/revise/reject opinion is advisory: it neither
+rewrites the proposal nor applies content. Earlier opinions remain labeled with
+their proposal version after edits. Failed reviews require explicit retry; teaching
+cases and standalone manual proposals do not yet support this review path.
+Completed exercise judgments that propose no change also appear in Awaiting
+review, including retained historical judgments. The entry leads with that same
+served content, then the rationale. The operator can draft a correction from
+current content, request an advisory second opinion with a question, or close
+the review with an optional reason.
+The second opinion reviews the no-change judgment; it does not create or apply a
+proposal. Closed reviews remain in Archive, with their retained jobs and results in the case evidence.
+
+### Queue navigation and refresh
+
+The operator panel's Content improvement tab presents an Awaiting review queue,
+an attention inbox and Archive. Open entries in each view lead with the original
+served content described above. Previous and next controls navigate one item at
+a time; applying or dismissing advances to the next available item. Cards keep scope and identity consequences
+visible before approval; one Details disclosure contains full rationale,
+relationship effects, encounter history, optional review notes and source-based
+manual authoring. Edit proposal edits the displayed draft. Creating a separate
+correction starts a new proposal from the current source.
+
+Left and Right navigate the displayed queue while preserving text editing and
+native control keys. Each queue remembers its selected identity while moving
+between queues; the operator panel keeps the review mounted while visiting Usage
+or another operator tab. The cursor survives these visits for the current panel
+session. Archive defaults to resolutions from the last 12 hours, using receipt or closure
+event timestamps. Search spans all loaded resolved proposals and closed no-change
+reviews. Records without retained resolution timestamps are searchable but do not
+enter the default time window.
+
+Queue lists refresh every 15 seconds while the panel and document are visible,
+and on window focus or visibility change. Refresh pauses during work or unsaved
+draft edits and never installs a different proposal version. A changed selected
+proposal requires explicit reload and validation before applying. Pending second
+opinions use their existing three-second polling cycle. These are reads; provider
+retry and application remain explicit operator actions.
 
 ## Content sharing
 

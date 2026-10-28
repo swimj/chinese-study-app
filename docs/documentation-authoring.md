@@ -33,6 +33,23 @@ guide explains the mechanisms that realize it; a runbook gives a procedure and
 its safety conditions. Several related sections can share a file when each
 section's purpose is clear.
 
+Distinguish product requirements, architectural constraints, and descriptive
+behavior before editing. Name the owner of each affected explanation. Preserve
+the guarantee in its contract and explain the mechanism in its implementation
+guide; link them rather than copying the mechanism into both. Treat existing
+detail as evidence to classify, not as a requirement merely because it already
+appears in a specification. Raise consequential uncertainty about intent.
+
+After a cutover, reconcile the affected entry points and old authority claims as
+well as adding the new account. A historical document needs an explicit scope;
+a redirect above a contradictory claim of current authority is insufficient.
+Move superseded designs with useful historical value into the archive, and
+remove obsolete procedural detail when Git history is sufficient. Carry useful
+current explanations forward into their maintained owners before archiving;
+current guides should stand on their own. Update current navigation to those
+owners and preserve archive links only for historical questions.
+Read the resulting sections as a whole, including adjacent text and links.
+
 ## Interpret feedback through the intended model
 
 Treat feedback as evidence about the understanding or outcome the user wants.

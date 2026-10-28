@@ -240,7 +240,7 @@ destination for the later dogfood migration.
 - Backend config: [`server/config.ts`](server/config.ts)
 - Database barrel: [`server/db.ts`](server/db.ts) (modules in [`server/db/`](server/db/), map in [`docs/server-db.md`](docs/server-db.md))
 - Agent/docs index: [`docs/README.md`](docs/README.md)
-- Product model spec: [`SPECS/learning-review-model.md`](SPECS/learning-review-model.md)
+- Product model spec: [Adaptive vocabulary study](SPECS/vocabulary-learning.md)
 - Default dev database: `data/app.db` (generated locally and ignored by Git)
 - Checked-in dev seed files: [`server/seeds/mandarin-dev.json`](server/seeds/mandarin-dev.json), [`server/seeds/french-dev.json`](server/seeds/french-dev.json)
 - Deck manifest (HSK delta decks for the new-word diet): `server/decks/mandarin-decks-v1.json` — checked-in runtime artifact with logical source provenance in its metadata. Rebuild with `npm run build:deck-manifest` only after supplying the external inputs described in [the deck-build script](scripts/build-deck-manifest.ts) at its expected local paths.

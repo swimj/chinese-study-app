@@ -3,7 +3,7 @@
 Feature-specific navigation map for the learner-facing Feedback surface, backed
 by completed-session reflection and proposal review. Product and lifecycle
 behavior is defined in
-[`SPECS/reflection-proposals-and-handles.md`](../SPECS/reflection-proposals-and-handles.md);
+[`SPECS/reflection-proposals-and-handles.md`](../SPECS/archive/reflection-proposals-and-handles.md);
 the general React map is in
 [`SPECS/frontend-architecture-map.md`](../SPECS/frontend-architecture-map.md).
 
@@ -95,9 +95,9 @@ provider request. Provider failures do not roll back a successfully closed
 session. Slow provider calls do not block the independent deadline cadence.
 
 See the authoritative lifecycle in
-[`session-progress-and-completion.md`](../SPECS/session-progress-and-completion.md#session-completion)
+[`session-progress-and-completion.md`](../SPECS/archive/session-progress-and-completion.md#session-completion)
 and eligibility in
-[`session-reflection-generation.md`](../SPECS/session-reflection-generation.md#2-finalized-session-boundary).
+[`session-reflection-generation.md`](../SPECS/archive/session-reflection-generation.md#2-finalized-session-boundary).
 
 ## Staged generation
 

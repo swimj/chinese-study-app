@@ -1,8 +1,14 @@
-# Home exercise failure and compensation rates
+# Archived: Home exercise failure and compensation rates
 
-The Mandarin study runtime follows [Adaptive vocabulary study](vocabulary-learning.md).
-This document describes the retained legacy implementation and historical records;
-its learner-write flow is not the Mandarin entry point.
+Archived after the Mandarin vocabulary cutover. This is a historical design
+record; current requirements are maintained in the [product contract](../vocabulary-learning.md)
+and [architecture contract](../vocabulary-architecture.md).
+
+This document preserves the earlier runtime's design and terminology for
+interpreting retained records. The description below is scoped to that runtime.
+[Adaptive vocabulary study](../vocabulary-learning.md) owns current Mandarin
+behavior; [Vocabulary study UI](../../docs/implementation/vocabulary-ui.md) describes
+the current frontend.
 
 Home's **Exercise failure rate** panel summarizes failures in completed review
 exercises and later corrections for unfair exercises. This document explains
@@ -39,7 +45,7 @@ answer it: an ambiguous cue may admit a reasonable answer that the exercise
 rejects. When the learner accepts a proposed repair from reflection, a
 qualifying failure can receive compensation: a correction to its scheduling
 penalty. The [false-lapse compensation
-contract](pure-cue-elicitation.md#false-lapse-compensation)
+contract](../pure-cue-elicitation.md#false-lapse-compensation)
 defines which word-production and pure-cue failures qualify and the scheduling
 recovery rules.
 
@@ -85,6 +91,6 @@ and completed exercise counts in **Rate details**, including compensation-only
 periods. These counts distinguish a zero adjusted rate from having recorded no
 failures and show the basis of each displayed rate.
 
-The [study-session API reference](../docs/api.md#study-sessions-and-attempts)
+The [study-session API reference](../../docs/api.md#study-sessions-and-attempts)
 describes the current persistence, response fields, and historical data-coverage
 limits.

@@ -35,6 +35,7 @@ Repository orientation (README)
     ├── Product models and promises
     │   ├── Shared concepts and guarantees
     │   └── Feature and domain models and contracts
+    ├── Architecture contracts
     ├── Implementation explanations
     │   ├── System architecture and data flow
     │   └── Subsystem mechanisms and code references
@@ -66,14 +67,30 @@ responsibility.
 | Documentation index | Where is the explanation I need? | Routes to product, implementation, operational, and decision documents | Current documents and their known coverage gaps |
 | Shared product-model documents | What are the common concepts and promises? | Vocabulary, entities, relationships, learner lifecycle, and cross-cutting intended guarantees | Feature contracts that refine the model |
 | Feature and domain documents | What does this part of the product mean and promise? | Detailed concepts, behavior, lifecycles, and guarantees | Shared definitions, implementation explanations, tests, and relevant decisions |
-| Architecture and subsystem documents | How does the implementation work today? | Components, data flow, state boundaries, mechanisms, limitations, and code references | The product guarantees being realized, known gaps, and operational procedures |
+| Architecture contracts | Which structural constraints must implementations preserve, and why? | Accepted authority boundaries, state ownership, consistency and failure guarantees | Product promises, their current realization, and decision rationale |
+| Implementation and subsystem explanations | How does the implementation work today? | Components, data flow, mechanisms, current policies, limitations, and code references | The product and architecture contracts being realized, known gaps, and operational procedures |
 | Operations guides | How do I perform this operation safely? | Preconditions, commands, checks, recovery steps, and required evidence | Relevant mechanisms and safety guarantees; distinct routes for hosted operation and contributor setup |
 | Decision and historical records | Why was this choice made, and what context still matters? | Reasons, alternatives, accepted decisions, and selected useful prior context | The current explanation affected by each decision |
 
-The product-model and feature-contract documents state intended behavior.
-Architecture and implementation documents explain its current realization,
-including gaps. Closely related contract and realization sections may share a
-file when their subjects and roles are explicit.
+Product contracts prescribe the experience and guarantees the system should
+provide. Architecture contracts prescribe the structural constraints that
+implementations must preserve to provide those guarantees. Implementation
+explanations describe the current realization, including gaps and changeable
+mechanisms. An architecture diagram can serve either role; its title or folder
+does not establish whether it describes the code or constrains future designs.
+
+For example, preserving the exact content of an active vocabulary session is a
+product promise. Deriving learning effects from an acknowledged action boundary
+is an architectural constraint. A connection-scoped cache, its capacity, and the
+queries used to hydrate it describe the current implementation. Exact UI layout,
+key bindings, reserve sizes, and model-routing weights normally belong to the
+current behavior account unless a deliberate requirement makes them binding.
+Moving such a detail out of a contract does not authorize a behavior change.
+
+Closely related prescription and description may share a file when named sections
+make their roles explicit. Use separate documents when readers need to consult
+or maintain those explanations independently. A contract should explain the
+reason for a constraint without reproducing the mechanism that currently meets it.
 
 For this project, **Steward** maintains the current vision and priorities, as
 described in [the project context](../AGENTS.md#11-project-context-and-task-scope).

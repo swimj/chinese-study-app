@@ -12,8 +12,10 @@ not silently override it. See [AGENTS.md](AGENTS.md) for source reconciliation.
 
 The Mandarin product uses adaptive vocabulary modes and a flexible exercise pool.
 The [vocabulary contract](SPECS/vocabulary-learning.md) owns the current learner
-loop; [its implementation guide](docs/vocabulary-learning.md) owns the runtime
-and cutover. Word mode, exercise selection, scheduling, and content repair have
+loop; the [architecture contract](SPECS/vocabulary-architecture.md) owns state
+and consistency constraints, and [the implementation guide](docs/vocabulary-learning.md)
+explains the runtime and cutover. Word mode, exercise selection, scheduling,
+and content repair have
 separate authority. Simple initial policies can evolve without replacing those
 boundaries. This snapshot does not certify deployment or operational readiness.
 
@@ -33,10 +35,10 @@ belong there and in task instructions, not in this frontier.
   repair. Teaching has an exclusive repertoire bound to its introduction; ordinary
   practice draws from the current pool at session composition. Each session retains
   its repertoire while controls choose dynamically within it. Unresolved sense
-  associations allow word fallback. A stable teaching reserve prepares twice the
-  configured daily intake ahead of sessions; general practice queues when teaching
-  completion commits at closure. New teaching crosses an explicit preparation
-  compatibility boundary lazily in the reserve; historical learner state and
+  associations allow word fallback. Teaching preparation runs ahead of admission;
+  general practice queues when
+  teaching completion commits at closure. The implementation guide describes
+  reserve sizing and preparation compatibility; historical learner state and
   established sense identities survive source refresh.
 - **Reflection:** private learner lessons and internal content proposals run
   independently. Operators approve content applications. Backend judgment can

@@ -31,7 +31,7 @@ and release procedures.
 
 For the adaptive vocabulary runtime, `scripts/prepare-vocabulary-fixtures.ts`
 creates a fresh, provider-disabled fixture directory. See the
-[vocabulary verification guide](vocabulary-learning.md#conversion-and-local-verification).
+[vocabulary verification guide](vocabulary-learning.md#contributor-verification).
 `scripts/vocabulary-prompt-experiment.ts` prepares and inspects offline authoring
 experiments; the separate `vocabulary-prompt-trial.ts` live runner requires explicit
 provider-call authorization. The [prompt handoff](implementation/vocabulary-prompt-handoff.md)
@@ -103,7 +103,7 @@ and compatibility boundary being inspected.
 ## Repeatable UI annotation fixtures
 
 For the adaptive vocabulary session, use the
-[full vocabulary walkthrough fixture](vocabulary-learning.md#conversion-and-local-verification).
+[full vocabulary walkthrough fixture](vocabulary-learning.md#contributor-verification).
 It includes 12 words, Solidify graduation boundaries and a persisted manual
 override. The command below prepares the retained legacy annotation scenarios.
 

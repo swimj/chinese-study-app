@@ -1,10 +1,12 @@
 # Adaptive vocabulary study
 
-This contract defines the Mandarin learner experience, evidence, and authority.
-The [implementation guide](../docs/vocabulary-learning.md) describes persistence,
-workers, APIs, and release boundaries. The exploratory
-[model whiteboard](../notes/active/2026-10-15-vocabulary-model-whiteboard.md)
-retains the broader product direction; this contract covers the implemented first delivery.
+This product contract defines the Mandarin learning model, learner-visible
+behavior, and content-review authority. Its requirements describe intended
+behavior independently of the current implementation. The
+[architecture contract](vocabulary-architecture.md) defines state and consistency
+constraints; the [implementation guide](../docs/vocabulary-learning.md) explains
+their realization. Broader exploration is retained in the
+[model whiteboard](../notes/active/2026-10-15-vocabulary-model-whiteboard.md).
 
 ## Words, uses, and exercises
 
@@ -105,21 +107,11 @@ Completed teaching counts against that local study day; an introduction shown
 without completing its recall requirements does not. Other scheduling and usage
 reporting retain their own UTC-day policies.
 
-New-word preparation maintains a stable reserve of twice the configured daily
-new-word limit, capped at 40 candidates. The reserve follows stash, priority and
-diet policy and prepares lexical bootstrap, introductions and their teaching
-exercises ahead of admission. Failed preparation retains its candidate slot;
-repeated visits do not expand speculative work. Completed or dismissed words
-leave the reserve, allowing replenishment even when today's intake is exhausted.
-A deliberate preparation compatibility boundary applies to new teaching. When an
-Unstudied candidate enters the reserve, incompatible bootstrap and teaching
-material refresh lazily. Prompt or model revisions alone do not invalidate it.
-Historical artifacts, sense identities and learner progress remain intact.
-Already learned words keep their banked material and grow through improvement;
-shared additions prepared for another learner may appear in their future sessions.
-General practice is queued only when teaching completion commits at session
-closure. Ready material can enter a fresh session the same day; it never joins
-an already running session.
+Teaching preparation runs ahead of admission and retains failed work for retry
+and operator recovery. Preparation refresh preserves historical artifacts, established sense
+identities and learner progress. General practice becomes eligible for preparation
+when teaching completion commits at session closure. Newly ready material can
+enter a subsequent session, including on the same day.
 
 Start freezes a session payload: admitted words and starting states, eligible
 content versions, teaching repertoires, answer criteria, and reveal/source facts.
@@ -129,11 +121,7 @@ prescribe a fixed sequence. Publication, edits, retirement, content deactivation
 and external skill/proxy changes affect subsequent sessions. Account and private
 content access checks remain live. A reset to Unstudied still defers teaching.
 
-The backend may operate the live player. Ordinary actions use retained session
-material and indexed session/access reads, without rediscovering content or
-scanning active sessions. Events are persisted incrementally; server-side state
-is derived from the retained payload and log. Exact encounter retention records
-what the dynamic player actually showed within that frozen composition.
+### Exercise actions and coverage
 
 The learner can answer, skip an exercise, try another way, stop on a word, ask for
 more, and react to exercises. Controls depend on context. Ordinary completion
@@ -157,11 +145,13 @@ select the most urgent eligible skill for each word; completing that work applie
 a six-hour shared recency guard. Independent pure cues share the review portion
 of the mix and interleave with ordinary word exercises.
 
+### Teaching and answer reveal
+
 Introductions preserve the progressive teaching walkthrough, back-navigation,
 and recap. Teaching sentences highlight the taught word with its pronunciation;
-other reliably aligned readings appear on hover or keyboard focus, without a
-separate sentence-pinyin line. They do not offer exercise-level Skip; a learner can stop work on the
-whole unstudied word from the footer without claiming teaching completion.
+other reliably aligned readings are accessible without obscuring the taught word.
+Introductions do not offer exercise-level Skip; a learner can stop work on the
+whole unstudied word without claiming teaching completion.
 
 Exercises interleave across words, including teaching exercises. An introduction
 or Solidify warmup does not require the next exercise to target that same word.
@@ -178,8 +168,8 @@ with lexical meaning as the fallback. It retains pronunciation, authored usage
 notes and explanations. Cloze reveals stay tied to the answered prompt: show its
 mapped sense or lexical meaning, and a translation only when linked to the
 completed cloze. A correct pure-cue response fills the blank with the learner's
-accepted input, preserving their choice among accepted members. They do not introduce a different example sentence. Other
-eligible reveals retain source examples. A Word reference
+accepted input, preserving their choice among accepted members. Cloze reveals
+do not introduce a different example sentence. Other eligible reveals retain source examples. A Word reference
 disclosure exposes the full retained teaching source. Rejected production shows
 the learner's submitted answer alongside the expected answer. Personal notes
 are visible after reveal and reflect the learner's current notes rather than
@@ -190,9 +180,10 @@ before reveal.
 
 Progress indicators show multi-success requirements: separate recognition and
 production streaks during teaching, and reinforcement streaks after a practice
-mistake. Single-success requirements do not display a lone numbered chip.
-Undo updates these indicators from effective evidence. Coverage by “Enough for
+mistake. Undo updates these indicators from effective evidence. Coverage by “Enough for
 today” does not fill recall-success indicators.
+
+### Continuing and revisiting work
 
 Before answer reveal, “Try another way” puts the word back into the session queue and excludes the
 current exercise identity for the rest of that session, including later versions
@@ -220,11 +211,12 @@ ready material and explicit continuation choices carry the session when it is
 unavailable. Local answer checking uses the served answer space. A teacher
 judgment can later assess whether the check was fair.
 
-Interactions are sent incrementally with stable retry identities. The backend
-acknowledges an ordered log and stores exact encounter evidence. Finalization
-flushes outstanding work and freezes an acknowledged boundary. A failed save
-remains retryable; it is not presented as completed progress. This delivery does
-not restore an interrupted active session or maintain a durable browser outbox.
+### Saving and completion
+
+Study progress is acknowledged before it is presented as durably saved. Failed
+saves remain retryable. Active sessions survive navigation within the mounted
+application; recovery of an active session after reload is unsupported. Pending
+completion remains recoverable independently of the active study screen.
 
 “Finish for now” stops admission and wraps up open work. It reveals “Finish
 immediately,” which explains that unfinished words remain due. Both paths retain
@@ -234,17 +226,15 @@ unfinished practice does not receive covering credit.
 The summary has a 15-second cancellation window. Returning to study cancels that
 completion and resumes with the same observations. Undo cancels completion and
 reverses the latest supported learner interaction, including its automatic
-companion actions, by appending an undo record. Historical observations remain.
-Closing applies learner effects and writes the completion, receipts, and queued
-post-session work atomically. Repeated close requests apply no duplicate effects.
+companion actions, while retaining historical observations.
+Closing applies learner effects once and makes the completed session available
+for post-session processing. A failed close remains retryable without duplicate effects.
 Changing mode in a pending summary cancels that revision and stages a new boundary.
 Closed-session mode changes are new commands, not historical undo.
 
-The summary presents immediate actions before its counted word groups: new
-words studied (“Today’s new words”), words leaving Solidify (“Words solidified”), other covered words, and
-words left for another session. Each word retains its pronunciation, meaning,
-learning-mode choice, and any exceptional outcome; routine completion text is
-not repeated under each word. Longer groups use expandable lists. Elapsed
+The summary distinguishes newly studied words, words leaving Solidify, other
+covered words, and words left for another session. Each word retains its
+pronunciation, meaning, learning-mode choice, and any exceptional outcome. Elapsed
 study time excludes time spent away from the active session. Successful closure
 returns the learner to Home unless they choose “Keep summary open” or perform a
 summary edit. Keeping the summary open does not extend the Undo deadline.
@@ -285,13 +275,13 @@ Reading the lesson and approving a content proposal are unrelated to that
 correction. It applies once to current state and preserves explicit mode and
 refresh choices. Provider failure does not invalidate session completion.
 
+### Content repair boundaries
+
 A dictionary cue spanning distinct uses can be replaced by a general-practice
-repertoire. Reflection and ordinary preparation share the general-exercise
-authoring contract: concise direct evocations and contextual clozes chosen for
-the target's own lexical contribution, with optional post-answer teaching.
-Reflection retains its selected model and supplies the established sense
-inventory. Its response adapter creates a proposal that replaces the source cue
-and adds the remaining exercises; application requires operator approval.
+repertoire. Prepared and reflection-proposed exercises use concise direct
+evocations and contextual clozes chosen for the target's own lexical contribution,
+with optional post-answer teaching. A reflection repertoire proposal replaces the
+source cue and adds the remaining exercises; application requires operator approval.
 Ordinary preparation publishes validated exercises through its preparation policy.
 
 For a single-word production exercise with an admitted intended sense, local
@@ -323,24 +313,30 @@ without a new comparison word. These proposals remain separate from learner
 feedback and require manual application; they do not reconcile individual word
 exercise collections.
 
-The operator's default surface is a cross-learner proposal inbox for scanning
-suggestions and approving changes. Current versus proposed learning content and
-recipient scope are visible before approval; evidence and manual editing are
-available on drill-in. Operational failures and unresolved cases are separate
-from ready suggestions. Second opinions are retained, advisory reviews bound to
-an exact proposal version; they do not replace edits or authorize application.
+### Operator review
 
-Review cards prioritize the item, judgment and proposed content. One Details
-disclosure contains supporting evidence, processing metadata and optional notes.
+The operator's default surface is a cross-learner proposal inbox for scanning
+suggestions and approving changes. Each entry leads with the served content
+retained from the learner's encounters: the cue and accepted answers, in
+encounter order. An encounter without a retained snapshot is labeled
+unavailable. Diagnosis, current versus proposed learning content, and recipient
+scope follow, and are visible before approval. When the entry has no retained
+served snapshot, it states that the original served content is unavailable and
+does not present current or proposed content as the original. Evidence and
+manual editing are available on drill-in. Operational failures and unresolved
+cases are separate from ready suggestions. Second opinions are retained,
+advisory reviews bound to an exact proposal version; they do not replace edits
+or authorize application.
+
+Operators can inspect supporting evidence and edit proposals before approval.
 Dismissal and closing a completed no-change review accept an optional reason;
 teaching and unresolved sense or promotion assessments require a resolution.
-Archive defaults to all proposals and no-change reviews resolved in the last
-12 hours. Search covers all retained resolutions, including older entries.
-Queue navigation preserves the selected item while moving among operator views.
-Arrow keys move between items outside text fields and native controls.
-Background list refresh preserves the selection, draft and exact reviewed version.
+Resolved proposals and reviews remain searchable. Navigation and background
+refresh preserve the selection, unsaved draft, and exact reviewed version.
+The [operator guide](../docs/operator-panel.md#content-improvement-workflow)
+describes the current queue and archive interface.
 
-Shared content changes require operator review. Preview validates the exact
+Content-repair proposals require operator review. Preview validates the exact
 proposal version, source bases, effect scope, and resulting content. Approval
 binds that version; application rechecks it and records an idempotent receipt.
 The operator chooses whether to update an identity or replace and retire it.
@@ -348,20 +344,12 @@ Learner schedules, deactivations, and teaching bindings refer to identities;
 replacement does not silently transfer those relationships. Related teaching
 repairs can be applied together with an explicitly rebound repertoire.
 
-Service-owned model calls retain source-learner attribution separately from
-ownership. Provider input and output are untrusted and validated. Prompt versions,
-exact retained requests/results, model settings, and content links support later
-analysis without turning provenance into live dependency propagation.
+Model processing preserves private evidence and attributable results under the
+[architecture contract](vocabulary-architecture.md#generation-review-and-application-authority).
+Failed preparation and review work expose recovery without bypassing content approval.
+Accumulated spend does not reject, skip, or change the selected model for
+internal content-improvement work, including work with requesting learner context.
 
-Reflection model routing applies independently of the content-improvement
-stages. Individual jobs use equal-probability selection among the three offered
-arms (Luna, GLM, Sol), independent of accumulated spend. The size-weighted
-batched policy remains separate. A job retains its selected model across stages
-and retries.
-Preparation failures use bounded automatic retries before requiring operator
-attention; an operator can begin another bounded cycle with prior attempts
-retained. Neither retries nor model routing bypass publication checks or authorize
-content application.
 
 Learners can dismiss feedback lessons without deleting them or changing learning
 state. Dismissed lessons remain accessible and restorable, and do not contribute

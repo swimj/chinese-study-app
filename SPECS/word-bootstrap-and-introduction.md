@@ -1,12 +1,14 @@
 # Word Bootstrap, Introduction, And Early Rehearsal
 
-Status: accepted design direction, with preparation-reserve policy agreed 2026-10-01.
-The [local authoring lab](../docs/word-introduction-lab.md) remains available alongside
-shared preparation, paced introductions, and package-based early learning. See the
-[data representation and compatibility guide](../docs/word-content-representation.md).
-This is the product and content-model north star for the combined feature.
-The policy choices in §9 can remain open through a merged prototype. Define
-their initial behavior when enabling the corresponding live study effects.
+This design explains teaching intent and the relationship between lexical
+bootstrap, introductions and practice material. Its package-based realization
+and open design questions preserve context from the earlier teaching system.
+The [vocabulary product contract](vocabulary-learning.md) owns current Mandarin
+learning policy, while the [architecture contract](vocabulary-architecture.md)
+owns retained repertoires and content identity. The
+[implementation guide](../docs/vocabulary-learning.md#teaching-reserve) describes
+current preparation; the [local authoring lab](../docs/word-introduction-lab.md)
+is a contributor experiment surface.
 
 ## 1. Outcome And Authority
 
@@ -20,13 +22,11 @@ Word bootstrap, introduction, and early rehearsal form one feature. Bootstrap
 and teaching remain separate authoring tasks with distinct prompts: bootstrap
 describes the word; teaching turns that content into an experience.
 
-This spec owns content boundaries, teaching intent, and the relationship to
-review reflection. It does not replace current lifecycle, covering, scheduling,
-Undo, or commit rules. Until explicitly revised, those remain in
-[learning-review-model](learning-review-model.md),
-[session-progress-and-completion](session-progress-and-completion.md), and
-[study-action-model](study-action-model.md). Existing review and pure-cue
-contracts remain authoritative for their exercises.
+This design develops content quality and teaching rationale. For current lifecycle,
+covering, scheduling, Undo and completion requirements, use
+[Adaptive vocabulary study](vocabulary-learning.md). Earlier package and reflection
+mechanisms below should be read in their stated design context, rather than as
+instructions to restore the retired write paths.
 
 The [draft introduction prompt and worked examples](../notes/active/2026-09-24-word-introduction-prompt-draft.md)
 provide editorial guidance. The
@@ -307,7 +307,7 @@ reconciliation is required to proceed with this work.
   reach three consecutive `Good` ratings before the first-encounter word unit
   completes through the existing deferred commit and Undo path. Recognition uses
   curated source content under the
-  [new-word recall policy](session-progress-and-completion.md#unstudied-word-covering).
+  [new-word recall policy](vocabulary-learning.md#exercise-actions-and-coverage).
   Production selects a rehearsal by its current streak
   modulo the package rehearsal count, returning to the first on a streak reset.
   in-session walkthrough has no skip-to-cards or Escape bypass; leaving uses
