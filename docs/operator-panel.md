@@ -103,8 +103,12 @@ approval and evidence guarantees, and the
 how judgments and proposals are produced.
 
 Open `#operator-usage` and select **Content improvement** using the
-[operator allowlist](#access). Opening a proposal validates its saved version
-and shows current and proposed content, accepted answers, and recipient scope.
+[operator allowlist](#access). Opening a proposal validates its saved version.
+The entry leads with **Original served content**: each encounter that retains
+a snapshot shows its cue and accepted answers, in encounter order. An encounter
+without a snapshot says that snapshot is unavailable. Diagnosis, current and
+proposed content, accepted answers, and recipient scope follow. A case with no
+retained snapshot states that the original served content is unavailable.
 Changed answer criteria and retained teaching are expanded in the comparison.
 
 “Approve and apply” records approval for the displayed version and applies it
@@ -123,16 +127,18 @@ rewrites the proposal nor applies content. Earlier opinions remain labeled with
 their proposal version after edits. Failed reviews require explicit retry; teaching
 cases and standalone manual proposals do not yet support this review path.
 Completed exercise judgments that propose no change also appear in Awaiting
-review, including retained historical judgments. The operator can inspect the
-served exercise and rationale, draft a correction from current content, request
-an advisory second opinion with a question, or close the review with an optional reason.
+review, including retained historical judgments. The entry leads with that same
+served content, then the rationale. The operator can draft a correction from
+current content, request an advisory second opinion with a question, or close
+the review with an optional reason.
 The second opinion reviews the no-change judgment; it does not create or apply a
 proposal. Closed reviews remain in Archive, with their retained jobs and results in the case evidence.
 
 ### Queue navigation and refresh
 
 The operator panel's Content improvement tab presents an Awaiting review queue,
-an attention inbox and Archive. Previous and next controls navigate one item at
+an attention inbox and Archive. Open entries in each view lead with the original
+served content described above. Previous and next controls navigate one item at
 a time; applying or dismissing advances to the next available item. Cards keep scope and identity consequences
 visible before approval; one Details disclosure contains full rationale,
 relationship effects, encounter history, optional review notes and source-based
