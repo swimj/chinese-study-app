@@ -138,17 +138,6 @@ learner was necessarily told by the original cue.
 See [worker routing and retry controls](../vocabulary-learning.md#background-work-and-operator-repair)
 for model selection, provider gates and preparation retry budgets.
 
-## Invocation policy
-
-Accumulated spend does not gate backend content-improvement calls or change their
-selected model, including when work carries a requesting learner's context.
-Individual reflection jobs retain their selected arm across stages and retries.
-Provider invocation records retain usage, reported or estimated cost, and unknown
-costs for inspection. Operator authorization, validation, explicit failure retry,
-worker concurrency and leases, and provider request/output limits apply independently
-of spend. The retained manual correction API (`/api/operator/content-improvements`)
-does not invoke a model.
-
 ## Dictionary fallback publication scope
 
 Corpus dictionary fallbacks and the repertoires generated from them are shared

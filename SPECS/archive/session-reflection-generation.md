@@ -433,15 +433,6 @@ dogfood observability. Price estimates must identify or preserve the rate
 snapshot used; they are operational intuition, not learning evidence or a
 correctness signal.
 
-### Spend and execution
-
-Accumulated spend does not reject, skip, or change the selected model for
-reflection generation, retries, or second opinions, including backend work with
-inherited learner context. Persisted usage and cost estimates support reporting;
-unknown costs remain unknown. Authorization, evidence and output validation,
-retry eligibility, concurrency controls, and provider request/output limits apply
-independently of spend.
-
 ## 7. Integration Invariants
 
 - Reflection generation never directly mutates learner, scheduling, or content

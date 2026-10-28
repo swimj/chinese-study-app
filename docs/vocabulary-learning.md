@@ -303,8 +303,7 @@ Individual reflection jobs select Luna, GLM, or Sol with equal probability,
 regardless of how many encounters their evidence contains. The separate batched
 policy retains GLM/Luna at 70/30 for up to ten items and Sol/GLM/Luna at 60/20/20
 for larger bundles; vocabulary jobs do not currently batch unrelated cases. Selection is
-retained across stages and retries. Accumulated spend does not restrict routing,
-explicit model choices, or retries for learner feedback, improvements, or AI
+retained across stages and retries for learner feedback, improvements, and AI
 second opinions. Practice and sense authoring keep their independently configured model.
 
 ### Teaching reserve

@@ -347,9 +347,6 @@ repairs can be applied together with an explicitly rebound repertoire.
 Model processing preserves private evidence and attributable results under the
 [architecture contract](vocabulary-architecture.md#generation-review-and-application-authority).
 Failed preparation and review work expose recovery without bypassing content approval.
-Accumulated spend does not reject, skip, or change the selected model for
-internal content-improvement work, including work with requesting learner context.
-
 
 Learners can dismiss feedback lessons without deleting them or changing learning
 state. Dismissed lessons remain accessible and restorable, and do not contribute

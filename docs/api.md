@@ -671,9 +671,8 @@ GPT-5.6 Luna high at 30%. Larger bundles sample GPT-6 Sol high at 60%, GLM at
 20%, and Luna at 20%. Ordinary and pure-cue bundles are routed independently
 using their actual item counts. Explicit choices and manual second opinions
 do not use these weights. Terra, GLM Flash max, and Gemini remain registered
-but are withdrawn from the default pool and learner-facing pickers. Accumulated
-spend does not restrict model selection or provider execution. OpenRouter arms require
-`OPENROUTER_API_KEY` and use OpenRouter's normal eligible-provider routing;
+but are withdrawn from the default pool and learner-facing pickers. OpenRouter
+arms require `OPENROUTER_API_KEY` and use OpenRouter's normal eligible-provider routing;
 they do not pin one upstream host or disable fallbacks. Missing credentials fail
 only the selected arm with the existing `503` typed failure; they never affect
 finalization or other arms. OpenRouter's returned cost is preserved for a
