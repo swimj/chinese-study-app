@@ -1,8 +1,8 @@
 # Testing map
 
 This map helps contributors select checks for affected behavior and understand
-what those checks exercise. The [development and review workflow](stacked-feature-development-and-review.md#preserve-behavior-across-implementation-changes)
-describes how to preserve implementation and regression evidence during a change.
+what those checks exercise. The [development principles](development-principles.md#preserve-behavior-across-implementation-changes)
+describe how to preserve implementation and regression evidence during a change.
 
 Run full suite: `npm test` (Node test runner, `tests/*.test.ts`).
 
