@@ -1,3 +1,4 @@
+import type { VocabularySessionPayload } from './vocabulary-session-payload';
 import type { BootstrapRevealSnapshot } from './word-content/reveal';
 import type { WordContentDocument } from './word-content/types';
 
@@ -41,6 +42,8 @@ export type VocabularySessionWordContext = {
 };
 export type VocabularySessionInitialContext = {
   sessionId: string;
+  /** Immutable repertoire prepared at session Start. */
+  payload?: VocabularySessionPayload;
   words: readonly VocabularySessionWordContext[];
   /** Frozen review order interleaves independent cues with selected word objectives. */
   reviewOrder?: readonly { kind: 'word' | 'pure_cue'; id: string }[];
@@ -287,6 +290,7 @@ export function projectVocabularySession(
   result.undoneActionIds = [...undone];
   result.latestUndoableActionId = latestUndoable;
   result.pureCueOutcomes = projectPureCueOutcomes(result.encounters);
+  effectiveProjectionStates.set(result, copyProjection(result));
   // Original observations survive Undo; only their effective contribution changes.
   result.encounters = prefix.filter((action): action is Extract<VocabularySessionAction, { kind: 'presentation' }> => action.kind === 'presentation')
     .map((presentation) => {
@@ -307,6 +311,91 @@ export function projectVocabularySession(
     word.recommendedMode = word.explicitModeChoice === null && !initial?.automaticPromotionPaused && isCleanSolidifySession(word)
       ? recommendVocabularyMode(word.mode, (initial?.cleanCoveredSessions ?? 0) + 1)
       : null;
+  }
+  return result;
+}
+
+
+/** Effective state is kept separately from observation evidence after Undo. Weak keys
+ * bound its lifetime to the caller's retained projection; durable logs remain authority. */
+const effectiveProjectionStates = new WeakMap<VocabularySessionProjection, VocabularySessionProjection>();
+function copyProjection(source: VocabularySessionProjection): VocabularySessionProjection {
+  return { ...source,
+    words: Object.fromEntries(Object.entries(source.words).map(([id, word]) => [id, { ...word,
+      skillProgress: { recognition: { ...word.skillProgress.recognition }, production: { ...word.skillProgress.production },
+        contextual_selection: { ...word.skillProgress.contextual_selection } } }])),
+    encounters: source.encounters.map(encounter => ({ ...encounter, responses: [...encounter.responses],
+      effectiveResponses: [...encounter.effectiveResponses], feedback: [...encounter.feedback], effectiveFeedback: [...encounter.effectiveFeedback] })),
+    excludedContentIds: [...source.excludedContentIds], undoneActionIds: [...source.undoneActionIds],
+    coveredWordIds: [...source.coveredWordIds], uncoveredWordIds: [...source.uncoveredWordIds],
+    pureCueOutcomes: source.pureCueOutcomes.map(outcome => ({ ...outcome, encounterIds: [...outcome.encounterIds] })),
+  };
+}
+
+/** Advance a trusted acknowledged projection without executing its old actions again.
+ * Copying evidence and building indexes remain linear in session history. Undo (and a
+ * rehydrated post-Undo projection without its effective state) uses the replay oracle.
+ * Inputs are never mutated, including when incoming validation fails.
+ */
+export function advanceVocabularySession(
+  context: VocabularySessionInitialContext,
+  existingActions: readonly VocabularySessionAction[],
+  previous: VocabularySessionProjection,
+  incoming: readonly VocabularySessionAction[],
+): VocabularySessionProjection {
+  invariant(previous.sessionId === context.sessionId, 'projection belongs to another session');
+  invariant(previous.throughSequence === existingActions.length, 'projection must match acknowledged boundary');
+  if (incoming.some(action => action.kind === 'undo')
+    || (previous.undoneActionIds.length > 0 && !effectiveProjectionStates.has(previous))) {
+    return projectVocabularySession(context, [...existingActions, ...incoming]);
+  }
+  const ids = new Set(existingActions.map(action => action.actionId));
+  const clients = new Set(existingActions.map(action => action.clientActionId));
+  const result = copyProjection(effectiveProjectionStates.get(previous) ?? previous);
+  // Public projections retain all observed responses; the reducer operates on effective ones.
+  if (!effectiveProjectionStates.has(previous)) {
+    for (const encounter of result.encounters) encounter.responses = [...encounter.effectiveResponses];
+  }
+  const evidence = new Map(previous.encounters.map(encounter => [encounter.encounterId, {
+    ...encounter, responses: [...encounter.responses], feedback: [...encounter.feedback],
+  }]));
+  let sequence = existingActions.length;
+  for (const action of incoming) {
+    invariant(action.protocolVersion === VOCABULARY_SESSION_PROTOCOL_VERSION, 'unsupported protocol version');
+    invariant(action.sequence === ++sequence, 'actions must be ordered and contiguous');
+    invariant(action.actionId.trim() && !ids.has(action.actionId), 'duplicate or empty action ID');
+    invariant(action.clientActionId.trim() && !clients.has(action.clientActionId), 'duplicate or empty client action ID');
+    invariant(Number.isFinite(Date.parse(action.occurredAt)), 'invalid action timestamp');
+    ids.add(action.actionId); clients.add(action.clientActionId);
+    applyAction(result, action, context);
+    if (action.kind === 'presentation') {
+      const observed = result.encounters.at(-1)!;
+      evidence.set(observed.encounterId, { ...observed, responses: [], feedback: [] });
+    } else if (action.kind === 'response') {
+      evidence.get(action.payload.encounterId)!.responses.push(action);
+    } else if (action.kind === 'feedback') {
+      evidence.get(action.payload.encounterId)!.feedback.push(action);
+    }
+    if (UNDOABLE_KINDS.has(action.kind)) result.latestUndoableActionId = action.actionId;
+    settleFinishedWork(result);
+  }
+  result.throughSequence = sequence;
+  result.pureCueOutcomes = projectPureCueOutcomes(result.encounters);
+  effectiveProjectionStates.set(result, copyProjection(result));
+  const effective = new Map(result.encounters.map(encounter => [encounter.encounterId, encounter]));
+  result.encounters = [...evidence.values()].map(observed => {
+    const current = effective.get(observed.encounterId);
+    return { ...(current ?? observed), mode: observed.mode, workNumber: observed.workNumber,
+      presentationUndone: !current, responses: observed.responses, feedback: observed.feedback,
+      effectiveResponses: [...(current?.responses ?? [])], effectiveFeedback: effectiveVocabularyReactions(observed.feedback) };
+  });
+  result.coveredWordIds = []; result.uncoveredWordIds = [];
+  for (const word of Object.values(result.words)) {
+    if (!word.admitted) continue;
+    (word.covered ? result.coveredWordIds : result.uncoveredWordIds).push(word.wordId);
+    const initial = context.words.find(entry => entry.wordId === word.wordId);
+    word.recommendedMode = word.explicitModeChoice === null && !initial?.automaticPromotionPaused && isCleanSolidifySession(word)
+      ? recommendVocabularyMode(word.mode, (initial?.cleanCoveredSessions ?? 0) + 1) : null;
   }
   return result;
 }

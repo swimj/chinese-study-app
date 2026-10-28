@@ -4,7 +4,7 @@ import { schedulePureCueAssessment } from '../../src/domain/pure-cues.ts';
 import { normalizeProductionAnswerForProfile } from '../../src/study-profile.ts';
 import { isDeepStrictEqual } from 'node:util';
 import { SESSION_COMPLETION_UNDO_MS } from '../../src/domain/session-completion.ts';
-import { projectVocabularySession, isCleanSolidifySession, VOCABULARY_SESSION_POLICY, type VocabularySessionAction,
+import { advanceVocabularySession, projectVocabularySession, isCleanSolidifySession, VOCABULARY_SESSION_POLICY, type VocabularySessionAction,
   type VocabularySessionInitialContext, type VocabularySessionProjection } from '../../src/domain/vocabulary-session.ts';
 import type { VocabularyPersistedSession, VocabularySessionCompletion } from '../../src/domain/vocabulary-session-api.ts';
 export type { VocabularyPersistedSession, VocabularySessionCompletion } from '../../src/domain/vocabulary-session-api.ts';
@@ -48,6 +48,75 @@ function readActions(sessionId: string): VocabularySessionAction[] {
   return (getDb().prepare('SELECT action_json FROM session_actions WHERE session_id = ? AND learner_id = ? ORDER BY sequence_number')
     .all(sessionId, requireLearnerId()) as { action_json: string }[]).map((row) => JSON.parse(row.action_json) as VocabularySessionAction);
 }
+type SessionHead = Pick<SessionRow, 'learner_id' | 'status' | 'started_at'> & {
+  sequence_number: number | null; action_id: string | null;
+};
+type SessionRuntime = { context: StoredContext; actions: VocabularySessionAction[]; projection: VocabularySessionProjection; head: SessionHead; completion?: VocabularySessionCompletion | null };
+// Connection identity and learner ownership are both part of the cache boundary. The
+// database remains authoritative: a head probe also catches another writer or an outer
+// transaction rolling back a successful nested append, even at the same sequence number.
+const runtimeCaches = new WeakMap<ReturnType<typeof getDb>, Map<string, SessionRuntime>>();
+const MAX_CACHED_SESSIONS = 64;
+function runtimeCache(): Map<string, SessionRuntime> {
+  const db = getDb(); let cache = runtimeCaches.get(db);
+  if (!cache) { cache = new Map(); runtimeCaches.set(db, cache); }
+  return cache;
+}
+function runtimeKey(sessionId: string): string { return JSON.stringify([requireLearnerId(), sessionId]); }
+function freezeRuntimeValue(value: unknown): void {
+  if(value===null||typeof value!=='object'||Object.isFrozen(value))return;
+  for(const child of Object.values(value))freezeRuntimeValue(child);
+  Object.freeze(value);
+}
+function rememberRuntime(sessionId: string, runtime: SessionRuntime): void {
+  // A caller must not turn a derived cache entry into another source of authority.
+  freezeRuntimeValue(runtime.context);freezeRuntimeValue(runtime.actions);freezeRuntimeValue(runtime.projection);
+  const cache = runtimeCache(); const key = runtimeKey(sessionId);
+  cache.delete(key); cache.set(key, runtime);
+  while (cache.size > MAX_CACHED_SESSIONS) cache.delete(cache.keys().next().value!);
+}
+function sessionHead(sessionId: string): SessionHead {
+  const head = getDb().prepare(`SELECT s.learner_id, s.status, s.started_at, a.sequence_number, a.action_id
+    FROM vocabulary_sessions s LEFT JOIN session_actions a ON a.session_id = s.session_id
+      AND a.sequence_number = (SELECT sequence_number FROM session_actions WHERE session_id = s.session_id ORDER BY sequence_number DESC LIMIT 1)
+    WHERE s.session_id = ? AND s.learner_id = ?`).get(sessionId, requireLearnerId()) as SessionHead | undefined;
+  if (!head) { runtimeCache().delete(runtimeKey(sessionId)); throw new VocabularySessionNotFoundError('Vocabulary session not found'); }
+  return head;
+}
+function sessionRuntime(sessionId: string): SessionRuntime {
+  const head = sessionHead(sessionId); const cached = runtimeCache().get(runtimeKey(sessionId));
+  if (cached && cached.head.started_at === head.started_at && cached.head.sequence_number === head.sequence_number && cached.head.action_id === head.action_id) {
+    const runtime = { ...cached, head }; rememberRuntime(sessionId, runtime); return runtime;
+  }
+  const context = JSON.parse(sessionRow(sessionId).context_json) as StoredContext;
+  const actions = readActions(sessionId);
+  const runtime = { context, actions, projection: projectVocabularySession(context, actions), head };
+  rememberRuntime(sessionId, runtime); return runtime;
+}
+function cachedSessionCompletion(sessionId: string, runtime: SessionRuntime, now: string): VocabularySessionCompletion | null {
+  const head = getDb().prepare(`SELECT completion_id, status, closed_at, last_error FROM vocabulary_session_completions
+    WHERE session_id = ? AND learner_id = ? ORDER BY revision_number DESC LIMIT 1`)
+    .get(sessionId, requireLearnerId()) as Pick<CompletionRow, 'completion_id' | 'status' | 'closed_at' | 'last_error'> | undefined;
+  if (!head) { runtime.completion = null; return null; }
+  const previous = runtime.completion;
+  // Closure recomputes the report; a rolled-back closure must also discard that
+  // report. Other state changes retain the same staged report and immutable input.
+  if (!previous || previous.completionId !== head.completion_id || (previous.status === 'closed') !== (head.status === 'closed')) {
+    const row = completionRow(sessionId, head.completion_id);
+    if (!row) throw new Error('Vocabulary completion disappeared during hydration');
+    runtime.completion = completionDto(row, now);
+    freezeRuntimeValue(runtime.completion.report); freezeRuntimeValue(runtime.completion.metadata);
+  } else {
+    runtime.completion = { ...previous, status: head.status, closedAt: head.closed_at, error: head.last_error,
+      serverNow: now, canUndo: (head.status === 'pending' || head.status === 'failed') && now < previous.closeAt };
+  }
+  // Keep cached metadata separate from the returned, time-sensitive DTO.
+  return { ...runtime.completion };
+}
+function sessionDto(sessionId: string, runtime: SessionRuntime, now: string): VocabularyPersistedSession {
+  return { sessionId, status: runtime.head.status, context: runtime.context, actions: runtime.actions, projection: runtime.projection,
+    completion: cachedSessionCompletion(sessionId, runtime, now) };
+}
 function completionDto(row: CompletionRow, now: string): VocabularySessionCompletion {
   const retained = JSON.parse(row.input_json) as {activeDurationMs?:number|null};
   const activeDurationMs = retained.activeDurationMs ?? null;
@@ -58,12 +127,10 @@ function completionDto(row: CompletionRow, now: string): VocabularySessionComple
     metadata: {activeDurationMs,source:activeDurationMs===null?null:'client_visibility_and_focus'} };
 }
 export function getVocabularySessionCompletion(sessionId: string, now = new Date().toISOString()): VocabularySessionCompletion | null {
-  sessionRow(sessionId); const row = completionRow(sessionId); return row ? completionDto(row, now) : null;
+  sessionHead(sessionId); const row = completionRow(sessionId); return row ? completionDto(row, now) : null;
 }
 export function getVocabularySession(sessionId: string, now = new Date().toISOString()): VocabularyPersistedSession {
-  const row = sessionRow(sessionId); const context = JSON.parse(row.context_json) as StoredContext;
-  const actions = readActions(sessionId);
-  return { sessionId, status: row.status, context, actions, projection: projectVocabularySession(context, actions), completion: getVocabularySessionCompletion(sessionId, now) };
+  return sessionDto(sessionId, sessionRuntime(sessionId), now);
 }
 
 /** Internal trusted creation: callers supply ready teaching requirements, never learner modes. */
@@ -83,19 +150,25 @@ export function createVocabularySession(context: VocabularySessionInitialContext
       return { ...supplied, mode: actual.mode, automaticPromotionPaused: actual.automaticPromotionPaused, cleanCoveredSessions: schedule.schedulerState.cleanCoveredSessions ?? 0 };
     });
     const stored: StoredContext = { ...context, sessionId: context.sessionId, words, wordStateVersions };
-    projectVocabularySession(stored, []);
+    const projection = projectVocabularySession(stored, []);
     getDb().prepare(`INSERT INTO vocabulary_sessions(session_id,learner_id,protocol_version,context_json,started_at,status)
       VALUES (?,?,1,?,?,'active')`).run(context.sessionId, learnerId, JSON.stringify(stored), now);
+    rememberRuntime(context.sessionId, { context: stored, actions: [], projection, head: { learner_id: learnerId, status: 'active', started_at: now, sequence_number: null, action_id: null } });
     emitBackendEvent({ name: 'vocabulary.session.started', learnerId, sessionId: context.sessionId, data: { wordIds: words.map((word) => word.wordId) } });
     return getVocabularySession(context.sessionId, now);
   });
 }
 function normalizeResponse(response: string | null): string { return normalizeProductionAnswerForProfile(response ?? '', 'mandarin'); }
 /** Validate immutable content identity and the exact source body/assessment retained by the trusted serving adapter. */
-function validatePresentation(action: Extract<VocabularySessionAction, { kind: 'presentation' }>): void {
-  const snapshot = action.payload.snapshot; const content = getVocabularyContentVersion(snapshot.contentId, snapshot.contentVersion);
+function validatePresentation(action: Extract<VocabularySessionAction, { kind: 'presentation' }>, payload: VocabularySessionInitialContext['payload']): void {
+  const snapshot = action.payload.snapshot;
+  if(payload) {
+    const retained=payload.snapshots[`${snapshot.contentId}/${snapshot.role}`];
+    if(!retained||retained.contentVersion!==snapshot.contentVersion)throw new VocabularySessionInputError('Encounter is outside the frozen session repertoire');
+  }
+  const content = getVocabularyContentVersion(snapshot.contentId, snapshot.contentVersion);
   if (!content) throw new VocabularySessionInputError('Encounter content version is unavailable to this learner');
-  if (getDb().prepare('SELECT 1 FROM learner_content_deactivations WHERE learner_id = ? AND content_id = ?').get(requireLearnerId(), snapshot.contentId))
+  if (!payload && getDb().prepare('SELECT 1 FROM learner_content_deactivations WHERE learner_id = ? AND content_id = ?').get(requireLearnerId(), snapshot.contentId))
     throw new VocabularySessionInputError('Encounter content is deactivated');
   if (!isDeepStrictEqual(snapshot.body.material, content.body)) throw new VocabularySessionInputError('Encounter source body does not match retained content version');
   if (content.kind === 'introduction') {
@@ -122,7 +195,7 @@ function validatePresentation(action: Extract<VocabularySessionAction, { kind: '
 export function appendVocabularySessionActions(sessionId: string, incoming: readonly VocabularySessionAction[], now = new Date().toISOString()): VocabularyPersistedSession {
   timestamp(now);
   return atomic(() => {
-    const row = sessionRow(sessionId); const existing = readActions(sessionId); const all = [...existing];
+    const runtime = sessionRuntime(sessionId); const row = runtime.head; const existing = runtime.actions; const all = [...existing];
     const fresh: VocabularySessionAction[] = [];
     for (const action of incoming) {
       const retry = all.find((entry) => entry.clientActionId === action.clientActionId);
@@ -132,7 +205,7 @@ export function appendVocabularySessionActions(sessionId: string, incoming: read
       }
       if (row.status !== 'active') throw new VocabularySessionConflictError('Session does not accept actions while finalizing or closed');
       if (action.sequence !== all.length + 1) throw new VocabularySessionConflictError('Action sequence must match the next acknowledged boundary');
-      if (action.kind === 'presentation') validatePresentation(action);
+      if (action.kind === 'presentation') validatePresentation(action, runtime.context.payload);
       if (action.kind === 'response') {
         const presentation = all.find((entry): entry is Extract<VocabularySessionAction, { kind: 'presentation' }> => entry.kind === 'presentation' && entry.payload.encounterId === action.payload.encounterId);
         if (!presentation?.payload.snapshot.assessment) throw new VocabularySessionInputError('Response has no served assessment');
@@ -154,8 +227,8 @@ export function appendVocabularySessionActions(sessionId: string, incoming: read
       }
       all.push(action); fresh.push(action);
     }
-    const context = JSON.parse(row.context_json) as StoredContext;
-    const projection = projectVocabularySession(context, all);
+    const context = runtime.context;
+    const projection = fresh.length ? advanceVocabularySession(context, existing, runtime.projection, fresh) : runtime.projection;
     for (const action of fresh) {
       const encounterId = 'encounterId' in action.payload ? action.payload.encounterId : null;
       const wordId = 'wordId' in action.payload ? action.payload.wordId : null;
@@ -184,7 +257,10 @@ export function appendVocabularySessionActions(sessionId: string, incoming: read
             encounter.snapshot.contentVersion, encounter.wordId, action.payload.feedback, JSON.stringify(action.payload), action.occurredAt);
       }
     }
-    return getVocabularySession(sessionId, now);
+    const last = all.at(-1);
+    const updated = { ...runtime, context, actions: all, projection, head: { ...row, sequence_number: last?.sequence ?? null, action_id: last?.actionId ?? null } };
+    rememberRuntime(sessionId, updated);
+    return sessionDto(sessionId, updated, now);
   });
 }
 

@@ -279,11 +279,11 @@ Every session action → Append-only session log
 The log preserves what happened; undo adds a record rather than erasing history.
 Ordinary Undo retains its existing scope: the latest undoable transition. Returning
 to an earlier word creates fresh practice, not a rewind of intervening work.
-Generation can run best-effort during study, with latency naturally covered by
-other exercises or interactions. Ready results can enrich the ongoing session.
-When a result would otherwise block progress, the app falls back to pre-existing
-content or behavior. Live responses use available assessment criteria and
-learner controls without waiting for model judgment.
+The earlier proposal for ready generation results to enrich an ongoing session
+is superseded by the [session payload contract](../../SPECS/vocabulary-learning.md#live-session-and-completion).
+Generation improves material for subsequent sessions. The active player chooses
+dynamically from its retained payload, without waiting for generation or fetching
+new content. Exact encounter evidence records those choices.
 
 Session state is derived from the log, allowing the learner to return to any
 earlier word and keep studying. Durable learning changes are applied after the

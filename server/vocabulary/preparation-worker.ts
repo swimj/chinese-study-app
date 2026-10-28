@@ -1,19 +1,8 @@
 import { WordPreparationProviderError, PREPARATION_PROVIDER_BACKOFF_MS } from '../word-content/provider-failure.ts';
-import { getDb } from '../db/connection.ts';
 import { getHostedServiceControls } from '../db/hosted-operations.ts';
 import { HostedProviderWorkUnavailableError,runHostedProviderWork } from '../hosted-runtime-controls.ts';
 import { createVocabularyPracticePreparation,type VocabularyPracticeProvider } from './preparation.ts';
 
-/** Shared preparation follows actual admitted session demand, not every word in the corpus.
- * This query does not claim learner authority or publish private session evidence. */
-function activeSessionDemand(): string[] {
-  const rows=getDb().prepare(`SELECT DISTINCT w.word_id FROM vocabulary_sessions s
-    JOIN learners l ON l.learner_id=s.learner_id JOIN json_each(s.context_json,'$.words') member
-    JOIN learner_words w ON w.learner_id=s.learner_id AND w.word_id=json_extract(member.value,'$.wordId')
-    WHERE s.status='active' AND l.disabled_at IS NULL AND w.mode!='unstudied' AND w.dismissed_at IS NULL
-    ORDER BY w.word_id LIMIT 100`).all() as Array<{word_id:string}>;
-  return rows.map((row)=>row.word_id);
-}
 /** Durable general-pool authoring. Only worker dispatch awaits providers; live sessions keep using ready content.
  * Provider calls are fenced by hosted controls; late returns cannot publish during maintenance or shutdown. */
 export function createVocabularyPracticeWorker(options: {
@@ -27,7 +16,7 @@ export function createVocabularyPracticeWorker(options: {
   onError?: (error:unknown)=>void;
 } = {}) {
   const now=options.now??Date.now,controls=options.controls??getHostedServiceControls;
-  const providerWork=options.providerWork??runHostedProviderWork,demand=options.demand??activeSessionDemand;
+  const providerWork=options.providerWork??runHostedProviderWork,demand=options.demand??(()=>[]);
   const concurrency=options.concurrency??1,pollMs=options.pollMs??5_000;
   if(!Number.isSafeInteger(concurrency)||concurrency<1||concurrency>3)throw new Error('Practice preparation concurrency must be 1–3');
   if(!Number.isSafeInteger(pollMs)||pollMs<10)throw new Error('Invalid preparation poll interval');
