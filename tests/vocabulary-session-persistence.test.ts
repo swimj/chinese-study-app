@@ -21,6 +21,11 @@ type Input = VocabularySessionAction extends infer A ? A extends VocabularySessi
 beforeEach(() => {
   sql = new DatabaseSync(':memory:'); setDb(sql); sql.exec(`PRAGMA foreign_keys=ON;
     CREATE TABLE learners(learner_id TEXT PRIMARY KEY);
+    CREATE TABLE word_introduction_preparation(preparation_epoch INTEGER DEFAULT 0,word_id TEXT PRIMARY KEY, content_id TEXT, package_id TEXT, active_stage TEXT, lease_token TEXT, lease_expires_at TEXT);
+    CREATE TABLE word_content_documents(content_id TEXT PRIMARY KEY, word_id TEXT, publication_id TEXT, content_json TEXT);
+    CREATE TABLE shared_content_publications(publication_id TEXT PRIMARY KEY, publication_status TEXT);
+    CREATE TABLE model_invocations(id TEXT PRIMARY KEY);
+    CREATE TABLE learner_word_reserve_requests(learner_id TEXT PRIMARY KEY, requested_at TEXT NOT NULL);
     CREATE TABLE learner_owned_review_session_summaries(learner_id TEXT,session_id TEXT,PRIMARY KEY(learner_id,session_id));
     CREATE TABLE lexical_words(id TEXT PRIMARY KEY,created_at TEXT,hanzi TEXT NOT NULL DEFAULT '字',pinyin TEXT NOT NULL DEFAULT 'zì');
     CREATE TABLE learner_settings(learner_id TEXT,setting_key TEXT,value_json TEXT,updated_at TEXT,PRIMARY KEY(learner_id,setting_key));
@@ -36,6 +41,8 @@ beforeEach(() => {
   for (const name of ['0039_vocabulary_content.sql','0041_vocabulary_learner_state.sql','0042_vocabulary_sessions.sql','0047_vocabulary_dismissal.sql','0052_vocabulary_automatic_promotion_pause.sql','0023_session_debrief.sql','0048_vocabulary_connections.sql']) {
     sql.exec(fs.readFileSync(new URL(`../server/db/migrations/${name}`,import.meta.url),'utf8'));
   }
+  sql.exec(fs.readFileSync(new URL('../server/db/migrations/0045_vocabulary_provenance_links.sql',import.meta.url),'utf8').split('CREATE TABLE vocabulary_practice_preparation')[1]!.replace(/^/, 'CREATE TABLE vocabulary_practice_preparation'));
+  sql.exec("ALTER TABLE vocabulary_practice_preparation ADD COLUMN next_attempt_at TEXT NOT NULL DEFAULT ''; ALTER TABLE vocabulary_practice_preparation ADD COLUMN total_attempt_count INTEGER NOT NULL DEFAULT 0;");
   contents = {};
   alice(() => {
     for (const [id, word, skill, role, type] of [
@@ -191,6 +198,11 @@ test('owner checks and exact snapshot/assessment validation reject cross-learner
 });
 
 test('teaching requires explicit completion and recognition self-assessment retains null response',()=>alice(()=>{
+  const bootstrap={schemaVersion:1,id:'bootstrap-new',word:{wordId:'new',hanzi:'字',traditional:null,pinyin:'zì'},
+    uses:[{id:'u1',label:'character',notes:[],exampleIds:['e1']}],examples:[{id:'e1',text:'字',translation:'Character',pronunciation:'zì'}]};
+  sql.prepare("INSERT INTO word_introduction_preparation(word_id,content_id) VALUES ('new','bootstrap-new')").run();
+  sql.prepare("INSERT INTO shared_content_publications VALUES ('published','available')").run();
+  sql.prepare("INSERT INTO word_content_documents VALUES ('bootstrap-new','new','published',?)").run(JSON.stringify(bootstrap));
   createVocabularySession(context(),now);
   const teaching: Input[]=[present('intro','new')];
   for(let index=0;index<3;index++)for(const contentId of ['recognize','produce']) {
@@ -200,7 +212,18 @@ test('teaching requires explicit completion and recognition self-assessment reta
   }
   const log=actions(...teaching,{kind:'teaching_complete',payload:{wordId:'new'}},finish);
   appendVocabularySessionActions('session',log,now);assert.equal(count('teaching_completions'),0);
-  const staged=stageVocabularySessionCompletion('session',log.length,now);closeVocabularySessionCompletion('session',staged.completionId,later);
+  assert.equal(count('vocabulary_practice_preparation'),0);assert.equal(count('learner_word_reserve_requests'),0);
+  const staged=stageVocabularySessionCompletion('session',log.length,now);
+  assert.equal(count('vocabulary_practice_preparation'),0);
+  sql.exec("CREATE TRIGGER fail_close_event BEFORE INSERT ON backend_events WHEN NEW.name='vocabulary.session.closed' BEGIN SELECT RAISE(ABORT,'closure event failure'); END;");
+  assert.throws(()=>closeVocabularySessionCompletion('session',staged.completionId,later),/closure event failure/);
+  assert.equal(count('vocabulary_practice_preparation'),0);assert.equal(count('learner_word_reserve_requests'),0);assert.equal(count('teaching_completions'),0);
+  sql.exec('DROP TRIGGER fail_close_event');
+  closeVocabularySessionCompletion('session',staged.completionId,later);
+  assert.equal(count('vocabulary_practice_preparation'),1);assert.equal(count('learner_word_reserve_requests'),1);
+  assert.equal(sql.prepare('SELECT status FROM vocabulary_practice_preparation').get()?.status,'queued');
+  closeVocabularySessionCompletion('session',staged.completionId,later);
+  assert.equal(count('vocabulary_practice_preparation'),1);
   assert.equal(count('teaching_completions'),1);assert.equal(getVocabularyLearnerWord('new')?.mode,'solidify');
   assert.equal(getVocabularyWordSchedule('new')?.schedulerState.cleanCoveredSessions,0);
   assert.equal(getVocabularyLearnerWord('new')?.automaticPromotionPaused,false);

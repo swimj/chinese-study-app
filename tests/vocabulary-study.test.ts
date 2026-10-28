@@ -13,9 +13,12 @@ import { adoptVocabularyPureCues } from '../server/vocabulary/pure-cue-serving.t
 import { createVocabularyContent,replaceVocabularyContent,updateVocabularyContent,getVocabularyContent,createVocabularySense,establishVocabularySenseCatalog,getVocabularySenseCatalog } from '../server/db/vocabulary-content.ts';
 import { createVocabularySession as createStoredSession,stageVocabularySessionCompletion,cancelVocabularySessionCompletion,closeVocabularySessionCompletion } from '../server/db/vocabulary-sessions.ts';
 import { addVocabularyWord,dismissVocabularyWord,getVocabularyLearnerWord,getVocabularyWordSchedule,enrollVocabularyDietWord } from '../server/db/vocabulary-learners.ts';
-import { startVocabularyStudy,composeVocabularySessionPayload,previewVocabularyStudy,getVocabularyStudy,nextVocabularyExercise,commandVocabularyStudy } from '../server/vocabulary/study.ts';
+import { startVocabularyStudy as startRuntime,composeVocabularySessionPayload,previewVocabularyStudy as previewRuntime,getVocabularyStudy,nextVocabularyExercise,commandVocabularyStudy } from '../server/vocabulary/study.ts';
 import type { VocabularyStudy } from '../src/domain/vocabulary-study-api.ts';
 import type { VocabularyContent } from '../src/domain/vocabulary-content.ts';
+// These player fixtures isolate composition from shared-provider reserve storage.
+const startVocabularyStudy=(options:Parameters<typeof startRuntime>[0]={})=>startRuntime({prepareReserve:()=>{},...options});
+const previewVocabularyStudy=(options:Parameters<typeof previewRuntime>[0]={})=>previewRuntime({prepareReserve:()=>{},...options});
 let db:DatabaseSync;
 const owner=<T>(fn:()=>T)=>runWithLearnerId('alice',fn);
 const actor={kind:'operator' as const,id:'test'};
@@ -37,6 +40,8 @@ function exercise(id:string,wordId:string,role:'teaching'|'general'='general',pu
 beforeEach(()=>{
   db=new DatabaseSync(':memory:');setDb(db);db.exec(`PRAGMA foreign_keys=ON;
     CREATE TABLE learners(learner_id TEXT PRIMARY KEY);
+    CREATE TABLE learner_word_preparation_reserve(learner_id TEXT,word_id TEXT,added_at TEXT,PRIMARY KEY(learner_id,word_id));
+    CREATE TABLE learner_word_reserve_requests(learner_id TEXT PRIMARY KEY,requested_at TEXT);
     CREATE TABLE learner_owned_review_session_summaries(learner_id TEXT,session_id TEXT,PRIMARY KEY(learner_id,session_id));
     CREATE TABLE lexical_words(id TEXT PRIMARY KEY,hanzi TEXT,traditional TEXT,pinyin TEXT,meaning TEXT,created_at TEXT,priority INTEGER DEFAULT 0);
     CREATE TABLE learner_settings(learner_id TEXT,setting_key TEXT,value_json TEXT,updated_at TEXT,PRIMARY KEY(learner_id,setting_key));
@@ -956,6 +961,7 @@ test('measure retained-session hot-path scaling', {skip:process.env.RUN_SESSION_
 
 
 test('live HTTP actions never wake background workers; Start schedules a wake after its response',async()=>owner(async()=>{
+  db.prepare("INSERT OR REPLACE INTO learner_settings VALUES('alice','daily_new_word_limit','0','2026-10-27')").run();
   const routes=new Map<string,(req:Request,res:Response)=>void>();
   const register=(method:string)=>(path:string,handler:(req:Request,res:Response)=>void)=>{routes.set(`${method} ${path}`,handler);};
   let wakes=0;registerVocabularyStudyRoutes({get:register('GET'),post:register('POST')} as unknown as Express,()=>{wakes++;});

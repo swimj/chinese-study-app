@@ -1,6 +1,7 @@
 import type { VocabularySessionPayload } from '../../src/domain/vocabulary-session-payload.ts';
 import { selectSequentialBootstrapReveal } from '../../src/domain/word-content/reveal.ts';
-import { createVocabularyPracticePreparation } from './preparation.ts';
+import { reconcileVocabularyPreparationReserve } from './preparation-reserve.ts';
+import { skillEnabled, eligible, introductions, compatibleIntroductions, teachingReady } from './teaching-readiness.ts';
 import { vocabularyTeachingSource } from './teaching-source.ts';
 import { vocabularyRevealSnapshot } from './reveal-snapshot.ts';
 import { createHash, randomUUID } from 'node:crypto';
@@ -17,8 +18,7 @@ import { composeVocabularyStudy, type VocabularyComposition } from './compositio
 import { selectVocabularyPureCueCandidates } from './pure-cue-serving.ts';
 import { isVocabularyProductionProxied } from './production-coverage.ts';
 import { isVocabularyDefinitionFallback } from '../../src/domain/vocabulary-production-coverage.ts';
-import { enqueueWordPreparation } from '../db/preparation-work.ts';
-import { ensureVocabularySensesFromBootstrap, canEnsureVocabularySensesFromBootstrap } from './sense-readiness.ts';
+import { ensureVocabularySensesFromBootstrap } from './sense-readiness.ts';
 import { requireLearnerId } from '../db/learner-context.ts';
 import { getVocabularyLearnerWord, enrollVocabularyDietWord } from '../db/vocabulary-learners.ts';
 import { createVocabularyContent, emitBackendEvent, getVocabularyContent, getVocabularyTeachingExercises, listVocabularyExercises } from '../db/vocabulary-content.ts';
@@ -41,24 +41,6 @@ function lexical(wordId:string):VocabularyStudyWord {
     .get(requireLearnerId(),wordId) as VocabularyStudyWord|undefined;
   if(!row)throw new VocabularySessionInputError('Unknown lexical word');return {...row};
 }
-function skillEnabled(wordId:string,skill:'recognition'|'production'|'contextual_selection'):boolean {
-  const disabled=getDb().prepare('SELECT enabled FROM learner_owned_word_skill_state WHERE learner_id=? AND word_id=? AND skill_id=?')
-    .get(requireLearnerId(),wordId,skill) as {enabled:number}|undefined;
-  const relevance=getDb().prepare('SELECT relevance_state FROM learner_owned_word_skill_relevance WHERE learner_id=? AND word_id=? AND skill_id=?')
-    .get(requireLearnerId(),wordId,skill) as {relevance_state:string}|undefined;
-  return disabled?.enabled!==0&&relevance?.relevance_state!=='suppressed';
-}
-function suppressed(wordId:string):boolean {return !skillEnabled(wordId,'production');}
-function eligible(content:VocabularyContent):boolean {
-  return content.availability==='active'&&(content.accessScope==='shared'||content.ownerLearnerId===requireLearnerId())
-    &&!getDb().prepare('SELECT 1 FROM learner_content_deactivations WHERE learner_id=? AND content_id=?').get(requireLearnerId(),content.contentId)
-;
-}
-function introductions(wordId:string):VocabularyContent[] {
-  return (getDb().prepare(`SELECT c.content_id FROM content_items c JOIN content_words w USING(content_id)
-    WHERE w.word_id=? AND w.relation='target' AND c.kind='introduction' ORDER BY c.created_at,c.content_id`).all(wordId) as {content_id:string}[])
-    .map((row)=>getVocabularyContent(row.content_id)).filter((content):content is VocabularyContent=>content!==null&&eligible(content));
-}
 function baseline(wordId:string,kind:'recognition'|'production',role:'teaching'|'general'):VocabularyContent|null {
   if(!skillEnabled(wordId,kind))return null;
   const word=lexical(wordId);const id=`vocabulary:baseline:v1:${requireLearnerId()}:${kind}:${role}:${wordId}`;
@@ -74,7 +56,7 @@ function baseline(wordId:string,kind:'recognition'|'production',role:'teaching'|
   return eligible(content)?content:null;
 }
 function teaching(wordId:string):{intro:VocabularyContent;exercises:VocabularyContent[];requirements:VocabularyTeachingRequirements}|null {
-  for(const intro of introductions(wordId)) {
+  for(const intro of compatibleIntroductions(wordId)) {
     const exercises=getVocabularyTeachingExercises(intro.contentId).filter((entry)=>eligible(entry)
       &&entry.kind==='exercise'&&skillEnabled(wordId,entry.skill));
     if(!exercises.some((entry)=>entry.kind==='exercise'&&entry.skill==='production'))continue;
@@ -210,16 +192,6 @@ export function getVocabularyStudy(sessionId:string):VocabularyStudy {
       canFinishForNow:active&&session.projection.phase==='active',canFinishImmediately:active&&session.projection.phase==='finishing',canChangeMode:active&&wordId!==null},
     notice:word?.teachingDeferred?'This word is now Unstudied. Fresh teaching will start in your next session.':session.projection.phase==='finishing'?'Finish the words already started, or finish immediately.':null};
 }
-function teachingReady(wordId:string):boolean {
-  if(!skillEnabled(wordId,'recognition')||suppressed(wordId))return false;
-  const baselineRecognition=getVocabularyContent(`vocabulary:baseline:v1:${requireLearnerId()}:recognition:teaching:${wordId}`);
-  const contentReady=introductions(wordId).some((intro)=>{
-    const exercises=getVocabularyTeachingExercises(intro.contentId).filter((entry)=>eligible(entry)&&entry.kind==='exercise'&&skillEnabled(wordId,entry.skill));
-    return exercises.some((entry)=>entry.kind==='exercise'&&entry.skill==='production')
-      &&(exercises.some((entry)=>entry.kind==='exercise'&&entry.skill==='recognition')||baselineRecognition===null||eligible(baselineRecognition));
-  });
-  return contentReady&&canEnsureVocabularySensesFromBootstrap(wordId);
-}
 function composeCurrentStudy(requestTeaching:(wordId:string)=>void):VocabularyComposition {
   return composeVocabularyStudy({teachingReady,canUseSkill:(wordId,skill)=>{
     if(!skillEnabled(wordId,skill))return false;
@@ -257,18 +229,20 @@ function planVocabularyStudy(composition:VocabularyComposition, samplingSeed:str
       ...admittedReview.filter((entry)=>entry.kind==='word').map((entry)=>reviewWords.find((word)=>word.wordId===entry.id)!)];
     return {words:admittedWords,reviewOrder:admittedReview};
 }
-export function previewVocabularyStudy(options:{requestTeaching?:(wordId:string)=>void;previewSeed?:string}={}):VocabularySessionPreview {
+export function previewVocabularyStudy(options:{requestTeaching?:(wordId:string)=>void;prepareReserve?:()=>void;previewSeed?:string}={}):VocabularySessionPreview {
+  (options.prepareReserve??reconcileVocabularyPreparationReserve)();
   const previewSeed=options.previewSeed??randomUUID();
   const composition=composeCurrentStudy(()=>{});
   const planned=planVocabularyStudy(composition,previewSeed,false);
   // Preparation demand is the same bounded, idempotent queue used by Start.
-  const request=options.requestTeaching??((wordId:string)=>{enqueueWordPreparation(wordId,'teaching');});
+  const request=options.requestTeaching??(()=>{});
   composition.requestedPreparationWordIds.forEach(request);
   return {previewSeed,itemCount:planned.words.length+planned.reviewOrder.filter((entry)=>entry.kind==='pure_cue').length,
     preparationPending:composition.requestedPreparationWordIds.length>0};
 }
-export function startVocabularyStudy(options:{requestTeaching?:(wordId:string)=>void;previewSeed?:string}={}):VocabularyStudy {
-  const composition=composeCurrentStudy(options.requestTeaching??((wordId)=>{enqueueWordPreparation(wordId,'teaching');}));
+export function startVocabularyStudy(options:{requestTeaching?:(wordId:string)=>void;prepareReserve?:()=>void;previewSeed?:string}={}):VocabularyStudy {
+  (options.prepareReserve??reconcileVocabularyPreparationReserve)();
+  const composition=composeCurrentStudy(options.requestTeaching??(()=>{}));
   return atomic(()=>{
     const sessionId=randomUUID();
     const planned=planVocabularyStudy(composition,options.previewSeed??sessionId,true);
@@ -284,9 +258,6 @@ export function startVocabularyStudy(options:{requestTeaching?:(wordId:string)=>
     const context:VocabularySessionInitialContext={sessionId,words:planned.words,composition:composition.settings,reviewOrder:planned.reviewOrder};
     context.payload=composeVocabularySessionPayload(context);
     const created=createVocabularySession(context);
-    // Publication can improve a later session; this session already owns its repertoire.
-    const preparation=createVocabularyPracticePreparation();
-    if(preparation.isConfigured())for(const word of context.words)if(word.mode!=='unstudied')preparation.ensure(word.wordId);
     return nextVocabularyExercise(created.sessionId,randomUUID());
   });
 }

@@ -93,6 +93,22 @@ A word with neither skill enabled is omitted from ordinary Solidify admission.
 
 ## Live session and completion
 
+New-word preparation maintains a stable reserve of twice the configured daily
+new-word limit, capped at 40 candidates. The reserve follows stash, priority and
+diet policy and prepares lexical bootstrap, introductions and their teaching
+exercises ahead of admission. Failed preparation retains its candidate slot;
+repeated visits do not expand speculative work. Completed or dismissed words
+leave the reserve, allowing replenishment even when today's intake is exhausted.
+A deliberate preparation compatibility boundary applies to new teaching. When an
+Unstudied candidate enters the reserve, incompatible bootstrap and teaching
+material refresh lazily. Prompt or model revisions alone do not invalidate it.
+Historical artifacts, sense identities and learner progress remain intact.
+Already learned words keep their banked material and grow through improvement;
+shared additions prepared for another learner may appear in their future sessions.
+General practice is queued only when teaching completion commits at session
+closure. Ready material can enter a fresh session the same day; it never joins
+an already running session.
+
 Start freezes a session payload: admitted words and starting states, eligible
 content versions, teaching repertoires, answer criteria, and reveal/source facts.
 The player chooses dynamically within that payload as the learner answers,

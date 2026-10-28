@@ -13,6 +13,7 @@ const alice = <T>(fn: () => T) => runWithLearnerId('alice', fn);
 beforeEach(() => {
   sql = new DatabaseSync(':memory:'); setDb(sql); sql.exec(`PRAGMA foreign_keys=ON;
     CREATE TABLE learners(learner_id TEXT PRIMARY KEY);
+    CREATE TABLE learner_word_reserve_requests(learner_id TEXT PRIMARY KEY, requested_at TEXT NOT NULL);
     CREATE TABLE lexical_words(id TEXT PRIMARY KEY, created_at TEXT);
     CREATE TABLE learner_word_state(learner_id TEXT, word_id TEXT, status TEXT, learning_streak INTEGER, last_learning_covered_on TEXT);
     CREATE TABLE learner_owned_user_word_priority(learner_id TEXT, word_id TEXT, priority_tier INTEGER, updated_at TEXT);
@@ -187,4 +188,20 @@ test('explicit same-mode Solidify choice holds graduation, and other mode choice
   const held=changeVocabularyMode('learning','solidify',teachAgain.stateVersion);
   assert.equal(dismissVocabularyWord('learning',held.stateVersion).automaticPromotionPaused,false);
   assert.deepEqual(getVocabularyWordSchedule('learning'),schedule);
+}));
+
+test('membership and mode transitions request deferred reserve reconciliation atomically',()=>alice(()=>{
+  const clear=()=>sql.prepare('DELETE FROM learner_word_reserve_requests').run();
+  const requested=()=>assert.deepEqual(sql.prepare('SELECT learner_id FROM learner_word_reserve_requests').all().map(row=>row.learner_id),['alice']);
+  addVocabularyWord('untouched');requested();clear();
+  setVocabularyStashMembership('untouched',false);requested();clear();
+  setVocabularyStashMembership('untouched',false);assert.equal(sql.prepare('SELECT count(*) AS n FROM learner_word_reserve_requests').get()?.n,0);
+  let word=getVocabularyLearnerWord('untouched')!;
+  word=changeVocabularyMode('untouched','solidify',word.stateVersion);requested();clear();
+  dismissVocabularyWord('untouched',word.stateVersion);requested();clear();
+  sql.exec('BEGIN');
+  addVocabularyWord('untouched');requested();
+  sql.exec('ROLLBACK');
+  assert.equal(sql.prepare('SELECT count(*) AS n FROM learner_word_reserve_requests').get()?.n,0);
+  assert.notEqual(getVocabularyLearnerWord('untouched')?.dismissedAt,null);
 }));

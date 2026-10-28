@@ -378,11 +378,12 @@ test('automatic graduation pause migration preserves existing words and defaults
 test('operator-only migration preserves both existing controls and defaults access open', () => {
   const { db } = copy('operator-only-upgrade', true);
   try {
-    const prior = schemaMigrations.filter((entry) => entry.id !== 'app_schema:0056_operator_only_access');
+    const index = schemaMigrations.findIndex(entry => entry.id === 'app_schema:0056_operator_only_access');
+    const prior = schemaMigrations.slice(0,index);
     migrateDatabase(db, prior);
     db.exec("UPDATE service_controls SET enabled = CASE control_key WHEN 'maintenance_mode' THEN 1 ELSE 0 END, updated_at = '2026-10-27T00:00:00.000Z', actor_id = 'incident-operator'");
     const before = db.prepare('SELECT * FROM service_controls ORDER BY control_key').all();
-    assert.deepEqual(migrateDatabase(db), ['app_schema:0056_operator_only_access']);
+    assert.deepEqual(migrateDatabase(db), schemaMigrations.slice(index).map(entry=>entry.id));
     assert.deepEqual(db.prepare("SELECT * FROM service_controls WHERE control_key != 'operator_only' ORDER BY control_key").all(), before);
     assert.deepEqual({ ...db.prepare("SELECT * FROM service_controls WHERE control_key = 'operator_only'").get() }, {
       control_key: 'operator_only', enabled: 0, updated_at: '1970-01-01T00:00:00.000Z', actor_id: 'system_default',
@@ -391,4 +392,22 @@ test('operator-only migration preserves both existing controls and defaults acce
     assert.throws(() => db.exec("INSERT INTO service_controls VALUES ('invalid', 1, 'now', 'operator')"), /CHECK constraint/);
     assertSchemaCurrent(db);
   } finally { db.close(); }
+});
+
+
+test('preparation compatibility migration retains old preparation and makes no eager queue demand', () => {
+  const { db } = copy('preparation-compatibility-upgrade', true);
+  try {
+    const index = schemaMigrations.findIndex(entry => entry.id === 'app_schema:0057_preparation_compatibility');
+    migrateDatabase(db,schemaMigrations.slice(0,index));
+    db.exec("INSERT INTO lexical_words(id,hanzi,pinyin,meaning,meanings_json,examples_json,priority,created_at) VALUES('epoch-word','字','zi','word','[]','[]',0,'2026-01-01')");
+    db.exec("INSERT INTO word_introduction_preparation(word_id,active_stage,lease_token,lease_expires_at) VALUES('epoch-word','bootstrap','old-token','2026-10-30T00:00:00.000Z')");
+    const before=db.prepare('SELECT * FROM word_introduction_preparation').all();
+    const queues=db.prepare('SELECT * FROM word_preparation_work').all();
+    assert.deepEqual(migrateDatabase(db),schemaMigrations.slice(index).map(entry=>entry.id));
+    assert.deepEqual(db.prepare('SELECT * FROM word_introduction_preparation').all().map(row=>({...row})),before.map(row=>({...row,preparation_epoch:0})));
+    assert.deepEqual(db.prepare('SELECT * FROM word_preparation_work').all(),queues);
+    assert.throws(()=>db.exec('UPDATE word_introduction_preparation SET preparation_epoch=-1'),/CHECK/);
+    assertSchemaCurrent(db);
+  } finally {db.close();}
 });

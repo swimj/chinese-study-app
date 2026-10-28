@@ -4,7 +4,7 @@
 <text x="70" y="208" class="cardtitle">Compose</text>
 <text x="70" y="245" class="body">Select words and starting states</text>
 <text x="70" y="274" class="body">Discover eligible material</text>
-<text x="70" y="303" class="body">Prepare all mode pools</text>
+<text x="70" y="303" class="body">Collect all mode pools</text>
 <rect x="433" y="172" width="334" height="154" rx="16" fill="#e6f1fb" stroke="#b7c9d8"/>
 <text x="455" y="208" class="cardtitle">Freeze</text>
 <text x="455" y="245" class="body">Pin versions and reveal facts</text>
@@ -14,7 +14,7 @@
 <text x="840" y="208" class="cardtitle">Persist</text>
 <text x="840" y="245" class="body">Store immutable payload</text>
 <text x="840" y="274" class="body">Serve the first encounter</text>
-<text x="840" y="303" class="body">Queue future preparation</text>
+<text x="840" y="303" class="body">Use ready reserve material</text>
 <path d="M382,250 L433,250" fill="none" stroke="#50677c" stroke-width="2.5" marker-end="url(#arrow)"/>
 <path d="M767,250 L818,250" fill="none" stroke="#50677c" stroke-width="2.5" marker-end="url(#arrow)"/>
 <text x="48" y="379" class="label">ORDINARY ACTION · warm player</text>
@@ -53,5 +53,5 @@
 <rect x="818" y="632" width="334" height="125" rx="16" fill="#fff3d8" stroke="#b7c9d8"/>
 <text x="840" y="668" class="cardtitle">Completion</text>
 <text x="840" y="705" class="body">Replay the frozen boundary</text>
-<text x="840" y="734" class="body">Apply durable learner effects</text>
+<text x="840" y="734" class="body">Commit effects + future work</text>
 <text x="48" y="802" class="small">Remaining costs: in-memory history copying / enumeration and full response serialization.</text></svg>

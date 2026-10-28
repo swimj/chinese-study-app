@@ -14,6 +14,8 @@ const now='2026-10-17T10:00:00.000Z';const owner=<T>(fn:()=>T)=>runWithLearnerId
 beforeEach(()=>{
   db=new DatabaseSync(':memory:');setDb(db);db.exec(`PRAGMA foreign_keys=ON;
     CREATE TABLE learners(learner_id TEXT PRIMARY KEY);
+    CREATE TABLE learner_word_preparation_reserve(learner_id TEXT,word_id TEXT,added_at TEXT,PRIMARY KEY(learner_id,word_id));
+    CREATE TABLE learner_word_reserve_requests(learner_id TEXT PRIMARY KEY,requested_at TEXT);
     CREATE TABLE lexical_words(id TEXT PRIMARY KEY,hanzi TEXT,pinyin TEXT,priority INTEGER,created_at TEXT);
     CREATE TABLE learner_word_state(learner_id TEXT,word_id TEXT,status TEXT,learning_streak INTEGER,last_learning_covered_on TEXT);
     CREATE TABLE learner_owned_user_word_priority(learner_id TEXT,word_id TEXT,priority_tier INTEGER,updated_at TEXT);

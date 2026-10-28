@@ -33,7 +33,11 @@ belong there and in task instructions, not in this frontier.
   repair. Teaching has an exclusive repertoire bound to its introduction; ordinary
   practice draws from the current pool at session composition. Each session retains
   its repertoire while controls choose dynamically within it. Unresolved sense
-  associations allow word fallback.
+  associations allow word fallback. A stable teaching reserve prepares twice the
+  configured daily intake ahead of sessions; general practice queues when teaching
+  completion commits at closure. New teaching crosses an explicit preparation
+  compatibility boundary lazily in the reserve; historical learner state and
+  established sense identities survive source refresh.
 - **Reflection:** private learner lessons and internal content proposals run
   independently. Operators approve content applications. Backend judgment can
   compensate scheduling without learner approval or content publication.

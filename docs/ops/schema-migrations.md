@@ -123,6 +123,13 @@ no kickoff is inferred from authored text, posting time, or expiry. This change
 requires the offline migration procedure; the app-only upgrade route cannot
 apply it. Populated upgrade coverage is in `tests/schema-migrations.test.ts`.
 
+Migration `0057_preparation_compatibility` adds the shared preparation epoch,
+defaulting existing rows to zero. It changes no artifacts, learner state, queues
+or provider leases. Runtime reserve admission lazily refreshes incompatible
+preparation; no historical backfill runs during migration. Use the stopped-writer
+procedure above. Coverage includes a populated prior-version preparation row and
+lease preservation in `tests/schema-migrations.test.ts`.
+
 ## Writing the next migration
 
 Add a SQL file under `server/db/migrations/` and append its definition to

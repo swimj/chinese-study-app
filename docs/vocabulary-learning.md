@@ -33,7 +33,8 @@ flowchart LR
   Closure --> Connections[Connections queue]
   Repair --> Operator[Preview and manual approval]
   Operator --> Content[Current shared or private content]
-  Content --> Commands
+  Content --> Start[Start freezes payload]
+  Start --> Commands
 ```
 
 `server/vocabulary/study.ts` freezes ready material at Start and turns trusted commands
@@ -211,8 +212,8 @@ objective and independent pure cue once, rather than counting repeated exercises
 or dictionary entries. The ready count remains visible in the compact Connections
 view. Initial loading and settings changes refresh the preview; background
 preparation polling retains the last usable count. Zero ready items offer Check
-again. Missing introductions use the existing bounded preparation queue.
-Planning reads readiness and existing cue schedules without creating sessions,
+again. Preview and Start reconcile the stable teaching reserve through the
+shared, idempotent preparation queue. Planning then reads readiness and existing cue schedules without creating sessions,
 enrolling words, establishing senses, or adopting/updating cue schedules. Start
 reuses the preview's sampling seed while creating its own fresh session identity;
 intervening readiness, schedule, or settings changes can still change admission.
@@ -375,13 +376,41 @@ and rejects retries of disallowed arms rather than silently changing models.
 This applies to learner feedback, improvements, and AI second opinions; practice
 and sense authoring keep their independently configured model.
 
-Start records general-practice demand for admitted learned words when a provider
-is configured, after retaining the current repertoire. `preparation-worker.ts`
-consumes that durable queue; polling does not scan active session JSON. Live
-Next, command, and read routes never wake workers. Preview, Start, refresh and
-closure can schedule a wake after returning their response. Publication supplies
-future session composition. The worker uses
-ready source material and retained generation briefs, with service attribution.
+`preparation-reserve.ts` maintains up to twice the configured daily new-word
+limit (maximum 40), independent of the remaining intake today. It shares the
+stash/diet admission planner, prefers existing members, and uses a stable reserve
+seed. Preparation failure retains its slot; source, priority, quota and learner
+lifecycle changes can change membership. The existing reserve tables and settings
+triggers remain authoritative. Vocabulary add, enrollment, stash, dismissal, mode
+and closure writes request reconciliation; the periodic word-preparation runtime
+reconciles pending learners. Preview and Start also reconcile before composition.
+Only bootstrap and teaching jobs are queued for reserve candidates.
+
+Migration `0057_preparation_compatibility` records an explicit preparation epoch
+on the shared preparation pointer; existing rows start at zero, with no eager
+queueing. The current boundary is epoch 1. Reserve reconciliation clears old
+source/package pointers and requeues bounded bootstrap/teaching work while
+retaining artifact and attempt history. Active provider work defers refresh;
+paused failures retain their operator retry boundary. Repeated reconciliation
+does not reset the current cycle's failure budget. Imported teaching admission
+requires the current source/package at a compatible epoch. Native vocabulary
+introductions already use the current content contract.
+
+Runtime publication preserves established or partial sense inventories and their
+identities. Refreshed source uses have unresolved mappings until explicitly
+mapped; no text-based identity merge is inferred. Cold words can establish their
+initial inventory. Historical reviewed words are not scanned or regenerated;
+existing material remains usable and shared improvements can enter later sessions.
+This change requires the stopped-writer migration route, not an app-only upgrade.
+
+Successful session closure queues general practice for completed teaching in the
+same transaction as learning effects. Undo before closure and failed closure
+create no practice demand. Queueing does not require configured credentials;
+provider dispatch retains its configuration and hosted-control gates. The
+vocabulary preparation worker consumes the durable practice queue without
+scanning active session JSON. Live Next, command and read routes never wake
+workers. Preview, Start, refresh and closure can schedule a wake after returning
+the response. Publication supplies future session composition.
 The shared teaching pipeline generates the introduction first, then exercises
 conditioned on that delivered material. A failed companion call preserves the
 successful introduction. No session waits for either workflow.
@@ -389,7 +418,7 @@ successful introduction. No session waits for either workflow.
 A wholly unprepared word therefore uses four authoring calls: lexical bootstrap,
 introduction, teaching exercises, and the independent general-practice pool.
 The first three establish a ready teaching repertoire; general practice is
-prepared separately for learned-word demand. These are shared artifacts, not
+prepared after committed teaching completion. These are shared artifacts, not
 per-learner or per-session calls. The starting general v4 and teaching-exercise v2
 briefs come from the retained [editorial trials](implementation/vocabulary-prompt-handoff.md).
 Existing artifacts are reused; retry creates additional attributable attempts.
