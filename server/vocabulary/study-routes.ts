@@ -24,6 +24,13 @@ function mode(value: unknown): VocabularyWordMode {
   if (!['unstudied','solidify','practice','maintain'].includes(String(value))) throw new VocabularySessionInputError('Unknown mode');
   return value as VocabularyWordMode;
 }
+export function parseVocabularyTimeZone(value: unknown): string | undefined {
+  if (value === undefined) return undefined; // Compatibility with older clients.
+  if (typeof value !== 'string' || !value || value.length > 100) throw new VocabularySessionInputError('Invalid time zone');
+  try { new Intl.DateTimeFormat('en-US', {timeZone: value}); }
+  catch { throw new VocabularySessionInputError('Invalid time zone'); }
+  return value;
+}
 export function parseVocabularyPreviewSeed(value:unknown):string|undefined {
   if(value===undefined)return undefined;
   if(typeof value!=='string'||value.length!==36||!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) {
@@ -65,8 +72,8 @@ export function registerVocabularyStudyRoutes(app: Express, wake: () => void = (
       res.status(status).json({error:status===500?'This study action could not be saved. Please retry.':(error as Error).message});
     }
   };
-  app.get('/api/vocabulary/session-preview',handle(()=>previewVocabularyStudy(),true));
-  app.post('/api/vocabulary/sessions',handle(req=>startVocabularyStudy({previewSeed:parseVocabularyPreviewSeed(record(req.body??{}).previewSeed)}),true));
+  app.get('/api/vocabulary/session-preview',handle(req=>previewVocabularyStudy({timeZone:parseVocabularyTimeZone(req.query.timeZone)}),true));
+  app.post('/api/vocabulary/sessions',handle(req=>startVocabularyStudy({previewSeed:parseVocabularyPreviewSeed(record(req.body??{}).previewSeed),timeZone:parseVocabularyTimeZone(record(req.body??{}).timeZone)}),true));
   app.get('/api/vocabulary/sessions/:id',handle(req=>getVocabularyStudy(req.params.id)));
   app.post('/api/vocabulary/sessions/:id/next',handle(req=>{
     const b=record(req.body); if(b.another!==undefined&&typeof b.another!=='boolean') throw new VocabularySessionInputError('Invalid another flag');

@@ -31,12 +31,26 @@ export function vocabularyDailyNewWordLimit():number {
   if(typeof configured!=='number'||!Number.isInteger(configured)||configured<0||configured>20)throw new Error('Invalid daily_new_word_limit setting');
   return configured;
 }
-export function remainingVocabularyNewWordQuota(now=new Date().toISOString()):number {
-  const configured=vocabularyDailyNewWordLimit();
-  const learner=requireLearnerId(),day=now.slice(0,10);
-  const legacy=getDb().prepare('SELECT new_study_count FROM learner_owned_daily_new_word_intake WHERE learner_id=? AND day_key=?').get(learner,day) as {new_study_count:number}|undefined;
-  const fresh=getDb().prepare("SELECT count(*) AS n FROM teaching_completions WHERE learner_id=? AND source_kind='session' AND substr(completed_at,1,10)=?").get(learner,day) as {n:number};
-  return Math.max(0,configured-(legacy?.new_study_count??0)-fresh.n);
+// The browser supplies its IANA zone. Compare wall-clock dates directly so that
+// the 04:00 boundary remains correct on daylight-saving transition days.
+export function localNewWordDay(instant: string, timeZone: string): string {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(instant));
+  const get = (type: string) => parts.find(part => part.type === type)?.value;
+  const year = get('year'), month = get('month'), day = get('day'), hour = get('hour');
+  if (!year || !month || !day || !hour) throw new Error('Could not determine local study day');
+  const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day) - (Number(hour) < 4 ? 1 : 0)));
+  return date.toISOString().slice(0, 10);
+}
+export function remainingVocabularyNewWordQuota(now = new Date().toISOString(), timeZone?: string): number {
+  const configured = vocabularyDailyNewWordLimit();
+  const learner = requireLearnerId(), day = timeZone ? localNewWordDay(now, timeZone) : now.slice(0, 10);
+  const legacy = getDb().prepare('SELECT new_study_count FROM learner_owned_daily_new_word_intake WHERE learner_id=? AND day_key=?').get(learner, day) as {new_study_count:number}|undefined;
+  // A local day can span two UTC dates; the 72-hour window also covers zone
+  // offsets and clock changes. Historical imports are already in legacy intake.
+  const since = new Date(Date.parse(now) - 72 * 60 * 60 * 1000).toISOString();
+  const rows = getDb().prepare("SELECT completed_at FROM teaching_completions WHERE learner_id=? AND source_kind='session' AND completed_at>=? AND completed_at<=?").all(learner, since, now) as {completed_at:string}[];
+  const fresh = rows.filter(row => (timeZone ? localNewWordDay(row.completed_at, timeZone) : row.completed_at.slice(0, 10)) === day).length;
+  return Math.max(0, configured - (legacy?.new_study_count ?? 0) - fresh);
 }
 export function planVocabularyNewWords(options:{limit:number;seed:string;now:string;manifest?:DeckManifest|null;readyIds?:ReadonlySet<string>;preferredIds?:ReadonlySet<string>;excludedIds?:ReadonlySet<string>}) {
   const now=options.now,learner=requireLearnerId(),remaining=options.limit,readyIds=options.readyIds;
@@ -94,14 +108,14 @@ export function planVocabularyNewWords(options:{limit:number;seed:string;now:str
 /** New-model state is the only lifecycle predicate; source material and lexical deck identities can be shared. */
 export function composeVocabularyStudy(options:{
   teachingReady:(wordId:string)=>boolean; requestTeaching:(wordId:string)=>void; now?:string; manifest?:DeckManifest|null;
-  canUseSkill?: (wordId: string, skillId: VocabularyReviewSkill) => boolean;
+  canUseSkill?: (wordId: string, skillId: VocabularyReviewSkill) => boolean; timeZone?: string;
 }):VocabularyComposition {
   const now=options.now??new Date().toISOString(),learner=requireLearnerId();
-  const settings=vocabularyCompositionSettings();const remaining=remainingVocabularyNewWordQuota(now);
+  const settings=vocabularyCompositionSettings();const remaining=remainingVocabularyNewWordQuota(now, options.timeZone);
   const readyIds=new Set((remaining>0?getDb().prepare(`SELECT DISTINCT w.word_id FROM content_items c JOIN content_words w USING(content_id)
     WHERE c.kind='introduction' AND c.availability='active' AND w.relation='target'
       AND (c.access_scope='shared' OR c.owner_learner_id=?)`).all(learner) as {word_id:string}[]:[]).map((entry)=>entry.word_id).filter(options.teachingReady));
-  const plan=planVocabularyNewWords({limit:remaining,seed:buildUnstudiedAdmissionSeedSource(now.slice(0,10),remaining),now,
+  const plan=planVocabularyNewWords({limit:remaining,seed:buildUnstudiedAdmissionSeedSource(options.timeZone ? localNewWordDay(now, options.timeZone) : now.slice(0,10),remaining),now,
     manifest:options.manifest,readyIds,preferredIds:new Set(getWordReserveCandidates())});
   const newIds=plan.newWordIds;
   const learningWordIds=(getDb().prepare(`SELECT w.word_id FROM learner_words w JOIN learner_word_schedules s USING(learner_id,word_id)

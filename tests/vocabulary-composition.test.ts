@@ -7,7 +7,7 @@ import {setDb} from '../server/db/connection.ts';
 import {runWithLearnerId} from '../server/db/learner-context.ts';
 import {addVocabularyWord,changeVocabularyMode,dismissVocabularyWord} from '../server/db/vocabulary-learners.ts';
 import {createVocabularyContent} from '../server/db/vocabulary-content.ts';
-import {composeVocabularyStudy,remainingVocabularyNewWordQuota} from '../server/vocabulary/composition.ts';
+import {composeVocabularyStudy,remainingVocabularyNewWordQuota,localNewWordDay} from '../server/vocabulary/composition.ts';
 import type {DeckManifest} from '../server/decks/manifest.ts';
 let db:DatabaseSync;let ready:Set<string>;let requested:string[];
 const now='2026-10-17T10:00:00.000Z';const owner=<T>(fn:()=>T)=>runWithLearnerId('alice',fn);
@@ -44,6 +44,23 @@ test('daily UTC quota combines retained historical intake and new completed teac
   assert.equal(remainingVocabularyNewWordQuota(now),2);
   for(let i=0;i<5;i++){lexical(`new-${i}`);prepared(`new-${i}`);}
   assert.equal(compose().newWordIds.length,2);assert.equal(remainingVocabularyNewWordQuota(now),2);
+}));
+
+test('new-word day uses 4 a.m. wall time across daylight-saving changes', () => {
+  assert.equal(localNewWordDay('2026-10-28T07:59:59.000Z', 'America/New_York'), '2026-10-27');
+  assert.equal(localNewWordDay('2026-10-28T08:00:00.000Z', 'America/New_York'), '2026-10-28');
+  assert.equal(localNewWordDay('2026-03-08T07:30:00.000Z', 'America/New_York'), '2026-03-07');
+  assert.equal(localNewWordDay('2026-03-08T08:00:00.000Z', 'America/New_York'), '2026-03-08');
+  assert.equal(localNewWordDay('2026-11-01T08:59:59.000Z', 'America/New_York'), '2026-10-31');
+  assert.equal(localNewWordDay('2026-11-01T09:00:00.000Z', 'America/New_York'), '2026-11-01');
+});
+
+test('local quota combines legacy intake and only completed teaching in the local study day', () => owner(() => {
+  settings('daily_new_word_limit', 5);
+  db.prepare("INSERT INTO learner_owned_daily_new_word_intake VALUES('alice','2026-10-27',1)").run();
+  db.prepare("INSERT INTO teaching_completions VALUES('alice','session','2026-10-27T08:00:00.000Z'),('alice','session','2026-10-28T00:30:00.000Z'),('alice','session','2026-10-27T07:59:59.000Z'),('alice','legacy_import','2026-10-28T00:30:00.000Z'),('bob','session','2026-10-28T00:30:00.000Z')").run();
+  assert.equal(remainingVocabularyNewWordQuota('2026-10-28T04:00:00.000Z', 'America/New_York'), 2);
+  assert.equal(remainingVocabularyNewWordQuota('2026-10-28T08:00:00.000Z', 'America/New_York'), 5);
 }));
 
 test('ready new words receive capacity even behind many due Solidify words',()=>owner(()=>{
