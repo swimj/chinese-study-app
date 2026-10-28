@@ -1,3 +1,5 @@
+import { VocabularyReflectionConflict } from '../db/vocabulary-reflection.ts';
+import { getVocabularyContentForMaintenance } from '../db/vocabulary-content.ts';
 import { GENERAL_EXERCISE_CONTRACT,generalExerciseInvocation,type GeneralExerciseSource } from './general-exercise-authoring.ts';
 import { vocabularyAuthoredPromptBody } from '../../src/domain/vocabulary-production-coverage.ts';
 import { readFile } from 'node:fs/promises';
@@ -33,6 +35,12 @@ const improvementSchema=object({diagnosis:text,operations:{type:'array',items:ob
 export const vocabularySingleImprovementSchema=object({...improvementSchema.properties!,pureCueReferral:vocabularyPureCueReferralSchema});
 function nonempty(value:string):void{if(!value.trim())throw new VocabularyReflectionOutputError('Reflection output contains empty text');}
 function source(job:VocabularyReflectionJob):VocabularyContent|null {
+  if(job.reassessmentSourceJobId||job.reassessmentSource) {
+    const pinned=job.reassessmentSource,current=pinned?getVocabularyContentForMaintenance(pinned.contentId):null;
+    if(!pinned||!current||current.version!==pinned.version||current.availability!=='active')throw new VocabularyReflectionConflict('Reassessment source version changed; request a new assessment');
+    if(pinned.accessScope==='private'&&pinned.ownerLearnerId!==job.learnerId)throw new VocabularyReflectionOutputError('Reflection source access mismatch');
+    return pinned;
+  }
   const encounter=job.evidence.evidence[0];
   if(!encounter)return null;
   const row=getDb().prepare('SELECT snapshot_json FROM content_revision_history WHERE content_id=? AND version=?')
@@ -51,7 +59,7 @@ export function projectVocabularyReflectionInput(job:VocabularyReflectionJob):un
   const words=wordIds.map(id=>getDb().prepare('SELECT id AS wordId,hanzi,traditional,pinyin,meaning FROM lexical_words WHERE id=?').get(id));
   return {caseId:job.caseId,subject:!pureCue&&job.evidence.wordId!==null?{kind:'word',wordId:job.evidence.wordId}
     :{kind:'pureCue',contentId:job.evidence.contentId},words,
-    sourceContent:content,encounters:job.evidence.evidence.map(item=>({encounterId:item.encounterId,wordId:item.wordId,
+    sourceContent:content,...(job.reassessmentSource?{assessmentOrigin:{kind:'operator_reassessment',sourceJobId:job.reassessmentSourceJobId??null,sessionEvidence:'historical_only'}}:{}),encounters:(job.reassessmentSource?[]:job.evidence.evidence).map(item=>({encounterId:item.encounterId,wordId:item.wordId,
       purpose:item.snapshot.role,mode:item.mode,served:item.snapshot,responses:item.responses.map(response=>({actionId:response.actionId,
         response:response.payload.response,outcome:response.payload.outcome,effective:item.effectiveResponses.some(effective=>effective.actionId===response.actionId)})),
       reactions:getEffectiveVocabularyEncounterReactions(item).map(({payload})=>({encounterId:payload.encounterId,reaction:payload.feedback,...(payload.comment!==undefined?{comment:payload.comment}:{})})),skipped:item.skipped,presentationUndone:item.presentationUndone}))};
@@ -122,7 +130,7 @@ export function createVocabularyReflectionProvider(options:{environment?:NodeJS.
   return {isConfigured:()=>REFLECTION_MODEL_ARMS.some(arm=>arm.enabledByDefault&&Boolean(environment[reflectionConfigForChoice(arm.choice).apiKeyEnvironmentVariable]?.trim())),async run(job,context){
     if(job.evidence.kind==='teaching_review')throw new VocabularyReflectionOutputError('Teaching belongs to the manual inbox');
     job=eligibleVocabularyReflectionJob(job);
-    if(!job.evidence.evidence.length){
+    if(!job.evidence.evidence.length&&!job.reassessmentSourceJobId){
       const diagnosis='Provider review is deferred for non-production exercises; original evidence remains in the session log.';
       return job.kind==='learner_feedback'?{kind:'learner_feedback',judgment:{diagnosis,message:null,unfairEncounterIds:[]}}
         :{kind:'exercise_improvement',result:{diagnosis,proposal:null}};

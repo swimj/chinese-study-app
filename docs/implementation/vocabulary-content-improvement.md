@@ -81,12 +81,19 @@ with its mapping rationale;
 neither triggers automatic repair or sense expansion. Operators can close these
 findings after inspection. Learner feedback and compensation remain independent.
 
-An operator-requested reassessment creates a separate case and uses the selected
-model for a fresh final assessment. It reuses the source job’s retained mapping
-only when its source and sense inventory still match, and keeps the mapping and
-content fences. A single-sense assessment can still invoke promotion when
-referred; a laundry list runs repertoire generation. Pure cues use their
-standalone assessment. Failures remain available for explicit retry.
+An operator-requested reassessment creates a separate case and pins the current
+exercise identity and version at submission. When it differs from the historical
+assessed source version, the operator must confirm the current version before
+queueing work. The selected model performs fresh mapping and final assessment,
+even for an unchanged source version; the child does not reuse the parent job's
+mapping. A single-sense assessment can invoke promotion when referred; a laundry
+list runs repertoire generation. Pure cues use their standalone assessment.
+The resulting proposal is based on the pinned current version. The original
+encounters remain historical context; their responses and reactions are not
+supplied as learner evidence for the independent operator assessment.
+Source version and sense-state fences reject subsequent changes before accepting
+results, and proposal application revalidates its bases. Failures remain available
+for explicit retry against the same pinned source.
 
 ### Existing pure-cue assessment
 

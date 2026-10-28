@@ -1,3 +1,4 @@
+import { VocabularyReflectionConflict } from '../db/vocabulary-reflection.ts';
 import { pureCueStimulusRepairErrors } from '../../src/domain/pure-cue-repair.ts';
 import { isDeepStrictEqual } from 'node:util';
 import type { JsonSchema } from '../../src/domain/reflection-result-schema.ts';
@@ -25,7 +26,7 @@ function record(value:VocabularyJson|undefined):Record<string,VocabularyJson>{
 export function prepareVocabularyPureCueImprovement(job:VocabularyReflectionJob,original:VocabularyContent){
   if(original.kind!=='exercise'||original.exerciseType!=='pure_cue'||original.skill!=='production'||original.exerciseRole!=='general')throw new Error('Pure-cue review requires a general production pure cue');
   if(original.accessScope==='private'&&original.ownerLearnerId!==job.learnerId)throw new Error('Pure-cue review source access mismatch');
-  const rawResponses=[...new Set(job.evidence.evidence.filter(encounter=>!encounter.presentationUndone).flatMap(encounter=>encounter.effectiveResponses
+  const rawResponses=[...new Set((job.reassessmentSourceJobId?[]:job.evidence.evidence).filter(encounter=>!encounter.presentationUndone).flatMap(encounter=>encounter.effectiveResponses
     .filter(response=>response.payload.outcome==='rejected').flatMap(response=>response.payload.response?.trim()?[response.payload.response]:[])))];
   const members=()=>original.answers.map(answer=>{
     const word=getDb().prepare(`${wordQuery} WHERE id=?`).get(answer.wordId) as Word|undefined;
@@ -35,7 +36,10 @@ export function prepareVocabularyPureCueImprovement(job:VocabularyReflectionJob,
   const currentMembers=members(),responseCandidates=resolve();
   const candidates=responseCandidates.filter(item=>item.words.length===1).map(item=>item.words[0]!).filter(word=>!original.answers.some(answer=>answer.wordId===word.wordId));
   const fence=()=>{
-    if(!isDeepStrictEqual(getVocabularyContentForMaintenance(original.contentId),original)||original.availability!=='active')throw new Error('Pure-cue review source changed');
+    const current=getVocabularyContentForMaintenance(original.contentId);
+    if(job.reassessmentSourceJobId) {
+      if(!current||current.version!==original.version||current.availability!=='active')throw new VocabularyReflectionConflict('Pure-cue review source changed');
+    } else if(!isDeepStrictEqual(current,original)||original.availability!=='active')throw new Error('Pure-cue review source changed');
     if(!isDeepStrictEqual(members(),currentMembers)||!isDeepStrictEqual(resolve(),responseCandidates))throw new Error('Pure-cue review lexical evidence changed');
   };
   return {input:{currentMembers,responseCandidates},fence,normalize(value:unknown,invocationId?:string|null):VocabularyReflectionResult{

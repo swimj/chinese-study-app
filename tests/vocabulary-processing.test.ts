@@ -6,7 +6,7 @@ import { setDb } from '../server/db/connection.ts';
 import { runWithLearnerId } from '../server/db/learner-context.ts';
 import { createVocabularyContent,createVocabularySense,establishVocabularySenseCatalog,getVocabularySenseCatalog,getVocabularySenses,getVocabularyContent } from '../server/db/vocabulary-content.ts';
 import { createVocabularySession,appendVocabularySessionActions,stageVocabularySessionCompletion } from '../server/db/vocabulary-sessions.ts';
-import { claimVocabularyReflectionJob,retryOwnVocabularyFeedback,retryVocabularyPostSessionDispatch,listOwnVocabularyMessages,recordVocabularyFeedbackJudgment } from '../server/db/vocabulary-reflection.ts';
+import { VocabularyReflectionConflict,claimVocabularyReflectionJob,retryOwnVocabularyFeedback,retryVocabularyPostSessionDispatch,listOwnVocabularyMessages,recordVocabularyFeedbackJudgment } from '../server/db/vocabulary-reflection.ts';
 import { createVocabularyProcessingWorker } from '../server/vocabulary/processing-worker.ts';
 import { createVocabularyReflectionProvider,normalizeVocabularyReflectionOutput } from '../server/vocabulary/reflection-provider.ts';
 import { createOpenAiCompatibleAdapter } from '../server/llm/openai-compatible.ts';
@@ -35,7 +35,7 @@ beforeEach(()=>{
   sql.exec(`CREATE TABLE learner_settings(learner_id TEXT,setting_key TEXT,value_json TEXT,updated_at TEXT,PRIMARY KEY(learner_id,setting_key));
     CREATE TABLE learner_owned_review_session_summaries(learner_id TEXT,session_id TEXT,PRIMARY KEY(learner_id,session_id));`);
 
-  for(const name of ['0042_vocabulary_sessions.sql','0044_vocabulary_reflection.sql','0059_vocabulary_reassessment.sql','0055_vocabulary_feedback_dismissal.sql','0045_vocabulary_provenance_links.sql'])sql.exec(fs.readFileSync(new URL(`../server/db/migrations/${name}`,import.meta.url),'utf8'));
+  for(const name of ['0042_vocabulary_sessions.sql','0044_vocabulary_reflection.sql','0059_vocabulary_reassessment.sql','0060_vocabulary_reassessment_source.sql','0055_vocabulary_feedback_dismissal.sql','0045_vocabulary_provenance_links.sql'])sql.exec(fs.readFileSync(new URL(`../server/db/migrations/${name}`,import.meta.url),'utf8'));
   for(const name of ['0023_session_debrief.sql','0048_vocabulary_connections.sql','0049_vocabulary_sense_readiness.sql','0050_vocabulary_improvement_admission.sql','0051_vocabulary_pure_cue_promotion.sql'])sql.exec(fs.readFileSync(new URL(`../server/db/migrations/${name}`,import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0054_vocabulary_provider_retry_routing.sql',import.meta.url),'utf8'));
   sql.exec(`INSERT INTO learner_words(learner_id,word_id,in_stash,added_at,mode,mode_changed_at) VALUES ('alice','a',1,'2026-01-01','practice','2026-01-01');
@@ -317,5 +317,16 @@ test('expired sense preparation fences its crashed reflection and resumes after 
   assert.equal(sql.prepare('SELECT active_token FROM vocabulary_sense_readiness').get()!.active_token,null);
   clock+=30_000;await processing.step();assert.equal(calls,1);
   assert.equal(sql.prepare('SELECT status FROM vocabulary_reflection_jobs WHERE job_id=?').get(old.jobId)!.status,'succeeded');
+  await processing.stop();
+});
+
+ test('source conflicts remain distinct from provider failures',async()=>{
+  pending();
+  const processing=worker({isConfigured:()=>true,run:async job=>{
+    if(job.kind==='exercise_improvement')throw new VocabularyReflectionConflict('source changed');
+    return result(job);
+  }});
+  await processing.step();
+  assert.equal(sql.prepare("SELECT last_error FROM vocabulary_reflection_jobs WHERE kind='exercise_improvement'").get()!.last_error,'source_conflict');
   await processing.stop();
 });

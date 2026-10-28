@@ -3,10 +3,12 @@ import type { VocabularyContent,VocabularyContentDraft } from '../../domain/voca
 import type { VocabularySecondOpinion, VocabularyContentProposal, VocabularyProposalDraft, VocabularyProposalApplication, VocabularyProposalOperation, VocabularyReflectionCase, VocabularyImprovementAdmission, VocabularyPureCueReferral, VocabularyPureCuePromotion } from '../../domain/vocabulary-reflection';
 
 export type VocabularyReassessmentModel = 'openai:gpt-5.6-luna-high' | 'zai:glm-5.3-flash-high' | 'openai:gpt-6-sol-high';
+export type VocabularyReassessmentSource={contentId:string;assessedVersion:number;currentVersion:number};
 export type VocabularyCaseWorkspace={case:VocabularyReflectionCase;sources:VocabularyContent[];diagnosis?:import('../../domain/vocabulary-content').VocabularyJson;admission?:VocabularyImprovementAdmission;pureCueReferral?:VocabularyPureCueReferral|null;pureCuePromotion?:VocabularyPureCuePromotion;
+  reassessmentSource?:VocabularyReassessmentSource|null;
   reassessment?:{caseId:string;jobId:string;status:string;error:string|null}|null;
   jobs:{jobId:string;kind:string;status:string;attemptNumber:number;error:string|null;secondOpinion:boolean;result:VocabularySecondOpinion['result']}[];proposals:VocabularyContentProposal[]};
-export type VocabularyReviewSnapshot={proposal:VocabularyContentProposal;case:VocabularyReflectionCase|null;reassessment:{eligible:boolean;latest:{caseId:string;jobId:string;status:string;error:string|null}|null}|null;previews:{operationKey:string;source:VocabularyContent|null;result:VocabularyContentDraft}[]};
+export type VocabularyReviewSnapshot={proposal:VocabularyContentProposal;case:VocabularyReflectionCase|null;reassessment:{eligible:boolean;source:VocabularyReassessmentSource|null;latest:{caseId:string;jobId:string;status:string;error:string|null}|null}|null;previews:{operationKey:string;source:VocabularyContent|null;result:VocabularyContentDraft}[]};
 export type VocabularyProposalPreview={proposal:VocabularyContentProposal;
   previews:{operationKey:string;source:VocabularyContent|null;result:VocabularyContent}[];
   operations:{operationKey:string;strategy:VocabularyProposalOperation['strategy'];scope:VocabularyProposalOperation['scope'];
@@ -20,7 +22,7 @@ const write=<T>(path:string,body:unknown,method='POST')=>apiRequest<T>(`${root}$
 export const vocabularyOperatorApi={
   cases:(kind:VocabularyReflectionCase['kind'])=>apiRequest<{items:VocabularyReflectionCase[]}>(`${root}/cases?kind=${kind}`),
   noProposalCases:(status:'completed'|'closed'='completed')=>apiRequest<{items:VocabularyReflectionCase[]}>(`${root}/no-proposal-cases?status=${status}`),
-  reassessCase:(caseId:string,modelChoice:VocabularyReassessmentModel)=>write<{caseId:string;jobId:string}>(`/cases/${id(caseId)}/reassessments`,{modelChoice}),
+  reassessCase:(caseId:string,modelChoice:VocabularyReassessmentModel,expectedContentVersion:number)=>write<{caseId:string;jobId:string}>(`/cases/${id(caseId)}/reassessments`,{modelChoice,expectedContentVersion}),
   requestCaseSecondOpinion:(caseId:string,notes:string)=>write<{ok:true}>(`/cases/${id(caseId)}/second-opinions`,{notes}),
   workspace:(caseId:string)=>apiRequest<VocabularyCaseWorkspace>(`${root}/cases/${id(caseId)}`),
   proposals:()=>apiRequest<{items:VocabularyContentProposal[]}>(`${root}/proposals`),

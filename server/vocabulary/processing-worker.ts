@@ -78,7 +78,7 @@ export function createVocabularyProcessingWorker(options:{provider?:VocabularyRe
         // Expired leases have already been fenced as unknown outcome. Never revive them.
         try{
           if(error instanceof VocabularySenseReadinessPending)deferVocabularyReflectionForSense(work.jobId,work.leaseToken,error.retryAt,iso());
-          else failVocabularyReflectionJob(work.jobId,work.leaseToken,error instanceof VocabularyReflectionOutputError?'invalid_output':'provider_failed',iso(),iso());
+          else failVocabularyReflectionJob(work.jobId,work.leaseToken,error instanceof VocabularyReflectionConflict?'source_conflict':error instanceof VocabularyReflectionOutputError?'invalid_output':'provider_failed',iso(),iso());
         }
         catch(stale){if(!(stale instanceof VocabularyReflectionConflict))throw stale;}
       }

@@ -1,4 +1,4 @@
-import type { VocabularyContentDraft, VocabularyJson } from './vocabulary-content.ts';
+import type { VocabularyContent, VocabularyContentDraft, VocabularyJson } from './vocabulary-content.ts';
 import type { VocabularyEncounterEvidence } from './vocabulary-session.ts';
 
 export type VocabularyReflectionSubject = { kind: 'word'; wordId: string } | { kind: 'pureCue'; contentId: string };
@@ -7,6 +7,7 @@ export type VocabularyReflectionCase = {
   kind: 'learner_feedback' | 'exercise_improvement' | 'teaching_review';
   wordId: string | null; contentId: string | null; status: 'open' | 'completed' | 'closed';
   evidence: VocabularyEncounterEvidence[]; createdAt: string;
+  reassessmentSource?: {contentId:string;version:number};
   /** Authoritative resolution time; absent in older clients and null when unresolved or unavailable. */
   resolvedAt?: string | null;
 };
@@ -16,6 +17,8 @@ export type VocabularyReflectionJob = {
   attemptNumber: number; leaseToken: string; leaseExpiresAt: string;
   evidence: VocabularyReflectionCase;
   reassessmentSourceJobId?: string;
+  /** Current authored version explicitly selected by the operator; encounters remain historical. */
+  reassessmentSource?: VocabularyContent;
   secondOpinion?: { requestId: string; proposal: VocabularyContentProposal | null; notes: string; diagnosis?: VocabularyJson };
 };
 export type VocabularyFeedbackJudgmentInput = {
