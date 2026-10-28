@@ -25,6 +25,7 @@ beforeEach(()=>{
   Object.assign(process.env,{APP_AUTH_MODE:'clerk',APP_MODE:'study',APP_DATA_DIR:'/tmp/vocabulary-processing',APP_OPERATOR_CLERK_USER_IDS:'editor'});
   clock=Date.parse(at)+16_000;sql=new DatabaseSync(':memory:');setDb(sql);
   sql.exec(`PRAGMA foreign_keys=ON;CREATE TABLE learners(learner_id TEXT PRIMARY KEY,disabled_at TEXT,display_name TEXT);
+    CREATE TABLE learner_word_reserve_requests(learner_id TEXT PRIMARY KEY,requested_at TEXT NOT NULL);
     CREATE TABLE lexical_words(id TEXT PRIMARY KEY,hanzi TEXT,traditional TEXT,pinyin TEXT,meaning TEXT);
     CREATE TABLE word_preparation_work(id TEXT);INSERT INTO learners VALUES ('alice',NULL,'Alice'),('bob',NULL,'Bob');
     INSERT INTO lexical_words VALUES ('a','字',NULL,'zì','character');`);
@@ -95,7 +96,8 @@ test('in-flight feedback never blocks another closure or subsequent improvement 
     if(job.kind==='learner_feedback'&&!held){held=job;entered();return new Promise(resolve=>{release=resolve;});}
     if(job.kind==='exercise_improvement')improvements++;return result(job);
   }});
-  const first=processing.step();await begun;
+  const first=processing.step();
+  await Promise.race([begun,first.then(()=>{throw new Error('Processing step ended before entering the held feedback provider');})]);
   // Wait for the independent first improvement result to commit before dispatching another batch.
   for(let index=0;index<4;index++)await Promise.resolve();
   clock+=60_000;pending('second');await processing.step();

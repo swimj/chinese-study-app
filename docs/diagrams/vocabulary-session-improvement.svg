@@ -1,35 +1,43 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="840" viewBox="0 0 1200 840" role="img" aria-labelledby="title desc"><title id="title">Content improves between sessions</title><desc id="desc">Session A retains versioned material despite publication and retirement in the shared pool. Start queues practice preparation for future sessions. A periodic worker publishes content without scanning active sessions. Session B composes from the updated pool.</desc><defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L8,3 z" fill="#50677c"/></marker></defs><style>text{font-family:Arial,Helvetica,sans-serif;fill:#19334a}.heading{font-size:31px;font-weight:700}.sub{font-size:19px;fill:#50677c}.cardtitle{font-size:22px;font-weight:700}.body{font-size:19px}.small{font-size:17px;fill:#50677c}.label{font-size:18px;font-weight:700}</style><rect width="1200" height="840" fill="#f5f8fb"/><text x="48" y="62" class="heading">Content improves between sessions</text><text x="48" y="96" class="sub">A running session keeps its repertoire; the next Start sees published improvements.</text>
-<rect x="48" y="158" width="337" height="176" rx="16" fill="#e6f1fb" stroke="#b7c9d8"/>
-<text x="70" y="194" class="cardtitle">Session A · Start</text>
-<text x="70" y="231" class="body">Read the eligible content pool</text>
-<text x="70" y="260" class="body">Capture payload A</text>
-<text x="70" y="289" class="body">Pin admitted material and versions</text>
-<rect x="48" y="405" width="337" height="180" rx="16" fill="#e8f3eb" stroke="#b7c9d8"/>
-<text x="70" y="441" class="cardtitle">Session A · live play</text>
-<text x="70" y="478" class="body">Choose dynamically from A</text>
-<text x="70" y="507" class="body">More, mode changes and Undo</text>
-<text x="70" y="536" class="body">use the same retained material</text>
-<path d="M216,334 L216,405" fill="none" stroke="#50677c" stroke-width="2.5" marker-end="url(#arrow)"/>
-<rect x="451" y="158" width="317" height="176" rx="16" fill="#e6f1fb" stroke="#b7c9d8"/>
-<text x="473" y="194" class="cardtitle">Preparation queue</text>
-<text x="473" y="231" class="body">Start records shared demand</text>
-<text x="473" y="260" class="body">Periodic worker drains queue</text>
-<text x="473" y="289" class="body">No active-session demand scan</text>
-<path d="M385,246 L451,246" fill="none" stroke="#50677c" stroke-width="2.5" marker-end="url(#arrow)"/>
-<rect x="451" y="405" width="317" height="180" rx="16" fill="#fff3d8" stroke="#b7c9d8"/>
-<text x="473" y="441" class="cardtitle">Published content pool</text>
-<text x="473" y="478" class="body">Worker publishes ready results</text>
-<text x="473" y="507" class="body">Operators edit or retire content</text>
-<text x="473" y="536" class="body">Changes await the next Start</text>
-<path d="M609,334 L609,405" fill="none" stroke="#50677c" stroke-width="2.5" marker-end="url(#arrow)"/>
-<rect x="834" y="405" width="318" height="180" rx="16" fill="#e8f3eb" stroke="#b7c9d8"/>
-<text x="856" y="441" class="cardtitle">Session B · Start</text>
-<text x="856" y="478" class="body">Read the updated eligible pool</text>
-<text x="856" y="507" class="body">Capture payload B</text>
-<text x="856" y="536" class="body">Serve the improved material</text>
-<path d="M768,495 L834,495" fill="none" stroke="#50677c" stroke-width="2.5" marker-end="url(#arrow)"/>
-<text x="838" y="370" class="label">Next composition boundary</text>
-<rect x="48" y="658" width="1104" height="118" rx="16" fill="#ffffff" stroke="#b7c9d8"/>
-<text x="70" y="694" class="cardtitle">No mid-session content admission</text>
-<text x="70" y="731" class="body">Publication and retirement do not rewrite payload A. Session actions still change its player state.</text>
-<text x="70" y="760" class="body">Account and private-content authorization remain enforced; live steps do not wake preparation.</text></svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="840" viewBox="0 0 1200 840" role="img" aria-labelledby="title desc"><title id="title">Content improves between sessions</title><desc id="desc">Session A retains versioned material despite publication and retirement in the shared pool. A stable reserve prepares teaching before sessions; committed teaching queues general practice. A periodic worker publishes content without scanning active sessions. Session B composes from the updated pool.</desc><defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L8,3 z" fill="#50677c"/></marker></defs><style>text{font-family:Arial,Helvetica,sans-serif;fill:#19334a}.heading{font-size:31px;font-weight:700}.sub{font-size:19px;fill:#50677c}.cardtitle{font-size:22px;font-weight:700}.body{font-size:19px}.small{font-size:17px;fill:#50677c}.label{font-size:18px;font-weight:700}</style><rect width="1200" height="840" fill="#f5f8fb"/><text x="48" y="62" class="heading">Content improves between sessions</text><text x="48" y="96" class="sub">A running session keeps its repertoire; the next Start sees published improvements.</text>
+
+<rect x="48" y="142" width="340" height="153" rx="16" fill="#e6f1fb" stroke="#b7c9d8"/>
+<text x="70" y="178" class="cardtitle">Stable new-word reserve</text>
+<text x="70" y="215" class="body">2 × daily limit · up to 40 words</text>
+<text x="70" y="244" class="body">Bootstrap → intro → teaching</text>
+<text x="70" y="273" class="body">Refresh old scheme lazily</text>
+<rect x="438" y="142" width="330" height="153" rx="16" fill="#e6f1fb" stroke="#b7c9d8"/>
+<text x="460" y="178" class="cardtitle">Session A · Start</text>
+<text x="460" y="215" class="body">Select ready reserve material</text>
+<text x="460" y="244" class="body">Collect other ready study work</text>
+<text x="460" y="273" class="body">Freeze payload A</text>
+<rect x="818" y="142" width="334" height="153" rx="16" fill="#e8f3eb" stroke="#b7c9d8"/>
+<text x="840" y="178" class="cardtitle">Session A · live play</text>
+<text x="840" y="215" class="body">Choose dynamically within A</text>
+<text x="840" y="244" class="body">More, mode changes and Undo</text>
+<text x="840" y="273" class="body">keep the same material</text>
+<path d="M388,220 L438,220" fill="none" stroke="#50677c" stroke-width="2.5" marker-end="url(#arrow)"/>
+<path d="M768,220 L818,220" fill="none" stroke="#50677c" stroke-width="2.5" marker-end="url(#arrow)"/>
+<rect x="818" y="403" width="334" height="153" rx="16" fill="#fff3d8" stroke="#b7c9d8"/>
+<text x="840" y="439" class="cardtitle">Commit teaching at closure</text>
+<text x="840" y="476" class="body">Queue general practice</text>
+<text x="840" y="505" class="body">Request reserve replenishment</text>
+<text x="840" y="534" class="body">Both commit with learner effects</text>
+<path d="M985,295 L985,403" fill="none" stroke="#50677c" stroke-width="2.5" marker-end="url(#arrow)"/>
+<rect x="438" y="403" width="330" height="153" rx="16" fill="#e6f1fb" stroke="#b7c9d8"/>
+<text x="460" y="439" class="cardtitle">Background preparation</text>
+<text x="460" y="476" class="body">Drain durable shared queues</text>
+<text x="460" y="505" class="body">Publish ready teaching / practice</text>
+<text x="460" y="534" class="body">No active-session scan</text>
+<path d="M818,480 L768,480" fill="none" stroke="#50677c" stroke-width="2.5" marker-end="url(#arrow)"/>
+<rect x="48" y="403" width="340" height="153" rx="16" fill="#e8f3eb" stroke="#b7c9d8"/>
+<text x="70" y="439" class="cardtitle">Session B · Start</text>
+<text x="70" y="476" class="body">Capture the updated ready pool</text>
+<text x="70" y="505" class="body">New words can enter today</text>
+<text x="70" y="534" class="body">Live session A stays frozen</text>
+<path d="M438,480 L388,480" fill="none" stroke="#50677c" stroke-width="2.5" marker-end="url(#arrow)"/>
+<rect x="48" y="650" width="1104" height="153" rx="16" fill="#ffffff" stroke="#b7c9d8"/>
+<text x="70" y="686" class="cardtitle">Preparation and playback have separate boundaries</text>
+<text x="70" y="723" class="body">New teaching requires compatible preparation. Historical reviewers keep banked material.</text>
+<text x="70" y="752" class="body">General practice follows committed teaching. Shared additions can benefit all learners.</text>
+<text x="70" y="781" class="body">Account and private-content access checks remain live. Ordinary session actions do not wake workers.</text>
+</svg>

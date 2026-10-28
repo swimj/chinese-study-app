@@ -16,7 +16,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { before,after,beforeEach,afterEach,test } from 'node:test';
 import { createBaselineFixture } from './helpers/baseline-database.ts';
 import { migrateDatabase,schemaMigrations,type SchemaMigration } from '../server/db/migrations.ts';
-import { importLegacyVocabulary,type VocabularyImportReport } from '../server/db/vocabulary-import.ts';
+import { importLegacyVocabulary,importLegacyVocabularyWord,type VocabularyImportReport } from '../server/db/vocabulary-import.ts';
 import type { VocabularyContent } from '../src/domain/vocabulary-content.ts';
 import type { TeachingPackage,WordContentDocument } from '../src/domain/word-content/types.ts';
 let root: string;
@@ -265,6 +265,41 @@ test('incremental word materialization imports only the requested authored sourc
   assert.equal(again.createdContent,0); assert.equal(again.createdSenses,0);
   assert.equal(JSON.parse(db.prepare('SELECT body_json FROM content_items WHERE content_id=?').get(current.contentId)!.body_json as string).prompt,'human correction');
   assert.equal(db.prepare("SELECT sense_catalog_version FROM vocabulary_word_catalogs WHERE word_id='w1'").get()!.sense_catalog_version,catalogVersion);
+});
+
+function publishWord(): VocabularyImportReport {
+  db.exec('BEGIN');
+  try { const report = importLegacyVocabularyWord(db,'w1',{ originKind: 'model' }); db.exec('COMMIT'); return report; }
+  catch (error) { db.exec('ROLLBACK'); throw error; }
+}
+
+for (const inventory of ['established','partial'] as const) test(`runtime refresh preserves ${inventory} senses and leaves fresh source mappings unresolved`, () => {
+  const old = bootstrap(); teaching(old,'old-teaching'); convert();
+  if (inventory === 'partial') db.exec("UPDATE vocabulary_word_catalogs SET senses_established_at=NULL WHERE word_id='w1'");
+  const tables = ['senses','sense_revision_history','vocabulary_word_catalogs','legacy_sense_imports'];
+  const before = tables.map(table => db.prepare(`SELECT * FROM ${table}`).all());
+  const oldMapping = lookup('teaching_exercise','old-teaching','same-local-id').words;
+  const refreshed = bootstrap('refreshed','2026-10-27T00:00:00.000Z');
+  assert.equal(publishWord().createdSenses,0);
+  teaching(refreshed,'refreshed-teaching');
+  const published = publishWord();
+  assert.equal(published.createdContent,2); assert.equal(published.createdSenses,0);
+  const exercise = lookup('teaching_exercise','refreshed-teaching','same-local-id');
+  assert.equal(exercise.words[0]!.senseId,null);
+  assert.equal(exercise.words[0]!.senseMappingEstablishedAt,null);
+  assert.deepEqual(lookup('teaching_exercise','old-teaching','same-local-id').words,oldMapping);
+  const repeated = publishWord();
+  assert.equal(repeated.createdContent,0); assert.equal(repeated.createdSenses,0);
+  assert.deepEqual(tables.map(table => db.prepare(`SELECT * FROM ${table}`).all()),before);
+});
+
+test('runtime publication establishes senses for a cold word once', () => {
+  convert(); const source = bootstrap();
+  assert.equal(publishWord().createdSenses,2);
+  assert.ok(db.prepare("SELECT senses_established_at FROM vocabulary_word_catalogs WHERE word_id='w1'").get()!.senses_established_at);
+  teaching(source,'cold-teaching');
+  assert.equal(publishWord().createdSenses,0);
+  assert.ok(lookup('teaching_exercise','cold-teaching','same-local-id').words[0]!.senseId);
 });
 
 test('failed conversion rolls back the entire migration batch and keeps original evidence', () => {

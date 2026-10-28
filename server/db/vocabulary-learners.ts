@@ -1,5 +1,6 @@
 import { getDb } from './connection.ts';
 import { requireLearnerId } from './learner-context.ts';
+import { requestWordReserveReconciliation } from './word-reserve.ts';
 import { emitBackendEvent } from './vocabulary-content.ts';
 import type { VocabularyWordMode } from '../../src/domain/vocabulary-session.ts';
 
@@ -76,6 +77,7 @@ export function addVocabularyWord(wordId: string, intendedUseText: string | null
       .run(learnerId, wordId, JSON.stringify({ intervalHours: 24, easeFactor: 2.5, enabled: 1, cleanCoveredSessions: 0 }));
     emitBackendEvent({ name: 'vocabulary.word.added', learnerId, entityKind: 'word', entityId: wordId,
       actorKind: 'learner', actorId: learnerId, data: { intendedUseText } });
+    requestWordReserveReconciliation();
     return requireWord(wordId);
   });
 }
@@ -92,6 +94,7 @@ export function enrollVocabularyDietWord(wordId: string): VocabularyLearnerWord 
       VALUES (?,?,'vocabulary-v1',?)`).run(learnerId,wordId,JSON.stringify({intervalHours:24,easeFactor:2.5,enabled:1,cleanCoveredSessions:0}));
     emitBackendEvent({name:'vocabulary.word.enrolled',learnerId,actorKind:'learner',actorId:learnerId,entityKind:'word',entityId:wordId,
       data:{source:'selected_diet_word',inStash:false}});
+    requestWordReserveReconciliation();
     return requireWord(wordId);
   });
 }
@@ -127,6 +130,7 @@ export function setVocabularyStashMembership(wordId: string,inStash: boolean,exp
       .run(inStash?1:0,inStash?1:0,before.learnerId,wordId);
     emitBackendEvent({ name: 'vocabulary.stash.membership_changed',learnerId: before.learnerId,actorKind: 'learner',actorId: before.learnerId,
       entityKind: 'word',entityId: wordId,data: { before: before.inStash,after: inStash,mode: before.mode } });
+    requestWordReserveReconciliation();
     return requireWord(wordId);
   });
 }
@@ -142,6 +146,7 @@ export function dismissVocabularyWord(wordId: string,expectedVersion?: number): 
       WHERE learner_id=? AND word_id=?`).run(new Date().toISOString(),changedAt,before.learnerId,wordId);
     emitBackendEvent({ name: 'vocabulary.word.dismissed',learnerId: before.learnerId,actorKind: 'learner',actorId: before.learnerId,
       entityKind: 'word',entityId: wordId,data: { before: { mode: before.mode,inStash: before.inStash },after: { mode: 'unstudied',inStash: false } } });
+    requestWordReserveReconciliation();
     return requireWord(wordId);
   });
 }
@@ -158,6 +163,7 @@ export function changeVocabularyMode(wordId: string, mode: VocabularyWordMode, e
     emitBackendEvent({ name: 'vocabulary.mode.changed', learnerId: before.learnerId, actorKind: 'learner',
       actorId: before.learnerId, entityKind: 'word', entityId: wordId,
       data: { before: before.mode, after: mode, automaticPromotionPaused, source: 'explicit_choice' } });
+    requestWordReserveReconciliation();
     return requireWord(wordId);
   });
 }

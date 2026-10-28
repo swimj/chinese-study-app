@@ -30,7 +30,7 @@ function forms(word: Lexical): string[] { return [...new Set([word.hanzi,word.tr
 /** Deterministic conversion and publication materialization. Caller owns the transaction (normally migration runner's after hook).
  * Uses only the supplied database: no app singleton, current learner context or provider calls.
  * Re-running skips imported identities and never overwrites subsequent authored changes. */
-export function importLegacyVocabulary(db: DatabaseSync, options: { wordId?: string; originKind?: 'import' | 'model' } = {}): VocabularyImportReport {
+export function importLegacyVocabulary(db: DatabaseSync, options: { wordId?: string; originKind?: 'import' | 'model'; preserveExistingSenseInventory?: boolean } = {}): VocabularyImportReport {
   if (!db.isTransaction) throw new Error('Legacy vocabulary import requires the caller-owned transaction');
   const report: VocabularyImportReport = { createdContent: 0,existingContent: 0,createdSenses: 0,importedPureSchedules: 0,
     importedDeactivations: 0,importedTeachingCompletions: 0,mappedRelationships: 0,unresolvedRelationships: 0,
@@ -129,28 +129,35 @@ export function importLegacyVocabulary(db: DatabaseSync, options: { wordId?: str
     const selected = (eligible.length ? eligible : rows).at(-1)!;
     const inventory = { wordId,documentCount: rows.length,selectedContentId: selected.content_id,eligibleDocumentCount: eligible.length };
     report.bootstrapInventory.push(inventory);
-    let createdWordSenses = 0;
-    for (const row of rows) {
-      const document = parsedDocuments.get(row.content_id)!;
-      for (const use of document.uses) {
-        if (db.prepare('SELECT 1 FROM legacy_sense_imports WHERE source_content_id=? AND source_use_id=?').get(row.content_id,use.id)) continue;
-        const senseId = id('sense',row.content_id,use.id);
-        const description = { label: use.label,notes: [...use.notes],examples: use.exampleIds.map((exampleId) => document.examples.find((example) => example.id === exampleId)!),
-          source: { contentId: row.content_id,useId: use.id,model: row.model } };
-        const sense = { senseId,wordId,description,status: row.content_id === selected.content_id ? 'active' : 'retired',version: 1,
-          createdAt: row.created_at,updatedAt: row.created_at };
-        db.prepare('INSERT INTO senses(sense_id,word_id,description_json,status,version,created_at,updated_at) VALUES (?,?,?,?,1,?,?)')
-          .run(senseId,wordId,JSON.stringify(description),sense.status,row.created_at,row.created_at);
-        db.prepare(`INSERT INTO sense_revision_history(change_id,sense_id,version,previous_version,snapshot_json,change_kind,
-          actor_kind,actor_id,reason_json,recorded_at) VALUES (?,?,1,NULL,?,'created','service',?,?,?)`)
-          .run(id('sense-history',senseId),senseId,JSON.stringify(sense),IMPORT_ACTOR,JSON.stringify({ sourceContentId: row.content_id,sourceUseId: use.id }),row.created_at);
-        db.prepare('INSERT INTO legacy_sense_imports VALUES (?,?,?,1)').run(row.content_id,use.id,senseId);
-        report.createdSenses += 1; createdWordSenses += 1;
+    // Runtime source refresh is not authority to duplicate or establish an existing
+    // sense inventory. New source-use relationships remain unresolved until mapped.
+    const preserveInventory = options.preserveExistingSenseInventory && (
+      db.prepare('SELECT 1 FROM vocabulary_word_catalogs WHERE word_id=?').get(wordId)
+      || db.prepare('SELECT 1 FROM senses WHERE word_id=? LIMIT 1').get(wordId));
+    if (!preserveInventory) {
+      let createdWordSenses = 0;
+      for (const row of rows) {
+        const document = parsedDocuments.get(row.content_id)!;
+        for (const use of document.uses) {
+          if (db.prepare('SELECT 1 FROM legacy_sense_imports WHERE source_content_id=? AND source_use_id=?').get(row.content_id,use.id)) continue;
+          const senseId = id('sense',row.content_id,use.id);
+          const description = { label: use.label,notes: [...use.notes],examples: use.exampleIds.map((exampleId) => document.examples.find((example) => example.id === exampleId)!),
+            source: { contentId: row.content_id,useId: use.id,model: row.model } };
+          const sense = { senseId,wordId,description,status: row.content_id === selected.content_id ? 'active' : 'retired',version: 1,
+            createdAt: row.created_at,updatedAt: row.created_at };
+          db.prepare('INSERT INTO senses(sense_id,word_id,description_json,status,version,created_at,updated_at) VALUES (?,?,?,?,1,?,?)')
+            .run(senseId,wordId,JSON.stringify(description),sense.status,row.created_at,row.created_at);
+          db.prepare(`INSERT INTO sense_revision_history(change_id,sense_id,version,previous_version,snapshot_json,change_kind,
+            actor_kind,actor_id,reason_json,recorded_at) VALUES (?,?,1,NULL,?,'created','service',?,?,?)`)
+            .run(id('sense-history',senseId),senseId,JSON.stringify(sense),IMPORT_ACTOR,JSON.stringify({ sourceContentId: row.content_id,sourceUseId: use.id }),row.created_at);
+          db.prepare('INSERT INTO legacy_sense_imports VALUES (?,?,?,1)').run(row.content_id,use.id,senseId);
+          report.createdSenses += 1; createdWordSenses += 1;
+        }
       }
+      db.prepare(`INSERT INTO vocabulary_word_catalogs(word_id,sense_catalog_version,senses_established_at) VALUES (?,1,?)
+        ON CONFLICT(word_id) DO UPDATE SET sense_catalog_version=sense_catalog_version+?`)
+        .run(wordId,selected.created_at,createdWordSenses > 0 ? 1 : 0);
     }
-    db.prepare(`INSERT INTO vocabulary_word_catalogs(word_id,sense_catalog_version,senses_established_at) VALUES (?,1,?)
-      ON CONFLICT(word_id) DO UPDATE SET sense_catalog_version=sense_catalog_version+?`)
-      .run(wordId,selected.created_at,createdWordSenses > 0 ? 1 : 0);
     emit(`bootstrap:${wordId}:${selected.content_id}:${rows.length}`,'vocabulary.bootstrap.inventory','word',wordId,inventory,selected.created_at);
   }
   const packages = db.prepare(`SELECT * FROM word_teaching_packages ${options.wordId === undefined ? '' : 'WHERE word_id=?'} ORDER BY created_at,package_id`).all(...filterArgs) as PackageRow[];
@@ -300,5 +307,5 @@ export function importLegacyVocabulary(db: DatabaseSync, options: { wordId?: str
 /** Indexed per-word publication seam; new model calls stay in the authoring service. */
 export function importLegacyVocabularyWord(db: DatabaseSync, wordId: string, options: { originKind?: 'import' | 'model' } = {}): VocabularyImportReport {
   if (!wordId.trim()) throw new Error('Expected lexical word identity');
-  return importLegacyVocabulary(db,{ ...options,wordId });
+  return importLegacyVocabulary(db,{ ...options,wordId,preserveExistingSenseInventory: true });
 }

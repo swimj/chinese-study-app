@@ -11,6 +11,8 @@ export type { VocabularyPersistedSession, VocabularySessionCompletion } from '..
 import { getDb } from './connection.ts';
 import { nextReviewSchedule } from './review-policy.ts';
 import { REVIEW_PHASE_RECENCY_GUARD_HOURS } from './types.ts';
+import { requestWordReserveReconciliation } from './word-reserve.ts';
+import { createVocabularyPracticePreparation } from '../vocabulary/preparation.ts';
 import { enqueueVocabularyConnections } from '../vocabulary/connections.ts';
 import { applyVocabularyContextualSelection } from './vocabulary-contextual-selection.ts';
 import { applyVocabularyRecognition } from './vocabulary-recognition.ts';
@@ -446,6 +448,14 @@ export function closeVocabularySessionCompletion(sessionId: string, completionId
       getDb().prepare("UPDATE vocabulary_session_completions SET status = 'closed',closed_at = ?,report_json = ?,last_error = NULL WHERE completion_id = ?")
         .run(now, JSON.stringify(projection), previous.completion_id);
       enqueueVocabularyConnections(sessionId, previous.completion_id, projection, now);
+      requestWordReserveReconciliation(now);
+      // General practice is future-session work. Admission or an in-flight teaching
+      // observation is insufficient: queue only when teaching commits durably here.
+      const taught = Object.values(projection.words).filter(word => word.teachingCompleted);
+      if (taught.length) {
+        const preparation = createVocabularyPracticePreparation({ now: () => now });
+        for (const word of taught) preparation.ensure(word.wordId);
+      }
       emitBackendEvent({ name: 'vocabulary.session.closed', learnerId: requireLearnerId(), sessionId,
         data: { completionId: previous.completion_id, throughSequence: previous.through_sequence, coveredWordIds: projection.coveredWordIds, uncoveredWordIds: projection.uncoveredWordIds }, occurredAt: now });
       return completionDto(completionRow(sessionId, previous.completion_id)!, now);

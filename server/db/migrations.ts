@@ -195,6 +195,9 @@ export const schemaMigrations: readonly SchemaMigration[] = [{
 }, {
   id: 'app_schema:0056_operator_only_access',
   sql: fs.readFileSync(new URL('./migrations/0056_operator_only_access.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0057_preparation_compatibility',
+  sql: fs.readFileSync(new URL('./migrations/0057_preparation_compatibility.sql', import.meta.url), 'utf8'),
 }];
 
 function checksum(value: string): string {

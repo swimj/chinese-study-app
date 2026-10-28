@@ -1,7 +1,7 @@
 import { config } from '../db/connection.ts';
 import { runWithLearnerId } from '../db/learner-context.ts';
 import { getHostedServiceControls } from '../db/hosted-operations.ts';
-import { reconcileWordPreparationReserve } from '../db/persistence.ts';
+import { reconcileVocabularyPreparationReserve } from '../vocabulary/preparation-reserve.ts';
 import { listPendingWordReserveLearners } from '../db/word-reserve.ts';
 import { createWordIntroductionProvider } from './provider.ts';
 import { createWordPreparationWorker } from './preparation-worker.ts';
@@ -21,7 +21,7 @@ export function startWordPreparationRuntime() {
     const controls = getHostedServiceControls();
     if (!controls.maintenanceMode) {
       for (const learnerId of listPendingWordReserveLearners()) {
-        try { runWithLearnerId(learnerId, () => reconcileWordPreparationReserve()); }
+        try { runWithLearnerId(learnerId, () => reconcileVocabularyPreparationReserve()); }
         catch { console.error('Word reserve reconciliation failed'); }
       }
     }

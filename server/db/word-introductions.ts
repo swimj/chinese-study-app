@@ -1,3 +1,4 @@
+import { VOCABULARY_PREPARATION_EPOCH } from './preparation-compatibility.ts';
 import { importLegacyVocabularyWord } from './vocabulary-import.ts';
 import { linkVocabularyPublicationOutput } from './vocabulary-provenance.ts';
 import { isBootstrapRevealSnapshot } from '../../src/domain/word-content/reveal.ts';
@@ -172,6 +173,7 @@ type PreparationRow = {
   word_id: string;
   content_id: string | null;
   package_id: string | null;
+  preparation_epoch: number;
   active_stage: 'bootstrap' | 'teaching' | null;
   lease_token: string | null;
   lease_expires_at: string | null;
@@ -180,7 +182,7 @@ export type WordIntroductionStage = 'bootstrap' | 'teaching';
 
 function preparationRow(wordId: string): PreparationRow | null {
   return getDb().prepare(`
-    SELECT word_id, content_id, package_id, active_stage, lease_token, lease_expires_at
+    SELECT word_id, content_id, package_id, preparation_epoch, active_stage, lease_token, lease_expires_at
     FROM word_introduction_preparation WHERE word_id = ?
   `).get(wordId) as PreparationRow | undefined ?? null;
 }
@@ -337,9 +339,9 @@ export function finishSharedWordIntroductionBootstrap(
     const saved = insertContent(content, sourceModel);
     getDb().prepare(`
       UPDATE word_introduction_preparation
-      SET content_id = ?, active_stage = NULL, lease_token = NULL, lease_expires_at = NULL
+      SET content_id = ?, preparation_epoch = ?, active_stage = NULL, lease_token = NULL, lease_expires_at = NULL
       WHERE word_id = ?
-    `).run(content.id, wordId);
+    `).run(content.id, VOCABULARY_PREPARATION_EPOCH, wordId);
     importLegacyVocabularyWord(getDb(),wordId,{ originKind: 'model' });
     linkVocabularyPublicationOutput(getDb(),invocationId,'bootstrap',content.id);
     return saved;
@@ -560,7 +562,9 @@ export function getSharedWordIntroductionContent(wordId: string): WordContentDoc
   return row ? parseWordContent(JSON.parse(row.content_json)) : null;
 }
 export function getSharedWordTeachingPackageId(wordId: string): string | null {
-  return eligiblePackageRows(wordId)[0]?.package_id ?? null;
+  const current = preparationRow(wordId);
+  if (!current || current.preparation_epoch < VOCABULARY_PREPARATION_EPOCH) return eligiblePackageRows(wordId)[0]?.package_id ?? null;
+  return eligiblePackageRows(wordId).find(row => row.package_id === current?.package_id && row.content_id === current?.content_id)?.package_id ?? null;
 }
 
 /** Validate historical post-reveal material against its immutable source, even after withdrawal. */
