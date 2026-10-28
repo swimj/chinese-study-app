@@ -285,6 +285,15 @@ Reading the lesson and approving a content proposal are unrelated to that
 correction. It applies once to current state and preserves explicit mode and
 refresh choices. Provider failure does not invalidate session completion.
 
+A dictionary cue spanning distinct uses can be replaced by a general-practice
+repertoire. Reflection and ordinary preparation share the general-exercise
+authoring contract: concise direct evocations and contextual clozes chosen for
+the target's own lexical contribution, with optional post-answer teaching.
+Reflection retains its selected model and supplies the established sense
+inventory. Its response adapter creates a proposal that replaces the source cue
+and adds the remaining exercises; application requires operator approval.
+Ordinary preparation publishes validated exercises through its preparation policy.
+
 For a single-word production exercise with an admitted intended sense, local
 improvement and a shared-practice referral are independently optional. Local
 edits preserve that exercise's answer contract. Referral written forms are

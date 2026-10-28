@@ -19,6 +19,12 @@ and release readiness are tracked separately.
 - **Local improvement** preserves that sense and the exercise's accepted answers.
   Local drafts and a pure-cue referral are independently optional. Raw responses
   and learner reactions inform assessment without dictating the result.
+- **Repertoire generation** shares ordinary preparation's general-exercise
+  authoring call and validation, using the reflection job's selected model.
+  Active sense descriptions provide uses and available examples. The adapter
+  preserves structured clozes and post-answer teaching notes in a proposal: one
+  operation replaces the source and the others add exercises. Generation leaves
+  the live exercise pool unchanged until operator application.
 - **Promotion** resolves referral words to lexical identities and examines
   overlapping pure cues in the same publication scope. It can reject the referral,
   reuse a suitable cue, extend membership and update its integrated teaching note,
