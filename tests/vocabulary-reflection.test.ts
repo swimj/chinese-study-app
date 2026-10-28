@@ -15,7 +15,7 @@ import { createVocabularySession, appendVocabularySessionActions, stageVocabular
 import { ingestVocabularySessionEvidence, getVocabularyReflectionCase, listVocabularyReflectionCases,
   claimVocabularyReflectionJob, recoverVocabularyReflectionJobs, failVocabularyReflectionJob, retryOwnVocabularyFeedback,
   recordVocabularyFeedbackJudgment, recordVocabularyImprovementResult, listOwnVocabularyMessages, markOwnVocabularyMessageSeen, dismissOwnVocabularyMessage, restoreOwnVocabularyMessage, getOwnVocabularyFeedbackAttention,
-  requestVocabularySecondOpinion, listVocabularySecondOpinions, listVocabularyNoProposalCases, requestVocabularyCaseSecondOpinion, retryVocabularyReflectionJob, createVocabularyProposal, saveVocabularyProposal, approveVocabularyProposal, applyVocabularyProposal,
+  requestVocabularyReassessment, requestVocabularySecondOpinion, listVocabularySecondOpinions, listVocabularyNoProposalCases, requestVocabularyCaseSecondOpinion, retryVocabularyReflectionJob, createVocabularyProposal, saveVocabularyProposal, approveVocabularyProposal, applyVocabularyProposal,
   previewVocabularyProposal, getVocabularyProposal, listVocabularyProposals, closeVocabularyProposal, closeVocabularyTeachingCase, closeVocabularyCase, getVocabularyCaseWorkspace } from '../server/db/vocabulary-reflection.ts';
 import type { VocabularyContentDraft, VocabularyContent } from '../src/domain/vocabulary-content.ts';
 import type { VocabularySessionAction, VocabularyEncounterSnapshot } from '../src/domain/vocabulary-session.ts';
@@ -51,6 +51,7 @@ beforeEach(() => {
 
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0042_vocabulary_sessions.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0044_vocabulary_reflection.sql',import.meta.url),'utf8'));
+  sql.exec(fs.readFileSync(new URL('../server/db/migrations/0059_vocabulary_reassessment.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0055_vocabulary_feedback_dismissal.sql',import.meta.url),'utf8'));
   sql.exec(`INSERT INTO learner_words(learner_id,word_id,in_stash,added_at,mode,mode_changed_at) VALUES
     ('alice','a',1,'2026-01-01','practice','2026-01-01'),('alice','b',1,'2026-01-01','practice','2026-01-01'),
@@ -750,4 +751,27 @@ test('historical resolved records without authoritative evidence have no fabrica
   const evidence=cases.find(value=>value.kind==='exercise_improvement')!;
   sql.prepare("UPDATE reflection_cases SET status='closed' WHERE case_id=?").run(evidence.caseId);
   assert.equal(getVocabularyReflectionCase(evidence.caseId).resolvedAt,null);
+});
+
+
+test('reassessment queues an independent model-selected job and prevents concurrent retries',()=>{
+  sql.exec('ALTER TABLE vocabulary_reflection_jobs ADD COLUMN model_choice TEXT');
+  const {cases}=ingest([present('cue',null),response('cue')]);
+  const caseId=cases.find(item=>item.kind==='exercise_improvement')!.caseId;
+  const initial=claimVocabularyReflectionJob({kind:'exercise_improvement',now:judgedAt})!;
+  recordVocabularyImprovementResult(initial.jobId,initial.leaseToken,{diagnosis:'Original judgment',proposal:null},judgedAt);
+  const request=requestVocabularyReassessment(caseId,'editor','openai:gpt-6-sol-high');
+  assert.notEqual(request.caseId,caseId);
+  assert.equal(getVocabularyCaseWorkspace(caseId,'editor').reassessment?.jobId,request.jobId);
+  assert.throws(()=>requestVocabularyReassessment(caseId,'editor','openai:gpt-6-sol-high'),/already in progress/);
+  const now=new Date(Date.now()+1000).toISOString();
+  const child=claimVocabularyReflectionJob({kind:'exercise_improvement',now})!;
+  assert.equal(child.jobId,request.jobId);
+  assert.equal(child.reassessmentSourceJobId,initial.jobId);
+  assert.equal(sql.prepare('SELECT model_choice FROM vocabulary_reflection_jobs WHERE job_id=?').get(child.jobId)!.model_choice,'openai:gpt-6-sol-high');
+  failVocabularyReflectionJob(child.jobId,child.leaseToken,'failed',now,now);
+  const another=requestVocabularyReassessment(caseId,'editor','openai:gpt-5.6-luna-high');
+  assert.throws(()=>retryVocabularyReflectionJob(child.jobId,'editor',now),/already in progress/);
+  sql.prepare("UPDATE vocabulary_reflection_jobs SET created_at='2000-01-01T00:00:00.000Z' WHERE job_id=?").run(another.jobId);
+  assert.equal(getVocabularyCaseWorkspace(caseId,'editor').reassessment?.jobId,another.jobId);
 });

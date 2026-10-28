@@ -203,6 +203,9 @@ export const schemaMigrations: readonly SchemaMigration[] = [{
   id: 'app_schema:0058_shared_dictionary_baselines',
   sql: fs.readFileSync(new URL('./migrations/0058_shared_dictionary_baselines.sql', import.meta.url), 'utf8'),
   after: migrateSharedDictionaryBaselines,
+}, {
+  id: 'app_schema:0059_vocabulary_reassessment',
+  sql: fs.readFileSync(new URL('./migrations/0059_vocabulary_reassessment.sql', import.meta.url), 'utf8'),
 }];
 
 function checksum(value: string): string {

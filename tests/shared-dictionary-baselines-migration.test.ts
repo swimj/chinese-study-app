@@ -72,7 +72,7 @@ test('populated offline upgrade corrects stock baselines and versions pending re
     db.prepare('INSERT INTO learner_content_deactivations VALUES(?,?,?)').run('alice',source.contentId,at);
     const history=all(db,'content_revision_history'),proposalHistory=all(db,'proposal_revision_history'),reviews=all(db,'proposal_reviews');
     const controls=all(db,'learner_content_deactivations'),count=all(db,'content_items').length,guard=schema(db);
-    assert.deepEqual(migrateDatabase(db),[SHARED_DICTIONARY_BASELINES_MIGRATION]);
+    assert.deepEqual(migrateDatabase(db),[SHARED_DICTIONARY_BASELINES_MIGRATION,'app_schema:0059_vocabulary_reassessment']);
     const current=db.prepare('SELECT * FROM content_items WHERE content_id=?').get(source.contentId)!;
     assert.equal(current.access_scope,'shared');assert.equal(current.owner_learner_id,null);assert.equal(current.version,2);
     assert.equal(db.prepare('SELECT access_scope FROM content_items WHERE content_id=?').get(edited.contentId)!.access_scope,'private');
@@ -91,7 +91,7 @@ test('populated offline upgrade corrects stock baselines and versions pending re
     assert.equal(db.prepare("SELECT version FROM content_proposals WHERE proposal_id='operator-edited-service'").get()!.version,2);
     assert.deepEqual(db.prepare("SELECT operations_json FROM content_proposals WHERE proposal_id='operator-edited-service'").get()!.operations_json,JSON.stringify(serviceEdited.operations));
     for(const id of ['closed','manual','stale'])assert.equal(db.prepare('SELECT version FROM content_proposals WHERE proposal_id=?').get(id)!.version,1);
-    assert.deepEqual(schema(db),guard);assertSchemaCurrent(db);
+    assert.deepEqual(schema(db).filter(row=>row.name!=='vocabulary_reflection_jobs'),guard.filter(row=>row.name!=='vocabulary_reflection_jobs'));assertSchemaCurrent(db);
     assert.throws(()=>db.prepare("UPDATE content_items SET access_scope='private',owner_learner_id='alice' WHERE content_id=?").run(source.contentId),/immutable/);
     assert.throws(()=>db.exec("UPDATE proposal_revision_history SET actor_id='rewritten'"),/immutable/);
     const after=all(db,'content_revision_history');assert.deepEqual(migrateDatabase(db),[]);assert.deepEqual(all(db,'content_revision_history'),after);
@@ -107,7 +107,7 @@ test('failed migration rolls back scope, proposal revision, audit events and the
     const target=schemaMigrations[index]!;
     assert.throws(()=>migrateDatabase(db,[...schemaMigrations.slice(0,index),{...target,after:connection=>{target.after!(connection);throw new Error('Injected after-hook failure');}}]),/Injected/);
     assert.deepEqual(tables.map(table=>all(db,table)),before);assert.deepEqual(schema(db),beforeSchema);
-    assert.deepEqual(migrateDatabase(db),[SHARED_DICTIONARY_BASELINES_MIGRATION]);
+    assert.deepEqual(migrateDatabase(db),[SHARED_DICTIONARY_BASELINES_MIGRATION,'app_schema:0059_vocabulary_reassessment']);
   }finally{db.close();}
 });
 

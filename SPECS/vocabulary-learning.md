@@ -326,7 +326,9 @@ does not present current or proposed content as the original. Evidence and
 manual editing are available on drill-in. Operational failures and unresolved
 cases are separate from ready suggestions. Second opinions are retained,
 advisory reviews bound to an exact proposal version; they do not replace edits
-or authorize application.
+or authorize application. Operators can also request a fresh improvement
+assessment using a chosen model. It produces a separate review item and does not
+resolve or apply the original proposal or judgment.
 
 Operators can inspect supporting evidence and edit proposals before approval.
 Dismissal and closing a completed no-change review accept an optional reason;

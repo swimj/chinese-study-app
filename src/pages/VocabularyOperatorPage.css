@@ -96,3 +96,7 @@
 .vocabulary-served-choices { margin: .4rem 0 .6rem; padding-left: 1.25rem; }
 .vocabulary-improvement-entry-body:empty { display: none; }
 .vocabulary-improvement-entry:has(.vocabulary-improvement-entry-body:empty) .vocabulary-served-lead { margin-bottom: 0; padding-bottom: 0; border-bottom: 0; }
+
+.vocabulary-reassessment-control { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem; }
+.vocabulary-operator-page .vocabulary-reassessment-control label { margin: 0; font-size: .85rem; }
+.vocabulary-reassessment-control select { min-height: 40px; }
