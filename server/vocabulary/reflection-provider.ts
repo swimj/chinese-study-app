@@ -174,7 +174,7 @@ export function createVocabularyReflectionProvider(options:{environment?:NodeJS.
     if (job.secondOpinion) {
       if (job.kind !== 'exercise_improvement') throw new VocabularyReflectionOutputError('Second opinion requires an improvement job');
       const schema=object({verdict:{type:'string',enum:['support','revise','reject']},rationale:text});
-      const sources=job.secondOpinion.proposal.bases.map(base=>{
+      const sources=(job.secondOpinion.proposal?.bases ?? []).map(base=>{
         const row=getDb().prepare('SELECT snapshot_json FROM content_revision_history WHERE content_id=? AND version=?')
           .get(base.contentId,base.expectedVersion) as {snapshot_json:string}|undefined;
         if(!row)throw new VocabularyReflectionOutputError('Second opinion source version is unavailable');
@@ -183,7 +183,7 @@ export function createVocabularyReflectionProvider(options:{environment?:NodeJS.
         return content;
       });
       const response=await runCall('second_opinion',{proposal:job.secondOpinion.proposal,operatorNotes:job.secondOpinion.notes,
-        sources,evidence:projectVocabularyReflectionInput(job)},schema,'second-opinion','1');
+        sources,originalDiagnosis:job.secondOpinion.diagnosis ?? null,evidence:projectVocabularyReflectionInput(job)},schema,'second-opinion','2');
       try {
         if(validateJsonSchema(response.value,schema).length)throw new VocabularyReflectionOutputError('Second opinion failed its strict schema');
         const opinion=response.value as import('../../src/domain/vocabulary-reflection.ts').VocabularySecondOpinionVerdict;

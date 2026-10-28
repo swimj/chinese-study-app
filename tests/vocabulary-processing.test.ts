@@ -119,12 +119,14 @@ test('expired unknown outcome is failed and fenced until explicit retry',async()
 test('strict real injected provider retains service provenance and rejects forged subjects/answers/scope',async()=>{
   pending();const ingestOnly=worker({isConfigured:()=>false,run:async job=>result(job)});await ingestOnly.step();await ingestOnly.stop();
   const job=claimVocabularyReflectionJob({kind:'learner_feedback',now:new Date(clock).toISOString()})!;installModelInvocationLedger();
+  let lastRequest: {messages:{role:string;content:string}[]} | undefined;
   let payload:unknown={diagnosis:'An alternate fits',lesson:'The original cue also permits this answer.',unfairEncounterIds:['session-one']};
   const sense=createVocabularySense({wordId:'a',description:{label:'written character'}},{kind:'operator',id:'editor'});
   establishVocabularySenseCatalog('a',getVocabularySenseCatalog('a').version,{kind:'operator',id:'editor'});
   const adapter=createOpenAiCompatibleAdapter({id:'openai',defaultBaseUrl:'https://example.invalid',apiKeyEnvironmentVariable:'KEY',structuredOutputMode:'json_schema',maxTokensField:'max_tokens',
     fetchImplementation:async(_url,init)=>{
       const request=JSON.parse(String(init?.body)) as {response_format:{json_schema:{name:string}}};
+      lastRequest=request as typeof request & {messages:{role:string;content:string}[]};
       const value=request.response_format.json_schema.name.includes('sense_mapping')?{outcome:'single_sense',rationale:'A written character.',senseIds:[sense.senseId]}:payload;
       return new Response(JSON.stringify({id:'provider-1',model:'resolved',choices:[{message:{content:JSON.stringify(value)},finish_reason:'stop'}],usage:{prompt_tokens:100,completion_tokens:10}}),{status:200});
     }});
@@ -160,8 +162,14 @@ test('strict real injected provider retains service provenance and rejects forge
     assert.equal(opinion.result.proposal,null);assert.equal(opinion.result.secondOpinion?.verdict,'revise');
   }
   const opinionInvocation=sql.prepare("SELECT * FROM model_invocations WHERE prompt_name='vocabulary-reflection-second-opinion'").get()!;
-  assert.equal(opinionInvocation.workflow_id,improve.jobId);assert.equal(opinionInvocation.prompt_version,'1');
+  assert.equal(opinionInvocation.workflow_id,improve.jobId);assert.equal(opinionInvocation.prompt_version,'2');
   assert.equal(opinionInvocation.prompt_template,`${fs.readFileSync(new URL('../server/vocabulary/reflection-prompts/reasoning.md',import.meta.url),'utf8')}\n\n${fs.readFileSync(new URL('../server/vocabulary/reflection-prompts/second-opinion.md',import.meta.url),'utf8')}`);
+  const noChangeJob:VocabularyReflectionJob={...improve,secondOpinion:{requestId:'no-change',proposal:null,notes:'Check the answer',diagnosis:'No correction needed'}};
+  await provider.run(noChangeJob);
+  const input=JSON.parse(lastRequest!.messages.find(item=>item.role==='user')!.content);
+  assert.equal(input.proposal,null);assert.equal(input.operatorNotes,'Check the answer');
+  assert.equal(input.originalDiagnosis,'No correction needed');assert.equal(input.evidence.sourceContent.contentId,'one');
+  assert.equal(input.evidence.sourceContent.version,1);assert.equal(input.evidence.encounters[0].served.body.prompt,'Prompt one');
   payload={verdict:'support',rationale:'Fine',operations:[]};await assert.rejects(()=>provider.run(opinionJob),/strict schema/);
   const teaching={...improve,evidence:{...improve.evidence,kind:'teaching_review' as const,evidence:improve.evidence.evidence.map(item=>({...item,snapshot:{...item.snapshot,role:'teaching' as const}}))}};
   await assert.rejects(()=>provider.run(teaching),/manual inbox/);

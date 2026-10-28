@@ -13,7 +13,7 @@ export type VocabularyReflectionJob = {
   kind: 'learner_feedback' | 'exercise_improvement';
   attemptNumber: number; leaseToken: string; leaseExpiresAt: string;
   evidence: VocabularyReflectionCase;
-  secondOpinion?: { requestId: string; proposal: VocabularyContentProposal; notes: string };
+  secondOpinion?: { requestId: string; proposal: VocabularyContentProposal | null; notes: string; diagnosis?: VocabularyJson };
 };
 export type VocabularyFeedbackJudgmentInput = {
   diagnosis: VocabularyJson; message: VocabularyJson | null;

@@ -23,7 +23,7 @@ const OPERATOR_TABS = [
 ] as const;
 type OperatorTab = typeof OPERATOR_TABS[number]['id'];
 
-export function OperatorUsagePulsePage({ legacyContentEditing = true }: { legacyContentEditing?: boolean } = {}) {
+export function OperatorUsagePulsePage() {
   const [tab, setTab] = useState<OperatorTab>('usage');
   return <section className="panel operator-usage-pulse">
     <h2>Operator</h2>
@@ -49,7 +49,7 @@ export function OperatorUsagePulsePage({ legacyContentEditing = true }: { legacy
       {tab === 'usage' && <UsagePulsePanel />}
       {tab === 'invocations' && <ModelInvocationsPanel />}
       {tab === 'sharing' && <ContentSharingPanel />}
-      {tab === 'quality' && <ContentQualityPanel legacyContentEditing={legacyContentEditing} />}
+      {tab === 'quality' && <ContentQualityPanel />}
       {tab === 'failures' && <PreparationFailuresPanel />}
       {tab === 'whats-new' && <WhatsNewEditor />}
       {tab === 'banner' && <ServiceBannerPanel />}

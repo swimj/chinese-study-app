@@ -74,6 +74,13 @@ application, closure, and failed-work retries. Proposal mutations carry expected
 versions; application requires exact approval and an idempotency key. See
 [the implementation guide](vocabulary-learning.md) for content authority.
 
+`GET /api/operator/vocabulary/no-proposal-cases` lists completed original
+exercise-improvement judgments with no proposal and no operator closure; `?status=closed` lists closed reviews.
+`POST /api/operator/vocabulary/cases/:id/second-opinions` accepts optional `notes`
+and queues an advisory review of the retained no-change judgment. Case workspace
+jobs expose the advisory status and result; the existing job retry and case close
+routes apply. This path does not create or apply a content proposal.
+
 Single-word improvement results can include `pureCueReferral` (null or
 `{candidateWords: string[], sharedPurpose: string, rationale: string}`) and a
 `pureCuePromotion` assessment. Referral forms are advisory. Promotion records
@@ -1081,7 +1088,7 @@ jobs resume after restart. See [the contract](../SPECS/session-debrief.md).
 
 The revisioned draft, validation, application and evidence-history endpoints
 under `/api/operator/content-improvements` are described in the
-[workspace API contract](content-improvement.md#agent-api). All require operator
+[correction API contract](content-improvement.md#agent-api). All require operator
 access. Application is an explicit, revision-checked transaction, independent
 of learner feedback and study commits.
 

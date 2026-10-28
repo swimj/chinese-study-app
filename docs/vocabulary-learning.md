@@ -460,6 +460,13 @@ and learner evidence. Its support/revise/reject opinion is advisory: it neither
 rewrites the proposal nor applies content. Earlier opinions remain labeled with
 their proposal version after edits. Failed reviews require explicit retry; teaching
 cases and standalone manual proposals do not yet support this review path.
+Completed exercise judgments that propose no change also appear in Awaiting
+review, including retained historical judgments. The operator can inspect the
+served exercise and rationale, draft a correction from current content, request
+an advisory second opinion with a question, or close the review with a reason.
+The second opinion reviews the no-change judgment; it does not create or apply a
+proposal. Closed reviews remain in History, with their retained jobs and results in the case evidence.
+
 Single-word local improvement drafts wording changes and additional variants of
 the supplied exercise while preserving its accepted-answer membership. Operators can
 edit the full authored draft, including its answer relationships, before preview.
