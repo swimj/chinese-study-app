@@ -1,5 +1,6 @@
 import { failPreparationAttempt } from '../vocabulary/preparation-retry.ts';
 import { randomUUID } from 'node:crypto';
+import { vocabularyAuthoredPromptBody } from '../../src/domain/vocabulary-production-coverage.ts';
 import type { VocabularyActor, VocabularyJson, VocabularyContent } from '../../src/domain/vocabulary-content.ts';
 import { VOCABULARY_COMPENSATION_POLICY, type VocabularySecondOpinion, type VocabularyReflectionCase, type VocabularyReflectionJob,
   type VocabularyFeedbackJudgmentInput, type VocabularyProposalDraft, type VocabularyContentProposal,
@@ -659,6 +660,79 @@ export function listVocabularyProposals(actorId: string, status?: VocabularyCont
   return (getDb().prepare(`SELECT proposal_id FROM content_proposals WHERE (? IS NULL OR status=?) ORDER BY updated_at DESC,proposal_id`)
     .all(status ?? null,status ?? null) as { proposal_id:string }[]).map(row => withProposalResolution(proposal(row.proposal_id)));
 }
+/** Read-only review data. This is a display projection, not approval validation. */
+type ReassessmentSummary = { eligible: boolean; latest: {caseId:string;jobId:string;status:string;error:string|null} | null };
+function reassessmentSummary(evidence: VocabularyReflectionCase): ReassessmentSummary {
+  const db=getDb();
+  const source=evidence.kind==='exercise_improvement'&&evidence.status==='completed'
+    ? db.prepare("SELECT job_id FROM vocabulary_reflection_jobs WHERE case_id=? AND status='succeeded' AND second_opinion_json IS NULL").get(evidence.caseId) as {job_id:string}|undefined : undefined;
+  if(!source) return {eligible:false,latest:null};
+  const latest=db.prepare(`SELECT case_id AS caseId,job_id AS jobId,status,last_error AS error FROM vocabulary_reflection_jobs
+    WHERE reassessment_source_job_id=? ORDER BY CASE WHEN status IN ('queued','running') THEN 0 ELSE 1 END,created_at DESC,job_id DESC LIMIT 1`).get(source.job_id) as ReassessmentSummary['latest'] | undefined;
+  const original=evidence.evidence[0];
+  const row=original ? db.prepare('SELECT snapshot_json FROM content_revision_history WHERE content_id=? AND version=?').get(original.snapshot.contentId,original.snapshot.contentVersion) as {snapshot_json:string}|undefined : undefined;
+  if(!row) return {eligible:false,latest:latest??null};
+  const content=resolveSharedDictionaryBaselineRevision(db,JSON.parse(row.snapshot_json) as VocabularyContent);
+  if(content.kind!=='exercise') return {eligible:false,latest:latest??null};
+  const stage=content.exerciseType==='pure_cue' ? undefined : db.prepare("SELECT result_json FROM vocabulary_improvement_stages WHERE job_id=? AND stage='sense_mapping' ORDER BY recorded_at DESC LIMIT 1").get(source.job_id) as {result_json:string}|undefined;
+  const mapping=stage?JSON.parse(stage.result_json) as {outcome:string}:null;
+  return {eligible:content.exerciseType==='pure_cue'||!!mapping&&['single_sense','laundry_list'].includes(mapping.outcome),latest:latest??null};
+}
+export function listVocabularyProposalReviewBatch(actorId: string, input: { limit?: number; startProposalId?: string; maxBytes?: number } = {}): {
+  items: { proposal: VocabularyContentProposal; case: VocabularyReflectionCase | null; reassessment: ReassessmentSummary | null;
+    previews: { operationKey: string; source: VocabularyContent | null; result: VocabularyProposalOperation['content'] }[] }[];
+  nextProposalId: string | null;
+} {
+  operator(actorId);
+  const limit = input.limit ?? 20, maxBytes = input.maxBytes ?? 4 * 1024 * 1024;
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50 || !Number.isSafeInteger(maxBytes) || maxBytes < 1) throw new Error('Invalid review batch limit');
+  const db = getDb();
+  const start = input.startProposalId === undefined ? null : db.prepare(`SELECT updated_at,proposal_id FROM content_proposals
+    WHERE proposal_id=? AND status IN ('draft','awaiting_review','approved')`).get(input.startProposalId) as {updated_at:string;proposal_id:string}|undefined;
+  if (input.startProposalId !== undefined && !start) throw new VocabularyReflectionConflict('Starting proposal is no longer open');
+  // Scan each status through the existing (status, updated_at) index. Sorting
+  // the small merge avoids sorting the entire open queue for an IN query.
+  const scan = start
+    ? db.prepare(`SELECT proposal_id,updated_at FROM content_proposals
+        WHERE status=? AND updated_at<=? AND (updated_at<? OR proposal_id>=?)
+        ORDER BY updated_at DESC,proposal_id ASC LIMIT ?`)
+    : db.prepare(`SELECT proposal_id,updated_at FROM content_proposals
+        WHERE status=? ORDER BY updated_at DESC,proposal_id ASC LIMIT ?`);
+  const rows = (['draft','awaiting_review','approved'] as const).flatMap(status =>
+    (start ? scan.all(status,start.updated_at,start.updated_at,start.proposal_id,limit+1)
+      : scan.all(status,limit+1)) as {proposal_id:string;updated_at:string}[])
+    .sort((a,b)=>a.updated_at===b.updated_at ? (a.proposal_id < b.proposal_id ? -1 : a.proposal_id > b.proposal_id ? 1 : 0)
+      : (a.updated_at > b.updated_at ? -1 : 1)).slice(0,limit+1);
+  const items: { proposal: VocabularyContentProposal; case: VocabularyReflectionCase | null; reassessment: ReassessmentSummary | null;
+    previews: { operationKey: string; source: VocabularyContent | null; result: VocabularyProposalOperation['content'] }[] }[] = [];
+  const cases = new Map<string,VocabularyReflectionCase>();
+  const reassessments = new Map<string,ReassessmentSummary>();
+  const sources = new Map<string,VocabularyContent|null>();
+  for (const [index,row] of rows.slice(0,limit).entries()) {
+    const value = withProposalResolution(proposal(row.proposal_id));
+    let caseValue: VocabularyReflectionCase | null = null;
+    if (value.caseId) {
+      caseValue = cases.get(value.caseId) ?? getVocabularyReflectionCase(value.caseId);
+      cases.set(value.caseId,caseValue);
+    }
+    const previews = value.operations.map(operation => {
+      let source: VocabularyContent | null = null;
+      if (operation.strategy !== 'create') {
+        if (!sources.has(operation.sourceContentId)) sources.set(operation.sourceContentId,getVocabularyContentForMaintenance(operation.sourceContentId));
+        source = sources.get(operation.sourceContentId)!;
+      }
+      return { operationKey: operation.operationKey, source, result: source
+        ? {...operation.content,body:vocabularyAuthoredPromptBody(source.body,operation.content.body)} : operation.content };
+    });
+    if (caseValue && !reassessments.has(caseValue.caseId)) reassessments.set(caseValue.caseId,reassessmentSummary(caseValue));
+    const item = {proposal:value,case:caseValue,reassessment:caseValue?reassessments.get(caseValue.caseId)!:null,previews};
+    const nextProposalId = rows[index+1]?.proposal_id ?? null;
+    const bytes = Buffer.byteLength(JSON.stringify({items:[...items,item],nextProposalId}),'utf8');
+    if (items.length > 0 && bytes > maxBytes) return {items,nextProposalId:row.proposal_id};
+    items.push(item);
+  }
+  return {items,nextProposalId:rows[limit]?.proposal_id ?? null};
+}
 export function getVocabularyCaseWorkspace(caseId: string, actorId: string): { case: VocabularyReflectionCase;
   jobs: { jobId: string;kind:string;status:string;attemptNumber:number;error:string|null;secondOpinion: boolean;result: VocabularySecondOpinion['result'] }[]; proposals: VocabularyContentProposal[];sources:VocabularyContent[];
   reassessment: {caseId:string;jobId:string;status:string;error:string|null} | null;
@@ -682,7 +756,9 @@ export function getVocabularyCaseWorkspace(caseId: string, actorId: string): { c
   const reassessment=getDb().prepare(`SELECT child.case_id AS caseId,child.job_id AS jobId,child.status,child.last_error AS error
     FROM vocabulary_reflection_jobs child JOIN vocabulary_reflection_jobs source ON source.job_id=child.reassessment_source_job_id
     WHERE source.case_id=? ORDER BY CASE WHEN child.status IN ('queued','running') THEN 0 ELSE 1 END,child.created_at DESC,child.job_id DESC LIMIT 1`).get(caseId) as {caseId:string;jobId:string;status:string;error:string|null}|undefined;
-  return {case:evidence,jobs,reassessment:reassessment??null,proposals:listVocabularyProposals(actorId).filter(value=>value.caseId===caseId),sources,...(improvement ? {diagnosis:improvement.diagnosis} : {}),...(admission ? {admission} : {}),...(improvement?.pureCueReferral?{pureCueReferral:improvement.pureCueReferral}:{}),...(improvement?.pureCuePromotion?{pureCuePromotion:improvement.pureCuePromotion}:{})};
+  const proposals=(getDb().prepare('SELECT proposal_id FROM content_proposals WHERE case_id=? ORDER BY updated_at DESC,proposal_id')
+    .all(caseId) as {proposal_id:string}[]).map(row=>withProposalResolution(proposal(row.proposal_id)));
+  return {case:evidence,jobs,reassessment:reassessment??null,proposals,sources,...(improvement ? {diagnosis:improvement.diagnosis} : {}),...(admission ? {admission} : {}),...(improvement?.pureCueReferral?{pureCueReferral:improvement.pureCueReferral}:{}),...(improvement?.pureCuePromotion?{pureCuePromotion:improvement.pureCuePromotion}:{})};
 }
 export function listVocabularyFailedDispatches(actorId:string):{dispatchId:string;learnerId:string;sessionId:string;error:string}[] {
   operator(actorId);

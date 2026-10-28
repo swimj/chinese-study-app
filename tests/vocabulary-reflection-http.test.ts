@@ -7,7 +7,7 @@ import { setDb } from '../server/db/connection.ts';
 import { runWithLearnerId } from '../server/db/learner-context.ts';
 import { createVocabularyContent,getVocabularyContentForMaintenance } from '../server/db/vocabulary-content.ts';
 import { createVocabularySession,appendVocabularySessionActions,stageVocabularySessionCompletion,closeVocabularySessionCompletion } from '../server/db/vocabulary-sessions.ts';
-import { ingestVocabularySessionEvidence,claimVocabularyReflectionJob,recordVocabularyFeedbackJudgment,recordVocabularyImprovementResult } from '../server/db/vocabulary-reflection.ts';
+import { ingestVocabularySessionEvidence,claimVocabularyReflectionJob,recordVocabularyFeedbackJudgment,recordVocabularyImprovementResult,listVocabularyProposalReviewBatch } from '../server/db/vocabulary-reflection.ts';
 import { registerVocabularyReflectionRoutes } from '../server/vocabulary/reflection-routes.ts';
 import type { VocabularySessionAction } from '../src/domain/vocabulary-session.ts';
 let sql:DatabaseSync,env:Record<string,string|undefined>,handlers:Map<string,RequestHandler[]>,wakes:number;
@@ -320,4 +320,85 @@ test('reassessment endpoint validates model and authority and queues the selecte
   assert.equal(response.status,200);assert.notEqual(response.body.caseId,caseId);assert.equal(wakes,1);
   assert.equal(call('post',route,{params,body:{modelChoice:'openai:gpt-6-sol-high'}}).status,409);
   assert.equal((call('get',`${base}/cases/:id`,{params}).body.reassessment as {jobId:string}).jobId,response.body.jobId);
+});
+
+
+test('review batches page open proposals without writes and always make progress past the byte cap',()=>{
+  const first=call('post',`${base}/proposals`,{body:{...proposal(),caseId}}).body;
+  const second=call('post',`${base}/proposals`,{body:proposal()}).body;
+  const third=call('post',`${base}/proposals`,{body:proposal()}).body;
+  const ids=[first,second,third].map(item=>String(item.proposalId));
+  sql.prepare('UPDATE content_proposals SET updated_at=? WHERE proposal_id=?').run('2026-10-20T00:00:00.000Z',ids[0]);
+  sql.prepare('UPDATE content_proposals SET updated_at=? WHERE proposal_id=?').run('2026-10-19T00:00:00.000Z',ids[1]);
+  sql.prepare('UPDATE content_proposals SET updated_at=?,status=? WHERE proposal_id=?').run('2026-10-21T00:00:00.000Z','closed',ids[2]);
+  const before=Number(sql.prepare('SELECT total_changes() AS n').get()!.n);
+  const one=listVocabularyProposalReviewBatch('editor',{limit:2,maxBytes:1});
+  assert.equal(one.items.length,1);assert.equal(one.items[0]!.proposal.proposalId,ids[0]);assert.equal(one.nextProposalId,ids[1]);
+  assert.equal(one.items[0]!.case!.caseId,caseId);assert.ok(JSON.stringify(one.items[0]!.case!.evidence).includes('Private learner comment'));
+  assert.ok(!('workspace' in one.items[0]!));
+  assert.equal(one.items[0]!.previews[0]!.source!.contentId,'one');
+  assert.deepEqual(one.items[0]!.previews[0]!.result.body,{prompt:'A written symbol used in a language'});
+  const next=call('get',`${base}/proposals/review-batch`,{query:{limit:'2',startProposalId:one.nextProposalId}});
+  assert.equal(next.status,200);assert.equal((next.body.items as {proposal:{proposalId:string}}[])[0]!.proposal.proposalId,ids[1]);
+  assert.equal(next.body.nextProposalId,null);
+  assert.equal(Number(sql.prepare('SELECT total_changes() AS n').get()!.n),before);
+  assert.equal(call('get',`${base}/proposals/review-batch`,{query:{limit:'51'}}).status,400);
+  assert.equal(call('get',`${base}/proposals/review-batch`,{query:{startProposalId:ids[2]}}).status,409);
+  process.env.APP_OPERATOR_CLERK_USER_IDS='';
+  assert.equal(call('get',`${base}/proposals/review-batch`).status,403);
+});
+
+
+test('batch display matches dry-run authored content for create, update and replace including fallback provenance',()=>{
+  const original={prompt:'Original',source:{kind:'dictionary_baseline'}};
+  const revised={prompt:'Rewritten',source:{kind:'dictionary_baseline'}};
+  sql.prepare('UPDATE content_items SET body_json=? WHERE content_id=?').run(JSON.stringify(original),'one');
+  for(const strategy of ['create','update_existing','replace'] as const) {
+    const content={...draft(strategy==='create'?'created':strategy==='replace'?'replacement':'one'),body:revised};
+    const operation=strategy==='create'
+      ? {operationKey:strategy,scope:{kind:'shared'},rationale:'improve',strategy,content}
+      : {operationKey:strategy,scope:{kind:'shared'},rationale:'improve',strategy,sourceContentId:'one',expectedVersion:1,content};
+    const created=call('post',`${base}/proposals`,{body:{operations:[operation],rationale:'Improve'}});
+    assert.equal(created.status,200);
+    const id=String(created.body.proposalId);
+    const batch=listVocabularyProposalReviewBatch('editor',{startProposalId:id,limit:1});
+    const displayed=batch.items[0]!.previews[0]!;
+    const dryRun=call('post',`${base}/proposals/:id/preview`,{params:{id},body:{expectedVersion:1}});
+    assert.equal(dryRun.status,200);
+    const actual=(dryRun.body.previews as {source:{body:unknown}|null;result:{body:unknown}}[])[0]!;
+    assert.deepEqual(displayed.source?.body??null,actual.source?.body??null);
+    assert.deepEqual(displayed.result.body,actual.result.body);
+    if(strategy!=='create')assert.deepEqual(displayed.result.body,{prompt:'Rewritten',source:{kind:'authored_prompt',previous:{kind:'dictionary_baseline'}}});
+  }
+});
+
+test('batch ordering breaks timestamp ties by proposal ID and pages without gaps',()=>{
+  const ids=Array.from({length:3},()=>String(call('post',`${base}/proposals`,{body:proposal()}).body.proposalId)).sort();
+  sql.prepare('UPDATE content_proposals SET updated_at=?').run('2026-10-20T00:00:00.000Z');
+  sql.prepare('UPDATE content_proposals SET status=? WHERE proposal_id=?').run('draft',ids[0]);
+  sql.prepare('UPDATE content_proposals SET status=? WHERE proposal_id=?').run('approved',ids[1]);
+  const first=listVocabularyProposalReviewBatch('editor',{limit:2});
+  assert.deepEqual(first.items.map(item=>item.proposal.proposalId),ids.slice(0,2));
+  assert.equal(first.nextProposalId,ids[2]);
+  const last=listVocabularyProposalReviewBatch('editor',{limit:2,startProposalId:first.nextProposalId!});
+  assert.deepEqual(last.items.map(item=>item.proposal.proposalId),ids.slice(2));
+  assert.equal(last.nextProposalId,null);
+});
+
+
+test('batch displays each operation even if its source is missing',()=>{
+  const operations=[
+    {operationKey:'update',scope:{kind:'shared'},rationale:'Improve',strategy:'update_existing',sourceContentId:'one',expectedVersion:1,content:draft()},
+    {operationKey:'create',scope:{kind:'shared'},rationale:'Add',strategy:'create',content:draft('new')},
+  ];
+  const created=call('post',`${base}/proposals`,{body:{operations,rationale:'Two changes'}});
+  assert.equal(created.status,200);const id=String(created.body.proposalId);
+  const batch=listVocabularyProposalReviewBatch('editor',{startProposalId:id});
+  assert.deepEqual(batch.items[0]!.previews.map(item=>item.operationKey),['update','create']);
+  const altered=[{...operations[0],sourceContentId:'missing'},operations[1]];
+  sql.prepare('UPDATE content_proposals SET operations_json=? WHERE proposal_id=?').run(JSON.stringify(altered),id);
+  const missing=listVocabularyProposalReviewBatch('editor',{startProposalId:id});
+  assert.equal(missing.items[0]!.previews[0]!.source,null);
+  assert.deepEqual(missing.items[0]!.previews[0]!.result,operations[0]!.content);
+  assert.equal(call('post',`${base}/proposals/:id/approve`,{params:{id},body:{expectedVersion:1}}).status,404);
 });

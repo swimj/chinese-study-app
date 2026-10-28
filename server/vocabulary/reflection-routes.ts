@@ -4,7 +4,7 @@ import type { VocabularyProposalDraft, VocabularyProposalOperation, VocabularyCo
 import { isOfferedReflectionModelChoice } from '../reflection/model-arms.ts';
 import { createVocabularyPracticePreparation } from './preparation.ts';
 import { createOperatorAllowlistMiddleware } from '../operator-access.ts';
-import { getVocabularyCaseWorkspace, listVocabularyReflectionCases, listVocabularyProposals, getVocabularyProposal,
+import { getVocabularyCaseWorkspace, listVocabularyReflectionCases, listVocabularyProposals, listVocabularyProposalReviewBatch, getVocabularyProposal,
   requestVocabularyReassessment, requestVocabularySecondOpinion, listVocabularySecondOpinions, listVocabularyNoProposalCases, requestVocabularyCaseSecondOpinion, createVocabularyProposal, saveVocabularyProposal, previewVocabularyProposal, approveVocabularyProposal,
   applyVocabularyProposal, closeVocabularyProposal, closeVocabularyCase, listOwnVocabularyMessages,
   getOwnVocabularyFeedbackAttention,listOwnVocabularyFeedbackFailures,listOwnVocabularyFeedbackJobs, markOwnVocabularyMessageSeen, dismissOwnVocabularyMessage, restoreOwnVocabularyMessage, retryOwnVocabularyFeedback,
@@ -115,6 +115,14 @@ export function registerVocabularyReflectionRoutes(app:Express,options:{wake?:()
   app.get(`${base}/proposals`,gate,handle((req,actor)=>{
     object(req.query,['status']);const status=req.query.status===undefined?undefined:choice(req.query.status,['draft','awaiting_review','approved','applied','closed'] as const);
     return {items:listVocabularyProposals(actor,status)};
+  }));
+  app.get(`${base}/proposals/review-batch`,gate,handle((req,actor)=>{
+    object(req.query,['limit','startProposalId']);
+    const raw=req.query.limit;
+    if(raw!==undefined&&(typeof raw!=='string'||!/^\d+$/.test(raw)))throw new VocabularyReflectionRequestError('Expected batch limit');
+    const limit=raw===undefined?20:Number(raw);
+    if(!Number.isSafeInteger(limit)||limit<1||limit>50)throw new VocabularyReflectionRequestError('Expected batch limit between 1 and 50');
+    return listVocabularyProposalReviewBatch(actor,{limit,...(req.query.startProposalId===undefined?{}:{startProposalId:text(req.query.startProposalId)})});
   }));
   app.post(`${base}/proposals`,gate,handle((req,actor)=>createVocabularyProposal(parseVocabularyProposalDraft(req.body),actor)));
   app.get(`${base}/proposals/:id`,gate,handle((req,actor)=>getVocabularyProposal(text(req.params.id),actor)));
