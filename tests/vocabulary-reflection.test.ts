@@ -16,7 +16,7 @@ import { ingestVocabularySessionEvidence, getVocabularyReflectionCase, listVocab
   claimVocabularyReflectionJob, recoverVocabularyReflectionJobs, failVocabularyReflectionJob, retryOwnVocabularyFeedback,
   recordVocabularyFeedbackJudgment, recordVocabularyImprovementResult, listOwnVocabularyMessages, markOwnVocabularyMessageSeen, dismissOwnVocabularyMessage, restoreOwnVocabularyMessage, getOwnVocabularyFeedbackAttention,
   requestVocabularyReassessment, requestVocabularySecondOpinion, listVocabularySecondOpinions, listVocabularyNoProposalCases, requestVocabularyCaseSecondOpinion, retryVocabularyReflectionJob, createVocabularyProposal, saveVocabularyProposal, approveVocabularyProposal, applyVocabularyProposal,
-  previewVocabularyProposal, getVocabularyProposal, listVocabularyProposals, closeVocabularyProposal, closeVocabularyTeachingCase, closeVocabularyCase, getVocabularyCaseWorkspace } from '../server/db/vocabulary-reflection.ts';
+  previewVocabularyProposal, getVocabularyProposal, listVocabularyProposals, listVocabularyProposalReviewBatch, closeVocabularyProposal, closeVocabularyTeachingCase, closeVocabularyCase, getVocabularyCaseWorkspace } from '../server/db/vocabulary-reflection.ts';
 import type { VocabularyContentDraft, VocabularyContent } from '../src/domain/vocabulary-content.ts';
 import type { VocabularySessionAction, VocabularyEncounterSnapshot } from '../src/domain/vocabulary-session.ts';
 import type { VocabularyProposalOperation } from '../src/domain/vocabulary-reflection.ts';
@@ -777,7 +777,14 @@ test('reassessment queues an independent model-selected job and prevents concurr
   const caseId=cases.find(item=>item.kind==='exercise_improvement')!.caseId;
   const initial=claimVocabularyReflectionJob({kind:'exercise_improvement',now:judgedAt})!;
   recordVocabularyImprovementResult(initial.jobId,initial.leaseToken,{diagnosis:'Original judgment',proposal:null},judgedAt);
+  const proposal=createVocabularyProposal({caseId,operations:[op()],rationale:'Review'},'editor');
+  const batch=()=>listVocabularyProposalReviewBatch('editor',{startProposalId:proposal.proposalId}).items[0].reassessment;
+  const before=sql.prepare('SELECT total_changes() AS count').get()!.count;
+  assert.deepEqual(batch(),{eligible:true,latest:null});
+  assert.equal(sql.prepare('SELECT total_changes() AS count').get()!.count,before);
   const request=requestVocabularyReassessment(caseId,'editor','openai:gpt-6-sol-high');
+  assert.equal(batch()?.latest?.jobId,request.jobId);
+  assert.equal(batch()?.latest?.status,'queued');
   assert.notEqual(request.caseId,caseId);
   assert.equal(getVocabularyCaseWorkspace(caseId,'editor').reassessment?.jobId,request.jobId);
   assert.throws(()=>requestVocabularyReassessment(caseId,'editor','openai:gpt-6-sol-high'),/already in progress/);
@@ -787,8 +794,11 @@ test('reassessment queues an independent model-selected job and prevents concurr
   assert.equal(child.reassessmentSourceJobId,initial.jobId);
   assert.equal(sql.prepare('SELECT model_choice FROM vocabulary_reflection_jobs WHERE job_id=?').get(child.jobId)!.model_choice,'openai:gpt-6-sol-high');
   failVocabularyReflectionJob(child.jobId,child.leaseToken,'failed',now,now);
+  assert.equal(batch()?.latest?.status,'failed');
   const another=requestVocabularyReassessment(caseId,'editor','openai:gpt-5.6-luna-high');
   assert.throws(()=>retryVocabularyReflectionJob(child.jobId,'editor',now),/already in progress/);
   sql.prepare("UPDATE vocabulary_reflection_jobs SET created_at='2000-01-01T00:00:00.000Z' WHERE job_id=?").run(another.jobId);
   assert.equal(getVocabularyCaseWorkspace(caseId,'editor').reassessment?.jobId,another.jobId);
+  sql.prepare("UPDATE vocabulary_reflection_jobs SET status='succeeded',created_at='9999-01-01T00:00:00.000Z' WHERE job_id=?").run(another.jobId);
+  assert.equal(batch()?.latest?.status,'succeeded');
 });

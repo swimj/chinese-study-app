@@ -1582,10 +1582,12 @@ export const fetchVocabularyWords = () => vocabularyRequest<{words:VocabularyWor
 export const setVocabularyWordMode = (id: string, mode: import('../domain/vocabulary-session').VocabularyWordMode, expectedVersion: number) => vocabularyRequest<unknown>(`/words/${encodeURIComponent(id)}/mode`, {mode,expectedVersion});
 export const refreshVocabularyWord = (id: string) => vocabularyRequest<unknown>(`/words/${encodeURIComponent(id)}/refresh`, {});
 
+/** HTTP failure from the shared feature transport. */
+export class ApiRequestError extends Error { constructor(message:string,readonly status:number){super(message);} }
 /** Shared authenticated transport for feature-specific API contracts. */
 export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await apiFetch(`${API_BASE}${path}`, init);
-  if (!response.ok) throw new Error(await readApiErrorMessage(response, 'The request could not be completed.'));
+  if (!response.ok) throw new ApiRequestError(await readApiErrorMessage(response, 'The request could not be completed.'),response.status);
   return response.json() as Promise<T>;
 }
 export type VocabularyFeedbackMessage = {messageId:string; caseId:string; subjectLabel?:string; body: import('../domain/vocabulary-content').VocabularyJson; createdAt:string; seenAt:string|null; dismissedAt:string|null};

@@ -3,6 +3,7 @@ import {createRoot} from 'react-dom/client';
 import {VocabularyOperatorPage} from '../../src/pages/VocabularyOperatorPage';
 import {OperatorUsagePulsePage} from '../../src/pages/OperatorUsagePulsePage';
 import type {VocabularyOperatorApi} from '../../src/features/vocabulary-operator/api';
+import {ApiRequestError} from '../../src/services/api';
 import type {VocabularyContent} from '../../src/domain/vocabulary-content';
 import type {VocabularyContentProposal,VocabularyReflectionCase,VocabularySecondOpinion} from '../../src/domain/vocabulary-reflection';
 import type {VocabularyEncounterEvidence,VocabularySessionAction} from '../../src/domain/vocabulary-session';
@@ -68,17 +69,21 @@ const api:VocabularyOperatorApi={cases:async kind=>({items:empty?[]:kind==='teac
   proposals:async()=>({items:empty||noProposal?[]:[...proposals.values()]}),proposal:async id=>proposal(id),dispatches:async()=>({items:empty?[]:dispatches}),retryDispatch:async()=>{dispatches=[];return {ok:true};},retryJob:async jobId=>{for(const items of secondOpinions.values()){const item=items.find(value=>value.jobId===jobId);if(item){item.status='succeeded';item.error=null;item.attemptNumber+=1;item.result=reviewResult;}}return {ok:true};},closeCase:async()=>{noProposalClosed=true;noProposalResolvedAt=new Date().toISOString();return {ok:true};},
   create:async value=>{const created={...initial,proposalId:`manual-${proposals.size}`,version:1,caseId:value.caseId??null,operations:value.operations,rationale:value.rationale,status:'awaiting_review' as const};proposals.set(created.proposalId,created);return created;},
   save:async(id,version,value)=>update(id,{version:version+1,operations:value.operations,rationale:value.rationale,status:'awaiting_review'}),
+  reviewBatch:async(start,limit=20)=>{
+    if(failNextLoad&&start==='pepper-proposal'){if(proposals.get('proposal')?.status==='closed')failNextLoad=false;throw new Error('Simulated next item failure');}
+    const open=[...proposals.values()].filter(item=>!['closed','applied'].includes(item.status));const offset=open.findIndex(item=>item.proposalId===start);
+    if(offset<0)return {items:[],nextProposalId:null};
+    const items=await Promise.all(open.slice(offset,offset+limit).map(async proposal=>({proposal,case:proposal.caseId?[exerciseCase,teachingCase,...additionalCases].find(item=>item.caseId===proposal.caseId)??null:null,reassessment:proposal.caseId?{eligible:reassessment,latest:reassessmentRequest?.parentId===proposal.caseId?reassessmentRequest:null}:null,previews:proposal.operations.map(operation=>({operationKey:operation.operationKey,source:operation.strategy==='create'?null:contents.get(operation.sourceContentId)!,result:operation.content}))})));
+    return {items,nextProposalId:open[offset+items.length]?.proposalId??null};
+  },
   preview:async id=>{if(failNextLoad&&id==='pepper-proposal'){if(proposals.get('proposal')?.status==='closed')failNextLoad=false;throw new Error('Simulated next preview failure');}if(new URLSearchParams(location.search).has('stale'))throw new Error('The source changed; revise or dismiss this proposal.');const current=proposal(id);return {proposal:current,previews:current.operations.map(operation=>({operationKey:operation.operationKey,source:operation.strategy==='create'?null:contents.get(operation.sourceContentId)!,result:{...general,...operation.content,version:2} as VocabularyContent})),operations:current.operations.map(operation=>({operationKey:operation.operationKey,strategy:operation.strategy,scope:operation.scope,schedulesRemainOnSource:operation.scope.kind==='shared'?12:1,deactivationsRemainOnSource:0,teachingBindingsRemainOnSource:0,sourceSenseMappings:1,sourceCurations:0,sourceIntroductionExercises:0,transfersRelationships:false}))};},
-  approve:async id=>{update(id,{status:'approved'});return {reviewId:`approved-${id}`};},apply:async id=>{if(failApplication){failApplication=false;throw new Error('Application response failed; retry the approved version.');}const current=update(id,{status:'applied',resolvedAt:new Date().toISOString()});return {applicationId:`application-${id}`,proposalId:id,proposalVersion:current.version,reviewId:`approved-${id}`,changes:[]};},close:async id=>{update(id,{status:'closed',resolvedAt:new Date().toISOString()});return {ok:true};}};
-if (new URLSearchParams(location.search).has('staleCached')) {
-  const originalProposal=api.proposal;let pepperReads=0;
-  api.proposal=async id=>{if(id==='pepper-proposal'&&++pepperReads===2)update(id,{version:2});return originalProposal(id);};
-}
+  approve:async id=>{if(new URLSearchParams(location.search).has('stale'))throw new ApiRequestError('The source changed; revise or dismiss this proposal.',409);update(id,{status:'approved'});return {reviewId:`approved-${id}`};},apply:async id=>{if(new URLSearchParams(location.search).has('staleApply'))throw new ApiRequestError('The source changed during application.',409);if(failApplication){failApplication=false;throw new Error('Application response failed; retry the approved version.');}const current=update(id,{status:'applied',resolvedAt:new Date().toISOString()});return {applicationId:`application-${id}`,proposalId:id,proposalVersion:current.version,reviewId:`approved-${id}`,changes:[]};},close:async id=>{update(id,{status:'closed',resolvedAt:new Date().toISOString()});return {ok:true};}};
 if (new URLSearchParams(location.search).has('slow')) {
-  const originalProposal=api.proposal,originalWorkspace=api.workspace,originalPreview=api.preview;
+  const originalProposal=api.proposal,originalWorkspace=api.workspace,originalPreview=api.preview,originalBatch=api.reviewBatch;
   const delay=()=>new Promise<void>(resolve=>setTimeout(resolve,800));
   api.proposal=async id=>{await delay();return originalProposal(id);};
   api.workspace=async id=>{await delay();return originalWorkspace(id);};
   api.preview=async(id,version)=>{await delay();return originalPreview(id,version);};
+  api.reviewBatch=async(id,limit)=>{await delay();return originalBatch(id,limit);};
 }
 createRoot(document.getElementById('root')!).render(<React.StrictMode>{new URLSearchParams(location.search).has('usage')?<OperatorUsagePulsePage initialTab="improvement" improvementApi={api}/>:<VocabularyOperatorPage api={api}/>}</React.StrictMode>);

@@ -103,7 +103,7 @@ approval and evidence guarantees, and the
 how judgments and proposals are produced.
 
 Open `#operator-usage` and select **Content improvement** using the
-[operator allowlist](#access). Opening a proposal validates its saved version.
+[operator allowlist](#access). Opening a proposal displays its saved version and source content.
 The entry leads with **Original served content**: each encounter that retains
 a snapshot shows its cue and accepted answers, in encounter order. An encounter
 without a snapshot says that snapshot is unavailable. Diagnosis, current and
@@ -112,9 +112,11 @@ retained snapshot states that the original served content is unavailable.
 Changed answer criteria and retained teaching are expanded in the comparison.
 
 “Approve and apply” records approval for the displayed version and applies it
-with an idempotent receipt. Preview runs the real writers under rollback;
-approval and application revalidate current bases. A failed application can be
-retried without losing the approval or application key in the current view.
+with an idempotent receipt. Approval runs the real writers under rollback to
+validate the proposal; application revalidates current bases. The optional
+validation control can run the same preview before approval and show relationship
+counts. A failed application can be retried without losing the approval or
+application key in the current view.
 Manual edits create a new version and invalidate the previous preview and review.
 Teaching repairs can update an exercise and explicitly bind its resulting version
 in the same ordered proposal. Failed jobs and dispatches have explicit retry controls.
@@ -142,10 +144,9 @@ automatically.
 
 ### Queue navigation and refresh
 
-The review queue preloads nearby proposal details in the background. A cached
-card appears immediately while its preview is refreshed; approval waits for that
-refresh and remains subject to server validation. After a successful action the
-next known item opens while the queue refreshes. If it cannot load, the completed
+The review queue preloads nearby proposal details in bounded batches. A cached
+card appears immediately; approval remains subject to server validation. After a
+successful action the next known item opens while the queue refreshes. If it cannot load, the completed
 action remains recorded and a retry control is shown.
 
 The operator panel's Content improvement tab presents an Awaiting review queue,
