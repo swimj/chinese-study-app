@@ -52,8 +52,11 @@ export function parseVocabularyStudyCommand(value: unknown): VocabularyStudyComm
   }
 }
 export function registerVocabularyStudyRoutes(app: Express, wake: () => void = () => {}): void {
-  const handle = (fn: (req:Request) => unknown) => (req:Request,res:Response) => {
-    try { const result=fn(req); wake(); res.json(result); }
+  const handle = (fn: (req:Request) => unknown, wakeAfter = false) => (req:Request,res:Response) => {
+    try {
+      const result=fn(req); res.json(result);
+      if(wakeAfter)setImmediate(()=>{try{wake();}catch{console.error('Vocabulary worker wake failed');}});
+    }
     catch(error) {
       const status=error instanceof VocabularySessionInputError || error instanceof VocabularyStateInputError ? 400
         : error instanceof VocabularySessionConflictError || error instanceof VocabularyStateConflict ? 409
@@ -62,8 +65,8 @@ export function registerVocabularyStudyRoutes(app: Express, wake: () => void = (
       res.status(status).json({error:status===500?'This study action could not be saved. Please retry.':(error as Error).message});
     }
   };
-  app.get('/api/vocabulary/session-preview',handle(()=>previewVocabularyStudy()));
-  app.post('/api/vocabulary/sessions',handle(req=>startVocabularyStudy({previewSeed:parseVocabularyPreviewSeed(record(req.body??{}).previewSeed)})));
+  app.get('/api/vocabulary/session-preview',handle(()=>previewVocabularyStudy(),true));
+  app.post('/api/vocabulary/sessions',handle(req=>startVocabularyStudy({previewSeed:parseVocabularyPreviewSeed(record(req.body??{}).previewSeed)}),true));
   app.get('/api/vocabulary/sessions/:id',handle(req=>getVocabularyStudy(req.params.id)));
   app.post('/api/vocabulary/sessions/:id/next',handle(req=>{
     const b=record(req.body); if(b.another!==undefined&&typeof b.another!=='boolean') throw new VocabularySessionInputError('Invalid another flag');
@@ -75,7 +78,7 @@ export function registerVocabularyStudyRoutes(app: Express, wake: () => void = (
   app.post('/api/vocabulary/sessions/:id/completion',handle(req=>{const b=record(req.body);return stageVocabularySessionCompletion(req.params.id,integer(b.throughSequence),undefined,b.activeDurationMs===undefined?{}:{activeDurationMs:integer(b.activeDurationMs)});}));
   app.get('/api/vocabulary/sessions/:id/completion',handle(req=>getVocabularySessionCompletion(req.params.id)));
   app.post('/api/vocabulary/sessions/:id/completion/cancel',handle(req=>cancelVocabularySessionCompletion(req.params.id,text(record(req.body).completionId))));
-  app.post('/api/vocabulary/sessions/:id/completion/close',handle(req=>closeVocabularySessionCompletion(req.params.id,text(record(req.body).completionId))));
+  app.post('/api/vocabulary/sessions/:id/completion/close',handle(req=>closeVocabularySessionCompletion(req.params.id,text(record(req.body).completionId)),true));
   app.get('/api/vocabulary/completion/current',handle(()=>{
     const sessionId=getCurrentVocabularyPendingCompletionSessionId();
     return sessionId?getVocabularyStudy(sessionId):null;
@@ -90,6 +93,6 @@ export function registerVocabularyStudyRoutes(app: Express, wake: () => void = (
   }));
   app.post('/api/vocabulary/words/:id',handle(req=>addVocabularyWord(req.params.id)));
   app.post('/api/vocabulary/words/:id/mode',handle(req=>{const b=record(req.body);return changeVocabularyMode(req.params.id,mode(b.mode),integer(b.expectedVersion));}));
-  app.post('/api/vocabulary/words/:id/refresh',handle(req=>requestVocabularyRefresh(req.params.id)));
+  app.post('/api/vocabulary/words/:id/refresh',handle(req=>requestVocabularyRefresh(req.params.id),true));
   app.post('/api/vocabulary/words/:id/dismiss',handle(req=>dismissVocabularyWord(req.params.id)));
 }

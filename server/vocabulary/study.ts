@@ -1,3 +1,6 @@
+import type { VocabularySessionPayload } from '../../src/domain/vocabulary-session-payload.ts';
+import { selectSequentialBootstrapReveal } from '../../src/domain/word-content/reveal.ts';
+import { createVocabularyPracticePreparation } from './preparation.ts';
 import { vocabularyTeachingSource } from './teaching-source.ts';
 import { vocabularyRevealSnapshot } from './reveal-snapshot.ts';
 import { createHash, randomUUID } from 'node:crypto';
@@ -5,7 +8,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { normalizeProductionAnswerForProfile } from '../../src/study-profile.ts';
 import type { VocabularyContent, VocabularyJson } from '../../src/domain/vocabulary-content.ts';
 import type { VocabularyStudy, VocabularyStudyCommand, VocabularyStudyWord, VocabularySessionPreview } from '../../src/domain/vocabulary-study-api.ts';
-import { getPendingVocabularySkills, isVocabularyWordReadyToCover, isVocabularyTeachingComplete, projectVocabularySession, VOCABULARY_SESSION_POLICY, type VocabularyEncounterSnapshot, type VocabularySessionAction, type VocabularySessionInitialContext,
+import { getPendingVocabularySkills, isVocabularyWordReadyToCover, isVocabularyTeachingComplete, projectVocabularySession, advanceVocabularySession, VOCABULARY_SESSION_POLICY, type VocabularyEncounterSnapshot, type VocabularySessionAction, type VocabularySessionInitialContext,
   type VocabularySessionJson, type VocabularySessionProjection, type VocabularyTeachingRequirements } from '../../src/domain/vocabulary-session.ts';
 import type { VocabularyPersistedSession } from '../../src/domain/vocabulary-session-api.ts';
 import { getDb } from '../db/connection.ts';
@@ -117,12 +120,12 @@ function availableGeneral(wordId:string,mode:'solidify'|'practice'|'maintain'):V
   if(recognize&&!pool.some((entry)=>entry.contentId===recognize.contentId))pool.push(recognize);
   return pool;
 }
-function pureCandidates(session?:VocabularyPersistedSession):VocabularyContent[] {
-  if(session?.context.reviewOrder)return session.context.reviewOrder.filter((entry)=>entry.kind==='pure_cue').map((entry)=>getVocabularyContent(entry.id))
-    .filter((entry):entry is VocabularyContent=>entry!==null&&eligible(entry)&&entry.kind==='exercise'&&entry.exerciseType==='pure_cue');
-  return selectVocabularyPureCueCandidates({ordinaryReviewCount:session?.context.words.filter((word)=>word.mode==='practice'||word.mode==='maintain').length??0,
-    sessionSeed:session?.sessionId??`adoption/${requireLearnerId()}`});
+function sessionPayload(session:VocabularyPersistedSession):VocabularySessionPayload {
+  const payload=session.context.payload;
+  if(!payload||payload.version!==1)throw new VocabularySessionConflictError('This session predates the current player. Start a new session.');
+  return payload;
 }
+function pureCandidates(session:VocabularyPersistedSession):VocabularyContent[] { return sessionPayload(session).pureCues; }
 function snapshot(content:VocabularyContent,role:VocabularyEncounterSnapshot['role'],projection:VocabularySessionProjection):VocabularyEncounterSnapshot {
   const teachingSource=content.kind==='introduction'?vocabularyTeachingSource(content.body):undefined;
   const targetWordId=content.words.find(word=>word.relation==='target')?.wordId;
@@ -140,6 +143,45 @@ function snapshot(content:VocabularyContent,role:VocabularyEncounterSnapshot['ro
     mappingSnapshot:content.words.map((word)=>({wordId:word.wordId,senseId:word.senseId??null,senseMappingEstablishedAt:word.senseMappingEstablishedAt??null})),
   };
 }
+/** Expensive content discovery happens once, before the first encounter. */
+export function composeVocabularySessionPayload(context:VocabularySessionInitialContext):VocabularySessionPayload {
+  const payload:VocabularySessionPayload={version:1,words:{},pureCues:[],snapshots:{}};
+  const empty=projectVocabularySession(context,[]);
+  const retain=(content:VocabularyContent,role:VocabularyEncounterSnapshot['role'])=>{
+    payload.snapshots[`${content.contentId}/${role}`]=snapshot(content,role,empty);
+  };
+  for(const word of context.words) {
+    const ready=teaching(word.wordId);
+    const priming=ready?.intro??introductions(word.wordId)[0]??null;
+    const general={solidify:availableGeneral(word.wordId,'solidify'),practice:availableGeneral(word.wordId,'practice'),maintain:availableGeneral(word.wordId,'maintain')};
+    const recognition=baseline(word.wordId,'recognition','general');
+    if(recognition&&!general.maintain.some(content=>content.kind==='exercise'&&content.skill==='recognition'))general.maintain.push(recognition);
+    payload.words[word.wordId]={lexical:lexical(word.wordId),teaching:ready,priming,general};
+    if(ready){retain(ready.intro,'teaching');ready.exercises.forEach(content=>retain(content,'teaching'));}
+    if(priming)retain(priming,'priming');
+    Object.values(general).flat().forEach(content=>retain(content,'general'));
+  }
+  for(const target of context.reviewOrder??[])if(target.kind==='pure_cue') {
+    const content=getVocabularyContent(target.id);
+    if(!content||!eligible(content))throw new Error('Admitted pure cue lost its content');
+    payload.pureCues.push(content);retain(content,'general');
+  }
+  return payload;
+}
+function retainedSnapshot(session:VocabularyPersistedSession,content:VocabularyContent,role:VocabularyEncounterSnapshot['role'],projection:VocabularySessionProjection):VocabularyEncounterSnapshot {
+  const template=sessionPayload(session).snapshots[`${content.contentId}/${role}`];
+  if(!template)throw new Error('Session repertoire is missing a served snapshot');
+  const result=structuredClone(template);
+  // Teaching examples rotate within the retained source, without resolving it again.
+  if(role==='teaching'&&result.kind==='recognition'&&result.body.wordReference
+    &&!result.body.revealWords?.some(word=>word.sense)) {
+    const wordId=content.words.find(word=>word.relation==='target')?.wordId;
+    const count=projection.encounters.filter(entry=>entry.wordId===wordId&&entry.snapshot.kind==='recognition')
+      .reduce((sum,entry)=>sum+entry.effectiveResponses.length,0);
+    result.body.bootstrapReveal=selectSequentialBootstrapReveal(result.body.wordReference,count);
+  }
+  return result;
+}
 function inputJson(value:unknown):VocabularySessionJson{return JSON.parse(JSON.stringify(value)) as VocabularySessionJson;}
 function commandRetry(session:VocabularyPersistedSession,clientId:string,input:VocabularySessionJson):boolean {
   if(!clientId.trim())throw new VocabularySessionInputError('Expected command identity');
@@ -154,13 +196,15 @@ function actionBuilder(session:VocabularyPersistedSession,clientId:string,input:
     const offset=additions.length;const suffix=offset===0?'':`:${offset}`;
     additions.push({...action,protocolVersion:1,sequence:session.actions.length+offset+1,actionId:createHash('sha256').update(`${session.sessionId}/${clientId}${suffix}`).digest('hex'),
       clientActionId:`${clientId}${suffix}`,transitionId:clientId,occurredAt:new Date().toISOString(),...(offset===0?{commandInput:input}:{})});
-  },projection(){return projectVocabularySession(session.context,[...session.actions,...additions]);}};
+  },projection(){return advanceVocabularySession(session.context,session.actions,session.projection,additions);}};
 }
 function current(session:VocabularyPersistedSession) {return session.projection.encounters.filter((entry)=>!entry.presentationUndone).at(-1)??null;}
 export function getVocabularyStudy(sessionId:string):VocabularyStudy {
   const session=getVocabularySession(sessionId);const encounter=current(session);const wordId=encounter?.wordId??null;
   const word=wordId?session.projection.words[wordId]:null;const active=session.status==='active'&&session.projection.phase!=='completed';
-  return {session,words:session.context.words.map((word)=>lexical(word.wordId)),currentEncounter:encounter,currentWordId:wordId,
+  const {payload,...publicContext}=session.context;
+  const liveNotes=wordId?getDb().prepare('SELECT personal_notes FROM learner_word_state WHERE learner_id=? AND word_id=?').get(requireLearnerId(),wordId) as {personal_notes:string}|undefined:undefined;
+  return {session:{...session,context:publicContext},words:payload?session.context.words.map(word=>({...payload.words[word.wordId].lexical,...(word.wordId===wordId?{personalNotes:liveNotes?.personal_notes??''}:{})})):session.context.words.map(word=>lexical(word.wordId)),currentEncounter:encounter,currentWordId:wordId,
     controls:{canNext:active,canSkip:active&&encounter!==null,canEnough:active&&word?.workStatus==='open'&&word.mode!=='unstudied',
       canMore:active&&word!==null&&!word.teachingDeferred&&(word.workStatus==='wrapped'||word.workStatus==='skipped'),canUndo:active&&session.projection.latestUndoableActionId!==null,
       canFinishForNow:active&&session.projection.phase==='active',canFinishImmediately:active&&session.projection.phase==='finishing',canChangeMode:active&&wordId!==null},
@@ -237,7 +281,12 @@ export function startVocabularyStudy(options:{requestTeaching?:(wordId:string)=>
       const ready=teaching(word.wordId);if(!ready)throw new Error('Ready teaching lost its exercise source');
       word.teachingRequirements=ready.requirements;
     }
-    const created=createVocabularySession({sessionId,words:planned.words,composition:composition.settings,reviewOrder:planned.reviewOrder});
+    const context:VocabularySessionInitialContext={sessionId,words:planned.words,composition:composition.settings,reviewOrder:planned.reviewOrder};
+    context.payload=composeVocabularySessionPayload(context);
+    const created=createVocabularySession(context);
+    // Publication can improve a later session; this session already owns its repertoire.
+    const preparation=createVocabularyPracticePreparation();
+    if(preparation.isConfigured())for(const word of context.words)if(word.mode!=='unstudied')preparation.ensure(word.wordId);
     return nextVocabularyExercise(created.sessionId,randomUUID());
   });
 }
@@ -298,6 +347,7 @@ export function nextVocabularyExercise(sessionId:string,clientActionId:string,op
     const session=getVocabularySession(sessionId);const input=inputJson({type:'next',...options});
     if(commandRetry(session,clientActionId,input))return getVocabularyStudy(sessionId);
     if(session.status!=='active'||session.projection.phase==='completed')throw new VocabularySessionConflictError('Session is not accepting new work');
+    const payload=sessionPayload(session);
     const builder=actionBuilder(session,clientActionId,input);const previous=current(session);
     if(options.another&&(!previous||previous.snapshot.role==='teaching'||previous.snapshot.kind==='introduction'||previous.snapshot.kind==='recognition'))
       throw new VocabularySessionInputError('This exercise does not support another way');
@@ -326,7 +376,7 @@ export function nextVocabularyExercise(sessionId:string,clientActionId:string,op
         const pendingSkills=getPendingVocabularySkills(word);
         const pending=pendingSkills.length?pendingSkills:word.workNumber>1?(word.mode==='solidify'?word.solidifySkills:[word.selectedSkill]):pendingSkills;
         if(word.mode==='unstudied') {
-          const ready=teaching(wordId);if(!ready)return unavailable('Teaching material is unavailable.');
+          const ready=payload.words[wordId].teaching;if(!ready)return unavailable('Teaching material is unavailable.');
           const requirements=session.context.words.find((entry)=>entry.wordId===wordId)?.teachingRequirements;
           if(!requirements||ready.intro.contentId!==requirements.introductionContentId)return unavailable('The prepared introduction changed.');
           role='teaching';
@@ -341,13 +391,13 @@ export function nextVocabularyExercise(sessionId:string,clientActionId:string,op
           }
         }else {
           if(word.mode==='solidify'&&!projection.encounters.some((entry)=>entry.wordId===wordId&&!entry.presentationUndone&&entry.snapshot.kind==='introduction')) {
-            chosen=teaching(wordId)?.intro??introductions(wordId)[0]??null;role='priming';
+            chosen=payload.words[wordId].priming;role='priming';
           }
           if(!chosen) {
             role='general';
             const skill=pending[sampleIndex(session,projection,pending.length,`skill/${wordId}`)];
-            const pool=availableGeneral(wordId,word.mode).filter((entry)=>!excluded.has(entry.contentId)&&(skill==='contextual_selection'?isContrast(entry):entry.skill===skill&&!isContrast(entry)));
-            if(skill==='recognition')chosen=pool.find((entry)=>entry.kind==='exercise'&&entry.skill==='recognition')??baseline(wordId,'recognition','general');
+            const pool=payload.words[wordId].general[word.mode].filter((entry)=>!excluded.has(entry.contentId)&&(skill==='contextual_selection'?isContrast(entry):entry.skill===skill&&!isContrast(entry)));
+            if(skill==='recognition')chosen=pool.find((entry)=>entry.kind==='exercise'&&entry.skill==='recognition')??null;
             else {
               const misses=unresolvedMisses(projection,wordId);const last=seen.at(-1);
               const retry=misses.find((id)=>last?.snapshot.contentId!==id);
@@ -367,11 +417,11 @@ export function nextVocabularyExercise(sessionId:string,clientActionId:string,op
           unavailableWords.add(wordId);projection=builder.projection();
           continue;
         }
-        builder.push({kind:'presentation',payload:{encounterId:randomUUID(),wordId,snapshot:snapshot(chosen,role,projection)}});
+        builder.push({kind:'presentation',payload:{encounterId:randomUUID(),wordId,snapshot:retainedSnapshot(session,chosen,role,projection)}});
       }else if(target?.kind==='pure_cue') {
-        const pure=getVocabularyContent(target.id);
+        const pure=payload.pureCues.find(content=>content.contentId===target.id);
         if(!pure)throw new Error('Selected pure cue disappeared');
-        builder.push({kind:'presentation',payload:{encounterId:randomUUID(),wordId:null,snapshot:snapshot(pure,'general',projection)}});
+        builder.push({kind:'presentation',payload:{encounterId:randomUUID(),wordId:null,snapshot:retainedSnapshot(session,pure,'general',projection)}});
       }else {
         if(projection.phase==='active')builder.push({kind:'finish_for_now',payload:{}});
         if(builder.additions.length)appendVocabularySessionActions(sessionId,builder.additions);
@@ -383,7 +433,7 @@ export function nextVocabularyExercise(sessionId:string,clientActionId:string,op
 }
 export function commandVocabularyStudy(sessionId:string,clientActionId:string,command:VocabularyStudyCommand):VocabularyStudy {
   return atomic(()=>{
-    const session=getVocabularySession(sessionId);const input=inputJson(command);
+    const session=getVocabularySession(sessionId);sessionPayload(session);const input=inputJson(command);
     if(commandRetry(session,clientActionId,input))return getVocabularyStudy(sessionId);
     if(session.status!=='active')throw new VocabularySessionConflictError('Cancel the completion revision before resuming study');
     const builder=actionBuilder(session,clientActionId,input);const encounter=current(session);const wordId=('wordId'in command?command.wordId:undefined)??encounter?.wordId;

@@ -93,6 +93,20 @@ A word with neither skill enabled is omitted from ordinary Solidify admission.
 
 ## Live session and completion
 
+Start freezes a session payload: admitted words and starting states, eligible
+content versions, teaching repertoires, answer criteria, and reveal/source facts.
+The player chooses dynamically within that payload as the learner answers,
+skips, changes modes, asks for More, or undoes an action. Composition does not
+prescribe a fixed sequence. Publication, edits, retirement, content deactivation,
+and external skill/proxy changes affect subsequent sessions. Account and private
+content access checks remain live. A reset to Unstudied still defers teaching.
+
+The backend may operate the live player. Ordinary actions use retained session
+material and indexed session/access reads, without rediscovering content or
+scanning active sessions. Events are persisted incrementally; server-side state
+is derived from the retained payload and log. Exact encounter retention records
+what the dynamic player actually showed within that frozen composition.
+
 The learner can answer, skip an exercise, try another way, stop on a word, ask for
 more, and react to exercises. Controls depend on context. Ordinary completion
 follows the mode's requirements:

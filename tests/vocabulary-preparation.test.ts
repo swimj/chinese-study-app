@@ -225,11 +225,12 @@ test('bootstrap publication links its actual invocation to seeded sense versions
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM invocation_sense_links WHERE invocation_id=? AND role='output'").get(invocationId)!.n,1);
 });
 
-test('background worker discovers admitted active-session demand, fences provider calls and publishes ready work', async () => {
+test('background worker consumes explicitly queued demand, fences provider calls and publishes ready work', async () => {
   runWithLearnerId('a',()=>{const word=addVocabularyWord('w1');changeVocabularyMode('w1','practice',word.stateVersion);
     createVocabularySession({sessionId:'active-demand',words:[{wordId:'w1',mode:'practice'}]});});
   let calls=0;let failures=0;
   const provider=createVocabularyPracticeProvider({environment:{OPENAI_API_KEY:'test'},fetchImplementation:(async()=>{calls++;return response(output());})as typeof fetch});
+  createVocabularyPracticePreparation({provider}).ensure('w1');
   const worker=createVocabularyPracticeWorker({provider,onError:()=>{failures++;}});
   db.prepare("UPDATE service_controls SET enabled=0 WHERE control_key='provider_work_enabled'").run();
   assert.equal(await worker.step(),false);assert.equal(calls,0);
@@ -278,10 +279,10 @@ test('worker shutdown waits for an in-flight call, fences publication and never 
   const restart=createVocabularyPracticeWorker({provider,demand:()=>['w1']});await restart.drain();assert.equal(calls,1);await restart.stop();
 });
 
-test('disabled learners do not create preparation demand from retained active sessions', async () => {
+test('retained active sessions do not create preparation demand during worker polling', async () => {
   runWithLearnerId('a',()=>{const word=addVocabularyWord('w1');changeVocabularyMode('w1','practice',word.stateVersion);
     createVocabularySession({sessionId:'disabled-demand',words:[{wordId:'w1',mode:'practice'}]});});
-  db.prepare("UPDATE learners SET disabled_at=? WHERE learner_id='a'").run(new Date().toISOString());let calls=0;
+  let calls=0;
   const provider=createVocabularyPracticeProvider({environment:{OPENAI_API_KEY:'test'},fetchImplementation:(async()=>{calls++;return response(output());})as typeof fetch});
   const worker=createVocabularyPracticeWorker({provider});assert.equal(await worker.step(),false);assert.equal(calls,0);
   assert.equal(db.prepare('SELECT count(*) AS n FROM vocabulary_practice_preparation').get()!.n,0);await worker.stop();

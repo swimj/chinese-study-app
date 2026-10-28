@@ -31,7 +31,9 @@ belong there and in task instructions, not in this frontier.
   while recognition, contrast, and pure cues retain their appropriate scheduling.
 - **Content:** complete current objects and full version history support shared
   repair. Teaching has an exclusive repertoire bound to its introduction; ordinary
-  practice uses a fluid pool. Unresolved sense associations allow word fallback.
+  practice draws from the current pool at session composition. Each session retains
+  its repertoire while controls choose dynamically within it. Unresolved sense
+  associations allow word fallback.
 - **Reflection:** private learner lessons and internal content proposals run
   independently. Operators approve content applications. Backend judgment can
   compensate scheduling without learner approval or content publication.

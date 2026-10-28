@@ -1,3 +1,7 @@
+import type { Express, Request, Response } from 'express';
+import { registerVocabularyStudyRoutes } from '../server/vocabulary/study-routes.ts';
+import type { VocabularySessionInitialContext } from '../src/domain/vocabulary-session.ts';
+import { selectVocabularyPureCueCandidates } from '../server/vocabulary/pure-cue-serving.ts';
 import { selectPureCuesForSession } from '../src/domain/pure-cues.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -7,14 +11,20 @@ import { setDb } from '../server/db/connection.ts';
 import { runWithLearnerId } from '../server/db/learner-context.ts';
 import { adoptVocabularyPureCues } from '../server/vocabulary/pure-cue-serving.ts';
 import { createVocabularyContent,replaceVocabularyContent,updateVocabularyContent,getVocabularyContent,createVocabularySense,establishVocabularySenseCatalog,getVocabularySenseCatalog } from '../server/db/vocabulary-content.ts';
-import { createVocabularySession,stageVocabularySessionCompletion,cancelVocabularySessionCompletion,closeVocabularySessionCompletion } from '../server/db/vocabulary-sessions.ts';
+import { createVocabularySession as createStoredSession,stageVocabularySessionCompletion,cancelVocabularySessionCompletion,closeVocabularySessionCompletion } from '../server/db/vocabulary-sessions.ts';
 import { addVocabularyWord,dismissVocabularyWord,getVocabularyLearnerWord,getVocabularyWordSchedule,enrollVocabularyDietWord } from '../server/db/vocabulary-learners.ts';
-import { startVocabularyStudy,previewVocabularyStudy,getVocabularyStudy,nextVocabularyExercise,commandVocabularyStudy } from '../server/vocabulary/study.ts';
+import { startVocabularyStudy,composeVocabularySessionPayload,previewVocabularyStudy,getVocabularyStudy,nextVocabularyExercise,commandVocabularyStudy } from '../server/vocabulary/study.ts';
 import type { VocabularyStudy } from '../src/domain/vocabulary-study-api.ts';
 import type { VocabularyContent } from '../src/domain/vocabulary-content.ts';
 let db:DatabaseSync;
 const owner=<T>(fn:()=>T)=>runWithLearnerId('alice',fn);
 const actor={kind:'operator' as const,id:'test'};
+function createVocabularySession(context:VocabularySessionInitialContext) {
+  const reviewOrder=context.reviewOrder??selectVocabularyPureCueCandidates({ordinaryReviewCount:context.words.filter(word=>word.mode==='practice'||word.mode==='maintain').length,sessionSeed:context.sessionId})
+    .map(cue=>({kind:'pure_cue' as const,id:cue.contentId}));
+  const frozen={...context,reviewOrder};
+  return createStoredSession({...frozen,payload:composeVocabularySessionPayload(frozen)});
+}
 function exercise(id:string,wordId:string,role:'teaching'|'general'='general',pure=false):VocabularyContent {
   if(role==='teaching'&&getVocabularySenseCatalog(wordId).establishedAt===null) {
     createVocabularySense({wordId,description:{label:`Use of ${wordId}`}},actor);
@@ -254,15 +264,19 @@ test('independent pure cues expose no selected word and never credit their accep
   assert.deepEqual(view.session.projection.coveredWordIds,[]);assert.equal(view.session.projection.pureCueOutcomes[0].covered,true);
 }));
 
-test('cross-owner sessions are inaccessible and existing learner deactivation/suppression remain effective',()=>{
-  const view=owner(()=>startVocabularyStudy());
+test('session ownership stays live while content deactivation and skill suppression affect later admission',()=>{
+  const view=owner(()=>{db.prepare("UPDATE learner_words SET mode='practice' WHERE word_id='a'").run();createVocabularySession({sessionId:'access-freeze',words:[{wordId:'a',mode:'practice'},{wordId:'b',mode:'practice'}]});return getVocabularyStudy('access-freeze');});
   runWithLearnerId('bob',()=>assert.throws(()=>getVocabularyStudy(view.session.sessionId),/not found/));
   owner(()=>{
     db.prepare("INSERT INTO learner_owned_word_skill_state VALUES('alice','b','production',24,2.5,0,NULL,NULL)").run();
     db.prepare("INSERT INTO learner_content_deactivations VALUES('alice','general-1','2026-10-17T00:00:00.000Z')").run();
-    const next=nextVocabularyExercise(view.session.sessionId,'next');assert.notEqual(next.currentEncounter?.snapshot.contentId,'general-1');
-    commandVocabularyStudy(view.session.sessionId,'enough',{type:'enough'});
-    const advanced=nextVocabularyExercise(view.session.sessionId,'advance');assert.notEqual(advanced.currentWordId,'b');
+    const next=nextVocabularyExercise(view.session.sessionId,'next',{wordId:'a'});
+    assert.equal(next.currentEncounter?.snapshot.contentId,'general-1');
+    const retained=nextVocabularyExercise(view.session.sessionId,'b',{wordId:'b'});
+    assert.equal(retained.currentWordId,'b');
+    const fresh=startVocabularyStudy();
+    assert.ok(!fresh.session.context.words.some(word=>word.wordId==='b'));
+    assert.notEqual(nextVocabularyExercise(fresh.session.sessionId,'a',{wordId:'a'}).currentEncounter?.snapshot.contentId,'general-1');
   });
 });
 
@@ -741,7 +755,7 @@ test('independent pure cue shares the review queue and completes lapse reinforce
   assert.equal(db.prepare("SELECT count(*) AS n FROM learner_pure_cue_schedules WHERE content_id='queue-pure' AND last_practised_at IS NOT NULL").get()?.n,1);
 }));
 
-test('teaching stops without coverage when a bound authored skill becomes disabled or suppressed after admission',()=>owner(()=>{
+test('teaching retains admission-time skill availability when later settings change',()=>owner(()=>{
   createVocabularyContent({contentId:'authored-recognition',kind:'exercise',payloadVersion:1,body:{prompt:'新'},
     exerciseType:'recognition',skill:'recognition',exerciseRole:'teaching',assessment:{responseMode:'self_assessment'},
     accessScope:'shared',availability:'active',originKind:'human',words:[{wordId:'new',relation:'target'}],
@@ -760,8 +774,10 @@ test('teaching stops without coverage when a bound authored skill becomes disabl
     if(restriction==='disabled')db.prepare("INSERT INTO learner_owned_word_skill_state VALUES('alice','new',?,24,2.5,0,NULL,NULL)").run(skill);
     else db.prepare("INSERT INTO learner_owned_word_skill_relevance VALUES('alice','new',?,'suppressed')").run(skill);
     const stopped=nextVocabularyExercise(id,'next');
-    assert.match(stopped.notice!,/Teaching material is unavailable/);
-    assert.equal(stopped.session.projection.encounters.length,1);
+    assert.equal(stopped.notice,null);
+    assert.equal(stopped.session.projection.encounters.length,2);
+    assert.notEqual(stopped.currentEncounter?.snapshot.kind,'introduction');
+    assert.equal(composeVocabularySessionPayload({sessionId:'later',words:[{wordId:'new',mode:'unstudied'}]}).words.new.teaching,null);
     assert.equal(stopped.session.projection.words.new.workStatus,'open');
     assert.equal(stopped.session.projection.words.new.covered,false);
     assert.equal(stopped.session.projection.words.new.teachingCompleted,false);
@@ -830,9 +846,10 @@ test('pure coverage excludes dictionary production from preview and Start even w
   const schedules=db.prepare('SELECT * FROM learner_word_schedules ORDER BY learner_id,word_id').all();
   assert.equal(previewVocabularyStudy().itemCount,0);
   assert.throws(()=>startVocabularyStudy(),/No ready study material is available/);
-  // Also guard serving in a session admitted before coverage changed.
+  // The earlier session retains its admitted fallback; proxy coverage applies at the next Start.
   const continued=nextVocabularyExercise(initial.session.sessionId,'retry-after-proxy',{wordId:'b'});
-  assert.equal(continued.session.projection.encounters.length,initial.session.projection.encounters.length,'no new fallback is presented after proxy coverage changes');
+  assert.equal(continued.session.projection.encounters.length,initial.session.projection.encounters.length+1);
+  assert.equal(continued.currentEncounter?.snapshot.contentId,initial.currentEncounter?.snapshot.contentId);
   assert.equal(continued.session.projection.words.b.covered,false);
   assert.deepEqual(db.prepare('SELECT * FROM learner_word_schedules ORDER BY learner_id,word_id').all(),schedules);
   assert.equal(db.prepare("SELECT count(*) AS n FROM learner_owned_word_skill_relevance WHERE relevance_state='proxied'").get()?.n,0);
@@ -873,4 +890,87 @@ for(const strategy of ['update','replace'] as const)test(`explicit ${strategy} o
   const started=startVocabularyStudy();
   assert.equal(started.currentEncounter?.snapshot.contentId,authored.contentId);
   assert.equal(started.session.context.words[0].selectedSkill,'production');
+}));
+
+
+test('publication, edits and retirement cannot change a retained repertoire, including after cache reload',()=>owner(()=>{
+  const first=focusedA();
+  const original=getVocabularyContent('general-2')!;
+  updateVocabularyContent(original.contentId,original.version,{...original,body:{prompt:'Edited after Start'}},actor);
+  exercise('general-0-new','a');
+  db.prepare("UPDATE content_items SET availability='retired' WHERE content_id='general-2'").run();
+  db.prepare("UPDATE lexical_words SET meaning='Edited dictionary fact' WHERE id='a'").run();
+  setDb(db); // A new connection wrapper forces cold hydration from durable context.
+  const next=nextVocabularyExercise(first.session.sessionId,'another',{another:true});
+  assert.equal(next.currentEncounter?.snapshot.contentId,'general-2');
+  assert.equal(next.currentEncounter?.snapshot.contentVersion,1);
+  assert.equal(next.currentEncounter?.snapshot.body.prompt,'Retrieve general-2');
+  assert.equal(next.currentEncounter?.snapshot.body.revealWords?.find(word=>word.wordId==='a')?.meaning,'first');
+  assert.equal(next.session.context.payload,undefined,'never transmit the unserved repertoire');
+  createVocabularySession({sessionId:'fresh-published',words:[{wordId:'a',mode:'practice'}]});
+  const fresh=nextVocabularyExercise('fresh-published','next');
+  assert.equal(fresh.currentEncounter?.snapshot.contentId,'general-0-new');
+  assert.equal(fresh.words[0].meaning,'Edited dictionary fact');
+}));
+
+test('warm live progression reads no session history, payload, content pool, or active-session demand',()=>owner(()=>{
+  const first=focusedA();const queries:string[]=[];const prepare=db.prepare.bind(db);
+  Object.defineProperty(db,'prepare',{configurable:true,value:(sql:string)=>{queries.push(sql);return prepare(sql);}});
+  try {
+    commandVocabularyStudy(first.session.sessionId,'answer',{type:'response',response:'甲'});
+    nextVocabularyExercise(first.session.sessionId,'more',{wordId:'a'});
+  } finally {delete (db as unknown as {prepare?:unknown}).prepare;}
+  assert.ok(queries.length>0);
+  const forbidden=queries.filter(sql=>/SELECT action_json|SELECT \* FROM vocabulary_sessions|json_each|FROM content_items c|JOIN content_words w|FROM lexical_words w/i.test(sql));
+  assert.deepEqual(forbidden,[]);
+}));
+
+test('sessions without a retained payload cannot continue after upgrade, but their evidence remains readable',()=>owner(()=>{
+  createStoredSession({sessionId:'pre-payload',words:[{wordId:'a',mode:'practice'}]});
+  assert.throws(()=>nextVocabularyExercise('pre-payload','next'),/predates the current player/);
+  assert.throws(()=>commandVocabularyStudy('pre-payload','finish',{type:'finishForNow'}),/predates the current player/);
+  assert.equal(getVocabularyStudy('pre-payload').session.actions.length,0);
+}));
+
+
+test('Maintain recognition retains its baseline even when curated production fills the general pool',()=>owner(()=>{
+  db.prepare("UPDATE learner_words SET mode='maintain' WHERE word_id='a'").run();
+  db.prepare("INSERT INTO content_mode_suitability(content_id,mode,suitability,assessed_content_version) VALUES('general-1','maintain','curated',1)").run();
+  createVocabularySession({sessionId:'maintain-recognition',words:[{wordId:'a',mode:'maintain',selectedSkill:'recognition'}]});
+  assert.equal(nextVocabularyExercise('maintain-recognition','next').currentEncounter?.snapshot.kind,'recognition');
+}));
+
+test('measure retained-session hot-path scaling', {skip:process.env.RUN_SESSION_BENCHMARK!=='1'},()=>owner(()=>{
+  let view=focusedA();const id=view.session.sessionId;
+  for(const target of [10,100,500]) {
+    while(view.session.projection.encounters.length<target)view=nextVocabularyExercise(id,`grow-${view.session.actions.length}`,{wordId:'a'});
+    const samples:number[]=[];const serialization:number[]=[];let bytes=0;
+    for(let i=0;i<5;i++) {
+      const begin=performance.now();view=nextVocabularyExercise(id,`measure-${target}-${i}`,{wordId:'a'});samples.push(performance.now()-begin);
+      const jsonStart=performance.now();const json=JSON.stringify(view);serialization.push(performance.now()-jsonStart);bytes=Buffer.byteLength(json);
+    }
+    samples.sort((a,b)=>a-b);serialization.sort((a,b)=>a-b);
+    console.log(JSON.stringify({sessionBenchmark:{encounters:view.session.projection.encounters.length,actions:view.session.actions.length,nextMedianMs:samples[2],serializeMedianMs:serialization[2],responseBytes:bytes}}));
+  }
+}));
+
+
+test('live HTTP actions never wake background workers; Start schedules a wake after its response',async()=>owner(async()=>{
+  const routes=new Map<string,(req:Request,res:Response)=>void>();
+  const register=(method:string)=>(path:string,handler:(req:Request,res:Response)=>void)=>{routes.set(`${method} ${path}`,handler);};
+  let wakes=0;registerVocabularyStudyRoutes({get:register('GET'),post:register('POST')} as unknown as Express,()=>{wakes++;});
+  const call=(route:string,id:string,body:unknown={})=>{
+    let result:VocabularyStudy|undefined;let status=200;
+    const response={json(value:VocabularyStudy){result=value;return this;},status(value:number){status=value;return this;}};
+    routes.get(route)!({params:{id},body} as Request,response as unknown as Response);
+    assert.equal(status,200);assert.ok(result);return result;
+  };
+  const started=call('POST /api/vocabulary/sessions','');
+  assert.equal(wakes,0,'no synchronous worker work before response');
+  await new Promise<void>(resolve=>setImmediate(resolve));assert.equal(wakes,1);wakes=0;
+  const id=started.session.sessionId;
+  call('GET /api/vocabulary/sessions/:id',id);
+  call('POST /api/vocabulary/sessions/:id/next',id,{clientActionId:'route-next'});
+  call('POST /api/vocabulary/sessions/:id/commands',id,{clientActionId:'route-command',command:{type:'skip'}});
+  await new Promise<void>(resolve=>setImmediate(resolve));assert.equal(wakes,0);
 }));

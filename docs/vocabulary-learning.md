@@ -36,7 +36,7 @@ flowchart LR
   Content --> Commands
 ```
 
-`server/vocabulary/study.ts` selects ready material and turns trusted commands
+`server/vocabulary/study.ts` freezes ready material at Start and turns trusted commands
 into ordered actions. `src/domain/vocabulary-session.ts` derives the live state
 and final report. `server/db/vocabulary-sessions.ts` enforces ownership, retry
 identity, snapshots, completion fencing, and atomic learning effects. HTTP clients
@@ -49,13 +49,62 @@ wait for outstanding saves. Pending/failed completion is recoverable, while acti
 session restoration is outside this release. Cancellation and resume form a
 single frontend transition so an automatic staging effect cannot race them.
 
+## Retained session payload and hot-path work
+
+The immutable `vocabulary_sessions.context_json` includes the versioned payload:
+lexical facts, all mode-dependent exercise pools for admitted words, teaching and
+priming material, selected pure cues, and complete encounter templates with
+answer and reveal facts. Mode changes and More choose within those pools.
+Teaching recognition rotates examples within its retained source. Edits,
+retirement, skill suppression and proxy changes take effect at the next Start.
+The current card's personal notes remain a separate indexed learner lookup.
+
+A connection-scoped cache holds at most 64 session runtimes, keyed by learner
+and session. SQLite remains authoritative. Every access probes session ownership,
+status and the latest indexed action sequence/identity. A mismatch, eviction or
+new connection hydrates the immutable context and log once. Including action
+identity detects rolled-back writes replaced at the same sequence. Cached values
+are frozen so callers cannot mutate durable authority through shared references.
+
+Ordinary appends validate the served version/access and response, write the log
+and related evidence transactionally, then advance the projection using only new
+actions. The next exercise is selected from the payload. Responses omit the
+unserved repertoire. Existing sessions without a payload cannot continue study;
+their evidence and completion records remain readable. This requires no schema
+migration; active sessions are not carried through this upgrade.
+
+This focused implementation still copies and scans in-memory session evidence
+and returns full action/encounter history. Undo and completion replay the log;
+a cold cache also replays once. These costs grow with session length. It removes
+live content discovery and repeated database history reads, without claiming
+constant total work for an indefinitely long session.
+
+A local synthetic benchmark (one word, repeated Next, in-memory SQLite, five
+samples per checkpoint) measured the retained limits below. This excludes HTTP,
+authentication, disk latency and hosted contention; it is not a production SLA.
+
+| Encounters / actions | Median Next | Median JSON serialization | Response size |
+| --- | --- | --- | --- |
+| 15 / 29 | 0.41 ms | 0.15 ms | 30 KB |
+| 105 / 209 | 0.85 ms | 1.10 ms | 197 KB |
+| 505 / 1009 | 1.42 ms | 5.21 ms | 940 KB |
+
+Run `RUN_SESSION_BENCHMARK=1 node --import tsx --test --test-name-pattern='measure retained-session' tests/vocabulary-study.test.ts`
+to repeat the experiment. Regression tests also inspect SQL to ensure warm
+progression does not reload context/history or query live content pools, rather
+than relying on timing thresholds that vary by machine.
+
+See the [state ownership](diagrams/vocabulary-session-state.svg),
+[transition work](diagrams/vocabulary-session-transitions.svg), and
+[content improvement](diagrams/vocabulary-session-improvement.svg) diagrams.
+
 ## Content and learner persistence
 
 `vocabulary-content.ts` owns complete current content and immutable full history,
 including initial and current versions. Update preserves identity; replacement
 creates a new identity and retires the predecessor atomically. Expected versions
-reject stale changes. Teaching binds authored versions; fresh serving overlays
-current identity-level sense mappings without rewriting historical encounters.
+reject stale changes. Session composition captures authored versions and current
+identity-level sense mappings. Later serving uses that retained material.
 
 `content_words` describes targets and contextual relationships. Accepted-answer
 membership is separate; an answer word must also have a content relationship.
@@ -71,7 +120,7 @@ that policy. Their adapters read different authoritative storage:
 `server/vocabulary/production-coverage.ts` reads accepted-answer membership and
 the current vocabulary targeted repertoire.
 `review-selection.ts` applies it before objective ranking and session capacity;
-`study.ts` also filters definition fallback when serving Practice or Maintain,
+`study.ts` also filters definition fallback when composing Practice or Maintain pools,
 including baselines already stored as private content. A usable owned targeted
 exercise remains eligible. Explicit prompt edits and replacements record authored
 prompt provenance while retaining the dictionary source as ancestry; editing only
@@ -326,7 +375,12 @@ and rejects retries of disallowed arms rather than silently changing models.
 This applies to learner feedback, improvements, and AI second opinions; practice
 and sense authoring keep their independently configured model.
 
-`preparation-worker.ts` prepares a general pool for actual study demand. It uses
+Start records general-practice demand for admitted learned words when a provider
+is configured, after retaining the current repertoire. `preparation-worker.ts`
+consumes that durable queue; polling does not scan active session JSON. Live
+Next, command, and read routes never wake workers. Preview, Start, refresh and
+closure can schedule a wake after returning their response. Publication supplies
+future session composition. The worker uses
 ready source material and retained generation briefs, with service attribution.
 The shared teaching pipeline generates the introduction first, then exercises
 conditioned on that delivered material. A failed companion call preserves the

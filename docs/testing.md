@@ -220,6 +220,22 @@ All HTTP is intercepted, so these fixtures do not modify learner data.
 | `client-incident-diagnostics.test.ts` | Account-scoped client queue bounds/retention, visible IDs, private sidecar deduplication/pruning, and inspection | Client/server incident diagnostic modules |
 | `study-commit-diagnostics.test.ts` | Success/failure correlation, exact private payload/error retention, 30-day pruning, diagnostic-id responses, contrast routing, and logging isolation | `server/study-commit-diagnostics.ts`, study-commit API handlers |
 
+## Retained vocabulary sessions
+
+`vocabulary-study.test.ts` covers admission-time repertoire freezing, published
+content and settings changes between sessions, cold hydration, Maintain
+recognition fallback, and live HTTP routes that do not wake workers. Its SQL
+assertions guard against full context/history reads and live content discovery.
+The optional scaling experiment is documented in
+[vocabulary runtime](vocabulary-learning.md#retained-session-payload-and-hot-path-work).
+
+`vocabulary-session-incremental.test.ts` compares ordinary incremental updates
+with full replay through teaching, reactions, pure cues, mode changes and Undo.
+`vocabulary-session-cache.test.ts` covers indexed warm reads, rollback and
+same-sequence replacement, learner/connection isolation, eviction, and completion
+report reuse with fresh status/time metadata. The persistence and completion
+suites retain finalization and durable-effects coverage.
+
 ## Vocabulary backend provider trials
 
 [`scripts/vocabulary-reflection-trial.ts`](../scripts/vocabulary-reflection-trial.ts)

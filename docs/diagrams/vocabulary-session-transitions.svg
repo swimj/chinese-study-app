@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="840" viewBox="0 0 1200 840" role="img" aria-labelledby="title desc"><title id="title">Work at each transition</title><desc id="desc">Start composes and persists a session payload. Ordinary commands perform indexed checks, use cached state, append evidence transactionally, advance projection and return a full-history view. Cold cache, Undo and completion have explicit replay costs.</desc><defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L8,3 z" fill="#50677c"/></marker></defs><style>text{font-family:Arial,Helvetica,sans-serif;fill:#19334a}.heading{font-size:31px;font-weight:700}.sub{font-size:19px;fill:#50677c}.cardtitle{font-size:22px;font-weight:700}.body{font-size:19px}.small{font-size:17px;fill:#50677c}.label{font-size:18px;font-weight:700}</style><rect width="1200" height="840" fill="#f5f8fb"/><text x="48" y="62" class="heading">Work at each transition</text><text x="48" y="96" class="sub">Discovery belongs at Start. Normal play uses the retained session.</text>
+<text x="48" y="151" class="label">START · composition work</text>
+<rect x="48" y="172" width="334" height="154" rx="16" fill="#e6f1fb" stroke="#b7c9d8"/>
+<text x="70" y="208" class="cardtitle">Compose</text>
+<text x="70" y="245" class="body">Select words and starting states</text>
+<text x="70" y="274" class="body">Discover eligible material</text>
+<text x="70" y="303" class="body">Prepare all mode pools</text>
+<rect x="433" y="172" width="334" height="154" rx="16" fill="#e6f1fb" stroke="#b7c9d8"/>
+<text x="455" y="208" class="cardtitle">Freeze</text>
+<text x="455" y="245" class="body">Pin versions and reveal facts</text>
+<text x="455" y="274" class="body">Materialize the session payload</text>
+<text x="455" y="303" class="body">Keep sequencing dynamic</text>
+<rect x="818" y="172" width="334" height="154" rx="16" fill="#e8f3eb" stroke="#b7c9d8"/>
+<text x="840" y="208" class="cardtitle">Persist</text>
+<text x="840" y="245" class="body">Store immutable payload</text>
+<text x="840" y="274" class="body">Serve the first encounter</text>
+<text x="840" y="303" class="body">Queue future preparation</text>
+<path d="M382,250 L433,250" fill="none" stroke="#50677c" stroke-width="2.5" marker-end="url(#arrow)"/>
+<path d="M767,250 L818,250" fill="none" stroke="#50677c" stroke-width="2.5" marker-end="url(#arrow)"/>
+<text x="48" y="379" class="label">ORDINARY ACTION · warm player</text>
+<rect x="48" y="400" width="252" height="166" rx="16" fill="#e6f1fb" stroke="#b7c9d8"/>
+<text x="70" y="436" class="cardtitle">Check</text>
+<text x="70" y="473" class="body">Indexed session head</text>
+<text x="70" y="502" class="body">Learner / content access</text>
+<text x="70" y="531" class="body">Detect stale cache</text>
+<rect x="332" y="400" width="252" height="166" rx="16" fill="#e6f1fb" stroke="#b7c9d8"/>
+<text x="354" y="436" class="cardtitle">Choose</text>
+<text x="354" y="473" class="body">Cached repertoire</text>
+<text x="354" y="502" class="body">Current projection</text>
+<text x="354" y="531" class="body">No corpus discovery</text>
+<rect x="616" y="400" width="252" height="166" rx="16" fill="#e6f1fb" stroke="#b7c9d8"/>
+<text x="638" y="436" class="cardtitle">Commit</text>
+<text x="638" y="473" class="body">Append evidence</text>
+<text x="638" y="502" class="body">Advance projection</text>
+<text x="638" y="531" class="body">Only new actions</text>
+<rect x="900" y="400" width="252" height="166" rx="16" fill="#fff3d8" stroke="#b7c9d8"/>
+<text x="922" y="436" class="cardtitle">Respond</text>
+<text x="922" y="473" class="body">Full history view</text>
+<text x="922" y="502" class="body">Browser refreshes</text>
+<text x="922" y="531" class="body">History-sized cost</text>
+<path d="M300,482 L332,482" fill="none" stroke="#50677c" stroke-width="2.5" marker-end="url(#arrow)"/>
+<path d="M584,482 L616,482" fill="none" stroke="#50677c" stroke-width="2.5" marker-end="url(#arrow)"/>
+<path d="M868,482 L900,482" fill="none" stroke="#50677c" stroke-width="2.5" marker-end="url(#arrow)"/>
+<text x="48" y="612" class="label">EXPLICIT EXCEPTIONS</text>
+<rect x="48" y="632" width="334" height="125" rx="16" fill="#fff3d8" stroke="#b7c9d8"/>
+<text x="70" y="668" class="cardtitle">Cold cache</text>
+<text x="70" y="705" class="body">Load payload + action history</text>
+<text x="70" y="734" class="body">Replay once to rebuild</text>
+<rect x="433" y="632" width="334" height="125" rx="16" fill="#fff3d8" stroke="#b7c9d8"/>
+<text x="455" y="668" class="cardtitle">Undo</text>
+<text x="455" y="705" class="body">Replay effective history</text>
+<text x="455" y="734" class="body">Keep original observations</text>
+<rect x="818" y="632" width="334" height="125" rx="16" fill="#fff3d8" stroke="#b7c9d8"/>
+<text x="840" y="668" class="cardtitle">Completion</text>
+<text x="840" y="705" class="body">Replay the frozen boundary</text>
+<text x="840" y="734" class="body">Apply durable learner effects</text>
+<text x="48" y="802" class="small">Remaining costs: in-memory history copying / enumeration and full response serialization.</text></svg>
