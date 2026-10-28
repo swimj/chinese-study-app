@@ -81,6 +81,14 @@ and queues an advisory review of the retained no-change judgment. Case workspace
 jobs expose the advisory status and result; the existing job retry and case close
 routes apply. This path does not create or apply a content proposal.
 
+Proposal detail/list and case reads include `resolvedAt`: receipt application time
+for applied proposals, latest closure event time for dismissed proposals or closed
+cases, and `null` when unresolved or authoritative historical evidence is missing.
+The operator Archive uses this timestamp for its 12-hour default; search covers
+all retained entries. Proposal dismissal and completed no-change review closure
+accept omitted or empty `reason`. Teaching and unresolved sense/promotion
+assessment closures still require a nonempty resolution.
+
 Single-word improvement results can include `pureCueReferral` (null or
 `{candidateWords: string[], sharedPurpose: string, rationale: string}`) and a
 `pureCuePromotion` assessment. Referral forms are advisory. Promotion records

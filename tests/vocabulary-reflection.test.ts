@@ -7,13 +7,13 @@ import { beforeEach, afterEach, test } from 'node:test';
 import { setDb } from '../server/db/connection.ts';
 import { runWithLearnerId } from '../server/db/learner-context.ts';
 import { requestVocabularyRefresh } from '../server/db/vocabulary-learners.ts';
-import { createVocabularyContent, getVocabularyContentForMaintenance, updateVocabularyContent,createVocabularySense,getVocabularySenseCatalog,mapVocabularyContentSense,updateVocabularySense } from '../server/db/vocabulary-content.ts';
+import { createVocabularyContent, emitBackendEvent, getVocabularyContentForMaintenance, updateVocabularyContent,createVocabularySense,getVocabularySenseCatalog,mapVocabularyContentSense,updateVocabularySense } from '../server/db/vocabulary-content.ts';
 import { createVocabularySession, appendVocabularySessionActions, stageVocabularySessionCompletion, closeVocabularySessionCompletion } from '../server/db/vocabulary-sessions.ts';
 import { ingestVocabularySessionEvidence, getVocabularyReflectionCase, listVocabularyReflectionCases,
   claimVocabularyReflectionJob, recoverVocabularyReflectionJobs, failVocabularyReflectionJob, retryOwnVocabularyFeedback,
   recordVocabularyFeedbackJudgment, recordVocabularyImprovementResult, listOwnVocabularyMessages, markOwnVocabularyMessageSeen, dismissOwnVocabularyMessage, restoreOwnVocabularyMessage, getOwnVocabularyFeedbackAttention,
   requestVocabularySecondOpinion, listVocabularySecondOpinions, listVocabularyNoProposalCases, requestVocabularyCaseSecondOpinion, retryVocabularyReflectionJob, createVocabularyProposal, saveVocabularyProposal, approveVocabularyProposal, applyVocabularyProposal,
-  previewVocabularyProposal, getVocabularyProposal, closeVocabularyTeachingCase, closeVocabularyCase, getVocabularyCaseWorkspace } from '../server/db/vocabulary-reflection.ts';
+  previewVocabularyProposal, getVocabularyProposal, listVocabularyProposals, closeVocabularyProposal, closeVocabularyTeachingCase, closeVocabularyCase, getVocabularyCaseWorkspace } from '../server/db/vocabulary-reflection.ts';
 import type { VocabularyContentDraft, VocabularyContent } from '../src/domain/vocabulary-content.ts';
 import type { VocabularySessionAction, VocabularyEncounterSnapshot } from '../src/domain/vocabulary-session.ts';
 import type { VocabularyProposalOperation } from '../src/domain/vocabulary-reflection.ts';
@@ -158,6 +158,8 @@ for (const outcome of ['inventory_gap','unmappable'] as const) test(`${outcome} 
   assert.deepEqual(getVocabularyCaseWorkspace(work.caseId,'editor').admission,admission);
   assert.equal(claimVocabularyReflectionJob({kind:'exercise_improvement',now:judgedAt}),null);
   assert.ok(claimVocabularyReflectionJob({kind:'learner_feedback',now:judgedAt}));
+  assert.throws(()=>closeVocabularyCase(work.caseId,'editor',''),/nonempty/);
+  assert.equal(getVocabularyReflectionCase(work.caseId).status,'open');
   closeVocabularyCase(work.caseId,'editor','Recorded for later attention');
   assert.equal(getVocabularyReflectionCase(work.caseId).status,'closed');
   assert.deepEqual(recordVocabularyImprovementResult(work.jobId,work.leaseToken,input,judgedAt),result);
@@ -281,6 +283,8 @@ test('content drift rejects applications; teaching cases use manual proposals on
   const review = approveVocabularyProposal(proposal.proposalId,1,'editor');
   updateVocabularyContent('teach',1,{ ...draft('teach','new','teaching'),body: 'Intervening repair' },actor);
   assert.throws(() => applyVocabularyProposal(proposal.proposalId,1,review,'stale-source','editor'),/base changed/);
+  assert.throws(()=>closeVocabularyCase(teaching.caseId,'editor',''),/nonempty/);
+  assert.equal(getVocabularyReflectionCase(teaching.caseId).status,'open');
   closeVocabularyTeachingCase(teaching.caseId,'editor','Reviewed alongside exact introduction');
   assert.equal(listVocabularyReflectionCases('teaching_review','editor').length,0);
   const privateContent = createVocabularyContent({ ...draft('private'),accessScope: 'private',ownerLearnerId: 'alice' },actor);
@@ -409,6 +413,8 @@ test('unresolved pure-cue referral stays inspectable alongside a local proposal 
   const workspace=getVocabularyCaseWorkspace(work.caseId,'editor');
   assert.deepEqual(workspace.pureCueReferral,pureCueReferral);assert.deepEqual(workspace.pureCuePromotion,pureCuePromotion);
   assert.equal(workspace.case.status,'open');assert.ok(result.proposalId);assert.equal(getVocabularyContentForMaintenance('one')!.version,1);
+  assert.throws(()=>closeVocabularyCase(work.caseId,'editor',''),/nonempty/);
+  assert.equal(getVocabularyReflectionCase(work.caseId).status,'open');
   closeVocabularyCase(work.caseId,'editor','Deferred unresolved lexical identity');
   assert.equal(getVocabularyCaseWorkspace(work.caseId,'editor').case.status,'closed');
   assert.deepEqual(recordVocabularyImprovementResult(work.jobId,work.leaseToken,input,judgedAt),result);
@@ -553,7 +559,82 @@ test('historical no-proposal judgments remain reviewable with a separate advisor
   recordVocabularyImprovementResult(review.jobId,review.leaseToken,{diagnosis:'Consider revising',proposal:null,secondOpinion:{verdict:'revise',rationale:'The cue is ambiguous'}},now);
   assert.equal(getVocabularyCaseWorkspace(caseId,'editor').jobs.find(item=>item.secondOpinion)?.result?.verdict,'revise');
   assert.deepEqual(listVocabularyNoProposalCases('editor').map(item=>item.caseId),[caseId]);
-  closeVocabularyCase(caseId,'editor','Reviewed');
+  closeVocabularyCase(caseId,'editor');
   assert.equal(listVocabularyNoProposalCases('editor').length,0);
   assert.deepEqual(listVocabularyNoProposalCases('editor','closed').map(item=>item.caseId),[caseId]);
+});
+
+
+test('proposal dismissal without a reason records review and leaves authored content and learner state intact',()=>{
+  const created=createVocabularyProposal({operations:[op()],rationale:'Clarify this cue.'},'editor');
+  const content=getVocabularyContentForMaintenance('one');
+  const schedules=sql.prepare('SELECT * FROM learner_word_schedules ORDER BY learner_id,word_id').all();
+  assert.throws(()=>closeVocabularyProposal(created.proposalId,2,'editor'),/version/);
+  assert.equal(getVocabularyProposal(created.proposalId,'editor').status,'awaiting_review');
+  closeVocabularyProposal(created.proposalId,1,'editor');
+  assert.equal(getVocabularyProposal(created.proposalId,'editor').status,'closed');
+  const review=sql.prepare('SELECT disposition,notes_json FROM proposal_reviews WHERE proposal_id=?').get(created.proposalId)!;
+  assert.equal(review.disposition,'rejected');assert.deepEqual(JSON.parse(String(review.notes_json)),{reason:''});
+  const event=sql.prepare("SELECT data_json FROM backend_events WHERE name='vocabulary.reflection.proposal_closed' AND entity_id=?").get(created.proposalId)!;
+  assert.deepEqual(JSON.parse(String(event.data_json)),{version:1,reason:''});
+  assert.deepEqual(getVocabularyContentForMaintenance('one'),content);
+  assert.deepEqual(sql.prepare('SELECT * FROM learner_word_schedules ORDER BY learner_id,word_id').all(),schedules);
+  assert.equal(sql.prepare('SELECT count(*) n FROM proposal_applications WHERE proposal_id=?').get(created.proposalId)!.n,0);
+  assert.throws(()=>closeVocabularyProposal(created.proposalId,1,'editor'),/already resolved/);
+});
+
+
+test('proposal resolution times come from application receipts and closure events, independently of old draft dates',()=>{
+  const applied=createVocabularyProposal({operations:[op()],rationale:'Apply this change'},'editor');
+  const dismissed=createVocabularyProposal({operations:[op()],rationale:'Review this change'},'editor');
+  const pending=createVocabularyProposal({operations:[op()],rationale:'Keep awaiting review'},'editor');
+  sql.prepare("UPDATE content_proposals SET created_at=?,updated_at=?").run(at,at);
+  assert.ok(listVocabularyProposals('editor').every(value=>value.resolvedAt===null));
+  const review=approveVocabularyProposal(applied.proposalId,1,'editor');
+  assert.equal(getVocabularyProposal(applied.proposalId,'editor').resolvedAt,null);
+  const receipt=applyVocabularyProposal(applied.proposalId,1,review,'resolve-old-draft','editor');
+  const appliedAt=String(sql.prepare('SELECT applied_at FROM proposal_applications WHERE application_id=?').get(receipt.applicationId)!.applied_at);
+  assert.notEqual(appliedAt,at);assert.equal(getVocabularyProposal(applied.proposalId,'editor').resolvedAt,appliedAt);
+  const late='2099-01-02T00:00:00.000Z',earlier='2099-01-01T00:00:00.000Z';
+  closeVocabularyProposal(dismissed.proposalId,1,'editor');
+  const closedAt=String(sql.prepare("SELECT occurred_at FROM backend_events WHERE entity_id=? AND name='vocabulary.reflection.proposal_closed'").get(dismissed.proposalId)!.occurred_at);
+  assert.notEqual(closedAt,at);assert.equal(getVocabularyProposal(dismissed.proposalId,'editor').resolvedAt,closedAt);
+  for(const [entityId,occurredAt,name] of [[dismissed.proposalId,late,'vocabulary.reflection.proposal_closed'],[dismissed.proposalId,earlier,'vocabulary.reflection.proposal_closed'],[dismissed.proposalId,'2099-01-03T00:00:00.000Z','vocabulary.reflection.retry_requested'],[pending.proposalId,late,'vocabulary.reflection.proposal_closed'],[applied.proposalId,late,'vocabulary.reflection.proposal_closed']] as const)
+    emitBackendEvent({entityKind:'reflection',entityId,name,occurredAt,data:{version:1}});
+  assert.equal(getVocabularyProposal(dismissed.proposalId,'editor').resolvedAt,late);
+  assert.equal(getVocabularyProposal(applied.proposalId,'editor').resolvedAt,appliedAt);
+  assert.equal(getVocabularyProposal(pending.proposalId,'editor').resolvedAt,null);
+  const listed=new Map(listVocabularyProposals('editor').map(value=>[value.proposalId,value.resolvedAt]));
+  assert.equal(listed.get(dismissed.proposalId),late);assert.equal(listed.get(applied.proposalId),appliedAt);assert.equal(listed.get(pending.proposalId),null);
+  assert.equal(sql.prepare('SELECT updated_at FROM content_proposals WHERE proposal_id=?').get(applied.proposalId)!.updated_at,at);
+});
+
+for(const kind of ['no-change','teaching'] as const)test(`${kind} case resolution uses its latest closure event and not case creation time`,()=>{
+  const {cases}=ingest(kind==='teaching'?[present('intro','new'),present('teach','new'),{kind:'feedback',payload:{encounterId:'teach',feedback:'negative'}}]:[present('one'),response('one'),wrap()]);
+  const evidence=cases.find(value=>value.kind===(kind==='teaching'?'teaching_review':'exercise_improvement'))!;
+  if(kind==='no-change') {
+    const job=claimVocabularyReflectionJob({kind:'exercise_improvement',now:judgedAt})!;
+    recordVocabularyImprovementResult(job.jobId,job.leaseToken,{diagnosis:'No change needed',proposal:null},judgedAt);
+  }
+  assert.equal(getVocabularyReflectionCase(evidence.caseId).resolvedAt,null);
+  closeVocabularyCase(evidence.caseId,'editor',kind==='teaching'?'Reviewed teaching content':'');
+  const eventName=kind==='teaching'?'vocabulary.reflection.teaching_case_closed':'vocabulary.reflection.admission_case_closed';
+  const resolvedAt=String(sql.prepare('SELECT occurred_at FROM backend_events WHERE entity_id=? AND name=?').get(evidence.caseId,eventName)!.occurred_at);
+  assert.notEqual(resolvedAt,evidence.createdAt);assert.equal(getVocabularyReflectionCase(evidence.caseId).resolvedAt,resolvedAt);
+  for(const occurredAt of ['2099-01-02T00:00:00.000Z','2099-01-01T00:00:00.000Z'])emitBackendEvent({entityKind:'reflection',entityId:evidence.caseId,name:eventName,occurredAt,data:{reason:'Later closure'}});
+  assert.equal(getVocabularyCaseWorkspace(evidence.caseId,'editor').case.resolvedAt,'2099-01-02T00:00:00.000Z');
+  if(kind==='no-change')assert.equal(listVocabularyNoProposalCases('editor','closed')[0]!.resolvedAt,'2099-01-02T00:00:00.000Z');
+});
+
+test('historical resolved records without authoritative evidence have no fabricated resolution time',()=>{
+  const closed=createVocabularyProposal({operations:[op()],rationale:'Legacy closed proposal'},'editor');
+  const applied=createVocabularyProposal({operations:[op()],rationale:'Legacy applied proposal'},'editor');
+  sql.prepare("UPDATE content_proposals SET status='closed' WHERE proposal_id=?").run(closed.proposalId);
+  sql.prepare("UPDATE content_proposals SET status='applied' WHERE proposal_id=?").run(applied.proposalId);
+  assert.equal(getVocabularyProposal(closed.proposalId,'editor').resolvedAt,null);
+  assert.equal(getVocabularyProposal(applied.proposalId,'editor').resolvedAt,null);
+  const {cases}=ingest([present('one'),response('one'),wrap()]);
+  const evidence=cases.find(value=>value.kind==='exercise_improvement')!;
+  sql.prepare("UPDATE reflection_cases SET status='closed' WHERE case_id=?").run(evidence.caseId);
+  assert.equal(getVocabularyReflectionCase(evidence.caseId).resolvedAt,null);
 });

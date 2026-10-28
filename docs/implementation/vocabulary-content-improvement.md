@@ -62,6 +62,31 @@ See the [vocabulary contract](../../SPECS/vocabulary-learning.md) for learning a
 review authority, and the [implementation guide](../vocabulary-learning.md) for
 runtime details.
 
+## Operator review
+
+The operator panel's Content improvement tab presents an Awaiting review queue,
+an attention inbox and Archive. Cards keep scope and identity consequences
+visible before approval; one Details disclosure contains full rationale,
+relationship effects, encounter history, optional review notes and source-based
+manual authoring. Edit proposal edits the displayed draft. Creating a separate
+correction starts a new proposal from the current source.
+
+Left and Right navigate the displayed queue while preserving text editing and
+native control keys. Each queue remembers its selected identity while moving
+between queues; the operator panel keeps the review mounted while visiting Usage
+or another operator tab. The cursor survives these visits for the current panel
+session. Archive defaults to resolutions from the last 12 hours, using receipt or closure
+event timestamps. Search spans all loaded resolved proposals and closed no-change
+reviews. Records without retained resolution timestamps are searchable but do not
+enter the default time window.
+
+Queue lists refresh every 15 seconds while the panel and document are visible,
+and on window focus or visibility change. Refresh pauses during work or unsaved
+draft edits and never installs a different proposal version. A changed selected
+proposal requires explicit reload and validation before applying. Pending second
+opinions use their existing three-second polling cycle. These are reads; provider
+retry and application remain explicit operator actions.
+
 ## Updating the picture
 
 The [rendering source](../diagrams/render-content-improvement-flow.py) keeps layout,

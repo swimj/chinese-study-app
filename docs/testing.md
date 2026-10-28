@@ -76,10 +76,18 @@ that the rating is saved and the outgoing card reflects the acknowledged recall
 before requesting the successor. `?covered=1` checks the covered card's rightward
 departure; `?retry=1` fails the first save so Retry save must retain the departure.
 `/tests/browser/vocabulary-ui.html` provides presentation scenarios;
-`/tests/browser/vocabulary-operator.html` exercises the proposal-first internal review surface (ready suggestions, history, manual edits, and `?second=pending|failed|result`; `?narrow=1&large=1` checks compact enlarged-text layout)
-with intercepted HTTP (`?empty=1` for empty lists). These fixtures are separate
+`/tests/browser/vocabulary-operator.html` exercises the proposal-first internal review surface (ready suggestions, Archive search, proposal edits, and `?second=pending|failed|result`; `?narrow=1&large=1` checks compact enlarged-text layout)
+with an in-memory API (`?empty=1` for empty lists, `?noProposal=1` for a no-change judgment). These fixtures are separate
 from `npm test`. Add `?usage=1` to place the review in the operator panel's
-Content improvement tab, including its narrow and enlarged-text variants. The
+Content improvement tab, including its narrow and enlarged-text variants. Check
+Left/Right navigation, preserved selection after visiting Usage or Archive, the
+single Details disclosure, optional-reason Dismiss/Done, and second-opinion
+one-click requests and optional questions under Details. `?stale=1` exercises preview failure with edit
+and dismissal recovery; `?applyFailure=1` checks retrying an approved version
+after a failed application response; `?refresh=1` adds an incoming proposal after load for
+background refresh checks. `?oldArchive=1` provides a resolution older than 12
+hours that appears only through search. `vocabulary-operator-navigation.test.ts` covers
+arrow bounds and native input, composition, repeat and modifier guards. The
 separate `/tests/browser/vocabulary-operator-production.html` preview reads a
 locally installed sanitized excerpt from
 `tests/browser/.local/operator-production-preview.json` (gitignored). It replays

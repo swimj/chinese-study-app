@@ -38,6 +38,12 @@ function event(name: string, entityId: string, data: VocabularyJson, actor?: Voc
   emitBackendEvent({ name, entityKind: 'reflection', entityId, data,
     actorKind: actor?.kind ?? 'service', actorId: actor?.id ?? 'vocabulary-reflection' });
 }
+function latestClosureTime(entityId: string, names: readonly string[]): string | null {
+  const row = getDb().prepare(`SELECT occurred_at FROM backend_events
+    WHERE entity_kind='reflection' AND entity_id=? AND name IN (${names.map(() => '?').join(',')})
+    ORDER BY occurred_at DESC,recorded_at DESC,event_id DESC LIMIT 1`).get(entityId,...names) as { occurred_at: string } | undefined;
+  return row?.occurred_at ?? null;
+}
 type CaseRow = { case_id: string; completion_id: string; learner_id: string; kind: VocabularyReflectionCase['kind'];
   word_id: string | null; content_id: string | null; status: VocabularyReflectionCase['status']; evidence_snapshot_json: string; created_at: string };
 /** Internal private evidence reader. HTTP callers must establish operator authority before using it. */
@@ -46,7 +52,8 @@ export function getVocabularyReflectionCase(caseId: string): VocabularyReflectio
   if (!row) throw new Error('Unknown vocabulary reflection case');
   return { caseId: row.case_id, completionId: row.completion_id, learnerId: row.learner_id, kind: row.kind,
     wordId: row.word_id, contentId: row.content_id, status: row.status,
-    evidence: JSON.parse(row.evidence_snapshot_json) as VocabularyEncounterEvidence[], createdAt: row.created_at };
+    evidence: JSON.parse(row.evidence_snapshot_json) as VocabularyEncounterEvidence[], createdAt: row.created_at,
+    resolvedAt: row.status === 'closed' ? latestClosureTime(caseId,['vocabulary.reflection.admission_case_closed','vocabulary.reflection.teaching_case_closed']) : null };
 }
 export function listVocabularyReflectionCases(kind: VocabularyReflectionCase['kind'], actorId: string): VocabularyReflectionCase[] {
   operator(actorId);
@@ -331,7 +338,16 @@ function proposal(proposalId: string): VocabularyContentProposal {
     operations: JSON.parse(row.operations_json) as VocabularyProposalOperation[],rationale: row.rationale,
     authorKind: row.author_kind,authorId: row.author_id,invocationId: row.invocation_id,bases };
 }
-export function getVocabularyProposal(proposalId: string, actorId: string): VocabularyContentProposal { operator(actorId); return proposal(proposalId); }
+function withProposalResolution(value: VocabularyContentProposal): VocabularyContentProposal {
+  let resolvedAt: string | null = null;
+  if (value.status === 'applied') {
+    const row = getDb().prepare('SELECT applied_at FROM proposal_applications WHERE proposal_id=? AND proposal_version=?')
+      .get(value.proposalId,value.version) as { applied_at: string } | undefined;
+    resolvedAt = row?.applied_at ?? null;
+  } else if (value.status === 'closed') resolvedAt = latestClosureTime(value.proposalId,['vocabulary.reflection.proposal_closed']);
+  return { ...value,resolvedAt };
+}
+export function getVocabularyProposal(proposalId: string, actorId: string): VocabularyContentProposal { operator(actorId); return withProposalResolution(proposal(proposalId)); }
 function baseVersions(draft: VocabularyProposalDraft): VocabularyContentProposal['bases'] {
   const bases = new Map<string,number>(), keys = new Set<string>(), produced = new Map<string,number>();
   const add = (id: string,version: number) => {
@@ -502,8 +518,9 @@ export function approveVocabularyProposal(proposalId: string, expectedVersion: n
     event('vocabulary.reflection.proposal_approved',proposalId,{ version: expectedVersion, reviewId: id },actor); return id;
   });
 }
-export function closeVocabularyProposal(proposalId: string, expectedVersion: number, actorId: string, reason: string): void {
-  const actor = operator(actorId); nonempty(reason);
+export function closeVocabularyProposal(proposalId: string, expectedVersion: number, actorId: string, reason = ''): void {
+  const actor = operator(actorId);
+  if (typeof reason !== 'string') throw new TypeError('Expected text reason');
   atomic(() => {
     const value = expectedProposal(proposalId,expectedVersion);
     if (value.status === 'applied' || value.status === 'closed') throw new VocabularyReflectionConflict('Proposal is already resolved');
@@ -572,16 +589,21 @@ function caseImprovementResult(caseId: string): VocabularyImprovementResultInput
   return row ? (JSON.parse(row.result_json) as { input: VocabularyImprovementResultInput }).input : undefined;
 }
 function caseAdmission(caseId: string): VocabularyImprovementAdmission | undefined { return caseImprovementResult(caseId)?.admission; }
-export function closeVocabularyCase(caseId: string, actorId: string, reason: string): void {
-  const actor = operator(actorId); nonempty(reason);
+export function closeVocabularyCase(caseId: string, actorId: string, reason = ''): void {
+  const actor = operator(actorId);
+  if (typeof reason !== 'string') throw new TypeError('Expected text reason');
   atomic(() => {
     const evidence = getVocabularyReflectionCase(caseId);
     if (evidence.kind === 'teaching_review') { closeVocabularyTeachingCase(caseId,actorId,reason); return; }
-    const admission = caseAdmission(caseId);
-    const noProposal = caseImprovementResult(caseId)?.proposal === null;
-    if (evidence.kind !== 'exercise_improvement' || (!noProposal && !(admission && ['unmappable','inventory_gap'].includes(admission.outcome)) && caseImprovementResult(caseId)?.pureCuePromotion?.outcome !== 'needs_operator')) {
+    const improvement = caseImprovementResult(caseId);
+    const admission = improvement?.admission;
+    const noProposal = improvement?.proposal === null;
+    const unresolved = (admission !== undefined && ['unmappable','inventory_gap'].includes(admission.outcome))
+      || improvement?.pureCuePromotion?.outcome === 'needs_operator';
+    if (evidence.kind !== 'exercise_improvement' || (!noProposal && !unresolved)) {
       throw new VocabularyReflectionConflict('Only manual teaching or unresolved assessment cases can be closed');
     }
+    if (!(evidence.status === 'completed' && noProposal && !unresolved)) nonempty(reason);
     getDb().prepare("UPDATE reflection_cases SET status='closed' WHERE case_id=?").run(caseId);
     event('vocabulary.reflection.admission_case_closed',caseId,{ reason,outcome: admission?.outcome??null },actor);
   });
@@ -621,7 +643,7 @@ export function retryVocabularyReflectionJob(jobId: string, actorId: string, at 
 export function listVocabularyProposals(actorId: string, status?: VocabularyContentProposal['status']): VocabularyContentProposal[] {
   operator(actorId);
   return (getDb().prepare(`SELECT proposal_id FROM content_proposals WHERE (? IS NULL OR status=?) ORDER BY updated_at DESC,proposal_id`)
-    .all(status ?? null,status ?? null) as { proposal_id:string }[]).map(row => proposal(row.proposal_id));
+    .all(status ?? null,status ?? null) as { proposal_id:string }[]).map(row => withProposalResolution(proposal(row.proposal_id)));
 }
 export function getVocabularyCaseWorkspace(caseId: string, actorId: string): { case: VocabularyReflectionCase;
   jobs: { jobId: string;kind:string;status:string;attemptNumber:number;error:string|null;secondOpinion: boolean;result: VocabularySecondOpinion['result'] }[]; proposals: VocabularyContentProposal[];sources:VocabularyContent[];

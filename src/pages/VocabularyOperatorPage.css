@@ -73,3 +73,20 @@
 .vocabulary-operator-preview > article > .vocabulary-scope { margin-bottom: .6rem; }
 .vocabulary-second-opinion { border-top: 1px solid var(--border); padding-top: .75rem; }
 .vocabulary-second-opinion .vocabulary-operator-actions { margin: .6rem 0; }
+
+.vocabulary-operator-page > header { margin-bottom: 1rem; }
+.vocabulary-operator-page > header h2 { font-size: 1.4rem; margin: 0; }
+.vocabulary-operator-detail > section { padding: 1rem; }
+.vocabulary-operator-preview > article { margin: .75rem 0 1rem; }
+.vocabulary-operator-preview > article > h3 { font-size: 1rem; margin-top: .6rem; }
+.vocabulary-operator-comparison > div { padding: .8rem; }
+.vocabulary-operator-preview .vocabulary-scope { font-weight: 500; }
+.vocabulary-operator-answers > strong { font-size: .85rem; font-weight: 500; color: var(--text-secondary); }
+.vocabulary-operator-answers > p { margin: .2rem 0; }
+.vocabulary-authored-details { margin-top: .75rem; }
+.vocabulary-evidence > section { border: 0; padding: 1rem 0; margin: 0; background: transparent; }
+.vocabulary-proposal-editor { border-top: 1px solid var(--border); margin-top: 1rem; }
+.vocabulary-operator-page input[type=search] { width: 100%; padding: .6rem; font: inherit; color: inherit; background: var(--surface); border: 1px solid var(--border); border-radius: .4rem; }
+.vocabulary-archive-results { margin-bottom: 1rem; }
+.vocabulary-operator-detail > .reflection-help-shell { display: block; overflow: visible; margin-bottom: .75rem; }
+.vocabulary-operator-detail .reflection-help-chrome { margin-bottom: 0; }
