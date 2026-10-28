@@ -437,8 +437,9 @@ lesson; typing, composition and modified keys retain their normal behavior.
 Operators open `#operator-vocabulary` directly. It is unlisted in learner
 navigation and Content Bin, and protected by the existing operator allowlist.
 For now, hosted operator access is restricted to the dogfood account. The
-cross-learner inbox starts with proposals awaiting review. Selecting a suggestion
-validates its saved version and shows current and proposed content, accepted
+cross-learner inbox starts with proposals awaiting review. Previous and next controls
+navigate one proposal at a time; applying or dismissing a proposal advances to
+the next available item. Opening a proposal validates its saved version and shows current and proposed content, accepted
 answers, and shared or learner-only scope. Changed answer criteria and retained
 teaching are expanded in the comparison. Evidence, processing details, relationship
 effects, and manual editing are available on drill-in; history and issues needing
