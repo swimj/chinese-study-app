@@ -1,76 +1,38 @@
 # Operator content improvement
 
-This guide explains how operators and assisting agents review and safely correct
-existing study content through the content-improvement workspace. It covers
-selection, drafting, validation, explicit application, content-specific
-replacement and repair boundaries, the operator API, and the evidence retained
-for improving future generation. Use it to understand what a correction changes,
-what history it preserves, and how to prepare or apply one.
-
-The workspace turns an exact content observation into a reviewed correction.
-Operators make the editorial judgments; agents can prepare the same durable
-drafts through a revision-checked API. Generation experiments are a separate
-process: this workflow captures their evidence without changing prompts or
-regenerating content automatically. The [generation guide](word-content-generation.md)
-explains how new word content is produced, and the
-[serving guide](word-content-serving.md#selection-and-withdrawal) explains how
-package corrections affect later selection and existing learner pins.
+This guide describes the retained revision-checked operator API for correcting
+older study content, including validation, application effects, and retained
+evidence. The content quality panel shows historical ratings; it no longer
+provides a correction editor. The current vocabulary operator page handles
+vocabulary reflection review separately.
 
 ## Review and application
 
-Open a case from **Improve this item** in content triage, or select a content
-kind and source ID directly under **Open content by source ID**. The triage action
-opens the draft directly, with an unsaved-edit warning before switching cases.
-A case records the current source and, when
-selected from feedback, the exact rated snapshot separately. An older flag is
-evidence about what was served, not permission to overwrite newer material.
+An authenticated operator or agent can create a correction case through the API
+from a content kind and source ID, optionally attaching an exact rated snapshot.
+The snapshot is evidence about what was served, not permission to overwrite
+newer material. Saved drafts retain diagnosis, proposed content, rationale,
+origin, actor, and time without changing study content.
 
-Drafting is flexible: diagnosis, proposed content, rationale, and preview can
-be revisited in any order. The possible general lesson is optional. An agent
-proposal remains labeled as agent-originated even when an operator accepts it.
-Saving a draft changes no study content. The workspace retains each saved
-revision with its actor and time.
+Before application, inspect the validated preview and expected answers and
+record the problem and why the revision is better. Application requires explicit
+approval of the saved revision and an additional acknowledgement for changed
+answer space. Validation runs again in the application transaction; stale
+revisions or changed source/dependency state reject the write. A case can also
+be closed without changing content.
 
-For a rehearsal, the editor focuses on the selected exercise beside its original
-and a live materialized preview. The full source and teaching package remain
-available under **Advanced**; focused edits preserve the rest of the package.
-An example cloze can receive an optional English frame. Editorial evidence sits
-below the comparison. **Save and validate** retains an immutable draft revision
-before checking it; a validation failure leaves that saved revision available.
-The separate **Save draft** action remains available without validation.
-
-A draft chip exposes an × action on hover or keyboard focus (always visible on
-touch devices); the open editor also offers **Discard draft**. These actions
-close the case without applying it, remove it from unresolved drafts, and retain
-saved revisions under Closed cases. Discarding an open draft with unsaved edits
-requires confirmation. Applied and closed cases do not offer this action.
-**Application effects** discloses the content-specific consequences near review
-and approval.
-
-Exercise previews show the learner-facing cue followed by expected answers for
-editorial judgment. They do not include an answer-entry or matcher-testing flow.
-Unvalidated cues can use known source answers; changed answer identities require
-validation to resolve their written forms.
-
-Before application, inspect the materialized preview and expected answers, and record both the problem and why the revision is better. Application
-requires explicit approval of the saved revision. Changed answer space requires
-an additional acknowledgement. Validation runs again inside the application
-transaction; stale draft revisions or changed source/dependency state reject
-the write. Refreshing never implicitly applies an unsaved proposal. A case can
-also be closed with a reason without changing content.
-
-The transaction applies the correction and saves its accepted evidence together.
-The original content, rated snapshot, feedback, and prior draft revisions remain
-available. A resolved case cannot be edited; start another case for further
-changes. Corrections do not regrade previous attempts, compensate lapses, reset
-progress, or modify already-served exercise snapshots.
+The transaction saves accepted evidence with the correction. Original content,
+rated snapshots, feedback, and prior draft revisions remain available. A resolved
+case cannot be edited; start another case for further changes. Corrections do not
+regrade previous attempts, compensate lapses, reset progress, or modify already
+served exercise snapshots.
 
 ## Content boundaries
 
 Shared corrections affect future selection for all eligible learners. Private
 content retains its original owner and does not become shared through an
-operator correction. Operator authorization is required for all workspace reads
-and writes, including the domain entry points. The workspace exposes authored
+operator correction. Operator authorization is required for all correction reads
+and writes, including the domain entry points. The API exposes authored
 material and correction evidence, not learner responses or reflection bundles.
 
 Production cues, supplements, and contrast prompts use replacement identities.
@@ -101,8 +63,8 @@ retirement remain separate publication decisions.
 ## Agent API
 
 All routes live under `/api/operator/content-improvements`, use the existing
-operator authentication/allowlist, and return JSON. Agents should use the same
-authenticated operator session as the UI. There is no unauthenticated agent
+operator authentication/allowlist, and return JSON. Agents must use an
+authenticated operator session. There is no unauthenticated agent
 backdoor and no provider invocation or automatic generation in this workflow.
 
 | Method and suffix | Contract |
@@ -139,12 +101,12 @@ repaired examples, unseen similar examples, and already-good controls.
 Correcting an item does not require a prompt change. Recording a possible lesson
 does not establish a general rule or trigger model-provider work. Improved
 future generation does not automatically rewrite existing content. The
-workspace implements evidence capture for this second loop, not an automated
+API implements evidence capture for this second loop, not an automated
 prompt optimizer or evaluation service.
 
 ## Delivery and migration
 
-The workspace adds versioned schema migrations for correction drafts, immutable
+The correction workflow uses versioned schema migrations for correction drafts, immutable
 revision evidence and content-specific replacement/repair records. Deploy via
 the [offline migration procedure](ops/schema-migrations.md), with stopped writers
 and a verified backup. The app-only hosted upgrade route is insufficient.

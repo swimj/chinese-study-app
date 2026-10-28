@@ -530,6 +530,6 @@ change its ownership or expose learner responses.
 future cue, supplement, contrast and introduction selection. Existing learner
 introduction pins may retain their predecessor. `operator_pure_cue_repairs`
 records the bounded in-place wording repair before a guarded update. The
-workspace transaction owns correction application and audit together. See the
+correction transaction owns application and audit together. See the
 [workflow and API](content-improvement.md) for the operator contract. Migrations
 `0032` and `0033` require the offline schema migration procedure.

@@ -50,8 +50,19 @@ export function getVocabularyReflectionCase(caseId: string): VocabularyReflectio
 }
 export function listVocabularyReflectionCases(kind: VocabularyReflectionCase['kind'], actorId: string): VocabularyReflectionCase[] {
   operator(actorId);
-  return (getDb().prepare('SELECT case_id FROM reflection_cases WHERE kind=? AND status=? ORDER BY created_at,case_id')
+  return (getDb().prepare('SELECT c.case_id FROM reflection_cases c WHERE c.kind=? AND c.status=? AND NOT EXISTS (SELECT 1 FROM vocabulary_reflection_jobs j WHERE j.case_id=c.case_id AND j.second_opinion_json IS NOT NULL) ORDER BY c.created_at,c.case_id')
     .all(kind, 'open') as { case_id: string }[]).map(row => getVocabularyReflectionCase(row.case_id));
+}
+/** Completed original judgments without a proposal remain reviewable, including historical results. */
+export function listVocabularyNoProposalCases(actorId: string, status: 'completed' | 'closed' = 'completed'): VocabularyReflectionCase[] {
+  operator(actorId);
+  const rows = getDb().prepare(`SELECT c.case_id FROM reflection_cases c
+    JOIN vocabulary_reflection_jobs j ON j.case_id=c.case_id
+    WHERE c.kind='exercise_improvement' AND c.status=? AND j.status='succeeded'
+      AND j.second_opinion_json IS NULL AND json_type(j.result_json, '$.input.proposal')='null'
+      AND NOT EXISTS (SELECT 1 FROM content_proposals p WHERE p.case_id=c.case_id)
+    ORDER BY c.created_at DESC,c.case_id`).all(status) as {case_id:string}[];
+  return rows.map(row=>getVocabularyReflectionCase(row.case_id));
 }
 function createCase(learnerId: string, completionId: string, kind: VocabularyReflectionCase['kind'], subjectKey: string,
   wordId: string | null, contentId: string | null, evidence: VocabularyEncounterEvidence[], at: string): string {
@@ -557,7 +568,7 @@ export function closeVocabularyTeachingCase(caseId: string, actorId: string, rea
 
 function caseImprovementResult(caseId: string): VocabularyImprovementResultInput | undefined {
   const row = getDb().prepare(`SELECT result_json FROM vocabulary_reflection_jobs
-    WHERE case_id=? AND kind='exercise_improvement' AND status='succeeded'`).get(caseId) as { result_json: string } | undefined;
+    WHERE case_id=? AND kind='exercise_improvement' AND status='succeeded' AND second_opinion_json IS NULL`).get(caseId) as { result_json: string } | undefined;
   return row ? (JSON.parse(row.result_json) as { input: VocabularyImprovementResultInput }).input : undefined;
 }
 function caseAdmission(caseId: string): VocabularyImprovementAdmission | undefined { return caseImprovementResult(caseId)?.admission; }
@@ -567,7 +578,8 @@ export function closeVocabularyCase(caseId: string, actorId: string, reason: str
     const evidence = getVocabularyReflectionCase(caseId);
     if (evidence.kind === 'teaching_review') { closeVocabularyTeachingCase(caseId,actorId,reason); return; }
     const admission = caseAdmission(caseId);
-    if (evidence.kind !== 'exercise_improvement' || (!(admission && ['unmappable','inventory_gap'].includes(admission.outcome)) && caseImprovementResult(caseId)?.pureCuePromotion?.outcome !== 'needs_operator')) {
+    const noProposal = caseImprovementResult(caseId)?.proposal === null;
+    if (evidence.kind !== 'exercise_improvement' || (!noProposal && !(admission && ['unmappable','inventory_gap'].includes(admission.outcome)) && caseImprovementResult(caseId)?.pureCuePromotion?.outcome !== 'needs_operator')) {
       throw new VocabularyReflectionConflict('Only manual teaching or unresolved assessment cases can be closed');
     }
     getDb().prepare("UPDATE reflection_cases SET status='closed' WHERE case_id=?").run(caseId);
@@ -612,12 +624,12 @@ export function listVocabularyProposals(actorId: string, status?: VocabularyCont
     .all(status ?? null,status ?? null) as { proposal_id:string }[]).map(row => proposal(row.proposal_id));
 }
 export function getVocabularyCaseWorkspace(caseId: string, actorId: string): { case: VocabularyReflectionCase;
-  jobs: { jobId: string;kind:string;status:string;attemptNumber:number;error:string|null }[]; proposals: VocabularyContentProposal[];sources:VocabularyContent[];
-  admission?: VocabularyImprovementAdmission; pureCueReferral?: VocabularyPureCueReferral | null; pureCuePromotion?: VocabularyPureCuePromotion } {
+  jobs: { jobId: string;kind:string;status:string;attemptNumber:number;error:string|null;secondOpinion: boolean;result: VocabularySecondOpinion['result'] }[]; proposals: VocabularyContentProposal[];sources:VocabularyContent[];
+  diagnosis?: VocabularyJson; admission?: VocabularyImprovementAdmission; pureCueReferral?: VocabularyPureCueReferral | null; pureCuePromotion?: VocabularyPureCuePromotion } {
   operator(actorId);
   const evidence=getVocabularyReflectionCase(caseId);
-  const jobs=getDb().prepare(`SELECT job_id AS jobId,kind,status,attempt_number AS attemptNumber,last_error AS error
-    FROM vocabulary_reflection_jobs WHERE case_id=?`).all(caseId) as { jobId:string;kind:string;status:string;attemptNumber:number;error:string|null }[];
+  const jobRows=getDb().prepare(`SELECT job_id AS jobId,kind,status,attempt_number AS attemptNumber,last_error AS error,second_opinion_json,result_json FROM vocabulary_reflection_jobs WHERE case_id=? OR json_extract(second_opinion_json,'$.parentCaseId')=? ORDER BY created_at,job_id`).all(caseId,caseId) as { jobId:string;kind:string;status:string;attemptNumber:number;error:string|null;second_opinion_json:string|null;result_json:string|null }[];
+  const jobs=jobRows.map(({second_opinion_json,result_json,...row})=>({...row,secondOpinion:!!second_opinion_json,result:result_json?(JSON.parse(result_json) as {input:VocabularyImprovementResultInput}).input.secondOpinion??null:null}));
   const ids=new Set(evidence.evidence.map(item=>item.snapshot.contentId));
   for(const id of [...ids]) {
     for(const row of getDb().prepare('SELECT introduction_id FROM introduction_exercises WHERE exercise_id=?').all(id) as {introduction_id:string}[])ids.add(row.introduction_id);
@@ -630,7 +642,7 @@ export function getVocabularyCaseWorkspace(caseId: string, actorId: string): { c
   if(improvement?.pureCuePromotion?.existingContentId)ids.add(improvement.pureCuePromotion.existingContentId);
   const sources=[...ids].map(id=>getVocabularyContentForMaintenance(id)).filter((value):value is VocabularyContent=>value!==null);
   const admission = caseAdmission(caseId);
-  return {case:evidence,jobs,proposals:listVocabularyProposals(actorId).filter(value=>value.caseId===caseId),sources,...(admission ? {admission} : {}),...(improvement?.pureCueReferral?{pureCueReferral:improvement.pureCueReferral}:{}),...(improvement?.pureCuePromotion?{pureCuePromotion:improvement.pureCuePromotion}:{})};
+  return {case:evidence,jobs,proposals:listVocabularyProposals(actorId).filter(value=>value.caseId===caseId),sources,...(improvement ? {diagnosis:improvement.diagnosis} : {}),...(admission ? {admission} : {}),...(improvement?.pureCueReferral?{pureCueReferral:improvement.pureCueReferral}:{}),...(improvement?.pureCuePromotion?{pureCuePromotion:improvement.pureCuePromotion}:{})};
 }
 export function listVocabularyFailedDispatches(actorId:string):{dispatchId:string;learnerId:string;sessionId:string;error:string}[] {
   operator(actorId);
@@ -693,4 +705,20 @@ export function listVocabularySecondOpinions(proposalId: string, actorId: string
   return rows.map(row => ({requestId:row.request_id,proposalId:row.proposal_id,proposalVersion:row.proposal_version,
     jobId:row.job_id,status:row.status,attemptNumber:row.attempt_number,error:row.last_error,requestedAt:row.requested_at,
     result:row.result_json ? (JSON.parse(row.result_json) as {input:VocabularyImprovementResultInput}).input.secondOpinion ?? null : null}));
+}
+
+export function requestVocabularyCaseSecondOpinion(caseId:string, actorId:string, notes:string): void {
+  const actor=operator(actorId);
+  atomic(()=>{
+    const evidence=getVocabularyReflectionCase(caseId), result=caseImprovementResult(caseId);
+    if(evidence.kind!=='exercise_improvement'||evidence.status!=='completed'||!result||result.proposal!==null)
+      throw new VocabularyReflectionConflict('A completed no-proposal judgment is required');
+    const existing=getDb().prepare("SELECT 1 FROM vocabulary_reflection_jobs WHERE json_extract(second_opinion_json,'$.parentCaseId')=? AND status IN ('queued','running')").get(caseId);
+    if(existing)throw new VocabularyReflectionConflict('A second opinion is already in progress');
+    const at=timestamp(), requestId=randomUUID();
+    const childId=createCase(evidence.learnerId,evidence.completionId,'exercise_improvement',`case-second-opinion/${requestId}`,evidence.wordId,evidence.contentId,evidence.evidence,at);
+    getDb().prepare('UPDATE vocabulary_reflection_jobs SET second_opinion_json=? WHERE case_id=?')
+      .run(encode({requestId,parentCaseId:caseId,proposal:null,notes,diagnosis:result.diagnosis}),childId);
+    event('vocabulary.reflection.case_second_opinion_requested',caseId,{requestId,notes},actor);
+  });
 }

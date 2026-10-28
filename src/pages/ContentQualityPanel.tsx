@@ -10,7 +10,6 @@ import {
   type ContentQualityRatedSnapshot,
 } from '../domain/content-quality';
 import { fetchContentQualityRatingLedger } from '../services/api';
-import { ContentImprovementWorkspace, type ImprovementSelection } from './ContentImprovementWorkspace';
 import { contentQualityTextBlocks } from './content-quality-presentation';
 
 const KIND_LABELS: Record<ContentQualityKind, string> = {
@@ -41,12 +40,11 @@ function percent(numerator: number, denominator: number): string {
   return denominator === 0 ? '—' : `${(100 * numerator / denominator).toFixed(1)}%`;
 }
 
-export function ContentQualityPanel({ legacyContentEditing = true }: { legacyContentEditing?: boolean } = {}) {
+export function ContentQualityPanel() {
   const [timestampOptionsOpen, setTimestampOptionsOpen] = useState(false);
   const [timestampDisplay, setTimestampDisplay] = useTimestampDisplay('content-quality');
   const formatTimestamp = createTimestampFormatter(timestampDisplay);
   const zoneLabel = timestampDisplayLabel(timestampDisplay);
-  const [improvementSelection, setImprovementSelection] = useState<ImprovementSelection | null>(null);
   const [payload, setPayload] = useState<Awaited<ReturnType<typeof fetchContentQualityRatingLedger>> | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -58,10 +56,6 @@ export function ContentQualityPanel({ legacyContentEditing = true }: { legacyCon
   const [direction, setDirection] = useState<'asc' | 'desc'>('desc');
   const [view, setView] = useState<'ratings' | 'snapshot'>('ratings');
   const [dateWindow, setDateWindow] = useState(lastSevenUtcDays);
-  function improve(item: Pick<ContentQualityRatingEntry, 'kind' | 'sourceId' | 'contentKey'>) {
-    setImprovementSelection({ kind: item.kind, sourceId: item.sourceId, contentKey: item.contentKey });
-    document.getElementById('content-improvement-workspace')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }
 
   useEffect(() => {
     let cancelled = false;
@@ -151,16 +145,15 @@ export function ContentQualityPanel({ legacyContentEditing = true }: { legacyCon
             </select></td> : <td colSpan={3}><label className="content-quality-visually-hidden" htmlFor="quality-vote-filter">Filter ratings included in aggregate</label><select id="quality-vote-filter" value={rating} onChange={(event) => setRating(event.target.value as 'up' | 'down' | '')}>
               <option value="">All votes</option><option value="up">Helpful only</option><option value="down">Not helpful only</option>
             </select><span className="content-quality-filter-note">Filter which votes are counted.</span></td>}
-          </tr>{view === 'ratings' ? orderedRatings.map((entry, index) => <RatingRow key={`${entry.contentKey}:${entry.updatedAt}:${index}`} entry={entry} onImprove={legacyContentEditing ? improve : undefined} formatTimestamp={formatTimestamp} />)
-            : orderedSnapshots.map((item) => <SnapshotRow key={item.contentKey} item={item} onImprove={legacyContentEditing ? improve : undefined} formatTimestamp={formatTimestamp} />)}</tbody>
+          </tr>{view === 'ratings' ? orderedRatings.map((entry, index) => <RatingRow key={`${entry.contentKey}:${entry.updatedAt}:${index}`} entry={entry} formatTimestamp={formatTimestamp} />)
+            : orderedSnapshots.map((item) => <SnapshotRow key={item.contentKey} item={item} formatTimestamp={formatTimestamp} />)}</tbody>
         </table>
       </div>
       {view === 'ratings' ? orderedRatings.length === 0 && <p>No current ratings match these filters.</p> : orderedSnapshots.length === 0 && <p>No rated snapshots match these filters.</p>}
     </>}
     {timestampOptionsOpen && <TimestampColumnDialog title={view === 'ratings' ? 'Changed' : 'Latest rating'} display={timestampDisplay} onDisplay={setTimestampDisplay}
       sorted={sortBy === 'updatedAt'} direction={direction} onSort={(order) => { setSortBy('updatedAt'); setDirection(order); }} onClose={() => setTimestampOptionsOpen(false)} />}
-    {legacyContentEditing ? <ContentImprovementWorkspace selection={improvementSelection} />
-      : <p className="notes">These are historical content ratings.</p>}
+    <p className="notes">These are historical content ratings.</p>
   </section>;
 }
 
@@ -183,24 +176,22 @@ function SortButton({ label, active, direction, onClick }: { label: string; acti
   return <button type="button" className="operator-column-button" onClick={onClick}>{label}{active ? direction === 'asc' ? ' ↑' : ' ↓' : ' ▾'}</button>;
 }
 
-function RatingRow({ entry, onImprove, formatTimestamp }: { formatTimestamp: (timestamp: string) => string; entry: ContentQualityRatingEntry; onImprove?: (item: Pick<ContentQualityRatingEntry, 'kind' | 'sourceId' | 'contentKey'>) => void }) {
+function RatingRow({ entry, formatTimestamp }: { formatTimestamp: (timestamp: string) => string; entry: ContentQualityRatingEntry }) {
   const textBlocks = contentQualityTextBlocks(entry.content);
   return <tr>
     <td><time dateTime={entry.updatedAt}>{formatTimestamp(entry.updatedAt)}</time></td>
     <th scope="row" className="content-quality-title"><details><summary>{entry.title}</summary>
       <dl className="content-quality-readable">{textBlocks.map((block, index) => <div key={index}><dt>{block.label}</dt><dd>{block.text}</dd></div>)}</dl>
-      {onImprove && entry.kind !== 'definition_fallback' && <button type="button" className="secondary-button" onClick={() => onImprove(entry)}>Improve this item</button>}
       <details><summary>Exact content snapshot (JSON)</summary><pre className="content-quality-snapshot">{JSON.stringify(entry.content, null, 2)}</pre></details>
     </details></th>
     <td>{KIND_LABELS[entry.kind]}</td><td>{entry.rating === 'up' ? 'Helpful' : 'Not helpful'}</td>
   </tr>;
 }
 
-function SnapshotRow({ item, onImprove, formatTimestamp }: { formatTimestamp: (timestamp: string) => string; item: ContentQualityRatedSnapshot; onImprove?: (item: Pick<ContentQualityRatingEntry, 'kind' | 'sourceId' | 'contentKey'>) => void }) {
+function SnapshotRow({ item, formatTimestamp }: { formatTimestamp: (timestamp: string) => string; item: ContentQualityRatedSnapshot }) {
   const textBlocks = contentQualityTextBlocks(item.content);
   return <tr><td><time dateTime={item.updatedAt}>{formatTimestamp(item.updatedAt)}</time></td><th scope="row" className="content-quality-title"><details><summary>{item.title}</summary>
     <dl className="content-quality-readable">{textBlocks.map((block, index) => <div key={index}><dt>{block.label}</dt><dd>{block.text}</dd></div>)}</dl>
-    {onImprove && item.kind !== 'definition_fallback' && <button type="button" className="secondary-button" onClick={() => onImprove(item)}>Improve this item</button>}
     <details><summary>Exact content snapshot (JSON)</summary><pre className="content-quality-snapshot">{JSON.stringify(item.content, null, 2)}</pre></details>
   </details></th><td>{KIND_LABELS[item.kind]}</td><td>{item.up}</td><td>{item.down}</td><td>{item.totalRatings}</td></tr>;
 }

@@ -323,7 +323,7 @@ function App({ onSignOut, accountScope = 'trusted-local' }: { onSignOut?: () => 
       ) : currentPage === 'operator-vocabulary' ? (
         <VocabularyOperatorPage />
       ) : currentPage === 'operator-usage' ? (
-        <OperatorUsagePulsePage legacyContentEditing={false} />
+        <OperatorUsagePulsePage />
       ) : null}
 
     </AppChrome>

@@ -7,7 +7,7 @@ import { setDb } from '../server/db/connection.ts';
 import { runWithLearnerId } from '../server/db/learner-context.ts';
 import { createVocabularyContent,getVocabularyContentForMaintenance } from '../server/db/vocabulary-content.ts';
 import { createVocabularySession,appendVocabularySessionActions,stageVocabularySessionCompletion,closeVocabularySessionCompletion } from '../server/db/vocabulary-sessions.ts';
-import { ingestVocabularySessionEvidence,claimVocabularyReflectionJob,recordVocabularyFeedbackJudgment } from '../server/db/vocabulary-reflection.ts';
+import { ingestVocabularySessionEvidence,claimVocabularyReflectionJob,recordVocabularyFeedbackJudgment,recordVocabularyImprovementResult } from '../server/db/vocabulary-reflection.ts';
 import { registerVocabularyReflectionRoutes } from '../server/vocabulary/reflection-routes.ts';
 import type { VocabularySessionAction } from '../src/domain/vocabulary-session.ts';
 let sql:DatabaseSync,env:Record<string,string|undefined>,handlers:Map<string,RequestHandler[]>,wakes:number;
@@ -212,6 +212,25 @@ test('second opinion endpoints require operator authority, current version, and 
   assert.equal(requested.status,200);assert.equal(requested.body.status,'queued');assert.equal(wakes,1);
   assert.deepEqual(call('post',route,{params:{id},body:{expectedVersion:1}}).body,requested.body);
   assert.equal((call('get',route,{params:{id}}).body.items as unknown[]).length,1);
+});
+
+test('no-proposal review endpoints enforce operator access and retain the requested opinion',()=>{
+  const job=claimVocabularyReflectionJob({kind:'exercise_improvement',now:later})!;
+  recordVocabularyImprovementResult(job.jobId,job.leaseToken,{diagnosis:'No change needed',proposal:null},later);
+  const list=`${base}/no-proposal-cases`,route=`${base}/cases/:id/second-opinions`,params={id:caseId};
+  process.env.APP_OPERATOR_CLERK_USER_IDS='someone-else';
+  assert.equal(call('get',list).status,403);
+  assert.equal(call('post',route,{params,body:{notes:'Consider the answer'}}).status,403);
+  process.env.APP_OPERATOR_CLERK_USER_IDS='editor';
+  assert.equal((call('get',list).body.items as unknown[]).length,1);
+  assert.equal(call('get',list,{query:{status:'invalid'}}).status,400);
+  assert.equal(call('post',route,{params,body:{notes:{}}}).status,400);
+  assert.equal(call('post',route,{params,body:{notes:'Consider the answer',force:true}}).status,400);
+  assert.equal(call('post',route,{params,body:{notes:'Consider the answer'}}).status,200);
+  assert.equal(wakes,1);
+  assert.equal(call('post',route,{params}).status,409);
+  const workspace=call('get',`${base}/cases/:id`,{params});
+  assert.equal((workspace.body.jobs as {secondOpinion:boolean}[]).filter(item=>item.secondOpinion).length,1);
 });
 
 

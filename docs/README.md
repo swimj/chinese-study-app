@@ -94,7 +94,7 @@ hosted operations, and contributor development clearly separated.
 - Operator interface: [operator panel guide](operator-panel.md), with the
   [API reference](api.md#operator-view) describing its HTTP contracts.
 - Content correction: [operator content improvement](content-improvement.md#review-and-application)
-  explains how to draft, validate, and explicitly approve corrections, with
+  explains the retained correction API, including validation and explicit approval, with
   content-specific effects and retained history.
 - Blog publication: [manual editor and operator command](whats-new.md#manual-operator-editor),
   including the skill’s interactive draft-review procedure.

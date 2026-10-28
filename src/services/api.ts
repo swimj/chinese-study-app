@@ -1537,30 +1537,6 @@ export async function markWhatsNewSeenSequence(request: {
   return response.json();
 }
 
-async function improvementRequest<T>(path: string, method = 'GET', body?: unknown): Promise<T> {
-  const response = await apiFetch(`${API_BASE}/api/operator/content-improvements${path}`, {
-    method, ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
-  });
-  if (!response.ok) throw new Error(await readApiErrorMessage(response, 'Could not update content improvement'));
-  return response.json();
-}
-export const fetchContentImprovements = (status: import('../domain/content-improvement').ImprovementCase['status'], offset = 0) =>
-  improvementRequest<{ items: import('../domain/content-improvement').ImprovementCase[]; total: number }>(`?status=${status}&limit=25&offset=${offset}`);
-export const createContentImprovement = (source: { kind: import('../domain/content-quality').ContentQualityKind; sourceId: string; contentKey?: string }) =>
-  improvementRequest<import('../domain/content-improvement').ImprovementCase>('', 'POST', source);
-export const fetchContentImprovement = (id: string) => improvementRequest<import('../domain/content-improvement').ImprovementCase>(`/${encodeURIComponent(id)}`);
-export const saveContentImprovement = (id: string, expectedRevision: number, draft: import('../domain/content-improvement').ImprovementDraftFields) =>
-  improvementRequest<import('../domain/content-improvement').ImprovementCase>(`/${encodeURIComponent(id)}`, 'PUT', { ...draft, expectedRevision });
-export const validateContentImprovement = (id: string, expectedRevision: number) =>
-  improvementRequest<import('../domain/content-improvement').ImprovementCheck>(`/${encodeURIComponent(id)}/validate`, 'POST', { expectedRevision });
-export const applyContentImprovement = (id: string, expectedRevision: number, acceptAnswerSpaceChange: boolean) =>
-  improvementRequest<import('../domain/content-improvement').ImprovementCase>(`/${encodeURIComponent(id)}/apply`, 'POST', { expectedRevision, approve: true, acceptAnswerSpaceChange });
-export const closeContentImprovement = (id: string, expectedRevision: number, resolution: string) =>
-  improvementRequest<import('../domain/content-improvement').ImprovementCase>(`/${encodeURIComponent(id)}/close`, 'POST', { expectedRevision, resolution });
-export const fetchContentImprovementHistory = (id: string) =>
-  improvementRequest<import('../domain/content-improvement').ImprovementCase[]>(`/${encodeURIComponent(id)}/history`);
-
-
 async function requestSessionCompletion(sessionId: string, action: '' | '/undo' | '/close', body?: unknown): Promise<SessionCompletion> {
   const response = await apiFetch(`${API_BASE}/api/study-sessions/${encodeURIComponent(sessionId)}/completion${action}`, {
     method: body === undefined ? 'GET' : 'POST',

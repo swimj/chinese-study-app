@@ -56,7 +56,7 @@ does not silently select another package. Unprepared new words are omitted at
 session entry; established Practice words without eligible completed-package
 content use their existing ordinary cards.
 
-The [operator content-improvement workspace](content-improvement.md) can correct
+The retained [operator correction API](content-improvement.md) can correct
 an eligible introduction or rehearsal by publishing a coherent source/package
 revision. New unpinned selections use the successor; existing learner pins
 continue using the predecessor while its publications remain eligible. The

@@ -95,13 +95,10 @@ Quality evidence is not fed to any model provider.
 
 ## Improving content
 
-The [operator content-improvement workspace](content-improvement.md) opens a
-revisioned correction case from an inspected item or a directly selected source.
-A reaction remains a descriptive overlay; only a separately reviewed, explicitly
-approved correction changes future content selection. Definition fallback ratings
-are inspectable in the ledger but do not expose the authored-content correction
-editor; review production can already request feedback and a proposed cue repair
-through reflection.
+Ratings are historical observations. The current vocabulary operator page
+supports review of vocabulary reflection; the retained
+[correction API](content-improvement.md) provides revision-checked access to
+older content correction cases.
 
 ## Deployment
 

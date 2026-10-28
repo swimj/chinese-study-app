@@ -12,7 +12,7 @@ import { createVocabularySession, appendVocabularySessionActions, stageVocabular
 import { ingestVocabularySessionEvidence, getVocabularyReflectionCase, listVocabularyReflectionCases,
   claimVocabularyReflectionJob, recoverVocabularyReflectionJobs, failVocabularyReflectionJob, retryOwnVocabularyFeedback,
   recordVocabularyFeedbackJudgment, recordVocabularyImprovementResult, listOwnVocabularyMessages, markOwnVocabularyMessageSeen, dismissOwnVocabularyMessage, restoreOwnVocabularyMessage, getOwnVocabularyFeedbackAttention,
-  requestVocabularySecondOpinion, listVocabularySecondOpinions, retryVocabularyReflectionJob, createVocabularyProposal, saveVocabularyProposal, approveVocabularyProposal, applyVocabularyProposal,
+  requestVocabularySecondOpinion, listVocabularySecondOpinions, listVocabularyNoProposalCases, requestVocabularyCaseSecondOpinion, retryVocabularyReflectionJob, createVocabularyProposal, saveVocabularyProposal, approveVocabularyProposal, applyVocabularyProposal,
   previewVocabularyProposal, getVocabularyProposal, closeVocabularyTeachingCase, closeVocabularyCase, getVocabularyCaseWorkspace } from '../server/db/vocabulary-reflection.ts';
 import type { VocabularyContentDraft, VocabularyContent } from '../src/domain/vocabulary-content.ts';
 import type { VocabularySessionAction, VocabularyEncounterSnapshot } from '../src/domain/vocabulary-session.ts';
@@ -532,4 +532,28 @@ test('approved proposal and applied receipt survive database reopen without dupl
     assert.deepEqual(getVocabularyContentForMaintenance('one'),content);
     assert.equal(sql.prepare('SELECT count(*) n FROM application_content_changes').get()!.n,changeCount);
   } finally { fs.rmSync(dir,{recursive:true,force:true}); }
+});
+
+
+test('historical no-proposal judgments remain reviewable with a separate advisory job', () => {
+  const {cases}=ingest([present('one'),response('one'),wrap()]);
+  const caseId=cases.find(item=>item.kind==='exercise_improvement')!.caseId;
+  const initial=claimVocabularyReflectionJob({kind:'exercise_improvement',now:judgedAt})!;
+  recordVocabularyImprovementResult(initial.jobId,initial.leaseToken,{diagnosis:'No change needed',proposal:null},judgedAt);
+  assert.deepEqual(listVocabularyNoProposalCases('editor').map(item=>item.caseId),[caseId]);
+  requestVocabularyCaseSecondOpinion(caseId,'editor','Consider the answer');
+  assert.throws(()=>requestVocabularyCaseSecondOpinion(caseId,'editor','Again'),/already in progress/);
+  assert.equal(listVocabularyReflectionCases('exercise_improvement','editor').length,0);
+  const now=new Date(Date.now()+1000).toISOString();
+  const review=claimVocabularyReflectionJob({kind:'exercise_improvement',now})!;
+  assert.notEqual(review.caseId,caseId);
+  assert.equal(review.secondOpinion?.proposal,null);
+  assert.equal(review.secondOpinion?.diagnosis,'No change needed');
+  assert.equal(review.secondOpinion?.notes,'Consider the answer');
+  recordVocabularyImprovementResult(review.jobId,review.leaseToken,{diagnosis:'Consider revising',proposal:null,secondOpinion:{verdict:'revise',rationale:'The cue is ambiguous'}},now);
+  assert.equal(getVocabularyCaseWorkspace(caseId,'editor').jobs.find(item=>item.secondOpinion)?.result?.verdict,'revise');
+  assert.deepEqual(listVocabularyNoProposalCases('editor').map(item=>item.caseId),[caseId]);
+  closeVocabularyCase(caseId,'editor','Reviewed');
+  assert.equal(listVocabularyNoProposalCases('editor').length,0);
+  assert.deepEqual(listVocabularyNoProposalCases('editor','closed').map(item=>item.caseId),[caseId]);
 });

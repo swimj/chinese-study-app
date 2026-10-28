@@ -4,7 +4,7 @@ import type { VocabularyProposalDraft, VocabularyProposalOperation, VocabularyCo
 import { createVocabularyPracticePreparation } from './preparation.ts';
 import { createOperatorAllowlistMiddleware } from '../operator-access.ts';
 import { getVocabularyCaseWorkspace, listVocabularyReflectionCases, listVocabularyProposals, getVocabularyProposal,
-  requestVocabularySecondOpinion, listVocabularySecondOpinions, createVocabularyProposal, saveVocabularyProposal, previewVocabularyProposal, approveVocabularyProposal,
+  requestVocabularySecondOpinion, listVocabularySecondOpinions, listVocabularyNoProposalCases, requestVocabularyCaseSecondOpinion, createVocabularyProposal, saveVocabularyProposal, previewVocabularyProposal, approveVocabularyProposal,
   applyVocabularyProposal, closeVocabularyProposal, closeVocabularyCase, listOwnVocabularyMessages,
   getOwnVocabularyFeedbackAttention,listOwnVocabularyFeedbackFailures,listOwnVocabularyFeedbackJobs, markOwnVocabularyMessageSeen, dismissOwnVocabularyMessage, restoreOwnVocabularyMessage, retryOwnVocabularyFeedback,
   retryVocabularyReflectionJob, listVocabularyFailedDispatches, retryVocabularyPostSessionDispatch, VocabularyReflectionConflict } from '../db/vocabulary-reflection.ts';
@@ -96,6 +96,12 @@ export function registerVocabularyReflectionRoutes(app:Express,options:{wake?:()
   app.get(`${base}/cases`,gate,handle((req,actor)=>{
     object(req.query,['kind']);const kind=choice(req.query.kind??'exercise_improvement',['learner_feedback','exercise_improvement','teaching_review'] as const);
     return {items:listVocabularyReflectionCases(kind,actor)};
+  }));
+  app.get(`${base}/no-proposal-cases`,gate,handle((req,actor)=>{object(req.query,['status']);const status=choice(req.query.status??'completed',['completed','closed'] as const);return {items:listVocabularyNoProposalCases(actor,status)};}));
+  app.post(`${base}/cases/:id/second-opinions`,gate,handle((req,actor)=>{
+    const input=object(req.body,['notes']);
+    if(input.notes!==undefined&&typeof input.notes!=='string')throw new VocabularyReflectionRequestError('Expected text notes');
+    requestVocabularyCaseSecondOpinion(text(req.params.id),actor,(input.notes as string|undefined)??'');options.wake?.();return {ok:true};
   }));
   app.get(`${base}/cases/:id`,gate,handle((req,actor)=>getVocabularyCaseWorkspace(text(req.params.id),actor)));
   app.post(`${base}/cases/:id/close`,gate,handle((req,actor)=>{const input=object(req.body,['reason']);closeVocabularyCase(text(req.params.id),actor,text(input.reason));return {ok:true};}));
