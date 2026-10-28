@@ -1,24 +1,28 @@
-# Reflection Proposals And Handles
+# Archived: Reflection Proposals And Handles
+
+Archived after the Mandarin vocabulary cutover. This is a historical design
+record; current requirements are maintained in the [product contract](../vocabulary-learning.md)
+and [architecture contract](../vocabulary-architecture.md).
 
 This document preserves the earlier reflection proposal and operation contract,
 including result artifacts, review, authorization, application and attribution.
 It helps contributors interpret historical operation versions and their adapters.
 
-The [vocabulary product contract](vocabulary-learning.md#reactions-feedback-content-repair-and-authority)
+The [vocabulary product contract](../vocabulary-learning.md#reactions-feedback-content-repair-and-authority)
 owns current Mandarin review authority. Content changes require operator approval;
 a designated judgment can separately authorize bounded scheduling compensation.
 The proposal-only authority described below applies to the earlier reflection
 flow. Its operation descriptions are historical contracts, not a list of currently
-available Mandarin write APIs; see the [cutover boundary](../docs/vocabulary-learning.md#cutover-compatibility).
+available Mandarin write APIs; see the [cutover boundary](../../docs/vocabulary-learning.md#cutover-compatibility).
 
 Related documents:
 
-- [`SPECS/study-action-model.md`](./study-action-model.md)
-- [`SPECS/session-progress-and-completion.md`](./session-progress-and-completion.md)
-- [`SPECS/session-reflection-generation.md`](./session-reflection-generation.md)
-- [`STABILITY_FRONTIER.md`](../STABILITY_FRONTIER.md)
-- [`notes/active/2026-07-10-session-evidence-bundle-design.md`](../notes/active/2026-07-10-session-evidence-bundle-design.md)
-- [`notes/active/2026-07-20-llm-provider-spike-summary.md`](../notes/active/2026-07-20-llm-provider-spike-summary.md)
+- [`SPECS/study-action-model.md`](study-action-model.md)
+- [`SPECS/session-progress-and-completion.md`](session-progress-and-completion.md)
+- [`SPECS/session-reflection-generation.md`](session-reflection-generation.md)
+- [`STABILITY_FRONTIER.md`](../../STABILITY_FRONTIER.md)
+- [`notes/active/2026-07-10-session-evidence-bundle-design.md`](../../notes/active/2026-07-10-session-evidence-bundle-design.md)
+- [`notes/active/2026-07-20-llm-provider-spike-summary.md`](../../notes/active/2026-07-20-llm-provider-spike-summary.md)
 
 ## 1. Scope And Authority
 
@@ -39,7 +43,7 @@ It does not choose:
 
 - database tables or HTTP routes for a particular implementation milestone;
 - the exact reflection trigger or evidence-generation boundary, which are owned
-  by [`session-reflection-generation.md`](./session-reflection-generation.md),
+  by [`session-reflection-generation.md`](session-reflection-generation.md),
   or a provider prompt or review-page layout;
 - a universal schema-generated workbench;
 - a final multi-sense production-task ontology or general answer-class model;
@@ -757,7 +761,7 @@ Review and acceptance use the ordinary proposal inbox. Unseen membership or
 teaching changes make the operation stale. Source history remains immutable;
 restoration is first-attempt based and restore-once. Invalid/uncertain responses
 produce explanation-only inbox items. See the complete policy in
-[`pure-cue-elicitation.md`](pure-cue-elicitation.md#pure-cue-response-reflection).
+[`pure-cue-elicitation.md`](../pure-cue-elicitation.md#pure-cue-response-reflection).
 
 ### `repair_pure_cue_stimulus` version 1
 
@@ -787,7 +791,7 @@ missing.
 This is a bounded exception to the shared-content stimulus immutability rule;
 it does not authorize general axis repair or rewriting other content types.
 See the worked example in
-[`pure-cue-elicitation.md`](pure-cue-elicitation.md#pure-cue-response-reflection).
+[`pure-cue-elicitation.md`](../pure-cue-elicitation.md#pure-cue-response-reflection).
 
 ### `promote_pure_elicitation` version 1 (historical)
 
@@ -1242,8 +1246,8 @@ remains visibly unsupported.
 ## 11. Production-Cue Boundary
 
 The accepted and implemented V0 boundary is defined in the production section
-of [`study-action-model.md`](./study-action-model.md). The completed
-[`SWI-24 design memo`](../PLANS/swi-24-production-task-cue-contract.md) is a
+of [`study-action-model.md`](study-action-model.md). The completed
+[`SWI-24 design memo`](../../PLANS/swi-24-production-task-cue-contract.md) is a
 historical rationale and implementation record, not additional current
 authority.
 It separates word-based scheduling demand, one default production task per
@@ -1424,4 +1428,4 @@ compatibility rows are projections backed by canonical content. Publishing a
 cue and reading its canonical representation obey the same visibility boundary.
 This does not introduce a new model-facing structured-cloze operation or
 reinterpret historical proposals. See
-[structured review content](../docs/structured-review-content.md).
+[structured review content](../../docs/structured-review-content.md).

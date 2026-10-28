@@ -33,20 +33,16 @@ mechanisms. [Study UI](../docs/implementation/vocabulary-ui.md) and the
 current interfaces. These descriptions do not make every layout or algorithm an
 architectural requirement.
 
-## Earlier runtime contracts and design rationale
+## Design rationale and archives
 
-These documents help interpret historical records and recover design reasoning.
-Their earlier-runtime authority is explicitly scoped in their openings. Current
-vocabulary requirements are maintained in the contracts above; a surviving
-principle is not lost merely because its original realization was replaced.
+The [specification archive](archive/README.md) retains earlier runtime designs
+for historical investigation. Current study and review questions start with the
+contracts above. Useful surviving explanations belong in those current owners;
+the archive is not a supplemental requirements layer.
 
-- [Learning and review](learning-review-model.md): earlier lifecycle and direction-level scheduling.
-- [Study actions](study-action-model.md): earlier skill state, attempt events and production primitives.
-- [Session progress and completion](session-progress-and-completion.md): earlier covering and deferred-commit model.
-- [Reflection generation](session-reflection-generation.md) and
-  [proposals and handles](reflection-proposals-and-handles.md): earlier evidence and authorization flow.
-- [Home exercise rates](home-exercise-rates.md) and [My Words](my-words.md): earlier metrics and browsing terminology.
-- [Word bootstrap and introduction](word-bootstrap-and-introduction.md): teaching rationale and earlier package-based design, with current preparation owned by the vocabulary guides.
+The [bootstrap and introduction design](word-bootstrap-and-introduction.md)
+retains teaching rationale and package-based design, with current preparation
+owned by the vocabulary guides.
 
 ## Other feature sources
 

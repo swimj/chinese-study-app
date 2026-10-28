@@ -1,20 +1,24 @@
-# Session progress and completion
+# Archived: Session progress and completion
+
+Archived after the Mandarin vocabulary cutover. This is a historical design
+record; current requirements are maintained in the [product contract](../vocabulary-learning.md)
+and [architecture contract](../vocabulary-architecture.md).
 
 This document preserves the earlier runtime's in-session covering, Undo and
 deferred-commit contract. It explains the relationship between pending work
 and durably accepted study in that model.
 
-[Adaptive vocabulary study](vocabulary-learning.md#live-session-and-completion)
+[Adaptive vocabulary study](../vocabulary-learning.md#live-session-and-completion)
 owns current Mandarin completion behavior; the
-[architecture contract](vocabulary-architecture.md#completion-and-failure-boundaries)
+[architecture contract](../vocabulary-architecture.md#completion-and-failure-boundaries)
 owns durable acceptance constraints. The rules below describe the earlier
 runtime and support interpretation of historical evidence.
 
 <a id="session-covering-criteria"></a>
 
 Related design sources are the [earlier lifecycle](learning-review-model.md),
-[teaching design](word-bootstrap-and-introduction.md), and
-[pure-cue contract](pure-cue-elicitation.md). These links retain the earlier
+[teaching design](../word-bootstrap-and-introduction.md), and
+[pure-cue contract](../pure-cue-elicitation.md). These links retain the earlier
 model's relationships; current vocabulary requirements have their own owners above.
 
 ## Scope
@@ -292,7 +296,7 @@ content revision, reused across encounters. It saves independently of session
 commits; Undo changes neither this rating nor the fact that content was shown.
 Quality is descriptive only and has no effect on grading, coverage, scheduling,
 publication, or reflection generation. Feedback failures must not block study.
-See [content quality](../docs/content-quality.md) for supported surfaces,
+See [content quality](../../docs/content-quality.md) for supported surfaces,
 keyboard behavior, exposure semantics, and operator analytics.
 
 <a id="completed-session-reflection-boundary"></a>
@@ -353,16 +357,16 @@ or close completion is retryable and does not fabricate accepted work or
 start generation. Reflection and Connections are best-effort after closure;
 their latency does not delay Home or reopen study. Connections is read from Home,
 separately from this immediate deterministic report. See
-[`session-debrief.md`](./session-debrief.md).
+[`session-debrief.md`](../session-debrief.md).
 
 An undone transition contributes no reflection evidence. Reflection generation,
 validation, or later review failure never changes covering, accepted attempts,
 the completed-session record, or scheduler projection. The detailed evidence,
 generation, failure, and retry contract is defined in
-[`session-reflection-generation.md`](./session-reflection-generation.md).
+[`session-reflection-generation.md`](session-reflection-generation.md).
 
 For the current storage and worker mechanisms, see
-[session completion persistence](../docs/server-db.md#session-completion-persistence).
+[session completion persistence](../../docs/server-db.md#session-completion-persistence).
 
 ## Commit Payload Intent
 

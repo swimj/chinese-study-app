@@ -1,11 +1,15 @@
-# Study Action Model
+# Archived: Study Action Model
+
+Archived after the Mandarin vocabulary cutover. This is a historical design
+record; current requirements are maintained in the [product contract](../vocabulary-learning.md)
+and [architecture contract](../vocabulary-architecture.md).
 
 This document preserves the earlier study-action design: word skills,
 scheduling, attempt events, contrast selection, and production tasks and cues.
 Use it to interpret retained records and the rationale behind those mechanisms.
 
-[Adaptive vocabulary study](vocabulary-learning.md) defines current Mandarin
-behavior; the [implementation guide](../docs/vocabulary-learning.md) explains
+[Adaptive vocabulary study](../vocabulary-learning.md) defines current Mandarin
+behavior; the [implementation guide](../../docs/vocabulary-learning.md) explains
 current admission, scheduling and persistence. The contracts below apply to the
 earlier runtime. Experimental policies retain that qualification and do not
 create delivery commitments for the vocabulary runtime.
@@ -13,7 +17,7 @@ create delivery commitments for the vocabulary runtime.
 For long-term product vision beyond the current PoC, see
 `adaptive_vocabulary_training_product_notes.md`.
 
-The accepted [pure-cue elicitation contract](./pure-cue-elicitation.md) adds a
+The accepted [pure-cue elicitation contract](../pure-cue-elicitation.md) adds a
 bounded exception to word-owned scheduling: explicitly promoted standalone
 elicitations own their admission, attempts, and scheduler. The word-level
 principles below continue to govern ordinary word-owned actions; they do not
@@ -23,8 +27,8 @@ Related documents:
 
 - [`learning-review-model.md`](learning-review-model.md)
 - [`session-progress-and-completion.md`](session-progress-and-completion.md)
-- [`adaptive_vocabulary_training_product_notes.md`](adaptive_vocabulary_training_product_notes.md)
-- [`milestone-7-8-relevance-aware-contrast-plan.md`](./archive/milestone-7-8-relevance-aware-contrast-plan.md)
+- [`adaptive_vocabulary_training_product_notes.md`](../adaptive_vocabulary_training_product_notes.md)
+- [`milestone-7-8-relevance-aware-contrast-plan.md`](milestone-7-8-relevance-aware-contrast-plan.md)
 
 ## 1. Product Direction
 
@@ -509,7 +513,7 @@ application; it does not use the live skill's `nextDueAt`. It ends when a later
 production assessment replaces the restored schedule; other skills still follow
 the ordinary policy. Compensation does not restore the word-level recency
 guard: the word was still studied even if the lapse judgment was later corrected.
-See [false-lapse compensation](./pure-cue-elicitation.md#false-lapse-compensation).
+See [false-lapse compensation](../pure-cue-elicitation.md#false-lapse-compensation).
 
 Once a word is admitted, the selector usually chooses the enabled skill with
 the highest urgency, then chooses an action for that skill.
@@ -574,7 +578,7 @@ Two provenances of `unstudied` words:
   When the deck manifest is present (Mandarin only), diet fill is a seeded
   weighted sample across the learner's deck distribution — see
   [Deck-based diet fill](#deck-based-diet-fill) below and
-  [diet-deck-distribution.md](./diet-deck-distribution.md). Without a
+  [diet-deck-distribution.md](../diet-deck-distribution.md). Without a
   manifest (French profile, older dev seeds), the legacy order applies:
   corpus/hardcoded `words.priority` (then `created_at`, then `id`).
 - **Stash:** any unstudied word that has a `user_word_priority` overlay
@@ -615,7 +619,7 @@ only outside the prepared Mandarin flow.
 ### Stash-only source
 
 Session settings select the unstudied admission source: `mixed` or `stash_only`.
-The [new-learner policy](./diet-deck-distribution.md#25-new-user-defaults-and-retired-placement-intake)
+The [new-learner policy](../diet-deck-distribution.md#25-new-user-defaults-and-retired-placement-intake)
 defines initial settings and treatment of existing learners.
 
 When `stash_only`:
@@ -680,7 +684,7 @@ frequency-ranked fill applies unchanged.
   still needed after deck spill keeps the legacy corpus-priority order
   (`words.priority` descending, then `created_at`, then `id`).
 - Profile initialization and adjustments follow the
-  [diet contract](./diet-deck-distribution.md#23-learner-diet-profile).
+  [diet contract](../diet-deck-distribution.md#23-learner-diet-profile).
   Session composition reads the effective profile without changing it.
 
 The composed unstudied admitted set is:
@@ -726,7 +730,7 @@ App entry and priority/settings changes reconcile the reserve. A durable first
 study commit requests replenishment and asynchronous review preparation; mere
 composition, preview, or abandonment does not consume a candidate. The detailed
 shared generation, retry and operator policies are owned by
-[word-bootstrap-and-introduction.md](word-bootstrap-and-introduction.md#preparation-reserve-and-session-readiness-2026-10-01).
+[word-bootstrap-and-introduction.md](../word-bootstrap-and-introduction.md#preparation-reserve-and-session-readiness-2026-10-01).
 French retains its existing first-encounter and selection path.
 
 ### Non-goals
@@ -1183,7 +1187,7 @@ definition-based production prompts is independently useful even when no
 contrast content exists.
 
 See
-[`milestone-7-8-relevance-aware-contrast-plan.md`](./archive/milestone-7-8-relevance-aware-contrast-plan.md)
+[`milestone-7-8-relevance-aware-contrast-plan.md`](milestone-7-8-relevance-aware-contrast-plan.md)
 for the implementation plan.
 
 - add lexical cluster tables
@@ -1206,7 +1210,7 @@ for the implementation plan.
 
 These were scope exclusions for that historical implementation sequence, not
 current project-level non-goals. Current-wave scope is defined in
-[`STABILITY_FRONTIER.md`](../STABILITY_FRONTIER.md).
+[`STABILITY_FRONTIER.md`](../../STABILITY_FRONTIER.md).
 
 - full event sourcing
 - automatic prompt generation

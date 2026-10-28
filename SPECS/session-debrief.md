@@ -120,12 +120,11 @@ Completing the last session unit immediately opens a compact completion screen
 with a deterministic word report. After pending completion
 is acknowledged, a fixed 15-second server deadline preserves final Undo. The
 completion lifecycle, cancellation race, early closure, and navigation rules are
-owned by [`session-progress-and-completion.md`](session-progress-and-completion.md#session-completion).
+owned by [Adaptive vocabulary study](vocabulary-learning.md#saving-and-completion).
 No separate confirmation is needed to enter this screen.
 
-The report shows distinct new words studied (first-study units that entered
-Practice) and distinct words graduated from Practice to Review by accepted work
-in this session. It shows counts and word lists, omits empty groups, and is
+The report distinguishes newly studied words, words leaving Solidify, other
+covered words and work left for another session. It shows counts and word lists, omits empty groups, and is
 provisional while Undo is available: staging previews the final action without
 accepting it. Closure confirms the report from persisted transitions rather than
 model-generated reporting or the number of Practice units covered.

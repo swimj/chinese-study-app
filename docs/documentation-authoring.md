@@ -43,6 +43,11 @@ appears in a specification. Raise consequential uncertainty about intent.
 After a cutover, reconcile the affected entry points and old authority claims as
 well as adding the new account. A historical document needs an explicit scope;
 a redirect above a contradictory claim of current authority is insufficient.
+Move superseded designs with useful historical value into the archive, and
+remove obsolete procedural detail when Git history is sufficient. Carry useful
+current explanations forward into their maintained owners before archiving;
+current guides should stand on their own. Update current navigation to those
+owners and preserve archive links only for historical questions.
 Read the resulting sections as a whole, including adjacent text and links.
 
 ## Interpret feedback through the intended model

@@ -153,12 +153,24 @@ for cancellation, restaging and retries.
 
 ## Words and feedback
 
-My words reuses the existing collection browser and controller with vocabulary
-mode and data adapters. Recently studied, personal words, current deck, search,
-stage filters, recent lapses, pagination, private notes and study dates remain
-available. Unenrolled deck words can be inspected without creating learner state;
-Add to study is explicit. Mode, refresh and removal use vocabulary commands.
-Current modes and dismissal take precedence over retained legacy state.
+### Word collections
+
+My words uses the vocabulary collection adapter in `server/db/vocabulary-words.ts`.
+Recently studied contains enrolled words outside Unstudied; it is not a
+collection limited to a recent time window. Personally added uses current stash
+membership. Current deck includes the union of explicit HSK decks with positive
+weights and is unavailable for a mix containing Beyond HSK. Browsing an unenrolled
+deck word does not enroll it; Add to study is explicit. Dismissed words are excluded.
+
+Current vocabulary modes determine filtering and available word controls.
+Last-study dates combine retained historical dates, schedule records and effective
+responses from closed vocabulary sessions. Independent pure-cue responses do not
+assign study dates to their accepted member words. Recent lapses uses rejected
+effective responses in the last three UTC days, including bounded retained legacy
+evidence; undone responses do not reappear as lapses. Search, pagination, private
+notes and mode/refresh/removal commands use the current collection view.
+
+### Feedback inbox
 
 Learners read lessons in a Feedback inbox using the proposal inbox’s single-card
 layout, subject/date header and previous/next pager. Lessons appear recent first;

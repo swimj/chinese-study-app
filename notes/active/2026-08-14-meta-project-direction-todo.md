@@ -76,12 +76,12 @@ Cold start is especially important: the product vision already identifies it as 
 Once the beta outcome is aligned, I recommend a fairly decisive cleanup:
 - Replace the obsolete cue frontier in [STABILITY_FRONTIER.md](/Users/jw/dev/chinese-study-app/STABILITY_FRONTIER.md) with the hosted-beta outcome, current gap, beta invariants, and a new advancement test.
 - Graduate the completed production-task/cue decisions out of [SWI-24’s design plan](/Users/jw/dev/chinese-study-app/PLANS/swi-24-production-task-cue-contract.md) and eliminate stale gates. The canonical reflection spec still says the exact V2 schema is awaiting human orientation even though it is implemented.
-- Reduce [study-action-model.md](/Users/jw/dev/chinese-study-app/SPECS/study-action-model.md) to its durable action/scheduling/evidence contract. Its completed implementation roadmap and old open questions should become history.
+- Reduce [study-action-model.md](../../SPECS/archive/study-action-model.md) to its durable action/scheduling/evidence contract. Its completed implementation roadmap and old open questions should become history.
 - Consider extracting the production-task/cue contract into its own canonical spec.
-- Split [reflection-proposals-and-handles.md](/Users/jw/dev/chinese-study-app/SPECS/reflection-proposals-and-handles.md) along its two real organizing principles:
+- Split [reflection-proposals-and-handles.md](../../SPECS/archive/reflection-proposals-and-handles.md) along its two real organizing principles:
   - generic proposal/authorization/application governance;
   - the versioned operation registry.
-- Tighten [learning-review-model.md](/Users/jw/dev/chinese-study-app/SPECS/learning-review-model.md) around word lifecycle semantics and remove transitional scheduling/storage language now owned elsewhere.
+- Tighten [learning-review-model.md](../../SPECS/archive/learning-review-model.md) around word lifecycle semantics and remove transitional scheduling/storage language now owned elsewhere.
 - Refresh the [hosted-beta tenancy map](/Users/jw/dev/chinese-study-app/PLANS/hosted-beta-tenancy-table-map.md). It inventories 18 tables; the steady schema now has roughly 30, including the complete reflection and production-cue subsystems.
 - Create durable hosted-account/content-ownership behavior and hosted-service/release architecture documents only after those decisions are accepted.
 

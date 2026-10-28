@@ -1,13 +1,17 @@
-# Learning And Review Model
+# Archived: Learning And Review Model
+
+Archived after the Mandarin vocabulary cutover. This is a historical design
+record; current requirements are maintained in the [product contract](../vocabulary-learning.md)
+and [architecture contract](../vocabulary-architecture.md).
 
 This document preserves the word lifecycle and learning/review design used by
 the earlier study runtime. It helps contributors interpret historical records
 and recover the reasoning behind direction-level scheduling and learner overrides.
 
-[Adaptive vocabulary study](vocabulary-learning.md) owns current Mandarin modes,
+[Adaptive vocabulary study](../vocabulary-learning.md) owns current Mandarin modes,
 session behavior and learner effects. The rules below are scoped to the earlier
 model; their original terminology does not assign present-day authority.
-The current product and [architecture contracts](vocabulary-architecture.md)
+The current product and [architecture contracts](../vocabulary-architecture.md)
 maintain vocabulary requirements; historical guarantees remain evidence when
 reconciling an unresolved difference.
 
@@ -97,7 +101,7 @@ New-word intake is policy-driven.
 
 For the current stage, the policy uses a daily new-word cap plus the
 experimental dual-pool unstudied admission contract in
-[`study-action-model.md`](./study-action-model.md#experimental-dual-pool-unstudied-admission).
+[`study-action-model.md`](study-action-model.md#experimental-dual-pool-unstudied-admission).
 The mixed stash/diet split is the default; session settings may restrict new
 words to stash only. That is a policy choice, not a fundamental property of
 the model.

@@ -11,10 +11,10 @@ migration script for existing databases is a deliberate follow-up after
 review settles the schema — the feature does not merge or release without
 it.
 
-Related authority:
+Related design sources:
 
-- [`study-action-model.md`](./study-action-model.md) — dual-pool unstudied
-  admission (the current diet behavior this redesign modifies)
+- [`study-action-model.md`](archive/study-action-model.md) — dual-pool unstudied
+  admission (historical context for this redesign)
 - [`intake-triage-advisor.md`](./archive/intake-triage-advisor.md) — retired V1
   triage contract (§2.7)
 - [`adaptive_vocabulary_training_product_notes.md`](./adaptive_vocabulary_training_product_notes.md) —
@@ -254,7 +254,7 @@ records the removed endpoints.
 ## 2.6 Feedback surface; no settings page in v1
 
 The deck machinery has no learner-facing picker or distribution controls
-(decided, §2.11). The later [My words Current deck view](./my-words.md) adds a
+(decided, §2.11). The later [My words Current deck view](../docs/implementation/vocabulary-ui.md#word-collections) adds a
 read-only view of current deck vocabulary and HSK level/part labels; it does
 not change placement, nudges, or scheduling. Consequences:
 

@@ -213,9 +213,9 @@ semantics and needs no broader lifecycle model.
 
 Implementation must extend these canonical contracts together with code/tests:
 
-- [Session reflection generation](./session-reflection-generation.md): curated
+- [Session reflection generation](archive/session-reflection-generation.md): curated
   source inputs, resource limits, idempotency, and failure isolation.
-- [Reflection proposals and handles](./reflection-proposals-and-handles.md):
+- [Reflection proposals and handles](archive/reflection-proposals-and-handles.md):
   selected-original retirement and its distinction from authorization.
 
 The earlier SWI-55 framing kept old and new proposals independently unresolved;

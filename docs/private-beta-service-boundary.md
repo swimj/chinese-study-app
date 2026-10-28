@@ -72,113 +72,25 @@ worker exemption is implied by operator access.
 Public signup, organizations, billing identities, a general role hierarchy,
 and a self-service recovery product are outside this beta contract.
 
-## Durable Ownership Inventory
+## Data ownership
 
-The [ownership manifest](../server/db/ownership-manifest.ts) classifies every
-steady-state application table; its schema-completeness test requires new tables
-to be classified. Temporary migration tables and SQLite internals are excluded.
-Mixed tables require an explicit ownership/scope boundary before accepting
-hosted learner data.
+Every persisted record has explicit learner, shared-content, or service ownership.
+Mixed storage must enforce those scopes before accepting hosted learner data.
+
+Learner identity, progress, schedules, encounters, reactions and personal notes
+are private. Their use as evidence for reusable content does not make the
+underlying evidence shared. Shared authored content has its own identity and
+revision history; referencing it grants no access to another learner's records.
+
+Service-owned jobs, generation provenance, imports and release ledgers carry
+operational authority. They retain source attribution where needed without
+making private source material publicly readable. Ownership checks protect both
+current state and retained historical records.
 
 The [vocabulary architecture contract](../SPECS/vocabulary-architecture.md#content-identity-ownership-and-revision)
-owns current vocabulary content/evidence boundaries; the
-[implementation guide](vocabulary-learning.md#content-identity-and-eligibility)
-describes their storage. The learner and content inventory below retains earlier
-source-table names and correction semantics. Those source-table mutation rules
-explain the historical design, not current vocabulary writes. Retained records
-remain subject to their ownership boundaries; service metadata has its separate
-role below.
-
-### Learner-owned state, evidence, and history
-
-- `user_word_priority`, `word_study_admission_state`, `word_skill_state`,
-  `daily_new_word_intake`, `review_session_summaries`, `study_sessions`,
-  `study_attempt_events`, `study_events`, and `word_skill_relevance`.
-- `reflection_artifacts`, `reflection_generation_runs`,
-  `reflection_proposal_reviews`, `reflection_operation_invocations`,
-  `reflection_quality_annotations`, and `reflection_help_inbox`.
-- `intake_triage_runs`, `intake_triage_assessments`, and
-  `intake_triage_assessment_dispositions`.
-- `production_cue_evidence_records` and `production_cue_evidence_projection`.
-  The strict-target cue cutover removes the legacy `production_recheck_demands`.
-- `learner_pure_cue_state`, pure-cue served snapshots and attempts, and
-  restore-once scheduler compensation snapshots and their source-attempt links.
-- `production_cue_lifecycle_events` and `production_cue_activation_state` in
-  their current meaning. They record each learner's authorized cue activation
-  history and projection and are explicitly learner-owned.
-- `learner_word_state` and `learner_word_meaning_preferences`, split from the
-  shared lexical roots formerly mixed into `words` and `word_meanings`.
-
-These records remain private even when they motivate reusable shared content.
-Service processing fields and provider provenance do not convert learner
-evidence into service-owned data.
-
-### Shared content and reference data
-
-- Lexical identity and imported lexical content currently represented by
-  `words`, `word_meanings`, and `word_lookup_aliases`.
-- Reusable contrast content currently represented by `contrast_clusters`,
-  `contrast_cluster_members`, and `contrast_prompts`.
-- Reusable production content currently represented by `production_tasks`,
-  `production_cues`, `production_cue_accepted_words`, and post-reveal
-  `production_cue_supplements`.
-- Pure-cue stimulus/axis identity and holistic reveal-time teaching note
-  (`pure_cues`), with additive accepted membership (`pure_cue_accepted_words`).
-  No learner schedule lives on these content rows.
-- A new or explicitly repurposed shared publication lifecycle records
-  `shared_trial`, `available`, `quarantined`, and `retired`. It is separate
-  from the current learner activation history and from learner suppression.
-
-Shared stimulus identity is immutable by default. Pure cues explicitly allow
-authorized set-add membership expansion and an accompanying holistic
-teaching-note update, attributed to the accepted cleanup operation. An
-extension leaves stimulus and semantic axis unchanged; current member/note
-evidence must still match before a rewrite.
-The bounded `repair_pure_cue_stimulus` operation also permits an authorized,
-attributed in-place stimulus revision for an underspecified shared pure cue.
-It preserves cue ID, axis, members, teaching note, publication status, and
-ordinary scheduling policy, with exact current-content preconditions and an
-immutable before/after revision record. An unfair source lapse can receive the
-existing restore-once learner-private compensation. It does not generalize to
-other shared content.
-This affects future snapshots, never historical grading or reveal text.
-The operator [correction API](content-improvement.md) separately
-authorizes revision-checked wording and teaching-note repairs on pure cues, with
-immutable before/after operator evidence. Axis, accepted membership, publication
-status and scheduling remain fixed; operator corrections do not compensate
-lapses. Other API corrections create explicit successors, retain private
-ownership, and preserve served snapshots. Introduction successors apply to new
-unpinned selections while existing learner pins continue using their package.
-Other corrections create distinct attributable content
-or an explicit disposition rather than rewriting history. A repair operation
-preserves causal provenance without assuming that its inputs and outputs are
-versions of one stable artifact. Attempts and evidence retain the exact content
-reference, fallback, answer space, and other served snapshot required to
-interpret the historical event; they do not carry publication identity.
-
-### Service and import metadata
-
-`contrast_candidate_intake` was a vestigial local experiment and is retired
-rather than tenant-adapted. The polymorphic `study_content_feedback` log is
-retired rather than tenant-adapted. Its active legacy bad-prompt cases were
-processed once through reflection and Help before the temporary exclusion
-state was removed. Going forward, bad production prompts are repaired through
-durable production cues; bad contrast content is repaired or deleted through
-the ordinary content lifecycle. SWI-49 owns shared-artifact reporting and
-quarantine.
-
-The former `app_metadata` keyspace is replaced by `learner_settings`,
-`schema_migrations`, and `content_imports`. Release and migration ledgers are
-service-operational records; they do not grant access to learner content.
-
-SWI-47 implements this boundary with physical learner-owned tables behind
-current-learner compatibility views, shared lexical tables plus learner
-overlays, and explicit `learner`/`shared` scope on contrast and production cue
-artifacts. Ordinary application writes create learner-private generated
-content; accepted reusable repairs publish in the same transaction. Accepted
-pure-cue promotions likewise publish `shared_trial` content, and explicitly
-selected overbroad shared targeted cues retire globally. Private activation
-overlays cannot reactivate a retired publication.
+defines vocabulary identity and revision constraints. The
+[database map](server-db.md) locates persistence modules and the table ownership
+manifest used to check schema coverage.
 
 ## Shared Content Contract
 
@@ -205,11 +117,9 @@ Pure cues retain independent schedules and sparse strong-cue sampling, adopted
 from relevant Practice/Maintain vocabulary without learner proposal review.
 Neither word mode nor a due date promises exhaustive session inclusion.
 
-The legacy source-table descriptions above explain retained imported/history
-records. Their old pinning, learner-approval, and successor-only rules do not
-control current vocabulary writes. Historical served snapshots remain immutable;
-updates affect fresh encounters. Identity replacement does not silently transfer
-schedules, deactivations, or teaching bindings.
+Historical served snapshots remain immutable; updates affect fresh encounters.
+Identity replacement does not silently transfer schedules, deactivations, or
+teaching bindings.
 
 ## Persistence And Reconsideration
 

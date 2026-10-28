@@ -103,8 +103,7 @@ hosted operations, and contributor development clearly separated.
   [API reference](api.md#operator-view) describing its HTTP contracts.
 - Content correction: [Content improvement workflow](operator-panel.md#content-improvement-workflow)
   explains current vocabulary review and application. The
-  [earlier correction reference](content-improvement.md) explains historical records
-  and read access; its Mandarin write API is retired.
+  [API map](api.md#operator-content-improvement) identifies retained historical reads.
 - Blog publication: [manual editor and operator command](whats-new.md#manual-operator-editor),
   including the skill’s interactive draft-review procedure.
 - Contributor environments: [scripts](scripts.md) and the
@@ -145,7 +144,7 @@ and the referenced documents.
 | Date added | Outstanding description |
 | --- | --- |
 | 2026-10-07 | The root README mixes product/repository orientation with former local-study clone advice and French try-out instructions. Its retained material needs appropriate current guides or an explicit historical role. |
-| 2026-10-28 | Vocabulary product and architecture contracts have separate owners, and the affected earlier lifecycle/reflection contracts have historical scope. The older word-content representation/generation/serving guides and other feature sources listed in SPECS/README.md still need their retained mechanisms and current applicability reconciled; closure requires explicit current versus historical ownership in those sources. |
+| 2026-10-28 | Vocabulary product and architecture contracts have separate owners, and the earlier lifecycle/reflection contracts are archived. The older word-content representation/generation/serving guides and other feature sources listed in SPECS/README.md still need their retained mechanisms and current applicability reconciled; closure requires explicit current versus historical ownership in those sources. |
 | 2026-10-07 | `architecture.md` is primarily a navigation map. The system-level explanation of components, data flow, state boundaries, and mechanisms remains missing. |
 | 2026-10-07 | The service-boundary document mixes guarantees, alternatives, the hosted package, one-time migration, and acceptance scenarios. The frontier combines direction, constraints, and unresolved decisions. These documents still need clearer responsibilities. |
 | 2026-10-07 | Legacy in-repo plans and vision copies need a retention decision: useful conclusions need current explanatory homes, and retained historical material needs a deliberate reference role alongside the Steward workspace. |

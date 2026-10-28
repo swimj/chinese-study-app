@@ -238,6 +238,17 @@ never filled with estimated durations.
 
 ## Session actions and completion
 
+The study controller flushes queued work and retrieves any pending or failed
+prior completion before Start. It closes that completion before requesting a
+new session. Failed closure leaves Start retryable and prevents the new session
+request; this ordering is owned by `useVocabularyStudy`, not independently
+performed by the server's session-creation function.
+
+Recognition records learner self-assessment. Typed production compares normalized
+input with the retained accepted-answer forms. Contrast validates a selected
+served word identity against the retained correct-choice criteria. The server
+verifies the outcome against the served assessment before retaining the response.
+
 Before the answer is revealed, Try another way logs an `exercise_exclude` alongside the skipped encounter and
 next presentation. Its content identity is excluded for the session, across
 versions and manual revisits; Undo reverses the transition. Teaching and recognition

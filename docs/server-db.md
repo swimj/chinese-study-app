@@ -277,6 +277,8 @@ relationships; they do not establish that the caller may act as the supplied
 learner. Operator and service-wide work therefore need their own authorized scope.
 The [ownership manifest](../server/db/ownership-manifest.ts) identifies table
 ownership and enforcement points when inspecting or extending a persistence path.
+Schema-completeness tests require every steady-state table to be classified;
+temporary migration tables and SQLite internals are excluded.
 
 ### Focused verification
 
@@ -533,5 +535,5 @@ future cue, supplement, contrast and introduction selection. Existing learner
 introduction pins may retain their predecessor. `operator_pure_cue_repairs`
 records the bounded in-place wording repair before a guarded update. The
 correction transaction owns application and audit together. See the
-[workflow and API](content-improvement.md) for the operator contract. Migrations
+[API map](api.md#operator-content-improvement) for historical read access. Migrations
 `0032` and `0033` require the offline schema migration procedure.

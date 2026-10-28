@@ -1,9 +1,13 @@
-# Words And My Words
+# Archived: Words And My Words
+
+Archived after the Mandarin vocabulary cutover. This is a historical design
+record; current requirements are maintained in the [product contract](../vocabulary-learning.md)
+and [architecture contract](../vocabulary-architecture.md).
 
 This document preserves the earlier runtime's design and terminology for
 interpreting retained records. The description below is scoped to that runtime.
-[Adaptive vocabulary study](vocabulary-learning.md) owns current Mandarin
-behavior; [Vocabulary study UI](../docs/implementation/vocabulary-ui.md) describes
+[Adaptive vocabulary study](../vocabulary-learning.md) owns current Mandarin
+behavior; [Vocabulary study UI](../../docs/implementation/vocabulary-ui.md) describes
 the current frontend.
 
 ## Earlier browsing contract

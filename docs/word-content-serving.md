@@ -5,15 +5,17 @@ recognition and recall before the word enters ordinary review. The application
 must choose content that is ready, keep the material stable during study, and
 record progress separately from opening or reading a lesson.
 
-This guide explains that serving path for prepared introductions and Practice,
+This guide describes the earlier package-serving runtime. Current Mandarin
+serving is explained in the [vocabulary implementation guide](vocabulary-learning.md).
+The account below explains that earlier serving path for prepared introductions and Practice,
 the learner-facing name for the persisted `learning` stage. It covers preparation
 demand, package association, session snapshots, and their connection to study
 progress. [Generation and publication](word-content-generation.md) produce the
 shared material; [data representation](word-content-representation.md) explains
 its source documents, packages, and exercise snapshots. The
 [feature contract](../SPECS/word-bootstrap-and-introduction.md),
-[covering contract](../SPECS/session-progress-and-completion.md), and
-[learning/review model](../SPECS/learning-review-model.md) define the intended
+[covering contract](../SPECS/archive/session-progress-and-completion.md), and
+[learning/review model](../SPECS/archive/learning-review-model.md) define the intended
 learning rules that this implementation realizes.
 
 ## Requesting prepared content
@@ -56,13 +58,10 @@ does not silently select another package. Unprepared new words are omitted at
 session entry; established Practice words without eligible completed-package
 content use their existing ordinary cards.
 
-The retained [operator correction API](content-improvement.md) can correct
-an eligible introduction or rehearsal by publishing a coherent source/package
-revision. New unpinned selections use the successor; existing learner pins
-continue using the predecessor while its publications remain eligible. The
-original source stays available to other packages and review exercises that
-reference it. Supersession does not revive withdrawn content or silently move
-an existing learner pin.
+Earlier introduction corrections created coherent source/package successors.
+Unpinned selections could use a successor while existing learner pins retained
+their predecessor. These relationships explain retained package records; current
+vocabulary repair follows the [operator workflow](operator-panel.md#content-improvement-workflow).
 
 Active session and Undo snapshots retain the exact package, content, exercise,
 and accepted-answer identities already served. Selection for a later session
@@ -109,7 +108,7 @@ restores the pacing position alongside progress.
 
 Finishing the walkthrough makes recognition and production available according
 to that ordering policy. The
-[new-word recall policy](../SPECS/session-progress-and-completion.md#unstudied-word-covering)
+[new-word recall policy](../SPECS/archive/session-progress-and-completion.md#unstudied-word-covering)
 defines recognition cycling and completion. The implementation stores a per-word
 `recognitionAttempts` count in active session progress, initialized to zero.
 Each recognition rating increments it; production ratings leave it unchanged.
@@ -129,7 +128,7 @@ Only completing both recall streaks covers the word through the deferred
 commit/Undo path. Finishing the teaching beats alone grants no study credit.
 The session walkthrough has no skip-to-cards control or Escape bypass; normal
 session controls allow leaving without completing teaching. The
-[covering contract](../SPECS/session-progress-and-completion.md#unstudied-word-covering)
+[covering contract](../SPECS/archive/session-progress-and-completion.md#unstudied-word-covering)
 defines that distinction and the effects of the durable first-study commit.
 
 ## Practice and the handoff to review
@@ -150,8 +149,8 @@ Practice uses the existing coverage and first-try success rules. Three
 consecutive successful study sessions graduate the word; calendar-day adjacency
 is irrelevant. Learning commits retain their existing word-level success result,
 with no durable per-rehearsal attempt ledger. The
-[learning covering rules](../SPECS/session-progress-and-completion.md#learning-word-covering)
-and [graduation model](../SPECS/learning-review-model.md) own those promises.
+[learning covering rules](../SPECS/archive/session-progress-and-completion.md#learning-word-covering)
+and [graduation model](../SPECS/archive/learning-review-model.md) own those promises.
 
 Ordinary review uses separately authored bootstrap-backed cues and its existing
 reflection/scheduling paths. Graduation does not convert a target rehearsal into

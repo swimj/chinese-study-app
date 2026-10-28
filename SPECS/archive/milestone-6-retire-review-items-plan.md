@@ -9,9 +9,9 @@ study actions and word-skill scheduler state.
 
 Related documents:
 
-- [`study-action-model.md`](/Users/jw/dev/chinese-study-app/SPECS/study-action-model.md)
-- [`learning-review-model.md`](/Users/jw/dev/chinese-study-app/SPECS/learning-review-model.md)
-- [`session-progress-and-completion.md`](../session-progress-and-completion.md)
+- [`study-action-model.md`](study-action-model.md)
+- [`learning-review-model.md`](learning-review-model.md)
+- [`session-progress-and-completion.md`](session-progress-and-completion.md)
 
 ## Goal
 
