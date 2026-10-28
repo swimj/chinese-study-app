@@ -17,6 +17,9 @@ export type ModelInvocationRow = {
   actorId?: string;
   requestingLearnerId?: string | null;
   userDisplayName: string | null;
+  /** Reporting attribution, separate from backend execution ownership. */
+  initiator?: string;
+  initiatorDisplayName?: string | null;
   spendUsd: number | null;
   spendSource: 'reported' | 'estimated' | 'unknown';
   latencyMs: number | null;

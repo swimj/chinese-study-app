@@ -126,12 +126,26 @@ export function listModelInvocations(input: { from?: unknown; to?: unknown } = {
       i.invocation_type AS invocationType, i.learner_id AS learnerId,
       i.actor_kind AS actorKind, i.actor_id AS actorId, i.requesting_learner_id AS requestingLearnerId,
       l.display_name AS userDisplayName, i.spend_usd AS spendUsd,
-      i.spend_source AS spendSource, i.status, i.latency_ms AS latencyMs
+      i.spend_source AS spendSource, i.status, i.latency_ms AS latencyMs,
+      j.job_id AS reflectionJobId, j.second_opinion_json AS secondOpinion,
+      j.reassessment_source_job_id AS reassessmentSourceJobId,
+      COALESCE(i.requesting_learner_id, c.learner_id) AS sourceLearnerId,
+      source.display_name AS sourceDisplayName
     FROM model_invocations i LEFT JOIN learners l ON l.learner_id = i.learner_id
+    LEFT JOIN vocabulary_reflection_jobs j ON j.job_id = i.workflow_id AND i.actor_kind = 'service' AND i.actor_id = 'vocabulary-reflection'
+    LEFT JOIN reflection_cases c ON c.case_id = j.case_id
+    LEFT JOIN learners source ON source.learner_id = COALESCE(i.requesting_learner_id, c.learner_id)
     WHERE (? IS NULL OR i.timestamp >= ?) AND (? IS NULL OR i.timestamp <= ?)
     ORDER BY i.timestamp DESC, i.id DESC`).all(
     from ?? null, from ? `${from}T00:00:00.000Z` : null,
     to ?? null, to ? `${to}T23:59:59.999Z` : null,
-  ) as ModelInvocationRow[];
-  return { rows };
+  ) as (ModelInvocationRow & { reflectionJobId: string | null; secondOpinion: string | null;
+    reassessmentSourceJobId: string | null; sourceLearnerId: string | null; sourceDisplayName: string | null })[];
+  return { rows: rows.map(({ reflectionJobId, secondOpinion, reassessmentSourceJobId, sourceLearnerId, sourceDisplayName, ...row }) => {
+    // Saved job intent applies to every stage and retry, including historical calls.
+    const operator = reflectionJobId !== null && (secondOpinion !== null || reassessmentSourceJobId !== null);
+    const learnerId = row.learnerId ?? (reflectionJobId !== null && !operator ? sourceLearnerId : null);
+    return { ...row, initiator: operator ? 'Operator' : learnerId ?? 'Service',
+      initiatorDisplayName: learnerId ? row.userDisplayName ?? sourceDisplayName : null };
+  }) };
 }

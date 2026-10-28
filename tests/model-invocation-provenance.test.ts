@@ -176,3 +176,33 @@ test('service vocabulary spend retains requesting context and separate truthful 
   assert.equal(getDb().prepare('SELECT requesting_learner_id FROM model_invocations WHERE id=?').get(id)?.requesting_learner_id,'provenance-a');
   assert.equal(getDb().prepare('SELECT requesting_learner_id FROM model_invocations WHERE id=?').get(other)?.requesting_learner_id,'provenance-b');
 });
+
+test('ledger projects historical reflection initiation without rewriting execution ownership', () => {
+  const sql = getDb();
+  sql.exec('BEGIN; PRAGMA defer_foreign_keys=ON');
+  try {
+    // Partial session fixture exists only inside this rolled-back transaction.
+    sql.prepare(`INSERT INTO reflection_cases(case_id,completion_id,learner_id,kind,subject_key,status,evidence_snapshot_json,created_at)
+      VALUES ('initiator-case','fixture-completion','provenance-a','exercise_improvement','fixture','open','{}','2026-10-01')`).run();
+    sql.prepare(`INSERT INTO vocabulary_reflection_jobs(job_id,case_id,kind,dedupe_key,status,next_attempt_at,created_at)
+      VALUES ('initiator-job','initiator-case','exercise_improvement','fixture','queued','2026-10-01','2026-10-01')`).run();
+    sql.prepare("UPDATE learners SET display_name='Avery' WHERE learner_id='provenance-a'").run();
+    const id = startServiceModelInvocation({ ...input, serviceId: 'vocabulary-reflection',
+      provenance: { workflowId: 'initiator-job', stepName: 'sense_mapping', attemptNumber: 2 } });
+    const read = () => listModelInvocations().rows.find(row => row.id === id)!;
+    assert.equal(read().initiator, 'provenance-a');
+    assert.equal(read().initiatorDisplayName, 'Avery');
+    assert.equal(read().learnerId, null);
+    assert.equal(read().actorKind, 'service');
+    sql.prepare("UPDATE model_invocations SET requesting_learner_id='provenance-a' WHERE id=?").run(id);
+    assert.equal(read().initiator, 'provenance-a');
+    sql.prepare("UPDATE vocabulary_reflection_jobs SET second_opinion_json='{}' WHERE job_id='initiator-job'").run();
+    assert.equal(read().initiator, 'Operator');
+    assert.equal(read().initiatorDisplayName, null);
+    sql.prepare("UPDATE vocabulary_reflection_jobs SET second_opinion_json=NULL,reassessment_source_job_id='initiator-job' WHERE job_id='initiator-job'").run();
+    assert.equal(read().initiator, 'Operator');
+    const automated = startServiceModelInvocation({ ...input, serviceId: 'maintenance', requestingLearnerId: 'provenance-a' });
+    assert.equal(listModelInvocations().rows.find(row => row.id === automated)!.initiator, 'Service');
+    assert.equal(sql.prepare('SELECT learner_id FROM model_invocations WHERE id=?').get(id)!.learner_id, null);
+  } finally { sql.exec('ROLLBACK'); }
+});
