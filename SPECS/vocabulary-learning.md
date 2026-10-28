@@ -93,6 +93,11 @@ A word with neither skill enabled is omitted from ordinary Solidify admission.
 
 ## Live session and completion
 
+The daily new-word limit resets at 4:00 a.m. in the browser's local time zone.
+Completed teaching counts against that local study day; an introduction shown
+without completing its recall requirements does not. Other scheduling and usage
+reporting retain their own UTC-day policies.
+
 New-word preparation maintains a stable reserve of twice the configured daily
 new-word limit, capped at 40 candidates. The reserve follows stash, priority and
 diet policy and prepares lexical bootstrap, introductions and their teaching

@@ -1597,8 +1597,8 @@ async function vocabularyRequest<T>(path: string, body?: unknown): Promise<T> {
   if (!response.ok) throw new Error(await readApiErrorMessage(response, 'Could not save vocabulary work'));
   return response.json() as Promise<T>;
 }
-export const fetchVocabularySessionPreview = () => vocabularyRequest<import('../domain/vocabulary-study-api').VocabularySessionPreview>('/session-preview');
-export const startVocabularySession = (previewSeed?:string) => vocabularyRequest<import('../domain/vocabulary-study-api').VocabularyStudy>('/sessions', previewSeed?{previewSeed}:{});
+export const fetchVocabularySessionPreview = () => vocabularyRequest<import('../domain/vocabulary-study-api').VocabularySessionPreview>(`/session-preview?timeZone=${encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC')}`);
+export const startVocabularySession = (previewSeed?:string) => vocabularyRequest<import('../domain/vocabulary-study-api').VocabularyStudy>('/sessions', {timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC', ...(previewSeed ? {previewSeed} : {})});
 export const fetchVocabularyStudy = (id: string) => vocabularyRequest<import('../domain/vocabulary-study-api').VocabularyStudy>(`/sessions/${encodeURIComponent(id)}`);
 export const nextVocabularyStudy = (id: string, clientActionId: string, options: {wordId?: string; another?: boolean} = {}) =>
   vocabularyRequest<import('../domain/vocabulary-study-api').VocabularyStudy>(`/sessions/${encodeURIComponent(id)}/next`, {clientActionId,...options});

@@ -192,8 +192,8 @@ export function getVocabularyStudy(sessionId:string):VocabularyStudy {
       canFinishForNow:active&&session.projection.phase==='active',canFinishImmediately:active&&session.projection.phase==='finishing',canChangeMode:active&&wordId!==null},
     notice:word?.teachingDeferred?'This word is now Unstudied. Fresh teaching will start in your next session.':session.projection.phase==='finishing'?'Finish the words already started, or finish immediately.':null};
 }
-function composeCurrentStudy(requestTeaching:(wordId:string)=>void):VocabularyComposition {
-  return composeVocabularyStudy({teachingReady,canUseSkill:(wordId,skill)=>{
+function composeCurrentStudy(requestTeaching:(wordId:string)=>void, timeZone?:string):VocabularyComposition {
+  return composeVocabularyStudy({teachingReady,timeZone,canUseSkill:(wordId,skill)=>{
     if(!skillEnabled(wordId,skill))return false;
     if(skill!=='contextual_selection')return true;
     const mode=getVocabularyLearnerWord(wordId)?.mode;
@@ -229,10 +229,10 @@ function planVocabularyStudy(composition:VocabularyComposition, samplingSeed:str
       ...admittedReview.filter((entry)=>entry.kind==='word').map((entry)=>reviewWords.find((word)=>word.wordId===entry.id)!)];
     return {words:admittedWords,reviewOrder:admittedReview};
 }
-export function previewVocabularyStudy(options:{requestTeaching?:(wordId:string)=>void;prepareReserve?:()=>void;previewSeed?:string}={}):VocabularySessionPreview {
+export function previewVocabularyStudy(options:{requestTeaching?:(wordId:string)=>void;prepareReserve?:()=>void;previewSeed?:string;timeZone?:string}={}):VocabularySessionPreview {
   (options.prepareReserve??reconcileVocabularyPreparationReserve)();
   const previewSeed=options.previewSeed??randomUUID();
-  const composition=composeCurrentStudy(()=>{});
+  const composition=composeCurrentStudy(()=>{}, options.timeZone);
   const planned=planVocabularyStudy(composition,previewSeed,false);
   // Preparation demand is the same bounded, idempotent queue used by Start.
   const request=options.requestTeaching??(()=>{});
@@ -240,9 +240,9 @@ export function previewVocabularyStudy(options:{requestTeaching?:(wordId:string)
   return {previewSeed,itemCount:planned.words.length+planned.reviewOrder.filter((entry)=>entry.kind==='pure_cue').length,
     preparationPending:composition.requestedPreparationWordIds.length>0};
 }
-export function startVocabularyStudy(options:{requestTeaching?:(wordId:string)=>void;prepareReserve?:()=>void;previewSeed?:string}={}):VocabularyStudy {
+export function startVocabularyStudy(options:{requestTeaching?:(wordId:string)=>void;prepareReserve?:()=>void;previewSeed?:string;timeZone?:string}={}):VocabularyStudy {
   (options.prepareReserve??reconcileVocabularyPreparationReserve)();
-  const composition=composeCurrentStudy(options.requestTeaching??(()=>{}));
+  const composition=composeCurrentStudy(options.requestTeaching??(()=>{}), options.timeZone);
   return atomic(()=>{
     const sessionId=randomUUID();
     const planned=planVocabularyStudy(composition,options.previewSeed??sessionId,true);

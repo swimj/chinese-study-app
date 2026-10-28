@@ -48,11 +48,13 @@ background jobs or override either control.
 
 Mandarin study uses the authenticated `/api/vocabulary` family. Commands are
 validated in `server/vocabulary/study-routes.ts`; the server derives the learner.
+Preview and Start use the supplied time zone for the 4 a.m. local new-word
+quota boundary. Older clients omitting it retain UTC calendar-day behavior.
 
 | Method/path | Result or effect |
 | --- | --- |
-| `GET /session-preview` | Prospective ready item count, preparation status, and opaque sampling seed; queues bounded missing teaching preparation |
-| `POST /sessions` | Compose ready work and return its first encounter; optional `previewSeed` reuses the preview's pure-cue sampling draw |
+| `GET /session-preview` | Prospective ready item count, preparation status, and opaque sampling seed; accepts the browser IANA `timeZone` query parameter and queues bounded missing teaching preparation |
+| `POST /sessions` | Compose ready work and return its first encounter; accepts the browser IANA `timeZone`; optional `previewSeed` reuses the preview's pure-cue sampling draw |
 | `GET /sessions/:id` | Current owned projection and exact material |
 | `POST /sessions/:id/next` | Select ready material; stable `clientActionId` retries |
 | `POST /sessions/:id/commands` | Response, exercise reaction (v1 command `feedback`), skip, coverage, more, mode, Undo, resume, finish |
@@ -213,7 +215,7 @@ defines their initial values. Update them with JSON bodies containing
 | PATCH | `/api/learning-policy/daily-new-word-limit` | Config / learning policy |
 | PATCH | `/api/learning-policy/unstudied-admission-source` | Config / learning policy |
 
-Changing either setting does not rewrite the current UTC day's
+Changing either setting does not rewrite the current study day's
 completed-new-word count and does not mutate an already-started frontend
 session.
 

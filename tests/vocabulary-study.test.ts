@@ -960,6 +960,21 @@ test('measure retained-session hot-path scaling', {skip:process.env.RUN_SESSION_
 }));
 
 
+test('session preview and start reject invalid time zones', () => owner(() => {
+  const routes = new Map<string, (req: Request, res: Response) => void>();
+  const register = (method: string) => (path: string, handler: (req: Request, res: Response) => void) => routes.set(`${method} ${path}`, handler);
+  registerVocabularyStudyRoutes({get: register('GET'), post: register('POST')} as unknown as Express);
+  for (const [route, req] of [
+    ['GET /api/vocabulary/session-preview', {query:{timeZone:'Invalid/Zone'}, body:{}}],
+    ['POST /api/vocabulary/sessions', {query:{}, body:{timeZone:'Invalid/Zone'}}],
+  ] as const) {
+    let code = 200;
+    const response = {status(value:number){code=value;return this;}, json(){return this;}};
+    routes.get(route)!(req as unknown as Request, response as unknown as Response);
+    assert.equal(code, 400);
+  }
+}));
+
 test('live HTTP actions never wake background workers; Start schedules a wake after its response',async()=>owner(async()=>{
   db.prepare("INSERT OR REPLACE INTO learner_settings VALUES('alice','daily_new_word_limit','0','2026-10-27')").run();
   const routes=new Map<string,(req:Request,res:Response)=>void>();
