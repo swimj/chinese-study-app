@@ -81,7 +81,9 @@ example and `?state=Teaching` for target ruby and hover/focus pronunciation.
 Both support narrow-panel and enlarged-text controls.
 `/tests/browser/vocabulary-contrast-keyboard.html` exercises 1–9/0 selection
 and Enter submission through the active controller; `?count=3` checks bounds
-and `?production=1` checks Escape priority for the open reaction note. The motion fixture
+and `?production=1` checks Escape priority for the open reaction note.
+`?pure=1` checks that accepted input 诉求 fills the cloze instead of the first
+accepted member 意见, during both immediate and acknowledged reveal. The motion fixture
 `?slow=1` checks opaque paper while the next encounter is delayed;
 `/tests/browser/vocabulary-operator.html` exercises the proposal-first internal review surface (ready suggestions, Archive search, proposal edits, and `?second=pending|failed|result`; `?narrow=1&large=1` checks compact enlarged-text layout)
 with an in-memory API (`?empty=1` for empty lists, `?noProposal=1` for a no-change judgment). These fixtures are separate

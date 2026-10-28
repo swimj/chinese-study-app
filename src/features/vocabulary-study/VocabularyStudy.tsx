@@ -109,9 +109,13 @@ export function VocabularyStudy({ controller, hideStartButton = false, character
     }, 180);
   }
   const frozenWord = encounter?.snapshot.body.revealWords?.find((entry) => entry.wordId === word?.wordId) ?? word;
-  const answerForms = frozenWord ? formatSentenceAnswer(frozenWord, sentenceCharacterPresentation) : encounter?.snapshot.assessment?.acceptedAnswers[0] ?? '';
+  const expectedAnswer = frozenWord ? formatSentenceAnswer(frozenWord, sentenceCharacterPresentation) : encounter?.snapshot.assessment?.acceptedAnswers[0] ?? '';
   const assessment = c.assessment;
   const submitted = encounter?.effectiveResponses.at(-1)?.payload;
+  // A pure cue has no preferred member. Keep the learner's accepted input both
+  // during optimistic reveal and when replaying the persisted response.
+  const answerForms = encounter?.snapshot.schedulingScope === 'pure_cue' && assessment === 'accepted'
+    ? (submitted?.response ?? c.input).trim() || expectedAnswer : expectedAnswer;
   const criteria = materialObject(encounter?.snapshot.assessment?.criteria);
   const choices = materialObject(material).choices;
   const displayedChoices = Array.isArray(choices) ? choices.map((entry) => materialObject(entry)).filter((entry) => typeof entry.hanzi === 'string') : [];

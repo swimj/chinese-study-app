@@ -912,7 +912,7 @@ test('recognition and contrast do not displace a Practice production fallback',(
   const pool=session.context.payload!.words.a.general.practice;
   assert.ok(pool.some(content=>content.contentId==='contrast'));
   assert.ok(pool.some(content=>content.skill==='recognition'));
-  assert.equal(nextVocabularyExercise(session.sessionId,'next').currentEncounter?.snapshot.contentId,'vocabulary:baseline:v1:alice:production:general:a');
+  assert.equal(nextVocabularyExercise(session.sessionId,'next').currentEncounter?.snapshot.contentId,'vocabulary:baseline:v1:shared:production:general:a');
 }));
 
 test('pure coverage excludes dictionary production from preview and Start even while the cue is not due',()=>owner(()=>{

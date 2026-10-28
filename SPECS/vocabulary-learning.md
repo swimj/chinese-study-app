@@ -177,7 +177,8 @@ The answer reveal shows the exercise's mapped sense when one is available,
 with lexical meaning as the fallback. It retains pronunciation, authored usage
 notes and explanations. Cloze reveals stay tied to the answered prompt: show its
 mapped sense or lexical meaning, and a translation only when linked to the
-completed cloze. They do not introduce a different example sentence. Other
+completed cloze. A correct pure-cue response fills the blank with the learner's
+accepted input, preserving their choice among accepted members. They do not introduce a different example sentence. Other
 eligible reveals retain source examples. A Word reference
 disclosure exposes the full retained teaching source. Rejected production shows
 the learner's submitted answer alongside the expected answer. Personal notes
