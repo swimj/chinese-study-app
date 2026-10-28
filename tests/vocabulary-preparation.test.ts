@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { experimentOutputSchema } from '../server/word-content-lab/vocabulary-experiments/contracts.ts';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -379,4 +381,20 @@ test('an outage pauses new dispatch without rejecting a running sibling publicat
   assert.equal(db.prepare("SELECT COUNT(*) n FROM vocabulary_practice_preparation WHERE status='queued'").get()!.n,1);
   assert.equal(await worker.step(),false);assert.equal(calls,2);
   await worker.stop();
+});
+
+
+test('shared authoring extraction preserves the ordinary preparation generation identity',()=>{
+  const prompt=fs.readFileSync(new URL('../server/word-content-lab/vocabulary-experiments/prompts/general-exercises-v4.md',import.meta.url),'utf8');
+  const priorIdentity={prompt,promptVersion:'v4',schema:experimentOutputSchema({role:'general_exercises',content}),
+    model:'gpt-5.6-luna',reasoning:'high',maxOutputTokens:24_000,inputProjectionVersion:'general-exercises-v1'};
+  const priorKey=createHash('sha256').update(JSON.stringify(priorIdentity)).digest('hex');
+  assert.equal(createVocabularyPracticeProvider({environment:{OPENAI_API_KEY:'fake'}}).generationKey(content),priorKey);
+});
+
+for(const badText of ['没有空格。','____'])test(`ordinary preparation reaches shared cloze validation for ${badText}`,async()=>{
+  const value={exercises:[{id:'invalid-cloze',sourceUseId:'u1',stimulus:{kind:'phrase_cloze',frame:'A greeting.',text:badText},teachingNote:null}]};
+  const provider=createVocabularyPracticeProvider({environment:{OPENAI_API_KEY:'fake'},fetchImplementation:(async()=>response(value))as typeof fetch});
+  await assert.rejects(createVocabularyPracticePreparation({provider}).prepare('w1'),/Vocabulary practice generation failed/);
+  assert.equal(db.prepare("SELECT count(*) n FROM content_items WHERE exercise_role='general'").get()!.n,0);
 });

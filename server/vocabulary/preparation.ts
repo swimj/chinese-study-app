@@ -1,10 +1,10 @@
 import { preparationProviderFailure, WordPreparationProviderError } from '../word-content/provider-failure.ts';
 import { recordPreparationAttempt,linkPreparationInvocation,completePreparationAttempt,failPreparationAttempt } from './preparation-retry.ts';
 import { createHash,randomUUID } from 'node:crypto';
-import { readFileSync } from 'node:fs';
 import type { WordContentDocument } from '../../src/domain/word-content/types.ts';
 import type { VocabularyContent,VocabularyJson } from '../../src/domain/vocabulary-content.ts';
-import { experimentOutputSchema,projectExperimentInput,validateExperimentOutput } from '../word-content-lab/vocabulary-experiments/contracts.ts';
+import { generalExerciseInvocation, validateGeneralExerciseOutput, type GeneralExerciseOutput } from './general-exercise-authoring.ts';
+import { parseWordContent } from '../../src/domain/word-content/validation.ts';
 import { createOpenAiCompatibleAdapter } from '../llm/openai-compatible.ts';
 import { fetchImplementationForProvider } from '../llm/proxy-fetch.ts';
 import type { FetchImplementation } from '../llm/http.ts';
@@ -18,7 +18,6 @@ import { linkVocabularyInvocationContent,linkVocabularyInvocationSense } from '.
 export const VOCABULARY_PRACTICE_SERVICE = 'vocabulary-practice-authoring';
 export const VOCABULARY_PRACTICE_MODEL = 'gpt-5.6-luna';
 const TIMEOUT = 180_000;
-const prompt = readFileSync(new URL('../word-content-lab/vocabulary-experiments/prompts/general-exercises-v4.md',import.meta.url),'utf8');
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 export type VocabularyPracticeProvider = {
   model: string; isConfigured(): boolean; generationKey(content: WordContentDocument): string;
@@ -40,17 +39,16 @@ export function createVocabularyPracticeProvider(options: { environment?: NodeJS
   return {
     model: VOCABULARY_PRACTICE_MODEL,
     isConfigured: () => Boolean(environment.OPENAI_API_KEY?.trim()),
-    generationKey: (content) => hash({ prompt,promptVersion:'v4',schema: experimentOutputSchema({ role: 'general_exercises',content }),
-      model: VOCABULARY_PRACTICE_MODEL,reasoning: 'high',maxOutputTokens: 24_000,inputProjectionVersion: 'general-exercises-v1' }),
+    generationKey: (content) => { const invocation=generalExerciseInvocation(content); return hash({prompt:invocation.systemPrompt,promptVersion:'v4',schema:invocation.outputSchema,
+      model: VOCABULARY_PRACTICE_MODEL,reasoning:'high',maxOutputTokens:24_000,inputProjectionVersion:'general-exercises-v1'}); },
     async generate(content,options) {
       if (!environment.OPENAI_API_KEY?.trim()) throw new Error('Vocabulary practice provider is not configured');
-      const input = { role: 'general_exercises' as const,content };
-      const result = await adapter.run({ model: VOCABULARY_PRACTICE_MODEL,reasoningEffort: 'high',systemPrompt: prompt,
-        userPrompt: JSON.stringify(projectExperimentInput(input)),outputSchemaName: 'vocabulary_general_exercises_v1',
-        outputSchema: experimentOutputSchema(input),maxOutputTokens: 24_000,temperature: null,timeoutMs: TIMEOUT,cachePrompt: true,
+      const {promptName,promptVersion,schemaVersion,inputProjectionVersion,...invocation}=generalExerciseInvocation(parseWordContent(content));
+      const result = await adapter.run({ ...invocation,model: VOCABULARY_PRACTICE_MODEL,reasoningEffort: 'high',
+        maxOutputTokens: 24_000,temperature: null,timeoutMs: TIMEOUT,cachePrompt: true,
         invocationActor: { kind: 'service',serviceId: VOCABULARY_PRACTICE_SERVICE },
-        provenance: { workflowId: options.workflowId,attemptNumber: options.attemptNumber,stepName: 'general_exercises',promptName: 'vocabulary-general-exercises',
-          promptVersion: 'v4',schemaVersion: '1',inputProjectionVersion: 'general-exercises-v1' } },
+        provenance: { workflowId: options.workflowId,attemptNumber: options.attemptNumber,stepName: 'general_exercises',
+          promptName,promptVersion,schemaVersion,inputProjectionVersion } },
       { apiKey: environment.OPENAI_API_KEY.trim(),baseUrl: environment.OPENAI_BASE_URL?.trim() || null });
       options.onInvocation(result.invocationId);
       try {
@@ -72,8 +70,6 @@ function atomic<T>(work: () => T): T {
 function readWork(workId: string): VocabularyPracticeWork | null {
   return getDb().prepare(`SELECT ${projection} FROM vocabulary_practice_preparation WHERE work_id=?`).get(workId) as VocabularyPracticeWork | undefined ?? null;
 }
-type Wire = { exercises: Array<{ id: string; sourceUseId: string | null; stimulus: { kind: 'direct_text'; text: string }
-  | { kind: 'phrase_cloze'; frame: string; text: string }; teachingNote: string | null }> };
 
 /** Shared bounded authoring, invoked asynchronously by the backend worker. No session path awaits it.
  * A source/brief is prepared once. Failures retry after 30 and 60 seconds; exhausted cycles require an operator restart. */
@@ -128,12 +124,9 @@ export function createVocabularyPracticePreparation(options: { provider?: Vocabu
           }
         } });
       } catch (error) { throw preparationProviderFailure(error); }
-      const validation = validateExperimentOutput({ role: 'general_exercises',content: source },output);
-      if (validation.structuralErrors.length) {
-        invalidateServiceInvocation(invocationId,VOCABULARY_PRACTICE_SERVICE);
-        throw new Error('Vocabulary practice output failed validation');
-      }
-      const wire = output as Wire;
+      let wire:GeneralExerciseOutput;
+      try { wire=validateGeneralExerciseOutput(source,output); }
+      catch(error) { invalidateServiceInvocation(invocationId,VOCABULARY_PRACTICE_SERVICE);throw error; }
       retryable=false;
       return atomic(() => {
         if (options.canPublish && !options.canPublish()) throw new Error('Vocabulary preparation publication is currently blocked');

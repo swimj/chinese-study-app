@@ -144,9 +144,13 @@ answer membership. Either action can be useful without the other. Raw learner
 `response` remains usable evidence without a structured lexical resolution.
 
 Single improvement uses prompt version 3, JSON schema version 2, and input
-projection `vocabulary-admission.v2`. `sense-mapping.md` and `repertoire.md` remain
-standalone prompt version 2, schema version 1, and projection
-`vocabulary-admission.v1`. Repertoire output becomes one replacement of the
+projection `vocabulary-admission.v2`. `sense-mapping.md` uses standalone prompt
+version 2, schema version 1, and projection `vocabulary-admission.v1`.
+Repertoire generation uses the shared general-exercise invocation in
+`../general-exercise-authoring.ts`: the full general v4 brief, schema version 1,
+and projection `general-exercises-v1`, with the reflection job's selected model.
+Active senses supply uses, notes, and any retained examples. Its structured
+direct/cloze stimuli and optional teaching notes become one replacement of the
 assessed exercise plus new exercises; unrelated existing cues remain.
 
 A referral enters `pure-cue-promotion.md` within the same improvement job. Written

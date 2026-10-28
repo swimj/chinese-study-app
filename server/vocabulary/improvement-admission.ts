@@ -1,3 +1,4 @@
+import { generalExerciseSchema,validateGeneralExerciseOutput,type GeneralExerciseSource } from './general-exercise-authoring.ts';
 import { createHash } from 'node:crypto';
 import type { JsonSchema } from '../../src/domain/reflection-result-schema.ts';
 import type { VocabularyContent } from '../../src/domain/vocabulary-content.ts';
@@ -14,10 +15,8 @@ const serviceId = 'vocabulary-reflection';
 const text: JsonSchema = { type: 'string' };
 const object = (properties: Record<string,JsonSchema>): JsonSchema => ({ type: 'object',properties,required: Object.keys(properties),additionalProperties: false });
 export const vocabularySenseMappingSchema = object({ outcome: { type: 'string',enum: ['single_sense','laundry_list','unmappable','inventory_gap'] },rationale: text,senseIds: { type: 'array',items: text } });
-export const vocabularyRepertoireSchema = object({ diagnosis: text,exercises: { type: 'array',items: object({ senseId: text,prompt: text,rationale: text }) } });
 type Mapping = { outcome: 'single_sense'|'laundry_list'|'unmappable'|'inventory_gap'; rationale: string; senseIds: string[] };
 type MappingEvidence = Mapping & { observedMapping: {senseId:string|null; establishedAt:string|null}; mappingTimestamp:string };
-type Repertoire = { diagnosis: string; exercises: { senseId: string; prompt: string; rationale: string }[] };
 type ImprovementResult = Extract<VocabularyReflectionResult,{kind:'exercise_improvement'}>;
 export type VocabularyAdmissionStage = 'sense_mapping'|'single_improvement'|'repertoire'|'pure_cue_promotion';
 export type VocabularyAdmissionModelCall = (stage: VocabularyAdmissionStage,input: unknown,schema: JsonSchema) => Promise<{value: unknown; invocationId?: string|null}>;
@@ -139,22 +138,47 @@ export async function runVocabularyImprovementAdmission(options: {
         bases:[{contentId:original.contentId,expectedVersion:original.version},...promoted.bases],
         ...(local.invocationId?{invocationId:local.invocationId}:{})}:null}};
   }
-  const result = await stage<ImprovementResult>('repertoire',{...base,admission,acceptedAnswers:original.answers.flatMap(answer=>answer.acceptedForms)},vocabularyRepertoireSchema,(value,invocationId)=>{
-    const repertoire = value as Repertoire;
-    if(!repertoire.diagnosis.trim()||repertoire.exercises.length<2||repertoire.exercises.length>18
-      || repertoire.exercises.some(exercise=>!ids.has(exercise.senseId)||!exercise.prompt.trim()||!exercise.rationale.trim()))throw new Error('Repertoire requires two to eighteen valid exercises with supplied sense references');
-    const normalized=options.normalize({diagnosis:repertoire.diagnosis,operations:repertoire.exercises.map((exercise,index)=>({sourceContentId:original.contentId,
-      strategy:index===0?'replace':'create',rationale:exercise.rationale,prompt:exercise.prompt,acceptedAnswers:original.answers.flatMap(answer=>answer.acceptedForms)}))},invocationId);
+  const authoringSource:GeneralExerciseSource={word:{wordId,hanzi:word.hanzi,traditional:word.traditional,pinyin:word.pinyin},
+    uses:inventory.map(sense=>{
+      const description=sense.description;
+      if(typeof description==='string'&&description.trim())return {id:sense.senseId,label:description,notes:[],exampleIds:[]};
+      if(!description||typeof description!=='object'||Array.isArray(description)||typeof description.label!=='string'
+        ||(description.notes!==undefined&&(!Array.isArray(description.notes)||description.notes.some(note=>typeof note!=='string'))))throw new Error('Sense lacks authoring evidence');
+      return {id:sense.senseId,label:description.label,notes:(description.notes??[]) as string[],exampleIds:[]};
+    }),examples:[]};
+  // Imported inventories retain useful example evidence; generated inventories legitimately have none.
+  const examples:Array<GeneralExerciseSource['examples'][number]>=[];
+  authoringSource.uses.forEach((use,index)=>{
+    const description=inventory[index]!.description;
+    if(!description||typeof description!=='object'||Array.isArray(description)||!Array.isArray(description.examples))return;
+    for(const [exampleIndex,value] of description.examples.entries()){
+      if(!value||typeof value!=='object')throw new Error('Invalid sense example evidence');
+      const example=value as Record<string,unknown>;
+      if(typeof example.text!=='string'||typeof example.translation!=='string'
+        ||(example.pronunciation!==null&&typeof example.pronunciation!=='string'))throw new Error('Invalid sense example evidence');
+      const id=`${use.id}:example:${exampleIndex+1}`;
+      examples.push({id,text:example.text,translation:example.translation,pronunciation:example.pronunciation});
+      (use.exampleIds as string[]).push(id);
+    }
+  });
+  const input:GeneralExerciseSource={...authoringSource,examples};
+  const result = await stage<ImprovementResult>('repertoire',input,generalExerciseSchema(input),(value,invocationId)=>{
+    const repertoire=validateGeneralExerciseOutput(input,value);
+    const diagnosis=mapped.value.rationale;
+    const normalized=options.normalize({diagnosis,operations:repertoire.exercises.map((exercise,index)=>({sourceContentId:original.contentId,
+      strategy:index===0?'replace':'create',rationale:diagnosis,
+      prompt:exercise.stimulus.kind==='direct_text'?exercise.stimulus.text:`${exercise.stimulus.frame}\n${exercise.stimulus.text}`,
+      acceptedAnswers:original.answers.flatMap(answer=>answer.acceptedForms)}))},invocationId);
     if(normalized.kind!=='exercise_improvement'||!normalized.result.proposal)throw new Error('Repertoire did not produce a proposal');
     const timestamp=new Date().toISOString();
     normalized.result.proposal.operations.forEach((op,index)=>{
       const exercise=repertoire.exercises[index]!;
-      // These are newly authored standalone exercises, not new text pasted into old
-      // teaching/reveal material. Preserve answer assessment and publication scope only.
-      op.content.body={prompt:exercise.prompt,instruction:'',stimulus:{kind:'direct_text',text:exercise.prompt},
-        source:{kind:'vocabulary_repertoire',assessedContentId:original.contentId,assessedContentVersion:original.version,invocationId:invocationId??null}};
-      if(op.content.kind==='exercise')op.content.exerciseType='word';
-      op.content.words=[{wordId,relation:'target',senseId:exercise.senseId,senseMappingEstablishedAt:timestamp}];
+      op.content.body={prompt:exercise.stimulus.kind==='direct_text'?exercise.stimulus.text:`${exercise.stimulus.frame}\n${exercise.stimulus.text}`,
+        instruction:'',stimulus:exercise.stimulus,reveal:{teachingNote:exercise.teachingNote},
+        source:{kind:'vocabulary_repertoire',assessedContentId:original.contentId,assessedContentVersion:original.version,
+          localId:exercise.id,promptVersion:'v4',invocationId:invocationId??null}};
+      if(op.content.kind==='exercise')op.content.exerciseType=exercise.stimulus.kind==='phrase_cloze'?'cloze':'definition_gloss';
+      op.content.words=[{wordId,relation:'target',senseId:exercise.sourceUseId,senseMappingEstablishedAt:exercise.sourceUseId===null?null:timestamp}];
     });
     return normalized;
   });
