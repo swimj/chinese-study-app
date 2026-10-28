@@ -15,6 +15,7 @@ function object(value:unknown,allowed:readonly string[]):Record<string,unknown> 
   return value as Record<string,unknown>;
 }
 function text(value:unknown):string {if(typeof value!=='string'||!value.trim())throw new VocabularyReflectionRequestError('Expected nonempty text');return value;}
+function optionalText(value:unknown):string {if(value===undefined)return '';if(typeof value!=='string')throw new VocabularyReflectionRequestError('Expected text');return value;}
 function version(value:unknown):number{if(typeof value!=='number'||!Number.isSafeInteger(value)||value<1)throw new VocabularyReflectionRequestError('Expected positive version');return value;}
 function list(value:unknown):unknown[]{if(!Array.isArray(value))throw new VocabularyReflectionRequestError('Expected array');return value;}
 function choice<T extends string>(value:unknown,options:readonly T[]):T{if(typeof value!=='string'||!options.includes(value as T))throw new VocabularyReflectionRequestError('Unsupported choice');return value as T;}
@@ -104,7 +105,7 @@ export function registerVocabularyReflectionRoutes(app:Express,options:{wake?:()
     requestVocabularyCaseSecondOpinion(text(req.params.id),actor,(input.notes as string|undefined)??'');options.wake?.();return {ok:true};
   }));
   app.get(`${base}/cases/:id`,gate,handle((req,actor)=>getVocabularyCaseWorkspace(text(req.params.id),actor)));
-  app.post(`${base}/cases/:id/close`,gate,handle((req,actor)=>{const input=object(req.body,['reason']);closeVocabularyCase(text(req.params.id),actor,text(input.reason));return {ok:true};}));
+  app.post(`${base}/cases/:id/close`,gate,handle((req,actor)=>{const input=object(req.body,['reason']);closeVocabularyCase(text(req.params.id),actor,optionalText(input.reason));return {ok:true};}));
   app.get(`${base}/proposals`,gate,handle((req,actor)=>{
     object(req.query,['status']);const status=req.query.status===undefined?undefined:choice(req.query.status,['draft','awaiting_review','approved','applied','closed'] as const);
     return {items:listVocabularyProposals(actor,status)};
@@ -128,6 +129,6 @@ export function registerVocabularyReflectionRoutes(app:Express,options:{wake?:()
   app.post(`${base}/proposals/:id/apply`,gate,handle((req,actor)=>{const input=object(req.body,['expectedVersion','reviewId','idempotencyKey']);
     return applyVocabularyProposal(text(req.params.id),version(input.expectedVersion),text(input.reviewId),text(input.idempotencyKey),actor);
   }));
-  app.post(`${base}/proposals/:id/close`,gate,handle((req,actor)=>{const input=object(req.body,['expectedVersion','reason']);closeVocabularyProposal(text(req.params.id),version(input.expectedVersion),actor,text(input.reason));return {ok:true};}));
+  app.post(`${base}/proposals/:id/close`,gate,handle((req,actor)=>{const input=object(req.body,['expectedVersion','reason']);closeVocabularyProposal(text(req.params.id),version(input.expectedVersion),actor,optionalText(input.reason));return {ok:true};}));
   app.post(`${base}/jobs/:id/retry`,gate,handle((req,actor)=>{noBody(req);retryVocabularyReflectionJob(text(req.params.id),actor);options.wake?.();return {ok:true};}));
 }

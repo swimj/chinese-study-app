@@ -149,6 +149,9 @@ test('operator exact-version approval/application routes reject malformed and st
   const applied=call('post',`${base}/proposals/:id/apply`,{params:{id},body:input});assert.equal(applied.status,200);
   assert.deepEqual(call('post',`${base}/proposals/:id/apply`,{params:{id},body:input}),applied);
   assert.equal(getVocabularyContentForMaintenance('one')!.version,2);
+  const appliedAt=sql.prepare('SELECT applied_at FROM proposal_applications WHERE proposal_id=?').get(id)!.applied_at;
+  assert.equal(call('get',`${base}/proposals/:id`,{params:{id}}).body.resolvedAt,appliedAt);
+  assert.equal((call('get',`${base}/proposals`,{query:{status:'applied'}}).body.items as {resolvedAt:string}[])[0]!.resolvedAt,appliedAt);
   assert.equal(call('get',`${base}/proposals`,{query:{status:'applied'}}).status,200);
   assert.ok(!JSON.stringify(call('get',feedback)).includes('scope'));
 });
@@ -250,4 +253,53 @@ test('feedback dismiss and restore are owner-only empty-body commands and retain
     assert.equal(messages[0]!.dismissedAt===null,action==='restore');
     assert.equal(call('get',`${feedback}/attention`).body.unseenCount,action==='restore'?1:0);
   }
+});
+
+
+for(const reason of [undefined,'','  ','Reviewed without publishing.'])test(`proposal close accepts optional reason (${JSON.stringify(reason)}) and retains validation`,()=>{
+  const created=call('post',`${base}/proposals`,{body:proposal()});const params={id:String(created.body.proposalId)};
+  const route=`${base}/proposals/:id/close`;
+  assert.equal(call('get',`${base}/proposals/:id`,{params}).body.resolvedAt,null);
+  for(const invalid of [null,{},1])assert.equal(call('post',route,{params,body:{expectedVersion:1,reason:invalid}}).status,400);
+  assert.equal(call('post',route,{params,body:{expectedVersion:1,reason,unexpected:true}}).status,400);
+  assert.equal(call('post',route,{params,body:{expectedVersion:2,reason}}).status,409);
+  process.env.APP_OPERATOR_CLERK_USER_IDS='someone-else';
+  assert.equal(call('post',route,{params,body:{expectedVersion:1,reason}}).status,403);
+  process.env.APP_OPERATOR_CLERK_USER_IDS='editor';
+  assert.equal(call('post',route,{params,body:{expectedVersion:1,reason}}).status,200);
+  assert.equal(call('get',`${base}/proposals/:id`,{params}).body.status,'closed');
+  const closedAt=sql.prepare("SELECT occurred_at FROM backend_events WHERE entity_id=? AND name='vocabulary.reflection.proposal_closed'").get(params.id)!.occurred_at;
+  assert.equal(call('get',`${base}/proposals/:id`,{params}).body.resolvedAt,closedAt);
+  assert.equal((call('get',`${base}/proposals`,{query:{status:'closed'}}).body.items as {resolvedAt:string}[])[0]!.resolvedAt,closedAt);
+  assert.equal(getVocabularyContentForMaintenance('one')!.version,1);
+  assert.equal(call('post',route,{params,body:{expectedVersion:1,reason}}).status,409);
+});
+
+for(const reason of [undefined,'','  ','Reviewed without a change.'])test(`completed no-change review closes with optional reason (${JSON.stringify(reason)})`,()=>{
+  const job=claimVocabularyReflectionJob({kind:'exercise_improvement',now:later})!;
+  recordVocabularyImprovementResult(job.jobId,job.leaseToken,{diagnosis:'No change needed',proposal:null},later);
+  const params={id:caseId},route=`${base}/cases/:id/close`;
+  assert.equal((call('get',`${base}/cases/:id`,{params}).body.case as {resolvedAt:null}).resolvedAt,null);
+  for(const invalid of [null,{},1])assert.equal(call('post',route,{params,body:{reason:invalid}}).status,400);
+  assert.equal(call('post',route,{params,body:{reason,unexpected:true}}).status,400);
+  assert.equal(call('post',route,{params,body:{reason}}).status,200);
+  assert.equal((call('get',`${base}/no-proposal-cases`).body.items as unknown[]).length,0);
+  const archived=call('get',`${base}/no-proposal-cases`,{query:{status:'closed'}}).body.items as {resolvedAt:string}[];
+  assert.equal(archived.length,1);
+  const closedAt=sql.prepare("SELECT occurred_at FROM backend_events WHERE entity_id=? AND name='vocabulary.reflection.admission_case_closed'").get(caseId)!.occurred_at;
+  assert.equal(archived[0]!.resolvedAt,closedAt);
+  assert.equal((call('get',`${base}/cases/:id`,{params}).body.case as {resolvedAt:string}).resolvedAt,closedAt);
+  assert.equal(getVocabularyContentForMaintenance('one')!.version,1);
+});
+
+for(const outcome of ['inventory_gap','unmappable','needs_operator'] as const)test(`${outcome} assessment closure still requires a reason even without a proposal`,()=>{
+  const job=claimVocabularyReflectionJob({kind:'exercise_improvement',now:later})!;
+  const unresolved=outcome==='needs_operator'
+    ?{pureCuePromotion:{outcome,rationale:'Ambiguous candidate',candidateWordIds:['a'],existingContentId:null}}
+    :{admission:{outcome,rationale:'Inspect the intended use',wordId:'a',sourceContentId:'one',sourceContentVersion:1,catalogVersion:1,senseIds:[],sourceMapping:{senseId:null,establishedAt:null}}};
+  recordVocabularyImprovementResult(job.jobId,job.leaseToken,{diagnosis:'Manual review needed',proposal:null,...unresolved},later);
+  const params={id:caseId},route=`${base}/cases/:id/close`;
+  for(const reason of [undefined,'','  '])assert.equal(call('post',route,{params,body:{reason}}).status,400);
+  assert.equal((call('get',`${base}/cases/:id`,{params}).body.case as {status:string}).status,'open');
+  assert.equal(call('post',route,{params,body:{reason:'Deferred after reviewing the unresolved assessment'}}).status,200);
 });

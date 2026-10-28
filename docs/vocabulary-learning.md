@@ -446,7 +446,7 @@ navigate one proposal at a time; applying or dismissing a proposal advances to
 the next available item. Opening a proposal validates its saved version and shows current and proposed content, accepted
 answers, and shared or learner-only scope. Changed answer criteria and retained
 teaching are expanded in the comparison. Evidence, processing details, relationship
-effects, and manual editing are available on drill-in; history and issues needing
+effects, and manual editing are available on drill-in; Archive and issues needing
 attention have separate views.
 
 “Approve and apply” records approval for the displayed version and applies it
@@ -467,9 +467,9 @@ cases and standalone manual proposals do not yet support this review path.
 Completed exercise judgments that propose no change also appear in Awaiting
 review, including retained historical judgments. The operator can inspect the
 served exercise and rationale, draft a correction from current content, request
-an advisory second opinion with a question, or close the review with a reason.
+an advisory second opinion with a question, or close the review with an optional reason.
 The second opinion reviews the no-change judgment; it does not create or apply a
-proposal. Closed reviews remain in History, with their retained jobs and results in the case evidence.
+proposal. Closed reviews remain in Archive, with their retained jobs and results in the case evidence.
 
 Single-word local improvement drafts wording changes and additional variants of
 the supplied exercise while preserving its accepted-answer membership. Operators can

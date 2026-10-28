@@ -7,6 +7,8 @@ export type VocabularyReflectionCase = {
   kind: 'learner_feedback' | 'exercise_improvement' | 'teaching_review';
   wordId: string | null; contentId: string | null; status: 'open' | 'completed' | 'closed';
   evidence: VocabularyEncounterEvidence[]; createdAt: string;
+  /** Authoritative resolution time; absent in older clients and null when unresolved or unavailable. */
+  resolvedAt?: string | null;
 };
 export type VocabularyReflectionJob = {
   jobId: string; caseId: string; learnerId: string;
@@ -56,6 +58,8 @@ export type VocabularyContentProposal = {
   operations: VocabularyProposalOperation[]; rationale: string;
   bases: { contentId: string; expectedVersion: number }[];
   invocationId: string | null; authorKind: 'operator' | 'service'; authorId: string;
+  /** Authoritative application or dismissal time; never the draft creation/update time. */
+  resolvedAt?: string | null;
 };
 export type VocabularyProposalApplication = {
   applicationId: string; proposalId: string; proposalVersion: number; reviewId: string;

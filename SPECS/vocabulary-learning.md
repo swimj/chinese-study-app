@@ -308,6 +308,16 @@ available on drill-in. Operational failures and unresolved cases are separate
 from ready suggestions. Second opinions are retained, advisory reviews bound to
 an exact proposal version; they do not replace edits or authorize application.
 
+Review cards prioritize the item, judgment and proposed content. One Details
+disclosure contains supporting evidence, processing metadata and optional notes.
+Dismissal and closing a completed no-change review accept an optional reason;
+teaching and unresolved sense or promotion assessments require a resolution.
+Archive defaults to all proposals and no-change reviews resolved in the last
+12 hours. Search covers all retained resolutions, including older entries.
+Queue navigation preserves the selected item while moving among operator views.
+Arrow keys move between items outside text fields and native controls.
+Background list refresh preserves the selection, draft and exact reviewed version.
+
 Shared content changes require operator review. Preview validates the exact
 proposal version, source bases, effect scope, and resulting content. Approval
 binds that version; application rechecks it and records an idempotent receipt.

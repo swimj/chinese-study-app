@@ -3,8 +3,8 @@ import type { VocabularyContentProposal, VocabularySecondOpinion } from '../../d
 import type { VocabularyOperatorApi } from './api';
 
 const verdicts = { support: 'Supports this proposal', revise: 'Suggests revision', reject: 'Recommends against this proposal' };
-export function ProposalSecondOpinion({ api, proposal, eligible, disabled }: {
-  api: VocabularyOperatorApi; proposal: VocabularyContentProposal; eligible: boolean; disabled: boolean;
+export function ProposalSecondOpinion({ api, proposal, eligible, disabled, expanded = false }: {
+  api: VocabularyOperatorApi; proposal: VocabularyContentProposal; eligible: boolean; disabled: boolean; expanded?: boolean;
 }) {
   const [opinions, setOpinions] = useState<VocabularySecondOpinion[]>([]);
   const [notes, setNotes] = useState('');
@@ -39,14 +39,13 @@ export function ProposalSecondOpinion({ api, proposal, eligible, disabled }: {
   return <div className="vocabulary-second-opinion" aria-label="Second opinion">
     {error && <div role="alert"><p>{error}</p><button className="secondary-button" onClick={() => setRefreshKey(value => value + 1)}>Reload second opinions</button></div>}
     {current ? <>
-      <strong>Second opinion · version {current.proposalVersion}</strong>
-      {current.result ? <><p><strong>{verdicts[current.result.verdict]}</strong></p><p>{current.result.rationale}</p></>
-        : <p role="status">{current.status === 'queued' ? 'Queued' : current.status === 'running' ? 'Reviewing…' : 'Review failed'}</p>}
-      {current.status === 'failed' && eligible && <><button className="secondary-button" disabled={busy || disabled} onClick={() => void request(current)}>Retry second opinion</button><details><summary>Failure details</summary><p>{current.error}</p></details></>}
+      {current.result ? <><p><strong>{verdicts[current.result.verdict]}</strong></p><p>{expanded ? current.result.rationale : current.result.rationale.match(/^.*?[.!?](?:\s|$)/)?.[0].trim() ?? current.result.rationale}</p></>
+        : <p role="status">{current.status === 'queued' ? 'Second opinion queued' : current.status === 'running' ? 'Reviewing…' : 'Review failed'}</p>}
+      {current.status === 'failed' && eligible && <><button className="secondary-button" disabled={busy || disabled} onClick={() => void request(current)}>Retry second opinion</button>{expanded && <p>{current.error}</p>}</>}
     </> : eligible && <>
-      <button className="secondary-button" disabled={busy || disabled} onClick={() => void request()}>Ask AI for a second opinion</button>
-      <details><summary>Add a question for the AI</summary><label>Question for the AI<textarea value={notes} onChange={event => setNotes(event.target.value)} disabled={busy || disabled} /></label></details>
+      <button className="secondary-button" disabled={busy || disabled} onClick={() => void request()}>Second opinion</button>
+      {expanded && <label>Question for second opinion (optional)<textarea value={notes} onChange={event => setNotes(event.target.value)} disabled={busy || disabled} /></label>}
     </>}
-    {older.length > 0 && <details><summary>Earlier opinions ({older.length})</summary>{older.map(item => <article key={item.requestId}><h4>Version {item.proposalVersion} · earlier draft</h4><p>{item.result ? verdicts[item.result.verdict] : item.status}</p><p>{item.result?.rationale}</p></article>)}</details>}
+    {expanded && older.length > 0 && <div><h4>Earlier opinions</h4>{older.map(item => <article key={item.requestId}><h4>Version {item.proposalVersion} · earlier draft</h4><p>{item.result ? verdicts[item.result.verdict] : item.status}</p><p>{item.result?.rationale}</p></article>)}</div>}
   </div>;
 }
