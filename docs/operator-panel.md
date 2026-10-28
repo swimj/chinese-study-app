@@ -34,9 +34,8 @@ snapshot. The view does not use server-side pagination.
 Initiator identifies the learner whose session triggered initial reflection and
 its pipeline stages, Operator for explicitly requested second opinions and
 reassessments, or Service for independent automation. Backend execution ownership
-is separate. Saved workflow/job associations let historical backend reflection
-calls use the same classification without rewriting accounting records. Learner
-names and IDs remain available for learner initiators; operator work retains its
+is separate. Learner names and IDs remain available for learner initiators;
+operator work retains its
 source learner in provenance without grouping its spend under that learner.
 
 Model invocations and Content quality offer a Timestamp display control inside
