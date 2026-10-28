@@ -100,3 +100,7 @@
 .vocabulary-reassessment-control { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem; }
 .vocabulary-operator-page .vocabulary-reassessment-control label { margin: 0; font-size: .85rem; }
 .vocabulary-reassessment-control select { min-height: 40px; }
+
+.vocabulary-reassessment-confirmation { flex-basis: 100%; }
+.vocabulary-reassessment-confirmation p { margin: .5rem 0; }
+.vocabulary-reassessment-confirmation button + button { margin-left: .5rem; }

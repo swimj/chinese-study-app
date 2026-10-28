@@ -73,6 +73,16 @@ and application validate source versions and effect scope. Application records
 an idempotent receipt; stale bases or changed drafts require renewed validation
 and approval. Advisory second opinions cannot authorize or apply changes.
 
+Operator reassessment pins the current source identity and version at submission.
+A difference from the historical assessed version requires explicit operator
+confirmation. Source identity and version govern reassessment consistency;
+structural content comparisons do not substitute for version authority. A later
+source revision invalidates queued or in-flight work and proposals based on that
+version. Fresh mapping and assessment belong to the new case. Its link to the
+original assessment preserves provenance without making its encounters evidence
+for the new assessment. Retry retains the pinned version; it does not silently
+move the request to another revision.
+
 Learner feedback and bounded scheduling compensation have authority independent
 of content review. Reading a lesson is not content approval, and applying a
 proposal is not scheduling compensation. Receipts prevent repeated compensation

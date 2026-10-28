@@ -106,9 +106,10 @@ export function registerVocabularyReflectionRoutes(app:Express,options:{wake?:()
     requestVocabularyCaseSecondOpinion(text(req.params.id),actor,(input.notes as string|undefined)??'');options.wake?.();return {ok:true};
   }));
   app.post(`${base}/cases/:id/reassessments`,gate,handle((req,actor)=>{
-    const input=object(req.body,['modelChoice']);
+    const input=object(req.body,['modelChoice','expectedContentVersion']);
+    if(!Number.isSafeInteger(input.expectedContentVersion)||Number(input.expectedContentVersion)<1)throw new VocabularyReflectionRequestError('Expected positive source content version');
     if(!isOfferedReflectionModelChoice(input.modelChoice)) throw new VocabularyReflectionRequestError('Unsupported assessment model');
-    const result=requestVocabularyReassessment(text(req.params.id),actor,input.modelChoice as import('../reflection/model-arms.ts').ReflectionModelChoice);options.wake?.();return result;
+    const result=requestVocabularyReassessment(text(req.params.id),actor,input.modelChoice as import('../reflection/model-arms.ts').ReflectionModelChoice,input.expectedContentVersion as number);options.wake?.();return result;
   }));
   app.get(`${base}/cases/:id`,gate,handle((req,actor)=>getVocabularyCaseWorkspace(text(req.params.id),actor)));
   app.post(`${base}/cases/:id/close`,gate,handle((req,actor)=>{const input=object(req.body,['reason']);closeVocabularyCase(text(req.params.id),actor,optionalText(input.reason));return {ok:true};}));

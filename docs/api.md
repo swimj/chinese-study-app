@@ -83,6 +83,17 @@ and queues an advisory review of the retained no-change judgment. Case workspace
 jobs expose the advisory status and result; the existing job retry and case close
 routes apply. This path does not create or apply a content proposal.
 
+`POST /api/operator/vocabulary/cases/:id/reassessments` accepts `modelChoice` and
+required `expectedContentVersion`. It queues an independent assessment pinned to
+that current source version and returns the new `caseId` and `jobId`. The operator
+must confirm a version change shown by the review surface before submission. A
+source version that changed since the read is a conflict; the request does not
+silently assess the newer version. Case and review reads expose the historical
+assessed version and current version for this decision. Reassessment performs
+fresh mapping where applicable and fresh assessment without the original learner
+responses or reactions. It preserves the original case as historical context and
+does not resolve or apply its proposal or judgment.
+
 Proposal detail/list and case reads include `resolvedAt`: receipt application time
 for applied proposals, latest closure event time for dismissed proposals or closed
 cases, and `null` when unresolved or authoritative historical evidence is missing.

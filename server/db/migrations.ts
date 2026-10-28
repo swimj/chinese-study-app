@@ -206,6 +206,9 @@ export const schemaMigrations: readonly SchemaMigration[] = [{
 }, {
   id: 'app_schema:0059_vocabulary_reassessment',
   sql: fs.readFileSync(new URL('./migrations/0059_vocabulary_reassessment.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0060_vocabulary_reassessment_source',
+  sql: fs.readFileSync(new URL('./migrations/0060_vocabulary_reassessment_source.sql', import.meta.url), 'utf8'),
 }];
 
 function checksum(value: string): string {

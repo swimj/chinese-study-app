@@ -177,3 +177,11 @@ test('repair preserves banked no-op and surrounding-whitespace rejection cases',
     assert.throws(() => normalize(prompt), /trim surrounding whitespace/);
   }
 });
+
+test('operator reassessment excludes historical candidate responses and fences by source version',()=>{
+  const prepared=prepareVocabularyPureCueImprovement({...job(),reassessmentSourceJobId:'previous',reassessmentSource:original},original);
+  assert.deepEqual(prepared.input.responseCandidates,[]);
+  prepared.fence();
+  updateVocabularyContent('cue',original.version,{...original,body:{prompt:'Updated task.'}},actor);
+  assert.throws(()=>prepared.fence(),error=>error instanceof Error&&error.constructor.name==='VocabularyReflectionConflict');
+});

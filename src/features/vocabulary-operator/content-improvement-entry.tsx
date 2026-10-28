@@ -46,10 +46,10 @@ function ServedSnapshot({ snapshot }: { snapshot: VocabularyEncounterSnapshot })
   </article>;
 }
 
-export function ServedContentLead({ evidence }: { evidence: readonly VocabularyEncounterEvidence[] | null }) {
+export function ServedContentLead({ evidence, historical=false }: { evidence: readonly VocabularyEncounterEvidence[] | null; historical?:boolean }) {
   const lead = servedContentLead(evidence);
-  return <div className="vocabulary-served-lead" aria-label="Original served content">
-    <p className="vocabulary-served-label">Original served content</p>
+  return <div className="vocabulary-served-lead" aria-label={historical?"Historical session content":"Original served content"}>
+    <p className="vocabulary-served-label">{historical?"Historical session content":"Original served content"}</p>
     {lead.status === 'unavailable'
       ? <p>The original served content is not available for this entry.</p>
       : lead.items.map(item => 'missing' in item
@@ -59,11 +59,12 @@ export function ServedContentLead({ evidence }: { evidence: readonly VocabularyE
 }
 
 /** The served snapshot is the first content. Diagnosis, current content, and proposals stay in the body. */
-export function ContentImprovementEntry({ evidence, label, children }: {
-  evidence: readonly VocabularyEncounterEvidence[] | null; label: string; children?: ReactNode;
+export function ContentImprovementEntry({ evidence, label, children, assessedVersion }: {
+  evidence: readonly VocabularyEncounterEvidence[] | null; label: string; children?: ReactNode; assessedVersion?:number;
 }) {
   return <section aria-label={label} className="vocabulary-improvement-entry">
-    <ServedContentLead evidence={evidence} />
+    <ServedContentLead evidence={evidence} historical={assessedVersion!==undefined} />
+    {assessedVersion!==undefined&&<p className="vocabulary-operator-meta">Operator reassessment · source v{assessedVersion}</p>}
     <div className="vocabulary-improvement-entry-body">{children}</div>
   </section>;
 }

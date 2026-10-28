@@ -1,6 +1,6 @@
 import { generalExerciseSchema,validateGeneralExerciseOutput,type GeneralExerciseSource } from './general-exercise-authoring.ts';
 import { createHash } from 'node:crypto';
-import { isDeepStrictEqual } from 'node:util';
+import { VocabularyReflectionConflict } from '../db/vocabulary-reflection.ts';
 import type { JsonSchema } from '../../src/domain/reflection-result-schema.ts';
 import type { VocabularyContent } from '../../src/domain/vocabulary-content.ts';
 import type { VocabularyReflectionJob, VocabularyReflectionResult } from '../../src/domain/vocabulary-reflection.ts';
@@ -39,9 +39,9 @@ export async function runVocabularyImprovementAdmission(options: {
   assertPublish();
   const readiness = await (options.ensureSenses ?? ensureVocabularySenses)(wordId,{ workflowId: job.jobId,attemptNumber: job.attemptNumber,canPublish: options.canPublish });
   let current = getVocabularyContentForMaintenance(original.contentId);
-  if (!current || current.version !== original.version || current.availability !== 'active') throw new Error('Improvement source changed before admission');
+  if (!current || current.version !== original.version || current.availability !== 'active') throw new VocabularyReflectionConflict('Improvement source changed before admission');
   const originalMapping = current.words.find(word=>word.wordId===wordId);
-  if (!originalMapping) throw new Error('Improvement source has no target relationship');
+  if (!originalMapping) throw new VocabularyReflectionConflict('Improvement source has no target relationship');
   let expectedMapping = {senseId: originalMapping.senseId??null,establishedAt: originalMapping.senseMappingEstablishedAt??null};
   const fence = () => {
     assertPublish();
@@ -49,7 +49,7 @@ export async function runVocabularyImprovementAdmission(options: {
     const mapping = current?.words.find(word=>word.wordId===wordId);
     if (!current || current.version !== original.version || current.availability !== 'active'
       || !mapping || mapping.senseId != expectedMapping.senseId || mapping.senseMappingEstablishedAt != expectedMapping.establishedAt
-      || getVocabularySenseCatalog(wordId).version !== readiness.catalog.version) throw new Error('Improvement source, mapping, or sense catalog changed');
+      || getVocabularySenseCatalog(wordId).version !== readiness.catalog.version) throw new VocabularyReflectionConflict('Improvement source, mapping, or sense catalog changed');
   };
   fence();
   const inventory = readiness.senses.filter(sense=>sense.status==='active');
@@ -90,16 +90,7 @@ export async function runVocabularyImprovementAdmission(options: {
     } catch(error) { db.exec('ROLLBACK TO vocabulary_improvement_stage; RELEASE vocabulary_improvement_stage'); throw error; }
     return {value,...(response.invocationId?{invocationId:response.invocationId}:{})};
   }
-  const retained = job.reassessmentSourceJobId ? (getDb().prepare(`SELECT input_hash,input_json,result_json,invocation_id,recorded_at FROM vocabulary_improvement_stages WHERE job_id=? AND stage='sense_mapping' ORDER BY recorded_at DESC`)
-    .all(job.reassessmentSourceJobId) as {input_hash:string;input_json:string;result_json:string;invocation_id:string|null;recorded_at:string}[])
-    .find(row=>isDeepStrictEqual((JSON.parse(row.input_json) as {input:unknown}).input,JSON.parse(JSON.stringify(base)))) : undefined;
-  if(job.reassessmentSourceJobId&&!retained) throw new Error('Retained sense mapping no longer matches the source and catalog');
-  if(retained) {
-    fence();
-    getDb().prepare(`INSERT OR IGNORE INTO vocabulary_improvement_stages(job_id,stage,input_hash,input_json,result_json,invocation_id,recorded_at) VALUES (?,'sense_mapping',?,?,?,?,?)`)
-      .run(job.jobId,retained.input_hash,retained.input_json,retained.result_json,retained.invocation_id,retained.recorded_at);
-  }
-  const mapped = retained ? {value:JSON.parse(retained.result_json) as MappingEvidence,...(retained.invocation_id?{invocationId:retained.invocation_id}:{})} : await stage<MappingEvidence>('sense_mapping',base,vocabularySenseMappingSchema,value=>{
+  const mapped = await stage<MappingEvidence>('sense_mapping',base,vocabularySenseMappingSchema,value=>{
     const result = value as Mapping;
     if(!result.rationale.trim() || new Set(result.senseIds).size!==result.senseIds.length || result.senseIds.some(id=>!ids.has(id))
       || (result.outcome==='single_sense'&&result.senseIds.length!==1)

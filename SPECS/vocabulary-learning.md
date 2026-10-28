@@ -327,8 +327,14 @@ manual editing are available on drill-in. Operational failures and unresolved
 cases are separate from ready suggestions. Second opinions are retained,
 advisory reviews bound to an exact proposal version; they do not replace edits
 or authorize application. Operators can also request a fresh improvement
-assessment using a chosen model. It produces a separate review item and does not
-resolve or apply the original proposal or judgment.
+assessment of the current exercise version using a chosen model. If that version
+differs from the original assessment's source version, the operator sees both
+versions and must explicitly choose to proceed on the current version. Each
+reassessment performs fresh sense mapping where applicable and fresh assessment,
+including when the source version is unchanged. It produces a separate review
+item and does not resolve or apply the original proposal or judgment. The
+original encounter remains historical context; reassessment evaluates the authored
+exercise independently of the original learner response or reaction.
 
 Operators can inspect supporting evidence and edit proposals before approval.
 Dismissal and closing a completed no-change review accept an optional reason;

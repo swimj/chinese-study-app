@@ -86,7 +86,7 @@ and `?production=1` checks Escape priority for the open reaction note.
 `?pure=1` checks that accepted input 诉求 fills the cloze instead of the first
 accepted member 意见, during both immediate and acknowledged reveal. The motion fixture
 `?slow=1` checks opaque paper while the next encounter is delayed;
-`/tests/browser/vocabulary-operator.html` exercises the proposal-first internal review surface (ready suggestions, Archive search, proposal edits, and `?second=pending|failed|result`; `?narrow=1&large=1` checks compact enlarged-text layout; `?reassessment` enables reassessment; `?slow` exercises delayed reads, `?failNext` exercises navigation recovery, and `?stale` or `?staleApply` exercises a validation conflict)
+`/tests/browser/vocabulary-operator.html` exercises the proposal-first internal review surface (ready suggestions, Archive search, proposal edits, and `?second=pending|failed|result`; `?narrow=1&large=1` checks compact enlarged-text layout; `?reassessment` enables reassessment and `?reassessment=changed` checks explicit confirmation of a changed source version; `?slow` exercises delayed reads, `?failNext` exercises navigation recovery, and `?stale` or `?staleApply` exercises a validation conflict)
 with an in-memory API (`?empty=1` for empty lists, `?noProposal=1` for a no-change judgment). The first awaiting-review proposal's served snapshot uses a different cue and accepted-answer set from the current item and the proposed cue. `?noSnapshot=1` opens that proposal with no retained case snapshot. These fixtures are separate
 from `npm test`. Add `?usage=1` to place the review in the operator panel's
 Content improvement tab, including its narrow and enlarged-text variants. Check
