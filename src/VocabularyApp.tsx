@@ -14,7 +14,6 @@ import { VocabularyStudy } from './features/vocabulary-study/VocabularyStudy';
 import { VocabularyHomePage } from './pages/VocabularyHomePage';
 import { VocabularyWordsPage } from './pages/VocabularyWordsPage';
 import { VocabularyFeedbackPage } from './pages/VocabularyFeedbackPage';
-import { VocabularyOperatorPage } from './pages/VocabularyOperatorPage';
 import './features/vocabulary-study/pages.css';
 import { AppChrome, NestedNav, type AppPageKey } from './components/AppChrome';
 import { AboutPage, type AboutView } from './pages/AboutPage';
@@ -29,7 +28,7 @@ const OPERATOR_USAGE_HASH = '#operator-usage';
 
 function readInitialPage(): AppPageKey {
   if (typeof window === 'undefined') return 'home';
-  return window.location.hash === '#operator-vocabulary' ? 'operator-vocabulary' : window.location.hash === OPERATOR_USAGE_HASH ? 'operator-usage' : 'home';
+  return [OPERATOR_USAGE_HASH, '#operator-vocabulary'].includes(window.location.hash) ? 'operator-usage' : 'home';
 }
 
 function App({ onSignOut, accountScope = 'trusted-local' }: { onSignOut?: () => Promise<void>; accountScope?: string }) {
@@ -51,6 +50,7 @@ function App({ onSignOut, accountScope = 'trusted-local' }: { onSignOut?: () => 
   });
   const guideToSettings = !gettingStartedUnseen && !stashUnseen && settingsUnseen;
   const [currentPage, setCurrentPage] = useState<AppPageKey>(readInitialPage);
+  const [operatorInitialTab, setOperatorInitialTab] = useState<'usage' | 'improvement'>(() => window.location.hash === '#operator-vocabulary' ? 'improvement' : 'usage');
   const [aboutView, setAboutView] = useState<AboutView>('getting-started');
   const [selectedUpdateId, setSelectedUpdateId] = useState<string | null>(null);
   const homeUpdatesCollapsedKey = `home-updates-collapsed:v1:${accountScope}`;
@@ -97,6 +97,7 @@ function App({ onSignOut, accountScope = 'trusted-local' }: { onSignOut?: () => 
       }
       return;
     }
+    setOperatorInitialTab('usage');
     if (window.location.hash === OPERATOR_USAGE_HASH) {
       history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
     }
@@ -104,7 +105,11 @@ function App({ onSignOut, accountScope = 'trusted-local' }: { onSignOut?: () => 
 
   useEffect(() => {
     function onHashChange() {
-      if (window.location.hash === '#operator-vocabulary') setCurrentPage('operator-vocabulary');
+      if (window.location.hash === '#operator-vocabulary') {
+        setOperatorInitialTab('improvement');
+        setCurrentPage('operator-usage');
+        history.replaceState(null, '', `${window.location.pathname}${window.location.search}${OPERATOR_USAGE_HASH}`);
+      }
       if (window.location.hash === OPERATOR_USAGE_HASH) {
         setCurrentPage('operator-usage');
       }
@@ -320,10 +325,8 @@ function App({ onSignOut, accountScope = 'trusted-local' }: { onSignOut?: () => 
           onSelectKind={(kind) => void contentPage.selectKind(kind)}
           onSearch={() => void contentPage.submitSearch()}
         />
-      ) : currentPage === 'operator-vocabulary' ? (
-        <VocabularyOperatorPage />
       ) : currentPage === 'operator-usage' ? (
-        <OperatorUsagePulsePage />
+        <OperatorUsagePulsePage key={operatorInitialTab} initialTab={operatorInitialTab} />
       ) : null}
 
     </AppChrome>
