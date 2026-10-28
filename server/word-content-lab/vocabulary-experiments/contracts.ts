@@ -1,3 +1,4 @@
+import { generalExerciseSchema } from '../../vocabulary/general-exercise-authoring.ts';
 import type { WordBootstrapInput } from '../../../src/domain/word-content/application.ts';
 import type { WordContentDocument, TeachingPackage } from '../../../src/domain/word-content/types.ts';
 import type { JsonSchema } from '../../../src/domain/reflection-result-schema.ts';
@@ -57,12 +58,7 @@ export function experimentOutputSchema(input: ExperimentInput): JsonSchema {
     kind('example', { exampleId: string, field: { type: 'string', enum: ['sentence', 'translation', 'pronunciation'] } }),
     kind('use_note', { useId: string, noteIndex: { type: 'integer' } }),
   ] }, 1) }), 1) });
-  return object({ exercises: array(object({
-    id: string,
-    sourceUseId: { type: ['string', 'null'], enum: [null, ...input.content.uses.map((use) => use.id)] },
-    stimulus: { anyOf: [kind('direct_text', { text: string }), kind('phrase_cloze', { frame: string, text: string })] },
-    teachingNote: nullableString,
-  }), 1) });
+  return generalExerciseSchema(input.content);
 }
 
 export type ExercisePreview = {

@@ -503,7 +503,14 @@ independently optional local operations and a shared-practice referral. A gloss
 laundry list spanning distinct senses automatically generates a fresh repertoire proposal: one replacement retires the laundry list
 and additional exercises extend the pool, without retiring other cues. The
 repertoire draws on the word's active inventory; the discarded list has no sense
-association or requirement to preserve its old glosses. All content
+association or requirement to preserve its old glosses. Reflection invokes the same
+general-exercise authoring contract as ordinary preparation, retaining the complete
+general v4 brief, structured direct/cloze stimuli, optional teaching notes, and
+output validation. It keeps the reflection job's selected model. Established
+senses supply the lexical uses and any retained examples; missing examples are
+not invented. The response adapter preserves the source's accepted answers and
+publication scope and creates proposal operations instead of publishing exercises.
+All content
 application still requires operator approval. An uninterpretable exercise or an
 apparent inventory gap for a single intended use stays in the operator inbox
 with its mapping rationale;
@@ -540,7 +547,11 @@ shared authored text. This stage does not reconcile the participating words'
 exercise repertoires or change scheduling and compensation.
 
 The standalone r5 `single-improvement.md` uses prompt version 3 and schema
-version 2; mapping and repertoire retain prompt version 2 and schema version 1.
+version 2; mapping retains prompt version 2 and schema version 1. Repertoire uses
+the shared general-exercise prompt v4 and schema version 1. Its retained stage
+identity includes that authoring contract, so older repertoire stage results do
+not satisfy a new invocation. Existing saved proposals and second opinions remain
+bound to their original versions; an upgrade does not regenerate them.
 Promotion uses its own prompt/schema version 2 and projection
 `vocabulary-admission.v1`. Admission stages retain and reuse
 results by exact contract/input within the same job, with publication fences for

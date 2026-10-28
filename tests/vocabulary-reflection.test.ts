@@ -135,10 +135,10 @@ function dictionaryRepertoireProvider(accessScope:'shared'|'private',version:num
   const adapter:ProviderAdapter={id:'fake',defaultBaseUrl:'https://unused.invalid',apiKeyEnvironmentVariable:'KEY',structuredOutputMode:'json_schema',async run(request){
     calls++;
     const input=JSON.parse(request.userPrompt) as {sourceContent:VocabularyContent};
-    assert.equal(input.sourceContent.accessScope,accessScope);assert.equal(input.sourceContent.version,version);
+    if(calls===1){assert.equal(input.sourceContent.accessScope,accessScope);assert.equal(input.sourceContent.version,version);}
     const value=calls===1?{outcome:'laundry_list',rationale:'The corpus gloss bundles useful meanings.',senseIds:[]}
-      :{diagnosis:'Give each meaning a fair prompt.',exercises:[{senseId:'character',prompt:'A single written unit in a text.',rationale:'Written unit.'},
-        {senseId:'script',prompt:'A system of signs used for writing.',rationale:'Writing system.'}]};
+      :{exercises:[{id:'character',sourceUseId:'character',stimulus:{kind:'direct_text',text:'A single written unit in a text.'},teachingNote:'Written unit.'},
+        {id:'script',sourceUseId:'script',stimulus:{kind:'direct_text',text:'A system of signs used for writing.'},teachingNote:'Writing system.'}]};
     return {provider:'fake',model:'fake',responseId:null,structuredOutputMode:'json_schema',rawText:JSON.stringify(value),finishReason:'stop',rawResponse:null,
       usage:{inputTokens:null,cachedInputTokens:null,cacheWriteInputTokens:null,outputTokens:null,reasoningTokens:null,totalTokens:null},invocationId:null};
   }};

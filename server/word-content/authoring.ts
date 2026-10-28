@@ -98,11 +98,16 @@ export function normalizePracticeRehearsals(value: unknown, content: WordContent
       }],
     });
   });
+  return validatePracticeExercises(rehearsals,content.word,[content]);
+}
+
+/** Shared guards for generated rehearsal stimuli, independent of source-document readiness. */
+export function validatePracticeExercises(rehearsals:TeachingPackage['rehearsals'],word:WordContentDocument['word'],contents:readonly WordContentDocument[]=[]):TeachingPackage['rehearsals'] {
   if (rehearsals.length === 0) throw new Error('Practice needs at least one exercise.');
   assertUniqueIds(rehearsals.map((exercise) => exercise.id), 'Practice rehearsals');
-  const forms = [content.word.hanzi, content.word.traditional].filter((form): form is string => form !== null);
+  const forms = [word.hanzi, word.traditional].filter((form): form is string => form !== null);
   for (const exercise of rehearsals) {
-    const snapshot = materializeExercise(exercise, [content]);
+    const snapshot = materializeExercise(exercise, contents);
     if (forms.some((form) => snapshot.instruction.includes(form) || snapshot.stimulus.text.includes(form))) {
       throw new Error('Generated rehearsal exposes its target answer.');
     }

@@ -19,6 +19,7 @@ separately. Changed lifecycle rules are not forced through legacy controllers.
 | Pure-cue stimulus repair | Old repair tests and `vocabulary-pure-cue-improvement.test.ts` use the shared nonempty/changed/trimmed stimulus invariant |
 | Pure-cue proxy admission | `production-proxy.test.ts` and `vocabulary-import.test.ts` run shared cases through the common policy and both storage adapters; `pure-cues.test.ts` exercises the legacy composer; `vocabulary-composition.test.ts` covers current content eligibility and `vocabulary-study.test.ts` covers preview/Start and persisted fallback serving |
 | Durable completion and proposal receipts | `vocabulary-session-persistence.test.ts` and `vocabulary-reflection.test.ts` include pending/approved and applied database-reopen cases with idempotent replay |
+| General-exercise authoring and reflection adaptation | `vocabulary-preparation.test.ts` and `vocabulary-improvement-admission.test.ts` cover the shared request contract, structural guards, and publication/proposal adapters; `vocabulary-reflection.test.ts` covers proposal application and scope |
 
 When replacing an admission path, inventory its eligibility gates as well as its
 ranking and schedule calculations. For each preserved gate, identify the owning

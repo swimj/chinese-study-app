@@ -1,3 +1,4 @@
+import { GENERAL_EXERCISE_CONTRACT,generalExerciseInvocation,type GeneralExerciseSource } from './general-exercise-authoring.ts';
 import { vocabularyAuthoredPromptBody } from '../../src/domain/vocabulary-production-coverage.ts';
 import { readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
@@ -144,7 +145,7 @@ export function createVocabularyReflectionProvider(options:{environment?:NodeJS.
         ?await readFile(new URL('./reflection-prompts/reasoning.md',import.meta.url),'utf8'):'';
       const systemPrompt=promptFile==='feedback'?task:`${reasoning}\n\n${task}`;prompts.set(promptFile,systemPrompt);return systemPrompt;
     };
-    const stagePrompt=(stage:string)=>stage==='sense_mapping'?'sense-mapping':stage==='repertoire'?'repertoire':stage==='pure_cue_promotion'?'pure-cue-promotion':'single-improvement';
+    const stagePrompt=(stage:string)=>stage==='sense_mapping'?'sense-mapping':stage==='pure_cue_promotion'?'pure-cue-promotion':'single-improvement';
     const admissionPromptVersion=(stage:string)=>stage==='single_improvement'||stage==='pure_cue_promotion'?'3':'2';
     const schemaVersion=(step:string)=>step==='single_improvement'||step==='pure_cue_promotion'?'2':'1';
     const projectionVersion=(step:string)=>step==='second_opinion'?'vocabulary-second-opinion.v1'
@@ -152,14 +153,15 @@ export function createVocabularyReflectionProvider(options:{environment?:NodeJS.
       :step==='single_improvement'?'vocabulary-admission.v2':'vocabulary-admission.v1';
     const runCall=async (step:string,input:unknown,schema:JsonSchema,promptFile:string,promptVersion:string)=>{
       if(context?.canPublish&&!context.canPublish())throw new Error('Reflection lost publication authority');
-      const systemPrompt=await promptFor(promptFile);
+      const shared=step==='repertoire'?generalExerciseInvocation(input as GeneralExerciseSource):null;
+      const systemPrompt=shared?.systemPrompt??await promptFor(promptFile);
       const result=await adapter.run({model:config.providerModel,reasoningEffort:config.reasoningEffort,
-        systemPrompt,userPrompt:JSON.stringify(input),
-        outputSchemaName:`vocabulary_reflection_${step}_v${schemaVersion(step)}`,outputSchema:schema,
+        systemPrompt,userPrompt:shared?.userPrompt??JSON.stringify(input),
+        outputSchemaName:shared?.outputSchemaName??`vocabulary_reflection_${step}_v${schemaVersion(step)}`,outputSchema:schema,
         maxOutputTokens:config.maxOutputTokens,temperature:null,timeoutMs:config.timeoutMs,cachePrompt:true,
         invocationActor:{kind:'service',serviceId:VOCABULARY_REFLECTION_SERVICE_ID,requestingLearnerId:job.learnerId},
-        provenance:{workflowId:job.jobId,stepName:step,attemptNumber:job.attemptNumber,promptName:`vocabulary-reflection-${promptFile}`,
-          promptVersion,schemaVersion:schemaVersion(step),inputProjectionVersion:projectionVersion(step)}},
+        provenance:{workflowId:job.jobId,stepName:step,attemptNumber:job.attemptNumber,promptName:shared?.promptName??`vocabulary-reflection-${promptFile}`,
+          promptVersion:shared?.promptVersion??promptVersion,schemaVersion:shared?.schemaVersion??schemaVersion(step),inputProjectionVersion:shared?.inputProjectionVersion??projectionVersion(step)}},
         {apiKey,baseUrl});
       try {
         if(isOutputTruncationFinishReason(result.finishReason))throw new VocabularyReflectionOutputError('Reflection output was truncated');
@@ -203,8 +205,8 @@ export function createVocabularyReflectionProvider(options:{environment?:NodeJS.
       return runVocabularyImprovementAdmission({job,original,projectedInput:projectVocabularyReflectionInput(job),
         ensureSenses:options.ensureSenses,canPublish:context?.canPublish,improvementSchema:vocabularySingleImprovementSchema,
         stageIdentity:async(stage,schema)=>({provider:adapter.id,baseUrl:baseUrl??adapter.defaultBaseUrl,
-          model:config.providerModel,reasoningEffort:config.reasoningEffort,systemPrompt:await promptFor(stagePrompt(stage)),
-          schema,outputSchemaName:`vocabulary_reflection_${stage}_v${schemaVersion(stage)}`,promptVersion:admissionPromptVersion(stage),schemaVersion:schemaVersion(stage),inputProjectionVersion:projectionVersion(stage),
+          model:config.providerModel,reasoningEffort:config.reasoningEffort,schema,...(stage==='repertoire'?GENERAL_EXERCISE_CONTRACT:{systemPrompt:await promptFor(stagePrompt(stage)),
+            outputSchemaName:`vocabulary_reflection_${stage}_v${schemaVersion(stage)}`,promptVersion:admissionPromptVersion(stage),schemaVersion:schemaVersion(stage),inputProjectionVersion:projectionVersion(stage)}),
           maxOutputTokens:config.maxOutputTokens,temperature:null,timeoutMs:config.timeoutMs,cachePrompt:true}),
         call:(stage,input,schema)=>runCall(stage,input,schema,stagePrompt(stage),admissionPromptVersion(stage)),
         normalize:(value,invocationId)=>normalizeVocabularyReflectionOutput(job,value,invocationId,!!value&&typeof value==='object'&&'pureCueReferral' in value)});
