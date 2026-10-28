@@ -134,6 +134,12 @@ the review with an optional reason.
 The second opinion reviews the no-change judgment; it does not create or apply a
 proposal. Closed reviews remain in Archive, with their retained jobs and results in the case evidence.
 
+**Reassess improvement** runs a fresh assessment with the selected model,
+defaulting to GPT-6 Sol high. It reuses the retained sense mapping when applicable
+and places its independent result in the review queue. The original proposal or
+no-change judgment remains available for review; neither result is applied
+automatically.
+
 ### Queue navigation and refresh
 
 The operator panel's Content improvement tab presents an Awaiting review queue,

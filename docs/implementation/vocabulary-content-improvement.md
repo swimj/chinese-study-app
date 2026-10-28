@@ -81,6 +81,13 @@ with its mapping rationale;
 neither triggers automatic repair or sense expansion. Operators can close these
 findings after inspection. Learner feedback and compensation remain independent.
 
+An operator-requested reassessment creates a separate case and uses the selected
+model for a fresh final assessment. It reuses the source job’s retained mapping
+only when its source and sense inventory still match, and keeps the mapping and
+content fences. A single-sense assessment can still invoke promotion when
+referred; a laundry list runs repertoire generation. Pure cues use their
+standalone assessment. Failures remain available for explicit retry.
+
 ### Existing pure-cue assessment
 
 Existing pure cues use a dedicated standalone `pure-cue-improvement.md` call,

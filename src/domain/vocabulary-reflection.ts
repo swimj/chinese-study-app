@@ -15,6 +15,7 @@ export type VocabularyReflectionJob = {
   kind: 'learner_feedback' | 'exercise_improvement';
   attemptNumber: number; leaseToken: string; leaseExpiresAt: string;
   evidence: VocabularyReflectionCase;
+  reassessmentSourceJobId?: string;
   secondOpinion?: { requestId: string; proposal: VocabularyContentProposal | null; notes: string; diagnosis?: VocabularyJson };
 };
 export type VocabularyFeedbackJudgmentInput = {

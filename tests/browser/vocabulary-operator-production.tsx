@@ -19,7 +19,7 @@ async function main(){
     workspace:async id=>{const record=data.records.find(item=>item.workspace.case.caseId===id);if(!record)throw new Error('Unknown local case');return record.workspace;},
     dispatches:async()=>({items:[]}),preparationFailures:async()=>({items:[]}),
     retryPreparation:async()=>{throw new Error('This historical preview does not run processing.');},retryDispatch:async()=>{throw new Error('This historical preview does not run processing.');},retryJob:async()=>{throw new Error('This historical preview does not run model calls.');},closeCase:async()=>({ok:true}),
-    noProposalCases:async()=>({items:[]}),requestCaseSecondOpinion:async()=>({ok:true as const}),
+    noProposalCases:async()=>({items:[]}),reassessCase:async()=>({caseId:'reassessment',jobId:'reassessment-job'}),requestCaseSecondOpinion:async()=>({ok:true as const}),
     secondOpinions:async()=>({items:[]}),requestSecondOpinion:async()=>{throw new Error('No second-opinion records are included in this export. Use the live operator inbox to request a new review.');},
     create:async()=>{throw new Error('Edit an existing example in this preview.');},
     save:async(id,version,draft)=>update(id,{...draft,caseId:draft.caseId??get(id).caseId,version:version+1,status:'awaiting_review'}),

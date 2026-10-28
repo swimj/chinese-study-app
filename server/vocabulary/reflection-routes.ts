@@ -1,10 +1,11 @@
 import type { Express,Request,Response } from 'express';
 import type { VocabularyContentDraft } from '../../src/domain/vocabulary-content.ts';
 import type { VocabularyProposalDraft, VocabularyProposalOperation, VocabularyContentProposal, VocabularyReflectionCase } from '../../src/domain/vocabulary-reflection.ts';
+import { isOfferedReflectionModelChoice } from '../reflection/model-arms.ts';
 import { createVocabularyPracticePreparation } from './preparation.ts';
 import { createOperatorAllowlistMiddleware } from '../operator-access.ts';
 import { getVocabularyCaseWorkspace, listVocabularyReflectionCases, listVocabularyProposals, getVocabularyProposal,
-  requestVocabularySecondOpinion, listVocabularySecondOpinions, listVocabularyNoProposalCases, requestVocabularyCaseSecondOpinion, createVocabularyProposal, saveVocabularyProposal, previewVocabularyProposal, approveVocabularyProposal,
+  requestVocabularyReassessment, requestVocabularySecondOpinion, listVocabularySecondOpinions, listVocabularyNoProposalCases, requestVocabularyCaseSecondOpinion, createVocabularyProposal, saveVocabularyProposal, previewVocabularyProposal, approveVocabularyProposal,
   applyVocabularyProposal, closeVocabularyProposal, closeVocabularyCase, listOwnVocabularyMessages,
   getOwnVocabularyFeedbackAttention,listOwnVocabularyFeedbackFailures,listOwnVocabularyFeedbackJobs, markOwnVocabularyMessageSeen, dismissOwnVocabularyMessage, restoreOwnVocabularyMessage, retryOwnVocabularyFeedback,
   retryVocabularyReflectionJob, listVocabularyFailedDispatches, retryVocabularyPostSessionDispatch, VocabularyReflectionConflict } from '../db/vocabulary-reflection.ts';
@@ -103,6 +104,11 @@ export function registerVocabularyReflectionRoutes(app:Express,options:{wake?:()
     const input=object(req.body,['notes']);
     if(input.notes!==undefined&&typeof input.notes!=='string')throw new VocabularyReflectionRequestError('Expected text notes');
     requestVocabularyCaseSecondOpinion(text(req.params.id),actor,(input.notes as string|undefined)??'');options.wake?.();return {ok:true};
+  }));
+  app.post(`${base}/cases/:id/reassessments`,gate,handle((req,actor)=>{
+    const input=object(req.body,['modelChoice']);
+    if(!isOfferedReflectionModelChoice(input.modelChoice)) throw new VocabularyReflectionRequestError('Unsupported assessment model');
+    const result=requestVocabularyReassessment(text(req.params.id),actor,input.modelChoice as import('../reflection/model-arms.ts').ReflectionModelChoice);options.wake?.();return result;
   }));
   app.get(`${base}/cases/:id`,gate,handle((req,actor)=>getVocabularyCaseWorkspace(text(req.params.id),actor)));
   app.post(`${base}/cases/:id/close`,gate,handle((req,actor)=>{const input=object(req.body,['reason']);closeVocabularyCase(text(req.params.id),actor,optionalText(input.reason));return {ok:true};}));

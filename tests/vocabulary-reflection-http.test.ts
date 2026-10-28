@@ -31,7 +31,7 @@ beforeEach(()=>{
     CREATE TABLE learner_owned_review_session_summaries(learner_id TEXT,session_id TEXT,PRIMARY KEY(learner_id,session_id));`);
   sql.exec("ALTER TABLE lexical_words ADD COLUMN hanzi TEXT NOT NULL DEFAULT '字';ALTER TABLE lexical_words ADD COLUMN pinyin TEXT NOT NULL DEFAULT 'zì';");
 
-  for(const name of ['0042_vocabulary_sessions.sql','0044_vocabulary_reflection.sql','0055_vocabulary_feedback_dismissal.sql'])sql.exec(fs.readFileSync(new URL(`../server/db/migrations/${name}`,import.meta.url),'utf8'));
+  for(const name of ['0042_vocabulary_sessions.sql','0044_vocabulary_reflection.sql','0059_vocabulary_reassessment.sql','0055_vocabulary_feedback_dismissal.sql'])sql.exec(fs.readFileSync(new URL(`../server/db/migrations/${name}`,import.meta.url),'utf8'));
   for(const name of ['0023_session_debrief.sql','0048_vocabulary_connections.sql','0049_vocabulary_sense_readiness.sql','0050_vocabulary_improvement_admission.sql','0051_vocabulary_pure_cue_promotion.sql','0053_vocabulary_second_opinions.sql'])sql.exec(fs.readFileSync(new URL(`../server/db/migrations/${name}`,import.meta.url),'utf8'));
   sql.exec(`INSERT INTO learner_words(learner_id,word_id,in_stash,added_at,mode,mode_changed_at) VALUES ('alice','a',1,'2026-01-01','practice','2026-01-01');
     INSERT INTO learner_word_schedules(learner_id,word_id,next_eligible_at,policy_version,scheduler_state_json) VALUES
@@ -302,4 +302,22 @@ for(const outcome of ['inventory_gap','unmappable','needs_operator'] as const)te
   for(const reason of [undefined,'','  '])assert.equal(call('post',route,{params,body:{reason}}).status,400);
   assert.equal((call('get',`${base}/cases/:id`,{params}).body.case as {status:string}).status,'open');
   assert.equal(call('post',route,{params,body:{reason:'Deferred after reviewing the unresolved assessment'}}).status,200);
+});
+
+test('reassessment endpoint validates model and authority and queues the selected independent assessment',()=>{
+  sql.exec('ALTER TABLE vocabulary_reflection_jobs ADD COLUMN model_choice TEXT');
+  const job=claimVocabularyReflectionJob({kind:'exercise_improvement',now:later})!;
+  recordVocabularyImprovementResult(job.jobId,job.leaseToken,{diagnosis:'No change',proposal:null},later);
+  sql.prepare("INSERT INTO vocabulary_improvement_stages VALUES (?,'sense_mapping','hash','{}',?,NULL,?)")
+    .run(job.jobId,JSON.stringify({outcome:'single_sense'}),later);
+  const route=`${base}/cases/:id/reassessments`,params={id:caseId};
+  assert.equal(call('post',route,{params,body:{modelChoice:'bad'}}).status,400);
+  assert.equal(call('post',route,{params,body:{modelChoice:'openai:gpt-6-sol-high',extra:true}}).status,400);
+  process.env.APP_OPERATOR_CLERK_USER_IDS='someone-else';
+  assert.equal(call('post',route,{params,body:{modelChoice:'openai:gpt-6-sol-high'}}).status,403);
+  process.env.APP_OPERATOR_CLERK_USER_IDS='editor';
+  const response=call('post',route,{params,body:{modelChoice:'openai:gpt-6-sol-high'}});
+  assert.equal(response.status,200);assert.notEqual(response.body.caseId,caseId);assert.equal(wakes,1);
+  assert.equal(call('post',route,{params,body:{modelChoice:'openai:gpt-6-sol-high'}}).status,409);
+  assert.equal((call('get',`${base}/cases/:id`,{params}).body.reassessment as {jobId:string}).jobId,response.body.jobId);
 });

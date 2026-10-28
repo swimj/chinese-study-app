@@ -442,3 +442,26 @@ test('repertoire retries reuse exact new-contract output and retain old-contract
   assert.equal(db.prepare("SELECT count(*) n FROM invocation_sense_links WHERE invocation_id='invocation-2'").get()!.n,2);
   assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
 });
+
+test('reassessment reuses retained mapping while rerunning the final assessment with its selected model',async()=>{
+  const first=provider((_request,index)=>index===1?single:repair);
+  await first.provider.run(job());
+  db.prepare('INSERT INTO vocabulary_reflection_jobs VALUES (?,?)').run('reassessment','openai:gpt-6-sol-high');
+  const again=provider(()=>repair,{spend:0});
+  const result=await again.provider.run({...job(),jobId:'reassessment',caseId:'new-case',reassessmentSourceJobId:'job'});
+  assert.equal(result.kind,'exercise_improvement');
+  assert.equal(again.requests.length,1);
+  assert.equal(again.requests[0]!.provenance!.stepName,'single_improvement');
+  assert.equal(again.requests[0]!.model,'gpt-6-sol');
+  assert.equal(db.prepare("SELECT count(*) AS n FROM vocabulary_improvement_stages WHERE job_id='reassessment' AND stage='sense_mapping'").get()!.n,1);
+});
+
+test('reassessment refuses retained mapping after the sense catalog changes',async()=>{
+  const first=provider((_request,index)=>index===1?single:repair);
+  await first.provider.run(job());
+  db.prepare('INSERT INTO vocabulary_reflection_jobs VALUES (?,?)').run('reassessment','openai:gpt-6-sol-high');
+  createVocabularySense({senseId:'new-sense',wordId:'word',description:{label:'a new meaning'}},actor);
+  const again=provider(()=>repair,{spend:0});
+  await assert.rejects(()=>again.provider.run({...job(),jobId:'reassessment',reassessmentSourceJobId:'job'}),/Retained sense mapping no longer matches/);
+  assert.equal(again.requests.length,0);
+});
