@@ -2,6 +2,7 @@
 // npm run dev:frontend; open /tests/browser/vocabulary-ui.html.
 import { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { ClozePrompt } from '../../src/features/session/ClozePrompt';
 import { VocabularyAnswer, VocabularyRecognitionPrompt } from '../../src/features/vocabulary-study/VocabularyAnswer';
 import type { VocabularyEncounterSnapshot } from '../../src/domain/vocabulary-session';
 import { VocabularyWarmup } from '../../src/features/vocabulary-study/VocabularyWarmup';
@@ -34,7 +35,14 @@ const teachingMaterial = JSON.parse(JSON.stringify({ beats: teachingSnapshot.bea
 const teachingSource = JSON.parse(JSON.stringify(teachingFixture.content)) as VocabularySessionJson;
 const teachingWord = { ...teachingFixture.content.word, meaning: teachingFixture.content.uses[0]!.label };
 
-const scenarios = ['Practice', 'Fresh session', 'Recognition', 'Answer rejected', 'Solidify warmup', 'Teaching', 'Finishing', 'Summary pending', 'Saved + feedback', 'Empty', 'Long content', 'Long session'] as const;
+const clozeWord = { wordId: 'mutter', hanzi: '碎碎念', traditional: null, pinyin: 'suì suì niàn', meaning: 'to repeat oneself; to nag' };
+const clozeSnapshot: VocabularyEncounterSnapshot = { kind: 'production', role: 'teaching', contentId: 'cloze-preview', contentVersion: 1,
+  body: { prompt: "Mom isn't really angry; she is just repeatedly reminding me not to forget my umbrella.\n妈妈没有真的生气，只是在旁边____，提醒我别忘了带伞。", revealWords: [clozeWord],
+    bootstrapReveal: { contentId: 'old-source', useId: 'other', exampleId: 'other', englishFrame: 'Going on and on',
+      exampleSentence: '他一紧张就开始碎碎念，把同一件事来回说好几遍。', exampleTranslation: 'Whenever he gets nervous, he starts going on and on.' } },
+  assessment: { acceptedAnswers: ['碎碎念'] } };
+
+const scenarios = ['Practice', 'Fresh session', 'Recognition', 'Cloze reveal', 'Answer rejected', 'Solidify warmup', 'Teaching', 'Finishing', 'Summary pending', 'Saved + feedback', 'Empty', 'Long content', 'Long session'] as const;
 type Scenario = typeof scenarios[number];
 const previewParams = new URLSearchParams(window.location.search);
 const initialScenario = scenarios.find((entry) => entry === previewParams.get('state')) ?? 'Practice';
@@ -42,6 +50,7 @@ const historyPlacements = ['below', 'left', 'right', 'drawer'] as const;
 const initialPlacement = historyPlacements.find((entry) => entry === previewParams.get('history')) ?? 'right';
 function scenarioState(next: Scenario): LabState {
   const initial = next === 'Long session' ? longSessionLabState() : initialLabState();
+  if (next === 'Cloze reveal') { initial.revealed = true; initial.assessment = 'accepted'; }
   if (next === 'Fresh session') { initial.seen = []; initial.marks = { reluctant: 'open', maybe: 'open' }; }
   if (next === 'Answer rejected') Object.assign(initial, checkLabAnswer({ ...initial, value: '不想' }));
   if (next === 'Teaching') initial.modes.reluctant = 'unstudied';
@@ -133,13 +142,13 @@ function App() {
       key: `${word.id}-${scenario}-${session.promptIndex}`, kind: teaching ? 'introduction' : warmup ? 'warmup' : empty ? 'empty' : 'exercise',
       recognition,
       label: recognition ? 'Recognition' : teaching ? 'Word introduction' : warmup ? 'A quick refresher' : empty ? 'Ready when you are' : session.extra ? 'Extra practice' : 'Production',
-      prompt: recognition ? <VocabularyRecognitionPrompt snapshot={recognitionSnapshot} word={warmupWord} revealed={session.revealed} sentenceCharacterPresentation="simplified" /> : teaching || warmup ? <><p>When something matters to you, <span lang="zh">舍不得</span> is the feeling of not wanting to part with it.</p><p lang="zh">假期结束了，我真舍不得离开。</p></> : empty ? 'You’ve worked through the exercises available here.' : scenario === 'Long content' ? 'You’re talking to someone about a book that has travelled with you for years. The cover is falling apart, you barely have space for it anymore, and you know you could find the same book anywhere — but you just can’t bring yourself to throw this particular copy away. How would you describe that feeling?' : word.prompts[session.promptIndex % word.prompts.length],
+      prompt: scenario === 'Cloze reveal' ? <ClozePrompt text={clozeSnapshot.body.prompt} answer={clozeWord.hanzi} /> : recognition ? <VocabularyRecognitionPrompt snapshot={recognitionSnapshot} word={warmupWord} revealed={session.revealed} sentenceCharacterPresentation="simplified" /> : teaching || warmup ? <><p>When something matters to you, <span lang="zh">舍不得</span> is the feeling of not wanting to part with it.</p><p lang="zh">假期结束了，我真舍不得离开。</p></> : empty ? 'You’ve worked through the exercises available here.' : scenario === 'Long content' ? 'You’re talking to someone about a book that has travelled with you for years. The cover is falling apart, you barely have space for it anymore, and you know you could find the same book anywhere — but you just can’t bring yourself to throw this particular copy away. How would you describe that feeling?' : word.prompts[session.promptIndex % word.prompts.length],
       supportingContent: teaching || warmup ? <p>The holiday is over. I really don’t want to leave.</p> : undefined,
     },
     response: {
       visible: !recognition && !teaching && !warmup && !empty, value: session.value, placeholder: 'What Chinese comes to mind?', disabled: arriving, revealed: session.revealed,
       assessment: session.assessment,
-      answer: recognition ? <VocabularyAnswer snapshot={recognitionSnapshot} word={warmupWord} characterPresentation="simplified" sentenceCharacterPresentation="simplified" /> : <><div className="vocab-answer-word"><strong lang="zh">{word.hanzi}</strong><span>{word.pinyin}</span></div><p className="vocab-answer-meaning">{word.meaning}</p></>,
+      answer: scenario === 'Cloze reveal' ? <VocabularyAnswer snapshot={clozeSnapshot} word={clozeWord} characterPresentation="simplified" sentenceCharacterPresentation="simplified" /> : recognition ? <VocabularyAnswer snapshot={recognitionSnapshot} word={warmupWord} characterPresentation="simplified" sentenceCharacterPresentation="simplified" /> : <><div className="vocab-answer-word"><strong lang="zh">{word.hanzi}</strong><span>{word.pinyin}</span></div><p className="vocab-answer-meaning">{word.meaning}</p></>,
       message: recognition ? undefined : session.assessment === 'rejected' ? `Your answer: ${session.value.trim() || 'No answer'}.` : session.assessment === 'accepted' && !session.extra ? 'Covered for today.' : undefined,
       primaryPlacement: !recognition && !teaching && !warmup && (empty || session.revealed) ? 'footer' : 'response',
       primaryLabel: recognition ? session.revealed ? 'Continue' : 'Reveal answer' : teaching || warmup ? 'Continue' : empty ? 'Next word' : session.revealed ? session.assessment === 'accepted' && !session.extra ? 'Next word' : 'Continue' : session.value.trim() ? 'Check answer' : 'No clue',

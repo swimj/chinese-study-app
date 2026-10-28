@@ -3,6 +3,7 @@
 // ?covered=1 enables general production / Try another way after the rating.
 // ?reduced=1 forces reduced motion and verifies no departure/tuck ghosts.
 // ?narrow=1 uses a 420px panel at 125% text; open Covered in this session for the tray.
+// ?slow=1 holds Correct's successor while checking the underlying paper stays opaque.
 import { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { VocabularyStudy } from '../../src/features/vocabulary-study/VocabularyStudy';
@@ -47,6 +48,7 @@ function study(): Study {
 let failed = false;
 let result = 'Reveal and rate the word';
 let anotherResult = 'Try another way has not run';
+let paperResult = 'Paper handoff has not run';
 let requeueCalls = 0;
 let requeueInput: string | null = null;
 let requeueEncounter: string | null = null;
@@ -75,6 +77,17 @@ window.fetch = async (input, init) => {
     return Response.json(study());
   }
   if (url.endsWith('/next')) {
+    if (query.has('slow') && document.querySelector('.desk-stack.is-departing') && !reducedMotion()) {
+      await new Promise(resolve => setTimeout(resolve, 300));
+      const paper = document.querySelector<HTMLElement>('.desk-stack .vocab-paper');
+      const contents = paper?.querySelector<HTMLElement>('.vocab-card-main');
+      const session = document.querySelector<HTMLElement>('.vocab-layout-session > .vocab-session');
+      const opaque = paper && getComputedStyle(paper).visibility === 'visible'
+        && getComputedStyle(paper).backgroundColor !== 'rgba(0, 0, 0, 0)';
+      const hiddenContents = contents && getComputedStyle(contents).visibility === 'hidden';
+      const horizontal = session && getComputedStyle(session).overflowX;
+      paperResult = `${opaque && hiddenContents && horizontal === 'hidden' ? 'PASS' : 'FAIL'}: waiting paper opaque=${Boolean(opaque)}, outgoing contents hidden=${Boolean(hiddenContents)}, horizontal overflow=${horizontal}`;
+    }
     const options = JSON.parse(String(init?.body)) as { another?: boolean };
     if (options.another) {
       const current = study().currentEncounter!;
@@ -121,6 +134,7 @@ function Fixture() {
     <div style={{ fontSize: '.7rem', lineHeight: 1.4 }}>
       <output id="motion-result" data-result={result} style={{ display: 'block' }}>{result}</output>
       <output id="another-result" style={{ display: 'block' }}>{anotherResult}</output>
+      <output id="paper-result" style={{ display: 'block' }}>{paperResult}</output>
       <output id="sidebar-result" data-requeue-calls={requeueCalls} style={{ display: 'block' }}>{sidebarResult}</output>
     </div>
     <div style={{ width: narrow ? 420 : '100%', maxWidth: '100%', height: 'calc(100dvh - 6rem)', margin: '0 auto' }}>

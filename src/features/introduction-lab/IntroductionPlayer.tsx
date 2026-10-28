@@ -1,7 +1,8 @@
 import { formatCardCharacters, type CharacterPresentation, type SentenceCharacterPresentation } from '../../domain/card-characters';
 import { convertSentenceCharacters, sentenceCharacterLanguage } from '../../domain/sentence-characters';
 import { getRehearsalInstruction } from '../rehearsal-presentation';
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { VocabularyCharacterRuby, vocabularySentenceRuby } from '../vocabulary-study/VocabularyRuby';
 import type { TeachingPackageSnapshot, WordContentDocument } from '../../domain/word-content';
 import {
   type IntroductionPlayerAction,
@@ -105,6 +106,23 @@ export function IntroductionPlayer({ snapshot, content, state, onAction, onResta
   const sentenceLang = sentenceCharacterPresentation ? sentenceCharacterLanguage(sentenceCharacterPresentation) : 'zh-Hans';
   const wordText = (word: { hanzi: string; traditional: string | null }) => characterPresentation
     ? formatCardCharacters(word, characterPresentation) : word.hanzi;
+  function teachingSentence(text: string, pronunciation: string | null): ReactNode {
+    const sentence = sentenceText(text);
+    const target = [content.word.hanzi, content.word.traditional].filter((text): text is string => Boolean(text))
+      .map(sentenceText).find((text) => sentence.includes(text));
+    if (!target) return sentence;
+    const ruby = vocabularySentenceRuby(sentence, pronunciation, target, content.word.pinyin);
+    if (ruby) return ruby;
+    // Keep the taught reading even when the full sentence cannot be aligned safely.
+    return sentence.split(target).map((part, index) => <Fragment key={index}>
+      {index > 0 && <VocabularyCharacterRuby text={target} pinyin={content.word.pinyin} target />}{part}
+    </Fragment>);
+  }
+  function examplePronunciation(exampleId: string): string | null {
+    const part = snapshot.beats.flatMap((beat) => beat.parts).find((part) =>
+      part.source.kind === 'example' && part.source.exampleId === exampleId && part.source.field === 'pronunciation');
+    return part?.text ?? content.examples.find((example) => example.id === exampleId)?.pronunciation ?? null;
+  }
   const exercise = snapshot.rehearsals[state.exerciseIndex];
   const instruction = exercise ? getRehearsalInstruction(exercise) : '';
   return <div className="intro-lab-player">
@@ -126,10 +144,11 @@ export function IntroductionPlayer({ snapshot, content, state, onAction, onResta
             aria-label={`Beat ${index + 1}${index === state.beatIndex ? ', current' : ''}`}>
             <span className="intro-lab-beat-number">{String(index + 1).padStart(2, '0')}</span>
             <div className="intro-lab-beat-copy">
-              {beat.parts.map((part, partIndex) => <p key={partIndex}
+              {beat.parts.map((part, partIndex) => part.source.kind === 'example' && part.source.field === 'pronunciation' ? null : <p key={partIndex}
                 lang={part.source.kind === 'example' && part.source.field === 'sentence' ? sentenceLang : undefined}
-                className={part.source.kind === 'example' ? `intro-lab-part-${part.source.field}` : undefined}>
-                {sentenceText(part.text)}
+                className={part.source.kind === 'example' ? `intro-lab-part-${part.source.field}${part.source.field === 'sentence' ? ' intro-teaching-sentence' : ''}` : undefined}>
+                {part.source.kind === 'example' && part.source.field === 'sentence'
+                  ? teachingSentence(part.text, examplePronunciation(part.source.exampleId)) : sentenceText(part.text)}
               </p>)}
             </div>
           </article>
@@ -194,7 +213,7 @@ export function IntroductionPlayer({ snapshot, content, state, onAction, onResta
             const example = content.examples.find((row) => row.id === use.exampleIds[0]);
             return <div key={use.id}>
               <strong>{sentenceText(use.label)}</strong>
-              {example && <><p lang={sentenceLang}>{sentenceText(example.text)}</p><p>{sentenceText(example.translation)}</p></>}
+              {example && <><p className="intro-teaching-sentence" lang={sentenceLang}>{teachingSentence(example.text, example.pronunciation)}</p><p>{sentenceText(example.translation)}</p></>}
             </div>;
           })}
         </div>

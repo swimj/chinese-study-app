@@ -82,3 +82,13 @@ test('mapped source use chooses its own example while a sense without source ass
   assert.deepEqual(unassociated.wordReference,expanded);
   assert.equal(unassociated.bootstrapReveal,undefined);
 });
+
+test('direct-text teaching clozes never acquire a rotating bootstrap example through their definition type', () => {
+  for (const prompt of ['Mom keeps reminding me.\n妈妈在旁边____。', '我有点（ ）。']) {
+    const content = exercise({ exerciseRole: 'teaching', body: { prompt, source: { bootstrapContentId: 'unrelated' } } });
+    const result = vocabularyRevealSnapshot(content, { fallbackIntroduction: () => { throw new Error('Must not seek an unrelated example'); } });
+    assert.equal(result.bootstrapReveal, undefined);
+    assert.equal(result.wordReference, undefined);
+    assert.equal(result.revealWords?.[0].meaning, 'greedy; gluttonous');
+  }
+});

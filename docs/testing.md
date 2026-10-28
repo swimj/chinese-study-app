@@ -75,7 +75,14 @@ controller and card surface: reveal, then Correct or Forgot. Its PASS result che
 that the rating is saved and the outgoing card reflects the acknowledged recall
 before requesting the successor. `?covered=1` checks the covered card's rightward
 departure; `?retry=1` fails the first save so Retry save must retain the departure.
-`/tests/browser/vocabulary-ui.html` provides presentation scenarios;
+`/tests/browser/vocabulary-ui.html` provides presentation scenarios, including
+`?state=Cloze%20reveal` for an old snapshot containing an unrelated bootstrap
+example and `?state=Teaching` for target ruby and hover/focus pronunciation.
+Both support narrow-panel and enlarged-text controls.
+`/tests/browser/vocabulary-contrast-keyboard.html` exercises 1–9/0 selection
+and Enter submission through the active controller; `?count=3` checks bounds
+and `?production=1` checks Escape priority for the open reaction note. The motion fixture
+`?slow=1` checks opaque paper while the next encounter is delayed;
 `/tests/browser/vocabulary-operator.html` exercises the proposal-first internal review surface (ready suggestions, Archive search, proposal edits, and `?second=pending|failed|result`; `?narrow=1&large=1` checks compact enlarged-text layout)
 with an in-memory API (`?empty=1` for empty lists, `?noProposal=1` for a no-change judgment). These fixtures are separate
 from `npm test`. Add `?usage=1` to place the review in the operator panel's

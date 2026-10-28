@@ -119,7 +119,7 @@ export function VocabularySessionContent(props: VocabularySessionViewProps) {
           if (response.primaryEnabled && !props.busy) props.onPrimary();
         }}>
           {response.visible && !response.revealed && <div className="vocab-input-wrap">
-            <ResponseInput blocked={reactionOpen || confirmFinish} id={answerId} aria-label="Your answer" value={response.value} placeholder={response.placeholder} autoComplete="off"
+            <ResponseInput blocked={reactionOpen || confirmFinish} id={answerId} aria-label="Your answer" name="study-answer" type="text" data-1p-ignore data-lpignore="true" value={response.value} placeholder={response.placeholder} autoComplete="off"
               disabled={response.disabled || props.busy} onChange={(event) => props.onResponseChange(event.target.value)} />
           </div>}
           <div className="vocab-main-actions">
@@ -151,11 +151,8 @@ export function VocabularySessionContent(props: VocabularySessionViewProps) {
               <button type="button" aria-keyshortcuts="]" aria-pressed={props.reactionInput.reaction === 'helpful'} disabled={props.reactionInput.status === 'saving'}
                 onClick={() => props.onReaction(props.reactionInput.reaction === 'helpful' ? null : 'helpful')}>Helpful<ShortcutHint shortcut="]" /></button>
             </div>
-            <label>Anything you want to add?<textarea rows={2} onKeyDown={(event) => {
-              if (event.key === 'Escape' && !event.nativeEvent.isComposing && event.keyCode !== 229) {
-                event.preventDefault(); event.stopPropagation(); event.currentTarget.blur();
-              }
-            }} value={props.reactionInput.comment} placeholder="What felt off, or what might help?"
+            <label>Anything you want to add?<textarea rows={2} aria-keyshortcuts={reactionOpen ? 'Escape' : undefined}
+              value={props.reactionInput.comment} placeholder="What felt off, or what might help?"
               disabled={props.reactionInput.status === 'saving'} onChange={(event) => props.onCommentChange(event.target.value)} /></label>
             <div className="vocab-reaction-send"><button type="button" className="vocab-secondary" disabled={!props.reactionInput.comment.trim() || props.reactionInput.status === 'saving'}
               onClick={props.onCommentSubmit}>{props.reactionInput.status === 'saving' ? 'Sending…' : 'Send note'}</button>

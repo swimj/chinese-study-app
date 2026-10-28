@@ -16,7 +16,7 @@ import { convertSentenceCharacters, formatSentenceAnswer } from '../../domain/se
 import { VocabularyIntroduction } from './VocabularyIntroduction';
 import { ShortcutHint } from '../../components/ShortcutHint';
 import { VocabularyShortcutGuide } from './VocabularyShortcutGuide';
-import { resolveVocabularyKey, type VocabularyShortcutCommand } from './keyboard';
+import { resolveVocabularyKey, vocabularyChoiceShortcuts, type VocabularyShortcutCommand } from './keyboard';
 import type { VocabularySessionJson } from '../../domain/vocabulary-session';
 
 const modeChoices: VocabularyModeChoice[] = [
@@ -115,6 +115,7 @@ export function VocabularyStudy({ controller, hideStartButton = false, character
   const criteria = materialObject(encounter?.snapshot.assessment?.criteria);
   const choices = materialObject(material).choices;
   const displayedChoices = Array.isArray(choices) ? choices.map((entry) => materialObject(entry)).filter((entry) => typeof entry.hanzi === 'string') : [];
+  const choiceShortcuts = vocabularyChoiceShortcuts(displayedChoices.length);
   const props: VocabularySessionViewProps = {
     recallProgress: intro ? [] : getVocabularyRecallProgress(study).filter((row) => row.total > 1),
     cardMotion: {ref:motion.deskRef,confirmingPrimary:motion.confirmingPrimary},
@@ -134,8 +135,8 @@ export function VocabularyStudy({ controller, hideStartButton = false, character
       supportingContent: <>
         {study.notice && !completed && <p role="status">{study.notice}</p>}
         {!intro && vocabularyMaterialInstruction(material) && <p>{vocabularyMaterialInstruction(material)}</p>}
-        {contrast && !c.revealed && <div role="group" aria-label="Choose an answer">{displayedChoices.map((choice, index) => <button type="button" key={index} disabled={!canAct} aria-pressed={selectedChoice === index} aria-keyshortcuts={index < 2 ? String(index + 1) : undefined}
-          className={`vocab-secondary${selectedChoice === index ? ' is-selected-choice' : ''}`} onClick={() => c.submitResponse(String(choice.hanzi), undefined, typeof choice.wordId === 'string' ? choice.wordId : undefined)}>{characterPresentation === 'traditional' && typeof choice.traditional === 'string' ? choice.traditional : choice.hanzi as string}<ShortcutHint shortcut={index < 2 ? String(index + 1) : undefined} /></button>)}</div>}
+        {contrast && !c.revealed && <div role="group" aria-label="Choose an answer">{displayedChoices.map((choice, index) => <button type="button" key={index} disabled={!canAct} aria-pressed={selectedChoice === index} aria-keyshortcuts={choiceShortcuts[index]?.key}
+          className={`vocab-secondary${selectedChoice === index ? ' is-selected-choice' : ''}`} onClick={() => c.submitResponse(String(choice.hanzi), undefined, typeof choice.wordId === 'string' ? choice.wordId : undefined)}>{characterPresentation === 'traditional' && typeof choice.traditional === 'string' ? choice.traditional : choice.hanzi as string}<ShortcutHint shortcut={choiceShortcuts[index]?.key} /></button>)}</div>}
       </>,
     },
     response: { visible: !intro && !recognition && !contrast && !encounter?.skipped && wordProgress?.workStatus !== 'wrapped' && wordProgress?.workStatus !== 'skipped', value: c.input, placeholder: 'What Chinese comes to mind?', disabled: !canAct,
@@ -213,14 +214,19 @@ export function VocabularyStudy({ controller, hideStartButton = false, character
       const input = surface.current?.querySelector<HTMLInputElement>('.vocab-input-wrap input');
       if (input === document.activeElement) surface.current?.focus(); else input?.focus();
     },
+    focusReaction: () => {
+      const input = surface.current?.querySelector<HTMLTextAreaElement>('.vocab-reaction-drawer.is-open textarea:not(:disabled)');
+      if (input === document.activeElement) surface.current?.focus(); else input?.focus();
+    },
     forgot: () => rateRecognition('rejected', true), correct: () => rateRecognition('accepted', true),
-    choice1: () => setSelectedChoice(0), choice2: () => setSelectedChoice(1),
     undo: props.onUndo, another: props.onAnother, skip: props.onSkip, enough: props.onEnough,
     more: props.onMore, finish: props.onFinishForNow, reactions: () => setReactionOpen((value) => !value),
     helpful: () => { setReactionOpen(true); c.react(c.reaction === 'helpful' ? null : 'helpful'); },
     notHelpful: () => { setReactionOpen(true); c.react(c.reaction === 'not-helpful' ? null : 'not-helpful'); },
     guide: () => setGuideOpen(true), home: props.onReturnHome,
   };
+  for (const { command, index } of choiceShortcuts) actions[command] = () => setSelectedChoice(index);
+  if (props.reactionInput.visible && reactionOpen && props.reactionInput.status !== 'saving') available.add('focusReaction');
   const controlKeys = { undo: 'U', another: 'A', skip: 'S', enough: 'D', more: 'M', finishForNow: 'F' } as const;
   for (const [name, key] of Object.entries(controlKeys)) {
     const item = props.controls[name as keyof typeof controlKeys];
@@ -236,8 +242,7 @@ export function VocabularyStudy({ controller, hideStartButton = false, character
       if (props.response.visible && !c.revealed) { available.add('noClue'); available.add('focusInput'); }
       if (recognition && c.revealed && assessment === 'unassessed') { available.add('correct'); available.add('forgot'); }
       if (contrast && !c.revealed) {
-        if (displayedChoices[0]) available.add('choice1');
-        if (displayedChoices[1]) available.add('choice2');
+        for (const { command } of choiceShortcuts) available.add(command);
       }
       if (props.reactionInput.visible) {
         available.add('reactions');
@@ -248,7 +253,8 @@ export function VocabularyStudy({ controller, hideStartButton = false, character
   keyboardHandler.current = (event) => {
     const element = event.target instanceof HTMLElement ? event.target : null;
     const editable = element?.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])');
-    const target = editable ? editable.matches('.vocab-input-wrap input') ? 'answer' : 'editable'
+    const target = editable ? editable.matches('.vocab-input-wrap input') ? 'answer'
+      : editable.matches('.vocab-reaction-drawer textarea') ? 'reaction' : 'editable'
       : element?.closest('button, a, summary') ? 'native' : 'surface';
     // Do not turn Space into "No clue" or submit a partially typed answer while blurred.
     const candidates = new Set(available);

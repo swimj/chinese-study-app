@@ -1,3 +1,16 @@
+@import '../vocabulary-study/vocabulary-ruby.css';
+
+.intro-teaching-sentence ruby { white-space: nowrap; }
+.intro-teaching-sentence .vocab-ruby-target {
+  color: var(--lab-ink);
+  text-decoration: underline;
+  text-decoration-color: var(--accent, #387466);
+  text-decoration-thickness: .08em;
+  text-underline-offset: .15em;
+}
+.intro-teaching-sentence .vocab-ruby-on-demand { color: var(--lab-muted); font-weight: 400; }
+.intro-teaching-sentence rt { font-family: var(--font-sans, sans-serif); }
+
 /* One continuous sheet: revealed teaching stays above the current reading place. */
 .intro-lab .intro-teaching-viewport {
   --teaching-height: clamp(240px, 42vh, 420px);

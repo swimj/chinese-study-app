@@ -5,6 +5,7 @@ import { convertSentenceCharacters } from '../../domain/sentence-characters';
 import { BootstrapSourceReveal } from '../session/BootstrapSourceReveal';
 import { WordSourceExamples } from '../session/WordSourceExamples';
 import { renderVocabularyReveal } from './render-material';
+import { clozePromptParts } from '../../domain/cloze-prompt';
 import { VocabularyCharacterRuby } from './VocabularyRuby';
 
 function object(value: VocabularySessionJson | undefined) {
@@ -35,7 +36,8 @@ export function VocabularyAnswer({ snapshot, word, characterPresentation, senten
   characterPresentation: CharacterPresentation; sentenceCharacterPresentation: SentenceCharacterPresentation;
 }) {
   const words = snapshot.body.revealWords?.length ? snapshot.body.revealWords : word ? [word] : [];
-  const bootstrap = snapshot.body.bootstrapReveal;
+  const cloze = snapshot.kind === 'production' && clozePromptParts(snapshot.body.prompt).length > 1;
+  const bootstrap = cloze ? undefined : snapshot.body.bootstrapReveal;
   return <>
     {words.length ? words.map((entry) => {
       const sense = 'sense' in entry ? vocabularySenseLabel(entry.sense?.description) : null;
@@ -47,7 +49,7 @@ export function VocabularyAnswer({ snapshot, word, characterPresentation, senten
       </div>;
     }) : <p lang="zh">{snapshot.assessment?.acceptedAnswers.join(' / ')}</p>}
     {bootstrap ? <BootstrapSourceReveal reveal={bootstrap} sentenceCharacterPresentation={sentenceCharacterPresentation} />
-      : renderVocabularyReveal(snapshot.body.material, sentenceCharacterPresentation)}
+      : renderVocabularyReveal(snapshot.body.material, sentenceCharacterPresentation, cloze ? { prompt: snapshot.body.prompt, answers: snapshot.assessment?.acceptedAnswers ?? [] } : undefined)}
     {snapshot.body.wordReference && <details className="desk-reference vocab-word-reference"><summary>Word reference</summary>
       <WordSourceExamples content={snapshot.body.wordReference} sentenceCharacterPresentation={sentenceCharacterPresentation} />
     </details>}

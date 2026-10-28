@@ -121,3 +121,36 @@ test('recognition preserves character wrappers across reveal, including unaligne
     assert.doesNotMatch(before, /<rt|bù|shǔ|uncertain/);
   }
 });
+
+test('cloze reveal ignores unrelated bootstrap examples in already served snapshots', () => {
+  const served = snapshot({ prompt: 'Seeing the cake: 我有点____。', revealWords: [word], bootstrapReveal: {
+    contentId: 'source', useId: 'other', exampleId: 'other-example', englishFrame: 'Another use',
+    exampleSentence: '看得我都馋了。', exampleTranslation: 'It makes my mouth water.',
+  } });
+  const html = answer(served);
+  assert.match(html, /馋/); assert.match(html, /chán/); assert.match(html, /gluttonous/);
+  assert.doesNotMatch(html, /Another use|看得我都馋了|mouth water/);
+  served.body.revealWords = [{ ...word, sense: { senseId: 'food', version: 1, description: 'Crave tasty food' } }];
+  const mapped = answer(served);
+  assert.match(mapped, /Crave tasty food/); assert.doesNotMatch(mapped, /gluttonous|mouth water/);
+});
+
+test('cloze supplements retain only translations of the completed cue plus authored explanations', () => {
+  const served = snapshot({ prompt: 'Seeing the cake:\n我有点（ ）。', revealWords: [word], material: {
+    reveal: { englishFrame: 'Unmapped source frame', exampleSentence: '我有点馋。', exampleTranslation: 'I crave something tasty.',
+      teachingNote: 'This expresses appetite.', explanation: 'A little desire for food.' },
+  } });
+  const html = answer(served);
+  assert.match(html, /I crave something tasty/); assert.match(html, /This expresses appetite/); assert.match(html, /A little desire for food/);
+  assert.doesNotMatch(html, /Unmapped source frame|我有点馋|production-supplement-sentence/);
+  served.body.material = { reveal: { exampleSentence: '看得我都馋了。', exampleTranslation: 'It makes my mouth water.' } };
+  assert.doesNotMatch(answer(served), /看得我都馋了|mouth water/);
+});
+
+test('definition production still uses its frozen bootstrap example', () => {
+  const html = answer(snapshot({ revealWords: [word], bootstrapReveal: {
+    contentId: 'source', useId: 'food', exampleId: 'example', englishFrame: 'A craving',
+    exampleSentence: '我有点馋。', exampleTranslation: 'I crave something tasty.',
+  } }));
+  assert.match(html, /A craving/); assert.match(html, /我有点馋/); assert.doesNotMatch(html, /gluttonous/);
+});

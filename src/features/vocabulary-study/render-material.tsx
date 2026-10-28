@@ -1,3 +1,4 @@
+import { clozePromptParts } from '../../domain/cloze-prompt';
 import type { ReactNode } from 'react';
 import type { VocabularySessionJson } from '../../domain/vocabulary-session';
 import { convertSentenceCharacters } from '../../domain/sentence-characters';
@@ -41,14 +42,23 @@ export function renderVocabularyTeaching(material: VocabularySessionJson | undef
 }
 /** Render only known learner-facing reveal fields; provenance and answer criteria stay out of the lesson. */
 export function renderVocabularyReveal(material: VocabularySessionJson | undefined,
-  sentencePresentation: SentenceCharacterPresentation = 'simplified'): ReactNode {
+  sentencePresentation: SentenceCharacterPresentation = 'simplified',
+  cloze?: { prompt: string; answers: readonly string[] }): ReactNode {
   const body = object(material); const reveal = object(body.reveal);
   const text = (value: VocabularySessionJson | undefined) => typeof value === 'string' ? value.trim() : '';
   const frame = text(reveal.englishFrame), sentence = text(reveal.exampleSentence), translation = text(reveal.exampleTranslation);
+  // A supplement translation is tied to this cloze only when its sentence is
+  // exactly the completed Mandarin line. Do not infer associations from shared words.
+  const linkedTranslation = cloze && sentence && cloze.prompt.split('\n').some(line => {
+    const parts = clozePromptParts(line);
+    return parts.length > 1 && cloze.answers.some(answer =>
+      convertSentenceCharacters(parts.join(answer).trim(), 'simplified') === convertSentenceCharacters(sentence, 'simplified'));
+  }) ? translation : '';
   const note = text(reveal.teachingNote);
   const explanations = [...new Set([text(reveal.explanation), text(body.explanation)].filter(Boolean))];
   return <>
-    {(frame || sentence || translation) && <ProductionSupplementAside supplement={{englishFrame:frame,exampleSentence:sentence,exampleTranslation:translation}} sentenceCharacterPresentation={sentencePresentation} />}
+    {!cloze && (frame || sentence || translation) && <ProductionSupplementAside supplement={{englishFrame:frame,exampleSentence:sentence,exampleTranslation:translation}} sentenceCharacterPresentation={sentencePresentation} />}
+    {linkedTranslation && <p>{convertSentenceCharacters(linkedTranslation, sentencePresentation)}</p>}
     {note && <div className="vocab-usage-note"><p className="vocab-eyebrow">Usage note</p><p>{convertSentenceCharacters(note, sentencePresentation)}</p></div>}
     {explanations.map((value) => <p key={value}>{convertSentenceCharacters(value, sentencePresentation)}</p>)}
   </>;
