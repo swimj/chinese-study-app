@@ -71,7 +71,8 @@ test('finished teaching shows pinned word uses and examples, with Enter continui
       assert.ok(markup.includes(escapeHtml(use.label)));
       const example = content.examples.find((row) => row.id === use.exampleIds[0]);
       if (example) {
-        assert.ok(markup.includes(escapeHtml(example.text)));
+        const sentenceMarkup = markup.replace(/<r[tp]\b[^>]*>.*?<\/r[tp]>/g, '').replace(/<[^>]*>/g, '');
+        assert.ok(sentenceMarkup.includes(escapeHtml(example.text)));
         assert.ok(markup.includes(escapeHtml(example.translation)));
       }
     }
@@ -103,4 +104,40 @@ test('session teaching converts source examples and inline explanation without r
   assert.match(markup, /lang="zh-Hans"/);
   assert.equal(JSON.stringify(source), original);
   assert.equal(snapshot.beats[0]!.parts[0]!.text, source.examples[0]!.text);
+});
+
+test('teaching sentences and recap use target ruby with focusable context readings, without a full pinyin line', async () => {
+  const { createElement } = await import('react');
+  const { renderToStaticMarkup } = await import('react-dom/server');
+  const { IntroductionPlayer } = await import('../src/features/introduction-lab/IntroductionPlayer.js');
+  const { content } = wordContentFixtures[0]!;
+  const example = { id: 'ruby-example', text: '我会报备。', pronunciation: 'Wǒ huì bàobèi.', translation: 'I will report in advance.' };
+  const source = { ...content, word: { ...content.word, hanzi: '报备', traditional: '報備', pinyin: 'bàobèi' },
+    uses: [{ id: 'use', label: 'Report in advance', notes: [], exampleIds: [example.id] }], examples: [example] };
+  const snapshot = { rehearsals: [], beats: [{ id: 'sentence', parts: [
+    { text: example.text, source: { kind: 'example' as const, exampleId: example.id, field: 'sentence' as const } },
+    { text: example.pronunciation, source: { kind: 'example' as const, exampleId: example.id, field: 'pronunciation' as const } },
+    { text: example.translation, source: { kind: 'example' as const, exampleId: example.id, field: 'translation' as const } },
+  ] }] };
+  for (const phase of ['introduction', 'finished'] as const) {
+    const markup = renderToStaticMarkup(createElement(IntroductionPlayer, {
+      snapshot, content: source, state: { ...initialIntroductionPlayerState(), phase },
+      onAction: () => {}, onRestart: () => {}, sentenceCharacterPresentation: 'traditional', mode: 'teaching-only',
+    }));
+    assert.match(markup, /tabindex="0" class="vocab-character-ruby vocab-ruby-on-demand">我/);
+    assert.match(markup, /class="vocab-character-ruby vocab-ruby-target">報<rp>\(<\/rp><rt lang="zh-Latn">bào/);
+    assert.match(markup, /class="vocab-character-ruby vocab-ruby-target">備<rp>\(<\/rp><rt lang="zh-Latn">bèi/);
+    assert.match(markup, /lang="zh-Hant"/);
+    assert.ok(markup.includes(example.translation));
+    assert.ok(!markup.includes(example.pronunciation));
+    assert.doesNotMatch(markup, /intro-lab-part-pronunciation/);
+  }
+  const uncertain = { ...source, examples: [{ ...example, pronunciation: null }] };
+  const markup = renderToStaticMarkup(createElement(IntroductionPlayer, {
+    snapshot: { ...snapshot, beats: [{ ...snapshot.beats[0]!, parts: snapshot.beats[0]!.parts.filter((part) => part.source.field !== 'pronunciation') }] },
+    content: uncertain, state: initialIntroductionPlayerState(), onAction: () => {}, onRestart: () => {}, mode: 'teaching-only',
+  }));
+  assert.match(markup, /class="vocab-ruby-target"/);
+  assert.doesNotMatch(markup, /vocab-ruby-on-demand|intro-lab-part-pronunciation/);
+  assert.ok(markup.includes('我会'));
 });

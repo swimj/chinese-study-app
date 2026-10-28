@@ -1,3 +1,4 @@
+import { clozePromptParts } from '../../src/domain/cloze-prompt.ts';
 import type { VocabularyContent, VocabularyJson } from '../../src/domain/vocabulary-content.ts';
 import type { VocabularyEncounterSnapshot } from '../../src/domain/vocabulary-session.ts';
 import { selectBootstrapReveal, selectSequentialBootstrapReveal } from '../../src/domain/word-content/reveal.ts';
@@ -28,6 +29,10 @@ export function vocabularyRevealSnapshot(content: VocabularyContent, options: {
     if (mapping?.senseId && !sense) throw new Error(`Missing mapped reveal sense ${mapping.senseId}`);
     return { ...word, ...(sense ? { sense: { senseId: sense.senseId, version: sense.version, description: sense.description } } : {}) };
   });
+  // Direct-text teaching rehearsals can contain clozes despite their legacy
+  // definition type. The served prompt determines whether a rotating example fits.
+  const prompt = object(content.body).prompt;
+  if (content.skill === 'production' && typeof prompt === 'string' && clozePromptParts(prompt).length > 1) return { revealWords };
   if (ids.length !== 1 || !(content.skill === 'recognition' || content.exerciseType === 'definition')) return { revealWords };
   const wordId = ids[0]!;
   const material = object(content.body);

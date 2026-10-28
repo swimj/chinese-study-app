@@ -192,7 +192,9 @@
    session panel does. Reading scrolls; the next action and history stay in reach. */
 .vocab-study-surface { display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0; overflow: hidden; }
 .vocab-study-surface > .vocab-session { flex: 1; }
-.vocab-session { display: flex; flex-direction: column; height: 100%; min-height: 0; gap: .65rem; overflow-y: auto; }
+/* The rotated under-card may extend past the paper edge, but must not create
+   a horizontal scroll lane in this vertically scrolling session. */
+.vocab-session { display: flex; flex-direction: column; height: 100%; min-height: 0; gap: .65rem; overflow-x: hidden; overflow-y: auto; }
 .vocab-session > .vocab-session-topline,
 .vocab-session > .vocab-finishing,
 .vocab-session > .vocab-error,

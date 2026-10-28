@@ -158,7 +158,9 @@ a six-hour shared recency guard. Independent pure cues share the review portion
 of the mix and interleave with ordinary word exercises.
 
 Introductions preserve the progressive teaching walkthrough, back-navigation,
-and recap. They do not offer exercise-level Skip; a learner can stop work on the
+and recap. Teaching sentences highlight the taught word with its pronunciation;
+other reliably aligned readings appear on hover or keyboard focus, without a
+separate sentence-pinyin line. They do not offer exercise-level Skip; a learner can stop work on the
 whole unstudied word from the footer without claiming teaching completion.
 
 Exercises interleave across words, including teaching exercises. An introduction
@@ -173,7 +175,10 @@ result before the learner continues.
 
 The answer reveal shows the exercise's mapped sense when one is available,
 with lexical meaning as the fallback. It retains pronunciation, authored usage
-notes and explanations, and available source examples. A Word reference
+notes and explanations. Cloze reveals stay tied to the answered prompt: show its
+mapped sense or lexical meaning, and a translation only when linked to the
+completed cloze. They do not introduce a different example sentence. Other
+eligible reveals retain source examples. A Word reference
 disclosure exposes the full retained teaching source. Rejected production shows
 the learner's submitted answer alongside the expected answer. Personal notes
 are visible after reveal and reflect the learner's current notes rather than

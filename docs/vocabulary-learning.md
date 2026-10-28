@@ -116,7 +116,9 @@ General selectors exclude teaching. Maintain prefers current curated versions;
 a shared dictionary baseline is an explicit fallback when curated material is
 unavailable, not a claim of curation. Its learner-independent identity is reused
 across learners. Migrated legacy identities retain their original controls;
-composition excludes duplicate stock fallback copies. Sense mapping and curation changes emit
+composition excludes duplicate stock fallback copies. Eligible authored word-specific
+production excludes previously stored dictionary baselines from the composed
+repertoire. Sense mapping and curation changes emit
 transactional retained events.
 
 `src/domain/production-proxy.ts` owns the shared proxy decision and the usable
@@ -250,6 +252,14 @@ these fields use available lexical facts and their material's known reveal
 fields. Rejected production also displays the submitted response; contrast
 answers identify the selected and expected choices.
 
+Cloze answer rendering uses the same blank parser as the prompt. This also
+recognizes direct-text teaching clozes imported with a definition exercise type.
+Those prompts do not acquire rotating bootstrap examples, and the renderer
+omits them from older retained snapshots. Mapped senses and lexical fallback
+remain available; a supplement translation is shown only when its example
+sentence exactly matches a completed cloze line (after character conversion).
+Authored usage notes and explanations remain visible.
+
 Personal notes use a separate current-learner lookup in the study response.
 `VocabularyPersonalNotes` displays existing notes after reveal. Personal-note
 creation and editing entry points are paused across learner study surfaces,
@@ -266,7 +276,11 @@ and Undo use the same projection, so the chips reflect accepted evidence rather
 than an extra local success counter.
 
 Introductions reuse the progressive teaching player: formatted teaching steps,
-back-navigation, and a recap of the pinned source's uses and examples. Introduction
+back-navigation, and a recap of the pinned source's uses and examples. Typed
+teaching sentences and recap examples use the warmup's character ruby: target
+readings stay visible, while other reliably aligned readings appear on hover or
+keyboard focus. Uncertain alignment shows only target readings, and teaching
+omits the separate sentence-pinyin row. Introduction
 steps have no exercise-level Skip; stopping the whole unstudied word remains a
 footer control. Teaching exercises still interleave with other words. Selection
 balances use within each skill’s teaching pool; small pools may repeat identical
@@ -325,14 +339,16 @@ for that explicitly queued work, including requests made while finishing;
 Finish immediately can end the session before extra practice is finished.
 
 Keyboard controls follow the available action. Space reveals/continues; Enter
-submits production; Shift+Enter records No clue; Escape toggles answer focus.
+submits production; Shift+Enter records No clue. Escape toggles focus into or
+out of the open reaction note; when that panel is closed, it toggles answer focus.
 Recognition reveals pronunciation as ruby above each character when the authored
 pinyin aligns safely, leaving the answer
 panel for meaning and examples without an Answer heading or duplicate pronunciation.
 Recognition uses 1 for Forgot and 2 or Space for Correct, with a brief visible
 confirmation before advancing. Ratings save before card departure: an ongoing
 correct answer moves left, a covered word moves right. A save retry retains that
-departure after acknowledgement. Contrast uses 1/2 to select and Enter to confirm.
+departure after acknowledgement. Contrast choices use 1–9, then 0 for the tenth option, with Enter to
+confirm the selected choice.
 U (also Z) undoes, A tries another way, S skips an exercise, D covers for today,
 M requests more practice, and F finishes for now. R opens reactions; [ and ] vote
 Not helpful and Helpful. ? opens the shortcut guide. Teaching retains Space for

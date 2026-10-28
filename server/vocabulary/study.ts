@@ -85,13 +85,18 @@ function contrastEligible(content:VocabularyContent,wordId:string):boolean {
 }
 function availableGeneral(wordId:string,mode:'solidify'|'practice'|'maintain'):VocabularyContent[] {
   const allowFallback=mode==='solidify'||!isVocabularyProductionProxied(wordId);
-  const pool=listVocabularyExercises({wordId,mode}).filter((entry)=>eligible(entry)&&entry.kind==='exercise'&&entry.exerciseType!=='pure_cue'
+  let pool=listVocabularyExercises({wordId,mode}).filter((entry)=>eligible(entry)&&entry.kind==='exercise'&&entry.exerciseType!=='pure_cue'
     // Scope repair retains old baseline identities. Only serve this learner's
     // selected baseline, rather than every migrated copy for the same word.
     &&(object(object(entry.body).source).kind!=='dictionary_baseline'
       ||entry.contentId===getDictionaryBaseline(wordId,entry.skill==='recognition'?'recognition':'production','general')?.contentId)
     &&(allowFallback||entry.skill!=='production'||!isVocabularyDefinitionFallback(entry))
     &&(isContrast(entry)?contrastEligible(entry,wordId):entry.skill==='recognition'?skillEnabled(wordId,'recognition'):skillEnabled(wordId,'production')));
+  // Persisted baselines remain fallback material, even after a previous session
+  // created them. They must not compete with eligible authored production.
+  if(pool.some((entry)=>entry.kind==='exercise'&&entry.skill==='production'&&!isContrast(entry)&&!isVocabularyDefinitionFallback(entry))) {
+    pool=pool.filter((entry)=>entry.kind!=='exercise'||entry.skill!=='production'||!isVocabularyDefinitionFallback(entry));
+  }
   // Recognition remains its own self-assessed objective and never supplies production coverage.
   const recognize=baseline(wordId,'recognition','general');
   if(mode==='maintain') {

@@ -883,6 +883,38 @@ test('Solidify with both recall directions disabled is excluded instead of creat
 }));
 
 
+for(const mode of ['solidify','practice','maintain'] as const)test(`${mode} excludes persisted dictionary production when an eligible authored cue exists`,()=>owner(()=>{
+  // Materialize a baseline before authored content exists, as a previous session can.
+  createVocabularySession({sessionId:'before-authored',words:[{wordId:'b',mode:'maintain',selectedSkill:'production'}]});
+  const fallbackId=nextVocabularyExercise('before-authored','next').currentEncounter!.snapshot.contentId;
+  const fallback=getVocabularyContent(fallbackId)!;
+  updateVocabularyContent(fallbackId,fallback.version,{...fallback,body:{...(fallback.body as object),explanation:'An enriched fallback is still fallback.'}},actor);
+  exercise('z-authored-b','b');
+  db.prepare("UPDATE learner_words SET mode=? WHERE word_id='b'").run(mode);
+  if(mode==='maintain')db.prepare("INSERT INTO content_mode_suitability VALUES('z-authored-b','maintain','curated',1)").run();
+  const session=createVocabularySession({sessionId:'after-authored',words:[{wordId:'b',mode,selectedSkill:'production'}]});
+  const pool=session.context.payload!.words.b.general[mode];
+  assert.ok(pool.some(content=>content.contentId==='z-authored-b'));
+  assert.ok(!pool.some(content=>content.contentId===fallbackId));
+  assert.equal(nextVocabularyExercise('after-authored','next').currentEncounter?.snapshot.contentId,'z-authored-b');
+  // Retirement/deactivation can make dictionary fallback necessary again.
+  db.prepare("INSERT INTO learner_content_deactivations VALUES('alice','z-authored-b','2026-10-28T00:00:00.000Z')").run();
+  const later=createVocabularySession({sessionId:'after-deactivation',words:[{wordId:'b',mode,selectedSkill:'production'}]});
+  assert.ok(later.context.payload!.words.b.general[mode].some(content=>content.contentId===fallbackId));
+}));
+
+test('recognition and contrast do not displace a Practice production fallback',()=>owner(()=>{
+  db.prepare("UPDATE learner_words SET mode='practice' WHERE word_id='a'").run();
+  contrastContent();
+  for(const id of ['general-1','general-2'])db.prepare("INSERT INTO learner_content_deactivations VALUES('alice',?,'2026-10-28T00:00:00.000Z')").run(id);
+  db.prepare("INSERT INTO learner_owned_word_skill_state VALUES('alice','a','contextual_selection',6,2.5,1,NULL,NULL)").run();
+  const session=createVocabularySession({sessionId:'independent-objectives',words:[{wordId:'a',mode:'practice',selectedSkill:'production'}]});
+  const pool=session.context.payload!.words.a.general.practice;
+  assert.ok(pool.some(content=>content.contentId==='contrast'));
+  assert.ok(pool.some(content=>content.skill==='recognition'));
+  assert.equal(nextVocabularyExercise(session.sessionId,'next').currentEncounter?.snapshot.contentId,'vocabulary:baseline:v1:alice:production:general:a');
+}));
+
 test('pure coverage excludes dictionary production from preview and Start even while the cue is not due',()=>owner(()=>{
   db.prepare("UPDATE learner_words SET dismissed_at='2026-10-01' WHERE word_id!='b'").run();
   // First materialize the fallback, then add coverage: existing baseline content

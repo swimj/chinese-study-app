@@ -3,13 +3,14 @@ import { test } from 'node:test';
 import {
   resolveVocabularyKey,
   VOCABULARY_SHORTCUTS,
+  vocabularyChoiceShortcuts,
   type VocabularyKeyEvent,
   type VocabularyKeyboardContext,
   type VocabularyShortcutCommand,
 } from '../src/features/vocabulary-study/keyboard.ts';
 
 function context(
-  commands: VocabularyShortcutCommand[] = Object.keys(VOCABULARY_SHORTCUTS) as VocabularyShortcutCommand[],
+  commands: VocabularyShortcutCommand[] = (Object.keys(VOCABULARY_SHORTCUTS) as VocabularyShortcutCommand[]).filter((command) => command !== 'focusReaction'),
   target: VocabularyKeyboardContext['target'] = 'surface',
 ): VocabularyKeyboardContext {
   return { available: new Set(commands), target, modalOpen: false };
@@ -34,8 +35,8 @@ test('shortcuts resolve only available actions, with contextual choices taking p
 });
 
 test('answer fields preserve typing and permit only explicit submit, no clue, and focus actions', () => {
-  for (const target of ['answer', 'editable'] as const) {
-    for (const key of [' ', '1', '2', 'u', 'a', 's', 'd', 'm', 'f', 'r', '[', ']', '?', 'ArrowLeft']) {
+  for (const target of ['answer', 'reaction', 'editable'] as const) {
+    for (const key of [' ', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', 'u', 'a', 's', 'd', 'm', 'f', 'r', '[', ']', '?', 'ArrowLeft']) {
       assert.equal(resolveVocabularyKey({ key }, context(undefined, target)), null, `${target}: ${key}`);
     }
   }
@@ -48,6 +49,25 @@ test('answer fields preserve typing and permit only explicit submit, no clue, an
   }
   for (const event of [{ key: 'Enter' }, { key: 'Enter', shiftKey: true }, { key: 'Escape' }]) {
     assert.equal(resolveVocabularyKey(event, context(undefined, 'editable')), null);
+  }
+});
+
+test('Escape prioritizes the open reaction note and retains modal and composition guards', () => {
+  const commands: VocabularyShortcutCommand[] = ['focusReaction', 'focusInput', 'primary', 'noClue'];
+  for (const target of ['reaction', 'surface', 'native', 'answer'] as const) {
+    const open = context(commands, target);
+    assert.equal(resolveVocabularyKey({ key: 'Escape' }, open), 'focusReaction');
+    assert.equal(resolveVocabularyKey({ key: 'Escape' }, { ...open, modalOpen: true }), null);
+    for (const guard of [{ isComposing: true }, { keyCode: 229 }, { repeat: true }, { defaultPrevented: true },
+      { ctrlKey: true }, { metaKey: true }, { altKey: true }, { shiftKey: true }]) {
+      assert.equal(resolveVocabularyKey({ key: 'Escape', ...guard }, open), null);
+    }
+  }
+  assert.equal(resolveVocabularyKey({ key: 'Escape' }, context(commands, 'editable')), null);
+  assert.equal(resolveVocabularyKey({ key: 'Escape' }, context(['focusInput'], 'reaction')), null);
+  assert.equal(resolveVocabularyKey({ key: 'Escape' }, context(['focusInput'], 'answer')), 'focusInput');
+  for (const event of [{ key: 'Enter' }, { key: 'Enter', shiftKey: true }, { key: ' ' }]) {
+    assert.equal(resolveVocabularyKey(event, context(commands, 'reaction')), null);
   }
 });
 
@@ -68,7 +88,7 @@ test('modifiers, consumed events, composition, repeats, and modals block all com
   ];
   const events: VocabularyKeyEvent[] = [
     { key: 'Enter' }, { key: 'Enter', shiftKey: true }, { key: '?' },
-    { key: 'Escape' }, { key: ' ' }, { key: '1' }, { key: 'u' }, { key: 'ArrowLeft' },
+    { key: 'Escape' }, { key: ' ' }, { key: '1' }, { key: '3' }, { key: '9' }, { key: '0' }, { key: 'u' }, { key: 'ArrowLeft' },
   ];
   for (const event of events) {
     for (const guard of guards) assert.equal(resolveVocabularyKey({ ...event, ...guard }, context()), null);
@@ -80,9 +100,29 @@ test('Shift is accepted only for question mark and no clue; Caps Lock letters st
   assert.equal(resolveVocabularyKey({ key: '?', shiftKey: true }, context()), 'guide');
   assert.equal(resolveVocabularyKey({ key: 'Enter', shiftKey: true }, context()), 'noClue');
   assert.equal(resolveVocabularyKey({ key: 'U' }, context()), 'undo');
-  for (const key of ['U', 'A', '1', ' ', 'Escape', 'ArrowLeft', '/', '[', ']']) {
+  for (const key of ['U', 'A', '1', '3', '9', '0', ' ', 'Escape', 'ArrowLeft', '/', '[', ']']) {
     assert.equal(resolveVocabularyKey({ key, shiftKey: true }, context()), null, key);
   }
+});
+
+test('contrast choices use 1 through 9 then 0, bounded by displayed options', () => {
+  const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
+  for (const count of [0, 1, 2, 3, 9, 10, 12]) {
+    const choices = vocabularyChoiceShortcuts(count);
+    assert.equal(choices.length, Math.min(count, 10));
+    const available = choices.map((choice) => choice.command);
+    for (let index = 0; index < keys.length; index++) {
+      const choice = choices[index];
+      if (choice) {
+        assert.equal(choice.index, index);
+        assert.equal(choice.key, keys[index]);
+        assert.deepEqual(VOCABULARY_SHORTCUTS[choice.command].keys, [keys[index]]);
+      }
+      assert.equal(resolveVocabularyKey({ key: keys[index]! }, context(available)), choice?.command ?? null);
+    }
+  }
+  assert.equal(resolveVocabularyKey({ key: '0' }, context(['forgot', 'correct'])), null);
+  assert.equal(resolveVocabularyKey({ key: '9' }, context(['forgot', 'correct'])), null);
 });
 
 test('advertised key strings agree with contextual shortcuts and keep Z as an unadvertised alias', () => {

@@ -55,7 +55,10 @@
 .desk-departure-front.session-card-shell { display: grid; grid-template-columns: minmax(0,1fr); grid-template-rows: minmax(0,1fr) auto; border: 0; padding: 0; }
 .desk-departure-back { transform: rotateY(180deg); background: linear-gradient(145deg,var(--surface),var(--surface-muted)); }
 .desk-departure.session-desk { display: block; margin: 0; }
-.desk-stack.is-departing .desk-front { visibility: hidden; pointer-events: none; }
+/* Keep the paper opaque while an async successor loads beneath the moving
+   clone. Hiding the entire front exposes the gray decorative under-card. */
+.desk-stack.is-departing .desk-front { pointer-events: none; }
+.desk-stack.is-departing :is(.session-card-shell, .vocab-paper) > * { visibility: hidden; }
 @keyframes desk-answer-lift { from { opacity: 0; transform: translateY(9px); } to { opacity: 1; transform: translateY(0); } }
 @media (max-width: 640px) { .session-panel-active.study-session-panel { padding: .15rem 1.25rem; } .session-desk { gap: .8rem; } .session-desk .session-action-bar { padding: .75rem 1rem; } .session-desk .session-action-section:not(:first-child) button { font-size: .7rem; } }
 @media (prefers-reduced-motion: reduce) { .session-desk *, .desk-cloze-answer { animation: none !important; transition: none !important; } }
