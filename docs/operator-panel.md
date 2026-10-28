@@ -142,6 +142,12 @@ automatically.
 
 ### Queue navigation and refresh
 
+The review queue preloads nearby proposal details in the background. A cached
+card appears immediately while its preview is refreshed; approval waits for that
+refresh and remains subject to server validation. After a successful action the
+next known item opens while the queue refreshes. If it cannot load, the completed
+action remains recorded and a retry control is shown.
+
 The operator panel's Content improvement tab presents an Awaiting review queue,
 an attention inbox and Archive. Open entries in each view lead with the original
 served content described above. Previous and next controls navigate one item at

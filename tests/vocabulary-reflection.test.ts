@@ -486,6 +486,23 @@ test('withdrawn negative reactions retain raw audit evidence without creating re
   assert.equal(retained.encounters[0].feedback.length,2);assert.equal(retained.encounters[0].effectiveFeedback.length,0);
 });
 
+test('case workspace returns only its proposals in the same order and detail as the global list',()=>{
+  const {cases}=ingest([present('one'),response('one')]);
+  const other=close([present('one','a','other-encounter'),response('other-encounter')],'other-session');
+  const otherIds=ingestVocabularySessionEvidence('alice',other.completionId,other.report,closedAt);
+  const first=cases.find(value=>value.kind==='exercise_improvement')!,second=otherIds.map(id=>getVocabularyReflectionCase(id)).find(value=>value.kind==='exercise_improvement')!;
+  assert.ok(first);assert.ok(second);
+  const older=createVocabularyProposal({caseId:first.caseId,operations:[op()],rationale:'Older'},'editor');
+  const newer=createVocabularyProposal({caseId:first.caseId,operations:[op()],rationale:'Newer'},'editor');
+  createVocabularyProposal({caseId:second.caseId,operations:[op()],rationale:'Other case'},'editor');
+  createVocabularyProposal({operations:[op()],rationale:'No case'},'editor');
+  sql.prepare('UPDATE content_proposals SET updated_at=? WHERE proposal_id=?').run('2026-01-01T00:00:00.000Z',older.proposalId);
+  sql.prepare('UPDATE content_proposals SET updated_at=? WHERE proposal_id=?').run('2026-01-02T00:00:00.000Z',newer.proposalId);
+  const expected=listVocabularyProposals('editor').filter(value=>value.caseId===first.caseId);
+  assert.deepEqual(expected.map(value=>value.proposalId),[newer.proposalId,older.proposalId]);
+  assert.deepEqual(getVocabularyCaseWorkspace(first.caseId,'editor').proposals,expected);
+});
+
 test('ordered teaching exercise and introduction repair previews and applies atomically against pre-state bases',()=>{
   const intro=getVocabularyContentForMaintenance('intro')!;
   const operations:VocabularyProposalOperation[]=[{operationKey:'exercise',scope:{kind:'shared'},strategy:'update_existing',sourceContentId:'teach',expectedVersion:1,rationale:'Repair this taught cue',
