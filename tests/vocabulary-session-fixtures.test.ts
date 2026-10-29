@@ -7,10 +7,15 @@ import { test } from 'node:test';
 
 // Use the complete preparation command and real composition/command/finalization
 // paths: a plausible manifest alone does not establish a usable walkthrough.
-test('full vocabulary fixture serves progression boundaries and persists a declined graduation', async () => {
+test('full vocabulary fixture serves progression boundaries and persists a declined graduation', async (t) => {
+  // Preparation must keep the prior session on yesterday even just before UTC midnight.
+  const now = '2026-10-28T23:59:55.000Z';
+  t.mock.timers.enable({ apis: ['Date'], now: new Date(now) });
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'full-vocabulary-fixture-test-'));
   const dataDir=path.join(root,'fresh');
-  const run=()=>spawnSync(process.execPath,['--import','tsx','scripts/prepare-vocabulary-fixtures.ts',`--data-dir=${dataDir}`],{encoding:'utf8'});
+  const clockPath=path.join(root,'clock.mjs');
+  fs.writeFileSync(clockPath,`import { mock } from 'node:test';\nmock.timers.enable({ apis: ['Date'], now: new Date('${now}') });\n`);
+  const run=()=>spawnSync(process.execPath,['--import',clockPath,'--import','tsx','scripts/prepare-vocabulary-fixtures.ts',`--data-dir=${dataDir}`],{encoding:'utf8'});
   try {
     const prepared=run();assert.equal(prepared.status,0,prepared.stderr);
     const manifest=JSON.parse(fs.readFileSync(path.join(dataDir,'fixture-manifest.json'),'utf8'));
