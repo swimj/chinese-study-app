@@ -1,3 +1,5 @@
+import { ensureVocabularyDefaultUsefulSelection } from './default-useful-selection.ts';
+import { VocabularySenseSelectionRequired } from './sense-readiness.ts';
 import { resolveVocabularySenseCoverage } from '../db/vocabulary-sense-coverage.ts';
 import { generalExerciseSchema,validateGeneralExerciseOutput,type GeneralExerciseSource } from './general-exercise-authoring.ts';
 import { createHash } from 'node:crypto';
@@ -27,7 +29,7 @@ export type VocabularySenseEnsurer = typeof ensureVocabularySenses;
 /** Intermediate evidence is durable; source identity is not a substitute for the exact version examined. */
 export async function runVocabularyImprovementAdmission(options: {
   job: VocabularyReflectionJob; original: VocabularyContent; projectedInput: unknown;
-  ensureSenses?: VocabularySenseEnsurer; canPublish?: ()=>boolean;
+  ensureDefaults?:typeof ensureVocabularyDefaultUsefulSelection; ensureSenses?: VocabularySenseEnsurer; canPublish?: ()=>boolean;
   call: VocabularyAdmissionModelCall; improvementSchema: JsonSchema;
   stageIdentity: (stage:VocabularyAdmissionStage,schema:JsonSchema)=>Promise<unknown>;
   normalize: (value: unknown,invocationId?: string|null)=>VocabularyReflectionResult;
@@ -98,17 +100,22 @@ export async function runVocabularyImprovementAdmission(options: {
       || (result.outcome!=='single_sense'&&result.senseIds.length!==0)) throw new Error('Invalid mapping outcome or supplied sense references');
     let generationScope:VocabularyGenerationScope|null=null;
     if(result.outcome==='single_sense')generationScope={selectionEstablished:true,senseIds:[...result.senseIds],source:{kind:'mapped_source'}};
-    else if(result.outcome==='laundry_list') {
-      // Resolve once when repertoire scope is first requested. Retained backend
-      // mapping evidence carries this snapshot through later retries; serving
-      // policy is not a dependency of the mapper or authored result.
-      const selected=resolveVocabularySenseCoverage(wordId,job.caseId);
-      generationScope={selectionEstablished:selected.selectionEstablished,senseIds:[...selected.includedSenseIds],source:selected.review?.includedSenseIds!==null&&selected.review?.includedSenseIds!==undefined
-        ?{kind:'review_override',caseId:job.caseId,capturedVersion:selected.review.version}
-        :{kind:'word_defaults',wordId,capturedVersion:selected.word.version}};
-    }
     return {...result,generationScope,observedMapping:{...expectedMapping},mappingTimestamp:new Date().toISOString()};
   });
+  if(mapped.value.outcome==='laundry_list'){
+    const scopeInput=JSON.stringify({contract:'requested-generation-scope-v1',mapping:mapped.value,catalogVersion:readiness.catalog.version});
+    const scopeHash=createHash('sha256').update(scopeInput).digest('hex');
+    const cached=getDb().prepare("SELECT result_json FROM vocabulary_improvement_stages WHERE job_id=? AND stage='sense_mapping' AND input_hash=?").get(job.jobId,scopeHash) as {result_json:string}|undefined;
+    if(cached)mapped.value.generationScope=JSON.parse(cached.result_json) as VocabularyGenerationScope;
+    else {
+      let selected=resolveVocabularySenseCoverage(wordId,job.caseId);
+      if(!selected.selectionEstablished)try{await (options.ensureDefaults??ensureVocabularyDefaultUsefulSelection)(wordId,{workflowId:job.jobId,canPublish:options.canPublish});selected=resolveVocabularySenseCoverage(wordId,job.caseId);}
+      catch(error){if(!(error instanceof VocabularySenseSelectionRequired))throw error;}
+      fence();
+      mapped.value.generationScope={selectionEstablished:selected.selectionEstablished,senseIds:[...selected.includedSenseIds],source:selected.review?.includedSenseIds!==null&&selected.review?.includedSenseIds!==undefined?{kind:'review_override',caseId:job.caseId,capturedVersion:selected.review.version}:{kind:'word_defaults',wordId,capturedVersion:selected.word.version}};
+      getDb().prepare("INSERT INTO vocabulary_improvement_stages(job_id,stage,input_hash,input_json,result_json,invocation_id,recorded_at) VALUES (?,'sense_mapping',?,?,?,?,?)").run(job.jobId,scopeHash,scopeInput,JSON.stringify(mapped.value.generationScope),null,new Date().toISOString());
+    }
+  }
   const before = mapped.value.observedMapping;
   const sameBefore = expectedMapping.senseId===before.senseId && expectedMapping.establishedAt===before.establishedAt;
   const samePublished = mapped.value.outcome==='single_sense' && expectedMapping.senseId===mapped.value.senseIds[0]
@@ -121,7 +128,7 @@ export async function runVocabularyImprovementAdmission(options: {
     fence();
     return {kind:'exercise_improvement',result:{diagnosis:mapped.value.rationale,proposal:null,admission,...(mapped.invocationId?{invocationId:mapped.invocationId}:{})}};
   }
-  if(mapped.value.outcome==='laundry_list'&&!mapped.value.generationScope?.selectionEstablished){fence();return {kind:'exercise_improvement',result:{diagnosis:'Useful senses require an operator selection before repertoire generation.',proposal:null,admission:{...admission,outcome:'needs_coverage'}}};}
+  if(mapped.value.outcome==='laundry_list'&&!mapped.value.generationScope?.selectionEstablished){fence();return {kind:'exercise_improvement',result:{diagnosis:'Useful senses have not been selected; operator coverage review is required before repertoire generation.',proposal:null,admission:{...admission,outcome:'needs_coverage'}}};}
   const selectedInventory=inventory.filter(sense=>mapped.value.generationScope?.senseIds.includes(sense.senseId));
   if (mapped.value.outcome==='laundry_list'&&selectedInventory.length===0) {
     fence();return {kind:'exercise_improvement',result:{diagnosis:'No senses were requested for this generation. The source exercise remains unchanged.',proposal:null,admission:{...admission,outcome:'no_senses_requested'}}};

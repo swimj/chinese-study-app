@@ -1,5 +1,6 @@
 import { VocabularySenseMappingUnavailable, isSenseMappingAvailabilityFailure } from './sense-mapping-retry.ts';
 import { GLM_FLASH_HIGH_REFLECTION_MODEL_CONFIG } from '../reflection/glm-provider.ts';
+import type { ensureVocabularyDefaultUsefulSelection } from './default-useful-selection.ts';
 import { VocabularyReflectionConflict } from '../db/vocabulary-reflection.ts';
 import { getVocabularyContentForMaintenance } from '../db/vocabulary-content.ts';
 import { GENERAL_EXERCISE_CONTRACT,generalExerciseInvocation,type GeneralExerciseSource } from './general-exercise-authoring.ts';
@@ -119,7 +120,7 @@ export function normalizeVocabularyReflectionOutput(job:VocabularyReflectionJob,
   return {kind:'exercise_improvement',result:{diagnosis:result.diagnosis,...(withReferral?{pureCueReferral:referral}:{}),proposal:operations.length?{operations,rationale:result.diagnosis,
     bases:[{contentId:original.contentId,expectedVersion:original.version}],...(invocationId?{invocationId}:{})}:null,...(invocationId?{invocationId}:{})}};
 }
-export function createVocabularyReflectionProvider(options:{environment?:NodeJS.ProcessEnv;adapter?:ProviderAdapter;adapters?:Partial<Record<ReflectionModelChoice,ProviderAdapter>>;random?:()=>number;fetchImplementation?:typeof globalThis.fetch;ensureSenses?:VocabularySenseEnsurer}={}):VocabularyReflectionProvider {
+export function createVocabularyReflectionProvider(options:{environment?:NodeJS.ProcessEnv;adapter?:ProviderAdapter;adapters?:Partial<Record<ReflectionModelChoice,ProviderAdapter>>;random?:()=>number;fetchImplementation?:typeof globalThis.fetch;ensureSenses?:VocabularySenseEnsurer;ensureDefaults?:typeof ensureVocabularyDefaultUsefulSelection}={}):VocabularyReflectionProvider {
   const environment=options.environment??process.env;
   const adapters=new Map<string,ProviderAdapter>();
   const adapterFor=(choice:ReflectionModelChoice,config=reflectionConfigForChoice(choice))=>{
@@ -232,7 +233,7 @@ export function createVocabularyReflectionProvider(options:{environment?:NodeJS.
       &&original.skill==='production'&&original.exerciseType!=='pure_cue'&&original.answers.length===1&&original.answers[0]?.wordId===job.evidence.wordId
       &&job.evidence.evidence.every(encounter=>encounter.snapshot.schedulingScope!=='pure_cue')) {
       return runVocabularyImprovementAdmission({job,original,projectedInput:projectVocabularyReflectionInput(job),
-        ensureSenses:options.ensureSenses,canPublish:context?.canPublish,improvementSchema:vocabularySingleImprovementSchema,
+        ensureSenses:options.ensureSenses,ensureDefaults:options.ensureDefaults,canPublish:context?.canPublish,improvementSchema:vocabularySingleImprovementSchema,
         stageIdentity:async(stage,schema)=>{
           const {config,adapter,baseUrl}=routingFor(stage);
           return {provider:adapter.id,baseUrl:baseUrl??adapter.defaultBaseUrl,

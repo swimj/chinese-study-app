@@ -1149,7 +1149,7 @@ messages for the learner’s history.
 word selection. `GET/PUT /api/operator/vocabulary/cases/:id/sense-coverage` reads
 or edits this review's requested scope. PUT requires a nonnegative
 `expectedVersion` and distinct active sense IDs belonging to the word: word
-requests use `excludedSenseIds`, case requests use nullable `includedSenseIds`
+requests use `includedSenseIds` (or compatible `excludedSenseIds`), case requests use nullable `includedSenseIds`
 (null inherits word defaults; [] requests none). Invalid payloads return 400;
 version conflicts return 409. These policy edits do not invalidate content proposals.
 
@@ -1161,3 +1161,11 @@ access scope, rationale and compulsory comparison `content` snapshot. The server
 retires the live active general production source without creating a successor.
 Save, preview, exact-version approval and idempotent application use the same
 proposal routes; retirement never writes review coverage or word defaults.
+
+Operator case workspaces and proposal review-batch snapshots include nullable
+`defaultSelectionFinding`: `status: needs_operator`, `reason`, `invocationId` and
+`recommendedSenseIds`. It is read-only and returns null after any explicit shared
+selection, including none. The finding does not block single-sense generation or
+content approval. Practice-preparation failures expose prerequisite selection and
+source-mapping findings; `retryable` is false while mappings need operator review
+or a model-empty recommendation awaits a selection.

@@ -454,3 +454,18 @@ test('retirement receipt upgrade runs the real migration chain and preserves exi
     assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);assertSchemaCurrent(db);
   }finally{db.close();}
 });
+
+test('default useful selection upgrade preserves prior coverage without interpreting unknown as all or none',()=>{
+  const {db}=copy('default-useful-upgrade',true);
+  try{
+    const prior=schemaMigrations.slice(0,schemaMigrations.findIndex(item=>item.id==='app_schema:0064_vocabulary_default_useful_senses'));
+    migrateDatabase(db,prior);
+    db.exec(`INSERT INTO lexical_words(id,hanzi,traditional,pinyin,meaning,meanings_json,examples_json,priority,created_at) VALUES ('selection','函',NULL,'hán','letter; box','["letter","box"]','[]',1,'2026-10-29');
+      INSERT INTO vocabulary_word_sense_coverage(word_id,version,excluded_sense_ids_json,updated_at) VALUES ('selection',4,'["old-exclusion"]','2026-10-29');`);
+    const before=db.prepare('SELECT * FROM vocabulary_sense_coverage_history').all();
+    migrateDatabase(db);migrateDatabase(db);
+    const row=db.prepare('SELECT * FROM vocabulary_word_sense_coverage WHERE word_id=?').get('selection')!;
+    assert.equal(row.version,4);assert.equal(row.excluded_sense_ids_json,'["old-exclusion"]');assert.equal(row.default_useful_sense_ids_json,null);
+    assert.deepEqual(db.prepare('SELECT * FROM vocabulary_sense_coverage_history').all(),before);assertSchemaCurrent(db);
+  }finally{db.close();}
+});

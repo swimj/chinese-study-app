@@ -16,9 +16,15 @@ const projection = `work_id AS workId, requested_by_learner_id AS requestedByLea
   active_token AS activeToken, expires_at AS expiresAt, last_error AS lastError`;
 function transaction<T>(work: () => T): T {
   const db = getDb();
-  db.exec('BEGIN IMMEDIATE');
-  try { const result = work(); db.exec('COMMIT'); return result; }
-  catch (error) { db.exec('ROLLBACK'); throw error; }
+  const nested = db.isTransaction;
+  const savepoint = `preparation_${randomUUID().replaceAll('-', '')}`;
+  db.exec(nested ? `SAVEPOINT ${savepoint}` : 'BEGIN IMMEDIATE');
+  try { const result = work(); db.exec(nested ? `RELEASE ${savepoint}` : 'COMMIT'); return result; }
+  catch (error) {
+    db.exec(nested ? `ROLLBACK TO ${savepoint}` : 'ROLLBACK');
+    if (nested) db.exec(`RELEASE ${savepoint}`);
+    throw error;
+  }
 }
 function time(value: string): string {
   if (!Number.isFinite(Date.parse(value)) || new Date(value).toISOString() !== value) throw new Error('Expected canonical UTC time');
@@ -155,4 +161,10 @@ export function retryWordPreparation(workId: string, actorId: string, now = new 
     getDb().prepare(`INSERT INTO word_preparation_retry_events (event_id, work_id, actor_id, occurred_at)
       VALUES (?, ?, ?, ?)`).run(randomUUID(), workId, actorId.trim(), now);
   });
+}
+
+/** Waiting on the independent shared sense job consumes none of this enrichment job's attempts. */
+export function deferWordPreparationForSenses(workId:string,retryAt:string,now=new Date().toISOString()):void {
+  time(now);time(retryAt);
+  getDb().prepare("UPDATE word_preparation_work SET next_attempt_at=?,last_error='Waiting for canonical sense readiness',updated_at=? WHERE work_id=? AND status='queued'").run(retryAt,now,workId);
 }

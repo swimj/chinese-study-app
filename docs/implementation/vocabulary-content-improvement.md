@@ -1,6 +1,7 @@
 # Vocabulary content-improvement architecture
 
-The adaptive vocabulary content-improvement pipeline separates sense admission,
+The adaptive vocabulary content-improvement pipeline shares canonical inventory
+and default-useful sense selection with teaching bootstrap, then separates sense admission,
 local exercise repair, optional pure-cue promotion, and existing pure-cue review.
 This implementation reference describes current provider-call boundaries,
 retained stage results and publication fences. The
@@ -12,9 +13,10 @@ explains review controls.
 
 ## Reading the flow
 
-- **Sense readiness** reuses an established inventory or imports usable bootstrap
-  uses without a provider call. Otherwise, it requests a sense-only inventory.
-  Partial or inconsistent inventories require operator inspection.
+- **Sense readiness** reuses the canonical inventory. Fresh establishment makes
+  one inventory/default-useful selection call, preserving real peripheral senses
+  without selecting them automatically. Legacy documents alone do not establish
+  or remap an inventory; unresolved legacy state requires operator/cutover work.
 - **Mapping** assesses the authored exercise. A single intended sense admits local
   improvement; a laundry list routes to a fresh repertoire. An unmappable cue or
   inventory gap stops generation with an operator finding. The mapped sense is
@@ -24,7 +26,7 @@ explains review controls.
   and learner reactions inform assessment without dictating the result.
 - **Repertoire generation** shares ordinary preparation's general-exercise
   authoring call and validation, using the reflection job's selected model.
-  Active sense descriptions provide uses and available examples. The adapter
+  The explicit default-useful selection (or review override) supplies uses and available examples. The adapter
   preserves structured clozes and post-answer teaching notes in a proposal: one
   operation replaces the source and the others add exercises. Generation leaves
   the live exercise pool unchanged until operator application.
@@ -222,36 +224,49 @@ when changing labels or routing, and keep this explanation aligned with it.
 
 ## Scoped production coverage
 
-`server/db/vocabulary-sense-coverage.ts` owns nullable shared default-useful IDs and review
-included sense IDs. A null review selection inherits defaults; an empty selection
-requests no production generation. Each scope has a compare-and-swap version,
-immutable change history and backend events. Mapping receives every active
+`server/db/vocabulary-sense-coverage.ts` owns nullable shared default-useful IDs,
+compatible excluded IDs and review included IDs. A null shared selection is
+unknown (`selectionEstablished: false`), while `[]` is explicitly none. A null
+review selection inherits defaults; an explicit review selection establishes that
+review's effective coverage even when shared defaults remain unknown. Each scope has a compare-and-swap version,
+immutable change history and backend events. Mapping still receives every active
 sense and no mutable policy metadata. A single mapped sense is the explicit
 input to local improvement, even when currently excluded from serving. A
 laundry-list assessment captures review IDs or shared defaults once for its
-repertoire invocation. An explicit empty scope records `no_senses_requested`,
+repertoire invocation. A captured scope records whether selection is established. Unknown repertoire
+scope initializes shared defaults asynchronously; unresolved findings record `needs_coverage`; an explicit empty scope records `no_senses_requested`,
 does not call authoring, and leaves the source active without a proposal.
 
 Admission retains `generationScope`: exact sense IDs plus mapped-source,
 review-override or word-default provenance. Captured policy versions are audit
 evidence, not approval or publication dependencies. Backend-normalized mapping
 evidence persists the first requested scope in the existing stage-result cache;
-The mapper wire schema contains no serving policy. Retrying the same assessment preserves its
+`canonical-generation-scope-v1` identifies that backend normalization without changing the mapper's wire schema. Retrying the same assessment preserves its
 scope and completed content results after serving policy changes. A new
 reassessment can request a new scope. Content calls, their cache identities and
 publication fences omit mutable serving metadata. Source content, mapping,
-canonical catalog and publication-authority fences remain active.
+canonical catalog and publication-authority fences remain active. Serving policy metadata does not invalidate ordinary content approval/application.
 
-Shared defaults filter mapped general production at `listVocabularyExercises`.
-Preparation captures the full source document. Serving policy is absent from its
-generation key and content publication fences.
+Shared defaults filter mapped general production at `listVocabularyExercises`
+and shared production-proxy checks. Established selection admits only active
+selected identities; later inventory additions do not become useful implicitly.
+Unknown selection preserves the existing exclusion-based serving policy.
+General preparation validates the immutable bootstrap document's complete mapped
+canonical scope through `legacy_sense_imports`, retaining use/example identities
+and exact current canonical versions. Shared useful policy gates only new automatic
+demand: unknown policy records a durable prerequisite; explicit none or no source
+intersection creates no new authoring demand. The worker initializes unknown
+defaults before claiming an authoring attempt. Existing work remains discoverable and runs against its original full document across
+policy edits. The generation key contains the source/authoring contract, without
+policy versions; source/catalog/version changes still fence publication.
 Unmapped content stays eligible under the existing fallback policy. A sense
 coverage change does not rewrite content, learner attempts or served snapshots.
 
 Operator GET/PUT routes are `/api/operator/vocabulary/words/:id/sense-coverage`
 and `/api/operator/vocabulary/cases/:id/sense-coverage`. PUT requires the current
-nonnegative `expectedVersion` and respectively `excludedSenseIds` or nullable
-`includedSenseIds`. Review reassessment copies overrides into the child case;
+nonnegative `expectedVersion` and shared `includedSenseIds` (or compatible `excludedSenseIds`), versus nullable
+review `includedSenseIds`. Shared exclusion controls explicitly establish the
+complementary useful selection; they do not interpret an absent selection. Review reassessment copies overrides into the child case;
 proposal edits remain separate editorial inputs and are not reassessment input.
 
 ## Explicit retirement proposals
@@ -268,3 +283,70 @@ application use the same ordered content transitions; preview rolls back history
 events and writes. A failure in another operation rolls back the entire application.
 Sense selection is configured directly through review coverage or word defaults;
 content proposals never mutate that policy.
+
+## Shared inventory, useful selection and teaching enrichment
+
+`ensureVocabularySenses` owns the canonical inventory. Fresh lexical words receive
+one inventory/default recommendation call using `sense-inventory.md`. Inventory and
+nonempty initial useful selection publish atomically. The model's zero-usefulness
+finding retains the inventory, stores its recommendation/invocation and leaves
+usefulness unknown for operator review. Mapping can still improve a single use.
+
+`ensureVocabularyDefaultUsefulSelection` conditionally initializes unknown defaults.
+It selects active teaching-imported identities deterministically when their exact
+source links are valid. Inventory-only words use `default-useful-selection.md`, an
+adaptation of the inventory brief's full editorial reasoning that only returns
+existing sense IDs. The selector cannot rewrite labels, notes, sense versions or
+inventory membership. An operator's concurrent selection wins; the recommendation
+remains auditable. Explicit `[]` is preserved and suppresses unknown-selection findings.
+
+`vocabulary_default_selection_readiness` gives the selector its own lease and
+bounded retry cycle. Inventory and selector attempts share the attempt journal,
+with selector work IDs prefixed `default-selection:`. Provider failures retry after
+30/60 seconds; exhausted cycles and model-empty recommendations become operator
+findings. Maintenance, lost leases and source races defer work under a fresh claim
+without invalidating a structurally valid model response. Provider orchestration
+and administrative retries live above database persistence modules.
+
+A laundry-list reflection first persists its validated mapping. A separate
+backend-only record captures generation scope in the same stage store. Selection
+initialization can wait or fail without repeating the mapper or marking its
+invocation invalid. Captured scope is immutable on retry. Single-sense improvement
+never waits for useful selection.
+
+Teaching completion synchronously records general-practice demand in its completion
+transaction. When defaults are unknown, `default_selection_pending` marks that work
+as a prerequisite rather than an authoring attempt. The practice worker performs
+initialization under its provider-work gate, then clears the marker once. Selector
+waiting consumes no authoring attempts. Saved operator policy resolves selector
+attention and requeues affected prerequisite work. Source mapping failures are
+operator-visible, nonretryable findings; source reconciliation is a separate action.
+
+One immutable source has one automatic practice lifecycle across prompt revisions.
+Ready pools, including ready-empty results, are reused. Exhausted and in-flight work
+are not replaced with new rows or budgets. A queued lifecycle adopts the current
+provider contract at claim with an audit event while retaining its identity and
+attempt counts. Running work keeps its captured contract. Explicit operator retry
+starts a new bounded cycle; prompt revision alone does not.
+
+Bootstrap preflight obtains inventory and useful selection before claiming an
+example-enrichment lease. `WordBootstrapInput.canonicalSenses` selects the enrichment
+prompt/schema; the independent local lab keeps its inventory experiment. Enrichment
+returns exactly the captured IDs and example references; server assembly supplies
+canonical labels/notes. Publication checks canonical IDs/versions and catalog, then
+records exact immutable `legacy_sense_imports` links before invoking the content
+importer in the same transaction. Teaching/review components use document scope and
+preflight its current canonical mappings; policy edits do not invalidate components
+or change a prepared package's lesson.
+
+Operator workspace and review-batch metadata include a read-only
+`defaultSelectionFinding` when model-empty or exhausted initialization needs review.
+It carries the reason, recommended IDs and invocation ID, and disappears whenever
+an explicit word policy is saved. This finding never blocks single-sense content
+approval. [The initialization procedure](../ops/default-useful-selection.md) describes
+bounded dry runs, deterministic imports and optional model-backed batches.
+
+Reveal snapshots prefer explicit source-use links in the selected document,
+allowing reflection-first canonical senses to obtain later teaching examples
+without changing their descriptions or replaying historical encounters. Retained
+legacy description-source links remain readable for their original documents.

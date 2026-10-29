@@ -551,3 +551,12 @@ Migration `0063_vocabulary_proposal_drop_actions` rebuilds
 and foreign keys and retaining immutable application history. Retirement points
 to the retired source revision and its content-history change; it creates no
 replacement content identity.
+
+Migration `0064` creates `vocabulary_default_selection_readiness`, owned by
+`server/vocabulary/default-useful-selection.ts`. Its lease, due time and bounded
+attempt count are separate from inventory creation. Recommendations retain their
+invocation and canonical IDs; model-empty findings remain unknown until an operator
+chooses useful senses. Shared default-useful IDs are nullable coverage state in
+`0061`; schema installation does not initialize that data. The
+[default-selection procedure](ops/default-useful-selection.md) runs repeatable
+bounded initialization separately from schema migration.

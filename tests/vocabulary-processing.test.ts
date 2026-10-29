@@ -1,10 +1,13 @@
+import { ensureVocabularySenses } from '../server/vocabulary/sense-readiness.ts';
+import { recoverVocabularySenseDependencies } from '../server/db/vocabulary-reflection.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { beforeEach,afterEach,test } from 'node:test';
 import { setDb } from '../server/db/connection.ts';
 import { runWithLearnerId } from '../server/db/learner-context.ts';
-import { createVocabularyContent,createVocabularySense,establishVocabularySenseCatalog,getVocabularySenseCatalog,getVocabularySenses,getVocabularyContent } from '../server/db/vocabulary-content.ts';
+import { createVocabularyContent,mapVocabularyContentSense,createVocabularySense,establishVocabularySenseCatalog,getVocabularySenseCatalog,getVocabularySenses,getVocabularyContent } from '../server/db/vocabulary-content.ts';
+import { writeVocabularyDefaultUsefulSenses } from '../server/db/vocabulary-sense-coverage.ts';
 import { createVocabularySession,appendVocabularySessionActions,stageVocabularySessionCompletion } from '../server/db/vocabulary-sessions.ts';
 import { VocabularyReflectionConflict,claimVocabularyReflectionJob,retryVocabularyReflectionJob,retryOwnVocabularyFeedback,retryVocabularyPostSessionDispatch,listOwnVocabularyMessages,recordVocabularyFeedbackJudgment } from '../server/db/vocabulary-reflection.ts';
 import { createVocabularyProcessingWorker } from '../server/vocabulary/processing-worker.ts';
@@ -28,7 +31,7 @@ beforeEach(()=>{
     CREATE TABLE lexical_words(id TEXT PRIMARY KEY,hanzi TEXT,traditional TEXT,pinyin TEXT,meaning TEXT);
     CREATE TABLE word_preparation_work(id TEXT);INSERT INTO learners VALUES ('alice',NULL,'Alice'),('bob',NULL,'Bob');
     INSERT INTO lexical_words VALUES ('a','字',NULL,'zì','character');`);
-  for(const name of ['0062_vocabulary_sense_coverage.sql','0039_vocabulary_content.sql','0025_model_invocations.sql','0026_model_invocation_outcomes.sql','0040_model_provenance.sql'])sql.exec(fs.readFileSync(new URL(`../server/db/migrations/${name}`,import.meta.url),'utf8'));
+  for(const name of ['0062_vocabulary_sense_coverage.sql','0064_vocabulary_default_useful_senses.sql','0039_vocabulary_content.sql','0025_model_invocations.sql','0026_model_invocation_outcomes.sql','0040_model_provenance.sql'])sql.exec(fs.readFileSync(new URL(`../server/db/migrations/${name}`,import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0041_vocabulary_learner_state.sql',import.meta.url),'utf8').split('-- Do not use the words view')[0]!);
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0047_vocabulary_dismissal.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0052_vocabulary_automatic_promotion_pause.sql',import.meta.url),'utf8'));
@@ -123,6 +126,7 @@ test('strict real injected provider retains service provenance and rejects forge
   let payload:unknown={diagnosis:'An alternate fits',lesson:'The original cue also permits this answer.',unfairEncounterIds:['session-one']};
   const sense=createVocabularySense({wordId:'a',description:{label:'written character'}},{kind:'operator',id:'editor'});
   establishVocabularySenseCatalog('a',getVocabularySenseCatalog('a').version,{kind:'operator',id:'editor'});
+  writeVocabularyDefaultUsefulSenses('a',0,[sense.senseId],{kind:'operator',id:'editor'});
   const adapter=createOpenAiCompatibleAdapter({id:'openai',defaultBaseUrl:'https://example.invalid',apiKeyEnvironmentVariable:'KEY',structuredOutputMode:'json_schema',maxTokensField:'max_tokens',
     fetchImplementation:async(_url,init)=>{
       const request=JSON.parse(String(init?.body)) as {response_format:{json_schema:{name:string}}};
@@ -455,4 +459,54 @@ test('an expired mapping lease cannot consume retry budget or revive unknown wor
     await processing.step();assert.equal(mappingJobRow().status,'failed');
     assert.equal(mappingJobRow().last_error,'provider_outcome_unknown');assert.equal(trial.models.length,1);
   } finally {await processing.stop();}
+});
+
+test('model-empty inventory attention does not revoke a live mapped single-sense repair',async()=>{
+  sql.exec(`CREATE TABLE lexical_word_meanings(id TEXT PRIMARY KEY,word_id TEXT,text TEXT,position INTEGER);
+    CREATE TABLE word_introduction_preparation(word_id TEXT PRIMARY KEY,content_id TEXT,package_id TEXT,preparation_epoch INTEGER,active_stage TEXT,lease_token TEXT,lease_expires_at TEXT);`);
+  pending();let release!:()=>void,entered!:(job:VocabularyReflectionJob)=>void;
+  const held=new Promise<void>(resolve=>{release=resolve;});
+  const started=new Promise<VocabularyReflectionJob>(resolve=>{entered=resolve;});
+  const processing=worker({isConfigured:()=>true,run:async job=>{
+    if(job.kind==='learner_feedback')return result(job);
+    const ready=await ensureVocabularySenses('a',{workflowId:job.jobId,now:()=>new Date(clock).toISOString(),provider:{isConfigured:()=>true,generate:async()=>({senses:[{label:'written character',notes:[],defaultUseful:false}]})}});
+    const sense=ready.senses[0]!,mappingAt=new Date(clock).toISOString();
+    mapVocabularyContentSense({contentId:'one',wordId:'a',expectedContentVersion:1,expectedMapping:{senseId:null,establishedAt:null},senseId:sense.senseId,establishedAt:mappingAt},{kind:'service',id:'test'});
+    entered(job);await held;
+    return {kind:'exercise_improvement',result:{diagnosis:'The mapped use remains valuable despite unknown default usefulness.',proposal:null,
+      admission:{outcome:'single_sense',rationale:'Written character.',wordId:'a',sourceContentId:'one',sourceContentVersion:1,catalogVersion:ready.catalog.version,senseIds:[sense.senseId],sourceMapping:{senseId:sense.senseId,establishedAt:mappingAt},generationScope:{selectionEstablished:true,senseIds:[sense.senseId],source:{kind:'mapped_source'}}}}};
+  }});
+  const flight=processing.step();const job=await started;
+  try{
+    assert.equal(sql.prepare("SELECT status FROM vocabulary_default_selection_readiness WHERE word_id='a'").get()!.status,'failed');
+    await processing.step();
+    const live=sql.prepare('SELECT status,lease_token FROM vocabulary_reflection_jobs WHERE job_id=?').get(job.jobId)!;
+    assert.equal(live.status,'running');assert.equal(live.lease_token,job.leaseToken);
+  }finally{release();await flight;await processing.stop();}
+  assert.equal(sql.prepare('SELECT status FROM vocabulary_reflection_jobs WHERE job_id=?').get(job.jobId)!.status,'succeeded');
+});
+
+for(const kind of ['sense','selection'] as const)for(const state of ['queued','failed'] as const)test(`${kind} ${state} prerequisite cannot revoke a live caller but its expired caller is recovered`,async()=>{
+  pending();const ingest=worker({isConfigured:()=>false,run:async job=>result(job)});await ingest.step();await ingest.stop();
+  const job=claimVocabularyReflectionJob({kind:'exercise_improvement',now:new Date(clock).toISOString(),leaseMs:1000})!;
+  const table=kind==='sense'?'vocabulary_sense_readiness':'vocabulary_default_selection_readiness';
+  sql.prepare(`INSERT INTO ${table}(word_id,status,attempt_count,total_attempt_count,expected_catalog_version,workflow_id,created_at,updated_at) VALUES ('a',?,1,1,0,?,?,?)`).run(state,job.jobId,at,at);
+  assert.equal(recoverVocabularySenseDependencies(new Date(clock).toISOString()),0);
+  assert.equal(sql.prepare('SELECT lease_token FROM vocabulary_reflection_jobs WHERE job_id=?').get(job.jobId)!.lease_token,job.leaseToken);
+  clock+=1000;assert.equal(recoverVocabularySenseDependencies(new Date(clock).toISOString()),1);
+  const recovered=sql.prepare('SELECT status,lease_token,attempt_number FROM vocabulary_reflection_jobs WHERE job_id=?').get(job.jobId)!;
+  assert.equal(recovered.status,kind==='selection'||state==='queued'?'queued':'failed');assert.equal(recovered.lease_token,null);assert.equal(recovered.attempt_number,1);
+  assert.equal(sql.prepare(`SELECT attempt_count FROM ${table} WHERE word_id='a'`).get()!.attempt_count,1);
+});
+
+test('expired selector lease still recovers its crashed caller before the caller lease expires',async()=>{
+  pending();const ingest=worker({isConfigured:()=>false,run:async job=>result(job)});await ingest.step();await ingest.stop();
+  const job=claimVocabularyReflectionJob({kind:'exercise_improvement',now:new Date(clock).toISOString(),leaseMs:30*60_000})!;
+  sql.prepare(`INSERT INTO vocabulary_default_selection_readiness(word_id,status,attempt_count,total_attempt_count,active_token,expires_at,expected_catalog_version,workflow_id,created_at,updated_at)
+    VALUES ('a','running',1,1,'selector-old',?,0,?,?,?)`).run(new Date(clock+300_000).toISOString(),job.jobId,at,at);
+  clock+=300_000;assert.equal(recoverVocabularySenseDependencies(new Date(clock).toISOString()),1);
+  const waiting=sql.prepare('SELECT status,lease_token,next_attempt_at FROM vocabulary_reflection_jobs WHERE job_id=?').get(job.jobId)!;
+  assert.equal(waiting.status,'queued');assert.equal(waiting.lease_token,null);assert.equal(waiting.next_attempt_at,new Date(clock+30_000).toISOString());
+  const selector=sql.prepare('SELECT status,active_token,attempt_count,total_attempt_count FROM vocabulary_default_selection_readiness').get()!;
+  assert.equal(selector.status,'queued');assert.equal(selector.active_token,null);assert.equal(selector.attempt_count,1);assert.equal(selector.total_attempt_count,1);
 });

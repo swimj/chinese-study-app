@@ -425,3 +425,11 @@ success without provider calls or database writes.
 The learner feedback preview also supports Dismiss/Restore and Left/Right/D
 shortcuts. Verify dismissal advances to the next card, survives Refresh, and
 remains restorable under Dismissed; dropdowns retain their native keyboard input.
+
+The shared inventory/default-selection boundary is covered by
+`tests/vocabulary-unified-bootstrap.test.ts` and
+`tests/vocabulary-default-useful-selection.test.ts`: canonical identity across
+reflection/teaching order, deterministic import initialization, selector leases,
+operator precedence, model-empty attention and repeatable read-only batch plans.
+`tests/vocabulary-preparation.test.ts` covers completion prerequisites and preserving
+ready pools and retry budgets across authoring-contract revisions.

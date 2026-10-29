@@ -111,54 +111,48 @@ these contracts or by passing implementation tests.
 
 ### Canonical senses and useful selection
 
-A word has one canonical inventory of supported meanings and uses, including
-peripheral uses where linguistically real. Its persisted **default useful** sense
-selection is a separate editorial decision shared by teaching bootstrap and
-reflection. A review may explicitly override the selection, including selecting a
-peripheral use; exercise improvement trusts that selected use and assesses the
-exercise rather than deciding its popularity again.
+Three separate records answer different questions:
 
-An absent/null shared selection is unknown; it means neither every sense nor no
-senses. An explicitly saved empty selection selects none. Fresh inventory
-establishment makes both inventory and default selection in one shared call.
-Teaching bootstrap captures selected canonical IDs and versions, then enriches
-exactly those identities with examples. Later policy edits do not retarget that
-invocation or invalidate its immutable output.
+- The **canonical inventory** describes all supported meanings and uses, including
+  peripheral, literary, technical and bound-form senses. Each sense has a stable
+  identity and version.
+- The **default useful selection** chooses which senses normally deserve teaching
+  and mapped production practice. Null means unknown; an operator-saved `[]` means
+  explicitly none. A review can supply its own selection, including an uncommon
+  use, without changing the word defaults.
+- An **invocation scope** records the exact canonical targets that a content call
+  will address. Later changes to defaults do not retarget that call or invalidate
+  its result. Source, mapping and canonical-version changes still fence publication.
 
-Mapping examines the full active inventory and may identify an excluded sense.
-It improves a single mapped sense independently of serving defaults. A repertoire
-invocation captures explicit review sense IDs or seeds them from shared defaults;
-those IDs and their source are immutable invocation inputs. An explicit empty
-scope requests no generation and leaves the source unchanged. No serving-policy
-change implies exercise retirement.
+Unknown defaults initialize asynchronously when needed. Active senses imported
+from teaching establish their useful selection deterministically. Inventory-only
+words receive a selector decision over existing sense IDs; it cannot create or
+rewrite senses. A model recommendation of no useful senses preserves the inventory
+and remains unknown with an operator finding. It never becomes an operator's
+explicit none decision. A concurrent operator decision takes precedence.
 
-Reassessment copies an explicit review selection; inherited defaults remain
-inherited for the new invocation. Later review/default changes do not invalidate
-in-flight reflection, completed content generation, or content edit approval.
-Actual source/version, mapping and canonical sense changes still fence content
-work. Serving independently filters mapped exercises without rewriting them.
+| Consumer | Unknown defaults | Explicit none | Selected set |
+| --- | --- | --- | --- |
+| Mapped general production serving | Preserve exclusion-based eligibility | Filter all mapped production senses | Serve only active selected senses |
+| New automatic general practice demand | Record a durable prerequisite and initialize asynchronously | No new demand | Create demand when the immutable source intersects selection |
+| Teaching bootstrap | Initialize defaults before capturing enrichment targets | Operator disposition; no enrichment call | Enrich the captured canonical IDs |
+| Teaching/review components for a document | Use the document's canonical scope | Use the document's canonical scope | Use the document's canonical scope |
+| Repertoire invocation inheriting defaults | Initialize, then capture scope; unresolved findings remain visible | No generation or retirement | Author against the captured IDs |
+| Single-sense improvement | Map the full inventory and improve the mapped use | Same | Same |
 
-A review selection applies to that review and future reassessments; null inherits
-the shared defaults when a new invocation captures its scope. Unknown selection
-requires operator coverage review before repertoire generation; a mapped single
-sense supplies its own explicit scope. General preparation uses its immutable
-source document's full mapped canonical scope. Established useful policy with
-an intersecting source sense creates new automatic demand; existing queued work
-continues across policy edits. Teaching and review components likewise retain
-their document scope and package coherence. Canonical source, version and catalog
-changes still fence new publication.
+An explicit review override supplies repertoire scope directly. Reassessment copies
+that override; null inherits shared defaults when the new invocation captures its
+scope. Default or review edits do not invalidate completed content generation or
+ordinary content approval. General preparation likewise retains its immutable
+source document's full mapped canonical scope across policy edits. Prepared
+teaching packages preserve document/component coherence.
 
-Recognition, existing prepared teaching packages, unmapped fallback exercises and
-historical encounters preserve existing serving behavior. Existing legacy rich
-documents/inventories are not remapped or assigned defaults by ordinary runtime;
-valid existing source mappings remain usable without inventing a useful selection.
-A separately authorized legacy default-selection cutover is pending.
-
-Content proposals can retire unsuitable general production exercises without
-replacement. Operators can separately exclude existing senses from review
-coverage or shared word defaults. Exact-version approval preserves learner
-history and linguistic identity. Coverage is edited directly with scope-version checks. Content proposals retain
-source, mapping and catalog fences and never change sense policy.
+Unmapped fallback exercises, recognition and historical encounters retain their
+serving rules. Missing or stale document-to-sense mappings raise an operator finding
+before new generation; runtime does not invent reconciliation or remap old sources.
+Coverage changes never imply retirement. A proposal may separately retire a general
+production exercise, subject to exact source, mapping and catalog checks. Operators
+edit sense policy directly with scope-version checks; content proposals never change it.
 
 Exercise improvement trusts the mapped sense's necessity, including specialized
 or personalized uses, and judges fidelity of the exact lexical target rather

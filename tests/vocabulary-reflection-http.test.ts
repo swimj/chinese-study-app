@@ -30,6 +30,7 @@ beforeEach(()=>{
     INSERT INTO learners VALUES ('alice',NULL),('bob',NULL);INSERT INTO lexical_words VALUES ('a');`);
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0039_vocabulary_content.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0062_vocabulary_sense_coverage.sql',import.meta.url),'utf8'));
+  sql.exec(fs.readFileSync(new URL('../server/db/migrations/0064_vocabulary_default_useful_senses.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0041_vocabulary_learner_state.sql',import.meta.url),'utf8').split('-- Do not use the words view')[0]!);
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0047_vocabulary_dismissal.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0052_vocabulary_automatic_promotion_pause.sql',import.meta.url),'utf8'));
@@ -43,6 +44,11 @@ beforeEach(()=>{
   sql.exec(`INSERT INTO learner_words(learner_id,word_id,in_stash,added_at,mode,mode_changed_at) VALUES ('alice','a',1,'2026-01-01','practice','2026-01-01');
     INSERT INTO learner_word_schedules(learner_id,word_id,next_eligible_at,policy_version,scheduler_state_json) VALUES
     ('alice','a','2026-10-20T10:00:00.000Z','test','{"intervalHours":24,"easeFactor":2.5,"enabled":1,"cleanCoveredSessions":0}');`);
+  sql.exec(`CREATE TABLE vocabulary_practice_preparation(work_id TEXT PRIMARY KEY,word_id TEXT,source_content_id TEXT,generation_key TEXT NOT NULL DEFAULT 'fixture',attempt_count INTEGER NOT NULL DEFAULT 0,total_attempt_count INTEGER NOT NULL DEFAULT 0,invocation_id TEXT,last_error TEXT,status TEXT,active_token TEXT,expires_at TEXT,created_at TEXT NOT NULL DEFAULT '',updated_at TEXT,next_attempt_at TEXT NOT NULL DEFAULT '');
+    CREATE TABLE word_introduction_preparation(word_id TEXT PRIMARY KEY,content_id TEXT,package_id TEXT,preparation_epoch INTEGER DEFAULT 1,active_stage TEXT,lease_token TEXT,lease_expires_at TEXT);
+    CREATE TABLE word_content_documents(content_id TEXT PRIMARY KEY,word_id TEXT,publication_id TEXT,content_json TEXT);
+    CREATE TABLE shared_content_publications(publication_id TEXT PRIMARY KEY,publication_status TEXT);`);
+  sql.exec(fs.readFileSync(new URL('../server/db/migrations/0043_vocabulary_import.sql',import.meta.url),'utf8').split('CREATE TRIGGER')[0]!);
   createVocabularyContent(draft(),{kind:'operator',id:'editor'});
   const completion=alice(()=>{
     createVocabularySession({sessionId:'session',words:[{wordId:'a',mode:'practice'}]},at);
@@ -189,8 +195,12 @@ test('feedback attention counts only own unread messages and independent feedbac
 });
 
 test('practice preparation diagnostics and explicit retry require allowlisted authority and audit the actor',()=>{
-  sql.exec(`CREATE TABLE vocabulary_practice_preparation(work_id TEXT PRIMARY KEY,word_id TEXT,source_content_id TEXT,attempt_count INTEGER,invocation_id TEXT,last_error TEXT,status TEXT,updated_at TEXT,next_attempt_at TEXT);
-    INSERT INTO vocabulary_practice_preparation VALUES ('work','a','source',3,'invocation','interrupted_unknown_outcome','failed','2026-10-17','2026-10-17');`);
+  const sense=createVocabularySense({wordId:'a',description:'A written character'},{kind:'operator',id:'editor'});
+  const source={schemaVersion:1,id:'source',word:{wordId:'a',hanzi:'字',traditional:null,pinyin:'zì'},uses:[{id:'u1',label:'A written character',notes:[],exampleIds:['e1']}],examples:[{id:'e1',text:'字',translation:'Character',pronunciation:null}]};
+  sql.prepare("INSERT INTO word_content_documents VALUES ('source','a','publication',?)").run(JSON.stringify(source));
+  sql.exec("INSERT INTO shared_content_publications VALUES ('publication','available');INSERT INTO word_introduction_preparation(word_id,content_id) VALUES ('a','source')");
+  sql.prepare('INSERT INTO legacy_sense_imports VALUES (?,?,?,?)').run('source','u1',sense.senseId,sense.version);
+  sql.exec("INSERT INTO vocabulary_practice_preparation(work_id,word_id,source_content_id,attempt_count,invocation_id,last_error,status,updated_at,next_attempt_at) VALUES ('work','a','source',3,'invocation','interrupted_unknown_outcome','failed','2026-10-17','2026-10-17')");
   const path=`${base}/practice-preparation`;
   process.env.APP_OPERATOR_CLERK_USER_IDS='someone-else';
   assert.equal(call('get',`${path}/failures`).status,403);
@@ -463,4 +473,17 @@ test('retirement HTTP contract preserves source identity and rejects policy meta
   const approval=call('post',`${base}/proposals/:id/approve`,{params:{id},body:{expectedVersion:1}});assert.equal(approval.status,200);
   const applied=call('post',`${base}/proposals/:id/apply`,{params:{id},body:{expectedVersion:1,reviewId:approval.body.reviewId,idempotencyKey:'retire-http'}});
   assert.equal(applied.status,200);assert.equal(getVocabularyContentForMaintenance('one')!.availability,'retired');assert.equal(getVocabularyContentForMaintenance('one')!.version,2);
+});
+
+test('default-selection finding is read-only in workspace and review batch and resolves with explicit none',()=>{
+  sql.prepare("INSERT INTO vocabulary_default_selection_readiness(word_id,status,expected_catalog_version,workflow_id,recommendation_json,last_error,created_at,updated_at) VALUES ('a','failed',0,'inventory','{\"senseIds\":[]}',?,?,?)").run('The model selected no useful senses; operator selection is required.',at,at);
+  const created=call('post',`${base}/proposals`,{body:{...proposal(),caseId}});assert.equal(created.status,200);
+  const before=sql.prepare('SELECT total_changes() n').get()!.n;
+  const workspace=call('get',`${base}/cases/:id`,{params:{id:caseId}});assert.equal(workspace.status,200);
+  assert.equal((workspace.body.defaultSelectionFinding as {status:string}).status,'needs_operator');
+  const batch=listVocabularyProposalReviewBatch('editor');assert.equal(batch.items[0]!.defaultSelectionFinding?.status,'needs_operator');
+  assert.equal(sql.prepare('SELECT total_changes() n').get()!.n,before);
+  const saved=call('put',`${base}/words/:id/sense-coverage`,{params:{id:'a'},body:{expectedVersion:0,includedSenseIds:[]}});assert.equal(saved.status,200);
+  assert.equal(call('get',`${base}/cases/:id`,{params:{id:caseId}}).body.defaultSelectionFinding,null);
+  assert.equal(listVocabularyProposalReviewBatch('editor').items[0]!.defaultSelectionFinding,null);
 });

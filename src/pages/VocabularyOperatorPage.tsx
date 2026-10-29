@@ -26,7 +26,7 @@ function diagnosisSummary(value:VocabularyJson|undefined):string {
 const proposalTitle=(proposal:VocabularyContentProposal)=>Array.from(new Set(proposal.operations.flatMap(operation=>operation.content.kind==='exercise'?operation.content.answers.map(answer=>answer.acceptedForms[0]).filter(Boolean):[]))).join(' · ')||'Teaching content';
 const kinds={exercise_improvement:'Exercise issues',teaching_review:'Teaching inbox',learner_feedback:'Feedback cases'} as const;
 const labels={create:'Add another item',update_existing:'Update existing item',replace:'Replace with new item',retire:'Retire exercise'} as const;
-const admissionLabels={needs_coverage:'Useful senses need selection',no_senses_requested:'No senses requested for generation',single_sense:'Intended sense identified',laundry_list:'Multiple senses: fresh repertoire',unmappable:'Intended sense could not be established',inventory_gap:'Possible gap in the sense inventory'} as const;
+const admissionLabels={needs_coverage:'Select useful senses before generation',no_senses_requested:'No senses requested for generation',single_sense:'Intended sense identified',laundry_list:'Multiple senses: fresh repertoire',unmappable:'Intended sense could not be established',inventory_gap:'Possible gap in the sense inventory'} as const;
 const pretty=(value:unknown)=>JSON.stringify(value,null,2);
 const message=(error:unknown)=>error instanceof Error?error.message:'The request could not finish. Refresh and try again.';
 function draftOf(value:VocabularyContentProposal):VocabularyProposalDraft{return {caseId:value.caseId??undefined,operations:value.operations,rationale:value.rationale,bases:value.bases};}
@@ -105,7 +105,7 @@ export function VocabularyOperatorPage({api=vocabularyOperatorApi,previewOnly=fa
   const dirty=draftText!==savedText;
   interacting.current=busy||dirty;
   const promotionNeedsAttention=workspace?.pureCuePromotion?.outcome==='needs_operator';
-  const admissionNeedsAttention=workspace?.admission?.outcome==='unmappable'||workspace?.admission?.outcome==='inventory_gap';
+  const admissionNeedsAttention=workspace?.admission?.outcome==='unmappable'||workspace?.admission?.outcome==='inventory_gap'||workspace?.admission?.outcome==='needs_coverage';
   let draft:VocabularyProposalDraft|null=null;try{const value:unknown=JSON.parse(draftText);if(editableDraft(value))draft=value;}catch{/* Keep invalid editing text intact. */}
   const selectedApproval=selected?approvalRequests.find(item=>item.proposalId===selected.proposalId&&item.expectedVersion===selected.version&&(item.status==='queued'||item.status==='running')):undefined;
   const editable=!selectedApproval&&(selected===null||!['applied','closed'].includes(selected.status));

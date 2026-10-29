@@ -38,7 +38,11 @@ export function vocabularyRevealSnapshot(content: VocabularyContent, options: {
   const material = object(content.body);
   const source = object(material.source);
   const mappedSource = object(object(revealWords[0]?.sense?.description).source);
-  const pinnedId = source.bootstrapContentId ?? mappedSource.contentId;
+  const senseId=revealWords[0]?.sense?.senseId;
+  const canonicalSource=senseId?getDb().prepare(`SELECT m.source_content_id FROM legacy_sense_imports m
+    JOIN word_introduction_preparation prepared ON prepared.content_id=m.source_content_id
+    WHERE prepared.word_id=? AND m.sense_id=?`).get(wordId,senseId) as {source_content_id:string}|undefined:undefined;
+  const pinnedId = source.bootstrapContentId ?? canonicalSource?.source_content_id ?? mappedSource.contentId;
   const sourceMaterial = typeof pinnedId === 'string' ? { bootstrapContentId: pinnedId }
     : options.fallbackIntroduction?.(wordId);
   const raw = sourceMaterial === undefined ? undefined : vocabularyTeachingSource(sourceMaterial);
@@ -47,8 +51,10 @@ export function vocabularyRevealSnapshot(content: VocabularyContent, options: {
   if (wordReference.word.wordId !== wordId) throw new Error('Reveal source belongs to another word');
   if (revealWords[0]?.sense) {
     // A daily example must not imply that another source use is the mapped sense.
-    if (mappedSource.contentId !== wordReference.id || typeof mappedSource.useId !== 'string') return { revealWords, wordReference };
-    const index = wordReference.uses.findIndex(use => use.id === mappedSource.useId);
+    const explicit=getDb().prepare('SELECT source_use_id FROM legacy_sense_imports WHERE source_content_id=? AND sense_id=?').get(wordReference.id,senseId!) as {source_use_id:string}|undefined;
+    const useId=explicit?.source_use_id??(mappedSource.contentId===wordReference.id&&typeof mappedSource.useId==='string'?mappedSource.useId:null);
+    if(useId===null)return { revealWords,wordReference };
+    const index = wordReference.uses.findIndex(use => use.id === useId);
     if (index < 0) throw new Error('Mapped reveal source use is missing');
     return { revealWords,wordReference,bootstrapReveal: selectSequentialBootstrapReveal(wordReference,index) };
   }

@@ -12,7 +12,9 @@ beforeEach(() => {
   db.exec(`CREATE TABLE lexical_words(id TEXT,hanzi TEXT,traditional TEXT,pinyin TEXT,meaning TEXT);
     INSERT INTO lexical_words VALUES('a','馋',NULL,'chán','greedy; gluttonous'),('b','贪吃',NULL,'tān chī','gluttonous');
     CREATE TABLE senses(sense_id TEXT,word_id TEXT,description_json TEXT,status TEXT,version INTEGER,created_at TEXT,updated_at TEXT);
-    CREATE TABLE word_content_documents(content_id TEXT,content_json TEXT);`);
+    CREATE TABLE word_content_documents(content_id TEXT,content_json TEXT);
+    CREATE TABLE word_introduction_preparation(word_id TEXT,content_id TEXT);
+    CREATE TABLE legacy_sense_imports(source_content_id TEXT,source_use_id TEXT,sense_id TEXT,imported_sense_version INTEGER);`);
 });
 afterEach(() => { setDb(null); db.close(); });
 function exercise(overrides: Partial<VocabularyContent> = {}): VocabularyContent {

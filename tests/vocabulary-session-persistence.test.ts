@@ -6,7 +6,8 @@ import path from 'node:path';
 import { afterEach, beforeEach, test } from 'node:test';
 import { setDb } from '../server/db/connection.ts';
 import { runWithLearnerId } from '../server/db/learner-context.ts';
-import { createVocabularyContent } from '../server/db/vocabulary-content.ts';
+import { writeVocabularyDefaultUsefulSenses } from '../server/db/vocabulary-sense-coverage.ts';
+import { createVocabularyContent,createVocabularySense } from '../server/db/vocabulary-content.ts';
 import { changeVocabularyMode, getVocabularyLearnerWord, getVocabularyWordSchedule } from '../server/db/vocabulary-learners.ts';
 import { createVocabularySession, appendVocabularySessionActions, getVocabularySession, stageVocabularySessionCompletion,
   cancelVocabularySessionCompletion, closeVocabularySessionCompletion, listDueVocabularySessionCompletions } from '../server/db/vocabulary-sessions.ts';
@@ -38,11 +39,12 @@ beforeEach(() => {
     INSERT INTO lexical_words(id,created_at) VALUES ('a','2026-01-01T00:00:00.000Z'),('b','2026-01-01T00:00:00.000Z'),('new','2026-01-01T00:00:00.000Z');
     INSERT INTO learner_word_state VALUES ('alice','a','learning',2,NULL),('alice','b','review',0,NULL),('alice','new','unstudied',0,NULL);
   `);
-  for (const name of ['0062_vocabulary_sense_coverage.sql','0039_vocabulary_content.sql','0041_vocabulary_learner_state.sql','0042_vocabulary_sessions.sql','0047_vocabulary_dismissal.sql','0052_vocabulary_automatic_promotion_pause.sql','0023_session_debrief.sql','0048_vocabulary_connections.sql']) {
+  for (const name of ['0062_vocabulary_sense_coverage.sql','0064_vocabulary_default_useful_senses.sql','0039_vocabulary_content.sql','0041_vocabulary_learner_state.sql','0042_vocabulary_sessions.sql','0047_vocabulary_dismissal.sql','0052_vocabulary_automatic_promotion_pause.sql','0023_session_debrief.sql','0048_vocabulary_connections.sql']) {
     sql.exec(fs.readFileSync(new URL(`../server/db/migrations/${name}`,import.meta.url),'utf8'));
   }
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0045_vocabulary_provenance_links.sql',import.meta.url),'utf8').split('CREATE TABLE vocabulary_practice_preparation')[1]!.replace(/^/, 'CREATE TABLE vocabulary_practice_preparation'));
   sql.exec("ALTER TABLE vocabulary_practice_preparation ADD COLUMN next_attempt_at TEXT NOT NULL DEFAULT ''; ALTER TABLE vocabulary_practice_preparation ADD COLUMN total_attempt_count INTEGER NOT NULL DEFAULT 0;");
+  sql.exec(fs.readFileSync(new URL('../server/db/migrations/0043_vocabulary_import.sql',import.meta.url),'utf8').split('CREATE TRIGGER')[0]!);
   contents = {};
   alice(() => {
     for (const [id, word, skill, role, type] of [
@@ -203,6 +205,9 @@ test('teaching requires explicit completion and recognition self-assessment reta
   sql.prepare("INSERT INTO word_introduction_preparation(word_id,content_id) VALUES ('new','bootstrap-new')").run();
   sql.prepare("INSERT INTO shared_content_publications VALUES ('published','available')").run();
   sql.prepare("INSERT INTO word_content_documents VALUES ('bootstrap-new','new','published',?)").run(JSON.stringify(bootstrap));
+  const sense=createVocabularySense({senseId:'new-character',wordId:'new',description:{label:'character',notes:[]}},{kind:'service',id:'session-fixture'});
+  sql.prepare('INSERT INTO legacy_sense_imports VALUES (?,?,?,?)').run(bootstrap.id,'u1',sense.senseId,sense.version);
+  writeVocabularyDefaultUsefulSenses('new',0,[sense.senseId],{kind:'service',id:'session-fixture'});
   createVocabularySession(context(),now);
   const teaching: Input[]=[present('intro','new')];
   for(let index=0;index<3;index++)for(const contentId of ['recognize','produce']) {
