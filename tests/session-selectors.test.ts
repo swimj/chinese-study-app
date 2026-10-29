@@ -2,13 +2,41 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
   getPersonalNotesEditorTarget,
+  getActiveAnswerText,
   getActivePrompt,
+  getCompletedReinforcementStreak,
+  getDisplayedReinforcementStreak,
   getStudySessionPanelView,
-  hasServedProductionCueSupplement,
+  hasServedProductionReveal,
+  isPureCueReviewInReinforcement,
 } from '../src/features/session/session-selectors.ts';
 import type { Word } from '../src/types.ts';
 
 describe('session selectors', () => {
+  test('shows the final successful reinforcement count only when the session completes on that rating', () => {
+    assert.equal(getCompletedReinforcementStreak({
+      sessionCompleted: true, reviewInReinforcement: true, rating: 'good', reinforcementStreak: 2,
+    }), 3);
+    assert.equal(getCompletedReinforcementStreak({
+      sessionCompleted: true, reviewInReinforcement: true, rating: null, reinforcementStreak: 2,
+    }), null);
+    assert.equal(getCompletedReinforcementStreak({
+      sessionCompleted: false, reviewInReinforcement: true, rating: 'good', reinforcementStreak: 1,
+    }), null);
+  });
+
+  test('retains the third success on the completion card while skips keep their actual count', () => {
+    assert.equal(getDisplayedReinforcementStreak({
+      completionGate: true, activeReinforcementStreak: 2, completedReinforcementStreak: 3,
+    }), 3);
+    assert.equal(getDisplayedReinforcementStreak({
+      completionGate: true, activeReinforcementStreak: 2, completedReinforcementStreak: null,
+    }), 2);
+    assert.equal(getDisplayedReinforcementStreak({
+      completionGate: false, activeReinforcementStreak: 1, completedReinforcementStreak: 3,
+    }), 1);
+  });
+
   test('targets the frozen production card for notes while awaiting next after a wrong answer', () => {
     const target = getPersonalNotesEditorTarget({
       word: createWord({ id: 'next-card', personalNotes: 'next card notes' }),
@@ -107,6 +135,67 @@ describe('session selectors', () => {
     );
   });
 
+  test('formats recognition characters and leaves served cue text stored', () => {
+    const word = {
+      ...createWord({ id: 'gate', personalNotes: '' }),
+      hanzi: '门',
+      traditional: '門',
+      meaning: 'door',
+      meanings: ['door'],
+    };
+    const recognition = {
+      sessionActionId: 'learning/gate/recognition',
+      actionKind: 'recognition' as const,
+      targetWordId: word.id,
+      sampledSkillIds: ['recognition' as const],
+      contentRef: null,
+      intervalHours: 0,
+      word,
+      contrastSelection: null,
+      production: null,
+    };
+
+    assert.equal(getActivePrompt({
+      item: recognition,
+      word,
+      promptDisplayedMeanings: [],
+      allMeanings: ['door'],
+      characterPresentation: 'traditional',
+    }), '門');
+    assert.equal(getActivePrompt({
+      item: recognition,
+      word,
+      promptDisplayedMeanings: [],
+      allMeanings: ['door'],
+      characterPresentation: 'both',
+    }), '门 / 門');
+    assert.equal(getActiveAnswerText({
+      item: recognition,
+      word,
+      allMeanings: ['door'],
+      characterPresentation: 'both',
+    }), 'door');
+
+    const production = {
+      ...recognition,
+      actionKind: 'production' as const,
+      sampledSkillIds: ['production' as const],
+    };
+    assert.equal(getActivePrompt({
+      item: production,
+      word,
+      promptDisplayedMeanings: ['door'],
+      allMeanings: ['door'],
+      characterPresentation: 'traditional',
+    }), 'door');
+    assert.equal(getActiveAnswerText({
+      item: production,
+      word,
+      allMeanings: ['door'],
+      characterPresentation: 'traditional',
+    }), '門');
+  });
+
   test('uses the frozen production cue instead of live word meanings', () => {
     const word = createWord({ id: 'cue-word', personalNotes: '' });
     assert.equal(getActivePrompt({
@@ -130,7 +219,6 @@ describe('session selectors', () => {
           text: 'The exact served cue',
           acceptedAnswers: [{ wordId: 'cue-word', hanzi: '字', traditional: null }],
           supplement: null,
-          recheckDemandId: null,
         },
       },
       word,
@@ -140,17 +228,16 @@ describe('session selectors', () => {
   });
 
   test('detects a served production cue supplement snapshot', () => {
-    assert.equal(hasServedProductionCueSupplement(null), false);
-    assert.equal(hasServedProductionCueSupplement({
+    assert.equal(hasServedProductionReveal(null), false);
+    assert.equal(hasServedProductionReveal({
       taskId: 'production-task:cue-word:default_production',
       cueId: 'cue-1',
       cueType: 'definition_gloss',
       text: 'to shield',
       acceptedAnswers: [{ wordId: 'cue-word', hanzi: '包庇', traditional: null }],
       supplement: null,
-      recheckDemandId: null,
     }), false);
-    assert.equal(hasServedProductionCueSupplement({
+    assert.equal(hasServedProductionReveal({
       taskId: 'production-task:cue-word:default_production',
       cueId: 'cue-1',
       cueType: 'definition_gloss',
@@ -162,8 +249,24 @@ describe('session selectors', () => {
         exampleSentence: '他明知儿子犯了罪，却包庇了他。',
         exampleTranslation: 'He knew his son had committed a crime but shielded him.',
       },
-      recheckDemandId: null,
     }), true);
+  });
+
+  test('bootstrap reveal gives definition production the Continue stage without admitting other cue types', () => {
+    const production = {
+      taskId: 'task', cueId: null, cueType: 'definition_gloss' as const, text: 'to learn',
+      acceptedAnswers: [{ wordId: 'word', hanzi: '学习', traditional: null }], supplement: null,
+      bootstrapReveal: { contentId: 'content', useId: 'use', exampleId: 'example',
+        englishFrame: 'Learn a language', exampleSentence: '学习中文。', exampleTranslation: 'Study Chinese.' },
+    };
+    assert.equal(hasServedProductionReveal(production), true);
+    assert.equal(hasServedProductionReveal({ ...production, cueType: 'minimal_context' }), false);
+    assert.equal(hasServedProductionReveal({ ...production, bootstrapReveal: undefined }), false);
+  });
+
+  test('treats a lapsed pure cue as reinforcement without a word anchor', () => {
+    assert.equal(isPureCueReviewInReinforcement(0), false);
+    assert.equal(isPureCueReviewInReinforcement(1), true);
   });
 });
 

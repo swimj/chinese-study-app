@@ -1,10 +1,17 @@
+import { formatRehearsalPrompt } from '../rehearsal-presentation';
+import {
+  DEFAULT_CHARACTER_PRESENTATION,
+  formatCardCharacters,
+  type CharacterPresentation,
+} from '../../domain/card-characters';
 import type { SessionStudyItem } from '../../domain/study-actions';
-import type { Word, WordMeaning } from '../../types';
+import type { ReviewRating, Word, WordMeaning } from '../../types';
 
-export function hasServedProductionCueSupplement(
+export function hasServedProductionReveal(
   production: SessionStudyItem['production'] | null | undefined,
 ) {
-  return production?.supplement != null;
+  return production?.cueType === 'definition_gloss'
+    && (production.bootstrapReveal != null || production.supplement != null);
 }
 
 export function getActiveWordPersonalNotes({
@@ -55,6 +62,7 @@ export type StudySessionPanelView =
   | 'not_started'
   | 'completed'
   | 'frozen_production'
+  | 'frozen_pure_cue'
   | 'frozen_contrast'
   | 'unstudied_intro'
   | 'empty'
@@ -65,9 +73,12 @@ export function getStudySessionPanelView({
   sessionCompletedWithSummary,
   productionAwaitingNext,
   frozenProductionCardPresent,
+  pureCueAwaitingNext = false,
+  frozenPureCueCardPresent = false,
   contrastAwaitingNext,
   frozenContrastCardPresent,
   activeItemPresent,
+  activePureCuePresent = false,
   activeWordStatus,
   activeUnstudiedIntroComplete,
 }: {
@@ -75,9 +86,12 @@ export function getStudySessionPanelView({
   sessionCompletedWithSummary: boolean;
   productionAwaitingNext: boolean;
   frozenProductionCardPresent: boolean;
+  pureCueAwaitingNext?: boolean;
+  frozenPureCueCardPresent?: boolean;
   contrastAwaitingNext: boolean;
   frozenContrastCardPresent: boolean;
   activeItemPresent: boolean;
+  activePureCuePresent?: boolean;
   activeWordStatus: Word['status'] | null;
   activeUnstudiedIntroComplete: boolean;
 }): StudySessionPanelView {
@@ -87,6 +101,10 @@ export function getStudySessionPanelView({
 
   if (productionAwaitingNext && frozenProductionCardPresent) {
     return 'frozen_production';
+  }
+
+  if (pureCueAwaitingNext && frozenPureCueCardPresent) {
+    return 'frozen_pure_cue';
   }
 
   if (contrastAwaitingNext && frozenContrastCardPresent) {
@@ -101,7 +119,7 @@ export function getStudySessionPanelView({
     return 'unstudied_intro';
   }
 
-  if (!activeItemPresent || activeWordStatus === null) {
+  if (!activePureCuePresent && (!activeItemPresent || activeWordStatus === null)) {
     return 'empty';
   }
 
@@ -146,11 +164,13 @@ export function getActivePrompt({
   word,
   promptDisplayedMeanings,
   allMeanings,
+  characterPresentation = DEFAULT_CHARACTER_PRESENTATION,
 }: {
   item: SessionStudyItem | null;
   word: Word | null;
   promptDisplayedMeanings: string[];
   allMeanings: string[];
+  characterPresentation?: CharacterPresentation;
 }) {
   if (!item || !word) {
     return null;
@@ -160,36 +180,44 @@ export function getActivePrompt({
     return item.contrastSelection?.prompt.promptText ?? null;
   }
 
+  if (item.actionKind === 'production' && item.rehearsal) {
+    return formatRehearsalPrompt(item.rehearsal);
+  }
+
   if (item.actionKind === 'production' && item.production) {
     return item.production.text;
   }
 
   return item.actionKind === 'recognition'
-    ? word.hanzi
-    : promptDisplayedMeanings[0] ?? allMeanings[0] ?? word.meaning;
+    ? formatCardCharacters(word, characterPresentation)
+    : promptDisplayedMeanings[0] ?? item.wordContent?.uses[0]?.label ?? allMeanings[0] ?? word.meaning;
 }
 
 export function getActiveAnswerText({
   item,
   word,
   allMeanings,
+  characterPresentation = DEFAULT_CHARACTER_PRESENTATION,
 }: {
   item: SessionStudyItem | null;
   word: Word | null;
   allMeanings: string[];
+  characterPresentation?: CharacterPresentation;
 }) {
   if (!item || !word) {
     return null;
   }
 
   if (item.actionKind === 'contrast_selection') {
-    return item.contrastSelection?.choices.find((choice) => choice.word.id === item.contrastSelection?.promptTargetWordId)
-      ?.word.hanzi ?? null;
+    const target = item.contrastSelection?.choices.find((choice) => (
+      choice.word.id === item.contrastSelection?.promptTargetWordId
+    ));
+    return target ? formatCardCharacters(target.word, characterPresentation) : null;
   }
 
   return item.actionKind === 'recognition'
-    ? allMeanings[0] ?? word.meaning
-    : word.hanzi;
+    ? item.wordContent?.uses[0]?.label ?? allMeanings[0] ?? word.meaning
+    : formatCardCharacters(word, characterPresentation);
 }
 
 export function getActiveAnswerPinyin({
@@ -219,6 +247,40 @@ export function isReviewInReinforcement({
   failureCount: number;
 }) {
   return word?.status === 'review' && failureCount > 0;
+}
+
+export function isPureCueReviewInReinforcement(failureCount: number) {
+  return failureCount > 0;
+}
+
+export function getCompletedReinforcementStreak({
+  sessionCompleted,
+  reviewInReinforcement,
+  rating,
+  reinforcementStreak,
+}: {
+  sessionCompleted: boolean;
+  reviewInReinforcement: boolean;
+  rating: ReviewRating | null;
+  reinforcementStreak: number;
+}): number | null {
+  return sessionCompleted && reviewInReinforcement && rating !== null && rating !== 'forgot'
+    ? reinforcementStreak + 1
+    : null;
+}
+
+export function getDisplayedReinforcementStreak({
+  completionGate,
+  activeReinforcementStreak,
+  completedReinforcementStreak,
+}: {
+  completionGate: boolean;
+  activeReinforcementStreak: number;
+  completedReinforcementStreak: number | null;
+}): number {
+  return completionGate && completedReinforcementStreak !== null
+    ? completedReinforcementStreak
+    : activeReinforcementStreak;
 }
 
 export function getActiveReviewState({

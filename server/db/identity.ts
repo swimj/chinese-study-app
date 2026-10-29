@@ -1,3 +1,4 @@
+import { DEFAULT_DAILY_NEW_WORD_LIMIT } from './types.ts';
 import { getDb } from './connection.ts';
 import { requireLearnerId } from './learner-context.ts';
 import { randomUUID } from 'node:crypto';
@@ -71,11 +72,12 @@ export function bootstrapLearner({
 
   getDb().exec('BEGIN');
   try {
-    getDb().prepare(`
+    const inserted = getDb().prepare(`
       INSERT INTO learners (learner_id, display_name, created_at, disabled_at)
       VALUES (?, ?, ?, NULL)
       ON CONFLICT(learner_id) DO NOTHING
     `).run(normalizedLearnerId, displayName.trim() || normalizedLearnerId, createdAt);
+    if (inserted.changes > 0) initializeNewLearnerAdmissionSource(normalizedLearnerId, createdAt);
     getDb().prepare(`
       INSERT INTO learner_auth_mappings (provider, provider_subject, learner_id, created_at)
       VALUES (?, ?, ?, ?)
@@ -203,8 +205,9 @@ export function resolveOrBootstrapExternalLearner({
     `).run(normalizedProvider, normalizedSubject, learnerId, createdAt);
     getDb().prepare(`
       INSERT INTO learner_settings (learner_id, setting_key, value_json, updated_at)
-      VALUES (?, 'daily_new_word_limit', '10', ?)
-    `).run(learnerId, createdAt);
+      VALUES (?, 'daily_new_word_limit', ?, ?)
+    `).run(learnerId, JSON.stringify(DEFAULT_DAILY_NEW_WORD_LIMIT), createdAt);
+    initializeNewLearnerAdmissionSource(learnerId, createdAt);
     getDb().exec('COMMIT');
     return learnerId;
   } catch (error) {
@@ -294,4 +297,12 @@ export function setLearnerDisabled(learnerId: string, disabled: boolean, at = ne
   if (result.changes !== 1) {
     throw new Error(`Learner "${learnerId}" does not exist.`);
   }
+}
+
+/** Persist only at creation so existing learners keep their saved or legacy policy. */
+function initializeNewLearnerAdmissionSource(learnerId: string, createdAt: string): void {
+  getDb().prepare(`
+    INSERT INTO learner_settings (learner_id, setting_key, value_json, updated_at)
+    VALUES (?, 'unstudied_admission_source', '"stash_only"', ?)
+  `).run(learnerId, createdAt);
 }

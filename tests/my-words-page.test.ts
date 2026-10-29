@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { test } from 'node:test';
-import { MyWordsPage, type MyWordsPageProps } from '../src/pages/MyWordsPage.tsx';
+import { MyWordsPage, WordBrowserPage, type MyWordsPageProps } from '../src/pages/MyWordsPage.tsx';
 import {
   ALL_MY_WORDS_STATUSES,
   myWordsRecentLapseSinceDay,
@@ -35,6 +35,7 @@ test('waiting personal words show their stage and full details without invented 
   assert.match(markup, /this day/);
   assert.match(markup, /From a book/);
   assert.match(markup, /aria-controls="my-word-detail"/);
+  assert.doesNotMatch(markup, /Prepare introduction/);
   assert.doesNotMatch(markup, /First studied|Last added|Jan 2/);
 });
 
@@ -62,18 +63,18 @@ test('stage chips sit beside Recent lapses; Recently studied disables unstudied 
   const personal = render({});
   assert.match(personal, /aria-label="Word stage"/);
   assert.match(personal, />Not yet studied</);
-  assert.match(personal, />Learning</);
+  assert.match(personal, />Practice</);
   assert.match(personal, />In review</);
   assert.match(personal, />Recent lapses</);
   assert.match(personal, /aria-pressed="false"[^>]*>Not yet studied</);
-  assert.match(personal, /aria-pressed="false"[^>]*>Learning</);
+  assert.match(personal, /aria-pressed="false"[^>]*>Practice</);
   assert.match(personal, /aria-pressed="false"[^>]*>In review</);
   assert.doesNotMatch(personal, /disabled=""[^>]*>Not yet studied</);
   const recent = render({ view: 'recent' });
   assert.match(recent, /disabled=""[^>]*>Not yet studied</);
   assert.doesNotMatch(recent, /disabled=""[^>]*>Recent lapses</);
   assert.match(render({ recentLapses: true }), /aria-pressed="true"[^>]*>Recent lapses</);
-  assert.match(render({ statuses: ['learning'] }), /aria-pressed="true"[^>]*>Learning</);
+  assert.match(render({ statuses: ['learning'] }), /aria-pressed="true"[^>]*>Practice</);
 });
 
 test('current deck is available only with placement and includes unseen words in its detail', () => {
@@ -114,4 +115,18 @@ test('status chip helpers start from implicit all, isolate on first click, and d
   assert.deepEqual(normalizeMyWordsStatuses('recent', ['unstudied']), ['learning', 'review']);
   assert.deepEqual(normalizeMyWordsStatuses('personal', ['unstudied']), ['unstudied']);
   assert.equal(myWordsRecentLapseSinceDay('2026-09-16'), '2026-09-14');
+});
+
+test('vocabulary mode adapter retains the existing collection, detail, missing-date and pagination shell', () => {
+  const stages = [{status:'unstudied',label:'Not yet studied'}, {status:'solidify',label:'Solidify'},
+    {status:'practice',label:'Practice'}, {status:'maintain',label:'Maintain'}] as const;
+  const markup=renderToStaticMarkup(createElement(WordBrowserPage, {
+    view:'recent', query:'', statuses:[], recentLapses:false, stages,
+    words:[{...waiting,word:{...waiting.word,status:'maintain'}}], currentDeck:{label:'HSK 1'}, selectedId:'word',
+    loading:false,error:null,hasMore:true,total:51,scrollTop:0,
+    onViewChange:()=>{},onQueryChange:()=>{},onToggleStatus:()=>{},onToggleRecentLapses:()=>{},onSelect:()=>{},
+    onLoadMore:()=>{},onRetry:()=>{},onScroll:()=>{},renderWordActions:()=>createElement('button',null,'Refresh'),
+  }));
+  for(const text of ['Personally added','Current deck','Recent lapses','Maintain','this day','From a book','Study date not recorded','Not recorded','Load more words','Refresh']) assert.ok(markup.includes(text),text);
+  assert.doesNotMatch(markup,/In review|mastered/i);
 });

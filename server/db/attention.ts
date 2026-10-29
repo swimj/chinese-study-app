@@ -1,5 +1,9 @@
+import { getLatestWhatsNewPublicationSequence } from './whats-new.ts';
+import { WhatsNewInputError } from '../../src/domain/whats-new.ts';
+import { requireLearnerId } from './learner-context.ts';
 import { getDb } from './connection.ts';
 import { getLearnerParam, upsertLearnerParam } from './identity.ts';
+import { isCurrentReflectionArtifactContract } from '../../src/domain/reflection-contracts.ts';
 
 const WHATS_NEW_SEEN_THROUGH_KEY = 'whats_new_seen_through_date';
 const FAILED_REFLECTION_RUNS_SEEN_THROUGH_KEY = 'failed_reflection_runs_seen_through_at';
@@ -11,18 +15,23 @@ export type ReflectionInboxSeenTarget =
 
 export type AttentionBadges = {
   reflectionUnseenCount: number;
+  reflectionGenerating: boolean;
   failedReflectionRunIds: string[];
   failedReflectionRunsSeenThroughAt: string | null;
   whatsNewSeenThroughDate: string | null;
+  whatsNewSeenThroughSequence: number | null;
 };
 
 export function getAttentionBadges(): AttentionBadges {
   const failedReflectionRunsSeenThroughAt = getFailedReflectionRunsSeenThroughAt();
   return {
     reflectionUnseenCount: countUnseenReflectionHelpItems(),
+    reflectionGenerating: Boolean(getDb().prepare(`SELECT 1 FROM learner_session_reflection_dispatches
+      WHERE learner_id = ? AND status IN ('queued','running') LIMIT 1`).get(requireLearnerId())),
     failedReflectionRunIds: listFailedReflectionRunIds(failedReflectionRunsSeenThroughAt),
     failedReflectionRunsSeenThroughAt,
     whatsNewSeenThroughDate: getWhatsNewSeenThroughDate(),
+    whatsNewSeenThroughSequence: getWhatsNewSeenThroughSequence(),
   };
 }
 
@@ -74,16 +83,19 @@ export function markFailedReflectionRunsSeen(
 }
 
 export function countUnseenReflectionHelpItems(): number {
-  const row = getDb().prepare(`
-    SELECT
-      (
-        SELECT COUNT(*)
+  const rows = getDb().prepare(`
+    SELECT artifacts.reflection_flow_version AS reflectionFlowVersion,
+      artifacts.bundle_schema_version AS bundleSchemaVersion,
+      artifacts.result_schema_version AS resultSchemaVersion,
+      artifacts.prompt_version AS promptVersion, COUNT(*) AS count
+    FROM (
+        SELECT artifact_id
         FROM reflection_proposal_reviews
         WHERE disposition = 'pending' AND inbox_seen_at IS NULL
-      ) + (
-        SELECT COUNT(*)
+        UNION ALL
+        SELECT inbox.artifact_id
         FROM reflection_help_inbox AS inbox
-        WHERE inbox.inbox_seen_at IS NULL
+        WHERE inbox.inbox_seen_at IS NULL AND inbox.disposition = 'open'
           AND NOT EXISTS (
             SELECT 1
             FROM reflection_proposal_reviews AS review
@@ -91,9 +103,19 @@ export function countUnseenReflectionHelpItems(): number {
               AND review.item_id = inbox.item_id
               AND review.disposition = 'pending'
           )
-      ) AS count
-  `).get() as { count: number };
-  return row.count;
+      ) AS unseen
+    JOIN reflection_artifacts AS artifacts ON artifacts.artifact_id = unseen.artifact_id
+    GROUP BY artifacts.artifact_id
+  `).all() as Array<{
+    reflectionFlowVersion: string;
+    bundleSchemaVersion: string;
+    resultSchemaVersion: string;
+    promptVersion: string;
+    count: number;
+  }>;
+  return rows.reduce((count, row) => (
+    count + (isCurrentReflectionArtifactContract(row) ? row.count : 0)
+  ), 0);
 }
 
 export function markReflectionInboxSeen(
@@ -168,6 +190,8 @@ function markProposalInboxSeen(
   return {
     marked: existing.inbox_seen_at === null,
     reflectionUnseenCount: countUnseenReflectionHelpItems(),
+    reflectionGenerating: Boolean(getDb().prepare(`SELECT 1 FROM learner_session_reflection_dispatches
+      WHERE learner_id = ? AND status IN ('queued','running') LIMIT 1`).get(requireLearnerId())),
   };
 }
 
@@ -181,12 +205,14 @@ function markExplanationInboxSeen(
   const existing = getDb().prepare(`
     SELECT inbox_id, inbox_seen_at
     FROM reflection_help_inbox
-    WHERE artifact_id = ? AND item_id = ?
+    WHERE artifact_id = ? AND item_id = ? AND disposition = 'open'
   `).get(artifactId, itemId) as { inbox_id: string; inbox_seen_at: string | null } | undefined;
   if (!existing) {
     return {
       marked: false,
       reflectionUnseenCount: countUnseenReflectionHelpItems(),
+    reflectionGenerating: Boolean(getDb().prepare(`SELECT 1 FROM learner_session_reflection_dispatches
+      WHERE learner_id = ? AND status IN ('queued','running') LIMIT 1`).get(requireLearnerId())),
     };
   }
   if (existing.inbox_seen_at === null) {
@@ -199,6 +225,8 @@ function markExplanationInboxSeen(
   return {
     marked: existing.inbox_seen_at === null,
     reflectionUnseenCount: countUnseenReflectionHelpItems(),
+    reflectionGenerating: Boolean(getDb().prepare(`SELECT 1 FROM learner_session_reflection_dispatches
+      WHERE learner_id = ? AND status IN ('queued','running') LIMIT 1`).get(requireLearnerId())),
   };
 }
 
@@ -231,4 +259,32 @@ function assertIsoTimestamp(value: string, label: string): void {
   if (Number.isNaN(parsed.valueOf()) || parsed.toISOString() !== value) {
     throw new Error(`Expected ${label} to be an ISO-8601 UTC timestamp.`);
   }
+}
+
+const WHATS_NEW_SEQUENCE_KEY = 'whats_new_seen_through_sequence';
+export function getWhatsNewSeenThroughSequence(): number | null {
+  const stored = getLearnerParam(WHATS_NEW_SEQUENCE_KEY);
+  if (stored !== null) {
+    if (typeof stored !== 'number' || !Number.isSafeInteger(stored) || stored < 0) throw new Error('Stored blog seen sequence is invalid.');
+    return stored;
+  }
+  const date = getWhatsNewSeenThroughDate();
+  if (date === null) return null;
+  return (getDb().prepare(`SELECT COALESCE(MAX(json_extract(post_json, '$.publicationSequence')), 0) AS sequence
+    FROM whats_new_post_revisions WHERE actor_id = 'migration:0028'
+      AND json_extract(post_json, '$.date') <= ?`).get(date) as { sequence: number }).sequence;
+}
+export function updateWhatsNewSeenThroughSequence(throughSequence: unknown, mode: unknown): number {
+  if (typeof throughSequence !== 'number' || !Number.isSafeInteger(throughSequence) || throughSequence < 0
+    || (mode !== 'ensure' && mode !== 'seen')) throw new WhatsNewInputError('Expected a nonnegative publication sequence and ensure or seen mode.');
+  const db = getDb();
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    if (throughSequence > getLatestWhatsNewPublicationSequence()) throw new WhatsNewInputError('Publication sequence exceeds the newest blog post.');
+    const current = getWhatsNewSeenThroughSequence();
+    const next = mode === 'ensure' && current !== null ? current : Math.max(current ?? 0, throughSequence);
+    upsertLearnerParam(WHATS_NEW_SEQUENCE_KEY, next);
+    db.exec('COMMIT');
+    return next;
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
 }

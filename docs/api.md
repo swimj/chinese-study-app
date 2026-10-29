@@ -1,5 +1,11 @@
 # HTTP API index
 
+The [vocabulary product contract](../SPECS/vocabulary-learning.md) defines intended
+behavior; the [architecture contract](../SPECS/vocabulary-architecture.md) defines
+structural constraints. The [implementation guide](vocabulary-learning.md) explains
+the current runtime. Earlier-runtime entries below support retained records and
+compatibility; they do not reopen retired Mandarin write paths.
+
 Routes are defined in [server/index.ts](../server/index.ts). Frontend client: [src/services/api.ts](../src/services/api.ts).
 
 Base URL: `http://localhost:5174` in development (override with
@@ -8,24 +14,136 @@ frontend.
 
 ## Public health and frontend
 
-`GET /healthz` is the only public operational endpoint. It verifies database
-access and returns `status`, persisted maintenance/provider-work flags, and the
-active provider-work count without learner data. In production, Express serves
-the built frontend and applies an SPA fallback outside `/api`; `/api/*` remains
-authenticated. Mutating API requests return `503 MAINTENANCE_MODE` while
-maintenance is active. Provider-backed requests additionally return
-`503 PROVIDER_WORK_DISABLED` when that control is off.
+`GET /healthz` verifies database access and returns `status`, persisted service
+controls, and the active provider-work count without learner data. In production,
+Express serves the built frontend and applies an SPA fallback outside `/api`.
 
-## Authentication
+`GET /api/service-access` returns `{ allowed: boolean }` with `Cache-Control:
+no-store`. It checks operator-only access using the verified Clerk subject when
+present, without resolving or bootstrapping a learner. Anonymous callers can
+use this probe; it grants no application-data access.
+
+## Authentication and service access
 
 Normal local dogfood uses `APP_AUTH_MODE=trusted_local` (the default) and its
-configured `APP_LEARNER_ID`. The hosted-style path uses `APP_AUTH_MODE=clerk`:
-every API route requires a verified Clerk session, derives the learner from the
-server-side Clerk-subject mapping, and returns `401 AUTH_REQUIRED` or
-`403 ACCOUNT_DISABLED` before domain work when applicable. Clients never send
-a learner id. The frontend obtains a short-lived Clerk session token and sends
-it as a bearer token; local setup is documented in the README's Clerk fixture
-section.
+configured `APP_LEARNER_ID`. The hosted-style path uses `APP_AUTH_MODE=clerk`.
+Except for the access-status probe, API routes require a verified Clerk session,
+derive the learner from the server-side Clerk-subject mapping, and return
+`401 AUTH_REQUIRED` or `403 ACCOUNT_DISABLED` before domain work when applicable.
+Clients never send a learner id. The frontend obtains a short-lived Clerk
+session token and sends it as a bearer token; local setup is documented in the
+README's Clerk fixture section.
+
+When the persisted operator-only control is enabled, non-operators receive
+`503 OPERATOR_ONLY` on application API reads and writes before learner resolution
+or bootstrap. Responses are not cacheable. Operators are identified by
+`APP_OPERATOR_CLERK_USER_IDS`; trusted-local mode retains the same explicit
+operator allowlist/sentinel rules as operator endpoints. An empty allowlist
+admits nobody while operator-only access is enabled.
+
+Maintenance independently rejects mutating API requests with
+`503 MAINTENANCE_MODE`, including operator requests. Provider-backed work also
+respects `503 PROVIDER_WORK_DISABLED`. Operator-only access does not pause
+background jobs or override either control.
+
+## Adaptive vocabulary
+
+Mandarin study uses the authenticated `/api/vocabulary` family. Commands are
+validated in `server/vocabulary/study-routes.ts`; the server derives the learner.
+Preview and Start use the supplied time zone for the 4 a.m. local new-word
+quota boundary. Older clients omitting it retain UTC calendar-day behavior.
+
+| Method/path | Result or effect |
+| --- | --- |
+| `GET /session-preview` | Prospective ready item count, preparation status, and opaque sampling seed; accepts the browser IANA `timeZone` query parameter and queues bounded missing teaching preparation |
+| `POST /sessions` | Compose ready work and return its first encounter; accepts the browser IANA `timeZone`; optional `previewSeed` reuses the preview's pure-cue sampling draw |
+| `GET /sessions/:id` | Current owned projection and exact material |
+| `POST /sessions/:id/next` | Select ready material; stable `clientActionId` retries |
+| `POST /sessions/:id/commands` | Response, exercise reaction (v1 command `feedback`), skip, coverage, more, mode, Undo, resume, finish |
+| `POST /sessions/:id/completion` | Freeze `throughSequence` after flush, with optional reported active duration |
+| `GET /sessions/:id/completion` | Current completion and server deadline |
+| `POST /sessions/:id/completion/cancel` | Cancel exact `completionId` before closure |
+| `POST /sessions/:id/completion/close` | Apply exact completion idempotently |
+| `GET /completion/current` | Pending/failed completion, without active-session restoration |
+| `GET /words` | Owned words and current modes/schedule hints |
+| `POST /words/:id`, `/mode`, `/refresh`, `/dismiss` | Explicit enrollment and word controls |
+| `GET /feedback`, `/feedback/attention` | Read-only own lessons and lightweight attention |
+| `GET /statistics` | UTC daily session/response/coverage totals, active-time availability, and current modes |
+| `POST /feedback/:id/seen`, `/feedback/jobs/:id/retry` | Acknowledge lesson or explicitly retry own failed feedback |
+
+`/api/operator/vocabulary` provides allowlisted cases, drafts, preview, approval,
+application, closure, and failed-work retries. Proposal mutations carry expected
+versions; application requires exact approval and an idempotency key. See
+[the implementation guide](vocabulary-learning.md) for content authority.
+
+`POST /api/operator/vocabulary/proposals/:id/approval-requests` accepts
+`{ expectedVersion, requestId, notes? }` and returns `202` with the persisted request
+receipt. Authentication and request-shape checks run before acknowledgement;
+proposal validation and application run in the background. Repeating the same
+request ID and payload returns its existing receipt; conflicting reuse is rejected.
+`GET /api/operator/vocabulary/approval-requests` returns `{ items }` with request
+states `queued`, `running`, `succeeded`, or `attention`, retained errors, and
+application receipts. `POST /api/operator/vocabulary/approval-requests/:id/retry`
+accepts an empty body and requeues an attention request with the same identities.
+The existing explicit preview, approve, and apply routes retain their contracts.
+
+`GET /api/operator/vocabulary/no-proposal-cases` lists completed original
+exercise-improvement judgments with no proposal and no operator closure; `?status=closed` lists closed reviews.
+`POST /api/operator/vocabulary/cases/:id/second-opinions` accepts optional `notes`
+and queues an advisory review of the retained no-change judgment. Case workspace
+jobs expose the advisory status and result; the existing job retry and case close
+routes apply. This path does not create or apply a content proposal.
+
+`POST /api/operator/vocabulary/cases/:id/reassessments` accepts `modelChoice` and
+required `expectedContentVersion`. It queues an independent assessment pinned to
+that current source version and returns the new `caseId` and `jobId`. The operator
+must confirm a version change shown by the review surface before submission. A
+source version that changed since the read is a conflict; the request does not
+silently assess the newer version. Case and review reads expose the historical
+assessed version and current version for this decision. Reassessment performs
+fresh mapping where applicable and fresh assessment without the original learner
+responses or reactions. It preserves the original case as historical context and
+does not resolve or apply its proposal or judgment.
+
+Proposal detail/list and case reads include `resolvedAt`: receipt application time
+for applied proposals, latest closure event time for dismissed proposals or closed
+cases, and `null` when unresolved or authoritative historical evidence is missing.
+The operator Archive uses this timestamp for its 12-hour default; search covers
+all retained entries. Proposal dismissal and completed no-change review closure
+accept omitted or empty `reason`. Teaching and unresolved sense/promotion
+assessment closures still require a nonempty resolution.
+
+Single-word improvement results can include `pureCueReferral` (null or
+`{candidateWords: string[], sharedPurpose: string, rationale: string}`) and a
+`pureCuePromotion` assessment. Referral forms are advisory. Promotion records
+`reject`, `reuse`, `extend`, `create`, or `needs_operator` when identities cannot
+be resolved unambiguously. Creation and extension require complete teaching notes
+and join any local edits in the existing reviewed proposal; there is no separate
+automatic publication route.
+The [implementation guide](vocabulary-learning.md) describes scope, retained
+answers, and same-job stage reuse.
+
+Existing pure-cue improvement uses a dedicated assessment with `extend`, `repair`,
+or `explanation_only`. Extension preserves stimulus, axis and existing answers
+while replacing the integrated teaching note; repair changes only the stimulus.
+Both await operator application. Raw response evidence remains available when
+lexical resolution is missing or ambiguous, but extension requires a uniquely
+resolved ID from an effective rejected response. Learner feedback is independent.
+Only general production encounters enter provider jobs; recognition and contrast
+remain in session evidence and are excluded from provider feedback aggregation
+and improvement dispatch.
+
+`GET /api/operator/vocabulary/practice-preparation/failures` lists retained failed
+authoring work. `POST /api/operator/vocabulary/practice-preparation/:id/retry`
+queues an explicitly authorized retry within the attempt limit; worker gates
+still govern provider execution.
+
+Mandarin legacy `/api/study-sessions/*` writes, legacy word completion/dismissal,
+introduction open/complete, review-summary commits, learner proposal/application,
+and old operator content-editor writes return `409 VOCABULARY_CUTOVER`.
+Both methods of `/api/session-payload` are retired because even GET composed
+and reserved work. Reload into the new client. Historical read endpoints
+below remain useful for retained records; they do not define the new study flow.
 
 ## My words
 
@@ -49,14 +167,21 @@ values mean no stage narrowing. Combined with search as AND. Recently studied
 ignores `unstudied`; if that leaves no stages, the collection's learning and
 review membership is used. Optional `lapses=1` or `lapses=true` further keeps
 words with a projected Forgot/incorrect attempt in the last three UTC days or
-an unsuccessful last learning day; omit or `0`/`false` leaves that filter off.
+an unsuccessful last learning day after a prior successful learning day
+(never-succeeded / just-graduated learning words excluded); omit or `0`/`false`
+leaves that filter off.
 The lapses predicate is independent of the selected stages. Results are ordered
 learning (last study date descending, missing last), unstudied (pronunciation),
 review (last study date descending, missing last), then word id. For
 paged views, limit is 1–100; offset is a nonnegative integer.
-Invalid parameters, including unknown status or lapses values, return 400. See [the product contract](../SPECS/my-words.md).
+Invalid parameters, including unknown status or lapses values, return 400. These legacy query semantics are distinct from the current
+[vocabulary word collection](#vocabulary-word-collection).
 
 ## Content diagnostics
+
+Content Bin uses this read-only API to inspect words, contrast clusters, and
+durable word-owned production cues. The [frontend map](../SPECS/frontend-architecture-map.md#entry-and-navigation)
+explains navigation between connected items.
 
 | Method | Path | Handler domain |
 | --- | --- | --- |
@@ -65,13 +190,27 @@ Invalid parameters, including unknown status or lapses values, return 400. See [
 The diagnostic query requires non-empty `q` input and applies the bound in SQL
 before hydrating the selected records. It returns only the selected kind and a
 `hasMore` signal; it does not read or count the corpus before a user query.
-Word items include
-cluster membership, production-task cue counts, and any post-reveal production
-cue supplements (english frame, example sentence, translation, and whether
-the supplement is attached to a durable cue or the meaning-derived fallback);
-cluster items include
-members and prompts; durable production-cue items include their anchor and
-accepted words, lifecycle state, provenance, and current evidence projection.
+Word items include `latestBootstrapContent`: `{ createdAt, content }` for the
+latest eligible [bootstrap document](word-content-representation.md#source-documents-and-teaching-packages),
+ordered by creation time then content id, or `null` when none is available,
+as well as cluster membership.
+
+Word details separate the exercise cue from optional material shown after reveal:
+
+- `productionTask` contains the task id and total/active durable cue counts for
+  the current learner, or is `null` when the word has no production task.
+- `productionCues` lists durable cues as `{ id, text, cueType, availabilityStatus }`,
+  including inactive cues and cues without supplements. Use these identities to
+  open cue details; a cue's presence in the list does not mean it can serve.
+- `productionCueSupplements` contains post-reveal English frames, example
+  sentences, and translations. Its `cueId` identifies the attached durable cue,
+  or is `null` for a task-level meaning-derived supplement. That fallback
+  supplement is not itself a durable cue.
+
+The [response types](../src/domain/content-diagnostics.ts) define these fields.
+Cluster items include members and prompts; durable production-cue items include
+their anchor and accepted words, lifecycle state, provenance, and current evidence
+projection.
 It does not expose a content mutation path.
 
 ## Shared content reports
@@ -95,21 +234,20 @@ exposed as a learner-controlled HTTP endpoint.
 
 `GET /api/status?studyDayKey=YYYY-MM-DD` also returns `sessionActiveTimeMetrics`: today's completed active-session duration, plus 3-day and 7-day calendar-day averages in milliseconds. Averages include zero-activity days.
 
-The status payload also returns `serviceBanner`: `null`, or `{ message, postedAt, expiresAt }`
+The status payload also returns `serviceBanner`: `null`, or `{ message, postedAt, expiresAt, kickoffAt? }`
 for the current unexpired operator-posted signed-in notice. Expired and cleared
-notices are omitted. The banner is not public; it is on this authenticated
-status read only.
+notices are omitted. Operators can also read and manage the banner through the
+operator API below.
 
-The status payload also returns two diet-deck flags (SPECS/diet-deck-distribution.md):
-`dietDecksActive` (deck-based diet admission is active: Mandarin profile with a
-deck manifest present) and `dietIntakeRequired` (deck mode active and the learner
-has no stored diet profile yet — the first-run placement intake should be shown).
+The status payload also returns `dietDecksActive`: deck-based diet admission
+is active when the Mandarin profile has a deck manifest. The former
+`dietIntakeRequired` field has been removed.
 
 The status payload also returns `dailyNewWordLimit` and
-`unstudiedAdmissionSource`, the durable configured limit and unstudied
-admission source used when composing a new session. `unstudiedAdmissionSource`
-is `"mixed"` (default 50/50 stash/diet split) or `"stash_only"`. Update them
-with JSON bodies containing `dailyNewWordLimit` as a non-negative integer or
+`unstudiedAdmissionSource`, the resolved settings used when composing a new
+session. The [new-learner policy](../SPECS/diet-deck-distribution.md#25-new-user-defaults-and-retired-placement-intake)
+defines their initial values. Update them with JSON bodies containing
+`dailyNewWordLimit` as an integer from 0 through 20 or
 `unstudiedAdmissionSource` as `"mixed"` or `"stash_only"`:
 
 | Method | Path | Handler domain |
@@ -117,24 +255,112 @@ with JSON bodies containing `dailyNewWordLimit` as a non-negative integer or
 | PATCH | `/api/learning-policy/daily-new-word-limit` | Config / learning policy |
 | PATCH | `/api/learning-policy/unstudied-admission-source` | Config / learning policy |
 
-Changing either setting does not rewrite the current UTC day's
+Changing either setting does not rewrite the current study day's
 completed-new-word count and does not mutate an already-started frontend
 session.
 
-## Operator usage pulse
+The status payload also returns learner-private character preferences:
+`characterPresentation`: `"simplified"` (default), `"traditional"`, or `"both"`,
+and `sentenceCharacterPresentation`: `"simplified"` (default) or `"traditional"`.
+Standalone session word labels use stored character fields; `"both"` renders
+`simplified / traditional` when the forms differ. A missing or identical
+traditional field is shown as the stored hanzi.
+
+Sentences, examples, Chinese explanation text, and clozes on the main session
+surfaces are converted for display. Simplified or Traditional card presentation
+also determines the sentence script. With Both, sentences follow the separate
+sentence preference; a revealed answer inserted into a sentence uses that one
+script. The sentence preference is retained when changing the card setting.
+Conversion preserves stored content and exact attempt evidence. See
+[character presentation](../SPECS/character-presentation.md).
+
+| Method | Path | Handler domain |
+| --- | --- | --- |
+| PATCH | `/api/learner-settings/character-presentation` | Learner settings |
+| PATCH | `/api/learner-settings/sentence-character-presentation` | Learner settings |
+| PATCH | `/api/learner-settings/study-new-words-first` | Accept/return `{studyNewWordsFirst:boolean}`; legacy private learner setting, default false; selects Introductions first when true and Random when false, retaining the saved spacing; also returned in status; invalid values return 400 |
+| PATCH | `/api/learner-settings/study-introduction-order` | Accept/return `{studyIntroductionOrder:"random"\|"first"\|"paced",studyIntroductionSpacing:number}`; atomically saves private order and integer spacing 1–10 (default 3); status returns both fields; existing boolean preferences map to Random/Introductions first; invalid values return 400 |
+
+The first route accepts
+`{ "characterPresentation": "simplified" | "traditional" | "both" }` and returns
+that saved field. The second accepts
+`{ "sentenceCharacterPresentation": "simplified" | "traditional" }` and returns
+that saved field. Unsupported or missing values return `400`. Neither route
+accepts a client-selected learner; writes use the authenticated learner context.
+
+## Operator view
 
 | Method | Path | Handler domain |
 | --- | --- | --- |
 | GET | `/api/operator/usage-pulse` | Operational cohort pulse |
+| GET | `/api/operator/content-sharing?weekStart=YYYY-MM-DD` | Reconstructed UTC-week content reuse and bounded shared-content examples |
+| GET | `/api/operator/model-invocations?from=YYYY-MM-DD&to=YYYY-MM-DD` | User-attributed model calls in an inclusive UTC date range |
+| GET | `/api/operator/word-preparation/failures` | Shared preparation failures and attempt history |
+| POST | `/api/operator/word-preparation/:workId/retry` | Retry paused work; empty `{}` body and operator actor audit |
+| GET | `/api/operator/service-banner` | Current active banner |
+| PUT | `/api/operator/service-banner` | Set a custom banner with `{ message, expiresAt? }` or a planned update with `{ kickoffAt }` |
+| DELETE | `/api/operator/service-banner` | Clear the current banner |
 
-Bookmark-only frontend surface: `#operator-usage` (not in primary nav).
-Requires the caller’s Clerk user id (or trusted-local learner id / `trusted_local`
-sentinel) to appear in `APP_OPERATOR_CLERK_USER_IDS`. Returns content-free
-cohort aggregates: live `today` plus the last 7 completed UTC-day snapshots
-(`dau`, sessions, new words, model spend, median stash, median session time,
-and sparse scenario counts). The configured hosted smoke learner
-(`APP_SMOKE_CLERK_USER_ID`) is omitted from the inactive-7d count. Empty
-allowlist fails closed with `403 OPERATOR_FORBIDDEN`.
+Operator routes require the caller’s Clerk user id (or trusted-local learner id /
+`trusted_local` sentinel) in `APP_OPERATOR_CLERK_USER_IDS`. An empty allowlist
+fails closed with `403 OPERATOR_FORBIDDEN`. See the
+[operator panel guide](operator-panel.md) for the bookmark-only UI and its
+workflows.
+
+`GET /api/operator/content-sharing` defaults to the current UTC week. Optional
+`weekStart` must be a valid Monday date key no later than the current week;
+malformed, repeated, or future values return `400`. The operator-only response
+contains weekly exact-content reuse metrics, learner-originated cue reuse,
+bounded examples, and current study-overlap context. It is read-only and
+reconstructs historical weeks from available evidence. See
+[sharing metric definitions](operator-panel.md#content-sharing) for counting
+rules and coverage limits.
+
+`GET /api/operator/usage-pulse` returns content-free cohort aggregates: live
+`today` plus the last 7 completed UTC-day snapshots (`dau`, sessions, new words,
+practice completed, review correct/wrong, proposals accepted, mean stash, total
+active session time, and sparse scenario counts). The
+configured hosted smoke learner (`APP_SMOKE_CLERK_USER_ID`) is omitted from the
+inactive-7d count. See [usage metric definitions](operator-panel.md#usage-metrics)
+for units and historical availability.
+
+`GET /api/operator/model-invocations` returns `{ rows }`: timestamp,
+provider/model identifier, invocation type, learner identity and display name,
+`initiator` (learner ID, `Operator`, or `Service`) and `initiatorDisplayName`,
+`latencyMs`, status, USD spend, and its reported/estimated/unknown basis. Optional
+dates are validated; omitting them returns the full ledger without silent
+truncation. Unknown costs remain unknown and are counted separately.
+The ledger records actual production transport attempts from this release onward,
+including failed attempts. Latency covers the provider request through response
+receipt, excluding later domain validation and persistence. A timeout records
+`timed_out` with the configured request timeout as its latency. Other transport
+failures record `failed` with measured latency. Invalid JSON, malformed responses,
+truncation, or rejected schema/domain output record `invalid_response`; validation
+may update an already `completed` call to this status without changing its cost or
+latency. Completed still does not imply published model output. Historical calls
+and unfinished calls have null latency; elapsed times are never invented. It
+stores no prompts, answers, or response bodies. OpenRouter `usage.cost` takes
+precedence over token-price estimates. Other current transports supply token usage
+rather than per-request USD charges; estimates use pinned pricing snapshots.
+Existing usage-pulse spend snapshots retain their reflection/intake scope. No
+historical invocation rows or missing user attribution are fabricated.
+
+Planned service updates accept `{ kickoffAt }`, an ISO timestamp with an explicit
+time zone, normalized to UTC. Kickoff must be after posting; expiry is 24 hours
+after kickoff. Do not combine kickoff with a custom message or expiry. The
+response includes `kickoffAt` for planned updates; clients format the standard
+notice in the viewer's browser zone. `message` supplies generic fallback text.
+Custom and pre-existing notices omit `kickoffAt` and render their authored text.
+Replacing a planned update with a custom notice clears its kickoff.
+
+Custom service-banner messages are single-line text up to 280 characters.
+Omitting `expiresAt` for a custom message uses the 24-hour default. `PUT` returns
+`{ serviceBanner: { message, postedAt, expiresAt, kickoffAt? } }`; `GET` returns that shape or
+`{ serviceBanner: null }`, and `DELETE` returns `{ status }` with `cleared` or
+`noop`. Invalid messages, kickoff timestamps, or expiry timestamps return `400`. Writes use the
+authenticated operator as the audit actor. Preparation retry preserves
+successful earlier stages; ordinary learner requests do not reset exhausted
+budgets.
 
 ## Words and meanings
 
@@ -177,19 +403,15 @@ before.
 
 ## Diet profile
 
-The durable contract is
-[`SPECS/diet-deck-distribution.md`](../SPECS/diet-deck-distribution.md) (§2.3,
-§2.5, §2.6). The diet profile is a versioned JSON value in the
-`learner_settings` store (`diet_profile`): deck weights, provenance
-(`intake` / `learner-nudge` / `operator`), and `updatedAt`. When unset it
-defaults to 100% weight on the first deck by manifest order. Deck machinery
-is never user-visible.
+The [diet contract](../SPECS/diet-deck-distribution.md) defines profile
+initialization and adjustment behavior. A profile response contains `version`,
+`weights`, `provenance`, and `updatedAt`, with optional historical `intake`
+evidence. Provenance actors are `learner-nudge`, `operator`, and historical
+`intake` entries.
 
 | Method | Path | Handler domain |
 | --- | --- | --- |
 | POST | `/api/diet/nudge` | `diet-profile` |
-| POST | `/api/diet/intake` | `diet-profile` |
-| POST | `/api/diet/intake/assess` | `diet-placement` |
 
 `POST /api/diet/nudge` accepts `{ direction: 'easier' | 'harder' }` and shifts
 a fixed internal weight quantum from the current max-weight deck toward the
@@ -199,53 +421,59 @@ past the first/last deck is a no-op (`changed: false`, no provenance entry).
 Returns `200` with `{ profile, changed }`; `400` for an invalid direction;
 `409` when the deck manifest is unavailable on the installation.
 
-`POST /api/diet/intake` accepts
-`{ answers: Array<{ prompt: string, answer: string }>, selfSelect?: 'complete-beginner' | 'some-basics' | 'intermediate' | 'advanced-or-heritage' | null }`.
-It stores the raw natural-language answers plus the resulting initial
-placement in the diet profile. Intake answers are profile evidence, never
-study actions: no attempt events, no covering, no commits. The v1 placement
-mapping is fixed (self-select maps directly onto the deck ladder by manifest
-order; absent self-select starts on the first deck). Returns `201` with the
-stored profile; `400` for invalid input; `409` when the deck manifest is
-unavailable.
-
-`POST /api/diet/intake/assess` accepts `{ answers, providerDisclosureAccepted: true }`, where
-`answers` contains one or two exact `{ prompt, answer }` pairs (each prompt is
-at most 200 characters, each answer at most 2,000 characters, and the combined
-answer text at most 4,000 characters). The explicit flag records authorization
-to send those answers to the configured provider. On a validated response, the
-server maps its next HSK 2.0 learning level internally and atomically stores the
-resulting diet profile and intake evidence. The provider never receives deck
-configuration, learner identity, history, or corpus data. It returns `201` on
-success, `400` for invalid input or missing disclosure, `409` for a concurrent
-or stale placement, `502` for provider or output validation failure, and `503`
-when hosted provider work is disabled. It never writes study actions, attempts,
-covering, or commits. The existing manual `/api/diet/intake` route remains the
-explicit self-select/skip fallback and does not call a provider.
-
-The stored assessment retains the model's `nextLearningLevel` and rationale.
-For a reduced manifest, the internal placement may use the first available
-lower HSK 2.0 deck; the tail deck is never an intake placement target.
-An installation must retain an HSK 2.0 Level 1 deck to offer provider-assisted
-intake, because all supported next-learning levels rely on that baseline.
+The `/api/diet/intake` and `/api/diet/intake/assess` routes are retired.
 
 Operator jumps (100% weight on a chosen deck, provenance actor `operator`)
 are performed with `scripts/set-diet-deck.ts`; there is no HTTP endpoint.
 
 ## Session composition
 
+The review bucket includes word-owned items and standalone pure-cue items
+(`itemType: pure_cue_production`). Pure-cue items have a server-issued frozen
+snapshot and no target word. Their admission is independent of word review;
+fragile cues are due-date admitted and strong cues use proportional sampling.
+
+`POST /api/study-sessions/:sessionId/pure-cue-assessments` accepts
+`{ attemptId, snapshotId, sessionActionId, events, reinforcementSkipped? }`. Each event supplies
+`eventId`, `occurredAt`, `response`, `outcome`, `submittedWordId`, and `rating`.
+The server verifies outcomes against its saved snapshot and covering rules,
+uses its own commit clock, and returns 204. An identical retry is idempotent;
+conflicting evidence or a snapshot already consumed by another action is 400.
+No member-word scheduler or admission state is changed.
+
+Word-review completion accepts optional `commitIntent.reinforcementSkipped`;
+pure-cue completion accepts optional top-level `reinforcementSkipped`. Both are
+booleans and default to `false` when omitted. Only `true` allows a recorded lapse
+with fewer than three subsequent consecutive successful recalls to complete.
+`true` is rejected for clean or already-covered evidence; an unfinished batch
+without it is rejected. Validation also applies to retries. These commits preserve
+supplied attempts and ordinary lapse scheduling, add no successful recall, and
+imply no compensation. Empty batches, inconsistent evidence, and events after
+normal coverage remain invalid. The flag is a completion instruction, not a
+separate stored attempt or scheduler state.
+
 | Method | Path | Handler domain |
 | --- | --- | --- |
-| GET | `/api/session-payload` | `session-composition` |
+| GET | `/api/session-payload` | Immediate composition from currently ready content |
+| POST | `/api/session-payload` | `{ "studyDayKey": "YYYY-MM-DD" }`; bounded session-entry preparation and ready payload |
 
-The session payload contains the three study-item buckets. Review production
+The session payload contains the three study-item buckets, admitting at most
+1000 units in total, including standalone pure cues in review. Above that cap,
+slots follow the live scheduler's 50/30/20 review/learning/unstudied weights,
+redistributing unused slots from smaller buckets and retaining internal order.
+Review production
 items freeze their selected durable cue or meaning-derived fallback, the canonical
 `{ wordId, hanzi, traditional }` rows whose ids define the accepted set used for
 client grading, and nullable recheck-demand id. Unstudied membership is the
 experimental dual-pool admitted set from
-[`SPECS/study-action-model.md`](../SPECS/study-action-model.md#experimental-dual-pool-unstudied-admission)
+[`SPECS/study-action-model.md`](../SPECS/archive/study-action-model.md#experimental-dual-pool-unstudied-admission)
 (mixed stash/diet split of remaining daily new-word quota, or stash-only when
-that source is selected, plus require bypass).
+that source is selected). Mandarin applies readiness within those pools without
+a require bypass; legacy non-Mandarin selection remains unchanged. Entry waits
+up to 30 seconds total, then may return fewer or no new words. Mandarin new-word
+items include exact teaching/source snapshots; the active player does not fetch
+or generate missing introductions. Quotas are computed before readiness filtering,
+so temporary stash preparation delays do not transfer slots to diet.
 The nullable `traditional` form is canonical content; lookup aliases are excluded.
 Typed production grading uses only that frozen accepted-answer snapshot. The
 server derives `submittedWordId` at commit: accepted results from the frozen
@@ -260,8 +488,42 @@ match. The payload does not include the shared word catalog.
 | POST | `/api/study-sessions/:sessionId/accepted-contrast-selection-attempt` | `study-sessions` |
 | POST | `/api/study-sessions/:sessionId/manage-study-action` | `study-management` |
 | POST | `/api/study-sessions/:sessionId/reflections` | `reflection` |
+| GET | `/api/session-completions/current` | `session-completion` |
+| GET | `/api/study-sessions/:sessionId/completion` | `session-completion` |
+| POST | `/api/study-sessions/:sessionId/completion` | `session-completion` |
+| POST | `/api/study-sessions/:sessionId/completion/undo` | `session-completion` |
+| POST | `/api/study-sessions/:sessionId/completion/close` | `session-completion` |
 | POST | `/api/review-session-summaries` | `analytics` |
 | POST | `/api/client-incidents` | `client diagnostics` |
+
+Completion POST accepts the
+[`StageSessionCompletionRequest`](../src/domain/session-completion.ts):
+`revisionId`, canonical ISO UTC `startedAt`, UTC `studyDayKey`, `summary`,
+`pendingCommit` (a deferred final action or null), and `reflectionEvidence`
+(a supported evidence supplement or null). The summary requires canonical
+`completedAt`, non-negative integer completion/failure counts and
+`activeDurationMs`, and may include a learning count and exact debrief inventory.
+Completion cannot precede start, and failure count cannot exceed completion
+count. Final action validation uses the owning study persistence contract;
+review, contrast, and pure-cue commits must match the route session.
+
+Stage/read/cancel/close return `SessionCompletion`: session/revision IDs,
+`status` (`pending`, `cancelled`, `closed`, or `failed`), `closeAt`, `serverNow`,
+`completedAt`, `canUndo`, deterministic word `report`, and nullable `error`.
+Staging previews the final action without accepting it and freezes a 15-second
+server deadline. Repeating the exact revision preserves its deadline; changing
+its input conflicts. Undo and close POST accept `{ revisionId }`. Undo cancels
+only before expiry; close accepts the final action, summary, and generation work
+atomically and can close early or retry failed closure. Repeated cancellation or
+successful closure returns the saved result.
+
+Current GET returns `{ completion: SessionCompletion | null }` for the learner's
+pending/failed completion. Session GET returns its latest revision and may close
+an overdue pending revision. Every operation is learner-scoped. Explicit input
+errors return `400`, missing completion returns `404`, lifecycle or revision
+conflicts return `409`, and persistence failures return `500`. Browser unload is
+not required; server recovery closes acknowledged overdue completions. See the
+[earlier completion contract](../SPECS/archive/session-progress-and-completion.md#session-completion).
 
 Accepted review production events must include their exact frozen
 `metadata.production` snapshot. The accepted-review batch transaction appends
@@ -278,6 +540,30 @@ lifecycle event with stable learner/session/action/event correlations, outcome,
 rating, and elapsed time so an ambiguous retry can be paired with an earlier
 durable success.
 
+The homepage exercise failure rate reads saved session totals and daily
+compensation counters. New session-summary writes include word reviews and
+standalone pure cues in the existing completion/failure fields: each exercise
+counts once, with one failure if it lapsed even when reinforcement succeeds.
+All exercise types use the summary's UTC completion day. Repeated summary writes
+replace totals rather than incrementing them.
+
+The legacy `reviewFailureRateDays` response field names describe these combined
+exercise counts. `compensatedReviewActionSessions` reads a learner-private daily
+counter incremented transactionally when a word-production or pure-cue scheduler
+restoration first applies. Pending/unavailable restorations and already-restored
+retries add nothing. Compensation-only days are included by UTC application date.
+Daily/rolling failure-rate fields remain unadjusted; the homepage derives each
+window's adjusted failure rate as
+`max(0, sum(failures) - sum(compensations)) / sum(completions)` and compensation
+rate as `sum(compensations) / sum(completions)`. Both rates are null without
+completions; compensation counts remain visible and rates are not capped at
+100%. No matching of source-failure dates is required.
+
+Migration `0022_exercise_compensation_days` starts the compensation table empty.
+There is no backfill: old summaries retain their word-only totals, and old
+restorations are not counted. New restorations of old failures do count. This is
+a forward-looking rough signal; rollout-spanning windows mix old and new coverage.
+
 `POST /api/review-session-summaries` accepts a non-negative integer `activeDurationMs` alongside the existing completion counts. The `sessionId` upsert replaces all summary fields, including the duration.
 Caught summary persistence failures use the same diagnostic-id contract so the
 otherwise-lost completion counts and active duration remain inspectable.
@@ -291,8 +577,9 @@ study commit. See [error logging and diagnostics](./ops/error-diagnostics.md#cli
 
 ## Post-session reflection
 
-The durable contract is
-[`SPECS/reflection-proposals-and-handles.md`](../SPECS/reflection-proposals-and-handles.md).
+This section describes the retained earlier reflection API. Its historical
+contract is
+[`SPECS/archive/reflection-proposals-and-handles.md`](../SPECS/archive/reflection-proposals-and-handles.md).
 Request/result types live in
 [`src/domain/reflection-evidence.ts`](../src/domain/reflection-evidence.ts) and
 [`src/domain/reflection.ts`](../src/domain/reflection.ts).
@@ -300,7 +587,7 @@ Request/result types live in
 | Method | Path | Purpose |
 | --- | --- | --- |
 | POST | `/api/study-sessions/:sessionId/reflections` | Generate or return the session's initial reflection |
-| POST | `/api/deferred-reflection-second-opinions` | Generate a selected deferred-proposal second opinion |
+| POST | `/api/deferred-reflection-second-opinions` | Generate a selected deferred-item second opinion |
 | GET | `/api/reflection-artifacts?review=open\|all` | Load the unresolved queue or recent history |
 | GET | `/api/reflection-generation-runs` | Load the compact dogfood log of concluded provider attempts |
 | POST | `/api/reflection-generation-runs/:runId/retry` | Retry a failed run from its saved bounded evidence bundle |
@@ -310,25 +597,35 @@ Request/result types live in
 | PUT | `/api/reflection-quality` | Upsert the tag set on one reflection item |
 | DELETE | `/api/reflection-quality` | Clear quality tags for one reflection item |
 | GET | `/api/reflection-quality-stats` | Aggregate dogfood quality rates by model arm |
-| GET | `/api/attention-badges` | Unseen Help-queue count, unseen failed generation-run ids, failed-run seen-through cursor, and What’s New seen-through date |
+| GET | `/api/attention-badges` | Unseen Help-queue count, durable reflection generation state, unseen failed generation-run ids, failed-run seen-through cursor, and What’s New read cursors |
 | POST | `/api/reflection-inbox-seen` | Stamp one Help card as displayed |
+| GET | `/api/whats-new` | Read shared published blog posts |
+| GET | `/api/operator/whats-new` | Operator-only current posts including drafts |
+| PUT | `/api/operator/whats-new` | Operator-only validated, revision-checked post save |
+| POST | `/api/whats-new-seen-sequence` | Ensure or advance the What’s New publication sequence |
+| GET | `/api/whats-new-attention` | Read per-post learner attention and active badge IDs without starting clocks |
+| POST | `/api/whats-new-attention` | Record visible badge exposure or reading for a published-post snapshot |
 | POST | `/api/whats-new-seen` | Ensure or advance the What’s New seen-through date |
 | POST | `/api/failed-reflection-runs-seen` | Advance the failed-reflection-run seen-through timestamp |
 | GET | `/api/reflection-help-inbox` | List open explanation-only Help inbox rows |
 | DELETE | `/api/reflection-help-inbox` | Mark one explanation-only Help item Done by deleting its inbox row |
+| POST | `/api/reflection-help-inbox/defer` | Move one explanation-only Help item into second-opinion staging |
 | POST | `/api/reflection-artifacts/:artifactId/items/:itemId/manual-invocations` | Authorize a registered operation against an explanation-only item |
 
 ### Generate
 
 The request body is a `SessionReflectionEvidenceSupplementV1` or V2 object
-itself, not a wrapper. It contains one or more qualifying review-production
+itself, not a wrapper. It contains qualifying review-production
 items, including the cue as shown, nullable raw response, complete ordered ids
 of the accepted attempt batch, and the optional V2 learner-request marker. The
 backend uses those ids only to validate durable session/action identity, then
 enriches each into a canonical V4 `production_mistake` bundle item without
 attempt rows, attempt summaries, or production-management metadata. V4 keeps
 the exact nullable post-reveal supplement separate from the pre-reveal cue;
-new generation returns the strict V7 result contract.
+new staged generation materializes the current V10 result contract. The items
+array may be empty for a pure-cue-only session: the server reconstructs eligible
+pure-cue first responses from durable assessments and invokes the independent
+pure-cue provider flow. Either call can succeed if the other fails.
 
 A successful response is exactly:
 
@@ -337,6 +634,8 @@ A successful response is exactly:
   artifactId: string;
   proposalCount: number;
   status: 'created' | 'existing';
+  additionalArtifactIds?: string[];
+  partialFailure?: string;
 }
 ```
 
@@ -344,8 +643,7 @@ A successful response is exactly:
 `(sessionId, initial_post_session_reflection.v2)` returns `200` and does not
 call the provider again. Evidence validation errors return `400`, missing
 sessions or referenced entities return `404`, missing provider configuration
-returns `503`, provider/structured-output failures return `502`, explicit
-non-Luna requests after the daily spend cap return `409`, and
+returns `503`, provider/structured-output failures return `502`, and
 unexpected persistence failures return `500`. Typed generation failures use
 `{ error, code }`; internal failures expose only a safe `{ error }`.
 
@@ -355,18 +653,11 @@ are durable. It never rewrites study attempts, completion, or scheduling state.
 ### Generation run log
 
 `GET /api/reflection-generation-runs` returns the most recent concluded
-provider attempts, newest first, plus the current UTC-day spend-cap state:
+provider attempts, newest first:
 
 ```ts
 {
   runs: ReflectionGenerationRunDto[];
-  spendCap: {
-    lunaOnly: boolean;
-    spentUsd: number;
-    capUsd: number;
-    dayKey: string;
-    resetsAt: string; // next UTC midnight
-  };
 }
 ```
 
@@ -397,13 +688,14 @@ whose session/flow does not already have a successful artifact.
 
 ### Comparison arms
 
-The reflection service has a backend-only comparison-arm registry. Luna, GLM,
-and GPT-5.6 Terra are sampled with equal probability for initial generation.
-Gemini 3.6 Flash remains registered so it can be re-offered later, but it is
-not in the default candidate pool or learner-facing pickers. Once that learner's
-UTC-day estimated spend surpasses $0.50, unselected initial generation uses only
-Luna. OpenRouter arms require
-`OPENROUTER_API_KEY` and use OpenRouter's normal eligible-provider routing;
+The reflection service has a backend-only comparison-arm registry. Initial
+bundles with at most 10 included items sample GLM-5.3 Flash high at 70% and
+GPT-5.6 Luna high at 30%. Larger bundles sample GPT-6 Sol high at 60%, GLM at
+20%, and Luna at 20%. Ordinary and pure-cue bundles are routed independently
+using their actual item counts. Explicit choices and manual second opinions
+do not use these weights. Terra, GLM Flash max, and Gemini remain registered
+but are withdrawn from the default pool and learner-facing pickers. OpenRouter
+arms require `OPENROUTER_API_KEY` and use OpenRouter's normal eligible-provider routing;
 they do not pin one upstream host or disable fallbacks. Missing credentials fail
 only the selected arm with the existing `503` typed failure; they never affect
 finalization or other arms. OpenRouter's returned cost is preserved for a
@@ -415,10 +707,8 @@ saved bundle and returns the same response shape and `201`/`200` semantics as
 initial generation. The retry is a new append-only generation run; it never
 rewrites the failed attempt. Missing runs return `404`. Concluded runs that
 cannot be retried, same-model retries whose source model is no longer a
-configured comparison arm, and non-Luna retries after the daily spend cap,
-return `409`. An explicit current model may still
-retry a retained bundle whose source model has been retired, unless the spend
-cap has restricted the learner to Luna.
+configured comparison arm return `409`. An explicit current model may
+retry a retained bundle whose source model has been retired.
 
 ### Queue and detail
 
@@ -556,7 +846,8 @@ The Help inbox is the open set of explanation-only items still in Help. Items
 with empty proposal lists are added when their artifact is materialized. Items
 that carry proposals are not inbox members; their Help presence follows
 proposal review. Artifact detail includes `helpInbox` for explanation-only
-items still open in Help.
+items still open in Help, plus `deferredHelpInbox` for explanation items staged
+for a second opinion.
 
 `GET /api/reflection-help-inbox` returns `{ entries }` for every still-open
 explanation item. Success returns `200` with:
@@ -567,16 +858,23 @@ type ReflectionHelpInboxEntry = {
   artifactId: string;
   itemId: string;
   openedAt: string;
+  disposition: 'open' | 'deferred' | 'requested_second_opinion';
 };
 ```
 
 `DELETE /api/reflection-help-inbox` accepts `{ artifactId, itemId }` and
 removes that item from Help. Success returns `200` with `{ done: true }` when
-a row existed or `{ done: false }` when none did. Missing artifact/item still
+an open or deferred row existed (same end state: gone from Help and from
+second-opinion staging) or `{ done: false }` when none did. Terminal
+`requested_second_opinion` rows are not deleted. Missing artifact/item still
 return `404`. There is no learner-facing undo.
 
 Done leaves the artifact body unchanged, so By session and raw artifact reads
 still show the item.
+
+`POST /api/reflection-help-inbox/defer` accepts `{ artifactId, itemId }` and
+returns `{ deferred: true }` when an open row moved to second-opinion staging.
+The second-opinion request accepts `helpInboxIds` alongside `proposalIds`.
 
 ### Attention badges
 
@@ -585,14 +883,20 @@ still show the item.
 ```ts
 {
   reflectionUnseenCount: number;
+  reflectionGenerating: boolean;
   failedReflectionRunIds: string[];
   failedReflectionRunsSeenThroughAt: string | null;
   whatsNewSeenThroughDate: string | null;
+  whatsNewSeenThroughSequence: number | null;
 }
 ```
 
 `reflectionUnseenCount` is pending Help proposals plus open explanation-only
 inbox rows whose `inbox_seen_at` is still null. It is not the Help queue length.
+`reflectionGenerating` is true when this learner has a queued or running durable
+post-session reflection dispatch, including after browser navigation or reload.
+It becomes false for succeeded, skipped, or failed dispatches. The client uses it
+for the Reflections spinner; it does not count artifacts or pending proposals.
 `failedReflectionRunIds` are concluded generation runs whose durable `state` is
 `failed` and whose `completed_at` is later than the learner’s stored
 seen-through timestamp, newest completion first. A null cursor means every
@@ -601,10 +905,10 @@ is current and gives the failure marker priority over the count. Opening Run
 meta durably acknowledges currently failed runs. `failedReflectionRunsSeenThroughAt`
 is that ISO-8601 UTC cursor in `learner_params`
 (`failed_reflection_runs_seen_through_at`), or null if it has never been
-written. `whatsNewSeenThroughDate` is the learner’s stored YYYY-MM-DD cursor in
-`learner_params` (`whats_new_seen_through_date`), or null if it has never been
-written. It is not a `learner_settings` value. The client grandfathers a
-missing cursor against the current catalog and counts later posts itself.
+written.
+
+The What’s New cursor fields follow the
+[blog's unread-update contract](whats-new.md#unread-updates).
 
 `POST /api/reflection-inbox-seen` accepts one of:
 
@@ -617,15 +921,55 @@ It stamps `inbox_seen_at` once and returns `{ marked, reflectionUnseenCount }`.
 Missing proposals return `404`. A missing explanation inbox row is a no-op
 `200` so Done races do not fail the pager.
 
-`POST /api/whats-new-seen` accepts `{ throughDate, mode }` where `throughDate`
-is `YYYY-MM-DD` and `mode` is `ensure` (fill only when unset) or `seen`
-(monotonic max). Success returns `{ whatsNewSeenThroughDate }`.
-
 `POST /api/failed-reflection-runs-seen` accepts `{}` or `{ seenThroughAt }`
 where `seenThroughAt` is an ISO-8601 UTC timestamp. An empty body uses the
 server clock. Success advances the cursor monotonically and returns
 `{ failedReflectionRunIds, failedReflectionRunsSeenThroughAt }`, where the ids
 are the remaining unseen failed runs.
+
+### What’s New blog
+
+`GET /api/whats-new` returns `{ posts: WhatsNewPost[] }` containing published
+posts. Operator-only `GET /api/operator/whats-new` returns the same shape,
+including drafts. `PUT /api/operator/whats-new` requires the existing operator
+allowlist and accepts `WhatsNewWriteRequest`; success returns the saved
+`WhatsNewPost`. The [shared types](../src/domain/whats-new.ts) define these
+shapes, and the [operator command](whats-new.md#operator-command) shows a full
+write-input example. Invalid content returns 400, stale revisions return 409,
+and missing operator access returns 403. The write endpoint has a scoped 1 MiB
+JSON limit to accommodate escaped content within the domain bounds.
+
+`GET /api/whats-new-attention` returns the current learner's
+`{ items, unseenPostIds, nextExpiryAt, serverNow }`, using the
+[attention type](../src/domain/whats-new-attention.ts). Each item has `postId`,
+nullable `firstBadgeSeenAt`, and nullable `readAt`. `unseenPostIds` contains
+published posts that are unread and either never exposed in a visible badge or
+still inside their own twelve-hour window. `nextExpiryAt`
+is the earliest active expiry or null; `serverNow` permits clock-offset-aware
+client expiry. Reading this endpoint changes no state.
+
+`POST /api/whats-new-attention` accepts
+`{ postIds: string[], kind: 'badge-seen' | 'read' }` and returns the same state.
+The client submits the exact published-post IDs represented by the visible
+aggregate badge or visible per-post markers, or the individual post opened for
+reading. Each first timestamp is durable and idempotent. A new post receives
+its own clock without extending an older one. Both operations use server UTC
+time and only affect the signed-in learner. Missing/unknown fields, invalid
+kinds, empty or duplicate IDs, more than 1000 IDs, and unknown or draft post
+IDs return 400 without partial writes.
+Existing legacy cursors retain acknowledged reads, with their parameter update
+time used as `readAt`; a learner without a cursor starts with all published
+posts eligible, however old their publication dates are.
+
+The compatibility `POST /api/whats-new-seen-sequence` accepts
+`{ throughSequence: number, mode: 'ensure' | 'seen' }` and returns
+`{ whatsNewSeenThroughSequence: number }`. An invalid mode, negative/noninteger
+sequence, or sequence beyond publication history returns 400.
+The retained `POST /api/whats-new-seen` accepts
+`{ throughDate: string, mode: 'ensure' | 'seen' }`, where the date is
+`YYYY-MM-DD`, and returns `{ whatsNewSeenThroughDate: string }`.
+The [blog contract](whats-new.md#unread-updates) explains acknowledgement,
+initialization, and compatibility behavior.
 
 ### Manual authorization from explanation-only items
 
@@ -668,3 +1012,133 @@ primitives. The vestigial `contrast_candidate_intake` table and reader are
 retired; pre-SWI-47 databases are no longer supported by current builds.
 
 Domain column matches [server-db.md](./server-db.md) modules.
+
+## Local introduction lab
+
+These development-only routes require `APP_WORD_CONTENT_WORKBENCH=1`, dev mode,
+trusted-local authentication, Mandarin, and a loopback client. The
+[lab guide](word-introduction-lab.md) documents its isolated launch command.
+They return local drafts, never publish study content or record learner progress.
+
+| Route | Result |
+| --- | --- |
+| `GET /api/intro-lab/status` | Generation availability and configured model |
+| `GET /api/intro-lab/drafts` | Saved immutable draft envelopes |
+| `POST /api/intro-lab/bootstrap` | Generate and save content from lexical input |
+| `POST /api/intro-lab/drafts/:id/teaching` | Generate and save a new draft with teaching pinned to the saved content |
+| `POST /api/intro-lab/import` | Validate and save supplied content with optional teaching |
+
+Bootstrap input is `{ hanzi, traditional, pinyin, guidance }`. Import input is
+`{ content, teaching?, origin? }`, where origin is `sample` or `imported`.
+Success returns the draft itself; failures return `{ error }`. Invalid output
+is never archived, and teaching failure preserves its input bootstrap draft.
+
+## Shared word introduction (Mandarin)
+
+Mounted after authentication and maintenance controls. See
+[serving word content](word-content-serving.md#private-association-api) for the
+package-association mechanism and its separation from study progress.
+
+| Method | Route | Effect |
+| --- | --- | --- |
+| POST | `/api/words/:wordId/introduction/open` | Exact packageId; privately pin an eligible ready package without generation |
+| POST | `/api/words/:wordId/introduction/complete` | Exact packageId; private navigation marker only |
+
+Preparation uses the stored lexical word through the reserve workflow and never pins a package.
+Missing words return 404; unavailable/withdrawn sources return 409.
+Opening and completing accept only `{ "packageId": "..." }`.
+
+Review preparation is independent and requested after the first durable study
+commit. Opening a lesson does not wait for, trigger, or retry review.
+Automatic retries and operator recovery own failures; usable teaching and existing
+review fallback remain available.
+
+## Content quality
+
+- `POST /api/content-quality/encounters`, body `{target, encounterId}`: record an
+  idempotent visible-content encounter and return `{contentKey, rating}` for the
+  authenticated learner. References are validated against accessible content.
+- `PUT /api/content-quality/ratings`, body `{contentKey, rating}`: set `up`,
+  `down`, or `null` to clear the learner's standing vote; requires a prior own
+  encounter. This does not modify study or content state.
+- `GET /api/operator/content-quality`: operator-allowlisted aggregate triage.
+  Optional `kind`, `since`, `until` (inclusive UTC dates), `limit`, and `offset`
+  select an exposure cohort with current standing votes. Returns full-filter
+  totals and paginated exact-content snapshots without learner identifiers.
+- `GET /api/operator/content-quality/ratings`: operator-allowlisted current
+  non-null ratings ordered by last change plus the total count. Learner
+  identifiers are omitted; the operator table applies its date window and
+  snapshot aggregation to these rows.
+
+See [content quality](content-quality.md) for supported target shapes and
+interpretation; the shared wire types live in `src/domain/content-quality.ts`.
+
+## Session debrief
+
+Vocabulary session closure enqueues Connections atomically from its retained
+server projection; callers do not supply an inventory. The first inventory and
+learner interests snapshot remain immutable across retries. The retired
+`POST /api/review-session-summaries` returns 409 without effects. Historical
+Connections remain readable through the same endpoints.
+
+Inventories with 0–14 eligible rows after the
+[recent connection cooldown](../SPECS/session-debrief.md#recent-connection-cooldown)
+are ready with zero notes and no provider attempt; 15–1000 eligible rows queue
+generation. The exercise count records the admitted inventory before cooldown.
+See the [Connections input contract](../SPECS/session-debrief.md#completion-and-input)
+for encounter membership and the provider input bound.
+
+| Method | Path | Response |
+| --- | --- | --- |
+| GET | `/api/session-debriefs/latest` | `{debrief}` for the latest completed debrief record, or null |
+| GET | `/api/session-debriefs/:sessionId` | `{debrief}`, or 404 |
+| POST | `/api/session-debriefs/:sessionId/retry` | `{debrief}` requeued from failed, or ready-empty for a failed inventory with fewer than 15 eligible rows; 404 for absent/private records, 409 for other states |
+| PATCH | `/api/learner-settings/debrief-interests` | Accept/return `{debriefInterests:string}`; at most 1000 characters, empty allowed |
+
+`GET /api/status` includes `debriefInterests` with an empty default. All routes
+use server-derived identity. A debrief DTO contains `sessionId`, `completedAt`
+(UTC), `exerciseCount` (inventory rows), `status` (`queued`, `running`, `ready`,
+`failed`), `notes` (null until ready, including an empty ready array), `error`
+(nullable learner-safe failure text), and `attemptCount`. Notes contain `text`,
+exact input `refs`, and nullable `followUp`. No provider call is awaited by the
+summary or retry endpoint. Interrupted attempts require explicit retry; queued
+jobs resume after restart. See [the contract](../SPECS/session-debrief.md).
+### Session recovery highlights
+
+`GET /api/study-sessions/:sessionId/recovery-highlights` returns `{ highlights }` for a learner-owned completed summary. Missing, unfinished, and other-learner sessions return `404`; empty IDs return `400`. This independent read uses accepted attempts and currently applied corrections; it does not generate reflection or alter scheduling. See [the feature contract](../SPECS/session-recovery-highlights.md) for thresholds and evidence references.
+
+## Operator content improvement
+
+Current review and application use `/api/operator/vocabulary`; see
+[Adaptive vocabulary](#adaptive-vocabulary) and the
+[operator workflow](operator-panel.md#content-improvement-workflow).
+`/api/operator/content-improvements` retains authenticated operator GET access to
+historical cases and evidence. Mandarin writes, including validation and closure,
+return `409 VOCABULARY_CUTOVER`. GET `/`, `/:id` and `/:id/history` expose
+retained cases and revision evidence; the [route implementation](../server/content-improvement-routes.ts)
+defines their read shapes.
+
+### Vocabulary word collection
+
+`GET /api/vocabulary/word-collection` supplies the shared Words browser. Query
+parameters are `view=recent|personal|deck`, `q`, comma-separated `mode` values,
+`lapses=0|1`, `limit` (1–100), and nonnegative `offset`. It returns `words`,
+`total`, `hasMore`, and `currentDeck`. Current vocabulary state owns modes and
+enrollment; retained study history supplies compatible dates. Closed effective
+responses respect Undo and exclude pure-cue responses from word lapse evidence.
+
+### Vocabulary learner feedback inbox
+
+`GET /api/vocabulary/feedback` returns owner-scoped `messages`, `jobs`, and
+legacy-compatible `failures`. Messages include `subjectLabel`, `caseId`, body,
+creation time and seen time. Jobs expose queued/running/failed status, subject
+label, case identity, creation time and a learner-safe error. Completed jobs are
+represented by their messages; operator proposals and provider diagnostics are
+not included. `POST /api/vocabulary/feedback/:messageId/seen` marks only that
+message read. The existing job retry endpoint requeues the selected failed item.
+
+Feedback messages also expose nullable `dismissedAt`. Owner-only POST actions
+`/api/vocabulary/feedback/:messageId/dismiss` and `/restore` are idempotent.
+Dismissal excludes a message from unread attention without changing its body,
+seen time, scheduling or content-improvement state. GET retains dismissed
+messages for the learner’s history.

@@ -58,6 +58,9 @@ function validateAt(value: unknown, schema: JsonSchema, path: string): string[] 
     if (schema.minItems !== undefined && value.length < schema.minItems) {
       errors.push(`${path}: expected at least ${schema.minItems} item(s)`);
     }
+    if (schema.maxItems !== undefined && value.length > schema.maxItems) {
+      errors.push(`${path}: expected at most ${schema.maxItems} item(s)`);
+    }
     if (schema.items !== undefined) {
       errors.push(...value.flatMap((item, index) => (
         validateAt(item, schema.items!, `${path}[${index}]`)

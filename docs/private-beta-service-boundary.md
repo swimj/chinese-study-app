@@ -49,110 +49,77 @@ SQLite is the permanent service database.
   read-only access by default, and registered repair commands rather than
   learner impersonation or improvised database edits.
 
+### Operator-only service access
+
+A persisted operator-only control restricts application API access to the
+configured operator allowlist. The server checks verified external identity
+before resolving or creating a learner. Non-operators cannot read application
+data, submit commands, or bootstrap a learner while the control is enabled.
+The access-status probe reveals only whether the caller may enter; it does not
+create learner state. Health checks and frontend assets remain available.
+
+The browser checks access before mounting the learner application. An existing
+tab that receives an operator-only rejection replaces the application with a
+maintenance screen. This restriction does not erase data already loaded in a
+tab or revoke a request admitted before the control changed.
+
+Operator-only access, maintenance, and provider-work controls have independent
+purposes. Operators remain subject to maintenance write restrictions. Restricting
+interactive access does not pause background work for other learners; the
+existing global provider-work control governs provider dispatch. No per-learner
+worker exemption is implied by operator access.
+
 Public signup, organizations, billing identities, a general role hierarchy,
 and a self-service recovery product are outside this beta contract.
 
-## Durable Ownership Inventory
+## Data ownership
 
-The current schema has 47 steady-state application tables. Temporary migration
-tables and SQLite internals are excluded. Existing mixed tables must be split
-or given an equivalently explicit ownership/scope boundary before real hosted
-learner data is accepted.
+Every persisted record has explicit learner, shared-content, or service ownership.
+Mixed storage must enforce those scopes before accepting hosted learner data.
 
-The machine-auditable inventory is
-[`server/db/ownership-manifest.ts`](../server/db/ownership-manifest.ts). Its
-schema-completeness test requires every new steady-state table to be classified
-before it can land.
+Learner identity, progress, schedules, encounters, reactions and personal notes
+are private. Their use as evidence for reusable content does not make the
+underlying evidence shared. Shared authored content has its own identity and
+revision history; referencing it grants no access to another learner's records.
 
-### Learner-owned state, evidence, and history
+Service-owned jobs, generation provenance, imports and release ledgers carry
+operational authority. They retain source attribution where needed without
+making private source material publicly readable. Ownership checks protect both
+current state and retained historical records.
 
-- `user_word_priority`, `word_study_admission_state`, `word_skill_state`,
-  `daily_new_word_intake`, `review_session_summaries`, `study_sessions`,
-  `study_attempt_events`, `study_events`, and `word_skill_relevance`.
-- `reflection_artifacts`, `reflection_generation_runs`,
-  `reflection_proposal_reviews`, `reflection_operation_invocations`,
-  `reflection_quality_annotations`, and `reflection_help_inbox`.
-- `intake_triage_runs`, `intake_triage_assessments`, and
-  `intake_triage_assessment_dispositions`.
-- `production_cue_evidence_records`, `production_cue_evidence_projection`, and
-  `production_recheck_demands`.
-- `production_cue_lifecycle_events` and `production_cue_activation_state` in
-  their current meaning. They record each learner's authorized cue activation
-  history and projection and are explicitly learner-owned.
-- `learner_word_state` and `learner_word_meaning_preferences`, split from the
-  shared lexical roots formerly mixed into `words` and `word_meanings`.
-
-These records remain private even when they motivate reusable shared content.
-Service processing fields and provider provenance do not convert learner
-evidence into service-owned data.
-
-### Shared content and reference data
-
-- Lexical identity and imported lexical content currently represented by
-  `words`, `word_meanings`, and `word_lookup_aliases`.
-- Reusable contrast content currently represented by `contrast_clusters`,
-  `contrast_cluster_members`, and `contrast_prompts`.
-- Reusable production content currently represented by `production_tasks`,
-  `production_cues`, `production_cue_accepted_words`, and post-reveal
-  `production_cue_supplements`.
-- A new or explicitly repurposed shared publication lifecycle records
-  `shared_trial`, `available`, `quarantined`, and `retired`. It is separate
-  from the current learner activation history and from learner suppression.
-
-Shared content is immutable. Corrections create distinct attributable content
-or an explicit disposition rather than rewriting history. A repair operation
-preserves causal provenance without assuming that its inputs and outputs are
-versions of one stable artifact. Attempts and evidence retain the exact content
-reference, fallback, answer space, and other served snapshot required to
-interpret the historical event; they do not carry publication identity.
-
-### Service and import metadata
-
-`contrast_candidate_intake` was a vestigial local experiment and is retired
-rather than tenant-adapted. The polymorphic `study_content_feedback` log is
-retired rather than tenant-adapted. Its active legacy bad-prompt cases were
-processed once through reflection and Help before the temporary exclusion
-state was removed. Going forward, bad production prompts are repaired through
-durable production cues; bad contrast content is repaired or deleted through
-the ordinary content lifecycle. SWI-49 owns shared-artifact reporting and
-quarantine.
-
-The former `app_metadata` keyspace is replaced by `learner_settings`,
-`schema_migrations`, and `content_imports`. Release and migration ledgers are
-service-operational records; they do not grant access to learner content.
-
-SWI-47 implements this boundary with physical learner-owned tables behind
-current-learner compatibility views, shared lexical tables plus learner
-overlays, and explicit `learner`/`shared` scope on contrast and production cue
-artifacts. Ordinary application writes create learner-private generated
-content; shared publication remains a later service operation.
+The [vocabulary architecture contract](../SPECS/vocabulary-architecture.md#content-identity-ownership-and-revision)
+defines vocabulary identity and revision constraints. The
+[database map](server-db.md) locates persistence modules and the table ownership
+manifest used to check schema coverage.
 
 ## Shared Content Contract
 
-The beta has no canonical or blessed content tier. Imported corpus content is
-a reproducible bootstrap snapshot, not a quality claim.
+The current Mandarin content authority is described by the
+[vocabulary contract](../SPECS/vocabulary-learning.md). Complete current objects
+and immutable full revision history preserve identity separately from authored
+representation. The current product's authored study content is shared. The
+model can represent learner-private authored content, but no current product
+feature defines such content. Imports preserve legacy labels for compatibility;
+source-bounded corrections use explicit migrations. Learner evidence, personal
+notes and progress remain private. Active, quarantined, and retired availability is separate from curation
+and learner-specific deactivation.
 
-Reusable generated content normally enters `shared_trial` after the source
-learner explicitly approves its durable effect and the artifact passes strict
-local validation and sanitization. Private evidence, notes, analysis, and
-learner identity are never published with it. Publication states are:
+Backend authoring can publish structurally validated shared material under its
+bounded preparation policy. Internal reflection proposes changes; an allowlisted
+operator previews, approves, and applies the exact version. Learners receive
+separate private read-only lessons. Their evidence is not published as shared
+content. Scheduling compensation has bounded backend authority independent of
+content approval.
 
-- `shared_trial` — eligible for ordinary serving under optimistic publication;
-- `available` — eligible service-visible content, including imported content;
-- `quarantined` — immediately ineligible while a problem is investigated; and
-- `retired` — historically retained but no longer eligible.
+Teaching has an explicitly bound repertoire; general practice draws from eligible
+standalone exercises. Maintain prefers curated versions with a dictionary fallback.
+Pure cues retain independent schedules and sparse strong-cue sampling, adopted
+from relevant Practice/Maintain vocabulary without learner proposal review.
+Neither word mode nor a due date promises exhaustive session inclusion.
 
-For the first beta, selection is uniform random across all eligible artifacts
-for the same learning purpose, including imported and trial content. The
-randomness is injectable in tests. Later ranking, personalization, feedback,
-or embedding-based policy is a refinement of the probability distribution,
-not a reason to weaken identity or provenance.
-
-Learner suppression remains private relevance/curriculum state. Reporting a
-bad artifact may cause a shared quarantine or retirement, and a future shared
-task-level disposition is a separate operation. A possible "commonly
-suppressed" prior is deferred; explicit learner admission or prioritization
-must override such a default if it is introduced.
+Historical served snapshots remain immutable; updates affect fresh encounters.
+Identity replacement does not silently transfer schedules, deactivations, or
+teaching bindings.
 
 ## Persistence And Reconsideration
 

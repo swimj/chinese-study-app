@@ -1,3 +1,13 @@
+import { assertBootstrapRevealSource } from './word-introductions.ts';
+import { selectBootstrapReveal } from '../../src/domain/word-content/reveal.ts';
+import { getSessionWordOutcome, getSessionWordReport, recordSessionWordOutcome, assertSessionAcceptsNewWordOutcome } from './session-word-outcomes.ts';
+import { DEFAULT_INTRODUCTION_SPACING, isStudyIntroductionOrder, isStudyIntroductionSpacing, type StudyIntroductionOrder } from '../../src/domain/introduction-order.ts';
+import { enqueueSessionDebrief } from './session-debrief.ts';
+import { allocateSessionBucketSlots } from '../../src/domain/session-limits.ts';
+import type { PureCue } from '../../src/domain/pure-cues.ts';
+import { allowsProductionUnderProxyPolicy } from '../../src/domain/production-proxy.ts';
+import { validateDebriefInventory, type SessionDebriefInventoryItem } from '../../src/domain/session-debrief.ts';
+import { validateContentQualitySchema } from './content-quality.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -17,8 +27,10 @@ import type {
   ContrastSelectionCommitIntent,
   ContrastPrompt,
   ReviewCommitFields,
+  PureCueSessionReviewItem,
   SessionStudyItem,
   SessionStudyItemBuckets,
+  LearningRehearsalSnapshot,
   ProductionExerciseSnapshot,
   ProductionAnswerWord,
   StudyAttemptEvent,
@@ -32,7 +44,16 @@ import type {
   WordSkillRelevanceState,
 } from '../../src/domain/study-actions.ts';
 import { buildReviewSessionStudyItem, deriveReviewCommitFieldsFromAttemptEvents } from '../../src/domain/study-actions.ts';
+import {
+  issuePureCueServedSnapshot,
+  isWordProductionProxied,
+  selectStoredPureCuesForSession,
+  captureProductionSchedulerSnapshotForAttemptBatchWithoutTransaction,
+  getProductionCompensationEligibilityDeadlines,
+} from './pure-cues.ts';
 import type { StudyProfileId } from '../../src/study-profile.ts';
+import type { WordContentDocument } from '../../src/domain/word-content/types.ts';
+import { materializeTeachingPackage } from '../../src/domain/word-content/materialize.ts';
 import {
   buildProductionAnswerLookup,
   deriveAcceptedSubmittedWordId,
@@ -40,7 +61,14 @@ import {
   type ProductionAnswerLookup,
 } from '../../src/domain/production-response.ts';
 import { config, getConfig, getDb, dbPath, seedDataPath, dbExistedOnStartup } from './connection.ts';
+import { seedWordIntroductionFixtures } from '../seeds/word-introductions.ts';
 import { fillMissingNormalizedHanzi, normalizeMandarinHanziLookup } from './hanzi-lookup.ts';
+import { getWordIntroductionLibrary, getWordIntroductionPreparation } from './word-introductions.ts';
+import { enqueueWordPreparation } from './preparation-work.ts';
+import { getWordReserveCandidates, replaceWordReserveCandidates, requestWordReserveReconciliation,
+  finishWordReserveReconciliation, getBlockedPreparationWordIds } from './word-reserve.ts';
+import type { WordIntroductionResponse } from '../../src/domain/word-content/application.ts';
+import { getCanonicalReviewContent, isCanonicalReviewSourceEligible } from './review-content.ts';
 import { assertSchemaCurrent, migrateDatabase } from './migrations.ts';
 import { createHostedOperationsSchema } from './hosted-operations.ts';
 import {
@@ -60,16 +88,11 @@ import {
 } from './domain-commands.ts';
 import {
   appendProductionCueAttemptEvidenceWithoutTransaction,
-  appendProductionRecheckDemandWithoutTransaction,
-  consumeProductionRecheckDemandWithoutTransaction,
   defaultProductionTaskId,
   createProductionCueIndexes,
   createProductionCueSchema,
   getActiveProductionCuesForWord,
-  getPendingProductionRecheckForWord,
   getProductionCueSupplement,
-  getProductionRecheckDemand,
-  linkProductionRecheckReplacementWithoutTransaction,
   projectProductionCueEvidence,
   validateProductionCueSchema,
   type ProductionCueAttemptResultV0,
@@ -82,10 +105,10 @@ import {
   PRIORITY_TIER_REGULAR,
   PRIORITY_TIER_SUNK,
   REVIEW_PHASE_RECENCY_GUARD_HOURS,
-  REVIEW_SKILL_URGENCY_TIE_EPSILON,
 } from './types.ts';
 import { queryManifestDeckWords, invalidateDeckWordIds, queryDeckWordStudyDates } from './deck-words.ts';
 import { applyIntervalHourFuzz } from './interval-schedule.ts';
+import { nextReviewSchedule, reviewUrgency, compareReviewCandidates } from './review-policy.ts';
 import {
   buildUnstudiedAdmissionSeedSource,
   DEFAULT_UNSTUDIED_ADMISSION_SOURCE,
@@ -97,6 +120,14 @@ import {
   type UnstudiedStashCandidate,
   assertUnstudiedAdmissionSource,
 } from './unstudied-admission.ts';
+import {
+  assertCharacterPresentation,
+  assertSentenceCharacterPresentation,
+  DEFAULT_SENTENCE_CHARACTER_PRESENTATION,
+  type SentenceCharacterPresentation,
+  DEFAULT_CHARACTER_PRESENTATION,
+  type CharacterPresentation,
+} from '../../src/domain/card-characters.ts';
 import {
   getTailDeckId,
   loadDeckManifest,
@@ -306,8 +337,8 @@ const RECENT_LAPSE_IDS_SQL = `
   UNION
   SELECT id AS word_id
   FROM words
-  WHERE last_learning_covered_on IS NOT NULL
-    AND (last_learning_success_on IS NULL OR last_learning_covered_on > last_learning_success_on)
+  WHERE last_learning_success_on IS NOT NULL
+    AND last_learning_covered_on > last_learning_success_on
 `;
 
 function queryRecentLapseWordIds(sinceDay: string): Set<string> {
@@ -440,7 +471,7 @@ export function getPrioritizedUnstudiedWords(): PriorityWordsPayload {
         words.meanings_json,
         words.personal_notes,
         words.examples_json,
-        words.status,
+        'unstudied' AS status,
         words.priority,
         words.created_at,
         words.learning_streak,
@@ -453,7 +484,8 @@ export function getPrioritizedUnstudiedWords(): PriorityWordsPayload {
         user_word_priority.updated_at AS overlay_updated_at
       FROM user_word_priority
       JOIN words ON words.id = user_word_priority.word_id
-      WHERE words.status = 'unstudied'
+      WHERE ${unstudiedPriorityPredicate('words')}
+        AND ${priorityMembershipPredicate('words')}
         AND user_word_priority.priority_tier >= ${PRIORITY_TIER_REGULAR}
         AND (
           user_word_priority.bump_count > 0
@@ -522,17 +554,17 @@ export function updateWordUserPriority(wordId: string, patch: UserWordPriorityPa
     .prepare(`
       SELECT
         id,
-        status
+        CASE WHEN ${unstudiedPriorityPredicate('words')} THEN 1 ELSE 0 END AS is_unstudied
       FROM words
       WHERE id = ?
     `)
-    .get(wordId) as { id: string; status: WordStatus } | undefined;
+    .get(wordId) as { id: string; is_unstudied: number } | undefined;
 
   if (!existingWord) {
     throw new Error('Word not found');
   }
 
-  if (existingWord.status !== 'unstudied') {
+  if (existingWord.is_unstudied !== 1) {
     throw new Error('Expected unstudied word');
   }
 
@@ -624,7 +656,7 @@ export function addUnstudiedUserPriorityByHanzi(
 
   const matchesToAdd = selectPriorityMatchesByWordIds(matches, wordIds);
 
-  getDb().exec('BEGIN');
+  getDb().exec('SAVEPOINT add_unstudied_priority');
 
   try {
     for (const match of matchesToAdd) {
@@ -665,9 +697,10 @@ export function addUnstudiedUserPriorityByHanzi(
       `).run(match.id, nextBumpCount, nextForceTop, nextPriorityTier, nextRequiredForNextSession, new Date().toISOString());
     }
 
-    getDb().exec('COMMIT');
+    getDb().exec('RELEASE add_unstudied_priority');
   } catch (error) {
-    getDb().exec('ROLLBACK');
+    getDb().exec('ROLLBACK TO add_unstudied_priority');
+    getDb().exec('RELEASE add_unstudied_priority');
     throw error;
   }
 
@@ -713,6 +746,18 @@ function selectPriorityMatchesByWordIds(
   return uniqueWordIds.map((id) => ({ id }));
 }
 
+/** Stash APIs follow the new Mandarin mode once enrolled; other profiles retain their lifecycle. */
+function unstudiedPriorityPredicate(alias: 'words'): string {
+  if (config.studyProfile !== 'mandarin') return `${alias}.status='unstudied'`;
+  return `COALESCE((SELECT CASE WHEN vocabulary.mode='unstudied' THEN 1 ELSE 0 END FROM learner_words vocabulary
+    WHERE vocabulary.learner_id=current_learner_id() AND vocabulary.word_id=${alias}.id),CASE WHEN ${alias}.status='unstudied' THEN 1 ELSE 0 END)=1`;
+}
+function priorityMembershipPredicate(alias: 'words'): string {
+  if (config.studyProfile !== 'mandarin') return '1=1';
+  return `COALESCE((SELECT CASE WHEN vocabulary.in_stash=1 AND vocabulary.dismissed_at IS NULL THEN 1 ELSE 0 END
+    FROM learner_words vocabulary WHERE vocabulary.learner_id=current_learner_id() AND vocabulary.word_id=${alias}.id),1)=1`;
+}
+
 function resolveUnstudiedPriorityWordIdsByTarget(targetText: string): Array<{ id: string }> {
   const submittedText = targetText.trim();
   const exactMatches = getDb()
@@ -720,7 +765,7 @@ function resolveUnstudiedPriorityWordIdsByTarget(targetText: string): Array<{ id
       SELECT
         id
       FROM words
-      WHERE status = 'unstudied'
+      WHERE ${unstudiedPriorityPredicate('words')}
         AND hanzi = ?
       ORDER BY priority DESC, created_at ASC
     `)
@@ -739,7 +784,7 @@ function resolveUnstudiedPriorityWordIdsByTarget(targetText: string): Array<{ id
             words.created_at
           FROM words
           JOIN lexical_words ON lexical_words.id = words.id
-          WHERE words.status = 'unstudied'
+          WHERE ${unstudiedPriorityPredicate('words')}
             AND lexical_words.normalized_hanzi <> ''
             AND lexical_words.normalized_hanzi = ?
           ORDER BY words.priority DESC, words.created_at ASC
@@ -760,7 +805,7 @@ function resolveUnstudiedPriorityWordIdsByTarget(targetText: string): Array<{ id
           words.created_at
         FROM word_lookup_aliases
         JOIN words ON words.id = word_lookup_aliases.word_id
-        WHERE words.status = 'unstudied'
+        WHERE ${unstudiedPriorityPredicate('words')}
           AND word_lookup_aliases.normalized_alias = ?
         ORDER BY words.priority DESC, words.created_at ASC
       `)
@@ -780,6 +825,53 @@ function resolveUnstudiedPriorityWordIdsByTarget(targetText: string): Array<{ id
   });
 }
 
+/** Reconciliation is bounded, synchronous and provider-free. Day changes never reshuffle retained candidates. */
+export function reconcileWordPreparationReserve(studyDayKey = getTodayKey()): void {
+  assertStudyDayKey(studyDayKey);
+  if (config.studyProfile !== 'mandarin') { finishWordReserveReconciliation(); return; }
+  const existing = new Set(getWordReserveCandidates());
+  const target = 2 * getDailyNewWordLimit();
+  const blocked = getBlockedPreparationWordIds();
+  // Failed current candidates retain their slots: failure alone cannot expand speculative spend.
+  // Priority, pool, intake-limit and lifecycle changes still reconcile membership normally.
+  const excludedIds = new Set([...blocked].filter((id) => !existing.has(id)));
+  const candidates = getAdmittedUnstudiedWords(target, 'reserve', getUnstudiedAdmissionSource(), {
+    preferredIds: existing, excludedIds, ignoreRequired: true,
+  });
+  getDb().exec('SAVEPOINT reconcile_word_reserve');
+  try {
+    replaceWordReserveCandidates(candidates.map((word) => word.id));
+    for (const word of candidates) {
+      if (!blocked.has(word.id) && !getWordIntroductionLibrary(word.id)?.selectedPackageId) enqueueWordPreparation(word.id, 'teaching');
+    }
+    finishWordReserveReconciliation();
+    getDb().exec('RELEASE SAVEPOINT reconcile_word_reserve');
+  } catch (error) {
+    getDb().exec('ROLLBACK TO SAVEPOINT reconcile_word_reserve');
+    getDb().exec('RELEASE SAVEPOINT reconcile_word_reserve');
+    throw error;
+  }
+}
+function getReadyReserveIds(): Set<string> {
+  return new Set(getWordReserveCandidates().filter((id) => getWordIntroductionLibrary(id)?.selectedPackageId != null));
+}
+/** No composition here: polling must not repeatedly issue served review snapshots. */
+export function inspectSessionPreparation(studyDayKey: string): { targetCount: number; readyCount: number; pending: boolean } {
+  assertStudyDayKey(studyDayKey);
+  if (config.studyProfile !== 'mandarin') return { targetCount: 0, readyCount: 0, pending: false };
+  const quota = getRemainingDailyNewWordSlots(studyDayKey);
+  const source = getUnstudiedAdmissionSource();
+  const blocked = getBlockedPreparationWordIds();
+  const reserveIds = new Set(getWordReserveCandidates().filter((id) => !blocked.has(id)));
+  const intended = getAdmittedUnstudiedWords(quota, studyDayKey, source, { eligibleIds: reserveIds, ignoreRequired: true });
+  const ready = getAdmittedUnstudiedWords(quota, studyDayKey, source, { eligibleIds: getReadyReserveIds(), ignoreRequired: true });
+  const readyIds = new Set(ready.map((word) => word.id));
+  const pendingTop = intended.some((word) => !readyIds.has(word.id) && Boolean(getDb().prepare(
+    'SELECT 1 FROM user_word_priority WHERE word_id = ? AND priority_tier = ?',
+  ).get(word.id, PRIORITY_TIER_TOP)));
+  return { targetCount: intended.length, readyCount: ready.length, pending: ready.length < intended.length || pendingTop };
+}
+
 export function getSessionPayload(
   studyDayKey: string,
   options: { random?: () => number } = {},
@@ -787,6 +879,7 @@ export function getSessionPayload(
   assertStudyDayKey(studyDayKey);
   ensureAcceptedReviewAttemptEventsProjectedBeforeSessionComposition();
 
+  if (config.studyProfile === 'mandarin') reconcileWordPreparationReserve(studyDayKey);
   return {
     buckets: getSessionItemBucketsWithWords(studyDayKey, options.random ?? Math.random),
   };
@@ -1146,7 +1239,8 @@ export function getContrastPromptsForCluster(clusterId: string): ContrastPrompt[
         prompt_text,
         explanation
       FROM contrast_prompts
-      WHERE cluster_id = ?
+      WHERE cluster_id = ? AND NOT EXISTS (SELECT 1 FROM content_improvement_replacements r
+        WHERE r.kind = 'contrast_prompt' AND r.source_id = contrast_prompts.id)
       ORDER BY id ASC
     `)
     .all(normalizedClusterId) as ContrastPromptRow[];
@@ -1488,7 +1582,9 @@ export function recordAcceptedReviewAttemptBatch({
   }
 
   assertReviewAttemptBatchMatchesCommitIntent(events, commitIntent);
-  const derivedCommitFields = deriveReviewCommitFieldsFromAttemptEvents(events);
+  const derivedCommitFields = deriveReviewCommitFieldsFromAttemptEvents(events, {
+    reinforcementSkipped: commitIntent.reinforcementSkipped,
+  });
   assertDerivedReviewCommitMatchesIntent(derivedCommitFields, commitIntent);
 
   const reviewedAt = new Date().toISOString();
@@ -1500,35 +1596,17 @@ export function recordAcceptedReviewAttemptBatch({
     return assigned?.event ?? event;
   });
   const terminalProductionAttempt = productionAttempts.at(-1) ?? null;
-  const recheckDemandId = assertProductionAttemptRecheckDemandCoherence(productionAttempts);
-  const servedRecheck = recheckDemandId === null ? null : getProductionRecheckDemand(recheckDemandId);
-  if (recheckDemandId !== null && servedRecheck === null) {
-    throw new Error(`Production recheck demand ${recheckDemandId} does not exist.`);
-  }
-  if (servedRecheck !== null && (
-    servedRecheck.consumedAt !== null
-    || servedRecheck.taskId !== terminalProductionAttempt?.evidence.taskId
-    || servedRecheck.dueAt > reviewedAt
-  )) {
-    throw new Error(`Production recheck demand ${recheckDemandId} is stale or not due.`);
-  }
-  if (servedRecheck !== null && terminalProductionAttempt !== null) {
-    const expectedSessionActionId = `review/${terminalProductionAttempt.event.targetWordId}/production/recheck/${servedRecheck.demandId}`;
-    if (events.some((event) => event.sessionActionId !== expectedSessionActionId)) {
-      throw new Error(`Production recheck demand ${servedRecheck.demandId} does not match its served action.`);
-    }
-  } else if (
-    terminalProductionAttempt !== null
-    && terminalProductionAttempt.event.sessionActionId.includes('/production/recheck/')
-  ) {
-    throw new Error('Production recheck action is missing its demand snapshot.');
-  }
-
-  getDb().exec('BEGIN');
+  getDb().exec('SAVEPOINT recordAcceptedReviewAttemptBatch');
 
   try {
     ensureStudySessionExistsWithoutTransaction(sessionId, eventsToStore[0]?.occurredAt ?? reviewedAt);
     insertStudyAttemptEventsWithoutTransaction(eventsToStore);
+    if (terminalProductionAttempt !== null && derivedCommitFields.failureCount > 0) {
+      captureProductionSchedulerSnapshotForAttemptBatchWithoutTransaction({
+        sourceAttemptId: terminalProductionAttempt.event.id,
+        capturedAt: reviewedAt,
+      });
+    }
     for (const { event, evidence } of productionAttempts) {
       appendProductionCueAttemptEvidenceWithoutTransaction({
         occurredAt: event.occurredAt,
@@ -1541,44 +1619,18 @@ export function recordAcceptedReviewAttemptBatch({
     }
     if (productionAttempts.length > 0) projectProductionCueEvidence(reviewedAt);
 
-    const preserveAnchorScheduler = derivedCommitFields.failureCount === 0
-      && terminalProductionAttempt !== null
-      && terminalProductionAttempt.evidence.result === 'accepted_non_anchor';
-    if (!preserveAnchorScheduler) {
-      projectReviewAttemptEventsWithoutTransaction({
-        events: eventsToStore,
-        failureCount: derivedCommitFields.failureCount,
-        terminalRating: derivedCommitFields.terminalRating,
-        reviewedAt,
-      });
-    }
-
-    if (servedRecheck !== null && terminalProductionAttempt !== null) {
-      consumeProductionRecheckDemandWithoutTransaction({
-        demandId: servedRecheck.demandId,
-        consumedAt: reviewedAt,
-        consumedByAttemptId: terminalProductionAttempt.event.id,
-      });
-    }
-    if (preserveAnchorScheduler && terminalProductionAttempt !== null) {
-      const existingPending = getPendingProductionRecheckForWord(terminalProductionAttempt.event.targetWordId);
-      if (existingPending === null) {
-        const replacement = appendProductionRecheckDemandWithoutTransaction({
-          taskId: terminalProductionAttempt.evidence.taskId,
-          sourceAttemptId: terminalProductionAttempt.event.id,
-          scheduledAt: reviewedAt,
-          dueAt: addHours(reviewedAt, 48),
-        });
-        if (servedRecheck !== null) {
-          linkProductionRecheckReplacementWithoutTransaction(servedRecheck.demandId, replacement.demandId);
-        }
-      }
-    }
+    projectReviewAttemptEventsWithoutTransaction({
+      events: eventsToStore,
+      failureCount: derivedCommitFields.failureCount,
+      terminalRating: derivedCommitFields.terminalRating,
+      reviewedAt,
+    });
     markStudyAttemptEventsProjectedWithoutTransaction(eventsToStore.map((event) => event.id), reviewedAt);
 
-    getDb().exec('COMMIT');
+    getDb().exec('RELEASE recordAcceptedReviewAttemptBatch');
   } catch (error) {
-    getDb().exec('ROLLBACK');
+    getDb().exec('ROLLBACK TO recordAcceptedReviewAttemptBatch');
+    getDb().exec('RELEASE recordAcceptedReviewAttemptBatch');
     throw error;
   }
 
@@ -1592,7 +1644,6 @@ type ParsedProductionAttemptEvidence = {
   cueId: string | null;
   submittedWordId: string | null;
   result: ProductionCueAttemptResultV0;
-  recheckDemandId: string | null;
   responseKind: 'typed' | 'no_clue';
 };
 
@@ -1604,14 +1655,23 @@ function parseProductionAttemptEvidence(event: StudyAttemptEvent): ParsedProduct
     || typeof production.taskId !== 'string'
     || (production.cueId !== null && typeof production.cueId !== 'string')
     || !isProductionCueAttemptResult(production.result)
-    || (production.recheckDemandId !== null && typeof production.recheckDemandId !== 'string')
     || !Array.isArray(production.acceptedWordIds)
-    || production.acceptedWordIds.some((wordId) => typeof wordId !== 'string')
+    || production.acceptedWordIds.length !== 1
+    || production.acceptedWordIds[0] !== event.targetWordId
     || (responseKind !== 'typed' && responseKind !== 'no_clue')
     || (responseKind === 'typed' && typeof production.submittedText !== 'string')
     || (responseKind === 'no_clue' && production.submittedText !== null)
   ) {
     throw new Error(`Production attempt ${event.id} has invalid production evidence metadata.`);
+  }
+  if (production.bootstrapReveal !== undefined) {
+    if (production.cueType !== 'definition_gloss' || production.supplement != null) {
+      throw new Error('Bootstrap reveal requires definition production without a legacy supplement');
+    }
+    assertBootstrapRevealSource(event.targetWordId, production.bootstrapReveal);
+  }
+  if ('recheckDemandId' in production || event.sessionActionId.includes('/production/recheck/')) {
+    throw new Error(`Production attempt ${event.id} uses retired production recheck state.`);
   }
   if (
     production.submittedText !== event.response
@@ -1627,6 +1687,7 @@ function parseProductionAttemptEvidence(event: StudyAttemptEvent): ParsedProduct
   }
   const submittedWordId = deriveProductionSubmittedWordId({
     event,
+    cueId: production.cueId,
     acceptedWordIds: production.acceptedWordIds,
     result: production.result,
     responseKind,
@@ -1647,7 +1708,6 @@ function parseProductionAttemptEvidence(event: StudyAttemptEvent): ParsedProduct
     cueId: production.cueId,
     submittedWordId,
     result: production.result,
-    recheckDemandId: production.recheckDemandId,
     responseKind,
   };
 }
@@ -1677,12 +1737,14 @@ function assignProductionSubmittedWordId(
 
 function deriveProductionSubmittedWordId({
   event,
+  cueId,
   acceptedWordIds,
   result,
   responseKind,
   submittedText,
 }: {
   event: StudyAttemptEvent;
+  cueId: string | null;
   acceptedWordIds: string[];
   result: ProductionCueAttemptResultV0;
   responseKind: 'typed' | 'no_clue';
@@ -1695,7 +1757,7 @@ function deriveProductionSubmittedWordId({
     throw new Error(`Production attempt ${event.id} has invalid production evidence metadata.`);
   }
   const profileId = getConfig().studyProfile;
-  const acceptedAnswers = getProductionAnswerWordsByIds(acceptedWordIds);
+  const acceptedAnswers = getReviewProductionAnswers(cueId, acceptedWordIds);
   const acceptedSubmittedWordId = deriveAcceptedSubmittedWordId({
     result,
     submittedText,
@@ -1773,8 +1835,20 @@ function freezeProductionExerciseSnapshot(
   const { acceptedWordIds, ...snapshot } = production;
   return {
     ...snapshot,
-    acceptedAnswers: getProductionAnswerWordsByIds(acceptedWordIds),
+    acceptedAnswers: getReviewProductionAnswers(snapshot.cueId, acceptedWordIds),
   };
+}
+
+function getReviewProductionAnswers(cueId: string | null, wordIds: readonly string[]): ProductionAnswerWord[] {
+  const canonical = cueId === null ? null : getCanonicalReviewContent('production_cue', cueId);
+  if (canonical === null) return getProductionAnswerWordsByIds(wordIds);
+  if (canonical.kind !== 'production_cue'
+    || canonical.exercise.acceptedAnswers.length !== wordIds.length
+    || canonical.exercise.acceptedAnswers.some((answer, index) => answer.wordId !== wordIds[index])) {
+    throw new Error(`Canonical review cue ${cueId} has inconsistent accepted word identities.`);
+  }
+  // The immutable cue owns its answer forms even if the lexical catalog is corrected later.
+  return canonical.exercise.acceptedAnswers.map((answer) => ({ ...answer }));
 }
 
 function isProductionAttemptResultCoherent(
@@ -1787,27 +1861,14 @@ function isProductionAttemptResultCoherent(
     case 'accepted_anchor':
       return submittedWordId === anchorWordId && acceptedWordIds.includes(anchorWordId);
     case 'accepted_non_anchor':
-      return submittedWordId !== null
-        && submittedWordId !== anchorWordId
-        && acceptedWordIds.includes(submittedWordId);
+      return false;
     case 'rejected':
       return submittedWordId === null || !acceptedWordIds.includes(submittedWordId);
   }
 }
 
-function assertProductionAttemptRecheckDemandCoherence(
-  attempts: Array<{ evidence: ParsedProductionAttemptEvidence }>,
-): string | null {
-  const demandIds = new Set(attempts.map(({ evidence }) => evidence.recheckDemandId));
-  if (demandIds.size > 1) {
-    throw new Error('Production attempt batch must reference one recheck demand.');
-  }
-  return attempts[0]?.evidence.recheckDemandId ?? null;
-}
-
 function isProductionCueAttemptResult(value: unknown): value is ProductionCueAttemptResultV0 {
   return value === 'accepted_anchor'
-    || value === 'accepted_non_anchor'
     || value === 'rejected';
 }
 
@@ -1832,7 +1893,7 @@ export function recordAcceptedContrastSelectionAttempt({
 
   const reviewedAt = new Date().toISOString();
 
-  getDb().exec('BEGIN');
+  getDb().exec('SAVEPOINT recordAcceptedContrastSelectionAttempt');
 
   try {
     ensureStudySessionExistsWithoutTransaction(sessionId, event.occurredAt);
@@ -1843,9 +1904,10 @@ export function recordAcceptedContrastSelectionAttempt({
     });
     markStudyAttemptEventsProjectedWithoutTransaction([event.id], reviewedAt);
 
-    getDb().exec('COMMIT');
+    getDb().exec('RELEASE recordAcceptedContrastSelectionAttempt');
   } catch (error) {
-    getDb().exec('ROLLBACK');
+    getDb().exec('ROLLBACK TO recordAcceptedContrastSelectionAttempt');
+    getDb().exec('RELEASE recordAcceptedContrastSelectionAttempt');
     throw error;
   }
 
@@ -2240,7 +2302,101 @@ export function setUnstudiedAdmissionSource(unstudiedAdmissionSource: UnstudiedA
   return getLearningPolicySettings();
 }
 
-export function completeUnstudiedWordSession(wordId: string, studyDayKey: string): Word {
+export function getCharacterPresentation(): CharacterPresentation {
+  return readCharacterPresentation();
+}
+
+export function setCharacterPresentation(characterPresentation: CharacterPresentation) {
+  assertCharacterPresentation(characterPresentation);
+  upsertLearnerSetting('character_presentation', characterPresentation);
+  return { characterPresentation: readCharacterPresentation() };
+}
+
+export function getStudyNewWordsFirst(): boolean {
+  const row = getDb().prepare(`
+    SELECT value_json FROM learner_settings
+    WHERE learner_id = ? AND setting_key = 'study_new_words_first'
+  `).get(requireLearnerId()) as { value_json: string } | undefined;
+  if (!row) return false;
+  const value: unknown = JSON.parse(row.value_json);
+  if (typeof value !== 'boolean') throw new Error('Expected studyNewWordsFirst to be a boolean');
+  return value;
+}
+
+export function setStudyNewWordsFirst(studyNewWordsFirst: boolean) {
+  if (typeof studyNewWordsFirst !== 'boolean') throw new Error('Expected studyNewWordsFirst to be a boolean');
+  setStudyIntroductionOrder(studyNewWordsFirst ? 'first' : 'random', getStudyIntroductionSpacing());
+  return { studyNewWordsFirst: getStudyNewWordsFirst() };
+}
+
+export function getStudyIntroductionOrder(): StudyIntroductionOrder {
+  const row = getDb().prepare(`
+    SELECT value_json FROM learner_settings
+    WHERE learner_id = ? AND setting_key = 'study_introduction_order'
+  `).get(requireLearnerId()) as { value_json: string } | undefined;
+  if (!row) return getStudyNewWordsFirst() ? 'first' : 'random';
+  const value: unknown = JSON.parse(row.value_json);
+  if (!isStudyIntroductionOrder(value)) throw new Error('Expected studyIntroductionOrder to be random, first or paced');
+  return value;
+}
+
+export function getStudyIntroductionSpacing(): number {
+  const row = getDb().prepare(`
+    SELECT value_json FROM learner_settings
+    WHERE learner_id = ? AND setting_key = 'study_introduction_spacing'
+  `).get(requireLearnerId()) as { value_json: string } | undefined;
+  if (!row) return DEFAULT_INTRODUCTION_SPACING;
+  const value: unknown = JSON.parse(row.value_json);
+  if (!isStudyIntroductionSpacing(value)) throw new Error('Expected integer studyIntroductionSpacing between 1 and 10');
+  return value;
+}
+
+export function setStudyIntroductionOrder(studyIntroductionOrder: StudyIntroductionOrder, studyIntroductionSpacing: number) {
+  if (!isStudyIntroductionOrder(studyIntroductionOrder)) throw new Error('Expected studyIntroductionOrder to be random, first or paced');
+  if (!isStudyIntroductionSpacing(studyIntroductionSpacing)) throw new Error('Expected integer studyIntroductionSpacing between 1 and 10');
+  getDb().exec('SAVEPOINT set_study_introduction_order');
+  try {
+    upsertLearnerSetting('study_introduction_order', studyIntroductionOrder);
+    upsertLearnerSetting('study_introduction_spacing', studyIntroductionSpacing);
+    upsertLearnerSetting('study_new_words_first', studyIntroductionOrder === 'first');
+    getDb().exec('RELEASE SAVEPOINT set_study_introduction_order');
+  } catch (error) {
+    getDb().exec('ROLLBACK TO SAVEPOINT set_study_introduction_order');
+    getDb().exec('RELEASE SAVEPOINT set_study_introduction_order');
+    throw error;
+  }
+  return { studyIntroductionOrder: getStudyIntroductionOrder(), studyIntroductionSpacing: getStudyIntroductionSpacing() };
+}
+
+export function getSentenceCharacterPresentation(): SentenceCharacterPresentation {
+  const row = getDb()
+    .prepare(`
+      SELECT value_json
+      FROM learner_settings
+      WHERE learner_id = ? AND setting_key = 'sentence_character_presentation'
+    `)
+    .get(requireLearnerId()) as { value_json: string } | undefined;
+  if (!row) {
+    return DEFAULT_SENTENCE_CHARACTER_PRESENTATION;
+  }
+  const presentation: unknown = JSON.parse(row.value_json);
+  assertSentenceCharacterPresentation(presentation);
+  return presentation;
+}
+
+export function setSentenceCharacterPresentation(sentenceCharacterPresentation: SentenceCharacterPresentation) {
+  assertSentenceCharacterPresentation(sentenceCharacterPresentation);
+  upsertLearnerSetting('sentence_character_presentation', sentenceCharacterPresentation);
+  return { sentenceCharacterPresentation: getSentenceCharacterPresentation() };
+}
+
+export function completeUnstudiedWordSession(wordId: string, studyDayKey: string, sessionId?: string, fromCompletion = false): Word {
+  if (sessionId !== undefined) {
+    if (!sessionId.trim()) throw new Error('Expected non-empty session id');
+    const previous = getSessionWordOutcome(sessionId, wordId, 'introduction');
+    if (previous) return previous;
+    if (!fromCompletion) assertSessionAcceptsNewWordOutcome(sessionId);
+  }
   assertStudyDayKey(studyDayKey);
   const existingWord = getDb()
     .prepare(`
@@ -2280,9 +2436,9 @@ export function completeUnstudiedWordSession(wordId: string, studyDayKey: string
     throw new Error('Unstudied word has unexpected learning progress');
   }
 
-  const today = getTodayKey();
+  const today = studyDayKey;
 
-  getDb().exec('BEGIN');
+  getDb().exec('SAVEPOINT completeUnstudiedWordSession');
 
   try {
     getDb().prepare(`
@@ -2302,9 +2458,19 @@ export function completeUnstudiedWordSession(wordId: string, studyDayKey: string
     `).run(new Date().toISOString(), wordId);
 
     incrementDailyNewStudyCount(studyDayKey);
-    getDb().exec('COMMIT');
+    if (config.studyProfile === 'mandarin') {
+      enqueueWordPreparation(wordId, 'review');
+      requestWordReserveReconciliation();
+    }
+    if (sessionId !== undefined) {
+      const word = getWordById(wordId);
+      if (!word) throw new Error('Committed word disappeared');
+      recordSessionWordOutcome(sessionId, existingWord.status, word, 'introduction');
+    }
+    getDb().exec('RELEASE completeUnstudiedWordSession');
   } catch (error) {
-    getDb().exec('ROLLBACK');
+    getDb().exec('ROLLBACK TO completeUnstudiedWordSession');
+    getDb().exec('RELEASE completeUnstudiedWordSession');
     throw error;
   }
 
@@ -2338,18 +2504,27 @@ export function getReviewFailureRateDays(limit = 14): ReviewFailureRateDay[] {
     throw new Error('Expected positive integer limit');
   }
 
+  // New summaries include pure cues. Historical summaries stay as recorded;
+  // compensation is a forward-only daily counter, not a scan of restoration history.
   const rows = getDb()
     .prepare(`
-      SELECT
-        day_key,
-        SUM(completed_count) AS completed_count,
-        SUM(failed_count) AS failed_count
-      FROM review_session_summaries
+      WITH daily_counts AS (
+        SELECT day_key, completed_count, failed_count, 0 AS compensated_count
+        FROM review_session_summaries
+        UNION ALL
+        SELECT day_key, 0, 0, compensated_count
+        FROM learner_exercise_compensation_days
+        WHERE learner_id = ?
+      )
+      SELECT day_key, SUM(completed_count) AS completed_count,
+        SUM(failed_count) AS failed_count, SUM(compensated_count) AS compensated_count
+      FROM daily_counts
       GROUP BY day_key
       ORDER BY day_key DESC
       LIMIT ?
     `)
-    .all(limit) as ReviewSessionResultRow[];
+    .all(requireLearnerId(), limit) as
+      Array<ReviewSessionResultRow & { compensated_count: number }>;
 
   const ascendingRows = [...rows].reverse();
   const countsByDay = new Map(
@@ -2370,6 +2545,7 @@ export function getReviewFailureRateDays(limit = 14): ReviewFailureRateDay[] {
       dayKey: row.day_key,
       completedReviewActionSessions: row.completed_count,
       failedReviewActionSessions: row.failed_count,
+      compensatedReviewActionSessions: row.compensated_count,
       failureRate: calculateFailureRate(row.failed_count, row.completed_count),
       rolling3DayFailureRate: calculateFailureRate(rolling3.failedCount, rolling3.completedCount),
       rolling7DayFailureRate: calculateFailureRate(rolling7.failedCount, rolling7.completedCount),
@@ -2415,12 +2591,16 @@ export function recordReviewSessionSummary({
   completedReviewActionCount,
   failedReviewActionCount,
   activeDurationMs,
+  completedLearningWordCount,
+  debriefInventory,
 }: {
   sessionId: string;
   completedAt: string;
   completedReviewActionCount: number;
   failedReviewActionCount: number;
   activeDurationMs: number;
+  completedLearningWordCount?: number;
+  debriefInventory?: SessionDebriefInventoryItem[];
 }) {
   const normalizedSessionId = sessionId.trim();
   if (normalizedSessionId.length === 0) {
@@ -2443,32 +2623,73 @@ export function recordReviewSessionSummary({
     throw new Error('Expected non-negative integer activeDurationMs');
   }
 
-  getDb().prepare(`
-    INSERT INTO learner_owned_review_session_summaries (
-      session_id,
-      completed_at,
-      day_key,
-      completed_count,
-      failed_count,
-      active_duration_ms
-    ) VALUES (?, ?, ?, ?, ?, ?)
-    ON CONFLICT(learner_id, session_id) DO UPDATE SET
-      completed_at = excluded.completed_at,
-      day_key = excluded.day_key,
-      completed_count = excluded.completed_count,
-      failed_count = excluded.failed_count,
-      active_duration_ms = excluded.active_duration_ms
-  `).run(
-    normalizedSessionId,
-    completedAt,
-    completedAt.slice(0, 10),
-    completedReviewActionCount,
-    failedReviewActionCount,
-    activeDurationMs,
-  );
+  if (completedLearningWordCount !== undefined &&
+    (!Number.isInteger(completedLearningWordCount) || completedLearningWordCount < 0)) {
+    throw new Error('Expected non-negative integer completedLearningWordCount');
+  }
+
+  if (debriefInventory !== undefined) validateDebriefInventory(debriefInventory);
+  getDb().exec('SAVEPOINT recordReviewSessionSummary');
+  try {
+    const previous = getDb().prepare('SELECT day_key FROM review_session_summaries WHERE session_id = ?')
+      .get(normalizedSessionId) as { day_key: string } | undefined;
+    const dayKey = completedAt.slice(0, 10);
+    const closedReport = getDb().prepare(`SELECT json_array_length(report_json, '$.newWords') AS count
+      FROM learner_session_completions WHERE learner_id = ? AND session_id = ? AND status = 'closed'`)
+      .get(requireLearnerId(), normalizedSessionId) as { count: number } | undefined;
+    // Migration can retain a confirmed report even when individual outcomes are absent.
+    const newWordCount = closedReport?.count ?? getSessionWordReport(normalizedSessionId).newWords.length;
+    getDb().prepare(`
+      INSERT INTO learner_owned_review_session_summaries (
+        session_id,
+        completed_at,
+        day_key,
+        completed_count,
+        failed_count,
+        active_duration_ms,
+        learning_completed_count,
+        new_word_count
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(learner_id, session_id) DO UPDATE SET
+        completed_at = excluded.completed_at,
+        day_key = excluded.day_key,
+        completed_count = excluded.completed_count,
+        failed_count = excluded.failed_count,
+        active_duration_ms = excluded.active_duration_ms,
+        learning_completed_count = COALESCE(excluded.learning_completed_count, learner_owned_review_session_summaries.learning_completed_count),
+        new_word_count = excluded.new_word_count
+    `).run(
+      normalizedSessionId,
+      completedAt,
+      completedAt.slice(0, 10),
+      completedReviewActionCount,
+      failedReviewActionCount,
+      activeDurationMs,
+      completedLearningWordCount ?? null,
+      newWordCount,
+    );
+    // A completion can arrive after midnight's snapshot. Refresh persisted totals
+    // on write (also on summary retries/moves), never reconstruct them on panel load.
+    getDb().prepare(`UPDATE usage_daily_snapshots SET new_words = (
+      SELECT COALESCE(SUM(new_word_count), 0) FROM learner_owned_review_session_summaries
+      WHERE day_key = usage_daily_snapshots.day_key
+    ) WHERE day_key IN (?, ?)`).run(previous?.day_key ?? dayKey, dayKey);
+    if (debriefInventory !== undefined && config.studyProfile === 'mandarin') enqueueSessionDebrief(normalizedSessionId, completedAt, debriefInventory);
+    getDb().exec('RELEASE recordReviewSessionSummary');
+  } catch (error) {
+    getDb().exec('ROLLBACK TO recordReviewSessionSummary'); getDb().exec('RELEASE recordReviewSessionSummary');
+    throw error;
+  }
 }
 
-export function completeLearningWordSession(wordId: string, success: boolean): Word {
+export function completeLearningWordSession(wordId: string, success: boolean, sessionId?: string, studyDayKey?: string, fromCompletion = false): Word {
+  if (studyDayKey !== undefined) assertStudyDayKey(studyDayKey);
+  if (sessionId !== undefined) {
+    if (!sessionId.trim()) throw new Error('Expected non-empty session id');
+    const previous = getSessionWordOutcome(sessionId, wordId, 'learning');
+    if (previous) return previous;
+    if (!fromCompletion) assertSessionAcceptsNewWordOutcome(sessionId);
+  }
   const existingWord = getDb()
     .prepare(`
       SELECT
@@ -2495,11 +2716,11 @@ export function completeLearningWordSession(wordId: string, success: boolean): W
     throw new Error('Word not found');
   }
 
-  const today = getTodayKey();
+  const today = studyDayKey ?? getTodayKey();
   const nextLearningStreak = success ? existingWord.learning_streak + 1 : 0;
   const nextStatus: WordStatus = nextLearningStreak >= 3 ? 'review' : 'learning';
 
-  getDb().exec('BEGIN');
+  getDb().exec('SAVEPOINT completeLearningWordSession');
 
   try {
     getDb().prepare(`
@@ -2524,9 +2745,15 @@ export function completeLearningWordSession(wordId: string, success: boolean): W
       upsertWordStudyAdmissionState(wordId, 'review', addHours(now, REVIEW_PHASE_RECENCY_GUARD_HOURS));
     }
 
-    getDb().exec('COMMIT');
+    if (sessionId !== undefined) {
+      const word = getWordById(wordId);
+      if (!word) throw new Error('Committed word disappeared');
+      recordSessionWordOutcome(sessionId, existingWord.status, word, 'learning');
+    }
+    getDb().exec('RELEASE completeLearningWordSession');
   } catch (error) {
-    getDb().exec('ROLLBACK');
+    getDb().exec('ROLLBACK TO completeLearningWordSession');
+    getDb().exec('RELEASE completeLearningWordSession');
     throw error;
   }
 
@@ -2605,6 +2832,8 @@ export function dismissWordFromStudy(wordId: string): void {
   }
 }
 
+// Versioned migrations include content-only cleanup (such as rehearsal framing).
+// Existing databases must apply these offline; startup never rewrites content.
 export function initializeDatabase() {
   if (!dbExistedOnStartup) {
     createBaselineSchema();
@@ -3333,6 +3562,12 @@ function validateSchema() {
     'prompt_text',
     'explanation',
   ]);
+  assertTableColumns('model_invocations', [
+    'id', 'timestamp', 'provider', 'model', 'invocation_type', 'learner_id',
+    'spend_usd', 'spend_source', 'status', 'pricing_json', 'latency_ms',
+  ]);
+  assertTableColumns('word_preparation_work', ['requested_by_learner_id']);
+  validateContentQualitySchema();
   validateReflectionSchema();
   validateProductionCueSchema();
   validateSharedContentSchema();
@@ -3382,6 +3617,7 @@ function seedDatabase() {
 
   if (config.authMode === 'clerk') {
     seedSharedDevelopmentFixtureData(seedData);
+    seedWordIntroductionFixtures(seedData.wordIntroductionFixtureIds ?? []);
     return;
   }
 
@@ -3571,6 +3807,7 @@ function seedDatabase() {
     getDb().exec('ROLLBACK');
     throw error;
   }
+  seedWordIntroductionFixtures(seedData.wordIntroductionFixtureIds ?? []);
 }
 
 /**
@@ -3641,6 +3878,7 @@ function readSeedData(): SeedData | null {
   const words = parsed.words.map(normalizeSeedWord);
   return {
     words,
+    wordIntroductionFixtureIds: parsed.wordIntroductionFixtureIds,
     wordMeanings: buildWordMeaningsFromWords(words),
     wordStudyAdmissionStates: parsed.wordStudyAdmissionStates.map(normalizeSeedWordStudyAdmissionState),
     wordSkillStates: parsed.wordSkillStates.map(normalizeSeedWordSkillState),
@@ -3748,6 +3986,9 @@ function withDevContrastSeedData(seedData: SeedData): SeedData {
 
 function mergeSeedData(seedData: SeedData, addition: SeedData): SeedData {
   return {
+    wordIntroductionFixtureIds: [...new Set([
+      ...seedData.wordIntroductionFixtureIds ?? [], ...addition.wordIntroductionFixtureIds ?? [],
+    ])],
     words: mergeBy(seedData.words, addition.words, (word) => word.id),
     wordMeanings: mergeBy(seedData.wordMeanings, addition.wordMeanings, (meaning) => meaning.id),
     wordStudyAdmissionStates: mergeBy(
@@ -4551,6 +4792,10 @@ function assertReviewAttemptCommitIntent(commitIntent: ReviewAttemptCommitIntent
     throw new Error('Expected commit-review-action-session commit intent');
   }
 
+  if (commitIntent.reinforcementSkipped !== undefined && typeof commitIntent.reinforcementSkipped !== 'boolean') {
+    throw new Error('Expected boolean reinforcementSkipped');
+  }
+
   assertNonEmptyString(commitIntent.sessionActionId, 'Expected non-empty session action id');
   assertNonEmptyString(commitIntent.targetWordId, 'Expected non-empty target word id');
 
@@ -4810,7 +5055,23 @@ function getSessionItemBucketsWithWords(
   const today = getTodayKey();
   const remainingDailyNewWordSlots = getRemainingDailyNewWordSlots(studyDayKey);
   const unstudiedAdmissionSource = getUnstudiedAdmissionSource();
-  const reviewRows = getReviewSessionStudyItems(now, random);
+  const wordReviewItems = getReviewSessionStudyItems(now, random);
+  const pureCueSelection = selectStoredPureCuesForSession({
+    ordinaryReviewCount: wordReviewItems.length,
+    now,
+    random,
+  });
+  const fragileIds = new Set(pureCueSelection.fragile.map((cue) => cue.id));
+  type PendingReviewItem = { kind: 'word'; item: SessionStudyItem } | { kind: 'pureCue'; cue: PureCue };
+  const pendingReview = interleavePureCueReviewItems<PendingReviewItem>(
+    wordReviewItems.map((item) => ({ kind: 'word', item })),
+    pureCueSelection.selected.map((cue) => ({ kind: 'pureCue', cue })), random,
+  );
+  const unstudiedCandidates = config.studyProfile === 'mandarin'
+    ? getAdmittedUnstudiedWords(remainingDailyNewWordSlots, studyDayKey, unstudiedAdmissionSource, {
+      eligibleIds: getReadyReserveIds(), ignoreRequired: true,
+    })
+    : getAdmittedUnstudiedWords(remainingDailyNewWordSlots, studyDayKey, unstudiedAdmissionSource);
 
   const learningRows = getDb()
     .prepare(`
@@ -4835,18 +5096,89 @@ function getSessionItemBucketsWithWords(
       ORDER BY words.created_at ASC, words.id ASC
     `)
     .all(today) as WordRow[];
+  const slots = allocateSessionBucketSlots({
+    review: pendingReview.length, learning: learningRows.length, unstudied: unstudiedCandidates.length,
+  });
+  const review = pendingReview.slice(0, slots.review).map((pending): SessionStudyItem | PureCueSessionReviewItem => {
+    if (pending.kind === 'word') return pending.item;
+    const cue = pending.cue;
+    const snapshot = issuePureCueServedSnapshot({ pureCueId: cue.id, servedAt: now });
+    return {
+      itemType: 'pure_cue_production',
+      sessionActionId: `pure-cue/${snapshot.snapshotId}`,
+      snapshot,
+      tier: fragileIds.has(cue.id) ? 'fragile' : 'strong',
+    };
+  });
 
+  const learning = learningRows.slice(0, slots.learning).map(mapWordRow);
+  const learningContent: Record<string, WordContentDocument> = {};
+  const learningRehearsals: Record<string, LearningRehearsalSnapshot> = {};
+  if (config.studyProfile === 'mandarin') {
+    // No durable cursor is needed: this stable UTC-day index rotates authored
+    // rehearsals without advancing when a session is merely composed/fetched.
+    const dayOrdinal = Math.floor(Date.parse(`${studyDayKey}T00:00:00.000Z`) / 86_400_000);
+    for (const word of learning) {
+      const library = getWordIntroductionLibrary(word.id);
+      // Rehearsal is teaching-linked: an available shared package alone does
+      // not mean this learner completed its introduction.
+      if (!library?.completed) continue;
+      const selected = library?.packages.find((entry) => entry.teaching.id === library.selectedPackageId);
+      if (!selected) continue;
+      const content = library?.contents.find((entry) => entry.content.id === selected.teaching.wordContentId)?.content;
+      if (!content) throw new Error(`Selected introduction ${selected.teaching.id} has no eligible pinned content`);
+      const snapshot = materializeTeachingPackage(selected.teaching, [content]);
+      const rehearsal = snapshot.rehearsals[dayOrdinal % snapshot.rehearsals.length];
+      if (!rehearsal) throw new Error(`Selected introduction ${selected.teaching.id} has no rehearsal`);
+      learningContent[word.id] = content;
+      learningRehearsals[word.id] = {
+        ...rehearsal, packageId: selected.teaching.id, wordContentId: content.id,
+      };
+    }
+  }
+
+  const introductions: Record<string, WordIntroductionResponse> = {};
+  const unstudied = unstudiedCandidates.slice(0, slots.unstudied);
+  for (const word of config.studyProfile === 'mandarin' ? unstudied : []) {
+    const library = getWordIntroductionLibrary(word.id);
+    if (!library?.selectedPackageId) throw new Error('Admitted word has no prepared introduction');
+    introductions[word.id] = { ...library, generationAvailable: false, model: '' };
+  }
   return {
-    review: reviewRows,
-    learning: learningRows.map(mapWordRow),
-    unstudied: getAdmittedUnstudiedWords(remainingDailyNewWordSlots, studyDayKey, unstudiedAdmissionSource),
+    ...(config.studyProfile === 'mandarin' ? { introductions } : {}),
+    review,
+    learning,
+    learningContent,
+    learningRehearsals,
+    unstudied,
   };
 }
+
+function interleavePureCueReviewItems<T>(
+  wordItems: T[],
+  pureCueItems: T[],
+  random: () => number,
+) {
+  const interleaved = [...wordItems];
+  for (const item of pureCueItems) {
+    const index = Math.floor(random() * (interleaved.length + 1));
+    interleaved.splice(index, 0, item);
+  }
+  return interleaved;
+}
+
+type PreparationSelection = {
+  preferredIds?: ReadonlySet<string>;
+  eligibleIds?: ReadonlySet<string>;
+  excludedIds?: ReadonlySet<string>;
+  ignoreRequired?: boolean;
+};
 
 function getAdmittedUnstudiedWords(
   remainingDailyNewWordSlots: number,
   studyDayKey: string,
   source: UnstudiedAdmissionSource,
+  selection: PreparationSelection = {},
 ): Word[] {
   const stashRows = getDb()
     .prepare(`
@@ -4879,11 +5211,11 @@ function getAdmittedUnstudiedWords(
       overlay_updated_at: string;
     }>;
 
-  const stash: UnstudiedStashCandidate[] = stashRows.map((row) => ({
+  const stash: UnstudiedStashCandidate[] = stashRows.filter((row) => !selection.excludedIds?.has(row.id)).map((row) => ({
     id: row.id,
     overlayUpdatedAt: row.overlay_updated_at,
     isTop: row.priority_tier === PRIORITY_TIER_TOP,
-    isRequired: row.required_for_next_session !== 0,
+    isRequired: !selection.ignoreRequired && row.required_for_next_session !== 0,
   }));
   const seedSource = buildUnstudiedAdmissionSeedSource(studyDayKey, remainingDailyNewWordSlots);
   const stashRatio = getStashDietSplit();
@@ -4893,10 +5225,12 @@ function getAdmittedUnstudiedWords(
     seedSource,
     stashRatio,
     source,
+    ...selection,
   });
-  const dietRows = getDietCandidateRows(stashPlan.dietDemand, seedSource);
+  const dietRows = getDietCandidateRows(stashPlan.dietDemand, seedSource, selection);
   const admittedIds = selectAdmittedUnstudiedWordIds({
     stash,
+    ...selection,
     dietIds: dietRows.map((row) => row.id),
     remainingQuota: remainingDailyNewWordSlots,
     seedSource,
@@ -4931,18 +5265,18 @@ function getAdmittedUnstudiedWords(
  * legacy corpus-priority fill applies unchanged (French profile, dev seeds).
  * SPECS/diet-deck-distribution.md §2.4.
  */
-function getDietCandidateRows(remainingQuota: number, seedSource: string): WordRow[] {
+function getDietCandidateRows(remainingQuota: number, seedSource: string, selection: PreparationSelection = {}): WordRow[] {
   if (remainingQuota === 0) {
     return [];
   }
   const manifest = config.studyProfile === 'mandarin' ? loadDeckManifest() : null;
   if (!manifest) {
-    return queryLegacyDietRows(remainingQuota);
+    return selectLegacyDietRows(remainingQuota, selection);
   }
-  return getDeckedDietRows(remainingQuota, manifest, seedSource);
+  return getDeckedDietRows(remainingQuota, manifest, seedSource, selection);
 }
 
-function getDeckedDietRows(remainingQuota: number, manifest: DeckManifest, seedSource: string): WordRow[] {
+function getDeckedDietRows(remainingQuota: number, manifest: DeckManifest, seedSource: string, selection: PreparationSelection = {}): WordRow[] {
   const profile = getDietProfile(manifest);
   if (!profile) {
     throw new Error('Diet profile invariant violated: manifest present but no effective profile.');
@@ -4968,12 +5302,17 @@ function getDeckedDietRows(remainingQuota: number, manifest: DeckManifest, seedS
     .map((deck) => deck.id);
 
   const rowsById = new Map<string, WordRow>();
+  let plannedCount = 0;
+  let plannedIds: ReadonlySet<string> = new Set();
   const selectedIds = selectDeckDietWordIds({
+    ...selection,
+    onPlanned: (count, ids) => { plannedCount = count; plannedIds = ids; },
     targets,
     spillDeckIds,
     seedSource,
     limit: remainingQuota,
-    loadCandidatesForDeck: (deckId) => queryDeckDietCandidatesForDeck(manifest, deckId, rowsById),
+    loadCandidatesForDeck: (deckId) => queryDeckDietCandidatesForDeck(manifest, deckId, rowsById)
+      .filter((id) => !selection.excludedIds?.has(id)),
   });
 
   const rows: WordRow[] = selectedIds.map((id) => {
@@ -4984,8 +5323,10 @@ function getDeckedDietRows(remainingQuota: number, manifest: DeckManifest, seedS
     return row;
   });
 
-  if (rows.length < remainingQuota) {
-    rows.push(...queryLegacyDietRows(remainingQuota - rows.length, new Set(selectedIds)));
+  if (plannedCount < remainingQuota) {
+    rows.push(...selectLegacyDietRows(remainingQuota - plannedCount, {
+      ...selection, excludedIds: new Set([...(selection.excludedIds ?? []), ...plannedIds]),
+    }));
   }
   return rows;
 }
@@ -4999,6 +5340,16 @@ function queryDeckDietCandidatesForDeck(
   const rows = queryManifestDeckWords(manifest, [deckId], 'diet');
   for (const row of rows) rowsById.set(row.id, row);
   return rows.map((row) => row.id);
+}
+
+function selectLegacyDietRows(limit: number, selection: PreparationSelection): WordRow[] {
+  if (!selection.preferredIds && !selection.eligibleIds && !selection.excludedIds) return queryLegacyDietRows(limit);
+  const rows = queryLegacyDietRows(-1, selection.excludedIds ? new Set(selection.excludedIds) : undefined);
+  const preferred = selection.preferredIds;
+  const ordered = preferred
+    ? [...rows.filter((row) => preferred.has(row.id)), ...rows.filter((row) => !preferred.has(row.id))]
+    : rows;
+  return ordered.filter((row) => !selection.eligibleIds || selection.eligibleIds.has(row.id)).slice(0, limit);
 }
 
 function queryLegacyDietRows(remainingQuota: number, excludeIds?: Set<string>): WordRow[] {
@@ -5033,6 +5384,7 @@ function queryLegacyDietRows(remainingQuota: number, excludeIds?: Set<string>): 
 }
 
 function getReviewSessionStudyItems(now: string, random: () => number): SessionStudyItem[] {
+  const compensationDeadlines = getProductionCompensationEligibilityDeadlines();
   const rows = getDb()
     .prepare(`
       SELECT
@@ -5076,19 +5428,11 @@ function getReviewSessionStudyItems(now: string, random: () => number): SessionS
   const bestCandidateByWordId = new Map<string, ReviewSessionItemCandidate>();
 
   for (const row of rows) {
-    const pendingRecheck = row.skill_id === 'production'
-      ? getPendingProductionRecheckForWord(row.id)
-      : null;
-    const dueRecheck = pendingRecheck !== null && pendingRecheck.dueAt <= now;
-    if (pendingRecheck !== null && !dueRecheck) {
+    const compensationDeadline = compensationDeadlines.get(row.id);
+    if (row.skill_id === 'production' && compensationDeadline !== undefined && now < compensationDeadline) {
       continue;
     }
-
-    const content = getReviewSkillContentIfAvailable(
-      row,
-      pendingRecheck?.demandId ?? null,
-      random,
-    );
+    const content = getReviewSkillContentIfAvailable(row, random);
     if (content === undefined) {
       continue;
     }
@@ -5101,7 +5445,7 @@ function getReviewSessionStudyItems(now: string, random: () => number): SessionS
     }
 
     const ordinarilyAdmitted = row.earliest_next_study_at === null || row.earliest_next_study_at <= now;
-    if (!ordinarilyAdmitted && !dueRecheck) {
+    if (!ordinarilyAdmitted) {
       continue;
     }
 
@@ -5111,8 +5455,7 @@ function getReviewSessionStudyItems(now: string, random: () => number): SessionS
       );
     }
 
-    const elapsedHours = getElapsedHours(row.skill_last_studied_at, now);
-    const urgency = dueRecheck ? Number.POSITIVE_INFINITY : elapsedHours / row.skill_interval_hours;
+    const urgency = reviewUrgency(row.skill_interval_hours, row.skill_last_studied_at, now);
     if (urgency < 1) {
       continue;
     }
@@ -5121,22 +5464,21 @@ function getReviewSessionStudyItems(now: string, random: () => number): SessionS
       item: mapReviewSessionItemWithSkillRow(
         row,
         content,
-        dueRecheck ? `review/${row.id}/production/recheck/${pendingRecheck.demandId}` : undefined,
       ),
       wordId: row.id,
       skillId: row.skill_id,
       urgency,
-      nextDueAt: dueRecheck ? pendingRecheck.dueAt : row.skill_next_due_at,
+      nextDueAt: row.skill_next_due_at,
     };
     const currentBest = bestCandidateByWordId.get(candidate.wordId);
 
-    if (!currentBest || compareReviewSessionItemCandidates(candidate, currentBest) < 0) {
+    if (!currentBest || compareReviewCandidates(candidate, currentBest) < 0) {
       bestCandidateByWordId.set(candidate.wordId, candidate);
     }
   }
 
   return dedupeContrastChoiceSets([...bestCandidateByWordId.values()]
-    .sort(compareReviewSessionItemCandidates))
+    .sort(compareReviewCandidates))
     .map((candidate) => candidate.item);
 }
 
@@ -5169,12 +5511,23 @@ function isReviewSkillCandidateAllowedByRelevancePolicy(
   row: ReviewSessionItemWithSkillRow,
   hasDurableProductionCue: boolean,
 ) {
+  if (row.skill_id === 'production' && !allowsProductionUnderProxyPolicy({
+    proxied: isWordProductionProxied(row.id),
+    hasUsableTargetedCue: hasDurableProductionCue,
+  })) {
+    return false;
+  }
   return row.skill_relevance_state !== 'suppressed' || hasDurableProductionCue;
+}
+
+function eligibleReviewSupplement(taskId: string, cueId: string | null) {
+  const supplement = getProductionCueSupplement(taskId, cueId);
+  return supplement && isCanonicalReviewSourceEligible('production_cue_supplement', supplement.supplementId)
+    ? supplement : null;
 }
 
 function getReviewSkillContentIfAvailable(
   row: ReviewSessionItemWithSkillRow,
-  recheckDemandId: string | null,
   random: () => number,
 ): {
   contentRef: StudyContentRef | null;
@@ -5201,7 +5554,7 @@ function getReviewSkillContentIfAvailable(
   if (row.skill_id === 'production') {
     const cue = randomArrayElement(getActiveProductionCuesForWord(row.id), random);
     if (cue) {
-      const supplement = getProductionCueSupplement(cue.taskId, cue.cueId);
+      const supplement = eligibleReviewSupplement(cue.taskId, cue.cueId);
       return {
         contentRef: { type: 'production_cue', taskId: cue.taskId, cueId: cue.cueId },
         contrastSelection: null,
@@ -5217,7 +5570,6 @@ function getReviewSkillContentIfAvailable(
             exampleSentence: supplement.exampleSentence,
             exampleTranslation: supplement.exampleTranslation,
           },
-          recheckDemandId,
         }),
       };
     }
@@ -5230,7 +5582,7 @@ function getReviewSkillContentIfAvailable(
       return undefined;
     }
     const taskId = defaultProductionTaskId(row.id);
-    const supplement = getProductionCueSupplement(taskId, null);
+    const supplement = eligibleReviewSupplement(taskId, null);
     return {
       contentRef: null,
       contrastSelection: null,
@@ -5246,7 +5598,6 @@ function getReviewSkillContentIfAvailable(
           exampleSentence: supplement.exampleSentence,
           exampleTranslation: supplement.exampleTranslation,
         },
-        recheckDemandId,
       }),
     };
   }
@@ -5358,6 +5709,8 @@ function getEligibleContrastDistractorPromptCandidatesForScheduledWord(
       LEFT JOIN contrast_prompts
         ON contrast_prompts.cluster_id = scheduled_member.cluster_id
        AND contrast_prompts.target_word_id IN (scheduled_member.word_id, sibling_member.word_id)
+       AND NOT EXISTS (SELECT 1 FROM content_improvement_replacements r
+         WHERE r.kind = 'contrast_prompt' AND r.source_id = contrast_prompts.id)
       WHERE scheduled_member.word_id = ?
       ORDER BY
         contrast_clusters.id ASC,
@@ -5443,7 +5796,7 @@ function mapReviewSessionItemWithSkillRow(
   sessionActionId?: string,
 ): SessionStudyItem {
   const word = mapWordRow(row);
-  return buildReviewSessionStudyItem({
+  const item = buildReviewSessionStudyItem({
     wordSkillState: {
       wordId: row.id,
       skillId: row.skill_id,
@@ -5459,55 +5812,33 @@ function mapReviewSessionItemWithSkillRow(
     contrastSelection: content.contrastSelection,
     production: content.production,
   });
-}
-
-function compareReviewSessionItemCandidates(
-  left: ReviewSessionItemCandidate,
-  right: ReviewSessionItemCandidate,
-) {
-  const urgencyComparison = right.urgency - left.urgency;
-  if (Math.abs(urgencyComparison) > REVIEW_SKILL_URGENCY_TIE_EPSILON) {
-    return urgencyComparison;
+  const bootstrapRevealEligible = row.skill_id === 'recognition'
+    || (row.skill_id === 'production' && item.production?.cueType === 'definition_gloss');
+  if (bootstrapRevealEligible && getConfig().studyProfile === 'mandarin') {
+    const sourceId = getWordIntroductionPreparation(row.id)?.contentId;
+    const source = getWordIntroductionLibrary(row.id)?.contents.find((entry) => entry.content.id === sourceId)?.content;
+    if (source) {
+      const bootstrapReveal = selectBootstrapReveal(source, new Date());
+      return { ...item, wordContent: source, bootstrapReveal,
+        ...(item.production ? { production: { ...item.production, supplement: null, bootstrapReveal } } : {}),
+      };
+    }
+    if (row.skill_id !== 'recognition') return item;
+    // Reuse existing visible teaching only; recognition never requests generation.
+    const taskId = defaultProductionTaskId(row.id);
+    const cueIds = [null, ...getActiveProductionCuesForWord(row.id)
+      .filter((cue) => cue.cueType === 'definition_gloss').map((cue) => cue.cueId)];
+    for (const cueId of cueIds) {
+      const supplement = eligibleReviewSupplement(taskId, cueId);
+      if (supplement) return { ...item, recognitionSupplement: {
+        supplementId: supplement.supplementId,
+        englishFrame: supplement.englishFrame,
+        exampleSentence: supplement.exampleSentence,
+        exampleTranslation: supplement.exampleTranslation,
+      } };
+    }
   }
-
-  const dueComparison = compareNullableIsoTimestamps(left.nextDueAt, right.nextDueAt);
-  if (dueComparison !== 0) {
-    return dueComparison;
-  }
-
-  const wordComparison = left.wordId.localeCompare(right.wordId);
-  if (wordComparison !== 0) {
-    return wordComparison;
-  }
-
-  return left.skillId.localeCompare(right.skillId);
-}
-
-function compareNullableIsoTimestamps(left: string | null, right: string | null) {
-  if (left === right) {
-    return 0;
-  }
-
-  if (left === null) {
-    return 1;
-  }
-
-  if (right === null) {
-    return -1;
-  }
-
-  return left.localeCompare(right);
-}
-
-function getElapsedHours(fromIso: string, toIso: string) {
-  const fromTime = Date.parse(fromIso);
-  const toTime = Date.parse(toIso);
-
-  if (!Number.isFinite(fromTime) || !Number.isFinite(toTime)) {
-    throw new Error(`Session composition invariant violated: expected valid ISO timestamps, got "${fromIso}" and "${toIso}".`);
-  }
-
-  return (toTime - fromTime) / (60 * 60 * 1000);
+  return item;
 }
 
 function scheduleWordSkillStateFromReviewAttempt(
@@ -5517,14 +5848,13 @@ function scheduleWordSkillStateFromReviewAttempt(
   reviewedAt: string,
 ): WordSkillState {
   if (failureCount > 0) {
-    const penaltyEase = Math.max(1.8, Number((state.easeFactor - 0.15 * failureCount).toFixed(2)));
+    const scheduled = nextReviewSchedule(state, { failureCount, successful: false });
 
     return {
       ...state,
-      intervalHours: 6,
+      ...scheduled,
       lastStudiedAt: reviewedAt,
-      nextDueAt: addHours(reviewedAt, 6),
-      easeFactor: penaltyEase,
+      nextDueAt: addHours(reviewedAt, scheduled.intervalHours),
     };
   }
 
@@ -5541,7 +5871,7 @@ function scheduleWordSkillStateFromReviewAttempt(
   }
 
   if (terminalRating === 'good') {
-    const nextInterval = applyIntervalHourFuzz(ceilIntervalHours(state.intervalHours * state.easeFactor));
+    const { intervalHours: nextInterval } = nextReviewSchedule(state, { failureCount: 0, successful: true });
 
     return {
       ...state,
@@ -5657,7 +5987,7 @@ function getUnstudiedPriorityWordById(wordId: string): PriorityWord {
         words.meanings_json,
         words.personal_notes,
         words.examples_json,
-        words.status,
+        'unstudied' AS status,
         words.priority,
         words.created_at,
         words.learning_streak,
@@ -5671,7 +6001,7 @@ function getUnstudiedPriorityWordById(wordId: string): PriorityWord {
       FROM words
       LEFT JOIN user_word_priority ON user_word_priority.word_id = words.id
       WHERE words.id = ?
-        AND words.status = 'unstudied'
+        AND ${unstudiedPriorityPredicate('words')}
     `)
     .get(wordId) as PriorityWordRow | undefined;
 
@@ -5728,6 +6058,7 @@ function getDailyNewWordLimit(): number {
     .get(requireLearnerId()) as { value_json: string } | undefined;
 
   if (!row) {
+    // Existing saved limits remain authoritative; only unset learners use the default.
     return DEFAULT_DAILY_NEW_WORD_LIMIT;
   }
 
@@ -5746,12 +6077,32 @@ function getUnstudiedAdmissionSource(): UnstudiedAdmissionSource {
     .get(requireLearnerId()) as { value_json: string } | undefined;
 
   if (!row) {
+    // New learners receive an explicit stash-only setting during bootstrap.
+    // Keep the legacy mixed policy for existing learners without a saved choice.
     return DEFAULT_UNSTUDIED_ADMISSION_SOURCE;
   }
 
   const unstudiedAdmissionSource = JSON.parse(row.value_json) as unknown;
   assertUnstudiedAdmissionSource(unstudiedAdmissionSource);
   return unstudiedAdmissionSource;
+}
+
+function readCharacterPresentation(): CharacterPresentation {
+  const row = getDb()
+    .prepare(`
+      SELECT value_json
+      FROM learner_settings
+      WHERE learner_id = ? AND setting_key = 'character_presentation'
+    `)
+    .get(requireLearnerId()) as { value_json: string } | undefined;
+
+  if (!row) {
+    return DEFAULT_CHARACTER_PRESENTATION;
+  }
+
+  const characterPresentation = JSON.parse(row.value_json) as unknown;
+  assertCharacterPresentation(characterPresentation);
+  return characterPresentation;
 }
 
 function getDailyNewStudyCount(studyDayKey: string): number {
@@ -5780,8 +6131,8 @@ function incrementDailyNewStudyCount(studyDayKey: string) {
 }
 
 function assertDailyNewWordLimit(value: number) {
-  if (!Number.isSafeInteger(value) || value < 0) {
-    throw new Error('Expected non-negative integer dailyNewWordLimit');
+  if (!Number.isSafeInteger(value) || value < 0 || value > 20) {
+    throw new Error('Expected integer dailyNewWordLimit between 0 and 20');
   }
 }
 

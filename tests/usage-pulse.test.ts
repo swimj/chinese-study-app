@@ -94,13 +94,6 @@ describe('usage pulse snapshots', { concurrency: false }, () => {
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
 
-  test('medianOf handles empty, odd, and even lists', () => {
-    assert.equal(usagePulse.medianOf([]), null);
-    assert.equal(usagePulse.medianOf([3]), 3);
-    assert.equal(usagePulse.medianOf([1, 3, 2]), 2);
-    assert.equal(usagePulse.medianOf([4, 1, 2, 3]), 2.5);
-  });
-
   test('computes cohort metrics, sparse counts, and persists idempotent daily snapshots', () => {
     const dayKey = '2026-09-10';
     const earlierDay = '2026-09-09';
@@ -121,7 +114,8 @@ describe('usage pulse snapshots', { concurrency: false }, () => {
         completedAt: `${dayKey}T12:00:00.000Z`,
         activeDurationMs: 120_000,
       });
-      insertNewWordIntake(dayKey, 2);
+      insertNewWordIntake(dayKey, 9); // admission totals are independent of Usage
+      getDb().prepare("UPDATE review_session_summaries SET new_word_count = 2 WHERE session_id = 'session-a1'").run();
       insertReflectionSpend({
         runId: 'run-a',
         completedAt: `${dayKey}T13:00:00.000Z`,
@@ -168,9 +162,12 @@ describe('usage pulse snapshots', { concurrency: false }, () => {
     assert.equal(computed.dau, 1);
     assert.equal(computed.sessionsCompleted, 1);
     assert.equal(computed.newWords, 2);
-    assert.equal(computed.modelSpendUsd, 0.75);
-    assert.equal(computed.medianSessionActiveMs, 120_000);
-    assert.equal(computed.medianStashSize, 0.5);
+    assert.equal(computed.practiceCompleted, 0);
+    assert.equal(computed.reviewCorrect, 1);
+    assert.equal(computed.reviewWrong, 0);
+    assert.equal(computed.proposalsAccepted, 0);
+    assert.equal(computed.sessionActiveMs, 120_000);
+    assert.equal(computed.meanStashSize, 0.75);
     assert.equal(computed.sessionsAbandoned, 1);
     assert.equal(computed.learnersSpendWithoutAccepts, 2);
     assert.equal(computed.studyCommitFailures, 1);
@@ -190,6 +187,246 @@ describe('usage pulse snapshots', { concurrency: false }, () => {
     assert.equal(stored.length, 1);
     assert.equal(stored[0]?.capturedAt, `${dayKey}T23:59:30.000Z`);
     assert.equal(stored[0]?.dau, 1);
+  });
+
+  test('sums completed exercises and time; practice counts known records as a lower bound for partial legacy days', () => {
+    const dayKey = '2026-10-05';
+    const summary = { sessionId: 'totals-a', completedAt: `${dayKey}T12:00:00.000Z`,
+      completedReviewActionCount: 5, failedReviewActionCount: 2,
+      activeDurationMs: 120_000, completedLearningWordCount: 3 };
+    dbModule.runWithLearnerId('learner-a', () => {
+      dbModule.recordReviewSessionSummary(summary);
+      dbModule.recordReviewSessionSummary(summary);
+      const { completedLearningWordCount, ...legacy } = summary;
+      dbModule.recordReviewSessionSummary(legacy);
+      assert.equal(getDb().prepare(`SELECT learning_completed_count AS count FROM review_session_summaries
+        WHERE session_id = ?`).get(summary.sessionId)?.count, 3);
+      dbModule.recordReviewSessionSummary({ ...summary, sessionId: 'totals-b',
+        completedReviewActionCount: 2, failedReviewActionCount: 1, activeDurationMs: 30_000,
+        completedLearningWordCount: 4 });
+      assert.throws(() => dbModule.recordReviewSessionSummary({ ...summary, completedLearningWordCount: -1 }), /completedLearningWordCount/);
+    });
+    let totals = usagePulse.computeUsagePulseDay({ dayKey });
+    assert.equal(totals.reviewCorrect, 4);
+    assert.equal(totals.reviewWrong, 3);
+    assert.equal(totals.sessionActiveMs, 150_000);
+    assert.equal(totals.practiceCompleted, 7);
+    dbModule.runWithLearnerId('learner-a', () => insertSessionSummary({
+      sessionId: 'legacy-totals', dayKey, completedAt: `${dayKey}T13:00:00.000Z`, activeDurationMs: 10_000,
+    }));
+    totals = usagePulse.computeUsagePulseDay({ dayKey });
+    assert.equal(totals.practiceCompleted, 7);
+    assert.equal(totals.sessionActiveMs, 160_000);
+    usagePulse.captureUsagePulseDay({ dayKey });
+    getDb().prepare('UPDATE usage_daily_snapshots SET practice_completed = NULL WHERE day_key = ?').run(dayKey);
+    assert.equal(usagePulse.listUsageDailySnapshots([dayKey])[0]?.practiceCompleted, 7);
+    usagePulse.captureUsagePulseDay({ dayKey: '2026-10-04' });
+    getDb().prepare('UPDATE usage_daily_snapshots SET practice_completed = NULL WHERE day_key = ?').run('2026-10-04');
+    assert.equal(usagePulse.listUsageDailySnapshots(['2026-10-04'])[0]?.practiceCompleted, 0);
+    assert.equal(usagePulse.computeUsagePulseDay({ dayKey: '2026-10-04' }).practiceCompleted, 0);
+    // Existing cohort sizes are [0, 2, 1, 0]; empty stashes participate in the mean.
+    assert.equal(totals.meanStashSize, 0.75);
+  });
+
+  test('persists three evening EDT new words on the UTC session day, independent of admission', (t) => {
+    // Production-shaped case: Oct 21, 9 p.m. EDT is Oct 22 UTC. Admission
+    // uses the client's local study day; Usage displays UTC calendar days.
+    t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-22T01:07:31.534Z') });
+    const admissionDay = '2026-10-21';
+    const reportingDay = '2026-10-22';
+    usagePulse.captureUsagePulseDay({ dayKey: admissionDay });
+    usagePulse.captureUsagePulseDay({ dayKey: reportingDay });
+    const savedCapture = usagePulse.listUsageDailySnapshots([admissionDay])[0]!.capturedAt;
+    getDb().prepare('UPDATE usage_daily_snapshots SET mean_stash_size = 42 WHERE day_key = ?').run(admissionDay);
+    dbModule.runWithLearnerId('learner-a', () => {
+      for (const id of ['evening-a', 'evening-b', 'evening-c']) {
+        insertLexicalWord(id);
+        dbModule.completeUnstudiedWordSession(id, admissionDay, 'evening');
+        // A retry returns the existing transition and contributes no new intake.
+        dbModule.completeUnstudiedWordSession(id, admissionDay, 'evening');
+      }
+      assert.equal(usagePulse.computeUsagePulseDay({ dayKey: reportingDay }).newWords, 0);
+      completeUsageSession('evening', '2026-10-22T02:12:41.686Z', 11);
+      completeUsageSession('evening', '2026-10-22T02:12:41.686Z', 11);
+      assert.equal(getDb().prepare("SELECT new_word_count FROM review_session_summaries WHERE session_id = 'evening'").get()?.new_word_count, 3);
+      assert.equal(getDb().prepare(`SELECT new_study_count FROM daily_new_word_intake WHERE day_key = ?`)
+        .get(admissionDay)?.new_study_count, 3);
+      assert.equal(getDb().prepare(`SELECT new_study_count FROM daily_new_word_intake WHERE day_key = ?`)
+        .get(reportingDay), undefined);
+    });
+    const today = usagePulse.computeUsagePulseDay({ dayKey: reportingDay });
+    assert.equal(today.newWords, 3);
+    assert.equal(today.sessionsCompleted, 1);
+    assert.equal(today.practiceCompleted, 11);
+    assert.equal(usagePulse.computeUsagePulseDay({ dayKey: admissionDay }).newWords, 0);
+    assert.equal(usagePulse.listUsageDailySnapshots([reportingDay])[0]?.newWords, 3);
+
+    // The three new words remain three after later Practice.
+    t.mock.timers.setTime(new Date('2026-10-23T16:00:00.000Z').getTime());
+    dbModule.runWithLearnerId('learner-a', () => {
+      dbModule.completeLearningWordSession('evening-a', true, 'later-practice', '2026-10-23');
+      completeUsageSession('later-practice', '2026-10-23T16:00:00.000Z', 1);
+    });
+    assert.equal(usagePulse.computeUsagePulseDay({ dayKey: reportingDay }).newWords, 3);
+    assert.equal(usagePulse.computeUsagePulseDay({ dayKey: '2026-10-23' }).newWords, 0);
+
+    // Summary writes refresh persisted totals; panel reads preserve capture-time data.
+    const historical = usagePulse.listUsageDailySnapshots([admissionDay])[0]!;
+    assert.equal(historical.newWords, 0);
+    assert.equal(historical.capturedAt, savedCapture);
+    assert.equal(historical.meanStashSize, 42);
+    assert.equal(getDb().prepare('SELECT new_words FROM usage_daily_snapshots WHERE day_key = ?')
+      .get(admissionDay)?.new_words, 0);
+    const pulse = usagePulse.getUsagePulse({ now: new Date('2026-10-23T18:00:00.000Z'), windowDays: 2 });
+    assert.deepEqual(pulse.days.map((day) => day.newWords), [0, 3]);
+  });
+
+  test('counts a whole session on its UTC completion day, with retries and cohort aggregation', (t) => {
+    t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-01T17:00:00.000Z') });
+    dbModule.runWithLearnerId('learner-a', () => {
+      insertLexicalWord('normal-day');
+      dbModule.completeUnstudiedWordSession('normal-day', '2026-11-01', 'normal-session');
+      completeUsageSession('normal-session', '2026-11-01T17:00:00.000Z');
+      // A sessionless legacy commit has intake evidence but no outcome timestamp.
+      insertLexicalWord('legacy-day');
+      dbModule.completeUnstudiedWordSession('legacy-day', '2026-11-01');
+      t.mock.timers.setTime(new Date('2026-11-01T23:59:59.999Z').getTime());
+      insertLexicalWord('before-midnight');
+      dbModule.completeUnstudiedWordSession('before-midnight', '2026-11-01', 'midnight-session');
+      t.mock.timers.setTime(new Date('2026-11-02T00:00:00.000Z').getTime());
+      insertLexicalWord('at-midnight');
+      dbModule.completeUnstudiedWordSession('at-midnight', '2026-11-01', 'midnight-session');
+      assert.equal(usagePulse.computeUsagePulseDay({ dayKey: '2026-11-02' }).newWords, 0);
+      completeUsageSession('midnight-session', '2026-11-02T00:10:00.000Z');
+      completeUsageSession('midnight-session', '2026-11-02T00:10:00.000Z');
+    });
+    dbModule.runWithLearnerId('learner-b', () => {
+      // Same lexical identity for another learner is a separate new-word event.
+      dbModule.completeUnstudiedWordSession('at-midnight', '2026-11-01', 'midnight-session');
+      insertNewWordIntake('2026-11-01', 3); // admission evidence does not supply Usage totals
+      completeUsageSession('midnight-session', '2026-11-02T00:12:00.000Z');
+    });
+    assert.equal(usagePulse.computeUsagePulseDay({ dayKey: '2026-10-31' }).newWords, 0);
+    assert.equal(usagePulse.computeUsagePulseDay({ dayKey: '2026-11-01' }).newWords, 1);
+    assert.equal(usagePulse.computeUsagePulseDay({ dayKey: '2026-11-02' }).newWords, 3);
+    assert.equal(usagePulse.computeUsagePulseDay({ dayKey: '2026-11-03' }).newWords, 0);
+    usagePulse.captureUsagePulseDay({ dayKey: '2026-11-01' });
+    usagePulse.captureUsagePulseDay({ dayKey: '2026-11-02' });
+    assert.deepEqual(usagePulse.listUsageDailySnapshots(['2026-11-01', '2026-11-02'])
+      .map((day) => day.newWords), [1, 3]);
+  });
+
+  test('counts the final word only after acceptance on the summary day, even when closure crosses UTC midnight', async (t) => {
+    const { stageSessionCompletion, undoSessionCompletion, closeSessionCompletion } =
+      await import('../server/db/session-completion.ts');
+    const stagedAt = '2026-12-01T23:59:55.000Z';
+    const closedAt = '2026-12-02T00:00:10.000Z';
+    t.mock.timers.enable({ apis: ['Date'], now: new Date(stagedAt) });
+    dbModule.runWithLearnerId('learner-a', () => {
+      const stage = (id: string) => {
+        insertLexicalWord(id);
+        return stageSessionCompletion(id, {
+          revisionId: 'r1', startedAt: '2026-12-01T23:50:00.000Z', studyDayKey: '2026-12-01',
+          summary: { completedAt: stagedAt, completedReviewActionCount: 0,
+            failedReviewActionCount: 0, activeDurationMs: 1000 },
+          pendingCommit: { type: 'commit-unstudied-word-session', wordId: id }, reflectionEvidence: null,
+        }, stagedAt);
+      };
+      assert.equal(stage('usage-undo').report.newWords.length, 1);
+      assert.equal(usagePulse.computeUsagePulseDay({ dayKey: '2026-12-01' }).newWords, 0);
+      undoSessionCompletion('usage-undo', 'r1', stagedAt);
+      assert.equal(stage('usage-final').report.newWords.length, 1);
+      usagePulse.captureUsagePulseDay({ dayKey: '2026-12-01' });
+      t.mock.timers.setTime(new Date(closedAt).getTime());
+      closeSessionCompletion('usage-final', 'r1', closedAt);
+      closeSessionCompletion('usage-final', 'r1', closedAt);
+    });
+    assert.equal(usagePulse.computeUsagePulseDay({ dayKey: '2026-12-01' }).newWords, 1);
+    assert.equal(usagePulse.computeUsagePulseDay({ dayKey: '2026-12-02' }).newWords, 0);
+    assert.equal(usagePulse.listUsageDailySnapshots(['2026-12-01'])[0]?.newWords, 1);
+  });
+
+  test('a Usage snapshot write failure rolls back final acceptance and can be retried exactly once', async (t) => {
+    const { stageSessionCompletion, closeSessionCompletion } = await import('../server/db/session-completion.ts');
+    const at = '2026-12-05T12:00:00.000Z';
+    t.mock.timers.enable({ apis: ['Date'], now: new Date(at) });
+    usagePulse.captureUsagePulseDay({ dayKey: '2026-12-05' });
+    dbModule.runWithLearnerId('learner-a', () => {
+      insertLexicalWord('usage-write-failure');
+      stageSessionCompletion('usage-write-failure', {
+        revisionId: 'r1', startedAt: at, studyDayKey: '2026-12-05',
+        summary: { completedAt: at, completedReviewActionCount: 0, failedReviewActionCount: 0, activeDurationMs: 0 },
+        pendingCommit: { type: 'commit-unstudied-word-session', wordId: 'usage-write-failure' }, reflectionEvidence: null,
+      }, at);
+      getDb().exec(`CREATE TEMP TRIGGER fail_usage_snapshot BEFORE UPDATE ON usage_daily_snapshots
+        WHEN NEW.day_key = '2026-12-05' BEGIN SELECT RAISE(ABORT, 'test snapshot failure'); END`);
+      try {
+        assert.throws(() => closeSessionCompletion('usage-write-failure', 'r1', at), /test snapshot failure/);
+        assert.equal(getDb().prepare("SELECT status FROM words WHERE id = 'usage-write-failure'").get()?.status, 'unstudied');
+        assert.equal(getDb().prepare("SELECT new_study_count FROM daily_new_word_intake WHERE day_key = '2026-12-05'").get(), undefined);
+        assert.equal(getDb().prepare("SELECT new_word_count FROM review_session_summaries WHERE session_id = 'usage-write-failure'").get(), undefined);
+        assert.equal(usagePulse.listUsageDailySnapshots(['2026-12-05'])[0]?.newWords, 0);
+      } finally {
+        getDb().exec('DROP TRIGGER fail_usage_snapshot');
+      }
+      closeSessionCompletion('usage-write-failure', 'r1', at);
+      closeSessionCompletion('usage-write-failure', 'r1', at);
+      assert.equal(getDb().prepare("SELECT new_study_count FROM daily_new_word_intake WHERE day_key = '2026-12-05'").get()?.new_study_count, 1);
+      assert.equal(getDb().prepare("SELECT new_word_count FROM review_session_summaries WHERE session_id = 'usage-write-failure'").get()?.new_word_count, 1);
+    });
+    assert.equal(usagePulse.listUsageDailySnapshots(['2026-12-05'])[0]?.newWords, 1);
+  });
+
+  test('summary retries preserve confirmed report-only history and refresh both days when moved', () => {
+    usagePulse.captureUsagePulseDay({ dayKey: '2026-12-06' });
+    usagePulse.captureUsagePulseDay({ dayKey: '2026-12-07' });
+    dbModule.runWithLearnerId('learner-a', () => {
+      // Same evidence as a migrated report-only summary: no individual outcomes.
+      getDb().prepare(`INSERT INTO learner_session_completions
+        (learner_id,session_id,revision_id,staged_at,close_at,input_json,report_json,status,closed_at)
+        VALUES (?, 'report-only-usage', 'r1', 'now', 'now', '{}', ?, 'closed', 'now')`)
+        .run('learner-a', JSON.stringify({ newWords: [{ id: 'a' }, { id: 'b' }], graduatedWords: [] }));
+      completeUsageSession('report-only-usage', '2026-12-06T12:00:00.000Z');
+      assert.equal(usagePulse.listUsageDailySnapshots(['2026-12-06'])[0]?.newWords, 2);
+      completeUsageSession('report-only-usage', '2026-12-07T12:00:00.000Z');
+      completeUsageSession('report-only-usage', '2026-12-07T12:00:00.000Z');
+      assert.equal(getDb().prepare("SELECT new_word_count FROM review_session_summaries WHERE session_id = 'report-only-usage'").get()?.new_word_count, 2);
+    });
+    assert.deepEqual(usagePulse.listUsageDailySnapshots(['2026-12-06', '2026-12-07'])
+      .map(day => day.newWords), [0, 2]);
+  });
+
+  test('counts proposal acceptance events by creation day regardless of application state', () => {
+    const dayKey = '2026-10-03';
+    dbModule.runWithLearnerId('learner-a', () => {
+      getDb().exec(`INSERT INTO reflection_artifacts
+        (artifact_id, reflection_flow_version, generated_at, provider, model, prompt_version,
+          bundle_schema_version, result_schema_version, evidence_bundle_json, result_json)
+        VALUES ('usage-artifact', 'test', '2026-10-03T00:00:00.000Z', 'test', 'test', 'test', 'test', 'test', '{}', '{}');`);
+      const entries = [
+        ['accepted-start', `${dayKey}T00:00:00.000Z`, 'authorization_withdrawn', 'proposal_acceptance'],
+        ['accepted-failed', `${dayKey}T23:59:59.999Z`, 'failed', 'proposal_acceptance'],
+        ['accepted-next', '2026-10-04T00:00:00.000Z', 'pending', 'proposal_acceptance'],
+        ['manual', `${dayKey}T12:00:00.000Z`, 'pending', 'manual'],
+        ['replacement', `${dayKey}T12:00:00.000Z`, 'pending', 'user_replacement'],
+      ];
+      entries.forEach(([id, createdAt, state, origin], index) => {
+        getDb().prepare(`INSERT INTO reflection_proposal_reviews
+          (proposal_id, artifact_id, item_id, proposal_index, disposition, updated_at)
+          VALUES (?, 'usage-artifact', 'item', ?, 'pending', ?)`).run(`proposal-${id}`, index, createdAt);
+        getDb().prepare(`INSERT INTO reflection_operation_invocations
+          (invocation_id, created_at, origin_kind, origin_proposal_id, origin_superseded_proposal_id,
+            operation_kind, operation_version, operation_json, application_state, application_updated_at, application_error)
+          VALUES (?, ?, ?, ?, ?, 'suppress_skill', 1, '{}', ?, ?, ?)`).run(id, createdAt, origin,
+            origin === 'proposal_acceptance' ? `proposal-${id}` : null,
+            origin === 'user_replacement' ? `proposal-${id}` : null, state,
+            '2026-10-07T12:00:00.000Z', state === 'failed' ? 'failure' : null);
+      });
+    });
+    assert.equal(usagePulse.computeUsagePulseDay({ dayKey }).proposalsAccepted, 2);
+    assert.equal(usagePulse.computeUsagePulseDay({ dayKey: '2026-10-04' }).proposalsAccepted, 1);
+    usagePulse.captureUsagePulseDay({ dayKey });
+    assert.equal(usagePulse.listUsageDailySnapshots([dayKey])[0]?.proposalsAccepted, 2);
   });
 
   test('excludes the configured smoke learner from inactive 7d count', () => {
@@ -254,6 +491,11 @@ describe('usage pulse snapshots', { concurrency: false }, () => {
     assert.equal(pulse.days.length, 3);
     assert.equal(pulse.days.at(-1)?.dayKey, usagePulse.addUtcDays(usagePulse.utcDayKey(now), -1));
   });
+
+  function completeUsageSession(sessionId: string, completedAt: string, practice = 0): void {
+    dbModule.recordReviewSessionSummary({ sessionId, completedAt, completedReviewActionCount: 1,
+      failedReviewActionCount: 0, activeDurationMs: 1000, completedLearningWordCount: practice });
+  }
 
   function insertLexicalWord(wordId: string): void {
     getDb().prepare(`
@@ -388,6 +630,89 @@ describe('operator usage pulse API', { concurrency: false }, () => {
     restoreEnv('APP_OPERATOR_CLERK_USER_IDS', previousOperatorAllowlist);
     restoreEnv('APP_AUTH_MODE', previousAuthMode);
     fs.rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  test('preparation diagnostics and retries are operator-only and audit the authenticated actor', async () => {
+    const { getDb } = await import('../server/db/connection.ts');
+    const { enqueueWordPreparation } = await import('../server/db/preparation-work.ts');
+    const sql = getDb();
+    sql.prepare(`INSERT INTO lexical_words (id, hanzi, traditional, pinyin, meaning, meanings_json, examples_json, priority, created_at)
+      VALUES ('operator-word', '词', NULL, 'cí', 'word', '["word"]', '[]', 1, '2026-10-01T00:00:00.000Z')`).run();
+    const work = enqueueWordPreparation('operator-word', 'bootstrap');
+    sql.prepare(`UPDATE word_preparation_work SET status = 'paused', attempt_count = 3, last_error = 'Invalid output' WHERE work_id = ?`).run(work.workId);
+    const endpoint = `${baseUrl}/api/operator/word-preparation`;
+    const retry = (body: object) => fetch(`${endpoint}/${work.workId}/retry`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    process.env.APP_OPERATOR_CLERK_USER_IDS = '';
+    assert.equal((await fetch(`${endpoint}/failures`)).status, 403);
+    assert.equal((await retry({})).status, 403);
+    process.env.APP_OPERATOR_CLERK_USER_IDS = 'trusted_local';
+    const listed = await fetch(`${endpoint}/failures`);
+    assert.equal(listed.status, 200);
+    assert.equal((await listed.json()).failures[0].workId, work.workId);
+    assert.equal((await retry({ actorId: 'spoofed' })).status, 400);
+    assert.equal((await retry({})).status, 200);
+    assert.equal((await retry({})).status, 409);
+    assert.equal(sql.prepare('SELECT actor_id FROM word_preparation_retry_events WHERE work_id = ?').get(work.workId)!.actor_id, 'operator-local');
+    assert.equal(sql.prepare('SELECT attempt_count FROM word_preparation_work WHERE work_id = ?').get(work.workId)!.attempt_count, 0);
+  });
+
+  test('model invocation ledger is operator-only and validates UTC date filters', async () => {
+    const endpoint = `${baseUrl}/api/operator/model-invocations`;
+    process.env.APP_OPERATOR_CLERK_USER_IDS = '';
+    assert.equal((await fetch(endpoint)).status, 403);
+    process.env.APP_OPERATOR_CLERK_USER_IDS = 'trusted_local';
+    const allowed = await fetch(endpoint);
+    assert.equal(allowed.status, 200);
+    assert.deepEqual(await allowed.json(), { rows: [] });
+    assert.equal((await fetch(`${endpoint}?from=2026-02-30`)).status, 400);
+    assert.equal((await fetch(`${endpoint}?from=2026-02-01&to=2026-01-01`)).status, 400);
+    assert.equal((await fetch(`${endpoint}?from=2026-01-01&to=2026-01-01`)).status, 200);
+  });
+
+  test('service banner read, set, and clear are operator-only and attribute the authenticated actor', async () => {
+    const endpoint = `${baseUrl}/api/operator/service-banner`;
+    process.env.APP_OPERATOR_CLERK_USER_IDS = '';
+    assert.equal((await fetch(endpoint)).status, 403);
+    assert.equal((await fetch(endpoint, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: 'Planned downtime', expiresAt: '2099-10-08T08:00:00.000Z' }),
+    })).status, 403);
+    process.env.APP_OPERATOR_CLERK_USER_IDS = 'trusted_local';
+
+    assert.deepEqual(await (await fetch(endpoint)).json(), { serviceBanner: null });
+    const set = await fetch(endpoint, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: 'Planned downtime', expiresAt: '2099-10-08T08:00:00.000Z' }),
+    });
+    assert.equal(set.status, 200);
+    const posted = await set.json() as { serviceBanner: { message: string; postedAt: string; expiresAt: string } };
+    assert.equal(posted.serviceBanner.message, 'Planned downtime');
+    assert.match(posted.serviceBanner.postedAt, /^\d{4}-\d\d-\d\dT/);
+    assert.equal(posted.serviceBanner.expiresAt, '2099-10-08T08:00:00.000Z');
+    const { getDb } = await import('../server/db/connection.ts');
+    assert.equal(getDb().prepare('SELECT actor_id FROM service_banner WHERE singleton = 1').get()!.actor_id, 'operator-local');
+    assert.equal((await fetch(endpoint, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: ' '.repeat(1) }),
+    })).status, 400);
+    for (const payload of [
+      { kickoffAt: 'invalid' }, { kickoffAt: '2099-02-30T00:30:00Z' }, { kickoffAt: 42 }, { kickoffAt: '2020-01-01T00:00:00Z' },
+      { kickoffAt: '2099-07-02T00:30:00' }, { kickoffAt: '2099-07-02T00:30:00Z', message: 'conflicting' },
+      { kickoffAt: '2099-07-02T00:30:00Z', expiresAt: '2099-07-05T00:00:00Z' },
+    ]) {
+      assert.equal((await fetch(endpoint, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })).status, 400);
+    }
+    const plannedResponse = await fetch(endpoint, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kickoffAt: '2099-07-02T00:30:00Z' }) });
+    assert.equal(plannedResponse.status, 200);
+    const planned = await plannedResponse.json() as { serviceBanner: { kickoffAt: string; postedAt: string; expiresAt: string } };
+    assert.equal(planned.serviceBanner.kickoffAt, '2099-07-02T00:30:00.000Z');
+    assert.equal(planned.serviceBanner.expiresAt, '2099-07-03T00:30:00.000Z');
+    assert.notEqual(planned.serviceBanner.postedAt, planned.serviceBanner.kickoffAt);
+    assert.deepEqual(await (await fetch(endpoint)).json(), planned);
+    assert.equal((await fetch(endpoint, { method: 'DELETE' })).status, 200);
+    assert.deepEqual(await (await fetch(endpoint)).json(), { serviceBanner: null });
   });
 
   test('allows trusted_local operators and rejects empty allowlist', async () => {

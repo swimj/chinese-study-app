@@ -1,11 +1,17 @@
 import { normalizeProductionAnswerForProfile, type StudyProfileId } from '../study-profile';
+import { matchServedCueAnswer } from './cues';
 import type {
   ProductionAnswerWord,
   ProductionAttemptResult,
   ProductionExerciseSnapshot,
   ProductionResponseResolution,
 } from './study-actions';
+import { assertStrictTargetOnlyProductionSnapshot } from './study-actions';
 
+/**
+ * Catalog lookup used only to identify a rejected response for reflection
+ * promotion. It is not an accepted-answer or grading mechanism.
+ */
 export type ProductionAnswerLookup = ReadonlyMap<string, readonly string[]>;
 
 export function resolveSessionProductionResponse({
@@ -42,38 +48,14 @@ export function resolveAcceptedProductionResponse({
   acceptedAnswers: readonly ProductionAnswerWord[];
   profileId?: StudyProfileId;
 }): ProductionResponseResolution {
-  const matchingWordIdSet = new Set(
-    listMatchingProductionWordIds(submittedText, acceptedAnswers, profileId),
-  );
-  const acceptedWordIds = acceptedAnswers.map((word) => word.wordId);
+  assertStrictTargetOnlyProductionSnapshot({ acceptedAnswers: [...acceptedAnswers] }, anchorWordId);
+  const match = matchServedCueAnswer({ acceptedAnswers: [...acceptedAnswers] }, submittedText, profileId);
 
-  if (matchingWordIdSet.has(anchorWordId) && acceptedWordIds.includes(anchorWordId)) {
+  if (match?.wordId === anchorWordId) {
     return { submittedText, result: 'accepted_anchor' };
   }
 
-  const acceptedNonAnchorId = acceptedWordIds.find(
-    (wordId) => wordId !== anchorWordId && matchingWordIdSet.has(wordId),
-  );
-  if (acceptedNonAnchorId !== undefined) {
-    return { submittedText, result: 'accepted_non_anchor' };
-  }
-
   return { submittedText, result: 'rejected' };
-}
-
-export function listMatchingProductionWordIds(
-  submittedText: string,
-  answerWords: readonly ProductionAnswerWord[],
-  profileId: StudyProfileId = 'mandarin',
-): string[] {
-  const normalizedResponse = normalizeHanziAnswer(submittedText, profileId);
-  return [...new Set(
-    answerWords
-      .filter((word) => productionAnswerForms(word).some(
-        (form) => normalizeHanziAnswer(form, profileId) === normalizedResponse,
-      ))
-      .map((word) => word.wordId),
-  )];
 }
 
 export function buildProductionAnswerLookup(
@@ -94,6 +76,10 @@ export function buildProductionAnswerLookup(
   return lookup;
 }
 
+/**
+ * Returns a catalog identity only for a rejected response that has one
+ * unambiguous out-of-set match. This never changes production grading.
+ */
 export function resolveUniqueOutOfSetWordId({
   submittedText,
   answerLookup,
@@ -112,6 +98,11 @@ export function resolveUniqueOutOfSetWordId({
   return matchingOutOfSetIds.length === 1 ? matchingOutOfSetIds[0]! : null;
 }
 
+/**
+ * Validates the frozen target-only answer space before attaching its stable
+ * target identity to durable evidence. Rejected responses retain no owner
+ * answer identity; a known wrong-word lookup is handled separately.
+ */
 export function deriveAcceptedSubmittedWordId({
   result,
   submittedText,
@@ -125,36 +116,16 @@ export function deriveAcceptedSubmittedWordId({
   acceptedAnswers: readonly ProductionAnswerWord[];
   profileId?: StudyProfileId;
 }): string | null {
-  const canonicalResolution = resolveAcceptedProductionResponse({
+  const resolution = resolveAcceptedProductionResponse({
     submittedText,
     anchorWordId,
     acceptedAnswers,
     profileId,
   });
-  if (canonicalResolution.result !== result) {
-    throw new Error('Production attempt result does not match the frozen accepted-answer forms.');
+  if (resolution.result !== result) {
+    throw new Error('Production attempt result does not match the frozen target-only answer form.');
   }
-
-  const matchingWordIdSet = new Set(listMatchingProductionWordIds(
-    submittedText,
-    acceptedAnswers,
-    profileId,
-  ));
-  const acceptedWordIds = acceptedAnswers.map((word) => word.wordId);
-
-  switch (result) {
-    case 'accepted_anchor':
-      return anchorWordId;
-    case 'accepted_non_anchor': {
-      const acceptedNonAnchorId = acceptedWordIds.find(
-        (wordId) => wordId !== anchorWordId && matchingWordIdSet.has(wordId),
-      );
-      if (acceptedNonAnchorId === undefined) throw new Error('Missing accepted non-anchor match.');
-      return acceptedNonAnchorId;
-    }
-    case 'rejected':
-      return null;
-  }
+  return result === 'accepted_anchor' ? anchorWordId : null;
 }
 
 function productionAnswerForms(word: ProductionAnswerWord): string[] {

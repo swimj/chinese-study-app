@@ -7,8 +7,8 @@ import { after, before, beforeEach, describe, test } from 'node:test';
 import { pathToFileURL } from 'node:url';
 import type {
   ReflectionOperation,
-  SessionReflectionBundleV2,
-  SessionReflectionResultV6,
+  SessionReflectionBundleV6,
+  SessionReflectionResultV10,
 } from '../src/domain/reflection.js';
 
 type DbModule = typeof import('../server/db.ts');
@@ -125,6 +125,98 @@ describe('reflection help inbox', { concurrency: false }, () => {
     assert.equal(dbModule.listReflectionHelpInbox().length, 0);
   });
 
+  test('Done after defer deletes the staging row the same as Done from open Help', () => {
+    const informational = materializeInformational('inbox-done-after-defer').artifact;
+    assert.deepEqual(dbModule.deferReflectionHelpInboxItem({
+      artifactId: informational.artifactId,
+      itemId: 'item',
+    }, generatedAt), { deferred: true });
+    assert.equal(dbModule.getReflectionArtifactDetail(informational.artifactId).deferredHelpInbox.length, 1);
+
+    assert.deepEqual(dbModule.markReflectionHelpInboxDone({
+      artifactId: informational.artifactId,
+      itemId: 'item',
+    }), { done: true });
+    assert.equal(dbModule.getReflectionArtifactDetail(informational.artifactId).helpInbox.length, 0);
+    assert.equal(dbModule.getReflectionArtifactDetail(informational.artifactId).deferredHelpInbox.length, 0);
+    assert.deepEqual(dbModule.markReflectionHelpInboxDone({
+      artifactId: informational.artifactId,
+      itemId: 'item',
+    }), { done: false });
+  });
+
+  test('defers an explanation item into second-opinion selection and retires it on success', () => {
+    const informational = materializeInformational('inbox-deferred-explanation').artifact;
+    const inboxId = informational.helpInbox[0]!.inboxId;
+    assert.deepEqual(dbModule.deferReflectionHelpInboxItem({
+      artifactId: informational.artifactId,
+      itemId: 'item',
+    }, generatedAt), { deferred: true });
+    assert.equal(dbModule.listReflectionHelpInbox().length, 0);
+    assert.equal(dbModule.getReflectionArtifactDetail(informational.artifactId).helpInbox.length, 0);
+    assert.deepEqual(
+      dbModule.getReflectionArtifactDetail(informational.artifactId).deferredHelpInbox.map((row) => row.inboxId),
+      [inboxId],
+    );
+    assert.equal(dbModule.listReflectionArtifacts('open').some((row) => row.artifactId === informational.artifactId), true);
+
+    const selection = dbModule.buildStagedDeferredSecondOpinionBundle([], generatedAt, [inboxId]);
+    assert.equal(selection.bundle.items.length, 1);
+    assert.deepEqual(selection.sourceProposalIds, []);
+    assert.deepEqual(selection.sourceHelpInboxIds, [inboxId]);
+    const continuation = dbModule.createReflectionGenerationContinuation({
+      sourceSessionId: null,
+      reflectionFlowVersion: dbModule.STAGED_DEFERRED_SECOND_OPINION_FLOW_VERSION,
+      createdAt: generatedAt,
+      eligibleItemCount: selection.eligibleItemCount,
+      includedItemCount: selection.bundle.items.length,
+      diagnosisBundle: selection.bundle,
+      sourceProposalIds: selection.sourceProposalIds,
+      sourceHelpInboxIds: selection.sourceHelpInboxIds,
+    });
+    assert.deepEqual(continuation.sourceHelpInboxIds, [inboxId]);
+    dbModule.materializeReflectionArtifact({
+      sourceSessionId: null,
+      reflectionFlowVersion: dbModule.STAGED_DEFERRED_SECOND_OPINION_FLOW_VERSION,
+      generatedAt,
+      provider: 'openai', model: 'gpt-5.6-luna-high', promptVersion: 'reflection-staged-v4',
+      sourceProposalIds: [], sourceHelpInboxIds: [inboxId],
+      evidenceBundle: {
+        ...selection.bundle,
+        schemaVersion: 'curated_reflection_bundle.v3',
+        items: selection.bundle.items.map((item) => ({ ...item, promotionEvidence: null })),
+      },
+      result: {
+        schemaVersion: 'session_reflection_result.v10',
+        itemResults: selection.bundle.items.map((item) => ({
+          itemId: item.itemId, diagnosisTags: [], learnerExplanation: 'Try again.', proposals: [], questions: [],
+        })),
+      },
+    });
+    assert.equal(dbModule.getReflectionArtifactDetail(informational.artifactId).deferredHelpInbox.length, 0);
+    assert.equal(sqlite.prepare('SELECT disposition FROM reflection_help_inbox WHERE inbox_id = ?').get(inboxId)?.disposition, 'requested_second_opinion');
+  });
+
+  test('overlap admission leaves an omitted explanation deferred', () => {
+    const proposalArtifact = materialize('inbox-overlap-proposal', suppressOperation('target')).artifact;
+    const explanationArtifact = materializeInformational('inbox-overlap-explanation').artifact;
+    const proposalId = proposalArtifact.proposals[0]!.review.proposalId;
+    const inboxId = explanationArtifact.helpInbox[0]!.inboxId;
+    dbModule.deferReflectionProposal(proposalId, generatedAt);
+    dbModule.deferReflectionHelpInboxItem({ artifactId: explanationArtifact.artifactId, itemId: 'item' }, generatedAt);
+
+    const selection = dbModule.buildStagedDeferredSecondOpinionBundle([proposalId], generatedAt, [inboxId]);
+    assert.equal(selection.eligibleItemCount, 2);
+    assert.equal(selection.bundle.items.length, 1);
+    assert.equal(selection.overlapOmittedItemCount, 1);
+    assert.deepEqual(selection.sourceProposalIds, [proposalId]);
+    assert.deepEqual(selection.sourceHelpInboxIds, []);
+    assert.deepEqual(
+      dbModule.getReflectionArtifactDetail(explanationArtifact.artifactId).deferredHelpInbox.map((row) => row.inboxId),
+      [inboxId],
+    );
+  });
+
   test('authorizes a manual operation on an explanation-only item and leaves Help', () => {
     const informational = materializeInformational('inbox-manual-override').artifact;
     const authorized = dbModule.authorizeManualReflectionOperation({
@@ -184,11 +276,11 @@ function materialize(
   `).run(sessionId, generatedAt, generatedAt);
   return dbModule.materializeReflectionArtifact({
     sourceSessionId: sessionId,
-    reflectionFlowVersion: 'initial_post_session_reflection.v2',
+    reflectionFlowVersion: 'initial_post_session_reflection.v6',
     generatedAt,
     provider: 'openai',
     model: 'gpt-5.6-luna-high',
-    promptVersion: 'reflection-v7',
+    promptVersion: 'reflection-staged-v4',
     evidenceBundle: bundle(sessionId),
     result: result(operation),
   });
@@ -204,14 +296,14 @@ function materializeInformational(
   `).run(sessionId, generatedAt, generatedAt);
   return dbModule.materializeReflectionArtifact({
     sourceSessionId: sessionId,
-    reflectionFlowVersion: 'initial_post_session_reflection.v2',
+    reflectionFlowVersion: 'initial_post_session_reflection.v6',
     generatedAt,
     provider: 'openai',
     model: 'gpt-5.6-luna-high',
-    promptVersion: 'reflection-v7',
+    promptVersion: 'reflection-staged-v4',
     evidenceBundle: bundle(sessionId),
     result: {
-      schemaVersion: 'session_reflection_result.v6',
+      schemaVersion: 'session_reflection_result.v10',
       itemResults: [{
         itemId: 'item',
         diagnosisTags: ['ordinary_retrieval_noise'],
@@ -223,9 +315,9 @@ function materializeInformational(
   });
 }
 
-function bundle(sessionId: string): SessionReflectionBundleV2 {
+function bundle(sessionId: string): SessionReflectionBundleV6 {
   return {
-    schemaVersion: 'session_reflection_bundle.v2',
+    schemaVersion: 'session_reflection_bundle.v6',
     generatedAt,
     session: {
       sessionId,
@@ -253,7 +345,9 @@ function bundle(sessionId: string): SessionReflectionBundleV2 {
         cueType: 'definition_gloss',
         text: 'target',
         acceptedWordIds: ['target'],
+        supplement: null,
       },
+      promotionEvidence: null,
       rawResponse: '替代',
       responseKind: 'unmatched_text',
       submittedWord: null,
@@ -261,9 +355,9 @@ function bundle(sessionId: string): SessionReflectionBundleV2 {
   };
 }
 
-function result(operation: ReflectionOperation): SessionReflectionResultV6 {
+function result(operation: ReflectionOperation): SessionReflectionResultV10 {
   return {
-    schemaVersion: 'session_reflection_result.v6',
+    schemaVersion: 'session_reflection_result.v10',
     itemResults: [{
       itemId: 'item',
       diagnosisTags: ['persistent_confusion'],

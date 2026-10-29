@@ -4,11 +4,83 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, test } from 'node:test';
 import type {
   ProductionMistakeReflectionItemV2,
+  ReflectionItemV5,
+  PromotePureElicitationOperationV1,
   RepairProductionCueOperationV2,
+  ReconcileProductionCuesOperationV1,
 } from '../src/domain/reflection.ts';
+import type { PureCueReflectionItemV1, ReconcilePureCueResponseOperationV1 } from '../src/domain/pure-cue-reflection.ts';
 import { AcceptedWordChips, ReflectionOperationEditor } from '../src/features/reflection/ReflectionOperationEditor.tsx';
 
 describe('reflection operation editor', () => {
+  test('word-only reconciliation displays compensation independently of a shared cue', () => {
+    const operation: ReconcileProductionCuesOperationV1 = {
+      kind: 'reconcile_production_cues', version: 1, sourceAttemptId: 'attempt-1',
+      targetWordId: 'target', responseWordId: 'alternate', destination: null,
+      sourceAttemptFairness: 'misleading_or_overloaded_cue',
+      wordPlans: [{ wordId: 'target', deactivateCueIds: ['cue-1'], distinctiveCueDrafts: [
+        { cueType: 'minimal_context', text: 'A precise target context' },
+      ] }, { wordId: 'alternate', deactivateCueIds: [], distinctiveCueDrafts: [] }],
+    };
+    const markup = renderToStaticMarkup(createElement(ReflectionOperationEditor, {
+      operation, evidence: promotionEvidence(), disabled: true,
+    }));
+    assert.match(markup, /Word-specific cleanup/);
+    assert.match(markup, /No shared cue; reconcile word-specific cues/);
+    assert.match(markup, /Original cue fairness/);
+    assert.match(markup, /value="misleading_or_overloaded_cue" selected=""/);
+    assert.match(markup, /restore eligible lapse/);
+    assert.match(markup, /A precise target context/);
+    assert.match(markup, /Deactivate cue: broad target/);
+    assert.match(markup, /Keep cue: broad alternate/);
+    assert.doesNotMatch(markup, /New elicitation/);
+    assert.doesNotMatch(markup, /No actionable change/);
+  });
+
+  test('suppression recommendation leaves only response-word editing available', () => {
+    const operation: ReconcileProductionCuesOperationV1 = {
+      kind: 'reconcile_production_cues', version: 1, sourceAttemptId: 'attempt-1',
+      targetWordId: 'target', responseWordId: 'alternate', destination: null,
+      sourceAttemptFairness: 'fair',
+      wordPlans: [
+        { wordId: 'target', deactivateCueIds: [], distinctiveCueDrafts: [] },
+        { wordId: 'alternate', deactivateCueIds: [], distinctiveCueDrafts: [
+          { cueType: 'minimal_context', text: 'A useful response context' },
+        ] },
+      ],
+    };
+    const markup = renderToStaticMarkup(createElement(ReflectionOperationEditor, {
+      operation, evidence: promotionEvidence(), targetProductionSuppressed: true,
+      onChange: () => {},
+    }));
+    assert.match(markup, /Only response-word cues can be changed here/);
+    assert.match(markup, /Misleading or overloaded cue — no lapse change/);
+    assert.doesNotMatch(markup, /restore eligible lapse/);
+    assert.match(markup, /Keep cue: broad alternate/);
+    assert.match(markup, /A useful response context/);
+    assert.doesNotMatch(markup, /Keep cue: broad target|Edit shared cue|Shared practice/);
+  });
+
+  test('extension preview names existing members beyond the triggering pair', () => {
+    const evidence = promotionEvidence();
+    assert.ok(evidence.promotionEvidence);
+    Object.assign(evidence.promotionEvidence.intersectingPureCues[0]!, {
+      acceptedWordIds: ['target', 'third'], teachingNote: 'Existing member comparison',
+      acceptedMembers: [{ wordId: 'target', hanzi: '目标' }, { wordId: 'third', hanzi: '其他' }],
+    });
+    const operation: ReconcileProductionCuesOperationV1 = {
+      kind: 'reconcile_production_cues', version: 1, sourceAttemptId: 'attempt-1',
+      targetWordId: 'target', responseWordId: 'alternate', sourceAttemptFairness: 'fair',
+      destination: { kind: 'existing', pureCueId: 'pure-1', teachingNote: 'Whole group teaching',
+        expectedAcceptedWordIds: ['target', 'third'], expectedTeachingNote: 'Existing member comparison' },
+      wordPlans: ['target', 'alternate'].map((wordId) => ({ wordId, deactivateCueIds: [], distinctiveCueDrafts: [] })),
+    };
+    const markup = renderToStaticMarkup(createElement(ReflectionOperationEditor, { operation, evidence }));
+    assert.match(markup, /目标 \/ 其他 \/ 替代/);
+    assert.doesNotMatch(markup, />third</);
+    assert.match(markup, /value="fair" selected=""/);
+  });
+
   test('lists V2 cue changes compactly and does not restate Hanzi', () => {
     const markup = renderToStaticMarkup(createElement(ReflectionOperationEditor, {
       operation: cueRepairV2(),
@@ -32,22 +104,123 @@ describe('reflection operation editor', () => {
     assert.doesNotMatch(markup, /Remove word/);
   });
 
-  test('accepted-word chips cover visible attempt words and mark the proposal set', () => {
+  test('accepted-word labels show only the fixed proposal set without editing controls', () => {
     const markup = renderToStaticMarkup(createElement(AcceptedWordChips, {
       wordOptions: [
         { wordId: 'target', hanzi: '目标', pinyin: 'mùbiāo' },
         { wordId: 'alternate', hanzi: '替代', pinyin: 'tìdài' },
       ],
       acceptedWordIds: ['target'],
-      disabled: false,
-      onChange: () => {},
     }));
 
     assert.match(markup, /目标 · mùbiāo/);
-    assert.match(markup, /替代 · tìdài/);
-    assert.match(markup, /aria-pressed="true"/);
-    assert.match(markup, /aria-pressed="false"/);
+    assert.doesNotMatch(markup, /替代 · tìdài/);
+    assert.doesNotMatch(markup, /<button|aria-pressed/);
+    assert.match(markup, /read-only/);
     assert.match(markup, /is-accepted/);
+  });
+
+  test('legacy multi-answer sets remain visible and unchanged as read-only labels', () => {
+    const acceptedWordIds = ['target', 'alternate'];
+    const markup = renderToStaticMarkup(createElement(AcceptedWordChips, {
+      wordOptions: [{ wordId: 'target', hanzi: '目标', pinyin: 'mùbiāo' }],
+      acceptedWordIds,
+    }));
+    assert.match(markup, /目标 · mùbiāo/);
+    assert.match(markup, />alternate</);
+    assert.doesNotMatch(markup, /<button|aria-pressed/);
+    assert.deepEqual(acceptedWordIds, ['target', 'alternate']);
+  });
+
+  test('presents promotion as a grouped future cue set without repeated word metadata', () => {
+    const evidence = promotionEvidence();
+    const operation: PromotePureElicitationOperationV1 = {
+      kind: 'promote_pure_elicitation',
+      version: 1,
+      sourceAttemptId: evidence.sourceAttemptId,
+      targetWordId: 'target',
+      responseWordId: 'alternate',
+      destination: { kind: 'existing', pureCueId: 'pure-1' },
+      wordPlans: [{
+        wordId: 'target',
+        deactivateCueIds: ['cue-1'],
+        distinctiveCueDrafts: [],
+      }, {
+        wordId: 'alternate',
+        deactivateCueIds: [],
+        distinctiveCueDrafts: [{ cueType: 'minimal_context', text: 'alternate-only context' }],
+      }],
+    };
+    const markup = renderToStaticMarkup(createElement(ReflectionOperationEditor, {
+      operation,
+      evidence,
+      onChange: () => {},
+    }));
+    assert.match(markup, /reflection-promotion-preview/);
+    assert.match(markup, /目标 \/ 替代/);
+    assert.match(markup, /目标 · mùbiāo/);
+    assert.match(markup, /替代 · tìdài/);
+    assert.equal(markup.match(/mùbiāo/g)?.length, 1);
+    assert.equal(markup.match(/tìdài/g)?.length, 1);
+    assert.match(markup, /reflection-promotion-cue-copy">shared axis</);
+    assert.doesNotMatch(markup, /reflection-promotion-cue-copy">shared axis — explicit axis</);
+    assert.match(markup, /kind-deactivate is-excluded/);
+    assert.match(markup, /aria-pressed="false" aria-label="Deactivate cue: broad target"/);
+    assert.match(markup, /kind-keep is-included/);
+    assert.match(markup, /aria-pressed="true" aria-label="Keep cue: broad alternate"/);
+    assert.match(markup, /kind-create is-included/);
+    assert.match(markup, /alternate-only context/);
+    assert.doesNotMatch(markup, /\(2 accepted\)/);
+    assert.doesNotMatch(markup, /type="checkbox"/);
+    assert.doesNotMatch(markup, /3 changes/);
+    assert.doesNotMatch(markup, /Source attempt/);
+    assert.doesNotMatch(markup, /Promotion scope/);
+    assert.doesNotMatch(markup, /Pure elicitation destination/);
+    assert.doesNotMatch(markup, /Deactivate broad word-owned cues/);
+    assert.doesNotMatch(markup, /not-in-evidence/);
+  });
+
+  test('pure cue extension presents individual cues like regular proposals', () => {
+    const evidence: PureCueReflectionItemV1 = {
+      source: 'pure_cue_mistake', sourceActionKind: 'pure_cue', itemId: 'item',
+      sourceAttemptId: 'assessment', firstEventId: 'event', sessionActionId: 'action',
+      occurredAt: '2026-09-30T00:00:00.000Z', rawResponse: '替代',
+      targetWord: null, submittedWord: { wordId: 'alternate', hanzi: '替代', pinyin: 'tìdài', meanings: ['alternate'] },
+      sessionNote: null,
+      servedSnapshot: { snapshotId: 'snapshot', pureCueId: 'pure', servedAt: '2026-09-30T00:00:00.000Z',
+        stimulus: 'Shared situation', axisNote: 'shared axis', teachingNote: 'Existing guidance', acceptedAnswers: [] },
+      currentCue: { id: 'pure', stimulus: 'Shared situation', axisNote: 'shared axis',
+        teachingNote: 'Existing guidance', acceptedWordIds: ['target'], acceptedWords: [
+          { wordId: 'target', hanzi: '目标', pinyin: 'mùbiāo', meanings: ['target'] },
+        ] },
+      activeProductionCues: [
+        { cueId: 'keep', cueType: 'definition_gloss', text: 'Precise cue', acceptedWordIds: ['alternate'] },
+        { cueId: 'retire', cueType: 'minimal_context', text: 'Overbroad cue', acceptedWordIds: ['alternate'] },
+      ],
+      existingContent: { contrastClusters: [], knownAcceptedAlternates: [] },
+    };
+    const operation: ReconcilePureCueResponseOperationV1 = {
+      kind: 'reconcile_pure_cue_response', version: 1, sourceAttemptId: 'assessment',
+      responseWordId: 'alternate', pureCueId: 'pure', expectedAcceptedWordIds: ['target'],
+      expectedTeachingNote: 'Existing guidance', teachingNote: 'Revised guidance',
+      responseWordPlan: { wordId: 'alternate', deactivateCueIds: ['retire'], distinctiveCueDrafts: [
+        { cueType: 'circumstance', text: 'A distinctive context' },
+      ] },
+    };
+    const markup = renderToStaticMarkup(createElement(ReflectionOperationEditor, {
+      operation, evidence, onChange: () => {},
+    }));
+    assert.match(markup, /reflection-promotion-preview/);
+    assert.match(markup, /替代 — individual cues/);
+    assert.match(markup, /kind-keep is-included/);
+    assert.match(markup, /aria-pressed="true" aria-label="Keep cue: Precise cue"/);
+    assert.match(markup, /kind-deactivate is-excluded/);
+    assert.match(markup, /aria-pressed="false" aria-label="Deactivate cue: Overbroad cue"/);
+    assert.match(markup, /kind-create is-included/);
+    assert.match(markup, /A distinctive context/);
+    assert.match(markup, /Edit new cue/);
+    assert.match(markup, /\+ Add cue/);
+    assert.doesNotMatch(markup, /type="checkbox"|Exclude new cue/);
   });
 });
 
@@ -114,5 +287,32 @@ function v2Evidence(): ProductionMistakeReflectionItemV2 {
       meanings: ['alternate'],
     },
     responseKind: 'matched_known_word',
+  };
+}
+
+function promotionEvidence(): ReflectionItemV5 {
+  const evidence = v2Evidence();
+  return {
+    ...evidence,
+    servedCue: { ...evidence.servedCue, acceptedWordIds: ['target', 'alternate'], supplement: null },
+    promotionEvidence: {
+      diagnosisTags: ['production_cue_overloaded'],
+      words: ['target', 'alternate'].map((wordId) => ({
+        wordId,
+        activeProductionCues: [{
+          cueId: wordId === 'target' ? 'cue-1' : 'cue-2',
+          taskId: `production-task:${wordId}:default_production`,
+          cueType: 'definition_gloss',
+          text: `broad ${wordId}`,
+          acceptedWordIds: ['target', 'alternate'],
+        }],
+      })),
+      intersectingPureCues: [{
+        id: 'pure-1',
+        stimulus: 'shared axis',
+        axisNote: 'explicit axis',
+        acceptedWordIds: ['target'],
+      }],
+    },
   };
 }

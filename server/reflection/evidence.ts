@@ -1,3 +1,5 @@
+import { isBootstrapRevealSnapshot, type BootstrapRevealSnapshot } from '../../src/domain/word-content/reveal.ts';
+import { assertBootstrapRevealSource } from '../db/word-introductions.ts';
 import type {
   ReflectionExistingContentV0,
   ReflectionServedCueSnapshotV2,
@@ -18,6 +20,7 @@ import {
   getProductionCueSupplement,
   type ProductionCueAttemptResultV0,
 } from '../db/production-cues.ts';
+import { selectNonOverlappingReflectionItems } from './bundle-admission.ts';
 
 export type ReflectionEvidenceErrorCode =
   | 'invalid_supplement'
@@ -92,12 +95,13 @@ type ClusterRow = {
  * prefer a complete, useful result for a bounded number of mistakes over a
  * potentially truncated result for an entire session.
  */
-export const INITIAL_REFLECTION_MAX_EVIDENCE_ITEMS = 25;
+export const INITIAL_REFLECTION_MAX_EVIDENCE_ITEMS = 50;
 
 export type InitialReflectionBundleBuild = {
   bundle: SessionReflectionBundleV4;
   eligibleItemCount: number;
   includedItemCount: number;
+  overlapOmittedItemCount?: number;
 };
 
 export function buildInitialReflectionBundle(
@@ -181,7 +185,8 @@ export function buildInitialReflectionBundleWithMetrics(
       'No qualifying production reflection evidence remains after excluding managed study actions.',
     );
   }
-  const items = eligibleItems.slice(0, INITIAL_REFLECTION_MAX_EVIDENCE_ITEMS);
+  const admittedItems = selectNonOverlappingReflectionItems(eligibleItems);
+  const items = admittedItems.items.slice(0, INITIAL_REFLECTION_MAX_EVIDENCE_ITEMS);
   const bundle = {
     schemaVersion: 'session_reflection_bundle.v4' as const,
     generatedAt,
@@ -199,6 +204,7 @@ export function buildInitialReflectionBundleWithMetrics(
       bundle: parseSessionReflectionBundleV4(bundle),
       eligibleItemCount: eligibleItems.length,
       includedItemCount: items.length,
+      overlapOmittedItemCount: admittedItems.overlapOmittedItemCount,
     };
   } catch {
     throw new ReflectionEvidenceError(
@@ -442,6 +448,7 @@ function productionServedCue(
       text: metadata.text,
       acceptedWordIds: [...metadata.acceptedWordIds],
       supplement: metadata.supplement,
+      ...(metadata.bootstrapReveal ? { bootstrapReveal: { ...metadata.bootstrapReveal } } : {}),
     };
   }
   if (suppliedCue.cueId !== null) {
@@ -460,6 +467,7 @@ function productionServedCue(
 }
 
 type ProductionAttemptMetadataV0 = {
+  bootstrapReveal?: BootstrapRevealSnapshot;
   taskId: string;
   cueId: string | null;
   cueType: 'definition_gloss' | 'minimal_context' | 'circumstance';
@@ -490,7 +498,9 @@ function parseProductionAttemptMetadata(raw: string): ProductionAttemptMetadataV
   const supplement = production.supplement === undefined ? null : production.supplement;
   const responseKind = production.responseKind === undefined ? 'typed' : production.responseKind;
   if (
-    typeof production.taskId !== 'string'
+    (production.bootstrapReveal !== undefined && (!isBootstrapRevealSnapshot(production.bootstrapReveal)
+      || production.cueType !== 'definition_gloss' || supplement !== null))
+    || typeof production.taskId !== 'string'
     || (production.cueId !== null && typeof production.cueId !== 'string')
     || (
       production.cueType !== 'definition_gloss'
@@ -500,7 +510,9 @@ function parseProductionAttemptMetadata(raw: string): ProductionAttemptMetadataV
     || typeof production.text !== 'string'
     || production.text.trim().length === 0
     || !Array.isArray(production.acceptedWordIds)
-    || production.acceptedWordIds.length === 0
+    || production.acceptedWordIds.length !== 1
+    || production.acceptedWordIds[0] !== production.anchorWordId
+    || 'recheckDemandId' in production
     || production.acceptedWordIds.some((wordId) => typeof wordId !== 'string')
     || new Set(production.acceptedWordIds).size !== production.acceptedWordIds.length
     || (
@@ -523,7 +535,6 @@ function parseProductionAttemptMetadata(raw: string): ProductionAttemptMetadataV
     || (production.submittedWordId !== null && typeof production.submittedWordId !== 'string')
     || (
       production.result !== 'accepted_anchor'
-      && production.result !== 'accepted_non_anchor'
       && production.result !== 'rejected'
     )
   ) {
@@ -555,8 +566,13 @@ function validateProductionAttemptMetadata(
     throw invalidReference('The production attempt snapshot does not match its durable attempt.');
   }
 
+  if (metadata.bootstrapReveal) {
+    try { assertBootstrapRevealSource(attempt.target_word_id, metadata.bootstrapReveal); }
+    catch { throw invalidReference('Production post-reveal content differs from its immutable bootstrap source.'); }
+  }
   const contentRef = parseNullableObjectJson(attempt.content_ref_json);
-  const durableSupplement = getProductionCueSupplement(metadata.taskId, metadata.cueId);
+  const durableSupplement = metadata.supplement === null ? null
+    : getProductionCueSupplement(metadata.taskId, metadata.cueId, metadata.supplement.supplementId);
   if (metadata.supplement !== null && (
     durableSupplement === null
     || durableSupplement.supplementId !== metadata.supplement.supplementId
@@ -609,9 +625,7 @@ function isProductionResultCoherent(metadata: ProductionAttemptMetadataV0): bool
     case 'accepted_anchor':
       return metadata.submittedWordId === metadata.anchorWordId;
     case 'accepted_non_anchor':
-      return metadata.submittedWordId !== null
-        && metadata.submittedWordId !== metadata.anchorWordId
-        && metadata.acceptedWordIds.includes(metadata.submittedWordId);
+      return false;
     case 'rejected':
       return metadata.submittedWordId === null
         || !metadata.acceptedWordIds.includes(metadata.submittedWordId);

@@ -1,12 +1,18 @@
-import { useState } from 'react';
+import type { PureCueReflectionItemV1, ReconcilePureCueResponseOperationV1 } from '../../domain/pure-cue-reflection';
+import { useEffect, useRef, useState } from 'react';
 import type {
   CreateContrastClusterOperation,
   ProductionCueChangeV2,
   ProductionCueDraftV2,
+  PromotePureElicitationWordPlanV1,
   ReflectionInputItemV1,
   ReflectionInputItemV2,
   ReflectionItemV3,
+  ReflectionItemV5,
   ReflectionOperation,
+  PromotePureElicitationOperationV1,
+  ReconcileProductionCuesOperationV1,
+  PureCuePromotionPureCueSnapshotV2,
   RepairProductionCueOperationV1,
   RepairProductionCueOperationV2,
 } from '../../domain/reflection';
@@ -25,11 +31,13 @@ export function ReflectionOperationEditor({
   operation,
   evidence = null,
   disabled = false,
+  targetProductionSuppressed = false,
   onChange,
 }: {
   operation: ReflectionOperation;
-  evidence?: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | null;
+  evidence?: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | ReflectionItemV5 | PureCueReflectionItemV1 | null;
   disabled?: boolean;
+  targetProductionSuppressed?: boolean;
   onChange?: (operation: ReflectionOperation) => void;
 }) {
   const wordOptions = collectEvidenceWordOptions(evidence);
@@ -45,6 +53,27 @@ export function ReflectionOperationEditor({
   }
 
   switch (operation.kind) {
+    case 'repair_pure_cue_stimulus':
+      return (
+        <div className="reflection-operation-fields">
+          <Field label="Stimulus shown to the learner">
+            <p>{operation.expectedStimulus}</p>
+          </Field>
+          <Field label="Repaired stimulus">
+            <textarea value={operation.stimulus} disabled={disabled}
+              onChange={(event) => onChange?.({ ...operation, stimulus: event.target.value })} />
+          </Field>
+          <p className="notes">The existing axis and accepted answers stay the same. The repaired stimulus will be used for future attempts.</p>
+        </div>
+      );
+    case 'reconcile_pure_cue_response': {
+      if (evidence?.source !== 'pure_cue_mistake') {
+        return <p className="notes">Pure cue evidence is unavailable.</p>;
+      }
+      return (
+        <PureCueResponseEditor operation={operation} evidence={evidence} disabled={disabled} onChange={onChange} />
+      );
+    }
     case 'suppress_definition_production':
       return (
         <div className="reflection-operation-fields">
@@ -52,7 +81,7 @@ export function ReflectionOperationEditor({
             <EvidenceWordPicker
               value={operation.wordId}
               options={wordOptions}
-              disabled={disabled}
+              disabled={disabled || targetProductionSuppressed}
               onChange={(wordId) => dispatch({
                 type: 'set_suppression_word',
                 wordId,
@@ -125,6 +154,8 @@ export function ReflectionOperationEditor({
           </Field>
         </div>
       );
+    case 'request_word_bootstrap':
+      return <p>Request bootstrap generation for this word. No-op if the word is already bootstrapped.</p>;
     case 'add_production_cue_supplement':
       return (
         <div className="reflection-operation-fields">
@@ -160,7 +191,417 @@ export function ReflectionOperationEditor({
           </Field>
         </div>
       );
+    case 'reconcile_production_cues':
+    case 'promote_pure_elicitation':
+      return (
+        <PureElicitationPromotionEditor
+          operation={operation}
+          evidence={evidence}
+          targetProductionSuppressed={targetProductionSuppressed}
+          wordOptions={wordOptions}
+          disabled={disabled}
+          dispatch={dispatch}
+        />
+      );
   }
+}
+
+function PureCueResponseEditor({
+  operation, evidence, disabled, onChange,
+}: {
+  operation: ReconcilePureCueResponseOperationV1;
+  evidence: PureCueReflectionItemV1;
+  disabled: boolean;
+  onChange?: (operation: ReflectionOperation) => void;
+}) {
+  const plan = operation.responseWordPlan;
+  const updatePlan = (patch: Partial<typeof plan>) => {
+    if (disabled || onChange === undefined) return;
+    onChange({ ...operation, responseWordPlan: { ...plan, ...patch } });
+  };
+
+  function handleCueAction(action: WordCuePlanAction) {
+    switch (action.type) {
+      case 'toggle_cue':
+        updatePlan({ deactivateCueIds: plan.deactivateCueIds.includes(action.cueId)
+          ? plan.deactivateCueIds.filter((id) => id !== action.cueId)
+          : [...plan.deactivateCueIds, action.cueId] });
+        break;
+      case 'add_draft':
+        updatePlan({ distinctiveCueDrafts: [...plan.distinctiveCueDrafts, { cueType: 'minimal_context', text: '' }] });
+        break;
+      case 'update_draft':
+        updatePlan({ distinctiveCueDrafts: plan.distinctiveCueDrafts.map((draft, index) =>
+          index === action.index ? { ...draft, ...action.patch } : draft) });
+        break;
+      case 'remove_draft':
+        updatePlan({ distinctiveCueDrafts: plan.distinctiveCueDrafts.filter((_, index) => index !== action.index) });
+        break;
+      case 'restore_draft':
+        updatePlan({ distinctiveCueDrafts: [...plan.distinctiveCueDrafts, action.draft] });
+        break;
+    }
+  }
+
+  return (
+    <div className="reflection-operation-fields">
+      <p>{evidence.servedSnapshot.stimulus}</p>
+      <p className="notes">Accepted answers: {evidence.currentCue.acceptedWords.map((word) => word.hanzi).join('、')}
+        {' → add '}{evidence.submittedWord.hanzi}</p>
+      <p className="notes">Accepting restores the pure cue's progress before this first response. Existing members' word cues stay unchanged.</p>
+      <Field label="Teaching note">
+        <textarea value={operation.teachingNote} disabled={disabled}
+          onChange={(event) => onChange?.({ ...operation, teachingNote: event.target.value })} />
+      </Field>
+      <section className="reflection-promotion-preview" aria-label="Resulting cue set">
+        <WordCuePlanEditor
+          heading={`${evidence.submittedWord.hanzi} — individual cues`}
+          plan={plan}
+          activeCues={evidence.activeProductionCues.filter((cue): cue is typeof cue & { cueId: string } => cue.cueId !== null)}
+          disabled={disabled}
+          onAction={onChange === undefined ? undefined : handleCueAction}
+        />
+      </section>
+    </div>
+  );
+}
+
+function PureElicitationPromotionEditor({
+  operation,
+  evidence,
+  wordOptions,
+  disabled,
+  targetProductionSuppressed,
+  dispatch,
+}: {
+  operation: PromotePureElicitationOperationV1 | ReconcileProductionCuesOperationV1;
+  targetProductionSuppressed: boolean;
+  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | ReflectionItemV5 | PureCueReflectionItemV1 | null;
+  wordOptions: EvidenceWordOption[];
+  disabled: boolean;
+  dispatch: (action: ReflectionOperationDraftAction) => void;
+}) {
+  const promotionEvidence = evidence !== null && 'promotionEvidence' in evidence
+    ? evidence.promotionEvidence
+    : null;
+  const pureCues = promotionEvidence?.intersectingPureCues ?? [];
+  const pureMemberLabels = new Map(pureCues.flatMap((cue) =>
+    'acceptedMembers' in cue
+      ? (cue as PureCuePromotionPureCueSnapshotV2).acceptedMembers.map((member) => [member.wordId, member.hanzi] as const)
+      : []));
+  const wordEvidence = new Map(
+    (promotionEvidence?.words ?? []).map((word) => [word.wordId, word]),
+  );
+  const wordLabel = (wordId: string) => {
+    const option = wordOptions.find((word) => word.wordId === wordId);
+    return option === undefined ? wordId : evidenceWordSurfaceLabel(option);
+  };
+  const wordHeading = (wordId: string) => {
+    const option = wordOptions.find((word) => word.wordId === wordId);
+    return option?.hanzi ?? pureMemberLabels.get(wordId) ?? wordId;
+  };
+  const [destinationExpanded, setDestinationExpanded] = useState(false);
+  const destinationAcceptedWordIds = promotionDestinationAcceptedWordIds(operation, pureCues);
+
+  function handleCueAction(wordId: string, action: WordCuePlanAction) {
+    switch (action.type) {
+      case 'toggle_cue':
+        dispatch({ type: 'toggle_promotion_deactivation', wordId, cueId: action.cueId });
+        break;
+      case 'add_draft':
+        dispatch({ type: 'add_promotion_distinctive_cue', wordId });
+        break;
+      case 'update_draft':
+        dispatch({ type: 'update_promotion_distinctive_cue', wordId, index: action.index, patch: action.patch });
+        break;
+      case 'remove_draft':
+        dispatch({ type: 'remove_promotion_distinctive_cue', wordId, index: action.index });
+        break;
+      case 'restore_draft':
+        dispatch({ type: 'restore_promotion_distinctive_cue', wordId, draft: action.draft });
+        break;
+    }
+  }
+
+  function existingDestination(cue: typeof pureCues[number]) {
+    const teachingNote = 'teachingNote' in cue && typeof cue.teachingNote === 'string' ? cue.teachingNote : '';
+    return operation.kind === 'reconcile_production_cues'
+      ? { kind: 'existing' as const, pureCueId: cue.id, teachingNote,
+          expectedAcceptedWordIds: [...cue.acceptedWordIds], expectedTeachingNote: teachingNote,
+          expectedStimulus: cue.stimulus, expectedAxisNote: cue.axisNote }
+      : { kind: 'existing' as const, pureCueId: cue.id };
+  }
+
+  return (
+    <div className="reflection-operation-fields">
+      <p className="notes reflection-promotion-pair">
+        {wordLabel(operation.targetWordId)} ↔ {wordLabel(operation.responseWordId)}
+      </p>
+      {operation.kind === 'reconcile_production_cues' ? (
+        <Field label="Original cue fairness">
+          <select value={operation.sourceAttemptFairness} disabled={disabled}
+            onChange={(event) => dispatch({ type: 'set_reconciliation_fairness', fairness: event.target.value as ReconcileProductionCuesOperationV1['sourceAttemptFairness'] })}>
+            <option value="fair">Fair cue — preserve the original assessment</option>
+            <option value="misleading_or_overloaded_cue">{targetProductionSuppressed
+              ? 'Misleading or overloaded cue — no lapse change'
+              : 'Misleading or overloaded cue — restore eligible lapse'}</option>
+          </select>
+        </Field>
+      ) : null}
+      <section className="reflection-promotion-preview" aria-label="Resulting cue set">
+        {targetProductionSuppressed ? <p className="notes">Target production suppression is recommended. Only response-word cues can be changed here.</p> : <section className="reflection-promotion-group reflection-promotion-shared-group">
+          <header className="reflection-promotion-group-heading">
+            <h5>{operation.destination === null ? 'Word-specific cleanup' : destinationAcceptedWordIds.map(wordHeading).join(' / ')}</h5>
+          </header>
+          <div className={`reflection-promotion-cue is-included ${operation.destination?.kind === 'existing' ? 'kind-keep' : operation.destination === null ? '' : 'kind-create'}`}>
+            <div className="reflection-promotion-cue-row">
+              {operation.destination !== null ? <PromotionCueStatus kind={operation.destination.kind === 'existing' ? 'keep' : 'create'} /> : null}
+              <span className="reflection-promotion-cue-copy">
+                {compactPromotionDestinationPreview(operation, pureCues)}
+              </span>
+              <button type="button" className="reflection-promotion-expand"
+                aria-expanded={destinationExpanded}
+                aria-label={destinationExpanded ? 'Close shared cue editor' : 'Edit shared cue'}
+                onClick={() => setDestinationExpanded((current) => !current)}>
+                {destinationExpanded ? '▴' : '▾'}
+              </button>
+            </div>
+            {destinationExpanded ? (
+              <div className="reflection-promotion-cue-detail">
+                <Field label="Shared practice">
+                  <select value={operation.destination?.kind ?? 'none'} disabled={disabled}
+                    onChange={(event) => {
+                      const cue = pureCues[0];
+                      const destination = event.target.value === 'none' ? null
+                        : event.target.value === 'existing' && cue !== undefined
+                          ? existingDestination(cue)
+                          : operation.kind === 'reconcile_production_cues'
+                            ? { kind: 'create' as const, stimulus: '', axisNote: '', teachingNote: '' }
+                            : { kind: 'create' as const, stimulus: '', axisNote: '' };
+                      dispatch({ type: 'set_promotion_destination', destination });
+                    }}>
+                    {operation.kind === 'reconcile_production_cues' ? <option value="none">No shared cue</option> : null}
+                    <option value="create">Create new pure elicitation</option>
+                    <option value="existing" disabled={pureCues.length === 0}>Extend existing pure elicitation</option>
+                  </select>
+                </Field>
+                {operation.destination?.kind === 'existing' ? (
+                  <Field label="Existing pure elicitation">
+                    <select value={operation.destination.pureCueId} disabled={disabled}
+                      onChange={(event) => {
+                        const cue = pureCues.find((entry) => entry.id === event.target.value);
+                        if (cue === undefined) throw new Error('Selected pure cue is missing from evidence.');
+                        dispatch({ type: 'set_promotion_destination', destination: existingDestination(cue) });
+                      }}>
+                      {pureCues.map((cue) => <option value={cue.id} key={cue.id}>{cue.stimulus}{cue.axisNote ? ` — ${cue.axisNote}` : ''}</option>)}
+                    </select>
+                  </Field>
+                ) : operation.destination?.kind === 'create' ? (
+                  <>
+                    <Field label="Shared elicitation stimulus">
+                      <textarea value={operation.destination.stimulus} disabled={disabled}
+                        onChange={(event) => {
+                          if (operation.destination?.kind !== 'create') return;
+                          dispatch({ type: 'set_promotion_destination', destination: { ...operation.destination, stimulus: event.target.value } });
+                        }} />
+                    </Field>
+                    <Field label="Semantic axis note">
+                      <textarea value={operation.destination.axisNote} disabled={disabled}
+                        onChange={(event) => {
+                          if (operation.destination?.kind !== 'create') return;
+                          dispatch({ type: 'set_promotion_destination', destination: { ...operation.destination, axisNote: event.target.value } });
+                        }} />
+                    </Field>
+                  </>
+                ) : null}
+                {operation.kind === 'reconcile_production_cues' && operation.destination !== null ? (
+                  <Field label="Teaching note shown on reveal">
+                    <textarea value={operation.destination.teachingNote} disabled={disabled}
+                      onChange={(event) => {
+                        if (operation.destination === null) return;
+                        dispatch({ type: 'set_promotion_destination', destination: { ...operation.destination, teachingNote: event.target.value } });
+                      }} />
+                  </Field>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        </section>}
+
+        {operation.wordPlans.filter((plan) => !targetProductionSuppressed || plan.wordId !== operation.targetWordId).map((plan) => (
+          <WordCuePlanEditor
+            key={plan.wordId}
+            heading={wordHeading(plan.wordId)}
+            plan={plan}
+            activeCues={wordEvidence.get(plan.wordId)?.activeProductionCues ?? []}
+            disabled={disabled}
+            onAction={(action) => handleCueAction(plan.wordId, action)}
+          />
+        ))}
+      </section>
+    </div>
+  );
+}
+
+type WordCueDraft = PromotePureElicitationWordPlanV1['distinctiveCueDrafts'][number];
+type WordCuePlanAction =
+  | { type: 'toggle_cue'; cueId: string }
+  | { type: 'add_draft' }
+  | { type: 'update_draft'; index: number; patch: Partial<WordCueDraft> }
+  | { type: 'remove_draft'; index: number }
+  | { type: 'restore_draft'; draft: WordCueDraft };
+
+function WordCuePlanEditor({
+  heading, plan, activeCues, disabled, onAction,
+}: {
+  heading: string;
+  plan: PromotePureElicitationWordPlanV1;
+  activeCues: ReadonlyArray<{ cueId: string; text: string }>;
+  disabled: boolean;
+  onAction?: (action: WordCuePlanAction) => void;
+}) {
+  const cueTypes = ['definition_gloss', 'minimal_context', 'circumstance'] as const;
+  const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
+  const [excludedDrafts, setExcludedDrafts] = useState<Array<{ key: number; draft: WordCueDraft }>>([]);
+  const excludedDraftKey = useRef(0);
+  const localPlanChangePending = useRef(false);
+
+  useEffect(() => {
+    if (localPlanChangePending.current) {
+      localPlanChangePending.current = false;
+      return;
+    }
+    setExcludedDrafts([]);
+  }, [plan]);
+
+  function send(action: WordCuePlanAction) {
+    if (disabled || onAction === undefined) return;
+    localPlanChangePending.current = true;
+    onAction(action);
+  }
+
+  return (
+    <section className="reflection-promotion-group">
+      <header className="reflection-promotion-group-heading"><h5>{heading}</h5></header>
+      <ul className="reflection-promotion-cues">
+        {activeCues.map((cue) => {
+          const included = !plan.deactivateCueIds.includes(cue.cueId);
+          return (
+            <li className={`reflection-promotion-cue ${included ? 'kind-keep is-included' : 'kind-deactivate is-excluded'}`} key={cue.cueId}>
+              <button type="button" className="reflection-promotion-cue-toggle" aria-pressed={included}
+                aria-label={`${included ? 'Keep' : 'Deactivate'} cue: ${cue.text}`} disabled={disabled}
+                onClick={() => send({ type: 'toggle_cue', cueId: cue.cueId })}>
+                <PromotionCueStatus kind={included ? 'keep' : 'deactivate'} />
+                <span className="reflection-promotion-cue-copy">{cue.text}</span>
+              </button>
+            </li>
+          );
+        })}
+        {plan.distinctiveCueDrafts.map((draft, index) => {
+          const expanded = expandedIndex === index;
+          const preview = draft.text.trim() || 'New distinctive cue';
+          return (
+            <li className={`reflection-promotion-cue kind-create is-included${expanded ? ' is-expanded' : ''}`} key={index}>
+              <div className="reflection-promotion-cue-row">
+                <button type="button" className="reflection-promotion-cue-toggle" aria-pressed="true"
+                  aria-label={`New cue: ${preview}`} disabled={disabled}
+                  onClick={() => {
+                    setExcludedDrafts((current) => [...current, { key: excludedDraftKey.current++, draft: { ...draft } }]);
+                    setExpandedIndex((current) => current === index ? null : current);
+                    send({ type: 'remove_draft', index });
+                  }}>
+                  <PromotionCueStatus kind="create" />
+                  <span className="reflection-promotion-cue-copy">{preview}</span>
+                </button>
+                <button type="button" className="reflection-promotion-expand" aria-expanded={expanded}
+                  aria-label={expanded ? 'Close new cue editor' : 'Edit new cue'}
+                  onClick={() => setExpandedIndex((current) => current === index ? null : index)}>
+                  {expanded ? '▴' : '▾'}
+                </button>
+              </div>
+              {expanded ? <div className="reflection-promotion-cue-detail">
+                <Field label={`Cue ${index + 1} type`}>
+                  <select value={draft.cueType} disabled={disabled} onChange={(event) => send({
+                    type: 'update_draft', index, patch: { cueType: event.target.value as typeof cueTypes[number] },
+                  })}>
+                    {cueTypes.map((cueType) => <option value={cueType} key={cueType}>{humanize(cueType)}</option>)}
+                  </select>
+                </Field>
+                <Field label="Cue text">
+                  <textarea value={draft.text} disabled={disabled} onChange={(event) => send({
+                    type: 'update_draft', index, patch: { text: event.target.value },
+                  })} />
+                </Field>
+              </div> : null}
+            </li>
+          );
+        })}
+        {excludedDrafts.map(({ key, draft }) => (
+          <li className="reflection-promotion-cue kind-create is-excluded" key={key}>
+            <button type="button" className="reflection-promotion-cue-toggle" aria-pressed="false"
+              aria-label={`New cue: ${draft.text.trim() || 'New distinctive cue'}`} disabled={disabled}
+              onClick={() => {
+                setExcludedDrafts((current) => current.filter((entry) => entry.key !== key));
+                send({ type: 'restore_draft', draft });
+              }}>
+              <PromotionCueStatus kind="create" />
+              <span className="reflection-promotion-cue-copy">{draft.text.trim() || 'New distinctive cue'}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      {!disabled && onAction !== undefined ? <button type="button"
+        className="secondary-button reflection-promotion-add-cue"
+        onClick={() => {
+          setExpandedIndex(plan.distinctiveCueDrafts.length);
+          send({ type: 'add_draft' });
+        }}>+ Add cue</button> : null}
+    </section>
+  );
+}
+
+function PromotionCueStatus({
+  kind,
+}: {
+  kind: 'create' | 'keep' | 'deactivate';
+}) {
+  return (
+    <span className={`reflection-promotion-cue-status kind-${kind}`} aria-hidden="true">
+      {kind === 'create' ? '+' : kind === 'keep' ? '✓' : '−'}
+    </span>
+  );
+}
+
+function promotionDestinationAcceptedWordIds(
+  operation: PromotePureElicitationOperationV1 | ReconcileProductionCuesOperationV1,
+  pureCues: ReadonlyArray<{ id: string; acceptedWordIds: string[] }>,
+): string[] {
+  const existingPureCueId = operation.destination?.kind === 'existing'
+    ? operation.destination.pureCueId
+    : null;
+  const existingIds = existingPureCueId === null
+    ? []
+    : pureCues.find((cue) => cue.id === existingPureCueId)?.acceptedWordIds ?? [];
+  return [...new Set([
+    ...existingIds,
+    operation.targetWordId,
+    operation.responseWordId,
+  ])];
+}
+
+function compactPromotionDestinationPreview(
+  operation: PromotePureElicitationOperationV1 | ReconcileProductionCuesOperationV1,
+  pureCues: ReadonlyArray<{ id: string; stimulus: string; axisNote: string }>,
+): string {
+  if (operation.destination?.kind === 'existing') {
+    const { pureCueId } = operation.destination;
+    const cue = pureCues.find((item) => item.id === pureCueId);
+    const stimulus = cue?.stimulus.trim() ?? '';
+    return stimulus.length === 0 ? pureCueId : stimulus;
+  }
+  if (operation.destination === null) return 'No shared cue; reconcile word-specific cues';
+  const stimulus = operation.destination.stimulus.trim();
+  return stimulus.length === 0 ? 'New elicitation' : stimulus;
 }
 
 function ProductionCueEditorV2({
@@ -415,8 +856,6 @@ function ProductionCueDraftFields({
       <AcceptedWordChips
         wordOptions={wordOptions}
         acceptedWordIds={draft.acceptedWordIds}
-        disabled={disabled}
-        onChange={(acceptedWordIds) => onPatch({ acceptedWordIds })}
       />
     </div>
   );
@@ -425,25 +864,20 @@ function ProductionCueDraftFields({
 export function AcceptedWordChips({
   wordOptions,
   acceptedWordIds,
-  disabled,
-  onChange,
 }: {
   wordOptions: EvidenceWordOption[];
   acceptedWordIds: string[];
-  disabled: boolean;
-  onChange: (acceptedWordIds: string[]) => void;
 }) {
-  const selected = new Set(acceptedWordIds);
-  const extraOptions = acceptedWordIds
-    .filter((wordId) => !wordOptions.some((option) => option.wordId === wordId))
-    .map((wordId) => ({ wordId, hanzi: wordId, pinyin: '' }));
-  const chips = [...wordOptions, ...extraOptions];
+  const chips = acceptedWordIds.map((wordId) => (
+    wordOptions.find((option) => option.wordId === wordId)
+      ?? { wordId, hanzi: wordId, pinyin: '' }
+  ));
 
   if (chips.length === 0) {
     return (
       <div className="reflection-accepted-words">
         <span className="reflection-accepted-words-label">Accepted</span>
-        <p className="notes">No visible words on this attempt.</p>
+        <p className="notes">No accepted answers.</p>
       </div>
     );
   }
@@ -451,32 +885,15 @@ export function AcceptedWordChips({
   return (
     <div className="reflection-accepted-words">
       <span className="reflection-accepted-words-label">Accepted</span>
-      <div className="reflection-accepted-word-chips" role="group" aria-label="Accepted words">
-        {chips.map((option) => {
-          const isAccepted = selected.has(option.wordId);
-          return (
-            <button
-              type="button"
+      <div className="reflection-accepted-word-chips" aria-label="Accepted words (read-only)">
+        {chips.map((option) => (
+            <span
               key={option.wordId}
-              className={
-                isAccepted
-                  ? 'reflection-accepted-word-chip is-accepted'
-                  : 'reflection-accepted-word-chip'
-              }
-              disabled={disabled}
-              aria-pressed={isAccepted}
-              onClick={() => {
-                onChange(
-                  isAccepted
-                    ? acceptedWordIds.filter((wordId) => wordId !== option.wordId)
-                    : [...acceptedWordIds, option.wordId],
-                );
-              }}
+              className="reflection-accepted-word-chip is-accepted"
             >
-              {evidenceWordSurfaceLabel(option)}
-            </button>
-          );
-        })}
+              {option.pinyin.trim() ? evidenceWordSurfaceLabel(option) : option.hanzi}
+            </span>
+        ))}
       </div>
     </div>
   );

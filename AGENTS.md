@@ -1,205 +1,199 @@
-# AGENTS.md
+# Working in this repository
 
-Guidance for AI coding agents working in this repository.
+AGENTS.md defines how agents conduct work in this repository and routes them to
+more specific contributor procedures. [README.md](README.md) introduces the
+hosted Mandarin study app; the [documentation index](docs/README.md) routes to
+application knowledge. Contributor development and tests are separate from
+learner use of the hosted service.
 
-## 1) Project Snapshot
+## Task scope and judgment
 
-- App type: Chinese study app in local-browser-first PoC phase.
-- Frontend: React + Vite + TypeScript in `src/`.
-- Backend: Express + TypeScript in `server/`.
-- Persistence: SQLite (`app.db`) via Node `DatabaseSync`, modules under `server/db/`.
-- Direction: treat current local setup as an implementation phase, not a permanent architecture. Prefer decisions that keep a future web-service migration feasible.
-- Documentation taxonomy: [`docs/README.md`](docs/README.md), [`SPECS/README.md`](SPECS/README.md), and [`notes/README.md`](notes/README.md) (medium-lived working memory).
-- Product behavior source of truth:
-  - `SPECS/learning-review-model.md` — word lifecycle
-  - `SPECS/session-covering-criteria.md` — in-session covering and commits
-  - `SPECS/study-action-model.md` — scheduling, study actions, attempt events
-  - `SPECS/session-reflection-generation.md` — post-session finalization,
-    reflection evidence, generation, failure isolation, and retry
-  - `SPECS/reflection-proposals-and-handles.md` — reflection proposals,
-    authorization, application, provenance, and handle operations
+Justin's request and subsequent clarifications define the task. Solve the
+requested problem coherently, including justified local refactoring. Discuss a
+broader redesign or scope expansion before undertaking it. Preserve unrelated
+work and existing behavior outside the authorized change.
 
-## 2) First Files To Read
+Make routine implementation choices and continue well-defined work. When a
+consequential product or architectural decision is unresolved, explain the
+choice, evidence, and recommendation to Justin before implementing that part.
+A request to work in one shot does not settle an ambiguous learning policy,
+data effect, or architectural boundary.
 
-1. `README.md`
-2. `docs/README.md`
-3. `package.json`
-4. `SPECS/learning-review-model.md`
-5. `SPECS/session-covering-criteria.md`
-6. `SPECS/study-action-model.md`
-7. `STABILITY_FRONTIER.md` — how to interpret and maintain the current build-wave boundary (see §12)
-8. Task-spec notes linked from the relevant Linear item or supplied dispatch context, followed by only the working notes relevant to the task (working memory only; defer to SPECS on conflict — see [`notes/README.md`](notes/README.md))
-9. Relevant tests under `tests/` (see [`docs/testing.md`](docs/testing.md))
+Use the [documentation principles](docs/documentation-principles.md#intent-evidence-and-disagreement)
+to reconcile sources: contracts describe intended promises, code and observed
+execution establish actual behavior, and tests provide bounded evidence. Surface
+material discrepancies; correct clearly stale descriptions within scope. An
+authorized change to a product promise updates the owning contract alongside
+the implementation and relevant tests. Neither existing code nor an old
+specification automatically settles disputed intent.
 
-When code and spec conflict, treat the spec as intended behavior and update code + tests together.
+## Find the relevant guidance
 
-### Task routing
+Choose reading from the task's needs. The links below are routes, not a list to
+read before every edit.
 
-| If you are changing… | Read first | Tests to touch |
-| --- | --- | --- |
-| Session composition / scheduling | `SPECS/study-action-model.md` (scheduling sections), `session-covering-criteria.md` | `session-composition.test.ts`, `session-bucket-scheduler.test.ts` |
-| In-flight session UI / undo | `session-covering-criteria.md`, `SPECS/frontend-architecture-map.md` | `session-selectors.test.ts`, `session-bucket-state.test.ts` |
-| Contrast clusters / content | `study-action-model.md` (contrast sections), `reflection-proposals-and-handles.md` (`create_contrast_cluster`) | `contrast-content.test.ts`, `reflection-application.test.ts` |
-| Word priority / French aliases | `README.md` (French section), `src/study-profile.ts` | `user-priority.test.ts`, `priority-aliases.test.ts` |
-| Persistence / SQL | [`docs/server-db.md`](docs/server-db.md) | matching `tests/*.test.ts` that import `server/db.ts` |
-| HTTP API contract | [`docs/api.md`](docs/api.md), `server/index.ts` | domain tests above + manual smoke if needed |
-| Reflection generation / evidence | `SPECS/session-reflection-generation.md`, `session-covering-criteria.md`, `docs/reflection-frontend-architecture.md` | `reflection-generation.test.ts`, `reflection-generation-isolation.test.ts`, `session-finalization.test.ts` |
-| Reflection proposals / handles | `SPECS/reflection-proposals-and-handles.md`, `SPECS/session-reflection-generation.md` | `llm-provider-runner.test.ts` plus matching lifecycle/adapter tests |
-| Hosted application-only release | [`docs/ops/hosted-beta-deployment.md`](docs/ops/hosted-beta-deployment.md), agent terminal-driver procedure | No schema/data migration; use authenticated Fly access on the first launch when the sandbox blocks `~/.fly`; retain and poll one terminal session through its terminal exit status; never start a second upgrade while the first has unknown state |
+| Task or question | Guidance |
+| --- | --- |
+| Write or maintain documentation | [Authoring procedure](docs/documentation-authoring.md), following the [documentation principles](docs/documentation-principles.md) |
+| Reason about implementation choices and quality | [Development principles](docs/development-principles.md); [testing map](docs/testing.md) for affected coverage |
+| Organize, publish, or revise pull requests | [PR delivery and Graphite stacks](docs/stacked-feature-development-and-review.md) |
+| Create, adapt, or review a model prompt | [Prompt development](docs/prompt-development.md): working lineage, contract adaptation, and behavioral comparisons |
+| Set up a contributor environment or find a command | [Contributor setup and scripts](docs/scripts.md#contributor-setup-and-local-checks); [package.json](package.json) for command definitions |
+| Understand product behavior or current implementation | [Documentation index](docs/README.md), then the owning contracts, implementation explanations, relevant code, and tests |
+| Work affecting architectural assumptions or invariants | [Stability frontier](STABILITY_FRONTIER.md) for preserved assumptions and unresolved decisions, then the relevant contracts |
+| Change persistence or schema | [Database map](docs/server-db.md) and [migration guide](docs/ops/schema-migrations.md#writing-the-next-migration) |
+| Operate or release the hosted service | [Release and maintenance runbook](docs/ops/hosted-beta-deployment.md), including its agent terminal-driver procedure; [offline migrations](docs/ops/schema-migrations.md) for schema-changing work |
+| Find configuration | [Configuration reference](docs/architecture.md#configuration), [.env.example](.env.example), and the relevant operations guide |
 
-### Environment variables
+Existing documents are sources to reconcile against the documentation target;
+the index records known adoption gaps. Read supplied task notes and historical
+material when they help answer the task's question. An old plan's `active` label
+does not establish current priority, unfinished work, or authorization.
 
-| Variable | Side | Purpose |
-| --- | --- | --- |
-| `APP_MODE` | Backend | `dev` (seed sample data) or `study` (requires explicit data dir) |
-| `APP_DATA_DIR` | Backend | Directory containing `app.db` |
-| `APP_LEARNER_ID` | Backend | Stable learner id; required in study mode unless `--learner-id` is supplied |
-| `APP_STUDY_PROFILE` | Backend | `mandarin` or `french` |
-| `APP_METRICS_PORT` | Backend | Optional private Prometheus listener; hosted Fly config uses `9091` |
-| `APP_ALLOWED_CLERK_USER_IDS` | Backend | Optional comma-separated Clerk user-id allowlist; RC uses this to prevent copied accounts from bootstrapping or accessing the restored database. |
-| `APP_DEPLOYMENT_TIER` | Backend | Deployment label (`beta` or `release_candidate`) used by destructive RC-only maintenance scripts. |
-| `APP_OPERATOR_CLERK_USER_IDS` | Backend | Comma-separated Clerk user ids allowed to open the operator usage-pulse page/API. In `trusted_local` mode, include the learner id or the sentinel `trusted_local`. |
-| `APP_SEED_DATA_PATH` | Backend | Required in dev mode; seed JSON path |
-| `PORT` | Backend | API port (default `5174`) |
-| `APP_REVISION` | Image build | Exact Git commit baked into a hosted image; required, never left `unknown` |
-| `APP_SMOKE_CLERK_USER_ID` | Hosted | Clerk `user_…` id for `hosted:smoke`; also excluded from usage-pulse inactive-learner count; protected hosted configuration |
-| `APP_SMOKE_CLERK_EMAIL` | Hosted | Optional resolver for that smoke user when the `user_…` id is not yet set |
-| `VITE_API_BASE` | Frontend | API origin (default `http://localhost:5174`) |
-| `VITE_STUDY_PROFILE` | Frontend | Client study profile (`mandarin` / `french`) |
-| `LITESTREAM_REPLICA_PATH` | Hosted | Replica key prefix; RC assigns a new prefix for every restored database generation. |
+## Working preferences
 
-CLI flags mirror env where applicable (`--mode`, `--data-dir`, `--study-profile`, `--seed-data`).
+- For prompt work, read the closest working prompt in full and preserve its
+  linguistic reasoning, examples, and teaching strategy while adapting the
+  call contract. Narrower responsibilities do not justify compressing proven
+  guidance; identify substantive removals and validate behavioral changes.
+- Use the existing architecture where it fits. Add dependencies, global state
+  machinery, or new abstractions when the task warrants them; explain material
+  additions. Avoid introducing single-machine assumptions into hosted behavior.
+- Preserve shared behavior and applicable regression evidence when implementation
+  machinery changes. Use the [development principles](docs/development-principles.md)
+  to choose reuse boundaries and verify that coverage reaches the current path.
+- Keep strict TypeScript types. Use `any` only with a concrete justification.
+- In domain and state transitions, fail loudly when a programmer invariant is
+  violated. Tolerant no-ops belong to explicitly user-driven or externally
+  uncertain inputs, not hidden recovery from broken caller contracts.
+- Keep backend timestamps and date keys in UTC (`toISOString`, `YYYY-MM-DD` UTC)
+  unless the task explicitly changes that policy.
+- Keep HTTP handlers thin and domain/persistence logic in `server/db/` or its
+  owning subsystem. Centralize frontend API calls in `src/services/api.ts`.
+  Endpoint changes preserve validation and meaningful status codes and update
+  the client contract where needed. Use the [API map](docs/api.md) for navigation.
 
-## 3) Working Agreements
+Own your assigned task's end-to-end completion, including how the work is divided,
+coordinated, integrated, and verified. For substantial work, proactively choose
+an orchestration approach and revise it as the task develops; Justin need not
+separately request orchestration or identify opportunities to delegate.
 
-- Keep changes minimal and scoped to the user request.
-- Prefer targeted fixes over broad refactors.
-- For sufficiently large tasks with independently bounded subtasks,
-  use subagents by default—especially for read-heavy exploration, test or CI triage, and review.
-  Keep concurrent code edits isolated; avoid edits in the same worktree unless coordination is explicit.
-- Do not introduce new dependencies unless necessary.
-- Preserve strict TypeScript quality; avoid `any` unless clearly justified.
-- Prefer strict invariants in state/domain transition functions:
-  - if a caller contract is expected to always hold, fail loudly (`throw`) when violated
-  - avoid silent defensive fallbacks that mask programmer errors
-  - reserve tolerant no-op behavior for explicitly user-driven or externally uncertain inputs
-- Keep backend timestamps and date keys in UTC (`toISOString`, `YYYY-MM-DD` UTC date key) unless explicitly changing product policy.
-- Avoid hard-coding assumptions that only work in single-machine/local-only deployments if a cleaner abstraction can preserve future hosted-service options.
-- When the desired goal is vague, only write code roughly up to what is relatively well-defined, limit speculative policy decisions. Even if the prompt explicitly ask to go in one-shot, stop and alert me of the the points of ambiguity instead of proceeding.
-- Implementation work defaults to the proportional delivery and review model in
-  [`docs/stacked-feature-development-and-review.md`](docs/stacked-feature-development-and-review.md):
-  state whether it is one cohesive pull request or likely needs a stack, then
-  publish the verified implementation for review unless the task says
-  otherwise. A normal single GitHub pull request remains sufficient and should
-  keep the repository's ordinary validation scope. Use the installed `gt` CLI
-  only when multiple Graphite-managed branches improve review comprehension.
-  Standalone research, planning, and documentation-only tasks may return in
-  Codex without a pull request unless review publication is requested; docs
-  changed alongside implementation remain part of that implementation's PR.
+Use subagents when they can keep substantial intermediate detail out of the
+main context, enable useful parallel progress, or improve the result. Choose
+subtasks by their context needs and dependencies. Exploration, implementation,
+testing, and independent review are examples, not an exhaustive list. When you
+delegate part of your task, retain responsibility for integrating and verifying
+the result against your task's objective and constraints. Give each subagent a
+clear scope, relevant context, and expected outcome.
+Request concise results with evidence, relevant changes, and unresolved questions.
 
-## 4) Runbook Commands
+Keep tightly coupled work together when delegation would add more coordination
+than value, avoid duplicating effort, and coordinate concurrent edits explicitly.
+Independently dispatched tasks belong in separate worktrees. Graphite stacks
+follow the review workflow's single-writer rule.
 
-### Child-worktree bootstrap
+For UI work, make the next action and necessary consequences clear. Put optional
+calculation details and technical explanations in accessible disclosures. Avoid
+repeated prose in compact cards; use shared labels or tables when they make
+comparisons clearer. Preserve readable text and wrapping rather than shrinking
+or clipping content to fit.
 
-- A child agent may start in a fresh worktree without dependencies or generated files. Before testing or building, verify the needed environment is present; do not assume another agent's environment is available.
-- When dependencies or generated files are missing, run `./scripts/codex-setup.sh` from the repository root.
-- `node_modules/` and the generated `.codex/environments/environment.toml` are ignored local files. Neither belongs in `.worktreeinclude`; the setup configuration invokes the tracked script to recreate dependencies per worktree.
+Do not add instructional filler or explanatory helper copy to preempt hypothetical
+confusion. Labels, controls, layout, and interaction should carry the flow. Avoid
+lines such as “Read this familiar example” or “Give the Mandarin word” when the
+content and controls already establish the action. If an interaction proves
+confusing, improve its design with Justin rather than automatically adding prose.
+Keep actual learning content, actionable errors, and necessary consequences;
+this is a rule against redundant UI narration, not against useful content.
 
-- Install deps: `npm install`
-- Start frontend: `npm run dev:frontend` (Vite on `4173`)
-- Start backend (dev mode): `npm run dev:backend` (API on `5174`)
-- Start backend (study mode): `npm run study:backend -- --data-dir=/absolute/path --learner-id=<stable-id>`
-- Reset dev DB: `npm run reset:dev-data`
-- Run tests: `npm test`
-- Build frontend: `npm run build`
+## Data and operational boundaries
 
-## 5) Data Safety Rules
+`data/` can contain valued databases, backups, and source artifacts. Identify
+the target and its role before running a mutating command. Intentional changes
+or resets to development data are allowed when needed for the task; explain
+them. Preserve backups (`data/*.backup*`), sources (`data/sources/*`), and useful
+`tmp/` or export artifacts unless their disposal is authorized. Ask before an
+irreversible data change whose scope has not already been authorized.
 
-This repo contains real DB artifacts and backups under `data/`.
+Keep secrets out of commits, logs, and artifacts. Use local environment
+configuration or the hosted secret mechanism as appropriate; `.env.example`
+documents names without real credentials.
 
-- It is acceptable to modify/reset dev data under `data/` when needed for the requested task (including schema/script work and local verification), as long as changes are intentional and explained.
-- Do not casually delete backup/source artifacts (`data/*.backup*`, `data/sources/*`) unless the task explicitly calls for cleanup/migration.
-- Treat `tmp/` and generated/export artifacts as potentially useful unless explicitly disposable.
-- Never commit secrets. Keep API keys in `.env` (see `.env.example`).
-- When changing schema or persistence behavior, update [`server/db/persistence.ts`](server/db/persistence.ts) (or `server/db/connection.ts` for init paths) and add/update tests in `tests/` in the same change.
+Persistence changes belong in the owning module with relevant tests. New schema
+changes follow the versioned migration procedure, not edits to startup
+constructors or previously applied migrations. The hosted app-only upgrade
+route permits no schema or data migration. Follow the runbook for the requested
+operation and retain its required evidence; successful implementation alone
+does not establish release or recovery readiness.
 
-## 6) Backend/API Conventions
+### Review publication authorization
 
-- API routes are defined in `server/index.ts` (index: [`docs/api.md`](docs/api.md)).
-- DB + domain logic live in `server/db/` (barrel: `server/db.ts`); prefer keeping HTTP handlers thin.
-- For endpoint behavior changes:
-  - maintain input validation
-  - maintain meaningful status codes (`400`, `404`, `500`)
-  - update API client calls in `src/services/api.ts` if contract changes
+Justin authorizes pushing task branches and creating or updating review pull
+requests in this project's configured GitHub repository. Before publishing,
+verify that `origin` points to `https://github.com/swimj/chinese-study-app.git`.
+This authorization covers review publication, not merging, deploying,
+or publishing to another repository. Agents may force-push an existing task
+branch when updating the pull request they created or are responsible for. Use
+`--force-with-lease` so the update is rejected if the remote branch changed
+since it was last observed. This authorization does not cover rewriting another
+person's branch or a branch outside the task's review boundary.
 
-## 7) Frontend Conventions
+A sandbox failure accessing shared Git metadata or GitHub does not establish
+that host authentication is broken. Diagnose the execution context and request
+the supported permission when needed. Respect an explicit denial and report
+its reason; do not bypass it through another route.
 
-- Keep API interactions centralized in `src/services/api.ts`.
-- Keep session runtime behavior coherent with spec (frontend owns in-flight session state; backend owns durable state).
-- Avoid introducing global state libraries unless required.
-- UI map: `SPECS/frontend-architecture-map.md`.
+## Verification and delivery
 
-## 8) Testing Expectations
+Choose checks that establish the requested behavior and cover affected risks.
+Use the [testing map](docs/testing.md) to find focused Node tests and
+[contributor commands](docs/scripts.md#contributor-setup-and-local-checks) to run
+them. Add or update behavior tests where practical. For scheduling or session
+changes, start with composition and completion coverage. Run compilation/build
+checks for substantial code changes and broader tests when the affected surface
+warrants them. Documentation-only changes need content and link verification.
 
-- Add or update tests for behavior changes when practical.
-- Prefer focused node tests under `tests/*.test.ts`.
-- For scheduling/session logic changes, update composition/completion tests first.
-- Before finishing substantial code changes, run the minimum relevant verification command(s) for the area changed.
+Verify visual changes in their actual container, including narrow desktop
+panels and enlarged text. Exercise relevant long labels, large values, empty
+states, expanded disclosures, and keyboard access. A build does not establish
+visual correctness; report missing rendered verification.
 
-## 9) Done Checklist
+Update owning documentation when a change affects the explanations readers
+need, using the authoring procedure to choose useful detail and scope. Report
+meaningful remaining gaps; touching a document does not certify its entire
+contents. Documentation completeness is not a blanket merge gate, while
+task-specific correctness and safety requirements still apply.
 
-1. Code compiles and relevant tests pass.
-2. Behavior is aligned with spec docs.
-3. No accidental data-file modifications.
-4. Docs updated when behavior or commands changed.
+Implementation work normally finishes with a verified review pull request.
+Before substantial implementation, state whether the change is one cohesive PR
+or likely needs a stack. Use ordinary GitHub delivery for a single PR and the
+installed `gt` CLI for a useful multi-branch stack, following the PR delivery
+and Graphite workflow. Standalone research, planning, and documentation tasks may
+return in Codex without a PR unless publication is requested.
 
-## 10) If Unsure
+At handoff, explain the outcome, verification and its limits, material open
+choices or documentation gaps, and any remote state changed. Check the final
+diff for unintended files or data changes. For published work, include the PR
+link and review state; distinguish implemented, merged, deployed, and observed.
 
-- Ask for clarification before making irreversible data changes.
-- Favor explicitness over hidden magic in learning/review logic.
-- Leave concise comments only where logic is non-obvious.
+<a id="11-project-context-and-task-scope"></a>
 
-## 11) Working With Linear And Current Project State
+## Project context
 
-Effective 2026-08-02, Linear is the source of truth for current idea intake,
-classification, portfolio priority, readiness, themes, debt, parked work,
-declared Focus/Async work, and portfolio disposition. The successful steward
-operating model is recorded in
-[`PLANS/project-steward-linear-trial.md`](PLANS/project-steward-linear-trial.md).
-The former repository task catalog has been retired; use Git history only when
-historical context is needed. Do not create a replacement repository backlog.
+The persistent Steward workspace at `/Users/jw/dev/chinese-study-steward`
+maintains the north star in `vision.md`, weekly priorities in `outlook.md`, and
+unresolved thinking in `chewing.md`. Consult it for alignment when relevant and
+available. Its AGENTS.md governs the Steward role; this repository retains the
+contracts needed to carry out a well-scoped application task without that
+workspace.
 
-- **Authority split**: Linear records the current portfolio and which cataloged tasks the human has declared in flight. A task remains in flight through execution, review, and revision. The initiating Codex prompt, task-spec note when one exists, and subsequent task thread own its detailed execution contract and context. GitHub pull requests and Git history own review, CI, integration, and merge truth. Durable product behavior, architecture, vision, and frontier decisions remain in Git.
-- **WIP policy**: Focus maximum 1; async tasks in flight maximum 2; work awaiting review maximum 2; Linear `Todo` maximum 5. The human selects or dispatches work and supplies disposition facts; agents must not dispatch additional work autonomously. A steward with authorized Linear access may record an explicitly supplied Focus/Async or disposition transition but must not infer unreported execution state.
-- **Direct prompts and one-offs**: a direct human prompt is sufficient authorization for the requested in-scope work. Brief one-offs do not need a Linear item merely to legitimize them and may remain unknown to the steward.
-- **Capture without Linear access**: if work surfaces a worthwhile new idea and the agent lacks authorized Linear access, report it in the handoff for the human or steward to capture. Do not create a parallel repository backlog.
-- **Capture is not dispatch**: creating or updating a Linear item does not focus or dispatch it. The human controls selection, readiness, Focus/Async transitions, and final disposition.
-- **Dispatch-ready packet**: work promoted to `Todo` for independent dispatch should state its outcome, deliverable, scope, required inputs, done criteria, non-goals, dependencies/overlap, execution constraints, and when to stop for input. Keep this in Linear when short; otherwise link one task-spec note that consolidates the executable context.
-- **Potential staleness**: before focus or dispatch, the human revalidates that the outcome is still wanted, inputs are stable enough, no in-flight task owns the same decision boundary, semantic and merge overlap are acceptable, and review capacity exists.
-- **Task identity and context**: the first prompt plus subsequent task thread define an agent task's semantic identity and execution contract. A Linear identifier improves traceability but is not required for a brief one-off. Once dispatched, the worker follows that prompt and the specs/docs at its base revision; later Linear edits do not silently steer it.
-- **Worktree ownership**: each independently dispatched async task runs in its own worktree. Do not place multiple independently dispatched tasks in one worktree. Worktrees prevent simultaneous filesystem interference; they do not prevent logical conflicts, overlapping diffs, stale assumptions, or integration cost.
-- **Working notes vs task specs**: ordinary working notes stay lightweight and do not need a catalog backlink. When their content becomes critical to a cataloged task, consolidate the necessary context into a task-spec note and link it from Linear. Do not copy volatile execution or review state into note metadata.
-- **Review disposition**: review results are accepted/merged, returned for revision, discarded, or converted into a new decision/task. Finished agent execution is not completed project work until the human supplies or confirms its disposition.
-- **PR handoff**: implementation work normally returns through a GitHub PR, whether dispatched async or directly prompted. Its title and description should make the originating task recognizable and record the outcome, material deviations, verification, open decisions, dependencies/overlap, and follow-up work. Standalone research, planning, and documentation-only work, plus a no-diff conclusion, may return through the Codex task unless review publication is requested.
-- **Commits and task identity**: stage deliberately so unrelated changes are not swept in. Every commit should be relatable to a Linear item, linked task spec, or directly requested one-off; items and commits need not be one-to-one.
+Task conversations establish execution context. Git and GitHub supply review
+and integration evidence. Linear supports issue intake and retrieval, but its
+bookkeeping is incomplete: a direct task needs no Linear item, and later issue
+edits do not silently change the ongoing task. The frontier is a checkout's
+architectural snapshot, not a live task ledger or release certificate.
 
-## 12) Working With The Stability Frontier
-
-Read [`STABILITY_FRONTIER.md`](STABILITY_FRONTIER.md) before treating the
-current frontier as an implementation contract.
-
-- The frontier summarizes the current near-term product outcome, settled build
-  assumptions, invariants, blocking decisions, non-goals, and advancement test.
-- Canonical specs remain authoritative for product behavior. If the frontier
-  conflicts with a spec or verified implementation constraint, flag it as stale
-  and request human resolution.
-- A frontier marked draft is not accepted implementation authority.
-- Work within settled blocks and preserve frontier invariants. Do not resolve a
-  named blocking decision speculatively merely to complete a task.
-- Proactively call out a **frontier movement candidate** when evidence shows
-  that a block is stable enough to promote, an assumption is invalid, a
-  non-goal needs reconsideration, or the advancement test appears satisfied.
-- Do not independently change the frontier's product outcome, invariants,
-  settled-vs-blocking classifications, major non-goals, or advancement test.
-  Propose the change and seek human confirmation. After explicit approval,
-  update the frontier and its owning durable docs together.
+Justin selects portfolio work. Historical Steward/Linear dispatch rituals are
+not prerequisites for implementation. Report material overlap and worthwhile
+out-of-scope ideas in the handoff; creating additional portfolio tasks, changing
+external records, or maintaining a replacement backlog requires authorization.

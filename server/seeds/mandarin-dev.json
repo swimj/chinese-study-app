@@ -129,6 +129,128 @@
       "learningStreak": 0,
       "lastLearningSuccessOn": null,
       "lastLearningCoveredOn": null
+    },
+    {
+      "id": "word-baobei",
+      "hanzi": "报备",
+      "traditional": "報備",
+      "pinyin": "bàobèi",
+      "meaning": "Notify responsible people for the record; Keep a partner informed",
+      "meanings": [
+        "Notify responsible people for the record",
+        "Keep a partner informed"
+      ],
+      "examples": [
+        "你得先向物业报备朋友的车牌号。",
+        "我现在出门买杯咖啡都得跟他报备。"
+      ],
+      "status": "unstudied",
+      "priority": 100,
+      "createdAt": "2026-10-05T00:00:00.000Z",
+      "learningStreak": 0,
+      "lastLearningSuccessOn": null,
+      "lastLearningCoveredOn": null
+    },
+    {
+      "id": "word-tengjiao",
+      "hanzi": "藤椒",
+      "traditional": "藤椒",
+      "pinyin": "téngjiāo",
+      "meaning": "Fragrant Sichuan pepper used in food",
+      "meanings": [
+        "Fragrant Sichuan pepper used in food"
+      ],
+      "examples": [
+        "这道藤椒鸡吃起来很香，舌头还会有点麻。"
+      ],
+      "status": "unstudied",
+      "priority": 99,
+      "createdAt": "2026-10-05T00:00:00.000Z",
+      "learningStreak": 0,
+      "lastLearningSuccessOn": null,
+      "lastLearningCoveredOn": null
+    },
+    {
+      "id": "word-paomo",
+      "hanzi": "泡沫",
+      "traditional": "泡沫",
+      "pinyin": "pàomò",
+      "meaning": "Foam or lather; An inflated economic bubble",
+      "meanings": [
+        "Foam or lather",
+        "An inflated economic bubble"
+      ],
+      "examples": [
+        "洗手液一搓就起泡沫了。",
+        "房价涨得太快，可能已经出现了泡沫。"
+      ],
+      "status": "unstudied",
+      "priority": 98,
+      "createdAt": "2026-10-05T00:00:00.000Z",
+      "learningStreak": 0,
+      "lastLearningSuccessOn": null,
+      "lastLearningCoveredOn": null
+    },
+    {
+      "id": "word-bukan",
+      "hanzi": "不堪",
+      "traditional": "不堪",
+      "pinyin": "bùkān",
+      "meaning": "Intensifies a description of an unbearable state; Cannot bear or withstand what follows",
+      "meanings": [
+        "Intensifies a description of an unbearable state",
+        "Cannot bear or withstand what follows"
+      ],
+      "examples": [
+        "忙了一整天，我已经疲惫不堪了。",
+        "楼上的噪音让人不堪忍受。"
+      ],
+      "status": "unstudied",
+      "priority": 97,
+      "createdAt": "2026-10-05T00:00:00.000Z",
+      "learningStreak": 0,
+      "lastLearningSuccessOn": null,
+      "lastLearningCoveredOn": null
+    },
+    {
+      "id": "word-shichen-dahai",
+      "hanzi": "石沉大海",
+      "traditional": "石沉大海",
+      "pinyin": "shí chén dà hǎi",
+      "meaning": "Sent something and heard nothing back",
+      "meanings": [
+        "Sent something and heard nothing back"
+      ],
+      "examples": [
+        "方案发过去以后就石沉大海了，一点回音都没有。",
+        "投了十几份简历，全都石沉大海了。"
+      ],
+      "status": "unstudied",
+      "priority": 96,
+      "createdAt": "2026-10-05T00:00:00.000Z",
+      "learningStreak": 0,
+      "lastLearningSuccessOn": null,
+      "lastLearningCoveredOn": null
+    },
+    {
+      "id": "word-weisuoyuwei",
+      "hanzi": "为所欲为",
+      "traditional": "為所欲為",
+      "pinyin": "wéi suǒ yù wéi",
+      "meaning": "Do whatever one wants without regard for others",
+      "meanings": [
+        "Do whatever one wants without regard for others"
+      ],
+      "examples": [
+        "他以为自己是老板，就可以为所欲为。",
+        "有钱就能为所欲为吗？"
+      ],
+      "status": "unstudied",
+      "priority": 95,
+      "createdAt": "2026-10-05T00:00:00.000Z",
+      "learningStreak": 0,
+      "lastLearningSuccessOn": null,
+      "lastLearningCoveredOn": null
     }
   ],
   "wordStudyAdmissionStates": [
@@ -364,5 +486,13 @@
       "nextDueAt": "2026-04-04T15:08:52.778Z",
       "easeFactor": 2.5
     }
+  ],
+  "wordIntroductionFixtureIds": [
+    "word-baobei",
+    "word-tengjiao",
+    "word-paomo",
+    "word-bukan",
+    "word-shichen-dahai",
+    "word-weisuoyuwei"
   ]
 }

@@ -1,9 +1,10 @@
+import { PLANNED_UPDATE_MESSAGE, UPDATE_NOTICE_TTL_MS, type ServiceBannerRequest } from '../../src/domain/service-banner.ts';
 import fs from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { config, getDb } from './connection.ts';
 import { INITIAL_REVIEW_EASE_FACTOR } from './types.ts';
 
-export const HOSTED_SERVICE_CONTROL_KEYS = ['maintenance_mode', 'provider_work_enabled'] as const;
+export const HOSTED_SERVICE_CONTROL_KEYS = ['maintenance_mode', 'provider_work_enabled', 'operator_only'] as const;
 export type HostedServiceControlKey = (typeof HOSTED_SERVICE_CONTROL_KEYS)[number];
 
 export type HostedServiceControl = {
@@ -15,6 +16,7 @@ export type HostedServiceControl = {
 
 export type HostedServiceControlState = {
   maintenanceMode: boolean;
+  operatorOnly: boolean;
   providerWorkEnabled: boolean;
 };
 
@@ -70,6 +72,7 @@ export function createHostedOperationsSchema(): void {
 export function getHostedServiceControls(): HostedServiceControlState {
   return {
     maintenanceMode: readHostedServiceControl('maintenance_mode').enabled,
+    operatorOnly: readHostedServiceControl('operator_only').enabled,
     providerWorkEnabled: readHostedServiceControl('provider_work_enabled').enabled,
   };
 }
@@ -98,6 +101,7 @@ export const SERVICE_BANNER_MESSAGE_MAX_LENGTH = 280;
 export const DEFAULT_SERVICE_BANNER_TTL_MS = 24 * 60 * 60 * 1000;
 
 export type ServiceBanner = {
+  kickoffAt?: string;
   message: string;
   postedAt: string;
   expiresAt: string;
@@ -105,6 +109,7 @@ export type ServiceBanner = {
 };
 
 export type ServiceBannerPublic = {
+  kickoffAt?: string;
   message: string;
   postedAt: string;
   expiresAt: string;
@@ -119,6 +124,7 @@ export type ClearServiceBannerResult = {
 export function toPublicServiceBanner(banner: ServiceBanner): ServiceBannerPublic {
   return {
     message: banner.message,
+    ...(banner.kickoffAt ? { kickoffAt: banner.kickoffAt } : {}),
     postedAt: banner.postedAt,
     expiresAt: banner.expiresAt,
   };
@@ -126,10 +132,11 @@ export function toPublicServiceBanner(banner: ServiceBanner): ServiceBannerPubli
 
 export function getActiveServiceBanner(now: Date = new Date()): ServiceBanner | null {
   const row = getDb().prepare(`
-    SELECT message, posted_at, expires_at, actor_id
+    SELECT message, posted_at, expires_at, actor_id, kickoff_at
     FROM service_banner
     WHERE singleton = 1
   `).get() as {
+    kickoff_at: string | null;
     message: string;
     posted_at: string;
     expires_at: string;
@@ -139,43 +146,58 @@ export function getActiveServiceBanner(now: Date = new Date()): ServiceBanner | 
   if (row.expires_at <= now.toISOString()) return null;
   return {
     message: row.message,
+    ...(row.kickoff_at ? { kickoffAt: row.kickoff_at } : {}),
     postedAt: row.posted_at,
     expiresAt: row.expires_at,
     actorId: row.actor_id,
   };
 }
 
-export function setServiceBanner(input: {
-  message: string;
+export function setServiceBanner(input: ServiceBannerRequest & {
   actorId: string;
   postedAt?: string;
-  expiresAt?: string;
 }): ServiceBanner {
-  const message = requireBannerMessage(input.message);
+  if (input.kickoffAt !== undefined && (input.message !== undefined || input.expiresAt !== undefined)) {
+    throw new Error('Expected service banner kickoff without custom message or expiry.');
+  }
+  let kickoffAt: string | undefined;
+  if (input.kickoffAt !== undefined) {
+    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?(?:Z|[+-]\d{2}:\d{2})$/.test(input.kickoffAt)) {
+      throw new Error('Expected ISO service banner kickoff timestamp with time zone.');
+    }
+    kickoffAt = new Date(requireIsoTimestamp(input.kickoffAt, 'service banner kickoff')).toISOString();
+    const datePart = input.kickoffAt.slice(0, 10);
+    if (new Date(`${datePart}T00:00:00.000Z`).toISOString().slice(0, 10) !== datePart) {
+      throw new Error('Expected valid calendar date for service banner kickoff.');
+    }
+  }
+  const message = kickoffAt ? PLANNED_UPDATE_MESSAGE : requireBannerMessage(input.message ?? '');
   const actorId = requireNonEmpty(input.actorId, 'actor id');
   const postedAt = requireIsoTimestamp(input.postedAt ?? new Date().toISOString(), 'posted at');
+  if (kickoffAt && kickoffAt <= postedAt) throw new Error('Expected service banner kickoff after posted at.');
   const expiresAt = requireIsoTimestamp(
-    input.expiresAt ?? new Date(new Date(postedAt).getTime() + DEFAULT_SERVICE_BANNER_TTL_MS).toISOString(),
+    (kickoffAt ? new Date(new Date(kickoffAt).getTime() + UPDATE_NOTICE_TTL_MS).toISOString() : input.expiresAt) ?? new Date(new Date(postedAt).getTime() + DEFAULT_SERVICE_BANNER_TTL_MS).toISOString(),
     'expires at',
   );
   if (expiresAt <= postedAt) throw new Error('Expected service banner expiry after posted at.');
   getDb().exec('BEGIN IMMEDIATE');
   try {
     getDb().prepare(`
-      INSERT INTO service_banner (singleton, message, posted_at, expires_at, actor_id)
-      VALUES (1, ?, ?, ?, ?)
+      INSERT INTO service_banner (singleton, message, posted_at, expires_at, actor_id, kickoff_at)
+      VALUES (1, ?, ?, ?, ?, ?)
       ON CONFLICT(singleton) DO UPDATE SET
         message = excluded.message,
         posted_at = excluded.posted_at,
         expires_at = excluded.expires_at,
-        actor_id = excluded.actor_id
-    `).run(message, postedAt, expiresAt, actorId);
+        actor_id = excluded.actor_id,
+        kickoff_at = excluded.kickoff_at
+    `).run(message, postedAt, expiresAt, actorId, kickoffAt ?? null);
     getDb().exec('COMMIT');
   } catch (error) {
     getDb().exec('ROLLBACK');
     throw error;
   }
-  return { message, postedAt, expiresAt, actorId };
+  return { message, postedAt, expiresAt, actorId, ...(kickoffAt ? { kickoffAt } : {}) };
 }
 
 export function clearServiceBanner(input: {

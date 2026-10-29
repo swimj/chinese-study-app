@@ -3,6 +3,12 @@
 Status: implemented first-cut feature specification, based on the 2026-09-07
 product discussion.
 
+Later extension: explanation-only Help items can now be deferred and selected
+alongside proposals. They retain their own inbox disposition and item identity;
+no proposal is synthesized. The selection and retirement rules below apply to
+both kinds, while the first-cut statements about proposal-only eligibility
+describe the original implementation boundary.
+
 Origin: [SWI-55 — Let learners re-reflect on a curated batch of deferred items](https://linear.app/swimj/issue/SWI-55).
 Related: [SWI-52 — Let learners request a second opinion on a reflection proposal](https://linear.app/swimj/issue/SWI-52).
 
@@ -34,8 +40,7 @@ and ordinary result validation. It supports:
 - selection of one, several, or all eligible deferred proposals across sessions;
 - a fresh bounded reflection request containing their original evidence items;
 - explicit selection from available compatible models, with the learner's last
-  choice remembered where practical. After the daily spend cap, only Luna
-  remains selectable until the next UTC day;
+  choice remembered where practical;
 - ordinary review of fresh results;
 - automatic retirement of the selected originals from active review after
   successful generation, without requiring proposal-by-proposal reconciliation.
@@ -201,15 +206,15 @@ This specification defines the implemented first cut. It fits one cohesive PR
 across the existing generation and review boundaries.
 
 The implementation uses a versioned curated-source envelope, the existing
-twenty-five-item bound, and the `requested_second_opinion` review disposition
+fifty-item bound, and the `requested_second_opinion` review disposition
 for closure. It preserves the current prompt's evidence-item
 semantics and needs no broader lifecycle model.
 
 Implementation must extend these canonical contracts together with code/tests:
 
-- [Session reflection generation](./session-reflection-generation.md): curated
+- [Session reflection generation](archive/session-reflection-generation.md): curated
   source inputs, resource limits, idempotency, and failure isolation.
-- [Reflection proposals and handles](./reflection-proposals-and-handles.md):
+- [Reflection proposals and handles](archive/reflection-proposals-and-handles.md):
   selected-original retirement and its distinction from authorization.
 
 The earlier SWI-55 framing kept old and new proposals independently unresolved;

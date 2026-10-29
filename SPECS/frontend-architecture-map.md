@@ -1,197 +1,80 @@
-# Frontend Architecture Map
+# Frontend architecture map
 
-Navigation map for the React frontend. Product behavior is defined by the canonical specs, especially:
+For contributors tracing the Mandarin frontend, this document maps component
+ownership, controller wiring, and session interaction handling. The
+[vocabulary contract](vocabulary-learning.md) defines product behavior; the
+[implementation guide](../docs/vocabulary-learning.md) explains backend effects.
 
-- `SPECS/learning-review-model.md`
-- `SPECS/session-covering-criteria.md`
-- `SPECS/study-action-model.md`
-- `SPECS/reflection-proposals-and-handles.md`
+## Entry and navigation
 
-## Directory Tree
+`main.tsx` mounts the authenticated app. `App.tsx` selects `VocabularyApp` for
+Mandarin and lazy-loads the retained `LegacyApp` for the French experiment.
+`VocabularyApp` owns cross-page navigation, account-scoped welcome/update state,
+backend settings, and the mounted study controller. `AppChrome` supplies Home,
+Words, Feedback, Content Bin, and About. Study hides the ordinary navigation.
 
-```text
-src/
-  App.tsx                         # app shell: chrome, page selection, backend status, overlays
-  main.tsx                        # React entrypoint
-  styles.css                      # shared app styles
-  types.ts                        # shared frontend API/domain DTO types
-  study-profile.ts                # mandarin vs french client profile
+Words contains Stash (`PriorityPage` and its existing controller) and My words
+(`VocabularyWordsPage`). The latter reads current modes and exposes explicit
+mode, refresh, and dismissal commands. Content Bin remains a read-only browser
+of retained source primitives; its link opens current Vocabulary content review.
+Operator Usage's historical quality panel also points to that review workflow.
 
-  auth/
-    ClerkAuthenticationBoundary.tsx  # Clerk session gate around App
-    ClerkAuthGateViews.tsx           # loading chrome, signed-out sign-in, and invite password panel
-    clerk-auth-gate.ts               # loading vs sign-in vs invite sign-up vs app phase resolver
+## Session ownership
 
-  components/
-    AppChrome.tsx                 # left-gutter primary nav, nested page rails, errors, signed-in service banner
-    MeaningList.tsx               # shared meaning list rendering
-
-  pages/
-    AboutPage.tsx                 # learner help: getting started, usage, known issues, recent changes
-    HomePage.tsx                  # home: overview + active session grid
-    HomeOverviewPanel.tsx         # backend/session availability overview + Start session card (gear toggles SessionSettingsPanel)
-    PriorityPage.tsx              # Words / Stash: unstudied priority chip bank
-    MyWordsPage.tsx               # Words / My words: collection list and side detail pane
-    ReflectionsPage.tsx           # help pager, second-opinion chip bank, artifact history/detail, and proposal-level review
-    ContentDiagnosticsPage.tsx    # read-only primitive content browser
-
-  features/
-    attention/
-      useAttentionBadges.ts       # nav unseen counts, durable failed-run marker, Help-card ack, What’s New cursor
-    words/
-      useMyWordsController.ts     # learner collection search, bounded loading, selection
-
-    session/
-      useStudySession.ts          # session runtime controller
-      StudySessionPanel.tsx       # active/completed session UI
-      SessionSummaryPanel.tsx     # completed session summary UI
-      PersonalNotesEditorOverlay.tsx
-      session-keyboard.ts         # state-to-action/shortcut descriptors + key resolution
-      session-dialog-focus.ts     # session dialog focus trap, Escape, restoration
-      session-finalization.ts     # Finish/Close, in-app leave finish, and best-effort reflection states
-      session-reflection-evidence.ts # typed production evidence accumulator + Undo snapshots
-      session-commit.ts           # deferred durable commit adapter
-      session-prefetch.ts         # session payload prefetch cache
-      session-rating.ts           # keyboard/rating option helpers
-      session-selectors.ts        # active prompt/answer/meaning derivation
-      session-state-copy.ts       # undo snapshot cloning helper
-      session-summary.ts          # session summary type + updates
-
-    priority/
-      usePriorityPageController.ts # priority loading, search, batch updates
-      priority-page-model.ts       # triage frequency sort, stash recency, chip-bank partition/selection
-      PriorityWordBank.tsx         # manage-view top/stash chip bank, hover details, drag between sections
-
-    reflection/
-      useReflectionPageController.ts # open/history/detail loading and review mutations
-      reflection-page-model.ts       # item grouping, typed draft edits, support/validation facts
-      ReflectionOperationEditor.tsx  # purpose-built editors for the four V1 operations
-
-    content/
-      useContentDiagnosticsController.ts # bounded primitive-kind search and loading
-
-  domain/
-    client-incidents.ts           # bounded client transport incident schema shared with server
-    study-actions.ts              # shared study-action types/adapters (also used by server)
-    reflection.ts                 # canonical reflection result/operation/lifecycle contract
-    reflection-evidence.ts        # strict supplement and initial-bundle validation
-    reflection-result-schema.ts   # strict provider JSON schema
-
-  lib/
-    session-state.ts              # frontend in-flight session state machine
-    session-scheduler.ts          # active queue helpers
-
-  services/
-    api.ts                        # frontend API client
-    client-incident-diagnostics.ts # account-scoped pending transport-incident queue
+```mermaid
+flowchart LR
+  App[VocabularyApp] --> Hook[useVocabularyStudy]
+  Hook --> API[services/api.ts]
+  API --> Backend[Ordered log and completion boundary]
+  Backend --> Hook
+  Hook --> Adapter[VocabularyStudy]
+  Adapter --> View[VocabularySessionView]
+  View --> Hook
 ```
 
-## Mental Model
+`features/vocabulary-study/useVocabularyStudy.ts` owns the live request queue,
+retry IDs, answer submission, completion cancellation/restaging, and current-mode
+overlays. Its controller survives page navigation while the app remains mounted.
+The server acknowledges durable evidence; the shared vocabulary-session reducer
+projects covering, supported Undo, and session outcomes. The browser does not
+persist an active-session recovery log in this delivery.
 
-`main.tsx` wraps `App` in `ClerkAuthenticationBoundary`. Clerk startup is a
-loading state, not a signed-out state: the sign-in heading stays hidden until
-Clerk reports no session. An invitation ticket in the URL mounts SignUp on the
-app origin so invited users set a password there and continue into a signed-in
-Home, rather than completing signup on Clerk Account Portal.
+`VocabularyStudy.tsx` adapts those contracts to presentation props. It supplies
+only safe word identities, so unrevealed production targets cannot leak through
+headings or the earlier-word tray. Recognition presents hanzi before reveal and
+pronunciation/meaning afterward. `render-material.tsx` renders retained authored
+material and applies the learner's character settings.
 
-`App.tsx` is intentionally thin. It owns only cross-page concerns:
+`features/vocabulary-ui/` owns cards, summary, feedback disclosure, mode controls,
+finish confirmation, and the scrolling history tray. It emits callbacks rather
+than deciding scheduling or applying learner effects. The tray receives all
+safe entries in recent-activity order; its scroll position can remain on older
+words while new activity arrives.
 
-- current page selection (`home` | `priority` | `reflections` | `content` | `about`)
-- global error message
-- backend status refresh
-- signed-in service banner from that status (hidden during an active session)
-- app chrome wiring
-- personal-notes overlay mounting
-- wiring page controllers (`useStudySession`, `usePriorityPageController`,
-  `useReflectionPageController`, `useContentDiagnosticsController`,
-  `useAttentionBadges`)
+Mode switches live in the summary and Words panel. Pending-summary edits cancel
+and restage the immutable completion boundary. Closed-summary mode changes update
+current state without rewriting historical outcomes. The summary's cancellation
+window uses the backend deadline.
 
-Page-specific state should not drift back into `App.tsx`. Use a page controller hook or keep state inside the page component when it is purely local UI.
+## Feedback and operators
 
-## Primary navigation
+`VocabularyFeedbackPage` renders private read-only lessons and retries failed
+lesson generation. Its lightweight attention polling is separate from What's New
+read state. `VocabularyOperatorPage` shows cases, source/encounter evidence,
+versioned drafts, validated previews, explicit approval, and application receipts.
+`features/vocabulary-operator/api.ts` uses the common authenticated transport in
+`services/api.ts`; the server enforces operator access independently of navigation.
 
-`AppChrome` is a persistent left gutter, not a top tab bar. The four primary
-views stay **Home**, **New Words**, **Reflections**, and **Content Bin**. The product
-name sits at the top of that gutter and wraps to fill the rail width; there is
-no tagline or version in primary nav, and Home does not repeat the name as a
-page heading. An active study session still hides this gutter so the session
-panel can use the full width.
+Connections continues through `SessionDebriefPanel` and its loader. New vocabulary
+completion identities are supported by the existing background Connections queue.
+The Home page uses current vocabulary statistics and existing session settings,
+Connections, and What's New components.
 
-New Words and Reflections already have left-gutter view controls. Those controls
-are nested children of the matching primary item (portal into the chrome
-nested slot; they still own their local view state). Home and Content have no
-nested children.
+## Verification surfaces
 
-- New Words children: **Manage**, **Triage**
-- Reflections children: **Proposals**, **Second opinion**, **By session**, **Run meta**,
-  **Quality**
-- Reflections primary-tab overlay (only while that view is open): **Refresh**
-  (cycle icon; same hover dimming/pulse pattern as Home session-settings gear)
-
-The primary landmark remains `aria-label="Primary"`. Nested rails keep their
-existing `New Words views` / `Reflection views` labels and keyboard behavior.
-
-## Page Controllers
-
-`useStudySession` owns the in-flight study session on the home page (see Session Controller below).
-
-`usePriorityPageController` owns the priority page: loading, add-by-target search,
-multi-match selection when a query resolves to several unstudied rows, added-word
-highlighting, and batch priority updates.
-
-`useReflectionPageController` owns the reflection page. See the
-[reflection frontend architecture map](../docs/reflection-frontend-architecture.md)
-for its loading, Refresh (full workspace reread including cached details),
-compact dogfood run-log, review, and application-status boundaries.
-
-`useContentDiagnosticsController` owns the read-only content diagnostic page:
-primitive-kind selection and explicit query submission. Opening the page and
-switching primitive kinds remain idle; only a non-empty user query triggers
-bounded server-side selection and result loading.
-
-## Session Controller
-
-`useStudySession` owns the in-flight study session runtime:
-
-- session payload prefetch
-- start/end/rate/undo/dismiss flows
-- deferred durable session commits
-- session summary updates
-- completed-session finalization and non-blocking reflection generation,
-  including in-app leave from the completed summary as the same finish path
-- ephemeral reflection-evidence capture and retry supplement retention
-- production Hanzi input flow
-- personal notes editor state
-- active word meaning loading and visibility updates
-- keyboard shortcuts and focus effects, using `session-keyboard.ts` as the
-  shared state-to-action/shortcut description so the panel and controller
-  cannot drift; Space on the completed summary is Finish session / Close
-  summary
-- accepted production with a served cue supplement: an `await-supplement`
-  Continue beat before rating; cards without a supplement still rate immediately
-
-The hook returns:
-
-- `homePageProps` → `HomePage`
-- `finishCompletedSessionIfLeaving` → `App.tsx` primary-nav leave
-- `personalNotesEditor` → overlay in `App.tsx`
-
-The completed-session finalization, evidence accumulator, and reflection review
-workspace are mapped separately in the
-[reflection frontend architecture map](../docs/reflection-frontend-architecture.md).
-
-## Boundaries
-
-- Backend/API contracts stay centralized in `src/services/api.ts`.
-- Accepted review/contrast commit transport failures use the bounded shared
-  client-incident schema. Pending records are account-scoped in local storage
-  and uploaded best-effort after authenticated startup or reconnection; they do
-  not retry the commit itself.
-- Durable state changes go through backend API calls.
-- Frontend owns only the active, in-flight session snapshot after a session starts.
-- Core session transitions live in `src/lib/session-state.ts`; UI hooks orchestrate, they do not redefine rules.
-- Shared display helpers belong in `components/` only when genuinely cross-feature.
-
-## Cleanup Notes
-
-Removed first-prototype static flashcard / browser-side AI practice UI. The app loads backend data and local session state instead.
+The [testing map](../docs/testing.md) separates the real-hook cancellation fixture,
+standalone visual scenarios, operator fixture, and disposable API-backed study
+fixture. Server-rendered checks do not establish focus, scrolling, or live timing.
+The [study UI guide](../docs/implementation/vocabulary-ui.md) describes current
+presentation and input behavior. The [prompt experiments](../docs/implementation/vocabulary-prompt-handoff.md)
+retain trial context; the product and architecture contracts own requirements.

@@ -1,0 +1,419 @@
+import assert from 'node:assert/strict';
+import { describe, test } from 'node:test';
+import {
+  normalizeStagedReflectionDiagnosisResultV2,
+  normalizeStagedReflectionDiagnosisResultV3,
+  validateStagedReflectionDiagnosisResultV3,
+  validatePureCuePromotionResultV2,
+  validateStagedReflectionDiagnosisResultV2,
+  type PureCuePromotionBundleV2,
+  type ReflectionItemV4,
+  type SessionReflectionBundleV4,
+  type StagedReflectionDiagnosisResultV2Wire,
+} from '../src/domain/reflection.ts';
+import {
+  pureCuePromotionResultV2WireSchema,
+  stagedReflectionDiagnosisResultV2WireSchema,
+  stagedReflectionDiagnosisResultV4WireSchema,
+} from '../src/domain/reflection-result-schema.ts';
+import { validateJsonSchema } from '../server/llm/json-schema-validator.ts';
+import {
+  compatiblePromptVersions,
+  isCompatiblePromptVersion,
+  isCurrentReflectionArtifactContract,
+  promptMajorVersion,
+} from '../src/domain/reflection-contracts.ts';
+
+test('prompt minor versions share a major and preserve current contract compatibility', () => {
+  assert.equal(promptMajorVersion('reflection-staged-v3.1'), 'reflection-staged-v3');
+  assert.equal(promptMajorVersion('reflection-staged-v3'), 'reflection-staged-v3');
+  assert.deepEqual(compatiblePromptVersions('reflection-staged-v3.1'), [
+    'reflection-staged-v3', 'reflection-staged-v3.0', 'reflection-staged-v3.1',
+  ]);
+  assert.equal(isCompatiblePromptVersion('reflection-staged-v3', 'reflection-staged-v3.1'), true);
+  assert.equal(isCompatiblePromptVersion('reflection-staged-v3.2', 'reflection-staged-v3.1'), false);
+  assert.equal(isCompatiblePromptVersion('reflection-staged-v2.9', 'reflection-staged-v3.1'), false);
+  assert.equal(isCompatiblePromptVersion('pure-cue-promotion-v3', 'reflection-staged-v3.1'), false);
+  assert.equal(isCurrentReflectionArtifactContract({
+    reflectionFlowVersion: 'initial_post_session_reflection.v6',
+    bundleSchemaVersion: 'session_reflection_bundle.v6',
+    resultSchemaVersion: 'session_reflection_result.v10',
+    promptVersion: 'reflection-staged-v4.0',
+  }), true);
+  for (const [promptVersion, expected] of [
+    ['reflection-staged-v4.0', true],
+    ['reflection-staged-v4.1', true],
+    ['reflection-staged-v4.2', true],
+    ['reflection-staged-v4.3', false],
+    ['reflection-staged-v5.0', true],
+    ['reflection-staged-v5.1', false],
+    ['reflection-staged-v4.4', false],
+    ['reflection-staged-v3.2', false],
+  ] as const) {
+    assert.equal(isCurrentReflectionArtifactContract({
+      reflectionFlowVersion: 'initial_post_session_reflection.v6',
+      bundleSchemaVersion: 'session_reflection_bundle.v6',
+      resultSchemaVersion: 'session_reflection_result.v10',
+      promptVersion,
+    }), expected, promptVersion);
+  }
+});
+
+const generatedAt = '2026-09-21T08:00:00.000Z';
+
+function word(wordId: string) {
+  return { wordId, hanzi: wordId, pinyin: `${wordId}1`, meanings: [`${wordId} meaning`] };
+}
+
+function item(overrides: Partial<ReflectionItemV4> = {}): ReflectionItemV4 {
+  return {
+    itemId: 'item-1',
+    source: 'production_mistake',
+    sourceActionKind: 'production',
+    sessionActionId: 'action-1',
+    occurredAt: generatedAt,
+    targetWord: word('target'),
+    sessionNote: null,
+    existingContent: { contrastClusters: [], knownAcceptedAlternates: [] },
+    sourceAttemptId: 'attempt-1',
+    servedCue: {
+      cueId: 'cue-target',
+      cueType: 'definition_gloss',
+      text: 'shared meaning',
+      acceptedWordIds: ['target'],
+      supplement: null,
+    },
+    rawResponse: 'response',
+    submittedWord: word('response'),
+    responseKind: 'matched_known_word',
+    ...overrides,
+  };
+}
+
+function bundle(inputItem = item()): SessionReflectionBundleV4 {
+  return {
+    schemaVersion: 'session_reflection_bundle.v4',
+    generatedAt,
+    session: {
+      sessionId: 'session-1',
+      startedAt: null,
+      endedAt: generatedAt,
+      studyProfile: 'mandarin',
+    },
+    items: [inputItem],
+  };
+}
+
+function ambiguousPairWire(): StagedReflectionDiagnosisResultV2Wire {
+  return {
+    schemaVersion: 'staged_reflection_diagnosis_result.v2',
+    itemResults: [{
+      kind: 'ambiguous_pair',
+      itemId: 'item-1',
+      diagnosisTags: ['cue_overlap_hides_usage_difference'],
+      handoff: {
+        ambiguityReason: 'The rejected response plausibly answers the broad cue.',
+      },
+    }],
+  };
+}
+
+describe('staged reflection diagnosis contract', () => {
+  test('derives repair identity, ownership and create/replace from retained evidence', () => {
+    const evidence = bundle();
+    const wire: StagedReflectionDiagnosisResultV2Wire = {
+      schemaVersion: 'staged_reflection_diagnosis_result.v2',
+      itemResults: [{
+        kind: 'ordinary',
+        itemId: 'item-1',
+        diagnosisTags: ['production_cue_overloaded'],
+        learnerExplanation: 'The cue is too broad, but the response does not need shared elicitation.',
+        proposals: [{
+          proposalGroupKey: null,
+          rationale: 'Replace the exact broad cue with a target-specific cue.',
+          operation: {
+            kind: 'repair_production_cue',
+            replacementCues: [{ cueType: 'minimal_context', text: 'A context that evokes target.' }],
+            sourceAttemptJudgments: [{ kind: 'misleading_or_overloaded_cue' }],
+          },
+        }],
+        questions: [],
+      }],
+    };
+
+    assert.deepEqual(validateJsonSchema(wire, stagedReflectionDiagnosisResultV2WireSchema), []);
+    const normalized = normalizeStagedReflectionDiagnosisResultV2(wire, evidence);
+    assert.deepEqual(validateStagedReflectionDiagnosisResultV2(normalized, evidence), []);
+    const result = normalized.itemResults[0]!;
+    assert.equal(result.kind, 'ordinary');
+    if (result.kind !== 'ordinary') throw new Error('Expected ordinary result.');
+    const operation = result.proposals[0]!.operation;
+    assert.equal(operation.kind, 'repair_production_cue');
+    if (operation.kind !== 'repair_production_cue' || operation.version !== 2) throw new Error('Expected cue repair.');
+    assert.equal(operation.version, 2);
+    assert.equal(operation.taskId, 'production-task:target:default_production');
+    assert.equal(operation.sourceAttemptJudgments[0]?.sourceAttemptId, 'attempt-1');
+    assert.deepEqual(operation.changes, [{
+      kind: 'replace', cueId: 'cue-target',
+      replacements: [{ cueType: 'minimal_context', text: 'A context that evokes target.', acceptedWordIds: ['target'] }],
+    }]);
+
+    const fallback = bundle(item({ servedCue: { ...evidence.items[0]!.servedCue, cueId: null } }));
+    const fallbackResult = normalizeStagedReflectionDiagnosisResultV2(wire, fallback);
+    assert.deepEqual(validateStagedReflectionDiagnosisResultV2(fallbackResult, fallback), []);
+    const fallbackItem = fallbackResult.itemResults[0]!;
+    if (fallbackItem.kind !== 'ordinary') throw new Error('Expected ordinary result.');
+    const fallbackOperation = fallbackItem.proposals[0]!.operation;
+    if (fallbackOperation.kind !== 'repair_production_cue' || fallbackOperation.version !== 2) throw new Error('Expected repair');
+    assert.deepEqual(fallbackOperation.changes, [{
+      kind: 'create', cue: { cueType: 'minimal_context', text: 'A context that evokes target.', acceptedWordIds: ['target'] },
+    }]);
+
+    const synthetic = bundle(item({ sourceAttemptId: 'synthetic-reflection-attempt:review' }));
+    const syntheticItem = normalizeStagedReflectionDiagnosisResultV2(wire, synthetic).itemResults[0]!;
+    if (syntheticItem.kind !== 'ordinary') throw new Error('Expected ordinary result.');
+    const syntheticOperation = syntheticItem.proposals[0]!.operation;
+    if (syntheticOperation.kind !== 'repair_production_cue') throw new Error('Expected repair');
+    assert.deepEqual(syntheticOperation.sourceAttemptJudgments, []);
+
+    for (const extra of [{ cueId: 'forged' }, { acceptedWordIds: ['target', 'response'] }]) {
+      const malformed = structuredClone(wire);
+      const malformedItem = malformed.itemResults[0]!;
+      if (malformedItem.kind !== 'ordinary') throw new Error('Expected ordinary');
+      const malformedOperation = malformedItem.proposals[0]!.operation;
+      if (malformedOperation.kind !== 'repair_production_cue') throw new Error('Expected repair');
+      Object.assign(malformedOperation.replacementCues[0]!, extra);
+      assert.notDeepEqual(validateJsonSchema(malformed, stagedReflectionDiagnosisResultV2WireSchema), []);
+    }
+    const wrongOwner = structuredClone(wire);
+    const wrongOwnerItem = wrongOwner.itemResults[0]!;
+    if (wrongOwnerItem.kind !== 'ordinary') throw new Error('Expected ordinary');
+    const wrongOwnerOperation = wrongOwnerItem.proposals[0]!.operation;
+    if (wrongOwnerOperation.kind !== 'repair_production_cue') throw new Error('Expected repair');
+    Object.assign(wrongOwnerOperation, { wordId: 'response' });
+    assert.notDeepEqual(validateJsonSchema(wrongOwner, stagedReflectionDiagnosisResultV2WireSchema), []);
+
+    for (const targetOperation of [
+      { kind: 'suppress_definition_production' as const, version: 1 as const },
+      { kind: 'add_production_cue_supplement' as const,
+        englishFrame: 'A useful frame', exampleSentence: '目标', exampleTranslation: 'Target' },
+    ]) {
+      const targetWire = structuredClone(wire);
+      const targetItem = targetWire.itemResults[0]!;
+      if (targetItem.kind !== 'ordinary') throw new Error('Expected ordinary');
+      targetItem.proposals[0]!.operation = targetOperation;
+      assert.deepEqual(validateJsonSchema(targetWire, stagedReflectionDiagnosisResultV2WireSchema), []);
+      const targetResult = normalizeStagedReflectionDiagnosisResultV2(targetWire, evidence).itemResults[0]!;
+      if (targetResult.kind !== 'ordinary') throw new Error('Expected ordinary');
+      assert.equal('wordId' in targetResult.proposals[0]!.operation
+        && targetResult.proposals[0]!.operation.wordId, 'target');
+      Object.assign(targetItem.proposals[0]!.operation, { wordId: 'response' });
+      assert.notDeepEqual(validateJsonSchema(targetWire, stagedReflectionDiagnosisResultV2WireSchema), []);
+    }
+    const unknownItem = structuredClone(wire);
+    unknownItem.itemResults[0]!.itemId = 'missing';
+    assert.throws(() => normalizeStagedReflectionDiagnosisResultV2(unknownItem, evidence), /Unknown staged reflection item/);
+
+    const emptyRepair = structuredClone(wire);
+    const emptyItem = emptyRepair.itemResults[0]!;
+    if (emptyItem.kind !== 'ordinary') throw new Error('Expected ordinary');
+    const emptyOperation = emptyItem.proposals[0]!.operation;
+    if (emptyOperation.kind !== 'repair_production_cue') throw new Error('Expected repair');
+    emptyOperation.replacementCues = [];
+    assert.notDeepEqual(validateJsonSchema(emptyRepair, stagedReflectionDiagnosisResultV2WireSchema), []);
+    const unsupportedJudgment = structuredClone(wire);
+    const judgmentItem = unsupportedJudgment.itemResults[0]!;
+    if (judgmentItem.kind !== 'ordinary') throw new Error('Expected ordinary');
+    const judgmentOperation = judgmentItem.proposals[0]!.operation;
+    if (judgmentOperation.kind !== 'repair_production_cue') throw new Error('Expected repair');
+    Object.assign(judgmentOperation.sourceAttemptJudgments[0]!, { sourceAttemptId: 'forged' });
+    assert.notDeepEqual(validateJsonSchema(unsupportedJudgment, stagedReflectionDiagnosisResultV2WireSchema), []);
+  });
+
+  test('fails loudly when an ordinary result drafts a multi-answer word-owned cue', () => {
+    const evidence = bundle();
+    const wire = {
+      schemaVersion: 'staged_reflection_diagnosis_result.v2',
+      itemResults: [{
+        kind: 'ordinary',
+        itemId: 'item-1',
+        diagnosisTags: ['valid_or_near_valid_alternate'],
+        learnerExplanation: 'This invalid ordinary path tries to broaden a word-owned cue.',
+        proposals: [{
+          proposalGroupKey: null,
+          rationale: 'Invalid shared acceptance in the ordinary path.',
+          operation: {
+            kind: 'repair_production_cue',
+            wordId: 'target',
+            changes: [{
+              kind: 'replace',
+              cueId: 'cue-target',
+              replacements: [{
+                cueType: 'definition_gloss',
+                text: 'shared meaning',
+                acceptedWordIds: ['target', 'response'],
+              }],
+            }],
+            sourceAttemptJudgments: [{
+              kind: 'accepted_answer_space_omission',
+              submittedWordId: 'response',
+            }],
+          },
+        }],
+        questions: [],
+      }],
+    };
+    assert.notDeepEqual(validateJsonSchema(wire, stagedReflectionDiagnosisResultV2WireSchema), []);
+  });
+
+  test('keeps ambiguous-pair output exclusive and rejects ineligible routing without tag heuristics', () => {
+    const evidence = bundle();
+    const wire = ambiguousPairWire();
+    assert.deepEqual(validateJsonSchema(wire, stagedReflectionDiagnosisResultV2WireSchema), []);
+    assert.deepEqual(validateStagedReflectionDiagnosisResultV2(wire, evidence), []);
+
+    const muddy = structuredClone(wire) as unknown as { itemResults: Array<Record<string, unknown>> };
+    muddy.itemResults[0]!.learnerExplanation = 'Not allowed on a shared-axis handoff.';
+    assert.match(
+      validateJsonSchema(muddy, stagedReflectionDiagnosisResultV2WireSchema).join('\n'),
+      /does not match any allowed schema/,
+    );
+
+    const unrelatedTags = structuredClone(wire);
+    unrelatedTags.itemResults[0]!.diagnosisTags = ['ordinary_retrieval_noise'];
+    assert.deepEqual(
+      validateStagedReflectionDiagnosisResultV2(unrelatedTags, evidence),
+      [],
+      'routing is explicit and does not depend on a diagnosis-tag heuristic',
+    );
+
+    const ineligible = bundle(item({
+      servedCue: {
+        ...item().servedCue,
+        acceptedWordIds: ['target', 'response'],
+      },
+    }));
+    assert.match(
+      validateStagedReflectionDiagnosisResultV2(wire, ineligible).join('\n'),
+      /ambiguous_pair requires a rejected strict target-only production attempt/,
+    );
+  });
+
+  test('does not offer unsupported persistence claims in the staged diagnosis tags', () => {
+    const wire = ambiguousPairWire();
+    Object.assign(wire.itemResults[0]!, { diagnosisTags: ['persistent_confusion'] });
+    assert.notDeepEqual(validateJsonSchema(wire, stagedReflectionDiagnosisResultV2WireSchema), []);
+    assert.match(validateStagedReflectionDiagnosisResultV2(wire, bundle()).join('\n'), /persistent_confusion is not available/);
+  });
+});
+
+describe('promotion reconciliation contract', () => {
+  const promotionBundle: PureCuePromotionBundleV2 = {
+    schemaVersion: 'pure_cue_promotion_bundle.v2',
+    generatedAt,
+    sourceSessionId: 'session-1',
+    studyProfile: 'mandarin',
+    items: [{
+      itemId: 'item-1',
+      sourceAttemptId: 'attempt-1',
+      targetWord: word('target'),
+      responseWord: word('response'),
+      servedCue: item().servedCue,
+      handoff: { ambiguityReason: 'The response plausibly fits the cue.' },
+      promotionEvidence: {
+        diagnosisTags: ['cue_overlap_hides_usage_difference'],
+        words: ['target', 'response'].map((wordId) => ({
+          wordId,
+          activeProductionCues: [],
+        })),
+        intersectingPureCues: [],
+      },
+    }],
+  };
+
+  test('requires learner-facing text for cleanup and permits explanation-only without content', () => {
+    const promote = {
+      schemaVersion: 'pure_cue_promotion_result.v2',
+      itemResults: [{
+        itemId: 'item-1',
+        decision: {
+          kind: 'reconcile',
+          rationale: 'The explicit shared axis is useful.',
+          learnerExplanation: 'Both words fit this bounded prompt, while their broader uses remain distinct.',
+          operation: {
+            sourceAttemptFairness: 'fair',
+            destination: {
+              kind: 'create',
+              stimulus: 'one bounded shared meaning',
+              axisNote: 'A useful shared expressive purpose.',
+              teachingNote: 'These words have distinct uses elsewhere.',
+            },
+            wordPlans: ['target', 'response'].map((wordId) => ({
+              wordId,
+              deactivateCueIds: [],
+              distinctiveCueDrafts: [],
+            })),
+          },
+        },
+      }],
+    };
+    assert.deepEqual(validateJsonSchema(promote, pureCuePromotionResultV2WireSchema), []);
+    assert.deepEqual(validatePureCuePromotionResultV2(promote, promotionBundle), []);
+
+    const disagreement = {
+      schemaVersion: 'pure_cue_promotion_result.v2',
+      itemResults: [{
+        itemId: 'item-1',
+        decision: {
+          kind: 'explanation_only',
+          learnerExplanation: 'On review, the proposed shared axis would erase an important usage boundary.',
+        },
+      }],
+    };
+    assert.deepEqual(validateJsonSchema(disagreement, pureCuePromotionResultV2WireSchema), []);
+    assert.deepEqual(validatePureCuePromotionResultV2(disagreement, promotionBundle), []);
+
+    const retiredNoPromotion = structuredClone(disagreement) as unknown as {
+      itemResults: Array<{ decision: Record<string, unknown> }>;
+    };
+    retiredNoPromotion.itemResults[0]!.decision = {
+      kind: 'no_promotion',
+      rationale: 'Retired shape.',
+    };
+    assert.notDeepEqual(validateJsonSchema(retiredNoPromotion, pureCuePromotionResultV2WireSchema), []);
+  });
+});
+
+
+test('current bootstrap request binds its target from definition evidence and authors no supplement', () => {
+  const evidence = bundle(item({ servedCue: { ...item().servedCue, supplement: {
+    supplementId: 'legacy', englishFrame: 'Old frame', exampleSentence: 'Old example', exampleTranslation: 'Old translation',
+  } } }));
+  const wire = {
+    schemaVersion: 'staged_reflection_diagnosis_result.v4' as const,
+    itemResults: [{
+      kind: 'ordinary' as const, itemId: 'item-1', diagnosisTags: [], learnerExplanation: 'An example could help.',
+      proposals: [{ proposalGroupKey: null, rationale: 'General usage examples would help.', operation: { kind: 'request_word_bootstrap' as const } }],
+      questions: [],
+    }],
+  };
+  assert.deepEqual(validateJsonSchema(wire, stagedReflectionDiagnosisResultV4WireSchema), []);
+  const normalized = normalizeStagedReflectionDiagnosisResultV3({ ...wire, schemaVersion: 'staged_reflection_diagnosis_result.v3' }, evidence);
+  const result = normalized.itemResults[0]!;
+  assert.equal(result.kind, 'ordinary');
+  if (result.kind !== 'ordinary') throw new Error('Expected ordinary');
+  assert.deepEqual(result.proposals[0]!.operation, { kind: 'request_word_bootstrap', version: 1, wordId: 'target' });
+  assert.deepEqual(validateStagedReflectionDiagnosisResultV3(normalized, evidence), []);
+  const otherCue = bundle(item({ servedCue: { ...item().servedCue, cueType: 'minimal_context' } }));
+  assert.match(validateStagedReflectionDiagnosisResultV3(normalized, otherCue).join(' '), /definition-gloss/);
+  for (const added of [{ wordId: 'response' }, { exampleSentence: 'sentence' }, { version: 1 }]) {
+    const injected = structuredClone(wire);
+    Object.assign(injected.itemResults[0]!.proposals[0]!.operation, added);
+    assert.notDeepEqual(validateJsonSchema(injected, stagedReflectionDiagnosisResultV4WireSchema), []);
+  }
+  const legacy = structuredClone(wire);
+  Object.assign(legacy.itemResults[0]!.proposals[0]!.operation, {
+    kind: 'add_production_cue_supplement', englishFrame: 'frame', exampleSentence: 'sentence', exampleTranslation: 'translation',
+  });
+  assert.notDeepEqual(validateJsonSchema(legacy, stagedReflectionDiagnosisResultV4WireSchema), []);
+});

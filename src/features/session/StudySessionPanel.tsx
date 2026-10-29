@@ -1,4 +1,15 @@
-import { useRef, useState, type ReactNode, type RefObject } from 'react';
+import { SessionCompletionPanel, type SessionCompletionPanelProps } from './SessionCompletionPanel';
+import { convertSentenceCharacters, effectiveSentenceCharacterPresentation, formatSentenceAnswer } from '../../domain/sentence-characters';
+import { SessionDesk, RecallChips, type SessionDeskHandle } from './SessionDesk';
+import { StudyStageBadge, studyStageCardClass } from './StudyStageBadge';
+import { BootstrapSourceReveal } from './BootstrapSourceReveal';
+import { ProductionSupplementAside } from './ProductionSupplementAside';
+import { WordSourceExamples } from './WordSourceExamples';
+import { ClozePrompt } from './ClozePrompt';
+import { useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
+import { ContentQualityControls } from '../content-quality/ContentQualityControls';
+import { getSessionContentQualityTarget, sessionContentQualityEncounterId } from './session-content-quality';
+import type { ContentQualityTarget } from '../../domain/content-quality';
 import { MeaningList } from '../../components/MeaningList';
 import type {
   LearningWordProgress,
@@ -6,22 +17,35 @@ import type {
   BucketSessionState,
   UnstudiedWordProgress,
 } from '../../lib/session-state';
-import type { ProductionCueSupplementSnapshot, SessionStudyItem } from '../../domain/study-actions';
+import type {
+  PureCueSessionReviewItem,
+  SessionStudyItem,
+} from '../../domain/study-actions';
 import type { ReviewRating, Word, WordMeaning } from '../../types';
+import {
+  DEFAULT_CHARACTER_PRESENTATION,
+  formatCardCharacters,
+  type CharacterPresentation,
+  type SentenceCharacterPresentation,
+  type CardCharacterForms,
+} from '../../domain/card-characters';
 import { studyProfile } from '../../study-profile';
 import type { RatingOption } from './session-rating';
 import type { SessionSummary } from './session-summary';
 import type { SessionFinalizationState } from './session-finalization';
-import { getStudySessionPanelView, hasServedProductionCueSupplement } from './session-selectors';
+import { getDisplayedReinforcementStreak, getStudySessionPanelView, hasServedProductionReveal } from './session-selectors';
 import {
+  isImeComposingEvent,
   getSessionPrimaryAction,
   getSessionShortcutGuide,
   type SessionKeyboardContext,
   type SessionKeyCommand,
 } from './session-keyboard';
 import { useSessionDialogFocus } from './session-dialog-focus';
+import { SessionDebriefPanel } from './SessionDebriefPanel';
 import { SessionSummaryPanel } from './SessionSummaryPanel';
 import { formatIntervalHours } from '../../lib/format-interval';
+import { ReflectionRequestButton } from './ReflectionRequestButton';
 
 export type FrozenProductionCard = {
   sessionActionId: string;
@@ -37,11 +61,14 @@ export type FrozenProductionCard = {
   fallbackPrompt: string;
   answerPinyin: string;
   answerText: string;
+  answerForms: CardCharacterForms;
   allMeanings: string[];
   personalNotes: string;
   intervalHours: number;
   example: string;
   production?: SessionStudyItem['production'];
+  rehearsal?: SessionStudyItem['rehearsal'];
+  wordContent?: SessionStudyItem['wordContent'];
 };
 
 export type FrozenContrastCard = {
@@ -51,26 +78,100 @@ export type FrozenContrastCard = {
   queuedCount: number;
 };
 
-export function StudySessionPanel({
+export type FrozenPureCueCard = {
+  item: PureCueSessionReviewItem;
+  attemptedResponse: string | null;
+  reviewedCount: number;
+  queuedCount: number;
+};
+
+type StudySessionPanelProps = Omit<Parameters<typeof StudySessionPanelContent>[0], 'completionGate'> & { completionPanel?: Omit<SessionCompletionPanelProps, 'summary' | 'characterPresentation'> };
+
+// Retain the last committed card presentation, independently of the scheduler's
+// completed state. Undo still restores the controller's authoritative snapshot.
+export function StudySessionPanel(props: StudySessionPanelProps) {
+  const lastCard = useRef<StudySessionPanelProps | null>(null);
+  const completed = props.sessionPhase === 'completed';
+  useLayoutEffect(() => {
+    if (!props.sessionStarted) lastCard.current = null;
+    else if (!completed || props.frozenProductionCard || props.frozenPureCueCard || props.frozenContrastCard) {
+      lastCard.current = props;
+    }
+  });
+  if (completed && props.sessionSummary && props.completionPanel) {
+    return <SessionCompletionPanel {...props.completionPanel} summary={props.sessionSummary}
+      characterPresentation={props.characterPresentation ?? DEFAULT_CHARACTER_PRESENTATION} />;
+  }
+  if (completed && props.sessionFinalization.kind !== 'finalized' && lastCard.current
+    && (lastCard.current.answerRevealed || props.frozenProductionCard || props.frozenPureCueCard || props.frozenContrastCard)) {
+    const card = props.frozenProductionCard || props.frozenPureCueCard || props.frozenContrastCard ? props : lastCard.current;
+    return <StudySessionPanelContent {...card}
+      completionGate
+      deskRemainingCount={0}
+      deskAgainCount={0}
+      reviewedCount={props.reviewedCount}
+      activeElapsedTime={props.activeElapsedTime}
+      sessionFinalization={props.sessionFinalization}
+      sessionSummary={props.sessionSummary}
+      completedReinforcementStreak={props.completedReinforcementStreak}
+      hasUndo={props.hasUndo}
+      submittingRating={props.submittingRating}
+      confirmingSessionAction={props.confirmingSessionAction}
+      contentRatingSaving={props.contentRatingSaving}
+      shortcutGuideOpen={props.shortcutGuideOpen}
+      onEndSession={props.onEndSession}
+      onUndoLastRating={props.onUndoLastRating}
+      onOpenShortcutGuide={props.onOpenShortcutGuide}
+      onCloseShortcutGuide={props.onCloseShortcutGuide}
+    />;
+  }
+  if (completed && props.sessionFinalization.kind === 'finalized' && props.sessionSummary && studyProfile.id === 'mandarin') {
+    return <SessionDebriefPanel key={props.sessionSummary.sessionId} sessionId={props.sessionSummary.sessionId}
+      characterPresentation={props.characterPresentation}
+      completedAt={props.sessionSummary.completedAt ?? undefined} exerciseCount={props.sessionSummary.debriefInventory.length}
+      onDone={props.onEndSession} finalization={props.sessionFinalization} onRetryReflection={props.onRetrySessionReflection} />;
+  }
+  return <StudySessionPanelContent {...props}
+    {...(completed && props.sessionFinalization.kind === 'finalized' ? {
+      frozenProductionCard: null, frozenPureCueCard: null, frozenContrastCard: null,
+      productionAwaitingNext: false, pureCueAwaitingNext: false, contrastAwaitingNext: false,
+    } : {})} />;
+}
+
+function StudySessionPanelContent({
+  completionGate = false,
   sessionStarted,
+  sessionDeskRef,
+  deskAgainCount,
+  deskRemainingCount,
   sessionPhase,
   sessionSummary,
   sessionFinalization,
   activeItem,
+  activePureCue,
   activeWord,
+  characterPresentation = DEFAULT_CHARACTER_PRESENTATION,
+  sentenceCharacterPresentation = 'simplified',
   activeLearningProgress,
   activeUnstudiedProgress,
   activeReviewProgress,
+  activePureCueFailureCount,
+  activePureCueReinforcementStreak,
+  completedReinforcementStreak,
   reviewedCount,
   queuedCount,
   hasUndo,
   submittingRating,
+  confirmingSessionAction = false,
+  contentRatingSaving = false,
   personalNotesEditorOpen,
   personalNotesEditorSaving,
   studyManagementSubmitting,
   productionAwaitingNext,
+  pureCueAwaitingNext,
   productionAwaitingSupplement,
   frozenProductionCard,
+  frozenPureCueCard,
   contrastAwaitingNext,
   frozenContrastCard,
   activeAllMeanings,
@@ -113,32 +214,50 @@ export function StudySessionPanel({
   onProductionHanziInputChange,
   onSelectContrastChoice,
   onRevealAnswer,
+  onContentRatingSavingChange,
+  onContentRatingChange,
+  onFrozenProductionContentRatingChange,
   onToggleLearnerRequestedReview,
   onToggleFrozenProductionLearnerRequestedReview,
   onRate,
+  onSkipReinforcement,
   shortcutGuideOpen,
   onOpenShortcutGuide,
   onCloseShortcutGuide,
 }: {
+  completionGate?: boolean;
   sessionStarted: boolean;
+  sessionDeskRef: RefObject<SessionDeskHandle>;
+  deskAgainCount: number;
+  deskRemainingCount: number;
   sessionPhase: BucketSessionState['phase'] | null;
   sessionSummary: SessionSummary | null;
   sessionFinalization: SessionFinalizationState;
   activeItem: SessionStudyItem | null;
+  activePureCue: PureCueSessionReviewItem | null;
   activeWord: Word | null;
+  characterPresentation?: CharacterPresentation;
+  sentenceCharacterPresentation?: SentenceCharacterPresentation;
   activeLearningProgress: LearningWordProgress | undefined;
   activeUnstudiedProgress: UnstudiedWordProgress | undefined;
   activeReviewProgress: ReviewActionProgress | undefined;
+  activePureCueFailureCount: number;
+  activePureCueReinforcementStreak: number;
+  completedReinforcementStreak: number | null;
   reviewedCount: number;
   queuedCount: number;
   hasUndo: boolean;
   submittingRating: ReviewRating | null;
+  confirmingSessionAction?: boolean;
+  contentRatingSaving?: boolean;
   personalNotesEditorOpen: boolean;
   personalNotesEditorSaving: boolean;
   studyManagementSubmitting: boolean;
   productionAwaitingNext: boolean;
+  pureCueAwaitingNext: boolean;
   productionAwaitingSupplement: boolean;
   frozenProductionCard: FrozenProductionCard | null;
+  frozenPureCueCard: FrozenPureCueCard | null;
   contrastAwaitingNext: boolean;
   frozenContrastCard: FrozenContrastCard | null;
   activeAllMeanings: string[];
@@ -181,8 +300,12 @@ export function StudySessionPanel({
   onProductionHanziInputChange: (value: string) => void;
   onSelectContrastChoice: (wordId: string) => void;
   onRevealAnswer: () => void;
+  onContentRatingSavingChange?: (saving: boolean) => void;
+  onContentRatingChange?: (rating: 'up' | 'down' | null) => void;
+  onFrozenProductionContentRatingChange?: (rating: 'up' | 'down' | null) => void;
   onToggleLearnerRequestedReview: () => void;
   onToggleFrozenProductionLearnerRequestedReview: () => void;
+  onSkipReinforcement: () => void;
   onRate: (rating: ReviewRating, options: { restoreUi: 'revealed' | 'production-input' }) => void;
   shortcutGuideOpen: boolean;
   onOpenShortcutGuide: () => void;
@@ -191,28 +314,53 @@ export function StudySessionPanel({
   const productionFormId = 'production-hanzi-input-form';
   const panelView = getStudySessionPanelView({
     sessionStarted,
-    sessionCompletedWithSummary: sessionPhase === 'completed' && sessionSummary !== null,
+    sessionCompletedWithSummary: !completionGate && sessionPhase === 'completed' && sessionSummary !== null,
     productionAwaitingNext,
+    pureCueAwaitingNext,
     frozenProductionCardPresent: frozenProductionCard !== null,
+    frozenPureCueCardPresent: frozenPureCueCard !== null,
     contrastAwaitingNext,
     frozenContrastCardPresent: frozenContrastCard !== null,
     activeItemPresent: activeItem !== null,
+    activePureCuePresent: activePureCue !== null,
     activeWordStatus: activeWord?.status ?? null,
     activeUnstudiedIntroComplete: activeUnstudiedProgress?.introComplete ?? false,
   });
+  const sentenceScript = effectiveSentenceCharacterPresentation(characterPresentation, sentenceCharacterPresentation);
+  const sentenceText = (text: string) => convertSentenceCharacters(text, sentenceScript);
   const showRatingButtons = answerRevealed && (
     (!isProductionItem || productionAwaitingRating) &&
     (!activeItem || activeItem.actionKind !== 'contrast_selection' || contrastAwaitingRating)
   );
   const showProductionSupplementAside =
-    answerRevealed && hasServedProductionCueSupplement(activeItem?.production);
-  const sessionEndDisabled = sessionPhase === 'draining' || personalNotesEditorOpen;
+    answerRevealed && hasServedProductionReveal(activeItem?.production);
+  const activeBootstrapReveal = activeItem?.actionKind === 'recognition'
+    ? activeItem.bootstrapReveal
+    : activeItem?.production?.cueType === 'definition_gloss' ? activeItem.production.bootstrapReveal : undefined;
+  const frozenBootstrapReveal = frozenProductionCard?.production?.cueType === 'definition_gloss'
+    ? frozenProductionCard.production.bootstrapReveal : undefined;
+  const sessionInteractionPending = confirmingSessionAction || contentRatingSaving || submittingRating !== null;
+  const qualityHotkeysActive = !personalNotesEditorOpen && !shortcutGuideOpen && !sessionInteractionPending && !studyManagementSubmitting;
+  function qualityControls(target: ContentQualityTarget | null, actionId: string, count: number, label: string, hotkeys = true, onRatingChange?: (rating: 'up' | 'down' | null) => void) {
+    if (completionGate || !target || !sessionSummary) return null;
+    return <ContentQualityControls
+      target={target}
+      encounterId={sessionContentQualityEncounterId(sessionSummary.sessionId, actionId, count)}
+      label={label}
+      hotkeysActive={hotkeys && qualityHotkeysActive}
+      disabled={personalNotesEditorOpen || sessionInteractionPending || studyManagementSubmitting}
+      onRatingChange={onRatingChange}
+      onSavingChange={onRatingChange ? onContentRatingSavingChange : undefined}
+    />;
+  }
+  const sessionEndDisabled = sessionPhase === 'draining' || personalNotesEditorOpen || sessionInteractionPending || studyManagementSubmitting;
   const sessionEndLabel = sessionPhase === 'draining' ? 'Session draining' : 'End session';
   const keyboardContext = createSessionKeyboardContext({
     sessionStarted,
     isProductionItem,
     answerRevealed,
     productionAwaitingNext,
+    pureCueAwaitingNext,
     productionAwaitingSupplement,
     personalNotesEditorOpen,
     contrastAwaitingNext,
@@ -221,59 +369,95 @@ export function StudySessionPanel({
     contrastHasSelection: contrastSelectedWordId !== null,
     ratingAvailable: showRatingButtons,
     hasUndo,
-    hasActiveWord: activeWord !== null,
+    hasActiveWord: !completionGate && activeWord !== null,
     ratingOptions: activeRatingOptions,
-    completedSummary: panelView === 'completed',
+    completedSummary: completionGate || panelView === 'completed',
     summaryFinalizationKind: sessionFinalization.kind,
   });
+  keyboardContext.canRequestReflectionReview = !completionGate && (panelView === 'frozen_production'
+    ? frozenProductionCard?.status === 'review'
+    : panelView === 'active_card' && activeItem?.actionKind === 'production' && activeWord?.status === 'review');
+  keyboardContext.canNoClueProduction = keyboardContext.productionInputActive && !completionGate
+    && !studyManagementSubmitting && !sessionInteractionPending && productionHanziInput.trim().length === 0;
+  keyboardContext.canSkipReinforcement = !completionGate && reviewInReinforcement && !productionAwaitingNext && !pureCueAwaitingNext && !contrastAwaitingNext;
+  const skipReinforcementButton = keyboardContext.canSkipReinforcement ? (
+    <button type="button" className="secondary-button" onClick={onSkipReinforcement}
+      data-session-skip-reinforcement
+      aria-keyshortcuts="Shift+Space"
+      title="Complete this review with its recorded miss. Compensation is handled separately."
+      disabled={personalNotesEditorOpen || sessionInteractionPending || studyManagementSubmitting}>
+      Skip reinforcement<ShortcutHint shortcut="Shift+Space" />
+    </button>
+  ) : null;
   const primaryAction = getSessionPrimaryAction(keyboardContext);
   const shortcutGuide = getSessionShortcutGuide(keyboardContext, { includeDialogClose: shortcutGuideOpen });
+
+  const completionActions = (
+    <div className="session-action-bar">
+      <SessionActionSection>
+        <button type="button" onClick={onEndSession} disabled={sessionFinalization.kind === 'finalizing'}>
+          {sessionFinalization.kind === 'finalizing' ? 'Saving session…' : 'See session summary'}
+          <ShortcutHint shortcut={sessionFinalization.kind === 'finalizing' ? null : 'Enter'} />
+        </button>
+        <UndoButton hasUndo={hasUndo && sessionFinalization.kind === 'unfinalized'}
+          submittingRating={submittingRating} contentRatingSaving={contentRatingSaving} transitionPending={confirmingSessionAction} personalNotesEditorOpen={personalNotesEditorOpen}
+          onUndoLastRating={onUndoLastRating} />
+        <KeyboardGuideButton onClick={onOpenShortcutGuide} />
+      </SessionActionSection>
+    </div>
+  );
 
   return (
     <div className={sessionStarted ? 'panel study-session-panel session-panel-active' : 'panel study-session-panel'}>
       <h2>Study session</h2>
       <div className={shortcutGuideOpen ? 'session-interaction-surface is-paused' : 'session-interaction-surface'}>
+        <SessionDesk ref={sessionDeskRef} enabled={sessionStarted && panelView !== 'completed' && panelView !== 'empty'}
+          remaining={deskRemainingCount} again={deskAgainCount}
+          answered={frozenProductionCard?.reviewedCount ?? frozenPureCueCard?.reviewedCount ?? frozenContrastCard?.reviewedCount ?? reviewedCount}
+          elapsed={activeElapsedTime}
+          mistakeKey={panelView.startsWith('frozen_') ? `${panelView}:${frozenProductionCard?.sessionActionId ?? frozenPureCueCard?.item.sessionActionId ?? frozenContrastCard?.item.sessionActionId}:${reviewedCount}` : null}>
+
         {panelView === 'not_started' ? (
-          <p className="notes">Start the session to freeze the current session snapshot into frontend state.</p>
+          <p className="notes">Start a session when you’re ready to study.</p>
         ) : panelView === 'frozen_production' && frozenProductionCard ? (
-        <div className="review-card session-card-shell">
+        <div className={`review-card session-card-shell ${studyStageCardClass(frozenProductionCard.status)}`}>
           <div className="session-card-scroll">
             <div className="review-card-header">
               <p className="badge">
-                {frozenProductionCard.status === 'review'
-                  ? 'Review'
-                  : frozenProductionCard.status === 'learning'
-                    ? 'Learning'
-                    : 'New word'}
+                <StudyStageBadge status={frozenProductionCard.status} />
                 {` · ${studyProfile.labels.productionDirection}`}
               </p>
             </div>
-            <p className="notes">
+            <p className="notes desk-legacy-counts">
               Answered {frozenProductionCard.reviewedCount} this session · {frozenProductionCard.queuedCount} still queued
             </p>
             <div className="prompt-block">
-              <span className="prompt-label">Prompt</span>
               {frozenProductionCard.promptDisplayedMeanings.length > 0 ? (
-                <MeaningList meanings={frozenProductionCard.promptDisplayedMeanings} className="meaning-list-prompt" />
+                <MeaningList meanings={frozenProductionCard.promptDisplayedMeanings.map(sentenceText)} className="meaning-list-prompt" />
+              ) : !frozenProductionCard.production && !frozenProductionCard.rehearsal && !frozenProductionCard.contentRef ? (
+                <span className="prompt-meta meaning-list-prompt">No production meanings selected</span>
               ) : (
-                <span className="prompt-meta meaning-list-prompt">{frozenProductionCard.fallbackPrompt}</span>
+                <strong className="prompt-value"><ClozePrompt text={frozenProductionCard.fallbackPrompt} answer={formatSentenceAnswer(frozenProductionCard.answerForms, sentenceScript)} sentenceCharacterPresentation={sentenceScript} /></strong>
               )}
             </div>
             <div className="answer-block">
               <span className="prompt-label">Answer</span>
               <span className="answer-pinyin">{frozenProductionCard.answerPinyin}</span>
               <strong className="answer-value">{frozenProductionCard.answerText}</strong>
-              <MeaningList meanings={frozenProductionCard.allMeanings} />
-              {frozenProductionCard.production?.supplement ? (
+              {frozenBootstrapReveal ? <BootstrapSourceReveal reveal={frozenBootstrapReveal} sentenceCharacterPresentation={sentenceScript} /> : null}
+              <details className="desk-reference" open={frozenBootstrapReveal ? undefined : (frozenProductionCard.status !== 'review' || undefined)}><summary>Word reference</summary>{frozenProductionCard.wordContent ? <WordSourceExamples content={frozenProductionCard.wordContent} sentenceCharacterPresentation={sentenceScript} /> : <MeaningList meanings={frozenProductionCard.allMeanings.map(sentenceText)} />}</details>
+              {!frozenBootstrapReveal && frozenProductionCard.production?.supplement ? (
                 <div className="production-supplement">
                   <span className="prompt-label">In context</span>
                   <span className="prompt-meta">
-                    {frozenProductionCard.production.supplement.englishFrame}
+                    {sentenceText(frozenProductionCard.production.supplement.englishFrame)}
                   </span>
-                  <span>{frozenProductionCard.production.supplement.exampleSentence}</span>
+                  <span>{sentenceText(frozenProductionCard.production.supplement.exampleSentence)}</span>
                   <span className="prompt-meta">
-                    {frozenProductionCard.production.supplement.exampleTranslation}
+                    {sentenceText(frozenProductionCard.production.supplement.exampleTranslation)}
                   </span>
+                  {qualityControls({ kind: 'supplement', id: frozenProductionCard.production.supplement.supplementId },
+                    frozenProductionCard.sessionActionId, frozenProductionCard.reviewedCount, 'Supplement quality')}
                 </div>
               ) : null}
               {frozenProductionCard.personalNotes.trim().length > 0 ? (
@@ -282,43 +466,47 @@ export function StudySessionPanel({
               <span className="prompt-meta">
                 Interval {formatIntervalHours(frozenProductionCard.intervalHours)}
               </span>
-              <span className="prompt-meta">{frozenProductionCard.example}</span>
+              {!frozenProductionCard.wordContent && <span className="prompt-meta">{sentenceText(frozenProductionCard.example)}</span>}
             </div>
             {frozenProductionCard.attemptedHanzi ? (
               <div className="answer-block">
                 <span className="prompt-label">Your response</span>
                 <strong className="answer-value">{frozenProductionCard.attemptedHanzi}</strong>
-                <p className="notes">{studyProfile.labels.targetRecallIncorrect} This item was recorded as Forgot.</p>
               </div>
-            ) : (
-              <p className="notes">No clue. This item was recorded as Forgot.</p>
-            )}
+            ) : null}
           </div>
-          <div className="session-action-bar">
+          {completionGate ? (
+            completionActions
+          ) : (<div className="session-action-bar">
             <SessionActionSection>
-              <button type="button" onClick={onContinueAfterAutoForgot} disabled={personalNotesEditorOpen}>
-                Next
+              <button type="button" className={confirmingSessionAction ? 'is-confirming-action' : undefined} onClick={onContinueAfterAutoForgot} disabled={personalNotesEditorOpen || sessionInteractionPending || studyManagementSubmitting}>
+                Continue
                 <ShortcutHint shortcut={shortcutFor(primaryAction, 'continue_after_auto_forgot')} />
               </button>
               <UndoButton
                 hasUndo={hasUndo}
-                submittingRating={submittingRating}
+                submittingRating={submittingRating} contentRatingSaving={contentRatingSaving} transitionPending={confirmingSessionAction}
                 personalNotesEditorOpen={personalNotesEditorOpen}
                 onUndoLastRating={onUndoLastRating}
               />
             </SessionActionSection>
+            {qualityControls(getSessionContentQualityTarget({ ...frozenProductionCard, production: frozenProductionCard.production ?? null },
+              { wordId: frozenProductionCard.targetWordId, displayedMeanings: frozenProductionCard.promptDisplayedMeanings }),
+              frozenProductionCard.sessionActionId, frozenProductionCard.reviewedCount,
+              frozenProductionCard.rehearsal ? 'Practice quality' : 'Cue quality', !!frozenBootstrapReveal || !frozenProductionCard.production?.supplement,
+              frozenProductionCard.status === 'review' ? onFrozenProductionContentRatingChange : undefined)}
             {frozenProductionCard.status === 'review' ? (
               <SessionActionSection>
-                <button
-                  type="button"
-                  className="secondary-button"
-                  onClick={onToggleFrozenProductionLearnerRequestedReview}
-                  disabled={personalNotesEditorOpen}
+                <ReflectionRequestButton
+                  key={frozenProductionCard.sessionActionId}
+                  requested={frozenProductionLearnerRequestedReview}
+                  onToggle={onToggleFrozenProductionLearnerRequestedReview}
+                  disabled={personalNotesEditorOpen || sessionInteractionPending || studyManagementSubmitting}
                 >
-                  {frozenProductionLearnerRequestedReview ? 'Remove reflection request' : 'Ask reflection to review'}
-                </button>
+                  <ShortcutHint shortcut="R" />
+                </ReflectionRequestButton>
                 <FrozenProductionCardActions
-                  isSubmitting={studyManagementSubmitting}
+                  isSubmitting={studyManagementSubmitting || contentRatingSaving}
                   onDismissFrozenProductionWord={onDismissFrozenProductionWord}
                   onManageFrozenProductionAction={onManageFrozenProductionAction}
                 />
@@ -330,7 +518,62 @@ export function StudySessionPanel({
               </button>
               <KeyboardGuideButton onClick={onOpenShortcutGuide} />
             </SessionActionSection>
+          </div>)}
+        </div>
+      ) : panelView === 'frozen_pure_cue' && frozenPureCueCard ? (
+        <div className="review-card session-card-shell">
+          <div className="session-card-scroll">
+            <div className="review-card-header">
+              <p className="badge">Review · Pure cue production</p>
+            </div>
+            <p className="notes desk-legacy-counts">
+              Answered {frozenPureCueCard.reviewedCount} this session · {frozenPureCueCard.queuedCount} still queued
+            </p>
+            <div className="prompt-block">
+              <span className="prompt-label">Cue</span>
+              <strong className="prompt-value">{sentenceText(frozenPureCueCard.item.snapshot.stimulus)}</strong>
+              {frozenPureCueCard.item.snapshot.teachingNote ? (
+                <span className="prompt-meta">{sentenceText(frozenPureCueCard.item.snapshot.teachingNote)}</span>
+              ) : null}
+            </div>
+            <div className="answer-block">
+              <span className="prompt-label">Accepted answers</span>
+              {frozenPureCueCard.item.snapshot.acceptedAnswers.map((answer) => (
+                <AcceptedCharacterAnswer
+                  key={answer.wordId}
+                  answer={answer}
+                  presentation={characterPresentation}
+                />
+              ))}
+            </div>
+            {frozenPureCueCard.attemptedResponse ? (
+              <p className="notes">Your response: {frozenPureCueCard.attemptedResponse}</p>
+            ) : null}
           </div>
+          {completionGate ? (
+            completionActions
+          ) : (<div className="session-action-bar">
+            <SessionActionSection>
+              <button type="button" className={confirmingSessionAction ? 'is-confirming-action' : undefined} onClick={onContinueAfterAutoForgot} disabled={personalNotesEditorOpen || sessionInteractionPending || studyManagementSubmitting}>
+                Continue
+                <ShortcutHint shortcut={shortcutFor(primaryAction, 'continue_after_auto_forgot')} />
+              </button>
+              <UndoButton
+                hasUndo={hasUndo}
+                submittingRating={submittingRating} contentRatingSaving={contentRatingSaving} transitionPending={confirmingSessionAction}
+                personalNotesEditorOpen={personalNotesEditorOpen}
+                onUndoLastRating={onUndoLastRating}
+              />
+            </SessionActionSection>
+            {qualityControls({ kind: 'pure_cue', snapshotId: frozenPureCueCard.item.snapshot.snapshotId },
+              frozenPureCueCard.item.sessionActionId, frozenPureCueCard.reviewedCount, 'Cue quality')}
+            <SessionActionSection>
+              <button type="button" className="secondary-button" onClick={onEndSession} disabled={sessionEndDisabled}>
+                {sessionEndLabel}
+              </button>
+              <KeyboardGuideButton onClick={onOpenShortcutGuide} />
+            </SessionActionSection>
+          </div>)}
         </div>
       ) : panelView === 'frozen_contrast' && frozenContrastCard ? (
         <div className="review-card session-card-shell">
@@ -338,78 +581,66 @@ export function StudySessionPanel({
             <div className="review-card-header">
               <p className="badge">Review · Contrast selection</p>
             </div>
-            <p className="notes">
+            <p className="notes desk-legacy-counts">
               Answered {frozenContrastCard.reviewedCount} this session · {frozenContrastCard.queuedCount} still queued
             </p>
             <div className="prompt-block">
-              <span className="prompt-label">Prompt</span>
-              <strong className="contrast-prompt-text">{frozenContrastCard.item.contrastSelection?.prompt.promptText}</strong>
+              <strong className="contrast-prompt-text">{sentenceText(frozenContrastCard.item.contrastSelection?.prompt.promptText ?? '')}</strong>
             </div>
             <ContrastSelectionDrill
               item={frozenContrastCard.item}
               selectedWordId={frozenContrastCard.selectedWordId}
               answerRevealed={true}
               disabled={true}
+              characterPresentation={characterPresentation}
+              sentenceCharacterPresentation={sentenceScript}
               onSelectChoice={() => undefined}
             />
-            <p className="notes">Incorrect contrast choice. This item was recorded as Forgot.</p>
           </div>
-          <div className="session-action-bar">
+          {completionGate ? (
+            completionActions
+          ) : (<div className="session-action-bar">
             <SessionActionSection>
-              <button type="button" onClick={onContinueAfterAutoContrastForgot} disabled={personalNotesEditorOpen}>
-                Next
+              <button type="button" className={confirmingSessionAction ? 'is-confirming-action' : undefined} onClick={onContinueAfterAutoContrastForgot} disabled={personalNotesEditorOpen || sessionInteractionPending || studyManagementSubmitting}>
+                Continue
                 <ShortcutHint shortcut={shortcutFor(primaryAction, 'continue_after_auto_forgot')} />
               </button>
               <UndoButton
                 hasUndo={hasUndo}
-                submittingRating={submittingRating}
+                submittingRating={submittingRating} contentRatingSaving={contentRatingSaving} transitionPending={confirmingSessionAction}
                 personalNotesEditorOpen={personalNotesEditorOpen}
                 onUndoLastRating={onUndoLastRating}
               />
             </SessionActionSection>
+            {qualityControls(getSessionContentQualityTarget(frozenContrastCard.item),
+              frozenContrastCard.item.sessionActionId, frozenContrastCard.reviewedCount, 'Cue quality')}
             <SessionActionSection>
               <button type="button" className="secondary-button" onClick={onEndSession} disabled={sessionEndDisabled}>
                 {sessionEndLabel}
               </button>
               <KeyboardGuideButton onClick={onOpenShortcutGuide} />
             </SessionActionSection>
-          </div>
+          </div>)}
         </div>
       ) : panelView === 'completed' && sessionSummary ? (
         <div className="review-card session-card-shell">
           <div className="session-card-scroll">
-            <SessionSummaryPanel
-              summary={sessionSummary}
-              finalization={sessionFinalization}
-              onRetryReflection={onRetrySessionReflection}
-            />
+            {sessionFinalization.kind === 'finalized' ? (
+              <SessionSummaryPanel summary={sessionSummary} finalization={sessionFinalization}
+                onRetryReflection={onRetrySessionReflection} characterPresentation={characterPresentation} />
+            ) : <p>Your session is ready to finish.</p>}
           </div>
-          <div className="session-action-bar">
-            <SessionActionSection>
-              <button
-                type="button"
-                onClick={onEndSession}
-                disabled={sessionFinalization.kind === 'finalizing'}
-              >
-                {sessionFinalization.kind === 'finalized'
-                  ? 'Close summary'
-                  : sessionFinalization.kind === 'finalizing'
-                    ? 'Finishing...'
-                    : 'Finish session'}
-                <ShortcutHint
-                  shortcut={shortcutFor(primaryAction, 'finish_session')
-                    ?? shortcutFor(primaryAction, 'close_summary')}
-                />
-              </button>
-              <KeyboardGuideButton onClick={onOpenShortcutGuide} />
-              <UndoButton
-                hasUndo={hasUndo && sessionFinalization.kind === 'unfinalized'}
-                submittingRating={submittingRating}
-                personalNotesEditorOpen={personalNotesEditorOpen}
-                onUndoLastRating={onUndoLastRating}
-              />
-            </SessionActionSection>
-          </div>
+          {sessionFinalization.kind !== 'finalized' ? completionActions : (
+            <div className="session-action-bar">
+              <SessionActionSection>
+                <button type="button" onClick={onEndSession}>
+                  Close summary
+                  <ShortcutHint shortcut={shortcutFor(primaryAction, 'close_summary')} />
+                </button>
+                <KeyboardGuideButton onClick={onOpenShortcutGuide} />
+              </SessionActionSection>
+            </div>
+          )}
         </div>
       ) : panelView === 'unstudied_intro' && activeWord ? (
         <div className="review-card session-card-shell">
@@ -419,28 +650,30 @@ export function StudySessionPanel({
             </div>
             <div className="prompt-block">
               <span className="prompt-label">{studyProfile.labels.target}</span>
-              <strong className="prompt-value">{activeWord.hanzi}</strong>
+              <strong className="prompt-value">{formatCardCharacters(activeWord, characterPresentation)}</strong>
               <span className="prompt-meta">{activeWord.pinyin}</span>
-              <MeaningList meanings={activeAllMeanings} />
-              <span className="prompt-meta">{activeWord.examples[0]}</span>
+              <MeaningList meanings={activeAllMeanings.map(sentenceText)} />
+              <span className="prompt-meta">{sentenceText(activeWord.examples[0] ?? '')}</span>
               {activeWordPersonalNotes.trim().length > 0 ? (
                 <span className="prompt-meta">Notes: {activeWordPersonalNotes}</span>
               ) : null}
             </div>
           </div>
-          <div className="session-action-bar">
+          {completionGate ? (
+            completionActions
+          ) : (<div className="session-action-bar">
             <SessionActionSection>
               <button
                 type="button"
                 onClick={() => onBeginUnstudiedDrill(activeWord.id)}
-                disabled={personalNotesEditorOpen}
+                disabled={personalNotesEditorOpen || sessionInteractionPending || studyManagementSubmitting}
               >
                 Begin recall drills
                 <ShortcutHint shortcut={shortcutFor(primaryAction, 'begin_unstudied_drill')} />
               </button>
               <UndoButton
                 hasUndo={hasUndo}
-                submittingRating={submittingRating}
+                submittingRating={submittingRating} contentRatingSaving={contentRatingSaving} transitionPending={confirmingSessionAction}
                 personalNotesEditorOpen={personalNotesEditorOpen}
                 onUndoLastRating={onUndoLastRating}
               />
@@ -450,7 +683,7 @@ export function StudySessionPanel({
                 activeItem={null}
                 activeWord={activeWord}
                 personalNotesEditorSaving={personalNotesEditorSaving}
-                studyManagementSubmitting={studyManagementSubmitting}
+                studyManagementSubmitting={studyManagementSubmitting || sessionInteractionPending}
                 onDismissCurrentWord={onDismissCurrentWord}
                 onManageStudyAction={onManageStudyAction}
                 onOpenPersonalNotesEditor={onOpenPersonalNotesEditor}
@@ -462,18 +695,147 @@ export function StudySessionPanel({
               </button>
               <KeyboardGuideButton onClick={onOpenShortcutGuide} />
             </SessionActionSection>
+          </div>)}
+        </div>
+      ) : activePureCue ? (
+        <div className="review-card session-card-shell">
+          <div className="session-card-scroll">
+            <div className="review-card-header">
+              <p className="badge">
+                {reviewInReinforcement ? 'Review reinforcement' : 'Review'} · Pure cue production
+              </p>
+            </div>
+            <p className="notes desk-legacy-counts">
+              Answered {reviewedCount} this session · {queuedCount} still queued · Elapsed {activeElapsedTime}
+            </p>
+            <div className="prompt-block">
+              <span className="prompt-label">Cue</span>
+              <strong className="prompt-value">{sentenceText(activePureCue.snapshot.stimulus)}</strong>
+              {reviewInReinforcement ? <RecallChips
+                count={getDisplayedReinforcementStreak({
+                  completionGate,
+                  activeReinforcementStreak: activePureCueReinforcementStreak,
+                  completedReinforcementStreak,
+                })}
+                label="Practice again"
+              /> : null}
+            </div>
+            {answerRevealed ? (
+              <div className="answer-block">
+                <span className="prompt-label">Accepted answers</span>
+                {activePureCue.snapshot.acceptedAnswers.map((answer) => (
+                  <AcceptedCharacterAnswer
+                    key={answer.wordId}
+                    answer={answer}
+                    presentation={characterPresentation}
+                  />
+                ))}
+                {activePureCue.snapshot.teachingNote ? (
+                  <span className="prompt-meta">{sentenceText(activePureCue.snapshot.teachingNote)}</span>
+                ) : null}
+              </div>
+            ) : (
+              <form
+                id={productionFormId}
+                className="stack"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  if (!completionGate) onSubmitProductionHanzi();
+                }}
+              >
+                <label className="prompt-label" htmlFor="production-hanzi-input">
+                  {studyProfile.labels.productionInput}
+                </label>
+                <input
+                  ref={productionHanziInputRef}
+                  id="production-hanzi-input"
+                  type="text"
+                  value={productionHanziInput}
+                  onChange={(event) => onProductionHanziInputChange(event.target.value)}
+                  onKeyDown={preventNoClueImplicitSubmit}
+                  autoComplete="off"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  disabled={completionGate || sessionInteractionPending || personalNotesEditorOpen || studyManagementSubmitting}
+                />
+                {productionHanziError ? <p className="notes">{productionHanziError}</p> : null}
+              </form>
+            )}
           </div>
+          {completionGate ? (
+            completionActions
+          ) : (<div className="session-action-bar">
+            <SessionActionSection>
+              {showRatingButtons ? (
+                <div className="rating-grid">
+                  {activeRatingOptions.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      className={`rating-button${(submittingRating === null ? option.isDefault : submittingRating === option.value) ? ' is-highlighted' : ''}${submittingRating === option.value ? ' is-submitting is-confirming-action' : ''}`}
+                      title={option.note}
+                      onClick={() => onRate(option.value, { restoreUi: 'production-input' })}
+                      disabled={completionGate || sessionInteractionPending || personalNotesEditorOpen || studyManagementSubmitting}
+                    >
+                      <strong>
+                        {option.label}
+                        <ShortcutHint shortcuts={[option.isDefault ? 'Space' : null, option.shortcutKey]} />
+                      </strong>
+                      <span>{option.note}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="rating-grid">
+                  <button
+                    type="submit"
+                    form={productionFormId}
+                    disabled={completionGate || sessionInteractionPending || personalNotesEditorOpen || studyManagementSubmitting}
+                  >
+                    {studyProfile.labels.submitProductionInput}
+                    <ShortcutHint shortcut={shortcutFor(primaryAction, 'submit_production')} />
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={onNoClueProduction}
+                    aria-keyshortcuts="Shift+Enter"
+                    disabled={sessionInteractionPending || personalNotesEditorOpen || studyManagementSubmitting || productionHanziInput.trim().length > 0}
+                  >
+                    No clue<ShortcutHint shortcut="Shift+Enter" />
+                  </button>
+                </div>
+              )}
+              {skipReinforcementButton}
+              <UndoButton
+                hasUndo={hasUndo}
+                submittingRating={submittingRating} contentRatingSaving={contentRatingSaving} transitionPending={confirmingSessionAction}
+                personalNotesEditorOpen={personalNotesEditorOpen}
+                onUndoLastRating={onUndoLastRating}
+              />
+            </SessionActionSection>
+            {qualityControls({ kind: 'pure_cue', snapshotId: activePureCue.snapshot.snapshotId },
+              activePureCue.sessionActionId, reviewedCount, 'Cue quality')}
+            <SessionActionSection>
+              <button type="button" className="secondary-button" onClick={onEndSession} disabled={sessionEndDisabled}>
+                {sessionEndLabel}
+              </button>
+              <KeyboardGuideButton onClick={onOpenShortcutGuide} />
+            </SessionActionSection>
+          </div>)}
         </div>
       ) : panelView === 'empty' ? (
         <div className="review-card session-card-shell">
           <div className="session-card-scroll">
             <p className="notes">No session items remain in the active snapshot.</p>
           </div>
-          <div className="session-action-bar">
+          {completionGate ? (
+            completionActions
+          ) : (<div className="session-action-bar">
             <SessionActionSection>
               <UndoButton
                 hasUndo={hasUndo}
-                submittingRating={submittingRating}
+                submittingRating={submittingRating} contentRatingSaving={contentRatingSaving} transitionPending={confirmingSessionAction}
                 personalNotesEditorOpen={personalNotesEditorOpen}
                 onUndoLastRating={onUndoLastRating}
               />
@@ -482,22 +844,15 @@ export function StudySessionPanel({
               </button>
               <KeyboardGuideButton onClick={onOpenShortcutGuide} />
             </SessionActionSection>
-          </div>
+          </div>)}
         </div>
       ) : activeItem && activeWord ? (
-        <div className="review-card session-card-shell">
+        <div className={`review-card session-card-shell ${studyStageCardClass(activeWord.status)}`}>
           <div className="session-card-scroll">
             <div className="review-card-header">
               <p className="badge">
-                {sessionPhase === 'draining'
-                  ? 'Draining'
-                  : activeWord.status === 'review'
-                    ? reviewInReinforcement
-                      ? 'Review reinforcement'
-                      : 'Review'
-                    : activeWord.status === 'learning'
-                      ? 'Learning'
-                      : 'New word'}
+                <StudyStageBadge status={activeWord.status} reinforcement={reviewInReinforcement} />
+                {sessionPhase === 'draining' ? ' · Draining' : null}
                 {' · '}
                 {activeItem.actionKind === 'recognition'
                   ? studyProfile.labels.recognitionDirection
@@ -506,58 +861,82 @@ export function StudySessionPanel({
                   : studyProfile.labels.productionDirection}
               </p>
             </div>
-            <p className="notes">
+            <p className="notes desk-legacy-counts">
               Answered {reviewedCount} this session · {queuedCount} still queued · Unique lapse items{' '}
               {sessionSummary?.lapsedReviewActionIds.length ?? 0} · Elapsed {activeElapsedTime}
             </p>
             <div className={showProductionSupplementAside ? 'prompt-block is-compact' : 'prompt-block'}>
-              <span className="prompt-label">Prompt</span>
               {activeItem.actionKind === 'contrast_selection' ? (
                 <>
-                  <strong className="contrast-prompt-text">{activePrompt}</strong>
+                  <strong className="contrast-prompt-text">{sentenceText(activePrompt ?? '')}</strong>
                 </>
               ) : activeItem.actionKind === 'recognition' ? (
-                <strong className="prompt-value">{activePrompt}</strong>
-              ) : activeItem.production ? (
-                <strong className="prompt-value">{activePrompt}</strong>
+                <strong className="prompt-value recognition-prompt">{activePrompt}</strong>
+              ) : activeItem.production || activeItem.rehearsal ? (
+                <strong className="prompt-value"><ClozePrompt text={activePrompt ?? ''} answer={answerRevealed ? formatSentenceAnswer(activeWord, sentenceScript) : null} contextAnswer={formatSentenceAnswer(activeWord, sentenceScript)} sentenceCharacterPresentation={sentenceScript} /></strong>
               ) : activePromptDisplayedMeanings.length > 0 ? (
-                <MeaningList meanings={activePromptDisplayedMeanings} className="meaning-list-prompt" />
+                <MeaningList meanings={activePromptDisplayedMeanings.map(sentenceText)} className="meaning-list-prompt" />
               ) : (
                 <span className="prompt-meta meaning-list-prompt">No production meanings selected</span>
               )}
-              <span className="prompt-meta">
-                {activeWord.status === 'review'
-                  ? `${activeReviewState} · Failures ${activeReviewProgress?.failureCount ?? 0}`
-                  : activeWord.status === 'learning'
-                    ? `Binary recall · Covered ${Number(activeLearningProgress?.coveredDirections.forward ?? false) + Number(activeLearningProgress?.coveredDirections.reverse ?? false)}/2 skills`
-                    : `Binary recall · Consecutive successes ${activeUnstudiedProgress?.consecutiveSuccesses.forward ?? 0}/3 recognition · ${activeUnstudiedProgress?.consecutiveSuccesses.reverse ?? 0}/3 production`}
-              </span>
+              {activeWord.status === 'unstudied' ? <RecallChips
+                count={activeUnstudiedProgress?.consecutiveSuccesses[activeItem.actionKind === 'recognition' ? 'forward' : 'reverse'] ?? 0}
+                label={activeItem.actionKind === 'recognition' ? 'Recognition' : 'Production'}
+              /> : activeWord.status === 'learning' ? <RecallChips total={2}
+                count={Number(activeLearningProgress?.coveredDirections.forward ?? false) + Number(activeLearningProgress?.coveredDirections.reverse ?? false)} label="Recall skills"
+              /> : reviewInReinforcement ? <RecallChips
+                count={getDisplayedReinforcementStreak({
+                  completionGate,
+                  activeReinforcementStreak: activeReviewProgress?.reinforcementStreak ?? 0,
+                  completedReinforcementStreak,
+                })}
+                label="Practice again"
+              /> : null}
             </div>
             {activeItem.actionKind === 'contrast_selection' ? (
               <ContrastSelectionDrill
                 item={activeItem}
                 selectedWordId={contrastSelectedWordId}
                 answerRevealed={answerRevealed}
-                disabled={submittingRating !== null || personalNotesEditorOpen}
+                disabled={completionGate || sessionInteractionPending || personalNotesEditorOpen || studyManagementSubmitting}
+                characterPresentation={characterPresentation}
+                sentenceCharacterPresentation={sentenceScript}
                 onSelectChoice={onSelectContrastChoice}
               />
             ) : answerRevealed ? (
               <div className="answer-block">
-                {showProductionSupplementAside && activeItem.production?.supplement ? (
+                {activeBootstrapReveal ? (
                   <>
-                    <p className="production-supplement-ack">You had it.</p>
+                    {isProductionItem ? <strong className="production-supplement-target">{activeAnswerText}</strong> : null}
+                    <span className="answer-pinyin">{activeAnswerPinyin}</span>
+                    <BootstrapSourceReveal reveal={activeBootstrapReveal} sentenceCharacterPresentation={sentenceScript} />
+                  </>
+                ) : showProductionSupplementAside && activeItem.production?.supplement ? (
+                  <>
                     <strong className="production-supplement-target">{activeAnswerText}</strong>
                     <span className="answer-pinyin">{activeAnswerPinyin}</span>
-                    <ProductionSupplementAside supplement={activeItem.production.supplement} />
+                    <ProductionSupplementAside supplement={activeItem.production.supplement} sentenceCharacterPresentation={sentenceScript} />
+                    {qualityControls({ kind: 'supplement', id: activeItem.production.supplement.supplementId },
+                      activeItem.sessionActionId, reviewedCount, 'Supplement quality')}
                   </>
                 ) : (
                   <>
                     <span className="prompt-label">Answer</span>
                     <span className="answer-pinyin">{activeAnswerPinyin}</span>
-                    <strong className="answer-value">{activeAnswerText}</strong>
+                    <strong className="answer-value">{activeItem.actionKind === 'recognition' ? sentenceText(activeAnswerText ?? '') : activeAnswerText}</strong>
                   </>
                 )}
-                {productionAwaitingSupplement ? null : activeMeaningRows.length > 0 ? (
+                {!productionAwaitingSupplement || activeBootstrapReveal ? <details key={activeItem.sessionActionId} className="desk-reference" open={activeBootstrapReveal ? undefined : (!isProductionItem || activeWord.status !== 'review' || undefined)}>
+                  <summary>Word reference</summary>
+                {activeItem.wordContent ? (
+                  <WordSourceExamples content={activeItem.wordContent} sentenceCharacterPresentation={sentenceScript} />
+                ) : activeItem.actionKind === 'recognition' && activeItem.recognitionSupplement ? (
+                  <>
+                    <ProductionSupplementAside supplement={activeItem.recognitionSupplement} sentenceCharacterPresentation={sentenceScript} />
+                    {qualityControls({ kind: 'supplement', id: activeItem.recognitionSupplement.supplementId },
+                      activeItem.sessionActionId, reviewedCount, 'Supplement quality')}
+                  </>
+                ) : activeMeaningRows.length > 0 ? (
                   <div className="stack">
                     <div className="meaning-visibility-grid">
                       <div className="meaning-visibility-header">
@@ -566,12 +945,12 @@ export function StudySessionPanel({
                       </div>
                       {activeMeaningRows.map((meaning) => (
                         <div key={meaning.id} className="meaning-visibility-row">
-                          <span className="prompt-meta">{meaning.text}</span>
+                          <span className="prompt-meta">{sentenceText(meaning.text)}</span>
                           <button
                             type="button"
                             className={`meaning-toggle-icon-button ${meaning.showOnProductionPrompt ? 'is-on' : 'is-off'}`}
                             onClick={() => onToggleMeaningVisibility(meaning)}
-                            disabled={meaningVisibilitySavingKey === meaning.id}
+                            disabled={completionGate || meaningVisibilitySavingKey === meaning.id}
                             aria-label={
                               meaning.showOnProductionPrompt
                                 ? `Hide "${meaning.text}" from production prompt`
@@ -592,7 +971,7 @@ export function StudySessionPanel({
                     </div>
                   </div>
                 ) : (
-                  <MeaningList meanings={activeAllMeanings} />
+                  <MeaningList meanings={activeAllMeanings.map(sentenceText)} />
                 )}
                 {productionAwaitingSupplement ? null : activeWordPersonalNotes.trim().length > 0 ? (
                   <span className="prompt-meta">Notes: {activeWordPersonalNotes}</span>
@@ -602,9 +981,10 @@ export function StudySessionPanel({
                     <span className="prompt-meta">
                       Interval {formatIntervalHours(activeItem.intervalHours)}
                     </span>
-                    <span className="prompt-meta">{activeWord.examples[0]}</span>
+                    {!activeItem.wordContent && !activeItem.recognitionSupplement && <span className="prompt-meta">{sentenceText(activeWord.examples[0] ?? '')}</span>}
                   </>
                 )}
+                </details> : null}
               </div>
             ) : isProductionItem && !productionAwaitingRating ? (
               <form
@@ -612,7 +992,7 @@ export function StudySessionPanel({
                 className="stack"
                 onSubmit={(event) => {
                   event.preventDefault();
-                  onSubmitProductionHanzi();
+                  if (!completionGate) onSubmitProductionHanzi();
                 }}
               >
                 <label className="prompt-label" htmlFor="production-hanzi-input">
@@ -624,24 +1004,22 @@ export function StudySessionPanel({
                   type="text"
                   value={productionHanziInput}
                   onChange={(event) => onProductionHanziInputChange(event.target.value)}
+                  onKeyDown={preventNoClueImplicitSubmit}
                   autoComplete="off"
                   autoCapitalize="none"
                   spellCheck={false}
-                  disabled={submittingRating !== null || personalNotesEditorOpen}
+                  disabled={completionGate || sessionInteractionPending || personalNotesEditorOpen || studyManagementSubmitting}
                 />
                 {productionHanziError ? <p className="notes">{productionHanziError}</p> : null}
               </form>
             ) : null}
           </div>
-          <div className="session-action-bar">
+          {completionGate ? (
+            completionActions
+          ) : (<div className="session-action-bar">
             <SessionActionSection>
               {activeItem.actionKind === 'contrast_selection' && !showRatingButtons ? (
                 <div className="rating-grid">
-                  <p className="prompt-meta session-action-hint">
-                    {contrastSelectedWordId
-                      ? 'Confirm the selected choice to continue.'
-                      : 'Press 1 or 2 to preview a choice, then confirm. Clicking a choice confirms it immediately.'}
-                  </p>
                   <button
                     type="button"
                     onClick={() => {
@@ -651,7 +1029,7 @@ export function StudySessionPanel({
                     }}
                     disabled={
                       contrastSelectedWordId === null
-                      || submittingRating !== null
+                      || sessionInteractionPending
                       || personalNotesEditorOpen
                     }
                   >
@@ -662,8 +1040,9 @@ export function StudySessionPanel({
               ) : productionAwaitingSupplement ? (
                 <button
                   type="button"
+                  className={confirmingSessionAction ? 'is-confirming-action' : undefined}
                   onClick={onContinueAfterProductionSupplement}
-                  disabled={personalNotesEditorOpen}
+                  disabled={personalNotesEditorOpen || sessionInteractionPending || studyManagementSubmitting}
                 >
                   Continue
                   <ShortcutHint shortcut={shortcutFor(primaryAction, 'continue_after_supplement')} />
@@ -674,18 +1053,18 @@ export function StudySessionPanel({
                     <button
                     key={option.value}
                     type="button"
-                    className={option.isDefault ? 'rating-button is-default' : 'rating-button'}
+                    className={`rating-button${(submittingRating === null ? option.isDefault : submittingRating === option.value) ? ' is-highlighted' : ''}${submittingRating === option.value ? ' is-submitting is-confirming-action' : ''}`}
                     title={option.note}
                     onClick={() =>
                         onRate(option.value, {
                           restoreUi: isProductionItem ? 'production-input' : 'revealed',
                         })
                       }
-                      disabled={submittingRating !== null || personalNotesEditorOpen}
+                      disabled={completionGate || sessionInteractionPending || personalNotesEditorOpen || studyManagementSubmitting}
                     >
                       <strong>
                         {option.label}
-                        <ShortcutHint shortcuts={[option.shortcutKey, option.isDefault ? 'Space' : null]} />
+                        <ShortcutHint shortcuts={[option.isDefault ? 'Space' : null, option.shortcutKey]} />
                       </strong>
                       <span>{option.note}</span>
                     </button>
@@ -696,7 +1075,7 @@ export function StudySessionPanel({
                   <button
                     type="submit"
                     form={productionFormId}
-                    disabled={submittingRating !== null || personalNotesEditorOpen}
+                    disabled={completionGate || sessionInteractionPending || personalNotesEditorOpen || studyManagementSubmitting}
                   >
                     {studyProfile.labels.submitProductionInput}
                     <ShortcutHint shortcut={shortcutFor(primaryAction, 'submit_production')} />
@@ -705,44 +1084,50 @@ export function StudySessionPanel({
                     type="button"
                     className="secondary-button"
                     onClick={onNoClueProduction}
+                    aria-keyshortcuts="Shift+Enter"
                     disabled={
-                      submittingRating !== null
+                      sessionInteractionPending
                       || personalNotesEditorOpen
+                      || studyManagementSubmitting
                       || productionHanziInput.trim().length > 0
                     }
                   >
-                    No clue
+                    No clue<ShortcutHint shortcut="Shift+Enter" />
                   </button>
                 </div>
               ) : (
-                <button type="button" onClick={onRevealAnswer} disabled={personalNotesEditorOpen}>
+                <button type="button" className={confirmingSessionAction ? 'is-confirming-action' : undefined} onClick={onRevealAnswer} disabled={personalNotesEditorOpen || sessionInteractionPending || studyManagementSubmitting}>
                   Reveal answer
                   <ShortcutHint shortcut={shortcutFor(primaryAction, 'reveal')} />
                 </button>
               )}
+              {skipReinforcementButton}
               <UndoButton
                 hasUndo={hasUndo}
-                submittingRating={submittingRating}
+                submittingRating={submittingRating} contentRatingSaving={contentRatingSaving} transitionPending={confirmingSessionAction}
                 personalNotesEditorOpen={personalNotesEditorOpen}
                 onUndoLastRating={onUndoLastRating}
               />
             </SessionActionSection>
+            {qualityControls(getSessionContentQualityTarget(activeItem, { wordId: activeItem.targetWordId, displayedMeanings: activePromptDisplayedMeanings }), activeItem.sessionActionId, reviewedCount,
+              activeItem.rehearsal ? 'Practice quality' : 'Cue quality', !!activeBootstrapReveal || !showProductionSupplementAside,
+              activeItem.actionKind === 'production' && activeWord.status === 'review' ? onContentRatingChange : undefined)}
             <SessionActionSection>
               {activeItem.actionKind === 'production' && activeWord.status === 'review' ? (
-                <button
-                  type="button"
-                  className="secondary-button"
-                  onClick={onToggleLearnerRequestedReview}
-                  disabled={personalNotesEditorOpen}
+                <ReflectionRequestButton
+                  key={activeItem.sessionActionId}
+                  requested={learnerRequestedReview}
+                  onToggle={onToggleLearnerRequestedReview}
+                  disabled={personalNotesEditorOpen || sessionInteractionPending || studyManagementSubmitting}
                 >
-                  {learnerRequestedReview ? 'Remove reflection request' : 'Ask reflection to review'}
-                </button>
+                  <ShortcutHint shortcut="R" />
+                </ReflectionRequestButton>
               ) : null}
               <CardActions
                 activeItem={activeItem}
                 activeWord={activeWord}
                 personalNotesEditorSaving={personalNotesEditorSaving}
-                studyManagementSubmitting={studyManagementSubmitting}
+                studyManagementSubmitting={studyManagementSubmitting || sessionInteractionPending}
                 onDismissCurrentWord={onDismissCurrentWord}
                 onManageStudyAction={onManageStudyAction}
                 onOpenPersonalNotesEditor={onOpenPersonalNotesEditor}
@@ -754,9 +1139,10 @@ export function StudySessionPanel({
               </button>
               <KeyboardGuideButton onClick={onOpenShortcutGuide} />
             </SessionActionSection>
-          </div>
+          </div>)}
         </div>
         ) : null}
+        </SessionDesk>
       </div>
       {shortcutGuideOpen ? (
         <KeyboardShortcutsOverlay
@@ -825,9 +1211,11 @@ function KeyboardShortcutsOverlay({
             onClick={onClose}
           >
             Close
-            <ShortcutHint shortcut="Escape" persist />
+            <ShortcutHint shortcut="Escape" />
           </button>
         </div>
+        <p className="notes">Content quality: [ thumbs down · ] thumbs up. Press the selected vote again to clear it.
+          When a supplement is shown, these keys rate the supplement. Shortcuts pause while typing.</p>
         {sections.map((section) => (
           <section key={section.title} className="keyboard-shortcuts-section">
             <h4 className="keyboard-shortcuts-section-title">{section.title}</h4>
@@ -852,19 +1240,38 @@ function KeyboardShortcutsOverlay({
   );
 }
 
+function AcceptedCharacterAnswer({
+  answer,
+  presentation,
+}: {
+  answer: { wordId: string; hanzi: string; traditional: string | null };
+  presentation: CharacterPresentation;
+}) {
+  return (
+    <strong className="answer-value">
+      {formatCardCharacters(answer, presentation)}
+    </strong>
+  );
+}
+
 function ContrastSelectionDrill({
   item,
   selectedWordId,
   answerRevealed,
   disabled,
+  characterPresentation,
+  sentenceCharacterPresentation,
   onSelectChoice,
 }: {
   item: SessionStudyItem;
   selectedWordId: string | null;
   answerRevealed: boolean;
   disabled: boolean;
+  characterPresentation: CharacterPresentation;
+  sentenceCharacterPresentation: SentenceCharacterPresentation;
   onSelectChoice: (wordId: string) => void;
 }) {
+  const sentenceText = (text: string) => convertSentenceCharacters(text, sentenceCharacterPresentation);
   const contrastSelection = item.contrastSelection;
   if (!contrastSelection) {
     return <p className="notes">Contrast content is unavailable for this item.</p>;
@@ -897,7 +1304,7 @@ function ContrastSelectionDrill({
               disabled={disabled || answerRevealed}
             >
               <span className="contrast-choice-index" aria-hidden="true">{index + 1}</span>
-              <strong>{choice.word.hanzi}</strong>
+              <strong>{formatCardCharacters(choice.word, characterPresentation)}</strong>
             </button>
           );
         })}
@@ -907,24 +1314,24 @@ function ContrastSelectionDrill({
           <span className="prompt-label">{selectedCorrect ? 'Correct' : 'Answer'}</span>
           {selectedChoice ? (
             <span className="prompt-meta">
-              You chose {selectedChoice.word.hanzi}.
+              You chose {formatCardCharacters(selectedChoice.word, characterPresentation)}.
             </span>
           ) : null}
           {targetChoice ? (
             <>
               <span className="answer-pinyin">{targetChoice.word.pinyin}</span>
-              <strong className="answer-value">{targetChoice.word.hanzi}</strong>
-              <MeaningList meanings={targetChoice.word.meanings.length > 0 ? targetChoice.word.meanings : [targetChoice.word.meaning]} />
+              <strong className="answer-value">{formatCardCharacters(targetChoice.word, characterPresentation)}</strong>
+              <MeaningList meanings={(targetChoice.word.meanings.length > 0 ? targetChoice.word.meanings : [targetChoice.word.meaning]).map(sentenceText)} />
               {targetChoice.nuanceNote.trim().length > 0 ? (
-                <span className="prompt-meta">Nuance: {targetChoice.nuanceNote}</span>
+                <span className="prompt-meta">Nuance: {sentenceText(targetChoice.nuanceNote)}</span>
               ) : null}
             </>
           ) : null}
           {contrastSelection.prompt.explanation.trim().length > 0 ? (
-            <span className="prompt-meta">{contrastSelection.prompt.explanation}</span>
+            <span className="prompt-meta">{sentenceText(contrastSelection.prompt.explanation)}</span>
           ) : null}
           {contrastSelection.clusterNote.trim().length > 0 ? (
-            <span className="prompt-meta">{contrastSelection.clusterNote}</span>
+            <span className="prompt-meta">{sentenceText(contrastSelection.clusterNote)}</span>
           ) : null}
         </div>
       ) : null}
@@ -933,13 +1340,17 @@ function ContrastSelectionDrill({
 }
 
 function UndoButton({
+  transitionPending = false,
   hasUndo,
   submittingRating,
+  contentRatingSaving = false,
   personalNotesEditorOpen,
   onUndoLastRating,
 }: {
   hasUndo: boolean;
+  transitionPending?: boolean;
   submittingRating: ReviewRating | null;
+  contentRatingSaving?: boolean;
   personalNotesEditorOpen: boolean;
   onUndoLastRating: () => void;
 }) {
@@ -952,7 +1363,7 @@ function UndoButton({
       type="button"
       className="secondary-button"
       onClick={onUndoLastRating}
-      disabled={submittingRating !== null || personalNotesEditorOpen}
+      disabled={transitionPending || contentRatingSaving || submittingRating !== null || personalNotesEditorOpen}
       aria-label="Undo last rating"
     >
       Undo
@@ -1007,15 +1418,6 @@ function CardActions({
           }}
         />
       ) : null}
-      <button
-        type="button"
-        className="secondary-button"
-        onClick={onOpenPersonalNotesEditor}
-        disabled={personalNotesEditorSaving}
-      >
-        Edit notes
-        <ShortcutHint shortcut="E" />
-      </button>
     </div>
   );
 }
@@ -1104,20 +1506,15 @@ function ManageStudyPanel({
 function ShortcutHint({
   shortcut,
   shortcuts,
-  persist = false,
 }: {
   shortcut?: string | null;
   shortcuts?: Array<string | null | undefined>;
-  persist?: boolean;
 }) {
   const keys = (shortcuts ?? [shortcut]).filter((key): key is string => Boolean(key));
   if (keys.length === 0) {
     return null;
   }
 
-  if (persist) {
-    return <kbd className="session-shortcut-hint is-persistent">{keys[0]}</kbd>;
-  }
 
   return (
     <span className="session-shortcut-hints">
@@ -1135,25 +1532,12 @@ function shortcutFor(
   return primaryAction?.command === command ? primaryAction.shortcut : null;
 }
 
-function ProductionSupplementAside({
-  supplement,
-}: {
-  supplement: ProductionCueSupplementSnapshot;
-}) {
-  return (
-    <div className="production-supplement production-supplement-aside">
-      <p className="production-supplement-frame">{supplement.englishFrame}</p>
-      <p className="production-supplement-sentence">{`「${supplement.exampleSentence}」`}</p>
-      <p className="production-supplement-translation">{supplement.exampleTranslation}</p>
-    </div>
-  );
-}
-
 function createSessionKeyboardContext({
   sessionStarted,
   isProductionItem,
   answerRevealed,
   productionAwaitingNext,
+  pureCueAwaitingNext,
   productionAwaitingSupplement,
   personalNotesEditorOpen,
   contrastAwaitingNext,
@@ -1171,6 +1555,7 @@ function createSessionKeyboardContext({
   isProductionItem: boolean;
   answerRevealed: boolean;
   productionAwaitingNext: boolean;
+  pureCueAwaitingNext: boolean;
   productionAwaitingSupplement: boolean;
   personalNotesEditorOpen: boolean;
   contrastAwaitingNext: boolean;
@@ -1192,8 +1577,10 @@ function createSessionKeyboardContext({
       isProductionItem &&
       !answerRevealed &&
       !productionAwaitingNext &&
+      !pureCueAwaitingNext &&
       !personalNotesEditorOpen,
     productionAwaitingNext,
+    pureCueAwaitingNext,
     productionAwaitingSupplement,
     contrastAwaitingNext,
     unstudiedIntro,
@@ -1208,4 +1595,12 @@ function createSessionKeyboardContext({
     completedSummary,
     summaryFinalizationKind,
   };
+}
+
+// The document shortcut handler owns Shift+Enter. If unavailable, it must not
+// fall through to the answer form's native Enter submission.
+function preventNoClueImplicitSubmit(event: KeyboardEvent<HTMLInputElement>) {
+  if (event.key === 'Enter' && event.shiftKey && !isImeComposingEvent(event.nativeEvent)) {
+    event.preventDefault();
+  }
 }

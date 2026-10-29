@@ -60,6 +60,7 @@ export function createOperatorAllowlistMiddleware(options?: {
       });
       return;
     }
+    response.locals.operatorSubject = subject;
     next();
   };
 }

@@ -1,3 +1,5 @@
+import { CardInbox } from '../components/CardInbox';
+import type { PureCueReflectionItemV1 } from '../domain/pure-cue-reflection';
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
 import type {
   EffectRef,
@@ -12,8 +14,10 @@ import type {
   ReflectionQualityTag,
 } from '../domain/reflection';
 import { CURRENT_REFLECTION_PROMPT_VERSION } from '../domain/reflection';
+import { isCurrentReflectionArtifactContract, supportsReflectionSecondOpinionEvidence } from '../domain/reflection-contracts';
 import type { ReflectionModelChoice, ReflectionQualityStatsDto } from '../services/api';
 import { NestedNav } from '../components/AppChrome';
+import { ReflectionStageCompositionNotice } from '../features/reflection/ReflectionStageCompositionNotice';
 import { ReflectionOperationEditor } from '../features/reflection/ReflectionOperationEditor';
 import type { ReflectionPageController } from '../features/reflection/useReflectionPageController';
 import { qualityItemKey } from '../features/reflection/useReflectionPageController';
@@ -27,6 +31,7 @@ import {
   presentQualityStatsArms,
   REFLECTION_QUALITY_TAG_OPTIONS,
   legacyReflectionUnhandledNeeds,
+  isPromotionDisagreement,
   reflectionLearnerFeedback,
   cloneReflectionOperation,
   createManualOperation,
@@ -35,14 +40,13 @@ import {
   reflectionOperationLabel,
   formatRunDuration,
   visibleOutputTokens,
-  reflectionSpendCapTip,
   type NoDurableChangeReflectionGist,
   type ReflectionArtifactSummaryDto,
+  type ReflectionArtifactDetailDto,
   type ReflectionGenerationRunDto,
   type ReflectionProposalPresentation,
   type ReflectionProposalDetailDto,
   type ReflectionHelpCard,
-  type ReflectionSpendCapDto,
 } from '../features/reflection/reflection-page-model';
 
 type ReflectionRetryMenuOption = {
@@ -52,15 +56,15 @@ type ReflectionRetryMenuOption = {
   disabled?: boolean;
 };
 
-const LUNA_REFLECTION_MODEL_CHOICE: ReflectionModelChoice = 'openai:gpt-5.6-luna-high';
-
 const REFLECTION_HANDLE_OPTIONS = [
+  { value: 'request_word_bootstrap@1', label: 'Prepare word examples' },
   { value: 'suppress_definition_production@1', label: 'Suppress definition production' },
   { value: 'create_contrast_cluster@1', label: 'Create contrast cluster (v1)' },
   { value: 'create_contrast_cluster@2', label: 'Create contrast cluster (v2)' },
   { value: 'repair_production_cue@1', label: 'Repair production cue (v1)' },
   { value: 'repair_production_cue@2', label: 'Repair production cue (v2)' },
   { value: 'accept_production_alternate@1', label: 'Accept production alternate' },
+  { value: 'reconcile_production_cues@1', label: 'Reconcile production cues' },
 ] as const;
 
 // Keep `enabledByDefault` in sync with `server/reflection/model-arms.ts`.
@@ -71,27 +75,21 @@ const REFLECTION_RETRY_MODEL_OPTIONS: ReadonlyArray<Omit<ReflectionRetryMenuOpti
   enabledByDefault: boolean;
 }> = [
   { id: 'openai:gpt-5.6-luna-high', label: 'Luna high', model: 'openai:gpt-5.6-luna-high', enabledByDefault: true },
-  { id: 'zai:glm-5.3-flash-max', label: 'GLM-5.3 Flash max', model: 'zai:glm-5.3-flash-max', enabledByDefault: true },
+  { id: 'zai:glm-5.3-flash-max', label: 'GLM-5.3 Flash max', model: 'zai:glm-5.3-flash-max', enabledByDefault: false },
+  { id: 'zai:glm-5.3-flash-high', label: 'GLM-5.3 Flash high', model: 'zai:glm-5.3-flash-high', enabledByDefault: true },
   { id: 'openrouter:gemini-3.6-flash', label: 'Gemini 3.6 Flash', model: 'openrouter:gemini-3.6-flash', enabledByDefault: false },
-  { id: 'openai:gpt-5.6-terra-high', label: 'GPT-5.6 Terra high', model: 'openai:gpt-5.6-terra-high', enabledByDefault: true },
+  { id: 'openai:gpt-5.6-terra-high', label: 'GPT-5.6 Terra high', model: 'openai:gpt-5.6-terra-high', enabledByDefault: false },
+  { id: 'openai:gpt-6-sol-high', label: 'GPT-6 Sol high', model: 'openai:gpt-6-sol-high', enabledByDefault: true },
 ];
 
 const OFFERED_REFLECTION_MODEL_OPTIONS = REFLECTION_RETRY_MODEL_OPTIONS.filter(
   (option) => option.enabledByDefault,
 );
 
-const DEFAULT_SECOND_OPINION_MODEL: ReflectionModelChoice = 'openai:gpt-5.6-terra-high';
+const DEFAULT_SECOND_OPINION_MODEL: ReflectionModelChoice = 'openai:gpt-6-sol-high';
 
 function sourceModelIsCurrentlyAvailable(storedModel: string): boolean {
   return OFFERED_REFLECTION_MODEL_OPTIONS.some((option) => option.model.endsWith(`:${storedModel}`));
-}
-
-function isLunaOnlySpendCap(spendCap: ReflectionSpendCapDto | null): boolean {
-  return spendCap?.lunaOnly === true;
-}
-
-function storedModelMatchesChoice(storedModel: string, choice: ReflectionModelChoice): boolean {
-  return choice.endsWith(`:${storedModel}`);
 }
 
 type ReflectionView = 'help' | 'second-opinion' | 'sessions' | 'usage' | 'quality';
@@ -109,12 +107,19 @@ export function ReflectionsPage({
 }) {
   const [view, setView] = useState<ReflectionView>('help');
   const [showDeferredInHelp, setShowDeferredInHelp] = useState(false);
-  const helpCards = buildReflectionHelpCards(controller.artifactDetails);
-  const deferredCards = toDeferredHelpCards(
-    buildReflectionProposalPresentations(controller.artifactDetails),
-  );
+  const currentArtifacts = controller.artifactDetails.filter(isCurrentReflectionArtifactContract);
+  const helpCards = buildReflectionHelpCards(currentArtifacts);
+  const deferredCards: ReflectionHelpCard[] = [...toDeferredHelpCards(
+    buildReflectionProposalPresentations(
+      controller.artifactDetails.filter(supportsReflectionSecondOpinionEvidence),
+    ),
+  ), ...toDeferredExplanationCards(controller.artifactDetails.filter(supportsReflectionSecondOpinionEvidence))];
+  const actionableDeferredCards: ReflectionHelpCard[] = [
+    ...toDeferredHelpCards(buildReflectionProposalPresentations(currentArtifacts)),
+    ...toDeferredExplanationCards(currentArtifacts),
+  ];
   const displayedHelpCards = showDeferredInHelp
-    ? [...helpCards, ...deferredCards]
+    ? [...helpCards, ...actionableDeferredCards]
     : helpCards;
   const views: Array<{ key: ReflectionView; label: string; count?: number }> = [
     { key: 'help', label: 'Proposals', count: helpCards.length },
@@ -132,7 +137,7 @@ export function ReflectionsPage({
   return (
     <section className="reflections-page">
       <NestedNav>
-        <nav className="reflection-view-rail" aria-label="Reflection views">
+        <nav className="reflection-view-rail" aria-label="Feedback views">
           {views.map((option) => (
             <button
               type="button"
@@ -163,7 +168,7 @@ export function ReflectionsPage({
         {controller.unreadableArtifactIds.size > 0 ? (
           <section className="panel reflection-unreadable-notice" role="status">
             <strong>
-              {controller.unreadableArtifactIds.size} stored reflection
+              {controller.unreadableArtifactIds.size} stored feedback result
               {controller.unreadableArtifactIds.size === 1 ? '' : 's'} could not be read
             </strong>
             <p className="notes">
@@ -177,7 +182,6 @@ export function ReflectionsPage({
         ) : view === 'usage' ? (
           <TokenUsageView
             runs={controller.generationRuns}
-            spendCap={controller.spendCap}
             retryStatus={controller.generationRetryStatus}
             onRetry={controller.retryGenerationRun}
           />
@@ -191,7 +195,7 @@ export function ReflectionsPage({
                 checked={showDeferredInHelp}
                 onChange={(event) => setShowDeferredInHelp(event.target.checked)}
               />
-              Show deferred proposals ({deferredCards.length})
+              Show deferred proposals ({actionableDeferredCards.length})
             </label>
             <HelpQueueView
               key={showDeferredInHelp ? 'help-with-deferred' : 'help'}
@@ -214,20 +218,16 @@ export function DeferredSecondOpinionQueue({
   cards,
   controller,
 }: {
-  cards: Array<Extract<ReflectionHelpCard, { kind: 'proposal' }>>;
+  cards: ReflectionHelpCard[];
   controller: ReflectionPageController;
 }) {
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(
-    () => new Set(cards.map((card) => card.proposal.review.proposalId)),
+    () => new Set(cards.map(secondOpinionCardId)),
   );
   const selectionInitialized = useRef(cards.length > 0);
   const [inspectedId, setInspectedId] = useState<string | null>(null);
   const [model, setModel] = useState<ReflectionModelChoice>(DEFAULT_SECOND_OPINION_MODEL);
-  const lunaOnly = isLunaOnlySpendCap(controller.spendCap);
-  useEffect(() => {
-    if (lunaOnly) setModel(LUNA_REFLECTION_MODEL_CHOICE);
-  }, [lunaOnly]);
-  const cardIds = cards.map((card) => card.proposal.review.proposalId).join('\u0000');
+  const cardIds = cards.map(secondOpinionCardId).join('\u0000');
   useEffect(() => {
     const availableIds = new Set(cardIds.length === 0 ? [] : cardIds.split('\u0000'));
     setSelectedIds((current) => {
@@ -241,18 +241,18 @@ export function DeferredSecondOpinionQueue({
     setInspectedId((current) => (current !== null && availableIds.has(current) ? current : null));
   }, [cardIds]);
   const selectedCount = [...selectedIds].filter((id) => cards.some(
-    (card) => card.proposal.review.proposalId === id,
+    (card) => secondOpinionCardId(card) === id,
   )).length;
   const generating = controller.deferredSecondOpinionStatus === 'generating';
   const failed = controller.deferredSecondOpinionStatus === 'failed';
   const allSelected = cards.length > 0 && selectedCount === cards.length;
-  const inspected = cards.find((card) => card.proposal.review.proposalId === inspectedId) ?? null;
+  const inspected = cards.find((card) => secondOpinionCardId(card) === inspectedId) ?? null;
 
   if (cards.length === 0) {
     return (
       <main className="reflection-help-shell is-empty">
         <section className="panel reflection-empty-state">
-          <p className="notes">No deferred proposals are available for a second opinion.</p>
+          <p className="notes">No deferred items are available for a second opinion.</p>
         </section>
       </main>
     );
@@ -267,7 +267,7 @@ export function DeferredSecondOpinionQueue({
           aria-label="Second-opinion bundle selection"
         >
           {cards.map((card) => {
-            const proposalId = card.proposal.review.proposalId;
+            const proposalId = secondOpinionCardId(card);
             const selected = selectedIds.has(proposalId);
             const inspecting = inspectedId === proposalId;
             const parts = secondOpinionChipParts(card);
@@ -323,7 +323,7 @@ export function DeferredSecondOpinionQueue({
           })}
         </div>
         {inspected === null ? null : (
-          <aside className="reflection-second-opinion-inspect" aria-label="Proposal details">
+          <aside className="reflection-second-opinion-inspect" aria-label="Item details">
             <header className="reflection-second-opinion-inspect-head">
               <ItemIdentityHeading evidence={inspected.evidence} />
               <button
@@ -334,10 +334,11 @@ export function DeferredSecondOpinionQueue({
                 Close
               </button>
             </header>
-            <p className="notes">{reflectionOperationLabel(inspected.proposal.proposal.operation)}</p>
+            <p className="notes">{inspected.kind === 'proposal' ? reflectionOperationLabel(inspected.proposal.proposal.operation) : 'Explanation only'}</p>
             <EvidenceView evidence={inspected.evidence} />
             <p>{reflectionLearnerFeedback(inspected.result)}</p>
-            <p>{inspected.proposal.proposal.rationale}</p>
+            <ReflectionStageCompositionNotice result={inspected.result} />
+            {inspected.kind === 'proposal' ? <p>{inspected.proposal.proposal.rationale}</p> : null}
           </aside>
         )}
       </div>
@@ -345,17 +346,12 @@ export function DeferredSecondOpinionQueue({
         {failed ? (
           <p className="notes" role="status">Second opinion failed. Try again from the rail.</p>
         ) : null}
-        {lunaOnly && controller.spendCap !== null ? (
-          <p className="reflection-spend-cap-tip" role="status">
-            {reflectionSpendCapTip(controller.spendCap.resetsAt)}
-          </p>
-        ) : null}
         <div className="reflection-help-toolbar">
           <button
             type="button"
             className="secondary-button"
             disabled={generating || allSelected}
-            onClick={() => setSelectedIds(new Set(cards.map((card) => card.proposal.review.proposalId)))}
+            onClick={() => setSelectedIds(new Set(cards.map(secondOpinionCardId)))}
           >
             Select all
           </button>
@@ -378,7 +374,6 @@ export function DeferredSecondOpinionQueue({
               <option
                 key={option.model}
                 value={option.model}
-                disabled={lunaOnly && option.model !== LUNA_REFLECTION_MODEL_CHOICE}
               >
                 {option.label}
               </option>
@@ -387,8 +382,18 @@ export function DeferredSecondOpinionQueue({
           <button
             type="button"
             disabled={selectedCount === 0 || generating}
-            title="Reflects again on the original study evidence. A successful result replaces only the selected deferred proposals."
-            onClick={() => void controller.generateDeferredSecondOpinion([...selectedIds], model).catch(() => undefined)}
+            title="Reflects again on the original study evidence. A successful result retires only selected deferred items whose evidence was included."
+            onClick={() => {
+              const selectedCards = cards.filter((card) => selectedIds.has(secondOpinionCardId(card)));
+              const proposalIds = selectedCards.flatMap((card) => (
+                card.kind === 'proposal' ? [card.proposal.review.proposalId] : []
+              ));
+              const helpInboxIds = selectedCards.flatMap((card) => (
+                card.kind === 'explanation' ? [secondOpinionCardId(card)] : []
+              ));
+              void controller.generateDeferredSecondOpinion(proposalIds, model, helpInboxIds)
+                .catch(() => undefined);
+            }}
           >
             {generating ? 'Getting second opinion...' : `Get a second opinion (${selectedCount})`}
           </button>
@@ -399,7 +404,7 @@ export function DeferredSecondOpinionQueue({
 }
 
 function secondOpinionChipParts(
-  card: Extract<ReflectionHelpCard, { kind: 'proposal' }>,
+  card: ReflectionHelpCard,
 ): { word: string; pinyin: string | null; typed: string | null; operation: string } {
   const word = card.evidence?.targetWord ?? null;
   return {
@@ -408,22 +413,34 @@ function secondOpinionChipParts(
     typed: card.evidence?.source === 'production_mistake'
       ? (card.evidence.rawResponse ?? 'No response')
       : null,
-    operation: compactReflectionOperationLabel(card.proposal.proposal.operation),
+    operation: card.kind === 'proposal'
+      ? compactReflectionOperationLabel(card.proposal.proposal.operation)
+      : 'Explanation only',
   };
 }
 
 function compactReflectionOperationLabel(operation: ReflectionOperation): string {
   switch (operation.kind) {
+    case 'repair_pure_cue_stimulus':
+      return 'Cue repair';
     case 'suppress_definition_production':
       return 'Suppress';
     case 'create_contrast_cluster':
       return 'Contrast';
     case 'repair_production_cue':
       return 'Cue';
+    case 'request_word_bootstrap':
+      return 'Word examples';
     case 'add_production_cue_supplement':
       return 'Context';
     case 'accept_production_alternate':
       return 'Alternate';
+    case 'promote_pure_elicitation':
+      return 'Pure cue';
+    case 'reconcile_production_cues':
+      return 'Cue cleanup';
+    case 'reconcile_pure_cue_response':
+      return 'Pure cue response';
   }
 }
 
@@ -435,6 +452,31 @@ function toDeferredHelpCards(
     cardKey: `proposal:${presentation.proposal.review.proposalId}`,
     ...presentation,
   }));
+}
+
+function toDeferredExplanationCards(
+  details: ReflectionArtifactDetailDto[],
+): Array<Extract<ReflectionHelpCard, { kind: 'explanation' }>> {
+  return details.flatMap((artifact) => artifact.deferredHelpInbox.flatMap((entry) => {
+    const result = artifact.result.itemResults.find((item) => item.itemId === entry.itemId);
+    if (!result || result.proposals.length > 0) return [];
+    const evidence = artifact.evidenceBundle.items.find((item) => item.itemId === entry.itemId) ?? null;
+    return [{
+      kind: 'explanation' as const,
+      actionability: isPromotionDisagreement(result) ? 'non_actionable_disagreement' as const : 'manual' as const,
+      cardKey: `explanation:${artifact.artifactId}:${entry.itemId}`,
+      artifact,
+      evidence,
+      result,
+    }];
+  }));
+}
+
+function secondOpinionCardId(card: ReflectionHelpCard): string {
+  if (card.kind === 'proposal') return card.proposal.review.proposalId;
+  const entry = card.artifact.deferredHelpInbox.find((row) => row.itemId === card.result.itemId);
+  if (!entry) throw new Error('Deferred explanation item is missing its staging row.');
+  return entry.inboxId;
 }
 
 function helpCardSeenRequest(card: ReflectionHelpCard): MarkReflectionInboxSeenRequest {
@@ -466,7 +508,6 @@ function HelpQueueView({
   const safeIndex = cards.length === 0 ? 0 : Math.min(index, cards.length - 1);
   const card = cards[safeIndex] ?? null;
   const cardKey = card?.cardKey ?? 'empty';
-  const Shell = 'main';
 
   useEffect(() => {
     setIndex((current) => (cards.length === 0 ? 0 : Math.min(current, cards.length - 1)));
@@ -484,15 +525,7 @@ function HelpQueueView({
     onCardDisplayed(helpCardSeenRequest(current));
   }, [cardKey]);
 
-  if (cards.length === 0) {
-    return (
-      <Shell className="reflection-help-shell is-empty">
-        <section className="panel reflection-empty-state">
-          <p className="notes">{emptyCopy}</p>
-        </section>
-      </Shell>
-    );
-  }
+  if (cards.length === 0) return <CardInbox count={0} index={0} itemLabel={itemLabel} emptyCopy={emptyCopy} onSelect={setIndex} />;
 
   if (card === null) {
     throw new Error(`Invariant violated: ${itemLabel} queue has cards but no current card.`);
@@ -505,36 +538,8 @@ function HelpQueueView({
   );
 
   return (
-    <Shell className="reflection-help-shell">
-      <header className="reflection-help-chrome">
-        <div className="reflection-help-pager">
-          <button
-            type="button"
-            className="secondary-button reflection-help-pager-button"
-            disabled={safeIndex === 0}
-            aria-label={`Previous ${itemLabel}`}
-            onClick={() => setIndex((current) => Math.max(0, current - 1))}
-          >
-            ‹
-          </button>
-          <span className="reflection-help-pager-index" aria-live="polite">
-            {safeIndex + 1} / {cards.length}
-          </span>
-          <button
-            type="button"
-            className="secondary-button reflection-help-pager-button"
-            disabled={safeIndex >= cards.length - 1}
-            aria-label={`Next ${itemLabel}`}
-            onClick={() => setIndex((current) => Math.min(cards.length - 1, current + 1))}
-          >
-            ›
-          </button>
-        </div>
-        <div className="reflection-help-chrome-meta">
-          <ItemIdentityHeading evidence={card.evidence} />
-          <p className="notes">{sessionDate}</p>
-        </div>
-      </header>
+    <CardInbox count={cards.length} index={safeIndex} itemLabel={itemLabel} emptyCopy={emptyCopy} onSelect={setIndex}
+      metadata={<><ItemIdentityHeading evidence={card.evidence} /><p className="notes">{sessionDate}</p></>}>
       {card.kind === 'explanation' ? (
         <HelpExplanationCard
           key={card.cardKey}
@@ -550,7 +555,7 @@ function HelpQueueView({
           scrollRef={scrollRef}
         />
       )}
-    </Shell>
+    </CardInbox>
   );
 }
 
@@ -571,6 +576,8 @@ function HelpExplanationCard({
   const draftState = draft === null
     ? null
     : getOperationDraftState(draft, draft, card.evidence);
+  const nonActionableDisagreement = card.actionability === 'non_actionable_disagreement';
+  const explanationOnly = nonActionableDisagreement || card.evidence?.source === 'pure_cue_mistake';
 
   return (
     <>
@@ -579,7 +586,9 @@ function HelpExplanationCard({
         <section className="reflection-analysis">
           <h3>Feedback</h3>
           <p>{reflectionLearnerFeedback(card.result)}</p>
+          <ReflectionStageCompositionNotice result={card.result} />
         </section>
+        {nonActionableDisagreement ? <DisagreementNotice /> : null}
         {card.result.questions.length > 0 ? (
           <InfoList
             title="Questions"
@@ -589,8 +598,10 @@ function HelpExplanationCard({
             }))}
           />
         ) : null}
-        {draftState?.applySupport === 'unsupported' ? <SupportNotice /> : null}
-        {draft !== null ? (
+        {!nonActionableDisagreement && draftState?.applySupport === 'unsupported'
+          ? <SupportNotice />
+          : null}
+        {!nonActionableDisagreement && draft !== null ? (
           <ReflectionOperationEditor
             operation={draft}
             evidence={card.evidence}
@@ -616,7 +627,7 @@ function HelpExplanationCard({
             onClear={controller.clearQuality}
           />
         </div>
-        {draftState !== null && draftState.validationErrors.length > 0 ? (
+        {!nonActionableDisagreement && draftState !== null && draftState.validationErrors.length > 0 ? (
           <div className="reflection-validation" role="alert">
             <strong>Fix before accepting:</strong>
             <ul>
@@ -624,49 +635,84 @@ function HelpExplanationCard({
             </ul>
           </div>
         ) : null}
-        <HelpReviewToolbar
-          submitting={submitting}
-          handleValue={draft === null ? '' : `${draft.kind}@${draft.version}`}
-          handleDisabled={submitting}
-          onHandleChange={(value) => {
-            const [kind, versionText] = value.split('@');
-            setDraft(createManualOperation(
-              kind as ReflectionOperation['kind'],
-              Number(versionText),
-              card.evidence,
-            ));
-          }}
-          resetDisabled={submitting || draft === null}
-          onReset={() => setDraft(null)}
-          deferDisabled
-          onDefer={() => undefined}
-          acceptDisabled={
-            submitting
-            || (draftState !== null && draftState.validationErrors.length > 0)
-          }
-          acceptLabel={submitting ? 'Saving...' : 'Accept'}
-          onAccept={() => {
-            if (draft === null) {
+        {explanationOnly ? (
+          <div className="reflection-help-toolbar">
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={submitting}
+              onClick={() => {
+                void controller.deferHelpInboxItem({
+                  artifactId: card.artifact.artifactId,
+                  itemId: card.result.itemId,
+                }).catch(() => undefined);
+              }}
+            >
+              Defer
+            </button>
+            <button
+              type="button"
+              disabled={submitting}
+              onClick={() => {
+                void controller.markHelpInboxDone({
+                  artifactId: card.artifact.artifactId,
+                  itemId: card.result.itemId,
+                }).catch(() => undefined);
+              }}
+            >
+              {submitting ? 'Saving...' : 'Done'}
+            </button>
+          </div>
+        ) : (
+          <HelpReviewToolbar
+            submitting={submitting}
+            handleValue={draft === null ? '' : `${draft.kind}@${draft.version}`}
+            handleDisabled={submitting}
+            onHandleChange={(value) => {
+              const [kind, versionText] = value.split('@');
+              setDraft(createManualOperation(
+                kind as ReflectionOperation['kind'],
+                Number(versionText),
+                card.evidence,
+              ));
+            }}
+            resetDisabled={submitting || draft === null}
+            onReset={() => setDraft(null)}
+            deferDisabled={submitting}
+            onDefer={() => {
+              void controller.deferHelpInboxItem({
+                artifactId: card.artifact.artifactId,
+                itemId: card.result.itemId,
+              }).catch(() => undefined);
+            }}
+            acceptDisabled={
+              submitting
+              || (draftState !== null && draftState.validationErrors.length > 0)
+            }
+            acceptLabel={submitting ? 'Saving...' : 'Accept'}
+            onAccept={() => {
+              if (draft === null) {
+                void controller.markHelpInboxDone({
+                  artifactId: card.artifact.artifactId,
+                  itemId: card.result.itemId,
+                }).catch(() => undefined);
+                return;
+              }
+              void controller.authorizeManualOperation({
+                artifactId: card.artifact.artifactId,
+                itemId: card.result.itemId,
+                operation: draft,
+              }).catch(() => undefined);
+            }}
+            dismissDisabled={submitting || draft === null}
+            onDismiss={() => {
               void controller.markHelpInboxDone({
                 artifactId: card.artifact.artifactId,
                 itemId: card.result.itemId,
               }).catch(() => undefined);
-              return;
-            }
-            void controller.authorizeManualOperation({
-              artifactId: card.artifact.artifactId,
-              itemId: card.result.itemId,
-              operation: draft,
-            }).catch(() => undefined);
-          }}
-          dismissDisabled={submitting || draft === null}
-          onDismiss={() => {
-            void controller.markHelpInboxDone({
-              artifactId: card.artifact.artifactId,
-              itemId: card.result.itemId,
-            }).catch(() => undefined);
-          }}
-        />
+            }}
+          />
+        )}
       </div>
     </>
   );
@@ -694,6 +740,7 @@ function HelpProposalCard({
         <section className="reflection-analysis">
           <h3>Feedback</h3>
           <p>{reflectionLearnerFeedback(card.result)}</p>
+          <ReflectionStageCompositionNotice result={card.result} />
         </section>
         {card.result.questions.length > 0 ? (
           <InfoList
@@ -709,6 +756,7 @@ function HelpProposalCard({
         <ReflectionOperationEditor
           operation={draft}
           evidence={card.evidence}
+          targetProductionSuppressed={'targetSuppression' in card.result && card.result.targetSuppression !== undefined}
           onChange={setDraft}
         />
       </div>
@@ -743,7 +791,7 @@ function HelpProposalCard({
         <HelpReviewToolbar
           submitting={submitting}
           handleValue={`${draft.kind}@${draft.version}`}
-          handleDisabled={submitting}
+          handleDisabled={submitting || card.evidence?.source === 'pure_cue_mistake'}
           onHandleChange={(value) => {
             const [kind, versionText] = value.split('@');
             setDraft(createReplacementOperation(
@@ -787,7 +835,7 @@ function HelpProposalCard({
   );
 }
 
-function SessionWorkspace({ controller }: { controller: ReflectionPageController }) {
+export function SessionWorkspace({ controller }: { controller: ReflectionPageController }) {
   const items = controller.selectedArtifact === null
     ? []
     : buildReflectionItemPresentations(controller.selectedArtifact);
@@ -808,7 +856,7 @@ function SessionWorkspace({ controller }: { controller: ReflectionPageController
         />
         <ArtifactList
           title="Recent history"
-          emptyLabel="No reflection artifacts yet."
+          emptyLabel="No feedback results yet."
           artifacts={controller.recentArtifacts}
           selectedArtifactId={controller.selectedArtifactId}
           unreadableArtifactIds={controller.unreadableArtifactIds}
@@ -819,9 +867,9 @@ function SessionWorkspace({ controller }: { controller: ReflectionPageController
       <main className="reflection-detail">
         {controller.selectedArtifact === null ? (
           <div className="panel reflection-empty-state">
-            <h2>No reflection selected</h2>
+            <h2>No feedback selected</h2>
             <p className="notes">
-              Completed-session reflections, including informational results without proposals,
+              Completed-session feedback results, including informational results without proposals,
               will appear in recent history.
             </p>
           </div>
@@ -831,7 +879,7 @@ function SessionWorkspace({ controller }: { controller: ReflectionPageController
               <div>
                 <p className="reflection-eyebrow">
                   {controller.selectedArtifact.sourceSessionId === null
-                    ? 'Curated reflection batch'
+                    ? 'Curated feedback batch'
                     : 'Source session'}
                 </p>
                 <h2>{formatDateTime(
@@ -841,7 +889,7 @@ function SessionWorkspace({ controller }: { controller: ReflectionPageController
                 )}</h2>
                 <p className="notes reflection-long-metadata">
                   {controller.selectedArtifact.sourceSessionId === null
-                    ? 'Curated non-session reflection'
+                    ? 'Curated non-session feedback'
                     : `Session ${controller.selectedArtifact.sourceSessionId}`}
                   {' · '}
                   {controller.selectedArtifact.sourceRunId === null
@@ -876,7 +924,7 @@ function SessionWorkspace({ controller }: { controller: ReflectionPageController
               <article className="panel reflection-item-card" key={item.result.itemId}>
                 <header className="reflection-item-heading">
                   <div>
-                    <p className="reflection-eyebrow">Reflection item {itemIndex + 1}</p>
+                    <p className="reflection-eyebrow">Feedback item {itemIndex + 1}</p>
                     <ItemIdentityHeading evidence={item.evidence} />
                   </div>
                   <div className="reflection-tag-list">
@@ -891,7 +939,10 @@ function SessionWorkspace({ controller }: { controller: ReflectionPageController
                 <section className="reflection-analysis">
                   <h3>Feedback</h3>
                   <p>{reflectionLearnerFeedback(item.result)}</p>
+                  <ReflectionStageCompositionNotice result={item.result} />
                 </section>
+
+                {isPromotionDisagreement(item.result) ? <DisagreementNotice /> : null}
 
                 {item.result.questions.length > 0 ? (
                   <InfoList
@@ -918,9 +969,11 @@ function SessionWorkspace({ controller }: { controller: ReflectionPageController
                   {item.proposals.length === 0 ? (
                     <>
                       <p className="notes">
-                        {item.result.diagnosisTags.includes('ordinary_retrieval_noise')
+                        {isPromotionDisagreement(item.result)
+                          ? 'Content review disagreed with the shared-axis handoff; no actionable change is available.'
+                          : item.result.diagnosisTags.includes('ordinary_retrieval_noise')
                           ? 'Judged as ordinary forgetting / retrieval noise; no durable change proposed.'
-                          : 'Informational reflection only; no change was proposed.'}
+                          : 'Informational feedback only; no change was proposed.'}
                       </p>
                       <ItemQualityTagControls
                         artifactId={selectedArtifact.artifactId}
@@ -946,7 +999,9 @@ function SessionWorkspace({ controller }: { controller: ReflectionPageController
                         <ProposalCard
                           key={proposal.review.proposalId}
                           proposal={proposal}
+                          targetProductionSuppressed={'targetSuppression' in item.result && item.result.targetSuppression !== undefined}
                           evidence={item.evidence}
+                          readOnly={!isCurrentReflectionArtifactContract(selectedArtifact)}
                           qualityArtifactId={selectedArtifact.artifactId}
                           qualityItemId={item.result.itemId}
                           qualityAnnotation={findQualityItemTags(
@@ -1054,33 +1109,37 @@ function NoDurableChangeGistPanel({
   );
 }
 
+function DisagreementNotice() {
+  return (
+    <section className="reflection-analysis reflection-disagreement-notice" role="status">
+      <h3>No actionable change</h3>
+      <p>
+        Content review disagreed with the shared-axis handoff. This explanation is informational
+        only, so it cannot create or authorize a proposal.
+      </p>
+    </section>
+  );
+}
+
 export function TokenUsageView({
   runs,
-  spendCap,
   retryStatus,
   onRetry,
 }: {
   runs: ReflectionGenerationRunDto[];
-  spendCap: ReflectionSpendCapDto | null;
   retryStatus: ReflectionPageController['generationRetryStatus'];
   onRetry: (runId: string, model?: ReflectionModelChoice) => Promise<void>;
 }) {
-  const lunaOnly = isLunaOnlySpendCap(spendCap);
   return (
     <main className="reflection-usage-view">
-      {lunaOnly && spendCap !== null ? (
-        <p className="reflection-spend-cap-tip" role="status">
-          {reflectionSpendCapTip(spendCap.resetsAt)}
-        </p>
-      ) : null}
       {runs.length === 0 ? (
         <section className="panel reflection-empty-state">
           <h2>No run meta yet</h2>
-          <p className="notes">No reflection generation attempts yet.</p>
+          <p className="notes">No feedback generation attempts yet.</p>
         </section>
       ) : (
         <section className="panel reflection-run-table-wrap">
-          <div className="reflection-run-table" role="table" aria-label="Reflection run meta">
+          <div className="reflection-run-table" role="table" aria-label="Feedback run meta">
             <div className="reflection-run-table-header" role="row">
               <span>Status</span><span>Run</span><span>Duration</span><span>Input</span><span>Cached</span>
               <span>Output</span><span>Reasoning</span><span>Visible</span>
@@ -1091,7 +1150,6 @@ export function TokenUsageView({
                 <div className="reflection-run-status">
                   <RunStatusControl
                     run={run}
-                    spendCap={spendCap}
                     retryStatus={retryStatus}
                     onRetry={onRetry}
                   />
@@ -1178,12 +1236,10 @@ function RunDiagnosticView({
 
 function RunStatusControl({
   run,
-  spendCap,
   retryStatus,
   onRetry,
 }: {
   run: ReflectionGenerationRunDto;
-  spendCap: ReflectionSpendCapDto | null;
   retryStatus: ReflectionPageController['generationRetryStatus'];
   onRetry: (runId: string, model?: ReflectionModelChoice) => Promise<void>;
 }) {
@@ -1194,7 +1250,6 @@ function RunStatusControl({
     return (
       <ReflectionRetryControl
         run={run}
-        spendCap={spendCap}
         retryFailed={retryStatus?.runId === run.runId && retryStatus.state === 'failed'}
         onRetry={onRetry}
       />
@@ -1204,18 +1259,16 @@ function RunStatusControl({
     return <span className="reflection-state-pill state-generating" role="status">In flight…</span>;
   }
   return run.state === 'succeeded'
-    ? <StatusIcon kind="success" label="Reflection generation succeeded" />
-    : <StatusIcon kind="failure" label="Reflection generation failed" />;
+    ? <StatusIcon kind="success" label="Feedback generation succeeded" />
+    : <StatusIcon kind="failure" label="Feedback generation failed" />;
 }
 
 function ReflectionRetryControl({
   run,
-  spendCap,
   retryFailed,
   onRetry,
 }: {
   run: ReflectionGenerationRunDto;
-  spendCap: ReflectionSpendCapDto | null;
   retryFailed: boolean;
   onRetry: (runId: string, model?: ReflectionModelChoice) => Promise<void>;
 }) {
@@ -1223,28 +1276,21 @@ function ReflectionRetryControl({
   const listId = useId();
   const [menuOpen, setMenuOpen] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const lunaOnly = isLunaOnlySpendCap(spendCap);
-  const sameModelAvailable = sourceModelIsCurrentlyAvailable(run.model)
-    && (!lunaOnly || storedModelMatchesChoice(run.model, LUNA_REFLECTION_MODEL_CHOICE));
+  const sameModelAvailable = sourceModelIsCurrentlyAvailable(run.model);
   const options: ReflectionRetryMenuOption[] = [
     {
       id: 'same',
       label: sameModelAvailable
         ? `Same model (${run.model})`
-        : lunaOnly && sourceModelIsCurrentlyAvailable(run.model)
-          ? `Same model (${run.model}) — Luna only until reset`
-          : `Same model (${run.model}) — no longer available`,
+        : `Same model (${run.model}) — no longer available`,
       disabled: !sameModelAvailable,
     },
-    ...OFFERED_REFLECTION_MODEL_OPTIONS.map((option) => ({
-      ...option,
-      disabled: lunaOnly && option.model !== LUNA_REFLECTION_MODEL_CHOICE,
-    })),
+    ...OFFERED_REFLECTION_MODEL_OPTIONS,
   ];
   const firstEnabledIndex = Math.max(0, options.findIndex((option) => !option.disabled));
   const label = retryFailed
-    ? 'Retry failed. Choose a model to retry this reflection.'
-    : `Retry reflection${run.failureCode === null ? '' : `: ${humanize(run.failureCode)}`}. Choose a model.`;
+    ? 'Retry failed. Choose a model to retry this feedback.'
+    : `Retry feedback${run.failureCode === null ? '' : `: ${humanize(run.failureCode)}`}. Choose a model.`;
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -1339,11 +1385,7 @@ function ReflectionRetryControl({
       {menuOpen ? (
         <div className="reflection-retry-menu" role="presentation">
           <p className="reflection-retry-menu-title">Retry with</p>
-          {lunaOnly && spendCap !== null ? (
-            <p className="reflection-retry-menu-notice" role="status">
-              {reflectionSpendCapTip(spendCap.resetsAt)}
-            </p>
-          ) : sameModelAvailable ? null : (
+          {sameModelAvailable ? null : (
             <p className="reflection-retry-menu-notice" role="status">
               {run.model} is no longer available. Choose another model.
             </p>
@@ -1352,7 +1394,7 @@ function ReflectionRetryControl({
             id={listId}
             className="reflection-retry-menu-list"
             role="listbox"
-            aria-label="Choose model for reflection retry"
+            aria-label="Choose model for feedback retry"
             aria-activedescendant={`${listId}-option-${selectedIndex}`}
           >
             {options.map((option, index) => {
@@ -1471,7 +1513,9 @@ function formatUsd(value: number): string {
 
 function ProposalCard({
   proposal,
+  targetProductionSuppressed,
   evidence,
+  readOnly,
   qualityArtifactId,
   qualityItemId,
   qualityAnnotation,
@@ -1488,7 +1532,9 @@ function ProposalCard({
   onClearQuality,
 }: {
   proposal: ReflectionProposalDetailDto;
-  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | null;
+  targetProductionSuppressed: boolean;
+  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | PureCueReflectionItemV1 | null;
+  readOnly: boolean;
   qualityArtifactId: string;
   qualityItemId: string;
   qualityAnnotation: ReflectionQualityItemTags | null;
@@ -1549,17 +1595,18 @@ function ProposalCard({
       <p>{proposal.proposal.rationale}</p>
       {draftState.applySupport === 'unsupported' ? <SupportNotice /> : null}
 
-      {unresolved ? (
+      {unresolved && !readOnly ? (
         <>
           <ReflectionOperationEditor
             operation={draft}
             evidence={evidence}
+            targetProductionSuppressed={targetProductionSuppressed}
             onChange={setDraft}
           />
           <label className="reflection-field">
             <span>Handle</span>
             <ReflectionHandleSelect
-              disabled={submitting}
+              disabled={submitting || targetProductionSuppressed || evidence?.source === 'pure_cue_mistake'}
               value={`${draft.kind}@${draft.version}`}
               onChange={(value) => {
                 const [kind, versionText] = value.split('@');
@@ -1647,7 +1694,7 @@ function ProposalCard({
           <h5>Original operation</h5>
           <ReflectionOperationEditor operation={original} evidence={evidence} disabled />
           <ReviewOutcome disposition={proposal.review.disposition} />
-          {proposal.review.disposition.kind === 'dismissed' ? (
+          {proposal.review.disposition.kind === 'dismissed' && !readOnly ? (
             <button
               type="button"
               className="secondary-button"
@@ -1680,9 +1727,9 @@ function ProposalCard({
                         />
                       </>
                     ) : null}
-              <ApplicationOutcome state={invocation.application.state} />
-              {invocation.application.state.kind === 'unsupported'
-                || invocation.application.state.kind === 'pending' ? (
+              <ApplicationOutcome state={invocation.application.state} operation={invocation.invocation.operation} />
+              {!readOnly && (invocation.application.state.kind === 'unsupported'
+                || invocation.application.state.kind === 'pending') ? (
                   <button
                     type="button"
                     className="danger-button"
@@ -1896,7 +1943,7 @@ function QualityStatsView({ stats }: { stats: ReflectionQualityStatsDto | null }
         <section className="panel reflection-empty-state">
           <h2>No quality signal yet</h2>
           <p className="notes">
-            Accept, dismiss, and tag reflection items while reviewing to accumulate rates by model
+            Accept, dismiss, and tag feedback items while reviewing to accumulate rates by model
             arm.
           </p>
         </section>
@@ -1919,16 +1966,17 @@ function QualityStatsView({ stats }: { stats: ReflectionQualityStatsDto | null }
               Terminal user reviews plus item tag overlays. Pending, deferred, and system
               supersession are excluded from disposition rates. Second-opinion retirement
               counts in the terminal total but is not a dismiss. Tags count whenever present.
-              Run cost sums priced generation attempts, including validation failures. Small
-              counts are not statistical claims.
+              Run cost sums priced generation attempts, including validation failures.
+              A staged continuation is one arm: both stage costs roll up, and mixed
+              models show as diagnosis → promotion. Small counts are not statistical claims.
             </p>
           </div>
         </header>
         <div className="reflection-quality-toolbar" role="group" aria-label="Quality table controls">
           <label className="reflection-field reflection-quality-filter">
-            <span>Reflection version</span>
+            <span>Feedback version</span>
             <select
-              aria-label="Filter by reflection version"
+              aria-label="Filter by feedback version"
               value={promptVersionFilter}
               onChange={(event) => {
                 const value = event.target.value;
@@ -1949,7 +1997,7 @@ function QualityStatsView({ stats }: { stats: ReflectionQualityStatsDto | null }
           </label>
         </div>
         {rows.length === 0 ? (
-          <p className="notes">No rows match this reflection version filter.</p>
+          <p className="notes">No rows match this feedback version filter.</p>
         ) : (
           <div className="reflection-quality-table" role="table" aria-label="Quality by model arm">
             <div className="reflection-quality-table-header" role="row">
@@ -2133,7 +2181,7 @@ function ReviewOutcome({ disposition }: { disposition: ProposalReviewDisposition
   }
 }
 
-function ApplicationOutcome({ state }: { state: OperationApplicationState }) {
+function ApplicationOutcome({ state, operation }: { state: OperationApplicationState; operation: ReflectionOperation }) {
   switch (state.kind) {
     case 'unsupported':
       return <p className="reflection-outcome">Application unsupported: {state.reason}</p>;
@@ -2142,7 +2190,9 @@ function ApplicationOutcome({ state }: { state: OperationApplicationState }) {
     case 'applied':
       return (
         <div className="reflection-outcome">
-          <p>Applied {formatDateTime(state.appliedAt)}.</p>
+          <p>{operation.kind === 'request_word_bootstrap'
+            ? `Preparation requested ${formatDateTime(state.appliedAt)}. Examples become available after preparation completes.`
+            : `Applied ${formatDateTime(state.appliedAt)}.`}</p>
           <EffectRefs label="Caused effects" refs={state.effectRefs} />
         </div>
       );
@@ -2153,7 +2203,11 @@ function ApplicationOutcome({ state }: { state: OperationApplicationState }) {
     case 'already_satisfied':
       return (
         <div className="reflection-outcome">
-          <p>The exact postcondition was already satisfied elsewhere.</p>
+          <p>{operation.kind === 'request_word_bootstrap'
+            ? state.satisfyingEffectRefs.some((ref) => ref.type === 'word_content')
+              ? 'Existing shared word content satisfies this request.'
+              : 'Word preparation has already been requested. This does not confirm that examples are ready.'
+            : 'The exact postcondition was already satisfied elsewhere.'}</p>
           <EffectRefs label="Satisfying references" refs={state.satisfyingEffectRefs} />
         </div>
       );
@@ -2170,16 +2224,37 @@ function EffectRefs({ label, refs }: { label: string; refs: EffectRef[] }) {
     <>
       <strong>{label}</strong>
       <ul className="reflection-reference-list">
-        {refs.map((ref) => <li key={`${ref.type}:${ref.id}`}>{ref.type}: {ref.id}</li>)}
+        {refs.map((ref) => (
+          <li key={`${ref.type}:${ref.id}`}>{effectRefLabel(ref)}</li>
+        ))}
       </ul>
     </>
   );
 }
 
+function effectRefLabel(ref: EffectRef): string {
+  if (ref.type !== 'production_scheduler_compensation') {
+    return `${ref.type}: ${ref.id}`;
+  }
+  const separator = ref.id.lastIndexOf('/');
+  const attemptId = decodeURIComponent(separator === -1 ? ref.id : ref.id.slice(0, separator));
+  const result = separator === -1 ? 'unknown' : ref.id.slice(separator + 1);
+  switch (result) {
+    case 'restored':
+      return `Scheduler compensation restored for ${attemptId}`;
+    case 'already_restored':
+      return `Scheduler compensation was already restored for ${attemptId}`;
+    case 'unavailable':
+      return `Scheduler compensation unavailable for ${attemptId}`;
+    default:
+      return `Scheduler compensation ${result} for ${attemptId}`;
+  }
+}
+
 function EvidenceView({
   evidence,
 }: {
-  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | null;
+  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | PureCueReflectionItemV1 | null;
 }) {
   if (evidence === null) {
     return (
@@ -2187,6 +2262,10 @@ function EvidenceView({
         <p className="notes">The evidence item could not be reconstructed for display.</p>
       </section>
     );
+  }
+
+  if (evidence.source === 'pure_cue_mistake') {
+    return <TestedCueLine label="Tested pure cue" texts={[evidence.servedSnapshot.stimulus, `Response: ${evidence.rawResponse}`]} />;
   }
 
   if (evidence.source === 'production_mistake') {
@@ -2250,7 +2329,7 @@ function TestedCueLine({
 function ItemIdentityHeading({
   evidence,
 }: {
-  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | null;
+  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | PureCueReflectionItemV1 | null;
 }) {
   const target = itemTitle(evidence);
   const typed = evidence?.source === 'production_mistake'
@@ -2386,11 +2465,12 @@ function InfoList({
   );
 }
 
-function itemTitle(evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | null): string {
+function itemTitle(evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | PureCueReflectionItemV1 | null): string {
   if (evidence?.targetWord !== null && evidence?.targetWord !== undefined) {
     return wordLabel(evidence.targetWord);
   }
-  return evidence?.source === 'session_note' ? 'Session note' : 'Reflection evidence';
+  if (evidence?.source === 'pure_cue_mistake') return `Pure cue · ${wordLabel(evidence.submittedWord)}`;
+  return evidence?.source === 'session_note' ? 'Session note' : 'Feedback evidence';
 }
 
 function wordLabel(word: { hanzi: string; pinyin: string }): string {

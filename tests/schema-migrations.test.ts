@@ -12,7 +12,7 @@ import { createBaselineFixture } from './helpers/baseline-database.ts';
 let dir: string;
 let baselineSource: string;
 let source: string;
-const migration = { id: 'app_schema:0009_optional_note', sql: 'ALTER TABLE learners ADD COLUMN migration_test_note TEXT;' };
+const migration = { id: 'app_schema:9000_optional_note', sql: 'ALTER TABLE learners ADD COLUMN migration_test_note TEXT;' };
 const testMigrations = [...schemaMigrations, migration];
 function startup(databaseDir: string) {
   return spawnSync(process.execPath, ['--import', 'tsx', '--input-type=module', '-e', 'await import("./server/db.ts")'], {
@@ -107,7 +107,7 @@ test('rolls the entire pending batch and data back on SQL failure', () => {
   const { db } = copy('failure');
   try {
     const schema = snapshot(db);
-    const broken = { id: 'app_schema:0010_broken', sql: "INSERT INTO learners VALUES ('test', 'Temporary', '2026-09-07', NULL, NULL); SELECT * FROM missing_table;" };
+    const broken = { id: 'app_schema:9001_broken', sql: "INSERT INTO learners VALUES ('test', 'Temporary', '2026-09-07', NULL, NULL); SELECT * FROM missing_table;" };
     assert.throws(() => migrateDatabase(db, [...testMigrations, broken]), /missing_table/);
     assert.deepEqual(snapshot(db), schema);
     assert.equal(db.prepare('SELECT COUNT(*) AS count FROM learners').get()?.count, 0);
@@ -119,7 +119,7 @@ test('rolls the entire pending batch and data back on SQL failure', () => {
 test('rejects foreign key violations and leaves the ledger unchanged', () => {
   const { db } = copy('foreign-key');
   try {
-    const bad = { id: 'app_schema:0009_bad_reference', sql: "PRAGMA defer_foreign_keys=ON; INSERT INTO learner_auth_mappings VALUES ('test', 'subject', 'missing', '2026-09-07');" };
+    const bad = { id: 'app_schema:9000_bad_reference', sql: "PRAGMA defer_foreign_keys=ON; INSERT INTO learner_auth_mappings VALUES ('test', 'subject', 'missing', '2026-09-07');" };
     assert.throws(() => migrateDatabase(db, [...schemaMigrations, bad]), /Foreign key check failed/);
     assertSchemaCurrent(db);
   } finally { db.close(); }
@@ -141,7 +141,7 @@ test('serializes against an existing writer and rejects gaps in migration histor
     db.exec('BEGIN IMMEDIATE');
     assert.throws(() => migrateDatabase(other, testMigrations), /locked/);
     db.exec('ROLLBACK');
-    const next = { id: 'app_schema:0010_index', sql: 'CREATE INDEX idx_migration_test ON learners(migration_test_note);' };
+    const next = { id: 'app_schema:9001_index', sql: 'CREATE INDEX idx_migration_test ON learners(migration_test_note);' };
     migrateDatabase(db, [...testMigrations, next]);
     db.prepare('DELETE FROM schema_migrations WHERE migration_id = ?').run(migration.id);
     assert.throws(() => assertSchemaCurrent(db, [...testMigrations, next]), /out-of-order/);
@@ -206,4 +206,208 @@ test('rejects an unexpected missing view guard', () => {
     assert.throws(() => migrateDatabase(db), /supported current schema baseline/);
     assert.equal(db.prepare("SELECT 1 FROM sqlite_schema WHERE name='reflection_artifacts_scoped_update'").get(), undefined);
   } finally { db.close(); }
+});
+
+
+test('exercise compensation migration starts empty and preserves existing summary and restoration history', () => {
+  const { db } = copy('exercise-compensation', true);
+  try {
+    const migrationIndex = schemaMigrations.findIndex(item => item.id === 'app_schema:0022_exercise_compensation_days');
+    assert.ok(migrationIndex > 0);
+    migrateDatabase(db, schemaMigrations.slice(0, migrationIndex));
+    db.prepare(`INSERT INTO learners (learner_id, display_name, created_at) VALUES ('test', 'Test', '2026-09-18')`).run();
+    db.prepare(`INSERT INTO lexical_words
+      (id, hanzi, pinyin, meaning, meanings_json, examples_json, priority, created_at)
+      VALUES ('word', '字', 'zi', 'character', '[]', '[]', 1, '2026-09-18')`).run();
+    db.prepare(`INSERT INTO learner_owned_review_session_summaries
+      (learner_id, session_id, completed_at, day_key, completed_count, failed_count, active_duration_ms)
+      VALUES ('test', 'old-session', '2026-09-18T00:00:00.000Z', '2026-09-18', 10, 2, 1000)`).run();
+    db.prepare(`INSERT INTO pure_cue_scheduler_compensation_snapshots
+      (learner_id, session_id, session_action_id, target_word_id, captured_at,
+       production_skill_state_json, admission_state_json, compensated_by_invocation_id, compensated_at)
+      VALUES ('test', 'old-session', 'action', 'word', '2026-09-18T00:00:00.000Z',
+        'null', 'null', 'old-invocation', '2026-09-19T00:00:00.000Z')`).run();
+    const summary = db.prepare('SELECT * FROM learner_owned_review_session_summaries').all();
+    const restorations = db.prepare('SELECT * FROM pure_cue_scheduler_compensation_snapshots').all();
+    migrateDatabase(db);
+    assertSchemaCurrent(db);
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM learner_exercise_compensation_days').get()?.n, 0);
+    assert.deepEqual(db.prepare('SELECT * FROM learner_owned_review_session_summaries').all().map(row => ({ ...row })), summary.map(row => ({ ...row, learning_completed_count: null, new_word_count: null })));
+    assert.deepEqual(db.prepare('SELECT * FROM pure_cue_scheduler_compensation_snapshots').all(), restorations);
+    assert.deepEqual(migrateDatabase(db), []);
+  } finally { db.close(); }
+});
+
+test('session debrief migration preserves valued completion rows and starts with no historical jobs', () => {
+  const { db } = copy('session-debrief-forward', true);
+  try {
+    const earlier = schemaMigrations.filter((migration) => migration.id < 'app_schema:0023_session_debrief');
+    migrateDatabase(db, earlier);
+    db.prepare(`INSERT INTO learners (learner_id, display_name, created_at) VALUES ('test','Preserve me','2026-10-06')`).run();
+    db.prepare(`INSERT INTO learner_owned_review_session_summaries (learner_id,session_id,completed_at,day_key,completed_count,failed_count,active_duration_ms)
+      VALUES ('test','historical','2026-10-05T00:00:00.000Z','2026-10-05',12,2,3456)`).run();
+    const old = db.prepare('SELECT * FROM learner_owned_review_session_summaries').all();
+    assert.deepEqual(migrateDatabase(db), schemaMigrations
+      .filter((migration) => migration.id >= 'app_schema:0023_session_debrief')
+      .map((migration) => migration.id));
+    assert.deepEqual(db.prepare('SELECT * FROM learner_owned_review_session_summaries').all().map(row => ({ ...row })), old.map(row => ({ ...row, learning_completed_count: null, new_word_count: null })));
+    assert.equal(db.prepare('SELECT COUNT(*) AS count FROM learner_session_debrief_jobs').get()?.count, 0);
+    assert.equal(db.prepare('SELECT COUNT(*) AS count FROM learner_session_debrief_attempts').get()?.count, 0);
+    assert.deepEqual(migrateDatabase(db), []);
+    assertSchemaCurrent(db);
+  } finally { db.close(); }
+});
+
+
+test('model invocation outcome migration preserves old accounting without inventing latency', () => {
+  const { db } = copy('model-invocation-outcomes', true);
+  try {
+    migrateDatabase(db, schemaMigrations.filter((migration) => migration.id < 'app_schema:0026_model_invocation_outcomes'));
+    db.prepare(`INSERT INTO learners (learner_id, display_name, created_at) VALUES ('ledger-history','History','2026-10-06')`).run();
+    db.prepare(`INSERT INTO model_invocations (id,timestamp,provider,model,invocation_type,learner_id,spend_usd,spend_source,status,pricing_json)
+      VALUES ('old-call','2026-10-06T12:00:00.000Z','openrouter','old-model','reflection','ledger-history',0.25,'reported','completed','{"source":"provider"}')`).run();
+    const old = db.prepare('SELECT * FROM model_invocations').get();
+    migrateDatabase(db);
+    const migrated = db.prepare('SELECT * FROM model_invocations').get()!;
+    for (const [key, value] of Object.entries(old!)) assert.deepEqual(migrated[key], value);
+    assert.equal(migrated.latency_ms, null);
+    assert.equal(migrated.actor_kind, 'learner');
+    assert.equal(migrated.actor_id, 'ledger-history');
+    assert.equal(migrated.prompt_hash, null);
+    assert.equal(migrated.request_snapshot_json, null);
+    assert.deepEqual(migrateDatabase(db), []);
+    assertSchemaCurrent(db);
+  } finally { db.close(); }
+});
+
+test('definition fallback migration preserves snapshots, encounters, ratings and integrity guards', () => {
+  const { db } = copy('definition-fallback-quality', true);
+  try {
+    const index = schemaMigrations.findIndex(item => item.id === 'app_schema:0035_definition_fallback_quality');
+    assert.ok(index > 0);
+    migrateDatabase(db, schemaMigrations.slice(0, index));
+    db.exec(`INSERT INTO learners(learner_id,display_name,created_at) VALUES ('test','Test','2026-10-10');
+      INSERT INTO content_quality_items VALUES ('existing','production_cue','cue','word','A greeting','{"cueText":"A greeting"}','{"source":"manual","model":null}','2026-10-10');
+      INSERT INTO learner_content_quality_encounters VALUES ('test','encounter','existing','2026-10-10');
+      INSERT INTO learner_content_quality_ratings VALUES ('test','existing','down','2026-10-10');`);
+    const tables = ['content_quality_items', 'learner_content_quality_encounters', 'learner_content_quality_ratings'];
+    const before = tables.map(table => db.prepare(`SELECT * FROM ${table}`).all());
+    migrateDatabase(db);
+    assertSchemaCurrent(db);
+    assert.deepEqual(tables.map(table => db.prepare(`SELECT * FROM ${table}`).all()), before);
+    assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), []);
+    assert.throws(() => db.exec("UPDATE content_quality_items SET title='changed'"), /immutable/);
+    assert.throws(() => db.exec("UPDATE learner_content_quality_encounters SET encounter_id='changed'"), /immutable/);
+    assert.throws(() => db.exec("UPDATE learner_content_quality_ratings SET content_key='changed'"), /immutable/);
+    db.exec(`INSERT INTO content_quality_items VALUES ('fallback','definition_fallback','word','word','hello','{"promptText":"hello","displayedMeanings":[]}','{"source":"definition fallback","model":null}','2026-10-10')`);
+    assert.throws(() => db.exec("INSERT INTO learner_content_quality_ratings VALUES ('test','fallback','down','2026-10-10')"), /requires own encounter/);
+    db.exec(`INSERT INTO learner_content_quality_encounters VALUES ('test','fallback-encounter','fallback','2026-10-10');
+      INSERT INTO learner_content_quality_ratings VALUES ('test','fallback','down','2026-10-10');`);
+    assert.deepEqual(migrateDatabase(db), []);
+  } finally { db.close(); }
+});
+
+test('durable session completion migration preserves historical progress and fabricates no intents or reporting jobs', () => {
+  const { db } = copy('session-completion-upgrade', true);
+  try {
+    const index = schemaMigrations.findIndex(item => item.id === 'app_schema:0036_session_completion');
+    assert.ok(index > 0);
+    migrateDatabase(db, schemaMigrations.slice(0, index));
+    db.exec(`INSERT INTO learners(learner_id,display_name,created_at) VALUES ('test','Test','2026-10-12');
+      INSERT INTO learner_owned_review_session_summaries
+        (learner_id,session_id,completed_at,day_key,completed_count,failed_count,active_duration_ms,learning_completed_count)
+        VALUES ('test','historical','2026-10-12T00:00:00.000Z','2026-10-12',4,1,120000,2);`);
+    const summaries = db.prepare('SELECT * FROM learner_owned_review_session_summaries').all();
+    const learners = db.prepare('SELECT * FROM learners').all();
+    migrateDatabase(db);
+    assertSchemaCurrent(db);
+    assert.deepEqual(db.prepare('SELECT * FROM learner_owned_review_session_summaries').all().map(row => ({ ...row })), summaries.map(row => ({ ...row, new_word_count: null })));
+    assert.deepEqual(db.prepare('SELECT * FROM learners').all(), learners);
+    for (const table of ['learner_session_completions', 'learner_session_word_outcomes', 'learner_session_reflection_dispatches'])
+      assert.equal(db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get()?.n, 0);
+    assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), []);
+    assert.deepEqual(migrateDatabase(db), []);
+  } finally { db.close(); }
+});
+
+
+test('service kickoff migration preserves authored notices without inferring kickoff', () => {
+  const { db } = copy('service-kickoff-upgrade', true);
+  try {
+    const index = schemaMigrations.findIndex(item => item.id === 'app_schema:0037_service_banner_kickoff');
+    assert.ok(index > 0);
+    migrateDatabase(db, schemaMigrations.slice(0, index));
+    db.exec(`INSERT INTO service_banner VALUES (1, 'Update around 6 PM EDT', '2030-07-01T00:00:00.000Z', '2030-07-03T00:00:00.000Z', 'operator');`);
+    const before = db.prepare('SELECT * FROM service_banner').get();
+    migrateDatabase(db);
+    assert.deepEqual({ ...db.prepare('SELECT * FROM service_banner').get() }, { ...before, kickoff_at: null });
+    assertSchemaCurrent(db);
+    assert.deepEqual(migrateDatabase(db), []);
+    const { db: fresh } = copy('service-kickoff-fresh', true);
+    try {
+      migrateDatabase(fresh);
+      assert.deepEqual(snapshot(db), snapshot(fresh));
+    } finally { fresh.close(); }
+  } finally { db.close(); }
+});
+
+test('automatic graduation pause migration preserves existing words and defaults to ordinary automatic progression',()=>{
+  const {db}=copy('automatic-graduation-pause',true);
+  try {
+    const index=schemaMigrations.findIndex((migration)=>migration.id==='app_schema:0052_vocabulary_automatic_promotion_pause');
+    assert.ok(index>0);
+    migrateDatabase(db,schemaMigrations.slice(0,index));
+    db.exec(`INSERT INTO learners(learner_id,display_name,created_at) VALUES ('pause-test','Pause test','2026-10-23');
+      INSERT INTO lexical_words(id,hanzi,pinyin,meaning,meanings_json,examples_json,priority,created_at)
+        VALUES ('pause-word','字','zi','character','[]','[]',1,'2026-10-23');
+      INSERT INTO learner_words(learner_id,word_id,in_stash,added_at,mode,mode_changed_at)
+        VALUES ('pause-test','pause-word',1,'2026-10-23','solidify','2026-10-23');`);
+    const before=db.prepare("SELECT * FROM learner_words WHERE learner_id='pause-test'").get()!;
+    assert.deepEqual(migrateDatabase(db),schemaMigrations.slice(index).map(migration=>migration.id));
+    const after=db.prepare("SELECT * FROM learner_words WHERE learner_id='pause-test'").get()!;
+    assert.deepEqual({...after},{...before,automatic_promotion_paused:0});
+    assert.throws(()=>db.exec("UPDATE learner_words SET automatic_promotion_paused=2 WHERE learner_id='pause-test'"),/CHECK/);
+    db.exec("UPDATE learner_words SET automatic_promotion_paused=1 WHERE learner_id='pause-test'");
+    assert.deepEqual(migrateDatabase(db),[]);
+    assert.equal(db.prepare("SELECT automatic_promotion_paused FROM learner_words WHERE learner_id='pause-test'").get()!.automatic_promotion_paused,1);
+    assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
+    assertSchemaCurrent(db);
+  } finally {db.close();}
+});
+
+test('operator-only migration preserves both existing controls and defaults access open', () => {
+  const { db } = copy('operator-only-upgrade', true);
+  try {
+    const index = schemaMigrations.findIndex(entry => entry.id === 'app_schema:0056_operator_only_access');
+    const prior = schemaMigrations.slice(0,index);
+    migrateDatabase(db, prior);
+    db.exec("UPDATE service_controls SET enabled = CASE control_key WHEN 'maintenance_mode' THEN 1 ELSE 0 END, updated_at = '2026-10-27T00:00:00.000Z', actor_id = 'incident-operator'");
+    const before = db.prepare('SELECT * FROM service_controls ORDER BY control_key').all();
+    assert.deepEqual(migrateDatabase(db), schemaMigrations.slice(index).map(entry=>entry.id));
+    assert.deepEqual(db.prepare("SELECT * FROM service_controls WHERE control_key != 'operator_only' ORDER BY control_key").all(), before);
+    assert.deepEqual({ ...db.prepare("SELECT * FROM service_controls WHERE control_key = 'operator_only'").get() }, {
+      control_key: 'operator_only', enabled: 0, updated_at: '1970-01-01T00:00:00.000Z', actor_id: 'system_default',
+    });
+    assert.deepEqual(migrateDatabase(db), []);
+    assert.throws(() => db.exec("INSERT INTO service_controls VALUES ('invalid', 1, 'now', 'operator')"), /CHECK constraint/);
+    assertSchemaCurrent(db);
+  } finally { db.close(); }
+});
+
+
+test('preparation compatibility migration retains old preparation and makes no eager queue demand', () => {
+  const { db } = copy('preparation-compatibility-upgrade', true);
+  try {
+    const index = schemaMigrations.findIndex(entry => entry.id === 'app_schema:0057_preparation_compatibility');
+    migrateDatabase(db,schemaMigrations.slice(0,index));
+    db.exec("INSERT INTO lexical_words(id,hanzi,pinyin,meaning,meanings_json,examples_json,priority,created_at) VALUES('epoch-word','字','zi','word','[]','[]',0,'2026-01-01')");
+    db.exec("INSERT INTO word_introduction_preparation(word_id,active_stage,lease_token,lease_expires_at) VALUES('epoch-word','bootstrap','old-token','2026-10-30T00:00:00.000Z')");
+    const before=db.prepare('SELECT * FROM word_introduction_preparation').all();
+    const queues=db.prepare('SELECT * FROM word_preparation_work').all();
+    assert.deepEqual(migrateDatabase(db),schemaMigrations.slice(index).map(entry=>entry.id));
+    assert.deepEqual(db.prepare('SELECT * FROM word_introduction_preparation').all().map(row=>({...row})),before.map(row=>({...row,preparation_epoch:0})));
+    assert.deepEqual(db.prepare('SELECT * FROM word_preparation_work').all(),queues);
+    assert.throws(()=>db.exec('UPDATE word_introduction_preparation SET preparation_epoch=-1'),/CHECK/);
+    assertSchemaCurrent(db);
+  } finally {db.close();}
 });

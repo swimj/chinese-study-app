@@ -1,0 +1,259 @@
+import assert from 'node:assert/strict';
+import { createElement, createRef, type ComponentProps } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { test } from 'node:test';
+import { StudySessionPanel } from '../src/features/session/StudySessionPanel.tsx';
+import { createSessionSummary } from '../src/features/session/session-summary.ts';
+import { selectBootstrapReveal } from '../src/domain/word-content/reveal';
+import type { PureCueSessionReviewItem } from '../src/domain/study-actions.ts';
+
+const cue: PureCueSessionReviewItem = {
+  itemType: 'pure_cue_production', sessionActionId: 'pure-action', tier: 'fragile',
+  snapshot: {
+    snapshotId: 'served', pureCueId: 'pure', servedAt: '2026-09-26T00:00:00.000Z',
+    stimulus: 'Describe unusual behavior', axisNote: 'Semantic classification for membership',
+    teachingNote: 'Frozen teaching about the accepted words',
+    acceptedAnswers: [{ wordId: 'word', hanzi: '古怪', traditional: null }],
+  },
+};
+
+function props(): ComponentProps<typeof StudySessionPanel> {
+  const noop = () => {};
+  return {
+    sessionStarted: true, sessionDeskRef: createRef(), deskAgainCount: 0, deskRemainingCount: 1, sessionPhase: 'active', sessionSummary: null,
+    sessionFinalization: { kind: 'unfinalized' }, activeItem: null, activePureCue: cue,
+    activeWord: null, activeLearningProgress: undefined, activeUnstudiedProgress: undefined,
+    activeReviewProgress: undefined, activePureCueFailureCount: 0, activePureCueReinforcementStreak: 0, reviewedCount: 0, queuedCount: 1,
+    hasUndo: false, submittingRating: null, personalNotesEditorOpen: false, personalNotesEditorSaving: false,
+    studyManagementSubmitting: false, productionAwaitingNext: false, pureCueAwaitingNext: false,
+    productionAwaitingSupplement: false, frozenProductionCard: null, frozenPureCueCard: null,
+    contrastAwaitingNext: false, frozenContrastCard: null, activeAllMeanings: [], activeWordPersonalNotes: '',
+    reviewInReinforcement: false, activeElapsedTime: '0:01', activePrompt: null,
+    activePromptDisplayedMeanings: [], activeReviewState: 'Review', answerRevealed: false,
+    activeAnswerPinyin: null, activeAnswerText: null, activeMeaningRows: [], meaningVisibilitySavingKey: null,
+    isProductionItem: true, productionAwaitingRating: false, productionHanziInput: '', productionHanziError: null,
+    productionHanziInputRef: createRef<HTMLInputElement>(), contrastSelectedWordId: null,
+    contrastAwaitingRating: false, activeRatingOptions: [], learnerRequestedReview: false,
+    frozenProductionLearnerRequestedReview: false, shortcutGuideOpen: false,
+    onUndoLastRating: noop, onEndSession: noop, onRetrySessionReflection: noop,
+    onContinueAfterAutoForgot: noop, onContinueAfterProductionSupplement: noop,
+    onContinueAfterAutoContrastForgot: noop, onDismissCurrentWord: noop, onManageStudyAction: noop,
+    onDismissFrozenProductionWord: noop, onManageFrozenProductionAction: noop, onOpenPersonalNotesEditor: noop,
+    onBeginUnstudiedDrill: noop, onToggleMeaningVisibility: noop, onSubmitProductionHanzi: noop,
+    onNoClueProduction: noop, onProductionHanziInputChange: noop, onSelectContrastChoice: noop,
+    onRevealAnswer: noop, onToggleLearnerRequestedReview: noop, onToggleFrozenProductionLearnerRequestedReview: noop,
+    onRate: noop, onOpenShortcutGuide: noop, onCloseShortcutGuide: noop,
+  };
+}
+
+function render(overrides: Partial<ComponentProps<typeof StudySessionPanel>> = {}) {
+  return renderToStaticMarkup(createElement(StudySessionPanel, { ...props(), ...overrides }));
+}
+
+test('pure-cue teaching stays hidden until reveal; semantic axis never becomes teaching', () => {
+  const hidden = render();
+  assert.match(hidden, /Describe unusual behavior/);
+  assert.doesNotMatch(hidden, /Frozen teaching|Semantic classification|古怪/);
+  const revealed = render({ answerRevealed: true });
+  assert.match(revealed, /Frozen teaching about the accepted words/);
+  assert.match(revealed, /古怪/);
+  assert.doesNotMatch(revealed, /Semantic classification/);
+  const noTeaching = render({ answerRevealed: true,
+    activePureCue: { ...cue, snapshot: { ...cue.snapshot, teachingNote: '' } },
+  });
+  assert.doesNotMatch(noTeaching, /Frozen teaching|Semantic classification/);
+});
+
+test('auto-forgot reveal uses the frozen teaching snapshot even when another cue is active', () => {
+  const markup = render({ pureCueAwaitingNext: true,
+    frozenPureCueCard: { item: cue, attemptedResponse: '错', reviewedCount: 1, queuedCount: 1 },
+    activePureCue: { ...cue, snapshot: { ...cue.snapshot, teachingNote: 'Newer active teaching' } },
+  });
+  assert.match(markup, /Frozen teaching about the accepted words/);
+  assert.match(markup, /古怪/);
+  assert.doesNotMatch(markup, /Newer active teaching|Semantic classification/);
+});
+
+
+test('pure cue quality is available before recall without leaking its accepted answers', () => {
+  const markup = render({ sessionSummary: createSessionSummary({ sessionId: 'quality-session',
+    startedAt: '2026-09-26T00:00:00.000Z', initialQueueLength: 1 }) });
+  assert.match(markup, /Helpful: Cue quality/);
+  assert.match(markup, /Not helpful: Cue quality/);
+  assert.ok(markup.indexOf('Not helpful: Cue quality') < markup.indexOf('Helpful: Cue quality'));
+  assert.doesNotMatch(markup, /Frozen teaching|Semantic classification|古怪/);
+});
+
+test('frozen production keeps cue feedback and gives the visible supplement the shortcut', () => {
+  const markup = render({
+    sessionSummary: createSessionSummary({ sessionId: 'quality-session', startedAt: '2026-09-26T00:00:00.000Z', initialQueueLength: 1 }),
+    productionAwaitingNext: true,
+    frozenProductionCard: {
+      sessionActionId: 'production-action', targetWordId: 'word', actionKind: 'production', sampledSkillIds: ['production'],
+      contentRef: { type: 'production_cue', taskId: 'task', cueId: 'cue' },
+      attemptedHanzi: null, status: 'review', reviewedCount: 0, queuedCount: 1,
+      promptDisplayedMeanings: [], fallbackPrompt: 'A prompt: （ ）', answerPinyin: 'ci', answerText: '词', answerForms: { hanzi: '词', traditional: '詞' },
+      allMeanings: ['word'], personalNotes: '', intervalHours: 24, example: '',
+      production: { taskId: 'task', cueId: 'cue', cueType: 'definition_gloss', text: 'A prompt: （ ）',
+        acceptedAnswers: [{ wordId: 'word', hanzi: '词', traditional: null }],
+        supplement: { supplementId: 'supplement', englishFrame: 'Frame', exampleSentence: 'Example', exampleTranslation: 'Translation' },
+      },
+    },
+  });
+  assert.match(markup, /Helpful: Cue quality/);
+  assert.match(markup, /Helpful: Supplement quality/);
+  assert.match(markup, /<mark class="desk-cloze-answer">词<\/mark>/);
+  assert.equal((markup.match(/Helpful content \(\]\)/g) ?? []).length, 1);
+  assert.doesNotMatch(markup, /Describe unusual behavior/);
+});
+
+test('recognition reuses supplement teaching only after reveal and retains dictionary fallback', () => {
+  const word = { id: 'recognition-word', hanzi: '包庇', traditional: null, pinyin: 'bāobì',
+    meaning: 'dictionary definition', meanings: ['dictionary definition'], personalNotes: '',
+    examples: ['legacy example'], status: 'review' as const, priority: 1, createdAt: '',
+    learningStreak: 0, lastLearningSuccessOn: null, lastLearningCoveredOn: null };
+  const item = { sessionActionId: 'recognition-action', actionKind: 'recognition' as const,
+    targetWordId: word.id, sampledSkillIds: ['recognition' as const], contentRef: null,
+    intervalHours: 24, word, contrastSelection: null, production: null,
+    recognitionSupplement: { supplementId: 'supplement', englishFrame: 'Knowingly shielding someone.',
+      exampleSentence: '他包庇了他。', exampleTranslation: 'He shielded him.' } };
+  const overrides = { activePureCue: null, activeItem: item, activeWord: word,
+    activeWordPersonalNotes: 'My existing learner note',
+    isProductionItem: false, activePrompt: word.hanzi, activeAllMeanings: word.meanings,
+    activeAnswerText: word.meaning, activeAnswerPinyin: word.pinyin,
+    sessionSummary: createSessionSummary({ sessionId: 'recognition-session',
+      startedAt: '2026-09-26T00:00:00.000Z', initialQueueLength: 1 }) };
+  const content = { schemaVersion: 1 as const, id: 'content',
+    word: { wordId: word.id, hanzi: word.hanzi, traditional: null, pinyin: word.pinyin },
+    uses: [
+      { id: 'a', label: 'First curated sense', notes: [], exampleIds: ['a'] },
+      { id: 'b', label: 'Second curated sense', notes: [], exampleIds: ['b'] },
+    ],
+    examples: [
+      { id: 'a', text: '他学习。', translation: 'He studies.', pronunciation: null },
+      { id: 'b', text: '她学习。', translation: 'She studies.', pronunciation: null },
+    ],
+  };
+  const bootstrapReveal = selectBootstrapReveal(content, new Date('2026-10-13T00:00:00Z'));
+  const bootstrap = { ...overrides, activeItem: { ...item, wordContent: content, bootstrapReveal }, characterPresentation: 'traditional' as const };
+  assert.doesNotMatch(render(bootstrap), /curated sense|studies/);
+  const bootstrapHtml = render({ ...bootstrap, answerRevealed: true });
+  assert.match(bootstrapHtml, /My existing learner note/);
+  assert.doesNotMatch(bootstrapHtml, /Edit notes|Open personal notes/);
+  const primaryReveal = bootstrapHtml.split('<details class="desk-reference">')[0];
+  assert.equal((primaryReveal.match(/curated sense/g) ?? []).length, 1);
+  assert.match(primaryReveal, /production-supplement-frame/);
+  assert.match(primaryReveal, /「[他她]學習。」/);
+  assert.match(primaryReveal, /(?:He|She) studies\./);
+  assert.doesNotMatch(primaryReveal, /dictionary definition|Knowingly shielding/);
+  assert.match(bootstrapHtml, /<details class="desk-reference"><summary>Word reference/);
+  assert.match(bootstrapHtml, /First curated sense/);
+  assert.match(bootstrapHtml, /Second curated sense/);
+  const production = { taskId: 'task', cueId: null, cueType: 'definition_gloss' as const,
+    text: word.meaning, acceptedAnswers: [{ wordId: word.id, hanzi: word.hanzi, traditional: null }],
+    supplement: item.recognitionSupplement, bootstrapReveal };
+  const productionItem = { ...bootstrap.activeItem, actionKind: 'production' as const,
+    sampledSkillIds: ['production' as const], production };
+  const productionProps = { ...bootstrap, activeItem: productionItem, isProductionItem: true,
+    activePrompt: word.meaning, activeAnswerText: word.hanzi };
+  assert.doesNotMatch(render(productionProps), /curated sense|studies/);
+  const productionHtml = render({ ...productionProps, answerRevealed: true, productionAwaitingSupplement: true });
+  const revealedExample = (html: string) => html.match(/<div class="production-supplement production-supplement-aside">.*?<\/div>/)?.[0];
+  assert.equal(revealedExample(productionHtml), revealedExample(bootstrapHtml));
+  assert.match(productionHtml, /<details class="desk-reference"><summary>Word reference/);
+  assert.doesNotMatch(productionHtml, /Knowingly shielding|Supplement quality/);
+  assert.match(productionHtml, /Continue/);
+  const frozenHtml = render({ ...productionProps, productionAwaitingNext: true,
+    frozenProductionCard: {
+      sessionActionId: productionItem.sessionActionId, targetWordId: word.id, actionKind: 'production', sampledSkillIds: ['production'],
+      contentRef: null, attemptedHanzi: '错', status: 'review', reviewedCount: 0, queuedCount: 1,
+      promptDisplayedMeanings: [], fallbackPrompt: word.meaning, answerPinyin: word.pinyin,
+      answerText: word.hanzi, answerForms: { hanzi: word.hanzi, traditional: null },
+      allMeanings: word.meanings, personalNotes: '', intervalHours: 24, example: '', production, wordContent: content,
+    },
+  });
+  assert.equal(revealedExample(frozenHtml), revealedExample(bootstrapHtml));
+  assert.doesNotMatch(frozenHtml, /Knowingly shielding|Supplement quality/);
+  assert.match(frozenHtml, /Your response/);
+  const clozeHtml = render({ ...productionProps, answerRevealed: true,
+    activeItem: { ...productionItem, production: { ...production, cueType: 'minimal_context', supplement: null } },
+  });
+  assert.equal(revealedExample(clozeHtml), undefined);
+
+  assert.doesNotMatch(render(overrides), /Knowingly shielding|He shielded|Supplement quality/);
+  const revealed = render({ ...overrides, answerRevealed: true });
+  assert.match(revealed, /Knowingly shielding someone/);
+  assert.match(revealed, /他包庇了他。/);
+  assert.match(revealed, /He shielded him/);
+  assert.match(revealed, /Helpful: Supplement quality/);
+  assert.doesNotMatch(revealed, /legacy example/);
+  const fallback = render({ ...overrides, answerRevealed: true,
+    activeItem: { ...item, recognitionSupplement: undefined } });
+  assert.match(fallback, /dictionary definition/);
+  assert.match(fallback, /legacy example/);
+  const inlineChinese = render({ ...overrides, answerRevealed: true,
+    characterPresentation: 'traditional', sentenceCharacterPresentation: 'simplified',
+    activeAnswerText: 'Notice 学习 in this use label.' });
+  assert.match(inlineChinese, /Notice 學習 in this use label/);
+
+});
+
+for (const marker of ['____', '__', '_______', '（ ）']) {
+  test(`production fills ${marker} only after reveal and retains the full word reference`, () => {
+    const word = { id: 'pepper', hanzi: '藤椒', traditional: null, pinyin: 'téng jiāo', meaning: 'rattan pepper', meanings: ['rattan pepper'], personalNotes: '', examples: [], status: 'review' as const, priority: 1, createdAt: '2026-01-01T00:00:00.000Z', learningStreak: 0, lastLearningSuccessOn: null, lastLearningCoveredOn: null };
+    const item = { sessionActionId: 'pepper-action', actionKind: 'production' as const, targetWordId: word.id, sampledSkillIds: ['production' as const], contentRef: null, intervalHours: 24, word, contrastSelection: null,
+      production: { taskId: 'task', cueId: 'cue', cueType: 'minimal_context' as const, text: `菜里加了${marker}。`, acceptedAnswers: [{ wordId: word.id, hanzi: word.hanzi, traditional: null }], supplement: null },
+    };
+    const presentation = { activePureCue: null, activeItem: item, activeWord: word, activePrompt: item.production.text, activeAnswerText: word.hanzi, activeAllMeanings: word.meanings };
+    const hidden = render(presentation);
+    assert.match(hidden, /菜里加了____。/);
+    assert.doesNotMatch(hidden, /藤椒|rattan pepper/);
+    const revealed = render({ ...presentation, answerRevealed: true, productionAwaitingRating: true });
+    assert.match(revealed, /<mark class="desk-cloze-answer">藤椒<\/mark>/);
+    assert.match(revealed, /<details class="desk-reference"><summary>Word reference<\/summary>/);
+    assert.match(revealed, /rattan pepper/);
+    const recognition = render({ ...presentation, isProductionItem: false, answerRevealed: true,
+      activeItem: { ...item, actionKind: 'recognition', sampledSkillIds: ['recognition'], production: undefined }, activePrompt: word.hanzi, activeAnswerText: 'rattan pepper',
+    });
+    assert.match(recognition, /<details class="desk-reference" open="">/);
+  });
+}
+
+test('session sentences use the effective script while standalone answers follow Card characters', () => {
+  const source = { ...cue, snapshot: { ...cue.snapshot,
+    stimulus: '這個學生在學習。', teachingNote: 'Notice 學習 in this sentence.',
+    acceptedAnswers: [{ wordId: 'word', hanzi: '学习', traditional: '學習' }],
+  } };
+  const bothTraditional = render({ activePureCue: source, characterPresentation: 'both',
+    sentenceCharacterPresentation: 'traditional', answerRevealed: true });
+  assert.match(bothTraditional, /這個學生在學習。/);
+  assert.match(bothTraditional, /学习 \/ 學習/);
+  const simplifiedOverride = render({ activePureCue: source, characterPresentation: 'simplified',
+    sentenceCharacterPresentation: 'traditional', answerRevealed: true });
+  assert.match(simplifiedOverride, /这个学生在学习。/);
+  assert.doesNotMatch(simplifiedOverride, /這個|學習/);
+  const traditionalOverride = render({ activePureCue: source, characterPresentation: 'traditional',
+    sentenceCharacterPresentation: 'simplified' });
+  assert.match(traditionalOverride, /這個學生在學習。/);
+  assert.deepEqual(source.snapshot.acceptedAnswers, [{ wordId: 'word', hanzi: '学习', traditional: '學習' }]);
+  assert.equal(source.snapshot.stimulus, '這個學生在學習。');
+});
+
+test('frozen failure card fills one canonical traditional cloze answer while keeping both standalone forms', () => {
+  const markup = render({ characterPresentation: 'both', sentenceCharacterPresentation: 'traditional',
+    productionAwaitingNext: true, frozenProductionCard: {
+      sessionActionId: 'production-action', targetWordId: 'word', actionKind: 'production', sampledSkillIds: ['production'],
+      contentRef: { type: 'production_cue', taskId: 'task', cueId: 'cue' },
+      attemptedHanzi: '学', status: 'review', reviewedCount: 0, queuedCount: 1,
+      promptDisplayedMeanings: [], fallbackPrompt: '这个学生正在____。', answerPinyin: 'xué xí',
+      answerText: '学习 / 學習', answerForms: { hanzi: '学习', traditional: '學習' },
+      allMeanings: ['to study'], personalNotes: 'My note: 学习', intervalHours: 24, example: '他喜欢学习。',
+    },
+  });
+  assert.match(markup, /這個學生正在/);
+  assert.match(markup, /<mark class="desk-cloze-answer">學習<\/mark>/);
+  assert.match(markup, /<strong class="answer-value">学习 \/ 學習<\/strong>/);
+  assert.match(markup, /他喜歡學習。/);
+  assert.match(markup, /My note: 学习/);
+  assert.doesNotMatch(markup, /<mark[^>]*>学习 \/ 學習/);
+});

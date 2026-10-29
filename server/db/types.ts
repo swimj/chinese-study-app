@@ -54,6 +54,7 @@ export type ReviewFailureRateDay = {
   dayKey: string;
   completedReviewActionSessions: number;
   failedReviewActionSessions: number;
+  compensatedReviewActionSessions: number;
   failureRate: number | null;
   rolling3DayFailureRate: number | null;
   rolling7DayFailureRate: number | null;
@@ -72,6 +73,7 @@ export type ReviewPassRating = 'hard' | 'good' | 'easy';
 export type StudySessionProcessingState = StudySessionRecord['processingState'];
 
 export type ReviewAttemptCommitIntent = {
+  reinforcementSkipped?: boolean;
   type: 'commit-review-action-session';
   sessionActionId: string;
   targetWordId: string;
@@ -265,6 +267,7 @@ export type DailyNewWordIntakeRow = {
 };
 
 export type SeedData = {
+  wordIntroductionFixtureIds?: string[];
   words: Word[];
   wordMeanings: WordMeaning[];
   wordStudyAdmissionStates: WordStudyAdmissionState[];
@@ -323,7 +326,7 @@ export type PriorityWordRow = WordRow & {
   overlay_updated_at: string | null;
 };
 
-export const DEFAULT_DAILY_NEW_WORD_LIMIT = 10;
+export const DEFAULT_DAILY_NEW_WORD_LIMIT = 5;
 export const INITIAL_REVIEW_EASE_FACTOR = 2.5;
 export const INITIAL_CONTEXTUAL_SELECTION_INTERVAL_HOURS = 6;
 export const PRIORITY_TIER_TOP = 1;

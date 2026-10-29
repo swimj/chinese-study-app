@@ -38,8 +38,9 @@ LITESTREAM_ACCESS_KEY_ID
 LITESTREAM_SECRET_ACCESS_KEY
 ```
 
-The two OpenAI arms use `OPENAI_API_KEY`, GLM uses `ZAI_API_KEY`, and Gemini
-uses `OPENROUTER_API_KEY`. Hosted provider calls are direct. Do not enable
+The two OpenAI arms use `OPENAI_API_KEY`, both GLM-5.3 Flash arms use
+`ZAI_API_KEY`, and Gemini uses `OPENROUTER_API_KEY`. Hosted provider calls are
+direct. Do not enable
 `APP_USE_LOCAL_PROVIDER_PROXY`; that switch exists only for local dogfood.
 
 The Clerk development instance remains invite-only. The Fly origin must stay
@@ -107,7 +108,9 @@ The designated smoke account is the pre-existing Clerk user
 `x6nscl63n@mozmail.com`. It must already map to a hosted learner; first-time
 authentication bootstraps a learner even on GET and would violate the no-write
 boundary. A password is not used: `hosted:smoke` mints a short-lived Clerk
-session with `CLERK_SECRET_KEY` and revokes it. Never print the token.
+session with `CLERK_SECRET_KEY`, reads `GET /api/vocabulary/statistics`, validates
+the learner statistics response, and revokes the session. This probe does not
+reserve words or create a study session. Never print the token.
 
 Protected hosted configuration, in ignored
 `deploy/fly/.generated/fly.toml` `[env]` or a Fly secret:
@@ -121,9 +124,20 @@ performs.
 
 ### Post a pre-upgrade banner
 
-Hours before a planned window, post a signed-in chrome notice from the **currently
-running** image. Do not bake the message into the upgrade itself. Quote the
-message so spaces survive `fly ssh`:
+Hours before a planned window, use the operator **Service banner** panel in the
+**currently running** app. Enter the estimated update kickoff in your local
+time, or select UTC, to preview and publish the standardized update notice.
+Learners see the kickoff formatted in their browser time zone. This time describes
+when the update is expected to start; the notice expires 24 hours after that
+kickoff. The panel shows the actual expiry separately.
+
+For other announcements, use the custom-message path. Its editor starts with
+the current banner text, including a standardized update notice when one is
+active. Publishing a custom message replaces that banner and sets its expiry
+to 24 hours after saving.
+
+The CLI remains available for a custom notice. Do not bake the message into the
+upgrade itself. Quote the message so spaces survive `fly ssh`:
 
 ```bash
 fly ssh console --app <app-name> --command \
@@ -131,7 +145,7 @@ fly ssh console --app <app-name> --command \
 ```
 
 The notice is visible to signed-in learners on the next Home load (including
-returning from a session). It expires after 24 hours. Successful
+returning from a session). CLI notices expire 24 hours after posting. Successful
 `hosted:upgrade` reopen also clears it and no-ops when none exists. Clear
 manually with `--clear=true` instead of `--message`.
 
@@ -265,6 +279,48 @@ fly ssh console --app <app-name> --command \
   'npm run hosted:banner -- --data-dir=/data --clear=true --actor-id=<operator>'
 ```
 
+## Operator-only access
+
+Use operator-only access to run the application for diagnostics while blocking
+other learners. It preserves normal operator application behavior, subject to
+the independent maintenance and provider-work controls. The configured
+`APP_OPERATOR_CLERK_USER_IDS` allowlist determines access; an empty allowlist
+blocks everyone. Confirm your Clerk user is already in that configuration
+before enabling the control.
+
+This control requires migration `0056_operator_only_access`. Its initial release
+uses the [offline migration procedure](schema-migrations.md); it is not an
+application-only upgrade. Later control changes do not require restarting the
+service:
+
+```bash
+fly ssh console --app <app-name> --command \
+  'npm run --silent hosted:control -- --data-dir=/data --control=operator-only --enabled=true --actor-id=<operator>'
+```
+
+Verify `GET /api/service-access` reports `allowed: false` without an operator
+session and `allowed: true` with your verified operator session. Verify a
+non-operator application request returns `503 OPERATOR_ONLY` and your browser
+can enter. The probe does not bootstrap accounts. Ordinary smoke-account checks
+are blocked unless that account is explicitly an operator; do not expand the
+allowlist just to make a smoke check pass.
+
+For normal interactive operator diagnostics, maintenance must be off. Choose
+provider work independently: leaving it enabled retains the background workload
+for all learners, while disabling it pauses new provider dispatch globally.
+Operator-only access does not stop local background processing, cancel running
+requests, or create a separate diagnostic database. Operator actions use the
+live database and retain their normal effects.
+
+Non-operators see a maintenance screen in the updated frontend. Existing tabs
+switch when an API call is rejected; older frontend bundles may display their
+usual request error, but the backend blocks their access. Frontend assets and
+health checks remain reachable. To reopen learner access, run the same command
+with `--enabled=false`, then verify access with an ordinary existing account.
+The setting survives restarts and deployments; release automation must not
+implicitly clear it. Keep a service offline at the infrastructure level when
+no public access at all is wanted.
+
 ## Learner access
 
 To disable or re-enable local service access for a learner, also disable or
@@ -276,6 +332,49 @@ fly ssh console --app <app-name> --command \
 ```
 
 ## Operator recovery
+
+### Recover failed cue repairs from correct requested reviews
+
+`hosted:recover-correct-cue-repairs` selects the latest accepted current-contract
+fallback repair per word for an explicit learner, while that word has no stored
+production cues (including retired ones). It preserves the failure and recovered
+effects in an immutable operator audit. No hand-written SQL or provider calls
+are needed; the command leaves service controls to the operator.
+
+This command ships with `0027_correct_cue_repair_recovery`. Deploy using the
+[offline schema-release procedure](schema-migrations.md), applying the migration
+before target startup. Recovery may run in that window or a later maintenance
+window:
+
+1. Disable provider work, enable maintenance, and wait for `/healthz` to report
+   zero active provider work. Sync Litestream and take a fresh volume snapshot
+   before recovery, using the commands above.
+2. Preview the plan from the deployed image:
+
+   ```bash
+   fly ssh console --app <app-name> --command \
+     'npm run --silent hosted:recover-correct-cue-repairs -- --data-dir=/data --learner-id=<learner-id>'
+   ```
+
+   Review `candidates`, `skipped`, and `digest`. Output identifies words and
+   invocations without learner responses or provider payloads; retain it as
+   private operator evidence. The October 7 incident inspection found 69 distinct
+   current-contract word candidates; always re-preview the live selection.
+3. Confirm that digest to recover the selected batch atomically:
+
+   ```bash
+   fly ssh console --app <app-name> --command \
+     'npm run --silent hosted:recover-correct-cue-repairs -- --data-dir=/data --learner-id=<learner-id> --actor-id=<operator> --apply=true --confirm-plan=<digest>'
+   ```
+
+   A changed plan refuses all writes; adapter or audit failure rolls back every
+   recovery. On failure, retain maintenance and investigate before re-previewing.
+4. Preview again: recovered invocations should be absent. Verify the returned
+   ids, target identity, health, and authenticated hosted smoke. Original failures
+   and recovered effect refs are in `operator_reflection_cue_recoveries`; the
+   same invocations now report applied.
+5. Reopen writes first and provider work last using the existing control commands;
+   clear any pre-upgrade banner. Recovery remains a deliberate operator action.
 
 ### Provision a reflection test card
 

@@ -18,7 +18,8 @@ export type SessionSummaryFinalizationKind = 'unfinalized' | 'finalizing' | 'fin
 export type SessionKeyCommand =
   | { type: 'toggle_production_input_focus' }
   | { type: 'submit_production' }
-  | { type: 'open_notes' }
+  | { type: 'no_clue_production' }
+  | { type: 'toggle_reflection_review' }
   | { type: 'reveal' }
   | { type: 'begin_unstudied_drill' }
   | { type: 'continue_after_auto_forgot' }
@@ -26,6 +27,7 @@ export type SessionKeyCommand =
   | { type: 'rate_default' }
   | { type: 'preview_contrast'; choiceIndex: 0 | 1 }
   | { type: 'confirm_contrast' }
+  | { type: 'skip_reinforcement' }
   | { type: 'undo' }
   | { type: 'rate'; rating: ReviewRating }
   | { type: 'finish_session' }
@@ -38,13 +40,23 @@ export type SessionKeyEvent = {
   isComposing: boolean;
   keyCode: number;
   shiftKey?: boolean;
+  ctrlKey?: boolean;
+  metaKey?: boolean;
+  altKey?: boolean;
 };
 
 export type SessionKeyboardContext = {
+  canSkipReinforcement?: boolean;
+  canNoClueProduction?: boolean;
+  canRequestReflectionReview?: boolean;
+  isProductionInputTarget?: boolean;
   sessionStarted: boolean;
   isEditableTarget: boolean;
+  isQualityControlTarget?: boolean;
+  isNativeActionTarget?: boolean;
   productionInputActive: boolean;
   productionAwaitingNext: boolean;
+  pureCueAwaitingNext?: boolean;
   productionAwaitingSupplement: boolean;
   contrastAwaitingNext: boolean;
   unstudiedIntro: boolean;
@@ -107,7 +119,7 @@ export function getSessionInteractionKind(context: SessionKeyboardContext): Sess
     return 'completed_summary';
   }
 
-  if (context.productionAwaitingNext || context.contrastAwaitingNext) {
+  if (context.productionAwaitingNext || context.pureCueAwaitingNext || context.contrastAwaitingNext) {
     return 'await_next';
   }
 
@@ -165,12 +177,12 @@ export function getSessionPrimaryAction(context: SessionKeyboardContext): Sessio
       return { command: 'continue_after_auto_forgot', label: 'Next', shortcut: 'Space' };
     case 'completed_summary':
       if (context.summaryFinalizationKind === 'unfinalized') {
-        return { command: 'finish_session', label: 'Finish session', shortcut: 'Space' };
+        return { command: 'finish_session', label: 'See session summary', shortcut: 'Enter' };
       }
       if (context.summaryFinalizationKind === 'finalized') {
         return { command: 'close_summary', label: 'Close summary', shortcut: 'Space' };
       }
-      return { command: 'finish_session', label: 'Finishing...', shortcut: null };
+      return { command: 'finish_session', label: 'Saving session…', shortcut: null };
     default:
       return null;
   }
@@ -182,6 +194,7 @@ export function getSessionShortcutGuide(
 ): SessionShortcutGuideSection[] {
   const kind = getSessionInteractionKind(context);
   const thisCard = getThisCardShortcutRows(kind, context);
+  if (context.canSkipReinforcement) thisCard.push({ key: 'Shift+Space', description: 'Skip reinforcement and complete this review', available: true });
   const sessionRows: SessionShortcutRow[] = [
     {
       key: 'U',
@@ -189,16 +202,15 @@ export function getSessionShortcutGuide(
       available: context.hasUndo,
     },
     {
-      key: 'E',
-      description: 'Open personal notes',
-      available: context.hasActiveWord,
-    },
-    {
       key: '?',
       description: 'Open or close the shortcut guide',
       available: true,
     },
   ];
+
+  if (context.canRequestReflectionReview) sessionRows.unshift({
+    key: 'R', description: 'Request feedback / remove request', available: true,
+  });
 
   const sections: SessionShortcutGuideSection[] = [];
   if (thisCard.length > 0) {
@@ -229,6 +241,21 @@ export function resolveSessionKey(
     return null;
   }
 
+  if (event.key === 'Enter' && event.shiftKey) {
+    return !event.ctrlKey && !event.metaKey && !event.altKey
+      && !isImeComposingEvent(event)
+      && getSessionInteractionKind(context) === 'production_input'
+      && context.canNoClueProduction
+      && (!context.isEditableTarget || context.isProductionInputTarget)
+      && !context.isQualityControlTarget
+      ? { type: 'no_clue_production' } : null;
+  }
+
+  // Native activation of feedback controls must not submit or grade the exercise.
+  if (context.isQualityControlTarget && (event.key === ' ' || event.key === 'Enter')) {
+    return null;
+  }
+
   const composing = isImeComposingEvent(event);
   if (composing && (event.key === 'Escape' || event.key === 'Enter' || isShortcutGuideToggleKey(event))) {
     return null;
@@ -254,15 +281,20 @@ export function resolveSessionKey(
     return null;
   }
 
-  if ((event.key === 'e' || event.key === 'E') && context.hasActiveWord) {
-    return { type: 'open_notes' };
+  if (event.key.toLowerCase() === 'r' && context.canRequestReflectionReview && !context.completedSummary) {
+    return !composing && !event.ctrlKey && !event.metaKey && !event.altKey
+      ? { type: 'toggle_reflection_review' } : null;
+  }
+
+  if (event.key === ' ' && event.shiftKey) {
+    return !composing && context.canSkipReinforcement ? { type: 'skip_reinforcement' } : null;
   }
 
   if (context.completedSummary) {
+    if (context.isNativeActionTarget && (event.key === 'Enter' || event.key === ' ')) return null;
+    if (event.key === 'Enter' && context.summaryFinalizationKind === 'unfinalized') return { type: 'finish_session' };
     if (event.key === ' ') {
-      if (context.summaryFinalizationKind === 'unfinalized') {
-        return { type: 'finish_session' };
-      }
+      if (context.summaryFinalizationKind === 'unfinalized') return null;
       if (context.summaryFinalizationKind === 'finalized') {
         return { type: 'close_summary' };
       }
@@ -281,7 +313,7 @@ export function resolveSessionKey(
   }
 
   if (event.key === ' ') {
-    if (context.productionAwaitingNext || context.contrastAwaitingNext) {
+    if (context.productionAwaitingNext || context.pureCueAwaitingNext || context.contrastAwaitingNext) {
       return { type: 'continue_after_auto_forgot' };
     }
 
@@ -305,7 +337,7 @@ export function resolveSessionKey(
       return { type: 'reveal' };
     }
 
-    if (context.hasActiveWord && getDefaultRating(context.ratingOptions)) {
+    if (context.ratingAvailable && getDefaultRating(context.ratingOptions)) {
       return { type: 'rate_default' };
     }
 
@@ -326,7 +358,7 @@ export function resolveSessionKey(
     return { type: 'undo' };
   }
 
-  if (context.productionAwaitingNext || context.contrastAwaitingNext || context.productionAwaitingSupplement) {
+  if (context.productionAwaitingNext || context.pureCueAwaitingNext || context.contrastAwaitingNext || context.productionAwaitingSupplement) {
     return null;
   }
 
@@ -365,6 +397,7 @@ function getThisCardShortcutRows(
     case 'production_input':
       return [
         { key: 'Enter', description: 'Submit the typed response', available: true },
+        { key: 'Shift+Enter', description: 'No clue (empty answer)', available: context.canNoClueProduction === true },
         {
           key: 'Escape',
           description: 'Leave or return to the answer field',
@@ -401,12 +434,12 @@ function getThisCardShortcutRows(
       return [{ key: 'Space', description: 'Continue to the next card', available: true }];
     case 'completed_summary':
       if (context.summaryFinalizationKind === 'unfinalized') {
-        return [{ key: 'Space', description: 'Finish the session', available: true }];
+        return [{ key: 'Enter', description: 'See session summary', available: true }];
       }
       if (context.summaryFinalizationKind === 'finalized') {
         return [{ key: 'Space', description: 'Close the summary', available: true }];
       }
-      return [{ key: 'Space', description: 'Finish the session', available: false }];
+      return [{ key: 'Enter', description: 'See session summary', available: false }];
     default:
       return [];
   }

@@ -1,0 +1,449 @@
+# Archived: Session Reflection Generation
+
+Archived after the Mandarin vocabulary cutover. This is a historical design
+record; current requirements are maintained in the [product contract](../vocabulary-learning.md)
+and [architecture contract](../vocabulary-architecture.md).
+
+This document preserves the earlier post-session reflection contract: eligible
+evidence, completed-session boundaries, failure isolation, retries and provenance.
+Use it to interpret historical reflection artifacts and understand that design.
+
+The current Mandarin model separates learner lessons, internal content improvement
+and bounded scheduling correction. The
+[vocabulary product contract](../vocabulary-learning.md#reactions-feedback-content-repair-and-authority)
+and [architecture contract](../vocabulary-architecture.md#generation-review-and-application-authority)
+define those responsibilities. The evidence filters and lifecycle below apply
+to the earlier reflection flow.
+
+Related documents:
+
+- [`session-progress-and-completion.md`](session-progress-and-completion.md)
+- [`study-action-model.md`](study-action-model.md)
+- [`reflection-proposals-and-handles.md`](reflection-proposals-and-handles.md)
+- [`docs/reflection-frontend-architecture.md`](../../docs/reflection-frontend-architecture.md)
+
+## 1. Scope And Authority
+
+For the earlier runtime, this specification defines:
+
+- the completed-session boundary at which reflection becomes eligible;
+- the relationship among Undo, durable attempt acceptance, and reflection
+  evidence;
+- the initial evidence-item inclusion contract and its versioning boundary;
+- generation idempotency, failure isolation, and deliberate retry semantics;
+- the distinction between a generation attempt and a successful immutable
+  reflection artifact; and
+- the requirement that model resource exposure be explicitly bounded and
+  observable.
+
+It does not choose:
+
+- database tables, HTTP routes, frontend components, or process topology;
+- a permanent provider, model, price schedule, or batching algorithm;
+- proposal review or operation-application semantics;
+- a final production-cue or accepted-answer model;
+- broad learner-history context; or
+- time-budgeted planning or autonomous scheduling.
+
+## 2. Finalized-Session Boundary
+
+Completing the last session unit immediately opens the completion screen and
+saves a pending completion. The backend acknowledges a fixed 15-second final
+Undo deadline. Ordinary active/draining leave does not finish a session.
+The completion lifecycle is defined in
+[`session-progress-and-completion.md`](session-progress-and-completion.md#session-completion).
+
+Pending completion preserves the final deferred action and qualifying reflection
+supplement without accepting the study outcome. Undo must cancel it before the
+server deadline. Expiry, **Return to Home**, or navigation to another page
+within the app closes it. Refresh, tab close, backgrounding, and navigation to
+another URL leave the acknowledged deadline intact; overdue completion closes
+on server recovery.
+
+Closure proceeds in this order:
+
+1. close the final Undo window and accept the final deferred study action;
+2. record the durable completed-session summary;
+3. freeze the qualifying reflection supplement against the accepted attempts; and
+4. durably schedule reflection only when qualifying evidence exists.
+
+If final acceptance or the summary write fails, reflection must not start.
+Retry does not fabricate a completed session or duplicate attempt evidence.
+The acknowledgement boundary is explicit: the backend can guarantee closure
+only after it has received pending completion.
+
+Once closure succeeds, reflection is best-effort. Durable dispatch does not
+require a mounted summary or a later browser request. Generation failure,
+invalid output, timeout, or absence of qualifying evidence does not reopen the
+session, change covering, or affect scheduling projection. The learner returns
+to Home while generation may continue; retry is available from
+Reflections rather than blocking the completion screen.
+
+## 3. Evidence Boundary
+
+Reflection input distinguishes three layers:
+
+1. ephemeral presentation and response evidence captured while the session UI
+   holds exactly what the learner saw and typed;
+2. durable session, action, attempt, word, and content truth used by the backend
+   to validate and enrich that supplement; and
+3. the exact validated, bounded bundle supplied to one generation attempt.
+
+The client does not supply enriched domain truth. The backend verifies session,
+action, and attempt references before constructing a provider-facing bundle.
+
+### Initial evidence kinds
+
+Pure-cue failures additionally use `pure_cue_post_session_reflection.v1` with
+`pure_cue_reflection_bundle.v1` and `pure_cue_reflection_result.v1`. They are
+reconstructed from durable assessments, separately from the word-production
+supplement, and receive a separate provider call and artifact. See
+[`pure-cue-elicitation.md`](../pure-cue-elicitation.md#pure-cue-response-reflection).
+The generation endpoint can return additional artifact IDs and a
+partial-failure notice; successful artifacts are available in the inbox.
+
+The initial flow includes review-phase production failures that are either an
+explicit no-clue response or a non-empty typed response outside the accepted
+answer space snapshotted on the served cue. A learner may mark an otherwise
+accepted Hanzi response wrong because they recalled its pronunciation
+incorrectly; that is a study mistake but is not reflection-eligible in the
+initial flow. Word-owned accepted space contains only the target word,
+including all migrated durable cues and fallback. No-clue evidence preserves a null raw response and null submitted
+word with the explicit `no_clue` discriminator; it is not relabeled as a typed
+mistake. Each item preserves at least:
+
+- the target word identity;
+- the production cue exactly as shown;
+- the raw typed response;
+- sufficient action and accepted-attempt identity for backend validation; and
+- the versioned word/content context selected by the backend.
+
+For the production-cue flow, the provider receives the target word and one
+singular immutable snapshot of the cue actually served. The V0 task identity is
+deterministic from that word and is supplied at the trusted provider boundary,
+not copied through model evidence or output. The provider does not receive the
+task's other active or inactive cues. A fallback snapshot has a null durable cue
+id; durable cue snapshots retain their exact cue id, type, text, and accepted-
+word set. This keeps model context and proposal authority causal to the attempt.
+Duplicate detection against other task content belongs at proposal review or
+application time, not in provider evidence.
+
+The V4 bundle additionally snapshots the nullable post-reveal production-cue
+supplement served with that exercise. A supplement retains its immutable id,
+English frame, complete target-language example, and English translation. It
+is distinct from the pre-reveal cue text because it did not influence recall or
+grading. Supplying it prevents reflection from proposing a second V1 supplement
+for an exercise that already has one.
+
+The served cue may additionally retain `bootstrapReveal`: immutable source, use,
+and example identities plus the exact displayed frame, sentence, and translation.
+The backend validates this snapshot against its historical source even if that
+source has since been withdrawn. Diagnosis receives the text as
+`postRevealWordContent`, separate from the tested cue. It may inform a learner
+explanation, but cannot establish cue fairness, constrain the answer space, or
+reinterpret the response using information unavailable before reveal.
+
+Attempt references prove that the captured mistake belongs to the finalized,
+durably accepted action batch. Workflow-only reinforcement attempts need not be
+copied into the model-facing bundle.
+
+An undone transition contributes no evidence. Evidence is also removed when the
+corresponding action is canceled or excluded through an in-session management
+path whose durable meaning is that the exercise should not be reflected on.
+
+The V3 bundle introduced an untrusted learner-request marker on a
+review-phase production action. The learner can request feedback explicitly,
+or implicitly by saving a “Not helpful” rating on that action's production
+exercise, whether it uses an authored cue or a definition fallback.
+These sources are tracked separately in the session and combine into one marker.
+Clearing the negative rating removes only its implicit request; an explicit
+request or ordinary failure evidence remains independently eligible. Loading a
+past rating does not create a new request. The marker may be set before or after the
+response, survives Undo, and can be explicitly removed. It becomes eligible
+only after its full action batch is durably accepted; it is removed with a
+canceled, dismissed, or managed-away action. A marked correct response is
+eligible, but the marker never changes grading, covering, scheduling,
+reinforcement, or completion. When the action also has a production failure,
+the V3 bundle has one item with both the original failure evidence and the
+marker.
+
+The marker and all learner-authored fields are hints, not strict content
+management directives. Backend reconstruction is authoritative, and the
+prompt treats the marker only as a request for useful feedback. V4 retains that
+marker and pairs with the V7 diagnosis result contract; every item has a non-empty
+learner-facing explanation even when no proposal is warranted. V5 and V6
+results remain readable for immutable stored artifacts.
+
+All newly constructed initial diagnosis bundles use V4, including sessions containing
+only ordinary failure evidence or no served supplement. V2 and V3 remain
+readable for immutable stored artifacts and exact-bundle retries, but new
+diagnosis does not branch by marker or supplement presence. The staged flow
+then retains V6 enriched evidence with a final V10 result, as described below.
+
+Learner-authored session notes, contrast-selection signals, learning/unstudied
+actions, and broader history require explicit evidence-kind and bundle-schema
+extensions. Adding them must not silently reinterpret stored bundles from an
+earlier version.
+
+## 4. Generation Attempts And Artifacts
+
+A generation attempt records one invocation of a versioned reflection flow over
+one exact bounded bundle. A successful reflection artifact is a separate,
+immutable product record containing the validated result and the provenance
+defined by the reflection proposal specification.
+
+For dogfood model comparison, an explicit generation request creates a distinct
+candidate artifact even when the source session and reflection flow match an
+earlier candidate. The initial post-session request may select a configured
+model randomly after building each bundle: at most 10 included items use
+GLM-5.3 Flash high / GPT-5.6 Luna high at 70/30; more than 10 use GPT-6 Sol
+high / GLM / Luna at 60/20/20. Ordinary and pure-cue initial bundles are routed
+independently. Terra is not offered by default. Explicit model choices and
+manual second opinions bypass these weights. A deliberate retry reuses the exact stored bundle and defaults
+to the source run's model when that model is still a configured comparison arm.
+Same-model retry of a retired model is refused; the operator must select another
+configured model. Each candidate retains its originating generation-run identity.
+
+Provider output is untrusted. It must pass strict structural and cross-reference
+validation before a successful artifact and its proposal-review rows are
+materialized. Invalid or truncated output may be retained as a failed generation
+attempt for observability, but it is not a reflection artifact and creates no
+proposal or operation authority.
+
+At the provider-output boundary, returned `itemId` values first resolve by
+exact match against the current evidence bundle. If that fails for an id shaped
+as `source:Hanzi:pinyin`, a deterministic fallback compares the exact source and
+Hanzi plus tone-insensitive pinyin syllables (case, tone marks or trailing tone
+digits, and underscore/space/apostrophe/hyphen syllable separators). Syllable
+boundaries and the distinction between `u` and `ü` remain significant. Exactly
+one matching bundle item permits rewriting to its canonical `itemId` before
+normal validation; unresolved or ambiguous aliases still fail, as do duplicate
+results after rewriting. This does not relax canonical database ids, durable
+word references, or operation-level `wordId` validation.
+
+The backend owns provider credentials and calls. Provider/model identity,
+prompt version, bundle schema, result schema, and available response metadata are
+preserved so later review can distinguish what actually ran.
+
+### Staged production-cue cleanup
+
+New initial requests use `initial_post_session_reflection.v6`; new deferred
+second opinions use `deferred_second_opinion.v5`. Only the current staged
+generation contract and prompt major identities can execute. Earlier minor
+versions of the current prompt major remain compatible with the current
+contract; future minors and earlier majors do not support provider retries.
+Saved diagnosis-v4.0–v4.2 artifacts retain proposal application compatibility
+under the canonical V10 contract, including legacy supplement operations.
+Other obsolete artifacts remain readable. Second opinions may reuse compatible
+original diagnosis evidence regardless of the source flow, prompt, or result
+version. Pending obsolete proposals cannot be authorized or applied.
+There is no one-shot retry compatibility path and no silent evidence upgrade.
+
+The server persists a continuation and exact diagnosis input before calling the
+provider. Diagnosis uses provider wire `staged_reflection_diagnosis_result.v4`, normalized
+to canonical `staged_reflection_diagnosis_result.v3`: each item is
+either ordinary explanation/proposals or an `ambiguous_pair` handoff, never both.
+The handoff includes required nullable `targetSuppression: { reason } | null`.
+A non-null value is stage one's recommendation that deliberate production of
+this exact target remains low-value even under an ideal cue. It survives routing
+and does not require stage-two ratification. It is independent of source-cue
+fairness and cannot be inferred merely from difficulty writing a good cue.
+The handoff's `ambiguityReason` describes why the response plausibly answers
+the exact displayed cue, without asserting a shared slot or final fairness.
+Stage one is a best-effort filter; stage two may revise its assessment.
+Only explicit handoffs trigger
+enrichment with both words' active production cues and intersecting pure cues;
+diagnosis tags alone do not route an item. New targeted cues are owner-only.
+
+The active staged prompts target Mandarin; French is retired experimentation,
+not a supported staged-reflection path. The model receives a content-focused
+projection, not the complete durable evidence bundle. Stage-one input omits
+cue/task/attempt identities, deterministic answer membership, study-profile
+configuration, and the persistence source label. A correct requested review,
+stored with a null response kind, is shown to the model as
+`responseKind: correct`. The full evidence remains available internally for validation,
+normalization, and exact continuation checkpoints.
+
+Stage-one repair, suppression, and bootstrap-request wire operations omit `wordId`.
+Normalization resolves the containing `itemId` against that retained bundle
+and uses its `targetWord.wordId`; contrast membership remains model-authored.
+
+Stage-one repair output describes non-empty `replacementCues` (cue type and
+text), not persistence-level create/replace/deactivate operations. The adapter
+derives creation versus replacement, the served cue identity, and target-only
+acceptance from the original evidence. Standalone cue retirement remains a
+durable/manual capability, not a stage-one model choice. Suppression remains
+a separate semantic judgment about low production value, never an automatic
+translation of cue retirement. A target-only answer set is a storage invariant;
+natural cue design aims for strong target evocation, not guaranteed linguistic
+uniqueness. Subsequent practice can reveal ambiguity worth revisiting.
+
+Before either initial or second-opinion diagnosis, stable greedy admission
+excludes items whose target/identified response words overlap an already kept
+item. Initial admission then applies its item cap. Continuations record
+`overlapOmittedItemCount` separately from eligible/included counts. This bounded
+best-effort policy does not detect every shared destination conflict.
+
+The exact diagnosis, enriched final evidence, and bounded
+`pure_cue_promotion_bundle.v3` input are saved before the conditional cleanup call.
+The durable stage name is `promotion`. It uses a separate strict
+`pure_cue_promotion_result.v2` contract and Mandarin prompt, without model-facing
+study-profile configuration. It returns `reconcile` with both word plans and
+an optional shared destination, or `explanation_only`. A no-slot repair is a
+successful result, not disagreement. Source fairness is judged independently
+of whether a pure cue is published. Ordinary contrast remains in stage one.
+No model directs a database tool loop, and no intermediate learner artifact is
+created.
+
+Existing pure-cue evidence contains member identities and one aggregate teaching
+note. Extension revises that note holistically for all members, while keeping
+stimulus and axis unchanged. It does not fetch every existing member's full
+lexical context. Axis authoring describes the shared communicative slot;
+member-specific teaching belongs in the reveal note. Legacy mixed notes are not
+repaired by the prompt. The server stamps current-member and teaching-note
+preconditions from evidence so application rejects unseen changes.
+
+The final V10 result excludes multi-answer word-owned drafts. Ordinary items
+retain stage-one feedback. Routed items normally receive stage-two feedback and
+its coordinated cleanup or explanation-only outcome. When target suppression
+is recommended, assembly creates a separate target suppression proposal from
+the stage-one reason, preserves response-word cue changes, empties the target
+plan, and removes the shared destination. Reconciliation is omitted if no
+response-word change remains. If a withheld shared destination accompanies
+response-word cue retirements, the entire stage-two content plan is withheld:
+those retirements may depend on the shared replacement. The complete response
+plan is retained as `withheldTargetChanges.dependentResponsePlan`, without an
+actionable reconciliation. Response-only fixes and independent response additions
+remain eligible. Its `promotionOutcome` describes stage-two
+content only: `explanation_only` can therefore accompany the suppression
+proposal. Suppression and response cleanup are independently reviewable and
+can apply in either order; neither depends on accepting the other.
+
+Unexpected target cue changes or shared destinations are retained in
+`withheldTargetChanges`, with the original stage-two rationale and explanation,
+for subdued informational display. These are not proposals, cannot be accepted,
+and never receive review rows or invocations. A conflicting stage-two
+explanation is shown with that withheld material; the main explanation uses the
+stage-one reason and describes the surviving response-only plan. The reason
+remains independently visible even when stage two produces no conflict.
+Authorization also rejects revisions/replacements that reintroduce target cue
+changes or a shared destination from this item. No target lapse compensation
+is introduced by suppression or by response-only cleanup. Each actual provider call has its own
+run, prompt/schema identity, usage, and failure accounting. A promotion run's
+eligible and included counts are the items in its retained promotion input,
+not the diagnosis bundle size. The final artifact
+links to the completing run; its continuation retains the chain.
+
+See [`pure-cue-elicitation.md`](../pure-cue-elicitation.md) for cleanup,
+compensation, and standalone scheduling policy.
+
+## 5. Failure And Deliberate Retry
+
+Failed provider runs additionally produce best-effort private diagnostic files
+with exact evidence and full rejected output. These are operational artifacts,
+not successful reflection artifacts or proposal authority. Files expire after
+seven days and are collected on server startup; see the
+[diagnostics runbook](../../docs/ops/error-diagnostics.md#reflection-diagnostics)
+for storage, privacy, and failure-isolation details.
+
+Every generation failure is isolated from session correctness. A failure may be
+shown to the learner or dogfood operator, but retry is an explicit reflection
+action rather than a retry of study completion.
+
+When a failed attempt retained a complete validated bundle and no successful
+artifact exists for the source session and flow, the product may offer a
+deliberate retry. Retry:
+
+- reuses the exact backend-owned bundle rather than reconstructing current word
+  or content context;
+- creates a new generation-attempt record for each new provider call;
+- still passes provider output through the current strict result validator;
+- materializes a distinct successful candidate artifact with provenance back to
+  its source run;
+- never automatically authorizes or applies a resulting proposal; and
+- refuses same-model retry when the source run's model is no longer a
+  configured comparison arm. Retry with an explicit current model remains
+  available when the bundle is still retryable.
+
+A failure outside the current flow/bundle/prompt contract is not retryable,
+even if its evidence was retained. Study forward to obtain current evidence;
+the service does not upgrade historical work into a new generation contract.
+
+For staged flows, a promotion retry reuses the saved diagnosis and exact
+promotion input, without refreshing cues or regenerating diagnosis. Normal
+stages use the same selected model; an explicit retry-model override applies to
+the stage being called. If diagnosis is already saved and no promotion call is
+needed, retrying artifact persistence makes no provider call and preserves the
+original diagnosis model identity. Provider success followed by preparation or
+artifact-persistence failure remains visible and retryable, with usage retained.
+
+## 6. Bounded Resource Exposure
+
+### Deferred second-opinion requests
+
+Second-opinion eligibility is separate from proposal execution eligibility.
+Supported retained evidence is session bundle V4/V5/V6 or curated bundle V1/V2/V3.
+These contain the current original diagnosis item format; any prior promotion
+evidence is discarded and the composed diagnosis bundle is strictly validated.
+Other evidence formats remain ineligible; no implicit evidence upgrade is made.
+Old artifacts stay immutable and their proposals remain ineligible for execution.
+
+A learner may deliberately compose a non-session reflection request from one
+or more deferred proposals or explanation-only items. The backend resolves each selection to its
+learner-owned immutable source evidence, deduplicates a shared evidence item,
+and sends no prior proposal text, disposition, later attempt, or refreshed
+content state to diagnosis. A subsequent promotion stage enriches current cue
+state exactly once and saves it for retries. The current request is capped at the same fifty distinct
+evidence items as initial reflection; an over-limit request is rejected rather
+than truncated or partitioned automatically.
+
+The composed envelope is versioned separately from a session bundle and has no
+source-session id. Private generation provenance retains selected proposal and
+explanation-inbox ids, while the provider envelope contains only its version, generation time,
+and remapped original evidence items. It never fabricates a session or sends
+prior proposal/review identifiers. It remaps provider item
+ids to avoid collisions between original artifacts. Model/provider/run/result
+validation follows the staged diagnosis/promotion flow. Its diagnosis
+envelope is `curated_reflection_diagnosis_bundle.v2`; final enriched evidence is
+`curated_reflection_bundle.v3`, with explicit study profile and no fabricated
+source session. Stored V1/V2 curated evidence remains readable. A provider or validation failure
+leaves every selected original deferred. On successful durable materialization,
+only included selections that remain deferred are retired atomically. Selections
+omitted by word-overlap admission remain deferred. The current
+implementation records proposal retirement as the terminal review disposition
+`requested_second_opinion` and explanation-item retirement on its inbox row;
+both are distinct from an explicit learner dismissal.
+
+Every reflection flow must put an explicit upper bound on model resource
+exposure. The mechanism may be a fixed evidence-item cap, deterministic
+partitioning, dynamic batching, or a later policy with equivalent safety. The
+bound and the handling of excluded eligible items must be inspectable.
+
+The initial fifty-item cap is a provisional dogfood control, not a permanent
+product invariant. Replacing it must preserve:
+
+- deterministic accounting of eligible versus included evidence;
+- truthful visibility of partial coverage;
+- strict validation for every provider result;
+- no artifact materialization from truncated or invalid output; and
+- failure isolation from study state.
+
+Token categories, finish/stop metadata, and cost estimates may be exposed for
+dogfood observability. Price estimates must identify or preserve the rate
+snapshot used; they are operational intuition, not learning evidence or a
+correctness signal.
+
+## 7. Integration Invariants
+
+- Reflection generation never directly mutates learner, scheduling, or content
+  state.
+- A successful artifact grants proposal-only authority; every durable effect
+  still requires explicit authorization and a supported application adapter.
+- Reflection review is available asynchronously after the source session
+  and its ephemeral UI state are gone.
+- Original evidence and generated conclusions are distinguishable from later
+  user edits, authorization, application status, and effects.
+- Expanding reflection input must use versioned evidence contracts rather than
+  scraping untyped frontend state or prose.
+- Structural validation constrains application authority but does not by itself
+  solve semantic prompt-injection risk from learner- or content-supplied text.

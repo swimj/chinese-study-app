@@ -1,6 +1,28 @@
 # Chinese Study App
 
-A Mandarin study app currently built for a local-browser-first PoC workflow, with a React/Vite frontend and a local backend.
+A Mandarin study app used through an invite-only hosted beta, implemented with
+a React/Vite frontend and Express backend.
+
+This repository contains the application and its product, implementation, and
+operations documentation. Learners use the hosted service. Contributor setup
+and testing are separate from that learner experience.
+
+## Where to start
+
+- [Documentation index](docs/README.md): routes to product models, current
+  implementation, operations, and the documentation target and known gaps.
+  For hosted release and maintenance, this route leads to the
+  [hosted operations runbook](docs/ops/hosted-beta-deployment.md).
+- [Contributor guidance](AGENTS.md): task scope, conventions, safety,
+  verification, and review delivery.
+
+**README adoption status, 2026-10-07:** the orientation above has been updated.
+The remaining sections below are legacy material pending reconciliation,
+including former local-study workflows and French experimentation. They are
+not current learner onboarding or an endorsed operating procedure. See the
+[bounded adoption gap](docs/README.md#known-adoption-gaps)
+and remove this notice when the retained material has been reconciled with
+the README's orientation-only role and the relevant owning guides.
 
 ## Architecture Direction
 
@@ -8,11 +30,13 @@ The implementation still supports fast local iteration, but the primary
 dogfood history now runs in the invite-only hosted Mandarin service. The
 accepted beta boundary includes explicit learner ownership, shared content,
 Clerk identity, Fly/Litestream operation, and deterministic dogfood cutover.
-The current build wave is making releases, recovery, and bounded support
-repeatable before widening beyond operator-controlled use.
+The current emphasis is polish, maturity, and debt in the existing learner
+experience, building confidence for test-learner invitations and future additions.
+Operational readiness still needs evidence; this direction does not declare
+all release, recovery, or support concerns resolved.
 
-See [`STABILITY_FRONTIER.md`](./STABILITY_FRONTIER.md) for the accepted outcome,
-non-goals, and advancement test, and
+See [`STABILITY_FRONTIER.md`](./STABILITY_FRONTIER.md) for safe architectural assumptions,
+invariants, and unsettled decisions, and
 [`docs/private-beta-service-boundary.md`](./docs/private-beta-service-boundary.md)
 for the accepted hosted architecture contract. The first beta deliberately uses
 one shared embedded SQLite database; Postgres remains an evidence-triggered
@@ -24,7 +48,7 @@ When making changes, prefer designs that avoid unnecessary coupling to single-ma
 
 The current implementation includes:
 
-- local Express backend in [`server/`](/Users/jw/dev/chinese-study-app/server)
+- local Express backend in [`server/`](server/)
 - SQLite persistence
 - revised word/review schema aligned to the learning-review spec
 - separate `dev` and `study` backend modes
@@ -34,6 +58,8 @@ The current implementation includes:
 - mixed study sessions containing due review actions, active learning words, and unstudied words admitted by the current new-word intake policy
 - active session snapshot owned by the frontend after session start
 - frontend dashboard that loads words and due review actions from the backend API
+- durable Mandarin session debriefs with up to ten notes from the exact session
+  vocabulary and optional learner interests, independently of reflection
 - durable post-session reflection with proposal review, explicit authorization,
   supported application, failure isolation, and retry diagnostics
 - immutable production tasks and cues with snapshotted answer spaces,
@@ -50,31 +76,30 @@ The current implementation includes:
 
 ## Getting Started
 
-1. Install packages:
+For local development, follow
+[Contributor setup and local checks](docs/scripts.md#contributor-setup-and-local-checks)
+to install dependencies, start the backend and frontend, and run tests or a
+build. That guide includes development database precautions and configuration
+references. Run the servers in separate terminals, then open
+<http://localhost:4173>.
 
-   ```bash
-   npm install
-   ```
-
-2. Start the backend:
-
-   ```bash
-   npm run dev:backend
-   ```
-
-   This runs the backend in `dev` mode and uses the repo-local database at [`data/app.db`](/Users/jw/dev/chinese-study-app/data/app.db).
-
-3. In a second terminal, start the frontend:
-
-   ```bash
-   npm run dev:frontend
-   ```
-
-4. Open the app in your browser at `http://localhost:4173`.
-
-The frontend calls the backend at `http://localhost:5174` by default. You can override that with `VITE_API_BASE`.
+During local development, the frontend calls the backend at `http://localhost:5174`
+by default. You can override that with `VITE_API_BASE`.
 Production builds use their serving origin by default, so a separate frontend
 server and `VITE_API_BASE` are not required for the hosted beta.
+
+## Word introduction prototype
+
+First encounters open a paced lesson in a Mandarin study session. The preparation
+workflow supplies ready content before the session admits a new word. Validated content publishes automatically
+and is reused across learners. See [content generation](docs/word-content-generation.md)
+and [study integration](docs/word-content-serving.md) for the implementation,
+and the [migration guide](docs/ops/schema-migrations.md) for database upgrades.
+
+Run `npm run dev:intro-lab` and open <http://localhost:4177/intro-lab> to try
+the six paced introductions, deterministic rehearsal, and optional two-stage
+generation. It uses isolated local draft storage and does not change study
+progress. See [the lab guide](docs/word-introduction-lab.md).
 
 ## Modes and Data
 
@@ -86,8 +111,12 @@ server and `VITE_API_BASE` are not required for the hosted beta.
   npm run dev:backend
   ```
 
-- Uses the repo-local database at [`data/app.db`](/Users/jw/dev/chinese-study-app/data/app.db)
+- Uses the repo-local database at `data/app.db`
 - Seeds sample data on first run
+- The Mandarin seed includes six ready new-word lessons (报备、藤椒、泡沫、不堪、石沉大海、为所欲为),
+  shared with the introduction lab. They appear through ordinary **Start session**
+  alongside the existing review examples, without provider calls. Existing databases
+  are not reseeded; reset only a disposable dev database to reload the fixture.
 - Safe to reset during development
 
 To reset the default dev database:
@@ -207,13 +236,13 @@ destination for the later dogfood migration.
 
 ## Data Layout
 
-- Backend entrypoint: [`server/index.ts`](/Users/jw/dev/chinese-study-app/server/index.ts)
-- Backend config: [`server/config.ts`](/Users/jw/dev/chinese-study-app/server/config.ts)
-- Database barrel: [`server/db.ts`](/Users/jw/dev/chinese-study-app/server/db.ts) (modules in [`server/db/`](server/db/), map in [`docs/server-db.md`](docs/server-db.md))
+- Backend entrypoint: [`server/index.ts`](server/index.ts)
+- Backend config: [`server/config.ts`](server/config.ts)
+- Database barrel: [`server/db.ts`](server/db.ts) (modules in [`server/db/`](server/db/), map in [`docs/server-db.md`](docs/server-db.md))
 - Agent/docs index: [`docs/README.md`](docs/README.md)
-- Product model spec: [`SPECS/learning-review-model.md`](/Users/jw/dev/chinese-study-app/SPECS/learning-review-model.md)
-- Default dev database: [`data/app.db`](/Users/jw/dev/chinese-study-app/data/app.db)
-- Checked-in dev seed files: [`server/seeds/mandarin-dev.json`](/Users/jw/dev/chinese-study-app/server/seeds/mandarin-dev.json), [`server/seeds/french-dev.json`](/Users/jw/dev/chinese-study-app/server/seeds/french-dev.json)
+- Product model spec: [Adaptive vocabulary study](SPECS/vocabulary-learning.md)
+- Default dev database: `data/app.db` (generated locally and ignored by Git)
+- Checked-in dev seed files: [`server/seeds/mandarin-dev.json`](server/seeds/mandarin-dev.json), [`server/seeds/french-dev.json`](server/seeds/french-dev.json)
 - Deck manifest (HSK delta decks for the new-word diet): `server/decks/mandarin-decks-v1.json` — checked-in runtime artifact with logical source provenance in its metadata. Rebuild with `npm run build:deck-manifest` only after supplying the external inputs described in [the deck-build script](scripts/build-deck-manifest.ts) at its expected local paths.
 
 ### Deck manifest provenance and regeneration

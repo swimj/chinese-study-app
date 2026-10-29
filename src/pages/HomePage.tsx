@@ -1,18 +1,24 @@
+import type { SessionCompletionPanelProps } from '../features/session/SessionCompletionPanel';
+import type { StudyIntroductionOrder } from '../domain/introduction-order';
+import type { WhatsNewCatalog } from '../features/attention/useWhatsNewCatalog';
+import type { SessionDeskHandle } from '../features/session/SessionDesk';
+import { SessionIntroductionGatePanel } from '../features/session/SessionIntroductionGatePanel';
+import type { SessionIntroductionGate } from '../features/session/useIntroductionGate';
 import type { RefObject } from 'react';
 import { useEffect, useState } from 'react';
-import type { BackendStatus, UnstudiedAdmissionSource, DietIntakeInput, DietSelfSelect } from '../services/api';
-import { DietIntakePanel } from '../features/diet/DietIntakePanel';
+import type { BackendStatus, UnstudiedAdmissionSource } from '../services/api';
 import {
-  isDietIntakeSubmitting,
-  type DietIntakeSubmissionState,
-} from '../features/diet/diet-intake-submission';
+  DEFAULT_CHARACTER_PRESENTATION,
+  type CharacterPresentation,
+  type SentenceCharacterPresentation,
+} from '../domain/card-characters';
 import type {
   BucketSessionState,
   LearningWordProgress,
   ReviewActionProgress,
   UnstudiedWordProgress,
 } from '../lib/session-state';
-import type { SessionStudyItem } from '../domain/study-actions';
+import type { PureCueSessionReviewItem, SessionStudyItem } from '../domain/study-actions';
 import type { ReviewRating, Word, WordMeaning } from '../types';
 import type { SessionPrefetchState } from '../features/session/session-prefetch';
 import type { RatingOption } from '../features/session/session-rating';
@@ -22,33 +28,61 @@ import {
   StudySessionPanel,
   type FrozenContrastCard,
   type FrozenProductionCard,
+  type FrozenPureCueCard,
 } from '../features/session/StudySessionPanel';
+import { useSessionDebrief } from '../features/session/useSessionDebrief';
+import { HomeConnections } from '../features/session/HomeConnections';
+import { ConnectionSignals } from '../features/session/ConnectionSignals';
+import { useHomeConnectionsView } from '../features/session/useHomeConnectionsView';
 import { HomeOverviewPanel, SessionSettingsPanel } from './HomeOverviewPanel';
+import { HomeUpdates, HomeUpdatesCollapsedControl } from './HomeUpdates';
 
 export function HomePage({
+  updatesCatalog,
+  unseenPostIds = [],
+  onUnseenBadgeVisible = async () => {},
+  updatesCollapsed = false,
+  onToggleUpdatesCollapsed = () => {},
+  onOpenUpdate,
+  onViewAllUpdates,
+  introductionGate,
   backendStatus,
+  guideToSettings = false,
+  onSettingsOpened,
   onSaveSessionSettings,
   sessionPrefetch,
   sessionStarted,
+  sessionDeskRef,
+  deskAgainCount,
+  deskRemainingCount,
   sessionPhase,
   sessionLoading,
   displayedSessionItemCount,
   reviewedCount,
   sessionSummary,
   sessionFinalization,
+  completionPanel,
   activeItem,
+  activePureCue,
   activeWord,
   activeLearningProgress,
   activeUnstudiedProgress,
   activeReviewProgress,
+  activePureCueFailureCount,
+  activePureCueReinforcementStreak,
+  completedReinforcementStreak,
   hasUndo,
   submittingRating,
+  confirmingSessionAction = false,
+  contentRatingSaving = false,
   personalNotesEditorOpen,
   personalNotesEditorSaving,
   studyManagementSubmitting,
   productionAwaitingNext,
+  pureCueAwaitingNext,
   productionAwaitingSupplement,
   frozenProductionCard,
+  frozenPureCueCard,
   contrastAwaitingNext,
   frozenContrastCard,
   activeAllMeanings,
@@ -92,49 +126,71 @@ export function HomePage({
   onProductionHanziInputChange,
   onSelectContrastChoice,
   onRevealAnswer,
+  onContentRatingSavingChange,
+  onContentRatingChange,
+  onFrozenProductionContentRatingChange,
   onToggleLearnerRequestedReview,
   onToggleFrozenProductionLearnerRequestedReview,
   onRate,
+  onSkipReinforcement,
   shortcutGuideOpen,
   onOpenShortcutGuide,
   onCloseShortcutGuide,
-  dietIntakeSubmission,
-  dietIntakeDrafts,
-  dietIntakeSelfSelect,
-  onDietIntakeDraftsChange,
-  onDietIntakeSelfSelectChange,
-  onSubmitDietIntakeAssessment,
-  onSubmitManualDietIntake,
-  onRetryDietIntakeRefresh,
-  dietIntakeStartBlocked,
   onNudgeDiet,
 }: {
+  updatesCatalog?: WhatsNewCatalog;
+  unseenPostIds?: readonly string[];
+  onUnseenBadgeVisible?: (postIds: string[]) => Promise<void>;
+  updatesCollapsed?: boolean;
+  onToggleUpdatesCollapsed?: () => void;
+  onOpenUpdate?: (id: string) => void;
+  onViewAllUpdates?: () => void;
+  introductionGate?: SessionIntroductionGate | null;
   backendStatus: BackendStatus | null;
+  guideToSettings?: boolean;
+  onSettingsOpened?: () => void;
   onSaveSessionSettings: (settings: {
     dailyNewWordLimit?: number;
+    studyIntroductionOrder?: StudyIntroductionOrder;
+    studyIntroductionSpacing?: number;
     unstudiedAdmissionSource?: UnstudiedAdmissionSource;
+    characterPresentation?: CharacterPresentation;
+    sentenceCharacterPresentation?: SentenceCharacterPresentation;
+    debriefInterests?: string;
   }) => Promise<void>;
   sessionPrefetch: SessionPrefetchState;
   sessionStarted: boolean;
+  sessionDeskRef: RefObject<SessionDeskHandle>;
+  deskAgainCount: number;
+  deskRemainingCount: number;
   sessionPhase: BucketSessionState['phase'] | null;
   sessionLoading: boolean;
   displayedSessionItemCount: number;
   reviewedCount: number;
   sessionSummary: SessionSummary | null;
   sessionFinalization: SessionFinalizationState;
+  completionPanel?: Omit<SessionCompletionPanelProps, 'summary' | 'characterPresentation'>;
   activeItem: SessionStudyItem | null;
+  activePureCue: PureCueSessionReviewItem | null;
   activeWord: Word | null;
   activeLearningProgress: LearningWordProgress | undefined;
   activeUnstudiedProgress: UnstudiedWordProgress | undefined;
   activeReviewProgress: ReviewActionProgress | undefined;
+  activePureCueFailureCount: number;
+  activePureCueReinforcementStreak: number;
+  completedReinforcementStreak: number | null;
   hasUndo: boolean;
   submittingRating: ReviewRating | null;
+  confirmingSessionAction?: boolean;
+  contentRatingSaving?: boolean;
   personalNotesEditorOpen: boolean;
   personalNotesEditorSaving: boolean;
   studyManagementSubmitting: boolean;
   productionAwaitingNext: boolean;
+  pureCueAwaitingNext: boolean;
   productionAwaitingSupplement: boolean;
   frozenProductionCard: FrozenProductionCard | null;
+  frozenPureCueCard: FrozenPureCueCard | null;
   contrastAwaitingNext: boolean;
   frozenContrastCard: FrozenContrastCard | null;
   activeAllMeanings: string[];
@@ -178,25 +234,24 @@ export function HomePage({
   onProductionHanziInputChange: (value: string) => void;
   onSelectContrastChoice: (wordId: string) => void;
   onRevealAnswer: () => void;
+  onContentRatingSavingChange?: (saving: boolean) => void;
+  onContentRatingChange?: (rating: 'up' | 'down' | null) => void;
+  onFrozenProductionContentRatingChange?: (rating: 'up' | 'down' | null) => void;
   onToggleLearnerRequestedReview: () => void;
   onToggleFrozenProductionLearnerRequestedReview: () => void;
+  onSkipReinforcement: () => void;
   onRate: (rating: ReviewRating, options: { restoreUi: 'revealed' | 'production-input' }) => void;
   shortcutGuideOpen: boolean;
   onOpenShortcutGuide: () => void;
   onCloseShortcutGuide: () => void;
-  dietIntakeSubmission: DietIntakeSubmissionState;
-  dietIntakeDrafts: Record<string, string>;
-  dietIntakeSelfSelect: DietSelfSelect | null;
-  onDietIntakeDraftsChange: (drafts: Record<string, string>) => void;
-  onDietIntakeSelfSelectChange: (value: DietSelfSelect | null) => void;
-  onSubmitDietIntakeAssessment: (input: Pick<DietIntakeInput, 'answers'>) => Promise<void>;
-  onSubmitManualDietIntake: (input: DietIntakeInput) => Promise<void>;
-  onRetryDietIntakeRefresh: () => Promise<void>;
-  dietIntakeStartBlocked: boolean;
   onNudgeDiet: (direction: 'easier' | 'harder') => Promise<void>;
 }) {
+  const recent = useSessionDebrief(undefined, !sessionStarted && backendStatus?.studyProfile === 'mandarin');
   const [sessionSettingsOpen, setSessionSettingsOpen] = useState(false);
   const [sessionSettingsSaving, setSessionSettingsSaving] = useState(false);
+  const connectionsVisible = !sessionStarted && !sessionSettingsOpen;
+  const connections = useHomeConnectionsView(recent.debrief, connectionsVisible);
+  const connectionsExpanded = connectionsVisible && connections.expanded;
   useEffect(() => {
     if (sessionStarted) {
       setSessionSettingsOpen(false);
@@ -204,34 +259,26 @@ export function HomePage({
   }, [sessionStarted]);
 
   return (
-    <div className={sessionStarted ? 'home-page home-session-active' : 'home-page'}>
-      <div className="grid home-grid">
-        {(backendStatus?.dietIntakeRequired || dietIntakeSubmission.phase === 'refreshing' || dietIntakeSubmission.phase === 'refresh-error') && !sessionStarted ? (
-          <DietIntakePanel
-            submitting={isDietIntakeSubmitting(dietIntakeSubmission)}
-            submission={dietIntakeSubmission}
-            drafts={dietIntakeDrafts}
-            selfSelect={dietIntakeSelfSelect}
-            onDraftsChange={onDietIntakeDraftsChange}
-            onSelfSelectChange={onDietIntakeSelfSelectChange}
-            onAssess={(input) => void onSubmitDietIntakeAssessment(input)}
-            onSubmitManual={(input) => void onSubmitManualDietIntake(input)}
-            onRetryRefresh={() => void onRetryDietIntakeRefresh()}
-          />
-        ) : null}
+    <div className={sessionStarted ? 'home-page home-session-active' : `home-page${connectionsExpanded ? ' home-connections-expanded' : ''}${updatesCollapsed ? ' home-updates-collapsed' : ''}`}>
+      {connectionsExpanded ? <ConnectionSignals /> : null}
+      {!sessionStarted && !connectionsExpanded && !sessionSettingsOpen && updatesCollapsed && updatesCatalog
+        ? <HomeUpdatesCollapsedControl unseenPostIds={unseenPostIds} onVisible={onUnseenBadgeVisible} onExpand={onToggleUpdatesCollapsed} /> : null}
+      <div className={`grid home-grid${!sessionStarted && !connectionsExpanded && !sessionSettingsOpen && !updatesCollapsed && updatesCatalog && onOpenUpdate && onViewAllUpdates ? ' home-with-updates' : ''}`}>
         <HomeOverviewPanel
           backendStatus={backendStatus}
+          compact={connectionsExpanded}
           sessionPrefetch={sessionPrefetch}
           sessionStarted={sessionStarted}
           sessionPhase={sessionPhase}
           sessionFinalization={sessionFinalization}
           sessionLoading={sessionLoading}
           displayedSessionItemCount={displayedSessionItemCount}
+          guideToSettings={guideToSettings}
           sessionSettingsOpen={sessionSettingsOpen}
           sessionSettingsSaving={sessionSettingsSaving}
-          dietIntakeStartBlocked={dietIntakeStartBlocked}
           onToggleSessionSettings={() => {
             if (!sessionSettingsSaving) {
+              if (!sessionSettingsOpen) onSettingsOpened?.();
               setSessionSettingsOpen((open) => !open);
             }
           }}
@@ -240,6 +287,18 @@ export function HomePage({
           onNudgeDiet={onNudgeDiet}
         />
 
+        {!sessionStarted && !sessionSettingsOpen && recent.debrief ? (
+          <HomeConnections key={recent.debrief.sessionId} debrief={recent.debrief} expanded={connections.expanded}
+            error={recent.error} retrying={recent.retrying} onToggle={connections.toggle}
+            onRetry={recent.retry} onReload={recent.reload} />
+        ) : !sessionStarted && recent.error && backendStatus?.studyProfile === 'mandarin' ? (
+          <p className="notes" role="status">Couldn’t load the recent session. <button type="button" className="secondary-button" onClick={recent.reload}>Try again</button></p>
+        ) : null}
+
+        {!sessionStarted && !connectionsExpanded && !sessionSettingsOpen && !updatesCollapsed && updatesCatalog && onOpenUpdate && onViewAllUpdates
+          ? <HomeUpdates catalog={updatesCatalog} unseenPostIds={unseenPostIds} onUnseenBadgeVisible={onUnseenBadgeVisible}
+            onOpenPost={onOpenUpdate} onViewAll={onViewAllUpdates} onCollapse={onToggleUpdatesCollapsed} /> : null}
+
         {sessionSettingsOpen && !sessionStarted ? (
           <SessionSettingsPanel
             backendStatus={backendStatus}
@@ -247,27 +306,46 @@ export function HomePage({
             onSavingChange={setSessionSettingsSaving}
             onClose={() => setSessionSettingsOpen(false)}
           />
-        ) : (
+        ) : introductionGate ? (
+          <SessionIntroductionGatePanel gate={introductionGate}
+            characterPresentation={backendStatus?.characterPresentation ?? DEFAULT_CHARACTER_PRESENTATION}
+            sentenceCharacterPresentation={backendStatus?.sentenceCharacterPresentation ?? 'simplified'}
+            onUndo={hasUndo && submittingRating === null ? onUndoLastRating : undefined} />
+        ) : sessionStarted ? (
           <StudySessionPanel
+            sessionDeskRef={sessionDeskRef}
+            deskAgainCount={deskAgainCount}
+            deskRemainingCount={deskRemainingCount}
             sessionStarted={sessionStarted}
             sessionPhase={sessionPhase}
             sessionSummary={sessionSummary}
             sessionFinalization={sessionFinalization}
+            completionPanel={completionPanel}
             activeItem={activeItem}
+            activePureCue={activePureCue}
             activeWord={activeWord}
+            characterPresentation={backendStatus?.characterPresentation ?? DEFAULT_CHARACTER_PRESENTATION}
+            sentenceCharacterPresentation={backendStatus?.sentenceCharacterPresentation ?? 'simplified'}
             activeLearningProgress={activeLearningProgress}
             activeUnstudiedProgress={activeUnstudiedProgress}
             activeReviewProgress={activeReviewProgress}
+            activePureCueFailureCount={activePureCueFailureCount}
+            activePureCueReinforcementStreak={activePureCueReinforcementStreak}
+            completedReinforcementStreak={completedReinforcementStreak}
             reviewedCount={reviewedCount}
             queuedCount={displayedSessionItemCount}
             hasUndo={hasUndo}
             submittingRating={submittingRating}
+            confirmingSessionAction={confirmingSessionAction}
+            contentRatingSaving={contentRatingSaving}
             personalNotesEditorOpen={personalNotesEditorOpen}
             personalNotesEditorSaving={personalNotesEditorSaving}
             studyManagementSubmitting={studyManagementSubmitting}
             productionAwaitingNext={productionAwaitingNext}
+            pureCueAwaitingNext={pureCueAwaitingNext}
             productionAwaitingSupplement={productionAwaitingSupplement}
             frozenProductionCard={frozenProductionCard}
+            frozenPureCueCard={frozenPureCueCard}
             contrastAwaitingNext={contrastAwaitingNext}
             frozenContrastCard={frozenContrastCard}
             activeAllMeanings={activeAllMeanings}
@@ -310,14 +388,18 @@ export function HomePage({
             onProductionHanziInputChange={onProductionHanziInputChange}
             onSelectContrastChoice={onSelectContrastChoice}
             onRevealAnswer={onRevealAnswer}
+            onContentRatingSavingChange={onContentRatingSavingChange}
+            onContentRatingChange={onContentRatingChange}
+            onFrozenProductionContentRatingChange={onFrozenProductionContentRatingChange}
             onToggleLearnerRequestedReview={onToggleLearnerRequestedReview}
             onToggleFrozenProductionLearnerRequestedReview={onToggleFrozenProductionLearnerRequestedReview}
             onRate={onRate}
+            onSkipReinforcement={onSkipReinforcement}
             shortcutGuideOpen={shortcutGuideOpen}
             onOpenShortcutGuide={onOpenShortcutGuide}
             onCloseShortcutGuide={onCloseShortcutGuide}
           />
-        )}
+        ) : null}
       </div>
     </div>
   );

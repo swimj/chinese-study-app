@@ -1,0 +1,1 @@
+ALTER TABLE vocabulary_reflection_jobs ADD COLUMN reassessment_source_job_id TEXT REFERENCES vocabulary_reflection_jobs(job_id);

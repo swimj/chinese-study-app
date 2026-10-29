@@ -319,7 +319,7 @@ function createHarness(options: {
       return {
         stdout: JSON.stringify({
           status,
-          endpoint: '/api/session-payload',
+          endpoint: '/api/vocabulary/statistics',
           httpStatus: status === 'ok' ? 200 : 500,
           sessionRevoked: true,
           failure: status === 'ok' ? null : 'unexpected payload',

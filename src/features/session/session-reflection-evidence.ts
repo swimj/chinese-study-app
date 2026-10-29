@@ -115,6 +115,18 @@ export function toggleLearnerRequestedReview(
   };
 }
 
+/** Negative content ratings request review independently of the explicit request toggle. */
+export function setContentRatingRequestedReview(
+  accumulator: LearnerRequestedReflectionAccumulator,
+  item: Parameters<typeof toggleLearnerRequestedReview>[1],
+  promptDisplayedMeanings: readonly string[],
+  rating: 'up' | 'down' | null,
+): LearnerRequestedReflectionAccumulator {
+  if (rating !== 'down') return dropLearnerRequestedReflectionForAction(accumulator, item.sessionActionId);
+  if (accumulator.items.some((entry) => entry.sessionActionId === item.sessionActionId)) return accumulator;
+  return toggleLearnerRequestedReview(accumulator, item, promptDisplayedMeanings);
+}
+
 export function appendAcceptedLearnerRequestedAttemptIds(
   accumulator: LearnerRequestedReflectionAccumulator,
   input: Parameters<typeof appendAcceptedProductionAttemptIds>[1],
@@ -144,8 +156,9 @@ export function dropLearnerRequestedReflectionForAction(
 export function buildLearnerRequestedReflectionSupplement(
   failures: SessionReflectionEvidenceAccumulator,
   requests: LearnerRequestedReflectionAccumulator,
+  ratingRequests: LearnerRequestedReflectionAccumulator = createLearnerRequestedReflectionAccumulator(),
 ): SessionReflectionEvidenceSupplementV2 {
-  const requestByAction = new Map(requests.items.map((item) => [item.sessionActionId, item]));
+  const requestByAction = new Map([...ratingRequests.items, ...requests.items].map((item) => [item.sessionActionId, item]));
   const items = failures.items.map((failure) => {
     const request = requestByAction.get(failure.sessionActionId);
     requestByAction.delete(failure.sessionActionId);

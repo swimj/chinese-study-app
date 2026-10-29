@@ -1,4 +1,20 @@
-import { randomUUID } from 'node:crypto';
+import { enqueueWordPreparation, getWordPreparationWork } from './preparation-work.ts';
+import { getSharedWordIntroductionContent } from './word-introductions.ts';
+import { normalizeMandarinHanziLookup } from './hanzi-lookup.ts';
+import type { PureCueAssessmentEvent } from '../../src/domain/pure-cues.ts';
+import type { RepairProductionCueOperationV2 } from '../../src/domain/reflection.ts';
+import {
+  type PureCueReflectionBundleV1, type PureCueReflectionItemV1,
+  type PureCueReflectionResultV1, type ReconcilePureCueResponseOperationV1, type RepairPureCueStimulusOperationV1,
+  validatePureCueReflectionResult, validatePureCueReflectionOperationEvidenceContext,
+  validateRepairPureCueStimulusEvidenceContext,
+  parsePureCueReflectionBundle,
+} from '../../src/domain/pure-cue-reflection.ts';
+import { PURE_CUE_REFLECTION_FLOW_VERSION, PURE_CUE_REFLECTION_PROMPT_VERSION } from '../../src/domain/reflection-contracts.ts';
+import { restorePureCueSchedulerSnapshotWithoutTransaction, repairPureCueStimulusWithoutTransaction } from './pure-cues.ts';
+import { createHash, randomUUID } from 'node:crypto';
+import { getHostedServiceControls } from './hosted-operations.ts';
+import { selectNonOverlappingReflectionItems } from '../reflection/bundle-admission.ts';
 import type {
   EffectRef,
   OperationApplicationStatus,
@@ -13,12 +29,24 @@ import type {
   ReflectionInputItemV2,
   ReflectionItemV3,
   ReflectionItemV4,
+  ReflectionItemV6,
+  ReflectionItemV5,
+  SessionReflectionBundleV5,
+  CuratedReflectionBundleV2,
+  SessionReflectionResultV8,
+  PureCuePromotionBundleV1,
   SessionReflectionBundle,
   SessionReflectionBundleV1,
   SessionReflectionBundleV2,
   SessionReflectionBundleV3,
   SessionReflectionBundleV4,
+  SessionReflectionBundleV6,
   CuratedReflectionBundleV1,
+  CuratedReflectionBundleV3,
+  CuratedReflectionDiagnosisBundleV2,
+  PureCuePromotionBundleV2,
+  PureCuePromotionBundleV3,
+  PureCuePromotionResultV2Wire,
   SessionReflectionResult,
   SessionReflectionResultV4,
   SessionReflectionResultV5,
@@ -26,6 +54,12 @@ import type {
   ReflectionHelpInboxEntry,
   SessionReflectionResultV6,
   SessionReflectionResultV7,
+  StagedReflectionDiagnosisResultV2,
+  StagedReflectionDiagnosisResultV3,
+  SessionReflectionResultV9,
+  SessionReflectionResultV10,
+  PromotePureElicitationOperationV1,
+  ReconcileProductionCuesOperationV1,
 } from '../../src/domain/reflection.ts';
 import {
   assertOperationApplicationTransition,
@@ -34,22 +68,41 @@ import {
   getReflectionOperationRegistration,
   reflectionOperationWordReferences,
   validateReflectionOperationEvidenceContext,
+  validateTargetSuppressionOperation,
   validateReflectionOperation,
   validateSessionReflectionResult,
   validateSessionReflectionResultV5,
   validateSessionReflectionResultV6,
   validateSessionReflectionResultV7,
+  validateStagedReflectionDiagnosisResultV2,
+  validateStagedReflectionDiagnosisResultV3,
+  validateSessionReflectionResultV9,
+  validateSessionReflectionResultV10,
+  validateSessionReflectionResultV8,
 } from '../../src/domain/reflection.ts';
-import { parseStoredSessionReflectionBundle } from '../../src/domain/reflection-evidence.ts';
+import {
+  parseCuratedReflectionDiagnosisBundleV2,
+  parsePureCuePromotionBundleV2,
+  parsePureCuePromotionBundleV3,
+  parsePureCuePromotionBundleV1,
+  parseStoredSessionReflectionBundle,
+} from '../../src/domain/reflection-evidence.ts';
 import type { NormalizedTokenUsage } from '../llm/types.ts';
 import type { ReflectionGenerationDiagnostic } from '../reflection/run-diagnostics.ts';
 import {
-  buildReflectionSpendCap,
-  utcDayKey,
-  utcDayRange,
-  type ReflectionSpendCap,
-} from '../reflection/spend-cap.ts';
-import { dbPath, getDb } from './connection.ts';
+  CURRENT_DEFERRED_SECOND_OPINION_FLOW_VERSION,
+  CURRENT_INITIAL_REFLECTION_FLOW_VERSION,
+  PURE_CUE_PROMOTION_PROMPT_VERSION,
+  STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION,
+  compatiblePromptVersions,
+  isCompatiblePromptVersion,
+  isCurrentReflectionArtifactContract,
+  supportsReflectionSecondOpinionEvidence,
+  isCurrentReflectionFlowVersion,
+  isCurrentReflectionGenerationStage,
+} from '../../src/domain/reflection-contracts.ts';
+import { dbPath, getConfig, getDb } from './connection.ts';
+import { requireLearnerId } from './learner-context.ts';
 import {
   learnerScopedStorageTableName,
   physicalLearnerTableName,
@@ -62,7 +115,7 @@ import {
 import {
   createReflectionHelpInboxSchema,
   listReflectionHelpInboxForArtifact,
-  markReflectionHelpInboxDone,
+  listDeferredReflectionHelpInboxForArtifact,
   seedReflectionHelpInboxWithoutTransaction,
   validateReflectionHelpInboxSchema,
 } from './reflection-help-inbox.ts';
@@ -74,12 +127,33 @@ import {
 import {
   applyProductionCueRepairWithoutTransaction,
   applyProductionCueSupplementWithoutTransaction,
+  defaultProductionTaskId,
+  getActiveProductionCuesForWord,
+  assertPureCuePromotionSource,
+  validateProductionCueRepairCurrentStateWithoutTransaction,
 } from './production-cues.ts';
+import {
+  createPureCueWithoutTransaction,
+  extendPureCueAcceptedWordsWithoutTransaction,
+  getPureCueContent,
+  getActivePureCuesAcceptingAny,
+  hasActionLapseToCompensate,
+  restoreProductionSchedulerSnapshotWithoutTransaction,
+} from './pure-cues.ts';
+import {
+  getSharedContentPublicationForContent,
+  isEligibleSharedPublicationStatus,
+  publishAuthorizedPureCueWithoutTransaction,
+} from './shared-content.ts';
 import { stampProposalInboxSeenIfLeavingPending } from './attention.ts';
 
 export const INITIAL_REFLECTION_FLOW_VERSION = 'initial_post_session_reflection.v2';
+export const STAGED_INITIAL_REFLECTION_FLOW_VERSION = CURRENT_INITIAL_REFLECTION_FLOW_VERSION;
+export const LEGACY_INITIAL_REFLECTION_FLOW_VERSION = INITIAL_REFLECTION_FLOW_VERSION;
 export const DEFERRED_SECOND_OPINION_FLOW_VERSION = 'deferred_second_opinion.v1';
-export const DEFERRED_SECOND_OPINION_MAX_EVIDENCE_ITEMS = 25;
+export const STAGED_DEFERRED_SECOND_OPINION_FLOW_VERSION = CURRENT_DEFERRED_SECOND_OPINION_FLOW_VERSION;
+export const LEGACY_DEFERRED_SECOND_OPINION_FLOW_VERSION = DEFERRED_SECOND_OPINION_FLOW_VERSION;
+export const DEFERRED_SECOND_OPINION_MAX_EVIDENCE_ITEMS = 50;
 
 export class DeferredSecondOpinionError extends Error {
   constructor(message: string) {
@@ -101,9 +175,13 @@ type MaterializeReflectionArtifactBase = {
   provider: string;
   model: string;
   promptVersion: string;
+  continuationId?: string;
+  sourceProposalIds?: string[];
+  sourceHelpInboxIds?: string[];
 };
 
 export type MaterializeReflectionArtifactInput = MaterializeReflectionArtifactBase & (
+  | { evidenceBundle: PureCueReflectionBundleV1; result: PureCueReflectionResultV1 }
   | { evidenceBundle: SessionReflectionBundleV1; result: SessionReflectionResultV4 }
   | { evidenceBundle: SessionReflectionBundleV2; result: SessionReflectionResultV5 }
   | { evidenceBundle: SessionReflectionBundleV3; result: SessionReflectionResultV5 }
@@ -112,12 +190,27 @@ export type MaterializeReflectionArtifactInput = MaterializeReflectionArtifactBa
   | { evidenceBundle: SessionReflectionBundleV4; result: SessionReflectionResultV7 }
   | { evidenceBundle: SessionReflectionBundleV2; result: SessionReflectionResultV7 }
   | { evidenceBundle: SessionReflectionBundleV3; result: SessionReflectionResultV7 }
+  | { evidenceBundle: SessionReflectionBundleV5; result: SessionReflectionResultV8 }
+  | { evidenceBundle: CuratedReflectionBundleV2; result: SessionReflectionResultV8; sourceProposalIds: string[] }
+  | { evidenceBundle: SessionReflectionBundleV6; result: SessionReflectionResultV9 | SessionReflectionResultV10 }
+  | {
+      evidenceBundle: CuratedReflectionBundleV3;
+      result: SessionReflectionResultV9 | SessionReflectionResultV10;
+      sourceProposalIds: string[];
+    }
   | {
       evidenceBundle: CuratedReflectionBundleV1;
       result: SessionReflectionResultV7;
       sourceProposalIds: string[];
     }
 );
+
+export type ReflectionGenerationProviderBundle =
+  | SessionReflectionBundle
+  | CuratedReflectionDiagnosisBundleV2
+  | PureCuePromotionBundleV1
+  | PureCuePromotionBundleV2
+  | PureCuePromotionBundleV3;
 
 export type ReflectionGenerationRunState = 'in_flight' | 'succeeded' | 'failed';
 
@@ -158,19 +251,8 @@ export type RecordReflectionGenerationRunInput = Omit<
   bundleSchemaVersion?: string | null;
   resultSchemaVersion?: string | null;
   diagnostic?: ReflectionGenerationDiagnostic | null;
-  evidenceBundle: SessionReflectionBundle;
+  evidenceBundle: ReflectionGenerationProviderBundle;
   sourceProposalIds?: string[] | null;
-};
-
-export type ReflectionGenerationRetrySource = {
-  runId: string;
-  sourceSessionId: string | null;
-  reflectionFlowVersion: string;
-  model: string;
-  eligibleItemCount: number;
-  includedItemCount: number;
-  evidenceBundle: SessionReflectionBundle;
-  sourceProposalIds?: string[];
 };
 
 export type StartReflectionGenerationRunInput = {
@@ -185,8 +267,37 @@ export type StartReflectionGenerationRunInput = {
   clientRequestId: string;
   eligibleItemCount: number;
   includedItemCount: number;
-  evidenceBundle: SessionReflectionBundle;
+  evidenceBundle: ReflectionGenerationProviderBundle;
   sourceProposalIds?: string[] | null;
+};
+
+export type ReflectionGenerationContinuationStage = 'diagnosis' | 'promotion';
+
+export type ReflectionGenerationContinuation = {
+  continuationId: string;
+  sourceSessionId: string | null;
+  reflectionFlowVersion: string;
+  createdAt: string;
+  eligibleItemCount: number;
+  includedItemCount: number;
+  diagnosisBundle: SessionReflectionBundleV4 | CuratedReflectionDiagnosisBundleV2;
+  sourceProposalIds: string[] | null;
+  sourceHelpInboxIds: string[] | null;
+  overlapOmittedItemCount: number;
+  diagnosisResult: StagedReflectionDiagnosisResultV2 | StagedReflectionDiagnosisResultV3 | null;
+  finalEvidenceBundle: SessionReflectionBundleV6 | CuratedReflectionBundleV3 | null;
+  promotionBundle: PureCuePromotionBundleV2 | PureCuePromotionBundleV3 | null;
+  artifactId: string | null;
+};
+
+export type ReflectionGenerationContinuationRetrySource = {
+  runId: string;
+  continuation: ReflectionGenerationContinuation;
+  stage: ReflectionGenerationContinuationStage;
+  provider: string;
+  model: string;
+  providerModel: string;
+  promptVersion: string;
 };
 
 /**
@@ -243,7 +354,22 @@ export type ReflectionArtifactDetail = ReflectionArtifactRecord & {
   proposals: ReflectionProposalDetail[];
   qualityItemTags: ReflectionQualityItemTags[];
   helpInbox: ReflectionHelpInboxEntry[];
+  deferredHelpInbox: ReflectionHelpInboxEntry[];
 };
+
+export function reflectionArtifactSupportsCurrentActions(
+  artifact: Pick<
+    ReflectionArtifactRecord,
+    'reflectionFlowVersion' | 'bundleSchemaVersion' | 'resultSchemaVersion' | 'promptVersion'
+  >,
+): boolean {
+  return isCurrentReflectionArtifactContract({
+    reflectionFlowVersion: artifact.reflectionFlowVersion,
+    bundleSchemaVersion: artifact.bundleSchemaVersion,
+    resultSchemaVersion: artifact.resultSchemaVersion,
+    promptVersion: artifact.promptVersion,
+  });
+}
 
 export type ReflectionArtifactSummary = Omit<
   ReflectionArtifactRecord,
@@ -352,6 +478,7 @@ type ReflectionGenerationRunRow = {
   estimated_cost_usd: number | null;
   evidence_bundle_json: string | null;
   source_proposal_ids_json: string | null;
+  promotion_considered_item_count?: number | null;
   retryable: number;
 };
 
@@ -392,6 +519,18 @@ type InvocationRow = {
   satisfying_effect_refs_json: string;
 };
 
+type StoredInvocationOperationV1 = {
+  schemaVersion: 'reflection_invocation_operation.v1';
+  sourceArtifactId: string;
+  sourceItemId: string;
+  operation: ReflectionOperation;
+};
+
+const LEGACY_REFLECTION_READ_ONLY_MESSAGE = (
+  'This reflection was generated by an older contract and is read-only. '
+  + 'Its saved result remains available, but it cannot authorize or apply changes.'
+);
+
 const artifactColumns = [
   'artifact_id',
   'source_session_id',
@@ -406,6 +545,13 @@ const artifactColumns = [
   'evidence_bundle_json',
   'result_json',
 ] as const;
+
+const promotionRunItemCountSelect = `
+  CASE
+    WHEN runs.bundle_schema_version IN ('pure_cue_promotion_bundle.v1', 'pure_cue_promotion_bundle.v2', 'pure_cue_promotion_bundle.v3')
+      THEN json_array_length(json_extract(runs.evidence_bundle_json, '$.items'))
+    ELSE NULL
+  END AS promotion_considered_item_count`;
 
 const reflectionGenerationRunColumns = [
   'run_id',
@@ -903,26 +1049,54 @@ export function materializeReflectionArtifact(
   assertNonEmpty(input.promptVersion, 'prompt version');
   assertIsoTimestamp(input.generatedAt, 'generation timestamp');
   if (
-    input.sourceSessionId !== null
-    && (!('session' in input.evidenceBundle) || input.evidenceBundle.session.sessionId !== input.sourceSessionId)
+    (
+      input.sourceSessionId !== null
+      || input.reflectionFlowVersion === STAGED_INITIAL_REFLECTION_FLOW_VERSION
+      || input.reflectionFlowVersion === STAGED_DEFERRED_SECOND_OPINION_FLOW_VERSION
+    )
+    && providerBundleSourceSessionId(input.evidenceBundle) !== input.sourceSessionId
   ) {
     throw new Error('Reflection evidence session does not match the source session id.');
   }
   if (
-    input.reflectionFlowVersion === INITIAL_REFLECTION_FLOW_VERSION
+    input.reflectionFlowVersion === LEGACY_INITIAL_REFLECTION_FLOW_VERSION
     && input.evidenceBundle.schemaVersion !== 'session_reflection_bundle.v2'
     && input.evidenceBundle.schemaVersion !== 'session_reflection_bundle.v3'
     && input.evidenceBundle.schemaVersion !== 'session_reflection_bundle.v4'
   ) {
-    throw new Error('The current reflection flow requires a V2, V3, or V4 evidence bundle.');
+    throw new Error('The legacy initial reflection flow requires a V2, V3, or V4 evidence bundle.');
   }
   if (
-    input.reflectionFlowVersion === DEFERRED_SECOND_OPINION_FLOW_VERSION
+    input.reflectionFlowVersion === STAGED_INITIAL_REFLECTION_FLOW_VERSION
+    && input.evidenceBundle.schemaVersion !== 'session_reflection_bundle.v6'
+  ) {
+    throw new Error('The staged initial reflection flow requires a V6 evidence bundle.');
+  }
+  if (
+    input.reflectionFlowVersion === LEGACY_DEFERRED_SECOND_OPINION_FLOW_VERSION
     && input.evidenceBundle.schemaVersion !== 'curated_reflection_bundle.v1'
   ) {
-    throw new Error('The deferred second-opinion flow requires a curated deferred evidence bundle.');
+    throw new Error('The legacy deferred second-opinion flow requires a V1 curated bundle.');
+  }
+  if (
+    input.reflectionFlowVersion === STAGED_DEFERRED_SECOND_OPINION_FLOW_VERSION
+    && input.evidenceBundle.schemaVersion !== 'curated_reflection_bundle.v3'
+  ) {
+    throw new Error('The staged deferred second-opinion flow requires a V3 curated bundle.');
+  }
+  if (
+    isCurrentReflectionFlowVersion(input.reflectionFlowVersion)
+    && !isCurrentReflectionArtifactContract({
+      reflectionFlowVersion: input.reflectionFlowVersion,
+      bundleSchemaVersion: input.evidenceBundle.schemaVersion,
+      resultSchemaVersion: input.result.schemaVersion,
+      promptVersion: input.promptVersion,
+    })
+  ) {
+    throw new Error('The current reflection flow requires current final bundle, result, and prompt versions.');
   }
   assertCuratedSourceProposalProvenance(input.evidenceBundle, input.sourceProposalIds);
+  assertSourceHelpInboxProvenance(input.evidenceBundle, input.sourceHelpInboxIds);
   const validationErrors = validateReflectionArtifactPair(input.result, input.evidenceBundle);
   if (validationErrors.length > 0) {
     throw new Error(`Cannot materialize invalid reflection result:\n${validationErrors.join('\n')}`);
@@ -992,32 +1166,69 @@ export function materializeReflectionArtifact(
           );
         }
       }
+
+      if (input.continuationId !== undefined) {
+        const updated = database.prepare(`
+          UPDATE reflection_generation_continuations
+          SET artifact_id = ?
+          WHERE learner_id = current_learner_id()
+            AND continuation_id = ?
+            AND artifact_id IS NULL
+            AND final_evidence_bundle_json = ?
+            AND diagnosis_result_json IS NOT NULL
+        `).run(
+          artifactId,
+          input.continuationId,
+          JSON.stringify(input.evidenceBundle),
+        );
+        if (updated.changes !== 1) {
+          throw new Error('Reflection generation continuation is not ready for final materialization.');
+        }
+      }
       seedReflectionHelpInboxWithoutTransaction(
         artifactId,
         explanationItemIds,
         input.generatedAt,
       );
-      if (input.evidenceBundle.schemaVersion === 'curated_reflection_bundle.v1') {
+      if (
+        input.evidenceBundle.schemaVersion === 'curated_reflection_bundle.v1'
+        || input.evidenceBundle.schemaVersion === 'curated_reflection_bundle.v3'
+      ) {
         const selection = input.sourceProposalIds;
-        if (selection === undefined || selection.length === 0) {
+        const selectedHelpInboxIds = input.sourceHelpInboxIds ?? [];
+        if ((selection === undefined || selection.length === 0) && selectedHelpInboxIds.length === 0) {
           throw new DeferredSecondOpinionError('Second-opinion selection provenance is required.');
         }
-        const placeholders = selection.map(() => '?').join(', ');
-        const eligible = database.prepare(`
-          SELECT proposal_id
-          FROM reflection_proposal_reviews
-          WHERE proposal_id IN (${placeholders}) AND disposition = 'deferred'
-        `).all(...selection) as Array<{ proposal_id: string }>;
-        if (eligible.length !== selection.length) {
-          throw new DeferredSecondOpinionError(
-            'One or more selected deferred proposals were already resolved.',
-          );
+        if (selection && selection.length > 0) {
+          const placeholders = selection.map(() => '?').join(', ');
+          const eligible = database.prepare(`
+            SELECT proposal_id FROM reflection_proposal_reviews
+            WHERE proposal_id IN (${placeholders}) AND disposition = 'deferred'
+          `).all(...selection) as Array<{ proposal_id: string }>;
+          if (eligible.length !== selection.length) {
+            throw new DeferredSecondOpinionError('One or more selected deferred proposals were already resolved.');
+          }
+          database.prepare(`
+            UPDATE reflection_proposal_reviews
+            SET disposition = 'requested_second_opinion', updated_at = ?
+            WHERE proposal_id IN (${placeholders}) AND disposition = 'deferred'
+          `).run(input.generatedAt, ...selection);
         }
-        database.prepare(`
-          UPDATE reflection_proposal_reviews
-          SET disposition = 'requested_second_opinion', updated_at = ?
-          WHERE proposal_id IN (${placeholders}) AND disposition = 'deferred'
-        `).run(input.generatedAt, ...selection);
+        if (selectedHelpInboxIds.length > 0) {
+          const placeholders = selectedHelpInboxIds.map(() => '?').join(', ');
+          const eligible = database.prepare(`
+            SELECT inbox_id FROM reflection_help_inbox
+            WHERE inbox_id IN (${placeholders}) AND disposition = 'deferred'
+          `).all(...selectedHelpInboxIds) as Array<{ inbox_id: string }>;
+          if (eligible.length !== selectedHelpInboxIds.length) {
+            throw new DeferredSecondOpinionError('One or more selected deferred explanation items were already resolved.');
+          }
+          database.prepare(`
+            UPDATE reflection_help_inbox
+            SET disposition = 'requested_second_opinion', disposition_at = ?
+            WHERE inbox_id IN (${placeholders}) AND disposition = 'deferred'
+          `).run(input.generatedAt, ...selectedHelpInboxIds);
+        }
       }
       created = true;
       database.exec('COMMIT');
@@ -1102,6 +1313,7 @@ export function getReflectionArtifactDetail(artifactId: string): ReflectionArtif
     proposals,
     qualityItemTags: listReflectionQualityAnnotationsForArtifact(artifactId),
     helpInbox: listReflectionHelpInboxForArtifact(artifactId),
+    deferredHelpInbox: listDeferredReflectionHelpInboxForArtifact(artifactId),
   };
 }
 
@@ -1122,6 +1334,10 @@ export function listReflectionArtifacts(
         FROM reflection_proposal_reviews AS open_review
         WHERE open_review.artifact_id = reflection_artifacts.artifact_id
           AND open_review.disposition IN ('pending', 'deferred')
+      ) OR EXISTS (
+        SELECT 1 FROM reflection_help_inbox AS deferred_item
+        WHERE deferred_item.artifact_id = reflection_artifacts.artifact_id
+          AND deferred_item.disposition = 'deferred'
       )`
     : '';
   const rows = getDb().prepare(`
@@ -1208,21 +1424,25 @@ export function recordReflectionGenerationRun(
     throw new Error('Included reflection evidence item count cannot exceed eligible item count.');
   }
   if (
-    input.sourceSessionId !== null
-    && (!('session' in input.evidenceBundle) || input.evidenceBundle.session.sessionId !== input.sourceSessionId)
+    (
+      input.sourceSessionId !== null
+      || input.reflectionFlowVersion === STAGED_INITIAL_REFLECTION_FLOW_VERSION
+      || input.reflectionFlowVersion === STAGED_DEFERRED_SECOND_OPINION_FLOW_VERSION
+    )
+    && providerBundleSourceSessionId(input.evidenceBundle) !== input.sourceSessionId
   ) {
     throw new Error('Reflection generation run source session does not match its evidence bundle.');
   }
   if (
-    input.reflectionFlowVersion === INITIAL_REFLECTION_FLOW_VERSION
+    input.reflectionFlowVersion === LEGACY_INITIAL_REFLECTION_FLOW_VERSION
     && input.evidenceBundle.schemaVersion !== 'session_reflection_bundle.v2'
     && input.evidenceBundle.schemaVersion !== 'session_reflection_bundle.v3'
     && input.evidenceBundle.schemaVersion !== 'session_reflection_bundle.v4'
   ) {
-    throw new Error('The current reflection flow requires a V2, V3, or V4 retained evidence bundle.');
+    throw new Error('The legacy reflection flow requires a V2, V3, or V4 retained evidence bundle.');
   }
   assertCuratedSourceProposalProvenance(input.evidenceBundle, input.sourceProposalIds);
-  parseStoredSessionReflectionBundle(input.evidenceBundle);
+  parseReflectionGenerationProviderBundle(input.evidenceBundle);
   assertNormalizedUsage(input.usage);
   if (input.estimatedCostUsd !== null && (!Number.isFinite(input.estimatedCostUsd)
     || input.estimatedCostUsd < 0)) {
@@ -1272,9 +1492,11 @@ export function recordReflectionGenerationRun(
         || input.evidenceBundle.schemaVersion === 'session_reflection_bundle.v3'
         || input.evidenceBundle.schemaVersion === 'session_reflection_bundle.v4'
         || input.evidenceBundle.schemaVersion === 'curated_reflection_bundle.v1'
+        || input.evidenceBundle.schemaVersion === 'curated_reflection_diagnosis_bundle.v2'
       )
         ? (input.evidenceBundle.schemaVersion === 'session_reflection_bundle.v4'
-          || input.evidenceBundle.schemaVersion === 'curated_reflection_bundle.v1')
+          || input.evidenceBundle.schemaVersion === 'curated_reflection_bundle.v1'
+          || input.evidenceBundle.schemaVersion === 'curated_reflection_diagnosis_bundle.v2')
           ? 'session_reflection_result.v7'
           : 'session_reflection_result.v6'
         : 'session_reflection_result.v4'
@@ -1318,9 +1540,15 @@ export function startReflectionGenerationRun(input: StartReflectionGenerationRun
   assertCount(input.eligibleItemCount, 'eligible reflection evidence item count');
   assertCount(input.includedItemCount, 'included reflection evidence item count');
   if (input.includedItemCount > input.eligibleItemCount) throw new Error('Included reflection evidence item count cannot exceed eligible item count.');
-  if (input.sourceSessionId !== null
-    && (!('session' in input.evidenceBundle) || input.evidenceBundle.session.sessionId !== input.sourceSessionId)) throw new Error('Reflection generation run source session does not match its evidence bundle.');
-  parseStoredSessionReflectionBundle(input.evidenceBundle);
+  if (
+    (
+      input.sourceSessionId !== null
+      || input.reflectionFlowVersion === STAGED_INITIAL_REFLECTION_FLOW_VERSION
+      || input.reflectionFlowVersion === STAGED_DEFERRED_SECOND_OPINION_FLOW_VERSION
+    )
+    && providerBundleSourceSessionId(input.evidenceBundle) !== input.sourceSessionId
+  ) throw new Error('Reflection generation run source session does not match its evidence bundle.');
+  parseReflectionGenerationProviderBundle(input.evidenceBundle);
   assertCuratedSourceProposalProvenance(input.evidenceBundle, input.sourceProposalIds);
   getDb().prepare(`
     INSERT INTO reflection_generation_run_starts (
@@ -1338,6 +1566,34 @@ export function startReflectionGenerationRun(input: StartReflectionGenerationRun
   );
 }
 
+/** Conclude provider calls whose owning dispatch lease expired; never infer provider output. */
+export function recoverSessionReflectionDispatchRuns(sessionId: string, completedAt: string): 'not_started' | 'succeeded' | 'failed' {
+  const starts = getDb().prepare(`SELECT starts.* FROM reflection_generation_run_starts AS starts
+    WHERE source_session_id = ? AND NOT EXISTS (
+      SELECT 1 FROM reflection_generation_runs AS runs WHERE runs.run_id = starts.run_id)
+    ORDER BY started_at, run_id`).all(sessionId) as Array<{
+      run_id: string; source_session_id: string; reflection_flow_version: string; started_at: string;
+      provider: string; model: string; provider_model: string; prompt_version: string; client_request_id: string;
+      eligible_item_count: number; included_item_count: number; evidence_bundle_json: string; source_proposal_ids_json: string | null;
+    }>;
+  for (const start of starts) {
+    const evidenceBundle = parseReflectionGenerationProviderBundle(parseJson(start.evidence_bundle_json, 'interrupted reflection evidence'));
+    recordReflectionGenerationRun({ runId: start.run_id, sourceSessionId: start.source_session_id,
+      reflectionFlowVersion: start.reflection_flow_version, startedAt: start.started_at, completedAt,
+      provider: start.provider, model: start.model, providerModel: start.provider_model, promptVersion: start.prompt_version,
+      clientRequestId: start.client_request_id, responseId: null, finishReason: null, bundleSchemaVersion: evidenceBundle.schemaVersion,
+      resultSchemaVersion: null, diagnostic: null, state: 'failed', failureCode: 'interrupted',
+      eligibleItemCount: start.eligible_item_count, includedItemCount: start.included_item_count,
+      usage: { inputTokens: null, cachedInputTokens: null, cacheWriteInputTokens: null, outputTokens: null, reasoningTokens: null, totalTokens: null },
+      pricingSnapshotId: null, pricingAsOf: null, pricingBasis: null, estimatedCostUsd: null, evidenceBundle,
+      sourceProposalIds: start.source_proposal_ids_json === null ? null : JSON.parse(start.source_proposal_ids_json) as string[],
+    });
+  }
+  const runs = getDb().prepare('SELECT state FROM reflection_generation_runs WHERE source_session_id = ?').all(sessionId) as Array<{ state: string }>;
+  if (runs.length === 0) return 'not_started';
+  return runs.some(run => run.state === 'failed') ? 'failed' : 'succeeded';
+}
+
 export function listReflectionGenerationRuns(limit = 50): ReflectionGenerationRunRecord[] {
   if (!Number.isInteger(limit) || limit < 1 || limit > 200) {
     throw new Error('Reflection generation run list limit must be an integer from 1 to 200.');
@@ -1350,21 +1606,100 @@ export function listReflectionGenerationRuns(limit = 50): ReflectionGenerationRu
     run_id: string; source_session_id: string | null; reflection_flow_version: string;
     started_at: string; provider: string; model: string; provider_model: string; prompt_version: string;
     client_request_id: string; eligible_item_count: number; included_item_count: number;
+    evidence_bundle_json: string;
   }>;
-  const inFlight = activeRows.map((row): ReflectionGenerationRunRecord => ({
-    runId: row.run_id, sourceSessionId: row.source_session_id, reflectionFlowVersion: row.reflection_flow_version,
-    startedAt: row.started_at, completedAt: null, provider: row.provider, model: row.model,
-    providerModel: row.provider_model, promptVersion: row.prompt_version, responseId: null,
-    clientRequestId: row.client_request_id, finishReason: null, bundleSchemaVersion: 'session_reflection_bundle.v4',
-    resultSchemaVersion: 'session_reflection_result.v7', diagnostic: null, state: 'in_flight', failureCode: null,
-    eligibleItemCount: row.eligible_item_count, includedItemCount: row.included_item_count,
-    usage: { inputTokens: null, cachedInputTokens: null, cacheWriteInputTokens: null, outputTokens: null, reasoningTokens: null, totalTokens: null },
-    pricingSnapshotId: null, pricingAsOf: null, pricingBasis: null, estimatedCostUsd: null, retryable: false,
-  }));
+  const inFlight = activeRows.map((row): ReflectionGenerationRunRecord => {
+    const evidenceBundle = parseReflectionGenerationProviderBundle(
+      parseJson(row.evidence_bundle_json, `reflection run ${row.run_id} input`),
+    );
+    const consideredItemCount = (evidenceBundle.schemaVersion === 'pure_cue_promotion_bundle.v1' || evidenceBundle.schemaVersion === 'pure_cue_promotion_bundle.v2' || evidenceBundle.schemaVersion === 'pure_cue_promotion_bundle.v3')
+      ? evidenceBundle.items.length
+      : null;
+    return {
+      runId: row.run_id,
+      sourceSessionId: row.source_session_id,
+      reflectionFlowVersion: row.reflection_flow_version,
+      startedAt: row.started_at,
+      completedAt: null,
+      provider: row.provider,
+      model: row.model,
+      providerModel: row.provider_model,
+      promptVersion: row.prompt_version,
+      responseId: null,
+      clientRequestId: row.client_request_id,
+      finishReason: null,
+      bundleSchemaVersion: evidenceBundle.schemaVersion,
+      resultSchemaVersion: row.prompt_version === PURE_CUE_REFLECTION_PROMPT_VERSION
+        ? 'pure_cue_reflection_result.v2'
+        : isCompatiblePromptVersion(row.prompt_version, PURE_CUE_PROMOTION_PROMPT_VERSION)
+        ? 'pure_cue_promotion_result.v2'
+        : (isCompatiblePromptVersion(row.prompt_version, STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION)
+          || isCompatiblePromptVersion(row.prompt_version, 'reflection-staged-v4.2'))
+          ? 'staged_reflection_diagnosis_result.v3'
+          : 'session_reflection_result.v7',
+      diagnostic: null,
+      state: 'in_flight',
+      failureCode: null,
+      eligibleItemCount: consideredItemCount ?? row.eligible_item_count,
+      includedItemCount: consideredItemCount ?? row.included_item_count,
+      usage: {
+        inputTokens: null,
+        cachedInputTokens: null,
+        cacheWriteInputTokens: null,
+        outputTokens: null,
+        reasoningTokens: null,
+        totalTokens: null,
+      },
+      pricingSnapshotId: null,
+      pricingAsOf: null,
+      pricingBasis: null,
+      estimatedCostUsd: null,
+      retryable: false,
+    };
+  });
   if (inFlight.length >= limit) return inFlight;
   const concludedRows = getDb().prepare(`
     SELECT ${reflectionGenerationRunColumns.map((column) => `runs.${column}`).join(', ')},
-      CASE WHEN runs.evidence_bundle_json IS NOT NULL THEN 1 ELSE 0 END AS retryable
+      ${promotionRunItemCountSelect},
+      CASE WHEN runs.state = 'failed' AND runs.evidence_bundle_json IS NOT NULL AND EXISTS (
+        SELECT 1
+        FROM reflection_generation_continuation_runs AS links
+        JOIN reflection_generation_continuations AS continuations
+          ON continuations.learner_id = links.learner_id
+          AND continuations.continuation_id = links.continuation_id
+        WHERE links.learner_id = current_learner_id()
+          AND links.run_id = runs.run_id
+          AND continuations.artifact_id IS NULL
+          AND continuations.reflection_flow_version = runs.reflection_flow_version
+          AND (
+            (
+              links.stage = 'diagnosis'
+              AND runs.prompt_version IN (${compatiblePromptVersions(STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION).map((version) => `'${version}'`).join(', ')})
+              AND (
+                (runs.reflection_flow_version = '${CURRENT_INITIAL_REFLECTION_FLOW_VERSION}'
+                  AND runs.bundle_schema_version = 'session_reflection_bundle.v4')
+                OR (runs.reflection_flow_version = '${CURRENT_DEFERRED_SECOND_OPINION_FLOW_VERSION}'
+                  AND runs.bundle_schema_version = 'curated_reflection_diagnosis_bundle.v2')
+              )
+            )
+            OR (
+              links.stage = 'promotion'
+              AND runs.reflection_flow_version IN (
+                '${CURRENT_INITIAL_REFLECTION_FLOW_VERSION}',
+                '${CURRENT_DEFERRED_SECOND_OPINION_FLOW_VERSION}'
+              )
+              AND runs.bundle_schema_version = 'pure_cue_promotion_bundle.v3'
+              AND runs.prompt_version IN (${compatiblePromptVersions(PURE_CUE_PROMOTION_PROMPT_VERSION).map((version) => `'${version}'`).join(', ')})
+            )
+          )
+      ) THEN 1 WHEN runs.state = 'failed' AND runs.evidence_bundle_json IS NOT NULL
+        AND runs.reflection_flow_version = '${PURE_CUE_REFLECTION_FLOW_VERSION}'
+        AND runs.bundle_schema_version = 'pure_cue_reflection_bundle.v1'
+        AND runs.prompt_version = '${PURE_CUE_REFLECTION_PROMPT_VERSION}'
+        AND NOT EXISTS (SELECT 1 FROM reflection_artifacts AS artifact
+          WHERE artifact.reflection_flow_version = runs.reflection_flow_version
+            AND artifact.evidence_bundle_json = runs.evidence_bundle_json)
+        THEN 1 ELSE 0 END AS retryable
     FROM reflection_generation_runs AS runs
     ORDER BY completed_at DESC, run_id ASC
     LIMIT ?
@@ -1372,75 +1707,53 @@ export function listReflectionGenerationRuns(limit = 50): ReflectionGenerationRu
   return [...inFlight, ...concludedRows.map(mapReflectionGenerationRunRow)];
 }
 
-export function getReflectionSpendCap(now = new Date()): ReflectionSpendCap {
-  const dayKey = utcDayKey(now);
-  const { start, end } = utcDayRange(dayKey);
-  const row = getDb().prepare(`
-    SELECT COALESCE(SUM(estimated_cost_usd), 0) AS spent_usd
-    FROM reflection_generation_runs
-    WHERE completed_at >= ? AND completed_at < ?
-  `).get(start, end) as { spent_usd: number };
-  return buildReflectionSpendCap(row.spent_usd, now);
-}
-
 function getReflectionGenerationRun(runId: string): ReflectionGenerationRunRecord {
   const row = getDb().prepare(`
     SELECT ${reflectionGenerationRunColumns.map((column) => `runs.${column}`).join(', ')},
-      CASE WHEN runs.evidence_bundle_json IS NOT NULL THEN 1 ELSE 0 END AS retryable
+      ${promotionRunItemCountSelect},
+      CASE WHEN runs.state = 'failed' AND runs.evidence_bundle_json IS NOT NULL AND EXISTS (
+        SELECT 1 FROM reflection_generation_continuation_runs AS links
+        JOIN reflection_generation_continuations AS continuations
+          ON continuations.learner_id = links.learner_id
+          AND continuations.continuation_id = links.continuation_id
+        WHERE links.learner_id = current_learner_id()
+          AND links.run_id = runs.run_id
+          AND continuations.artifact_id IS NULL
+          AND continuations.reflection_flow_version = runs.reflection_flow_version
+          AND (
+            (
+              links.stage = 'diagnosis'
+              AND runs.prompt_version IN (${compatiblePromptVersions(STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION).map((version) => `'${version}'`).join(', ')})
+              AND (
+                (runs.reflection_flow_version = '${CURRENT_INITIAL_REFLECTION_FLOW_VERSION}'
+                  AND runs.bundle_schema_version = 'session_reflection_bundle.v4')
+                OR (runs.reflection_flow_version = '${CURRENT_DEFERRED_SECOND_OPINION_FLOW_VERSION}'
+                  AND runs.bundle_schema_version = 'curated_reflection_diagnosis_bundle.v2')
+              )
+            )
+            OR (
+              links.stage = 'promotion'
+              AND runs.reflection_flow_version IN (
+                '${CURRENT_INITIAL_REFLECTION_FLOW_VERSION}',
+                '${CURRENT_DEFERRED_SECOND_OPINION_FLOW_VERSION}'
+              )
+              AND runs.bundle_schema_version = 'pure_cue_promotion_bundle.v3'
+              AND runs.prompt_version IN (${compatiblePromptVersions(PURE_CUE_PROMOTION_PROMPT_VERSION).map((version) => `'${version}'`).join(', ')})
+            )
+          )
+      ) THEN 1 WHEN runs.state = 'failed' AND runs.evidence_bundle_json IS NOT NULL
+        AND runs.reflection_flow_version = '${PURE_CUE_REFLECTION_FLOW_VERSION}'
+        AND runs.bundle_schema_version = 'pure_cue_reflection_bundle.v1'
+        AND runs.prompt_version = '${PURE_CUE_REFLECTION_PROMPT_VERSION}'
+        AND NOT EXISTS (SELECT 1 FROM reflection_artifacts AS artifact
+          WHERE artifact.reflection_flow_version = runs.reflection_flow_version
+            AND artifact.evidence_bundle_json = runs.evidence_bundle_json)
+        THEN 1 ELSE 0 END AS retryable
     FROM reflection_generation_runs AS runs
     WHERE runs.run_id = ?
   `).get(runId) as ReflectionGenerationRunRow | undefined;
   if (!row) throw new Error('Reflection generation run not found.');
   return mapReflectionGenerationRunRow(row);
-}
-
-export function getReflectionGenerationRetrySource(
-  runId: string,
-): ReflectionGenerationRetrySource {
-  const normalizedRunId = runId.trim();
-  if (normalizedRunId.length === 0) {
-    throw new Error('Expected non-empty reflection generation run id.');
-  }
-  const row = getDb().prepare(`
-    SELECT ${reflectionGenerationRunColumns.map((column) => `runs.${column}`).join(', ')},
-      CASE WHEN runs.evidence_bundle_json IS NOT NULL THEN 1 ELSE 0 END AS retryable
-    FROM reflection_generation_runs AS runs
-    WHERE runs.run_id = ?
-  `).get(normalizedRunId) as ReflectionGenerationRunRow | undefined;
-  if (!row) throw new Error('Reflection generation run not found.');
-  if (row.retryable !== 1 || row.evidence_bundle_json === null) {
-    throw new Error('Reflection generation run is not retryable.');
-  }
-
-  let evidenceBundle: SessionReflectionBundle;
-  try {
-    evidenceBundle = parseStoredSessionReflectionBundle(parseJson(
-      row.evidence_bundle_json,
-      `reflection generation run ${row.run_id} evidence bundle`,
-    ));
-  } catch (error) {
-    throw corruptionError(error instanceof Error ? error.message : String(error));
-  }
-  if (
-    row.source_session_id !== null
-    && (!('session' in evidenceBundle) || evidenceBundle.session.sessionId !== row.source_session_id)
-  ) {
-    throw corruptionError(
-      `reflection generation run ${row.run_id} source session does not match its evidence`,
-    );
-  }
-  return {
-    runId: row.run_id,
-    sourceSessionId: row.source_session_id,
-    reflectionFlowVersion: row.reflection_flow_version,
-    model: row.model,
-    eligibleItemCount: row.eligible_item_count,
-    includedItemCount: row.included_item_count,
-    evidenceBundle,
-    ...(row.source_proposal_ids_json === null
-      ? {}
-      : { sourceProposalIds: parseSourceProposalIds(row.source_proposal_ids_json, row.run_id) }),
-  };
 }
 
 function parseSourceProposalIds(value: string, runId: string): string[] {
@@ -1451,17 +1764,409 @@ function parseSourceProposalIds(value: string, runId: string): string[] {
   return parsed;
 }
 
+function providerBundleSourceSessionId(bundle: ReflectionGenerationProviderBundle): string | null {
+  if ('session' in bundle) return bundle.session.sessionId;
+  if (bundle.schemaVersion === 'pure_cue_promotion_bundle.v1' || bundle.schemaVersion === 'pure_cue_promotion_bundle.v2' || bundle.schemaVersion === 'pure_cue_promotion_bundle.v3') return bundle.sourceSessionId;
+  return null;
+}
+
+function parseReflectionGenerationProviderBundle(
+  value: unknown,
+): ReflectionGenerationProviderBundle {
+  if (isRecord(value) && value.schemaVersion === 'pure_cue_promotion_bundle.v1') return parsePureCuePromotionBundleV1(value);
+  if (isRecord(value) && value.schemaVersion === 'pure_cue_promotion_bundle.v3') return parsePureCuePromotionBundleV3(value);
+  if (isRecord(value) && value.schemaVersion === 'pure_cue_promotion_bundle.v2') {
+    return parsePureCuePromotionBundleV2(value);
+  }
+  if (isRecord(value) && value.schemaVersion === 'curated_reflection_diagnosis_bundle.v2') {
+    return parseCuratedReflectionDiagnosisBundleV2(value);
+  }
+  return parseStoredSessionReflectionBundle(value);
+}
+
+export function createReflectionGenerationContinuation(input: {
+  continuationId?: string;
+  sourceSessionId: string | null;
+  reflectionFlowVersion: string;
+  createdAt: string;
+  eligibleItemCount: number;
+  includedItemCount: number;
+  overlapOmittedItemCount?: number;
+  diagnosisBundle: SessionReflectionBundleV4 | CuratedReflectionDiagnosisBundleV2;
+  sourceProposalIds?: string[];
+  sourceHelpInboxIds?: string[];
+}): ReflectionGenerationContinuation {
+  const continuationId = input.continuationId ?? randomUUID();
+  assertNonEmpty(continuationId, 'reflection continuation id');
+  assertIsoTimestamp(input.createdAt, 'reflection continuation creation time');
+  assertCount(input.eligibleItemCount, 'eligible reflection evidence item count');
+  assertCount(input.includedItemCount, 'included reflection evidence item count');
+  const overlapOmittedItemCount = input.overlapOmittedItemCount ?? 0;
+  assertCount(overlapOmittedItemCount, 'overlapping reflection evidence item count');
+  if (overlapOmittedItemCount + input.includedItemCount > input.eligibleItemCount) {
+    throw new Error('Included and overlapping reflection counts exceed eligible evidence.');
+  }
+  if (input.includedItemCount > input.eligibleItemCount) {
+    throw new Error('Included reflection evidence item count cannot exceed eligible item count.');
+  }
+  parseReflectionGenerationProviderBundle(input.diagnosisBundle);
+  if (!isCurrentReflectionGenerationStage({
+    reflectionFlowVersion: input.reflectionFlowVersion,
+    stage: 'diagnosis',
+    bundleSchemaVersion: input.diagnosisBundle.schemaVersion,
+    promptVersion: STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION,
+  })) {
+    throw new Error('New reflection continuations require the current staged diagnosis contract.');
+  }
+  if (providerBundleSourceSessionId(input.diagnosisBundle) !== input.sourceSessionId) {
+    throw new Error('Reflection continuation source session does not match its diagnosis bundle.');
+  }
+  assertCuratedSourceProposalProvenance(input.diagnosisBundle, input.sourceProposalIds);
+  assertSourceHelpInboxProvenance(input.diagnosisBundle, input.sourceHelpInboxIds);
+  if (input.sourceProposalIds?.length === 0 && !input.sourceHelpInboxIds?.length) {
+    throw new Error('Curated reflection requires a deferred selection.');
+  }
+  getDb().prepare(`
+    INSERT INTO reflection_generation_continuations (
+      learner_id, continuation_id, source_session_id, reflection_flow_version,
+      created_at, eligible_item_count, included_item_count, diagnosis_bundle_json,
+      source_proposal_ids_json, source_help_inbox_ids_json, diagnosis_result_json, final_evidence_bundle_json,
+      promotion_bundle_json, artifact_id, overlap_omitted_item_count
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, ?)
+  `).run(
+    requireLearnerId(),
+    continuationId,
+    input.sourceSessionId,
+    input.reflectionFlowVersion,
+    input.createdAt,
+    input.eligibleItemCount,
+    input.includedItemCount,
+    JSON.stringify(input.diagnosisBundle),
+    input.sourceProposalIds === undefined ? null : JSON.stringify(input.sourceProposalIds),
+    input.sourceHelpInboxIds === undefined ? null : JSON.stringify(input.sourceHelpInboxIds),
+    overlapOmittedItemCount,
+  );
+  return getReflectionGenerationContinuation(continuationId);
+}
+
+export function linkReflectionGenerationContinuationRun(input: {
+  continuationId: string;
+  runId: string;
+  stage: ReflectionGenerationContinuationStage;
+  createdAt: string;
+}): void {
+  assertNonEmpty(input.continuationId, 'reflection continuation id');
+  assertNonEmpty(input.runId, 'reflection continuation run id');
+  assertIsoTimestamp(input.createdAt, 'reflection continuation run link time');
+  if (input.stage !== 'diagnosis' && input.stage !== 'promotion') {
+    throw new Error('Reflection continuation stage must be diagnosis or promotion.');
+  }
+  getDb().prepare(`
+    INSERT INTO reflection_generation_continuation_runs (
+      learner_id, run_id, continuation_id, stage, created_at
+    ) VALUES (?, ?, ?, ?, ?)
+  `).run(requireLearnerId(), input.runId, input.continuationId, input.stage, input.createdAt);
+}
+
+export function prepareReflectionGenerationPromotion(input: {
+  continuationId: string;
+  diagnosisResult: StagedReflectionDiagnosisResultV3;
+  preparedAt: string;
+}): ReflectionGenerationContinuation {
+  assertIsoTimestamp(input.preparedAt, 'reflection promotion preparation time');
+  const continuation = getReflectionGenerationContinuation(input.continuationId);
+  if (!isCurrentReflectionFlowVersion(continuation.reflectionFlowVersion)) {
+    throw new Error('Cannot prepare an obsolete reflection continuation.');
+  }
+  const validationErrors = validateStagedReflectionDiagnosisResultV3(
+    input.diagnosisResult,
+    continuation.diagnosisBundle,
+  );
+  if (validationErrors.length > 0) {
+    throw new Error(`Cannot persist invalid staged diagnosis:\n${validationErrors.join('\n')}`);
+  }
+  const resultByItemId = new Map(
+    input.diagnosisResult.itemResults.map((itemResult) => [itemResult.itemId, itemResult]),
+  );
+  const enrichedItems = continuation.diagnosisBundle.items.map((item): ReflectionItemV6 => {
+    const itemResult = resultByItemId.get(item.itemId)!;
+    const responseWordId = item.submittedWord?.wordId ?? null;
+    const targetWordId = item.targetWord.wordId;
+    const shouldEnrich = itemResult.kind === 'ambiguous_pair';
+    if (shouldEnrich) {
+      if (responseWordId === null) throw new Error('Shared-axis handoff requires a response word.');
+      assertPureCuePromotionSource(item.sourceAttemptId, targetWordId, responseWordId);
+    }
+    const activeByWord = shouldEnrich
+      ? [targetWordId, responseWordId!].map((wordId) => ({
+          wordId,
+          activeProductionCues: getActiveProductionCuesForWord(wordId).map((cue) => ({
+            cueId: cue.cueId,
+            taskId: cue.taskId,
+            cueType: cue.cueType,
+            text: cue.text,
+            acceptedWordIds: cue.acceptedWordIds,
+          })),
+        }))
+      : [];
+    const promotionEvidence = shouldEnrich ? {
+      diagnosisTags: [...itemResult.diagnosisTags],
+      words: activeByWord,
+      intersectingPureCues: getActivePureCuesAcceptingAny([targetWordId, responseWordId!])
+        .map((cue) => ({
+          id: cue.id,
+          stimulus: cue.stimulus,
+          axisNote: cue.axisNote,
+          teachingNote: cue.teachingNote,
+          acceptedWordIds: cue.acceptedWordIds,
+          acceptedMembers: cue.acceptedWordIds.map((wordId) => {
+            const word = getDb().prepare('SELECT hanzi FROM lexical_words WHERE id = ?').get(wordId) as { hanzi: string };
+            return { wordId, hanzi: word.hanzi };
+          }),
+        })),
+    } : null;
+    return { ...item, promotionEvidence };
+  });
+  const studyProfile = 'session' in continuation.diagnosisBundle
+    ? continuation.diagnosisBundle.session.studyProfile
+    : continuation.diagnosisBundle.studyProfile;
+  const finalEvidenceBundle: SessionReflectionBundleV6 | CuratedReflectionBundleV3 =
+    'session' in continuation.diagnosisBundle
+      ? {
+          schemaVersion: 'session_reflection_bundle.v6',
+          generatedAt: input.preparedAt,
+          session: continuation.diagnosisBundle.session,
+          items: enrichedItems,
+        }
+      : {
+          schemaVersion: 'curated_reflection_bundle.v3',
+          generatedAt: input.preparedAt,
+          studyProfile,
+          items: enrichedItems,
+        };
+  parseStoredSessionReflectionBundle(finalEvidenceBundle);
+  const promotionBundle: PureCuePromotionBundleV3 = {
+    schemaVersion: 'pure_cue_promotion_bundle.v3',
+    generatedAt: input.preparedAt,
+    sourceSessionId: continuation.sourceSessionId,
+    studyProfile,
+    items: enrichedItems.flatMap((item) => {
+      const itemResult = resultByItemId.get(item.itemId)!;
+      if (itemResult.kind !== 'ambiguous_pair' || item.promotionEvidence === null || item.submittedWord === null) return [];
+      return [{
+        itemId: item.itemId,
+        sourceAttemptId: item.sourceAttemptId,
+        targetWord: item.targetWord,
+        responseWord: item.submittedWord,
+        servedCue: item.servedCue,
+        handoff: itemResult.handoff,
+        promotionEvidence: item.promotionEvidence,
+      }];
+    }),
+  };
+  parsePureCuePromotionBundleV3(promotionBundle);
+
+  const database = getDb();
+  const stored = database.prepare(`
+    SELECT diagnosis_result_json, final_evidence_bundle_json, promotion_bundle_json
+    FROM reflection_generation_continuations
+    WHERE learner_id = ? AND continuation_id = ?
+  `).get(requireLearnerId(), input.continuationId) as {
+    diagnosis_result_json: string | null;
+    final_evidence_bundle_json: string | null;
+    promotion_bundle_json: string | null;
+  } | undefined;
+  if (stored === undefined) throw new Error('Reflection generation continuation not found.');
+  const exact = [
+    JSON.stringify(input.diagnosisResult),
+    JSON.stringify(finalEvidenceBundle),
+    JSON.stringify(promotionBundle),
+  ];
+  if (stored.diagnosis_result_json !== null) {
+    if (
+      stored.diagnosis_result_json !== exact[0]
+      || stored.final_evidence_bundle_json !== exact[1]
+      || stored.promotion_bundle_json !== exact[2]
+    ) {
+      throw new Error('Reflection continuation diagnosis was already prepared with different evidence.');
+    }
+    return getReflectionGenerationContinuation(input.continuationId);
+  }
+  const updated = database.prepare(`
+    UPDATE reflection_generation_continuations
+    SET diagnosis_result_json = ?, final_evidence_bundle_json = ?, promotion_bundle_json = ?
+    WHERE learner_id = ? AND continuation_id = ? AND diagnosis_result_json IS NULL
+  `).run(...exact, requireLearnerId(), input.continuationId);
+  if (updated.changes !== 1) throw new Error('Reflection continuation could not save promotion evidence.');
+  return getReflectionGenerationContinuation(input.continuationId);
+}
+
+export function getReflectionGenerationContinuationRetrySource(
+  runId: string,
+): ReflectionGenerationContinuationRetrySource | null {
+  const row = getDb().prepare(`
+    SELECT links.continuation_id, links.stage, runs.provider, runs.model,
+      runs.provider_model, runs.prompt_version, runs.bundle_schema_version,
+      runs.state, runs.reflection_flow_version AS run_flow_version,
+      continuations.reflection_flow_version, continuations.artifact_id
+    FROM reflection_generation_continuation_runs AS links
+    JOIN reflection_generation_runs AS runs ON runs.run_id = links.run_id
+    JOIN reflection_generation_continuations AS continuations
+      ON continuations.learner_id = links.learner_id
+      AND continuations.continuation_id = links.continuation_id
+    WHERE links.learner_id = ? AND links.run_id = ?
+  `).get(requireLearnerId(), runId) as {
+    continuation_id: string;
+    stage: ReflectionGenerationContinuationStage;
+    provider: string;
+    model: string;
+    provider_model: string;
+    prompt_version: string;
+    bundle_schema_version: string | null;
+    state: ReflectionGenerationRunState;
+    run_flow_version: string;
+    reflection_flow_version: string;
+    artifact_id: string | null;
+  } | undefined;
+  if (row === undefined) return null;
+  if (
+    row.state !== 'failed'
+    || row.artifact_id !== null
+    || row.run_flow_version !== row.reflection_flow_version
+    || !isCurrentReflectionGenerationStage({
+      reflectionFlowVersion: row.reflection_flow_version,
+      stage: row.stage,
+      bundleSchemaVersion: row.bundle_schema_version,
+      promptVersion: row.prompt_version,
+    })
+  ) return null;
+  return {
+    runId,
+    continuation: getReflectionGenerationContinuation(row.continuation_id),
+    stage: row.stage,
+    provider: row.provider,
+    model: row.model,
+    providerModel: row.provider_model,
+    promptVersion: row.prompt_version,
+  };
+}
+
+export function getReflectionGenerationContinuation(
+  continuationId: string,
+): ReflectionGenerationContinuation {
+  const row = getDb().prepare(`
+    SELECT * FROM reflection_generation_continuations
+    WHERE learner_id = ? AND continuation_id = ?
+  `).get(requireLearnerId(), continuationId) as ReflectionGenerationContinuationRow | undefined;
+  if (row === undefined) throw new Error('Reflection generation continuation not found.');
+  return mapReflectionGenerationContinuation(row);
+}
+
+type ReflectionGenerationContinuationRow = {
+  continuation_id: string;
+  source_session_id: string | null;
+  reflection_flow_version: string;
+  created_at: string;
+  eligible_item_count: number;
+  included_item_count: number;
+  overlap_omitted_item_count: number;
+  diagnosis_bundle_json: string;
+  source_proposal_ids_json: string | null;
+  source_help_inbox_ids_json: string | null;
+  diagnosis_result_json: string | null;
+  final_evidence_bundle_json: string | null;
+  promotion_bundle_json: string | null;
+  artifact_id: string | null;
+};
+
+function mapReflectionGenerationContinuation(
+  row: ReflectionGenerationContinuationRow,
+): ReflectionGenerationContinuation {
+  const diagnosisBundle = parseReflectionGenerationProviderBundle(parseJson(
+    row.diagnosis_bundle_json,
+    `reflection continuation ${row.continuation_id} diagnosis bundle`,
+  ));
+  if (
+    diagnosisBundle.schemaVersion !== 'session_reflection_bundle.v4'
+    && diagnosisBundle.schemaVersion !== 'curated_reflection_diagnosis_bundle.v2'
+  ) {
+    throw corruptionError(`reflection continuation ${row.continuation_id} has an invalid diagnosis bundle`);
+  }
+  const diagnosisResult = row.diagnosis_result_json === null
+    ? null
+    : parseJson(row.diagnosis_result_json, `reflection continuation ${row.continuation_id} diagnosis result`) as StagedReflectionDiagnosisResultV2 | StagedReflectionDiagnosisResultV3;
+  if (diagnosisResult !== null) {
+    const errors = diagnosisResult.schemaVersion === 'staged_reflection_diagnosis_result.v2'
+      ? validateStagedReflectionDiagnosisResultV2(diagnosisResult, diagnosisBundle)
+      : validateStagedReflectionDiagnosisResultV3(diagnosisResult, diagnosisBundle);
+    if (errors.length > 0) throw corruptionError(errors.join('; '));
+  }
+  const finalEvidenceBundle = row.final_evidence_bundle_json === null
+    ? null
+    : parseStoredSessionReflectionBundle(parseJson(
+        row.final_evidence_bundle_json,
+        `reflection continuation ${row.continuation_id} final evidence`,
+      ));
+  if (
+    finalEvidenceBundle !== null
+    && finalEvidenceBundle.schemaVersion !== 'session_reflection_bundle.v6'
+    && finalEvidenceBundle.schemaVersion !== 'curated_reflection_bundle.v3'
+  ) {
+    throw corruptionError(`reflection continuation ${row.continuation_id} has invalid final evidence`);
+  }
+  const promotionBundle = row.promotion_bundle_json === null
+    ? null
+    : parseReflectionGenerationProviderBundle(parseJson(
+        row.promotion_bundle_json,
+        `reflection continuation ${row.continuation_id} promotion bundle`,
+      ));
+  if (promotionBundle !== null && promotionBundle.schemaVersion !== 'pure_cue_promotion_bundle.v2'
+    && promotionBundle.schemaVersion !== 'pure_cue_promotion_bundle.v3') {
+    throw corruptionError(`reflection continuation ${row.continuation_id} has an invalid promotion bundle`);
+  }
+  return {
+    continuationId: row.continuation_id,
+    sourceSessionId: row.source_session_id,
+    reflectionFlowVersion: row.reflection_flow_version,
+    createdAt: row.created_at,
+    eligibleItemCount: row.eligible_item_count,
+    includedItemCount: row.included_item_count,
+    overlapOmittedItemCount: row.overlap_omitted_item_count,
+    diagnosisBundle,
+    sourceProposalIds: row.source_proposal_ids_json === null
+      ? null
+      : parseSourceProposalIds(row.source_proposal_ids_json, row.continuation_id),
+    sourceHelpInboxIds: row.source_help_inbox_ids_json === null
+      ? null
+      : parseSourceProposalIds(row.source_help_inbox_ids_json, row.continuation_id),
+    diagnosisResult,
+    finalEvidenceBundle,
+    promotionBundle,
+    artifactId: row.artifact_id,
+  };
+}
+
 function assertCuratedSourceProposalProvenance(
-  bundle: SessionReflectionBundle,
+  bundle: ReflectionGenerationProviderBundle,
   sourceProposalIds: string[] | null | undefined,
 ): void {
-  if (bundle.schemaVersion !== 'curated_reflection_bundle.v1') {
+  if (
+    bundle.schemaVersion !== 'curated_reflection_bundle.v1'
+    && bundle.schemaVersion !== 'curated_reflection_diagnosis_bundle.v2'
+    && bundle.schemaVersion !== 'curated_reflection_bundle.v2'
+    && bundle.schemaVersion !== 'curated_reflection_bundle.v3'
+    && !((bundle.schemaVersion === 'pure_cue_promotion_bundle.v2' || bundle.schemaVersion === 'pure_cue_promotion_bundle.v3') && bundle.sourceSessionId === null)
+  ) {
     if (sourceProposalIds !== null && sourceProposalIds !== undefined) {
       throw new Error('Only curated reflection bundles may retain proposal selection provenance.');
     }
     return;
   }
-  if (sourceProposalIds === null || sourceProposalIds === undefined || sourceProposalIds.length === 0) {
+  if (sourceProposalIds === null || sourceProposalIds === undefined || (
+    sourceProposalIds.length === 0 && bundle.schemaVersion !== 'curated_reflection_bundle.v3'
+    && bundle.schemaVersion !== 'curated_reflection_diagnosis_bundle.v2'
+    && bundle.schemaVersion !== 'pure_cue_promotion_bundle.v2'
+  )) {
     throw new Error('Curated reflection bundles require selected proposal provenance.');
   }
   const unique = new Set<string>();
@@ -1469,6 +2174,20 @@ function assertCuratedSourceProposalProvenance(
     assertNonEmpty(proposalId, 'selected source proposal id');
     if (unique.has(proposalId)) throw new Error('Selected source proposal ids must be unique.');
     unique.add(proposalId);
+  }
+}
+
+function assertSourceHelpInboxProvenance(
+  bundle: ReflectionGenerationProviderBundle,
+  ids: string[] | undefined,
+): void {
+  if (ids === undefined) return;
+  if (bundle.schemaVersion !== 'curated_reflection_diagnosis_bundle.v2'
+    && bundle.schemaVersion !== 'curated_reflection_bundle.v3') {
+    throw new Error('Only current curated reflection bundles may retain explanation selection provenance.');
+  }
+  if (new Set(ids).size !== ids.length || ids.some((id) => typeof id !== 'string' || id.trim().length === 0)) {
+    throw new Error('Selected explanation inbox ids must be unique and non-empty.');
   }
 }
 
@@ -1491,32 +2210,52 @@ export function deferReflectionProposal(
  * The returned envelope intentionally contains no earlier proposal text or
  * review disposition; the provider sees only the original evidence again.
  */
-export function buildDeferredSecondOpinionBundle(
+export function buildStagedDeferredSecondOpinionBundle(
   proposalIds: string[],
   generatedAt = new Date().toISOString(),
-): { bundle: CuratedReflectionBundleV1; sourceProposalIds: string[] } {
+  helpInboxIds: string[] = [],
+): { bundle: CuratedReflectionDiagnosisBundleV2; sourceProposalIds: string[]; sourceHelpInboxIds: string[]; eligibleItemCount: number; overlapOmittedItemCount: number } {
   const normalizedProposalIds = [...new Set(proposalIds.map((proposalId) => proposalId.trim()))].sort();
-  if (normalizedProposalIds.length === 0) {
-    throw new DeferredSecondOpinionError('Select at least one deferred proposal.');
+  const normalizedHelpInboxIds = [...new Set(helpInboxIds.map((id) => id.trim()))].sort();
+  if (normalizedProposalIds.length + normalizedHelpInboxIds.length === 0) {
+    throw new DeferredSecondOpinionError('Select at least one deferred item.');
   }
-  if (normalizedProposalIds.some((proposalId) => proposalId.length === 0)) {
-    throw new DeferredSecondOpinionError('Selected proposal ids must be non-empty.');
+  if (normalizedProposalIds.some((id) => id.length === 0)
+    || normalizedHelpInboxIds.some((id) => id.length === 0)) {
+    throw new DeferredSecondOpinionError('Selected ids must be non-empty.');
   }
-  const placeholders = normalizedProposalIds.map(() => '?').join(', ');
-  const rows = getDb().prepare(`
+  const proposalRows = normalizedProposalIds.length === 0 ? [] : getDb().prepare(`
     SELECT proposal_id, artifact_id, item_id
     FROM reflection_proposal_reviews
-    WHERE proposal_id IN (${placeholders}) AND disposition = 'deferred'
+    WHERE proposal_id IN (${normalizedProposalIds.map(() => '?').join(', ')}) AND disposition = 'deferred'
+    ORDER BY proposal_id
   `).all(...normalizedProposalIds) as Array<{ proposal_id: string; artifact_id: string; item_id: string }>;
-  if (rows.length !== normalizedProposalIds.length) {
+  if (proposalRows.length !== normalizedProposalIds.length) {
     throw new DeferredSecondOpinionError(
       'Every selected proposal must still be deferred and available for a second opinion.',
     );
   }
+  const helpRows = normalizedHelpInboxIds.length === 0 ? [] : getDb().prepare(`
+    SELECT inbox_id, artifact_id, item_id FROM reflection_help_inbox
+    WHERE inbox_id IN (${normalizedHelpInboxIds.map(() => '?').join(', ')})
+      AND disposition = 'deferred'
+    ORDER BY inbox_id
+  `).all(...normalizedHelpInboxIds) as Array<{ inbox_id: string; artifact_id: string; item_id: string }>;
+  if (helpRows.length !== normalizedHelpInboxIds.length) {
+    throw new DeferredSecondOpinionError('Every selected explanation item must still be deferred.');
+  }
+  const rows = [...proposalRows, ...helpRows];
 
   const sourceItems = new Map<string, ReflectionItemV4>();
+  const studyProfiles = new Set<string>();
   for (const row of rows) {
     const artifact = getReflectionArtifactDetail(row.artifact_id);
+    if (!supportsReflectionSecondOpinionEvidence(artifact)) {
+      throw new DeferredSecondOpinionError(
+        'Second opinions require a supported retained evidence format. '
+        + 'This older proposal remains viewable.',
+      );
+    }
     const item = artifact.evidenceBundle.items.find((candidate) => candidate.itemId === row.item_id);
     if (item === undefined) {
       throw new DeferredSecondOpinionError('A selected proposal no longer has usable retained evidence.');
@@ -1524,13 +2263,22 @@ export function buildDeferredSecondOpinionBundle(
     if (!('servedCue' in item)) {
       throw new DeferredSecondOpinionError('A selected proposal no longer has usable retained evidence.');
     }
+    const { promotionEvidence: _promotionEvidence, ...diagnosisItem } = item as ReflectionItemV6;
     sourceItems.set(`${row.artifact_id}\u0000${row.item_id}`, {
-      ...item,
+      ...diagnosisItem,
       servedCue: {
-        ...item.servedCue,
-        supplement: item.servedCue.supplement ?? null,
+        ...diagnosisItem.servedCue,
+        supplement: diagnosisItem.servedCue.supplement ?? null,
+        ...(diagnosisItem.servedCue.bootstrapReveal === undefined ? {} : { bootstrapReveal: diagnosisItem.servedCue.bootstrapReveal }),
       },
     });
+    studyProfiles.add(
+      'session' in artifact.evidenceBundle
+        ? artifact.evidenceBundle.session.studyProfile
+        : 'studyProfile' in artifact.evidenceBundle
+          ? artifact.evidenceBundle.studyProfile
+          : getConfig().studyProfile,
+    );
   }
   if (sourceItems.size > DEFERRED_SECOND_OPINION_MAX_EVIDENCE_ITEMS) {
     throw new DeferredSecondOpinionError(
@@ -1539,17 +2287,38 @@ export function buildDeferredSecondOpinionBundle(
   }
 
   const requestId = randomUUID();
-  const items = [...sourceItems.values()].map((item, index) => ({
+  const selection = selectNonOverlappingReflectionItems([...sourceItems.values()]);
+  const includedSourceItems = new Set(selection.items);
+  const includedSourceKeys = new Set([...sourceItems.entries()]
+    .filter(([, item]) => includedSourceItems.has(item)).map(([key]) => key));
+  // Omitted proposals stay deferred; only evidence actually reconsidered is retired.
+  const includedProposalIds = proposalRows.filter((row) => (
+    includedSourceKeys.has(`${row.artifact_id}\u0000${row.item_id}`)
+  )).map((row) => row.proposal_id);
+  const includedHelpInboxIds = helpRows.filter((row) => (
+    includedSourceKeys.has(`${row.artifact_id}\u0000${row.item_id}`)
+  )).map((row) => row.inbox_id);
+  const items = selection.items.map((item, index) => ({
     ...item,
     itemId: `${requestId}:item:${index + 1}`,
   }));
-  const bundle: CuratedReflectionBundleV1 = {
-    schemaVersion: 'curated_reflection_bundle.v1',
+  if (studyProfiles.size !== 1) {
+    throw new DeferredSecondOpinionError('Selected evidence spans incompatible study profiles.');
+  }
+  const bundle: CuratedReflectionDiagnosisBundleV2 = {
+    schemaVersion: 'curated_reflection_diagnosis_bundle.v2',
     generatedAt,
+    studyProfile: [...studyProfiles][0] as CuratedReflectionDiagnosisBundleV2['studyProfile'],
     items,
   };
-  parseStoredSessionReflectionBundle(bundle);
-  return { bundle, sourceProposalIds: normalizedProposalIds };
+  parseCuratedReflectionDiagnosisBundleV2(bundle);
+  return {
+    bundle,
+    sourceProposalIds: includedProposalIds,
+    sourceHelpInboxIds: includedHelpInboxIds,
+    eligibleItemCount: sourceItems.size,
+    overlapOmittedItemCount: selection.overlapOmittedItemCount,
+  };
 }
 
 export function dismissReflectionProposal(
@@ -1615,12 +2384,27 @@ export function supersedeReflectionProposal(
 
 function requireRegisteredOperationForEvidence(
   operation: ReflectionOperation,
-  evidenceItem: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | ReflectionItemV4,
+  evidenceItem: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | ReflectionItemV4 | ReflectionItemV5 | ReflectionItemV6 | PureCueReflectionItemV1,
+  hasTargetSuppression = false,
 ): NonNullable<ReturnType<typeof getReflectionOperationRegistration>> {
+  // All callers authorize only current artifacts. Retain the legacy operation
+  // for historical reads, but never reopen its implicit-compensation contract.
+  if (operation.kind === 'promote_pure_elicitation') {
+    throw new Error('Legacy pure-cue promotion cannot authorize new changes; use cue reconciliation.');
+  }
   const itemValidationErrors = validateReflectionOperation(operation, {
     allowedWordIds: visibleWordIds(evidenceItem),
     evidenceItemId: evidenceItem.itemId,
   });
+  if (hasTargetSuppression) {
+    if (evidenceItem.targetWord === null) throw new Error('Target suppression requires a target word.');
+    itemValidationErrors.push(...validateTargetSuppressionOperation(operation, evidenceItem.targetWord.wordId));
+  }
+  if (evidenceItem.source === 'pure_cue_mistake') {
+    if (operation.kind === 'reconcile_pure_cue_response') itemValidationErrors.push(...validatePureCueReflectionOperationEvidenceContext(operation, evidenceItem));
+    else if (operation.kind === 'repair_pure_cue_stimulus') itemValidationErrors.push(...validateRepairPureCueStimulusEvidenceContext(operation, evidenceItem));
+    else throw new Error('Pure cue evidence only authorizes response reconciliation or stimulus repair.');
+  }
   if ('servedCue' in evidenceItem) {
     itemValidationErrors.push(...validateReflectionOperationEvidenceContext(
       operation,
@@ -1660,12 +2444,13 @@ export function acceptReflectionProposal(
   database.exec('BEGIN IMMEDIATE');
   try {
     const reviewRow = requireProposalReviewRow(input.proposalId);
+    assertCurrentReflectionArtifactActions(reviewRow.artifact_id);
     assertProposalReviewTransition(
       reviewRow.disposition as ProposalReviewDisposition['kind'],
       'accepted',
     );
-    const { proposal: originalProposal, evidenceItem } = originalProposalContextForReview(reviewRow);
-    const registration = requireRegisteredOperationForEvidence(input.operation, evidenceItem);
+    const { proposal: originalProposal, evidenceItem, hasTargetSuppression } = originalProposalContextForReview(reviewRow);
+    const registration = requireRegisteredOperationForEvidence(input.operation, evidenceItem, hasTargetSuppression);
     const acceptanceMode = classifyProposalAcceptance(
       originalProposal.operation,
       input.operation,
@@ -1700,7 +2485,11 @@ export function acceptReflectionProposal(
       input.proposalId,
       input.operation.kind,
       input.operation.version,
-      JSON.stringify(input.operation),
+      serializeStoredInvocationOperation(
+        input.operation,
+        reviewRow.artifact_id,
+        reviewRow.item_id,
+      ),
       initialApplication.kind,
       createdAt,
       applicationColumns.unsupportedReason,
@@ -1744,18 +2533,19 @@ export function replaceReflectionProposal(
   database.exec('BEGIN IMMEDIATE');
   try {
     const reviewRow = requireProposalReviewRow(input.proposalId);
+    assertCurrentReflectionArtifactActions(reviewRow.artifact_id);
     assertProposalReviewTransition(
       reviewRow.disposition as ProposalReviewDisposition['kind'],
       'superseded',
     );
-    const { proposal: originalProposal, evidenceItem } = originalProposalContextForReview(reviewRow);
+    const { proposal: originalProposal, evidenceItem, hasTargetSuppression } = originalProposalContextForReview(reviewRow);
     if (
       originalProposal.operation.kind === input.operation.kind
       && originalProposal.operation.version === input.operation.version
     ) {
       throw new Error('A replacement proposal must change operation kind or version.');
     }
-    const registration = requireRegisteredOperationForEvidence(input.operation, evidenceItem);
+    const registration = requireRegisteredOperationForEvidence(input.operation, evidenceItem, hasTargetSuppression);
     const initialApplication: OperationApplicationState = registration.applySupport === 'supported'
       ? { kind: 'pending' }
       : { kind: 'unsupported', reason: unsupportedApplicationReason(input.operation) };
@@ -1786,7 +2576,11 @@ export function replaceReflectionProposal(
       input.proposalId,
       input.operation.kind,
       input.operation.version,
-      JSON.stringify(input.operation),
+      serializeStoredInvocationOperation(
+        input.operation,
+        reviewRow.artifact_id,
+        reviewRow.item_id,
+      ),
       initialApplication.kind,
       createdAt,
       applicationColumns.unsupportedReason,
@@ -1844,17 +2638,21 @@ export function authorizeManualReflectionOperation(
   database.exec('BEGIN IMMEDIATE');
   try {
     const artifact = getReflectionArtifactDetail(input.artifactId);
+    assertCurrentReflectionArtifactActions(artifact.artifactId);
     const itemResult = artifact.result.itemResults.find((item) => item.itemId === input.itemId);
     const evidenceItem = artifact.evidenceBundle.items.find((item) => item.itemId === input.itemId);
     if (!itemResult || !evidenceItem) {
       throw new Error('Reflection item not found.');
+    }
+    if ('promotionOutcome' in itemResult && itemResult.promotionOutcome === 'disagreement') {
+      throw new Error('Stage disagreement is non-actionable; no content changes can be authorized from this item.');
     }
     if (itemResult.proposals.length > 0) {
       throw new Error(
         'Manual authorization is only available for explanation-only reflection items.',
       );
     }
-    const registration = requireRegisteredOperationForEvidence(input.operation, evidenceItem);
+    const registration = requireRegisteredOperationForEvidence(input.operation, evidenceItem, 'targetSuppression' in itemResult && itemResult.targetSuppression !== undefined);
     const initialApplication: OperationApplicationState = registration.applySupport === 'supported'
       ? { kind: 'pending' }
       : { kind: 'unsupported', reason: unsupportedApplicationReason(input.operation) };
@@ -1884,7 +2682,7 @@ export function authorizeManualReflectionOperation(
       createdAt,
       input.operation.kind,
       input.operation.version,
-      JSON.stringify(input.operation),
+      serializeStoredInvocationOperation(input.operation, input.artifactId, input.itemId),
       initialApplication.kind,
       createdAt,
       applicationColumns.unsupportedReason,
@@ -1894,10 +2692,10 @@ export function authorizeManualReflectionOperation(
       applicationColumns.effectRefsJson,
       applicationColumns.satisfyingEffectRefsJson,
     );
-    markReflectionHelpInboxDone({
-      artifactId: input.artifactId,
-      itemId: input.itemId,
-    });
+    database.prepare(`
+      DELETE FROM reflection_help_inbox
+      WHERE artifact_id = ? AND item_id = ? AND disposition IN ('open', 'deferred')
+    `).run(input.artifactId, input.itemId);
     database.exec('COMMIT');
   } catch (error) {
     database.exec('ROLLBACK');
@@ -1933,6 +2731,7 @@ export function transitionReflectionInvocationApplication(
   database.exec('BEGIN IMMEDIATE');
   try {
     const current = getReflectionInvocation(invocationId);
+    assertCurrentReflectionInvocationActions(invocationId);
     assertOperationApplicationTransition(current.application.state.kind, state.kind);
     database.prepare(`
       UPDATE ${physicalLearnerTableName('reflection_operation_invocations')}
@@ -1982,7 +2781,9 @@ export function listPendingReflectionInvocationIds(): string[] {
     WHERE application_state = 'pending'
     ORDER BY application_updated_at ASC, invocation_id ASC
   `).all() as Array<{ invocation_id: string }>;
-  return rows.map((row) => row.invocation_id);
+  return rows
+    .map((row) => row.invocation_id)
+    .filter(reflectionInvocationSupportsCurrentActions);
 }
 
 export function recoverPendingReflectionInvocations(): OperationInvocationStatus[] {
@@ -2017,6 +2818,13 @@ export function applyReflectionInvocation(
   }
 
   try {
+    assertCurrentReflectionInvocationActions(invocationId);
+  } catch (error) {
+    database.exec('ROLLBACK');
+    throw error;
+  }
+
+  try {
     const nextState = applyPendingOperationWithoutTransaction(
       current.invocation.operation,
       invocationId,
@@ -2047,6 +2855,141 @@ export function applyReflectionInvocation(
   }
 }
 
+const CORRECT_CUE_REPAIR_FAILURE = 'Reflection application failed: Unfair-cue compensation requires the action\'s first attempt, which must be the mistake.';
+
+export type CorrectCueRepairRecoveryPlan = {
+  digest: string;
+  candidates: Array<{ invocationId: string; wordId: string; cueCount: number }>;
+  skipped: Array<{ invocationId: string; reason: string }>;
+};
+
+function correctCueRepairRecoveryPlanWithoutTransaction(): CorrectCueRepairRecoveryPlan {
+  const database = getDb();
+  const learnerId = requireLearnerId();
+  const rows = database.prepare(`SELECT invocation_id FROM reflection_operation_invocations
+    WHERE application_state='failed' AND application_error=?
+    ORDER BY created_at DESC, invocation_id DESC`).all(CORRECT_CUE_REPAIR_FAILURE) as Array<{ invocation_id: string }>;
+  const candidates: CorrectCueRepairRecoveryPlan['candidates'] = [];
+  const skipped: CorrectCueRepairRecoveryPlan['skipped'] = [];
+  const chosenWords = new Set<string>();
+  const frozenInvocations: OperationInvocationStatus[] = [];
+  for (const row of rows) {
+    const status = getReflectionInvocation(row.invocation_id);
+    const operation = status.invocation.operation;
+    const skip = (reason: string) => skipped.push({ invocationId: row.invocation_id, reason });
+    if (!reflectionInvocationSupportsCurrentActions(row.invocation_id)) {
+      skip('obsolete_contract');
+      continue;
+    }
+    const review = database.prepare(`SELECT accepted_invocation_id FROM reflection_proposal_reviews
+      WHERE proposal_id=(SELECT origin_proposal_id FROM reflection_operation_invocations WHERE invocation_id=?)
+      AND disposition='accepted'`).get(row.invocation_id) as { accepted_invocation_id: string } | undefined;
+    if (!review || review.accepted_invocation_id !== row.invocation_id) {
+      skip('not_accepted_proposal');
+      continue;
+    }
+    if (operation.kind !== 'repair_production_cue' || operation.version !== 2
+      || operation.changes.some(change => change.kind !== 'create')
+      || operation.sourceAttemptJudgments.length !== 1
+      || operation.sourceAttemptJudgments[0].kind !== 'misleading_or_overloaded_cue') {
+      skip('not_fallback_correct_repair');
+      continue;
+    }
+    const sourceAttemptId = operation.sourceAttemptJudgments[0].sourceAttemptId;
+    const source = database.prepare(`SELECT a.outcome,a.target_word_id,a.action_kind,
+      a.action_attempt_sequence,e.cue_id,e.task_id
+      FROM study_attempt_events a JOIN production_cue_evidence_records e
+      ON e.source_attempt_id=a.id AND e.record_kind='attempt'
+      WHERE a.id=?`).get(sourceAttemptId) as {
+        outcome: string; target_word_id: string; action_kind: string;
+        action_attempt_sequence: number; cue_id: string | null; task_id: string;
+      } | undefined;
+    if (!source || source.outcome !== 'correct' || source.action_kind !== 'production'
+      || source.action_attempt_sequence !== 1 || source.cue_id !== null
+      || source.target_word_id !== operation.wordId || source.task_id !== operation.taskId
+      || hasActionLapseToCompensate(sourceAttemptId)
+      || validateProductionCueRepairCurrentStateWithoutTransaction(operation) !== null) {
+      skip('invalid_source');
+      continue;
+    }
+    // Even retired cues count as modification: recovery must not undo a later
+    // decision to retire content or add redundant alternatives to a repaired word.
+    const existingCue = database.prepare(`SELECT 1 FROM scoped_production_cues
+      WHERE task_id=? AND (content_scope='shared' OR owner_learner_id=?) LIMIT 1`)
+      .get(operation.taskId, learnerId);
+    if (existingCue) {
+      skip('modified_word');
+      continue;
+    }
+    if (chosenWords.has(operation.wordId)) {
+      skip('older_proposal');
+      continue;
+    }
+    chosenWords.add(operation.wordId);
+    candidates.push({ invocationId: row.invocation_id, wordId: operation.wordId, cueCount: operation.changes.length });
+    frozenInvocations.push(status);
+  }
+  const digest = createHash('sha256').update(JSON.stringify({ learnerId, frozenInvocations, skipped })).digest('hex');
+  return { digest, candidates, skipped };
+}
+
+export function previewCorrectCueRepairRecovery(): CorrectCueRepairRecoveryPlan {
+  const database = getDb();
+  database.exec('BEGIN');
+  try {
+    const plan = correctCueRepairRecoveryPlanWithoutTransaction();
+    database.exec('COMMIT');
+    return plan;
+  } catch (error) {
+    database.exec('ROLLBACK');
+    throw error;
+  }
+}
+
+/** Operator-only repair of this specific historical bug, not an application retry API. */
+export function recoverCorrectCueRepairs(input: {
+  actorId: string;
+  expectedPlanDigest: string;
+  recoveredAt?: string;
+}): { recoveredInvocationIds: string[]; planDigest: string } {
+  assertNonEmpty(input.actorId, 'operator actor id');
+  assertNonEmpty(input.expectedPlanDigest, 'recovery plan digest');
+  const recoveredAt = input.recoveredAt ?? new Date().toISOString();
+  assertIsoTimestamp(recoveredAt, 'recovery time');
+  const database = getDb();
+  database.exec('BEGIN IMMEDIATE');
+  try {
+    const controls = getHostedServiceControls();
+    if (!controls.maintenanceMode || controls.providerWorkEnabled) {
+      throw new Error('Cue repair recovery requires maintenance mode and disabled provider work.');
+    }
+    const plan = correctCueRepairRecoveryPlanWithoutTransaction();
+    if (plan.digest !== input.expectedPlanDigest) throw new Error('Recovery plan changed; preview it again before applying.');
+    for (const candidate of plan.candidates) {
+      const original = getReflectionInvocation(candidate.invocationId);
+      // This transient state exists only inside the locked recovery transaction;
+      // it is never exposed to the background application worker.
+      const updated = database.prepare(`UPDATE ${physicalLearnerTableName('reflection_operation_invocations')}
+        SET application_state='pending',application_error=NULL
+        WHERE learner_id=? AND invocation_id=? AND application_state='failed' AND application_error=?`)
+        .run(requireLearnerId(), candidate.invocationId, CORRECT_CUE_REPAIR_FAILURE);
+      if (updated.changes !== 1) throw new Error('Recovery source failure changed.');
+      const state = applyPendingOperationWithoutTransaction(original.invocation.operation, candidate.invocationId, recoveredAt);
+      if (state.kind !== 'applied') throw new Error(`Recovery did not apply ${candidate.invocationId}: ${state.kind}.`);
+      writeApplicationStateWithoutTransaction(candidate.invocationId, state, recoveredAt);
+      database.prepare(`INSERT INTO operator_reflection_cue_recoveries
+        (invocation_id,learner_id,actor_id,recovered_at,plan_digest,original_failure_json,recovered_application_json)
+        VALUES (?,?,?,?,?,?,?)`).run(candidate.invocationId, requireLearnerId(), input.actorId,
+        recoveredAt, plan.digest, JSON.stringify(original.application), JSON.stringify(state));
+    }
+    database.exec('COMMIT');
+    return { recoveredInvocationIds: plan.candidates.map(candidate => candidate.invocationId), planDigest: plan.digest };
+  } catch (error) {
+    database.exec('ROLLBACK');
+    throw error;
+  }
+}
+
 function transitionProposalReview(
   proposalId: string,
   to: ProposalReviewDisposition['kind'],
@@ -2058,6 +3001,7 @@ function transitionProposalReview(
   database.exec('BEGIN IMMEDIATE');
   try {
     const current = requireProposalReviewRow(proposalId);
+    assertCurrentReflectionArtifactActions(current.artifact_id);
     assertProposalReviewTransition(
       current.disposition as ProposalReviewDisposition['kind'],
       to,
@@ -2101,7 +3045,8 @@ function requireProposalReviewRow(proposalId: string): ProposalReviewRow {
 
 function originalProposalContextForReview(row: ProposalReviewRow): {
   proposal: ReflectionProposalV1;
-  evidenceItem: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | ReflectionItemV4;
+  hasTargetSuppression: boolean;
+  evidenceItem: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | ReflectionItemV4 | ReflectionItemV5 | ReflectionItemV6 | PureCueReflectionItemV1;
 } {
   const artifactRow = getDb().prepare(`
     SELECT ${artifactColumns.join(', ')}
@@ -2122,7 +3067,17 @@ function originalProposalContextForReview(row: ProposalReviewRow): {
       `proposal review ${row.proposal_id} cannot be traced to immutable proposal content`,
     );
   }
-  return { proposal, evidenceItem };
+  return { proposal, evidenceItem, hasTargetSuppression: itemResult !== undefined && 'targetSuppression' in itemResult && itemResult.targetSuppression !== undefined };
+}
+
+function reportedPromotionItemCount(row: ReflectionGenerationRunRow): number | null {
+  if (row.bundle_schema_version !== 'pure_cue_promotion_bundle.v1' && row.bundle_schema_version !== 'pure_cue_promotion_bundle.v2' && row.bundle_schema_version !== 'pure_cue_promotion_bundle.v3') return null;
+  const count = row.promotion_considered_item_count;
+  if (count === undefined || count === null) return null;
+  if (!Number.isInteger(count) || count < 0) {
+    throw corruptionError('reflection generation run promotion input has an invalid item count');
+  }
+  return count;
 }
 
 function mapReflectionGenerationRunRow(
@@ -2142,6 +3097,7 @@ function mapReflectionGenerationRunRow(
   if (row.included_item_count > row.eligible_item_count) {
     throw corruptionError('reflection generation run includes more items than were eligible');
   }
+  const consideredItemCount = reportedPromotionItemCount(row);
   if (row.state !== 'succeeded' && row.state !== 'failed') {
     throw corruptionError(`reflection generation run has unsupported state ${row.state}`);
   }
@@ -2182,8 +3138,8 @@ function mapReflectionGenerationRunRow(
     resultSchemaVersion: row.result_schema_version,
     state: row.state,
     failureCode: row.failure_code,
-    eligibleItemCount: row.eligible_item_count,
-    includedItemCount: row.included_item_count,
+    eligibleItemCount: consideredItemCount ?? row.eligible_item_count,
+    includedItemCount: consideredItemCount ?? row.included_item_count,
     usage,
     pricingSnapshotId: row.pricing_snapshot_id,
     pricingAsOf: row.pricing_as_of,
@@ -2264,6 +3220,7 @@ function validateReflectionArtifactPair(
   evidenceBundle: SessionReflectionBundle,
 ): string[] {
   if (!isRecord(result)) return ['$: expected object'];
+  if (evidenceBundle.schemaVersion === 'pure_cue_reflection_bundle.v1') return validatePureCueReflectionResult(result, evidenceBundle);
   if (
     evidenceBundle.schemaVersion === 'session_reflection_bundle.v1'
     && result.schemaVersion === 'session_reflection_result.v4'
@@ -2312,6 +3269,34 @@ function validateReflectionArtifactPair(
     && result.schemaVersion === 'session_reflection_result.v7'
   ) {
     return validateSessionReflectionResultV7(result, evidenceBundle);
+  }
+  if (
+    (evidenceBundle.schemaVersion === 'session_reflection_bundle.v6' || evidenceBundle.schemaVersion === 'curated_reflection_bundle.v3')
+    && result.schemaVersion === 'session_reflection_result.v10'
+  ) return validateSessionReflectionResultV10(result, evidenceBundle);
+  if (
+    evidenceBundle.schemaVersion === 'session_reflection_bundle.v6'
+    && result.schemaVersion === 'session_reflection_result.v9'
+  ) {
+    return validateSessionReflectionResultV9(result, evidenceBundle);
+  }
+  if (
+    evidenceBundle.schemaVersion === 'curated_reflection_bundle.v3'
+    && result.schemaVersion === 'session_reflection_result.v9'
+  ) {
+    return validateSessionReflectionResultV9(result, evidenceBundle);
+  }
+  if (
+    evidenceBundle.schemaVersion === 'session_reflection_bundle.v5'
+    && result.schemaVersion === 'session_reflection_result.v8'
+  ) {
+    return validateSessionReflectionResultV8(result, evidenceBundle);
+  }
+  if (
+    evidenceBundle.schemaVersion === 'curated_reflection_bundle.v2'
+    && result.schemaVersion === 'session_reflection_result.v8'
+  ) {
+    return validateSessionReflectionResultV8(result, evidenceBundle);
   }
   return [
     `$.schemaVersion: result ${String(result.schemaVersion)} is not compatible with ${evidenceBundle.schemaVersion}`,
@@ -2378,19 +3363,21 @@ function mapProposalReviewRow(row: ProposalReviewRow): ProposalReviewStatus {
 }
 
 function mapInvocationRow(row: InvocationRow): OperationInvocationStatus {
-  const operation = parseJson(
+  const storedOperation = parseJson(
     row.operation_json,
     `reflection invocation ${row.invocation_id} operation`,
   );
+  const { operation } = parseStoredInvocationOperation(storedOperation, row.invocation_id);
   const operationErrors = validateReflectionOperation(operation);
   if (operationErrors.length > 0) {
     throw corruptionError(
       `invocation ${row.invocation_id} contains an invalid operation:\n${operationErrors.join('\n')}`,
     );
   }
+  const validatedOperation = operation as ReflectionOperation;
   if (
-    row.operation_kind !== operation.kind
-    || row.operation_version !== operation.version
+    row.operation_kind !== validatedOperation.kind
+    || row.operation_version !== validatedOperation.version
   ) {
     throw corruptionError(`invocation ${row.invocation_id} operation metadata does not match its JSON`);
   }
@@ -2424,7 +3411,7 @@ function mapInvocationRow(row: InvocationRow): OperationInvocationStatus {
       invocationId: row.invocation_id,
       createdAt: row.created_at,
       origin,
-      operation: operation as ReflectionOperation,
+      operation: validatedOperation,
     },
     application: {
       invocationId: row.invocation_id,
@@ -2432,6 +3419,112 @@ function mapInvocationRow(row: InvocationRow): OperationInvocationStatus {
       state: applicationStateFromRow(row),
     },
   };
+}
+
+function serializeStoredInvocationOperation(
+  operation: ReflectionOperation,
+  sourceArtifactId: string,
+  sourceItemId: string,
+): string {
+  const stored: StoredInvocationOperationV1 = {
+    schemaVersion: 'reflection_invocation_operation.v1',
+    sourceArtifactId,
+    sourceItemId,
+    operation,
+  };
+  return JSON.stringify(stored);
+}
+
+function parseStoredInvocationOperation(
+  value: unknown,
+  invocationId: string,
+): {
+  operation: unknown;
+  sourceArtifactId: string | null;
+  sourceItemId: string | null;
+} {
+  if (!isRecord(value) || value.schemaVersion !== 'reflection_invocation_operation.v1') {
+    return { operation: value, sourceArtifactId: null, sourceItemId: null };
+  }
+  if (
+    typeof value.sourceArtifactId !== 'string'
+    || value.sourceArtifactId.trim().length === 0
+    || typeof value.sourceItemId !== 'string'
+    || value.sourceItemId.trim().length === 0
+    || !('operation' in value)
+  ) {
+    throw corruptionError(`invocation ${invocationId} has invalid source-artifact provenance`);
+  }
+  return {
+    operation: value.operation,
+    sourceArtifactId: value.sourceArtifactId,
+    sourceItemId: value.sourceItemId,
+  };
+}
+
+function assertCurrentReflectionArtifactActions(artifactId: string): void {
+  const row = getDb().prepare(`
+    SELECT reflection_flow_version, bundle_schema_version, result_schema_version, prompt_version
+    FROM reflection_artifacts
+    WHERE artifact_id = ?
+  `).get(artifactId) as {
+    reflection_flow_version: string;
+    bundle_schema_version: string;
+    result_schema_version: string;
+    prompt_version: string;
+  } | undefined;
+  if (row === undefined) throw new Error('Reflection artifact not found.');
+  if (!isCurrentReflectionArtifactContract({
+    reflectionFlowVersion: row.reflection_flow_version,
+    bundleSchemaVersion: row.bundle_schema_version,
+    resultSchemaVersion: row.result_schema_version,
+    promptVersion: row.prompt_version,
+  })) {
+    throw new Error(`Cannot authorize or apply changes. ${LEGACY_REFLECTION_READ_ONLY_MESSAGE}`);
+  }
+}
+
+function invocationSourceArtifactId(row: InvocationRow): string | null {
+  const stored = parseStoredInvocationOperation(
+    parseJson(row.operation_json, `reflection invocation ${row.invocation_id} operation`),
+    row.invocation_id,
+  );
+  if (stored.sourceArtifactId !== null) return stored.sourceArtifactId;
+  const proposalId = row.origin_kind === 'proposal_acceptance'
+    ? row.origin_proposal_id
+    : row.origin_kind === 'user_replacement'
+      ? row.origin_superseded_proposal_id
+      : null;
+  if (proposalId === null) return null;
+  const proposal = getDb().prepare(`
+    SELECT artifact_id
+    FROM reflection_proposal_reviews
+    WHERE proposal_id = ?
+  `).get(proposalId) as { artifact_id: string } | undefined;
+  return proposal?.artifact_id ?? null;
+}
+
+function assertCurrentReflectionInvocationActions(invocationId: string): void {
+  const row = getDb().prepare(`
+    SELECT ${invocationColumns.join(', ')}
+    FROM reflection_operation_invocations
+    WHERE invocation_id = ?
+  `).get(invocationId) as InvocationRow | undefined;
+  if (row === undefined) throw new Error('Reflection invocation not found.');
+  const artifactId = invocationSourceArtifactId(row);
+  if (artifactId === null) {
+    throw new Error(`Cannot authorize or apply changes. ${LEGACY_REFLECTION_READ_ONLY_MESSAGE}`);
+  }
+  assertCurrentReflectionArtifactActions(artifactId);
+}
+
+function reflectionInvocationSupportsCurrentActions(invocationId: string): boolean {
+  try {
+    assertCurrentReflectionInvocationActions(invocationId);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function applicationStateFromRow(row: InvocationRow): OperationApplicationState {
@@ -2513,13 +3606,29 @@ function applyPendingOperationWithoutTransaction(
     case 'create_contrast_cluster':
       return applyContrastClusterCreationWithoutTransaction(operation, appliedAt);
     case 'repair_production_cue':
-      return operation.version === 2
-        ? applyProductionCueRepairWithoutTransaction(operation, invocationId, appliedAt)
-        : (() => {
-            throw new Error(
-              `No faithful application adapter is available for ${operation.kind}@${operation.version}.`,
-            );
-          })();
+      if (operation.version !== 2) {
+        throw new Error(
+          `No faithful application adapter is available for ${operation.kind}@${operation.version}.`,
+        );
+      }
+      return applyUnfairCueRepairCompensation(
+        operation,
+        applyProductionCueRepairWithoutTransaction(operation, invocationId, appliedAt),
+        invocationId,
+        appliedAt,
+      );
+    case 'request_word_bootstrap': {
+      const content = getSharedWordIntroductionContent(operation.wordId);
+      if (content !== null) {
+        return { kind: 'already_satisfied', satisfyingEffectRefs: [{ type: 'word_content', id: content.id }] };
+      }
+      const existing = getWordPreparationWork(operation.wordId, 'bootstrap');
+      const work = enqueueWordPreparation(operation.wordId, 'bootstrap', appliedAt);
+      const refs = [{ type: 'word_preparation_work', id: work.workId }];
+      return existing === null
+        ? { kind: 'applied', appliedAt, effectRefs: refs }
+        : { kind: 'already_satisfied', satisfyingEffectRefs: refs };
+    }
     case 'add_production_cue_supplement':
       return applyProductionCueSupplementWithoutTransaction(
         operation,
@@ -2530,7 +3639,230 @@ function applyPendingOperationWithoutTransaction(
       throw new Error(
         `No faithful application adapter is available for ${operation.kind}@${operation.version}.`,
       );
+    case 'reconcile_pure_cue_response':
+      return applyPureCueResponseWithoutTransaction(operation, invocationId, appliedAt);
+    case 'repair_pure_cue_stimulus':
+      return applyPureCueStimulusRepairWithoutTransaction(operation, invocationId, appliedAt);
+    case 'reconcile_production_cues':
+    case 'promote_pure_elicitation':
+      return applyPureElicitationPromotionWithoutTransaction(
+        operation,
+        invocationId,
+        appliedAt,
+      );
   }
+}
+
+function applyUnfairCueRepairCompensation(
+  operation: Extract<ReflectionOperation, { kind: 'repair_production_cue'; version: 2 }>,
+  state: OperationApplicationState,
+  invocationId: string,
+  appliedAt: string,
+): OperationApplicationState {
+  if (state.kind !== 'applied' && state.kind !== 'already_satisfied') return state;
+  const installsFairerCue = operation.changes.some((change) => (
+    change.kind === 'create' || change.kind === 'replace'
+  ));
+  if (!installsFairerCue) return state;
+  const misleadingAttemptIds = operation.sourceAttemptJudgments
+    .filter((judgment) => judgment.kind === 'misleading_or_overloaded_cue')
+    .map((judgment) => judgment.sourceAttemptId);
+  const sourceAttemptId = misleadingAttemptIds[0];
+  if (sourceAttemptId === undefined) return state;
+  if (misleadingAttemptIds.some((attemptId) => attemptId !== sourceAttemptId)) {
+    throw new Error('Unfair-cue compensation restores one action and cannot name multiple attempts.');
+  }
+  if (!hasActionLapseToCompensate(sourceAttemptId)) return state;
+
+  const causedEffectRefs = state.kind === 'applied' ? [...state.effectRefs] : [];
+  const satisfyingEffectRefs = state.kind === 'already_satisfied'
+    ? [...state.satisfyingEffectRefs]
+    : [];
+  const compensationKind = restoreProductionSchedulerSnapshotWithoutTransaction({
+    sourceAttemptId,
+    compensationInvocationId: invocationId,
+    restoredAt: appliedAt,
+  }).kind;
+  const compensationRef = {
+    type: 'production_scheduler_compensation',
+    id: `${encodeURIComponent(sourceAttemptId)}/${compensationKind}`,
+  };
+  if (compensationKind === 'restored') causedEffectRefs.push(compensationRef);
+  else satisfyingEffectRefs.push(compensationRef);
+  if (causedEffectRefs.length > 0) {
+    return {
+      kind: 'applied',
+      appliedAt,
+      effectRefs: [...causedEffectRefs, ...satisfyingEffectRefs],
+    };
+  }
+  return { kind: 'already_satisfied', satisfyingEffectRefs };
+}
+
+function applyPureElicitationPromotionWithoutTransaction(
+  operation: PromotePureElicitationOperationV1 | ReconcileProductionCuesOperationV1,
+  invocationId: string,
+  appliedAt: string,
+): OperationApplicationState {
+  assertPureCuePromotionSource(operation.sourceAttemptId, operation.targetWordId, operation.responseWordId);
+  const pairWordIds = [operation.targetWordId, operation.responseWordId];
+  const planByWordId = new Map(operation.wordPlans.map((plan) => [plan.wordId, plan]));
+  const repairs = pairWordIds.map((wordId) => {
+    const plan = planByWordId.get(wordId)!;
+    return {
+      kind: 'repair_production_cue' as const,
+      version: 2 as const,
+      wordId,
+      taskId: defaultProductionTaskId(wordId),
+      changes: [
+        ...plan.deactivateCueIds.map((cueId) => ({ kind: 'deactivate' as const, cueId })),
+        ...plan.distinctiveCueDrafts.map((draft) => ({
+          kind: 'create' as const,
+          cue: {
+            cueType: draft.cueType,
+            text: draft.text,
+            acceptedWordIds: [wordId],
+          },
+        })),
+      ],
+      sourceAttemptJudgments: [],
+    };
+  });
+
+  for (const repair of repairs) {
+    const currentStateError = validateProductionCueRepairCurrentStateWithoutTransaction(repair);
+    if (currentStateError !== null) return { kind: 'stale', reason: currentStateError };
+  }
+
+  const existingDestination = operation.destination?.kind === 'existing'
+    ? getPureCueContent(operation.destination.pureCueId)
+    : operation.destination === null ? null : getPureCueContent(`pure-cue:reflection:${invocationId}`);
+  if (operation.destination?.kind === 'existing') {
+    const publication = getSharedContentPublicationForContent(
+      'pure_cue',
+      operation.destination.pureCueId,
+    );
+    if (
+      existingDestination === null
+      || publication === null
+      || !isEligibleSharedPublicationStatus(publication.publicationStatus)
+    ) {
+      return {
+        kind: 'stale',
+        reason: `Pure cue ${operation.destination.pureCueId} is no longer eligible shared content.`,
+      };
+    }
+  } else if (existingDestination !== null) {
+    return {
+      kind: 'stale',
+      reason: `Pure cue id reserved for invocation ${invocationId} already exists.`,
+    };
+  }
+
+  if (operation.kind === 'reconcile_production_cues' && operation.destination?.kind === 'existing') {
+    const destination = operation.destination;
+    const historicalStimulusRevision = destination.expectedStimulus === undefined
+      && getDb().prepare('SELECT 1 FROM pure_cue_stimulus_revisions WHERE pure_cue_id = ? LIMIT 1')
+        .get(destination.pureCueId) !== undefined;
+    if (existingDestination!.teachingNote !== destination.expectedTeachingNote
+      || (destination.expectedStimulus !== undefined && existingDestination!.stimulus !== destination.expectedStimulus)
+      || (destination.expectedAxisNote !== undefined && existingDestination!.axisNote !== destination.expectedAxisNote)
+      || historicalStimulusRevision
+      || JSON.stringify([...existingDestination!.acceptedWordIds].sort())
+        !== JSON.stringify([...destination.expectedAcceptedWordIds].sort())) {
+      return { kind: 'stale', reason: 'Pure cue content changed since reconciliation evidence was captured.' };
+    }
+  }
+
+  const causedEffectRefs: EffectRef[] = [];
+  const satisfyingEffectRefs: EffectRef[] = [];
+  let pureCueId: string;
+  if (operation.destination?.kind === 'create') {
+    const pureCue = createPureCueWithoutTransaction({
+      id: `pure-cue:reflection:${invocationId}`,
+      stimulus: operation.destination.stimulus,
+      axisNote: operation.destination.axisNote,
+      teachingNote: 'teachingNote' in operation.destination ? operation.destination.teachingNote : '',
+      acceptedWordIds: pairWordIds,
+      createdAt: appliedAt,
+    });
+    pureCueId = pureCue.id;
+    publishAuthorizedPureCueWithoutTransaction({
+      pureCueId,
+      invocationId,
+      authorizedAt: appliedAt,
+    });
+    causedEffectRefs.push({ type: 'pure_cue', id: pureCueId });
+  } else if (operation.destination?.kind === 'existing') {
+    pureCueId = operation.destination.pureCueId;
+    const existingMembers = new Set(existingDestination!.acceptedWordIds);
+    const addedMembers = pairWordIds.filter((wordId) => !existingMembers.has(wordId));
+    extendPureCueAcceptedWordsWithoutTransaction({
+      id: pureCueId,
+      acceptedWordIds: pairWordIds,
+      ...(operation.kind === 'reconcile_production_cues' ? {
+        teachingRevision: { teachingNote: operation.destination.teachingNote, invocationId, revisedAt: appliedAt },
+      } : {}),
+    });
+    if (operation.kind === 'reconcile_production_cues'
+      && operation.destination.teachingNote !== existingDestination!.teachingNote) {
+      causedEffectRefs.push({ type: 'pure_cue_teaching_note', id: pureCueId });
+    }
+    for (const wordId of pairWordIds) {
+      const membershipRef = {
+        type: 'pure_cue_membership',
+        id: `${encodeURIComponent(pureCueId)}/${encodeURIComponent(wordId)}`,
+      };
+      if (addedMembers.includes(wordId)) causedEffectRefs.push(membershipRef);
+      else satisfyingEffectRefs.push(membershipRef);
+    }
+  }
+
+  for (const repair of repairs) {
+    const repairState = applyProductionCueRepairWithoutTransaction(repair, invocationId, appliedAt);
+    if (repairState.kind === 'stale') {
+      throw new Error(`Promotion cue state changed after preflight: ${repairState.reason}`);
+    }
+    if (repairState.kind === 'applied') causedEffectRefs.push(...repairState.effectRefs);
+    if (repairState.kind === 'already_satisfied') {
+      satisfyingEffectRefs.push(...repairState.satisfyingEffectRefs);
+    }
+    if (
+      repairState.kind !== 'applied'
+      && repairState.kind !== 'already_satisfied'
+    ) {
+      throw new Error(`Unexpected promotion cue application state ${repairState.kind}.`);
+    }
+  }
+
+  const targetPlan = planByWordId.get(operation.targetWordId)!;
+  const sourceAttempt = getDb().prepare('SELECT metadata_json FROM study_attempt_events WHERE id = ?')
+    .get(operation.sourceAttemptId) as { metadata_json: string };
+  const sourceMetadata = JSON.parse(sourceAttempt.metadata_json) as { production: { cueId: string | null } };
+  const repairsSource = operation.destination !== null || (
+    targetPlan.distinctiveCueDrafts.length > 0
+    && (sourceMetadata.production.cueId === null
+      || targetPlan.deactivateCueIds.includes(sourceMetadata.production.cueId))
+  );
+  if (operation.kind === 'promote_pure_elicitation'
+    || (operation.sourceAttemptFairness === 'misleading_or_overloaded_cue' && repairsSource)) {
+    const compensationKind = restoreProductionSchedulerSnapshotWithoutTransaction({
+      sourceAttemptId: operation.sourceAttemptId,
+      compensationInvocationId: invocationId,
+      restoredAt: appliedAt,
+    }).kind;
+    const compensationRef = {
+      type: 'production_scheduler_compensation',
+      id: `${encodeURIComponent(operation.sourceAttemptId)}/${compensationKind}`,
+    };
+    if (compensationKind === 'restored') causedEffectRefs.push(compensationRef);
+    else satisfyingEffectRefs.push(compensationRef);
+  }
+
+  if (causedEffectRefs.length > 0) {
+    return { kind: 'applied', appliedAt, effectRefs: [...causedEffectRefs, ...satisfyingEffectRefs] };
+  }
+  return { kind: 'already_satisfied', satisfyingEffectRefs };
 }
 
 function applyProductionSuppressionWithoutTransaction(
@@ -3181,7 +4513,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function visibleWordIds(
-  item: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | ReflectionItemV4,
+  item: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | ReflectionItemV4 | ReflectionItemV5 | ReflectionItemV6 | PureCueReflectionItemV1,
 ): Set<string> {
   const wordIds = new Set<string>();
   if (item.targetWord !== null) {
@@ -3208,4 +4540,122 @@ function visibleWordIds(
 
 function corruptionError(detail: string): Error {
   return new Error(`Reflection store corruption: ${detail}.`);
+}
+
+/** Exact saved input for the independent pure-cue provider call. */
+export function getPureCueReflectionRetrySource(runId: string): {
+  bundle: PureCueReflectionBundleV1; model: string;
+} | null {
+  const row = getDb().prepare(`SELECT reflection_flow_version, model, state, prompt_version,
+    evidence_bundle_json FROM reflection_generation_runs WHERE run_id = ?`).get(runId) as {
+      reflection_flow_version: string; model: string; state: string; prompt_version: string;
+      evidence_bundle_json: string | null;
+    } | undefined;
+  if (!row || row.reflection_flow_version !== PURE_CUE_REFLECTION_FLOW_VERSION) return null;
+  if (row.state !== 'failed' || row.prompt_version !== PURE_CUE_REFLECTION_PROMPT_VERSION || row.evidence_bundle_json === null) {
+    throw new Error('Pure cue reflection run is not retryable.');
+  }
+  if (getDb().prepare(`SELECT 1 FROM reflection_artifacts WHERE reflection_flow_version = ?
+    AND evidence_bundle_json = ? LIMIT 1`).get(PURE_CUE_REFLECTION_FLOW_VERSION, row.evidence_bundle_json)) {
+    throw new Error('Pure cue reflection evidence already has a successful artifact.');
+  }
+  return { bundle: parsePureCueReflectionBundle(JSON.parse(row.evidence_bundle_json)), model: row.model };
+}
+
+function applyPureCueResponseWithoutTransaction(
+  operation: ReconcilePureCueResponseOperationV1,
+  invocationId: string,
+  appliedAt: string,
+): OperationApplicationState {
+  const source = getDb().prepare(`SELECT pure_cue_id, snapshot_id, events_json FROM pure_cue_attempts
+    WHERE learner_id = ? AND attempt_id = ?`).get(requireLearnerId(), operation.sourceAttemptId) as {
+      pure_cue_id: string; snapshot_id: string; events_json: string;
+    } | undefined;
+  const first = source ? (JSON.parse(source.events_json) as PureCueAssessmentEvent[])[0] : undefined;
+  const response = getDb().prepare('SELECT normalized_hanzi FROM lexical_words WHERE id = ?')
+    .get(operation.responseWordId) as { normalized_hanzi: string } | undefined;
+  if (source?.pure_cue_id !== operation.pureCueId || first?.outcome !== 'rejected'
+    || !first.response?.trim() || !response || response.normalized_hanzi !== normalizeMandarinHanziLookup(first.response)) {
+    throw new Error('Pure cue reconciliation must address its learner-owned first rejected response.');
+  }
+  const current = getPureCueContent(operation.pureCueId);
+  const served = source && getDb().prepare('SELECT stimulus, axis_note FROM pure_cue_served_snapshots WHERE learner_id = ? AND snapshot_id = ?')
+    .get(requireLearnerId(), source.snapshot_id) as { stimulus: string; axis_note: string } | undefined;
+  if (!current?.active || current.teachingNote !== operation.expectedTeachingNote
+    || served?.stimulus !== current.stimulus || served?.axis_note !== current.axisNote
+    || JSON.stringify([...current.acceptedWordIds].sort()) !== JSON.stringify([...operation.expectedAcceptedWordIds].sort())) {
+    return { kind: 'stale', reason: 'Pure cue membership or teaching note changed since reflection.' };
+  }
+  const plan = operation.responseWordPlan;
+  const repair: RepairProductionCueOperationV2 = {
+    kind: 'repair_production_cue', version: 2, wordId: operation.responseWordId,
+    taskId: defaultProductionTaskId(operation.responseWordId), sourceAttemptJudgments: [],
+    changes: [
+      ...plan.deactivateCueIds.map((cueId) => ({ kind: 'deactivate' as const, cueId })),
+      ...plan.distinctiveCueDrafts.map((draft) => ({ kind: 'create' as const,
+        cue: { ...draft, acceptedWordIds: [operation.responseWordId] } })),
+    ],
+  };
+  const invalid = validateProductionCueRepairCurrentStateWithoutTransaction(repair);
+  if (invalid !== null) return { kind: 'stale', reason: invalid };
+  // Authorization revalidates C-only evidence; all effects share the caller's transaction.
+  extendPureCueAcceptedWordsWithoutTransaction({ id: operation.pureCueId,
+    acceptedWordIds: [operation.responseWordId],
+    teachingRevision: { teachingNote: operation.teachingNote, invocationId, revisedAt: appliedAt },
+  });
+  const effects: EffectRef[] = [];
+  if (!current.acceptedWordIds.includes(operation.responseWordId)) effects.push({
+    type: 'pure_cue_membership', id: `${encodeURIComponent(operation.pureCueId)}/${encodeURIComponent(operation.responseWordId)}`,
+  });
+  if (current.teachingNote !== operation.teachingNote) effects.push({ type: 'pure_cue_teaching_note', id: operation.pureCueId });
+  if (repair.changes.length > 0) {
+    const state = applyProductionCueRepairWithoutTransaction(repair, invocationId, appliedAt);
+    if (state.kind === 'applied') effects.push(...state.effectRefs);
+    else if (state.kind === 'already_satisfied') effects.push(...state.satisfyingEffectRefs);
+    else throw new Error('Response word cue repair failed after preflight.');
+  }
+  const compensation = restorePureCueSchedulerSnapshotWithoutTransaction({
+    sourceAttemptId: operation.sourceAttemptId, compensationInvocationId: invocationId, restoredAt: appliedAt,
+  });
+  effects.push({ type: 'pure_cue_scheduler_compensation', id: `${encodeURIComponent(operation.sourceAttemptId)}/${compensation.kind}` });
+  return { kind: 'applied', appliedAt, effectRefs: effects };
+}
+
+function applyPureCueStimulusRepairWithoutTransaction(
+  operation: RepairPureCueStimulusOperationV1,
+  invocationId: string,
+  appliedAt: string,
+): OperationApplicationState {
+  const source = getDb().prepare(`SELECT attempt.pure_cue_id, attempt.events_json, snapshot.stimulus
+    FROM pure_cue_attempts AS attempt
+    JOIN pure_cue_served_snapshots AS snapshot
+      ON snapshot.learner_id = attempt.learner_id AND snapshot.snapshot_id = attempt.snapshot_id
+    WHERE attempt.learner_id = ? AND attempt.attempt_id = ?`).get(requireLearnerId(), operation.sourceAttemptId) as {
+      pure_cue_id: string; events_json: string; stimulus: string;
+    } | undefined;
+  const first = source ? (JSON.parse(source.events_json) as PureCueAssessmentEvent[])[0] : undefined;
+  const response = getDb().prepare('SELECT normalized_hanzi FROM lexical_words WHERE id = ?')
+    .get(operation.responseWordId) as { normalized_hanzi: string } | undefined;
+  if (source?.pure_cue_id !== operation.pureCueId || source.stimulus !== operation.expectedStimulus
+    || first?.outcome !== 'rejected' || !first.response?.trim() || !response
+    || response.normalized_hanzi !== normalizeMandarinHanziLookup(first.response)) {
+    throw new Error('Pure cue stimulus repair must address its learner-owned first rejected response and served stimulus.');
+  }
+  const current = getPureCueContent(operation.pureCueId);
+  if (!current?.active || current.stimulus !== operation.expectedStimulus
+    || current.axisNote !== operation.expectedAxisNote
+    || current.teachingNote !== operation.expectedTeachingNote
+    || JSON.stringify([...current.acceptedWordIds].sort()) !== JSON.stringify([...operation.expectedAcceptedWordIds].sort())) {
+    return { kind: 'stale', reason: 'Pure cue content changed since reflection.' };
+  }
+  repairPureCueStimulusWithoutTransaction({ id: operation.pureCueId,
+    expectedStimulus: operation.expectedStimulus, stimulus: operation.stimulus,
+    invocationId, revisedAt: appliedAt });
+  const compensation = restorePureCueSchedulerSnapshotWithoutTransaction({
+    sourceAttemptId: operation.sourceAttemptId, compensationInvocationId: invocationId, restoredAt: appliedAt,
+  });
+  return { kind: 'applied', appliedAt, effectRefs: [
+    { type: 'pure_cue_stimulus', id: operation.pureCueId },
+    { type: 'pure_cue_scheduler_compensation', id: `${encodeURIComponent(operation.sourceAttemptId)}/${compensation.kind}` },
+  ] };
 }

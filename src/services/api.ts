@@ -1,3 +1,10 @@
+import type { ServiceBannerRequest } from '../domain/service-banner';
+import type { SessionCompletion, StageSessionCompletionRequest } from '../domain/session-completion';
+import type { StudyIntroductionOrder } from '../domain/introduction-order';
+import type { WhatsNewPost, WhatsNewWriteRequest } from '../domain/whats-new';
+import type { WhatsNewAttention } from '../domain/whats-new-attention';
+import type { ModelInvocationRow } from '../domain/model-invocations';
+import type { SessionDebrief, SessionDebriefInventoryItem } from '../domain/session-debrief';
 import type {
   PriorityWord,
   ReviewFailureRateDay,
@@ -15,6 +22,9 @@ import type {
   StudySkillId,
   StudyEvent,
 } from '../domain/study-actions';
+import type { PureCueAssessmentEvent } from '../domain/pure-cues';
+import type { CharacterPresentation, SentenceCharacterPresentation } from '../domain/card-characters';
+import type { RecoveryHighlight } from '../domain/recovery-highlights';
 import type {
   OperationApplicationStatus,
   OperationInvocation,
@@ -39,12 +49,32 @@ import type {
 import type { MyWordsResponse, MyWordsStatus, MyWordsView } from '../domain/my-words';
 import { ALL_MY_WORDS_STATUSES } from '../domain/my-words';
 import type { ClientTransportIncidentContext } from './client-incident-diagnostics';
+import type {
+  IntroductionDraft,
+  IntroductionLabStatus,
+  IntroductionLexicalInput,
+} from '../domain/word-content/lab';
+import type { TeachingPackage, WordContentDocument } from '../domain/word-content/types';
+import type { WordIntroductionResponse } from '../domain/word-content/application';
 import {
   captureClientTransportFailure,
   readBrowserStorage,
   readPendingClientTransportIncidents,
   removeUploadedClientTransportIncidents,
 } from './client-incident-diagnostics';
+
+export async function fetchSessionRecoveryHighlights(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<RecoveryHighlight[]> {
+  const response = await apiFetch(
+    `${API_BASE}/api/study-sessions/${encodeURIComponent(sessionId)}/recovery-highlights`,
+    { signal },
+  );
+  if (!response.ok) throw new Error('Could not load session recovery highlights.');
+  const result: { highlights: RecoveryHighlight[] } = await response.json();
+  return result.highlights;
+}
 
 export async function fetchMyWords(
   view: MyWordsView,
@@ -75,12 +105,30 @@ let clientIncidentStorageScope: string | null = import.meta.env?.VITE_AUTH_MODE 
   ? null
   : 'trusted-local';
 let clientIncidentUpload: Promise<void> | null = null;
+let authenticationGeneration = 0;
+const serviceAccessDeniedListeners = new Set<() => void>();
+
+export function subscribeServiceAccessDenied(listener: () => void): () => void {
+  serviceAccessDeniedListeners.add(listener);
+  return () => { serviceAccessDeniedListeners.delete(listener); };
+}
+
+export async function fetchServiceAccess(signal?: AbortSignal): Promise<{ allowed: boolean }> {
+  const response = await apiFetch(`${API_BASE}/api/service-access`, { signal });
+  if (!response.ok) throw new Error('Could not check service availability.');
+  const body: unknown = await response.json();
+  if (!body || typeof body !== 'object' || !('allowed' in body) || typeof body.allowed !== 'boolean') {
+    throw new Error('Invalid service availability response.');
+  }
+  return { allowed: body.allowed };
+}
 
 export function setApiAuthenticationTokenProvider(provider: ApiAuthenticationTokenProvider | null): void {
   apiAuthenticationTokenProvider = provider;
 }
 
 export function setClientIncidentStorageScope(scope: string | null): void {
+  if (clientIncidentStorageScope !== scope) authenticationGeneration += 1;
   clientIncidentStorageScope = scope;
 }
 
@@ -90,6 +138,7 @@ async function apiFetch(
   incidentContext?: ClientTransportIncidentContext,
 ): Promise<Response> {
   const startedAtMs = Date.now();
+  const requestAuthenticationGeneration = authenticationGeneration;
   let token: string | null;
   try {
     token = await apiAuthenticationTokenProvider?.() ?? null;
@@ -108,7 +157,15 @@ async function apiFetch(
   const headers = new Headers(init.headers);
   if (token) headers.set('Authorization', `Bearer ${token}`);
   try {
-    return await fetch(input, { ...init, headers });
+    const response = await fetch(input, { ...init, headers });
+    if (response.status === 503) {
+      const body: unknown = await response.clone().json().catch(() => null);
+      if (requestAuthenticationGeneration === authenticationGeneration
+        && body && typeof body === 'object' && 'code' in body && body.code === 'OPERATOR_ONLY') {
+        for (const listener of serviceAccessDeniedListeners) listener();
+      }
+    }
+    return response;
   } catch (error) {
     if (!incidentContext) throw error;
     throw captureClientTransportFailure({
@@ -120,6 +177,72 @@ async function apiFetch(
       startedAtMs,
     });
   }
+}
+
+async function introductionLabRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await apiFetch(`${API_BASE}/api/intro-lab${path}`, init);
+  if (!response.ok) {
+    const body: unknown = await response.json().catch(() => null);
+    const message = body && typeof body === 'object' && 'error' in body
+      && typeof body.error === 'string' ? body.error : `Introduction lab request failed (${response.status}).`;
+    throw new Error(message);
+  }
+  return response.json() as Promise<T>;
+}
+
+export function fetchIntroductionLabStatus(): Promise<IntroductionLabStatus> {
+  return introductionLabRequest('/status');
+}
+
+export function fetchIntroductionDrafts(): Promise<IntroductionDraft[]> {
+  return introductionLabRequest('/drafts');
+}
+
+export function bootstrapIntroduction(input: IntroductionLexicalInput): Promise<IntroductionDraft> {
+  return introductionLabRequest('/bootstrap', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
+  });
+}
+
+export function generateIntroductionTeaching(draftId: string): Promise<IntroductionDraft> {
+  return introductionLabRequest(`/drafts/${encodeURIComponent(draftId)}/teaching`, { method: 'POST' });
+}
+
+export function importIntroductionDraft(input: {
+  content: WordContentDocument;
+  teaching?: TeachingPackage | null;
+  origin?: 'sample' | 'imported';
+}): Promise<IntroductionDraft> {
+  return introductionLabRequest('/import', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
+  });
+}
+
+async function wordIntroductionRequest(
+  wordId: string,
+  path: string,
+  init?: RequestInit,
+): Promise<WordIntroductionResponse> {
+  const response = await apiFetch(`${API_BASE}/api/words/${encodeURIComponent(wordId)}/introduction${path}`, init);
+  if (!response.ok) {
+    const body: unknown = await response.json().catch(() => null);
+    const message = body && typeof body === 'object' && 'error' in body && typeof body.error === 'string'
+      ? body.error : `Could not load the introduction (${response.status}).`;
+    throw new Error(message);
+  }
+  return response.json() as Promise<WordIntroductionResponse>;
+}
+
+export function openWordIntroduction(wordId: string, packageId: string): Promise<WordIntroductionResponse> {
+  return wordIntroductionRequest(wordId, '/open', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ packageId }),
+  });
+}
+
+export function completeWordIntroduction(wordId: string, packageId: string): Promise<WordIntroductionResponse> {
+  return wordIntroductionRequest(wordId, '/complete', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ packageId }),
+  });
 }
 
 export async function flushPendingClientTransportIncidents(): Promise<void> {
@@ -149,6 +272,7 @@ export async function flushPendingClientTransportIncidents(): Promise<void> {
 }
 
 type ServiceBanner = {
+  kickoffAt?: string;
   message: string;
   postedAt: string;
   expiresAt: string;
@@ -166,11 +290,15 @@ type BackendStatus = {
   sessionActiveTimeMetrics: SessionActiveTimeMetrics;
   dailyNewWordLimit: number;
   unstudiedAdmissionSource: UnstudiedAdmissionSource;
+  characterPresentation: CharacterPresentation;
+  sentenceCharacterPresentation: SentenceCharacterPresentation;
+  studyNewWordsFirst: boolean;
+  studyIntroductionOrder: StudyIntroductionOrder;
+  studyIntroductionSpacing: number;
+  debriefInterests: string;
   learningCoverageDate: string;
   /** True when deck-based diet admission is active (Mandarin profile with a manifest). */
   dietDecksActive: boolean;
-  /** True when the learner should see the first-run placement intake (SPECS/diet-deck-distribution.md §2.5). */
-  dietIntakeRequired: boolean;
   serviceBanner: ServiceBanner | null;
 };
 
@@ -182,9 +310,12 @@ export type UsageDailySnapshot = {
   dau: number;
   sessionsCompleted: number;
   newWords: number;
-  modelSpendUsd: number;
-  medianStashSize: number | null;
-  medianSessionActiveMs: number | null;
+  practiceCompleted: number;
+  reviewCorrect: number;
+  reviewWrong: number;
+  proposalsAccepted: number;
+  meanStashSize: number | null;
+  sessionActiveMs: number;
   learnersInactive7d: number;
   sessionsAbandoned: number;
   learnersSpendWithoutAccepts: number;
@@ -204,9 +335,12 @@ type LearningPolicyResponse = {
 
 export type SessionPayload = {
   buckets: SessionStudyItemBuckets;
+  preparation?: { pending: boolean };
 };
 
 export type GenerateSessionReflectionResult = {
+  additionalArtifactIds?: string[];
+  partialFailure?: string;
   artifactId: string;
   proposalCount: number;
   status: 'created' | 'existing';
@@ -215,20 +349,13 @@ export type GenerateSessionReflectionResult = {
 export type ReflectionModelChoice =
   | 'openai:gpt-5.6-luna-high'
   | 'zai:glm-5.3-flash-max'
+  | 'zai:glm-5.3-flash-high'
   | 'openrouter:gemini-3.6-flash'
-  | 'openai:gpt-5.6-terra-high';
-
-export type ReflectionSpendCapDto = {
-  lunaOnly: boolean;
-  spentUsd: number;
-  capUsd: number;
-  dayKey: string;
-  resetsAt: string;
-};
+  | 'openai:gpt-5.6-terra-high'
+  | 'openai:gpt-6-sol-high';
 
 export type ReflectionGenerationRunsResponse = {
   runs: ReflectionGenerationRunDto[];
-  spendCap: ReflectionSpendCapDto;
 };
 
 export type ReflectionTokenUsageDto = {
@@ -320,6 +447,7 @@ export type ReflectionArtifactDetailDto = {
   proposals: ReflectionProposalDetailDto[];
   qualityItemTags: ReflectionQualityItemTags[];
   helpInbox: ReflectionHelpInboxEntry[];
+  deferredHelpInbox: ReflectionHelpInboxEntry[];
 };
 
 export type ReflectionQualityArmStatsDto = {
@@ -348,6 +476,7 @@ export type ReflectionReviewApi = {
   generateDeferredSecondOpinion: (
     proposalIds: string[],
     model: ReflectionModelChoice,
+    helpInboxIds?: string[],
   ) => Promise<GenerateSessionReflectionResult>;
   getArtifact: (artifactId: string) => Promise<ReflectionArtifactDetailDto>;
   reviewProposal: (
@@ -362,6 +491,9 @@ export type ReflectionReviewApi = {
   markHelpInboxDone: (
     request: MarkReflectionHelpInboxDoneRequest,
   ) => Promise<{ done: boolean }>;
+  deferHelpInboxItem: (
+    request: MarkReflectionHelpInboxDoneRequest,
+  ) => Promise<{ deferred: boolean }>;
   authorizeManualOperation: (
     request: AuthorizeManualReflectionOperationRequest,
   ) => Promise<unknown>;
@@ -406,7 +538,10 @@ type PriorityWordsResponse = {
 
 export async function fetchSessionPayload(): Promise<SessionPayload> {
   const studyDayKey = getCurrentStudyDayKey();
-  const response = await apiFetch(`${API_BASE}/api/session-payload?studyDayKey=${encodeURIComponent(studyDayKey)}`);
+  const response = await apiFetch(`${API_BASE}/api/session-payload`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ studyDayKey }),
+  });
   if (!response.ok) {
     throw new Error('Failed to load session payload');
   }
@@ -419,6 +554,27 @@ export async function fetchStatus(): Promise<BackendStatus> {
   const response = await apiFetch(`${API_BASE}/api/status?studyDayKey=${encodeURIComponent(studyDayKey)}`);
   if (!response.ok) {
     throw new Error('Failed to load backend status');
+  }
+  return response.json();
+}
+
+export async function fetchModelInvocations(from?: string, to?: string): Promise<{ rows: ModelInvocationRow[] }> {
+  const params = new URLSearchParams();
+  if (from !== undefined) params.set('from', from);
+  if (to !== undefined) params.set('to', to);
+  const response = await apiFetch(`${API_BASE}/api/operator/model-invocations?${params}`);
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to load model invocations'));
+  }
+  return response.json();
+}
+
+export async function fetchContentSharingDigest(weekStart?: string): Promise<import('../domain/content-sharing').ContentSharingDigest> {
+  const params = new URLSearchParams();
+  if (weekStart !== undefined) params.set('weekStart', weekStart);
+  const response = await apiFetch(`${API_BASE}/api/operator/content-sharing?${params}`);
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to load content sharing'));
   }
   return response.json();
 }
@@ -463,49 +619,67 @@ export async function updateUnstudiedAdmissionSource(
   return response.json();
 }
 
+export async function updateCharacterPresentation(
+  characterPresentation: CharacterPresentation,
+): Promise<{ characterPresentation: CharacterPresentation }> {
+  const response = await apiFetch(`${API_BASE}/api/learner-settings/character-presentation`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ characterPresentation }),
+  });
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to update character presentation'));
+  }
+
+  return response.json();
+}
+
+export async function updateStudyIntroductionOrder(
+  studyIntroductionOrder: StudyIntroductionOrder,
+  studyIntroductionSpacing: number,
+): Promise<{ studyIntroductionOrder: StudyIntroductionOrder; studyIntroductionSpacing: number }> {
+  const response = await apiFetch(`${API_BASE}/api/learner-settings/study-introduction-order`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ studyIntroductionOrder, studyIntroductionSpacing }),
+  });
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to update introduction ordering'));
+  }
+  return response.json();
+}
+
+export async function updateStudyNewWordsFirst(
+  studyNewWordsFirst: boolean,
+): Promise<{ studyNewWordsFirst: boolean }> {
+  const response = await apiFetch(`${API_BASE}/api/learner-settings/study-new-words-first`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ studyNewWordsFirst }),
+  });
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to update new-word ordering'));
+  }
+  return response.json();
+}
+
+export async function updateSentenceCharacterPresentation(
+  sentenceCharacterPresentation: SentenceCharacterPresentation,
+): Promise<{ sentenceCharacterPresentation: SentenceCharacterPresentation }> {
+  const response = await apiFetch(`${API_BASE}/api/learner-settings/sentence-character-presentation`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sentenceCharacterPresentation }),
+  });
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to update sentence character presentation'));
+  }
+  return response.json();
+}
+
 // --- Diet profile (SPECS/diet-deck-distribution.md) --------------------------
-
-export type DietSelfSelect =
-  | 'complete-beginner'
-  | 'some-basics'
-  | 'intermediate'
-  | 'advanced-or-heritage';
-
-export type DietIntakeInput = {
-  answers: Array<{ prompt: string; answer: string }>;
-  selfSelect: DietSelfSelect | null;
-};
-
-export type DietIntakeAssessmentInput = Pick<DietIntakeInput, 'answers'>;
-
-export async function submitDietIntake(input: DietIntakeInput): Promise<void> {
-  const response = await apiFetch(`${API_BASE}/api/diet/intake`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(input),
-  });
-  if (!response.ok) {
-    throw new Error(await readApiErrorMessage(response, 'Failed to record the diet intake'));
-  }
-}
-
-export async function submitDietIntakeAssessment(input: DietIntakeAssessmentInput): Promise<void> {
-  const response = await apiFetch(`${API_BASE}/api/diet/intake/assess`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      answers: input.answers,
-      providerDisclosureAccepted: true,
-    }),
-  });
-  if (!response.ok) {
-    throw new Error(await readApiErrorMessage(response, 'Unable to assess and save your starting point'));
-  }
-}
 
 export async function nudgeDiet(direction: 'easier' | 'harder'): Promise<{ changed: boolean }> {
   const response = await apiFetch(`${API_BASE}/api/diet/nudge`, {
@@ -531,6 +705,7 @@ export async function recordAcceptedReviewAttemptBatch({
   events: StudyAttemptEvent[];
   commitIntent: {
     type: 'commit-review-action-session';
+    reinforcementSkipped?: boolean;
     sessionActionId: string;
     targetWordId: string;
     actionKind: 'recognition' | 'production';
@@ -581,6 +756,36 @@ export async function recordAcceptedContrastSelectionAttempt({
 
   if (!response.ok) {
     throw new Error(await readApiErrorMessage(response, 'Failed to record accepted contrast selection attempt'));
+  }
+}
+
+export async function recordPureCueAssessment({
+  sessionId,
+  attemptId,
+  snapshotId,
+  sessionActionId,
+  events,
+  reinforcementSkipped,
+}: {
+  sessionId: string;
+  attemptId: string;
+  snapshotId: string;
+  sessionActionId: string;
+  events: PureCueAssessmentEvent[];
+  reinforcementSkipped?: boolean;
+}): Promise<void> {
+  const response = await apiFetch(`${API_BASE}/api/study-sessions/${encodeURIComponent(sessionId)}/pure-cue-assessments`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ attemptId, snapshotId, sessionActionId, events, reinforcementSkipped }),
+  }, {
+    route: '/api/study-sessions/:sessionId/pure-cue-assessments',
+    sessionId,
+    sessionActionId,
+    eventIds: events.map((event) => event.eventId),
+  });
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to record pure cue assessment'));
   }
 }
 
@@ -662,12 +867,16 @@ export async function recordReviewSessionSummary({
   completedReviewActionCount,
   failedReviewActionCount,
   activeDurationMs,
+  completedLearningWordCount,
+  debriefInventory,
 }: {
   sessionId: string;
   completedAt: string;
   completedReviewActionCount: number;
   failedReviewActionCount: number;
   activeDurationMs: number;
+  completedLearningWordCount?: number;
+  debriefInventory?: SessionDebriefInventoryItem[];
 }): Promise<void> {
   const response = await apiFetch(`${API_BASE}/api/review-session-summaries`, {
     method: 'POST',
@@ -680,6 +889,8 @@ export async function recordReviewSessionSummary({
       completedReviewActionCount,
       failedReviewActionCount,
       activeDurationMs,
+      completedLearningWordCount,
+      ...(debriefInventory === undefined ? {} : { debriefInventory }),
     }),
   });
 
@@ -687,6 +898,8 @@ export async function recordReviewSessionSummary({
     throw new Error(await readApiErrorMessage(response, 'Failed to record review session summary'));
   }
 }
+
+export class NoQualifyingReflectionEvidenceError extends Error {}
 
 export async function generateSessionReflection({
   sessionId,
@@ -707,7 +920,9 @@ export async function generateSessionReflection({
   );
 
   if (!response.ok) {
-    throw new Error(await readApiErrorMessage(response, 'Failed to generate session reflection'));
+    const payload = await response.clone().json().catch(() => null) as { code?: string } | null;
+    if (payload?.code === 'no_qualifying_evidence') throw new NoQualifyingReflectionEvidenceError('No qualifying feedback evidence.');
+    throw new Error(await readApiErrorMessage(response, 'Failed to generate session feedback'));
   }
 
   return response.json();
@@ -720,7 +935,7 @@ export async function fetchReflectionArtifacts(
     `${API_BASE}/api/reflection-artifacts?review=${encodeURIComponent(review)}`,
   );
   if (!response.ok) {
-    throw new Error(await readApiErrorMessage(response, 'Failed to load reflection artifacts'));
+    throw new Error(await readApiErrorMessage(response, 'Failed to load feedback artifacts'));
   }
 
   const payload = await response.json() as { artifacts: ReflectionArtifactSummaryDto[] };
@@ -730,7 +945,7 @@ export async function fetchReflectionArtifacts(
 export async function fetchReflectionGenerationRuns(): Promise<ReflectionGenerationRunsResponse> {
   const response = await apiFetch(`${API_BASE}/api/reflection-generation-runs`);
   if (!response.ok) {
-    throw new Error(await readApiErrorMessage(response, 'Failed to load reflection generation runs'));
+    throw new Error(await readApiErrorMessage(response, 'Failed to load feedback generation runs'));
   }
   const payload = await response.json() as ReflectionGenerationRunsResponse;
   return payload;
@@ -749,7 +964,7 @@ export async function retryReflectionGenerationRun(
     },
   );
   if (!response.ok) {
-    throw new Error(await readApiErrorMessage(response, 'Failed to retry reflection generation'));
+    throw new Error(await readApiErrorMessage(response, 'Failed to retry feedback generation'));
   }
   return response.json();
 }
@@ -757,11 +972,12 @@ export async function retryReflectionGenerationRun(
 export async function generateDeferredReflectionSecondOpinion(
   proposalIds: string[],
   model: ReflectionModelChoice,
+  helpInboxIds: string[] = [],
 ): Promise<GenerateSessionReflectionResult> {
   const response = await apiFetch(`${API_BASE}/api/deferred-reflection-second-opinions`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ proposalIds, model }),
+    body: JSON.stringify({ proposalIds, helpInboxIds, model }),
   });
   if (!response.ok) {
     throw new Error(await readApiErrorMessage(response, 'Failed to generate a second opinion'));
@@ -776,7 +992,7 @@ export async function fetchReflectionArtifactDetail(
     `${API_BASE}/api/reflection-artifacts/${encodeURIComponent(artifactId)}`,
   );
   if (!response.ok) {
-    throw new Error(await readApiErrorMessage(response, 'Failed to load reflection artifact'));
+    throw new Error(await readApiErrorMessage(response, 'Failed to load feedback artifact'));
   }
 
   return response.json();
@@ -797,7 +1013,7 @@ export async function reviewReflectionProposal(
     },
   );
   if (!response.ok) {
-    throw new Error(await readApiErrorMessage(response, 'Failed to review reflection proposal'));
+    throw new Error(await readApiErrorMessage(response, 'Failed to review feedback proposal'));
   }
 
   return response.json();
@@ -818,7 +1034,7 @@ export async function withdrawReflectionAuthorization(
   );
   if (!response.ok) {
     throw new Error(
-      await readApiErrorMessage(response, 'Failed to withdraw reflection authorization'),
+      await readApiErrorMessage(response, 'Failed to withdraw feedback authorization'),
     );
   }
 
@@ -834,7 +1050,7 @@ export async function upsertReflectionQuality(
     body: JSON.stringify(request),
   });
   if (!response.ok) {
-    throw new Error(await readApiErrorMessage(response, 'Failed to save reflection quality'));
+    throw new Error(await readApiErrorMessage(response, 'Failed to save feedback quality'));
   }
   return response.json();
 }
@@ -848,7 +1064,7 @@ export async function clearReflectionQuality(
     body: JSON.stringify(request),
   });
   if (!response.ok) {
-    throw new Error(await readApiErrorMessage(response, 'Failed to clear reflection quality'));
+    throw new Error(await readApiErrorMessage(response, 'Failed to clear feedback quality'));
   }
   return response.json();
 }
@@ -856,7 +1072,7 @@ export async function clearReflectionQuality(
 export async function fetchReflectionQualityStats(): Promise<ReflectionQualityStatsDto> {
   const response = await apiFetch(`${API_BASE}/api/reflection-quality-stats`);
   if (!response.ok) {
-    throw new Error(await readApiErrorMessage(response, 'Failed to load reflection quality stats'));
+    throw new Error(await readApiErrorMessage(response, 'Failed to load feedback quality stats'));
   }
   return response.json();
 }
@@ -878,7 +1094,7 @@ export async function markReflectionInboxSeen(
     body: JSON.stringify(request),
   });
   if (!response.ok) {
-    throw new Error(await readApiErrorMessage(response, 'Failed to mark reflection inbox item seen'));
+    throw new Error(await readApiErrorMessage(response, 'Failed to mark feedback inbox item seen'));
   }
   return response.json();
 }
@@ -910,22 +1126,24 @@ export async function markFailedReflectionRunsSeen(request: {
     body: JSON.stringify(request),
   });
   if (!response.ok) {
-    throw new Error(await readApiErrorMessage(response, 'Failed to acknowledge failed reflection runs'));
+    throw new Error(await readApiErrorMessage(response, 'Failed to acknowledge failed feedback runs'));
   }
   return response.json();
 }
 
 export type AttentionBadgesDto = {
+  reflectionGenerating: boolean;
   reflectionUnseenCount: number;
   failedReflectionRunIds: string[];
   failedReflectionRunsSeenThroughAt: string | null;
   whatsNewSeenThroughDate: string | null;
+  whatsNewSeenThroughSequence: number | null;
 };
 
 export async function fetchReflectionHelpInbox(): Promise<{ entries: ReflectionHelpInboxEntry[] }> {
   const response = await apiFetch(`${API_BASE}/api/reflection-help-inbox`);
   if (!response.ok) {
-    throw new Error(await readApiErrorMessage(response, 'Failed to load reflection help inbox'));
+    throw new Error(await readApiErrorMessage(response, 'Failed to load feedback help inbox'));
   }
   return response.json();
 }
@@ -939,7 +1157,21 @@ export async function markReflectionHelpInboxDone(
     body: JSON.stringify(request),
   });
   if (!response.ok) {
-    throw new Error(await readApiErrorMessage(response, 'Failed to mark reflection help inbox item done'));
+    throw new Error(await readApiErrorMessage(response, 'Failed to mark feedback help inbox item done'));
+  }
+  return response.json();
+}
+
+export async function deferReflectionHelpInboxItem(
+  request: MarkReflectionHelpInboxDoneRequest,
+): Promise<{ deferred: boolean }> {
+  const response = await apiFetch(`${API_BASE}/api/reflection-help-inbox/defer`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  });
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, 'Failed to defer feedback help item'));
   }
   return response.json();
 }
@@ -947,7 +1179,7 @@ export async function markReflectionHelpInboxDone(
 export async function authorizeManualReflectionOperation(
   request: AuthorizeManualReflectionOperationRequest,
 ): Promise<unknown> {
-  const response = await fetch(
+  const response = await apiFetch(
     `${API_BASE}/api/reflection-artifacts/${encodeURIComponent(request.artifactId)}/items/${encodeURIComponent(request.itemId)}/manual-invocations`,
     {
       method: 'POST',
@@ -957,19 +1189,19 @@ export async function authorizeManualReflectionOperation(
   );
   if (!response.ok) {
     throw new Error(
-      await readApiErrorMessage(response, 'Failed to authorize manual reflection operation'),
+      await readApiErrorMessage(response, 'Failed to authorize manual feedback operation'),
     );
   }
   return response.json();
 }
 
-export async function completeLearningSession(wordId: string, success: boolean): Promise<Word> {
+export async function completeLearningSession(wordId: string, success: boolean, sessionId?: string): Promise<Word> {
   const response = await apiFetch(`${API_BASE}/api/words/${wordId}/complete-learning-session`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ success }),
+    body: JSON.stringify({ success, sessionId }),
   });
 
   if (!response.ok) {
@@ -979,14 +1211,14 @@ export async function completeLearningSession(wordId: string, success: boolean):
   return response.json();
 }
 
-export async function completeUnstudiedSession(wordId: string): Promise<Word> {
+export async function completeUnstudiedSession(wordId: string, sessionId?: string): Promise<Word> {
   const studyDayKey = getCurrentStudyDayKey();
   const response = await apiFetch(`${API_BASE}/api/words/${wordId}/complete-unstudied-session`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ studyDayKey }),
+    body: JSON.stringify({ studyDayKey, sessionId }),
   });
 
   if (!response.ok) {
@@ -1115,6 +1347,10 @@ async function readApiErrorMessage(response: Response, fallbackMessage: string) 
   return fallbackMessage;
 }
 
+export function getSessionPayloadCacheKey(): string {
+  return JSON.stringify([getCurrentStudyDayKey(), clientIncidentStorageScope]);
+}
+
 function getCurrentStudyDayKey(): string {
   const userTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'UTC';
   const now = new Date();
@@ -1138,3 +1374,239 @@ function getCurrentStudyDayKey(): string {
 
   return `${year}-${month}-${day}`;
 }
+
+
+export type PreparationFailure = {
+  workId: string; wordId: string; hanzi: string; stage: 'bootstrap' | 'teaching' | 'review';
+  status: 'queued' | 'running' | 'ready' | 'paused'; attemptCount: number;
+  nextAttemptAt: string; lastError: string | null;
+  attempts: Array<{ attemptId: string; startedAt: string; finishedAt: string | null;
+    outcome: 'ready' | 'failed' | 'interrupted' | null; diagnostic: string | null }>;
+};
+export async function fetchPreparationFailures(): Promise<PreparationFailure[]> {
+  const response = await apiFetch(`${API_BASE}/api/operator/word-preparation/failures`);
+  if (!response.ok) throw new Error('Failed to load word preparation failures');
+  return (await response.json() as { failures: PreparationFailure[] }).failures;
+}
+export async function retryPreparationWork(workId: string): Promise<void> {
+  const response = await apiFetch(`${API_BASE}/api/operator/word-preparation/${encodeURIComponent(workId)}/retry`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+  });
+  if (!response.ok) throw new Error('Failed to retry word preparation');
+}
+
+export async function recordContentQualityEncounter(
+  target: import('../domain/content-quality').ContentQualityTarget,
+  encounterId: string,
+): Promise<import('../domain/content-quality').ContentQualityState> {
+  const response = await apiFetch(`${API_BASE}/api/content-quality/encounters`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ target, encounterId }),
+  });
+  if (!response.ok) throw new Error(await readApiErrorMessage(response, 'Could not load content feedback'));
+  return response.json();
+}
+
+export async function saveContentQualityRating(
+  contentKey: string,
+  rating: import('../domain/content-quality').ContentQualityRating,
+): Promise<import('../domain/content-quality').ContentQualityState> {
+  const response = await apiFetch(`${API_BASE}/api/content-quality/ratings`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ contentKey, rating }),
+  });
+  if (!response.ok) throw new Error(await readApiErrorMessage(response, 'Could not save content feedback'));
+  return response.json();
+}
+
+export async function fetchContentQualityStats(
+  filters: import('../domain/content-quality').ContentQualityFilters = {},
+): Promise<import('../domain/content-quality').ContentQualityAnalytics> {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(filters)) {
+    if (value !== undefined) params.set(key, String(value));
+  }
+  const response = await apiFetch(`${API_BASE}/api/operator/content-quality?${params}`);
+  if (!response.ok) throw new Error(await readApiErrorMessage(response, 'Could not load content quality'));
+  return response.json();
+}
+
+export async function fetchContentQualityRatingLedger(): Promise<import('../domain/content-quality').ContentQualityRatingLedger> {
+  const response = await apiFetch(`${API_BASE}/api/operator/content-quality/ratings`);
+  if (!response.ok) throw new Error(await readApiErrorMessage(response, 'Could not load content quality ratings'));
+  return response.json();
+}
+
+export async function updateDebriefInterests(debriefInterests: string): Promise<{ debriefInterests: string }> {
+  const response = await apiFetch(`${API_BASE}/api/learner-settings/debrief-interests`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ debriefInterests }),
+  });
+  if (!response.ok) throw new Error(await readApiErrorMessage(response, 'Could not save interests'));
+  return response.json();
+}
+export async function fetchLatestSessionDebrief(signal?: AbortSignal): Promise<SessionDebrief | null> {
+  const response = await apiFetch(`${API_BASE}/api/session-debriefs/latest`, { signal });
+  if (!response.ok) throw new Error(await readApiErrorMessage(response, 'Could not load session debrief'));
+  return (await response.json() as { debrief: SessionDebrief | null }).debrief;
+}
+export async function fetchSessionDebrief(sessionId: string, signal?: AbortSignal): Promise<SessionDebrief | null> {
+  const response = await apiFetch(`${API_BASE}/api/session-debriefs/${encodeURIComponent(sessionId)}`, { signal });
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(await readApiErrorMessage(response, 'Could not load session debrief'));
+  return (await response.json() as { debrief: SessionDebrief }).debrief;
+}
+export async function retrySessionDebrief(sessionId: string, signal?: AbortSignal): Promise<SessionDebrief> {
+  const response = await apiFetch(`${API_BASE}/api/session-debriefs/${encodeURIComponent(sessionId)}/retry`, { method: 'POST', signal });
+  if (!response.ok) throw new Error(await readApiErrorMessage(response, 'Could not retry session debrief'));
+  return (await response.json() as { debrief: SessionDebrief }).debrief;
+}
+
+export async function fetchWhatsNew(): Promise<{ posts: WhatsNewPost[] }> {
+  const response = await apiFetch(`${API_BASE}/api/whats-new`);
+  if (!response.ok) throw new Error(await readApiErrorMessage(response, 'Failed to load What’s new'));
+  return response.json();
+}
+
+export async function fetchWhatsNewAttention(): Promise<WhatsNewAttention> {
+  const response = await apiFetch(`${API_BASE}/api/whats-new-attention`);
+  if (!response.ok) throw new Error(await readApiErrorMessage(response, 'Failed to load update notifications'));
+  return response.json();
+}
+
+export async function updateWhatsNewAttention(request: {
+  postIds: string[]; kind: 'badge-seen' | 'read';
+}): Promise<WhatsNewAttention> {
+  const response = await apiFetch(`${API_BASE}/api/whats-new-attention`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request),
+  });
+  if (!response.ok) throw new Error(await readApiErrorMessage(response, 'Failed to acknowledge updates'));
+  return response.json();
+}
+
+export async function fetchOperatorWhatsNew(): Promise<{ posts: WhatsNewPost[] }> {
+  const response = await apiFetch(`${API_BASE}/api/operator/whats-new`);
+  if (!response.ok) throw new Error(await readApiErrorMessage(response, "Failed to load blog posts"));
+  return response.json();
+}
+
+export async function fetchOperatorServiceBanner(): Promise<{ serviceBanner: ServiceBanner | null }> {
+  const response = await apiFetch(`${API_BASE}/api/operator/service-banner`);
+  if (!response.ok) throw new Error(await readApiErrorMessage(response, 'Failed to load service banner'));
+  return response.json();
+}
+
+export async function saveOperatorServiceBanner(request: ServiceBannerRequest): Promise<{ serviceBanner: ServiceBanner }> {
+  const response = await apiFetch(`${API_BASE}/api/operator/service-banner`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request),
+  });
+  if (!response.ok) throw new Error(await readApiErrorMessage(response, 'Failed to save service banner'));
+  return response.json();
+}
+
+export async function clearOperatorServiceBanner(): Promise<{ status: 'cleared' | 'noop' }> {
+  const response = await apiFetch(`${API_BASE}/api/operator/service-banner`, { method: 'DELETE' });
+  if (!response.ok) throw new Error(await readApiErrorMessage(response, 'Failed to clear service banner'));
+  return response.json();
+}
+
+export async function saveOperatorWhatsNew(request: WhatsNewWriteRequest): Promise<WhatsNewPost> {
+  const response = await apiFetch(`${API_BASE}/api/operator/whats-new`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request),
+  });
+  if (!response.ok) throw new Error(await readApiErrorMessage(response,
+    response.status === 409 ? 'This post changed elsewhere. Copy your edits, then reload the post before saving.' : 'Failed to save blog post'));
+  return response.json();
+}
+
+export async function markWhatsNewSeenSequence(request: {
+  throughSequence: number; mode: 'ensure' | 'seen';
+}): Promise<{ whatsNewSeenThroughSequence: number }> {
+  const response = await apiFetch(`${API_BASE}/api/whats-new-seen-sequence`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request),
+  });
+  if (!response.ok) throw new Error(await readApiErrorMessage(response, 'Failed to acknowledge blog posts'));
+  return response.json();
+}
+
+async function requestSessionCompletion(sessionId: string, action: '' | '/undo' | '/close', body?: unknown): Promise<SessionCompletion> {
+  const response = await apiFetch(`${API_BASE}/api/study-sessions/${encodeURIComponent(sessionId)}/completion${action}`, {
+    method: body === undefined ? 'GET' : 'POST',
+    ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+  });
+  if (!response.ok) throw new Error(await readApiErrorMessage(response, 'Could not save session completion'));
+  return response.json();
+}
+
+export function stageSessionCompletion(sessionId: string, request: StageSessionCompletionRequest) {
+  return requestSessionCompletion(sessionId, '', request);
+}
+export function fetchSessionCompletion(sessionId: string) {
+  return requestSessionCompletion(sessionId, '');
+}
+export function undoSessionCompletion(sessionId: string, revisionId: string) {
+  return requestSessionCompletion(sessionId, '/undo', { revisionId });
+}
+export function closeSessionCompletion(sessionId: string, revisionId: string) {
+  return requestSessionCompletion(sessionId, '/close', { revisionId });
+}
+export async function fetchCurrentSessionCompletion(): Promise<SessionCompletion | null> {
+  const response = await apiFetch(`${API_BASE}/api/session-completions/current`);
+  if (!response.ok) throw new Error(await readApiErrorMessage(response, 'Could not load session completion'));
+  const result = await response.json() as { completion: SessionCompletion | null };
+  return result.completion;
+}
+
+// Vocabulary commands ship incrementally; finalization freezes the acknowledged boundary.
+async function vocabularyRequest<T>(path: string, body?: unknown): Promise<T> {
+  const response = await apiFetch(`${API_BASE}/api/vocabulary${path}`, body === undefined ? undefined : {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  });
+  if (!response.ok) throw new Error(await readApiErrorMessage(response, 'Could not save vocabulary work'));
+  return response.json() as Promise<T>;
+}
+export const fetchVocabularySessionPreview = () => vocabularyRequest<import('../domain/vocabulary-study-api').VocabularySessionPreview>(`/session-preview?timeZone=${encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC')}`);
+export const startVocabularySession = (previewSeed?:string) => vocabularyRequest<import('../domain/vocabulary-study-api').VocabularyStudy>('/sessions', {timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC', ...(previewSeed ? {previewSeed} : {})});
+export const fetchVocabularyStudy = (id: string) => vocabularyRequest<import('../domain/vocabulary-study-api').VocabularyStudy>(`/sessions/${encodeURIComponent(id)}`);
+export const nextVocabularyStudy = (id: string, clientActionId: string, options: {wordId?: string; another?: boolean} = {}) =>
+  vocabularyRequest<import('../domain/vocabulary-study-api').VocabularyStudy>(`/sessions/${encodeURIComponent(id)}/next`, {clientActionId,...options});
+export const commandVocabularyStudy = (id: string, clientActionId: string, command: import('../domain/vocabulary-study-api').VocabularyStudyCommand) =>
+  vocabularyRequest<import('../domain/vocabulary-study-api').VocabularyStudy>(`/sessions/${encodeURIComponent(id)}/commands`, {clientActionId,command});
+export const stageVocabularyCompletion = (id: string, throughSequence: number, activeDurationMs?: number) => vocabularyRequest<import('../domain/vocabulary-session-api').VocabularySessionCompletion>(`/sessions/${encodeURIComponent(id)}/completion`, {throughSequence,...(activeDurationMs === undefined ? {} : {activeDurationMs})});
+export const fetchVocabularyCompletion = (id: string) => vocabularyRequest<import('../domain/vocabulary-session-api').VocabularySessionCompletion | null>(`/sessions/${encodeURIComponent(id)}/completion`);
+export const cancelVocabularyCompletion = (id: string, completionId: string) => vocabularyRequest<import('../domain/vocabulary-session-api').VocabularySessionCompletion>(`/sessions/${encodeURIComponent(id)}/completion/cancel`, {completionId});
+export const closeVocabularyCompletion = (id: string, completionId: string) => vocabularyRequest<import('../domain/vocabulary-session-api').VocabularySessionCompletion>(`/sessions/${encodeURIComponent(id)}/completion/close`, {completionId});
+export const fetchCurrentVocabularyCompletion = () => vocabularyRequest<import('../domain/vocabulary-study-api').VocabularyStudy | null>('/completion/current');
+export const dismissVocabularyWord = (id: string) => vocabularyRequest<unknown>(`/words/${encodeURIComponent(id)}/dismiss`, {});
+export type VocabularyWordRow = import('../domain/vocabulary-study-api').VocabularyStudyWord & {mode: import('../domain/vocabulary-session').VocabularyWordMode; inStash: number; stateVersion: number; nextEligibleAt: string | null; refreshUntil: string | null};
+export const fetchVocabularyWords = () => vocabularyRequest<{words:VocabularyWordRow[]}>('/words');
+export const setVocabularyWordMode = (id: string, mode: import('../domain/vocabulary-session').VocabularyWordMode, expectedVersion: number) => vocabularyRequest<unknown>(`/words/${encodeURIComponent(id)}/mode`, {mode,expectedVersion});
+export const refreshVocabularyWord = (id: string) => vocabularyRequest<unknown>(`/words/${encodeURIComponent(id)}/refresh`, {});
+
+/** HTTP failure from the shared feature transport. */
+export class ApiRequestError extends Error { constructor(message:string,readonly status:number){super(message);} }
+/** Shared authenticated transport for feature-specific API contracts. */
+export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await apiFetch(`${API_BASE}${path}`, init);
+  if (!response.ok) throw new ApiRequestError(await readApiErrorMessage(response, 'The request could not be completed.'),response.status);
+  return response.json() as Promise<T>;
+}
+export type VocabularyFeedbackMessage = {messageId:string; caseId:string; subjectLabel?:string; body: import('../domain/vocabulary-content').VocabularyJson; createdAt:string; seenAt:string|null; dismissedAt:string|null};
+export type VocabularyFeedbackJob = {jobId:string; caseId:string; subjectLabel:string; status:'queued'|'running'|'failed'; createdAt:string; error:string|null};
+export type VocabularyFeedbackInbox = {messages:VocabularyFeedbackMessage[]; failures:{jobId:string; error:string}[]; jobs?:VocabularyFeedbackJob[]};
+export const fetchVocabularyFeedback = () => vocabularyRequest<VocabularyFeedbackInbox>('/feedback');
+export const markVocabularyFeedbackSeen = (id:string) => vocabularyRequest<unknown>(`/feedback/${encodeURIComponent(id)}/seen`, {});
+export const dismissVocabularyFeedback = (id:string) => vocabularyRequest<unknown>(`/feedback/${encodeURIComponent(id)}/dismiss`, {});
+export const restoreVocabularyFeedback = (id:string) => vocabularyRequest<unknown>(`/feedback/${encodeURIComponent(id)}/restore`, {});
+export const retryVocabularyFeedback = (id:string) => vocabularyRequest<unknown>(`/feedback/jobs/${encodeURIComponent(id)}/retry`, {});
+
+export const fetchVocabularyAttention = () => vocabularyRequest<{unseenCount:number;hasFailure:boolean;generating:boolean}>('/feedback/attention');
+
+export const fetchVocabularyStatistics = () => vocabularyRequest<import('../domain/vocabulary-statistics').VocabularyStatistics>('/statistics');
+
+export async function fetchVocabularyWordCollection(view: MyWordsView, query: string, offset=0, signal?:AbortSignal,
+  modes:readonly import('../domain/vocabulary-session').VocabularyWordMode[]=[], recentLapses=false):Promise<import('../domain/vocabulary-words').VocabularyWordsCollection> {
+  const params=new URLSearchParams({view,q:query,offset:String(offset),limit:'50',mode:modes.join(','),lapses:recentLapses?'1':'0'});
+  return apiRequest(`/api/vocabulary/word-collection?${params}`,{signal});
+}
+
+export const enrollVocabularyWord = (id:string) => vocabularyRequest<unknown>(`/words/${encodeURIComponent(id)}`, {});

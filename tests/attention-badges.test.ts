@@ -7,8 +7,8 @@ import { after, before, beforeEach, describe, test } from 'node:test';
 import { pathToFileURL } from 'node:url';
 import type {
   ReflectionOperation,
-  SessionReflectionBundleV2,
-  SessionReflectionResultV6,
+  SessionReflectionBundleV6,
+  SessionReflectionResultV10,
 } from '../src/domain/reflection.js';
 
 type DbModule = typeof import('../server/db.ts');
@@ -83,6 +83,25 @@ describe('attention badges', { concurrency: false }, () => {
       itemId: 'item',
     }, seenAt);
     assert.equal(dbModule.countUnseenReflectionHelpItems(), 0);
+  });
+
+  test('obsolete unread proposals do not leave an unresolvable Help badge', () => {
+    const sessionId = 'obsolete-attention';
+    insertSession(sessionId);
+    const legacy = dbModule.materializeReflectionArtifact({
+      sourceSessionId: sessionId,
+      reflectionFlowVersion: 'initial_post_session_reflection.v3',
+      generatedAt,
+      provider: 'openai',
+      model: 'gpt-5.6-luna-high',
+      promptVersion: 'reflection-staged-v4',
+      evidenceBundle: bundle(sessionId),
+      result: result(suppressOperation('target')),
+    }).artifact;
+    assert.equal(legacy.proposals[0]!.review.disposition.kind, 'pending');
+    assert.equal(dbModule.countUnseenReflectionHelpItems(), 0);
+    materialize('current-attention', suppressOperation('target'));
+    assert.equal(dbModule.countUnseenReflectionHelpItems(), 1);
   });
 
   test('keeps seen-but-pending out of the badge without changing disposition', () => {
@@ -178,9 +197,11 @@ describe('attention badges', { concurrency: false }, () => {
     assert.deepEqual(dbModule.listFailedReflectionRunIds(), ['failed-run']);
     assert.deepEqual(dbModule.getAttentionBadges(), {
       reflectionUnseenCount: 0,
+      reflectionGenerating: false,
       failedReflectionRunIds: ['failed-run'],
       failedReflectionRunsSeenThroughAt: null,
       whatsNewSeenThroughDate: null,
+      whatsNewSeenThroughSequence: null,
     });
   });
 
@@ -225,11 +246,11 @@ function materialize(
   insertSession(sessionId);
   return dbModule.materializeReflectionArtifact({
     sourceSessionId: sessionId,
-    reflectionFlowVersion: 'initial_post_session_reflection.v2',
+    reflectionFlowVersion: 'initial_post_session_reflection.v6',
     generatedAt,
     provider: 'openai',
     model: 'gpt-5.6-luna-high',
-    promptVersion: 'reflection-v7',
+    promptVersion: 'reflection-staged-v4',
     evidenceBundle: bundle(sessionId),
     result: result(operation),
   });
@@ -241,14 +262,14 @@ function materializeInformational(
   insertSession(sessionId);
   return dbModule.materializeReflectionArtifact({
     sourceSessionId: sessionId,
-    reflectionFlowVersion: 'initial_post_session_reflection.v2',
+    reflectionFlowVersion: 'initial_post_session_reflection.v6',
     generatedAt,
     provider: 'openai',
     model: 'gpt-5.6-luna-high',
-    promptVersion: 'reflection-v7',
+    promptVersion: 'reflection-staged-v4',
     evidenceBundle: bundle(sessionId),
     result: {
-      schemaVersion: 'session_reflection_result.v6',
+      schemaVersion: 'session_reflection_result.v10',
       itemResults: [{
         itemId: 'item',
         diagnosisTags: ['ordinary_retrieval_noise'],
@@ -272,13 +293,13 @@ function recordFailedRun(sessionId: string, runId: string, completedAt: string):
   dbModule.recordReflectionGenerationRun({
     runId,
     sourceSessionId: sessionId,
-    reflectionFlowVersion: 'initial_post_session_reflection.v2',
+    reflectionFlowVersion: 'initial_post_session_reflection.v6',
     startedAt: generatedAt,
     completedAt,
     provider: 'openai',
     model: 'gpt-5.6-luna-high',
     providerModel: 'gpt-5.6-luna',
-    promptVersion: 'reflection-v7',
+    promptVersion: 'reflection-staged-v4',
     responseId: null,
     finishReason: null,
     state: 'failed',
@@ -305,13 +326,13 @@ function recordSucceededRun(sessionId: string, runId: string, completedAt: strin
   dbModule.recordReflectionGenerationRun({
     runId,
     sourceSessionId: sessionId,
-    reflectionFlowVersion: 'initial_post_session_reflection.v2',
+    reflectionFlowVersion: 'initial_post_session_reflection.v6',
     startedAt: generatedAt,
     completedAt,
     provider: 'openai',
     model: 'gpt-5.6-luna-high',
     providerModel: 'gpt-5.6-luna',
-    promptVersion: 'reflection-v7',
+    promptVersion: 'reflection-staged-v4',
     responseId: 'response-1',
     finishReason: 'stop',
     state: 'succeeded',
@@ -334,9 +355,9 @@ function recordSucceededRun(sessionId: string, runId: string, completedAt: strin
   });
 }
 
-function bundle(sessionId: string): SessionReflectionBundleV2 {
+function bundle(sessionId: string): SessionReflectionBundleV6 {
   return {
-    schemaVersion: 'session_reflection_bundle.v2',
+    schemaVersion: 'session_reflection_bundle.v6',
     generatedAt,
     session: {
       sessionId,
@@ -359,7 +380,9 @@ function bundle(sessionId: string): SessionReflectionBundleV2 {
       },
       sessionNote: null,
       existingContent: { contrastClusters: [], knownAcceptedAlternates: [] },
+      promotionEvidence: null,
       servedCue: {
+        supplement: null,
         cueId: null,
         cueType: 'definition_gloss',
         text: 'target',
@@ -372,9 +395,9 @@ function bundle(sessionId: string): SessionReflectionBundleV2 {
   };
 }
 
-function result(operation: ReflectionOperation): SessionReflectionResultV6 {
+function result(operation: ReflectionOperation): SessionReflectionResultV10 {
   return {
-    schemaVersion: 'session_reflection_result.v6',
+    schemaVersion: 'session_reflection_result.v10',
     itemResults: [{
       itemId: 'item',
       diagnosisTags: ['persistent_confusion'],

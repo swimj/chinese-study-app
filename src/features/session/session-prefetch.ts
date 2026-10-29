@@ -1,5 +1,6 @@
 import {
   fetchSessionPayload,
+  getSessionPayloadCacheKey,
   type SessionPayload,
 } from '../../services/api';
 
@@ -14,6 +15,7 @@ export type SessionPrefetchState = {
 
 let sessionPrefetchPromise: Promise<SessionPayload> | null = null;
 let sessionPrefetchGeneration = 0;
+let sessionPrefetchCacheKey: string | null = null;
 let sessionPrefetchStateCache: SessionPrefetchState = {
   status: 'idle',
   payload: null,
@@ -22,6 +24,9 @@ let sessionPrefetchStateCache: SessionPrefetchState = {
 };
 
 export function getSessionPrefetchSnapshot(): SessionPrefetchState {
+  if (sessionPrefetchCacheKey !== null && sessionPrefetchCacheKey !== getSessionPayloadCacheKey()) {
+    resetSessionPrefetchCache();
+  }
   return {
     ...sessionPrefetchStateCache,
   };
@@ -30,6 +35,7 @@ export function getSessionPrefetchSnapshot(): SessionPrefetchState {
 export function resetSessionPrefetchCache() {
   sessionPrefetchGeneration += 1;
   sessionPrefetchPromise = null;
+  sessionPrefetchCacheKey = null;
   sessionPrefetchStateCache = {
     status: 'idle',
     payload: null,
@@ -39,7 +45,10 @@ export function resetSessionPrefetchCache() {
 }
 
 export function beginSessionPrefetch(): Promise<SessionPayload> {
-  if (sessionPrefetchStateCache.status === 'ready' && sessionPrefetchStateCache.payload) {
+  const cacheKey = getSessionPayloadCacheKey();
+  if (sessionPrefetchCacheKey !== null && sessionPrefetchCacheKey !== cacheKey) resetSessionPrefetchCache();
+  if (sessionPrefetchStateCache.status === 'ready' && sessionPrefetchStateCache.payload
+    && (getSessionPayloadItemCount(sessionPrefetchStateCache.payload) ?? 0) > 0) {
     return Promise.resolve(sessionPrefetchStateCache.payload);
   }
 
@@ -47,6 +56,7 @@ export function beginSessionPrefetch(): Promise<SessionPayload> {
     return sessionPrefetchPromise;
   }
 
+  sessionPrefetchCacheKey = cacheKey;
   sessionPrefetchStateCache = {
     status: 'pending',
     payload: null,

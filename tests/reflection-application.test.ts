@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -7,9 +8,13 @@ import { after, before, beforeEach, describe, test } from 'node:test';
 import { pathToFileURL } from 'node:url';
 import type {
   ReflectionOperation,
-  SessionReflectionBundleV1,
-  SessionReflectionResultV4,
+  SessionReflectionBundleV6,
+  SessionReflectionResultV10,
 } from '../src/domain/reflection.js';
+import { getCanonicalReviewContent } from '../server/db/review-content.ts';
+import { createInitialReflectionGenerationService } from '../server/reflection/generation.ts';
+import { createLunaReflectionProvider } from '../server/reflection/luna-provider.ts';
+import { hasActionLapseToCompensate } from '../server/db/pure-cues.ts';
 
 type DbModule = typeof import('../server/db.ts');
 
@@ -44,11 +49,16 @@ describe('reflection application adapters', { concurrency: false }, () => {
   beforeEach(() => {
     const deleteGuards = sqlite.prepare(`
       SELECT name, sql FROM sqlite_schema
-      WHERE type = 'trigger' AND name LIKE '%_no_delete'
+      WHERE type = 'trigger' AND (name LIKE '%_no_delete' OR name IN ('legacy_sense_imports_retained','sense_revision_history_retained'))
     `).all() as Array<{ name: string; sql: string }>;
     sqlite.exec(`
+      DROP TRIGGER IF EXISTS legacy_sense_imports_retained;
+      DROP TRIGGER IF EXISTS sense_revision_history_retained;
       DROP TRIGGER IF EXISTS fail_reflection_prompt_insert;
       DROP TRIGGER IF EXISTS fail_production_cue_lifecycle_insert;
+      DROP TRIGGER IF EXISTS fail_promotion_second_cue_insert;
+      DROP TRIGGER IF EXISTS fail_recovery_second_cue;
+      DROP TRIGGER IF EXISTS operator_reflection_cue_recoveries_no_delete;
       DROP TRIGGER IF EXISTS production_cues_no_delete;
       DROP TRIGGER IF EXISTS production_cue_supplements_no_delete;
       DROP TRIGGER IF EXISTS production_cue_accepted_words_no_delete;
@@ -58,8 +68,21 @@ describe('reflection application adapters', { concurrency: false }, () => {
       DROP TRIGGER IF EXISTS shared_content_publications_no_delete;
       DROP TRIGGER IF EXISTS shared_content_publication_provenance_no_delete;
       DROP TRIGGER IF EXISTS shared_content_reports_no_delete;
+      DROP TRIGGER IF EXISTS pure_cue_accepted_words_no_delete;
+      DROP TRIGGER IF EXISTS pure_cue_served_snapshots_no_delete;
+      DROP TRIGGER IF EXISTS pure_cue_attempts_no_delete;
+      DROP TRIGGER IF EXISTS pure_cue_teaching_revisions_no_delete;
+      DROP TRIGGER IF EXISTS review_content_records_no_delete;
+      DROP TRIGGER IF EXISTS word_content_documents_no_delete;
       PRAGMA defer_foreign_keys = ON;
       BEGIN;
+      -- Shared bootstrap publication now materializes its catalog. This disposable
+      -- legacy-adapter fixture removes those children before its source documents.
+      DELETE FROM legacy_sense_imports;
+      DELETE FROM sense_revision_history;
+      DELETE FROM senses;
+      DELETE FROM vocabulary_word_catalogs;
+      DELETE FROM scoped_review_content_records;
       DELETE FROM shared_content_publication_events;
       DELETE FROM shared_content_reports;
       DELETE FROM shared_content_publication_provenance;
@@ -71,11 +94,23 @@ describe('reflection application adapters', { concurrency: false }, () => {
       DELETE FROM scoped_production_cue_supplements;
       DELETE FROM scoped_production_cues;
       DELETE FROM production_tasks;
+      DELETE FROM pure_cue_attempts;
+      DELETE FROM pure_cue_served_snapshots;
+      DELETE FROM pure_cue_scheduler_compensation_snapshot_attempts;
+      DELETE FROM pure_cue_scheduler_compensation_snapshots;
+      DELETE FROM learner_pure_cue_state;
+      DELETE FROM pure_cue_accepted_words;
+      DELETE FROM pure_cue_teaching_revisions;
+      DELETE FROM pure_cues;
       DELETE FROM reflection_help_inbox;
       DELETE FROM reflection_quality_annotations;
+      DELETE FROM operator_reflection_cue_recoveries;
       DELETE FROM reflection_proposal_reviews;
       DELETE FROM reflection_operation_invocations;
+      DELETE FROM reflection_generation_continuation_runs;
+      DELETE FROM reflection_generation_continuations;
       DELETE FROM reflection_generation_runs;
+      DELETE FROM reflection_generation_run_starts;
       DELETE FROM reflection_artifacts;
       DELETE FROM contrast_prompts;
       DELETE FROM contrast_cluster_members;
@@ -83,6 +118,10 @@ describe('reflection application adapters', { concurrency: false }, () => {
       DELETE FROM word_skill_relevance;
       DELETE FROM study_events;
       DELETE FROM study_sessions;
+      DELETE FROM word_preparation_attempts;
+      DELETE FROM word_preparation_work;
+      DELETE FROM word_introduction_preparation;
+      DELETE FROM word_content_documents;
       DELETE FROM words;
       COMMIT;
     `);
@@ -94,6 +133,8 @@ describe('reflection application adapters', { concurrency: false }, () => {
 
     insertWord('target', '目标');
     insertWord('alternate', '替代');
+    dbModule.setHostedServiceControl({ key: 'maintenance_mode', enabled: false, actorId: 'test-reset', updatedAt: createdAt });
+    dbModule.setHostedServiceControl({ key: 'provider_work_enabled', enabled: true, actorId: 'test-reset', updatedAt: createdAt });
   });
 
   after(() => {
@@ -273,6 +314,18 @@ describe('reflection application adapters', { concurrency: false }, () => {
       'production_cue_lifecycle_event',
     ]);
     const cue = dbModule.getProductionCue(refs[0]!.id);
+    const canonical = getCanonicalReviewContent('production_cue', refs[0]!.id);
+    assert.equal(canonical?.kind, 'production_cue');
+    if (canonical?.kind !== 'production_cue') throw new Error('Missing canonical review cue.');
+    assert.deepEqual(canonical.exercise, {
+      id: refs[0]!.id,
+      responseMode: 'hanzi_entry',
+      contract: { kind: 'targeted_review', wordId: 'target' },
+      instruction: '',
+      stimulus: { kind: 'direct_text', text: 'What you know about a fact' },
+      acceptedAnswers: [{ wordId: 'target', hanzi: '目标', traditional: null }],
+    });
+    assert.deepEqual(canonical.contents, []);
     assert.deepEqual(cue, {
       cueId: refs[0]!.id,
       taskId: 'production-task:target:default_production',
@@ -288,6 +341,562 @@ describe('reflection application adapters', { concurrency: false }, () => {
     assert.deepEqual(dbModule.applyReflectionInvocation('cue-create', createdAt), result);
   });
 
+  test('reconciles a pair without a pure cue and compensates only a repaired unfair source', () => {
+    const targetCue = seedBroadCue('reconcile-target', 'target');
+    const responseCue = seedBroadCue('reconcile-response', 'alternate');
+    insertStudyAttempt('reconcile-source', { cueId: targetCue });
+    insertInvocation('reconcile-only', {
+      ...promotionOperation({ sourceAttemptId: 'reconcile-source',
+        destination: { kind: 'create', stimulus: 'unused', axisNote: '' },
+        targetBroadId: targetCue, alternateBroadId: responseCue,
+        targetDistinctiveText: 'Target-specific context', alternateDistinctiveText: 'Response-specific context' }),
+      kind: 'reconcile_production_cues', destination: null,
+      sourceAttemptFairness: 'misleading_or_overloaded_cue',
+    });
+    const state = dbModule.applyReflectionInvocation('reconcile-only', appliedAt).application.state;
+    assert.equal(state.kind, 'applied', JSON.stringify(state));
+    if (state.kind !== 'applied') return;
+    assert.ok(state.effectRefs.some((ref) => ref.type === 'production_scheduler_compensation'));
+    assert.equal(sqlite.prepare('SELECT count(*) AS n FROM pure_cues').get()?.n, 0);
+    assert.equal(dbModule.getProductionCue(targetCue)?.active, false);
+    assert.equal(dbModule.getProductionCue(responseCue)?.active, false);
+    assert.equal(dbModule.getActiveProductionCuesForWord('target')[0]?.text, 'Target-specific context');
+  });
+
+  test('authorizes unfair retire-only cleanup without restoring the source snapshot', () => {
+    const sourceCue = seedBroadCue('retire-only-source', 'target');
+    const retainedCue = seedBroadCue('retire-only-retained', 'target');
+    insertStudyAttempt('retire-only-attempt', { cueId: sourceCue });
+    sqlite.prepare(`INSERT INTO word_skill_state
+      (word_id, skill_id, enabled, interval_hours, last_studied_at, next_due_at, ease_factor)
+      VALUES ('target', 'production', 1, 240, ?, ?, 2.4)`).run(createdAt, createdAt);
+    dbModule.captureProductionSchedulerSnapshotForAttemptBatchWithoutTransaction({
+      sourceAttemptId: 'retire-only-attempt', capturedAt: appliedAt,
+    });
+    sqlite.prepare("UPDATE word_skill_state SET interval_hours = 6, ease_factor = 2.1 WHERE word_id = 'target' AND skill_id = 'production'").run();
+    const operation: Extract<ReflectionOperation, { kind: 'reconcile_production_cues' }> = {
+      kind: 'reconcile_production_cues', version: 1, sourceAttemptId: 'retire-only-attempt',
+      targetWordId: 'target', responseWordId: 'alternate', destination: null,
+      sourceAttemptFairness: 'misleading_or_overloaded_cue',
+      wordPlans: [{ wordId: 'target', deactivateCueIds: [sourceCue], distinctiveCueDrafts: [] },
+        { wordId: 'alternate', deactivateCueIds: [], distinctiveCueDrafts: [] }],
+    };
+    const { artifact } = dbModule.materializeReflectionArtifact({
+      sourceSessionId: 'cue-evidence-session:retire-only-attempt',
+      reflectionFlowVersion: 'initial_post_session_reflection.v6', generatedAt: appliedAt,
+      provider: 'openai', model: 'gpt-5.6-luna', promptVersion: 'pure-cue-promotion-v3.0',
+      evidenceBundle: {
+        schemaVersion: 'session_reflection_bundle.v6', generatedAt: appliedAt,
+        session: { sessionId: 'cue-evidence-session:retire-only-attempt', startedAt: createdAt, endedAt: appliedAt, studyProfile: 'mandarin' },
+        items: [{ itemId: 'retire-only', sessionActionId: 'cue-action:retire-only-attempt', occurredAt: appliedAt,
+          source: 'production_mistake', sourceActionKind: 'production', sourceAttemptId: 'retire-only-attempt',
+          targetWord: wordSnapshot('target', '目标'), submittedWord: wordSnapshot('alternate', '替代'),
+          responseKind: 'matched_known_word', rawResponse: '替代', sessionNote: null,
+          existingContent: { contrastClusters: [], knownAcceptedAlternates: [] },
+          servedCue: { cueId: sourceCue, cueType: 'definition_gloss', text: 'broad target', acceptedWordIds: ['target'], supplement: null },
+          promotionEvidence: {
+            diagnosisTags: ['production_cue_overloaded'], intersectingPureCues: [],
+            words: ['target', 'alternate'].map((wordId) => ({ wordId,
+              activeProductionCues: dbModule.getActiveProductionCuesForWord(wordId).map((cue) => ({
+                cueId: cue.cueId, taskId: cue.taskId, cueType: cue.cueType, text: cue.text, acceptedWordIds: cue.acceptedWordIds,
+              })),
+            })),
+          },
+        }],
+      },
+      result: { schemaVersion: 'session_reflection_result.v10', itemResults: [{
+        itemId: 'retire-only', diagnosisTags: ['production_cue_overloaded'], promotionOutcome: 'reconciled',
+        learnerExplanation: 'Retain the useful cue and remove this misleading one.', questions: [],
+        proposals: [{ proposalGroupKey: null, rationale: 'The remaining exercise provides coverage.', operation }],
+      }] },
+    });
+    const authorized = dbModule.acceptReflectionProposal({
+      proposalId: artifact.proposals[0]!.review.proposalId, invocationId: 'retire-only-authorized', operation, createdAt: appliedAt,
+    });
+    const state = dbModule.applyReflectionInvocation(authorized.invocation.invocation.invocationId, appliedAt).application.state;
+    assert.equal(state.kind, 'applied', JSON.stringify(state));
+    if (state.kind === 'applied') assert.equal(state.effectRefs.some((ref) => ref.type === 'production_scheduler_compensation'), false);
+    assert.equal(dbModule.getProductionCue(sourceCue)?.active, false);
+    assert.equal(dbModule.getProductionCue(retainedCue)?.active, true);
+    assert.equal(sqlite.prepare("SELECT interval_hours FROM word_skill_state WHERE word_id = 'target' AND skill_id = 'production'").get()?.interval_hours, 6);
+    assert.equal(sqlite.prepare('SELECT compensated_by_invocation_id FROM pure_cue_scheduler_compensation_snapshots').get()?.compensated_by_invocation_id, null);
+  });
+
+  for (const suppressionFirst of [true, false]) test(`composed suppression and response fixes apply in either order (${suppressionFirst}) without compensation`, () => {
+    const sourceCue = seedBroadCue('retire-only-source', 'target');
+    const retainedCue = seedBroadCue('retire-only-retained', 'alternate');
+    insertStudyAttempt('retire-only-attempt', { cueId: sourceCue });
+    sqlite.prepare(`INSERT INTO word_skill_state
+      (word_id, skill_id, enabled, interval_hours, last_studied_at, next_due_at, ease_factor)
+      VALUES ('target', 'production', 1, 240, ?, ?, 2.4)`).run(createdAt, createdAt);
+    dbModule.captureProductionSchedulerSnapshotForAttemptBatchWithoutTransaction({
+      sourceAttemptId: 'retire-only-attempt', capturedAt: appliedAt,
+    });
+    sqlite.prepare("UPDATE word_skill_state SET interval_hours = 6, ease_factor = 2.1 WHERE word_id = 'target' AND skill_id = 'production'").run();
+    const operation: Extract<ReflectionOperation, { kind: 'reconcile_production_cues' }> = {
+      kind: 'reconcile_production_cues', version: 1, sourceAttemptId: 'retire-only-attempt',
+      targetWordId: 'target', responseWordId: 'alternate', destination: null,
+      sourceAttemptFairness: 'misleading_or_overloaded_cue',
+      wordPlans: [{ wordId: 'target', deactivateCueIds: [], distinctiveCueDrafts: [] },
+        { wordId: 'alternate', deactivateCueIds: [retainedCue], distinctiveCueDrafts: [{ cueType: 'minimal_context', text: 'A precise response cue.' }] }],
+    };
+    const { artifact } = dbModule.materializeReflectionArtifact({
+      sourceSessionId: 'cue-evidence-session:retire-only-attempt',
+      reflectionFlowVersion: 'initial_post_session_reflection.v6', generatedAt: appliedAt,
+      provider: 'openai', model: 'gpt-5.6-luna', promptVersion: 'pure-cue-promotion-v3.0',
+      evidenceBundle: {
+        schemaVersion: 'session_reflection_bundle.v6', generatedAt: appliedAt,
+        session: { sessionId: 'cue-evidence-session:retire-only-attempt', startedAt: createdAt, endedAt: appliedAt, studyProfile: 'mandarin' },
+        items: [{ itemId: 'retire-only', sessionActionId: 'cue-action:retire-only-attempt', occurredAt: appliedAt,
+          source: 'production_mistake', sourceActionKind: 'production', sourceAttemptId: 'retire-only-attempt',
+          targetWord: wordSnapshot('target', '目标'), submittedWord: wordSnapshot('alternate', '替代'),
+          responseKind: 'matched_known_word', rawResponse: '替代', sessionNote: null,
+          existingContent: { contrastClusters: [], knownAcceptedAlternates: [] },
+          servedCue: { cueId: sourceCue, cueType: 'definition_gloss', text: 'broad target', acceptedWordIds: ['target'], supplement: null },
+          promotionEvidence: {
+            diagnosisTags: ['production_cue_overloaded'], intersectingPureCues: [],
+            words: ['target', 'alternate'].map((wordId) => ({ wordId,
+              activeProductionCues: dbModule.getActiveProductionCuesForWord(wordId).map((cue) => ({
+                cueId: cue.cueId, taskId: cue.taskId, cueType: cue.cueType, text: cue.text, acceptedWordIds: cue.acceptedWordIds,
+              })),
+            })),
+          },
+        }],
+      },
+      result: { schemaVersion: 'session_reflection_result.v10', itemResults: [{
+        itemId: 'retire-only', diagnosisTags: ['production_cue_overloaded'], promotionOutcome: 'reconciled',
+        learnerExplanation: 'Suppress the target; repair the response.', questions: [],
+        targetSuppression: { reason: 'The target is not useful for isolated production.' },
+        proposals: [{ proposalGroupKey: null, rationale: 'The target is not useful for isolated production.', operation: suppressOperation('target') },
+          { proposalGroupKey: null, rationale: 'Repair the response cue.', operation }],
+      }] },
+    });
+    const suppression = artifact.proposals.find(p => p.proposal.operation.kind === 'suppress_definition_production')!;
+    const response = artifact.proposals.find(p => p.proposal.operation.kind === 'reconcile_production_cues')!;
+    const forbidden: ReflectionOperation = { ...operation, wordPlans: [
+      { wordId: 'target', deactivateCueIds: [sourceCue], distinctiveCueDrafts: [] }, operation.wordPlans[1]!,
+    ] };
+    for (const proposal of [suppression, response]) {
+      assert.throws(() => dbModule.acceptReflectionProposal({ proposalId: proposal.review.proposalId, operation: forbidden, createdAt: appliedAt }), /suppression|target/i);
+      if (proposal === suppression) assert.throws(() => dbModule.replaceReflectionProposal({ proposalId: proposal.review.proposalId, operation: forbidden, createdAt: appliedAt }), /suppression|target/i);
+      assert.throws(() => dbModule.replaceReflectionProposal({ proposalId: proposal.review.proposalId, operation: cueRepairOperation({ changes: [{ kind: 'create', cue: { cueType: 'minimal_context', text: 'A forbidden target exercise.', acceptedWordIds: ['target'] } }] }), createdAt: appliedAt }), /suppression|target/i);
+    }
+    for (const [index, proposal] of (suppressionFirst ? [suppression, response] : [response, suppression]).entries()) {
+      const authorized = dbModule.acceptReflectionProposal({ proposalId: proposal.review.proposalId, invocationId: `composed-${index}`, operation: proposal.proposal.operation, createdAt: appliedAt });
+      const state = dbModule.applyReflectionInvocation(authorized.invocation.invocation.invocationId, appliedAt).application.state;
+      assert.equal(state.kind, 'applied', JSON.stringify(state));
+      if (state.kind === 'applied') assert.equal(state.effectRefs.some(ref => ref.type === 'production_scheduler_compensation'), false);
+    }
+    assert.equal(dbModule.getWordSkillRelevance('target', 'production')?.relevanceState, 'suppressed');
+    assert.equal(dbModule.getProductionCue(sourceCue)?.active, true);
+    assert.equal(dbModule.getProductionCue(retainedCue)?.active, false);
+    assert.equal(dbModule.getActiveProductionCuesForWord('alternate')[0]?.text, 'A precise response cue.');
+    assert.equal(sqlite.prepare("SELECT interval_hours FROM word_skill_state WHERE word_id = 'target' AND skill_id = 'production'").get()?.interval_hours, 6);
+    assert.equal(sqlite.prepare('SELECT compensated_by_invocation_id FROM pure_cue_scheduler_compensation_snapshots').get()?.compensated_by_invocation_id, null);
+  });
+
+  test('new pure cue publication includes teaching text and fair sources stay uncompensated', () => {
+    insertStudyAttempt('new-teaching-source');
+    insertInvocation('new-teaching', {
+      kind: 'reconcile_production_cues', version: 1, sourceAttemptId: 'new-teaching-source',
+      targetWordId: 'target', responseWordId: 'alternate', sourceAttemptFairness: 'fair',
+      destination: { kind: 'create', stimulus: 'a concrete shared slot', axisNote: 'shared purpose', teachingNote: 'a compact comparison' },
+      wordPlans: ['target', 'alternate'].map((wordId) => ({ wordId, deactivateCueIds: [], distinctiveCueDrafts: [] })),
+    });
+    const state = dbModule.applyReflectionInvocation('new-teaching', appliedAt).application.state;
+    assert.equal(state.kind, 'applied', JSON.stringify(state));
+    if (state.kind === 'applied') assert.equal(state.effectRefs.some((ref) => ref.type === 'production_scheduler_compensation'), false);
+    const cue = dbModule.getPureCueContent('pure-cue:reflection:new-teaching');
+    assert.equal(cue?.teachingNote, 'a compact comparison');
+    assert.equal(cue?.active, true);
+    const canonical = getCanonicalReviewContent('pure_cue', 'pure-cue:reflection:new-teaching');
+    assert.equal(canonical?.kind, 'pure_cue');
+    if (canonical?.kind !== 'pure_cue') throw new Error('Missing canonical pure review.');
+    assert.deepEqual(canonical.exercise.acceptedAnswers.map((answer) => answer.wordId), ['target', 'alternate']);
+  });
+
+  test('fair reconciliation and unrelated target drafting do not forgive the source lapse', () => {
+    const sourceCue = seedBroadCue('reconcile-served', 'target');
+    const otherCue = seedBroadCue('reconcile-other', 'target');
+    const responseCue = seedBroadCue('reconcile-response', 'alternate');
+    for (const fairness of ['fair', 'misleading_or_overloaded_cue'] as const) {
+      const id = `reconcile-${fairness}`;
+      insertStudyAttempt(id, { cueId: sourceCue });
+      insertInvocation(id, {
+        kind: 'reconcile_production_cues', version: 1, sourceAttemptId: id,
+        targetWordId: 'target', responseWordId: 'alternate', destination: null,
+        sourceAttemptFairness: fairness,
+        wordPlans: [{ wordId: 'target', deactivateCueIds: fairness === 'fair' ? [] : [otherCue],
+          distinctiveCueDrafts: [{ cueType: 'minimal_context', text: id }] },
+        { wordId: 'alternate', deactivateCueIds: fairness === 'fair' ? [responseCue] : [], distinctiveCueDrafts: [] }],
+      });
+      const state = dbModule.applyReflectionInvocation(id, appliedAt).application.state;
+      assert.equal(state.kind, 'applied', JSON.stringify(state));
+      if (state.kind === 'applied') assert.equal(state.effectRefs.some((ref) => ref.type === 'production_scheduler_compensation'), false);
+    }
+    assert.equal(dbModule.getProductionCue(sourceCue)?.active, true);
+  });
+
+  test('extends teaching text holistically with provenance and freezes previous served teaching', () => {
+    insertWord('third', '第三');
+    seedEligiblePureCueContent({ id: 'teaching-pure', stimulus: 'shared slot', axisNote: 'shared purpose', acceptedWordIds: ['target', 'third'] });
+    sqlite.prepare("UPDATE pure_cues SET teaching_note = 'original comparison' WHERE id = 'teaching-pure'").run();
+    sqlite.prepare("INSERT INTO word_study_admission_state (word_id, study_phase) VALUES ('target', 'review')").run();
+    dbModule.adoptEligiblePureCuesForCurrentLearner(createdAt);
+    const snapshot = dbModule.issuePureCueServedSnapshot({ pureCueId: 'teaching-pure', servedAt: createdAt });
+    const previousCanonical = getCanonicalReviewContent('pure_cue', 'teaching-pure');
+    assert.equal(previousCanonical?.kind, 'pure_cue');
+    if (previousCanonical?.kind !== 'pure_cue') throw new Error('Missing original canonical pure review.');
+    insertStudyAttempt('teaching-source');
+    const operation: Extract<ReflectionOperation, { kind: 'reconcile_production_cues' }> = {
+      kind: 'reconcile_production_cues', version: 1, sourceAttemptId: 'teaching-source',
+      targetWordId: 'target', responseWordId: 'alternate', sourceAttemptFairness: 'fair',
+      destination: { kind: 'existing', pureCueId: 'teaching-pure', teachingNote: 'all three members compared',
+        expectedTeachingNote: 'original comparison', expectedAcceptedWordIds: ['target', 'third'] },
+      wordPlans: ['target', 'alternate'].map((wordId) => ({ wordId, deactivateCueIds: [], distinctiveCueDrafts: [] })),
+    };
+    insertInvocation('teaching-extension', operation);
+    insertInvocation('stale-teaching-extension', operation);
+    const state = dbModule.applyReflectionInvocation('teaching-extension', appliedAt).application.state;
+    assert.equal(state.kind, 'applied', JSON.stringify(state));
+    assert.equal(dbModule.getPureCueContent('teaching-pure')?.teachingNote, 'all three members compared');
+    assert.equal(dbModule.getPureCueServedSnapshot(snapshot.snapshotId)?.teachingNote, 'original comparison');
+    const extendedCanonical = getCanonicalReviewContent('pure_cue', 'teaching-pure');
+    assert.equal(extendedCanonical?.kind, 'pure_cue');
+    if (extendedCanonical?.kind !== 'pure_cue') throw new Error('Missing revised canonical pure review.');
+    assert.equal(extendedCanonical.revision, previousCanonical.revision + 1);
+    assert.equal(extendedCanonical.createdAt, appliedAt);
+    assert.notEqual(extendedCanonical.exercise.id, previousCanonical.exercise.id);
+    assert.deepEqual(previousCanonical.exercise.acceptedAnswers.map((answer) => answer.wordId), ['target', 'third']);
+    assert.deepEqual(extendedCanonical.exercise.acceptedAnswers.map((answer) => answer.wordId), ['target', 'third', 'alternate']);
+    assert.equal((sqlite.prepare(`
+      SELECT document_json FROM scoped_review_content_records WHERE record_id = ?
+    `).get(previousCanonical.recordId) as { document_json: string }).document_json,
+    JSON.stringify({ schemaVersion: 1, exercise: previousCanonical.exercise, contents: previousCanonical.contents }));
+    assert.equal(sqlite.prepare("SELECT invocation_id FROM pure_cue_teaching_revisions").get()?.invocation_id, 'teaching-extension');
+    assert.equal(dbModule.applyReflectionInvocation('stale-teaching-extension', appliedAt).application.state.kind, 'stale');
+    assert.deepEqual(dbModule.getPureCueContent('teaching-pure')?.acceptedWordIds, ['target', 'third', 'alternate']);
+  });
+
+  test('rolls back teaching rewrite and membership when a later word repair fails', () => {
+    insertWord('third', '第三');
+    seedEligiblePureCueContent({ id: 'rollback-teaching', stimulus: 'shared slot', axisNote: 'shared purpose', acceptedWordIds: ['target', 'third'] });
+    insertStudyAttempt('rollback-teaching-source');
+    insertInvocation('rollback-teaching', {
+      kind: 'reconcile_production_cues', version: 1, sourceAttemptId: 'rollback-teaching-source',
+      targetWordId: 'target', responseWordId: 'alternate', sourceAttemptFairness: 'fair',
+      destination: { kind: 'existing', pureCueId: 'rollback-teaching', teachingNote: 'rewritten',
+        expectedTeachingNote: '', expectedAcceptedWordIds: ['target', 'third'] },
+      wordPlans: [{ wordId: 'target', deactivateCueIds: [], distinctiveCueDrafts: [{ cueType: 'minimal_context', text: 'will fail' }] },
+        { wordId: 'alternate', deactivateCueIds: [], distinctiveCueDrafts: [] }],
+    });
+    sqlite.exec(`CREATE TRIGGER fail_promotion_second_cue_insert BEFORE INSERT ON scoped_production_cues
+      BEGIN SELECT RAISE(ABORT, 'forced failure after teaching rewrite'); END;`);
+    assert.equal(dbModule.applyReflectionInvocation('rollback-teaching', appliedAt).application.state.kind, 'failed');
+    assert.equal(dbModule.getPureCueContent('rollback-teaching')?.teachingNote, '');
+    assert.deepEqual(dbModule.getPureCueContent('rollback-teaching')?.acceptedWordIds, ['target', 'third']);
+    assert.equal(sqlite.prepare('SELECT count(*) AS n FROM pure_cue_teaching_revisions').get()?.n, 0);
+  });
+
+  test('promotes an explicit pair atomically with set-add, derived coverage, and lapse restoration', () => {
+    insertWord('third', '第三');
+    const targetBroadId = seedBroadCue('promotion-target-broad', 'target');
+    const alternateBroadId = seedBroadCue('promotion-alternate-broad', 'alternate');
+    const unselectedTargetCueId = seedBroadCue('promotion-target-unselected', 'target');
+    seedEligiblePureCueContent({
+      id: 'existing-pure',
+      stimulus: 'shared axis',
+      axisNote: 'explicit existing axis',
+      acceptedWordIds: ['target', 'third'],
+    });
+    assert.equal(dbModule.getPureCue('existing-pure'), null);
+    sqlite.prepare(`
+      INSERT INTO word_skill_state (
+        word_id, skill_id, enabled, interval_hours, last_studied_at, next_due_at, ease_factor
+      ) VALUES ('target', 'production', 1, 240, ?, ?, 2.4)
+    `).run(createdAt, createdAt);
+    sqlite.prepare(`
+      INSERT INTO word_study_admission_state (word_id, study_phase, earliest_next_study_at)
+      VALUES ('target', 'review', '2026-07-30T12:00:00.000Z')
+    `).run();
+    dbModule.adoptEligiblePureCuesForCurrentLearner(createdAt);
+    sqlite.prepare(`
+      UPDATE learner_pure_cue_state
+      SET interval_hours = 333, ease_factor = 2.3,
+        last_studied_at = ?, next_due_at = '2026-08-12T09:00:00.000Z',
+        strong_since = NULL, strong_successes = 4
+      WHERE learner_id = 'test-learner' AND pure_cue_id = 'existing-pure'
+    `).run(createdAt);
+    insertStudyAttempt('promotion-lapse');
+    dbModule.captureProductionSchedulerSnapshotForAttemptBatchWithoutTransaction({
+      sourceAttemptId: 'promotion-lapse',
+      capturedAt: appliedAt,
+    });
+    sqlite.prepare(`
+      UPDATE word_skill_state
+      SET interval_hours = 6, ease_factor = 2.1,
+        last_studied_at = ?, next_due_at = '2026-07-29T18:01:00.000Z'
+      WHERE word_id = 'target' AND skill_id = 'production'
+    `).run(appliedAt);
+    sqlite.prepare(`
+      INSERT INTO word_skill_relevance (
+        word_id, skill_id, relevance_state, updated_at, source_event_id
+      ) VALUES ('alternate', 'production', 'suppressed', ?, NULL)
+    `).run(createdAt);
+
+    insertInvocation('promotion-existing', promotionOperation({
+      sourceAttemptId: 'promotion-lapse',
+      destination: { kind: 'existing', pureCueId: 'existing-pure' },
+      targetBroadId,
+      alternateBroadId,
+      targetDistinctiveText: 'target-only situation',
+    }));
+    const applied = dbModule.applyReflectionInvocation('promotion-existing', appliedAt);
+    assert.equal(
+      applied.application.state.kind,
+      'applied',
+      JSON.stringify(applied.application.state),
+    );
+    assert.deepEqual(dbModule.getPureCueContent('existing-pure')?.acceptedWordIds, [
+      'target',
+      'third',
+      'alternate',
+    ]);
+    const canonicalPure = getCanonicalReviewContent('pure_cue', 'existing-pure');
+    assert.equal(canonicalPure?.kind, 'pure_cue');
+    if (canonicalPure?.kind !== 'pure_cue') throw new Error('Missing canonical pure review.');
+    assert.equal(canonicalPure.revision, 2);
+    assert.deepEqual(canonicalPure.exercise.acceptedAnswers.map((answer) => answer.wordId), [
+      'target', 'third', 'alternate',
+    ]);
+    assert.equal((sqlite.prepare(`
+      SELECT COUNT(*) AS count FROM scoped_review_content_records
+      WHERE kind = 'pure_cue' AND content_id = 'existing-pure'
+    `).get() as { count: number }).count, 2);
+    assert.deepEqual(dbModule.getPureCue('existing-pure')?.acceptedWordIds, [
+      'target',
+      'third',
+      'alternate',
+    ]);
+    assert.deepEqual(
+      { ...sqlite.prepare(`
+        SELECT interval_hours, ease_factor, last_studied_at, next_due_at, strong_successes
+        FROM learner_pure_cue_state
+        WHERE learner_id = 'test-learner' AND pure_cue_id = 'existing-pure'
+      `).get() as Record<string, unknown> },
+      {
+        interval_hours: 333,
+        ease_factor: 2.3,
+        last_studied_at: createdAt,
+        next_due_at: '2026-08-12T09:00:00.000Z',
+        strong_successes: 4,
+      },
+    );
+    assert.equal(dbModule.getProductionCue(targetBroadId)?.active, false);
+    assert.equal(dbModule.getProductionCue(alternateBroadId)?.active, false);
+    assert.equal(dbModule.getProductionCue(unselectedTargetCueId)?.active, true);
+    assert.equal(
+      dbModule.getSharedContentPublicationForContent('production_cue', targetBroadId)
+        ?.publicationStatus,
+      'retired',
+    );
+    assert.equal(
+      dbModule.getSharedContentPublicationForContent('production_cue', alternateBroadId)
+        ?.publicationStatus,
+      'retired',
+    );
+    assert.equal(
+      dbModule.getSharedContentPublicationForContent('production_cue', unselectedTargetCueId)
+        ?.publicationStatus,
+      'shared_trial',
+    );
+    const retiredTargetPublication = dbModule.getSharedContentPublicationForContent(
+      'production_cue',
+      targetBroadId,
+    )!;
+    assert.deepEqual(
+      { ...sqlite.prepare(`
+        SELECT actor_kind, actor_id, reason
+        FROM shared_content_publication_events
+        WHERE publication_id = ? AND to_status = 'retired'
+      `).get(retiredTargetPublication.publicationId) as Record<string, unknown> },
+      {
+        actor_kind: 'source_authorization',
+        actor_id: null,
+        reason: 'validated learner-authorized production-cue retirement',
+      },
+    );
+    assert.deepEqual(
+      dbModule.getActiveProductionCuesForWord('target').map((cue) => cue.cueId).toSorted(),
+      [
+        unselectedTargetCueId,
+        dbModule.getActiveProductionCuesForWord('target').find(
+          (cue) => cue.text === 'target-only situation',
+        )!.cueId,
+      ].toSorted(),
+    );
+    assert.equal(dbModule.getWordSkillRelevance('target', 'production'), null);
+    assert.equal(
+      dbModule.getWordSkillRelevance('alternate', 'production')?.relevanceState,
+      'suppressed',
+    );
+    assert.equal(dbModule.isWordProductionProxied('target'), false);
+    assert.equal(dbModule.isWordProductionProxied('alternate'), true);
+    assert.deepEqual(
+      { ...sqlite.prepare(`
+        SELECT interval_hours, next_due_at FROM word_skill_state
+        WHERE word_id = 'target' AND skill_id = 'production'
+      `).get() as Record<string, unknown> },
+      { interval_hours: 240, next_due_at: '2026-07-29T18:01:00.000Z' },
+    );
+    const refs = applied.application.state.kind === 'applied'
+      ? applied.application.state.effectRefs
+      : [];
+    assert.equal(refs.some((ref) => ref.type === 'word_skill_relevance'), false);
+    assert.ok(refs.some((ref) => (
+      ref.type === 'production_scheduler_compensation' && ref.id.endsWith('/restored')
+    )));
+  });
+
+  test('rolls back every promotion effect on failure', () => {
+    insertStudyAttempt('accepted-forgot');
+
+    const targetBroadId = seedBroadCue('rollback-target-broad', 'target');
+    const alternateBroadId = seedBroadCue('rollback-alternate-broad', 'alternate');
+    sqlite.exec(`
+      CREATE TRIGGER fail_promotion_second_cue_insert
+      BEFORE INSERT ON scoped_production_cues
+      WHEN NEW.task_id = 'production-task:alternate:default_production'
+      BEGIN
+        SELECT RAISE(ABORT, 'forced second-word cue failure');
+      END;
+    `);
+    insertInvocation('promotion-rollback', promotionOperation({
+      sourceAttemptId: 'accepted-forgot',
+      destination: { kind: 'create', stimulus: 'new shared axis', axisNote: 'explicit axis' },
+      targetBroadId,
+      alternateBroadId,
+      targetDistinctiveText: 'target only',
+      alternateDistinctiveText: 'alternate only',
+    }));
+    const failed = dbModule.applyReflectionInvocation('promotion-rollback', appliedAt);
+    assert.equal(failed.application.state.kind, 'failed');
+    assert.equal(dbModule.getPureCueContent('pure-cue:reflection:promotion-rollback'), null);
+    assert.equal(
+      dbModule.getSharedContentPublicationForContent(
+        'pure_cue',
+        'pure-cue:reflection:promotion-rollback',
+      ),
+      null,
+    );
+    assert.equal(dbModule.getProductionCue(targetBroadId)?.active, true);
+    assert.equal(dbModule.getProductionCue(alternateBroadId)?.active, true);
+    assert.deepEqual(
+      dbModule.getActiveProductionCuesForWord('target').map((cue) => cue.text),
+      ['broad target'],
+    );
+  });
+
+  test('reports unavailable snapshots but rejects clean-success promotion', () => {
+    const targetBroadId = seedBroadCue('historical-target-broad', 'target');
+    const alternateBroadId = seedBroadCue('historical-alternate-broad', 'alternate');
+    insertStudyAttempt('historical-lapse');
+    insertInvocation('historical-promotion', promotionOperation({
+      sourceAttemptId: 'historical-lapse',
+      destination: { kind: 'create', stimulus: 'historical shared axis', axisNote: 'explicit axis' },
+      targetBroadId,
+      alternateBroadId,
+    }));
+    const historical = dbModule.applyReflectionInvocation('historical-promotion', appliedAt);
+    assert.equal(historical.application.state.kind, 'applied');
+    const purePublication = dbModule.getSharedContentPublicationForContent(
+      'pure_cue',
+      'pure-cue:reflection:historical-promotion',
+    );
+    assert.equal(
+      purePublication?.publicationStatus,
+      'shared_trial',
+    );
+    assert.equal(
+      dbModule.getSharedContentPublicationProvenance(purePublication!.publicationId)
+        ?.sourceInvocationId,
+      'historical-promotion',
+    );
+    assert.deepEqual(
+      { ...sqlite.prepare(`
+        SELECT from_status, to_status, actor_kind, actor_id, reason
+        FROM shared_content_publication_events
+        WHERE publication_id = ?
+      `).get(purePublication!.publicationId) as Record<string, unknown> },
+      {
+        from_status: null,
+        to_status: 'shared_trial',
+        actor_kind: 'source_authorization',
+        actor_id: null,
+        reason: 'validated learner-authorized pure-cue promotion',
+      },
+    );
+    const historicalRefs = historical.application.state.kind === 'applied'
+      ? historical.application.state.effectRefs
+      : [];
+    assert.ok(historicalRefs.some((ref) => (
+      ref.type === 'production_scheduler_compensation' && ref.id.endsWith('/unavailable')
+    )));
+
+    insertAcceptedNonAnchorAttempt('accepted-good', 'good');
+    insertInvocation('successful-promotion', promotionOperation({
+      sourceAttemptId: 'accepted-good',
+      destination: { kind: 'existing', pureCueId: 'pure-cue:reflection:historical-promotion' },
+      targetBroadId,
+      alternateBroadId,
+    }));
+    const successful = dbModule.applyReflectionInvocation('successful-promotion', appliedAt);
+    assert.equal(successful.application.state.kind, 'failed');
+    assert.match(JSON.stringify(successful.application.state), /strict target-only production lapse/);
+  });
+
+  test('bootstrap requests enqueue only shared bootstrap and coalesce without changing exercises', () => {
+    const operation = { kind: 'request_word_bootstrap' as const, version: 1 as const, wordId: 'target' };
+    insertInvocation('bootstrap-request', operation);
+    const result = dbModule.applyReflectionInvocation('bootstrap-request', appliedAt);
+    assert.equal(result.application.state.kind, 'applied');
+    assert.equal(countRows('word_content_documents'), 0);
+    assert.equal(countRows('production_cues'), 0);
+    assert.equal(countRows('production_cue_supplements'), 0);
+    const rows = sqlite.prepare('SELECT work_id, word_id, stage, status FROM word_preparation_work').all();
+    assert.equal(rows.length, 1);
+    assert.deepEqual({ ...rows[0] }, {
+      work_id: result.application.state.kind === 'applied' ? result.application.state.effectRefs[0]!.id : null,
+      word_id: 'target', stage: 'bootstrap', status: 'queued',
+    });
+    assert.equal(result.application.state.kind === 'applied' && result.application.state.effectRefs[0]!.type, 'word_preparation_work');
+    assert.deepEqual(dbModule.applyReflectionInvocation('bootstrap-request', appliedAt), result);
+    insertInvocation('bootstrap-request-again', operation);
+    assert.equal(dbModule.applyReflectionInvocation('bootstrap-request-again', appliedAt).application.state.kind, 'already_satisfied');
+    assert.equal(countRows('word_preparation_work'), 1);
+    sqlite.prepare("UPDATE word_preparation_work SET status = 'paused', attempt_count = 3, last_error = 'Provider failed'").run();
+    insertInvocation('bootstrap-request-paused', operation);
+    dbModule.applyReflectionInvocation('bootstrap-request-paused', appliedAt);
+    assert.deepEqual({ ...sqlite.prepare('SELECT status, attempt_count FROM word_preparation_work').get() }, { status: 'paused', attempt_count: 3 });
+  });
+
+  test('bootstrap requests reuse eligible shared content without enqueueing any stage', async () => {
+    const shared = await import('../server/db/word-introductions.ts');
+    const word = sqlite.prepare('SELECT hanzi, traditional, pinyin FROM lexical_words WHERE id = ?').get('target') as { hanzi: string; traditional: string | null; pinyin: string };
+    const now = new Date().toISOString();
+    assert.equal(shared.claimSharedWordIntroductionStage('target', 'bootstrap', 'bootstrap-test', now, new Date(Date.now() + 60_000).toISOString()), 'claimed');
+    shared.finishSharedWordIntroductionBootstrap('target', 'bootstrap-test', {
+      schemaVersion: 1, id: 'bootstrap-content', word: { wordId: 'target', ...word },
+      uses: [{ id: 'use', label: 'a goal', notes: [], exampleIds: ['example'] }],
+      examples: [{ id: 'example', text: '这是我们的目标。', translation: 'This is our goal.', pronunciation: 'zhè shì wǒmen de mùbiāo' }],
+    }, 'test');
+    insertInvocation('bootstrap-reuse', { kind: 'request_word_bootstrap', version: 1, wordId: 'target' });
+    const result = dbModule.applyReflectionInvocation('bootstrap-reuse', appliedAt);
+    assert.deepEqual(result.application.state, { kind: 'already_satisfied', satisfyingEffectRefs: [{ type: 'word_content', id: 'bootstrap-content' }] });
+    assert.equal(countRows('word_preparation_work'), 0);
+    assert.equal(countRows('word_teaching_packages'), 0);
+  });
+
   test('adds one immutable fallback supplement without changing the cue or scheduler', () => {
     const operation = supplementOperation(null);
     insertInvocation('supplement-create', operation);
@@ -300,6 +909,15 @@ describe('reflection application adapters', { concurrency: false }, () => {
       ? result.application.state.effectRefs[0]
       : null;
     assert.equal(ref?.type, 'production_cue_supplement');
+    const canonicalSupplement = getCanonicalReviewContent('production_cue_supplement', ref!.id);
+    assert.equal(canonicalSupplement?.kind, 'production_cue_supplement');
+    if (canonicalSupplement?.kind !== 'production_cue_supplement') {
+      throw new Error('Missing canonical supplement.');
+    }
+    assert.equal(canonicalSupplement.source.kind, 'example');
+    assert.equal(canonicalSupplement.contents[0]?.word.wordId, 'target');
+    assert.equal(canonicalSupplement.contents[0]?.examples[0]?.text, operation.exampleSentence);
+    assert.equal(countRows('word_content_documents'), 0);
     assert.deepEqual(
       dbModule.getProductionCueSupplement('production-task:target:default_production', null),
       {
@@ -437,7 +1055,7 @@ describe('reflection application adapters', { concurrency: false }, () => {
         replacements: [{
           cueType: 'definition_gloss',
           text: 'target or substitute',
-          acceptedWordIds: ['target', 'alternate'],
+          acceptedWordIds: ['target'],
         }],
       }],
     }));
@@ -453,7 +1071,7 @@ describe('reflection application adapters', { concurrency: false }, () => {
     assert.ok(activeCues.some((cue) => cue.cueId === seededCueIds[1]));
     assert.ok(activeCues.some((cue) => (
       cue.text === 'target or substitute'
-      && cue.acceptedWordIds.join(',') === 'target,alternate'
+      && cue.acceptedWordIds.join(',') === 'target'
     )));
   });
 
@@ -490,7 +1108,7 @@ describe('reflection application adapters', { concurrency: false }, () => {
       already.application.state.kind === 'already_satisfied'
         ? already.application.state.satisfyingEffectRefs.map((ref) => ref.type)
         : [],
-      ['production_cue_lifecycle_event'],
+      ['production_cue_lifecycle_event', 'shared_content_publication'],
     );
 
     insertInvocation('cue-independent-create', cueRepairOperation({
@@ -519,6 +1137,67 @@ describe('reflection application adapters', { concurrency: false }, () => {
     const stale = dbModule.applyReflectionInvocation('cue-wrong-task', appliedAt);
     assert.equal(stale.application.state.kind, 'stale');
     assert.equal(dbModule.getProductionCue(independentlyCreatedCueId)?.active, true);
+  });
+
+  test('retires an explicitly selected shared cue even when this learner already deactivated it', () => {
+    const cueId = seedBroadCue('shared-cue-personally-off-seed', 'target');
+    sqlite.prepare(`
+      INSERT INTO production_cue_lifecycle_events (
+        event_id, cue_id, task_id, lifecycle_kind, occurred_at, invocation_id
+      ) VALUES (
+        'personal-off-event', ?, 'production-task:target:default_production',
+        'deactivated', ?, 'shared-cue-personally-off-seed'
+      )
+    `).run(cueId, '2026-07-29T12:00:30.000Z');
+    sqlite.prepare(`
+      UPDATE learner_owned_production_cue_activation_state
+      SET active = 0, latest_lifecycle_event_id = 'personal-off-event',
+        updated_at = '2026-07-29T12:00:30.000Z'
+      WHERE cue_id = ?
+    `).run(cueId);
+    const lifecycleCount = countRows('production_cue_lifecycle_events');
+    assert.equal(dbModule.getProductionCue(cueId)?.active, false);
+    assert.equal(
+      dbModule.getSharedContentPublicationForContent('production_cue', cueId)
+        ?.publicationStatus,
+      'shared_trial',
+    );
+
+    insertInvocation('retire-personally-off-shared-cue', cueRepairOperation({
+      changes: [{ kind: 'deactivate', cueId }],
+    }));
+    const retired = dbModule.applyReflectionInvocation(
+      'retire-personally-off-shared-cue',
+      appliedAt,
+    );
+    assert.equal(retired.application.state.kind, 'applied');
+    assert.equal(countRows('production_cue_lifecycle_events'), lifecycleCount);
+    assert.equal(
+      dbModule.getSharedContentPublicationForContent('production_cue', cueId)
+        ?.publicationStatus,
+      'retired',
+    );
+    assert.deepEqual(
+      retired.application.state.kind === 'applied'
+        ? retired.application.state.effectRefs.map((ref) => ref.type)
+        : [],
+      ['shared_content_publication'],
+    );
+
+    insertInvocation('retire-globally-retired-shared-cue', cueRepairOperation({
+      changes: [{ kind: 'deactivate', cueId }],
+    }));
+    const already = dbModule.applyReflectionInvocation(
+      'retire-globally-retired-shared-cue',
+      '2026-07-29T12:02:00.000Z',
+    );
+    assert.equal(already.application.state.kind, 'already_satisfied');
+    assert.deepEqual(
+      already.application.state.kind === 'already_satisfied'
+        ? already.application.state.satisfyingEffectRefs.map((ref) => ref.type).toSorted()
+        : [],
+      ['production_cue_lifecycle_event', 'shared_content_publication'],
+    );
   });
 
   test('rolls back cue content and records failed application when lifecycle persistence fails', () => {
@@ -587,14 +1266,13 @@ describe('reflection application adapters', { concurrency: false }, () => {
           replacements: [{
             cueType: 'definition_gloss',
             text: 'target',
-            acceptedWordIds: ['target', 'alternate'],
+            acceptedWordIds: ['target'],
           }],
         }],
       }),
       sourceAttemptJudgments: [{
-        kind: 'accepted_answer_space_omission',
+        kind: 'misleading_or_overloaded_cue',
         sourceAttemptId: 'attempt-omission',
-        submittedWordId: 'alternate',
       }],
     });
     const repaired = dbModule.applyReflectionInvocation(
@@ -634,7 +1312,462 @@ describe('reflection application adapters', { concurrency: false }, () => {
     assert.equal(countRows('word_study_admission_state'), beforeAdmissionCount);
   });
 
-  test('requires an accepted-answer judgment to replace the exact served cue', () => {
+  test('smart-resets a lapsed production schedule when an unfair cue is replaced', () => {
+    sqlite.prepare(`
+      INSERT INTO word_skill_state (
+        word_id, skill_id, enabled, interval_hours, last_studied_at, next_due_at, ease_factor
+      ) VALUES ('target', 'production', 1, 240, ?, ?, 2.4)
+    `).run(createdAt, createdAt);
+    sqlite.prepare(`
+      INSERT INTO word_study_admission_state (word_id, study_phase, earliest_next_study_at)
+      VALUES ('target', 'review', '2026-07-30T12:00:00.000Z')
+    `).run();
+    const cueId = seedBroadCue('unfair-reset-seed', 'target');
+    insertStudyAttempt('unfair-reset-lapse', { cueId });
+    sqlite.prepare(`
+      UPDATE study_attempt_events
+      SET metadata_json = ?
+      WHERE id = 'unfair-reset-lapse'
+    `).run(JSON.stringify({
+      production: {
+        taskId: 'production-task:target:default_production',
+        cueId,
+        cueType: 'definition_gloss',
+        text: 'broad target',
+        acceptedWordIds: ['target'],
+        anchorWordId: 'target',
+        submittedText: '替代',
+        submittedWordId: 'alternate',
+        result: 'rejected',
+      },
+    }));
+    dbModule.appendProductionCueAttemptEvidenceWithoutTransaction({
+      evidenceId: 'unfair-reset-attempt-evidence',
+      occurredAt: appliedAt,
+      taskId: 'production-task:target:default_production',
+      cueId,
+      sourceAttemptId: 'unfair-reset-lapse',
+      attemptResult: 'rejected',
+      submittedWordId: 'alternate',
+    });
+    dbModule.captureProductionSchedulerSnapshotForAttemptBatchWithoutTransaction({
+      sourceAttemptId: 'unfair-reset-lapse',
+      capturedAt: appliedAt,
+    });
+    sqlite.prepare(`
+      UPDATE word_skill_state
+      SET interval_hours = 6, ease_factor = 2.1,
+        last_studied_at = ?, next_due_at = '2026-07-29T18:00:00.000Z'
+      WHERE word_id = 'target' AND skill_id = 'production'
+    `).run(appliedAt);
+    sqlite.prepare(`
+      UPDATE word_study_admission_state
+      SET earliest_next_study_at = '2026-07-29T18:01:00.000Z'
+      WHERE word_id = 'target'
+    `).run();
+
+    insertInvocation('unfair-reset-repair', {
+      ...cueRepairOperation({
+        changes: [{
+          kind: 'replace',
+          cueId,
+          replacements: [{
+            cueType: 'circumstance',
+            text: 'a fairer situation for 目标',
+            acceptedWordIds: ['target'],
+          }],
+        }],
+      }),
+      sourceAttemptJudgments: [{
+        kind: 'misleading_or_overloaded_cue',
+        sourceAttemptId: 'unfair-reset-lapse',
+      }],
+    });
+    const repaired = dbModule.applyReflectionInvocation('unfair-reset-repair', appliedAt);
+    assert.equal(repaired.application.state.kind, 'applied');
+    assert.deepEqual(
+      { ...sqlite.prepare(`
+        SELECT interval_hours, ease_factor, next_due_at FROM word_skill_state
+        WHERE word_id = 'target' AND skill_id = 'production'
+      `).get() as Record<string, unknown> },
+      { interval_hours: 240, ease_factor: 2.4, next_due_at: '2026-07-29T18:01:00.000Z' },
+    );
+    assert.equal(
+      (sqlite.prepare(`SELECT earliest_next_study_at FROM word_study_admission_state
+        WHERE word_id = 'target'`).get() as { earliest_next_study_at: string } | undefined)
+        ?.earliest_next_study_at,
+      '2026-07-29T18:01:00.000Z',
+    );
+    const refs = repaired.application.state.kind === 'applied'
+      ? repaired.application.state.effectRefs
+      : [];
+    assert.ok(refs.some((ref) => (
+      ref.type === 'production_scheduler_compensation' && ref.id.endsWith('/restored')
+    )));
+    assert.equal(dbModule.getProductionCue(cueId)?.active, false);
+  });
+
+  for (const repairKind of ['ordinary', 'pair_cleanup'] as const) {
+    for (const previousDueAt of ['2026-07-29T00:00:00.000Z', '2026-07-30T00:00:00.000Z']) {
+      test(`${repairKind} compensation gates production until its restored deadline (${previousDueAt})`, (t) => {
+        const lastStudiedAt = '2026-07-01T00:00:00.000Z';
+        const deadline = previousDueAt > '2026-07-29T18:01:00.000Z'
+          ? previousDueAt : '2026-07-29T18:01:00.000Z';
+        t.mock.timers.enable({ apis: ['Date'], now: new Date(appliedAt) });
+        const cueId = seedBroadCue('delay-source-cue', 'target');
+        insertStudyAttempt('delay-source', { cueId });
+        sqlite.prepare(`UPDATE study_attempt_events
+          SET metadata_json = json_set(metadata_json, '$.production.text', 'broad target')
+          WHERE id = 'delay-source'`).run();
+        dbModule.appendProductionCueAttemptEvidenceWithoutTransaction({
+          evidenceId: 'delay-source-evidence', occurredAt: appliedAt,
+          taskId: 'production-task:target:default_production', cueId,
+          sourceAttemptId: 'delay-source', attemptResult: 'rejected', submittedWordId: 'alternate',
+        });
+        sqlite.prepare(`INSERT INTO word_skill_state
+          (word_id, skill_id, enabled, interval_hours, last_studied_at, next_due_at, ease_factor)
+          VALUES ('target', 'production', 1, 240, ?, ?, 2.4)`)
+          .run(lastStudiedAt, previousDueAt);
+        sqlite.prepare(`INSERT INTO word_study_admission_state
+          (word_id, study_phase, earliest_next_study_at) VALUES ('target', 'review', NULL)`).run();
+        const targetSkills = () => dbModule.getSessionPayload(new Date().toISOString().slice(0, 10))
+          .buckets.review.filter((item) => item.itemType !== 'pure_cue_production' && item.word.id === 'target')
+          .map((item) => item.actionKind);
+        // Ordinary urgency still wins over a future due date before compensation.
+        assert.deepEqual(targetSkills(), ['production']);
+        dbModule.captureProductionSchedulerSnapshotForAttemptBatchWithoutTransaction({
+          sourceAttemptId: 'delay-source', capturedAt: appliedAt,
+        });
+        sqlite.prepare(`UPDATE word_skill_state SET interval_hours = 6,
+          last_studied_at = ?, next_due_at = ?, ease_factor = 2.1
+          WHERE word_id = 'target' AND skill_id = 'production'`).run(appliedAt, appliedAt);
+        const draft = { cueType: 'minimal_context' as const, text: 'A distinctive target context' };
+        const operation: ReflectionOperation = repairKind === 'ordinary' ? {
+          ...cueRepairOperation({ changes: [{ kind: 'replace', cueId,
+            replacements: [{ ...draft, acceptedWordIds: ['target'] }] }] }),
+          sourceAttemptJudgments: [{ kind: 'misleading_or_overloaded_cue', sourceAttemptId: 'delay-source' }],
+        } : {
+          kind: 'reconcile_production_cues', version: 1, sourceAttemptId: 'delay-source',
+          targetWordId: 'target', responseWordId: 'alternate', destination: null,
+          sourceAttemptFairness: 'misleading_or_overloaded_cue',
+          wordPlans: [{ wordId: 'target', deactivateCueIds: [cueId], distinctiveCueDrafts: [draft] },
+            { wordId: 'alternate', deactivateCueIds: [], distinctiveCueDrafts: [] }],
+        };
+        insertInvocation('delay-repair', operation);
+        const result = dbModule.applyReflectionInvocation('delay-repair', appliedAt).application.state;
+        assert.equal(result.kind, 'applied', JSON.stringify(result));
+        assert.deepEqual({ ...sqlite.prepare(`SELECT interval_hours, next_due_at FROM word_skill_state
+          WHERE word_id = 'target' AND skill_id = 'production'`).get() },
+        { interval_hours: 240, next_due_at: deadline });
+        // Admission must derive its guard from the snapshot, not the mutable
+        // nextDueAt field (including when that ordinary field is absent).
+        sqlite.prepare("UPDATE word_skill_state SET next_due_at = NULL WHERE word_id = 'target' AND skill_id = 'production'").run();
+        assert.deepEqual(targetSkills(), []);
+        t.mock.timers.setTime(new Date(deadline).getTime() - 1);
+        assert.deepEqual(targetSkills(), []);
+
+        // The compensation delay belongs to production, not other skills of the word.
+        sqlite.prepare(`INSERT INTO word_skill_state
+          (word_id, skill_id, enabled, interval_hours, last_studied_at, next_due_at, ease_factor)
+          VALUES ('target', 'recognition', 1, 24, ?, ?, 2.5)`).run(lastStudiedAt, previousDueAt);
+        assert.deepEqual(targetSkills(), ['recognition']);
+        sqlite.prepare("DELETE FROM word_skill_state WHERE word_id = 'target' AND skill_id = 'recognition'").run();
+
+        t.mock.timers.setTime(new Date(deadline).getTime());
+        sqlite.prepare(`UPDATE word_skill_state SET next_due_at = '2026-08-01T00:00:00.000Z'
+          WHERE word_id = 'target' AND skill_id = 'production'`).run();
+        assert.deepEqual(targetSkills(), ['production']);
+        // Restore-once retries must not restart the waiting period.
+        dbModule.applyReflectionInvocation('delay-repair', deadline);
+        assert.deepEqual(targetSkills(), ['production']);
+
+        // A later production assessment replaces the restored schedule. Historical
+        // compensation must not turn ordinary due dates into eligibility gates.
+        sqlite.prepare(`UPDATE word_skill_state SET interval_hours = 6,
+          last_studied_at = ?, next_due_at = '2026-08-01T00:00:00.000Z'
+          WHERE word_id = 'target' AND skill_id = 'production'`).run(deadline);
+        t.mock.timers.setTime(new Date(deadline).getTime() + 6 * 60 * 60 * 1000);
+        assert.deepEqual(targetSkills(), ['production']);
+      });
+    }
+  }
+
+  test('derives compensation guards from the latest learner-owned restoration, not capture order', (t) => {
+    t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-07-29T12:00:00.000Z') });
+    dbModule.bootstrapLearner({ learnerId: 'other-delay-learner', displayName: 'Other' });
+    sqlite.prepare(`INSERT INTO word_skill_state
+      (word_id, skill_id, enabled, interval_hours, last_studied_at, next_due_at, ease_factor)
+      VALUES ('target', 'production', 1, 240, '2026-07-01T00:00:00.000Z', NULL, 2.4)`).run();
+    sqlite.prepare(`INSERT INTO word_study_admission_state
+      (word_id, study_phase, earliest_next_study_at) VALUES ('target', 'review', NULL)`).run();
+    const insertSnapshot = (id: string, learnerId: string, capturedAt: string,
+      compensatedAt: string | null, nextDueAt: string | null) => {
+      sqlite.prepare(`INSERT INTO pure_cue_scheduler_compensation_snapshots
+        (learner_id, session_id, session_action_id, target_word_id, captured_at,
+         production_skill_state_json, admission_state_json, compensated_by_invocation_id, compensated_at)
+        VALUES (?, ?, ?, 'target', ?, ?, 'null', ?, ?)`).run(
+        learnerId, id, id, capturedAt, JSON.stringify({ enabled: true, intervalHours: 240,
+          lastStudiedAt: '2026-07-01T00:00:00.000Z', nextDueAt, easeFactor: 2.4 }),
+        compensatedAt === null ? null : id, compensatedAt,
+      );
+    };
+    insertSnapshot('earlier-restore', 'test-learner', '2026-07-28T00:00:00.000Z',
+      '2026-07-29T00:00:00.000Z', '2026-08-01T00:00:00.000Z');
+    insertSnapshot('latest-restore', 'test-learner', '2026-07-27T00:00:00.000Z',
+      '2026-07-29T06:00:00.000Z', null);
+    insertSnapshot('unrestored', 'test-learner', '2026-07-29T07:00:00.000Z', null,
+      '2026-08-02T00:00:00.000Z');
+    insertSnapshot('other-learner', 'other-delay-learner', '2026-07-29T07:00:00.000Z',
+      '2026-07-29T08:00:00.000Z', '2026-08-03T00:00:00.000Z');
+    assert.equal(dbModule.getProductionCompensationEligibilityDeadlines().get('target'),
+      '2026-07-29T12:00:00.000Z');
+    assert.deepEqual(dbModule.getSessionPayload('2026-07-29').buckets.review.map((item) => item.actionKind),
+      ['production']);
+    insertSnapshot('tied-restore', 'test-learner', '2026-07-26T00:00:00.000Z',
+      '2026-07-29T06:00:00.000Z', '2026-07-29T13:00:00.000Z');
+    assert.equal(dbModule.getProductionCompensationEligibilityDeadlines().get('target'),
+      '2026-07-29T13:00:00.000Z');
+    assert.deepEqual(dbModule.getSessionPayload('2026-07-29').buckets.review, []);
+  });
+
+  test('generates, accepts, and applies a cue repair from a learner-requested correct response', async () => {
+    insertStudyAttempt('correct-flow');
+    const sessionId = 'cue-evidence-session:correct-flow';
+    sqlite.prepare(`UPDATE study_attempt_events SET outcome = 'correct', rating = 'good',
+      response = '目标', metadata_json = ? WHERE id = 'correct-flow'`).run(JSON.stringify({ production: {
+      taskId: 'production-task:target:default_production', cueId: null,
+      cueType: 'definition_gloss', text: 'target', acceptedWordIds: ['target'],
+      anchorWordId: 'target', responseKind: 'typed', submittedText: '目标',
+      submittedWordId: 'target', result: 'accepted_anchor',
+    } }));
+    dbModule.appendProductionCueAttemptEvidenceWithoutTransaction({
+      evidenceId: 'correct-flow-evidence', occurredAt: appliedAt,
+      taskId: 'production-task:target:default_production', cueId: null,
+      sourceAttemptId: 'correct-flow', attemptResult: 'accepted_anchor', submittedWordId: 'target',
+    });
+    dbModule.recordReviewSessionSummary({ sessionId, completedAt: appliedAt,
+      completedReviewActionCount: 1, failedReviewActionCount: 0, activeDurationMs: 60_000 });
+    sqlite.prepare(`INSERT INTO word_skill_state
+      (word_id, skill_id, enabled, interval_hours, last_studied_at, next_due_at, ease_factor)
+      VALUES ('target', 'production', 1, 240, ?, '2026-08-08T12:01:00.000Z', 2.4)`).run(appliedAt);
+    const scheduleBefore = sqlite.prepare('SELECT * FROM word_skill_state').all();
+    const attemptsBefore = sqlite.prepare('SELECT * FROM study_attempt_events').all();
+    let transportCalls = 0;
+    const provider = createLunaReflectionProvider({
+      environment: { OPENAI_API_KEY: 'test-only-key' },
+      fetchImplementation: async (_input, init) => {
+        transportCalls += 1;
+        const request = JSON.parse(String(init?.body)) as { messages: Array<{ content: string }> };
+        const input = JSON.parse(request.messages[1]!.content) as {
+          items: Array<{ itemId: string; responseKind: string }>;
+        };
+        assert.equal(input.items[0]?.responseKind, 'correct');
+        return new Response(JSON.stringify({ id: 'correct-flow-response', model: 'gpt-5.6-luna',
+          choices: [{ finish_reason: 'stop', message: { content: JSON.stringify({
+            schemaVersion: 'staged_reflection_diagnosis_result.v4',
+            itemResults: [{ kind: 'ordinary', itemId: input.items[0]!.itemId,
+              diagnosisTags: ['production_cue_overloaded'], learnerExplanation: 'Recall succeeded, but the cue needs a more precise situation.',
+              proposals: [{ proposalGroupKey: null, rationale: 'Replace the broad fallback.', operation: {
+                kind: 'repair_production_cue', replacementCues: [{ cueType: 'circumstance', text: 'a fairer situation for 目标' }],
+                sourceAttemptJudgments: [{ kind: 'misleading_or_overloaded_cue' }],
+              } }], questions: [],
+            }],
+          }) } }], usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 },
+        }), { headers: { 'content-type': 'application/json' } });
+      },
+    });
+    const service = createInitialReflectionGenerationService({ provider, now: () => appliedAt });
+    const generated = await service.generate(sessionId, {
+      schemaVersion: 'session_reflection_evidence_supplement.v2',
+      items: [{ itemId: 'production-mistake:cue-action:correct-flow', sessionActionId: 'cue-action:correct-flow',
+        targetWordId: 'target', learnerRequestedReview: true, rawResponse: '目标', responseKind: 'typed',
+        attemptIds: ['correct-flow'], cuesAsShown: [{ cueId: null, cueType: 'definition_gloss',
+          displayOrder: 0, text: 'target', displayedMeanings: ['target'] }],
+      }],
+    });
+    assert.equal(transportCalls, 1);
+    const artifact = dbModule.getReflectionArtifactDetail(generated.artifactId);
+    const proposal = artifact.proposals[0]!;
+    assert.equal(proposal.proposal.operation.kind, 'repair_production_cue');
+    if (proposal.proposal.operation.kind !== 'repair_production_cue' || proposal.proposal.operation.version !== 2) {
+      throw new Error('Expected a normalized V2 cue repair.');
+    }
+    assert.deepEqual(proposal.proposal.operation.sourceAttemptJudgments,
+      [{ kind: 'misleading_or_overloaded_cue', sourceAttemptId: 'correct-flow' }]);
+    const accepted = dbModule.acceptReflectionProposal({ proposalId: proposal.review.proposalId,
+      operation: proposal.proposal.operation, invocationId: 'correct-flow-repair', createdAt: appliedAt });
+    assert.equal(accepted.invocation.application.state.kind, 'pending');
+    const applied = dbModule.applyReflectionInvocation('correct-flow-repair', appliedAt).application.state;
+    assert.equal(applied.kind, 'applied', JSON.stringify(applied));
+    assert.ok(dbModule.getActiveProductionCuesForWord('target').some(cue => cue.text === 'a fairer situation for 目标'));
+    assert.deepEqual(sqlite.prepare('SELECT * FROM word_skill_state').all(), scheduleBefore);
+    assert.deepEqual(sqlite.prepare('SELECT * FROM study_attempt_events').all(), attemptsBefore);
+    if (applied.kind !== 'applied') throw new Error('Expected successful cue repair.');
+    assert.equal(applied.effectRefs.some(ref => ref.type === 'production_scheduler_compensation'), false);
+  });
+
+  test('rejects missing compensation sources and invalid stored outcomes', () => {
+    assert.throws(() => hasActionLapseToCompensate('missing-source'), /attempt missing-source is unavailable/);
+    insertStudyAttempt('invalid-outcome');
+    sqlite.prepare("UPDATE study_attempt_events SET outcome = 'unexpected' WHERE id = 'invalid-outcome'").run();
+    assert.throws(() => hasActionLapseToCompensate('invalid-outcome'), /has invalid outcome unexpected/);
+  });
+
+  for (const sourceKind of ['fallback', 'durable'] as const) {
+    test(`repairs a misleading ${sourceKind} cue after a correct requested review without compensation`, () => {
+      const cueId = sourceKind === 'durable' ? seedBroadCue('correct-seed', 'target') : null;
+      insertStudyAttempt('correct-review', { cueId });
+      sqlite.prepare(`UPDATE study_attempt_events
+        SET outcome = 'correct', rating = 'good', response = '目标', metadata_json = ?
+        WHERE id = 'correct-review'`).run(JSON.stringify({ production: {
+        taskId: 'production-task:target:default_production', cueId,
+        cueType: 'definition_gloss', text: cueId === null ? 'target' : 'broad target',
+        acceptedWordIds: ['target'], anchorWordId: 'target',
+        submittedText: '目标', submittedWordId: 'target', result: 'accepted_anchor',
+      } }));
+      dbModule.appendProductionCueAttemptEvidenceWithoutTransaction({
+        evidenceId: 'correct-review-evidence', occurredAt: appliedAt,
+        taskId: 'production-task:target:default_production', cueId,
+        sourceAttemptId: 'correct-review', attemptResult: 'accepted_anchor', submittedWordId: 'target',
+      });
+      sqlite.prepare(`INSERT INTO word_skill_state
+        (word_id, skill_id, enabled, interval_hours, last_studied_at, next_due_at, ease_factor)
+        VALUES ('target', 'production', 1, 240, ?, '2026-08-08T12:01:00.000Z', 2.4)`)
+        .run(appliedAt);
+      const scheduleBefore = sqlite.prepare('SELECT * FROM word_skill_state').all();
+      const attemptsBefore = sqlite.prepare('SELECT * FROM study_attempt_events').all();
+      const cue = { cueType: 'circumstance' as const, text: 'a fairer situation for 目标', acceptedWordIds: ['target'] };
+      insertInvocation('correct-repair', {
+        ...cueRepairOperation({ changes: cueId === null
+          ? [{ kind: 'create', cue }]
+          : [{ kind: 'replace', cueId, replacements: [cue] }],
+        }),
+        sourceAttemptJudgments: [{ kind: 'misleading_or_overloaded_cue', sourceAttemptId: 'correct-review' }],
+      });
+      const repaired = dbModule.applyReflectionInvocation('correct-repair', appliedAt);
+      assert.equal(repaired.application.state.kind, 'applied');
+      if (repaired.application.state.kind !== 'applied') throw new Error('Correct review repair failed.');
+      assert.ok(repaired.application.state.effectRefs.some(ref => ref.type === 'production_cue'));
+      assert.ok(repaired.application.state.effectRefs.some(ref => ref.type === 'production_cue_evidence_judgment'));
+      assert.equal(repaired.application.state.effectRefs.some(ref => ref.type === 'production_scheduler_compensation'), false);
+      if (cueId !== null) assert.equal(dbModule.getProductionCue(cueId)?.active, false);
+      assert.deepEqual(sqlite.prepare('SELECT * FROM word_skill_state').all(), scheduleBefore);
+      assert.deepEqual(sqlite.prepare('SELECT * FROM study_attempt_events').all(), attemptsBefore);
+      assert.equal(sqlite.prepare('SELECT COUNT(*) AS count FROM pure_cue_scheduler_compensation_snapshots').get()?.count, 0);
+      assert.deepEqual(dbModule.applyReflectionInvocation('correct-repair', appliedAt), repaired);
+    });
+  }
+
+  test('rejects unfair-cue compensation that does not name the action\'s first mistake', () => {
+    const cueId = seedBroadCue('later-attempt-seed', 'target');
+    insertStudyAttempt('later-attempt-first', { cueId });
+    sqlite.prepare(`
+      UPDATE study_attempt_events
+      SET metadata_json = ?
+      WHERE id = 'later-attempt-first'
+    `).run(JSON.stringify({
+      production: {
+        taskId: 'production-task:target:default_production',
+        cueId,
+        cueType: 'definition_gloss',
+        text: 'broad target',
+        acceptedWordIds: ['target'],
+        anchorWordId: 'target',
+        submittedText: '替代',
+        submittedWordId: 'alternate',
+        result: 'rejected',
+      },
+    }));
+    sqlite.prepare(`
+      INSERT INTO study_attempt_events (
+        id, occurred_at, session_id, session_action_id, session_event_sequence,
+        action_attempt_sequence, action_kind, target_word_id, sampled_skill_ids_json,
+        response, outcome, rating, content_ref_json, metadata_json, projected_at
+      )
+      SELECT 'later-attempt-second', occurred_at, session_id, session_action_id, 2,
+        2, action_kind, target_word_id, sampled_skill_ids_json,
+        response, outcome, rating, content_ref_json, metadata_json, projected_at
+      FROM study_attempt_events WHERE id = 'later-attempt-first'
+    `).run();
+    dbModule.appendProductionCueAttemptEvidenceWithoutTransaction({
+      evidenceId: 'later-attempt-evidence',
+      occurredAt: appliedAt,
+      taskId: 'production-task:target:default_production',
+      cueId,
+      sourceAttemptId: 'later-attempt-second',
+      attemptResult: 'rejected',
+      submittedWordId: 'alternate',
+    });
+    insertInvocation('later-attempt-repair', {
+      ...cueRepairOperation({
+        changes: [{
+          kind: 'replace',
+          cueId,
+          replacements: [{
+            cueType: 'circumstance',
+            text: 'a fairer situation for 目标',
+            acceptedWordIds: ['target'],
+          }],
+        }],
+      }),
+      sourceAttemptJudgments: [{
+        kind: 'misleading_or_overloaded_cue',
+        sourceAttemptId: 'later-attempt-second',
+      }],
+    });
+    const repaired = dbModule.applyReflectionInvocation('later-attempt-repair', appliedAt);
+    assert.equal(repaired.application.state.kind, 'failed');
+    assert.match(
+      repaired.application.state.kind === 'failed' ? repaired.application.state.error : '',
+      /must reference the action's first attempt/,
+    );
+    assert.equal(dbModule.getProductionCue(cueId)?.active, true);
+  });
+
+  test('leaves a lapse in place when a repair does not judge the served cue unfair', () => {
+    sqlite.prepare(`
+      INSERT INTO word_skill_state (
+        word_id, skill_id, enabled, interval_hours, last_studied_at, next_due_at, ease_factor
+      ) VALUES ('target', 'production', 1, 240, ?, ?, 2.4)
+    `).run(createdAt, createdAt);
+    const cueId = seedBroadCue('fair-repair-seed', 'target');
+    insertStudyAttempt('fair-repair-lapse', { cueId });
+    dbModule.captureProductionSchedulerSnapshotForAttemptBatchWithoutTransaction({
+      sourceAttemptId: 'fair-repair-lapse',
+      capturedAt: appliedAt,
+    });
+    sqlite.prepare(`
+      UPDATE word_skill_state
+      SET interval_hours = 6, ease_factor = 2.1, next_due_at = '2026-07-29T18:00:00.000Z'
+      WHERE word_id = 'target' AND skill_id = 'production'
+    `).run();
+    insertInvocation('fair-repair', cueRepairOperation({
+      changes: [{
+        kind: 'replace',
+        cueId,
+        replacements: [{
+          cueType: 'circumstance',
+          text: 'a clearer situation for 目标',
+          acceptedWordIds: ['target'],
+        }],
+      }],
+    }));
+    const repaired = dbModule.applyReflectionInvocation('fair-repair', appliedAt);
+    assert.equal(repaired.application.state.kind, 'applied');
+    assert.deepEqual(
+      { ...sqlite.prepare(`
+        SELECT interval_hours, ease_factor FROM word_skill_state
+        WHERE word_id = 'target' AND skill_id = 'production'
+      `).get() as Record<string, unknown> },
+      { interval_hours: 6, ease_factor: 2.1 },
+    );
+    const refs = repaired.application.state.kind === 'applied'
+      ? repaired.application.state.effectRefs
+      : [];
+    assert.equal(refs.some((ref) => ref.type === 'production_scheduler_compensation'), false);
+  });
+
+  test('requires a misleading-cue judgment to repair the exact served cue', () => {
     insertInvocation('cue-exact-repair-seed', cueRepairOperation({
       changes: [{
         kind: 'create',
@@ -667,14 +1800,13 @@ describe('reflection application adapters', { concurrency: false }, () => {
           cue: {
             cueType: 'minimal_context',
             text: 'An unrelated new cue',
-            acceptedWordIds: ['target', 'alternate'],
+            acceptedWordIds: ['target'],
           },
         }],
       }),
       sourceAttemptJudgments: [{
-        kind: 'accepted_answer_space_omission',
+        kind: 'misleading_or_overloaded_cue',
         sourceAttemptId: 'attempt-exact-repair',
-        submittedWordId: 'alternate',
       }],
     });
 
@@ -967,6 +2099,128 @@ describe('reflection application adapters', { concurrency: false }, () => {
     assert.deepEqual(dbModule.applyReflectionInvocation('contrast-failed', createdAt), result);
   });
 
+  test('previews only the latest unchanged accepted fallback repair with the exact historical failure', () => {
+    seedFailedAcceptedCorrectCueRepair('recovery-older');
+    seedFailedAcceptedCorrectCueRepair('recovery-latest', { acceptedAt: '2026-07-29T12:02:00.000Z' });
+    seedFailedAcceptedCorrectCueRepair('wrong-error', { error: 'Different application failure' });
+    const obsolete = seedFailedAcceptedCorrectCueRepair('obsolete-recovery');
+    // Simulate an artifact accepted before its prompt contract was retired.
+    sqlite.prepare(`UPDATE learner_owned_reflection_artifacts SET prompt_version = 'reflection-staged-v1'
+      WHERE artifact_id = ?`).run(obsolete.artifact.artifactId);
+    const wrongSource = seedFailedAcceptedCorrectCueRepair('wrong-source-recovery');
+    sqlite.prepare(`UPDATE study_attempt_events SET target_word_id = 'alternate' WHERE id = ?`).run(wrongSource.attemptId);
+    seedFailedAcceptedCorrectCueRepair('modified-word', { wordId: 'alternate' });
+    insertInvocation('manual-recovery', cueRepairOperation({ changes: [{ kind: 'create', cue: {
+      cueType: 'circumstance', text: 'manual target', acceptedWordIds: ['target'],
+    } }] }));
+    sqlite.prepare(`UPDATE reflection_operation_invocations SET application_state = 'failed', application_error = ?
+      WHERE invocation_id = 'manual-recovery'`).run(historicalCorrectCueRepairError);
+    const cueId = seedBroadCue('modified-word-seed', 'alternate');
+    insertInvocation('retire-modified-cue', { kind: 'repair_production_cue', version: 2,
+      wordId: 'alternate', taskId: 'production-task:alternate:default_production',
+      changes: [{ kind: 'deactivate', cueId }], sourceAttemptJudgments: [] });
+    dbModule.applyReflectionInvocation('retire-modified-cue', appliedAt);
+    assert.equal(dbModule.getProductionCue(cueId)?.active, false);
+    const plan = dbModule.previewCorrectCueRepairRecovery();
+    assert.deepEqual(plan.candidates, [{ invocationId: 'recovery-latest', wordId: 'target', cueCount: 1 }]);
+    assert.ok(plan.skipped.some(row => row.invocationId === 'recovery-older' && row.reason === 'older_proposal'));
+    assert.ok(plan.skipped.some(row => row.invocationId === 'modified-word' && row.reason === 'modified_word'));
+    assert.ok(plan.skipped.some(row => row.invocationId === 'manual-recovery'));
+    assert.ok(plan.skipped.some(row => row.invocationId === 'obsolete-recovery' && row.reason === 'obsolete_contract'));
+    assert.ok(plan.skipped.some(row => row.invocationId === 'wrong-source-recovery' && row.reason === 'invalid_source'));
+    assert.equal(plan.skipped.some(row => row.invocationId === 'wrong-error'), false);
+  });
+
+  test('requires quiescence and an unchanged preview, then preserves acceptance and immutable recovery audit', () => {
+    const source = seedFailedAcceptedCorrectCueRepair('recover-success');
+    sqlite.prepare(`INSERT INTO word_skill_state
+      (word_id, skill_id, enabled, interval_hours, last_studied_at, next_due_at, ease_factor)
+      VALUES ('target', 'production', 1, 240, ?, '2026-08-08T12:01:00.000Z', 2.4)`).run(appliedAt);
+    const attempts = sqlite.prepare('SELECT * FROM study_attempt_events').all();
+    const schedules = sqlite.prepare('SELECT * FROM word_skill_state').all();
+    const original = dbModule.getReflectionInvocation('recover-success');
+    const beforePlan = dbModule.previewCorrectCueRepairRecovery();
+    const recover = (digest: string) => dbModule.recoverCorrectCueRepairs({ actorId: 'test-operator',
+      expectedPlanDigest: digest, recoveredAt: '2026-07-29T12:05:00.000Z' });
+    assert.throws(() => recover(beforePlan.digest), /maintenance mode and disabled provider work/);
+    dbModule.setHostedServiceControl({ key: 'maintenance_mode', enabled: true, actorId: 'test-operator', updatedAt: appliedAt });
+    assert.throws(() => recover(beforePlan.digest), /maintenance mode and disabled provider work/);
+    quiesceCueRecovery();
+    seedFailedAcceptedCorrectCueRepair('recover-newer', { acceptedAt: '2026-07-29T12:03:00.000Z' });
+    assert.throws(() => recover(beforePlan.digest), /plan changed/);
+    sqlite.prepare(`UPDATE reflection_operation_invocations SET application_error = 'different'
+      WHERE invocation_id = 'recover-newer'`).run();
+    const plan = dbModule.previewCorrectCueRepairRecovery();
+    assert.deepEqual(recover(plan.digest).recoveredInvocationIds, ['recover-success']);
+    assert.equal(dbModule.getReflectionInvocation('recover-success').application.state.kind, 'applied');
+    assert.deepEqual(dbModule.getReflectionArtifactDetail(source.artifact.artifactId).proposals[0]!.review.disposition,
+      { kind: 'accepted', acceptanceMode: 'exact', acceptedInvocationId: 'recover-success' });
+    assert.deepEqual(sqlite.prepare('SELECT * FROM word_skill_state').all(), schedules);
+    // The second source was deliberately added after the snapshot; the original source is still unchanged.
+    assert.deepEqual(sqlite.prepare('SELECT * FROM study_attempt_events WHERE id = ?').all(source.attemptId), attempts);
+    const audit = sqlite.prepare('SELECT * FROM operator_reflection_cue_recoveries WHERE invocation_id = ?')
+      .get('recover-success') as { original_failure_json: string; actor_id: string; recovered_at: string };
+    assert.deepEqual(JSON.parse(audit.original_failure_json), original.application);
+    assert.equal(audit.actor_id, 'test-operator');
+    assert.equal(audit.recovered_at, '2026-07-29T12:05:00.000Z');
+    assert.throws(() => sqlite.prepare(`UPDATE operator_reflection_cue_recoveries SET actor_id = 'changed'`).run(), /immutable/);
+    assert.throws(() => sqlite.prepare('DELETE FROM operator_reflection_cue_recoveries').run(), /immutable/);
+    const repeatedPlan = dbModule.previewCorrectCueRepairRecovery();
+    assert.deepEqual(repeatedPlan.candidates, []);
+    assert.deepEqual(recover(repeatedPlan.digest).recoveredInvocationIds, []);
+    assert.equal(countRows('operator_reflection_cue_recoveries'), 1);
+  });
+
+  test('rolls back every recovery candidate and audit when a later cue insertion fails', () => {
+    seedFailedAcceptedCorrectCueRepair('atomic-first', { acceptedAt: '2026-07-29T12:03:00.000Z' });
+    seedFailedAcceptedCorrectCueRepair('atomic-second', { wordId: 'alternate' });
+    const before = ['atomic-first', 'atomic-second'].map(id => dbModule.getReflectionInvocation(id));
+    const attempts = sqlite.prepare('SELECT * FROM study_attempt_events').all();
+    quiesceCueRecovery();
+    const plan = dbModule.previewCorrectCueRepairRecovery();
+    assert.deepEqual(plan.candidates.map(row => row.invocationId), ['atomic-first', 'atomic-second']);
+    sqlite.exec(`CREATE TRIGGER fail_recovery_second_cue BEFORE INSERT ON scoped_production_cues
+      WHEN NEW.cue_text LIKE 'recovered alternate %'
+      BEGIN SELECT RAISE(ABORT, 'injected recovery cue failure'); END;`);
+    assert.throws(() => dbModule.recoverCorrectCueRepairs({ actorId: 'test-operator', expectedPlanDigest: plan.digest }),
+      /injected recovery cue failure/);
+    assert.deepEqual(['atomic-first', 'atomic-second'].map(id => dbModule.getReflectionInvocation(id)), before);
+    assert.equal(countRows('production_cues'), 0);
+    assert.equal(countRows('operator_reflection_cue_recoveries'), 0);
+    assert.deepEqual(sqlite.prepare('SELECT * FROM study_attempt_events').all(), attempts);
+  });
+
+  test('the host command previews without applying and recovers only the confirmed plan', () => {
+    seedFailedAcceptedCorrectCueRepair('cli-recovery');
+    const command = (...args: string[]) => JSON.parse(execFileSync(process.execPath,
+      ['--import', 'tsx', 'scripts/recover-correct-cue-repairs.ts',
+        `--data-dir=${dataDir}`, '--learner-id=test-learner', ...args],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
+    const plan = command();
+    assert.deepEqual(plan, dbModule.previewCorrectCueRepairRecovery());
+    assert.equal(dbModule.getReflectionInvocation('cli-recovery').application.state.kind, 'failed');
+    assert.equal(countRows('production_cues'), 0);
+    quiesceCueRecovery();
+    const result = command('--apply=true', '--actor-id=cli-operator', `--confirm-plan=${plan.digest}`);
+    assert.deepEqual(result.recoveredInvocationIds, ['cli-recovery']);
+    assert.equal(dbModule.getReflectionInvocation('cli-recovery').application.state.kind, 'applied');
+    assert.equal(sqlite.prepare('SELECT actor_id FROM operator_reflection_cue_recoveries').get()?.actor_id, 'cli-operator');
+  });
+
+  test('does not expose another learner\'s recovery candidates', () => {
+    seedFailedAcceptedCorrectCueRepair('own-recovery');
+    dbModule.bootstrapLearner({ learnerId: 'recovery-other-learner', displayName: 'Other' });
+    assert.deepEqual(dbModule.runWithLearnerId('recovery-other-learner', () =>
+      dbModule.previewCorrectCueRepairRecovery().candidates), []);
+    const ownPlan = dbModule.previewCorrectCueRepairRecovery();
+    assert.deepEqual(ownPlan.candidates.map(row => row.invocationId), ['own-recovery']);
+    quiesceCueRecovery();
+    assert.throws(() => dbModule.runWithLearnerId('recovery-other-learner', () => dbModule.recoverCorrectCueRepairs({
+      actorId: 'test-operator', expectedPlanDigest: ownPlan.digest,
+    })), /plan changed/);
+    assert.equal(dbModule.getReflectionInvocation('own-recovery').application.state.kind, 'failed');
+  });
+
   test('leaves unsupported invocations and domain state untouched', () => {
     insertInvocation(
       'unsupported',
@@ -1009,6 +2263,71 @@ function suppressOperation(wordId: string): ReflectionOperation {
   return { kind: 'suppress_definition_production', version: 1, wordId };
 }
 
+const historicalCorrectCueRepairError = "Reflection application failed: Unfair-cue compensation requires the action's first attempt, which must be the mistake.";
+
+function seedFailedAcceptedCorrectCueRepair(
+  invocationId: string,
+  options: { wordId?: 'target' | 'alternate'; acceptedAt?: string; error?: string } = {},
+) {
+  const wordId = options.wordId ?? 'target';
+  const hanzi = wordId === 'target' ? '目标' : '替代';
+  const acceptedAt = options.acceptedAt ?? appliedAt;
+  const attemptId = `recovery-attempt:${invocationId}`;
+  insertStudyAttempt(attemptId);
+  const sessionId = `cue-evidence-session:${attemptId}`;
+  const actionId = `cue-action:${attemptId}`;
+  sqlite.prepare(`UPDATE study_attempt_events SET target_word_id = ?, outcome = 'correct',
+    rating = 'good', response = ?, metadata_json = ? WHERE id = ?`).run(wordId, hanzi, JSON.stringify({ production: {
+    taskId: `production-task:${wordId}:default_production`, cueId: null,
+    cueType: 'definition_gloss', text: wordId, acceptedWordIds: [wordId],
+    anchorWordId: wordId, submittedText: hanzi, submittedWordId: wordId, result: 'accepted_anchor',
+  } }), attemptId);
+  dbModule.appendProductionCueAttemptEvidenceWithoutTransaction({
+    evidenceId: `recovery-evidence:${invocationId}`, occurredAt: appliedAt,
+    taskId: `production-task:${wordId}:default_production`, cueId: null,
+    sourceAttemptId: attemptId, attemptResult: 'accepted_anchor', submittedWordId: wordId,
+  });
+  const operation: Extract<ReflectionOperation, { kind: 'repair_production_cue'; version: 2 }> = {
+    kind: 'repair_production_cue', version: 2, wordId,
+    taskId: `production-task:${wordId}:default_production`,
+    changes: [{ kind: 'create', cue: { cueType: 'circumstance',
+      text: `recovered ${wordId} ${invocationId}`, acceptedWordIds: [wordId] } }],
+    sourceAttemptJudgments: [{ kind: 'misleading_or_overloaded_cue', sourceAttemptId: attemptId }],
+  };
+  const artifact = dbModule.materializeReflectionArtifact({
+    sourceSessionId: sessionId, reflectionFlowVersion: 'initial_post_session_reflection.v6',
+    generatedAt: acceptedAt, provider: 'openai', model: 'gpt-5.6-luna', promptVersion: 'reflection-staged-v4.0',
+    evidenceBundle: {
+      schemaVersion: 'session_reflection_bundle.v6', generatedAt: acceptedAt,
+      session: { sessionId, startedAt: createdAt, endedAt: appliedAt, studyProfile: 'mandarin' },
+      items: [{ itemId: 'recovery-item', sessionActionId: actionId, sourceAttemptId: attemptId,
+        occurredAt: appliedAt, source: 'production_mistake', sourceActionKind: 'production',
+        learnerRequestedReview: true, targetWord: wordSnapshot(wordId, hanzi), sessionNote: null,
+        existingContent: { contrastClusters: [], knownAcceptedAlternates: [] },
+        servedCue: { cueId: null, cueType: 'definition_gloss', text: wordId,
+          acceptedWordIds: [wordId], supplement: null }, promotionEvidence: null,
+        rawResponse: hanzi, submittedWord: null, responseKind: null,
+      }],
+    },
+    result: { schemaVersion: 'session_reflection_result.v10', itemResults: [{ itemId: 'recovery-item',
+      diagnosisTags: ['production_cue_overloaded'], learnerExplanation: 'Improve the cue after successful recall.',
+      proposals: [{ proposalGroupKey: null, rationale: 'Make the fallback precise.', operation }], questions: [],
+    }] },
+  }).artifact;
+  const accepted = dbModule.acceptReflectionProposal({ proposalId: artifact.proposals[0]!.review.proposalId,
+    operation, invocationId, createdAt: acceptedAt });
+  assert.equal(accepted.invocation.application.state.kind, 'pending');
+  sqlite.prepare(`UPDATE reflection_operation_invocations SET application_state = 'failed',
+    application_error = ?, application_updated_at = ? WHERE invocation_id = ?`)
+    .run(options.error ?? historicalCorrectCueRepairError, acceptedAt, invocationId);
+  return { artifact, operation, attemptId, sessionId };
+}
+
+function quiesceCueRecovery() {
+  dbModule.setHostedServiceControl({ key: 'maintenance_mode', enabled: true, actorId: 'test-operator', updatedAt: appliedAt });
+  dbModule.setHostedServiceControl({ key: 'provider_work_enabled', enabled: false, actorId: 'test-operator', updatedAt: appliedAt });
+}
+
 function contrastOperation(): ReflectionOperation {
   return {
     kind: 'create_contrast_cluster',
@@ -1044,6 +2363,88 @@ function cueRepairOperation(input: {
   };
 }
 
+function seedBroadCue(invocationId: string, wordId: 'target' | 'alternate'): string {
+  insertInvocation(invocationId, {
+    kind: 'repair_production_cue',
+    version: 2,
+    wordId,
+    taskId: `production-task:${wordId}:default_production`,
+    changes: [{
+      kind: 'create',
+      cue: {
+        cueType: 'definition_gloss',
+        text: `broad ${wordId}`,
+        acceptedWordIds: [wordId],
+      },
+    }],
+    sourceAttemptJudgments: [],
+  });
+  const applied = dbModule.applyReflectionInvocation(invocationId, appliedAt);
+  assert.equal(applied.application.state.kind, 'applied');
+  if (applied.application.state.kind !== 'applied') throw new Error('Cue seed failed.');
+  return applied.application.state.effectRefs.find((ref) => ref.type === 'production_cue')!.id;
+}
+
+function seedEligiblePureCueContent(input: {
+  id: string;
+  stimulus: string;
+  axisNote: string;
+  acceptedWordIds: string[];
+}): void {
+  dbModule.createPureCueWithoutTransaction({ ...input, createdAt });
+  const publicationId = `publication:${input.id}`;
+  sqlite.prepare(`
+    INSERT INTO shared_content_publications (
+      publication_id, content_kind, content_id, learning_purpose_key,
+      publication_status, published_at, status_updated_at
+    ) VALUES (?, 'pure_cue', ?, ?, 'shared_trial', ?, ?)
+  `).run(publicationId, input.id, `pure-cue:${input.id}`, createdAt, createdAt);
+  sqlite.prepare(`
+    INSERT INTO shared_content_publication_events (
+      event_id, publication_id, from_status, to_status,
+      actor_kind, actor_id, reason, occurred_at
+    ) VALUES (?, ?, NULL, 'shared_trial', 'operator', 'test-operator', ?, ?)
+  `).run(
+    `publication-event:${input.id}`,
+    publicationId,
+    'test fixture eligible pure cue',
+    createdAt,
+  );
+}
+
+function promotionOperation(input: {
+  sourceAttemptId: string;
+  destination: Extract<ReflectionOperation, { kind: 'promote_pure_elicitation' }>['destination'];
+  targetBroadId: string;
+  alternateBroadId: string;
+  targetDistinctiveText?: string;
+  alternateDistinctiveText?: string;
+}): Extract<ReflectionOperation, { kind: 'promote_pure_elicitation' }> {
+  return {
+    kind: 'promote_pure_elicitation',
+    version: 1,
+    sourceAttemptId: input.sourceAttemptId,
+    targetWordId: 'target',
+    responseWordId: 'alternate',
+    destination: input.destination,
+    wordPlans: [{
+      wordId: 'target',
+      deactivateCueIds: [input.targetBroadId],
+      distinctiveCueDrafts: input.targetDistinctiveText === undefined ? [] : [{
+        cueType: 'minimal_context',
+        text: input.targetDistinctiveText,
+      }],
+    }, {
+      wordId: 'alternate',
+      deactivateCueIds: [input.alternateBroadId],
+      distinctiveCueDrafts: input.alternateDistinctiveText === undefined ? [] : [{
+        cueType: 'minimal_context',
+        text: input.alternateDistinctiveText,
+      }],
+    }],
+  };
+}
+
 function supplementOperation(
   cueId: string | null,
 ): Extract<ReflectionOperation, { kind: 'add_production_cue_supplement' }> {
@@ -1064,6 +2465,7 @@ function insertInvocation(
   operation: ReflectionOperation,
   applicationState: 'pending' | 'unsupported' = 'pending',
 ): void {
+  const sourceArtifact = materializeCurrentSourceArtifact(invocationId);
   sqlite.prepare(`
     INSERT INTO reflection_operation_invocations (
       invocation_id,
@@ -1088,7 +2490,12 @@ function insertInvocation(
     createdAt,
     operation.kind,
     operation.version,
-    JSON.stringify(operation),
+    JSON.stringify({
+      schemaVersion: 'reflection_invocation_operation.v1',
+      sourceArtifactId: sourceArtifact.artifactId,
+      sourceItemId: 'item',
+      operation,
+    }),
     applicationState,
     createdAt,
     applicationState === 'unsupported' ? 'No faithful adapter is available.' : null,
@@ -1108,8 +2515,8 @@ function materializeProposal(
       processed_at
     ) VALUES (?, '2026-07-29T11:30:00.000Z', ?, 'processed', ?)
   `).run(sourceSessionId, createdAt, createdAt);
-  const evidenceBundle: SessionReflectionBundleV1 = {
-    schemaVersion: 'session_reflection_bundle.v1',
+  const evidenceBundle: SessionReflectionBundleV6 = {
+    schemaVersion: 'session_reflection_bundle.v6',
     generatedAt: createdAt,
     session: {
       sessionId: sourceSessionId,
@@ -1123,50 +2530,111 @@ function materializeProposal(
       occurredAt: '2026-07-29T11:59:00.000Z',
       source: 'production_mistake',
       sourceActionKind: 'production',
+      sourceAttemptId: `attempt-${sourceSessionId}`,
       targetWord: wordSnapshot('target', '目标'),
       sessionNote: null,
       existingContent: { contrastClusters: [], knownAcceptedAlternates: [] },
-      cuesAsShown: [{
+      servedCue: {
         cueId: null,
         cueType: 'definition_gloss',
-        displayOrder: 0,
         text: 'target',
-        displayedMeanings: ['meaning'],
-      }],
+        acceptedWordIds: ['target'],
+        supplement: null,
+      },
+      promotionEvidence: null,
       rawResponse: '替代',
       submittedWord: wordSnapshot('alternate', '替代'),
       responseKind: 'matched_known_word',
     }],
   };
-  const result: SessionReflectionResultV4 = {
-    schemaVersion: 'session_reflection_result.v4',
+  const result: SessionReflectionResultV10 = {
+    schemaVersion: 'session_reflection_result.v10',
     itemResults: [{
       itemId: 'item',
       diagnosisTags: ['persistent_confusion'],
-      observation: 'The two words merit a concrete contrast.',
-      learnerExplanation: null,
+      learnerExplanation: 'The two words merit a concrete contrast.',
       proposals: [{
         proposalGroupKey: null,
         rationale: 'Make the distinction trainable.',
         operation,
       }],
       questions: [],
-      unhandledNeeds: [],
     }],
   };
   return dbModule.materializeReflectionArtifact({
     sourceSessionId,
-    reflectionFlowVersion: 'initial_post_session_reflection.v1',
+    reflectionFlowVersion: 'initial_post_session_reflection.v6',
     generatedAt: createdAt,
     provider: 'openai',
     model: 'gpt-5.6-luna',
-    promptVersion: 'reflection-v2',
+    promptVersion: 'reflection-staged-v4.0',
     evidenceBundle,
     result,
   }).artifact;
 }
 
-function wordSnapshot(wordId: string, hanzi: string): SessionReflectionBundleV1[
+function materializeCurrentSourceArtifact(
+  invocationId: string,
+): ReturnType<DbModule['materializeReflectionArtifact']>['artifact'] {
+  const sourceSessionId = `source-${invocationId}`;
+  sqlite.prepare(`
+    INSERT INTO study_sessions (
+      id, started_at, ended_at, processing_state, processed_at
+    ) VALUES (?, '2026-07-29T11:30:00.000Z', ?, 'processed', ?)
+  `).run(sourceSessionId, createdAt, createdAt);
+  return dbModule.materializeReflectionArtifact({
+    sourceSessionId,
+    reflectionFlowVersion: 'initial_post_session_reflection.v6',
+    generatedAt: createdAt,
+    provider: 'openai',
+    model: 'gpt-5.6-luna',
+    promptVersion: 'reflection-staged-v4.0',
+    evidenceBundle: {
+      schemaVersion: 'session_reflection_bundle.v6',
+      generatedAt: createdAt,
+      session: {
+        sessionId: sourceSessionId,
+        startedAt: '2026-07-29T11:30:00.000Z',
+        endedAt: createdAt,
+        studyProfile: 'mandarin',
+      },
+      items: [{
+        itemId: 'item',
+        source: 'production_mistake',
+        sourceActionKind: 'production',
+        sessionActionId: `action-${invocationId}`,
+        sourceAttemptId: `attempt-${invocationId}`,
+        occurredAt: '2026-07-29T11:59:00.000Z',
+        targetWord: wordSnapshot('target', '目标'),
+        sessionNote: null,
+        existingContent: { contrastClusters: [], knownAcceptedAlternates: [] },
+        servedCue: {
+          cueId: null,
+          cueType: 'definition_gloss',
+          text: 'target',
+          acceptedWordIds: ['target'],
+          supplement: null,
+        },
+        promotionEvidence: null,
+        rawResponse: '替代',
+        submittedWord: wordSnapshot('alternate', '替代'),
+        responseKind: 'matched_known_word',
+      }],
+    },
+    result: {
+      schemaVersion: 'session_reflection_result.v10',
+      itemResults: [{
+        itemId: 'item',
+        diagnosisTags: ['ordinary_retrieval_noise'],
+        learnerExplanation: 'The operation is explicitly authorized in this fixture.',
+        proposals: [],
+        questions: [],
+      }],
+    },
+  }).artifact;
+}
+
+function wordSnapshot(wordId: string, hanzi: string): SessionReflectionBundleV6[
   'items'
 ][number]['targetWord'] {
   return {
@@ -1204,8 +2672,8 @@ function insertStudyAttempt(
   sqlite.prepare(`
     INSERT OR IGNORE INTO study_sessions (
       id, started_at, ended_at, processing_state, processed_at
-    ) VALUES ('cue-evidence-session', ?, ?, 'processed', ?)
-  `).run(createdAt, appliedAt, appliedAt);
+    ) VALUES (?, ?, ?, 'processed', ?)
+  `).run(`cue-evidence-session:${attemptId}`, createdAt, appliedAt, appliedAt);
   sqlite.prepare(`
     INSERT INTO study_attempt_events (
       id,
@@ -1223,11 +2691,13 @@ function insertStudyAttempt(
       content_ref_json,
       metadata_json,
       projected_at
-    ) VALUES (?, ?, 'cue-evidence-session', 'cue-action', 1, 1, 'production', 'target',
+    ) VALUES (?, ?, ?, ?, 1, 1, 'production', 'target',
       '["production"]', '替代', 'incorrect', 'forgot', ?, ?, ?)
   `).run(
     attemptId,
     appliedAt,
+    `cue-evidence-session:${attemptId}`,
+    `cue-action:${attemptId}`,
     options.cueId === null
       ? null
       : JSON.stringify({
@@ -1250,6 +2720,31 @@ function insertStudyAttempt(
     }),
     appliedAt,
   );
+}
+
+function insertAcceptedNonAnchorAttempt(
+  attemptId: string,
+  rating: 'forgot' | 'good',
+): void {
+  insertStudyAttempt(attemptId);
+  sqlite.prepare(`
+    UPDATE study_attempt_events
+    SET outcome = 'correct', rating = ?, metadata_json = ?
+    WHERE id = ?
+  `).run(rating, JSON.stringify({
+    production: {
+      taskId: 'production-task:target:default_production',
+      cueId: null,
+      cueType: 'definition_gloss',
+      text: 'target',
+      acceptedWordIds: ['target', 'alternate'],
+      anchorWordId: 'target',
+      submittedText: '替代',
+      submittedWordId: 'alternate',
+      result: 'accepted_non_anchor',
+    },
+  }), attemptId);
+
 }
 
 function insertContextualSchedulerState(wordId: string, enabled: boolean): void {

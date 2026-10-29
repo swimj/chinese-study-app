@@ -2,6 +2,68 @@
 
 Casual notes for people using the app before there is a real release process.
 
+## Unreleased — promotion run item counts
+
+- Run meta for a promotion attempt shows how many items that attempt considered.
+  Earlier promotion runs that copied the diagnosis bundle size, such as 19/19,
+  now report the saved promotion input instead.
+
+## Unreleased — post pure-cue review tweaks
+
+- Older-contract reflections no longer show a page banner; they remain
+  read-only under By session.
+- Pure-cue promotion proposals in Help use the same compact expandable change
+  list as cue repairs. Expand a row to edit destination, deactivations, or
+  distinctive cues.
+- Accepting a promotion still restores the pre-lapse interval and ease. Production
+  then stays off the next session for at least six hours instead of becoming
+  immediately due.
+- Newly adopted pure cues keep a 24-hour interval, but first become due after
+  six hours.
+
+## Unreleased — GLM-5.3 Flash output cap
+
+- Both GLM-5.3 Flash arms request 131,072 output tokens, the maximum Z.AI
+  accepts. The previous 200,000 cap was rejected immediately.
+
+## Unreleased — GLM-5.3 Flash high reflection arm
+
+- GLM-5.3 Flash at reasoning high is now a default reflection candidate
+  alongside Luna, GLM-5.3 Flash max, and Terra. It uses the same Z.AI Flash
+  model and pricing as the max arm; the stored model id keeps the two
+  reasoning profiles distinct.
+- Both GLM-5.3 Flash reasoning arms allow 131,072 output tokens, including
+  reasoning, instead of the 50,000 cap used by the other models.
+
+## Unreleased — Reflections generating spinner
+
+- After a session starts reflection, or while a retry or second opinion is
+  running in this tab, Reflections shows a spinner instead of the Help count.
+  Closing the session summary leaves that spinner up until generation finishes.
+  An unseen failed run still takes priority. The spinner is same-tab only and
+  hides on the Reflections page like the other badges.
+
+## Unreleased — strict word cues and pure-cue cutover
+
+- Reflection first diagnoses the attempt, then hands shared expressive axes
+  to a content-reconciliation stage. That stage explains the actual proposed
+  repairs. If it disagrees with the diagnosis, you see explicit feedback with
+  no content changes or compensation to accept. Overlapping word pairs are
+  omitted from a bundle; omitted second-opinion proposals remain deferred.
+- Accepted pure-cue promotions publish shared content. Relevant cues enter
+  review automatically when you study any accepted member, with your own
+  schedule and history. Accepted repairs retire selected overbroad shared
+  targeted cues for everyone; existing served assessments remain unchanged.
+- Word-owned cues now accept only their target word. Existing alternate answer
+  memberships are removed, including on shared cues. Broad meanings can become
+  standalone pure cues through future practice and reflection; this release
+  does not automatically promote existing content.
+- The temporary 48-hour alternate-answer retry scheduler and its outstanding
+  demands are removed. Restart any open study session after this upgrade.
+- Obsolete reflection work cannot be retried, used for second opinions, or
+  applied after the cutover. Old results remain readable; pending old work may
+  need to be discarded. New study uses the current staged reflection pipeline.
+
 ## Unreleased — GLM-5.3 Flash reflection arm
 
 - The Z.AI comparison arm now uses GLM-5.3 Flash at reasoning max instead of
@@ -19,7 +81,6 @@ Casual notes for people using the app before there is a real release process.
 
 - The operator usage pulse no longer counts the configured hosted smoke
   learner as inactive.
->>>>>>> 6affbc0 (Exclude the hosted smoke learner from usage-pulse inactive counts.)
 
 ## Unreleased — app-origin invite signup
 

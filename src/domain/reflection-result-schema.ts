@@ -14,6 +14,7 @@ export type JsonSchema = {
   items?: JsonSchema;
   anyOf?: JsonSchema[];
   minItems?: number;
+  maxItems?: number;
 };
 
 const stringSchema: JsonSchema = { type: 'string' };
@@ -166,6 +167,37 @@ const addProductionCueSupplementOperationV1Wire = objectSchema({
   exampleTranslation: stringSchema,
 });
 
+const promotePureElicitationOperationV1Wire = objectSchema({
+  destination: {
+    anyOf: [
+      objectSchema({
+        kind: enumSchema(['existing']),
+        pureCueId: stringSchema,
+      }),
+      objectSchema({
+        kind: enumSchema(['create']),
+        stimulus: stringSchema,
+        axisNote: stringSchema,
+      }),
+    ],
+  },
+  wordPlans: {
+    ...arraySchema(objectSchema({
+      wordId: stringSchema,
+      deactivateCueIds: arraySchema(stringSchema),
+      distinctiveCueDrafts: arraySchema(objectSchema({
+        cueType: enumSchema([
+          'definition_gloss',
+          'minimal_context',
+          'circumstance',
+        ]),
+        text: stringSchema,
+      })),
+    })),
+    minItems: 2,
+  },
+});
+
 const acceptAlternateOperation = objectSchema({
   kind: enumSchema(['accept_production_alternate']),
   version: enumSchema([1]),
@@ -287,6 +319,47 @@ const proposalSchemaV7Wire = objectSchema({
   operation: operationSchemaV7Wire,
 });
 
+const stagedRepairCueOperationV1Wire = objectSchema({
+  kind: enumSchema(['repair_production_cue']),
+  replacementCues: {
+    ...arraySchema(objectSchema({
+      cueType: enumSchema([
+        'definition_gloss',
+        'minimal_context',
+        'circumstance',
+      ]),
+      text: stringSchema,
+    })),
+    minItems: 1,
+  },
+  sourceAttemptJudgments: arraySchema(objectSchema({
+    kind: enumSchema(['misleading_or_overloaded_cue']),
+  })),
+});
+
+const stagedReflectionOperationV1Wire: JsonSchema = {
+  anyOf: [
+    objectSchema({
+      kind: enumSchema(['suppress_definition_production']),
+      version: enumSchema([1]),
+    }),
+    createContrastClusterOperationV2,
+    stagedRepairCueOperationV1Wire,
+    objectSchema({
+      kind: enumSchema(['add_production_cue_supplement']),
+      englishFrame: stringSchema,
+      exampleSentence: stringSchema,
+      exampleTranslation: stringSchema,
+    }),
+  ],
+};
+
+const stagedReflectionProposalV1Wire = objectSchema({
+  proposalGroupKey: nullableStringSchema,
+  rationale: stringSchema,
+  operation: stagedReflectionOperationV1Wire,
+});
+
 const itemResultSchemaV7Wire = objectSchema({
   ...itemResultSchemaV6Wire.properties,
   proposals: arraySchema(proposalSchemaV7Wire),
@@ -319,3 +392,161 @@ export const sessionReflectionResultV7WireSchema: JsonSchema = objectSchema({
 }, 'One structured post-session reflection result with post-reveal cue supplements.');
 
 export const SESSION_REFLECTION_RESULT_V7_WIRE_SCHEMA_NAME = 'session_reflection_result_v7';
+
+const stagedReflectionDiagnosisOrdinaryResultV1Wire = objectSchema({
+  kind: enumSchema(['ordinary']),
+  itemId: stringSchema,
+  diagnosisTags: arraySchema(enumSchema([
+    'valid_or_near_valid_alternate',
+    'cue_overlap_hides_usage_difference',
+    'production_cue_overloaded',
+    'form_or_sound_interference',
+    'grammar_or_usage_role_interference',
+    'ordinary_retrieval_noise',
+    'insufficient_evidence',
+  ])),
+  learnerExplanation: stringSchema,
+  proposals: arraySchema(stagedReflectionProposalV1Wire),
+  questions: itemResultSchemaV6Wire.properties!.questions!,
+});
+
+const stagedReflectionDiagnosisSharedAxisResultV1Wire = objectSchema({
+  kind: enumSchema(['shared_axis']),
+  itemId: stringSchema,
+  diagnosisTags: stagedReflectionDiagnosisOrdinaryResultV1Wire.properties!.diagnosisTags!,
+  handoff: objectSchema({
+    axis: stringSchema,
+    boundaries: stringSchema,
+    responseValidity: stringSchema,
+  }),
+});
+
+export const stagedReflectionDiagnosisResultV1WireSchema: JsonSchema = objectSchema({
+  schemaVersion: enumSchema(['staged_reflection_diagnosis_result.v1']),
+  itemResults: arraySchema({
+    anyOf: [
+      stagedReflectionDiagnosisOrdinaryResultV1Wire,
+      stagedReflectionDiagnosisSharedAxisResultV1Wire,
+    ],
+  }),
+}, 'Exclusive ordinary results or shared-axis handoffs from staged reflection diagnosis.');
+
+export const STAGED_REFLECTION_DIAGNOSIS_RESULT_V1_WIRE_SCHEMA_NAME =
+  'staged_reflection_diagnosis_result_v1';
+
+export const pureCuePromotionResultV1WireSchema: JsonSchema = objectSchema({
+  schemaVersion: enumSchema(['pure_cue_promotion_result.v1']),
+  itemResults: arraySchema(objectSchema({
+    itemId: stringSchema,
+    decision: {
+      anyOf: [
+        objectSchema({
+          kind: enumSchema(['promote']),
+          rationale: stringSchema,
+          learnerExplanation: stringSchema,
+          operation: promotePureElicitationOperationV1Wire,
+        }),
+        objectSchema({
+          kind: enumSchema(['disagreement']),
+          learnerExplanation: stringSchema,
+        }),
+      ],
+    },
+  })),
+}, 'Promotion-only decisions over server-enriched pure-cue evidence.');
+
+export const PURE_CUE_PROMOTION_RESULT_V1_WIRE_SCHEMA_NAME = 'pure_cue_promotion_result_v1';
+
+
+const reconcileProductionCuesOperationV1Wire = objectSchema({
+  destination: { anyOf: [
+    { type: 'null' },
+    objectSchema({ kind: enumSchema(['existing']), pureCueId: stringSchema, teachingNote: stringSchema }),
+    objectSchema({ kind: enumSchema(['create']), stimulus: stringSchema, axisNote: stringSchema, teachingNote: stringSchema }),
+  ] },
+  wordPlans: promotePureElicitationOperationV1Wire.properties!.wordPlans!,
+  sourceAttemptFairness: enumSchema(['fair', 'misleading_or_overloaded_cue']),
+});
+const stagedReflectionDiagnosisAmbiguousPairResultV2Wire = objectSchema({
+  kind: enumSchema(['ambiguous_pair']),
+  itemId: stringSchema,
+  diagnosisTags: stagedReflectionDiagnosisOrdinaryResultV1Wire.properties!.diagnosisTags!,
+  handoff: objectSchema({
+    ambiguityReason: stringSchema,
+  }),
+});
+
+export const stagedReflectionDiagnosisResultV2WireSchema: JsonSchema = objectSchema({
+  schemaVersion: enumSchema(['staged_reflection_diagnosis_result.v2']),
+  itemResults: arraySchema({
+    anyOf: [
+      stagedReflectionDiagnosisOrdinaryResultV1Wire,
+      stagedReflectionDiagnosisAmbiguousPairResultV2Wire,
+    ],
+  }),
+}, 'Exclusive ordinary results or best-effort ambiguous-pair handoffs.');
+
+export const STAGED_REFLECTION_DIAGNOSIS_RESULT_V2_WIRE_SCHEMA_NAME =
+  'staged_reflection_diagnosis_result_v2';
+
+export const pureCuePromotionResultV2WireSchema: JsonSchema = objectSchema({
+  schemaVersion: enumSchema(['pure_cue_promotion_result.v2']),
+  itemResults: arraySchema(objectSchema({
+    itemId: stringSchema,
+    decision: {
+      anyOf: [
+        objectSchema({
+          kind: enumSchema(['reconcile']),
+          rationale: stringSchema,
+          learnerExplanation: stringSchema,
+          operation: reconcileProductionCuesOperationV1Wire,
+        }),
+        objectSchema({
+          kind: enumSchema(['explanation_only']),
+          learnerExplanation: stringSchema,
+        }),
+      ],
+    },
+  })),
+}, 'Coordinated production-cue cleanup with optional shared publication or explanation only.');
+
+export const PURE_CUE_PROMOTION_RESULT_V2_WIRE_SCHEMA_NAME = 'pure_cue_promotion_result_v2';
+
+export const stagedReflectionDiagnosisResultV3WireSchema: JsonSchema = objectSchema({
+  schemaVersion: enumSchema(['staged_reflection_diagnosis_result.v3']),
+  itemResults: arraySchema({ anyOf: [
+    stagedReflectionDiagnosisOrdinaryResultV1Wire,
+    objectSchema({
+      kind: enumSchema(['ambiguous_pair']),
+      itemId: stringSchema,
+      diagnosisTags: stagedReflectionDiagnosisOrdinaryResultV1Wire.properties!.diagnosisTags!,
+      handoff: objectSchema({
+        ambiguityReason: stringSchema,
+        targetSuppression: { anyOf: [objectSchema({ reason: stringSchema }), { type: 'null' }] },
+      }),
+    }),
+  ] }),
+}, 'Ordinary results or ambiguous-pair handoffs with an explicit optional target suppression recommendation.');
+export const STAGED_REFLECTION_DIAGNOSIS_RESULT_V3_WIRE_SCHEMA_NAME = 'staged_reflection_diagnosis_result_v3';
+
+/** New provider output requests shared preparation; historical authored supplements remain readable. */
+export const stagedReflectionDiagnosisResultV4WireSchema: JsonSchema = objectSchema({
+  ...stagedReflectionDiagnosisResultV3WireSchema.properties,
+  schemaVersion: enumSchema(['staged_reflection_diagnosis_result.v4']),
+  itemResults: arraySchema({ anyOf: [
+    objectSchema({
+      ...stagedReflectionDiagnosisOrdinaryResultV1Wire.properties,
+      proposals: arraySchema(objectSchema({
+        ...stagedReflectionProposalV1Wire.properties,
+        operation: { anyOf: [
+          objectSchema({ kind: enumSchema(['suppress_definition_production']), version: enumSchema([1]) }),
+          createContrastClusterOperationV2,
+          stagedRepairCueOperationV1Wire,
+          objectSchema({ kind: enumSchema(['request_word_bootstrap']) }),
+        ] },
+      })),
+    }),
+    stagedReflectionDiagnosisResultV3WireSchema.properties!.itemResults!.items!.anyOf![1]!,
+  ] }),
+}, 'Diagnosis with bootstrap requests instead of model-authored post-reveal supplements.');
+export const STAGED_REFLECTION_DIAGNOSIS_RESULT_V4_WIRE_SCHEMA_NAME = 'staged_reflection_diagnosis_result_v4';

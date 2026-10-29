@@ -1,11 +1,19 @@
+import { PURE_CUE_REFLECTION_FLOW_VERSION, PURE_CUE_REFLECTION_PROMPT_VERSION } from '../src/domain/reflection-contracts.ts';
 import assert from 'node:assert/strict';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, test } from 'node:test';
 import type { SessionReflectionBundleV1, SessionReflectionResultV4 } from '../src/domain/reflection.ts';
 import type { ReflectionPageController } from '../src/features/reflection/useReflectionPageController.ts';
-import { ReflectionsPage, DeferredSecondOpinionQueue, TokenUsageView } from '../src/pages/ReflectionsPage.tsx';
+import {
+  ReflectionsPage,
+  DeferredSecondOpinionQueue,
+  SessionWorkspace,
+  TokenUsageView,
+} from '../src/pages/ReflectionsPage.tsx';
 import type { ReflectionArtifactDetailDto } from '../src/services/api.ts';
+import type { SessionReflectionBundleV6, SessionReflectionResultV10 } from '../src/domain/reflection.ts';
+import { CURRENT_INITIAL_REFLECTION_FLOW_VERSION, STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION } from '../src/domain/reflection-contracts.ts';
 
 describe('reflection run log presentation', () => {
   test('keeps the page available when every stored artifact is unreadable', () => {
@@ -17,7 +25,6 @@ describe('reflection run log presentation', () => {
       artifactDetails: [],
       unreadableArtifactIds: new Set([artifactId]),
       generationRuns: [],
-      spendCap: null,
       qualityStats: { arms: [] },
       selectedArtifact: null,
       selectedArtifactId: null,
@@ -41,11 +48,12 @@ describe('reflection run log presentation', () => {
       upsertQuality: async () => {},
       clearQuality: async () => {},
       markHelpInboxDone: async () => {},
+      deferHelpInboxItem: async () => {},
       authorizeManualOperation: async () => {},
     };
 
     const markup = renderToStaticMarkup(createElement(ReflectionsPage, { controller }));
-    assert.match(markup, /1 stored reflection could not be read/);
+    assert.match(markup, /1 stored feedback result could not be read/);
     assert.match(markup, /No remaining proposals to review/);
     assert.match(markup, /reflection-view-rail/);
     assert.match(markup, />Proposals</);
@@ -86,11 +94,70 @@ describe('reflection run log presentation', () => {
     assert.match(markup, /aria-label="Handle"/);
     assert.doesNotMatch(markup, /disabled=""[^>]*aria-label="Handle"/);
     assert.match(markup, /disabled=""[^>]*>Reset</);
-    assert.match(markup, /disabled=""[^>]*>Defer</);
+    assert.match(markup, /class="secondary-button">Defer</);
     assert.match(markup, /disabled=""[^>]*>Dismiss</);
     assert.match(markup, />Accept</);
     assert.doesNotMatch(markup, />Done</);
     assert.doesNotMatch(markup, /disabled=""[^>]*>Accept</);
+  });
+
+  test('disagreement Help keeps Done and quality but exposes no actionable controls', () => {
+    const artifact = disagreementArtifact();
+    const markup = renderToStaticMarkup(createElement(ReflectionsPage, {
+      controller: idleController({ artifactDetails: [artifact] }),
+    }));
+
+    assert.match(markup, /No actionable change/);
+    assert.match(markup, /The two-stage reviewers did not agree./);
+    assert.match(markup, /informational only, so it cannot create or authorize a proposal/);
+    assert.match(markup, /aria-label="Quality tags"/);
+    assert.match(markup, />Done</);
+    assert.match(markup, />Defer</);
+    assert.doesNotMatch(markup, /aria-label="Handle"/);
+    assert.doesNotMatch(markup, />Accept</);
+    assert.doesNotMatch(markup, />Dismiss</);
+  });
+
+  test('by-session disagreement is explicit and remains non-actionable', () => {
+    const artifact = disagreementArtifact();
+    const markup = renderToStaticMarkup(createElement(SessionWorkspace, {
+      controller: idleController({
+        selectedArtifact: artifact,
+        selectedArtifactId: artifact.artifactId,
+      }),
+    }));
+
+    assert.match(markup, /No actionable change/);
+    assert.match(markup, /The two-stage reviewers did not agree./);
+    assert.match(markup, /Content review disagreed with the shared-axis handoff/);
+    assert.match(markup, /aria-label="Quality tags"/);
+    assert.doesNotMatch(markup, /aria-label="Handle"/);
+    assert.doesNotMatch(markup, /Authorize replacement/);
+  });
+
+  test('obsolete artifacts are readable history, not actionable Help cards', () => {
+    const artifact = explanationArtifact();
+    artifact.promptVersion = 'reflection-v9';
+    const markup = renderToStaticMarkup(createElement(ReflectionsPage, {
+      controller: idleController({ artifactDetails: [artifact] }),
+    }));
+    assert.doesNotMatch(markup, /older contract remain available under By session, read-only/);
+    assert.match(markup, /No remaining proposals to review/);
+    assert.doesNotMatch(markup, />Accept</);
+  });
+
+  test('compatible old deferred evidence is selectable without enabling proposal execution', () => {
+    const artifact = deferredProposalArtifact('old-deferred', '目标', 'Old proposal');
+    const currentEvidence = explanationArtifact().evidenceBundle;
+    artifact.evidenceBundle = { ...currentEvidence, items: currentEvidence.items.map((item) => ({ ...item, itemId: 'mistake' })) };
+    artifact.bundleSchemaVersion = currentEvidence.schemaVersion;
+    const markup = renderToStaticMarkup(createElement(ReflectionsPage, {
+      controller: idleController({ artifactDetails: [artifact] }),
+    }));
+    assert.match(markup, /Second opinion/);
+    assert.match(markup, /Show deferred proposals \(0\)/);
+    assert.doesNotMatch(markup, />Accept</);
+    assert.match(markup, /reflection-view-rail-count[^>]*>1</);
   });
 
   test('second-opinion packaging uses compact chips and a Help-style bottom rail', () => {
@@ -110,7 +177,7 @@ describe('reflection run log presentation', () => {
     assert.match(markup, /aria-label="Model"/);
     assert.match(
       markup,
-      /<option value="openai:gpt-5.6-terra-high" selected="">GPT-5.6 Terra high<\/option>/,
+      /<option value="openai:gpt-6-sol-high" selected="">GPT-6 Sol high<\/option>/,
     );
     assert.doesNotMatch(
       markup,
@@ -124,17 +191,19 @@ describe('reflection run log presentation', () => {
     assert.doesNotMatch(markup, />Proposal details</);
   });
 
-  test('second-opinion model selector blocks non-Luna arms after the daily spend cap', () => {
+  test('second-opinion model selector offers all currently available models', () => {
     const markup = renderToStaticMarkup(createElement(DeferredSecondOpinionQueue, {
       cards: deferredSecondOpinionCards(),
-      controller: idleController({ spendCap: cappedSpendCap() }),
+      controller: idleController(),
     }));
 
-    assert.match(markup, /Luna is the only available model until/);
+    assert.doesNotMatch(markup, /Luna is the only available model until/);
     assert.match(markup, /value="openai:gpt-5.6-luna-high"/);
     assert.doesNotMatch(markup, /value="openai:gpt-5.6-luna-high" disabled=""/);
-    assert.match(markup, /value="zai:glm-5.3-flash-max" disabled=""/);
-    assert.match(markup, /value="openai:gpt-5.6-terra-high" disabled=""/);
+    assert.doesNotMatch(markup, /value="zai:glm-5.3-flash-max"/);
+    assert.match(markup, /<option value="zai:glm-5.3-flash-high">GLM-5.3 Flash high<\/option>/);
+    assert.doesNotMatch(markup, /value="openai:gpt-5.6-terra-high"/);
+    assert.match(markup, /<option value="openai:gpt-6-sol-high" selected="">GPT-6 Sol high<\/option>/);
   });
 
   test('second-opinion empty state stays compact', () => {
@@ -143,16 +212,32 @@ describe('reflection run log presentation', () => {
       controller: idleController(),
     }));
 
-    assert.match(markup, /No deferred proposals are available for a second opinion/);
+    assert.match(markup, /No deferred items are available for a second opinion/);
     assert.match(markup, /reflection-help-shell is-empty/);
     assert.doesNotMatch(markup, /Build a second-opinion bundle/);
     assert.doesNotMatch(markup, /Get a second opinion/);
   });
 
+  test('second-opinion pen accepts a deferred explanation without a proposal', () => {
+    const artifact = explanationArtifact();
+    artifact.deferredHelpInbox = artifact.helpInbox.map((entry) => ({ ...entry, disposition: 'deferred' }));
+    artifact.helpInbox = [];
+    const result = artifact.result.itemResults[0]!;
+    const markup = renderToStaticMarkup(createElement(DeferredSecondOpinionQueue, {
+      cards: [{
+        kind: 'explanation', actionability: 'manual', cardKey: `explanation:${artifact.artifactId}:${result.itemId}`,
+        artifact, evidence: artifact.evidenceBundle.items[0]!, result,
+      }],
+      controller: idleController(),
+    }));
+    assert.match(markup, /Explanation only/);
+    assert.match(markup, /Get a second opinion \(1\)/);
+  });
+
   test('renders the empty dogfood state', () => {
     const markup = renderRuns([]);
 
-    assert.match(markup, /No reflection generation attempts yet/);
+    assert.match(markup, /No feedback generation attempts yet/);
   });
 
   test('renders failed usage with unavailable cost and successful priced usage', () => {
@@ -203,15 +288,15 @@ describe('reflection run log presentation', () => {
     assert.doesNotMatch(markup, /provider run /);
     assert.doesNotMatch(markup, /Token usage summary/);
     assert.doesNotMatch(markup, /Estimated cost/);
-    assert.match(markup, /Retry reflection: output truncated\. Choose a model\./);
+    assert.match(markup, /Retry feedback: output truncated\. Choose a model\./);
     assert.doesNotMatch(markup, /<select/);
     assert.doesNotMatch(markup, /Choose model for reflection retry/);
   });
 
-  test('run-meta view explains the Luna-only spend cap', () => {
-    const markup = renderRuns([], null, cappedSpendCap());
-    assert.match(markup, /Luna is the only available model until/);
-    assert.match(markup, /No reflection generation attempts yet/);
+  test('empty run-meta view has no spend-policy notice', () => {
+    const markup = renderRuns([]);
+    assert.doesNotMatch(markup, /Luna is the only available model until/);
+    assert.match(markup, /No feedback generation attempts yet/);
   });
 
   test('replaces retry with a concise generation status', () => {
@@ -225,7 +310,7 @@ describe('reflection run log presentation', () => {
     })];
     const markup = renderRuns(runs, { runId: 'failed', state: 'generating' });
     assert.match(markup, /Generating…/);
-    assert.doesNotMatch(markup, /Retry reflection/);
+    assert.doesNotMatch(markup, /Retry feedback/);
   });
 });
 
@@ -259,7 +344,6 @@ function idleController(
     artifactDetails: [],
     unreadableArtifactIds: new Set(),
     generationRuns: [],
-    spendCap: null,
     qualityStats: { arms: [] },
     selectedArtifact: null,
     selectedArtifactId: null,
@@ -283,6 +367,7 @@ function idleController(
     upsertQuality: async () => {},
     clearQuality: async () => {},
     markHelpInboxDone: async () => {},
+    deferHelpInboxItem: async () => {},
     authorizeManualOperation: async () => {},
     ...overrides,
   };
@@ -290,8 +375,8 @@ function idleController(
 
 function explanationArtifact(): ReflectionArtifactDetailDto {
   const generatedAt = '2026-07-29T12:00:00.000Z';
-  const evidenceBundle: SessionReflectionBundleV1 = {
-    schemaVersion: 'session_reflection_bundle.v1',
+  const evidenceBundle: SessionReflectionBundleV6 = {
+    schemaVersion: 'session_reflection_bundle.v6',
     generatedAt,
     session: {
       sessionId: 'session',
@@ -313,13 +398,15 @@ function explanationArtifact(): ReflectionArtifactDetailDto {
       },
       sessionNote: null,
       existingContent: { contrastClusters: [], knownAcceptedAlternates: [] },
-      cuesAsShown: [{
+      sourceAttemptId: 'attempt-informational',
+      promotionEvidence: null,
+      servedCue: {
         cueId: null,
         cueType: 'definition_gloss',
-        displayOrder: 0,
         text: 'target',
-        displayedMeanings: ['target'],
-      }],
+        acceptedWordIds: ['target'],
+        supplement: null,
+      },
       rawResponse: '替代',
       submittedWord: {
         wordId: 'alternate',
@@ -330,27 +417,25 @@ function explanationArtifact(): ReflectionArtifactDetailDto {
       responseKind: 'matched_known_word',
     }],
   };
-  const result: SessionReflectionResultV4 = {
-    schemaVersion: 'session_reflection_result.v4',
+  const result: SessionReflectionResultV10 = {
+    schemaVersion: 'session_reflection_result.v10',
     itemResults: [{
       itemId: 'informational',
       diagnosisTags: ['ordinary_retrieval_noise'],
-      observation: 'Keep going.',
       learnerExplanation: 'Keep going.',
       proposals: [],
       questions: [],
-      unhandledNeeds: [],
     }],
   };
   return {
     artifactId: 'artifact',
     sourceSessionId: 'session',
     sourceRunId: null,
-    reflectionFlowVersion: 'initial_post_session_reflection.v1',
+    reflectionFlowVersion: CURRENT_INITIAL_REFLECTION_FLOW_VERSION,
     generatedAt,
     provider: 'openai-compatible',
     model: 'gpt-5.6-luna',
-    promptVersion: 'reflection-v2',
+    promptVersion: STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION,
     bundleSchemaVersion: evidenceBundle.schemaVersion,
     resultSchemaVersion: result.schemaVersion,
     evidenceBundle,
@@ -362,8 +447,18 @@ function explanationArtifact(): ReflectionArtifactDetailDto {
       artifactId: 'artifact',
       itemId: 'informational',
       openedAt: generatedAt,
+      disposition: 'open',
     }],
+    deferredHelpInbox: [],
   };
+}
+
+function disagreementArtifact(): ReflectionArtifactDetailDto {
+  const artifact = explanationArtifact();
+  const result = artifact.result.itemResults[0]!;
+  result.learnerExplanation = 'The two-stage reviewers did not agree.';
+  Object.assign(result, { promotionOutcome: 'disagreement' as const });
+  return artifact;
 }
 
 function deferredSecondOpinionCards(): Array<Extract<import('../src/features/reflection/reflection-page-model.ts').ReflectionHelpCard, { kind: 'proposal' }>> {
@@ -493,30 +588,19 @@ function deferredProposalArtifact(
     }],
     qualityItemTags: [],
     helpInbox: [],
+    deferredHelpInbox: [],
   };
 }
 
 function renderRuns(
   runs: ReflectionPageController['generationRuns'],
   retryStatus: ReflectionPageController['generationRetryStatus'] = null,
-  spendCap: ReflectionPageController['spendCap'] = null,
 ): string {
   return renderToStaticMarkup(createElement(TokenUsageView, {
     runs,
-    spendCap,
     retryStatus,
     onRetry: async () => {},
   }));
-}
-
-function cappedSpendCap(): NonNullable<ReflectionPageController['spendCap']> {
-  return {
-    lunaOnly: true,
-    spentUsd: 0.62,
-    capUsd: 0.5,
-    dayKey: '2026-09-10',
-    resetsAt: '2026-09-11T00:00:00.000Z',
-  };
 }
 
 function run(overrides: {
@@ -568,3 +652,44 @@ function run(overrides: {
     retryable: overrides.state === 'failed',
   };
 }
+
+
+function pureReflectionArtifact(): ReflectionArtifactDetailDto {
+  const base = explanationArtifact();
+  const word = (wordId: string) => ({ wordId, hanzi: wordId, pinyin: wordId, meanings: [wordId] });
+  const item = {
+    source: 'pure_cue_mistake' as const, sourceActionKind: 'pure_cue' as const, itemId: 'informational', sourceAttemptId: 'assessment', firstEventId: 'first', sessionActionId: 'action', occurredAt: base.generatedAt, rawResponse: 'C', submittedWord: word('C'), targetWord: null, sessionNote: null,
+    existingContent: { contrastClusters: [] as [], knownAcceptedAlternates: [] as [] },
+    servedSnapshot: { snapshotId: 'snapshot', pureCueId: 'cue', servedAt: base.generatedAt, stimulus: 'Shared situation', axisNote: '', teachingNote: 'A and B', acceptedAnswers: ['A', 'B'].map(wordId => ({ wordId, hanzi: wordId, traditional: null })) },
+    currentCue: { id: 'cue', stimulus: 'Shared situation', axisNote: '', teachingNote: 'A and B', acceptedWordIds: ['A', 'B'], acceptedWords: [word('A'), word('B')] }, activeProductionCues: [],
+  };
+  return { ...base, reflectionFlowVersion: PURE_CUE_REFLECTION_FLOW_VERSION, promptVersion: PURE_CUE_REFLECTION_PROMPT_VERSION,
+    bundleSchemaVersion: 'pure_cue_reflection_bundle.v1', resultSchemaVersion: 'pure_cue_reflection_result.v2',
+    evidenceBundle: { schemaVersion: 'pure_cue_reflection_bundle.v1', generatedAt: base.generatedAt, session: { sessionId: 'session', startedAt: base.generatedAt, endedAt: base.generatedAt, studyProfile: 'mandarin' }, items: [item] },
+    result: { schemaVersion: 'pure_cue_reflection_result.v2', itemResults: [{ itemId: item.itemId, diagnosisTags: [], learnerExplanation: 'C does not fit.', questions: [], proposals: [] }] },
+  };
+}
+
+test('deferred pure cue proposals remain discoverable without entering second opinions', () => {
+  const artifact = pureReflectionArtifact();
+  artifact.proposals = deferredProposalArtifact('deferred-pure', 'C', 'C fits').proposals;
+  artifact.proposals[0].itemId = 'informational';
+  artifact.proposals[0].proposal.operation = { kind: 'reconcile_pure_cue_response', version: 1, sourceAttemptId: 'assessment', responseWordId: 'C', pureCueId: 'cue', expectedAcceptedWordIds: ['A', 'B'], expectedTeachingNote: 'A and B', teachingNote: 'A, B, and C', responseWordPlan: { wordId: 'C', deactivateCueIds: [], distinctiveCueDrafts: [] } };
+  artifact.result.itemResults[0].proposals = [artifact.proposals[0].proposal];
+  const controller = idleController({ artifactDetails: [artifact] });
+  const markup = renderToStaticMarkup(createElement(ReflectionsPage, { controller }));
+  assert.match(markup, /Show deferred proposals \(1\)/);
+  assert.doesNotMatch(markup, /Second opinion.*?reflection-view-count[^>]*>1/);
+  artifact.proposals[0].review.disposition = { kind: 'pending' };
+  const pendingMarkup = renderToStaticMarkup(createElement(ReflectionsPage, { controller }));
+  assert.match(pendingMarkup, /class="reflection-handle-select" aria-label="Handle" disabled/);
+});
+
+test('pure cue explanation cards offer Done and Defer without ordinary manual handles', () => {
+  const artifact = pureReflectionArtifact();
+  const markup = renderToStaticMarkup(createElement(ReflectionsPage, { controller: idleController({ artifactDetails: [artifact] }) }));
+  assert.match(markup, /C does not fit/);
+  assert.match(markup, />Done</);
+  assert.match(markup, />Defer</);
+  assert.doesNotMatch(markup, /Suppress definition production|Accept replacement|reflection-handle-select/);
+});

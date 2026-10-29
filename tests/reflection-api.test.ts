@@ -7,12 +7,11 @@ import { after, before, beforeEach, describe, test } from 'node:test';
 import { pathToFileURL } from 'node:url';
 import type {
   ReflectionOperation,
-  SessionReflectionBundleV1,
-  SessionReflectionResultV4,
+  SessionReflectionBundleV6,
+  SessionReflectionResultV10,
 } from '../src/domain/reflection.ts';
 import {
   RetiredReflectionSourceModelError,
-  ReflectionSpendCapError,
   type InitialReflectionGenerationService,
 } from '../server/reflection/generation.ts';
 import { ReflectionEvidenceError } from '../server/reflection/evidence.ts';
@@ -36,7 +35,7 @@ let receivedGenerationRequest: {
 let generationImplementation: InitialReflectionGenerationService['generate'];
 let retryImplementation: InitialReflectionGenerationService['retry'];
 let secondOpinionImplementation: InitialReflectionGenerationService['generateDeferredSecondOpinion'];
-let receivedSecondOpinionRequest: { proposalIds: string[]; model: string } | null = null;
+let receivedSecondOpinionRequest: { proposalIds: string[]; model: string; helpInboxIds: string[] } | null = null;
 let receivedRetryRunId: string | null = null;
 let lifecycleEvents: ReflectionLifecycleEvent[];
 let errorLogs: Array<{ message: string; metadata: Record<string, string> }>;
@@ -70,9 +69,9 @@ describe('reflection HTTP API', { concurrency: false }, () => {
         receivedRetryRunId = runId;
         return retryImplementation(runId);
       },
-      generateDeferredSecondOpinion(proposalIds, model) {
-        receivedSecondOpinionRequest = { proposalIds, model };
-        return secondOpinionImplementation(proposalIds, model);
+      generateDeferredSecondOpinion(proposalIds, model, helpInboxIds = []) {
+        receivedSecondOpinionRequest = { proposalIds, model, helpInboxIds };
+        return secondOpinionImplementation(proposalIds, model, helpInboxIds);
       },
     };
     app = indexModule.createApp({
@@ -203,6 +202,7 @@ describe('reflection HTTP API', { concurrency: false }, () => {
     assert.deepEqual(receivedSecondOpinionRequest, {
       proposalIds: ['proposal-b', 'proposal-a'],
       model: 'openai:gpt-5.6-luna-high',
+      helpInboxIds: [],
     });
     assert.deepEqual(lifecycleEvents.map((event) => event.event), [
       'reflection.generation_requested',
@@ -210,6 +210,17 @@ describe('reflection HTTP API', { concurrency: false }, () => {
     ]);
     assert.equal(lifecycleEvents[0]?.sessionId, null);
     assert.equal(lifecycleEvents[1]?.sessionId, null);
+  });
+
+  test('passes selected explanation inbox ids to second-opinion generation', async () => {
+    const response = await request('/api/deferred-reflection-second-opinions', {
+      method: 'POST',
+      body: { proposalIds: [], helpInboxIds: ['inbox-a'], model: 'openai:gpt-5.6-luna-high' },
+    });
+    assert.equal(response.status, 201);
+    assert.deepEqual(receivedSecondOpinionRequest, {
+      proposalIds: [], model: 'openai:gpt-5.6-luna-high', helpInboxIds: ['inbox-a'],
+    });
   });
 
   test('correlates unexpected deferred second-opinion failures without exposing details to the learner', async () => {
@@ -359,7 +370,7 @@ describe('reflection HTTP API', { concurrency: false }, () => {
       'pending',
     );
     assert.equal(
-      (detail.json as { result: SessionReflectionResultV4 }).result.itemResults[0]?.observation,
+      (detail.json as { result: SessionReflectionResultV10 }).result.itemResults[0]?.learnerExplanation,
       'The production goal is not useful.',
     );
 
@@ -383,13 +394,13 @@ describe('reflection HTTP API', { concurrency: false }, () => {
       artifacts: [{
         artifactId: artifact.artifactId,
         sourceSessionId: 'unreadable-session',
-        reflectionFlowVersion: 'initial_post_session_reflection.v1',
+        reflectionFlowVersion: 'initial_post_session_reflection.v6',
         generatedAt,
         provider: 'openai',
         model: 'gpt-5.6-luna-high',
-        promptVersion: 'reflection-v2',
-        bundleSchemaVersion: 'session_reflection_bundle.v1',
-        resultSchemaVersion: 'session_reflection_result.v4',
+        promptVersion: 'reflection-staged-v4',
+        bundleSchemaVersion: 'session_reflection_bundle.v6',
+        resultSchemaVersion: 'session_reflection_result.v10',
         proposalCount: 1,
         openProposalCount: 1,
         readState: 'unreadable',
@@ -437,21 +448,7 @@ describe('reflection HTTP API', { concurrency: false }, () => {
 
     const response = await request('/api/reflection-generation-runs');
     assert.equal(response.status, 200);
-    const payload = response.json as {
-      runs: unknown[];
-      spendCap: {
-        lunaOnly: boolean;
-        spentUsd: number;
-        capUsd: number;
-        dayKey: string;
-        resetsAt: string;
-      };
-    };
-    assert.deepEqual(payload.runs, [dbModule.listReflectionGenerationRuns()[0]]);
-    assert.equal(payload.spendCap.lunaOnly, false);
-    assert.equal(payload.spendCap.capUsd, 0.5);
-    assert.match(payload.spendCap.dayKey, /^\d{4}-\d{2}-\d{2}$/);
-    assert.equal(payload.spendCap.resetsAt, `${nextUtcDay(payload.spendCap.dayKey)}T00:00:00.000Z`);
+    assert.deepEqual(response.json, { runs: [dbModule.listReflectionGenerationRuns()[0]] });
   });
 
   test('retries a failed generation run through the dedicated endpoint', async () => {
@@ -488,38 +485,6 @@ describe('reflection HTTP API', { concurrency: false }, () => {
     });
   });
 
-  test('refuses non-Luna generation after the daily spend cap', async () => {
-    generationImplementation = async () => {
-      throw new ReflectionSpendCapError('2026-09-11T00:00:00.000Z');
-    };
-    retryImplementation = async () => {
-      throw new ReflectionSpendCapError('2026-09-11T00:00:00.000Z');
-    };
-    secondOpinionImplementation = async () => {
-      throw new ReflectionSpendCapError('2026-09-11T00:00:00.000Z');
-    };
-
-    const generated = await request(
-      '/api/study-sessions/session-1/reflections',
-      { method: 'POST', body: { schemaVersion: 'session_reflection_evidence_supplement.v1', items: [], model: 'openai:gpt-5.6-terra-high' } },
-    );
-    assert.equal(generated.status, 409);
-    assert.deepEqual(generated.json, {
-      error: 'Daily reflection spend cap reached. Only Luna is available until 2026-09-11T00:00:00.000Z.',
-    });
-
-    const retried = await request(
-      '/api/reflection-generation-runs/failed-run/retry',
-      { method: 'POST', body: { model: 'zai:glm-5.3-flash-max' } },
-    );
-    assert.equal(retried.status, 409);
-
-    const secondOpinion = await request(
-      '/api/deferred-reflection-second-opinions',
-      { method: 'POST', body: { proposalIds: ['proposal-1'], model: 'openai:gpt-5.6-terra-high' } },
-    );
-    assert.equal(secondOpinion.status, 409);
-  });
 
   test('strictly reviews proposals and immediately applies supported acceptance', async () => {
     const deferredArtifact = materialize(
@@ -750,6 +715,21 @@ describe('reflection HTTP API', { concurrency: false }, () => {
     })).status, 404);
   });
 
+  test('moves an explanation-only Help item to the second-opinion pen', async () => {
+    const artifact = materializeInformational('inbox-api-defer').artifact;
+    const response = await request('/api/reflection-help-inbox/defer', {
+      method: 'POST',
+      body: { artifactId: artifact.artifactId, itemId: 'item-1' },
+    });
+    assert.equal(response.status, 200);
+    assert.deepEqual(response.json, { deferred: true });
+    const detail = await request(`/api/reflection-artifacts/${artifact.artifactId}`);
+    assert.equal((detail.json as { helpInbox: unknown[] }).helpInbox.length, 0);
+    assert.equal((detail.json as { deferredHelpInbox: unknown[] }).deferredHelpInbox.length, 1);
+    assert.equal((await request('/api/reflection-help-inbox')).json.entries.length, 0);
+    assert.equal((await request('/api/reflection-artifacts?review=open')).status, 200);
+  });
+
   test('attention badges count unseen help cards and mark one proposal seen', async () => {
     const withProposals = materialize('attention-api-pending', suppressOperation('target')).artifact;
     materializeInformational('attention-api-explanation');
@@ -757,9 +737,11 @@ describe('reflection HTTP API', { concurrency: false }, () => {
     assert.equal(listed.status, 200);
     assert.deepEqual(listed.json, {
       reflectionUnseenCount: 2,
+      reflectionGenerating: false,
       failedReflectionRunIds: [],
       failedReflectionRunsSeenThroughAt: null,
       whatsNewSeenThroughDate: null,
+      whatsNewSeenThroughSequence: null,
     });
 
     const marked = await request('/api/reflection-inbox-seen', {
@@ -1184,23 +1166,21 @@ function materializeInformational(
   `).run(sessionId, generatedAt, generatedAt);
   return dbModule.materializeReflectionArtifact({
     sourceSessionId: sessionId,
-    reflectionFlowVersion: 'initial_post_session_reflection.v1',
+    reflectionFlowVersion: 'initial_post_session_reflection.v6',
     generatedAt,
     provider: 'openai',
     model: 'gpt-5.6-luna-high',
-    promptVersion: 'reflection-v2',
+    promptVersion: 'reflection-staged-v4',
     evidenceBundle: bundle(sessionId),
     result: {
-      schemaVersion: 'session_reflection_result.v4',
+      schemaVersion: 'session_reflection_result.v10',
       itemResults: [{
         itemId: 'item-1',
         diagnosisTags: ['ordinary_retrieval_noise'],
-        observation: 'Ordinary retrieval noise; no durable change.',
-        learnerExplanation: null,
+      learnerExplanation: 'Ordinary retrieval noise; no durable change.',
         proposals: [],
         questions: [],
-        unhandledNeeds: [],
-      }],
+        }],
     },
   });
 }
@@ -1216,19 +1196,19 @@ function materializationInput(
   `).run(sessionId, generatedAt, generatedAt);
   return {
     sourceSessionId: sessionId,
-    reflectionFlowVersion: 'initial_post_session_reflection.v1',
+    reflectionFlowVersion: 'initial_post_session_reflection.v6',
     generatedAt,
     provider: 'openai',
     model: 'gpt-5.6-luna-high',
-    promptVersion: 'reflection-v2',
+    promptVersion: 'reflection-staged-v4',
     evidenceBundle: bundle(sessionId),
     result: result(operation),
   };
 }
 
-function bundle(sessionId: string): SessionReflectionBundleV1 {
+function bundle(sessionId: string): SessionReflectionBundleV6 {
   return {
-    schemaVersion: 'session_reflection_bundle.v1',
+    schemaVersion: 'session_reflection_bundle.v6',
     generatedAt,
     session: {
       sessionId,
@@ -1250,15 +1230,16 @@ function bundle(sessionId: string): SessionReflectionBundleV1 {
       },
       sessionNote: null,
       existingContent: { contrastClusters: [], knownAcceptedAlternates: [] },
-      cuesAsShown: [{
+      sourceAttemptId: 'attempt-1',
+      promotionEvidence: null,
+      servedCue: {
         cueId: null,
         cueType: 'definition_gloss',
-        displayOrder: 0,
         text: 'target',
-        displayedMeanings: ['target'],
-      }],
+        acceptedWordIds: ['target'],
+        supplement: null,
+      },
       rawResponse: '替代',
-      responseKind: 'typed',
       submittedWord: {
         wordId: 'alternate',
         hanzi: '替代',
@@ -1270,21 +1251,19 @@ function bundle(sessionId: string): SessionReflectionBundleV1 {
   };
 }
 
-function result(operation: ReflectionOperation): SessionReflectionResultV4 {
+function result(operation: ReflectionOperation): SessionReflectionResultV10 {
   return {
-    schemaVersion: 'session_reflection_result.v4',
+    schemaVersion: 'session_reflection_result.v10',
     itemResults: [{
       itemId: 'item-1',
       diagnosisTags: ['persistent_confusion'],
-      observation: 'The production goal is not useful.',
-      learnerExplanation: null,
+      learnerExplanation: 'The production goal is not useful.',
       proposals: [{
         proposalGroupKey: null,
         rationale: 'Apply the bounded operation.',
         operation,
       }],
       questions: [],
-      unhandledNeeds: [],
     }],
   };
 }
@@ -1331,6 +1310,7 @@ function insertWord(wordId: string, hanzi: string): void {
 }
 
 function insertPendingInvocation(invocationId: string, operation: ReflectionOperation): void {
+  const artifact = materialize(`source-${invocationId}`, operation).artifact;
   sqlite.prepare(`
     INSERT INTO reflection_operation_invocations (
       invocation_id,
@@ -1355,7 +1335,12 @@ function insertPendingInvocation(invocationId: string, operation: ReflectionOper
     generatedAt,
     operation.kind,
     operation.version,
-    JSON.stringify(operation),
+    JSON.stringify({
+      schemaVersion: 'reflection_invocation_operation.v1',
+      sourceArtifactId: artifact.artifactId,
+      sourceItemId: 'item-1',
+      operation,
+    }),
     generatedAt,
   );
 }
@@ -1363,12 +1348,6 @@ function insertPendingInvocation(invocationId: string, operation: ReflectionOper
 function assertIsoString(value: string): string {
   assert.equal(new Date(value).toISOString(), value);
   return value;
-}
-
-function nextUtcDay(dayKey: string): string {
-  const date = new Date(`${dayKey}T00:00:00.000Z`);
-  date.setUTCDate(date.getUTCDate() + 1);
-  return date.toISOString().slice(0, 10);
 }
 
 function restoreEnv(name: string, value: string | undefined) {

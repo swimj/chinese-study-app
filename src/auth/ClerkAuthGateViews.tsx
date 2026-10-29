@@ -15,15 +15,18 @@ export function ClerkAuthLoadingView() {
 
 export function ClerkAuthSignInView({
   error,
+  serviceRestricted,
   signInTargetRef,
 }: {
   error: string | null;
+  serviceRestricted?: boolean;
   signInTargetRef?: Ref<HTMLDivElement>;
 }) {
   return (
     <ClerkAuthFormView
       heading="Sign in to study"
       error={error}
+      serviceRestricted={serviceRestricted}
       targetRef={signInTargetRef}
     />
   );
@@ -31,15 +34,18 @@ export function ClerkAuthSignInView({
 
 export function ClerkAuthSignUpView({
   error,
+  serviceRestricted,
   signUpTargetRef,
 }: {
   error: string | null;
+  serviceRestricted?: boolean;
   signUpTargetRef?: Ref<HTMLDivElement>;
 }) {
   return (
     <ClerkAuthFormView
       heading="Set a password to study"
       error={error}
+      serviceRestricted={serviceRestricted}
       targetRef={signUpTargetRef}
     />
   );
@@ -48,16 +54,19 @@ export function ClerkAuthSignUpView({
 function ClerkAuthFormView({
   heading,
   error,
+  serviceRestricted,
   targetRef,
 }: {
   heading: string;
   error: string | null;
+  serviceRestricted?: boolean;
   targetRef?: Ref<HTMLDivElement>;
 }) {
   return (
     <main className="container">
       <section className="panel">
-        <h1>{heading}</h1>
+        <h1>{serviceRestricted ? 'Temporarily unavailable' : heading}</h1>
+        {serviceRestricted && <p role="status">The app is temporarily unavailable. Operator sign-in remains available.</p>}
         {error ? <p className="notes">{error}</p> : null}
         <div ref={targetRef} />
       </section>

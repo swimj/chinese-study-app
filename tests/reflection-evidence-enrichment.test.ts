@@ -1,3 +1,5 @@
+import { selectBootstrapReveal } from '../src/domain/word-content/reveal.ts';
+import type { WordContentDocument } from '../src/domain/word-content/types.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -38,20 +40,22 @@ describe('initial reflection evidence enrichment', { concurrency: false }, () =>
 
     sqlite = new DatabaseSync(':memory:');
     sqlite.exec('PRAGMA foreign_keys = ON;');
+    sqlite.function('current_learner_id', () => 'test-learner');
     createSchema();
     setDb(sqlite);
   });
 
   beforeEach(() => {
     sqlite.exec(`
+      DELETE FROM word_content_documents;
       DELETE FROM word_skill_relevance;
       DELETE FROM contrast_prompts;
       DELETE FROM contrast_cluster_members;
       DELETE FROM contrast_clusters;
       DELETE FROM production_cue_supplements;
-      DELETE FROM production_cue_activation_state;
+      DELETE FROM learner_owned_production_cue_activation_state;
       DELETE FROM production_cue_accepted_words;
-      DELETE FROM production_cues;
+      DELETE FROM scoped_production_cues;
       DELETE FROM production_tasks;
       DELETE FROM study_events;
       DELETE FROM study_attempt_events;
@@ -184,6 +188,26 @@ describe('initial reflection evidence enrichment', { concurrency: false }, () =>
     assert.equal(bundle.items[0]?.servedCue.text, 'goal; objective');
   });
 
+  test('preserves and verifies exact bootstrap teaching without changing the tested cue', () => {
+    const content: WordContentDocument = { schemaVersion: 1, id: 'bootstrap-target',
+      word: { wordId: 'target', hanzi: '目标', traditional: null, pinyin: 'mu biao' },
+      uses: [{ id: 'use', label: 'A project goal', notes: [], exampleIds: ['example'] }],
+      examples: [{ id: 'example', text: '这是我们的目标。', translation: 'This is our goal.', pronunciation: null }] };
+    sqlite.prepare('INSERT INTO word_content_documents (content_id, word_id, content_json) VALUES (?, ?, ?)').run(content.id, 'target', JSON.stringify(content));
+    const bootstrapReveal = selectBootstrapReveal(content, new Date(generatedAt));
+    const metadata = JSON.parse(productionAttemptMetadata({ submittedText: '替代', submittedWordId: null,
+      result: 'rejected', acceptedWordIds: ['target'] }));
+    metadata.production.bootstrapReveal = bootstrapReveal;
+    sqlite.prepare("UPDATE study_attempt_events SET metadata_json = ? WHERE id = 'attempt-1'").run(JSON.stringify(metadata));
+    const bundle = buildInitialReflectionBundle('session-1', supplement('替代'), generatedAt);
+    assert.deepEqual(bundle.items[0]?.servedCue.bootstrapReveal, bootstrapReveal);
+    assert.equal(bundle.items[0]?.servedCue.text, 'goal; objective');
+    assert.deepEqual(bundle.items[0]?.servedCue.acceptedWordIds, ['target']);
+    metadata.production.bootstrapReveal.exampleSentence = 'Fabricated teaching';
+    sqlite.prepare("UPDATE study_attempt_events SET metadata_json = ? WHERE id = 'attempt-1'").run(JSON.stringify(metadata));
+    assert.throws(() => buildInitialReflectionBundle('session-1', supplement('替代'), generatedAt), /immutable bootstrap source/);
+  });
+
   test('reports the single eligible item included in an initial bundle', () => {
     const built = buildInitialReflectionBundleWithMetrics(
       'session-1',
@@ -193,6 +217,7 @@ describe('initial reflection evidence enrichment', { concurrency: false }, () =>
 
     assert.equal(built.eligibleItemCount, 1);
     assert.equal(built.includedItemCount, 1);
+    assert.equal(built.overlapOmittedItemCount, 0);
     assert.equal(built.bundle.items.length, 1);
   });
 
@@ -204,7 +229,7 @@ describe('initial reflection evidence enrichment', { concurrency: false }, () =>
       generatedAt,
     );
 
-    assert.equal(INITIAL_REFLECTION_MAX_EVIDENCE_ITEMS, 25);
+    assert.equal(INITIAL_REFLECTION_MAX_EVIDENCE_ITEMS, 50);
     assert.equal(built.eligibleItemCount, 2);
     assert.equal(built.includedItemCount, 2);
     assert.deepEqual(built.bundle.items.map((item) => item.itemId), [
@@ -213,22 +238,28 @@ describe('initial reflection evidence enrichment', { concurrency: false }, () =>
     ]);
   });
 
-  test('caps more than twenty-five eligible items at the backend bundle boundary', () => {
-    const additionalItems = Array.from({ length: 25 }, (_, index) => (
+  test('admits non-overlapping evidence before applying the backend item cap', () => {
+    const additionalItems = Array.from({ length: 50 }, (_, index) => (
       insertEligibleProductionMistake(`additional-${index + 1}`)
     ));
+    const repeatedTarget = insertEligibleRepeatedTargetMistake('repeated-target');
     const built = buildInitialReflectionBundleWithMetrics(
       'session-1',
-      withItems(supplement('替代'), [supplement('替代').items[0]!, ...additionalItems]),
+      withItems(supplement('替代'), [
+        supplement('替代').items[0]!,
+        repeatedTarget,
+        ...additionalItems,
+      ]),
       generatedAt,
     );
 
-    assert.equal(built.eligibleItemCount, 26);
-    assert.equal(built.includedItemCount, 25);
+    assert.equal(built.eligibleItemCount, 52);
+    assert.equal(built.includedItemCount, 50);
+    assert.equal(built.overlapOmittedItemCount, 1);
     assert.equal(built.bundle.items.length, INITIAL_REFLECTION_MAX_EVIDENCE_ITEMS);
     assert.deepEqual(
       built.bundle.items.map((item) => item.itemId),
-      ['production-mistake:action-1', ...additionalItems.slice(0, 24).map((item) => item.itemId)],
+      ['production-mistake:action-1', ...additionalItems.slice(0, 49).map((item) => item.itemId)],
     );
   });
 
@@ -447,7 +478,7 @@ describe('initial reflection evidence enrichment', { concurrency: false }, () =>
     }
   });
 
-  test('excludes an accepted non-anchor response that the learner rated forgot', () => {
+  test('rejects obsolete accepted-alternate evidence rather than regenerating reflection', () => {
     sqlite.prepare(`
       UPDATE study_attempt_events
       SET metadata_json = ?
@@ -461,7 +492,7 @@ describe('initial reflection evidence enrichment', { concurrency: false }, () =>
 
     assertEvidenceError(
       () => buildInitialReflectionBundle('session-1', supplement('替代'), generatedAt),
-      'no_qualifying_evidence',
+      'invalid_reference',
       400,
     );
   });
@@ -621,6 +652,8 @@ describe('initial reflection evidence enrichment', { concurrency: false }, () =>
   });
 });
 
+// Minimal read-only evidence fixture. Cue ownership/activation use the current
+// schema; cues without canonical content records remain a supported content case.
 function createSchema() {
   sqlite.exec(`
     CREATE TABLE words (
@@ -707,17 +740,24 @@ function createSchema() {
       task_kind TEXT NOT NULL,
       created_at TEXT NOT NULL
     );
-    CREATE TABLE production_cues (
+    CREATE TABLE scoped_production_cues (
       cue_id TEXT PRIMARY KEY,
       task_id TEXT NOT NULL REFERENCES production_tasks(task_id) ON DELETE CASCADE,
       cue_type TEXT NOT NULL,
       cue_text TEXT NOT NULL,
       created_at TEXT NOT NULL,
       origin_kind TEXT NOT NULL,
-      origin_invocation_id TEXT
+      origin_invocation_id TEXT,
+      content_scope TEXT NOT NULL DEFAULT 'learner' CHECK (content_scope IN ('learner', 'shared')),
+      owner_learner_id TEXT DEFAULT 'test-learner',
+      CHECK ((content_scope = 'learner' AND owner_learner_id IS NOT NULL)
+        OR (content_scope = 'shared' AND owner_learner_id IS NULL))
     );
+    CREATE VIEW production_cues AS
+      SELECT * FROM scoped_production_cues
+      WHERE content_scope = 'shared' OR owner_learner_id = current_learner_id();
     CREATE TABLE production_cue_accepted_words (
-      cue_id TEXT NOT NULL REFERENCES production_cues(cue_id) ON DELETE CASCADE,
+      cue_id TEXT NOT NULL REFERENCES scoped_production_cues(cue_id) ON DELETE CASCADE,
       word_id TEXT NOT NULL REFERENCES words(id),
       position INTEGER NOT NULL,
       PRIMARY KEY (cue_id, word_id)
@@ -725,18 +765,62 @@ function createSchema() {
     CREATE TABLE production_cue_supplements (
       supplement_id TEXT PRIMARY KEY,
       task_id TEXT NOT NULL REFERENCES production_tasks(task_id) ON DELETE CASCADE,
-      cue_id TEXT REFERENCES production_cues(cue_id),
+      cue_id TEXT REFERENCES scoped_production_cues(cue_id),
       english_frame TEXT NOT NULL,
       example_sentence TEXT NOT NULL,
       example_translation TEXT NOT NULL,
       created_at TEXT NOT NULL,
       origin_invocation_id TEXT NOT NULL
     );
-    CREATE TABLE production_cue_activation_state (
-      cue_id TEXT PRIMARY KEY REFERENCES production_cues(cue_id) ON DELETE CASCADE,
+    CREATE TABLE learner_owned_production_cue_activation_state (
+      learner_id TEXT NOT NULL DEFAULT 'test-learner',
+      cue_id TEXT NOT NULL REFERENCES scoped_production_cues(cue_id) ON DELETE CASCADE,
       active INTEGER NOT NULL,
       latest_lifecycle_event_id TEXT NOT NULL,
-      updated_at TEXT NOT NULL
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (learner_id, cue_id)
+    );
+    CREATE VIEW production_cue_activation_state AS
+      SELECT cue_id, active, latest_lifecycle_event_id, updated_at
+      FROM learner_owned_production_cue_activation_state
+      WHERE learner_id = current_learner_id();
+    CREATE TABLE shared_content_publications (
+      publication_id TEXT PRIMARY KEY,
+      content_kind TEXT NOT NULL,
+      content_id TEXT NOT NULL,
+      publication_status TEXT NOT NULL,
+      UNIQUE (content_kind, content_id)
+    );
+    CREATE TABLE shared_content_publication_provenance (
+      publication_id TEXT PRIMARY KEY,
+      source_invocation_id TEXT
+    );
+    CREATE TABLE content_improvement_replacements (
+      kind TEXT NOT NULL,
+      source_id TEXT NOT NULL,
+      replacement_source_id TEXT NOT NULL,
+      PRIMARY KEY (kind, source_id)
+    );
+    -- These fixtures intentionally model legacy cues with no canonical sidecar.
+    -- The review-content reader must see an empty sidecar surface.
+    CREATE TABLE scoped_review_content_records (
+      record_id TEXT PRIMARY KEY,
+      kind TEXT NOT NULL,
+      content_id TEXT NOT NULL,
+      exercise_id TEXT,
+      revision INTEGER NOT NULL,
+      word_id TEXT,
+      source_word_content_id TEXT,
+      document_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      model TEXT
+    );
+    CREATE VIEW review_content_records AS SELECT * FROM scoped_review_content_records;
+    CREATE TABLE word_content_documents (
+      content_id TEXT PRIMARY KEY,
+      word_id TEXT,
+      content_json TEXT,
+      publication_id TEXT
     );
   `);
 }
@@ -833,7 +917,6 @@ function productionAttemptMetadata({
       submittedText,
       submittedWordId,
       result,
-      recheckDemandId: null,
     },
   });
 }
@@ -910,6 +993,41 @@ function insertEligibleProductionMistake(
   };
 }
 
+function insertEligibleRepeatedTargetMistake(
+  suffix: string,
+): SessionReflectionEvidenceSupplementV1['items'][number] {
+  const actionId = `action-${suffix}`;
+  const response = `wrong-${suffix}`;
+  sqlite.prepare(`
+    INSERT INTO study_attempt_events (
+      id, occurred_at, session_id, session_action_id, session_event_sequence,
+      action_attempt_sequence, action_kind, target_word_id,
+      sampled_skill_ids_json, response, outcome, rating, projected_at
+    ) VALUES
+      (?, ?, 'session-1', ?, 1, 1, 'production', 'target', '["production"]', ?, 'incorrect', 'forgot', ?),
+      (?, ?, 'session-1', ?, 2, 2, 'production', 'target', '["production"]', ?, 'correct', 'good', ?)
+  `).run(
+    `attempt-${suffix}-1`, completedAt, actionId, response, completedAt,
+    `attempt-${suffix}-2`, completedAt, actionId, `correct-${suffix}`, completedAt,
+  );
+
+  return {
+    itemId: `production-mistake:${actionId}`,
+    sessionActionId: actionId,
+    targetWordId: 'target',
+    cuesAsShown: [{
+      cueId: null,
+      cueType: 'definition_gloss',
+      displayOrder: 0,
+      text: 'goal; objective',
+      displayedMeanings: ['goal', 'objective'],
+    }],
+    rawResponse: response,
+    responseKind: 'typed',
+    attemptIds: [`attempt-${suffix}-1`, `attempt-${suffix}-2`],
+  };
+}
+
 function insertProductionCue({
   cueId,
   cueType = 'minimal_context',
@@ -924,7 +1042,7 @@ function insertProductionCue({
   acceptedWordIds: string[];
 }) {
   sqlite.prepare(`
-    INSERT INTO production_cues (
+    INSERT INTO scoped_production_cues (
       cue_id, task_id, cue_type, cue_text, created_at, origin_kind, origin_invocation_id
     ) VALUES (?, 'production-task:target:default_production', ?, ?, ?, 'manual', NULL)
   `).run(cueId, cueType, text, `${completedAt}:${cueId}`);
@@ -935,7 +1053,7 @@ function insertProductionCue({
     `).run(cueId, wordId, position);
   });
   sqlite.prepare(`
-    INSERT INTO production_cue_activation_state (
+    INSERT INTO learner_owned_production_cue_activation_state (
       cue_id, active, latest_lifecycle_event_id, updated_at
     ) VALUES (?, ?, ?, ?)
   `).run(cueId, active ? 1 : 0, `lifecycle:${cueId}`, completedAt);

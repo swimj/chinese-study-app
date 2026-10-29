@@ -1,6 +1,7 @@
 import type { NormalizedTokenUsage } from '../llm/types.ts';
 import {
   estimateRunCostFromSnapshot,
+  DEBRIEF_PRICING,
   LUNA_STANDARD_SHORT_CONTEXT_PRICING,
   type RunPricingSnapshot,
 } from '../llm/run-pricing.ts';
@@ -139,12 +140,23 @@ export const INITIAL_TERRA_STANDARD_SHORT_CONTEXT_PRICING: ReflectionRunPricingS
   outputPerMillionUsd: 12,
 };
 
+// OpenAI Standard short-context prices, verified 2026-10-03:
+// https://developers.openai.com/api/docs/pricing
+export const INITIAL_SOL_STANDARD_SHORT_CONTEXT_PRICING: ReflectionRunPricingSnapshot = {
+  id: 'openai-gpt-6-sol-standard-short-context-2026-10-03',
+  pricingAsOf: '2026-10-03', provider: 'openai', providerModel: 'gpt-6-sol',
+  serviceTier: 'standard', contextBand: 'short', currency: 'USD',
+  inputPerMillionUsd: 2, cachedInputPerMillionUsd: 0.2, cacheWriteInputPerMillionUsd: 2.5,
+  outputPerMillionUsd: 10,
+};
+
 export type ReflectionRunCostEstimate = {
   estimatedCostUsd: number;
   pricing: ReflectionRunPricingBasis;
 };
 
 const INITIAL_REFLECTION_RUN_PRICING: ReadonlyArray<ReflectionRunPricingSnapshot> = [
+  DEBRIEF_PRICING,
   INITIAL_LUNA_STANDARD_SHORT_CONTEXT_PRICING,
   INITIAL_GLM_5_2_STANDARD_SHORT_CONTEXT_PRICING,
   INITIAL_GLM_5_3_STANDARD_SHORT_CONTEXT_PRICING,
@@ -154,6 +166,7 @@ const INITIAL_REFLECTION_RUN_PRICING: ReadonlyArray<ReflectionRunPricingSnapshot
   INITIAL_OPENROUTER_DEEPSEEK_V4_PRO_PRICING,
   INITIAL_OPENROUTER_CLAUDE_SONNET_5_PRICING,
   INITIAL_TERRA_STANDARD_SHORT_CONTEXT_PRICING,
+  INITIAL_SOL_STANDARD_SHORT_CONTEXT_PRICING,
 ];
 
 export function estimateInitialReflectionRunCost(input: {

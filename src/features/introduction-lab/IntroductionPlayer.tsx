@@ -1,0 +1,229 @@
+import { formatCardCharacters, type CharacterPresentation, type SentenceCharacterPresentation } from '../../domain/card-characters';
+import { convertSentenceCharacters, sentenceCharacterLanguage } from '../../domain/sentence-characters';
+import { getRehearsalInstruction } from '../rehearsal-presentation';
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { VocabularyCharacterRuby, vocabularySentenceRuby } from '../vocabulary-study/VocabularyRuby';
+import type { TeachingPackageSnapshot, WordContentDocument } from '../../domain/word-content';
+import {
+  type IntroductionPlayerAction,
+  type IntroductionPlayerState,
+} from './player';
+
+import { teachingNavigationKeyAction } from './teaching-navigation';
+import { ShortcutHint } from '../../components/ShortcutHint';
+
+function isInteractiveTarget(target: EventTarget | null): boolean {
+  return target instanceof HTMLElement && (
+    target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON', 'A', 'SUMMARY'].includes(target.tagName)
+  );
+}
+
+export function IntroductionPlayer({ snapshot, content, state, onAction, onRestart, onFinish, finishing, mode = 'full', characterPresentation, sentenceCharacterPresentation, renderTeachingActions }: {
+  snapshot: Pick<TeachingPackageSnapshot, 'beats' | 'rehearsals'>;
+  content: Pick<WordContentDocument, 'word' | 'uses' | 'examples'>;
+  state: IntroductionPlayerState;
+  onAction: (action: IntroductionPlayerAction) => void;
+  onRestart: () => void;
+  onFinish?: () => void;
+  finishing?: boolean;
+  mode?: 'full' | 'teaching-only';
+  renderTeachingActions?: (primary: ReactNode, secondary: ReactNode) => ReactNode;
+  characterPresentation?: CharacterPresentation;
+  sentenceCharacterPresentation?: SentenceCharacterPresentation;
+}) {
+  function teachingActions(primary: ReactNode, secondary: ReactNode, primaryFirst = false) {
+    if (renderTeachingActions) return renderTeachingActions(primary, secondary);
+    return <div className="intro-lab-player-actions">{primaryFirst ? primary : secondary}{primaryFirst ? secondary : primary}</div>;
+  }
+  const [browsing, setBrowsing] = useState(false);
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const scrollTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const programmaticScrollRef = useRef(false);
+  const newestRef = useRef<HTMLElement>(null);
+  const answerRef = useRef<HTMLInputElement>(null);
+  const composingRef = useRef(false);
+  const resultRef = useRef<HTMLDivElement>(null);
+
+  function focusCurrent(smooth = true) {
+    const viewport = viewportRef.current;
+    const current = newestRef.current;
+    if (!viewport || !current) return;
+    setBrowsing(false);
+    programmaticScrollRef.current = true;
+    clearTimeout(scrollTimerRef.current);
+    viewport.scrollTo({
+      top: current.offsetTop - 24,
+      behavior: smooth && !window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'smooth' : 'instant',
+    });
+    current.focus({ preventScroll: true });
+    scrollTimerRef.current = setTimeout(() => { programmaticScrollRef.current = false; }, 550);
+  }
+
+  function act(action: IntroductionPlayerAction) {
+    if (action.type === 'continue') {
+      if (!finishing) onFinish?.();
+      return;
+    }
+    onAction(action);
+  }
+
+  useLayoutEffect(() => {
+    if (state.phase === 'introduction') focusCurrent();
+    else if (state.phase === 'rehearsal') answerRef.current?.focus();
+    else if (state.phase === 'result') resultRef.current?.focus();
+  }, [snapshot, state.phase, state.beatIndex, state.exerciseIndex]);
+
+  useEffect(() => () => clearTimeout(scrollTimerRef.current), []);
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.defaultPrevented || document.querySelector('dialog[open], [role="dialog"][aria-modal="true"]')) return;
+      const action = teachingNavigationKeyAction({
+        key: event.key,
+        repeat: event.repeat,
+        composing: event.isComposing || event.keyCode === 229,
+        editable: isInteractiveTarget(event.target),
+        modified: event.metaKey || event.ctrlKey || event.altKey,
+      }, state.phase, browsing);
+      if (!action) {
+        // A held Space must not fall through to native scrolling after returning.
+        if (event.repeat && event.key === ' ' && state.phase === 'introduction'
+          && !event.isComposing && !isInteractiveTarget(event.target)
+          && !event.metaKey && !event.ctrlKey && !event.altKey) event.preventDefault();
+        return;
+      }
+      event.preventDefault();
+      if (action.type === 'focus-current') focusCurrent();
+      else act(action);
+    }
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [snapshot, state.phase, onAction, browsing, finishing, onFinish]);
+
+  // The authoring lab keeps its raw source preview; the session supplies preferences.
+  const sentenceText = (text: string) => sentenceCharacterPresentation
+    ? convertSentenceCharacters(text, sentenceCharacterPresentation) : text;
+  const sentenceLang = sentenceCharacterPresentation ? sentenceCharacterLanguage(sentenceCharacterPresentation) : 'zh-Hans';
+  const wordText = (word: { hanzi: string; traditional: string | null }) => characterPresentation
+    ? formatCardCharacters(word, characterPresentation) : word.hanzi;
+  function teachingSentence(text: string, pronunciation: string | null): ReactNode {
+    const sentence = sentenceText(text);
+    const target = [content.word.hanzi, content.word.traditional].filter((text): text is string => Boolean(text))
+      .map(sentenceText).find((text) => sentence.includes(text));
+    if (!target) return sentence;
+    const ruby = vocabularySentenceRuby(sentence, pronunciation, target, content.word.pinyin);
+    if (ruby) return ruby;
+    // Keep the taught reading even when the full sentence cannot be aligned safely.
+    return sentence.split(target).map((part, index) => <Fragment key={index}>
+      {index > 0 && <VocabularyCharacterRuby text={target} pinyin={content.word.pinyin} target />}{part}
+    </Fragment>);
+  }
+  function examplePronunciation(exampleId: string): string | null {
+    const part = snapshot.beats.flatMap((beat) => beat.parts).find((part) =>
+      part.source.kind === 'example' && part.source.exampleId === exampleId && part.source.field === 'pronunciation');
+    return part?.text ?? content.examples.find((example) => example.id === exampleId)?.pronunciation ?? null;
+  }
+  const exercise = snapshot.rehearsals[state.exerciseIndex];
+  const instruction = exercise ? getRehearsalInstruction(exercise) : '';
+  return <div className="intro-lab-player">
+    {state.phase === 'introduction' && <>
+      <div className="intro-lab-progress"><span>Introduction</span><span>{state.beatIndex + 1} of {snapshot.beats.length}</span></div>
+      <div className={`intro-teaching-viewport${browsing ? ' browsing' : ''}`}
+        ref={viewportRef} role="region" aria-label="Teaching steps; scroll up to revisit"
+        onWheel={() => { programmaticScrollRef.current = false; }}
+        onTouchStart={() => { programmaticScrollRef.current = false; }}
+        onScroll={() => {
+          if (programmaticScrollRef.current || !viewportRef.current || !newestRef.current) return;
+          setBrowsing(Math.abs(viewportRef.current.scrollTop - (newestRef.current.offsetTop - 24)) > 16);
+        }}>
+      <div className="intro-lab-beat-stack">
+        {snapshot.beats.slice(0, state.beatIndex + 1).map((beat, index) => (
+          <article key={beat.id} ref={index === state.beatIndex ? newestRef : undefined}
+            tabIndex={index === state.beatIndex ? -1 : undefined}
+            className={`intro-lab-beat${index === state.beatIndex ? ' newest' : ' past'}`}
+            aria-label={`Beat ${index + 1}${index === state.beatIndex ? ', current' : ''}`}>
+            <span className="intro-lab-beat-number">{String(index + 1).padStart(2, '0')}</span>
+            <div className="intro-lab-beat-copy">
+              {beat.parts.map((part, partIndex) => part.source.kind === 'example' && part.source.field === 'pronunciation' ? null : <p key={partIndex}
+                lang={part.source.kind === 'example' && part.source.field === 'sentence' ? sentenceLang : undefined}
+                className={part.source.kind === 'example' ? `intro-lab-part-${part.source.field}${part.source.field === 'sentence' ? ' intro-teaching-sentence' : ''}` : undefined}>
+                {part.source.kind === 'example' && part.source.field === 'sentence'
+                  ? teachingSentence(part.text, examplePronunciation(part.source.exampleId)) : sentenceText(part.text)}
+              </p>)}
+            </div>
+          </article>
+        ))}
+      </div>
+      </div>
+      <div className="intro-teaching-location" aria-live="polite">{state.beatIndex > 0 ? '↑ Earlier steps' : ''}</div>
+      {teachingActions(
+        <button type="button" className={renderTeachingActions ? 'vocab-primary' : 'intro-lab-button primary'} aria-keyshortcuts="Space" disabled={finishing} onClick={() => browsing ? focusCurrent() : act({ type: 'advance' })}>
+          {browsing ? 'Back to current step' : state.beatIndex === snapshot.beats.length - 1 ? mode === 'teaching-only' ? 'Finish walkthrough' : 'Try the expression' : 'Continue'}<ShortcutHint shortcut="Space" />
+        </button>,
+        !browsing && <button type="button" className={renderTeachingActions ? 'vocab-secondary' : 'intro-lab-button outline'} disabled={finishing || state.beatIndex === 0} aria-keyshortcuts="ArrowLeft" onClick={() => act({ type: 'back' })}>Back<ShortcutHint shortcut="←" /></button>,
+      )}
+    </>}
+    {state.phase === 'rehearsal' && exercise && <>
+      <div className="intro-lab-progress"><span>Target rehearsal</span><span>{state.exerciseIndex + 1} of {snapshot.rehearsals.length}</span></div>
+      <div className="intro-lab-practice-card">
+        {instruction && <h3>{sentenceText(instruction)}</h3>}
+        <p className="intro-lab-stimulus" lang={exercise.stimulus.source.kind === 'example_cloze' ? sentenceLang : undefined}>{sentenceText(exercise.stimulus.text)}</p>
+        <form onSubmit={(event) => {
+          event.preventDefault();
+          if (!composingRef.current) act({ type: 'submit' });
+        }}>
+          <label htmlFor="intro-lab-answer">Your answer</label>
+          <input id="intro-lab-answer" ref={answerRef} value={state.response} autoComplete="off"
+            onCompositionStart={() => { composingRef.current = true; }}
+            onCompositionEnd={() => { composingRef.current = false; }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && (event.nativeEvent.isComposing || event.keyCode === 229 || composingRef.current)) {
+                event.preventDefault();
+              }
+            }}
+            onChange={(event) => act({ type: 'edit', response: event.target.value })}
+            placeholder="Type Chinese characters" />
+          <div className="intro-lab-player-actions">
+            <button type="button" className="intro-lab-button outline" onClick={() => act({ type: 'back' })}>Back to introduction</button>
+            <button type="button" className="intro-lab-button subtle" onClick={() => act({ type: 'reveal' })}>Show taught answer</button>
+            <button type="submit" className="intro-lab-button primary" disabled={!state.response.trim()}>Check answer</button>
+          </div>
+        </form>
+      </div>
+    </>}
+    {state.phase === 'result' && exercise && <div ref={resultRef} tabIndex={-1} className="intro-lab-result">
+      <p className="intro-lab-kicker">{state.result === 'accepted' ? 'That is the taught expression' : state.result === 'revealed' ? 'The taught expression' : 'Keep this expression in mind'}</p>
+      <h3>{exercise.acceptedAnswers[0] && wordText(exercise.acceptedAnswers[0])}</h3>
+      {!characterPresentation && exercise.acceptedAnswers[0]?.traditional && exercise.acceptedAnswers[0].traditional !== exercise.acceptedAnswers[0].hanzi &&
+        <p>Traditional: {exercise.acceptedAnswers[0].traditional}</p>}
+      {state.result === 'rejected' && <p>Your answer did not match this constrained rehearsal. Another expression may be natural in the sentence; this exercise asks for the one just taught.</p>}
+      <div className="intro-lab-player-actions">
+        <button type="button" className="intro-lab-button outline" onClick={() => act({ type: 'retry' })}>Try again</button>
+        <button type="button" className="intro-lab-button primary" onClick={() => act({ type: 'next' })}>
+          {state.exerciseIndex < snapshot.rehearsals.length - 1 ? 'Next rehearsal' : 'Finish introduction'} <ShortcutHint shortcut="Space" />
+        </button>
+      </div>
+    </div>}
+    {state.phase === 'finished' && <div className="intro-lab-finished">
+      <div className="intro-lab-word-recap" aria-label="Word summary">
+        <h3>{wordText(content.word)}</h3>
+        <p className="intro-lab-recap-pinyin">{content.word.pinyin}</p>
+        <div className="intro-lab-recap-uses">
+          {content.uses.map((use) => {
+            const example = content.examples.find((row) => row.id === use.exampleIds[0]);
+            return <div key={use.id}>
+              <strong>{sentenceText(use.label)}</strong>
+              {example && <><p className="intro-teaching-sentence" lang={sentenceLang}>{teachingSentence(example.text, example.pronunciation)}</p><p>{sentenceText(example.translation)}</p></>}
+            </div>;
+          })}
+        </div>
+      </div>
+      {teachingActions(
+        onFinish && <button type="button" className={renderTeachingActions ? 'vocab-primary' : 'intro-lab-button primary'} disabled={finishing} aria-keyshortcuts="Enter" onClick={onFinish}>{finishing ? 'Saving…' : <>Continue<ShortcutHint shortcut="Enter" /></>}</button>,
+        <button type="button" className={renderTeachingActions ? 'vocab-secondary' : 'intro-lab-button outline'} disabled={finishing} onClick={onRestart}>Start again</button>,
+        true,
+      )}
+    </div>}
+    {mode === 'full' && <p className="intro-lab-preview-note">No mastery grade is recorded here.</p>}
+  </div>;
+}

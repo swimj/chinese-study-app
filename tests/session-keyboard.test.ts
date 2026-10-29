@@ -54,6 +54,15 @@ function key(value: string, extras: Partial<{ code: string; isComposing: boolean
 }
 
 describe('session keyboard contract', () => {
+  test('personal-note authoring has no shortcut or advertised entry while paused', () => {
+    for (const answerRevealed of [false,true]) {
+      const context = createContext({ answerRevealed });
+      assert.equal(resolveSessionKey(key('e'), context), null);
+      assert.equal(resolveSessionKey(key('E'), context), null);
+      const rows = getSessionShortcutGuide(context).flatMap(section => section.rows);
+      assert.ok(rows.every(row => row.key !== 'E' && !/personal notes/i.test(row.description)));
+    }
+  });
   test('unrevealed recognition uses Space to reveal', () => {
     const context = createContext();
     assert.equal(getSessionInteractionKind(context), 'recognition_unrevealed');
@@ -245,7 +254,7 @@ describe('session keyboard contract', () => {
     assert.equal(resolveSessionKey(key('/'), createContext()), null);
   });
 
-  test('completed summary uses Space to finish, then Space to close, and never rates or reveals', () => {
+  test('completed card uses Enter to open summary, which cannot undo, rate or reveal', () => {
     const unfinalized = createContext({
       completedSummary: true,
       answerRevealed: true,
@@ -255,10 +264,11 @@ describe('session keyboard contract', () => {
     assert.equal(getSessionInteractionKind(unfinalized), 'completed_summary');
     assert.deepEqual(getSessionPrimaryAction(unfinalized), {
       command: 'finish_session',
-      label: 'Finish session',
-      shortcut: 'Space',
+      label: 'See session summary',
+      shortcut: 'Enter',
     });
-    assert.deepEqual(resolveSessionKey(key(' '), unfinalized), { type: 'finish_session' });
+    assert.deepEqual(resolveSessionKey(key('Enter'), unfinalized), { type: 'finish_session' });
+    assert.equal(resolveSessionKey(key(' '), unfinalized), null);
     assert.deepEqual(resolveSessionKey(key('u'), unfinalized), { type: 'undo' });
     assert.equal(resolveSessionKey(key('1'), unfinalized), null);
     assert.equal(resolveSessionKey(key('3'), unfinalized), null);
@@ -271,6 +281,7 @@ describe('session keyboard contract', () => {
     assert.equal(getSessionPrimaryAction(finalizing)?.shortcut, null);
     assert.equal(resolveSessionKey(key(' '), finalizing), null);
     assert.equal(resolveSessionKey(key('u'), finalizing), null);
+    assert.equal(resolveSessionKey(key('Enter'), finalizing), null);
 
     const finalized = createContext({
       completedSummary: true,
@@ -283,8 +294,19 @@ describe('session keyboard contract', () => {
       shortcut: 'Space',
     });
     assert.deepEqual(resolveSessionKey(key(' '), finalized), { type: 'close_summary' });
+    assert.equal(resolveSessionKey(key('Enter'), finalized), null);
+    assert.equal(resolveSessionKey(key('u'), { ...finalized, hasUndo: true }), null);
     const thisCard = getSessionShortcutGuide(unfinalized).find((section) => section.title === 'This card');
-    assert.equal(thisCard?.rows[0]?.description, 'Finish the session');
+    assert.equal(thisCard?.rows[0]?.description, 'See session summary');
+  });
+
+  test('native completion controls keep Enter and Space for their own action', () => {
+    for (const summaryFinalizationKind of ['unfinalized', 'finalizing', 'finalized'] as const) {
+      const context = createContext({ completedSummary: true, summaryFinalizationKind,
+        isNativeActionTarget: true, hasUndo: true });
+      assert.equal(resolveSessionKey(key('Enter'), context), null);
+      assert.equal(resolveSessionKey(key(' '), context), null);
+    }
   });
 
   test('Space still reveals an in-session card rather than finishing', () => {
@@ -342,4 +364,75 @@ describe('session rating labels', () => {
     assert.equal(options[1]?.label, 'Good');
     assert.equal(getRatingForKey('2', options), 'good');
   });
+});
+
+
+test('native quality button activation never grades, submits, or advances a study card', () => {
+  const states: Partial<SessionKeyboardContext>[] = [
+    { productionInputActive: true, isProductionItem: true },
+    { answerRevealed: true, ratingAvailable: true },
+    { productionAwaitingNext: true },
+    { productionAwaitingSupplement: true },
+    { contrastSelectionActive: true, contrastHasSelection: true },
+  ];
+  for (const state of states) {
+    const context = createContext({ ...state, isQualityControlTarget: true });
+    assert.equal(resolveSessionKey(key('Enter'), context), null);
+    assert.equal(resolveSessionKey(key(' '), context), null);
+  }
+  assert.deepEqual(resolveSessionKey(key('Enter'), createContext({
+    productionInputActive: true, isProductionItem: true,
+  })), { type: 'submit_production' });
+  assert.deepEqual(resolveSessionKey(key(' '), createContext({
+    answerRevealed: true, ratingAvailable: true,
+  })), { type: 'rate_default' });
+  assert.deepEqual(resolveSessionKey(key('?'), createContext({ isQualityControlTarget: true })),
+    { type: 'toggle_shortcut_guide' });
+});
+
+
+test('Shift+Space skips only reinforcement outside typing and IME composition', () => {
+  const context = createContext({ canSkipReinforcement: true });
+  assert.deepEqual(resolveSessionKey(key(' ', { shiftKey: true }), context), { type: 'skip_reinforcement' });
+  assert.deepEqual(resolveSessionKey(key(' '), context), { type: 'reveal' });
+  for (const overrides of [{ canSkipReinforcement: false }, { isEditableTarget: true }, { sessionStarted: false }]) {
+    assert.equal(resolveSessionKey(key(' ', { shiftKey: true }), { ...context, ...overrides }), null);
+  }
+  assert.equal(resolveSessionKey(key(' ', { shiftKey: true, isComposing: true }), context), null);
+  assert.equal(resolveSessionKey(key(' ', { shiftKey: true, keyCode: 229 }), context), null);
+  assert.ok(getSessionShortcutGuide(context).flatMap((section) => section.rows).some((row) => row.key === 'Shift+Space'));
+});
+
+test('Shift+Enter records No clue only for an empty production answer', () => {
+  const context = createContext({ productionInputActive: true, isProductionItem: true,
+    canNoClueProduction: true, isEditableTarget: true, isProductionInputTarget: true });
+  const shortcut = key('Enter', { shiftKey: true });
+  assert.deepEqual(resolveSessionKey(shortcut, context), { type: 'no_clue_production' });
+  assert.deepEqual(resolveSessionKey(shortcut, { ...context, isEditableTarget: false }), { type: 'no_clue_production' });
+  assert.deepEqual(resolveSessionKey(key('Enter'), context), { type: 'submit_production' });
+  for (const overrides of [
+    { canNoClueProduction: false }, { productionInputActive: false }, { sessionStarted: false },
+    { isProductionInputTarget: false }, { isQualityControlTarget: true },
+    { completedSummary: true }, { productionAwaitingNext: true }, { pureCueAwaitingNext: true },
+  ]) assert.equal(resolveSessionKey(shortcut, { ...context, ...overrides }), null);
+  for (const overrides of [{ isComposing: true }, { keyCode: 229 }, { ctrlKey: true }, { metaKey: true }, { altKey: true }]) {
+    assert.equal(resolveSessionKey({ ...shortcut, ...overrides }, context), null);
+  }
+  for (const available of [true, false]) {
+    const rows = getSessionShortcutGuide({ ...context, canNoClueProduction: available }).flatMap(section => section.rows);
+    assert.equal(rows.find(row => row.key === 'Shift+Enter')?.available, available);
+  }
+});
+
+test('R toggles an available reflection request outside typing and composition', () => {
+  const context = createContext({ canRequestReflectionReview: true });
+  for (const letter of ['r', 'R']) assert.deepEqual(resolveSessionKey(key(letter), context), { type: 'toggle_reflection_review' });
+  for (const overrides of [{ isEditableTarget: true }, { completedSummary: true }, { sessionStarted: false }, { canRequestReflectionReview: false }]) {
+    assert.equal(resolveSessionKey(key('r'), { ...context, ...overrides }), null);
+  }
+  for (const overrides of [{ isComposing: true }, { keyCode: 229 }, { ctrlKey: true }, { metaKey: true }, { altKey: true }]) {
+    assert.equal(resolveSessionKey({ ...key('r'), ...overrides }, context), null);
+  }
+  assert.ok(getSessionShortcutGuide(context).flatMap(section => section.rows).some(row => row.key === 'R' && row.available));
+  assert.ok(!getSessionShortcutGuide({ ...context, canRequestReflectionReview: false }).flatMap(section => section.rows).some(row => row.key === 'R'));
 });

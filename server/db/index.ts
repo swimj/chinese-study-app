@@ -11,6 +11,7 @@ export * from './reflection-help-inbox.ts';
 export * from './attention.ts';
 export * from './domain-commands.ts';
 export * from './production-cues.ts';
+export * from './pure-cues.ts';
 export * from './content-diagnostics.ts';
 export * from './intake-triage.ts';
 export * from './identity.ts';
@@ -22,3 +23,12 @@ export * from './learner-ownership-guards.ts';
 export * from './shared-content-bootstrap.ts';
 export * from './hosted-operations.ts';
 export * from './usage-pulse.ts';
+export * from './word-introductions.ts';
+export * from './review-content.ts';
+
+export * from './content-quality.ts';
+
+export * from './session-debrief.ts';
+export * from './recovery-highlights.ts';
+
+export * from './whats-new.ts';

@@ -1,35 +1,37 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { MarkReflectionInboxSeenRequest } from '../../domain/reflection';
 import {
   fetchAttentionBadges,
   markFailedReflectionRunsSeen,
   markReflectionInboxSeen,
-  markWhatsNewSeen,
 } from '../../services/api';
-import { countUnseenWhatsNew, latestWhatsNewDate } from '../../pages/AboutPage';
+import { useWhatsNewAttention } from './useWhatsNewAttention';
 
 export function useAttentionBadges() {
+  const [reflectionGenerating, setReflectionGenerating] = useState(false);
   const [reflectionUnseenCount, setReflectionUnseenCount] = useState(0);
   const [failedReflectionRunIds, setFailedReflectionRunIds] = useState<string[]>([]);
-  const [whatsNewUnseenCount, setWhatsNewUnseenCount] = useState(0);
+  const updates = useWhatsNewAttention();
+  const refreshUpdates = updates.refresh;
 
+  const refreshGeneration = useRef(0);
   const refresh = useCallback(async () => {
+    const generation = ++refreshGeneration.current;
     const attention = await fetchAttentionBadges();
-    let seenThrough = attention.whatsNewSeenThroughDate;
-    if (seenThrough === null) {
-      const ensured = await markWhatsNewSeen({
-        throughDate: latestWhatsNewDate(),
-        mode: 'ensure',
-      });
-      seenThrough = ensured.whatsNewSeenThroughDate;
-    }
+    if (generation !== refreshGeneration.current) return;
     setReflectionUnseenCount(attention.reflectionUnseenCount);
+    setReflectionGenerating(attention.reflectionGenerating ?? false);
     if (!Array.isArray(attention.failedReflectionRunIds)) {
       throw new Error('Attention badges response is missing failedReflectionRunIds.');
     }
     setFailedReflectionRunIds(attention.failedReflectionRunIds);
-    setWhatsNewUnseenCount(countUnseenWhatsNew(seenThrough));
   }, []);
+  const refreshAll = useCallback(async () => {
+    // Either attention source can still refresh if the other one is unavailable.
+    const results = await Promise.allSettled([refresh(), refreshUpdates()]);
+    const failure = results.find(result => result.status === 'rejected');
+    if (failure?.status === 'rejected') throw failure.reason;
+  }, [refresh, refreshUpdates]);
 
   const markHelpCardSeen = useCallback(async (request: MarkReflectionInboxSeenRequest) => {
     const result = await markReflectionInboxSeen(request);
@@ -41,32 +43,36 @@ export function useAttentionBadges() {
     setFailedReflectionRunIds(result.failedReflectionRunIds);
   }, []);
 
-  const acknowledgeWhatsNew = useCallback(async () => {
-    const result = await markWhatsNewSeen({
-      throughDate: latestWhatsNewDate(),
-      mode: 'seen',
-    });
-    setWhatsNewUnseenCount(countUnseenWhatsNew(result.whatsNewSeenThroughDate));
-  }, []);
-
   useEffect(() => {
-    void refresh().catch(() => undefined);
+    void refreshAll().catch(() => undefined);
     function onVisibility() {
       if (document.visibilityState === 'visible') {
-        void refresh().catch(() => undefined);
+        void refreshAll().catch(() => undefined);
       }
     }
+    function onFocus() { void refreshAll().catch(() => undefined); }
     document.addEventListener('visibilitychange', onVisibility);
-    return () => document.removeEventListener('visibilitychange', onVisibility);
-  }, [refresh]);
+    window.addEventListener('focus', onFocus);
+    // Generation now belongs to the backend and can finish after the session UI leaves.
+    const poll = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void refresh().catch(() => undefined);
+    }, 5000);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('focus', onFocus);
+      window.clearInterval(poll);
+    };
+  }, [refreshAll]);
 
   return {
     reflectionUnseenCount,
+    reflectionGenerating,
     hasUnseenReflectionFailure: failedReflectionRunIds.length > 0,
-    whatsNewUnseenCount,
-    refresh,
+    whatsNewUnseenPostIds: updates.unseenPostIds,
+    refresh: refreshAll,
     markHelpCardSeen,
     acknowledgeFailedReflectionRuns,
-    acknowledgeWhatsNew,
+    acknowledgeWhatsNew: updates.read,
+    acknowledgeWhatsNewBadge: updates.exposeBadge,
   };
 }

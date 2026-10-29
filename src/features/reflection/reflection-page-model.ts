@@ -1,9 +1,12 @@
+import { validatePureCueReflectionOperationEvidenceContext, validateRepairPureCueStimulusEvidenceContext } from '../../domain/pure-cue-reflection';
+import type { PureCueReflectionItemV1 } from '../../domain/pure-cue-reflection';
 import type {
   AcceptProductionAlternateOperationV1,
   CreateContrastClusterOperation,
   ReflectionInputItemV1,
   ReflectionInputItemV2,
   ReflectionItemV3,
+  ReflectionItemV5,
   ReflectionItemResult,
   ReflectionHelpInboxEntry,
   ReflectionOperation,
@@ -11,6 +14,9 @@ import type {
   ReflectionQualityTag,
   ProductionCueChangeV2,
   ProductionCueDraftV2,
+  PureCueDistinctiveProductionCueDraftV1,
+  PromotePureElicitationDestinationV1,
+  ReconcileProductionCuesOperationV1,
   RepairProductionCueOperationV1,
   RepairProductionCueOperationV2,
 } from '../../domain/reflection';
@@ -165,6 +171,7 @@ export type ReflectionItemPresentation = {
   evidence: ReflectionInputItemV1
     | ReflectionInputItemV2
     | ReflectionItemV3
+    | PureCueReflectionItemV1
     | null;
   result: ReflectionItemResult;
   proposals: ReflectionProposalDetailDto[];
@@ -187,6 +194,7 @@ export type LearnerRequestedReflectionPresentation = {
   evidence: ReflectionInputItemV1
     | ReflectionInputItemV2
     | ReflectionItemV3
+    | PureCueReflectionItemV1
     | null;
   result: ReflectionItemResult;
 };
@@ -210,6 +218,7 @@ export type ReflectionProposalPresentation = {
   evidence: ReflectionInputItemV1
     | ReflectionInputItemV2
     | ReflectionItemV3
+    | PureCueReflectionItemV1
     | null;
   result: ReflectionItemResult;
   proposal: ReflectionProposalDetailDto;
@@ -222,11 +231,13 @@ export type ReflectionHelpCard =
     })
   | {
       kind: 'explanation';
+      actionability: 'manual' | 'non_actionable_disagreement';
       cardKey: string;
       artifact: ReflectionArtifactDetailDto;
       evidence: ReflectionInputItemV1
         | ReflectionInputItemV2
         | ReflectionItemV3
+        | PureCueReflectionItemV1
         | null;
       result: ReflectionItemResult;
     };
@@ -280,6 +291,9 @@ export function buildReflectionHelpCards(
       }
       cards.push({
         kind: 'explanation',
+        actionability: isPromotionDisagreement(result)
+          ? 'non_actionable_disagreement'
+          : 'manual',
         cardKey: `explanation:${artifact.artifactId}:${result.itemId}`,
         artifact,
         evidence,
@@ -334,6 +348,14 @@ export function buildNoDurableChangeGists(
     }));
 }
 
+/**
+ * Legacy result items do not carry a staged-promotion outcome. Keep the guard
+ * structural so stored V1 items remain readable when V2 adds the optional field.
+ */
+export function isPromotionDisagreement(result: ReflectionItemResult): boolean {
+  return 'promotionOutcome' in result && result.promotionOutcome === 'disagreement';
+}
+
 export function reflectionLearnerFeedback(result: ReflectionItemResult): string {
   if (result.learnerExplanation !== null) return result.learnerExplanation;
   return 'observation' in result ? result.observation : '';
@@ -375,41 +397,6 @@ export function buildReflectionProposalPresentations(
   }
 
   return presentations;
-}
-
-/**
- * Apply the known second-opinion success outcome in the client detail cache:
- * selected deferred proposals leave the deferred bank as dismissed with
- * `requested_second_opinion`, matching durable retirement without a refetch.
- */
-export function retireSelectedDeferredProposalsAfterSecondOpinion(
-  details: ReflectionArtifactDetailDto[],
-  selectedProposalIds: ReadonlyArray<string>,
-): ReflectionArtifactDetailDto[] {
-  const selected = new Set(selectedProposalIds);
-  return details.map((detail) => {
-    let changed = false;
-    const proposals = detail.proposals.map((proposal) => {
-      if (
-        !selected.has(proposal.review.proposalId)
-        || proposal.review.disposition.kind !== 'deferred'
-      ) {
-        return proposal;
-      }
-      changed = true;
-      return {
-        ...proposal,
-        review: {
-          ...proposal.review,
-          disposition: {
-            kind: 'dismissed' as const,
-            reason: 'requested_second_opinion',
-          },
-        },
-      };
-    });
-    return changed ? { ...detail, proposals } : detail;
-  });
 }
 
 /**
@@ -468,6 +455,10 @@ export function formatRunDuration(startedAt: string, completedAt: string): strin
 
 export function cloneReflectionOperation(operation: ReflectionOperation): ReflectionOperation {
   switch (operation.kind) {
+    case 'repair_pure_cue_stimulus':
+      return { ...operation, expectedAcceptedWordIds: [...operation.expectedAcceptedWordIds] };
+    case 'reconcile_pure_cue_response':
+      return structuredClone(operation);
     case 'suppress_definition_production':
       return { ...operation };
     case 'create_contrast_cluster':
@@ -510,8 +501,31 @@ export function cloneReflectionOperation(operation: ReflectionOperation): Reflec
       };
     case 'accept_production_alternate':
       return { ...operation };
+    case 'request_word_bootstrap':
     case 'add_production_cue_supplement':
       return { ...operation };
+    case 'reconcile_production_cues':
+      return {
+        ...operation,
+        destination: operation.destination === null ? null : operation.destination.kind === 'existing'
+          ? { ...operation.destination, expectedAcceptedWordIds: [...operation.destination.expectedAcceptedWordIds] }
+          : { ...operation.destination },
+        wordPlans: operation.wordPlans.map((plan) => ({
+          ...plan,
+          deactivateCueIds: [...plan.deactivateCueIds],
+          distinctiveCueDrafts: plan.distinctiveCueDrafts.map((draft) => ({ ...draft })),
+        })),
+      };
+    case 'promote_pure_elicitation':
+      return {
+        ...operation,
+        destination: { ...operation.destination },
+        wordPlans: operation.wordPlans.map((plan) => ({
+          ...plan,
+          deactivateCueIds: [...plan.deactivateCueIds],
+          distinctiveCueDrafts: plan.distinctiveCueDrafts.map((draft) => ({ ...draft })),
+        })),
+      };
   }
 }
 
@@ -580,7 +594,23 @@ export type ReflectionOperationDraftAction =
   | { type: 'set_alternate_word'; alternateWordId: string }
   | { type: 'set_supplement_english_frame'; englishFrame: string }
   | { type: 'set_supplement_example_sentence'; exampleSentence: string }
-  | { type: 'set_supplement_example_translation'; exampleTranslation: string };
+  | { type: 'set_supplement_example_translation'; exampleTranslation: string }
+  | { type: 'set_promotion_destination'; destination: PromotePureElicitationDestinationV1 | ReconcileProductionCuesOperationV1['destination'] }
+  | { type: 'set_reconciliation_fairness'; fairness: ReconcileProductionCuesOperationV1['sourceAttemptFairness'] }
+  | { type: 'toggle_promotion_deactivation'; wordId: string; cueId: string }
+  | { type: 'add_promotion_distinctive_cue'; wordId: string }
+  | {
+      type: 'restore_promotion_distinctive_cue';
+      wordId: string;
+      draft: PureCueDistinctiveProductionCueDraftV1;
+    }
+  | { type: 'remove_promotion_distinctive_cue'; wordId: string; index: number }
+  | {
+      type: 'update_promotion_distinctive_cue';
+      wordId: string;
+      index: number;
+      patch: Partial<PureCueDistinctiveProductionCueDraftV1>;
+    };
 
 export function reduceReflectionOperationDraft(
   operation: ReflectionOperation,
@@ -947,13 +977,115 @@ export function reduceReflectionOperationDraft(
         action.type,
         (current) => ({ ...current, exampleTranslation: action.exampleTranslation }),
       );
+    case 'set_reconciliation_fairness':
+      return editOperation(operation, 'reconcile_production_cues', action.type,
+        (current) => ({ ...current, sourceAttemptFairness: action.fairness }));
+    case 'set_promotion_destination':
+      return editCueReconciliation(
+        operation,
+        action.type,
+        (current) => {
+          if (current.kind === 'reconcile_production_cues') {
+            if (action.destination !== null && !('teachingNote' in action.destination)) {
+              throw new Error('Cue reconciliation requires teaching content.');
+            }
+            return { ...current, destination: action.destination };
+          }
+          if (action.destination === null) throw new Error('Historical promotion requires a destination.');
+          return { ...current, destination: action.destination };
+        },
+      );
+    case 'toggle_promotion_deactivation':
+      return editCueReconciliation(
+        operation,
+        action.type,
+        (current) => ({
+          ...current,
+          wordPlans: current.wordPlans.map((plan) => plan.wordId !== action.wordId
+            ? plan
+            : {
+                ...plan,
+                deactivateCueIds: plan.deactivateCueIds.includes(action.cueId)
+                  ? plan.deactivateCueIds.filter((cueId) => cueId !== action.cueId)
+                  : [...plan.deactivateCueIds, action.cueId],
+              }),
+        }),
+      );
+    case 'add_promotion_distinctive_cue':
+      return editCueReconciliation(
+        operation,
+        action.type,
+        (current) => ({
+          ...current,
+          wordPlans: current.wordPlans.map((plan) => plan.wordId !== action.wordId
+            ? plan
+            : {
+                ...plan,
+                distinctiveCueDrafts: [
+                  ...plan.distinctiveCueDrafts,
+                  { cueType: 'definition_gloss', text: '' },
+                ],
+              }),
+        }),
+      );
+    case 'restore_promotion_distinctive_cue':
+      return editCueReconciliation(
+        operation,
+        action.type,
+        (current) => ({
+          ...current,
+          wordPlans: current.wordPlans.map((plan) => plan.wordId !== action.wordId
+            ? plan
+            : {
+                ...plan,
+                distinctiveCueDrafts: [...plan.distinctiveCueDrafts, { ...action.draft }],
+              }),
+        }),
+      );
+    case 'remove_promotion_distinctive_cue':
+      return editCueReconciliation(
+        operation,
+        action.type,
+        (current) => ({
+          ...current,
+          wordPlans: current.wordPlans.map((plan) => plan.wordId !== action.wordId
+            ? plan
+            : {
+                ...plan,
+                distinctiveCueDrafts: removeAt(
+                  plan.distinctiveCueDrafts,
+                  action.index,
+                  'promotion distinctive cue',
+                ),
+              }),
+        }),
+      );
+    case 'update_promotion_distinctive_cue':
+      return editCueReconciliation(
+        operation,
+        action.type,
+        (current) => ({
+          ...current,
+          wordPlans: current.wordPlans.map((plan) => plan.wordId !== action.wordId
+            ? plan
+            : {
+                ...plan,
+                distinctiveCueDrafts: updateAt(
+                  plan.distinctiveCueDrafts,
+                  action.index,
+                  (draft) => ({ ...draft, ...action.patch }),
+                  'promotion distinctive cue',
+                ),
+              }),
+        }),
+      );
   }
 }
 
 export function getOperationDraftState(
   original: ReflectionOperation,
   draft: ReflectionOperation,
-  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | null = null,
+  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | PureCueReflectionItemV1 | null = null,
 ): {
   acceptanceMode: 'exact' | 'revised' | 'replacement';
   validationErrors: string[];
@@ -963,13 +1095,20 @@ export function getOperationDraftState(
   if (registration === null) {
     throw new Error(`Invariant violated: unregistered operation ${draft.kind}@${draft.version}.`);
   }
-  const allowedWordIds = evidence === null ? undefined : visibleWordIds(evidence);
+  const allowedWordIds = evidence === null ? undefined : evidence.source === 'pure_cue_mistake'
+    ? new Set([evidence.submittedWord.wordId]) : visibleWordIds(evidence);
   const validationErrors = validateReflectionOperation(
     draft,
     evidence === null || allowedWordIds === undefined
       ? {}
       : { allowedWordIds, evidenceItemId: evidence.itemId },
   );
+  if (evidence?.source === 'pure_cue_mistake' && draft.kind === 'reconcile_pure_cue_response') {
+    validationErrors.push(...validatePureCueReflectionOperationEvidenceContext(draft, evidence));
+  }
+  if (evidence?.source === 'pure_cue_mistake' && draft.kind === 'repair_pure_cue_stimulus') {
+    validationErrors.push(...validateRepairPureCueStimulusEvidenceContext(draft, evidence));
+  }
   if (evidence !== null && 'servedCue' in evidence) {
     validationErrors.push(...validateReflectionOperationEvidenceContext(draft, evidence, '$'));
   }
@@ -986,7 +1125,7 @@ export function createReplacementOperation(
   kind: ReflectionOperation['kind'],
   version: number,
   original: ReflectionOperation,
-  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | null,
+  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | ReflectionItemV5 | PureCueReflectionItemV1 | null,
 ): ReflectionOperation {
   const targetWordId = evidence?.targetWord?.wordId ?? primaryWordId(original);
   const submittedWordId = evidence !== null && 'submittedWord' in evidence
@@ -994,6 +1133,25 @@ export function createReplacementOperation(
     : secondaryWordId(original);
 
   switch (kind) {
+    case 'repair_pure_cue_stimulus':
+      if (evidence?.source !== 'pure_cue_mistake') {
+        throw new Error('Pure cue stimulus repair requires its original evidence.');
+      }
+      return {
+        kind,
+        version: 1,
+        sourceAttemptId: evidence.sourceAttemptId,
+        responseWordId: evidence.submittedWord.wordId,
+        pureCueId: evidence.currentCue.id,
+        expectedStimulus: evidence.currentCue.stimulus,
+        expectedAxisNote: evidence.currentCue.axisNote,
+        expectedAcceptedWordIds: [...evidence.currentCue.acceptedWordIds],
+        expectedTeachingNote: evidence.currentCue.teachingNote,
+        stimulus: '',
+      };
+    case 'reconcile_pure_cue_response':
+      if (original.kind === kind) return cloneReflectionOperation(original);
+      throw new Error('Pure cue response reconciliation requires its original evidence.');
     case 'suppress_definition_production':
       return { kind, version: 1, wordId: targetWordId };
     case 'create_contrast_cluster':
@@ -1025,6 +1183,8 @@ export function createReplacementOperation(
         proposedCues: [],
         repairIntent: 'add_distinguishing_anchor',
       };
+    case 'request_word_bootstrap':
+      return { kind, version: 1, wordId: targetWordId };
     case 'add_production_cue_supplement':
       return {
         kind,
@@ -1043,13 +1203,51 @@ export function createReplacementOperation(
         targetWordId,
         alternateWordId: submittedWordId,
       };
+    case 'reconcile_production_cues':
+      return {
+        kind,
+        version: 1,
+        sourceAttemptId: evidence !== null && 'sourceAttemptId' in evidence ? evidence.sourceAttemptId : '',
+        targetWordId,
+        responseWordId: submittedWordId,
+        destination: null,
+        sourceAttemptFairness: 'fair',
+        wordPlans: [targetWordId, submittedWordId]
+          .filter((wordId, index, values) => wordId.length > 0 && values.indexOf(wordId) === index)
+          .map((wordId) => ({ wordId, deactivateCueIds: [], distinctiveCueDrafts: [] })),
+      };
+    case 'promote_pure_elicitation': {
+      const promotionEvidence = evidence !== null && 'promotionEvidence' in evidence
+        ? evidence.promotionEvidence
+        : null;
+      const firstPureCueId = promotionEvidence?.intersectingPureCues[0]?.id ?? null;
+      return {
+        kind,
+        version: 1,
+        sourceAttemptId: evidence !== null && 'sourceAttemptId' in evidence
+          ? evidence.sourceAttemptId
+          : '',
+        targetWordId,
+        responseWordId: submittedWordId,
+        destination: firstPureCueId === null
+          ? { kind: 'create', stimulus: '', axisNote: '' }
+          : { kind: 'existing', pureCueId: firstPureCueId },
+        wordPlans: [targetWordId, submittedWordId]
+          .filter((wordId, index, values) => wordId.length > 0 && values.indexOf(wordId) === index)
+          .map((wordId) => ({
+            wordId,
+            deactivateCueIds: [],
+            distinctiveCueDrafts: [],
+          })),
+      };
+    }
   }
 }
 
 export function createManualOperation(
   kind: ReflectionOperation['kind'],
   version: number,
-  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | null,
+  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | ReflectionItemV5 | PureCueReflectionItemV1 | null,
 ): ReflectionOperation {
   return createReplacementOperation(
     kind,
@@ -1065,26 +1263,43 @@ export function createManualOperation(
 
 export function reflectionOperationLabel(operation: ReflectionOperation): string {
   switch (operation.kind) {
+    case 'repair_pure_cue_stimulus':
+      return 'Repair pure cue stimulus';
     case 'suppress_definition_production':
       return 'Suppress definition production';
     case 'create_contrast_cluster':
       return 'Create contrast cluster';
     case 'repair_production_cue':
       return 'Repair production cue';
+    case 'request_word_bootstrap':
+      return 'Prepare word examples';
     case 'add_production_cue_supplement':
       return 'Add post-reveal context';
     case 'accept_production_alternate':
       return 'Accept production alternate';
+    case 'promote_pure_elicitation':
+      return 'Promote pure elicitation';
+    case 'reconcile_production_cues':
+      return 'Reconcile production cues';
+    case 'reconcile_pure_cue_response':
+      return 'Accept pure cue response';
   }
 }
 
 function primaryWordId(operation: ReflectionOperation): string {
   switch (operation.kind) {
+    case 'repair_pure_cue_stimulus':
+    case 'reconcile_pure_cue_response':
+      return operation.responseWordId;
     case 'suppress_definition_production':
     case 'repair_production_cue':
+    case 'request_word_bootstrap':
     case 'add_production_cue_supplement':
       return operation.wordId;
     case 'accept_production_alternate':
+      return operation.targetWordId;
+    case 'reconcile_production_cues':
+    case 'promote_pure_elicitation':
       return operation.targetWordId;
     case 'create_contrast_cluster':
       return operation.members[0]?.wordId ?? '';
@@ -1093,12 +1308,19 @@ function primaryWordId(operation: ReflectionOperation): string {
 
 function secondaryWordId(operation: ReflectionOperation): string {
   switch (operation.kind) {
+    case 'repair_pure_cue_stimulus':
+    case 'reconcile_pure_cue_response':
+      return '';
     case 'accept_production_alternate':
       return operation.alternateWordId;
+    case 'reconcile_production_cues':
+    case 'promote_pure_elicitation':
+      return operation.responseWordId;
     case 'create_contrast_cluster':
       return operation.members[1]?.wordId ?? '';
     case 'suppress_definition_production':
     case 'repair_production_cue':
+    case 'request_word_bootstrap':
     case 'add_production_cue_supplement':
       return '';
   }
@@ -1237,18 +1459,20 @@ function assertIndex(values: unknown[], index: number, label: string): void {
 }
 
 function reflectionEvidenceTitle(
-  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | null,
+  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | PureCueReflectionItemV1 | null,
 ): string {
   if (evidence?.targetWord !== null && evidence?.targetWord !== undefined) {
     return reflectionWordLabel(evidence.targetWord);
   }
-  return evidence?.source === 'session_note' ? 'Session note' : 'Reflection evidence';
+  if (evidence?.source === 'pure_cue_mistake') return `Pure cue · ${reflectionWordLabel(evidence.submittedWord)}`;
+  return evidence?.source === 'session_note' ? 'Session note' : 'Feedback evidence';
 }
 
 function reflectionResponseSummary(
-  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | null,
+  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | PureCueReflectionItemV1 | null,
 ): string | null {
   if (evidence === null) return null;
+  if (evidence.source === 'pure_cue_mistake') return `Typed ${reflectionWordLabel(evidence.submittedWord)}`;
   if (evidence.source === 'production_mistake') {
     if (evidence.responseKind === 'no_clue') return 'No clue';
     if (evidence.submittedWord !== null) {
@@ -1267,9 +1491,10 @@ function reflectionResponseSummary(
 }
 
 function reflectionCueSummary(
-  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | null,
+  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | PureCueReflectionItemV1 | null,
 ): string | null {
   if (evidence === null) return null;
+  if (evidence.source === 'pure_cue_mistake') return evidence.servedSnapshot.stimulus;
   if (evidence.source === 'production_mistake') {
     if ('servedCue' in evidence) return evidence.servedCue.text;
     return evidence.cuesAsShown[0]?.text ?? null;
@@ -1291,7 +1516,7 @@ export type EvidenceWordOption = {
 };
 
 export function collectEvidenceWordOptions(
-  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | null,
+  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | PureCueReflectionItemV1 | null,
 ): EvidenceWordOption[] {
   if (evidence === null) return [];
   const byId = new Map<string, EvidenceWordOption>();
@@ -1306,6 +1531,7 @@ export function collectEvidenceWordOptions(
     }
   }
   add(evidence.targetWord);
+  if (evidence.source === 'pure_cue_mistake') evidence.currentCue.acceptedWords.forEach(add);
   if ('submittedWord' in evidence) add(evidence.submittedWord);
   if (evidence.source === 'session_note') {
     for (const relatedWord of evidence.relatedWords) add(relatedWord);
@@ -1321,34 +1547,20 @@ export function evidenceWordSurfaceLabel(word: EvidenceWordOption): string {
 }
 
 export function servedCueDisplayText(
-  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | null,
+  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | PureCueReflectionItemV1 | null,
 ): string | null {
   if (evidence === null) return null;
+  if (evidence.source === 'pure_cue_mistake') return evidence.servedSnapshot.stimulus;
   if ('servedCue' in evidence) return evidence.servedCue.text;
   if (evidence.source === 'production_mistake') return evidence.cuesAsShown[0]?.text ?? null;
   return null;
 }
 
 export function servedCueId(
-  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | null,
+  evidence: ReflectionInputItemV1 | ReflectionInputItemV2 | ReflectionItemV3 | PureCueReflectionItemV1 | null,
 ): string | null {
   if (evidence === null || !('servedCue' in evidence)) return null;
   return evidence.servedCue.cueId;
-}
-
-export function formatReflectionSpendCapResetAt(resetsAt: string): string {
-  return new Intl.DateTimeFormat(undefined, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-    timeZoneName: 'short',
-  }).format(new Date(resetsAt));
-}
-
-export function reflectionSpendCapTip(resetsAt: string): string {
-  return `Luna is the only available model until ${formatReflectionSpendCapResetAt(resetsAt)}.`;
 }
 
 export type {
@@ -1358,6 +1570,16 @@ export type {
   ReflectionProposalDetailDto,
   ReflectionQualityStatsDto,
   ReflectionReviewApi,
-  ReflectionSpendCapDto,
 } from '../../services/api';
 export type { AcceptProductionAlternateOperationV1 };
+
+function editCueReconciliation(
+  operation: ReflectionOperation,
+  actionType: string,
+  update: (current: Extract<ReflectionOperation, { kind: 'promote_pure_elicitation' | 'reconcile_production_cues' }>) => ReflectionOperation,
+): ReflectionOperation {
+  if (operation.kind !== 'promote_pure_elicitation' && operation.kind !== 'reconcile_production_cues') {
+    throw new Error(`${actionType} requires a cue reconciliation operation.`);
+  }
+  return update(operation);
+}

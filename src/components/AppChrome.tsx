@@ -1,3 +1,4 @@
+import { serviceBannerMessage } from '../features/operator/service-banner';
 import { createContext, useContext, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { reflectionNavBadge } from '../features/attention/reflection-attention';
@@ -22,13 +23,16 @@ const PRIMARY_PAGES: ReadonlyArray<{
 }> = [
   { key: 'home', label: 'Home', nested: false },
   { key: 'priority', label: 'Words', nested: true },
-  { key: 'reflections', label: 'Reflections', nested: true },
+  { key: 'reflections', label: 'Feedback', nested: true },
   { key: 'content', label: 'Content Bin', nested: false },
   { key: 'about', label: 'About', nested: true },
 ];
 
 export function AppChrome({
   currentPage,
+  gettingStartedUnseen = false,
+  guideToStash = false,
+  onOpenGettingStarted,
   error,
   serviceBanner,
   sessionActive,
@@ -37,7 +41,7 @@ export function AppChrome({
   contentPageLoading,
   reflectionUnseenCount = 0,
   hasUnseenReflectionFailure = false,
-  aboutUnseenCount = 0,
+  reflectionGenerating = false,
   children,
   onOpenHomePage,
   onOpenPriorityPage,
@@ -48,15 +52,18 @@ export function AppChrome({
   onSignOut,
 }: {
   currentPage: AppPageKey;
+  gettingStartedUnseen?: boolean;
+  guideToStash?: boolean;
+  onOpenGettingStarted?: () => void;
   error: string | null;
-  serviceBanner: { message: string } | null;
+  serviceBanner: { message: string; kickoffAt?: string } | null;
   sessionActive: boolean;
   priorityPageLoading: boolean;
   reflectionPageLoading: boolean;
   contentPageLoading: boolean;
   reflectionUnseenCount?: number;
   hasUnseenReflectionFailure?: boolean;
-  aboutUnseenCount?: number;
+  reflectionGenerating?: boolean;
   children: ReactNode;
   onOpenHomePage: () => void;
   onOpenPriorityPage: () => void;
@@ -82,7 +89,7 @@ export function AppChrome({
     // While already on Reflections, the overlay refresh icon owns loading feedback.
     reflections:
       reflectionPageLoading && currentPage !== 'reflections'
-        ? 'Loading reflections...'
+        ? 'Loading feedback...'
         : undefined,
     content: contentPageLoading ? 'Loading content bin...' : undefined,
   };
@@ -104,7 +111,7 @@ export function AppChrome({
       }>
         <nav className="navbar app-primary-nav" aria-label="Primary">
           <div className="nav-brand">
-            <strong>闲云无敌锤子</strong>
+            <strong lang="zh-Hans">闲云无敌锤子</strong>
           </div>
           <div className="nav-tabs">
             {PRIMARY_PAGES.map((page) => {
@@ -115,29 +122,34 @@ export function AppChrome({
                     tabActive: active,
                     unseenCount: reflectionUnseenCount,
                     hasUnseenFailure: hasUnseenReflectionFailure,
+                    isGenerating: reflectionGenerating,
                   })
-                : page.key === 'about' && aboutUnseenCount > 0
-                  ? { kind: 'count' as const, count: aboutUnseenCount }
-                  : { kind: 'none' as const };
+                : { kind: 'none' as const };
               const label = loadingLabels[page.key] ?? page.label;
               const tabButton = (
                 <button
                   type="button"
-                  className={`nav-tab ${active ? 'active' : ''}`}
+                  className={`nav-tab ${active ? 'active' : ''}${page.key === 'priority' && guideToStash ? ' getting-started-attention' : ''}`}
                   aria-current={active ? 'page' : undefined}
                   aria-label={
                     badge.kind === 'failure'
                       ? `${page.label}, generation failed`
-                      : badge.kind === 'count'
-                        ? `${page.label}, ${badge.count} new`
-                        : undefined
+                      : badge.kind === 'generating'
+                        ? `${page.label}, generating`
+                        : badge.kind === 'count'
+                          ? `${page.label}, ${badge.count} new`
+                          : undefined
                   }
                   onClick={openers[page.key]}
                   disabled={navigationLoading}
                 >
                   <span>{label}</span>
+                  {page.key === 'priority' && guideToStash ? <span className="getting-started-new">Add to your stash</span> : null}
                   {badge.kind === 'count' ? (
-                    <span className="nav-tab-count">{badge.count}</span>
+                    <span className={`nav-tab-count nav-tab-count-${page.key}`}>{badge.count}</span>
+                  ) : null}
+                  {badge.kind === 'generating' ? (
+                    <span className="nav-tab-generating" aria-hidden="true" />
                   ) : null}
                   {badge.kind === 'failure' ? (
                     <span className="nav-tab-alert" aria-hidden="true">!</span>
@@ -152,8 +164,8 @@ export function AppChrome({
                       <button
                         type="button"
                         className="reflections-nav-refresh"
-                        title="Reload reflection lists, help inbox, run log, and all artifact details"
-                        aria-label="Refresh reflection workspace from server"
+                        title="Reload feedback lists, help inbox, run log, and all artifact details"
+                        aria-label="Refresh feedback workspace from server"
                         disabled={reflectionPageLoading}
                         onClick={() => onRefreshReflections()}
                       >
@@ -163,6 +175,17 @@ export function AppChrome({
                   ) : (
                     tabButton
                   )}
+                  {page.key === 'about' && !active && gettingStartedUnseen ? (
+                    <div className="app-nav-nested">
+                      <nav className="reflection-view-rail" aria-label="About views">
+                        <button type="button" className="reflection-view-rail-tab getting-started-attention"
+                          disabled={navigationLoading} onClick={onOpenGettingStarted ?? onOpenAboutPage}>
+                          <span>Getting Started</span>
+                          <span className="getting-started-new">Start here</span>
+                        </button>
+                      </nav>
+                    </div>
+                  ) : null}
                   {active && page.nested ? (
                     <div ref={nestedSlotRef} className="app-nav-nested" />
                   ) : null}
@@ -180,7 +203,7 @@ export function AppChrome({
         <div className="app-chrome-main">
           {serviceBanner && !sessionActive ? (
             <div className="service-banner" role="status">
-              {serviceBanner.message}
+              {serviceBannerMessage(serviceBanner)}
             </div>
           ) : null}
 

@@ -1,3 +1,4 @@
+import { clearWordPreparationFixtures } from './helpers/prepared-word-fixtures.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -52,6 +53,7 @@ describe('My words collections', { concurrency: false }, () => {
   });
 
   beforeEach(() => {
+    clearWordPreparationFixtures(sqlite);
     rawLearner = 'test-learner';
     sqlite.exec('DELETE FROM study_attempt_events; DELETE FROM study_sessions; DELETE FROM word_skill_state; DELETE FROM user_word_priority; DELETE FROM words;');
     sqlite.exec("DELETE FROM learner_settings WHERE setting_key = 'diet_profile'");
@@ -147,7 +149,7 @@ describe('My words collections', { concurrency: false }, () => {
     assert.ok(first.words.every((entry) => entry.word.status === 'learning'));
   });
 
-  test('recent lapses keep any forgot in the last three UTC days or an unsuccessful last learning day', () => {
+  test('recent lapses keep recent forgots or a post-success unsuccessful learning day', () => {
     const today = new Date().toISOString().slice(0, 10);
     const inWindow = shiftUtcDay(today, -2);
     const outside = shiftUtcDay(today, -3);
@@ -157,11 +159,13 @@ describe('My words collections', { concurrency: false }, () => {
     insert('review-old', 'review', outside);
     insert('learn-fail', 'learning', today);
     insert('learn-ok', 'learning', today);
+    insert('learn-graduate', 'learning', today);
     insert('waiting');
     db.updateWordUserPriority('waiting', { bumpDelta: 1 });
     sqlite.prepare('UPDATE words SET last_learning_success_on = last_learning_covered_on WHERE id IN (?, ?, ?)').run('review-forgot', 'review-recovered', 'review-old');
     sqlite.prepare('UPDATE words SET last_learning_success_on = ? WHERE id = ?').run(shiftUtcDay(today, -5), 'learn-fail');
     sqlite.prepare('UPDATE words SET last_learning_success_on = ? WHERE id = ?').run(today, 'learn-ok');
+    // Same shape as unstudied -> learning graduation: covered today, never succeeded.
     insertAttempt('forgot-now', `${inWindow}T12:00:00.000Z`, `${inWindow}T12:00:01.000Z`, 'review-forgot', 'incorrect', 'forgot');
     insertAttempt('forgot-then-ok', `${inWindow}T08:00:00.000Z`, `${inWindow}T08:00:01.000Z`, 'review-recovered', 'incorrect', 'forgot');
     insertAttempt('later-ok', `${inWindow}T09:00:00.000Z`, `${inWindow}T09:00:01.000Z`, 'review-recovered', 'correct', 'good');
@@ -170,6 +174,7 @@ describe('My words collections', { concurrency: false }, () => {
     const recent = db.getMyWords({ recentLapses: true });
     assert.deepEqual(new Set(recent.words.map((entry) => entry.word.id)), new Set(['learn-fail', 'review-forgot', 'review-recovered']));
     assert.equal(recent.total, 3);
+    assert.ok(!recent.words.some((entry) => entry.word.id === 'learn-graduate'));
     assert.equal(db.getMyWords({ view: 'personal', recentLapses: true, statuses: ['unstudied'] }).total, 0);
     sqlite.prepare('UPDATE words SET hanzi = ?, pinyin = ? WHERE id = ?').run('我', 'wǒ', 'review-forgot');
     sqlite.prepare('UPDATE words SET hanzi = ?, pinyin = ? WHERE id = ?').run('你', 'nǐ', 'learn-fail');
@@ -219,13 +224,13 @@ describe('My words collections', { concurrency: false }, () => {
     db.updateWordUserPriority('personal', { bumpDelta: 1 });
     db.dismissWordFromStudy('dismissed');
     place({ 'hsk2-l1': 1 });
-    const before = db.snapshotStoredDietProfile();
+    const before = db.getStoredDietProfile();
     const result = db.getMyWords({ view: 'deck' });
     assert.equal(result.currentDeck?.label, 'HSK 1');
     assert.deepEqual(new Set(result.words.map((entry) => entry.word.id)), new Set(['unseen', 'personal', 'studied', 'normalized']));
     assert.equal(result.words.find((entry) => entry.word.id === 'unseen')?.word.status, 'unstudied');
     assert.equal(result.total, 4);
-    assert.equal(db.snapshotStoredDietProfile(), before);
+    assert.deepEqual(db.getStoredDietProfile(), before);
     assert.equal(db.getMyWords({ view: 'personal' }).words.length, 1);
     const response = await fetch(`${origin}/api/my-words?view=deck&q=我`);
     assert.equal(response.status, 200);

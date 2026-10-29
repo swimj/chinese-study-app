@@ -1,3 +1,4 @@
+import type { SavedWordContent } from './word-content/application';
 import type { ProductionCueSupplementSnapshot, ProductionCueType } from './study-actions';
 import type { Word } from '../types';
 
@@ -13,6 +14,7 @@ export type WordDiagnosticItem = {
   kind: 'word';
   id: string;
   word: Word;
+  latestBootstrapContent: SavedWordContent | null;
   contrastClusters: Array<{
     clusterId: string;
     title: string;
@@ -23,6 +25,7 @@ export type WordDiagnosticItem = {
     cueCount: number;
     activeCueCount: number;
   } | null;
+  productionCues: Array<Pick<ProductionCueDiagnosticItem, 'id' | 'text' | 'cueType' | 'availabilityStatus'>>;
   productionCueSupplements: WordDiagnosticSupplement[];
 };
 
@@ -44,6 +47,15 @@ export type ContrastClusterDiagnosticItem = {
   }>;
 };
 
+export type ProductionCueAvailabilityStatus =
+  | 'active'
+  | 'deactivated'
+  | 'replaced'
+  | 'retired'
+  | 'quarantined'
+  | 'unpublished'
+  | 'source_unavailable';
+
 export type ProductionCueDiagnosticItem = {
   kind: 'production_cue';
   id: string;
@@ -54,6 +66,8 @@ export type ProductionCueDiagnosticItem = {
   acceptedWords: Word[];
   createdAt: string;
   active: boolean;
+  availabilityStatus: ProductionCueAvailabilityStatus;
+  replacementCueId: string | null;
   attribution: {
     origin: 'reflection' | 'manual';
     invocationId: string | null;

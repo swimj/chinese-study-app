@@ -314,25 +314,24 @@ describe('review attempt event derivation', () => {
     );
   });
 
-  test('rejects incomplete review reinforcement batches', () => {
-    assert.throws(
-      () =>
-        deriveReviewCommitFieldsFromAttemptEvents([
-          createAttemptEvent({
-            id: 'attempt-1',
-            actionAttemptSequence: 1,
-            rating: 'forgot',
-            outcome: 'incorrect',
-          }),
-          createAttemptEvent({
-            id: 'attempt-2',
-            actionAttemptSequence: 2,
-            rating: 'good',
-            outcome: 'correct',
-          }),
-        ]),
-      /do not represent a covered review action/,
-    );
+  test('unfinished reinforcement requires an explicit skip flag', () => {
+    const events = [
+      createAttemptEvent({ id: 'attempt-1', actionAttemptSequence: 1, rating: 'forgot', outcome: 'incorrect' }),
+      createAttemptEvent({ id: 'attempt-2', actionAttemptSequence: 2, rating: 'good', outcome: 'correct' }),
+    ];
+    for (const count of [1, 2]) {
+      const partial = events.slice(0, count);
+      assert.throws(() => deriveReviewCommitFieldsFromAttemptEvents(partial), /covered review action/);
+      assert.throws(() => deriveReviewCommitFieldsFromAttemptEvents(partial, { reinforcementSkipped: false }), /covered review action/);
+      assert.deepEqual(deriveReviewCommitFieldsFromAttemptEvents(partial, { reinforcementSkipped: true }),
+        { failureCount: 1, terminalRating: null });
+    }
+    const clean = [createAttemptEvent({ rating: 'good', outcome: 'correct' })];
+    assert.throws(() => deriveReviewCommitFieldsFromAttemptEvents(clean, { reinforcementSkipped: true }), /unfinished lapsed review/);
+    const covered = [...events, ...[3, 4].map((sequence) => createAttemptEvent({
+      id: `attempt-${sequence}`, actionAttemptSequence: sequence, rating: 'good', outcome: 'correct',
+    }))];
+    assert.throws(() => deriveReviewCommitFieldsFromAttemptEvents(covered, { reinforcementSkipped: true }), /unfinished lapsed review/);
   });
 
   test('rejects mismatched denormalized outcome and rating', () => {

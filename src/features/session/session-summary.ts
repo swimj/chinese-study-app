@@ -1,4 +1,10 @@
-import type { SessionStudyItem } from '../../domain/study-actions';
+import {
+  DEFAULT_CHARACTER_PRESENTATION,
+  formatCardCharacters,
+  type CharacterPresentation,
+} from '../../domain/card-characters';
+import type { SessionDebriefInventoryItem } from '../../domain/session-debrief';
+import type { PureCueSessionReviewItem, SessionStudyItem } from '../../domain/study-actions';
 import type { ReviewRating, Word } from '../../types';
 import type { BucketSessionCommitIntent, SessionPhase } from '../../lib/session-state';
 
@@ -20,12 +26,16 @@ export type SessionSummary = {
   initialQueueLength: number;
   answeredCount: number;
   completedReviewActions: number;
+  completedPureCueActions: number;
+  lapsedPureCueActions: number;
   lapsedReviewActions: number;
   lapsedReviewLabels: string[];
   lapsedReviewActionIds: string[];
   completedLearningWords: number;
+  correctDayLearningWords: number;
   completedUnstudiedWords: number;
   completionMode: 'natural' | 'drain';
+  debriefInventory: SessionDebriefInventoryItem[];
 };
 
 export function createSessionSummary({
@@ -45,12 +55,24 @@ export function createSessionSummary({
     initialQueueLength,
     answeredCount: 0,
     completedReviewActions: 0,
+    completedPureCueActions: 0,
+    lapsedPureCueActions: 0,
     lapsedReviewActions: 0,
     lapsedReviewLabels: [],
     lapsedReviewActionIds: [],
     completedLearningWords: 0,
+    correctDayLearningWords: 0,
     completedUnstudiedWords: 0,
     completionMode: 'natural',
+    debriefInventory: [],
+  };
+}
+
+/** Legacy API field names now cover all review exercises, including standalone pure cues. */
+export function getCompletedExerciseCounts(summary: SessionSummary) {
+  return {
+    completedReviewActionCount: summary.completedReviewActions + summary.completedPureCueActions,
+    failedReviewActionCount: summary.lapsedReviewActionIds.length + summary.lapsedPureCueActions,
   };
 }
 
@@ -83,6 +105,7 @@ export function updateSessionSummaryForRating({
   activeWord,
   activeItem,
   previousPhase,
+  characterPresentation = DEFAULT_CHARACTER_PRESENTATION,
 }: {
   summary: SessionSummary | null;
   transition: SessionSummaryTransition;
@@ -90,6 +113,7 @@ export function updateSessionSummaryForRating({
   activeWord: Word;
   activeItem: SessionStudyItem;
   previousPhase: SessionPhase;
+  characterPresentation?: CharacterPresentation;
 }): SessionSummary | null {
   if (!summary) {
     return summary;
@@ -125,7 +149,7 @@ export function updateSessionSummaryForRating({
         nextSummary.lapsedReviewActions += 1;
         nextSummary.lapsedReviewLabels = [
           ...nextSummary.lapsedReviewLabels,
-          formatReviewEncounterLabel(activeItem, activeWord),
+          formatReviewEncounterLabel(activeItem, activeWord, characterPresentation),
         ];
       }
       break;
@@ -135,13 +159,16 @@ export function updateSessionSummaryForRating({
         nextSummary.lapsedReviewActions += 1;
         nextSummary.lapsedReviewLabels = [
           ...nextSummary.lapsedReviewLabels,
-          formatReviewEncounterLabel(activeItem, activeWord),
+          formatReviewEncounterLabel(activeItem, activeWord, characterPresentation),
         ];
-        nextSummary.lapsedReviewActionIds = [...nextSummary.lapsedReviewActionIds, activeItem.sessionActionId];
+        if (!nextSummary.lapsedReviewActionIds.includes(activeItem.sessionActionId)) {
+          nextSummary.lapsedReviewActionIds = [...nextSummary.lapsedReviewActionIds, activeItem.sessionActionId];
+        }
       }
       break;
     case 'commit-learning-word-session':
       nextSummary.completedLearningWords += 1;
+      if (transition.commit.success) nextSummary.correctDayLearningWords += 1;
       break;
     case 'commit-unstudied-word-session':
       nextSummary.completedUnstudiedWords += 1;
@@ -150,16 +177,76 @@ export function updateSessionSummaryForRating({
       break;
   }
 
+  if (transition.commit.type !== 'none') {
+    const target = activeItem.actionKind === 'contrast_selection'
+      ? activeItem.contrastSelection?.choices.find((choice) => choice.word.id === activeItem.contrastSelection?.promptTargetWordId)?.word
+      : activeWord;
+    if (!target) throw new Error('Covered contrast exercise must have its frozen prompt target.');
+    nextSummary.debriefInventory = [...summary.debriefInventory, {
+      word: formatCardCharacters(target, characterPresentation), pinyin: target.pinyin,
+    }];
+  }
+
   return nextSummary;
 }
 
-function formatReviewEncounterLabel(item: SessionStudyItem, word: Word) {
+export function updateSessionSummaryForPureCueRating({
+  activePureCue,
+  characterPresentation = DEFAULT_CHARACTER_PRESENTATION,
+  summary,
+  transition,
+  previousPhase,
+}: {
+  summary: SessionSummary | null;
+  transition: SessionSummaryTransition;
+  previousPhase: SessionPhase;
+  activePureCue: PureCueSessionReviewItem;
+  characterPresentation?: CharacterPresentation;
+}): SessionSummary | null {
+  if (!summary) return summary;
+  const nextSummary: SessionSummary = {
+    ...summary,
+    answeredCount: transition.state.answeredCount,
+    completedAt: transition.state.phase === 'completed' && summary.completedAt === null
+      ? new Date().toISOString()
+      : summary.completedAt,
+    completionMode: transition.state.phase === 'completed' && previousPhase === 'draining'
+      ? 'drain'
+      : summary.completionMode,
+  };
+  if (transition.commit.type === 'commit-pure-cue-production-session') {
+    nextSummary.completedPureCueActions += 1;
+    nextSummary.debriefInventory = [...summary.debriefInventory, {
+      word: activePureCue.snapshot.acceptedAnswers.map((answer) => formatCardCharacters(answer, characterPresentation)).join(' / '),
+      // The accepted-answer snapshot intentionally contains no pronunciation.
+      pinyin: '',
+    }];
+    if (transition.commit.events.some((event) => event.rating === 'forgot')) {
+      nextSummary.lapsedPureCueActions += 1;
+    }
+  }
+  return nextSummary;
+}
+
+function formatReviewEncounterLabel(
+  item: SessionStudyItem,
+  word: Word,
+  characterPresentation: CharacterPresentation,
+) {
   if (item.actionKind === 'contrast_selection') {
-    const target = item.contrastSelection?.choices.find((choice) => choice.word.id === item.contrastSelection?.promptTargetWordId);
-    return target ? `${item.contrastSelection?.prompt.promptText} -> ${target.word.hanzi}` : `${word.hanzi} contrast`;
+    const target = item.contrastSelection?.choices.find((choice) => (
+      choice.word.id === item.contrastSelection?.promptTargetWordId
+    ));
+    const characters = target
+      ? formatCardCharacters(target.word, characterPresentation)
+      : formatCardCharacters(word, characterPresentation);
+    return target
+      ? `${item.contrastSelection?.prompt.promptText} -> ${characters}`
+      : `${characters} contrast`;
   }
 
+  const characters = formatCardCharacters(word, characterPresentation);
   return item.actionKind === 'recognition'
-    ? `${word.hanzi} -> ${word.meaning}`
-    : `${word.meaning} -> ${word.hanzi}`;
+    ? `${characters} -> ${word.meaning}`
+    : `${word.meaning} -> ${characters}`;
 }

@@ -1,17 +1,33 @@
+import { useSessionCompletionFlow } from './useSessionCompletionFlow';
+import type { SessionCompletionPanelProps } from './SessionCompletionPanel';
+import type { SessionCompletion, StageSessionCompletionRequest } from '../../domain/session-completion';
+import { DEFAULT_INTRODUCTION_SPACING, type StudyIntroductionOrder } from '../../domain/introduction-order';
+import { resolveContentExerciseResponse } from '../../domain/word-content/materialize';
+import { useIntroductionGate, type SessionIntroductionGate } from './useIntroductionGate';
+import { selectedIntroduction } from '../word-introduction/model';
+import { sameIntroductionCompletionTarget } from './introduction-gate';
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import type { ReviewRating, Word, WordMeaning } from '../../types';
 import type {
   ProductionResponseResolution,
+  PureCueSessionReviewItem,
   SessionStudyItem,
 } from '../../domain/study-actions';
-import { studyManagementActionRemovesCurrentReviewAction } from '../../domain/study-actions';
+import { isPureCueSessionReviewItem, studyManagementActionRemovesCurrentReviewAction } from '../../domain/study-actions';
+import {
+  DEFAULT_CHARACTER_PRESENTATION,
+  formatCardCharacters,
+  type CharacterPresentation,
+} from '../../domain/card-characters';
 import { resolveSessionProductionResponse } from '../../domain/production-response';
+import { matchServedCueAnswer } from '../../domain/cues';
+import { resolvePureCueResponse, type PureCueAssessmentEvent } from '../../domain/pure-cues';
 import {
   dismissWordFromStudy,
+  fetchCurrentSessionCompletion,
+  closeSessionCompletion,
   fetchWordMeanings,
-  generateSessionReflection,
   recordStudyManagementAction,
-  recordReviewSessionSummary,
   updateWordMeaningVisibility,
   updateWordPersonalNotes,
 } from '../../services/api';
@@ -23,6 +39,7 @@ import {
   beginBucketDrainSession,
   cancelRatedReviewSessionAction,
   completeActiveUnstudiedIntro,
+  completeActiveUnstudiedTeaching,
   createBucketSessionState,
   dismissActiveBucketSessionUnit,
   dismissBucketSessionWordFromSnapshot,
@@ -31,6 +48,8 @@ import {
   getBucketSessionTotalCount,
   markActiveSessionUnitStarted,
   rateActiveSessionUnit,
+  skipActiveReviewReinforcement,
+  rateActivePureCueProductionUnit,
   rateActiveContrastSelectionUnit,
   type BucketSessionState,
   type LearningWordProgress,
@@ -41,6 +60,8 @@ import type { ActiveBucketSchedulerUnit } from '../../lib/session-scheduler';
 import {
   beginDrainSessionSummary,
   createSessionSummary,
+  getCompletedExerciseCounts,
+  updateSessionSummaryForPureCueRating,
   updateSessionSummaryForRating,
   type SessionSummary,
 } from './session-summary';
@@ -56,10 +77,12 @@ import {
   getActiveMeaningSelection,
   getActivePrompt,
   getActiveReviewState,
+  getCompletedReinforcementStreak,
   getActiveWordPersonalNotes,
   getPersonalNotesEditorTarget,
-  hasServedProductionCueSupplement,
+  hasServedProductionReveal,
   isProductionSessionItem,
+  isPureCueReviewInReinforcement,
   isReviewInReinforcement,
 } from './session-selectors';
 import {
@@ -74,7 +97,9 @@ import {
   applySessionCommit,
   type DeferredSessionCommit,
 } from './session-commit';
-import type { FrozenContrastCard, FrozenProductionCard } from './StudySessionPanel';
+import type { SessionDeskHandle } from './SessionDesk';
+import { getSessionDeskOutcome, getSessionDeskUnitKey, retainSessionDeskAgainKeys, updateSessionDeskAgainKeys } from './session-desk-model';
+import type { FrozenContrastCard, FrozenProductionCard, FrozenPureCueCard } from './StudySessionPanel';
 import {
   createActiveSessionClock,
   finishActiveSessionClock,
@@ -95,26 +120,18 @@ import {
   appendAcceptedLearnerRequestedAttemptIds,
   dropLearnerRequestedReflectionForAction,
   toggleLearnerRequestedReview,
+  setContentRatingRequestedReview,
   type SessionReflectionEvidenceAccumulator,
   type LearnerRequestedReflectionAccumulator,
-  type SessionReflectionEvidenceSupplementV1,
 } from './session-reflection-evidence';
 import {
-  beginSessionFinalization,
-  completeSessionFinalization,
-  completeSessionReflectionGeneration,
+  hasPureCueReflectionEvidence,
   createSessionFinalizationState,
-  failSessionReflectionGeneration,
-  finalizeSessionBeforeReflection,
-  isCurrentSessionReflectionRequest,
-  resetFailedSessionFinalization,
-  retrySessionReflectionGeneration,
-  shouldFinishSessionOnLeave,
-  runExclusiveAsync,
   type SessionFinalizationState,
 } from './session-finalization';
 
 type SessionUndoSnapshot = {
+  introductionWordId?: string;
   sessionState: BucketSessionState;
   sessionSummary: SessionSummary | null;
   ui: SessionUiSnapshot;
@@ -124,15 +141,19 @@ type SessionUndoSnapshot = {
 type ProductionUiPhase = 'idle' | 'await-supplement' | 'await-rating' | 'await-next';
 
 type SessionUiSnapshot = {
+  deskAgainKeys: string[];
   answerRevealed: boolean;
   productionHanziInput: string;
   productionHanziError: string | null;
   productionSubmittedResponse: string | null;
   productionResponseResolution: ProductionResponseResolution | null;
+  pureCueResponseResolution: Pick<PureCueAssessmentEvent, 'outcome' | 'submittedWordId'> | null;
   productionUiPhase: ProductionUiPhase;
   frozenProductionCard: FrozenProductionCard | null;
+  frozenPureCueCard: FrozenPureCueCard | null;
   contrastSelectedWordId: string | null;
   frozenContrastCard: FrozenContrastCard | null;
+  completedReinforcementStreak: number | null;
 };
 
 export type StudySessionControllerOptions = {
@@ -140,9 +161,17 @@ export type StudySessionControllerOptions = {
   onSessionEnded: () => Promise<void>;
   onReflectionGenerated?: () => Promise<void> | void;
   sessionSurfaceVisible: boolean;
+  studyNewWordsFirst?: boolean;
+  studyIntroductionOrder?: StudyIntroductionOrder;
+  studyIntroductionSpacing?: number;
+  characterPresentation?: CharacterPresentation;
 };
 
 export type StudySessionHomePageProps = {
+  sessionDeskRef: RefObject<SessionDeskHandle>;
+  deskAgainCount: number;
+  deskRemainingCount: number;
+  introductionGate: SessionIntroductionGate | null;
   sessionPrefetch: SessionPrefetchState;
   sessionStarted: boolean;
   sessionPhase: BucketSessionState['phase'] | null;
@@ -151,19 +180,28 @@ export type StudySessionHomePageProps = {
   reviewedCount: number;
   sessionSummary: SessionSummary | null;
   sessionFinalization: SessionFinalizationState;
+  completionPanel?: Omit<SessionCompletionPanelProps, 'summary' | 'characterPresentation'>;
   activeItem: SessionStudyItem | null;
+  activePureCue: PureCueSessionReviewItem | null;
   activeWord: Word | null;
   activeLearningProgress: LearningWordProgress | undefined;
   activeUnstudiedProgress: UnstudiedWordProgress | undefined;
   activeReviewProgress: ReviewActionProgress | undefined;
+  activePureCueFailureCount: number;
+  activePureCueReinforcementStreak: number;
+  completedReinforcementStreak: number | null;
   hasUndo: boolean;
   submittingRating: ReviewRating | null;
+  confirmingSessionAction: boolean;
+  contentRatingSaving: boolean;
   personalNotesEditorOpen: boolean;
   personalNotesEditorSaving: boolean;
   studyManagementSubmitting: boolean;
   productionAwaitingNext: boolean;
+  pureCueAwaitingNext: boolean;
   productionAwaitingSupplement: boolean;
   frozenProductionCard: FrozenProductionCard | null;
+  frozenPureCueCard: FrozenPureCueCard | null;
   contrastAwaitingNext: boolean;
   frozenContrastCard: FrozenContrastCard | null;
   activeAllMeanings: string[];
@@ -207,8 +245,12 @@ export type StudySessionHomePageProps = {
   onProductionHanziInputChange: (value: string) => void;
   onSelectContrastChoice: (wordId: string) => void;
   onRevealAnswer: () => void;
+  onContentRatingSavingChange: (saving: boolean) => void;
+  onContentRatingChange: (rating: 'up' | 'down' | null) => void;
+  onFrozenProductionContentRatingChange: (rating: 'up' | 'down' | null) => void;
   onToggleLearnerRequestedReview: () => void;
   onToggleFrozenProductionLearnerRequestedReview: () => void;
+  onSkipReinforcement: () => void;
   onRate: (rating: ReviewRating, options: { restoreUi: 'revealed' | 'production-input' }) => void;
   shortcutGuideOpen: boolean;
   onOpenShortcutGuide: () => void;
@@ -229,6 +271,7 @@ export type PersonalNotesEditorController = {
 
 export type StudySessionController = {
   sessionStarted: boolean;
+  sessionReflectionGenerating: boolean;
   prefetchSession: () => Promise<void>;
   refreshSessionPrefetch: () => Promise<void>;
   invalidateSessionPrefetch: () => void;
@@ -242,14 +285,28 @@ export function useStudySession({
   onSessionEnded,
   onReflectionGenerated,
   sessionSurfaceVisible,
+  studyNewWordsFirst = false,
+  studyIntroductionOrder,
+  studyIntroductionSpacing = DEFAULT_INTRODUCTION_SPACING,
+  characterPresentation = DEFAULT_CHARACTER_PRESENTATION,
 }: StudySessionControllerOptions): StudySessionController {
   const [sessionPrefetch, setSessionPrefetch] = useState<SessionPrefetchState>(() => getSessionPrefetchSnapshot());
+  const sessionDeskRef = useRef<SessionDeskHandle>(null);
+  const deskBusyRef = useRef(false);
+  const mountedRef = useRef(false);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+  const [deskAgainKeys, setDeskAgainKeys] = useState<string[]>([]);
+  const [deskRemainingOverride, setDeskRemainingOverride] = useState<number | null>(null);
   const [sessionStarted, setSessionStarted] = useState(false);
   const [sessionState, setSessionState] = useState<BucketSessionState | null>(null);
   const [sessionSummary, setSessionSummary] = useState<SessionSummary | null>(null);
   const [sessionLoading, setSessionLoading] = useState(false);
   const [answerRevealed, setAnswerRevealed] = useState(false);
   const [submittingRating, setSubmittingRating] = useState<ReviewRating | null>(null);
+  const [confirmingSessionAction, setConfirmingSessionAction] = useState(false);
   const [pendingSessionCommit, setPendingSessionCommit] = useState<DeferredSessionCommit | null>(null);
   const [lastUndoSnapshot, setLastUndoSnapshot] = useState<SessionUndoSnapshot | null>(null);
   const [sessionNow, setSessionNow] = useState(() => new Date().toISOString());
@@ -267,10 +324,13 @@ export function useStudySession({
   const [productionHanziError, setProductionHanziError] = useState<string | null>(null);
   const [productionSubmittedResponse, setProductionSubmittedResponse] = useState<string | null>(null);
   const [productionResponseResolution, setProductionResponseResolution] = useState<ProductionResponseResolution | null>(null);
+  const [pureCueResponseResolution, setPureCueResponseResolution] = useState<Pick<PureCueAssessmentEvent, 'outcome' | 'submittedWordId'> | null>(null);
   const [productionUiPhase, setProductionUiPhase] = useState<ProductionUiPhase>('idle');
   const [contrastSelectedWordId, setContrastSelectedWordId] = useState<string | null>(null);
   const [frozenProductionCard, setFrozenProductionCard] = useState<FrozenProductionCard | null>(null);
+  const [frozenPureCueCard, setFrozenPureCueCard] = useState<FrozenPureCueCard | null>(null);
   const [frozenContrastCard, setFrozenContrastCard] = useState<FrozenContrastCard | null>(null);
+  const [completedReinforcementStreak, setCompletedReinforcementStreak] = useState<number | null>(null);
   const [shortcutGuideOpen, setShortcutGuideOpen] = useState(false);
   const personalNotesEditorInputRef = useRef<HTMLTextAreaElement | null>(null);
   const productionHanziInputRef = useRef<HTMLInputElement | null>(null);
@@ -281,19 +341,22 @@ export function useStudySession({
   const learnerRequestedReflectionRef = useRef<LearnerRequestedReflectionAccumulator>(
     createLearnerRequestedReflectionAccumulator(),
   );
-  const pendingReflectionSupplementRef = useRef<unknown>(null);
-  const activeSessionIdRef = useRef<string | null>(null);
+  const contentRatingRequestedReflectionRef = useRef<LearnerRequestedReflectionAccumulator>(
+    createLearnerRequestedReflectionAccumulator(),
+  );
+  const contentRatingSavingRef = useRef(false);
+  const contentRatingSaveBarrierRef = useRef<Promise<void>>(Promise.resolve());
+  const releaseContentRatingSaveRef = useRef<(() => void) | null>(null);
+  const [contentRatingSaving, setContentRatingSaving] = useState(false);
+  const hasCommittedPureCueReflectionRef = useRef(false);
   const [sessionFinalization, setSessionFinalization] = useState<SessionFinalizationState>(
     createSessionFinalizationState,
   );
   const sessionFinalizationRef = useRef<SessionFinalizationState>(sessionFinalization);
   const pendingSessionCommitRef = useRef<DeferredSessionCommit | null>(pendingSessionCommit);
   const sessionStateRef = useRef<BucketSessionState | null>(sessionState);
-  const sessionStartedRef = useRef(sessionStarted);
-  const inFlightFinishRef = useRef<Promise<void> | null>(null);
   pendingSessionCommitRef.current = pendingSessionCommit;
   sessionStateRef.current = sessionState;
-  sessionStartedRef.current = sessionStarted;
 
   function updateSessionFinalization(
     updater: (current: SessionFinalizationState) => SessionFinalizationState,
@@ -328,8 +391,27 @@ export function useStudySession({
       : 0
     : getSessionPayloadItemCount(sessionPrefetch.payload) ?? 0;
   const activeUnit = sessionStarted && sessionState ? getOptionalActiveSessionUnit(sessionState) : null;
-  const activeItem: SessionStudyItem | null = activeUnit?.type === 'study' ? activeUnit.item : null;
+  const activePureCue: PureCueSessionReviewItem | null = activeUnit?.type === 'study' && isPureCueSessionReviewItem(activeUnit.item)
+    ? activeUnit.item
+    : null;
+  const activeItem: SessionStudyItem | null = activeUnit?.type === 'study' && !isPureCueSessionReviewItem(activeUnit.item)
+    ? activeUnit.item
+    : null;
   const activeWord = activeUnit?.type === 'unstudied_intro' ? activeUnit.word : activeItem?.word ?? null;
+  const introductionController = useIntroductionGate({
+    sessionId: sessionStarted ? sessionState?.sessionId ?? null : null,
+    visible: sessionSurfaceVisible && frozenProductionCard === null
+      && frozenPureCueCard === null && frozenContrastCard === null,
+    profile: studyProfile.id, word: activeWord,
+    completedSession: sessionState?.phase === 'completed',
+    introductions: sessionState?.introductions,
+  });
+  const introductionGate = introductionController.gate;
+  const currentIntroductionTargetRef = useRef({ state: sessionState, wordId: activeWord?.id, gateKey: introductionGate?.key });
+  currentIntroductionTargetRef.current = { state: sessionState, wordId: activeWord?.id, gateKey: introductionGate?.key };
+  const introductionBlocked = introductionGate !== null;
+  const introductionBlockedRef = useRef(introductionBlocked);
+  introductionBlockedRef.current = introductionBlocked;
   const activeWordPersonalNotes = getActiveWordPersonalNotes({
     word: activeWord,
     overridesByWordId: sessionPersonalNotesOverridesByWordId,
@@ -348,23 +430,28 @@ export function useStudySession({
     activeUnit?.type === 'study' && activeUnit.bucket === 'review'
       ? sessionState?.reviewProgress[activeUnit.item.sessionActionId]
       : undefined;
+  const activePureCueReviewProgress = activePureCue
+    ? sessionState?.pureCueReviewProgress[activePureCue.sessionActionId]
+    : undefined;
   const reviewedCount = sessionStarted ? sessionState?.answeredCount ?? 0 : 0;
-  const activeReviewFailureCount = activeReviewProgress?.failureCount ?? 0;
-  const activeReviewReinforcementStreak = activeReviewProgress?.reinforcementStreak ?? 0;
-  const reviewInReinforcement = isReviewInReinforcement({
-    word: activeWord,
-    failureCount: activeReviewFailureCount,
-  });
+  const activeReviewFailureCount = activePureCueReviewProgress?.failureCount ?? activeReviewProgress?.failureCount ?? 0;
+  const activePureCueFailureCount = activePureCueReviewProgress?.failureCount ?? 0;
+  const activeReviewReinforcementStreak = activePureCueReviewProgress?.reinforcementStreak ?? activeReviewProgress?.reinforcementStreak ?? 0;
+  const reviewInReinforcement = activePureCue
+    ? isPureCueReviewInReinforcement(activeReviewFailureCount)
+    : isReviewInReinforcement({ word: activeWord, failureCount: activeReviewFailureCount });
   const activePrompt = getActivePrompt({
     item: activeItem,
     word: activeWord,
     promptDisplayedMeanings: activePromptDisplayedMeanings,
     allMeanings: activeAllMeanings,
+    characterPresentation,
   });
   const activeAnswerText = getActiveAnswerText({
     item: activeItem,
     word: activeWord,
     allMeanings: activeAllMeanings,
+    characterPresentation,
   });
   const activeAnswerPinyin = getActiveAnswerPinyin({
     item: activeItem,
@@ -375,7 +462,7 @@ export function useStudySession({
     reinforcementStreak: activeReviewReinforcementStreak,
     failureCount: activeReviewFailureCount,
   });
-  const isProductionItem = isProductionSessionItem(activeItem);
+  const isProductionItem = isProductionSessionItem(activeItem) || activePureCue !== null;
   const contrastSelectionActive = activeItem?.actionKind === 'contrast_selection';
   const contrastAwaitingRating =
     contrastSelectionActive &&
@@ -384,10 +471,11 @@ export function useStudySession({
   const productionAwaitingRating = isProductionItem && productionUiPhase === 'await-rating';
   const productionAwaitingSupplement = isProductionItem && productionUiPhase === 'await-supplement';
   const productionAwaitingNext = productionUiPhase === 'await-next' && frozenProductionCard !== null;
+  const pureCueAwaitingNext = productionUiPhase === 'await-next' && frozenPureCueCard !== null;
   const contrastAwaitingNext = frozenContrastCard !== null;
   const activeRatingOptions = getActiveRatingOptions({
     actionKind: activeItem?.actionKind,
-    wordStatus: activeWord?.status,
+    wordStatus: activePureCue ? 'review' : activeWord?.status,
     reviewInReinforcement,
   });
   const activeElapsedTime =
@@ -445,8 +533,10 @@ export function useStudySession({
     setProductionHanziError(null);
     setProductionSubmittedResponse(null);
     setProductionResponseResolution(null);
+    setPureCueResponseResolution(null);
     setProductionUiPhase('idle');
     setFrozenProductionCard(null);
+    setFrozenPureCueCard(null);
   }
 
   function resetContrastUi() {
@@ -455,6 +545,7 @@ export function useStudySession({
   }
 
   function resetAnswerAndProductionUi() {
+    setDeskRemainingOverride(null);
     setAnswerRevealed(false);
     resetProductionUi();
     resetContrastUi();
@@ -468,6 +559,8 @@ export function useStudySession({
   }
 
   function resetSessionScopedUi() {
+    setDeskAgainKeys([]);
+    setDeskRemainingOverride(null);
     setAnswerRevealed(false);
     setSessionPersonalNotesOverridesByWordId({});
     setSessionMeaningRowsByWordId({});
@@ -475,32 +568,42 @@ export function useStudySession({
     resetPersonalNotesEditorUi();
     resetProductionUi();
     resetContrastUi();
+    setCompletedReinforcementStreak(null);
   }
 
   function createSessionUiSnapshot(): SessionUiSnapshot {
     return {
+      deskAgainKeys: [...deskAgainKeys],
       answerRevealed,
       productionHanziInput,
       productionHanziError,
       productionSubmittedResponse,
       productionResponseResolution,
+      pureCueResponseResolution,
       productionUiPhase,
       frozenProductionCard,
+      frozenPureCueCard,
       contrastSelectedWordId,
       frozenContrastCard,
+      completedReinforcementStreak,
     };
   }
 
   function restoreSessionUiSnapshot(snapshot: SessionUiSnapshot) {
+    setDeskAgainKeys([...snapshot.deskAgainKeys]);
+    setDeskRemainingOverride(null);
     setAnswerRevealed(snapshot.answerRevealed);
     setProductionHanziInput(snapshot.productionHanziInput);
     setProductionHanziError(snapshot.productionHanziError);
     setProductionSubmittedResponse(snapshot.productionSubmittedResponse);
     setProductionResponseResolution(snapshot.productionResponseResolution);
+    setPureCueResponseResolution(snapshot.pureCueResponseResolution);
     setProductionUiPhase(snapshot.productionUiPhase);
     setFrozenProductionCard(snapshot.frozenProductionCard);
+    setFrozenPureCueCard(snapshot.frozenPureCueCard);
     setContrastSelectedWordId(snapshot.contrastSelectedWordId);
     setFrozenContrastCard(snapshot.frozenContrastCard);
+    setCompletedReinforcementStreak(snapshot.completedReinforcementStreak);
   }
 
   async function applyPendingUndoClosure(): Promise<SessionReflectionEvidenceAccumulator> {
@@ -521,9 +624,20 @@ export function useStudySession({
             sessionActionId: commit.sessionActionId, acceptedAttempts: commit.events,
           })
         : learnerRequestedReflectionRef.current;
-      await applySessionCommit(commit);
+      const acceptedRatingRequests = commit.type === 'commit-review-action-session'
+        ? appendAcceptedLearnerRequestedAttemptIds(contentRatingRequestedReflectionRef.current, {
+            sessionActionId: commit.sessionActionId, acceptedAttempts: commit.events,
+          })
+        : contentRatingRequestedReflectionRef.current;
+      await applySessionCommit(commit, sessionStateRef.current?.sessionId);
+      if (commit.type === 'commit-pure-cue-production-session') {
+        hasCommittedPureCueReflectionRef.current ||= hasPureCueReflectionEvidence({
+          [commit.sessionActionId]: { events: commit.events },
+        });
+      }
       reflectionEvidenceRef.current = acceptedEvidence;
       learnerRequestedReflectionRef.current = acceptedRequests;
+      contentRatingRequestedReflectionRef.current = acceptedRatingRequests;
       setPendingSessionCommit(null);
     }
 
@@ -536,20 +650,40 @@ export function useStudySession({
     setError(null);
 
     try {
+      // A previous tab/reload can leave a durable completion pending on Home.
+      // Settle it before selecting another session against the old word state.
+      const previousCompletion = await fetchCurrentSessionCompletion();
+      if (previousCompletion && previousCompletion.status !== 'closed') {
+        const closed = await closeSessionCompletion(previousCompletion.sessionId, previousCompletion.revisionId);
+        if (closed.status !== 'closed') throw new Error('Finish saving your previous session before starting another.');
+        resetSessionPrefetchCache();
+      }
       const sessionPayload = await ensureSessionPrefetch(syncSessionPrefetchState);
       const sessionItemCount = getSessionPayloadItemCount(sessionPayload) ?? 0;
       if (sessionItemCount === 0) {
-        setError('No session items are currently available.');
+        setError(sessionPayload.preparation?.pending
+          ? 'Your session is being prepared. Please try Start session again shortly.'
+          : 'No session items are currently available.');
         return;
+      }
+
+      if (studyProfile.id === 'mandarin') {
+        for (const word of sessionPayload.buckets.unstudied) {
+          const library = sessionPayload.buckets.introductions?.[word.id];
+          if (!library || library.wordId !== word.id || library.selectedPackageId === null
+            || library.preparationUnavailable || !selectedIntroduction(library)) {
+            throw new Error('This session is still preparing a new-word introduction. Please try again shortly.');
+          }
+        }
       }
 
       const startedAt = new Date().toISOString();
       const startedAtMs = new Date(startedAt).getTime();
       const sessionId = createFrontendSessionId();
-      activeSessionIdRef.current = sessionId;
       reflectionEvidenceRef.current = createSessionReflectionEvidenceAccumulator();
+      hasCommittedPureCueReflectionRef.current = false;
       learnerRequestedReflectionRef.current = createLearnerRequestedReflectionAccumulator();
-      pendingReflectionSupplementRef.current = null;
+      contentRatingRequestedReflectionRef.current = createLearnerRequestedReflectionAccumulator();
       updateSessionFinalization(() => createSessionFinalizationState());
       setSessionNow(startedAt);
       activeSessionClockRef.current = createActiveSessionClock({
@@ -557,7 +691,7 @@ export function useStudySession({
         visibilityState: typeof document === 'undefined' ? undefined : document.visibilityState,
         supportsVisibilityApi: typeof document !== 'undefined' && 'visibilityState' in document,
       });
-      setSessionState(createBucketSessionState({ buckets: sessionPayload.buckets, sessionId }));
+      setSessionState(createBucketSessionState({ buckets: sessionPayload.buckets, sessionId, schedulerPolicy: { studyNewWordsFirst, studyIntroductionOrder, studyIntroductionSpacing } }));
       resetSessionScopedUi();
       setPendingSessionCommit(null);
       setLastUndoSnapshot(null);
@@ -575,6 +709,7 @@ export function useStudySession({
   }
 
   async function handleEndSession() {
+    if (contentRatingSavingRef.current || deskBusyRef.current) return;
     if (sessionStarted && sessionState && sessionState.phase === 'active') {
       const drainedState = beginBucketDrainSession(sessionState);
       setSessionState(drainedState);
@@ -589,190 +724,114 @@ export function useStudySession({
     }
 
     if (sessionState?.phase === 'completed') {
-      if (sessionFinalizationRef.current.kind === 'finalized') {
-        await closeCompletedSession();
-      } else if (sessionFinalizationRef.current.kind === 'unfinalized') {
-        await finishCompletedSession();
-      }
+      await completionFlow.finish();
       return;
     }
 
   }
 
   async function finishCompletedSessionIfLeaving(): Promise<boolean> {
-    if (!shouldFinishSessionOnLeave({
-      sessionStarted: sessionStartedRef.current,
-      sessionPhase: sessionStateRef.current?.phase ?? null,
-      finalizationKind: sessionFinalizationRef.current.kind,
-    })) {
-      return true;
-    }
-
-    await finishCompletedSession();
-    return sessionFinalizationRef.current.kind === 'finalized';
-  }
-
-  async function finishCompletedSession() {
-    if (sessionFinalizationRef.current.kind === 'finalized') {
-      return;
-    }
-
-    await runExclusiveAsync(inFlightFinishRef, runCompletedSessionFinish);
-  }
-
-  async function runCompletedSessionFinish() {
-    if (!sessionSummary || !sessionStateRef.current || sessionStateRef.current.phase !== 'completed') {
-      throw new Error('Session finalization invariant violated: expected a completed session summary.');
-    }
-    if (sessionFinalizationRef.current.kind !== 'unfinalized') {
-      return;
-    }
-
-    updateSessionFinalization(beginSessionFinalization);
-    setError(null);
-    const finalizingSummary = sessionSummary;
-    let evidence: SessionReflectionEvidenceAccumulator;
-
-    try {
-      evidence = await finalizeSessionBeforeReflection({
-        flushPendingCommit: applyPendingUndoClosure,
-        recordSummary: async () => {
-          const activeDurationMs = activeSessionClockRef.current
-            ? getActiveSessionDurationMs(activeSessionClockRef.current, Date.now())
-            : 0;
-          await recordReviewSessionSummary({
-            sessionId: finalizingSummary.sessionId,
-            completedAt: finalizingSummary.completedAt ?? new Date().toISOString(),
-            completedReviewActionCount: finalizingSummary.completedReviewActions,
-            failedReviewActionCount: finalizingSummary.lapsedReviewActionIds.length,
-            activeDurationMs,
-          });
-        },
-      });
-    } catch (err) {
-      updateSessionFinalization(resetFailedSessionFinalization);
-      setError(err instanceof Error ? err.message : 'Unknown error');
-      return;
-    }
-
-    const hasReflectionEvidence = evidence.items.length > 0
-      || learnerRequestedReflectionRef.current.items.length > 0;
-    updateSessionFinalization((current) =>
-      completeSessionFinalization({
-        state: current,
-        hasReflectionEvidence,
-      }),
-    );
-
-    if (hasReflectionEvidence) {
-      try {
-        const supplement = learnerRequestedReflectionRef.current.items.length > 0
-          ? buildLearnerRequestedReflectionSupplement(evidence, learnerRequestedReflectionRef.current)
-          : buildSessionReflectionEvidenceSupplement(evidence);
-        pendingReflectionSupplementRef.current = supplement;
-        void runSessionReflectionGeneration(finalizingSummary.sessionId, supplement);
-      } catch (err) {
-        updateSessionFinalization((current) =>
-          failSessionReflectionGeneration(
-            current,
-            err instanceof Error ? err.message : 'Unknown reflection error',
-            { retryable: false },
-          ),
-        );
-      }
-    }
-  }
-
-  async function runSessionReflectionGeneration(
-    sessionId: string,
-    supplement: unknown,
-  ) {
-    try {
-      const result = await generateSessionReflection({
-        sessionId,
-        evidence: supplement,
-      });
-      if (!isCurrentSessionReflectionRequest({
-        activeSessionId: activeSessionIdRef.current,
-        requestSessionId: sessionId,
-      })) {
-        return;
-      }
-      updateSessionFinalization((current) =>
-        completeSessionReflectionGeneration(current, result),
-      );
-      void Promise.resolve(onReflectionGenerated?.()).catch(() => undefined);
-    } catch (err) {
-      if (!isCurrentSessionReflectionRequest({
-        activeSessionId: activeSessionIdRef.current,
-        requestSessionId: sessionId,
-      })) {
-        return;
-      }
-      updateSessionFinalization((current) =>
-        failSessionReflectionGeneration(
-          current,
-          err instanceof Error ? err.message : 'Unknown reflection error',
-        ),
-      );
-      void Promise.resolve(onReflectionGenerated?.()).catch(() => undefined);
-    }
+    await contentRatingSaveBarrierRef.current;
+    if (sessionStateRef.current?.phase !== 'completed') return true;
+    return completionFlow.finish();
   }
 
   function handleRetrySessionReflection() {
-    if (
-      sessionFinalizationRef.current.kind !== 'finalized'
-      || sessionFinalizationRef.current.reflection.kind !== 'failed'
-    ) {
-      return;
-    }
-    const sessionId = activeSessionIdRef.current;
-    const supplement = pendingReflectionSupplementRef.current;
-    if (!sessionId || !supplement) {
-      throw new Error('Session finalization invariant violated: reflection retry evidence is unavailable.');
-    }
-    updateSessionFinalization(retrySessionReflectionGeneration);
-    void runSessionReflectionGeneration(sessionId, supplement);
+    void onReflectionGenerated?.();
   }
 
   async function closeCompletedSession() {
-    activeSessionIdRef.current = null;
     setSessionStarted(false);
     setSessionState(null);
     setSessionSummary(null);
     updateSessionFinalization(() => createSessionFinalizationState());
     activeSessionClockRef.current = null;
     reflectionEvidenceRef.current = createSessionReflectionEvidenceAccumulator();
+    hasCommittedPureCueReflectionRef.current = false;
     learnerRequestedReflectionRef.current = createLearnerRequestedReflectionAccumulator();
-    pendingReflectionSupplementRef.current = null;
+    contentRatingRequestedReflectionRef.current = createLearnerRequestedReflectionAccumulator();
     resetSessionScopedUi();
     setPendingSessionCommit(null);
     setLastUndoSnapshot(null);
     resetSessionPrefetchCache();
     setSessionPrefetch(getSessionPrefetchSnapshot());
-    await onSessionEnded();
+    await onSessionEnded().catch((reason) => setError(reason instanceof Error ? reason.message : 'Could not refresh Home'));
     void ensureSessionPrefetch(syncSessionPrefetchState).catch(() => undefined);
   }
 
+  function completedActiveDurationMs(): number {
+    const completedAtMs = sessionSummary?.completedAt ? Date.parse(sessionSummary.completedAt) : Date.now();
+    return activeSessionClockRef.current
+      ? getActiveSessionDurationMs(activeSessionClockRef.current, completedAtMs)
+      : sessionSummary?.activeDurationMs ?? 0;
+  }
+  function buildCompletionRequest(revisionId: string): StageSessionCompletionRequest {
+    if (!sessionSummary || !sessionState || sessionState.phase !== 'completed') {
+      throw new Error('Completion requires a completed session.');
+    }
+    const commit = pendingSessionCommitRef.current;
+    const acceptedEvidence = commit?.type === 'commit-review-action-session'
+      ? appendAcceptedProductionAttemptIds(reflectionEvidenceRef.current, { sessionActionId: commit.sessionActionId, acceptedAttempts: commit.events })
+      : reflectionEvidenceRef.current;
+    const acceptedRequests = commit?.type === 'commit-review-action-session'
+      ? appendAcceptedLearnerRequestedAttemptIds(learnerRequestedReflectionRef.current, { sessionActionId: commit.sessionActionId, acceptedAttempts: commit.events })
+      : learnerRequestedReflectionRef.current;
+    const acceptedRatings = commit?.type === 'commit-review-action-session'
+      ? appendAcceptedLearnerRequestedAttemptIds(contentRatingRequestedReflectionRef.current, { sessionActionId: commit.sessionActionId, acceptedAttempts: commit.events })
+      : contentRatingRequestedReflectionRef.current;
+    const pureEvidence = hasCommittedPureCueReflectionRef.current || (commit?.type === 'commit-pure-cue-production-session'
+      && hasPureCueReflectionEvidence({ [commit.sessionActionId]: { events: commit.events } }));
+    const qualifying = pureEvidence || acceptedEvidence.items.length > 0 || acceptedRequests.items.length > 0 || acceptedRatings.items.length > 0;
+    const reflectionEvidence = !qualifying ? null : acceptedRequests.items.length > 0 || acceptedRatings.items.length > 0
+      ? buildLearnerRequestedReflectionSupplement(acceptedEvidence, acceptedRequests, acceptedRatings)
+      : buildSessionReflectionEvidenceSupplement(acceptedEvidence);
+    const completedAt = sessionSummary.completedAt ?? new Date().toISOString();
+    return { revisionId, startedAt: sessionSummary.startedAt, studyDayKey: completedAt.slice(0, 10),
+      pendingCommit: commit, reflectionEvidence,
+      summary: { completedAt, ...getCompletedExerciseCounts(sessionSummary),
+        completedLearningWordCount: sessionSummary.correctDayLearningWords,
+        activeDurationMs: completedActiveDurationMs(),
+        ...(studyProfile.id === 'mandarin' ? { debriefInventory: sessionSummary.debriefInventory } : {}) } };
+  }
+  const completionFlow = useSessionCompletionFlow({
+    sessionId: sessionState?.phase === 'completed' && sessionSummary ? sessionState.sessionId : null,
+    surfaceVisible: sessionSurfaceVisible, buildRequest: buildCompletionRequest,
+    onCancelled: restoreLastRating, onReturnHome: closeCompletedSession,
+  });
+
+  useEffect(() => {
+    if (completionFlow.completion?.status === 'closed') {
+      updateSessionFinalization(() => ({ kind: 'finalized', reflection: { kind: 'skipped' } }));
+    }
+  }, [completionFlow.completion?.status]);
+
   async function handleRate(
-    rating: ReviewRating,
-    _options?: {
+    rating: ReviewRating | null,
+    options?: {
       restoreUi?: 'revealed' | 'production-input';
+      confirmKeyboardRating?: boolean;
     },
   ) {
-    if (!sessionState || !activeItem || !activeWord) {
+    if (contentRatingSavingRef.current || deskBusyRef.current || submittingRating !== null || !sessionState || (!activeItem && !activePureCue) || (!activeWord && !activePureCue)) {
       return;
     }
 
-    if (activeItem.actionKind === 'contrast_selection' && contrastSelectedWordId === null) {
+    if (activeItem?.actionKind === 'contrast_selection' && contrastSelectedWordId === null) {
       setError('Choose an answer before rating this contrast prompt.');
       return;
     }
 
-    setSubmittingRating(rating);
+    if (rating === null && (!reviewInReinforcement || productionAwaitingNext || pureCueAwaitingNext || contrastAwaitingNext)) return;
+    deskBusyRef.current = true;
+    setSubmittingRating(rating ?? 'forgot');
     setError(null);
 
     try {
+      if (options?.confirmKeyboardRating) {
+        // Let the chosen button paint before the desk starts moving the card.
+        await new Promise<void>((resolve) => window.setTimeout(resolve, 240));
+        if (!mountedRef.current) return;
+      }
       // A new rating closes the undo window for the previously deferred commit.
       const submittedProductionUndoSnapshot =
         productionAwaitingRating ? lastUndoSnapshot : null;
@@ -790,7 +849,13 @@ export function useStudySession({
       }
 
       const transition =
-        activeItem.actionKind === 'contrast_selection'
+        rating === null ? skipActiveReviewReinforcement(sessionState) : activePureCue
+          ? rateActivePureCueProductionUnit(sessionState, rating, {
+              response: productionSubmittedResponse,
+              outcome: pureCueResponseResolution?.outcome ?? 'rejected',
+              submittedWordId: pureCueResponseResolution?.submittedWordId ?? null,
+            })
+          : activeItem?.actionKind === 'contrast_selection'
           ? rateActiveContrastSelectionUnit({
               state: sessionState,
               selectedWordId: contrastSelectedWordId ?? '',
@@ -799,42 +864,66 @@ export function useStudySession({
             })
           : rateActiveSessionUnit(sessionState, rating, {
               response:
-                activeItem.actionKind === 'production'
+                activeItem?.actionKind === 'production'
                   ? productionSubmittedResponse
                   : null,
               productionResponse:
-                activeItem.actionKind === 'production'
+                activeItem?.actionKind === 'production'
                   ? productionResponseResolution
                   : null,
             });
-      setPendingSessionCommit(transition.commit.type === 'none' ? null : transition.commit);
+      setCompletedReinforcementStreak(getCompletedReinforcementStreak({
+        sessionCompleted: transition.state.phase === 'completed',
+        reviewInReinforcement,
+        rating,
+        reinforcementStreak: activePureCue
+          ? activeReviewReinforcementStreak
+          : activeReviewProgress?.reinforcementStreak ?? 0,
+      }));
+      const outcome = rating === null ? 'done' : getSessionDeskOutcome(rating, transition.commit);
+      if (activeUnit?.type !== 'study') throw new Error('Session desk requires an active study unit.');
+      const key = getSessionDeskUnitKey(activeUnit.bucket, activeUnit.item.sessionActionId, activeWord?.id);
+      // Update metadata only once the learner chooses to leave this card.
+      setDeskAgainKeys((keys) => updateSessionDeskAgainKeys(keys, key, outcome));
+      const showNext = () => {
+        setPendingSessionCommit(transition.commit.type === 'none' ? null : transition.commit);
 
-      setSessionState(transition.state);
-      setSessionSummary((current) =>
-        updateSessionSummaryForRating({
-          summary: current,
-          transition,
-          rating,
-          activeWord,
-          activeItem,
-          previousPhase: sessionState.phase,
-        }),
-      );
-      resetAnswerAndProductionUi();
+        setSessionState(transition.state);
+        setSessionSummary((current) => activePureCue
+          ? updateSessionSummaryForPureCueRating({
+              activePureCue, characterPresentation,
+              summary: current,
+              transition,
+              previousPhase: sessionState.phase,
+            })
+          : updateSessionSummaryForRating({
+            summary: current,
+            transition,
+            rating: rating ?? 'forgot',
+            activeWord: activeWord!,
+            activeItem: activeItem!,
+            previousPhase: sessionState.phase,
+            characterPresentation,
+          }));
+        resetAnswerAndProductionUi();
+      };
+      if (transition.state.phase !== 'completed' && sessionDeskRef.current) await sessionDeskRef.current.depart(outcome, showNext);
+      else showNext();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
+      deskBusyRef.current = false;
       setSubmittingRating(null);
     }
   }
 
   async function handleSubmitProductionHanzi() {
+    if (contentRatingSavingRef.current || deskBusyRef.current || submittingRating !== null) return;
     if (
       personalNotesEditorOpen ||
       !sessionState ||
-      !activeItem ||
-      !activeWord ||
-      activeItem.actionKind !== 'production'
+      (!activeItem && !activePureCue) ||
+      (activeItem !== null && activeItem.actionKind !== 'production')
     ) {
       return;
     }
@@ -849,6 +938,7 @@ export function useStudySession({
       return;
     }
 
+    deskBusyRef.current = true;
     setSubmittingRating('good');
     setError(null);
 
@@ -862,19 +952,38 @@ export function useStudySession({
         reflectionEvidence: snapshotSessionReflectionEvidence(reflectionEvidenceRef.current),
       });
 
+      if (activePureCue) {
+        const resolution = resolvePureCueResponse(activePureCue.snapshot, typedResponse, studyProfile.id);
+        if (resolution.outcome === 'accepted') {
+          setProductionHanziError(null);
+          setProductionSubmittedResponse(typedResponse);
+          setPureCueResponseResolution(resolution);
+          setProductionUiPhase('await-rating');
+          setAnswerRevealed(true);
+          return;
+        }
+        applyAutomaticPureCueForgot({ stateAtResponse: sessionState, item: activePureCue, response: typedResponse, resolution });
+        return;
+      }
       let resolution: ProductionResponseResolution;
-      if (activeWord.status === 'review') {
+      if (activeItem!.rehearsal) {
+        const result = resolveContentExerciseResponse(activeItem!.rehearsal, typedResponse);
+        resolution = { submittedText: typedResponse, result: result.outcome === 'accepted' ? 'accepted_anchor' : 'rejected' };
+      } else if (activeWord!.status === 'review') {
         resolution = resolveSessionProductionResponse({
           submittedText: typedResponse,
-          anchorWordId: activeWord.id,
-          production: activeItem.production,
+          anchorWordId: activeWord!.id,
+          production: activeItem!.production,
           profileId: studyProfile.id,
         });
       } else {
-        const accepted = submittedHanzi === normalizeProductionAnswer(
-          activeWord.hanzi,
-          studyProfile.defaultProductionMatchOptions,
-        );
+        const accepted = matchServedCueAnswer({
+          acceptedAnswers: [{
+            wordId: activeWord!.id,
+            hanzi: activeWord!.hanzi,
+            traditional: activeWord!.traditional,
+          }],
+        }, typedResponse, studyProfile.id) !== null;
         resolution = {
           submittedText: typedResponse,
           result: accepted ? 'accepted_anchor' : 'rejected',
@@ -887,38 +996,87 @@ export function useStudySession({
         setProductionSubmittedResponse(typedResponse);
         setProductionResponseResolution(resolution);
         setProductionUiPhase(
-          hasServedProductionCueSupplement(activeItem.production) ? 'await-supplement' : 'await-rating',
+          hasServedProductionReveal(activeItem!.production) ? 'await-supplement' : 'await-rating',
         );
         setAnswerRevealed(true);
         return;
       }
       applyAutomaticProductionForgot({
         stateAtResponse: sessionState,
-        itemAtResponse: activeItem,
-        wordAtResponse: activeWord,
+        itemAtResponse: activeItem!,
+        wordAtResponse: activeWord!,
         response: typedResponse,
-        resolution: activeWord.status === 'review' ? resolution : null,
+        resolution: activeWord!.status === 'review' ? resolution : null,
         attemptedHanzi: submittedHanzi,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
+      deskBusyRef.current = false;
       setSubmittingRating(null);
     }
   }
 
+  // These callbacks capture the rendered action. Saving fences departure until the
+  // server confirms the rating, so its request is present before attempt commit.
+  const ratingSessionId = sessionState?.sessionId;
+  function handleContentRatingChange(rating: 'up' | 'down' | null, frozen = false) {
+    if (ratingSessionId !== sessionStateRef.current?.sessionId
+      || sessionFinalizationRef.current.kind !== 'unfinalized') return;
+    const item = frozen && frozenProductionCard ? {
+      sessionActionId: frozenProductionCard.sessionActionId,
+      targetWordId: frozenProductionCard.targetWordId,
+      actionKind: 'production' as const,
+      production: frozenProductionCard.production ?? null,
+      word: { status: frozenProductionCard.status },
+    } : activeItem;
+    if (!item) return;
+    contentRatingRequestedReflectionRef.current = setContentRatingRequestedReview(
+      contentRatingRequestedReflectionRef.current, item,
+      frozen && frozenProductionCard ? frozenProductionCard.promptDisplayedMeanings : activePromptDisplayedMeanings,
+      rating,
+    );
+  }
+
+  function handleToggleLearnerRequestedReview() {
+    if (!activeItem || activeItem.actionKind !== 'production') return;
+    learnerRequestedReflectionRef.current = toggleLearnerRequestedReview(
+      learnerRequestedReflectionRef.current,
+      activeItem,
+      activePromptDisplayedMeanings,
+    );
+    setSessionNow(new Date().toISOString());
+  }
+
+  function handleToggleFrozenProductionLearnerRequestedReview() {
+    if (!frozenProductionCard || frozenProductionCard.status !== 'review') return;
+    learnerRequestedReflectionRef.current = toggleLearnerRequestedReview(
+      learnerRequestedReflectionRef.current,
+      {
+        sessionActionId: frozenProductionCard.sessionActionId,
+        targetWordId: frozenProductionCard.targetWordId,
+        actionKind: 'production',
+        production: frozenProductionCard.production ?? null,
+        word: { status: frozenProductionCard.status },
+      },
+      frozenProductionCard.promptDisplayedMeanings,
+    );
+    setSessionNow(new Date().toISOString());
+  }
+
   async function handleNoClueProduction() {
+    if (contentRatingSavingRef.current || deskBusyRef.current || submittingRating !== null) return;
     if (
       personalNotesEditorOpen ||
       !sessionState ||
-      !activeItem ||
-      !activeWord ||
-      activeItem.actionKind !== 'production' ||
+      (!activeItem && !activePureCue) ||
+      (activeItem !== null && activeItem.actionKind !== 'production') ||
       productionHanziInput.trim().length > 0
     ) {
       return;
     }
 
+    deskBusyRef.current = true;
     setSubmittingRating('forgot');
     setError(null);
 
@@ -930,12 +1088,21 @@ export function useStudySession({
         ui: createSessionUiSnapshot(),
         reflectionEvidence: snapshotSessionReflectionEvidence(reflectionEvidenceRef.current),
       });
+      if (activePureCue) {
+        applyAutomaticPureCueForgot({
+          stateAtResponse: sessionState,
+          item: activePureCue,
+          response: null,
+          resolution: { outcome: 'rejected', submittedWordId: null },
+        });
+        return;
+      }
       applyAutomaticProductionForgot({
         stateAtResponse: sessionState,
-        itemAtResponse: activeItem,
-        wordAtResponse: activeWord,
+        itemAtResponse: activeItem!,
+        wordAtResponse: activeWord!,
         response: null,
-        resolution: activeWord.status === 'review'
+        resolution: activeWord!.status === 'review'
           ? {
               responseKind: 'no_clue',
               submittedText: null,
@@ -947,6 +1114,7 @@ export function useStudySession({
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
+      deskBusyRef.current = false;
       setSubmittingRating(null);
     }
   }
@@ -997,6 +1165,7 @@ export function useStudySession({
         activeWord: wordAtResponse,
         activeItem: itemAtResponse,
         previousPhase: stateAtResponse.phase,
+        characterPresentation,
       }),
     );
     setFrozenProductionCard({
@@ -1006,39 +1175,123 @@ export function useStudySession({
       sampledSkillIds: [...itemAtResponse.sampledSkillIds],
       contentRef: itemAtResponse.contentRef,
       production: itemAtResponse.production ?? null,
+      rehearsal: itemAtResponse.rehearsal,
+      wordContent: itemAtResponse.wordContent,
       attemptedHanzi,
       status: wordAtResponse.status,
       reviewedCount,
       queuedCount: getBucketSessionTotalCount(stateAtResponse),
-      promptDisplayedMeanings: itemAtResponse.production ? [] : [...activePromptDisplayedMeanings],
+      promptDisplayedMeanings: itemAtResponse.production || itemAtResponse.rehearsal ? [] : [...activePromptDisplayedMeanings],
       fallbackPrompt: activePrompt ?? wordAtResponse.meaning,
       answerPinyin: wordAtResponse.pinyin,
-      answerText: wordAtResponse.hanzi,
+      answerText: formatCardCharacters(wordAtResponse, characterPresentation),
+      answerForms: { hanzi: wordAtResponse.hanzi, traditional: wordAtResponse.traditional },
       allMeanings: [...activeAllMeanings],
       personalNotes: activeWordPersonalNotes,
       intervalHours: itemAtResponse.intervalHours,
       example: wordAtResponse.examples[0] ?? '',
     });
+    const expectedCharacters = formatCardCharacters(wordAtResponse, characterPresentation);
     setProductionHanziError(
       attemptedHanzi === null
-        ? `No clue recorded. Expected "${wordAtResponse.hanzi}".`
-        : `Incorrect ${studyProfile.labels.target}. Expected "${wordAtResponse.hanzi}".`,
+        ? `No clue recorded. Expected "${expectedCharacters}".`
+        : itemAtResponse.rehearsal
+          ? `This drill asks for the taught expression "${expectedCharacters}". Another expression may be natural here.`
+          : `Incorrect ${studyProfile.labels.target}. Expected "${expectedCharacters}".`,
     );
     setProductionUiPhase('await-next');
     setAnswerRevealed(true);
   }
 
-  function handleContinueAfterAutoForgot() {
-    // Unmask the active card after the queue already advanced due to an incorrect hanzi submission.
-    resetAnswerAndProductionUi();
+  function applyAutomaticPureCueForgot({
+    stateAtResponse,
+    item,
+    response,
+    resolution,
+  }: {
+    stateAtResponse: BucketSessionState;
+    item: PureCueSessionReviewItem;
+    response: string | null;
+    resolution: Pick<PureCueAssessmentEvent, 'outcome' | 'submittedWordId'>;
+  }) {
+    const transition = rateActivePureCueProductionUnit(stateAtResponse, 'forgot', {
+      response,
+      outcome: resolution.outcome,
+      submittedWordId: resolution.submittedWordId,
+    });
+    setPendingSessionCommit(transition.commit.type === 'none' ? null : transition.commit);
+    setSessionState(transition.state);
+    setSessionSummary((current) =>
+      updateSessionSummaryForPureCueRating({
+        activePureCue: item, characterPresentation,
+        summary: current,
+        transition,
+        previousPhase: stateAtResponse.phase,
+      }),
+    );
+    setFrozenPureCueCard({
+      item,
+      attemptedResponse: response,
+      reviewedCount,
+      queuedCount: getBucketSessionTotalCount(stateAtResponse),
+    });
+    setProductionHanziError(
+      response === null
+        ? 'No clue recorded. Review the accepted answers.'
+        : 'That response is not in this cue\'s frozen accepted-answer set.',
+    );
+    setProductionUiPhase('await-next');
+    setAnswerRevealed(true);
   }
 
-  function handleContinueAfterProductionSupplement() {
-    if (!productionAwaitingSupplement) {
-      return;
-    }
+  async function confirmSessionAction() {
+    setConfirmingSessionAction(true);
+    await new Promise<void>((resolve) => window.setTimeout(resolve, 240));
+    return mountedRef.current;
+  }
 
-    setProductionUiPhase('await-rating');
+  async function handleRevealAnswer() {
+    if (contentRatingSavingRef.current || deskBusyRef.current || answerRevealed || (!activeItem && !activePureCue)) return;
+    deskBusyRef.current = true;
+    try {
+      if (!await confirmSessionAction()) return;
+      setAnswerRevealed(true);
+    } finally {
+      deskBusyRef.current = false;
+      setConfirmingSessionAction(false);
+    }
+  }
+
+  async function handleContinueAfterAutoForgot() {
+    if (contentRatingSavingRef.current || deskBusyRef.current || submittingRating !== null || (!frozenProductionCard && !frozenPureCueCard)) return;
+    deskBusyRef.current = true;
+    setSubmittingRating('forgot');
+    try {
+      if (!await confirmSessionAction()) return;
+      const key = frozenPureCueCard
+        ? getSessionDeskUnitKey('review', frozenPureCueCard.item.sessionActionId)
+        : getSessionDeskUnitKey(frozenProductionCard!.status, frozenProductionCard!.sessionActionId, frozenProductionCard!.targetWordId);
+      setDeskAgainKeys((keys) => updateSessionDeskAgainKeys(keys, key, 'wrong'));
+      // Domain state already advanced; uncover it beneath the departing clone.
+      if (sessionState?.phase !== 'completed' && sessionDeskRef.current) await sessionDeskRef.current.depart('wrong', resetAnswerAndProductionUi);
+      else resetAnswerAndProductionUi();
+    } finally {
+      deskBusyRef.current = false;
+      setSubmittingRating(null);
+      setConfirmingSessionAction(false);
+    }
+  }
+
+  async function handleContinueAfterProductionSupplement() {
+    if (contentRatingSavingRef.current || deskBusyRef.current || !productionAwaitingSupplement) return;
+    deskBusyRef.current = true;
+    try {
+      if (!await confirmSessionAction()) return;
+      setProductionUiPhase('await-rating');
+    } finally {
+      deskBusyRef.current = false;
+      setConfirmingSessionAction(false);
+    }
   }
 
   function handlePreviewContrastChoice(wordId: string) {
@@ -1056,6 +1309,7 @@ export function useStudySession({
   }
 
   async function handleSelectContrastChoice(wordId: string) {
+    if (contentRatingSavingRef.current || deskBusyRef.current || submittingRating !== null) return;
     if (!activeItem || activeItem.actionKind !== 'contrast_selection' || answerRevealed || personalNotesEditorOpen) {
       return;
     }
@@ -1076,6 +1330,7 @@ export function useStudySession({
       return;
     }
 
+    deskBusyRef.current = true;
     setSubmittingRating('forgot');
     setError(null);
 
@@ -1096,6 +1351,7 @@ export function useStudySession({
         practiceMore: false,
       });
       setPendingSessionCommit(transition.commit.type === 'none' ? null : transition.commit);
+      setDeskRemainingOverride(getBucketSessionTotalCount(sessionState));
       setSessionState(transition.state);
       setSessionSummary((current) =>
         updateSessionSummaryForRating({
@@ -1105,6 +1361,7 @@ export function useStudySession({
           activeWord,
           activeItem,
           previousPhase: sessionState.phase,
+          characterPresentation,
         }),
       );
       setFrozenContrastCard({
@@ -1116,19 +1373,43 @@ export function useStudySession({
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
+      deskBusyRef.current = false;
       setSubmittingRating(null);
     }
   }
 
-  function handleContinueAfterAutoContrastForgot() {
-    resetAnswerAndProductionUi();
+  async function handleContinueAfterAutoContrastForgot() {
+    if (contentRatingSavingRef.current || deskBusyRef.current || submittingRating !== null || !frozenContrastCard) return;
+    deskBusyRef.current = true;
+    setSubmittingRating('forgot');
+    try {
+      if (!await confirmSessionAction()) return;
+      // Contrast is completed on its first answer; it does not enter reinforcement.
+      if (sessionState?.phase !== 'completed' && sessionDeskRef.current) await sessionDeskRef.current.depart('contrast-miss', resetAnswerAndProductionUi);
+      else resetAnswerAndProductionUi();
+    } finally {
+      deskBusyRef.current = false;
+      setSubmittingRating(null);
+      setConfirmingSessionAction(false);
+    }
   }
 
   function handleUndoLastRating() {
-    if (!lastUndoSnapshot || submittingRating !== null) {
+    if (sessionStateRef.current?.phase === 'completed') {
+      void completionFlow.undo();
+      return;
+    }
+    restoreLastRating();
+  }
+
+  function restoreLastRating() {
+    if (contentRatingSavingRef.current || deskBusyRef.current || sessionFinalizationRef.current.kind !== 'unfinalized' || !lastUndoSnapshot || submittingRating !== null) {
       return;
     }
 
+    if (lastUndoSnapshot.introductionWordId) {
+      introductionController.reopen(lastUndoSnapshot.sessionState.sessionId, lastUndoSnapshot.introductionWordId);
+    }
     setSessionState(cloneBucketSessionState(lastUndoSnapshot.sessionState));
     setSessionSummary(lastUndoSnapshot.sessionSummary);
     restoreSessionUiSnapshot(lastUndoSnapshot.ui);
@@ -1137,7 +1418,40 @@ export function useStudySession({
     );
     setPendingSessionCommit(null);
     setLastUndoSnapshot(null);
+    if (activeSessionClockRef.current) {
+      activeSessionClockRef.current = updateActiveSessionClockForVisibility({ clock: activeSessionClockRef.current, nowMs: Date.now(), visibilityState: document.visibilityState });
+    }
     setError(null);
+  }
+
+  async function handleCompleteTeaching() {
+    if (!sessionState || !activeWord || !introductionGate || submittingRating !== null) return;
+    const sourceState = sessionState;
+    const sourceWord = activeWord;
+    const dismiss = introductionGate.dismiss;
+    setSubmittingRating('good');
+    setError(null);
+    try {
+      await applyPendingUndoClosure();
+      const current = currentIntroductionTargetRef.current;
+      if (!sameIntroductionCompletionTarget({
+        state: sourceState, wordId: sourceWord.id, gateKey: introductionGate.key,
+      }, current)) return;
+      const transition = completeActiveUnstudiedTeaching(sourceState, sourceWord.id);
+      setLastUndoSnapshot({
+        introductionWordId: sourceWord.id,
+        sessionState: cloneBucketSessionState(sourceState), sessionSummary,
+        ui: createSessionUiSnapshot(),
+        reflectionEvidence: snapshotSessionReflectionEvidence(reflectionEvidenceRef.current),
+      });
+      if (transition.commit.type !== 'none') throw new Error('Teaching alone must not commit its word unit.');
+      setPendingSessionCommit(null);
+      setSessionState(transition.state);
+      dismiss();
+      resetAnswerAndProductionUi();
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Could not finish the introduction.');
+    } finally { setSubmittingRating(null); }
   }
 
   function handleBeginUnstudiedDrill(wordId: string) {
@@ -1145,10 +1459,13 @@ export function useStudySession({
   }
 
   async function handleDismissCurrentWord() {
+    if (contentRatingSavingRef.current || deskBusyRef.current) return;
     if (!sessionState || !activeWord) {
       return;
     }
 
+    deskBusyRef.current = true;
+    setStudyManagementSubmitting(true);
     setError(null);
 
     try {
@@ -1175,16 +1492,24 @@ export function useStudySession({
           learnerRequestedReflectionRef.current,
           activeItem.sessionActionId,
         );
+        contentRatingRequestedReflectionRef.current = dropLearnerRequestedReflectionForAction(
+          contentRatingRequestedReflectionRef.current,
+          activeItem.sessionActionId,
+        );
       }
       resetAnswerAndProductionUi();
       setLastUndoSnapshot(null);
       await dismissWordFromStudy(transition.dismiss.wordId);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      deskBusyRef.current = false;
+      setStudyManagementSubmitting(false);
     }
   }
 
   async function handleManageStudyAction() {
+    if (contentRatingSavingRef.current || deskBusyRef.current) return;
     if (!sessionState || !activeItem || !activeWord) {
       return;
     }
@@ -1199,6 +1524,7 @@ export function useStudySession({
       return;
     }
 
+    deskBusyRef.current = true;
     setStudyManagementSubmitting(true);
     setError(null);
 
@@ -1222,6 +1548,10 @@ export function useStudySession({
           learnerRequestedReflectionRef.current,
           activeItem.sessionActionId,
         );
+        contentRatingRequestedReflectionRef.current = dropLearnerRequestedReflectionForAction(
+          contentRatingRequestedReflectionRef.current,
+          activeItem.sessionActionId,
+        );
         setSessionState(dropActiveReviewSessionAction(sessionState));
         resetAnswerAndProductionUi();
         setLastUndoSnapshot(null);
@@ -1229,11 +1559,13 @@ export function useStudySession({
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
+      deskBusyRef.current = false;
       setStudyManagementSubmitting(false);
     }
   }
 
   async function handleManageFrozenProductionAction() {
+    if (contentRatingSavingRef.current || deskBusyRef.current) return;
     if (!sessionState || !frozenProductionCard) {
       return;
     }
@@ -1243,6 +1575,7 @@ export function useStudySession({
       return;
     }
 
+    deskBusyRef.current = true;
     setStudyManagementSubmitting(true);
     setError(null);
 
@@ -1270,6 +1603,10 @@ export function useStudySession({
         learnerRequestedReflectionRef.current,
         frozenProductionCard.sessionActionId,
       );
+      contentRatingRequestedReflectionRef.current = dropLearnerRequestedReflectionForAction(
+        contentRatingRequestedReflectionRef.current,
+        frozenProductionCard.sessionActionId,
+      );
       setSessionState(nextState);
       setSessionSummary((current) =>
         cancelFrozenProductionRatingInSummary({
@@ -1284,15 +1621,18 @@ export function useStudySession({
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
+      deskBusyRef.current = false;
       setStudyManagementSubmitting(false);
     }
   }
 
   async function handleDismissFrozenProductionWord() {
+    if (contentRatingSavingRef.current || deskBusyRef.current) return;
     if (!sessionState || !frozenProductionCard) {
       return;
     }
 
+    deskBusyRef.current = true;
     setStudyManagementSubmitting(true);
     setError(null);
 
@@ -1317,6 +1657,10 @@ export function useStudySession({
         learnerRequestedReflectionRef.current,
         frozenProductionCard.sessionActionId,
       );
+      contentRatingRequestedReflectionRef.current = dropLearnerRequestedReflectionForAction(
+        contentRatingRequestedReflectionRef.current,
+        frozenProductionCard.sessionActionId,
+      );
       setSessionState(nextState);
       setSessionSummary((current) =>
         cancelFrozenProductionRatingInSummary({
@@ -1331,6 +1675,7 @@ export function useStudySession({
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
+      deskBusyRef.current = false;
       setStudyManagementSubmitting(false);
     }
   }
@@ -1422,21 +1767,6 @@ export function useStudySession({
   }, [activeUnit?.type, activeUnit?.type === 'study' ? activeUnit.item.sessionActionId : null, answerRevealed, sessionStarted, sessionState]);
 
   useEffect(() => {
-    if (productionUiPhase === 'await-next') {
-      return;
-    }
-
-    setProductionHanziInput('');
-    setProductionHanziError(null);
-    if (productionUiPhase === 'await-rating' && !isProductionItem) {
-      setProductionUiPhase('idle');
-    }
-    if (productionUiPhase === 'await-supplement' && !isProductionItem) {
-      setProductionUiPhase('idle');
-    }
-  }, [activeItem?.sessionActionId, productionUiPhase, isProductionItem]);
-
-  useEffect(() => {
     if (!sessionStarted || sessionState?.phase === 'completed' || !sessionSummary) {
       return;
     }
@@ -1493,7 +1823,7 @@ export function useStudySession({
   }, [personalNotesEditorOpen]);
 
   useEffect(() => {
-    if (!sessionStarted || !isProductionItem || answerRevealed || productionAwaitingNext || personalNotesEditorOpen) {
+    if (submittingRating !== null || introductionBlocked || !sessionStarted || !isProductionItem || answerRevealed || (productionAwaitingNext || pureCueAwaitingNext) || personalNotesEditorOpen) {
       return;
     }
 
@@ -1503,11 +1833,15 @@ export function useStudySession({
 
     productionHanziInputRef.current?.focus();
   }, [
+    submittingRating,
+    introductionBlocked,
     activeUnstudiedProgress?.introComplete,
     activeItem?.sessionActionId,
+    activePureCue?.sessionActionId,
     answerRevealed,
     personalNotesEditorOpen,
     productionAwaitingNext,
+    pureCueAwaitingNext,
     isProductionItem,
     sessionStarted,
   ]);
@@ -1526,17 +1860,26 @@ export function useStudySession({
   }, [personalNotesEditorOpen]);
 
   useEffect(() => {
-    if (!sessionStarted || !sessionState || !sessionSurfaceVisible) {
+    if (introductionBlocked || !sessionStarted || !sessionState || !sessionSurfaceVisible) {
       return;
     }
 
     const completedSummary = sessionState.phase === 'completed';
+    // The completion screen owns its shortcuts throughout saving, Undo, and closure.
+    if (completedSummary) return;
     const summaryFinalizationKind = sessionFinalization.kind;
 
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.defaultPrevented || shortcutGuideOpen || submittingRating !== null || personalNotesEditorOpen) {
+      // Native disclosures (including the sidebar) retain their own activation keys.
+      if ((event.key === ' ' || event.key === 'Enter' || event.code === 'Space')
+        && event.target instanceof Element && event.target.closest('summary')) return;
+      if (contentRatingSavingRef.current || deskBusyRef.current || event.repeat || introductionBlockedRef.current || event.defaultPrevented || shortcutGuideOpen || submittingRating !== null || personalNotesEditorOpen) {
         return;
       }
+
+      if (!event.shiftKey && (event.key === ' ' || event.key === 'Enter')
+        && event.target instanceof Element && event.target.closest('[data-session-skip-reinforcement]')) return;
+      if (event.shiftKey && event.key === ' ' && (event.metaKey || event.ctrlKey || event.altKey)) return;
 
       const command = resolveSessionKey(
         {
@@ -1545,12 +1888,25 @@ export function useStudySession({
           isComposing: event.isComposing,
           keyCode: event.keyCode,
           shiftKey: event.shiftKey,
+          ctrlKey: event.ctrlKey,
+          metaKey: event.metaKey,
+          altKey: event.altKey,
         },
         {
           sessionStarted: true,
           isEditableTarget: isEditableKeyboardTarget(event.target),
+          isNativeActionTarget: event.target instanceof Element && event.target.closest('button, a[href]') !== null,
+          isQualityControlTarget: event.target instanceof Element
+            && event.target.closest('[data-content-quality-controls]') !== null,
           productionInputActive: productionSubmissionInputActive,
+          canNoClueProduction: productionHanziInput.trim().length === 0,
+          canRequestReflectionReview: !completedSummary && (productionAwaitingNext
+            ? frozenProductionCard?.status === 'review'
+            : !pureCueAwaitingNext && !contrastAwaitingNext
+              && activeItem?.actionKind === 'production' && activeWord?.status === 'review'),
+          isProductionInputTarget: event.target === productionHanziInputRef.current,
           productionAwaitingNext,
+          pureCueAwaitingNext,
           productionAwaitingSupplement,
           contrastAwaitingNext,
           unstudiedIntro: activeWord?.status === 'unstudied' && !activeUnstudiedProgress?.introComplete,
@@ -1558,9 +1914,10 @@ export function useStudySession({
           contrastSelectionActive,
           contrastHasSelection: contrastSelectedWordId !== null,
           answerRevealed,
-          ratingAvailable: answerRevealed && !productionAwaitingNext && !productionAwaitingSupplement && !contrastAwaitingNext,
+          ratingAvailable: answerRevealed && !productionAwaitingNext && !pureCueAwaitingNext && !productionAwaitingSupplement && !contrastAwaitingNext,
           hasUndo: lastUndoSnapshot !== null,
           hasActiveWord: activeWord !== null,
+          canSkipReinforcement: reviewInReinforcement && !productionAwaitingNext && !pureCueAwaitingNext && !contrastAwaitingNext,
           ratingOptions: activeRatingOptions,
           completedSummary,
           summaryFinalizationKind,
@@ -1588,14 +1945,21 @@ export function useStudySession({
             productionHanziInputRef.current?.focus();
           }
           return;
+        case 'skip_reinforcement':
+          void handleRate(null);
+          return;
+        case 'no_clue_production':
+          void handleNoClueProduction();
+          return;
         case 'submit_production':
           void handleSubmitProductionHanzi();
           return;
-        case 'open_notes':
-          handleOpenPersonalNotesEditor();
+        case 'toggle_reflection_review':
+          if (productionAwaitingNext) handleToggleFrozenProductionLearnerRequestedReview();
+          else handleToggleLearnerRequestedReview();
           return;
         case 'reveal':
-          setAnswerRevealed(true);
+          void handleRevealAnswer();
           return;
         case 'begin_unstudied_drill':
           if (activeWord) {
@@ -1603,7 +1967,7 @@ export function useStudySession({
           }
           return;
         case 'continue_after_auto_forgot':
-          if (productionAwaitingNext) {
+          if (productionAwaitingNext || pureCueAwaitingNext) {
             handleContinueAfterAutoForgot();
           } else if (contrastAwaitingNext) {
             handleContinueAfterAutoContrastForgot();
@@ -1614,8 +1978,9 @@ export function useStudySession({
           return;
         case 'rate_default': {
           const defaultRating = getDefaultRating(activeRatingOptions);
-          if (defaultRating && activeWord) {
+          if (defaultRating && (activeWord || activePureCue)) {
             void handleRate(defaultRating, {
+              confirmKeyboardRating: true,
               restoreUi: isProductionItem ? 'production-input' : 'revealed',
             });
           }
@@ -1638,6 +2003,7 @@ export function useStudySession({
           return;
         case 'rate':
           void handleRate(command.rating, {
+            confirmKeyboardRating: true,
             restoreUi: isProductionItem ? 'production-input' : 'revealed',
           });
           return;
@@ -1657,18 +2023,23 @@ export function useStudySession({
     return () => document.removeEventListener('keydown', handleKeyDown, true);
   }, [
     activeRatingOptions,
+    reviewInReinforcement,
     activeItem,
+    activePureCue,
     activeUnstudiedProgress?.introComplete,
     activeWord,
     activeWordPersonalNotes,
+    activePromptDisplayedMeanings,
     answerRevealed,
     contrastAwaitingNext,
     contrastSelectionActive,
     contrastSelectedWordId,
     productionAwaitingNext,
+    pureCueAwaitingNext,
     productionAwaitingSupplement,
     isProductionItem,
     productionSubmissionInputActive,
+    productionHanziInput,
     frozenProductionCard,
     lastUndoSnapshot,
     personalNotesEditorOpen,
@@ -1676,17 +2047,23 @@ export function useStudySession({
     sessionStarted,
     sessionState,
     sessionSurfaceVisible,
+    introductionBlocked,
     shortcutGuideOpen,
     submittingRating,
   ]);
 
   return {
     sessionStarted,
+    sessionReflectionGenerating: false,
     prefetchSession,
     refreshSessionPrefetch,
     invalidateSessionPrefetch,
     finishCompletedSessionIfLeaving,
     homePageProps: {
+      sessionDeskRef,
+      deskAgainCount: sessionState ? retainSessionDeskAgainKeys(deskAgainKeys, sessionState).length : 0,
+      deskRemainingCount: deskRemainingOverride ?? displayedSessionItemCount,
+      introductionGate: introductionGate ? { ...introductionGate, complete: () => { void handleCompleteTeaching(); } } : null,
       sessionPrefetch,
       sessionStarted,
       sessionPhase: sessionState?.phase ?? null,
@@ -1695,19 +2072,34 @@ export function useStudySession({
       reviewedCount,
       sessionSummary,
       sessionFinalization,
+      completionPanel: {
+        completion: completionFlow.completion, saving: completionFlow.saving, busy: completionFlow.busy,
+        error: completionFlow.error, hasUndo: lastUndoSnapshot !== null,
+        onUndo: handleUndoLastRating, onReturnHome: () => void completionFlow.finish(),
+        onKeepOpen: completionFlow.keepSummaryOpen, onRetry: () => void completionFlow.retry(),
+        keepOpen: completionFlow.keepOpen, remainingSeconds: completionFlow.remainingSeconds,
+      },
       activeItem,
+      activePureCue,
       activeWord,
       activeLearningProgress,
       activeUnstudiedProgress,
       activeReviewProgress,
+      activePureCueFailureCount,
+      activePureCueReinforcementStreak: activePureCueReviewProgress?.reinforcementStreak ?? 0,
+      completedReinforcementStreak,
       hasUndo: lastUndoSnapshot !== null,
       submittingRating,
+      confirmingSessionAction,
+      contentRatingSaving,
       personalNotesEditorOpen,
       personalNotesEditorSaving,
       studyManagementSubmitting,
       productionAwaitingNext,
+      pureCueAwaitingNext,
       productionAwaitingSupplement,
       frozenProductionCard,
+      frozenPureCueCard,
       contrastAwaitingNext,
       frozenContrastCard,
       activeAllMeanings,
@@ -1755,31 +2147,24 @@ export function useStudySession({
         }
       },
       onSelectContrastChoice: handleSelectContrastChoice,
-      onRevealAnswer: () => setAnswerRevealed(true),
-      onToggleLearnerRequestedReview: () => {
-        if (!activeItem || activeItem.actionKind !== 'production') return;
-        learnerRequestedReflectionRef.current = toggleLearnerRequestedReview(
-          learnerRequestedReflectionRef.current,
-          activeItem,
-          activePromptDisplayedMeanings,
-        );
-        setSessionNow(new Date().toISOString());
+      onRevealAnswer: () => void handleRevealAnswer(),
+      onContentRatingSavingChange: (saving) => {
+        if (saving) {
+          contentRatingSaveBarrierRef.current = new Promise<void>((resolve) => {
+            releaseContentRatingSaveRef.current = resolve;
+          });
+        } else {
+          releaseContentRatingSaveRef.current?.();
+          releaseContentRatingSaveRef.current = null;
+        }
+        contentRatingSavingRef.current = saving;
+        setContentRatingSaving(saving);
       },
-      onToggleFrozenProductionLearnerRequestedReview: () => {
-        if (!frozenProductionCard || frozenProductionCard.status !== 'review') return;
-        learnerRequestedReflectionRef.current = toggleLearnerRequestedReview(
-          learnerRequestedReflectionRef.current,
-          {
-            sessionActionId: frozenProductionCard.sessionActionId,
-            targetWordId: frozenProductionCard.targetWordId,
-            actionKind: 'production',
-            production: frozenProductionCard.production ?? null,
-            word: { status: frozenProductionCard.status },
-          },
-          frozenProductionCard.promptDisplayedMeanings,
-        );
-        setSessionNow(new Date().toISOString());
-      },
+      onContentRatingChange: (rating) => handleContentRatingChange(rating),
+      onFrozenProductionContentRatingChange: (rating) => handleContentRatingChange(rating, true),
+      onToggleLearnerRequestedReview: handleToggleLearnerRequestedReview,
+      onToggleFrozenProductionLearnerRequestedReview: handleToggleFrozenProductionLearnerRequestedReview,
+      onSkipReinforcement: () => void handleRate(null),
       onRate: (rating, options) => void handleRate(rating, options),
       shortcutGuideOpen,
       onOpenShortcutGuide: () => setShortcutGuideOpen(true),

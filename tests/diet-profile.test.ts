@@ -13,12 +13,9 @@ import {
   type DeckManifest,
 } from '../server/decks/manifest.ts';
 import {
-  applyDietIntake,
   applyDietNudge,
   applyOperatorDietJump,
   createDefaultDietProfile,
-  mapNextLearningLevelToDeckId,
-  mapSelfSelectToDeckId,
   parseDietProfile,
   resolveEffectiveDietWeights,
   UnknownDietDeckError,
@@ -41,7 +38,7 @@ describe('deck manifest loader', () => {
 
   test('loads decks sorted by order and joins words by canonical key', () => {
     const manifest = fixtureManifest();
-    assert.deepEqual(manifest.decks.map((deck) => deck.id), ['hsk2-l1', 'hsk2-l2', 'hsk2-l3-s1', 'beyond-hsk']);
+    assert.deepEqual(manifest.decks.map((deck) => deck.id), ['hsk2-l1', 'hsk2-l2', 'hsk2-l3-s1', 'hsk2-l6-s1', 'beyond-hsk']);
     assert.equal(getDeckIdForWord(manifest, '我', 'wǒ'), 'hsk2-l1');
     assert.equal(getDeckIdForWord(manifest, '抽象', 'chōu xiàng'), 'hsk2-l3-s1');
   });
@@ -72,20 +69,29 @@ describe('deck manifest loader', () => {
 });
 
 describe('diet profile transitions', () => {
-  test('default when unset is 100% weight on the first deck by manifest order', () => {
+  test('default when unset is 100% weight on the first HSK 6 deck', () => {
     const profile = createDefaultDietProfile(fixtureManifest(), NOW);
-    assert.deepEqual(profile.weights, { 'hsk2-l1': 1 });
+    assert.deepEqual(profile.weights, { 'hsk2-l6-s1': 1 });
     assert.deepEqual(profile.provenance, []);
+  });
+
+  test('runtime manifest defaults to the first HSK 6 stratum and missing HSK 6 fails loudly', () => {
+    const manifest = loadDeckManifest();
+    assert.ok(manifest);
+    assert.deepEqual(createDefaultDietProfile(manifest, NOW).weights, { 'hsk2-l6-s1': 1 });
+    const reduced = { ...fixtureManifest() };
+    reduced.decks = reduced.decks.filter((deck) => deck.hsk?.level !== 6);
+    assert.throws(() => createDefaultDietProfile(reduced, NOW), /no HSK 2.0 Level 6 deck/);
   });
 
   test('a harder nudge shifts one quantum from the max-weight deck to its successor', () => {
     const manifest = fixtureManifest();
-    const initial = createDefaultDietProfile(manifest, NOW);
+    const initial = applyOperatorDietJump(null, manifest, 'hsk2-l1', null, NOW);
     const { profile, changed } = applyDietNudge(initial, manifest, 'harder', '2026-09-10T01:00:00.000Z');
 
     assert.equal(changed, true);
     assert.deepEqual(profile.weights, { 'hsk2-l1': 0.9, 'hsk2-l2': 0.1 });
-    assert.deepEqual(profile.provenance, [{ actor: 'learner-nudge', at: '2026-09-10T01:00:00.000Z', note: 'harder' }]);
+    assert.deepEqual(profile.provenance.slice(1), [{ actor: 'learner-nudge', at: '2026-09-10T01:00:00.000Z', note: 'harder' }]);
     assert.equal(profile.updatedAt, '2026-09-10T01:00:00.000Z');
   });
 
@@ -104,7 +110,7 @@ describe('diet profile transitions', () => {
 
   test('nudges are clamped at the ends without provenance', () => {
     const manifest = fixtureManifest();
-    const first = createDefaultDietProfile(manifest, NOW);
+    const first = applyOperatorDietJump(null, manifest, 'hsk2-l1', null, NOW);
     const easierAtFirst = applyDietNudge(first, manifest, 'easier', NOW);
     assert.equal(easierAtFirst.changed, false);
     assert.equal(easierAtFirst.profile, first);
@@ -117,12 +123,12 @@ describe('diet profile transitions', () => {
 
   test('repeated nudges walk the full weight across adjacent decks', () => {
     const manifest = fixtureManifest();
-    let profile = createDefaultDietProfile(manifest, NOW);
+    let profile = applyOperatorDietJump(null, manifest, 'hsk2-l1', null, NOW);
     for (let index = 0; index < 10; index += 1) {
       profile = applyDietNudge(profile, manifest, 'harder', NOW).profile;
     }
     assert.deepEqual(profile.weights, { 'hsk2-l2': 1 });
-    assert.equal(profile.provenance.length, 10);
+    assert.equal(profile.provenance.length, 11);
     const weightSum = Object.values(profile.weights).reduce((sum, weight) => sum + weight, 0);
     assert.ok(Math.abs(weightSum - 1) < 1e-9);
   });
@@ -133,61 +139,9 @@ describe('diet profile transitions', () => {
     assert.deepEqual(resolveEffectiveDietWeights(stale, manifest), { 'hsk2-l1': 1 });
   });
 
-  test('self-select maps onto the first deck of an HSK target level, walking down', () => {
-    const manifest = fixtureManifest();
-    assert.equal(mapSelfSelectToDeckId(manifest, null), 'hsk2-l1');
-    assert.equal(mapSelfSelectToDeckId(manifest, 'complete-beginner'), 'hsk2-l1');
-    assert.equal(mapSelfSelectToDeckId(manifest, 'some-basics'), 'hsk2-l2');
-    // The fixture has no L4+ decks; intermediate and advanced walk down to L3.
-    assert.equal(mapSelfSelectToDeckId(manifest, 'intermediate'), 'hsk2-l3-s1');
-    assert.equal(mapSelfSelectToDeckId(manifest, 'advanced-or-heritage'), 'hsk2-l3-s1');
-  });
-
-  test('self-select targets L4/L6 when those decks exist, never the tail', () => {
-    const manifest: DeckManifest = {
-      meta: { manifestVersion: 1 },
-      decks: [1, 2, 3, 4, 5, 6].map((level, index) => ({
-        id: `hsk2-l${level}`,
-        order: index,
-        hsk: { version: '2.0', level },
-        stratum: null,
-        size: 100,
-      })).concat([{ id: 'beyond-hsk', order: 6, hsk: null, stratum: null, size: 0 }]),
-      assignments: {},
-    };
-    assert.equal(mapSelfSelectToDeckId(manifest, 'some-basics'), 'hsk2-l2');
-    assert.equal(mapSelfSelectToDeckId(manifest, 'intermediate'), 'hsk2-l4');
-    assert.equal(mapSelfSelectToDeckId(manifest, 'advanced-or-heritage'), 'hsk2-l6');
-  });
-
-  test('provider next-learning levels map internally and reject manifests without HSK placement decks', () => {
-    const manifest = fixtureManifest();
-    assert.equal(mapNextLearningLevelToDeckId(manifest, 1), 'hsk2-l1');
-    assert.equal(mapNextLearningLevelToDeckId(manifest, 3), 'hsk2-l3-s1');
-    assert.equal(mapNextLearningLevelToDeckId(manifest, 6), 'hsk2-l3-s1');
-    assert.throws(() => mapNextLearningLevelToDeckId({ ...manifest, decks: [manifest.decks.at(-1)!] }, 1), /no HSK 2.0 deck/);
-    assert.throws(() => mapNextLearningLevelToDeckId(manifest, 7 as 1), /1 through 6/);
-  });
-
-  test('intake stores raw answers verbatim and places 100% on the mapped deck', () => {
-    const manifest = fixtureManifest();
-    const profile = applyDietIntake(null, manifest, {
-      answers: [
-        { prompt: 'What is your background with Chinese?', answer: 'Heritage speaker, never studied formally.' },
-        { prompt: 'What do you want to be able to do?', answer: 'Read wuxia novels.' },
-      ],
-      selfSelect: 'advanced-or-heritage',
-    }, NOW);
-
-    assert.deepEqual(profile.weights, { 'hsk2-l3-s1': 1 });
-    assert.equal(profile.intake?.answers[1]?.answer, 'Read wuxia novels.');
-    assert.equal(profile.intake?.selfSelect, 'advanced-or-heritage');
-    assert.deepEqual(profile.provenance, [{ actor: 'intake', at: NOW, note: 'self-select: advanced-or-heritage' }]);
-  });
-
   test('operator jump sets 100% on a chosen deck and rejects unknown decks', () => {
     const manifest = fixtureManifest();
-    const current = applyDietIntake(null, manifest, { answers: [], selfSelect: null }, NOW);
+    const current = historicalProfile();
     const jumped = applyOperatorDietJump(current, manifest, 'hsk2-l3-s1', 'concierge correction', NOW);
 
     assert.deepEqual(jumped.weights, { 'hsk2-l3-s1': 1 });
@@ -197,10 +151,7 @@ describe('diet profile transitions', () => {
   });
 
   test('stored profiles round-trip through validation and reject corrupt values', () => {
-    const profile = applyDietIntake(null, fixtureManifest(), {
-      answers: [{ prompt: 'p', answer: 'a' }],
-      selfSelect: null,
-    }, NOW);
+    const profile = historicalProfile();
     assert.deepEqual(parseDietProfile(JSON.parse(JSON.stringify(profile))), profile);
     assert.throws(() => parseDietProfile({ version: 2 }), /version/);
     assert.throws(() => parseDietProfile({ version: 1, weights: 'x', provenance: [], updatedAt: NOW }), /weights/);
@@ -246,14 +197,15 @@ describe('diet profile persistence', { concurrency: false }, () => {
     return row ? JSON.parse(row.value_json) : null;
   }
 
-  test('unset profile stays unpersisted and defaults to the first deck', () => {
+  test('unset profile stays unpersisted and defaults to the first HSK 6 deck', () => {
     assert.equal(dbModule.getStoredDietProfile(), null);
     const profile = dbModule.getDietProfile(fixtureManifest());
-    assert.deepEqual(profile?.weights, { 'hsk2-l1': 1 });
+    assert.deepEqual(profile?.weights, { 'hsk2-l6-s1': 1 });
     assert.equal(storedSetting(), null);
   });
 
   test('nudge persists the shifted distribution with provenance', () => {
+    dbModule.setOperatorDietDeck('hsk2-l1', null, fixtureManifest());
     const result = dbModule.nudgeDietProfile('harder', fixtureManifest());
     assert.equal(result.changed, true);
     const stored = dbModule.getStoredDietProfile();
@@ -267,47 +219,14 @@ describe('diet profile persistence', { concurrency: false }, () => {
     assert.equal(clamped.profile.weights['hsk2-l1'], 1);
   });
 
-  test('intake persists answers and placement without any study-action side effects', () => {
-    const profile = dbModule.recordDietIntake({
-      answers: [{ prompt: 'Background?', answer: 'Studied for a year in college.' }],
-      selfSelect: 'some-basics',
-    }, fixtureManifest());
-    assert.deepEqual(profile.weights, { 'hsk2-l2': 1 });
-
-    const stored = storedSetting() as { intake?: { answers: Array<{ answer: string }> } };
-    assert.equal(stored.intake?.answers[0]?.answer, 'Studied for a year in college.');
-
-    // These logical names are learner-scoped views over learner_owned_*
-    // storage tables; the raw connection lacks current_learner_id, so count
-    // the physical tables directly (single-learner test database).
-    for (const table of ['learner_owned_study_attempt_events', 'learner_owned_study_sessions', 'learner_owned_study_events', 'learner_owned_daily_new_word_intake']) {
-      const row = sqlite.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get() as { count: number };
-      assert.equal(row.count, 0, `intake must not write to ${table}`);
-    }
-  });
-
-  test('provider-assessed intake atomically retains judgment evidence and rejects a stale result', () => {
-    const before = dbModule.snapshotStoredDietProfile();
-    const provider = {
-      provider: 'openai', modelConfig: 'gpt-5.6-luna-high', providerModel: 'gpt-5.6-luna',
-      promptVersion: 'diet-intake-placement-v1', clientRequestId: 'assessment-1', responseId: 'response-1',
-      finishReason: 'stop', usage: { inputTokens: 10, cachedInputTokens: null, cacheWriteInputTokens: null, outputTokens: 5, reasoningTokens: null, totalTokens: 15 },
-    } as const;
-    const profile = dbModule.recordAssessedDietIntakeIfUnchanged({
-      answers: [{ prompt: 'Background?', answer: 'I can hold conversations.' }], level: 3,
-      rationale: 'Ready for elementary expansion.', provider, at: NOW,
-    }, before, fixtureManifest());
-    assert.deepEqual(profile.weights, { 'hsk2-l3-s1': 1 });
-    assert.equal(profile.intake?.assessment?.nextLearningLevel, 3);
-    assert.equal(profile.intake?.assessment?.provider.promptVersion, 'diet-intake-placement-v1');
-
-    const staleSnapshot = dbModule.snapshotStoredDietProfile();
-    dbModule.nudgeDietProfile('harder', fixtureManifest());
-    assert.throws(() => dbModule.recordAssessedDietIntakeIfUnchanged({
-      answers: [{ prompt: 'Background?', answer: 'New answer.' }], level: 2,
-      rationale: 'Would overwrite a newer nudge.', provider, at: NOW,
-    }, staleSnapshot, fixtureManifest()), dbModule.DietProfileChangedDuringAssessmentError);
-    assert.notDeepEqual(dbModule.getStoredDietProfile()?.weights, { 'hsk2-l2': 1 });
+  test('saved historical survey placement survives reads and subsequent nudges', () => {
+    const historical = historicalProfile();
+    dbModule.saveDietProfile(historical);
+    assert.deepEqual(dbModule.getDietProfile(fixtureManifest()), historical);
+    const nudged = dbModule.nudgeDietProfile('harder', fixtureManifest()).profile;
+    assert.deepEqual(nudged.intake, historical.intake);
+    assert.deepEqual(nudged.provenance[0], historical.provenance[0]);
+    assert.deepEqual(storedSetting(), nudged);
   });
 
   test('operator jump persists 100% on the chosen deck', () => {
@@ -318,54 +237,24 @@ describe('diet profile persistence', { concurrency: false }, () => {
 
   test('operations fail loudly when the manifest is unavailable', () => {
     assert.throws(() => dbModule.nudgeDietProfile('harder', null), /manifest is not available/);
-    assert.throws(() => dbModule.recordDietIntake({ answers: [], selfSelect: null }, null), /manifest is not available/);
     assert.throws(() => dbModule.setOperatorDietDeck('hsk2-l1', null, null), /manifest is not available/);
   });
 });
 
-describe('diet status surface', { concurrency: false }, () => {
-  let dataDir = '';
-  let sqlite: DatabaseSync;
-  let dbModule: typeof import('../server/db.ts');
-
-  before(async () => {
-    dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'chinese-study-app-diet-status-'));
-    const previousMode = process.env.APP_MODE;
-    const previousDataDir = process.env.APP_DATA_DIR;
-    process.env.APP_MODE = 'study';
-    process.env.APP_DATA_DIR = dataDir;
-
-    const moduleUrl = `${pathToFileURL(path.resolve('server/db.ts')).href}?test-status=${Date.now()}`;
-    dbModule = await import(moduleUrl);
-
-    if (previousMode === undefined) delete process.env.APP_MODE;
-    else process.env.APP_MODE = previousMode;
-    if (previousDataDir === undefined) delete process.env.APP_DATA_DIR;
-    else process.env.APP_DATA_DIR = previousDataDir;
-
-    sqlite = new DatabaseSync(path.join(dataDir, 'app.db'));
-  });
-
-  after(() => {
-    sqlite.close();
-    fs.rmSync(dataDir, { recursive: true, force: true });
-  });
-
-  beforeEach(() => {
-    sqlite.exec(`DELETE FROM learner_settings WHERE setting_key = 'diet_profile';`);
-  });
-
-  test('intake is required only while no profile is stored', () => {
-    assert.equal(dbModule.isDietDeckModeActive(fixtureManifest()), true);
-    assert.equal(dbModule.isDietIntakeRequired(fixtureManifest()), true);
-
-    dbModule.recordDietIntake({ answers: [], selfSelect: null }, fixtureManifest());
-    assert.equal(dbModule.isDietIntakeRequired(fixtureManifest()), false);
-    assert.equal(dbModule.isDietDeckModeActive(fixtureManifest()), true);
-  });
-
-  test('deck mode and intake are inactive without a manifest', () => {
-    assert.equal(dbModule.isDietDeckModeActive(null), false);
-    assert.equal(dbModule.isDietIntakeRequired(null), false);
-  });
-});
+function historicalProfile(): DietProfile {
+  return {
+    version: 1, weights: { 'hsk2-l1': 1 }, updatedAt: NOW,
+    provenance: [{ actor: 'intake', at: NOW, note: 'historical assessment' }],
+    intake: {
+      answers: [{ prompt: 'Background?', answer: 'Studied for a year.' }],
+      selfSelect: null, at: NOW,
+      assessment: {
+        nextLearningLevel: 1, rationale: 'Historical assessment.',
+        provider: { provider: 'openai', modelConfig: 'gpt-5.6-luna-high', providerModel: 'gpt-5.6-luna',
+          promptVersion: 'diet-intake-placement-v1', clientRequestId: 'assessment-1', responseId: null,
+          finishReason: 'stop', usage: { inputTokens: 10, cachedInputTokens: null, cacheWriteInputTokens: null,
+            outputTokens: 5, reasoningTokens: null, totalTokens: 15 } },
+      },
+    },
+  };
+}

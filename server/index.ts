@@ -1,3 +1,29 @@
+import { registerVocabularyStatisticsRoutes } from './vocabulary/statistics-routes.ts';
+import { createVocabularyCutoverFence } from './vocabulary/cutover-routes.ts';
+import { addVocabularyStashByHanzi, updateVocabularyStashPriority } from './db/vocabulary-stash.ts';
+import { registerVocabularyStudyRoutes } from './vocabulary/study-routes.ts';
+import { registerVocabularyReflectionRoutes } from './vocabulary/reflection-routes.ts';
+import { createVocabularyProcessingWorker } from './vocabulary/processing-worker.ts';
+import { getVocabularyApprovalRequests } from './vocabulary/approval-requests.ts';
+import { createVocabularyPracticeWorker } from './vocabulary/preparation-worker.ts';
+import { SessionWordOutcomeConflictError } from './db/session-word-outcomes.ts';
+import { createSessionCompletionWorker } from './session-completion/worker.ts';
+import { stageSessionCompletion, undoSessionCompletion, closeSessionCompletion, getSessionCompletion, getCurrentSessionCompletion, SessionCompletionInputError, SessionCompletionConflictError, SessionCompletionNotFoundError } from './db/session-completion.ts';
+import { isStudyIntroductionOrder, isStudyIntroductionSpacing } from '../src/domain/introduction-order.ts';
+import { registerContentImprovementRoutes } from './content-improvement-routes.ts';
+import { listWhatsNewPosts, saveWhatsNewPost, WhatsNewConflictError } from './db/whats-new.ts';
+import { WhatsNewInputError, parseWhatsNewWriteRequest } from '../src/domain/whats-new.ts';
+import { updateWhatsNewSeenThroughSequence } from './db/attention.ts';
+import { getWhatsNewAttention, updateWhatsNewAttention } from './db/whats-new-attention.ts';
+import { createFileReflectionFailureArtifactSink } from './reflection/failure-artifacts.ts';
+import { installModelInvocationLedger } from './llm/invocation-ledger.ts';
+import { listModelInvocations, ModelInvocationInputError } from './db/model-invocations.ts';
+import { getDebriefInterests, setDebriefInterests, getLatestSessionDebrief, getSessionDebrief, retrySessionDebrief, SessionDebriefNotFoundError, SessionDebriefRetryConflictError } from './db/session-debrief.ts';
+import { SessionDebriefInputError, validateDebriefInventory } from '../src/domain/session-debrief.ts';
+import { startSessionDebriefRuntime } from './session-debrief/worker.ts';
+import { ContentQualityInputError, parseContentQualityTarget, recordContentQualityEncounter, setContentQualityRating, getContentQualityAnalytics, getContentQualityRatingLedger } from './db/content-quality.ts';
+import type { ContentQualityKind } from '../src/domain/content-quality.ts';
+import { ContentSharingInputError, getContentSharingDigest } from './db/content-sharing.ts';
 import cors from 'cors';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { randomUUID } from 'node:crypto';
@@ -23,13 +49,18 @@ import {
   listUnstudiedPriorityMatchesByTarget,
   dbConfig,
   DietManifestUnavailableError,
-  DietProfileChangedDuringAssessmentError,
   isDietDeckModeActive,
-  isDietIntakeRequired,
-  isDietSelfSelect,
   nudgeDietProfile,
-  recordDietIntake,
   getLearningPolicy,
+  getCharacterPresentation,
+  getStudyNewWordsFirst,
+  getStudyIntroductionOrder,
+  getStudyIntroductionSpacing,
+  setStudyIntroductionOrder,
+  setStudyNewWordsFirst,
+  getSentenceCharacterPresentation,
+  setSentenceCharacterPresentation,
+  setCharacterPresentation,
   setUnstudiedAdmissionSource,
   getContentDiagnostics,
   getMyWords,
@@ -39,11 +70,11 @@ import {
   getReviewFailureRateDays,
   listReflectionArtifacts,
   listReflectionGenerationRuns,
-  getReflectionSpendCap,
   listReflectionHelpInbox,
   recoverPendingReflectionInvocations,
   requireLearnerId,
   runWithLearnerId,
+  currentLearnerIdOrNull,
   getAttentionBadges,
   markReflectionInboxSeen,
   markFailedReflectionRunsSeen,
@@ -56,11 +87,15 @@ import {
   getWordStatusCounts,
   recordAcceptedContrastSelectionAttempt,
   recordAcceptedReviewAttemptBatch,
+  recordPureCueAssessment,
   recordReviewSessionSummary,
+  getSessionRecoveryHighlights,
   recordStudyManagementAction,
   getSharedContentPublicationForContent,
   getHostedServiceControls,
   getActiveServiceBanner,
+  setServiceBanner,
+  clearServiceBanner,
   toPublicServiceBanner,
   reportSharedContentPublication,
   searchWords,
@@ -70,17 +105,13 @@ import {
   updateWordUserPriority,
   upsertReflectionQualityAnnotation,
   markReflectionHelpInboxDone,
+  deferReflectionHelpInboxItem,
   withdrawReflectionInvocationAuthorization,
   getUsagePulse,
   type ReviewAttemptCommitIntent,
 } from './db.ts';
-import { isDietIntakePlacementAnswers } from '../src/domain/diet-intake-placement.ts';
 import { isMyWordsStatus, type MyWordsStatus } from '../src/domain/my-words.ts';
-import {
-  createDietIntakePlacementService,
-  DietIntakePlacementAssessmentError,
-  type DietIntakePlacementService,
-} from './diet/intake-placement-service.ts';
+import { createServiceAccessMiddleware } from './service-access.ts';
 import { createOperatorAllowlistMiddleware } from './operator-access.ts';
 import { startUsagePulseScheduler } from './usage-pulse-scheduler.ts';
 import {
@@ -96,6 +127,7 @@ import type {
   StudyContentRef,
   StudySkillId,
 } from '../src/domain/study-actions.ts';
+import type { PureCueAssessmentEvent } from '../src/domain/pure-cues.ts';
 import type {
   ClearReflectionQualityRequest,
   MarkReflectionHelpInboxDoneRequest,
@@ -115,7 +147,6 @@ import {
   createInitialReflectionGenerationService,
   isReflectionModelChoice,
   RetiredReflectionSourceModelError,
-  ReflectionSpendCapError,
   type InitialReflectionGenerationService,
 } from './reflection/generation.ts';
 import { ReflectionEvidenceError } from './reflection/evidence.ts';
@@ -134,6 +165,12 @@ import {
 } from './observability.ts';
 import { readServiceOperationalMetrics } from './hosted-observability.ts';
 import {
+  createRequestTimingMiddleware,
+  createSlowRequestLogger,
+  readSlowRequestThresholdMs,
+} from './request-timing.ts';
+import { createRequestFlightRecorder, type RequestFlightRecorder } from './request-flight-recorder.ts';
+import {
   createStudyCommitDiagnosticSink,
   describeStudyCommitFailure,
   describeStudyCommitSuccess,
@@ -144,6 +181,17 @@ import {
   createClientIncidentDiagnosticSink,
   type ClientIncidentDiagnosticSink,
 } from './client-incident-diagnostics.ts';
+import { createIntroductionLabRouter, introductionLabEnabled } from './word-content-lab/routes.ts';
+import { createWordIntroductionRouter } from './word-content/routes.ts';
+import { createWordIntroductionService, type WordIntroductionService } from './word-content/service.ts';
+import {
+  createIntroductionLabService,
+  type IntroductionLabService,
+} from './word-content-lab/service.ts';
+
+import { listWordPreparationFailures, retryWordPreparation } from './db/preparation-work.ts';
+import { prepareSessionPayload } from './word-content/session-preparation.ts';
+import { startWordPreparationRuntime } from './word-content/preparation-runtime.ts';
 
 const port = dbConfig.port;
 const defaultJsonBodyLimit = '100kb';
@@ -151,14 +199,26 @@ const defaultJsonBodyLimit = '100kb';
 export type CreateAppOptions = {
   reflectionGenerationService?: InitialReflectionGenerationService;
   reflectionLifecycleLogger?: ReflectionLifecycleLogger;
-  dietIntakePlacementService?: DietIntakePlacementService;
   resolveClerkProviderSubject?: ProviderSubjectResolver;
   /** `undefined` follows NODE_ENV; `null` explicitly disables frontend serving. */
   frontendDistPath?: string | null;
   logError?: (message: string, metadata: Record<string, string>) => void;
   serviceMetrics?: ServiceMetrics | null;
+  requestTiming?: {
+    clockMs?: () => number;
+    slowRequestThresholdMs?: number;
+    logSlowRequest?: (line: string) => void;
+    flightRecorder?: RequestFlightRecorder;
+  };
   studyCommitDiagnosticSink?: StudyCommitDiagnosticSink;
   clientIncidentDiagnosticSink?: ClientIncidentDiagnosticSink;
+  introductionLabService?: IntroductionLabService;
+  wordIntroductionService?: WordIntroductionService;
+  wakeWordPreparation?: () => void;
+  canPrepareWords?: () => boolean;
+  wakeSessionDebriefs?: () => void;
+  wakeSessionCompletions?: () => void;
+  wakeVocabulary?: () => void;
 };
 
 function parseMyWordsStatusQuery(value: unknown): MyWordsStatus[] | undefined | 'invalid' {
@@ -181,24 +241,39 @@ function parseMyWordsLapsesQuery(value: unknown): boolean | 'invalid' {
 }
 
 export function createApp(options: CreateAppOptions = {}) {
+  installModelInvocationLedger();
   const app = express();
   const frontendDistPath = resolveFrontendDistPath(options.frontendDistPath);
   const reflectionLifecycleLogger = options.reflectionLifecycleLogger
     ?? createStdoutReflectionLifecycleLogger();
+  const failureArtifactSink = createFileReflectionFailureArtifactSink(dbConfig.dataDir);
   const reflectionGenerationService = options.reflectionGenerationService
     ?? createInitialReflectionGenerationService({
       lifecycleLogger: reflectionLifecycleLogger,
+      failureArtifactSink,
       providerDiagnosticSink: createFileReflectionProviderDiagnosticSink(dbConfig.dataDir),
-      getSpendCap: getReflectionSpendCap,
     });
-  const dietIntakePlacementService = options.dietIntakePlacementService
-    ?? createDietIntakePlacementService();
   const studyCommitDiagnosticSink = options.studyCommitDiagnosticSink
     ?? createStudyCommitDiagnosticSink(dbConfig.dataDir);
   const clientIncidentDiagnosticSink = options.clientIncidentDiagnosticSink
     ?? createClientIncidentDiagnosticSink(dbConfig.dataDir);
 
+  const logSlowRequest = createSlowRequestLogger({
+    thresholdMs: options.requestTiming?.slowRequestThresholdMs
+      ?? readSlowRequestThresholdMs(process.env.APP_SLOW_REQUEST_MS),
+    logLine: options.requestTiming?.logSlowRequest,
+  });
+  const requestTiming = createRequestTimingMiddleware({
+    clockMs: options.requestTiming?.clockMs,
+    onSummary: (summary) => {
+      const slow = logSlowRequest(summary);
+      options.serviceMetrics?.observeRequestTiming(summary, slow);
+      options.requestTiming?.flightRecorder?.record(summary);
+    },
+  });
+
   app.disable('x-powered-by');
+  app.use(requestTiming.begin);
   if (options.serviceMetrics) app.use(options.serviceMetrics.requestMiddleware);
   app.use(cors(dbConfig.authMode === 'clerk'
     ? {
@@ -206,7 +281,12 @@ export function createApp(options: CreateAppOptions = {}) {
         allowedHeaders: ['Authorization', 'Content-Type'],
       }
     : undefined));
+  app.use('/api/operator/content-improvements', express.json({ limit: '512kb' }));
+  app.use('/api/operator/whats-new', express.json({ limit: '1mb' }));
+  app.use('/api/whats-new-attention', express.json({ limit: '160kb' }));
+  app.use('/api/study-sessions/:sessionId/completion', express.json({ limit: '1mb' }));
   app.use(express.json({ limit: defaultJsonBodyLimit }));
+  app.use(requestTiming.resume);
 
   // Fly health checks and browser assets must remain available without a learner session.
   app.get('/healthz', (_req, res) => {
@@ -214,6 +294,7 @@ export function createApp(options: CreateAppOptions = {}) {
     res.json({
       status: 'ok',
       maintenanceMode: controls.maintenanceMode,
+      operatorOnly: controls.operatorOnly,
       providerWorkEnabled: controls.providerWorkEnabled,
       activeProviderWorkCount: getActiveProviderWorkCount(),
     });
@@ -222,11 +303,14 @@ export function createApp(options: CreateAppOptions = {}) {
     app.use(express.static(frontendDistPath, { index: false }));
   }
 
+  app.use('/api', requestTiming.authStarted);
   if (dbConfig.authMode === 'trusted_local') {
+    app.use('/api', createServiceAccessMiddleware(() => null));
     app.use('/api', (_req, _res, next) => runWithLearnerId(dbConfig.learnerId, next));
   } else {
     app.use('/api', ...createClerkRequestAuthentication(options.resolveClerkProviderSubject));
   }
+  app.use('/api', requestTiming.authFinished(currentLearnerIdOrNull));
   app.use('/api', (req, res, next) => {
     if (
       !['GET', 'HEAD', 'OPTIONS'].includes(req.method)
@@ -237,6 +321,19 @@ export function createApp(options: CreateAppOptions = {}) {
     }
     next();
   });
+
+  app.use('/api', createVocabularyCutoverFence(dbConfig.studyProfile));
+  if (dbConfig.studyProfile === 'mandarin') {
+    app.use('/api/words', createWordIntroductionRouter(
+      options.wordIntroductionService ?? createWordIntroductionService(),
+    ));
+  }
+
+  if (introductionLabEnabled(dbConfig, process.env.APP_WORD_CONTENT_WORKBENCH)) {
+    app.use('/api/intro-lab', createIntroductionLabRouter(
+      options.introductionLabService ?? createIntroductionLabService({ dataDir: dbConfig.dataDir }),
+    ));
+  }
 
   app.post('/api/client-incidents', (req, res) => {
     const incidents = req.body?.incidents;
@@ -314,6 +411,50 @@ export function createApp(options: CreateAppOptions = {}) {
     }
   });
 
+  app.post('/api/content-quality/encounters', (req, res) => {
+    try {
+      res.json(recordContentQualityEncounter(parseContentQualityTarget(req.body?.target), req.body?.encounterId));
+    } catch (error) {
+      if (error instanceof ContentQualityInputError) { res.status(400).json({ error: error.message }); return; }
+      console.error('Content quality encounter failed', error);
+      res.status(500).json({ error: 'Failed to record content quality encounter' });
+    }
+  });
+  app.put('/api/content-quality/ratings', (req, res) => {
+    try { res.json(setContentQualityRating(req.body?.contentKey, req.body?.rating)); }
+    catch (error) {
+      if (error instanceof ContentQualityInputError) { res.status(400).json({ error: error.message }); return; }
+      console.error('Content quality rating failed', error);
+      res.status(500).json({ error: 'Failed to save content quality rating' });
+    }
+  });
+  registerContentImprovementRoutes(app);
+  registerVocabularyStudyRoutes(app, options.wakeVocabulary);
+  registerVocabularyStatisticsRoutes(app);
+  registerVocabularyReflectionRoutes(app, {wake: options.wakeVocabulary});
+  app.get('/api/operator/content-quality', createOperatorAllowlistMiddleware(), (req, res) => {
+    if (Object.values(req.query).some(value => typeof value !== 'string')) {
+      res.status(400).json({ error: 'Expected string quality filters' }); return;
+    }
+    try {
+      res.json(getContentQualityAnalytics({ kind: req.query.kind as ContentQualityKind | undefined,
+        since: req.query.since as string | undefined, until: req.query.until as string | undefined,
+        limit: req.query.limit === undefined ? undefined : Number(req.query.limit),
+        offset: req.query.offset === undefined ? undefined : Number(req.query.offset) }));
+    } catch (error) {
+      if (error instanceof ContentQualityInputError) { res.status(400).json({ error: error.message }); return; }
+      console.error('Content quality analytics failed', error);
+      res.status(500).json({ error: 'Failed to load content quality analytics' });
+    }
+  });
+  app.get('/api/operator/content-quality/ratings', createOperatorAllowlistMiddleware(), (_req, res) => {
+    try { res.json(getContentQualityRatingLedger()); }
+    catch (error) {
+      console.error('Content quality rating ledger failed', error);
+      res.status(500).json({ error: 'Failed to load content quality rating ledger' });
+    }
+  });
+
   app.get(
     '/api/operator/usage-pulse',
     createOperatorAllowlistMiddleware(),
@@ -326,6 +467,84 @@ export function createApp(options: CreateAppOptions = {}) {
       }
     },
   );
+
+  app.get('/api/operator/content-sharing', createOperatorAllowlistMiddleware(), (req, res) => {
+    try {
+      res.json(getContentSharingDigest(req.query.weekStart));
+    } catch (error) {
+      if (error instanceof ContentSharingInputError) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
+      console.error('Failed to load content sharing digest', error);
+      res.status(500).json({ error: 'Failed to load content sharing digest' });
+    }
+  });
+
+  app.get('/api/operator/model-invocations', createOperatorAllowlistMiddleware(), (req, res) => {
+    try {
+      res.json(listModelInvocations({ from: req.query.from, to: req.query.to }));
+    } catch (error) {
+      if (error instanceof ModelInvocationInputError) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
+      console.error('Failed to load model invocations', error);
+      res.status(500).json({ error: 'Failed to load model invocations' });
+    }
+  });
+
+  app.get('/api/operator/word-preparation/failures', createOperatorAllowlistMiddleware(), (_req, res) => {
+    res.json({ failures: listWordPreparationFailures() });
+  });
+
+  app.get('/api/operator/service-banner', createOperatorAllowlistMiddleware(), (_req, res) => {
+    const banner = getActiveServiceBanner();
+    res.json({ serviceBanner: banner ? toPublicServiceBanner(banner) : null });
+  });
+  app.put('/api/operator/service-banner', createOperatorAllowlistMiddleware(), (req, res) => {
+    const { message, expiresAt, kickoffAt } = req.body ?? {};
+    const planned = typeof kickoffAt === 'string' && message === undefined && expiresAt === undefined;
+    const custom = kickoffAt === undefined && typeof message === 'string'
+      && (expiresAt === undefined || typeof expiresAt === 'string');
+    if (!planned && !custom) {
+      res.status(400).json({ error: 'Expected either an ISO kickoff timestamp, or a message with optional ISO expiry timestamp.' });
+      return;
+    }
+    try {
+      const request = planned ? { kickoffAt } : { message, expiresAt };
+      const banner = setServiceBanner({ ...request, actorId: res.locals.operatorSubject });
+      res.json({ serviceBanner: toPublicServiceBanner(banner) });
+    } catch (error) {
+      if (error instanceof Error && /service banner message|service banner expiry|service banner kickoff|expires at/i.test(error.message)) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
+      console.error('Failed to update operator service banner', error);
+      res.status(500).json({ error: 'Failed to update service banner' });
+    }
+  });
+  app.delete('/api/operator/service-banner', createOperatorAllowlistMiddleware(), (_req, res) => {
+    res.json(clearServiceBanner({ actorId: res.locals.operatorSubject }));
+  });
+  app.post('/api/operator/word-preparation/:workId/retry', createOperatorAllowlistMiddleware(), (req, res) => {
+    if (!req.body || Array.isArray(req.body) || typeof req.body !== 'object' || Object.keys(req.body).length !== 0
+      || !req.params.workId || req.params.workId.length > 200) {
+      res.status(400).json({ error: 'Expected an empty retry request.' });
+      return;
+    }
+    try {
+      retryWordPreparation(req.params.workId, res.locals.operatorSubject);
+      options.wakeWordPreparation?.();
+      res.json({ queued: true });
+    } catch (error) {
+      if (error instanceof Error && error.message === 'Only paused preparation can be retried') {
+        res.status(409).json({ error: error.message });
+        return;
+      }
+      res.status(500).json({ error: 'Could not retry word preparation.' });
+    }
+  });
 
   app.get('/api/words/search', (req, res) => {
     const query = req.query?.q;
@@ -359,6 +578,22 @@ export function createApp(options: CreateAppOptions = {}) {
       }
 
       res.status(500).json({ error: 'Failed to load word meanings' });
+    }
+  });
+
+  app.post('/api/session-payload', async (req, res) => {
+    const studyDayKey = readStudyDayKeyFromQuery(req.body?.studyDayKey);
+    if (!studyDayKey || Object.keys(req.body ?? {}).some((key) => key !== 'studyDayKey')) {
+      res.status(400).json({ error: 'Expected YYYY-MM-DD studyDayKey' });
+      return;
+    }
+    try {
+      res.json(await prepareSessionPayload(studyDayKey, {
+        wake: options.wakeWordPreparation ?? (() => {}),
+        budgetMs: options.canPrepareWords?.() ? 30_000 : 0,
+      }));
+    } catch {
+      res.status(500).json({ error: 'Could not prepare your session. Please try again.' });
     }
   });
 
@@ -420,11 +655,12 @@ export function createApp(options: CreateAppOptions = {}) {
         return;
       }
 
-      const addedWords = addUnstudiedUserPriorityByHanzi(
+      const addedWords = addVocabularyStashByHanzi(
         normalizedHanzi,
         requiredForNextSession === true,
         wordIds,
       );
+      options.wakeWordPreparation?.();
       res.json({
         addedCount: addedWords.length,
         words: addedWords,
@@ -473,70 +709,6 @@ export function createApp(options: CreateAppOptions = {}) {
     }
   });
 
-  app.post('/api/diet/intake', (req, res) => {
-    const answers = req.body?.answers;
-    const selfSelect = req.body?.selfSelect;
-
-    if (!Array.isArray(answers)
-      || !answers.every((answer) => typeof answer === 'object' && answer !== null
-        && typeof answer.prompt === 'string' && answer.prompt.trim().length > 0
-        && typeof answer.answer === 'string' && answer.answer.trim().length > 0)) {
-      res.status(400).json({ error: 'Expected answers to be an array of non-empty { prompt, answer } strings' });
-      return;
-    }
-    if (selfSelect !== undefined && selfSelect !== null && !isDietSelfSelect(selfSelect)) {
-      res.status(400).json({ error: 'Expected selfSelect to be a valid coarse self-select value when provided' });
-      return;
-    }
-
-    try {
-      const profile = recordDietIntake({
-        answers: answers.map((answer) => ({ prompt: answer.prompt as string, answer: answer.answer as string })),
-        selfSelect: selfSelect ?? null,
-      });
-      res.status(201).json(profile);
-    } catch (error) {
-      if (error instanceof DietManifestUnavailableError) {
-        res.status(409).json({ error: error.message });
-        return;
-      }
-      res.status(500).json({ error: 'Failed to record the diet intake' });
-    }
-  });
-
-  app.post('/api/diet/intake/assess', async (req, res) => {
-    const answers = req.body?.answers;
-    if (req.body?.providerDisclosureAccepted !== true) {
-      res.status(400).json({ error: 'Expected providerDisclosureAccepted to be true' });
-      return;
-    }
-    if (!isDietIntakePlacementAnswers(answers)) {
-      res.status(400).json({ error: 'Expected one or two bounded non-empty intake answers' });
-      return;
-    }
-    try {
-      const boundedAnswers = answers.map(({ prompt, answer }) => ({ prompt, answer }));
-      const profile = await runHostedProviderWork(() => dietIntakePlacementService.assessAndApply(boundedAnswers));
-      res.status(201).json(profile);
-    } catch (error) {
-      if (handleHostedProviderWorkError(error, res)) return;
-      if (error instanceof DietManifestUnavailableError) {
-        res.status(409).json({ error: error.message });
-        return;
-      }
-      if (error instanceof DietProfileChangedDuringAssessmentError) {
-        res.status(409).json({ error: error.message, code: 'profile_changed' });
-        return;
-      }
-      if (error instanceof DietIntakePlacementAssessmentError) {
-        const status = error.code === 'invalid_input' ? 400 : error.code === 'already_running' ? 409 : 502;
-        res.status(status).json({ error: error.message, code: error.code, providerCode: error.providerCode });
-        return;
-      }
-      res.status(500).json({ error: 'Failed to assess diet intake' });
-    }
-  });
-
   app.get('/api/status', (req, res) => {
     const studyDayKey = readStudyDayKeyFromQuery(req.query?.studyDayKey);
     if (!studyDayKey) {
@@ -556,9 +728,14 @@ export function createApp(options: CreateAppOptions = {}) {
       reviewFailureRateDays: getReviewFailureRateDays(),
       sessionActiveTimeMetrics: getSessionActiveTimeMetrics(studyDayKey),
       dietDecksActive: isDietDeckModeActive(),
-      dietIntakeRequired: isDietIntakeRequired(),
       serviceBanner: banner ? toPublicServiceBanner(banner) : null,
       ...getLearningPolicy(studyDayKey),
+      characterPresentation: getCharacterPresentation(),
+      sentenceCharacterPresentation: getSentenceCharacterPresentation(),
+      studyNewWordsFirst: getStudyNewWordsFirst(),
+      studyIntroductionOrder: getStudyIntroductionOrder(),
+      studyIntroductionSpacing: getStudyIntroductionSpacing(),
+      debriefInterests: getDebriefInterests(),
     });
   });
 
@@ -568,7 +745,7 @@ export function createApp(options: CreateAppOptions = {}) {
     try {
       res.json(setDailyNewWordLimit(dailyNewWordLimit));
     } catch (error) {
-      if (error instanceof Error && error.message === 'Expected non-negative integer dailyNewWordLimit') {
+      if (error instanceof Error && error.message === 'Expected integer dailyNewWordLimit between 0 and 20') {
         res.status(400).json({ error: error.message });
         return;
       }
@@ -589,6 +766,98 @@ export function createApp(options: CreateAppOptions = {}) {
       }
 
       res.status(500).json({ error: 'Failed to update unstudied admission source' });
+    }
+  });
+
+  app.patch('/api/learner-settings/debrief-interests', (req, res) => {
+    try { res.json(setDebriefInterests(req.body?.debriefInterests)); }
+    catch (error) {
+      res.status(error instanceof SessionDebriefInputError ? 400 : 500).json({ error: error instanceof SessionDebriefInputError ? error.message : 'Failed to update interests' });
+    }
+  });
+
+  app.get('/api/session-debriefs/latest', (_req, res) => {
+    res.json({ debrief: getLatestSessionDebrief() });
+  });
+
+  app.get('/api/session-debriefs/:sessionId', (req, res) => {
+    const debrief = getSessionDebrief(req.params.sessionId);
+    if (!debrief) { res.status(404).json({ error: 'Session debrief not found' }); return; }
+    res.json({ debrief });
+  });
+
+  app.post('/api/session-debriefs/:sessionId/retry', (req, res) => {
+    try {
+      const debrief = retrySessionDebrief(req.params.sessionId);
+      if (debrief.status === 'queued') {
+        try { options.wakeSessionDebriefs?.(); } catch { /* A durable retry survives a missed wake. */ }
+      }
+      res.json({ debrief });
+    } catch (error) {
+      res.status(error instanceof SessionDebriefNotFoundError ? 404 : error instanceof SessionDebriefRetryConflictError ? 409 : 500)
+        .json({ error: error instanceof SessionDebriefNotFoundError || error instanceof SessionDebriefRetryConflictError ? error.message : 'Failed to retry session debrief' });
+    }
+  });
+
+  app.patch('/api/learner-settings/character-presentation', (req, res) => {
+    const characterPresentation = req.body?.characterPresentation;
+
+    try {
+      res.json(setCharacterPresentation(characterPresentation));
+    } catch (error) {
+      if (
+        error instanceof Error
+        && error.message === 'Expected characterPresentation to be "simplified", "traditional", or "both"'
+      ) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
+
+      res.status(500).json({ error: 'Failed to update character presentation' });
+    }
+  });
+
+  app.patch('/api/learner-settings/study-introduction-order', (req, res) => {
+    const { studyIntroductionOrder, studyIntroductionSpacing } = req.body ?? {};
+    if (!isStudyIntroductionOrder(studyIntroductionOrder)) {
+      res.status(400).json({ error: 'Expected studyIntroductionOrder to be random, first or paced' });
+      return;
+    }
+    if (!isStudyIntroductionSpacing(studyIntroductionSpacing)) {
+      res.status(400).json({ error: 'Expected integer studyIntroductionSpacing between 1 and 10' });
+      return;
+    }
+    try {
+      res.json(setStudyIntroductionOrder(studyIntroductionOrder, studyIntroductionSpacing));
+    } catch {
+      res.status(500).json({ error: 'Failed to update introduction ordering' });
+    }
+  });
+
+  app.patch('/api/learner-settings/study-new-words-first', (req, res) => {
+    if (typeof req.body?.studyNewWordsFirst !== 'boolean') {
+      res.status(400).json({ error: 'Expected studyNewWordsFirst to be a boolean' });
+      return;
+    }
+    try {
+      res.json(setStudyNewWordsFirst(req.body.studyNewWordsFirst));
+    } catch {
+      res.status(500).json({ error: 'Failed to update new-word ordering' });
+    }
+  });
+
+  app.patch('/api/learner-settings/sentence-character-presentation', (req, res) => {
+    try {
+      res.json(setSentenceCharacterPresentation(req.body?.sentenceCharacterPresentation));
+    } catch (error) {
+      if (
+        error instanceof Error
+        && error.message === 'Expected sentenceCharacterPresentation to be "simplified" or "traditional"'
+      ) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
+      res.status(500).json({ error: 'Failed to update sentence character presentation' });
     }
   });
 
@@ -704,6 +973,62 @@ export function createApp(options: CreateAppOptions = {}) {
         publicError: isClientError
           ? error.message
           : 'Failed to record accepted contrast selection attempt',
+      });
+    }
+  });
+
+  app.post('/api/study-sessions/:sessionId/pure-cue-assessments', (req, res) => {
+    const sessionId = req.params.sessionId;
+    const { attemptId, snapshotId, sessionActionId, events, reinforcementSkipped } = req.body ?? {};
+    if (
+      typeof sessionId !== 'string' || sessionId.trim().length === 0
+      || typeof attemptId !== 'string' || attemptId.trim().length === 0
+      || typeof snapshotId !== 'string' || snapshotId.trim().length === 0
+      || typeof sessionActionId !== 'string' || sessionActionId.trim().length === 0
+      || !Array.isArray(events)
+    ) {
+      res.status(400).json({ error: 'Expected non-empty pure cue assessment identity and events array' });
+      return;
+    }
+    if (reinforcementSkipped !== undefined && typeof reinforcementSkipped !== 'boolean') {
+      res.status(400).json({ error: 'Expected boolean reinforcementSkipped' });
+      return;
+    }
+    if (!events.every(isPureCueAssessmentEventInput)) {
+      res.status(400).json({ error: 'Expected pure cue assessment event objects with valid primitive fields' });
+      return;
+    }
+    const commitStartedAtMs = Date.now();
+    try {
+      recordPureCueAssessment({
+        attemptId: attemptId.trim(),
+        snapshotId: snapshotId.trim(),
+        sessionId: sessionId.trim(),
+        sessionActionId: sessionActionId.trim(),
+        events: events as PureCueAssessmentEvent[],
+        reinforcementSkipped,
+        committedAt: new Date().toISOString(),
+      });
+      recordStudyCommitSuccessSafely({
+        sink: studyCommitDiagnosticSink,
+        route: '/api/study-sessions/:sessionId/pure-cue-assessments',
+        request: req,
+        elapsedMs: Date.now() - commitStartedAtMs,
+      });
+      res.status(204).send();
+    } catch (error) {
+      const isClientError = isPureCueAssessmentClientError(error);
+      respondWithStudyCommitFailure({
+        sink: studyCommitDiagnosticSink,
+        route: '/api/study-sessions/:sessionId/pure-cue-assessments',
+        request: req,
+        response: res,
+        error,
+        elapsedMs: Date.now() - commitStartedAtMs,
+        responseStatus: isClientError ? 400 : 500,
+        publicError: isClientError && error instanceof Error
+          ? error.message
+          : 'Failed to record pure cue assessment',
       });
     }
   });
@@ -889,18 +1214,6 @@ export function createApp(options: CreateAppOptions = {}) {
         });
         return;
       }
-      if (isReflectionSpendCapError(error)) {
-        reflectionLifecycleLogger.emit({
-          event: 'reflection.generation_failed',
-          sessionId: normalizedSessionId,
-          failure: 'internal',
-          code: 'spend_cap',
-          clientRequestId: null,
-          elapsedMs: Date.now() - generationStartedAt,
-        });
-        res.status(409).json({ error: error.message });
-        return;
-      }
       if (error instanceof LunaReflectionProviderError) {
         reflectionLifecycleLogger.emit({
           event: 'reflection.generation_failed',
@@ -946,7 +1259,6 @@ export function createApp(options: CreateAppOptions = {}) {
     try {
       res.json({
         runs: listReflectionGenerationRuns(),
-        spendCap: getReflectionSpendCap(),
       });
     } catch {
       res.status(500).json({ error: 'Failed to load reflection generation runs' });
@@ -983,10 +1295,6 @@ export function createApp(options: CreateAppOptions = {}) {
         res.status(409).json({ error: error.message });
         return;
       }
-      if (isReflectionSpendCapError(error)) {
-        res.status(409).json({ error: error.message });
-        return;
-      }
       if (error instanceof Error && (
         error.message === 'Reflection generation run is not retryable.'
         || error.message === 'Reflection generation run is not retryable by the current flow.'
@@ -1007,9 +1315,14 @@ export function createApp(options: CreateAppOptions = {}) {
 
   app.post('/api/deferred-reflection-second-opinions', async (req, res) => {
     const proposalIds = req.body?.proposalIds;
+    const helpInboxIds = req.body?.helpInboxIds ?? [];
     const requestedModel = req.body?.model;
     if (!Array.isArray(proposalIds) || !proposalIds.every((proposalId) => typeof proposalId === 'string')) {
       res.status(400).json({ error: 'Expected an array of selected reflection proposal ids' });
+      return;
+    }
+    if (!Array.isArray(helpInboxIds) || !helpInboxIds.every((id) => typeof id === 'string')) {
+      res.status(400).json({ error: 'Expected an array of selected explanation item ids' });
       return;
     }
     if (!isReflectionModelChoice(requestedModel)) {
@@ -1023,7 +1336,7 @@ export function createApp(options: CreateAppOptions = {}) {
     });
     try {
       const result = await runHostedProviderWork(
-        () => reflectionGenerationService.generateDeferredSecondOpinion(proposalIds, requestedModel),
+        () => reflectionGenerationService.generateDeferredSecondOpinion(proposalIds, requestedModel, helpInboxIds),
       );
       reflectionLifecycleLogger.emit({
         event: 'reflection.generation_succeeded',
@@ -1057,18 +1370,6 @@ export function createApp(options: CreateAppOptions = {}) {
           elapsedMs: Date.now() - generationStartedAt,
         });
         res.status(400).json({ error: error.message });
-        return;
-      }
-      if (isReflectionSpendCapError(error)) {
-        reflectionLifecycleLogger.emit({
-          event: 'reflection.generation_failed',
-          sessionId: null,
-          failure: 'internal',
-          code: 'spend_cap',
-          clientRequestId: null,
-          elapsedMs: Date.now() - generationStartedAt,
-        });
-        res.status(409).json({ error: error.message });
         return;
       }
       if (error instanceof LunaReflectionProviderError) {
@@ -1360,6 +1661,43 @@ export function createApp(options: CreateAppOptions = {}) {
     }
   });
 
+  app.get('/api/whats-new', (_req, res) => {
+    res.json({ posts: listWhatsNewPosts() });
+  });
+  app.get('/api/whats-new-attention', (_req, res) => {
+    res.json(getWhatsNewAttention());
+  });
+  app.post('/api/whats-new-attention', (req, res) => {
+    try {
+      res.json(updateWhatsNewAttention(req.body));
+    } catch (error) {
+      if (error instanceof WhatsNewInputError) { res.status(400).json({ error: error.message }); return; }
+      console.error('Failed to update blog attention', error);
+      res.status(500).json({ error: 'Failed to update blog attention' });
+    }
+  });
+  app.get('/api/operator/whats-new', createOperatorAllowlistMiddleware(), (_req, res) => {
+    res.json({ posts: listWhatsNewPosts({ includeDrafts: true }) });
+  });
+  app.put('/api/operator/whats-new', createOperatorAllowlistMiddleware(), (req, res) => {
+    try {
+      res.json(saveWhatsNewPost(parseWhatsNewWriteRequest(req.body), res.locals.operatorSubject as string));
+    } catch (error) {
+      if (error instanceof WhatsNewInputError) { res.status(400).json({ error: error.message }); return; }
+      if (error instanceof WhatsNewConflictError) { res.status(409).json({ error: error.message }); return; }
+      console.error('Failed to save blog post', error);
+      res.status(500).json({ error: 'Failed to save blog post' });
+    }
+  });
+  app.post('/api/whats-new-seen-sequence', (req, res) => {
+    try {
+      res.json({ whatsNewSeenThroughSequence: updateWhatsNewSeenThroughSequence(req.body?.throughSequence, req.body?.mode) });
+    } catch (error) {
+      if (error instanceof WhatsNewInputError) { res.status(400).json({ error: error.message }); return; }
+      res.status(500).json({ error: 'Failed to update blog seen sequence' });
+    }
+  });
+
   app.post('/api/whats-new-seen', (req, res) => {
     const request = readWhatsNewSeenRequest(req.body);
     if (request === null) {
@@ -1426,12 +1764,88 @@ export function createApp(options: CreateAppOptions = {}) {
     }
   });
 
+  app.post('/api/reflection-help-inbox/defer', (req, res) => {
+    const request = readMarkReflectionHelpInboxDoneRequest(req.body);
+    if (request === null) {
+      res.status(400).json({ error: 'Expected a valid reflection help item' });
+      return;
+    }
+    try {
+      res.json(deferReflectionHelpInboxItem(request));
+    } catch (error) {
+      if (isReflectionQualityNotFoundError(error)) {
+        res.status(404).json({ error: error.message.replace(/\.$/, '') });
+        return;
+      }
+      res.status(500).json({ error: 'Failed to defer reflection help item' });
+    }
+  });
+
+  app.get('/api/study-sessions/:sessionId/recovery-highlights', (req, res) => {
+    if (req.params.sessionId.trim().length === 0) {
+      res.status(400).json({ error: 'Expected non-empty session id' });
+      return;
+    }
+    try {
+      const highlights = getSessionRecoveryHighlights(req.params.sessionId);
+      if (highlights === null) {
+        res.status(404).json({ error: 'Completed session not found' });
+        return;
+      }
+      res.json({ highlights });
+    } catch {
+      res.status(500).json({ error: 'Failed to load recovery highlights' });
+    }
+  });
+
+  function completionError(res: Response, error: unknown): void {
+    if (error instanceof SessionCompletionInputError) res.status(400).json({ error: error.message });
+    else if (error instanceof SessionCompletionConflictError) res.status(409).json({ error: error.message });
+    else if (error instanceof SessionCompletionNotFoundError) res.status(404).json({ error: error.message });
+    else res.status(500).json({ error: 'Failed to save session completion' });
+  }
+  app.get('/api/session-completions/current', (_req, res) => {
+    try { res.json({ completion: getCurrentSessionCompletion() }); }
+    catch (error) { completionError(res, error); }
+  });
+  app.get('/api/study-sessions/:sessionId/completion', (req, res) => {
+    try {
+      const completion = getSessionCompletion(req.params.sessionId);
+      if (!completion) throw new SessionCompletionNotFoundError('Session completion not found');
+      res.json(completion);
+    } catch (error) { completionError(res, error); }
+  });
+  app.post('/api/study-sessions/:sessionId/completion', (req, res) => {
+    try {
+      const completion = stageSessionCompletion(req.params.sessionId, req.body);
+      try { options.wakeSessionCompletions?.(); } catch { /* Deadline is durable. */ }
+      res.json(completion);
+    } catch (error) { completionError(res, error); }
+  });
+  app.post('/api/study-sessions/:sessionId/completion/undo', (req, res) => {
+    try { res.json(undoSessionCompletion(req.params.sessionId, req.body?.revisionId)); }
+    catch (error) { completionError(res, error); }
+  });
+  app.post('/api/study-sessions/:sessionId/completion/close', (req, res) => {
+    try {
+      const completion = closeSessionCompletion(req.params.sessionId, req.body?.revisionId);
+      try { options.wakeSessionCompletions?.(); options.wakeSessionDebriefs?.(); } catch { /* Jobs are durable. */ }
+      res.json(completion);
+    } catch (error) { completionError(res, error); }
+  });
+
   app.post('/api/review-session-summaries', (req, res) => {
     const sessionId = req.body?.sessionId;
     const completedAt = req.body?.completedAt;
     const completedReviewActionCount = req.body?.completedReviewActionCount;
     const failedReviewActionCount = req.body?.failedReviewActionCount;
+    const completedLearningWordCount = req.body?.completedLearningWordCount;
     const activeDurationMs = req.body?.activeDurationMs;
+    const debriefInventory: unknown = req.body?.debriefInventory;
+    if (debriefInventory !== undefined) {
+      try { validateDebriefInventory(debriefInventory); }
+      catch (error) { res.status(400).json({ error: error instanceof Error ? error.message : 'Invalid debrief inventory' }); return; }
+    }
 
     if (typeof sessionId !== 'string' || sessionId.trim().length === 0) {
       res.status(400).json({ error: 'Expected non-empty string sessionId' });
@@ -1458,6 +1872,12 @@ export function createApp(options: CreateAppOptions = {}) {
       return;
     }
 
+    if (completedLearningWordCount !== undefined &&
+      (!Number.isInteger(completedLearningWordCount) || completedLearningWordCount < 0)) {
+      res.status(400).json({ error: 'Expected non-negative integer completedLearningWordCount' });
+      return;
+    }
+
     const commitStartedAtMs = Date.now();
     try {
       recordReviewSessionSummary({
@@ -1466,6 +1886,8 @@ export function createApp(options: CreateAppOptions = {}) {
         completedReviewActionCount,
         failedReviewActionCount,
         activeDurationMs,
+        completedLearningWordCount,
+        ...(debriefInventory === undefined ? {} : { debriefInventory }),
       });
       try {
         reflectionLifecycleLogger.emit({
@@ -1477,6 +1899,9 @@ export function createApp(options: CreateAppOptions = {}) {
         });
       } catch {
         // Observability must not turn a durable summary into a failed response.
+      }
+      if (debriefInventory !== undefined && getSessionDebrief(sessionId)?.status === 'queued') {
+        try { options.wakeSessionDebriefs?.(); } catch { /* The queue is already durable. */ }
       }
       res.status(204).end();
     } catch (error) {
@@ -1503,6 +1928,9 @@ export function createApp(options: CreateAppOptions = {}) {
   });
 
   app.post('/api/words/:id/complete-learning-session', (req, res) => {
+    if (req.body?.sessionId !== undefined && (typeof req.body.sessionId !== 'string' || !req.body.sessionId.trim())) {
+      res.status(400).json({ error: 'Expected non-empty sessionId when provided' }); return;
+    }
     const success = req.body?.success;
 
     if (typeof success !== 'boolean') {
@@ -1511,7 +1939,7 @@ export function createApp(options: CreateAppOptions = {}) {
     }
 
     try {
-      const updatedWord = completeLearningWordSession(req.params.id, success);
+      const updatedWord = completeLearningWordSession(req.params.id, success, req.body?.sessionId);
       res.json(updatedWord);
     } catch (error) {
       if (error instanceof Error && error.message === 'Word not found') {
@@ -1519,11 +1947,15 @@ export function createApp(options: CreateAppOptions = {}) {
         return;
       }
 
+      if (error instanceof SessionWordOutcomeConflictError) { res.status(409).json({ error: error.message }); return; }
       res.status(500).json({ error: 'Failed to complete learning session' });
     }
   });
 
   app.post('/api/words/:id/complete-unstudied-session', (req, res) => {
+    if (req.body?.sessionId !== undefined && (typeof req.body.sessionId !== 'string' || !req.body.sessionId.trim())) {
+      res.status(400).json({ error: 'Expected non-empty sessionId when provided' }); return;
+    }
     const studyDayKey = readStudyDayKeyFromBody(req.body?.studyDayKey);
     if (!studyDayKey) {
       res.status(400).json({ error: 'Expected YYYY-MM-DD studyDayKey in request body' });
@@ -1531,7 +1963,7 @@ export function createApp(options: CreateAppOptions = {}) {
     }
 
     try {
-      const updatedWord = completeUnstudiedWordSession(req.params.id, studyDayKey);
+      const updatedWord = completeUnstudiedWordSession(req.params.id, studyDayKey, req.body?.sessionId);
       res.json(updatedWord);
     } catch (error) {
       if (error instanceof Error && error.message === 'Word not found') {
@@ -1544,6 +1976,7 @@ export function createApp(options: CreateAppOptions = {}) {
         return;
       }
 
+      if (error instanceof SessionWordOutcomeConflictError) { res.status(409).json({ error: error.message }); return; }
       res.status(500).json({ error: 'Failed to complete unstudied session' });
     }
   });
@@ -1620,7 +2053,8 @@ export function createApp(options: CreateAppOptions = {}) {
     }
 
     try {
-      const updatedWord = updateWordUserPriority(req.params.id, { bumpDelta, forceTop, reset, requiredForNextSession });
+      const updatedWord = updateVocabularyStashPriority(req.params.id, { bumpDelta, forceTop, reset, requiredForNextSession });
+      options.wakeWordPreparation?.();
       res.json(updatedWord);
     } catch (error) {
       if (error instanceof Error && error.message === 'Word not found') {
@@ -1726,6 +2160,34 @@ function respondWithStudyCommitFailure({
     error: publicError,
     diagnosticId: diagnostic.diagnosticId,
   });
+}
+
+function isPureCueAssessmentEventInput(value: unknown): value is PureCueAssessmentEvent {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const event = value as Record<string, unknown>;
+  return (
+    typeof event.eventId === 'string'
+    && typeof event.occurredAt === 'string'
+    && (typeof event.response === 'string' || event.response === null)
+    && (event.outcome === 'accepted' || event.outcome === 'rejected')
+    && (typeof event.submittedWordId === 'string' || event.submittedWordId === null)
+    && (event.rating === 'forgot' || event.rating === 'hard' || event.rating === 'good' || event.rating === 'easy')
+  );
+}
+
+function isPureCueAssessmentClientError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return (
+    error.message.startsWith('Expected ')
+    || error.message.startsWith('Invalid ')
+    || error.message.startsWith('Pure cue ')
+    || error.message.startsWith('Duplicate pure cue ')
+    || error.message.startsWith('Rejected pure cue ')
+    || error.message.startsWith('Frozen pure cue ')
+    || error.message.startsWith('Pure cue assessment')
+  );
 }
 
 function recordStudyCommitSuccessSafely({
@@ -1872,11 +2334,6 @@ function readReviewProposalRequest(value: unknown): ReviewProposalRequest | null
 
 function isReflectionNotFoundError(error: unknown, message: string): error is Error {
   return error instanceof Error && error.message === message;
-}
-
-function isReflectionSpendCapError(error: unknown): error is ReflectionSpendCapError {
-  return error instanceof ReflectionSpendCapError
-    || (error instanceof Error && error.name === 'ReflectionSpendCapError');
 }
 
 function isReflectionReviewClientError(error: unknown): error is Error {
@@ -2096,11 +2553,12 @@ export type StartServerOptions = {
   port?: number;
   app?: ReturnType<typeof createApp>;
   additionalServers?: Server[];
-  closeDatabase?: () => void;
+  closeDatabase?: () => void | Promise<void>;
+  stopBackgroundWork?: () => Promise<void>;
 };
 
 export function startServer(options: StartServerOptions = {}): Server {
-  const host = options.host ?? '0.0.0.0';
+  const host = options.host ?? process.env.APP_HOST ?? '0.0.0.0';
   const serverPort = options.port ?? port;
   const app = options.app ?? createApp();
   const server = app.listen(serverPort, host, () => {
@@ -2112,29 +2570,30 @@ export function startServer(options: StartServerOptions = {}): Server {
     server,
     options.closeDatabase ?? closeDbConnection,
     options.additionalServers ?? [],
+    options.stopBackgroundWork,
   );
   return server;
 }
 
 export function installGracefulShutdown(
   server: Server,
-  closeDatabase: () => void = closeDbConnection,
+  closeDatabase: () => void | Promise<void> = closeDbConnection,
   additionalServers: Server[] = [],
+  stopBackgroundWork: () => Promise<void> = async () => {},
 ): () => Promise<void> {
   let shutdownPromise: Promise<void> | null = null;
   const shutdown = () => {
-    shutdownPromise ??= new Promise<void>((resolve, reject) => {
-      closeServers([server, ...additionalServers], (serverError) => {
-        try {
-          closeDatabase();
-        } catch (databaseError) {
-          reject(databaseError);
-          return;
-        }
-        if (serverError) reject(serverError);
-        else resolve();
+    shutdownPromise ??= (async () => {
+      // Stop claiming immediately, while HTTP requests and active publications drain.
+      const background = stopBackgroundWork();
+      const closing = new Promise<void>((resolve, reject) => {
+        closeServers([server, ...additionalServers], (error) => error ? reject(error) : resolve());
       });
-    });
+      const results = await Promise.allSettled([background, closing]);
+      await closeDatabase();
+      const failure = results.find((result) => result.status === 'rejected');
+      if (failure?.status === 'rejected') throw failure.reason;
+    })();
     return shutdownPromise;
   };
   const handleSignal = () => {
@@ -2172,23 +2631,43 @@ function closeServers(servers: Server[], done: (error?: Error) => void): void {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  recoverPendingReflectionApplicationsAtStartup();
+  if (dbConfig.studyProfile !== 'mandarin') recoverPendingReflectionApplicationsAtStartup();
   const serviceMetrics = createServiceMetrics();
   const metricsPort = readMetricsPort(process.env.APP_METRICS_PORT);
+  const flightRecorder = metricsPort === null ? null : createRequestFlightRecorder();
   const metricsServer = metricsPort === null
     ? null
     : startMetricsServer({
         metrics: serviceMetrics,
         port: metricsPort,
         readOperationalMetrics: () => readServiceOperationalMetrics(),
+        flightRecorder: flightRecorder ?? undefined,
       });
   const usagePulseScheduler = startUsagePulseScheduler();
+  installModelInvocationLedger();
+  const wordPreparation = startWordPreparationRuntime();
+  const sessionDebriefs = startSessionDebriefRuntime();
+  const sessionCompletions = createSessionCompletionWorker({ wakeDebriefs: sessionDebriefs.wake,
+    reflectionService: createInitialReflectionGenerationService({
+      lifecycleLogger: createStdoutReflectionLifecycleLogger(),
+      failureArtifactSink: createFileReflectionFailureArtifactSink(dbConfig.dataDir),
+      providerDiagnosticSink: createFileReflectionProviderDiagnosticSink(dbConfig.dataDir),
+    }), onError: () => console.error('Session completion worker failed') });
+  if (dbConfig.studyProfile !== 'mandarin') sessionCompletions.wake();
+  const vocabularyProcessing = createVocabularyProcessingWorker({onError: error => console.error(error)});
+  const vocabularyPreparation = createVocabularyPracticeWorker({onError: error => console.error(error)});
+  const vocabularyApprovals = getVocabularyApprovalRequests();
+  if (dbConfig.studyProfile === 'mandarin') vocabularyApprovals.wake();
+  const wakeVocabulary = () => { vocabularyProcessing.wake(); vocabularyPreparation.wake(); sessionDebriefs.wake(); };
+  if (dbConfig.studyProfile === 'mandarin') wakeVocabulary();
   startServer({
-    app: createApp({ serviceMetrics }),
+    app: createApp({ serviceMetrics, requestTiming: { flightRecorder: flightRecorder ?? undefined }, wakeWordPreparation: wordPreparation.wake, canPrepareWords: wordPreparation.canPrepare, wakeSessionDebriefs: sessionDebriefs.wake, wakeSessionCompletions: sessionCompletions.wake, wakeVocabulary }),
+    stopBackgroundWork: async () => { vocabularyApprovals.stop(); await Promise.all([wordPreparation.stop(), sessionDebriefs.stop(), sessionCompletions.stop(), vocabularyProcessing.stop(), vocabularyPreparation.stop()]); },
     additionalServers: metricsServer ? [metricsServer] : [],
     closeDatabase: () => {
       usagePulseScheduler.stop();
       serviceMetrics.dispose();
+      flightRecorder?.stop();
       closeDbConnection();
     },
   });

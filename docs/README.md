@@ -1,63 +1,152 @@
 # Documentation index
 
-How documentation in this repo is classified and where to start.
+Use this index to find the document or section that answers your question. The
+[documentation principles](documentation-principles.md#documentation-map)
+define the target hierarchy independently of today's folders and labels.
 
-## Reading order for agents
+The **Target** paragraphs describe the job of each document group. **Existing
+sources** identify available material. The dated inventory below records known
+outstanding gaps between that material and the target.
 
-1. [AGENTS.md](../AGENTS.md) — runbook, conventions, task routing
-2. [STABILITY_FRONTIER.md](../STABILITY_FRONTIER.md) — how to use and maintain the current build-wave boundary
-3. [SPECS/README.md](../SPECS/README.md) — product spec index
-4. Canonical specs (behavior changes must align here):
-   - [SPECS/learning-review-model.md](../SPECS/learning-review-model.md)
-   - [SPECS/session-covering-criteria.md](../SPECS/session-covering-criteria.md)
-   - [SPECS/study-action-model.md](../SPECS/study-action-model.md)
-   - [SPECS/session-reflection-generation.md](../SPECS/session-reflection-generation.md)
-   - [SPECS/reflection-proposals-and-handles.md](../SPECS/reflection-proposals-and-handles.md)
-5. [architecture.md](./architecture.md) — system map (navigation only)
-6. [private-beta-service-boundary.md](./private-beta-service-boundary.md) — accepted hosted-beta ownership, identity, persistence, release, and trust contract
-7. [hosted-dogfood-shared-trial-policy.md](./hosted-dogfood-shared-trial-policy.md) — one-time shared-trial backfill used at the hosted dogfood cutover
-8. Relevant tests — see [testing.md](./testing.md)
+## Entry points
 
-## Doc classes
+- [Root README](../README.md) owns product/repository orientation and where to
+  go next. Its legacy body still needs reconciliation, as recorded below.
+- [AGENTS.md](../AGENTS.md) is the entry point for agent instructions about
+  conducting work: documentation authoring, implementation/testing/review, and
+  specialized procedures.
+- This index routes readers to knowledge about the application and records the
+  known outstanding gaps below. Each linked document or section maintains
+  its current explanation.
 
-| Class | Location | Use when |
-| --- | --- | --- |
-| **Current operating contract** | `STABILITY_FRONTIER.md` | Understanding what the current build wave may assume, what remains blocking, and when human guidance is required |
-| **Canonical product** | `SPECS/learning-review-model.md`, `session-covering-criteria.md`, `study-action-model.md`, `session-reflection-generation.md`, `reflection-proposals-and-handles.md` | Changing user-visible study or reflection behavior |
-| **Architecture maps** | `docs/architecture.md`, `docs/api.md`, `docs/server-db.md`, `SPECS/frontend-architecture-map.md` | Finding code; must stay in sync with implementation |
-| **Accepted architecture contracts** | `docs/private-beta-service-boundary.md` | Building the hosted private-beta service boundary and steel thread |
-| **Active plans** | Active entries in `PLANS/`, open milestone slices in `SPECS/` | Planned work not yet done |
-| **Completed / historical** | `SPECS/archive/`, completed plans retained in `PLANS/` | Context only; not authoritative for current behavior |
-| **Vision / strategic context** | `docs/vision/`, `SPECS/adaptive_vocabulary_training_product_notes.md` | Long-term direction and hypotheses; not implementation contracts or a current task catalog |
-| **Operations** | `docs/ops/`, `SPECS/study-db-setup.md` | Local setup and data workflows |
-| **Working memory** | `notes/active/` | Cross-thread context, research, multi-day work bundles (days–weeks; not authoritative or live task state) |
-| **Archived working memory** | `notes/archive/` | Retired working notes retained for context only; not part of the default agent reading path |
+## Product model and intended guarantees
 
-When a map doc and code disagree, fix the map in the same change as the code (or file a follow-up immediately).
+**Target:** coherent shared concepts and guarantees, refined by feature/domain
+models and contracts. Several documents can explain the shared model.
+Readers should recover the vocabulary, relationships, learner lifecycle, and
+promises without first reconstructing the current implementation.
 
-## Companion maps
+**Current Mandarin entry point:** [Adaptive vocabulary study](../SPECS/vocabulary-learning.md)
+owns modes, selection, session behavior and content-review promises. The
+[product routes](../SPECS/README.md) distinguish current contracts from earlier
+runtime designs retained for interpretation and rationale.
 
-- [architecture.md](./architecture.md) — frontend/backend boundaries and data flow
-- [api.md](./api.md) — HTTP route index by domain
-- [testing.md](./testing.md) — test files mapped to domains
-- [server-db.md](./server-db.md) — `server/db/` module map
-- [scripts.md](./scripts.md) — maintenance scripts catalog
-- [ops/schema-migrations.md](./ops/schema-migrations.md) — explicit offline migrations, baseline adoption, and migration authoring
-- [ops/hosted-beta-deployment.md](./ops/hosted-beta-deployment.md) — invite, upgrade, maintenance, backup, restore, and human/agent release procedures
-- [ops/hosted-release-candidate.md](./ops/hosted-release-candidate.md) — restore-backed Fly RC deploys, manual acceptance, quiesce/idle/activate, and exact-image promotion
-- [ops/hosted-observability.md](./ops/hosted-observability.md) — private Fly/Grafana performance dashboard and metrics runbook
-- [ops/error-diagnostics.md](./ops/error-diagnostics.md) — current error surfaces, retention/privacy boundaries, incident correlation, and operator triage
-- [reflection-frontend-architecture.md](./reflection-frontend-architecture.md) — feature-specific session-finalization, evidence, and review-UI map
+[What’s New](whats-new.md#content-and-publication) defines the blog’s publication
+and unread-update contract; its persistence and operator sections explain how
+the application realizes those promises.
 
-## Development and review workflows
+## Prescriptive architecture
 
-- [stacked-feature-development-and-review.md](./stacked-feature-development-and-review.md) — default proportional implementation delivery and review model; it scales from one PR to a Graphite stack
-- [hosted-beta-implementation-steel-thread.md](../PLANS/hosted-beta-implementation-steel-thread.md) — accepted implementation sequence and proof gates for the private-beta service
+**Target:** accepted structural constraints and their reasons, independent of
+particular components or algorithms.
 
-## Other root docs
+- [Vocabulary architecture contract](../SPECS/vocabulary-architecture.md): session
+  authority, retained evidence, atomic completion, content identity and application.
+- [Stability frontier](../STABILITY_FRONTIER.md): cross-cutting constraints and
+  unsettled decisions; it summarizes boundaries rather than replacing their owners.
+- [Service boundary](private-beta-service-boundary.md): identity, ownership,
+  persistence and operational trust. Its historical storage inventory is explicitly
+  scoped; other mixed responsibilities remain in the gap inventory below.
 
-- [README.md](../README.md) — human getting started, modes, data layout
-- [STABILITY_FRONTIER.md](../STABILITY_FRONTIER.md) — stability-frontier operating model and agent maintenance rules
-- Linear — current idea intake, portfolio placement, priority, and declared Focus/Async work; the steward maintains it under the operating model in [`PLANS/project-steward-linear-trial.md`](../PLANS/project-steward-linear-trial.md)
-- [CHANGELOG.md](../CHANGELOG.md) — casual release notes for users
-- [notes/README.md](../notes/README.md) — medium-lived working memory for cross-thread context
+## Descriptive architecture and implementation
+
+**Target:** explain actual components, data flow, mechanisms, and limitations,
+linking to the intended guarantees they realize and any known gaps.
+
+**Existing starting points:**
+
+- [Vocabulary runtime](vocabulary-learning.md): persistence, selection, session
+  execution, background preparation and compatibility.
+- [Vocabulary study UI](implementation/vocabulary-ui.md): controller/view integration,
+  rendering, input behavior and verification surfaces.
+- [Architecture map](architecture.md): runtime layout and code navigation;
+  currently identifies itself as navigation-only.
+- [Vocabulary content-improvement architecture](implementation/vocabulary-content-improvement.md):
+  rendered provider-call flow, sense admission, and optional pure-cue promotion.
+- [API map](api.md), [database map](server-db.md), and
+  [frontend map](../SPECS/frontend-architecture-map.md): focused code references.
+- [Operator panel guide](operator-panel.md): how to reach and use the
+  bookmark-only operator surface.
+- [Structured review content](structured-review-content.md),
+  [reflection frontend](reflection-frontend-architecture.md), and
+  [content quality](content-quality.md): related feature realization and operator
+  material.
+- [Test coverage map](testing.md): test files and the domains they exercise.
+
+The maps provide useful navigation. The target also calls for explanatory
+accounts of the mechanisms and causal relationships behind that structure.
+
+### Word content
+
+| Reader's question | Explanation |
+| --- | --- |
+| How are current content identities and learner eligibility represented? | [Content identity and eligibility](vocabulary-learning.md#content-identity-and-eligibility) |
+| How does teaching become ready and lead to general practice? | [Background preparation](vocabulary-learning.md#background-work-and-operator-repair) |
+| How do reactions produce reviewable content changes? | [Content-improvement pipeline](implementation/vocabulary-content-improvement.md) |
+| How do I interpret earlier package records and source artifacts? | [Representation](word-content-representation.md), [generation](word-content-generation.md), and [serving](word-content-serving.md) retain the earlier package account and shared preparation context; current vocabulary selection is owned above. |
+
+The [bootstrap and introduction design](../SPECS/word-bootstrap-and-introduction.md)
+retains teaching rationale and earlier package-based realization. The
+[local introduction aid](word-introduction-lab.md) supports authoring experiments.
+These routes do not certify full reconciliation of the older package guides.
+
+## Operations guides
+
+**Target:** maintained procedures and safety conditions, with learner use,
+hosted operations, and contributor development clearly separated.
+
+- Hosted operation: [release and maintenance](ops/hosted-beta-deployment.md),
+  [release candidates and ephemeral rehearsal](ops/hosted-release-candidate.md),
+  [observability](ops/hosted-observability.md),
+  [diagnostics](ops/error-diagnostics.md), and
+  [schema migrations](ops/schema-migrations.md).
+- Operator interface: [operator panel guide](operator-panel.md), with the
+  [API reference](api.md#operator-view) describing its HTTP contracts.
+- Content correction: [Content improvement workflow](operator-panel.md#content-improvement-workflow)
+  explains current vocabulary review and application. The
+  [API map](api.md#operator-content-improvement) identifies retained historical reads.
+- Blog publication: [manual editor and operator command](whats-new.md#manual-operator-editor),
+  including the skill’s interactive draft-review procedure.
+- Contributor environments: [scripts](scripts.md) and the
+  [local introduction development aid](word-introduction-lab.md).
+- Prompt development: [preserving working behavior while adapting model calls](prompt-development.md),
+  including prompt lineage, contract changes, and retained comparison evidence.
+
+The hosted service is the current learner path. These guides provide the
+existing operational references; their coverage and accuracy need verification
+for the operation being performed.
+
+## Rationale and supporting history
+
+The relevant model, contract, or implementation document should explain
+important decisions or link their rationale. Use
+[working notes](../notes/README.md), [PLANS](../PLANS/),
+[archived specs](../SPECS/archive/), and
+[older in-repo vision](vision/) only for a specific historical or exploratory
+question. Accepted decisions and useful reasons should be linked from the
+current explanatory document.
+
+[Steward](../AGENTS.md#11-project-context-and-task-scope) maintains current
+vision and priorities. The older in-repo vision copies remain to be assessed
+for useful rationale and historical context.
+
+## Known adoption gaps
+
+This table records observed documentation problems left open beyond the task
+that found them. Add new findings; when part of a row is addressed, replace it
+with the remaining problem or problems. Remove resolved rows. Absence can mean
+unassessed or reconciled; the table is not a coverage record. Keep detailed work
+with the relevant document or issue/PR.
+
+The initial findings come from the
+[PR #315 review](https://github.com/swimj/chinese-study-app/pull/315#pullrequestreview-5437854523)
+and the referenced documents.
+
+| Date added | Outstanding description |
+| --- | --- |
+| 2026-10-07 | The root README mixes product/repository orientation with former local-study clone advice and French try-out instructions. Its retained material needs appropriate current guides or an explicit historical role. |
+| 2026-10-28 | Vocabulary product and architecture contracts have separate owners, and the earlier lifecycle/reflection contracts are archived. The older word-content representation/generation/serving guides and other feature sources listed in SPECS/README.md still need their retained mechanisms and current applicability reconciled; closure requires explicit current versus historical ownership in those sources. |
+| 2026-10-07 | `architecture.md` is primarily a navigation map. The system-level explanation of components, data flow, state boundaries, and mechanisms remains missing. |
+| 2026-10-07 | The service-boundary document mixes guarantees, alternatives, the hosted package, one-time migration, and acceptance scenarios. The frontier combines direction, constraints, and unresolved decisions. These documents still need clearer responsibilities. |
+| 2026-10-07 | Legacy in-repo plans and vision copies need a retention decision: useful conclusions need current explanatory homes, and retained historical material needs a deliberate reference role alongside the Steward workspace. |
+| 2026-10-08 | The local introduction lab is an exploratory development aid. Its longer-term role and the documentation needed for it remain undecided; a reusable local prompt-development workflow has not been specified. |

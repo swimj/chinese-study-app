@@ -1,6 +1,9 @@
+import { assertVocabularyCutoverReady } from './vocabulary-cutover.ts';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import type { DatabaseSync } from 'node:sqlite';
+import { importLegacyVocabulary } from './vocabulary-import.ts';
+import { migrateSharedDictionaryBaselines } from './dictionary-baseline-sharing.ts';
 import { fillMissingNormalizedHanzi } from './hanzi-lookup.ts';
 
 const PREFIX = 'app_schema:';
@@ -12,6 +15,7 @@ const deployedBaseline = { ...baseline, ...deployedOverrides };
 export type SchemaMigration = {
   id: string;
   sql: string;
+  before?: (db: DatabaseSync) => void;
   after?: (db: DatabaseSync) => void;
 };
 // Append migrations here in order. Never edit an applied migration or the baseline.
@@ -43,6 +47,168 @@ export const schemaMigrations: readonly SchemaMigration[] = [{
   id: 'app_schema:0008_normalized_hanzi',
   sql: fs.readFileSync(new URL('./migrations/0008_normalized_hanzi.sql', import.meta.url), 'utf8'),
   after: fillMissingNormalizedHanzi,
+}, {
+  id: 'app_schema:0009_pure_cues',
+  sql: fs.readFileSync(new URL('./migrations/0009_pure_cues.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0010_strict_word_cues',
+  sql: fs.readFileSync(new URL('./migrations/0010_strict_word_cues.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0011_reflection_generation_continuations',
+  sql: fs.readFileSync(
+    new URL('./migrations/0011_reflection_generation_continuations.sql', import.meta.url),
+    'utf8',
+  ),
+}, {
+  id: 'app_schema:0012_pure_cue_teaching_notes',
+  sql: fs.readFileSync(new URL('./migrations/0012_pure_cue_teaching_notes.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0013_deferred_explanation_items',
+  sql: fs.readFileSync(new URL('./migrations/0013_deferred_explanation_items.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0014_pure_cue_reflection',
+  sql: fs.readFileSync(new URL('./migrations/0014_pure_cue_reflection.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0015_pure_cue_stimulus_repair',
+  sql: fs.readFileSync(new URL('./migrations/0015_pure_cue_stimulus_repair.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0016_word_introduction_content',
+  sql: fs.readFileSync(new URL('./migrations/0016_word_introduction_content.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0017_review_content_records',
+  sql: fs.readFileSync(new URL('./migrations/0017_review_content_records.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0018_word_preparation_work',
+  sql: fs.readFileSync(new URL('./migrations/0018_word_preparation_work.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0019_word_preparation_reserve',
+  sql: fs.readFileSync(new URL('./migrations/0019_word_preparation_reserve.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0020_rehearsal_presentation',
+  sql: fs.readFileSync(new URL('./migrations/0020_rehearsal_presentation.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0021_content_quality',
+  sql: fs.readFileSync(new URL('./migrations/0021_content_quality.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0022_exercise_compensation_days',
+  sql: fs.readFileSync(new URL('./migrations/0022_exercise_compensation_days.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0023_session_debrief',
+  sql: fs.readFileSync(new URL('./migrations/0023_session_debrief.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0024_recovery_attempt_window',
+  sql: fs.readFileSync(new URL('./migrations/0024_recovery_attempt_window.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0025_model_invocations',
+  sql: fs.readFileSync(new URL('./migrations/0025_model_invocations.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0026_model_invocation_outcomes',
+  sql: fs.readFileSync(new URL('./migrations/0026_model_invocation_outcomes.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0027_correct_cue_repair_recovery',
+  sql: fs.readFileSync(new URL('./migrations/0027_correct_cue_repair_recovery.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0028_whats_new_blog',
+  sql: fs.readFileSync(new URL('./migrations/0028_whats_new_blog.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0029_introduction_components',
+  sql: fs.readFileSync(new URL('./migrations/0029_introduction_components.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0030_whats_new_previews',
+  sql: fs.readFileSync(new URL('./migrations/0030_whats_new_previews.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0031_whats_new_attention',
+  sql: fs.readFileSync(new URL('./migrations/0031_whats_new_attention.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0032_content_improvement_workspace',
+  sql: fs.readFileSync(new URL('./migrations/0032_content_improvement_workspace.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0033_content_improvement_repairs',
+  sql: fs.readFileSync(new URL('./migrations/0033_content_improvement_repairs.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0034_usage_exercise_totals',
+  sql: fs.readFileSync(new URL('./migrations/0034_usage_exercise_totals.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0035_definition_fallback_quality',
+  sql: fs.readFileSync(new URL('./migrations/0035_definition_fallback_quality.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0036_session_completion',
+  sql: fs.readFileSync(new URL('./migrations/0036_session_completion.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0037_service_banner_kickoff',
+  sql: fs.readFileSync(new URL('./migrations/0037_service_banner_kickoff.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0038_usage_new_word_totals',
+  sql: fs.readFileSync(new URL('./migrations/0038_usage_new_word_totals.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0039_vocabulary_content',
+  sql: fs.readFileSync(new URL('./migrations/0039_vocabulary_content.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0040_model_provenance',
+  sql: fs.readFileSync(new URL('./migrations/0040_model_provenance.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0041_vocabulary_learner_state',
+  before: assertVocabularyCutoverReady,
+  sql: fs.readFileSync(new URL('./migrations/0041_vocabulary_learner_state.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0042_vocabulary_sessions',
+  sql: fs.readFileSync(new URL('./migrations/0042_vocabulary_sessions.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0043_vocabulary_import',
+  sql: fs.readFileSync(new URL('./migrations/0043_vocabulary_import.sql', import.meta.url), 'utf8'),
+  after: (db) => { importLegacyVocabulary(db); },
+}, {
+  id: 'app_schema:0044_vocabulary_reflection',
+  sql: fs.readFileSync(new URL('./migrations/0044_vocabulary_reflection.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0045_vocabulary_provenance_links',
+  sql: fs.readFileSync(new URL('./migrations/0045_vocabulary_provenance_links.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0046_vocabulary_pure_cue_guards',
+  sql: fs.readFileSync(new URL('./migrations/0046_vocabulary_pure_cue_guards.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0047_vocabulary_dismissal',
+  sql: fs.readFileSync(new URL('./migrations/0047_vocabulary_dismissal.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0048_vocabulary_connections',
+  sql: fs.readFileSync(new URL('./migrations/0048_vocabulary_connections.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0049_vocabulary_sense_readiness',
+  sql: fs.readFileSync(new URL('./migrations/0049_vocabulary_sense_readiness.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0050_vocabulary_improvement_admission',
+  sql: fs.readFileSync(new URL('./migrations/0050_vocabulary_improvement_admission.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0051_vocabulary_pure_cue_promotion',
+  sql: fs.readFileSync(new URL('./migrations/0051_vocabulary_pure_cue_promotion.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0052_vocabulary_automatic_promotion_pause',
+  sql: fs.readFileSync(new URL('./migrations/0052_vocabulary_automatic_promotion_pause.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0053_vocabulary_second_opinions',
+  sql: fs.readFileSync(new URL('./migrations/0053_vocabulary_second_opinions.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0054_vocabulary_provider_retry_routing',
+  sql: fs.readFileSync(new URL('./migrations/0054_vocabulary_provider_retry_routing.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0055_vocabulary_feedback_dismissal',
+  sql: fs.readFileSync(new URL('./migrations/0055_vocabulary_feedback_dismissal.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0056_operator_only_access',
+  sql: fs.readFileSync(new URL('./migrations/0056_operator_only_access.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0057_preparation_compatibility',
+  sql: fs.readFileSync(new URL('./migrations/0057_preparation_compatibility.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0058_shared_dictionary_baselines',
+  sql: fs.readFileSync(new URL('./migrations/0058_shared_dictionary_baselines.sql', import.meta.url), 'utf8'),
+  after: migrateSharedDictionaryBaselines,
+}, {
+  id: 'app_schema:0059_vocabulary_reassessment',
+  sql: fs.readFileSync(new URL('./migrations/0059_vocabulary_reassessment.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0060_vocabulary_reassessment_source',
+  sql: fs.readFileSync(new URL('./migrations/0060_vocabulary_reassessment_source.sql', import.meta.url), 'utf8'),
 }];
 
 function checksum(value: string): string {
@@ -140,6 +306,7 @@ export function migrateDatabase(db: DatabaseSync, migrations = schemaMigrations)
         let baselineVariant: 'fresh' | 'fly_3ad618b' | undefined;
         if (migration.id === BASELINE_ID) baselineVariant = adoptBaseline(db);
         else {
+          migration.before?.(db);
           db.exec(migration.sql);
           migration.after?.(db);
         }

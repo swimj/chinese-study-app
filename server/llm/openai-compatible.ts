@@ -1,3 +1,6 @@
+import { ProviderTimeoutError, ProviderInvalidResponseError } from './types.ts';
+import { beginInvocation, recordInvocationResponse, concludeInvocation,
+  beginServiceInvocation, recordServiceInvocationResponse, concludeServiceInvocation } from './invocation-ledger.ts';
 import type {
   JsonValue,
   ProviderAdapter,
@@ -125,23 +128,53 @@ export function createOpenAiCompatibleAdapter(
       request: ProviderRunRequest,
       config: ProviderRunConfig,
     ): Promise<ProviderRawResult> {
-      const rawResponse = await postJson(
-        options.id,
-        fetchImplementation,
-        joinUrl(config.baseUrl ?? options.defaultBaseUrl, '/chat/completions'),
-        {
-          authorization: `Bearer ${config.apiKey}`,
-          ...(request.clientRequestId ? { 'x-client-request-id': request.clientRequestId } : {}),
-        },
-        requestBody(
-          request,
-          options.structuredOutputMode,
-          options.maxTokensField,
-          options.additionalRequestBody,
-        ),
-        request.timeoutMs,
-      );
-      return parseResponse(options.id, options.structuredOutputMode, rawResponse);
+      // Retain the exact body independently of transport configuration. Headers,
+      // credentials and endpoint configuration never enter the ledger snapshot.
+      const body = requestBody(request, options.structuredOutputMode, options.maxTokensField, options.additionalRequestBody);
+      const invocation = { provider: options.id, model: request.model, invocationType: request.outputSchemaName,
+        provenance: { ...request.provenance, promptTemplate: request.systemPrompt,
+          schemaName: request.outputSchemaName, schema: request.outputSchema,
+          settings: { reasoningEffort: request.reasoningEffort, maxOutputTokens: request.maxOutputTokens,
+            temperature: request.temperature, timeoutMs: request.timeoutMs, cachePrompt: request.cachePrompt },
+          requestSnapshot: body } };
+
+      const service = request.invocationActor;
+      const invocationId = service === undefined ? beginInvocation(invocation)
+        : beginServiceInvocation({ ...invocation, serviceId: service.serviceId, requestingLearnerId: service.requestingLearnerId });
+      const conclude = (status: 'completed' | 'failed' | 'timed_out' | 'invalid_response', latency: number) => service === undefined
+        ? concludeInvocation(invocationId, status, latency)
+        : concludeServiceInvocation(invocationId, service.serviceId, status, latency);
+      const startedAt = performance.now();
+      let transportLatencyMs: number | null = null;
+      try {
+        const rawResponse = await postJson(
+          options.id,
+          fetchImplementation,
+          joinUrl(config.baseUrl ?? options.defaultBaseUrl, '/chat/completions'),
+          {
+            authorization: `Bearer ${config.apiKey}`,
+            ...(request.clientRequestId ? { 'x-client-request-id': request.clientRequestId } : {}),
+          },
+          body,
+          request.timeoutMs,
+        );
+        transportLatencyMs = performance.now() - startedAt;
+        if (service === undefined) recordInvocationResponse(invocationId, invocation, rawResponse);
+        else recordServiceInvocationResponse(invocationId, service.serviceId, invocation, rawResponse);
+        let result: ProviderRawResult;
+        try {
+          result = parseResponse(options.id, options.structuredOutputMode, rawResponse);
+        } catch (error) {
+          throw new ProviderInvalidResponseError(error instanceof Error ? error.message : 'Invalid provider response');
+        }
+        conclude('completed', transportLatencyMs);
+        return { ...result, invocationId };
+      } catch (error) {
+        const status = error instanceof ProviderTimeoutError ? 'timed_out'
+          : error instanceof ProviderInvalidResponseError ? 'invalid_response' : 'failed';
+        conclude(status, error instanceof ProviderTimeoutError ? request.timeoutMs : transportLatencyMs ?? performance.now() - startedAt);
+        throw error;
+      }
     },
   };
 }

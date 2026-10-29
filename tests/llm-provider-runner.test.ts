@@ -14,6 +14,9 @@ import {
   SESSION_REFLECTION_RESULT_SCHEMA_NAME,
   sessionReflectionResultSchema,
 } from '../spikes/llm-provider/runner/result-schema.js';
+import {
+  stagedReflectionDiagnosisResultV1WireSchema,
+} from '../src/domain/reflection-result-schema.ts';
 import { validateResultAgainstBundle } from '../spikes/llm-provider/runner/result-validator.js';
 import { runBatch } from '../spikes/llm-provider/runner/run-batch.js';
 import { renderFixtureUserPrompt, runFixture } from '../spikes/llm-provider/runner/run-fixture.js';
@@ -192,6 +195,32 @@ describe('LLM provider result schema', () => {
     };
     withItemEvidence.itemResults[0]!.evidence = [];
     assert.match(validateJsonSchema(withItemEvidence, sessionReflectionResultSchema).join('\n'), /unknown property/);
+  });
+
+  test('enforces exclusive ordinary and shared-axis staged diagnosis payloads', () => {
+    const sharedAxis = {
+      schemaVersion: 'staged_reflection_diagnosis_result.v1',
+      itemResults: [{
+        kind: 'shared_axis',
+        itemId: 'item-1',
+        diagnosisTags: ['valid_or_near_valid_alternate'],
+        handoff: {
+          axis: 'a bounded expressive instinct',
+          boundaries: 'The words differ outside the exact shared use.',
+          responseValidity: 'The response naturally answers the original served stimulus.',
+        },
+      }],
+    };
+    assert.deepEqual(validateJsonSchema(sharedAxis, stagedReflectionDiagnosisResultV1WireSchema), []);
+
+    const mixed = structuredClone(sharedAxis) as unknown as {
+      itemResults: Array<Record<string, unknown>>;
+    };
+    mixed.itemResults[0]!.proposals = [];
+    assert.match(
+      validateJsonSchema(mixed, stagedReflectionDiagnosisResultV1WireSchema).join('\n'),
+      /does not match any allowed schema/,
+    );
   });
 });
 

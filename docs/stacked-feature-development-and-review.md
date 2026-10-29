@@ -1,8 +1,14 @@
-# Feature Development And Review
+# Pull request delivery and Graphite stacks
 
-This document defines the default delivery and review model for implementation
-work. Use it alongside the initiating prompt or a task spec; it is not itself a
-task spec, a source of product behavior, or authorization to dispatch work.
+This procedure helps contributors organize changes into reviewable pull requests,
+operate Graphite stacks, publish verified work, and incorporate review feedback.
+It covers the single-PR delivery path and the additional branch, worktree, and
+restacking mechanics needed for large changes delivered as dependent PRs.
+
+Use it alongside the initiating prompt or task spec and the
+[development principles](development-principles.md), which guide implementation
+choices and preservation of behavior and coverage. This procedure defines delivery
+mechanics; it does not supply a product contract or authorize new work.
 
 Every implementation should be organized for review and normally finish as a
 pull request. A cohesive change uses one branch and one pull request. When
@@ -28,17 +34,17 @@ The initiating prompt or task spec must provide the task-specific contract:
 - any reason to depart from the normal review-delivery default, including a
   draft pull request, an existing review boundary, or no pull request.
 
-This document owns the delivery and review mechanics: orientation, review-unit
-design, stack evolution where needed, feedback placement, validation,
-publication mechanics, and handoff. Graphite-specific setup and commands apply
-only to a multi-branch stack.
+This document owns review-unit design, stack evolution, feedback placement,
+validation across review branches, publication mechanics, and handoff.
+Graphite-specific setup and commands apply only to a multi-branch stack.
 
-Use the repository's normal authority order when sources disagree. Canonical
-product specs and accepted architecture contracts own behavior. The stability
-frontier owns the current build-wave boundary. The task prompt and task spec
-own the detailed execution contract. This model supplies workflow defaults;
-an explicit task-specific workflow rule may override a default. Stop and report
-any conflict that cannot be resolved through that order.
+The task prompt and subsequent clarifications supply execution scope. Canonical
+specs and accepted architecture contracts describe intended behavior; the
+frontier summarizes safe assumptions and unsettled decisions. Surface conflicts
+with instructions or verified implementation rather than silently resolving them
+by document rank. Old planning prose does not veto a direct task. This model
+supplies workflow defaults; explicit task-specific workflow rules may override
+them. Ask when an unresolved consequential decision is necessary to proceed.
 
 One implementation or feature stack still represents one dispatched task or
 portfolio outcome. Creating several branches does not create new Linear items
@@ -162,7 +168,7 @@ intermediate branches buildable and testable where practical, but do not add
 fake abstractions, temporary production behavior, or excessive scaffolding
 solely to make every intermediate branch independently shippable.
 
-## Incremental implementation
+## Implement and revise stack branches
 
 For each coherent review unit:
 
@@ -193,6 +199,10 @@ The companion task spec and repository guidance own the exact verification
 matrix. For a single pull request, run the normal focused and broader checks
 that apply to its change, inspect its one diff, and leave the worktree clean.
 That is one ordinary testing pass, not stack validation multiplied by one.
+
+Use the [development principles](development-principles.md#make-verification-evidence-match-the-claim)
+and [testing map](testing.md) to assess the evidence for the change. Include that
+evidence and its limits in the review description.
 
 For a stack, in addition:
 
@@ -238,13 +248,17 @@ explicitly. Add the installed CLI's supported draft option when the task says
 new pull requests should remain drafts. Do not use an update-only mode when the
 boundary contains new branches that need pull requests.
 
-Publishing authorizes only the Graphite-managed branch pushes and pull-request
-creation or updates needed for the task's stack. It does not authorize merging,
-changing unrelated repository settings, or mutating a different review
-boundary. Never merge unless the human separately authorizes it. If publishing
-is blocked by authentication, permissions, repository configuration, or an
-unclear CLI operation, stop and report the exact blocker rather than bypassing
-Graphite with an improvised Git/GitHub workflow.
+Publishing authorizes the branch pushes and pull-request creation or updates
+needed for the task's review boundary. Agents may force-push a branch in that
+boundary when updating a pull request they created or are responsible for; use
+`--force-with-lease` so an unexpected remote change stops the update. If a
+Graphite update cannot publish the intended branch rewrite, a direct Git push
+with that lease is authorized after verifying the remote, branch, and expected
+remote head. This does not authorize rewriting another person's branch or a
+branch outside the task's review boundary. It does not authorize merging or
+changing unrelated repository settings. Never merge unless the human separately
+authorizes it. If publishing is blocked by authentication, permissions, or
+repository configuration, report the exact blocker.
 
 ## Review rounds
 
@@ -341,8 +355,9 @@ with draft/ready state. For a stack, also report:
 
 > Follow `docs/stacked-feature-development-and-review.md` as the delivery and
 > review model, composed with `<task-spec-path>` as the task-specific execution
-> contract. Use the repository's canonical specs and accepted stability frontier
-> as higher product authority. State whether the implementation is one cohesive
+> contract. Use canonical specs and the frontier for intended behavior and safe
+> assumptions; surface material conflicts with the task or code. State whether
+> the implementation is one cohesive
 > pull request or likely needs a stack, honoring any orientation gates. Publish
 > the verified implementation for review; if it needs a multi-branch stack, use
 > the installed `gt` CLI directly and publish the complete stack through

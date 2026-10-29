@@ -1,0 +1,43 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { test } from 'node:test';
+import { wordContentFixtures } from '../src/features/introduction-lab/samples.ts';
+
+test('Mandarin dev seed respects stash-only defaults and admits lessons after enabling diet', async () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mandarin-teaching-seed-'));
+  process.env.APP_MODE = 'dev';
+  process.env.APP_AUTH_MODE = 'trusted_local';
+  process.env.APP_STUDY_PROFILE = 'mandarin';
+  process.env.APP_DATA_DIR = dataDir;
+  process.env.APP_SEED_DATA_PATH = path.resolve('server/seeds/mandarin-dev.json');
+  const db = await import('../server/db.ts');
+  const { getDb } = await import('../server/db/connection.ts');
+  try {
+    const studyDayKey = new Date().toISOString().slice(0, 10);
+    const initial = db.getSessionPayload(studyDayKey);
+    assert.equal(db.getLearningPolicy(studyDayKey).dailyNewWordLimit, 5);
+    assert.equal(initial.buckets.unstudied.length, 0, 'empty stash never falls back to diet');
+    assert.ok(initial.buckets.review.length > 0, 'stash-only still permits existing reviews');
+    db.setUnstudiedAdmissionSource('mixed');
+    assert.equal(db.getSessionPayload(studyDayKey).buckets.unstudied.length, 5);
+    db.setDailyNewWordLimit(6);
+    const payload = db.getSessionPayload(studyDayKey);
+    assert.deepEqual(payload.buckets.unstudied.map((word) => word.id),
+      wordContentFixtures.map(({ content }) => content.word.wordId));
+    assert.ok(payload.buckets.review.length > 0, 'existing review fixtures remain available');
+    for (const { content, teaching } of wordContentFixtures) {
+      const library = payload.buckets.introductions?.[content.word.wordId];
+      assert.equal(library?.selectedPackageId, teaching.id);
+      assert.equal(library?.completed, false);
+      assert.deepEqual(db.getSharedWordIntroductionPreparation(content.word.wordId), {
+        contentId: content.id, packageId: teaching.id, activeStage: null,
+      });
+    }
+    assert.equal(getDb().prepare('SELECT COUNT(*) AS count FROM learner_word_introduction_events').get()?.count, 0);
+  } finally {
+    getDb().close();
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  }
+});

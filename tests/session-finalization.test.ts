@@ -1,13 +1,20 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
+  addInFlightSessionReflection,
   beginSessionFinalization,
   completeSessionFinalization,
   completeSessionReflectionGeneration,
+  createInFlightSessionReflectionIds,
   createSessionFinalizationState,
   failSessionReflectionGeneration,
   finalizeSessionBeforeReflection,
+  hasInFlightSessionReflection,
+  hasPureCueReflectionEvidence,
+  skipSessionReflectionGeneration,
   isCurrentSessionReflectionRequest,
+  isSessionReflectionGenerating,
+  removeInFlightSessionReflection,
   resetFailedSessionFinalization,
   retrySessionReflectionGeneration,
   runExclusiveAsync,
@@ -26,6 +33,7 @@ describe('completed-session finalization', () => {
       kind: 'finalized',
       reflection: { kind: 'generating' },
     });
+    assert.equal(isSessionReflectionGenerating(finalized), true);
 
     const failed = failSessionReflectionGeneration(finalized, 'Provider unavailable');
     assert.deepEqual(failed, {
@@ -52,6 +60,7 @@ describe('completed-session finalization', () => {
         status: 'created',
       },
     });
+    assert.equal(isSessionReflectionGenerating(succeeded), false);
   });
 
   test('marks a finalized session with no qualifying evidence as skipped', () => {
@@ -158,11 +167,13 @@ describe('completed-session finalization', () => {
     }), false);
   });
 
-  test('hides app chrome only while a live session has not reached the summary', () => {
-    assert.equal(sessionHidesAppChrome({ sessionStarted: true, sessionPhase: 'active' }), true);
-    assert.equal(sessionHidesAppChrome({ sessionStarted: true, sessionPhase: 'draining' }), true);
-    assert.equal(sessionHidesAppChrome({ sessionStarted: true, sessionPhase: 'completed' }), false);
-    assert.equal(sessionHidesAppChrome({ sessionStarted: false, sessionPhase: null }), false);
+  test('shows app navigation throughout the completion Undo window', () => {
+    assert.equal(sessionHidesAppChrome({ sessionStarted: true, sessionPhase: 'active', finalizationKind: 'finalized' }), true);
+    assert.equal(sessionHidesAppChrome({ sessionStarted: true, sessionPhase: 'draining', finalizationKind: 'finalized' }), true);
+    assert.equal(sessionHidesAppChrome({ sessionStarted: true, sessionPhase: 'completed', finalizationKind: 'finalized' }), false);
+    assert.equal(sessionHidesAppChrome({ sessionStarted: true, sessionPhase: 'completed', finalizationKind: 'unfinalized' }), false);
+    assert.equal(sessionHidesAppChrome({ sessionStarted: true, sessionPhase: 'completed', finalizationKind: 'finalizing' }), false);
+    assert.equal(sessionHidesAppChrome({ sessionStarted: false, sessionPhase: null, finalizationKind: 'finalized' }), false);
   });
 
   test('overlapping finish callers share one in-flight run', async () => {
@@ -204,4 +215,47 @@ describe('completed-session finalization', () => {
       requestSessionId: 'session-1',
     }), true);
   });
+
+  test('keeps in-flight generation after the summary is closed', () => {
+    const generating = completeSessionFinalization({
+      state: beginSessionFinalization(createSessionFinalizationState()),
+      hasReflectionEvidence: true,
+    });
+    let inFlight = addInFlightSessionReflection(
+      createInFlightSessionReflectionIds(),
+      'session-1',
+    );
+
+    assert.equal(isSessionReflectionGenerating(generating), true);
+    assert.equal(hasInFlightSessionReflection(inFlight), true);
+
+    const closedSummary = createSessionFinalizationState();
+    assert.equal(isSessionReflectionGenerating(closedSummary), false);
+    assert.equal(hasInFlightSessionReflection(inFlight), true);
+    assert.equal(isCurrentSessionReflectionRequest({
+      activeSessionId: null,
+      requestSessionId: 'session-1',
+    }), false);
+
+    inFlight = addInFlightSessionReflection(inFlight, 'session-2');
+    inFlight = removeInFlightSessionReflection(inFlight, 'session-1');
+    assert.equal(hasInFlightSessionReflection(inFlight), true);
+
+    inFlight = removeInFlightSessionReflection(inFlight, 'session-2');
+    assert.equal(hasInFlightSessionReflection(inFlight), false);
+  });
+});
+
+test('pure cue reflection qualifies only a nonempty rejected first response', () => {
+  const rejected = { eventId: 'first', occurredAt: '2026-09-30T00:00:00.000Z', response: 'C', outcome: 'rejected' as const, submittedWordId: null, rating: 'forgot' as const };
+  assert.equal(hasPureCueReflectionEvidence({ cue: { events: [rejected] } }), true);
+  assert.equal(hasPureCueReflectionEvidence({ cue: { events: [{ ...rejected, response: null }, rejected] } }), false);
+  assert.equal(hasPureCueReflectionEvidence({ cue: { events: [{ ...rejected, outcome: 'accepted' }, rejected] } }), false);
+  assert.equal(hasPureCueReflectionEvidence({ cue: { events: [{ ...rejected, response: ' ' }] } }), false);
+});
+
+test('durable evidence filtering can finish generation as skipped without failing the session', () => {
+  const state = completeSessionFinalization({ state: beginSessionFinalization(createSessionFinalizationState()), hasReflectionEvidence: true });
+  assert.deepEqual(skipSessionReflectionGeneration(state), { kind: 'finalized', reflection: { kind: 'skipped' } });
+  assert.throws(() => skipSessionReflectionGeneration(createSessionFinalizationState()), /expected finalized\/generating/);
 });

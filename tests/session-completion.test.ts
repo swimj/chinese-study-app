@@ -1,3 +1,4 @@
+import { clearWordPreparationFixtures } from './helpers/prepared-word-fixtures.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -73,24 +74,25 @@ describe('session completion', { concurrency: false }, () => {
   });
 
   beforeEach(() => {
+    clearWordPreparationFixtures(sqlite);
     const deleteGuards = sqlite.prepare(`
       SELECT name, sql FROM sqlite_schema
       WHERE type = 'trigger' AND name LIKE '%_no_delete'
     `).all() as Array<{ name: string; sql: string }>;
     sqlite.exec(`
-      DROP TRIGGER IF EXISTS production_recheck_demands_no_delete;
       DROP TRIGGER IF EXISTS production_cue_evidence_records_no_delete;
       DROP TRIGGER IF EXISTS production_cue_lifecycle_events_no_delete;
       DROP TRIGGER IF EXISTS production_cue_accepted_words_no_delete;
       DROP TRIGGER IF EXISTS production_cues_no_delete;
       DELETE FROM production_cue_evidence_projection;
-      DELETE FROM production_recheck_demands;
       DELETE FROM production_cue_evidence_records;
       DELETE FROM production_cue_activation_state;
       DELETE FROM production_cue_lifecycle_events;
       DELETE FROM scoped_production_cue_accepted_words;
       DELETE FROM scoped_production_cues;
       DELETE FROM word_skill_relevance;
+      DELETE FROM pure_cue_scheduler_compensation_snapshot_attempts;
+      DELETE FROM pure_cue_scheduler_compensation_snapshots;
       DELETE FROM study_attempt_events;
       DELETE FROM study_sessions;
       DELETE FROM daily_new_word_intake;
@@ -514,7 +516,6 @@ describe('session completion', { concurrency: false }, () => {
     assert.equal((events[0]?.metadata.production as { responseKind?: unknown }).responseKind, 'no_clue');
     assert.equal(state.intervalHours, 6);
     assert.equal(state.easeFactor, 2.35);
-    assert.equal(dbModule.getPendingProductionRecheckForWord('no-clue-production'), null);
   });
 
   test('commit derives submittedWordId for unique out-of-set text and leaves ambiguous matches unresolved', () => {
@@ -580,7 +581,6 @@ describe('session completion', { concurrency: false }, () => {
       submittedText: '外',
       submittedWordId: 'lookup-anchor',
       result: 'rejected',
-      recheckDemandId: null,
       attemptKey: 'unique-outside',
     });
     assert.equal(fetchAttemptSubmittedWordId(uniqueAttemptId), 'lookup-outside');
@@ -592,7 +592,6 @@ describe('session completion', { concurrency: false }, () => {
       acceptedWordIds: ['lookup-anchor'],
       submittedText: '未知',
       result: 'rejected',
-      recheckDemandId: null,
       attemptKey: 'unknown-text',
     });
     assert.equal(fetchAttemptSubmittedWordId(unknownAttemptId), null);
@@ -604,15 +603,14 @@ describe('session completion', { concurrency: false }, () => {
       acceptedWordIds: ['lookup-anchor'],
       submittedText: '行',
       result: 'rejected',
-      recheckDemandId: null,
       attemptKey: 'ambiguous-homograph',
     });
     assert.equal(fetchAttemptSubmittedWordId(ambiguousAttemptId), null);
   });
 
-  test('production reconciliation preserves clean alternate responses and consumes one-shot rechecks', () => {
+  test('rejects multi-answer and retired-recheck production commit snapshots', () => {
     insertWord({
-      id: 'alternate-anchor',
+      id: 'strict-anchor',
       hanzi: '锚',
       pinyin: 'mao',
       meaning: 'anchor',
@@ -621,168 +619,50 @@ describe('session completion', { concurrency: false }, () => {
       priority: 100,
       createdAt: isoHoursAgo(96),
     });
-    insertWord({
-      id: 'alternate-answer',
-      hanzi: '另',
-      pinyin: 'ling',
-      meaning: 'alternate',
-      examples: [],
-      status: 'review',
-      priority: 90,
-      createdAt: isoHoursAgo(96),
-    });
-    insertWordStudyAdmissionState('alternate-anchor', isoHoursAgo(1));
-    insertWordSkillState('alternate-anchor', 'production', {
+    insertWordStudyAdmissionState('strict-anchor', isoHoursAgo(1));
+    insertWordSkillState('strict-anchor', 'production', {
       intervalHours: 24,
       lastStudiedAt: isoHoursAgo(48),
       nextDueAt: isoHoursAgo(24),
       easeFactor: 2.5,
     });
     insertProductionCue({
-      wordId: 'alternate-anchor',
-      cueId: 'alternate-cue',
-      text: 'Give either accepted answer',
-      acceptedWordIds: ['alternate-anchor', 'alternate-answer'],
+      wordId: 'strict-anchor',
+      cueId: 'strict-cue',
+      text: 'Give the target answer',
+      acceptedWordIds: ['strict-anchor'],
     });
-    const originalSkill = fetchWordSkillState('alternate-anchor', 'production');
-    const originalAdmission = fetchAdmissionState('alternate-anchor');
+    const originalSkill = fetchWordSkillState('strict-anchor', 'production');
+    const originalAdmission = fetchAdmissionState('strict-anchor');
 
-    const firstAttemptId = commitProductionAttempt({
-      anchorWordId: 'alternate-anchor',
-      cueId: 'alternate-cue',
-      cueText: 'Give either accepted answer',
-      acceptedWordIds: ['alternate-anchor', 'alternate-answer'],
-      submittedText: '另',
-      submittedWordId: 'alternate-answer',
-      result: 'accepted_non_anchor',
-      recheckDemandId: null,
-    });
-
-    assert.deepEqual(fetchWordSkillState('alternate-anchor', 'production'), originalSkill);
-    assert.deepEqual(fetchAdmissionState('alternate-anchor'), originalAdmission);
-    const initialDemand = dbModule.getPendingProductionRecheckForWord('alternate-anchor');
-    assert.equal(initialDemand?.sourceAttemptId, firstAttemptId);
-    assert.equal(initialDemand?.dueAt, addHours(initialDemand?.scheduledAt ?? fail('Missing recheck'), 48));
-    const evidenceRow = sqlite.prepare(`
-      SELECT attempt_result, submitted_word_id
-      FROM production_cue_evidence_records
-      WHERE source_attempt_id = ?
-    `).get(firstAttemptId) as { attempt_result: string; submitted_word_id: string | null };
-    assert.equal(evidenceRow.attempt_result, 'accepted_non_anchor');
-    assert.equal(evidenceRow.submitted_word_id, 'alternate-answer');
-
-    insertWord({
-      id: 'due-anchor',
-      hanzi: '回',
-      pinyin: 'hui',
-      meaning: 'return',
-      examples: [],
-      status: 'review',
-      priority: 100,
-      createdAt: isoHoursAgo(96),
-    });
-    insertWordStudyAdmissionState('due-anchor', addHours(new Date().toISOString(), 24));
-    insertWordSkillState('due-anchor', 'production', {
-      intervalHours: 24,
-      lastStudiedAt: isoHoursAgo(1),
-      nextDueAt: addHours(new Date().toISOString(), 23),
-      easeFactor: 2.5,
-    });
-    insertProductionCue({
-      wordId: 'due-anchor',
-      cueId: 'due-cue',
-      text: 'Come back',
-      acceptedWordIds: ['due-anchor'],
-    });
-    const dueSourceAttemptId = insertProjectedProductionSourceAttempt('due-anchor');
-    const dueScheduledAt = isoHoursAgo(49);
-    const dueDemand = dbModule.appendProductionRecheckDemandWithoutTransaction({
-      demandId: 'due-demand',
-      taskId: 'production-task:due-anchor:default_production',
-      sourceAttemptId: dueSourceAttemptId,
-      scheduledAt: dueScheduledAt,
-      dueAt: addHours(dueScheduledAt, 48),
-    });
-    const dueOriginalSkill = fetchWordSkillState('due-anchor', 'production');
-    const dueCommitAttemptId = commitProductionAttempt({
-      anchorWordId: 'due-anchor',
-      cueId: 'due-cue',
-      cueText: 'Come back',
-      acceptedWordIds: ['due-anchor'],
-      submittedText: '回',
-      submittedWordId: 'due-anchor',
+    assert.throws(() => commitProductionAttempt({
+      anchorWordId: 'strict-anchor',
+      cueId: 'strict-cue',
+      cueText: 'Give the target answer',
+      acceptedWordIds: ['strict-anchor', 'obsolete-alternate'],
+      submittedText: '锚',
       result: 'accepted_anchor',
-      recheckDemandId: dueDemand.demandId,
-    });
+      attemptKey: 'multi-answer',
+    }), /invalid production evidence metadata/);
+    assert.throws(() => commitProductionAttempt({
+      anchorWordId: 'strict-anchor',
+      cueId: 'strict-cue',
+      cueText: 'Give the target answer',
+      acceptedWordIds: ['strict-anchor'],
+      submittedText: '锚',
+      result: 'accepted_anchor',
+      retiredRecheckDemandId: 'retired-demand',
+      attemptKey: 'retired-recheck',
+    }), /retired production recheck state/);
 
-    assert.equal(dbModule.getPendingProductionRecheckForWord('due-anchor'), null);
-    assert.equal(dbModule.getProductionRecheckDemand(dueDemand.demandId)?.consumedByAttemptId, dueCommitAttemptId);
-    assert.notDeepEqual(fetchWordSkillState('due-anchor', 'production'), dueOriginalSkill);
-
-    insertWord({
-      id: 'reschedule-anchor',
-      hanzi: '再查',
-      pinyin: 'zai cha',
-      meaning: 'check again',
-      examples: [],
-      status: 'review',
-      priority: 100,
-      createdAt: isoHoursAgo(96),
-    });
-    insertWord({
-      id: 'reschedule-answer',
-      hanzi: '复查',
-      pinyin: 'fu cha',
-      meaning: 'recheck',
-      examples: [],
-      status: 'review',
-      priority: 90,
-      createdAt: isoHoursAgo(96),
-    });
-    insertWordStudyAdmissionState('reschedule-anchor', isoHoursAgo(1));
-    insertWordSkillState('reschedule-anchor', 'production', {
-      intervalHours: 24,
-      lastStudiedAt: isoHoursAgo(48),
-      nextDueAt: isoHoursAgo(24),
-      easeFactor: 2.5,
-    });
-    insertProductionCue({
-      wordId: 'reschedule-anchor',
-      cueId: 'reschedule-cue',
-      text: 'Check this answer space again',
-      acceptedWordIds: ['reschedule-anchor', 'reschedule-answer'],
-    });
-    const rescheduleSourceAttemptId = insertProjectedProductionSourceAttempt('reschedule-anchor');
-    const rescheduleScheduledAt = isoHoursAgo(49);
-    const oldDemand = dbModule.appendProductionRecheckDemandWithoutTransaction({
-      demandId: 'old-reschedule-demand',
-      taskId: 'production-task:reschedule-anchor:default_production',
-      sourceAttemptId: rescheduleSourceAttemptId,
-      scheduledAt: rescheduleScheduledAt,
-      dueAt: addHours(rescheduleScheduledAt, 48),
-    });
-    const rescheduleOriginalSkill = fetchWordSkillState('reschedule-anchor', 'production');
-    const rescheduleOriginalAdmission = fetchAdmissionState('reschedule-anchor');
-    commitProductionAttempt({
-      anchorWordId: 'reschedule-anchor',
-      cueId: 'reschedule-cue',
-      cueText: 'Check this answer space again',
-      acceptedWordIds: ['reschedule-anchor', 'reschedule-answer'],
-      submittedText: '复查',
-      submittedWordId: 'reschedule-answer',
-      result: 'accepted_non_anchor',
-      recheckDemandId: oldDemand.demandId,
-    });
-
-    const successor = dbModule.getPendingProductionRecheckForWord('reschedule-anchor');
-    assert.notEqual(successor?.demandId, oldDemand.demandId);
-    assert.equal(successor?.dueAt, addHours(successor?.scheduledAt ?? fail('Missing successor'), 48));
-    assert.equal(dbModule.getProductionRecheckDemand(oldDemand.demandId)?.replacementDemandId, successor?.demandId);
-    assert.deepEqual(fetchWordSkillState('reschedule-anchor', 'production'), rescheduleOriginalSkill);
-    assert.deepEqual(fetchAdmissionState('reschedule-anchor'), rescheduleOriginalAdmission);
+    assert.deepEqual(fetchWordSkillState('strict-anchor', 'production'), originalSkill);
+    assert.deepEqual(fetchAdmissionState('strict-anchor'), originalAdmission);
+    assert.equal(sqlite.prepare(`
+      SELECT COUNT(*) AS count FROM study_attempt_events WHERE target_word_id = 'strict-anchor'
+    `).get().count, 0);
   });
 
-  test('a covered production action with an initial rejection keeps ordinary lapse projection', () => {
+  for (const skipReinforcement of [false, true]) test(`a production lapse keeps ordinary projection with reinforcement skipped=${skipReinforcement}`, () => {
     insertReviewWordWithItem({
       wordId: 'production-lapse',
       sessionActionId: 'production-lapse-reverse',
@@ -806,7 +686,8 @@ describe('session completion', { concurrency: false }, () => {
       skillId: 'production',
       failureCount: 1,
       terminalRating: null,
-      attempts: [
+      reinforcementSkipped: skipReinforcement,
+      attempts: skipReinforcement ? [{ rating: 'forgot', outcome: 'incorrect' }] : [
         { rating: 'forgot', outcome: 'incorrect' },
         { rating: 'good', outcome: 'correct' },
         { rating: 'good', outcome: 'correct' },
@@ -816,13 +697,13 @@ describe('session completion', { concurrency: false }, () => {
 
     assert.equal(state.intervalHours, 6);
     assert.equal(state.easeFactor, 2.35);
-    assert.equal(dbModule.getPendingProductionRecheckForWord('production-lapse'), null);
     const evidenceCount = sqlite.prepare(`
       SELECT COUNT(*) AS count
       FROM production_cue_evidence_records
       WHERE task_id = 'production-task:production-lapse:default_production'
     `).get() as { count: number };
-    assert.equal(evidenceCount.count, 4);
+    assert.equal(evidenceCount.count, skipReinforcement ? 1 : 4);
+    assert.equal(Date.parse(state.nextDueAt) - Date.parse(state.lastStudiedAt), 6 * 60 * 60 * 1000);
   });
 
   test('an accepted typed response rated forgot keeps the ordinary lapse projection', () => {
@@ -859,10 +740,9 @@ describe('session completion', { concurrency: false }, () => {
 
     assert.equal(state.intervalHours, 6);
     assert.equal(state.easeFactor, 2.35);
-    assert.equal(dbModule.getPendingProductionRecheckForWord('accepted-forgot-production'), null);
   });
 
-  test('rolls back attempt, cue evidence, scheduling, and recheck writes together', () => {
+  test('rolls back attempt, cue evidence, and scheduling writes together', () => {
     insertWord({
       id: 'atomic-anchor',
       hanzi: '整',
@@ -905,7 +785,6 @@ describe('session completion', { concurrency: false }, () => {
         submittedText: '整',
         submittedWordId: 'atomic-anchor',
         result: 'accepted_anchor',
-        recheckDemandId: null,
       }), /forced cue evidence failure/);
     } finally {
       sqlite.exec('DROP TRIGGER IF EXISTS fail_session_cue_evidence;');
@@ -919,7 +798,6 @@ describe('session completion', { concurrency: false }, () => {
     assert.equal(sqlite.prepare(`
       SELECT COUNT(*) AS count FROM production_cue_evidence_records WHERE task_id = ?
     `).get('production-task:atomic-anchor:default_production').count, 0);
-    assert.equal(dbModule.getPendingProductionRecheckForWord('atomic-anchor'), null);
   });
 
   test('recording a clean easy review attempt batch uses the easy bonus and projects scheduler state', () => {
@@ -1528,6 +1406,7 @@ function recordAcceptedReviewBatch({
   failureCount,
   terminalRating,
   attempts,
+  reinforcementSkipped,
 }: {
   sessionActionId: string;
   wordId: string;
@@ -1538,6 +1417,7 @@ function recordAcceptedReviewBatch({
   failureCount: number;
   terminalRating: 'hard' | 'good' | 'easy' | null;
   attempts?: ReviewAttemptInput[];
+  reinforcementSkipped?: boolean;
 }) {
   const computedSessionActionId = `review/${wordId}/${skillId}`;
   const attemptInputs = attempts ?? [
@@ -1595,7 +1475,6 @@ function recordAcceptedReviewBatch({
                   : 'incorrect-production-response',
                 submittedWordId: productionAccepted ? wordId : null,
                 result: productionResult,
-                recheckDemandId: null,
               },
             },
       };
@@ -1608,6 +1487,7 @@ function recordAcceptedReviewBatch({
       sampledSkillIds: [skillId],
       failureCount,
       terminalRating,
+      reinforcementSkipped,
     },
   });
 
@@ -1715,76 +1595,6 @@ function insertProductionCue({
   `).run(cueId, lifecycleEventId, isoHoursAgo(1));
 }
 
-function insertProjectedProductionSourceAttempt(wordId: string) {
-  const sessionId = `${wordId}-source-session`;
-  const attemptId = `${wordId}-source-attempt`;
-  const alternateWordId = `${wordId}-alternate`;
-  insertWord({
-    id: alternateWordId,
-    hanzi: `${wordId} alternate`,
-    pinyin: 'alternate',
-    meaning: 'alternate',
-    examples: [],
-    status: 'unstudied',
-    priority: -999,
-    createdAt: isoHoursAgo(96),
-  });
-  sqlite.prepare(`
-    INSERT INTO study_sessions (id, started_at, ended_at, processing_state, processed_at)
-    VALUES (?, ?, ?, 'processed', ?)
-  `).run(sessionId, isoHoursAgo(2), isoHoursAgo(1), isoHoursAgo(1));
-  sqlite.prepare(`
-    INSERT INTO study_attempt_events (
-      id,
-      occurred_at,
-      session_id,
-      session_action_id,
-      session_event_sequence,
-      action_attempt_sequence,
-      action_kind,
-      target_word_id,
-      sampled_skill_ids_json,
-      response,
-      outcome,
-      rating,
-      content_ref_json,
-      metadata_json,
-      projected_at
-    ) VALUES (?, ?, ?, ?, 1, 1, 'production', ?, '["production"]', ?, 'correct', 'good', NULL, ?, ?)
-  `).run(
-    attemptId,
-    isoHoursAgo(1),
-    sessionId,
-    `review/${wordId}/production`,
-    wordId,
-    alternateWordId,
-    JSON.stringify({
-      production: {
-        taskId: `production-task:${wordId}:default_production`,
-        cueId: null,
-        cueType: 'definition_gloss',
-        text: 'source prompt',
-        acceptedWordIds: [wordId, alternateWordId],
-        anchorWordId: wordId,
-        submittedText: alternateWordId,
-        submittedWordId: alternateWordId,
-        result: 'accepted_non_anchor',
-        recheckDemandId: null,
-      },
-    }),
-    isoHoursAgo(1),
-  );
-  dbModule.appendProductionCueAttemptEvidenceWithoutTransaction({
-    occurredAt: isoHoursAgo(1),
-    taskId: `production-task:${wordId}:default_production`,
-    cueId: null,
-    sourceAttemptId: attemptId,
-    attemptResult: 'accepted_non_anchor',
-    submittedWordId: alternateWordId,
-  });
-  return attemptId;
-}
-
 function commitProductionAttempt({
   anchorWordId,
   cueId,
@@ -1793,7 +1603,7 @@ function commitProductionAttempt({
   submittedText,
   submittedWordId,
   result,
-  recheckDemandId,
+  retiredRecheckDemandId,
   attemptKey,
 }: {
   anchorWordId: string;
@@ -1802,14 +1612,12 @@ function commitProductionAttempt({
   acceptedWordIds: string[];
   submittedText: string;
   submittedWordId?: string | null;
-  result: 'accepted_anchor' | 'accepted_non_anchor' | 'rejected';
-  recheckDemandId: string | null;
+  result: 'accepted_anchor' | 'rejected';
+  retiredRecheckDemandId?: string;
   attemptKey?: string;
 }) {
-  const suffix = attemptKey ?? recheckDemandId ?? result;
-  const sessionActionId = recheckDemandId === null
-    ? `review/${anchorWordId}/production/${suffix}`
-    : `review/${anchorWordId}/production/recheck/${suffix}`;
+  const suffix = attemptKey ?? result;
+  const sessionActionId = `review/${anchorWordId}/production/${suffix}`;
   const sessionId = `${sessionActionId}-session`;
   const covering = result === 'rejected';
   const productionWord = covering
@@ -1859,7 +1667,7 @@ function commitProductionAttempt({
               ? { submittedWordId: attempt.submittedWordId }
               : {}),
             result: attempt.result,
-            recheckDemandId,
+            ...(retiredRecheckDemandId === undefined ? {} : { recheckDemandId: retiredRecheckDemandId }),
           },
         },
       };

@@ -3,12 +3,12 @@
 Status: completed and integrated on `main` (2026-08-03). The checklist below is
 retained as the historical implementation and acceptance record. Durable
 generation behavior has graduated to
-[`SPECS/session-reflection-generation.md`](../SPECS/session-reflection-generation.md);
+[`SPECS/session-reflection-generation.md`](../SPECS/archive/session-reflection-generation.md);
 proposal and handle semantics remain owned by the canonical reflection spec.
 
 This plan defines the smallest end-to-end reflection path that exercises the
 durable contract in
-[`SPECS/reflection-proposals-and-handles.md`](../SPECS/reflection-proposals-and-handles.md)
+[`SPECS/reflection-proposals-and-handles.md`](../SPECS/archive/reflection-proposals-and-handles.md)
 against real study data. It is a milestone checklist, not a second source of
 truth for proposal or handle semantics.
 

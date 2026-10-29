@@ -37,6 +37,7 @@ export type ReviewFailureRateDay = {
   dayKey: string;
   completedReviewActionSessions: number;
   failedReviewActionSessions: number;
+  compensatedReviewActionSessions: number;
   failureRate: number | null;
   rolling3DayFailureRate: number | null;
   rolling7DayFailureRate: number | null;

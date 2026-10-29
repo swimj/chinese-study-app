@@ -1,7 +1,14 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import type { SessionStudyItem, SessionStudyItemBuckets, StudySkillId } from '../src/domain/study-actions.ts';
+import type {
+  PureCueSessionReviewItem,
+  SessionStudyItem,
+  SessionStudyItemBuckets,
+  StudySkillId,
+} from '../src/domain/study-actions.ts';
 import type { ReviewRating, Word } from '../src/types.ts';
+import { hasPureCueReflectionEvidence } from '../src/features/session/session-finalization.ts';
+import { cloneBucketSessionState } from '../src/features/session/session-state-copy.ts';
 
 const testSessionId = 'bucket-session-test';
 
@@ -285,6 +292,7 @@ describe('bucket session state covering contract', () => {
         unstudied: {
           [touchedUnstudiedWord.id]: {
             introComplete: true,
+            recognitionAttempts: 0,
             successStreaks: { recognition: 0, production: 0 },
           },
         },
@@ -411,6 +419,64 @@ describe('bucket session state covering contract', () => {
     assert.equal(getBucketSessionUnitCounts(canceled).review, 1);
   });
 
+  test('pure cue review preserves the Undo snapshot and completes after clean or reinforced responses', async () => {
+    const {
+      createBucketSessionState,
+      getActiveSessionUnit,
+      markActiveSessionUnitStarted,
+      rateActivePureCueProductionUnit,
+    } = await loadBucketSessionStateApi();
+    const pureCue = createPureCueReviewItem();
+    const started = markActiveSessionUnitStarted(createBucketSessionState({
+      buckets: { review: [pureCue], learning: [], unstudied: [] },
+      sessionId: testSessionId,
+      schedulerPolicy: { bucketWeights: { review: 1, learning: 0, unstudied: 0 } },
+      seed: 1,
+    }));
+    const undoSnapshot = cloneBucketSessionState(started);
+
+    const lapsed = rateActivePureCueProductionUnit(started, 'forgot', {
+      response: 'wrong', outcome: 'rejected', submittedWordId: null,
+    });
+    assert.deepEqual(lapsed.commit, { type: 'none' });
+    assert.equal(lapsed.state.pureCueReviewProgress[pureCue.sessionActionId]?.failureCount, 1);
+    const active = getActiveSessionUnit(lapsed.state);
+    assert.equal(active.type, 'study');
+    assert.equal(active.type === 'study' ? active.item.sessionActionId : null, pureCue.sessionActionId);
+
+    const undone = cloneBucketSessionState(undoSnapshot);
+    assert.equal(undone.answeredCount, 0);
+    assert.equal(undone.pureCueReviewProgress[pureCue.sessionActionId], undefined);
+    const restoredActive = getActiveSessionUnit(undone);
+    assert.equal(restoredActive.type === 'study' ? restoredActive.item.sessionActionId : null, pureCue.sessionActionId);
+
+    let reinforced = lapsed.state;
+    let completed: ReturnType<typeof rateActivePureCueProductionUnit> | null = null;
+    for (let successes = 0; successes < 3; successes += 1) {
+      completed = rateActivePureCueProductionUnit(reinforced, 'good', {
+        response: '撒谎', outcome: 'accepted', submittedWordId: 'word-a',
+      });
+      reinforced = completed.state;
+    }
+    assert.equal(completed?.commit.type, 'commit-pure-cue-production-session');
+    assert.deepEqual(reinforced.pureCueReviewProgress, {});
+    assert.equal(hasPureCueReflectionEvidence(reinforced.pureCueReviewProgress), false);
+    if (completed?.commit.type !== 'commit-pure-cue-production-session') throw new Error('Missing pure cue commit');
+    assert.equal(hasPureCueReflectionEvidence({ [completed.commit.sessionActionId]: { events: completed.commit.events } }), true);
+
+
+    const cleanStarted = markActiveSessionUnitStarted(createBucketSessionState({
+      buckets: { review: [createPureCueReviewItem()], learning: [], unstudied: [] },
+      sessionId: `${testSessionId}-clean`,
+      schedulerPolicy: { bucketWeights: { review: 1, learning: 0, unstudied: 0 } },
+      seed: 1,
+    }));
+    const cleanCompleted = rateActivePureCueProductionUnit(cleanStarted, 'good', {
+      response: '撒谎', outcome: 'accepted', submittedWordId: 'word-a',
+    });
+    assert.equal(cleanCompleted.commit.type, 'commit-pure-cue-production-session');
+  });
+
   test('contrast selection requires forgot for wrong choices and pass ratings for correct choices', async () => {
     const {
       createBucketSessionState,
@@ -465,6 +531,32 @@ describe('bucket session state covering contract', () => {
     assert.equal(result.commit.event.outcome, 'incorrect');
     assert.equal(result.commit.event.response, 'contrast-distractor');
     assert.equal(result.commit.promptTargetWordId, 'contrast-target');
+  });
+
+  test('a final contrast miss can save a summary after drain and after Undo', async () => {
+    const { createBucketSessionState, markActiveSessionUnitStarted, beginBucketDrainSession,
+      rateActiveContrastSelectionUnit } = await import('../src/lib/session-state.ts');
+    const { createSessionSummary, updateSessionSummaryForRating, getCompletedExerciseCounts } =
+      await import('../src/features/session/session-summary.ts');
+    const item = createContrastStudyItem();
+    const state = beginBucketDrainSession(markActiveSessionUnitStarted(createBucketSessionState({
+      buckets: { review: [item], learning: [], unstudied: [] }, sessionId: testSessionId,
+    })));
+    const summary = createSessionSummary({ sessionId: testSessionId,
+      startedAt: '2026-10-05T00:00:00Z', initialQueueLength: 1 });
+    for (let replay = 0; replay < 2; replay += 1) {
+      const transition = rateActiveContrastSelectionUnit({ state, selectedWordId: 'contrast-distractor',
+        rating: 'forgot', practiceMore: false });
+      const completed = updateSessionSummaryForRating({ summary, transition, rating: 'forgot',
+        activeWord: item.word, activeItem: item, previousPhase: state.phase });
+      assert.ok(completed);
+      assert.equal(transition.state.phase, 'completed');
+      assert.deepEqual(getCompletedExerciseCounts(completed), {
+        completedReviewActionCount: 1, failedReviewActionCount: 1,
+      });
+      assert.deepEqual(completed.lapsedReviewActionIds, [item.sessionActionId]);
+      assert.equal(completed.completionMode, 'drain');
+    }
   });
 
   test('defaults scheduler seed from sessionId so sessions interleave differently', async () => {
@@ -550,6 +642,7 @@ type BucketSessionStateApi = {
   cancelRatedReviewSessionAction: (state: unknown, sessionActionId: string) => {
     answeredCount: number;
     reviewProgress: Record<string, { failureCount: number } | undefined>;
+    pureCueReviewProgress: Record<string, { failureCount: number } | undefined>;
   };
   dismissActiveBucketSessionUnit: (state: unknown) => { state: { reviewProgress: Record<string, unknown> } };
   getActiveSessionUnit: (state: unknown) => BucketSessionActiveUnit;
@@ -563,6 +656,7 @@ type BucketSessionStateApi = {
     }>;
     unstudied: Record<string, {
       introComplete: boolean;
+      recognitionAttempts: number;
       successStreaks: Record<'recognition' | 'production', number>;
     }>;
   };
@@ -579,6 +673,16 @@ type BucketSessionStateApi = {
     practiceMore: boolean;
   }) => BucketSessionTransitionResult;
   rateActiveSessionUnit: (state: unknown, rating: ReviewRating) => BucketSessionTransitionResult;
+  rateActivePureCueProductionUnit: (state: unknown, rating: ReviewRating, response: {
+    response: string | null;
+    outcome: 'accepted' | 'rejected';
+    submittedWordId: string | null;
+  }) => {
+    state: {
+      pureCueReviewProgress: Record<string, { failureCount: number } | undefined>;
+    };
+    commit: { type: string };
+  };
 };
 
 type TestBucketSessionState = {
@@ -600,6 +704,7 @@ async function loadBucketSessionStateApi(): Promise<BucketSessionStateApi> {
     'getBucketSessionUnitCounts',
     'markActiveSessionUnitStarted',
     'rateActiveContrastSelectionUnit',
+    'rateActivePureCueProductionUnit',
     'rateActiveSessionUnit',
   ];
 
@@ -637,6 +742,23 @@ function createReviewStudyItem(wordId: string): SessionStudyItem {
     intervalHours: 24,
     word,
     contrastSelection: null,
+  };
+}
+
+function createPureCueReviewItem(): PureCueSessionReviewItem {
+  return {
+    itemType: 'pure_cue_production',
+    sessionActionId: 'pure-cue/snapshot-a',
+    tier: 'fragile',
+    snapshot: {
+      snapshotId: 'snapshot-a',
+      pureCueId: 'cue-a',
+      servedAt: '2026-09-18T00:00:00.000Z',
+      stimulus: 'to tell an untruth',
+      axisNote: 'ordinary speech',
+      teachingNote: 'Both answers describe telling an untruth.',
+      acceptedAnswers: [{ wordId: 'word-a', hanzi: '撒谎', traditional: '撒謊' }],
+    },
   };
 }
 
@@ -692,3 +814,63 @@ function createWord(overrides: Partial<Word> & Pick<Word, 'id' | 'status'>): Wor
     lastLearningCoveredOn: overrides.lastLearningCoveredOn ?? null,
   };
 }
+
+
+test('skipping reinforcement completes only the active review and preserves evidence and Undo state', async () => {
+  const api = await import('../src/lib/session-state.ts');
+  const { deriveReviewCommitFieldsFromAttemptEvents } = await import('../src/domain/study-actions.ts');
+  for (const pureCue of [false, true]) {
+    for (const recalls of [0, 1, 2]) {
+      const item = pureCue ? createPureCueReviewItem() : createReviewStudyItem('skip-review');
+      let state = api.markActiveSessionUnitStarted(api.createBucketSessionState({
+        buckets: { review: [item], learning: [], unstudied: [] },
+        sessionId: testSessionId, seed: 1,
+      }));
+      assert.throws(() => api.skipActiveReviewReinforcement(state), /recorded.*lapse/);
+      state = pureCue
+        ? api.rateActivePureCueProductionUnit(state, 'forgot', { response: 'wrong', outcome: 'rejected', submittedWordId: null }).state
+        : api.rateActiveSessionUnit(state, 'forgot').state;
+      for (let i = 0; i < recalls; i++) {
+        state = pureCue
+          ? api.rateActivePureCueProductionUnit(state, 'good', { response: '撒谎', outcome: 'accepted', submittedWordId: 'word-a' }).state
+          : api.rateActiveSessionUnit(state, 'good').state;
+      }
+      const undo = cloneBucketSessionState(state);
+      const skipped = api.skipActiveReviewReinforcement(state);
+      assert.equal(skipped.state.phase, 'completed');
+      assert.equal(skipped.state.answeredCount, state.answeredCount);
+      assert.deepEqual(cloneBucketSessionState(state), undo);
+      assert.equal(api.getBucketSessionUnitCounts(undo).review, 1);
+      assert.equal(api.getBucketSessionUnitCounts(skipped.state).review, 0);
+      assert.deepEqual(skipped.state.reviewProgress, {});
+      assert.deepEqual(skipped.state.pureCueReviewProgress, {});
+      assert.ok('reinforcementSkipped' in skipped.commit && skipped.commit.reinforcementSkipped === true);
+      if (skipped.commit.type === 'commit-review-action-session') {
+        assert.deepEqual(skipped.commit.events, state.reviewProgress[item.sessionActionId]!.attempts);
+        assert.deepEqual(deriveReviewCommitFieldsFromAttemptEvents(skipped.commit.events, { reinforcementSkipped: skipped.commit.reinforcementSkipped }), { failureCount: 1, terminalRating: null });
+        assert.equal(skipped.commit.failureCount, 1);
+        assert.equal(skipped.commit.terminalRating, null);
+      } else if (skipped.commit.type === 'commit-pure-cue-production-session') {
+        assert.deepEqual(skipped.commit.events, state.pureCueReviewProgress[item.sessionActionId]!.events);
+        assert.equal(hasPureCueReflectionEvidence({ [item.sessionActionId]: { events: skipped.commit.events } }), true);
+      } else assert.fail('Skip must produce a review commit.');
+      const { applySessionCommit } = await import('../src/features/session/session-commit.ts');
+      const previousFetch = globalThis.fetch;
+      let postedBody: Record<string, unknown> | undefined;
+      globalThis.fetch = async (_input, init) => {
+        postedBody = JSON.parse(String(init?.body));
+        return new Response(null, { status: 204 });
+      };
+      try {
+        await applySessionCommit(skipped.commit);
+        assert.ok(postedBody);
+        const intent = pureCue ? postedBody : postedBody.commitIntent as Record<string, unknown>;
+        assert.equal(intent.reinforcementSkipped, true);
+        assert.deepEqual(postedBody.events, skipped.commit.events);
+      } finally {
+        globalThis.fetch = previousFetch;
+      }
+
+    }
+  }
+});

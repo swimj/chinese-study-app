@@ -1,3 +1,4 @@
+import { clearWordPreparationFixtures, prepareWordFixture } from './helpers/prepared-word-fixtures.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -48,6 +49,7 @@ describe('user priority layer', { concurrency: false }, () => {
   });
 
   beforeEach(() => {
+    clearWordPreparationFixtures(sqlite);
     sqlite.exec(`
       DELETE FROM daily_new_word_intake;
       DELETE FROM user_word_priority;
@@ -242,7 +244,7 @@ describe('user priority layer', { concurrency: false }, () => {
     assert.deepEqual(ordered, ['newer-top', 'older-top', 'newer-bump', 'older-bump']);
   });
 
-  test('session unstudied intake respects cap and expected selection set', () => {
+  test('new learner intake respects the cap and selects only stash words', () => {
     const { dailyNewWordLimit } = dbModule.getLearningPolicy(studyDayKey);
 
     insertWord('old-base', 60, 'unstudied', '2026-01-01T00:00:00.000Z');
@@ -258,8 +260,6 @@ describe('user priority layer', { concurrency: false }, () => {
     const expectedIdSet = new Set([
       'unstudied/forced',
       'unstudied/boosted',
-      'unstudied/old-base',
-      'unstudied/very-low',
     ].slice(0, dailyNewWordLimit));
 
     assert.equal(sessionIds.length, expectedIdSet.size);
@@ -312,6 +312,7 @@ function insertWord(id: string, priority: number, status: WordStatus, createdAt:
     SET normalized_hanzi = ?
     WHERE id = ?
   `).run(normalizeMandarinHanziLookup(hanzi), id);
+  if (status === 'unstudied') prepareWordFixture(sqlite, dbModule, id);
 }
 
 function getSessionItemIds(db: DbModule): string[] {

@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import { PROVIDER_REQUEST_TIMEOUT_MS } from '../server/llm/types.ts';
-import { GLM_REFLECTION_MODEL_CONFIG } from '../server/reflection/glm-provider.ts';
+import {
+  GLM_FLASH_HIGH_REFLECTION_MODEL_CONFIG,
+  GLM_REFLECTION_MODEL_CONFIG,
+} from '../server/reflection/glm-provider.ts';
 import { LUNA_REFLECTION_MODEL_CONFIG } from '../server/reflection/luna-provider.ts';
 import {
   REFLECTION_MODEL_ARMS,
@@ -11,18 +14,24 @@ import {
 } from '../server/reflection/model-arms.ts';
 
 describe('reflection comparison-arm registry', () => {
-  test('registers four comparison arms and offers three by default', () => {
+  test('registers six comparison arms and offers three by default', () => {
     const choices = REFLECTION_MODEL_ARMS.map((arm) => arm.choice);
     assert.deepEqual(choices, [
       'openai:gpt-5.6-luna-high',
       'zai:glm-5.3-flash-max',
+      'zai:glm-5.3-flash-high',
       'openrouter:gemini-3.6-flash',
       'openai:gpt-5.6-terra-high',
+      'openai:gpt-6-sol-high',
     ]);
     assert.equal(LUNA_REFLECTION_MODEL_CHOICE, 'openai:gpt-5.6-luna-high');
     assert.equal(isReflectionModelChoice('openai:gpt-5.6-terra-high'), true);
+    assert.equal(isReflectionModelChoice('zai:glm-5.3-flash-high'), true);
+    assert.equal(isReflectionModelChoice('zai:glm-5.3-flash-max'), true);
     assert.equal(isReflectionModelChoice('openrouter:gemini-3.6-flash'), true);
-    assert.equal(isOfferedReflectionModelChoice('openai:gpt-5.6-terra-high'), true);
+    assert.equal(isOfferedReflectionModelChoice('openai:gpt-5.6-terra-high'), false);
+    assert.equal(isOfferedReflectionModelChoice('zai:glm-5.3-flash-high'), true);
+    assert.equal(isOfferedReflectionModelChoice('zai:glm-5.3-flash-max'), false);
     assert.equal(isOfferedReflectionModelChoice('openrouter:gemini-3.6-flash'), false);
     assert.equal(isReflectionModelChoice('openrouter:claude-sonnet-5'), false);
     assert.equal(isReflectionModelChoice('dashscope:qwen3.8-max'), false);
@@ -32,18 +41,29 @@ describe('reflection comparison-arm registry', () => {
       REFLECTION_MODEL_ARMS.filter((arm) => arm.enabledByDefault).map((arm) => arm.choice),
       [
         'openai:gpt-5.6-luna-high',
-        'zai:glm-5.3-flash-max',
-        'openai:gpt-5.6-terra-high',
+        'zai:glm-5.3-flash-high',
+        'openai:gpt-6-sol-high',
       ],
+    );
+    assert.equal(
+      REFLECTION_MODEL_ARMS.find((arm) => arm.choice === 'zai:glm-5.3-flash-max')?.enabledByDefault,
+      false,
     );
     assert.equal(
       REFLECTION_MODEL_ARMS.find((arm) => arm.choice === 'openrouter:gemini-3.6-flash')?.enabledByDefault,
       false,
     );
-    assert.ok(
-      REFLECTION_MODEL_ARMS
-        .filter((arm) => arm.enabledByDefault)
-        .every((arm) => arm.dogfoodSelectionWeight === 1),
+    assert.deepEqual(
+      Object.fromEntries(
+        REFLECTION_MODEL_ARMS
+          .filter((arm) => arm.enabledByDefault)
+          .map((arm) => [arm.choice, arm.dogfoodSelectionWeight]),
+      ),
+      {
+        'openai:gpt-5.6-luna-high': { smallBundle: 30, largeBundle: 20 },
+        'zai:glm-5.3-flash-high': { smallBundle: 70, largeBundle: 20 },
+        'openai:gpt-6-sol-high': { smallBundle: 0, largeBundle: 60 },
+      },
     );
   });
 
@@ -51,9 +71,20 @@ describe('reflection comparison-arm registry', () => {
     assert.equal(PROVIDER_REQUEST_TIMEOUT_MS, 900_000);
     assert.equal(LUNA_REFLECTION_MODEL_CONFIG.timeoutMs, PROVIDER_REQUEST_TIMEOUT_MS);
     assert.equal(GLM_REFLECTION_MODEL_CONFIG.timeoutMs, PROVIDER_REQUEST_TIMEOUT_MS);
+    assert.equal(GLM_FLASH_HIGH_REFLECTION_MODEL_CONFIG.timeoutMs, PROVIDER_REQUEST_TIMEOUT_MS);
+    assert.equal(GLM_FLASH_HIGH_REFLECTION_MODEL_CONFIG.reasoningEffort, 'high');
+    assert.equal(GLM_FLASH_HIGH_REFLECTION_MODEL_CONFIG.providerModel, 'glm-5.3-flash');
+    assert.equal(GLM_REFLECTION_MODEL_CONFIG.maxOutputTokens, 131_072);
+    assert.equal(GLM_FLASH_HIGH_REFLECTION_MODEL_CONFIG.maxOutputTokens, 131_072);
+    assert.equal(LUNA_REFLECTION_MODEL_CONFIG.maxOutputTokens, 50_000);
     for (const arm of REFLECTION_MODEL_ARMS) {
       if (arm.config === null) continue;
       assert.equal(arm.config.timeoutMs, PROVIDER_REQUEST_TIMEOUT_MS, arm.choice);
+      assert.equal(
+        arm.config.maxOutputTokens,
+        arm.choice.startsWith('zai:') ? 131_072 : 50_000,
+        arm.choice,
+      );
     }
   });
 

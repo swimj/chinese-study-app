@@ -1,10 +1,16 @@
+import type { LearningRehearsalSnapshot } from '../domain/study-actions';
+import type { WordContentDocument } from '../domain/word-content/types';
+import { selectBootstrapReveal, selectSequentialBootstrapReveal } from '../domain/word-content/reveal';
 import type {
   SessionStudyItem,
+  SessionReviewItem,
   SessionStudyItemBuckets,
   StudySkillId,
 } from '../domain/study-actions';
-import { buildWordLifecycleSessionStudyItems, cloneProductionExerciseSnapshot } from '../domain/study-actions';
+import { buildWordLifecycleSessionStudyItems, cloneProductionExerciseSnapshot, isPureCueSessionReviewItem } from '../domain/study-actions';
 import type { Word } from '../types';
+import { DEFAULT_INTRODUCTION_SPACING, isStudyIntroductionOrder, isStudyIntroductionSpacing, type StudyIntroductionOrder } from '../domain/introduction-order';
+import { DEFAULT_SESSION_BUCKET_WEIGHTS } from '../domain/session-limits';
 
 // Live sessions seed from sessionId. This fallback keeps scheduler unit tests
 // deterministic when they omit both a seed and a session id.
@@ -16,6 +22,9 @@ export type BucketSchedulerWeights = Record<BucketSchedulerBucket, number>;
 
 export type BucketSessionSchedulerPolicy = {
   bucketWeights: BucketSchedulerWeights;
+  studyNewWordsFirst?: boolean;
+  studyIntroductionOrder?: StudyIntroductionOrder;
+  studyIntroductionSpacing?: number;
 };
 
 export type BucketSchedulerLearningProgress = {
@@ -26,6 +35,8 @@ export type BucketSchedulerLearningProgress = {
 
 export type BucketSchedulerUnstudiedProgress = {
   introComplete: boolean;
+  /** Completed recognition exercises, including misses; independent of the success streak. */
+  recognitionAttempts: number;
   successStreaks: Record<ReviewStudySkillId, number>;
 };
 
@@ -38,7 +49,7 @@ export type ActiveBucketSchedulerUnit =
   | {
       type: 'study';
       bucket: BucketSchedulerBucket;
-      item: SessionStudyItem;
+      item: SessionReviewItem;
     }
   | {
       type: 'unstudied_intro';
@@ -46,22 +57,27 @@ export type ActiveBucketSchedulerUnit =
     };
 
 export type BucketSessionScheduler = {
-  reviewQueue: SessionStudyItem[];
+  /** Activated only after the in-session teaching beats are completed. */
+  unstudiedTeaching?: Record<string, {
+    rehearsals: LearningRehearsalSnapshot[];
+    content: WordContentDocument;
+  }>;
+  learningRehearsals?: Record<string, LearningRehearsalSnapshot>;
+  learningContent?: Record<string, WordContentDocument>;
+  reviewQueue: SessionReviewItem[];
   learningPool: Word[];
   unstudiedPool: Word[];
   policy: BucketSessionSchedulerPolicy;
   rngState: number;
+  /** Remaining existing-work exercises before the next paced introduction. */
+  introductionExercisesRemaining: number;
   activeUnit: ActiveBucketSchedulerUnit | null;
 };
 
 type ReviewStudySkillId = Extract<StudySkillId, 'recognition' | 'production'>;
 
 const DEFAULT_BUCKET_POLICY: BucketSessionSchedulerPolicy = {
-  bucketWeights: {
-    review: 50,
-    learning: 30,
-    unstudied: 20,
-  },
+  bucketWeights: DEFAULT_SESSION_BUCKET_WEIGHTS,
 };
 
 const REVIEW_STUDY_SKILLS: ReviewStudySkillId[] = ['recognition', 'production'];
@@ -77,7 +93,15 @@ export function createBucketSessionScheduler({
   progress?: Partial<BucketSchedulerProgress>;
   seed?: number;
 }): BucketSessionScheduler {
+  if (policy?.studyIntroductionOrder !== undefined && !isStudyIntroductionOrder(policy.studyIntroductionOrder)) {
+    throw new Error('Invalid introduction order.');
+  }
+  if (policy?.studyIntroductionSpacing !== undefined && !isStudyIntroductionSpacing(policy.studyIntroductionSpacing)) {
+    throw new Error('Introduction spacing must be an integer from 1 to 10.');
+  }
   const scheduler: BucketSessionScheduler = {
+    learningRehearsals: structuredClone(buckets.learningRehearsals ?? {}),
+    learningContent: structuredClone(buckets.learningContent ?? {}),
     reviewQueue: [...buckets.review],
     learningPool: [...buckets.learning],
     unstudiedPool: [...buckets.unstudied],
@@ -90,10 +114,24 @@ export function createBucketSessionScheduler({
       },
     },
     rngState: normalizeSeed(seed ?? DEFAULT_SEED),
+    introductionExercisesRemaining: 0,
     activeUnit: null,
   };
 
   return syncBucketScheduler(scheduler, normalizeBucketSchedulerProgress(progress));
+}
+
+/** Advance only at accepted session transitions, never at a recomputation. */
+export function recordBucketIntroductionCompleted(scheduler: BucketSessionScheduler): BucketSessionScheduler {
+  return scheduler.policy.studyIntroductionOrder === 'paced'
+    ? { ...scheduler, introductionExercisesRemaining: scheduler.policy.studyIntroductionSpacing ?? DEFAULT_INTRODUCTION_SPACING }
+    : scheduler;
+}
+
+export function recordBucketStudyExercise(scheduler: BucketSessionScheduler): BucketSessionScheduler {
+  return scheduler.policy.studyIntroductionOrder === 'paced'
+    ? { ...scheduler, introductionExercisesRemaining: Math.max(0, scheduler.introductionExercisesRemaining - 1) }
+    : scheduler;
 }
 
 export function sessionIdToSchedulerSeed(sessionId: string): number {
@@ -149,6 +187,9 @@ export function completeActiveBucketSchedulerUnit(scheduler: BucketSessionSchedu
         });
       }
 
+      if (isPureCueSessionReviewItem(active.item)) {
+        throw new Error('Pure cue session items are review-only.');
+      }
       return syncBucketScheduler(removeBucketSchedulerWord(scheduler, active.bucket, active.item.targetWordId));
     case 'unstudied_intro':
       return syncBucketScheduler(scheduler);
@@ -209,13 +250,18 @@ export function pruneBucketSchedulerWords(
 
 export function cloneBucketSessionScheduler(scheduler: BucketSessionScheduler): BucketSessionScheduler {
   return {
+    unstudiedTeaching: structuredClone(scheduler.unstudiedTeaching ?? {}),
+    learningRehearsals: structuredClone(scheduler.learningRehearsals ?? {}),
+    learningContent: structuredClone(scheduler.learningContent ?? {}),
     reviewQueue: scheduler.reviewQueue.map(cloneSessionStudyItem),
     learningPool: scheduler.learningPool.map(cloneWord),
     unstudiedPool: scheduler.unstudiedPool.map(cloneWord),
     policy: {
+      ...scheduler.policy,
       bucketWeights: { ...scheduler.policy.bucketWeights },
     },
     rngState: scheduler.rngState,
+    introductionExercisesRemaining: scheduler.introductionExercisesRemaining,
     activeUnit: scheduler.activeUnit ? cloneActiveBucketSchedulerUnit(scheduler.activeUnit) : null,
   };
 }
@@ -247,9 +293,22 @@ function cloneActiveBucketSchedulerUnit(unit: ActiveBucketSchedulerUnit): Active
   };
 }
 
-function cloneSessionStudyItem(item: SessionStudyItem): SessionStudyItem {
+function cloneSessionStudyItem(item: SessionReviewItem): SessionReviewItem {
+  if (isPureCueSessionReviewItem(item)) {
+    return {
+      ...item,
+      snapshot: {
+        ...item.snapshot,
+        acceptedAnswers: item.snapshot.acceptedAnswers.map((answer) => ({ ...answer })),
+      },
+    };
+  }
   return {
     ...item,
+    ...(item.rehearsal ? { rehearsal: structuredClone(item.rehearsal) } : {}),
+    ...(item.wordContent ? { wordContent: structuredClone(item.wordContent) } : {}),
+    ...(item.bootstrapReveal ? { bootstrapReveal: { ...item.bootstrapReveal } } : {}),
+    ...(item.recognitionSupplement ? { recognitionSupplement: { ...item.recognitionSupplement } } : {}),
     sampledSkillIds: [...item.sampledSkillIds],
     contentRef: item.contentRef ? { ...item.contentRef } : null,
     production: item.production
@@ -281,7 +340,24 @@ function recomputeActiveBucketSchedulerUnit(
   scheduler: BucketSessionScheduler,
   progress: BucketSchedulerProgress,
 ): BucketSessionScheduler {
+  // Only unfinished introductions get priority; recall keeps ordinary bucket weights.
+  const order = scheduler.policy.studyIntroductionOrder
+    ?? (scheduler.policy.studyNewWordsFirst ? 'first' : 'random');
+  const pendingIntros = order !== 'random'
+    ? scheduler.unstudiedPool.filter((word) => !progress.unstudied[word.id]?.introComplete)
+    : [];
   const counts = getBucketSchedulerBucketCountsForProgress(scheduler, progress);
+  const spacingWorkAvailable = counts.review > 0 || counts.learning > 0;
+  if (pendingIntros.length > 0 && (order === 'first'
+    || scheduler.introductionExercisesRemaining === 0 || !spacingWorkAvailable)) {
+    const rngState = lcg(scheduler.rngState);
+    return {
+      ...scheduler,
+      rngState: lcg(rngState),
+      activeUnit: { type: 'unstudied_intro', word: pendingIntros[randomIndex(rngState, pendingIntros.length)]! },
+    };
+  }
+
   if (counts.review === 0 && counts.learning === 0 && counts.unstudied === 0) {
     return {
       ...scheduler,
@@ -289,7 +365,8 @@ function recomputeActiveBucketSchedulerUnit(
     };
   }
 
-  const bucket = pickBucketSchedulerBucket(scheduler, progress, scheduler.rngState);
+  const bucket = pickBucketSchedulerBucket(scheduler, progress, scheduler.rngState,
+    pendingIntros.length > 0 && order === 'paced' ? ['review', 'learning'] : REVIEW_BUCKETS);
   const activeUnit = pickActiveBucketSchedulerUnit(scheduler, bucket, progress, lcg(scheduler.rngState));
 
   return {
@@ -303,8 +380,9 @@ function pickBucketSchedulerBucket(
   scheduler: BucketSessionScheduler,
   progress: BucketSchedulerProgress,
   rngState: number,
+  eligibleBuckets: BucketSchedulerBucket[] = REVIEW_BUCKETS,
 ): BucketSchedulerBucket {
-  const nonemptyBuckets = getNonemptyBucketSchedulerBuckets(scheduler, progress);
+  const nonemptyBuckets = getNonemptyBucketSchedulerBuckets(scheduler, progress).filter(bucket => eligibleBuckets.includes(bucket));
   const totalWeight = nonemptyBuckets.reduce((sum, bucket) => sum + Math.max(0, scheduler.policy.bucketWeights[bucket]), 0);
 
   if (totalWeight <= 0) {
@@ -360,8 +438,25 @@ function pickActiveBucketSchedulerUnit(
       bucket,
       word,
       skillId: pickOpenBucketWordSkill(progress, bucket, word.id, lcg(rngState)),
+      recognitionAttempts: bucket === 'unstudied'
+        ? (progress.unstudied[word.id] ?? createInitialBucketUnstudiedProgress()).recognitionAttempts : 0,
+      rehearsal: bucket === 'learning' ? scheduler.learningRehearsals?.[word.id]
+        : getUnstudiedRehearsal(scheduler, progress, word.id),
+      wordContent: bucket === 'learning' ? scheduler.learningContent?.[word.id]
+        : scheduler.unstudiedTeaching?.[word.id]?.content,
     }),
   };
+}
+
+function getUnstudiedRehearsal(
+  scheduler: BucketSessionScheduler, progress: BucketSchedulerProgress, wordId: string,
+): LearningRehearsalSnapshot | undefined {
+  const teaching = scheduler.unstudiedTeaching?.[wordId];
+  if (!teaching) return undefined;
+  const streak = progress.unstudied[wordId]?.successStreaks.production ?? 0;
+  const rehearsal = teaching.rehearsals[streak % teaching.rehearsals.length];
+  if (!rehearsal) throw new Error('Unstudied teaching must contain a rehearsal.');
+  return rehearsal;
 }
 
 function getBucketSchedulerCandidateWords(
@@ -416,15 +511,41 @@ function buildBucketWordStudyItem({
   bucket,
   word,
   skillId,
+  recognitionAttempts,
+  rehearsal,
+  wordContent,
 }: {
   bucket: 'learning' | 'unstudied';
   word: Word;
   skillId: ReviewStudySkillId;
+  recognitionAttempts: number;
+  rehearsal?: LearningRehearsalSnapshot;
+  wordContent?: WordContentDocument;
 }): SessionStudyItem {
   const item = buildWordLifecycleSessionStudyItems({ source: bucket, word })
     .find((candidate) => candidate.sampledSkillIds.length === 1 && candidate.sampledSkillIds[0] === skillId);
 
-  return item ?? assertLifecycleSessionStudyItemPresent(bucket, word.id, skillId);
+  if (!item) return assertLifecycleSessionStudyItemPresent(bucket, word.id, skillId);
+  if (rehearsal && (!rehearsal.packageId || !rehearsal.wordContentId
+    || rehearsal.contract.kind !== 'target_rehearsal'
+    || rehearsal.contract.wordId !== word.id || rehearsal.acceptedAnswers.length !== 1
+    || rehearsal.acceptedAnswers[0]?.wordId !== word.id
+    || rehearsal.acceptedAnswers[0]?.hanzi !== word.hanzi
+    || rehearsal.acceptedAnswers[0]?.traditional !== word.traditional)) {
+    throw new Error('Learning rehearsal must use the admitted word and target-only answer contract.');
+  }
+  if (wordContent && (wordContent.word.wordId !== word.id
+    || (rehearsal && rehearsal.wordContentId !== wordContent.id))) {
+    throw new Error('Learning content must belong to the admitted word.');
+  }
+  return { ...item,
+    ...(skillId === 'production' && rehearsal ? { rehearsal } : {}),
+    ...(wordContent ? { wordContent } : {}),
+    ...(skillId === 'recognition' && wordContent
+      ? { bootstrapReveal: bucket === 'unstudied'
+        ? selectSequentialBootstrapReveal(wordContent, recognitionAttempts)
+        : selectBootstrapReveal(wordContent, new Date()) } : {}),
+  };
 }
 
 export function createInitialBucketLearningProgress(): BucketSchedulerLearningProgress {
@@ -447,6 +568,7 @@ export function createInitialBucketLearningProgress(): BucketSchedulerLearningPr
 export function createInitialBucketUnstudiedProgress(): BucketSchedulerUnstudiedProgress {
   return {
     introComplete: false,
+    recognitionAttempts: 0,
     successStreaks: {
       recognition: 0,
       production: 0,
@@ -483,10 +605,10 @@ function isActiveBucketWord(
     return bucket === 'unstudied' && active.word.id === wordId;
   }
 
-  return active.bucket === bucket && active.item.targetWordId === wordId;
+  return active.bucket === bucket && !isPureCueSessionReviewItem(active.item) && active.item.targetWordId === wordId;
 }
 
-function assertActiveReviewHeadMatches(scheduler: BucketSessionScheduler, item: SessionStudyItem) {
+function assertActiveReviewHeadMatches(scheduler: BucketSessionScheduler, item: SessionReviewItem) {
   const head = scheduler.reviewQueue[0] ?? assertBucketSchedulerReviewActionPresent();
   if (head.sessionActionId !== item.sessionActionId) {
     throw new Error(

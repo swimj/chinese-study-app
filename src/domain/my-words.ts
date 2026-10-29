@@ -18,7 +18,7 @@ export type MyWordsResponse = {
 
 export const WORD_STAGE_LABELS: Record<MyWordsStatus, string> = {
   unstudied: 'Not yet studied',
-  learning: 'Learning',
+  learning: 'Practice',
   review: 'In review',
 };
 
@@ -104,7 +104,11 @@ export function shouldShowMyWordsCount(view: MyWordsView, recentLapses: boolean)
 }
 
 export function compareMyWords(left: MyWord, right: MyWord): number {
-  const stage = STAGE_SORT_RANK[left.word.status] - STAGE_SORT_RANK[right.word.status];
+  return compareWordBrowserEntries(left, right, STAGE_SORT_RANK);
+}
+
+export function compareWordBrowserEntries<Stage extends string>(left: WordBrowserEntry<Stage>, right: WordBrowserEntry<Stage>, ranks: Readonly<Record<Stage, number>>): number {
+  const stage = ranks[left.word.status] - ranks[right.word.status];
   if (stage !== 0) return stage;
   if (left.word.status === 'unstudied') {
     const a = left.word.pinyin.toLowerCase();
@@ -125,3 +129,8 @@ export function formatStudyDate(value: string | null): string {
     year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC',
   }).format(new Date(value));
 }
+
+export type WordBrowserEntry<Stage extends string = MyWordsStatus> = {
+  word: Pick<MyWord['word'], 'id' | 'hanzi' | 'traditional' | 'pinyin' | 'meaning' | 'meanings' | 'personalNotes'> & {status: Stage};
+  lastStudiedAt: string | null; personalUpdatedAt: string | null;
+};

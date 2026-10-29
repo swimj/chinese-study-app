@@ -1,24 +1,28 @@
 # Hosted observability
 
-This runbook owns the first production performance-observability surface for
-the hosted beta. The view is Fly's managed Grafana, separate from the learner
-application and protected by Fly organization access. The application exposes
-content-free Prometheus metrics only on the private metrics listener; it does
-not add an `/admin` route, a learner-facing page, or a public `/metrics`
-endpoint.
+This runbook helps operators configure private metrics, open the hosted
+performance dashboard, and investigate latency. Fly's managed Grafana is
+protected by Fly organization access, separate from the application's
+[operator panel](../operator-panel.md). The application exposes content-free
+Prometheus metrics on a private listener, without a public `/metrics` endpoint.
 
-The initial slice is deliberately small. It is intended to identify where
-hosted latency is being introduced and to provide a stable seam for adding
-deeper measurements after a hotspot is observed. It does not introduce a
-second telemetry vendor, distributed tracing, long-retention analytics, or
-large-scale alerting infrastructure.
+Start with a representative slow action and compare the dashboard's request,
+process, and storage measurements. Every request also records where its time
+went (SQLite, model provider, authentication, response serialization, and the
+remainder), so the first occurrence of a slow request leaves evidence without
+new instrumentation or a reproduction. These measurements do not provide
+distributed tracing, CPU profiles, or long-retention analytics.
 
 A separate operator **usage pulse** page (`#operator-usage`, gated by
 `APP_OPERATOR_CLERK_USER_IDS`) provides content-free cohort product-usage
-snapshots (DAU, sessions, spend, stash median, sparse scenario counts). The
+snapshots (DAU, sessions, new words, practice, review outcomes, acceptance totals,
+mean stash, total active time, and sparse scenario counts). The
 hosted smoke account is omitted from the inactive-learner count so a
 read-only deploy identity is not treated as a lapsed learner. That surface is
 not Grafana and does not replace this performance dashboard.
+
+For scheduled or ad hoc data investigation without a connected laptop, see
+[cloud production observation](cloud-production-observation.md).
 
 ## Data boundary
 
@@ -26,6 +30,11 @@ The metrics contain only bounded operational dimensions:
 
 - normalized Express route templates, HTTP methods, and status codes;
 - request latency, response sizes, and in-flight counts;
+- per-route request time split into the fixed phases `sqlite`, `provider`,
+  `auth`, `response`, and `other`, plus per-route SQLite statement and
+  slow-request counts;
+- process-wide SQLite time and statement counts split into `request` and
+  `background` context, and SQLite transaction hold time;
 - process CPU, memory, uptime, and event-loop delay;
 - bounded application version and Fly deployment identifier labels;
 - SQLite database and WAL file sizes;
@@ -48,6 +57,14 @@ stack and cause chain, and runtime release identity. Those details are
 deliberately retained because omitting them makes deterministic commit failures
 impossible to diagnose after the browser session is gone. Authorization headers,
 credentials, cookies, and unrelated request headers are never recorded.
+
+Slow-request log events are not metrics. A `request.slow` event records the
+route template, phase totals, statement count, transaction count, the five
+most expensive statements, and the server-derived learner id. Statements are
+identified by a fingerprint and a normalized prefix of their SQL text: quoted
+literals become `'?'`, numbers become `N`, and placeholder lists collapse, so
+bound parameter values, answers, and other learner content never appear.
+Statement fingerprints must not become metric labels.
 
 Fly adds its own `app`, `instance`, `host`, and `region` labels when scraping.
 Do not emit those labels from the application.
@@ -121,14 +138,17 @@ failed write of each UTC day, the application removes valid records older than
 30 days. Malformed lines are preserved for manual diagnosis rather than silently
 discarded.
 
-## Deploy and open the admin view
+<a id="deploy-and-open-the-admin-view"></a>
 
-Merging this change does not alter the running Fly app. The repository has no
-automatic Fly deployment workflow, and the ignored generated Fly configuration
-does not update when its tracked template changes.
+## Configure metrics and open Grafana
 
-When the operator is ready to activate observability, update
-`deploy/fly/.generated/fly.toml` from the tracked template while preserving its
+Merging metrics code or configuration changes does not deploy them. The
+repository has no automatic Fly deployment workflow, and the ignored generated
+Fly configuration does not update when its tracked template changes.
+
+To enable or verify metrics collection, compare
+`deploy/fly/.generated/fly.toml` with the
+[tracked template](../../deploy/fly/fly.template.toml). When updating it, preserve
 app-specific values, including the live Machine memory setting. Confirm it
 contains both `APP_METRICS_PORT = "9091"` and:
 
@@ -149,7 +169,8 @@ is not declared as an HTTP service, so the Fly proxy does not publish it. Fly's
 metrics collector scrapes it every 15 seconds. The learner application remains
 on port 5174.
 
-Deploy through the normal hosted release runbook. Then:
+Deploy configuration changes through the
+[hosted release runbook](hosted-beta-deployment.md). To open the dashboard:
 
 1. Sign in to [Fly managed Grafana](https://fly-metrics.net) with an account
    that has access to the Fly organization.
@@ -198,19 +219,90 @@ comparison.
 4. Compare response size by route. A large `/api/session-payload` or static
    response can make transfer and serialization visible even when handler work
    is otherwise healthy.
-5. Check CPU, event-loop delay, and memory over the same interval. High CPU or
+5. Read **Mean API time by phase**, **SQLite time per request by route**, and
+   **SQLite statements per request by route**. They show whether a slow route
+   spends its time in SQLite, an upstream provider, authentication, response
+   serialization, or `other` (handler JavaScript and waiting behind other work
+   on the event loop). Many statements at low per-statement cost point to
+   repeated per-item queries rather than one slow query.
+6. Check CPU, event-loop delay, and memory over the same interval. High CPU or
    event-loop delay indicates process saturation or blocking work. Low CPU and
    event-loop delay with one slow route points instead toward I/O, SQLite, or
-   an upstream provider.
-6. Check database/WAL size, volume use, and backup age for operational context.
+   an upstream provider. **SQLite event-loop load** shows whether background
+   work (workers, schedulers, and metrics reads) is occupying the single
+   SQLite connection and event loop while requests wait.
+7. Check database/WAL size, volume use, and backup age for operational context.
    Backup age approaching 3,600 seconds is already a stop-writes condition in
    the hosted deployment runbook. Treat any red availability indicator as an
    operational fault rather than a fresh backup.
 
-This first slice deliberately does not label individual SQL statements or
-provider calls. Once a repeatable slow route is identified, add a bounded
-timer around the relevant persistence or provider boundary rather than adding
-unbounded tracing everywhere.
+Metrics stop at the fixed phase labels. Individual statements appear only in
+slow-request events, described next.
+
+## Diagnose a slow request
+
+Every response carries a `Server-Timing` header with SQLite time and statement
+count, authentication time, provider wait, and total application time until
+headers were sent. Open the request in browser DevTools (**Network**, then
+**Timing**) to see the server's breakdown for that exact request.
+
+A request whose local time (wall time excluding provider waits) reaches
+`APP_SLOW_REQUEST_MS` (default 500) writes one compact JSON line to stdout:
+
+```bash
+fly logs --app <app-name> | grep '"request.slow"'
+```
+
+Read the event in this order:
+
+1. `phasesMs` splits `durationMs` into exclusive buckets. `other` is the
+   remainder: handler JavaScript plus time spent waiting for the event loop.
+2. `sqlite.statements` and `sqlite.topStatements` identify the statements
+   that consumed SQLite time. A high `count` on one fingerprint means a
+   per-item query inside a loop; a high `maxMs` means one expensive statement.
+   Run `EXPLAIN QUERY PLAN` on that statement against a restored copy.
+3. `sqlite.maxTransactionMs` is the longest transaction this request held.
+   Other writers wait for it.
+4. `otherSqliteMs` and `concurrentRequestsAtStart` indicate contention. A
+   large `otherSqliteMs` with a small own `sqlite` phase means other requests
+   or background work held the event loop while this request waited.
+5. `learnerId` correlates the event with a learner whose data volume may
+   explain the cost.
+
+Background SQLite work and work that continues after a response has been sent
+count toward the `background` context rather than toward any request.
+
+## Read recent request timings
+
+When a report arrives after the fact ("it was slow ten minutes ago"), read the
+in-memory flight recorder instead of waiting for a reproduction. While the
+metrics listener is enabled, the process keeps the last 2,000 request
+summaries (the same shape as a `request.slow` event, recorded for every
+request regardless of threshold) and one process sample every 10 seconds for
+the last hour:
+
+```bash
+fly ssh console --app <app-name> --command \
+  'npm run --silent hosted:inspect-request-timings -- --port=9091 --limit=20'
+```
+
+Narrow the read with `--route=/api/session-payload`, `--min-local-ms=250`, or
+`--since=<ISO timestamp>`. The output contains:
+
+- `routes`: per-route count, p50/p95/max of total and local time, mean phase
+  times, and statement counts across every matching retained request, slowest
+  p95 first;
+- `requests`: the newest matching summaries, up to `--limit`; and
+- `samples`: newest-first 10-second process samples with completed requests,
+  event-loop delay p95 and max, CPU percent of one core, memory, and SQLite
+  time inside requests and in background work.
+
+`oldestRetainedAt` shows how far back the request buffer reaches; on a busy
+Machine it may cover less than the sample hour. The recorder lives in process
+memory, so a restart or deploy clears it. Its endpoint,
+`/debug/request-timings` on the metrics port, answers only loopback callers
+because summaries include learner ids; reach it from `fly ssh console`, not
+from another Machine.
 
 ## Retention and follow-up threshold
 
@@ -222,8 +314,8 @@ true:
 - performance regressions need comparison across release windows longer than
   15 days;
 - an operational threshold needs unattended notification;
-- a route-level hotspot cannot be explained without bounded SQL/provider
-  spans; or
+- a slow request cannot be explained by its phase breakdown and statement
+  summary, for example CPU-bound JavaScript inside `other`; or
 - the managed dashboard cannot support the beta's routine diagnosis needs.
 
 If longer retention or alerting becomes necessary, federate the Fly Prometheus

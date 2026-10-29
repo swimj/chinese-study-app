@@ -1,24 +1,38 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
+  PURE_CUE_PROMOTION_RESULT_V2_WIRE_SCHEMA_NAME,
+  pureCuePromotionResultV2WireSchema,
   SESSION_REFLECTION_RESULT_V7_WIRE_SCHEMA_NAME,
   sessionReflectionResultV7WireSchema,
+  STAGED_REFLECTION_DIAGNOSIS_RESULT_V4_WIRE_SCHEMA_NAME,
+  stagedReflectionDiagnosisResultV4WireSchema,
 } from '../src/domain/reflection-result-schema.js';
 import type {
+  PureCuePromotionBundleV3,
+  PureCuePromotionResultV2Wire,
   SessionReflectionBundleV2,
+  SessionReflectionBundleV4,
   SessionReflectionResultV7,
   SessionReflectionResultV7Wire,
+  StagedReflectionDiagnosisResultV4Wire,
 } from '../src/domain/reflection.js';
 import {
   createLunaReflectionProvider,
+  createReflectionProvider,
   LUNA_REFLECTION_MODEL_CONFIG,
   LUNA_REFLECTION_PROMPT_VERSION,
+  PURE_CUE_PROMOTION_PROMPT_VERSION,
+  STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION,
   LunaReflectionProviderError,
 } from '../server/reflection/luna-provider.js';
 import {
+  createGlmFlashHighReflectionProvider,
   createGlmReflectionProvider,
+  GLM_FLASH_HIGH_REFLECTION_MODEL_CONFIG,
   GLM_REFLECTION_MODEL_CONFIG,
 } from '../server/reflection/glm-provider.js';
+import { REFLECTION_MODEL_ARMS } from '../server/reflection/model-arms.ts';
 import { PROVIDER_REQUEST_TIMEOUT_MS, type JsonValue } from '../server/llm/types.js';
 import { validateJsonSchema } from '../server/llm/json-schema-validator.js';
 import {
@@ -129,6 +143,101 @@ const validCanonicalResult: SessionReflectionResultV7 = {
   })),
 };
 
+const diagnosisBundle: SessionReflectionBundleV4 = {
+  ...bundle,
+  schemaVersion: 'session_reflection_bundle.v4',
+  items: bundle.items.map((item) => ({
+    ...item,
+    servedCue: { ...item.servedCue, supplement: null },
+  })),
+};
+
+const validStagedDiagnosisWireResult: StagedReflectionDiagnosisResultV4Wire = {
+  schemaVersion: 'staged_reflection_diagnosis_result.v4',
+  itemResults: [{
+    kind: 'ambiguous_pair',
+    itemId: 'item-1',
+    diagnosisTags: ['valid_or_near_valid_alternate'],
+    handoff: {
+      ambiguityReason: 'The response plausibly fits the original cue.',
+      targetSuppression: null,
+    },
+  }],
+};
+
+const promotionBundle: PureCuePromotionBundleV3 = {
+  schemaVersion: 'pure_cue_promotion_bundle.v3',
+  generatedAt: bundle.generatedAt,
+  sourceSessionId: bundle.session.sessionId,
+  studyProfile: bundle.session.studyProfile,
+  items: [{
+    itemId: 'item-1',
+    sourceAttemptId: 'attempt-1',
+    targetWord: bundle.items[0]!.targetWord,
+    responseWord: bundle.items[0]!.submittedWord!,
+    servedCue: { ...bundle.items[0]!.servedCue, supplement: null },
+    handoff: validStagedDiagnosisWireResult.itemResults[0]!.kind === 'ambiguous_pair'
+      ? validStagedDiagnosisWireResult.itemResults[0]!.handoff
+      : { ambiguityReason: '', targetSuppression: null },
+    promotionEvidence: {
+      diagnosisTags: ['production_cue_overloaded'],
+      words: [{
+        wordId: 'word-1',
+        activeProductionCues: [{
+          cueId: 'cue-1',
+          taskId: 'production-task:word-1:default_production',
+          cueType: 'definition_gloss',
+          text: 'to know',
+          acceptedWordIds: ['word-1', 'word-2'],
+        }],
+      }, {
+        wordId: 'word-2',
+        activeProductionCues: [{
+          cueId: 'cue-2',
+          taskId: 'production-task:word-2:default_production',
+          cueType: 'minimal_context',
+          text: 'to recognize a person',
+          acceptedWordIds: ['word-2'],
+        }],
+      }],
+      intersectingPureCues: [],
+    },
+  }],
+};
+
+const validPromotionWireResult: PureCuePromotionResultV2Wire = {
+  schemaVersion: 'pure_cue_promotion_result.v2',
+  itemResults: [{
+    itemId: 'item-1',
+    decision: {
+      kind: 'reconcile',
+      rationale: 'The shared elicitation is useful and the remaining cue can stay distinctive.',
+      learnerExplanation: 'This proposes a shared cue for the bounded overlap and keeps the distinctive cue; no change has been applied yet.',
+      operation: {
+        sourceAttemptFairness: 'fair',
+        destination: {
+          kind: 'create',
+          stimulus: 'to know or recognize',
+          axisNote: 'General knowledge versus recognizing a person.',
+          teachingNote: 'Both words fit this exercise; their other uses differ.',
+        },
+        wordPlans: [{
+          wordId: 'word-1',
+          deactivateCueIds: ['cue-1'],
+          distinctiveCueDrafts: [],
+        }, {
+          wordId: 'word-2',
+          deactivateCueIds: [],
+          distinctiveCueDrafts: [{
+            cueType: 'minimal_context',
+            text: 'Recognize a person you have met.',
+          }],
+        }],
+      },
+    },
+  }],
+};
+
 function responseEnvelope(
   content: string,
   overrides: Record<string, JsonValue> = {},
@@ -185,6 +294,113 @@ async function expectProviderError(
 }
 
 describe('production Luna reflection provider', () => {
+  function appendItemCopy(items: Array<{ itemId: string }>, itemId: string) {
+    const copy = structuredClone(items[0]!);
+    copy.itemId = itemId;
+    items.push(copy);
+  }
+
+  for (const flow of ['legacy', 'diagnosis', 'promotion'] as const) {
+    function aliasFixture() {
+      const evidence = structuredClone(flow === 'legacy' ? bundle
+        : flow === 'diagnosis' ? diagnosisBundle : promotionBundle);
+      const wire = structuredClone(flow === 'legacy' ? validWireResult
+        : flow === 'diagnosis' ? validStagedDiagnosisWireResult : validPromotionWireResult);
+      evidence.items[0]!.itemId = 'cw:窘境:jiǒng_jìng';
+      wire.itemResults[0]!.itemId = 'cw:窘境:jiǒng_jing';
+      return { evidence, wire };
+    }
+
+    function generateAliasFixture({ evidence, wire }: ReturnType<typeof aliasFixture>) {
+      const provider = createLunaReflectionProvider({
+        environment: { OPENAI_API_KEY: 'unit-test-secret' },
+        systemPrompt: 'prompt', diagnosisSystemPrompt: 'prompt', promotionSystemPrompt: 'prompt',
+        fetchImplementation: capturingFetch(responseEnvelope(JSON.stringify(wire)), []),
+      });
+      if (flow === 'legacy') return provider.generate(evidence as SessionReflectionBundleV2);
+      if (flow === 'diagnosis') return provider.generateDiagnosis(evidence as SessionReflectionBundleV4);
+      return provider.generatePromotion!(evidence as PureCuePromotionBundleV3);
+    }
+
+    test(`${flow} resolves a unique tone-insensitive provider item alias without changing evidence`, async () => {
+      for (const alias of ['cw:窘境:jiǒng_jing', 'cw:窘境:JIONG3 JING4', 'cw:窘境:jiǒng_jìng'.normalize('NFD')]) {
+        const fixture = aliasFixture();
+        fixture.wire.itemResults[0]!.itemId = alias;
+        const before = structuredClone(fixture);
+        const generated = await generateAliasFixture(fixture);
+        assert.equal(generated.result.itemResults[0]!.itemId, 'cw:窘境:jiǒng_jìng');
+        assert.deepEqual(fixture, before);
+      }
+    });
+
+    test(`${flow} rejects unresolved aliases with different source, Hanzi, syllables, or boundaries`, async () => {
+      for (const alias of ['other:窘境:jiǒng_jing', 'cw:困境:jiǒng_jing', 'cw:窘境:jiǒng_jin', 'cw:窘境:jiongjing', 'unknown-item']) {
+        const fixture = aliasFixture();
+        fixture.wire.itemResults[0]!.itemId = alias;
+        const error = await expectProviderError(generateAliasFixture(fixture), 'domain_contract_invalid');
+        assert.ok(error.issueCount > 0);
+      }
+    });
+
+    test(`${flow} preserves the pinyin distinction between u and ü`, async () => {
+      const fixture = aliasFixture();
+      fixture.evidence.items[0]!.itemId = 'cw:绿境:lǜ_jìng';
+      fixture.wire.itemResults[0]!.itemId = 'cw:绿境:lu_jing';
+      await expectProviderError(generateAliasFixture(fixture), 'domain_contract_invalid');
+      fixture.wire.itemResults[0]!.itemId = 'cw:绿境:lü_jing';
+      const generated = await generateAliasFixture(fixture);
+      assert.equal(generated.result.itemResults[0]!.itemId, fixture.evidence.items[0]!.itemId);
+    });
+
+    test(`${flow} rejects ambiguous aliases but gives exact IDs precedence`, async () => {
+      const fixture = aliasFixture();
+      const secondId = 'cw:窘境:jiǒng_jīng';
+      appendItemCopy(fixture.evidence.items, secondId);
+      appendItemCopy(fixture.wire.itemResults, secondId);
+      await expectProviderError(generateAliasFixture(fixture), 'domain_contract_invalid');
+
+      fixture.wire.itemResults[0]!.itemId = fixture.evidence.items[0]!.itemId;
+      const generated = await generateAliasFixture(fixture);
+      assert.deepEqual(generated.result.itemResults.map((item) => item.itemId), fixture.evidence.items.map((item) => item.itemId));
+    });
+
+    test(`${flow} still rejects duplicate results after alias resolution`, async () => {
+      const fixture = aliasFixture();
+      appendItemCopy(fixture.wire.itemResults, fixture.evidence.items[0]!.itemId);
+      await expectProviderError(generateAliasFixture(fixture), 'domain_contract_invalid');
+    });
+  }
+
+  test('item alias resolution does not loosen operation wordId validation', async () => {
+    const evidence = structuredClone(bundle);
+    const canonicalId = 'cw:窘境:jiǒng_jìng';
+    const alias = 'cw:窘境:jiǒng_jing';
+    evidence.items[0]!.itemId = canonicalId;
+    evidence.items[0]!.targetWord = {
+      wordId: canonicalId, hanzi: '窘境', pinyin: 'jiǒng jìng', meanings: ['predicament'],
+    };
+    evidence.items[0]!.servedCue.acceptedWordIds = [canonicalId];
+    const wire = structuredClone(validWireResult);
+    wire.itemResults[0]!.itemId = alias;
+    const operation = wire.itemResults[0]!.proposals[0]!.operation;
+    assert.equal(operation.kind, 'repair_production_cue');
+    if (operation.kind !== 'repair_production_cue') throw new Error('Expected repair fixture');
+    operation.wordId = canonicalId;
+    const change = operation.changes[0]!;
+    if (change.kind !== 'replace') throw new Error('Expected replacement fixture');
+    change.replacements[0]!.acceptedWordIds = [canonicalId, 'word-2'];
+    const generate = () => createLunaReflectionProvider({
+      environment: { OPENAI_API_KEY: 'unit-test-secret' }, systemPrompt: 'prompt',
+      fetchImplementation: capturingFetch(responseEnvelope(JSON.stringify(wire)), []),
+    }).generate(evidence);
+    const generated = await generate();
+    assert.equal(generated.result.itemResults[0]!.itemId, canonicalId);
+    assert.equal(generated.result.itemResults[0]!.proposals[0]!.operation.kind, 'repair_production_cue');
+    operation.wordId = alias;
+    const error = await expectProviderError(generate(), 'domain_contract_invalid');
+    assert.match(JSON.stringify(error.diagnostic?.issues), /wordId/);
+  });
+
   test('uses Z.AI JSON-object transport for GLM-5.3 Flash max', async () => {
     const capture: CapturedRequest[] = [];
     const provider = createGlmReflectionProvider({
@@ -200,11 +416,32 @@ describe('production Luna reflection provider', () => {
     assert.equal(request.headers.get('authorization'), 'Bearer unit-test-zai-secret');
     assert.equal(request.body.model, 'glm-5.3-flash');
     assert.equal(request.body.reasoning_effort, 'max');
-    assert.equal(request.body.max_tokens, 50_000);
+    assert.equal(request.body.max_tokens, 131_072);
     assert.deepEqual(request.body.response_format, { type: 'json_object' });
     assert.equal(generated.metadata.provider, 'zai');
     assert.equal(generated.metadata.modelConfig, 'glm-5.3-flash-max');
     assert.equal(GLM_REFLECTION_MODEL_CONFIG.timeoutMs, PROVIDER_REQUEST_TIMEOUT_MS);
+  });
+
+  test('uses Z.AI JSON-object transport for GLM-5.3 Flash high', async () => {
+    const capture: CapturedRequest[] = [];
+    const provider = createGlmFlashHighReflectionProvider({
+      environment: { ZAI_API_KEY: 'unit-test-zai-secret' },
+      systemPrompt: 'Production reflection system prompt.',
+      fetchImplementation: capturingFetch(responseEnvelope(JSON.stringify(validWireResult)), capture),
+    });
+
+    const generated = await provider.generate(bundle);
+
+    const request = capture[0]!;
+    assert.equal(request.url, 'https://api.z.ai/api/paas/v4/chat/completions');
+    assert.equal(request.body.model, 'glm-5.3-flash');
+    assert.equal(request.body.reasoning_effort, 'high');
+    assert.equal(request.body.max_tokens, 131_072);
+    assert.deepEqual(request.body.response_format, { type: 'json_object' });
+    assert.equal(generated.metadata.provider, 'zai');
+    assert.equal(generated.metadata.modelConfig, 'glm-5.3-flash-high');
+    assert.equal(GLM_FLASH_HIGH_REFLECTION_MODEL_CONFIG.timeoutMs, PROVIDER_REQUEST_TIMEOUT_MS);
   });
 
   test('sends the exact model, reasoning, auth, prompt, and strict V7 wire schema request', async () => {
@@ -285,6 +522,207 @@ describe('production Luna reflection provider', () => {
     assert.equal(serialized.includes('must-not-be-returned'), false);
   });
 
+  test('runs both staged contracts through the registered GPT-6 Sol high provider', async () => {
+    const arm = REFLECTION_MODEL_ARMS.find((entry) => entry.choice === 'openai:gpt-6-sol-high');
+    assert.ok(arm?.config);
+    for (const stage of ['diagnosis', 'promotion'] as const) {
+      const capture: CapturedRequest[] = [];
+      const wireResult = stage === 'diagnosis' ? validStagedDiagnosisWireResult : validPromotionWireResult;
+      const provider = createReflectionProvider(arm.config, {
+        environment: { OPENAI_API_KEY: 'unit-test-secret' },
+        fetchImplementation: capturingFetch(
+          responseEnvelope(JSON.stringify(wireResult), { model: 'gpt-6-sol' }),
+          capture,
+        ),
+      });
+      const generated = stage === 'diagnosis'
+        ? await provider.generateDiagnosis(diagnosisBundle)
+        : await provider.generatePromotion(promotionBundle);
+      assert.equal(capture.length, 1);
+      assert.equal(capture[0]!.url, 'https://api.openai.com/v1/chat/completions');
+      assert.equal(capture[0]!.body.model, 'gpt-6-sol');
+      assert.equal(capture[0]!.body.reasoning_effort, 'high');
+      assert.equal(capture[0]!.body.max_completion_tokens, 50_000);
+      assert.deepEqual(capture[0]!.body.response_format, {
+        type: 'json_schema',
+        json_schema: {
+          name: stage === 'diagnosis' ? STAGED_REFLECTION_DIAGNOSIS_RESULT_V4_WIRE_SCHEMA_NAME : PURE_CUE_PROMOTION_RESULT_V2_WIRE_SCHEMA_NAME,
+          strict: true,
+          schema: stage === 'diagnosis' ? stagedReflectionDiagnosisResultV4WireSchema : pureCuePromotionResultV2WireSchema,
+        },
+      });
+      assert.deepEqual(generated.result, stage === 'diagnosis' ? { ...wireResult, schemaVersion: 'staged_reflection_diagnosis_result.v3' } : wireResult);
+      assert.equal(generated.metadata.modelConfig, 'gpt-6-sol-high');
+      assert.equal(generated.metadata.providerModel, 'gpt-6-sol');
+    }
+  });
+
+  test('uses the separate strict promotion contract and returns the validated wire decision', async () => {
+    const capture: CapturedRequest[] = [];
+    const provider = createLunaReflectionProvider({
+      environment: { OPENAI_API_KEY: 'unit-test-secret' },
+      promotionSystemPrompt: 'Pure-cue promotion system prompt.',
+      fetchImplementation: capturingFetch(
+        responseEnvelope(JSON.stringify(validPromotionWireResult)),
+        capture,
+      ),
+    });
+
+    const generated = await provider.generatePromotion!(promotionBundle, {
+      clientRequestId: 'promotion-run-123',
+    });
+
+    assert.equal(capture.length, 1);
+    const request = capture[0]!;
+    assert.equal(request.headers.get('x-client-request-id'), 'promotion-run-123');
+    const { studyProfile: _profile, ...modelPromotionBundle } = promotionBundle;
+    assert.deepEqual(request.body.messages, [
+      { role: 'system', content: 'Pure-cue promotion system prompt.' },
+      { role: 'user', content: JSON.stringify(modelPromotionBundle) },
+    ]);
+    assert.deepEqual(request.body.response_format, {
+      type: 'json_schema',
+      json_schema: {
+        name: PURE_CUE_PROMOTION_RESULT_V2_WIRE_SCHEMA_NAME,
+        strict: true,
+        schema: pureCuePromotionResultV2WireSchema,
+      },
+    });
+    assert.deepEqual(generated.result, validPromotionWireResult);
+    assert.equal(generated.metadata.promptVersion, PURE_CUE_PROMOTION_PROMPT_VERSION);
+  });
+
+  test('uses the standalone staged diagnosis prompt and distinct strict result contract', async () => {
+    const capture: CapturedRequest[] = [];
+    const provider = createLunaReflectionProvider({
+      environment: { OPENAI_API_KEY: 'unit-test-secret' },
+      fetchImplementation: capturingFetch(
+        responseEnvelope(JSON.stringify(validStagedDiagnosisWireResult)),
+        capture,
+      ),
+    });
+
+    const generated = await provider.generateDiagnosis(diagnosisBundle, {
+      clientRequestId: 'diagnosis-run-123',
+    });
+
+    const request = capture[0]!;
+    assert.equal(request.headers.get('x-client-request-id'), 'diagnosis-run-123');
+    assert.deepEqual(request.body.response_format, {
+      type: 'json_schema',
+      json_schema: {
+        name: STAGED_REFLECTION_DIAGNOSIS_RESULT_V4_WIRE_SCHEMA_NAME,
+        strict: true,
+        schema: stagedReflectionDiagnosisResultV4WireSchema,
+      },
+    });
+    const messages = request.body.messages;
+    assert.ok(Array.isArray(messages));
+    const systemMessage = messages[0] as Record<string, JsonValue>;
+    assert.match(String(systemMessage.content), /^# Staged reflection diagnosis/);
+    assert.match(String(systemMessage.content), /studying Mandarin/);
+    assert.match(String(systemMessage.content), /replacementCues/);
+    assert.match(String(systemMessage.content), /`ambiguous_pair`/);
+    assert.doesNotMatch(String(systemMessage.content), /shared_axis|responseValidity|handoff\.axis/);
+    assert.match(String(systemMessage.content), /strong evocation, not proof that no other word could ever fit/);
+    const guidance = String(systemMessage.content).replace(/\s+/g, ' ');
+    assert.match(guidance, /`servedCue.text` is the production cue visible before answering/);
+    assert.match(guidance, /never to narrow the original cue, resolve its ambiguity, or justify rejecting an alternate answer/);
+    assert.match(guidance, /A correct answer shows successful recall of the intended word; it does not establish that the cue is a good production exercise/);
+    assert.match(guidance, /judge coherence as a production exercise/);
+    assert.match(guidance, /Reinforcement enriches an already adequate meaning/);
+    assert.doesNotMatch(String(systemMessage.content), /studyProfile|acceptedWordIds|cueId|fallback|history|restoration/);
+    const userMessage = messages[1] as Record<string, JsonValue>;
+    const modelInput = JSON.parse(String(userMessage.content));
+    assert.equal(modelInput.items[0].targetWord.wordId, diagnosisBundle.items[0]!.targetWord.wordId);
+    assert.deepEqual(modelInput.items[0].servedCue, {
+      cueType: diagnosisBundle.items[0]!.servedCue.cueType,
+      text: diagnosisBundle.items[0]!.servedCue.text,
+      supplement: null,
+    });
+    assert.doesNotMatch(String(userMessage.content), /"(?:studyProfile|cueId|taskId|sourceAttemptId|sessionActionId|acceptedWordIds|supplementId)"/);
+    assert.ok(diagnosisBundle.items[0]!.sourceAttemptId);
+    assert.equal(diagnosisBundle.session.studyProfile, 'mandarin');
+    assert.equal(String(systemMessage.content).includes('Every known visible word'), false);
+    assert.deepEqual(generated.result, { ...validStagedDiagnosisWireResult, schemaVersion: 'staged_reflection_diagnosis_result.v3' });
+    assert.equal(generated.metadata.promptVersion, STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION);
+  });
+
+  test('refuses non-Mandarin staged input before any model call', async () => {
+    const capture: CapturedRequest[] = [];
+    const provider = createLunaReflectionProvider({
+      environment: { OPENAI_API_KEY: 'unit-test-secret' },
+      fetchImplementation: capturingFetch(responseEnvelope('{}'), capture),
+    });
+    const french = structuredClone(diagnosisBundle);
+    french.session.studyProfile = 'french';
+    await assert.rejects(provider.generateDiagnosis(french), /supports Mandarin only/);
+    await assert.rejects(provider.generatePromotion({ ...promotionBundle, studyProfile: 'french' }), /supports Mandarin only/);
+    assert.equal(capture.length, 0);
+  });
+
+  test('projects second-opinion content without losing supplements or changing retained evidence', async () => {
+    const capture: CapturedRequest[] = [];
+    const item = structuredClone(diagnosisBundle.items[0]!);
+    item.learnerRequestedReview = true;
+    item.servedCue.bootstrapReveal = {
+      contentId: 'private-content', useId: 'private-use', exampleId: 'private-example',
+      englishFrame: 'A bootstrap frame', exampleSentence: '这是目标。', exampleTranslation: 'This is a goal.',
+    };
+    item.sessionNote = 'Please explain this usage.';
+    item.servedCue.supplement = {
+      supplementId: 'private-supplement', englishFrame: 'An everyday use',
+      exampleSentence: '目标', exampleTranslation: 'A goal',
+    };
+    const evidence = {
+      schemaVersion: 'curated_reflection_diagnosis_bundle.v2' as const,
+      generatedAt: diagnosisBundle.generatedAt,
+      studyProfile: 'mandarin' as const,
+      items: [item],
+    };
+    const before = structuredClone(evidence);
+    const provider = createLunaReflectionProvider({
+      environment: { OPENAI_API_KEY: 'unit-test-secret' },
+      fetchImplementation: capturingFetch(responseEnvelope(JSON.stringify(validStagedDiagnosisWireResult)), capture),
+    });
+    await provider.generateDiagnosis(evidence);
+    const messages = capture[0]!.body.messages as Array<Record<string, JsonValue>>;
+    const projected = JSON.parse(String(messages[1]!.content));
+    assert.deepEqual(projected.items[0].servedCue.supplement, {
+      englishFrame: 'An everyday use', exampleSentence: '目标', exampleTranslation: 'A goal',
+    });
+    assert.deepEqual(projected.items[0].postRevealWordContent, {
+      englishFrame: 'A bootstrap frame', exampleSentence: '这是目标。', exampleTranslation: 'This is a goal.',
+    });
+    assert.equal(projected.items[0].servedCue.bootstrapReveal, undefined);
+    assert.equal(projected.items[0].servedCue.text, item.servedCue.text);
+    assert.doesNotMatch(JSON.stringify(projected), /private-content|private-use|private-example/);
+    assert.equal(projected.items[0].learnerRequestedReview, true);
+    assert.equal(projected.items[0].sessionNote, item.sessionNote);
+    assert.deepEqual(projected.items[0].submittedWord, item.submittedWord);
+    assert.equal(projected.items[0].rawResponse, item.rawResponse);
+    assert.equal(projected.items[0].source, undefined);
+    assert.equal(projected.items[0].responseKind, 'matched_known_word');
+    assert.doesNotMatch(JSON.stringify(projected), /"(?:studyProfile|cueId|taskId|sourceAttemptId|acceptedWordIds|supplementId)"/);
+    assert.deepEqual(evidence, before);
+
+    item.responseKind = null;
+    const correctCapture: CapturedRequest[] = [];
+    const correctProvider = createLunaReflectionProvider({
+      environment: { OPENAI_API_KEY: 'unit-test-secret' },
+      fetchImplementation: capturingFetch(
+        responseEnvelope(JSON.stringify(validStagedDiagnosisWireResult)),
+        correctCapture,
+      ),
+    });
+    await assert.rejects(correctProvider.generateDiagnosis(evidence));
+    const correctMessages = correctCapture[0]!.body.messages as Array<Record<string, JsonValue>>;
+    const correctInput = JSON.parse(String(correctMessages[1]!.content));
+    assert.equal(correctInput.items[0].responseKind, 'correct');
+    assert.equal(correctInput.items[0].source, undefined);
+    assert.equal(evidence.items[0]!.responseKind, null);
+  });
+
   test('retains a non-negative provider-reported request cost', async () => {
     const provider = createLunaReflectionProvider({
       environment: { OPENAI_API_KEY: 'unit-test-secret' },
@@ -356,7 +794,11 @@ describe('production Luna reflection provider', () => {
     const exposed = `${error.message}\n${JSON.stringify(error)}`;
     assert.equal(exposed.includes('super-secret-value'), false);
     assert.equal(exposed.includes('raw-upstream-private-response'), false);
-    assert.equal(error.issueCount, 0);
+    assert.equal(error.issueCount, 1);
+    assert.equal(error.diagnostic?.issues[0]?.code, 'provider_http');
+    assert.match(error.diagnostic?.issues[0]?.message ?? '', /HTTP 500/);
+    assert.equal(JSON.stringify(error.diagnostic).includes('super-secret-value'), false);
+    assert.equal(error.cause, undefined);
     assert.ok(error.clientRequestId);
     assert.deepEqual(diagnostics, [{
       at: diagnostics[0]?.at,
@@ -375,6 +817,36 @@ describe('production Luna reflection provider', () => {
     const serializedDiagnostic = JSON.stringify(diagnostics);
     assert.equal(serializedDiagnostic.includes('super-secret-value'), false);
     assert.equal(serializedDiagnostic.includes('raw-upstream-private-response'), false);
+  });
+
+  test('a throwing diagnostic sink preserves the provider failure without logging private details', async () => {
+    const warnings: string[] = [];
+    const original = console.error;
+    console.error = (value: string) => warnings.push(value);
+    try {
+      const provider = createLunaReflectionProvider({
+        environment: { OPENAI_API_KEY: 'secret' },
+        systemPrompt: 'prompt', diagnosisSystemPrompt: 'prompt', promotionSystemPrompt: 'prompt',
+        fetchImplementation: capturingFetch({ error: 'private upstream response' }, [], 503),
+        diagnosticSink: { record() { throw new Error('private sink failure'); } },
+      });
+      for (const invoke of [
+        () => provider.generate(bundle),
+        () => provider.generateDiagnosis(diagnosisBundle),
+        () => provider.generatePromotion!(promotionBundle),
+      ]) {
+        const error = await expectProviderError(invoke(), 'upstream_failure');
+        assert.equal(error.diagnostic?.issues[0]?.code, 'provider_http');
+        assert.match(error.diagnostic?.issues[0]?.message ?? '', /HTTP 503/);
+      }
+      assert.deepEqual(warnings.map((warning) => JSON.parse(warning)), [
+        { event: 'reflection.provider_diagnostic_write_failed' },
+        { event: 'reflection.provider_diagnostic_write_failed' },
+        { event: 'reflection.provider_diagnostic_write_failed' },
+      ]);
+    } finally {
+      console.error = original;
+    }
   });
 
   test('records transport error categories and codes without messages or stacks', () => {
@@ -421,6 +893,8 @@ describe('production Luna reflection provider', () => {
 
     const error = await expectProviderError(provider.generate(bundle), 'output_truncated');
     assert.equal(JSON.stringify(error).includes('partial-response'), false);
+    assert.equal(error.diagnostic?.issues[0]?.code, 'output_truncated');
+    assert.match(error.diagnostic?.issues[0]?.message ?? '', /length/);
     assert.deepEqual(error.metadata, {
       provider: 'openai',
       modelConfig: 'gpt-5.6-luna-high',
@@ -445,7 +919,7 @@ describe('production Luna reflection provider', () => {
       code: LunaReflectionProviderError['code'];
       hasIssues: boolean;
     }> = [
-      { content: '{not-json', code: 'invalid_json', hasIssues: false },
+      { content: '{not-json', code: 'invalid_json', hasIssues: true },
       {
         content: JSON.stringify({
           schemaVersion: 'session_reflection_result.v7',
@@ -478,6 +952,11 @@ describe('production Luna reflection provider', () => {
       const error = await expectProviderError(provider.generate(bundle), testCase.code);
       assert.equal(error.issueCount > 0, testCase.hasIssues);
       assert.equal(JSON.stringify(error).includes(testCase.content), false);
+      if (testCase.code === 'invalid_json') {
+        assert.ok(error.cause instanceof SyntaxError);
+        assert.equal(error.diagnostic?.issues[0]?.message, error.cause.message);
+        assert.equal(error.diagnostic?.fullRejectedOutput, testCase.content);
+      }
       if (testCase.code === 'schema_invalid') {
         assert.match(error.clientRequestId ?? '', /^[0-9a-f-]{36}$/);
         assert.equal(error.diagnostic?.phase, 'structural_schema');
@@ -507,6 +986,8 @@ describe('production Luna reflection provider', () => {
     assert.equal(error.diagnostic?.rejectedOutput?.includes('sk-secret-value-123456789'), true);
     assert.ok((error.diagnostic?.rejectedOutput?.length ?? 0) <= 4_020);
     assert.match(error.diagnostic?.rejectedOutput ?? '', /truncated/);
+    assert.ok((error.diagnostic?.fullRejectedOutput?.length ?? 0) > 10_000);
+    assert.equal(JSON.stringify(error.diagnostic).includes('fullRejectedOutput'), false);
   });
 
   test('loads the fixed active production prompt when no prompt is injected', async () => {

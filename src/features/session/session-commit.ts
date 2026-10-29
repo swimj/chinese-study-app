@@ -4,11 +4,12 @@ import {
   completeUnstudiedSession,
   recordAcceptedContrastSelectionAttempt,
   recordAcceptedReviewAttemptBatch,
+  recordPureCueAssessment,
 } from '../../services/api';
 
 export type DeferredSessionCommit = Exclude<BucketSessionCommitIntent, { type: 'none' }>;
 
-export async function applySessionCommit(commit: DeferredSessionCommit) {
+export async function applySessionCommit(commit: DeferredSessionCommit, sessionId?: string) {
   switch (commit.type) {
     case 'commit-review-action-session': {
       await recordAcceptedReviewAttemptBatch({
@@ -22,6 +23,7 @@ export async function applySessionCommit(commit: DeferredSessionCommit) {
           sampledSkillIds: commit.sampledSkillIds,
           failureCount: commit.failureCount,
           terminalRating: commit.terminalRating,
+          reinforcementSkipped: commit.reinforcementSkipped,
         },
       });
       return;
@@ -44,11 +46,21 @@ export async function applySessionCommit(commit: DeferredSessionCommit) {
         },
       });
       return;
+    case 'commit-pure-cue-production-session':
+      await recordPureCueAssessment({
+        sessionId: commit.sessionId,
+        attemptId: commit.attemptId,
+        snapshotId: commit.snapshotId,
+        reinforcementSkipped: commit.reinforcementSkipped,
+        sessionActionId: commit.sessionActionId,
+        events: commit.events,
+      });
+      return;
     case 'commit-learning-word-session':
-      await completeLearningSession(commit.wordId, commit.success);
+      await completeLearningSession(commit.wordId, commit.success, sessionId);
       return;
     case 'commit-unstudied-word-session':
-      await completeUnstudiedSession(commit.wordId);
+      await completeUnstudiedSession(commit.wordId, sessionId);
       return;
   }
 }

@@ -1,5 +1,9 @@
+import { SessionStartCard } from '../components/SessionStartCard';
+export { SettingsGearIcon } from '../components/SessionStartCard';
 import { useEffect, useRef, useState } from 'react';
+import { DEFAULT_INTRODUCTION_SPACING, MAX_INTRODUCTION_SPACING, isStudyIntroductionOrder, type StudyIntroductionOrder } from '../domain/introduction-order';
 import type { BackendStatus, UnstudiedAdmissionSource } from '../services/api';
+import type { CharacterPresentation, SentenceCharacterPresentation } from '../domain/card-characters';
 import type { SessionPrefetchState } from '../features/session/session-prefetch';
 import type { SessionPhase } from '../lib/session-state';
 import { getReviewFailureRatePeriods } from '../lib/review-failure-rates';
@@ -8,6 +12,8 @@ import { DietNudgePrompt } from '../features/diet/DietNudgePrompt';
 
 export function HomeOverviewPanel({
   backendStatus,
+  compact = false,
+  guideToSettings = false,
   sessionPrefetch,
   sessionStarted,
   sessionPhase,
@@ -16,13 +22,14 @@ export function HomeOverviewPanel({
   displayedSessionItemCount,
   sessionSettingsOpen,
   sessionSettingsSaving,
-  dietIntakeStartBlocked,
   onToggleSessionSettings,
   onStartSession,
   onEndSession,
   onNudgeDiet,
 }: {
   backendStatus: BackendStatus | null;
+  compact?: boolean;
+  guideToSettings?: boolean;
   sessionPrefetch: SessionPrefetchState;
   sessionStarted: boolean;
   sessionPhase: SessionPhase | null;
@@ -31,7 +38,6 @@ export function HomeOverviewPanel({
   displayedSessionItemCount: number;
   sessionSettingsOpen: boolean;
   sessionSettingsSaving: boolean;
-  dietIntakeStartBlocked: boolean;
   onToggleSessionSettings: () => void;
   onStartSession: () => void;
   onEndSession: () => void;
@@ -40,37 +46,86 @@ export function HomeOverviewPanel({
   const prefetchedSessionItemCount = !sessionStarted && sessionPrefetch.status === 'ready'
     ? displayedSessionItemCount
     : null;
-  const canStartSession = sessionStarted || (prefetchedSessionItemCount ?? 0) > 0;
+  const failureRatePeriods = getReviewFailureRatePeriods(backendStatus?.reviewFailureRateDays ?? []);
+  const preparationPending = sessionPrefetch.payload?.preparation?.pending === true;
+  const entryWaiting = sessionPrefetch.status === 'pending';
+  const canStartSession = sessionStarted || sessionPrefetch.status === 'ready' || sessionPrefetch.status === 'error';
+
+  const metrics = <>
+      <section className="failure-rate-section" aria-label="Exercise failure rate">
+        <h3>Exercise failure rate</h3>
+        <table className="overview-rate-table" aria-label="Exercise rates by period">
+          <thead>
+            <tr>
+              <td />
+              {failureRatePeriods.map((period) => <th key={period.days} scope="col">{period.days}-day</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            <tr className="overview-rate-primary">
+              <th scope="row">Adjusted failure</th>
+              {failureRatePeriods.map((period) => <td key={period.days}>{formatFailureRate(period.adjustedFailureRate)}</td>)}
+            </tr>
+            <tr>
+              <th scope="row">Compensation</th>
+              {failureRatePeriods.map((period) => <td key={period.days}>{formatFailureRate(period.compensationRate)}</td>)}
+            </tr>
+          </tbody>
+        </table>
+        <details className="overview-rate-details">
+          <summary>Rate details</summary>
+          <table className="overview-rate-table" aria-label="Exercise counts by period">
+            <thead>
+              <tr>
+                <td />
+                {failureRatePeriods.map((period) => <th key={period.days} scope="col">{period.days}-day</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th scope="row">Recorded failures</th>
+                {failureRatePeriods.map((period) => <td key={period.days}>{period.failedCount}</td>)}
+              </tr>
+              <tr>
+                <th scope="row">Compensations</th>
+                {failureRatePeriods.map((period) => <td key={period.days}>{period.compensatedCount}</td>)}
+              </tr>
+              <tr>
+                <th scope="row">Exercises</th>
+                {failureRatePeriods.map((period) => <td key={period.days}>{period.completedCount}</td>)}
+              </tr>
+            </tbody>
+          </table>
+          <p>Adjusted failure subtracts compensations from recorded failures, down to zero. Both rates divide by completed exercises.</p>
+          <p>Compensations count when applied and may correct earlier failures. Periods include today, in UTC.</p>
+        </details>
+      </section>
+      <section className="failure-rate-section" aria-label="Active study time">
+        <h3>Active study time</h3>
+        <div className="failure-rate-list">
+          <ActiveTimeMetric label="Today" value={backendStatus?.sessionActiveTimeMetrics.todayActiveDurationMs ?? 0} />
+          <ActiveTimeMetric label="3-day average" value={backendStatus?.sessionActiveTimeMetrics.rolling3DayAverageActiveDurationMs ?? 0} />
+          <ActiveTimeMetric label="7-day average" value={backendStatus?.sessionActiveTimeMetrics.rolling7DayAverageActiveDurationMs ?? 0} />
+        </div>
+      </section>
+  </>;
 
   return (
-    <div className="panel">
+    <div className={`panel home-overview${compact ? ' is-compact' : ''}`}>
       {!sessionStarted ? (
-        <div className={`session-start-shell${sessionSettingsOpen ? ' is-settings-open' : ''}`}>
-          <button
-            type="button"
-            className="session-start-card"
-            onClick={onStartSession}
-            disabled={sessionSettingsOpen || sessionLoading || dietIntakeStartBlocked || !canStartSession}
-          >
-            <span className="session-start-card-label">
-              {sessionLoading || dietIntakeStartBlocked ? 'Preparing session...' : 'Start session'}
-            </span>
-            <span className="session-start-card-helper">
-              words: {prefetchedSessionItemCount ?? '...'}
-            </span>
-          </button>
-          <button
-            type="button"
-            className="session-settings-gear"
-            aria-label="Session settings"
-            aria-expanded={sessionSettingsOpen}
-            aria-controls="session-settings-panel"
-            disabled={sessionSettingsSaving}
-            onClick={onToggleSessionSettings}
-          >
-            <SettingsGearIcon />
-          </button>
-        </div>
+        <SessionStartCard
+          disabled={sessionSettingsOpen || sessionLoading || !canStartSession}
+          onStart={onStartSession} settingsOpen={sessionSettingsOpen} settingsSaving={sessionSettingsSaving}
+          guideToSettings={guideToSettings} onToggleSettings={onToggleSessionSettings}
+          settingsTitle={guideToSettings ? 'Make it yours: explore session settings' : 'Session settings'}
+          label={sessionLoading || entryWaiting ? 'Preparing session...'
+            : prefetchedSessionItemCount === 0 ? 'Check again' : 'Start session'}
+          helper={entryWaiting ? 'Getting your study material ready. This may take about 30 seconds.'
+            : preparationPending && prefetchedSessionItemCount === 0
+              ? 'Preparing your session. You can check again shortly.'
+              : prefetchedSessionItemCount === 0 ? 'No study material is ready right now. You can check again or return later.'
+                : <>{prefetchedSessionItemCount ?? '...'} study items ready</>}
+        />
       ) : (
         <div className="stack">
           <div className="stat-card">
@@ -99,25 +154,7 @@ export function HomeOverviewPanel({
           ) : null}
         </div>
       )}
-      <section className="failure-rate-section" aria-label="Review failure rate">
-        <h3>Review failure rate</h3>
-        <div className="failure-rate-list">
-          {getReviewFailureRatePeriods(backendStatus?.reviewFailureRateDays ?? []).map((period) => (
-            <div key={period.days} className="failure-rate-period">
-              <span>{period.days}-day</span>
-              <strong>{formatFailureRate(period.failureRate)}</strong>
-            </div>
-          ))}
-        </div>
-      </section>
-      <section className="failure-rate-section" aria-label="Active study time">
-        <h3>Active study time</h3>
-        <div className="failure-rate-list">
-          <ActiveTimeMetric label="Today" value={backendStatus?.sessionActiveTimeMetrics.todayActiveDurationMs ?? 0} />
-          <ActiveTimeMetric label="3-day average" value={backendStatus?.sessionActiveTimeMetrics.rolling3DayAverageActiveDurationMs ?? 0} />
-          <ActiveTimeMetric label="7-day average" value={backendStatus?.sessionActiveTimeMetrics.rolling7DayAverageActiveDurationMs ?? 0} />
-        </div>
-      </section>
+      {compact ? null : metrics}
     </div>
   );
 }
@@ -131,7 +168,12 @@ export function SessionSettingsPanel({
   backendStatus: BackendStatus | null;
   onSaveSessionSettings: (settings: {
     dailyNewWordLimit?: number;
+    studyIntroductionOrder?: StudyIntroductionOrder;
+    studyIntroductionSpacing?: number;
     unstudiedAdmissionSource?: UnstudiedAdmissionSource;
+    characterPresentation?: CharacterPresentation;
+    sentenceCharacterPresentation?: SentenceCharacterPresentation;
+    debriefInterests?: string;
   }) => Promise<void>;
   onSavingChange: (saving: boolean) => void;
   onClose: () => void;
@@ -143,17 +185,41 @@ export function SessionSettingsPanel({
       ? ''
       : String(backendStatus.dailyNewWordLimit)
   ));
+  const [introductionOrderDraft, setIntroductionOrderDraft] = useState<StudyIntroductionOrder>(
+    backendStatus?.studyIntroductionOrder ?? (backendStatus?.studyNewWordsFirst ? 'first' : 'random'),
+  );
+  const [introductionSpacingDraft, setIntroductionSpacingDraft] = useState(
+    backendStatus?.studyIntroductionSpacing ?? DEFAULT_INTRODUCTION_SPACING,
+  );
   const [sourceDraft, setSourceDraft] = useState<UnstudiedAdmissionSource>(
     backendStatus?.unstudiedAdmissionSource ?? 'mixed',
   );
+  const [presentationDraft, setPresentationDraft] = useState<CharacterPresentation>(
+    backendStatus?.characterPresentation ?? 'simplified',
+  );
+  const [sentencePresentationDraft, setSentencePresentationDraft] = useState<SentenceCharacterPresentation>(
+    backendStatus?.sentenceCharacterPresentation ?? 'simplified',
+  );
+  const [interestsDraft, setInterestsDraft] = useState(backendStatus?.debriefInterests ?? '');
   const [limitSaving, setLimitSaving] = useState(false);
   const [limitError, setLimitError] = useState<string | null>(null);
 
   const committedLimit = backendStatus?.dailyNewWordLimit ?? null;
+  const committedIntroductionOrder = backendStatus?.studyIntroductionOrder ?? (backendStatus?.studyNewWordsFirst ? 'first' : 'random');
+  const committedIntroductionSpacing = backendStatus?.studyIntroductionSpacing ?? DEFAULT_INTRODUCTION_SPACING;
+  const introductionOrderDirty = introductionOrderDraft !== committedIntroductionOrder;
+  const introductionSpacingDirty = introductionSpacingDraft !== committedIntroductionSpacing;
   const committedSource = backendStatus?.unstudiedAdmissionSource ?? 'mixed';
+  const committedPresentation = backendStatus?.characterPresentation ?? 'simplified';
+  const committedSentencePresentation = backendStatus?.sentenceCharacterPresentation ?? 'simplified';
   const limitDirty = committedLimit !== null && limitDraft.trim() !== String(committedLimit);
   const sourceDirty = sourceDraft !== committedSource;
-  const settingsDirty = limitDirty || sourceDirty;
+  const presentationDirty = backendStatus?.studyProfile === 'mandarin' && presentationDraft !== committedPresentation;
+  const sentencePresentationDirty = backendStatus?.studyProfile === 'mandarin'
+    && sentencePresentationDraft !== committedSentencePresentation;
+  const committedInterests = backendStatus?.debriefInterests ?? '';
+  const interestsDirty = backendStatus?.studyProfile === 'mandarin' && interestsDraft !== committedInterests;
+  const settingsDirty = introductionOrderDirty || introductionSpacingDirty || limitDirty || sourceDirty || presentationDirty || sentencePresentationDirty || interestsDirty;
 
   function beginLimitEdit() {
     setLimitDraft(committedLimit === null ? '' : String(committedLimit));
@@ -163,7 +229,12 @@ export function SessionSettingsPanel({
 
   function cancelAndClose() {
     setLimitDraft(committedLimit === null ? '' : String(committedLimit));
+    setIntroductionOrderDraft(committedIntroductionOrder);
+    setIntroductionSpacingDraft(committedIntroductionSpacing);
     setSourceDraft(committedSource);
+    setPresentationDraft(committedPresentation);
+    setSentencePresentationDraft(committedSentencePresentation);
+    setInterestsDraft(committedInterests);
     setLimitEditing(false);
     setLimitError(null);
     onClose();
@@ -185,22 +256,42 @@ export function SessionSettingsPanel({
 
     const patch: {
       dailyNewWordLimit?: number;
+      studyIntroductionOrder?: StudyIntroductionOrder;
+      studyIntroductionSpacing?: number;
       unstudiedAdmissionSource?: UnstudiedAdmissionSource;
+      characterPresentation?: CharacterPresentation;
+      sentenceCharacterPresentation?: SentenceCharacterPresentation;
+      debriefInterests?: string;
     } = {};
 
     if (limitDirty) {
       const dailyNewWordLimit = Number(limitDraft);
-      if (limitDraft.trim().length === 0 || !Number.isSafeInteger(dailyNewWordLimit) || dailyNewWordLimit < 0) {
-        setLimitError('Enter a non-negative integer.');
+      if (limitDraft.trim().length === 0 || !Number.isSafeInteger(dailyNewWordLimit) || dailyNewWordLimit < 0 || dailyNewWordLimit > 20) {
+        setLimitError('Enter a whole number from 0 to 20.');
         setLimitEditing(true);
         return;
       }
       patch.dailyNewWordLimit = dailyNewWordLimit;
     }
 
+    if (introductionOrderDirty || introductionSpacingDirty) {
+      patch.studyIntroductionOrder = introductionOrderDraft;
+      patch.studyIntroductionSpacing = introductionSpacingDraft;
+    }
+
     if (sourceDirty) {
       patch.unstudiedAdmissionSource = sourceDraft;
     }
+
+    if (presentationDirty) {
+      patch.characterPresentation = presentationDraft;
+    }
+
+    if (sentencePresentationDirty) {
+      patch.sentenceCharacterPresentation = sentencePresentationDraft;
+    }
+
+    if (interestsDirty) patch.debriefInterests = interestsDraft;
 
     setLimitSaving(true);
     onSavingChange(true);
@@ -233,7 +324,7 @@ export function SessionSettingsPanel({
 
       if (event.key === 'Enter' && !limitSaving) {
         const target = event.target as HTMLElement | null;
-        if (target?.closest('textarea, button')) {
+        if (target?.closest('textarea, button, select, summary')) {
           return;
         }
         event.preventDefault();
@@ -243,7 +334,7 @@ export function SessionSettingsPanel({
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [limitDraft, sourceDraft, limitSaving, settingsDirty, committedLimit, committedSource]);
+  }, [limitDraft, introductionOrderDraft, introductionSpacingDraft, committedIntroductionOrder, committedIntroductionSpacing, sourceDraft, presentationDraft, sentencePresentationDraft, interestsDraft, committedInterests, limitSaving, settingsDirty, committedLimit, committedSource, committedPresentation, committedSentencePresentation]);
 
   useEffect(() => {
     if (limitEditing) {
@@ -262,6 +353,20 @@ export function SessionSettingsPanel({
     setSourceDraft(committedSource);
   }, [committedSource]);
 
+  useEffect(() => {
+    setPresentationDraft(committedPresentation);
+  }, [committedPresentation]);
+
+  useEffect(() => {
+    setSentencePresentationDraft(committedSentencePresentation);
+  }, [committedSentencePresentation]);
+
+  useEffect(() => { setIntroductionOrderDraft(committedIntroductionOrder); }, [committedIntroductionOrder]);
+
+  useEffect(() => { setIntroductionSpacingDraft(committedIntroductionSpacing); }, [committedIntroductionSpacing]);
+
+  useEffect(() => { setInterestsDraft(committedInterests); }, [committedInterests]);
+
   return (
     <div
       id="session-settings-panel"
@@ -279,6 +384,7 @@ export function SessionSettingsPanel({
               className="session-settings-limit-input"
               type="number"
               min={0}
+              max={20}
               step={1}
               inputMode="numeric"
               value={limitDraft}
@@ -315,6 +421,103 @@ export function SessionSettingsPanel({
             New words from stash only
           </label>
         </div>
+        <div className="session-settings-row" style={{ flexWrap: 'wrap' }}>
+          <label className="session-settings-label" htmlFor="study-introduction-order">Introductions:</label>
+          <select
+            id="study-introduction-order"
+            className="session-settings-select"
+            value={introductionOrderDraft}
+            disabled={backendStatus === null || limitSaving}
+            onChange={(event) => {
+              if (isStudyIntroductionOrder(event.target.value)) {
+                setIntroductionOrderDraft(event.target.value);
+                setLimitError(null);
+              }
+            }}
+          >
+            <option value="random">Random</option>
+            <option value="first">Introductions first</option>
+            <option value="paced">Paced</option>
+          </select>
+        </div>
+        {introductionOrderDraft === 'paced' ? (
+          <div className="session-settings-row" style={{ flexWrap: 'wrap' }}>
+            <label className="session-settings-label" htmlFor="study-introduction-spacing">Exercises between introductions:</label>
+            <select
+              id="study-introduction-spacing"
+              className="session-settings-select"
+              value={introductionSpacingDraft}
+              disabled={backendStatus === null || limitSaving}
+              onChange={(event) => {
+                setIntroductionSpacingDraft(Number(event.target.value));
+                setLimitError(null);
+              }}
+            >
+              {Array.from({ length: MAX_INTRODUCTION_SPACING }, (_, index) => index + 1).map((spacing) => (
+                <option key={spacing} value={spacing}>{spacing}</option>
+              ))}
+            </select>
+          </div>
+        ) : null}
+        <details>
+          <summary>Introduction order details</summary>
+          <p>Random mixes introductions into the session. Introductions first shows every new word before other exercises.</p>
+          <p>Paced starts with an introduction, then spaces introductions with the selected number of existing learning or review exercises, when available. New-word practice joins the mix after all introductions are done.</p>
+        </details>
+        {backendStatus?.studyProfile === 'mandarin' ? (
+          <div className="session-settings-row">
+            <label className="session-settings-label" htmlFor="card-character-presentation">
+              Card characters:
+            </label>
+            <select
+              id="card-character-presentation"
+              className="session-settings-select"
+              value={presentationDraft}
+              disabled={backendStatus.characterPresentation === undefined || limitSaving}
+              onChange={(event) => {
+                const next = event.target.value;
+                if (next === 'simplified' || next === 'traditional' || next === 'both') {
+                  setPresentationDraft(next);
+                  setLimitError(null);
+                }
+              }}
+            >
+              <option value="simplified">Simplified</option>
+              <option value="traditional">Traditional</option>
+              <option value="both">Both</option>
+            </select>
+          </div>
+        ) : null}
+        {backendStatus?.studyProfile === 'mandarin' && presentationDraft === 'both' ? (
+          <div className="session-settings-row">
+            <label className="session-settings-label" htmlFor="sentence-character-presentation">
+              Sentences and examples:
+            </label>
+            <select
+              id="sentence-character-presentation"
+              className="session-settings-select"
+              value={sentencePresentationDraft}
+              disabled={backendStatus.sentenceCharacterPresentation === undefined || limitSaving}
+              onChange={(event) => {
+                const next = event.target.value;
+                if (next === 'simplified' || next === 'traditional') {
+                  setSentencePresentationDraft(next);
+                  setLimitError(null);
+                }
+              }}
+            >
+              <option value="simplified">Simplified</option>
+              <option value="traditional">Traditional</option>
+            </select>
+          </div>
+        ) : null}
+        {backendStatus?.studyProfile === 'mandarin' ? <div className="session-settings-interests">
+          <label htmlFor="debrief-interests">Interests <span className="notes">(optional)</span></label>
+          <p className="notes" id="debrief-interests-help">Topics you’re curious about, to help connect the words after a session.</p>
+          <textarea id="debrief-interests" aria-describedby="debrief-interests-help" maxLength={1000} rows={3}
+            placeholder="professional tennis, 汉服, wukong video game, ..."
+            value={interestsDraft} disabled={limitSaving} onChange={(event) => setInterestsDraft(event.target.value)} />
+        </div> : null}
         {limitError ? <p className="form-error" role="alert">{limitError}</p> : null}
         <div className="session-settings-actions">
           <button
@@ -340,25 +543,8 @@ export function SessionSettingsPanel({
   );
 }
 
-function SettingsGearIcon() {
-  return (
-    <svg
-      className="session-settings-gear-icon"
-      viewBox="0 0 24 24"
-      width="16"
-      height="16"
-      aria-hidden="true"
-      focusable="false"
-    >
-      <path
-        fill="currentColor"
-        d="M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.06-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.1 7.1 0 0 0-1.63-.94l-.36-2.54a.5.5 0 0 0-.5-.42h-3.84a.5.5 0 0 0-.5.42l-.36 2.54c-.58.23-1.12.54-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.71 8.84a.5.5 0 0 0 .12.64l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94L2.83 14.52a.5.5 0 0 0-.12.64l1.92 3.32c.14.24.43.34.68.22l2.39-.96c.5.4 1.05.71 1.63.94l.36 2.54c.05.24.26.42.5.42h3.84c.24 0 .45-.18.5-.42l.36-2.54c.58-.23 1.12-.54 1.63-.94l2.39.96c.25.12.54.02.68-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58ZM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2Z"
-      />
-    </svg>
-  );
-}
 
-function ActiveTimeMetric({ label, value }: { label: string; value: number }) {
+export function ActiveTimeMetric({ label, value }: { label: string; value: number }) {
   return (
     <div className="failure-rate-period">
       <span>{label}</span>

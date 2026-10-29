@@ -1,0 +1,118 @@
+.session-panel-active.study-session-panel { padding: .25rem 1rem; border: 0; background: transparent; box-shadow: none; grid-template-rows: minmax(0, 1fr); overflow: visible; }
+.session-panel-active.study-session-panel > h2 { display: none; }
+.session-desk { --desk-card-edge: color-mix(in srgb, var(--surface-muted) 90%, black); --desk-card-shadow: 0 1px 0 var(--surface), 0 4px 0 var(--desk-card-edge), 0 8px 12px #00000014, 0 20px 34px #00000012; width: min(100%, 850px); margin: 0 auto; min-height: 0; display: grid; grid-template-rows: auto minmax(0,1fr) auto; gap: 1.15rem; }
+.desk-heading, .desk-footer { display: flex; justify-content: space-between; align-items: center; gap: 1rem; font-size: .8rem; color: var(--text-muted); }
+.desk-heading { padding: 0 .65rem; }
+.desk-overview { position: relative; }
+.desk-overview summary { cursor: pointer; }
+.desk-overview > div { position: absolute; right: 0; top: 1.8rem; padding: 1rem; width: 210px; background: var(--surface); box-shadow: var(--shadow-card); border-radius: 12px; z-index: 20; display: grid; gap: .6rem; }
+.desk-stack { position: relative; min-height: 0; isolation: isolate; }
+.desk-under-card { position: absolute; inset: 7px 4px -8px; border-radius: 20px; background: color-mix(in srgb, var(--surface-muted) 85%, black); box-shadow: 0 3px 0 var(--desk-card-edge, color-mix(in srgb, var(--surface-muted) 90%, black)), 0 12px 20px #00000014; transform: translate(4px, 3px) rotate(-2.2deg); pointer-events: none; }
+.desk-front { height: 100%; position: relative; }
+.desk-stack.is-tucking > .desk-front { z-index: 1; }
+.vocab-layout.is-tucking { isolation: isolate; }
+.vocab-layout.is-tucking > .vocab-layout-session { position: relative; z-index: 1; }
+.desk-tuck.vocab-session { position: absolute; display: block; margin: 0; overflow: visible; container-type: normal; z-index: 2; pointer-events: none; }
+.desk-tuck > .vocab-paper, .desk-tuck > .vocab-word-tile { width: 100%; height: 100%; margin: 0; }
+.desk-tuck > .vocab-word-tile { min-width: 0; text-align: left; padding: .65rem .9rem; display: grid; gap: .2rem; overflow-wrap: anywhere; }
+.session-desk .session-card-shell { height: 100%; border: 0; border-radius: 20px; background: var(--surface); box-shadow: var(--desk-card-shadow); display: grid; grid-template-columns: minmax(0,1fr); grid-template-rows: minmax(0,1fr) auto; gap: 0; padding: 0; overflow: visible; }
+.session-desk .session-card-scroll { padding: clamp(1.2rem,3vw,2.5rem) clamp(1.2rem,4vw,3rem) 1.2rem; gap: 1.1rem; border-radius: 20px 20px 0 0; }
+.session-desk .session-card-scroll > .desk-legacy-counts { display: none; }
+.session-desk .session-action-bar { border: 0; border-top: 1px solid color-mix(in srgb, var(--border) 50%, transparent); padding: 1rem clamp(1.2rem,4vw,3rem); overflow: visible; gap: .7rem; background: color-mix(in srgb, var(--surface-muted) 32%, var(--surface)); border-radius: 0 0 20px 20px; display: flex; flex-wrap: wrap; align-items: center; }
+.session-desk .session-action-section { display: flex; flex-wrap: wrap; align-items: center; gap: .45rem; }
+.session-desk .session-action-section:first-child { flex: 1 0 100%; }
+.session-desk .session-action-section:not(:first-child) { font-size: .75rem; }
+.session-desk .session-action-section:not(:first-child) button { font-size: .75rem; padding: .35rem .5rem; background: transparent; box-shadow: none; border-color: transparent; color: var(--text-muted); }
+.session-desk .session-action-section:last-child { margin-left: auto; }
+.session-desk .session-action-bar button { width: auto; min-height: 2.25rem; }
+.session-desk .session-action-bar .rating-grid { display: flex; flex-wrap: wrap; width: auto; flex: 1; gap: .5rem; }
+.session-desk .rating-grid > button { flex: 1; }
+.session-desk .rating-button:not(.is-highlighted) { background: var(--surface); color: var(--text-secondary); border-color: var(--border); }
+.session-desk .session-action-bar .inline-actions { display: flex; }
+.session-desk .session-action-bar .manage-study-popover { position: absolute; bottom: 100%; top: auto; left: 0; width: min(330px,75vw); z-index: 25; background: var(--surface); box-shadow: var(--shadow-card); }
+.session-desk .session-action-bar .manage-study-actions { display: grid; }
+.session-desk .prompt-block { border: 0; background: transparent; padding: 0; gap: .7rem; }
+.session-desk .prompt-value, .session-desk .contrast-prompt-text { font-size: clamp(1.45rem,2.6vw,2rem); font-weight: 500; line-height: 1.65; white-space: pre-line; }
+.session-desk .prompt-block.is-compact .prompt-value { font-size: clamp(1.45rem,2.6vw,2rem); }
+.session-desk .answer-block { border: 0; border-radius: 14px; background: color-mix(in srgb, var(--accent-soft) 45%, var(--surface)); padding: 1.15rem 1.35rem; animation: desk-answer-lift 240ms ease-out; }
+.session-desk .answer-value { font-size: 1.75rem; }
+.session-desk .review-card-header .badge { background: transparent; padding: 0; color: var(--text-muted); font-weight: 500; }
+.session-desk .desk-reference { font-size: .9rem; color: var(--text-secondary); }
+.desk-reference > summary { cursor: pointer; padding: .35rem 0; color: var(--text-muted); }
+.desk-reference[open] > summary { margin-bottom: .7rem; }
+.desk-cloze-answer { color: var(--accent); background: var(--accent-soft); border-radius: .25rem; padding: 0 .15em; animation: desk-answer-lift 240ms ease-out; }
+.desk-recall-progress { display: flex; align-items: center; gap: .6rem; font-size: .75rem; color: var(--text-muted); }
+.desk-chips { display: inline-flex; gap: .3rem; }
+.desk-chips > span { display: grid; place-items: center; width: 1.5rem; height: 1.5rem; border-radius: .45rem; background: var(--surface-muted); color: var(--text-muted); transition: background 160ms, color 160ms; }
+.desk-chips > .is-filled { background: var(--accent); color: white; }
+.desk-footer { padding: .3rem .6rem; }
+.desk-again-pile { display: flex; align-items: center; gap: .6rem; padding: .65rem .9rem; border-radius: 10px; }
+.desk-again-pile.has-cards { color: var(--danger); background: var(--danger-soft); }
+.desk-pile-mark { width: 22px; height: 16px; border-radius: 3px; background: var(--danger-soft); transform: rotate(-6deg); box-shadow: 2px 2px 0 color-mix(in srgb,var(--danger) 24%,transparent); }
+.desk-departure { position: fixed; pointer-events: none; z-index: 1000; perspective: 1400px; }
+.desk-departure-turn { width: 100%; height: 100%; position: relative; transform-style: preserve-3d; }
+.desk-departure-front, .desk-departure-back { position: absolute; inset: 0; width: 100%; height: 100%; backface-visibility: hidden; border-radius: 20px; overflow: hidden; background: var(--surface); box-shadow: var(--desk-card-shadow); }
+.desk-departure-front.session-card-shell { display: grid; grid-template-columns: minmax(0,1fr); grid-template-rows: minmax(0,1fr) auto; border: 0; padding: 0; }
+.desk-departure-back { transform: rotateY(180deg); background: linear-gradient(145deg,var(--surface),var(--surface-muted)); }
+.desk-departure.session-desk { display: block; margin: 0; }
+/* Keep the paper opaque while an async successor loads beneath the moving
+   clone. Hiding the entire front exposes the gray decorative under-card. */
+.desk-stack.is-departing .desk-front { pointer-events: none; }
+.desk-stack.is-departing :is(.session-card-shell, .vocab-paper) > * { visibility: hidden; }
+@keyframes desk-answer-lift { from { opacity: 0; transform: translateY(9px); } to { opacity: 1; transform: translateY(0); } }
+@media (max-width: 640px) { .session-panel-active.study-session-panel { padding: .15rem 1.25rem; } .session-desk { gap: .8rem; } .session-desk .session-action-bar { padding: .75rem 1rem; } .session-desk .session-action-section:not(:first-child) button { font-size: .7rem; } }
+@media (prefers-reduced-motion: reduce) { .session-desk *, .desk-cloze-answer { animation: none !important; transition: none !important; } }
+
+.session-desk .session-card-scroll { display: flex; flex-direction: column; }
+.session-desk .session-card-scroll > form { margin-top: auto; padding-top: 1rem; }
+.session-desk .session-card-scroll > * { flex-shrink: 0; }
+
+.session-desk #production-hanzi-input { width: 100%; min-height: 3rem; padding: .65rem .8rem; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text); font-size: 1.25rem; }
+.session-desk .recognition-prompt { font-size: clamp(2.6rem,6vw,4rem); line-height: 1.35; }
+
+/* The completed deck shares the study paper while reporting completion facts. */
+.session-debrief-panel .session-desk { grid-template-rows: auto minmax(0,1fr); }
+.session-debrief-panel .debrief-title { margin: 0; font-size: 1.55rem; letter-spacing: -.025em; }
+.debrief-kicker, .debrief-facts, .debrief-progress { margin: 0; color: var(--text-muted); font-size: .8rem; }
+.session-debrief-panel .session-card-scroll { gap: .65rem; }
+.debrief-connection { margin-top: 1.2rem; }
+.debrief-progress { margin-bottom: 1.2rem; }
+.debrief-note { margin: 0; font-size: 1.1rem; line-height: 1.85; white-space: pre-wrap; overflow-wrap: anywhere; }
+.debrief-waiting { min-height: 200px; display: flex; flex-direction: column; justify-content: center; align-items: flex-start; gap: .6rem; }
+.debrief-waiting p { margin: 0; }
+.debrief-waiting .notes { font-size: .9rem; }
+.debrief-breath { display: flex; gap: 5px; margin-bottom: .6rem; }
+.debrief-breath i { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); animation: debrief-breathe 2s infinite; }
+.debrief-breath i:nth-child(2) { animation-delay: .25s; }
+.debrief-breath i:nth-child(3) { animation-delay: .5s; }
+.debrief-reflection-details { margin-top: auto; padding-top: 1.5rem; color: var(--text-muted); font-size: .8rem; }
+.debrief-reflection-details summary { cursor: pointer; }
+.debrief-reflection-details .notes { font-size: .8rem; }
+.debrief-actions kbd { font-size: .7rem; margin-left: .4rem; opacity: .75; white-space: nowrap; }
+.debrief-actions .debrief-shortcuts { margin-left: auto; }
+.session-desk .debrief-actions .debrief-home, .session-desk .debrief-actions .debrief-shortcuts { background: transparent; color: var(--text-muted); border-color: transparent; box-shadow: none; }
+.recent-session-section { margin-top: 1rem; }
+.recent-session-section > .debrief-kicker { margin-bottom: .5rem; }
+.recent-session-entry { width: 100%; padding: 1.2rem 1.4rem; display: flex; justify-content: space-between; align-items: center; gap: 1rem; text-align: left; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; color: var(--text); box-shadow: none; }
+.recent-session-entry strong { font-weight: 500; }
+.recent-session-entry small { display: block; margin-top: .25rem; color: var(--text-muted); }
+.recent-session-status { color: var(--accent); font-size: .8rem; }
+.session-settings-interests { display: grid; gap: .4rem; }
+.session-settings-interests .notes { margin: 0; }
+.session-settings-interests textarea { width: 100%; min-height: 5rem; resize: vertical; font: inherit; color: var(--text); background: var(--surface); padding: .6rem; border: 1px solid var(--border); border-radius: 8px; }
+.session-settings-interests textarea:focus::placeholder { color: transparent; }
+@keyframes debrief-breathe { 0%,100% { opacity: .3; } 50% { opacity: 1; } }
+@media (max-width: 520px) { .debrief-note { font-size: 1rem; } .recent-session-entry { padding: 1rem; align-items: flex-start; } .recent-session-status { text-align: right; } .session-desk .debrief-actions { gap: .5rem; } }
+.home-session-active .home-grid > .session-debrief-panel:first-child { display: grid; }
+
+.study-stage-badge { display: inline-flex; align-items: center; gap: .4rem; vertical-align: middle; }
+.study-stage-icon { width: 1.1em; height: 1.1em; flex: none; }
+.session-desk .is-practice-card .review-card-header .badge,
+.session-desk .is-new-word-card .review-card-header .badge { color: var(--accent); }
+.session-desk .is-practice-card > .session-card-scroll,
+.session-desk .is-new-word-card > .session-card-scroll { box-shadow: inset 0 3px 0 color-mix(in srgb, var(--accent) 40%, transparent); }
+.word-source-examples p { overflow-wrap: anywhere; }
+
+.session-desk .session-action-bar > .content-quality-controls { margin: 0; font-size: .75rem; }
+.session-desk .session-action-bar > .content-quality-controls .content-quality-vote { color: var(--text-muted); }
+.session-desk .session-action-bar > .content-quality-controls .content-quality-vote[aria-pressed="true"] { color: var(--accent); }

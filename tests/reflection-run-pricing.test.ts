@@ -61,6 +61,29 @@ describe('initial reflection run pricing', () => {
     });
   });
 
+  test('prices GPT-6 Sol from the pinned October 3 snapshot', () => {
+    assert.deepEqual(estimateInitialReflectionRunCost({
+      provider: 'openai',
+      providerModel: 'gpt-6-sol',
+      usage: completeUsage,
+    }), {
+      estimatedCostUsd: 3.78,
+      pricing: {
+        id: 'openai-gpt-6-sol-standard-short-context-2026-10-03',
+        pricingAsOf: '2026-10-03',
+        provider: 'openai',
+        providerModel: 'gpt-6-sol',
+        serviceTier: 'standard',
+        contextBand: 'short',
+        currency: 'USD',
+        inputPerMillionUsd: 2,
+        cachedInputPerMillionUsd: 0.2,
+        cacheWriteInputPerMillionUsd: 2.5,
+        outputPerMillionUsd: 10,
+      },
+    });
+  });
+
   test('prices DashScope Qwen arms from the pinned August 15 International snapshots', () => {
     assert.deepEqual(estimateInitialReflectionRunCost({
       provider: 'dashscope',

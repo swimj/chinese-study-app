@@ -8,8 +8,8 @@ import type {
   MarkReflectionHelpInboxDoneRequest,
   AuthorizeManualReflectionOperationRequest,
 } from '../../domain/reflection';
-import type { ReflectionModelChoice, ReflectionSpendCapDto } from '../../services/api';
-import { artifactDetailIdsToFetch, retireSelectedDeferredProposalsAfterSecondOpinion } from './reflection-page-model';
+import type { ReflectionModelChoice } from '../../services/api';
+import { artifactDetailIdsToFetch } from './reflection-page-model';
 import type {
   ReflectionArtifactDetailDto,
   ReflectionArtifactSummaryDto,
@@ -26,7 +26,6 @@ export type ReflectionPageController = {
   artifactDetails: ReflectionArtifactDetailDto[];
   unreadableArtifactIds: ReadonlySet<string>;
   generationRuns: ReflectionGenerationRunDto[];
-  spendCap: ReflectionSpendCapDto | null;
   qualityStats: ReflectionQualityStatsDto | null;
   selectedArtifact: ReflectionArtifactDetailDto | null;
   selectedArtifactId: string | null;
@@ -46,6 +45,7 @@ export type ReflectionPageController = {
   generateDeferredSecondOpinion: (
     proposalIds: string[],
     model: ReflectionModelChoice,
+    helpInboxIds?: string[],
   ) => Promise<void>;
   deferProposal: (proposalId: string) => Promise<void>;
   dismissProposal: (
@@ -59,6 +59,7 @@ export type ReflectionPageController = {
   upsertQuality: (request: UpsertReflectionQualityRequest) => Promise<void>;
   clearQuality: (request: ClearReflectionQualityRequest) => Promise<void>;
   markHelpInboxDone: (request: MarkReflectionHelpInboxDoneRequest) => Promise<void>;
+  deferHelpInboxItem: (request: MarkReflectionHelpInboxDoneRequest) => Promise<void>;
   authorizeManualOperation: (
     request: AuthorizeManualReflectionOperationRequest,
   ) => Promise<void>;
@@ -91,7 +92,6 @@ export function useReflectionPageController({
     new Set(),
   );
   const [generationRuns, setGenerationRuns] = useState<ReflectionGenerationRunDto[]>([]);
-  const [spendCap, setSpendCap] = useState<ReflectionSpendCapDto | null>(null);
   const [qualityStats, setQualityStats] = useState<ReflectionQualityStatsDto | null>(null);
   const [selectedArtifact, setSelectedArtifact] = useState<ReflectionArtifactDetailDto | null>(null);
   const [submittingProposalId, setSubmittingProposalId] = useState<string | null>(null);
@@ -111,7 +111,7 @@ export function useReflectionPageController({
 
   function requireApi(): ReflectionReviewApi {
     if (api === undefined) {
-      throw new Error('Reflection review API is not available.');
+      throw new Error('Feedback review API is not available.');
     }
     return api;
   }
@@ -136,7 +136,6 @@ export function useReflectionPageController({
       reviewApi.listHelpInbox(),
     ]);
     const nextGenerationRuns = generationRunsPayload.runs;
-    setSpendCap(generationRunsPayload.spendCap);
     setQualityStats(nextQualityStats);
     const orderedArtifacts = [
       ...nextRecentArtifacts,
@@ -213,7 +212,7 @@ export function useReflectionPageController({
     try {
       await task();
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'Unknown reflection review error');
+      setError(error instanceof Error ? error.message : 'Unknown feedback review error');
       throw error;
     } finally {
       setIsLoading(false);
@@ -268,20 +267,14 @@ export function useReflectionPageController({
   async function generateDeferredSecondOpinion(
     proposalIds: string[],
     model: ReflectionModelChoice,
+    helpInboxIds: string[] = [],
   ): Promise<void> {
     if (deferredSecondOpinionStatus === 'generating') return;
     setDeferredSecondOpinionStatus('generating');
     setError(null);
     try {
-      const result = await requireApi().generateDeferredSecondOpinion(proposalIds, model);
-      // Success already means the selected originals are retired. Patch the client
-      // cache so the chip bank / deferred counts update, then load lists + the new
-      // result without refetching those known source dispositions.
-      const retiredDetails = retireSelectedDeferredProposalsAfterSecondOpinion(
-        artifactDetails,
-        proposalIds,
-      );
-      await loadListsAndDetail(result.artifactId, new Set(), retiredDetails);
+      const result = await requireApi().generateDeferredSecondOpinion(proposalIds, model, helpInboxIds);
+      await loadListsAndDetail(result.artifactId, 'all');
       setDeferredSecondOpinionStatus(null);
       notifyHelpQueueChanged();
     } catch (error) {
@@ -305,11 +298,10 @@ export function useReflectionPageController({
       notifyHelpQueueChanged();
     } catch (error) {
       setGenerationRetryStatus({ runId, state: 'failed' });
-      setError(error instanceof Error ? error.message : 'Failed to retry reflection generation');
+      setError(error instanceof Error ? error.message : 'Failed to retry feedback generation');
       try {
         const payload = await requireApi().listGenerationRuns();
         setGenerationRuns(payload.runs);
-        setSpendCap(payload.spendCap);
       } catch {
         // Preserve the retry failure as the actionable error.
       }
@@ -344,7 +336,7 @@ export function useReflectionPageController({
       );
       notifyHelpQueueChanged();
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'Failed to review reflection proposal');
+      setError(error instanceof Error ? error.message : 'Failed to review feedback proposal');
       throw error;
     } finally {
       setSubmittingProposalId(null);
@@ -387,7 +379,7 @@ export function useReflectionPageController({
         new Set([request.artifactId]),
       );
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'Failed to save reflection quality');
+      setError(error instanceof Error ? error.message : 'Failed to save feedback quality');
       throw error;
     } finally {
       setSubmittingQualityItemKey(null);
@@ -405,7 +397,7 @@ export function useReflectionPageController({
         new Set([request.artifactId]),
       );
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'Failed to clear reflection quality');
+      setError(error instanceof Error ? error.message : 'Failed to clear feedback quality');
       throw error;
     } finally {
       setSubmittingQualityItemKey(null);
@@ -424,7 +416,23 @@ export function useReflectionPageController({
       );
       notifyHelpQueueChanged();
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'Failed to mark reflection help item done');
+      setError(error instanceof Error ? error.message : 'Failed to mark feedback item done');
+      throw error;
+    } finally {
+      setSubmittingHelpInboxItemKey(null);
+    }
+  }
+
+  async function deferHelpInboxItem(request: MarkReflectionHelpInboxDoneRequest): Promise<void> {
+    const key = qualityItemKey(request.artifactId, request.itemId);
+    setSubmittingHelpInboxItemKey(key);
+    setError(null);
+    try {
+      await requireApi().deferHelpInboxItem(request);
+      await loadListsAndDetail(selectedArtifact?.artifactId ?? null, new Set([request.artifactId]));
+      notifyHelpQueueChanged();
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Failed to defer feedback item');
       throw error;
     } finally {
       setSubmittingHelpInboxItemKey(null);
@@ -450,7 +458,7 @@ export function useReflectionPageController({
       );
     } catch (error) {
       setError(
-        error instanceof Error ? error.message : 'Failed to authorize manual reflection operation',
+        error instanceof Error ? error.message : 'Failed to authorize manual feedback operation',
       );
       throw error;
     } finally {
@@ -465,7 +473,6 @@ export function useReflectionPageController({
     artifactDetails,
     unreadableArtifactIds,
     generationRuns,
-    spendCap,
     qualityStats,
     selectedArtifact,
     selectedArtifactId: selectedArtifact?.artifactId ?? null,
@@ -498,6 +505,7 @@ export function useReflectionPageController({
     upsertQuality,
     clearQuality,
     markHelpInboxDone,
+    deferHelpInboxItem,
     authorizeManualOperation,
   };
 }

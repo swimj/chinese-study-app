@@ -1,22 +1,22 @@
-import { useLayoutEffect, useRef } from 'react';
+import { useLayoutEffect, useRef, type ReactNode } from 'react';
 import {
   formatStudyDate,
-  isMyWordsStageFilterNarrowed,
   MY_WORDS_STAGE_CHIPS,
   shouldShowMyWordsCount,
-  WORD_STAGE_LABELS,
-  type MyWord,
+  type WordBrowserEntry,
   type MyWordsResponse,
   type MyWordsStatus,
   type MyWordsView,
 } from '../domain/my-words';
 
-export type MyWordsPageProps = {
+export type MyWordsPageProps<Stage extends string = MyWordsStatus, Entry extends WordBrowserEntry<Stage> = WordBrowserEntry<Stage>> = {
+  stages?: ReadonlyArray<{status: Stage; label: string}>;
+  renderWordActions?: (entry: Entry) => ReactNode;
   view: MyWordsView;
   query: string;
-  statuses: readonly MyWordsStatus[];
+  statuses: readonly Stage[];
   recentLapses: boolean;
-  words: MyWord[];
+  words: Entry[];
   currentDeck: MyWordsResponse['currentDeck'];
   selectedId: string | null;
   loading: boolean;
@@ -26,7 +26,7 @@ export type MyWordsPageProps = {
   scrollTop: number;
   onViewChange: (view: MyWordsView) => void;
   onQueryChange: (query: string) => void;
-  onToggleStatus: (status: MyWordsStatus) => void;
+  onToggleStatus: (status: Stage) => void;
   onToggleRecentLapses: () => void;
   onSelect: (id: string | null) => void;
   onLoadMore: () => void;
@@ -34,7 +34,11 @@ export type MyWordsPageProps = {
   onScroll: (top: number) => void;
 };
 
-export function MyWordsPage(props: MyWordsPageProps) {
+export function WordBrowserPage<Stage extends string = MyWordsStatus, Entry extends WordBrowserEntry<Stage> = WordBrowserEntry<Stage>>(props: MyWordsPageProps<Stage, Entry>) {
+  const stages = props.stages ?? MY_WORDS_STAGE_CHIPS;
+  const label = (stage: Stage) => stages.find((item) => item.status === stage)?.label ?? stage;
+  const available = stages.filter((item) => props.view !== 'recent' || item.status !== 'unstudied');
+  const narrowed = props.statuses.length > 0 && available.some((item) => !props.statuses.some((stage) => stage === item.status));
   const listRef = useRef<HTMLDivElement>(null);
   const selected = props.words.find((entry) => entry.word.id === props.selectedId);
 
@@ -53,7 +57,8 @@ export function MyWordsPage(props: MyWordsPageProps) {
   return (
     <section className="my-words-page" aria-label="My words"
       onKeyDown={(event) => {
-        if (event.key === 'Escape' && selected) { event.stopPropagation(); closeDetails(); }
+        if (event.key !== 'Escape') return;
+        if (selected) { event.stopPropagation(); closeDetails(); }
       }}>
       <header className="my-words-header">
         <h1>My words</h1>
@@ -72,12 +77,12 @@ export function MyWordsPage(props: MyWordsPageProps) {
         </div>
         <div className="my-words-stages">
           <div role="group" aria-label="Word stage">
-            {MY_WORDS_STAGE_CHIPS.map(({ status, label }) => (
+            {stages.map(({ status, label }) => (
               <button type="button" key={status}
-                className={`my-words-stage${props.statuses.includes(status) ? ' selected' : ''}`}
-                aria-pressed={props.statuses.includes(status)}
+                className={`my-words-stage${props.statuses.some((stage) => stage === status) ? ' selected' : ''}`}
+                aria-pressed={props.statuses.some((stage) => stage === status)}
                 disabled={props.view === 'recent' && status === 'unstudied'}
-                onClick={() => props.onToggleStatus(status)}>{label}</button>
+                onClick={() => props.onToggleStatus(status as Stage)}>{label}</button>
             ))}
           </div>
           <button type="button"
@@ -114,7 +119,7 @@ export function MyWordsPage(props: MyWordsPageProps) {
                 <span className="my-word-gloss">{entry.word.meanings[0] ?? entry.word.meaning}</span>
               </span>
               <span className="my-word-summary">
-                <span>{WORD_STAGE_LABELS[entry.word.status]}</span>
+                <span>{label(entry.word.status)}</span>
                 {props.view === 'recent' && <span className="my-word-date">{entry.lastStudiedAt
                   ? `Studied ${formatStudyDate(entry.lastStudiedAt)}` : 'Study date not recorded'}</span>}
               </span>
@@ -127,7 +132,7 @@ export function MyWordsPage(props: MyWordsPageProps) {
           {!props.loading && !props.error && props.words.length === 0 && (
             <p className="my-words-message">{props.view === 'deck' && !props.currentDeck
               ? 'Current deck is unavailable. Choose another collection.'
-              : props.query.trim() || props.recentLapses || isMyWordsStageFilterNarrowed(props.view, props.statuses)
+              : props.query.trim() || props.recentLapses || narrowed
               ? 'No matching words in this collection.'
               : props.view === 'recent'
                 ? 'Once you begin studying, your words will appear here.'
@@ -145,7 +150,8 @@ export function MyWordsPage(props: MyWordsPageProps) {
           <p className="my-word-pronunciation">{selected.word.pinyin}</p>
           {selected.word.traditional && selected.word.traditional !== selected.word.hanzi &&
             <p className="notes">Traditional: {selected.word.traditional}</p>}
-          <span className="my-word-stage">{WORD_STAGE_LABELS[selected.word.status]}</span>
+          {!props.renderWordActions && <span className="my-word-stage">{label(selected.word.status)}</span>}
+          {props.renderWordActions?.(selected)}
           <h3>Meaning</h3>
           <ul className="my-word-meanings">{(selected.word.meanings.length ? selected.word.meanings : [selected.word.meaning])
             .map((meaning, index) => <li key={index}>{meaning}</li>)}</ul>
@@ -159,4 +165,10 @@ export function MyWordsPage(props: MyWordsPageProps) {
       </div>
     </section>
   );
+}
+
+export type { WordBrowserEntry } from '../domain/my-words';
+
+export function MyWordsPage(props: MyWordsPageProps) {
+  return <WordBrowserPage {...props} />;
 }

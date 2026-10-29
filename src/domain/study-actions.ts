@@ -1,4 +1,13 @@
+import type { BootstrapRevealSnapshot } from './word-content/reveal';
+import type { ContentExerciseSnapshot, WordContentDocument } from './word-content/types';
+import type { WordIntroductionResponse } from './word-content/application';
 import type { ReviewRating, Word } from '../types';
+import {
+  assertTargetedCueAcceptsOnlyOwner,
+  type AcceptedCueAnswer,
+  type TargetedCueFormat,
+} from './cues';
+import type { PureCueServedSnapshot } from './pure-cues';
 
 export type StudySkillId = 'recognition' | 'production' | 'contextual_selection';
 
@@ -12,11 +21,10 @@ export type StudyContentRef =
   | { type: 'example_sentence'; id: string }
   | { type: 'production_cue'; taskId: string; cueId: string };
 
-export type ProductionCueType = 'definition_gloss' | 'minimal_context' | 'circumstance';
+export type ProductionCueType = TargetedCueFormat;
 
 export type ProductionAttemptResult =
   | 'accepted_anchor'
-  | 'accepted_non_anchor'
   | 'rejected';
 
 export type ProductionCueSupplementSnapshot = {
@@ -33,14 +41,23 @@ export type ProductionExerciseSnapshot = {
   text: string;
   acceptedAnswers: ProductionAnswerWord[];
   supplement: ProductionCueSupplementSnapshot | null;
-  recheckDemandId: string | null;
+  /** Frozen word teaching shown only after the response. */
+  bootstrapReveal?: BootstrapRevealSnapshot;
 };
 
-export type ProductionAnswerWord = {
-  wordId: string;
-  hanzi: string;
-  traditional: string | null;
-};
+export type ProductionAnswerWord = AcceptedCueAnswer;
+
+/**
+ * Word-owned production remains a target-word assessment. The array shape is
+ * retained in served evidence, but a live snapshot must contain exactly the
+ * one answer owned by its scheduled target.
+ */
+export function assertStrictTargetOnlyProductionSnapshot(
+  production: Pick<ProductionExerciseSnapshot, 'acceptedAnswers'>,
+  targetWordId: string,
+): void {
+  assertTargetedCueAcceptsOnlyOwner(production, targetWordId);
+}
 
 export type ProductionResponseResolution =
   | {
@@ -61,6 +78,7 @@ export function cloneProductionExerciseSnapshot(
     ...production,
     acceptedAnswers: production.acceptedAnswers.map((word) => ({ ...word })),
     supplement: production.supplement == null ? null : { ...production.supplement },
+    ...(production.bootstrapReveal ? { bootstrapReveal: { ...production.bootstrapReveal } } : {}),
   };
 }
 
@@ -111,6 +129,11 @@ export type StudyAction = {
 export type SessionStudyItemSource = 'unstudied' | 'learning' | 'review';
 export type WordLifecycleSessionStudyItemSource = Exclude<SessionStudyItemSource, 'review'>;
 
+export type LearningRehearsalSnapshot = ContentExerciseSnapshot & {
+  readonly packageId: string;
+  readonly wordContentId: string;
+};
+
 export type SessionStudyItem = {
   sessionActionId: string;
   actionKind: StudyActionKind;
@@ -121,10 +144,38 @@ export type SessionStudyItem = {
   word: Word;
   contrastSelection: ContrastSelectionContent | null;
   production: ProductionExerciseSnapshot | null;
+  /** Frozen target rehearsal, separate from review cues and reflection evidence. */
+  rehearsal?: LearningRehearsalSnapshot;
+  wordContent?: WordContentDocument;
+  bootstrapReveal?: BootstrapRevealSnapshot;
+  /** Existing eligible teaching shown only after a recognition review is revealed. */
+  recognitionSupplement?: ProductionCueSupplementSnapshot;
 };
 
+/**
+ * A standalone production elicitation.  Unlike SessionStudyItem it is not
+ * admitted from, anchored to, or projected onto a word scheduler row.
+ */
+export type PureCueSessionReviewItem = {
+  itemType: 'pure_cue_production';
+  sessionActionId: string;
+  snapshot: PureCueServedSnapshot;
+  tier: 'fragile' | 'strong';
+};
+
+// Keep the established word item shape available to all word-only callers.
+// Only the review queue carries the wider union.
+export type SessionReviewItem = SessionStudyItem | PureCueSessionReviewItem;
+
+export function isPureCueSessionReviewItem(item: SessionReviewItem): item is PureCueSessionReviewItem {
+  return 'itemType' in item && item.itemType === 'pure_cue_production';
+}
+
 export type SessionStudyItemBuckets = {
-  review: SessionStudyItem[];
+  introductions?: Record<string, WordIntroductionResponse>;
+  learningRehearsals?: Record<string, LearningRehearsalSnapshot>;
+  learningContent?: Record<string, WordContentDocument>;
+  review: SessionReviewItem[];
   learning: Word[];
   unstudied: Word[];
 };
@@ -264,6 +315,10 @@ export function buildReviewSessionStudyItem({
     );
   }
 
+  if (production !== null) {
+    assertStrictTargetOnlyProductionSnapshot(production, word.id);
+  }
+
   return {
     sessionActionId,
     actionKind: mapStudySkillToDefaultActionKind(wordSkillState.skillId),
@@ -296,7 +351,11 @@ export function buildWordLifecycleSessionStudyItems({
   ];
 }
 
-export function deriveReviewCommitFieldsFromAttemptEvents(events: StudyAttemptEvent[]): ReviewCommitFields {
+export function deriveReviewCommitFieldsFromAttemptEvents(
+  events: StudyAttemptEvent[],
+  { reinforcementSkipped = false }: { reinforcementSkipped?: boolean } = {},
+): ReviewCommitFields {
+  if (typeof reinforcementSkipped !== 'boolean') throw new Error('Expected boolean reinforcementSkipped');
   if (events.length === 0) {
     throw new Error('Cannot derive review commit fields from an empty attempt event batch.');
   }
@@ -357,6 +416,13 @@ export function deriveReviewCommitFieldsFromAttemptEvents(events: StudyAttemptEv
         terminalRating: null,
       };
     }
+  }
+
+  if (reinforcementSkipped) {
+    if (commitFields !== null || failureCount === 0) {
+      throw new Error('Expected unfinished lapsed review when reinforcementSkipped is true');
+    }
+    commitFields = { failureCount, terminalRating: null };
   }
 
   if (commitFields === null) {

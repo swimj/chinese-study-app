@@ -1,3 +1,7 @@
+import { useEffect, useState } from 'react';
+import { DEFAULT_CHARACTER_PRESENTATION, formatCardCharacters, type CharacterPresentation } from '../../domain/card-characters';
+import type { RecoveryHighlight } from '../../domain/recovery-highlights';
+import { fetchSessionRecoveryHighlights } from '../../services/api';
 import type { SessionSummary } from './session-summary';
 import type { SessionFinalizationState } from './session-finalization';
 
@@ -5,10 +9,12 @@ export function SessionSummaryPanel({
   summary,
   finalization,
   onRetryReflection,
+  characterPresentation = DEFAULT_CHARACTER_PRESENTATION,
 }: {
   summary: SessionSummary;
   finalization: SessionFinalizationState;
   onRetryReflection: () => void;
+  characterPresentation?: CharacterPresentation;
 }) {
   const elapsedLabel = formatElapsedTime(summary.activeDurationMs);
 
@@ -18,6 +24,13 @@ export function SessionSummaryPanel({
         {summary.completionMode === 'drain' ? 'Session complete via drain mode' : 'Session complete'}
       </p>
       <h3>Session summary</h3>
+      {finalization.kind === 'finalized' ? (
+        <SessionRecoveryHighlights
+          key={summary.sessionId}
+          sessionId={summary.sessionId}
+          characterPresentation={characterPresentation}
+        />
+      ) : null}
       <p className="notes">
         {summary.completionMode === 'drain'
           ? 'You ended intake and finished the remaining open work.'
@@ -25,7 +38,13 @@ export function SessionSummaryPanel({
       </p>
       <div className="summary-topline">
         <span className="badge">Review actions completed {summary.completedReviewActions}</span>
+        {summary.completedPureCueActions > 0 ? (
+          <span className="badge">Pure cues completed {summary.completedPureCueActions}</span>
+        ) : null}
         <span className="badge">Lapses {summary.lapsedReviewActions}</span>
+        {summary.lapsedPureCueActions > 0 ? (
+          <span className="badge">Pure cue lapses {summary.lapsedPureCueActions}</span>
+        ) : null}
       </div>
       {summary.lapsedReviewLabels.length > 0 ? (
         <div className="summary-lapses">
@@ -58,8 +77,14 @@ export function SessionSummaryPanel({
           <span className="stat-label">Review actions completed</span>
           <strong className="stat-value">{summary.completedReviewActions}</strong>
         </div>
+        {summary.completedPureCueActions > 0 ? (
+          <div className="stat-card">
+            <span className="stat-label">Pure cues completed</span>
+            <strong className="stat-value">{summary.completedPureCueActions}</strong>
+          </div>
+        ) : null}
         <div className="stat-card">
-          <span className="stat-label">Learning words covered</span>
+          <span className="stat-label">Practice words covered</span>
           <strong className="stat-value">{summary.completedLearningWords}</strong>
         </div>
         <div className="stat-card">
@@ -79,7 +104,44 @@ export function SessionSummaryPanel({
   );
 }
 
-function SessionReflectionStatus({
+export function SessionRecoveryHighlights({ sessionId, characterPresentation }: {
+  sessionId: string;
+  characterPresentation: CharacterPresentation;
+}) {
+  const [highlights, setHighlights] = useState<RecoveryHighlight[]>([]);
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetchSessionRecoveryHighlights(sessionId, controller.signal).then((result) => {
+      if (!controller.signal.aborted) setHighlights(result);
+    }).catch(() => {
+      // Optional acknowledgment must never obstruct session completion or reflection.
+    });
+    return () => controller.abort();
+  }, [sessionId]);
+  return <RecoveryHighlightList highlights={highlights} characterPresentation={characterPresentation} />;
+}
+
+export function RecoveryHighlightList({ highlights, characterPresentation }: {
+  highlights: readonly RecoveryHighlight[];
+  characterPresentation: CharacterPresentation;
+}) {
+  if (highlights.length === 0) return null;
+  return (
+    <section className="summary-recovery" aria-label="Coming back more reliably">
+      <h4>Coming back more reliably</h4>
+      <ul className="summary-recovery-words">
+        {highlights.map((highlight) => (
+          <li key={highlight.id}>
+            <strong>{formatCardCharacters(highlight, characterPresentation)}</strong>
+            <span>{highlight.skill === 'recognition' ? 'Meaning' : 'Word recall'}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+export function SessionReflectionStatus({
   finalization,
   onRetryReflection,
 }: {
@@ -89,7 +151,7 @@ function SessionReflectionStatus({
   if (finalization.kind === 'unfinalized') {
     return (
       <p className="notes">
-        Finish the session to save the final attempt and start reflection.
+        Finish the session to save the final attempt and start feedback.
         Leaving for another page does the same.
       </p>
     );
@@ -102,31 +164,34 @@ function SessionReflectionStatus({
     case 'skipped':
       return (
         <p className="notes">
-          Reflection skipped: this session had no qualifying production failures.
+          No feedback to generate for this session.
         </p>
       );
     case 'generating':
       return (
         <p className="notes">
-          Reflection is generating. You can close this summary while it finishes.
+          Feedback is generating. You can close this summary while it finishes.
         </p>
       );
     case 'succeeded':
       return (
         <p className="notes">
-          Reflection ready with {finalization.reflection.proposalCount} proposal
+          Feedback ready with {finalization.reflection.proposalCount} proposal
           {finalization.reflection.proposalCount === 1 ? '' : 's'}.
+          {finalization.reflection.partialFailure ? (
+            <> Some feedback could not be generated: {finalization.reflection.partialFailure} Retry the failed run in Feedback.</>
+          ) : null}
         </p>
       );
     case 'failed':
       return (
         <div className="stack">
           <p className="notes">
-            Reflection failed without affecting the completed session: {finalization.reflection.error}
+            Feedback failed without affecting the completed session: {finalization.reflection.error}
           </p>
           {finalization.reflection.retryable ? (
             <button type="button" className="secondary-button" onClick={onRetryReflection}>
-              Retry reflection
+              Retry feedback
             </button>
           ) : null}
         </div>

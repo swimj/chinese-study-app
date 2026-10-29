@@ -1,0 +1,74 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import {after,before,test} from 'node:test';
+import {prepareWordFixture} from './helpers/prepared-word-fixtures.ts';
+import type {TeachingPackage,WordContentDocument} from '../src/domain/word-content/types.ts';
+let dir:string;
+let db: typeof import('../server/db.ts');
+let sql: ReturnType<typeof import('../server/db/connection.ts')['getDb']>;
+let api: typeof import('../server/db/content-improvements.ts');
+const keys=['APP_MODE','APP_AUTH_MODE','APP_DATA_DIR','APP_LEARNER_ID','APP_OPERATOR_CLERK_USER_IDS'] as const;
+const previous=Object.fromEntries(keys.map(k=>[k,process.env[k]]));
+before(async()=>{
+  dir=fs.mkdtempSync(path.join(os.tmpdir(),'package-improvement-'));
+  Object.assign(process.env,{APP_MODE:'study',APP_AUTH_MODE:'trusted_local',APP_DATA_DIR:dir,APP_LEARNER_ID:'editor',APP_OPERATOR_CLERK_USER_IDS:'editor'});
+  db=await import('../server/db.ts');sql=(await import('../server/db/connection.ts')).getDb();api=await import('../server/db/content-improvements.ts');
+  db.bootstrapLearner({learnerId:'pinned'});db.bootstrapLearner({learnerId:'fresh'});
+  sql.prepare(`INSERT INTO lexical_words (id,hanzi,pinyin,meaning,meanings_json,examples_json,priority,created_at)
+    VALUES ('word','你好','nǐ hǎo','hello','[]','[]',10,'now')`).run();
+  prepareWordFixture(sql,db,'word');
+});
+after(()=>{for(const k of keys){if(previous[k]===undefined)delete process.env[k];else process.env[k]=previous[k];}fs.rmSync(dir,{recursive:true,force:true});});
+
+test('coherent package replacement preserves pins and source references while new learners select revision',()=>{
+  const oldPackage='fixture-package:word', oldContent='fixture-content:word';
+  db.runWithLearnerId('pinned',()=>db.pinWordTeachingPackage('word',oldPackage));
+  sql.prepare('INSERT INTO word_introduction_preparation (word_id,content_id,package_id) VALUES (?,?,?)').run('word',oldContent,oldPackage);
+  let item=api.createImprovementCase({kind:'rehearsal',sourceId:`${oldPackage}/rehearsal`},'editor');
+  const content=item.proposed.content as WordContentDocument;
+  const pkg=item.proposed.package as TeachingPackage;
+  item=api.saveImprovementCase(item.id,{expectedRevision:1,diagnosis:'The greeting needs conversational context.',rationale:'A natural exchange provides a clearer cue.',generalLesson:'',proposalOrigin:'operator',proposed:{content:{...content,examples:[{...content.examples[0],text:'你好，老师！'}]},package:{...pkg,rehearsals:[{...pkg.rehearsals[0],instruction:'Greet your teacher.',stimulus:{kind:'example_cloze',example:{contentId:content.id,exampleId:content.examples[0].id},blanks:[{start:0,end:2,expectedText:'你好'}],frame:null}}]}}},'editor');
+  const checked=api.validateImprovementCase(item.id,{expectedRevision:2},'editor');
+  assert.deepEqual(checked.errors,[]);
+  item=api.applyImprovementCase(item.id,{expectedRevision:2,approve:true,acceptAnswerSpaceChange:false},'editor');
+  assert(item.outcome?.replacementSourceId);
+  const nextPackage=item.outcome.replacementSourceId.split('/')[0];
+  assert.equal(db.runWithLearnerId('pinned',()=>db.getWordIntroductionLibrary('word'))?.selectedPackageId,oldPackage);
+  assert.equal(db.runWithLearnerId('fresh',()=>db.getWordIntroductionLibrary('word'))?.selectedPackageId,nextPackage);
+  assert.throws(()=>db.runWithLearnerId('fresh',()=>db.pinWordTeachingPackage('word',oldPackage)),/Eligible teaching package/);
+  db.runWithLearnerId('pinned',()=>db.completeWordTeachingPackage('word',oldPackage));
+  const appliedPreview=item.outcome.appliedSource?.preview as {content: WordContentDocument; snapshot: import('../src/domain/word-content/types.ts').TeachingPackageSnapshot};
+  const preview=checked.preview as typeof appliedPreview;
+  assert.deepEqual(appliedPreview.snapshot.beats,preview.snapshot.beats);
+  assert.equal(appliedPreview.snapshot.rehearsals[0].stimulus.text,'____，老师！');
+  assert.deepEqual(appliedPreview.snapshot.rehearsals.map(r=>({...r,stimulus:{...r.stimulus,source:null}})),preview.snapshot.rehearsals.map(r=>({...r,stimulus:{...r.stimulus,source:null}})));
+  const stimulus=appliedPreview.snapshot.rehearsals[0].stimulus.source;
+  assert.equal(stimulus.kind,'example_cloze');
+  if(stimulus.kind === 'example_cloze') assert.equal(stimulus.example.contentId,appliedPreview.content.id);
+  assert.deepEqual(item.outcome.appliedSource?.provenance,{source:'operator-approved content improvement',model:null});
+  const next=JSON.parse(sql.prepare('SELECT package_json FROM word_teaching_packages WHERE package_id=?').get(nextPackage)!.package_json as string) as TeachingPackage;
+  assert.notEqual(next.wordContentId,oldContent);
+  assert.equal(sql.prepare('SELECT package_id FROM word_introduction_preparation WHERE word_id=?').get('word')!.package_id,nextPackage);
+  assert.equal(JSON.parse(sql.prepare('SELECT content_json FROM word_content_documents WHERE content_id=?').get(oldContent)!.content_json as string).examples[0].text,'你好。');
+  assert.equal(sql.prepare(`SELECT publication_status FROM shared_content_publications WHERE content_kind='word_content' AND content_id=?`).get(oldContent)!.publication_status,'shared_trial');
+  const stale=api.createImprovementCase({kind:'teaching_package',sourceId:oldPackage},'editor');
+  assert.match(api.validateImprovementCase(stale.id,{expectedRevision:1},'editor').errors.join(' '),/already has a replacement/);
+});
+
+test('lexical identity, missing references and active preparation prevent unsafe package corrections',async()=>{
+  const current=sql.prepare("SELECT replacement_source_id FROM content_improvement_replacements WHERE kind='teaching_package'").get()!.replacement_source_id as string;
+  const source=api.createImprovementCase({kind:'teaching_package',sourceId:current},'editor');
+  const content=source.proposed.content as WordContentDocument;
+  const adapters=await import('../server/db/content-improvement-packages.ts');
+  assert.match(adapters.validatePackageImprovement(source.source,source.proposed).errors.join(' '),/Change the content/);
+  assert.match(adapters.validatePackageImprovement(source.source,{...source.proposed,content:{...content,examples:[]}}).errors.join(' '),/example|at least/);
+  const edit=(proposed:Record<string,unknown>)=>api.saveImprovementCase(source.id,{expectedRevision:1,diagnosis:'Test',rationale:'Test',generalLesson:'',proposalOrigin:'agent',proposed},'editor');
+  const changed=edit({...source.proposed,content:{...content,word:{...content.word,hanzi:'错'}}});
+  assert.match(api.validateImprovementCase(changed.id,{expectedRevision:2},'editor').errors.join(' '),/Lexical identity/);
+  sql.prepare("UPDATE word_introduction_preparation SET active_stage='teaching',lease_token='busy',lease_expires_at='2099-01-01T00:00:00.000Z' WHERE word_id='word'").run();
+  assert.throws(()=>adapters.applyPackageImprovement(source.source,changed.proposed,{actorId:'editor',caseId:source.id,now:new Date().toISOString()}),/eligibility changed/);
+  assert.equal(api.validateImprovementCase(changed.id,{expectedRevision:2},'editor').sourceChanged,true);
+  assert.match(api.validateImprovementCase(changed.id,{expectedRevision:2},'editor').errors.join(' '),/in progress/);
+});

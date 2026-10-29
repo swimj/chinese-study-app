@@ -4,14 +4,21 @@ import {
   loadDeckManifest,
   type DeckManifest,
 } from '../decks/manifest.ts';
-import type { DietIntakePlacementRunMetadata } from '../diet/intake-placement-provider.ts';
+import type { NormalizedTokenUsage } from '../llm/types.ts';
+
+/** Historical survey metadata retained for stored profile compatibility. */
+type DietIntakePlacementRunMetadata = {
+  provider: string; modelConfig: string; providerModel: string; promptVersion: string;
+  clientRequestId: string; responseId: string | null; finishReason: string | null;
+  usage: NormalizedTokenUsage;
+};
 
 /**
  * Learner diet profile (SPECS/diet-deck-distribution.md §2.3).
  *
  * The profile is a versioned JSON value in the `learner_settings` key-value
  * store under `diet_profile`. When unset, the effective profile defaults to
- * 100% weight on the first deck by manifest order. Deck machinery is never
+ * 100% weight on the first HSK 2.0 Level 6 deck by manifest order. Deck machinery is never
  * user-visible; nudges are the learner's coarse steering signal and operator
  * jumps happen through scripts/set-diet-deck.ts (no HTTP endpoint).
  */
@@ -86,20 +93,13 @@ export class UnknownDietDeckError extends Error {
   }
 }
 
-export class DietProfileChangedDuringAssessmentError extends Error {
-  constructor() {
-    super('The diet profile changed while the intake assessment was running.');
-    this.name = 'DietProfileChangedDuringAssessmentError';
-  }
-}
-
 // --- Pure transitions -------------------------------------------------------
 
-/** Default when unset: 100% weight on the first deck by manifest order. */
+/** Default when unset: 100% weight on the first HSK 2.0 Level 6 deck by manifest order. */
 export function createDefaultDietProfile(manifest: DeckManifest, now: string): DietProfile {
-  const first = manifest.decks[0];
+  const first = manifest.decks.find((deck) => deck.hsk?.version === '2.0' && deck.hsk.level === 6);
   if (!first) {
-    throw new Error('Deck manifest invariant violated: no decks.');
+    throw new Error('Deck manifest invariant violated: no HSK 2.0 Level 6 deck.');
   }
   return {
     version: DIET_PROFILE_VERSION,
@@ -183,128 +183,6 @@ export function applyDietNudge(
   };
 }
 
-/**
- * Provisional v1 placement mapping (SPECS/diet-deck-distribution.md §2.11):
- * a coarse self-select maps onto the first deck of an HSK target level
- * (beginner → L1, some basics → L2, intermediate → L4, advanced/heritage →
- * L6). When no deck carries the target level (small manifests), walk DOWN to
- * the nearest lower level — under-placement is safer than over-placement
- * because nudges and spill correct upward. Without a self-select the learner
- * starts on the first deck. The tail deck is never a placement target.
- */
-export function mapSelfSelectToDeckId(manifest: DeckManifest, selfSelect: DietSelfSelect | null): string {
-  const decks = manifest.decks;
-  if (decks.length === 0) {
-    throw new Error('Deck manifest invariant violated: no decks.');
-  }
-
-  const targetLevel: number | null = selfSelect === null || selfSelect === 'complete-beginner'
-    ? null
-    : selfSelect === 'some-basics'
-      ? 2
-      : selfSelect === 'intermediate'
-        ? 4
-        : 6;
-
-  if (targetLevel === null) {
-    return decks[0]!.id;
-  }
-  for (let level = targetLevel; level >= 1; level -= 1) {
-    const deck = decks.find((candidate) => candidate.hsk?.version === '2.0' && candidate.hsk.level === level);
-    if (deck) {
-      return deck.id;
-    }
-  }
-  return decks[0]!.id;
-}
-
-/** Map a provider-selected next HSK learning level without exposing deck machinery. */
-export function mapNextLearningLevelToDeckId(
-  manifest: DeckManifest,
-  nextLearningLevel: 1 | 2 | 3 | 4 | 5 | 6,
-): string {
-  if (!Number.isInteger(nextLearningLevel) || nextLearningLevel < 1 || nextLearningLevel > 6) {
-    throw new Error('Diet intake next learning level must be an integer from 1 through 6.');
-  }
-  const decks = manifest.decks;
-  if (decks.length === 0) throw new Error('Deck manifest invariant violated: no decks.');
-  for (let level = nextLearningLevel; level >= 1; level -= 1) {
-    const deck = decks.find((candidate) => candidate.hsk?.version === '2.0' && candidate.hsk.level === level);
-    if (deck) return deck.id;
-  }
-  throw new Error('Deck manifest has no HSK 2.0 deck available for intake placement.');
-}
-
-/**
- * Store raw natural-language intake answers plus the resulting initial
- * placement. Intake answers are profile evidence, never study actions.
- * Placement (re)initializes the weights at 100% on the placed deck; prior
- * provenance is retained.
- */
-export function applyDietIntake(
-  current: DietProfile | null,
-  manifest: DeckManifest,
-  input: { answers: DietIntakeAnswer[]; selfSelect: DietSelfSelect | null },
-  now: string,
-): DietProfile {
-  const deckId = mapSelfSelectToDeckId(manifest, input.selfSelect);
-  return {
-    version: DIET_PROFILE_VERSION,
-    weights: { [deckId]: 1 },
-    provenance: [
-      ...(current?.provenance ?? []),
-      {
-        actor: 'intake',
-        at: now,
-        note: input.selfSelect
-          ? `self-select: ${input.selfSelect}`
-          : input.answers.length === 0
-            ? 'intake skipped'
-            : 'intake without self-select',
-      },
-    ],
-    updatedAt: now,
-    intake: {
-      answers: input.answers,
-      selfSelect: input.selfSelect,
-      at: now,
-    },
-  };
-}
-
-export function applyAssessedDietIntake(
-  current: DietProfile | null,
-  manifest: DeckManifest,
-  input: {
-    answers: DietIntakeAnswer[];
-    level: 1 | 2 | 3 | 4 | 5 | 6;
-    rationale: string;
-    provider: DietIntakePlacementRunMetadata;
-  },
-  now: string,
-): DietProfile {
-  const deckId = mapNextLearningLevelToDeckId(manifest, input.level);
-  return {
-    version: DIET_PROFILE_VERSION,
-    weights: { [deckId]: 1 },
-    provenance: [
-      ...(current?.provenance ?? []),
-      { actor: 'intake', at: now, note: 'provider-assessed initial placement' },
-    ],
-    updatedAt: now,
-    intake: {
-      answers: input.answers,
-      selfSelect: null,
-      at: now,
-      assessment: {
-        nextLearningLevel: input.level,
-        rationale: input.rationale,
-        provider: input.provider,
-      },
-    },
-  };
-}
-
 /** Operator jump: 100% weight on a chosen deck (concierge correction). */
 export function applyOperatorDietJump(
   current: DietProfile | null,
@@ -334,11 +212,6 @@ export function applyOperatorDietJump(
 export function getStoredDietProfile(): DietProfile | null {
   const raw = readStoredDietProfileJson();
   return raw === null ? null : parseDietProfile(JSON.parse(raw));
-}
-
-/** Exact stored JSON used to reject an asynchronous assessment that went stale. */
-export function snapshotStoredDietProfile(): string | null {
-  return readStoredDietProfileJson();
 }
 
 function readStoredDietProfileJson(): string | null {
@@ -392,7 +265,7 @@ export function getStashDietSplit(): number {
   return value;
 }
 
-/** Stored profile when present, otherwise the manifest-order default (not persisted). */
+/** Stored profile when present, otherwise the HSK 6 default (not persisted). */
 export function getDietProfile(manifest: DeckManifest | null = loadDeckManifest()): DietProfile | null {
   const stored = getStoredDietProfile();
   if (stored) {
@@ -407,15 +280,6 @@ export function getDietProfile(manifest: DeckManifest | null = loadDeckManifest(
 /** True when deck-based diet admission is active (Mandarin profile with a manifest). */
 export function isDietDeckModeActive(manifest: DeckManifest | null = loadDeckManifest()): boolean {
   return config.studyProfile === 'mandarin' && manifest !== null;
-}
-
-/**
- * True when the learner should see the first-run placement intake: the deck
- * machinery is active and no diet profile has been stored yet (no intake,
- * nudge, or operator jump has happened).
- */
-export function isDietIntakeRequired(manifest: DeckManifest | null = loadDeckManifest()): boolean {
-  return isDietDeckModeActive(manifest) && getStoredDietProfile() === null;
 }
 
 // --- Learner/operator-facing operations -------------------------------------
@@ -434,45 +298,6 @@ export function nudgeDietProfile(
     saveDietProfile(result.profile);
   }
   return result;
-}
-
-export function recordDietIntake(
-  input: { answers: DietIntakeAnswer[]; selfSelect: DietSelfSelect | null },
-  manifest: DeckManifest | null = loadDeckManifest(),
-): DietProfile {
-  if (!manifest) {
-    throw new DietManifestUnavailableError();
-  }
-  const profile = applyDietIntake(getStoredDietProfile(), manifest, input, new Date().toISOString());
-  return saveDietProfile(profile);
-}
-
-export function recordAssessedDietIntakeIfUnchanged(
-  input: {
-    answers: DietIntakeAnswer[];
-    level: 1 | 2 | 3 | 4 | 5 | 6;
-    rationale: string;
-    provider: DietIntakePlacementRunMetadata;
-    at: string;
-  },
-  beforeSnapshot: string | null,
-  manifest: DeckManifest | null = loadDeckManifest(),
-): DietProfile {
-  if (!manifest) throw new DietManifestUnavailableError();
-  const database = getDb();
-  database.exec('BEGIN IMMEDIATE');
-  try {
-    const currentSnapshot = readStoredDietProfileJson();
-    if (currentSnapshot !== beforeSnapshot) throw new DietProfileChangedDuringAssessmentError();
-    const current = currentSnapshot === null ? null : parseDietProfile(JSON.parse(currentSnapshot));
-    const profile = applyAssessedDietIntake(current, manifest, input, input.at);
-    saveDietProfile(profile);
-    database.exec('COMMIT');
-    return profile;
-  } catch (error) {
-    database.exec('ROLLBACK');
-    throw error;
-  }
 }
 
 export function setOperatorDietDeck(

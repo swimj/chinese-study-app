@@ -11,7 +11,6 @@ import { durableOwnershipManifest } from '../server/db/ownership-manifest.ts';
 test('classifies every steady-state application table exactly once', async () => {
   const manifestNames = durableOwnershipManifest.map((entry) => entry.table);
   assert.equal(new Set(manifestNames).size, manifestNames.length, 'ownership manifest contains duplicate tables');
-  assert.equal(durableOwnershipManifest.length, 51);
   assert.ok(durableOwnershipManifest.every((entry) => entry.ambiguity === null));
 
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'chinese-study-app-ownership-manifest-'));
@@ -48,6 +47,19 @@ test('classifies every steady-state application table exactly once', async () =>
         );
       }
 
+      assert.equal(
+        durableOwnershipManifest.find((entry) => entry.table === 'pure_cues')?.ownershipClass,
+        'shared',
+      );
+      assert.equal(
+        durableOwnershipManifest.find((entry) => entry.table === 'pure_cue_accepted_words')?.ownershipClass,
+        'shared',
+      );
+      assert.equal(
+        durableOwnershipManifest.find((entry) => entry.table === 'learner_pure_cue_state')?.ownershipClass,
+        'learner_private',
+      );
+
       assert.deepEqual(
         learnerScopedCompatibilityTables.map((name) => `learner_owned_${name}`).sort(),
         durableOwnershipManifest
@@ -61,7 +73,13 @@ test('classifies every steady-state application table exactly once', async () =>
       for (const entry of durableOwnershipManifest.filter(
         (item) => item.ownershipClass === 'mixed_requires_separation',
       )) {
-        assertViewUsesLearnerContext(database, entry.table.replace(/^scoped_/, ''));
+        if (entry.table === 'content_items') {
+          // New content uses explicit module-level learner reads, not legacy compatibility views.
+          // vocabulary-content.test.ts exercises private reads and selection across two learners.
+          const schema = database.prepare("SELECT sql FROM sqlite_master WHERE name = 'content_items'").get() as {sql: string};
+          assert.match(schema.sql, /owner_learner_id TEXT REFERENCES learners/);
+          assert.match(schema.sql, /access_scope = 'shared' AND owner_learner_id IS NULL/);
+        } else assertViewUsesLearnerContext(database, entry.table.replace(/^scoped_/, ''));
       }
     } finally {
       database.close();

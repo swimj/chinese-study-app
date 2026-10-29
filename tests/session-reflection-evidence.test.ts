@@ -19,10 +19,30 @@ import {
   restoreSessionReflectionEvidence,
   snapshotSessionReflectionEvidence,
   toggleLearnerRequestedReview,
+  setContentRatingRequestedReview,
 } from '../src/features/session/session-reflection-evidence.ts';
 import type { Word } from '../src/types.ts';
 
 describe('completed-session reflection evidence', () => {
+  test('freezes bootstrap teaching separately from the production prompt and answer set', () => {
+    const item = createStudyItem({ actionKind: 'production', status: 'review' });
+    const bootstrapReveal = { contentId: 'content', useId: 'use', exampleId: 'example',
+      englishFrame: 'A usage', exampleSentence: '目标。', exampleTranslation: 'A goal.' };
+    item.production = { ...item.production!, bootstrapReveal };
+    const state = markActiveSessionUnitStarted(createBucketSessionState({
+      buckets: { review: [item], learning: [], unstudied: [] }, sessionId: 'bootstrap-evidence',
+      schedulerPolicy: { bucketWeights: { review: 1, learning: 0, unstudied: 0 } }, seed: 1,
+    }));
+    const result = rateActiveSessionUnit(state, 'forgot', { response: '替代',
+      productionResponse: { submittedText: '替代', result: 'rejected' } });
+    const metadata = result.state.reviewProgress[item.sessionActionId]!.attempts[0]!.metadata.production as Record<string, unknown>;
+    assert.deepEqual(metadata.bootstrapReveal, bootstrapReveal);
+    assert.notEqual(metadata.bootstrapReveal, bootstrapReveal);
+    assert.equal(metadata.text, 'target');
+    assert.deepEqual(metadata.acceptedWordIds, ['review-word']);
+    assert.equal(metadata.result, 'rejected');
+  });
+
   test('review production attempt batches retain the raw typed response without changing rating behavior', () => {
     const item = createStudyItem({ actionKind: 'production', status: 'review' });
     let state = markActiveSessionUnitStarted(createBucketSessionState({
@@ -63,7 +83,6 @@ describe('completed-session reflection evidence', () => {
         anchorWordId: 'review-word',
         submittedText: '  生字原样  ',
         result: 'rejected',
-        recheckDemandId: null,
       },
     );
 
@@ -127,7 +146,6 @@ describe('completed-session reflection evidence', () => {
       responseKind: 'no_clue',
       submittedText: null,
       result: 'rejected',
-      recheckDemandId: null,
     });
     assert.equal(result.state.reviewProgress[item.sessionActionId]?.failureCount, 1);
     assert.equal(result.state.reviewProgress[item.sessionActionId]?.reinforcementStreak, 0);
@@ -276,7 +294,6 @@ describe('completed-session reflection evidence', () => {
         text: 'When choosing a target under uncertain conditions',
         acceptedAnswers: [{ wordId: 'review-word', hanzi: '目标', traditional: null }],
         supplement: null,
-        recheckDemandId: null,
       },
     };
     const durableCaptured = recordProductionMistakeEvidence(initial, {
@@ -431,6 +448,51 @@ describe('completed-session reflection evidence', () => {
     );
   });
 
+  test('negative rating and explicit requests remain independent and deduplicate by action', () => {
+    const item = createStudyItem({ actionKind: 'production', status: 'review' });
+    const empty = createLearnerRequestedReflectionAccumulator();
+    const failures = createSessionReflectionEvidenceAccumulator();
+    const explicit = toggleLearnerRequestedReview(empty, item, ['target']);
+    const implicit = setContentRatingRequestedReview(empty, item, ['target'], 'down');
+    assert.equal(buildLearnerRequestedReflectionSupplement(failures, explicit, implicit).items.length, 1);
+    assert.equal(buildLearnerRequestedReflectionSupplement(failures, empty, implicit).items.length, 1);
+    for (const rating of ['up', null] as const) {
+      const cleared = setContentRatingRequestedReview(implicit, item, ['target'], rating);
+      assert.equal(buildLearnerRequestedReflectionSupplement(failures, empty, cleared).items.length, 0);
+      assert.equal(buildLearnerRequestedReflectionSupplement(failures, explicit, cleared).items.length, 1);
+    }
+    assert.equal(setContentRatingRequestedReview(implicit, item, ['target'], 'down'), implicit);
+  });
+
+  test('rating requests link accepted attempts, preserve failure evidence, and drop removed actions', () => {
+    const item = createStudyItem({ actionKind: 'production', status: 'review' });
+    const empty = createLearnerRequestedReflectionAccumulator();
+    const failure = createAttempt({ item, id: 'wrong', response: 'wrong' });
+    const failures = recordProductionMistakeEvidence(createSessionReflectionEvidenceAccumulator(), {
+      item, incorrectAttempt: failure, promptDisplayedMeanings: ['target'],
+    });
+    const implicit = appendAcceptedLearnerRequestedAttemptIds(
+      setContentRatingRequestedReview(empty, item, ['target'], 'down'),
+      { sessionActionId: item.sessionActionId, acceptedAttempts: [failure] },
+    );
+    assert.deepEqual(buildLearnerRequestedReflectionSupplement(createSessionReflectionEvidenceAccumulator(), empty, implicit).items[0]?.attemptIds, ['wrong']);
+    const merged = buildLearnerRequestedReflectionSupplement(failures, empty, implicit);
+    assert.equal(merged.items.length, 1);
+    assert.equal(merged.items[0]?.rawResponse, 'wrong');
+    const removed = dropLearnerRequestedReflectionForAction(implicit, item.sessionActionId);
+    assert.equal(buildLearnerRequestedReflectionSupplement(failures, empty, removed).items.length, 1);
+    assert.deepEqual(removed.items, []);
+  });
+
+  test('ratings on unsupported content do not request reflection', () => {
+    const empty = createLearnerRequestedReflectionAccumulator();
+    for (const item of [
+      createStudyItem({ actionKind: 'recognition', status: 'review' }),
+      createStudyItem({ actionKind: 'production', status: 'learning' }),
+      createStudyItem({ actionKind: 'contrast_selection', status: 'review' }),
+    ]) assert.equal(setContentRatingRequestedReview(empty, item, ['target'], 'down'), empty);
+  });
+
   test('keeps an explicit review request outside Undo while joining it to the accepted action batch', () => {
     const item = createStudyItem({ actionKind: 'production', status: 'review' });
     let requests = toggleLearnerRequestedReview(
@@ -482,7 +544,6 @@ function createStudyItem({
           text: word.meaning,
           acceptedAnswers: [{ wordId: word.id, hanzi: word.hanzi, traditional: word.traditional }],
           supplement: null,
-          recheckDemandId: null,
         }
       : null,
   };

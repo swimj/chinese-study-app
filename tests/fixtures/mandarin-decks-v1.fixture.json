@@ -8,7 +8,8 @@
     { "id": "hsk2-l1", "order": 0, "hsk": { "version": "2.0", "level": 1 }, "stratum": null, "size": 8 },
     { "id": "hsk2-l2", "order": 1, "hsk": { "version": "2.0", "level": 2 }, "stratum": null, "size": 4 },
     { "id": "hsk2-l3-s1", "order": 2, "hsk": { "version": "2.0", "level": 3 }, "stratum": 1, "size": 1 },
-    { "id": "beyond-hsk", "order": 3, "hsk": null, "stratum": null, "size": 1 }
+    { "id": "hsk2-l6-s1", "order": 3, "hsk": { "version": "2.0", "level": 6 }, "stratum": 1, "size": 0 },
+    { "id": "beyond-hsk", "order": 4, "hsk": null, "stratum": null, "size": 1 }
   ],
   "assignments": {
     "我|wǒ": "hsk2-l1",

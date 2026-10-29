@@ -1,9 +1,11 @@
+import type { PureCueReflectionItemV1, ReconcilePureCueResponseOperationV1 } from '../src/domain/pure-cue-reflection.ts';
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import type {
   CreateContrastClusterOperationV1,
   ProductionMistakeReflectionItemV2,
   ReflectionOperation,
+  ReflectionItemV6,
   RepairProductionCueOperationV2,
   SessionReflectionBundleV1,
   SessionReflectionResultV4,
@@ -25,7 +27,6 @@ import {
   reduceReflectionOperationDraft,
   formatRunDuration,
   artifactDetailIdsToFetch,
-  retireSelectedDeferredProposalsAfterSecondOpinion,
   visibleOutputTokens,
   type ReflectionArtifactDetailDto,
 } from '../src/features/reflection/reflection-page-model.js';
@@ -73,6 +74,19 @@ describe('reflection page model', () => {
     ]);
     assert.equal(cards[0]?.kind === 'proposal' && cards[0].result.itemId, 'mistake');
     assert.equal(cards[2]?.kind, 'explanation');
+    assert.equal(cards[2]?.kind === 'explanation' && cards[2].actionability, 'manual');
+  });
+
+  test('marks staged disagreement explanations as non-actionable while retaining Help membership', () => {
+    const detail = artifactDetail();
+    const result = detail.result.itemResults[1]!;
+    Object.assign(result, { promotionOutcome: 'disagreement' as const });
+
+    const cards = buildReflectionHelpCards([detail]);
+    const explanation = cards.find((card) => card.kind === 'explanation');
+    assert(explanation?.kind === 'explanation');
+    assert.equal(explanation.actionability, 'non_actionable_disagreement');
+
   });
 
   test('hides Done explanation cards from the help queue but keeps pending proposals', () => {
@@ -171,47 +185,6 @@ describe('reflection page model', () => {
         .map((entry) => entry.proposal.review.proposalId),
       ['proposal-b'],
     );
-  });
-
-  test('retires selected deferred proposals in the client cache after second-opinion success', () => {
-    const first = artifactDetail();
-    first.artifactId = 'source-a';
-    first.proposals[0].review.disposition = { kind: 'deferred' };
-    first.proposals[1].review.disposition = { kind: 'deferred' };
-    const second = artifactDetail();
-    second.artifactId = 'source-b';
-    second.proposals[0].review.proposalId = 'proposal-c';
-    second.proposals[0].review.disposition = { kind: 'deferred' };
-    second.proposals[1].review.proposalId = 'proposal-d';
-    second.proposals[1].review.disposition = { kind: 'pending' };
-    const untouched = artifactDetail();
-    untouched.artifactId = 'source-c';
-    untouched.proposals[0].review.proposalId = 'proposal-e';
-    untouched.proposals[0].review.disposition = { kind: 'deferred' };
-    untouched.proposals[1].review.proposalId = 'proposal-f';
-    untouched.proposals[1].review.disposition = { kind: 'deferred' };
-
-    const nextDetails = retireSelectedDeferredProposalsAfterSecondOpinion(
-      [first, second, untouched],
-      ['proposal-b', 'proposal-c'],
-    );
-
-    assert.deepEqual(
-      buildReflectionProposalPresentations(nextDetails)
-        .map((entry) => entry.proposal.review.proposalId)
-        .sort(),
-      ['proposal-a', 'proposal-e', 'proposal-f'],
-    );
-    assert.deepEqual(
-      nextDetails[0]!.proposals[1]!.review.disposition,
-      { kind: 'dismissed', reason: 'requested_second_opinion' },
-    );
-    assert.deepEqual(
-      nextDetails[1]!.proposals[0]!.review.disposition,
-      { kind: 'dismissed', reason: 'requested_second_opinion' },
-    );
-    assert.equal(nextDetails[1]!.proposals[1]!.review.disposition.kind, 'pending');
-    assert.equal(nextDetails[2], untouched);
   });
 
   test('Refresh fetches every scoped detail even when the client cache is warm', () => {
@@ -705,6 +678,126 @@ describe('reflection page model', () => {
     );
   });
 
+  test('edits word-only cleanup and source fairness independently of shared publication', () => {
+    const evidence = promotionEvidence();
+    let draft = createManualOperation('reconcile_production_cues', 1, evidence);
+    assert.equal(draft.kind, 'reconcile_production_cues');
+    if (draft.kind !== 'reconcile_production_cues') return;
+    assert.equal(draft.destination, null);
+    draft = reduceReflectionOperationDraft(draft, {
+      type: 'toggle_promotion_deactivation', wordId: 'target', cueId: 'cue-1',
+    }) as typeof draft;
+    draft = reduceReflectionOperationDraft(draft, {
+      type: 'add_promotion_distinctive_cue', wordId: 'target',
+    }) as typeof draft;
+    draft = reduceReflectionOperationDraft(draft, {
+      type: 'update_promotion_distinctive_cue', wordId: 'target', index: 0,
+      patch: { text: 'a natural target-specific context' },
+    }) as typeof draft;
+    draft = reduceReflectionOperationDraft(draft, {
+      type: 'set_reconciliation_fairness', fairness: 'misleading_or_overloaded_cue',
+    }) as typeof draft;
+    assert.equal(draft.destination, null);
+    assert.equal(draft.sourceAttemptFairness, 'misleading_or_overloaded_cue');
+    assert.equal(draft.wordPlans[0]!.distinctiveCueDrafts[0]!.text, 'a natural target-specific context');
+    assert.deepEqual(getOperationDraftState(draft, draft, evidence).validationErrors, []);
+
+    const destination = {
+      kind: 'existing' as const, pureCueId: 'pure-1', teachingNote: 'Teaching for the complete membership',
+      expectedAcceptedWordIds: ['target'], expectedTeachingNote: '',
+    };
+    draft = reduceReflectionOperationDraft(draft, { type: 'set_promotion_destination', destination }) as typeof draft;
+    const clone = cloneReflectionOperation(draft);
+    assert.equal(clone.kind, 'reconcile_production_cues');
+    if (clone.kind !== 'reconcile_production_cues' || clone.destination?.kind !== 'existing') return;
+    clone.destination.expectedAcceptedWordIds.push('unrelated');
+    assert.deepEqual(destination.expectedAcceptedWordIds, ['target']);
+    draft = reduceReflectionOperationDraft(draft, { type: 'set_promotion_destination', destination: null }) as typeof draft;
+    assert.equal(draft.sourceAttemptFairness, 'misleading_or_overloaded_cue');
+    assert.deepEqual(draft.wordPlans[0]!.deactivateCueIds, ['cue-1']);
+  });
+
+  test('editing holistic teaching content preserves the shared stimulus, axis, and extension preconditions', () => {
+    const evidence = promotionEvidence();
+    let draft = createManualOperation('reconcile_production_cues', 1, evidence);
+    assert.equal(draft.kind, 'reconcile_production_cues');
+    if (draft.kind !== 'reconcile_production_cues') return;
+    const createDestination = {
+      kind: 'create' as const, stimulus: 'A concrete shared context', axisNote: 'Shared expressive purpose',
+      teachingNote: 'Initial member comparison',
+    };
+    draft = reduceReflectionOperationDraft(draft, {
+      type: 'set_promotion_destination', destination: createDestination,
+    }) as typeof draft;
+    draft = reduceReflectionOperationDraft(draft, {
+      type: 'set_promotion_destination', destination: { ...createDestination, teachingNote: 'Revised complete explanation' },
+    }) as typeof draft;
+    assert.deepEqual(draft.destination, { ...createDestination, teachingNote: 'Revised complete explanation' });
+    const extension = {
+      kind: 'existing' as const, pureCueId: 'pure-1', teachingNote: 'Existing aggregate teaching',
+      expectedAcceptedWordIds: ['target'], expectedTeachingNote: 'Existing aggregate teaching',
+    };
+    draft = reduceReflectionOperationDraft(draft, {
+      type: 'set_promotion_destination', destination: extension,
+    }) as typeof draft;
+    draft = reduceReflectionOperationDraft(draft, {
+      type: 'set_promotion_destination', destination: { ...extension, teachingNote: 'Aggregate teaching including alternate' },
+    }) as typeof draft;
+    assert.deepEqual(draft.destination, { ...extension, teachingNote: 'Aggregate teaching including alternate' });
+    assert.equal(draft.sourceAttemptFairness, 'fair');
+    assert.equal(draft.sourceAttemptId, 'attempt-1');
+  });
+
+  test('builds and edits a promotion without changing the server-stamped pair', () => {
+    const evidence = promotionEvidence();
+    let draft = createManualOperation('promote_pure_elicitation', 1, evidence);
+    assert.equal(draft.kind, 'promote_pure_elicitation');
+    if (draft.kind !== 'promote_pure_elicitation') return;
+    assert.deepEqual({
+      sourceAttemptId: draft.sourceAttemptId,
+      targetWordId: draft.targetWordId,
+      responseWordId: draft.responseWordId,
+    }, {
+      sourceAttemptId: 'attempt-1',
+      targetWordId: 'target',
+      responseWordId: 'alternate',
+    });
+    assert.deepEqual(draft.wordPlans.map((plan) => plan.deactivateCueIds), [[], []]);
+
+    draft = reduceReflectionOperationDraft(draft, {
+      type: 'toggle_promotion_deactivation',
+      wordId: 'target',
+      cueId: 'cue-1',
+    }) as typeof draft;
+    draft = reduceReflectionOperationDraft(draft, {
+      type: 'add_promotion_distinctive_cue',
+      wordId: 'alternate',
+    }) as typeof draft;
+    draft = reduceReflectionOperationDraft(draft, {
+      type: 'update_promotion_distinctive_cue',
+      wordId: 'alternate',
+      index: 0,
+      patch: { text: 'alternate-only situation' },
+    }) as typeof draft;
+    assert.deepEqual(draft.wordPlans[0]!.deactivateCueIds, ['cue-1']);
+    assert.equal(draft.wordPlans[1]!.distinctiveCueDrafts[0]!.text, 'alternate-only situation');
+
+    const excludedDraft = draft.wordPlans[1]!.distinctiveCueDrafts[0]!;
+    draft = reduceReflectionOperationDraft(draft, {
+      type: 'remove_promotion_distinctive_cue',
+      wordId: 'alternate',
+      index: 0,
+    }) as typeof draft;
+    assert.deepEqual(draft.wordPlans[1]!.distinctiveCueDrafts, []);
+    draft = reduceReflectionOperationDraft(draft, {
+      type: 'restore_promotion_distinctive_cue',
+      wordId: 'alternate',
+      draft: excludedDraft,
+    }) as typeof draft;
+    assert.deepEqual(draft.wordPlans[1]!.distinctiveCueDrafts, [excludedDraft]);
+    assert.deepEqual(getOperationDraftState(draft, draft, evidence).validationErrors, []);
+  });
+
   test('stamps the served cue id when a manual V2 change is switched to deactivate', () => {
     const evidence = v2Evidence();
     const original: ReflectionOperation = {
@@ -901,6 +994,35 @@ function v2Evidence(): ProductionMistakeReflectionItemV2 {
   };
 }
 
+function promotionEvidence(): ReflectionItemV6 {
+  const evidence = v2Evidence();
+  return {
+    ...evidence,
+    servedCue: { ...evidence.servedCue, acceptedWordIds: ['target'], supplement: null },
+    promotionEvidence: {
+      diagnosisTags: ['production_cue_overloaded'],
+      words: ['target', 'alternate'].map((wordId) => ({
+        wordId,
+        activeProductionCues: [{
+          cueId: wordId === 'target' ? 'cue-1' : 'cue-2',
+          taskId: `production-task:${wordId}:default_production`,
+          cueType: 'definition_gloss',
+          text: `broad ${wordId}`,
+          acceptedWordIds: [wordId],
+        }],
+      })),
+      intersectingPureCues: [{
+        id: 'pure-1',
+        stimulus: 'shared axis',
+        axisNote: 'explicit axis',
+        teachingNote: '',
+        acceptedWordIds: ['target', 'third'],
+        acceptedMembers: [{ wordId: 'target', hanzi: '目标' }, { wordId: 'third', hanzi: '其他' }],
+      }],
+    },
+  };
+}
+
 function fallbackEvidence(): ProductionMistakeReflectionItemV2 {
   const evidence = v2Evidence();
   return {
@@ -996,7 +1118,9 @@ function artifactDetail(): ReflectionArtifactDetailDto {
       artifactId: 'artifact',
       itemId: 'informational',
       openedAt: evidenceBundle.generatedAt,
+      disposition: 'open',
     }],
+    deferredHelpInbox: [],
   };
 }
 
@@ -1079,3 +1203,42 @@ function qualityArm(
     ),
   };
 }
+
+
+test('pure cue proposal edits preserve source binding and isolate C cue changes', () => {
+  const evidence: PureCueReflectionItemV1 = {
+    source: 'pure_cue_mistake', sourceActionKind: 'pure_cue', itemId: 'pure-item',
+    sourceAttemptId: 'assessment', firstEventId: 'event', sessionActionId: 'action',
+    occurredAt: '2026-09-30T00:00:00.000Z', rawResponse: 'C',
+    targetWord: null, submittedWord: wordSnapshot('C', 'C'), sessionNote: null,
+    servedSnapshot: { snapshotId: 'snapshot', pureCueId: 'pure', servedAt: '2026-09-30T00:00:00.000Z', stimulus: 'Shared situation', axisNote: '', teachingNote: 'A and B', acceptedAnswers: [] },
+    currentCue: { id: 'pure', stimulus: 'Shared situation', axisNote: '', teachingNote: 'A and B', acceptedWordIds: ['A', 'B'], acceptedWords: [wordSnapshot('A', 'A'), wordSnapshot('B', 'B')] },
+    activeProductionCues: [], existingContent: { contrastClusters: [], knownAcceptedAlternates: [] },
+  };
+  const original: ReconcilePureCueResponseOperationV1 = {
+    kind: 'reconcile_pure_cue_response', version: 1, sourceAttemptId: 'assessment', responseWordId: 'C', pureCueId: 'pure',
+    expectedAcceptedWordIds: ['A', 'B'], expectedTeachingNote: 'A and B', teachingNote: 'A, B, and C',
+    responseWordPlan: { wordId: 'C', deactivateCueIds: [], distinctiveCueDrafts: [] },
+  };
+  const draft = cloneReflectionOperation(original);
+  assert.equal(draft.kind, 'reconcile_pure_cue_response');
+  if (draft.kind !== 'reconcile_pure_cue_response') throw new Error('Unexpected draft kind');
+  assert.deepEqual(getOperationDraftState(original, draft, evidence).validationErrors, []);
+  draft.responseWordPlan.wordId = 'A';
+  assert.ok(getOperationDraftState(original, draft, evidence).validationErrors.length > 0);
+  assert.equal(original.responseWordPlan.wordId, 'C');
+
+  const repair = createReplacementOperation('repair_pure_cue_stimulus', 1, original, evidence);
+  assert.equal(repair.kind, 'repair_pure_cue_stimulus');
+  if (repair.kind !== 'repair_pure_cue_stimulus') throw new Error('Unexpected repair kind');
+  assert.equal(repair.expectedStimulus, evidence.currentCue.stimulus);
+  assert.deepEqual(repair.expectedAcceptedWordIds, ['A', 'B']);
+  assert.ok(getOperationDraftState(repair, repair, evidence).validationErrors.length > 0);
+  const revisedRepair = { ...repair, stimulus: 'Both experts agreed: they offered ____ advice.' };
+  assert.deepEqual(getOperationDraftState(repair, revisedRepair, evidence).validationErrors, []);
+  const clonedRepair = cloneReflectionOperation(revisedRepair);
+  assert.equal(clonedRepair.kind, 'repair_pure_cue_stimulus');
+  if (clonedRepair.kind !== 'repair_pure_cue_stimulus') throw new Error('Unexpected cloned repair kind');
+  clonedRepair.expectedAcceptedWordIds.push('D');
+  assert.deepEqual(revisedRepair.expectedAcceptedWordIds, ['A', 'B']);
+});

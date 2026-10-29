@@ -1,0 +1,43 @@
+/* Placement exploration only. No selectors here affect the live application. */
+.vocab-preview main { container-type: inline-size; }
+.vocab-history-trial { position: relative; display: grid; height: 100%; min-height: 0; min-width: 0; gap: 1.1rem; width: min(100%, 1080px); margin: 0 auto; }
+.vocab-history-trial.is-below { display: block; max-width: 850px; }
+.vocab-history-trial.is-left { grid-template: 'history session' minmax(0, 1fr) / 12rem minmax(0, 850px); }
+.vocab-history-trial.is-right { grid-template: 'session history' minmax(0, 1fr) / minmax(0, 850px) 12rem; }
+.vocab-history-trial.is-drawer { grid-template: 'session toggle' minmax(0, 1fr) / minmax(0, 850px) 3.25rem; max-width: 920px; }
+.vocab-history-trial-session { grid-area: session; height: 100%; min-height: 0; min-width: 0; }
+.vocab-history-trial-rail { grid-area: history; min-height: 0; min-width: 0; padding-top: 2.75rem; }
+.vocab-history-trial-rail .vocab-word-tray,
+.vocab-history-trial-drawer .vocab-word-tray { height: 100%; min-height: 0; display: flex; flex-direction: column; padding: 0; }
+.vocab-history-trial-rail .vocab-tray-heading,
+.vocab-history-trial-drawer .vocab-tray-heading { flex: none; flex-wrap: wrap; gap: .3rem; }
+.vocab-history-trial-rail .vocab-tray-navigation,
+.vocab-history-trial-drawer .vocab-tray-navigation { margin-left: auto; }
+.vocab-history-trial-rail .vocab-word-tray-items,
+.vocab-history-trial-drawer .vocab-word-tray-items { flex: 1; min-height: 0; flex-direction: column; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding: .35rem .35rem .75rem; }
+.vocab-history-trial-rail .vocab-word-tile,
+.vocab-history-trial-drawer .vocab-word-tile { width: 100%; min-width: 0; font: inherit; text-align: left; padding: .65rem .9rem; border: 1px solid var(--border); border-radius: .65rem; background: var(--surface); color: var(--text); display: grid; gap: .2rem; }
+.vocab-history-trial-rail .vocab-word-tile.is-active,
+.vocab-history-trial-drawer .vocab-word-tile.is-active { background: var(--accent-soft); border-color: var(--accent); }
+.vocab-history-trial-rail .vocab-word-tile:focus-visible,
+.vocab-history-trial-drawer .vocab-word-tile:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+.vocab-history-trial-toggle { grid-area: toggle; display: none; align-self: start; padding-top: 2.75rem; }
+.is-drawer > .vocab-history-trial-toggle { display: block; }
+.vocab-history-trial-toggle > button { width: 100%; min-height: 3rem; font: inherit; font-size: .75rem; display: grid; justify-content: center; gap: .25rem; padding: .55rem .35rem; border: 1px solid var(--border); border-radius: .65rem; color: var(--text-secondary); background: var(--surface); }
+.vocab-history-trial-toggle > button[aria-expanded='true'] { background: var(--accent-soft); color: var(--accent); }
+.vocab-history-trial-drawer { position: absolute; z-index: 30; top: 2.75rem; right: 4.35rem; bottom: 0; width: min(16rem, calc(100% - 4.5rem)); min-height: 0; padding: .9rem; border: 1px solid var(--border); border-radius: .8rem; background: var(--surface); box-shadow: var(--shadow-card); }
+.is-left > .vocab-history-trial-drawer,
+.is-right > .vocab-history-trial-drawer { display: none; }
+@container (max-width: 760px) {
+  .vocab-history-trial.is-left,
+  .vocab-history-trial.is-right,
+  .vocab-history-trial.is-drawer { grid-template: 'toggle' auto 'session' minmax(0, 1fr) / minmax(0, 1fr); gap: .5rem; }
+  .vocab-history-trial-rail { display: none; }
+  .is-left > .vocab-history-trial-toggle,
+  .is-right > .vocab-history-trial-toggle,
+  .is-drawer > .vocab-history-trial-toggle { display: block; justify-self: end; padding-top: 0; }
+  .vocab-history-trial-toggle > button { display: flex; align-items: center; gap: .6rem; padding: .4rem .8rem; min-height: 2.4rem; }
+  .vocab-history-trial-drawer,
+  .is-left > .vocab-history-trial-drawer,
+  .is-right > .vocab-history-trial-drawer { display: block; top: 2.9rem; right: 0; width: min(16rem, 100%); }
+}

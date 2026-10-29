@@ -1,0 +1,94 @@
+export const PURE_CUE_REFLECTION_FLOW_VERSION = 'pure_cue_post_session_reflection.v1' as const;
+export const PURE_CUE_REFLECTION_PROMPT_VERSION = 'pure-cue-reflection-v2.0' as const;
+export const CURRENT_INITIAL_REFLECTION_FLOW_VERSION = 'initial_post_session_reflection.v6' as const;
+export const CURRENT_DEFERRED_SECOND_OPINION_FLOW_VERSION = 'deferred_second_opinion.v5' as const;
+
+export const STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION = 'reflection-staged-v5.0' as const;
+export const PURE_CUE_PROMOTION_PROMPT_VERSION = 'pure-cue-promotion-v3.0' as const;
+
+/** Bare major versions shipped before minor numbering are equivalent to .0. */
+export function promptMajorVersion(version: string): string {
+  const match = /^(.*-v[1-9]\d*)(?:\.(?:0|[1-9]\d*))?$/.exec(version);
+  return match?.[1] ?? version;
+}
+
+export function compatiblePromptVersions(current: string): string[] {
+  const match = /^(.*-v[1-9]\d*)(?:\.(0|[1-9]\d*))?$/.exec(current);
+  if (!match) return [current];
+  const major = match[1]!;
+  const minor = Number(match[2] ?? 0);
+  return [major, ...Array.from({ length: minor + 1 }, (_, index) => `${major}.${index}`)];
+}
+
+export function isCompatiblePromptVersion(version: string, current: string): boolean {
+  return compatiblePromptVersions(current).includes(version);
+}
+
+export type ReflectionGenerationStage = 'diagnosis' | 'promotion';
+
+export function isCurrentReflectionGenerationStage(input: {
+  reflectionFlowVersion: string;
+  stage: ReflectionGenerationStage;
+  bundleSchemaVersion: string | null;
+  promptVersion: string;
+}): boolean {
+  if (input.stage === 'promotion') {
+    return isCurrentReflectionFlowVersion(input.reflectionFlowVersion)
+      && input.bundleSchemaVersion === 'pure_cue_promotion_bundle.v3'
+      && isCompatiblePromptVersion(input.promptVersion, PURE_CUE_PROMOTION_PROMPT_VERSION);
+  }
+  if (!isCompatiblePromptVersion(input.promptVersion, STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION)) return false;
+  return (
+    input.reflectionFlowVersion === CURRENT_INITIAL_REFLECTION_FLOW_VERSION
+    && input.bundleSchemaVersion === 'session_reflection_bundle.v4'
+  ) || (
+    input.reflectionFlowVersion === CURRENT_DEFERRED_SECOND_OPINION_FLOW_VERSION
+    && input.bundleSchemaVersion === 'curated_reflection_diagnosis_bundle.v2'
+  );
+}
+
+export function isCurrentReflectionArtifactContract(input: {
+  reflectionFlowVersion: string;
+  bundleSchemaVersion: string;
+  resultSchemaVersion: string;
+  promptVersion: string;
+}): boolean {
+  // V1 pure-cue artifacts retain their existing extension reviews; only new provider runs use V2.
+  if (input.reflectionFlowVersion === PURE_CUE_REFLECTION_FLOW_VERSION) return input.bundleSchemaVersion === 'pure_cue_reflection_bundle.v1' && (
+    (input.resultSchemaVersion === 'pure_cue_reflection_result.v2' && isCompatiblePromptVersion(input.promptVersion, PURE_CUE_REFLECTION_PROMPT_VERSION))
+    || (input.resultSchemaVersion === 'pure_cue_reflection_result.v1' && input.promptVersion === 'pure-cue-reflection-v1.0')
+  );
+  if (input.resultSchemaVersion !== 'session_reflection_result.v10') return false;
+  if (
+    !isCompatiblePromptVersion(input.promptVersion, STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION)
+    // Existing authored supplement proposals retain their original application authority.
+    && !isCompatiblePromptVersion(input.promptVersion, 'reflection-staged-v4.2')
+    && !isCompatiblePromptVersion(input.promptVersion, PURE_CUE_PROMOTION_PROMPT_VERSION)
+  ) return false;
+  return (
+    input.reflectionFlowVersion === CURRENT_INITIAL_REFLECTION_FLOW_VERSION
+    && input.bundleSchemaVersion === 'session_reflection_bundle.v6'
+  ) || (
+    input.reflectionFlowVersion === CURRENT_DEFERRED_SECOND_OPINION_FLOW_VERSION
+    && input.bundleSchemaVersion === 'curated_reflection_bundle.v3'
+  );
+}
+
+export function isCurrentReflectionFlowVersion(value: string): boolean {
+  return value === PURE_CUE_REFLECTION_FLOW_VERSION || value === CURRENT_INITIAL_REFLECTION_FLOW_VERSION
+    || value === CURRENT_DEFERRED_SECOND_OPINION_FLOW_VERSION;
+}
+
+/** Second opinions consume original diagnosis evidence, not prior generated output. */
+export function supportsReflectionSecondOpinionEvidence(input: {
+  bundleSchemaVersion: string;
+}): boolean {
+  return [
+    'session_reflection_bundle.v4',
+    'session_reflection_bundle.v5',
+    'session_reflection_bundle.v6',
+    'curated_reflection_bundle.v1',
+    'curated_reflection_bundle.v2',
+    'curated_reflection_bundle.v3',
+  ].includes(input.bundleSchemaVersion);
+}

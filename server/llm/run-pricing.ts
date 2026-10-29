@@ -55,3 +55,10 @@ export function estimateRunCostFromSnapshot(
 
   return { estimatedCostUsd, pricing };
 }
+
+export const DEBRIEF_PRICING: RunPricingSnapshot = {
+  id: 'openai-gpt-6.1-sol-standard-short-context-2026-10-06', pricingAsOf: '2026-10-06',
+  provider: 'openai', providerModel: 'gpt-6.1-sol', serviceTier: 'standard', contextBand: 'short', currency: 'USD',
+  inputPerMillionUsd: 2, cachedInputPerMillionUsd: 0.1, cacheWriteInputPerMillionUsd: 2.5, outputPerMillionUsd: 10,
+};
+// Official Standard short-context rates: https://developers.openai.com/api/docs/pricing

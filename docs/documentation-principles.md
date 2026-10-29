@@ -1,0 +1,218 @@
+# Documentation principles
+
+## Purpose
+
+These principles help contributors decide what repository documentation should
+explain, how its parts relate, and how to maintain it as the product changes.
+The [authoring procedure](documentation-authoring.md) applies these principles
+when creating or revising a document.
+
+Documentation should help a reader recover the product's model, understand its
+promises, explain how the implementation works, operate it safely, and reason
+about the next change. Clear models and causal explanations make that knowledge
+useful to both humans and agents. A reader with a systems/database background
+should be able to follow the prose without reconstructing an implementation
+session.
+
+The standard below describes the documentation we want. The target hierarchy
+defines where each kind of explanation belongs; existing documents should be
+assessed and reorganized against it.
+
+## Documentation map
+
+This is a conceptual tree of documents and document groups. The branches group
+related explanations and show how readers reach them. They describe navigation
+and content organization; the evidence section below explains how to reason
+about authority and disagreement.
+
+```text
+Repository orientation (README)
+├── Contributor guidance (AGENTS.md)
+│   ├── Documentation authoring and maintenance
+│   ├── Implementation, testing, and review
+│   └── Specialized agent procedures
+└── Application knowledge (documentation index)
+    ├── Product models and promises
+    │   ├── Shared concepts and guarantees
+    │   └── Feature and domain models and contracts
+    ├── Architecture contracts
+    ├── Implementation explanations
+    │   ├── System architecture and data flow
+    │   └── Subsystem mechanisms and code references
+    ├── Operations guides
+    └── Decision and historical records
+```
+
+Each node may be a document or a small collection with a clear entry point.
+Shared concepts can be explained across several coherent documents; feature
+contracts refer to those definitions and develop the details for their area.
+The logical relationships determine the useful file boundaries and locations.
+
+The two main entry points answer different questions. **AGENTS.md** helps an
+agent find instructions for conducting its work, such as writing documentation
+or validating a change. **The documentation index** helps any reader find
+knowledge about the application, such as scheduling behavior or persistence.
+A procedure can link to the application explanations needed to carry it out.
+
+## What each document group provides
+
+Here, an explanation's **owner** means the named document or section that
+maintains it. Use the document's name when assigning that
+responsibility.
+
+| Document or group | Reader's question | Content it maintains | Useful links |
+| --- | --- | --- | --- |
+| Repository README | What is this product and repository, and where should I start? | Brief orientation to the product's current use and repository contents | Contributor guidance and application documentation |
+| AGENTS.md and contributor guidance | How should I carry out this task? | Execution scope, conventions, safety, authoring, verification, and review procedures | More specific guidance and the application explanations needed for the task |
+| Documentation index | Where is the explanation I need? | Routes to product, implementation, operational, and decision documents | Current documents and their known coverage gaps |
+| Shared product-model documents | What are the common concepts and promises? | Vocabulary, entities, relationships, learner lifecycle, and cross-cutting intended guarantees | Feature contracts that refine the model |
+| Feature and domain documents | What does this part of the product mean and promise? | Detailed concepts, behavior, lifecycles, and guarantees | Shared definitions, implementation explanations, tests, and relevant decisions |
+| Architecture contracts | Which structural constraints must implementations preserve, and why? | Accepted authority boundaries, state ownership, consistency and failure guarantees | Product promises, their current realization, and decision rationale |
+| Implementation and subsystem explanations | How does the implementation work today? | Components, data flow, mechanisms, current policies, limitations, and code references | The product and architecture contracts being realized, known gaps, and operational procedures |
+| Operations guides | How do I perform this operation safely? | Preconditions, commands, checks, recovery steps, and required evidence | Relevant mechanisms and safety guarantees; distinct routes for hosted operation and contributor setup |
+| Decision and historical records | Why was this choice made, and what context still matters? | Reasons, alternatives, accepted decisions, and selected useful prior context | The current explanation affected by each decision |
+
+Product contracts prescribe the experience and guarantees the system should
+provide. Architecture contracts prescribe the structural constraints that
+implementations must preserve to provide those guarantees. Implementation
+explanations describe the current realization, including gaps and changeable
+mechanisms. An architecture diagram can serve either role; its title or folder
+does not establish whether it describes the code or constrains future designs.
+
+For example, preserving the exact content of an active vocabulary session is a
+product promise. Deriving learning effects from an acknowledged action boundary
+is an architectural constraint. A connection-scoped cache, its capacity, and the
+queries used to hydrate it describe the current implementation. Exact UI layout,
+key bindings, reserve sizes, and model-routing weights normally belong to the
+current behavior account unless a deliberate requirement makes them binding.
+Moving such a detail out of a contract does not authorize a behavior change.
+
+Closely related prescription and description may share a file when named sections
+make their roles explicit. Use separate documents when readers need to consult
+or maintain those explanations independently. A contract should explain the
+reason for a constraint without reproducing the mechanism that currently meets it.
+
+For this project, **Steward** maintains the current vision and priorities, as
+described in [the project context](../AGENTS.md#11-project-context-and-task-scope).
+Working plans and investigation notes support the task that uses them. Accepted
+product decisions that change the model or its promises become part of the
+relevant model or contract, with useful rationale retained in the explanation
+or a linked decision record.
+
+## Intent, evidence, and disagreement
+
+Different sources answer different questions:
+
+- **Contracts:** what the product promises and which constraints should hold.
+- **Code and observed execution:** how the implementation actually behaves.
+- **Tests:** which behavior is checked, under which conditions.
+- **Rationale and decisions:** why a choice was made and what authorized it.
+
+Contracts express intent independently of the current implementation.
+Implementation explanations make mechanisms, limitations, and discrepancies
+visible. Tests supply bounded evidence for the behavior they exercise.
+
+When sources disagree, identify the intended promise, actual behavior, relevant
+evidence, and any unresolved decision. Correct a clearly stale description
+within scope. When an authorized change alters a product promise, update the
+owning contract alongside the implementation and relevant tests. For changes to
+mechanisms or operating procedures, revise the explanations whose answers would
+otherwise become inaccurate or inadequate for their readers.
+Ask for human judgment when a consequential product or architectural choice
+remains unresolved, while continuing independent, well-defined work.
+
+Existing specifications can preserve accidental choices or superseded intent.
+A canonical label alone does not establish that every sentence reflects a
+deliberate decision. Recover intent from the model, rationale, history, and
+explicit decisions. Do not silently rewrite a promise to fit the code, repair
+code to a suspect spec, or turn uncertainty into a new guarantee.
+
+## How explanations evolve
+
+Each document should open by establishing its purpose and scope. Purpose
+explains who the document is for and what it helps them understand or do; scope
+identifies the topics and questions it addresses. Together, they help readers
+decide whether the document meets their needs. The [opening of this
+document](#purpose) provides an example. A short introduction can be sufficient;
+use a dedicated section when the scope needs more explanation.
+
+That purpose determines the explanations the document owns and the detail they
+need. A detail earns its place through the explanatory work it does. Choose the
+level of abstraction that makes the relevant relationships and consequences
+clear while allowing the implementation to evolve. To decide whether
+information or a reference belongs, ask: without it, what would the reader be
+unable to understand or do that this document is meant to support?
+
+For example, a contract might explain when an action is available and what
+invoking it means for the learner. The button's exact screen position usually
+contributes little to that account, while a requirement that learners can
+recognize and access the action may be central. Similarly, an interleaving
+contract might explain the constraints on exercise order and why they matter.
+Those explanations may be sufficient, with the particular algorithm remaining
+in code. Its details warrant prose when they are needed to answer a reader's
+question, such as why a mechanism has a consequential limitation.
+
+A change should require updates to other documents only when it changes an
+explanation they own. Link to another explanation where the reader's
+understanding depends on it. As understanding changes, maintain and reorganize
+the documentation toward these responsibilities. Choose file boundaries that
+keep related concepts understandable and responsibilities clear.
+
+A working note can preserve exploration or support a handoff. Its durable
+conclusions should graduate into the appropriate explanation. The task or PR
+can retain execution detail, while the maintained documentation tells readers
+what is true, what is promised, and why.
+
+A specification can discuss possible extensions or unresolved choices when
+they clarify a current boundary, tradeoff, or constraint. Keep them near the
+relevant explanation and distinguish them from accepted promises and delivery
+commitments. State what is undecided, and update or remove the discussion as
+decisions change. Broader exploration and task planning belong in supporting
+documents rather than an accumulating list of speculative work in the spec.
+
+### Current-state language
+
+Maintained explanations describe the model directly for readers who do not know
+the task history. Avoid release-relative wording such as "now", "still",
+"remains", "continues to", or "no longer" when it implicitly compares the
+documented behavior with an earlier implementation. Write "Connections is a
+Home reader" instead of "Connections remains a Home reader". Write "Word-owned
+cues accept only the target word" instead of "Word-owned cues now accept only
+the target word". Put change comparisons in pull requests, release notes, or
+explicitly dated/versioned historical and migration explanations.
+
+Temporal language is useful when it describes a relationship within the model:
+"The server retains the staged input across restart" specifies persistence,
+and "Undo is available until the deadline" specifies a lifecycle boundary.
+Name the relevant state, event, or version so the sentence does not depend on
+knowing what changed in the current task. This is a test of meaning, not a ban
+on particular words.
+
+## Coverage and maintenance
+
+Keep the target clear and improve the corpus alongside development, with effort
+proportional to the change. Report which explanations were checked and which
+meaningful gaps remain. Documentation completeness alone is not a blanket merge
+gate; task-specific correctness, data-safety, and release requirements still
+apply.
+
+Record current adoption evidence in the
+[index's dated gap inventory](README.md#known-adoption-gaps): the observed gap,
+the affected documents, and what would close it. Update or remove each entry
+when its evidence changes or its closure condition is met. Remove the temporary
+inventory once its listed gaps are closed. Detailed work belongs with the
+relevant document or existing issue/PR.
+
+Future custodial work should complement ordinary development in two ways:
+
+1. **Change-based review:** inspect merged code and docs together for descriptions
+   that fell behind and contract edits that changed a promise to fit the code.
+2. **Bounded exploration:** trace a question from a feature, concept, or document
+   through the documentation structure, contracts, implementation, and tests.
+   Choose seeds to balance coverage with risk and frequency of change.
+
+Each pass should state its question, evidence, and limits. Propose small, clear
+descriptive corrections and raise ambiguous promises for a human decision.
+Keep enough context about known discrepancies to avoid repeated discovery and
+alerts, then retire that context when it is resolved. Cadence, implementation,
+permissions, and activation of this future work remain separate decisions.

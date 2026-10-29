@@ -1,3 +1,4 @@
+import { clearWordPreparationFixtures, prepareWordFixture } from './helpers/prepared-word-fixtures.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -78,27 +79,28 @@ describe('session composition', { concurrency: false }, () => {
   });
 
   beforeEach(() => {
+    clearWordPreparationFixtures(sqlite);
     const deleteGuards = sqlite.prepare(`
       SELECT name, sql FROM sqlite_schema
       WHERE type = 'trigger' AND name LIKE '%_no_delete'
     `).all() as Array<{ name: string; sql: string }>;
     sqlite.exec(`
-      DROP TRIGGER IF EXISTS production_recheck_demands_no_delete;
       DROP TRIGGER IF EXISTS production_cue_evidence_records_no_delete;
       DROP TRIGGER IF EXISTS production_cue_lifecycle_events_no_delete;
       DROP TRIGGER IF EXISTS production_cue_accepted_words_no_delete;
       DROP TRIGGER IF EXISTS production_cues_no_delete;
       DROP TRIGGER IF EXISTS production_cue_supplements_no_delete;
+      DROP TRIGGER IF EXISTS review_content_records_no_delete;
       DROP TRIGGER IF EXISTS shared_content_publication_events_no_delete;
       DROP TRIGGER IF EXISTS shared_content_publications_no_delete;
       DROP TRIGGER IF EXISTS shared_content_publication_provenance_no_delete;
       DROP TRIGGER IF EXISTS shared_content_reports_no_delete;
+      DELETE FROM scoped_review_content_records;
       DELETE FROM shared_content_publication_events;
       DELETE FROM shared_content_reports;
       DELETE FROM shared_content_publication_provenance;
       DELETE FROM shared_content_publications;
       DELETE FROM production_cue_evidence_projection;
-      DELETE FROM production_recheck_demands;
       DELETE FROM production_cue_evidence_records;
       DELETE FROM production_cue_activation_state;
       DELETE FROM production_cue_lifecycle_events;
@@ -291,7 +293,6 @@ describe('session composition', { concurrency: false }, () => {
       text: 'To tell two close possibilities apart',
       acceptedAnswers: [{ wordId: 'cue-word', hanzi: '辨', traditional: null }],
       supplement: null,
-      recheckDemandId: null,
     });
   });
 
@@ -338,67 +339,91 @@ describe('session composition', { concurrency: false }, () => {
     assert.equal(second?.production?.text, 'second shared cue');
   });
 
-  test('serves fallback reinforcement as a separate post-reveal supplement snapshot', () => {
-    insertWord({
-      id: 'supplemented-word',
-      hanzi: '包庇',
-      pinyin: 'baobi',
-      meaning: 'to shield; to harbor',
-      examples: [],
-      status: 'review',
-      priority: 100,
-      createdAt: isoHoursAgo(96),
-    });
-    insertWordStudyAdmissionState('supplemented-word', null);
-    insertWordSkillState({
-      wordId: 'supplemented-word',
-      skillId: 'production',
-      intervalHours: 24,
-      lastStudiedAt: isoHoursAgo(48),
-      nextDueAt: isoHoursAgo(24),
-    });
-    const operation = {
-      kind: 'add_production_cue_supplement' as const,
-      version: 1 as const,
-      wordId: 'supplemented-word',
-      taskId: 'production-task:supplemented-word:default_production',
-      cueId: null,
-      englishFrame: 'Knowingly shielding someone from responsibility.',
-      exampleSentence: '他明知儿子犯了罪，却包庇了他。',
-      exampleTranslation: 'He knew his son had committed a crime but shielded him.',
-    };
-    const appliedAt = new Date().toISOString();
-    sqlite.prepare(`
-      INSERT INTO reflection_operation_invocations (
-        invocation_id, created_at, origin_kind, origin_proposal_id,
-        origin_superseded_proposal_id, operation_kind, operation_version,
-        operation_json, application_state, application_updated_at,
-        unsupported_reason, applied_at, application_error, stale_reason,
-        effect_refs_json, satisfying_effect_refs_json
-      ) VALUES (
-        'supplement-session-invocation', ?, 'manual', NULL, NULL, ?, 1, ?,
-        'pending', ?, NULL, NULL, NULL, NULL, '[]', '[]'
-      )
-    `).run(appliedAt, operation.kind, JSON.stringify(operation), appliedAt);
-    const applied = dbModule.applyProductionCueSupplementWithoutTransaction(
-      operation,
-      'supplement-session-invocation',
-      appliedAt,
-    );
-    assert.equal(applied.kind, 'applied');
+  for (const cueId of [null, 'supplement-definition-cue']) {
+    test(`serves ${cueId ?? 'fallback'} reinforcement in production and recognition`, () => {
+      insertWord({
+        id: 'supplemented-word',
+        hanzi: '包庇',
+        pinyin: 'baobi',
+        meaning: 'to shield; to harbor',
+        examples: [],
+        status: 'review',
+        priority: 100,
+        createdAt: isoHoursAgo(96),
+      });
+      insertWordStudyAdmissionState('supplemented-word', null);
+      insertWordSkillState({
+        wordId: 'supplemented-word',
+        skillId: 'production',
+        intervalHours: 24,
+        lastStudiedAt: isoHoursAgo(48),
+        nextDueAt: isoHoursAgo(24),
+      });
+      if (cueId) insertProductionCue({ wordId: 'supplemented-word', cueId,
+        text: 'to shield; to harbor', acceptedWordIds: ['supplemented-word'], active: true,
+        cueType: 'definition_gloss' });
+      const operation = {
+        kind: 'add_production_cue_supplement' as const,
+        version: 1 as const,
+        wordId: 'supplemented-word',
+        taskId: 'production-task:supplemented-word:default_production',
+        cueId,
+        englishFrame: 'Knowingly shielding someone from responsibility.',
+        exampleSentence: '他明知儿子犯了罪，却包庇了他。',
+        exampleTranslation: 'He knew his son had committed a crime but shielded him.',
+      };
+      const appliedAt = new Date().toISOString();
+      sqlite.prepare(`
+        INSERT INTO reflection_operation_invocations (
+          invocation_id, created_at, origin_kind, origin_proposal_id,
+          origin_superseded_proposal_id, operation_kind, operation_version,
+          operation_json, application_state, application_updated_at,
+          unsupported_reason, applied_at, application_error, stale_reason,
+          effect_refs_json, satisfying_effect_refs_json
+        ) VALUES (
+          'supplement-session-invocation', ?, 'manual', NULL, NULL, ?, 1, ?,
+          'pending', ?, NULL, NULL, NULL, NULL, '[]', '[]'
+        )
+      `).run(appliedAt, operation.kind, JSON.stringify(operation), appliedAt);
+      const applied = dbModule.applyProductionCueSupplementWithoutTransaction(
+        operation,
+        'supplement-session-invocation',
+        appliedAt,
+      );
+      assert.equal(applied.kind, 'applied');
 
-    const item = dbModule.getSessionPayload(studyDayKey).buckets.review.find(
-      (candidate) => candidate.targetWordId === 'supplemented-word',
-    );
-    assert.equal(item?.production?.text, 'to shield; to harbor');
-    assert.equal(item?.production?.cueId, null);
-    assert.deepEqual(item?.production?.supplement, {
-      supplementId: applied.kind === 'applied' ? applied.effectRefs[0]!.id : '',
-      englishFrame: operation.englishFrame,
-      exampleSentence: operation.exampleSentence,
-      exampleTranslation: operation.exampleTranslation,
+      const item = dbModule.getSessionPayload(studyDayKey).buckets.review.find(
+        (candidate) => candidate.targetWordId === 'supplemented-word',
+      );
+      assert.equal(item?.production?.text, 'to shield; to harbor');
+      assert.equal(item?.production?.cueId, cueId);
+      assert.deepEqual(item?.production?.supplement, {
+        supplementId: applied.kind === 'applied' ? applied.effectRefs[0]!.id : '',
+        englishFrame: operation.englishFrame,
+        exampleSentence: operation.exampleSentence,
+        exampleTranslation: operation.exampleTranslation,
+      });
+      insertWordSkillState({ wordId: 'supplemented-word', skillId: 'recognition',
+        intervalHours: 12, lastStudiedAt: isoHoursAgo(48), nextDueAt: isoHoursAgo(36) });
+      const recognition = dbModule.getSessionPayload(studyDayKey).buckets.review.find(
+        (candidate) => candidate.targetWordId === 'supplemented-word',
+      );
+      assert.equal(recognition?.actionKind, 'recognition');
+      assert.equal(recognition?.wordContent, undefined);
+      assert.equal(recognition?.production, null);
+      assert.deepEqual(recognition?.recognitionSupplement, item?.production?.supplement);
+      if (cueId) {
+        sqlite.prepare('UPDATE production_cue_activation_state SET active = 0 WHERE cue_id = ?').run(cueId);
+        const afterRetirement = dbModule.getSessionPayload(studyDayKey).buckets.review.find(
+          (candidate) => candidate.targetWordId === 'supplemented-word');
+        assert.equal(afterRetirement?.recognitionSupplement, undefined);
+        assert.ok(recognition?.recognitionSupplement, 'existing session retains its snapshot');
+      }
+      dbModule.bootstrapLearner({ learnerId: 'supplement-other-learner' });
+      assert.equal(dbModule.runWithLearnerId('supplement-other-learner', () =>
+        dbModule.getProductionCueSupplement(operation.taskId, cueId)), null);
     });
-  });
+  }
 
   test('does not resurrect the legacy production gloss when every normalized meaning is hidden', () => {
     insertWord({
@@ -432,83 +457,6 @@ describe('session composition', { concurrency: false }, () => {
     );
 
     assert.deepEqual(getSessionItemIds(dbModule), []);
-  });
-
-  test('masks ordinary production until a pending recheck is due, then forces production', () => {
-    insertWord({
-      id: 'recheck-word',
-      hanzi: '查',
-      pinyin: 'cha',
-      meaning: 'check',
-      examples: [],
-      status: 'review',
-      priority: 100,
-      createdAt: isoHoursAgo(96),
-    });
-    insertWordStudyAdmissionState('recheck-word', null);
-    insertWordSkillState({
-      wordId: 'recheck-word',
-      skillId: 'production',
-      intervalHours: 72,
-      lastStudiedAt: isoHoursAgo(1),
-      nextDueAt: isoHoursFromNow(71),
-    });
-    insertWordSkillState({
-      wordId: 'recheck-word',
-      skillId: 'recognition',
-      intervalHours: 24,
-      lastStudiedAt: isoHoursAgo(48),
-      nextDueAt: isoHoursAgo(24),
-    });
-    const sourceAttemptId = insertProjectedProductionAttempt('recheck-word');
-    const scheduledAt = isoHoursAgo(1);
-    dbModule.appendProductionRecheckDemandWithoutTransaction({
-      demandId: 'recheck-demand',
-      taskId: 'production-task:recheck-word:default_production',
-      sourceAttemptId,
-      scheduledAt,
-      dueAt: shiftHours(scheduledAt, 48),
-    });
-
-    assert.deepEqual(
-      dbModule.getSessionPayload(studyDayKey).buckets.review.map((item) => item.actionKind),
-      ['recognition'],
-    );
-
-    insertWord({
-      id: 'due-recheck-word',
-      hanzi: '再',
-      pinyin: 'zai',
-      meaning: 'again',
-      examples: [],
-      status: 'review',
-      priority: 100,
-      createdAt: isoHoursAgo(96),
-    });
-    insertWordStudyAdmissionState('due-recheck-word', isoHoursFromNow(72));
-    insertWordSkillState({
-      wordId: 'due-recheck-word',
-      skillId: 'production',
-      intervalHours: 72,
-      lastStudiedAt: isoHoursAgo(1),
-      nextDueAt: isoHoursFromNow(71),
-    });
-    const dueSourceAttemptId = insertProjectedProductionAttempt('due-recheck-word');
-    const dueScheduledAt = isoHoursAgo(49);
-    dbModule.appendProductionRecheckDemandWithoutTransaction({
-      demandId: 'due-recheck-demand',
-      taskId: 'production-task:due-recheck-word:default_production',
-      sourceAttemptId: dueSourceAttemptId,
-      scheduledAt: dueScheduledAt,
-      dueAt: shiftHours(dueScheduledAt, 48),
-    });
-
-    const item = dbModule.getSessionPayload(studyDayKey).buckets.review.find(
-      (candidate) => candidate.targetWordId === 'due-recheck-word',
-    );
-    assert.equal(item?.actionKind, 'production');
-    assert.equal(item?.sessionActionId, 'review/due-recheck-word/production/recheck/due-recheck-demand');
-    assert.equal(item?.production?.recheckDemandId, 'due-recheck-demand');
   });
 
   test('does not schedule suppressed production even when its scheduler state is urgent', () => {
@@ -1327,16 +1275,17 @@ describe('session composition', { concurrency: false }, () => {
     assert.deepEqual(sessionIds, []);
   });
 
-  test('daily new-word limit defaults to 10 and persists independently from the completed count', () => {
-    assert.equal(dbModule.getLearningPolicy(studyDayKey).dailyNewWordLimit, 10);
+  test('daily new-word limit defaults to 5 and persists independently from the completed count', () => {
+    sqlite.exec("DELETE FROM learner_settings WHERE setting_key = 'daily_new_word_limit'");
+    assert.equal(dbModule.getLearningPolicy(studyDayKey).dailyNewWordLimit, 5);
     assert.equal(dbModule.getLearningPolicy(studyDayKey).unstudiedAdmissionSource, 'mixed');
     assert.throws(
       () => dbModule.setDailyNewWordLimit(-1),
-      /Expected non-negative integer dailyNewWordLimit/,
+      /Expected integer dailyNewWordLimit between 0 and 20/,
     );
     assert.throws(
       () => dbModule.setDailyNewWordLimit(1.5),
-      /Expected non-negative integer dailyNewWordLimit/,
+      /Expected integer dailyNewWordLimit between 0 and 20/,
     );
 
     dbModule.setDailyNewWordLimit(3);
@@ -1376,6 +1325,27 @@ describe('session composition', { concurrency: false }, () => {
     assert.equal(dbModule.getLearningPolicy(studyDayKey).dailyNewWordLimit, 4);
   });
 
+  test('character presentation defaults to simplified and persists independently of learning policy', () => {
+    assert.equal(dbModule.getCharacterPresentation(), 'simplified');
+    assert.throws(
+      () => dbModule.setCharacterPresentation('pinyin' as never),
+      /Expected characterPresentation to be "simplified", "traditional", or "both"/,
+    );
+
+    dbModule.setDailyNewWordLimit(4);
+    const saved = dbModule.setCharacterPresentation('both');
+
+    const settingRow = sqlite
+      .prepare(`SELECT value_json FROM learner_settings WHERE learner_id = 'test-learner' AND setting_key = 'character_presentation'`)
+      .get() as { value_json: string } | undefined;
+
+    assert.equal(settingRow?.value_json, '"both"');
+    assert.deepEqual(saved, { characterPresentation: 'both' });
+    assert.equal(dbModule.getCharacterPresentation(), 'both');
+    assert.equal(dbModule.getLearningPolicy(studyDayKey).dailyNewWordLimit, 4);
+    assert.equal(dbModule.getLearningPolicy(studyDayKey).unstudiedAdmissionSource, 'mixed');
+  });
+
   test('new sessions use configured limit minus completed count across limit and day changes', () => {
     for (let index = 0; index < 6; index += 1) {
       insertUnstudiedWordPair(
@@ -1404,7 +1374,7 @@ describe('session composition', { concurrency: false }, () => {
     assert.equal(dbModule.getSessionPayload(nextDayKey).buckets.unstudied.length, 1);
   });
 
-  test('zero limit blocks normal new words but preserves required overflow', () => {
+  test('zero limit blocks all new words including legacy required flags', () => {
     insertUnstudiedWordPair('zero-limit-normal', 100, '2026-01-01T00:00:00.000Z');
     insertUnstudiedWordPair('zero-limit-required', 10, '2026-01-02T00:00:00.000Z');
     dbModule.updateWordUserPriority('zero-limit-required', { requiredForNextSession: true });
@@ -1412,7 +1382,7 @@ describe('session composition', { concurrency: false }, () => {
 
     assert.deepEqual(
       dbModule.getSessionPayload(studyDayKey).buckets.unstudied.map((word) => word.id),
-      ['zero-limit-required'],
+      [],
     );
   });
 
@@ -1466,7 +1436,7 @@ describe('session composition', { concurrency: false }, () => {
     assert.equal(sessionIds.includes(`unstudied/unstudied-${totalUnstudiedWords}`), false);
   });
 
-  test('includes required unstudied words beyond the split even when the stash half is full of tops', () => {
+  test('legacy required flags do not bypass the intake split or cap', () => {
     dbModule.setDailyNewWordLimit(2);
     insertUnstudiedWordPair('diet-high', 100, '2026-01-01T00:00:00.000Z');
     insertUnstudiedWordPair('diet-low', 10, '2026-01-02T00:00:00.000Z');
@@ -1479,7 +1449,6 @@ describe('session composition', { concurrency: false }, () => {
     assert.deepEqual(new Set(sessionIds), new Set([
       'unstudied/top-fills-stash',
       'unstudied/diet-high',
-      'unstudied/required-extra',
     ]));
   });
 
@@ -1981,7 +1950,84 @@ describe('session composition', { concurrency: false }, () => {
     );
   });
 
+  for (const total of [999, 1000, 1001]) {
+    test(`caps ${total} mixed session candidates at 1000 without changing durable study state`, () => {
+      const stamp = isoHoursAgo(48);
+      for (let index = 0; index < 600; index++) {
+        const id = `cap-review-${String(index).padStart(4, '0')}`;
+        insertWord({ id, hanzi: id, pinyin: id, meaning: id, examples: [], status: 'review', priority: 1, createdAt: stamp });
+        insertWordStudyAdmissionState(id, null);
+        insertWordSkillState({ wordId: id, skillId: 'recognition', intervalHours: 24,
+          lastStudiedAt: stamp, nextDueAt: isoHoursAgo(24) });
+      }
+      for (let index = 0; index < total - 610; index++) {
+        const id = `cap-learning-${String(index).padStart(4, '0')}`;
+        insertWord({ id, hanzi: id, pinyin: id, meaning: id, examples: [], status: 'learning', priority: 1, createdAt: stamp });
+      }
+      for (let index = 0; index < 10; index++) insertUnstudiedWordPair(`cap-new-${index}`, 100, stamp);
+      const before = sqlite.prepare('SELECT * FROM learner_word_state ORDER BY word_id').all();
+      const skillBefore = sqlite.prepare('SELECT * FROM learner_owned_word_skill_state ORDER BY word_id, skill_id').all();
+      const { buckets } = dbModule.getSessionPayload(studyDayKey, { random: () => 0 });
+      assert.equal(buckets.review.length + buckets.learning.length + buckets.unstudied.length, Math.min(total, 1000));
+      assert.equal(buckets.review.length, 600); assert.equal(buckets.unstudied.length, 10);
+      assert.equal(buckets.learning.length, Math.min(total - 610, 390));
+      assert.equal(buckets.review[0].sessionActionId, 'review/cap-review-0000/recognition');
+      assert.equal(buckets.learning[0].id, 'cap-learning-0000');
+      assert.deepEqual(sqlite.prepare('SELECT * FROM learner_word_state ORDER BY word_id').all(), before);
+      assert.deepEqual(sqlite.prepare('SELECT * FROM learner_owned_word_skill_state ORDER BY word_id, skill_id').all(), skillBefore);
+      assert.equal(sqlite.prepare('SELECT COUNT(*) AS count FROM daily_new_word_intake').get()?.count, 0);
+      assert.equal(Object.keys(buckets.introductions ?? {}).length, buckets.unstudied.length);
+    });
+  }
+
   test.todo('keeps UTC date-key and ISO timestamp handling consistent across session composition boundaries');
+
+  test('counts pure cues within the same cap and issues snapshots only for admitted review rows', () => {
+    const stamp = isoHoursAgo(48);
+    for (let index = 0; index < 1001; index++) {
+      const id = `pure-cap-review-${String(index).padStart(4, '0')}`;
+      insertWord({ id, hanzi: id, pinyin: id, meaning: id, examples: [], status: 'review', priority: 1, createdAt: stamp });
+      insertWordStudyAdmissionState(id, null);
+      insertWordSkillState({ wordId: id, skillId: 'recognition', intervalHours: 24, lastStudiedAt: stamp, nextDueAt: isoHoursAgo(24) });
+    }
+    dbModule.createPureCueWithoutTransaction({ id: 'cap-pure-cue', stimulus: 'shared cap',
+      acceptedWordIds: ['pure-cap-review-0000', 'pure-cap-review-0001'], createdAt: stamp });
+    sqlite.prepare(`INSERT INTO shared_content_publications
+      (publication_id, content_kind, content_id, learning_purpose_key, publication_status, published_at, status_updated_at)
+      VALUES ('cap-pure-publication', 'pure_cue', 'cap-pure-cue', 'pure:cap', 'shared_trial', ?, ?)`)
+      .run(stamp, stamp);
+    dbModule.adoptEligiblePureCuesForCurrentLearner(stamp);
+    const snapshotCount = () => sqlite.prepare('SELECT COUNT(*) AS count FROM pure_cue_served_snapshots').get()?.count;
+    const before = snapshotCount();
+    const excluded = dbModule.getSessionPayload(studyDayKey, { random: () => 0.999999 }).buckets;
+    assert.equal(excluded.review.length, 1000);
+    assert.equal(excluded.review.some((item) => item.itemType === 'pure_cue_production'), false);
+    assert.equal(snapshotCount(), before);
+    const included = dbModule.getSessionPayload(studyDayKey, { random: () => 0 }).buckets;
+    assert.equal(included.review.length, 1000);
+    assert.equal(included.review[0].itemType, 'pure_cue_production');
+    assert.equal(Number(snapshotCount()), Number(before) + 1);
+    assert.equal(sqlite.prepare('SELECT last_studied_at FROM learner_pure_cue_state WHERE pure_cue_id = ?').get('cap-pure-cue')?.last_studied_at, null);
+
+    // Reproduce a later session after a success crossed into the strong tier.
+    // Even abundant ordinary work and favorable composition rolls cannot refill
+    // the strong allowance with a cue studied only seven hours ago.
+    const studiedAt = isoHoursAgo(7);
+    sqlite.prepare(`UPDATE learner_pure_cue_state
+      SET interval_hours = 750, last_studied_at = ?, strong_since = ?
+      WHERE learner_id = 'test-learner' AND pure_cue_id = 'cap-pure-cue'`)
+      .run(studiedAt, studiedAt);
+    const beforeStrongPreparation = snapshotCount();
+    for (const roll of [0, 0.5, 0.999999]) {
+      const review = dbModule.getSessionPayload(studyDayKey, { random: () => roll }).buckets.review;
+      assert.equal(review.length, 1000);
+      assert.equal(review.some((item) => item.itemType === 'pure_cue_production'), false);
+    }
+    assert.equal(snapshotCount(), beforeStrongPreparation);
+    assert.equal(sqlite.prepare('SELECT last_studied_at FROM learner_pure_cue_state WHERE pure_cue_id = ?')
+      .get('cap-pure-cue')?.last_studied_at, studiedAt);
+  });
+
 });
 
 function insertProductionCue({
@@ -1990,20 +2036,22 @@ function insertProductionCue({
   text,
   acceptedWordIds,
   active,
+  cueType = 'minimal_context',
 }: {
   wordId: string;
   cueId: string;
   text: string;
   acceptedWordIds: string[];
   active: boolean;
+  cueType?: 'minimal_context' | 'definition_gloss';
 }) {
   const taskId = `production-task:${wordId}:default_production`;
   const eventId = `${cueId}-lifecycle`;
   sqlite.prepare(`
     INSERT INTO production_cues (
       cue_id, task_id, cue_type, cue_text, created_at, origin_kind, origin_invocation_id
-    ) VALUES (?, ?, 'minimal_context', ?, ?, 'manual', NULL)
-  `).run(cueId, taskId, text, isoHoursAgo(1));
+    ) VALUES (?, ?, ?, ?, ?, 'manual', NULL)
+  `).run(cueId, taskId, cueType, text, isoHoursAgo(1));
   const insertAccepted = sqlite.prepare(`
     INSERT INTO production_cue_accepted_words (cue_id, word_id, position)
     VALUES (?, ?, ?)
@@ -2053,76 +2101,6 @@ function insertSharedProductionCue({
   `).run(publicationId, cueId, taskId, isoHoursAgo(1), isoHoursAgo(1));
 }
 
-function insertProjectedProductionAttempt(wordId: string) {
-  const sessionId = `${wordId}-source-session`;
-  const attemptId = `${wordId}-source-attempt`;
-  const alternateWordId = `${wordId}-alternate`;
-  insertWord({
-    id: alternateWordId,
-    hanzi: `${wordId} alternate`,
-    pinyin: 'alternate',
-    meaning: 'alternate',
-    examples: [],
-    status: 'unstudied',
-    priority: -999,
-    createdAt: isoHoursAgo(96),
-  });
-  sqlite.prepare(`
-    INSERT INTO study_sessions (id, started_at, ended_at, processing_state, processed_at)
-    VALUES (?, ?, ?, 'processed', ?)
-  `).run(sessionId, isoHoursAgo(2), isoHoursAgo(1), isoHoursAgo(1));
-  sqlite.prepare(`
-    INSERT INTO study_attempt_events (
-      id,
-      occurred_at,
-      session_id,
-      session_action_id,
-      session_event_sequence,
-      action_attempt_sequence,
-      action_kind,
-      target_word_id,
-      sampled_skill_ids_json,
-      response,
-      outcome,
-      rating,
-      content_ref_json,
-      metadata_json,
-      projected_at
-    ) VALUES (?, ?, ?, ?, 1, 1, 'production', ?, '["production"]', ?, 'correct', 'good', NULL, ?, ?)
-  `).run(
-    attemptId,
-    isoHoursAgo(1),
-    sessionId,
-    `review/${wordId}/production`,
-    wordId,
-    alternateWordId,
-    JSON.stringify({
-      production: {
-        taskId: `production-task:${wordId}:default_production`,
-        cueId: null,
-        cueType: 'definition_gloss',
-        text: 'source prompt',
-        acceptedWordIds: [wordId, alternateWordId],
-        anchorWordId: wordId,
-        submittedText: alternateWordId,
-        submittedWordId: alternateWordId,
-        result: 'accepted_non_anchor',
-        recheckDemandId: null,
-      },
-    }),
-    isoHoursAgo(1),
-  );
-  dbModule.appendProductionCueAttemptEvidenceWithoutTransaction({
-    occurredAt: isoHoursAgo(1),
-    taskId: `production-task:${wordId}:default_production`,
-    cueId: null,
-    sourceAttemptId: attemptId,
-    attemptResult: 'accepted_non_anchor',
-    submittedWordId: alternateWordId,
-  });
-  return attemptId;
-}
-
 function insertWord(record: WordRecord) {
   sqlite.prepare(`
     INSERT INTO words (
@@ -2153,6 +2131,7 @@ function insertWord(record: WordRecord) {
     record.lastLearningSuccessOn ?? null,
     record.lastLearningCoveredOn ?? null,
   );
+  if (record.status === 'unstudied') prepareWordFixture(sqlite, dbModule, record.id);
 }
 
 function insertReviewSkillState(record: ReviewSkillStateRecord) {

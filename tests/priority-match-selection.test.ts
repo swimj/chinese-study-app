@@ -74,7 +74,6 @@ function render(overrides: Partial<PriorityPageProps> = {}): string {
     onCancelMatchSelection: () => {},
     onHighlightsHandled: () => {},
     priorityBatchSubmitting: false,
-    onRequireForNextSession: async () => {},
     onMoveSelectedToTop: async () => {},
     onMoveSelectedToStash: async () => {},
     onRemoveSelected: async () => {},

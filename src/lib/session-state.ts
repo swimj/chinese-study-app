@@ -1,12 +1,20 @@
 import type { ReviewRating, Word } from '../types';
+import { materializeTeachingPackage } from '../domain/word-content';
+import type { WordIntroductionResponse } from '../domain/word-content/application';
 import type {
   ProductionResponseResolution,
+  SessionStudyItem,
   SessionStudyItemBuckets,
   StudyAttemptEvent,
   StudySkillId,
 } from '../domain/study-actions';
+import { assertStrictTargetOnlyProductionSnapshot } from '../domain/study-actions';
+import { isPureCueSessionReviewItem as isPureCueReviewItem } from '../domain/study-actions';
+import type { PureCueAssessmentEvent, PureCueServedSnapshot } from '../domain/pure-cues';
 import {
   createBucketSessionScheduler,
+  recordBucketIntroductionCompleted,
+  recordBucketStudyExercise,
   createInitialBucketLearningProgress,
   createInitialBucketUnstudiedProgress,
   getBucketSchedulerActiveUnit,
@@ -43,12 +51,20 @@ export type ReviewActionProgress = {
   attempts: StudyAttemptEvent[];
 };
 
+export type PureCueReviewActionProgress = {
+  failureCount: number;
+  reinforcementStreak: number;
+  events: PureCueAssessmentEvent[];
+};
+
 export type SessionPhase = 'active' | 'draining' | 'completed';
 
 type ReviewStudySkillId = Extract<StudySkillId, 'recognition' | 'production'>;
 type ContrastSelectionRating = ReviewRating;
 
 export type BucketSessionState = {
+  /** Frozen at session admission; never refreshed while a session is active. */
+  introductions: Readonly<Record<string, WordIntroductionResponse>>;
   sessionId: string;
   phase: SessionPhase;
   scheduler: BucketSessionScheduler;
@@ -56,12 +72,14 @@ export type BucketSessionState = {
   startedActionIds: string[];
   progress: BucketSchedulerProgress;
   reviewProgress: Record<string, ReviewActionProgress>;
+  pureCueReviewProgress: Record<string, PureCueReviewActionProgress>;
 };
 
 export type BucketSessionCommitIntent =
   | { type: 'none' }
   | {
       type: 'commit-review-action-session';
+      reinforcementSkipped?: boolean;
       sessionId: string;
       sessionActionId: string;
       targetWordId: string;
@@ -85,6 +103,15 @@ export type BucketSessionCommitIntent =
       practiceMore: boolean;
       event: StudyAttemptEvent;
     }
+  | {
+      type: 'commit-pure-cue-production-session';
+      reinforcementSkipped?: boolean;
+      sessionId: string;
+      sessionActionId: string;
+      attemptId: string;
+      snapshotId: string;
+      events: PureCueAssessmentEvent[];
+    }
   | { type: 'commit-learning-word-session'; wordId: string; success: boolean }
   | { type: 'commit-unstudied-word-session'; wordId: string };
 
@@ -100,6 +127,12 @@ export type RateActiveSessionUnitOptions = {
    */
   response?: string | null;
   productionResponse?: ProductionResponseResolution | null;
+};
+
+export type RateActivePureCueSessionUnitOptions = {
+  response: string | null;
+  outcome: PureCueAssessmentEvent['outcome'];
+  submittedWordId: string | null;
 };
 
 export type SessionDismissIntent =
@@ -128,12 +161,19 @@ export function createBucketSessionState({
   schedulerPolicy?: Partial<BucketSessionSchedulerPolicy>;
   seed?: number;
 }): BucketSessionState {
+  for (const item of buckets.review) {
+    if (!isPureCueReviewItem(item) && item.actionKind === 'production' && item.production !== null) {
+      assertStrictTargetOnlyProductionSnapshot(item.production, item.targetWordId);
+    }
+  }
+
   const progress: BucketSchedulerProgress = {
     learning: {},
     unstudied: {},
   };
 
   return {
+    introductions: structuredClone(buckets.introductions ?? {}),
     sessionId,
     phase: 'active',
     scheduler: createBucketSessionScheduler({
@@ -146,6 +186,7 @@ export function createBucketSessionState({
     startedActionIds: [],
     progress,
     reviewProgress: {},
+    pureCueReviewProgress: {},
   };
 }
 
@@ -208,9 +249,46 @@ export function completeActiveUnstudiedIntro(state: BucketSessionState): BucketS
     state: refreshBucketSessionScheduler({
       ...state,
       progress,
+      scheduler: recordBucketIntroductionCompleted(state.scheduler),
     }),
     commit: { type: 'none' },
   };
+}
+
+/** Teaching opens the existing interleaved 3x3 recall phase, without study credit. */
+export function completeActiveUnstudiedTeaching(
+  state: BucketSessionState, wordId: string,
+): BucketSessionTransitionResult {
+  const active = getBucketSchedulerActiveUnit(state.scheduler);
+  const word = active.type === 'unstudied_intro' ? active.word : null;
+  if (!word || word.id !== wordId || word.status !== 'unstudied') {
+    throw new Error('Session invariant violated: completed teaching must match the active unstudied word.');
+  }
+  const library = state.introductions[wordId];
+  const teaching = library?.packages.find(({ teaching }) => teaching.id === library.selectedPackageId)?.teaching;
+  const content = library?.contents.find(({ content }) => content.id === teaching?.wordContentId)?.content;
+  if (!teaching || !content || library.preparationUnavailable || library.wordId !== wordId) {
+    throw new Error('Session invariant violated: completed teaching requires its admitted package and content.');
+  }
+  const snapshot = materializeTeachingPackage(teaching, [content]);
+  if (snapshot.wordId !== wordId || snapshot.rehearsals.length === 0) {
+    throw new Error('Session invariant violated: teaching must rehearse the active word.');
+  }
+  return completeActiveUnstudiedIntro({
+    ...state,
+    scheduler: {
+      ...state.scheduler,
+      unstudiedTeaching: {
+        ...state.scheduler.unstudiedTeaching,
+        [wordId]: {
+          content: structuredClone(content),
+          rehearsals: snapshot.rehearsals.map((exercise) => ({
+            ...exercise, packageId: teaching.id, wordContentId: content.id,
+          })),
+        },
+      },
+    },
+  });
 }
 
 export function rateActiveSessionUnit(
@@ -224,6 +302,7 @@ export function rateActiveSessionUnit(
   }
 
   assertActiveSessionUnitStarted(state, active, rating);
+  state = { ...state, scheduler: recordBucketStudyExercise(state.scheduler) };
 
   switch (active.bucket) {
     case 'learning':
@@ -231,6 +310,9 @@ export function rateActiveSessionUnit(
     case 'unstudied':
       return handleBucketUnstudiedAttempt(state, active, rating);
     case 'review':
+      if (isPureCueReviewItem(active.item)) {
+        throw new Error('Session invariant violated: pure cue production must use its dedicated rating transition.');
+      }
       if (active.item.actionKind === 'contrast_selection') {
         throw new Error('Session invariant violated: contrast selection must be completed with a selected choice.');
       }
@@ -258,11 +340,12 @@ export function rateActiveContrastSelectionUnit({
   practiceMore: boolean;
 }): BucketSessionTransitionResult {
   const active = getActiveSessionUnit(state);
-  if (active.type !== 'study' || active.bucket !== 'review' || active.item.actionKind !== 'contrast_selection') {
+  if (active.type !== 'study' || active.bucket !== 'review' || isPureCueReviewItem(active.item) || active.item.actionKind !== 'contrast_selection') {
     throw new Error('Session invariant violated: cannot complete contrast selection when the active unit is not contrast review.');
   }
 
   assertActiveSessionUnitStarted(state, active, rating);
+  state = { ...state, scheduler: recordBucketStudyExercise(state.scheduler) };
 
   const item = active.item;
   const contrastSelection = item.contrastSelection;
@@ -315,12 +398,132 @@ export function rateActiveContrastSelectionUnit({
   };
 }
 
+/** Finish a lapsed review without inventing a recall or changing its lapse evidence. */
+export function skipActiveReviewReinforcement(state: BucketSessionState): BucketSessionTransitionResult {
+  const active = getActiveSessionUnit(state);
+  if (active.type !== 'study' || active.bucket !== 'review') {
+    throw new Error('Session invariant violated: skipping reinforcement requires an active review.');
+  }
+  const item = active.item;
+  if (isPureCueReviewItem(item)) {
+    const progress = state.pureCueReviewProgress[item.sessionActionId];
+    if (!progress || progress.failureCount === 0) {
+      throw new Error('Session invariant violated: skipping reinforcement requires a recorded lapse.');
+    }
+    return {
+      state: refreshBucketSessionScheduler({
+        ...state,
+        scheduler: removeCompletedReviewAction(state.scheduler),
+        pureCueReviewProgress: removeKey(state.pureCueReviewProgress, item.sessionActionId),
+      }),
+      commit: {
+        type: 'commit-pure-cue-production-session',
+        reinforcementSkipped: true,
+        sessionId: state.sessionId,
+        sessionActionId: item.sessionActionId,
+        attemptId: `${state.sessionId}/${item.sessionActionId}/assessment`,
+        snapshotId: item.snapshot.snapshotId,
+        events: [...progress.events],
+      },
+    };
+  }
+  const progress = state.reviewProgress[item.sessionActionId];
+  if (!progress || progress.failureCount === 0 || item.actionKind === 'contrast_selection') {
+    throw new Error('Session invariant violated: skipping reinforcement requires a recorded word-review lapse.');
+  }
+  return {
+    state: refreshBucketSessionScheduler({
+      ...state,
+      scheduler: removeCompletedReviewAction(state.scheduler),
+      reviewProgress: removeKey(state.reviewProgress, item.sessionActionId),
+    }),
+    commit: {
+      type: 'commit-review-action-session',
+      reinforcementSkipped: true,
+      sessionId: state.sessionId,
+      sessionActionId: item.sessionActionId,
+      targetWordId: item.targetWordId,
+      actionKind: item.actionKind,
+      sampledSkillIds: item.sampledSkillIds.map(onlyReviewStudySkill),
+      failureCount: progress.failureCount,
+      terminalRating: null,
+      events: [...progress.attempts],
+    },
+  };
+}
+
+export function rateActivePureCueProductionUnit(
+  state: BucketSessionState,
+  rating: ReviewRating,
+  options: RateActivePureCueSessionUnitOptions,
+): BucketSessionTransitionResult {
+  const active = getActiveSessionUnit(state);
+  if (active.type !== 'study' || active.bucket !== 'review' || !isPureCueReviewItem(active.item)) {
+    throw new Error('Session invariant violated: pure cue production rating requires the active pure cue review item.');
+  }
+  assertActiveSessionUnitStarted(state, active, rating);
+  state = { ...state, scheduler: recordBucketStudyExercise(state.scheduler) };
+  const item = active.item;
+  if (options.outcome === 'rejected' && rating !== 'forgot') {
+    throw new Error('Session invariant violated: rejected pure cue response must be rated forgot.');
+  }
+  const current = state.pureCueReviewProgress[item.sessionActionId] ?? createInitialPureCueReviewProgress();
+  const event: PureCueAssessmentEvent = {
+    eventId: `${state.sessionId}/${item.sessionActionId}/attempt-${current.events.length + 1}`,
+    occurredAt: new Date().toISOString(),
+    response: options.response,
+    outcome: options.outcome,
+    submittedWordId: options.submittedWordId,
+    rating,
+  };
+  const events = [...current.events, event];
+  const failureCount = current.failureCount + (options.outcome === 'rejected' || rating === 'forgot' ? 1 : 0);
+  const reinforcementStreak = options.outcome === 'rejected' || rating === 'forgot'
+    ? 0
+    : current.reinforcementStreak + 1;
+  const coveredCleanly = current.failureCount === 0 && options.outcome === 'accepted' && rating !== 'forgot';
+  const coveredAfterReinforcement = failureCount > 0 && reinforcementStreak >= 3;
+  if (coveredCleanly || coveredAfterReinforcement) {
+    return {
+      state: refreshBucketSessionScheduler({
+        ...state,
+        answeredCount: state.answeredCount + 1,
+        scheduler: removeCompletedReviewAction(state.scheduler),
+        pureCueReviewProgress: removeKey(state.pureCueReviewProgress, item.sessionActionId),
+      }),
+      commit: {
+        type: 'commit-pure-cue-production-session',
+        sessionId: state.sessionId,
+        sessionActionId: item.sessionActionId,
+        attemptId: `${state.sessionId}/${item.sessionActionId}/assessment`,
+        snapshotId: item.snapshot.snapshotId,
+        events,
+      },
+    };
+  }
+  return {
+    state: refreshBucketSessionScheduler({
+      ...state,
+      answeredCount: state.answeredCount + 1,
+      scheduler: rotateActiveReviewAction(state.scheduler),
+      pureCueReviewProgress: {
+        ...state.pureCueReviewProgress,
+        [item.sessionActionId]: { failureCount, reinforcementStreak, events },
+      },
+    }),
+    commit: { type: 'none' },
+  };
+}
+
 export function beginBucketDrainSession(state: BucketSessionState): BucketSessionState {
   assertBucketDrainablePhase(state);
 
   const openLearningWordIds = new Set(Object.keys(state.progress.learning));
   const openUnstudiedWordIds = new Set(Object.keys(state.progress.unstudied));
-  const openReviewActionIds = new Set(Object.keys(state.reviewProgress));
+  const openReviewActionIds = new Set([
+    ...Object.keys(state.reviewProgress),
+    ...Object.keys(state.pureCueReviewProgress),
+  ]);
   const scheduler = pruneBucketSchedulerWords(state.scheduler, (unit) => {
     if (unit.type === 'study' && unit.bucket === 'review') {
       return openReviewActionIds.has(unit.item.sessionActionId);
@@ -346,7 +549,12 @@ export function beginBucketDrainSession(state: BucketSessionState): BucketSessio
 
 export function dismissActiveBucketSessionUnit(state: BucketSessionState): BucketSessionDismissTransitionResult {
   const active = getActiveSessionUnit(state);
-  const word = active.type === 'unstudied_intro' ? active.word : active.item.word;
+  if (active.type === 'study' && isPureCueReviewItem(active.item)) {
+    throw new Error('Session invariant violated: pure cues do not support word dismissal.');
+  }
+  const word = active.type === 'unstudied_intro'
+    ? active.word
+    : (active.item as SessionStudyItem).word;
   const scheduler =
     word.status === 'review'
       ? removeCompletedReviewAction(state.scheduler)
@@ -383,7 +591,10 @@ export function dropActiveReviewSessionAction(state: BucketSessionState): Bucket
   const nextState = refreshBucketSessionScheduler({
     ...state,
     scheduler: removeCompletedReviewAction(state.scheduler),
-    reviewProgress: removeReviewProgressForWord(state.reviewProgress, active.item.word.id, state.scheduler.reviewQueue),
+    reviewProgress: isPureCueReviewItem(active.item)
+      ? state.reviewProgress
+      : removeReviewProgressForWord(state.reviewProgress, active.item.word.id, state.scheduler.reviewQueue),
+    pureCueReviewProgress: removeKey(state.pureCueReviewProgress, active.item.sessionActionId),
   });
 
   return {
@@ -395,7 +606,8 @@ export function dropActiveReviewSessionAction(state: BucketSessionState): Bucket
 export function cancelRatedReviewSessionAction(state: BucketSessionState, sessionActionId: string): BucketSessionState {
   const actionExists =
     state.scheduler.reviewQueue.some((item) => item.sessionActionId === sessionActionId) ||
-    state.reviewProgress[sessionActionId] !== undefined;
+    state.reviewProgress[sessionActionId] !== undefined ||
+    state.pureCueReviewProgress[sessionActionId] !== undefined;
 
   if (!actionExists) {
     throw new Error(`Session invariant violated: review action "${sessionActionId}" is not in the active session.`);
@@ -409,6 +621,7 @@ export function cancelRatedReviewSessionAction(state: BucketSessionState, sessio
       reviewQueue: state.scheduler.reviewQueue.filter((item) => item.sessionActionId !== sessionActionId),
     },
     reviewProgress: removeKey(state.reviewProgress, sessionActionId),
+    pureCueReviewProgress: removeKey(state.pureCueReviewProgress, sessionActionId),
   });
 
   return {
@@ -425,7 +638,9 @@ export function dismissBucketSessionWordFromSnapshot(state: BucketSessionState, 
     ...state,
     scheduler: {
       ...state.scheduler,
-      reviewQueue: state.scheduler.reviewQueue.filter((item) => item.targetWordId !== wordId),
+      reviewQueue: state.scheduler.reviewQueue.filter(
+        (item) => isPureCueReviewItem(item) || item.targetWordId !== wordId,
+      ),
       learningPool: state.scheduler.learningPool.filter((word) => word.id !== wordId),
       unstudiedPool: state.scheduler.unstudiedPool.filter((word) => word.id !== wordId),
     },
@@ -449,7 +664,7 @@ function removeReviewProgressForWord(
 ) {
   const actionIdsForWord = new Set(
     reviewQueue
-      .filter((item) => item.targetWordId === wordId)
+      .filter((item): item is SessionStudyItem => !isPureCueReviewItem(item) && item.targetWordId === wordId)
       .map((item) => item.sessionActionId),
   );
 
@@ -463,6 +678,7 @@ function handleBucketLearningAttempt(
   active: Extract<ActiveBucketSchedulerUnit, { type: 'study' }>,
   rating: ReviewRating,
 ): BucketSessionTransitionResult {
+  if (isPureCueReviewItem(active.item)) throw new Error('Session invariant violated: pure cue cannot be a learning item.');
   const wordId = active.item.targetWordId;
   const skillId = onlyReviewStudySkill(active.item.sampledSkillIds[0]);
   const currentProgress = state.progress.learning[wordId] ?? createInitialBucketLearningProgress();
@@ -528,6 +744,7 @@ function handleBucketReviewAttempt(
   response: string | null,
   productionResponse: ProductionResponseResolution | null,
 ): BucketSessionTransitionResult {
+  if (isPureCueReviewItem(active.item)) throw new Error('Session invariant violated: pure cue must use its dedicated review transition.');
   const item = active.item;
   const currentProgress = state.reviewProgress[item.sessionActionId] ?? createInitialReviewProgress();
   const attemptEvent = buildBucketReviewAttemptEvent({
@@ -604,6 +821,10 @@ function handleBucketReviewAttempt(
   };
 }
 
+function createInitialPureCueReviewProgress(): PureCueReviewActionProgress {
+  return { failureCount: 0, reinforcementStreak: 0, events: [] };
+}
+
 function buildBucketReviewAttemptEvent({
   state,
   item,
@@ -613,7 +834,7 @@ function buildBucketReviewAttemptEvent({
   productionResponse,
 }: {
   state: BucketSessionState;
-  item: Extract<ActiveBucketSchedulerUnit, { type: 'study' }>['item'];
+  item: SessionStudyItem;
   rating: ReviewRating;
   actionAttemptSequence: number;
   response: string | null;
@@ -641,7 +862,7 @@ function buildBucketReviewAttemptEvent({
 }
 
 function buildProductionAttemptMetadata(
-  item: Extract<ActiveBucketSchedulerUnit, { type: 'study' }>['item'],
+  item: SessionStudyItem,
   response: string | null,
   rating: ReviewRating,
   resolution: ProductionResponseResolution | null,
@@ -650,6 +871,7 @@ function buildProductionAttemptMetadata(
   if (!production || !resolution) {
     throw new Error('Session invariant violated: review production attempt is missing its frozen response evidence.');
   }
+  assertStrictTargetOnlyProductionSnapshot(production, item.targetWordId);
   if (resolution.responseKind !== 'no_clue' && resolution.submittedText !== response) {
     throw new Error('Session invariant violated: production response evidence does not match the submitted response.');
   }
@@ -671,11 +893,11 @@ function buildProductionAttemptMetadata(
       acceptedWordIds: production.acceptedAnswers.map((word) => word.wordId),
       acceptedAnswers: production.acceptedAnswers.map((word) => ({ ...word })),
       supplement: production.supplement == null ? null : { ...production.supplement },
+      ...(production.bootstrapReveal ? { bootstrapReveal: { ...production.bootstrapReveal } } : {}),
       anchorWordId: item.targetWordId,
       ...(resolution.responseKind === 'no_clue' ? { responseKind: 'no_clue' } : {}),
       submittedText: resolution.submittedText,
       result: resolution.result,
-      recheckDemandId: production.recheckDemandId,
     },
   };
 }
@@ -688,7 +910,7 @@ function buildContrastSelectionAttemptEvent({
   practiceMore,
 }: {
   state: BucketSessionState;
-  item: Extract<ActiveBucketSchedulerUnit, { type: 'study' }>['item'];
+  item: SessionStudyItem;
   selectedWordId: string;
   rating: ContrastSelectionRating;
   practiceMore: boolean;
@@ -724,11 +946,13 @@ function handleBucketUnstudiedAttempt(
   active: Extract<ActiveBucketSchedulerUnit, { type: 'study' }>,
   rating: ReviewRating,
 ): BucketSessionTransitionResult {
+  if (isPureCueReviewItem(active.item)) throw new Error('Session invariant violated: pure cue cannot be an unstudied item.');
   const wordId = active.item.targetWordId;
   const skillId = onlyReviewStudySkill(active.item.sampledSkillIds[0]);
   const currentProgress = state.progress.unstudied[wordId] ?? createInitialBucketUnstudiedProgress();
   const nextProgress: BucketSchedulerUnstudiedProgress = {
     introComplete: currentProgress.introComplete,
+    recognitionAttempts: currentProgress.recognitionAttempts + (skillId === 'recognition' ? 1 : 0),
     successStreaks: { ...currentProgress.successStreaks },
   };
 
@@ -848,7 +1072,7 @@ function assertActiveSessionUnitStarted(
     message: 'Attempted to rate a bucket session unit before it was marked started',
     rating,
     currentActionId: active.item.sessionActionId,
-    currentWordId: active.item.targetWordId,
+    currentWordId: isPureCueReviewItem(active.item) ? null : active.item.targetWordId,
     startedActionIds: state.startedActionIds,
     answeredCount: state.answeredCount,
     phase: state.phase,

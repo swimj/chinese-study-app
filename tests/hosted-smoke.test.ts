@@ -68,13 +68,12 @@ describe('hosted smoke', () => {
     assert.equal(clerk.tokens, 0);
   });
 
-  test('resolves the smoke user by email, reads session-payload, and revokes the token', async () => {
+  test('resolves the smoke user by email, reads statistics without allocating study work, and revokes the token', async () => {
     const clerk = trackingClerk({ userId: 'user_from_email' });
     const fetched: string[] = [];
     const result = await runHostedSmoke({
       clerkEmail: 'x6nscl63n@mozmail.com',
       apiBase: 'http://127.0.0.1:5174',
-      studyDayKey: '2026-09-04',
       clerk,
       learners: {
         resolveClerkLearnerId: (userId) => userId === 'user_from_email' ? 'learner_smoke' : null,
@@ -83,10 +82,13 @@ describe('hosted smoke', () => {
       fetchImpl: async (input, init) => {
         fetched.push(String(input));
         const authorization = new Headers(init?.headers).get('authorization');
+        assert.equal(init?.method, 'GET');
+        assert.equal(init?.body, undefined);
         assert.equal(authorization, 'Bearer smoke-token');
         assert.equal(authorization?.includes('smoke-token') === true, true);
         return jsonResponse(200, {
-          buckets: { review: [], learning: [], unstudied: [] },
+          modes: { unstudied: 0,solidify: 0,practice: 0,maintain: 0 },
+          days: Array.from({length:14},(_,i)=>({dayKey:`2026-09-${String(i+1).padStart(2,'0')}`,sessions:0,coveredWords:0,unknownCoverageSessions:0,acceptedResponses:0,rejectedResponses:0,activeDurationMs:0,unknownDurationSessions:0})),
         });
       },
     });
@@ -94,7 +96,8 @@ describe('hosted smoke', () => {
     assert.equal(result.sessionRevoked, true);
     assert.equal(result.httpStatus, 200);
     assert.equal(clerk.revoked, 1);
-    assert.equal(fetched[0], 'http://127.0.0.1:5174/api/session-payload?studyDayKey=2026-09-04');
+    assert.equal(fetched.length, 1);
+    assert.equal(fetched[0], 'http://127.0.0.1:5174/api/vocabulary/statistics');
     assert.equal(JSON.stringify(result).includes('smoke-token'), false);
     assert.equal(JSON.stringify(result).includes('x6nscl63n@mozmail.com'), false);
     assert.equal(JSON.stringify(result).includes('user_from_email'), false);
@@ -113,7 +116,7 @@ describe('hosted smoke', () => {
       fetchImpl: async () => jsonResponse(200, { unexpected: true }),
     });
     assert.equal(result.status, 'failed');
-    assert.match(result.failure ?? '', /not a valid bucketed session response/);
+    assert.match(result.failure ?? '', /not a valid learner statistics response/);
     assert.equal(clerk.revoked, 1);
     assert.equal(JSON.stringify(result).includes('smoke-token'), false);
   });

@@ -281,3 +281,46 @@ function createWord(overrides: Partial<Word> & Pick<Word, 'id' | 'status'>): Wor
     lastLearningCoveredOn: overrides.lastLearningCoveredOn ?? null,
   };
 }
+
+
+test('both Practice recall directions retain pinned source content for reveal', async () => {
+  const { wordContentFixtures } = await import('./fixtures/word-content.ts');
+  const { content } = wordContentFixtures[0]!;
+  const { createBucketSessionScheduler, getBucketSchedulerActiveUnit } = await loadBucketSchedulerApi();
+  const word = createWord({ id: content.word.wordId, hanzi: content.word.hanzi, traditional: content.word.traditional, status: 'learning' });
+  const seen = new Set<string>();
+  for (let seed=1; seed<=32; seed++) {
+    const scheduler = createBucketSessionScheduler({ buckets: { review: [], learning: [word], unstudied: [], learningContent: { [word.id]: content } }, seed });
+    const active = getBucketSchedulerActiveUnit(scheduler);
+    assert.equal(active.type, 'study');
+    if (active.type !== 'study' || 'itemType' in active.item) throw new Error('Expected word recall');
+    seen.add(active.item.actionKind);
+    assert.deepEqual(active.item.wordContent, content);
+    assert.notEqual(active.item.wordContent, content, 'session freezes its own content snapshot');
+  }
+  assert.deepEqual([...seen].sort(), ['production','recognition']);
+});
+
+
+test('Practice recognition freezes its composed daily bootstrap reveal across midnight and Undo copies', async (t) => {
+  const { wordContentFixtures } = await import('./fixtures/word-content.ts');
+  const { selectBootstrapReveal } = await import('../src/domain/word-content/reveal.ts');
+  const { content } = wordContentFixtures[0]!;
+  const { createBucketSessionScheduler, getBucketSchedulerActiveUnit, cloneBucketSessionScheduler } = await loadBucketSchedulerApi();
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-13T23:59:59Z') });
+  const word = createWord({ id: content.word.wordId, hanzi: content.word.hanzi, traditional: content.word.traditional, status: 'learning' });
+  const progress = { learning: { [word.id]: { coveredSkills: { recognition: false, production: true },
+    firstTryGood: { recognition: false, production: true }, attempts: { recognition: 0, production: 1 } } }, unstudied: {} };
+  const scheduler = createBucketSessionScheduler({ buckets: { review: [], learning: [word], unstudied: [], learningContent: { [word.id]: content } }, progress });
+  const active = getBucketSchedulerActiveUnit(scheduler);
+  if (active.type !== 'study' || 'itemType' in active.item) throw new Error('Expected word recall');
+  assert.equal(active.item.actionKind, 'recognition');
+  assert.deepEqual(active.item.bootstrapReveal, selectBootstrapReveal(content, new Date()));
+  const selected = active.item.bootstrapReveal;
+  t.mock.timers.setTime(new Date('2026-10-14T00:00:01Z').getTime());
+  const copied = getBucketSchedulerActiveUnit(cloneBucketSessionScheduler(scheduler));
+  if (copied.type !== 'study' || 'itemType' in copied.item) throw new Error('Expected word recall');
+  assert.deepEqual(copied.item.bootstrapReveal, selected);
+  assert.notEqual(copied.item.bootstrapReveal, selected);
+  assert.notEqual(selectBootstrapReveal(content, new Date()).useId, selected?.useId);
+});

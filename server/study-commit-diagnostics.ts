@@ -6,6 +6,7 @@ export const STUDY_COMMIT_DIAGNOSTICS_FILENAME = 'study-commit-diagnostics.jsonl
 export const STUDY_COMMIT_DIAGNOSTICS_RETENTION_DAYS = 30;
 
 export type StudyCommitRoute =
+  | '/api/study-sessions/:sessionId/pure-cue-assessments'
   | '/api/study-sessions/:sessionId/accepted-review-attempt-batch'
   | '/api/study-sessions/:sessionId/accepted-contrast-selection-attempt'
   | '/api/review-session-summaries';
@@ -130,7 +131,7 @@ export function describeStudyCommitSuccess(input: {
     results: [event, ...events]
       .filter((candidate): candidate is Record<string, unknown> => candidate !== null)
       .map((candidate) => ({
-        eventId: nonEmptyString(candidate.id) ?? '',
+        eventId: nonEmptyString(candidate.id) ?? nonEmptyString(candidate.eventId) ?? '',
         outcome: nonEmptyString(candidate.outcome),
         rating: nonEmptyString(candidate.rating),
       })),
@@ -246,6 +247,7 @@ function readCorrelation(
       ?? nonEmptyString(event?.sessionId)
       ?? nonEmptyString(events[0]?.sessionId),
     sessionActionId: nonEmptyString(commitIntent?.sessionActionId)
+      ?? nonEmptyString(record?.sessionActionId)
       ?? nonEmptyString(event?.sessionActionId)
       ?? nonEmptyString(events[0]?.sessionActionId),
     targetWordId: nonEmptyString(commitIntent?.targetWordId)
@@ -259,7 +261,7 @@ function readCorrelation(
     selectedWordId: nonEmptyString(commitIntent?.selectedWordId)
       ?? nonEmptyString(event?.response),
     eventIds: [event, ...events]
-      .map((candidate) => nonEmptyString(candidate?.id))
+      .map((candidate) => nonEmptyString(candidate?.id) ?? nonEmptyString(candidate?.eventId))
       .filter((id): id is string => id !== null),
   };
 }

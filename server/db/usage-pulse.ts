@@ -1,4 +1,5 @@
 import { getDb } from './connection.ts';
+import { getVocabularyCompletionUsage } from './vocabulary-statistics.ts';
 import { CLERK_AUTH_PROVIDER, resolveLearnerId } from './identity.ts';
 import { PRIORITY_TIER_REGULAR } from './types.ts';
 import {
@@ -14,9 +15,12 @@ export type UsageDailySnapshot = {
   dau: number;
   sessionsCompleted: number;
   newWords: number;
-  modelSpendUsd: number;
-  medianStashSize: number | null;
-  medianSessionActiveMs: number | null;
+  practiceCompleted: number;
+  reviewCorrect: number;
+  reviewWrong: number;
+  proposalsAccepted: number;
+  meanStashSize: number | null;
+  sessionActiveMs: number;
   learnersInactive7d: number;
   sessionsAbandoned: number;
   learnersSpendWithoutAccepts: number;
@@ -35,9 +39,12 @@ type SnapshotRow = {
   dau: number;
   sessions_completed: number;
   new_words: number;
-  model_spend_usd: number;
-  median_stash_size: number | null;
-  median_session_active_ms: number | null;
+  practice_completed: number;
+  review_correct: number;
+  review_wrong: number;
+  proposals_accepted: number;
+  mean_stash_size: number | null;
+  session_active_ms: number;
   learners_inactive_7d: number;
   sessions_abandoned: number;
   learners_spend_without_accepts: number;
@@ -68,14 +75,6 @@ export function enumerateUtcDayKeys(endDayKey: string, dayCount: number): string
   return keys;
 }
 
-export function medianOf(values: number[]): number | null {
-  if (values.length === 0) return null;
-  const sorted = [...values].sort((left, right) => left - right);
-  const mid = Math.floor(sorted.length / 2);
-  if (sorted.length % 2 === 1) return sorted[mid]!;
-  return (sorted[mid - 1]! + sorted[mid]!) / 2;
-}
-
 export function computeUsagePulseDay(input: {
   dayKey: string;
   capturedAt?: string;
@@ -91,45 +90,36 @@ export function computeUsagePulseDay(input: {
   const inactiveWindowStart = addUtcDays(dayKey, -(USAGE_PULSE_WINDOW_DAYS - 1));
   const smokeLearnerId = resolveConfiguredSmokeLearnerId(input.smokeClerkUserId);
 
+  const vocabulary = getVocabularyCompletionUsage(dayKey);
   const dauRow = getDb().prepare(`
     SELECT COUNT(DISTINCT learner_id) AS value
-    FROM learner_owned_review_session_summaries
-    WHERE day_key = ?
-  `).get(dayKey) as { value: number };
+    FROM (SELECT learner_id FROM learner_owned_review_session_summaries WHERE day_key=?
+      UNION SELECT learner_id FROM vocabulary_session_completions WHERE status='closed' AND substr(closed_at,1,10)=?)
+  `).get(dayKey,dayKey) as { value: number };
 
   const sessionsCompletedRow = getDb().prepare(`
     SELECT COUNT(*) AS value
-    FROM learner_owned_review_session_summaries
-    WHERE day_key = ?
+    FROM learner_owned_review_session_summaries legacy
+    WHERE day_key = ? AND NOT EXISTS (SELECT 1 FROM vocabulary_session_completions c WHERE c.session_id=legacy.session_id AND c.learner_id=legacy.learner_id AND c.status='closed')
   `).get(dayKey) as { value: number };
 
-  const newWordsRow = getDb().prepare(`
-    SELECT COALESCE(SUM(new_study_count), 0) AS value
-    FROM learner_owned_daily_new_word_intake
-    WHERE day_key = ?
-  `).get(dayKey) as { value: number };
-
-  const spendRow = getDb().prepare(`
-    SELECT COALESCE(SUM(estimated_cost_usd), 0) AS value
-    FROM learner_owned_reflection_generation_runs
-    WHERE estimated_cost_usd IS NOT NULL
-      AND substr(completed_at, 1, 10) = ?
-  `).get(dayKey) as { value: number };
-
-  const intakeSpendRow = getDb().prepare(`
-    SELECT COALESCE(SUM(estimated_cost_usd), 0) AS value
-    FROM learner_owned_intake_triage_runs
-    WHERE estimated_cost_usd IS NOT NULL
-      AND substr(completed_at, 1, 10) = ?
-  `).get(dayKey) as { value: number } | undefined;
-
-  const modelSpendUsd = Number(spendRow.value) + Number(intakeSpendRow?.value ?? 0);
-
-  const sessionDurations = (getDb().prepare(`
-    SELECT active_duration_ms AS value
-    FROM learner_owned_review_session_summaries
-    WHERE day_key = ?
-  `).all(dayKey) as Array<{ value: number }>).map((row) => row.value);
+  const totals = getDb().prepare(`
+    SELECT COALESCE(SUM(completed_count - failed_count), 0) AS review_correct,
+      COALESCE(SUM(failed_count), 0) AS review_wrong,
+      COALESCE(SUM(active_duration_ms), 0) AS session_active_ms,
+      COALESCE(SUM(learning_completed_count), 0) AS practice_completed,
+      COALESCE(SUM(new_word_count), 0) AS new_words
+    FROM learner_owned_review_session_summaries legacy
+    WHERE day_key = ? AND NOT EXISTS (SELECT 1 FROM vocabulary_session_completions c WHERE c.session_id=legacy.session_id AND c.learner_id=legacy.learner_id AND c.status='closed')
+  `).get(dayKey) as {
+    review_correct: number; review_wrong: number; session_active_ms: number;
+    practice_completed: number; new_words: number;
+  };
+  const proposals = getDb().prepare(`
+    SELECT COUNT(*) AS value FROM learner_owned_reflection_operation_invocations
+    WHERE origin_kind = 'proposal_acceptance'
+      AND created_at >= ? AND created_at < ?
+  `).get(`${dayKey}T00:00:00.000Z`, `${addUtcDays(dayKey, 1)}T00:00:00.000Z`) as { value: number };
 
   const stashSizes = (getDb().prepare(`
     SELECT learners.learner_id AS learner_id,
@@ -142,7 +132,8 @@ export function computeUsagePulseDay(input: {
         WHERE priority.learner_id = learners.learner_id
           AND COALESCE(word_state.status, 'unstudied') = 'unstudied'
           AND priority.priority_tier >= ?
-      ) AS stash_size
+          AND NOT EXISTS (SELECT 1 FROM learner_words nw WHERE nw.learner_id=priority.learner_id AND nw.word_id=priority.word_id)
+      ) + (SELECT COUNT(*) FROM learner_words nw WHERE nw.learner_id=learners.learner_id AND nw.in_stash=1 AND nw.mode='unstudied' AND nw.dismissed_at IS NULL) AS stash_size
     FROM learners
   `).all(PRIORITY_TIER_REGULAR) as Array<{ learner_id: string; stash_size: number }>)
     .map((row) => row.stash_size);
@@ -157,13 +148,15 @@ export function computeUsagePulseDay(input: {
         WHERE summaries.learner_id = learners.learner_id
           AND summaries.day_key >= ?
           AND summaries.day_key <= ?
-      )
-  `).get(smokeLearnerId, smokeLearnerId, inactiveWindowStart, dayKey) as { value: number };
+      ) AND NOT EXISTS (SELECT 1 FROM vocabulary_session_completions c WHERE c.learner_id=learners.learner_id
+        AND c.status='closed' AND substr(c.closed_at,1,10)>=? AND substr(c.closed_at,1,10)<=?)
+  `).get(smokeLearnerId, smokeLearnerId, inactiveWindowStart, dayKey,inactiveWindowStart,dayKey) as { value: number };
 
   const sessionsAbandonedRow = getDb().prepare(`
     SELECT COUNT(*) AS value
     FROM learner_owned_study_sessions AS sessions
     WHERE substr(sessions.started_at, 1, 10) = ?
+      AND NOT EXISTS (SELECT 1 FROM vocabulary_sessions current_session WHERE current_session.learner_id=sessions.learner_id AND current_session.session_id=sessions.id)
       AND NOT EXISTS (
         SELECT 1
         FROM learner_owned_review_session_summaries AS summaries
@@ -201,13 +194,16 @@ export function computeUsagePulseDay(input: {
     dayKey,
     capturedAt,
     dau: Number(dauRow.value),
-    sessionsCompleted: Number(sessionsCompletedRow.value),
-    newWords: Number(newWordsRow.value),
-    modelSpendUsd,
-    medianStashSize: medianOf(stashSizes),
-    medianSessionActiveMs: medianOf(sessionDurations),
+    sessionsCompleted: Number(sessionsCompletedRow.value)+vocabulary.sessions,
+    newWords: totals.new_words+vocabulary.newWords,
+    practiceCompleted: totals.practice_completed+vocabulary.practiceCompleted,
+    reviewCorrect: totals.review_correct+vocabulary.acceptedResponses,
+    reviewWrong: totals.review_wrong+vocabulary.rejectedResponses,
+    proposalsAccepted: proposals.value,
+    meanStashSize: stashSizes.length ? stashSizes.reduce((sum, size) => sum + size, 0) / stashSizes.length : null,
+    sessionActiveMs: totals.session_active_ms+vocabulary.activeDurationMs,
     learnersInactive7d: Number(learnersInactive7dRow.value),
-    sessionsAbandoned: Number(sessionsAbandonedRow.value),
+    sessionsAbandoned: Number(sessionsAbandonedRow.value)+Number((getDb().prepare(`SELECT COUNT(*) value FROM vocabulary_sessions s WHERE substr(s.started_at,1,10)=? AND NOT EXISTS (SELECT 1 FROM vocabulary_session_completions c WHERE c.session_id=s.session_id AND c.learner_id=s.learner_id AND c.status='closed')`).get(dayKey) as {value:number}).value),
     learnersSpendWithoutAccepts: Number(spendWithoutAcceptsRow.value),
     studyCommitFailures,
   };
@@ -222,21 +218,28 @@ export function upsertUsageDailySnapshot(snapshot: UsageDailySnapshot): void {
       sessions_completed,
       new_words,
       model_spend_usd,
-      median_stash_size,
-      median_session_active_ms,
+      practice_completed,
+      review_correct,
+      review_wrong,
+      proposals_accepted,
+      mean_stash_size,
+      session_active_ms,
       learners_inactive_7d,
       sessions_abandoned,
       learners_spend_without_accepts,
       study_commit_failures
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(day_key) DO UPDATE SET
       captured_at = excluded.captured_at,
       dau = excluded.dau,
       sessions_completed = excluded.sessions_completed,
       new_words = excluded.new_words,
-      model_spend_usd = excluded.model_spend_usd,
-      median_stash_size = excluded.median_stash_size,
-      median_session_active_ms = excluded.median_session_active_ms,
+      practice_completed = excluded.practice_completed,
+      review_correct = excluded.review_correct,
+      review_wrong = excluded.review_wrong,
+      proposals_accepted = excluded.proposals_accepted,
+      mean_stash_size = excluded.mean_stash_size,
+      session_active_ms = excluded.session_active_ms,
       learners_inactive_7d = excluded.learners_inactive_7d,
       sessions_abandoned = excluded.sessions_abandoned,
       learners_spend_without_accepts = excluded.learners_spend_without_accepts,
@@ -247,9 +250,12 @@ export function upsertUsageDailySnapshot(snapshot: UsageDailySnapshot): void {
     snapshot.dau,
     snapshot.sessionsCompleted,
     snapshot.newWords,
-    snapshot.modelSpendUsd,
-    snapshot.medianStashSize,
-    snapshot.medianSessionActiveMs,
+    snapshot.practiceCompleted,
+    snapshot.reviewCorrect,
+    snapshot.reviewWrong,
+    snapshot.proposalsAccepted,
+    snapshot.meanStashSize,
+    snapshot.sessionActiveMs,
     snapshot.learnersInactive7d,
     snapshot.sessionsAbandoned,
     snapshot.learnersSpendWithoutAccepts,
@@ -267,9 +273,16 @@ export function listUsageDailySnapshots(dayKeys: readonly string[]): UsageDailyS
       dau,
       sessions_completed,
       new_words,
-      model_spend_usd,
-      median_stash_size,
-      median_session_active_ms,
+      COALESCE(practice_completed, (
+        SELECT COALESCE(SUM(learning_completed_count), 0)
+        FROM learner_owned_review_session_summaries
+        WHERE day_key = usage_daily_snapshots.day_key
+      )) AS practice_completed,
+      review_correct,
+      review_wrong,
+      proposals_accepted,
+      mean_stash_size,
+      session_active_ms,
       learners_inactive_7d,
       sessions_abandoned,
       learners_spend_without_accepts,
@@ -365,9 +378,12 @@ function mapSnapshotRow(row: SnapshotRow): UsageDailySnapshot {
     dau: row.dau,
     sessionsCompleted: row.sessions_completed,
     newWords: row.new_words,
-    modelSpendUsd: row.model_spend_usd,
-    medianStashSize: row.median_stash_size,
-    medianSessionActiveMs: row.median_session_active_ms,
+    practiceCompleted: row.practice_completed,
+    reviewCorrect: row.review_correct,
+    reviewWrong: row.review_wrong,
+    proposalsAccepted: row.proposals_accepted,
+    meanStashSize: row.mean_stash_size,
+    sessionActiveMs: row.session_active_ms,
     learnersInactive7d: row.learners_inactive_7d,
     sessionsAbandoned: row.sessions_abandoned,
     learnersSpendWithoutAccepts: row.learners_spend_without_accepts,

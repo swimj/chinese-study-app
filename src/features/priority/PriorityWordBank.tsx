@@ -243,7 +243,7 @@ export function PriorityWordBank({
         draggingWordIds={draggingWordIds}
         dropActive={dropSection === 'top'}
         submitting={submitting}
-        emptyCopy="Drag chips here to move them to top."
+        emptyCopy="Words you want to study first. Drag words here to put them next in line."
         chipRefs={chipRefs}
         onSectionMouseDown={handleSectionMouseDown}
         onChipClick={handleChipClick}
@@ -265,7 +265,7 @@ export function PriorityWordBank({
         draggingWordIds={draggingWordIds}
         dropActive={dropSection === 'stash'}
         submitting={submitting}
-        emptyCopy="Add matches below, or drag chips here from top."
+        emptyCopy="Words that have caught your attention and that you’d like to learn."
         chipRefs={chipRefs}
         onSectionMouseDown={handleSectionMouseDown}
         onChipClick={handleChipClick}
@@ -397,7 +397,6 @@ function PriorityBankSection({
             const chipClassName = [
               'priority-word-chip',
               selected ? 'is-selected' : '',
-              entry.requiredForNextSession ? 'is-required' : '',
               highlightedWordIds.includes(wordId) ? 'is-highlighted' : '',
               draggingWordIds.includes(wordId) ? 'is-dragging' : '',
             ].filter(Boolean).join(' ');
@@ -472,7 +471,6 @@ function PriorityChipPopover({
           ×
         </button>
       </div>
-      {word.requiredForNextSession ? <span className="priority-required-pill">Required</span> : null}
       <MeaningList meanings={word.word.meanings.length > 0 ? word.word.meanings : [word.word.meaning]} />
     </div>
   );

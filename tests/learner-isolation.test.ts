@@ -51,6 +51,38 @@ describe('learner isolation', { concurrency: false }, () => {
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
 
+  test('new local and external learners use stash only, five words and HSK 6 without resetting preferences', () => {
+    const external = dbModule.resolveOrBootstrapExternalLearner({ provider: 'clerk', providerSubject: 'user_defaults_test' });
+    for (const learner of ['learner-a', external]) {
+      dbModule.runWithLearnerId(learner, () => {
+        assert.equal(dbModule.getLearningPolicy('2026-10-07').dailyNewWordLimit, 5);
+        assert.equal(dbModule.getLearningPolicy('2026-10-07').unstudiedAdmissionSource, 'stash_only');
+        assert.deepEqual(dbModule.getDietProfile()?.weights, { 'hsk2-l6-s1': 1 });
+      });
+    }
+    dbModule.runWithLearnerId(external, () => {
+      dbModule.setDailyNewWordLimit(12);
+      dbModule.setUnstudiedAdmissionSource('mixed');
+      dbModule.setOperatorDietDeck('hsk2-l2');
+    });
+    assert.equal(dbModule.resolveOrBootstrapExternalLearner({ provider: 'clerk', providerSubject: 'user_defaults_test' }), external);
+    dbModule.runWithLearnerId(external, () => {
+      assert.equal(dbModule.getLearningPolicy('2026-10-07').dailyNewWordLimit, 12);
+      assert.equal(dbModule.getLearningPolicy('2026-10-07').unstudiedAdmissionSource, 'mixed');
+      assert.deepEqual(dbModule.getDietProfile()?.weights, { 'hsk2-l2': 1 });
+    });
+  });
+
+  test('repeated local bootstrap preserves explicit and legacy admission choices', () => {
+    dbModule.bootstrapLearner({ learnerId: 'existing-local' });
+    dbModule.runWithLearnerId('existing-local', () => dbModule.setUnstudiedAdmissionSource('mixed'));
+    dbModule.bootstrapLearner({ learnerId: 'existing-local' });
+    assert.equal(dbModule.runWithLearnerId('existing-local', () => dbModule.getLearningPolicy('2026-10-07').unstudiedAdmissionSource), 'mixed');
+    sqlite.prepare("DELETE FROM learner_settings WHERE learner_id = ? AND setting_key = 'unstudied_admission_source'").run('existing-local');
+    dbModule.bootstrapLearner({ learnerId: 'existing-local' });
+    assert.equal(dbModule.runWithLearnerId('existing-local', () => dbModule.getLearningPolicy('2026-10-07').unstudiedAdmissionSource), 'mixed');
+  });
+
   test('shares lexical content while isolating learner overlays', () => {
     dbModule.runWithLearnerId('learner-a', () => {
       dbModule.updateWordPersonalNotes('shared-word', 'A private note');
@@ -173,7 +205,12 @@ describe('learner isolation', { concurrency: false }, () => {
       'production_cue',
       originalCueId,
     );
+    const otherOriginalPublication = dbModule.getSharedContentPublicationForContent(
+      'production_cue',
+      otherOriginalCueId,
+    );
     assert.ok(originalPublication);
+    assert.ok(otherOriginalPublication);
     assert.deepEqual(sourceCue?.attribution, {
       origin: 'reflection',
       invocationId: 'learner-a-cue-create',
@@ -259,7 +296,11 @@ describe('learner isolation', { concurrency: false }, () => {
     assert.ok(replacementPublication);
     assert.equal(
       dbModule.getSharedContentPublication(originalPublication.publicationId)?.publicationStatus,
-      'shared_trial',
+      'retired',
+    );
+    assert.equal(
+      dbModule.getSharedContentPublication(otherOriginalPublication.publicationId)?.publicationStatus,
+      'retired',
     );
     assert.equal(
       dbModule.getSharedContentPublication(replacementPublication.publicationId)?.publicationStatus,
@@ -272,7 +313,7 @@ describe('learner isolation', { concurrency: false }, () => {
         'learner-b',
         () => dbModule.getProductionCue(originalCueId)?.active,
       ),
-      true,
+      false,
     );
     assert.equal(
       dbModule.runWithLearnerId(
@@ -280,6 +321,18 @@ describe('learner isolation', { concurrency: false }, () => {
         () => dbModule.getProductionCue(originalCueId)?.active,
       ),
       false,
+    );
+    assert.deepEqual(
+      { ...sqlite.prepare(`
+        SELECT actor_kind, actor_id, reason
+        FROM shared_content_publication_events
+        WHERE publication_id = ? AND to_status = 'retired'
+      `).get(originalPublication.publicationId) as Record<string, unknown> },
+      {
+        actor_kind: 'source_authorization',
+        actor_id: null,
+        reason: 'validated learner-authorized production-cue retirement',
+      },
     );
     dbModule.runWithLearnerId('learner-b', () => dbModule.upsertStudySessionRecord({
       id: 'shared-version-session',
@@ -300,7 +353,6 @@ describe('learner isolation', { concurrency: false }, () => {
         submittedText: '共享',
         submittedWordId: 'shared-word',
         result: 'accepted_anchor',
-        recheckDemandId: null,
       },
     });
     sqlite.prepare(`
@@ -440,6 +492,38 @@ function cueRepairOperation(input: {
 }
 
 function insertInvocation(invocationId: string, operation: ReflectionOperation): void {
+  const generatedAt = '2026-08-21T04:00:00.000Z';
+  const sessionId = `source-${invocationId}`;
+  sqlite.prepare(`
+    INSERT INTO study_sessions (id, started_at, ended_at, processing_state, processed_at)
+    VALUES (?, ?, ?, 'processed', ?)
+  `).run(sessionId, generatedAt, generatedAt, generatedAt);
+  const artifact = dbModule.runWithLearnerId(rawLearnerId, () => dbModule.materializeReflectionArtifact({
+    sourceSessionId: sessionId,
+    reflectionFlowVersion: 'initial_post_session_reflection.v6',
+    generatedAt,
+    provider: 'openai',
+    model: 'gpt-5.6-luna-high',
+    promptVersion: 'reflection-staged-v4',
+    evidenceBundle: {
+      schemaVersion: 'session_reflection_bundle.v6',
+      generatedAt,
+      session: { sessionId, startedAt: generatedAt, endedAt: generatedAt, studyProfile: 'mandarin' },
+      items: [{
+        itemId: 'item', source: 'production_mistake', sourceActionKind: 'production',
+        sessionActionId: `action-${invocationId}`, sourceAttemptId: `attempt-${invocationId}`,
+        occurredAt: generatedAt,
+        targetWord: { wordId: 'shared-word', hanzi: '共享', pinyin: 'gòngxiǎng', meanings: ['shared'] },
+        sessionNote: null, existingContent: { contrastClusters: [], knownAcceptedAlternates: [] },
+        servedCue: { cueId: null, cueType: 'definition_gloss', text: 'shared', acceptedWordIds: ['shared-word'], supplement: null },
+        promotionEvidence: null, rawResponse: '?', responseKind: 'unmatched_text', submittedWord: null,
+      }],
+    },
+    result: {
+      schemaVersion: 'session_reflection_result.v10',
+      itemResults: [{ itemId: 'item', diagnosisTags: ['ordinary_retrieval_noise'], learnerExplanation: 'Review the cue.', proposals: [], questions: [] }],
+    },
+  }).artifact);
   sqlite.prepare(`
     INSERT INTO reflection_operation_invocations (
       invocation_id, created_at, origin_kind, origin_proposal_id,
@@ -449,7 +533,12 @@ function insertInvocation(invocationId: string, operation: ReflectionOperation):
       effect_refs_json, satisfying_effect_refs_json
     ) VALUES (?, '2026-08-21T04:00:00.000Z', 'manual', NULL, NULL, ?, ?, ?,
       'pending', '2026-08-21T04:00:00.000Z', NULL, NULL, NULL, NULL, '[]', '[]')
-  `).run(invocationId, operation.kind, operation.version, JSON.stringify(operation));
+  `).run(invocationId, operation.kind, operation.version, JSON.stringify({
+    schemaVersion: 'reflection_invocation_operation.v1',
+    sourceArtifactId: artifact.artifactId,
+    sourceItemId: 'item',
+    operation,
+  }));
 }
 
 function restoreEnv(name: string, value: string | undefined): void {
