@@ -18,6 +18,7 @@ separately. Changed lifecycle rules are not forced through legacy controllers.
 | Preparation-wide outage classification and pause | `preparation-provider-failure.test.ts`, old `word-preparation-worker.test.ts`, new `vocabulary-preparation.test.ts`; item budgets and running sibling publication remain separate |
 | Pure-cue stimulus repair | Old repair tests and `vocabulary-pure-cue-improvement.test.ts` use the shared nonempty/changed/trimmed stimulus invariant |
 | Pure-cue proxy admission | `production-proxy.test.ts` and `vocabulary-import.test.ts` run shared cases through the common policy and both storage adapters; `pure-cues.test.ts` exercises the legacy composer; `vocabulary-composition.test.ts` covers current content eligibility and `vocabulary-study.test.ts` covers preview/Start and persisted fallback serving |
+| Queued operator approvals | `vocabulary-reflection.test.ts` covers persisted admission, exact authorization, restart replay, stale revisions, overlap rollback, maintenance/retries, torn journal records, compaction, and crash after commit; `vocabulary-reflection-http.test.ts` covers ACK/auth/request identity; `vocabulary-operator-approval-state.test.ts` covers frontend receipt merging and attention resolution |
 | Durable completion and proposal receipts | `vocabulary-session-persistence.test.ts` and `vocabulary-reflection.test.ts` include pending/approved and applied database-reopen cases with idempotent replay |
 | General-exercise authoring and reflection adaptation | `vocabulary-preparation.test.ts` and `vocabulary-improvement-admission.test.ts` cover the shared request contract, structural guards, and publication/proposal adapters; `vocabulary-reflection.test.ts` covers proposal application and scope |
 
@@ -87,7 +88,11 @@ and `?production=1` checks Escape priority for the open reaction note.
 accepted member 意见, during both immediate and acknowledged reveal. The motion fixture
 `?slow=1` checks opaque paper while the next encounter is delayed;
 `/tests/browser/vocabulary-operator.html` exercises the proposal-first internal review surface (ready suggestions, Archive search, proposal edits, and `?second=pending|failed|result`; `?narrow=1&large=1` checks compact enlarged-text layout; `?reassessment` enables reassessment and `?reassessment=changed` checks explicit confirmation of a changed source version; `?slow` exercises delayed reads, `?failNext` exercises navigation recovery, and `?stale` or `?staleApply` exercises a validation conflict)
-with an in-memory API (`?empty=1` for empty lists, `?noProposal=1` for a no-change judgment). The first awaiting-review proposal's served snapshot uses a different cue and accepted-answer set from the current item and the proposed cue. `?noSnapshot=1` opens that proposal with no retained case snapshot. These fixtures are separate
+with an in-memory API (`?empty=1` for empty lists, `?noProposal=1` for a no-change judgment).
+`?holdApproval=1` retains an acknowledged approval in the queue while advancing
+the review card; `?approvalQueued=1` hydrates pending work;
+`?approvalAttention=1` shows a failed request with retry and proposal controls;
+`?lostAck=1` exercises exact-request retry after a lost acknowledgement. The first awaiting-review proposal's served snapshot uses a different cue and accepted-answer set from the current item and the proposed cue. `?noSnapshot=1` opens that proposal with no retained case snapshot. These fixtures are separate
 from `npm test`. Add `?usage=1` to place the review in the operator panel's
 Content improvement tab, including its narrow and enlarged-text variants. Check
 Left/Right navigation, preserved selection after visiting Usage or Archive, the

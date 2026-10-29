@@ -1,6 +1,6 @@
 import { apiRequest } from '../../services/api';
 import type { VocabularyContent,VocabularyContentDraft } from '../../domain/vocabulary-content';
-import type { VocabularySecondOpinion, VocabularyContentProposal, VocabularyProposalDraft, VocabularyProposalApplication, VocabularyProposalOperation, VocabularyReflectionCase, VocabularyImprovementAdmission, VocabularyPureCueReferral, VocabularyPureCuePromotion } from '../../domain/vocabulary-reflection';
+import type { VocabularyApprovalRequest, VocabularySecondOpinion, VocabularyContentProposal, VocabularyProposalDraft, VocabularyProposalApplication, VocabularyProposalOperation, VocabularyReflectionCase, VocabularyImprovementAdmission, VocabularyPureCueReferral, VocabularyPureCuePromotion } from '../../domain/vocabulary-reflection';
 
 export type VocabularyReassessmentModel = 'openai:gpt-5.6-luna-high' | 'zai:glm-5.3-flash-high' | 'openai:gpt-6-sol-high';
 export type VocabularyReassessmentSource={contentId:string;assessedVersion:number;currentVersion:number};
@@ -25,6 +25,9 @@ export const vocabularyOperatorApi={
   reassessCase:(caseId:string,modelChoice:VocabularyReassessmentModel,expectedContentVersion:number)=>write<{caseId:string;jobId:string}>(`/cases/${id(caseId)}/reassessments`,{modelChoice,expectedContentVersion}),
   requestCaseSecondOpinion:(caseId:string,notes:string)=>write<{ok:true}>(`/cases/${id(caseId)}/second-opinions`,{notes}),
   workspace:(caseId:string)=>apiRequest<VocabularyCaseWorkspace>(`${root}/cases/${id(caseId)}`),
+  approvalRequests:()=>apiRequest<{items:VocabularyApprovalRequest[]}>(`${root}/approval-requests`),
+  requestApproval:(proposalId:string,expectedVersion:number,requestId:string,notes:string)=>write<VocabularyApprovalRequest>(`/proposals/${id(proposalId)}/approval-requests`,{expectedVersion,requestId,notes}),
+  retryApproval:(requestId:string)=>write<VocabularyApprovalRequest>(`/approval-requests/${id(requestId)}/retry`,{}),
   proposals:()=>apiRequest<{items:VocabularyContentProposal[]}>(`${root}/proposals`),
   reviewBatch:(startProposalId:string,limit=20)=>apiRequest<{items:VocabularyReviewSnapshot[];nextProposalId:string|null}>(`${root}/proposals/review-batch?limit=${limit}&startProposalId=${id(startProposalId)}`),
   proposal:(proposalId:string)=>apiRequest<VocabularyContentProposal>(`${root}/proposals/${id(proposalId)}`),

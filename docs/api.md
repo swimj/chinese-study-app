@@ -76,6 +76,17 @@ application, closure, and failed-work retries. Proposal mutations carry expected
 versions; application requires exact approval and an idempotency key. See
 [the implementation guide](vocabulary-learning.md) for content authority.
 
+`POST /api/operator/vocabulary/proposals/:id/approval-requests` accepts
+`{ expectedVersion, requestId, notes? }` and returns `202` with the persisted request
+receipt. Authentication and request-shape checks run before acknowledgement;
+proposal validation and application run in the background. Repeating the same
+request ID and payload returns its existing receipt; conflicting reuse is rejected.
+`GET /api/operator/vocabulary/approval-requests` returns `{ items }` with request
+states `queued`, `running`, `succeeded`, or `attention`, retained errors, and
+application receipts. `POST /api/operator/vocabulary/approval-requests/:id/retry`
+accepts an empty body and requeues an attention request with the same identities.
+The existing explicit preview, approve, and apply routes retain their contracts.
+
 `GET /api/operator/vocabulary/no-proposal-cases` lists completed original
 exercise-improvement judgments with no proposal and no operator closure; `?status=closed` lists closed reviews.
 `POST /api/operator/vocabulary/cases/:id/second-opinions` accepts optional `notes`

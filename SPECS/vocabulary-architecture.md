@@ -66,7 +66,9 @@ correction changes it.
 
 Backend preparation can publish structurally validated shared material under its
 bounded authoring policy. Internal reflection instead proposes content changes;
-an operator previews, approves, and applies an exact proposal version. Preparation
+an operator reviews and authorizes application of an exact proposal version.
+A persisted request can acknowledge that authorization before background
+validation and application complete. Preparation
 and reflection repertoire generation share the general-exercise authoring contract;
 their adapters retain these distinct publication and proposal authorities. Preview
 and application validate source versions and effect scope. Application records

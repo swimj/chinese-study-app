@@ -1,6 +1,14 @@
 import type { VocabularyContent, VocabularyContentDraft, VocabularyJson } from './vocabulary-content.ts';
 import type { VocabularyEncounterEvidence } from './vocabulary-session.ts';
 
+/** A persisted operator instruction; success is established only by its application receipt. */
+export type VocabularyApprovalRequest = {
+  requestId: string; proposalId: string; expectedVersion: number; actorId: string; notes: VocabularyJson;
+  status: 'queued' | 'running' | 'succeeded' | 'attention'; attempts: number;
+  createdAt: string; updatedAt: string; error: string | null;
+  application: VocabularyProposalApplication | null;
+};
+
 export type VocabularyReflectionSubject = { kind: 'word'; wordId: string } | { kind: 'pureCue'; contentId: string };
 export type VocabularyReflectionCase = {
   caseId: string; completionId: string; learnerId: string;

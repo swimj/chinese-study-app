@@ -152,6 +152,30 @@ learner was necessarily told by the original cue.
 See [worker routing and retry controls](../vocabulary-learning.md#background-work-and-operator-repair)
 for model selection, provider gates and preparation retry budgets.
 
+## Queued operator application
+
+Approve and apply persists an exact-version operator request before returning its
+acknowledgement. The frontend advances from that receipt and uses queue status
+reads to discover completion or attention failures. It does not label a queued
+request as applied.
+
+`server/vocabulary/approval-requests.ts` keeps an append-only JSON-lines journal
+at `APP_DATA_DIR/vocabulary-approval-requests.jsonl`, alongside the database on
+the persistent volume. Memory indexes the journal for scheduling. One worker
+processes requests serially and yields between applications; maintenance mode
+pauses processing. The worker uses the existing real-writer rollback preview,
+source and sense fences, exact-version operator review, and atomic application.
+The review and application commit together in SQLite. A stable request-derived
+application key lets replay recover the receipt if the SQLite commit succeeded
+before the completion journal append.
+
+Only newline-terminated journal records count as committed; startup discards an
+incomplete final append and rejects malformed committed records. Periodic atomic
+compaction retains pending and attention work plus a recent completion tail.
+The journal is outside SQLite and Litestream replication. A lost volume can lose
+in-flight authorizations; the proposals remain available in the database for
+operator reconciliation. The journal does not request provider calls.
+
 ## Dictionary fallback publication scope
 
 Corpus dictionary fallbacks and the repertoires generated from them are shared

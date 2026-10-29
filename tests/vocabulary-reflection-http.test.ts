@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { getVocabularyApprovalRequests } from '../server/vocabulary/approval-requests.ts';
 import { DatabaseSync } from 'node:sqlite';
 import { beforeEach,afterEach,test } from 'node:test';
 import type { Express,Request,Response,NextFunction,RequestHandler } from 'express';
@@ -10,6 +13,7 @@ import { createVocabularySession,appendVocabularySessionActions,stageVocabularyS
 import { ingestVocabularySessionEvidence,claimVocabularyReflectionJob,recordVocabularyFeedbackJudgment,recordVocabularyImprovementResult,listVocabularyProposalReviewBatch } from '../server/db/vocabulary-reflection.ts';
 import { registerVocabularyReflectionRoutes } from '../server/vocabulary/reflection-routes.ts';
 import type { VocabularySessionAction } from '../src/domain/vocabulary-session.ts';
+let directory:string;
 let sql:DatabaseSync,env:Record<string,string|undefined>,handlers:Map<string,RequestHandler[]>,wakes:number;
 const at='2026-10-17T10:00:00.000Z',later='2026-10-17T10:00:16.000Z',base='/api/operator/vocabulary',feedback='/api/vocabulary/feedback';
 const alice=<T>(work:()=>T)=>runWithLearnerId('alice',work);
@@ -18,7 +22,8 @@ function draft(id='one'){return {contentId:id,kind:'exercise' as const,payloadVe
   assessment:{match:'exact'},accessScope:'shared' as const,availability:'active' as const,originKind:'human' as const,words:[{wordId:'a',relation:'target' as const}],answers:[{wordId:'a',acceptedForms:['字']}]};}
 beforeEach(()=>{
   env=Object.fromEntries(['APP_AUTH_MODE','APP_DATA_DIR','APP_MODE','APP_LEARNER_ID','APP_OPERATOR_CLERK_USER_IDS'].map(key=>[key,process.env[key]]));
-  Object.assign(process.env,{APP_AUTH_MODE:'trusted_local',APP_MODE:'study',APP_DATA_DIR:'/tmp/vocabulary-reflection-http',APP_LEARNER_ID:'editor',APP_OPERATOR_CLERK_USER_IDS:'editor'});
+  directory=fs.mkdtempSync(path.join(os.tmpdir(),'approval-http-'));
+  Object.assign(process.env,{APP_AUTH_MODE:'trusted_local',APP_MODE:'study',APP_DATA_DIR:directory,APP_LEARNER_ID:'editor',APP_OPERATOR_CLERK_USER_IDS:'editor'});
   sql=new DatabaseSync(':memory:');setDb(sql);sql.exec(`PRAGMA foreign_keys=ON;CREATE TABLE learners(learner_id TEXT PRIMARY KEY,disabled_at TEXT);
     CREATE TABLE learner_word_reserve_requests(learner_id TEXT PRIMARY KEY, requested_at TEXT NOT NULL);
     CREATE TABLE lexical_words(id TEXT PRIMARY KEY);CREATE TABLE model_invocations(id TEXT PRIMARY KEY);
@@ -57,7 +62,7 @@ beforeEach(()=>{
   const app=Object.fromEntries(['get','post','put'].map(method=>[method,(route:string,...callbacks:RequestHandler[])=>{handlers.set(`${method} ${route}`,callbacks);}])) as unknown as Express;
   registerVocabularyReflectionRoutes(app,{wake:()=>{wakes++;}});
 });
-afterEach(()=>{sql.close();for(const[key,value]of Object.entries(env)){if(value===undefined)delete process.env[key];else process.env[key]=value;}});
+afterEach(()=>{getVocabularyApprovalRequests().stop();fs.rmSync(directory,{recursive:true,force:true});sql.close();for(const[key,value]of Object.entries(env)){if(value===undefined)delete process.env[key];else process.env[key]=value;}});
 function call(method:string,route:string,input:{body?:unknown;params?:Record<string,string>;query?:Record<string,unknown>;learner?:string|null}={}) {
   let status=200,body:unknown;const callbacks=handlers.get(`${method} ${route}`)!;assert.ok(callbacks,route);
   const req={body:input.body??{},params:input.params??{},query:input.query??{}} as unknown as Request;
@@ -401,4 +406,32 @@ test('batch displays each operation even if its source is missing',()=>{
   assert.equal(missing.items[0]!.previews[0]!.source,null);
   assert.deepEqual(missing.items[0]!.previews[0]!.result,operations[0]!.content);
   assert.equal(call('post',`${base}/proposals/:id/approve`,{params:{id},body:{expectedVersion:1}}).status,404);
+});
+
+
+test('approval request HTTP admission acknowledges persisted work, enforces authority and payload, and returns later receipts',()=>{
+  const created=call('post',`${base}/proposals`,{body:proposal()});const id=String(created.body.proposalId);
+  const route=`${base}/proposals/:id/approval-requests`,body={requestId:'http-approval',expectedVersion:1,notes:{review:'Exact version'}};
+  process.env.APP_OPERATOR_CLERK_USER_IDS='';
+  assert.equal(call('post',route,{params:{id},body}).status,403);
+  assert.equal(call('get',`${base}/approval-requests`).status,403);
+  process.env.APP_OPERATOR_CLERK_USER_IDS='editor';
+  for(const invalid of [{...body,extra:true},{...body,expectedVersion:0},{...body,requestId:''}]) {
+    assert.equal(call('post',route,{params:{id},body:invalid}).status,400);
+  }
+  assert.equal(call('post',route,{params:{id},body:{...body,expectedVersion:2}}).status,409);
+  const ack=call('post',route,{params:{id},body});assert.equal(ack.status,202);assert.equal(ack.body.status,'queued');
+  assert.equal(getVocabularyContentForMaintenance('one')!.version,1);
+  assert.equal(sql.prepare('SELECT count(*) n FROM proposal_reviews').get()!.n,0);
+  assert.deepEqual(call('post',route,{params:{id},body}),ack);
+  assert.equal(call('post',route,{params:{id},body:{...body,notes:'Changed'}}).status,409);
+  assert.equal((call('get',`${base}/approval-requests`).body.items as unknown[]).length,1);
+  const retry=`${base}/approval-requests/:id/retry`;
+  assert.equal(call('post',retry,{params:{id:'http-approval'},body:{}}).status,409);
+  sql.exec(`CREATE TABLE service_controls(control_key TEXT PRIMARY KEY,enabled INTEGER,updated_at TEXT,actor_id TEXT);
+    INSERT INTO service_controls VALUES ('maintenance_mode',0,'2026-01-01','test'),('operator_only',0,'2026-01-01','test'),('provider_work_enabled',1,'2026-01-01','test');`);
+  getVocabularyApprovalRequests().step();
+  const done=(call('get',`${base}/approval-requests`).body.items as {status:string;application:unknown}[])[0]!;
+  assert.equal(done.status,'succeeded');assert.ok(done.application);
+  assert.equal(getVocabularyContentForMaintenance('one')!.version,2);
 });

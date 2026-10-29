@@ -345,9 +345,13 @@ The [operator guide](../docs/operator-panel.md#content-improvement-workflow)
 describes the current queue and archive interface.
 
 Content-repair proposals require operator review. The review display shows the
-saved proposal and relevant source content. Approval validates the exact proposal
-version, source bases, effect scope, and resulting content, and binds that version;
-application rechecks it and records an idempotent receipt.
+saved proposal and relevant source content. Approve and apply authorizes the exact
+saved version. The interface advances after the backend persists that request;
+acknowledgement means queued, not applied. Background work validates the proposal
+version, source bases, effect scope, and resulting content, records the matching
+operator approval, and applies it with an idempotent receipt. Validation or
+application failures appear in Needs attention. A changed draft or stale source
+cannot receive application under the earlier authorization.
 The operator chooses whether to update an identity or replace and retire it.
 Learner schedules, deactivations, and teaching bindings refer to identities;
 replacement does not silently transfer those relationships. Related teaching

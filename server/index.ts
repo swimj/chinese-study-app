@@ -4,6 +4,7 @@ import { addVocabularyStashByHanzi, updateVocabularyStashPriority } from './db/v
 import { registerVocabularyStudyRoutes } from './vocabulary/study-routes.ts';
 import { registerVocabularyReflectionRoutes } from './vocabulary/reflection-routes.ts';
 import { createVocabularyProcessingWorker } from './vocabulary/processing-worker.ts';
+import { getVocabularyApprovalRequests } from './vocabulary/approval-requests.ts';
 import { createVocabularyPracticeWorker } from './vocabulary/preparation-worker.ts';
 import { SessionWordOutcomeConflictError } from './db/session-word-outcomes.ts';
 import { createSessionCompletionWorker } from './session-completion/worker.ts';
@@ -2655,11 +2656,13 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   if (dbConfig.studyProfile !== 'mandarin') sessionCompletions.wake();
   const vocabularyProcessing = createVocabularyProcessingWorker({onError: error => console.error(error)});
   const vocabularyPreparation = createVocabularyPracticeWorker({onError: error => console.error(error)});
+  const vocabularyApprovals = getVocabularyApprovalRequests();
+  if (dbConfig.studyProfile === 'mandarin') vocabularyApprovals.wake();
   const wakeVocabulary = () => { vocabularyProcessing.wake(); vocabularyPreparation.wake(); sessionDebriefs.wake(); };
   if (dbConfig.studyProfile === 'mandarin') wakeVocabulary();
   startServer({
     app: createApp({ serviceMetrics, requestTiming: { flightRecorder: flightRecorder ?? undefined }, wakeWordPreparation: wordPreparation.wake, canPrepareWords: wordPreparation.canPrepare, wakeSessionDebriefs: sessionDebriefs.wake, wakeSessionCompletions: sessionCompletions.wake, wakeVocabulary }),
-    stopBackgroundWork: async () => { await Promise.all([wordPreparation.stop(), sessionDebriefs.stop(), sessionCompletions.stop(), vocabularyProcessing.stop(), vocabularyPreparation.stop()]); },
+    stopBackgroundWork: async () => { vocabularyApprovals.stop(); await Promise.all([wordPreparation.stop(), sessionDebriefs.stop(), sessionCompletions.stop(), vocabularyProcessing.stop(), vocabularyPreparation.stop()]); },
     additionalServers: metricsServer ? [metricsServer] : [],
     closeDatabase: () => {
       usagePulseScheduler.stop();

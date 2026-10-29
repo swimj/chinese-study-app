@@ -3,7 +3,7 @@ import {createRoot} from 'react-dom/client';
 import {VocabularyOperatorPage} from '../../src/pages/VocabularyOperatorPage';
 import type {VocabularyOperatorApi,VocabularyCaseWorkspace} from '../../src/features/vocabulary-operator/api';
 import type {VocabularyContent} from '../../src/domain/vocabulary-content';
-import type {VocabularyContentProposal} from '../../src/domain/vocabulary-reflection';
+import type {VocabularyApprovalRequest,VocabularyContentProposal} from '../../src/domain/vocabulary-reflection';
 import '../../src/styles.css';
 type RecordPreview={proposal:VocabularyContentProposal;original:VocabularyContent;workspace:VocabularyCaseWorkspace;provenance:{artifactId:string;proposalId:string;generatedAt:string;model:string;review:{disposition:string;updated_at:string;acceptance_mode:string};application:unknown;mapping:string;originalOperation:unknown}};
 async function main(){
@@ -14,7 +14,11 @@ async function main(){
   const proposals=new Map(data.records.map(record=>[record.proposal.proposalId,structuredClone(record.proposal)]));
   function get(id:string){const item=proposals.get(id);if(!item)throw new Error('Unknown local proposal');return item;}
   function update(id:string,patch:Partial<VocabularyContentProposal>){const value={...get(id),...patch};proposals.set(id,value);return value;}
+  const approvals:VocabularyApprovalRequest[]=[];
   const api:VocabularyOperatorApi={
+    approvalRequests:async()=>({items:approvals}),
+    requestApproval:async(id,expectedVersion,requestId,notes)=>{const now=new Date().toISOString();const item:VocabularyApprovalRequest={requestId,proposalId:id,expectedVersion,actorId:'local-preview',notes,status:'queued',attempts:0,createdAt:now,updatedAt:now,error:null,application:null};approvals.push(item);setTimeout(()=>{const proposal=update(id,{status:'applied',resolvedAt:new Date().toISOString()});item.status='succeeded';item.updatedAt=new Date().toISOString();item.application={applicationId:'local-preview-only',proposalId:id,proposalVersion:proposal.version,reviewId:'local-preview',changes:[]};},100);return {...item};},
+    retryApproval:async()=>{throw new Error('No failed approvals are included in this preview.');},
     cases:async()=>({items:[]}),proposals:async()=>({items:[...proposals.values()]}),proposal:async id=>get(id),
     workspace:async id=>{const record=data.records.find(item=>item.workspace.case.caseId===id);if(!record)throw new Error('Unknown local case');return record.workspace;},
     dispatches:async()=>({items:[]}),preparationFailures:async()=>({items:[]}),
