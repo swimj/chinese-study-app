@@ -83,7 +83,8 @@ try {
 
       // Exercise the real finalization path for a previous-day declined recommendation.
       // Content/state is authored fixture material; this log is a synthetic learner history.
-      const previousAt=new Date(now.getTime()-86_400_000).toISOString();
+      // Leave room for completion's 16 seconds without crossing into today's UTC date.
+      const previousAt=new Date(Date.parse(`${now.toISOString().slice(0,10)}T00:00:00.000Z`)-86_400_000).toISOString();
       const sessionId='vocabulary-fixture-kept-solidifying';
       const wordId=content.heldWordId;
       const exercise=getVocabularyContent(content.exerciseIdsByWord[wordId]![0]!)!;
