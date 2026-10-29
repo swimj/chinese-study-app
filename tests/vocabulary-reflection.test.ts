@@ -56,6 +56,7 @@ beforeEach(() => {
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0042_vocabulary_sessions.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0044_vocabulary_reflection.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0061_vocabulary_sense_mapping_retries.sql',import.meta.url),'utf8'));
+  sql.exec(fs.readFileSync(new URL('../server/db/migrations/0063_vocabulary_proposal_drop_actions.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0059_vocabulary_reassessment.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0060_vocabulary_reassessment_source.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0055_vocabulary_feedback_dismissal.sql',import.meta.url),'utf8'));
@@ -1045,4 +1046,39 @@ for(const route of ['reassessment','proposal opinion','case opinion'] as const)f
   else if(route==='proposal opinion'){const opinion=requestVocabularySecondOpinion(result.proposalId!,1,'editor');childId=(sql.prepare('SELECT case_id FROM vocabulary_reflection_jobs WHERE job_id=?').get(opinion.jobId) as {case_id:string}).case_id;}
   else {requestVocabularyCaseSecondOpinion(work.caseId,'editor','Try another view');childId=(sql.prepare('SELECT case_id FROM vocabulary_reflection_jobs WHERE case_id!=? AND second_opinion_json IS NOT NULL').get(work.caseId) as {case_id:string}).case_id;}
   assert.deepEqual(resolveVocabularySenseCoverage('a',childId).review?.includedSenseIds,selection==='inherit'?null:selection==='none'?[]:[sense.senseId]);
+});
+
+
+test('reviewed retirement dry-runs without effects, preserves relationships and replays its exact receipt',()=>{
+  sql.prepare("INSERT INTO learner_content_deactivations VALUES ('alice','one',?)").run(at);
+  const before=sql.prepare('SELECT count(*) n FROM content_revision_history').get()!.n;
+  const proposed=createVocabularyProposal({operations:[op('retire')],rationale:'No faithful repair'},'editor');
+  const preview=previewVocabularyProposal(proposed.proposalId,1,'editor');
+  assert.equal(preview.previews[0]!.result.availability,'retired');assert.equal(preview.previews[0]!.result.contentId,'one');
+  assert.equal(preview.operations[0]!.deactivationsRemainOnSource,1);assert.equal(preview.operations[0]!.transfersRelationships,false);
+  assert.equal(getVocabularyContentForMaintenance('one')!.availability,'active');assert.equal(sql.prepare('SELECT count(*) n FROM content_revision_history').get()!.n,before);
+  const input={requestId:'retirement-request',proposalId:proposed.proposalId,expectedVersion:1,actorId:'editor',notes:'Reviewed retirement'};
+  const receipt=completeVocabularyApprovalRequest(input);assert.deepEqual(completeVocabularyApprovalRequest(input),receipt);
+  assert.equal(receipt.changes[0]!.strategy,'retire');assert.equal(receipt.changes[0]!.resultContentId,'one');assert.equal(receipt.changes[0]!.resultVersion,2);
+  assert.equal(getVocabularyContentForMaintenance('one')!.availability,'retired');assert.equal(sql.prepare('SELECT content_id FROM learner_content_deactivations').get()!.content_id,'one');
+  assert.equal(sql.prepare('SELECT count(*) n FROM content_revision_history').get()!.n,Number(before)+1);
+  assert.equal(sql.prepare("SELECT write_strategy FROM content_revision_history WHERE content_id='one' AND version=2").get()!.write_strategy,'update_existing');
+  assert.ok(sql.prepare('SELECT source_history_change_id FROM application_content_changes').get()!.source_history_change_id);
+  assert.deepEqual(sql.prepare('PRAGMA foreign_key_check').all(),[]);
+});
+
+test('retirement enforces general production and ownership; late failure rolls back retirement and review atomically',()=>{
+  const create=(operations:VocabularyProposalOperation[])=>createVocabularyProposal({operations,rationale:'Review removal'},'editor');
+  assert.throws(()=>create([{...op('retire','teach'),content:draft('teach','new','teaching')}]),/general production/);
+  createVocabularyContent({...draft('recognize'),skill:'recognition'},actor);
+  assert.throws(()=>create([{...op('retire','recognize'),content:{...draft('recognize'),skill:'recognition'}}]),/general production/);
+  const privateSource=createVocabularyContent({...draft('private-drop'),accessScope:'private',ownerLearnerId:'alice'},actor);
+  assert.throws(()=>create([{...op('retire','private-drop'),content:draft('private-drop')}]),/ownership/);
+  const privateProposal=create([{...op('retire','private-drop'),scope:{kind:'learner',learnerId:'alice'},content:{...privateSource}}]);
+  assert.equal(previewVocabularyProposal(privateProposal.proposalId,1,'editor').previews[0]!.result.accessScope,'private');
+  const failed=create([op('retire'),{...op('create','one','collision'),operationKey:'new'}]);
+  const approved=approveVocabularyProposal(failed.proposalId,1,'editor');createVocabularyContent(draft('collision'),actor);
+  assert.throws(()=>applyVocabularyProposal(failed.proposalId,1,approved,'failed-retire','editor'),/UNIQUE/);
+  assert.equal(getVocabularyContentForMaintenance('one')!.availability,'active');assert.equal(getVocabularyContentForMaintenance('one')!.version,1);
+  assert.equal(sql.prepare('SELECT count(*) n FROM proposal_applications WHERE proposal_id=?').get(failed.proposalId)!.n,0);
 });

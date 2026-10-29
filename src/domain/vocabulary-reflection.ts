@@ -68,7 +68,7 @@ export type VocabularyProposalScope = { kind: 'shared' } | { kind: 'learner'; le
 export type VocabularyProposalOperation = {
   operationKey: string; scope: VocabularyProposalScope; rationale: string;
 } & ({ strategy: 'create'; content: VocabularyContentDraft }
-  | { strategy: 'update_existing' | 'replace'; sourceContentId: string; expectedVersion: number; content: VocabularyContentDraft });
+  | { strategy: 'update_existing' | 'replace' | 'retire'; sourceContentId: string; expectedVersion: number; content: VocabularyContentDraft });
 export type VocabularyProposalDraft = {
   caseId?: string; operations: VocabularyProposalOperation[]; rationale: string;
   invocationId?: string; bases?: { contentId: string; expectedVersion: number }[];
