@@ -596,6 +596,31 @@ export function applyVocabularyProposal(proposalId: string, expectedVersion: num
     event('vocabulary.reflection.proposal_applied',proposalId,{ applicationId,version: expectedVersion },actor); return receipt;
   });
 }
+
+/** Queue replay uses the committed receipt before attempting validation again. */
+export function completeVocabularyApprovalRequest(input: {
+  requestId: string; proposalId: string; expectedVersion: number; actorId: string; notes: VocabularyJson;
+}): VocabularyProposalApplication {
+  operator(input.actorId);
+  return atomic(() => {
+    const key = `approval-request:${input.requestId}`;
+    const previous = getDb().prepare(`SELECT a.proposal_id,a.proposal_version,a.effects_json,r.operator_id,r.notes_json
+      FROM proposal_applications a JOIN proposal_reviews r ON r.review_id=a.authorized_review_id
+      WHERE a.idempotency_key=?`).get(key) as {
+        proposal_id:string;proposal_version:number;effects_json:string;operator_id:string;notes_json:string
+      } | undefined;
+    if (previous) {
+      if (previous.proposal_id !== input.proposalId || previous.proposal_version !== input.expectedVersion
+        || previous.operator_id !== input.actorId || previous.notes_json !== encode(input.notes)) {
+        throw new VocabularyReflectionConflict('Approval request identity belongs to another authorization');
+      }
+      return JSON.parse(previous.effects_json) as VocabularyProposalApplication;
+    }
+    // The review and application commit together; a crash cannot leave an orphan authorization.
+    const reviewId = approveVocabularyProposal(input.proposalId,input.expectedVersion,input.actorId,input.notes);
+    return applyVocabularyProposal(input.proposalId,input.expectedVersion,reviewId,key,input.actorId);
+  });
+}
 export function closeVocabularyTeachingCase(caseId: string, actorId: string, reason: string): void {
   const actor = operator(actorId); nonempty(reason);
   atomic(() => {

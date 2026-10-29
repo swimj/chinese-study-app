@@ -118,12 +118,16 @@ proposed content, accepted answers, and recipient scope follow. A case with no
 retained snapshot states that the original served content is unavailable.
 Changed answer criteria and retained teaching are expanded in the comparison.
 
-“Approve and apply” records approval for the displayed version and applies it
-with an idempotent receipt. Approval runs the real writers under rollback to
-validate the proposal; application revalidates current bases. The optional
-validation control can run the same preview before approval and show relationship
-counts. A failed application can be retried without losing the approval or
-application key in the current view.
+“Approve and apply” queues the displayed version and advances after the backend
+persists the request. Queued requests are hidden from Awaiting review while they
+finish. Acknowledgement does not mean the content has been applied. The backend
+validates the proposal with the real writers under rollback, records the exact
+version's operator approval, and applies it with an idempotent receipt. Application
+revalidates current bases. The optional validation control can run the same
+preview before submission and show relationship counts. Failed requests appear
+under Needs attention with the retained error and retry control. Retrying uses the
+same request and application identities; stale content requires revision or
+reassessment rather than applying a newer version under the earlier request.
 Manual edits create a new version and invalidate the previous preview and review.
 Teaching repairs can update an exercise and explicitly bind its resulting version
 in the same ordered proposal. Failed jobs and dispatches have explicit retry controls.

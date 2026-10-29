@@ -9,6 +9,8 @@ import { runWithLearnerId } from '../server/db/learner-context.ts';
 import { requestVocabularyRefresh } from '../server/db/vocabulary-learners.ts';
 import { createVocabularyContent, emitBackendEvent, getVocabularyContentForMaintenance, listVocabularyExercises, updateVocabularyContent,createVocabularySense,getVocabularySenseCatalog,getVocabularySenses,establishVocabularySenseCatalog,mapVocabularyContentSense,updateVocabularySense } from '../server/db/vocabulary-content.ts';
 import { migrateSharedDictionaryBaselines } from '../server/db/dictionary-baseline-sharing.ts';
+import { createVocabularyApprovalRequests } from '../server/vocabulary/approval-requests.ts';
+import { completeVocabularyApprovalRequest } from '../server/db/vocabulary-reflection.ts';
 import { createVocabularyReflectionProvider, projectVocabularyReflectionInput } from '../server/vocabulary/reflection-provider.ts';
 import type { ProviderAdapter } from '../server/llm/types.ts';
 import { createVocabularySession, appendVocabularySessionActions, stageVocabularySessionCompletion, closeVocabularySessionCompletion } from '../server/db/vocabulary-sessions.ts';
@@ -849,4 +851,117 @@ test('advisory review of reassessment keeps the pinned source and excludes histo
   const input=projectVocabularyReflectionInput(advisory) as {sourceContent:VocabularyContent;encounters:unknown[]};
   assert.equal(input.sourceContent.version,2);
   assert.deepEqual(input.encounters,[]);
+});
+
+
+function approvalFixture() {
+  const directory=fs.mkdtempSync(path.join(os.tmpdir(),'vocabulary-approval-'));
+  const filePath=path.join(directory,'requests.jsonl');
+  const proposal=createVocabularyProposal({operations:[op()],rationale:'Operator repair'},'editor');
+  const input={requestId:'approval-one',proposalId:proposal.proposalId,expectedVersion:1,actorId:'editor',notes:{reason:'Reviewed'}};
+  const queue=createVocabularyApprovalRequests({filePath,controls:()=>({maintenanceMode:false})});
+  return {directory,filePath,proposal,input,queue};
+}
+test('approval admission persists exact operator instruction without preview writes and replay applies it once',()=>{
+  const f=approvalFixture();
+  try {
+    const ack=f.queue.enqueue(f.input);
+    assert.equal(ack.status,'queued');assert.equal(getVocabularyContentForMaintenance('one')!.version,1);
+    assert.equal(sql.prepare('SELECT count(*) n FROM proposal_reviews').get()!.n,0);
+    assert.deepEqual(f.queue.enqueue(f.input),ack);
+    assert.throws(()=>f.queue.enqueue({...f.input,notes:'Changed authorization'}),/another approval/);
+    assert.throws(()=>f.queue.enqueue({...f.input,requestId:'second'}),/already has a queued approval/);
+    const restarted=createVocabularyApprovalRequests({filePath:f.filePath,controls:()=>({maintenanceMode:false})});
+    assert.equal(restarted.step(),true);
+    const done=restarted.list()[0]!;assert.equal(done.status,'succeeded');assert.ok(done.application);
+    assert.ok(done.updatedAt>ack.updatedAt);assert.equal(getVocabularyContentForMaintenance('one')!.version,2);
+    assert.deepEqual(completeVocabularyApprovalRequest(f.input),done.application);
+    assert.equal(sql.prepare('SELECT count(*) n FROM proposal_reviews').get()!.n,1);
+    assert.equal(sql.prepare('SELECT count(*) n FROM proposal_applications').get()!.n,1);
+    assert.throws(()=>completeVocabularyApprovalRequest({...f.input,notes:'Different operator decision'}),/another authorization/);
+  }finally{fs.rmSync(f.directory,{recursive:true,force:true});}
+});
+test('approval worker retains stale exact-version validation failures in attention and compacts resolved attention',()=>{
+  const f=approvalFixture();
+  try {
+    f.queue.enqueue(f.input);
+    saveVocabularyProposal(f.proposal.proposalId,1,{operations:[op()],rationale:'Changed after submission'},'editor');
+    assert.equal(f.queue.step(),true);
+    assert.equal(f.queue.list()[0]!.status,'attention');assert.match(f.queue.list()[0]!.error!,/version changed/);
+    assert.equal(getVocabularyContentForMaintenance('one')!.version,1);
+    assert.equal(sql.prepare('SELECT count(*) n FROM proposal_reviews').get()!.n,0);
+    f.queue.compact();assert.deepEqual(f.queue.list(),[]);
+  }finally{fs.rmSync(f.directory,{recursive:true,force:true});}
+});
+test('approval validation and application roll back together on overlapping proposals',()=>{
+  const f=approvalFixture();
+  try {
+    f.queue.enqueue(f.input);
+    const second=createVocabularyProposal({operations:[op()],rationale:'Overlapping repair'},'editor');
+    f.queue.enqueue({...f.input,requestId:'second',proposalId:second.proposalId});
+    f.queue.step();f.queue.step();
+    assert.deepEqual(f.queue.list().map(item=>item.status),['succeeded','attention']);
+    assert.equal(sql.prepare('SELECT count(*) n FROM proposal_reviews').get()!.n,1);
+    assert.equal(getVocabularyContentForMaintenance('one')!.version,2);
+  }finally{fs.rmSync(f.directory,{recursive:true,force:true});}
+});
+test('approval worker pauses in maintenance and bounds infrastructure retries before explicit retry',()=>{
+  const f=approvalFixture();let maintenance=true,calls=0;
+  const queue=createVocabularyApprovalRequests({filePath:f.filePath,controls:()=>({maintenanceMode:maintenance}),
+    complete:()=>{calls++;throw Object.assign(new Error('Storage busy'),{code:'ERR_SQLITE_ERROR',errcode:5});}});
+  try {
+    queue.enqueue(f.input);assert.equal(queue.step(),false);assert.equal(calls,0);
+    maintenance=false;queue.step();queue.step();queue.step();
+    assert.equal(calls,3);assert.equal(queue.list()[0]!.status,'attention');
+    assert.equal(queue.step(),false);assert.throws(()=>queue.retry(f.input.requestId,'someone-else'),/another operator/);
+    const retried=queue.retry(f.input.requestId,'editor');assert.equal(retried.status,'queued');assert.equal(retried.attempts,0);
+    queue.stop();assert.equal(queue.step(),false);
+  }finally{fs.rmSync(f.directory,{recursive:true,force:true});}
+});
+test('approval journal discards only a torn final record, retains pending requests through compaction, and rejects malformed committed data',()=>{
+  const f=approvalFixture();
+  try {
+    f.queue.enqueue(f.input);fs.appendFileSync(f.filePath,'{"requestId":"torn');
+    const restarted=createVocabularyApprovalRequests({filePath:f.filePath,controls:()=>({maintenanceMode:false})});
+    assert.equal(restarted.list().length,1);assert.ok(fs.readFileSync(f.filePath,'utf8').endsWith('\n'));
+    restarted.compact();assert.equal(restarted.list()[0]!.status,'queued');
+    fs.appendFileSync(f.filePath,'invalid JSON\n');
+    const broken=createVocabularyApprovalRequests({filePath:f.filePath});
+    assert.throws(()=>broken.list(),/JSON/);
+  }finally{fs.rmSync(f.directory,{recursive:true,force:true});}
+});
+test('crash after SQLite commit but before success journal append reconciles its receipt after restart',t=>{
+  const f=approvalFixture();
+  try {
+    f.queue.enqueue(f.input);
+    const original=fs.appendFileSync;
+    t.mock.method(fs,'appendFileSync',(...args:Parameters<typeof fs.appendFileSync>)=>{
+      if(String(args[1]).includes('"status":"succeeded"'))throw Object.assign(new Error('Disk full'),{code:'ENOSPC'});
+      return original(...args);
+    });
+    assert.throws(()=>f.queue.step(),/Disk full/);
+    assert.equal(getVocabularyContentForMaintenance('one')!.version,2);
+    assert.equal(f.queue.list()[0]!.status,'running');
+    t.mock.restoreAll();
+    const restarted=createVocabularyApprovalRequests({filePath:f.filePath,controls:()=>({maintenanceMode:false})});
+    restarted.step();assert.equal(restarted.list()[0]!.status,'succeeded');
+    assert.equal(getVocabularyContentForMaintenance('one')!.version,2);
+    assert.equal(sql.prepare('SELECT count(*) n FROM proposal_reviews').get()!.n,1);
+  }finally{t.mock.restoreAll();fs.rmSync(f.directory,{recursive:true,force:true});}
+});
+
+test('an application failure after validation rolls back its review, content changes, and application together',()=>{
+  const f=approvalFixture();
+  try {
+    f.queue.enqueue(f.input);
+    sql.exec("CREATE TRIGGER fail_application BEFORE INSERT ON proposal_applications BEGIN SELECT RAISE(ABORT,'Application write failed'); END;");
+    f.queue.step();assert.equal(f.queue.list()[0]!.status,'attention');
+    assert.equal(getVocabularyContentForMaintenance('one')!.version,1);
+    assert.equal(getVocabularyProposal(f.proposal.proposalId,'editor').status,'awaiting_review');
+    assert.equal(sql.prepare('SELECT count(*) n FROM proposal_reviews').get()!.n,0);
+    assert.equal(sql.prepare('SELECT count(*) n FROM proposal_applications').get()!.n,0);
+    sql.exec('DROP TRIGGER fail_application');
+    f.queue.retry(f.input.requestId,'editor');f.queue.step();
+    assert.equal(f.queue.list()[0]!.status,'succeeded');
+  }finally{fs.rmSync(f.directory,{recursive:true,force:true});}
 });

@@ -1,9 +1,10 @@
 import type { Express,Request,Response } from 'express';
-import type { VocabularyContentDraft } from '../../src/domain/vocabulary-content.ts';
+import type { VocabularyContentDraft, VocabularyJson } from '../../src/domain/vocabulary-content.ts';
 import type { VocabularyProposalDraft, VocabularyProposalOperation, VocabularyContentProposal, VocabularyReflectionCase } from '../../src/domain/vocabulary-reflection.ts';
 import { isOfferedReflectionModelChoice } from '../reflection/model-arms.ts';
 import { createVocabularyPracticePreparation } from './preparation.ts';
 import { createOperatorAllowlistMiddleware } from '../operator-access.ts';
+import { getVocabularyApprovalRequests } from './approval-requests.ts';
 import { getVocabularyCaseWorkspace, listVocabularyReflectionCases, listVocabularyProposals, listVocabularyProposalReviewBatch, getVocabularyProposal,
   requestVocabularyReassessment, requestVocabularySecondOpinion, listVocabularySecondOpinions, listVocabularyNoProposalCases, requestVocabularyCaseSecondOpinion, createVocabularyProposal, saveVocabularyProposal, previewVocabularyProposal, approveVocabularyProposal,
   applyVocabularyProposal, closeVocabularyProposal, closeVocabularyCase, listOwnVocabularyMessages,
@@ -117,6 +118,27 @@ export function registerVocabularyReflectionRoutes(app:Express,options:{wake?:()
     object(req.query,['status']);const status=req.query.status===undefined?undefined:choice(req.query.status,['draft','awaiting_review','approved','applied','closed'] as const);
     return {items:listVocabularyProposals(actor,status)};
   }));
+  app.get(`${base}/approval-requests`,gate,handle(req=>{
+    object(req.query,[]);return {items:getVocabularyApprovalRequests().list()};
+  }));
+  app.post(`${base}/proposals/:id/approval-requests`,gate,(req,res)=>{
+    try {
+      const input=object(req.body,['expectedVersion','requestId','notes']);if(input.notes!==undefined)json(input.notes);
+      const requestId=text(input.requestId);
+      if(requestId.length>200)throw new VocabularyReflectionRequestError('Request ID is too long');
+      const queue=getVocabularyApprovalRequests();
+      const result=queue.enqueue({requestId,proposalId:text(req.params.id),expectedVersion:version(input.expectedVersion),
+        actorId:res.locals.operatorSubject as string,notes:(input.notes??null) as VocabularyJson});
+      res.status(202).json(result);queue.wake();
+    }catch(error){failure(error,res);}
+  });
+  app.post(`${base}/approval-requests/:id/retry`,gate,(req,res)=>{
+    try {
+      noBody(req);const queue=getVocabularyApprovalRequests();
+      const result=queue.retry(text(req.params.id),res.locals.operatorSubject as string);
+      res.status(202).json(result);queue.wake();
+    }catch(error){failure(error,res);}
+  });
   app.get(`${base}/proposals/review-batch`,gate,handle((req,actor)=>{
     object(req.query,['limit','startProposalId']);
     const raw=req.query.limit;
