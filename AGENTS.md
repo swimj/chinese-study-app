@@ -35,7 +35,8 @@ read before every edit.
 | Task or question | Guidance |
 | --- | --- |
 | Write or maintain documentation | [Authoring procedure](docs/documentation-authoring.md), following the [documentation principles](docs/documentation-principles.md) |
-| Implement or review a change | [Development and review workflow](docs/stacked-feature-development-and-review.md); [testing map](docs/testing.md) for affected coverage |
+| Reason about implementation choices and quality | [Development principles](docs/development-principles.md); [testing map](docs/testing.md) for affected coverage |
+| Organize, publish, or revise pull requests | [PR delivery and Graphite stacks](docs/stacked-feature-development-and-review.md) |
 | Create, adapt, or review a model prompt | [Prompt development](docs/prompt-development.md): working lineage, contract adaptation, and behavioral comparisons |
 | Set up a contributor environment or find a command | [Contributor setup and scripts](docs/scripts.md#contributor-setup-and-local-checks); [package.json](package.json) for command definitions |
 | Understand product behavior or current implementation | [Documentation index](docs/README.md), then the owning contracts, implementation explanations, relevant code, and tests |
@@ -58,6 +59,9 @@ does not establish current priority, unfinished work, or authorization.
 - Use the existing architecture where it fits. Add dependencies, global state
   machinery, or new abstractions when the task warrants them; explain material
   additions. Avoid introducing single-machine assumptions into hosted behavior.
+- Preserve shared behavior and applicable regression evidence when implementation
+  machinery changes. Use the [development principles](docs/development-principles.md)
+  to choose reuse boundaries and verify that coverage reaches the current path.
 - Keep strict TypeScript types. Use `any` only with a concrete justification.
 - In domain and state transitions, fail loudly when a programmer invariant is
   violated. Tolerant no-ops belong to explicitly user-driven or externally
@@ -163,8 +167,8 @@ task-specific correctness and safety requirements still apply.
 Implementation work normally finishes with a verified review pull request.
 Before substantial implementation, state whether the change is one cohesive PR
 or likely needs a stack. Use ordinary GitHub delivery for a single PR and the
-installed `gt` CLI for a useful multi-branch stack, following the development
-and review workflow. Standalone research, planning, and documentation tasks may
+installed `gt` CLI for a useful multi-branch stack, following the PR delivery
+and Graphite workflow. Standalone research, planning, and documentation tasks may
 return in Codex without a PR unless publication is requested.
 
 At handoff, explain the outcome, verification and its limits, material open

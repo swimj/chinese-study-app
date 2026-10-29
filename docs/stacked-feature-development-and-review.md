@@ -1,8 +1,14 @@
-# Feature Development And Review
+# Pull request delivery and Graphite stacks
 
-This document defines the default delivery and review model for implementation
-work. Use it alongside the initiating prompt or a task spec; it is not itself a
-task spec, a source of product behavior, or authorization to dispatch work.
+This procedure helps contributors organize changes into reviewable pull requests,
+operate Graphite stacks, publish verified work, and incorporate review feedback.
+It covers the single-PR delivery path and the additional branch, worktree, and
+restacking mechanics needed for large changes delivered as dependent PRs.
+
+Use it alongside the initiating prompt or task spec and the
+[development principles](development-principles.md), which guide implementation
+choices and preservation of behavior and coverage. This procedure defines delivery
+mechanics; it does not supply a product contract or authorize new work.
 
 Every implementation should be organized for review and normally finish as a
 pull request. A cohesive change uses one branch and one pull request. When
@@ -28,10 +34,9 @@ The initiating prompt or task spec must provide the task-specific contract:
 - any reason to depart from the normal review-delivery default, including a
   draft pull request, an existing review boundary, or no pull request.
 
-This document owns the delivery and review mechanics: orientation, review-unit
-design, stack evolution where needed, feedback placement, validation,
-publication mechanics, and handoff. Graphite-specific setup and commands apply
-only to a multi-branch stack.
+This document owns review-unit design, stack evolution, feedback placement,
+validation across review branches, publication mechanics, and handoff.
+Graphite-specific setup and commands apply only to a multi-branch stack.
 
 The task prompt and subsequent clarifications supply execution scope. Canonical
 specs and accepted architecture contracts describe intended behavior; the
@@ -163,7 +168,7 @@ intermediate branches buildable and testable where practical, but do not add
 fake abstractions, temporary production behavior, or excessive scaffolding
 solely to make every intermediate branch independently shippable.
 
-## Incremental implementation
+## Implement and revise stack branches
 
 For each coherent review unit:
 
@@ -194,6 +199,10 @@ The companion task spec and repository guidance own the exact verification
 matrix. For a single pull request, run the normal focused and broader checks
 that apply to its change, inspect its one diff, and leave the worktree clean.
 That is one ordinary testing pass, not stack validation multiplied by one.
+
+Use the [development principles](development-principles.md#make-verification-evidence-match-the-claim)
+and [testing map](testing.md) to assess the evidence for the change. Include that
+evidence and its limits in the review description.
 
 For a stack, in addition:
 
