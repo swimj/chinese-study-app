@@ -104,3 +104,13 @@
 .vocabulary-reassessment-confirmation { flex-basis: 100%; }
 .vocabulary-reassessment-confirmation p { margin: .5rem 0; }
 .vocabulary-reassessment-confirmation button + button { margin-left: .5rem; }
+
+.vocabulary-attention-count { font-size: 1rem; color: var(--text-secondary, #52676e); font-variant-numeric: tabular-nums; }
+.vocabulary-attention-categories { display: grid; gap: .5rem; }
+.vocabulary-attention-categories button { display: flex; justify-content: space-between; gap: .75rem; text-align: left; padding: .6rem .75rem; border: 1px solid var(--border, #cad5d7); border-radius: .5rem; background: transparent; color: inherit; }
+.vocabulary-attention-categories button[aria-pressed=true] { background: var(--accent, #207569); color: white; }
+.vocabulary-attention-failures { list-style: none; padding: 0; margin: 0; }
+.vocabulary-attention-failures > li + li { border-top: 1px solid var(--border, #cad5d7); padding-top: 1rem; margin-top: 1rem; }
+.vocabulary-attention-failures h3 { margin-top: 0; }
+.vocabulary-attention-failures details:last-child { margin-bottom: 0; }
+.vocabulary-operator-layout .vocabulary-operator-detail:empty { display: none; }
