@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, test } from 'node:test';
 import {
+  activateHostedRc,
   calculateRestoreTimestamp,
   readRcFlyConfig,
   runHostedRcDeploy,
@@ -13,6 +14,7 @@ import type { CommandResult, HostedUpgradeDeps } from '../scripts/lib/hosted-upg
 
 const APP = 'chinese-study-rc-test';
 const SOURCE_REVISION = '1234567890abcdef1234567890abcdef12345678';
+const IMAGE_DIGEST = `sha256:${'a'.repeat(64)}`;
 const CONFIG = `
 app = "${APP}"
 primary_region = "sin"
@@ -64,7 +66,7 @@ describe('hosted release candidate workflow', () => {
     assert.equal(result.status, 'ok', result.failure ?? '');
     assert.equal(result.restoreRequestedAt, '2026-09-19T12:30:00.000Z');
     assert.equal(result.activated, true);
-    assert.equal(result.immutableImage, `registry.fly.io/${APP}@sha256:rc123`);
+    assert.equal(result.immutableImage, `registry.fly.io/${APP}@${IMAGE_DIGEST}`);
     assert.deepEqual(result.stages.map((stage) => `${stage.stage}:${stage.status}`), [
       'declare:ok',
       'build:ok',
@@ -80,6 +82,9 @@ describe('hosted release candidate workflow', () => {
     assert.ok(harness.events.indexOf('restore') < harness.events.indexOf('database:promote'));
     assert.ok(harness.events.indexOf('database:promote') < harness.events.indexOf('deploy:activate'));
     assert.equal(harness.events.includes('migration:apply'), false);
+    assert.equal(harness.events.includes('control:provider-work:true'), false);
+    assert.ok(result.stages.every((stage) => stage.durationMs >= 0));
+    assert.ok(harness.commands.some((command) => command.startsWith("sh -lc 'set -eu;")));
     assert.equal(JSON.stringify(result).includes('prod-secret'), false);
     harness.cleanup();
   });
@@ -101,6 +106,50 @@ describe('hosted release candidate workflow', () => {
     assert.match(result.failure ?? '', /declared schema-unchanged/);
     assert.equal(result.activated, false);
     assert.equal(harness.events.includes('deploy:activate'), false);
+    harness.cleanup();
+  });
+
+  test('reuses an immutable candidate image without rebuilding and rejects mutable tags', async () => {
+    const harness = createHarness('unchanged');
+    const rejected = await runHostedRcDeploy({ ...harness.input, image: `registry.fly.io/${APP}:latest` }, harness.deps);
+    assert.equal(rejected.status, 'failed');
+    assert.equal(harness.events.length, 0);
+    const image = `registry.fly.io/${APP}@${IMAGE_DIGEST}`;
+    const result = await runHostedRcDeploy({ ...harness.input, image }, harness.deps);
+    assert.equal(result.status, 'ok', result.failure ?? '');
+    assert.equal(result.immutableImage, image);
+    assert.equal(harness.events.includes('build'), false);
+    harness.cleanup();
+  });
+
+  test('separate activation opens learner access without enabling copied provider jobs', async () => {
+    const harness = createHarness('unchanged');
+    const prepared = await runHostedRcDeploy({ ...harness.input, activateAfterPrepare: false }, harness.deps);
+    assert.equal(prepared.status, 'ok', prepared.failure ?? '');
+    await activateHostedRc({
+      repoRoot: harness.input.repoRoot,
+      app: APP,
+      actorId: harness.input.actorId,
+      sourceRevision: SOURCE_REVISION,
+      image: prepared.candidateImage!,
+      replicaPath: prepared.rcReplicaPath!,
+      flyConfigPath: harness.input.flyConfigPath,
+    }, harness.deps);
+    assert.ok(harness.events.includes('control:maintenance:false'));
+    assert.equal(harness.events.includes('control:provider-work:true'), false);
+    harness.cleanup();
+  });
+
+  test('rejects a Machine whose digest differs before restoring production data', async () => {
+    const harness = createHarness('unchanged');
+    const result = await runHostedRcDeploy({
+      ...harness.input,
+      image: `registry.fly.io/${APP}@sha256:${'b'.repeat(64)}`,
+    }, harness.deps);
+    assert.equal(result.status, 'failed');
+    assert.equal(result.failedStage, 'idle');
+    assert.match(result.failure ?? '', /image digest does not match/);
+    assert.equal(harness.events.includes('restore'), false);
     harness.cleanup();
   });
 });
@@ -125,6 +174,7 @@ function createHarness(schemaMode: 'unchanged' | 'migrate', forcePending = false
   let maintenance = false;
   let providerWork = true;
   const events: string[] = [];
+  const commands: string[] = [];
   const emitted: unknown[] = [];
   let nowMs = Date.parse('2026-09-20T12:30:00.000Z');
 
@@ -176,6 +226,7 @@ function createHarness(schemaMode: 'unchanged' | 'migrate', forcePending = false
     }
     if (args[0] === 'ssh' && args[1] === 'sftp') return ok();
     const command = args[args.indexOf('--command') + 1] ?? '';
+    commands.push(command);
     if (command.includes('hosted:control') && command.includes('provider-work')) {
       providerWork = command.includes('--enabled=true');
       events.push(`control:provider-work:${providerWork}`);
@@ -234,13 +285,14 @@ function createHarness(schemaMode: 'unchanged' | 'migrate', forcePending = false
         registry: 'registry.fly.io',
         repository: APP,
         tag: `rc-${SOURCE_REVISION}`,
-        digest: 'sha256:rc123',
+        digest: IMAGE_DIGEST,
       },
     }]);
   }
 
   return {
     events,
+    commands,
     emitted,
     input: {
       repoRoot,

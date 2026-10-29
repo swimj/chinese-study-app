@@ -6,11 +6,13 @@ driving one. They use the same release command and release gates; the latter
 additionally defines how to observe a long-running local terminal process
 safely.
 
-Release candidates should first pass the separate restore-backed Fly RC and
-manual acceptance procedure in the
-[hosted release-candidate runbook](hosted-release-candidate.md). For an
-application-only beta release, that flow can promote the exact tested image by
-digest instead of rebuilding it.
+Every schema or data migration first runs on a separate, ephemeral Fly Machine
+restored from a recent coherent backup. Application-only releases use that same
+environment when behavior changes warrant realistic-data checks or subjective
+testing. The [release rehearsal and RC runbook](hosted-release-candidate.md)
+owns preparation, additional checks, optional browser use, and cleanup. Rehearse
+while production serves, before entering its maintenance window. For an
+application-only beta release, promote the exact tested image by digest.
 
 The service is one 1 GB Fly Machine in `sin`, one encrypted Fly Volume at
 `/data`, Clerk authentication, and Litestream replication to a private,
@@ -190,8 +192,12 @@ An agent drives the same command, but must distinguish a terminal update from
 the command's completion. The upgrade runner is a foreground local process; it
 does not become a fire-and-forget Fly job after it starts.
 
-1. Apply the same eligibility and clean-checkout checks as the human procedure,
-   then start **one** `hosted:upgrade` process.
+1. Apply the same eligibility and clean-checkout checks as the human procedure.
+   Read migration guidance and Justin's requested release checks. For migrations,
+   follow the [offline migration procedure](schema-migrations.md), including
+   ephemeral rehearsal before stopping production. For eligible app-only releases,
+   use rehearsal when the changed behavior calls for realistic data; then start
+   **one** `hosted:upgrade` process with the tested digest when available.
 2. Start the process with access to the authenticated Fly CLI state. In a
    managed sandbox that blocks the operator's `~/.fly` directory, request the
    required elevated execution permission on the first launch; do not make an
@@ -219,9 +225,20 @@ This procedure deliberately does not claim durable release history or resumable
 execution. The final terminal result is still per-invocation evidence; a lost
 local runner remains an operational recovery case.
 
+Keep release-specific judgment explicit: additional checks agreed in conversation
+are welcome, and do not need a new permanent framework. Run expensive scripts on
+the rehearsal Machine, save their results with its run evidence, and distinguish
+them from essential production checks. Collect stage timings and resource usage
+as described in [release-instance observability](hosted-observability.md#release-instance-observability).
+Unless Justin asks to keep the environment, finish the rehearsal lifecycle by
+destroying its Machine and volume after preserving evidence. Keeping it for
+further checks is a conversational operator decision. Use the separate browser
+RC workflow when manual authenticated application use is wanted.
+
 ## Schema-changing releases and service controls
 
-For a schema-changing release, stop new provider work, then stop writes. The
+After the isolated rehearsal passes, begin the schema-changing release's
+production maintenance window: stop new provider work, then stop writes. The
 health response exposes only control state and the active provider-work count;
 wait for that count to reach zero before forcing a backup sync.
 

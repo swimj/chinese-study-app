@@ -48,6 +48,7 @@ if (action === 'deploy' || action === 'restore') {
     schemaMode: rawSchema as HostedRcSchemaMode,
     sourceBackupEnvFile: requireArgument(args, 'source-backup-env-file'),
     restoreAgeHours,
+    image: args.get('image'),
     activateAfterPrepare: action === 'deploy',
     flyConfigPath: configPath,
   }, deps);

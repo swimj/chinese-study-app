@@ -346,6 +346,7 @@ cue snapshots establish flow coverage, not replay of actual learner sessions.
 | Hosted metrics / Grafana export | `observability.test.ts`, `request-timing.test.ts`, `hosted-runtime.test.ts` |
 | Hosted app-only upgrade pipeline | `hosted-upgrade.test.ts`, `hosted-smoke.test.ts` |
 | Hosted RC restore and deployment pipeline | `hosted-rc.test.ts`, `hosted-upgrade.test.ts`, `hosted-operations.test.ts`, `clerk-authentication.test.ts` |
+| Ephemeral migration rehearsal lifecycle and isolation | `hosted-rehearsal.test.ts` |
 | Hosted service banner | `hosted-operations.test.ts`, `hosted-runtime.test.ts`, `app-chrome-nav.test.ts` |
 | Hosted study-commit failures | `study-commit-diagnostics.test.ts` |
 | Client transport incident capture/upload | `client-incident-diagnostics.test.ts`, `study-commit-diagnostics.test.ts` |

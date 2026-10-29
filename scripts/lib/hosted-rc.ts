@@ -18,6 +18,7 @@ import {
   readPackageVersion,
   readPreparedFlyConfig,
   requireFullGitSha,
+  requireDigestQualifiedFlyImage,
   setHostedControl,
   shellSingleQuote,
   ssh,
@@ -45,6 +46,7 @@ export type HostedRcDeployInput = {
   restoreAgeHours?: number;
   activateAfterPrepare?: boolean;
   flyConfigPath?: string;
+  image?: string;
 };
 
 export type HostedRcResult = {
@@ -59,7 +61,7 @@ export type HostedRcResult = {
   restoreRequestedAt: string | null;
   rcReplicaPath: string | null;
   machine: FlyDeploymentIdentity | null;
-  stages: Array<{ stage: string; status: 'ok' | 'failed'; at: string; detail?: unknown }>;
+  stages: Array<{ stage: string; status: 'ok' | 'failed'; at: string; durationMs: number; detail?: unknown }>;
   failedStage: string | null;
   failure: string | null;
   activated: boolean;
@@ -97,9 +99,12 @@ export async function runHostedRcDeploy(
   let remoteRestoreCredentialPath: string | null = null;
   let restoreMachineId: string | null = null;
   const configPath = path.resolve(input.repoRoot, input.flyConfigPath ?? DEFAULT_RC_FLY_CONFIG_PATH);
+  let previousStageAt = deps.now().getTime();
 
   const record = (stage: string, status: 'ok' | 'failed', detail?: unknown): void => {
-    const event = { stage, status, at: deps.now().toISOString(), ...(detail === undefined ? {} : { detail }) };
+    const now = deps.now();
+    const event = { stage, status, at: now.toISOString(), durationMs: Math.max(0, now.getTime() - previousStageAt), ...(detail === undefined ? {} : { detail }) };
+    previousStageAt = now.getTime();
     stages.push(event);
     deps.emit({ type: 'rc-stage', ...event });
   };
@@ -150,7 +155,9 @@ export async function runHostedRcDeploy(
     restoreRequestedAt = calculateRestoreTimestamp(deps.now(), restoreAgeHours);
     const packageVersion = readPackageVersion(input.repoRoot, deps);
     const imageLabel = `rc-${sourceRevision}`;
-    candidateImage = `registry.fly.io/${flyConfig.app}:${imageLabel}`;
+    candidateImage = input.image === undefined
+      ? `registry.fly.io/${flyConfig.app}:${imageLabel}`
+      : requireDigestQualifiedFlyImage(input.image);
     const generationId = `${restoreRequestedAt.replace(/[^0-9]/g, '').slice(0, 14)}-${sourceRevision.slice(0, 12)}`;
     rcReplicaPath = `${RC_REPLICA_ROOT}/${generationId}`;
     record('declare', 'ok', {
@@ -163,7 +170,7 @@ export async function runHostedRcDeploy(
     });
 
     currentStage = 'build';
-    await deps.run('fly', [
+    if (input.image === undefined) await deps.run('fly', [
       'deploy',
       '--app', flyConfig.app,
       '--config', flyConfig.configPath,
@@ -173,13 +180,13 @@ export async function runHostedRcDeploy(
       '--image-label', imageLabel,
       '--build-arg', `APP_REVISION=${sourceRevision}`,
     ], { cwd: input.repoRoot, timeoutMs: 1_200_000, env: flyCommandEnv() });
-    record('build', 'ok', { candidateImage });
+    record('build', 'ok', { candidateImage, reusedImage: input.image !== undefined });
 
     currentStage = 'quiesce';
     const inventory = await readRcMachine(input.app, deps);
     if (!inventory.idle) {
-      await setHostedControl(input.app, actorId, 'provider-work', false, deps);
-      await setHostedControl(input.app, actorId, 'maintenance', true, deps);
+      await setHostedControl(input.app, input.actorId, 'provider-work', false, deps);
+      await setHostedControl(input.app, input.actorId, 'maintenance', true, deps);
       await pollHealthz(flyConfig.publicOrigin, deps, 960_000, (health) => (
         health.maintenanceMode && !health.providerWorkEnabled && health.activeProviderWorkCount === 0
           ? health
@@ -207,6 +214,13 @@ export async function runHostedRcDeploy(
     ], { timeoutMs: 360_000, env: flyCommandEnv() });
     const idled = await readRcMachine(input.app, deps);
     if (!idled.idle) throw new Error('RC Machine did not report the idle command after update.');
+    if (input.image !== undefined) {
+      const identity = await readFlyDeploymentIdentity(input.app, deps);
+      if (identity.imageDigest !== candidateImage.split('@')[1]) {
+        throw new Error('RC Machine image digest does not match the requested candidate.');
+      }
+      immutableImage = candidateImage;
+    }
     record('idle', 'ok', { machineId: idled.machineId });
 
     currentStage = 'restore';
@@ -370,10 +384,9 @@ export async function runHostedRcDeploy(
       deps,
       30_000,
     );
-    await setHostedControl(input.app, actorId, 'maintenance', false, deps);
-    await setHostedControl(input.app, actorId, 'provider-work', true, deps);
+    await setHostedControl(input.app, input.actorId, 'maintenance', false, deps);
     const openInspect = await inspectHostedService(input.app, deps);
-    assertPersistedControls(openInspect, { maintenanceMode: false, providerWorkEnabled: true });
+    assertPersistedControls(openInspect, { maintenanceMode: false, providerWorkEnabled: false });
     activated = true;
     record('activate', 'ok', { machine, immutableImage });
     return finish('ok', null);
@@ -445,10 +458,9 @@ export async function activateHostedRc(input: {
     deps,
     30_000,
   );
-  await setHostedControl(input.app, actorId, 'maintenance', false, deps);
-  await setHostedControl(input.app, actorId, 'provider-work', true, deps);
+  await setHostedControl(input.app, input.actorId, 'maintenance', false, deps);
   const openInspect = await inspectHostedService(input.app, deps);
-  assertPersistedControls(openInspect, { maintenanceMode: false, providerWorkEnabled: true });
+  assertPersistedControls(openInspect, { maintenanceMode: false, providerWorkEnabled: false });
   const machine = await readFlyDeploymentIdentity(input.app, deps);
   return { machine, immutableImage: toDigestQualifiedImage(machine.imageRef ?? input.image, machine.imageDigest) };
 }
@@ -637,7 +649,7 @@ async function runRcSsh(
   timeoutMs: number,
 ): Promise<string> {
   const result = await deps.run('fly', [
-    'ssh', 'console', '--app', app, '--machine', machineId, '--user', 'node', '--quiet', '--command', command,
+    'ssh', 'console', '--app', app, '--machine', machineId, '--user', 'node', '--quiet', '--command', `sh -lc '${command.replace(/'/g, `'"'"'`)}'`,
   ], { timeoutMs, env: flyCommandEnv() });
   return result.stdout;
 }
