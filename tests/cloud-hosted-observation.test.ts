@@ -99,3 +99,37 @@ test('invalid inputs and wrong runtime identity fail closed', () => {
   assert.throws(() => observeHosted(app, machine, validateRequest({}), (args) => args[0] === 'releases' ? '[]' : JSON.stringify({ status: 'ok', runtime: { sourceRevision: revision, flyMachineId: 'another', flyAppName: app } })), /identity/);
   assert.throws(() => observeHosted(app, machine, validateRequest({}), () => { throw new Error('unavailable'); }), /unavailable/);
 });
+
+test('Machines exec transports the real payload over API and handles omitted zero exit code', () => {
+  const { dir, file } = fixture();
+  try {
+    const request = validateRequest({ databasePath: file, queries: [{ name: 'count', sql: 'SELECT count(*) AS n FROM evidence' }] });
+    const before = fs.readFileSync(file);
+    for (const code of [undefined, 0]) {
+      const calls: string[][] = [];
+      const report = observeHosted(app, machine, request, (args) => {
+        calls.push(args);
+        if (args[0] === 'releases') return '[]';
+        assert.deepEqual(args.slice(0, 3), ['machine', 'exec', machine]);
+        assert.deepEqual(args.slice(4), ['--app', app, '--json', '--timeout', '20']);
+        const result = execute(args[3]);
+        assert.equal(result.status, 0, result.stderr);
+        return JSON.stringify({ stdout: result.stdout, exit_code: code });
+      }, 'machine-exec');
+      assert.equal(calls.length, 2);
+      assert.equal(report.transport, 'machine-exec');
+      assert.deepEqual(report.observation.results[0].rows, [{ n: '2' }]);
+      assert.deepEqual(fs.readFileSync(file), before);
+    }
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('Machines exec rejects failed or malformed remote results even when CLI exits successfully', () => {
+  for (const response of [
+    { exit_code: 1, stdout: '{}' }, { exit_code: null, stdout: '{}' },
+    { exit_code: '0', stdout: '{}' }, { exit_code: 0 }, { stdout: 'not JSON' },
+  ]) {
+    assert.throws(() => observeHosted(app, machine, validateRequest({}),
+      args => args[0] === 'releases' ? '[]' : JSON.stringify(response), 'machine-exec'));
+  }
+});

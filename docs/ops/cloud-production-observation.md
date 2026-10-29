@@ -14,13 +14,15 @@ Use a private cloud execution environment with:
 - a checkout of this repository at the reviewed observer revision;
 - Node 22.13 or later and dependencies installed with `npm ci`;
 - the official [Fly CLI](https://fly.io/docs/flyctl/install/) on `PATH`;
-- network access to GitHub/npm for setup and to Fly's API and SSH transport;
+- network access to GitHub/npm for setup and to Fly's API (plus SSH transport
+  when using the default `ssh` mode);
 - authorized Fly credentials supplied through the environment's secret store
   as `FLY_API_TOKEN`; and
 - the intended app name and existing running Machine ID, obtained from the
   operator's deployment configuration or `fly machine list --app <app> --json`.
 
-The token must support release reads and SSH execution on the target app.
+The token must support release reads and the selected command-execution transport
+on the target app (SSH or Machines exec).
 An SSH-capable token is **not** a read-only database credential. This workflow
 relocates the existing trusted operator access; it does not introduce a new
 credential isolation boundary. Creating or copying credentials into the runner
@@ -29,8 +31,8 @@ repository files, CI logs, or reports. A broader access-hardening project is not
 required to move the inspection off the laptop.
 
 No app deployment is required for this command on the current Node 22 image.
-The observer sends its self-contained JavaScript to Node over the existing SSH
-connection; it does not install a file, start the application, or import the
+The observer sends its self-contained JavaScript to Node over the selected Fly
+transport; it does not install a file, start the application, or import the
 application database initializer. Updating this checkout updates the observer,
 not the running product. No new public endpoint or always-on service is added.
 
@@ -47,6 +49,28 @@ identity differs or its baked source revision is unknown. Authentication,
 network, stopped-Machine, missing-database and timeout errors are failures to
 observe, not evidence of zero usage. The command does not start a stopped Machine.
 
+## Cloud sandboxes without a Fly SSH agent
+
+Some cloud sandboxes cannot create the local Unix socket required by Fly's SSH
+agent. In that case use the Machines exec HTTPS API instead:
+
+```bash
+npm run --silent hosted:observe -- --app=<app> --machine=<machine-id> \
+  --transport=machine-exec
+```
+
+This uses `fly machine exec --json --timeout 20` and the same read-only observer
+payload; it does not start a stopped Machine or install anything there. SSH
+explicitly selects the `node` Unix user; Machines exec uses the platform's
+execution identity and does not offer that user flag. Neither transport is a
+credential restriction to read-only operations. The HTTPS path requires Fly API network access but no local SSH-agent socket.
+
+The payload's maximum 15-second query deadline still applies, within the
+20-second Machines exec timeout and 45-second local CLI timeout. Nonzero remote
+exit or malformed output fails the observation. Output records the selected
+transport. Supply a writable local HOME/config directory if the runner's normal
+home is read-only; keep its authorized Fly login private, outside the repository.
+
 ## Investigate a question
 
 Prepare a private JSON request from the
@@ -54,7 +78,7 @@ Prepare a private JSON request from the
 
 ```bash
 npm run --silent hosted:observe -- --app=<app> --machine=<machine-id> \
-  --queries=/private/path/query-request.json
+  --transport=machine-exec --queries=/private/path/query-request.json
 ```
 
 Each query has a unique `name`, a `sql` read statement and optional positional
