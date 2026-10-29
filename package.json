@@ -54,7 +54,8 @@
     "preview": "vite preview",
     "dev:intro-lab": "node --env-file-if-exists=.env --import tsx scripts/dev-introduction-lab.ts",
     "hosted:whats-new": "node --import tsx scripts/manage-whats-new.ts",
-    "dev:new-learner": "node --env-file-if-exists=.env --import tsx scripts/dev-new-learner.ts"
+    "dev:new-learner": "node --env-file-if-exists=.env --import tsx scripts/dev-new-learner.ts",
+    "hosted:observe": "node --import tsx scripts/observe-hosted-service.ts"
   },
   "dependencies": {
     "@clerk/express": "^2.1.60",

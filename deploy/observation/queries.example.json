@@ -1,0 +1,12 @@
+{
+  "queries": [
+    {
+      "name": "available_tables",
+      "sql": "SELECT name FROM sqlite_schema WHERE type = ? ORDER BY name",
+      "params": ["table"]
+    }
+  ],
+  "maxRows": 500,
+  "maxResultBytes": 1000000,
+  "queryTimeoutMs": 5000
+}

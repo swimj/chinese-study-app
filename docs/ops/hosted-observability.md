@@ -21,6 +21,9 @@ hosted smoke account is omitted from the inactive-learner count so a
 read-only deploy identity is not treated as a lapsed learner. That surface is
 not Grafana and does not replace this performance dashboard.
 
+For scheduled or ad hoc data investigation without a connected laptop, see
+[cloud production observation](cloud-production-observation.md).
+
 ## Data boundary
 
 The metrics contain only bounded operational dimensions:
