@@ -147,15 +147,49 @@ the review with an optional reason.
 The second opinion reviews the no-change judgment; it does not create or apply a
 proposal. Closed reviews remain in Archive, with their retained jobs and results in the case evidence.
 
-**Reassess improvement** runs a fresh assessment with the selected model,
+**Reassess current exercise** runs a fresh assessment with the selected model,
 defaulting to GPT-6 Sol high. It assesses the current exercise version with fresh
 sense mapping where applicable and places its independent result in the review
 queue. If the source version differs from the original assessment, the control
 shows the version change and requires confirmation to proceed on the current
 version. The original encounter stays available as historical context, not learner
 evidence for the independent assessment. A further source change requires a new request
-against the current version. The original proposal or no-change judgment remains
-available for review; neither result is applied automatically.
+against the current version. The control refreshes current source metadata before
+submission. Stale proposals and unsaved proposal edits do not prevent reassessing
+the live exercise; saved sense coverage is used, and the old result, draft text and
+item selections remain intact. A succeeded assessment in Needs attention because
+useful coverage is unknown can be corrected and reassessed there. Neither result
+is applied automatically.
+
+**Sense coverage** initially edits this review. It distinguishes inherited word
+defaults, a review override and unknown defaults. Check desired uses or choose
+**Select none**, then save. **Use word defaults** clears the review override;
+unknown shared defaults remain unknown. **Edit word defaults** opens the shared
+selection, with counts of mapped general production exercises affected by removing
+uses. **Back to review coverage** returns to the review's effective selection.
+Each sense's real notes are available in its disclosure. Word-default changes update mapped practice selection and can seed the scope of
+future teaching and content invocations; they do not retarget work already
+requested or retire content.
+
+Saving coverage preserves unsaved proposal edits and item selections while
+refreshing the displayed evidence and reassessment state. Content proposals keep
+their assessed targets and remain approvable after selection edits. Source, mapping,
+canonical catalog or explicit assessment evidence changes require review before
+approval; **Refresh snapshot** updates the evidence without discarding draft edits.
+When a newer saved revision exists, **Load current proposal** opens that revision
+with the usual confirmation before discarding unsaved edits.
+Unsaved scope edits and pending saves block navigation and resolution; loading
+coverage does not. A new reassessment copies the saved review selection.
+
+A model finding about missing useful defaults appears beside **Sense coverage**
+and in **Needs attention → Word defaults need attention**, including after its
+exercise repair is approved.
+**Review word defaults** opens the shared selection. This finding is independent
+of a proposed exercise repair and does not block its approval. The attention entry
+opens a shared word editor without requiring an open assessment; **Open assessment**
+provides the originating context when available. Closing the word editor returns to
+the existing draft and item selections. Saving explicit
+word defaults, including **Select none**, resolves it.
 
 ### Selecting and editing proposal items
 
@@ -174,7 +208,9 @@ item; Item details contains the full authored record.
 ### Queue navigation and refresh
 
 The review queue preloads nearby proposal details in bounded batches. A cached
-card appears immediately; approval remains subject to server validation. After a
+card appears immediately; approval remains subject to server validation. Coverage
+saves invalidate affected snapshots (same case for review edits, same word for
+shared edits), and an epoch fence rejects older in-flight prefetch responses. After a
 successful action the next known item opens while the queue refreshes. If it cannot load, the completed
 action remains recorded and a retry control is shown.
 

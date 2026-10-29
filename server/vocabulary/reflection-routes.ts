@@ -1,6 +1,6 @@
 import { retryReflectionWithReadiness } from '../word-content/retry-preparation.ts';
 import { resolveDefaultUsefulSelectionAttention } from './default-useful-selection.ts';
-import { VocabularySenseCoverageConflict,setVocabularyDefaultUsefulSenses,getVocabularySenseCoverageWorkspace,setVocabularyWordSenseCoverage,setVocabularyCaseSenseCoverage } from '../db/vocabulary-sense-coverage.ts';
+import { VocabularySenseCoverageConflict,listVocabularyDefaultSelectionFindings,setVocabularyDefaultUsefulSenses,getVocabularySenseCoverageWorkspace,setVocabularyWordSenseCoverage,setVocabularyCaseSenseCoverage } from '../db/vocabulary-sense-coverage.ts';
 import type { Express,Request,Response } from 'express';
 import type { VocabularyContentDraft, VocabularyJson } from '../../src/domain/vocabulary-content.ts';
 import type { VocabularyProposalDraft, VocabularyProposalOperation, VocabularyContentProposal, VocabularyReflectionCase } from '../../src/domain/vocabulary-reflection.ts';
@@ -107,7 +107,7 @@ export function registerVocabularyReflectionRoutes(app:Express,options:{wake?:()
     }));
   }
   const practicePreparation=createVocabularyPracticePreparation();
-  app.get(`${base}/practice-preparation/failures`,gate,handle(req=>{object(req.query,[]);return {items:practicePreparation.listFailed()};}));
+  app.get(`${base}/practice-preparation/failures`,gate,handle((req,actor)=>{object(req.query,[]);return {items:practicePreparation.listFailed(),defaultSelectionFindings:listVocabularyDefaultSelectionFindings(actor)};}));
   app.post(`${base}/practice-preparation/:id/retry`,gate,handle((req,actor)=>{
     noBody(req);practicePreparation.retry(text(req.params.id),actor);options.wake?.();return {ok:true};
   }));

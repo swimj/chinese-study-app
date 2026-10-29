@@ -107,3 +107,15 @@ export function getVocabularyDefaultSelectionFinding(wordId:string):import('../.
   const recommendation=row.recommendation_json?JSON.parse(row.recommendation_json) as {senseIds?:unknown}:null;
   return {status:'needs_operator',reason:row.last_error==='default_selection_failed'?'Default useful selection could not finish after its bounded retries. Select useful senses or retry initialization.':row.last_error??'Default useful selection needs operator review.',invocationId:row.invocation_id,recommendedSenseIds:Array.isArray(recommendation?.senseIds)?recommendation.senseIds.filter((id:unknown):id is string=>typeof id==='string'):[]};
 }
+
+/** Word-level attention survives completion or approval of the originating assessment. */
+export function listVocabularyDefaultSelectionFindings(actorId:string):import('../../src/domain/vocabulary-sense-coverage.ts').VocabularyDefaultSelectionAttention[] {
+  authorize(actorId);
+  const rows=getDb().prepare(`SELECT r.word_id AS wordId,w.hanzi,j.case_id AS caseId
+    FROM vocabulary_default_selection_readiness r JOIN lexical_words w ON w.id=r.word_id
+    LEFT JOIN vocabulary_word_sense_coverage c ON c.word_id=r.word_id
+    LEFT JOIN vocabulary_reflection_jobs j ON j.job_id=r.workflow_id
+    WHERE r.status='failed' AND c.default_useful_sense_ids_json IS NULL
+    ORDER BY r.updated_at,r.word_id`).all() as {wordId:string;hanzi:string;caseId:string|null}[];
+  return rows.map(row=>{const finding=getVocabularyDefaultSelectionFinding(row.wordId);if(!finding)throw new Error('Unknown selection attention lost its finding during a synchronous read');return {...row,...finding};});
+}

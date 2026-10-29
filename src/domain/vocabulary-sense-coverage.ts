@@ -8,3 +8,4 @@ export type VocabularyEffectiveSenseCoverage = {
 export type VocabularySenseCoverageWorkspace = VocabularyEffectiveSenseCoverage & {senses:VocabularySense[];productionExerciseCounts?:Record<string,number>};
 
 export type VocabularyDefaultSelectionFinding={status:'needs_operator';reason:string;invocationId:string|null;recommendedSenseIds:string[]};
+export type VocabularyDefaultSelectionAttention=VocabularyDefaultSelectionFinding&{wordId:string;hanzi:string;caseId:string|null};

@@ -21,3 +21,12 @@ test('review cache accounts for encoded bytes and retains one oversized item', (
   assert.equal(cache.get('large'), undefined);
   assert.equal(cache.get('other')?.text, '字'.repeat(4));
 });
+
+test('scope invalidation retains unrelated snapshots and rejects earlier in-flight responses',()=>{
+  const cache=new OperatorPrefetchCache<{word:string}>();
+  cache.set('first',{word:'a'});cache.set('sibling',{word:'a'});cache.set('other',{word:'b'});
+  const oldEpoch=cache.epoch();cache.invalidateWhere(value=>value.word==='a');
+  assert.equal(cache.get('first'),undefined);assert.equal(cache.get('sibling'),undefined);assert.equal(cache.get('other')?.word,'b');
+  assert.equal(cache.setIfCurrent('sibling',{word:'a'},oldEpoch),false);assert.equal(cache.get('sibling'),undefined);
+  assert.equal(cache.setIfCurrent('sibling',{word:'a'},cache.epoch()),true);
+});
