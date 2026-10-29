@@ -124,6 +124,14 @@ accepted member 意见, during both immediate and acknowledged reveal. The motio
 `?slow=1` checks opaque paper while the next encounter is delayed;
 `/tests/browser/vocabulary-operator.html` exercises the proposal-first internal review surface (ready suggestions, Archive search, proposal edits, and `?second=pending|failed|result`; `?narrow=1&large=1` checks compact enlarged-text layout; `?reassessment` enables reassessment and `?reassessment=changed` checks explicit confirmation of a changed source version; `?slow` exercises delayed reads, `?failNext` exercises navigation recovery, and `?stale` or `?staleApply` exercises a validation conflict)
 with an in-memory API (`?empty=1` for empty lists, `?noProposal=1` for a no-change judgment).
+`tests/vocabulary-proposal-review.test.ts` covers compact grouping, readable sense
+references, reversible inclusion, malformed draft guards, structured cue editing,
+cloze validation, consequential change signals and retained evidence bases.
+The operator browser fixture also accepts `?many=1` for a nine-item repertoire,
+`?actions=1` for retirement, `?criteriaOnly=1` for unchanged cues with changed
+answer criteria/reveal, and `?saveFailure=1` for a recoverable failed save.
+Combine `?many=1&narrow=1&large=1` to check wrapping and enlarged text.
+
 `?holdApproval=1` retains an acknowledged approval in the queue while advancing
 the review card; `?approvalQueued=1` hydrates pending work;
 `?approvalAttention=1` shows a failed request with retry and proposal controls;

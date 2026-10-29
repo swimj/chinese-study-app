@@ -1,15 +1,15 @@
 import type { VocabularyDefaultSelectionFinding,VocabularySenseCoverageWorkspace } from '../../domain/vocabulary-sense-coverage';
 import { apiRequest } from '../../services/api';
 import type { VocabularyContent,VocabularyContentDraft } from '../../domain/vocabulary-content';
-import type { VocabularyApprovalRequest, VocabularySecondOpinion, VocabularyContentProposal, VocabularyProposalDraft, VocabularyProposalApplication, VocabularyProposalOperation, VocabularyReflectionCase, VocabularyImprovementAdmission, VocabularyPureCueReferral, VocabularyPureCuePromotion } from '../../domain/vocabulary-reflection';
+import type { VocabularyApprovalRequest, VocabularySecondOpinion, VocabularyContentProposal, VocabularyProposalDraft, VocabularyProposalApplication, VocabularySenseLabel, VocabularyProposalOperation, VocabularyReflectionCase, VocabularyImprovementAdmission, VocabularyPureCueReferral, VocabularyPureCuePromotion } from '../../domain/vocabulary-reflection';
 
 export type VocabularyReassessmentModel = 'openai:gpt-5.6-luna-high' | 'zai:glm-5.3-flash-high' | 'openai:gpt-6-sol-high';
 export type VocabularyReassessmentSource={contentId:string;assessedVersion:number;currentVersion:number};
-export type VocabularyCaseWorkspace={defaultSelectionFinding?:VocabularyDefaultSelectionFinding|null;case:VocabularyReflectionCase;sources:VocabularyContent[];diagnosis?:import('../../domain/vocabulary-content').VocabularyJson;admission?:VocabularyImprovementAdmission;pureCueReferral?:VocabularyPureCueReferral|null;pureCuePromotion?:VocabularyPureCuePromotion;
+export type VocabularyCaseWorkspace={senseLabels?:VocabularySenseLabel[];defaultSelectionFinding?:VocabularyDefaultSelectionFinding|null;case:VocabularyReflectionCase;sources:VocabularyContent[];diagnosis?:import('../../domain/vocabulary-content').VocabularyJson;admission?:VocabularyImprovementAdmission;pureCueReferral?:VocabularyPureCueReferral|null;pureCuePromotion?:VocabularyPureCuePromotion;
   reassessmentSource?:VocabularyReassessmentSource|null;
   reassessment?:{caseId:string;jobId:string;status:string;error:string|null}|null;
   jobs:{jobId:string;kind:string;status:string;attemptNumber:number;error:string|null;secondOpinion:boolean;result:VocabularySecondOpinion['result']}[];proposals:VocabularyContentProposal[]};
-export type VocabularyReviewSnapshot={defaultSelectionFinding?:VocabularyDefaultSelectionFinding|null;proposal:VocabularyContentProposal;case:VocabularyReflectionCase|null;reassessment:{eligible:boolean;source:VocabularyReassessmentSource|null;latest:{caseId:string;jobId:string;status:string;error:string|null}|null}|null;previews:{operationKey:string;source:VocabularyContent|null;result:VocabularyContentDraft}[]};
+export type VocabularyReviewSnapshot={senseLabels?:VocabularySenseLabel[];defaultSelectionFinding?:VocabularyDefaultSelectionFinding|null;proposal:VocabularyContentProposal;case:VocabularyReflectionCase|null;reassessment:{eligible:boolean;source:VocabularyReassessmentSource|null;latest:{caseId:string;jobId:string;status:string;error:string|null}|null}|null;previews:{operationKey:string;source:VocabularyContent|null;result:VocabularyContentDraft}[]};
 export type VocabularyProposalPreview={proposal:VocabularyContentProposal;
   previews:{operationKey:string;source:VocabularyContent|null;result:VocabularyContent}[];
   operations:{operationKey:string;strategy:VocabularyProposalOperation['strategy'];scope:VocabularyProposalOperation['scope'];

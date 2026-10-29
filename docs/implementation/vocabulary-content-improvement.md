@@ -389,3 +389,40 @@ Reveal snapshots prefer explicit source-use links in the selected document,
 allowing reflection-first canonical senses to obtain later teaching examples
 without changing their descriptions or replaying historical encounters. Retained
 legacy description-source links remain readable for their original documents.
+
+## Compact proposal editing
+
+Review batches and case workspaces include read-only sense labels alongside the
+proposal evidence. Reading these labels does not establish an inventory or select
+useful senses. The review groups authored items by their target sense and shows
+common answer forms and access scope once. Unmapped items remain in general
+practice. Known full sense identifiers and unambiguous eight-character UUID
+references become readable labels in visible rationale prose; Details retains the
+original explanation and identifiers.
+
+Each item has an inclusion checkbox. Unchecking it removes the operation from the
+next saved revision while retaining its edited draft locally until saving or
+explicitly leaving the review. Checking it again restores those edits. Excluding
+a replacement also excludes that operation's source retirement; the source stays
+active. Retirement is an explicit content operation.
+No selected operations disables saving and approval; the operator can restore the
+selection or dismiss the proposal. Toggling an item never changes sense coverage.
+
+The editor treats direct text and phrase clozes according to their stored
+structure. A structured cue edit updates both the visible `body.prompt` and its
+`body.stimulus`; frame and cloze text are separate fields. Legacy prompt-only
+content retains its shape. Other structured stimulus kinds remain available in
+the full JSON disclosure. Background refreshes do not replace an unsaved draft,
+and failed save requests retain edits and item selection.
+
+The operator keeps the full operation pool and a separate inclusion set until a
+save succeeds. Saving submits selected operations while retaining explicit
+`bases`: those bases also name evidence used to assess the proposal, including a
+source whose replacement was excluded. An actual evidence-version change thus
+requires review even when the remaining operation creates independent content.
+The operator can inspect and edit explicit evidence in the full draft.
+
+Server validation enforces the single-blank phrase-cloze contract
+on proposal save and content writes, including preview/application. Retirement
+uses its live source snapshot and can remove an invalid exercise without
+requiring an authored cue repair.

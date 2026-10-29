@@ -1113,3 +1113,23 @@ for(const route of ['reassessment','proposal opinion','case opinion'] as const)f
   else {requestVocabularyCaseSecondOpinion(work.caseId,'editor','Try another view');childId=(sql.prepare('SELECT case_id FROM vocabulary_reflection_jobs WHERE case_id!=? AND second_opinion_json IS NOT NULL').get(work.caseId) as {case_id:string}).case_id;}
   assert.deepEqual(resolveVocabularySenseCoverage('a',childId).review?.includedSenseIds,selection==='inherit'?null:selection==='none'?[]:[sense.senseId]);
 });
+
+test('excluded source operations retain explicit assessment evidence as an approval dependency',()=>{
+  const replacement={...op('replace','one','new-one'),operationKey:'omitted'};
+  assert.notEqual(replacement.strategy,'create');if(replacement.strategy==='create')throw new Error('Expected source operation fixture');
+  const independent={...op('create','one','additional'),operationKey:'included'};
+  const proposal=createVocabularyProposal({operations:[independent],bases:[{contentId:replacement.sourceContentId,expectedVersion:1}],rationale:'Source remains assessment evidence'},'editor');
+  const approved=approveVocabularyProposal(proposal.proposalId,1,'editor');
+  updateVocabularyContent('one',1,draft('one'),actor);
+  assert.throws(()=>applyVocabularyProposal(proposal.proposalId,1,approved,'evidence-drift','editor'),/content base changed/);
+  assert.equal(getVocabularyContentForMaintenance('additional'),null);
+});
+
+test('retirement can remove a historically malformed cloze without authoring a repair',()=>{
+  const body={prompt:'A malformed historical cloze',stimulus:{kind:'phrase_cloze',frame:'A letter',text:'没有空格'}};
+  sql.prepare('UPDATE content_items SET body_json=? WHERE content_id=?').run(JSON.stringify(body),'one');
+  const proposed=createVocabularyProposal({operations:[op('retire')],rationale:'Retire the malformed exercise'},'editor');
+  assert.deepEqual(previewVocabularyProposal(proposed.proposalId,1,'editor').previews[0]!.result.body,body);
+  const approved=approveVocabularyProposal(proposed.proposalId,1,'editor');applyVocabularyProposal(proposed.proposalId,1,approved,'malformed-retire','editor');
+  assert.equal(getVocabularyContentForMaintenance('one')!.availability,'retired');assert.deepEqual(getVocabularyContentForMaintenance('one')!.body,body);
+});
