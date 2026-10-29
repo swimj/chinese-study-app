@@ -1,3 +1,4 @@
+import { getVocabularyWordSenseCoverage } from '../db/vocabulary-sense-coverage.ts';
 import { preparationProviderFailure, WordPreparationProviderError } from '../word-content/provider-failure.ts';
 import { recordPreparationAttempt,linkPreparationInvocation,completePreparationAttempt,failPreparationAttempt } from './preparation-retry.ts';
 import { createHash,randomUUID } from 'node:crypto';
@@ -77,10 +78,13 @@ export function createVocabularyPracticePreparation(options: { provider?: Vocabu
   const provider = options.provider ?? createVocabularyPracticeProvider();
   const now = options.now ?? (() => new Date().toISOString());
   const pending = new Map<string,Promise<void>>();
+  function productionSource(content:WordContentDocument):WordContentDocument { return content; }
+  function generationKey(content:WordContentDocument):string { return provider.generationKey(content); }
   function ensure(wordId: string): VocabularyPracticeWork | null {
-    const content = getSharedWordIntroductionContent(wordId);
+    const bootstrap = getSharedWordIntroductionContent(wordId);
+    const content=bootstrap?productionSource(bootstrap):null;
     if (!content) return null;
-    const key = provider.generationKey(content);
+    const key = generationKey(content);
     const workId = `vocabulary-practice:${hash([wordId,content.id,key])}`;
     getDb().prepare(`INSERT OR IGNORE INTO vocabulary_practice_preparation
       (work_id,word_id,source_content_id,generation_key,status,created_at,updated_at) VALUES (?,?,?,?,'queued',?,?)`)
@@ -109,8 +113,9 @@ export function createVocabularyPracticePreparation(options: { provider?: Vocabu
     const sourceSenses = getDb().prepare(`SELECT sense_id,imported_sense_version,source_use_id FROM legacy_sense_imports WHERE source_content_id=?`)
       .all(work.sourceContentId) as Array<{ sense_id: string; imported_sense_version: number; source_use_id: string }>;
     try {
-      source = getSharedWordIntroductionContent(work.wordId);
-      if (!source || source.id !== work.sourceContentId || provider.generationKey(source) !== work.generationKey) throw new Error('Vocabulary preparation source changed');
+      const bootstrap=getSharedWordIntroductionContent(work.wordId);
+      source = bootstrap?productionSource(bootstrap):null;
+      if (!source || source.id !== work.sourceContentId || generationKey(source) !== work.generationKey) throw new Error('Vocabulary preparation source changed');
       retryable=true;
       let output: unknown;
       try {
@@ -132,7 +137,8 @@ export function createVocabularyPracticePreparation(options: { provider?: Vocabu
         if (options.canPublish && !options.canPublish()) throw new Error('Vocabulary preparation publication is currently blocked');
         const current = readWork(workId);
         if (!current || current.status !== 'running' || current.activeToken !== token || current.expiresAt! <= now()) throw new Error('Vocabulary preparation lease changed');
-        if (getSharedWordIntroductionContent(work.wordId)?.id !== source!.id || getVocabularySenseCatalog(work.wordId).version !== catalogue.version) {
+        if (getSharedWordIntroductionContent(work.wordId)?.id !== source!.id || getVocabularySenseCatalog(work.wordId).version !== catalogue.version
+          || !productionSource(getSharedWordIntroductionContent(work.wordId)!) || generationKey(source!)!==work.generationKey) {
           throw new Error('Vocabulary preparation source changed');
         }
         const content = wire.exercises.map((exercise) => {

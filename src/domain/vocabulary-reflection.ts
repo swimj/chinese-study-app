@@ -34,10 +34,19 @@ export type VocabularyFeedbackJudgmentInput = {
   /** Refers to actual encounters; only effective rejected responses can compensate scheduling. */
   unfairEncounterIds: string[]; invocationId?: string;
 };
+export type VocabularyGenerationScope = {
+  selectionEstablished: boolean;
+  senseIds: string[];
+  /** Captured provenance only; later serving-policy versions do not invalidate content. */
+  source: {kind:'mapped_source'}
+    | {kind:'review_override';caseId:string;capturedVersion:number}
+    | {kind:'word_defaults';wordId:string;capturedVersion:number};
+};
 export type VocabularyImprovementAdmission = {
-  outcome: 'single_sense' | 'laundry_list' | 'unmappable' | 'inventory_gap';
+  outcome: 'single_sense' | 'laundry_list' | 'unmappable' | 'inventory_gap' | 'no_senses_requested' | 'needs_coverage';
   rationale: string; wordId: string; sourceContentId: string; sourceContentVersion: number;
   catalogVersion: number; senseIds: string[]; invocationId?: string;
+  generationScope?: VocabularyGenerationScope | null;
   sourceMapping: { senseId: string | null; establishedAt: string | null };
 };
 export type VocabularyPureCueReferral = { candidateWords: string[]; sharedPurpose: string; rationale: string };

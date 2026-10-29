@@ -219,3 +219,37 @@ python3 docs/diagrams/render-content-improvement-flow.py
 The renderer uses Arial on macOS or DejaVu Sans elsewhere; `--font` and
 `--bold-font` accept alternate TrueType font paths. Inspect the rendered image
 when changing labels or routing, and keep this explanation aligned with it.
+
+## Scoped production coverage
+
+`server/db/vocabulary-sense-coverage.ts` owns nullable shared default-useful IDs and review
+included sense IDs. A null review selection inherits defaults; an empty selection
+requests no production generation. Each scope has a compare-and-swap version,
+immutable change history and backend events. Mapping receives every active
+sense and no mutable policy metadata. A single mapped sense is the explicit
+input to local improvement, even when currently excluded from serving. A
+laundry-list assessment captures review IDs or shared defaults once for its
+repertoire invocation. An explicit empty scope records `no_senses_requested`,
+does not call authoring, and leaves the source active without a proposal.
+
+Admission retains `generationScope`: exact sense IDs plus mapped-source,
+review-override or word-default provenance. Captured policy versions are audit
+evidence, not approval or publication dependencies. Backend-normalized mapping
+evidence persists the first requested scope in the existing stage-result cache;
+The mapper wire schema contains no serving policy. Retrying the same assessment preserves its
+scope and completed content results after serving policy changes. A new
+reassessment can request a new scope. Content calls, their cache identities and
+publication fences omit mutable serving metadata. Source content, mapping,
+canonical catalog and publication-authority fences remain active.
+
+Shared defaults filter mapped general production at `listVocabularyExercises`.
+Preparation captures the full source document. Serving policy is absent from its
+generation key and content publication fences.
+Unmapped content stays eligible under the existing fallback policy. A sense
+coverage change does not rewrite content, learner attempts or served snapshots.
+
+Operator GET/PUT routes are `/api/operator/vocabulary/words/:id/sense-coverage`
+and `/api/operator/vocabulary/cases/:id/sense-coverage`. PUT requires the current
+nonnegative `expectedVersion` and respectively `excludedSenseIds` or nullable
+`includedSenseIds`. Review reassessment copies overrides into the child case;
+proposal edits remain separate editorial inputs and are not reassessment input.

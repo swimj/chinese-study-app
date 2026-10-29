@@ -1,3 +1,4 @@
+import { inheritVocabularyCaseSenseCoverage } from './vocabulary-sense-coverage.ts';
 import { failPreparationAttempt } from '../vocabulary/preparation-retry.ts';
 import { randomUUID } from 'node:crypto';
 import { vocabularyAuthoredPromptBody } from '../../src/domain/vocabulary-production-coverage.ts';
@@ -455,7 +456,7 @@ export function recordVocabularyImprovementResult(jobId: string, token: string, 
       const current=pinned?getVocabularyContentForMaintenance(pinned.contentId):null;
       if(!pinned||!current||current.version!==pinned.version||current.availability!=='active')throw new VocabularyReflectionConflict('Reassessment source version changed before publication');
     }
-    const needsAttention = input.admission?.outcome === 'unmappable' || input.admission?.outcome === 'inventory_gap';
+    const needsAttention = input.admission?.outcome === 'unmappable' || input.admission?.outcome === 'inventory_gap' || input.admission?.outcome === 'needs_coverage';
     if (input.admission) {
       const evidence = getVocabularyReflectionCase(row.case_id), admission = input.admission;
       if (admission.wordId !== evidence.wordId || !(pinned ? pinned.contentId===admission.sourceContentId && pinned.version===admission.sourceContentVersion : evidence.evidence.some(item => {
@@ -507,6 +508,8 @@ function currentBases(value: VocabularyContentProposal): void {
   if(admission) {
     const source=getVocabularyContentForMaintenance(admission.sourceContentId);
     const mapping=source?.words.find(word=>word.wordId===admission.wordId);
+    // A generation's sense IDs are immutable inputs. Serving defaults may
+    // change independently; historical coverage fingerprints are audit only.
     if(getVocabularySenseCatalog(admission.wordId).version!==admission.catalogVersion
       ||!mapping||(admission.sourceMapping&&((mapping.senseId??null)!==admission.sourceMapping.senseId
         ||(mapping.senseMappingEstablishedAt??null)!==admission.sourceMapping.establishedAt))) {
@@ -663,7 +666,7 @@ export function closeVocabularyCase(caseId: string, actorId: string, reason = ''
     const improvement = caseImprovementResult(caseId);
     const admission = improvement?.admission;
     const noProposal = improvement?.proposal === null;
-    const unresolved = (admission !== undefined && ['unmappable','inventory_gap'].includes(admission.outcome))
+    const unresolved = (admission !== undefined && ['unmappable','inventory_gap','needs_coverage'].includes(admission.outcome))
       || improvement?.pureCuePromotion?.outcome === 'needs_operator';
     if (evidence.kind !== 'exercise_improvement' || (!noProposal && !unresolved)) {
       throw new VocabularyReflectionConflict('Only manual teaching or unresolved assessment cases can be closed');
@@ -866,6 +869,7 @@ export function requestVocabularySecondOpinion(proposalId: string, expectedVersi
     const requestId = randomUUID(), at = timestamp();
     const caseId = createCase(evidence.learnerId,evidence.completionId,'exercise_improvement',`second-opinion/${requestId}`,
       evidence.wordId,evidence.contentId,evidence.evidence,at);
+    inheritVocabularyCaseSenseCoverage(evidence.caseId,caseId,actorId);
     const row = getDb().prepare('SELECT job_id FROM vocabulary_reflection_jobs WHERE case_id=?').get(caseId) as { job_id: string };
     getDb().prepare('UPDATE vocabulary_reflection_jobs SET second_opinion_json=?,reassessment_source_json=(SELECT reassessment_source_json FROM vocabulary_reflection_jobs WHERE case_id=? AND second_opinion_json IS NULL) WHERE job_id=?')
       .run(encode({requestId,proposal:value,notes}),evidence.caseId,row.job_id);
@@ -898,6 +902,7 @@ export function requestVocabularyCaseSecondOpinion(caseId:string, actorId:string
     if(existing)throw new VocabularyReflectionConflict('A second opinion is already in progress');
     const at=timestamp(), requestId=randomUUID();
     const childId=createCase(evidence.learnerId,evidence.completionId,'exercise_improvement',`case-second-opinion/${requestId}`,evidence.wordId,evidence.contentId,evidence.evidence,at);
+    inheritVocabularyCaseSenseCoverage(caseId,childId,actorId);
     getDb().prepare('UPDATE vocabulary_reflection_jobs SET second_opinion_json=?,reassessment_source_json=(SELECT reassessment_source_json FROM vocabulary_reflection_jobs WHERE case_id=? AND second_opinion_json IS NULL) WHERE case_id=?')
       .run(encode({requestId,parentCaseId:caseId,proposal:null,notes,diagnosis:result.diagnosis}),caseId,childId);
     event('vocabulary.reflection.case_second_opinion_requested',caseId,{requestId,notes},actor);
@@ -910,7 +915,7 @@ export function requestVocabularyReassessment(caseId:string, actorId:string, mod
   if(!isOfferedReflectionModelChoice(modelChoice)) throw new Error('Unsupported assessment model');
   return atomic(()=>{
     const evidence=getVocabularyReflectionCase(caseId);
-    if(evidence.kind!=='exercise_improvement'||evidence.status!=='completed') throw new VocabularyReflectionConflict('A completed improvement assessment is required');
+    if(evidence.kind!=='exercise_improvement'||(evidence.status!=='completed'&&!(evidence.status==='open'&&caseAdmission(caseId)?.outcome==='needs_coverage'))) throw new VocabularyReflectionConflict('A completed improvement assessment is required');
     const db=getDb();
     const source=db.prepare("SELECT job_id FROM vocabulary_reflection_jobs WHERE case_id=? AND status='succeeded' AND second_opinion_json IS NULL").get(caseId) as {job_id:string}|undefined;
     if(!source) throw new VocabularyReflectionConflict('Completed assessment evidence is unavailable');
@@ -923,6 +928,7 @@ export function requestVocabularyReassessment(caseId:string, actorId:string, mod
     const content=getVocabularyContentForMaintenance(metadata.contentId)!;
     const at=timestamp(), requestId=randomUUID();
     const childId=createCase(evidence.learnerId,evidence.completionId,'exercise_improvement',`reassessment/${requestId}`,evidence.wordId,evidence.contentId,evidence.evidence,at);
+    inheritVocabularyCaseSenseCoverage(caseId,childId,actorId);
     const child=db.prepare('SELECT job_id FROM vocabulary_reflection_jobs WHERE case_id=?').get(childId) as {job_id:string};
     db.prepare('UPDATE vocabulary_reflection_jobs SET model_choice=?,reassessment_source_job_id=?,reassessment_source_json=? WHERE job_id=?').run(modelChoice,source.job_id,encode(content),child.job_id);
     event('vocabulary.reflection.reassessment_requested',caseId,{requestId,caseId:childId,jobId:child.job_id,sourceJobId:source.job_id,modelChoice,sourceContentId:content.contentId,sourceContentVersion:content.version},actor);

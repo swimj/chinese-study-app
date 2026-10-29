@@ -1142,3 +1142,13 @@ Feedback messages also expose nullable `dismissedAt`. Owner-only POST actions
 Dismissal excludes a message from unread attention without changing its body,
 seen time, scheduling or content-improvement state. GET retains dismissed
 messages for the learner’s history.
+
+### Operator sense coverage
+
+`GET/PUT /api/operator/vocabulary/words/:id/sense-coverage` reads or edits shared
+word selection. `GET/PUT /api/operator/vocabulary/cases/:id/sense-coverage` reads
+or edits this review's requested scope. PUT requires a nonnegative
+`expectedVersion` and distinct active sense IDs belonging to the word: word
+requests use `excludedSenseIds`, case requests use nullable `includedSenseIds`
+(null inherits word defaults; [] requests none). Invalid payloads return 400;
+version conflicts return 409. These policy edits do not invalidate content proposals.

@@ -411,3 +411,20 @@ test('preparation compatibility migration retains old preparation and makes no e
     assertSchemaCurrent(db);
   } finally {db.close();}
 });
+
+test('sense coverage migration preserves existing authored data and starts inherited defaults',()=>{
+  const {db}=copy('sense-coverage-upgrade',true);
+  try {
+    const prior=schemaMigrations.filter(item=>item.id!=='app_schema:0062_vocabulary_sense_coverage');
+    migrateDatabase(db,prior);
+    const before=db.prepare('SELECT * FROM content_items ORDER BY content_id').all();
+    const senses=db.prepare('SELECT * FROM senses ORDER BY sense_id').all();
+    migrateDatabase(db);
+    assert.deepEqual(db.prepare('SELECT * FROM content_items ORDER BY content_id').all(),before);
+    assert.deepEqual(db.prepare('SELECT * FROM senses ORDER BY sense_id').all(),senses);
+    for(const table of ['vocabulary_word_sense_coverage','vocabulary_case_sense_coverage','vocabulary_sense_coverage_history'])
+      assert.equal(db.prepare(`SELECT count(*) n FROM ${table}`).get()!.n,0);
+    assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
+    assertSchemaCurrent(db);
+  }finally{db.close();}
+});

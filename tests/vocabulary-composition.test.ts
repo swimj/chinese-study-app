@@ -1,3 +1,4 @@
+import { writeVocabularyWordSenseCoverage } from '../server/db/vocabulary-sense-coverage.ts';
 import { isVocabularyProductionProxied } from '../server/vocabulary/production-coverage.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -6,7 +7,7 @@ import {beforeEach,afterEach,test} from 'node:test';
 import {setDb} from '../server/db/connection.ts';
 import {runWithLearnerId} from '../server/db/learner-context.ts';
 import {addVocabularyWord,changeVocabularyMode,dismissVocabularyWord} from '../server/db/vocabulary-learners.ts';
-import {createVocabularyContent} from '../server/db/vocabulary-content.ts';
+import {createVocabularySense,mapVocabularyContentSense,createVocabularyContent} from '../server/db/vocabulary-content.ts';
 import {composeVocabularyStudy,remainingVocabularyNewWordQuota,localNewWordDay} from '../server/vocabulary/composition.ts';
 import type {DeckManifest} from '../server/decks/manifest.ts';
 let db:DatabaseSync;let ready:Set<string>;let requested:string[];
@@ -27,7 +28,7 @@ beforeEach(()=>{
     CREATE TABLE teaching_completions(learner_id TEXT,source_kind TEXT,completed_at TEXT);
     INSERT INTO learners VALUES('alice'),('bob');
   `);
-  for(const file of ['0039_vocabulary_content.sql','0041_vocabulary_learner_state.sql','0047_vocabulary_dismissal.sql','0052_vocabulary_automatic_promotion_pause.sql'])db.exec(fs.readFileSync(new URL(`../server/db/migrations/${file}`,import.meta.url),'utf8'));
+  for(const file of ['0062_vocabulary_sense_coverage.sql','0039_vocabulary_content.sql','0041_vocabulary_learner_state.sql','0047_vocabulary_dismissal.sql','0052_vocabulary_automatic_promotion_pause.sql'])db.exec(fs.readFileSync(new URL(`../server/db/migrations/${file}`,import.meta.url),'utf8'));
   ready=new Set();requested=[];
 });
 afterEach(()=>db.close());
@@ -247,4 +248,18 @@ test('private targeted exception is learner-scoped, respects deactivation and pr
   db.prepare("INSERT INTO learner_content_deactivations VALUES('alice','pure',?)").run(now);
   assert.equal(isVocabularyProductionProxied('word'),true,'learner deactivation does not rewrite shared repertoire coverage');
   assert.deepEqual(compose().dueWordIds,[]);
+}));
+
+
+test('excluded mapped targeted senses no longer defeat shared pure-cue production proxy',()=>owner(()=>{
+  reviewWord('covered',96);
+  coverageExercise('pure-covered','covered',{pure:true});
+  coverageExercise('targeted-covered','covered');
+  createVocabularySense({senseId:'covered-sense',wordId:'covered',description:'marginal use'},{kind:'operator',id:'test'});
+  mapVocabularyContentSense({contentId:'targeted-covered',wordId:'covered',expectedContentVersion:1,
+    expectedMapping:{senseId:null,establishedAt:null},senseId:'covered-sense'},{kind:'operator',id:'test'});
+  assert.equal(isVocabularyProductionProxied('covered'),false);
+  writeVocabularyWordSenseCoverage('covered',0,['covered-sense'],{kind:'operator',id:'test'});
+  assert.equal(isVocabularyProductionProxied('covered'),true);
+  assert.deepEqual(compose().reviewSelections,[]);
 }));

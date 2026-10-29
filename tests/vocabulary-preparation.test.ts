@@ -398,3 +398,17 @@ for(const badText of ['没有空格。','____'])test(`ordinary preparation reach
   await assert.rejects(createVocabularyPracticePreparation({provider}).prepare('w1'),/Vocabulary practice generation failed/);
   assert.equal(db.prepare("SELECT count(*) n FROM content_items WHERE exercise_role='general'").get()!.n,0);
 });
+
+test('serving policy edits preserve captured preparation source and generation identity',async()=>{
+  const {ensureVocabularySensesFromBootstrap}=await import('../server/vocabulary/sense-readiness.ts');
+  const {writeVocabularyWordSenseCoverage}=await import('../server/db/vocabulary-sense-coverage.ts');
+  const ready=ensureVocabularySensesFromBootstrap('w1')!;
+  const provider={model:'fake',isConfigured:()=>true,generationKey:()=> 'key',async generate(){
+    writeVocabularyWordSenseCoverage('w1',0,[ready.senses[0]!.senseId],{kind:'operator',id:'editor'});
+    return output();
+  }};
+  const preparation=createVocabularyPracticePreparation({provider});
+  await preparation.prepare('w1');
+  assert.equal(db.prepare("SELECT count(*) n FROM content_items WHERE exercise_role='general'").get()!.n,output().exercises.length);
+  assert.equal(preparation.ensure('w1')?.status,'ready');
+});
