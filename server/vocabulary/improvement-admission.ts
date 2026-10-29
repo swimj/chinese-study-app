@@ -1,7 +1,7 @@
 import { ensureVocabularyDefaultUsefulSelection } from './default-useful-selection.ts';
 import { VocabularySenseSelectionRequired } from './sense-readiness.ts';
 import { resolveVocabularySenseCoverage } from '../db/vocabulary-sense-coverage.ts';
-import { generalExerciseSchema,validateGeneralExerciseOutput,type GeneralExerciseSource } from './general-exercise-authoring.ts';
+import { GENERAL_EXERCISE_CONTRACT,generalExerciseSchema,validateGeneralExerciseOutput,type GeneralExerciseSource } from './general-exercise-authoring.ts';
 import { createHash } from 'node:crypto';
 import { VocabularyReflectionConflict } from '../db/vocabulary-reflection.ts';
 import type { JsonSchema } from '../../src/domain/reflection-result-schema.ts';
@@ -31,7 +31,7 @@ export async function runVocabularyImprovementAdmission(options: {
   job: VocabularyReflectionJob; original: VocabularyContent; projectedInput: unknown;
   ensureDefaults?:typeof ensureVocabularyDefaultUsefulSelection; ensureSenses?: VocabularySenseEnsurer; canPublish?: ()=>boolean;
   call: VocabularyAdmissionModelCall; improvementSchema: JsonSchema;
-  stageIdentity: (stage:VocabularyAdmissionStage,schema:JsonSchema)=>Promise<unknown>;
+  stageIdentity: (stage:VocabularyAdmissionStage,schema:JsonSchema,input:unknown)=>Promise<unknown>;
   normalize: (value: unknown,invocationId?: string|null)=>VocabularyReflectionResult;
 }): Promise<ImprovementResult> {
   const {job,original} = options;
@@ -63,7 +63,7 @@ export async function runVocabularyImprovementAdmission(options: {
   const base = {sourceContent: original,wordId,word,catalog: readiness.catalog,senses: inventory};
   async function stage<T>(name: VocabularyAdmissionStage,input: unknown,schema: JsonSchema,normalize: (value: unknown,invocationId?: string|null)=>T,extra?:{fence:()=>void;contents:VocabularyContent[]}): Promise<{value:T; invocationId?:string}> {
     fence();extra?.fence();
-    const identity=await options.stageIdentity(name,schema);
+    const identity=await options.stageIdentity(name,schema,input);
     fence();extra?.fence();
     const inputJson = JSON.stringify({contract:identity,input,...(name==='sense_mapping'?{normalizationVersion:'canonical-generation-scope-v1'}:{})});
     const hash = createHash('sha256').update(inputJson).digest('hex');
@@ -189,21 +189,31 @@ export async function runVocabularyImprovementAdmission(options: {
   const input:GeneralExerciseSource={...authoringSource,examples};
   const result = await stage<ImprovementResult>('repertoire',input,generalExerciseSchema(input),(value,invocationId)=>{
     const repertoire=validateGeneralExerciseOutput(input,value);
-    const diagnosis=mapped.value.rationale;
-    const normalized=options.normalize({diagnosis,operations:repertoire.exercises.map((exercise,index)=>({sourceContentId:original.contentId,
+    let diagnosis=mapped.value.rationale;
+    if(!repertoire.exercises.length){
+      const remaining=getDb().prepare(`SELECT count(*) AS count FROM content_items c
+        JOIN content_words w ON w.content_id=c.content_id AND w.word_id=? AND w.relation='target'
+        WHERE c.content_id!=? AND c.kind='exercise' AND c.exercise_role='general' AND c.skill='production'
+        AND c.availability='active' AND c.access_scope=? AND c.owner_learner_id IS ?`)
+        .get(wordId,original.contentId,original.accessScope,original.ownerLearnerId??null) as {count:number};
+      diagnosis=`${mapped.value.rationale}\n\nAuthoring returned no exercises for the selected exact target. The authoring contract provides no explanatory rationale. Propose retiring this source without changing the selected sense coverage. At assessment time, ${remaining.count} other active general production exercise${remaining.count===1?'':'s'} existed for this word in the same publication scope.${remaining.count===0?' Retiring this source would leave none in that scope.':''}`;
+    }
+    const authoredOperations=repertoire.exercises.map((exercise,index)=>({sourceContentId:original.contentId,
       strategy:index===0?'replace':'create',rationale:diagnosis,
       prompt:exercise.stimulus.kind==='direct_text'?exercise.stimulus.text:`${exercise.stimulus.frame}\n${exercise.stimulus.text}`,
-      acceptedAnswers:original.answers.flatMap(answer=>answer.acceptedForms)}))},invocationId);
+      acceptedAnswers:original.answers.flatMap(answer=>answer.acceptedForms)}));
+    const normalized=options.normalize({diagnosis,operations:authoredOperations.length?authoredOperations:[{sourceContentId:original.contentId,
+      strategy:'retire',rationale:diagnosis,prompt:'',acceptedAnswers:original.answers.flatMap(answer=>answer.acceptedForms)}]},invocationId);
     if(normalized.kind!=='exercise_improvement'||!normalized.result.proposal)throw new Error('Repertoire did not produce a proposal');
     const timestamp=new Date().toISOString();
-    normalized.result.proposal.operations.forEach((op,index)=>{
+    normalized.result.proposal.operations.slice(0,repertoire.exercises.length).forEach((op,index)=>{
       const exercise=repertoire.exercises[index]!;
       op.content.body={prompt:exercise.stimulus.kind==='direct_text'?exercise.stimulus.text:`${exercise.stimulus.frame}\n${exercise.stimulus.text}`,
         instruction:'',stimulus:exercise.stimulus,reveal:{teachingNote:exercise.teachingNote},
         source:{kind:'vocabulary_repertoire',assessedContentId:original.contentId,assessedContentVersion:original.version,
-          localId:exercise.id,promptVersion:'v4',invocationId:invocationId??null}};
+          localId:exercise.id,promptVersion:GENERAL_EXERCISE_CONTRACT.promptVersion,invocationId:invocationId??null}};
       if(op.content.kind==='exercise')op.content.exerciseType=exercise.stimulus.kind==='phrase_cloze'?'cloze':'definition_gloss';
-      op.content.words=[{wordId,relation:'target',senseId:exercise.sourceUseId,senseMappingEstablishedAt:exercise.sourceUseId===null?null:timestamp}];
+      op.content.words=[{wordId,relation:'target',senseId:exercise.sourceUseId,senseMappingEstablishedAt:timestamp}];
     });
     return normalized;
   });

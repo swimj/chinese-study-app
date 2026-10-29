@@ -55,7 +55,7 @@ separately. Changed lifecycle rules are not forced through legacy controllers.
 | Pure-cue proxy admission | `production-proxy.test.ts` and `vocabulary-import.test.ts` run shared cases through the common policy and both storage adapters; `pure-cues.test.ts` exercises the legacy composer; `vocabulary-composition.test.ts` covers current content eligibility and `vocabulary-study.test.ts` covers preview/Start and persisted fallback serving |
 | Queued operator approvals | `vocabulary-reflection.test.ts` covers persisted admission, exact authorization, restart replay, stale revisions, overlap rollback, maintenance/retries, torn journal records, compaction, and crash after commit; `vocabulary-reflection-http.test.ts` covers ACK/auth/request identity; `vocabulary-operator-approval-state.test.ts` covers frontend receipt merging and attention resolution |
 | Durable completion and proposal receipts | `vocabulary-session-persistence.test.ts` and `vocabulary-reflection.test.ts` include pending/approved and applied database-reopen cases with idempotent replay |
-| General-exercise authoring and reflection adaptation | `vocabulary-preparation.test.ts` and `vocabulary-improvement-admission.test.ts` cover the shared request contract, structural guards, and publication/proposal adapters; `vocabulary-reflection.test.ts` covers proposal application and scope |
+| General-exercise authoring and reflection adaptation | `vocabulary-general-exercise-authoring.test.ts`, `vocabulary-preparation.test.ts` and `vocabulary-improvement-admission.test.ts` cover shared guards, empty-result operator attention, exercise retirement, trusted selected senses, coverage-independent mapping, and publication/proposal adapters; `vocabulary-reflection.test.ts` covers application and scope |
 
 When replacing an admission path, inventory its eligibility gates as well as its
 ranking and schedule calculations. For each preserved gate, identify the owning
@@ -323,6 +323,19 @@ provenance, sense inventories, admission stages, feedback and state effects.
 Keep historical fixtures/results intact, record input adaptations, and separate
 backend execution checks from linguistic judgments. Synthetic actions over real
 cue snapshots establish flow coverage, not replay of actual learner sessions.
+
+[`scripts/review-exercise-fidelity-trial.ts`](../scripts/review-exercise-fidelity-trial.ts)
+prepares standalone synthetic single/repertoire/mapping requests without opening
+an application database. It defaults to six development/retention controls and Luna high with
+strict schemas; `--model-choice` selects another registered reflection arm.
+`--profile auto` uses preparation settings for general cases and reflection
+settings otherwise. `--cases` selects up to eight cases, including the separate
+worked-example smoke cases. `--baseline-revision` retains the source prompt and
+v4/v5 contract from Git. Add `--allow-provider-calls` only for authorized live
+comparisons, run baseline and candidate sequentially, and review linguistic
+quality separately from schema validation. See the
+[prompt evaluation notes](../server/vocabulary/reflection-prompts/README.md#local-evaluation-seams)
+for validation limits and bounded evidence.
 
 ## When changing…
 

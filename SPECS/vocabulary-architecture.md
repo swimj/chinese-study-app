@@ -161,7 +161,13 @@ faithful repair is apparent; it does not propose sense exclusion. A nonempty
 requested scope whose model returns no faithful exercises can propose retiring
 only the assessed source. This quality decision is distinct from an empty
 requested scope, which performs no generation and proposes no content change.
-Every retirement remains operator-reviewed.
+Every retirement remains operator-reviewed. New automatic repertoire exercises
+must reference a supplied selected sense; an absent or unknown reference fails
+validation rather than receiving an invented binding. Legacy and manually authored
+unmapped content retain their existing behavior. This reference requirement does
+not prescribe cue types or require exercises for every selected sense. An empty
+automatic preparation result instead publishes nothing and stops for operator
+attention, preserving the valid invocation and recommendation.
 
 Proposal review groups exercises by readable sense labels and supports reversible
 item selection before saving a new revision. Excluding a replacement retains its

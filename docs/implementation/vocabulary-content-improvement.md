@@ -21,14 +21,20 @@ explains review controls.
   improvement; a laundry list routes to a fresh repertoire. An unmappable cue or
   inventory gap stops generation with an operator finding. The mapped sense is
   authorial context, not a clue the learner necessarily saw.
-- **Local improvement** preserves that sense and the exercise's accepted answers.
+- **Local improvement** trusts the selected sense and preserves accepted answers.
+  It can repair the exercise or propose retiring the individual source when no
+  faithful exact-target repair is apparent. It does not reassess sense popularity.
   Local drafts and a pure-cue referral are independently optional. Raw responses
   and learner reactions inform assessment without dictating the result.
 - **Repertoire generation** shares ordinary preparation's general-exercise
   authoring call and validation, using the reflection job's selected model.
-  The explicit default-useful selection (or review override) supplies uses and available examples. The adapter
+  Captured requested sense IDs, seeded from defaults or a review override, supply
+  uses and available examples. The adapter
   preserves structured clozes and post-answer teaching notes in a proposal: one
-  operation replaces the source and the others add exercises. Generation leaves
+  operation replaces the source and the others add exercises. An empty faithful
+  model output after a nonempty request instead proposes source retirement
+  without changing coverage. An empty requested scope makes no authoring call
+  and leaves the source unchanged. Generation leaves
   the live exercise pool unchanged until operator application.
 - **Promotion** resolves referral words to lexical identities and examines
   overlapping pure cues in the same publication scope. It can reject the referral,
@@ -55,10 +61,10 @@ within mixed-word feedback aggregation. Teaching issues go to a manual inbox.
 
 ### Single-word assessment
 
-Single-word local improvement drafts wording changes and additional variants of
-the supplied exercise while preserving its accepted-answer membership. Operators can
+Single-word local improvement drafts wording changes, additional variants, or
+individual-exercise retirement while preserving its accepted-answer membership. Operators can
 edit the full authored draft, including its answer relationships, before preview.
-Automatic proposals for new contrast clusters or learner suppression are not
+Automatic proposals for sense exclusion, new contrast clusters or learner suppression are not
 supplied by this adapter. Single-word admission can additionally propose pure-cue
 creation or membership extension through the separate shared-practice assessment
 below.
@@ -69,10 +75,10 @@ A defensible single sense admits a sense-specific local assessment with
 independently optional local operations and a shared-practice referral. A gloss
 laundry list spanning distinct senses automatically generates a fresh repertoire proposal: one replacement retires the laundry list
 and additional exercises extend the pool, without retiring other cues. The
-repertoire draws on the word's active inventory; the discarded list has no sense
+repertoire draws on the word's effective selected senses; the discarded list has no sense
 association or requirement to preserve its old glosses. Reflection invokes the same
 general-exercise authoring contract as ordinary preparation, retaining the complete
-general v4 brief, structured direct/cloze stimuli, optional teaching notes, and
+general v5 brief, structured direct/cloze stimuli, optional teaching notes, and
 output validation. It keeps the reflection job's selected model. Established
 senses supply the lexical uses and any retained examples; missing examples are
 not invented. The response adapter preserves the source's accepted answers and
@@ -82,6 +88,33 @@ apparent inventory gap for a single intended use stays in the operator inbox
 with its mapping rationale;
 neither triggers automatic repair or sense expansion. Operators can close these
 findings after inspection. Learner feedback and compensation remain independent.
+
+Selected senses are intentional, including uncommon or personalized uses. The
+assessment judges the exact target's contribution rather than deciding whether
+the selected meaning is generally useful. Making a compound-fragment cue more
+selective is insufficient when it still retrieves a different lexical unit;
+genuine construction practice and good direct cues for obscure selected nouns
+remain valid. An empty operations array retains the current exercise. A `retire` operation
+has an empty wire prompt and retains the source comparison snapshot, identity
+and version. Normalization uses that snapshot; source drift is handled by the
+publication/approval fences without reclassifying valid provider output as
+malformed. It cannot accompany local create/update/replace operations for
+that source; an independent shared-practice referral may still accompany it.
+Repertoire authoring returns only `exercises`, with no sense-exclusion fields.
+Every new automatic item must identify a supplied use; null or unknown references
+are rejected rather than assigned an arbitrary sense. Aliases translate back to
+canonical bindings before publication/proposal validation. Legacy and manual
+unmapped content remain supported by their existing contracts.
+An empty model-produced array after a nonempty requested scope records inability
+to author faithful exact-target practice and becomes a retirement proposal.
+An empty requested scope is a separate no-action outcome. Ordinary preparation
+retains an empty recommendation and valid invocation in operator attention,
+publishes nothing, and stops automatic retries. An explicit operator retry starts
+another bounded cycle without changing selected senses. Reflection retirement
+diagnoses disclose that general authoring supplies no explanatory rationale and
+report the assessment-time count of other active general production exercises
+in the same publication scope, including when retirement would leave none. That
+count is context for review rather than a guarantee about later serving.
 
 An operator-requested reassessment creates a separate case and pins the current
 exercise identity and version at submission. When it differs from the historical
@@ -133,19 +166,25 @@ exercise repertoires or change scheduling and compensation.
 
 ### Versions and retained stage results
 
-`single-improvement.md` uses prompt version 3 and schema
-version 2; mapping retains prompt version 2 and schema version 1. Repertoire uses
-the shared general-exercise prompt v4 and schema version 1. Its retained stage
+`single-improvement.md` uses prompt version 4 and schema
+version 3; mapping uses prompt version 3 and schema version 1. Repertoire uses
+the shared general-exercise prompt v5 and schema version 2. Its retained stage
 identity includes that authoring contract, so older repertoire stage results do
 not satisfy a new invocation. Existing saved proposals and second opinions remain
 bound to their original versions; an upgrade does not regenerate them.
-Promotion uses prompt version 3, schema version 2 and projection
-`vocabulary-admission.v1`. Admission stages retain and reuse
+Mapper, single improvement and promotion use call-local sense projection
+`vocabulary-admission.v3`; shared repertoire uses `general-exercises-v2`.
+Canonical IDs remain in cached source evidence and normalized generation scope;
+the model receives short references, including nested relationship and admission
+fields. Repertoire use/example references are shortened too. Unknown aliases
+fail validation before canonical persistence. Stage identities retain the exact
+wire input/schema along with projection version. Promotion uses prompt version 3
+and schema version 2. Admission stages retain and reuse
 results by exact contract/input within the same job, with publication fences for
 source and sense state and, for promotion, resolved identities and inspected cues.
 
-Sense establishment reuses existing inventories or authored bootstrap uses before
-requesting a sense-only generation call. It does not regenerate teaching or
+Sense establishment reuses an existing canonical inventory before requesting
+the shared inventory/default-selection call. It does not regenerate teaching or
 practice content as a side effect. Mapping and generation retain evaluated source
 versions and invocation provenance; publication is fenced against changed sources
 and maintenance controls. A mapped sense explains authorial intent, not what the

@@ -377,9 +377,21 @@ A wholly unprepared word therefore uses four authoring calls: lexical bootstrap,
 introduction, teaching exercises, and the independent general-practice pool.
 The first three establish a ready teaching repertoire; general practice is
 prepared after committed teaching completion. These are shared artifacts, not
-per-learner or per-session calls. The starting general v4 and teaching-exercise v2
+per-learner or per-session calls. The general v5 and teaching-exercise v2
 briefs come from the retained [editorial trials](implementation/vocabulary-prompt-handoff.md).
 Existing artifacts are reused; retry creates additional attributable attempts.
+General authoring trusts selected senses, including specialized learning needs.
+Each new automatic exercise binds to one supplied sense so future serving policy
+can include or exclude it. Unmapped legacy/manual content keeps its existing rules.
+An empty authoring result preserves its valid invocation and recommendation,
+publishes no exercises, and requires operator review without automatic retries.
+An explicit operator retry can start another bounded cycle; selected coverage
+is unchanged. The v5 prompt and empty-output schema change generation identity,
+but each source keeps its existing automatic lifecycle: earlier ready pools,
+queued/running work and exhausted budgets are retained. A prompt rollout does
+not add a second pool or reset attempts. Unstarted work binds the current authoring
+contract when claimed. Operator content review and explicit retries remain
+separate from automatic preparation.
 
 ### Preparation retries
 

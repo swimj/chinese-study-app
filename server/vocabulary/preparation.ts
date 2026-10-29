@@ -6,7 +6,7 @@ import { recordPreparationAttempt,linkPreparationInvocation,completePreparationA
 import { createHash,randomUUID } from 'node:crypto';
 import type { WordContentDocument } from '../../src/domain/word-content/types.ts';
 import type { VocabularyContent,VocabularyJson } from '../../src/domain/vocabulary-content.ts';
-import { generalExerciseInvocation, validateGeneralExerciseOutput, type GeneralExerciseOutput } from './general-exercise-authoring.ts';
+import { GENERAL_EXERCISE_CONTRACT,generalExerciseInvocation, normalizeGeneralExerciseReferences, validateGeneralExerciseOutput, type GeneralExerciseOutput } from './general-exercise-authoring.ts';
 import { parseWordContent } from '../../src/domain/word-content/validation.ts';
 import { createOpenAiCompatibleAdapter } from '../llm/openai-compatible.ts';
 import { fetchImplementationForProvider } from '../llm/proxy-fetch.ts';
@@ -33,7 +33,7 @@ const projection = `work_id AS workId,word_id AS wordId,source_content_id AS sou
   status,attempt_count AS attemptCount,active_token AS activeToken,expires_at AS expiresAt,invocation_id AS invocationId,last_error AS lastError,next_attempt_at AS nextAttemptAt,total_attempt_count AS totalAttemptCount`;
 const actor = { kind: 'service' as const,id: VOCABULARY_PRACTICE_SERVICE };
 
-/** The v4 brief is a replaceable editorial candidate; structural validity does not certify learning quality. */
+/** The shared brief is a replaceable editorial candidate; structural validity does not certify learning quality. */
 export function createVocabularyPracticeProvider(options: { environment?: NodeJS.ProcessEnv; fetchImplementation?: FetchImplementation } = {}): VocabularyPracticeProvider {
   const environment = options.environment ?? process.env;
   const adapter = createOpenAiCompatibleAdapter({ id: 'openai',defaultBaseUrl: 'https://api.openai.com/v1',apiKeyEnvironmentVariable: 'OPENAI_API_KEY',
@@ -42,8 +42,8 @@ export function createVocabularyPracticeProvider(options: { environment?: NodeJS
   return {
     model: VOCABULARY_PRACTICE_MODEL,
     isConfigured: () => Boolean(environment.OPENAI_API_KEY?.trim()),
-    generationKey: (content) => { const invocation=generalExerciseInvocation(content); return hash({prompt:invocation.systemPrompt,promptVersion:'v4',schema:invocation.outputSchema,
-      model: VOCABULARY_PRACTICE_MODEL,reasoning:'high',maxOutputTokens:24_000,inputProjectionVersion:'general-exercises-v1'}); },
+    generationKey: (content) => { const invocation=generalExerciseInvocation(content); return hash({prompt:invocation.systemPrompt,promptVersion:invocation.promptVersion,schema:invocation.outputSchema,
+      model: VOCABULARY_PRACTICE_MODEL,reasoning:'high',maxOutputTokens:24_000,inputProjectionVersion:invocation.inputProjectionVersion}); },
     async generate(content,options) {
       if (!environment.OPENAI_API_KEY?.trim()) throw new Error('Vocabulary practice provider is not configured');
       const {promptName,promptVersion,schemaVersion,inputProjectionVersion,...invocation}=generalExerciseInvocation(parseWordContent(content));
@@ -56,7 +56,7 @@ export function createVocabularyPracticeProvider(options: { environment?: NodeJS
       options.onInvocation(result.invocationId);
       try {
         if (isOutputTruncationFinishReason(result.finishReason)) throw new Error('truncated');
-        return JSON.parse(result.rawText) as unknown;
+        return normalizeGeneralExerciseReferences(content,JSON.parse(result.rawText) as unknown);
       } catch {
         invalidateServiceInvocation(result.invocationId,VOCABULARY_PRACTICE_SERVICE);
         throw new Error('Vocabulary practice output is invalid or incomplete');
@@ -158,7 +158,7 @@ export function createVocabularyPracticePreparation(options: { provider?: Vocabu
     if (!work || work.status !== 'running' || work.activeToken !== token || work.expiresAt! <= now()) throw new Error('Vocabulary preparation lease is not active');
     let invocationId: string | null | undefined;
     let source: WordContentDocument | null = null;
-    let retryable=false;
+    let retryable=false,emptyOutput=false;
     const catalogue = getVocabularySenseCatalog(work.wordId);
     const sourceSenses = getDb().prepare(`SELECT sense_id,imported_sense_version,source_use_id FROM legacy_sense_imports WHERE source_content_id=?`)
       .all(work.sourceContentId) as Array<{ sense_id: string; imported_sense_version: number; source_use_id: string }>;
@@ -183,6 +183,12 @@ export function createVocabularyPracticePreparation(options: { provider?: Vocabu
       try { wire=validateGeneralExerciseOutput(source,output); }
       catch(error) { invalidateServiceInvocation(invocationId,VOCABULARY_PRACTICE_SERVICE);throw error; }
       retryable=false;
+      if(!wire.exercises.length){
+        emptyOutput=true;
+        emitBackendEvent({name:'vocabulary.practice_preparation.no_exercises',entityKind:'vocabulary_practice_preparation',entityId:workId,
+          actorKind:'service',actorId:VOCABULARY_PRACTICE_SERVICE,data:{workId,sourceContentId:source.id,invocationId:invocationId??null,exercises:[]}});
+        throw new Error('Vocabulary practice authored no exercises; operator review required');
+      }
       return atomic(() => {
         if (options.canPublish && !options.canPublish()) throw new Error('Vocabulary preparation publication is currently blocked');
         const current = readWork(workId);
@@ -192,16 +198,17 @@ export function createVocabularyPracticePreparation(options: { provider?: Vocabu
           throw new Error('Vocabulary preparation source changed');
         }
         const content = wire.exercises.map((exercise) => {
-          const mapping = exercise.sourceUseId === null ? null : sourceSenses.find((sense) => sense.source_use_id === exercise.sourceUseId);
+          const mapping = sourceSenses.find((sense) => sense.source_use_id === exercise.sourceUseId);
+          if(!mapping)throw new Error('Vocabulary preparation lost its canonical use binding');
           const created = createVocabularyContent({ contentId: `vocabulary-practice-content:${hash([workId,exercise.id])}`,
             kind: 'exercise',payloadVersion: 1,body: { prompt: exercise.stimulus.kind === 'direct_text' ? exercise.stimulus.text : `${exercise.stimulus.frame}\n${exercise.stimulus.text}`,
               instruction: '',stimulus: exercise.stimulus as unknown as VocabularyJson,reveal: { teachingNote: exercise.teachingNote },
-              source: { kind: 'general_exercises',bootstrapContentId: source!.id,localId: exercise.id,promptVersion: 'v4',model: provider.model } },
+              source: { kind: 'general_exercises',bootstrapContentId: source!.id,localId: exercise.id,promptVersion: GENERAL_EXERCISE_CONTRACT.promptVersion,model: provider.model } },
             exerciseType: exercise.stimulus.kind === 'phrase_cloze' ? 'cloze' : 'definition_gloss',skill: 'production',exerciseRole: 'general',
             assessment: { responseMode: 'hanzi_entry',matchingProfile: 'mandarin' },accessScope: 'shared',availability: 'active',originKind: 'model',
             authorKind: 'service',authorId: VOCABULARY_PRACTICE_SERVICE,
-            words: [{ wordId: work.wordId,relation: 'target',senseId: mapping?.sense_id ?? null,
-              senseMappingEstablishedAt: mapping ? now() : null }],
+            words: [{ wordId: work.wordId,relation: 'target',senseId: mapping.sense_id,
+              senseMappingEstablishedAt: now() }],
             answers: [{ wordId: work.wordId,acceptedForms: [...new Set([source!.word.hanzi,source!.word.traditional].filter((form): form is string => form !== null))] }] },actor);
           if (invocationId != null) linkVocabularyInvocationContent({ invocationId,contentId: created.contentId,contentVersion: created.version,role: 'output' },actor);
           return created;
@@ -214,7 +221,7 @@ export function createVocabularyPracticePreparation(options: { provider?: Vocabu
     } catch (error) {
       // Provider bodies and transport failures may contain secrets; retain only a safe workflow code.
       const currentSource=getSharedWordIntroductionContent(work.wordId);
-      const diagnostic=!currentSource||currentSource.id!==work.sourceContentId||!productionSource(currentSource)?'source_mapping_requires_operator':'generation_failed';
+      const diagnostic=!currentSource||currentSource.id!==work.sourceContentId||!productionSource(currentSource)?'source_mapping_requires_operator':emptyOutput?'no_faithful_exercises':'generation_failed';
       failPreparationAttempt('practice',workId,token,now(),diagnostic,{retryable});
       if (error instanceof WordPreparationProviderError) throw error;
       if (error instanceof Error && /^Vocabulary (practice|preparation)/.test(error.message)) throw error;

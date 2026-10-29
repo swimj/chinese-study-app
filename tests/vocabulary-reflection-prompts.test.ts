@@ -46,3 +46,30 @@ test('shared vocabulary reasoning leaves output and operation authority to curre
   assert.ok(reasoning.includes('each option need not prove a distinct pedagogical dimension.'));
   assert.ok(reasoning.includes('The current\nimprovement call can author wording only within its supplied answer contract.'));
 });
+
+
+// These guard documented prompt lineage, not model quality. Live trial results
+// and editorial disagreements are retained separately in the prompt README.
+test('general repertoire preserves the full v4 authoring guidance and keeps examples exploratory',()=>{
+  const baseline=readFileSync(new URL('../server/word-content-lab/vocabulary-experiments/prompts/general-exercises-v4.md',import.meta.url),'utf8');
+  const current=readFileSync(new URL('../server/word-content-lab/vocabulary-experiments/prompts/general-exercises-v5.md',import.meta.url),'utf8');
+  for(const paragraph of baseline.trim().split('\n\n').filter(part=>!part.startsWith('#')&&!part.startsWith('Return only `exercises`'))){
+    assert.ok(current.includes(paragraph),`retained baseline paragraph: ${paragraph.slice(0,70)}`);
+  }
+  assert.match(current,/starting points for\nexploration, not templates/);
+  assert.match(current,/No example format is an essential hallmark/);
+  assert.match(current,/classification quiz/);
+  assert.doesNotMatch(current,/source exercise under review|Explain no extra fields/);
+});
+
+test('single decisions state supplied inputs and outcomes while retaining communicative judgment',()=>{
+  const brief=readFileSync(new URL('../server/vocabulary/reflection-prompts/single-improvement.md',import.meta.url),'utf8');
+  assert.match(brief,/making a cue more selective[\s\S]*little communicative value/);
+  assert.match(brief,/contextual exposure may still be valuable/);
+  const cases=brief.split('## Worked decision patterns')[1]!.split('## Output details')[0]!.split('### ').slice(1);
+  assert.equal(cases.length,10);
+  for(const example of cases){assert.match(example,/- Target:/);assert.match(example,/- Supplied sense:/);assert.match(example,/- Served prompt:/);assert.match(example,/- Encounter:/);}
+  assert.match(cases.find(example=>example.includes('Target: `他`'))!,/Propose retiring this source without replacement/);
+  assert.match(cases.find(example=>example.includes('Target: `有所`'))!,/Retain the source/);
+  assert.doesNotMatch(brief,/```json/);
+});

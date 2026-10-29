@@ -53,7 +53,7 @@ box(1400,880,500,140,'Capture repertoire scope\nUnknown: initialize defaults\nEm
 arrow([(1060,755),(1400,755),(1400,835)],'Laundry list',(1400,795))
 box(1400,1050,450,100,'CALL: Generate\nsense-based repertoire',True)
 arrow([(1400,950),(1400,1000)],'Nonempty scope',(1400,975))
-box(1400,1200,450,100,'Save replacement + additions\nAwait operator approval',terminal=True)
+box(1400,1200,450,100,'Save repertoire or source retirement\nAwait operator approval',terminal=True)
 arrow([(1400,1100),(1400,1150)])
 box(850,940,500,120,'CALL: Local improvement — r5\nLocal drafts + optional referral',True)
 arrow([(850,810),(850,880)],'Single sense; record mapping',(850,845))
