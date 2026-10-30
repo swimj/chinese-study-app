@@ -668,7 +668,7 @@ export function requireFullGitSha(value: string): string {
 
 export function requireDigestQualifiedFlyImage(value: string): string {
   const normalized = value.trim();
-  if (!/^registry\.fly\.io\/[a-z0-9][a-z0-9._/-]*@sha256:[a-f0-9]{64}$/.test(normalized)) {
+  if (!/^registry\.fly\.io\/[a-z0-9][a-z0-9._/-]*(?::[A-Za-z0-9_][A-Za-z0-9_.-]*)?@sha256:[a-f0-9]{64}$/.test(normalized)) {
     throw new Error('--image must be an immutable registry.fly.io digest-qualified reference.');
   }
   return normalized;

@@ -111,7 +111,7 @@ function credentials(file: string): string {
 
 export async function prepareRehearsal(input: PrepareRehearsalInput, deps: Deps): Promise<RehearsalManifest> {
   if (!/^[a-z0-9][a-z0-9-]+$/.test(input.app) || !/^[a-z0-9][a-z0-9-]+$/.test(input.sourceApp) || input.app === input.sourceApp) throw new Error('Rehearsal and source must be distinct valid apps.');
-  if (!/^registry\.fly\.io\/[a-z0-9-]+@sha256:[a-f0-9]{64}$/.test(input.image)) throw new Error('--image must be an immutable Fly registry digest.');
+  if (!/^registry\.fly\.io\/[a-z0-9-]+(?::[A-Za-z0-9_][A-Za-z0-9_.-]*)?@sha256:[a-f0-9]{64}$/.test(input.image)) throw new Error('--image must be an immutable Fly registry digest (optionally retaining its release tag).');
   if (!['unchanged', 'migrate'].includes(input.schema)) throw new Error('--schema must be unchanged or migrate.');
   if (!path.isAbsolute(input.runDir) || fs.existsSync(input.runDir)) throw new Error('--run-dir must be a new absolute directory.');
   const volumeSize = input.volumeSizeGb ?? 3;
