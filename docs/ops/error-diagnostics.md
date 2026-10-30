@@ -12,7 +12,8 @@ can and cannot prove. Deployment and Grafana setup remain in the
 | `Failed to fetch` with a client incident ID during a review or contrast commit | `hosted:inspect-client-incidents`, then study-commit success logs for the same event IDs | The browser's auth-token or fetch promise rejected. A matching backend success proves the commit completed; no matching success does not prove it never arrived. |
 | An application error with `Diagnostic ID: ...` during a study commit | `hosted:inspect-study-commits -- --diagnostic-id=...` | The request reached the commit handler and the handler caught a validation or persistence failure. |
 | An HTTP error without an ID | Service metrics, `fly logs`, then the relevant domain store | The browser received an HTTP response. Existing route-specific logging varies. |
-| A word introduction or review preparation failure | Operator view's [Preparation failures tab](#shared-word-preparation-failures) | The shared word/stage status, last error, and recorded attempt history. |
+| A shared introduction or teaching-exercise preparation failure | Operator view's [Preparation failures tab](#shared-word-preparation-failures) | The shared word/stage status, last error, and recorded attempt history. |
+| General-practice preparation fails after teaching | Content improvement → Needs attention | The failed preparation's source, attempt count, retained invocation, and whether operator retry is available; see [preparation retries](../vocabulary-learning.md#preparation-retries). |
 | A reflection-generation failure | Reflections run log, reflection lifecycle logs, then the provider diagnostics sidecar | The durable run state and safe provider classification; transport metadata is available for provider failures. |
 | A generic aborted request in Grafana | Prometheus route/method/outcome metrics | A response closed before completion. It is aggregate telemetry, not a per-request log, and `GET /api/*` may be unresolved to a specific route. |
 
@@ -135,6 +136,12 @@ error, so disappearance from the failures list does not establish completion.
 Retry does not republish or regenerate withdrawn content: work blocked by
 withdrawal pauses again for operator disposition. Ordinary learner requests
 cannot reset an exhausted budget.
+
+General practice prepared after committed teaching completion has a separate
+failure queue in **Content improvement → Needs attention**. An empty Preparation
+failures tab therefore does not establish that general practice is ready. The
+[vocabulary runtime](../vocabulary-learning.md#post-teaching-practice-preparation)
+explains that preparation lifecycle and its retry controls.
 
 The [operator API reference](../api.md#operator-view) lists the failure and retry
 endpoints and their access requirements. The
