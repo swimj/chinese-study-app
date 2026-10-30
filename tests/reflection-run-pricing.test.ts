@@ -12,6 +12,23 @@ const completeUsage = {
 };
 
 describe('initial reflection run pricing', () => {
+  test('prices GPT-6 Luna from its own October 30 snapshot and retains historical Luna rates', () => {
+    const usage = { inputTokens: 700, cachedInputTokens: 200, cacheWriteInputTokens: 300,
+      outputTokens: 100, reasoningTokens: 80, totalTokens: 1100 };
+    assert.deepEqual(estimateInitialReflectionRunCost({ provider: 'openai', providerModel: 'gpt-6-luna', usage }), {
+      // Normalized input excludes 300 cache-write tokens; reasoning is already included in output.
+      estimatedCostUsd: 0.0001395,
+      pricing: {
+        id: 'openai-gpt-6-luna-standard-short-context-2026-10-30',
+        pricingAsOf: '2026-10-30', provider: 'openai', providerModel: 'gpt-6-luna',
+        serviceTier: 'standard', contextBand: 'short', currency: 'USD',
+        inputPerMillionUsd: 0.1, cachedInputPerMillionUsd: 0.01, cacheWriteInputPerMillionUsd: 0.125,
+        outputPerMillionUsd: 0.5,
+      },
+    });
+    assert.equal(estimateInitialReflectionRunCost({ provider: 'openai', providerModel: 'gpt-5.6-luna', usage })?.estimatedCostUsd, 0.000299);
+  });
+
   test('prices each normalized token category from the pinned July 30 snapshot', () => {
     const estimate = estimateInitialReflectionRunCost({
       provider: 'openai',
