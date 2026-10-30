@@ -741,3 +741,43 @@ test('new repertoire items reject missing sense binding instead of inventing one
   assert.equal(getVocabularyContentForMaintenance('original')!.availability,'active');
   assert.equal(db.prepare("SELECT count(*) n FROM vocabulary_improvement_stages WHERE stage='repertoire'").get()!.n,0);
 });
+
+function resolvedPromotionJob():VocabularyReflectionJob {
+  db.prepare('INSERT INTO lexical_words VALUES (?,?,?,?,?)').run('other','扩大',null,'kuo4 da4','expand');
+  const referral={candidateWords:['放大','扩大'],sharedPurpose:'Increase size',rationale:'Shared expressive task'};
+  const resolution={actorId:'editor',recordedAt:at,sourceJobId:'parent',original,
+    admission:{outcome:'single_sense',rationale:'Size',wordId:'word',sourceContentId:'original',sourceContentVersion:original.version,catalogVersion:getVocabularySenseCatalog('word').version,senseIds:['size'],sourceMapping:{senseId:null,establishedAt:null}},
+    diagnosis:'Retained local diagnosis',referral,selections:{'放大':'word','扩大':'other'},candidates:db.prepare("SELECT id AS wordId,hanzi,traditional,pinyin,meaning FROM lexical_words WHERE id IN ('word','other') ORDER BY CASE id WHEN 'word' THEN 0 ELSE 1 END").all()};
+  db.prepare("INSERT INTO vocabulary_improvement_stages VALUES (?,'pure_cue_promotion',?,?,?,NULL,?)").run('job','operator-pure-cue-resolution-v1','{}',JSON.stringify(resolution),at);
+  return {...job(),reassessmentSourceJobId:'parent',reassessmentSource:original};
+}
+const promotionReply={decision:'create',rationale:'Shared task fits',existingContentId:null,prompt:'Increase the size or extent.',semanticAxis:'Size increase',teachingNote:'Both express making something larger.',memberWordIds:['word','other']};
+test('resolved identity continuation calls only promotion, preserves evidence and records input provenance',async()=>{
+  const input=resolvedPromotionJob();
+  const trial=provider(request=>{
+    assert.equal(request.provenance?.stepName,'pure_cue_promotion');
+    const wire=JSON.parse(request.userPrompt);
+    assert.equal(wire.localAssessment,'Retained local diagnosis');assert.equal(wire.evidence.encounters.length,1);
+    assert.deepEqual(wire.candidates.map((word:{wordId:string})=>word.wordId),['word','other']);
+    return promotionReply;
+  },{ledger:true,ensureSenses:async()=>{throw new Error('Continuation must not rerun sense admission');}});
+  const result=await trial.provider.run(input);
+  assert.equal(trial.requests.length,1);assert.equal(result.kind,'exercise_improvement');
+  if(result.kind!=='exercise_improvement')assert.fail();
+  assert.equal(result.result.proposal?.operations.length,1);assert.equal(result.result.proposal.operations[0]!.operationKey,'pure-cue-promotion');
+  assert.equal(result.result.pureCuePromotion?.invocationId,'invocation-1');
+  assert.equal(db.prepare("SELECT count(*) n FROM invocation_content_links WHERE invocation_id='invocation-1' AND content_id='original' AND role='input'").get()!.n,1);
+  assert.equal(getVocabularyContentForMaintenance('original')!.version,1);
+  // The durable decision remains reusable after a worker retry; neither local stage runs.
+  await trial.provider.run({...input,attemptNumber:2});assert.equal(trial.requests.length,2);
+});
+test('resolved identity continuation fences source and dictionary changes before and during its model call',async()=>{
+  const input=resolvedPromotionJob();
+  const trial=provider(()=>{db.prepare("UPDATE lexical_words SET meaning='new meaning' WHERE id='other'").run();return promotionReply;});
+  await assert.rejects(()=>trial.provider.run(input),/identities changed/);
+  await assert.rejects(()=>trial.provider.run(input),/Selected lexical identities changed/);
+  assert.equal(trial.requests.length,1);
+  updateVocabularyContent('original',1,{...original,body:{prompt:'Changed source'}},actor);
+  await assert.rejects(()=>trial.provider.run(input),/source.*changed|version changed/i);
+  assert.equal(trial.requests.length,1);
+});

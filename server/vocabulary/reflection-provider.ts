@@ -1,9 +1,10 @@
+import { linkVocabularyInvocationContent, linkVocabularyInvocationSense } from '../db/vocabulary-provenance.ts';
 import { VocabularySenseMappingUnavailable, isSenseMappingAvailabilityFailure } from './sense-mapping-retry.ts';
 import { GLM_FLASH_HIGH_REFLECTION_MODEL_CONFIG } from '../reflection/glm-provider.ts';
 import { projectVocabularySenseReferences } from './model-sense-references.ts';
 import type { ensureVocabularyDefaultUsefulSelection } from './default-useful-selection.ts';
 import { VocabularyReflectionConflict } from '../db/vocabulary-reflection.ts';
-import { getVocabularyContentForMaintenance } from '../db/vocabulary-content.ts';
+import { getVocabularyContentForMaintenance, getVocabularySenseCatalog, getVocabularySenses } from '../db/vocabulary-content.ts';
 import { GENERAL_EXERCISE_CONTRACT,generalExerciseInvocation,normalizeGeneralExerciseReferences,type GeneralExerciseSource } from './general-exercise-authoring.ts';
 import { vocabularyAuthoredPromptBody } from '../../src/domain/vocabulary-production-coverage.ts';
 import { readFile } from 'node:fs/promises';
@@ -26,7 +27,7 @@ import { fetchImplementationForProvider } from '../llm/proxy-fetch.ts';
 import { isOutputTruncationFinishReason, type ProviderAdapter } from '../llm/types.ts';
 import { eligibleVocabularyReflectionJob } from './reflection-eligibility.ts';
 import { prepareVocabularyPureCueImprovement, vocabularyPureCueImprovementSchema } from './pure-cue-improvement.ts';
-import { vocabularyPureCueReferralSchema, validateVocabularyPureCueReferral } from './pure-cue-promotion.ts';
+import { getPureCueResolution, prepareVocabularyPureCuePromotion, vocabularyPureCuePromotionSchema, vocabularyPureCueReferralSchema, validateVocabularyPureCueReferral } from './pure-cue-promotion.ts';
 import { runVocabularyImprovementAdmission, type VocabularySenseEnsurer } from './improvement-admission.ts';
 
 const SENSE_MAPPING_CONFIG:ReflectionProviderConfig={...LUNA_REFLECTION_MODEL_CONFIG,modelConfig:'gpt-6-luna-high',providerModel:'gpt-6-luna'};
@@ -251,6 +252,38 @@ export function createVocabularyReflectionProvider(options:{environment?:NodeJS.
       } catch(error) {invalidateServiceInvocation(response.invocationId,VOCABULARY_REFLECTION_SERVICE_ID);throw error;}
     }
     const original=job.kind==='exercise_improvement'?source(job):null;
+    const resolution=job.reassessmentSourceJobId?getPureCueResolution(job.jobId):null;
+    if(resolution){
+      if(!original||!isDeepStrictEqual(original,resolution.original))throw new VocabularyReflectionConflict('Promotion source changed; reassess the current source');
+      const {admission,referral,selections}=resolution;
+      const catalog=getVocabularySenseCatalog(admission.wordId),senses=getVocabularySenses(admission.wordId).filter(sense=>sense.status==='active');
+      const promotion=prepareVocabularyPureCuePromotion(job,original,referral,selections);
+      const fence=()=>{
+        if(context?.canPublish&&!context.canPublish())throw new VocabularyReflectionConflict('Promotion lost publication authority');
+        if(!isDeepStrictEqual(getVocabularyContentForMaintenance(original.contentId),original)||getVocabularySenseCatalog(admission.wordId).version!==admission.catalogVersion)
+          throw new VocabularyReflectionConflict('Promotion source or sense inventory changed');
+        promotion.fence();
+        if(!isDeepStrictEqual(promotion.input.candidates,resolution.candidates))throw new VocabularyReflectionConflict('Selected lexical identities changed');
+      };
+      fence();
+      if(promotion.attention)throw new VocabularyReflectionConflict('Selected lexical identities do not resolve the referral');
+      const word=getDb().prepare('SELECT id AS wordId,hanzi,traditional,pinyin,meaning FROM lexical_words WHERE id=?').get(admission.wordId);
+      const response=await runCall('pure_cue_promotion',{sourceContent:original,wordId:admission.wordId,word,catalog,senses,
+        evidence:projectVocabularyReflectionInput(job),intendedSense:senses.find(sense=>sense.senseId===admission.senseIds[0]),
+        localAssessment:resolution.diagnosis,...promotion.input},vocabularyPureCuePromotionSchema,'pure-cue-promotion',admissionPromptVersion('pure_cue_promotion'));
+      try{
+        if(validateJsonSchema(response.value,vocabularyPureCuePromotionSchema).length)throw new VocabularyReflectionOutputError('Promotion failed strict output schema');
+        const promoted=promotion.normalize(response.value,response.invocationId);fence();
+        if(response.invocationId){
+          const actor={kind:'service' as const,id:VOCABULARY_REFLECTION_SERVICE_ID};
+          for(const content of [original,...promotion.contents])if(content.accessScope==='shared')linkVocabularyInvocationContent({invocationId:response.invocationId,contentId:content.contentId,contentVersion:content.version,role:'input'},actor);
+          for(const sense of senses)linkVocabularyInvocationSense({invocationId:response.invocationId,senseId:sense.senseId,senseVersion:sense.version,role:'input'},actor);
+        }
+        return {kind:'exercise_improvement',result:{diagnosis:promoted.assessment.rationale,admission,pureCueReferral:referral,pureCuePromotion:promoted.assessment,
+          ...(response.invocationId?{invocationId:response.invocationId}:{}),proposal:promoted.operations.length?{operations:promoted.operations,rationale:promoted.assessment.rationale,
+            bases:[{contentId:original.contentId,expectedVersion:original.version},...promoted.bases],...(response.invocationId?{invocationId:response.invocationId}:{})}:null}};
+      }catch(error){invalidateServiceInvocation(response.invocationId,VOCABULARY_REFLECTION_SERVICE_ID);throw error;}
+    }
     if(original?.kind==='exercise'&&original.exerciseType==='pure_cue'){
       const review=prepareVocabularyPureCueImprovement(job,original);review.fence();
       const response=await runCall('pure_cue_improvement',{sourceContent:original,evidence:projectVocabularyReflectionInput(job),...review.input},vocabularyPureCueImprovementSchema,'pure-cue-improvement','1');

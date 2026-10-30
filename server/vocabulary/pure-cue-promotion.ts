@@ -12,7 +12,7 @@ const object=(properties:Record<string,JsonSchema>):JsonSchema=>({type:'object',
 export const vocabularyPureCueReferralSchema:JsonSchema={anyOf:[{type:'null'},object({candidateWords:{type:'array',items:text,minItems:2,maxItems:8},sharedPurpose:text,rationale:text})]};
 export const vocabularyPureCuePromotionSchema=object({decision:{type:'string',enum:['reject','reuse','extend','create']},rationale:text,
   existingContentId:{type:['string','null']},prompt:{type:['string','null']},semanticAxis:{type:['string','null']},teachingNote:{type:['string','null']},memberWordIds:{type:'array',items:text}});
-type Word={wordId:string;hanzi:string;traditional:string|null;pinyin:string;meaning:string};
+export type Word={wordId:string;hanzi:string;traditional:string|null;pinyin:string;meaning:string};
 type Decision={decision:'reject'|'reuse'|'extend'|'create';rationale:string;existingContentId:string|null;prompt:string|null;semanticAxis:string|null;teachingNote:string|null;memberWordIds:string[]};
 export type PromotionResult={assessment:VocabularyPureCuePromotion;operations:VocabularyProposalOperation[];bases:{contentId:string;expectedVersion:number}[]};
 const wordQuery='SELECT id AS wordId,hanzi,traditional,pinyin,meaning FROM lexical_words';
@@ -21,8 +21,24 @@ export function validateVocabularyPureCueReferral(referral:VocabularyPureCueRefe
   if(!referral.sharedPurpose.trim()||!referral.rationale.trim()||referral.candidateWords.some(word=>!word.trim()||word!==word.trim())
     ||new Set(referral.candidateWords).size!==referral.candidateWords.length)throw new Error('Invalid pure-cue referral');
 }
+export function pureCueIdentityOptions(targetId:string,referral:VocabularyPureCueReferral):{form:string;choices:Word[]}[] {
+  const target=getDb().prepare(`${wordQuery} WHERE id=?`).get(targetId) as Word|undefined;
+  if(!target)throw new Error('Pure-cue target disappeared');
+  return referral.candidateWords.map(form=>({form,choices:form===target.hanzi||form===target.traditional?[target]:
+    (getDb().prepare(`${wordQuery} WHERE hanzi=? OR traditional=? ORDER BY id`).all(form,form) as Word[])})).map(option=>({...option,choices:option.choices.map(word=>({...word}))}));
+}
+export const PURE_CUE_RESOLUTION_CONTRACT='operator-pure-cue-resolution-v1';
+export type PureCueResolution={actorId:string;recordedAt:string;sourceJobId:string;original:VocabularyContent;
+  admission:import('../../src/domain/vocabulary-reflection.ts').VocabularyImprovementAdmission;
+  diagnosis:import('../../src/domain/vocabulary-content.ts').VocabularyJson;referral:VocabularyPureCueReferral;
+  selections:Record<string,string>;candidates:Word[]};
+export function getPureCueResolution(jobId:string):PureCueResolution|null {
+  const row=getDb().prepare("SELECT result_json FROM vocabulary_improvement_stages WHERE job_id=? AND stage='pure_cue_promotion' AND input_hash=?")
+    .get(jobId,PURE_CUE_RESOLUTION_CONTRACT) as {result_json:string}|undefined;
+  return row?JSON.parse(row.result_json) as PureCueResolution:null;
+}
 /** Referral forms are suggestions. Resolve exact lexical identities; never pick a pronunciation arbitrarily. */
-export function prepareVocabularyPureCuePromotion(job:VocabularyReflectionJob,original:VocabularyContent,referral:VocabularyPureCueReferral):{
+export function prepareVocabularyPureCuePromotion(job:VocabularyReflectionJob,original:VocabularyContent,referral:VocabularyPureCueReferral,selections:Record<string,string>={}):{
   input:{referral:VocabularyPureCueReferral;candidates:Word[];existingCues:VocabularyContent[]};
   attention:PromotionResult|null;contents:VocabularyContent[];fence:()=>void;
   normalize:(value:unknown,invocationId?:string|null)=>PromotionResult;
@@ -32,10 +48,12 @@ export function prepareVocabularyPureCuePromotion(job:VocabularyReflectionJob,or
   if(!targetId)throw new Error('Pure-cue referral requires a word target');
   const target=getDb().prepare(`${wordQuery} WHERE id=?`).get(targetId) as Word|undefined;
   if(!target)throw new Error('Pure-cue target disappeared');
-  const resolve=()=>referral.candidateWords.map(form=>{
-    // The source already disambiguates its own lexical identity.
-    if(form===target.hanzi||form===target.traditional)return [target];
-    return getDb().prepare(`${wordQuery} WHERE hanzi=? OR traditional=? ORDER BY id`).all(form,form) as Word[];
+  const resolve=()=>pureCueIdentityOptions(targetId,referral).map(({form,choices})=>{
+    const selected=selections[form];
+    if(!selected)return choices;
+    const word=choices.find(word=>word.wordId===selected);
+    if(!word)throw new Error('Selected pure-cue lexical identity no longer matches the referral');
+    return [word];
   });
   const matches=resolve();
   const candidates=[...new Map(matches.filter(items=>items.length===1).map(items=>[items[0]!.wordId,items[0]!])).values()];

@@ -17,6 +17,7 @@ async function main(){
   const approvals:VocabularyApprovalRequest[]=[];
   const unavailableCoverage=async()=>{throw new Error('Historical export does not include editable canonical sense coverage.');};
   const api:VocabularyOperatorApi={
+    resolvePureCueIdentities:async()=>{throw new Error('Historical replay cannot queue an assessment.');},
     wordSenseCoverage:unavailableCoverage,caseSenseCoverage:unavailableCoverage,saveDefaultUsefulSenses:unavailableCoverage,saveWordSenseCoverage:unavailableCoverage,saveCaseSenseCoverage:unavailableCoverage,
     approvalRequests:async()=>({items:approvals}),
     requestApproval:async(id,expectedVersion,requestId,notes)=>{const now=new Date().toISOString();const item:VocabularyApprovalRequest={requestId,proposalId:id,expectedVersion,actorId:'local-preview',notes,status:'queued',attempts:0,createdAt:now,updatedAt:now,error:null,application:null};approvals.push(item);setTimeout(()=>{const proposal=update(id,{status:'applied',resolvedAt:new Date().toISOString()});item.status='succeeded';item.updatedAt=new Date().toISOString();item.application={applicationId:'local-preview-only',proposalId:id,proposalVersion:proposal.version,reviewId:'local-preview',changes:[]};},100);return {...item};},
