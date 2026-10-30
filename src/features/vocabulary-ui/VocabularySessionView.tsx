@@ -183,7 +183,10 @@ export function VocabularySessionContent(props: VocabularySessionViewProps) {
     <div className="vocab-session-bottomline">
       <Action control={controls.undo} onClick={props.onUndo}>Undo last action</Action>
       {props.onShowShortcuts && <button type="button" className="vocab-text-button" aria-keyshortcuts="?" onClick={props.onShowShortcuts}>Shortcuts<ShortcutHint shortcut="?" /></button>}
-      <span>{props.progress.remaining} remaining <span className="vocab-dot">·</span> {props.progress.covered} covered <span className="vocab-dot">·</span> {props.progress.elapsedLabel}</span>
+      <span className="vocab-session-status">
+        <span style={{ visibility: props.saving ? 'hidden' : 'visible' }} aria-hidden={props.saving || undefined}>{props.progress.remaining} remaining <span className="vocab-dot">·</span> {props.progress.covered} covered <span className="vocab-dot">·</span> {props.progress.elapsedLabel}</span>
+        <span role="status" style={{ visibility: props.saving ? 'visible' : 'hidden' }} aria-hidden={!props.saving}>Saving your response…</span>
+      </span>
     </div>
 
     {confirmFinish && <dialog ref={finishDialog} className="vocab-finish-dialog" aria-labelledby={dialogTitleId}

@@ -91,7 +91,7 @@ export function VocabularyStudy({ controller, hideStartButton = false, character
   }
   function primary(fromKeyboard = false) {
     if (!canAct || composing.current) return;
-    void motion.runPrimary(performPrimary, {fromKeyboard, depart: c.revealed && !(recognition && c.assessment === 'unassessed'), outcome: getVocabularyCardOutcome(study!)});
+    void motion.runPrimary(performPrimary, {fromKeyboard: fromKeyboard && c.revealed, depart: c.revealed && !(recognition && c.assessment === 'unassessed'), outcome: getVocabularyCardOutcome(study!)});
   }
   function rateRecognition(value: 'accepted' | 'rejected', fromKeyboard = false) {
     if (!canAct || ratingTimer.current) return;
@@ -197,7 +197,7 @@ export function VocabularyStudy({ controller, hideStartButton = false, character
       feedback: [], canCancel: completionUndoOpen,
       canUndo: Boolean(completionUndoOpen && projection.latestUndoableActionId), canReturnHome: !c.saving && c.completion !== null,
     } : null,
-    busy: c.busy, error: c.error,
+    busy: c.busy, saving: c.saving, error: c.error,
     onResponseChange: c.setInput, onPrimary: primary,
     onSkip: () => { void c.send({ type: 'skip' }).then(() => c.next()); }, onAnother: () => { if (canAct) void motion.runPrimary(() => c.next({ another: true }), { depart: true, shuffle: true }); },
     onEnough: () => { void c.endWord(true); },
@@ -282,6 +282,5 @@ export function VocabularyStudy({ controller, hideStartButton = false, character
     <VocabularyShortcutGuide open={guideOpen} onClose={() => setGuideOpen(false)} />
     <VocabularySessionView {...props} />
     {c.error && !completed && <p><button type="button" disabled={c.busy} onClick={() => { void c.retrySave(); }}>Retry saving</button></p>}
-    {c.saving && !completed && <p role="status">Saving your response…</p>}
   </div>;
 }
