@@ -26,6 +26,17 @@ export type ReflectionRunPricingBasis = ReflectionRunPricingSnapshot | OpenRoute
  */
 export const INITIAL_LUNA_STANDARD_SHORT_CONTEXT_PRICING = LUNA_STANDARD_SHORT_CONTEXT_PRICING;
 
+// OpenAI Standard short-context (<=272k input) list prices, verified 2026-10-30:
+// https://developers.openai.com/api/docs/pricing
+// Cache writes use the published 30-minute cache duration.
+export const GPT_6_LUNA_STANDARD_SHORT_CONTEXT_PRICING: ReflectionRunPricingSnapshot = {
+  id: 'openai-gpt-6-luna-standard-short-context-2026-10-30',
+  pricingAsOf: '2026-10-30', provider: 'openai', providerModel: 'gpt-6-luna',
+  serviceTier: 'standard', contextBand: 'short', currency: 'USD',
+  inputPerMillionUsd: 0.1, cachedInputPerMillionUsd: 0.01, cacheWriteInputPerMillionUsd: 0.125,
+  outputPerMillionUsd: 0.5,
+};
+
 /**
  * Historical GLM-5.2 snapshot. Kept so persisted glm-5.2 runs still price
  * against the original basis and stay distinguishable from later GLM arms.
@@ -158,6 +169,7 @@ export type ReflectionRunCostEstimate = {
 const INITIAL_REFLECTION_RUN_PRICING: ReadonlyArray<ReflectionRunPricingSnapshot> = [
   DEBRIEF_PRICING,
   INITIAL_LUNA_STANDARD_SHORT_CONTEXT_PRICING,
+  GPT_6_LUNA_STANDARD_SHORT_CONTEXT_PRICING,
   INITIAL_GLM_5_2_STANDARD_SHORT_CONTEXT_PRICING,
   INITIAL_GLM_5_3_STANDARD_SHORT_CONTEXT_PRICING,
   INITIAL_GLM_STANDARD_SHORT_CONTEXT_PRICING,

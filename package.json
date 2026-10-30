@@ -25,6 +25,7 @@
     "hosted:sentinel": "node --import tsx scripts/seed-deployment-sentinel.ts",
     "hosted:invite": "node --import tsx scripts/invite-hosted-learner.ts",
     "hosted:inspect": "node --import tsx scripts/inspect-hosted-service.ts",
+    "hosted:backfill-luna-costs": "node --import tsx scripts/backfill-luna-invocation-costs.ts",
     "hosted:inspect-client-incidents": "node --import tsx scripts/inspect-client-incident-diagnostics.ts",
     "hosted:inspect-study-commits": "node --import tsx scripts/inspect-study-commit-diagnostics.ts",
     "hosted:inspect-request-timings": "node --import tsx scripts/inspect-request-timings.ts",

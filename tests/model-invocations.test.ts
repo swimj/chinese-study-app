@@ -59,6 +59,52 @@ test('OpenAI cache writes replace ordinary input charges and debrief uses its mo
     .run({ ...request, model: 'gpt-6.1-sol' }, config));
   assert.equal(listModelInvocations().rows.find((row) => row.model === 'gpt-6.1-sol')!.spendUsd, 0.00277);
 });
+test('service sense mapping prices GPT-6 Luna usage and retains the exact accounting basis', async () => {
+  const usage = { prompt_tokens: 1000, completion_tokens: 100, total_tokens: 1100,
+    prompt_tokens_details: { cached_tokens: 200, cache_write_tokens: 300 },
+    completion_tokens_details: { reasoning_tokens: 80 } };
+  const mappingRequest: ProviderRunRequest = { ...request, model: 'gpt-6-luna', reasoningEffort: 'high',
+    outputSchemaName: 'vocabulary_reflection_sense_mapping_v1',
+    invocationActor: { kind: 'service', serviceId: 'vocabulary-reflection', requestingLearnerId: 'ledger-a' },
+    provenance: { workflowId: 'sense-mapping-pricing', stepName: 'sense_mapping', attemptNumber: 1 } };
+  const result = await adapter({ ...response, usage }).run(mappingRequest, config);
+  const row = listModelInvocations().rows.find((item) => item.id === result.invocationId)!;
+  assert.equal(row.actorKind, 'service');
+  assert.equal(row.actorId, 'vocabulary-reflection');
+  assert.equal(row.requestingLearnerId, 'ledger-a');
+  assert.equal(row.status, 'completed');
+  assert.equal(row.spendSource, 'estimated');
+  assert.equal(row.spendUsd, 0.0001395);
+  const stored = sql.prepare('SELECT usage_json, pricing_json, step_name FROM model_invocations WHERE id = ?')
+    .get(result.invocationId!)!;
+  assert.equal(stored.step_name, 'sense_mapping');
+  assert.deepEqual(JSON.parse(String(stored.usage_json)), usage);
+  assert.deepEqual(JSON.parse(String(stored.pricing_json)), {
+    id: 'openai-gpt-6-luna-standard-short-context-2026-10-30',
+    pricingAsOf: '2026-10-30', provider: 'openai', providerModel: 'gpt-6-luna',
+    serviceTier: 'standard', contextBand: 'short', currency: 'USD',
+    inputPerMillionUsd: 0.1, cachedInputPerMillionUsd: 0.01, cacheWriteInputPerMillionUsd: 0.125,
+    outputPerMillionUsd: 0.5,
+  });
+  for (const invalidUsage of [
+    {},
+    { ...usage, prompt_tokens_details: { cached_tokens: 800, cache_write_tokens: 300 } },
+    { ...usage, prompt_tokens: 272_001 },
+  ]) {
+    const invalidResult = await adapter({ ...response, usage: invalidUsage }).run(mappingRequest, config);
+    const invalid = listModelInvocations().rows.find((item) => item.id === invalidResult.invocationId)!;
+    assert.equal(invalid.spendUsd, null);
+    assert.equal(invalid.spendSource, 'unknown');
+    assert.equal(sql.prepare('SELECT pricing_json FROM model_invocations WHERE id = ?')
+      .get(invalidResult.invocationId!)!.pricing_json, null);
+  }
+  await assert.rejects(() => adapter({ ...response,
+    usage: { ...usage, prompt_tokens_details: 'invalid' } }).run({ ...mappingRequest,
+    outputSchemaName: 'malformed_usage_details' }, config));
+  const malformed = listModelInvocations().rows.find(item => item.invocationType === 'malformed_usage_details')!;
+  assert.equal(malformed.spendUsd, null);
+  assert.equal(malformed.spendSource, 'unknown');
+});
 test('date filters are inclusive UTC and reject invalid dates or reversed ranges', () => {
   const id = listModelInvocations().rows[0]!.id;
   sql.prepare('UPDATE model_invocations SET timestamp = ? WHERE id = ?').run('2026-01-03T23:59:59.999Z', id);

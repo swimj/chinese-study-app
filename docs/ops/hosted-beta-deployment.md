@@ -350,6 +350,40 @@ fly ssh console --app <app-name> --command \
 
 ## Operator recovery
 
+### Backfill missing GPT-6 Luna invocation costs
+
+`hosted:backfill-luna-costs` estimates unknown direct-OpenAI `gpt-6-luna`
+invocation costs from retained token usage. It covers terminal attempts, including
+failed or invalid responses with usage, and preserves known costs, running calls,
+and original invocation evidence. Missing or invalid usage, requests outside the
+Standard/default 30-minute cache pricing basis, and input beyond 272K tokens are
+reported as skipped. The command makes no provider calls.
+
+Run this as a separate accounting repair after deploying the command, rather
+than as part of the application-only upgrade pipeline. Preview opens the existing
+database read-only without application startup or schema migration:
+
+```bash
+fly ssh console --app <app-name> --command \
+  'npm run --silent hosted:backfill-luna-costs -- --data-dir=/data'
+```
+
+Review the candidate IDs, skipped reasons, total estimated USD, and plan digest.
+Apply that exact plan with an attributable operator:
+
+```bash
+fly ssh console --app <app-name> --command \
+  'npm run --silent hosted:backfill-luna-costs -- --data-dir=/data --apply=true --actor-id=<operator> --confirm-plan=<digest>'
+```
+
+Apply rechecks the evidence and pricing inside one write transaction; a changed
+plan refuses all updates. Each repaired row stores `estimated` spend and the
+pinned pricing basis, with operator, UTC repair time, and plan digest in
+`pricing_json.backfill`. Retain the command output as operation evidence.
+Preview again to verify the repaired IDs are absent. Repeating a freshly
+previewed plan changes no already-priced rows. Service controls are independent
+of this accounting-only repair.
+
 ### Recover failed cue repairs from correct requested reviews
 
 `hosted:recover-correct-cue-repairs` selects the latest accepted current-contract
