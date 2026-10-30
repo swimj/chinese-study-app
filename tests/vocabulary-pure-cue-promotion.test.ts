@@ -21,6 +21,7 @@ beforeEach(() => {
     INSERT INTO lexical_words VALUES ('target','放大',NULL,'fang4 da4','enlarge'),('other','扩大','擴大','kuo4 da4','expand'),('retained','增加',NULL,'zeng1 jia1','increase'),('outside','缩小',NULL,'suo1 xiao3','shrink');`);
   db.exec(readFileSync(new URL('../server/db/migrations/0039_vocabulary_content.sql', import.meta.url), 'utf8'));
   db.exec(readFileSync(new URL('../server/db/migrations/0062_vocabulary_sense_coverage.sql', import.meta.url), 'utf8'));
+  db.exec(readFileSync(new URL('../server/db/migrations/0064_vocabulary_default_useful_senses.sql', import.meta.url), 'utf8'));
   original = createVocabularyContent({ contentId: 'source', kind: 'exercise', payloadVersion: 1,
     body: { prompt: 'Make this image larger.' }, exerciseType: 'word', skill: 'production', exerciseRole: 'general',
     assessment: { match: 'exact' }, answers: [{ wordId: 'target', acceptedForms: ['放大'] }],

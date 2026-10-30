@@ -1,3 +1,5 @@
+import { VocabularySenseReadinessPending } from '../server/vocabulary/sense-readiness.ts';
+import type { ensureVocabularyDefaultUsefulSelection } from '../server/vocabulary/default-useful-selection.ts';
 import { writeVocabularyDefaultUsefulSenses } from '../server/db/vocabulary-sense-coverage.ts';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -23,11 +25,12 @@ beforeEach(()=>{
   db=new DatabaseSync(':memory:');setDb(db);
   db.exec(`PRAGMA foreign_keys=ON;
     CREATE TABLE learners(learner_id TEXT PRIMARY KEY); INSERT INTO learners VALUES ('learner');
+    CREATE TABLE lexical_word_meanings(id TEXT PRIMARY KEY,word_id TEXT,text TEXT,position INTEGER);
     CREATE TABLE lexical_words(id TEXT PRIMARY KEY,hanzi TEXT,traditional TEXT,pinyin TEXT,meaning TEXT);
     INSERT INTO lexical_words VALUES ('word','放大',NULL,'fang4 da4','enlarge; amplify');
     CREATE TABLE model_invocations(id TEXT PRIMARY KEY,actor_kind TEXT,actor_id TEXT,learner_id TEXT,status TEXT,spend_usd REAL,requesting_learner_id TEXT,timestamp TEXT,invocation_type TEXT);
     CREATE TABLE vocabulary_reflection_jobs(job_id TEXT PRIMARY KEY,model_choice TEXT); INSERT INTO vocabulary_reflection_jobs VALUES ('job',NULL);`);
-  for(const name of ['0062_vocabulary_sense_coverage','0039_vocabulary_content','0045_vocabulary_provenance_links','0050_vocabulary_improvement_admission','0051_vocabulary_pure_cue_promotion'])
+  for(const name of ['0062_vocabulary_sense_coverage','0064_vocabulary_default_useful_senses','0039_vocabulary_content','0045_vocabulary_provenance_links','0050_vocabulary_improvement_admission','0051_vocabulary_pure_cue_promotion'])
     db.exec(readFileSync(new URL(`../server/db/migrations/${name}.sql`,import.meta.url),'utf8'));
   db.exec(readFileSync(new URL('../server/db/migrations/0061_vocabulary_sense_mapping_retries.sql',import.meta.url),'utf8'));
   original=createVocabularyContent({contentId:'original',kind:'exercise',payloadVersion:1,body:{prompt:'请把这张照片____后再打印。',instruction:'Old instruction',reveal:{teachingNote:'Old unrelated teaching'},source:{kind:'old_source'}},accessScope:'shared',availability:'active',originKind:'human',
@@ -43,7 +46,7 @@ function job(kind:VocabularyReflectionJob['kind']='exercise_improvement'):Vocabu
     evidence:[{encounterId:'encounter',wordId:'word',workNumber:1,presentedActionId:'presented',presentedAt:at,mode:'practice',snapshot:{contentId:'original',contentVersion:1,kind:'production',role:'general',body:{prompt:'请把这张照片____后再打印。'},assessment:{acceptedAnswers:['放大']}},responses:[],effectiveResponses:[],feedback:[],effectiveFeedback:[],skipped:false,presentationUndone:false}]}};
 }
 const readiness:VocabularySenseEnsurer=async()=>({catalog:getVocabularySenseCatalog('word'),senses:getVocabularySenses('word'),source:'existing'});
-function provider(reply:(request:ProviderRunRequest,index:number)=>unknown|Promise<unknown>,options:{ensureSenses?:VocabularySenseEnsurer;ledger?:boolean;adapterId?:string}={}) {
+function provider(reply:(request:ProviderRunRequest,index:number)=>unknown|Promise<unknown>,options:{ensureDefaults?:typeof ensureVocabularyDefaultUsefulSelection;ensureSenses?:VocabularySenseEnsurer;ledger?:boolean;adapterId?:string}={}) {
   const requests:ProviderRunRequest[]=[];
   const adapter:ProviderAdapter={id:options.adapterId??'fake',defaultBaseUrl:'https://unused.invalid',apiKeyEnvironmentVariable:'KEY',structuredOutputMode:'json_schema',async run(request){
     requests.push(request);const value=await reply(request,requests.length);
@@ -51,7 +54,7 @@ function provider(reply:(request:ProviderRunRequest,index:number)=>unknown|Promi
     if(invocationId)db.prepare("INSERT INTO model_invocations(id,actor_kind,actor_id,learner_id,status) VALUES (?,'service','vocabulary-reflection',NULL,'completed')").run(invocationId);
     return {provider:'fake',model:'fake',responseId:null,structuredOutputMode:'json_schema',rawText:JSON.stringify(value),finishReason:'stop',rawResponse:null,usage:{inputTokens:null,cachedInputTokens:null,cacheWriteInputTokens:null,outputTokens:null,reasoningTokens:null,totalTokens:null},invocationId};
   }};
-  return {requests,provider:createVocabularyReflectionProvider({random:()=>0,environment:{OPENAI_API_KEY:'fake'},adapter,ensureSenses:options.ensureSenses??readiness})};
+  return {requests,provider:createVocabularyReflectionProvider({random:()=>0,environment:{OPENAI_API_KEY:'fake'},adapter,ensureSenses:options.ensureSenses??readiness,ensureDefaults:options.ensureDefaults})};
 }
 const single={outcome:'single_sense',rationale:'Photo enlargement is the intended use, though direction is missing.',senseIds:['size']};
 const repair={pureCueReferral:null,diagnosis:'Make the intended direction explicit.',operations:[{sourceContentId:'original',strategy:'replace',rationale:'Clarifies larger.',prompt:'Make this image larger before printing it.',acceptedAnswers:['放大']}]};
@@ -194,7 +197,7 @@ test('successful mapping survives a later provider failure, while operator remap
 test('repertoire cannot leak accepted answers',async()=>{
   const trial=provider((_request,index)=>index===1?laundry:{...repertoire,exercises:repertoire.exercises.map(exercise=>({...exercise,stimulus:{kind:'direct_text',text:'Use 放大 here.'}}))});
   await assert.rejects(()=>trial.provider.run(job()),/exposes.*answer/);
-  assert.equal(db.prepare('SELECT count(*) n FROM vocabulary_improvement_stages').get()!.n,1);
+  assert.equal(db.prepare('SELECT count(*) n FROM vocabulary_improvement_stages').get()!.n,2);
 });
 
 const pureExplanation={diagnosis:'The submitted expression does not fit this shared task.',decision:'explanation_only',reason:'does_not_fit',addedWordIds:[],prompt:null,teachingNote:null};
@@ -281,7 +284,7 @@ for(const invalid of ['foreign-sense','empty-exercises'] as const)test(`repertoi
     :[];
   const trial=provider((_request,index)=>index===1?laundry:{...repertoire,exercises});
   await assert.rejects(()=>trial.provider.run(job()),/output schema/);
-  assert.equal(db.prepare('SELECT count(*) n FROM vocabulary_improvement_stages').get()!.n,1);
+  assert.equal(db.prepare('SELECT count(*) n FROM vocabulary_improvement_stages').get()!.n,2);
 });
 
 test('laundry-list replacement uses the inventory without mapping or preserving every old gloss',async()=>{
@@ -564,11 +567,43 @@ test('explicit review override supplies repertoire invocation independently of s
   assert.deepEqual(JSON.parse(trial.requests[1]!.userPrompt).content.uses.map((use:{id:string})=>use.id),['effect']);
 });
 
- test('unknown useful selection is attention rather than explicit no-senses scope',async()=>{
-  db.exec("DELETE FROM vocabulary_word_sense_coverage WHERE word_id='word'");
+
+test('unknown default usefulness does not block explicitly mapped single-sense improvement',async()=>{
+  db.exec('UPDATE vocabulary_word_sense_coverage SET default_useful_sense_ids_json=NULL');
+  const trial=provider((_request,index)=>index===1?single:repair),result=await trial.provider.run(job());
+  if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
+  assert.equal(result.result.admission?.outcome,'single_sense');assert.ok(result.result.proposal);assert.equal(trial.requests.length,2);
+});
+test('explicit review selection admits a use even when shared usefulness is unknown',async()=>{
+  const {writeVocabularyCaseSenseCoverage}=await import('../server/db/vocabulary-sense-coverage.ts');
+  db.exec("UPDATE vocabulary_word_sense_coverage SET default_useful_sense_ids_json=NULL; CREATE TABLE reflection_cases(case_id TEXT PRIMARY KEY,word_id TEXT); INSERT INTO reflection_cases VALUES ('case','word');");
+  writeVocabularyCaseSenseCoverage('case',0,['effect'],actor);
+  const trial=provider((_request,index)=>index===1?{...single,senseIds:['effect']}:repair),result=await trial.provider.run(job());
+  if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
+  assert.equal(trial.requests.length,2);assert.equal(result.result.admission?.outcome,'single_sense');assert.ok(result.result.proposal);
+  assert.equal(JSON.parse(trial.requests[1]!.userPrompt).intendedSense.senseId,'effect');
+});
+
+test('unknown default usefulness makes laundry-list generation an explicit attention finding',async()=>{
+  db.exec('UPDATE vocabulary_word_sense_coverage SET default_useful_sense_ids_json=NULL');
   const trial=provider(()=>laundry),result=await trial.provider.run(job());
   if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
-  assert.equal(trial.requests.length,1);assert.equal(result.result.proposal,null);
-  assert.equal(result.result.admission?.outcome,'needs_coverage');
-  assert.equal(getVocabularyContentForMaintenance('original')!.availability,'active');
- });
+  assert.equal(result.result.admission?.outcome,'needs_coverage');assert.equal(result.result.proposal,null);assert.equal(trial.requests.length,1);
+  assert.equal(result.result.admission?.generationScope?.selectionEstablished,false);
+});
+
+
+test('repertoire waits for useful initialization without repeating or invalidating its completed mapping',async()=>{
+  db.exec('UPDATE vocabulary_word_sense_coverage SET default_useful_sense_ids_json=NULL');
+  let initializations=0;
+  const trial=provider((_request,index)=>index===1?laundry:repertoire,{ledger:true,ensureDefaults:async()=>{
+    initializations++;if(initializations===1)throw new VocabularySenseReadinessPending('2026-10-29T01:00:00.000Z');
+    writeVocabularyDefaultUsefulSenses('word',1,['size','effect'],actor);
+    const {getVocabularyWordSenseCoverage}=await import('../server/db/vocabulary-sense-coverage.ts');return getVocabularyWordSenseCoverage('word');
+  }});
+  await assert.rejects(trial.provider.run(job()),VocabularySenseReadinessPending);assert.equal(trial.requests.length,1);
+  assert.equal(db.prepare("SELECT status FROM model_invocations WHERE id='invocation-1'").get()!.status,'completed');
+  const result=await trial.provider.run({...job(),attemptNumber:2});if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
+  assert.ok(result.result.proposal);assert.equal(trial.requests.length,2);assert.equal(initializations,2);
+  assert.deepEqual(result.result.admission?.generationScope?.senseIds,['effect','size']);
+});

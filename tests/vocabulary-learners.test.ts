@@ -31,6 +31,7 @@ beforeEach(() => {
     ALTER TABLE lexical_words ADD COLUMN meaning TEXT NOT NULL DEFAULT 'character';`);
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0039_vocabulary_content.sql', import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0062_vocabulary_sense_coverage.sql', import.meta.url),'utf8'));
+  sql.exec(fs.readFileSync(new URL('../server/db/migrations/0064_vocabulary_default_useful_senses.sql', import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0041_vocabulary_learner_state.sql', import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0046_vocabulary_pure_cue_guards.sql', import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0047_vocabulary_dismissal.sql', import.meta.url),'utf8'));

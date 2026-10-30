@@ -1,4 +1,4 @@
-import { resolveVocabularySenseCoverage,writeVocabularyWordSenseCoverage,writeVocabularyCaseSenseCoverage } from '../server/db/vocabulary-sense-coverage.ts';
+import { writeVocabularyDefaultUsefulSenses,resolveVocabularySenseCoverage,writeVocabularyWordSenseCoverage,writeVocabularyCaseSenseCoverage } from '../server/db/vocabulary-sense-coverage.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { DatabaseSync, backup } from 'node:sqlite';
@@ -40,6 +40,7 @@ beforeEach(() => {
     INSERT INTO learners VALUES ('alice',NULL),('bob',NULL); INSERT INTO lexical_words VALUES ('a'),('b'),('new');`);
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0039_vocabulary_content.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0062_vocabulary_sense_coverage.sql',import.meta.url),'utf8'));
+  sql.exec(fs.readFileSync(new URL('../server/db/migrations/0064_vocabulary_default_useful_senses.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0041_vocabulary_learner_state.sql',import.meta.url),'utf8').split('-- Do not use the words view')[0]!);
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0047_vocabulary_dismissal.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0052_vocabulary_automatic_promotion_pause.sql',import.meta.url),'utf8'));
@@ -111,7 +112,7 @@ function ingest(inputs: Input[]) {
   const completion = close(inputs); const ids = ingestVocabularySessionEvidence('alice',completion.completionId,completion.report,closedAt);
   return { completion,ids,cases: ids.map(id => getVocabularyReflectionCase(id)) };
 }
-function op(strategy: VocabularyProposalOperation['strategy']='update_existing',source='one',next='one'): VocabularyProposalOperation {
+function op(strategy: 'create'|'update_existing'|'replace'|'retire'='update_existing',source='one',next='one'): VocabularyProposalOperation {
   return { operationKey: 'repair',scope: { kind: 'shared' },rationale: 'Improve this exact cue',content: draft(next),
     ...(strategy === 'create' ? { strategy } : { strategy,sourceContentId: source,expectedVersion: 1 }) };
 }
@@ -126,7 +127,7 @@ function historicalDictionaryBaselineJob(migrate=true) {
     words:[{wordId:'a',relation:'target'}],answers:[{wordId:'a',acceptedForms:['字']}]},actor);
   for(const senseId of ['character','script'])createVocabularySense({senseId,wordId:'a',description:{label:senseId}},actor);
   establishVocabularySenseCatalog('a',getVocabularySenseCatalog('a').version,actor);
-  writeVocabularyWordSenseCoverage('a',0,[],actor);
+  writeVocabularyDefaultUsefulSenses('a',0,['character','script'],actor);
   ingest([present(id),response(id)]);
   const work=claimVocabularyReflectionJob({kind:'exercise_improvement',now:judgedAt})!;
   if(migrate)migrateDictionaryBaselines();
@@ -1070,8 +1071,9 @@ test('reviewed retirement dry-runs without effects, preserves relationships and 
 test('retirement enforces general production and ownership; late failure rolls back retirement and review atomically',()=>{
   const create=(operations:VocabularyProposalOperation[])=>createVocabularyProposal({operations,rationale:'Review removal'},'editor');
   assert.throws(()=>create([{...op('retire','teach'),content:draft('teach','new','teaching')}]),/general production/);
-  createVocabularyContent({...draft('recognize'),skill:'recognition'},actor);
-  assert.throws(()=>create([{...op('retire','recognize'),content:{...draft('recognize'),skill:'recognition'}}]),/general production/);
+  const recognition=draft('recognize');if(recognition.kind!=='exercise')assert.fail('Exercise fixture required');
+  createVocabularyContent({...recognition,skill:'recognition'},actor);
+  assert.throws(()=>create([{...op('retire','recognize'),content:{...recognition,skill:'recognition'}}]),/general production/);
   const privateSource=createVocabularyContent({...draft('private-drop'),accessScope:'private',ownerLearnerId:'alice'},actor);
   assert.throws(()=>create([{...op('retire','private-drop'),content:draft('private-drop')}]),/ownership/);
   const privateProposal=create([{...op('retire','private-drop'),scope:{kind:'learner',learnerId:'alice'},content:{...privateSource}}]);
@@ -1081,4 +1083,33 @@ test('retirement enforces general production and ownership; late failure rolls b
   assert.throws(()=>applyVocabularyProposal(failed.proposalId,1,approved,'failed-retire','editor'),/UNIQUE/);
   assert.equal(getVocabularyContentForMaintenance('one')!.availability,'active');assert.equal(getVocabularyContentForMaintenance('one')!.version,1);
   assert.equal(sql.prepare('SELECT count(*) n FROM proposal_applications WHERE proposal_id=?').get(failed.proposalId)!.n,0);
+});
+
+
+test('unknown useful selection remains an actionable attention case and can reassess after correction',()=>{
+  sql.exec('ALTER TABLE vocabulary_reflection_jobs ADD COLUMN model_choice TEXT');
+  const sense=createVocabularySense({wordId:'a',description:{label:'character',notes:[]}},actor);
+  ingest([present('one'),response('one')]);const work=claimVocabularyReflectionJob({kind:'exercise_improvement',now:judgedAt})!;
+  recordVocabularyImprovementResult(work.jobId,work.leaseToken,{diagnosis:'Choose useful senses',proposal:null,admission:{outcome:'needs_coverage',rationale:'Selection is unknown',wordId:'a',sourceContentId:'one',sourceContentVersion:1,catalogVersion:getVocabularySenseCatalog('a').version,senseIds:[],sourceMapping:{senseId:null,establishedAt:null}}},judgedAt);
+  assert.equal(getVocabularyReflectionCase(work.caseId).status,'open');
+  writeVocabularyCaseSenseCoverage(work.caseId,0,[sense.senseId],actor);
+  const next=requestVocabularyReassessment(work.caseId,'editor','openai:gpt-6-sol-high',1);
+  assert.notEqual(next.caseId,work.caseId);assert.deepEqual(resolveVocabularySenseCoverage('a',next.caseId).includedSenseIds,[sense.senseId]);
+  assert.deepEqual(getVocabularyReflectionCase(work.caseId).evidence,work.evidence.evidence);
+});
+
+
+
+for(const route of ['reassessment','proposal opinion','case opinion'] as const)for(const selection of ['set','none','inherit'] as const)test(`child coverage inherits ${selection} via ${route}`,()=>{
+  sql.exec('ALTER TABLE vocabulary_reflection_jobs ADD COLUMN model_choice TEXT');
+  const sense=createVocabularySense({wordId:'a',description:'written character'},actor);
+  ingest([present('one'),response('one')]);
+  const work=claimVocabularyReflectionJob({kind:'exercise_improvement',now:judgedAt})!;
+  writeVocabularyCaseSenseCoverage(work.caseId,0,selection==='inherit'?null:selection==='none'?[]:[sense.senseId],actor);
+  const result=recordVocabularyImprovementResult(work.jobId,work.leaseToken,{diagnosis:'Review',proposal:route==='proposal opinion'?{operations:[op()],rationale:'Repair'}:null},judgedAt);
+  let childId:string;
+  if(route==='reassessment')childId=requestVocabularyReassessment(work.caseId,'editor','openai:gpt-6-sol-high',1).caseId;
+  else if(route==='proposal opinion'){const opinion=requestVocabularySecondOpinion(result.proposalId!,1,'editor');childId=(sql.prepare('SELECT case_id FROM vocabulary_reflection_jobs WHERE job_id=?').get(opinion.jobId) as {case_id:string}).case_id;}
+  else {requestVocabularyCaseSecondOpinion(work.caseId,'editor','Try another view');childId=(sql.prepare('SELECT case_id FROM vocabulary_reflection_jobs WHERE case_id!=? AND second_opinion_json IS NOT NULL').get(work.caseId) as {case_id:string}).case_id;}
+  assert.deepEqual(resolveVocabularySenseCoverage('a',childId).review?.includedSenseIds,selection==='inherit'?null:selection==='none'?[]:[sense.senseId]);
 });

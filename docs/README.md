@@ -99,7 +99,8 @@ hosted operations, and contributor development clearly separated.
   [release candidates and ephemeral rehearsal](ops/hosted-release-candidate.md),
   [observability](ops/hosted-observability.md),
   [diagnostics](ops/error-diagnostics.md), and
-  [schema migrations](ops/schema-migrations.md).
+  [schema migrations](ops/schema-migrations.md), and
+  [default useful sense initialization](ops/default-useful-selection.md).
 - Operator interface: [operator panel guide](operator-panel.md), with the
   [API reference](api.md#operator-view) describing its HTTP contracts.
 - Content correction: [Content improvement workflow](operator-panel.md#content-improvement-workflow)

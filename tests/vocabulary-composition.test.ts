@@ -28,7 +28,7 @@ beforeEach(()=>{
     CREATE TABLE teaching_completions(learner_id TEXT,source_kind TEXT,completed_at TEXT);
     INSERT INTO learners VALUES('alice'),('bob');
   `);
-  for(const file of ['0062_vocabulary_sense_coverage.sql','0039_vocabulary_content.sql','0041_vocabulary_learner_state.sql','0047_vocabulary_dismissal.sql','0052_vocabulary_automatic_promotion_pause.sql'])db.exec(fs.readFileSync(new URL(`../server/db/migrations/${file}`,import.meta.url),'utf8'));
+  for(const file of ['0062_vocabulary_sense_coverage.sql','0064_vocabulary_default_useful_senses.sql','0039_vocabulary_content.sql','0041_vocabulary_learner_state.sql','0047_vocabulary_dismissal.sql','0052_vocabulary_automatic_promotion_pause.sql'])db.exec(fs.readFileSync(new URL(`../server/db/migrations/${file}`,import.meta.url),'utf8'));
   ready=new Set();requested=[];
 });
 afterEach(()=>db.close());
@@ -262,4 +262,16 @@ test('excluded mapped targeted senses no longer defeat shared pure-cue productio
   writeVocabularyWordSenseCoverage('covered',0,['covered-sense'],{kind:'operator',id:'test'});
   assert.equal(isVocabularyProductionProxied('covered'),true);
   assert.deepEqual(compose().reviewSelections,[]);
+}));
+
+test('new unselected senses do not defeat an existing pure-cue proxy',()=>owner(()=>{
+  reviewWord('covered',96);
+  coverageExercise('pure-covered','covered',{pure:true});
+  createVocabularySense({senseId:'initial-sense',wordId:'covered',description:'initial use'},{kind:'operator',id:'test'});
+  writeVocabularyWordSenseCoverage('covered',0,[],{kind:'operator',id:'test'});
+  createVocabularySense({senseId:'later-sense',wordId:'covered',description:'later use'},{kind:'operator',id:'test'});
+  coverageExercise('later-targeted','covered');
+  mapVocabularyContentSense({contentId:'later-targeted',wordId:'covered',expectedContentVersion:1,
+    expectedMapping:{senseId:null,establishedAt:null},senseId:'later-sense'},{kind:'operator',id:'test'});
+  assert.equal(isVocabularyProductionProxied('covered'),true);
 }));

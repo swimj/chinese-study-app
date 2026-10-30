@@ -40,6 +40,10 @@ belong there and in task instructions, not in this frontier.
   teaching completion commits at closure. The implementation guide describes
   reserve sizing and preparation compatibility; historical learner state and
   established sense identities survive source refresh.
+  Canonical sense inventory and default-useful selection are distinct; unknown
+  selection initializes asynchronously from teaching imports or an ID-preserving
+  selector. Model-empty findings need operator review; explicit canonical/document
+  scopes remain usable independently.
 - **Reflection:** private learner lessons and internal content proposals run
   independently. Operators approve content applications. Backend judgment can
   compensate scheduling without learner approval or content publication.

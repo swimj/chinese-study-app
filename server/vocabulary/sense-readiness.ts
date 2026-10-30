@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { getVocabularyWordSenseCoverage,writeVocabularyDefaultUsefulSenses } from '../db/vocabulary-sense-coverage.ts';
 import { recordPreparationAttempt,linkPreparationInvocation,completePreparationAttempt,failPreparationAttempt } from './preparation-retry.ts';
 import { randomUUID } from 'node:crypto';
 import type { VocabularySense, VocabularySenseCatalog } from '../../src/domain/vocabulary-content.ts';
@@ -19,14 +21,14 @@ export const VOCABULARY_SENSE_SERVICE = 'vocabulary-sense-readiness';
 export const VOCABULARY_SENSE_MODEL = 'gpt-5.6-luna';
 const actor = { kind: 'service' as const, id: VOCABULARY_SENSE_SERVICE };
 const timeoutMs = 180_000;
-const prompt = `Establish a useful Mandarin word sense inventory for vocabulary learning. The lexical word is identified by hanzi and pinyin. Separate distinct common meanings/uses; do not split near-paraphrases of the same use, and do not put distinct senses into a gloss laundry list. Each sense needs a concise English label and notes clarifying intended meaning and natural usage. Use dictionary glosses as evidence, not as a mandatory inventory. Cover common and practically useful senses, without speculative rare meanings. Return 1 to 16 senses. This is sense establishment only: do not generate exercises, teaching material, learner judgments, or replacements for existing content.`;
+const prompt = readFileSync(new URL('./reflection-prompts/sense-inventory.md',import.meta.url),'utf8');
 const schema: JsonSchema = { type: 'object', additionalProperties: false, required: ['senses'], properties: {
   senses: { type: 'array', minItems: 1, maxItems: 16, items: { type: 'object', additionalProperties: false,
-    required: ['label','notes'], properties: { label: { type: 'string' },
+    required: ['label','notes','defaultUseful'], properties: { label: { type: 'string' },defaultUseful:{type:'boolean'},
       notes: { type: 'array', maxItems: 8, items: { type: 'string' } } } } },
 } };
 export type VocabularySenseLexicalWord = NonNullable<ReturnType<typeof getSharedIntroductionLexicalWord>>;
-type Inventory = { senses: Array<{ label: string; notes: string[] }> };
+type Inventory = { senses: Array<{ label: string; notes: string[];defaultUseful:boolean }> };
 export type VocabularySenseProvider = {
   isConfigured(): boolean;
   generate(word: VocabularySenseLexicalWord, options: {
@@ -37,6 +39,7 @@ export type VocabularySenseReadiness = {
   catalog: VocabularySenseCatalog; senses: VocabularySense[]; source: 'existing' | 'bootstrap' | 'generated';
 };
 export class VocabularySenseReadinessError extends Error {}
+export class VocabularySenseSelectionRequired extends VocabularySenseReadinessError {}
 /** The caller must durably defer its dependent job; this is not a failed reflection invocation. */
 export class VocabularySenseReadinessPending extends VocabularySenseReadinessError {
   constructor(readonly retryAt:string) { super('Sense readiness is running or waiting for automatic retry'); }
@@ -52,11 +55,11 @@ export function createVocabularySenseProvider(options: { environment?: NodeJS.Pr
     async generate(word, context) {
       if (!environment.OPENAI_API_KEY?.trim()) throw new VocabularySenseReadinessError('Sense provider is not configured');
       const result = await adapter.run({ model: VOCABULARY_SENSE_MODEL, reasoningEffort: 'high', systemPrompt: prompt,
-        userPrompt: JSON.stringify({ word }), outputSchemaName: 'vocabulary_sense_inventory_v1', outputSchema: schema,
+        userPrompt: JSON.stringify({ word }), outputSchemaName: 'vocabulary_sense_inventory_v2', outputSchema: schema,
         maxOutputTokens: 8000, temperature: null, timeoutMs, cachePrompt: true,
         invocationActor: { kind: 'service', serviceId: VOCABULARY_SENSE_SERVICE },
         provenance: { workflowId: context.workflowId, attemptNumber: context.attemptNumber, stepName: 'sense_inventory',
-          promptName: 'vocabulary-sense-inventory', promptVersion: '1', schemaVersion: '1', inputProjectionVersion: 'lexical-word-v1' } },
+          promptName: 'vocabulary-sense-inventory', promptVersion: '2', schemaVersion: '2', inputProjectionVersion: 'lexical-word-v1' } },
       { apiKey: environment.OPENAI_API_KEY.trim(), baseUrl: environment.OPENAI_BASE_URL?.trim() || null });
       context.onInvocation(result.invocationId);
       try {
@@ -93,60 +96,13 @@ function existing(wordId: string): VocabularySenseReadiness | null {
   return { catalog,senses,source: 'existing' };
 }
 function publishGuard(options: { canPublish?: () => boolean }): void {
-  if (options.canPublish && !options.canPublish()) throw new VocabularySenseReadinessError('Sense readiness publication is currently blocked');
+  if (options.canPublish && !options.canPublish()) throw new VocabularySenseReadinessPending(new Date(Date.now()+30_000).toISOString());
 }
-function bootstrapInventory(source: WordContentDocument): Inventory | null {
-  try { return validateInventory({ senses: source.uses.map(use => ({ label: use.label, notes: [...use.notes] })) }); }
-  catch { return null; }
-}
-
-function reusableBootstrap(wordId: string): WordContentDocument | null {
-  const bootstrap = getSharedWordIntroductionContent(wordId);
-  if (!bootstrap || !bootstrapInventory(bootstrap)) return null;
-  const importedIds = new Set((getDb().prepare('SELECT sense_id FROM legacy_sense_imports WHERE source_content_id=?')
-    .all(bootstrap.id) as {sense_id:string}[]).map(row=>row.sense_id));
-  if (getVocabularySenses(wordId).some(sense=>!importedIds.has(sense.senseId))) {
-    throw new VocabularySenseReadinessError('Partial sense inventory requires operator review');
-  }
-  return bootstrap;
-}
-
-/** Same admission predicate as synchronous source reuse, without publishing a catalog. */
-export function canEnsureVocabularySensesFromBootstrap(wordId: string): boolean {
-  return existing(wordId)!==null || reusableBootstrap(wordId)!==null;
-}
-
-/** Synchronous shared-source reuse for preparation. Never makes a model call. */
-export function ensureVocabularySensesFromBootstrap(wordId: string, options: { canPublish?: () => boolean } = {}): VocabularySenseReadiness | null {
-  const ready = existing(wordId); if (ready) return ready;
-  publishGuard(options);
-  const catalog = getVocabularySenseCatalog(wordId);
-  const bootstrap = reusableBootstrap(wordId);
-  if (bootstrap) {
-    return atomic(() => {
-      publishGuard(options);
-      if (getVocabularySenseCatalog(wordId).version !== catalog.version || getSharedWordIntroductionContent(wordId)?.id !== bootstrap.id) {
-        throw new VocabularySenseReadinessError('Sense readiness source changed');
-      }
-      const importedIds = new Set((getDb().prepare('SELECT sense_id FROM legacy_sense_imports WHERE source_content_id=?')
-        .all(bootstrap.id) as {sense_id:string}[]).map(row=>row.sense_id));
-      if (getVocabularySenses(wordId).some(sense=>!importedIds.has(sense.senseId))) {
-        throw new VocabularySenseReadinessError('Partial sense inventory requires operator review');
-      }
-      for (const use of bootstrap.uses) {
-        const imported = getDb().prepare('SELECT sense_id FROM legacy_sense_imports WHERE source_content_id=? AND source_use_id=?').get(bootstrap.id,use.id);
-        if (imported) continue;
-        const sense = createVocabularySense({ wordId, description: { label: use.label, notes: [...use.notes],
-          examples: use.exampleIds.map(id => ({ ...bootstrap.examples.find(example => example.id === id)! })),
-          source: { contentId: bootstrap.id, useId: use.id } } },actor);
-        getDb().prepare('INSERT INTO legacy_sense_imports(source_content_id,source_use_id,sense_id,imported_sense_version) VALUES (?,?,?,?)')
-          .run(bootstrap.id,use.id,sense.senseId,sense.version);
-      }
-      establishVocabularySenseCatalog(wordId,getVocabularySenseCatalog(wordId).version,actor);
-      return { ...existing(wordId)!,source: 'bootstrap' };
-    });
-  }
-  return null;
+/** Existing inventories remain readable without assuming that their useful selection is known.
+ * Legacy rich documents do not establish a new canonical inventory during ordinary runtime. */
+export function canEnsureVocabularySensesFromBootstrap(wordId:string):boolean { return ensureVocabularySensesFromBootstrap(wordId)!==null; }
+export function ensureVocabularySensesFromBootstrap(wordId:string,_options:{canPublish?:()=>boolean}={}):VocabularySenseReadiness|null {
+  const ready=existing(wordId);if(!ready&&getVocabularySenses(wordId).length)throw new VocabularySenseReadinessError('Partial sense inventory requires operator review');return ready;
 }
 
 /** Establish an inventory on demand; never creates teaching or exercise repertoires.
@@ -162,7 +118,7 @@ export async function ensureVocabularySenses(wordId: string, options: {
   const catalog = getVocabularySenseCatalog(wordId);
   const bootstrap = getSharedWordIntroductionContent(wordId);
   // An unestablished partial inventory is an editorial question, not permission to duplicate it.
-  if (getVocabularySenses(wordId).length) throw new VocabularySenseReadinessError('Partial sense inventory requires operator review');
+  if (bootstrap || getVocabularySenses(wordId).length) throw new VocabularySenseReadinessError('Partial sense inventory requires operator review');
   const provider = options.provider ?? createVocabularySenseProvider();
   if (!provider.isConfigured()) throw new VocabularySenseReadinessError('Sense provider is not configured');
   const now = options.now ?? (() => new Date().toISOString());
@@ -197,19 +153,26 @@ export async function ensureVocabularySenses(wordId: string, options: {
     let inventory: Inventory;
     try { inventory = validateInventory(output); }
     catch (error) { invalidateServiceInvocation(invocationId,VOCABULARY_SENSE_SERVICE); throw error; }
-    retryable=false;
+    // Publication races are retried under a new lease; valid output is not invalidated.
+    const {recordEmptyUsefulRecommendation}=await import('./default-useful-selection.ts');
     return atomic(() => {
       publishGuard(options);
       if (!db.prepare("SELECT 1 FROM vocabulary_sense_readiness WHERE word_id=? AND status='running' AND active_token=? AND expires_at>?").get(wordId,token,now())) {
         throw new VocabularySenseReadinessError('Sense readiness lease changed');
       }
       if (getVocabularySenseCatalog(wordId).version !== catalog.version || JSON.stringify(getSharedIntroductionLexicalWord(wordId)) !== JSON.stringify(word)
-        || getSharedWordIntroductionContent(wordId)?.id !== bootstrap?.id) throw new VocabularySenseReadinessError('Sense readiness source changed');
-      for (const description of inventory.senses) {
+        || getSharedWordIntroductionContent(wordId) !== null) throw new VocabularySenseReadinessError('Sense readiness source changed');
+      const selected:string[]=[];
+      for (const {defaultUseful,...description} of inventory.senses) {
         const sense = createVocabularySense({ wordId,description: { ...description,source: { kind: 'sense_inventory' } } },actor);
+        if(defaultUseful)selected.push(sense.senseId);
         if (invocationId != null) linkVocabularyInvocationSense({ invocationId,senseId: sense.senseId,senseVersion: sense.version,role: 'output' },actor);
       }
       establishVocabularySenseCatalog(wordId,getVocabularySenseCatalog(wordId).version,actor);
+      const currentCoverage=getVocabularyWordSenseCoverage(wordId);
+      const recommendation={invocationId:invocationId??null,workflowId:options.workflowId,attemptNumber:attempt,senseIds:selected};
+      emitBackendEvent({name:'vocabulary.default_selection.recommended',entityKind:'word',entityId:wordId,actorKind:'service',actorId:VOCABULARY_SENSE_SERVICE,data:{...recommendation,applied:currentCoverage.defaultUsefulSenseIds===null&&selected.length>0}});
+      if(currentCoverage.defaultUsefulSenseIds===null){if(selected.length)writeVocabularyDefaultUsefulSenses(wordId,currentCoverage.version,selected,{...actor,reason:recommendation});else recordEmptyUsefulRecommendation(wordId,options.workflowId,invocationId,'inventory');}
       db.prepare("UPDATE vocabulary_sense_readiness SET status='ready',active_token=NULL,expires_at=NULL,last_error=NULL,updated_at=? WHERE word_id=? AND active_token=?")
         .run(now(),wordId,token);
       completePreparationAttempt(token,now());
@@ -218,6 +181,10 @@ export async function ensureVocabularySenses(wordId: string, options: {
   } catch (error) {
     const retryAt=failPreparationAttempt('sense',wordId,token,now(),'generation_failed',{retryable});
     if(retryAt)throw new VocabularySenseReadinessPending(retryAt);
+    if(error instanceof VocabularySenseReadinessPending)throw error;
+    const latest=existing(wordId);if(latest)return latest;
+    const state=db.prepare('SELECT status,expires_at,next_attempt_at FROM vocabulary_sense_readiness WHERE word_id=?').get(wordId) as {status:string;expires_at:string|null;next_attempt_at:string}|undefined;
+    if(state&&(state.status==='running'||state.status==='queued'))throw new VocabularySenseReadinessPending(state.expires_at??state.next_attempt_at);
     if (error instanceof VocabularySenseReadinessError) throw error;
     throw new VocabularySenseReadinessError('Sense inventory generation failed; inspect retained invocation');
   }

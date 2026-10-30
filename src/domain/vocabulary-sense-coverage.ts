@@ -6,3 +6,5 @@ export type VocabularyEffectiveSenseCoverage = {
   includedSenseIds:string[]; selectionEstablished:boolean; fingerprint:string;
 };
 export type VocabularySenseCoverageWorkspace = VocabularyEffectiveSenseCoverage & {senses:VocabularySense[];productionExerciseCounts?:Record<string,number>};
+
+export type VocabularyDefaultSelectionFinding={status:'needs_operator';reason:string;invocationId:string|null;recommendedSenseIds:string[]};

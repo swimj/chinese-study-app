@@ -1,4 +1,4 @@
-import { getVocabularyWordSenseCoverage } from '../db/vocabulary-sense-coverage.ts';
+import { resolveVocabularySenseCoverage } from '../db/vocabulary-sense-coverage.ts';
 import type { VocabularyJson } from '../../src/domain/vocabulary-content.ts';
 import { getDb } from '../db/connection.ts';
 import { requireLearnerId } from '../db/learner-context.ts';
@@ -24,10 +24,10 @@ export function isVocabularyProductionProxied(wordId: string): boolean {
       AND c.exercise_type NOT IN ('pure_cue', 'contrast')
       AND COALESCE(json_extract(c.assessment_json, '$.responseMode'), '') != 'word_choice'
       AND c.access_scope = 'shared' AND c.availability = 'active'`).all(wordId) as { body_json: string;sense_id:string|null }[] : [];
-  const excluded=new Set(getVocabularyWordSenseCoverage(wordId).excludedSenseIds);
+  const coverage=resolveVocabularySenseCoverage(wordId),included=new Set(coverage.includedSenseIds),excluded=new Set(coverage.word.excludedSenseIds);
   return isProductionProxied({
     hasSharedPureCue: Boolean(pure),
-    hasSharedTargetedCue: targeted.some((row) => (row.sense_id===null||!excluded.has(row.sense_id))&&!isVocabularyDefinitionFallback({ body: JSON.parse(row.body_json) as VocabularyJson })),
+    hasSharedTargetedCue: targeted.some((row) => (row.sense_id===null||(coverage.selectionEstablished?included.has(row.sense_id):!excluded.has(row.sense_id)))&&!isVocabularyDefinitionFallback({ body: JSON.parse(row.body_json) as VocabularyJson })),
   });
 }
 

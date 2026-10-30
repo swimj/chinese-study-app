@@ -57,6 +57,7 @@ export const durableOwnershipManifest: readonly DurableOwnershipEntry[] = [
   operationalEntry('vocabulary_practice_preparation', 'internal vocabulary processing and provenance; no shared access to private source evidence'),
   operationalEntry('vocabulary_second_opinions', 'operator-requested advisory reviews bound to proposal revisions and reflection jobs'),
   operationalEntry('vocabulary_preparation_attempts', 'retained preparation attempts, retry cycles and invocation provenance; operator access only'),
+  operationalEntry('vocabulary_default_selection_readiness', 'shared default-useful initialization, leases, recommendations and invocation provenance'),
   operationalEntry('vocabulary_sense_readiness', 'shared sense inventory preparation, leases and invocation provenance'),
   operationalEntry('vocabulary_improvement_stages', 'private source evidence and immutable admission and generation results; operator access only'),
   sharedEntry('vocabulary_word_catalogs', 'word sense inventory', 'establish from explicit bootstrap uses; unresolved stays explicit'),

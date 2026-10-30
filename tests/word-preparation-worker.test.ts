@@ -1,3 +1,5 @@
+import { createVocabularySense,establishVocabularySenseCatalog,getVocabularySenseCatalog } from '../server/db/vocabulary-content.ts';
+import { writeVocabularyDefaultUsefulSenses } from '../server/db/vocabulary-sense-coverage.ts';
 import { requireLearnerId, runWithLearnerId } from '../server/db/learner-context.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -18,6 +20,7 @@ import { getSharedWordIntroductionPreparation, claimSharedWordIntroductionStage 
 import { quarantineSharedContentPublication } from '../server/db/shared-content.ts';
 import { createSharedWordPreparation } from '../server/word-content/shared-preparation.ts';
 import { createWordPreparationWorker } from '../server/word-content/preparation-worker.ts';
+import { retryPreparationWithReadiness } from '../server/word-content/retry-preparation.ts';
 import type { WordIntroductionProvider } from '../server/word-content/provider.ts';
 
 const enqueueWordPreparation: typeof enqueue = (...args) => runWithLearnerId('test-learner', () => enqueue(...args));
@@ -41,14 +44,17 @@ function word(id: string) {
     (id, hanzi, traditional, pinyin, meaning, meanings_json, examples_json, priority, created_at)
     VALUES (?, ?, ?, ?, 'meaning', '["meaning"]', '[]', 10, ?)`)
     .run(id, value.hanzi, value.traditional, value.pinyin, new Date().toISOString());
+  const ids=fixture.content.uses.map(use=>createVocabularySense({senseId:`${id}:${use.id}`,wordId:id,description:{label:use.label,notes:[...use.notes]}},{kind:'service',id:'fixture'}).senseId);
+  establishVocabularySenseCatalog(id,getVocabularySenseCatalog(id).version,{kind:'service',id:'fixture'});
+  writeVocabularyDefaultUsefulSenses(id,0,ids,{kind:'service',id:'fixture'});
 
 }
 function fake(overrides: Partial<WordIntroductionProvider> = {}): WordIntroductionProvider {
   return {
     model: 'test', isConfigured: () => true,
-    generateBootstrap: async () => ({ uses: fixture.content.uses, examples: fixture.content.examples }),
+    generateBootstrap: async input => ({ uses: fixture.content.uses.map((use,index)=>({...use,id:input.canonicalSenses![index]!.senseId})), examples: fixture.content.examples }),
     generationKey: async (stage) => `test-${stage}-v1`,
-    generateTeaching: async () => ({ beats: fixture.teaching.beats }),
+    generateTeaching: async content => ({ beats: fixture.teaching.beats.map(beat=>({...beat,parts:beat.parts.map(part=>part.kind==='use_note'?{...part,useId:content.uses[fixture.content.uses.findIndex(use=>use.id===part.useId)]!.id}:part)})) }),
     generatePractice: async () => ({ rehearsals: [{ id: 'rehearsal', stimulus: { kind: 'direct_text', text: 'Recall the expression.' } }] }),
     generateReview: async () => ({ exercises: [{ id: 'cue', cueType: 'circumstance',
       stimulus: { kind: 'direct_text', text: 'Tell a colleague formally that their request has been recorded.' }, supplement: null }] }),
@@ -135,6 +141,27 @@ test('three validation failures pause shared stage; prior bootstrap survives; op
   await retry.stop();
 });
 
+test('operator retry composes with readiness orchestration and preserves caller rollback', () => {
+  word('nested-retry');
+  const work = enqueueWordPreparation('nested-retry', 'bootstrap');
+  sqlite.prepare("UPDATE word_preparation_work SET status='paused',attempt_count=3,last_error='Invalid output' WHERE work_id=?").run(work.workId);
+  sqlite.exec('BEGIN IMMEDIATE');
+  try {
+    runWithLearnerId('test-learner', () => retryPreparationWithReadiness(work.workId, 'operator-nested'));
+    assert.equal(sqlite.isTransaction, true);
+    assert.equal(getWordPreparationWork('nested-retry', 'bootstrap')!.status, 'queued');
+    assert.equal(sqlite.prepare('SELECT count(*) n FROM word_preparation_retry_events WHERE work_id=?').get(work.workId)!.n, 1);
+  } finally {
+    sqlite.exec('ROLLBACK');
+  }
+  assert.equal(getWordPreparationWork('nested-retry', 'bootstrap')!.status, 'paused');
+  assert.equal(sqlite.prepare('SELECT count(*) n FROM word_preparation_retry_events WHERE work_id=?').get(work.workId)!.n, 0);
+  runWithLearnerId('test-learner', () => retryPreparationWithReadiness(work.workId, 'operator-nested'));
+  assert.equal(getWordPreparationWork('nested-retry', 'bootstrap')!.status, 'queued');
+  assert.throws(() => runWithLearnerId('test-learner', () => retryPreparationWithReadiness(work.workId, 'operator-nested')), /Only paused preparation/);
+  assert.equal(sqlite.isTransaction, false);
+});
+
 test('expired attempt recovery preserves budget across restart and fences stale completion', async () => {
   word('crash');
   let clock = Date.now();
@@ -210,21 +237,21 @@ test('withdrawn published content pauses once without spending or starving later
 test('concurrent steps share a bounded batch and stop drains the active provider call', async () => {
   word('shutdown');
   let finish!: (value: unknown) => void;
-  let calls = 0;
+  let calls = 0;let entered!:()=>void;const started=new Promise<void>(resolve=>{entered=resolve;});
   const pendingOutput = new Promise<unknown>((resolve) => { finish = resolve; });
   const worker = createWordPreparationWorker({ controls, providerWork, concurrency: 1, provider: fake({
-    generateBootstrap: async () => { calls++; return pendingOutput; },
+    generateBootstrap: async () => { calls++;entered(); return pendingOutput; },
   }) });
   enqueueWordPreparation('shutdown', 'bootstrap');
   const first = worker.step();
   const second = worker.step();
   assert.equal(first, second);
-  assert.equal(calls, 1);
+  await started;assert.equal(calls, 1);
   let stopped = false;
   const stopping = worker.stop().then(() => { stopped = true; });
   await Promise.resolve();
   assert.equal(stopped, false);
-  finish({ uses: fixture.content.uses, examples: fixture.content.examples });
+  finish({ uses: fixture.content.uses.map(use=>({...use,id:`shutdown:${use.id}`})), examples: fixture.content.examples });
   await stopping;
   assert.equal(getWordPreparationWork('shutdown', 'bootstrap')?.status, 'ready');
   assert.equal(calls, 1);

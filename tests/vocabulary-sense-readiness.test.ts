@@ -1,3 +1,4 @@
+import { getVocabularyWordSenseCoverage,resolveVocabularySenseCoverage } from '../server/db/vocabulary-sense-coverage.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -19,7 +20,7 @@ import type { WordContentDocument } from '../src/domain/word-content/types.ts';
 let root: string; let baseline: string; let db: DatabaseSync;
 let oldEnv: Record<string,string|undefined>;
 const actor = { kind: 'operator' as const,id: 'operator' };
-const inventory = { senses: [{ label: 'enlarge',notes: ['Make an image or object larger.'] },{ label: 'amplify',notes: ['Increase a signal or sound.'] }] };
+const inventory = { senses: [{ label: 'enlarge',defaultUseful:true,notes: ['Make an image or object larger.'] },{ label: 'amplify',defaultUseful:false,notes: ['Increase a signal or sound.'] }] };
 const fixture: WordContentDocument = { schemaVersion: 1,id: 'bootstrap',word: { wordId: 'w1',hanzi: '放大',traditional: null,pinyin: 'fàng dà' },
   uses: [{ id: 'u1',label: 'enlarge',notes: ['Make something larger.'],exampleIds: ['e1'] }],
   examples: [{ id: 'e1',text: '放大照片',translation: 'Enlarge the photo.',pronunciation: null }] };
@@ -46,18 +47,13 @@ function bootstrap(): void {
   db.prepare("INSERT INTO word_introduction_preparation(word_id,content_id) VALUES ('w1','bootstrap')").run();
 }
 
-test('prospective bootstrap readiness shares admission predicates without establishing senses or writing on errors',()=>{
-  assert.equal(canEnsureVocabularySensesFromBootstrap('w1'),false);
-  bootstrap();
+test('legacy bootstrap alone is not canonical readiness and ordinary inspection does not write',()=>{
+  assert.equal(canEnsureVocabularySensesFromBootstrap('w1'),false);bootstrap();
   const before=db.prepare('SELECT total_changes() AS n').get()!.n;
-  assert.equal(canEnsureVocabularySensesFromBootstrap('w1'),true);
+  assert.equal(canEnsureVocabularySensesFromBootstrap('w1'),false);
+  assert.equal(ensureVocabularySensesFromBootstrap('w1'),null);
   assert.equal(getVocabularySenses('w1').length,0);
-  assert.equal(getVocabularySenseCatalog('w1').establishedAt,null);
   assert.equal(db.prepare('SELECT total_changes() AS n').get()!.n,before);
-  createVocabularySense({wordId:'w1',description:{label:'Partial unrelated inventory'}},actor);
-  const partial=db.prepare('SELECT total_changes() AS n').get()!.n;
-  assert.throws(()=>canEnsureVocabularySensesFromBootstrap('w1'),/Partial sense inventory/);
-  assert.equal(db.prepare('SELECT total_changes() AS n').get()!.n,partial);
 });
 function provider(run: () => unknown | Promise<unknown> = () => inventory): VocabularySenseProvider {
   return { isConfigured: () => true,generate: async () => run() };
@@ -76,17 +72,10 @@ test('established inventory is reused without provider calls or bootstrap reads,
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM vocabulary_sense_readiness').get()!.n,0);
 });
 
-test('bootstrap-only establishment creates stable senses without any teaching or exercise generation',() => {
-  assert.equal(ensureVocabularySensesFromBootstrap('w1'),null);
-  bootstrap();
-  const first = ensureVocabularySensesFromBootstrap('w1')!;
-  assert.equal(first.source,'bootstrap');assert.equal(first.senses.length,1);assert.ok(first.catalog.establishedAt);
-  assert.deepEqual(first.senses[0]!.description,{ label:'enlarge',notes:['Make something larger.'],examples:[fixture.examples[0]],source:{contentId:'bootstrap',useId:'u1'} });
-  assert.equal(db.prepare('SELECT sense_id FROM legacy_sense_imports').get()!.sense_id,first.senses[0]!.senseId);
-  assert.equal(ensureVocabularySensesFromBootstrap('w1')!.source,'existing');
-  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM content_items').get()!.n,0);
-  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM word_teaching_packages').get()!.n,0);
-  assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
+test('legacy rich source without canonical inventory requires explicit operator cutover',async()=>{
+  bootstrap();await assert.rejects(ensureVocabularySenses('w1',{workflowId:'legacy',provider:provider(()=>assert.fail('No regeneration'))}),/operator review/);
+  assert.equal(getVocabularySenses('w1').length,0);
+  assert.equal(getVocabularyWordSenseCoverage('w1').defaultUsefulSenseIds,null);
 });
 
 test('lexical-only generation records exact invocation provenance and sense outputs, then reuses them',async () => {
@@ -98,10 +87,18 @@ test('lexical-only generation records exact invocation provenance and sense outp
   const instance = createVocabularySenseProvider({ environment:{ OPENAI_API_KEY:'test-key' },adapter });
   const result = await ensureVocabularySenses('w1',{ workflowId:'workflow',attemptNumber:2,provider:instance });
   assert.equal(result.source,'generated');assert.equal(result.senses.length,2);
+  assert.deepEqual(resolveVocabularySenseCoverage('w1').includedSenseIds,[result.senses.find(sense=>(sense.description as {label:string}).label==='enlarge')!.senseId]);
+  assert.equal(getVocabularySenses('w1').length,2);
   await ensureVocabularySenses('w1',{ workflowId:'next',provider:instance });assert.equal(calls,1);
   const invocation = db.prepare('SELECT * FROM model_invocations WHERE actor_id=?').get(VOCABULARY_SENSE_SERVICE)!;
   assert.equal(invocation.model,'gpt-5.6-luna');assert.equal(invocation.workflow_id,'workflow');assert.equal(invocation.attempt_number,1);
-  assert.equal(invocation.prompt_name,'vocabulary-sense-inventory');assert.equal(invocation.prompt_version,'1');
+  assert.equal(invocation.prompt_name,'vocabulary-sense-inventory');assert.equal(invocation.prompt_version,'2');
+  const selectionHistory=db.prepare("SELECT snapshot_json FROM vocabulary_sense_coverage_history WHERE scope='word' AND subject_id='w1'").get()!;
+  const selectionEvent=db.prepare("SELECT data_json FROM backend_events WHERE name='vocabulary.sense_coverage.updated' AND entity_id='w1'").get()!;
+  const reason={invocationId:invocation.id,workflowId:'workflow',attemptNumber:1,senseIds:resolveVocabularySenseCoverage('w1').includedSenseIds};
+  assert.deepEqual(JSON.parse(String(selectionHistory.snapshot_json)).reason,reason);
+  assert.deepEqual(JSON.parse(String(selectionEvent.data_json)).reason,reason);
+  assert.throws(()=>db.exec("UPDATE vocabulary_sense_coverage_history SET snapshot_json='{}'"),/immutable/);
   assert.ok(invocation.prompt_template);assert.ok(invocation.request_snapshot_json);assert.ok(invocation.response_snapshot_json);
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM invocation_sense_links WHERE role='output'").get()!.n,2);
   assert.equal(sent.reasoning_effort,'high');
@@ -116,24 +113,22 @@ test('concurrent calls do not duplicate generation; catalog changes fence the pe
   const running=ensureVocabularySenses('w1',{workflowId:'one',provider:instance});
   await assert.rejects(ensureVocabularySenses('w1',{workflowId:'two',provider:instance}),/running or waiting/);
   createVocabularySense({wordId:'w1',description:{label:'operator sense'}},actor);
-  resolve(inventory);await assert.rejects(running,/source changed/);
+  resolve(inventory);await assert.rejects(running,VocabularySenseReadinessPending);
   assert.equal(calls,1);assert.equal(getVocabularySenses('w1').length,1);
-  assert.equal(db.prepare('SELECT status FROM vocabulary_sense_readiness').get()!.status,'failed');
+  assert.equal(db.prepare('SELECT status FROM vocabulary_sense_readiness').get()!.status,'queued');
 });
 
-test('maintenance blocks both beginning and publication; failed calls require explicit retry',async () => {
-  let allowed=false;let calls=0;
+test('maintenance defers beginning and publication without requiring operator retry',async () => {
+  let allowed=false;let calls=0;let now='2026-10-29T00:00:00.000Z';
   const instance=provider(()=>{calls++;allowed=false;return inventory;});
-  await assert.rejects(ensureVocabularySenses('w1',{workflowId:'blocked',provider:instance,canPublish:()=>allowed}),/blocked/);
+  await assert.rejects(ensureVocabularySenses('w1',{workflowId:'blocked',provider:instance,canPublish:()=>allowed,now:()=>now}),VocabularySenseReadinessPending);
   assert.equal(calls,0);assert.equal(db.prepare('SELECT COUNT(*) AS n FROM vocabulary_sense_readiness').get()!.n,0);
   allowed=true;
-  await assert.rejects(ensureVocabularySenses('w1',{workflowId:'running',provider:instance,canPublish:()=>allowed}),/blocked/);
+  await assert.rejects(ensureVocabularySenses('w1',{workflowId:'running',provider:instance,canPublish:()=>allowed,now:()=>now}),VocabularySenseReadinessPending);
   assert.equal(getVocabularySenses('w1').length,0);
-  await assert.rejects(ensureVocabularySenses('w1',{workflowId:'again',provider:instance}),/requires explicit/);assert.equal(calls,1);
-  assert.throws(()=>retryVocabularySenseReadiness('w1',''),/Operator/);
-  assert.throws(()=>retryVocabularySenseReadiness('w1','non-operator'),/Operator/);
-  retryVocabularySenseReadiness('w1','operator');
-  const ready=await ensureVocabularySenses('w1',{workflowId:'retried',provider:provider()});assert.equal(ready.senses.length,2);
+  assert.equal(db.prepare('SELECT status FROM vocabulary_sense_readiness').get()!.status,'queued');
+  now='2026-10-29T00:00:30.000Z';allowed=true;
+  const ready=await ensureVocabularySenses('w1',{workflowId:'retried',provider:provider(),now:()=>now});assert.equal(ready.senses.length,2);
 });
 
 test('interrupted expired sense work is fenced and scheduled after backoff',async () => {

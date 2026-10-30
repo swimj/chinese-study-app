@@ -98,3 +98,12 @@ export function setVocabularyCaseSenseCoverage(caseId:string,expectedVersion:num
 export function setVocabularyDefaultUsefulSenses(wordId:string,expectedVersion:number,includedSenseIds:string[],actorId:string):VocabularySenseCoverageWorkspace {
   authorize(actorId);writeVocabularyDefaultUsefulSenses(wordId,expectedVersion,includedSenseIds,{kind:'operator',id:actorId});return getVocabularySenseCoverageWorkspace('word',wordId,actorId);
 }
+
+/** Read-only operator finding; any explicit policy, including [], resolves unknown-selection attention. */
+export function getVocabularyDefaultSelectionFinding(wordId:string):import('../../src/domain/vocabulary-sense-coverage.ts').VocabularyDefaultSelectionFinding|null {
+  if(getVocabularyWordSenseCoverage(wordId).defaultUsefulSenseIds!==null)return null;
+  const row=getDb().prepare("SELECT last_error,invocation_id,recommendation_json FROM vocabulary_default_selection_readiness WHERE word_id=? AND status='failed'").get(wordId) as {last_error:string|null;invocation_id:string|null;recommendation_json:string|null}|undefined;
+  if(!row)return null;
+  const recommendation=row.recommendation_json?JSON.parse(row.recommendation_json) as {senseIds?:unknown}:null;
+  return {status:'needs_operator',reason:row.last_error==='default_selection_failed'?'Default useful selection could not finish after its bounded retries. Select useful senses or retry initialization.':row.last_error??'Default useful selection needs operator review.',invocationId:row.invocation_id,recommendedSenseIds:Array.isArray(recommendation?.senseIds)?recommendation.senseIds.filter((id:unknown):id is string=>typeof id==='string'):[]};
+}

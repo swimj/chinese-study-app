@@ -1,4 +1,4 @@
-import { inheritVocabularyCaseSenseCoverage } from './vocabulary-sense-coverage.ts';
+import { getVocabularyDefaultSelectionFinding,inheritVocabularyCaseSenseCoverage } from './vocabulary-sense-coverage.ts';
 import { failPreparationAttempt } from '../vocabulary/preparation-retry.ts';
 import { randomUUID } from 'node:crypto';
 import { vocabularyAuthoredPromptBody } from '../../src/domain/vocabulary-production-coverage.ts';
@@ -11,7 +11,6 @@ import { config, getDb } from './connection.ts';
 import { requireLearnerId } from './learner-context.ts';
 import { isOperatorSubject, parseOperatorAllowlist } from '../operator-access.ts';
 import { isVocabularyProviderEncounter } from '../vocabulary/reflection-eligibility.ts';
-import { retryVocabularySenseReadiness } from '../vocabulary/sense-readiness.ts';
 import { createVocabularyContent, updateVocabularyContent, replaceVocabularyContent, getVocabularySenseCatalog,
   getVocabularyContentForMaintenance, getVocabularySenses, emitBackendEvent } from './vocabulary-content.ts';
 import { isOfferedReflectionModelChoice, type ReflectionModelChoice } from '../reflection/model-arms.ts';
@@ -222,16 +221,23 @@ export function failVocabularySenseMappingCall(jobId: string, token: string, at 
 export function recoverVocabularySenseDependencies(at=timestamp()):number {
   timestamp(at);
   return atomic(()=>{
-    const rows=getDb().prepare(`SELECT j.job_id,s.word_id,s.status,s.active_token FROM vocabulary_reflection_jobs j
-      JOIN vocabulary_sense_readiness s ON s.workflow_id=j.job_id WHERE j.status='running'
-      AND (s.status IN ('queued','failed') OR (s.status='running' AND s.expires_at<=?))`).all(at) as Array<{job_id:string;word_id:string;status:string;active_token:string|null}>;
-    for(const row of rows){
-      if(row.status==='running')failPreparationAttempt('sense',row.word_id,row.active_token!,at,'interrupted_unknown_outcome',{interrupted:true});
-      const sense=getDb().prepare('SELECT status,next_attempt_at FROM vocabulary_sense_readiness WHERE word_id=?').get(row.word_id) as {status:string;next_attempt_at:string};
-      getDb().prepare(`UPDATE vocabulary_reflection_jobs SET status=?,next_attempt_at=?,last_error=?,lease_token=NULL,lease_expires_at=NULL WHERE job_id=? AND status='running'`)
-        .run(sense.status==='queued'?'queued':'failed',sense.next_attempt_at,sense.status==='queued'?null:'sense_preparation_failed',row.job_id);
+    let recovered=0;
+    for(const kind of ['sense','selection'] as const){
+      const table=kind==='sense'?'vocabulary_sense_readiness':'vocabulary_default_selection_readiness';
+      // A completed/failed prerequisite is not proof that a live content call depends on it.
+      // Recover its caller only after the caller lease expires; a running prerequisite's
+      // own expired lease remains sufficient evidence of an interrupted dependency.
+      const rows=getDb().prepare(`SELECT j.job_id,s.word_id,s.status,s.active_token FROM vocabulary_reflection_jobs j JOIN ${table} s ON s.workflow_id=j.job_id WHERE j.status='running' AND ((s.status='running' AND s.expires_at<=?) OR (j.lease_expires_at<=? AND s.status IN ('queued','failed')))`).all(at,at) as {job_id:string;word_id:string;status:string;active_token:string|null}[];
+      for(const row of rows){
+        if(row.status==='running')failPreparationAttempt(kind,row.word_id,row.active_token!,at,'interrupted_unknown_outcome',{interrupted:true});
+        const state=getDb().prepare(`SELECT status,next_attempt_at FROM ${table} WHERE word_id=?`).get(row.word_id) as {status:string;next_attempt_at:string};
+        // Selector attention is finalized as needs_coverage by the normal admission path.
+        const resume=state.status==='queued'||kind==='selection';
+        getDb().prepare("UPDATE vocabulary_reflection_jobs SET status=?,next_attempt_at=?,last_error=?,lease_token=NULL,lease_expires_at=NULL WHERE job_id=? AND status='running'").run(resume?'queued':'failed',state.next_attempt_at,resume?null:'sense_preparation_failed',row.job_id);
+      }
+      recovered+=rows.length;
     }
-    return rows.length;
+    return recovered;
   });
 }
 /** Sense preparation owns its retry budget. Defer the dependent reflection without a provider failure. */
@@ -721,12 +727,7 @@ function retryJob(jobId: string, learnerId: string | null, at: string): void {
 export function retryOwnVocabularyFeedback(jobId: string, at = timestamp()): void { atomic(() => retryJob(jobId,requireLearnerId(),at)); }
 export function retryVocabularyReflectionJob(jobId: string, actorId: string, at = timestamp()): void {
   operator(actorId); atomic(() => {
-    const work=job(jobId),evidence=getVocabularyReflectionCase(work.case_id);
     retryJob(jobId,null,at);
-    if(work.kind==='exercise_improvement'&&evidence.wordId!==null) {
-      const readiness=getDb().prepare('SELECT status FROM vocabulary_sense_readiness WHERE word_id=?').get(evidence.wordId) as {status:string}|undefined;
-      if(readiness?.status==='failed')retryVocabularySenseReadiness(evidence.wordId,actorId);
-    }
   });
 }
 export function listVocabularyProposals(actorId: string, status?: VocabularyContentProposal['status']): VocabularyContentProposal[] {
@@ -751,7 +752,7 @@ function reassessmentSource(evidence: VocabularyReflectionCase): ReassessmentSou
 }
 function reassessmentSummary(evidence: VocabularyReflectionCase): ReassessmentSummary {
   const db=getDb();
-  const source=evidence.kind==='exercise_improvement'&&evidence.status==='completed'
+  const source=evidence.kind==='exercise_improvement'&&(evidence.status==='completed'||(evidence.status==='open'&&caseAdmission(evidence.caseId)?.outcome==='needs_coverage'))
     ? db.prepare("SELECT job_id FROM vocabulary_reflection_jobs WHERE case_id=? AND status='succeeded' AND second_opinion_json IS NULL").get(evidence.caseId) as {job_id:string}|undefined : undefined;
   if(!source) return {eligible:false,source:null,latest:null};
   const latest=db.prepare(`SELECT case_id AS caseId,job_id AS jobId,status,last_error AS error FROM vocabulary_reflection_jobs
@@ -760,7 +761,7 @@ function reassessmentSummary(evidence: VocabularyReflectionCase): ReassessmentSu
   return {eligible:current!==null,source:current,latest:latest??null};
 }
 export function listVocabularyProposalReviewBatch(actorId: string, input: { limit?: number; startProposalId?: string; maxBytes?: number } = {}): {
-  items: { proposal: VocabularyContentProposal; case: VocabularyReflectionCase | null; reassessment: ReassessmentSummary | null;
+  items: {defaultSelectionFinding:import('../../src/domain/vocabulary-sense-coverage.ts').VocabularyDefaultSelectionFinding|null; proposal: VocabularyContentProposal; case: VocabularyReflectionCase | null; reassessment: ReassessmentSummary | null;
     previews: { operationKey: string; source: VocabularyContent | null; result: VocabularyProposalOperation['content'] }[] }[];
   nextProposalId: string | null;
 } {
@@ -784,7 +785,7 @@ export function listVocabularyProposalReviewBatch(actorId: string, input: { limi
       : scan.all(status,limit+1)) as {proposal_id:string;updated_at:string}[])
     .sort((a,b)=>a.updated_at===b.updated_at ? (a.proposal_id < b.proposal_id ? -1 : a.proposal_id > b.proposal_id ? 1 : 0)
       : (a.updated_at > b.updated_at ? -1 : 1)).slice(0,limit+1);
-  const items: { proposal: VocabularyContentProposal; case: VocabularyReflectionCase | null; reassessment: ReassessmentSummary | null;
+  const items: {defaultSelectionFinding:import('../../src/domain/vocabulary-sense-coverage.ts').VocabularyDefaultSelectionFinding|null; proposal: VocabularyContentProposal; case: VocabularyReflectionCase | null; reassessment: ReassessmentSummary | null;
     previews: { operationKey: string; source: VocabularyContent | null; result: VocabularyProposalOperation['content'] }[] }[] = [];
   const cases = new Map<string,VocabularyReflectionCase>();
   const reassessments = new Map<string,ReassessmentSummary>();
@@ -806,7 +807,7 @@ export function listVocabularyProposalReviewBatch(actorId: string, input: { limi
         ? {...operation.content,body:vocabularyAuthoredPromptBody(source.body,operation.content.body)} : operation.content };
     });
     if (caseValue && !reassessments.has(caseValue.caseId)) reassessments.set(caseValue.caseId,reassessmentSummary(caseValue));
-    const item = {proposal:value,case:caseValue,reassessment:caseValue?reassessments.get(caseValue.caseId)!:null,previews};
+    const item = {defaultSelectionFinding:caseValue?.wordId?getVocabularyDefaultSelectionFinding(caseValue.wordId):null,proposal:value,case:caseValue,reassessment:caseValue?reassessments.get(caseValue.caseId)!:null,previews};
     const nextProposalId = rows[index+1]?.proposal_id ?? null;
     const bytes = Buffer.byteLength(JSON.stringify({items:[...items,item],nextProposalId}),'utf8');
     if (items.length > 0 && bytes > maxBytes) return {items,nextProposalId:row.proposal_id};
@@ -814,7 +815,7 @@ export function listVocabularyProposalReviewBatch(actorId: string, input: { limi
   }
   return {items,nextProposalId:rows[limit]?.proposal_id ?? null};
 }
-export function getVocabularyCaseWorkspace(caseId: string, actorId: string): { case: VocabularyReflectionCase;
+export function getVocabularyCaseWorkspace(caseId: string, actorId: string): {defaultSelectionFinding:import('../../src/domain/vocabulary-sense-coverage.ts').VocabularyDefaultSelectionFinding|null; case: VocabularyReflectionCase;
   jobs: { jobId: string;kind:string;status:string;attemptNumber:number;error:string|null;secondOpinion: boolean;result: VocabularySecondOpinion['result'] }[]; proposals: VocabularyContentProposal[];sources:VocabularyContent[];
   reassessmentSource: ReassessmentSource | null;
   reassessment: {caseId:string;jobId:string;status:string;error:string|null} | null;
@@ -840,7 +841,7 @@ export function getVocabularyCaseWorkspace(caseId: string, actorId: string): { c
     WHERE source.case_id=? ORDER BY CASE WHEN child.status IN ('queued','running') THEN 0 ELSE 1 END,child.created_at DESC,child.job_id DESC LIMIT 1`).get(caseId) as {caseId:string;jobId:string;status:string;error:string|null}|undefined;
   const proposals=(getDb().prepare('SELECT proposal_id FROM content_proposals WHERE case_id=? ORDER BY updated_at DESC,proposal_id')
     .all(caseId) as {proposal_id:string}[]).map(row=>withProposalResolution(proposal(row.proposal_id)));
-  return {case:evidence,jobs,reassessmentSource:reassessmentSummary(evidence).source,reassessment:reassessment??null,proposals,sources,...(improvement ? {diagnosis:improvement.diagnosis} : {}),...(admission ? {admission} : {}),...(improvement?.pureCueReferral?{pureCueReferral:improvement.pureCueReferral}:{}),...(improvement?.pureCuePromotion?{pureCuePromotion:improvement.pureCuePromotion}:{})};
+  return {defaultSelectionFinding:evidence.wordId?getVocabularyDefaultSelectionFinding(evidence.wordId):null,case:evidence,jobs,reassessmentSource:reassessmentSummary(evidence).source,reassessment:reassessment??null,proposals,sources,...(improvement ? {diagnosis:improvement.diagnosis} : {}),...(admission ? {admission} : {}),...(improvement?.pureCueReferral?{pureCueReferral:improvement.pureCueReferral}:{}),...(improvement?.pureCuePromotion?{pureCuePromotion:improvement.pureCuePromotion}:{})};
 }
 export function listVocabularyFailedDispatches(actorId:string):{dispatchId:string;learnerId:string;sessionId:string;error:string}[] {
   operator(actorId);
