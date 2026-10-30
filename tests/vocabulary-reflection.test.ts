@@ -36,7 +36,7 @@ beforeEach(() => {
   sql = new DatabaseSync(':memory:'); setDb(sql);
   sql.exec(`PRAGMA foreign_keys=ON; CREATE TABLE learners(learner_id TEXT PRIMARY KEY,disabled_at TEXT);
     CREATE TABLE learner_word_reserve_requests(learner_id TEXT PRIMARY KEY, requested_at TEXT NOT NULL);
-    CREATE TABLE lexical_words(id TEXT PRIMARY KEY); CREATE TABLE model_invocations(id TEXT PRIMARY KEY);
+    CREATE TABLE lexical_words(id TEXT PRIMARY KEY); CREATE TABLE model_invocations(id TEXT PRIMARY KEY,step_name TEXT,provider TEXT,model TEXT,resolved_model TEXT);
     INSERT INTO learners VALUES ('alice',NULL),('bob',NULL); INSERT INTO lexical_words VALUES ('a'),('b'),('new');`);
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0039_vocabulary_content.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0062_vocabulary_sense_coverage.sql',import.meta.url),'utf8'));
@@ -839,7 +839,7 @@ test('reassessment queues an independent model-selected job and prevents concurr
   const proposal=createVocabularyProposal({caseId,operations:[op()],rationale:'Review'},'editor');
   const batch=()=>listVocabularyProposalReviewBatch('editor',{startProposalId:proposal.proposalId}).items[0].reassessment;
   const before=sql.prepare('SELECT total_changes() AS count').get()!.count;
-  assert.deepEqual(batch(),{eligible:true,source:{contentId:initial.evidence.evidence[0]!.snapshot.contentId,assessedVersion:1,currentVersion:1},latest:null});
+  assert.deepEqual(batch(),{eligible:true,unavailableReason:null,source:{contentId:initial.evidence.evidence[0]!.snapshot.contentId,assessedVersion:1,currentVersion:1},latest:null});
   assert.equal(sql.prepare('SELECT total_changes() AS count').get()!.count,before);
   const request=requestVocabularyReassessment(caseId,'editor','openai:gpt-6-sol-high',1);
   assert.equal(batch()?.latest?.jobId,request.jobId);
@@ -1133,7 +1133,10 @@ test('operator-authored create-only proposals report actual assessment evidence 
  const proposed=createVocabularyProposal({operations:[op('create','one','additional')],bases:[{contentId:'one',expectedVersion:1}],rationale:'Source assessment evidence'},'editor');
  assert.equal(listVocabularyProposalReviewBatch('editor',{startProposalId:proposed.proposalId}).items[0]!.coverageChanged,false);
  updateVocabularyContent('one',1,draft('one'),actor);
- assert.equal(listVocabularyProposalReviewBatch('editor',{startProposalId:proposed.proposalId}).items[0]!.coverageChanged,true);
+ const snapshot=listVocabularyProposalReviewBatch('editor',{startProposalId:proposed.proposalId}).items[0]!;
+ assert.equal(snapshot.coverageChanged,true);
+ assert.equal(snapshot.previews[0]!.source,null);
+ assert.deepEqual(snapshot.currentSources.map(source=>[source.contentId,source.version]),[['one',2]]);
  assert.throws(()=>approveVocabularyProposal(proposed.proposalId,1,'editor'),/content base changed/);
 });
 
@@ -1189,4 +1192,54 @@ test('identity selection refuses a changed mapping even when the authored source
   mapVocabularyContentSense({contentId:'one',wordId:'a',expectedContentVersion:1,expectedCatalogVersion:getVocabularySenseCatalog('a').version,
     expectedMapping:{senseId:null,establishedAt:null},senseId:'other',establishedAt:judgedAt},actor);
   assert.throws(()=>requestVocabularyPureCueResolution(work.caseId,'editor','openai:gpt-6-sol-high',1,{'他':'a','别':'b'}),/source mapping changed/);
+});
+
+test('review metadata attributes finalized stage models, excludes abandoned attempts, and identifies reassessment',()=>{
+  sql.exec('ALTER TABLE vocabulary_reflection_jobs ADD COLUMN model_choice TEXT');
+  ingest([present('one'),response('one')]);
+  const work=claimVocabularyReflectionJob({kind:'exercise_improvement',now:judgedAt})!;
+  for(const [id,stage,provider,model] of [['mapping','sense_mapping','openai','mapping-model'],['local','single_improvement','zai','local-model'],['promotion','pure_cue_promotion','openai','promotion-model'],['abandoned','single_improvement','openai','unused-model']])
+    sql.prepare('INSERT INTO model_invocations(id,step_name,provider,model) VALUES (?,?,?,?)').run(id!,stage!,provider!,model!);
+  const admission={outcome:'single_sense' as const,rationale:'One intended use',wordId:'a',sourceContentId:'one',sourceContentVersion:1,catalogVersion:getVocabularySenseCatalog('a').version,senseIds:[],sourceMapping:{senseId:null,establishedAt:null},invocationId:'mapping'};
+  const result=recordVocabularyImprovementResult(work.jobId,work.leaseToken,{diagnosis:'Repair',invocationId:'local',admission,pureCuePromotion:{outcome:'reject',rationale:'No shared task',candidateWordIds:['a'],existingContentId:null,invocationId:'promotion'},proposal:{operations:[op()],rationale:'Repair'}},judgedAt);
+  const metadata=listVocabularyProposalReviewBatch('editor',{startProposalId:result.proposalId!}).items[0]!.assessment!;
+  assert.equal(metadata.origin,'automatic');assert.deepEqual(metadata.models.map(model=>model.model),['mapping-model','local-model','promotion-model']);assert.equal(metadata.admission?.rationale,'One intended use');
+  assert.deepEqual(getVocabularyCaseWorkspace(work.caseId,'editor').assessment,metadata);
+  const next=requestVocabularyReassessment(work.caseId,'editor','openai:gpt-6-sol-high',1);
+  const child=claimVocabularyReflectionJob({kind:'exercise_improvement',now:new Date(Date.now()+1000).toISOString()})!;
+  recordVocabularyImprovementResult(child.jobId,child.leaseToken,{diagnosis:'No change',proposal:null},new Date(Date.now()+1100).toISOString());
+  assert.equal(getVocabularyCaseWorkspace(next.caseId,'editor').assessment.origin,'reassessment');
+});
+
+test('stale review remains stale after inspection and a separate current-source correction retains its own fence',()=>{
+  ingest([present('one'),response('one')]);const work=claimVocabularyReflectionJob({kind:'exercise_improvement',now:judgedAt})!;
+  const result=recordVocabularyImprovementResult(work.jobId,work.leaseToken,{diagnosis:'Repair',proposal:{operations:[op()],rationale:'Repair'}},judgedAt);
+  updateVocabularyContent('one',1,{...draft('one'),body:{prompt:'Current wording'}},actor);
+  const stale=listVocabularyProposalReviewBatch('editor',{startProposalId:result.proposalId!}).items[0]!;
+  assert.equal(stale.coverageChanged,true);assert.equal(stale.previews[0]!.source!.version,2);assert.equal(stale.proposal.bases[0]!.expectedVersion,1);
+  const correction=createVocabularyProposal({caseId:work.caseId,operations:[{...op(),expectedVersion:2}],rationale:'Explicit correction'},'editor');
+  assert.equal(correction.authorKind,'operator');assert.equal(correction.caseId,work.caseId);assert.equal(getVocabularyProposal(result.proposalId!,'editor').bases[0]!.expectedVersion,1);
+  updateVocabularyContent('one',2,{...draft('one'),body:{prompt:'Concurrent wording'}},actor);
+  assert.throws(()=>approveVocabularyProposal(correction.proposalId,1,'editor'),/base changed/);
+  assert.equal(getVocabularyCaseWorkspace(work.caseId,'editor').reassessmentUnavailableReason,null);
+});
+
+test('same exercise served at different versions retains separate improvement units',()=>{
+  const newer=present('one','a','newer');
+  if(newer.kind!=='presentation')throw new Error('Expected presentation');
+  const current=updateVocabularyContent('one',1,{...draft('one'),body:{prompt:'Version two'}},actor);
+  newer.payload.snapshot={...newer.payload.snapshot,contentVersion:2,body:{prompt:'Version two',material:current.body}};
+  const {cases}=ingest([present('one','a','older'),response('older'),newer,response('newer')]);
+  const units=cases.filter(item=>item.kind==='exercise_improvement');
+  assert.equal(units.length,2);assert.deepEqual(units.map(item=>item.evidence.map(encounter=>encounter.snapshot.contentVersion)).sort(),[[1],[2]]);
+});
+
+test('review eligibility reports unavailable reasons and never invents model provenance',()=>{
+  ingest([present('one'),response('one')]);
+  const work=claimVocabularyReflectionJob({kind:'exercise_improvement',now:judgedAt})!;
+  const pending=getVocabularyCaseWorkspace(work.caseId,'editor');
+  assert.equal(pending.assessment.origin,'unavailable');assert.equal(pending.assessment.models.length,0);assert.match(pending.reassessmentUnavailableReason!,/successful assessment/);
+  recordVocabularyImprovementResult(work.jobId,work.leaseToken,{diagnosis:'No change',proposal:null},judgedAt);
+  updateVocabularyContent('one',1,{...draft('one'),availability:'retired'},actor);
+  assert.match(getVocabularyCaseWorkspace(work.caseId,'editor').reassessmentUnavailableReason!,/not an active/);
 });

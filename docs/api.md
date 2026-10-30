@@ -115,11 +115,24 @@ must confirm a version change shown by the review surface before submission. A
 source version that changed since the read is a conflict; the request does not
 silently assess the newer version. Case and review reads expose the historical
 assessed version and current version for this decision. Reassessment performs
-fresh mapping where applicable and fresh assessment without the original learner
-responses or reactions. It preserves the original case as historical context and
-does not resolve or apply its proposal or judgment. A succeeded assessment with
-an open `needs_coverage` finding may also be reassessed after coverage correction;
-an unfinished job is not eligible.
+fresh mapping where applicable and fresh assessment with the retained learner
+responses, reactions and served snapshots, including across reassessment chains.
+The input identifies whether those encounters came from the current source version.
+It does not resolve or apply the original proposal or judgment. Succeeded
+assessments with open attention findings can also be reassessed; unfinished jobs
+are not eligible. Review reads include an explicit unavailability reason.
+
+`POST /api/operator/vocabulary/cases/:id/pure-cue-resolutions` accepts `modelChoice`,
+`expectedContentVersion` and `selections` of `{form, wordId}`. For a pending lexical
+identity finding, it validates exact dictionary choices and queues a promotion-only
+continuation with the retained referral and evidence. Source, mapping, catalog or
+identity drift is a conflict. The returned `caseId` and `jobId` identify an
+assessment, not approval or application. Case reads supply `pureCueIdentityOptions`.
+
+Review batches include `currentSources` for all proposal evidence bases, including
+create-only proposals. Batch and workspace `assessment` metadata attributes the
+finalized contributing invocations and sense mapping, separately from proposal
+authorship.
 
 Proposal detail/list and case reads include `resolvedAt`: receipt application time
 for applied proposals, latest closure event time for dismissed proposals or closed
