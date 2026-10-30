@@ -108,3 +108,69 @@ data changes use versioned migrations and the
 must satisfy the [release runbook](../docs/ops/hosted-beta-deployment.md).
 Migration and release evidence are specific to an operation, not implied by
 these contracts or by passing implementation tests.
+
+### Canonical senses and useful selection
+
+A word has one canonical inventory of supported meanings and uses, including
+peripheral uses where linguistically real. Its persisted **default useful** sense
+selection is a separate editorial decision shared by teaching bootstrap and
+reflection. A review may explicitly override the selection, including selecting a
+peripheral use; exercise improvement trusts that selected use and assesses the
+exercise rather than deciding its popularity again.
+
+An absent/null shared selection is unknown; it means neither every sense nor no
+senses. An explicitly saved empty selection selects none. Fresh inventory
+establishment makes both inventory and default selection in one shared call.
+Teaching bootstrap captures selected canonical IDs and versions, then enriches
+exactly those identities with examples. Later policy edits do not retarget that
+invocation or invalidate its immutable output.
+
+Mapping examines the full active inventory and may identify an excluded sense.
+It improves a single mapped sense independently of serving defaults. A repertoire
+invocation captures explicit review sense IDs or seeds them from shared defaults;
+those IDs and their source are immutable invocation inputs. An explicit empty
+scope requests no generation and leaves the source unchanged. No serving-policy
+change implies exercise retirement.
+
+Reassessment copies an explicit review selection; inherited defaults remain
+inherited for the new invocation. Later review/default changes do not invalidate
+in-flight reflection, completed content generation, or content edit approval.
+Actual source/version, mapping and canonical sense changes still fence content
+work. Serving independently filters mapped exercises without rewriting them.
+
+A review selection applies to that review and future reassessments; null inherits
+the shared defaults when a new invocation captures its scope. Unknown selection
+requires operator coverage review before repertoire generation; a mapped single
+sense supplies its own explicit scope. General preparation uses its immutable
+source document's full mapped canonical scope. Established useful policy with
+an intersecting source sense creates new automatic demand; existing queued work
+continues across policy edits. Teaching and review components likewise retain
+their document scope and package coherence. Canonical source, version and catalog
+changes still fence new publication.
+
+Recognition, existing prepared teaching packages, unmapped fallback exercises and
+historical encounters preserve existing serving behavior. Existing legacy rich
+documents/inventories are not remapped or assigned defaults by ordinary runtime;
+valid existing source mappings remain usable without inventing a useful selection.
+A separately authorized legacy default-selection cutover is pending.
+
+Content proposals can retire unsuitable general production exercises without
+replacement. Operators can separately exclude existing senses from review
+coverage or shared word defaults. Exact-version approval preserves learner
+history and linguistic identity. Policy operations retain coverage version and
+catalog fences; content operations retain source, mapping and catalog fences.
+
+Exercise improvement trusts the mapped sense's necessity, including specialized
+or personalized uses, and judges fidelity of the exact lexical target rather
+than serving popularity. It can propose retiring an individual exercise when no
+faithful repair is apparent; it does not propose sense exclusion. A nonempty
+requested scope whose model returns no faithful exercises can propose retiring
+only the assessed source. This quality decision is distinct from an empty
+requested scope, which performs no generation and proposes no content change.
+Every retirement remains operator-reviewed.
+
+Proposal review groups exercises by readable sense labels and supports reversible
+item selection before saving a new revision. Excluding a replacement retains its
+source; excluding all operations does not imply application, retirement or sense
+policy changes. Structured cue editing preserves the stimulus kind and keeps its
+rendered prompt consistent with its authored fields.

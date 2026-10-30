@@ -31,7 +31,7 @@ test('mapping retry migration preserves populated jobs, defaults to Luna, and ma
         .run(status,status,status,status,at,status==='running'?'lease':null,status==='running'?'2026-10-30T00:00:00.000Z':null,at);
     }
     const before=db.prepare('SELECT * FROM vocabulary_reflection_jobs ORDER BY job_id').all().map(row=>({...row}));
-    assert.deepEqual(migrateDatabase(db),[migrationId]);assertSchemaCurrent(db);
+    assert.deepEqual(migrateDatabase(db),schemaMigrations.slice(index).map(migration=>migration.id));assertSchemaCurrent(db);
     const after=db.prepare('SELECT * FROM vocabulary_reflection_jobs ORDER BY job_id').all();
     assert.deepEqual(after.map(({sense_mapping_availability_failures,...row})=>{
       assert.equal(sense_mapping_availability_failures,0);return row;

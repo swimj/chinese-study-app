@@ -535,3 +535,13 @@ records the bounded in-place wording repair before a guarded update. The
 correction transaction owns application and audit together. See the
 [API map](api.md#operator-content-improvement) for historical read access. Migrations
 `0032` and `0033` require the offline schema migration procedure.
+
+### Vocabulary sense coverage
+
+`server/db/vocabulary-sense-coverage.ts` owns `vocabulary_word_sense_coverage`,
+`vocabulary_case_sense_coverage` and append-only
+`vocabulary_sense_coverage_history` (migration `0062`). Word defaults exclude
+active senses from shared general production. Case selections override that
+coverage for a review; SQL null inherits and `[]` selects none. Versioned writes
+and backend events preserve operator/service provenance without altering sense
+identity, authored content or learner history.

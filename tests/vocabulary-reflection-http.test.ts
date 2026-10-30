@@ -29,6 +29,7 @@ beforeEach(()=>{
     CREATE TABLE lexical_words(id TEXT PRIMARY KEY);CREATE TABLE model_invocations(id TEXT PRIMARY KEY);
     INSERT INTO learners VALUES ('alice',NULL),('bob',NULL);INSERT INTO lexical_words VALUES ('a');`);
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0039_vocabulary_content.sql',import.meta.url),'utf8'));
+  sql.exec(fs.readFileSync(new URL('../server/db/migrations/0062_vocabulary_sense_coverage.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0041_vocabulary_learner_state.sql',import.meta.url),'utf8').split('-- Do not use the words view')[0]!);
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0047_vocabulary_dismissal.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0052_vocabulary_automatic_promotion_pause.sql',import.meta.url),'utf8'));
@@ -434,4 +435,18 @@ test('approval request HTTP admission acknowledges persisted work, enforces auth
   const done=(call('get',`${base}/approval-requests`).body.items as {status:string;application:unknown}[])[0]!;
   assert.equal(done.status,'succeeded');assert.ok(done.application);
   assert.equal(getVocabularyContentForMaintenance('one')!.version,2);
+});
+
+test('coverage endpoints require operator access, validate shape and reject stale versions',()=>{
+  const route='/api/operator/vocabulary/words/:id/sense-coverage',params={id:'a'};
+  process.env.APP_OPERATOR_CLERK_USER_IDS='';
+  assert.equal(call('get',route,{params}).status,403);
+  process.env.APP_OPERATOR_CLERK_USER_IDS='editor';
+  assert.equal(call('get',route,{params,learner:'editor'}).status,200);
+  assert.equal(call('put',route,{params,learner:'editor',body:{expectedVersion:0,excludedSenseIds:[]}}).status,200);
+  assert.equal(call('put',route,{params,learner:'editor',body:{expectedVersion:0,excludedSenseIds:[]}}).status,409);
+  assert.equal(call('put',route,{params,learner:'editor',body:{expectedVersion:1,excludedSenseIds:['foreign']}}).status,400);
+  const review='/api/operator/vocabulary/cases/:id/sense-coverage';
+  const result=call('put',review,{params:{id:caseId},learner:'editor',body:{expectedVersion:0,includedSenseIds:[]}});
+  assert.equal(result.status,200);assert.deepEqual((result.body.review as {includedSenseIds:string[]}).includedSenseIds,[]);
 });

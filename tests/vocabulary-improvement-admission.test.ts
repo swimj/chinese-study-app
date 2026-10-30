@@ -1,3 +1,4 @@
+import { writeVocabularyDefaultUsefulSenses } from '../server/db/vocabulary-sense-coverage.ts';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
@@ -26,7 +27,7 @@ beforeEach(()=>{
     INSERT INTO lexical_words VALUES ('word','放大',NULL,'fang4 da4','enlarge; amplify');
     CREATE TABLE model_invocations(id TEXT PRIMARY KEY,actor_kind TEXT,actor_id TEXT,learner_id TEXT,status TEXT,spend_usd REAL,requesting_learner_id TEXT,timestamp TEXT,invocation_type TEXT);
     CREATE TABLE vocabulary_reflection_jobs(job_id TEXT PRIMARY KEY,model_choice TEXT); INSERT INTO vocabulary_reflection_jobs VALUES ('job',NULL);`);
-  for(const name of ['0039_vocabulary_content','0045_vocabulary_provenance_links','0050_vocabulary_improvement_admission','0051_vocabulary_pure_cue_promotion'])
+  for(const name of ['0062_vocabulary_sense_coverage','0039_vocabulary_content','0045_vocabulary_provenance_links','0050_vocabulary_improvement_admission','0051_vocabulary_pure_cue_promotion'])
     db.exec(readFileSync(new URL(`../server/db/migrations/${name}.sql`,import.meta.url),'utf8'));
   db.exec(readFileSync(new URL('../server/db/migrations/0061_vocabulary_sense_mapping_retries.sql',import.meta.url),'utf8'));
   original=createVocabularyContent({contentId:'original',kind:'exercise',payloadVersion:1,body:{prompt:'请把这张照片____后再打印。',instruction:'Old instruction',reveal:{teachingNote:'Old unrelated teaching'},source:{kind:'old_source'}},accessScope:'shared',availability:'active',originKind:'human',
@@ -34,6 +35,7 @@ beforeEach(()=>{
   createVocabularySense({senseId:'size',wordId:'word',description:{label:'make an image or object larger'}},actor);
   createVocabularySense({senseId:'effect',wordId:'word',description:{label:'amplify an effect or significance'}},actor);
   establishVocabularySenseCatalog('word',getVocabularySenseCatalog('word').version,actor);
+  writeVocabularyDefaultUsefulSenses('word',0,['size','effect'],actor);
 });
 afterEach(()=>db.close());
 function job(kind:VocabularyReflectionJob['kind']='exercise_improvement'):VocabularyReflectionJob {
@@ -500,3 +502,73 @@ test('reassessment rejects a version race before any provider call',async()=>{
   await assert.rejects(()=>again.provider.run({...job(),reassessmentSourceJobId:'old',reassessmentSource:original}),/Reassessment source version changed/);
   assert.equal(again.requests.length,0);
 });
+
+test('mapped canonical sense improves independently of serving exclusions',async()=>{
+  const {writeVocabularyWordSenseCoverage}=await import('../server/db/vocabulary-sense-coverage.ts');
+  writeVocabularyWordSenseCoverage('word',1,['size'],actor);
+  const trial=provider((_request,index)=>index===1?single:repair),result=await trial.provider.run(job());
+  if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
+  assert.equal(result.result.admission?.outcome,'single_sense');assert.ok(result.result.proposal);
+  assert.deepEqual(result.result.admission?.generationScope,{selectionEstablished:true,senseIds:['size'],source:{kind:'mapped_source'}});
+  assert.equal(trial.requests.length,2);
+  assert.equal(JSON.parse(trial.requests[0]!.userPrompt).senses.length,2);
+  for(const request of trial.requests)assert.equal(Object.hasOwn(JSON.parse(request.userPrompt),'coverage'),false);
+  const retained=JSON.parse(String(db.prepare("SELECT input_json FROM vocabulary_improvement_stages WHERE stage='sense_mapping'").get()!.input_json));
+  assert.equal(Object.hasOwn(retained.input,'coverage'),false);
+  assert.equal(retained.normalizationVersion,'canonical-generation-scope-v1');
+});
+for(const during of ['mapping','improvement'] as const)test(`serving-policy change during ${during} does not invalidate mapped-sense work`,async()=>{
+  const {writeVocabularyWordSenseCoverage}=await import('../server/db/vocabulary-sense-coverage.ts');
+  const trial=provider((_request,index)=>{
+    if(index===(during==='mapping'?1:2))writeVocabularyWordSenseCoverage('word',1,['size'],actor);
+    return index===1?single:repair;
+  });
+  const result=await trial.provider.run(job());if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
+  assert.ok(result.result.proposal);assert.equal(trial.requests.length,2);
+  assert.equal(db.prepare('SELECT count(*) n FROM vocabulary_improvement_stages').get()!.n,2);
+  assert.deepEqual(result.result.admission?.generationScope?.senseIds,['size']);
+});
+
+for(const failFirst of [false,true])test(`repertoire scope survives policy changes and retry (first call fails=${failFirst})`,async()=>{
+  const {writeVocabularyWordSenseCoverage}=await import('../server/db/vocabulary-sense-coverage.ts');
+  const trial=provider((_request,index)=>{
+    if(index===1)return laundry;
+    if(index===2){writeVocabularyWordSenseCoverage('word',1,['effect'],actor);if(failFirst)throw new Error('Provider failed');}
+    return repertoire;
+  });
+  if(failFirst)await assert.rejects(()=>trial.provider.run(job()),/Provider failed/);
+  else await trial.provider.run(job());
+  const result=await trial.provider.run({...job(),attemptNumber:2});if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
+  assert.deepEqual(result.result.admission?.generationScope,{selectionEstablished:true,senseIds:['effect','size'],source:{kind:'word_defaults',wordId:'word',capturedVersion:1}});
+  assert.equal(trial.requests.length,failFirst?3:2);
+  for(const request of trial.requests.slice(1))assert.deepEqual(JSON.parse(request.userPrompt).content.uses.map((use:{id:string})=>use.id).sort(),['effect','size']);
+  assert.equal(getVocabularyContentForMaintenance('original')!.availability,'active');
+});
+
+test('explicit empty repertoire invocation is no-action and never retires source',async()=>{
+  const {writeVocabularyWordSenseCoverage}=await import('../server/db/vocabulary-sense-coverage.ts');
+  writeVocabularyWordSenseCoverage('word',1,['size','effect'],actor);
+  const trial=provider(()=>laundry),result=await trial.provider.run(job());if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
+  assert.equal(result.result.admission?.outcome,'no_senses_requested');assert.equal(result.result.proposal,null);
+  assert.deepEqual(result.result.admission?.generationScope?.senseIds,[]);assert.equal(trial.requests.length,1);
+  assert.equal(getVocabularyContentForMaintenance('original')!.availability,'active');
+});
+
+test('explicit review override supplies repertoire invocation independently of shared serving selection',async()=>{
+  const {writeVocabularyCaseSenseCoverage,writeVocabularyWordSenseCoverage}=await import('../server/db/vocabulary-sense-coverage.ts');
+  db.exec("CREATE TABLE reflection_cases(case_id TEXT PRIMARY KEY,word_id TEXT); INSERT INTO reflection_cases VALUES ('case','word');");
+  writeVocabularyWordSenseCoverage('word',1,['effect'],actor);writeVocabularyCaseSenseCoverage('case',0,['effect'],actor);
+  const trial=provider((_request,index)=>index===1?laundry:{exercises:repertoire.exercises.filter(exercise=>exercise.sourceUseId==='effect')});
+  const result=await trial.provider.run(job());if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
+  assert.deepEqual(result.result.admission?.generationScope,{selectionEstablished:true,senseIds:['effect'],source:{kind:'review_override',caseId:'case',capturedVersion:1}});
+  assert.deepEqual(JSON.parse(trial.requests[1]!.userPrompt).content.uses.map((use:{id:string})=>use.id),['effect']);
+});
+
+ test('unknown useful selection is attention rather than explicit no-senses scope',async()=>{
+  db.exec("DELETE FROM vocabulary_word_sense_coverage WHERE word_id='word'");
+  const trial=provider(()=>laundry),result=await trial.provider.run(job());
+  if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
+  assert.equal(trial.requests.length,1);assert.equal(result.result.proposal,null);
+  assert.equal(result.result.admission?.outcome,'needs_coverage');
+  assert.equal(getVocabularyContentForMaintenance('original')!.availability,'active');
+ });

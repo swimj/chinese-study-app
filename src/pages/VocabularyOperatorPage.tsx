@@ -26,7 +26,7 @@ function diagnosisSummary(value:VocabularyJson|undefined):string {
 const proposalTitle=(proposal:VocabularyContentProposal)=>Array.from(new Set(proposal.operations.flatMap(operation=>operation.content.kind==='exercise'?operation.content.answers.map(answer=>answer.acceptedForms[0]).filter(Boolean):[]))).join(' · ')||'Teaching content';
 const kinds={exercise_improvement:'Exercise issues',teaching_review:'Teaching inbox',learner_feedback:'Feedback cases'} as const;
 const labels={create:'Add another item',update_existing:'Update existing item',replace:'Replace with new item'} as const;
-const admissionLabels={single_sense:'Intended sense identified',laundry_list:'Multiple senses: fresh repertoire',unmappable:'Intended sense could not be established',inventory_gap:'Possible gap in the sense inventory'} as const;
+const admissionLabels={needs_coverage:'Useful senses need selection',no_senses_requested:'No senses requested for generation',single_sense:'Intended sense identified',laundry_list:'Multiple senses: fresh repertoire',unmappable:'Intended sense could not be established',inventory_gap:'Possible gap in the sense inventory'} as const;
 const pretty=(value:unknown)=>JSON.stringify(value,null,2);
 const message=(error:unknown)=>error instanceof Error?error.message:'The request could not finish. Refresh and try again.';
 function draftOf(value:VocabularyContentProposal):VocabularyProposalDraft{return {caseId:value.caseId??undefined,operations:value.operations,rationale:value.rationale,bases:value.bases};}

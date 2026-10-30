@@ -212,6 +212,9 @@ export const schemaMigrations: readonly SchemaMigration[] = [{
 }, {
   id: 'app_schema:0061_vocabulary_sense_mapping_retries',
   sql: fs.readFileSync(new URL('./migrations/0061_vocabulary_sense_mapping_retries.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0062_vocabulary_sense_coverage',
+  sql: fs.readFileSync(new URL('./migrations/0062_vocabulary_sense_coverage.sql', import.meta.url), 'utf8'),
 }];
 
 function checksum(value: string): string {

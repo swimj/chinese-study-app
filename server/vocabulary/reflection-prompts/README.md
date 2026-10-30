@@ -189,6 +189,14 @@ bypass this admission path. Recognition and contrast make no provider calls.
 
 ## Local evaluation seams
 
+The caller separates invocation scope from serving policy. A mapped single sense
+is always the scope of local improvement. Repertoire calls receive a captured
+review/default sense list, retained in backend mapping evidence and admission as
+`generationScope`. Mutable serving versions do not enter provider inputs or
+content cache/approval fences. An explicit empty invocation returns no proposal
+and leaves its source active. This interface adaptation preserves the complete
+linguistic briefs; it does not ask the model to reassess serving defaults.
+
 Use `tests/vocabulary-improvement-admission.test.ts` for an isolated SQLite
 fixture and `createVocabularyReflectionProvider({adapter, ensureSenses,
 environment})` to capture exact provider requests. The injected

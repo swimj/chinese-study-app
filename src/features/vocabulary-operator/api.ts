@@ -1,3 +1,4 @@
+import type { VocabularySenseCoverageWorkspace } from '../../domain/vocabulary-sense-coverage';
 import { apiRequest } from '../../services/api';
 import type { VocabularyContent,VocabularyContentDraft } from '../../domain/vocabulary-content';
 import type { VocabularyApprovalRequest, VocabularySecondOpinion, VocabularyContentProposal, VocabularyProposalDraft, VocabularyProposalApplication, VocabularyProposalOperation, VocabularyReflectionCase, VocabularyImprovementAdmission, VocabularyPureCueReferral, VocabularyPureCuePromotion } from '../../domain/vocabulary-reflection';
@@ -20,6 +21,10 @@ const root='/api/operator/vocabulary';
 const id=(value:string)=>encodeURIComponent(value);
 const write=<T>(path:string,body:unknown,method='POST')=>apiRequest<T>(`${root}${path}`,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
 export const vocabularyOperatorApi={
+  wordSenseCoverage:(wordId:string)=>apiRequest<VocabularySenseCoverageWorkspace>(`${root}/words/${id(wordId)}/sense-coverage`),
+  caseSenseCoverage:(caseId:string)=>apiRequest<VocabularySenseCoverageWorkspace>(`${root}/cases/${id(caseId)}/sense-coverage`),
+  saveWordSenseCoverage:(wordId:string,expectedVersion:number,excludedSenseIds:string[])=>write<VocabularySenseCoverageWorkspace>(`/words/${id(wordId)}/sense-coverage`,{expectedVersion,excludedSenseIds},'PUT'),
+  saveCaseSenseCoverage:(caseId:string,expectedVersion:number,includedSenseIds:string[]|null)=>write<VocabularySenseCoverageWorkspace>(`/cases/${id(caseId)}/sense-coverage`,{expectedVersion,includedSenseIds},'PUT'),
   cases:(kind:VocabularyReflectionCase['kind'])=>apiRequest<{items:VocabularyReflectionCase[]}>(`${root}/cases?kind=${kind}`),
   noProposalCases:(status:'completed'|'closed'='completed')=>apiRequest<{items:VocabularyReflectionCase[]}>(`${root}/no-proposal-cases?status=${status}`),
   reassessCase:(caseId:string,modelChoice:VocabularyReassessmentModel,expectedContentVersion:number)=>write<{caseId:string;jobId:string}>(`/cases/${id(caseId)}/reassessments`,{modelChoice,expectedContentVersion}),

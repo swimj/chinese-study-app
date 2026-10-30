@@ -1,3 +1,4 @@
+import { getVocabularyWordSenseCoverage } from './vocabulary-sense-coverage.ts';
 import { randomUUID } from 'node:crypto';
 import { vocabularyAuthoredPromptBody } from '../../src/domain/vocabulary-production-coverage.ts';
 import type { VocabularyActor, VocabularyBackendEvent, VocabularyContent, VocabularyContentDraft,
@@ -281,7 +282,8 @@ export function listVocabularyExercises(input: { wordId: string; mode: Vocabular
     AND (c.access_scope='shared' OR c.owner_learner_id=?)
     AND (? != 'maintain' OR (s.suitability='curated' AND s.assessed_content_version=c.version))
     ORDER BY c.content_id`).all(input.wordId,input.mode,learnerId,input.mode) as Array<{ content_id: string }>;
-  return rows.map((row) => requiredContent(row.content_id));
+  const excluded=new Set(getVocabularyWordSenseCoverage(input.wordId).excludedSenseIds);
+  return rows.map((row) => requiredContent(row.content_id)).filter(content=>content.kind!=='exercise'||content.skill!=='production'||!content.words.some(word=>word.wordId===input.wordId&&word.senseId!=null&&excluded.has(word.senseId)));
 }
 /** Resolves exact teaching versions, but current retirement/quarantine/access always gates fresh serving. */
 export function getVocabularyTeachingExercises(introductionId: string): VocabularyContent[] {

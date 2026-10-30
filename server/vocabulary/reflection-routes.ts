@@ -1,3 +1,4 @@
+import { VocabularySenseCoverageConflict,getVocabularySenseCoverageWorkspace,setVocabularyWordSenseCoverage,setVocabularyCaseSenseCoverage } from '../db/vocabulary-sense-coverage.ts';
 import type { Express,Request,Response } from 'express';
 import type { VocabularyContentDraft, VocabularyJson } from '../../src/domain/vocabulary-content.ts';
 import type { VocabularyProposalDraft, VocabularyProposalOperation, VocabularyContentProposal, VocabularyReflectionCase } from '../../src/domain/vocabulary-reflection.ts';
@@ -71,7 +72,7 @@ export function parseVocabularyProposalDraft(value:unknown):VocabularyProposalDr
 function noBody(req:Request):void{object(req.body??{},[]);}
 function failure(error:unknown,res:Response):void {
   const message=error instanceof Error?error.message:'';
-  const status=error instanceof VocabularyReflectionConflict?409
+  const status=error instanceof VocabularyReflectionConflict||error instanceof VocabularySenseCoverageConflict?409
     :message==='Operator access required'||message.includes('does not belong to current')||message.includes('Learner context')?403
     :/^Unknown vocabulary/.test(message)?404
     :error instanceof VocabularyReflectionRequestError||error instanceof TypeError?400
@@ -89,6 +90,17 @@ export function registerVocabularyReflectionRoutes(app:Express,options:{wake?:()
   app.post(`${feedback}/:messageId/dismiss`,handle(req=>{noBody(req);dismissOwnVocabularyMessage(text(req.params.messageId));return {ok:true};}));
   app.post(`${feedback}/:messageId/restore`,handle(req=>{noBody(req);restoreOwnVocabularyMessage(text(req.params.messageId));return {ok:true};}));
   app.post(`${feedback}/jobs/:jobId/retry`,handle(req=>{noBody(req);retryOwnVocabularyFeedback(text(req.params.jobId));options.wake?.();return {ok:true};}));
+  for(const scope of ['word','case'] as const) {
+    const path=`${base}/${scope==='word'?'words':'cases'}/:id/sense-coverage`;
+    app.get(path,gate,handle((req,actor)=>{object(req.query,[]);return getVocabularySenseCoverageWorkspace(scope,text(req.params.id),actor);}));
+    app.put(path,gate,handle((req,actor)=>{
+      const key=scope==='word'?'excludedSenseIds':'includedSenseIds',input=object(req.body,['expectedVersion',key]);
+      if(!Number.isSafeInteger(input.expectedVersion)||Number(input.expectedVersion)<0)throw new VocabularyReflectionRequestError('Expected nonnegative coverage version');
+      const selected=scope==='case'&&input[key]===null?null:list(input[key]).map(text);
+      return scope==='word'?setVocabularyWordSenseCoverage(text(req.params.id),Number(input.expectedVersion),selected!,actor)
+        :setVocabularyCaseSenseCoverage(text(req.params.id),Number(input.expectedVersion),selected,actor);
+    }));
+  }
   const practicePreparation=createVocabularyPracticePreparation();
   app.get(`${base}/practice-preparation/failures`,gate,handle(req=>{object(req.query,[]);return {items:practicePreparation.listFailed()};}));
   app.post(`${base}/practice-preparation/:id/retry`,gate,handle((req,actor)=>{
