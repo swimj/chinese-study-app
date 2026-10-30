@@ -15,7 +15,9 @@ async function main(){
   function get(id:string){const item=proposals.get(id);if(!item)throw new Error('Unknown local proposal');return item;}
   function update(id:string,patch:Partial<VocabularyContentProposal>){const value={...get(id),...patch};proposals.set(id,value);return value;}
   const approvals:VocabularyApprovalRequest[]=[];
+  const unavailableCoverage=async()=>{throw new Error('Historical export does not include editable canonical sense coverage.');};
   const api:VocabularyOperatorApi={
+    wordSenseCoverage:unavailableCoverage,caseSenseCoverage:unavailableCoverage,saveDefaultUsefulSenses:unavailableCoverage,saveWordSenseCoverage:unavailableCoverage,saveCaseSenseCoverage:unavailableCoverage,
     approvalRequests:async()=>({items:approvals}),
     requestApproval:async(id,expectedVersion,requestId,notes)=>{const now=new Date().toISOString();const item:VocabularyApprovalRequest={requestId,proposalId:id,expectedVersion,actorId:'local-preview',notes,status:'queued',attempts:0,createdAt:now,updatedAt:now,error:null,application:null};approvals.push(item);setTimeout(()=>{const proposal=update(id,{status:'applied',resolvedAt:new Date().toISOString()});item.status='succeeded';item.updatedAt=new Date().toISOString();item.application={applicationId:'local-preview-only',proposalId:id,proposalVersion:proposal.version,reviewId:'local-preview',changes:[]};},100);return {...item};},
     retryApproval:async()=>{throw new Error('No failed approvals are included in this preview.');},

@@ -94,6 +94,20 @@ and queues an advisory review of the retained no-change judgment. Case workspace
 jobs expose the advisory status and result; the existing job retry and case close
 routes apply. This path does not create or apply a content proposal.
 
+`GET /api/operator/vocabulary/words/:id/sense-coverage` and the corresponding
+`cases/:id/sense-coverage` return canonical senses, effective selection, inheritance,
+versions, `selectionEstablished`, and `productionExerciseCounts` keyed by sense ID.
+Counts use actual active mapped general production across content scopes, rather
+than only the current case's sources. PUT requires `expectedVersion`; word scope
+accepts explicit `includedSenseIds` (or compatible `excludedSenseIds`), while case
+scope accepts nullable `includedSenseIds`. `[]` explicitly selects none; case null
+inherits, including an unknown shared default. All routes require operator access.
+Review-batch snapshots expose `coverageChanged`, computed without writes from
+actual source, mapping and canonical catalog evidence. Content-only proposals remain valid after review or shared-default
+edits; their captured `generationScope` identifies the original invocation inputs.
+Approval/application revalidate their source evidence. Sense policy is edited
+through the coverage endpoints, separately from content proposals.
+
 `POST /api/operator/vocabulary/cases/:id/reassessments` accepts `modelChoice` and
 required `expectedContentVersion`. It queues an independent assessment pinned to
 that current source version and returns the new `caseId` and `jobId`. The operator
@@ -103,7 +117,9 @@ silently assess the newer version. Case and review reads expose the historical
 assessed version and current version for this decision. Reassessment performs
 fresh mapping where applicable and fresh assessment without the original learner
 responses or reactions. It preserves the original case as historical context and
-does not resolve or apply its proposal or judgment.
+does not resolve or apply its proposal or judgment. A succeeded assessment with
+an open `needs_coverage` finding may also be reassessed after coverage correction;
+an unfinished job is not eligible.
 
 Proposal detail/list and case reads include `resolvedAt`: receipt application time
 for applied proposals, latest closure event time for dismissed proposals or closed
@@ -137,6 +153,13 @@ and improvement dispatch.
 authoring work. `POST /api/operator/vocabulary/practice-preparation/:id/retry`
 queues an explicitly authorized retry within the attempt limit; worker gates
 still govern provider execution.
+
+The operator practice-preparation failure response includes
+`defaultSelectionFindings`: word-level unknown-default findings with `wordId`,
+`hanzi`, nullable originating `caseId`, reason, recommended sense IDs and invocation
+ID. The projection is read-only and independent of proposal/case completion. Saving
+explicit word defaults, including `[]`, removes that word from the projection.
+
 
 Mandarin legacy `/api/study-sessions/*` writes, legacy word completion/dismissal,
 introduction open/complete, review-summary commits, learner proposal/application,

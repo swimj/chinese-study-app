@@ -195,3 +195,35 @@ real controller and disposable API-backed study. Standalone rendering does not
 establish persistence, actual deadlines or integrated keyboard behavior. Retain
 rendered evidence for the specific UI change being reviewed rather than treating
 past fixture results as certification of the current interface.
+
+### Operator sense coverage and reassessment
+
+`ScopeCoverageEditor` lazily fetches explicit review/default selection and mapped
+exercise counts. It keeps scope-edit buffers separate from proposal text and
+operation toggles; unknown is distinct from explicit empty. Saves use scope CAS
+versions. A successful word PUT remains successful even if refreshing the review
+fails, with a separate recovery action for that read. While coverage edits or saves
+are active, navigation and proposal/case resolution are blocked. Plain scope reads
+allow navigation; unmounting cancels publication of their responses.
+
+The review cache retains unrelated entries while invalidating the affected case
+or word. Every invalidation advances an epoch; delayed prefetch/poll/load responses
+can only populate that same epoch. Read-only `coverageChanged` snapshots expose
+actual source, mapping and canonical catalog drift for service and operator
+proposals, including explicit assessment evidence bases. Review/default edits do
+not retarget captured generation scope or block content approval. See the
+[content-improvement implementation](vocabulary-content-improvement.md#single-word-assessment)
+for generation and evidence fences.
+The editor invalidates metadata and preview caches after a policy save while
+retaining proposal drafts, inclusion toggles and valid content approval. The current
+review snapshot is fetched again without installing over those edit buffers. Scope
+responses replace labels only for their word, preserving other proposal targets. Reassessment refreshes current source
+metadata, confirms a version change, then updates only reassessment status; it
+never installs a replacement proposal over unsaved text or selection toggles.
+
+The failure response also projects failed default selectors whose shared word
+selection is unknown. The word-level attention section reads those findings
+independently of review cases or proposals. Its shared-only editor uses the same
+scope writer without requiring a case; opening and closing it preserves the
+proposal's edit buffers. A committed word selection removes the live finding and
+invalidates metadata for that word. No additional acknowledgement state is stored.

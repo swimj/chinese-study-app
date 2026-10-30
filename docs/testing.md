@@ -132,6 +132,20 @@ The operator browser fixture also accepts `?many=1` for a nine-item repertoire,
 answer criteria/reveal, and `?saveFailure=1` for a recoverable failed save.
 Combine `?many=1&narrow=1&large=1` to check wrapping and enlarged text.
 
+`tests/vocabulary-sense-coverage-ui.test.ts` covers affected scope selection,
+exercise impact, label merging and read-versus-write navigation policy. Operator
+fixture variants: `?scope=1` enables coverage/reassessment; `?unknownCoverage=1`
+starts with unknown defaults; `?needsCoverage=1` provides an attention case;
+`?holdCoverage=1` keeps a save pending until its fixture button releases it;
+`?scopeSibling=1` adds another review for the same word.
+`?slowCoverageRead=1` delays plain scope reads for navigation checks;
+`?defaultSelectionFinding=1` shows an actual empty model recommendation beside an
+approvable content proposal. Approve it and check that **Needs attention → Word
+defaults need attention** retains the finding until an explicit word selection is
+saved. `?sourceDriftAfterCoverage=1` changes source evidence
+after a scope save so the refreshed snapshot must block approval.
+`?scope=1&many=1&multiwordLabels=1` checks that editing one word keeps other-word labels.
+
 `?holdApproval=1` retains an acknowledged approval in the queue while advancing
 the review card; `?approvalQueued=1` hydrates pending work;
 `?approvalAttention=1` shows a failed request with retry and proposal controls;

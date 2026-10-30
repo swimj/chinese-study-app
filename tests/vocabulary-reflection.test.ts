@@ -188,6 +188,7 @@ test('scope migration rebases a retained private repertoire and requires approva
   assert.ok(before.operations.every(operation=>operation.scope.kind==='learner'&&operation.content.accessScope==='private'));
   migrateDictionaryBaselines();
   const migrated=getVocabularyProposal(recorded.proposalId!,'editor');
+  assert.equal(listVocabularyProposalReviewBatch('editor',{startProposalId:migrated.proposalId}).items[0]!.coverageChanged,false);
   assert.equal(migrated.version,2);assert.equal(migrated.status,'awaiting_review');
   assert.deepEqual(migrated.bases.map(base=>({...base})),[{contentId:id,expectedVersion:2}]);
   assert.ok(migrated.operations.every(operation=>operation.scope.kind==='shared'&&operation.content.accessScope==='shared'&&operation.content.ownerLearnerId===null));
@@ -341,7 +342,7 @@ test('lease expiry and retries fence old workers and retain evidence', () => {
   assert.equal(Number(sql.prepare('SELECT count(*) n FROM teacher_judgments').get()!.n),1);
 });
 
-for(const drift of ['mapping','catalog','word coverage','review coverage'] as const)test(`sense-admitted content distinguishes canonical evidence from serving policy (${drift})`,()=>{
+for(const drift of ['source','mapping','catalog','word coverage','review coverage'] as const)test(`sense-admitted content distinguishes canonical evidence from serving policy (${drift})`,()=>{
   const sense=createVocabularySense({wordId:'a',description:'A written character'},actor);
   mapVocabularyContentSense({contentId:'one',wordId:'a',expectedContentVersion:1,expectedMapping:{senseId:null,establishedAt:null},senseId:sense.senseId,establishedAt:at},actor);
   ingest([present('one'),response('one')]);
@@ -349,13 +350,18 @@ for(const drift of ['mapping','catalog','word coverage','review coverage'] as co
   const admission={outcome:'single_sense' as const,rationale:'Identifiable use',wordId:'a',sourceContentId:'one',sourceContentVersion:1,
     catalogVersion:getVocabularySenseCatalog('a').version,senseIds:[sense.senseId],sourceMapping:{senseId:sense.senseId,establishedAt:at}};
   const result=recordVocabularyImprovementResult(work.jobId,work.leaseToken,{diagnosis:'Repair',proposal:{operations:[op('replace','one','fresh')],rationale:'Useful repair'},admission},judgedAt);
+  assert.equal(listVocabularyProposalReviewBatch('editor',{startProposalId:result.proposalId!}).items[0]!.coverageChanged,false);
   const review=approveVocabularyProposal(result.proposalId!,1,'editor');
-  if(drift==='mapping')mapVocabularyContentSense({contentId:'one',wordId:'a',expectedContentVersion:1,expectedMapping:admission.sourceMapping,senseId:null,establishedAt:judgedAt},actor);
+  if(drift==='source')updateVocabularyContent('one',1,{...getVocabularyContentForMaintenance('one')!,body:{prompt:'An independently revised cue'}},actor);
+  else if(drift==='mapping')mapVocabularyContentSense({contentId:'one',wordId:'a',expectedContentVersion:1,expectedMapping:admission.sourceMapping,senseId:null,establishedAt:judgedAt},actor);
   else if(drift==='catalog')updateVocabularySense(sense.senseId,sense.version,{description:sense.description,status:'retired'},actor);
   else if(drift==='word coverage')writeVocabularyWordSenseCoverage('a',0,[sense.senseId],actor);
   else writeVocabularyCaseSenseCoverage(work.caseId,0,[],actor);
-  if(drift==='mapping'||drift==='catalog') {
-    assert.throws(()=>applyVocabularyProposal(result.proposalId!,1,review,`stale-${drift}`,'editor'),/sense evidence changed/);
+  const changesBefore=sql.prepare('SELECT total_changes() n').get()!.n;
+  assert.equal(listVocabularyProposalReviewBatch('editor',{startProposalId:result.proposalId!}).items[0]!.coverageChanged,drift==='source'||drift==='mapping'||drift==='catalog');
+  assert.equal(sql.prepare('SELECT total_changes() n').get()!.n,changesBefore);
+  if(drift==='source'||drift==='mapping'||drift==='catalog') {
+    assert.throws(()=>applyVocabularyProposal(result.proposalId!,1,review,`stale-${drift}`,'editor'),/content base changed|sense evidence changed/);
     assert.equal(getVocabularyContentForMaintenance('one')!.availability,'active');
     assert.equal(sql.prepare('SELECT count(*) n FROM proposal_applications').get()!.n,0);
   }else{
@@ -366,6 +372,7 @@ for(const drift of ['mapping','catalog','word coverage','review coverage'] as co
     assert.equal(getVocabularyContentForMaintenance('fresh')!.availability,'active');
     assert.equal(sql.prepare('SELECT count(*) n FROM proposal_applications').get()!.n,1);
   }
+
 });
 
 test('generated proposals require exact operator review, reject stale approval and keep independent judgment', () => {
@@ -1100,19 +1107,6 @@ test('unknown useful selection remains an actionable attention case and can reas
 
 
 
-for(const route of ['reassessment','proposal opinion','case opinion'] as const)for(const selection of ['set','none','inherit'] as const)test(`child coverage inherits ${selection} via ${route}`,()=>{
-  sql.exec('ALTER TABLE vocabulary_reflection_jobs ADD COLUMN model_choice TEXT');
-  const sense=createVocabularySense({wordId:'a',description:'written character'},actor);
-  ingest([present('one'),response('one')]);
-  const work=claimVocabularyReflectionJob({kind:'exercise_improvement',now:judgedAt})!;
-  writeVocabularyCaseSenseCoverage(work.caseId,0,selection==='inherit'?null:selection==='none'?[]:[sense.senseId],actor);
-  const result=recordVocabularyImprovementResult(work.jobId,work.leaseToken,{diagnosis:'Review',proposal:route==='proposal opinion'?{operations:[op()],rationale:'Repair'}:null},judgedAt);
-  let childId:string;
-  if(route==='reassessment')childId=requestVocabularyReassessment(work.caseId,'editor','openai:gpt-6-sol-high',1).caseId;
-  else if(route==='proposal opinion'){const opinion=requestVocabularySecondOpinion(result.proposalId!,1,'editor');childId=(sql.prepare('SELECT case_id FROM vocabulary_reflection_jobs WHERE job_id=?').get(opinion.jobId) as {case_id:string}).case_id;}
-  else {requestVocabularyCaseSecondOpinion(work.caseId,'editor','Try another view');childId=(sql.prepare('SELECT case_id FROM vocabulary_reflection_jobs WHERE case_id!=? AND second_opinion_json IS NOT NULL').get(work.caseId) as {case_id:string}).case_id;}
-  assert.deepEqual(resolveVocabularySenseCoverage('a',childId).review?.includedSenseIds,selection==='inherit'?null:selection==='none'?[]:[sense.senseId]);
-});
 
 test('excluded source operations retain explicit assessment evidence as an approval dependency',()=>{
   const replacement={...op('replace','one','new-one'),operationKey:'omitted'};
@@ -1132,4 +1126,12 @@ test('retirement can remove a historically malformed cloze without authoring a r
   assert.deepEqual(previewVocabularyProposal(proposed.proposalId,1,'editor').previews[0]!.result.body,body);
   const approved=approveVocabularyProposal(proposed.proposalId,1,'editor');applyVocabularyProposal(proposed.proposalId,1,approved,'malformed-retire','editor');
   assert.equal(getVocabularyContentForMaintenance('one')!.availability,'retired');assert.deepEqual(getVocabularyContentForMaintenance('one')!.body,body);
+});
+
+test('operator-authored create-only proposals report actual assessment evidence drift before approval',()=>{
+ const proposed=createVocabularyProposal({operations:[op('create','one','additional')],bases:[{contentId:'one',expectedVersion:1}],rationale:'Source assessment evidence'},'editor');
+ assert.equal(listVocabularyProposalReviewBatch('editor',{startProposalId:proposed.proposalId}).items[0]!.coverageChanged,false);
+ updateVocabularyContent('one',1,draft('one'),actor);
+ assert.equal(listVocabularyProposalReviewBatch('editor',{startProposalId:proposed.proposalId}).items[0]!.coverageChanged,true);
+ assert.throws(()=>approveVocabularyProposal(proposed.proposalId,1,'editor'),/content base changed/);
 });

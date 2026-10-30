@@ -125,3 +125,12 @@
 .vocabulary-compact-review pre { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 100%; }
 .vocabulary-cue-editor { display: grid; gap: .5rem; }
 .vocabulary-operator-page .vocabulary-cue-editor label { margin: .5rem 0; }
+
+.vocabulary-sense-coverage { border: 1px solid var(--border, #cad5d7); border-radius: .6rem; padding: .75rem; }
+.vocabulary-sense-coverage > summary { padding: .2rem; }
+.vocabulary-sense-coverage h3 { margin: .75rem 0 .25rem; }
+.vocabulary-sense-coverage fieldset { margin: .75rem 0; padding: .5rem .75rem; }
+.vocabulary-coverage-sense + .vocabulary-coverage-sense { border-top: 1px solid var(--border, #cad5d7); }
+.vocabulary-coverage-sense > details { margin: 0 0 .6rem 1.75rem; }
+.vocabulary-coverage-sense ul { padding-left: 1.25rem; }
+.vocabulary-sense-coverage .vocabulary-operator-actions { gap: .5rem; margin: .75rem 0; }

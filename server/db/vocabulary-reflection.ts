@@ -512,6 +512,19 @@ export function saveVocabularyProposal(proposalId: string, expectedVersion: numb
       rationale: draft.rationale,bases: baseVersions({...draft,caseId:value.caseId??undefined}) },actor,timestamp());
   });
 }
+/** Read-only freshness for queue display; validation remains authoritative at approval/application. */
+export function vocabularyProposalCoverageChanged(value:VocabularyContentProposal):boolean {
+  if(value.bases.some(base=>getVocabularyContentForMaintenance(base.contentId)?.version!==base.expectedVersion))return true;
+  const admission=value.authorKind==='service'&&value.caseId?caseAdmission(value.caseId):undefined;
+  if(!admission)return false;
+  const source=getVocabularyContentForMaintenance(admission.sourceContentId);
+  const mapping=source?.words.find(word=>word.wordId===admission.wordId);
+  // Serving policy edits do not alter the assessment's captured generation scope.
+  return getVocabularySenseCatalog(admission.wordId).version!==admission.catalogVersion
+    ||!source||!mapping
+    ||!!(admission.sourceMapping&&((mapping.senseId??null)!==admission.sourceMapping.senseId
+      ||(mapping.senseMappingEstablishedAt??null)!==admission.sourceMapping.establishedAt));
+}
 function currentBases(value: VocabularyContentProposal): void {
   for (const base of value.bases) {
     const content = getVocabularyContentForMaintenance(base.contentId);
@@ -773,7 +786,7 @@ function senseLabels(wordIds:Iterable<string>,cache=new Map<string,VocabularySen
   });
 }
 export function listVocabularyProposalReviewBatch(actorId: string, input: { limit?: number; startProposalId?: string; maxBytes?: number } = {}): {
-  items: {senseLabels:VocabularySenseLabel[];defaultSelectionFinding:import('../../src/domain/vocabulary-sense-coverage.ts').VocabularyDefaultSelectionFinding|null; proposal: VocabularyContentProposal; case: VocabularyReflectionCase | null; reassessment: ReassessmentSummary | null;
+  items: {coverageChanged:boolean;senseLabels:VocabularySenseLabel[];defaultSelectionFinding:import('../../src/domain/vocabulary-sense-coverage.ts').VocabularyDefaultSelectionFinding|null; proposal: VocabularyContentProposal; case: VocabularyReflectionCase | null; reassessment: ReassessmentSummary | null;
     previews: { operationKey: string; source: VocabularyContent | null; result: VocabularyProposalOperation['content'] }[] }[];
   nextProposalId: string | null;
 } {
@@ -797,7 +810,7 @@ export function listVocabularyProposalReviewBatch(actorId: string, input: { limi
       : scan.all(status,limit+1)) as {proposal_id:string;updated_at:string}[])
     .sort((a,b)=>a.updated_at===b.updated_at ? (a.proposal_id < b.proposal_id ? -1 : a.proposal_id > b.proposal_id ? 1 : 0)
       : (a.updated_at > b.updated_at ? -1 : 1)).slice(0,limit+1);
-  const items: {senseLabels:VocabularySenseLabel[];defaultSelectionFinding:import('../../src/domain/vocabulary-sense-coverage.ts').VocabularyDefaultSelectionFinding|null; proposal: VocabularyContentProposal; case: VocabularyReflectionCase | null; reassessment: ReassessmentSummary | null;
+  const items: {coverageChanged:boolean;senseLabels:VocabularySenseLabel[];defaultSelectionFinding:import('../../src/domain/vocabulary-sense-coverage.ts').VocabularyDefaultSelectionFinding|null; proposal: VocabularyContentProposal; case: VocabularyReflectionCase | null; reassessment: ReassessmentSummary | null;
     previews: { operationKey: string; source: VocabularyContent | null; result: VocabularyProposalOperation['content'] }[] }[] = [];
   const cases = new Map<string,VocabularyReflectionCase>();
   const reassessments = new Map<string,ReassessmentSummary>();
@@ -820,7 +833,7 @@ export function listVocabularyProposalReviewBatch(actorId: string, input: { limi
         ? {...operation.content,body:vocabularyAuthoredPromptBody(source.body,operation.content.body)} : operation.content };
     });
     if (caseValue && !reassessments.has(caseValue.caseId)) reassessments.set(caseValue.caseId,reassessmentSummary(caseValue));
-    const item = {senseLabels:senseLabels([...(caseValue?.wordId?[caseValue.wordId]:[]),...value.operations.flatMap(operation=>operation.content.words.map(word=>word.wordId))],labelsByWord),defaultSelectionFinding:caseValue?.wordId?getVocabularyDefaultSelectionFinding(caseValue.wordId):null,proposal:value,case:caseValue,reassessment:caseValue?reassessments.get(caseValue.caseId)!:null,previews};
+    const item = {coverageChanged:vocabularyProposalCoverageChanged(value),senseLabels:senseLabels([...(caseValue?.wordId?[caseValue.wordId]:[]),...value.operations.flatMap(operation=>operation.content.words.map(word=>word.wordId))],labelsByWord),defaultSelectionFinding:caseValue?.wordId?getVocabularyDefaultSelectionFinding(caseValue.wordId):null,proposal:value,case:caseValue,reassessment:caseValue?reassessments.get(caseValue.caseId)!:null,previews};
     const nextProposalId = rows[index+1]?.proposal_id ?? null;
     const bytes = Buffer.byteLength(JSON.stringify({items:[...items,item],nextProposalId}),'utf8');
     if (items.length > 0 && bytes > maxBytes) return {items,nextProposalId:row.proposal_id};

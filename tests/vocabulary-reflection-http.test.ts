@@ -8,7 +8,7 @@ import { beforeEach,afterEach,test } from 'node:test';
 import type { Express,Request,Response,NextFunction,RequestHandler } from 'express';
 import { setDb } from '../server/db/connection.ts';
 import { runWithLearnerId } from '../server/db/learner-context.ts';
-import { createVocabularyContent,createVocabularySense,getVocabularyContentForMaintenance } from '../server/db/vocabulary-content.ts';
+import { mapVocabularyContentSense,createVocabularyContent,createVocabularySense,getVocabularyContentForMaintenance } from '../server/db/vocabulary-content.ts';
 import { createVocabularySession,appendVocabularySessionActions,stageVocabularySessionCompletion,closeVocabularySessionCompletion } from '../server/db/vocabulary-sessions.ts';
 import { ingestVocabularySessionEvidence,claimVocabularyReflectionJob,recordVocabularyFeedbackJudgment,recordVocabularyImprovementResult,listVocabularyProposalReviewBatch } from '../server/db/vocabulary-reflection.ts';
 import { registerVocabularyReflectionRoutes } from '../server/vocabulary/reflection-routes.ts';
@@ -483,6 +483,7 @@ test('default-selection finding is read-only in workspace and review batch and r
   assert.equal((workspace.body.defaultSelectionFinding as {status:string}).status,'needs_operator');
   const batch=listVocabularyProposalReviewBatch('editor');assert.equal(batch.items[0]!.defaultSelectionFinding?.status,'needs_operator');
   assert.equal(sql.prepare('SELECT total_changes() n').get()!.n,before);
+  assert.equal((call('get',`${base}/practice-preparation/failures`).body.defaultSelectionFindings as {caseId:string|null}[])[0]!.caseId,null);
   const saved=call('put',`${base}/words/:id/sense-coverage`,{params:{id:'a'},body:{expectedVersion:0,includedSenseIds:[]}});assert.equal(saved.status,200);
   assert.equal(call('get',`${base}/cases/:id`,{params:{id:caseId}}).body.defaultSelectionFinding,null);
   assert.equal(listVocabularyProposalReviewBatch('editor').items[0]!.defaultSelectionFinding,null);
@@ -521,4 +522,35 @@ for(const text of ['没有空格','____ 和 ____'])test(`operator proposal route
   assert.equal(call('post',`${base}/proposals`,{body:invalid}).status,400);
   const created=call('post',`${base}/proposals`,{body:proposal()});assert.equal(created.status,200);
   const saved=call('put',`${base}/proposals/:id`,{params:{id:String(created.body.proposalId)},body:{expectedVersion:1,draft:invalid}});assert.equal(saved.status,400);
+});
+
+test('coverage workspace counts actual mapped active general production beyond case sources',()=>{
+  const actor={kind:'operator' as const,id:'editor'};
+  createVocabularySense({senseId:'counted-sense',wordId:'a',description:{label:'Written character'}},actor);
+  const words=[{wordId:'a',relation:'target' as const,senseId:'counted-sense',senseMappingEstablishedAt:'2026-10-29T00:00:00.000Z'}];
+  mapVocabularyContentSense({contentId:'one',wordId:'a',expectedContentVersion:1,expectedMapping:{senseId:null,establishedAt:null},senseId:'counted-sense'},actor);
+  createVocabularyContent({...draft('extra-shared'),words},actor);
+  createVocabularyContent({...draft('extra-private'),words,accessScope:'private',ownerLearnerId:'bob'},actor);
+  createVocabularyContent({...draft('recognition-count'),words,skill:'recognition'},actor);
+  createVocabularyContent({...draft('teaching-count'),words,exerciseRole:'teaching'},actor);
+  createVocabularyContent({...draft('retired-count'),words,availability:'retired'},actor);
+  const before=sql.prepare('SELECT total_changes() n').get()!.n;
+  const result=call('get',`${base}/cases/:id/sense-coverage`,{params:{id:caseId}});
+  assert.equal(result.status,200);assert.deepEqual(result.body.productionExerciseCounts,{'counted-sense':3});
+  assert.equal(sql.prepare('SELECT total_changes() n').get()!.n,before);
+});
+
+test('unknown word defaults remain in attention after content approval and resolve with explicit none',()=>{
+  sql.prepare("INSERT INTO vocabulary_default_selection_readiness(word_id,status,expected_catalog_version,workflow_id,recommendation_json,last_error,created_at,updated_at) VALUES ('a','failed',0,?,'{\"senseIds\":[]}',?,?,?)").run(improvementJob,'The model selected no useful senses; operator selection is required.',at,at);
+  const created=call('post',`${base}/proposals`,{body:{...proposal(),caseId}});assert.equal(created.status,200);const id=String(created.body.proposalId);
+  const approved=call('post',`${base}/proposals/:id/approve`,{params:{id},body:{expectedVersion:1}});assert.equal(approved.status,200);
+  assert.equal(call('post',`${base}/proposals/:id/apply`,{params:{id},body:{expectedVersion:1,reviewId:approved.body.reviewId,idempotencyKey:'independent-default-finding'}}).status,200);
+  sql.prepare("UPDATE reflection_cases SET status='completed' WHERE case_id=?").run(caseId);
+  const before=sql.prepare('SELECT total_changes() n').get()!.n;
+  const attention=call('get',`${base}/practice-preparation/failures`);assert.equal(attention.status,200);
+  assert.deepEqual((attention.body.defaultSelectionFindings as {wordId:string;caseId:string|null}[]).map(item=>({wordId:item.wordId,caseId:item.caseId})),[{wordId:'a',caseId}]);
+  assert.equal(sql.prepare('SELECT total_changes() n').get()!.n,before);
+  process.env.APP_OPERATOR_CLERK_USER_IDS='';assert.equal(call('get',`${base}/practice-preparation/failures`).status,403);process.env.APP_OPERATOR_CLERK_USER_IDS='editor';
+  assert.equal(call('put',`${base}/words/:id/sense-coverage`,{params:{id:'a'},body:{expectedVersion:0,includedSenseIds:[]}}).status,200);
+  assert.deepEqual(call('get',`${base}/practice-preparation/failures`).body.defaultSelectionFindings,[]);
 });
