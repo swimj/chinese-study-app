@@ -107,20 +107,23 @@ export function ingestVocabularySessionEvidence(learnerId: string, completionId:
     const at = timestamp(recordedAt);
     db.prepare('INSERT INTO vocabulary_reflection_session_evidence VALUES (?,?,?,?,?)').run(completionId,learnerId,projection.sessionId,encoded,at);
     const rejected = (item: VocabularyEncounterEvidence) => item.responses.some(response => response.payload.outcome === 'rejected');
+    const effectiveRejection = (item: VocabularyEncounterEvidence) => item.effectiveResponses.some(response => response.payload.outcome === 'rejected');
     const comment = (item: VocabularyEncounterEvidence) => getEffectiveVocabularyEncounterReactions(item).some(reaction => reaction.payload.feedback === 'comment' || !!reaction.payload.comment?.trim());
     const issue = (item: VocabularyEncounterEvidence) => rejected(item) || comment(item) || item.skipped
       || getEffectiveVocabularyEncounterReactions(item).some(reaction => reaction.payload.feedback === 'negative');
+    // The session log retains undone responses. A learner lesson uses only the responses that survived Undo.
+    const lessonEvidence = (items: VocabularyEncounterEvidence[]) => items.map(item => ({ ...item, responses: [...item.effectiveResponses] }));
     const cases: string[] = [];
     const general = projection.encounters.filter(isVocabularyProviderEncounter);
     const wordIds = new Set(general.flatMap(item => item.wordId === null || item.snapshot.schedulingScope === 'pure_cue' ? [] : [item.wordId]));
     for (const wordId of wordIds) {
       const encounters = general.filter(item => item.wordId === wordId && item.snapshot.schedulingScope !== 'pure_cue');
-      if (encounters.some(item => rejected(item) || comment(item))) cases.push(createCase(learnerId,completionId,'learner_feedback',`word/${wordId}`,wordId,null,encounters,at));
+      if (encounters.some(item => effectiveRejection(item) || comment(item))) cases.push(createCase(learnerId,completionId,'learner_feedback',`word/${wordId}`,wordId,null,lessonEvidence(encounters),at));
     }
     const pureIds = new Set(general.filter(item => item.snapshot.schedulingScope === 'pure_cue').map(item => item.snapshot.contentId));
     for (const contentId of pureIds) {
       const encounters = general.filter(item => item.snapshot.schedulingScope === 'pure_cue' && item.snapshot.contentId === contentId);
-      if (encounters.some(item => rejected(item) || comment(item))) cases.push(createCase(learnerId,completionId,'learner_feedback',`pure/${contentId}`,null,contentId,encounters,at));
+      if (encounters.some(item => effectiveRejection(item) || comment(item))) cases.push(createCase(learnerId,completionId,'learner_feedback',`pure/${contentId}`,null,contentId,lessonEvidence(encounters),at));
     }
     for (const encounter of general.filter(issue)) cases.push(createCase(learnerId,completionId,'exercise_improvement',
       `encounter/${encounter.encounterId}`,encounter.wordId,encounter.snapshot.contentId,[encounter],at));

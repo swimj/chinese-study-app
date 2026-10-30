@@ -5,7 +5,7 @@ import { beforeEach,afterEach,test } from 'node:test';
 import { setDb } from '../server/db/connection.ts';
 import { runWithLearnerId } from '../server/db/learner-context.ts';
 import { createVocabularyContent,createVocabularySense,establishVocabularySenseCatalog,getVocabularySenseCatalog,getVocabularySenses,getVocabularyContent } from '../server/db/vocabulary-content.ts';
-import { createVocabularySession,appendVocabularySessionActions,stageVocabularySessionCompletion } from '../server/db/vocabulary-sessions.ts';
+import { createVocabularySession,appendVocabularySessionActions,stageVocabularySessionCompletion,cancelVocabularySessionCompletion,closeVocabularySessionCompletion } from '../server/db/vocabulary-sessions.ts';
 import { VocabularyReflectionConflict,claimVocabularyReflectionJob,retryVocabularyReflectionJob,retryOwnVocabularyFeedback,retryVocabularyPostSessionDispatch,listOwnVocabularyMessages,recordVocabularyFeedbackJudgment } from '../server/db/vocabulary-reflection.ts';
 import { createVocabularyProcessingWorker } from '../server/vocabulary/processing-worker.ts';
 import { createVocabularyReflectionProvider,normalizeVocabularyReflectionOutput } from '../server/vocabulary/reflection-provider.ts';
@@ -445,6 +445,69 @@ test('manual recovery from invalid mapping output resets partial availability fa
   } finally {await processing.stop();}
 });
 
+
+test('undo during the completion window keeps an accidental production response out of feedback after retry',async()=>{
+  const started=new Date(clock-16_000).toISOString();
+  const withinWindow=new Date(Date.parse(started)+1000).toISOString();
+  const sessionId='boundary';
+  const first=alice(()=>{
+    const snapshot={contentId:'one',contentVersion:1,kind:'production' as const,role:'general' as const,
+      body:{prompt:'Prompt one',material:getVocabularyContent('one')!.body},assessment:{acceptedAnswers:['字'],criteria:{match:'exact'}}};
+    createVocabularySession({sessionId,words:[{wordId:'a',mode:'practice'}]},started);
+    const inputs=[
+      {kind:'presentation' as const,payload:{encounterId:'boundary-one',wordId:'a',snapshot}},
+      {kind:'finish_for_now' as const,payload:{}},
+      {kind:'response' as const,payload:{encounterId:'boundary-one',response:'accidental',outcome:'rejected' as const}},
+      {kind:'word_wrap' as const,payload:{wordId:'a',reason:'enough' as const}},
+    ];
+    const actions=inputs.map((input,index)=>({...input,protocolVersion:1 as const,actionId:`boundary-${index}`,clientActionId:`boundary-c-${index}`,sequence:index+1,occurredAt:started,transitionId:index>=2?'submit':undefined}));
+    appendVocabularySessionActions(sessionId,actions,started);
+    return stageVocabularySessionCompletion(sessionId,actions.length,started);
+  });
+  const cancelled=alice(()=>cancelVocabularySessionCompletion(sessionId,first.completionId,withinWindow));
+  assert.equal(cancelled.status,'cancelled');
+  alice(()=>{
+    const inputs=[
+      {kind:'undo' as const,payload:{undoesActionId:'boundary-3'}},
+      {kind:'response' as const,payload:{encounterId:'boundary-one',response:'kept-miss',outcome:'rejected' as const}},
+      {kind:'word_wrap' as const,payload:{wordId:'a',reason:'enough' as const}},
+    ];
+    const actions=inputs.map((input,index)=>({...input,protocolVersion:1 as const,actionId:`boundary-next-${index}`,clientActionId:`boundary-next-c-${index}`,sequence:index+5,occurredAt:withinWindow}));
+    appendVocabularySessionActions(sessionId,actions,withinWindow);
+    stageVocabularySessionCompletion(sessionId,7,withinWindow);
+  });
+  assert.throws(()=>alice(()=>closeVocabularySessionCompletion(sessionId,first.completionId,new Date(clock).toISOString())),/cancelled/);
+  assert.equal(sql.prepare('SELECT count(*) n FROM vocabulary_post_session_dispatches WHERE completion_id=?').get(first.completionId)!.n,0);
+  sql.exec(`CREATE TABLE learner_owned_word_study_admission_state(
+    learner_id TEXT NOT NULL REFERENCES learners(learner_id) ON DELETE CASCADE,
+    word_id TEXT NOT NULL REFERENCES lexical_words(id) ON DELETE CASCADE,
+    study_phase TEXT NOT NULL,earliest_next_study_at TEXT,PRIMARY KEY(learner_id,word_id));`);
+  sql.exec("CREATE TRIGGER fail_boundary_case BEFORE INSERT ON reflection_cases BEGIN SELECT RAISE(ABORT,'test ingestion fault'); END;");
+  const processing=worker({isConfigured:()=>false,run:async job=>result(job)});
+  await processing.step();
+  const dispatch=sql.prepare('SELECT dispatch_id,status,evidence_json,completion_id FROM vocabulary_post_session_dispatches').get()!;
+  assert.equal(dispatch.status,'failed');
+  assert.notEqual(dispatch.completion_id,first.completionId);
+  const stored=JSON.parse(String(dispatch.evidence_json)) as {projection:{undoneActionIds:string[];encounters:{responses:{actionId:string;payload:{response:string}}[]}[]}};
+  assert.ok(stored.projection.undoneActionIds.includes('boundary-2'));
+  assert.equal(stored.projection.encounters[0]?.responses.some(action=>action.payload.response==='accidental'),true);
+  assert.equal(Number(sql.prepare('SELECT count(*) n FROM reflection_cases').get()!.n),0);
+  sql.exec('DROP TRIGGER fail_boundary_case');
+  retryVocabularyPostSessionDispatch(String(dispatch.dispatch_id),'editor',new Date(clock).toISOString());
+  await processing.step();
+  const lessons=sql.prepare("SELECT evidence_snapshot_json FROM reflection_cases WHERE kind='learner_feedback'").all() as {evidence_snapshot_json:string}[];
+  assert.equal(lessons.length,1);
+  assert.equal(lessons[0]!.evidence_snapshot_json.includes('accidental'),false);
+  assert.equal(lessons[0]!.evidence_snapshot_json.includes('kept-miss'),true);
+  const before=Number(sql.prepare('SELECT count(*) n FROM reflection_cases').get()!.n);
+  assert.throws(()=>retryVocabularyPostSessionDispatch(String(dispatch.dispatch_id),'editor',new Date(clock).toISOString()),/failed evidence/);
+  await processing.step();
+  assert.equal(Number(sql.prepare('SELECT count(*) n FROM reflection_cases').get()!.n),before);
+  const schedule=JSON.parse(String(sql.prepare("SELECT scheduler_state_json FROM learner_word_schedules WHERE word_id='a'").get()!.scheduler_state_json)) as {easeFactor:number;intervalHours:number};
+  assert.equal(schedule.easeFactor,2.35);
+  assert.equal(schedule.intervalHours,6);
+  await processing.stop();
+});
 
 test('an expired mapping lease cannot consume retry budget or revive unknown work',async()=>{
   pending();installModelInvocationLedger();

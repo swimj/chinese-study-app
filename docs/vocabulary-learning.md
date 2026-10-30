@@ -395,6 +395,16 @@ Retries do not bypass provider-work or maintenance controls.
 
 ## Feedback and scheduling compensation
 
+Learner lessons are queued for a word or an independent pure cue when its
+effective general-production evidence contains a rejection or an effective
+comment. The lesson stores that subject's general-production encounters and
+keeps only each encounter's effective responses. An undone response remains in
+the session projection and completion report, and it is absent from the lesson.
+A later effective rejection or comment for the same subject still queues a
+lesson from the retained evidence. Re-ingesting one closed completion returns
+the original lesson cases. Exercise-improvement and teaching-review selection
+use the recorded encounters, including observations Undo retained.
+
 Automatic scheduling compensation is independent of content application. The
 initial policy compensates general production and independent pure-cue scheduling,
 delaying current eligibility by at most 24 hours when every effective rejection
