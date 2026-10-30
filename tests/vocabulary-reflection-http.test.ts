@@ -8,7 +8,7 @@ import { beforeEach,afterEach,test } from 'node:test';
 import type { Express,Request,Response,NextFunction,RequestHandler } from 'express';
 import { setDb } from '../server/db/connection.ts';
 import { runWithLearnerId } from '../server/db/learner-context.ts';
-import { mapVocabularyContentSense,createVocabularyContent,createVocabularySense,getVocabularyContentForMaintenance } from '../server/db/vocabulary-content.ts';
+import { mapVocabularyContentSense,createVocabularyContent,createVocabularySense,getVocabularyContentForMaintenance,getVocabularySenseCatalog } from '../server/db/vocabulary-content.ts';
 import { createVocabularySession,appendVocabularySessionActions,stageVocabularySessionCompletion,closeVocabularySessionCompletion } from '../server/db/vocabulary-sessions.ts';
 import { ingestVocabularySessionEvidence,claimVocabularyReflectionJob,recordVocabularyFeedbackJudgment,recordVocabularyImprovementResult,listVocabularyProposalReviewBatch } from '../server/db/vocabulary-reflection.ts';
 import { registerVocabularyReflectionRoutes } from '../server/vocabulary/reflection-routes.ts';
@@ -26,7 +26,7 @@ beforeEach(()=>{
   Object.assign(process.env,{APP_AUTH_MODE:'trusted_local',APP_MODE:'study',APP_DATA_DIR:directory,APP_LEARNER_ID:'editor',APP_OPERATOR_CLERK_USER_IDS:'editor'});
   sql=new DatabaseSync(':memory:');setDb(sql);sql.exec(`PRAGMA foreign_keys=ON;CREATE TABLE learners(learner_id TEXT PRIMARY KEY,disabled_at TEXT);
     CREATE TABLE learner_word_reserve_requests(learner_id TEXT PRIMARY KEY, requested_at TEXT NOT NULL);
-    CREATE TABLE lexical_words(id TEXT PRIMARY KEY);CREATE TABLE model_invocations(id TEXT PRIMARY KEY);
+    CREATE TABLE lexical_words(id TEXT PRIMARY KEY);CREATE TABLE model_invocations(id TEXT PRIMARY KEY,step_name TEXT,provider TEXT,model TEXT,resolved_model TEXT);
     INSERT INTO learners VALUES ('alice',NULL),('bob',NULL);INSERT INTO lexical_words VALUES ('a');`);
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0039_vocabulary_content.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0062_vocabulary_sense_coverage.sql',import.meta.url),'utf8'));
@@ -553,4 +553,20 @@ test('unknown word defaults remain in attention after content approval and resol
   process.env.APP_OPERATOR_CLERK_USER_IDS='';assert.equal(call('get',`${base}/practice-preparation/failures`).status,403);process.env.APP_OPERATOR_CLERK_USER_IDS='editor';
   assert.equal(call('put',`${base}/words/:id/sense-coverage`,{params:{id:'a'},body:{expectedVersion:0,includedSenseIds:[]}}).status,200);
   assert.deepEqual(call('get',`${base}/practice-preparation/failures`).body.defaultSelectionFindings,[]);
+});
+
+test('pure cue resolution route validates identity selections and authority before queueing',()=>{
+  sql.exec("ALTER TABLE vocabulary_reflection_jobs ADD COLUMN model_choice TEXT;ALTER TABLE lexical_words ADD COLUMN traditional TEXT;ALTER TABLE lexical_words ADD COLUMN meaning TEXT NOT NULL DEFAULT 'word';INSERT INTO lexical_words(id,hanzi,pinyin) VALUES ('b','别','bié'),('c','别','biè');");
+  const work=claimVocabularyReflectionJob({kind:'exercise_improvement',now:later})!;
+  recordVocabularyImprovementResult(work.jobId,work.leaseToken,{diagnosis:'Review identities',proposal:null,
+    admission:{outcome:'single_sense',rationale:'Shared use',wordId:'a',sourceContentId:'one',sourceContentVersion:1,catalogVersion:getVocabularySenseCatalog('a').version,senseIds:[],sourceMapping:{senseId:null,establishedAt:null}},
+    pureCueReferral:{candidateWords:['字','别'],sharedPurpose:'Test shared task',rationale:'Review exact identity'},pureCuePromotion:{outcome:'needs_operator',rationale:'Ambiguous',candidateWordIds:['a'],existingContentId:null}},later);
+  const route=`${base}/cases/:id/pure-cue-resolutions`,params={id:caseId},body={modelChoice:'openai:gpt-6-sol-high',expectedContentVersion:1,selections:[{form:'字',wordId:'a'},{form:'别',wordId:'b'}]};
+  assert.equal(call('post',route,{params,body:{...body,modelChoice:'invalid'}}).status,400);
+  assert.equal(call('post',route,{params,body:{...body,unexpected:true}}).status,400);
+  assert.equal(call('post',route,{params,body:{...body,selections:[body.selections[0],body.selections[0]]}}).status,400);
+  assert.equal(call('post',route,{params,body:{...body,selections:[{form:'字',wordId:'a'},{form:'别',wordId:'missing'}]}}).status,409);
+  process.env.APP_OPERATOR_CLERK_USER_IDS='someone-else';assert.equal(call('post',route,{params,body}).status,403);process.env.APP_OPERATOR_CLERK_USER_IDS='editor';
+  const result=call('post',route,{params,body});assert.equal(result.status,200);assert.equal(wakes,1);assert.notEqual(result.body.caseId,caseId);
+  assert.equal(getVocabularyContentForMaintenance('one')!.version,1);assert.equal(sql.prepare('SELECT count(*) n FROM content_proposals').get()!.n,0);
 });

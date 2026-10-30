@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import type { VocabularyJson } from '../../domain/vocabulary-content';
-import type { VocabularyEncounterEvidence, VocabularyEncounterSnapshot } from '../../domain/vocabulary-session';
+import { getEffectiveVocabularyEncounterReactions, getVocabularyEncounterReactions, type VocabularyEncounterEvidence, type VocabularyEncounterSnapshot } from '../../domain/vocabulary-session';
 
 type ReadableValue = VocabularyJson;
 
@@ -46,15 +46,30 @@ function ServedSnapshot({ snapshot }: { snapshot: VocabularyEncounterSnapshot })
   </article>;
 }
 
+export function groupedServedEvidence(evidence: readonly VocabularyEncounterEvidence[]) {
+  const groups=new Map<string,{snapshot:VocabularyEncounterSnapshot;encounters:VocabularyEncounterEvidence[]}>();
+  for(const encounter of evidence){
+    const key=JSON.stringify(encounter.snapshot);
+    const group=groups.get(key);
+    if(group)group.encounters.push(encounter);else groups.set(key,{snapshot:encounter.snapshot,encounters:[encounter]});
+  }
+  return [...groups.values()];
+}
 export function ServedContentLead({ evidence, historical=false }: { evidence: readonly VocabularyEncounterEvidence[] | null; historical?:boolean }) {
   const lead = servedContentLead(evidence);
   return <div className="vocabulary-served-lead" aria-label={historical?"Historical session content":"Original served content"}>
     <p className="vocabulary-served-label">{historical?"Historical session content":"Original served content"}</p>
     {lead.status === 'unavailable'
       ? <p>The original served content is not available for this entry.</p>
-      : lead.items.map(item => 'missing' in item
-        ? <p key={item.encounterId}>The original served snapshot is not available for this encounter.</p>
-        : <ServedSnapshot key={item.encounterId} snapshot={item.snapshot} />)}
+      : groupedServedEvidence(evidence??[]).map(group=><div key={group.encounters[0].encounterId}>
+        {group.snapshot&&typeof group.snapshot.body?.prompt==='string'?<ServedSnapshot snapshot={group.snapshot}/>:<p>The original served snapshot is not available for this encounter.</p>}
+        <ul className="vocabulary-encounter-responses">{group.encounters.map(encounter=><li key={encounter.encounterId}>
+          {encounter.responses.map(response=><span key={response.actionId}>{response.payload.response??'Self assessment'} · {response.payload.outcome}{!encounter.effectiveResponses.some(item=>item.actionId===response.actionId)?' (undone)':''}; </span>)}
+          {encounter.skipped&&<span>Skipped; </span>}{encounter.presentationUndone&&<span>Presentation undone; </span>}
+          {getVocabularyEncounterReactions(encounter).map(reaction=><span key={reaction.actionId}>{reaction.payload.feedback}{reaction.payload.comment?`: ${reaction.payload.comment}`:''}{!getEffectiveVocabularyEncounterReactions(encounter).some(item=>item.actionId===reaction.actionId)?' (undone)':''}; </span>)}
+          {!encounter.responses.length&&!encounter.skipped&&!getVocabularyEncounterReactions(encounter).length&&<span>No response</span>}
+        </li>)}</ul>
+      </div>)}
   </div>;
 }
 

@@ -1,4 +1,4 @@
-import { pureCueIdentityOptions, PURE_CUE_RESOLUTION_CONTRACT, type PureCueResolution } from '../vocabulary/pure-cue-promotion.ts';
+import { getPureCueResolution, pureCueIdentityOptions, PURE_CUE_RESOLUTION_CONTRACT, type PureCueResolution } from '../vocabulary/pure-cue-promotion.ts';
 import { getVocabularyDefaultSelectionFinding,inheritVocabularyCaseSenseCoverage } from './vocabulary-sense-coverage.ts';
 import { failPreparationAttempt } from '../vocabulary/preparation-retry.ts';
 import { randomUUID } from 'node:crypto';
@@ -6,7 +6,7 @@ import { vocabularyAuthoredPromptBody,vocabularyPhraseClozeError } from '../../s
 import type { VocabularyActor, VocabularyJson, VocabularyContent } from '../../src/domain/vocabulary-content.ts';
 import { VOCABULARY_COMPENSATION_POLICY, type VocabularySecondOpinion, type VocabularyReflectionCase, type VocabularyReflectionJob,
   type VocabularyFeedbackJudgmentInput, type VocabularyProposalDraft, type VocabularyContentProposal,
-  type VocabularySenseLabel, type VocabularyProposalOperation, type VocabularyProposalApplication, type VocabularyImprovementResultInput, type VocabularyImprovementAdmission, type VocabularyPureCuePromotion, type VocabularyPureCueReferral, type VocabularyReflectionResult } from '../../src/domain/vocabulary-reflection.ts';
+  type VocabularyAssessmentReview, type VocabularySenseLabel, type VocabularyProposalOperation, type VocabularyProposalApplication, type VocabularyImprovementResultInput, type VocabularyImprovementAdmission, type VocabularyPureCuePromotion, type VocabularyPureCueReferral, type VocabularyReflectionResult } from '../../src/domain/vocabulary-reflection.ts';
 import { getEffectiveVocabularyEncounterReactions, type VocabularySessionProjection, type VocabularyEncounterEvidence } from '../../src/domain/vocabulary-session.ts';
 import { config, getDb } from './connection.ts';
 import { requireLearnerId } from './learner-context.ts';
@@ -763,7 +763,7 @@ export function listVocabularyProposals(actorId: string, status?: VocabularyCont
 }
 /** Read-only review data. This is a display projection, not approval validation. */
 type ReassessmentSource = { contentId:string; assessedVersion:number; currentVersion:number };
-type ReassessmentSummary = { eligible: boolean; source: ReassessmentSource | null; latest: {caseId:string;jobId:string;status:string;error:string|null} | null };
+type ReassessmentSummary = { eligible: boolean; unavailableReason: string | null; source: ReassessmentSource | null; latest: {caseId:string;jobId:string;status:string;error:string|null} | null };
 function reassessmentSource(evidence: VocabularyReflectionCase): ReassessmentSource | null {
   const pinned=getDb().prepare('SELECT reassessment_source_json FROM vocabulary_reflection_jobs WHERE case_id=? AND second_opinion_json IS NULL').get(evidence.caseId) as {reassessment_source_json:string|null}|undefined;
   const previous=pinned?.reassessment_source_json ? JSON.parse(pinned.reassessment_source_json) as VocabularyContent : null;
@@ -780,11 +780,24 @@ function reassessmentSummary(evidence: VocabularyReflectionCase): ReassessmentSu
   const db=getDb();
   const source=evidence.kind==='exercise_improvement'&&(evidence.status==='completed'||evidence.status==='open')
     ? db.prepare("SELECT job_id FROM vocabulary_reflection_jobs WHERE case_id=? AND status='succeeded' AND second_opinion_json IS NULL").get(evidence.caseId) as {job_id:string}|undefined : undefined;
-  if(!source) return {eligible:false,source:null,latest:null};
+  if(!source) return {eligible:false,unavailableReason:evidence.kind!=='exercise_improvement'?'Only exercise improvement assessments can be reassessed.':evidence.status==='closed'?'This assessment is closed.':'A successful assessment is required before reassessment.',source:null,latest:null};
   const latest=db.prepare(`SELECT case_id AS caseId,job_id AS jobId,status,last_error AS error FROM vocabulary_reflection_jobs
     WHERE reassessment_source_job_id=? ORDER BY CASE WHEN status IN ('queued','running') THEN 0 ELSE 1 END,created_at DESC,job_id DESC LIMIT 1`).get(source.job_id) as ReassessmentSummary['latest'] | undefined;
   const current=reassessmentSource(evidence);
-  return {eligible:current!==null,source:current,latest:latest??null};
+  return {eligible:current!==null,unavailableReason:current?null:'The current source is unavailable or is not an active general production exercise.',source:current,latest:latest??null};
+}
+function assessmentReview(caseId:string, fallbackInvocationId?:string|null):VocabularyAssessmentReview {
+  const row=getDb().prepare("SELECT job_id,result_json,reassessment_source_job_id FROM vocabulary_reflection_jobs WHERE case_id=? AND kind='exercise_improvement' AND status='succeeded' AND second_opinion_json IS NULL").get(caseId) as {job_id:string;result_json:string;reassessment_source_job_id:string|null}|undefined;
+  const result=row?(JSON.parse(row.result_json) as {input:VocabularyImprovementResultInput}).input:undefined;
+  const resolution=row?getPureCueResolution(row.job_id):null;
+  const parent=resolution?getDb().prepare('SELECT result_json FROM vocabulary_reflection_jobs WHERE job_id=?').get(resolution.sourceJobId) as {result_json:string}|undefined:undefined;
+  const retained=parent?(JSON.parse(parent.result_json) as {input:VocabularyImprovementResultInput}).input:undefined;
+  const ids=[...new Set([result?.admission?.invocationId,retained?.invocationId,retained?.proposal?.invocationId,result?.invocationId,result?.proposal?.invocationId,result?.pureCuePromotion?.invocationId,fallbackInvocationId].filter((id):id is string=>!!id))];
+  const models=ids.flatMap(id=>{
+    const model=getDb().prepare('SELECT id AS invocationId,step_name AS stage,provider,model,resolved_model AS resolvedModel FROM model_invocations WHERE id=?').get(id) as VocabularyAssessmentReview['models'][number]|undefined;
+    return model?[{...model,stage:model.stage??'exercise_improvement'}]:[];
+  });
+  return {origin:resolution?'identity_resolution':row?.reassessment_source_job_id?'reassessment':row?'automatic':'unavailable',models,...(result?.admission?{admission:result.admission}:{})};
 }
 /** Display metadata only: never establishes an inventory or its useful selection. */
 function senseLabels(wordIds:Iterable<string>,cache=new Map<string,VocabularySenseLabel[]>()):VocabularySenseLabel[] {
@@ -798,7 +811,7 @@ function senseLabels(wordIds:Iterable<string>,cache=new Map<string,VocabularySen
   });
 }
 export function listVocabularyProposalReviewBatch(actorId: string, input: { limit?: number; startProposalId?: string; maxBytes?: number } = {}): {
-  items: {coverageChanged:boolean;senseLabels:VocabularySenseLabel[];defaultSelectionFinding:import('../../src/domain/vocabulary-sense-coverage.ts').VocabularyDefaultSelectionFinding|null; proposal: VocabularyContentProposal; case: VocabularyReflectionCase | null; reassessment: ReassessmentSummary | null;
+  items: {currentSources:VocabularyContent[];assessment:VocabularyAssessmentReview|null;coverageChanged:boolean;senseLabels:VocabularySenseLabel[];defaultSelectionFinding:import('../../src/domain/vocabulary-sense-coverage.ts').VocabularyDefaultSelectionFinding|null; proposal: VocabularyContentProposal; case: VocabularyReflectionCase | null; reassessment: ReassessmentSummary | null;
     previews: { operationKey: string; source: VocabularyContent | null; result: VocabularyProposalOperation['content'] }[] }[];
   nextProposalId: string | null;
 } {
@@ -822,7 +835,7 @@ export function listVocabularyProposalReviewBatch(actorId: string, input: { limi
       : scan.all(status,limit+1)) as {proposal_id:string;updated_at:string}[])
     .sort((a,b)=>a.updated_at===b.updated_at ? (a.proposal_id < b.proposal_id ? -1 : a.proposal_id > b.proposal_id ? 1 : 0)
       : (a.updated_at > b.updated_at ? -1 : 1)).slice(0,limit+1);
-  const items: {coverageChanged:boolean;senseLabels:VocabularySenseLabel[];defaultSelectionFinding:import('../../src/domain/vocabulary-sense-coverage.ts').VocabularyDefaultSelectionFinding|null; proposal: VocabularyContentProposal; case: VocabularyReflectionCase | null; reassessment: ReassessmentSummary | null;
+  const items: {currentSources:VocabularyContent[];assessment:VocabularyAssessmentReview|null;coverageChanged:boolean;senseLabels:VocabularySenseLabel[];defaultSelectionFinding:import('../../src/domain/vocabulary-sense-coverage.ts').VocabularyDefaultSelectionFinding|null; proposal: VocabularyContentProposal; case: VocabularyReflectionCase | null; reassessment: ReassessmentSummary | null;
     previews: { operationKey: string; source: VocabularyContent | null; result: VocabularyProposalOperation['content'] }[] }[] = [];
   const cases = new Map<string,VocabularyReflectionCase>();
   const reassessments = new Map<string,ReassessmentSummary>();
@@ -845,7 +858,11 @@ export function listVocabularyProposalReviewBatch(actorId: string, input: { limi
         ? {...operation.content,body:vocabularyAuthoredPromptBody(source.body,operation.content.body)} : operation.content };
     });
     if (caseValue && !reassessments.has(caseValue.caseId)) reassessments.set(caseValue.caseId,reassessmentSummary(caseValue));
-    const item = {coverageChanged:vocabularyProposalCoverageChanged(value),senseLabels:senseLabels([...(caseValue?.wordId?[caseValue.wordId]:[]),...value.operations.flatMap(operation=>operation.content.words.map(word=>word.wordId))],labelsByWord),defaultSelectionFinding:caseValue?.wordId?getVocabularyDefaultSelectionFinding(caseValue.wordId):null,proposal:value,case:caseValue,reassessment:caseValue?reassessments.get(caseValue.caseId)!:null,previews};
+    const currentSources=value.bases.flatMap(base=>{
+      if(!sources.has(base.contentId))sources.set(base.contentId,getVocabularyContentForMaintenance(base.contentId));
+      const source=sources.get(base.contentId);return source?[source]:[];
+    });
+    const item = {currentSources,assessment:caseValue?assessmentReview(caseValue.caseId,value.invocationId):null,coverageChanged:vocabularyProposalCoverageChanged(value),senseLabels:senseLabels([...(caseValue?.wordId?[caseValue.wordId]:[]),...value.operations.flatMap(operation=>operation.content.words.map(word=>word.wordId))],labelsByWord),defaultSelectionFinding:caseValue?.wordId?getVocabularyDefaultSelectionFinding(caseValue.wordId):null,proposal:value,case:caseValue,reassessment:caseValue?reassessments.get(caseValue.caseId)!:null,previews};
     const nextProposalId = rows[index+1]?.proposal_id ?? null;
     const bytes = Buffer.byteLength(JSON.stringify({items:[...items,item],nextProposalId}),'utf8');
     if (items.length > 0 && bytes > maxBytes) return {items,nextProposalId:row.proposal_id};
@@ -853,7 +870,7 @@ export function listVocabularyProposalReviewBatch(actorId: string, input: { limi
   }
   return {items,nextProposalId:rows[limit]?.proposal_id ?? null};
 }
-export function getVocabularyCaseWorkspace(caseId: string, actorId: string): {senseLabels:VocabularySenseLabel[];defaultSelectionFinding:import('../../src/domain/vocabulary-sense-coverage.ts').VocabularyDefaultSelectionFinding|null; case: VocabularyReflectionCase;
+export function getVocabularyCaseWorkspace(caseId: string, actorId: string): {assessment:VocabularyAssessmentReview;reassessmentUnavailableReason:string|null;senseLabels:VocabularySenseLabel[];defaultSelectionFinding:import('../../src/domain/vocabulary-sense-coverage.ts').VocabularyDefaultSelectionFinding|null; case: VocabularyReflectionCase;
   jobs: { jobId: string;kind:string;status:string;attemptNumber:number;error:string|null;secondOpinion: boolean;result: VocabularySecondOpinion['result'] }[]; proposals: VocabularyContentProposal[];sources:VocabularyContent[];
   reassessmentSource: ReassessmentSource | null;
   reassessment: {caseId:string;jobId:string;status:string;error:string|null} | null;
@@ -879,7 +896,7 @@ export function getVocabularyCaseWorkspace(caseId: string, actorId: string): {se
     WHERE source.case_id=? ORDER BY CASE WHEN child.status IN ('queued','running') THEN 0 ELSE 1 END,child.created_at DESC,child.job_id DESC LIMIT 1`).get(caseId) as {caseId:string;jobId:string;status:string;error:string|null}|undefined;
   const proposals=(getDb().prepare('SELECT proposal_id FROM content_proposals WHERE case_id=? ORDER BY updated_at DESC,proposal_id')
     .all(caseId) as {proposal_id:string}[]).map(row=>withProposalResolution(proposal(row.proposal_id)));
-  return {...(improvement?.pureCuePromotion?.outcome==='needs_operator'&&improvement.pureCueReferral&&evidence.wordId?{pureCueIdentityOptions:pureCueIdentityOptions(evidence.wordId,improvement.pureCueReferral)}:{}),senseLabels:senseLabels([...(evidence.wordId?[evidence.wordId]:[]),...sources.flatMap(source=>source.words.map(word=>word.wordId))]),defaultSelectionFinding:evidence.wordId?getVocabularyDefaultSelectionFinding(evidence.wordId):null,case:evidence,jobs,reassessmentSource:reassessmentSummary(evidence).source,reassessment:reassessment??null,proposals,sources,...(improvement ? {diagnosis:improvement.diagnosis} : {}),...(admission ? {admission} : {}),...(improvement?.pureCueReferral?{pureCueReferral:improvement.pureCueReferral}:{}),...(improvement?.pureCuePromotion?{pureCuePromotion:improvement.pureCuePromotion}:{})};
+  return {assessment:assessmentReview(caseId),reassessmentUnavailableReason:reassessmentSummary(evidence).unavailableReason,...(improvement?.pureCuePromotion?.outcome==='needs_operator'&&improvement.pureCueReferral&&evidence.wordId?{pureCueIdentityOptions:pureCueIdentityOptions(evidence.wordId,improvement.pureCueReferral)}:{}),senseLabels:senseLabels([...(evidence.wordId?[evidence.wordId]:[]),...sources.flatMap(source=>source.words.map(word=>word.wordId))]),defaultSelectionFinding:evidence.wordId?getVocabularyDefaultSelectionFinding(evidence.wordId):null,case:evidence,jobs,reassessmentSource:reassessmentSummary(evidence).source,reassessment:reassessment??null,proposals,sources,...(improvement ? {diagnosis:improvement.diagnosis} : {}),...(admission ? {admission} : {}),...(improvement?.pureCueReferral?{pureCueReferral:improvement.pureCueReferral}:{}),...(improvement?.pureCuePromotion?{pureCuePromotion:improvement.pureCuePromotion}:{})};
 }
 export function listVocabularyFailedDispatches(actorId:string):{dispatchId:string;learnerId:string;sessionId:string;error:string}[] {
   operator(actorId);

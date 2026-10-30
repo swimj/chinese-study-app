@@ -1,5 +1,5 @@
 import { vocabularyPhraseClozeError } from '../../domain/vocabulary-production-coverage';
-import type { VocabularyContentDraft } from '../../domain/vocabulary-content';
+import type { VocabularyContent,VocabularyContentDraft } from '../../domain/vocabulary-content';
 import type { VocabularyProposalOperation,VocabularySenseLabel } from '../../domain/vocabulary-reflection';
 import type { VocabularyReviewSnapshot } from './api';
 import { ReadableJson } from './content-improvement-entry';
@@ -8,20 +8,22 @@ import { consequentialContentChanges,editableCue,groupOperations,operationAnswer
 export const proposalStrategyLabels={create:'Add exercise',update_existing:'Update exercise',replace:'Replace exercise',retire:'Retire exercise'} as const;
 function ContentCue({content}:{content:VocabularyContentDraft}) {const body=content.body;return body&&typeof body==='object'&&!Array.isArray(body)&&typeof body.prompt==='string'?<p className="vocabulary-operator-cue">{body.prompt}</p>:<ReadableJson value={body}/>;}
 function ContentDetails({content}:{content:VocabularyContentDraft}){return <pre>{JSON.stringify(content,null,2)}</pre>;}
-export function CompactProposalReview({operations,previews,senses,excluded,toggle,disabled,editing,onChange,onStrategy}:{
+export function CompactProposalReview({operations,previews,senses,excluded,toggle,disabled,editing,onChange,onStrategy,stale=false,onDraftCorrection,currentSources=[],bases=[]}:{
+  currentSources?:VocabularyContent[];bases?:{contentId:string;expectedVersion:number}[];
+  stale?:boolean;onDraftCorrection?:(source:VocabularyContent)=>void;
   operations:VocabularyProposalOperation[];previews:VocabularyReviewSnapshot['previews'];senses:VocabularySenseLabel[];
   excluded:ReadonlySet<string>;toggle:(key:string)=>void;disabled:boolean;editing:boolean;
   onChange:(key:string,change:(operation:VocabularyProposalOperation)=>VocabularyProposalOperation)=>void;
   onStrategy:(index:number,strategy:'create'|'update_existing'|'replace'|'retire')=>void;
 }) {
   const scopes=[...new Set(operations.map(operationScope))],answers=[...new Set(operations.map(operationAnswers).filter(Boolean))];
-  const sources=[...new Map(previews.filter(item=>item.source).map(item=>[item.source!.contentId,item.source!])).values()];
+  const sources=[...new Map([...currentSources,...previews.flatMap(item=>item.source?[item.source]:[])].map(source=>[source.contentId,source])).values()];
   const consequences=sourceConsequences(operations,excluded);
   return <div className="vocabulary-compact-review">
     <div className="vocabulary-repertoire-header"><span>{scopes.join(' · ')}</span>{answers.length===1&&<span><strong>Expected answer</strong> {answers[0]}</span>}</div>
     {sources.map((source,index)=><div className="vocabulary-source-summary" key={source.contentId}>
       {consequences.find(item=>item.sourceContentId===source.contentId)&&<p className="vocabulary-source-effect">{consequences.find(item=>item.sourceContentId===source.contentId)!.retired?'Source exercise will retire.':'Source exercise will stay active.'}</p>}
-      <details><summary>Current source{sources.length>1?` ${index+1}`:''} · version {source.version}</summary><ContentCue content={source}/><details><summary>Source details</summary><ContentDetails content={source}/></details></details>
+      <details open={stale||undefined}><summary>Current source{sources.length>1?` ${index+1}`:''} · version {source.version}</summary><ContentCue content={source}/><p><strong>Expected answers:</strong> {(source.answers??[]).map(answer=>answer.acceptedForms.join(' / ')).join(' / ')}</p>{stale&&<p className="vocabulary-operator-meta">Proposal based on {[...new Set([...bases.filter(base=>base.contentId===source.contentId).map(base=>base.expectedVersion),...operations.flatMap(operation=>operation.strategy!=='create'&&operation.sourceContentId===source.contentId?[operation.expectedVersion]:[])])].map(version=>`v${version}`).join(', ')}</p>}{stale&&onDraftCorrection&&<button className="secondary-button" disabled={disabled} onClick={()=>onDraftCorrection(source)}>Draft a correction from v{source.version}</button>}<details><summary>Source details</summary><ContentDetails content={source}/></details></details>
     </div>)}
     {groupOperations(operations,senses).map(group=><section className="vocabulary-sense-group" key={group.key} aria-label={group.label}>
       <h3>{group.label} <span className="vocabulary-group-count">{group.operations.filter(operation=>!excluded.has(operation.operationKey)).length}/{group.operations.length}</span></h3>

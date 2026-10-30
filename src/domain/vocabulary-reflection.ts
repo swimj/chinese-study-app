@@ -100,3 +100,10 @@ export type VocabularySecondOpinion = {
   status: 'queued' | 'running' | 'succeeded' | 'failed'; attemptNumber: number;
   error: string | null; requestedAt: string; result: VocabularySecondOpinionVerdict | null;
 };
+
+/** Read-only attribution of the finalized assessment, excluding abandoned model attempts. */
+export type VocabularyAssessmentReview = {
+  origin: 'automatic' | 'reassessment' | 'identity_resolution' | 'unavailable';
+  models: { invocationId:string; stage:string; provider:string; model:string; resolvedModel:string|null }[];
+  admission?: VocabularyImprovementAdmission;
+};
