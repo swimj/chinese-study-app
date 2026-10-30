@@ -191,6 +191,9 @@
 /* Continue the app shell's bounded height through the session, as the legacy
    session panel does. Reading scrolls; the next action and history stay in reach. */
 .vocab-study-surface { display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0; overflow: hidden; }
+/* Saving shares the progress footprint so network latency cannot resize the paper. */
+.vocab-session-status { display: grid; }
+.vocab-session-status > span { grid-area: 1 / 1; }
 .vocab-study-surface > .vocab-session { flex: 1; }
 /* The rotated under-card may extend past the paper edge, but must not create
    a horizontal scroll lane in this vertically scrolling session. */

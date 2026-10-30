@@ -4,6 +4,7 @@
 // ?reduced=1 forces reduced motion and verifies no departure/tuck ghosts.
 // ?narrow=1 uses a 420px panel at 125% text; open Covered in this session for the tray.
 // ?slow=1 holds Correct's successor while checking the underlying paper stays opaque.
+// ?production=1&save-delay=1 starts on a production card with a delayed answer save.
 import { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { VocabularyStudy } from '../../src/features/vocabulary-study/VocabularyStudy';
@@ -39,6 +40,7 @@ append({ kind: 'response', payload: { encounterId: 'covered-recognition', respon
 append({ kind: 'word_wrap', payload: { wordId: 'covered-word', reason: 'policy' } });
 if (!covered) append({ kind: 'presentation', payload: { encounterId: 'intro', wordId: 'word', snapshot: { kind: 'introduction', role: 'teaching', contentId: 'intro', contentVersion: 1, body: { prompt: '字' }, assessment: null } } });
 append({ kind: 'presentation', payload: { encounterId: 'recognition', wordId: 'word', snapshot: { kind: 'recognition', role: covered ? 'general' : 'teaching', contentId: 'recognition', contentVersion: 1, body: { prompt: '字' }, assessment: { acceptedAnswers: ['字'] } } } });
+if (query.has('production')) append({ kind: 'presentation', payload: { encounterId: 'production', wordId: 'word', snapshot: { kind: 'production', role: 'teaching', contentId: 'production', contentVersion: 1, body: { prompt: 'A written character' }, assessment: { acceptedAnswers: ['字'] } } } });
 function study(): Study {
   const projection = projectVocabularySession(context, actions);
   return { session: { sessionId: 'motion', status: 'active', context, actions, projection, completion: null },
@@ -59,7 +61,7 @@ window.fetch = async (input, init) => {
   if (url.endsWith('/completion/current')) return Response.json(null);
   if (url.endsWith('/sessions')) return Response.json(study());
   if (url.endsWith('/commands')) {
-    const { command } = JSON.parse(String(init?.body)) as { command: { type: string; wordId?: string; selfAssessment: 'accepted' | 'rejected' } };
+    const { command } = JSON.parse(String(init?.body)) as { command: { type: string; wordId?: string; response?: string | null; selfAssessment?: 'accepted' | 'rejected' } };
     if (command.type === 'requeue') {
       if (command.wordId !== 'covered-word') throw new Error('Expected covered fixture word');
       requeueCalls++;
@@ -72,7 +74,10 @@ window.fetch = async (input, init) => {
     }
     if (query.has('retry') && !failed) { failed = true; return Response.json({ error: 'Fixture save failure' }, { status: 503 }); }
     if (command.type !== 'response') throw new Error(`Unexpected command ${command.type}`);
-    append({ kind: 'response', payload: { encounterId: 'recognition', response: null, outcome: command.selfAssessment, selfAssessment: command.selfAssessment } });
+    if (query.has('save-delay')) await new Promise(resolve => setTimeout(resolve, 1500));
+    append({ kind: 'response', payload: { encounterId: study().currentEncounter!.encounterId, response: command.response ?? null,
+      outcome: command.selfAssessment ?? (command.response === '字' ? 'accepted' : 'rejected'),
+      ...(command.selfAssessment ? { selfAssessment: command.selfAssessment } : {}) } });
     if (covered && command.selfAssessment === 'accepted') append({ kind: 'word_wrap', payload: { wordId: 'word', reason: 'policy' } });
     return Response.json(study());
   }
