@@ -539,7 +539,7 @@ export function calculateRestoreTimestamp(now: Date, ageHours = DEFAULT_RESTORE_
 
 export function toDigestQualifiedImage(imageRef: string | null, digest: string | null): string | null {
   if (!imageRef || !digest) return null;
-  const repository = imageRef.replace(/@sha256:[a-f0-9]+$/i, '').replace(/:[^/:]+$/, '');
+  const repository = imageRef.replace(/@sha256:[a-f0-9]+$/i, '');
   return `${repository}@${digest}`;
 }
 

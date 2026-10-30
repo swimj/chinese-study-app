@@ -168,7 +168,7 @@ npm run hosted:upgrade -- \
   --actor-id=<operator> \
   --confirm-source-revision=<full-40-character-sha> \
   --confirm-eligible-release=true \
-  --image=registry.fly.io/<rc-app>@sha256:<tested-digest>
+  --image=registry.fly.io/<rc-app>:<release-tag>@sha256:<tested-digest>
 ```
 
 `--confirm-source-revision` must match `HEAD`. Image-source paths must be

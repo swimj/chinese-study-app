@@ -119,7 +119,7 @@ describe('hosted upgrade pipeline', () => {
   test('promotes a digest-qualified RC image without rebuilding and confirms its digest', async () => {
     const digest = `sha256:${'a'.repeat(64)}`;
     const harness = createHarness({ imageDigest: digest });
-    const image = `registry.fly.io/chinese-study-rc@${digest}`;
+    const image = `registry.fly.io/chinese-study-rc:release-tested@${digest}`;
     const result = await runHostedUpgrade({ ...harness.input, image }, harness.deps);
     assert.equal(result.status, 'ok', result.failure ?? '');
     const deploy = harness.commands.find((command) => command.args[0] === 'deploy');

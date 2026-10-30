@@ -42,7 +42,7 @@ describe('hosted release candidate workflow', () => {
     );
     assert.equal(
       toDigestQualifiedImage(`registry.fly.io/${APP}:rc-${SOURCE_REVISION}`, 'sha256:abc123'),
-      `registry.fly.io/${APP}@sha256:abc123`,
+      `registry.fly.io/${APP}:rc-${SOURCE_REVISION}@sha256:abc123`,
     );
   });
 
@@ -66,7 +66,7 @@ describe('hosted release candidate workflow', () => {
     assert.equal(result.status, 'ok', result.failure ?? '');
     assert.equal(result.restoreRequestedAt, '2026-09-19T12:30:00.000Z');
     assert.equal(result.activated, true);
-    assert.equal(result.immutableImage, `registry.fly.io/${APP}@${IMAGE_DIGEST}`);
+    assert.equal(result.immutableImage, `registry.fly.io/${APP}:rc-${SOURCE_REVISION}@${IMAGE_DIGEST}`);
     assert.deepEqual(result.stages.map((stage) => `${stage.stage}:${stage.status}`), [
       'declare:ok',
       'build:ok',
@@ -114,7 +114,7 @@ describe('hosted release candidate workflow', () => {
     const rejected = await runHostedRcDeploy({ ...harness.input, image: `registry.fly.io/${APP}:latest` }, harness.deps);
     assert.equal(rejected.status, 'failed');
     assert.equal(harness.events.length, 0);
-    const image = `registry.fly.io/${APP}@${IMAGE_DIGEST}`;
+    const image = `registry.fly.io/${APP}:rc-${SOURCE_REVISION}@${IMAGE_DIGEST}`;
     const result = await runHostedRcDeploy({ ...harness.input, image }, harness.deps);
     assert.equal(result.status, 'ok', result.failure ?? '');
     assert.equal(result.immutableImage, image);

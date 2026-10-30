@@ -77,7 +77,11 @@ docker buildx imagetools inspect \
 ```
 
 Record the `Digest` from the registry inspection and construct
-`registry.fly.io/<rehearsal-app>@sha256:<digest>`. Use that immutable reference
+`registry.fly.io/<rehearsal-app>:rehearsal-<full-40-character-sha>@sha256:<digest>`.
+Preserve the release tag alongside the digest: Fly's Machine image resolver can
+reject a digest-only reference even when it locates the image. The digest pins
+the content; retaining the tag does not make it a mutable-tag deployment.
+Use that immutable reference
 below, not the tag. The build configuration must include the intended frontend
 build arguments; image identity alone cannot correct a wrong build configuration.
 
@@ -88,7 +92,7 @@ npm run hosted:rehearse -- \
   --action=prepare \
   --app=<rehearsal-app> \
   --source-app=<beta-app> \
-  --image=registry.fly.io/<image-app>@sha256:<candidate-digest> \
+  --image=registry.fly.io/<image-app>:<release-tag>@sha256:<candidate-digest> \
   --schema=migrate \
   --source-backup-env-file=<absolute-read-only-source-env> \
   --run-dir=<absolute-ignored-run-directory>
@@ -304,7 +308,7 @@ npm run hosted:rc -- \
 This fails closed if the restored backup has a pending migration. It does not
 silently turn an app-only release into a schema-changing release.
 
-Add `--image=registry.fly.io/<image-app>@sha256:<tested-digest>` to `deploy` or
+Add `--image=registry.fly.io/<image-app>:<release-tag>@sha256:<tested-digest>` to `deploy` or
 `restore` to use the immutable candidate already tested in headless rehearsal.
 The runner skips the build and confirms the installed digest before restoring.
 
@@ -435,7 +439,7 @@ npm run hosted:upgrade -- \
   --actor-id=<operator> \
   --confirm-source-revision=<full-40-character-sha> \
   --confirm-eligible-release=true \
-  --image=registry.fly.io/<rc-app>@sha256:<tested-digest>
+  --image=registry.fly.io/<rc-app>:<release-tag>@sha256:<tested-digest>
 ```
 
 The beta runner refuses mutable tags and confirms Fly is serving that digest.

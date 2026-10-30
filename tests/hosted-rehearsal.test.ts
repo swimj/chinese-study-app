@@ -73,6 +73,15 @@ test('rehearsal restores isolated digest Machine, accepts pre/post checks, migra
   } finally { f.clean(); }
 });
 
+test('preserves the release tag alongside the immutable digest for Fly image resolution', async () => {
+  const f = fixture();
+  try {
+    f.input.image = f.input.image.replace('@sha256:', ':release-e960db93@sha256:');
+    await prepareRehearsal(f.input, f.deps);
+    assert.equal(f.commands.find(args => args[0] === 'machine' && args[1] === 'run')?.[2], f.input.image);
+  } finally { f.clean(); }
+});
+
 test('failed create is recovered by recorded unique names for explicit cleanup', async () => {
   const f = fixture();
   try {
