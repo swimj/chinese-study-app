@@ -133,9 +133,9 @@ inventories with no active senses require operator attention.
 Laundry lists receive no sense association. Their old glosses need not be
 represented in the inventory or preserved by the replacement repertoire.
 
-`single-improvement.md` is the standalone r5 sense-specific improvement prompt;
-it does not include `reasoning.md` or `improvement.md`. It assesses useful
-production of the admitted sense, interprets the actual response and substantive
+`single-improvement.md` is the standalone sense-specific improvement prompt;
+it does not include `reasoning.md` or `improvement.md`. It trusts selected sense
+coverage and assesses faithful production of the exact target, interprets the actual response and substantive
 reactions, chooses a local response, and independently considers shared practice.
 Its output is `{diagnosis, operations, pureCueReferral}`. Local operations preserve
 the source's accepted answers. The nullable referral contains advisory written
@@ -143,15 +143,54 @@ forms in `candidateWords`, a `sharedPurpose`, and a `rationale`; it does not cha
 answer membership. Either action can be useful without the other. Raw learner
 `response` remains usable evidence without a structured lexical resolution.
 
-Single improvement uses prompt version 3, JSON schema version 2, and input
-projection `vocabulary-admission.v2`. `sense-mapping.md` uses standalone prompt
-version 2, schema version 1, and projection `vocabulary-admission.v1`.
+Single improvement uses prompt version 4, JSON schema version 3, and input
+projection `vocabulary-admission.v3`. `sense-mapping.md` uses standalone prompt
+version 3, schema version 1, and the same reference projection.
 Repertoire generation uses the shared general-exercise invocation in
-`../general-exercise-authoring.ts`: the full general v4 brief, schema version 1,
-and projection `general-exercises-v1`, with the reflection job's selected model.
-Active senses supply uses, notes, and any retained examples. Its structured
+`../general-exercise-authoring.ts`: the full general v5 brief, schema version 2,
+and projection `general-exercises-v2`, with the reflection job's selected model.
+Selected senses supply uses, notes, and any retained examples. Every new
+automatic item anchors to a supplied use; null/unknown references are rejected
+rather than synthesized. This narrows the output reference contract while
+leaving cue approaches and repertoire exploration open. Legacy/manual unmapped
+content is unchanged. Its structured
 direct/cloze stimuli and optional teaching notes become one replacement of the
-assessed exercise plus new exercises; unrelated existing cues remain.
+assessed exercise plus new exercises; unrelated existing cues remain. An empty
+model output after a nonempty requested scope proposes retiring only the
+assessed source. An empty requested scope instead makes no authoring call and
+proposes no content change. The shared call
+returns no sense-exclusion assessment. An empty automatic preparation result
+publishes nothing and becomes terminal operator attention without changing
+coverage or retrying automatically; explicit operator retry starts a bounded cycle.
+
+The v4 single-improvement brief preserves the v3 purpose, linguistic reasoning,
+reaction/referral distinctions and content-design guidance. Its worked cases name
+the exact target, supplied sense, served prompt, evidence and concrete decision.
+The communicative-value test and contextual-exposure distinction remain explicit;
+retirement concerns exercise design while selected coverage remains trusted.
+The old finding that no convincing repair is apparent gains an exercise-level
+retirement outcome; it does not gain authority to exclude selected senses. The
+shared v5 brief retains every substantive general-v4 authoring paragraph and
+uses the purpose/decision/design/worked-example style of the reflection briefs.
+General examples are starting points for exploration, not required cue shapes,
+a checklist, or a claim that unfamiliar approaches are defective. The prompt
+under `word-content-lab/vocabulary-experiments/` is the active production brief
+for both ordinary preparation and reflection repertoire, despite that historical
+directory name. Mapping replaces
+the old paragraph equating inventory with useful coverage because canonical
+inventory includes attested peripheral senses separately from useful defaults.
+The provider receives the full inventory without serving-policy metadata.
+Backend-normalized mapping evidence captures the first requested repertoire
+scope, retained as generationScope with audit-only provenance. Later policy
+edits do not invalidate content calls or approval; source, mapping and catalog
+fences remain. Diagnoses and rationales use readable labels, with IDs kept in
+structured references. Mapper, single improvement and promotion receive short
+call-local sense references throughout nested inventory, source relationships,
+admission and intended-sense fields. Repertoire uses and example references are
+also shortened at the shared wire boundary. Unknown references are rejected;
+responses translate back before canonical validation. Persistent stage evidence,
+generation scope, provenance links and source/catalog fences retain canonical IDs.
+Stage identity records the actual projected input/schema and projection version.
 
 A referral enters `pure-cue-promotion.md` within the same improvement job. Written
 forms must resolve to at least two unambiguous lexical identities including the
@@ -177,7 +216,7 @@ legacy linguistic guidance with a shorter rubric. See the
 [prompt development guide](../../../docs/prompt-development.md).
 
 Promotion uses prompt version 3, schema version 2, and projection
-`vocabulary-admission.v1`. Like other admission stages, it caches its exact
+`vocabulary-admission.v3`. Like other admission stages, it caches its exact
 contract and input within the job, retains invocation provenance, and fences
 source, sense catalog, candidate identities and inspected cue versions.
 Creation or extension joins any local operations in one manually reviewed
@@ -196,6 +235,65 @@ review/default sense list, retained in backend mapping evidence and admission as
 content cache/approval fences. An explicit empty invocation returns no proposal
 and leaves its source active. This interface adaptation preserves the complete
 linguistic briefs; it does not ask the model to reassess serving defaults.
+
+`scripts/review-exercise-fidelity-trial.ts` prepares standalone synthetic
+single/repertoire/mapping requests without opening an application database or
+initializing its invocation ledger. The bounded default contains 贸, 得以 and 簋
+single/general cases; use `--cases` for up to eight named cases, including 泞 and
+the separate worked-example smoke cases. 他, 有所 and 笏 are demonstrated in the
+briefs and provide contract smoke evidence, not unseen lexical judgments.
+
+`--baseline-revision` reads the retained v4/v5 general brief and matching
+single-retirement schema from Git. Requests, rendered messages, schemas, hashes,
+model settings, raw responses and validation are saved in a new archive. General
+outputs use the rendered reference schema plus shared exercise/stimulus guards,
+so historical nullable references retain their original contract rather than
+receiving current binding policy. Single outputs receive partial standalone
+identity/answer/prompt/retirement checks rather than the database-backed normalizer.
+Mapping gets schema checks only. Source/version, ownership, referential semantics
+and application fences require database-backed behavior tests.
+
+```bash
+node --import tsx scripts/review-exercise-fidelity-trial.ts \
+  --archive=/tmp/exercise-fidelity --variant=candidate
+```
+
+The default only prepares requests. Authorized live runs add
+`--allow-provider-calls`. `--model-choice` defaults to the registered Luna high
+arm and its strict OpenAI schema transport; another registered arm retains its
+provider's own transport. `--profile auto` uses production preparation settings
+for general cases (Luna high, 24000 output tokens, 180 seconds by default) and
+the selected reflection arm's settings otherwise. `--profile reflection` runs
+general authoring with reflection settings too; `--profile preparation` requires
+general-only cases. Supply credentials through the configured provider's environment
+variables. Run baseline and candidate batches sequentially; each batch has at
+most three calls in flight. A valid schema alone does not establish useful practice.
+
+The retained review comparison used 19 bounded strict-Luna calls: six cases under
+each initial brief (12), three general follow-ups, two final positive controls,
+and two standalone default-selection probes over existing canonical records.
+These provider comparisons preceded the short-reference projection and required
+new-item use binding; every retained generated item already had a supplied
+reference. Structural projection/decode and null-rejection tests cover the later
+wire adaptation. Single 贸 retired under both variants; 得以 construction practice and deliberately
+selected rare 簋 were retained. Initial general 贸 failed through compound fragments;
+the first revision still failed through character-classification questions. Those
+failures remain evidence. After adapting the established metalinguistic reasoning,
+贸 returned empty as a development case. Unseen 泞 returned empty under both
+baseline and final revision, so it demonstrates no measured improvement. Final
+得以 and 簋 controls produced six and four useful options respectively. The 得以
+direct anchor names modal enablement rather than a whole event; its five clozes
+exercise natural constructions. These one-shot observations establish bounded
+judgments, not reliability across words or formats.
+
+The first synthetic general examples used an inert `pinyin:null` field instead of
+`pronunciation:null`, identically in both variants. Corrected follow-ups retain
+their exact inputs. Validation initially loaded a pre-v5 checked-out helper that
+rejected three legitimate empty outputs; separate revalidation against the frozen
+PR4 v5 helper passed all general outputs, retaining the initial diagnostic records.
+The canonical-ID selector probes omitted 函's case/box sense and selected all three
+supplied 查询 senses; 函's existing envelope notes remain an inventory-precision
+caveat. No corpus corrections, proposal applications or cutover writes followed.
 
 Use `tests/vocabulary-improvement-admission.test.ts` for an isolated SQLite
 fixture and `createVocabularyReflectionProvider({adapter, ensureSenses,

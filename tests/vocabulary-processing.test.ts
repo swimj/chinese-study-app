@@ -129,9 +129,9 @@ test('strict real injected provider retains service provenance and rejects forge
   writeVocabularyDefaultUsefulSenses('a',0,[sense.senseId],{kind:'operator',id:'editor'});
   const adapter=createOpenAiCompatibleAdapter({id:'openai',defaultBaseUrl:'https://example.invalid',apiKeyEnvironmentVariable:'KEY',structuredOutputMode:'json_schema',maxTokensField:'max_tokens',
     fetchImplementation:async(_url,init)=>{
-      const request=JSON.parse(String(init?.body)) as {response_format:{json_schema:{name:string}}};
+      const request=JSON.parse(String(init?.body)) as {messages:Array<{content:string}>;response_format:{json_schema:{name:string}}};
       lastRequest=request as typeof request & {messages:{role:string;content:string}[]};
-      const value=request.response_format.json_schema.name.includes('sense_mapping')?{outcome:'single_sense',rationale:'A written character.',senseIds:[sense.senseId]}:payload;
+      const value=request.response_format.json_schema.name.includes('sense_mapping')?{outcome:'single_sense',rationale:'A written character.',senseIds:[JSON.parse(request.messages[1]!.content).senses[0].senseId]}:payload;
       return new Response(JSON.stringify({id:'provider-1',model:'resolved',choices:[{message:{content:JSON.stringify(value)},finish_reason:'stop'}],usage:{prompt_tokens:100,completion_tokens:10}}),{status:200});
     }});
   const provider=createVocabularyReflectionProvider({random:()=>0,environment:{OPENAI_API_KEY:'never-save-token'},adapter,
@@ -147,8 +147,10 @@ test('strict real injected provider retains service provenance and rejects forge
   const valid={diagnosis:'Repair the overloaded cue',operations:[{sourceContentId:'one',strategy:'update_existing',rationale:'A faithful wording',prompt:'A written character',acceptedAnswers:['字']}]};
   assert.equal(normalizeVocabularyReflectionOutput(improve,valid).kind,'exercise_improvement');
   payload={...valid,pureCueReferral:null};assert.equal((await provider.run(improve)).kind,'exercise_improvement');
-  const improvementInvocation=sql.prepare("SELECT * FROM model_invocations WHERE prompt_name='vocabulary-reflection-single-improvement'").get()!;
-  assert.equal(improvementInvocation.prompt_version,'3');assert.equal(improvementInvocation.schema_version,'2');assert.equal(improvementInvocation.input_projection_version,'vocabulary-admission.v2');
+  const improvementInvocation=sql.prepare("SELECT * FROM model_invocations WHERE prompt_name='vocabulary-reflection-single-improvement'").get();
+  assert.ok(improvementInvocation,'Selected sense assessment must reach the active single-improvement call');
+  assert.equal(improvementInvocation.actor_kind,'service');assert.equal(improvementInvocation.learner_id,null);assert.equal(improvementInvocation.workflow_id,improve.jobId);
+  assert.equal(improvementInvocation.prompt_version,'4');assert.equal(improvementInvocation.schema_version,'3');assert.equal(improvementInvocation.input_projection_version,'vocabulary-admission.v3');
   assert.equal(improvementInvocation.prompt_template,`\n\n${fs.readFileSync(new URL('../server/vocabulary/reflection-prompts/single-improvement.md',import.meta.url),'utf8')}`);
   assert.throws(()=>normalizeVocabularyReflectionOutput(improve,{...valid,operations:[{...valid.operations[0],acceptedAnswers:['invented']}]}),/answer criteria/);
   assert.throws(()=>normalizeVocabularyReflectionOutput(improve,{...valid,operations:[{...valid.operations[0],sourceContentId:'two'}]}),/source identities/);
@@ -345,14 +347,16 @@ function mappingTrial(reply:(attempt:number)=>{status?:number;value?:unknown;raw
   const sense=createVocabularySense({wordId:'a',description:{label:'written character'}},{kind:'operator',id:'editor'});
   establishVocabularySenseCatalog('a',getVocabularySenseCatalog('a').version,{kind:'operator',id:'editor'});
   const fetchImplementation:typeof fetch=async(_url,init)=>{
-    const request=JSON.parse(String(init?.body)) as {model:string;response_format:{type:string;json_schema:{name:string}};reasoning_effort:string};requests.push(request);
+    const request=JSON.parse(String(init?.body)) as {model:string;messages:Array<{role:string;content:string}>;response_format:{type:string;json_schema:{name:string}};reasoning_effort:string};requests.push(request);
     let value:unknown={diagnosis:'Fair cue',lesson:'A useful lesson',unfairEncounterIds:[]};
     let rawText:string|undefined;
     if(request.model==='gpt-6-luna'||request.model==='glm-5.3-flash') {
       models.push(request.model);
       const response=reply(models.length);
       if(response.status)return new Response('Provider unavailable',{status:response.status});
-      value=response.value??{outcome:'single_sense',rationale:'A written character.',senseIds:[sense.senseId]};
+      const input=JSON.parse(request.messages.find(message=>message.role==='user')!.content) as {senses:Array<{senseId:string}>};
+      assert.equal(input.senses.length,1);assert.notEqual(input.senses[0]!.senseId,sense.senseId);
+      value=response.value??{outcome:'single_sense',rationale:'A written character.',senseIds:[input.senses[0]!.senseId]};
       rawText=response.rawText;
     } else if(request.response_format.json_schema.name.includes('single_improvement')) {
       if(repairFailsOnce&&++repairs===1)return new Response('Authoring unavailable',{status:503});
@@ -403,10 +407,17 @@ test('successful fallback mapping is reused when later authoring needs explicit 
     await processing.step();clock+=30_000;await processing.step();clock+=60_000;await processing.step();await processing.step();
     assert.equal(mappingJobRow().status,'failed');assert.equal(mappingJobRow().failures,3);
     assert.equal(trial.models.length,4);
-    const stored=JSON.parse(String(sql.prepare("SELECT input_json FROM vocabulary_improvement_stages WHERE stage='sense_mapping'").get()!.input_json));
+    const mappingStage=sql.prepare("SELECT input_json,result_json,input_hash FROM vocabulary_improvement_stages WHERE stage='sense_mapping'").get()!;
+    const stored=JSON.parse(String(mappingStage.input_json));
     assert.equal(stored.contract.model,'glm-5.3-flash');assert.equal(stored.contract.provider,'zai');
+    const wireInput=JSON.parse(stored.contract.modelInput);
+    assert.equal(wireInput.senses[0].senseId,'s1');
+    assert.notEqual(stored.input.senses[0].senseId,wireInput.senses[0].senseId);
+    assert.deepEqual(JSON.parse(String(mappingStage.result_json)).senseIds,[stored.input.senses[0].senseId]);
     retryVocabularyReflectionJob(String(mappingJobRow().job_id),'editor',new Date(clock).toISOString());
     await processing.step();assert.equal(mappingJobRow().status,'succeeded');assert.equal(trial.models.length,4);
+    const reused=sql.prepare("SELECT input_hash FROM vocabulary_improvement_stages WHERE stage='sense_mapping'").all();
+    assert.equal(reused.length,1);assert.equal(reused[0]!.input_hash,mappingStage.input_hash);
   } finally {await processing.stop();}
 });
 

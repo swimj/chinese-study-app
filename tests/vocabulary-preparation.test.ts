@@ -1,3 +1,4 @@
+import { generalExerciseInvocation } from '../server/vocabulary/general-exercise-authoring.ts';
 import { writeVocabularyDefaultUsefulSenses,getVocabularyWordSenseCoverage } from '../server/db/vocabulary-sense-coverage.ts';
 import { listVocabularyExercises,getVocabularySenses } from '../server/db/vocabulary-content.ts';
 import assert from 'node:assert/strict';
@@ -53,10 +54,11 @@ beforeEach(() => {
 });
 afterEach(() => db.close());
 function output(count = 6) {
-  return { exercises: Array.from({ length: count },(_,i) => ({ id: `exercise-${i}`,sourceUseId: i === 0 ? null : 'u1',
+  return { exercises: Array.from({ length: count },(_,i) => ({ id: `exercise-${i}`,sourceUseId:'u1',
     stimulus: { kind: 'direct_text',text: `A greeting, version ${i+1}.` },teachingNote: i % 2 ? 'Use when greeting someone.' : null })) };
 }
-function response(value: unknown): Response {
+function response(value: unknown,canonical=false): Response {
+  if(!canonical)value=JSON.parse(JSON.stringify(value,(key,item)=>key==='sourceUseId'&&item==='u1'?'s1':item));
   return new Response(JSON.stringify({ id: 'provider-result',model: 'resolved-model',choices: [{ message: { content: JSON.stringify(value) },finish_reason: 'stop' }],
     usage: { prompt_tokens: 20,completion_tokens: 50,total_tokens: 70 } }),{ status: 200,headers: { 'content-type': 'application/json' } });
 }
@@ -73,14 +75,14 @@ test('generous general generation retains service invocation, exact prompt/sourc
   assert.ok(rows.every((row) => row.origin_kind === 'model' && row.access_scope === 'shared'));
   const invocation = db.prepare("SELECT * FROM model_invocations WHERE actor_id=?").get(VOCABULARY_PRACTICE_SERVICE)!;
   assert.equal(invocation.actor_kind,'service');assert.equal(invocation.learner_id,null);assert.equal(invocation.status,'completed');
-  assert.equal(invocation.prompt_name,'vocabulary-general-exercises');assert.equal(invocation.prompt_version,'v4');
+  assert.equal(invocation.prompt_name,'vocabulary-general-exercises');assert.equal(invocation.prompt_version,'v5');
   assert.ok(invocation.prompt_template);assert.ok(invocation.prompt_hash);assert.ok(invocation.request_snapshot_json);assert.ok(invocation.response_snapshot_json);
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM invocation_content_links WHERE invocation_id=? AND role='output'").get(invocation.id)!.n,6);
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM invocation_sense_links WHERE invocation_id=? AND role='input'").get(invocation.id)!.n,1);
   const answers = db.prepare('SELECT accepted_forms_json FROM exercise_answer_words').all() as Array<{ accepted_forms_json: string }>;assert.ok(answers.every((row) => row.accepted_forms_json === '["你好"]'));
-  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM content_words WHERE sense_id IS NOT NULL").get()!.n,5);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM content_words WHERE sense_id IS NOT NULL").get()!.n,6);
   const messages = sent.messages as Array<{ content: string }>;
-  assert.match(messages[0]!.content,/Five or six/);assert.deepEqual(JSON.parse(messages[1]!.content).content,content);
+  assert.match(messages[0]!.content,/Five or six/);assert.deepEqual(JSON.parse(messages[1]!.content).content,{...content,uses:content.uses.map((use,index)=>({...use,id:`s${index+1}`}))});
   assert.equal(db.prepare('SELECT status FROM vocabulary_practice_preparation').get()!.status,'ready');
 });
 
@@ -89,7 +91,7 @@ test('invalid preparation retries after 30 and 60 seconds, then an operator star
   const bad=output(1);bad.exercises[0]!.sourceUseId='invented-use';
   const provider=createVocabularyPracticeProvider({environment:{OPENAI_API_KEY:'test-key'},fetchImplementation:(async()=>{calls++;return response(bad);})as typeof fetch});
   let preparation=createVocabularyPracticePreparation({provider,now:()=>new Date(now).toISOString()});
-  await assert.rejects(preparation.prepare('w1'),/failed validation/);
+  await assert.rejects(preparation.prepare('w1'),/failed validation|invalid or incomplete/);
   const work=preparation.ensure('w1')!;
   assert.equal(work.status,'queued');assert.equal(preparation.listFailed().length,0);
   assert.equal(work.nextAttemptAt,new Date(now+30_000).toISOString());
@@ -180,7 +182,7 @@ test('teaching exercises consume exact retained introduction and keep successful
 test('actual teaching-exercise transport retains delivered text and changes generation key with it', async () => {
   let sent:Record<string,unknown>={};
   const provider=createWordIntroductionProvider({environment:{OPENAI_API_KEY:'test-key'},fetchImplementation:(async(_url,init)=>{
-    sent=JSON.parse(String(init?.body));return response({exercises:[{id:'r',sourceUseId:'u1',stimulus:{kind:'direct_text',text:'Hello.'},teachingNote:'A familiar greeting.'}]});
+    sent=JSON.parse(String(init?.body));return response({exercises:[{id:'r',sourceUseId:'u1',stimulus:{kind:'direct_text',text:'Hello.'},teachingNote:'A familiar greeting.'}]},true);
   }) as typeof fetch});
   const teaching={id:'intro',wordContentId:content.id,beats:[{id:'b',parts:[{kind:'text' as const,text:'A familiar greeting.'}]}]};
   const adapted=await provider.generatePractice(content,{teaching,invocationActor:{kind:'service',serviceId:'teaching-test'}});
@@ -201,7 +203,7 @@ test('successful real shared teaching transport publishes separate author and ex
     const sent=JSON.parse(String(init?.body));
     const name=sent.response_format.json_schema.name as string;
     return response(name==='intro_lab_teaching_v2' ? {beats:[{id:'b',parts:[{kind:'text',text:'Use this expression to greet a familiar person.'}]}]}
-      : {exercises:[{id:'r',sourceUseId:'u1',stimulus:{kind:'direct_text',text:'Greet a familiar person.'},teachingNote:null}]});
+      : {exercises:[{id:'r',sourceUseId:'u1',stimulus:{kind:'direct_text',text:'Greet a familiar person.'},teachingNote:null}]},true);
   }) as typeof fetch});
   const service=createSharedWordPreparation(provider);
   assert.equal(service.claim('w1','teaching','authoring',new Date().toISOString(),new Date(Date.now()+300_000).toISOString()),'claimed');
@@ -358,7 +360,7 @@ for (const failure of ['invalid-json','invalid-structure'] as const) test(`${fai
   const provider=createVocabularyPracticeProvider({environment:{OPENAI_API_KEY:'test'},fetchImplementation:(async()=>{
     calls++;
     if(calls>1)return response(output());
-    if(failure==='invalid-structure')return response(output(0));
+    if(failure==='invalid-structure')return response({exercises:'not an array'});
     return new Response(JSON.stringify({choices:[{message:{content:'not JSON'},finish_reason:'stop'}]}),{status:200,headers:{'content-type':'application/json'}});
   })as typeof fetch});
   const worker=createVocabularyPracticeWorker({provider,concurrency:1,demand:()=>['w1','w2'],
@@ -390,12 +392,36 @@ test('an outage pauses new dispatch without rejecting a running sibling publicat
 });
 
 
-test('shared authoring extraction preserves the ordinary preparation generation identity',()=>{
+test('changed shared authoring prompt and empty-output contract intentionally change preparation identity',()=>{
   const prompt=fs.readFileSync(new URL('../server/word-content-lab/vocabulary-experiments/prompts/general-exercises-v4.md',import.meta.url),'utf8');
   const priorIdentity={prompt,promptVersion:'v4',schema:experimentOutputSchema({role:'general_exercises',content}),
     model:'gpt-5.6-luna',reasoning:'high',maxOutputTokens:24_000,inputProjectionVersion:'general-exercises-v1'};
   const priorKey=createHash('sha256').update(JSON.stringify(priorIdentity)).digest('hex');
-  assert.equal(createVocabularyPracticeProvider({environment:{OPENAI_API_KEY:'fake'}}).generationKey(content),priorKey);
+  const active=generalExerciseInvocation(content);
+  const activeKey=createHash('sha256').update(JSON.stringify({prompt:active.systemPrompt,promptVersion:active.promptVersion,schema:active.outputSchema,
+    model:'gpt-5.6-luna',reasoning:'high',maxOutputTokens:24_000,inputProjectionVersion:active.inputProjectionVersion})).digest('hex');
+  const key=createVocabularyPracticeProvider({environment:{OPENAI_API_KEY:'fake'}}).generationKey(content);
+  assert.equal(key,activeKey);assert.notEqual(key,priorKey);
+});
+
+test('empty faithful practice requires operator attention without automatic retries or coverage changes',async()=>{
+  const coverage=getVocabularyWordSenseCoverage('w1');let calls=0;
+  const provider={model:'fixture',isConfigured:()=>true,generationKey:()=> 'empty-faithful-v1',async generate(){calls++;return {exercises:[]};}};
+  const preparation=createVocabularyPracticePreparation({provider});
+  const work=preparation.ensure('w1')!;assert.ok(work);
+  const initialCount=db.prepare('SELECT COUNT(*) n FROM content_items').get()!.n;
+  const token=preparation.claim(work.workId)!;assert.ok(token);
+  await assert.rejects(()=>preparation.run(work.workId,token),/authored no exercises; operator review required/);
+  assert.equal(preparation.ensure('w1')!.status,'failed');
+  assert.equal(preparation.listFailed()[0]!.lastError,'no_faithful_exercises');
+  assert.equal(preparation.listFailed()[0]!.workId,work.workId);
+  assert.equal(preparation.listFailed()[0]!.retryable,true);
+  const recommendation=db.prepare("SELECT data_json FROM backend_events WHERE name='vocabulary.practice_preparation.no_exercises'").get()!;
+  assert.deepEqual(JSON.parse(String(recommendation.data_json)).exercises,[]);
+  assert.equal(db.prepare('SELECT diagnostic FROM vocabulary_preparation_attempts WHERE attempt_id=?').get(token)!.diagnostic,'no_faithful_exercises');
+  await preparation.prepare('w1');assert.equal(calls,1);
+  assert.deepEqual(getVocabularyWordSenseCoverage('w1'),coverage);
+  assert.equal(db.prepare('SELECT COUNT(*) n FROM content_items').get()!.n,initialCount);
 });
 
 for(const badText of ['没有空格。','____'])test(`ordinary preparation reaches shared cloze validation for ${badText}`,async()=>{
@@ -548,4 +574,15 @@ test('operator none prerequisite can reopen when useful demand returns, while au
   writeVocabularyDefaultUsefulSenses('w1',getVocabularyWordSenseCoverage('w1').version,[],{kind:'service',id:'fixture'});
   writeVocabularyDefaultUsefulSenses('w1',getVocabularyWordSenseCoverage('w1').version,[sense.senseId],{kind:'service',id:'fixture'});
   await preparation.prepare('w1');assert.equal(calls,1);assert.equal(preparation.ensure('w1')!.status,'ready');
+});
+
+test('valid empty automatic output retains its invocation and recommendation in operator attention',async()=>{
+  const provider=createVocabularyPracticeProvider({environment:{OPENAI_API_KEY:'test-key'},fetchImplementation:(async()=>response({exercises:[]}))as typeof fetch});
+  const preparation=createVocabularyPracticePreparation({provider});
+  await assert.rejects(()=>preparation.prepare('w1'),/operator review required/);
+  const invocation=db.prepare("SELECT id,status,response_snapshot_json FROM model_invocations WHERE actor_id=?").get(VOCABULARY_PRACTICE_SERVICE)!;
+  assert.equal(invocation.status,'completed');assert.match(String(invocation.response_snapshot_json),/exercises/);
+  const attention=preparation.listFailed()[0]!;
+  assert.equal(attention.invocationId,invocation.id);assert.equal(attention.lastError,'no_faithful_exercises');assert.equal(attention.retryable,true);
+  assert.equal(preparation.listQueued().length,0);
 });

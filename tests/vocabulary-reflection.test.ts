@@ -144,11 +144,11 @@ function dictionaryRepertoireProvider(accessScope:'shared'|'private',version:num
   let calls=0;
   const adapter:ProviderAdapter={id:'fake',defaultBaseUrl:'https://unused.invalid',apiKeyEnvironmentVariable:'KEY',structuredOutputMode:'json_schema',async run(request){
     calls++;
-    const input=JSON.parse(request.userPrompt) as {sourceContent:VocabularyContent};
+    const input=JSON.parse(request.userPrompt) as {sourceContent:VocabularyContent;content:{uses:Array<{id:string;label:string}>}};
     if(calls===1){assert.equal(input.sourceContent.accessScope,accessScope);assert.equal(input.sourceContent.version,version);}
     const value=calls===1?{outcome:'laundry_list',rationale:'The corpus gloss bundles useful meanings.',senseIds:[]}
-      :{exercises:[{id:'character',sourceUseId:'character',stimulus:{kind:'direct_text',text:'A single written unit in a text.'},teachingNote:'Written unit.'},
-        {id:'script',sourceUseId:'script',stimulus:{kind:'direct_text',text:'A system of signs used for writing.'},teachingNote:'Writing system.'}]};
+      :{exercises:[{id:'character',sourceUseId:input.content.uses.find(use=>use.label==='character')!.id,stimulus:{kind:'direct_text',text:'A single written unit in a text.'},teachingNote:'Written unit.'},
+        {id:'script',sourceUseId:input.content.uses.find(use=>use.label==='script')!.id,stimulus:{kind:'direct_text',text:'A system of signs used for writing.'},teachingNote:'Writing system.'}]};
     return {provider:'fake',model:'fake',responseId:null,structuredOutputMode:'json_schema',rawText:JSON.stringify(value),finishReason:'stop',rawResponse:null,
       usage:{inputTokens:null,cachedInputTokens:null,cacheWriteInputTokens:null,outputTokens:null,reasoningTokens:null,totalTokens:null},invocationId:null};
   }};
@@ -401,7 +401,7 @@ test('real provider content edits remain applicable while serving selection chan
   let calls=0;
   const adapter:ProviderAdapter={id:'fake',defaultBaseUrl:'https://unused.invalid',apiKeyEnvironmentVariable:'KEY',structuredOutputMode:'json_schema',async run(request){
     calls++;assert.equal(Object.hasOwn(JSON.parse(request.userPrompt),'coverage'),false);
-    const value=calls===1?{outcome:'single_sense',rationale:'The authored task names a written character.',senseIds:[sense.senseId]}:
+    const value=calls===1?{outcome:'single_sense',rationale:'The authored task names a written character.',senseIds:[JSON.parse(request.userPrompt).senses[0].senseId]}:
       {diagnosis:'Improve this exact exercise.',pureCueReferral:null,operations:[{sourceContentId:'one',strategy:'update_existing',rationale:'A direct faithful cue.',prompt:'A written character.',acceptedAnswers:['字']}]};
     if(calls===2)writeVocabularyWordSenseCoverage('a',1,[],actor);
     return {provider:'fake',model:'fake',responseId:null,structuredOutputMode:'json_schema',rawText:JSON.stringify(value),finishReason:'stop',rawResponse:null,

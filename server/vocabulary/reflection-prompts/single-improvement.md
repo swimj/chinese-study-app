@@ -15,10 +15,14 @@ a clear idea, intention, or situation, not necessarily a physical scene.
 The learner should be able to respond by feel rather than search an
 excessively broad space of possible meanings.
 
-An earlier step identified the intended sense of this exercise. Your task is
-to improve practice of that sense, considering the constructions, rhythm,
-collocations, and situations that make it useful to express. A good local
-exercise and a useful shared-practice opportunity may coexist.
+An earlier step identified the intended sense of this exercise. The selected
+sense is intentional learning coverage: trust that it is needed, including
+specialized, uncommon, or personally relevant uses. Your task is to improve
+faithful practice of that sense, considering the constructions, rhythm,
+collocations, and situations that make it useful to express. Assess the exercise's
+linguistic fidelity and retrieval design, not whether this sense deserves
+general-population coverage. A good local exercise and a useful shared-practice
+opportunity may coexist.
 
 When an encounter suggests a worthwhile expressive task that admits both the
 target and another word, you may refer that opportunity for pure-cue review.
@@ -68,7 +72,9 @@ The user message contains `word`, `intendedSense`, `sourceContent`, and
 Return a diagnosis and two independently optional kinds of action:
 
 - `operations`: zero or more local exercise proposals, preserving the supplied
-  accepted answers and intended sense.
+  accepted answers and intended sense. You may retire this exercise without
+  replacement when no faithful repair is apparent. Retirement does not exclude
+  the selected sense or declare its coverage unnecessary.
 - `pureCueReferral`: null or a reasoned candidate for later shared-practice
   review. It does not create a pure cue or change answer membership.
 
@@ -92,12 +98,18 @@ Several findings may coexist:
 - The exercise already supports useful direct production.
 - The capability is useful, but the cue evokes it poorly.
 - A useful expressive task admits more than one natural answer.
-- A convincing deliberate-production exercise for this lexical unit and sense
-  is not apparent, even though contextual exposure may still be valuable.
+- This source fails to exercise the exact lexical unit faithfully, and a
+  convincing, worthwhile repair of this exercise is not apparent, even though recognition
+  or contextual exposure may still be valuable. The selected sense remains
+  necessary coverage; this finding concerns the exercise.
 
-Assess the exact lexical unit. A poor cue does not prove that its intended
-capability is not worth practicing. Conversely, making a cue more selective
-is not enough if the resulting task has little communicative value.
+Assess the exact lexical unit. A poor cue does not prove that its selected
+sense should be dropped. Conversely, making a cue more selective does not fix
+an exercise that retrieves a different lexical unit. Making a cue more selective
+is also not enough if the resulting task has little communicative value. Assess
+whether the learner practises the target's actual contribution to the selected meaning. Do not use
+rarity, literary register, specialized context, or assumed general popularity
+as reasons to decline practice of deliberately selected coverage.
 
 Ask whether the visible wording evokes a coherent, useful meaning without
 mentally supplying restrictions from the target, the admitted sense, or
@@ -149,7 +161,18 @@ Choose a faithful response to the capability and evidence assessed above:
 - Clarify or repair a cue whose visible task poorly evokes the intended use.
 - Offer another faithful retrieval route when it adds useful practice or
   addresses a learner's preference without displacing a worthwhile original.
-- Explain why a convincing repair is not apparent rather than manufacture one.
+- Retire this source without replacement when no convincing repair offers
+  faithful, worthwhile practice of the exact target in the selected sense.
+  Explain the exercise-level limitation rather than manufacturing a more
+  selective version of the same mismatched task.
+- Leave genuine uncertainty visible instead of treating uncertainty as proof
+  that retirement is needed.
+
+An empty operations array retains the source; it is not retirement. A retire
+proposal stops this exercise only. Sense selection and exclusion are operator
+decisions outside this call, and retirement must not stand in for excluding
+a rare or specialized sense. Preserve a faithful existing exercise even if
+its selected use would be uncommon for a general learner.
 
 The smallest faithful response is often enough, but minimal change is not the
 learning objective. A different cue mechanism may work better than polishing
@@ -212,7 +235,8 @@ different served cue valid or invalid.
 Use Mandarin for natural example sentences, clozes, and short phrase stems.
 Use concise English for meanings and situation frames that help evoke the
 intended expression. Write internal explanations in concise English, retaining
-Mandarin where it carries the language point.
+Mandarin where it carries the language point. Use readable sense labels in
+diagnosis and rationale prose; keep IDs in structured reference fields.
 
 The learner should quickly understand what they are trying to express. An
 accurate prompt can still be wooden, indirect, or needlessly demanding to read.
@@ -285,68 +309,150 @@ belong after reveal, outside this call's authored prompt output.
 
 ## Worked decision patterns
 
-These illustrate reasoning, not lexical rules, mandatory output templates, or
-examples to copy into unrelated exercises.
+Each case names a possible input: the exact target, the supplied sense, and the
+prompt the learner saw, followed by relevant encounter evidence and a concrete
+judgment. The sense is already selected, not a choice for this call to make.
+These are example judgments, not lexical rules, required cue formats, or an
+exhaustive account of useful practice. Apply the reasoning to the actual input;
+do not copy its decision simply because a target resembles an example.
 
 ### Keep a useful task after a genuine substitution
 
-For `适用` under “to be applicable,” a response of `实用` means practical or
-useful, not applicable. The direct cue is coherent. Retain it unless other
-evidence identifies an improvement; related meanings alone do not justify a
-shared-practice referral.
+- Target: `适用`.
+- Supplied sense: to be applicable to a situation.
+- Served prompt: `to be applicable`.
+- Encounter: the learner supplied `实用`.
+
+Retain this exercise, with no local operation and no pure-cue referral. The
+prompt evokes a useful meaning directly. `实用` means practical or useful,
+not applicable; related meanings do not create a shared expressive task.
+Explain that concrete substitution in the diagnosis rather than rewriting a
+useful cue merely because the learner missed it.
 
 ### Improve readability after a correct answer
 
-For `犹豫`, imagine a long circumstance describing someone weighing two options,
-delaying a decision, imagining consequences, and repeatedly reconsidering. The
-learner answers correctly but says it takes too long to understand what is
-being asked. A concise frame such as `hesitate because you cannot decide:
-拿不定主意时，人往往会____。` can preserve the capability while making retrieval
-more immediate. Success on the original does not negate the reaction.
+- Target: `犹豫`.
+- Supplied sense: hesitate because one cannot decide.
+- Served prompt: `When faced with two possible choices, you keep weighing the
+  advantages and drawbacks of each, imagine what might happen afterward, delay
+  making a decision, and reconsider the options again.`
+- Encounter: the answer was correct; the learner says the prompt takes too long
+  to understand.
+
+Replace the source with `hesitate because you cannot decide: 拿不定主意时，人往往会____。`
+The intended capability is useful, but the narrative makes the learner work to
+identify it. The compact frame and natural sentence preserve the same sense
+while making retrieval more immediate. The correct answer does not negate the
+substantive reaction. No distinct response word supports a referral.
 
 ### Repair a broad cloze with an expressive frame
 
-For `忐忑` under `等待消息时，她心里很____。`, many emotional states fit.
-If the admitted sense is uneasy anticipation, a frame such as
-`uneasy and apprehensive while waiting for news: 等待消息时，她心里很____。`
-can clarify the task without making the sentence unnatural. A response naming
-excitement may fit the original, but an umbrella task about feelings would not
-preserve this intended use.
+- Target: `忐忑`.
+- Supplied sense: uneasy and apprehensive anticipation.
+- Served prompt: `等待消息时，她心里很____。`
+- Encounter: the learner supplied `兴奋`.
 
-### Let a construction carry the sense
+Update the cue to `uneasy and apprehensive while waiting for news: 等待消息时，她心里很____。`
+Excitement fits the original sentence, which does not communicate the intended
+emotional stance. The new frame clarifies that stance without distorting the
+Mandarin. Do not refer a generic shared task about feelings: excitement and
+uneasy anticipation express different intentions here.
 
-For `忍俊不禁`, an English explanation of being unable to restrain laughter
-can be accurate but remote from how the expression is used. A circumstance
-leading naturally into `听到这个意外的回答，他____。` can let the learner practice
-that reaction in flow, provided the frame conveys involuntary amusement rather
-than merely surprise. The value is the expressive situation, not the length of
-the story or a label saying “idiom.”
+### Let a construction carry the sense without discarding a plain anchor
+
+- Target: `忍俊不禁`.
+- Supplied sense: be unable to keep from laughing.
+- Served prompt: `unable to keep from laughing`.
+- Encounter: the learner answers correctly and asks for a way to practise it in
+  a sentence.
+
+Keep the useful direct cue and create an additional option:
+`unable to suppress a laugh at a funny answer: 听到这个风趣的回答，他____。`
+The frame makes involuntary amusement graspable and the sentence lets the
+learner practise the reaction in flow. The value is that expression, not a
+story's length or the label “idiom.” No referral is needed.
 
 ### Practice a useful collocation
 
-For `休闲`, `leisure time: ____时间` offers a compact way to practice the word
-as a building block in a useful collocation. The short meaning frame and familiar
-combination can together provide strong enough evocation. Learning to readily
-produce a word in such combinations is itself valuable practice.
+- Target: `休闲`.
+- Supplied sense: leisure or relaxation outside work.
+- Served prompt: `leisure time: ____时间`.
+- Encounter: the learner answers correctly and requests review without a comment.
+
+Retain the source, with no local operation or referral. The short meaning frame
+and familiar combination practise a useful building block. A correct sentence
+fragment need not be expanded into a scene, and a review request supplies no
+particular reason to replace a helpful cue.
 
 ### Refer overlap without forcing a repair
 
-For `提醒` and the response `提示` under
-`系统会____用户的密码即将过期。`, both can naturally describe the system notifying
-the user about an expiring password. A referral can identify that notification
-task while leaving the useful source cue unchanged. Their overlap here does
-not establish interchangeability in every use. The next stage assesses whether
-an existing pure cue can cover it or a new one would be useful.
+- Target: `提醒`.
+- Supplied sense: bring something to someone's attention so they remember or act.
+- Served prompt: `系统会____用户的密码即将过期。`
+- Encounter: the learner supplied `提示`.
+
+Keep the useful local cue and refer the shared task of notifying a user that
+their password is about to expire. Both words can naturally describe that task.
+Their overlap here does not establish interchangeability in every use. The next
+stage assesses the shared-practice design and whether an existing cue can cover
+it; do not manufacture a local repair just to make the referral possible.
 
 ### Clarify locally and refer independently
 
-For `批准` in the sense of officially authorizing a request, a bare cue “agree”
-may invite the response `同意`. A local draft can make official authorization
-clear, such as `officially authorize a leave request: 主管已经____了她的请假申请。`
-The same task may also support `同意`, with a difference of emphasis. Propose the
-clarification for its learning value and refer the apparent shared task for
-assessment. Neither action requires proving the words are identical or promising
-that the local draft uniquely elicits `批准`.
+- Target: `批准`.
+- Supplied sense: officially authorize a request.
+- Served prompt: `agree`.
+- Encounter: the learner supplied `同意`.
+
+Replace the broad source with `officially authorize a leave request: 主管已经____了她的请假申请。`
+Also refer that authorization task for shared-practice review: `同意` can
+naturally perform it, with a difference of emphasis. The local change earns its
+place by making the intended use clearer, not by proving that only `批准` can
+fit. Both proposals have their own useful justification.
+
+### Retire a task that does not earn deliberate recall
+
+- Target: `他`.
+- Supplied sense: other, another; the source notes describe its contribution in
+  expressions such as `他人` and `他日`.
+- Served prompt: `请尊重____人的隐私。`
+- Encounter: the learner supplied the accepted target and requested review
+  without a comment or distinct response word.
+
+Propose retiring this source without replacement, with no referral. The completed
+sentence is natural, but this retrieval task completes the larger word `他人`.
+Adding “formal, written” makes the same compound-completion task more selective;
+it does not give this isolated recall a useful communicative purpose. In this
+assessment, no convincing faithful repair is apparent. Contextual exposure can
+still help the learner understand the selected sense. Keep that sense selected;
+do not substitute the pronoun sense or infer that its coverage is unnecessary.
+This concrete decision does not establish that every bound contribution is
+unexercisable or that a future assessment could never find another useful task.
+
+### Keep genuine construction practice
+
+- Target: `有所`.
+- Supplied sense: a limited or unspecified degree before a verb.
+- Served prompt: `to some extent: 情况____改善。`
+- Encounter: the learner answers correctly and requests review without a comment.
+
+Retain the source, with no local operation or referral. The target contributes
+limited degree in ordinary syntax, and the supplied construction makes that
+contribution available for recall. It is not merely a one-character fragment
+of a larger stored compound. Do not retire useful construction practice because
+its target does not express the whole sentence by itself.
+
+### Keep a deliberately selected uncommon referent
+
+- Target: `笏`.
+- Supplied sense: a ceremonial tablet held by officials at imperial court,
+  deliberately selected for a learner interested in historical court vocabulary.
+- Served prompt: `A ceremonial tablet held by officials at imperial court.`
+- Encounter: the learner answers correctly and requests review without a comment.
+
+Retain the precise direct cue, with no local operation or referral. It evokes
+the selected referent directly. Its rarity does not make this exercise defective,
+and a scene or cloze would not automatically improve it.
 
 ## Output details
 
@@ -362,13 +468,18 @@ Each local operation contains:
 - the supplied `sourceContentId`;
 - `strategy`: `create` for another option while retaining the source,
   `update_existing` for an edit preserving identity, or `replace` for a successor
-  that retires the source;
+  that retires the source, or `retire` to stop this source without replacement;
 - a nonempty `rationale` explaining the pedagogical value and strategy;
-- the new learner-facing `prompt`; and
+- the new learner-facing `prompt` for authored changes, or an empty string
+  for retirement; and
 - the unchanged `acceptedAnswers`.
 
 Identity choices are reviewable proposals. Do not let storage strategy determine
-which exercise would help. An empty operations array is valid.
+which exercise would help. An empty operations array is valid and retains the
+source. Retirement copies the same sourceContentId and acceptedAnswers; the
+backend uses its source snapshot. Do not combine retire with a local create,
+update, or replace for this source. A genuinely valuable shared-practice
+referral may coexist with retiring the poor source.
 
 `pureCueReferral` is null or contains `candidateWords` (an array of written-form
 strings), `sharedPurpose` (a string), and `rationale` (a string). Identify the target and the distinct supplied response word by
@@ -381,14 +492,19 @@ Keep private comments, personal details, encounter identifiers and the learner's
 response history out of authored prompts, including any shared cue a later
 stage authors. Private comments can inform the judgment but must not be copied
 into shared authored content. Use only the supplied source reference
-and accepted answers for local operations. Do not propose suppression, teaching
-changes, scheduling changes, or work on another word's content.
+and accepted answers for local operations. Retire is an exercise-level action.
+Do not propose sense exclusion, word suppression, teaching changes, scheduling
+changes, or work on another word's content.
 
 ## Final check
 
 Before returning, confirm that:
 
-- the proposed practice preserves the admitted sense and exact lexical unit;
+- the proposed practice preserves the selected sense and exact lexical unit;
+- coverage was trusted without judging its general popularity or excluding
+  an intentionally selected rare, specialized, or personalized use;
+- retirement concerns a failed exercise with no convincing faithful repair,
+  not a broad judgment that the selected sense should not be learned;
 - cue quality was assessed independently of response correctness;
 - author context and post-reveal material were not used as hidden clues;
 - substantive reactions informed the assessment without dictating it;
