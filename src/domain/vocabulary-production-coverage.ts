@@ -19,3 +19,10 @@ export function vocabularyAuthoredPromptBody(previous: VocabularyJson, next: Voc
     || before.prompt.trim() === after.prompt.trim()) return next;
   return { ...after, source: { kind: 'authored_prompt', previous: after.source } };
 }
+
+/** Structured phrase clozes use the same single blank contract as generated exercises. */
+export function vocabularyPhraseClozeError(body:VocabularyJson):string|null {
+  const stimulus=object(object(body).stimulus);
+  return stimulus.kind==='phrase_cloze'&&(typeof stimulus.text!=='string'||stimulus.text.match(/_+/g)?.join('|')!=='____')
+    ?'Mandarin cloze must contain exactly one ____ blank.':null;
+}

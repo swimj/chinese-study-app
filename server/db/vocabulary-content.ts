@@ -1,6 +1,6 @@
 import { resolveVocabularySenseCoverage } from './vocabulary-sense-coverage.ts';
 import { randomUUID } from 'node:crypto';
-import { vocabularyAuthoredPromptBody } from '../../src/domain/vocabulary-production-coverage.ts';
+import { vocabularyAuthoredPromptBody,vocabularyPhraseClozeError } from '../../src/domain/vocabulary-production-coverage.ts';
 import type { VocabularyActor, VocabularyBackendEvent, VocabularyContent, VocabularyContentDraft,
   VocabularyJson, VocabularyMode, VocabularySense, VocabularySenseCatalog, VocabularyTeachingBinding,
   VocabularyWordRelationship } from '../../src/domain/vocabulary-content.ts';
@@ -128,6 +128,7 @@ function expectVersion(content: VocabularyContent, expected: number): void {
 function validateDraft(draft: VocabularyContentDraft): void {
   positive(draft.payloadVersion, 'payload version');
   json(draft.body);
+  const clozeError=draft.availability==='retired'?null:vocabularyPhraseClozeError(draft.body);if(clozeError)throw new Error(clozeError);
   if (draft.contentId !== undefined) nonempty(draft.contentId, 'content identity');
   if ((draft.accessScope === 'private') !== (typeof draft.ownerLearnerId === 'string' && draft.ownerLearnerId.trim().length > 0)) {
     throw new Error('Private content requires its owner; shared content has no owner');

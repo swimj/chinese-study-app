@@ -157,6 +157,20 @@ evidence for the independent assessment. A further source change requires a new 
 against the current version. The original proposal or no-change judgment remains
 available for review; neither result is applied automatically.
 
+### Selecting and editing proposal items
+
+Proposal items share expected answers and scope labels and group by readable
+sense labels. Each item has an inclusion checkbox. Turning a replacement off
+keeps its source active. Turning it back on restores its edits. Save the selected
+items as a new revision before approval; an empty selection offers restore or
+dismissal. A failed save retains the draft and selections.
+
+The cue editor keeps structured direct cues and Mandarin clozes synchronized
+with their displayed prompt. A Mandarin cloze requires exactly one `____` blank.
+Changes to answer criteria, reveal text or expected answers appear beside the
+item; Item details contains the full authored record.
+
+
 ### Queue navigation and refresh
 
 The review queue preloads nearby proposal details in bounded batches. A cached

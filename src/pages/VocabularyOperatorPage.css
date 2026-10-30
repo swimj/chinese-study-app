@@ -104,3 +104,24 @@
 .vocabulary-reassessment-confirmation { flex-basis: 100%; }
 .vocabulary-reassessment-confirmation p { margin: .5rem 0; }
 .vocabulary-reassessment-confirmation button + button { margin-left: .5rem; }
+
+.vocabulary-repertoire-header { display: flex; flex-wrap: wrap; gap: .5rem 1.5rem; margin: 1rem 0; color: var(--text-secondary, #52676e); }
+.vocabulary-repertoire-header strong { color: var(--text, #172b32); margin-right: .35rem; }
+.vocabulary-source-summary { margin: .75rem 0; }
+.vocabulary-source-summary summary, .vocabulary-item-details summary, .vocabulary-full-draft summary { cursor: pointer; }
+.vocabulary-source-effect { margin: .35rem 0; font-weight: 600; }
+.vocabulary-operator-page .vocabulary-sense-group { padding: 0; margin: 1.25rem 0; border: 0; background: transparent; }
+.vocabulary-operator-page .vocabulary-sense-group > h3 { display: flex; gap: .75rem; align-items: baseline; margin: 0; padding: .5rem 0; border-bottom: 1px solid var(--border, #cad5d7); }
+.vocabulary-group-count { font-size: .9rem; font-weight: 400; color: var(--text-secondary, #52676e); white-space: nowrap; }
+.vocabulary-proposed-row { padding: .8rem 0; border-bottom: 1px solid var(--border, #cad5d7); min-width: 0; }
+.vocabulary-proposed-row-heading { display: flex; flex-wrap: wrap; gap: .5rem 1rem; align-items: center; justify-content: space-between; }
+.vocabulary-operator-page label.vocabulary-inclusion { display: flex; flex-direction: row; align-items: center; gap: .65rem; margin: 0; font-weight: 500; min-height: 2rem; }
+.vocabulary-inclusion input { width: 1.15rem; height: 1.15rem; flex: 0 0 auto; accent-color: #087a7b; }
+.vocabulary-proposed-row-heading select { width: auto; max-width: 100%; }
+.vocabulary-proposed-row .vocabulary-operator-cue { margin: .5rem 0; font-size: 1.1rem; }
+.vocabulary-proposed-excluded { background: var(--surface-muted, #f4f6f6); padding-inline: .65rem; }
+.vocabulary-proposed-excluded > .vocabulary-operator-cue { color: var(--text-secondary, #52676e); }
+.vocabulary-item-details { margin-top: .5rem; font-size: .95rem; }
+.vocabulary-compact-review pre { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 100%; }
+.vocabulary-cue-editor { display: grid; gap: .5rem; }
+.vocabulary-operator-page .vocabulary-cue-editor label { margin: .5rem 0; }

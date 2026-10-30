@@ -169,8 +169,5 @@ not prescribe cue types or require exercises for every selected sense. An empty
 automatic preparation result instead publishes nothing and stops for operator
 attention, preserving the valid invocation and recommendation.
 
-Proposal review groups exercises by readable sense labels and supports reversible
-item selection before saving a new revision. Excluding a replacement retains its
-source; excluding all operations does not imply application, retirement or sense
-policy changes. Structured cue editing preserves the stimulus kind and keeps its
-rendered prompt consistent with its authored fields.
+Excluding a proposal operation does not apply, retire or change sense policy.
+Excluding a replacement retains its source. An empty selection cannot be applied.

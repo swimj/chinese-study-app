@@ -64,6 +64,7 @@ export type VocabularyImprovementResultInput = {
 };
 export type VocabularyReflectionResult = { kind: 'learner_feedback'; judgment: VocabularyFeedbackJudgmentInput }
   | { kind: 'exercise_improvement'; result: VocabularyImprovementResultInput };
+export type VocabularySenseLabel = {senseId:string;wordId:string;label:string};
 export type VocabularyProposalScope = { kind: 'shared' } | { kind: 'learner'; learnerId: string };
 export type VocabularyProposalOperation = {
   operationKey: string; scope: VocabularyProposalScope; rationale: string;

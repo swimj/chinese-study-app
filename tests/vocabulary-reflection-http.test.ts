@@ -487,3 +487,38 @@ test('default-selection finding is read-only in workspace and review batch and r
   assert.equal(call('get',`${base}/cases/:id`,{params:{id:caseId}}).body.defaultSelectionFinding,null);
   assert.equal(listVocabularyProposalReviewBatch('editor').items[0]!.defaultSelectionFinding,null);
 });
+
+test('operator review and workspace preload readable sense labels without establishing usefulness',()=>{
+  createVocabularySense({senseId:'display-sense',wordId:'a',description:{label:'written correspondence',notes:['Display metadata only']}},{kind:'operator',id:'editor'});
+  const eventsBefore=sql.prepare('SELECT count(*) n FROM backend_events').get()!.n;
+  const created=call('post',`${base}/proposals`,{body:proposal()});assert.equal(created.status,200);
+  const id=String(created.body.proposalId),afterCreation=sql.prepare('SELECT count(*) n FROM backend_events').get()!.n;
+  const batch=listVocabularyProposalReviewBatch('editor',{startProposalId:id});
+  assert.deepEqual(batch.items[0]!.senseLabels,[{senseId:'display-sense',wordId:'a',label:'written correspondence'}]);
+  const workspace=call('get',`${base}/cases/:id`,{params:{id:caseId}});assert.equal(workspace.status,200);assert.deepEqual(workspace.body.senseLabels,batch.items[0]!.senseLabels);
+  assert.equal(sql.prepare('SELECT count(*) n FROM vocabulary_word_sense_coverage').get()!.n,0);
+  assert.equal(sql.prepare('SELECT count(*) n FROM backend_events').get()!.n,afterCreation);assert.ok(afterCreation>=eventsBefore);
+});
+
+test('structured cloze editorial changes survive proposal save, preview and application',async()=>{
+  const {updateCue}=await import('../src/features/vocabulary-operator/proposal-review.ts');
+  const initial=proposal();initial.operations[0]!.content.body={prompt:'Old frame\n请查收此____。',stimulus:{kind:'phrase_cloze',frame:'Old frame',text:'请查收此____。'}} as typeof initial.operations[0]['content']['body'];
+  const created=call('post',`${base}/proposals`,{body:initial});assert.equal(created.status,200);const id=String(created.body.proposalId);
+  const {getVocabularyProposal}=await import('../server/db/vocabulary-reflection.ts');
+  const current=getVocabularyProposal(id,'editor');const operation=current.operations[0]!;
+  const edited={...current,operations:[{...operation,content:updateCue(operation.content,{kind:'phrase_cloze',frame:'A revised frame',text:'请认真写好此____。'})}]};
+  const saved=call('put',`${base}/proposals/:id`,{params:{id},body:{expectedVersion:1,draft:{caseId:current.caseId??undefined,operations:edited.operations,rationale:current.rationale}}});assert.equal(saved.status,200);
+  const preview=call('post',`${base}/proposals/:id/preview`,{params:{id},body:{expectedVersion:2}});assert.equal(preview.status,200);
+  const expected={prompt:'A revised frame\n请认真写好此____。',stimulus:{kind:'phrase_cloze',frame:'A revised frame',text:'请认真写好此____。'}};
+  assert.deepEqual((preview.body.previews as {result:{body:unknown}}[])[0]!.result.body,expected);
+  const approval=call('post',`${base}/proposals/:id/approve`,{params:{id},body:{expectedVersion:2}});assert.equal(approval.status,200);
+  const applied=call('post',`${base}/proposals/:id/apply`,{params:{id},body:{expectedVersion:2,reviewId:approval.body.reviewId,idempotencyKey:'structured-edit'}});assert.equal(applied.status,200);
+  assert.deepEqual(getVocabularyContentForMaintenance('one')!.body,expected);
+});
+
+for(const text of ['没有空格','____ 和 ____'])test(`operator proposal routes reject a phrase cloze with invalid blanks: ${text}`,()=>{
+  const invalid=proposal();invalid.operations[0]!.content.body={prompt:text,stimulus:{kind:'phrase_cloze',frame:'Context',text}} as typeof invalid.operations[0]['content']['body'];
+  assert.equal(call('post',`${base}/proposals`,{body:invalid}).status,400);
+  const created=call('post',`${base}/proposals`,{body:proposal()});assert.equal(created.status,200);
+  const saved=call('put',`${base}/proposals/:id`,{params:{id:String(created.body.proposalId)},body:{expectedVersion:1,draft:invalid}});assert.equal(saved.status,400);
+});

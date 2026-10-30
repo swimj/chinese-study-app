@@ -1,11 +1,11 @@
 import { getVocabularyDefaultSelectionFinding,inheritVocabularyCaseSenseCoverage } from './vocabulary-sense-coverage.ts';
 import { failPreparationAttempt } from '../vocabulary/preparation-retry.ts';
 import { randomUUID } from 'node:crypto';
-import { vocabularyAuthoredPromptBody } from '../../src/domain/vocabulary-production-coverage.ts';
+import { vocabularyAuthoredPromptBody,vocabularyPhraseClozeError } from '../../src/domain/vocabulary-production-coverage.ts';
 import type { VocabularyActor, VocabularyJson, VocabularyContent } from '../../src/domain/vocabulary-content.ts';
 import { VOCABULARY_COMPENSATION_POLICY, type VocabularySecondOpinion, type VocabularyReflectionCase, type VocabularyReflectionJob,
   type VocabularyFeedbackJudgmentInput, type VocabularyProposalDraft, type VocabularyContentProposal,
-  type VocabularyProposalOperation, type VocabularyProposalApplication, type VocabularyImprovementResultInput, type VocabularyImprovementAdmission, type VocabularyPureCuePromotion, type VocabularyPureCueReferral, type VocabularyReflectionResult } from '../../src/domain/vocabulary-reflection.ts';
+  type VocabularySenseLabel, type VocabularyProposalOperation, type VocabularyProposalApplication, type VocabularyImprovementResultInput, type VocabularyImprovementAdmission, type VocabularyPureCuePromotion, type VocabularyPureCueReferral, type VocabularyReflectionResult } from '../../src/domain/vocabulary-reflection.ts';
 import { getEffectiveVocabularyEncounterReactions, type VocabularySessionProjection, type VocabularyEncounterEvidence } from '../../src/domain/vocabulary-session.ts';
 import { config, getDb } from './connection.ts';
 import { requireLearnerId } from './learner-context.ts';
@@ -400,6 +400,7 @@ function baseVersions(draft: VocabularyProposalDraft): VocabularyContentProposal
     nonempty(operation.operationKey); nonempty(operation.rationale);
     if (keys.has(operation.operationKey)) throw new Error('Duplicate proposal operation key'); keys.add(operation.operationKey);
     const content = operation.content;
+    if(operation.strategy!=='retire'){const clozeError=vocabularyPhraseClozeError(content.body);if(clozeError)throw new Error(clozeError);}
     if (operation.scope.kind === 'shared') {
       if (content.accessScope !== 'shared' || content.ownerLearnerId != null) throw new Error('Shared scope must match authored content');
     } else if (operation.scope.kind === 'learner') {
@@ -760,8 +761,19 @@ function reassessmentSummary(evidence: VocabularyReflectionCase): ReassessmentSu
   const current=reassessmentSource(evidence);
   return {eligible:current!==null,source:current,latest:latest??null};
 }
+/** Display metadata only: never establishes an inventory or its useful selection. */
+function senseLabels(wordIds:Iterable<string>,cache=new Map<string,VocabularySenseLabel[]>()):VocabularySenseLabel[] {
+  return [...new Set(wordIds)].flatMap(wordId=>{
+    if(cache.has(wordId))return cache.get(wordId)!;
+    const labels=getVocabularySenses(wordId).map(sense=>{
+      const description=sense.description;
+      const label=typeof description==='string'?description:description&&typeof description==='object'&&!Array.isArray(description)&&typeof description.label==='string'?description.label:'Sense label unavailable';
+      return {senseId:sense.senseId,wordId,label};
+    });cache.set(wordId,labels);return labels;
+  });
+}
 export function listVocabularyProposalReviewBatch(actorId: string, input: { limit?: number; startProposalId?: string; maxBytes?: number } = {}): {
-  items: {defaultSelectionFinding:import('../../src/domain/vocabulary-sense-coverage.ts').VocabularyDefaultSelectionFinding|null; proposal: VocabularyContentProposal; case: VocabularyReflectionCase | null; reassessment: ReassessmentSummary | null;
+  items: {senseLabels:VocabularySenseLabel[];defaultSelectionFinding:import('../../src/domain/vocabulary-sense-coverage.ts').VocabularyDefaultSelectionFinding|null; proposal: VocabularyContentProposal; case: VocabularyReflectionCase | null; reassessment: ReassessmentSummary | null;
     previews: { operationKey: string; source: VocabularyContent | null; result: VocabularyProposalOperation['content'] }[] }[];
   nextProposalId: string | null;
 } {
@@ -785,11 +797,12 @@ export function listVocabularyProposalReviewBatch(actorId: string, input: { limi
       : scan.all(status,limit+1)) as {proposal_id:string;updated_at:string}[])
     .sort((a,b)=>a.updated_at===b.updated_at ? (a.proposal_id < b.proposal_id ? -1 : a.proposal_id > b.proposal_id ? 1 : 0)
       : (a.updated_at > b.updated_at ? -1 : 1)).slice(0,limit+1);
-  const items: {defaultSelectionFinding:import('../../src/domain/vocabulary-sense-coverage.ts').VocabularyDefaultSelectionFinding|null; proposal: VocabularyContentProposal; case: VocabularyReflectionCase | null; reassessment: ReassessmentSummary | null;
+  const items: {senseLabels:VocabularySenseLabel[];defaultSelectionFinding:import('../../src/domain/vocabulary-sense-coverage.ts').VocabularyDefaultSelectionFinding|null; proposal: VocabularyContentProposal; case: VocabularyReflectionCase | null; reassessment: ReassessmentSummary | null;
     previews: { operationKey: string; source: VocabularyContent | null; result: VocabularyProposalOperation['content'] }[] }[] = [];
   const cases = new Map<string,VocabularyReflectionCase>();
   const reassessments = new Map<string,ReassessmentSummary>();
   const sources = new Map<string,VocabularyContent|null>();
+  const labelsByWord=new Map<string,VocabularySenseLabel[]>();
   for (const [index,row] of rows.slice(0,limit).entries()) {
     const value = withProposalResolution(proposal(row.proposal_id));
     let caseValue: VocabularyReflectionCase | null = null;
@@ -807,7 +820,7 @@ export function listVocabularyProposalReviewBatch(actorId: string, input: { limi
         ? {...operation.content,body:vocabularyAuthoredPromptBody(source.body,operation.content.body)} : operation.content };
     });
     if (caseValue && !reassessments.has(caseValue.caseId)) reassessments.set(caseValue.caseId,reassessmentSummary(caseValue));
-    const item = {defaultSelectionFinding:caseValue?.wordId?getVocabularyDefaultSelectionFinding(caseValue.wordId):null,proposal:value,case:caseValue,reassessment:caseValue?reassessments.get(caseValue.caseId)!:null,previews};
+    const item = {senseLabels:senseLabels([...(caseValue?.wordId?[caseValue.wordId]:[]),...value.operations.flatMap(operation=>operation.content.words.map(word=>word.wordId))],labelsByWord),defaultSelectionFinding:caseValue?.wordId?getVocabularyDefaultSelectionFinding(caseValue.wordId):null,proposal:value,case:caseValue,reassessment:caseValue?reassessments.get(caseValue.caseId)!:null,previews};
     const nextProposalId = rows[index+1]?.proposal_id ?? null;
     const bytes = Buffer.byteLength(JSON.stringify({items:[...items,item],nextProposalId}),'utf8');
     if (items.length > 0 && bytes > maxBytes) return {items,nextProposalId:row.proposal_id};
@@ -815,7 +828,7 @@ export function listVocabularyProposalReviewBatch(actorId: string, input: { limi
   }
   return {items,nextProposalId:rows[limit]?.proposal_id ?? null};
 }
-export function getVocabularyCaseWorkspace(caseId: string, actorId: string): {defaultSelectionFinding:import('../../src/domain/vocabulary-sense-coverage.ts').VocabularyDefaultSelectionFinding|null; case: VocabularyReflectionCase;
+export function getVocabularyCaseWorkspace(caseId: string, actorId: string): {senseLabels:VocabularySenseLabel[];defaultSelectionFinding:import('../../src/domain/vocabulary-sense-coverage.ts').VocabularyDefaultSelectionFinding|null; case: VocabularyReflectionCase;
   jobs: { jobId: string;kind:string;status:string;attemptNumber:number;error:string|null;secondOpinion: boolean;result: VocabularySecondOpinion['result'] }[]; proposals: VocabularyContentProposal[];sources:VocabularyContent[];
   reassessmentSource: ReassessmentSource | null;
   reassessment: {caseId:string;jobId:string;status:string;error:string|null} | null;
@@ -841,7 +854,7 @@ export function getVocabularyCaseWorkspace(caseId: string, actorId: string): {de
     WHERE source.case_id=? ORDER BY CASE WHEN child.status IN ('queued','running') THEN 0 ELSE 1 END,child.created_at DESC,child.job_id DESC LIMIT 1`).get(caseId) as {caseId:string;jobId:string;status:string;error:string|null}|undefined;
   const proposals=(getDb().prepare('SELECT proposal_id FROM content_proposals WHERE case_id=? ORDER BY updated_at DESC,proposal_id')
     .all(caseId) as {proposal_id:string}[]).map(row=>withProposalResolution(proposal(row.proposal_id)));
-  return {defaultSelectionFinding:evidence.wordId?getVocabularyDefaultSelectionFinding(evidence.wordId):null,case:evidence,jobs,reassessmentSource:reassessmentSummary(evidence).source,reassessment:reassessment??null,proposals,sources,...(improvement ? {diagnosis:improvement.diagnosis} : {}),...(admission ? {admission} : {}),...(improvement?.pureCueReferral?{pureCueReferral:improvement.pureCueReferral}:{}),...(improvement?.pureCuePromotion?{pureCuePromotion:improvement.pureCuePromotion}:{})};
+  return {senseLabels:senseLabels([...(evidence.wordId?[evidence.wordId]:[]),...sources.flatMap(source=>source.words.map(word=>word.wordId))]),defaultSelectionFinding:evidence.wordId?getVocabularyDefaultSelectionFinding(evidence.wordId):null,case:evidence,jobs,reassessmentSource:reassessmentSummary(evidence).source,reassessment:reassessment??null,proposals,sources,...(improvement ? {diagnosis:improvement.diagnosis} : {}),...(admission ? {admission} : {}),...(improvement?.pureCueReferral?{pureCueReferral:improvement.pureCueReferral}:{}),...(improvement?.pureCuePromotion?{pureCuePromotion:improvement.pureCuePromotion}:{})};
 }
 export function listVocabularyFailedDispatches(actorId:string):{dispatchId:string;learnerId:string;sessionId:string;error:string}[] {
   operator(actorId);
