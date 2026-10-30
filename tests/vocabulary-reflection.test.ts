@@ -889,7 +889,7 @@ test('reassessment pins the confirmed current version, retains history, and fenc
   assert.throws(()=>recordVocabularyImprovementResult(nextJob.jobId,nextJob.leaseToken,{diagnosis:'No change',proposal:null},now),/source version changed before publication/);
 });
 
-test('advisory review of reassessment keeps the pinned source and excludes historical encounters',()=>{
+test('advisory review of reassessment keeps the pinned source and retains historical encounters',()=>{
   sql.exec("ALTER TABLE lexical_words ADD COLUMN traditional TEXT; ALTER TABLE lexical_words ADD COLUMN meaning TEXT;");
   sql.exec('ALTER TABLE vocabulary_reflection_jobs ADD COLUMN model_choice TEXT');
   const {cases}=ingest([present('one'),response('one')]);
@@ -906,7 +906,7 @@ test('advisory review of reassessment keeps the pinned source and excludes histo
   assert.equal(advisory.reassessmentSource!.version,2);
   const input=projectVocabularyReflectionInput(advisory) as {sourceContent:VocabularyContent;encounters:unknown[]};
   assert.equal(input.sourceContent.version,2);
-  assert.deepEqual(input.encounters,[]);
+  assert.equal(input.encounters.length,1);
 });
 
 
@@ -1135,3 +1135,10 @@ test('operator-authored create-only proposals report actual assessment evidence 
  assert.equal(listVocabularyProposalReviewBatch('editor',{startProposalId:proposed.proposalId}).items[0]!.coverageChanged,true);
  assert.throws(()=>approveVocabularyProposal(proposed.proposalId,1,'editor'),/content base changed/);
 });
+
+ test('improvement groups repeated attempts at an exercise and retains successful encounters',()=>{
+  const {cases}=ingest([present('one','a','first'),response('first'),present('one','a','second'),response('second'),present('one','a','third'),response('third','accepted'),present('two','a','other'),response('other')]);
+  const improvements=cases.filter(item=>item.kind==='exercise_improvement');
+  assert.equal(improvements.length,2);
+  assert.deepEqual(improvements.find(item=>item.contentId==='one')!.evidence.map(item=>item.encounterId),['first','second','third']);
+ });
