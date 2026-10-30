@@ -29,6 +29,7 @@ const actions: VocabularySessionAction[] = [{
   } },
 }];
 let submissions = 0;
+const reactions: Array<{ feedback: string; comment?: string }> = [];
 let pureRevealPassed = false;
 let selectedWordId: string | null = null;
 function study(): Study {
@@ -44,7 +45,15 @@ window.fetch = async (input, init) => {
   if (url.endsWith('/completion/current')) return Response.json(null);
   if (url.endsWith('/sessions')) return Response.json(study());
   if (url.endsWith('/commands')) {
-    const { command } = JSON.parse(String(init?.body)) as { command: { type: string; response: string; selectedWordId: string } };
+    const { command } = JSON.parse(String(init?.body)) as { command: { type: string; response: string; selectedWordId: string; feedback: string; comment?: string } };
+    if (command.type === 'feedback') {
+      reactions.push({ feedback: command.feedback, ...(command.comment ? { comment: command.comment } : {}) });
+      await new Promise(resolve => setTimeout(resolve, 300));
+      actions.push({ protocolVersion: 1, actionId: `reaction-${actions.length}`, clientActionId: `reaction-${actions.length}`,
+        sequence: actions.length + 1, occurredAt: new Date().toISOString(), kind: 'feedback',
+        payload: { encounterId: 'contrast', feedback: command.feedback, ...(command.comment ? { comment: command.comment } : {}) } } as VocabularySessionAction);
+      return Response.json(study());
+    }
     if (command.type !== 'response') throw new Error(`Unexpected command ${command.type}`);
     if (pure) {
       await new Promise(resolve => setTimeout(resolve, 300));
@@ -64,7 +73,7 @@ function Fixture() {
   const begun = useRef(false);
   useEffect(() => { if (!begun.current) { begun.current = true; void controller.start(); } }, []);
   return <>
-    <output id="contrast-result" data-submissions={submissions}>
+    <output id="contrast-result" data-submissions={submissions} data-reactions={JSON.stringify(reactions)}>
       {pure && submissions ? `${pureRevealPassed ? 'PASS' : 'FAIL'}: immediate reveal matches accepted input` : submissions ? `${submissions === 1 && selectedWordId === correct.wordId ? 'PASS' : 'FAIL'}: submitted ${selectedWordId} once=${submissions === 1}` : 'No answer submitted'}
     </output>
     <div style={{ height: 'calc(100dvh - 2rem)' }}><VocabularyStudy controller={controller} /></div>

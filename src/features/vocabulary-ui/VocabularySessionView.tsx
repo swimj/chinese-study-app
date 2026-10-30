@@ -39,6 +39,10 @@ export function VocabularySessionView(props: VocabularySessionViewProps) {
 /** Unplaced content is also used by the layout comparison preview. */
 export function VocabularySessionContent(props: VocabularySessionViewProps) {
   const { controls, response, presentation } = props;
+  const sendNoteButton = useRef<HTMLButtonElement>(null);
+  const composingNote = useRef(false);
+  const mac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform);
+  const sendNoteShortcut = mac ? 'Meta+Enter' : 'Control+Enter';
   const primaryInFooter = response.primaryPlacement === 'footer' && !response.revealActions;
   const primaryButton = <button type={primaryInFooter ? 'button' : 'submit'}
     className={`${response.shortcuts?.includes('Space') ? 'vocab-primary' : 'vocab-secondary'}${props.cardMotion?.confirmingPrimary ? ' is-confirming-action' : ''}`}
@@ -151,11 +155,22 @@ export function VocabularySessionContent(props: VocabularySessionViewProps) {
               <button type="button" aria-keyshortcuts="]" aria-pressed={props.reactionInput.reaction === 'helpful'} disabled={props.reactionInput.status === 'saving'}
                 onClick={() => props.onReaction(props.reactionInput.reaction === 'helpful' ? null : 'helpful')}>Helpful<ShortcutHint shortcut="]" /></button>
             </div>
-            <label>Anything you want to add?<textarea rows={2} aria-keyshortcuts={reactionOpen ? 'Escape' : undefined}
+            <label>Anything you want to add?<textarea rows={2} aria-keyshortcuts={reactionOpen ? `Escape ${sendNoteShortcut}` : undefined}
+              onCompositionStart={() => { composingNote.current = true; }}
+              onCompositionEnd={() => { composingNote.current = false; }}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter' || event.shiftKey || event.altKey
+                  || !(mac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey)) return;
+                if (composingNote.current || event.nativeEvent.isComposing || event.keyCode === 229) return;
+                event.preventDefault();
+                event.stopPropagation();
+                if (!event.repeat) sendNoteButton.current?.click();
+              }}
               value={props.reactionInput.comment} placeholder="What felt off, or what might help?"
               disabled={props.reactionInput.status === 'saving'} onChange={(event) => props.onCommentChange(event.target.value)} /></label>
-            <div className="vocab-reaction-send"><button type="button" className="vocab-secondary" disabled={!props.reactionInput.comment.trim() || props.reactionInput.status === 'saving'}
-              onClick={props.onCommentSubmit}>{props.reactionInput.status === 'saving' ? 'Sending…' : 'Send note'}</button>
+            <div className="vocab-reaction-send"><button ref={sendNoteButton} type="button" className="vocab-secondary" disabled={!props.reactionInput.comment.trim() || props.reactionInput.status === 'saving'}
+              aria-keyshortcuts={sendNoteShortcut}
+              onClick={props.onCommentSubmit}>{props.reactionInput.status === 'saving' ? 'Sending…' : 'Send note'}<ShortcutHint shortcut={mac ? '⌘+Enter' : 'Ctrl+Enter'} /></button>
               <span role="status">{props.reactionInput.status === 'saved' ? 'Reaction saved' : ''}</span></div>
           </div></div></div>}
       </footer>

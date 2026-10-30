@@ -119,6 +119,11 @@ Both support narrow-panel and enlarged-text controls.
 `/tests/browser/vocabulary-contrast-keyboard.html` exercises 1–9/0 selection
 and Enter submission through the active controller; `?count=3` checks bounds
 and `?production=1` checks Escape priority for the open reaction note.
+The reaction note accepts Cmd+Enter on Mac and Ctrl+Enter elsewhere through
+the Send note control. In this fixture, `#contrast-result` exposes
+`data-reactions` for checking written comments separately from answer submissions.
+Exercise plain Enter, IME composition, blank input, and the delayed pending save;
+the bracket shortcuts address Helpful / Not helpful separately.
 `?pure=1` checks that accepted input 诉求 fills the cloze instead of the first
 accepted member 意见, during both immediate and acknowledged reveal. The motion fixture
 `?slow=1` checks opaque paper while the next encounter is delayed;
