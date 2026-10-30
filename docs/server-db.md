@@ -545,3 +545,9 @@ active senses from shared general production. Case selections override that
 coverage for a review; SQL null inherits and `[]` selects none. Versioned writes
 and backend events preserve operator/service provenance without altering sense
 identity, authored content or learner history.
+
+Migration `0063_vocabulary_proposal_drop_actions` rebuilds
+`application_content_changes` to admit `retire`, preserving previous receipt rows
+and foreign keys and retaining immutable application history. Retirement points
+to the retired source revision and its content-history change; it creates no
+replacement content identity.

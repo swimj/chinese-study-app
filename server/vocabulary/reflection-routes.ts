@@ -59,7 +59,7 @@ export function parseVocabularyProposalDraft(value:unknown):VocabularyProposalDr
   if(list(draft.operations).length===0)throw new VocabularyReflectionRequestError('Proposal requires operations');
   const operations=list(draft.operations).map(value=>{
     const operation=object(value,['operationKey','scope','rationale','strategy','sourceContentId','expectedVersion','content']);
-    text(operation.operationKey);text(operation.rationale);const strategy=choice(operation.strategy,['create','update_existing','replace']);
+    text(operation.operationKey);text(operation.rationale);const strategy=choice(operation.strategy,['create','update_existing','replace','retire']);
     const scope=object(operation.scope,['kind','learnerId']);choice(scope.kind,['shared','learner']);
     if(scope.kind==='learner')text(scope.learnerId);else if(scope.learnerId!==undefined)throw new VocabularyReflectionRequestError('Shared effect cannot carry learner scope');
     if(strategy!=='create'){text(operation.sourceContentId);version(operation.expectedVersion);}

@@ -1152,3 +1152,12 @@ or edits this review's requested scope. PUT requires a nonnegative
 requests use `excludedSenseIds`, case requests use nullable `includedSenseIds`
 (null inherits word defaults; [] requests none). Invalid payloads return 400;
 version conflicts return 409. These policy edits do not invalidate content proposals.
+
+### Exercise retirement proposals
+
+Vocabulary content proposals support `retire` alongside `create`, `update_existing`
+and `replace`. Retirement names the exact `sourceContentId`, `expectedVersion`,
+access scope, rationale and compulsory comparison `content` snapshot. The server
+retires the live active general production source without creating a successor.
+Save, preview, exact-version approval and idempotent application use the same
+proposal routes; retirement never writes review coverage or word defaults.

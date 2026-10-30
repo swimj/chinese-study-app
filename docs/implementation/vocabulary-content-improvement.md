@@ -253,3 +253,18 @@ and `/api/operator/vocabulary/cases/:id/sense-coverage`. PUT requires the curren
 nonnegative `expectedVersion` and respectively `excludedSenseIds` or nullable
 `includedSenseIds`. Review reassessment copies overrides into the child case;
 proposal edits remain separate editorial inputs and are not reassessment input.
+
+## Explicit retirement proposals
+
+A proposal can `retire` an active general production exercise without creating a
+successor. Approval changes only its live availability and version. Its content
+identity, schedules, deactivations, teaching references, and historical encounters
+remain retained. The content history records the underlying availability update;
+the application receipt records the explicit `retire` decision.
+
+Retirement retains a compulsory comparison snapshot, but execution reads the exact
+live source rather than applying that snapshot as an authored edit. Preview and
+application use the same ordered content transitions; preview rolls back history,
+events and writes. A failure in another operation rolls back the entire application.
+Sense selection is configured directly through review coverage or word defaults;
+content proposals never mutate that policy.

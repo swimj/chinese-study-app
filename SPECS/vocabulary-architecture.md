@@ -157,8 +157,8 @@ A separately authorized legacy default-selection cutover is pending.
 Content proposals can retire unsuitable general production exercises without
 replacement. Operators can separately exclude existing senses from review
 coverage or shared word defaults. Exact-version approval preserves learner
-history and linguistic identity. Policy operations retain coverage version and
-catalog fences; content operations retain source, mapping and catalog fences.
+history and linguistic identity. Coverage is edited directly with scope-version checks. Content proposals retain
+source, mapping and catalog fences and never change sense policy.
 
 Exercise improvement trusts the mapped sense's necessity, including specialized
 or personalized uses, and judges fidelity of the exact lexical target rather

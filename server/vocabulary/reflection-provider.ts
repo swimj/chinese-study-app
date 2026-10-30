@@ -84,7 +84,7 @@ export function normalizeVocabularyReflectionOutput(job:VocabularyReflectionJob,
     return {kind:'learner_feedback',judgment:{diagnosis:result.diagnosis,message:result.lesson,unfairEncounterIds:result.unfairEncounterIds,
       ...(invocationId?{invocationId}:{})}};
   }
-  const result=value as {diagnosis:string;operations:{sourceContentId:string;strategy:VocabularyProposalOperation['strategy'];rationale:string;prompt:string;acceptedAnswers:string[]}[]};
+  const result=value as {diagnosis:string;operations:{sourceContentId:string;strategy:'create'|'update_existing'|'replace';rationale:string;prompt:string;acceptedAnswers:string[]}[]};
   const referral=withReferral?(value as {pureCueReferral:import('../../src/domain/vocabulary-reflection.ts').VocabularyPureCueReferral|null}).pureCueReferral:undefined;
   if(referral)validateVocabularyPureCueReferral(referral);
   nonempty(result.diagnosis);

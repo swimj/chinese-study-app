@@ -415,7 +415,7 @@ test('preparation compatibility migration retains old preparation and makes no e
 test('sense coverage migration preserves existing authored data and starts inherited defaults',()=>{
   const {db}=copy('sense-coverage-upgrade',true);
   try {
-    const prior=schemaMigrations.filter(item=>item.id!=='app_schema:0062_vocabulary_sense_coverage');
+    const prior=schemaMigrations.slice(0,schemaMigrations.findIndex(item=>item.id==='app_schema:0062_vocabulary_sense_coverage'));
     migrateDatabase(db,prior);
     const before=db.prepare('SELECT * FROM content_items ORDER BY content_id').all();
     const senses=db.prepare('SELECT * FROM senses ORDER BY sense_id').all();
@@ -426,5 +426,31 @@ test('sense coverage migration preserves existing authored data and starts inher
       assert.equal(db.prepare(`SELECT count(*) n FROM ${table}`).get()!.n,0);
     assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
     assertSchemaCurrent(db);
+  }finally{db.close();}
+});
+
+test('retirement receipt upgrade runs the real migration chain and preserves existing application history',()=>{
+  const {db}=copy('retirement-receipt-upgrade',true);
+  try {
+    const index=schemaMigrations.findIndex(item=>item.id==='app_schema:0063_vocabulary_proposal_drop_actions');
+    migrateDatabase(db,schemaMigrations.slice(0,index));
+    const at='2026-10-29T12:00:00.000Z';
+    db.exec('BEGIN IMMEDIATE');
+    db.prepare(`INSERT INTO content_items VALUES ('exercise','exercise',1,'{}','definition','production','general','{}','shared',NULL,'active','human',NULL,NULL,2,?,?)`).run(at,at);
+    for(const version of [1,2])db.prepare(`INSERT INTO content_revision_history VALUES (?,?,?,?,?,'updated','update_existing','operator','editor',NULL,?)`).run(version===1?'before':'after','exercise',version,version===1?null:1,'{}',at);
+    db.prepare(`INSERT INTO content_proposals VALUES ('proposal',NULL,1,'applied','[]','Retained history','operator','editor',NULL,?,?)`).run(at,at);
+    db.prepare(`INSERT INTO proposal_revision_history VALUES ('proposal',1,'{}','operator','editor',?)`).run(at);
+    db.prepare(`INSERT INTO proposal_reviews VALUES ('review','proposal',1,'editor','approved','{}',?)`).run(at);
+    db.prepare(`INSERT INTO proposal_applications VALUES ('application','proposal',1,'review','key','{}',?)`).run(at);
+    db.exec("INSERT INTO application_content_changes VALUES ('application','old','update_existing','exercise',1,'exercise',2,'after')");
+    db.exec('COMMIT');
+    const tables=['content_items','content_revision_history','proposal_revision_history','proposal_reviews','proposal_applications','application_content_changes'];
+    const before=tables.map(table=>db.prepare(`SELECT * FROM ${table}`).all());
+    migrateDatabase(db);
+    tables.forEach((table,i)=>assert.deepEqual(db.prepare(`SELECT * FROM ${table}`).all(),before[i]));
+    db.exec("INSERT INTO application_content_changes VALUES ('application','retire','retire','exercise',1,'exercise',2,'after')");
+    assert.throws(()=>db.exec("UPDATE application_content_changes SET write_strategy='create'"),/immutable/);
+    assert.throws(()=>db.exec('DELETE FROM application_content_changes'),/retained/);
+    assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);assertSchemaCurrent(db);
   }finally{db.close();}
 });

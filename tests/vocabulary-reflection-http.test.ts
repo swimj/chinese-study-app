@@ -8,7 +8,7 @@ import { beforeEach,afterEach,test } from 'node:test';
 import type { Express,Request,Response,NextFunction,RequestHandler } from 'express';
 import { setDb } from '../server/db/connection.ts';
 import { runWithLearnerId } from '../server/db/learner-context.ts';
-import { createVocabularyContent,getVocabularyContentForMaintenance } from '../server/db/vocabulary-content.ts';
+import { createVocabularyContent,createVocabularySense,getVocabularyContentForMaintenance } from '../server/db/vocabulary-content.ts';
 import { createVocabularySession,appendVocabularySessionActions,stageVocabularySessionCompletion,closeVocabularySessionCompletion } from '../server/db/vocabulary-sessions.ts';
 import { ingestVocabularySessionEvidence,claimVocabularyReflectionJob,recordVocabularyFeedbackJudgment,recordVocabularyImprovementResult,listVocabularyProposalReviewBatch } from '../server/db/vocabulary-reflection.ts';
 import { registerVocabularyReflectionRoutes } from '../server/vocabulary/reflection-routes.ts';
@@ -38,6 +38,7 @@ beforeEach(()=>{
   sql.exec("ALTER TABLE lexical_words ADD COLUMN hanzi TEXT NOT NULL DEFAULT '字';ALTER TABLE lexical_words ADD COLUMN pinyin TEXT NOT NULL DEFAULT 'zì';");
 
   for(const name of ['0042_vocabulary_sessions.sql','0044_vocabulary_reflection.sql','0061_vocabulary_sense_mapping_retries.sql','0059_vocabulary_reassessment.sql','0060_vocabulary_reassessment_source.sql','0055_vocabulary_feedback_dismissal.sql'])sql.exec(fs.readFileSync(new URL(`../server/db/migrations/${name}`,import.meta.url),'utf8'));
+  sql.exec(fs.readFileSync(new URL('../server/db/migrations/0063_vocabulary_proposal_drop_actions.sql',import.meta.url),'utf8'));
   for(const name of ['0023_session_debrief.sql','0048_vocabulary_connections.sql','0049_vocabulary_sense_readiness.sql','0050_vocabulary_improvement_admission.sql','0051_vocabulary_pure_cue_promotion.sql','0053_vocabulary_second_opinions.sql'])sql.exec(fs.readFileSync(new URL(`../server/db/migrations/${name}`,import.meta.url),'utf8'));
   sql.exec(`INSERT INTO learner_words(learner_id,word_id,in_stash,added_at,mode,mode_changed_at) VALUES ('alice','a',1,'2026-01-01','practice','2026-01-01');
     INSERT INTO learner_word_schedules(learner_id,word_id,next_eligible_at,policy_version,scheduler_state_json) VALUES
@@ -449,4 +450,17 @@ test('coverage endpoints require operator access, validate shape and reject stal
   const review='/api/operator/vocabulary/cases/:id/sense-coverage';
   const result=call('put',review,{params:{id:caseId},learner:'editor',body:{expectedVersion:0,includedSenseIds:[]}});
   assert.equal(result.status,200);assert.deepEqual((result.body.review as {includedSenseIds:string[]}).includedSenseIds,[]);
+});
+
+
+test('retirement HTTP contract preserves source identity and rejects policy metadata',()=>{
+  const operation={operationKey:'retire',strategy:'retire',scope:{kind:'shared'},sourceContentId:'one',expectedVersion:1,rationale:'No faithful repair',content:draft()};
+  const create=(value:unknown)=>call('post',`${base}/proposals`,{body:{caseId,operations:[value],rationale:'Review retirement'}});
+  assert.equal(create({...operation,coverage:{wordId:'a',senseIds:['sense']}}).status,400);
+  const created=create(operation);assert.equal(created.status,200);const id=String(created.body.proposalId);
+  const dry=call('post',`${base}/proposals/:id/preview`,{params:{id},body:{expectedVersion:1}});assert.equal(dry.status,200);
+  assert.equal((dry.body.previews as {result:{availability:string}}[])[0]!.result.availability,'retired');
+  const approval=call('post',`${base}/proposals/:id/approve`,{params:{id},body:{expectedVersion:1}});assert.equal(approval.status,200);
+  const applied=call('post',`${base}/proposals/:id/apply`,{params:{id},body:{expectedVersion:1,reviewId:approval.body.reviewId,idempotencyKey:'retire-http'}});
+  assert.equal(applied.status,200);assert.equal(getVocabularyContentForMaintenance('one')!.availability,'retired');assert.equal(getVocabularyContentForMaintenance('one')!.version,2);
 });

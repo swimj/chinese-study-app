@@ -86,6 +86,7 @@ export function migrateSharedDictionaryBaselines(db: DatabaseSync): void {
     if (!previous.operations.length || !bases.length || bases.some(base => promotions.get(base.contentId)?.before.version !== base.expectedVersion)) continue;
     const operations: VocabularyProposalOperation[] = [];
     for (const op of previous.operations) {
+      if(op.strategy!=='create'&&op.strategy!=='update_existing'&&op.strategy!=='replace')break;
       const body = object(op.content.body), source = body && object(body.source ?? null);
       const promotion = source && typeof source.assessedContentId === 'string' ? promotions.get(source.assessedContentId) : undefined;
       if (!promotion || source?.kind !== 'vocabulary_repertoire' || source.assessedContentVersion !== promotion.before.version

@@ -13,7 +13,7 @@ import { isOperatorSubject, parseOperatorAllowlist } from '../operator-access.ts
 import { isVocabularyProviderEncounter } from '../vocabulary/reflection-eligibility.ts';
 import { retryVocabularySenseReadiness } from '../vocabulary/sense-readiness.ts';
 import { createVocabularyContent, updateVocabularyContent, replaceVocabularyContent, getVocabularySenseCatalog,
-  getVocabularyContentForMaintenance, emitBackendEvent } from './vocabulary-content.ts';
+  getVocabularyContentForMaintenance, getVocabularySenses, emitBackendEvent } from './vocabulary-content.ts';
 import { isOfferedReflectionModelChoice, type ReflectionModelChoice } from '../reflection/model-arms.ts';
 import { resolveSharedDictionaryBaselineRevision } from './dictionary-baseline-sharing.ts';
 
@@ -375,6 +375,10 @@ function withProposalResolution(value: VocabularyContentProposal): VocabularyCon
   return { ...value,resolvedAt };
 }
 export function getVocabularyProposal(proposalId: string, actorId: string): VocabularyContentProposal { operator(actorId); return withProposalResolution(proposal(proposalId)); }
+function validateNonreplacementSource(operation:VocabularyProposalOperation,source:VocabularyContent):void {
+  if(operation.strategy!=='retire')return;
+  if(source.kind!=='exercise'||source.exerciseRole!=='general'||source.skill!=='production'||source.availability!=='active')throw new Error('Drop actions require an active general production exercise');
+}
 function baseVersions(draft: VocabularyProposalDraft): VocabularyContentProposal['bases'] {
   const bases = new Map<string,number>(), keys = new Set<string>(), produced = new Map<string,number>();
   const add = (id: string,version: number) => {
@@ -397,21 +401,23 @@ function baseVersions(draft: VocabularyProposalDraft): VocabularyContentProposal
       if (content.accessScope !== 'private' || content.ownerLearnerId !== operation.scope.learnerId) throw new Error('Learner scope must preserve private ownership');
     } else throw new Error('Unknown proposal effect scope');
     if (operation.strategy !== 'create') {
-      if (operation.strategy !== 'update_existing' && operation.strategy !== 'replace') throw new Error('Unknown proposal strategy');
+      if (!['update_existing','replace','retire'].includes(operation.strategy)) throw new Error('Unknown proposal strategy');
       if (sources.has(operation.sourceContentId)) throw new Error('Proposal cannot write a source twice'); sources.add(operation.sourceContentId);
       add(operation.sourceContentId,operation.expectedVersion);
       const source = getVocabularyContentForMaintenance(operation.sourceContentId);
       if (!source || source.accessScope !== content.accessScope || (source.ownerLearnerId ?? null) !== (content.ownerLearnerId ?? null)) {
         throw new Error('Repair cannot broaden or transfer content ownership');
       }
+      validateNonreplacementSource(operation,source);
+
     }
-    if (content.kind === 'introduction') for (const binding of content.teachingExercises) {
+    if (operation.strategy!=='retire'&&content.kind === 'introduction') for (const binding of content.teachingExercises) {
       // Only an explicitly named version produced by an earlier ordered operation
       // can satisfy a future teaching binding. Its pre-state source remains a base.
       if(produced.get(binding.exerciseId)!==binding.exerciseVersion)add(binding.exerciseId,binding.exerciseVersion);
     }
     if(operation.strategy!=='create')produced.set(operation.sourceContentId,operation.expectedVersion+1);
-    if(operation.strategy!=='update_existing'&&content.contentId)produced.set(content.contentId,1);
+    if((operation.strategy==='create'||operation.strategy==='replace')&&content.contentId)produced.set(content.contentId,1);
   }
   for (const base of draft.bases ?? [])if(produced.get(base.contentId)!==base.expectedVersion)add(base.contentId,base.expectedVersion);
   return [...bases].map(([contentId,expectedVersion]) => ({ contentId,expectedVersion })).sort((a,b) => a.contentId.localeCompare(b.contentId));
@@ -496,7 +502,7 @@ export function saveVocabularyProposal(proposalId: string, expectedVersion: numb
     if (value.status === 'applied' || value.status === 'closed') throw new VocabularyReflectionConflict('Resolved proposals cannot be edited');
     if ((draft.caseId ?? value.caseId) !== value.caseId) throw new Error('Proposal evidence origin is immutable');
     return persistProposal({ ...value,version: value.version+1,status: 'awaiting_review',operations: draft.operations,
-      rationale: draft.rationale,bases: baseVersions(draft) },actor,timestamp());
+      rationale: draft.rationale,bases: baseVersions({...draft,caseId:value.caseId??undefined}) },actor,timestamp());
   });
 }
 function currentBases(value: VocabularyContentProposal): void {
@@ -517,22 +523,32 @@ function currentBases(value: VocabularyContentProposal): void {
     }
   }
 }
-function previewWrites(value:VocabularyContentProposal,actor:VocabularyActor):{operationKey:string;source:VocabularyContent|null;result:VocabularyContent}[] {
+type OperationPreview={operationKey:string;source:VocabularyContent|null;result:VocabularyContent};
+/** Preview and application execute the same domain transition; preview owns a rollback savepoint. */
+function executeOperation(operation:VocabularyProposalOperation,actor:VocabularyActor):OperationPreview {
+  const source=operation.strategy==='create'?null:getVocabularyContentForMaintenance(operation.sourceContentId);
+  if(operation.strategy!=='create'&&!source)throw new Error('Unknown vocabulary content');
+  if(operation.strategy!=='create'&&source!.version!==operation.expectedVersion)throw new VocabularyReflectionConflict('Proposal content base changed; revise and review again');
+  if(source)validateNonreplacementSource(operation,source);
+  const result=operation.strategy==='create'?createVocabularyContent(operation.content,actor)
+    :operation.strategy==='update_existing'?updateVocabularyContent(operation.sourceContentId,operation.expectedVersion,operation.content,actor)
+    :operation.strategy==='retire'?updateVocabularyContent(operation.sourceContentId,operation.expectedVersion,{...source!,availability:'retired'},actor)
+    :replaceVocabularyContent(operation.sourceContentId,operation.expectedVersion,operation.content,actor).replacement;
+  return {operationKey:operation.operationKey,source,result};
+}
+function executeOperations(value:VocabularyContentProposal,actorFor:(operation:VocabularyProposalOperation)=>VocabularyActor):OperationPreview[] {
+  return value.operations.map(operation=>executeOperation(operation,actorFor(operation)));
+}
+function previewWrites(value:VocabularyContentProposal,actor:VocabularyActor):OperationPreview[] {
   const db=getDb(),point=`preview_${randomUUID().replaceAll('-','')}`;db.exec(`SAVEPOINT ${point}`);
   try {
-    const previews=value.operations.map(operation=>{
-      const source=operation.strategy==='create'?null:getVocabularyContentForMaintenance(operation.sourceContentId);
-      const result=operation.strategy==='create'?createVocabularyContent(operation.content,actor)
-        :operation.strategy==='update_existing'?updateVocabularyContent(operation.sourceContentId,operation.expectedVersion,operation.content,actor)
-        :replaceVocabularyContent(operation.sourceContentId,operation.expectedVersion,operation.content,actor).replacement;
-      return {operationKey:operation.operationKey,source,result};
-    });
+    const previews=executeOperations(value,()=>actor);
     if(db.prepare('PRAGMA foreign_key_check').all().length)throw new Error('Proposed content has invalid relationships');
     return previews;
   }finally{db.exec(`ROLLBACK TO ${point}`);db.exec(`RELEASE ${point}`);}
 }
 export function previewVocabularyProposal(proposalId: string, expectedVersion: number, actorId: string): {
-  proposal: VocabularyContentProposal; previews:{operationKey:string;source:VocabularyContent|null;result:VocabularyContent}[]; operations: { operationKey: string; strategy: VocabularyProposalOperation['strategy'];
+  proposal: VocabularyContentProposal; previews:OperationPreview[]; operations: { operationKey: string; strategy: VocabularyProposalOperation['strategy'];
     scope: VocabularyProposalOperation['scope']; schedulesRemainOnSource: number; deactivationsRemainOnSource: number;
     teachingBindingsRemainOnSource: number; sourceSenseMappings: number; sourceCurations: number;
     sourceIntroductionExercises: number; transfersRelationships: false }[];
@@ -595,11 +611,9 @@ export function applyVocabularyProposal(proposalId: string, expectedVersion: num
     if (!review) throw new VocabularyReflectionConflict('Approval does not authorize this exact proposal version');
     currentBases(value);
     const applicationId = randomUUID(), changes: VocabularyProposalApplication['changes'] = [];
-    for (const operation of value.operations) {
-      const reasonedActor = { ...actor,reason: { proposalId,version: expectedVersion,operationKey: operation.operationKey,rationale: operation.rationale } };
-      const result = operation.strategy === 'create' ? createVocabularyContent(operation.content,reasonedActor)
-        : operation.strategy === 'update_existing' ? updateVocabularyContent(operation.sourceContentId,operation.expectedVersion,operation.content,reasonedActor)
-        : replaceVocabularyContent(operation.sourceContentId,operation.expectedVersion,operation.content,reasonedActor).replacement;
+    const executed=executeOperations(value,operation=>({...actor,reason:{proposalId,version:expectedVersion,operationKey:operation.operationKey,rationale:operation.rationale}}));
+    for (const [index,operation] of value.operations.entries()) {
+      const {result}=executed[index]!;
       changes.push({ operationKey: operation.operationKey,strategy: operation.strategy,
         sourceContentId: operation.strategy === 'create' ? null : operation.sourceContentId,
         sourceVersion: operation.strategy === 'create' ? null : operation.expectedVersion,
@@ -609,7 +623,7 @@ export function applyVocabularyProposal(proposalId: string, expectedVersion: num
     getDb().prepare('INSERT INTO proposal_applications VALUES (?,?,?,?,?,?,?)').run(applicationId,proposalId,expectedVersion,reviewId,idempotencyKey,encode(receipt),timestamp());
     for (const change of changes) {
       const history = change.sourceContentId === null ? null : getDb().prepare('SELECT change_id FROM content_revision_history WHERE content_id=? AND version=?')
-        .get(change.sourceContentId,change.strategy === 'update_existing' ? change.resultVersion : change.sourceVersion!+1) as { change_id: string } | undefined;
+        .get(change.sourceContentId,change.strategy === 'update_existing'||change.strategy==='retire' ? change.resultVersion : change.sourceVersion!+1) as { change_id: string } | undefined;
       getDb().prepare('INSERT INTO application_content_changes VALUES (?,?,?,?,?,?,?,?)').run(applicationId,change.operationKey,change.strategy,
         change.sourceContentId,change.sourceVersion,change.resultContentId,change.resultVersion,history?.change_id ?? null);
     }
@@ -788,7 +802,7 @@ export function listVocabularyProposalReviewBatch(actorId: string, input: { limi
         if (!sources.has(operation.sourceContentId)) sources.set(operation.sourceContentId,getVocabularyContentForMaintenance(operation.sourceContentId));
         source = sources.get(operation.sourceContentId)!;
       }
-      return { operationKey: operation.operationKey, source, result: source
+      return { operationKey: operation.operationKey, source, result: source&&operation.strategy==='retire'?{...source,availability:'retired' as const}:source
         ? {...operation.content,body:vocabularyAuthoredPromptBody(source.body,operation.content.body)} : operation.content };
     });
     if (caseValue && !reassessments.has(caseValue.caseId)) reassessments.set(caseValue.caseId,reassessmentSummary(caseValue));
