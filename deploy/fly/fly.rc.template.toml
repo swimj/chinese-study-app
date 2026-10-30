@@ -1,0 +1,62 @@
+app = "REPLACE_WITH_RC_APP_NAME"
+primary_region = "sin"
+kill_signal = "SIGTERM"
+kill_timeout = "60s"
+
+[build]
+  # Copy to ignored deploy/fly/.generated/rc.fly.toml before use.
+  dockerfile = "../../../deploy/fly/Dockerfile"
+
+[build.args]
+  # Use the same Clerk instance as beta so a restored provider_subject maps to
+  # the copied learner and the exact built image can later be promoted.
+  VITE_CLERK_PUBLISHABLE_KEY = "REPLACE_WITH_CLERK_PUBLISHABLE_KEY"
+
+[env]
+  APP_ALLOWED_CLERK_USER_IDS = "REPLACE_WITH_COMMA_SEPARATED_RC_CLERK_USER_IDS"
+  APP_AUTH_MODE = "clerk"
+  APP_DATA_DIR = "/data"
+  APP_DEPLOYMENT_TIER = "release_candidate"
+  APP_METRICS_PORT = "9091"
+  APP_MODE = "study"
+  APP_SMOKE_CLERK_USER_ID = "user_REPLACE_WITH_RC_SMOKE_USER"
+  APP_STUDY_PROFILE = "mandarin"
+  APP_USE_LOCAL_PROVIDER_PROXY = "false"
+  CLERK_PUBLISHABLE_KEY = "REPLACE_WITH_CLERK_PUBLISHABLE_KEY"
+  CLERK_AUTHORIZED_PARTY = "https://REPLACE_WITH_RC_APP_NAME.fly.dev"
+  # This must be a separate bucket from the beta Litestream source bucket.
+  LITESTREAM_BUCKET = "REPLACE_WITH_RC_BACKUP_BUCKET"
+  # hosted:rc overrides this with a unique path for every restored generation.
+  LITESTREAM_REPLICA_PATH = "REPLACE_WITH_RC_REPLICA_PATH"
+  LITESTREAM_REGION = "ap-southeast-1"
+  PORT = "5174"
+
+[processes]
+  app = "litestream replicate -config /app/deploy/fly/litestream.rc.yml -exec 'npm run start:hosted'"
+
+[mounts]
+  source = "app_data_rc"
+  destination = "/data"
+
+[http_service]
+  internal_port = 5174
+  force_https = true
+  auto_start_machines = true
+  auto_stop_machines = "stop"
+  min_machines_running = 0
+  processes = ["app"]
+
+  [[http_service.checks]]
+    interval = "15s"
+    timeout = "3s"
+    grace_period = "45s"
+    method = "GET"
+    path = "/healthz"
+
+[metrics]
+  port = 9091
+  path = "/metrics"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1024mb"

@@ -7,11 +7,16 @@ import {
   requireArgument,
 } from './lib/hosted-runtime.ts';
 
-const args = readStrictArguments(['data-dir', 'sentinel-id', 'minimum-learners']);
+const args = readStrictArguments(['data-dir', 'sentinel-id', 'minimum-learners', 'minimum-sentinels']);
 configureHostedDatabase(args);
 const minimumLearners = readNonNegativeIntegerArgument(args, 'minimum-learners', 0);
+const minimumSentinels = readNonNegativeIntegerArgument(
+  args,
+  'minimum-sentinels',
+  args.has('sentinel-id') ? 0 : 1,
+);
 const dbModule = await import(pathToFileURL(path.resolve('server/db.ts')).href);
-const validation = dbModule.validateHostedRestore(requireArgument(args, 'sentinel-id'));
+const validation = dbModule.validateHostedRestore(args.get('sentinel-id'), minimumSentinels);
 if (validation.learnerCount < minimumLearners) {
   throw new Error(
     `Restored database has ${validation.learnerCount} learners; expected at least ${minimumLearners}.`,

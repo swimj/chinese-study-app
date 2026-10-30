@@ -24,6 +24,51 @@ not Grafana and does not replace this performance dashboard.
 For scheduled or ad hoc data investigation without a connected laptop, see
 [cloud production observation](cloud-production-observation.md).
 
+## Release-instance observability
+
+An [ephemeral rehearsal](hosted-release-candidate.md) spends its time restoring,
+migrating, and running selected checks without an HTTP server. Observe that work
+through the run evidence and Fly's Machine metrics. A separately activated browser
+RC also supplies application request metrics.
+
+Keep the run directory reported by `hosted:rehearse`. Its manifest identifies the
+candidate image, source recovery point, Machine, volume, and current lifecycle
+state. Events record stage starts, completions, failures, and durations. Remote
+command output and status resource snapshots give context for a slow restore,
+migration, or custom check. Collect the remote evidence before destroying the
+Machine and volume; local evidence survives their removal. Inspect check output
+before sharing it, because operator-supplied scripts can print learner data even
+when the runner's own events are content-free.
+
+For a running or retained environment:
+
+```bash
+npm run hosted:rehearse -- --action=status --run-dir=<absolute-run-directory>
+fly machine status --app <rehearsal-app> <machine-id>
+fly logs --app <rehearsal-app> --instance <machine-id>
+```
+
+Use Fly managed Grafana's Machine dashboards, selecting the rehearsal app,
+Machine ID, and the run's UTC time window. Compare CPU utilization and throttling,
+memory and OOM events, disk usage and I/O with stage durations and resource
+snapshots. The default performance CPU provides sustained compute; a long
+stage can still be I/O-bound or run out of temporary disk. Record measured peak
+memory and disk needs in migration guidance when they inform future sizing.
+
+`fly logs` shows Machine/app lifecycle output; SSH-launched command output belongs
+in the run's command logs and should not be assumed to appear there. A headless
+idle Machine has no application metrics listener, so missing
+`chinese_study_*` series are expected. For a separately activated browser RC, the
+private listener and application dashboard described below can diagnose HTTP and
+SQLite behavior with the RC app selected. Keep RC and production observations
+distinct.
+
+These are basic operational observations, not automatic cost estimates or
+unattended alerts. When a run stalls or the local terminal is lost, inspect
+status, logs, and resource state before retrying. Save failure evidence and
+remove both temporary resources when finished; stopping a Machine leaves its
+volume allocated.
+
 ## Data boundary
 
 The metrics contain only bounded operational dimensions:

@@ -76,6 +76,9 @@ For more frontend code navigation, see the
 | `VITE_API_BASE` | Frontend | API base override; defaults to `http://localhost:5174` in Vite development and the serving origin in production builds |
 | `APP_USE_LOCAL_PROVIDER_PROXY` | Backend | Exact `true` opts local OpenAI/OpenRouter calls into `127.0.0.1:7897`; hosted default is direct |
 | `APP_METRICS_PORT` | Backend | Optional private Prometheus listener; hosted Fly config uses `9091` |
+| `APP_ALLOWED_CLERK_USER_IDS` | Backend | Optional nonempty Clerk user-id allowlist; browser RC restricts access to the restored copy before learner bootstrap |
+| `APP_DEPLOYMENT_TIER` | Backend | `release_candidate` enables guarded RC-only database maintenance; never set this on beta |
+| `LITESTREAM_REPLICA_PATH` | Hosted | Browser RC uses a separate bucket and a fresh prefix per restored generation; headless rehearsal does not replicate |
 | `APP_SLOW_REQUEST_MS` | Backend | Local-time threshold (excluding provider waits) for `request.slow` log events; default `500` |
 | `VITE_STUDY_PROFILE` | Frontend | Client study profile |
 

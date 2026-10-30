@@ -47,8 +47,13 @@ stopped-writer maintenance window; `npm run hosted:upgrade` is app-only and
 cannot perform these changes. The migration runner does not deploy or back up a
 database automatically.
 
-1. Rehearse with the target release and a coherent restored copy of the current
-   database. Record the source/target revisions and the migration command output.
+1. Rehearse every schema or data migration with the target image on an
+   [ephemeral release Machine](hosted-release-candidate.md), restoring the latest
+   coherent backup after a source sync. Production keeps serving throughout
+   rehearsal; a few minutes of subsequent activity are acceptable. Record the
+   source recovery point, target revision and image digest, migration output,
+   and the results of the release-specific checks. Perform expensive comparisons
+   and behavioral rehearsals there before entering production maintenance.
 2. Disable provider work, enable maintenance, and wait for active requests and
    provider work to drain. Sync Litestream and record a verified recovery point.
    Retain the pre-release backup and its matching application image for recovery.
@@ -79,6 +84,20 @@ schema drift. Fresh databases initialize with the frozen baseline and apply the
 same shipped migrations before serving; existing databases never migrate on
 startup.
 
+Rehearsal does not replace the fresh production recovery point in step 2 or the
+actual migration and integrity checks in steps 4–5. The migration runner checks
+foreign keys and SQLite integrity itself. Choose additional live assertions for
+the migration's affected data; exhaustive table hashing, repeated full scans,
+and compression are not default production-release gates. The release agent
+may add or refine checks with Justin during the release, recording what ran and
+why. Keep that flexibility on the isolated copy whenever the check does not
+require live production state.
+
+Destroy the rehearsal Machine and its volume after collecting evidence unless
+Justin asks to keep it for further checks or manual use. A failed rehearsal is
+not permission to enter production maintenance. Inspect and preserve the needed
+failure evidence, then clean up or retain it under the same explicit decision.
+
 ### Hosted target code and stopped process
 
 Use the [idle-Machine procedure](hosted-beta-deployment.md#idle-the-machine-for-offline-work):
@@ -92,6 +111,12 @@ target image against `/data/app.db`. Finally restore the normal command using
 the recorded target image and saved configuration. Do not start the normal
 target application before running the migration; its compatibility check will
 refuse an unbaselined or pending database.
+
+If the actual migration requires sustained CPU beyond the production Machine's
+steady-state allocation, the operator can temporarily resize that Machine during
+the stopped-writer window, retaining its attached volume, then restore its saved
+size before reopening. Rehearsal timing and resource evidence inform this choice;
+offloading rehearsal does not eliminate the cost of applying the real migration.
 
 The existing `hosted:control`, `hosted:inspect`, and restore helpers initialize
 the backend and therefore also refuse incompatible schemas. Use source-release
@@ -142,6 +167,22 @@ upgrade route is insufficient. Populated preservation, rollback, repeat and
 fresh-schema coverage live in `tests/shared-dictionary-baselines-migration.test.ts`.
 
 ## Writing the next migration
+
+Give the release agent a concise rehearsal note alongside the migration's tests
+and review description. Describe the affected records, intended changes,
+preservation invariants, and how to verify them on a populated restored database.
+Include optional before/after check scripts when they make those assertions
+repeatable, and name any table rebuild, broad scan, large temporary copy, or
+other operation likely to need extra CPU, memory, disk, or time. State useful
+resource estimates when measured rather than inventing a universal threshold.
+
+Every migration uses ephemeral rehearsal, so an expense hint adjusts resource
+sizing and the release plan rather than deciding whether rehearsal happens.
+Checks can evolve in conversation with Justin; a migration note is a starting
+point, not a closed checklist. Prefer assertions about affected data and durable
+behavior. Do not turn a one-off exhaustive comparison into a standing requirement
+for unrelated releases. See the [rehearsal runbook](hosted-release-candidate.md)
+for uploading checks and retaining their evidence.
 
 Add a SQL file under `server/db/migrations/` and append its definition to
 `schemaMigrations` in `server/db/migrations.ts`, loading the file relative to

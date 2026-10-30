@@ -96,6 +96,7 @@ These routes do not certify full reconciliation of the older package guides.
 hosted operations, and contributor development clearly separated.
 
 - Hosted operation: [release and maintenance](ops/hosted-beta-deployment.md),
+  [release candidates and ephemeral rehearsal](ops/hosted-release-candidate.md),
   [observability](ops/hosted-observability.md),
   [diagnostics](ops/error-diagnostics.md), and
   [schema migrations](ops/schema-migrations.md).
