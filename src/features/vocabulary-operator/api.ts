@@ -7,6 +7,7 @@ import type { VocabularyApprovalRequest, VocabularySecondOpinion, VocabularyCont
 export type VocabularyReassessmentModel = 'openai:gpt-5.6-luna-high' | 'zai:glm-5.3-flash-high' | 'openai:gpt-6-sol-high';
 export type VocabularyReassessmentSource={contentId:string;assessedVersion:number;currentVersion:number};
 export type VocabularyCaseWorkspace={senseLabels?:VocabularySenseLabel[];defaultSelectionFinding?:VocabularyDefaultSelectionFinding|null;case:VocabularyReflectionCase;sources:VocabularyContent[];diagnosis?:import('../../domain/vocabulary-content').VocabularyJson;admission?:VocabularyImprovementAdmission;pureCueReferral?:VocabularyPureCueReferral|null;pureCuePromotion?:VocabularyPureCuePromotion;
+  pureCueIdentityOptions?:{form:string;choices:{wordId:string;hanzi:string;traditional:string|null;pinyin:string;meaning:string}[]}[];
   reassessmentSource?:VocabularyReassessmentSource|null;
   reassessment?:{caseId:string;jobId:string;status:string;error:string|null}|null;
   jobs:{jobId:string;kind:string;status:string;attemptNumber:number;error:string|null;secondOpinion:boolean;result:VocabularySecondOpinion['result']}[];proposals:VocabularyContentProposal[]};
@@ -29,6 +30,7 @@ export const vocabularyOperatorApi={
   saveCaseSenseCoverage:(caseId:string,expectedVersion:number,includedSenseIds:string[]|null)=>write<VocabularySenseCoverageWorkspace>(`/cases/${id(caseId)}/sense-coverage`,{expectedVersion,includedSenseIds},'PUT'),
   cases:(kind:VocabularyReflectionCase['kind'])=>apiRequest<{items:VocabularyReflectionCase[]}>(`${root}/cases?kind=${kind}`),
   noProposalCases:(status:'completed'|'closed'='completed')=>apiRequest<{items:VocabularyReflectionCase[]}>(`${root}/no-proposal-cases?status=${status}`),
+  resolvePureCueIdentities:(caseId:string,modelChoice:VocabularyReassessmentModel,expectedContentVersion:number,selections:{form:string;wordId:string}[])=>write<{caseId:string;jobId:string}>(`/cases/${id(caseId)}/pure-cue-resolutions`,{modelChoice,expectedContentVersion,selections}),
   reassessCase:(caseId:string,modelChoice:VocabularyReassessmentModel,expectedContentVersion:number)=>write<{caseId:string;jobId:string}>(`/cases/${id(caseId)}/reassessments`,{modelChoice,expectedContentVersion}),
   requestCaseSecondOpinion:(caseId:string,notes:string)=>write<{ok:true}>(`/cases/${id(caseId)}/second-opinions`,{notes}),
   workspace:(caseId:string)=>apiRequest<VocabularyCaseWorkspace>(`${root}/cases/${id(caseId)}`),

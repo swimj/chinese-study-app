@@ -18,7 +18,7 @@ import { createVocabularySession, appendVocabularySessionActions, stageVocabular
 import { ingestVocabularySessionEvidence, getVocabularyReflectionCase, listVocabularyReflectionCases,
   claimVocabularyReflectionJob, recoverVocabularyReflectionJobs, failVocabularyReflectionJob, retryOwnVocabularyFeedback,
   recordVocabularyFeedbackJudgment, recordVocabularyImprovementResult, listOwnVocabularyMessages, markOwnVocabularyMessageSeen, dismissOwnVocabularyMessage, restoreOwnVocabularyMessage, getOwnVocabularyFeedbackAttention,
-  requestVocabularyReassessment, requestVocabularySecondOpinion, listVocabularySecondOpinions, listVocabularyNoProposalCases, requestVocabularyCaseSecondOpinion, retryVocabularyReflectionJob, createVocabularyProposal, saveVocabularyProposal, approveVocabularyProposal, applyVocabularyProposal,
+  requestVocabularyPureCueResolution, requestVocabularyReassessment, requestVocabularySecondOpinion, listVocabularySecondOpinions, listVocabularyNoProposalCases, requestVocabularyCaseSecondOpinion, retryVocabularyReflectionJob, createVocabularyProposal, saveVocabularyProposal, approveVocabularyProposal, applyVocabularyProposal,
   previewVocabularyProposal, getVocabularyProposal, listVocabularyProposals, listVocabularyProposalReviewBatch, closeVocabularyProposal, closeVocabularyTeachingCase, closeVocabularyCase, getVocabularyCaseWorkspace } from '../server/db/vocabulary-reflection.ts';
 import type { VocabularyContentDraft, VocabularyContent } from '../src/domain/vocabulary-content.ts';
 import type { VocabularySessionAction, VocabularyEncounterSnapshot } from '../src/domain/vocabulary-session.ts';
@@ -52,7 +52,7 @@ beforeEach(() => {
       word_id TEXT NOT NULL REFERENCES lexical_words(id) ON DELETE CASCADE,
       study_phase TEXT NOT NULL,earliest_next_study_at TEXT,PRIMARY KEY(learner_id,word_id));
     CREATE TABLE learner_owned_review_session_summaries(learner_id TEXT,session_id TEXT,PRIMARY KEY(learner_id,session_id));`);
-  sql.exec("ALTER TABLE lexical_words ADD COLUMN hanzi TEXT NOT NULL DEFAULT '字';ALTER TABLE lexical_words ADD COLUMN pinyin TEXT NOT NULL DEFAULT 'zì';");
+  sql.exec("ALTER TABLE lexical_words ADD COLUMN hanzi TEXT NOT NULL DEFAULT '字';ALTER TABLE lexical_words ADD COLUMN pinyin TEXT NOT NULL DEFAULT 'zì';ALTER TABLE lexical_words ADD COLUMN traditional TEXT;ALTER TABLE lexical_words ADD COLUMN meaning TEXT NOT NULL DEFAULT 'character';");
 
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0042_vocabulary_sessions.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0044_vocabulary_reflection.sql',import.meta.url),'utf8'));
@@ -118,7 +118,7 @@ function op(strategy: 'create'|'update_existing'|'replace'|'retire'='update_exis
 }
 
 function historicalDictionaryBaselineJob(migrate=true) {
-  sql.exec("ALTER TABLE lexical_words ADD COLUMN traditional TEXT; ALTER TABLE lexical_words ADD COLUMN meaning TEXT NOT NULL DEFAULT 'written character; writing system'; ALTER TABLE vocabulary_reflection_jobs ADD COLUMN model_choice TEXT;");
+  sql.exec("UPDATE lexical_words SET meaning='written character; writing system'; ALTER TABLE vocabulary_reflection_jobs ADD COLUMN model_choice TEXT;");
   const id='vocabulary:baseline:v1:alice:production:general:a';
   contents[id]=createVocabularyContent({contentId:id,kind:'exercise',payloadVersion:1,
     body:{prompt:'written character; writing system',instruction:'Give the Mandarin word.',source:{kind:'dictionary_baseline',wordId:'a'}},
@@ -399,7 +399,7 @@ test('generated proposals require exact operator review, reject stale approval a
 });
 
 test('real provider content edits remain applicable while serving selection changes independently',async()=>{
-  sql.exec("ALTER TABLE lexical_words ADD COLUMN traditional TEXT; ALTER TABLE lexical_words ADD COLUMN meaning TEXT NOT NULL DEFAULT 'written character'; ALTER TABLE vocabulary_reflection_jobs ADD COLUMN model_choice TEXT;");
+  sql.exec("UPDATE lexical_words SET meaning='written character'; ALTER TABLE vocabulary_reflection_jobs ADD COLUMN model_choice TEXT;");
   const sense=createVocabularySense({senseId:'selected-sense',wordId:'a',description:{label:'written character'}},actor);
   establishVocabularySenseCatalog('a',getVocabularySenseCatalog('a').version,actor);
   writeVocabularyWordSenseCoverage('a',0,[sense.senseId],actor);
@@ -885,12 +885,13 @@ test('reassessment pins the confirmed current version, retains history, and fenc
   const next=requestVocabularyReassessment(request.caseId,'editor','openai:gpt-6-sol-high',3);
   const nextJob=claimVocabularyReflectionJob({kind:'exercise_improvement',now})!;
   assert.equal(nextJob.jobId,next.jobId);
+  assert.deepEqual(nextJob.evidence.evidence,initial.evidence.evidence);
   updateVocabularyContent('one',3,{...draft('one'),body:{prompt:'Raced source'}},actor);
   assert.throws(()=>recordVocabularyImprovementResult(nextJob.jobId,nextJob.leaseToken,{diagnosis:'No change',proposal:null},now),/source version changed before publication/);
 });
 
 test('advisory review of reassessment keeps the pinned source and retains historical encounters',()=>{
-  sql.exec("ALTER TABLE lexical_words ADD COLUMN traditional TEXT; ALTER TABLE lexical_words ADD COLUMN meaning TEXT;");
+
   sql.exec('ALTER TABLE vocabulary_reflection_jobs ADD COLUMN model_choice TEXT');
   const {cases}=ingest([present('one'),response('one')]);
   const caseId=cases.find(item=>item.kind==='exercise_improvement')!.caseId;
@@ -1142,3 +1143,50 @@ test('operator-authored create-only proposals report actual assessment evidence 
   assert.equal(improvements.length,2);
   assert.deepEqual(improvements.find(item=>item.contentId==='one')!.evidence.map(item=>item.encounterId),['first','second','third']);
  });
+
+function unresolvedPromotion(){
+  sql.exec("ALTER TABLE vocabulary_reflection_jobs ADD COLUMN model_choice TEXT;UPDATE lexical_words SET hanzi=CASE id WHEN 'a' THEN '他' ELSE '别' END;");
+  createVocabularySense({senseId:'other',wordId:'a',description:'other people'},actor);
+  establishVocabularySenseCatalog('a',getVocabularySenseCatalog('a').version,actor);
+  ingest([present('one'),response('one')]);
+  const work=claimVocabularyReflectionJob({kind:'exercise_improvement',now:judgedAt})!;
+  recordVocabularyImprovementResult(work.jobId,work.leaseToken,{diagnosis:'Local repair is independent.',proposal:{operations:[op()],rationale:'Local repair'},
+    admission:{outcome:'single_sense',rationale:'Other people',wordId:'a',sourceContentId:'one',sourceContentVersion:1,catalogVersion:getVocabularySenseCatalog('a').version,senseIds:['other'],sourceMapping:{senseId:null,establishedAt:null}},
+    pureCueReferral:{candidateWords:['他','别'],sharedPurpose:'Other people',rationale:'Consider register'},
+    pureCuePromotion:{outcome:'needs_operator',rationale:'Ambiguous pronunciation',candidateWordIds:['a'],existingContentId:null}},judgedAt);
+  return work;
+}
+test('operator identity selection persists immutable choices and queues independent assessment without publishing',()=>{
+  const work=unresolvedPromotion();
+  assert.equal(getVocabularyCaseWorkspace(work.caseId,'editor').pureCueIdentityOptions![1]!.choices.length,2);
+  assert.throws(()=>requestVocabularyPureCueResolution(work.caseId,'editor','openai:gpt-6-sol-high',1,{'他':'a','别':'a'}),/exact dictionary/);
+  const selected=requestVocabularyPureCueResolution(work.caseId,'editor','openai:gpt-6-sol-high',1,{'他':'a','别':'b'});
+  const row=sql.prepare("SELECT result_json FROM vocabulary_improvement_stages WHERE job_id=? AND input_hash='operator-pure-cue-resolution-v1'").get(selected.jobId)!;
+  const saved=JSON.parse(String(row.result_json));
+  assert.deepEqual(saved.selections,{'他':'a','别':'b'});assert.equal(saved.actorId,'editor');assert.equal(saved.sourceJobId,work.jobId);
+  assert.equal(getVocabularyCaseWorkspace(selected.caseId,'editor').proposals.length,0);
+  assert.equal(getVocabularyContentForMaintenance('one')!.version,1);
+  assert.throws(()=>requestVocabularyPureCueResolution(work.caseId,'editor','openai:gpt-6-sol-high',1,{'他':'a','别':'b'}),/already in progress/);
+  assert.throws(()=>sql.prepare('DELETE FROM vocabulary_improvement_stages WHERE job_id=?').run(selected.jobId),/retained/);
+});
+test('identity selection rejects changed source and missing lexical matches before queueing',()=>{
+  const work=unresolvedPromotion();
+  sql.prepare("UPDATE lexical_words SET hanzi='different' WHERE id IN ('b','new')").run();
+  assert.throws(()=>requestVocabularyPureCueResolution(work.caseId,'editor','openai:gpt-6-sol-high',1,{'他':'a','别':'b'}),/exact dictionary/);
+  updateVocabularyContent('one',1,{...draft('one'),body:{prompt:'New authored source'}},actor);
+  assert.throws(()=>requestVocabularyPureCueResolution(work.caseId,'editor','openai:gpt-6-sol-high',2,{'他':'a','别':'b'}),/source or sense inventory changed/);
+});
+
+test('successful open needs-operator assessment can use ordinary reassessment with original evidence',()=>{
+  const work=unresolvedPromotion();
+  assert.equal(getVocabularyReflectionCase(work.caseId).status,'open');
+  const next=requestVocabularyReassessment(work.caseId,'editor','openai:gpt-6-sol-high',1);
+  const child=claimVocabularyReflectionJob({kind:'exercise_improvement',now:new Date(Date.now()+1000).toISOString()})!;
+  assert.equal(child.jobId,next.jobId);assert.deepEqual(child.evidence.evidence,work.evidence.evidence);
+});
+test('identity selection refuses a changed mapping even when the authored source version is unchanged',()=>{
+  const work=unresolvedPromotion();
+  mapVocabularyContentSense({contentId:'one',wordId:'a',expectedContentVersion:1,expectedCatalogVersion:getVocabularySenseCatalog('a').version,
+    expectedMapping:{senseId:null,establishedAt:null},senseId:'other',establishedAt:judgedAt},actor);
+  assert.throws(()=>requestVocabularyPureCueResolution(work.caseId,'editor','openai:gpt-6-sol-high',1,{'他':'a','别':'b'}),/source mapping changed/);
+});

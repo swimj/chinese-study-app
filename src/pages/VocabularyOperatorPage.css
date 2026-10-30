@@ -134,3 +134,8 @@
 .vocabulary-coverage-sense > details { margin: 0 0 .6rem 1.75rem; }
 .vocabulary-coverage-sense ul { padding-left: 1.25rem; }
 .vocabulary-sense-coverage .vocabulary-operator-actions { gap: .5rem; margin: .75rem 0; }
+
+.vocabulary-pure-cue-identities { min-width: 0; display: grid; gap: .75rem; }
+.vocabulary-pure-cue-identities label { display: grid; gap: .3rem; min-width: 0; }
+.vocabulary-pure-cue-identities select { width: 100%; min-width: 0; max-width: 100%; }
+.vocabulary-pure-cue-identities p { overflow-wrap: anywhere; }

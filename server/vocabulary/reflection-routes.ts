@@ -9,7 +9,7 @@ import { createVocabularyPracticePreparation } from './preparation.ts';
 import { createOperatorAllowlistMiddleware } from '../operator-access.ts';
 import { getVocabularyApprovalRequests } from './approval-requests.ts';
 import { getVocabularyCaseWorkspace, listVocabularyReflectionCases, listVocabularyProposals, listVocabularyProposalReviewBatch, getVocabularyProposal,
-  requestVocabularyReassessment, requestVocabularySecondOpinion, listVocabularySecondOpinions, listVocabularyNoProposalCases, requestVocabularyCaseSecondOpinion, createVocabularyProposal, saveVocabularyProposal, previewVocabularyProposal, approveVocabularyProposal,
+  requestVocabularyPureCueResolution, requestVocabularyReassessment, requestVocabularySecondOpinion, listVocabularySecondOpinions, listVocabularyNoProposalCases, requestVocabularyCaseSecondOpinion, createVocabularyProposal, saveVocabularyProposal, previewVocabularyProposal, approveVocabularyProposal,
   applyVocabularyProposal, closeVocabularyProposal, closeVocabularyCase, listOwnVocabularyMessages,
   getOwnVocabularyFeedbackAttention,listOwnVocabularyFeedbackFailures,listOwnVocabularyFeedbackJobs, markOwnVocabularyMessageSeen, dismissOwnVocabularyMessage, restoreOwnVocabularyMessage, retryOwnVocabularyFeedback,
   retryVocabularyReflectionJob, listVocabularyFailedDispatches, retryVocabularyPostSessionDispatch, VocabularyReflectionConflict } from '../db/vocabulary-reflection.ts';
@@ -128,6 +128,14 @@ export function registerVocabularyReflectionRoutes(app:Express,options:{wake?:()
     if(!Number.isSafeInteger(input.expectedContentVersion)||Number(input.expectedContentVersion)<1)throw new VocabularyReflectionRequestError('Expected positive source content version');
     if(!isOfferedReflectionModelChoice(input.modelChoice)) throw new VocabularyReflectionRequestError('Unsupported assessment model');
     const result=requestVocabularyReassessment(text(req.params.id),actor,input.modelChoice as import('../reflection/model-arms.ts').ReflectionModelChoice,input.expectedContentVersion as number);options.wake?.();return result;
+  }));
+  app.post(`${base}/cases/:id/pure-cue-resolutions`,gate,handle((req,actor)=>{
+    const input=object(req.body,['modelChoice','expectedContentVersion','selections']);
+    if(!isOfferedReflectionModelChoice(input.modelChoice))throw new VocabularyReflectionRequestError('Unsupported assessment model');
+    const selections=Object.fromEntries(list(input.selections).map(value=>{const entry=object(value,['form','wordId']);return [text(entry.form),text(entry.wordId)];}));
+    if(Object.keys(selections).length!==list(input.selections).length)throw new VocabularyReflectionRequestError('Duplicate referral form');
+    const result=requestVocabularyPureCueResolution(text(req.params.id),actor,input.modelChoice as import('../reflection/model-arms.ts').ReflectionModelChoice,version(input.expectedContentVersion),selections);
+    options.wake?.();return result;
   }));
   app.get(`${base}/cases/:id`,gate,handle((req,actor)=>getVocabularyCaseWorkspace(text(req.params.id),actor)));
   app.post(`${base}/cases/:id/close`,gate,handle((req,actor)=>{const input=object(req.body,['reason']);closeVocabularyCase(text(req.params.id),actor,optionalText(input.reason));return {ok:true};}));

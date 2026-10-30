@@ -170,6 +170,32 @@ remain recorded assessments. Private reactions inform judgment without becoming
 shared authored text. This stage does not reconcile the participating words'
 exercise repertoires or change scheduling and compensation.
 
+### Operator resolution of ambiguous promotion candidates
+
+The operator workspace lists exact dictionary matches for each referred written
+form, including pronunciation and meaning. The source target remains fixed.
+An operator can select a matching lexical identity and queue a promotion
+assessment; a missing entry cannot be invented through this control.
+
+`POST /api/operator/vocabulary/cases/:id/pure-cue-resolutions` validates every
+selection against current dictionary matches and requires the original source
+version, sense catalog and target mapping to remain unchanged. It creates a
+separate child case/job and records an immutable
+`operator-pure-cue-resolution-v1` decision in `vocabulary_improvement_stages`,
+with the actor, timestamp, parent job, source, original local diagnosis/referral,
+and selected lexical snapshots. This uses the same retained-stage table as
+non-model generation-scope decisions; the resolution record is not a model call.
+
+The child calls only promotion, retaining encounter evidence and the original
+referral. Source, catalog and selected lexical identities are fenced before and
+after the call. It does not repeat sense admission or local exercise improvement.
+Its proposal contains only promotion operations, leaving the parent's independent
+repair proposal and operator edits untouched. The selected model's invocation
+records the child workflow and input content/sense provenance. Failed jobs can
+retry with the saved choices; changed source or lexical evidence requires fresh
+review. Identity selection never applies content: proposed promotion changes
+still require ordinary operator review and approval.
+
 ### Versions and retained stage results
 
 `single-improvement.md` uses prompt version 4 and schema

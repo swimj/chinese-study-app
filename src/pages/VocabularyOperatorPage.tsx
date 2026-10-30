@@ -1,3 +1,4 @@
+import { PureCueIdentityResolution } from '../features/vocabulary-operator/PureCueIdentityResolution';
 import { vocabularyPhraseClozeError } from '../domain/vocabulary-production-coverage';
 import type { VocabularyDefaultSelectionAttention,VocabularyDefaultSelectionFinding,VocabularySenseCoverageWorkspace } from '../domain/vocabulary-sense-coverage';
 import { ScopeCoverageEditor } from '../features/vocabulary-operator/ScopeCoverageEditor';
@@ -407,6 +408,13 @@ export function VocabularyOperatorPage({api=vocabularyOperatorApi,previewOnly=fa
         {workspace.jobs.filter(job=>job.secondOpinion).map(job=><div className="vocabulary-second-opinion" key={job.jobId}>{job.result?<><p><strong>{{support:'Supports no change',revise:'Suggests revision',reject:'Recommends a change'}[job.result.verdict]}</strong></p><p>{detailsOpen?job.result.rationale:brief(job.result.rationale)}</p></>:<p role="status">Second opinion: {job.status}</p>}{job.status==='failed'&&<button disabled={busy} onClick={()=>void run(async()=>{await api.retryJob(job.jobId);setWorkspace(await api.workspace(workspace.case.caseId));})}>Retry second opinion</button>}</div>)}
         {queue==='review'&&<div className="vocabulary-operator-actions"><button disabled={busy||scopeEditing} onClick={()=>resolveCurrentCase(true)}>Done</button><button className="secondary-button" disabled={busy||scopeEditing||workspace.jobs.some(job=>job.secondOpinion&&['queued','running'].includes(job.status))} onClick={()=>void run(async()=>{await api.requestCaseSecondOpinion(workspace.case.caseId,caseNotes);setCaseNotes('');setWorkspace(await api.workspace(workspace.case.caseId));},'Second opinion queued.')}>Second opinion</button>{reassessmentControl}</div>}
       </ContentImprovementEntry>}
+        {itemVisible&&workspace&&promotionNeedsAttention&&workspace.pureCueIdentityOptions&&!previewOnly&&queue!=='history'&&workspace.case.status!=='closed'&&<PureCueIdentityResolution key={`identities:${workspace.case.caseId}`} options={workspace.pureCueIdentityOptions} disabled={busy||dirty||scopeEditing||reassessmentPending} onSubmit={(model,selections)=>void run(async()=>{
+          if(!workspace.admission)throw new Error('Source assessment is unavailable.');
+          const result=await api.resolvePureCueIdentities(workspace.case.caseId,model,workspace.admission.sourceContentVersion,selections);
+          setWorkspace({...workspace,reassessment:{...result,status:'queued',error:null}});
+          if(selected)setReviewReassessment(previous=>previous?{...previous,latest:{...result,status:'queued',error:null}}:previous);
+          await reload();
+        },'Promotion assessment queued. Content still requires review.')} />}
       {caseEntryVisible&&workspace&&<ContentImprovementEntry assessedVersion={workspace.case.reassessmentSource?.version} label="Content improvement entry" evidence={workspace.case.evidence}>{scopeEditor}{reassessmentControl}</ContentImprovementEntry>}
       {itemVisible&&(workspace||selected)&&<details key={selected?.proposalId??workspace?.case.caseId} open={detailsOpen} onToggle={event=>{const open=event.currentTarget.open;setDetailsOpen(open);if(open&&selected)void loadWorkspaceForProposal(selected);}} className="vocabulary-evidence"><summary>Details</summary>
         {selected&&<section><h3>Proposal details</h3><p>{selected.rationale}</p><p className="vocabulary-operator-meta">{selected.status.replaceAll('_',' ')} · revision {selected.version}</p>{selected.operations.map(operation=><p key={operation.operationKey}>{operation.rationale}</p>)}

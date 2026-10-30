@@ -181,3 +181,13 @@ for (const teachingNote of [null, '', '   ', undefined]) test(`create and extend
   assert.throws(() => prepared.normalize(decision({ teachingNote })), /require a teaching note/);
   assert.throws(() => prepared.normalize(decision({ decision: 'extend', existingContentId: 'cue', prompt: null, semanticAxis: null, teachingNote, memberWordIds: ['target', 'retained', 'other'] })), /require a teaching note/);
 });
+
+test('explicit dictionary selection disambiguates only a matching identity and fences lexical edits',()=>{
+  db.prepare('INSERT INTO lexical_words VALUES (?,?,?,?,?)').run('homograph','扩大',null,'other reading','another meaning');
+  assert.equal(prepareVocabularyPureCuePromotion(job(),original,referral).attention?.assessment.outcome,'needs_operator');
+  const resolved=prepareVocabularyPureCuePromotion(job(),original,referral,{'扩大':'other'});
+  assert.equal(resolved.attention,null);assert.deepEqual(resolved.input.candidates.map(word=>word.wordId),['target','other']);
+  assert.throws(()=>prepareVocabularyPureCuePromotion(job(),original,referral,{'扩大':'outside'}),/no longer matches/);
+  db.prepare("UPDATE lexical_words SET meaning='changed meaning' WHERE id='other'").run();
+  assert.throws(()=>resolved.fence(),/identities changed/);
+});
