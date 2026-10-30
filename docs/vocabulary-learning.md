@@ -295,8 +295,8 @@ explains repair stages.
 `processing-worker.ts` closes due completions and ingests evidence even when
 provider work is disabled. Learner-feedback and exercise-improvement jobs have
 separate claims and outcomes. Teaching issues stay manual. Failed calls and
-expired unknown outcomes require explicit retry, except for preparation dependencies
-within their bounded automatic retry cycle; lease tokens fence late results.
+expired unknown outcomes require explicit retry, except for sense-mapping availability
+failures and preparation dependencies within their bounded automatic retry cycles; lease tokens fence late results.
 Maintenance and disabled-learner checks protect dispatch and publication.
 
 Individual reflection jobs select Luna, GLM, or Sol with equal probability,
@@ -305,11 +305,26 @@ policy retains GLM/Luna at 70/30 for up to ten items and Sol/GLM/Luna at 60/20/2
 for larger bundles; vocabulary jobs do not currently batch unrelated cases. Selection is
 retained across stages and retries for learner feedback, improvements, and AI
 second opinions, except for sense mapping. The admission step that maps an authored
-exercise to the existing sense inventory always uses OpenAI `gpt-6-luna` with high
-reasoning, including retries and operator reassessments. It requires `OPENAI_API_KEY`
-and honors `OPENAI_BASE_URL`; failures propagate without switching models. Cached
-mapping evidence includes this model configuration in its identity. Practice and
-sense-inventory authoring keep their independently configured model.
+exercise to the existing sense inventory starts with OpenAI `gpt-6-luna` with high
+reasoning, including operator reassessments. Mapping availability failures receive
+three attempts, with 30- and 60-second backoff. After the third consecutive failure,
+the next queued attempt switches to ZAI `glm-5.3-flash` with high reasoning and a
+fresh three-attempt budget using the same backoff. Exhausting both providers requires
+explicit operator retry, which starts a fresh Luna cycle. The durable mapping counter
+is independent of job claims, sense-inventory preparation, and later authoring calls.
+Each attempt runs through ordinary worker controls and lease fencing; expired unknown
+outcomes require manual retry rather than automatically making another call.
+
+Timeouts, recognized network failures, and HTTP 401/403/408/429/5xx responses qualify
+as availability failures. Missing credentials, other HTTP errors (including provider
+incompatibility), invalid JSON, truncation, and schema/domain validation failures
+require manual retry without automatically switching models. OpenAI requires
+`OPENAI_API_KEY` and honors `OPENAI_BASE_URL`; fallback requires `ZAI_API_KEY`.
+Cached mapping evidence includes the actual provider/model configuration in its
+identity. A successful fallback mapping retains that identity when later authoring
+needs a retry. Manual retry without successful mapping evidence starts a fresh
+Luna cycle. Practice and sense-inventory authoring keep their independently
+configured model and retry policies.
 
 ### Teaching reserve
 

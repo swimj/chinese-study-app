@@ -6,7 +6,7 @@ import { setDb } from '../server/db/connection.ts';
 import { runWithLearnerId } from '../server/db/learner-context.ts';
 import { createVocabularyContent,createVocabularySense,establishVocabularySenseCatalog,getVocabularySenseCatalog,getVocabularySenses,getVocabularyContent } from '../server/db/vocabulary-content.ts';
 import { createVocabularySession,appendVocabularySessionActions,stageVocabularySessionCompletion } from '../server/db/vocabulary-sessions.ts';
-import { VocabularyReflectionConflict,claimVocabularyReflectionJob,retryOwnVocabularyFeedback,retryVocabularyPostSessionDispatch,listOwnVocabularyMessages,recordVocabularyFeedbackJudgment } from '../server/db/vocabulary-reflection.ts';
+import { VocabularyReflectionConflict,claimVocabularyReflectionJob,retryVocabularyReflectionJob,retryOwnVocabularyFeedback,retryVocabularyPostSessionDispatch,listOwnVocabularyMessages,recordVocabularyFeedbackJudgment } from '../server/db/vocabulary-reflection.ts';
 import { createVocabularyProcessingWorker } from '../server/vocabulary/processing-worker.ts';
 import { createVocabularyReflectionProvider,normalizeVocabularyReflectionOutput } from '../server/vocabulary/reflection-provider.ts';
 import { createOpenAiCompatibleAdapter } from '../server/llm/openai-compatible.ts';
@@ -38,6 +38,7 @@ beforeEach(()=>{
   for(const name of ['0042_vocabulary_sessions.sql','0044_vocabulary_reflection.sql','0059_vocabulary_reassessment.sql','0060_vocabulary_reassessment_source.sql','0055_vocabulary_feedback_dismissal.sql','0045_vocabulary_provenance_links.sql'])sql.exec(fs.readFileSync(new URL(`../server/db/migrations/${name}`,import.meta.url),'utf8'));
   for(const name of ['0023_session_debrief.sql','0048_vocabulary_connections.sql','0049_vocabulary_sense_readiness.sql','0050_vocabulary_improvement_admission.sql','0051_vocabulary_pure_cue_promotion.sql'])sql.exec(fs.readFileSync(new URL(`../server/db/migrations/${name}`,import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0054_vocabulary_provider_retry_routing.sql',import.meta.url),'utf8'));
+  sql.exec(fs.readFileSync(new URL('../server/db/migrations/0061_vocabulary_sense_mapping_retries.sql',import.meta.url),'utf8'));
   sql.exec(`INSERT INTO learner_words(learner_id,word_id,in_stash,added_at,mode,mode_changed_at) VALUES ('alice','a',1,'2026-01-01','practice','2026-01-01');
     INSERT INTO learner_word_schedules(learner_id,word_id,next_eligible_at,policy_version,scheduler_state_json)
       VALUES ('alice','a','2026-10-20T10:00:00.000Z','test','{"intervalHours":24,"easeFactor":2.5,"enabled":1,"cleanCoveredSessions":0}');`);
@@ -293,6 +294,7 @@ test('a sense prerequisite defers its reflection job durably until due and does 
   }};
   let processing=worker(provider);await processing.step();
   assert.equal(alice(listOwnVocabularyMessages).length,1);
+  assert.equal(mappingJobRow().failures,0);
   assert.equal(sql.prepare("SELECT status FROM vocabulary_reflection_jobs WHERE kind='exercise_improvement'").get()!.status,'queued');
   await processing.stop();processing=worker(provider);
   clock+=29_999;await processing.step();assert.equal(improvementCalls,1);
@@ -329,4 +331,128 @@ test('expired sense preparation fences its crashed reflection and resumes after 
   await processing.step();
   assert.equal(sql.prepare("SELECT last_error FROM vocabulary_reflection_jobs WHERE kind='exercise_improvement'").get()!.last_error,'source_conflict');
   await processing.stop();
+});
+
+
+function mappingTrial(reply:(attempt:number)=>{status?:number;value?:unknown;rawText?:string},repairFailsOnce=false) {
+  const models:string[]=[];
+  const requests:Array<{model:string;response_format:{type:string};reasoning_effort:string}>=[];
+  let repairs=0;
+  const sense=createVocabularySense({wordId:'a',description:{label:'written character'}},{kind:'operator',id:'editor'});
+  establishVocabularySenseCatalog('a',getVocabularySenseCatalog('a').version,{kind:'operator',id:'editor'});
+  const fetchImplementation:typeof fetch=async(_url,init)=>{
+    const request=JSON.parse(String(init?.body)) as {model:string;response_format:{type:string;json_schema:{name:string}};reasoning_effort:string};requests.push(request);
+    let value:unknown={diagnosis:'Fair cue',lesson:'A useful lesson',unfairEncounterIds:[]};
+    let rawText:string|undefined;
+    if(request.model==='gpt-6-luna'||request.model==='glm-5.3-flash') {
+      models.push(request.model);
+      const response=reply(models.length);
+      if(response.status)return new Response('Provider unavailable',{status:response.status});
+      value=response.value??{outcome:'single_sense',rationale:'A written character.',senseIds:[sense.senseId]};
+      rawText=response.rawText;
+    } else if(request.response_format.json_schema.name.includes('single_improvement')) {
+      if(repairFailsOnce&&++repairs===1)return new Response('Authoring unavailable',{status:503});
+      value={diagnosis:'Keep this exercise',operations:[],pureCueReferral:null};
+    }
+    return new Response(JSON.stringify({model:request.model,choices:[{message:{content:rawText??JSON.stringify(value)},finish_reason:'stop'}]}),{status:200});
+  };
+  const create=()=>createVocabularyReflectionProvider({random:()=>0,environment:{OPENAI_API_KEY:'fake-openai',ZAI_API_KEY:'fake-zai'},fetchImplementation,
+    ensureSenses:async()=>({catalog:getVocabularySenseCatalog('a'),senses:getVocabularySenses('a'),source:'existing'})});
+  return {models,requests,create};
+}
+function mappingJobRow() {
+  return sql.prepare("SELECT job_id,status,sense_mapping_availability_failures AS failures,next_attempt_at,last_error FROM vocabulary_reflection_jobs WHERE kind='exercise_improvement'").get()!;
+}
+
+test('mapping exhausts three Luna attempts then three ZAI attempts with durable independent backoff',async()=>{
+  pending();installModelInvocationLedger();
+  const trial=mappingTrial(()=>({status:503}));
+  let processing=worker(trial.create());
+  try {
+    for(const [index,delay] of [0,30_000,60_000,0,30_000,60_000].entries()) {
+      if(delay){clock+=delay-1;await processing.step();assert.equal(trial.models.length,index);clock++;}
+      await processing.step();
+      assert.equal(trial.models.length,index+1);
+      assert.equal(mappingJobRow().failures,index+1);
+      assert.equal(mappingJobRow().status,index===5?'failed':'queued');
+      if(index===1){await processing.stop();processing=worker(trial.create());}
+    }
+    assert.deepEqual(trial.models,['gpt-6-luna','gpt-6-luna','gpt-6-luna','glm-5.3-flash','glm-5.3-flash','glm-5.3-flash']);
+    assert.equal(mappingJobRow().last_error,'sense_mapping_unavailable');
+    clock+=120_000;await processing.step();assert.equal(trial.models.length,6);
+    assert.equal(alice(listOwnVocabularyMessages).length,1);
+    assert.deepEqual(sql.prepare("SELECT provider,model FROM model_invocations WHERE step_name='sense_mapping' ORDER BY rowid").all().map(row=>[row.provider,row.model]),
+      trial.models.map(model=>[model==='gpt-6-luna'?'openai':'zai',model]));
+    const zai=trial.requests.find(request=>request.model==='glm-5.3-flash')!;
+    assert.equal(zai.response_format.type,'json_object');assert.equal(zai.reasoning_effort,'high');
+    retryVocabularyReflectionJob(String(mappingJobRow().job_id),'editor',new Date(clock).toISOString());
+    assert.equal(mappingJobRow().failures,0);
+    await processing.step();assert.equal(trial.models.at(-1),'gpt-6-luna');assert.equal(mappingJobRow().failures,1);
+  } finally {await processing.stop();}
+});
+
+test('successful fallback mapping is reused when later authoring needs explicit retry',async()=>{
+  pending();installModelInvocationLedger();
+  const trial=mappingTrial(attempt=>attempt<=3?{status:429}:{},true);
+  const processing=worker(trial.create());
+  try {
+    await processing.step();clock+=30_000;await processing.step();clock+=60_000;await processing.step();await processing.step();
+    assert.equal(mappingJobRow().status,'failed');assert.equal(mappingJobRow().failures,3);
+    assert.equal(trial.models.length,4);
+    const stored=JSON.parse(String(sql.prepare("SELECT input_json FROM vocabulary_improvement_stages WHERE stage='sense_mapping'").get()!.input_json));
+    assert.equal(stored.contract.model,'glm-5.3-flash');assert.equal(stored.contract.provider,'zai');
+    retryVocabularyReflectionJob(String(mappingJobRow().job_id),'editor',new Date(clock).toISOString());
+    await processing.step();assert.equal(mappingJobRow().status,'succeeded');assert.equal(trial.models.length,4);
+  } finally {await processing.stop();}
+});
+
+for(const response of [{value:{outcome:'single_sense',rationale:'Unknown sense',senseIds:['invented']}},{rawText:'invalid JSON'},{status:400}]) {
+  test(`mapping response failure stays manual: ${JSON.stringify(response)}`,async()=>{
+    pending();installModelInvocationLedger();const trial=mappingTrial(()=>response);
+    const processing=worker(trial.create());
+    try {
+      await processing.step();assert.equal(mappingJobRow().status,'failed');assert.equal(mappingJobRow().failures,0);
+      clock+=120_000;await processing.step();assert.deepEqual(trial.models,['gpt-6-luna']);
+    } finally {await processing.stop();}
+  });
+}
+
+test('maintenance and disabled learners stop queued mapping retries',async()=>{
+  pending();installModelInvocationLedger();const trial=mappingTrial(()=>({status:503}));
+  let state={maintenanceMode:false,providerWorkEnabled:true};
+  const processing=worker(trial.create(),()=>state);
+  try {
+    await processing.step();clock+=30_000;
+    state={maintenanceMode:true,providerWorkEnabled:true};await processing.step();assert.equal(trial.models.length,1);
+    state={maintenanceMode:false,providerWorkEnabled:false};await processing.step();assert.equal(trial.models.length,1);
+    state={maintenanceMode:false,providerWorkEnabled:true};
+    sql.exec("UPDATE learners SET disabled_at='disabled' WHERE learner_id='alice'");await processing.step();assert.equal(trial.models.length,1);
+    sql.exec("UPDATE learners SET disabled_at=NULL WHERE learner_id='alice'");await processing.step();assert.equal(trial.models.length,2);
+  } finally {await processing.stop();}
+});
+
+
+test('manual recovery from invalid mapping output resets partial availability failures',async()=>{
+  pending();installModelInvocationLedger();
+  const trial=mappingTrial(attempt=>attempt===1?{status:503}:{rawText:'invalid JSON'});
+  const processing=worker(trial.create());
+  try {
+    await processing.step();clock+=30_000;await processing.step();
+    assert.equal(mappingJobRow().status,'failed');assert.equal(mappingJobRow().failures,1);
+    retryVocabularyReflectionJob(String(mappingJobRow().job_id),'editor',new Date(clock).toISOString());
+    assert.equal(mappingJobRow().failures,0);
+    await processing.step();assert.equal(trial.models.at(-1),'gpt-6-luna');
+  } finally {await processing.stop();}
+});
+
+
+test('an expired mapping lease cannot consume retry budget or revive unknown work',async()=>{
+  pending();installModelInvocationLedger();
+  const trial=mappingTrial(()=>{clock+=31*60_000;return {status:503};});
+  const processing=worker(trial.create());
+  try {
+    await processing.step();assert.equal(mappingJobRow().failures,0);
+    await processing.step();assert.equal(mappingJobRow().status,'failed');
+    assert.equal(mappingJobRow().last_error,'provider_outcome_unknown');assert.equal(trial.models.length,1);
+  } finally {await processing.stop();}
 });

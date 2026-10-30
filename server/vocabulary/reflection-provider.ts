@@ -1,3 +1,5 @@
+import { VocabularySenseMappingUnavailable, isSenseMappingAvailabilityFailure } from './sense-mapping-retry.ts';
+import { GLM_FLASH_HIGH_REFLECTION_MODEL_CONFIG } from '../reflection/glm-provider.ts';
 import { VocabularyReflectionConflict } from '../db/vocabulary-reflection.ts';
 import { getVocabularyContentForMaintenance } from '../db/vocabulary-content.ts';
 import { GENERAL_EXERCISE_CONTRACT,generalExerciseInvocation,type GeneralExerciseSource } from './general-exercise-authoring.ts';
@@ -12,7 +14,7 @@ import { getEffectiveVocabularyEncounterReactions, getVocabularyEncounterReactio
 import { REFLECTION_MODEL_ARMS, isOfferedReflectionModelChoice, type ReflectionModelChoice } from '../reflection/model-arms.ts';
 import { LUNA_REFLECTION_MODEL_CONFIG, type ReflectionProviderConfig } from '../reflection/luna-provider.ts';
 import { reflectionConfigForChoice, routeIndividualReflectionModel } from '../reflection/model-routing.ts';
-import { vocabularyReflectionModelChoice } from '../db/vocabulary-reflection-routing.ts';
+import { vocabularyReflectionModelChoice, vocabularySenseMappingAvailabilityFailures } from '../db/vocabulary-reflection-routing.ts';
 import { getDb } from '../db/connection.ts';
 import { resolveSharedDictionaryBaselineRevision } from '../db/dictionary-baseline-sharing.ts';
 import { createOpenAiCompatibleAdapter } from '../llm/openai-compatible.ts';
@@ -164,11 +166,14 @@ export function createVocabularyReflectionProvider(options:{environment?:NodeJS.
       :step==='single_improvement'?'vocabulary-admission.v2':'vocabulary-admission.v1';
     const routingFor=(step:string)=>{
       if(step!=='sense_mapping')return {config,adapter,apiKey,baseUrl};
-      const mappingConfig=SENSE_MAPPING_CONFIG;
-      const mappingAdapter=adapterFor('openai:gpt-5.6-luna-high',mappingConfig);
+      const failures=vocabularySenseMappingAvailabilityFailures(job.jobId);
+      if(failures>=6)throw new Error('Sense mapping retry budget is exhausted');
+      const fallback=failures>=3;
+      const mappingConfig:ReflectionProviderConfig=fallback?GLM_FLASH_HIGH_REFLECTION_MODEL_CONFIG:SENSE_MAPPING_CONFIG;
+      const mappingAdapter=adapterFor(fallback?'zai:glm-5.3-flash-high':'openai:gpt-5.6-luna-high',mappingConfig);
       const mappingKey=environment[mappingConfig.apiKeyEnvironmentVariable]?.trim();
-      if(!mappingKey)throw new Error('Vocabulary sense mapping provider openai is not configured');
-      const mappingBaseUrl=environment[mappingConfig.baseUrlEnvironmentVariable!]?.trim()||null;
+      if(!mappingKey)throw new Error(`Vocabulary sense mapping provider ${mappingConfig.provider} is not configured`);
+      const mappingBaseUrl=mappingConfig.baseUrlEnvironmentVariable?environment[mappingConfig.baseUrlEnvironmentVariable]?.trim()||null:null;
       return {config:mappingConfig,adapter:mappingAdapter,apiKey:mappingKey,baseUrl:mappingBaseUrl};
     };
     const runCall=async (step:string,input:unknown,schema:JsonSchema,promptFile:string,promptVersion:string)=>{
@@ -183,7 +188,10 @@ export function createVocabularyReflectionProvider(options:{environment?:NodeJS.
         invocationActor:{kind:'service',serviceId:VOCABULARY_REFLECTION_SERVICE_ID,requestingLearnerId:job.learnerId},
         provenance:{workflowId:job.jobId,stepName:step,attemptNumber:job.attemptNumber,promptName:shared?.promptName??`vocabulary-reflection-${promptFile}`,
           promptVersion:shared?.promptVersion??promptVersion,schemaVersion:shared?.schemaVersion??schemaVersion(step),inputProjectionVersion:shared?.inputProjectionVersion??projectionVersion(step)}},
-        {apiKey,baseUrl});
+        {apiKey,baseUrl}).catch((error:unknown)=>{
+          if(step==='sense_mapping'&&isSenseMappingAvailabilityFailure(error))throw new VocabularySenseMappingUnavailable();
+          throw error;
+        });
       try {
         if(isOutputTruncationFinishReason(result.finishReason))throw new VocabularyReflectionOutputError('Reflection output was truncated');
         return {value:JSON.parse(result.rawText) as unknown,invocationId:result.invocationId};

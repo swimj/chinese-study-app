@@ -1,10 +1,11 @@
+import { VocabularySenseMappingUnavailable } from './sense-mapping-retry.ts';
 import { VocabularySenseReadinessPending } from './sense-readiness.ts';
 import { randomUUID } from 'node:crypto';
 import { getDb } from '../db/connection.ts';
 import { runWithLearnerId } from '../db/learner-context.ts';
 import { listDueVocabularySessionCompletions, closeVocabularySessionCompletion } from '../db/vocabulary-sessions.ts';
 import { ingestVocabularySessionEvidence, claimVocabularyReflectionJob, recoverVocabularyReflectionJobs,
-  finishVocabularyReflectionJob, failVocabularyReflectionJob, deferVocabularyReflectionForSense, recoverVocabularySenseDependencies, VocabularyReflectionConflict } from '../db/vocabulary-reflection.ts';
+  finishVocabularyReflectionJob, failVocabularyReflectionJob, failVocabularySenseMappingCall, deferVocabularyReflectionForSense, recoverVocabularySenseDependencies, VocabularyReflectionConflict } from '../db/vocabulary-reflection.ts';
 import { getHostedServiceControls } from '../db/hosted-operations.ts';
 import { runHostedProviderWork, HostedProviderWorkUnavailableError } from '../hosted-runtime-controls.ts';
 import type { VocabularySessionProjection } from '../../src/domain/vocabulary-session.ts';
@@ -78,6 +79,7 @@ export function createVocabularyProcessingWorker(options:{provider?:VocabularyRe
         // Expired leases have already been fenced as unknown outcome. Never revive them.
         try{
           if(error instanceof VocabularySenseReadinessPending)deferVocabularyReflectionForSense(work.jobId,work.leaseToken,error.retryAt,iso());
+          else if(error instanceof VocabularySenseMappingUnavailable)failVocabularySenseMappingCall(work.jobId,work.leaseToken,iso());
           else failVocabularyReflectionJob(work.jobId,work.leaseToken,error instanceof VocabularyReflectionConflict?'source_conflict':error instanceof VocabularyReflectionOutputError?'invalid_output':'provider_failed',iso(),iso());
         }
         catch(stale){if(!(stale instanceof VocabularyReflectionConflict))throw stale;}

@@ -28,6 +28,7 @@ beforeEach(()=>{
     CREATE TABLE vocabulary_reflection_jobs(job_id TEXT PRIMARY KEY,model_choice TEXT); INSERT INTO vocabulary_reflection_jobs VALUES ('job',NULL);`);
   for(const name of ['0039_vocabulary_content','0045_vocabulary_provenance_links','0050_vocabulary_improvement_admission','0051_vocabulary_pure_cue_promotion'])
     db.exec(readFileSync(new URL(`../server/db/migrations/${name}.sql`,import.meta.url),'utf8'));
+  db.exec(readFileSync(new URL('../server/db/migrations/0061_vocabulary_sense_mapping_retries.sql',import.meta.url),'utf8'));
   original=createVocabularyContent({contentId:'original',kind:'exercise',payloadVersion:1,body:{prompt:'请把这张照片____后再打印。',instruction:'Old instruction',reveal:{teachingNote:'Old unrelated teaching'},source:{kind:'old_source'}},accessScope:'shared',availability:'active',originKind:'human',
     exerciseType:'word',skill:'production',exerciseRole:'general',assessment:{match:'exact'},words:[{wordId:'word',relation:'target'}],answers:[{wordId:'word',acceptedForms:['放大']}]},actor);
   createVocabularySense({senseId:'size',wordId:'word',description:{label:'make an image or object larger'}},actor);
@@ -472,7 +473,7 @@ test('reassessment freshly maps current content and excludes historical encounte
   const current=getVocabularyContentForMaintenance('original')!;
   const {version,createdAt,updatedAt,...draft}=current;
   const revised=updateVocabularyContent('original',version,{...draft,body:{prompt:'An updated source.'}},actor);
-  db.prepare('INSERT INTO vocabulary_reflection_jobs VALUES (?,?)').run('reassessment','openai:gpt-6-sol-high');
+  db.prepare('INSERT INTO vocabulary_reflection_jobs(job_id,model_choice) VALUES (?,?)').run('reassessment','openai:gpt-6-sol-high');
   const again=provider((_request,index)=>index===1?single:repair);
   const result=await again.provider.run({...job(),jobId:'reassessment',caseId:'new-case',reassessmentSourceJobId:'job',reassessmentSource:revised});
   assert.equal(result.kind,'exercise_improvement');
@@ -485,7 +486,7 @@ test('reassessment freshly maps current content and excludes historical encounte
 
 test('reassessment runs fresh mapping even when source version is unchanged and catalog changed',async()=>{
   await provider((_request,index)=>index===1?single:repair).provider.run(job());
-  db.prepare('INSERT INTO vocabulary_reflection_jobs VALUES (?,?)').run('reassessment','openai:gpt-6-sol-high');
+  db.prepare('INSERT INTO vocabulary_reflection_jobs(job_id,model_choice) VALUES (?,?)').run('reassessment','openai:gpt-6-sol-high');
   createVocabularySense({senseId:'new-sense',wordId:'word',description:{label:'a new meaning'}},actor);
   const again=provider((_request,index)=>index===1?single:repair);
   await again.provider.run({...job(),jobId:'reassessment',reassessmentSourceJobId:'job',reassessmentSource:getVocabularyContentForMaintenance('original')!});
