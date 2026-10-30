@@ -72,7 +72,7 @@ test('populated offline upgrade corrects stock baselines and versions pending re
     db.prepare('INSERT INTO learner_content_deactivations VALUES(?,?,?)').run('alice',source.contentId,at);
     const history=all(db,'content_revision_history'),proposalHistory=all(db,'proposal_revision_history'),reviews=all(db,'proposal_reviews');
     const controls=all(db,'learner_content_deactivations'),count=all(db,'content_items').length,guard=schema(db);
-    assert.deepEqual(migrateDatabase(db),[SHARED_DICTIONARY_BASELINES_MIGRATION,'app_schema:0059_vocabulary_reassessment','app_schema:0060_vocabulary_reassessment_source']);
+    assert.deepEqual(migrateDatabase(db),[SHARED_DICTIONARY_BASELINES_MIGRATION,'app_schema:0059_vocabulary_reassessment','app_schema:0060_vocabulary_reassessment_source','app_schema:0061_vocabulary_sense_mapping_retries']);
     const current=db.prepare('SELECT * FROM content_items WHERE content_id=?').get(source.contentId)!;
     assert.equal(current.access_scope,'shared');assert.equal(current.owner_learner_id,null);assert.equal(current.version,2);
     assert.equal(db.prepare('SELECT access_scope FROM content_items WHERE content_id=?').get(edited.contentId)!.access_scope,'private');
@@ -107,7 +107,7 @@ test('failed migration rolls back scope, proposal revision, audit events and the
     const target=schemaMigrations[index]!;
     assert.throws(()=>migrateDatabase(db,[...schemaMigrations.slice(0,index),{...target,after:connection=>{target.after!(connection);throw new Error('Injected after-hook failure');}}]),/Injected/);
     assert.deepEqual(tables.map(table=>all(db,table)),before);assert.deepEqual(schema(db),beforeSchema);
-    assert.deepEqual(migrateDatabase(db),[SHARED_DICTIONARY_BASELINES_MIGRATION,'app_schema:0059_vocabulary_reassessment','app_schema:0060_vocabulary_reassessment_source']);
+    assert.deepEqual(migrateDatabase(db),[SHARED_DICTIONARY_BASELINES_MIGRATION,'app_schema:0059_vocabulary_reassessment','app_schema:0060_vocabulary_reassessment_source','app_schema:0061_vocabulary_sense_mapping_retries']);
   }finally{db.close();}
 });
 

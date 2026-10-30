@@ -14,3 +14,11 @@ export function vocabularyReflectionModelChoice(jobId: string, select: () => Ref
   db.prepare('UPDATE vocabulary_reflection_jobs SET model_choice=? WHERE job_id=? AND model_choice IS NULL').run(selected, jobId);
   return selected;
 }
+
+/** Availability failures belong to mapping, never to prerequisite/job claim counts. */
+export function vocabularySenseMappingAvailabilityFailures(jobId: string): number {
+  const row = getDb().prepare('SELECT sense_mapping_availability_failures AS failures FROM vocabulary_reflection_jobs WHERE job_id=?')
+    .get(jobId) as {failures:number}|undefined;
+  if (!row) throw new Error('Sense mapping routing requires a persisted job');
+  return row.failures;
+}

@@ -1,3 +1,5 @@
+import { VocabularySenseMappingUnavailable, isSenseMappingAvailabilityFailure } from './sense-mapping-retry.ts';
+import { GLM_FLASH_HIGH_REFLECTION_MODEL_CONFIG } from '../reflection/glm-provider.ts';
 import { VocabularyReflectionConflict } from '../db/vocabulary-reflection.ts';
 import { getVocabularyContentForMaintenance } from '../db/vocabulary-content.ts';
 import { GENERAL_EXERCISE_CONTRACT,generalExerciseInvocation,type GeneralExerciseSource } from './general-exercise-authoring.ts';
@@ -10,8 +12,9 @@ import type { VocabularyReflectionJob, VocabularyReflectionResult, VocabularyPro
 import type { JsonSchema } from '../../src/domain/reflection-result-schema.ts';
 import { getEffectiveVocabularyEncounterReactions, getVocabularyEncounterReactions } from '../../src/domain/vocabulary-session.ts';
 import { REFLECTION_MODEL_ARMS, isOfferedReflectionModelChoice, type ReflectionModelChoice } from '../reflection/model-arms.ts';
+import { LUNA_REFLECTION_MODEL_CONFIG, type ReflectionProviderConfig } from '../reflection/luna-provider.ts';
 import { reflectionConfigForChoice, routeIndividualReflectionModel } from '../reflection/model-routing.ts';
-import { vocabularyReflectionModelChoice } from '../db/vocabulary-reflection-routing.ts';
+import { vocabularyReflectionModelChoice, vocabularySenseMappingAvailabilityFailures } from '../db/vocabulary-reflection-routing.ts';
 import { getDb } from '../db/connection.ts';
 import { resolveSharedDictionaryBaselineRevision } from '../db/dictionary-baseline-sharing.ts';
 import { createOpenAiCompatibleAdapter } from '../llm/openai-compatible.ts';
@@ -23,6 +26,8 @@ import { eligibleVocabularyReflectionJob } from './reflection-eligibility.ts';
 import { prepareVocabularyPureCueImprovement, vocabularyPureCueImprovementSchema } from './pure-cue-improvement.ts';
 import { vocabularyPureCueReferralSchema, validateVocabularyPureCueReferral } from './pure-cue-promotion.ts';
 import { runVocabularyImprovementAdmission, type VocabularySenseEnsurer } from './improvement-admission.ts';
+
+const SENSE_MAPPING_CONFIG:ReflectionProviderConfig={...LUNA_REFLECTION_MODEL_CONFIG,modelConfig:'gpt-6-luna-high',providerModel:'gpt-6-luna'};
 
 export const VOCABULARY_REFLECTION_SERVICE_ID='vocabulary-reflection';
 export class VocabularyReflectionOutputError extends Error {}
@@ -116,16 +121,16 @@ export function normalizeVocabularyReflectionOutput(job:VocabularyReflectionJob,
 }
 export function createVocabularyReflectionProvider(options:{environment?:NodeJS.ProcessEnv;adapter?:ProviderAdapter;adapters?:Partial<Record<ReflectionModelChoice,ProviderAdapter>>;random?:()=>number;fetchImplementation?:typeof globalThis.fetch;ensureSenses?:VocabularySenseEnsurer}={}):VocabularyReflectionProvider {
   const environment=options.environment??process.env;
-  const adapters=new Map<ReflectionModelChoice,ProviderAdapter>();
-  const adapterFor=(choice:ReflectionModelChoice)=>{
-    const existing=options.adapters?.[choice]??options.adapter??adapters.get(choice);
+  const adapters=new Map<string,ProviderAdapter>();
+  const adapterFor=(choice:ReflectionModelChoice,config=reflectionConfigForChoice(choice))=>{
+    const key=config.providerModel;
+    const existing=options.adapters?.[choice]??options.adapter??adapters.get(key);
     if(existing)return existing;
-    const config=reflectionConfigForChoice(choice);
     const adapter=createOpenAiCompatibleAdapter({id:config.provider,defaultBaseUrl:config.defaultBaseUrl,
       apiKeyEnvironmentVariable:config.apiKeyEnvironmentVariable,structuredOutputMode:config.structuredOutputMode,
       maxTokensField:config.maxTokensField,additionalRequestBody:config.additionalRequestBody,
       fetchImplementation:options.fetchImplementation??fetchImplementationForProvider(config.provider,config.timeoutMs)});
-    adapters.set(choice,adapter);return adapter;
+    adapters.set(key,adapter);return adapter;
   };
   return {isConfigured:()=>REFLECTION_MODEL_ARMS.some(arm=>arm.enabledByDefault&&Boolean(environment[reflectionConfigForChoice(arm.choice).apiKeyEnvironmentVariable]?.trim())),async run(job,context){
     if(job.evidence.kind==='teaching_review')throw new VocabularyReflectionOutputError('Teaching belongs to the manual inbox');
@@ -159,8 +164,21 @@ export function createVocabularyReflectionProvider(options:{environment?:NodeJS.
     const projectionVersion=(step:string)=>step==='second_opinion'?'vocabulary-second-opinion.v1'
       :step==='feedback'||step==='improvement'?'vocabulary-reflection.v2'
       :step==='single_improvement'?'vocabulary-admission.v2':'vocabulary-admission.v1';
+    const routingFor=(step:string)=>{
+      if(step!=='sense_mapping')return {config,adapter,apiKey,baseUrl};
+      const failures=vocabularySenseMappingAvailabilityFailures(job.jobId);
+      if(failures>=6)throw new Error('Sense mapping retry budget is exhausted');
+      const fallback=failures>=3;
+      const mappingConfig:ReflectionProviderConfig=fallback?GLM_FLASH_HIGH_REFLECTION_MODEL_CONFIG:SENSE_MAPPING_CONFIG;
+      const mappingAdapter=adapterFor(fallback?'zai:glm-5.3-flash-high':'openai:gpt-5.6-luna-high',mappingConfig);
+      const mappingKey=environment[mappingConfig.apiKeyEnvironmentVariable]?.trim();
+      if(!mappingKey)throw new Error(`Vocabulary sense mapping provider ${mappingConfig.provider} is not configured`);
+      const mappingBaseUrl=mappingConfig.baseUrlEnvironmentVariable?environment[mappingConfig.baseUrlEnvironmentVariable]?.trim()||null:null;
+      return {config:mappingConfig,adapter:mappingAdapter,apiKey:mappingKey,baseUrl:mappingBaseUrl};
+    };
     const runCall=async (step:string,input:unknown,schema:JsonSchema,promptFile:string,promptVersion:string)=>{
       if(context?.canPublish&&!context.canPublish())throw new Error('Reflection lost publication authority');
+      const {config,adapter,apiKey,baseUrl}=routingFor(step);
       const shared=step==='repertoire'?generalExerciseInvocation(input as GeneralExerciseSource):null;
       const systemPrompt=shared?.systemPrompt??await promptFor(promptFile);
       const result=await adapter.run({model:config.providerModel,reasoningEffort:config.reasoningEffort,
@@ -170,7 +188,10 @@ export function createVocabularyReflectionProvider(options:{environment?:NodeJS.
         invocationActor:{kind:'service',serviceId:VOCABULARY_REFLECTION_SERVICE_ID,requestingLearnerId:job.learnerId},
         provenance:{workflowId:job.jobId,stepName:step,attemptNumber:job.attemptNumber,promptName:shared?.promptName??`vocabulary-reflection-${promptFile}`,
           promptVersion:shared?.promptVersion??promptVersion,schemaVersion:shared?.schemaVersion??schemaVersion(step),inputProjectionVersion:shared?.inputProjectionVersion??projectionVersion(step)}},
-        {apiKey,baseUrl});
+        {apiKey,baseUrl}).catch((error:unknown)=>{
+          if(step==='sense_mapping'&&isSenseMappingAvailabilityFailure(error))throw new VocabularySenseMappingUnavailable();
+          throw error;
+        });
       try {
         if(isOutputTruncationFinishReason(result.finishReason))throw new VocabularyReflectionOutputError('Reflection output was truncated');
         return {value:JSON.parse(result.rawText) as unknown,invocationId:result.invocationId};
@@ -212,10 +233,12 @@ export function createVocabularyReflectionProvider(options:{environment?:NodeJS.
       &&job.evidence.evidence.every(encounter=>encounter.snapshot.schedulingScope!=='pure_cue')) {
       return runVocabularyImprovementAdmission({job,original,projectedInput:projectVocabularyReflectionInput(job),
         ensureSenses:options.ensureSenses,canPublish:context?.canPublish,improvementSchema:vocabularySingleImprovementSchema,
-        stageIdentity:async(stage,schema)=>({provider:adapter.id,baseUrl:baseUrl??adapter.defaultBaseUrl,
+        stageIdentity:async(stage,schema)=>{
+          const {config,adapter,baseUrl}=routingFor(stage);
+          return {provider:adapter.id,baseUrl:baseUrl??adapter.defaultBaseUrl,
           model:config.providerModel,reasoningEffort:config.reasoningEffort,schema,...(stage==='repertoire'?GENERAL_EXERCISE_CONTRACT:{systemPrompt:await promptFor(stagePrompt(stage)),
             outputSchemaName:`vocabulary_reflection_${stage}_v${schemaVersion(stage)}`,promptVersion:admissionPromptVersion(stage),schemaVersion:schemaVersion(stage),inputProjectionVersion:projectionVersion(stage)}),
-          maxOutputTokens:config.maxOutputTokens,temperature:null,timeoutMs:config.timeoutMs,cachePrompt:true}),
+          maxOutputTokens:config.maxOutputTokens,temperature:null,timeoutMs:config.timeoutMs,cachePrompt:true};},
         call:(stage,input,schema)=>runCall(stage,input,schema,stagePrompt(stage),admissionPromptVersion(stage)),
         normalize:(value,invocationId)=>normalizeVocabularyReflectionOutput(job,value,invocationId,!!value&&typeof value==='object'&&'pureCueReferral' in value)});
     }

@@ -533,3 +533,12 @@ it is not eligible for an app-only upgrade.
 Migration `0055_vocabulary_feedback_dismissal` adds nullable learner-message
 dismissal timestamps. Existing messages remain active. Apply with the same
 stopped-writer procedure before restarting the updated backend.
+
+### Sense-mapping availability retries
+
+`0061_vocabulary_sense_mapping_retries` adds the reflection job's independent
+availability-failure counter, initialized to zero for existing jobs. It preserves
+job status, selected reflection model, evidence, results, and invocation history.
+The [runtime routing policy](../vocabulary-learning.md#dispatch-and-model-routing)
+uses this counter for bounded Luna retries and ZAI fallback. This schema change
+requires the offline migration route; the app-only upgrade route does not apply.

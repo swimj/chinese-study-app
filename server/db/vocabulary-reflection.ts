@@ -199,6 +199,24 @@ export function failVocabularyReflectionJob(jobId: string, token: string, failur
       lease_expires_at=NULL WHERE job_id=?`).run(failureCode,retryAt,jobId);
   });
 }
+/** Persist backoff and provider transition under the same lease as the failed call. */
+export function failVocabularySenseMappingCall(jobId: string, token: string, at = timestamp()): void {
+  timestamp(at);
+  atomic(() => {
+    leased(jobId,token,at);
+    const row = getDb().prepare('SELECT sense_mapping_availability_failures AS failures FROM vocabulary_reflection_jobs WHERE job_id=?')
+      .get(jobId) as {failures:number};
+    if (row.failures >= 6) throw new Error('Sense mapping retry budget is already exhausted');
+    const failures = row.failures + 1;
+    // Switch to ZAI immediately after Luna's third failure. Each provider's
+    // remaining attempts use the same 30/60-second backoff.
+    const delay = failures === 3 || failures === 6 ? 0 : failures % 3 === 1 ? 30_000 : 60_000;
+    getDb().prepare(`UPDATE vocabulary_reflection_jobs SET sense_mapping_availability_failures=?,status=?,last_error=?,
+      next_attempt_at=?,lease_token=NULL,lease_expires_at=NULL WHERE job_id=?`)
+      .run(failures,failures < 6 ? 'queued' : 'failed',failures < 6 ? null : 'sense_mapping_unavailable',
+        new Date(Date.parse(at)+delay).toISOString(),jobId);
+  });
+}
 /** Recover a crashed sense prerequisite without retrying an unrelated reflection provider call. */
 export function recoverVocabularySenseDependencies(at=timestamp()):number {
   timestamp(at);
@@ -676,6 +694,11 @@ function retryJob(jobId: string, learnerId: string | null, at: string): void {
     throw new VocabularyReflectionConflict('A reassessment is already in progress');
   getDb().prepare(`UPDATE vocabulary_reflection_jobs SET status='queued',next_attempt_at=?,last_error=NULL,lease_token=NULL,lease_expires_at=NULL WHERE job_id=?`)
     .run(timestamp(at),jobId);
+  // A manual restart gets a fresh cycle unless a successful mapping must retain
+  // its fallback route/cache identity while a later stage is retried.
+  getDb().prepare(`UPDATE vocabulary_reflection_jobs SET sense_mapping_availability_failures=0 WHERE job_id=?
+    AND (sense_mapping_availability_failures=6 OR NOT EXISTS (SELECT 1 FROM vocabulary_improvement_stages s
+      WHERE s.job_id=vocabulary_reflection_jobs.job_id AND s.stage='sense_mapping'))`).run(jobId);
   event('vocabulary.reflection.retry_requested',jobId,{ explicitRetry: true });
 }
 export function retryOwnVocabularyFeedback(jobId: string, at = timestamp()): void { atomic(() => retryJob(jobId,requireLearnerId(),at)); }

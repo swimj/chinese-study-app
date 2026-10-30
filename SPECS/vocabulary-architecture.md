@@ -92,8 +92,11 @@ and explicit learner mode and refresh choices remain protected.
 
 Provider output is untrusted. Retained requests, results, model settings, and
 source/version links support diagnosis without turning provenance into automatic
-dependency propagation. Retry preserves the selected job model and original
-evidence; provider-work and maintenance controls continue to govern execution.
+dependency propagation. Retry preserves original evidence and the selected job
+model, except that sense mapping may switch from Luna to ZAI after its bounded
+availability retry budget is exhausted. Mapping retries do not consume prerequisite
+preparation or later authoring budgets. Provider-work and maintenance controls
+continue to govern execution.
 The implementation guide owns routing weights, retry delays, and cache policies.
 
 ## Compatibility and operation

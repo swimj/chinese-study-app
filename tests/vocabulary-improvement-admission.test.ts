@@ -28,6 +28,7 @@ beforeEach(()=>{
     CREATE TABLE vocabulary_reflection_jobs(job_id TEXT PRIMARY KEY,model_choice TEXT); INSERT INTO vocabulary_reflection_jobs VALUES ('job',NULL);`);
   for(const name of ['0039_vocabulary_content','0045_vocabulary_provenance_links','0050_vocabulary_improvement_admission','0051_vocabulary_pure_cue_promotion'])
     db.exec(readFileSync(new URL(`../server/db/migrations/${name}.sql`,import.meta.url),'utf8'));
+  db.exec(readFileSync(new URL('../server/db/migrations/0061_vocabulary_sense_mapping_retries.sql',import.meta.url),'utf8'));
   original=createVocabularyContent({contentId:'original',kind:'exercise',payloadVersion:1,body:{prompt:'请把这张照片____后再打印。',instruction:'Old instruction',reveal:{teachingNote:'Old unrelated teaching'},source:{kind:'old_source'}},accessScope:'shared',availability:'active',originKind:'human',
     exerciseType:'word',skill:'production',exerciseRole:'general',assessment:{match:'exact'},words:[{wordId:'word',relation:'target'}],answers:[{wordId:'word',acceptedForms:['放大']}]},actor);
   createVocabularySense({senseId:'size',wordId:'word',description:{label:'make an image or object larger'}},actor);
@@ -86,6 +87,7 @@ test('single sense admission preserves target, supplies sense context, and reuse
   assert.deepEqual(mappingInput.word,{wordId:'word',hanzi:'放大',traditional:null,pinyin:'fang4 da4',meaning:'enlarge; amplify'});
   assert.deepEqual(mappingInput.senses.map((sense:{senseId:string})=>sense.senseId).sort(),['effect','size']);
   assert.equal(mappingInput.encounters,undefined);
+  assert.equal(trial.requests[0]!.model,'gpt-6-luna');
   const input=JSON.parse(trial.requests[1]!.userPrompt);assert.equal(input.intendedSense.senseId,'size');
   assert.match(trial.requests[1]!.systemPrompt,/Practice a useful collocation/);
   assert.deepEqual(trial.requests.map(request=>request.provenance?.stepName),['sense_mapping','single_improvement']);
@@ -99,6 +101,28 @@ test('single sense admission preserves target, supplies sense context, and reuse
   assert.equal(db.prepare('SELECT count(*) n FROM invocation_content_links').get()!.n,2);
   assert.equal(db.prepare('SELECT count(*) n FROM invocation_sense_links').get()!.n,4);
   assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
+});
+
+test('sense mapping stays on GPT-6 Luna across invalid-output retry while repair keeps the job model',async()=>{
+  db.prepare("UPDATE vocabulary_reflection_jobs SET model_choice='openai:gpt-6-sol-high' WHERE job_id='job'").run();
+  const trial=provider((_request,index)=>index===1?{...single,senseIds:['foreign']}:index===2?single:repair);
+  await assert.rejects(()=>trial.provider.run(job()),/Invalid mapping outcome/);
+  assert.equal(getVocabularyContentForMaintenance('original')!.words[0]!.senseId,null);
+  await trial.provider.run({...job(),attemptNumber:2});
+  assert.deepEqual(trial.requests.map(request=>[request.provenance!.stepName,request.model]),[
+    ['sense_mapping','gpt-6-luna'],['sense_mapping','gpt-6-luna'],['single_improvement','gpt-6-sol'],
+  ]);
+  const stored=JSON.parse(String(db.prepare("SELECT input_json FROM vocabulary_improvement_stages WHERE stage='sense_mapping'").get()!.input_json));
+  assert.equal(stored.contract.model,'gpt-6-luna');
+  assert.equal(stored.contract.reasoningEffort,'high');
+});
+
+test('mapping provider failures propagate without fallback or retained mapping evidence',async()=>{
+  db.prepare("UPDATE vocabulary_reflection_jobs SET model_choice='openai:gpt-6-sol-high' WHERE job_id='job'").run();
+  const trial=provider(()=>{throw new Error('Provider rejected model');});
+  for(const attemptNumber of [1,2])await assert.rejects(()=>trial.provider.run({...job(),attemptNumber}),/Provider rejected model/);
+  assert.deepEqual(trial.requests.map(request=>request.model),['gpt-6-luna','gpt-6-luna']);
+  assert.equal(db.prepare('SELECT count(*) n FROM vocabulary_improvement_stages').get()!.n,0);
 });
 
 test('laundry list automatically proposes one source replacement plus additions, preserving unrelated cues',async()=>{
@@ -449,7 +473,7 @@ test('reassessment freshly maps current content and excludes historical encounte
   const current=getVocabularyContentForMaintenance('original')!;
   const {version,createdAt,updatedAt,...draft}=current;
   const revised=updateVocabularyContent('original',version,{...draft,body:{prompt:'An updated source.'}},actor);
-  db.prepare('INSERT INTO vocabulary_reflection_jobs VALUES (?,?)').run('reassessment','openai:gpt-6-sol-high');
+  db.prepare('INSERT INTO vocabulary_reflection_jobs(job_id,model_choice) VALUES (?,?)').run('reassessment','openai:gpt-6-sol-high');
   const again=provider((_request,index)=>index===1?single:repair);
   const result=await again.provider.run({...job(),jobId:'reassessment',caseId:'new-case',reassessmentSourceJobId:'job',reassessmentSource:revised});
   assert.equal(result.kind,'exercise_improvement');
@@ -462,7 +486,7 @@ test('reassessment freshly maps current content and excludes historical encounte
 
 test('reassessment runs fresh mapping even when source version is unchanged and catalog changed',async()=>{
   await provider((_request,index)=>index===1?single:repair).provider.run(job());
-  db.prepare('INSERT INTO vocabulary_reflection_jobs VALUES (?,?)').run('reassessment','openai:gpt-6-sol-high');
+  db.prepare('INSERT INTO vocabulary_reflection_jobs(job_id,model_choice) VALUES (?,?)').run('reassessment','openai:gpt-6-sol-high');
   createVocabularySense({senseId:'new-sense',wordId:'word',description:{label:'a new meaning'}},actor);
   const again=provider((_request,index)=>index===1?single:repair);
   await again.provider.run({...job(),jobId:'reassessment',reassessmentSourceJobId:'job',reassessmentSource:getVocabularyContentForMaintenance('original')!});
