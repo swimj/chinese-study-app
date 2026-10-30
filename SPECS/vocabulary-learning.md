@@ -160,8 +160,19 @@ sequence of cumulative reveals: target contrast and pronunciation, sentence
 translation, then sense. Each Space press or Reveal activation advances one beat;
 a missing translation is skipped. Continue follows the final reveal. It does not
 replay the introduction, assess correctness, or award recall credit.
-Recognition ratings advance immediately after saving; production reveals its
-result before the learner continues.
+Recognition ratings advance immediately after saving. A production answer that
+does not match an accepted form is rejected immediately and reveals that result
+before the learner continues. A matching typed form reveals the accepted result
+and stays uncommitted until the learner continues or marks the attempt wrong.
+Continuing records the match as accepted and moves on. Marking it wrong, with
+the same Forgot control and 1 key used for recognition, records the typed form
+as rejected and leaves that attempt visible: the hanzi matched, and the learner
+reported a pronunciation miss. Next then continues. That override is available
+only for a matching form. A non-matching answer cannot be reclassified as
+accepted. While the matching result is uncommitted, word-level continuation
+such as Enough, More, Finish, and Come back later stays unavailable so the
+attempt is recorded before the word can wrap. Undo of the recorded attempt,
+while that production exercise is current, returns the typed form to the input.
 
 The answer reveal shows the exercise's mapped sense when one is available,
 with lexical meaning as the fallback. It retains pronunciation, authored usage
@@ -170,8 +181,10 @@ mapped sense or lexical meaning, and a translation only when linked to the
 completed cloze. A correct pure-cue response fills the blank with the learner's
 accepted input, preserving their choice among accepted members. Cloze reveals
 do not introduce a different example sentence. Other eligible reveals retain source examples. A Word reference
-disclosure exposes the full retained teaching source. Rejected production shows
-the learner's submitted answer alongside the expected answer. Personal notes
+disclosure exposes the full retained teaching source. A production rejection whose
+submitted form does not match an accepted answer shows that submission alongside
+the expected answer. A matched form the learner marked wrong keeps the typed
+hanzi as the attempt and does not present it as a failed character check. Personal notes
 are visible after reveal and reflect the learner's current notes rather than
 the frozen exercise. Creating and editing personal notes is paused while their
 relationship to words, exercises, and senses is being decided. Learner reactions

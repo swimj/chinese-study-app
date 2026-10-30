@@ -245,9 +245,16 @@ request; this ordering is owned by `useVocabularyStudy`, not independently
 performed by the server's session-creation function.
 
 Recognition records learner self-assessment. Typed production compares normalized
-input with the retained accepted-answer forms. Contrast validates a selected
+input with the retained accepted-answer forms. A matching form is accepted when
+the learner continues. The learner can instead mark that same matching attempt
+wrong, using the recognition Forgot control, when the pronunciation was not the
+one they intended. The recorded response keeps the typed form, the outcome is
+rejected, and `selfAssessment` is `rejected`. A non-matching form is rejected
+without that override, and a production self-assessment cannot turn a
+non-matching form into an acceptance. Contrast validates a selected
 served word identity against the retained correct-choice criteria. The server
-verifies the outcome against the served assessment before retaining the response.
+verifies the outcome against the served assessment before retaining the response,
+including that a production rejection override matches an accepted form.
 
 Before the answer is revealed, Try another way logs an `exercise_exclude` alongside the skipped encounter and
 next presentation. Its content identity is excluded for the session, across
@@ -410,7 +417,12 @@ Retries do not bypass provider-work or maintenance controls.
 Automatic scheduling compensation is independent of content application. The
 initial policy compensates general production and independent pure-cue scheduling,
 delaying current eligibility by at most 24 hours when every effective rejection
-within that scope was judged unfair. Word-scoped compensation also requires that
+within that scope was judged unfair. A matched production form the learner marked
+wrong is a pronunciation miss: it follows the ordinary rejected reinforcement and
+schedule path, it does not by itself open learner-feedback or exercise-improvement
+cases, and it vetoes unfair-cue compensation even when a judgment lists that
+encounter. A comment, negative reaction, or skip on the same encounter can still
+open a case. Word-scoped compensation also requires that
 the word was covered in the original finalized session. Uncovered words retain
 their scheduling eligibility, learner feedback, and content improvement work,
 even if a later session covers the word. Recognition and contrast receive no

@@ -6,7 +6,7 @@ import type { VocabularyActor, VocabularyJson, VocabularyContent } from '../../s
 import { VOCABULARY_COMPENSATION_POLICY, type VocabularySecondOpinion, type VocabularyReflectionCase, type VocabularyReflectionJob,
   type VocabularyFeedbackJudgmentInput, type VocabularyProposalDraft, type VocabularyContentProposal,
   type VocabularySenseLabel, type VocabularyProposalOperation, type VocabularyProposalApplication, type VocabularyImprovementResultInput, type VocabularyImprovementAdmission, type VocabularyPureCuePromotion, type VocabularyPureCueReferral, type VocabularyReflectionResult } from '../../src/domain/vocabulary-reflection.ts';
-import { getEffectiveVocabularyEncounterReactions, type VocabularySessionProjection, type VocabularyEncounterEvidence } from '../../src/domain/vocabulary-session.ts';
+import { getEffectiveVocabularyEncounterReactions, isVocabularyPronunciationLapse, type VocabularySessionProjection, type VocabularyEncounterEvidence } from '../../src/domain/vocabulary-session.ts';
 import { config, getDb } from './connection.ts';
 import { requireLearnerId } from './learner-context.ts';
 import { isOperatorSubject, parseOperatorAllowlist } from '../operator-access.ts';
@@ -106,7 +106,11 @@ export function ingestVocabularySessionEvidence(learnerId: string, completionId:
     }
     const at = timestamp(recordedAt);
     db.prepare('INSERT INTO vocabulary_reflection_session_evidence VALUES (?,?,?,?,?)').run(completionId,learnerId,projection.sessionId,encoded,at);
-    const rejected = (item: VocabularyEncounterEvidence) => item.responses.some(response => response.payload.outcome === 'rejected');
+    const pronunciationLapse = (item: VocabularyEncounterEvidence, response: VocabularyEncounterEvidence['responses'][number]) => isVocabularyPronunciationLapse({
+      kind: item.snapshot.kind, acceptedAnswers: item.snapshot.assessment?.acceptedAnswers, response: response.payload.response,
+      outcome: response.payload.outcome, selfAssessment: response.payload.selfAssessment,
+    });
+    const rejected = (item: VocabularyEncounterEvidence) => item.responses.some(response => response.payload.outcome === 'rejected' && !pronunciationLapse(item, response));
     const comment = (item: VocabularyEncounterEvidence) => getEffectiveVocabularyEncounterReactions(item).some(reaction => reaction.payload.feedback === 'comment' || !!reaction.payload.comment?.trim());
     const issue = (item: VocabularyEncounterEvidence) => rejected(item) || comment(item) || item.skipped
       || getEffectiveVocabularyEncounterReactions(item).some(reaction => reaction.payload.feedback === 'negative');
@@ -260,8 +264,13 @@ function compensate(evidence: VocabularyReflectionCase, judgmentId: string, inpu
     && (pure ? encounter.snapshot.schedulingScope === 'pure_cue' : encounter.snapshot.schedulingScope !== 'pure_cue')
     && (pure ? encounter.snapshot.contentId === evidence.contentId : encounter.wordId === evidence.wordId)
     && encounter.effectiveResponses.some(response => response.payload.outcome === 'rejected'));
+  const learnerReportedMiss = (encounter: VocabularyEncounterEvidence) => encounter.effectiveResponses.some(response => isVocabularyPronunciationLapse({
+    kind: encounter.snapshot.kind, acceptedAnswers: encounter.snapshot.assessment?.acceptedAnswers, response: response.payload.response,
+    outcome: response.payload.outcome, selfAssessment: response.payload.selfAssessment,
+  }));
   // Mixed genuine/unfair failures retain the conservative current schedule.
-  if (effectiveRejected.length === 0 || effectiveRejected.some(encounter => !unfair.has(encounter.encounterId))) return;
+  // A matched-hanzi pronunciation miss is a real lapse, not an app rejection that compensation can clear.
+  if (effectiveRejected.length === 0 || effectiveRejected.some(encounter => learnerReportedMiss(encounter) || !unfair.has(encounter.encounterId))) return;
   if (!pure) {
     const completion = getDb().prepare(`SELECT report_json FROM vocabulary_session_completions
       WHERE completion_id=? AND learner_id=? AND status='closed'`)

@@ -126,8 +126,12 @@ Available tiles show just the word; the accessible name retains the queue action
 The shortcut guide in the study UI lists the available keys. Shortcuts follow
 controller availability; typing, IME composition, native button activation and
 modal dialogs retain their own keyboard behavior. Space invokes the emphasized
-reveal or continuation action. Recognition ratings save before advancing; save
-retry preserves the departure until acknowledgement. Contrast supports numbered
+reveal or continuation action. After a matching production answer, Next, Space,
+or Enter records the acceptance and continues. 1 or Forgot records the typed
+form as a pronunciation miss and leaves that attempt visible, so Undo can return
+the typed form to the input; Next then continues. Recognition ratings save before
+advancing; save retry preserves the departure until acknowledgement. Accepting a
+matching production answer uses that same save-then-depart order. Contrast supports numbered
 selection followed by Enter confirmation.
 
 Answer inputs take focus when they become enabled, including after motion or

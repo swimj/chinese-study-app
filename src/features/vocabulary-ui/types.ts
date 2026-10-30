@@ -70,7 +70,11 @@ export type VocabularySessionViewProps = {
     disabled: boolean;
     revealed: boolean;
     assessment: 'accepted' | 'rejected' | 'unassessed';
+    /** Replaces the default accepted/rejected eyebrow when the reveal needs a more specific status. */
+    statusLabel?: string;
     answer: ReactNode;
+    /** Shown beside the footer continuation when a matched production answer can be marked wrong. */
+    markWrong?: ReactNode;
     /** Rating controls remain reachable while long reveal content scrolls. */
     revealActions?: ReactNode;
     message?: string;

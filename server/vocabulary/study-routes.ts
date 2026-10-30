@@ -43,7 +43,7 @@ export function parseVocabularyStudyCommand(value: unknown): VocabularyStudyComm
   switch(type) {
     case 'response':
       if (b.response !== null && (typeof b.response !== 'string' || b.response.length > 4000)) throw new VocabularySessionInputError('Invalid response');
-      if (b.selfAssessment !== undefined && b.selfAssessment !== 'accepted' && b.selfAssessment !== 'rejected') throw new VocabularySessionInputError('Invalid recognition rating');
+      if (b.selfAssessment !== undefined && b.selfAssessment !== 'accepted' && b.selfAssessment !== 'rejected') throw new VocabularySessionInputError('Invalid self-assessment');
       return {type,response:b.response as string|null,...(b.selfAssessment ? {selfAssessment:b.selfAssessment as 'accepted'|'rejected'}:{}),...(b.selectedWordId===undefined?{}:{selectedWordId:text(b.selectedWordId)})};
     case 'feedback':
       if (!['positive','negative','comment','withdrawn'].includes(String(b.feedback)) || (b.comment !== undefined && (typeof b.comment !== 'string' || b.comment.length > 8000))) throw new VocabularySessionInputError('Invalid reaction');

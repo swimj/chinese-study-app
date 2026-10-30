@@ -89,6 +89,7 @@ function snapshot(id: string): VocabularyEncounterSnapshot {
 }
 function present(id: string,wordId: string|null='a',encounterId=id): Input { return { kind: 'presentation',payload: { encounterId,wordId,snapshot: snapshot(id) } }; }
 function response(encounterId: string,outcome: 'accepted'|'rejected'='rejected'): Input { return { kind: 'response',payload: { encounterId,response: outcome === 'accepted' ? '字' : 'answer',outcome } }; }
+function pronunciationLapse(encounterId: string): Input { return { kind: 'response',payload: { encounterId,response: '字',outcome: 'rejected',selfAssessment: 'rejected' } }; }
 function wrap(): Input { return { kind: 'word_wrap',payload: { wordId: 'a',reason: 'enough' } }; }
 function close(inputs: Input[],sessionId='session') {
   return alice(() => {
@@ -504,6 +505,35 @@ for (const skill of ['recognition','contextual_selection'] as const) {
     assert.equal(alice(listOwnVocabularyMessages).length,0);
   });
 }
+
+test('marking matched hanzi wrong keeps the typed form, lapses the schedule, and opens no feedback case', () => {
+  assert.throws(() => close([present('one'),{ kind: 'response',payload: { encounterId: 'one',response: '字',outcome: 'rejected' } }],'rejected-without-override'),/served answer contract/);
+  assert.throws(() => close([present('one'),{ kind: 'response',payload: { encounterId: 'one',response: 'answer',outcome: 'rejected',selfAssessment: 'rejected' } }],'override-without-match'),/accepted answer/);
+  const { cases } = ingest([present('one'),pronunciationLapse('one'),wrap()]);
+  assert.equal(cases.length,0);
+  assert.equal(claimVocabularyReflectionJob({ kind: 'learner_feedback',now: judgedAt }),null);
+  assert.equal(claimVocabularyReflectionJob({ kind: 'exercise_improvement',now: judgedAt }),null);
+  const schedule = JSON.parse(String(sql.prepare("SELECT scheduler_state_json FROM learner_word_schedules WHERE word_id='a'").get()!.scheduler_state_json)) as { intervalHours: number };
+  assert.equal(schedule.intervalHours,6);
+});
+
+test('a comment on a pronunciation miss can open a case but cannot be compensated as an unfair cue', () => {
+  ingest([present('one'),pronunciationLapse('one'),{ kind: 'feedback',payload: { encounterId: 'one',feedback: 'comment',comment: 'I said the wrong sound' } },wrap()]);
+  const due = String(sql.prepare("SELECT next_eligible_at FROM learner_word_schedules WHERE word_id='a'").get()!.next_eligible_at);
+  const feedback = claimVocabularyReflectionJob({ kind: 'learner_feedback',now: judgedAt })!;
+  const recorded = feedback.evidence.evidence[0]!.responses[0]!.payload;
+  assert.equal(recorded.response,'字');assert.equal(recorded.outcome,'rejected');assert.equal(recorded.selfAssessment,'rejected');
+  recordVocabularyFeedbackJudgment(feedback.jobId,feedback.leaseToken,{ diagnosis: 'The written form was right',message: 'Pronunciation still needs work',unfairEncounterIds: ['one'] },judgedAt);
+  assert.equal(sql.prepare("SELECT next_eligible_at FROM learner_word_schedules WHERE word_id='a'").get()!.next_eligible_at,due);
+});
+
+test('a pronunciation miss vetoes compensation of a sibling rejection the model calls unfair', () => {
+  ingest([present('one'),response('one'),present('two'),pronunciationLapse('two'),wrap()]);
+  const due = String(sql.prepare("SELECT next_eligible_at FROM learner_word_schedules WHERE word_id='a'").get()!.next_eligible_at);
+  const feedback = claimVocabularyReflectionJob({ kind: 'learner_feedback',now: judgedAt })!;
+  recordVocabularyFeedbackJudgment(feedback.jobId,feedback.leaseToken,{ diagnosis: 'One cue was unfair',message: 'The other was a pronunciation miss',unfairEncounterIds: ['one','two'] },judgedAt);
+  assert.equal(sql.prepare("SELECT next_eligible_at FROM learner_word_schedules WHERE word_id='a'").get()!.next_eligible_at,due);
+});
 
 test('a genuine recognition lapse does not veto compensation for an unfair production rejection', () => {
   const base = draft('recognition');

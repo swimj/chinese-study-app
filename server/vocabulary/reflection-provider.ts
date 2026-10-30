@@ -68,7 +68,7 @@ export function projectVocabularyReflectionInput(job:VocabularyReflectionJob):un
     :{kind:'pureCue',contentId:job.evidence.contentId},words,
     sourceContent:content,...(job.reassessmentSource?{assessmentOrigin:{kind:'operator_reassessment',sourceJobId:job.reassessmentSourceJobId??null,sessionEvidence:'historical_only'}}:{}),encounters:(job.reassessmentSource?[]:job.evidence.evidence).map(item=>({encounterId:item.encounterId,wordId:item.wordId,
       purpose:item.snapshot.role,mode:item.mode,served:item.snapshot,responses:item.responses.map(response=>({actionId:response.actionId,
-        response:response.payload.response,outcome:response.payload.outcome,effective:item.effectiveResponses.some(effective=>effective.actionId===response.actionId)})),
+        response:response.payload.response,outcome:response.payload.outcome,...(response.payload.selfAssessment?{selfAssessment:response.payload.selfAssessment}:{}),effective:item.effectiveResponses.some(effective=>effective.actionId===response.actionId)})),
       reactions:getEffectiveVocabularyEncounterReactions(item).map(({payload})=>({encounterId:payload.encounterId,reaction:payload.feedback,...(payload.comment!==undefined?{comment:payload.comment}:{})})),skipped:item.skipped,presentationUndone:item.presentationUndone}))};
 }
 export function normalizeVocabularyReflectionOutput(job:VocabularyReflectionJob,value:unknown,invocationId?:string|null,withReferral=false):VocabularyReflectionResult {

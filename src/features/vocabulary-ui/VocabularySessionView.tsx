@@ -108,7 +108,7 @@ export function VocabularySessionContent(props: VocabularySessionViewProps) {
         {presentation.supportingContent && <div className="vocab-supporting">{presentation.supportingContent}</div>}
 
         {response.revealed && <section className={`vocab-answer vocab-answer-${response.assessment}${presentation.recognition ? ' vocab-answer-recognition' : ''}`} aria-label="Answer">
-          {!presentation.recognition && <p className="vocab-eyebrow">{response.assessment === 'accepted' ? 'That works' : response.assessment === 'rejected' ? 'Not quite — expected answer' : 'Answer'}</p>}
+          {!presentation.recognition && <p className="vocab-eyebrow">{response.statusLabel ?? (response.assessment === 'accepted' ? 'That works' : response.assessment === 'rejected' ? 'Not quite — expected answer' : 'Answer')}</p>}
           {response.answer}
           {response.message && <p className="vocab-answer-message">{response.message}</p>}
         </section>}
@@ -135,6 +135,7 @@ export function VocabularySessionContent(props: VocabularySessionViewProps) {
         <div className="vocab-word-controls">
           <div className="vocab-continuation-slot" ref={setActionTarget} />
           {primaryInFooter && primaryButton}
+          {primaryInFooter && response.markWrong}
           {primaryInFooter && <Action control={controls.skip} onClick={props.onSkip}>Skip exercise</Action>}
           {props.stopWord && props.onStopWord && <Action control={props.stopWord} onClick={props.onStopWord}>Come back later</Action>}
           <Action control={controls.enough} onClick={props.onEnough}>{props.wordWork?.enoughLabel ?? (props.wordWork?.extraPractice ? "I’m satisfied" : "Enough for today")}</Action>

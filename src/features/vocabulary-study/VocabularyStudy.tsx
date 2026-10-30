@@ -77,9 +77,17 @@ export function VocabularyStudy({ controller, hideStartButton = false, character
   const completed = projection.phase === 'completed' || c.completion !== null;
   const completionUndoOpen = Boolean(c.completion?.status === 'pending' && c.completion.canUndo && c.remainingSeconds !== null && c.remainingSeconds > 0);
   const canAct = !c.busy && !c.saving && !confirmingRating && !motion.motionBusy && c.error === null;
+  const pendingMatch = c.pendingProductionMatch;
   const control = (visible: boolean, enabled = true, reason?: string): VocabularyControl => ({ visible, enabled: enabled && canAct, ...(reason ? { reason } : {}) });
+  function departSaved(savedStudy: Parameters<NonNullable<Parameters<typeof c.commitPendingProduction>[1]>>[0], advance: () => Promise<void>) {
+    return (async () => {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      await motion.runPrimary(advance, { depart: true, outcome: getVocabularyCardOutcome(savedStudy) });
+    })();
+  }
   function performPrimary() {
     if (composing.current || !canAct) return;
+    if (pendingMatch) return c.commitPendingProduction('accepted', departSaved);
     if (encounter?.skipped || wordProgress?.workStatus === 'wrapped' || wordProgress?.workStatus === 'skipped') { return c.next(); }
     else if (intro) { return c.next(); }
     else if (contrast && !c.revealed) {
@@ -91,7 +99,18 @@ export function VocabularyStudy({ controller, hideStartButton = false, character
   }
   function primary(fromKeyboard = false) {
     if (!canAct || composing.current) return;
-    void motion.runPrimary(performPrimary, {fromKeyboard, depart: c.revealed && !(recognition && c.assessment === 'unassessed'), outcome: getVocabularyCardOutcome(study!)});
+    void motion.runPrimary(performPrimary, {fromKeyboard, depart: c.revealed && !pendingMatch && !(recognition && c.assessment === 'unassessed'), outcome: getVocabularyCardOutcome(study!)});
+  }
+  function rateProduction(fromKeyboard = false) {
+    if (!canAct || !pendingMatch || ratingTimer.current) return;
+    const submit = () => c.commitPendingProduction('rejected');
+    if (!fromKeyboard) { submit(); return; }
+    setConfirmingRating('rejected');
+    ratingTimer.current = setTimeout(() => {
+      ratingTimer.current = undefined;
+      submit();
+      setConfirmingRating(null);
+    }, 180);
   }
   function rateRecognition(value: 'accepted' | 'rejected', fromKeyboard = false) {
     if (!canAct || ratingTimer.current) return;
@@ -130,7 +149,7 @@ export function VocabularyStudy({ controller, hideStartButton = false, character
       teachingSource={encounter.snapshot.body.teachingSource} word={word} onContinue={() => { if (canAct) void c.next(); }}
       busy={!canAct} characterPresentation={characterPresentation} sentenceCharacterPresentation={sentenceCharacterPresentation}
       warmup={encounter.snapshot.role === 'priming'} /> } : {}),
-    stopWord: control(mode === 'unstudied' && !completed && wordProgress?.workStatus !== 'skipped'),
+    stopWord: control(mode === 'unstudied' && !completed && wordProgress?.workStatus !== 'skipped' && !pendingMatch),
     onStopWord: () => { void c.send({ type: 'skip', scope: 'word' }).then(() => c.next()); },
     presentation: { key: currentId ?? 'empty', kind: intro ? encounter?.snapshot.role === 'priming' ? 'warmup' : 'introduction' : encounter ? 'exercise' : 'empty',
       label: intro ? encounter?.snapshot.role === 'priming' ? 'Familiar warmup' : 'Introduction' : recognition ? 'Recognition' : contrast ? 'Choose the expression' : encounter?.snapshot.role === 'teaching' ? 'Try the taught word' : 'Produce Expression',
@@ -146,12 +165,14 @@ export function VocabularyStudy({ controller, hideStartButton = false, character
     response: { visible: !intro && !recognition && !contrast && !encounter?.skipped && wordProgress?.workStatus !== 'wrapped' && wordProgress?.workStatus !== 'skipped', value: c.input, placeholder: 'What Chinese comes to mind?', disabled: !canAct,
       revealed: c.revealed, assessment,
       answer: <>
-        {assessment === 'rejected' && !recognition && !contrast && <p className="vocab-submitted-answer">{submitted?.response || c.input ? <>Your answer: <span lang="zh">{submitted?.response ?? c.input}</span></> : 'No answer entered.'}</p>}
+        {assessment === 'rejected' && !recognition && !contrast && !c.pronunciationLapse && <p className="vocab-submitted-answer">{submitted?.response || c.input ? <>Your answer: <span lang="zh">{submitted?.response ?? c.input}</span></> : 'No answer entered.'}</p>}
         {encounter && <VocabularyAnswer snapshot={encounter.snapshot} word={word} characterPresentation={characterPresentation} sentenceCharacterPresentation={sentenceCharacterPresentation} />}
         {contrast && <VocabularyContrastAnswer material={material} selectedWordId={submitted?.selectedWordId ?? (selectedChoice === null ? undefined : String(displayedChoices[selectedChoice]?.wordId))} correctWordId={typeof criteria.correctWordId === 'string' ? criteria.correctWordId : undefined} sentenceCharacterPresentation={sentenceCharacterPresentation} />}
         {word && <VocabularyPersonalNotes word={word} />}
 
       </>,
+      ...(c.pronunciationLapse ? { statusLabel: 'Marked wrong' } : {}),
+      ...(pendingMatch ? { markWrong: <button type="button" aria-keyshortcuts="1" className={`vocab-secondary${confirmingRating === 'rejected' ? ' is-confirming-action' : ''}`} disabled={!canAct} onClick={() => rateProduction()}>Forgot<ShortcutHint shortcut="1" /></button> } : {}),
       revealActions: c.revealed && recognition && assessment === 'unassessed' && <div className="vocab-recognition-actions" role="group" aria-label="How did you remember this word?">
           <button type="button" aria-keyshortcuts="2 Space" className={`vocab-primary${confirmingRating === 'accepted' ? ' is-confirming-action' : ''}`} disabled={!canAct} onClick={() => rateRecognition('accepted')}>Correct<ShortcutHint shortcuts={['2', 'Space']} /></button>
           <button type="button" aria-keyshortcuts="1" className={`vocab-secondary${confirmingRating === 'rejected' ? ' is-confirming-action' : ''}`} disabled={!canAct} onClick={() => rateRecognition('rejected')}>Forgot<ShortcutHint shortcut="1" /></button>
@@ -172,9 +193,9 @@ export function VocabularyStudy({ controller, hideStartButton = false, character
     controls: {
       skip: control(!intro && encounter?.snapshot.role !== 'teaching' && assessment !== 'accepted' && study.controls.canSkip && !completed && !encounter?.skipped && wordProgress?.workStatus !== 'wrapped'),
       another: control(!c.revealed && !encounter?.skipped && wordProgress?.workStatus !== 'wrapped' && !intro && !recognition && encounter?.snapshot.role !== 'teaching' && study.controls.canNext && !completed),
-      enough: control(study.controls.canEnough && !completed), more: control(study.controls.canMore && !completed),
+      enough: control(study.controls.canEnough && !completed && !pendingMatch), more: control(study.controls.canMore && !completed && !pendingMatch),
       undo: control(study.controls.canUndo && !completed),
-      finishForNow: control(study.controls.canFinishForNow && !completed), finishImmediately: control(study.controls.canFinishImmediately && !completed),
+      finishForNow: control(study.controls.canFinishForNow && !completed && !pendingMatch), finishImmediately: control(study.controls.canFinishImmediately && !completed && !pendingMatch),
       changeMode: control(false),
     },
     reactionInput: { open: reactionOpen, visible: encounter !== null && !completed, reaction: c.reaction, comment: c.comment, status: c.reactionStatus },
@@ -222,7 +243,7 @@ export function VocabularyStudy({ controller, hideStartButton = false, character
       const input = surface.current?.querySelector<HTMLTextAreaElement>('.vocab-reaction-drawer.is-open textarea:not(:disabled)');
       if (input === document.activeElement) surface.current?.focus(); else input?.focus();
     },
-    forgot: () => rateRecognition('rejected', true), correct: () => rateRecognition('accepted', true),
+    forgot: () => pendingMatch ? rateProduction(true) : rateRecognition('rejected', true), correct: () => rateRecognition('accepted', true),
     undo: props.onUndo, another: props.onAnother, skip: props.onSkip, enough: props.onEnough,
     more: props.onMore, finish: props.onFinishForNow, reactions: () => setReactionOpen((value) => !value),
     helpful: () => { setReactionOpen(true); c.react(c.reaction === 'helpful' ? null : 'helpful'); },
@@ -245,6 +266,7 @@ export function VocabularyStudy({ controller, hideStartButton = false, character
       if (!intro && props.response.primaryEnabled) available.add('primary');
       if (props.response.visible && !c.revealed) { available.add('noClue'); available.add('focusInput'); }
       if (recognition && c.revealed && assessment === 'unassessed') { available.add('correct'); available.add('forgot'); }
+      if (pendingMatch) available.add('forgot');
       if (contrast && !c.revealed) {
         for (const { command } of choiceShortcuts) available.add(command);
       }

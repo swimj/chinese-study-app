@@ -110,7 +110,11 @@ The current Mandarin flow uses `/tests/browser/vocabulary-controller.html`
 the real hook. `/tests/browser/vocabulary-recognition-motion.html` uses the real
 controller and card surface: reveal, then Correct or Forgot. Its PASS result checks
 that the rating is saved and the outgoing card reflects the acknowledged recall
-before requesting the successor. `?covered=1` checks the covered card's rightward
+before requesting the successor. `/tests/browser/vocabulary-production-override.html`
+uses that same controller for a production exercise: a matching form stays
+uncommitted until Next records acceptance or Forgot records the typed hanzi as
+a pronunciation miss, and Undo of that miss returns the typed form to the input.
+A non-matching form is rejected immediately and has no Forgot control. `?covered=1` checks the covered card's rightward
 departure; `?retry=1` fails the first save so Retry save must retain the departure.
 `/tests/browser/vocabulary-ui.html` provides presentation scenarios, including
 `?state=Cloze%20reveal` for an old snapshot containing an unrelated bootstrap

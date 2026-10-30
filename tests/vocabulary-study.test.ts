@@ -13,6 +13,7 @@ import { adoptVocabularyPureCues } from '../server/vocabulary/pure-cue-serving.t
 import { createVocabularyContent,replaceVocabularyContent,updateVocabularyContent,getVocabularyContent,createVocabularySense,establishVocabularySenseCatalog,getVocabularySenseCatalog } from '../server/db/vocabulary-content.ts';
 import { createVocabularySession as createStoredSession,stageVocabularySessionCompletion,cancelVocabularySessionCompletion,closeVocabularySessionCompletion } from '../server/db/vocabulary-sessions.ts';
 import { addVocabularyWord,dismissVocabularyWord,getVocabularyLearnerWord,getVocabularyWordSchedule,enrollVocabularyDietWord } from '../server/db/vocabulary-learners.ts';
+import { nextReviewSchedule } from '../server/db/review-policy.ts';
 import { startVocabularyStudy as startRuntime,composeVocabularySessionPayload,previewVocabularyStudy as previewRuntime,getVocabularyStudy,nextVocabularyExercise,commandVocabularyStudy } from '../server/vocabulary/study.ts';
 import type { VocabularyStudy } from '../src/domain/vocabulary-study-api.ts';
 import type { VocabularyContent } from '../src/domain/vocabulary-content.ts';
@@ -217,6 +218,58 @@ test('rejected work stays open and another accepted general answer ends the defa
   view=commandVocabularyStudy(id,'pass',{type:'response',response:'甲'});
   assert.equal(view.session.projection.words.a.workStatus,'wrapped');assert.equal(view.session.projection.words.a.covered,true);
   assert.equal(view.session.projection.words.a.successfulRecall,true);assert.equal(view.session.projection.words.a.recommendedMode,null);
+}));
+
+test('a matching production form can be marked wrong, and a non-matching form cannot',()=>owner(()=>{
+  let view=focusedA();const id=view.session.sessionId;const before=getVocabularyWordSchedule('a')!;
+  view=productionExercise(id,'lapse');
+  const progress=()=>getVocabularyStudy(id).session.projection.words.a.skillProgress.production;
+  assert.throws(()=>commandVocabularyStudy(id,'mismatch',{type:'response',response:'错',selfAssessment:'rejected'}),/accepted answer/);
+  assert.throws(()=>commandVocabularyStudy(id,'accept-override',{type:'response',response:'甲',selfAssessment:'accepted'}),/matched answer wrong/);
+  assert.equal(progress().rejectedResponses,0);
+  view=commandVocabularyStudy(id,'lapse',{type:'response',response:' 甲！ ',selfAssessment:'rejected'});
+  const lapse=view.currentEncounter!.effectiveResponses[0]!.payload;
+  assert.equal(lapse.response,' 甲！ ');assert.equal(lapse.outcome,'rejected');assert.equal(lapse.selfAssessment,'rejected');
+  assert.equal(progress().rejectedResponses,1);assert.equal(progress().consecutiveAccepted,0);
+  assert.equal(view.session.projection.words.a.workStatus,'open');assert.equal(view.session.projection.words.a.covered,false);
+  view=commandVocabularyStudy(id,'undo-lapse',{type:'undo'});
+  assert.equal(view.currentEncounter?.effectiveResponses.length,0);
+  assert.equal(view.currentEncounter?.responses[0]?.payload.response,' 甲！ ');
+  assert.equal(progress().rejectedResponses,0);
+  view=commandVocabularyStudy(id,'lapse-again',{type:'response',response:'甲',selfAssessment:'rejected'});
+  for(let index=0;index<3;index++) {
+    view=productionExercise(id,`repair-${index}`);
+    view=commandVocabularyStudy(id,`repair-${index}`,{type:'response',response:'甲'});
+    assert.equal(view.currentEncounter?.effectiveResponses[0]?.payload.selfAssessment,undefined);
+  }
+  assert.equal(progress().rejectedResponses,1);assert.equal(progress().consecutiveAccepted,3);
+  assert.equal(view.session.projection.words.a.workStatus,'wrapped');assert.equal(view.session.projection.words.a.covered,true);
+  view=commandVocabularyStudy(id,'finish',{type:'finishForNow'});assert.equal(view.session.projection.phase,'completed');
+  const staged=stageVocabularySessionCompletion(id,view.session.actions.length);closeVocabularySessionCompletion(id,staged.completionId);
+  const after=getVocabularyWordSchedule('a')!;
+  const lapseSchedule=nextReviewSchedule(before.schedulerState,{failureCount:1,successful:false});
+  const cleanSchedule=nextReviewSchedule(before.schedulerState,{failureCount:0,successful:true});
+  assert.notEqual(lapseSchedule.intervalHours,cleanSchedule.intervalHours);
+  assert.equal(after.schedulerState.intervalHours,lapseSchedule.intervalHours);
+  assert.equal(after.schedulerState.easeFactor,lapseSchedule.easeFactor);
+}));
+
+test('an ordinary matching production answer is accepted without a pronunciation override',()=>owner(()=>{
+  let view=focusedA();const id=view.session.sessionId;view=productionExercise(id,'ordinary');
+  view=commandVocabularyStudy(id,'ordinary',{type:'response',response:'甲'});
+  const payload=view.currentEncounter!.effectiveResponses[0]!.payload;
+  assert.equal(payload.response,'甲');assert.equal(payload.outcome,'accepted');assert.equal(payload.selfAssessment,undefined);
+  assert.equal(view.session.projection.words.a.skillProgress.production.consecutiveAccepted,1);
+  assert.equal(view.session.projection.words.a.workStatus,'wrapped');
+}));
+
+test('a non-matching production answer is rejected without a pronunciation override',()=>owner(()=>{
+  let view=focusedA();const id=view.session.sessionId;view=productionExercise(id,'wrong');
+  view=commandVocabularyStudy(id,'wrong',{type:'response',response:'错'});
+  const payload=view.currentEncounter!.effectiveResponses[0]!.payload;
+  assert.equal(payload.response,'错');assert.equal(payload.outcome,'rejected');assert.equal(payload.selfAssessment,undefined);
+  assert.equal(view.session.projection.words.a.skillProgress.production.rejectedResponses,1);
+  assert.equal(view.session.projection.words.a.workStatus,'open');
 }));
 
 test('Undo reverses a final answer together with its automatic wrap while retaining raw observations',()=>owner(()=>{

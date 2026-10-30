@@ -7,10 +7,9 @@ import { vocabularyTeachingSource } from './teaching-source.ts';
 import { vocabularyRevealSnapshot } from './reveal-snapshot.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
-import { normalizeProductionAnswerForProfile } from '../../src/study-profile.ts';
 import type { VocabularyContent, VocabularyJson } from '../../src/domain/vocabulary-content.ts';
 import type { VocabularyStudy, VocabularyStudyCommand, VocabularyStudyWord, VocabularySessionPreview } from '../../src/domain/vocabulary-study-api.ts';
-import { getPendingVocabularySkills, isVocabularyWordReadyToCover, isVocabularyTeachingComplete, projectVocabularySession, advanceVocabularySession, VOCABULARY_SESSION_POLICY, type VocabularyEncounterSnapshot, type VocabularySessionAction, type VocabularySessionInitialContext,
+import { getPendingVocabularySkills, gradeVocabularyRecallResponse, isVocabularyWordReadyToCover, isVocabularyTeachingComplete, projectVocabularySession, advanceVocabularySession, VocabularyResponseContractError, VOCABULARY_SESSION_POLICY, type VocabularyEncounterSnapshot, type VocabularySessionAction, type VocabularySessionInitialContext,
   type VocabularySessionJson, type VocabularySessionProjection, type VocabularyTeachingRequirements } from '../../src/domain/vocabulary-session.ts';
 import type { VocabularyPersistedSession } from '../../src/domain/vocabulary-session-api.ts';
 import { getDb } from '../db/connection.ts';
@@ -424,16 +423,17 @@ export function commandVocabularyStudy(sessionId:string,clientActionId:string,co
       case 'response': {
         const target=needEncounter();if(target.snapshot.kind==='introduction')throw new VocabularySessionInputError('Continue from the introduction before answering');
         if(target.effectiveResponses.length||target.skipped)throw new VocabularySessionConflictError('Exercise already answered or skipped');
-        if(target.snapshot.kind==='recognition'&&command.selfAssessment===undefined)throw new VocabularySessionInputError('Recognition requires remembered/not-remembered assessment');
-        if(command.selfAssessment!==undefined&&target.snapshot.kind!=='recognition')throw new VocabularySessionInputError('Self assessment is only available for recognition');
-        const normalize=(value:string)=>normalizeProductionAnswerForProfile(value,'mandarin');
-        let accepted=command.selfAssessment!==undefined?command.selfAssessment==='accepted':command.response!==null&&normalize(command.response).length>0
-          &&target.snapshot.assessment!.acceptedAnswers.some((answer)=>normalize(answer)===normalize(command.response!));
+        let accepted: boolean;
         if(target.snapshot.kind==='contrast') {
           const criteria=object(target.snapshot.assessment?.criteria??null);const choices=object(target.snapshot.body.material??null).choices;
           if(!command.selectedWordId||!Array.isArray(choices)||!choices.some((choice)=>object(choice).wordId===command.selectedWordId))throw new VocabularySessionInputError('Select one of the served contrast choices');
+          if(command.selfAssessment!==undefined)throw new VocabularySessionInputError('Self assessment is only available for recognition');
           accepted=command.selectedWordId===criteria.correctWordId;
         } else if(command.selectedWordId!==undefined)throw new VocabularySessionInputError('Word choice requires a contrast exercise');
+        else if(target.snapshot.kind==='recognition'||target.snapshot.kind==='production') {
+          try { accepted=gradeVocabularyRecallResponse({kind:target.snapshot.kind,acceptedAnswers:target.snapshot.assessment?.acceptedAnswers??[],response:command.response,selfAssessment:command.selfAssessment})==='accepted'; }
+          catch(error) { if(error instanceof VocabularyResponseContractError)throw new VocabularySessionInputError(error.message); throw error; }
+        } else throw new VocabularySessionInputError('This exercise cannot record a response');
         builder.push({kind:'response',payload:{encounterId:target.encounterId,response:command.response,outcome:accepted?'accepted':'rejected',
           ...(command.selfAssessment?{selfAssessment:command.selfAssessment}:{}),...(command.selectedWordId?{selectedWordId:command.selectedWordId}:{})}});
         const projected=builder.projection();const word=target.wordId?projected.words[target.wordId]:null;

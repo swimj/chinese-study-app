@@ -39,7 +39,7 @@ export function VocabularyShortcutGuide({ open, onClose }: { open: boolean; onCl
         <div><dt><kbd>Space</kbd></dt><dd>Reveal or continue; mark Correct after revealing a recognition answer</dd></div>
         <div><dt><kbd>Shift+Enter</kbd></dt><dd>No clue, even with a partial answer</dd></div>
         <div><dt><kbd>Escape</kbd></dt><dd>Move focus into or out of the open reaction note, or the answer field when reactions are closed</dd></div>
-        <div><dt><kbd>1</kbd> / <kbd>2</kbd></dt><dd>Recognition: Forgot / Correct.</dd></div>
+        <div><dt><kbd>1</kbd> / <kbd>2</kbd></dt><dd>Recognition: Forgot / Correct. After a matching production answer, 1 marks that attempt wrong.</dd></div>
         <div><dt><kbd>1</kbd>–<kbd>9</kbd>, <kbd>0</kbd></dt><dd>Contrast: select options 1–9, or 0 for the tenth option, then press Enter.</dd></div>
         <div><dt><kbd>U</kbd> or <kbd>Z</kbd></dt><dd>Undo</dd></div>
         <div><dt><kbd>A</kbd></dt><dd>Try another</dd></div>

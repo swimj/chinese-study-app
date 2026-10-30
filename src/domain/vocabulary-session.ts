@@ -1,8 +1,62 @@
 import type { VocabularySessionPayload } from './vocabulary-session-payload';
 import type { BootstrapRevealSnapshot } from './word-content/reveal';
 import type { WordContentDocument } from './word-content/types';
+import { normalizeProductionAnswerForProfile } from '../study-profile';
 
 /** Shared, side-effect-free interpretation of the authoritative vocabulary session log. */
+
+/** A typed production form matches the served answer space under the Mandarin normalizer. */
+export function matchesVocabularyAcceptedAnswer(acceptedAnswers: readonly string[], response: string | null): boolean {
+  if (response === null) return false;
+  const normalized = normalizeProductionAnswerForProfile(response, 'mandarin');
+  return normalized.length > 0 && acceptedAnswers.some((answer) => normalizeProductionAnswerForProfile(answer, 'mandarin') === normalized);
+}
+
+export class VocabularyResponseContractError extends Error {}
+
+/**
+ * Grade recognition and typed production. Contrast stays a selected-word check.
+ * A matched production form is accepted unless the learner marks that attempt wrong.
+ */
+export function gradeVocabularyRecallResponse(input: {
+  kind: 'recognition' | 'production';
+  acceptedAnswers: readonly string[];
+  response: string | null;
+  selfAssessment?: 'accepted' | 'rejected';
+}): 'accepted' | 'rejected' {
+  if (input.kind === 'recognition') {
+    if (input.selfAssessment !== 'accepted' && input.selfAssessment !== 'rejected') {
+      throw new VocabularyResponseContractError('Recognition requires remembered/not-remembered assessment');
+    }
+    return input.selfAssessment === 'accepted' ? 'accepted' : 'rejected';
+  }
+  if (input.selfAssessment === 'accepted') {
+    throw new VocabularyResponseContractError('Production self-assessment can only mark a matched answer wrong');
+  }
+  const matched = matchesVocabularyAcceptedAnswer(input.acceptedAnswers, input.response);
+  if (input.selfAssessment === 'rejected') {
+    if (!matched) throw new VocabularyResponseContractError('A pronunciation override requires the submitted hanzi to match an accepted answer');
+    return 'rejected';
+  }
+  if (input.selfAssessment !== undefined) {
+    throw new VocabularyResponseContractError('Production self-assessment can only mark a matched answer wrong');
+  }
+  return matched ? 'accepted' : 'rejected';
+}
+
+/** Correct typed hanzi that the learner reported as a pronunciation miss. */
+export function isVocabularyPronunciationLapse(input: {
+  kind: string;
+  acceptedAnswers: readonly string[] | null | undefined;
+  response: string | null;
+  outcome: string;
+  selfAssessment?: 'accepted' | 'rejected';
+}): boolean {
+  return input.kind === 'production'
+    && input.outcome === 'rejected'
+    && input.selfAssessment === 'rejected'
+    && matchesVocabularyAcceptedAnswer(input.acceptedAnswers ?? [], input.response);
+}
 export const VOCABULARY_SESSION_PROTOCOL_VERSION = 1 as const;
 export const VOCABULARY_SESSION_POLICY = {
   version: 'vocabulary-session.v5',
@@ -478,7 +532,17 @@ function applyAction(state: VocabularySessionProjection, action: VocabularySessi
       invariant(encounter.responses.length === 0, 'another response requires a fresh encounter');
       invariant(action.payload.selectedWordId === undefined || encounter.snapshot.kind === 'contrast', 'word choice requires contrast');
       invariant(encounter.snapshot.kind !== 'contrast' || typeof action.payload.selectedWordId === 'string', 'contrast requires selected word identity');
-      invariant(action.payload.selfAssessment === undefined || encounter.snapshot.kind === 'recognition', 'self assessment requires recognition');
+      const pronunciationLapse = isVocabularyPronunciationLapse({
+        kind: encounter.snapshot.kind,
+        acceptedAnswers: encounter.snapshot.assessment?.acceptedAnswers,
+        response: action.payload.response,
+        outcome: action.payload.outcome,
+        selfAssessment: action.payload.selfAssessment,
+      });
+      invariant(
+        action.payload.selfAssessment === undefined || encounter.snapshot.kind === 'recognition' || pronunciationLapse,
+        'self assessment requires recognition or a matched production miss',
+      );
       invariant(action.payload.selfAssessment === undefined || action.payload.selfAssessment === action.payload.outcome, 'self assessment outcome mismatch');
       encounter.responses.push(action);
       if (word === null) return;
