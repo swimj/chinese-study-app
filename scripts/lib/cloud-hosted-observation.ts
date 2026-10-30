@@ -7,6 +7,7 @@ export type ObservationRequest = {
   databasePath: string; queries: ObservationQuery[]; maxRows: number;
   maxResultBytes: number; queryTimeoutMs: number;
 };
+export type ObservationTransport = 'ssh' | 'machine-exec';
 export type CommandRunner = (args: string[]) => string;
 
 export function validateRequest(value: unknown): ObservationRequest {
@@ -55,16 +56,27 @@ export function flyRunner(args: string[]): string {
   return result.stdout;
 }
 
-export function observeHosted(app: string, machine: string, request: ObservationRequest, run: CommandRunner = flyRunner) {
+export function observeHosted(app: string, machine: string, request: ObservationRequest, run: CommandRunner = flyRunner, transport: ObservationTransport = 'ssh') {
+  if (transport !== 'ssh' && transport !== 'machine-exec') throw new Error('Unknown observation transport.');
   if (!/^[a-z0-9][a-z0-9-]{0,62}$/.test(app) || !/^[a-f0-9]{6,32}$/.test(machine)) throw new Error('Explicit valid app and Machine IDs are required.');
   const startedAt = new Date().toISOString();
   const releases = JSON.parse(run(['releases', '--app', app, '--json']));
   const releasesReadAt = new Date().toISOString();
   const command = buildObservationCommand(request);
   const observerPayloadSha256 = createHash('sha256').update(fs.readFileSync(new URL('./hosted-observation-payload.cjs', import.meta.url))).digest('hex');
-  const observation = JSON.parse(run(['ssh', 'console', '--app', app, '--machine', machine, '--user', 'node', '--quiet', '--command', command]));
+  let output: string;
+  if (transport === 'machine-exec') {
+    const response = JSON.parse(run(['machine', 'exec', machine, command, '--app', app, '--json', '--timeout', '20']));
+    if ((response.exit_code !== undefined && response.exit_code !== 0) || typeof response.stdout !== 'string') {
+      throw new Error('Machine exec did not return a successful observer result.');
+    }
+    output = response.stdout;
+  } else {
+    output = run(['ssh', 'console', '--app', app, '--machine', machine, '--user', 'node', '--quiet', '--command', command]);
+  }
+  const observation = JSON.parse(output);
   if (observation.status !== 'ok' || observation.runtime?.flyMachineId !== machine || observation.runtime?.flyAppName !== app ||
       !/^[a-f0-9]{40}$/.test(observation.runtime?.sourceRevision ?? '')) throw new Error('Observation lacks the expected Machine/app/runtime identity.');
   return { formatVersion: 1, startedAt, finishedAt: new Date().toISOString(), app, machine,
-    observerPayloadSha256, request, releasesReadAt, releases, observation };
+    transport, observerPayloadSha256, request, releasesReadAt, releases, observation };
 }
