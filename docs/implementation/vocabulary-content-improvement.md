@@ -124,8 +124,14 @@ even for an unchanged source version; the child does not reuse the parent job's
 mapping. A single-sense assessment can invoke promotion when referred; a laundry
 list runs repertoire generation. Pure cues use their standalone assessment.
 The resulting proposal is based on the pinned current version. The original
-encounters remain historical context; their responses and reactions are not
-supplied as learner evidence for the independent operator assessment.
+encounters, responses and reactions remain model input across reassessment chains,
+including historical proposals. The input distinguishes evidence served from the
+same source version from historical evidence when the current source has changed.
+Successful assessments that need operator attention can also be reassessed.
+
+Within each completion, exercise improvement groups all encounters for the same
+exercise identity and served version when any encounter reports an issue. Different
+exercises and versions remain separate; retained historical cases are unchanged.
 Source version and sense-state fences reject subsequent changes before accepting
 results, and proposal application revalidates its bases. Failures remain available
 for explicit retry against the same pinned source.

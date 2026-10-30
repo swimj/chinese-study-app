@@ -26,7 +26,7 @@ function record(value:VocabularyJson|undefined):Record<string,VocabularyJson>{
 export function prepareVocabularyPureCueImprovement(job:VocabularyReflectionJob,original:VocabularyContent){
   if(original.kind!=='exercise'||original.exerciseType!=='pure_cue'||original.skill!=='production'||original.exerciseRole!=='general')throw new Error('Pure-cue review requires a general production pure cue');
   if(original.accessScope==='private'&&original.ownerLearnerId!==job.learnerId)throw new Error('Pure-cue review source access mismatch');
-  const rawResponses=[...new Set((job.reassessmentSourceJobId?[]:job.evidence.evidence).filter(encounter=>!encounter.presentationUndone).flatMap(encounter=>encounter.effectiveResponses
+  const rawResponses=[...new Set(job.evidence.evidence.filter(encounter=>!encounter.presentationUndone).flatMap(encounter=>encounter.effectiveResponses
     .filter(response=>response.payload.outcome==='rejected').flatMap(response=>response.payload.response?.trim()?[response.payload.response]:[])))];
   const members=()=>original.answers.map(answer=>{
     const word=getDb().prepare(`${wordQuery} WHERE id=?`).get(answer.wordId) as Word|undefined;

@@ -122,8 +122,19 @@ export function ingestVocabularySessionEvidence(learnerId: string, completionId:
       const encounters = general.filter(item => item.snapshot.schedulingScope === 'pure_cue' && item.snapshot.contentId === contentId);
       if (encounters.some(item => rejected(item) || comment(item))) cases.push(createCase(learnerId,completionId,'learner_feedback',`pure/${contentId}`,null,contentId,encounters,at));
     }
-    for (const encounter of general.filter(issue)) cases.push(createCase(learnerId,completionId,'exercise_improvement',
-      `encounter/${encounter.encounterId}`,encounter.wordId,encounter.snapshot.contentId,[encounter],at));
+    const exercises = new Map<string, VocabularyEncounterEvidence[]>();
+    for (const encounter of general) {
+      const key = JSON.stringify([encounter.snapshot.contentId, encounter.snapshot.contentVersion]);
+      const encounters = exercises.get(key) ?? [];
+      encounters.push(encounter);
+      exercises.set(key, encounters);
+    }
+    for (const [key, encounters] of exercises) {
+      if (!encounters.some(issue)) continue;
+      const first = encounters[0]!;
+      cases.push(createCase(learnerId,completionId,'exercise_improvement',`exercise/${key}`,
+        first.wordId,first.snapshot.contentId,encounters,at));
+    }
     for (const encounter of projection.encounters.filter(item => item.snapshot.role !== 'general' && issue(item))) {
       const teaching = projection.encounters.filter(item => item.snapshot.role !== 'general' && item.wordId === encounter.wordId);
       cases.push(createCase(learnerId,completionId,'teaching_review',`encounter/${encounter.encounterId}`,
@@ -766,7 +777,7 @@ function reassessmentSource(evidence: VocabularyReflectionCase): ReassessmentSou
 }
 function reassessmentSummary(evidence: VocabularyReflectionCase): ReassessmentSummary {
   const db=getDb();
-  const source=evidence.kind==='exercise_improvement'&&(evidence.status==='completed'||(evidence.status==='open'&&caseAdmission(evidence.caseId)?.outcome==='needs_coverage'))
+  const source=evidence.kind==='exercise_improvement'&&(evidence.status==='completed'||evidence.status==='open')
     ? db.prepare("SELECT job_id FROM vocabulary_reflection_jobs WHERE case_id=? AND status='succeeded' AND second_opinion_json IS NULL").get(evidence.caseId) as {job_id:string}|undefined : undefined;
   if(!source) return {eligible:false,source:null,latest:null};
   const latest=db.prepare(`SELECT case_id AS caseId,job_id AS jobId,status,last_error AS error FROM vocabulary_reflection_jobs
@@ -956,7 +967,7 @@ export function requestVocabularyReassessment(caseId:string, actorId:string, mod
   if(!isOfferedReflectionModelChoice(modelChoice)) throw new Error('Unsupported assessment model');
   return atomic(()=>{
     const evidence=getVocabularyReflectionCase(caseId);
-    if(evidence.kind!=='exercise_improvement'||(evidence.status!=='completed'&&!(evidence.status==='open'&&caseAdmission(caseId)?.outcome==='needs_coverage'))) throw new VocabularyReflectionConflict('A completed improvement assessment is required');
+    if(evidence.kind!=='exercise_improvement'||(evidence.status!=='completed'&&evidence.status!=='open')) throw new VocabularyReflectionConflict('A completed improvement assessment is required');
     const db=getDb();
     const source=db.prepare("SELECT job_id FROM vocabulary_reflection_jobs WHERE case_id=? AND status='succeeded' AND second_opinion_json IS NULL").get(caseId) as {job_id:string}|undefined;
     if(!source) throw new VocabularyReflectionConflict('Completed assessment evidence is unavailable');

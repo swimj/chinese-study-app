@@ -490,7 +490,7 @@ test('repertoire retries reuse exact new-contract output and retain old-contract
   assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
 });
 
-test('reassessment freshly maps current content and excludes historical encounters',async()=>{
+test('reassessment freshly maps current content and retains historical encounters',async()=>{
   const first=provider((_request,index)=>index===1?single:repair);
   await first.provider.run(job());
   const current=getVocabularyContentForMaintenance('original')!;
@@ -502,7 +502,8 @@ test('reassessment freshly maps current content and excludes historical encounte
   assert.equal(result.kind,'exercise_improvement');
   assert.deepEqual(again.requests.map(request=>request.provenance!.stepName),['sense_mapping','single_improvement']);
   const input=JSON.parse(again.requests[1]!.userPrompt);
-  assert.deepEqual(input.evidence.encounters,[]);
+  assert.equal(input.evidence.encounters.length,job().evidence.evidence.length);
+  assert.equal(input.evidence.assessmentOrigin.sessionEvidence,'historical_source');
   assert.equal(input.sourceContent.version,2);
   if(result.kind==='exercise_improvement')assert.deepEqual(result.result.proposal!.bases,[{contentId:'original',expectedVersion:2}]);
 });
