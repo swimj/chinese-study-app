@@ -167,10 +167,12 @@ use their own eligibility. The initial vocabulary UI and operator proposals do
 not expose suppression or its reversal.
 
 Solidify freezes its enabled recognition/production directions in `solidifySkills`
-when the session starts. Daily coverage requires that subset, and ordinary warmup
-still uses the introduction. A single enabled direction can cover the day but
-cannot qualify for automatic graduation; both disabled excludes the word from
-admission. A later skill-setting change affects subsequent sessions, not the
+when the session starts. Daily coverage requires that subset. For familiar priming,
+the warmup uses retained introduction material in a
+[separate reveal sequence](implementation/vocabulary-ui.md#introduction-and-warmup),
+rather than replaying the teaching walkthrough. A single enabled direction can
+cover the day but cannot qualify for automatic graduation; both disabled excludes
+the word from admission. A later skill-setting change affects subsequent sessions, not the
 active session's frozen directions or coverage requirements; see the
 [retained payload](#retained-session-payload-and-hot-path-work).
 
