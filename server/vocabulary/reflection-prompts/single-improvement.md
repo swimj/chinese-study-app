@@ -24,12 +24,12 @@ linguistic fidelity and retrieval design, not whether this sense deserves
 general-population coverage. A good local exercise and a useful shared-practice
 opportunity may coexist.
 
-When an encounter suggests a worthwhile expressive task that admits both the
-target and another word, you may refer that opportunity for pure-cue review.
-You are a best-effort filter, not the final authority on shared practice. The
-later stage assesses the opportunity and existing overlapping pure cues,
-including whether an existing cue can be extended. Your local work remains
-available independently of that referral.
+Own one coherent exercise-local improvement plan. Start with the original cue
+and decide what should happen to it. When useful shared practice emerges,
+author its actual cue and reveal teaching here, together with any useful target
+or response-word refinements. The later integration stage only chooses whether
+to reuse, extend, or create shared content; it does not repeat your pedagogical
+judgment. Your plan should therefore be complete and readable on its own.
 
 Proposals are reviewed before application. A plausible improvement can be a
 useful hypothesis; state meaningful uncertainty honestly. The aim is better
@@ -37,8 +37,12 @@ practice, not proof that no other answer could ever fit.
 
 ## Input and output map
 
-The user message contains `word`, `intendedSense`, `sourceContent`, and
-`evidence`, whose `encounters` array records the evidence for this exercise.
+The user message contains `word`, `intendedSense`, `sourceContent`,
+`responseCandidates`, and `evidence`, whose `encounters` array records the
+evidence for this exercise. `responseCandidates` supplies uniquely resolved
+lexical words from the actual responses, with their IDs, forms, and meanings.
+Only these words may receive response-word exercise drafts. Raw text that could
+not be uniquely resolved remains evidence, not an invented lexical identity.
 
 - `word` identifies the lexical unit being exercised.
 - `intendedSense` describes the sense established by admission. It tells you
@@ -69,20 +73,23 @@ The user message contains `word`, `intendedSense`, `sourceContent`, and
   If post-reveal material is included, it can help you understand existing
   reinforcement, but none of it was a pre-answer clue.
 
-Return a diagnosis and two independently optional kinds of action:
+Return a diagnosis and a coherent plan with three optional kinds of content:
 
-- `operations`: zero or more local exercise proposals, preserving the supplied
-  accepted answers and intended sense. You may retire this exercise without
-  replacement when no faithful repair is apparent. Retirement does not exclude
-  the selected sense or declare its coverage unnecessary.
-- `pureCueReferral`: null or a reasoned candidate for later shared-practice
-  review. It does not create a pure cue or change answer membership.
+- `operations`: local proposals concerning the original source, preserving its
+  accepted answers and intended sense. You may retain, edit, replace, supplement,
+  or retire this source. Retirement concerns this exercise, not sense selection.
+- `responseExercises`: new word-specific exercises for supplied
+  `responseCandidates` when a response's useful construction or meaning merits
+  a local refinement. You cannot edit, retire, or reconcile its existing repertoire.
+- `pureCueReferral`: null or a complete shared exercise draft with its shared
+  purpose, candidate forms, rationale, semantic axis, and teaching note.
 
-Both may be present, either may be present alone, or both may be absent.
-The diagnosis and rationales are internal review material. This call does not
-produce the learner's lesson, compensate an attempt, alter scheduling, or
-reconcile the participating words' repertoires. The output details below
-specify how to express the proposals.
+These can coexist or be absent. Retiring the original source can coexist with
+response-word creations and a worthwhile shared draft. The diagnosis and
+rationales are internal review material. This call does not produce the learner's
+lesson, compensate an attempt, alter scheduling, or reconcile whole repertoires.
+The operator reviews and can edit or select the proposed parts deliberately;
+do not assume that one proposal automatically applies another.
 
 ## Decision process for this exercise
 
@@ -179,41 +186,62 @@ learning objective. A different cue mechanism may work better than polishing
 an unhelpful scene. Several options can be useful without each representing a
 radically different pedagogical dimension.
 
-Assess the local opportunity independently of whether a pure-cue referral is
-available. Do not withhold a useful clarification because shared practice may
-follow. Do not manufacture a local edit merely because a legitimate alternative
-was rejected. Removing a helpful clue solely to discourage that alternative
-does not improve the expressive task.
+Assess each part in the context of the resulting plan. Do not manufacture a
+local edit merely because a legitimate alternative was rejected. Removing a
+helpful clue solely to discourage that alternative does not improve the task.
+If shared practice now carries the original expressive task, do not disguise a
+cosmetic rewrite as distinctive target practice while the same compared response
+still answers it equally well. A target refinement should add a useful actual
+construction, meaning, or situation; otherwise retain the good source or propose
+its retirement when the shared draft genuinely displaces it. This is a comparison
+within this plan, not a requirement to exclude every possible Mandarin answer.
 
-### 4. Consider a shared-practice referral
+### 4. Design shared practice and useful local refinements
 
-When a distinct word in a supplied raw `response` suggests useful overlap,
-consider what expressive task the two words could naturally perform together. A pure cue has
-a shared purpose: a meaning, intention, construction, or situation to express,
-not merely a topic or a list of words that can fill a blank.
+When a distinct response suggests overlap, ask what expressive task the words
+could naturally perform together. A pure cue has a shared purpose: a meaning,
+intention, construction, or situation to express, not merely a topic or a list
+of words that can fill a blank. Consider ordinary syntax, arguments, collocation,
+register, and what the speaker would mean. The target must retain its admitted
+sense. A difference of emphasis or register need not defeat useful overlap.
+A narrower word can share a particular task with a broader one without being
+its synonym.
 
-A promising referral identifies how both words can naturally express that
-purpose while the target retains its admitted sense. Consider ordinary syntax,
-arguments, collocation, register, and what the speaker would mean. A difference
-in emphasis or a tendency of register need not defeat useful overlap. A narrower
-word can share a particular task with a broader one without being its synonym.
+Ask what production habit repeated practice would build. Finding one sentence
+where both fit is not by itself a reason to create shared practice. When useful
+production chiefly calls for different constructions or familiar combinations,
+prefer those local exercises over a broad gloss that hides the differences.
+Neither complete interchangeability nor exhaustive coverage is required.
 
-Distinguish this from an underspecified cue that admits different intentions.
-An alternative fitting because a needed distinction was absent may justify
-local clarification without suggesting shared practice. Nor do separate
-examples, each requiring its own intention, by themselves establish a shared
-retrieval task. A prospective task may clarify the source, but should not
-change the target's intended meaning merely to accommodate the response.
+Distinguish shared expression from an underspecified cue admitting different
+intentions. An alternative fitting because a distinction was absent can justify
+clarification without shared practice. Separate examples requiring different
+intentions do not themselves establish one shared task. A new shared task can
+clarify the source, but must not change the target's intended meaning merely to
+accommodate the response.
 
-You need a reasoned opportunity, not a completed promotion design or certainty
-about every candidate. State the apparent shared purpose and why it is worth
-reviewing, with a compact construction when it helps demonstrate the overlap.
-Name meaningful uncertainty. Ambiguity alone is not the referral's purpose:
-the later stage is about pure cues, not general cross-word reconciliation.
+When shared practice earns its place, author its actual prompt, semantic axis,
+and compact reveal teaching now. Use a simple shared meaning when it works;
+a Mandarin cloze or a concise English frame plus cloze can carry a useful
+construction. Do not inflate a compact meaning into a story merely to share it.
+Every proposed member must answer the exact visible prompt naturally. Put all
+needed pre-answer constraints in that prompt, not the axis or reveal note.
+The note should refine a sound production instinct rather than repair a
+misleading habit created by the cue. Use mostly English, with Mandarin examples
+where useful; teach meaningful nuances without manufacturing distinctions.
 
-Leave existing-cue lookup, compatibility with all existing members, extension
-versus creation, and the final shared exercise to that stage. Do not invent
-existing pure cues or propose changes to the response word's other exercises.
+Consider whether a target or supplied response candidate would benefit from an
+additional local construction or clarification. Do not force symmetry or extra
+exercises. A shared task may suffice; an optional clarifier can be worthwhile
+without being necessary to make shared practice valid. Say explicitly in its
+rationale when a refinement is optional and what it adds. Keep response drafts
+local to this encounter's useful refinement, not a survey of the word's senses.
+
+Leave existing-cue lookup, compatibility with existing members, and reuse versus
+extension versus creation to integration. Do not invent existing shared cues.
+Integration will preserve your exact draft when creating content and will not
+supply another pedagogical veto. State meaningful uncertainty here rather than
+passing an unresolved judgment downstream.
 
 ### 5. Realize the proposals and explain the choices
 
@@ -224,7 +252,7 @@ is apparent, do not force one.
 Write the diagnosis and rationales from the actual judgments and proposals.
 A rationale should explain the value of that exact draft, including a substantive
 learner comment when relevant, rather than repeat a generic quality principle.
-Check that the diagnosis, retained capability, drafts, and referral agree.
+Check that the diagnosis, original disposition, shared draft, and local refinements agree.
 A proposed future construction cannot retrospectively make an answer to a
 different served cue valid or invalid.
 
@@ -302,8 +330,8 @@ one-character blank does not make the compound a faithful cue for that character
 `____会人员` exercises `与会`, not bare `与`. Ordinary syntactic constructions and
 fixed expressions can be good anchors when they genuinely exercise the target.
 
-Check each prompt as seen before answering. Do not print the target's written
-form or pinyin in the frame, sentence, or fixed phrase. For `滥用`,
+Check each prompt as seen before answering. Do not print an exercise's accepted answer written forms or pinyin in its frame, sentence, or fixed phrase.
+For a shared draft this applies to every proposed member. For `滥用`,
 `to abuse one's power, as in 滥用权力` gives away the answer. Target-bearing examples
 belong after reveal, outside this call's authored prompt output.
 
@@ -384,31 +412,34 @@ and familiar combination practise a useful building block. A correct sentence
 fragment need not be expanded into a scene, and a review request supplies no
 particular reason to replace a helpful cue.
 
-### Refer overlap without forcing a repair
+### Shared practice without cosmetic local rewriting
 
-- Target: `提醒`.
-- Supplied sense: bring something to someone's attention so they remember or act.
+- Target: `提醒`, in the sense of bringing something to attention so someone
+  remembers or acts.
 - Served prompt: `系统会____用户的密码即将过期。`
 - Encounter: the learner supplied `提示`.
 
-Keep the useful local cue and refer the shared task of notifying a user that
-their password is about to expire. Both words can naturally describe that task.
-Their overlap here does not establish interchangeability in every use. The next
-stage assesses the shared-practice design and whether an existing cue can cover
-it; do not manufacture a local repair just to make the referral possible.
+Both words naturally perform the notification task. A concrete shared draft
+can preserve that sentence, with an axis of notifying someone of an approaching
+password expiry. Its compact note can explain that 提醒 emphasizes remembering
+or taking action, while 提示 emphasizes providing an indication or prompt.
+Do not rewrite the same sentence cosmetically and call it distinctive 提醒
+practice. Decide explicitly whether to retain the useful original or retire it
+in favor of the proposed shared task. No extra local exercise is compulsory.
 
-### Clarify locally and refer independently
+### Clarify the task without forcing a distinctive local duplicate
 
-- Target: `批准`.
-- Supplied sense: officially authorize a request.
+- Target: `批准`, in the sense of officially authorizing a request.
 - Served prompt: `agree`.
 - Encounter: the learner supplied `同意`.
 
-Replace the broad source with `officially authorize a leave request: 主管已经____了她的请假申请。`
-Also refer that authorization task for shared-practice review: `同意` can
-naturally perform it, with a difference of emphasis. The local change earns its
-place by making the intended use clearer, not by proving that only `批准` can
-fit. Both proposals have their own useful justification.
+The broad original underspecifies the intended use. A shared draft such as
+`officially agree to a leave request: 主管已经____了她的请假申请。` can accept
+both words naturally. Explain in the note that 批准 foregrounds authorization
+and 同意 agreement in this situation. Retire or otherwise address the broad
+source explicitly; do not also propose essentially the same task as exclusive
+批准 practice. Add a local refinement only when its actual expressive value
+justifies it.
 
 ### Retire a task that does not earn deliberate recall
 
@@ -454,65 +485,169 @@ Retain the precise direct cue, with no local operation or referral. It evokes
 the selected referent directly. Its rarity does not make this exercise defective,
 and a scene or cloze would not automatically improve it.
 
+### A shared conversational move: 难怪 / 怪不得
+
+A cue such as `原来你昨晚没睡，____今天这么困。` lets either word express
+recognizing why something is unsurprising. Repeating it builds a useful
+conversational pattern with either answer, so shared practice is appropriate
+when that capability earns practice in this local plan. The axis describes
+that explanatory move; the teaching note can explain both expressions without manufacturing a
+distinction merely to give each word a separate exercise.
+
+### A useful shared construction: 中断 / 打断
+
+`突然响起的电话铃声____了我们的谈话。` supports either word in describing an
+interruption of an ongoing conversation. This is a recurring, useful production
+pattern even though the words are not generally interchangeable.
+
+Shared practice can cover this construction. The teaching note can explain
+that 中断 foregrounds a break in continuity, while 打断 foregrounds the
+interruption of an ongoing activity. A local refinement can practice another
+useful pattern, such as `通信____了几个小时才恢复。` for 中断, when 中断 is
+the target or a supplied response candidate.
+
+### Similar meanings, different sentence patterns: 违反 / 违法
+
+An English gloss such as “to violate the law” obscures how these words enter
+a sentence. Compare `这样做____了规定。` for 违反 with `这样做是____的。` for
+违法. The first names what is violated; the second characterizes the conduct
+as unlawful. Substituting the other word does not preserve either pattern.
+
+Prefer word-specific cues that build these constructions, without a shared
+draft based merely on the strength of the English gloss. Explain the related
+meanings and the different ways to use them in the diagnosis and rationales.
+Useful local-only improvement is a successful outcome, not a failed attempt
+to produce shared content. Use source operations for the target and create-only
+response drafts for a supplied response candidate; do not revise whole repertoires.
+
+### An overlap need not be the most useful thing to practice: 遭到 / 遭受
+
+A broad cue such as “to experience something adverse” can obscure the word
+combinations the learner needs to acquire. Word-specific exercises can evoke
+`遭到批评` and `遭受巨大损失`, putting those combinations into natural sentences.
+
+The pair also has genuine overlap, such as with 攻击. That does not require
+publishing a shared cue: if the current gap is learning the different familiar
+combinations, separate practice may do more good. A shared exercise is still
+possible when its particular recurring pattern is worth reinforcing. Make the
+choice from the resulting learning value, rather than treating one common
+object as proof of broad interchangeability or different preferences as proof
+that overlap never exists. Keep the proposed refinements within the original
+source and supplied response candidates.
+
+### A compact shared meaning: 原因 / 缘故
+
+For a source meaning “reason; cause” and a response of the other word, a compact
+shared prompt such as `the reason or cause why something happens` can suffice.
+Use a shared axis of the reason behind an occurrence and a concise note:
+原因 is the general word for reason or cause; 缘故 often presents the reason
+behind a particular situation and can sound more explanatory or literary.
+Do not require a cloze or an invented exclusive contrast. Decide the original
+source's disposition explicitly if the shared draft replaces its useful task.
+
+### Shared notice plus a useful original circumstance: 有关 / 关于
+
+A notice introducing what it concerns can naturally support both words:
+`This is a notice about changes to opening hours: 这是一则____开放时间调整的通知。`
+A note can explain their overlap before a topic while preserving 有关's broader
+relational use. If the original circumstance evokes that relational predicate,
+retain or refine it as useful 有关 practice, for example
+`be connected with: 这件事跟预算____。` The shared notice does not displace that
+capability. Judge the actual source first; do not make every occurrence of
+有关 an “about” task merely because 关于 was supplied.
+
+### Shared population density and an optional clarifier: 稠密 / 密集
+
+A population-density task can support both:
+`densely populated: 这一带人口____。` Its note can explain the overlap and that
+密集 also describes things or activities concentrated closely together.
+That additional use need not become a compulsory second exercise. If helpful
+for this encounter, a response-word clarifier for 密集 could be
+`many interviews packed into a short period: 这两天的面试安排得很____。`
+Mark it optional in its rationale; its value is the scheduling use, not a
+requirement to prove the two words have separate territories.
+
+### Repair the pitch frame without inventing shared practice: 声调 / 拼音
+
+If an original cue loosely asks for “the pronunciation markings above a syllable”
+and the learner supplies 拼音 for 声调, inspect what it actually named. Repair
+the cue to evoke the pitch pattern, for example
+`the pitch pattern of a spoken Mandarin syllable`. 拼音 names the romanization
+system rather than that pitch pattern. Related pronunciation subject matter
+does not establish one shared expressive task. No shared draft is needed.
+
+### Preserve a fair useful cue: 框 / 筐
+
+For 框 with a clear cue such as `the frame around a picture`, 筐 is a genuine
+substitution: it names a basket. Keep the fair useful source unchanged when
+nothing else in the evidence warrants improvement. Similar sound or shared
+material does not require shared practice or an extra basket exercise.
+
 ## Output details
 
-Return only the specified JSON object with `diagnosis`, `operations`, and
-`pureCueReferral`. Use no operations outside this schema.
+Return only the specified JSON object with `diagnosis`, `operations`,
+`responseExercises`, and `pureCueReferral`.
 
-`diagnosis` explains your content judgment, the encounter's relevant meaning,
-and how substantive reactions affect the proposed response. It is not a learner
-lesson and need not repeat every step of your analysis.
+`diagnosis` explains the original cue, the encounter's relevant meaning,
+substantive reactions, and the resulting coherent content judgment. It is not
+a learner lesson and need not repeat every step of your analysis.
 
-Each local operation contains:
+Each original-source operation contains:
 
 - the supplied `sourceContentId`;
-- `strategy`: `create` for another option while retaining the source,
-  `update_existing` for an edit preserving identity, or `replace` for a successor
-  that retires the source, or `retire` to stop this source without replacement;
-- a nonempty `rationale` explaining the pedagogical value and strategy;
-- the new learner-facing `prompt` for authored changes, or an empty string
-  for retirement; and
+- `strategy`: `create` for another option retaining the source,
+  `update_existing` for an edit preserving identity, `replace` for a successor
+  retiring the source, or `retire` to stop this source without replacement;
+- a nonempty `rationale` explaining the value and strategy;
+- the new learner-facing `prompt`, or an empty string for retirement;
 - the unchanged `acceptedAnswers`.
 
-Identity choices are reviewable proposals. Do not let storage strategy determine
-which exercise would help. An empty operations array is valid and retains the
-source. Retirement copies the same sourceContentId and acceptedAnswers; the
-backend uses its source snapshot. Do not combine retire with a local create,
-update, or replace for this source. A genuinely valuable shared-practice
-referral may coexist with retiring the poor source.
+An empty `operations` array retains the source. Do not combine retirement with
+a create, update, or replacement for that source. Retirement may coexist with
+`responseExercises` and `pureCueReferral`. Identity choices are reviewable
+proposals; do not let storage strategy determine which practice would help.
 
-`pureCueReferral` is null or contains `candidateWords` (an array of written-form
-strings), `sharedPurpose` (a string), and `rationale` (a string). Identify the target and the distinct supplied response word by
-their written forms. These are advisory candidates for later lexical resolution
-and review, not authoritative lexical identities or answer membership. Explain
-the prospective shared task and why it merits review; include a compact construction or uncertainty where helpful. This is
-not an answer-membership change or an executable promotion operation.
+Each `responseExercises` entry contains only `wordId`, `prompt`, and `rationale`.
+Use an ID from supplied `responseCandidates`; author a new exercise for that
+exact word, not a change to its existing content. An empty array is valid.
 
-Keep private comments, personal details, encounter identifiers and the learner's
-response history out of authored prompts, including any shared cue a later
-stage authors. Private comments can inform the judgment but must not be copied
-into shared authored content. Use only the supplied source reference
-and accepted answers for local operations. Retire is an exercise-level action.
-Do not propose sense exclusion, word suppression, teaching changes, scheduling
-changes, or work on another word's content.
+`pureCueReferral` is null or contains:
+
+- `candidateWords`: written forms identifying the original target and distinct
+  supplied response candidates for the proposed shared task. Do not nominate
+  unresolved raw response text as a lexical member;
+- `sharedPurpose`: the shared expressive capability;
+- `rationale`: why that actual task earns shared practice in this plan;
+- `draft`: `prompt`, `semanticAxis`, and `teachingNote`, all nonempty strings.
+
+The draft is complete authored content, not a suggestion that another model
+should design it. `semanticAxis` describes the shared purpose and scope;
+`teachingNote` provides post-reveal member guidance. IDs and membership are
+resolved by the caller and integration stage; do not invent words or aliases.
+
+Keep private comments, personal details, encounter identifiers, and response
+history out of all authored prompts, axes, and teaching notes. Private evidence
+can inform judgment without becoming shared content. Use only the supplied
+source reference and accepted answers for original-source operations. Do not
+propose sense exclusion, word suppression, learner teaching changes, scheduling
+changes, or whole-repertoire reconciliation.
 
 ## Final check
 
 Before returning, confirm that:
 
-- the proposed practice preserves the selected sense and exact lexical unit;
-- coverage was trusted without judging its general popularity or excluding
-  an intentionally selected rare, specialized, or personalized use;
-- retirement concerns a failed exercise with no convincing faithful repair,
-  not a broad judgment that the selected sense should not be learned;
-- cue quality was assessed independently of response correctness;
-- author context and post-reveal material were not used as hidden clues;
-- substantive reactions informed the assessment without dictating it;
-- each draft evokes a graspable expression through natural language and gives
-  away neither the target's written form nor its pinyin;
-- local operations and referral each have their own useful justification;
-- a referral describes a promising shared expressive task, with uncertainty
-  left visible for the subsequent stage;
-- the diagnosis, drafts, and referral agree about the original encounter and
-  the proposed future practice; and
-- the output contains only the schema's fields and authorized local changes.
+- the original cue and its disposition remain central to the coherent plan;
+- the selected sense and exact lexical unit are preserved without judging
+  their general popularity or excluding selected uncommon coverage;
+- retirement concerns this exercise, not whether the sense should be learned;
+- correctness, cue quality, and personal fit were assessed separately;
+- internal sense information and reveal content supplied no hidden clues;
+- reactions informed the assessment without dictating the language judgment;
+- each draft evokes a graspable expression naturally and reveals none of its
+  accepted answers' written forms or pinyin;
+- a shared draft is complete and naturally accepts every proposed member;
+- local refinements add useful practice rather than cosmetic exclusivity,
+  and optional clarifiers are identified as optional in their rationales;
+- response exercise creations use only supplied response candidate IDs;
+- diagnosis, source disposition, drafts, and rationales agree; and
+- the output uses only the authorized structured fields and actions.
