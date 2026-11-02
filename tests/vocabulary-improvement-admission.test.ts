@@ -21,7 +21,7 @@ let db:DatabaseSync;
 let original:VocabularyContent;
 const actor={kind:'service' as const,id:'fixture'};
 const at='2026-10-19T12:00:00.000Z';
-beforeEach(()=>{
+beforeEach(context=>{
   db=new DatabaseSync(':memory:');setDb(db);
   db.exec(`PRAGMA foreign_keys=ON;
     CREATE TABLE learners(learner_id TEXT PRIMARY KEY); INSERT INTO learners VALUES ('learner');
@@ -33,7 +33,7 @@ beforeEach(()=>{
   for(const name of ['0062_vocabulary_sense_coverage','0064_vocabulary_default_useful_senses','0039_vocabulary_content','0045_vocabulary_provenance_links','0050_vocabulary_improvement_admission','0051_vocabulary_pure_cue_promotion'])
     db.exec(readFileSync(new URL(`../server/db/migrations/${name}.sql`,import.meta.url),'utf8'));
   db.exec(readFileSync(new URL('../server/db/migrations/0061_vocabulary_sense_mapping_retries.sql',import.meta.url),'utf8'));
-  original=createVocabularyContent({contentId:'original',kind:'exercise',payloadVersion:1,body:{prompt:'请把这张照片____后再打印。',instruction:'Old instruction',reveal:{teachingNote:'Old unrelated teaching'},source:{kind:'old_source'}},accessScope:'shared',availability:'active',originKind:'human',
+  original=createVocabularyContent({contentId:'original',kind:'exercise',payloadVersion:1,body:{prompt:'请把这张照片____后再打印。',instruction:'Old instruction',reveal:{teachingNote:'Old unrelated teaching'},source:{kind:context.name.startsWith('[bootstrap]')?'dictionary_baseline':'old_source'}},accessScope:'shared',availability:'active',originKind:'human',
     exerciseType:'word',skill:'production',exerciseRole:'general',assessment:{match:'exact'},words:[{wordId:'word',relation:'target'}],answers:[{wordId:'word',acceptedForms:['放大']}]},actor);
   createVocabularySense({senseId:'size',wordId:'word',description:{label:'make an image or object larger'}},actor);
   createVocabularySense({senseId:'effect',wordId:'word',description:{label:'amplify an effect or significance'}},actor);
@@ -75,7 +75,9 @@ function provider(reply:(request:ProviderRunRequest,index:number)=>unknown|Promi
 }
 const single={outcome:'single_sense',rationale:'Photo enlargement is the intended use, though direction is missing.',senseIds:['size']};
 const repair={pureCueReferral:null,diagnosis:'Make the intended direction explicit.',operations:[{sourceContentId:'original',strategy:'replace',rationale:'Clarifies larger.',prompt:'Make this image larger before printing it.',acceptedAnswers:['放大']}]};
-const laundry={outcome:'laundry_list',rationale:'Two distinct uses are bundled.',senseIds:[]};
+// Select fixture provenance before creating content; model stubs never mutate
+// a source or its retained revision to force a routing comparison.
+const bootstrapTest:typeof test=(name,fn)=>test(`[bootstrap] ${String(name)}`,fn);
 const repertoire={exercises:[
   {id:'anchor',sourceUseId:'size',stimulus:{kind:'direct_text',text:'Make the image larger.'},teachingNote:'Image size.'},
   {id:'effect',sourceUseId:'effect',stimulus:{kind:'direct_text',text:'Make a small problem seem much more significant.'},teachingNote:null},
@@ -147,9 +149,9 @@ test('mapping provider failures propagate without fallback or retained mapping e
   assert.equal(db.prepare('SELECT count(*) n FROM vocabulary_improvement_stages').get()!.n,0);
 });
 
-test('laundry list automatically proposes one source replacement plus additions, preserving unrelated cues',async()=>{
+bootstrapTest('dictionary fallback automatically proposes one source replacement plus additions, preserving unrelated cues',async()=>{
   createVocabularyContent({...original,contentId:'other'},actor);
-  const trial=provider((_request,index)=>index===1?laundry:repertoire);
+  const trial=provider((_request,index)=>repertoire);
   const result=await trial.provider.run(job());if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
   assert.deepEqual(result.result.proposal!.operations.map(op=>op.strategy),['replace','create','create']);
   assert.deepEqual(result.result.proposal!.operations.map(op=>op.content.words[0]!.senseId),['size','effect','size']);
@@ -157,9 +159,9 @@ test('laundry list automatically proposes one source replacement plus additions,
   assert.equal(getVocabularyContentForMaintenance('original')!.availability,'active');
   assert.equal(getVocabularyContentForMaintenance('original')!.words[0]!.senseId,null);
   assert.equal(db.prepare('SELECT count(*) n FROM content_items').get()!.n,2);
-  assert.equal(trial.requests[1]!.provenance!.stepName,'repertoire');
+  assert.equal(trial.requests[0]!.provenance!.stepName,'repertoire');
   assert.deepEqual(result.result.admission!.senseIds,[]);
-  assert.deepEqual(trial.requests.map(request=>request.provenance!.promptVersion),['3','v5']);
+  assert.deepEqual(trial.requests.map(request=>request.provenance!.promptVersion),['v5']);
   for(const [index,op] of result.result.proposal!.operations.entries()){
     const authored=repertoire.exercises[index]!;
     const body=op.content.body as {prompt:string;instruction:string;stimulus:unknown;reveal?:unknown;source:{kind:string;assessedContentId:string}};
@@ -211,8 +213,8 @@ test('successful mapping survives a later provider failure, while operator remap
   await assert.rejects(()=>trial.provider.run({...job(),attemptNumber:3}),/changed since the retained/);assert.equal(trial.requests.length,3);
 });
 
-test('repertoire cannot leak accepted answers',async()=>{
-  const trial=provider((_request,index)=>index===1?laundry:{...repertoire,exercises:repertoire.exercises.map(exercise=>({...exercise,stimulus:{kind:'direct_text',text:'Use 放大 here.'}}))});
+bootstrapTest('repertoire cannot leak accepted answers',async()=>{
+  const trial=provider((_request,index)=>({...repertoire,exercises:repertoire.exercises.map(exercise=>({...exercise,stimulus:{kind:'direct_text',text:'Use 放大 here.'}}))}));
   await assert.rejects(()=>trial.provider.run(job()),/exposes.*answer/);
   assert.equal(db.prepare('SELECT count(*) n FROM vocabulary_improvement_stages').get()!.n,2);
 });
@@ -296,35 +298,35 @@ test('cache identity retains actual prompts and schema and separates provider co
   assert.equal(db.prepare('SELECT count(*) n FROM vocabulary_improvement_stages').get()!.n,4);
 });
 
-for(const invalid of ['foreign-sense'] as const)test(`repertoire rejects ${invalid}`,async()=>{
+for(const invalid of ['foreign-sense'] as const)bootstrapTest(`repertoire rejects ${invalid}`,async()=>{
   const exercises=repertoire.exercises.map(exercise=>({...exercise,sourceUseId:'unknown'}));
-  const trial=provider((_request,index)=>index===1?laundry:{...repertoire,exercises});
+  const trial=provider((_request,index)=>({...repertoire,exercises}));
   await assert.rejects(()=>trial.provider.run(job()),/output schema/);
   assert.equal(db.prepare('SELECT count(*) n FROM vocabulary_improvement_stages').get()!.n,2);
 });
 
-test('laundry-list replacement uses the inventory without mapping or preserving every old gloss',async()=>{
-  createVocabularyContent({...original,contentId:'list',body:{prompt:'enlarge an image; amplify significance; a specialist gloss absent from the inventory'}},actor);
+bootstrapTest('fallback replacement uses the inventory without mapping or preserving every old gloss',async()=>{
+  createVocabularyContent({...original,contentId:'list',body:{prompt:'enlarge an image; amplify significance; a specialist gloss absent from the inventory',source:{kind:'dictionary_baseline'}}},actor);
   const input=job();input.evidence.contentId='list';input.evidence.evidence[0]!.snapshot.contentId='list';
   const exercises=repertoire.exercises.filter(exercise=>exercise.sourceUseId==='size');
-  const trial=provider((_request,index)=>index===1?laundry:{...repertoire,exercises});
+  const trial=provider((_request,index)=>({...repertoire,exercises}));
   const result=await trial.provider.run(input);
   if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
-  assert.equal(result.result.admission!.outcome,'laundry_list');
+  assert.equal(result.result.admission!.outcome,'repertoire_bootstrap');
   assert.deepEqual(result.result.admission!.senseIds,[]);
   assert.deepEqual(result.result.proposal!.operations.map(op=>op.strategy),['replace','create']);
   assert.ok(result.result.proposal!.operations.every(op=>op.content.words[0]!.senseId==='size'));
   assert.equal(getVocabularyContentForMaintenance('list')!.words[0]!.senseId,null);
-  const generatedInput=JSON.parse(trial.requests[1]!.userPrompt);
+  const generatedInput=JSON.parse(trial.requests[0]!.userPrompt);
   assert.equal(generatedInput.role,'general_exercises');
   assert.equal(generatedInput.admission,undefined);
   assert.equal(generatedInput.content.uses.length,2);
-  assert.equal(trial.requests.length,2);
+  assert.equal(trial.requests.length,1);
 });
 
 for(const outcome of ['laundry_list','inventory_gap','unmappable'] as const)test(`${outcome} rejects unnecessary sense associations`,async()=>{
   const trial=provider(()=>({outcome,rationale:'Inspect the cue.',senseIds:['size','effect']}));
-  await assert.rejects(()=>trial.provider.run(job()),/Invalid mapping outcome/);
+  await assert.rejects(()=>trial.provider.run(job()),/Invalid mapping outcome|strict output schema/);
   assert.equal(trial.requests.length,1);
   assert.equal(getVocabularyContentForMaintenance('original')!.words[0]!.senseId,null);
 });
@@ -412,12 +414,12 @@ for (const spend of [0.1, 100]) {
   });
 }
 
-test('reflection repertoire reaches the same general invocation as preparation while retaining its selected model',async()=>{
+bootstrapTest('reflection repertoire reaches the same general invocation as preparation while retaining its selected model',async()=>{
   db.prepare("UPDATE vocabulary_reflection_jobs SET model_choice='openai:gpt-6-sol-high'").run();
   for(const senseId of ['size','effect'])updateVocabularySense(senseId,1,{status:'active',description:{label:senseId,notes:[],examples:[{text:'把图片放大。',translation:'Enlarge the image.',pronunciation:null}]}},actor);
-  const trial=provider((_request,index)=>index===1?laundry:repertoire);
+  const trial=provider((_request,index)=>repertoire);
   await trial.provider.run(job());
-  const reflected=trial.requests[1]!;
+  const reflected=trial.requests[0]!;
   let sent:{messages:Array<{content:string}>;response_format:{json_schema:{name:string;schema:unknown}}}|undefined;
   const preparation=createVocabularyPracticeProvider({environment:{OPENAI_API_KEY:'fake'},fetchImplementation:(async(_url,init)=>{
     sent=JSON.parse(String(init?.body));
@@ -439,10 +441,10 @@ test('reflection repertoire reaches the same general invocation as preparation w
   assert.equal(reflected.provenance!.promptVersion,'v5');
 });
 
-test('a single mapped repertoire exercise preserves private publication scope and answers',async()=>{
+bootstrapTest('a single mapped repertoire exercise preserves private publication scope and answers',async()=>{
   createVocabularyContent({...original,contentId:'private-source',accessScope:'private',ownerLearnerId:'learner'},actor);
   const input=job();input.evidence.contentId='private-source';input.evidence.evidence[0]!.snapshot.contentId='private-source';
-  const trial=provider((_request,index)=>index===1?laundry:{exercises:[{...repertoire.exercises[0],sourceUseId:'size'}]});
+  const trial=provider((_request,index)=>({exercises:[{...repertoire.exercises[0],sourceUseId:'size'}]}));
   const result=await trial.provider.run(input);if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
   const operations=result.result.proposal!.operations;assert.equal(operations.length,1);
   assert.deepEqual(operations[0]!.scope,{kind:'learner',learnerId:'learner'});
@@ -453,19 +455,18 @@ test('a single mapped repertoire exercise preserves private publication scope an
   assert.equal(db.prepare('SELECT count(*) n FROM content_items').get()!.n,2);
 });
 
-for(const malformed of ['missing-blank','answer-in-frame','duplicate-id'] as const)test(`repertoire shared validation rejects ${malformed}`,async()=>{
+for(const malformed of ['missing-blank','answer-in-frame','duplicate-id'] as const)bootstrapTest(`repertoire shared validation rejects ${malformed}`,async()=>{
   const exercises=structuredClone(repertoire.exercises);
   if(malformed==='duplicate-id')exercises[1]!.id=exercises[0]!.id;
   else exercises[2]!.stimulus={kind:'phrase_cloze',frame:malformed==='answer-in-frame'?'Use 放大.':'Enlarge the image.',text:malformed==='missing-blank'?'这张图太小了。':'把图片____。'};
-  const trial=provider((_request,index)=>index===1?laundry:{exercises});
+  const trial=provider(()=>({exercises}));
   await assert.rejects(()=>trial.provider.run(job()),/blank|exposes an accepted answer|duplicate/i);
   assert.equal(db.prepare("SELECT count(*) n FROM vocabulary_improvement_stages WHERE stage='repertoire'").get()!.n,0);
 });
 
-for(const change of ['source','catalog','authority'] as const)test(`repertoire publication fences ${change} changes during generation`,async()=>{
+for(const change of ['source','catalog','authority'] as const)bootstrapTest(`repertoire publication fences ${change} changes during generation`,async()=>{
   let allowed=true;
   const trial=provider((_request,index)=>{
-    if(index===1)return laundry;
     if(change==='source')updateVocabularyContent('original',1,{...original,body:{prompt:'Edited by operator'}},actor);
     if(change==='catalog')updateVocabularySense('size',1,{description:{label:'Changed meaning',notes:[]},status:'active'},actor);
     if(change==='authority')allowed=false;
@@ -475,18 +476,18 @@ for(const change of ['source','catalog','authority'] as const)test(`repertoire p
   assert.equal(db.prepare("SELECT count(*) n FROM vocabulary_improvement_stages WHERE stage='repertoire'").get()!.n,0);
 });
 
-test('repertoire retries reuse exact new-contract output and retain old-contract evidence without consuming it',async()=>{
+bootstrapTest('repertoire retries reuse exact new-contract output and retain old-contract evidence without consuming it',async()=>{
   db.prepare('INSERT INTO vocabulary_improvement_stages VALUES (?,?,?,?,?,?,?)').run('job','repertoire','old-contract',JSON.stringify({contract:{promptName:'vocabulary-reflection-repertoire',promptVersion:'2'}}),JSON.stringify({obsolete:true}),null,at);
-  const trial=provider((_request,index)=>index===1?laundry:repertoire,{ledger:true});
+  const trial=provider((_request,index)=>repertoire,{ledger:true});
   const result=await trial.provider.run(job());
   const replay=await trial.provider.run({...job(),attemptNumber:2});
-  assert.deepEqual(replay,result);assert.equal(trial.requests.length,2);
+  assert.deepEqual(replay,result);assert.equal(trial.requests.length,1);
   assert.equal(db.prepare("SELECT count(*) n FROM vocabulary_improvement_stages WHERE stage='repertoire'").get()!.n,2);
   const retained=JSON.parse(String(db.prepare("SELECT input_json FROM vocabulary_improvement_stages WHERE stage='repertoire' AND input_hash!='old-contract'").get()!.input_json));
-  assert.equal(retained.contract.systemPrompt,trial.requests[1]!.systemPrompt);
-  assert.deepEqual(retained.contract.schema,trial.requests[1]!.outputSchema);
-  assert.equal(db.prepare("SELECT count(*) n FROM invocation_content_links WHERE invocation_id='invocation-2'").get()!.n,1);
-  assert.equal(db.prepare("SELECT count(*) n FROM invocation_sense_links WHERE invocation_id='invocation-2'").get()!.n,2);
+  assert.equal(retained.contract.systemPrompt,trial.requests[0]!.systemPrompt);
+  assert.deepEqual(retained.contract.schema,trial.requests[0]!.outputSchema);
+  assert.equal(db.prepare("SELECT count(*) n FROM invocation_content_links WHERE invocation_id='invocation-1'").get()!.n,1);
+  assert.equal(db.prepare("SELECT count(*) n FROM invocation_sense_links WHERE invocation_id='invocation-1'").get()!.n,2);
   assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
 });
 
@@ -551,39 +552,38 @@ for(const during of ['mapping','improvement'] as const)test(`serving-policy chan
   assert.deepEqual(result.result.admission?.generationScope?.senseIds,['size']);
 });
 
-for(const failFirst of [false,true])test(`repertoire scope survives policy changes and retry (first call fails=${failFirst})`,async()=>{
+for(const failFirst of [false,true])bootstrapTest(`repertoire scope survives policy changes and retry (first call fails=${failFirst})`,async()=>{
   const {writeVocabularyWordSenseCoverage}=await import('../server/db/vocabulary-sense-coverage.ts');
   const trial=provider((_request,index)=>{
-    if(index===1)return laundry;
-    if(index===2){writeVocabularyWordSenseCoverage('word',1,['effect'],actor);if(failFirst)throw new Error('Provider failed');}
+    if(index===1){writeVocabularyWordSenseCoverage('word',1,['effect'],actor);if(failFirst)throw new Error('Provider failed');}
     return repertoire;
   });
   if(failFirst)await assert.rejects(()=>trial.provider.run(job()),/Provider failed/);
   else await trial.provider.run(job());
   const result=await trial.provider.run({...job(),attemptNumber:2});if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
   assert.deepEqual(result.result.admission?.generationScope,{selectionEstablished:true,senseIds:['effect','size'],source:{kind:'word_defaults',wordId:'word',capturedVersion:1}});
-  assert.equal(trial.requests.length,failFirst?3:2);
-  for(const request of trial.requests.slice(1))assert.deepEqual(JSON.parse(request.userPrompt).content.uses.map((use:{id:string})=>use.id).sort(),['s1','s2']);
+  assert.equal(trial.requests.length,failFirst?2:1);
+  for(const request of trial.requests)assert.deepEqual(JSON.parse(request.userPrompt).content.uses.map((use:{id:string})=>use.id).sort(),['s1','s2']);
   assert.equal(getVocabularyContentForMaintenance('original')!.availability,'active');
 });
 
-test('explicit empty repertoire invocation is no-action and never retires source',async()=>{
+bootstrapTest('explicit empty repertoire invocation is no-action and never retires source',async()=>{
   const {writeVocabularyWordSenseCoverage}=await import('../server/db/vocabulary-sense-coverage.ts');
   writeVocabularyWordSenseCoverage('word',1,['size','effect'],actor);
-  const trial=provider(()=>laundry),result=await trial.provider.run(job());if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
+  const trial=provider(()=>{throw new Error('No model call expected');}),result=await trial.provider.run(job());if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
   assert.equal(result.result.admission?.outcome,'no_senses_requested');assert.equal(result.result.proposal,null);
-  assert.deepEqual(result.result.admission?.generationScope?.senseIds,[]);assert.equal(trial.requests.length,1);
+  assert.deepEqual(result.result.admission?.generationScope?.senseIds,[]);assert.equal(trial.requests.length,0);
   assert.equal(getVocabularyContentForMaintenance('original')!.availability,'active');
 });
 
-test('explicit review override supplies repertoire invocation independently of shared serving selection',async()=>{
+bootstrapTest('explicit review override supplies repertoire invocation independently of shared serving selection',async()=>{
   const {writeVocabularyCaseSenseCoverage,writeVocabularyWordSenseCoverage}=await import('../server/db/vocabulary-sense-coverage.ts');
   db.exec("CREATE TABLE reflection_cases(case_id TEXT PRIMARY KEY,word_id TEXT); INSERT INTO reflection_cases VALUES ('case','word');");
   writeVocabularyWordSenseCoverage('word',1,['effect'],actor);writeVocabularyCaseSenseCoverage('case',0,['effect'],actor);
-  const trial=provider((_request,index)=>index===1?laundry:{exercises:repertoire.exercises.filter(exercise=>exercise.sourceUseId==='effect')});
+  const trial=provider((_request,index)=>({exercises:repertoire.exercises.filter(exercise=>exercise.sourceUseId==='effect')}));
   const result=await trial.provider.run(job());if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
   assert.deepEqual(result.result.admission?.generationScope,{selectionEstablished:true,senseIds:['effect'],source:{kind:'review_override',caseId:'case',capturedVersion:1}});
-  assert.deepEqual(JSON.parse(trial.requests[1]!.userPrompt).content.uses.map((use:{id:string})=>use.id),['s1']);
+  assert.deepEqual(JSON.parse(trial.requests[0]!.userPrompt).content.uses.map((use:{id:string})=>use.id),['s1']);
 });
 
 
@@ -603,27 +603,27 @@ test('explicit review selection admits a use even when shared usefulness is unkn
   assert.match(JSON.parse(trial.requests[1]!.userPrompt).intendedSense.senseId,/^s[12]$/);
 });
 
-test('unknown default usefulness makes laundry-list generation an explicit attention finding',async()=>{
+bootstrapTest('unknown default usefulness makes fallback generation an explicit attention finding',async()=>{
   db.exec('UPDATE vocabulary_word_sense_coverage SET default_useful_sense_ids_json=NULL');
-  const trial=provider(()=>laundry),result=await trial.provider.run(job());
+  const trial=provider(()=>{throw new Error('No model call expected');}),result=await trial.provider.run(job());
   if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
-  assert.equal(result.result.admission?.outcome,'needs_coverage');assert.equal(result.result.proposal,null);assert.equal(trial.requests.length,1);
+  assert.equal(result.result.admission?.outcome,'needs_coverage');assert.equal(result.result.proposal,null);assert.equal(trial.requests.length,0);
   assert.equal(result.result.admission?.generationScope?.selectionEstablished,false);
 });
 
 
-test('repertoire waits for useful initialization without repeating or invalidating its completed mapping',async()=>{
+bootstrapTest('repertoire waits for useful initialization without a mapping call or losing its retained route',async()=>{
   db.exec('UPDATE vocabulary_word_sense_coverage SET default_useful_sense_ids_json=NULL');
   let initializations=0;
-  const trial=provider((_request,index)=>index===1?laundry:repertoire,{ledger:true,ensureDefaults:async()=>{
+  const trial=provider((_request,index)=>repertoire,{ledger:true,ensureDefaults:async()=>{
     initializations++;if(initializations===1)throw new VocabularySenseReadinessPending('2026-10-29T01:00:00.000Z');
     writeVocabularyDefaultUsefulSenses('word',1,['size','effect'],actor);
     const {getVocabularyWordSenseCoverage}=await import('../server/db/vocabulary-sense-coverage.ts');return getVocabularyWordSenseCoverage('word');
   }});
-  await assert.rejects(trial.provider.run(job()),VocabularySenseReadinessPending);assert.equal(trial.requests.length,1);
-  assert.equal(db.prepare("SELECT status FROM model_invocations WHERE id='invocation-1'").get()!.status,'completed');
+  await assert.rejects(trial.provider.run(job()),VocabularySenseReadinessPending);assert.equal(trial.requests.length,0);
+  assert.equal(db.prepare("SELECT count(*) n FROM model_invocations").get()!.n,0);
   const result=await trial.provider.run({...job(),attemptNumber:2});if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
-  assert.ok(result.result.proposal);assert.equal(trial.requests.length,2);assert.equal(initializations,2);
+  assert.ok(result.result.proposal);assert.equal(trial.requests.length,1);assert.equal(initializations,2);
   assert.deepEqual(result.result.admission?.generationScope?.senseIds,['effect','size']);
 });
 
@@ -657,10 +657,10 @@ test('retirement can retain an independent shared-practice referral',async()=>{
   assert.equal(result.result.pureCuePromotion!.outcome,'reject');
 });
 
-test('empty faithful repertoire proposes only source retirement and preserves selected coverage',async()=>{
+bootstrapTest('empty faithful repertoire proposes only source retirement and preserves selected coverage',async()=>{
   const {resolveVocabularySenseCoverage}=await import('../server/db/vocabulary-sense-coverage.ts');
   const before=resolveVocabularySenseCoverage('word','case');
-  const trial=provider((_request,index)=>index===1?laundry:{exercises:[]});
+  const trial=provider((_request,index)=>({exercises:[]}));
   const result=await trial.provider.run(job());if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
   assert.deepEqual(result.result.proposal!.operations.map(operation=>operation.strategy),['retire']);
   assert.deepEqual(result.result.proposal!.operations[0]!.content.body,original.body);
@@ -695,26 +695,25 @@ for(const reassessment of [false,true])test(`valid retirement output stays compl
   assert.equal(getVocabularyContentForMaintenance('original')!.availability,'active');
 });
 
-test('empty repertoire reports other active production content in the same publication scope',async()=>{
+bootstrapTest('empty repertoire reports other active production content in the same publication scope',async()=>{
   if(original.kind!=='exercise')assert.fail('Expected exercise fixture');
   createVocabularyContent({...original,contentId:'other'},actor);
   createVocabularyContent({...original,contentId:'private',accessScope:'private',ownerLearnerId:'learner'},actor);
   createVocabularyContent({...original,contentId:'recognition',skill:'recognition'},actor);
-  const trial=provider((_request,index)=>index===1?laundry:{exercises:[]});
+  const trial=provider((_request,index)=>({exercises:[]}));
   const result=await trial.provider.run(job());if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
   assert.match(String(result.result.diagnosis),/1 other active general production exercise existed.*same publication scope/);
   assert.doesNotMatch(String(result.result.diagnosis),/would leave none/);
   assert.match(String(result.result.diagnosis),/contract provides no explanatory rationale/);
 });
 
-for(const outcome of ['single_sense','laundry_list'])test(`actual UUIDs stay canonical behind ${outcome} call-local references`,async()=>{
+for(const outcome of ['single_sense','repertoire_bootstrap'])(outcome==='single_sense'?test:bootstrapTest)(`actual UUIDs stay canonical behind ${outcome} call-local references`,async()=>{
   const size='fb57f552-2ef8-4df3-b2a9-701e0cb0e732',effect='9fef2d9f-eb72-4137-9219-c7fbf70b6dca';
   for(const id of ['size','effect'])updateVocabularySense(id,1,{description:id,status:'retired'},actor);
   createVocabularySense({senseId:size,wordId:'word',description:{label:'image enlargement',notes:[],examples:[{text:'把图片放大。',translation:'Enlarge the image.',pronunciation:null}]}},actor);
   createVocabularySense({senseId:effect,wordId:'word',description:{label:'amplify an effect'}},actor);
   writeVocabularyDefaultUsefulSenses('word',1,[size,effect],actor);
-  const trial=provider((_request,index)=>index===1?{...single,outcome,senseIds:outcome==='single_sense'?[size]:[]}:
-    outcome==='single_sense'?repair:{exercises:[{...repertoire.exercises[0],sourceUseId:size}]});
+  const trial=provider((_request,index)=>outcome==='single_sense'?(index===1?{...single,senseIds:[size]}:repair):{exercises:[{...repertoire.exercises[0],sourceUseId:size}]});
   const result=await trial.provider.run(job());if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
   for(const request of trial.requests){
     assert.ok(!request.userPrompt.includes(size));assert.ok(!request.userPrompt.includes(effect));
@@ -735,8 +734,8 @@ test('mapper rejects unlisted call-local IDs and records invalid output without 
 });
 
 
-test('new repertoire items reject missing sense binding instead of inventing one',async()=>{
-  const trial=provider((_request,index)=>index===1?laundry:{exercises:[{...repertoire.exercises[0],sourceUseId:null}]});
+bootstrapTest('new repertoire items reject missing sense binding instead of inventing one',async()=>{
+  const trial=provider((_request,index)=>({exercises:[{...repertoire.exercises[0],sourceUseId:null}]}));
   await assert.rejects(()=>trial.provider.run(job()),/strict output schema/);
   assert.equal(getVocabularyContentForMaintenance('original')!.availability,'active');
   assert.equal(db.prepare("SELECT count(*) n FROM vocabulary_improvement_stages WHERE stage='repertoire'").get()!.n,0);
@@ -780,4 +779,54 @@ test('resolved identity continuation fences source and dictionary changes before
   updateVocabularyContent('original',1,{...original,body:{prompt:'Changed source'}},actor);
   await assert.rejects(()=>trial.provider.run(input),/source.*changed|version changed/i);
   assert.equal(trial.requests.length,1);
+});
+
+for(const shape of ['compact_definition','synonymous_glosses'] as const)test(`authored ${shape} stays on local mapping and cannot request repertoire`,async()=>{
+  const {version,createdAt,updatedAt,...draft}=original;
+  const current=updateVocabularyContent('original',version,{...draft,body:{prompt:shape==='compact_definition'?'enlarge; magnify':'make larger; increase visible size',source:{kind:'authored_prompt'}}},actor);
+  const trial=provider((_request,index)=>index===1?single:repair);
+  const result=await trial.provider.run({...job(),reassessmentSourceJobId:'prior',reassessmentSource:current});
+  assert.equal(result.kind,'exercise_improvement');
+  assert.deepEqual(trial.requests.map(request=>request.provenance!.stepName),['sense_mapping','single_improvement']);
+  assert.deepEqual(trial.requests[0]!.outputSchema.properties!.outcome.enum,['single_sense','unmappable','inventory_gap']);
+});
+for(const kind of ['targeted','pure_cue'] as const)bootstrapTest(`current ${kind} practice prevents repeat bootstrap`,async()=>{
+  if(original.kind!=='exercise')assert.fail('Expected exercise');
+  createVocabularyContent({...original,contentId:'authored',exerciseType:kind,body:{prompt:'An authored retrieval task.',source:{kind:'authored_prompt'}}},actor);
+  const trial=provider(()=>{throw new Error('No provider call expected');});
+  const result=await trial.provider.run(job());if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
+  assert.equal(result.result.admission!.outcome,'already_covered');assert.equal(result.result.proposal,null);assert.equal(trial.requests.length,0);
+  assert.equal(getVocabularyContentForMaintenance('original')!.availability,'active');
+});
+for(const scope of ['other_owner','shared','recognition','retired','teaching','fallback'] as const)bootstrapTest(`${scope} content does not cover a private fallback`,async()=>{
+  if(original.kind!=='exercise')assert.fail('Expected exercise');
+  db.exec("INSERT INTO learners VALUES ('another')");
+  createVocabularyContent({...original,contentId:'private-source',accessScope:'private',ownerLearnerId:'learner'},actor);
+  const input=job();input.evidence.contentId='private-source';input.evidence.evidence[0]!.snapshot.contentId='private-source';
+  createVocabularyContent({...original,contentId:'other',accessScope:scope==='shared'?'shared':'private',ownerLearnerId:scope==='shared'?null:scope==='other_owner'?'another':'learner',
+    availability:scope==='retired'?'retired':'active',exerciseRole:scope==='teaching'?'teaching':'general',skill:scope==='recognition'?'recognition':'production',
+    body:{prompt:'Current other content.',source:{kind:scope==='fallback'?'dictionary_baseline':'authored_prompt'}}},actor);
+  const trial=provider(()=>repertoire);const result=await trial.provider.run(input);if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
+  assert.equal(result.result.admission!.outcome,'repertoire_bootstrap');assert.ok(result.result.proposal);assert.equal(trial.requests.length,1);
+});
+bootstrapTest('new authored practice during bootstrap fences publication',async()=>{
+  const trial=provider(()=>{createVocabularyContent({...original,contentId:'new-authored',body:{prompt:'New authored retrieval.'}},actor);return repertoire;});
+  await assert.rejects(()=>trial.provider.run(job()),/Authored production practice changed/);
+  assert.equal(db.prepare("SELECT count(*) n FROM vocabulary_improvement_stages WHERE stage='repertoire'").get()!.n,0);
+});
+bootstrapTest('retry checks current authored coverage before consuming a retained repertoire',async()=>{
+  const trial=provider(()=>repertoire);await trial.provider.run(job());
+  createVocabularyContent({...original,contentId:'new-authored',body:{prompt:'New authored retrieval.'}},actor);
+  const result=await trial.provider.run({...job(),attemptNumber:2});if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
+  assert.equal(result.result.admission!.outcome,'already_covered');assert.equal(result.result.proposal,null);assert.equal(trial.requests.length,1);
+});
+
+test('legacy dictionary supplement uses deterministic bootstrap without mapping',async()=>{
+  const {version,createdAt,updatedAt,...draft}=original;
+  const current=updateVocabularyContent('original',version,{...draft,body:{prompt:'enlarge; amplify',source:{kind:'production_cue_supplement',cueId:null}}},actor);
+  const trial=provider(()=>repertoire);
+  const result=await trial.provider.run({...job(),reassessmentSourceJobId:'prior',reassessmentSource:current});
+  if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
+  assert.equal(result.result.admission!.outcome,'repertoire_bootstrap');assert.equal(trial.requests.length,1);
+  assert.equal(trial.requests[0]!.provenance!.stepName,'repertoire');
 });

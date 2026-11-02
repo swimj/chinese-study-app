@@ -1,6 +1,6 @@
 import type {VocabularyAssessmentReview,VocabularySenseLabel} from '../../domain/vocabulary-reflection';
 const stages:Record<string,string>={sense_mapping:'Sense mapping',single_improvement:'Exercise improvement',pure_cue_promotion:'Pure cue promotion',pure_cue_improvement:'Pure cue improvement',repertoire:'Repertoire',exercise_improvement:'Exercise improvement'};
-const outcomes={single_sense:'Single sense → exercise improvement',laundry_list:'Multiple senses → repertoire',unmappable:'Intended sense unresolved',inventory_gap:'Possible inventory gap',needs_coverage:'Useful sense selection needed',no_senses_requested:'No senses selected'};
+const outcomes={repertoire_bootstrap:'Dictionary fallback → repertoire bootstrap',already_covered:'Authored practice already exists',single_sense:'Single sense → exercise improvement',laundry_list:'Multiple senses → repertoire',unmappable:'Intended sense unresolved',inventory_gap:'Possible inventory gap',needs_coverage:'Useful sense selection needed',no_senses_requested:'No senses selected'};
 export function AssessmentReview({assessment,senses,operator=false}:{assessment:VocabularyAssessmentReview|null|undefined;senses:VocabularySenseLabel[];operator?:boolean}) {
   if(!assessment&&!operator)return null;
   const admission=assessment?.admission,scope=admission?.generationScope;
