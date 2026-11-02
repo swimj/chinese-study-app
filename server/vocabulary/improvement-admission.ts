@@ -192,7 +192,7 @@ export async function runVocabularyImprovementAdmission(options: {
     },vocabularyPureCueIntegrationSchema,promotion.normalize,promotion)).value;
     fence();responseFence();promotion.fence();
     if(promoted.assessment.outcome==='needs_operator')return {kind:'exercise_improvement',result:{...local,admission,
-      pureCuePromotion:promoted.assessment,pendingPlan:local.proposal,proposal:null}};
+      pureCuePromotion:promoted.assessment,pendingPlan:local.proposal,responseCandidateSnapshots:responseCandidates,proposal:null}};
     const operations=[...(local.proposal?.operations??[]),...promoted.operations];
     const diagnosis=`${typeof local.diagnosis==='string'?local.diagnosis:JSON.stringify(local.diagnosis)}\n\nShared practice: ${promoted.assessment.rationale}`;
     return {kind:'exercise_improvement',result:{...local,diagnosis,admission,pureCuePromotion:promoted.assessment,

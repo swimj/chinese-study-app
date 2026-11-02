@@ -1,4 +1,5 @@
-import { getPureCueResolution, pureCueIdentityOptions, PURE_CUE_RESOLUTION_CONTRACT, type PureCueResolution } from '../vocabulary/pure-cue-promotion.ts';
+import { isDeepStrictEqual } from 'node:util';
+import { getPureCueResolution, pureCueIdentityOptions, vocabularyResponseCandidates, PURE_CUE_RESOLUTION_CONTRACT, type PureCueResolution } from '../vocabulary/pure-cue-promotion.ts';
 import { getVocabularyDefaultSelectionFinding,inheritVocabularyCaseSenseCoverage } from './vocabulary-sense-coverage.ts';
 import { failPreparationAttempt } from '../vocabulary/preparation-retry.ts';
 import { randomUUID } from 'node:crypto';
@@ -1022,6 +1023,8 @@ export function requestVocabularyPureCueResolution(caseId:string,actorId:string,
     if(!mapping||(mapping.senseId??null)!==local.admission.sourceMapping.senseId||(mapping.senseMappingEstablishedAt??null)!==local.admission.sourceMapping.establishedAt)
       throw new VocabularyReflectionConflict('Assessment source mapping changed; reassess the current source');
     const options=pureCueIdentityOptions(evidence.wordId,local.pureCueReferral);
+    if(local.pureCueReferral.draft&&!isDeepStrictEqual(vocabularyResponseCandidates({evidence}),local.responseCandidateSnapshots))
+      throw new VocabularyReflectionConflict('Response lexical identities changed; reassess the current source');
     if(Object.keys(selections).length!==options.length||options.some(option=>!option.choices.some(word=>word.wordId===selections[option.form])))
       throw new VocabularyReflectionConflict('Choose an exact dictionary identity for every referral word');
     const candidates=options.map(option=>option.choices.find(word=>word.wordId===selections[option.form])!);
@@ -1030,7 +1033,7 @@ export function requestVocabularyPureCueResolution(caseId:string,actorId:string,
     const queued=requestVocabularyReassessment(caseId,actorId,modelChoice,expectedContentVersion);
     const child=job(queued.jobId),at=timestamp();
     const resolution:PureCueResolution={actorId,recordedAt:at,sourceJobId:child.reassessment_source_job_id!,original,admission:local.admission,diagnosis:local.diagnosis,referral:local.pureCueReferral,selections,candidates:[...new Map(candidates.map(word=>[word.wordId,word])).values()],
-      ...(local.pureCueReferral.draft?{localPlan:local.pendingPlan??null}:{})};
+      ...(local.pureCueReferral.draft?{localPlan:local.pendingPlan??null,responseCandidateSnapshots:local.responseCandidateSnapshots}:{})};
     getDb().prepare("INSERT INTO vocabulary_improvement_stages(job_id,stage,input_hash,input_json,result_json,invocation_id,recorded_at) VALUES (?,'pure_cue_promotion',?,?,?,NULL,?)")
       .run(queued.jobId,PURE_CUE_RESOLUTION_CONTRACT,encode({contract:PURE_CUE_RESOLUTION_CONTRACT}),encode(resolution),at);
     event('vocabulary.reflection.pure_cue_identities_resolved',queued.caseId,{sourceCaseId:caseId,sourceJobId:resolution.sourceJobId,selections},actor);

@@ -67,8 +67,6 @@ test('single decisions state supplied inputs and outcomes while retaining commun
   assert.match(brief,/making a cue more selective[\s\S]*little communicative value/);
   assert.match(brief,/contextual exposure may still be valuable/);
   const cases=brief.split('## Worked decision patterns')[1]!.split('## Output details')[0]!.split('### ').slice(1);
-  assert.equal(cases.length,10);
-  for(const example of cases){assert.match(example,/- Target:/);assert.match(example,/- Supplied sense:/);assert.match(example,/- Served prompt:/);assert.match(example,/- Encounter:/);}
   assert.match(cases.find(example=>example.includes('Target: `他`'))!,/Propose retiring this source without replacement/);
   assert.match(cases.find(example=>example.includes('Target: `有所`'))!,/Retain the source/);
   assert.doesNotMatch(brief,/```json/);

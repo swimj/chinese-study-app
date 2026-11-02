@@ -66,6 +66,7 @@ export type VocabularyImprovementResultInput = {
   pureCuePromotion?: VocabularyPureCuePromotion;
   /** Complete local plan held until shared candidate identities can be resolved. */
   pendingPlan?: Omit<VocabularyProposalDraft,'caseId'> | null;
+  responseCandidateSnapshots?: {wordId:string;hanzi:string;traditional:string|null;pinyin:string;meaning:string}[];
 };
 export type VocabularyReflectionResult = { kind: 'learner_feedback'; judgment: VocabularyFeedbackJudgmentInput }
   | { kind: 'exercise_improvement'; result: VocabularyImprovementResultInput };

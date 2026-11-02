@@ -37,7 +37,7 @@ export type PureCueResolution={actorId:string;recordedAt:string;sourceJobId:stri
   admission:import('../../src/domain/vocabulary-reflection.ts').VocabularyImprovementAdmission;
   diagnosis:import('../../src/domain/vocabulary-content.ts').VocabularyJson;referral:VocabularyPureCueReferral;
   selections:Record<string,string>;candidates:Word[];
-  localPlan?:import('../../src/domain/vocabulary-reflection.ts').VocabularyImprovementResultInput['proposal']};
+  localPlan?:import('../../src/domain/vocabulary-reflection.ts').VocabularyImprovementResultInput['proposal'];responseCandidateSnapshots?:Word[]};
 export function getPureCueResolution(jobId:string):PureCueResolution|null {
   const row=getDb().prepare("SELECT result_json FROM vocabulary_improvement_stages WHERE job_id=? AND stage='pure_cue_promotion' AND input_hash=?")
     .get(jobId,PURE_CUE_RESOLUTION_CONTRACT) as {result_json:string}|undefined;
@@ -170,7 +170,7 @@ export function prepareVocabularyPureCueIntegration(job:VocabularyReflectionJob,
 }
 
 /** Only exact, unambiguous response identities may receive new individual practice. */
-export function vocabularyResponseCandidates(job:VocabularyReflectionJob):Word[] {
+export function vocabularyResponseCandidates(job:Pick<VocabularyReflectionJob,'evidence'>):Word[] {
   const forms=[...new Set(job.evidence.evidence.flatMap(encounter=>encounter.responses.flatMap(response=>response.payload.response?.trim()?[response.payload.response.trim()]:[])))];
   return [...new Map(forms.flatMap(form=>{
     const matches=getDb().prepare('SELECT id AS wordId,hanzi,traditional,pinyin,meaning FROM lexical_words WHERE hanzi=? OR traditional=?').all(form,form) as Word[];

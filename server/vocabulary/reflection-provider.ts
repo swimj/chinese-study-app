@@ -290,6 +290,7 @@ export function createVocabularyReflectionProvider(options:{environment?:NodeJS.
           throw new VocabularyReflectionConflict('Promotion source or sense inventory changed');
         promotion.fence();
         if(!isDeepStrictEqual(promotion.input.candidates,resolution.candidates))throw new VocabularyReflectionConflict('Selected lexical identities changed');
+        if(coherent&&!isDeepStrictEqual(vocabularyResponseCandidates(job),resolution.responseCandidateSnapshots))throw new VocabularyReflectionConflict('Response lexical identities changed; reassess the current source');
       };
       fence();
       if(promotion.attention)throw new VocabularyReflectionConflict('Selected lexical identities do not resolve the referral');
