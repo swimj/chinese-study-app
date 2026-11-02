@@ -1,5 +1,8 @@
 # Vocabulary reflection prompt decomposition
 
+This guide describes the active vocabulary reflection calls, their input/output
+contracts, preserved linguistic guidance, and retained trial evidence.
+
 Reactions are the learner's input about an exercise. Feedback is the read-only
 lesson generated for the learner. Model inputs expose effective learner input as
 `encounters[].reactions`, with each entry carrying `reaction` and an optional
@@ -105,128 +108,142 @@ stage-result cache.
 
 ## Single-word production admission
 
-`improvement-admission.ts` first ensures an established active sense inventory.
-`sense-readiness.ts` reuses existing senses, imports uses from valid shared
-bootstrap content, or generates a lexical-only inventory when neither exists.
-This prerequisite creates senses, not teaching material or exercises.
+`improvement-admission.ts` ensures an established active sense inventory through
+`sense-readiness.ts`. Readiness reuses canonical senses or requests the shared
+inventory/default-selection call. It creates senses, not teaching or exercises.
+Partial unestablished inventories and established inventories without active
+senses require operator attention.
 
-The separate `sense-mapping.md` call receives `{sourceContent, wordId, word,
-catalog, senses}`. `word` supplies lexical identity including hanzi and pinyin;
-`senses` contains active IDs and descriptions. The authored source includes its
-answer contract. Learner encounters are excluded from this mapping input. Within
-one call, assess the authored cue first; consult the inventory for an association
-only when a single intended use is discernible. Lexical background is not itself
-an authored cue or evidence that the cue is a laundry list.
+The backend identifies dictionary fallback sources before requesting mapping.
+Current authored general production practice accepting the word in the same
+publication scope and owner, including pure cues, records `already_covered`
+without a proposal. Otherwise the fallback takes `repertoire_bootstrap` directly:
+it captures selected scope and invokes shared general-exercise authoring without
+a mapping or local-improvement call. This content lifecycle does not depend on
+learner scheduling, adoption, deactivation, or selected serving senses.
+
+Authored sources enter the separate `sense-mapping.md` call with
+`{sourceContent, wordId, word, catalog, senses}`. It assesses the actual authored
+cue before associating it with a supplied active sense. Learner encounters are
+excluded from this mapping input. Related glosses are not a laundry-list route.
 
 | Mapping outcome | Required sense IDs | Subsequent work |
 | --- | --- | --- |
-| `single_sense` | Exactly one supplied active ID | Record mapping; run local improvement with the intended sense and encounter evidence |
-| `laundry_list` | None | Generate a candidate repertoire from the word's active inventory |
-| `inventory_gap` | None | Retain a visible operator finding |
-| `unmappable` | None | Retain a visible operator finding |
+| `single_sense` | Exactly one supplied active ID | Record mapping; assess a coherent local plan with the intended sense and encounter evidence |
+| `inventory_gap` | None | Retain an operator finding without expanding inventory |
+| `unmappable` | None | Retain an operator finding |
 
-Mapping describes intended content, not historical grading fairness. An absent
-single intended use in an otherwise established inventory is `inventory_gap`; it does
-not trigger inventory expansion. An empty or unestablished inventory is handled
-by readiness before mapping. Partial unestablished inventories and established
-inventories with no active senses require operator attention.
-Laundry lists receive no sense association. Their old glosses need not be
-represented in the inventory or preserved by the replacement repertoire.
+Mapping describes authorial intent, not historical grading fairness. Its internal
+sense context was not necessarily visible to the learner. The model does not
+return a repertoire-bootstrap outcome; that route belongs to deterministic
+fallback handling.
 
-`single-improvement.md` is the standalone sense-specific improvement prompt;
-it does not include `reasoning.md` or `improvement.md`. It trusts selected sense
-coverage and assesses faithful production of the exact target, interprets the actual response and substantive
-reactions, chooses a local response, and independently considers shared practice.
-Its output is `{diagnosis, operations, pureCueReferral}`. Local operations preserve
-the source's accepted answers. The nullable referral contains advisory written
-forms in `candidateWords`, a `sharedPurpose`, and a `rationale`; it does not change
-answer membership. Either action can be useful without the other. Raw learner
-`response` remains usable evidence without a structured lexical resolution.
+### Coherent exercise-local planning
 
-Single improvement uses prompt version 4, JSON schema version 3, and input
-projection `vocabulary-admission.v3`. `sense-mapping.md` uses standalone prompt
-version 3, schema version 1, and the same reference projection.
-Repertoire generation uses the shared general-exercise invocation in
-`../general-exercise-authoring.ts`: the full general v5 brief, schema version 2,
-and projection `general-exercises-v2`, with the reflection job's selected model.
-Selected senses supply uses, notes, and any retained examples. Every new
-automatic item anchors to a supplied use; null/unknown references are rejected
-rather than synthesized. This narrows the output reference contract while
-leaving cue approaches and repertoire exploration open. Legacy/manual unmapped
-content is unchanged. Its structured
-direct/cloze stimuli and optional teaching notes become one replacement of the
-assessed exercise plus new exercises; unrelated existing cues remain. An empty
-model output after a nonempty requested scope proposes retiring only the
-assessed source. An empty requested scope instead makes no authoring call and
-proposes no content change. The shared call
-returns no sense-exclusion assessment. An empty automatic preparation result
-publishes nothing and becomes terminal operator attention without changing
-coverage or retrying automatically; explicit operator retry starts a bounded cycle.
+`single-improvement.md` is standalone and includes neither `reasoning.md` nor
+`improvement.md`. It trusts selected coverage, assesses faithful production of the
+exact target, interprets actual responses and substantive reactions, and owns one
+coherent plan. The original cue's disposition leads that plan. Its output contains:
 
-The v4 single-improvement brief preserves the v3 purpose, linguistic reasoning,
-reaction/referral distinctions and content-design guidance. Its worked cases name
-the exact target, supplied sense, served prompt, evidence and concrete decision.
-The communicative-value test and contextual-exposure distinction remain explicit;
-retirement concerns exercise design while selected coverage remains trusted.
-The old finding that no convincing repair is apparent gains an exercise-level
-retirement outcome; it does not gain authority to exclude selected senses. The
-shared v5 brief retains every substantive general-v4 authoring paragraph and
-uses the purpose/decision/design/worked-example style of the reflection briefs.
-General examples are starting points for exploration, not required cue shapes,
-a checklist, or a claim that unfamiliar approaches are defective. The prompt
-under `word-content-lab/vocabulary-experiments/` is the active production brief
-for both ordinary preparation and reflection repertoire, despite that historical
-directory name. Mapping replaces
-the old paragraph equating inventory with useful coverage because canonical
-inventory includes attested peripheral senses separately from useful defaults.
-The provider receives the full inventory without serving-policy metadata.
-Backend-normalized mapping evidence captures the first requested repertoire
-scope, retained as generationScope with audit-only provenance. Later policy
-edits do not invalidate content calls or approval; source, mapping and catalog
-fences remain. Diagnoses and rationales use readable labels, with IDs kept in
-structured references. Mapper, single improvement and promotion receive short
-call-local sense references throughout nested inventory, source relationships,
-admission and intended-sense fields. Repertoire uses and example references are
-also shortened at the shared wire boundary. Unknown references are rejected;
-responses translate back before canonical validation. Persistent stage evidence,
-generation scope, provenance links and source/catalog fences retain canonical IDs.
-Stage identity records the actual projected input/schema and projection version.
+- `diagnosis` and original-source `operations`, preserving source accepted answers;
+- `responseExercises`, create-only exercises for supplied uniquely resolved actual
+  raw response identities, with exact `wordId`, `prompt`, and `rationale`;
+- nullable `pureCueReferral`, containing candidate forms, shared purpose, rationale,
+  and complete `draft` with prompt, semantic axis, and reveal teaching note.
 
-A referral enters `pure-cue-promotion.md` within the same improvement job. Written
-forms must resolve to at least two unambiguous lexical identities including the
-target; missing or ambiguous identities produce an operator-attention finding,
-not arbitrary membership. Lookup supplies active general production pure cues
-that overlap the resolved candidates and share the source's publication scope
-and owner. The stage can reject the opportunity, reuse a suitable cue, extend one,
-or create a new cue. Extension preserves its stimulus, reveal axis, all existing
-answers and accepted forms, while replacing the accumulated teaching note;
-creation uses resolved referral candidates. Creation and extension both require
-a complete teaching note, mostly English with Chinese where helpful. A shared
-purpose must work for every proposed member in the visible construction.
+Response drafts do not inspect or reconcile the response word's repertoire and
+receive no invented sense mapping; later assessment can establish one. Raw
+unresolved responses remain useful evidence without authorizing an invented ID.
+Original retirement can coexist with response-word creations and a shared draft,
+but not another create/update/replace operation for the same source.
 
-Promotion adapts the legacy `server/reflection/prompts/pure-cue-promotion.md`
-learning model, reasoning sequence, content guidance, and four worked examples.
-Its different call contract removes the legacy batch/result envelopes, suppression
-handoff, fairness output, learner explanation, and individual-word repertoire
-inspection/reconciliation. The original attempt still grounds the shared-practice
-judgment; learner feedback and compensation remain separate. The new call retains
-resolved candidate IDs, original responses/reactions, and shared-cue membership
-and teaching-note contracts. These responsibility changes do not replace the
-legacy linguistic guidance with a shorter rubric. See the
+This stage determines whether shared practice is useful and authors it completely.
+Local refinements should add actual useful construction or meaning rather than
+cosmetic target exclusivity against the compared response. It does not demand
+absolute uniqueness. An optional clarifier is labeled optional in its rationale;
+operator edits and selection of parts remain deliberate, without enforced
+component dependencies.
+
+Single improvement uses prompt version 5, schema version 4, and projection
+`vocabulary-admission.v4`. Mapping uses prompt version 4, schema version 1,
+and the same projection. Exact source, catalog, mapping, and lexical checks
+fence publication and approval. Stage identities retain actual projected input,
+schema, and contract. Short wire references translate back to canonical IDs;
+unknown references fail validation before persistence.
+
+The single-improvement brief preserves the earlier purpose, linguistic reasoning,
+reaction distinctions, content-design guidance, and positive controls. Its examples
+include correct-answer readability, useful requested construction practice, selected
+uncommon referents, and genuine syntactic building blocks. The 违反/违法 and
+遭到/遭受 examples carry the legacy promotion prompt's important distinction
+between overlapping glosses and worthwhile natural production patterns into the
+stage that owns that decision. Shared cases and local-only cases illustrate
+judgment rather than lexical bans or compulsory cue formats. See the
 [prompt development guide](../../../docs/prompt-development.md).
 
-Promotion uses prompt version 3, schema version 2, and projection
-`vocabulary-admission.v3`. Like other admission stages, it caches its exact
-contract and input within the job, retains invocation provenance, and fences
-source, sense catalog, candidate identities and inspected cue versions.
-Creation or extension joins any local operations in one manually reviewed
-proposal; rejection and reuse are retained assessments. Private comments must
-not enter shared authored content. The stage does not reconcile per-word
-exercise collections, alter scheduling, or compensate attempts. All exercise
-changes await operator application. Learner feedback and existing pure-cue review
-bypass this admission path. Recognition and contrast make no provider calls.
+### Shared-cue integration
 
-## Local evaluation seams
+`pure-cue-integration.md` receives `localAssessment`, `localPlan`, `referral`,
+resolved `candidates`, and eligible `existingCues`. Lookup includes active general
+production pure cues overlapping candidates within source scope and owner.
+Its output has only `decision`, `existingContentId`, `teachingNote`, and `rationale`.
+
+| Decision | Existing ID | Note output | Backend result |
+| --- | --- | --- | --- |
+| `reuse` | Supplied compatible cue already accepting every candidate | null | Record assessment; no shared edit |
+| `extend` | Supplied compatible cue missing a candidate | Integrated full note | Preserve stimulus, axis, forms, and all members; add every candidate |
+| `create` | null | null | Use exact upstream draft and every candidate |
+
+Integration uses prompt version 1, schema version 3, and projection
+`vocabulary-admission.v4`. It chooses a destination without a second pedagogical
+veto. An incompatible existing cue leads to creation, not rejection of the plan.
+Extension notes preserve accumulated teaching and cover the complete resulting
+membership, mostly in English with Chinese examples where useful. The prompt
+retains natural-production guidance and requires actual grammatical, collocational,
+and meaning compatibility rather than mere membership overlap.
+
+Unresolved shared identities withhold the complete proposal as `pendingPlan`.
+Operator identity selection records a separate immutable resolution and resumes
+the saved local plan plus integration into one proposal. It does not repeat
+mapping or local planning, and does not apply content. Source, catalog, selected
+lexical identities, and inspected shared-cue versions fence resumed work.
+
+### Legacy referral resolution
+
+`pure-cue-promotion.md` serves persisted pre-plan resolution records whose
+referrals lack an authored draft. Its retained contract can reject, reuse, extend,
+or create and emits promotion-only proposals; parent local proposals and operator
+edits are separate. The current integration stage does not use that legacy
+pedagogical veto or author a replacement draft. Legacy prompt/schema identities
+remain attached to the saved records rather than being reinterpreted as the new
+contract.
+
+### Repertoire authoring and independent paths
+
+Fallback repertoire bootstrap uses `../general-exercise-authoring.ts`: full
+general v5 brief, schema version 2, projection `general-exercises-v2`, and the
+reflection job's selected model. Selected canonical uses and retained examples
+supply authoring evidence. Every automatic item identifies a supplied use;
+null or unknown references are rejected. Structured direct/cloze stimuli and
+optional notes become a source replacement plus additional exercises. Unrelated
+cues are untouched. A nonempty requested scope returning no exercises proposes
+source retirement; an empty requested scope makes no call or proposal.
+
+Ordinary preparation uses the same authoring contract under separate publication
+authority. Its empty result publishes nothing and becomes terminal attention;
+explicit retry starts a bounded cycle without changing selected coverage.
+Canonical inventory includes peripheral senses separately from useful defaults.
+Captured generation scope is immutable across retry; later policy edits do not
+retarget an existing invocation or invalidate its result. Source, mapping, and
+catalog fences retain their authority.
+
+Learner feedback and existing pure-cue assessment bypass the single-word flow.
+Recognition and contrast make no provider calls. Private comments inform judgment
+without entering shared authored content. All reflection exercise changes await
+operator application; content assessment does not alter compensation or scheduling.
+Operator reassessment pins the current source and retains historical encounters,
+responses, and reactions as distinct evidence; it makes fresh applicable mapping
+and assessment calls rather than reusing the parent's assessment.
 
 The caller separates invocation scope from serving policy. A mapped single sense
 is always the scope of local improvement. Repertoire calls receive a captured
