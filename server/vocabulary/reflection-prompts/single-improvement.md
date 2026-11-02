@@ -95,10 +95,10 @@ do not assume that one proposal automatically applies another.
 
 ### 1. Assess useful production of the intended sense
 
-First consider the target in the admitted sense independently of the observed
-response. What useful meaning, construction, collocation, stance, or situation
-could practice evoke? What would someone be trying to say? Does the existing
-cue exercise that capability?
+Start with the authored cue: what is the learner trying to communicate in this
+particular circumstance, construction, or compact meaning? Then assess how the
+target in its admitted sense and the actual response answer that task. Do not
+start by finding a distinctive use of each word and fitting a new scene to it.
 
 Several findings may coexist:
 
@@ -231,7 +231,10 @@ misleading habit created by the cue. Use mostly English, with Mandarin examples
 where useful; teach meaningful nuances without manufacturing distinctions.
 
 Consider whether a target or supplied response candidate would benefit from an
-additional local construction or clarification. Do not force symmetry or extra
+additional local construction or clarification. First refine the originating
+circumstance: a different sentence structure can expose a useful contrast while
+talking about the same people, event, or topic. More expansive circumstances
+belong in optional clarifying cases, clearly identified as such. Do not force symmetry or extra
 exercises. A shared task may suffice; an optional clarifier can be worthwhile
 without being necessary to make shared practice valid. Say explicitly in its
 rationale when a refinement is optional and what it adds. Keep response drafts
@@ -537,51 +540,74 @@ source and supplied response candidates.
 
 ### A compact shared meaning: 原因 / 缘故
 
-For a source meaning “reason; cause” and a response of the other word, a compact
-shared prompt such as `the reason or cause why something happens` can suffice.
-Use a shared axis of the reason behind an occurrence and a concise note:
-原因 is the general word for reason or cause; 缘故 often presents the reason
-behind a particular situation and can sound more explanatory or literary.
-Do not require a cloze or an invented exclusive contrast. Decide the original
-source's disposition explicitly if the shared draft replaces its useful task.
+For an authored source meaning “reason; cause” and a response of the other word,
+a compact shared prompt such as `the reason or cause behind something` can
+suffice. Do not require a cloze or invent an exclusive contrast. The teaching
+note is an integral part of this design: 原因 is broadly useful, including
+分析原因 and 事故的原因. Acquire 缘故 through familiar constructions such as
+不知什么缘故 and 是天气的缘故. Both name reasons, but sharing this compact cue
+does not teach that 缘故 replaces 原因 in every sentence. These patterns provide
+usable guidance rather than a generic exceptions disclaimer. A note qualifies
+transfer into other constructions; it cannot rescue a member that fails to
+answer this cue. Retire the original single-answer source if this shared draft
+carries its task, without manufacturing an individual counterpart.
 
-### Shared notice plus a useful original circumstance: 有关 / 关于
+### One circumstance, shared and word-specific constructions: 有关 / 关于
 
-A notice introducing what it concerns can naturally support both words:
-`This is a notice about changes to opening hours: 这是一则____开放时间调整的通知。`
-A note can explain their overlap before a topic while preserving 有关's broader
-relational use. If the original circumstance evokes that relational predicate,
-retain or refine it as useful 有关 practice, for example
-`be connected with: 这件事跟预算____。` The shared notice does not displace that
-capability. Judge the actual source first; do not make every occurrence of
-有关 an “about” task merely because 关于 was supplied.
+- Source: `A notice concerning exam arrangements: 请查看____考试安排的通知。`
+- Target: 有关; response: 关于.
+
+Both words naturally introduce what the notice concerns. Propose that shared
+cue with a note explaining the overlap in this construction. A useful 有关
+refinement stays with the same notice and exam arrangements:
+`This notice concerns the exam arrangements: 这个通知跟考试安排____。`
+Here 有关 completes the relational predicate; 关于 does not. Replace the
+original with this target-specific exercise alongside the shared draft. This
+is a core local refinement, not an optional excursion: changing construction
+within the originating circumstance reveals useful word-specific practice.
+There is no need for a symmetrical 关于-only exercise or a new budget scenario.
 
 ### Shared population density and an optional clarifier: 稠密 / 密集
 
 A population-density task can support both:
-`densely populated: 这一带人口____。` Its note can explain the overlap and that
-密集 also describes things or activities concentrated closely together.
-That additional use need not become a compulsory second exercise. If helpful
-for this encounter, a response-word clarifier for 密集 could be
-`many interviews packed into a short period: 这两天的面试安排得很____。`
-Mark it optional in its rationale; its value is the scheduling use, not a
-requirement to prove the two words have separate territories.
+`Densely populated: 这个地区人口____。` Its note can explain the overlap:
+稠密 describes dense distribution, commonly of population or vegetation; 密集
+also describes things or activities concentrated closely together, including
+in time. These are usage tendencies, not separate statistical-versus-perceived
+territories; adding numerical population context would not exclude 密集.
+Retire the overlapping single-answer source in favor of the shared task.
+
+An optional response-word clarifier for 密集 could be:
+`Several interviews scheduled close together, with almost no breaks:
+明天上午的面试安排得很____。`
+Mark it optional in its rationale because it moves beyond the population
+circumstance. Its value is the scheduling use; the shared cue already handles
+the original encounter. Do not manufacture a 稠密-only counterpart.
 
 ### Repair the pitch frame without inventing shared practice: 声调 / 拼音
 
-If an original cue loosely asks for “the pronunciation markings above a syllable”
-and the learner supplies 拼音 for 声调, inspect what it actually named. Repair
-the cue to evoke the pitch pattern, for example
-`the pitch pattern of a spoken Mandarin syllable`. 拼音 names the romanization
-system rather than that pitch pattern. Related pronunciation subject matter
-does not establish one shared expressive task. No shared draft is needed.
+- Source: `学中文的时候，每个字都有自己的____，读错了意思就会完全不同。`
+- Target: 声调; response: 拼音.
+
+The sentence broadly evokes pronunciation without identifying pitch. 拼音 is
+understandable as a response to that broad task, but this does not establish
+shared expressive meaning. Refine the same circumstance:
+`The pitch pattern of a Mandarin syllable: 这个字的____读错了，意思可能就不一样。`
+The frame supplies the missing semantic focus while the sentence retains
+pronunciation affecting meaning. No shared cue or separate 拼音 exercise is
+needed. An understandable competing answer can reveal an underspecified cue
+without revealing a shared task.
 
 ### Preserve a fair useful cue: 框 / 筐
 
-For 框 with a clear cue such as `the frame around a picture`, 筐 is a genuine
-substitution: it names a basket. Keep the fair useful source unchanged when
-nothing else in the evidence warrants improvement. Similar sound or shared
-material does not require shared practice or an extra basket exercise.
+- Source: `Draw a box around something: 请把正确答案____起来。`
+- Target: 框; response: 筐.
+
+The cue already identifies the intended action. 筐 names a basket; the response
+is consistent with a sound or character mix-up rather than a competing expression
+unfairly excluded by the cue. Keep the source, with no shared draft or additional
+exercise. Explain the substitution without claiming certainty about the learner's
+mental process. A mistake warrants assessment, not necessarily a content change.
 
 ## Output details
 
@@ -614,8 +640,10 @@ exact word, not a change to its existing content. An empty array is valid.
 `pureCueReferral` is null or contains:
 
 - `candidateWords`: written forms identifying the original target and distinct
-  supplied response candidates for the proposed shared task. Do not nominate
-  unresolved raw response text as a lexical member;
+  submitted words for the proposed shared task. Written forms are advisory:
+  reason from raw responses even when dictionary resolution is ambiguous,
+  retaining the uncertainty for operator resolution. Do not invent a word
+  merely to turn an incomplete response into a comparison;
 - `sharedPurpose`: the shared expressive capability;
 - `rationale`: why that actual task earns shared practice in this plan;
 - `draft`: `prompt`, `semanticAxis`, and `teachingNote`, all nonempty strings.

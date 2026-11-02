@@ -227,13 +227,14 @@ export function createVocabularyReflectionProvider(options:{environment?:NodeJS.
       const {config,adapter,apiKey,baseUrl}=routingFor(step);
       const {shared,projected,wireSchema,userPrompt}=projectCall(step,input,schema);
       const systemPrompt=shared?.systemPrompt??await promptFor(promptFile);
+      const callSchemaVersion=promptFile==='pure-cue-promotion'?'2':schemaVersion(step);
       const result=await adapter.run({model:config.providerModel,reasoningEffort:config.reasoningEffort,
         systemPrompt,userPrompt,
-        outputSchemaName:shared?.outputSchemaName??`vocabulary_reflection_${step}_v${schemaVersion(step)}`,outputSchema:wireSchema,
+        outputSchemaName:shared?.outputSchemaName??`vocabulary_reflection_${step}_v${callSchemaVersion}`,outputSchema:wireSchema,
         maxOutputTokens:config.maxOutputTokens,temperature:null,timeoutMs:config.timeoutMs,cachePrompt:true,
         invocationActor:{kind:'service',serviceId:VOCABULARY_REFLECTION_SERVICE_ID,requestingLearnerId:job.learnerId},
         provenance:{workflowId:job.jobId,stepName:step,attemptNumber:job.attemptNumber,promptName:shared?.promptName??`vocabulary-reflection-${promptFile}`,
-          promptVersion:shared?.promptVersion??promptVersion,schemaVersion:shared?.schemaVersion??schemaVersion(step),inputProjectionVersion:shared?.inputProjectionVersion??projectionVersion(step)}},
+          promptVersion:shared?.promptVersion??promptVersion,schemaVersion:shared?.schemaVersion??callSchemaVersion,inputProjectionVersion:shared?.inputProjectionVersion??projectionVersion(step)}},
         {apiKey,baseUrl}).catch((error:unknown)=>{
           if(step==='sense_mapping'&&isSenseMappingAvailabilityFailure(error))throw new VocabularySenseMappingUnavailable();
           throw error;
