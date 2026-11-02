@@ -1248,7 +1248,7 @@ test('review eligibility reports unavailable reasons and never invents model pro
   assert.match(getVocabularyCaseWorkspace(work.caseId,'editor').reassessmentUnavailableReason!,/not an active/);
 });
 
-test('operator identity resolution resumes a held complete plan and publishes one stitched proposal',async()=>{
+for(const drift of ['none','before_queue','during_integration'] as const)test(`operator identity resolution resumes a complete plan with response drift=${drift}`,async()=>{
   sql.exec("ALTER TABLE vocabulary_reflection_jobs ADD COLUMN model_choice TEXT;UPDATE lexical_words SET hanzi=CASE id WHEN 'a' THEN '甲' WHEN 'b' THEN '乙' ELSE '丙' END;INSERT INTO lexical_words(id,hanzi,pinyin,meaning) VALUES ('homograph','乙','yi4','another identity');");
   createVocabularySense({senseId:'intended',wordId:'a',description:'the intended use'},actor);
   establishVocabularySenseCatalog('a',getVocabularySenseCatalog('a').version,actor);
@@ -1268,6 +1268,7 @@ test('operator identity resolution resumes a held complete plan and publishes on
     else {
       assert.equal(step,'pure_cue_promotion');assert.deepEqual(input.localPlan.operations.map((operation:{strategy:string})=>operation.strategy),['retire','create']);
       assert.deepEqual(input.referral.draft,referral.draft);
+      if(drift==='during_integration')sql.prepare("UPDATE lexical_words SET hanzi='丁',meaning='changed identity' WHERE id='new'").run();
       value={decision:'create',rationale:'Create the authored shared task.',existingContentId:null,teachingNote:null};
     }
     return {provider:'fake',model:'fake',responseId:null,structuredOutputMode:'json_schema',rawText:JSON.stringify(value),finishReason:'stop',rawResponse:null,
@@ -1281,11 +1282,27 @@ test('operator identity resolution resumes a held complete plan and publishes on
   const recorded=recordVocabularyImprovementResult(work.jobId,work.leaseToken,pending.result,judgedAt);
   assert.equal(recorded.proposalId,null);assert.equal(getVocabularyCaseWorkspace(work.caseId,'editor').proposals.length,0);
   assert.equal(getVocabularyContentForMaintenance('one')!.availability,'active');
+  assert.deepEqual(pending.result.responseCandidateSnapshots,[{wordId:'new',hanzi:'丙',traditional:null,pinyin:'zì',meaning:'character'}]);
+  if(drift==='before_queue'){
+    sql.prepare("UPDATE lexical_words SET hanzi='丁',meaning='changed identity' WHERE id='new'").run();
+    assert.throws(()=>requestVocabularyPureCueResolution(work.caseId,'editor','openai:gpt-6-sol-high',1,{'甲':'a','乙':'b'}),/Response lexical identities changed/);
+    assert.equal(sql.prepare("SELECT count(*) n FROM vocabulary_improvement_stages WHERE input_hash='operator-pure-cue-resolution-v1'").get()!.n,0);
+    assert.deepEqual(steps,['sense_mapping','single_improvement']);
+    assert.equal(getVocabularyCaseWorkspace(work.caseId,'editor').proposals.length,0);
+    return;
+  }
   const selected=requestVocabularyPureCueResolution(work.caseId,'editor','openai:gpt-6-sol-high',1,{'甲':'a','乙':'b'});
   const retained=JSON.parse(String(sql.prepare("SELECT result_json FROM vocabulary_improvement_stages WHERE job_id=? AND input_hash='operator-pure-cue-resolution-v1'").get(selected.jobId)!.result_json));
-  assert.deepEqual(retained.localPlan,pending.result.pendingPlan);
+  assert.deepEqual(retained.localPlan,pending.result.pendingPlan);assert.deepEqual(retained.responseCandidateSnapshots,pending.result.responseCandidateSnapshots);
   const child=claimVocabularyReflectionJob({kind:'exercise_improvement',now:new Date(Date.now()+1000).toISOString()})!;
   assert.equal(child.jobId,selected.jobId);assert.deepEqual(child.evidence.evidence,work.evidence.evidence);
+  if(drift==='during_integration'){
+    await assert.rejects(()=>provider.run(child),/Response lexical identities changed/);
+    assert.equal(getVocabularyCaseWorkspace(selected.caseId,'editor').proposals.length,0);
+    assert.equal(getVocabularyContentForMaintenance('one')!.availability,'active');
+    assert.equal(sql.prepare('SELECT count(*) n FROM content_proposals').get()!.n,0);
+    return;
+  }
   const completed=await provider.run(child);if(completed.kind!=='exercise_improvement')assert.fail('Expected improvement');
   assert.deepEqual(steps,['sense_mapping','single_improvement','pure_cue_promotion']);
   assert.deepEqual(completed.result.proposal!.operations.map(operation=>operation.strategy),['retire','create','create']);

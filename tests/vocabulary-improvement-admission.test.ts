@@ -887,3 +887,29 @@ for(const invalid of ['unknown-identity','answer-leak','private-comment'] as con
   await assert.rejects(()=>trial.provider.run(input),/supplied unambiguous response identity|exposes an accepted answer|copy private learner evidence/);
   assert.equal(db.prepare("SELECT count(*) n FROM vocabulary_improvement_stages WHERE stage='single_improvement'").get()!.n,0);
 });
+
+for(const invalid of ['resolved-answer-leak','unresolved-answer-leak','unresolved-private-note'] as const)test(`invalid shared draft ${invalid} is rejected before caching and retry authors a fresh plan`,async()=>{
+  if(invalid==='resolved-answer-leak')secondWord();
+  const input=job();
+  if(invalid==='unresolved-private-note')input.evidence.evidence[0]!.feedback=[{protocolVersion:1,actionId:'private-comment',clientActionId:'private-comment',sequence:2,occurredAt:at,kind:'feedback',
+    payload:{encounterId:'encounter',feedback:'comment',comment:'A private family detail.'}}];
+  const bad={...referral,draft:{...referral.draft,...(invalid==='unresolved-private-note'?{teachingNote:'A private family detail.'}:{prompt:'Use 放大 here.'})}};
+  let localCalls=0;
+  const trial=provider(request=>{
+    if(request.provenance!.stepName==='sense_mapping')return single;
+    if(request.provenance!.stepName==='single_improvement')return {...repair,pureCueReferral:++localCalls===1?bad:referral};
+    return createPromotion;
+  },{ledger:true});
+  await assert.rejects(()=>trial.provider.run(input),/exposes an accepted answer|copies private learner evidence/);
+  assert.equal(db.prepare("SELECT count(*) n FROM vocabulary_improvement_stages WHERE stage='single_improvement'").get()!.n,0);
+  assert.equal(db.prepare("SELECT status FROM model_invocations WHERE id='invocation-2'").get()!.status,'invalid_response');
+  assert.equal(db.prepare("SELECT status FROM model_invocations WHERE id='invocation-1'").get()!.status,'completed');
+  assert.equal(getVocabularyContentForMaintenance('original')!.availability,'active');
+  const result=await trial.provider.run({...input,attemptNumber:2});if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
+  assert.equal(localCalls,2);assert.equal(db.prepare("SELECT count(*) n FROM vocabulary_improvement_stages WHERE stage='single_improvement'").get()!.n,1);
+  assert.equal(db.prepare("SELECT status FROM model_invocations WHERE id='invocation-3'").get()!.status,'completed');
+  assert.deepEqual(trial.requests.map(request=>request.provenance!.stepName),invalid==='resolved-answer-leak'
+    ?['sense_mapping','single_improvement','single_improvement','pure_cue_promotion']:['sense_mapping','single_improvement','single_improvement']);
+  assert.equal(result.result.pureCuePromotion!.outcome,invalid==='resolved-answer-leak'?'create':'needs_operator');
+  if(invalid!=='resolved-answer-leak'){assert.equal(result.result.proposal,null);assert.equal(result.result.pendingPlan!.operations.length,1);}
+});
