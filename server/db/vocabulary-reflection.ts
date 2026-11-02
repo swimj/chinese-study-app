@@ -1029,7 +1029,8 @@ export function requestVocabularyPureCueResolution(caseId:string,actorId:string,
       throw new VocabularyReflectionConflict('Promotion requires the target and another distinct lexical identity');
     const queued=requestVocabularyReassessment(caseId,actorId,modelChoice,expectedContentVersion);
     const child=job(queued.jobId),at=timestamp();
-    const resolution:PureCueResolution={actorId,recordedAt:at,sourceJobId:child.reassessment_source_job_id!,original,admission:local.admission,diagnosis:local.diagnosis,referral:local.pureCueReferral,selections,candidates:[...new Map(candidates.map(word=>[word.wordId,word])).values()]};
+    const resolution:PureCueResolution={actorId,recordedAt:at,sourceJobId:child.reassessment_source_job_id!,original,admission:local.admission,diagnosis:local.diagnosis,referral:local.pureCueReferral,selections,candidates:[...new Map(candidates.map(word=>[word.wordId,word])).values()],
+      ...(local.pureCueReferral.draft?{localPlan:local.pendingPlan??null}:{})};
     getDb().prepare("INSERT INTO vocabulary_improvement_stages(job_id,stage,input_hash,input_json,result_json,invocation_id,recorded_at) VALUES (?,'pure_cue_promotion',?,?,?,NULL,?)")
       .run(queued.jobId,PURE_CUE_RESOLUTION_CONTRACT,encode({contract:PURE_CUE_RESOLUTION_CONTRACT}),encode(resolution),at);
     event('vocabulary.reflection.pure_cue_identities_resolved',queued.caseId,{sourceCaseId:caseId,sourceJobId:resolution.sourceJobId,selections},actor);

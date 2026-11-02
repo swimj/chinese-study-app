@@ -191,3 +191,51 @@ test('explicit dictionary selection disambiguates only a matching identity and f
   db.prepare("UPDATE lexical_words SET meaning='changed meaning' WHERE id='other'").run();
   assert.throws(()=>resolved.fence(),/identities changed/);
 });
+
+const authoredPlan={...referral,draft:{prompt:'Increase the size or extent.',semanticAxis:'Size or extent',teachingNote:'Use either expression for making the extent larger.'}};
+test('integration creation preserves the upstream draft and cannot reject or author substitute content',async()=>{
+  const {prepareVocabularyPureCueIntegration}=await import('../server/vocabulary/pure-cue-promotion.ts');
+  const prepared=prepareVocabularyPureCueIntegration(job(),original,authoredPlan);
+  const result=prepared.normalize({decision:'create',rationale:'No existing destination fits this task.',existingContentId:null,teachingNote:null});
+  const body=result.operations[0]!.content.body as {prompt:string;reveal:{axisNote:string;teachingNote:string}};
+  assert.equal(body.prompt,authoredPlan.draft.prompt);
+  assert.deepEqual(body.reveal,{axisNote:authoredPlan.draft.semanticAxis,teachingNote:authoredPlan.draft.teachingNote});
+  assert.throws(()=>prepared.normalize({decision:'reject',rationale:'Changed my mind.',existingContentId:null,teachingNote:null}),/cannot reject/);
+  assert.throws(()=>prepared.normalize({decision:'create',rationale:'Create',existingContentId:null,teachingNote:'Replace upstream note'}),/preserve/);
+});
+test('integration extension preserves all old members and adds every proposed candidate',async()=>{
+  const {prepareVocabularyPureCueIntegration}=await import('../server/vocabulary/pure-cue-promotion.ts');
+  const existing=cue();
+  const prepared=prepareVocabularyPureCueIntegration(job(),original,authoredPlan);
+  const result=prepared.normalize({decision:'extend',rationale:'The same task fits.',existingContentId:'cue',teachingNote:'An integrated note for all three members.'});
+  const output=result.operations[0]!.content;
+  if(output.kind!=='exercise'||existing.kind!=='exercise')assert.fail();
+  assert.deepEqual(output.answers.slice(0,2),existing.answers);
+  assert.deepEqual(output.answers.map(answer=>answer.wordId),['target','retained','other']);
+  assert.equal((output.body as {prompt:string}).prompt,(existing.body as {prompt:string}).prompt);
+});
+test('integration reuse requires all proposed identities and validates the authored draft even on reuse',async()=>{
+  const {prepareVocabularyPureCueIntegration}=await import('../server/vocabulary/pure-cue-promotion.ts');
+  cue();
+  const prepared=prepareVocabularyPureCueIntegration(job(),original,authoredPlan);
+  assert.throws(()=>prepared.normalize({decision:'reuse',rationale:'Reuse.',existingContentId:'cue',teachingNote:null}),/reuse cannot/);
+  assert.throws(()=>prepareVocabularyPureCueIntegration(job(),original,{...authoredPlan,draft:{...authoredPlan.draft,prompt:'Use 放大 or 扩大.'}}),/exposes/);
+});
+test('response refinements use only uniquely resolved submitted identities and never inherit source teaching or sense',async()=>{
+  const {normalizeVocabularyReflectionOutput,vocabularySingleImprovementSchema}=await import('../server/vocabulary/reflection-provider.ts');
+  const {validateJsonSchema}=await import('../server/llm/json-schema-validator.ts');
+  const input=job();
+  input.evidence.evidence[0]!.responses=[{protocolVersion:1,actionId:'answer',clientActionId:'answer',sequence:1,occurredAt:at,kind:'answer',payload:{encounterId:'encounter',response:'扩大',outcome:'rejected'}}];
+  const output={diagnosis:'Shared size task plus optional wider scope example.',operations:[],responseExercises:[{wordId:'other',prompt:'Broaden the scope of the investigation.',rationale:'Optional clarifying case.'}],pureCueReferral:null};
+  assert.deepEqual(validateJsonSchema(output,vocabularySingleImprovementSchema),[]);
+  const result=normalizeVocabularyReflectionOutput(input,output,null,true);
+  if(result.kind!=='exercise_improvement')assert.fail();
+  const content=result.result.proposal!.operations[0]!.content;
+  if(content.kind!=='exercise')assert.fail();
+  assert.deepEqual(content.words,[{wordId:'other',relation:'target'}]);
+  assert.deepEqual(content.answers,[{wordId:'other',acceptedForms:['扩大','擴大']}]);
+  assert.equal((content.body as {reveal?:unknown}).reveal,undefined);
+  assert.throws(()=>normalizeVocabularyReflectionOutput(input,{...output,responseExercises:[{...output.responseExercises[0],wordId:'outside'}]},null,true),/supplied unambiguous/);
+  db.exec("INSERT INTO lexical_words VALUES ('homograph','扩大',NULL,'other','other sense')");
+  assert.throws(()=>normalizeVocabularyReflectionOutput(input,output,null,true),/supplied unambiguous/);
+});

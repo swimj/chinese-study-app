@@ -10,6 +10,10 @@ import { getVocabularyContentForMaintenance } from '../db/vocabulary-content.ts'
 const text:JsonSchema={type:'string'};
 const object=(properties:Record<string,JsonSchema>):JsonSchema=>({type:'object',properties,required:Object.keys(properties),additionalProperties:false});
 export const vocabularyPureCueReferralSchema:JsonSchema={anyOf:[{type:'null'},object({candidateWords:{type:'array',items:text,minItems:2,maxItems:8},sharedPurpose:text,rationale:text})]};
+export const vocabularyPureCuePlanSchema:JsonSchema={anyOf:[{type:'null'},object({candidateWords:{type:'array',items:text,minItems:2,maxItems:8},sharedPurpose:text,rationale:text,
+  draft:object({prompt:text,semanticAxis:text,teachingNote:text})})]};
+export const vocabularyPureCueIntegrationSchema=object({decision:{type:'string',enum:['reuse','extend','create']},rationale:text,
+  existingContentId:{type:['string','null']},teachingNote:{type:['string','null']}});
 export const vocabularyPureCuePromotionSchema=object({decision:{type:'string',enum:['reject','reuse','extend','create']},rationale:text,
   existingContentId:{type:['string','null']},prompt:{type:['string','null']},semanticAxis:{type:['string','null']},teachingNote:{type:['string','null']},memberWordIds:{type:'array',items:text}});
 export type Word={wordId:string;hanzi:string;traditional:string|null;pinyin:string;meaning:string};
@@ -20,6 +24,7 @@ const wordQuery='SELECT id AS wordId,hanzi,traditional,pinyin,meaning FROM lexic
 export function validateVocabularyPureCueReferral(referral:VocabularyPureCueReferral):void {
   if(!referral.sharedPurpose.trim()||!referral.rationale.trim()||referral.candidateWords.some(word=>!word.trim()||word!==word.trim())
     ||new Set(referral.candidateWords).size!==referral.candidateWords.length)throw new Error('Invalid pure-cue referral');
+  if(referral.draft&&Object.values(referral.draft).some(value=>!value.trim()))throw new Error('Pure-cue plan requires complete authored content');
 }
 export function pureCueIdentityOptions(targetId:string,referral:VocabularyPureCueReferral):{form:string;choices:Word[]}[] {
   const target=getDb().prepare(`${wordQuery} WHERE id=?`).get(targetId) as Word|undefined;
@@ -31,7 +36,8 @@ export const PURE_CUE_RESOLUTION_CONTRACT='operator-pure-cue-resolution-v1';
 export type PureCueResolution={actorId:string;recordedAt:string;sourceJobId:string;original:VocabularyContent;
   admission:import('../../src/domain/vocabulary-reflection.ts').VocabularyImprovementAdmission;
   diagnosis:import('../../src/domain/vocabulary-content.ts').VocabularyJson;referral:VocabularyPureCueReferral;
-  selections:Record<string,string>;candidates:Word[]};
+  selections:Record<string,string>;candidates:Word[];
+  localPlan?:import('../../src/domain/vocabulary-reflection.ts').VocabularyImprovementResultInput['proposal']};
 export function getPureCueResolution(jobId:string):PureCueResolution|null {
   const row=getDb().prepare("SELECT result_json FROM vocabulary_improvement_stages WHERE job_id=? AND stage='pure_cue_promotion' AND input_hash=?")
     .get(jobId,PURE_CUE_RESOLUTION_CONTRACT) as {result_json:string}|undefined;
@@ -137,4 +143,37 @@ export function prepareVocabularyPureCuePromotion(job:VocabularyReflectionJob,or
     const operation:VocabularyProposalOperation=existing?{...common,strategy:'update_existing',sourceContentId:existing.contentId,expectedVersion:existing.version}:{...common,strategy:'create'};
     return {assessment,operations:[operation],bases};
   }};
+}
+
+/** Integrate an already-authored shared task; creation preserves the upstream draft exactly. */
+export function prepareVocabularyPureCueIntegration(job:VocabularyReflectionJob,original:VocabularyContent,referral:VocabularyPureCueReferral,selections:Record<string,string>={}) {
+  if(!referral.draft)throw new Error('Pure-cue integration requires an authored plan');
+  const prepared=prepareVocabularyPureCuePromotion(job,original,referral,selections);
+  const ids=prepared.input.candidates.map(word=>word.wordId);
+  const creation=(rationale:string):Decision=>({decision:'create',rationale,existingContentId:null,
+    ...referral.draft!,memberWordIds:ids});
+  // Apply the same privacy, lexical, and stimulus guards even if integration later reuses a cue.
+  if(!prepared.attention)prepared.normalize(creation(referral.rationale));
+  return {...prepared,normalize(value:unknown,invocationId?:string|null):PromotionResult {
+    if(!value||typeof value!=='object')throw new Error('Invalid pure-cue integration output');
+    const result=value as {decision:'reuse'|'extend'|'create';rationale:string;existingContentId:string|null;teachingNote:string|null};
+    if(result.decision==='create'){
+      if(result.existingContentId!==null||result.teachingNote!==null)throw new Error('Creation must preserve the proposed shared cue');
+      return prepared.normalize(creation(result.rationale),invocationId);
+    }
+    if(result.decision!=='reuse'&&result.decision!=='extend')throw new Error('Integration cannot reject an authored shared task');
+    const existing=prepared.input.existingCues.find(cue=>cue.contentId===result.existingContentId);
+    if(!existing||existing.kind!=='exercise')throw new Error('Integration destination was not supplied');
+    return prepared.normalize({...result,prompt:null,semanticAxis:null,memberWordIds:result.decision==='reuse'?ids:
+      [...new Set([...existing.answers.map(answer=>answer.wordId),...ids])]},invocationId);
+  }};
+}
+
+/** Only exact, unambiguous response identities may receive new individual practice. */
+export function vocabularyResponseCandidates(job:VocabularyReflectionJob):Word[] {
+  const forms=[...new Set(job.evidence.evidence.flatMap(encounter=>encounter.responses.flatMap(response=>response.payload.response?.trim()?[response.payload.response.trim()]:[])))];
+  return [...new Map(forms.flatMap(form=>{
+    const matches=getDb().prepare('SELECT id AS wordId,hanzi,traditional,pinyin,meaning FROM lexical_words WHERE hanzi=? OR traditional=?').all(form,form) as Word[];
+    return matches.length===1&&matches[0]!.wordId!==job.evidence.wordId?[[matches[0]!.wordId,matches[0]!] as const]:[];
+  })).values()];
 }

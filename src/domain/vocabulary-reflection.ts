@@ -49,7 +49,10 @@ export type VocabularyImprovementAdmission = {
   generationScope?: VocabularyGenerationScope | null;
   sourceMapping: { senseId: string | null; establishedAt: string | null };
 };
-export type VocabularyPureCueReferral = { candidateWords: string[]; sharedPurpose: string; rationale: string };
+export type VocabularyPureCueReferral = { candidateWords: string[]; sharedPurpose: string; rationale: string;
+  /** Absent only on historical referrals made before coherent exercise planning. */
+  draft?: {prompt:string;semanticAxis:string;teachingNote:string};
+};
 export type VocabularyPureCuePromotion = {
   outcome: 'reject' | 'reuse' | 'extend' | 'create' | 'needs_operator';
   rationale: string; candidateWordIds: string[]; existingContentId: string | null;
@@ -61,6 +64,8 @@ export type VocabularyImprovementResultInput = {
   admission?: VocabularyImprovementAdmission;
   pureCueReferral?: VocabularyPureCueReferral | null;
   pureCuePromotion?: VocabularyPureCuePromotion;
+  /** Complete local plan held until shared candidate identities can be resolved. */
+  pendingPlan?: Omit<VocabularyProposalDraft,'caseId'> | null;
 };
 export type VocabularyReflectionResult = { kind: 'learner_feedback'; judgment: VocabularyFeedbackJudgmentInput }
   | { kind: 'exercise_improvement'; result: VocabularyImprovementResultInput };
