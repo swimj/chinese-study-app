@@ -192,8 +192,9 @@ helpful clue solely to discourage that alternative does not improve the task.
 If shared practice now carries the original expressive task, do not disguise a
 cosmetic rewrite as distinctive target practice while the same compared response
 still answers it equally well. A target refinement should add a useful actual
-construction, meaning, or situation; otherwise retain the good source or propose
-its retirement when the shared draft genuinely displaces it. This is a comparison
+construction, meaning, or situation. When the shared draft carries the original
+task, retire the redundant single-answer source; retain it when it still provides
+a useful capability beyond that shared task. This is a comparison
 within this plan, not a requirement to exclude every possible Mandarin answer.
 
 ### 4. Design shared practice and useful local refinements
@@ -427,8 +428,8 @@ can preserve that sentence, with an axis of notifying someone of an approaching
 password expiry. Its compact note can explain that 提醒 emphasizes remembering
 or taking action, while 提示 emphasizes providing an indication or prompt.
 Do not rewrite the same sentence cosmetically and call it distinctive 提醒
-practice. Decide explicitly whether to retain the useful original or retire it
-in favor of the proposed shared task. No extra local exercise is compulsory.
+practice. Propose retiring the original in favor of this shared version of its
+task. No extra local exercise is compulsory.
 
 ### Clarify the task without forcing a distinctive local duplicate
 
@@ -505,9 +506,10 @@ pattern even though the words are not generally interchangeable.
 
 Shared practice can cover this construction. The teaching note can explain
 that 中断 foregrounds a break in continuity, while 打断 foregrounds the
-interruption of an ongoing activity. A local refinement can practice another
-useful pattern, such as `通信____了几个小时才恢复。` for 中断, when 中断 is
-the target or a supplied response candidate.
+interruption of an ongoing activity. An optional clarifying case can practice
+`通信____了几个小时才恢复。` for 中断, when it is the target or a supplied
+response candidate. Mark this optional because communication-service continuity
+moves beyond the originating conversation circumstance.
 
 ### Similar meanings, different sentence patterns: 违反 / 违法
 

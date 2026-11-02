@@ -336,3 +336,40 @@ into `ensureVocabularySenses`, then supply the latter as the reflection
 provider's `ensureSenses` dependency. Injecting a reflection adapter alone does
 not replace the independent sense-generation provider. Keep mapper judgments,
 inventory quality, and deterministic inability-to-proceed checks separate.
+
+### Coherent-plan comparison evidence (2026-11-02)
+
+The coherent-plan change compared eight synthetic single-exercise cases with
+Sol high: 原因/缘故, 有关/关于, 稠密/密集, 声调/拼音, 框/筐, 违反/违法,
+遭到/遭受, and correct-answer 犹豫 readability feedback. The harness freezes
+baseline schema/input separately: baseline `407ba42b` excludes `responseExercises`,
+`referral.draft`, and `responseCandidates`; the candidate supplies them. All
+other fixture evidence and model settings stay fixed. There were 24 calls:
+eight baseline, eight initial candidate, and eight corrected candidate calls.
+Every call completed with valid strict output and standalone content checks.
+
+The initial candidate introduced a budget scenario for 有关, despite the original
+notice/exam circumstance. Corrected examples keep the notice and exam arrangements
+in both shared and individual practice. 原因/缘故 reveal teaching now illustrates
+familiar constructions instead of only describing register. Final outputs
+provided shared density practice plus an explicitly optional 密集 interview case,
+separate 违反/违法 constructions, a pitch-frame repair, an unchanged fair 框 cue,
+and preserved correct-answer readability repair.
+
+One output remains questionable: 遭到-only practice in
+`这个决定____了各方的强烈反对。` may still admit 遭受, despite a collocational
+preference for 遭到. The shared decision-focused criticism cue also needs editorial
+judgment. Structural validity does not resolve that taste question. This experiment
+mostly exercises worked-example compliance, not held-out reliability; baseline
+referrals were not run through their downstream promotion stage. Reuse/extension
+and full proposal application are covered by database-backed injected-provider
+tests, not by these live single-stage calls.
+
+Exact requests, wire schemas, responses, settings, hashes, and editorial reviews
+are retained locally under `/private/tmp/exercise-comparison-20261102`, including
+`comparison-final-review.json` and `comparison-final-manifest.json`. The final
+live candidate used `a5ff5b00`; subsequent editorial tightening labels the 中断
+excursion optional and makes retirement of redundant single-answer sources
+explicit in the 提醒 example. Those two edits were reviewed but not rerun live.
+The fixture IDs begin `comparison-`; pass up to eight with the trial script's
+`--cases` option. No trial applied proposals or mutated hosted content.
