@@ -187,6 +187,6 @@ export function vocabularyResponseCandidates(job:Pick<VocabularyReflectionJob,'e
   const forms=[...new Set(job.evidence.evidence.flatMap(encounter=>encounter.responses.flatMap(response=>response.payload.response?.trim()?[response.payload.response.trim()]:[])))];
   return [...new Map(forms.flatMap(form=>{
     const matches=getDb().prepare('SELECT id AS wordId,hanzi,traditional,pinyin,meaning FROM lexical_words WHERE hanzi=? OR traditional=?').all(form,form) as Word[];
-    return matches.length===1&&matches[0]!.wordId!==job.evidence.wordId?[[matches[0]!.wordId,matches[0]!] as const]:[];
+    return matches.length===1&&matches[0]!.wordId!==job.evidence.wordId?[[matches[0]!.wordId,{...matches[0]!}] as const]:[];
   })).values()];
 }

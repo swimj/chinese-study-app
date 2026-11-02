@@ -71,6 +71,19 @@ if(new URLSearchParams(location.search).has('multiwordLabels')){
   displaySenseLabels.push({senseId,wordId:'word-tengjiao',label:'green Sichuan pepper'});
   initial.operations.push({operationKey:'another-word',strategy:'create',scope:{kind:'shared'},rationale:`Practice ${senseId}.`,content:{...pepper,contentId:'additional-pepper',words:[{wordId:'word-tengjiao',relation:'target',senseId}],body:{prompt:'Fresh green Sichuan pepper with a tingling citrus scent.'}}});
 }
+if(new URLSearchParams(location.search).has('coherent')){
+  general.body={prompt:'Densely populated: 这个地区人口____。'};
+  general.answers=[{wordId:'word-baobei',acceptedForms:['稠密']}];
+  draft.body=general.body;draft.answers=general.answers;
+  serveHistoricalCue(exerciseCase.evidence[0]!,String((general.body as {prompt:string}).prompt),['稠密']);
+  const responseWord={wordId:'word-miji',acceptedForms:['密集']};
+  initial.rationale='Share the original population-density task and offer optional practice for closely scheduled activities.';
+  initial.operations=[
+    {operationKey:'retire-source',strategy:'retire',sourceContentId:general.contentId,expectedVersion:1,scope:{kind:'shared'},rationale:'The shared cue carries the original task.',content:draft},
+    {operationKey:'response-refinement',strategy:'create',scope:{kind:'shared'},rationale:'Optional clarifying case: closely scheduled activities, beyond the originating population circumstance.',content:{...draft,contentId:'response-refinement',body:{prompt:'Several interviews scheduled close together: 明天上午的面试安排得很____。'},words:[{wordId:'word-miji',relation:'target'}],answers:[responseWord]}},
+    {operationKey:'shared-cue',strategy:'create',scope:{kind:'shared'},rationale:'Both words answer this same population-density task.',content:{...draft,contentId:'shared-cue',exerciseType:'pure_cue',answers:[...general.answers,responseWord],words:[...general.words,{wordId:'word-miji',relation:'target'}],body:{prompt:'Densely populated: 这个地区人口____。',reveal:{axisNote:'Dense population',teachingNote:'Both words fit population density; 密集 also describes closely scheduled activities.'}}}},
+  ];
+}
 const contents=new Map([general,pepper,crave,intro,teaching].map(item=>[item.contentId,item]));
 const staleSource=new URLSearchParams(location.search).has('staleSource');
 const assessmentReview:VocabularyAssessmentReview={origin:new URLSearchParams(location.search).has('reassessment')?'reassessment':'automatic',models:[{invocationId:'mapping-model',stage:'sense_mapping',provider:'openai',model:'gpt-6-luna',resolvedModel:null},{invocationId:'local-model',stage:'single_improvement',provider:'zai',model:'glm-5.3-flash',resolvedModel:null},{invocationId:'promotion-model',stage:'pure_cue_promotion',provider:'openai',model:'gpt-6-sol',resolvedModel:null}],admission:{outcome:'single_sense',rationale:'The served exercise asks for advance reporting. Other useful senses remain outside this repair.',wordId:'word-baobei',sourceContentId:general.contentId,sourceContentVersion:1,catalogVersion:1,senseIds:[reviewSenseLabels[0]!.senseId],sourceMapping:{senseId:null,establishedAt:null},generationScope:{selectionEstablished:true,senseIds:[reviewSenseLabels[0]!.senseId],source:{kind:'mapped_source'}}}};

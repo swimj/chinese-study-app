@@ -146,11 +146,11 @@ test('strict real injected provider retains service provenance and rejects forge
   const improve=claimVocabularyReflectionJob({kind:'exercise_improvement',now:new Date(clock).toISOString()})!;
   const valid={diagnosis:'Repair the overloaded cue',operations:[{sourceContentId:'one',strategy:'update_existing',rationale:'A faithful wording',prompt:'A written character',acceptedAnswers:['字']}]};
   assert.equal(normalizeVocabularyReflectionOutput(improve,valid).kind,'exercise_improvement');
-  payload={...valid,pureCueReferral:null};assert.equal((await provider.run(improve)).kind,'exercise_improvement');
+  payload={...valid,responseExercises:[],pureCueReferral:null};assert.equal((await provider.run(improve)).kind,'exercise_improvement');
   const improvementInvocation=sql.prepare("SELECT * FROM model_invocations WHERE prompt_name='vocabulary-reflection-single-improvement'").get();
   assert.ok(improvementInvocation,'Selected sense assessment must reach the active single-improvement call');
   assert.equal(improvementInvocation.actor_kind,'service');assert.equal(improvementInvocation.learner_id,null);assert.equal(improvementInvocation.workflow_id,improve.jobId);
-  assert.equal(improvementInvocation.prompt_version,'4');assert.equal(improvementInvocation.schema_version,'3');assert.equal(improvementInvocation.input_projection_version,'vocabulary-admission.v3');
+  assert.equal(improvementInvocation.prompt_version,'5');assert.equal(improvementInvocation.schema_version,'4');assert.equal(improvementInvocation.input_projection_version,'vocabulary-admission.v4');
   assert.equal(improvementInvocation.prompt_template,`\n\n${fs.readFileSync(new URL('../server/vocabulary/reflection-prompts/single-improvement.md',import.meta.url),'utf8')}`);
   assert.throws(()=>normalizeVocabularyReflectionOutput(improve,{...valid,operations:[{...valid.operations[0],acceptedAnswers:['invented']}]}),/answer criteria/);
   assert.throws(()=>normalizeVocabularyReflectionOutput(improve,{...valid,operations:[{...valid.operations[0],sourceContentId:'two'}]}),/source identities/);
@@ -205,7 +205,7 @@ for(const source of [
   await ingestOnly.step();await ingestOnly.stop();
   const job=claimVocabularyReflectionJob({kind:'exercise_improvement',now:new Date(clock).toISOString()})!;
   for(const strategy of ['create','update_existing','replace'] as const) {
-    const proposal=normalizeVocabularyReflectionOutput(job,{diagnosis:'Clarify the productive use',pureCueReferral:null,
+    const proposal=normalizeVocabularyReflectionOutput(job,{diagnosis:'Clarify the productive use',responseExercises:[],pureCueReferral:null,
       operations:[{sourceContentId:'fallback',strategy,rationale:'Use a concrete context',prompt:'A single written symbol in this sentence',acceptedAnswers:['字']}]},null,true);
     assert.equal(proposal.kind,'exercise_improvement');
     if(proposal.kind!=='exercise_improvement'||!proposal.result.proposal)throw new Error('Expected improvement proposal');
@@ -216,7 +216,7 @@ for(const source of [
     assert.equal(operation.content.accessScope,'private');assert.equal(operation.content.ownerLearnerId,'alice');
     assert.deepEqual(operation.content.answers,[{wordId:'a',acceptedForms:['字']}]);
   }
-  const unchanged=normalizeVocabularyReflectionOutput(job,{diagnosis:'Retain the existing prompt',pureCueReferral:null,
+  const unchanged=normalizeVocabularyReflectionOutput(job,{diagnosis:'Retain the existing prompt',responseExercises:[],pureCueReferral:null,
     operations:[{sourceContentId:'fallback',strategy:'create',rationale:'Keep wording',prompt:'Prompt fallback',acceptedAnswers:['字']}]},null,true);
   if(unchanged.kind!=='exercise_improvement'||!unchanged.result.proposal)throw new Error('Expected unchanged fixture proposal');
   assert.deepEqual(unchanged.result.proposal.operations[0]!.content.body,
@@ -360,7 +360,7 @@ function mappingTrial(reply:(attempt:number)=>{status?:number;value?:unknown;raw
       rawText=response.rawText;
     } else if(request.response_format.json_schema.name.includes('single_improvement')) {
       if(repairFailsOnce&&++repairs===1)return new Response('Authoring unavailable',{status:503});
-      value={diagnosis:'Keep this exercise',operations:[],pureCueReferral:null};
+      value={diagnosis:'Keep this exercise',operations:[],responseExercises:[],pureCueReferral:null};
     }
     return new Response(JSON.stringify({model:request.model,choices:[{message:{content:rawText??JSON.stringify(value)},finish_reason:'stop'}]}),{status:200});
   };
