@@ -27,7 +27,7 @@ import { fetchImplementationForProvider } from '../llm/proxy-fetch.ts';
 import { isOutputTruncationFinishReason, type ProviderAdapter } from '../llm/types.ts';
 import { eligibleVocabularyReflectionJob } from './reflection-eligibility.ts';
 import { prepareVocabularyPureCueImprovement, vocabularyPureCueImprovementSchema } from './pure-cue-improvement.ts';
-import { getPureCueResolution, prepareVocabularyPureCuePromotion, prepareVocabularyPureCueIntegration, vocabularyPureCueIntegrationSchema, vocabularyPureCuePromotionSchema, vocabularyPureCuePlanSchema, validateVocabularyPureCueReferral, vocabularyResponseCandidates } from './pure-cue-promotion.ts';
+import { getPureCueResolution, prepareVocabularyPureCuePromotion, prepareVocabularyPureCueIntegration, vocabularyPureCueIntegrationSchema, vocabularyPureCuePromotionSchema, vocabularyPureCuePlanSchema, validateVocabularyPureCueReferral, validateVocabularyPureCueDraft, vocabularyResponseCandidates } from './pure-cue-promotion.ts';
 import { runVocabularyImprovementAdmission, type VocabularySenseEnsurer } from './improvement-admission.ts';
 
 const SENSE_MAPPING_CONFIG:ReflectionProviderConfig={...LUNA_REFLECTION_MODEL_CONFIG,modelConfig:'gpt-6-luna-high',providerModel:'gpt-6-luna'};
@@ -94,6 +94,7 @@ export function normalizeVocabularyReflectionOutput(job:VocabularyReflectionJob,
   nonempty(result.diagnosis);
   const original=source(job,false);
   if(!original||original.kind!=='exercise'||original.exerciseRole!=='general')throw new VocabularyReflectionOutputError('Improvement requires a general exercise');
+  if(referral)validateVocabularyPureCueDraft(job,original,referral);
   const accepted=original.answers.flatMap(answer=>answer.acceptedForms);
   if(result.operations.filter(operation=>operation.strategy!=='create').length>1)throw new VocabularyReflectionOutputError('A source can only be updated, replaced, or retired once');
   if(result.operations.some(operation=>operation.strategy==='retire')&&result.operations.length!==1)throw new VocabularyReflectionOutputError('Retirement without replacement cannot also author local practice');

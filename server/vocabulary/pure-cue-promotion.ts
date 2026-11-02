@@ -146,8 +146,21 @@ export function prepareVocabularyPureCuePromotion(job:VocabularyReflectionJob,or
 }
 
 /** Integrate an already-authored shared task; creation preserves the upstream draft exactly. */
-export function prepareVocabularyPureCueIntegration(job:VocabularyReflectionJob,original:VocabularyContent,referral:VocabularyPureCueReferral,selections:Record<string,string>={}) {
+export function validateVocabularyPureCueDraft(job:VocabularyReflectionJob,original:VocabularyContent,referral:VocabularyPureCueReferral):void {
+  validateVocabularyPureCueReferral(referral);
   if(!referral.draft)throw new Error('Pure-cue integration requires an authored plan');
+  const text=[referral.draft.prompt,referral.draft.semanticAxis,referral.draft.teachingNote];
+  const fragments=job.evidence.evidence.flatMap(encounter=>[
+    ...getVocabularyEncounterReactions(encounter).map(reaction=>reaction.payload.comment??''),
+    ...encounter.responses.map(response=>(response.payload.response?.length??0)>=12?response.payload.response!:'')]).map(value=>value.trim()).filter(value=>value.length>=4);
+  if(original.accessScope==='shared'&&fragments.some(fragment=>text.some(value=>value.includes(fragment))))throw new Error('Shared cue copies private learner evidence');
+  const forms=[...referral.candidateWords,...(original.kind==='exercise'?original.answers.flatMap(answer=>answer.acceptedForms):[]),
+    ...pureCueIdentityOptions(job.evidence.wordId!,referral).flatMap(option=>option.choices.flatMap(word=>[word.hanzi,...(word.traditional?[word.traditional]:[])]))];
+  if(forms.some(form=>form&&referral.draft!.prompt.includes(form)))throw new Error('Shared stimulus exposes an accepted answer');
+}
+
+export function prepareVocabularyPureCueIntegration(job:VocabularyReflectionJob,original:VocabularyContent,referral:VocabularyPureCueReferral,selections:Record<string,string>={}) {
+  validateVocabularyPureCueDraft(job,original,referral);
   const prepared=prepareVocabularyPureCuePromotion(job,original,referral,selections);
   const ids=prepared.input.candidates.map(word=>word.wordId);
   const creation=(rationale:string):Decision=>({decision:'create',rationale,existingContentId:null,
