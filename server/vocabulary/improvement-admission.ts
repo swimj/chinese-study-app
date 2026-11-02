@@ -4,6 +4,7 @@ import { VocabularySenseSelectionRequired } from './sense-readiness.ts';
 import { resolveVocabularySenseCoverage } from '../db/vocabulary-sense-coverage.ts';
 import { GENERAL_EXERCISE_CONTRACT,generalExerciseSchema,validateGeneralExerciseOutput,type GeneralExerciseSource } from './general-exercise-authoring.ts';
 import { createHash } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import { VocabularyReflectionConflict } from '../db/vocabulary-reflection.ts';
 import type { JsonSchema } from '../../src/domain/reflection-result-schema.ts';
 import type { VocabularyContent } from '../../src/domain/vocabulary-content.ts';
@@ -13,7 +14,7 @@ import { getVocabularyContentForMaintenance, getVocabularySenseCatalog, mapVocab
 import { linkVocabularyInvocationContent, linkVocabularyInvocationSense } from '../db/vocabulary-provenance.ts';
 import { invalidateServiceInvocation } from '../llm/invocation-ledger.ts';
 import { validateJsonSchema } from '../llm/json-schema-validator.ts';
-import { prepareVocabularyPureCuePromotion, vocabularyPureCuePromotionSchema, type PromotionResult } from './pure-cue-promotion.ts';
+import { prepareVocabularyPureCueIntegration, vocabularyPureCueIntegrationSchema, vocabularyResponseCandidates, type PromotionResult } from './pure-cue-promotion.ts';
 import { ensureVocabularySenses } from './sense-readiness.ts';
 
 const serviceId = 'vocabulary-reflection';
@@ -173,24 +174,29 @@ export async function runVocabularyImprovementAdmission(options: {
       expectedMapping={senseId:mapped.value.senseIds[0]!,establishedAt};
     }
     admission.sourceMapping={...expectedMapping};
-    const result = await stage<ImprovementResult>('single_improvement',{evidence:options.projectedInput,...base,admission,intendedSense:inventory.find(sense=>sense.senseId===mapped.value.senseIds[0])},options.improvementSchema,(value,invocationId)=>{
+    const responseCandidates=vocabularyResponseCandidates(job);
+    const responseFence=()=>{if(!isDeepStrictEqual(vocabularyResponseCandidates(job),responseCandidates))throw new VocabularyReflectionConflict('Response lexical identities changed during improvement');};
+    const result = await stage<ImprovementResult>('single_improvement',{evidence:options.projectedInput,...base,responseCandidates,admission,intendedSense:inventory.find(sense=>sense.senseId===mapped.value.senseIds[0])},options.improvementSchema,(value,invocationId)=>{
       const normalized = options.normalize(value,invocationId);
       if(normalized.kind!=='exercise_improvement')throw new Error('Unexpected improvement result');
       for(const op of normalized.result.proposal?.operations??[])op.content.words=op.content.words.map(word=>word.wordId===wordId?{...word,senseId:mapped.value.senseIds[0],senseMappingEstablishedAt:expectedMapping.establishedAt}:word);
       return normalized;
-    });
+    },{fence:responseFence,contents:[]});
     fence();
     const local=result.value.result;
     if(!local.pureCueReferral)return {kind:'exercise_improvement',result:{...local,admission}};
-    const promotion=prepareVocabularyPureCuePromotion(job,original,local.pureCueReferral);
+    const promotion=prepareVocabularyPureCueIntegration(job,original,local.pureCueReferral);
     const promoted=promotion.attention??(await stage<PromotionResult>('pure_cue_promotion',{
       ...base,evidence:options.projectedInput,intendedSense:inventory.find(sense=>sense.senseId===mapped.value.senseIds[0]),
-      localAssessment:local.diagnosis,...promotion.input,
-    },vocabularyPureCuePromotionSchema,promotion.normalize,promotion)).value;
-    fence();promotion.fence();
+      localAssessment:local.diagnosis,localPlan:local.proposal,...promotion.input,
+    },vocabularyPureCueIntegrationSchema,promotion.normalize,promotion)).value;
+    fence();responseFence();promotion.fence();
+    if(promoted.assessment.outcome==='needs_operator')return {kind:'exercise_improvement',result:{...local,admission,
+      pureCuePromotion:promoted.assessment,pendingPlan:local.proposal,proposal:null}};
     const operations=[...(local.proposal?.operations??[]),...promoted.operations];
-    return {kind:'exercise_improvement',result:{...local,admission,pureCuePromotion:promoted.assessment,
-      proposal:operations.length?{operations,rationale:local.proposal?.rationale??promoted.assessment.rationale,
+    const diagnosis=`${typeof local.diagnosis==='string'?local.diagnosis:JSON.stringify(local.diagnosis)}\n\nShared practice: ${promoted.assessment.rationale}`;
+    return {kind:'exercise_improvement',result:{...local,diagnosis,admission,pureCuePromotion:promoted.assessment,
+      proposal:operations.length?{operations,rationale:diagnosis,
         bases:[{contentId:original.contentId,expectedVersion:original.version},...promoted.bases],
         ...(local.invocationId?{invocationId:local.invocationId}:{})}:null}};
   }

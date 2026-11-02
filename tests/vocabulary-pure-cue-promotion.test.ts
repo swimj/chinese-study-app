@@ -211,7 +211,7 @@ test('integration extension preserves all old members and adds every proposed ca
   const output=result.operations[0]!.content;
   if(output.kind!=='exercise'||existing.kind!=='exercise')assert.fail();
   assert.deepEqual(output.answers.slice(0,2),existing.answers);
-  assert.deepEqual(output.answers.map(answer=>answer.wordId),['target','retained','other']);
+  assert.deepEqual(output.answers.map(answer=>answer.wordId),[...existing.answers.map(answer=>answer.wordId),'other']);
   assert.equal((output.body as {prompt:string}).prompt,(existing.body as {prompt:string}).prompt);
 });
 test('integration reuse requires all proposed identities and validates the authored draft even on reuse',async()=>{
@@ -225,7 +225,7 @@ test('response refinements use only uniquely resolved submitted identities and n
   const {normalizeVocabularyReflectionOutput,vocabularySingleImprovementSchema}=await import('../server/vocabulary/reflection-provider.ts');
   const {validateJsonSchema}=await import('../server/llm/json-schema-validator.ts');
   const input=job();
-  input.evidence.evidence[0]!.responses=[{protocolVersion:1,actionId:'answer',clientActionId:'answer',sequence:1,occurredAt:at,kind:'answer',payload:{encounterId:'encounter',response:'扩大',outcome:'rejected'}}];
+  input.evidence.evidence[0]!.responses=[{protocolVersion:1,actionId:'answer',clientActionId:'answer',sequence:1,occurredAt:at,kind:'response',payload:{encounterId:'encounter',response:'扩大',outcome:'rejected'}}];
   const output={diagnosis:'Shared size task plus optional wider scope example.',operations:[],responseExercises:[{wordId:'other',prompt:'Broaden the scope of the investigation.',rationale:'Optional clarifying case.'}],pureCueReferral:null};
   assert.deepEqual(validateJsonSchema(output,vocabularySingleImprovementSchema),[]);
   const result=normalizeVocabularyReflectionOutput(input,output,null,true);
