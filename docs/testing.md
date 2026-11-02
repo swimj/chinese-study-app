@@ -107,7 +107,11 @@ account response fencing are covered by `operator-only-access.test.ts`,
 
 The current Mandarin flow uses `/tests/browser/vocabulary-controller.html`
 (and `?mode=undo`) to exercise cancellation and delayed acknowledgements through
-the real hook. `/tests/browser/vocabulary-recognition-motion.html` uses the real
+the real hook. Its `?mode=enough` and `?mode=skip` cases end the last open word
+while finishing and verify completion stages and closes without requesting another
+exercise. `?mode=enough-active` checks that active study advances after wrapping
+a word. These are browser checks with mocked transport, separate from `npm test`.
+`/tests/browser/vocabulary-recognition-motion.html` uses the real
 controller and card surface: reveal, then Correct or Forgot. Its PASS result checks
 that the rating is saved and the outgoing card reflects the acknowledged recall
 before requesting the successor. `?covered=1` checks the covered card's rightward
