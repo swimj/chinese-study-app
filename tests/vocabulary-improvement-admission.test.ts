@@ -54,6 +54,7 @@ function provider(reply:(request:ProviderRunRequest,index:number)=>unknown|Promi
     // Test scenarios describe canonical domain outcomes; the fake model emits
     // only the call-local references actually present on its wire input.
     const wire=JSON.parse(request.userPrompt),stage=request.provenance?.stepName;
+    if(stage==='single_improvement')value={responseExercises:[],...(value as Record<string,unknown>)};
     if(stage==='sense_mapping'){
       const mapping=value as {senseIds:string[]};
       const aliases=new Map(canonical.map((sense,index)=>[sense.senseId,wire.senses[index]?.senseId]));
@@ -100,7 +101,7 @@ test('improvement receives effective learner reactions and comments while mappin
   assert.deepEqual(projected.reactions,[{encounterId:'encounter',reaction:'comment',comment:reactions[1]!.payload.comment}]);
   assert.equal(projected.feedback,undefined);
   assert.equal(encounter.feedback.length,3); // Historical wire evidence is unchanged.
-  assert.equal(trial.requests[1]!.provenance!.inputProjectionVersion,'vocabulary-admission.v3');
+  assert.equal(trial.requests[1]!.provenance!.inputProjectionVersion,'vocabulary-admission.v4');
 });
 
 test('single sense admission preserves target, supplies sense context, and reuses both completed stages on retry',async()=>{
@@ -331,9 +332,9 @@ for(const outcome of ['laundry_list','inventory_gap','unmappable'] as const)test
   assert.equal(getVocabularyContentForMaintenance('original')!.words[0]!.senseId,null);
 });
 
-const referral={candidateWords:['放大','扩大'],sharedPurpose:'Make the visible size larger.',rationale:'Both may fulfill this shared task.'};
+const referral={candidateWords:['放大','扩大'],sharedPurpose:'Make the visible size larger.',rationale:'Both may fulfill this shared task.',draft:{prompt:'Make the displayed area larger.',semanticAxis:'Increase visible size.',teachingNote:'放大 and 扩大 can express enlargement when the object permits it.'}};
 function secondWord(){db.exec("INSERT INTO lexical_words VALUES ('other-word','扩大',NULL,'kuo4 da4','expand')");}
-const createPromotion={decision:'create',rationale:'A shared enlargement task.',existingContentId:null,prompt:'Make the displayed area larger.',semanticAxis:'Increase visible size.',teachingNote:'放大 and 扩大 can express enlargement when the object permits it.',memberWordIds:['word','other-word']};
+const createPromotion={decision:'create',rationale:'A shared enlargement task.',existingContentId:null,teachingNote:null};
 
 for(const localRepair of [false,true])test(`referral composes with local repair=${localRepair}; promotion caches and never publishes`,async()=>{
   secondWord();
@@ -350,22 +351,20 @@ for(const localRepair of [false,true])test(`referral composes with local repair=
   assert.equal(promotionInput.evidence.encounters[0].responses[0].response,'扩大');
   assert.match(promotionInput.intendedSense.senseId,/^s[12]$/);assert.equal(promotionInput.sourceContent.contentId,'original');
   assert.deepEqual(promotionInput.candidates.map((word:{wordId:string})=>word.wordId),['word','other-word']);
-  assert.equal(trial.requests[1]!.provenance!.promptVersion,'4');assert.equal(trial.requests[1]!.provenance!.schemaVersion,'3');
+  assert.equal(trial.requests[1]!.provenance!.promptVersion,'5');assert.equal(trial.requests[1]!.provenance!.schemaVersion,'4');
   assert.match(trial.requests[1]!.systemPrompt,/Practice a useful collocation/);
   assert.doesNotMatch(trial.requests[1]!.systemPrompt,/## Learner feedback and proposal rationales/);
-  assert.equal(trial.requests[2]!.provenance!.promptVersion,'3');assert.equal(trial.requests[2]!.provenance!.schemaVersion,'2');
+  assert.equal(trial.requests[2]!.provenance!.promptVersion,'1');assert.equal(trial.requests[2]!.provenance!.schemaVersion,'3');
   const replay=await trial.provider.run({...input,attemptNumber:2});assert.deepEqual(replay,result);assert.equal(trial.requests.length,3);
   assert.equal(db.prepare("SELECT count(*) n FROM vocabulary_improvement_stages WHERE stage='pure_cue_promotion'").get()!.n,1);
 });
 
-test('rejected referral retains local repair and no-op assessment, while missing lexical candidates need operator review without a promotion call',async()=>{
+test('unresolved identities hold the complete plan without exposing a partial proposal',async()=>{
   const trial=provider(request=>request.provenance!.stepName==='sense_mapping'?single:{...repair,pureCueReferral:referral});
   const result=await trial.provider.run(job());if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
-  assert.equal(result.result.pureCuePromotion!.outcome,'needs_operator');assert.equal(result.result.proposal!.operations.length,1);assert.equal(trial.requests.length,2);
-  secondWord();
-  const rejected=provider(()=>({decision:'reject',rationale:'These words do not share this construction.',existingContentId:null,prompt:null,semanticAxis:null,teachingNote:null,memberWordIds:[]}));
-  const reassessed=await rejected.provider.run({...job(),attemptNumber:2});if(reassessed.kind!=='exercise_improvement')assert.fail('Expected improvement');
-  assert.equal(rejected.requests.length,1);assert.equal(reassessed.result.pureCuePromotion!.outcome,'reject');assert.equal(reassessed.result.proposal!.operations.length,1);
+  assert.equal(result.result.pureCuePromotion!.outcome,'needs_operator');assert.equal(result.result.proposal,null);
+  assert.equal(result.result.pendingPlan!.operations.length,1);assert.equal(result.result.pendingPlan!.operations[0]!.strategy,'replace');
+  assert.equal(trial.requests.length,2);assert.equal(getVocabularyContentForMaintenance('original')!.version,1);
 });
 
 test('promotion failure retries only promotion and fences loss of publication authority',async()=>{
@@ -651,10 +650,10 @@ test('retirement can retain an independent shared-practice referral',async()=>{
   secondWord();
   const trial=provider(request=>request.provenance!.stepName==='sense_mapping'?single:request.provenance!.stepName==='single_improvement'
     ?{diagnosis:'Poor source; a distinct shared task merits assessment.',operations:[retirement],pureCueReferral:referral}
-    :{decision:'reject',rationale:'No suitable shared task was established.',existingContentId:null,prompt:null,semanticAxis:null,teachingNote:null,memberWordIds:[]});
+    :createPromotion);
   const result=await trial.provider.run(job());if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
-  assert.deepEqual(result.result.proposal!.operations.map(operation=>operation.strategy),['retire']);
-  assert.equal(result.result.pureCuePromotion!.outcome,'reject');
+  assert.deepEqual(result.result.proposal!.operations.map(operation=>operation.strategy),['retire','create']);
+  assert.equal(result.result.pureCuePromotion!.outcome,'create');
 });
 
 bootstrapTest('empty faithful repertoire proposes only source retirement and preserves selected coverage',async()=>{
@@ -829,4 +828,62 @@ test('legacy dictionary supplement uses deterministic bootstrap without mapping'
   if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
   assert.equal(result.result.admission!.outcome,'repertoire_bootstrap');assert.equal(trial.requests.length,1);
   assert.equal(trial.requests[0]!.provenance!.stepName,'repertoire');
+});
+
+function responseJob():VocabularyReflectionJob {
+  secondWord();
+  const input=job();
+  const answer={protocolVersion:1 as const,actionId:'answer',clientActionId:'answer',sequence:2,occurredAt:at,kind:'response' as const,
+    payload:{encounterId:'encounter',outcome:'rejected' as const,response:'扩大'}};
+  input.evidence.evidence[0]!.responses=[answer];input.evidence.evidence[0]!.effectiveResponses=[answer];
+  return input;
+}
+const responseExercise={wordId:'other-word',prompt:'Increase the scope of this project.',rationale:'Practise the response word in its own useful setting.'};
+test('single improvement receives exact response identities and can add only response practice',async()=>{
+  const input=responseJob(),sourceBefore=getVocabularyContentForMaintenance('original');
+  const trial=provider(request=>request.provenance!.stepName==='sense_mapping'?single:{...repair,operations:[],responseExercises:[responseExercise]});
+  const result=await trial.provider.run(input);if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
+  assert.deepEqual(JSON.parse(trial.requests[1]!.userPrompt).responseCandidates,[{wordId:'other-word',hanzi:'扩大',traditional:null,pinyin:'kuo4 da4',meaning:'expand'}]);
+  assert.equal(result.result.proposal!.operations.length,1);
+  const operation=result.result.proposal!.operations[0]!;
+  assert.equal(operation.strategy,'create');assert.equal(operation.content.kind,'exercise');
+  assert.deepEqual(operation.content.words,[{wordId:'other-word',relation:'target'}]);
+  if(operation.content.kind!=='exercise')assert.fail('Expected exercise');
+  assert.deepEqual(operation.content.answers,[{wordId:'other-word',acceptedForms:['扩大']}]);
+  assert.deepEqual(result.result.proposal!.bases,[{contentId:'original',expectedVersion:1}]);
+  assert.equal(getVocabularyContentForMaintenance('original')!.version,sourceBefore!.version);
+  assert.deepEqual(getVocabularyContentForMaintenance('original')!.body,sourceBefore!.body);
+});
+test('source retirement, response addition and exact shared draft form one coordinated proposal',async()=>{
+  const input=responseJob();
+  const trial=provider(request=>request.provenance!.stepName==='sense_mapping'?single:request.provenance!.stepName==='single_improvement'
+    ?{...repair,operations:[retirement],responseExercises:[responseExercise],pureCueReferral:referral}:createPromotion);
+  const result=await trial.provider.run(input);if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
+  assert.deepEqual(result.result.proposal!.operations.map(operation=>operation.strategy),['retire','create','create']);
+  const wire=JSON.parse(trial.requests[2]!.userPrompt);
+  assert.deepEqual(wire.localPlan.operations.map((operation:{strategy:string})=>operation.strategy),['retire','create']);
+  assert.deepEqual(wire.referral.draft,referral.draft);
+  const body=result.result.proposal!.operations[2]!.content.body as {prompt:string;reveal:{axisNote:string;teachingNote:string}};
+  assert.equal(body.prompt,referral.draft.prompt);assert.equal(body.reveal.axisNote,referral.draft.semanticAxis);assert.equal(body.reveal.teachingNote,referral.draft.teachingNote);
+  assert.deepEqual(result.result.proposal!.operations[1]!.content.words,[{wordId:'other-word',relation:'target'}]);
+  assert.equal(getVocabularyContentForMaintenance('original')!.availability,'active');assert.equal(db.prepare('SELECT count(*) n FROM content_items').get()!.n,1);
+});
+test('existing shared cue reuse still keeps source retirement and both evidence bases',async()=>{
+  const input=responseJob();
+  createVocabularyContent({...original,contentId:'shared-cue',exerciseType:'pure_cue',body:{prompt:referral.draft.prompt},words:[{wordId:'word',relation:'target'},{wordId:'other-word',relation:'target'}],
+    answers:[{wordId:'word',acceptedForms:['放大']},{wordId:'other-word',acceptedForms:['扩大']}]},actor);
+  const trial=provider(request=>request.provenance!.stepName==='sense_mapping'?single:request.provenance!.stepName==='single_improvement'
+    ?{...repair,operations:[retirement],pureCueReferral:referral}:{decision:'reuse',rationale:'Existing task fits the authored plan.',existingContentId:'shared-cue',teachingNote:null});
+  const result=await trial.provider.run(input);if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
+  assert.equal(result.result.pureCuePromotion!.outcome,'reuse');assert.deepEqual(result.result.proposal!.operations.map(operation=>operation.strategy),['retire']);
+  assert.deepEqual(result.result.proposal!.bases,[{contentId:'original',expectedVersion:1},{contentId:'shared-cue',expectedVersion:1}]);
+  assert.equal(getVocabularyContentForMaintenance('original')!.availability,'active');
+});
+for(const invalid of ['unknown-identity','answer-leak','private-comment'] as const)test(`response exercise rejects ${invalid}`,async()=>{
+  const input=responseJob();
+  if(invalid==='private-comment')input.evidence.evidence[0]!.feedback=[{protocolVersion:1,actionId:'comment',clientActionId:'comment',sequence:3,occurredAt:at,kind:'feedback',payload:{encounterId:'encounter',feedback:'comment',comment:'private family detail'}}];
+  const trial=provider(request=>request.provenance!.stepName==='sense_mapping'?single:{...repair,responseExercises:[{...responseExercise,
+    ...(invalid==='unknown-identity'?{wordId:'unknown'}:{prompt:invalid==='answer-leak'?'Use 扩大 here.':'Use private family detail.'})}]});
+  await assert.rejects(()=>trial.provider.run(input),/supplied unambiguous response identity|exposes an accepted answer|copy private learner evidence/);
+  assert.equal(db.prepare("SELECT count(*) n FROM vocabulary_improvement_stages WHERE stage='single_improvement'").get()!.n,0);
 });
