@@ -15,7 +15,7 @@ import { ApiRequestError } from '../services/api';
 import './VocabularyOperatorPage.css';
 import { CardInbox } from '../components/CardInbox';
 import { OperatorPrefetchCache } from '../features/vocabulary-operator/prefetch-cache';
-import { filterArchiveItems, resolveReviewNavigation, reviewItemKey } from '../features/vocabulary-operator/review-navigation';
+import { filterArchiveItems, resolveReviewNavigation, reviewItemAfterResolution, reviewItemKey } from '../features/vocabulary-operator/review-navigation';
 import { approvalNeedsAttention, mergeApprovalRequests, proposalHasApprovalRequest } from '../features/vocabulary-operator/approval-state';
 import { ProposalSecondOpinion } from '../features/vocabulary-operator/ProposalSecondOpinion';
 import { ContentImprovementEntry, proposalServedEvidence, ReadableJson } from '../features/vocabulary-operator/content-improvement-entry';
@@ -217,11 +217,13 @@ export function VocabularyOperatorPage({api=vocabularyOperatorApi,previewOnly=fa
   function save(){if(scopeEditing||busy)return;void run(async()=>{if(!draft)throw new Error('Fix the JSON draft before saving.');if(invalidCue)throw new Error('Fix the Mandarin cloze before saving.');if(!activeOperations.length)throw new Error('Select at least one change to save, or dismiss the proposal.');const outgoing=selectedProposalDraft(draft,excludedKeys);const value=selected?await api.save(selected.proposalId,selected.version,outgoing):await api.create(outgoing);await loadProposal(value);await reload();},'New version saved.');}
   function invalidateOnConflict(cause:unknown,value:VocabularyContentProposal){if(cause instanceof ApiRequestError&&cause.status===409){cache.current.delete(snapshotKey(value));setSnapshotOutdated(true);}throw cause;}
   function inspect(){if(!selected||dirty||scopeEditing||busy)return;void run(async()=>{try{setPreview(await api.preview(selected.proposalId,selected.version));}catch(cause){invalidateOnConflict(cause,selected);}},'Preview validated. Review the cue, expected answers, scope and identity effects.');}
-  async function advanceAfterResolution(proposalId:string,status:'queued'|'closed') {
-    const oldIndex=reviewItems.findIndex(item=>item.kind==='proposal'&&item.value.proposalId===proposalId);
-    const remaining=reviewItems.filter(item=>item.kind!=='proposal'||item.value.proposalId!==proposalId);
-    if(status==='closed')setProposals(items=>items.map(item=>item.proposalId===proposalId?{...item,status}:item));
-    const next=remaining[Math.min(Math.max(oldIndex,0),remaining.length-1)];
+  async function advanceAfterResolution(key:string,status:'queued'|'closed') {
+    queueRequest.current++;
+    const next=reviewItemAfterResolution(reviewItems,key);
+    if(status==='closed') {
+      setProposals(items=>items.map(item=>`proposal:${item.proposalId}`===key?{...item,status}:item));
+      setNoProposalCases(items=>items.filter(item=>`case:${item.caseId}`!==key));
+    }
     try {
       if(next){if(next.kind==='proposal')await loadProposal(next.value);else await loadCase(next.value.caseId);}
       else {initialSelection.current=false;setWorkspace(null);setSelected(null);setExcludedKeys(new Set());setDraftText('');setSavedText('');resetReview();}
@@ -238,13 +240,13 @@ export function VocabularyOperatorPage({api=vocabularyOperatorApi,previewOnly=fa
     // Invalidate any refresh started before this acknowledgement so it cannot restore the card.
     queueRequest.current++;
     setApprovalRequests(items=>mergeApprovalRequests(items,[result]));
-    await advanceAfterResolution(selected.proposalId,'queued');
+    await advanceAfterResolution(`proposal:${selected.proposalId}`,'queued');
     setNotice(result.status==='succeeded'?'Applied.':result.status==='attention'?'Approval needs attention.':'Approval queued.');
   });}
-  function dismissProposal(){if(!selected||scopeEditing||busy)return;void run(async()=>{await api.close(selected.proposalId,selected.version,reason);setSelected({...selected,status:'closed'});if(queue==='review')await advanceAfterResolution(selected.proposalId,'closed');else{install(await api.proposal(selected.proposalId));await reload();}},'Dismissed.');}
+  function dismissProposal(){if(!selected||scopeEditing||busy)return;void run(async()=>{await api.close(selected.proposalId,selected.version,reason);setSelected({...selected,status:'closed'});if(queue==='review')await advanceAfterResolution(`proposal:${selected.proposalId}`,'closed');else{install(await api.proposal(selected.proposalId));await reload();}},'Dismissed.');}
   function resolveCurrentCase(closeView:boolean){
     if(!workspace||scopeEditing||busy)return;const caseId=workspace.case.caseId;
-    void run(async()=>{await api.closeCase(caseId,reason);await reload();if(closeView){setWorkspace(null);initialSelection.current=false;}else setWorkspace(await api.workspace(caseId));},'Case closed; its evidence remains retained.');
+    void run(async()=>{await api.closeCase(caseId,reason);if(closeView&&queue==='review')await advanceAfterResolution(`case:${caseId}`,'closed');else{await reload();if(closeView){setWorkspace(null);initialSelection.current=false;}else setWorkspace(await api.workspace(caseId));}},'Case closed; its evidence remains retained.');
   }
   const pending=proposals.filter(item=>!['applied','closed'].includes(item.status)&&!proposalHasApprovalRequest(item,approvalRequests));
   const approvalFailures=approvalRequests.filter(item=>approvalNeedsAttention(item,proposals));

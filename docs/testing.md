@@ -132,7 +132,10 @@ the bracket shortcuts address Helpful / Not helpful separately.
 accepted member 意见, during both immediate and acknowledged reveal. The motion fixture
 `?slow=1` checks opaque paper while the next encounter is delayed;
 `/tests/browser/vocabulary-operator.html` exercises the proposal-first internal review surface (ready suggestions, Archive search, proposal edits, and `?second=pending|failed|result`; `?narrow=1&large=1` checks compact enlarged-text layout; `?reassessment` enables reassessment and `?reassessment=changed` checks explicit confirmation of a changed source version; `?reassessment=complete` checks completion polling after the originating proposal leaves the open batch; `?slow` exercises delayed reads, `?failNext` exercises navigation recovery, and `?stale` or `?staleApply` exercises a validation conflict)
-with an in-memory API (`?empty=1` for empty lists, `?noProposal=1` for a no-change judgment).
+with an in-memory API (`?empty=1` for empty lists, `?noProposal=1` for a no-change judgment). Combine `noProposal=1&noProposalCount=3`
+with `mixedReview=1` to verify Done keeps queue position across cases and proposals.
+`failDone=1` checks a failed closure; `failDoneNext=1` checks retrying navigation
+after a successful closure.
 `tests/vocabulary-proposal-review.test.ts` covers compact grouping, readable sense
 references, reversible inclusion, malformed draft guards, structured cue editing,
 cloze validation, consequential change signals and retained evidence bases.

@@ -6,6 +6,14 @@ export function reviewItemKey(item: ReviewItem): string {
   return item.kind === 'proposal' ? `proposal:${item.value.proposalId}` : `case:${item.value.caseId}`;
 }
 
+/** Continue at the removed item's position, falling back to the previous final item. */
+export function reviewItemAfterResolution(items: ReviewItem[], resolvedKey: string): ReviewItem | null {
+  const index = items.findIndex(item => reviewItemKey(item) === resolvedKey);
+  if (index < 0) throw new Error('Resolved review item is missing from the queue');
+  const remaining = items.filter(item => reviewItemKey(item) !== resolvedKey);
+  return remaining[Math.min(index, remaining.length - 1)] ?? null;
+}
+
 export function resolveReviewNavigation(event: ShortcutKeyEvent, context: {
   index: number; count: number; busy: boolean; nativeTarget: boolean;
 }): number | null {

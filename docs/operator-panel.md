@@ -143,7 +143,8 @@ Completed exercise judgments that propose no change also appear in Awaiting
 review, including retained historical judgments. The entry leads with that same
 served content, then the rationale. The operator can draft a correction from
 current content, request an advisory second opinion with a question, or close
-the review with an optional reason.
+the review with an optional reason. **Done** advances at the same queue position,
+or to the preceding item when closing the last entry.
 The second opinion reviews the no-change judgment; it does not create or apply a
 proposal. Closed reviews remain in Archive, with their retained jobs and results in the case evidence.
 
