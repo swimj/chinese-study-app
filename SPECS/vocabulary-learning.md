@@ -295,7 +295,8 @@ or meaning within the originating circumstance, with that distinction available
 through the cue itself. Enrichment adds optional practice surfaced during the
 assessment or requested by the learner. Source revision preserves its identity,
 answer contract, and learner controls. Retirement may coexist with optional
-additional target practice. Response-word additions create exercises only for
+additional target practice. Target additions, including enrichment, inherit the
+source exercise's mapped sense. Response-word additions create exercises only for
 unambiguous lexical identities established from actual responses; they do not
 reconcile the response word's repertoire or invent a sense association.
 
@@ -309,14 +310,13 @@ while integrating its accumulated teaching note. Creation preserves the authored
 shared prompt and teaching note unchanged. Notes are mostly English, with Chinese
 where useful.
 
-Missing or ambiguous shared identities require operator attention. The complete
-plan is withheld until every shared answer has a resolved identity. Selecting
-matching identities resumes it into one reviewable proposal; unresolved forms
-must not be assigned invented word identities. A resolution does not apply content.
+A submitted form can become an answer in shared or individual practice only when
+it matches one dictionary identity. Missing or ambiguous forms inform the
+diagnosis and target improvement as encounter evidence; they do not become
+proposed answers or require identity resolution to review the source repair.
 The operator can edit and select individual parts deliberately; optional local
 clarifiers are not enforced prerequisites for shared practice. Enrichment meets
-the same answer-fairness standard as repairs and is not automatically assigned
-the source exercise’s sense. The operator receives a
+the same answer-fairness standard as repairs. The operator receives a
 concise summary of the diagnosis and recommendation, with brief rationales for
 individual additions. Private learner comments inform review without being
 copied into shared authored content.

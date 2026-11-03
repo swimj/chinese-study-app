@@ -86,18 +86,20 @@ with intended-use description and supplied word references (`target`, `response_
 and so on). The model receives readable lexical information when a word is
 uniquely identified. The adapter supplies stored source versions and
 accepted forms when it translates the output into operations. Individual additions
-require `canAuthorIndividual: true`; unresolved forms can participate in shared
-practice subject to the identity review described below.
+and shared answers require `canAuthorIndividual: true`. Missing or ambiguous
+forms remain encounter evidence for diagnosis and target improvement; validation
+rejects their use as proposed answers.
 `revise` maps to `update_existing`, preserving identity and existing learner
 controls. The application retains its internal operation format; the model does
 not choose storage operations. Optional `learningRole` metadata lets the operator
 review identify source repair, shared practice, refinements, and enrichment.
 Old proposals without that metadata remain editable.
 
-Source repairs and target refinements retain the source sense. Response-word
-additions and optional target enrichment receive no invented sense association;
-a later assessment can establish one. Operators can edit complete authored
-proposals before preview. The adapter does not propose sense exclusion or learner
+Source repairs and all target additions, including optional enrichment, receive
+the source's mapped sense and mapping timestamp. This assumes the additional
+target practice develops the same sense. Response-word additions receive no
+invented sense association; a later assessment can establish one. Operators can
+edit complete authored proposals before preview. The adapter does not propose sense exclusion or learner
 suppression.
 
 The mapped intended use can be uncommon or excluded from current serving
@@ -192,19 +194,21 @@ admission stage-result cache.
 
 `single-improvement.md` owns the pedagogical judgment and authors the complete
 shared exercise. The adapter translates supplied answer references into the
-internal referral used for identity resolution and integration; this persistence
-boundary does not appear in the authoring prompt. A short `summary` carries the
+internal referral used for integration; this persistence boundary does not appear
+in the authoring prompt. A short `summary` carries the
 overall operator recommendation. Each exercise's rationale explains its own
 contribution. The separately stored integration rationale is not appended to the
 operator summary.
 
-`exercise-improvement-authoring.ts` trims submitted forms and matches each
-exactly against `lexical_words.hanzi` or `traditional`. One matching record supplies
-a lexical identity and permits individual authoring. Zero matches (such as a missing
-entry or nonmatching response) and multiple matches leave the identity unresolved.
+`exercise-improvement-authoring.ts` uses the shared response lookup to trim
+submitted forms and match each exactly against `lexical_words.hanzi` or
+`traditional`. One matching record supplies a lexical identity and permits both
+individual authoring and inclusion as a shared answer. Zero matches (such as a
+missing entry or nonmatching response) and multiple matches leave the identity unresolved.
 Several senses within one record do not create this ambiguity. The target already
 has an identity through its source exercise. Contextual disambiguation is not part
-of this lookup; the model receives the raw form even when no identity is supplied.
+of this lookup; the model receives the raw form as encounter evidence even when
+no identity is supplied.
 
 `pure-cue-promotion.ts` uses the same exact-form lookup for shared candidates and
 supplies eligible active overlapping pure cues in the same publication scope and owner. `pure-cue-integration.md`
@@ -216,8 +220,9 @@ upstream prompt and note unchanged and derives its semantic axis from that task.
 The derived axis cannot broaden or redesign the authored practice. Identity,
 privacy, and answer-leak guards apply even when integration selects reuse.
 
-When shared identities are missing or ambiguous, the result retains the complete
-local proposal as `pendingPlan` and withholds an actionable partial proposal.
+Historical saved assessments can contain shared answers whose identities are
+missing or ambiguous. Their complete local proposal is retained as `pendingPlan`
+until identity resolution; current authoring does not produce such plans.
 The operator workspace lists exact dictionary matches. Multiple matches can be
 resolved by selecting one. With no match, the selector cannot create or substitute
 an entry; it offers reassessment or closing the assessment. Selection through

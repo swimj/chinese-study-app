@@ -91,10 +91,10 @@ disposition, a complete shared draft, and any target or response-word practice.
 The [content repair contract](vocabulary-learning.md#content-repair-boundaries)
 defines source repair, distinctive refinements, and optional enrichment.
 Shared-cue integration chooses a compatible destination or creates that exact
-draft; it cannot veto the established pedagogical plan. Unresolved shared lexical
-identities withhold the complete plan until operator resolution. Resolution
-resumes the retained plan into one proposal under the same source and lexical
-fences. Operator editorial changes and deliberate selection of proposal parts
+draft; it cannot veto the established pedagogical plan. Proposed shared answers
+and response-word additions require uniquely resolved lexical identities;
+unresolved responses serve as encounter evidence for target improvement.
+Operator editorial changes and deliberate selection of proposal parts
 remain authoritative; generated components do not impose automatic dependency
 propagation. New response-word exercises retain exact lexical identity without
 inventing canonical sense mappings.

@@ -22,7 +22,7 @@ import { ingestVocabularySessionEvidence, getVocabularyReflectionCase, listVocab
   previewVocabularyProposal, getVocabularyProposal, listVocabularyProposals, listVocabularyProposalReviewBatch, closeVocabularyProposal, closeVocabularyTeachingCase, closeVocabularyCase, getVocabularyCaseWorkspace } from '../server/db/vocabulary-reflection.ts';
 import type { VocabularyContentDraft, VocabularyContent } from '../src/domain/vocabulary-content.ts';
 import type { VocabularySessionAction, VocabularyEncounterSnapshot } from '../src/domain/vocabulary-session.ts';
-import type { VocabularyProposalOperation } from '../src/domain/vocabulary-reflection.ts';
+import type { VocabularyProposalOperation, VocabularyReflectionResult } from '../src/domain/vocabulary-reflection.ts';
 let sql: DatabaseSync;
 const at = '2026-10-17T10:00:00.000Z', closedAt = '2026-10-17T10:00:16.000Z', judgedAt = '2026-10-17T11:00:00.000Z';
 const actor = { kind: 'operator' as const,id: 'editor' };
@@ -1248,7 +1248,7 @@ test('review eligibility reports unavailable reasons and never invents model pro
   assert.match(getVocabularyCaseWorkspace(work.caseId,'editor').reassessmentUnavailableReason!,/not an active/);
 });
 
-for(const drift of ['none','before_queue','during_integration'] as const)test(`operator identity resolution resumes a complete plan with response drift=${drift}`,async()=>{
+for(const drift of ['none','before_queue','during_integration'] as const)test(`operator identity resolution resumes a historical complete plan with response drift=${drift}`,async()=>{
   sql.exec("ALTER TABLE vocabulary_reflection_jobs ADD COLUMN model_choice TEXT;UPDATE lexical_words SET hanzi=CASE id WHEN 'a' THEN '甲' WHEN 'b' THEN '乙' ELSE '丙' END;INSERT INTO lexical_words(id,hanzi,pinyin,meaning) VALUES ('homograph','乙','yi4','another identity');");
   createVocabularySense({senseId:'intended',wordId:'a',description:'the intended use'},actor);
   establishVocabularySenseCatalog('a',getVocabularySenseCatalog('a').version,actor);
@@ -1260,24 +1260,30 @@ for(const drift of ['none','before_queue','during_integration'] as const)test(`o
   const adapter:ProviderAdapter={id:'fake',defaultBaseUrl:'https://unused.invalid',apiKeyEnvironmentVariable:'KEY',structuredOutputMode:'json_schema',async run(request){
     const step=request.provenance!.stepName;steps.push(step!);
     const input=JSON.parse(request.userPrompt);
-    let value:unknown;
-    if(step==='sense_mapping')value={outcome:'single_sense',rationale:'One intended use.',senseIds:[input.senses[0].senseId]};
-    else if(step==='single_improvement')value={summary:'Retire the source and provide response and shared practice.',
-      source:{decision:'retire',prompt:null},
-      additionalExercises:[{answer:'response_1',role:'refinement',prompt:'Express this distinct response purpose.',rationale:'Useful response-specific practice.'}],
-      sharedExercise:{answers:['target','response_2'],prompt:referral.draft.prompt,teachingNote:referral.draft.teachingNote,rationale:referral.rationale}};
-    else {
-      assert.equal(step,'pure_cue_promotion');assert.deepEqual(input.localPlan.operations.map((operation:{strategy:string})=>operation.strategy),['retire','create']);
-      assert.deepEqual(input.referral.draft,referral.draft);
-      if(drift==='during_integration')sql.prepare("UPDATE lexical_words SET hanzi='丁',meaning='changed identity' WHERE id='new'").run();
-      value={decision:'create',rationale:'Create the authored shared task.',existingContentId:null,semanticAxis:'The shared purpose.',teachingNote:null};
-    }
+    assert.equal(step,'pure_cue_promotion');assert.deepEqual(input.localPlan.operations.map((operation:{strategy:string})=>operation.strategy),['retire','create']);
+    assert.deepEqual(input.referral.draft,referral.draft);
+    if(drift==='during_integration')sql.prepare("UPDATE lexical_words SET hanzi='丁',meaning='changed identity' WHERE id='new'").run();
+    const value={decision:'create',rationale:'Create the authored shared task.',existingContentId:null,semanticAxis:'The shared purpose.',teachingNote:null};
     return {provider:'fake',model:'fake',responseId:null,structuredOutputMode:'json_schema',rawText:JSON.stringify(value),finishReason:'stop',rawResponse:null,
       usage:{inputTokens:null,cachedInputTokens:null,cacheWriteInputTokens:null,outputTokens:null,reasoningTokens:null,totalTokens:null},invocationId:null};
   }};
   const provider=createVocabularyReflectionProvider({random:()=>0,environment:{OPENAI_API_KEY:'fake'},adapter,
     ensureSenses:async()=>({catalog:getVocabularySenseCatalog('a'),senses:getVocabularySenses('a'),source:'existing'})});
-  const pending=await provider.run(work);if(pending.kind!=='exercise_improvement')assert.fail('Expected improvement');
+  // Persist the pre-eligibility contract directly: current authoring cannot emit
+  // unresolved shared answers, but retained complete plans must still resume.
+  const pending:Extract<VocabularyReflectionResult,{kind:'exercise_improvement'}>={kind:'exercise_improvement',result:{
+    diagnosis:'Retire the source and provide response and shared practice.',proposal:null,
+    admission:{outcome:'single_sense',rationale:'One intended use.',wordId:'a',sourceContentId:'one',sourceContentVersion:1,
+      catalogVersion:getVocabularySenseCatalog('a').version,senseIds:['intended'],sourceMapping:{senseId:null,establishedAt:null}},
+    pureCueReferral:referral,
+    pureCuePromotion:{outcome:'needs_operator',rationale:'Shared response has multiple dictionary identities.',candidateWordIds:['a'],existingContentId:null},
+    pendingPlan:{rationale:'Retire the source and provide response and shared practice.',bases:[{contentId:'one',expectedVersion:1}],operations:[
+      {...op('retire'),learningRole:'source_repair'},
+      {operationKey:'response-1',strategy:'create',learningRole:'refinement',scope:{kind:'shared'},rationale:'Useful response-specific practice.',
+        content:{...draft('historical-response','new'),body:{prompt:'Express this distinct response purpose.'},answers:[{wordId:'new',acceptedForms:['丙']}]}}
+    ]},
+    responseCandidateSnapshots:[{wordId:'new',hanzi:'丙',traditional:null,pinyin:'zì',meaning:'character'}],
+  }};
   assert.equal(pending.result.proposal,null);assert.equal(pending.result.pureCuePromotion!.outcome,'needs_operator');
   assert.deepEqual(pending.result.pendingPlan!.operations.map(operation=>operation.strategy),['retire','create']);
   const recorded=recordVocabularyImprovementResult(work.jobId,work.leaseToken,pending.result,judgedAt);
@@ -1288,7 +1294,7 @@ for(const drift of ['none','before_queue','during_integration'] as const)test(`o
     sql.prepare("UPDATE lexical_words SET hanzi='丁',meaning='changed identity' WHERE id='new'").run();
     assert.throws(()=>requestVocabularyPureCueResolution(work.caseId,'editor','openai:gpt-6-sol-high',1,{'甲':'a','乙':'b'}),/Response lexical identities changed/);
     assert.equal(sql.prepare("SELECT count(*) n FROM vocabulary_improvement_stages WHERE input_hash='operator-pure-cue-resolution-v1'").get()!.n,0);
-    assert.deepEqual(steps,['sense_mapping','single_improvement']);
+    assert.deepEqual(steps,[]);
     assert.equal(getVocabularyCaseWorkspace(work.caseId,'editor').proposals.length,0);
     return;
   }
@@ -1305,7 +1311,7 @@ for(const drift of ['none','before_queue','during_integration'] as const)test(`o
     return;
   }
   const completed=await provider.run(child);if(completed.kind!=='exercise_improvement')assert.fail('Expected improvement');
-  assert.deepEqual(steps,['sense_mapping','single_improvement','pure_cue_promotion']);
+  assert.deepEqual(steps,['pure_cue_promotion']);
   assert.deepEqual(completed.result.proposal!.operations.map(operation=>operation.strategy),['retire','create','create']);
   assert.deepEqual(completed.result.proposal!.operations.slice(0,2),pending.result.pendingPlan!.operations);
   const complete=recordVocabularyImprovementResult(child.jobId,child.leaseToken,completed.result,new Date().toISOString());

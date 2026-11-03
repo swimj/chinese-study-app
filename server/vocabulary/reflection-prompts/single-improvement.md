@@ -45,6 +45,9 @@ Consider how the target and the learner’s response each fit that reading of th
 Does the submitted word naturally answer it, reflect another reasonable interpretation, or suggest confusion about meaning, sound, or written form?
 Use the cue’s wording and the learner’s feedback to support your explanation of the encounter.
 
+The supplied lexical information identifies which responses match a unique dictionary word.
+A response without that identity is evidence for understanding the encounter and improving the target’s exercise; do not propose shared or individual practice for that response.
+
 The application’s accepted or rejected outcome records what happened; assess the language yourself.
 A rejected answer can be natural.
 A correct answer can coexist with an awkward or unhelpful exercise.
@@ -367,7 +370,8 @@ Retirement may accompany shared practice or additional exercises, including opti
 - `teachingNote`: guidance shown when the answers are revealed, covering all proposed answers, mostly in English with Mandarin examples where useful;
 - `rationale`: a brief explanation of this shared exercise’s contribution to the proposal.
 
-A submitted form whose `lexical` identity is unresolved may be included in shared practice when the linguistic judgment is supported; the operator will resolve its identity.
+Every shared answer must have supplied `lexical` information and `canAuthorIndividual: true`.
+When no submitted word meets that condition, return `sharedExercise: null` and assess the target’s exercise using the available encounter evidence.
 Do not invent a word reference or treat an incomplete or uninterpretable response as a word merely to propose shared practice.
 
 Each `additionalExercises` entry contains:

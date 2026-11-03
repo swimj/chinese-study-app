@@ -139,11 +139,11 @@ happens to the source. Its output is an editorial recommendation:
 description, historical encounters, and supplied words. Call-local references
 such as `target` and `response_1` identify answers without asking the model to
 repeat dictionary IDs or source accepted forms. The input marks
-whether each supplied word can receive an individual exercise. The target has a
-known identity; submitted forms require exactly one dictionary match. Missing or
-ambiguous matches can inform shared-practice judgment, with operator identity
-resolution required before that plan becomes actionable. Individual additions
-require a resolved supplied word.
+eligibility with `canAuthorIndividual`. The target has a known identity;
+submitted forms require exactly one dictionary match. Both individual additions
+and shared answers require a resolved supplied word. Missing or ambiguous forms
+serve as encounter evidence for diagnosis and target improvement; validation
+rejects their use as proposed answers.
 
 The adapter maps `revise` to `update_existing`, preserving source identity,
 answer criteria, and existing learner controls. Retirement can coexist with
@@ -151,9 +151,10 @@ additional target or response-word exercises and a shared cue. The application
 supplies operation keys, source versions, and answer forms. Internal proposals
 retain the established operations format and optional `learningRole` metadata;
 existing saved proposals remain readable without that metadata. Source repairs
-and target refinements retain the originating sense mapping. Optional target
-enrichment and response-word additions receive no invented sense association;
-later assessment can establish one.
+and all target additions, including optional enrichment, receive the originating
+sense mapping. This assumes additional target practice develops the same sense.
+Response-word additions receive no invented sense association; later assessment
+can establish one.
 
 Word-specific refinements must make a distinctive construction or meaning
 available through the cue. Optional enrichment comes from examples surfaced
@@ -165,7 +166,7 @@ Integration rationale remains separately recorded rather than being appended
 to that summary. Operator edits and selection of parts remain deliberate,
 without enforced component dependencies.
 
-Single improvement uses prompt version 7, schema version 5, and projection
+Single improvement uses prompt version 8, schema version 5, and projection
 `vocabulary-exercise-authoring.v1`. Mapping uses prompt version 5, schema version 1,
 and projection `vocabulary-admission.v4`. Exact source, catalog, mapping, and
 lexical checks fence publication and approval. Stage identities retain actual
@@ -201,7 +202,8 @@ membership, mostly in English with Chinese examples where useful. The prompt
 retains natural-production guidance and requires actual grammatical, collocational,
 and meaning compatibility rather than mere membership overlap.
 
-Unresolved shared identities withhold the complete proposal as `pendingPlan`.
+Historical assessments with unresolved shared identities retain the complete
+proposal as `pendingPlan`; current authoring rejects unresolved shared answers.
 Operator identity selection records a separate immutable resolution and resumes
 the saved local plan plus integration into one proposal. It does not repeat
 mapping or local planning, and does not apply content. Source, catalog, selected

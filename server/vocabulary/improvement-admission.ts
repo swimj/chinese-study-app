@@ -183,7 +183,7 @@ export async function runVocabularyImprovementAdmission(options: {
     const result = await stage<ImprovementResult>('single_improvement',projectVocabularyImprovementInput(job,original,inventory.find(sense=>sense.senseId===mapped.value.senseIds[0])!),options.improvementSchema,(value,invocationId)=>{
       const normalized = options.normalize(value,invocationId);
       if(normalized.kind!=='exercise_improvement')throw new Error('Unexpected improvement result');
-      for(const op of normalized.result.proposal?.operations??[])op.content.words=op.content.words.map(word=>word.wordId===wordId&&op.learningRole!=='enrichment'?{...word,senseId:mapped.value.senseIds[0],senseMappingEstablishedAt:expectedMapping.establishedAt}:word);
+      for(const op of normalized.result.proposal?.operations??[])op.content.words=op.content.words.map(word=>word.wordId===wordId?{...word,senseId:mapped.value.senseIds[0],senseMappingEstablishedAt:expectedMapping.establishedAt}:word);
       return normalized;
     },{fence:responseFence,contents:[],senses:inventory.filter(sense=>sense.senseId===mapped.value.senseIds[0])});
     fence();

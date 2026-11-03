@@ -3,7 +3,8 @@ import { isDeepStrictEqual } from 'node:util';
 import type { JsonSchema } from '../../src/domain/reflection-result-schema.ts';
 import type { VocabularyContent, VocabularyContentDraft } from '../../src/domain/vocabulary-content.ts';
 import type { VocabularyPureCueReferral, VocabularyPureCuePromotion, VocabularyProposalOperation, VocabularyReflectionJob } from '../../src/domain/vocabulary-reflection.ts';
-import { getVocabularyEncounterReactions } from '../../src/domain/vocabulary-session.ts';
+import { exactVocabularyWordMatches, vocabularyResponseWordMatches, type VocabularyResponseWord } from './response-word-matching.ts';
+import { copiesPrivateVocabularyEvidence } from './shared-evidence-guard.ts';
 import { getDb } from '../db/connection.ts';
 import { getVocabularyContentForMaintenance } from '../db/vocabulary-content.ts';
 
@@ -16,7 +17,7 @@ export const vocabularyPureCueIntegrationSchema=object({decision:{type:'string',
   existingContentId:{type:['string','null']},semanticAxis:{type:['string','null']},teachingNote:{type:['string','null']}});
 export const vocabularyPureCuePromotionSchema=object({decision:{type:'string',enum:['reject','reuse','extend','create']},rationale:text,
   existingContentId:{type:['string','null']},prompt:{type:['string','null']},semanticAxis:{type:['string','null']},teachingNote:{type:['string','null']},memberWordIds:{type:'array',items:text}});
-export type Word={wordId:string;hanzi:string;traditional:string|null;pinyin:string;meaning:string};
+export type Word=VocabularyResponseWord;
 type Decision={decision:'reject'|'reuse'|'extend'|'create';rationale:string;existingContentId:string|null;prompt:string|null;semanticAxis:string|null;teachingNote:string|null;memberWordIds:string[]};
 export type PromotionResult={assessment:VocabularyPureCuePromotion;operations:VocabularyProposalOperation[];bases:{contentId:string;expectedVersion:number}[]};
 const wordQuery='SELECT id AS wordId,hanzi,traditional,pinyin,meaning FROM lexical_words';
@@ -30,7 +31,7 @@ export function pureCueIdentityOptions(targetId:string,referral:VocabularyPureCu
   const target=getDb().prepare(`${wordQuery} WHERE id=?`).get(targetId) as Word|undefined;
   if(!target)throw new Error('Pure-cue target disappeared');
   return referral.candidateWords.map(form=>({form,choices:form===target.hanzi||form===target.traditional?[target]:
-    (getDb().prepare(`${wordQuery} WHERE hanzi=? OR traditional=? ORDER BY id`).all(form,form) as Word[])})).map(option=>({...option,choices:option.choices.map(word=>({...word}))}));
+    exactVocabularyWordMatches(form)})).map(option=>({...option,choices:option.choices.map(word=>({...word}))}));
 }
 export const PURE_CUE_RESOLUTION_CONTRACT='operator-pure-cue-resolution-v1';
 export type PureCueResolution={actorId:string;recordedAt:string;sourceJobId:string;original:VocabularyContent;
@@ -109,12 +110,8 @@ export function prepareVocabularyPureCuePromotion(job:VocabularyReflectionJob,or
       ||output.memberWordIds.every(id=>existingAnswers.some(answer=>answer.wordId===id))))fail('extension must preserve stimulus, axis and all existing members, and add a member');
     if(typeof output.teachingNote!=='string'||!output.teachingNote.trim())fail('creation and extension require a teaching note');
     const teachingNote=output.teachingNote!;
-    const privateFragments=job.evidence.evidence.flatMap(encounter=>[
-      ...getVocabularyEncounterReactions(encounter).flatMap(reaction=>reaction.payload.comment?[reaction.payload.comment.trim()]:[]),
-      ...encounter.responses.flatMap(response=>response.payload.response&&response.payload.response.length>=12?[response.payload.response]:[]),
-    ]).filter(fragment=>fragment.length>=4);
     const authoredText=[output.prompt,output.semanticAxis,teachingNote].filter((value):value is string=>typeof value==='string');
-    if(original.accessScope==='shared'&&privateFragments.some(fragment=>authoredText.some(value=>value.includes(fragment))))fail('shared cue copies private learner evidence');
+    if(copiesPrivateVocabularyEvidence(job,original.accessScope,authoredText))fail('shared cue copies private learner evidence');
     const answers=output.memberWordIds.map(id=>{
       const retained=existingAnswers.find(answer=>answer.wordId===id);if(retained)return retained;
       const word=candidates.find(word=>word.wordId===id);if(!word)return fail('new member not supplied');
@@ -150,10 +147,7 @@ export function validateVocabularyPureCueDraft(job:VocabularyReflectionJob,origi
   validateVocabularyPureCueReferral(referral);
   if(!referral.draft)throw new Error('Pure-cue integration requires an authored plan');
   const text=[referral.draft.prompt,referral.draft.semanticAxis,referral.draft.teachingNote].filter((value):value is string=>typeof value==='string');
-  const fragments=job.evidence.evidence.flatMap(encounter=>[
-    ...getVocabularyEncounterReactions(encounter).map(reaction=>reaction.payload.comment??''),
-    ...encounter.responses.map(response=>(response.payload.response?.length??0)>=12?response.payload.response!:'')]).map(value=>value.trim()).filter(value=>value.length>=4);
-  if(original.accessScope==='shared'&&fragments.some(fragment=>text.some(value=>value.includes(fragment))))throw new Error('Shared cue copies private learner evidence');
+  if(copiesPrivateVocabularyEvidence(job,original.accessScope,text))throw new Error('Shared cue copies private learner evidence');
   const forms=[...referral.candidateWords,...(original.kind==='exercise'?original.answers.flatMap(answer=>answer.acceptedForms):[]),
     ...pureCueIdentityOptions(job.evidence.wordId!,referral).flatMap(option=>option.choices.flatMap(word=>[word.hanzi,...(word.traditional?[word.traditional]:[])]))];
   if(forms.some(form=>form&&referral.draft!.prompt.includes(form)))throw new Error('Shared stimulus exposes an accepted answer');
@@ -185,9 +179,7 @@ export function prepareVocabularyPureCueIntegration(job:VocabularyReflectionJob,
 
 /** Only exact, unambiguous response identities may receive new individual practice. */
 export function vocabularyResponseCandidates(job:Pick<VocabularyReflectionJob,'evidence'>):Word[] {
-  const forms=[...new Set(job.evidence.evidence.flatMap(encounter=>encounter.responses.flatMap(response=>response.payload.response?.trim()?[response.payload.response.trim()]:[])))];
-  return [...new Map(forms.flatMap(form=>{
-    const matches=getDb().prepare('SELECT id AS wordId,hanzi,traditional,pinyin,meaning FROM lexical_words WHERE hanzi=? OR traditional=?').all(form,form) as Word[];
-    return matches.length===1&&matches[0]!.wordId!==job.evidence.wordId?[[matches[0]!.wordId,{...matches[0]!}] as const]:[];
+  return [...new Map(vocabularyResponseWordMatches(job).flatMap(({word})=>{
+    return word&&word.wordId!==job.evidence.wordId?[[word.wordId,{...word}] as const]:[];
   })).values()];
 }

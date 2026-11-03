@@ -5,6 +5,7 @@ import { getEffectiveVocabularyEncounterReactions } from '../../src/domain/vocab
 import { getDb } from '../db/connection.ts';
 import { validateJsonSchema } from '../llm/json-schema-validator.ts';
 import type { Word } from './pure-cue-promotion.ts';
+import { vocabularyResponseWordMatches } from './response-word-matching.ts';
 
 const text:JsonSchema={type:'string'};
 const object=(properties:Record<string,JsonSchema>):JsonSchema=>({type:'object',properties,required:Object.keys(properties),additionalProperties:false});
@@ -22,16 +23,13 @@ export type ExerciseImprovementOutput={
 type SuppliedWord={ref:string;form:string;word:Word|null};
 const wordQuery='SELECT id AS wordId,hanzi,traditional,pinyin,meaning FROM lexical_words';
 
-/** References denote supplied forms. Ambiguous forms remain available for shared identity review. */
+/** References denote supplied forms. Unresolved forms remain encounter evidence only. */
 export function vocabularyImprovementWords(job:VocabularyReflectionJob):SuppliedWord[] {
   const target=getDb().prepare(`${wordQuery} WHERE id=?`).get(job.evidence.wordId) as Word|undefined;
   if(!target)throw new Error('Improvement target is unavailable');
   const words:SuppliedWord[]=[{ref:'target',form:target.hanzi,word:target}];
-  const forms=[...new Set(job.evidence.evidence.flatMap(encounter=>encounter.responses.flatMap(response=>response.payload.response?.trim()?[response.payload.response.trim()]:[])))];
-  for(const form of forms){
+  for(const {form,word} of vocabularyResponseWordMatches(job)){
     if(form===target.hanzi||form===target.traditional)continue;
-    const matches=getDb().prepare(`${wordQuery} WHERE hanzi=? OR traditional=? ORDER BY id`).all(form,form) as Word[];
-    const word=matches.length===1?matches[0]!:null;
     if(word&&words.some(candidate=>candidate.word?.wordId===word.wordId))continue;
     words.push({ref:`response_${words.length}`,form,word});
   }
@@ -104,6 +102,7 @@ export function adaptVocabularyImprovementOutput(job:VocabularyReflectionJob,ori
     const shared=output.sharedExercise;
     nonempty(shared.prompt);nonempty(shared.teachingNote);nonempty(shared.rationale);
     if(!shared.answers.includes('target')||new Set(shared.answers).size!==shared.answers.length)throw new Error('Shared answers require target and distinct supplied responses');
+    if(shared.answers.some(ref=>!lookup(ref).word))throw new Error('Shared exercise requires supplied unambiguous words');
     pureCueReferral={candidateWords:shared.answers.map(ref=>lookup(ref).form),sharedPurpose:shared.prompt,rationale:shared.rationale,draft:{prompt:shared.prompt,teachingNote:shared.teachingNote}};
   }
   return {legacy:{diagnosis:output.summary,operations,responseExercises,pureCueReferral},roles:[...roles,...responseRoles]};

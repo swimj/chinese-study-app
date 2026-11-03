@@ -266,3 +266,40 @@ test('response refinements use only uniquely resolved submitted identities and n
   db.exec("INSERT INTO lexical_words VALUES ('homograph','扩大',NULL,'other','other sense')");
   assert.throws(()=>normalizeVocabularySingleImprovementOutput(input,output),/supplied unambiguous word/);
 });
+
+test('response identities agree across authoring and response candidates for aliases, homographs and missing forms',async()=>{
+  const {vocabularyImprovementWords}=await import('../server/vocabulary/exercise-improvement-authoring.ts');
+  const {vocabularyResponseCandidates}=await import('../server/vocabulary/pure-cue-promotion.ts');
+  const {vocabularyResponseWordMatches}=await import('../server/vocabulary/response-word-matching.ts');
+  db.exec("INSERT INTO lexical_words VALUES ('ambiguous-a','行',NULL,'xing2','work'),('ambiguous-b','行',NULL,'hang2','row')");
+  const input=job();
+  input.evidence.evidence[0]!.responses=[' 放大 ','扩大','擴大',' 行 ','missing','扩大',' '].map((response,index)=>({
+    protocolVersion:1,actionId:`response-${index}`,clientActionId:`response-${index}`,sequence:index+1,occurredAt:at,kind:'response',
+    payload:{encounterId:'encounter',response,outcome:'rejected'},
+  }));
+  assert.deepEqual(vocabularyResponseWordMatches(input).map(({form,matches})=>[form,matches.map(word=>word.wordId)]),[
+    ['放大',['target']],['扩大',['other']],['擴大',['other']],['行',['ambiguous-a','ambiguous-b']],['missing',[]],
+  ]);
+  assert.deepEqual(vocabularyResponseCandidates(input).map(word=>word.wordId),['other']);
+  assert.deepEqual(vocabularyImprovementWords(input).map(({ref,form,word})=>[ref,form,word?.wordId??null]),[
+    ['target','放大','target'],['response_1','扩大','other'],['response_2','行',null],['response_3','missing',null],
+  ]);
+});
+
+test('shared evidence guard consistently trims copied prose while allowing short answers and private scope',async()=>{
+  const {copiesPrivateVocabularyEvidence}=await import('../server/vocabulary/shared-evidence-guard.ts');
+  const input=job(),encounter=input.evidence.evidence[0]!;
+  encounter.feedback=[{protocolVersion:1,actionId:'comment',clientActionId:'comment',sequence:1,occurredAt:at,kind:'feedback',
+    payload:{encounterId:'encounter',feedback:'comment',comment:'  My private experience  '}}];
+  encounter.responses=['  A long private response  ','扩大'].map((response,index)=>({
+    protocolVersion:1,actionId:`response-${index}`,clientActionId:`response-${index}`,sequence:index+2,occurredAt:at,kind:'response',
+    payload:{encounterId:'encounter',response,outcome:'rejected'},
+  }));
+  for(const text of ['Example: My private experience.','A long private response']){
+    assert.equal(copiesPrivateVocabularyEvidence(input,'shared',[text]),true);
+    assert.equal(copiesPrivateVocabularyEvidence(input,'private',[text]),false);
+  }
+  assert.equal(copiesPrivateVocabularyEvidence(input,'shared',['扩大 describes expansion.']),false);
+  encounter.feedback[0]!.payload.comment='ok';
+  assert.equal(copiesPrivateVocabularyEvidence(input,'shared',['This looks ok.']),false);
+});

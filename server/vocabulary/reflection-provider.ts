@@ -1,3 +1,4 @@
+import { copiesPrivateVocabularyEvidence } from './shared-evidence-guard.ts';
 import { linkVocabularyInvocationContent, linkVocabularyInvocationSense } from '../db/vocabulary-provenance.ts';
 import { VocabularySenseMappingUnavailable, isSenseMappingAvailabilityFailure } from './sense-mapping-retry.ts';
 import { GLM_FLASH_HIGH_REFLECTION_MODEL_CONFIG } from '../reflection/glm-provider.ts';
@@ -13,7 +14,7 @@ import { isDeepStrictEqual } from 'node:util';
 import type { VocabularyContent, VocabularyJson } from '../../src/domain/vocabulary-content.ts';
 import type { VocabularyReflectionJob, VocabularyReflectionResult, VocabularyProposalOperation } from '../../src/domain/vocabulary-reflection.ts';
 import type { JsonSchema } from '../../src/domain/reflection-result-schema.ts';
-import { getEffectiveVocabularyEncounterReactions, getVocabularyEncounterReactions } from '../../src/domain/vocabulary-session.ts';
+import { getEffectiveVocabularyEncounterReactions } from '../../src/domain/vocabulary-session.ts';
 import { REFLECTION_MODEL_ARMS, isOfferedReflectionModelChoice, type ReflectionModelChoice } from '../reflection/model-arms.ts';
 import { LUNA_REFLECTION_MODEL_CONFIG, type ReflectionProviderConfig } from '../reflection/luna-provider.ts';
 import { reflectionConfigForChoice, routeIndividualReflectionModel } from '../reflection/model-routing.ts';
@@ -113,11 +114,7 @@ export function normalizeVocabularyReflectionOutput(job:VocabularyReflectionJob,
         scope:original.accessScope==='shared'?{kind:'shared'}:{kind:'learner',learnerId:original.ownerLearnerId!},rationale:operation.rationale,content};
     }
     nonempty(operation.prompt);
-    const privateFragments=job.evidence.evidence.flatMap(encounter=>[
-      ...getVocabularyEncounterReactions(encounter).flatMap(reaction=>reaction.payload.comment?.trim().length? [reaction.payload.comment.trim()]:[]),
-      ...encounter.responses.flatMap(response=>response.payload.response&&response.payload.response.length>=12?[response.payload.response]:[]),
-    ]).filter(fragment=>fragment.length>=4);
-    if(original.accessScope==='shared'&&privateFragments.some(fragment=>operation.prompt.includes(fragment))) {
+    if(copiesPrivateVocabularyEvidence(job,original.accessScope,[operation.prompt])) {
       throw new VocabularyReflectionOutputError('Shared authored content cannot copy private learner evidence');
     }
     if(accepted.some(answer=>answer.trim()&&operation.prompt.includes(answer)))throw new VocabularyReflectionOutputError('Retrieval prompt exposes an accepted answer');
@@ -141,10 +138,7 @@ export function normalizeVocabularyReflectionOutput(job:VocabularyReflectionJob,
       nonempty(exercise.prompt);nonempty(exercise.rationale);
       const acceptedForms=[...new Set([candidate.hanzi,...(candidate.traditional?[candidate.traditional]:[])])];
       if(acceptedForms.some(form=>exercise.prompt.includes(form)))throw new VocabularyReflectionOutputError('Response prompt exposes an accepted answer');
-      const fragments=job.evidence.evidence.flatMap(encounter=>[
-        ...getVocabularyEncounterReactions(encounter).map(reaction=>reaction.payload.comment??''),
-        ...encounter.responses.map(response=>(response.payload.response?.length??0)>=12?response.payload.response!:'')]).map(text=>text.trim()).filter(text=>text.length>=4);
-      if(original.accessScope==='shared'&&fragments.some(fragment=>exercise.prompt.includes(fragment)))throw new VocabularyReflectionOutputError('Shared authored content cannot copy private learner evidence');
+      if(copiesPrivateVocabularyEvidence(job,original.accessScope,[exercise.prompt]))throw new VocabularyReflectionOutputError('Shared authored content cannot copy private learner evidence');
       operations.push({operationKey:`response-${index+1}`,strategy:'create',rationale:exercise.rationale,
         scope:original.accessScope==='shared'?{kind:'shared'}:{kind:'learner',learnerId:original.ownerLearnerId!},
         content:{contentId:randomUUID(),kind:'exercise',payloadVersion:1,body:{prompt:exercise.prompt,instruction:'',stimulus:{kind:'direct_text',text:exercise.prompt},
@@ -171,9 +165,6 @@ export function normalizeVocabularySingleImprovementOutput(job:VocabularyReflect
       const answerWordId=operation.content.answers[0]!.wordId;
       operation.content={...operation.content,words:operation.content.words.filter(word=>word.wordId===answerWordId),exerciseType:'word',assessment:{match:'exact'},body:{prompt:body.prompt,instruction:'',stimulus:{kind:'direct_text',text:body.prompt},
         source:{kind:'vocabulary_additional_exercise',role:operation.learningRole,assessedContentId:original.contentId,invocationId:invocationId??null}}};
-    }
-    if(operation.learningRole==='enrichment'&&operation.strategy==='create'){
-      operation.content.words=operation.content.words.map(({senseId:_sense,senseMappingEstablishedAt:_at,...word})=>word);
     }
   });
   return normalized;
@@ -218,7 +209,7 @@ export function createVocabularyReflectionProvider(options:{environment?:NodeJS.
       const systemPrompt=promptFile==='feedback'?task:`${reasoning}\n\n${task}`;prompts.set(promptFile,systemPrompt);return systemPrompt;
     };
     const stagePrompt=(stage:string)=>stage==='sense_mapping'?'sense-mapping':stage==='pure_cue_promotion'?'pure-cue-integration':'single-improvement';
-    const admissionPromptVersion=(stage:string)=>stage==='single_improvement'?'7':stage==='sense_mapping'?'5':stage==='pure_cue_promotion'?'3':'2';
+    const admissionPromptVersion=(stage:string)=>stage==='single_improvement'?'8':stage==='sense_mapping'?'5':stage==='pure_cue_promotion'?'3':'2';
     const schemaVersion=(step:string)=>step==='single_improvement'?'5':step==='pure_cue_promotion'?'4':'1';
     const projectionVersion=(step:string)=>step==='second_opinion'?'vocabulary-second-opinion.v1'
       :step==='feedback'||step==='improvement'?'vocabulary-reflection.v2'

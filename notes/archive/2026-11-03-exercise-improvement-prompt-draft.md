@@ -6,7 +6,7 @@ created: 2026-11-03
 retire-when: incorporated into the working prompt or superseded
 
 Review draft developed through inline discussion on PR #442.
-Incorporated into the [working prompt](../../server/vocabulary/reflection-prompts/single-improvement.md); retained here as the review record.
+Incorporated into the [working prompt](../../../server/vocabulary/reflection-prompts/single-improvement.md); retained here as the review record.
 
 ---
 

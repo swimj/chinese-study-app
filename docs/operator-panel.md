@@ -193,8 +193,10 @@ word defaults, including **Select none**, resolves it.
 
 ### Resolving shared-practice identities
 
-When a proposed shared exercise includes an ambiguous dictionary form, Needs
-attention offers **Resolve candidate identities**. Select the intended entry for
+Current assessment uses missing or ambiguous dictionary forms as evidence for
+target improvement, without proposing them as answers. Historical saved
+assessments with unresolved shared answers appear in Needs attention with
+**Resolve candidate identities**. Select the intended entry for
 each ambiguous form, then queue the integration assessment. The complete content
 plan waits for this resolution; choosing identities resumes that plan without
 applying it or repeating the source assessment. If a form has no matching
