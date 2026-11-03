@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import { DatabaseSync, backup } from 'node:sqlite';
 import os from 'node:os';
@@ -21,7 +22,7 @@ const alice = <T>(work: () => T) => runWithLearnerId('alice', work);
 type Input = VocabularySessionAction extends infer A ? A extends VocabularySessionAction ? Pick<A, 'kind' | 'payload'> : never : never;
 beforeEach(() => {
   sql = new DatabaseSync(':memory:'); setDb(sql); sql.exec(`PRAGMA foreign_keys=ON;
-    CREATE TABLE learners(learner_id TEXT PRIMARY KEY);
+    CREATE TABLE learners(learner_id TEXT PRIMARY KEY,disabled_at TEXT);
     CREATE TABLE word_introduction_preparation(preparation_epoch INTEGER DEFAULT 0,word_id TEXT PRIMARY KEY, content_id TEXT, package_id TEXT, active_stage TEXT, lease_token TEXT, lease_expires_at TEXT);
     CREATE TABLE word_content_documents(content_id TEXT PRIMARY KEY, word_id TEXT, publication_id TEXT, content_json TEXT);
     CREATE TABLE shared_content_publications(publication_id TEXT PRIMARY KEY, publication_status TEXT);
@@ -35,7 +36,7 @@ beforeEach(() => {
     CREATE TABLE learner_owned_word_skill_state(learner_id TEXT,word_id TEXT,skill_id TEXT,interval_hours REAL,ease_factor REAL,enabled INTEGER,next_due_at TEXT,last_studied_at TEXT,PRIMARY KEY(learner_id,word_id,skill_id));
     CREATE TABLE learner_owned_word_skill_relevance(learner_id TEXT,word_id TEXT,skill_id TEXT,relevance_state TEXT,PRIMARY KEY(learner_id,word_id,skill_id));
     CREATE TABLE learner_owned_word_study_admission_state(learner_id TEXT,word_id TEXT,study_phase TEXT,earliest_next_study_at TEXT,PRIMARY KEY(learner_id,word_id));
-    INSERT INTO learners VALUES ('alice'),('bob');
+    INSERT INTO learners(learner_id) VALUES ('alice'),('bob');
     INSERT INTO lexical_words(id,created_at) VALUES ('a','2026-01-01T00:00:00.000Z'),('b','2026-01-01T00:00:00.000Z'),('new','2026-01-01T00:00:00.000Z');
     INSERT INTO learner_word_state VALUES ('alice','a','learning',2,NULL),('alice','b','review',0,NULL),('alice','new','unstudied',0,NULL);
   `);
@@ -479,4 +480,88 @@ for(const lapse of [false,true]) test(`strong pure-cue closure ${lapse?'returns 
   closeVocabularySessionCompletion('strong-session',staged.completionId,'2026-10-18T00:00:00.000Z');
   assert.deepEqual(sql.prepare("SELECT * FROM learner_pure_cue_schedules WHERE learner_id='alice' AND content_id='cue'").get(),row);
   assert.equal(sql.prepare("SELECT count(*) n FROM learner_state_effects WHERE kind='pure_cue_schedule_applied'").get()!.n,1);
+}));
+
+// One-time recovery reuses the production close path without changing live study.
+import { previewEnoughRecovery, applyEnoughRecovery } from '../scripts/lib/recover-enough-session.ts';
+function stuckEnoughSession() {
+  createVocabularySession({sessionId:'stuck',words:[{wordId:'b',mode:'practice'}]},now);
+  const log=actions(present('b','b'),response('b',false),finish,{kind:'word_wrap',payload:{wordId:'b',reason:'enough'}});
+  appendVocabularySessionActions('stuck',log,now);
+  return log;
+}
+const recoveryDay='2026-10-18T10:00:00.000Z';
+test('one-time Enough recovery previews without writes and closes historically with downstream dispatch once',()=>alice(()=>{
+  const log=stuckEnoughSession();const before=sql.prepare('SELECT total_changes() n').get()!.n;
+  const plan=previewEnoughRecovery('stuck',recoveryDay);
+  assert.equal(sql.prepare('SELECT total_changes() n').get()!.n,before);
+  assert.equal(plan.closedAt,'2026-10-17T10:00:15.000Z');
+  const result=applyEnoughRecovery('stuck',plan.digest,recoveryDay);
+  assert.equal(result.recoveredAt,recoveryDay);assert.equal(result.status,'closed');
+  assert.equal(getVocabularyWordSchedule('b')!.lastPractisedAt,plan.closedAt);
+  assert.equal(getVocabularySession('stuck').completion?.metadata.activeDurationMs,null);
+  assert.deepEqual(getVocabularySession('stuck').actions,log);
+  assert.equal(count('vocabulary_post_session_dispatches'),1);
+  assert.equal(sql.prepare('SELECT status FROM vocabulary_post_session_dispatches').get()!.status,'queued');
+  assert.equal(count('learner_word_reserve_requests'),1);
+  assert.throws(()=>applyEnoughRecovery('stuck',plan.digest,recoveryDay),/no completion revision/);
+  assert.equal(count('vocabulary_post_session_dispatches'),1);
+}));
+test('one-time Enough recovery refuses stale preview and subsequent learner choices',()=>alice(()=>{
+  stuckEnoughSession();const plan=previewEnoughRecovery('stuck',recoveryDay);
+  sql.prepare("UPDATE learner_word_schedules SET state_version=state_version+1 WHERE learner_id='alice' AND word_id='b'").run();
+  assert.throws(()=>applyEnoughRecovery('stuck',plan.digest,recoveryDay),/plan changed/);
+  assert.equal(count('vocabulary_session_completions'),0);
+  changeVocabularyMode('b','practice',getVocabularyLearnerWord('b')!.stateVersion);
+  assert.throws(()=>previewEnoughRecovery('stuck',recoveryDay),/state changed/);
+}));
+test('one-time Enough recovery refuses later study and wrong ownership',()=>alice(()=>{
+  stuckEnoughSession();
+  assert.throws(()=>runWithLearnerId('bob',()=>previewEnoughRecovery('stuck',recoveryDay)),/not found/);
+  createVocabularySession({sessionId:'later-session',words:[]},recoveryDay);
+  assert.throws(()=>previewEnoughRecovery('stuck',recoveryDay),/Subsequent/);
+}));
+test('one-time Enough recovery rolls back staging and effects when closure fails',()=>alice(()=>{
+  stuckEnoughSession();const plan=previewEnoughRecovery('stuck',recoveryDay);
+  sql.exec("CREATE TRIGGER fail_recovery BEFORE INSERT ON vocabulary_post_session_dispatches BEGIN SELECT RAISE(ABORT,'injected failure'); END;");
+  const before=getVocabularyWordSchedule('b');
+  assert.throws(()=>applyEnoughRecovery('stuck',plan.digest,recoveryDay),/injected failure/);
+  assert.equal(count('vocabulary_session_completions'),0);assert.equal(count('learner_state_effects'),0);
+  assert.equal(getVocabularySession('stuck').status,'active');assert.deepEqual(getVocabularyWordSchedule('b'),before);
+  sql.exec('DROP TRIGGER fail_recovery');
+  assert.equal(applyEnoughRecovery('stuck',plan.digest,recoveryDay).status,'closed');
+}));
+test('one-time Enough recovery rejects ordinary unfinished sessions',()=>alice(()=>{
+  createVocabularySession({sessionId:'stuck',words:[{wordId:'b',mode:'practice'}]},now);
+  appendVocabularySessionActions('stuck',actions(present('b','b')),now);
+  assert.throws(()=>previewEnoughRecovery('stuck',recoveryDay),/Final action/);
+}));
+
+test('one-time Enough recovery rejects disabled learners and later schedule writes',()=>alice(()=>{
+  stuckEnoughSession();
+  sql.prepare("UPDATE learners SET disabled_at=? WHERE learner_id='alice'").run(recoveryDay);
+  assert.throws(()=>previewEnoughRecovery('stuck',recoveryDay),/enabled learner/);
+  sql.prepare("UPDATE learners SET disabled_at=NULL WHERE learner_id='alice'").run();
+  sql.prepare("UPDATE learner_word_schedules SET last_practised_at=? WHERE learner_id='alice' AND word_id='b'").run(recoveryDay);
+  assert.throws(()=>previewEnoughRecovery('stuck',recoveryDay),/Scheduling changed/);
+}));
+
+test('one-time Enough CLI previews a read-only copy and applies only a confirmed plan',async()=>alice(async()=>{
+  stuckEnoughSession();
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'enough-recovery-cli-'));
+  const file=path.join(dir,'study.db');
+  try {
+    await backup(sql,file);
+    const cli=['--import','tsx','scripts/recover-enough-session.ts',`--database=${file}`,'--learner-id=alice','--session-id=stuck'];
+    const before=fs.readFileSync(file);
+    const plan=JSON.parse(execFileSync(process.execPath,cli,{encoding:'utf8'}));
+    assert.deepEqual(fs.readFileSync(file),before);
+    const result=JSON.parse(execFileSync(process.execPath,[...cli,'--apply=true',`--confirm-plan=${plan.digest}`],{encoding:'utf8'}));
+    assert.equal(result.status,'closed');
+    const copy=new DatabaseSync(file,{readOnly:true});
+    try {
+      assert.equal(copy.prepare("SELECT closed_at FROM vocabulary_sessions WHERE session_id='stuck'").get()!.closed_at,plan.closedAt);
+      assert.equal(copy.prepare('SELECT count(*) n FROM vocabulary_post_session_dispatches').get()!.n,1);
+    } finally {copy.close();}
+  } finally {fs.rmSync(dir,{recursive:true,force:true});}
 }));
