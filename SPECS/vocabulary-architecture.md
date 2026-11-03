@@ -87,7 +87,9 @@ source. Retry retains the pinned version; it does not silently move the request
 to another revision.
 
 Exercise-local assessment owns the coherent content plan, including the source's
-disposition, a complete shared draft, and any local target or response refinements.
+disposition, a complete shared draft, and any target or response-word practice.
+The [content repair contract](vocabulary-learning.md#content-repair-boundaries)
+defines source repair, distinctive refinements, and optional enrichment.
 Shared-cue integration chooses a compatible destination or creates that exact
 draft; it cannot veto the established pedagogical plan. Unresolved shared lexical
 identities withhold the complete plan until operator resolution. Resolution

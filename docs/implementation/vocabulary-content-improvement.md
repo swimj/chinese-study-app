@@ -19,7 +19,7 @@ flowchart TD
   Map -->|Single sense| Local[Coherent local plan and concrete shared draft]
   Map -->|Unmappable or inventory gap| Attention[Operator attention]
   Local --> Shared{Shared draft?}
-  Shared -->|No| Proposal[Operator review proposal]
+  Shared -->|No| Proposal[Proposal or no-change finding]
   Shared -->|Yes| Identities{Resolved identities?}
   Identities -->|No| Pending[Withhold pending plan for operator resolution]
   Pending --> Identities
@@ -40,11 +40,10 @@ flowchart TD
   owner. Learner adoption, scheduling, deactivation, and selected serving senses
   do not determine this content lifecycle. Covered fallbacks record no proposal;
   uncovered fallbacks bootstrap selected practice without a mapping model call.
-- **Mapping** assesses authored exercises for a single intended use. Related
-  glosses do not trigger a laundry-list repertoire route. Unmappable content or
-  inventory gaps stop with operator attention. Intended sense is authorial context,
+- **Mapping** identifies the intended use of an authored exercise and compares it
+  with the supplied inventory. Unmappable content or inventory gaps stop with operator attention. Intended sense is authorial context,
   not a clue the learner necessarily saw.
-- **Local planning** trusts selected coverage, judges the original cue foremost,
+- **Local planning** receives the mapped intended use, judges the original cue,
   and produces one coherent plan: a source decision, additional target or
   response-word exercises, and an optional complete shared draft. It can retire the original
   without excluding its sense. Raw responses and reactions inform the judgment.
@@ -71,7 +70,7 @@ within mixed-word feedback aggregation. Teaching issues go to a manual inbox.
 
 ## Routing, local planning and shared integration
 
-### Single-word assessment
+### Exercise-local authoring
 
 Single-word planning returns `{summary, source, sharedExercise, additionalExercises}`.
 The source decision is `keep`, `revise`, or `retire`; only revision carries a
@@ -84,9 +83,11 @@ search, and follows the same answer-fairness standard.
 
 `exercise-improvement-authoring.ts` presents the source and encounters separately,
 with intended-use description and supplied word references (`target`, `response_1`,
-and so on). It maps those references to lexical identities and supplies stored
-source versions and accepted forms. Individual additions require resolved supplied
-words. Ambiguous submitted forms remain available for shared identity review.
+and so on). The model receives readable lexical information when a word is
+uniquely identified. The adapter supplies stored source versions and
+accepted forms when it translates the output into operations. Individual additions
+require `canAuthorIndividual: true`; unresolved forms can participate in shared
+practice subject to the identity review described below.
 `revise` maps to `update_existing`, preserving identity and existing learner
 controls. The application retains its internal operation format; the model does
 not choose storage operations. Optional `learningRole` metadata lets the operator
@@ -98,6 +99,19 @@ additions and optional target enrichment receive no invented sense association;
 a later assessment can establish one. Operators can edit complete authored
 proposals before preview. The adapter does not propose sense exclusion or learner
 suppression.
+
+The mapped intended use can be uncommon or excluded from current serving
+coverage. Local assessment judges the exact target's contribution within that
+use; it does not receive or revise serving selections. Making a compound-fragment
+cue more selective is insufficient when it still retrieves a different lexical unit;
+genuine construction practice and good direct cues for obscure selected nouns
+remain valid. A `keep` decision retains the source; `retire` removes that
+exercise while allowing additional target or response-word practice and a shared
+cue. Both decisions use a null authored prompt. Normalization retains the source
+comparison snapshot, identity and version; source drift is handled by the
+publication/approval fences without reclassifying valid provider output as malformed.
+
+### Dictionary fallback and sense mapping
 
 After sense readiness, deterministic source routing separates dictionary
 fallback bootstrap from authored-cue assessment. An uncovered fallback captures
@@ -113,20 +127,12 @@ including pure cues accepting the target.
 
 Authored cues instead receive a separate mapping call. A defensible single sense
 admits coherent local planning. An uninterpretable source or inventory gap retains
-its rationale in operator attention without automatic inventory expansion. No
-laundry-list outcome sends authored content to repertoire generation. Learner
+its rationale in operator attention without automatic inventory expansion. The
+three outcomes are `single_sense`, `inventory_gap`, and `unmappable`. Learner
 feedback and compensation have independent authority.
 
-Selected senses are intentional, including uncommon or personalized uses. The
-assessment judges the exact target's contribution rather than deciding whether
-the selected meaning is generally useful. Making a compound-fragment cue more
-selective is insufficient when it still retrieves a different lexical unit;
-genuine construction practice and good direct cues for obscure selected nouns
-remain valid. A `keep` decision retains the source; `retire` removes that
-exercise while allowing additional target or response-word practice and a shared
-cue. Both decisions use a null authored prompt. Normalization retains the source
-comparison snapshot, identity and version; source drift is handled by the
-publication/approval fences without reclassifying valid provider output as malformed.
+### Repertoire authoring outcomes
+
 Repertoire authoring returns only `exercises`, with no sense-exclusion fields.
 Every new automatic item must identify a supplied use; null or unknown references
 are rejected rather than assigned an arbitrary sense. Aliases translate back to
@@ -143,17 +149,20 @@ report the assessment-time count of other active general production exercises
 in the same publication scope, including when retirement would leave none. That
 count is context for review rather than a guarantee about later serving.
 
+### Encounter grouping and reassessment
+
 An operator-requested reassessment creates a separate case and pins the current
 exercise identity and version at submission. When it differs from the historical
 assessed source version, the operator must confirm the current version before
-queueing work. The selected model performs fresh mapping and final assessment,
-even for an unchanged source version; the child does not reuse the parent job's
-mapping. An authored single-sense assessment can invoke shared integration; a dictionary
+queueing work. It requests fresh mapping where applicable and authors a fresh
+assessment with the selected model, even for an unchanged source version; the
+child does not reuse the parent job's mapping. An authored single-sense assessment can invoke shared integration; a dictionary
 fallback uses its deterministic covered-or-bootstrap route. Pure cues use their standalone assessment.
 The resulting proposal is based on the pinned current version. The original
 encounters, responses and reactions remain model input across reassessment chains,
-including historical proposals. The input distinguishes evidence served from the
-same source version from historical evidence when the current source has changed.
+including historical proposals. The input supplies the current source separately
+from each encounter's frozen served cue, responses, and effective reactions. It
+identifies operator reassessment as the assessment origin. Stored versions support the backend consistency checks.
 Successful assessments that need operator attention can also be reassessed.
 
 Within each completion, exercise improvement groups all encounters for the same
@@ -189,9 +198,16 @@ overall operator recommendation. Each exercise's rationale explains its own
 contribution. The separately stored integration rationale is not appended to the
 operator summary.
 
-`pure-cue-promotion.ts` resolves forms against exact dictionary identities, using
-the source to disambiguate its target, and supplies eligible active overlapping
-pure cues in the same publication scope and owner. `pure-cue-integration.md`
+`exercise-improvement-authoring.ts` trims submitted forms and matches each
+exactly against `lexical_words.hanzi` or `traditional`. One matching record supplies
+a lexical identity and permits individual authoring. Zero matches (such as a missing
+entry or nonmatching response) and multiple matches leave the identity unresolved.
+Several senses within one record do not create this ambiguity. The target already
+has an identity through its source exercise. Contextual disambiguation is not part
+of this lookup; the model receives the raw form even when no identity is supplied.
+
+`pure-cue-promotion.ts` uses the same exact-form lookup for shared candidates and
+supplies eligible active overlapping pure cues in the same publication scope and owner. `pure-cue-integration.md`
 receives the assessment, local plan, referral, candidates, and existing cues.
 Its only decisions are reuse, extend, and create. The backend supplies all
 resolved candidates deterministically. Extension retains every existing member,
@@ -202,7 +218,9 @@ privacy, and answer-leak guards apply even when integration selects reuse.
 
 When shared identities are missing or ambiguous, the result retains the complete
 local proposal as `pendingPlan` and withholds an actionable partial proposal.
-The operator workspace lists exact dictionary matches. Selection through
+The operator workspace lists exact dictionary matches. Multiple matches can be
+resolved by selecting one. With no match, the selector cannot create or substitute
+an entry; it offers reassessment or closing the assessment. Selection through
 `POST /api/operator/vocabulary/cases/:id/pure-cue-resolutions` validates the source,
 catalog, target mapping, and matching lexical snapshots, then creates a separate
 child case/job with an immutable resolution record. The child resumes the saved
@@ -218,18 +236,14 @@ leaving the parent's separate local proposal and editorial changes untouched.
 They do not define the current coherent-plan call boundary. Operator editorial
 trims and edits to ordinary proposals are deliberate review choices, not automatic
 dependencies that integration restores or enforces. Historical pending plans
-with an authored axis remain supported, as do already saved proposals without
-learning-role metadata; this contract change requires no database migration.
+with an authored axis are supported, as are saved proposals without learning-role
+metadata.
 
 ### Versions and retained stage results
 
-`single-improvement.md` uses prompt version 7, schema version 5, and projection
-`vocabulary-exercise-authoring.v1`. Mapping uses prompt version 5, schema version 1,
-and projection `vocabulary-admission.v4`. Integration uses prompt version 3,
-schema version 4, and projection `vocabulary-integration.v2`. Repertoire retains
-general-exercise prompt v5, schema version 2,
-and `general-exercises-v2` projection. Legacy promotion uses its retained contract
-for pre-plan resolution records.
+The [prompt contract guide](../../server/vocabulary/reflection-prompts/README.md)
+records the active prompt, schema, and input-projection versions for each call.
+The provider retains those versions with the exact invocation content.
 
 Stage identity includes exact projected input, schema, prompt contract, and
 projection version. Canonical IDs stay in retained evidence while wire inputs
@@ -305,12 +319,6 @@ Encounter evidence, learner state, provider results and stage caches remain
 immutable. A second opinion is advisory and does not regenerate a proposal.
 The migration makes no provider calls and applies no proposed content.
 
-## Maintaining the flow diagram
-
-The Mermaid diagram above describes the routing maintained by this guide. Update
-it with these provider boundaries when routing changes. The checked-in historical
-PNG and its renderer are retained artifacts; they do not describe this flow.
-
 ## Scoped production coverage
 
 `server/db/vocabulary-sense-coverage.ts` owns nullable shared default-useful IDs,
@@ -318,7 +326,7 @@ compatible excluded IDs and review included IDs. A null shared selection is
 unknown (`selectionEstablished: false`), while `[]` is explicitly none. A null
 review selection inherits defaults; an explicit review selection establishes that
 review's effective coverage even when shared defaults remain unknown. Each scope has a compare-and-swap version,
-immutable change history and backend events. Mapping still receives every active
+immutable change history and backend events. Mapping receives every active
 sense and no mutable policy metadata. A single mapped sense is the explicit
 input to local improvement, even when currently excluded from serving. A
 fallback bootstrap captures review IDs or shared defaults once for its

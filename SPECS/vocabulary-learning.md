@@ -67,7 +67,7 @@ not provide production coverage. Contrast selection has its own assessment and
 schedule. Pure cues accept several words, have independent learner scheduling,
 and do not award word progress to every accepted member.
 
-For Practice and Maintain, the [pure-cue proxy policy](pure-cue-elicitation.md)
+For Practice and Maintain, the [pure-cue proxy policy](pure-cue-elicitation.md#production-coverage)
 also governs production admission. A word is **proxied** when active shared pure
 content accepts it and no active shared general word-specific production cue
 remains. Its production objective cannot enter through dictionary fallback,
@@ -290,11 +290,14 @@ approval. Ordinary preparation publishes through its bounded preparation policy.
 For an authored single-word production exercise with an admitted intended sense,
 one assessment owns a coherent exercise-local plan. It decides the original
 cue's disposition, drafts useful shared practice when warranted, and proposes
-any target or response-word refinements. Source revision preserves its identity,
+target or response-word practice. A refinement develops a distinctive construction
+or meaning within the originating circumstance, with that distinction available
+through the cue itself. Enrichment adds optional practice surfaced during the
+assessment or requested by the learner. Source revision preserves its identity,
 answer contract, and learner controls. Retirement may coexist with optional
-additional target practice. Response-word refinements create exercises only for
-unambiguous lexical identities established from actual responses; they do not reconcile the
-response word's repertoire or invent a sense association.
+additional target practice. Response-word additions create exercises only for
+unambiguous lexical identities established from actual responses; they do not
+reconcile the response word's repertoire or invent a sense association.
 
 A shared proposal contains its actual visible cue, intended answers, and complete
 teaching note. Integration chooses reuse, extension, or creation without a second
@@ -307,15 +310,16 @@ shared prompt and teaching note unchanged. Notes are mostly English, with Chines
 where useful.
 
 Missing or ambiguous shared identities require operator attention. The complete
-plan is withheld pending resolution and resumed into one reviewable proposal
-when the operator selects matching identities. A resolution does not apply content.
+plan is withheld until every shared answer has a resolved identity. Selecting
+matching identities resumes it into one reviewable proposal; unresolved forms
+must not be assigned invented word identities. A resolution does not apply content.
 The operator can edit and select individual parts deliberately; optional local
-clarifiers are not enforced prerequisites for shared practice. Optional enrichment
-comes from useful examples surfaced during assessment or an explicit learner
-request, and meets the same answer-fairness standard as repairs. It is not
-automatically assigned the source exercise’s sense. The operator receives a
+clarifiers are not enforced prerequisites for shared practice. Enrichment meets
+the same answer-fairness standard as repairs and is not automatically assigned
+the source exercise’s sense. The operator receives a
 concise summary of the diagnosis and recommendation, with brief rationales for
-individual additions. Private learner comments inform review without being copied into shared authored content.
+individual additions. Private learner comments inform review without being
+copied into shared authored content.
 Content assessment does not change learner compensation or scheduling.
 
 An existing pure cue receives a separate content assessment of its established

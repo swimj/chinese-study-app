@@ -212,7 +212,7 @@ can only populate that same epoch. Read-only `coverageChanged` snapshots expose
 actual source, mapping and canonical catalog drift for service and operator
 proposals, including explicit assessment evidence bases. Review/default edits do
 not retarget captured generation scope or block content approval. See the
-[content-improvement implementation](vocabulary-content-improvement.md#single-word-assessment)
+[content-improvement implementation](vocabulary-content-improvement.md#versions-and-retained-stage-results)
 for generation and evidence fences.
 The editor invalidates metadata and preview caches after a policy save while
 retaining proposal drafts, inclusion toggles and valid content approval. The current
