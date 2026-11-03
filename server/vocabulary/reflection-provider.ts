@@ -218,7 +218,7 @@ export function createVocabularyReflectionProvider(options:{environment?:NodeJS.
       const systemPrompt=promptFile==='feedback'?task:`${reasoning}\n\n${task}`;prompts.set(promptFile,systemPrompt);return systemPrompt;
     };
     const stagePrompt=(stage:string)=>stage==='sense_mapping'?'sense-mapping':stage==='pure_cue_promotion'?'pure-cue-integration':'single-improvement';
-    const admissionPromptVersion=(stage:string)=>stage==='single_improvement'?'6':stage==='sense_mapping'?'4':stage==='pure_cue_promotion'?'2':'2';
+    const admissionPromptVersion=(stage:string)=>stage==='single_improvement'?'7':stage==='sense_mapping'?'5':stage==='pure_cue_promotion'?'3':'2';
     const schemaVersion=(step:string)=>step==='single_improvement'?'5':step==='pure_cue_promotion'?'4':'1';
     const projectionVersion=(step:string)=>step==='second_opinion'?'vocabulary-second-opinion.v1'
       :step==='feedback'||step==='improvement'?'vocabulary-reflection.v2'
@@ -320,7 +320,7 @@ export function createVocabularyReflectionProvider(options:{environment?:NodeJS.
       const word=getDb().prepare('SELECT id AS wordId,hanzi,traditional,pinyin,meaning FROM lexical_words WHERE id=?').get(admission.wordId);
       const response=await runCall('pure_cue_promotion',{sourceContent:original,wordId:admission.wordId,word,catalog,senses,
         evidence:projectVocabularyReflectionInput(job),intendedSense:senses.find(sense=>sense.senseId===admission.senseIds[0]),
-        localAssessment:resolution.diagnosis,localPlan:resolution.localPlan??null,...promotion.input},promotionSchema,coherent?'pure-cue-integration':'pure-cue-promotion',coherent?'2':'3');
+        localAssessment:resolution.diagnosis,localPlan:resolution.localPlan??null,...promotion.input},promotionSchema,coherent?'pure-cue-integration':'pure-cue-promotion','3');
       try{
         if(validateJsonSchema(response.value,promotionSchema).length)throw new VocabularyReflectionOutputError('Promotion failed strict output schema');
         const promoted=promotion.normalize(response.value,response.invocationId);fence();

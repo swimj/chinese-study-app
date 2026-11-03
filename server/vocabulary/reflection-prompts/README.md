@@ -179,8 +179,8 @@ Integration rationale remains separately recorded rather than being appended
 to that summary. Operator edits and selection of parts remain deliberate,
 without enforced component dependencies.
 
-Single improvement uses prompt version 6, schema version 5, and projection
-`vocabulary-exercise-authoring.v1`. Mapping uses prompt version 4, schema version 1,
+Single improvement uses prompt version 7, schema version 5, and projection
+`vocabulary-exercise-authoring.v1`. Mapping uses prompt version 5, schema version 1,
 and projection `vocabulary-admission.v4`. Exact source, catalog, mapping, and
 lexical checks fence publication and approval. Stage identities retain actual
 projected input, schema, and contract; unknown supplied references fail validation.
@@ -209,7 +209,7 @@ Its output has `decision`, `existingContentId`, `semanticAxis`, `teachingNote`, 
 | `extend` | Supplied compatible cue missing a candidate | null | Integrated full note | Preserve stimulus, axis, forms, and all members; add every candidate |
 | `create` | null | Derived from the authored shared task | null | Preserve the upstream prompt and teaching note; include every candidate |
 
-Integration uses prompt version 2, schema version 4, and projection
+Integration uses prompt version 3, schema version 4, and projection
 `vocabulary-integration.v2`. It chooses a destination without a second pedagogical
 veto. Creation derives the semantic axis from the authored cue, answers, note,
 and rationale; it does not broaden or redesign that task. An incompatible
@@ -431,3 +431,19 @@ are retained under `/private/tmp/exercise-authoring-20261103`, including
 `comparison-review.json` and `comparison-manifest.json`. The `baseline` directory
 contains transport failures; `baseline-network` and `candidate` contain the
 successful paired calls. No proposals were applied or hosted content changed.
+
+### Mapping simplification review (2026-11-03)
+
+Four paired synthetic mapping cases compare `95c1deec` with mapping prompt v5
+using the configured Luna high model. All eight outputs passed the mapping schema
+and matched the expected outcomes and references: compact 适用 and underspecified
+photo enlargement mapped to their supplied senses, 花's absent spending use was
+an inventory gap, and a bare 花 placeholder was unmappable. Revised rationales
+were shorter in each pair. Exact requests, schemas, settings, outputs, and review
+are retained under `/private/tmp/sense-mapping-review-20261103`. This is one run
+per synthetic case, without downstream application or hosted verification.
+
+The accompanying single-improvement v7 reaction/identity clarifications and
+integration v3 removal of a historical-draft aside were reviewed without new
+provider calls. The earlier authoring comparison above used single-improvement
+v6; 234 focused tests passed after these prompt and version edits.

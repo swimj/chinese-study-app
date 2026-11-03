@@ -35,8 +35,7 @@ The user message supplies:
   This explains how the shared exercise fits the plan. It does not authorize you
   to alter, add, or remove those proposals or reconcile whole word repertoires.
 - `referral`: the shared purpose, rationale, candidate forms, and complete
-  authored `draft` containing `prompt` and `teachingNote`. Historical drafts may
-  also supply a `semanticAxis`.
+  authored `draft` containing `prompt` and `teachingNote`.
 - `candidates`: resolved lexical identities, forms, pronunciations, and meanings
   for all incoming members. These are the members to integrate together; do
   not select a subset, invent identities, or add unrelated words.

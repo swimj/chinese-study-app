@@ -306,7 +306,7 @@ No 稠密-only counterpart is required.
 
 **忍俊不禁**
 
-If a learner recalls 忍俊不禁 from `unable to keep from laughing` and asks for sentence practice, preserve the useful direct cue and additionally offer:
+If a learner recalls 忍俊不禁 from `unable to keep from laughing` and writes in their encounter reaction that they would like sentence practice, preserve the useful direct cue and additionally offer:
 
 > unable to suppress a laugh at a funny answer:\
 > 听到这个风趣的回答，他____。
@@ -349,6 +349,7 @@ The input contains:
 A null response supplies no comparison word.
 `postAnswer` material was not part of the retrieval cue.
 Lexical information may be unavailable or ambiguous even when the submitted form is understandable; preserve meaningful uncertainty in the summary.
+`canAuthorIndividual` is true for the target and uniquely identified response words, and false for submitted forms whose dictionary identity is unresolved.
 Use the supplied word references in answer fields and readable Mandarin in explanations.
 
 ## Output reference

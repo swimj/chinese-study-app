@@ -223,9 +223,9 @@ learning-role metadata; this contract change requires no database migration.
 
 ### Versions and retained stage results
 
-`single-improvement.md` uses prompt version 6, schema version 5, and projection
-`vocabulary-exercise-authoring.v1`. Mapping uses prompt version 4, schema version 1,
-and projection `vocabulary-admission.v4`. Integration uses prompt version 2,
+`single-improvement.md` uses prompt version 7, schema version 5, and projection
+`vocabulary-exercise-authoring.v1`. Mapping uses prompt version 5, schema version 1,
+and projection `vocabulary-admission.v4`. Integration uses prompt version 3,
 schema version 4, and projection `vocabulary-integration.v2`. Repertoire retains
 general-exercise prompt v5, schema version 2,
 and `general-exercises-v2` projection. Legacy promotion uses its retained contract
