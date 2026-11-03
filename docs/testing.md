@@ -147,7 +147,7 @@ Combine `?many=1&narrow=1&large=1` to check wrapping and enlarged text.
 `tests/vocabulary-sense-coverage-ui.test.ts` covers affected scope selection,
 exercise impact, label merging and read-versus-write navigation policy. Operator
 fixture variants: `?scope=1` enables coverage/reassessment; `?unknownCoverage=1`
-starts with unknown defaults; `?needsCoverage=1` provides an attention case;
+starts with unknown defaults; `?needsCoverage=1` provides an attention case whose **Dismiss** stays disabled until a resolution is entered and then removes the case from that inbox;
 `?holdCoverage=1` keeps a save pending until its fixture button releases it;
 `?scopeSibling=1` adds another review for the same word.
 `?slowCoverageRead=1` delays plain scope reads for navigation checks;

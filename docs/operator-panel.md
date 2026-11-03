@@ -162,7 +162,9 @@ item selections remain intact while assessment runs. On successful completion,
 the originating item leaves its queue and remains in Archive, linked through the
 retained reassessment evidence. A proposal edited, approved, or resolved after
 submission is preserved. Failed reassessments leave the origin open. A succeeded assessment in Needs attention because
-useful coverage is unknown can be corrected and reassessed there. Neither result
+useful coverage is unknown can be corrected and reassessed there. **Dismiss** on that
+entry records a resolution and removes the case from Needs attention; its evidence
+remains retained. Neither result
 is applied automatically.
 
 **Sense coverage** initially edits this review. It distinguishes inherited word
@@ -204,8 +206,9 @@ assessments with unresolved shared answers appear in Needs attention with
 each ambiguous form, then queue the integration assessment. The complete content
 plan waits for this resolution; choosing identities resumes that plan without
 applying it or repeating the source assessment. If a form has no matching
-entry, this control cannot create one: reassess or close the assessment with a
-resolution. Source or dictionary changes can require a fresh assessment.
+entry, this control cannot create one: reassess, or **Dismiss** the entry with a
+resolution. Dismiss removes the case from Needs attention and retains its evidence.
+Source or dictionary changes can require a fresh assessment.
 
 ### Selecting and editing proposal items
 
