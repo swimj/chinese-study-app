@@ -5,6 +5,9 @@ import {projectVocabularySession,type VocabularySessionAction,type VocabularySes
 import type {VocabularyStudy} from '../../src/domain/vocabulary-study-api';
 import type {VocabularySessionCompletion} from '../../src/domain/vocabulary-session-api';
 
+const mode=new URLSearchParams(location.search).get('mode')??'resume';
+const ending=mode==='enough'||mode==='skip';
+const continuing=mode==='enough-active';
 const context:VocabularySessionInitialContext={sessionId:'fixture',words:[{wordId:'word',mode:'practice'}]};
 const time=()=>new Date().toISOString();
 const initial:VocabularySessionAction[]=[
@@ -13,9 +16,8 @@ const initial:VocabularySessionAction[]=[
   {kind:'finish_for_now',payload:{}},
   {kind:'finish_immediately',payload:{}},
 ].map((action,index)=>({...action,actionId:`action-${index+1}`,clientActionId:`client-${index+1}`,protocolVersion:1,sequence:index+1,occurredAt:time()} as VocabularySessionAction));
-let actions=[...initial],completion:VocabularySessionCompletion|null=null,status:'active'|'finalizing'|'closed'='active';
-let stageCalls=0,cancelCalls=0,resumeCalls=0,undoCalls=0;
-const mode=new URLSearchParams(location.search).get('mode')??'resume';
+let actions=ending?initial.filter((action)=>action.kind==='presentation'||action.kind==='finish_for_now').map((action,index)=>({...action,sequence:index+1,actionId:`action-${index+1}`,clientActionId:`client-${index+1}`})):continuing?initial.slice(0,1):[...initial],completion:VocabularySessionCompletion|null=null,status:'active'|'finalizing'|'closed'='active';
+let stageCalls=0,cancelCalls=0,resumeCalls=0,undoCalls=0,nextCalls=0,endCalls=0;
 function study():VocabularyStudy {
   const projection=projectVocabularySession(context,actions);
   return {session:{sessionId:'fixture',status,context,actions,projection,completion},words:[{wordId:'word',hanzi:'字',traditional:null,pinyin:'zì',meaning:'character'}],
@@ -27,6 +29,16 @@ window.fetch=async(input,init)=>{
   const url=String(input);
   if(url.endsWith('/api/vocabulary/completion/current'))return Response.json(null);
   if(url.endsWith('/api/vocabulary/sessions'))return Response.json(study());
+  if(url.endsWith('/next')){
+    nextCalls++;
+    if(status!=='active'||study().session.projection.phase==='completed')return Response.json({error:'Session is not accepting new work'},{status:409});
+    return Response.json(study());
+  }
+  if(url.endsWith('/completion/close')){
+    if(!completion)throw new Error('Missing completion');
+    completion={...completion,status:'closed',closedAt:time(),canUndo:false};status='closed';return Response.json(completion);
+  }
+  if(url.endsWith('/words'))return Response.json({words:[]});
   if(url.endsWith('/completion/cancel')){
     cancelCalls++;if(!completion)throw new Error('Missing completion');
     completion={...completion,status:'cancelled',canUndo:false};status='active';await pause(20);return Response.json(completion);
@@ -43,9 +55,12 @@ window.fetch=async(input,init)=>{
     await pause(60); // Let any unsafe auto-stage effect run between cancellation and this command.
     if(status!=='active')return Response.json({error:'Cancel the completion revision before resuming study'},{status:409});
     const projection=projectVocabularySession(context,actions);
-    const payload=body.command.type==='undo'?{undoesActionId:projection.latestUndoableActionId!}:{};
+    const end=body.command.type==='enough'||body.command.type==='skip';
+    const kind=body.command.type==='enough'?'word_wrap':body.command.type==='skip'?'word_skip':body.command.type;
+    const payload=end?{wordId:'word',...(kind==='word_wrap'?{reason:'enough'}:{})}:body.command.type==='undo'?{undoesActionId:projection.latestUndoableActionId!}:{};
+    if(end)endCalls++;
     if(body.command.type==='resume')resumeCalls++;else if(body.command.type==='undo')undoCalls++;
-    actions.push({kind:body.command.type,payload,actionId:`action-${actions.length+1}`,clientActionId:body.clientActionId,sequence:actions.length+1,protocolVersion:1,occurredAt:time()} as VocabularySessionAction);
+    actions.push({kind,payload,actionId:`action-${actions.length+1}`,clientActionId:body.clientActionId,sequence:actions.length+1,protocolVersion:1,occurredAt:time()} as VocabularySessionAction);
     return Response.json(study());
   }
   if(url.endsWith('/sessions/fixture')){await pause(20);return Response.json(study());}
@@ -54,13 +69,26 @@ window.fetch=async(input,init)=>{
 function Fixture(){
   const [result,setResult]=useState('Running');const begun=useRef(false),transitioned=useRef(false),checked=useRef(false);
   const controller=useVocabularyStudy();
+  useEffect(()=>{
+    if((ending||continuing)&&controller.study&&!controller.busy&&!transitioned.current){
+      transitioned.current=true;controller.keepSummaryOpenNow();void controller.endWord(mode!=='skip');
+    }
+    if(ending&&controller.completion?.status==='pending'&&!controller.busy&&!checked.current){
+      checked.current=true;void controller.retrySave();
+    }
+    if(ending&&controller.completion?.status==='closed'&&!controller.busy){
+      const word=controller.study?.session.projection.words.word;
+      setResult(stageCalls===1&&nextCalls===0&&endCalls===1&&!controller.saving&&!controller.error&&word?.covered===(mode==='enough')?'PASS':`FAIL stage=${stageCalls} next=${nextCalls} end=${endCalls}`);
+    }
+    if(continuing&&endCalls===1&&!controller.busy)setResult(nextCalls===1&&stageCalls===0&&!controller.error?'PASS':'FAIL active advancement');
+  },[controller.study,controller.busy,controller.completion]);
   useEffect(()=>{if(!begun.current){begun.current=true;void controller.start();}},[]);
   useEffect(()=>{
-    if(controller.completion?.status==='pending'&&!transitioned.current){transitioned.current=true;void(mode==='undo'?controller.undo():controller.resume());}
+    if(!ending&&!continuing&&controller.completion?.status==='pending'&&!transitioned.current){transitioned.current=true;void(mode==='undo'?controller.undo():controller.resume());}
   },[controller.completion]);
   useEffect(()=>{
     const phase=controller.study?.session.projection.phase;
-    if(transitioned.current&&!controller.busy&&phase&&phase!=='completed'&&!checked.current){
+    if(!ending&&!continuing&&transitioned.current&&!controller.busy&&phase&&phase!=='completed'&&!checked.current){
       checked.current=true;
       const valid=stageCalls===1&&cancelCalls===1&&(mode==='undo'?undoCalls===1&&phase==='finishing':resumeCalls===1&&phase==='active')
         &&controller.study?.session.projection.encounters[0].responses.length===1&&!controller.error;
