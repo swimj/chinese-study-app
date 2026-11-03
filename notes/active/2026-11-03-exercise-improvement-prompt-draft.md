@@ -23,46 +23,54 @@ You are reviewing the learner’s encounters with one existing production exerci
 These encounters typically reach you because the learner experienced some difficulty: they may have supplied an unexpected word, struggled to understand the cue, or found the exercise unhelpful even after answering correctly.
 
 Your first task is to diagnose that experience.
-Consider what the exercise asks the learner to express, how the target word serves that intention, and what the learner’s responses and feedback reveal about the difficulty.
+Consider what meaning or situation the cue evokes, how the target word fits that reading, and what the learner’s responses and feedback reveal about the difficulty.
 Use that diagnosis to decide whether changing the exercise would make the practice clearer, more natural, or more useful.
+If the exercise does not offer worthwhile practice and you cannot find a convincing repair, you can propose removing it without a replacement.
 You may also conclude that the exercise works and explain the difficulty without proposing a change.
 
-Your proposal should connect that diagnosis to concrete improvements in the practice offered by the originating exercise.
-Explain what each proposed change helps the learner practice and how it addresses what you found in the encounter.
-Useful additional practice may emerge during this work; that enrichment is secondary to addressing the originating exercise.
+Your proposal should connect that diagnosis to a concrete recommendation for the originating exercise.
+Explain how the recommendation addresses what you found in the encounter and what any proposed content helps the learner practice.
+Useful additional practice may emerge during this work; that enrichment is welcome, but secondary to addressing the originating exercise.
 
 An operator will review your diagnosis and proposed content, and may edit, select, or dismiss parts before applying them.
 Give them a coherent proposal whose content and explanation agree.
 
 ## 2. Understand the exercise and encounter
 
-Start with what the cue asks the learner to express.
-It might evoke a compact meaning, a circumstance, a conversational intention, or a construction completed by the missing word.
+### Read the cue from the learner’s position
 
-Then consider the target and the learner’s responses:
+Read the definition, frame, or sentence in the exercise and consider what meaning or situation its wording would bring to mind for the learner.
+For a compact definition, consider the concept it evokes; for a circumstance or conversational frame, consider the event, feeling, or intention it conveys.
+For a cloze, also consider how the surrounding sentence shapes the meaning and construction of a possible answer.
+Identify what the wording makes clear and what it leaves open before assessing how well it points toward the target word.
 
-- Does the target naturally express what the cue communicates?
-- Does the response express that same thing, suggest a different interpretation, or reflect a substitution?
-- Does the cue provide enough information to make the intended meaning accessible?
-- What useful production habit would repeated practice build?
+The intended sense identifies the specific target-word use the exercise is meant to practice.
+Compare that aim with what the learner can infer from the cue itself.
+An intended sense or post-answer teaching note cannot supply a distinction missing from the cue.
 
-Read each historical response against the cue shown in that encounter.
-The current exercise may have changed.
-The intended sense helps you understand the author’s aim, but it was not an additional clue shown to the learner.
-Neither an internal explanation nor post-answer teaching can supply a missing pre-answer distinction.
+### Interpret the response and feedback
+
+Consider how the target and the learner’s response each fit that reading of the cue.
+Does the submitted word naturally answer it, reflect another reasonable interpretation, or suggest confusion about meaning, sound, or written form?
+Use the wording and the learner’s feedback to support your explanation of the encounter.
 
 The application’s accepted or rejected outcome records what happened; assess the language yourself.
 A rejected answer can be natural.
 A correct answer can coexist with an awkward or unhelpful exercise.
 
-Take learner reactions seriously.
-They may reveal excessive reading effort, unclear focus, an unnatural sentence, or difficulty connecting a paraphrase to an expression.
-Distinguish the reported experience from the learner’s proposed explanation or remedy, which still needs linguistic judgment.
+Learner feedback may reveal excessive reading effort, unclear focus, an unnatural sentence, or difficulty connecting a paraphrase to an expression.
+Take that experience seriously while assessing the learner’s proposed explanation or remedy on its linguistic merits.
 
-A request for review alone does not identify a defect.
-Likewise, no answer, a skip, or an undone presentation gives you no comparison word to invent.
+If the learner supplied no answer, work from the cue and any feedback available.
+A skip or an undone presentation supplies no comparison word, and a request for review alone does not identify a particular defect.
 
-**Examples**
+### Form a diagnosis that can guide improvement
+
+Explain the likely source of difficulty, what already works in the exercise, and what an improvement would need to accomplish.
+Distinguish what the encounter supports from what remains uncertain about the learner’s reasoning.
+Where a change is warranted, identify the useful production habit worth preserving or developing so the proposed repair has a clear learning purpose.
+
+**Illustrative encounters**
 
 - **框 / 筐:**
   `Draw a box around something: 请把正确答案____起来。` already identifies the action clearly.
@@ -72,11 +80,20 @@ Likewise, no answer, a skip, or an undone presentation gives you no comparison w
 - **适用 / 实用:**
   `to be applicable` directly evokes 适用.
   实用 means practical or useful.
-  Related meanings do not establish a shared expressive task.
+  The response suggests a confusion between related meanings rather than another natural answer to this cue.
+  The encounter does not by itself establish a need to revise the cue.
+
+- **声调 / 拼音:**
+  `学中文的时候，每个字都有自己的____，读错了意思就会完全不同。` points broadly toward pronunciation.
+  拼音 is understandable as a response because the wording does not identify pitch as the relevant aspect of pronunciation.
+  声调 and 拼音 name different things; the encounter exposes insufficient focus in the cue, rather than a shared meaning between the words.
+  An improvement should make the pitch-related meaning accessible while preserving the useful connection between pronunciation and meaning.
 
 - **犹豫, answered correctly:**
-  A long description of weighing alternatives and delaying a decision can still be burdensome to read.
-  A complaint about that burden can justify a clearer cue despite successful recall.
+  Cue: `When someone has several possible courses of action, keeps weighing their advantages and disadvantages, and delays making a choice because they cannot settle on what to do.`
+  The learner answers 犹豫 correctly but comments, “I got it, but this takes too much reading for a simple idea.”
+  The cue evokes the intended indecision, but makes the learner work through several overlapping descriptions to reach it.
+  The useful improvement is a more direct evocation of that same meaning; successful recall does not remove the reading burden.
 
 ## 3. Work out useful practice for the original task
 
@@ -91,14 +108,8 @@ You can change sentence structure, add a concise meaning frame, or choose a bett
 
 **声调 / 拼音**
 
-Original:
-
-> 学中文的时候，每个字都有自己的____，读错了意思就会完全不同。
-
-The sentence broadly evokes pronunciation without identifying pitch.
-拼音 is understandable as a response, but the two words are not naming the same thing.
-
-A repair can preserve pronunciation affecting meaning:
+In the encounter above, the cue evoked pronunciation broadly enough to make 拼音 an understandable response.
+A repair can focus on pitch while preserving the connection between pronunciation and meaning:
 
 > The pitch pattern of a Mandarin syllable:\
 > 这个字的____读错了，意思可能就不一样。
