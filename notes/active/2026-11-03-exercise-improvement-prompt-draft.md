@@ -128,6 +128,8 @@ A frame such as “uneasy and apprehensive while waiting for news” can communi
 Clarifying an exercise may show that both the target and a submitted word naturally express the meaning or intention it evokes.
 A **pure cue** is a production exercise that accepts multiple words expressing that shared meaning or intention.
 It lets the learner practice a useful way of expressing something without treating an equally natural answer as a mistake.
+Each pure cue includes a teaching note shown to the learner when the answers are revealed.
+The note helps the learner understand the shared use and carry it into further practice with appropriate distinctions between the words.
 
 Assess the words against the actual cue you propose, including any clarification you have made.
 For a cloze, put each word into the blank and read the completed sentence: does it express the relevant meaning, fit the surrounding grammatical construction and its arguments, and sound natural in the sentence’s phrasing and rhythm?
@@ -152,7 +154,7 @@ The teaching note helps the learner transfer that shared meaning appropriately:
 > Both name reasons, but this shared meaning does not make 缘故 a replacement for 原因 in every sentence.
 
 The note provides usable patterns.
-It qualifies transfer into other constructions; it cannot rescue a member that does not answer the cue itself.
+It qualifies transfer into other constructions; every accepted word must naturally answer the cue before the learner reads the note.
 
 Shared clozes can also practice natural constructions:
 
@@ -160,13 +162,30 @@ Shared clozes can also practice natural constructions:
 - **中断 / 打断:** `突然响起的电话铃声____了我们的谈话。` practices interruption of an ongoing conversation.
 - **提醒 / 提示:** `系统会____用户的密码即将过期。` practices notifying someone of an approaching event.
 
+**遭到 / 遭受: repair need not produce a pure cue**
+
+A broad cue such as “to experience something adverse” can admit both words while hiding the word combinations the learner needs to acquire.
+Recognizing that broad category does not by itself teach the learner when to reach for either word in a sentence.
+Familiar combinations such as 遭到批评 and 遭受巨大损失 illustrate the more concrete production knowledge that practice can develop.
+
+When the encounter exposes this gap, repair the exercise around a natural combination that clarifies its originating meaning or circumstance.
+If that repair establishes worthwhile word-specific practice, propose it without adding a pure cue merely because both words fit the original English gloss.
+Repair without shared practice is a successful outcome.
+
+The words also genuinely overlap, including with 攻击.
+Finding that overlap elsewhere does not address the diagnosed gap or justify moving the repair to a different circumstance.
+A pure cue is appropriate when its particular shared pattern serves the originating exercise and is itself worth reinforcing.
+Explain collocational preferences as preferences: they do not make the other word impossible, and must not be used alone to justify accepting only one answer.
+
 When proposing shared practice, author the actual cue and its teaching note here.
 A subsequent integration step will look for compatible existing shared content to reuse or extend; otherwise it will create your draft.
 
 ### Consider useful word-specific practice within the same circumstance
 
-The same circumstance may support a different construction that naturally calls for the target or the submitted word specifically.
-Consider whether that construction teaches something useful alongside a pure cue, or whether word-specific practice better serves the original exercise on its own.
+The same circumstance may support a distinctive refinement: a construction or more specific meaning that naturally calls for the target or the submitted word in particular.
+Alongside a pure cue, word-specific practice should make that distinctive use available for recall through the cue itself.
+A second sentence that still admits both words on the same reading does not establish that distinction.
+Word-specific practice can also serve the original exercise on its own when the learning value lies in that construction or meaning.
 Let the natural use of the words determine the proposal; a pair of words does not require a pair of exercises.
 
 **有关 / 关于**
@@ -189,11 +208,10 @@ The proposal can therefore replace the original single-word exercise with this c
 This is a refinement of the original circumstance.
 It does not require finding a new topic, nor a symmetrical 关于-only exercise.
 
-Similar English glosses can conceal different ways of entering a Mandarin sentence.
-Their apparent overlap need not lead to a pure cue when the useful learning lies in how each word enters a construction.
-
 **违反 / 违法**
 
+Similar English glosses can conceal different ways of entering a Mandarin sentence.
+Their apparent overlap need not lead to a pure cue when the useful learning lies in how each word enters a construction.
 The gloss “to violate the law” obscures the construction difference:
 
 > 这样做____了规定。 — 违反\
@@ -205,24 +223,13 @@ Substituting the other word does not preserve either pattern.
 Prefer exercises that teach these constructions over a shared gloss that hides them.
 Repair the source around its target’s construction within the originating meaning or circumstance; the other construction may also be useful additional practice.
 
-**遭到 / 遭受**
-
-A broad cue such as “to experience something adverse” can obscure familiar combinations such as 遭到批评 and 遭受巨大损失.
-
-The words also have genuine overlap, including with 攻击.
-That overlap does not automatically make a shared cue the most useful proposal.
-Consider whether the originating exercise would teach more through a familiar combination or through a particular shared pattern.
-
-Explain preferences as preferences.
-Different collocational tendencies do not establish that another word is impossible, just as one common object does not establish broad interchangeability.
-
 ### Write content that makes the intended expression accessible
 
 Choose the presentation that best supports the meaning or construction being practiced:
 
 - A compact English meaning can directly evoke a concept or referent.
 - A Mandarin cloze can practice natural sentence structure and collocation.
-- A concise English circumstance or intention, optionally followed by a Mandarin stem, can convey expressive meaning that a bare gloss loses.
+- When a cloze leaves the intended meaning too open, a short English frame can supply semantic specificity while keeping the Mandarin sentence concise and natural.
 
 Use Mandarin for natural sentences and concise English for frames and explanations.
 Make the frame and sentence evoke the same meaning or intention.
@@ -241,9 +248,9 @@ If the exercise already works and no useful change emerges, propose no change.
 
 If clearer wording or a better construction improves practice of the originating meaning or circumstance, propose that improvement.
 If a pure cue takes over the original exercise’s useful practice, retire the redundant single-answer source.
-Keep or refine word-specific practice when it contributes something useful beyond the shared cue.
+Keep or refine word-specific practice alongside a pure cue when it develops a distinctive construction or meaning within the same circumstance, and its cue makes that distinction available to the learner.
 
-For example, clarifying 批准’s broad cue `agree` to a leave-request sentence may also admit 同意:
+For example, clarifying 批准’s broad cue `agree` with a sentence about a manager approving someone’s request for time off may also admit 同意:
 
 > officially agree to a leave request: 主管已经____了她的请假申请。
 
@@ -253,14 +260,15 @@ Do not also present essentially the same sentence as distinctive 批准-only pra
 Retirement without replacement is appropriate when the originating meaning or circumstance cannot support worthwhile retrieval of the actual target, even after considering clarification and changes of construction.
 
 For example, `请尊重____人的隐私。` completes 他人.
-Making it more formally worded does not necessarily make it useful recall practice for 他 in its “other” use.
+Further adjustments to the wording or framing still leave the learner completing 他人, rather than meaningfully recalling the intended “other” use of 他.
+Retire this exercise instead of continuing to refine a cue that does not provide worthwhile retrieval of its target.
 Judge that particular task without turning the finding into a general ban on dependent forms or fixed constructions.
 
 Conversely:
 
 - `to some extent: 情况____改善。` can genuinely practice 有所.
 - `leisure time: ____时间` can practice the useful combination 休闲时间.
-- A precise definition of 笏 can serve an intentionally learned historical referent.
+- `A ceremonial tablet held by officials at imperial court.` can directly evoke 笏 for a learner intentionally studying that historical referent.
 
 A cue need not be a complete scene, or teach a common everyday word, to be worthwhile.
 
