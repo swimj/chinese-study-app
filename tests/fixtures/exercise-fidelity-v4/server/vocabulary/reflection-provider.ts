@@ -1,0 +1,344 @@
+import { linkVocabularyInvocationContent, linkVocabularyInvocationSense } from '../db/vocabulary-provenance.ts';
+import { VocabularySenseMappingUnavailable, isSenseMappingAvailabilityFailure } from './sense-mapping-retry.ts';
+import { GLM_FLASH_HIGH_REFLECTION_MODEL_CONFIG } from '../reflection/glm-provider.ts';
+import { projectVocabularySenseReferences } from './model-sense-references.ts';
+import type { ensureVocabularyDefaultUsefulSelection } from './default-useful-selection.ts';
+import { VocabularyReflectionConflict } from '../db/vocabulary-reflection.ts';
+import { getVocabularyContentForMaintenance, getVocabularySenseCatalog, getVocabularySenses } from '../db/vocabulary-content.ts';
+import { GENERAL_EXERCISE_CONTRACT,generalExerciseInvocation,normalizeGeneralExerciseReferences,type GeneralExerciseSource } from './general-exercise-authoring.ts';
+import { vocabularyAuthoredPromptBody } from '../../src/domain/vocabulary-production-coverage.ts';
+import { readFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
+import type { VocabularyContent, VocabularyJson } from '../../src/domain/vocabulary-content.ts';
+import type { VocabularyReflectionJob, VocabularyReflectionResult, VocabularyProposalOperation } from '../../src/domain/vocabulary-reflection.ts';
+import type { JsonSchema } from '../../src/domain/reflection-result-schema.ts';
+import { getEffectiveVocabularyEncounterReactions, getVocabularyEncounterReactions } from '../../src/domain/vocabulary-session.ts';
+import { REFLECTION_MODEL_ARMS, isOfferedReflectionModelChoice, type ReflectionModelChoice } from '../reflection/model-arms.ts';
+import { LUNA_REFLECTION_MODEL_CONFIG, type ReflectionProviderConfig } from '../reflection/luna-provider.ts';
+import { reflectionConfigForChoice, routeIndividualReflectionModel } from '../reflection/model-routing.ts';
+import { vocabularyReflectionModelChoice, vocabularySenseMappingAvailabilityFailures } from '../db/vocabulary-reflection-routing.ts';
+import { getDb } from '../db/connection.ts';
+import { resolveSharedDictionaryBaselineRevision } from '../db/dictionary-baseline-sharing.ts';
+import { createOpenAiCompatibleAdapter } from '../llm/openai-compatible.ts';
+import { invalidateServiceInvocation } from '../llm/invocation-ledger.ts';
+import { validateJsonSchema } from '../llm/json-schema-validator.ts';
+import { fetchImplementationForProvider } from '../llm/proxy-fetch.ts';
+import { isOutputTruncationFinishReason, type ProviderAdapter } from '../llm/types.ts';
+import { eligibleVocabularyReflectionJob } from './reflection-eligibility.ts';
+import { prepareVocabularyPureCueImprovement, vocabularyPureCueImprovementSchema } from './pure-cue-improvement.ts';
+import { getPureCueResolution, prepareVocabularyPureCuePromotion, prepareVocabularyPureCueIntegration, vocabularyPureCueIntegrationSchema, vocabularyPureCuePromotionSchema, vocabularyPureCuePlanSchema, validateVocabularyPureCueReferral, validateVocabularyPureCueDraft, vocabularyResponseCandidates } from './pure-cue-promotion.ts';
+import { runVocabularyImprovementAdmission, type VocabularySenseEnsurer } from './improvement-admission.ts';
+
+const SENSE_MAPPING_CONFIG:ReflectionProviderConfig={...LUNA_REFLECTION_MODEL_CONFIG,modelConfig:'gpt-6-luna-high',providerModel:'gpt-6-luna'};
+
+export const VOCABULARY_REFLECTION_SERVICE_ID='vocabulary-reflection';
+export class VocabularyReflectionOutputError extends Error {}
+export type VocabularyReflectionProvider={isConfigured():boolean;run(job:VocabularyReflectionJob,context?:{canPublish?:()=>boolean}):Promise<VocabularyReflectionResult>};
+const text:JsonSchema={type:'string'};
+function object(properties:Record<string,JsonSchema>):JsonSchema{return {type:'object',properties,required:Object.keys(properties),additionalProperties:false};}
+const feedbackSchema=object({diagnosis:text,lesson:text,unfairEncounterIds:{type:'array',items:text}});
+const improvementSchema=object({diagnosis:text,operations:{type:'array',items:object({sourceContentId:text,
+  strategy:{type:'string',enum:['create','update_existing','replace','retire']},rationale:text,prompt:text,acceptedAnswers:{type:'array',items:text}})}});
+export const vocabularySingleImprovementSchema=object({...improvementSchema.properties!,
+  responseExercises:{type:'array',items:object({wordId:text,prompt:text,rationale:text})},pureCueReferral:vocabularyPureCuePlanSchema});
+function nonempty(value:string):void{if(!value.trim())throw new VocabularyReflectionOutputError('Reflection output contains empty text');}
+function source(job:VocabularyReflectionJob,checkCurrent=true):VocabularyContent|null {
+  if(job.reassessmentSourceJobId||job.reassessmentSource) {
+    const pinned=job.reassessmentSource,current=checkCurrent&&pinned?getVocabularyContentForMaintenance(pinned.contentId):null;
+    if(!pinned||(checkCurrent&&(!current||current.version!==pinned.version||current.availability!=='active')))throw new VocabularyReflectionConflict('Reassessment source version changed; request a new assessment');
+    if(pinned.accessScope==='private'&&pinned.ownerLearnerId!==job.learnerId)throw new VocabularyReflectionOutputError('Reflection source access mismatch');
+    return pinned;
+  }
+  const encounter=job.evidence.evidence[0];
+  if(!encounter)return null;
+  const row=getDb().prepare('SELECT snapshot_json FROM content_revision_history WHERE content_id=? AND version=?')
+    .get(encounter.snapshot.contentId,encounter.snapshot.contentVersion) as {snapshot_json:string}|undefined;
+  if(!row)throw new VocabularyReflectionOutputError('Reflection source version is unavailable');
+  const content=JSON.parse(row.snapshot_json) as VocabularyContent;
+  if(content.accessScope==='private'&&content.ownerLearnerId!==job.learnerId)throw new VocabularyReflectionOutputError('Reflection source access mismatch');
+  return resolveSharedDictionaryBaselineRevision(getDb(),content);
+}
+/** Excludes unrelated learners, live interpretation, and inferred sense targets. */
+export function projectVocabularyReflectionInput(job:VocabularyReflectionJob):unknown {
+  job=eligibleVocabularyReflectionJob(job);
+  const content=source(job);
+  const pureCue=content?.kind==='exercise'&&content.exerciseType==='pure_cue';
+  const wordIds=[...new Set(pureCue?content.answers.map(answer=>answer.wordId):job.evidence.evidence.flatMap(item=>item.wordId===null?content?.words.map(word=>word.wordId)??[]:[item.wordId]))];
+  const words=wordIds.map(id=>getDb().prepare('SELECT id AS wordId,hanzi,traditional,pinyin,meaning FROM lexical_words WHERE id=?').get(id));
+  return {caseId:job.caseId,subject:!pureCue&&job.evidence.wordId!==null?{kind:'word',wordId:job.evidence.wordId}
+    :{kind:'pureCue',contentId:job.evidence.contentId},words,
+    sourceContent:content,...(job.reassessmentSource?{assessmentOrigin:{kind:'operator_reassessment',sourceJobId:job.reassessmentSourceJobId??null,sessionEvidence:job.evidence.evidence.every(item=>item.snapshot.contentId===content?.contentId&&item.snapshot.contentVersion===content?.version)?'same_source':'historical_source'}}:{}),encounters:job.evidence.evidence.map(item=>({encounterId:item.encounterId,wordId:item.wordId,
+      purpose:item.snapshot.role,mode:item.mode,served:item.snapshot,responses:item.responses.map(response=>({actionId:response.actionId,
+        response:response.payload.response,outcome:response.payload.outcome,effective:item.effectiveResponses.some(effective=>effective.actionId===response.actionId)})),
+      reactions:getEffectiveVocabularyEncounterReactions(item).map(({payload})=>({encounterId:payload.encounterId,reaction:payload.feedback,...(payload.comment!==undefined?{comment:payload.comment}:{})})),skipped:item.skipped,presentationUndone:item.presentationUndone}))};
+}
+export function normalizeVocabularyReflectionOutput(job:VocabularyReflectionJob,value:unknown,invocationId?:string|null,withReferral=false):VocabularyReflectionResult {
+  job=eligibleVocabularyReflectionJob(job);
+  const schema=job.kind==='learner_feedback'?feedbackSchema:withReferral?vocabularySingleImprovementSchema:improvementSchema;
+  if(validateJsonSchema(value,schema).length)throw new VocabularyReflectionOutputError('Reflection output failed its strict schema');
+  if(job.evidence.kind==='teaching_review'||job.evidence.evidence.some(item=>item.snapshot.role!=='general'))throw new VocabularyReflectionOutputError('Teaching belongs to the manual inbox');
+  if(job.kind==='learner_feedback') {
+    const result=value as {diagnosis:string;lesson:string;unfairEncounterIds:string[]};
+    nonempty(result.diagnosis);nonempty(result.lesson);
+    if(new Set(result.unfairEncounterIds).size!==result.unfairEncounterIds.length||result.unfairEncounterIds.some(id=>
+      !job.evidence.evidence.some(item=>item.encounterId===id&&item.responses.some(response=>response.payload.outcome==='rejected')))) {
+      throw new VocabularyReflectionOutputError('Unfair judgment must reference a supplied rejected encounter');
+    }
+    return {kind:'learner_feedback',judgment:{diagnosis:result.diagnosis,message:result.lesson,unfairEncounterIds:result.unfairEncounterIds,
+      ...(invocationId?{invocationId}:{})}};
+  }
+  const result=value as {diagnosis:string;operations:{sourceContentId:string;strategy:'create'|'update_existing'|'replace'|'retire';rationale:string;prompt:string;acceptedAnswers:string[]}[]};
+  const referral=withReferral?(value as {pureCueReferral:import('../../src/domain/vocabulary-reflection.ts').VocabularyPureCueReferral|null}).pureCueReferral:undefined;
+  if(referral)validateVocabularyPureCueReferral(referral);
+  nonempty(result.diagnosis);
+  const original=source(job,false);
+  if(!original||original.kind!=='exercise'||original.exerciseRole!=='general')throw new VocabularyReflectionOutputError('Improvement requires a general exercise');
+  if(referral)validateVocabularyPureCueDraft(job,original,referral);
+  const accepted=original.answers.flatMap(answer=>answer.acceptedForms);
+  if(result.operations.filter(operation=>operation.strategy!=='create').length>1)throw new VocabularyReflectionOutputError('A source can only be updated, replaced, or retired once');
+  if(result.operations.some(operation=>operation.strategy==='retire')&&result.operations.length!==1)throw new VocabularyReflectionOutputError('Retirement without replacement cannot also author local practice');
+  const operations:VocabularyProposalOperation[]=result.operations.map((operation,index)=>{
+    nonempty(operation.rationale);
+    if(operation.sourceContentId!==original.contentId||!isDeepStrictEqual([...operation.acceptedAnswers].sort(),[...accepted].sort())) {
+      throw new VocabularyReflectionOutputError('Repair cannot invent source identities or change answer criteria');
+    }
+    if(operation.strategy==='retire') {
+      if(operation.prompt!=='')throw new VocabularyReflectionOutputError('Retirement cannot contain a replacement prompt');
+      // Normalize the examined snapshot, like authored changes. The admission
+      // fence handles concurrent source drift without invalidating valid output.
+      const {version:_version,createdAt:_created,updatedAt:_updated,...content}=original;
+      return {operationKey:`retire-${index+1}`,strategy:'retire',sourceContentId:original.contentId,expectedVersion:original.version,
+        scope:original.accessScope==='shared'?{kind:'shared'}:{kind:'learner',learnerId:original.ownerLearnerId!},rationale:operation.rationale,content};
+    }
+    nonempty(operation.prompt);
+    const privateFragments=job.evidence.evidence.flatMap(encounter=>[
+      ...getVocabularyEncounterReactions(encounter).flatMap(reaction=>reaction.payload.comment?.trim().length? [reaction.payload.comment.trim()]:[]),
+      ...encounter.responses.flatMap(response=>response.payload.response&&response.payload.response.length>=12?[response.payload.response]:[]),
+    ]).filter(fragment=>fragment.length>=4);
+    if(original.accessScope==='shared'&&privateFragments.some(fragment=>operation.prompt.includes(fragment))) {
+      throw new VocabularyReflectionOutputError('Shared authored content cannot copy private learner evidence');
+    }
+    if(accepted.some(answer=>answer.trim()&&operation.prompt.includes(answer)))throw new VocabularyReflectionOutputError('Retrieval prompt exposes an accepted answer');
+    const previousBody=original.body!==null&&typeof original.body==='object'&&!Array.isArray(original.body)?original.body:{};
+    const body:Record<string,VocabularyJson>={...previousBody,prompt:operation.prompt};
+    if('stimulus' in body)body.stimulus={kind:'direct_text',text:operation.prompt};
+    const {contentId:_id,version:_version,createdAt:_created,updatedAt:_updated,...draft}=original;
+    const content={...draft,body:vocabularyAuthoredPromptBody(original.body,body),...(operation.strategy==='update_existing'?{contentId:original.contentId}
+      :{contentId:randomUUID(),originKind:'model' as const,authorKind:'service',authorId:VOCABULARY_REFLECTION_SERVICE_ID})};
+    const common={operationKey:`repair-${index+1}`,scope:original.accessScope==='shared'?{kind:'shared' as const}
+      :{kind:'learner' as const,learnerId:original.ownerLearnerId!},rationale:operation.rationale,content};
+    return operation.strategy==='create'?{...common,strategy:'create'}
+      :{...common,strategy:operation.strategy,sourceContentId:original.contentId,expectedVersion:original.version};
+  });
+  if(withReferral){
+    const candidates=vocabularyResponseCandidates(job);
+    const responseExercises=(value as {responseExercises:{wordId:string;prompt:string;rationale:string}[]}).responseExercises;
+    for(const [index,exercise] of responseExercises.entries()){
+      const candidate=candidates.find(word=>word.wordId===exercise.wordId);
+      if(!candidate)throw new VocabularyReflectionOutputError('Response exercise requires a supplied unambiguous response identity');
+      nonempty(exercise.prompt);nonempty(exercise.rationale);
+      const acceptedForms=[...new Set([candidate.hanzi,...(candidate.traditional?[candidate.traditional]:[])])];
+      if(acceptedForms.some(form=>exercise.prompt.includes(form)))throw new VocabularyReflectionOutputError('Response prompt exposes an accepted answer');
+      const fragments=job.evidence.evidence.flatMap(encounter=>[
+        ...getVocabularyEncounterReactions(encounter).map(reaction=>reaction.payload.comment??''),
+        ...encounter.responses.map(response=>(response.payload.response?.length??0)>=12?response.payload.response!:'')]).map(text=>text.trim()).filter(text=>text.length>=4);
+      if(original.accessScope==='shared'&&fragments.some(fragment=>exercise.prompt.includes(fragment)))throw new VocabularyReflectionOutputError('Shared authored content cannot copy private learner evidence');
+      operations.push({operationKey:`response-${index+1}`,strategy:'create',rationale:exercise.rationale,
+        scope:original.accessScope==='shared'?{kind:'shared'}:{kind:'learner',learnerId:original.ownerLearnerId!},
+        content:{contentId:randomUUID(),kind:'exercise',payloadVersion:1,body:{prompt:exercise.prompt,instruction:'',stimulus:{kind:'direct_text',text:exercise.prompt},
+          source:{kind:'vocabulary_response_refinement',assessedContentId:original.contentId,invocationId:invocationId??null}},
+          exerciseType:'word',skill:'production',exerciseRole:'general',assessment:{match:'exact'},
+          answers:[{wordId:candidate.wordId,acceptedForms}],words:[{wordId:candidate.wordId,relation:'target'}],
+          accessScope:original.accessScope,ownerLearnerId:original.ownerLearnerId??null,availability:'active',originKind:'model',authorKind:'service',authorId:VOCABULARY_REFLECTION_SERVICE_ID}});
+    }
+  }
+  return {kind:'exercise_improvement',result:{diagnosis:result.diagnosis,...(withReferral?{pureCueReferral:referral}:{}),proposal:operations.length?{operations,rationale:result.diagnosis,
+    bases:[{contentId:original.contentId,expectedVersion:original.version}],...(invocationId?{invocationId}:{})}:null,...(invocationId?{invocationId}:{})}};
+}
+export function createVocabularyReflectionProvider(options:{environment?:NodeJS.ProcessEnv;adapter?:ProviderAdapter;adapters?:Partial<Record<ReflectionModelChoice,ProviderAdapter>>;random?:()=>number;fetchImplementation?:typeof globalThis.fetch;ensureSenses?:VocabularySenseEnsurer;ensureDefaults?:typeof ensureVocabularyDefaultUsefulSelection}={}):VocabularyReflectionProvider {
+  const environment=options.environment??process.env;
+  const adapters=new Map<string,ProviderAdapter>();
+  const adapterFor=(choice:ReflectionModelChoice,config=reflectionConfigForChoice(choice))=>{
+    const key=config.providerModel;
+    const existing=options.adapters?.[choice]??options.adapter??adapters.get(key);
+    if(existing)return existing;
+    const adapter=createOpenAiCompatibleAdapter({id:config.provider,defaultBaseUrl:config.defaultBaseUrl,
+      apiKeyEnvironmentVariable:config.apiKeyEnvironmentVariable,structuredOutputMode:config.structuredOutputMode,
+      maxTokensField:config.maxTokensField,additionalRequestBody:config.additionalRequestBody,
+      fetchImplementation:options.fetchImplementation??fetchImplementationForProvider(config.provider,config.timeoutMs)});
+    adapters.set(key,adapter);return adapter;
+  };
+  return {isConfigured:()=>REFLECTION_MODEL_ARMS.some(arm=>arm.enabledByDefault&&Boolean(environment[reflectionConfigForChoice(arm.choice).apiKeyEnvironmentVariable]?.trim())),async run(job,context){
+    if(job.evidence.kind==='teaching_review')throw new VocabularyReflectionOutputError('Teaching belongs to the manual inbox');
+    job=eligibleVocabularyReflectionJob(job);
+    if(!job.evidence.evidence.length&&!job.reassessmentSourceJobId){
+      const diagnosis='Provider review is deferred for non-production exercises; original evidence remains in the session log.';
+      return job.kind==='learner_feedback'?{kind:'learner_feedback',judgment:{diagnosis,message:null,unfairEncounterIds:[]}}
+        :{kind:'exercise_improvement',result:{diagnosis,proposal:null}};
+    }
+    if(context?.canPublish&&!context.canPublish())throw new Error('Reflection lost publication authority');
+    const choice=vocabularyReflectionModelChoice(job.jobId,()=>routeIndividualReflectionModel(options.random));
+    if(!isOfferedReflectionModelChoice(choice))throw new Error(`Stored reflection model is no longer offered: ${choice}`);
+    const config=reflectionConfigForChoice(choice);
+    const adapter=adapterFor(choice);
+    const apiKey=environment[config.apiKeyEnvironmentVariable]?.trim();
+    const baseUrl=config.baseUrlEnvironmentVariable?environment[config.baseUrlEnvironmentVariable]?.trim()||null:null;
+    if(!apiKey)throw new Error(`Vocabulary reflection provider ${config.provider} is not configured`);
+    if(job.evidence.kind==='teaching_review'||job.evidence.evidence.some(item=>item.snapshot.role!=='general'))throw new VocabularyReflectionOutputError('Teaching belongs to the manual inbox');
+    const kind=job.kind==='learner_feedback'?'feedback':'improvement';
+    const prompts=new Map<string,string>();
+    const promptFor=async(promptFile:string)=>{
+      const cached=prompts.get(promptFile);if(cached!==undefined)return cached;
+      let task=await readFile(new URL(`./reflection-prompts/${promptFile}.md`,import.meta.url),'utf8');
+      const reasoning=promptFile==='improvement'||promptFile==='second-opinion'
+        ?await readFile(new URL('./reflection-prompts/reasoning.md',import.meta.url),'utf8'):'';
+      const systemPrompt=promptFile==='feedback'?task:`${reasoning}\n\n${task}`;prompts.set(promptFile,systemPrompt);return systemPrompt;
+    };
+    const stagePrompt=(stage:string)=>stage==='sense_mapping'?'sense-mapping':stage==='pure_cue_promotion'?'pure-cue-integration':'single-improvement';
+    const admissionPromptVersion=(stage:string)=>stage==='single_improvement'?'5':stage==='sense_mapping'?'4':stage==='pure_cue_promotion'?'1':'2';
+    const schemaVersion=(step:string)=>step==='single_improvement'?'4':step==='pure_cue_promotion'?'3':'1';
+    const projectionVersion=(step:string)=>step==='second_opinion'?'vocabulary-second-opinion.v1'
+      :step==='feedback'||step==='improvement'?'vocabulary-reflection.v2'
+      :step==='single_improvement'||step==='sense_mapping'||step==='pure_cue_promotion'?'vocabulary-admission.v4':'vocabulary-admission.v1';
+    const routingFor=(step:string)=>{
+      if(step!=='sense_mapping')return {config,adapter,apiKey,baseUrl};
+      const failures=vocabularySenseMappingAvailabilityFailures(job.jobId);
+      if(failures>=6)throw new Error('Sense mapping retry budget is exhausted');
+      const fallback=failures>=3;
+      const mappingConfig:ReflectionProviderConfig=fallback?GLM_FLASH_HIGH_REFLECTION_MODEL_CONFIG:SENSE_MAPPING_CONFIG;
+      const mappingAdapter=adapterFor(fallback?'zai:glm-5.3-flash-high':'openai:gpt-5.6-luna-high',mappingConfig);
+      const mappingKey=environment[mappingConfig.apiKeyEnvironmentVariable]?.trim();
+      if(!mappingKey)throw new Error(`Vocabulary sense mapping provider ${mappingConfig.provider} is not configured`);
+      const mappingBaseUrl=mappingConfig.baseUrlEnvironmentVariable?environment[mappingConfig.baseUrlEnvironmentVariable]?.trim()||null:null;
+      return {config:mappingConfig,adapter:mappingAdapter,apiKey:mappingKey,baseUrl:mappingBaseUrl};
+    };
+    const projectCall=(step:string,input:unknown,schema:JsonSchema)=>{
+      const shared=step==='repertoire'?generalExerciseInvocation(input as GeneralExerciseSource):null;
+      const projected=!shared&&['sense_mapping','single_improvement','pure_cue_promotion'].includes(step)?projectVocabularySenseReferences(input):null;
+      const wireSchema=shared?.outputSchema??structuredClone(schema);
+      if(step==='sense_mapping'){
+        const senses=(projected!.input as {senses:Array<{senseId:string}>}).senses;
+        wireSchema.properties!.senseIds.items={type:'string',enum:senses.map(sense=>sense.senseId)};
+      }
+      return {shared,projected,wireSchema,userPrompt:shared?.userPrompt??JSON.stringify(projected?.input??input)};
+    };
+    const runCall=async (step:string,input:unknown,schema:JsonSchema,promptFile:string,promptVersion:string)=>{
+      if(context?.canPublish&&!context.canPublish())throw new Error('Reflection lost publication authority');
+      const {config,adapter,apiKey,baseUrl}=routingFor(step);
+      const {shared,projected,wireSchema,userPrompt}=projectCall(step,input,schema);
+      const systemPrompt=shared?.systemPrompt??await promptFor(promptFile);
+      const callSchemaVersion=promptFile==='pure-cue-promotion'?'2':schemaVersion(step);
+      const result=await adapter.run({model:config.providerModel,reasoningEffort:config.reasoningEffort,
+        systemPrompt,userPrompt,
+        outputSchemaName:shared?.outputSchemaName??`vocabulary_reflection_${step}_v${callSchemaVersion}`,outputSchema:wireSchema,
+        maxOutputTokens:config.maxOutputTokens,temperature:null,timeoutMs:config.timeoutMs,cachePrompt:true,
+        invocationActor:{kind:'service',serviceId:VOCABULARY_REFLECTION_SERVICE_ID,requestingLearnerId:job.learnerId},
+        provenance:{workflowId:job.jobId,stepName:step,attemptNumber:job.attemptNumber,promptName:shared?.promptName??`vocabulary-reflection-${promptFile}`,
+          promptVersion:shared?.promptVersion??promptVersion,schemaVersion:shared?.schemaVersion??callSchemaVersion,inputProjectionVersion:shared?.inputProjectionVersion??projectionVersion(step)}},
+        {apiKey,baseUrl}).catch((error:unknown)=>{
+          if(step==='sense_mapping'&&isSenseMappingAvailabilityFailure(error))throw new VocabularySenseMappingUnavailable();
+          throw error;
+        });
+      try {
+        if(isOutputTruncationFinishReason(result.finishReason))throw new VocabularyReflectionOutputError('Reflection output was truncated');
+        let value:unknown=JSON.parse(result.rawText);
+        if(shared||projected){
+          if(validateJsonSchema(value,wireSchema).length)throw new VocabularyReflectionOutputError('Improvement stage failed strict output schema');
+          if(shared)value=normalizeGeneralExerciseReferences(input as GeneralExerciseSource,value);
+          else if(step==='sense_mapping'){
+            const mapped=value as {senseIds:string[]};
+            value={...mapped,senseIds:mapped.senseIds.map(id=>projected!.references.canonical(id))};
+          }
+        }
+        return {value,invocationId:result.invocationId};
+      }catch(error){invalidateServiceInvocation(result.invocationId,VOCABULARY_REFLECTION_SERVICE_ID);throw error;}
+    };
+    if (job.secondOpinion) {
+      if (job.kind !== 'exercise_improvement') throw new VocabularyReflectionOutputError('Second opinion requires an improvement job');
+      const schema=object({verdict:{type:'string',enum:['support','revise','reject']},rationale:text});
+      const sources=(job.secondOpinion.proposal?.bases ?? []).map(base=>{
+        const row=getDb().prepare('SELECT snapshot_json FROM content_revision_history WHERE content_id=? AND version=?')
+          .get(base.contentId,base.expectedVersion) as {snapshot_json:string}|undefined;
+        if(!row)throw new VocabularyReflectionOutputError('Second opinion source version is unavailable');
+        const content=JSON.parse(row.snapshot_json) as VocabularyContent;
+        if(content.accessScope==='private'&&content.ownerLearnerId!==job.learnerId)throw new VocabularyReflectionOutputError('Second opinion source access mismatch');
+        return content;
+      });
+      const response=await runCall('second_opinion',{proposal:job.secondOpinion.proposal,operatorNotes:job.secondOpinion.notes,
+        sources,originalDiagnosis:job.secondOpinion.diagnosis ?? null,evidence:projectVocabularyReflectionInput(job)},schema,'second-opinion','2');
+      try {
+        if(validateJsonSchema(response.value,schema).length)throw new VocabularyReflectionOutputError('Second opinion failed its strict schema');
+        const opinion=response.value as import('../../src/domain/vocabulary-reflection.ts').VocabularySecondOpinionVerdict;
+        nonempty(opinion.rationale);
+        if(context?.canPublish&&!context.canPublish())throw new VocabularyReflectionOutputError('Second opinion lost publication authority');
+        return {kind:'exercise_improvement',result:{diagnosis:opinion.rationale,proposal:null,secondOpinion:opinion,
+          ...(response.invocationId?{invocationId:response.invocationId}:{})}};
+      } catch(error) {invalidateServiceInvocation(response.invocationId,VOCABULARY_REFLECTION_SERVICE_ID);throw error;}
+    }
+    const original=job.kind==='exercise_improvement'?source(job):null;
+    const resolution=job.reassessmentSourceJobId?getPureCueResolution(job.jobId):null;
+    if(resolution){
+      if(!original||!isDeepStrictEqual(original,resolution.original))throw new VocabularyReflectionConflict('Promotion source changed; reassess the current source');
+      const {admission,referral,selections}=resolution;
+      const catalog=getVocabularySenseCatalog(admission.wordId),senses=getVocabularySenses(admission.wordId).filter(sense=>sense.status==='active');
+      const coherent=!!referral.draft;
+      const promotion=coherent?prepareVocabularyPureCueIntegration(job,original,referral,selections):prepareVocabularyPureCuePromotion(job,original,referral,selections);
+      const promotionSchema=coherent?vocabularyPureCueIntegrationSchema:vocabularyPureCuePromotionSchema;
+      const fence=()=>{
+        if(context?.canPublish&&!context.canPublish())throw new VocabularyReflectionConflict('Promotion lost publication authority');
+        if(!isDeepStrictEqual(getVocabularyContentForMaintenance(original.contentId),original)||getVocabularySenseCatalog(admission.wordId).version!==admission.catalogVersion)
+          throw new VocabularyReflectionConflict('Promotion source or sense inventory changed');
+        promotion.fence();
+        if(!isDeepStrictEqual(promotion.input.candidates,resolution.candidates))throw new VocabularyReflectionConflict('Selected lexical identities changed');
+        if(coherent&&!isDeepStrictEqual(vocabularyResponseCandidates(job),resolution.responseCandidateSnapshots))throw new VocabularyReflectionConflict('Response lexical identities changed; reassess the current source');
+      };
+      fence();
+      if(promotion.attention)throw new VocabularyReflectionConflict('Selected lexical identities do not resolve the referral');
+      const word=getDb().prepare('SELECT id AS wordId,hanzi,traditional,pinyin,meaning FROM lexical_words WHERE id=?').get(admission.wordId);
+      const response=await runCall('pure_cue_promotion',{sourceContent:original,wordId:admission.wordId,word,catalog,senses,
+        evidence:projectVocabularyReflectionInput(job),intendedSense:senses.find(sense=>sense.senseId===admission.senseIds[0]),
+        localAssessment:resolution.diagnosis,localPlan:resolution.localPlan??null,...promotion.input},promotionSchema,coherent?'pure-cue-integration':'pure-cue-promotion',coherent?'1':'3');
+      try{
+        if(validateJsonSchema(response.value,promotionSchema).length)throw new VocabularyReflectionOutputError('Promotion failed strict output schema');
+        const promoted=promotion.normalize(response.value,response.invocationId);fence();
+        if(response.invocationId){
+          const actor={kind:'service' as const,id:VOCABULARY_REFLECTION_SERVICE_ID};
+          for(const content of [original,...promotion.contents])if(content.accessScope==='shared')linkVocabularyInvocationContent({invocationId:response.invocationId,contentId:content.contentId,contentVersion:content.version,role:'input'},actor);
+          for(const sense of senses)linkVocabularyInvocationSense({invocationId:response.invocationId,senseId:sense.senseId,senseVersion:sense.version,role:'input'},actor);
+        }
+        const operations=[...(coherent?resolution.localPlan?.operations??[]:[]),...promoted.operations];
+        const diagnosis=coherent?`${typeof resolution.diagnosis==='string'?resolution.diagnosis:JSON.stringify(resolution.diagnosis)}\n\nShared practice: ${promoted.assessment.rationale}`:promoted.assessment.rationale;
+        return {kind:'exercise_improvement',result:{diagnosis,admission,pureCueReferral:referral,pureCuePromotion:promoted.assessment,
+          ...(response.invocationId?{invocationId:response.invocationId}:{}),proposal:operations.length?{operations,rationale:diagnosis,
+            bases:[{contentId:original.contentId,expectedVersion:original.version},...promoted.bases],...(response.invocationId?{invocationId:response.invocationId}:{})}:null}};
+      }catch(error){invalidateServiceInvocation(response.invocationId,VOCABULARY_REFLECTION_SERVICE_ID);throw error;}
+    }
+    if(original?.kind==='exercise'&&original.exerciseType==='pure_cue'){
+      const review=prepareVocabularyPureCueImprovement(job,original);review.fence();
+      const response=await runCall('pure_cue_improvement',{sourceContent:original,evidence:projectVocabularyReflectionInput(job),...review.input},vocabularyPureCueImprovementSchema,'pure-cue-improvement','1');
+      if(context?.canPublish&&!context.canPublish())throw new Error('Reflection lost publication authority');
+      review.fence();
+      try{return review.normalize(response.value,response.invocationId);}
+      catch(error){invalidateServiceInvocation(response.invocationId,VOCABULARY_REFLECTION_SERVICE_ID);throw error;}
+    }
+    if(job.kind==='exercise_improvement'&&job.evidence.wordId!==null&&original?.kind==='exercise'
+      &&original.skill==='production'&&original.exerciseType!=='pure_cue'&&original.answers.length===1&&original.answers[0]?.wordId===job.evidence.wordId
+      &&job.evidence.evidence.every(encounter=>encounter.snapshot.schedulingScope!=='pure_cue')) {
+      return runVocabularyImprovementAdmission({job,original,projectedInput:projectVocabularyReflectionInput(job),
+        ensureSenses:options.ensureSenses,ensureDefaults:options.ensureDefaults,canPublish:context?.canPublish,improvementSchema:vocabularySingleImprovementSchema,
+        stageIdentity:async(stage,schema,input)=>{
+          const {config,adapter,baseUrl}=routingFor(stage);
+          return {provider:adapter.id,baseUrl:baseUrl??adapter.defaultBaseUrl,
+          model:config.providerModel,reasoningEffort:config.reasoningEffort,schema:projectCall(stage,input,schema).wireSchema,modelInput:projectCall(stage,input,schema).userPrompt,...(stage==='repertoire'?GENERAL_EXERCISE_CONTRACT:{systemPrompt:await promptFor(stagePrompt(stage)),
+            outputSchemaName:`vocabulary_reflection_${stage}_v${schemaVersion(stage)}`,promptVersion:admissionPromptVersion(stage),schemaVersion:schemaVersion(stage),inputProjectionVersion:projectionVersion(stage)}),
+          maxOutputTokens:config.maxOutputTokens,temperature:null,timeoutMs:config.timeoutMs,cachePrompt:true};},
+        call:(stage,input,schema)=>runCall(stage,input,schema,stagePrompt(stage),admissionPromptVersion(stage)),
+        normalize:(value,invocationId)=>normalizeVocabularyReflectionOutput(job,value,invocationId,!!value&&typeof value==='object'&&'pureCueReferral' in value)});
+    }
+    if(job.kind==='exercise_improvement')throw new VocabularyReflectionOutputError('Exercise has no supported improvement contract');
+    const result=await runCall(kind,projectVocabularyReflectionInput(job),feedbackSchema,kind,'4');
+    try{return normalizeVocabularyReflectionOutput(job,result.value,result.invocationId);}
+    catch(error){invalidateServiceInvocation(result.invocationId,VOCABULARY_REFLECTION_SERVICE_ID);throw error;}
+  }};
+}

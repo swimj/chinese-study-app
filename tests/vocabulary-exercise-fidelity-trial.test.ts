@@ -4,13 +4,13 @@ import assert from 'node:assert/strict';
 import {mkdtempSync,readFileSync,rmSync} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import {spawnSync} from 'node:child_process';
+import {execFileSync,spawnSync} from 'node:child_process';
 import {test} from 'node:test';
 
-function trial(options:string[],check:(archive:string)=>void){
+function trial(options:string[],check:(archive:string)=>void,env=process.env){
   const archive=mkdtempSync(path.join(os.tmpdir(),'fidelity-trial-'));
   try{
-    const run=spawnSync(process.execPath,['--import','tsx','scripts/review-exercise-fidelity-trial.ts','--archive',archive,'--variant','check',...options],{encoding:'utf8'});
+    const run=spawnSync(process.execPath,['--import','tsx','scripts/review-exercise-fidelity-trial.ts','--archive',archive,'--variant','check',...options],{encoding:'utf8',env});
     assert.equal(run.status,0,run.stderr);check(archive);
   }finally{rmSync(archive,{recursive:true,force:true});}
 }
@@ -67,13 +67,30 @@ test('single authoring trial projects supplied references and retains source and
   assert.ok(!captured.request.userPrompt.includes('comparison-source-'));
 }));
 
-test('single trial freezes legacy v4 schema and input for the pre-authoring baseline',()=>trial(['--cases','comparison-稠密-密集','--baseline-revision','11387643'],archive=>{
-  const captured=JSON.parse(readFileSync(path.join(archive,'check','comparison-稠密-密集','request.json'),'utf8'));
-  const input=JSON.parse(captured.request.userPrompt);
-  assert.equal(captured.request.outputSchemaName,'vocabulary_reflection_single_improvement_v4');
-  assert.deepEqual(Object.keys(captured.request.outputSchema.properties),['diagnosis','operations','responseExercises','pureCueReferral']);
-  assert.ok(input.responseCandidates[0].wordId);
-  assert.ok(input.sourceContent.contentId);
-  const referral=captured.request.outputSchema.properties.pureCueReferral.anyOf.find((schema:{type:string})=>schema.type==='object');
-  assert.ok(referral.properties.draft.required.includes('semanticAxis'));
-}));
+test('single trial freezes legacy v4 schema and input for the pre-authoring baseline',()=>{
+  // Retain the exact historical sources in a temporary Git repository: the CLI
+  // must exercise revision reads even in a shallow CI checkout.
+  const baseline=mkdtempSync(path.join(os.tmpdir(),'fidelity-baseline-'));
+  const fixture=path.resolve('tests/fixtures/exercise-fidelity-v4');
+  const env={...process.env,GIT_DIR:path.join(baseline,'.git'),GIT_WORK_TREE:fixture};
+  const git=(args:string[])=>execFileSync('git',args,{env,encoding:'utf8'}).trim();
+  try{
+    git(['init','--quiet']);
+    git(['add','server']);
+    git(['-c','user.name=Fixture','-c','user.email=fixture@example.invalid','-c','commit.gpgsign=false','-c','core.hooksPath=/dev/null','commit','--quiet','-m','Retained pre-authoring baseline']);
+    const revision=git(['rev-parse','HEAD']);
+    trial(['--cases','comparison-稠密-密集','--baseline-revision',revision],archive=>{
+      const captured=JSON.parse(readFileSync(path.join(archive,'check','comparison-稠密-密集','request.json'),'utf8'));
+      const input=JSON.parse(captured.request.userPrompt);
+      assert.equal(captured.request.outputSchemaName,'vocabulary_reflection_single_improvement_v4');
+      assert.deepEqual(Object.keys(captured.request.outputSchema.properties),['diagnosis','operations','responseExercises','pureCueReferral']);
+      assert.ok(input.responseCandidates[0].wordId);
+      assert.ok(input.sourceContent.contentId);
+      const referral=captured.request.outputSchema.properties.pureCueReferral.anyOf.find((schema:{type:string})=>schema.type==='object');
+      assert.ok(referral.properties.draft.required.includes('semanticAxis'));
+      assert.equal(captured.request.systemPrompt,`\n\n${readFileSync(path.join(fixture,'server/vocabulary/reflection-prompts/single-improvement.md'),'utf8')}`);
+      const index=JSON.parse(readFileSync(path.join(archive,'check-index.json'),'utf8'));
+      assert.equal(index.resolvedRevision,revision);
+    },env);
+  }finally{rmSync(baseline,{recursive:true,force:true});}
+});
