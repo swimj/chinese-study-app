@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { filterArchiveItems, resolveReviewNavigation, reviewItemKey, type ReviewItem } from '../src/features/vocabulary-operator/review-navigation.ts';
+import { filterArchiveItems, resolveReviewNavigation, reviewItemAfterResolution, reviewItemKey, type ReviewItem } from '../src/features/vocabulary-operator/review-navigation.ts';
 
 const context = { index: 1, count: 3, busy: false, nativeTarget: false };
 test('operator review arrows traverse the current queue without wrapping or invoking mutations', () => {
@@ -39,4 +39,16 @@ test('Archive includes every resolution type in its exact 12-hour window and sor
   assert.deepEqual(filterArchiveItems(items, 'unknown', now).map(reviewItemKey), ['proposal:unknown']);
   assert.deepEqual(filterArchiveItems(items, 'missing', now), []);
   assert.deepEqual(filterArchiveItems([closedCase], '', now + 12 * 60 * 60 * 1000), []);
+});
+
+test('Done preserves position across mixed review items and handles the last and only item',()=>{
+  const first=archivedProposal('first','closed',null),last=archivedProposal('last','closed',null);
+  const nextCase:ReviewItem={...closedCase,value:{...closedCase.value,caseId:'next-no-change'}};
+  const items=[first,closedCase,nextCase,last];
+  assert.equal(reviewItemAfterResolution(items,'case:no-change'),nextCase);
+  assert.equal(reviewItemAfterResolution(items,'case:next-no-change'),last);
+  assert.equal(reviewItemAfterResolution(items,'proposal:last'),nextCase);
+  assert.equal(reviewItemAfterResolution(items,'proposal:first'),closedCase);
+  assert.equal(reviewItemAfterResolution([closedCase],'case:no-change'),null);
+  assert.throws(()=>reviewItemAfterResolution(items,'case:missing'),/missing from the queue/);
 });
