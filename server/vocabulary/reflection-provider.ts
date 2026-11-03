@@ -209,7 +209,7 @@ export function createVocabularyReflectionProvider(options:{environment?:NodeJS.
       const systemPrompt=promptFile==='feedback'?task:`${reasoning}\n\n${task}`;prompts.set(promptFile,systemPrompt);return systemPrompt;
     };
     const stagePrompt=(stage:string)=>stage==='sense_mapping'?'sense-mapping':stage==='pure_cue_promotion'?'pure-cue-integration':'single-improvement';
-    const admissionPromptVersion=(stage:string)=>stage==='single_improvement'?'8':stage==='sense_mapping'?'5':stage==='pure_cue_promotion'?'3':'2';
+    const admissionPromptVersion=(stage:string)=>stage==='single_improvement'?'9':stage==='sense_mapping'?'5':stage==='pure_cue_promotion'?'3':'2';
     const schemaVersion=(step:string)=>step==='single_improvement'?'5':step==='pure_cue_promotion'?'4':'1';
     const projectionVersion=(step:string)=>step==='second_opinion'?'vocabulary-second-opinion.v1'
       :step==='feedback'||step==='improvement'?'vocabulary-reflection.v2'

@@ -166,7 +166,7 @@ Integration rationale remains separately recorded rather than being appended
 to that summary. Operator edits and selection of parts remain deliberate,
 without enforced component dependencies.
 
-Single improvement uses prompt version 8, schema version 5, and projection
+Single improvement uses prompt version 9, schema version 5, and projection
 `vocabulary-exercise-authoring.v1`. Mapping uses prompt version 5, schema version 1,
 and projection `vocabulary-admission.v4`. Exact source, catalog, mapping, and
 lexical checks fence publication and approval. Stage identities retain actual

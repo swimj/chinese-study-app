@@ -353,7 +353,7 @@ for(const localRepair of [false,true])test(`referral composes with local repair=
   assert.equal(promotionInput.evidence.encounters[0].responses[0].response,'扩大');
   assert.match(promotionInput.intendedSense.senseId,/^s[12]$/);assert.equal(promotionInput.sourceContent.contentId,'original');
   assert.deepEqual(promotionInput.candidates.map((word:{wordId:string})=>word.wordId),['word','other-word']);
-  assert.equal(trial.requests[1]!.provenance!.promptVersion,'8');assert.equal(trial.requests[1]!.provenance!.schemaVersion,'5');
+  assert.equal(trial.requests[1]!.provenance!.promptVersion,'9');assert.equal(trial.requests[1]!.provenance!.schemaVersion,'5');
   assert.match(trial.requests[1]!.systemPrompt,/# Review a Mandarin production exercise/);
   assert.doesNotMatch(trial.requests[1]!.systemPrompt,/## Learner feedback and proposal rationales/);
   assert.equal(trial.requests[2]!.provenance!.promptVersion,'3');assert.equal(trial.requests[2]!.provenance!.schemaVersion,'4');

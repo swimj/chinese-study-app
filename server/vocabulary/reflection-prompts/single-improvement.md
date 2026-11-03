@@ -45,9 +45,6 @@ Consider how the target and the learner’s response each fit that reading of th
 Does the submitted word naturally answer it, reflect another reasonable interpretation, or suggest confusion about meaning, sound, or written form?
 Use the cue’s wording and the learner’s feedback to support your explanation of the encounter.
 
-The supplied lexical information identifies which responses match a unique dictionary word.
-A response without that identity is evidence for understanding the encounter and improving the target’s exercise; do not propose shared or individual practice for that response.
-
 The application’s accepted or rejected outcome records what happened; assess the language yourself.
 A rejected answer can be natural.
 A correct answer can coexist with an awkward or unhelpful exercise.

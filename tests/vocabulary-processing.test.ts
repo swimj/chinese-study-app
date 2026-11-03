@@ -210,7 +210,7 @@ test('strict real injected provider retains service provenance and rejects forge
   const improvementInvocation=sql.prepare("SELECT * FROM model_invocations WHERE prompt_name='vocabulary-reflection-single-improvement'").get();
   assert.ok(improvementInvocation,'Selected sense assessment must reach the active single-improvement call');
   assert.equal(improvementInvocation.actor_kind,'service');assert.equal(improvementInvocation.learner_id,null);assert.equal(improvementInvocation.workflow_id,improve.jobId);
-  assert.equal(improvementInvocation.prompt_version,'8');assert.equal(improvementInvocation.schema_version,'5');assert.equal(improvementInvocation.input_projection_version,'vocabulary-exercise-authoring.v1');
+  assert.equal(improvementInvocation.prompt_version,'9');assert.equal(improvementInvocation.schema_version,'5');assert.equal(improvementInvocation.input_projection_version,'vocabulary-exercise-authoring.v1');
   assert.equal(improvementInvocation.prompt_template,`\n\n${fs.readFileSync(new URL('../server/vocabulary/reflection-prompts/single-improvement.md',import.meta.url),'utf8')}`);
   assert.throws(()=>normalizeVocabularyReflectionOutput(improve,{...valid,operations:[{...valid.operations[0],acceptedAnswers:['invented']}]}),/answer criteria/);
   assert.throws(()=>normalizeVocabularyReflectionOutput(improve,{...valid,operations:[{...valid.operations[0],sourceContentId:'two'}]}),/source identities/);
