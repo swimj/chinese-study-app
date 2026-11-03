@@ -31,7 +31,7 @@ export const vocabularyOperatorApi={
   cases:(kind:VocabularyReflectionCase['kind'])=>apiRequest<{items:VocabularyReflectionCase[]}>(`${root}/cases?kind=${kind}`),
   noProposalCases:(status:'completed'|'closed'='completed')=>apiRequest<{items:VocabularyReflectionCase[]}>(`${root}/no-proposal-cases?status=${status}`),
   resolvePureCueIdentities:(caseId:string,modelChoice:VocabularyReassessmentModel,expectedContentVersion:number,selections:{form:string;wordId:string}[])=>write<{caseId:string;jobId:string}>(`/cases/${id(caseId)}/pure-cue-resolutions`,{modelChoice,expectedContentVersion,selections}),
-  reassessCase:(caseId:string,modelChoice:VocabularyReassessmentModel,expectedContentVersion:number)=>write<{caseId:string;jobId:string}>(`/cases/${id(caseId)}/reassessments`,{modelChoice,expectedContentVersion}),
+  reassessCase:(caseId:string,modelChoice:VocabularyReassessmentModel,expectedContentVersion:number,originProposal?:{proposalId:string;expectedVersion:number})=>write<{caseId:string;jobId:string}>(`/cases/${id(caseId)}/reassessments`,{modelChoice,expectedContentVersion,originProposal}),
   requestCaseSecondOpinion:(caseId:string,notes:string)=>write<{ok:true}>(`/cases/${id(caseId)}/second-opinions`,{notes}),
   workspace:(caseId:string)=>apiRequest<VocabularyCaseWorkspace>(`${root}/cases/${id(caseId)}`),
   approvalRequests:()=>apiRequest<{items:VocabularyApprovalRequest[]}>(`${root}/approval-requests`),

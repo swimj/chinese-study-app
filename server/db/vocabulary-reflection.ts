@@ -508,8 +508,38 @@ export function recordVocabularyImprovementResult(jobId: string, token: string, 
     const output = { judgmentId,proposalId: created?.proposalId ?? null };
     finish(jobId,token,input,output,at);
     if (needsAttention || input.pureCuePromotion?.outcome === 'needs_operator') getDb().prepare("UPDATE reflection_cases SET status='open' WHERE case_id=?").run(row.case_id);
+    dismissReassessmentOrigin(row);
     return output;
   });
+}
+/** Retain the source evidence while replacing exactly the requested queue item. */
+function dismissReassessmentOrigin(row: JobRow): void {
+  if (!row.reassessment_source_job_id) return;
+  const source = job(row.reassessment_source_job_id);
+  const request = getDb().prepare(`SELECT data_json FROM backend_events
+    WHERE entity_kind='reflection' AND entity_id=? AND name='vocabulary.reflection.reassessment_requested'
+      AND json_extract(data_json,'$.jobId')=?`).get(source.case_id,row.job_id) as {data_json:string}|undefined;
+  // Older requests did not identify the originating queue item. Do not guess.
+  const origin = request ? (JSON.parse(request.data_json) as {origin?:ReassessmentOrigin}).origin : undefined;
+  if (!origin) return;
+  const data = {reason:'Superseded by successful reassessment',successorCaseId:row.case_id,successorJobId:row.job_id};
+  if (origin.kind === 'proposal') {
+    const value = proposal(origin.proposalId);
+    if (value.caseId !== source.case_id) throw new Error('Reassessment origin belongs to another case');
+    // Edits and explicit approval/resolution after the request remain authoritative.
+    if (value.version !== origin.expectedVersion || !['draft','awaiting_review'].includes(value.status)) return;
+    const approval = getDb().prepare(`SELECT 1 FROM backend_events WHERE entity_kind='reflection' AND entity_id=?
+      AND name='vocabulary.reflection.approval_requested' AND json_extract(data_json,'$.expectedVersion')=? LIMIT 1`)
+      .get(value.proposalId,value.version);
+    if (approval) return;
+    getDb().prepare("UPDATE content_proposals SET status='closed' WHERE proposal_id=?").run(value.proposalId);
+    event('vocabulary.reflection.proposal_closed',value.proposalId,{...data,version:value.version});
+  } else {
+    const value = getVocabularyReflectionCase(source.case_id);
+    if (value.status === 'closed') return;
+    getDb().prepare("UPDATE reflection_cases SET status='closed' WHERE case_id=?").run(source.case_id);
+    event('vocabulary.reflection.admission_case_closed',source.case_id,data);
+  }
 }
 function expectedProposal(id: string, version: number): VocabularyContentProposal {
   const value = proposal(id);
@@ -664,6 +694,12 @@ export function applyVocabularyProposal(proposalId: string, expectedVersion: num
     getDb().prepare("UPDATE content_proposals SET status='applied' WHERE proposal_id=?").run(proposalId);
     event('vocabulary.reflection.proposal_applied',proposalId,{ applicationId,version: expectedVersion },actor); return receipt;
   });
+}
+
+/** Retain operator intent before journal admission; this does not authorize application. */
+export function recordVocabularyApprovalIntent(input:{requestId:string;proposalId:string;expectedVersion:number;actorId:string}): void {
+  const actor=operator(input.actorId);
+  event('vocabulary.reflection.approval_requested',input.proposalId,{requestId:input.requestId,expectedVersion:input.expectedVersion},actor);
 }
 
 /** Queue replay uses the committed receipt before attempting validation again. */
@@ -981,8 +1017,10 @@ export function requestVocabularyCaseSecondOpinion(caseId:string, actorId:string
   });
 }
 
+export type ReassessmentOrigin = {kind:'case'} | {kind:'proposal';proposalId:string;expectedVersion:number};
+
 /** Queue a fresh assessment of the operator-selected current authored version. */
-export function requestVocabularyReassessment(caseId:string, actorId:string, modelChoice:ReflectionModelChoice, expectedContentVersion:number): {caseId:string;jobId:string} {
+export function requestVocabularyReassessment(caseId:string, actorId:string, modelChoice:ReflectionModelChoice, expectedContentVersion:number, origin:ReassessmentOrigin={kind:'case'}): {caseId:string;jobId:string} {
   const actor=operator(actorId);
   if(!isOfferedReflectionModelChoice(modelChoice)) throw new Error('Unsupported assessment model');
   return atomic(()=>{
@@ -993,6 +1031,11 @@ export function requestVocabularyReassessment(caseId:string, actorId:string, mod
     if(!source) throw new VocabularyReflectionConflict('Completed assessment evidence is unavailable');
     const active=db.prepare("SELECT 1 FROM vocabulary_reflection_jobs WHERE reassessment_source_job_id=? AND status IN ('queued','running')").get(source.job_id);
     if(active) throw new VocabularyReflectionConflict('A reassessment is already in progress');
+    if(origin.kind==='proposal') {
+      const value=expectedProposal(origin.proposalId,origin.expectedVersion);
+      if(value.caseId!==caseId||!['draft','awaiting_review'].includes(value.status))
+        throw new VocabularyReflectionConflict('Reassessment requires an unresolved proposal from this case');
+    }
     const metadata=reassessmentSource(evidence);
     if(!metadata)throw new VocabularyReflectionConflict('Current assessment source is unavailable');
     if(!Number.isSafeInteger(expectedContentVersion)||expectedContentVersion!==metadata.currentVersion)
@@ -1003,7 +1046,7 @@ export function requestVocabularyReassessment(caseId:string, actorId:string, mod
     inheritVocabularyCaseSenseCoverage(caseId,childId,actorId);
     const child=db.prepare('SELECT job_id FROM vocabulary_reflection_jobs WHERE case_id=?').get(childId) as {job_id:string};
     db.prepare('UPDATE vocabulary_reflection_jobs SET model_choice=?,reassessment_source_job_id=?,reassessment_source_json=? WHERE job_id=?').run(modelChoice,source.job_id,encode(content),child.job_id);
-    event('vocabulary.reflection.reassessment_requested',caseId,{requestId,caseId:childId,jobId:child.job_id,sourceJobId:source.job_id,modelChoice,sourceContentId:content.contentId,sourceContentVersion:content.version},actor);
+    event('vocabulary.reflection.reassessment_requested',caseId,{requestId,caseId:childId,jobId:child.job_id,sourceJobId:source.job_id,modelChoice,sourceContentId:content.contentId,sourceContentVersion:content.version,origin},actor);
     return {caseId:childId,jobId:child.job_id};
   });
 }

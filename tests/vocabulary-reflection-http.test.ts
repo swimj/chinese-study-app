@@ -586,3 +586,21 @@ test('pure cue resolution route validates identity selections and authority befo
   const result=call('post',route,{params,body});assert.equal(result.status,200);assert.equal(wakes,1);assert.notEqual(result.body.caseId,caseId);
   assert.equal(getVocabularyContentForMaintenance('one')!.version,1);assert.equal(sql.prepare('SELECT count(*) n FROM content_proposals').get()!.n,0);
 });
+
+ test('reassessment validates and retains the exact originating proposal',()=>{
+  sql.exec('ALTER TABLE vocabulary_reflection_jobs ADD COLUMN model_choice TEXT');
+  const job=claimVocabularyReflectionJob({kind:'exercise_improvement',now:later})!;
+  recordVocabularyImprovementResult(job.jobId,job.leaseToken,{diagnosis:'Original',proposal:null},later);
+  const original=call('post',`${base}/proposals`,{body:{...proposal(),caseId}}).body;
+  const unrelated=call('post',`${base}/proposals`,{body:proposal()}).body;
+  const route=`${base}/cases/:id/reassessments`,params={id:caseId};
+  const body={modelChoice:'openai:gpt-6-sol-high',expectedContentVersion:1};
+  for(const originProposal of [{proposalId:original.proposalId,expectedVersion:0},{proposalId:original.proposalId,expectedVersion:1,extra:true}])
+    assert.equal(call('post',route,{params,body:{...body,originProposal}}).status,400);
+  assert.equal(call('post',route,{params,body:{...body,originProposal:{proposalId:original.proposalId,expectedVersion:2}}}).status,409);
+  assert.equal(call('post',route,{params,body:{...body,originProposal:{proposalId:unrelated.proposalId,expectedVersion:1}}}).status,409);
+  const result=call('post',route,{params,body:{...body,originProposal:{proposalId:original.proposalId,expectedVersion:1}}});
+  assert.equal(result.status,200);
+  const request=sql.prepare("SELECT data_json FROM backend_events WHERE name='vocabulary.reflection.reassessment_requested' AND entity_id=?").get(caseId)!;
+  assert.deepEqual(JSON.parse(String(request.data_json)).origin,{kind:'proposal',proposalId:original.proposalId,expectedVersion:1});
+});

@@ -1328,3 +1328,85 @@ for(const drift of ['none','before_queue','during_integration'] as const)test(`o
   assert.deepEqual(shared.words.map(word=>word.wordId),['a','b']);assert.equal((shared.body as {prompt:string}).prompt,referral.draft.prompt);
   assert.deepEqual(sql.prepare('PRAGMA foreign_key_check').all(),[]);
 });
+
+for (const outcome of ['proposal','no_change','attention'] as const) test(`successful reassessment replaces only its originating proposal with ${outcome}`,()=>{
+  sql.exec('ALTER TABLE vocabulary_reflection_jobs ADD COLUMN model_choice TEXT');
+  const {cases}=ingest([present('one'),response('one')]);
+  const caseId=cases.find(item=>item.kind==='exercise_improvement')!.caseId;
+  const initial=claimVocabularyReflectionJob({kind:'exercise_improvement',now:judgedAt})!;
+  const originalInput={diagnosis:'Original judgment',proposal:{operations:[op()],rationale:'Original'}};
+  const original=recordVocabularyImprovementResult(initial.jobId,initial.leaseToken,originalInput,judgedAt);
+  const sibling=createVocabularyProposal({caseId,operations:[op()],rationale:'Independent editorial work'},'editor');
+  const request=requestVocabularyReassessment(caseId,'editor','openai:gpt-6-sol-high',1,{kind:'proposal',proposalId:original.proposalId!,expectedVersion:1});
+  assert.equal(getVocabularyProposal(original.proposalId!,'editor').status,'awaiting_review');
+  const now=new Date(Date.now()+1000).toISOString();
+  const child=claimVocabularyReflectionJob({kind:'exercise_improvement',now})!;
+  assert.equal(child.jobId,request.jobId);
+  const input={diagnosis:'Fresh judgment',proposal:outcome==='proposal'?{operations:[op()],rationale:'Fresh'}:null,
+    ...(outcome==='attention'?{pureCuePromotion:{outcome:'needs_operator' as const,rationale:'Choose identity',candidateWordIds:['a'],existingContentId:null}}:{})};
+  const result=recordVocabularyImprovementResult(child.jobId,child.leaseToken,input,now);
+  const closed=getVocabularyProposal(original.proposalId!,'editor');
+  assert.equal(closed.status,'closed');assert.ok(closed.resolvedAt);
+  assert.equal(getVocabularyProposal(sibling.proposalId,'editor').status,'awaiting_review');
+  assert.deepEqual(getVocabularyReflectionCase(caseId).evidence,initial.evidence.evidence);
+  assert.equal(getVocabularyReflectionCase(request.caseId).status,outcome==='attention'?'open':'completed');
+  if(result.proposalId)assert.equal(getVocabularyProposal(result.proposalId,'editor').status,'awaiting_review');
+  const closure=sql.prepare("SELECT actor_kind,data_json FROM backend_events WHERE entity_id=? AND name='vocabulary.reflection.proposal_closed'").get(original.proposalId!)!;
+  assert.equal(closure.actor_kind,'service');assert.equal(JSON.parse(String(closure.data_json)).successorJobId,child.jobId);
+  assert.equal(sql.prepare('SELECT count(*) AS n FROM proposal_reviews WHERE proposal_id=?').get(original.proposalId!)!.n,0);
+  assert.deepEqual(recordVocabularyImprovementResult(child.jobId,child.leaseToken,input,now),result);
+  assert.equal(sql.prepare("SELECT count(*) AS n FROM backend_events WHERE entity_id=? AND name='vocabulary.reflection.proposal_closed'").get(original.proposalId!)!.n,1);
+});
+
+for(const change of ['edit','approve','fail','stale'] as const)test(`reassessment preserves its origin after ${change}`,()=>{
+  sql.exec('ALTER TABLE vocabulary_reflection_jobs ADD COLUMN model_choice TEXT');
+  const {cases}=ingest([present('one'),response('one')]);
+  const caseId=cases.find(item=>item.kind==='exercise_improvement')!.caseId;
+  const initial=claimVocabularyReflectionJob({kind:'exercise_improvement',now:judgedAt})!;
+  const original=recordVocabularyImprovementResult(initial.jobId,initial.leaseToken,{diagnosis:'Original',proposal:{operations:[op()],rationale:'Original'}},judgedAt);
+  requestVocabularyReassessment(caseId,'editor','openai:gpt-6-sol-high',1,{kind:'proposal',proposalId:original.proposalId!,expectedVersion:1});
+  const now=new Date(Date.now()+1000).toISOString(),child=claimVocabularyReflectionJob({kind:'exercise_improvement',now})!;
+  if(change==='edit')saveVocabularyProposal(original.proposalId!,1,{operations:[op()],rationale:'Operator revision'},'editor');
+  if(change==='approve')approveVocabularyProposal(original.proposalId!,1,'editor');
+  if(change==='fail')failVocabularyReflectionJob(child.jobId,child.leaseToken,'provider failure',now,now);
+  else if(change==='stale'){
+    updateVocabularyContent('one',1,{...draft('one'),body:{prompt:'Changed source'}},actor);
+    assert.throws(()=>recordVocabularyImprovementResult(child.jobId,child.leaseToken,{diagnosis:'Fresh',proposal:null},now),/source version changed/);
+  }else recordVocabularyImprovementResult(child.jobId,child.leaseToken,{diagnosis:'Fresh',proposal:null},now);
+  const current=getVocabularyProposal(original.proposalId!,'editor');
+  assert.equal(current.status,change==='approve'?'approved':'awaiting_review');
+  assert.equal(current.version,change==='edit'?2:1);
+});
+
+for(const attention of [false,true])test(`successful reassessment archives originating ${attention?'attention':'no-change'} case`,()=>{
+  sql.exec('ALTER TABLE vocabulary_reflection_jobs ADD COLUMN model_choice TEXT');
+  const {cases}=ingest([present('one'),response('one')]);
+  const caseId=cases.find(item=>item.kind==='exercise_improvement')!.caseId;
+  const initial=claimVocabularyReflectionJob({kind:'exercise_improvement',now:judgedAt})!;
+  const input={diagnosis:'Judgment',proposal:null,...(attention?{pureCuePromotion:{outcome:'needs_operator' as const,rationale:'Choose identity',candidateWordIds:['a'],existingContentId:null}}:{})};
+  recordVocabularyImprovementResult(initial.jobId,initial.leaseToken,input,judgedAt);
+  const next=requestVocabularyReassessment(caseId,'editor','openai:gpt-6-sol-high',1);
+  const now=new Date(Date.now()+1000).toISOString(),child=claimVocabularyReflectionJob({kind:'exercise_improvement',now})!;
+  recordVocabularyImprovementResult(child.jobId,child.leaseToken,input,now);
+  assert.equal(getVocabularyReflectionCase(caseId).status,'closed');assert.ok(getVocabularyReflectionCase(caseId).resolvedAt);
+  assert.ok(listVocabularyNoProposalCases('editor','closed').some(item=>item.caseId===caseId));
+  assert.equal(getVocabularyReflectionCase(next.caseId).status,attention?'open':'completed');
+});
+
+test('successful reassessment preserves an approval queued through the real journal',()=>{
+  sql.exec('ALTER TABLE vocabulary_reflection_jobs ADD COLUMN model_choice TEXT');
+  ingest([present('one'),response('one')]);
+  const initial=claimVocabularyReflectionJob({kind:'exercise_improvement',now:judgedAt})!;
+  const original=recordVocabularyImprovementResult(initial.jobId,initial.leaseToken,{diagnosis:'Original',proposal:{operations:[op()],rationale:'Original'}},judgedAt);
+  requestVocabularyReassessment(initial.caseId,'editor','openai:gpt-6-sol-high',1,{kind:'proposal',proposalId:original.proposalId!,expectedVersion:1});
+  const folder=fs.mkdtempSync(path.join(os.tmpdir(),'reassessment-approval-'));
+  try {
+    const queue=createVocabularyApprovalRequests({filePath:path.join(folder,'requests.jsonl'),controls:()=>({maintenanceMode:false})});
+    queue.enqueue({requestId:'approval-during-reassessment',proposalId:original.proposalId!,expectedVersion:1,actorId:'editor',notes:null});
+    const now=new Date(Date.now()+1000).toISOString(),child=claimVocabularyReflectionJob({kind:'exercise_improvement',now})!;
+    recordVocabularyImprovementResult(child.jobId,child.leaseToken,{diagnosis:'Fresh',proposal:null},now);
+    assert.equal(getVocabularyProposal(original.proposalId!,'editor').status,'awaiting_review');
+    assert.equal(queue.step(),true);assert.equal(queue.list()[0]!.status,'succeeded');
+    assert.equal(getVocabularyProposal(original.proposalId!,'editor').status,'applied');
+  }finally{fs.rmSync(folder,{recursive:true,force:true});}
+});

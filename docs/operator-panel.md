@@ -157,7 +157,10 @@ the historical served snapshots from the current source. A further source change
 requires a new request against the current version. The control refreshes current source metadata before
 submission. Stale proposals and unsaved proposal edits do not prevent reassessing
 the live exercise; saved sense coverage is used, and the old result, draft text and
-item selections remain intact. A succeeded assessment in Needs attention because
+item selections remain intact while assessment runs. On successful completion,
+the originating item leaves its queue and remains in Archive, linked through the
+retained reassessment evidence. A proposal edited, approved, or resolved after
+submission is preserved. Failed reassessments leave the origin open. A succeeded assessment in Needs attention because
 useful coverage is unknown can be corrected and reassessed there. Neither result
 is applied automatically.
 
