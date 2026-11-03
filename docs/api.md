@@ -109,7 +109,12 @@ Approval/application revalidate their source evidence. Sense policy is edited
 through the coverage endpoints, separately from content proposals.
 
 `POST /api/operator/vocabulary/cases/:id/reassessments` accepts `modelChoice` and
-required `expectedContentVersion`. It queues an independent assessment pinned to
+required `expectedContentVersion`, plus optional `originProposal` containing
+`proposalId` and `expectedVersion` when started from a proposal. Omission identifies
+the case itself as the originating item. Successful publication closes that item
+atomically with the new result; changed or approved proposals are preserved.
+The durable request event retains this identity; requests predating that metadata
+do not automatically close an inferred origin. It queues an independent assessment pinned to
 that current source version and returns the new `caseId` and `jobId`. The operator
 must confirm a version change shown by the review surface before submission. A
 source version that changed since the read is a conflict; the request does not

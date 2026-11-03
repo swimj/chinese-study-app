@@ -82,6 +82,9 @@ structural content comparisons do not substitute for version authority. A later
 source revision invalidates queued or in-flight work and proposals based on that
 version. Fresh mapping and assessment belong to the new case. Its link to the
 original assessment preserves provenance and historical encounter evidence.
+Publication and dismissal of the unchanged originating review item commit
+atomically. The durable request records the selected item and proposal version;
+completion preserves later edits and explicit approval or resolution.
 The assessment distinguishes those served snapshots from its pinned current
 source. Retry retains the pinned version; it does not silently move the request
 to another revision.

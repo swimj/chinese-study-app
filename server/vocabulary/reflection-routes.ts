@@ -125,10 +125,16 @@ export function registerVocabularyReflectionRoutes(app:Express,options:{wake?:()
     requestVocabularyCaseSecondOpinion(text(req.params.id),actor,(input.notes as string|undefined)??'');options.wake?.();return {ok:true};
   }));
   app.post(`${base}/cases/:id/reassessments`,gate,handle((req,actor)=>{
-    const input=object(req.body,['modelChoice','expectedContentVersion']);
+    const input=object(req.body,['modelChoice','expectedContentVersion','originProposal']);
     if(!Number.isSafeInteger(input.expectedContentVersion)||Number(input.expectedContentVersion)<1)throw new VocabularyReflectionRequestError('Expected positive source content version');
     if(!isOfferedReflectionModelChoice(input.modelChoice)) throw new VocabularyReflectionRequestError('Unsupported assessment model');
-    const result=requestVocabularyReassessment(text(req.params.id),actor,input.modelChoice as import('../reflection/model-arms.ts').ReflectionModelChoice,input.expectedContentVersion as number);options.wake?.();return result;
+    let origin:import('../db/vocabulary-reflection.ts').ReassessmentOrigin={kind:'case'};
+    if(input.originProposal!==undefined) {
+      const proposal=object(input.originProposal,['proposalId','expectedVersion']);
+      if(!Number.isSafeInteger(proposal.expectedVersion)||Number(proposal.expectedVersion)<1)throw new VocabularyReflectionRequestError('Expected positive proposal version');
+      origin={kind:'proposal',proposalId:text(proposal.proposalId),expectedVersion:proposal.expectedVersion as number};
+    }
+    const result=requestVocabularyReassessment(text(req.params.id),actor,input.modelChoice as import('../reflection/model-arms.ts').ReflectionModelChoice,input.expectedContentVersion as number,origin);options.wake?.();return result;
   }));
   app.post(`${base}/cases/:id/pure-cue-resolutions`,gate,handle((req,actor)=>{
     const input=object(req.body,['modelChoice','expectedContentVersion','selections']);

@@ -276,7 +276,25 @@ export function VocabularyOperatorPage({api=vocabularyOperatorApi,previewOnly=fa
   useEffect(()=>{if(queue==='review'&&!initialSelection.current&&reviewItems.length){initialSelection.current=true;const first=reviewItems[0];if(first.kind==='proposal')openProposal(first.value);else openCase(first.value.caseId);}},[proposals,noProposalCases]);
   useEffect(()=>{if(busy||dirty||!workspace||selected||!workspace.jobs.some(job=>job.secondOpinion&&['queued','running'].includes(job.status)))return;let active=true;const timer=setTimeout(()=>{void api.workspace(workspace.case.caseId).then(value=>{if(active)setWorkspace(value);}).catch(cause=>{if(active)setError(message(cause));});},3000);return()=>{active=false;clearTimeout(timer);};},[api,workspace,selected,busy,dirty]);
   useEffect(()=>{if(!workspace?.reassessment||!['queued','running'].includes(workspace.reassessment.status)||busy)return;let active=true;const caseId=workspace.case.caseId;const timer=setTimeout(()=>{void api.workspace(caseId).then(async value=>{if(!active)return;setWorkspace(value);if(!value.reassessment||!['queued','running'].includes(value.reassessment.status))await reload();}).catch(cause=>{if(active)setError(message(cause));});},3000);return()=>{active=false;clearTimeout(timer);};},[api,workspace,busy,dirty]);
-  useEffect(()=>{if(!selected||!reviewReassessment?.latest||!['queued','running'].includes(reviewReassessment.latest.status)||busy)return;let active=true;const epoch=cache.current.epoch(),value=selected;const timer=setTimeout(()=>{void api.reviewBatch(value.proposalId,1).then(async batch=>{if(!active)return;const snapshot=batch.items.find(item=>item.proposal.proposalId===value.proposalId);if(!snapshot)return;if(!cache.current.setIfCurrent(snapshotKey(snapshot.proposal),snapshot,epoch))return;setReviewReassessment(snapshot.reassessment);setReviewAssessment(snapshot.assessment);setCoverageChanged(snapshot.coverageChanged??false);if(!snapshot.reassessment?.latest||!['queued','running'].includes(snapshot.reassessment.latest.status))await reload();}).catch(cause=>{if(active)setError(message(cause));});},3000);return()=>{active=false;clearTimeout(timer);};},[api,selected,reviewReassessment,busy,dirty]);
+  useEffect(()=>{
+    if(!selected?.caseId||!reviewReassessment?.latest||!['queued','running'].includes(reviewReassessment.latest.status)||busy)return;
+    let active=true;const value=selected;
+    const timer=setTimeout(()=>{
+      // The source proposal can leave the open batch when reassessment succeeds.
+      // Its retained case remains the authority for the replacement job's status.
+      void api.workspace(value.caseId!).then(async workspace=>{
+        if(!active)return;
+        setReviewReassessment(previous=>previous?{...previous,latest:workspace.reassessment??null,
+          source:workspace.reassessmentSource??null,eligible:!!workspace.reassessmentSource}:previous);
+        setReviewAssessment(workspace.assessment??null);
+        if(!workspace.reassessment||!['queued','running'].includes(workspace.reassessment.status)){
+          cache.current.delete(snapshotKey(value));
+          await reload();
+        }
+      }).catch(cause=>{if(active)setError(message(cause));});
+    },3000);
+    return()=>{active=false;clearTimeout(timer);};
+  },[api,selected,reviewReassessment,busy,dirty]);
   function selectItem(item:(typeof reviewItems)[number]){setNextLoad(null);if(item.kind==='proposal')openProposal(item.value);else openCase(item.value.caseId);}
   function switchQueue(next:typeof queue){
     if(busy||scopeEditing||next===queue||!maySwitch())return;
@@ -338,7 +356,7 @@ export function VocabularyOperatorPage({api=vocabularyOperatorApi,previewOnly=fa
     if(selected)setReviewReassessment({eligible:true,source,latest:current.reassessment??null});
     else setWorkspace(previous=>previous?.case.caseId===reassessmentCase.caseId?{...previous,reassessmentSource:source,reassessment:current.reassessment}:previous);
     if(source.currentVersion!==source.assessedVersion&&confirmedVersion!==source.currentVersion){setConfirmReassessment(`${reassessmentCase.caseId}/${source.currentVersion}`);return;}
-    const result=await api.reassessCase(reassessmentCase.caseId,reassessmentModel,source.currentVersion);
+    const result=await api.reassessCase(reassessmentCase.caseId,reassessmentModel,source.currentVersion,selected?{proposalId:selected.proposalId,expectedVersion:selected.version}:undefined);
     setConfirmReassessment(null);
     const latest={...result,status:'queued',error:null};
     if(selected){setReviewReassessment({eligible:true,source,latest});cache.current.delete(snapshotKey(selected));}

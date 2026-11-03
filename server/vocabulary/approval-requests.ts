@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { VocabularyApprovalRequest } from '../../src/domain/vocabulary-reflection.ts';
 import { config } from '../db/connection.ts';
-import { completeVocabularyApprovalRequest, getVocabularyProposal, VocabularyReflectionConflict } from '../db/vocabulary-reflection.ts';
+import { completeVocabularyApprovalRequest, recordVocabularyApprovalIntent, getVocabularyProposal, VocabularyReflectionConflict } from '../db/vocabulary-reflection.ts';
 import { getHostedServiceControls } from '../db/hosted-operations.ts';
 
 type Authorization = Pick<VocabularyApprovalRequest,'requestId'|'proposalId'|'expectedVersion'|'actorId'|'notes'>;
@@ -70,6 +70,9 @@ export function createVocabularyApprovalRequests(options:{
     const active=[...items.values()].find(item=>item.proposalId===input.proposalId&&item.expectedVersion===input.expectedVersion
       &&['queued','running'].includes(item.status));
     if(active)throw new VocabularyReflectionConflict('This proposal revision already has a queued approval');
+    // If journal admission fails, retaining intent conservatively protects this
+    // revision from automatic reassessment dismissal; only the journal can apply it.
+    recordVocabularyApprovalIntent(input);
     const at=iso();
     return append({...input,status:'queued',attempts:0,createdAt:at,updatedAt:at,error:null,application:null});
   }
