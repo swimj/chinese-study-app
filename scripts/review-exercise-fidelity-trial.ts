@@ -76,7 +76,9 @@ async function requestFor(fixture:ExerciseFidelityCase) {
       if(frozenMapping.includes("'laundry_list'"))outputSchema.properties!.outcome.enum=['single_sense','laundry_list','unmappable','inventory_gap'];
     }
     if(oldSingle&&!authoringContract)outputSchema.properties!.operations.items!.properties!.strategy.enum=['create','update_existing','replace'];
-    outputSchemaName=fixture.kind==='mapping'?'vocabulary_reflection_sense_mapping_v1':authoringContract?'vocabulary_reflection_single_improvement_v5':oldSingle?'vocabulary_reflection_single_improvement_v2':hasResponseExercises?'vocabulary_reflection_single_improvement_v4':'vocabulary_reflection_single_improvement_v3';
+    const authoringSchemaVersion=revision&&authoringContract?frozenProvider!.match(/const schemaVersion=.*?single_improvement'\?'(\d+)'/)?.[1]:'4';
+    if(authoringContract&&!authoringSchemaVersion)throw new Error('Historical authoring schema version is unavailable');
+    outputSchemaName=fixture.kind==='mapping'?'vocabulary_reflection_sense_mapping_v1':authoringContract?`vocabulary_reflection_single_improvement_v${authoringSchemaVersion}`:oldSingle?'vocabulary_reflection_single_improvement_v2':hasResponseExercises?'vocabulary_reflection_single_improvement_v4':'vocabulary_reflection_single_improvement_v3';
     decodeAliases=!revision||(await source('server/vocabulary/reflection-provider.ts')).includes('projectVocabularySenseReferences');
     if(authoringContract){
       userPrompt=JSON.stringify(projectExerciseAuthoringTrial(fixture));

@@ -166,8 +166,8 @@ Integration rationale remains separately recorded rather than being appended
 to that summary. Operator edits and selection of parts remain deliberate,
 without enforced component dependencies.
 
-Single improvement uses prompt version 9, schema version 5, and projection
-`vocabulary-exercise-authoring.v1`. Mapping uses prompt version 5, schema version 1,
+Single improvement uses prompt version 5, schema version 4, and projection
+`vocabulary-exercise-authoring.v1`. Mapping uses prompt version 4, schema version 1,
 and projection `vocabulary-admission.v4`. Exact source, catalog, mapping, and
 lexical checks fence publication and approval. Stage identities retain actual
 projected input, schema, and contract; unknown supplied references fail validation.
@@ -192,8 +192,8 @@ Its output has `decision`, `existingContentId`, `semanticAxis`, `teachingNote`, 
 | `extend` | Supplied compatible cue missing a candidate | null | Integrated full note | Preserve stimulus, axis, forms, and all members; add every candidate |
 | `create` | null | Derived from the authored shared task | null | Preserve the upstream prompt and teaching note; include every candidate |
 
-Integration uses prompt version 3, schema version 4, and projection
-`vocabulary-integration.v2`. It chooses a destination without a second pedagogical
+Integration uses prompt version 1, schema version 3, and projection
+`vocabulary-integration.v1`. It chooses a destination without a second pedagogical
 veto. Creation derives the semantic axis from the authored cue, answers, note,
 and rationale; it does not broaden or redesign that task. An incompatible
 existing cue leads to creation, not rejection of the plan.

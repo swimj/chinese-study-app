@@ -58,7 +58,7 @@ test('fidelity trials preserve nullable historical bindings while current wire r
 test('single authoring trial projects supplied references and retains source and encounter meanings',()=>trial(['--cases','comparison-稠密-密集'],archive=>{
   const captured=JSON.parse(readFileSync(path.join(archive,'check','comparison-稠密-密集','request.json'),'utf8'));
   const input=JSON.parse(captured.request.userPrompt);
-  assert.equal(captured.request.outputSchemaName,'vocabulary_reflection_single_improvement_v5');
+  assert.equal(captured.request.outputSchemaName,'vocabulary_reflection_single_improvement_v4');
   assert.deepEqual(Object.keys(captured.request.outputSchema.properties),['summary','source','sharedExercise','additionalExercises']);
   assert.deepEqual(input.words.map((word:{ref:string;form:string})=>[word.ref,word.form]),[['target','稠密'],['response_1','密集']]);
   assert.equal(input.source.prompt,captured.fixture.input.sourceContent.body.prompt);
