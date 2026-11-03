@@ -153,8 +153,7 @@ The teaching note helps the learner transfer that shared meaning appropriately:
 > Learn 缘故 through familiar constructions such as 不知什么缘故 and 是天气的缘故.
 > Both name reasons, but this shared meaning does not make 缘故 a replacement for 原因 in every sentence.
 
-The note provides usable patterns.
-It qualifies transfer into other constructions; every accepted word must naturally answer the cue before the learner reads the note.
+The note provides usable patterns and guides transfer into other constructions.
 
 Shared clozes can also practice natural constructions:
 
@@ -167,15 +166,14 @@ Shared clozes can also practice natural constructions:
 A broad cue such as “to experience something adverse” can admit both words while hiding the word combinations the learner needs to acquire.
 Recognizing that broad category does not by itself teach the learner when to reach for either word in a sentence.
 Familiar combinations such as 遭到批评 and 遭受巨大损失 illustrate the more concrete production knowledge that practice can develop.
+The words also genuinely overlap, including with 攻击.
+Explain collocational preferences as preferences: they do not make the other word impossible, and must not be used alone to justify accepting only one answer.
 
 When the encounter exposes this gap, repair the exercise around a natural combination that clarifies its originating meaning or circumstance.
+Finding overlap in another circumstance does not address the diagnosed gap or justify moving the repair there.
+A pure cue is appropriate when its particular shared pattern serves the originating exercise and is itself worth reinforcing.
 If that repair establishes worthwhile word-specific practice, propose it without adding a pure cue merely because both words fit the original English gloss.
 Repair without shared practice is a successful outcome.
-
-The words also genuinely overlap, including with 攻击.
-Finding that overlap elsewhere does not address the diagnosed gap or justify moving the repair to a different circumstance.
-A pure cue is appropriate when its particular shared pattern serves the originating exercise and is itself worth reinforcing.
-Explain collocational preferences as preferences: they do not make the other word impossible, and must not be used alone to justify accepting only one answer.
 
 When proposing shared practice, author the actual cue and its teaching note here.
 A subsequent integration step will look for compatible existing shared content to reuse or extend; otherwise it will create your draft.
@@ -274,9 +272,12 @@ A cue need not be a complete scene, or teach a common everyday word, to be worth
 
 ## 4. Consider additional enrichment, then present the proposal
 
-While judging the source, you may notice another useful construction, circumstance, or retrieval route for the target or a submitted word.
-Include such enrichment selectively.
-Explain what it adds and make clear when it goes beyond resolving the originating exercise.
+### Consider additional learning opportunities
+
+Enrichment is welcome when the diagnosis or repair reveals another example that would help the learner understand or use the target or a submitted word.
+It might introduce another circumstance, clarify a contrast, or offer a different retrieval route.
+Include it when you can explain the concrete learning value it adds, and identify it as optional enrichment beyond addressing the originating exercise.
+Enrichment can also be worthwhile when the original exercise needs no change.
 
 **稠密 / 密集**
 
@@ -284,8 +285,10 @@ The original population-density task supports both:
 
 > Densely populated: 这个地区人口____。
 
-Propose shared practice for that task.
-A teaching note can describe their usage tendencies without dividing them into statistical density versus perceived crowding.
+Propose shared practice for that meaning, with a short teaching note such as:
+
+> Both 人口稠密 and 人口密集 describe a densely populated area.
+> 密集 also describes events scheduled close together, as in 面试安排得很密集.
 
 A further case can show 密集’s temporal use:
 
@@ -294,27 +297,40 @@ A further case can show 密集’s temporal use:
 
 This is optional enrichment because it leaves the population circumstance.
 The shared cue already handles the original encounter.
+The interview example gives the learner practice with the further use of 密集 introduced in the teaching note.
 No 稠密-only counterpart is required.
 
-Similarly, after sharing 中断 / 打断 in a conversation-interruption cue, `通信____了几个小时才恢复。` may offer optional additional practice for 中断.
+**忍俊不禁**
 
-Enrichment can also respond to an explicit preference.
 If a learner recalls 忍俊不禁 from `unable to keep from laughing` and asks for sentence practice, preserve the useful direct cue and offer:
 
 > unable to suppress a laugh at a funny answer:\
 > 听到这个风趣的回答，他____。
 
-Before returning the proposal, check the arrangement as a whole:
+The original cue works; no source repair is needed.
+The additional sentence answers the learner’s request for practice using the expression in context.
 
-- The original exercise has been accounted for.
-- Each proposed exercise has a clear learning purpose and an appropriate answer set.
-- Additional enrichment is distinguishable from the source repair.
-- The explanation describes the actual content proposed, including meaningful uncertainty.
+### Present a concise recommendation to the operator
 
-Write the diagnosis for the operator: what you found in the source and evidence, what you propose, and why.
-Give individual changes concise rationales explaining their particular value.
+Err on the side of a short summary: the operator needs to understand the recommendation and decide whether to apply it.
+Default to a few short sentences in plain language, with further detail only when it materially affects that decision.
+Do the linguistic reasoning needed to reach a sound judgment, then present its conclusion and decisive evidence rather than an academic discussion or a narration of every consideration.
 
-Keep learner comments, private details, and encounter history out of authored exercise content.
+Explain:
+
+- What happened in the encounter and the evidence that supports your diagnosis.
+- Your recommendation for the original exercise, including why it should stay unchanged or be removed when appropriate.
+- How any pure cue and distinctive refinements work together, and what optional enrichment adds.
+
+For the population example, an operator summary could be:
+
+> Both 稠密 and 密集 naturally complete the population cue, so replace the single-answer exercise with shared practice.
+> The optional interview example adds practice with 密集 for events scheduled close together.
+
+Use the diagnosis for the overall recommendation and each change’s rationale for its particular contribution, without repeating the summary.
+Mention uncertainty when it could change the operator’s decision, and make sure the explanation matches the actual proposed content.
+
+Encounter evidence informs the operator explanation; authored exercises and teaching notes should contain learning content, without learner comments, private details, or encounter history.
 
 ## Output reference
 
