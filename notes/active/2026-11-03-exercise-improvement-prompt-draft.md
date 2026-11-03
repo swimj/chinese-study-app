@@ -52,14 +52,15 @@ An intended sense or post-answer teaching note cannot supply a distinction missi
 
 Consider how the target and the learner’s response each fit that reading of the cue.
 Does the submitted word naturally answer it, reflect another reasonable interpretation, or suggest confusion about meaning, sound, or written form?
-Use the wording and the learner’s feedback to support your explanation of the encounter.
+Use the cue’s wording and the learner’s feedback to support your explanation of the encounter.
 
 The application’s accepted or rejected outcome records what happened; assess the language yourself.
 A rejected answer can be natural.
 A correct answer can coexist with an awkward or unhelpful exercise.
 
-Learner feedback may reveal excessive reading effort, unclear focus, an unnatural sentence, or difficulty connecting a paraphrase to an expression.
-Take that experience seriously while assessing the learner’s proposed explanation or remedy on its linguistic merits.
+Learner feedback can reveal many kinds of difficulty: for example, excessive reading effort, unclear focus, an unnatural sentence, or difficulty connecting a paraphrase to an expression.
+Take the reported experience seriously.
+If the learner also suggests an explanation or remedy, assess it on its linguistic merits.
 
 If the learner supplied no answer, work from the cue and any feedback available.
 A skip or an undone presentation supplies no comparison word, and a request for review alone does not identify a particular defect.
@@ -93,18 +94,20 @@ Where a change is warranted, identify the useful production habit worth preservi
   Cue: `When someone has several possible courses of action, keeps weighing their advantages and disadvantages, and delays making a choice because they cannot settle on what to do.`
   The learner answers 犹豫 correctly but comments, “I got it, but this takes too much reading for a simple idea.”
   The cue evokes the intended indecision, but makes the learner work through several overlapping descriptions to reach it.
-  The useful improvement is a more direct evocation of that same meaning; successful recall does not remove the reading burden.
+  The useful improvement is a more direct evocation of that same meaning; successful recall does not establish that the cue was easy to read.
 
-## 3. Work out useful practice for the original task
+## 3. Develop a proposal for the originating exercise
 
-Use that assessment to decide what practice best serves the originating meaning or circumstance.
-Work through the language before deciding how many exercises to propose.
+Use the diagnosis to develop useful practice from the originating meaning or circumstance.
+Clarifying the cue, considering which words naturally answer it, and exploring its constructions inform one another; judge the resulting content together before deciding what to propose.
 
-### Clarify the intended expression where needed
+### Shape the original meaning or circumstance into useful practice
 
-A refinement should make the intended communication easier to grasp.
-Stay with the original circumstance where it provides useful practice.
-You can change sentence structure, add a concise meaning frame, or choose a better cue format.
+A repair should make the intended meaning accessible within the originating exercise’s meaning or circumstance.
+You can simplify a definition, add a concise frame to a cloze, or rephrase the sentence to bring a useful construction into focus.
+Choose between a compact definition, a Mandarin cloze, or a frame with a cloze according to what makes that meaning easiest to grasp and practice.
+If the originating meaning or circumstance cannot be shaped into worthwhile practice, propose removing the exercise.
+A different circumstance may offer useful additional practice, but belongs to enrichment rather than repair of the source.
 
 **声调 / 拼音**
 
@@ -115,19 +118,26 @@ A repair can focus on pitch while preserving the connection between pronunciatio
 > 这个字的____读错了，意思可能就不一样。
 
 This supplies the missing semantic focus.
-It does not call for a shared cue.
+声调 answers the clarified cue; 拼音 does not name the pitch pattern.
 
 Similarly, `等待消息时，她心里很____。` does not distinguish 忐忑 from 兴奋.
 A frame such as “uneasy and apprehensive while waiting for news” can communicate the intended emotional stance.
 
-### Decide whether the task earns shared practice
+### Consider which words naturally answer the resulting cue
 
-When the target and a response overlap, ask whether they naturally perform one useful expressive task.
-Consider their actual syntax, arguments, collocations, register, and meaning in the proposed cue.
+Clarifying an exercise may show that both the target and a submitted word naturally express the meaning or intention it evokes.
+A **pure cue** is a production exercise that accepts multiple words expressing that shared meaning or intention.
+It lets the learner practice a useful way of expressing something without treating an equally natural answer as a mistake.
 
-A shared cue should build a useful production instinct beyond this particular comparison.
-The members need not be interchangeable everywhere, and differences in emphasis or register can belong in the teaching note.
-But words fitting an underspecified blank for different reasons do not necessarily share a task.
+Assess the words against the actual cue you propose, including any clarification you have made.
+For a cloze, put each word into the blank and read the completed sentence: does it express the relevant meaning, fit the surrounding grammatical construction and its arguments, and sound natural in the sentence’s phrasing and rhythm?
+This grammatical and rhythmic slot is part of what the sentence teaches; shared dictionary meaning alone does not establish that both words fit it.
+Conversely, words that fit the same blank but express different meanings do not establish useful shared practice merely by being grammatically possible.
+
+A compact definition has no fixed sentence slot.
+Judge whether each word naturally expresses the concept it evokes; they need not substitute for each other in every construction.
+For either kind of cue, shared practice should build a useful production instinct beyond resolving this particular comparison.
+Differences in emphasis, register, and use in other constructions can belong in the post-answer teaching note.
 
 **原因 / 缘故**
 
@@ -144,7 +154,7 @@ The teaching note helps the learner transfer that shared meaning appropriately:
 The note provides usable patterns.
 It qualifies transfer into other constructions; it cannot rescue a member that does not answer the cue itself.
 
-Other worthwhile shared tasks include:
+Shared clozes can also practice natural constructions:
 
 - **难怪 / 怪不得:** `原来你昨晚没睡，____今天这么困。` practices recognizing why something is unsurprising.
 - **中断 / 打断:** `突然响起的电话铃声____了我们的谈话。` practices interruption of an ongoing conversation.
@@ -153,10 +163,11 @@ Other worthwhile shared tasks include:
 When proposing shared practice, author the actual cue and its teaching note here.
 A subsequent integration step will look for compatible existing shared content to reuse or extend; otherwise it will create your draft.
 
-### Consider constructions within the same circumstance
+### Consider useful word-specific practice within the same circumstance
 
-The originating circumstance can support both shared practice and a useful word-specific construction.
-These should work together.
+The same circumstance may support a different construction that naturally calls for the target or the submitted word specifically.
+Consider whether that construction teaches something useful alongside a pure cue, or whether word-specific practice better serves the original exercise on its own.
+Let the natural use of the words determine the proposal; a pair of words does not require a pair of exercises.
 
 **有关 / 关于**
 
@@ -178,10 +189,8 @@ The proposal can therefore replace the original single-word exercise with this c
 This is a refinement of the original circumstance.
 It does not require finding a new topic, nor a symmetrical 关于-only exercise.
 
-### Let natural production patterns guide the choice
-
 Similar English glosses can conceal different ways of entering a Mandarin sentence.
-Shared practice is useful when it teaches a sound production pattern; it is not required whenever two meanings overlap.
+Their apparent overlap need not lead to a pure cue when the useful learning lies in how each word enters a construction.
 
 **违反 / 违法**
 
@@ -194,7 +203,7 @@ The first names what is violated; the second characterizes the conduct as unlawf
 Substituting the other word does not preserve either pattern.
 
 Prefer exercises that teach these constructions over a shared gloss that hides them.
-Repair the source around its target’s use; the other construction may also be useful additional practice.
+Repair the source around its target’s construction within the originating meaning or circumstance; the other construction may also be useful additional practice.
 
 **遭到 / 遭受**
 
@@ -207,12 +216,31 @@ Consider whether the originating exercise would teach more through a familiar co
 Explain preferences as preferences.
 Different collocational tendencies do not establish that another word is impossible, just as one common object does not establish broad interchangeability.
 
+### Write content that makes the intended expression accessible
+
+Choose the presentation that best supports the meaning or construction being practiced:
+
+- A compact English meaning can directly evoke a concept or referent.
+- A Mandarin cloze can practice natural sentence structure and collocation.
+- A concise English circumstance or intention, optionally followed by a Mandarin stem, can convey expressive meaning that a bare gloss loses.
+
+Use Mandarin for natural sentences and concise English for frames and explanations.
+Make the frame and sentence evoke the same meaning or intention.
+Include details that help retrieval; avoid making the learner identify the relevant event inside an elaborate story.
+
+Read the completed sentence naturally.
+Check the participants, action, arguments, and intended meaning.
+Grammatical analysis can inform your design, but the learner should be trying to express something, not solve a classification puzzle.
+
+Aim for strong evocation without making the language awkward to eliminate every imaginable alternative.
+Preserve the actual target word’s contribution, and keep accepted written forms and pinyin out of pre-answer text.
+
 ### Let the resulting practice determine what happens to the source
 
 If the exercise already works and no useful change emerges, propose no change.
 
-If clearer wording or a better construction improves its task, propose that improvement.
-If a shared cue takes over the original task, retire the redundant single-answer source.
+If clearer wording or a better construction improves practice of the originating meaning or circumstance, propose that improvement.
+If a pure cue takes over the original exercise’s useful practice, retire the redundant single-answer source.
 Keep or refine word-specific practice when it contributes something useful beyond the shared cue.
 
 For example, clarifying 批准’s broad cue `agree` to a leave-request sentence may also admit 同意:
@@ -222,7 +250,7 @@ For example, clarifying 批准’s broad cue `agree` to a leave-request sentence
 That can be useful shared practice.
 Do not also present essentially the same sentence as distinctive 批准-only practice.
 
-Retirement is also appropriate when the exercise does not offer worthwhile retrieval of the actual target and you cannot find a convincing repair.
+Retirement without replacement is appropriate when the originating meaning or circumstance cannot support worthwhile retrieval of the actual target, even after considering clarification and changes of construction.
 
 For example, `请尊重____人的隐私。` completes 他人.
 Making it more formally worded does not necessarily make it useful recall practice for 他 in its “other” use.
@@ -235,25 +263,6 @@ Conversely:
 - A precise definition of 笏 can serve an intentionally learned historical referent.
 
 A cue need not be a complete scene, or teach a common everyday word, to be worthwhile.
-
-### Write content that makes the intended expression accessible
-
-Choose the format that best serves the task:
-
-- A compact English meaning can directly evoke a concept or referent.
-- A Mandarin cloze can practice natural sentence structure and collocation.
-- A concise English circumstance or intention, optionally followed by a Mandarin stem, can convey expressive meaning that a bare gloss loses.
-
-Use Mandarin for natural sentences and concise English for frames and explanations.
-Make the frame and sentence communicate one task.
-Include details that help retrieval; avoid making the learner identify the relevant event inside an elaborate story.
-
-Read the completed sentence naturally.
-Check the participants, action, arguments, and intended meaning.
-Grammatical analysis can inform your design, but the learner should be trying to express something, not solve a classification puzzle.
-
-Aim for strong evocation without making the language awkward to eliminate every imaginable alternative.
-Preserve the actual target word’s contribution, and keep accepted written forms and pinyin out of pre-answer text.
 
 ## 4. Consider additional enrichment, then present the proposal
 
