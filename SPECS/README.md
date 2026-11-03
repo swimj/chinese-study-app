@@ -23,7 +23,7 @@ conflicts rather than changing a promise solely to match the code.
 | What do words, modes, exercises, coverage and completion mean? | [Adaptive vocabulary study](vocabulary-learning.md): product model and intended learner behavior |
 | What can feedback, repair and operator review change? | [Review and content authority](vocabulary-learning.md#reactions-feedback-content-repair-and-authority) |
 | What structural constraints must an implementation preserve? | [Vocabulary architecture](vocabulary-architecture.md): state ownership, retained evidence, completion and application authority |
-| How do independent pure cues work? | [Pure-cue elicitation](pure-cue-elicitation.md), with current vocabulary admission in [mode and selection](vocabulary-learning.md#learner-mode-and-selection) |
+| How do independent pure cues work? | [Pure-cue elicitation](pure-cue-elicitation.md) for elicitation and scheduling; [mode and selection](vocabulary-learning.md#learner-mode-and-selection) for admission; [content repair](vocabulary-learning.md#content-repair-boundaries) for operator-reviewed changes |
 | What does Connections promise? | [Session debrief](session-debrief.md): input, durable generation, interests, failure and retry |
 | How are Chinese characters presented? | [Character presentation](character-presentation.md): display intent and explicitly described conversion mechanisms |
 

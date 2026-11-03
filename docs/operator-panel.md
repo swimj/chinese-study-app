@@ -152,9 +152,9 @@ defaulting to GPT-6 Sol high. It assesses the current exercise version with fres
 sense mapping where applicable and places its independent result in the review
 queue. If the source version differs from the original assessment, the control
 shows the version change and requires confirmation to proceed on the current
-version. The original encounter stays available as historical context, not learner
-evidence for the independent assessment. A further source change requires a new request
-against the current version. The control refreshes current source metadata before
+version. The assessment uses retained learner responses and reactions, distinguishing
+the historical served snapshots from the current source. A further source change
+requires a new request against the current version. The control refreshes current source metadata before
 submission. Stale proposals and unsaved proposal edits do not prevent reassessing
 the live exercise; saved sense coverage is used, and the old result, draft text and
 item selections remain intact. A succeeded assessment in Needs attention because
@@ -191,7 +191,25 @@ provides the originating context when available. Closing the word editor returns
 the existing draft and item selections. Saving explicit
 word defaults, including **Select none**, resolves it.
 
+### Resolving shared-practice identities
+
+Current assessment uses missing or ambiguous dictionary forms as evidence for
+target improvement, without proposing them as answers. Historical saved
+assessments with unresolved shared answers appear in Needs attention with
+**Resolve candidate identities**. Select the intended entry for
+each ambiguous form, then queue the integration assessment. The complete content
+plan waits for this resolution; choosing identities resumes that plan without
+applying it or repeating the source assessment. If a form has no matching
+entry, this control cannot create one: reassess or close the assessment with a
+resolution. Source or dictionary changes can require a fresh assessment.
+
 ### Selecting and editing proposal items
+
+Exercise-local plans label each item's contribution: **Source exercise**, **Shared
+practice**, **Distinctive refinement**, or **Optional enrichment**. A refinement
+practices a distinctive use within the original circumstance; enrichment adds
+practice beyond resolving that exercise. The summary explains the overall
+recommendation, and item rationales explain their individual contributions.
 
 Proposal items share expected answers and scope labels and group by readable
 sense labels. Each item has an inclusion checkbox. Turning a replacement off

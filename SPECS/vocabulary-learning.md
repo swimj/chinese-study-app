@@ -67,7 +67,7 @@ not provide production coverage. Contrast selection has its own assessment and
 schedule. Pure cues accept several words, have independent learner scheduling,
 and do not award word progress to every accepted member.
 
-For Practice and Maintain, the [pure-cue proxy policy](pure-cue-elicitation.md)
+For Practice and Maintain, the [pure-cue proxy policy](pure-cue-elicitation.md#production-coverage)
 also governs production admission. A word is **proxied** when active shared pure
 content accepts it and no active shared general word-specific production cue
 remains. Its production objective cannot enter through dictionary fallback,
@@ -277,30 +277,50 @@ refresh choices. Provider failure does not invalidate session completion.
 
 ### Content repair boundaries
 
-A dictionary cue spanning distinct uses can be replaced by a general-practice
-repertoire. Prepared and reflection-proposed exercises use concise direct
-evocations and contextual clozes chosen for the target's own lexical contribution,
-with optional post-answer teaching. A reflection repertoire proposal replaces the
-source cue and adds the remaining exercises; application requires operator approval.
-Ordinary preparation publishes validated exercises through its preparation policy.
+A dictionary fallback without current authored production practice in its
+publication scope and owner can seed a selected general-practice repertoire.
+Existing authored practice, including shared pure cues accepting the word,
+prevents another fallback bootstrap. Authored exercises receive local assessment
+of their intended use rather than replacement merely for spanning related glosses.
+Prepared and reflection-proposed exercises use concise direct evocations and
+contextual clozes chosen for the target's own lexical contribution, with optional
+post-answer teaching. Reflection proposes content; application requires operator
+approval. Ordinary preparation publishes through its bounded preparation policy.
 
-For a single-word production exercise with an admitted intended sense, local
-improvement and a shared-practice referral are independently optional. Local
-edits preserve that exercise's answer contract. Referral written forms are
-advisory; membership requires unambiguous lexical identities and a useful shared
-expressive purpose in the visible construction. Missing or ambiguous identities
-require operator attention. The subsequent assessment may reject the opportunity,
-reuse a suitable pure cue, extend an existing one, or propose a new cue. Existing
-cue lookup respects the source's publication scope and owner. Extension preserves
-the cue's stimulus, reveal axis, all existing members and their accepted forms,
-while updating its full accumulated teaching note. Creation also supplies a
-complete note. Notes are mostly English, using Chinese where helpful to
-illustrate the language point without manufacturing sharp pairwise distinctions.
-Creation and extension join local edits in a manually reviewed proposal; neither
-referral nor assessment publishes content. Private learner comments inform review
-without being copied into shared authored content. Shared-practice assessment
-does not reconcile individual word repertoires or change learner compensation
-or scheduling.
+For an authored single-word production exercise with an admitted intended sense,
+one assessment owns a coherent exercise-local plan. It decides the original
+cue's disposition, drafts useful shared practice when warranted, and proposes
+target or response-word practice. A refinement develops a distinctive construction
+or meaning within the originating circumstance, with that distinction available
+through the cue itself. Enrichment adds optional practice surfaced during the
+assessment or requested by the learner. Source revision preserves its identity,
+answer contract, and learner controls. Retirement may coexist with optional
+additional target practice. Target additions, including enrichment, inherit the
+source exercise's mapped sense. Response-word additions create exercises only for
+unambiguous lexical identities established from actual responses; they do not
+reconcile the response word's repertoire or invent a sense association.
+
+A shared proposal contains its actual visible cue, intended answers, and complete
+teaching note. Integration chooses reuse, extension, or creation without a second
+pedagogical veto, deriving a semantic axis from the authored task when creating
+a new shared exercise. Existing-cue lookup respects publication scope and owner.
+Reuse requires all proposed candidates already to be members of a compatible
+cue. Extension preserves its stimulus, axis, existing members and accepted forms,
+while integrating its accumulated teaching note. Creation preserves the authored
+shared prompt and teaching note unchanged. Notes are mostly English, with Chinese
+where useful.
+
+A submitted form can become an answer in shared or individual practice only when
+it matches one dictionary identity. Missing or ambiguous forms inform the
+diagnosis and target improvement as encounter evidence; they do not become
+proposed answers or require identity resolution to review the source repair.
+The operator can edit and select individual parts deliberately; optional local
+clarifiers are not enforced prerequisites for shared practice. Enrichment meets
+the same answer-fairness standard as repairs. The operator receives a
+concise summary of the diagnosis and recommendation, with brief rationales for
+individual additions. Private learner comments inform review without being
+copied into shared authored content.
+Content assessment does not change learner compensation or scheduling.
 
 An existing pure cue receives a separate content assessment of its established
 shared task. It may extend membership using unambiguous lexical IDs from actual
@@ -333,8 +353,9 @@ versions and must explicitly choose to proceed on the current version. Each
 reassessment performs fresh sense mapping where applicable and fresh assessment,
 including when the source version is unchanged. It produces a separate review
 item and does not resolve or apply the original proposal or judgment. The
-original encounter remains historical context; reassessment evaluates the authored
-exercise independently of the original learner response or reaction.
+original encounters, responses, and reactions are retained as historical evidence
+for the assessment of the pinned current source. Their served snapshots remain
+distinct from the current exercise and proposed content.
 
 Operators can inspect supporting evidence and edit proposals before approval.
 Dismissal and closing a completed no-change review accept an optional reason;

@@ -22,7 +22,7 @@ import { ingestVocabularySessionEvidence, getVocabularyReflectionCase, listVocab
   previewVocabularyProposal, getVocabularyProposal, listVocabularyProposals, listVocabularyProposalReviewBatch, closeVocabularyProposal, closeVocabularyTeachingCase, closeVocabularyCase, getVocabularyCaseWorkspace } from '../server/db/vocabulary-reflection.ts';
 import type { VocabularyContentDraft, VocabularyContent } from '../src/domain/vocabulary-content.ts';
 import type { VocabularySessionAction, VocabularyEncounterSnapshot } from '../src/domain/vocabulary-session.ts';
-import type { VocabularyProposalOperation } from '../src/domain/vocabulary-reflection.ts';
+import type { VocabularyProposalOperation, VocabularyReflectionResult } from '../src/domain/vocabulary-reflection.ts';
 let sql: DatabaseSync;
 const at = '2026-10-17T10:00:00.000Z', closedAt = '2026-10-17T10:00:16.000Z', judgedAt = '2026-10-17T11:00:00.000Z';
 const actor = { kind: 'operator' as const,id: 'editor' };
@@ -118,6 +118,9 @@ function op(strategy: 'create'|'update_existing'|'replace'|'retire'='update_exis
 }
 
 function historicalDictionaryBaselineJob(migrate=true) {
+  // This fixture models first repertoire bootstrap; unrelated authored cues for
+  // the same word would correctly suppress another bootstrap.
+  for(const id of ['one','two'])updateVocabularyContent(id,1,{...contents[id]!,availability:'retired'},actor);
   sql.exec("UPDATE lexical_words SET meaning='written character; writing system'; ALTER TABLE vocabulary_reflection_jobs ADD COLUMN model_choice TEXT;");
   const id='vocabulary:baseline:v1:alice:production:general:a';
   contents[id]=createVocabularyContent({contentId:id,kind:'exercise',payloadVersion:1,
@@ -141,13 +144,14 @@ function migrateDictionaryBaselines() {
   catch(error) { sql.exec('ROLLBACK');throw error; }
 }
 function dictionaryRepertoireProvider(accessScope:'shared'|'private',version:number) {
+  const current=getVocabularyContentForMaintenance('vocabulary:baseline:v1:alice:production:general:a')!;
+  assert.equal(current.accessScope,accessScope);assert.equal(current.version,version);
   let calls=0;
   const adapter:ProviderAdapter={id:'fake',defaultBaseUrl:'https://unused.invalid',apiKeyEnvironmentVariable:'KEY',structuredOutputMode:'json_schema',async run(request){
     calls++;
     const input=JSON.parse(request.userPrompt) as {sourceContent:VocabularyContent;content:{uses:Array<{id:string;label:string}>}};
-    if(calls===1){assert.equal(input.sourceContent.accessScope,accessScope);assert.equal(input.sourceContent.version,version);}
-    const value=calls===1?{outcome:'laundry_list',rationale:'The corpus gloss bundles useful meanings.',senseIds:[]}
-      :{exercises:[{id:'character',sourceUseId:input.content.uses.find(use=>use.label==='character')!.id,stimulus:{kind:'direct_text',text:'A single written unit in a text.'},teachingNote:'Written unit.'},
+    assert.equal(request.provenance!.stepName,'repertoire');
+    const value={exercises:[{id:'character',sourceUseId:input.content.uses.find(use=>use.label==='character')!.id,stimulus:{kind:'direct_text',text:'A single written unit in a text.'},teachingNote:'Written unit.'},
         {id:'script',sourceUseId:input.content.uses.find(use=>use.label==='script')!.id,stimulus:{kind:'direct_text',text:'A system of signs used for writing.'},teachingNote:'Writing system.'}]};
     return {provider:'fake',model:'fake',responseId:null,structuredOutputMode:'json_schema',rawText:JSON.stringify(value),finishReason:'stop',rawResponse:null,
       usage:{inputTokens:null,cachedInputTokens:null,cacheWriteInputTokens:null,outputTokens:null,reasoningTokens:null,totalTokens:null},invocationId:null};
@@ -165,7 +169,7 @@ test('historical private dictionary encounters generate shared repertoires after
   assert.throws(()=>projectVocabularyReflectionInput({...work,learnerId:'bob'}),/source access mismatch/);
   const trial=dictionaryRepertoireProvider('shared',2);
   const result=await trial.provider.run(work);if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
-  assert.equal(trial.calls,2);assert.equal(result.result.admission?.sourceContentVersion,2);
+  assert.equal(trial.calls,1);assert.equal(result.result.admission?.sourceContentVersion,2);
   assert.deepEqual(result.result.proposal!.operations.map(operation=>operation.scope),[{kind:'shared'},{kind:'shared'}]);
   const recorded=recordVocabularyImprovementResult(work.jobId,work.leaseToken,result.result,judgedAt);
   const review=approveVocabularyProposal(recorded.proposalId!,1,'editor');
@@ -409,7 +413,7 @@ test('real provider content edits remain applicable while serving selection chan
   const adapter:ProviderAdapter={id:'fake',defaultBaseUrl:'https://unused.invalid',apiKeyEnvironmentVariable:'KEY',structuredOutputMode:'json_schema',async run(request){
     calls++;assert.equal(Object.hasOwn(JSON.parse(request.userPrompt),'coverage'),false);
     const value=calls===1?{outcome:'single_sense',rationale:'The authored task names a written character.',senseIds:[JSON.parse(request.userPrompt).senses[0].senseId]}:
-      {diagnosis:'Improve this exact exercise.',pureCueReferral:null,operations:[{sourceContentId:'one',strategy:'update_existing',rationale:'A direct faithful cue.',prompt:'A written character.',acceptedAnswers:['字']}]};
+      {summary:'Improve this exact exercise.',source:{decision:'revise',prompt:'A written character.'},additionalExercises:[],sharedExercise:null};
     if(calls===2)writeVocabularyWordSenseCoverage('a',1,[],actor);
     return {provider:'fake',model:'fake',responseId:null,structuredOutputMode:'json_schema',rawText:JSON.stringify(value),finishReason:'stop',rawResponse:null,
       usage:{inputTokens:null,cachedInputTokens:null,cacheWriteInputTokens:null,outputTokens:null,reasoningTokens:null,totalTokens:null},invocationId:null};
@@ -1242,4 +1246,85 @@ test('review eligibility reports unavailable reasons and never invents model pro
   recordVocabularyImprovementResult(work.jobId,work.leaseToken,{diagnosis:'No change',proposal:null},judgedAt);
   updateVocabularyContent('one',1,{...draft('one'),availability:'retired'},actor);
   assert.match(getVocabularyCaseWorkspace(work.caseId,'editor').reassessmentUnavailableReason!,/not an active/);
+});
+
+for(const drift of ['none','before_queue','during_integration'] as const)test(`operator identity resolution resumes a historical complete plan with response drift=${drift}`,async()=>{
+  sql.exec("ALTER TABLE vocabulary_reflection_jobs ADD COLUMN model_choice TEXT;UPDATE lexical_words SET hanzi=CASE id WHEN 'a' THEN '甲' WHEN 'b' THEN '乙' ELSE '丙' END;INSERT INTO lexical_words(id,hanzi,pinyin,meaning) VALUES ('homograph','乙','yi4','another identity');");
+  createVocabularySense({senseId:'intended',wordId:'a',description:'the intended use'},actor);
+  establishVocabularySenseCatalog('a',getVocabularySenseCatalog('a').version,actor);
+  ingest([present('one'),{kind:'response',payload:{encounterId:'one',response:'丙',outcome:'rejected'}},present('one','a','second'),{kind:'response',payload:{encounterId:'second',response:'乙',outcome:'rejected'}}]);
+  const work=claimVocabularyReflectionJob({kind:'exercise_improvement',now:judgedAt})!;
+  const referral={candidateWords:['甲','乙'],sharedPurpose:'A shared expressive purpose.',rationale:'Both fit this task.',
+    draft:{prompt:'Express the shared purpose.',teachingNote:'甲 and 乙 both fulfil this task.'}};
+  const steps:string[]=[];
+  const adapter:ProviderAdapter={id:'fake',defaultBaseUrl:'https://unused.invalid',apiKeyEnvironmentVariable:'KEY',structuredOutputMode:'json_schema',async run(request){
+    const step=request.provenance!.stepName;steps.push(step!);
+    const input=JSON.parse(request.userPrompt);
+    assert.equal(step,'pure_cue_promotion');assert.deepEqual(input.localPlan.operations.map((operation:{strategy:string})=>operation.strategy),['retire','create']);
+    assert.deepEqual(input.referral.draft,referral.draft);
+    if(drift==='during_integration')sql.prepare("UPDATE lexical_words SET hanzi='丁',meaning='changed identity' WHERE id='new'").run();
+    const value={decision:'create',rationale:'Create the authored shared task.',existingContentId:null,semanticAxis:'The shared purpose.',teachingNote:null};
+    return {provider:'fake',model:'fake',responseId:null,structuredOutputMode:'json_schema',rawText:JSON.stringify(value),finishReason:'stop',rawResponse:null,
+      usage:{inputTokens:null,cachedInputTokens:null,cacheWriteInputTokens:null,outputTokens:null,reasoningTokens:null,totalTokens:null},invocationId:null};
+  }};
+  const provider=createVocabularyReflectionProvider({random:()=>0,environment:{OPENAI_API_KEY:'fake'},adapter,
+    ensureSenses:async()=>({catalog:getVocabularySenseCatalog('a'),senses:getVocabularySenses('a'),source:'existing'})});
+  // Persist the pre-eligibility contract directly: current authoring cannot emit
+  // unresolved shared answers, but retained complete plans must still resume.
+  const pending:Extract<VocabularyReflectionResult,{kind:'exercise_improvement'}>={kind:'exercise_improvement',result:{
+    diagnosis:'Retire the source and provide response and shared practice.',proposal:null,
+    admission:{outcome:'single_sense',rationale:'One intended use.',wordId:'a',sourceContentId:'one',sourceContentVersion:1,
+      catalogVersion:getVocabularySenseCatalog('a').version,senseIds:['intended'],sourceMapping:{senseId:null,establishedAt:null}},
+    pureCueReferral:referral,
+    pureCuePromotion:{outcome:'needs_operator',rationale:'Shared response has multiple dictionary identities.',candidateWordIds:['a'],existingContentId:null},
+    pendingPlan:{rationale:'Retire the source and provide response and shared practice.',bases:[{contentId:'one',expectedVersion:1}],operations:[
+      {...op('retire'),learningRole:'source_repair'},
+      {operationKey:'response-1',strategy:'create',learningRole:'refinement',scope:{kind:'shared'},rationale:'Useful response-specific practice.',
+        content:{...draft('historical-response','new'),body:{prompt:'Express this distinct response purpose.'},answers:[{wordId:'new',acceptedForms:['丙']}]}}
+    ]},
+    responseCandidateSnapshots:[{wordId:'new',hanzi:'丙',traditional:null,pinyin:'zì',meaning:'character'}],
+  }};
+  assert.equal(pending.result.proposal,null);assert.equal(pending.result.pureCuePromotion!.outcome,'needs_operator');
+  assert.deepEqual(pending.result.pendingPlan!.operations.map(operation=>operation.strategy),['retire','create']);
+  const recorded=recordVocabularyImprovementResult(work.jobId,work.leaseToken,pending.result,judgedAt);
+  assert.equal(recorded.proposalId,null);assert.equal(getVocabularyCaseWorkspace(work.caseId,'editor').proposals.length,0);
+  assert.equal(getVocabularyContentForMaintenance('one')!.availability,'active');
+  assert.deepEqual(pending.result.responseCandidateSnapshots,[{wordId:'new',hanzi:'丙',traditional:null,pinyin:'zì',meaning:'character'}]);
+  if(drift==='before_queue'){
+    sql.prepare("UPDATE lexical_words SET hanzi='丁',meaning='changed identity' WHERE id='new'").run();
+    assert.throws(()=>requestVocabularyPureCueResolution(work.caseId,'editor','openai:gpt-6-sol-high',1,{'甲':'a','乙':'b'}),/Response lexical identities changed/);
+    assert.equal(sql.prepare("SELECT count(*) n FROM vocabulary_improvement_stages WHERE input_hash='operator-pure-cue-resolution-v1'").get()!.n,0);
+    assert.deepEqual(steps,[]);
+    assert.equal(getVocabularyCaseWorkspace(work.caseId,'editor').proposals.length,0);
+    return;
+  }
+  const selected=requestVocabularyPureCueResolution(work.caseId,'editor','openai:gpt-6-sol-high',1,{'甲':'a','乙':'b'});
+  const retained=JSON.parse(String(sql.prepare("SELECT result_json FROM vocabulary_improvement_stages WHERE job_id=? AND input_hash='operator-pure-cue-resolution-v1'").get(selected.jobId)!.result_json));
+  assert.deepEqual(retained.localPlan,pending.result.pendingPlan);assert.deepEqual(retained.responseCandidateSnapshots,pending.result.responseCandidateSnapshots);
+  const child=claimVocabularyReflectionJob({kind:'exercise_improvement',now:new Date(Date.now()+1000).toISOString()})!;
+  assert.equal(child.jobId,selected.jobId);assert.deepEqual(child.evidence.evidence,work.evidence.evidence);
+  if(drift==='during_integration'){
+    await assert.rejects(()=>provider.run(child),/Response lexical identities changed/);
+    assert.equal(getVocabularyCaseWorkspace(selected.caseId,'editor').proposals.length,0);
+    assert.equal(getVocabularyContentForMaintenance('one')!.availability,'active');
+    assert.equal(sql.prepare('SELECT count(*) n FROM content_proposals').get()!.n,0);
+    return;
+  }
+  const completed=await provider.run(child);if(completed.kind!=='exercise_improvement')assert.fail('Expected improvement');
+  assert.deepEqual(steps,['pure_cue_promotion']);
+  assert.deepEqual(completed.result.proposal!.operations.map(operation=>operation.strategy),['retire','create','create']);
+  assert.deepEqual(completed.result.proposal!.operations.slice(0,2),pending.result.pendingPlan!.operations);
+  const complete=recordVocabularyImprovementResult(child.jobId,child.leaseToken,completed.result,new Date().toISOString());
+  const proposal=getVocabularyProposal(complete.proposalId!,'editor');
+  assert.equal(getVocabularyCaseWorkspace(work.caseId,'editor').proposals.length,0);
+  assert.deepEqual(proposal.bases.map(base=>({...base})),[{contentId:'one',expectedVersion:1}]);
+  const approval=approveVocabularyProposal(proposal.proposalId,proposal.version,'editor');
+  applyVocabularyProposal(proposal.proposalId,proposal.version,approval,'apply-stitched-plan','editor');
+  assert.equal(getVocabularyContentForMaintenance('one')!.availability,'retired');
+  const responseContent=getVocabularyContentForMaintenance(proposal.operations[1]!.content.contentId!)!;
+  assert.deepEqual(responseContent.words.map(word=>[word.wordId,word.relation]),[['new','target']]);
+  const shared=getVocabularyContentForMaintenance(proposal.operations[2]!.content.contentId!)!;
+  assert.equal(shared.kind==='exercise'&&shared.exerciseType,'pure_cue');
+  assert.deepEqual(shared.words.map(word=>word.wordId),['a','b']);assert.equal((shared.body as {prompt:string}).prompt,referral.draft.prompt);
+  assert.deepEqual(sql.prepare('PRAGMA foreign_key_check').all(),[]);
 });

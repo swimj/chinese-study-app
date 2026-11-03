@@ -43,13 +43,16 @@ export type VocabularyGenerationScope = {
     | {kind:'word_defaults';wordId:string;capturedVersion:number};
 };
 export type VocabularyImprovementAdmission = {
-  outcome: 'single_sense' | 'laundry_list' | 'unmappable' | 'inventory_gap' | 'no_senses_requested' | 'needs_coverage';
+  outcome: 'single_sense' | 'repertoire_bootstrap' | 'already_covered' | 'laundry_list' | 'unmappable' | 'inventory_gap' | 'no_senses_requested' | 'needs_coverage';
   rationale: string; wordId: string; sourceContentId: string; sourceContentVersion: number;
   catalogVersion: number; senseIds: string[]; invocationId?: string;
   generationScope?: VocabularyGenerationScope | null;
   sourceMapping: { senseId: string | null; establishedAt: string | null };
 };
-export type VocabularyPureCueReferral = { candidateWords: string[]; sharedPurpose: string; rationale: string };
+export type VocabularyPureCueReferral = { candidateWords: string[]; sharedPurpose: string; rationale: string;
+  /** Absent only on historical referrals made before coherent exercise planning. */
+  draft?: {prompt:string;semanticAxis?:string;teachingNote:string};
+};
 export type VocabularyPureCuePromotion = {
   outcome: 'reject' | 'reuse' | 'extend' | 'create' | 'needs_operator';
   rationale: string; candidateWordIds: string[]; existingContentId: string | null;
@@ -61,6 +64,9 @@ export type VocabularyImprovementResultInput = {
   admission?: VocabularyImprovementAdmission;
   pureCueReferral?: VocabularyPureCueReferral | null;
   pureCuePromotion?: VocabularyPureCuePromotion;
+  /** Complete local plan held until shared candidate identities can be resolved. */
+  pendingPlan?: Omit<VocabularyProposalDraft,'caseId'> | null;
+  responseCandidateSnapshots?: {wordId:string;hanzi:string;traditional:string|null;pinyin:string;meaning:string}[];
 };
 export type VocabularyReflectionResult = { kind: 'learner_feedback'; judgment: VocabularyFeedbackJudgmentInput }
   | { kind: 'exercise_improvement'; result: VocabularyImprovementResultInput };
@@ -68,6 +74,8 @@ export type VocabularySenseLabel = {senseId:string;wordId:string;label:string};
 export type VocabularyProposalScope = { kind: 'shared' } | { kind: 'learner'; learnerId: string };
 export type VocabularyProposalOperation = {
   operationKey: string; scope: VocabularyProposalScope; rationale: string;
+  /** Editorial role; optional for historical and manually authored proposals. */
+  learningRole?: 'source_repair' | 'refinement' | 'enrichment' | 'shared';
 } & ({ strategy: 'create'; content: VocabularyContentDraft }
   | { strategy: 'update_existing' | 'replace' | 'retire'; sourceContentId: string; expectedVersion: number; content: VocabularyContentDraft });
 export type VocabularyProposalDraft = {

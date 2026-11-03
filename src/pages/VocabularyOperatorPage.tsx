@@ -34,7 +34,7 @@ function diagnosisSummary(value:VocabularyJson|undefined):string {
 const proposalTitle=(proposal:VocabularyContentProposal)=>Array.from(new Set(proposal.operations.flatMap(operation=>operation.content.kind==='exercise'?operation.content.answers.map(answer=>answer.acceptedForms[0]).filter(Boolean):[]))).join(' · ')||'Teaching content';
 const kinds={exercise_improvement:'Exercise issues',teaching_review:'Teaching inbox',learner_feedback:'Feedback cases'} as const;
 const labels={create:'Add another item',update_existing:'Update existing item',replace:'Replace with new item',retire:'Retire exercise'} as const;
-const admissionLabels={needs_coverage:'Select useful senses before generation',no_senses_requested:'No senses requested for generation',single_sense:'Intended sense identified',laundry_list:'Multiple senses: fresh repertoire',unmappable:'Intended sense could not be established',inventory_gap:'Possible gap in the sense inventory'} as const;
+const admissionLabels={repertoire_bootstrap:'Dictionary fallback: fresh repertoire',already_covered:'Authored practice already exists',needs_coverage:'Select useful senses before generation',no_senses_requested:'No senses requested for generation',single_sense:'Intended sense identified',laundry_list:'Multiple senses: fresh repertoire',unmappable:'Intended sense could not be established',inventory_gap:'Possible gap in the sense inventory'} as const;
 const pretty=(value:unknown)=>JSON.stringify(value,null,2);
 const message=(error:unknown)=>error instanceof Error?error.message:'The request could not finish. Refresh and try again.';
 function draftOf(value:VocabularyContentProposal):VocabularyProposalDraft{return {caseId:value.caseId??undefined,operations:value.operations,rationale:value.rationale,bases:value.bases};}
@@ -210,7 +210,7 @@ export function VocabularyOperatorPage({api=vocabularyOperatorApi,previewOnly=fa
     const sourceId=base?.contentId??source?.contentId??operation.content.contentId??'',sourceVersion=base?.expectedVersion??source?.version??1;
     const content={...operation.content,contentId:next==='update_existing'||next==='retire'?sourceId:operation.content.contentId===sourceId?crypto.randomUUID():operation.content.contentId??crypto.randomUUID(),
       ...(next==='update_existing'&&source?{originKind:source.originKind,authorKind:source.authorKind,authorId:source.authorId,accessScope:source.accessScope,ownerLearnerId:source.ownerLearnerId}:{})};
-    const common={operationKey:operation.operationKey,scope:operation.scope,rationale:operation.rationale,content};
+    const common={operationKey:operation.operationKey,scope:operation.scope,rationale:operation.rationale,...(operation.learningRole?{learningRole:operation.learningRole}:{}),content};
     const changed:VocabularyProposalOperation=next==='create'?{...common,strategy:'create'}:{...common,strategy:next,sourceContentId:sourceId,expectedVersion:sourceVersion};
     changeDraft({...draft,bases:base?draft.bases??[base]:draft.bases,operations:draft.operations.map((old,i)=>i===index?changed:old)});
   }

@@ -11,7 +11,8 @@ import { writeVocabularyDefaultUsefulSenses } from '../server/db/vocabulary-sens
 import { createVocabularySession,appendVocabularySessionActions,stageVocabularySessionCompletion } from '../server/db/vocabulary-sessions.ts';
 import { VocabularyReflectionConflict,claimVocabularyReflectionJob,retryVocabularyReflectionJob,retryOwnVocabularyFeedback,retryVocabularyPostSessionDispatch,listOwnVocabularyMessages,recordVocabularyFeedbackJudgment } from '../server/db/vocabulary-reflection.ts';
 import { createVocabularyProcessingWorker } from '../server/vocabulary/processing-worker.ts';
-import { createVocabularyReflectionProvider,normalizeVocabularyReflectionOutput } from '../server/vocabulary/reflection-provider.ts';
+import { createVocabularyReflectionProvider,normalizeVocabularyReflectionOutput,normalizeVocabularySingleImprovementOutput } from '../server/vocabulary/reflection-provider.ts';
+import { projectVocabularyImprovementInput } from '../server/vocabulary/exercise-improvement-authoring.ts';
 import { createOpenAiCompatibleAdapter } from '../server/llm/openai-compatible.ts';
 import { installModelInvocationLedger } from '../server/llm/invocation-ledger.ts';
 import type { VocabularyReflectionJob,VocabularyReflectionResult } from '../src/domain/vocabulary-reflection.ts';
@@ -65,6 +66,65 @@ function result(job:VocabularyReflectionJob):VocabularyReflectionResult {
   return job.kind==='learner_feedback'?{kind:'learner_feedback',judgment:{diagnosis:'A useful distinction',message:'A private lesson',unfairEncounterIds:[]}}
     :{kind:'exercise_improvement',result:{diagnosis:'Keep the cue',proposal:null}};
 }
+async function authoringJob(){
+  pending();const processing=worker({isConfigured:()=>false,run:async job=>result(job)});
+  await processing.step();await processing.stop();
+  return claimVocabularyReflectionJob({kind:'exercise_improvement',now:new Date(clock).toISOString()})!;
+}
+const keepOutput=()=>({summary:'The original cue works.',source:{decision:'keep',prompt:null},sharedExercise:null,additionalExercises:[]});
+test('editorial decisions preserve source identity and permit retirement with target enrichment',async()=>{
+  const job=await authoringJob();
+  const keep=normalizeVocabularySingleImprovementOutput(job,keepOutput());
+  assert.equal(keep.kind,'exercise_improvement');if(keep.kind!=='exercise_improvement')throw new Error('Expected improvement');
+  assert.equal(keep.result.proposal,null);
+  const revise=normalizeVocabularySingleImprovementOutput(job,{...keepOutput(),source:{decision:'revise',prompt:'A written symbol'}});
+  if(revise.kind!=='exercise_improvement')throw new Error('Expected improvement');
+  const repair=revise.result.proposal!.operations[0]!;
+  assert.equal(repair.strategy,'update_existing');assert.equal(repair.content.contentId,'one');
+  assert.equal(repair.learningRole,'source_repair');assert.deepEqual(repair.content.answers,[{wordId:'a',acceptedForms:['字']}]);
+  const enriched=normalizeVocabularySingleImprovementOutput(job,{...keepOutput(),source:{decision:'retire',prompt:null},additionalExercises:[{answer:'target',role:'enrichment',prompt:'A separate written symbol',rationale:'A further use surfaced in the assessment.'}]});
+  if(enriched.kind!=='exercise_improvement')throw new Error('Expected improvement');
+  assert.deepEqual(enriched.result.proposal!.operations.map(op=>[op.strategy,op.learningRole]),[['retire','source_repair'],['create','enrichment']]);
+  assert.notEqual(enriched.result.proposal!.operations[1]!.content.contentId,'one');
+  assert.equal(alice(()=>getVocabularyContent('one'))!.availability,'active','normalization does not apply the recommendation');
+});
+test('authoring references preserve unresolved responses without inventing individual word identities',async()=>{
+  const job=await authoringJob();
+  const sense=createVocabularySense({wordId:'a',description:{label:'written character'}},{kind:'operator',id:'editor'});
+  const input=projectVocabularyImprovementInput(job,alice(()=>getVocabularyContent('one'))!,sense);
+  assert.deepEqual(input.words.map(word=>[word.ref,word.form,word.canAuthorIndividual]),[['target','字',true],['response_1','wrong',false]]);
+  assert.ok(!JSON.stringify(input).includes('wordId'));assert.ok(!JSON.stringify(input).includes('contentId'));
+  job.evidence.evidence[0]!.snapshot.body.material={prompt:'Old stored prompt',instruction:'Use the formal register.',reveal:{teachingNote:'The historical note.'}};
+  job.evidence.evidence[0]!.snapshot.body.explanation='The explanation actually shown.';
+  const historical=projectVocabularyImprovementInput(job,{...alice(()=>getVocabularyContent('one'))!,body:{prompt:'Current source',reveal:{teachingNote:'The current note.'}}},sense);
+  assert.equal(historical.encounters[0]!.prompt,'Prompt one');
+  assert.equal(historical.encounters[0]!.instruction,'Use the formal register.');
+  assert.deepEqual(historical.encounters[0]!.postAnswer,{reveal:{teachingNote:'The historical note.'},explanation:'The explanation actually shown.'});
+  assert.deepEqual(historical.source.postAnswer,{reveal:{teachingNote:'The current note.'}});
+  assert.throws(()=>normalizeVocabularySingleImprovementOutput(job,{...keepOutput(),source:{decision:'retire',prompt:null},sharedExercise:{answers:['target','response_1'],prompt:'A shared task',teachingNote:'Use each form in its familiar patterns.',rationale:'Both express the task.'}}),/Shared exercise requires supplied unambiguous words/);
+  assert.throws(()=>normalizeVocabularySingleImprovementOutput(job,{...keepOutput(),additionalExercises:[{answer:'response_1',role:'enrichment',prompt:'Another task',rationale:'Further practice'}]}),/unambiguous word/);
+  sql.prepare('INSERT INTO lexical_words VALUES (?,?,?,?,?)').run('b','wrong',null,'wrong','test response');
+  const shared=normalizeVocabularySingleImprovementOutput(job,{...keepOutput(),source:{decision:'retire',prompt:null},sharedExercise:{answers:['target','response_1'],prompt:'A shared task',teachingNote:'Use each form in its familiar patterns.',rationale:'Both express the task.'}});
+  if(shared.kind!=='exercise_improvement')throw new Error('Expected improvement');
+  assert.deepEqual(shared.result.pureCueReferral!.candidateWords,['字','wrong']);
+  assert.equal(shared.result.pureCueReferral!.draft!.semanticAxis,undefined);
+  const resolved=normalizeVocabularySingleImprovementOutput(job,{...keepOutput(),additionalExercises:[{answer:'response_1',role:'refinement',prompt:'Another task',rationale:'A construction contrast'}]});
+  if(resolved.kind!=='exercise_improvement')throw new Error('Expected improvement');
+  assert.deepEqual(resolved.result.proposal!.operations[0]!.content.answers,[{wordId:'b',acceptedForms:['wrong']}]);
+});
+test('authoring rejects malformed source decisions, invented refs and answer leakage',async()=>{
+  const job=await authoringJob();
+  for(const source of [{decision:'keep',prompt:'A rewrite'},{decision:'retire',prompt:''},{decision:'revise',prompt:null}]){
+    assert.throws(()=>normalizeVocabularySingleImprovementOutput(job,{...keepOutput(),source}),/prompt/);
+  }
+  assert.throws(()=>normalizeVocabularySingleImprovementOutput(job,{...keepOutput(),source:{decision:'revise',prompt:'Recall 字'}}),/exposes an accepted answer/);
+  assert.throws(()=>normalizeVocabularySingleImprovementOutput(job,{...keepOutput(),additionalExercises:[{answer:'invented',role:'enrichment',prompt:'A task',rationale:'Value'}]}),/Unknown supplied word/);
+  const shared={answers:['target','response_9'],prompt:'A task',teachingNote:'Guidance',rationale:'Value'};
+  assert.throws(()=>normalizeVocabularySingleImprovementOutput(job,{...keepOutput(),sharedExercise:shared}),/Unknown supplied word/);
+  assert.throws(()=>normalizeVocabularySingleImprovementOutput(job,{...keepOutput(),sharedExercise:{...shared,answers:['response_1','response_1']}}),/target and distinct/);
+  sql.prepare('INSERT INTO lexical_words VALUES (?,?,?,?,?)').run('b','wrong',null,'wrong','test response');
+  assert.throws(()=>normalizeVocabularySingleImprovementOutput(job,{...keepOutput(),sharedExercise:{...shared,answers:['target','response_1'],prompt:'Recall wrong'}}),/exposes an accepted answer/);
+});
 function worker(provider:{isConfigured():boolean;run(job:VocabularyReflectionJob):Promise<VocabularyReflectionResult>},controls=()=>({maintenanceMode:false,providerWorkEnabled:true})) {
   return createVocabularyProcessingWorker({provider,now:()=>clock,controls,providerWork:permitted});
 }
@@ -146,11 +206,11 @@ test('strict real injected provider retains service provenance and rejects forge
   const improve=claimVocabularyReflectionJob({kind:'exercise_improvement',now:new Date(clock).toISOString()})!;
   const valid={diagnosis:'Repair the overloaded cue',operations:[{sourceContentId:'one',strategy:'update_existing',rationale:'A faithful wording',prompt:'A written character',acceptedAnswers:['字']}]};
   assert.equal(normalizeVocabularyReflectionOutput(improve,valid).kind,'exercise_improvement');
-  payload={...valid,pureCueReferral:null};assert.equal((await provider.run(improve)).kind,'exercise_improvement');
+  payload={summary:valid.diagnosis,source:{decision:'revise',prompt:'A written character'},additionalExercises:[],sharedExercise:null};assert.equal((await provider.run(improve)).kind,'exercise_improvement');
   const improvementInvocation=sql.prepare("SELECT * FROM model_invocations WHERE prompt_name='vocabulary-reflection-single-improvement'").get();
   assert.ok(improvementInvocation,'Selected sense assessment must reach the active single-improvement call');
   assert.equal(improvementInvocation.actor_kind,'service');assert.equal(improvementInvocation.learner_id,null);assert.equal(improvementInvocation.workflow_id,improve.jobId);
-  assert.equal(improvementInvocation.prompt_version,'4');assert.equal(improvementInvocation.schema_version,'3');assert.equal(improvementInvocation.input_projection_version,'vocabulary-admission.v3');
+  assert.equal(improvementInvocation.prompt_version,'5');assert.equal(improvementInvocation.schema_version,'4');assert.equal(improvementInvocation.input_projection_version,'vocabulary-exercise-authoring.v1');
   assert.equal(improvementInvocation.prompt_template,`\n\n${fs.readFileSync(new URL('../server/vocabulary/reflection-prompts/single-improvement.md',import.meta.url),'utf8')}`);
   assert.throws(()=>normalizeVocabularyReflectionOutput(improve,{...valid,operations:[{...valid.operations[0],acceptedAnswers:['invented']}]}),/answer criteria/);
   assert.throws(()=>normalizeVocabularyReflectionOutput(improve,{...valid,operations:[{...valid.operations[0],sourceContentId:'two'}]}),/source identities/);
@@ -205,7 +265,7 @@ for(const source of [
   await ingestOnly.step();await ingestOnly.stop();
   const job=claimVocabularyReflectionJob({kind:'exercise_improvement',now:new Date(clock).toISOString()})!;
   for(const strategy of ['create','update_existing','replace'] as const) {
-    const proposal=normalizeVocabularyReflectionOutput(job,{diagnosis:'Clarify the productive use',pureCueReferral:null,
+    const proposal=normalizeVocabularyReflectionOutput(job,{diagnosis:'Clarify the productive use',responseExercises:[],pureCueReferral:null,
       operations:[{sourceContentId:'fallback',strategy,rationale:'Use a concrete context',prompt:'A single written symbol in this sentence',acceptedAnswers:['字']}]},null,true);
     assert.equal(proposal.kind,'exercise_improvement');
     if(proposal.kind!=='exercise_improvement'||!proposal.result.proposal)throw new Error('Expected improvement proposal');
@@ -216,7 +276,7 @@ for(const source of [
     assert.equal(operation.content.accessScope,'private');assert.equal(operation.content.ownerLearnerId,'alice');
     assert.deepEqual(operation.content.answers,[{wordId:'a',acceptedForms:['字']}]);
   }
-  const unchanged=normalizeVocabularyReflectionOutput(job,{diagnosis:'Retain the existing prompt',pureCueReferral:null,
+  const unchanged=normalizeVocabularyReflectionOutput(job,{diagnosis:'Retain the existing prompt',responseExercises:[],pureCueReferral:null,
     operations:[{sourceContentId:'fallback',strategy:'create',rationale:'Keep wording',prompt:'Prompt fallback',acceptedAnswers:['字']}]},null,true);
   if(unchanged.kind!=='exercise_improvement'||!unchanged.result.proposal)throw new Error('Expected unchanged fixture proposal');
   assert.deepEqual(unchanged.result.proposal.operations[0]!.content.body,
@@ -360,7 +420,7 @@ function mappingTrial(reply:(attempt:number)=>{status?:number;value?:unknown;raw
       rawText=response.rawText;
     } else if(request.response_format.json_schema.name.includes('single_improvement')) {
       if(repairFailsOnce&&++repairs===1)return new Response('Authoring unavailable',{status:503});
-      value={diagnosis:'Keep this exercise',operations:[],pureCueReferral:null};
+      value={summary:'Keep this exercise',source:{decision:'keep',prompt:null},additionalExercises:[],sharedExercise:null};
     }
     return new Response(JSON.stringify({model:request.model,choices:[{message:{content:rawText??JSON.stringify(value)},finish_reason:'stop'}]}),{status:200});
   };

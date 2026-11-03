@@ -81,9 +81,23 @@ confirmation. Source identity and version govern reassessment consistency;
 structural content comparisons do not substitute for version authority. A later
 source revision invalidates queued or in-flight work and proposals based on that
 version. Fresh mapping and assessment belong to the new case. Its link to the
-original assessment preserves provenance without making its encounters evidence
-for the new assessment. Retry retains the pinned version; it does not silently
-move the request to another revision.
+original assessment preserves provenance and historical encounter evidence.
+The assessment distinguishes those served snapshots from its pinned current
+source. Retry retains the pinned version; it does not silently move the request
+to another revision.
+
+Exercise-local assessment owns the coherent content plan, including the source's
+disposition, a complete shared draft, and any target or response-word practice.
+The [content repair contract](vocabulary-learning.md#content-repair-boundaries)
+defines source repair, distinctive refinements, and optional enrichment.
+Shared-cue integration chooses a compatible destination or creates that exact
+draft; it cannot veto the established pedagogical plan. Proposed shared answers
+and response-word additions require uniquely resolved lexical identities;
+unresolved responses serve as encounter evidence for target improvement.
+Operator editorial changes and deliberate selection of proposal parts
+remain authoritative; generated components do not impose automatic dependency
+propagation. New response-word exercises retain exact lexical identity without
+inventing canonical sense mappings.
 
 Learner feedback and bounded scheduling compensation have authority independent
 of content review. Reading a lesson is not content approval, and applying a

@@ -1,6 +1,7 @@
+import {exerciseComparisonCases} from './exercise-comparison-cases.ts';
 import type { GeneralExerciseSource } from '../../server/vocabulary/general-exercise-authoring.ts';
 
-export type ExerciseFidelityCase={name:string;kind:'single'|'general'|'mapping';input:Record<string,unknown>;targetForms:string[];sourceId?:string;generalSource?:GeneralExerciseSource};
+export type ExerciseFidelityCase={name:string;kind:'single'|'general'|'mapping';input:Record<string,unknown>;targetForms:string[];sourceId?:string;reviewExpectation?:string;generalSource?:GeneralExerciseSource};
 export const DEFAULT_FIDELITY_CASES=['single-贸','single-得以','single-簋','general-贸','general-得以','general-簋'];
 const word=(hanzi:string,pinyin:string,meaning:string)=>({wordId:`word-${hanzi}`,hanzi,traditional:hanzi,pinyin,meaning});
 function single(hanzi:string,pinyin:string,meaning:string,label:string,notes:string[],prompt:string,traditional=hanzi):ExerciseFidelityCase {
@@ -41,5 +42,5 @@ export function exerciseFidelityCases():ExerciseFidelityCase[] {
       examples:[{id:'e1',text:item.example,translation:item.translation,pronunciation:null}]};
     return [local,{name:`general-${item.hanzi}`,kind:'general' as const,targetForms:local.targetForms,input:{role:'general_exercises',content:source},generalSource:source}];
   });
-  return [...singles,...general,...heldout,{name:'mapper-查询',kind:'mapping',targetForms:['查询','查詢'],input:{word:w,wordId:w.wordId,catalog:{wordId:w.wordId,version:1},senses,sourceContent}}];
+  return [...exerciseComparisonCases(),...singles,...general,...heldout,{name:'mapper-查询',kind:'mapping',targetForms:['查询','查詢'],input:{word:w,wordId:w.wordId,catalog:{wordId:w.wordId,version:1},senses,sourceContent}}];
 }
