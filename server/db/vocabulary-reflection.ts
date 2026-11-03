@@ -411,6 +411,7 @@ function baseVersions(draft: VocabularyProposalDraft): VocabularyContentProposal
   const sources = new Set<string>();
   for (const operation of draft.operations) {
     nonempty(operation.operationKey); nonempty(operation.rationale);
+    if(operation.learningRole!==undefined&&!['source_repair','refinement','enrichment','shared'].includes(operation.learningRole))throw new Error('Unknown proposal learning role');
     if (keys.has(operation.operationKey)) throw new Error('Duplicate proposal operation key'); keys.add(operation.operationKey);
     const content = operation.content;
     if(operation.strategy!=='retire'){const clozeError=vocabularyPhraseClozeError(content.body);if(clozeError)throw new Error(clozeError);}

@@ -45,13 +45,14 @@ flowchart TD
   inventory gaps stop with operator attention. Intended sense is authorial context,
   not a clue the learner necessarily saw.
 - **Local planning** trusts selected coverage, judges the original cue foremost,
-  and produces one coherent plan: original-source actions, optional response-word
-  creations, and an optional complete shared draft. It can retire the original
+  and produces one coherent plan: a source decision, additional target or
+  response-word exercises, and an optional complete shared draft. It can retire the original
   without excluding its sense. Raw responses and reactions inform the judgment.
 - **Integration** inspects eligible overlapping shared cues. It reuses a compatible
   cue already accepting all candidates, extends a compatible cue preserving all
   existing content except its integrated teaching note, or creates the exact
-  upstream draft. It does not repeat the pedagogical decision. Unresolved
+  upstream prompt and teaching note with an axis derived from that task. It
+  does not repeat the pedagogical decision. Unresolved
   identities withhold the complete plan for operator resolution.
 - **Application** requires operator review. Shared changes and local refinements
   form one proposal; reuse is an assessment without a shared edit. Operators can
@@ -72,12 +73,31 @@ within mixed-word feedback aggregation. Teaching issues go to a manual inbox.
 
 ### Single-word assessment
 
-Single-word local planning preserves the source's answer membership while
-proposing wording changes, variants, or retirement. Its `responseExercises`
-create word-specific practice only for supplied uniquely resolved raw response
-identities. Those exercises have no invented sense association; a later assessment
-can establish one. Operators can edit complete authored proposals before preview.
-The adapter does not propose sense exclusion or learner suppression.
+Single-word planning returns `{summary, source, sharedExercise, additionalExercises}`.
+The source decision is `keep`, `revise`, or `retire`; only revision carries a
+prompt. Shared practice includes its actual cue, answer references, teaching
+note, and rationale. Additions use the same fields for target and response words,
+with a `refinement` or `enrichment` role. Refinements develop a distinctive use
+within the originating circumstance. Enrichment retains helpful examples surfaced
+by the assessment or answers a learner request; it does not trigger a separate
+search, and follows the same answer-fairness standard.
+
+`exercise-improvement-authoring.ts` presents the source and encounters separately,
+with intended-use description and supplied word references (`target`, `response_1`,
+and so on). It maps those references to lexical identities and supplies stored
+source versions and accepted forms. Individual additions require resolved supplied
+words. Ambiguous submitted forms remain available for shared identity review.
+`revise` maps to `update_existing`, preserving identity and existing learner
+controls. The application retains its internal operation format; the model does
+not choose storage operations. Optional `learningRole` metadata lets the operator
+review identify source repair, shared practice, refinements, and enrichment.
+Old proposals without that metadata remain editable.
+
+Source repairs and target refinements retain the source sense. Response-word
+additions and optional target enrichment receive no invented sense association;
+a later assessment can establish one. Operators can edit complete authored
+proposals before preview. The adapter does not propose sense exclusion or learner
+suppression.
 
 After sense readiness, deterministic source routing separates dictionary
 fallback bootstrap from authored-cue assessment. An uncovered fallback captures
@@ -102,12 +122,11 @@ assessment judges the exact target's contribution rather than deciding whether
 the selected meaning is generally useful. Making a compound-fragment cue more
 selective is insufficient when it still retrieves a different lexical unit;
 genuine construction practice and good direct cues for obscure selected nouns
-remain valid. An empty operations array retains the current exercise. A `retire` operation
-has an empty wire prompt and retains the source comparison snapshot, identity
-and version. Normalization uses that snapshot; source drift is handled by the
-publication/approval fences without reclassifying valid provider output as
-malformed. It cannot accompany local create/update/replace operations for
-that source; response-word creations and a concrete shared draft may accompany it.
+remain valid. A `keep` decision retains the source; `retire` removes that
+exercise while allowing additional target or response-word practice and a shared
+cue. Both decisions use a null authored prompt. Normalization retains the source
+comparison snapshot, identity and version; source drift is handled by the
+publication/approval fences without reclassifying valid provider output as malformed.
 Repertoire authoring returns only `exercises`, with no sense-exclusion fields.
 Every new automatic item must identify a supplied use; null or unknown references
 are rejected rather than assigned an arbitrary sense. Aliases translate back to
@@ -162,13 +181,13 @@ admission stage-result cache.
 
 ### Shared integration and unresolved identities
 
-`single-improvement.md` returns `diagnosis`, source `operations`, create-only
-`responseExercises`, and nullable `pureCueReferral`. A referral contains candidate
-forms, purpose, rationale, and complete `draft` prompt, semantic axis, and teaching
-note. This stage owns useful shared practice and local refinements, including
-whether an optional clarifier earns space. It avoids cosmetic exclusive-target
-rewrites that the same compared response answers equally well, without demanding
-absolute uniqueness against every possible Mandarin answer.
+`single-improvement.md` owns the pedagogical judgment and authors the complete
+shared exercise. The adapter translates supplied answer references into the
+internal referral used for identity resolution and integration; this persistence
+boundary does not appear in the authoring prompt. A short `summary` carries the
+overall operator recommendation. Each exercise's rationale explains its own
+contribution. The separately stored integration rationale is not appended to the
+operator summary.
 
 `pure-cue-promotion.ts` resolves forms against exact dictionary identities, using
 the source to disambiguate its target, and supplies eligible active overlapping
@@ -177,8 +196,9 @@ receives the assessment, local plan, referral, candidates, and existing cues.
 Its only decisions are reuse, extend, and create. The backend supplies all
 resolved candidates deterministically. Extension retains every existing member,
 accepted form, stimulus, and axis while integrating the note; creation uses the
-exact upstream draft. Identity, privacy, and answer-leak guards apply even when
-integration selects reuse.
+upstream prompt and note unchanged and derives its semantic axis from that task.
+The derived axis cannot broaden or redesign the authored practice. Identity,
+privacy, and answer-leak guards apply even when integration selects reuse.
 
 When shared identities are missing or ambiguous, the result retains the complete
 local proposal as `pendingPlan` and withholds an actionable partial proposal.
@@ -197,20 +217,24 @@ records can reject, reuse, extend, or create and produce promotion-only proposal
 leaving the parent's separate local proposal and editorial changes untouched.
 They do not define the current coherent-plan call boundary. Operator editorial
 trims and edits to ordinary proposals are deliberate review choices, not automatic
-dependencies that integration restores or enforces.
+dependencies that integration restores or enforces. Historical pending plans
+with an authored axis remain supported, as do already saved proposals without
+learning-role metadata; this contract change requires no database migration.
 
 ### Versions and retained stage results
 
-`single-improvement.md` uses prompt version 5 and schema version 4;
-mapping uses prompt version 4 and schema version 1. Integration uses prompt
-version 1 and schema version 3. These calls use `vocabulary-admission.v4`
-projection. Repertoire retains general-exercise prompt v5, schema version 2,
+`single-improvement.md` uses prompt version 6, schema version 5, and projection
+`vocabulary-exercise-authoring.v1`. Mapping uses prompt version 4, schema version 1,
+and projection `vocabulary-admission.v4`. Integration uses prompt version 2,
+schema version 4, and projection `vocabulary-integration.v2`. Repertoire retains
+general-exercise prompt v5, schema version 2,
 and `general-exercises-v2` projection. Legacy promotion uses its retained contract
 for pre-plan resolution records.
 
 Stage identity includes exact projected input, schema, prompt contract, and
 projection version. Canonical IDs stay in retained evidence while wire inputs
-use short sense references; unknown aliases fail validation. Results are reused
+use short sense references for mapping and supplied word references for
+exercise authoring; unknown aliases fail validation. Results are reused
 within the same job only for the same contract and input. Source, canonical
 inventory, mappings, resolved lexical identities, and inspected cue versions fence
 publication. Existing saved proposals and second opinions retain their original
@@ -423,7 +447,9 @@ useful senses. The review groups authored items by their target sense and shows
 common answer forms and access scope once. Unmapped items remain in general
 practice. Known full sense identifiers and unambiguous eight-character UUID
 references become readable labels in visible rationale prose; Details retains the
-original explanation and identifiers.
+original explanation and identifiers. Items with learning-role metadata show
+source repair, shared practice, refinement, or optional enrichment alongside
+their target. Saving edits or selecting items preserves that metadata.
 
 Each item has an inclusion checkbox. Unchecking it removes the operation from the
 next saved revision while retaining its edited draft locally until saving or

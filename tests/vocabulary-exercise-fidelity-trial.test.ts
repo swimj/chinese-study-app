@@ -54,3 +54,26 @@ test('fidelity trials preserve nullable historical bindings while current wire r
   assert.ok(fidelityGeneralContentErrors(source,{exercises:[]},historical).length);
   assert.deepEqual(fidelityGeneralContentErrors(source,{exercises:[]},current),[]);
 });
+
+test('single authoring trial projects supplied references and retains source and encounter meanings',()=>trial(['--cases','comparison-稠密-密集'],archive=>{
+  const captured=JSON.parse(readFileSync(path.join(archive,'check','comparison-稠密-密集','request.json'),'utf8'));
+  const input=JSON.parse(captured.request.userPrompt);
+  assert.equal(captured.request.outputSchemaName,'vocabulary_reflection_single_improvement_v5');
+  assert.deepEqual(Object.keys(captured.request.outputSchema.properties),['summary','source','sharedExercise','additionalExercises']);
+  assert.deepEqual(input.words.map((word:{ref:string;form:string})=>[word.ref,word.form]),[['target','稠密'],['response_1','密集']]);
+  assert.equal(input.source.prompt,captured.fixture.input.sourceContent.body.prompt);
+  assert.equal(input.encounters[0].responses[0].response,'密集');
+  assert.ok(!captured.request.userPrompt.includes('comparison-word-'));
+  assert.ok(!captured.request.userPrompt.includes('comparison-source-'));
+}));
+
+test('single trial freezes legacy v4 schema and input for the pre-authoring baseline',()=>trial(['--cases','comparison-稠密-密集','--baseline-revision','11387643'],archive=>{
+  const captured=JSON.parse(readFileSync(path.join(archive,'check','comparison-稠密-密集','request.json'),'utf8'));
+  const input=JSON.parse(captured.request.userPrompt);
+  assert.equal(captured.request.outputSchemaName,'vocabulary_reflection_single_improvement_v4');
+  assert.deepEqual(Object.keys(captured.request.outputSchema.properties),['diagnosis','operations','responseExercises','pureCueReferral']);
+  assert.ok(input.responseCandidates[0].wordId);
+  assert.ok(input.sourceContent.contentId);
+  const referral=captured.request.outputSchema.properties.pureCueReferral.anyOf.find((schema:{type:string})=>schema.type==='object');
+  assert.ok(referral.properties.draft.required.includes('semanticAxis'));
+}));

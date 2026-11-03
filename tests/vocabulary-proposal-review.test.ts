@@ -1,6 +1,9 @@
 import { vocabularyPhraseClozeError } from '../src/domain/vocabulary-production-coverage.ts';
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
+import {createElement} from 'react';
+import {renderToStaticMarkup} from 'react-dom/server';
+import {CompactProposalReview} from '../src/features/vocabulary-operator/CompactProposalReview.tsx';
 import type {VocabularyProposalOperation,VocabularySenseLabel} from '../src/domain/vocabulary-reflection.ts';
 import {editableProposalDraft,selectedProposalDraft,consequentialContentChanges,editableCue,updateCue,groupOperations,readableSenseProse,selectedOperations,toggleOperation,sourceConsequences} from '../src/features/vocabulary-operator/proposal-review.ts';
 const senses:VocabularySenseLabel[]=[{senseId:'12345678-1111-4000-8000-111111111111',wordId:'word',label:'formal correspondence'},{senseId:'23456789-1111-4000-8000-111111111111',wordId:'word',label:'envelope'}];
@@ -51,4 +54,27 @@ test('the compact review signals answer criteria and reveal changes when the cue
 test('excluding a source operation preserves explicit assessment evidence bases',()=>{
  const draft={rationale:'Retain the assessed source as evidence',operations:[operation(),{...operation('extra'),strategy:'create' as const}],bases:[{contentId:'source',expectedVersion:1}]};
  const selected=selectedProposalDraft(draft,new Set(['first']));assert.deepEqual(selected.operations.map(op=>op.operationKey),['extra']);assert.deepEqual(selected.bases,draft.bases);
+});
+test('optional enrichment remains independently selectable with its role and edits retained',()=>{
+ const source={...operation(),learningRole:'source_repair' as const};
+ const enrichment:VocabularyProposalOperation={operationKey:'extra',strategy:'create',scope:{kind:'shared'},rationale:'Another retrieval route',learningRole:'enrichment',content:operation('extra').content};
+ const edited={...enrichment,content:updateCue(enrichment.content,{kind:'direct_text',text:'An edited additional cue'})};
+ const draft={rationale:'Repair and optional addition',operations:[source,edited]};
+ assert.equal(editableProposalDraft(draft),true);
+ const excluded=toggleOperation(new Set(),'extra');
+ assert.deepEqual(selectedProposalDraft(draft,excluded).operations,[source]);
+ const restored=selectedProposalDraft(draft,toggleOperation(excluded,'extra'));
+ assert.equal(restored.operations[1]!.learningRole,'enrichment');
+ assert.equal(editableCue(restored.operations[1]!.content)?.text,'An edited additional cue');
+ for(const learningRole of ['other',null,{},['enrichment']])assert.equal(editableProposalDraft({...draft,operations:[{...enrichment,learningRole}]}),false);
+});
+test('compact review labels learning roles while historical operations retain their display',()=>{
+ const render=(operations:VocabularyProposalOperation[])=>renderToStaticMarkup(createElement(CompactProposalReview,{operations,previews:[],senses,excluded:new Set<string>(['extra']),toggle:()=>{},disabled:false,editing:false,onChange:()=>{},onStrategy:()=>{}}));
+ const roles=['source_repair','refinement','enrichment','shared'] as const;
+ const html=render(roles.map((learningRole,index)=>({...operation(index===2?'extra':`role-${index}`),learningRole})));
+ for(const label of ['Source exercise','Distinctive refinement','Optional enrichment','Shared practice'])assert.match(html,new RegExp(label));
+ assert.match(html,/vocabulary-proposed-excluded/);
+ const historical=render([operation()]);
+ assert.match(historical,/Replace exercise/);
+ assert.doesNotMatch(historical,/Distinctive refinement|Optional enrichment|Shared practice|Source exercise/);
 });

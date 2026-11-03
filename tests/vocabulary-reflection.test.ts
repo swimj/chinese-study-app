@@ -413,7 +413,7 @@ test('real provider content edits remain applicable while serving selection chan
   const adapter:ProviderAdapter={id:'fake',defaultBaseUrl:'https://unused.invalid',apiKeyEnvironmentVariable:'KEY',structuredOutputMode:'json_schema',async run(request){
     calls++;assert.equal(Object.hasOwn(JSON.parse(request.userPrompt),'coverage'),false);
     const value=calls===1?{outcome:'single_sense',rationale:'The authored task names a written character.',senseIds:[JSON.parse(request.userPrompt).senses[0].senseId]}:
-      {diagnosis:'Improve this exact exercise.',responseExercises:[],pureCueReferral:null,operations:[{sourceContentId:'one',strategy:'update_existing',rationale:'A direct faithful cue.',prompt:'A written character.',acceptedAnswers:['字']}]};
+      {summary:'Improve this exact exercise.',source:{decision:'revise',prompt:'A written character.'},additionalExercises:[],sharedExercise:null};
     if(calls===2)writeVocabularyWordSenseCoverage('a',1,[],actor);
     return {provider:'fake',model:'fake',responseId:null,structuredOutputMode:'json_schema',rawText:JSON.stringify(value),finishReason:'stop',rawResponse:null,
       usage:{inputTokens:null,cachedInputTokens:null,cacheWriteInputTokens:null,outputTokens:null,reasoningTokens:null,totalTokens:null},invocationId:null};
@@ -1252,24 +1252,25 @@ for(const drift of ['none','before_queue','during_integration'] as const)test(`o
   sql.exec("ALTER TABLE vocabulary_reflection_jobs ADD COLUMN model_choice TEXT;UPDATE lexical_words SET hanzi=CASE id WHEN 'a' THEN '甲' WHEN 'b' THEN '乙' ELSE '丙' END;INSERT INTO lexical_words(id,hanzi,pinyin,meaning) VALUES ('homograph','乙','yi4','another identity');");
   createVocabularySense({senseId:'intended',wordId:'a',description:'the intended use'},actor);
   establishVocabularySenseCatalog('a',getVocabularySenseCatalog('a').version,actor);
-  ingest([present('one'),{kind:'response',payload:{encounterId:'one',response:'丙',outcome:'rejected'}}]);
+  ingest([present('one'),{kind:'response',payload:{encounterId:'one',response:'丙',outcome:'rejected'}},present('one','a','second'),{kind:'response',payload:{encounterId:'second',response:'乙',outcome:'rejected'}}]);
   const work=claimVocabularyReflectionJob({kind:'exercise_improvement',now:judgedAt})!;
   const referral={candidateWords:['甲','乙'],sharedPurpose:'A shared expressive purpose.',rationale:'Both fit this task.',
-    draft:{prompt:'Express the shared purpose.',semanticAxis:'The shared purpose.',teachingNote:'甲 and 乙 both fulfil this task.'}};
+    draft:{prompt:'Express the shared purpose.',teachingNote:'甲 and 乙 both fulfil this task.'}};
   const steps:string[]=[];
   const adapter:ProviderAdapter={id:'fake',defaultBaseUrl:'https://unused.invalid',apiKeyEnvironmentVariable:'KEY',structuredOutputMode:'json_schema',async run(request){
     const step=request.provenance!.stepName;steps.push(step!);
     const input=JSON.parse(request.userPrompt);
     let value:unknown;
     if(step==='sense_mapping')value={outcome:'single_sense',rationale:'One intended use.',senseIds:[input.senses[0].senseId]};
-    else if(step==='single_improvement')value={diagnosis:'Retire the source and provide response and shared practice.',
-      operations:[{sourceContentId:'one',strategy:'retire',rationale:'This source is unhelpful.',prompt:'',acceptedAnswers:['字']}],
-      responseExercises:[{wordId:'new',prompt:'Express this distinct response purpose.',rationale:'Useful response-specific practice.'}],pureCueReferral:referral};
+    else if(step==='single_improvement')value={summary:'Retire the source and provide response and shared practice.',
+      source:{decision:'retire',prompt:null},
+      additionalExercises:[{answer:'response_1',role:'refinement',prompt:'Express this distinct response purpose.',rationale:'Useful response-specific practice.'}],
+      sharedExercise:{answers:['target','response_2'],prompt:referral.draft.prompt,teachingNote:referral.draft.teachingNote,rationale:referral.rationale}};
     else {
       assert.equal(step,'pure_cue_promotion');assert.deepEqual(input.localPlan.operations.map((operation:{strategy:string})=>operation.strategy),['retire','create']);
       assert.deepEqual(input.referral.draft,referral.draft);
       if(drift==='during_integration')sql.prepare("UPDATE lexical_words SET hanzi='丁',meaning='changed identity' WHERE id='new'").run();
-      value={decision:'create',rationale:'Create the authored shared task.',existingContentId:null,teachingNote:null};
+      value={decision:'create',rationale:'Create the authored shared task.',existingContentId:null,semanticAxis:'The shared purpose.',teachingNote:null};
     }
     return {provider:'fake',model:'fake',responseId:null,structuredOutputMode:'json_schema',rawText:JSON.stringify(value),finishReason:'stop',rawResponse:null,
       usage:{inputTokens:null,cachedInputTokens:null,cacheWriteInputTokens:null,outputTokens:null,reasoningTokens:null,totalTokens:null},invocationId:null};

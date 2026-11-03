@@ -6,6 +6,7 @@ import { ReadableJson } from './content-improvement-entry';
 import { consequentialContentChanges,editableCue,groupOperations,operationAnswers,operationScope,readableSenseProse,sourceConsequences,updateCue } from './proposal-review';
 
 export const proposalStrategyLabels={create:'Add exercise',update_existing:'Update exercise',replace:'Replace exercise',retire:'Retire exercise'} as const;
+const learningRoleLabels={source_repair:'Source exercise',refinement:'Distinctive refinement',enrichment:'Optional enrichment',shared:'Shared practice'} as const;
 function ContentCue({content}:{content:VocabularyContentDraft}) {const body=content.body;return body&&typeof body==='object'&&!Array.isArray(body)&&typeof body.prompt==='string'?<p className="vocabulary-operator-cue">{body.prompt}</p>:<ReadableJson value={body}/>;}
 function ContentDetails({content}:{content:VocabularyContentDraft}){return <pre>{JSON.stringify(content,null,2)}</pre>;}
 export function CompactProposalReview({operations,previews,senses,excluded,toggle,disabled,editing,onChange,onStrategy,stale=false,onDraftCorrection,currentSources=[],bases=[]}:{
@@ -33,6 +34,7 @@ export function CompactProposalReview({operations,previews,senses,excluded,toggl
         const changed=operation.strategy==='retire'?[]:consequentialContentChanges(previews.find(item=>item.operationKey===operation.operationKey)?.source??null,operation.content);
         return <article className={`vocabulary-proposed-row${included?'':' vocabulary-proposed-excluded'}`} key={operation.operationKey}>
           <div className="vocabulary-proposed-row-heading"><label className="vocabulary-inclusion"><input type="checkbox" checked={included} disabled={disabled} onChange={()=>toggle(operation.operationKey)} aria-label={`Include change ${index+1}: ${proposalStrategyLabels[operation.strategy]}`}/><span>{proposalStrategyLabels[operation.strategy]}</span></label>
+          {operation.learningRole&&<span className="vocabulary-operator-meta">{learningRoleLabels[operation.learningRole]}</span>}
           {editing&&<select aria-label={`Strategy for change ${index+1}`} value={operation.strategy} disabled={disabled} onChange={event=>onStrategy(index,event.target.value as 'create'|'update_existing'|'replace'|'retire')}>{Object.entries(proposalStrategyLabels).map(([value,label])=><option value={value} key={value}>{label}</option>)}</select>}</div>
           {scopes.length>1&&<p className="vocabulary-operator-meta">{operationScope(operation)}</p>}
           {operation.strategy==='retire'?<p>{included?'Retire without a replacement.':'Retirement excluded; the source stays active.'}</p>

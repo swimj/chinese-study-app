@@ -11,9 +11,9 @@ const text:JsonSchema={type:'string'};
 const object=(properties:Record<string,JsonSchema>):JsonSchema=>({type:'object',properties,required:Object.keys(properties),additionalProperties:false});
 export const vocabularyPureCueReferralSchema:JsonSchema={anyOf:[{type:'null'},object({candidateWords:{type:'array',items:text,minItems:2,maxItems:8},sharedPurpose:text,rationale:text})]};
 export const vocabularyPureCuePlanSchema:JsonSchema={anyOf:[{type:'null'},object({candidateWords:{type:'array',items:text,minItems:2,maxItems:8},sharedPurpose:text,rationale:text,
-  draft:object({prompt:text,semanticAxis:text,teachingNote:text})})]};
+  draft:{...object({prompt:text,semanticAxis:text,teachingNote:text}),required:['prompt','teachingNote']}})]};
 export const vocabularyPureCueIntegrationSchema=object({decision:{type:'string',enum:['reuse','extend','create']},rationale:text,
-  existingContentId:{type:['string','null']},teachingNote:{type:['string','null']}});
+  existingContentId:{type:['string','null']},semanticAxis:{type:['string','null']},teachingNote:{type:['string','null']}});
 export const vocabularyPureCuePromotionSchema=object({decision:{type:'string',enum:['reject','reuse','extend','create']},rationale:text,
   existingContentId:{type:['string','null']},prompt:{type:['string','null']},semanticAxis:{type:['string','null']},teachingNote:{type:['string','null']},memberWordIds:{type:'array',items:text}});
 export type Word={wordId:string;hanzi:string;traditional:string|null;pinyin:string;meaning:string};
@@ -139,17 +139,17 @@ export function prepareVocabularyPureCuePromotion(job:VocabularyReflectionJob,or
     }
     const body=content.body as {prompt?:string};
     if(!body.prompt||answers.some(answer=>answer.acceptedForms.some(form=>body.prompt!.includes(form))))fail('stimulus exposes an accepted answer');
-    const common={operationKey:'pure-cue-promotion',scope:original.accessScope==='shared'?{kind:'shared' as const}:{kind:'learner' as const,learnerId:original.ownerLearnerId!},rationale:output.rationale,content};
+    const common={learningRole:'shared' as const,operationKey:'pure-cue-promotion',scope:original.accessScope==='shared'?{kind:'shared' as const}:{kind:'learner' as const,learnerId:original.ownerLearnerId!},rationale:output.rationale,content};
     const operation:VocabularyProposalOperation=existing?{...common,strategy:'update_existing',sourceContentId:existing.contentId,expectedVersion:existing.version}:{...common,strategy:'create'};
     return {assessment,operations:[operation],bases};
   }};
 }
 
-/** Integrate an already-authored shared task; creation preserves the upstream draft exactly. */
+/** Validate authored practice before resolving its storage destination or deriving its axis. */
 export function validateVocabularyPureCueDraft(job:VocabularyReflectionJob,original:VocabularyContent,referral:VocabularyPureCueReferral):void {
   validateVocabularyPureCueReferral(referral);
   if(!referral.draft)throw new Error('Pure-cue integration requires an authored plan');
-  const text=[referral.draft.prompt,referral.draft.semanticAxis,referral.draft.teachingNote];
+  const text=[referral.draft.prompt,referral.draft.semanticAxis,referral.draft.teachingNote].filter((value):value is string=>typeof value==='string');
   const fragments=job.evidence.evidence.flatMap(encounter=>[
     ...getVocabularyEncounterReactions(encounter).map(reaction=>reaction.payload.comment??''),
     ...encounter.responses.map(response=>(response.payload.response?.length??0)>=12?response.payload.response!:'')]).map(value=>value.trim()).filter(value=>value.length>=4);
@@ -163,18 +163,19 @@ export function prepareVocabularyPureCueIntegration(job:VocabularyReflectionJob,
   validateVocabularyPureCueDraft(job,original,referral);
   const prepared=prepareVocabularyPureCuePromotion(job,original,referral,selections);
   const ids=prepared.input.candidates.map(word=>word.wordId);
-  const creation=(rationale:string):Decision=>({decision:'create',rationale,existingContentId:null,
-    ...referral.draft!,memberWordIds:ids});
-  // Apply the same privacy, lexical, and stimulus guards even if integration later reuses a cue.
-  if(!prepared.attention)prepared.normalize(creation(referral.rationale));
+  const creation=(rationale:string,semanticAxis:string|null):Decision=>({decision:'create',rationale,existingContentId:null,
+    prompt:referral.draft!.prompt,teachingNote:referral.draft!.teachingNote,semanticAxis,memberWordIds:ids});
   return {...prepared,normalize(value:unknown,invocationId?:string|null):PromotionResult {
     if(!value||typeof value!=='object')throw new Error('Invalid pure-cue integration output');
-    const result=value as {decision:'reuse'|'extend'|'create';rationale:string;existingContentId:string|null;teachingNote:string|null};
+    const result=value as {decision:'reuse'|'extend'|'create';rationale:string;existingContentId:string|null;semanticAxis?:string|null;teachingNote:string|null};
     if(result.decision==='create'){
       if(result.existingContentId!==null||result.teachingNote!==null)throw new Error('Creation must preserve the proposed shared cue');
-      return prepared.normalize(creation(result.rationale),invocationId);
+      // Historical integration replies predate the axis field and retain their authored axis.
+      const axis=result.semanticAxis===undefined?referral.draft!.semanticAxis??null:result.semanticAxis;
+      return prepared.normalize(creation(result.rationale,axis),invocationId);
     }
     if(result.decision!=='reuse'&&result.decision!=='extend')throw new Error('Integration cannot reject an authored shared task');
+    if(result.semanticAxis!==undefined&&result.semanticAxis!==null)throw new Error('Reuse and extension must preserve the existing semantic axis');
     const existing=prepared.input.existingCues.find(cue=>cue.contentId===result.existingContentId);
     if(!existing||existing.kind!=='exercise')throw new Error('Integration destination was not supplied');
     return prepared.normalize({...result,prompt:null,semanticAxis:null,memberWordIds:result.decision==='reuse'?ids:

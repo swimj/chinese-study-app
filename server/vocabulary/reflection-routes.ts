@@ -60,7 +60,8 @@ export function parseVocabularyProposalDraft(value:unknown):VocabularyProposalDr
   for(const key of ['caseId','invocationId'])if(draft[key]!==undefined)text(draft[key]);
   if(list(draft.operations).length===0)throw new VocabularyReflectionRequestError('Proposal requires operations');
   const operations=list(draft.operations).map(value=>{
-    const operation=object(value,['operationKey','scope','rationale','strategy','sourceContentId','expectedVersion','content']);
+    const operation=object(value,['operationKey','scope','rationale','strategy','sourceContentId','expectedVersion','content','learningRole']);
+    if(operation.learningRole!==undefined)choice(operation.learningRole,['source_repair','refinement','enrichment','shared']);
     text(operation.operationKey);text(operation.rationale);const strategy=choice(operation.strategy,['create','update_existing','replace','retire']);
     const scope=object(operation.scope,['kind','learnerId']);choice(scope.kind,['shared','learner']);
     if(scope.kind==='learner')text(scope.learnerId);else if(scope.learnerId!==undefined)throw new VocabularyReflectionRequestError('Shared effect cannot carry learner scope');

@@ -51,7 +51,7 @@ export type VocabularyImprovementAdmission = {
 };
 export type VocabularyPureCueReferral = { candidateWords: string[]; sharedPurpose: string; rationale: string;
   /** Absent only on historical referrals made before coherent exercise planning. */
-  draft?: {prompt:string;semanticAxis:string;teachingNote:string};
+  draft?: {prompt:string;semanticAxis?:string;teachingNote:string};
 };
 export type VocabularyPureCuePromotion = {
   outcome: 'reject' | 'reuse' | 'extend' | 'create' | 'needs_operator';
@@ -74,6 +74,8 @@ export type VocabularySenseLabel = {senseId:string;wordId:string;label:string};
 export type VocabularyProposalScope = { kind: 'shared' } | { kind: 'learner'; learnerId: string };
 export type VocabularyProposalOperation = {
   operationKey: string; scope: VocabularyProposalScope; rationale: string;
+  /** Editorial role; optional for historical and manually authored proposals. */
+  learningRole?: 'source_repair' | 'refinement' | 'enrichment' | 'shared';
 } & ({ strategy: 'create'; content: VocabularyContentDraft }
   | { strategy: 'update_existing' | 'replace' | 'retire'; sourceContentId: string; expectedVersion: number; content: VocabularyContentDraft });
 export type VocabularyProposalDraft = {

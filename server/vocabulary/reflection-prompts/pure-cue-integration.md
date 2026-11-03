@@ -19,7 +19,8 @@ The preceding stage owns the pedagogical judgment and coherent local plan:
 what should happen to the original exercise, whether shared practice is useful,
 the actual shared draft, and any target or response-word refinements. Your
 responsibility is narrower: choose a compatible supplied shared destination
-or create the exact upstream draft. Do not repeat the earlier judgment, reject
+or create the authored prompt and teaching note unchanged, describing their
+shared expressive purpose in a semantic axis. Do not repeat the earlier judgment, reject
 shared practice, redesign the draft, or veto the local plan. If no supplied
 existing cue fits, choose creation. This is a normal successful outcome.
 
@@ -34,7 +35,8 @@ The user message supplies:
   This explains how the shared exercise fits the plan. It does not authorize you
   to alter, add, or remove those proposals or reconcile whole word repertoires.
 - `referral`: the shared purpose, rationale, candidate forms, and complete
-  authored `draft` containing `prompt`, `semanticAxis`, and `teachingNote`.
+  authored `draft` containing `prompt` and `teachingNote`. Historical drafts may
+  also supply a `semanticAxis`.
 - `candidates`: resolved lexical identities, forms, pronunciations, and meanings
   for all incoming members. These are the members to integrate together; do
   not select a subset, invent identities, or add unrelated words.
@@ -47,6 +49,8 @@ Return exactly these fields:
 
 - `decision`: `reuse`, `extend`, or `create`.
 - `existingContentId`: a supplied cue ID for reuse or extension; null for creation.
+- `semanticAxis`: a concise description of the authored shared task's meaning
+  and scope for creation; null for reuse or extension.
 - `teachingNote`: a nonempty integrated note for extension; null for reuse or
   creation.
 - `rationale`: a nonempty explanation of why the selected destination fits, or
@@ -57,9 +61,19 @@ requires an existing compatible cue already accepting every incoming candidate.
 Extension keeps every existing member and adds every incoming candidate while
 preserving the existing prompt, semantic axis, accepted forms, and other authored
 content; your new teaching note is its only textual change. Creation uses the
-exact upstream draft and all incoming candidates. Do not return rewritten draft
+authored prompt and teaching note unchanged, all incoming candidates, and your
+semantic axis. Do not return rewritten draft
 text or a member list. In particular, creation has both `existingContentId` and
 `teachingNote` null; the caller uses the upstream note unchanged.
+
+The semantic axis records the shared expressive purpose for future compatibility
+judgments. Infer it from the authored prompt, its members, the teaching note, and
+the local assessment. Describe the task those already establish, including any
+construction or sense boundaries needed to recognize compatible practice. It
+must neither broaden the task nor add a distinction absent from the visible cue.
+For example, the population cue `这个地区人口____。` has a population-density
+axis; a note mentioning 密集's use for closely scheduled events does not extend
+that axis to event scheduling.
 
 These are reviewable proposals or recorded assessments, not applied changes.
 You do not decide learner feedback, attempt fairness, compensation, scheduling,
@@ -108,9 +122,10 @@ when only the destination's fixed wording prevents this particular extension.
 - Extend a compatible supplied cue when one or more incoming members are missing.
   Return its ID and a holistically integrated teaching note. Every existing
   member remains, and all incoming candidates are included.
-- Otherwise create the upstream draft unchanged. Return null ID and note.
-  Creation does not require inventing another cue or proving that the earlier
-  pedagogical decision was right again.
+- Otherwise create the authored prompt and teaching note unchanged. Return null
+  ID and note, and a semantic axis describing this shared task. Creation does not
+  require inventing another cue or proving that the earlier pedagogical decision
+  was right again.
 
 Prefer compatible existing practice over duplication, but do not stretch an
 existing task's meaning or construction to force reuse. Explain the substantive
@@ -180,7 +195,8 @@ another local distinction as a condition of integration.
 - Reuse edits nothing and requires all candidates already to be accepted.
 - Extension preserves the exact stimulus, axis, accepted forms, other authored
   fields, and all existing members; its note covers the resulting membership.
-- Creation uses the upstream draft unchanged and returns null ID and note.
+- Creation uses the authored prompt and teaching note unchanged, describes their
+  scope in a semantic axis, and returns null ID and note.
 - The rationale explains actual destination compatibility rather than repeating
   the earlier content assessment or re-deciding the local plan.
 - No hidden reveal constraints, unsupported nuances, private evidence, invented

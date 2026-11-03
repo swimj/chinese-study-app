@@ -1,12 +1,12 @@
 # Exercise improvement prompt draft
 
-status: active
+status: superseded
 type: research
 created: 2026-11-03
 retire-when: incorporated into the working prompt or superseded
 
-Review draft for inline discussion on PR #442.
-This is the prose draft from the conversation; the active prompt is unchanged.
+Review draft developed through inline discussion on PR #442.
+Incorporated into the [working prompt](../../server/vocabulary/reflection-prompts/single-improvement.md); retained here as the review record.
 
 ---
 
@@ -45,6 +45,9 @@ For a cloze, also consider how the surrounding sentence shapes the meaning and c
 Identify what the wording makes clear and what it leaves open before assessing how well it points toward the target word.
 
 The intended sense identifies the specific target-word use the exercise is meant to practice.
+Treat that use as intentionally selected, including specialized, uncommon, or personally relevant uses.
+Repairing or retiring this exercise does not change that selection.
+If the intended sense and source materially conflict, explain that limitation instead of silently changing the target use.
 Compare that aim with what the learner can infer from the cue itself.
 An intended sense or post-answer teaching note cannot supply a distinction missing from the cue.
 
@@ -175,8 +178,7 @@ A pure cue is appropriate when its particular shared pattern serves the originat
 If that repair establishes worthwhile word-specific practice, propose it without adding a pure cue merely because both words fit the original English gloss.
 Repair without shared practice is a successful outcome.
 
-When proposing shared practice, author the actual cue and its teaching note here.
-A subsequent integration step will look for compatible existing shared content to reuse or extend; otherwise it will create your draft.
+When proposing shared practice, author the complete cue and its teaching note as part of this proposal.
 
 ### Consider useful word-specific practice within the same circumstance
 
@@ -201,7 +203,7 @@ The same circumstance also supports:
 > 这个通知跟考试安排____。
 
 有关 completes this relational predicate; 关于 does not.
-The proposal can therefore replace the original single-word exercise with this construction and supply the shared notice cue alongside it.
+The proposal can therefore revise the original single-word exercise to practice this construction and supply the shared notice cue alongside it.
 
 This is a refinement of the original circumstance.
 It does not require finding a new topic, nor a symmetrical 关于-only exercise.
@@ -270,14 +272,16 @@ Conversely:
 
 A cue need not be a complete scene, or teach a common everyday word, to be worthwhile.
 
-## 4. Consider additional enrichment, then present the proposal
+## 4. Include useful examples surfaced by the assessment
 
-### Consider additional learning opportunities
-
-Enrichment is welcome when the diagnosis or repair reveals another example that would help the learner understand or use the target or a submitted word.
-It might introduce another circumstance, clarify a contrast, or offer a different retrieval route.
+While reasoning about the source, you may use another example to understand how the target or a submitted word works and decide what to propose.
+Consider retaining such an example as optional enrichment when it would also help the learner.
+Such enrichment might introduce another circumstance, clarify a contrast, or offer a different retrieval route.
+Do not conduct a separate search for additional exercises.
 Include it when you can explain the concrete learning value it adds, and identify it as optional enrichment beyond addressing the originating exercise.
-Enrichment can also be worthwhile when the original exercise needs no change.
+Enrichment can also respond to an explicit learner request, including when the original exercise needs no change.
+Apply the same standards of natural language, clear retrieval, and fair answer specificity to enrichment as to source repairs.
+Its inclusion is optional; that does not justify excluding another equally natural answer to its cue.
 
 **稠密 / 密集**
 
@@ -302,7 +306,7 @@ No 稠密-only counterpart is required.
 
 **忍俊不禁**
 
-If a learner recalls 忍俊不禁 from `unable to keep from laughing` and asks for sentence practice, preserve the useful direct cue and offer:
+If a learner recalls 忍俊不禁 from `unable to keep from laughing` and asks for sentence practice, preserve the useful direct cue and additionally offer:
 
 > unable to suppress a laugh at a funny answer:\
 > 听到这个风趣的回答，他____。
@@ -310,7 +314,7 @@ If a learner recalls 忍俊不禁 from `unable to keep from laughing` and asks f
 The original cue works; no source repair is needed.
 The additional sentence answers the learner’s request for practice using the expression in context.
 
-### Present a concise recommendation to the operator
+## 5. Present a concise recommendation to the operator
 
 Err on the side of a short summary: the operator needs to understand the recommendation and decide whether to apply it.
 Default to a few short sentences in plain language, with further detail only when it materially affects that decision.
@@ -327,40 +331,118 @@ For the population example, an operator summary could be:
 > Both 稠密 and 密集 naturally complete the population cue, so replace the single-answer exercise with shared practice.
 > The optional interview example adds practice with 密集 for events scheduled close together.
 
-Use the diagnosis for the overall recommendation and each change’s rationale for its particular contribution, without repeating the summary.
+Use `summary` for the overall diagnosis and recommendation, and each exercise’s `rationale` for its particular contribution, without repeating the summary.
 Mention uncertainty when it could change the operator’s decision, and make sure the explanation matches the actual proposed content.
 
 Encounter evidence informs the operator explanation; authored exercises and teaching notes should contain learning content, without learner comments, private details, or encounter history.
 
+## Input reference
+
+The input contains:
+
+- `words`: the target and distinct submitted forms. Each has a `ref` such as `target` or `response_1`, its written `form`, available `lexical` information, and `canAuthorIndividual`.
+- `source`: the exercise being assessed, with its visible `prompt`, any pre-answer `instruction`, and `postAnswer` material.
+- `intendedSense.description`: the intended target-word use.
+- `encounters`: the prompt, instruction, and post-answer material seen on each occasion, raw `responses` with their recorded `outcome` and whether they remain `effective`, learner `reactions`, and whether the presentation was skipped or undone.
+- `assessmentOrigin`, when supplied: context for an operator reassessment. Historical encounters may show an earlier prompt; assess those experiences against the text actually shown, and direct the recommendation to `source`.
+
+A null response supplies no comparison word.
+`postAnswer` material was not part of the retrieval cue.
+Lexical information may be unavailable or ambiguous even when the submitted form is understandable; preserve meaningful uncertainty in the summary.
+Use the supplied word references in answer fields and readable Mandarin in explanations.
+
 ## Output reference
 
-Return the specified JSON object with these fields:
+Return only a JSON object with these fields:
 
 | Field | Contents |
 |---|---|
-| `diagnosis` | Your assessment of the original exercise, relevant evidence, and resulting proposal. |
-| `operations` | Changes or additions for the original target, using the source’s accepted answers. Empty means no source change. |
-| `responseExercises` | New exercises for IDs supplied in `responseCandidates`, each with `wordId`, `prompt`, and `rationale`. |
-| `pureCueReferral` | A complete shared proposal, or null. |
+| `summary` | A short operator-facing diagnosis and recommendation, using the guidance in section 5. |
+| `source` | One decision for the original exercise: `keep`, `revise`, or `retire`, with a `prompt` only when revising. |
+| `sharedExercise` | A complete pure cue, or null. |
+| `additionalExercises` | Additional word-specific exercises for the target or submitted words. An empty array is valid. |
 
-Each source operation contains `sourceContentId`, `strategy`, `rationale`, `prompt`, and unchanged `acceptedAnswers`.
+`source` contains `decision` and `prompt`:
 
-The strategies are:
+- `keep`: retain the original exercise; `prompt` is null.
+- `revise`: improve the original exercise for its target and intended use; `prompt` contains the complete revised retrieval cue.
+- `retire`: remove the original exercise; `prompt` is null.
 
-- `update_existing`: revise the source while preserving its identity.
-- `replace`: retire the source and create its successor.
-- `create`: add another target exercise while leaving the source active.
-- `retire`: stop the source without a replacement; use an empty prompt.
+Explain this decision in `summary`; do not repeat it in a separate rationale.
+Retirement may accompany shared practice or additional exercises, including optional enrichment for the original target.
 
-Do not combine retirement with another source operation.
-It may accompany response exercises and a shared proposal.
+`sharedExercise`, when present, contains:
 
-A shared proposal contains `candidateWords`, `sharedPurpose`, `rationale`, and a `draft` with:
-
+- `answers`: distinct supplied word references, including `target` and at least one submitted word;
 - `prompt`: the complete visible retrieval cue;
-- `semanticAxis`: the shared expressive purpose and its scope;
-- `teachingNote`: post-answer guidance covering all proposed members, mostly in English with Mandarin examples where useful.
+- `teachingNote`: guidance shown when the answers are revealed, covering all proposed answers, mostly in English with Mandarin examples where useful;
+- `rationale`: a brief explanation of this shared exercise’s contribution to the proposal.
 
-Candidate forms identify the target and distinct submitted words.
-Where dictionary identity is unresolved, preserve that uncertainty for operator resolution rather than inventing an identity.
-Response-specific exercise IDs must come from `responseCandidates`.
+A submitted form whose `lexical` identity is unresolved may be included in shared practice when the linguistic judgment is supported; the operator will resolve its identity.
+Do not invent a word reference or treat an incomplete or uninterpretable response as a word merely to propose shared practice.
+
+Each `additionalExercises` entry contains:
+
+- `answer`: a supplied word reference whose `canAuthorIndividual` is true;
+- `role`: `refinement` for a distinctive construction or more specific meaning within the originating circumstance, or `enrichment` for optional additional practice described in section 4;
+- `prompt`: the complete visible retrieval cue;
+- `rationale`: a brief explanation of its particular learning value.
+
+The same fields serve additions for the original target and for submitted words.
+These additions propose new exercises; they do not revise those words’ other existing exercises.
+A revised source already carries its revised prompt, so do not repeat it in `additionalExercises`.
+
+### Complete output examples
+
+For the 框 / 筐 encounter, with 框 as `target` and 筐 as `response_1`:
+
+```json
+{
+  "summary": "The cue clearly asks for drawing a box around the answer. 筐 names a basket, so the response is consistent with a sound or character mix-up. Keep the exercise.",
+  "source": {"decision": "keep", "prompt": null},
+  "sharedExercise": null,
+  "additionalExercises": []
+}
+```
+
+For the 有关 / 关于 notice encounter, with 有关 as `target` and 关于 as `response_1`:
+
+```json
+{
+  "summary": "Both words naturally answer the notice cue. Share that task and revise the original to practice 跟……有关, which calls for 有关 specifically within the same circumstance.",
+  "source": {
+    "decision": "revise",
+    "prompt": "This notice concerns the exam arrangements: 这个通知跟考试安排____。"
+  },
+  "sharedExercise": {
+    "answers": ["target", "response_1"],
+    "prompt": "A notice concerning exam arrangements: 请查看____考试安排的通知。",
+    "teachingNote": "Both 有关考试安排的通知 and 关于考试安排的通知 describe a notice concerning exam arrangements. To say that the notice is related to those arrangements, use 这个通知跟考试安排有关。",
+    "rationale": "Preserves the natural ways to describe what the notice concerns."
+  },
+  "additionalExercises": []
+}
+```
+
+For the population-density encounter, with 稠密 as `target` and 密集 as `response_1`, when the scheduling example emerged while considering their uses:
+
+```json
+{
+  "summary": "Both 稠密 and 密集 naturally complete the population cue, so retire the single-answer exercise in favor of shared practice. The optional interview example adds practice with 密集 for events scheduled close together.",
+  "source": {"decision": "retire", "prompt": null},
+  "sharedExercise": {
+    "answers": ["target", "response_1"],
+    "prompt": "Densely populated: 这个地区人口____。",
+    "teachingNote": "Both 人口稠密 and 人口密集 describe a densely populated area. 密集 also describes events scheduled close together, as in 面试安排得很密集。",
+    "rationale": "Lets either natural expression answer the population-density task."
+  },
+  "additionalExercises": [
+    {
+      "answer": "response_1",
+      "role": "enrichment",
+      "prompt": "Several interviews scheduled close together, with almost no breaks: 明天上午的面试安排得很____。",
+      "rationale": "Practices the temporal use of 密集 introduced in the teaching note."
+    }
+  ]
+}
+```

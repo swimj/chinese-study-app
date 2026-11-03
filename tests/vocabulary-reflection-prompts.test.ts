@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
+import { vocabularySingleImprovementSchema } from '../server/vocabulary/exercise-improvement-authoring.ts';
+import { validateJsonSchema } from '../server/llm/json-schema-validator.ts';
 
 const original = readFileSync(new URL('../server/reflection/prompts/staged-diagnosis.md', import.meta.url), 'utf8');
 const reasoning = readFileSync(new URL('../server/vocabulary/reflection-prompts/reasoning.md', import.meta.url), 'utf8');
@@ -62,12 +64,10 @@ test('general repertoire preserves the full v4 authoring guidance and keeps exam
   assert.doesNotMatch(current,/source exercise under review|Explain no extra fields/);
 });
 
-test('single decisions state supplied inputs and outcomes while retaining communicative judgment',()=>{
+test('worked authoring outputs are valid examples of the active JSON contract',()=>{
   const brief=readFileSync(new URL('../server/vocabulary/reflection-prompts/single-improvement.md',import.meta.url),'utf8');
-  assert.match(brief,/making a cue more selective[\s\S]*little communicative value/);
-  assert.match(brief,/contextual exposure may still be valuable/);
-  const cases=brief.split('## Worked decision patterns')[1]!.split('## Output details')[0]!.split('### ').slice(1);
-  assert.match(cases.find(example=>example.includes('Target: `他`'))!,/Propose retiring this source without replacement/);
-  assert.match(cases.find(example=>example.includes('Target: `有所`'))!,/Retain the source/);
-  assert.doesNotMatch(brief,/```json/);
+  const examples=[...brief.matchAll(/```json\n([\s\S]*?)\n```/g)].map(match=>JSON.parse(match[1]!));
+  assert.equal(examples.length,3);
+  for(const example of examples)assert.deepEqual(validateJsonSchema(example,vocabularySingleImprovementSchema),[]);
+  assert.deepEqual(examples.map(example=>example.source.decision),['keep','revise','retire']);
 });

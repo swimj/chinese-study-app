@@ -1,3 +1,4 @@
+import { projectVocabularyImprovementInput, vocabularyImprovementWords } from './exercise-improvement-authoring.ts';
 import { isVocabularyDefinitionFallback } from '../../src/domain/vocabulary-production-coverage.ts';
 import { ensureVocabularyDefaultUsefulSelection } from './default-useful-selection.ts';
 import { VocabularySenseSelectionRequired } from './sense-readiness.ts';
@@ -7,7 +8,7 @@ import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { VocabularyReflectionConflict } from '../db/vocabulary-reflection.ts';
 import type { JsonSchema } from '../../src/domain/reflection-result-schema.ts';
-import type { VocabularyContent } from '../../src/domain/vocabulary-content.ts';
+import type { VocabularyContent, VocabularySense } from '../../src/domain/vocabulary-content.ts';
 import type { VocabularyGenerationScope,VocabularyReflectionJob, VocabularyReflectionResult } from '../../src/domain/vocabulary-reflection.ts';
 import { getDb } from '../db/connection.ts';
 import { getVocabularyContentForMaintenance, getVocabularySenseCatalog, mapVocabularyContentSense } from '../db/vocabulary-content.ts';
@@ -65,7 +66,7 @@ export async function runVocabularyImprovementAdmission(options: {
     .get(wordId) as {wordId:string;hanzi:string;traditional:string|null;pinyin:string;meaning:string}|undefined;
   if (!word) throw new Error('Improvement target lexical word is unavailable');
   const base = {sourceContent: original,wordId,word,catalog: readiness.catalog,senses: inventory};
-  async function stage<T>(name: VocabularyAdmissionStage,input: unknown,schema: JsonSchema,normalize: (value: unknown,invocationId?: string|null)=>T,extra?:{fence:()=>void;contents:VocabularyContent[]}): Promise<{value:T; invocationId?:string}> {
+  async function stage<T>(name: VocabularyAdmissionStage,input: unknown,schema: JsonSchema,normalize: (value: unknown,invocationId?: string|null)=>T,extra?:{fence:()=>void;contents:VocabularyContent[];senses?:readonly VocabularySense[]}): Promise<{value:T; invocationId?:string}> {
     fence();extra?.fence();
     const identity=await options.stageIdentity(name,schema,input);
     fence();extra?.fence();
@@ -75,6 +76,7 @@ export async function runVocabularyImprovementAdmission(options: {
       .get(job.jobId,name,hash) as {result_json:string;invocation_id:string|null}|undefined;
     if (cached) return {value: JSON.parse(cached.result_json) as T,...(cached.invocation_id?{invocationId:cached.invocation_id}:{})};
     const response = await options.call(name,input,schema);
+    fence();extra?.fence();
     let value:T;
     try {
       if (validateJsonSchema(response.value,schema).length) throw new Error('Improvement stage failed strict output schema');
@@ -89,7 +91,7 @@ export async function runVocabularyImprovementAdmission(options: {
         // sources retain their exact snapshot in this private job evidence instead.
         if(original.accessScope==='shared') linkVocabularyInvocationContent({invocationId:response.invocationId,contentId:original.contentId,contentVersion:original.version,role:'input'},{kind:'service',id:serviceId});
         for(const content of extra?.contents??[])if(content.accessScope==='shared')linkVocabularyInvocationContent({invocationId:response.invocationId,contentId:content.contentId,contentVersion:content.version,role:'input'},{kind:'service',id:serviceId});
-        for(const sense of inventory) linkVocabularyInvocationSense({invocationId:response.invocationId,senseId:sense.senseId,senseVersion:sense.version,role:'input'},{kind:'service',id:serviceId});
+        for(const sense of extra?.senses??inventory) linkVocabularyInvocationSense({invocationId:response.invocationId,senseId:sense.senseId,senseVersion:sense.version,role:'input'},{kind:'service',id:serviceId});
       }
       db.prepare('INSERT INTO vocabulary_improvement_stages(job_id,stage,input_hash,input_json,result_json,invocation_id,recorded_at) VALUES (?,?,?,?,?,?,?)')
         .run(job.jobId,name,hash,inputJson,JSON.stringify(value),response.invocationId??null,new Date().toISOString());
@@ -175,13 +177,15 @@ export async function runVocabularyImprovementAdmission(options: {
     }
     admission.sourceMapping={...expectedMapping};
     const responseCandidates=vocabularyResponseCandidates(job);
-    const responseFence=()=>{if(!isDeepStrictEqual(vocabularyResponseCandidates(job),responseCandidates))throw new VocabularyReflectionConflict('Response lexical identities changed during improvement');};
-    const result = await stage<ImprovementResult>('single_improvement',{evidence:options.projectedInput,...base,responseCandidates,admission,intendedSense:inventory.find(sense=>sense.senseId===mapped.value.senseIds[0])},options.improvementSchema,(value,invocationId)=>{
+    const authoringWords=vocabularyImprovementWords(job);
+    const responseFence=()=>{if(!isDeepStrictEqual(vocabularyResponseCandidates(job),responseCandidates)
+      ||!isDeepStrictEqual(vocabularyImprovementWords(job),authoringWords))throw new VocabularyReflectionConflict('Response lexical identities changed during improvement');};
+    const result = await stage<ImprovementResult>('single_improvement',projectVocabularyImprovementInput(job,original,inventory.find(sense=>sense.senseId===mapped.value.senseIds[0])!),options.improvementSchema,(value,invocationId)=>{
       const normalized = options.normalize(value,invocationId);
       if(normalized.kind!=='exercise_improvement')throw new Error('Unexpected improvement result');
-      for(const op of normalized.result.proposal?.operations??[])op.content.words=op.content.words.map(word=>word.wordId===wordId?{...word,senseId:mapped.value.senseIds[0],senseMappingEstablishedAt:expectedMapping.establishedAt}:word);
+      for(const op of normalized.result.proposal?.operations??[])op.content.words=op.content.words.map(word=>word.wordId===wordId&&op.learningRole!=='enrichment'?{...word,senseId:mapped.value.senseIds[0],senseMappingEstablishedAt:expectedMapping.establishedAt}:word);
       return normalized;
-    },{fence:responseFence,contents:[]});
+    },{fence:responseFence,contents:[],senses:inventory.filter(sense=>sense.senseId===mapped.value.senseIds[0])});
     fence();
     const local=result.value.result;
     if(!local.pureCueReferral)return {kind:'exercise_improvement',result:{...local,admission}};
@@ -194,7 +198,7 @@ export async function runVocabularyImprovementAdmission(options: {
     if(promoted.assessment.outcome==='needs_operator')return {kind:'exercise_improvement',result:{...local,admission,
       pureCuePromotion:promoted.assessment,pendingPlan:local.proposal,responseCandidateSnapshots:responseCandidates,proposal:null}};
     const operations=[...(local.proposal?.operations??[]),...promoted.operations];
-    const diagnosis=`${typeof local.diagnosis==='string'?local.diagnosis:JSON.stringify(local.diagnosis)}\n\nShared practice: ${promoted.assessment.rationale}`;
+    const diagnosis=typeof local.diagnosis==='string'?local.diagnosis:JSON.stringify(local.diagnosis);
     return {kind:'exercise_improvement',result:{...local,diagnosis,admission,pureCuePromotion:promoted.assessment,
       proposal:operations.length?{operations,rationale:diagnosis,
         bases:[{contentId:original.contentId,expectedVersion:original.version},...promoted.bases],

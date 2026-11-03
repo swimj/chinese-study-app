@@ -210,7 +210,7 @@ export function VocabularyOperatorPage({api=vocabularyOperatorApi,previewOnly=fa
     const sourceId=base?.contentId??source?.contentId??operation.content.contentId??'',sourceVersion=base?.expectedVersion??source?.version??1;
     const content={...operation.content,contentId:next==='update_existing'||next==='retire'?sourceId:operation.content.contentId===sourceId?crypto.randomUUID():operation.content.contentId??crypto.randomUUID(),
       ...(next==='update_existing'&&source?{originKind:source.originKind,authorKind:source.authorKind,authorId:source.authorId,accessScope:source.accessScope,ownerLearnerId:source.ownerLearnerId}:{})};
-    const common={operationKey:operation.operationKey,scope:operation.scope,rationale:operation.rationale,content};
+    const common={operationKey:operation.operationKey,scope:operation.scope,rationale:operation.rationale,...(operation.learningRole?{learningRole:operation.learningRole}:{}),content};
     const changed:VocabularyProposalOperation=next==='create'?{...common,strategy:'create'}:{...common,strategy:next,sourceContentId:sourceId,expectedVersion:sourceVersion};
     changeDraft({...draft,bases:base?draft.bases??[base]:draft.bases,operations:draft.operations.map((old,i)=>i===index?changed:old)});
   }

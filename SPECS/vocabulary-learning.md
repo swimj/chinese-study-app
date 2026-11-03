@@ -290,25 +290,32 @@ approval. Ordinary preparation publishes through its bounded preparation policy.
 For an authored single-word production exercise with an admitted intended sense,
 one assessment owns a coherent exercise-local plan. It decides the original
 cue's disposition, drafts useful shared practice when warranted, and proposes
-any target or response-word refinements. Original-source edits preserve its
-answer contract. Response-word refinements create exercises only for unambiguous
-lexical identities established from actual responses; they do not reconcile the
+any target or response-word refinements. Source revision preserves its identity,
+answer contract, and learner controls. Retirement may coexist with optional
+additional target practice. Response-word refinements create exercises only for
+unambiguous lexical identities established from actual responses; they do not reconcile the
 response word's repertoire or invent a sense association.
 
-A shared proposal contains its actual visible cue, semantic axis, and complete
+A shared proposal contains its actual visible cue, intended answers, and complete
 teaching note. Integration chooses reuse, extension, or creation without a second
-pedagogical veto. Existing-cue lookup respects publication scope and owner.
+pedagogical veto, deriving a semantic axis from the authored task when creating
+a new shared exercise. Existing-cue lookup respects publication scope and owner.
 Reuse requires all proposed candidates already to be members of a compatible
 cue. Extension preserves its stimulus, axis, existing members and accepted forms,
-while integrating its accumulated teaching note. Creation uses the authored
-shared draft unchanged. Notes are mostly English, with Chinese where useful.
+while integrating its accumulated teaching note. Creation preserves the authored
+shared prompt and teaching note unchanged. Notes are mostly English, with Chinese
+where useful.
 
 Missing or ambiguous shared identities require operator attention. The complete
 plan is withheld pending resolution and resumed into one reviewable proposal
 when the operator selects matching identities. A resolution does not apply content.
 The operator can edit and select individual parts deliberately; optional local
-clarifiers are not enforced prerequisites for shared practice. Private learner
-comments inform review without being copied into shared authored content.
+clarifiers are not enforced prerequisites for shared practice. Optional enrichment
+comes from useful examples surfaced during assessment or an explicit learner
+request, and meets the same answer-fairness standard as repairs. It is not
+automatically assigned the source exercise’s sense. The operator receives a
+concise summary of the diagnosis and recommendation, with brief rationales for
+individual additions. Private learner comments inform review without being copied into shared authored content.
 Content assessment does not change learner compensation or scheduling.
 
 An existing pure cue receives a separate content assessment of its established

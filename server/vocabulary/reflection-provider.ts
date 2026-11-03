@@ -28,6 +28,8 @@ import { isOutputTruncationFinishReason, type ProviderAdapter } from '../llm/typ
 import { eligibleVocabularyReflectionJob } from './reflection-eligibility.ts';
 import { prepareVocabularyPureCueImprovement, vocabularyPureCueImprovementSchema } from './pure-cue-improvement.ts';
 import { getPureCueResolution, prepareVocabularyPureCuePromotion, prepareVocabularyPureCueIntegration, vocabularyPureCueIntegrationSchema, vocabularyPureCuePromotionSchema, vocabularyPureCuePlanSchema, validateVocabularyPureCueReferral, validateVocabularyPureCueDraft, vocabularyResponseCandidates } from './pure-cue-promotion.ts';
+import { adaptVocabularyImprovementOutput, vocabularySingleImprovementSchema } from './exercise-improvement-authoring.ts';
+export { vocabularySingleImprovementSchema } from './exercise-improvement-authoring.ts';
 import { runVocabularyImprovementAdmission, type VocabularySenseEnsurer } from './improvement-admission.ts';
 
 const SENSE_MAPPING_CONFIG:ReflectionProviderConfig={...LUNA_REFLECTION_MODEL_CONFIG,modelConfig:'gpt-6-luna-high',providerModel:'gpt-6-luna'};
@@ -40,7 +42,7 @@ function object(properties:Record<string,JsonSchema>):JsonSchema{return {type:'o
 const feedbackSchema=object({diagnosis:text,lesson:text,unfairEncounterIds:{type:'array',items:text}});
 const improvementSchema=object({diagnosis:text,operations:{type:'array',items:object({sourceContentId:text,
   strategy:{type:'string',enum:['create','update_existing','replace','retire']},rationale:text,prompt:text,acceptedAnswers:{type:'array',items:text}})}});
-export const vocabularySingleImprovementSchema=object({...improvementSchema.properties!,
+const legacySingleImprovementSchema=object({...improvementSchema.properties!,
   responseExercises:{type:'array',items:object({wordId:text,prompt:text,rationale:text})},pureCueReferral:vocabularyPureCuePlanSchema});
 function nonempty(value:string):void{if(!value.trim())throw new VocabularyReflectionOutputError('Reflection output contains empty text');}
 function source(job:VocabularyReflectionJob,checkCurrent=true):VocabularyContent|null {
@@ -75,7 +77,7 @@ export function projectVocabularyReflectionInput(job:VocabularyReflectionJob):un
 }
 export function normalizeVocabularyReflectionOutput(job:VocabularyReflectionJob,value:unknown,invocationId?:string|null,withReferral=false):VocabularyReflectionResult {
   job=eligibleVocabularyReflectionJob(job);
-  const schema=job.kind==='learner_feedback'?feedbackSchema:withReferral?vocabularySingleImprovementSchema:improvementSchema;
+  const schema=job.kind==='learner_feedback'?feedbackSchema:withReferral?legacySingleImprovementSchema:improvementSchema;
   if(validateJsonSchema(value,schema).length)throw new VocabularyReflectionOutputError('Reflection output failed its strict schema');
   if(job.evidence.kind==='teaching_review'||job.evidence.evidence.some(item=>item.snapshot.role!=='general'))throw new VocabularyReflectionOutputError('Teaching belongs to the manual inbox');
   if(job.kind==='learner_feedback') {
@@ -97,7 +99,6 @@ export function normalizeVocabularyReflectionOutput(job:VocabularyReflectionJob,
   if(referral)validateVocabularyPureCueDraft(job,original,referral);
   const accepted=original.answers.flatMap(answer=>answer.acceptedForms);
   if(result.operations.filter(operation=>operation.strategy!=='create').length>1)throw new VocabularyReflectionOutputError('A source can only be updated, replaced, or retired once');
-  if(result.operations.some(operation=>operation.strategy==='retire')&&result.operations.length!==1)throw new VocabularyReflectionOutputError('Retirement without replacement cannot also author local practice');
   const operations:VocabularyProposalOperation[]=result.operations.map((operation,index)=>{
     nonempty(operation.rationale);
     if(operation.sourceContentId!==original.contentId||!isDeepStrictEqual([...operation.acceptedAnswers].sort(),[...accepted].sort())) {
@@ -156,6 +157,27 @@ export function normalizeVocabularyReflectionOutput(job:VocabularyReflectionJob,
   return {kind:'exercise_improvement',result:{diagnosis:result.diagnosis,...(withReferral?{pureCueReferral:referral}:{}),proposal:operations.length?{operations,rationale:result.diagnosis,
     bases:[{contentId:original.contentId,expectedVersion:original.version}],...(invocationId?{invocationId}:{})}:null,...(invocationId?{invocationId}:{})}};
 }
+export function normalizeVocabularySingleImprovementOutput(job:VocabularyReflectionJob,value:unknown,invocationId?:string|null):VocabularyReflectionResult {
+  const original=source(job,false);
+  if(!original)throw new VocabularyReflectionOutputError('Improvement source is unavailable');
+  const adapted=adaptVocabularyImprovementOutput(job,original,value);
+  const normalized=normalizeVocabularyReflectionOutput(job,adapted.legacy,invocationId,true);
+  if(normalized.kind!=='exercise_improvement')throw new Error('Unexpected single improvement result');
+  normalized.result.proposal?.operations.forEach((operation,index)=>{
+    operation.learningRole=adapted.roles[index]!;
+    if(operation.strategy==='create'&&operation.content.kind==='exercise'){
+      const body=operation.content.body;
+      if(!body||typeof body!=='object'||Array.isArray(body)||typeof body.prompt!=='string')throw new Error('Additional exercise lacks a prompt');
+      const answerWordId=operation.content.answers[0]!.wordId;
+      operation.content={...operation.content,words:operation.content.words.filter(word=>word.wordId===answerWordId),exerciseType:'word',assessment:{match:'exact'},body:{prompt:body.prompt,instruction:'',stimulus:{kind:'direct_text',text:body.prompt},
+        source:{kind:'vocabulary_additional_exercise',role:operation.learningRole,assessedContentId:original.contentId,invocationId:invocationId??null}}};
+    }
+    if(operation.learningRole==='enrichment'&&operation.strategy==='create'){
+      operation.content.words=operation.content.words.map(({senseId:_sense,senseMappingEstablishedAt:_at,...word})=>word);
+    }
+  });
+  return normalized;
+}
 export function createVocabularyReflectionProvider(options:{environment?:NodeJS.ProcessEnv;adapter?:ProviderAdapter;adapters?:Partial<Record<ReflectionModelChoice,ProviderAdapter>>;random?:()=>number;fetchImplementation?:typeof globalThis.fetch;ensureSenses?:VocabularySenseEnsurer;ensureDefaults?:typeof ensureVocabularyDefaultUsefulSelection}={}):VocabularyReflectionProvider {
   const environment=options.environment??process.env;
   const adapters=new Map<string,ProviderAdapter>();
@@ -196,11 +218,11 @@ export function createVocabularyReflectionProvider(options:{environment?:NodeJS.
       const systemPrompt=promptFile==='feedback'?task:`${reasoning}\n\n${task}`;prompts.set(promptFile,systemPrompt);return systemPrompt;
     };
     const stagePrompt=(stage:string)=>stage==='sense_mapping'?'sense-mapping':stage==='pure_cue_promotion'?'pure-cue-integration':'single-improvement';
-    const admissionPromptVersion=(stage:string)=>stage==='single_improvement'?'5':stage==='sense_mapping'?'4':stage==='pure_cue_promotion'?'1':'2';
-    const schemaVersion=(step:string)=>step==='single_improvement'?'4':step==='pure_cue_promotion'?'3':'1';
+    const admissionPromptVersion=(stage:string)=>stage==='single_improvement'?'6':stage==='sense_mapping'?'4':stage==='pure_cue_promotion'?'2':'2';
+    const schemaVersion=(step:string)=>step==='single_improvement'?'5':step==='pure_cue_promotion'?'4':'1';
     const projectionVersion=(step:string)=>step==='second_opinion'?'vocabulary-second-opinion.v1'
       :step==='feedback'||step==='improvement'?'vocabulary-reflection.v2'
-      :step==='single_improvement'||step==='sense_mapping'||step==='pure_cue_promotion'?'vocabulary-admission.v4':'vocabulary-admission.v1';
+      :step==='single_improvement'?'vocabulary-exercise-authoring.v1':step==='pure_cue_promotion'?'vocabulary-integration.v2':step==='sense_mapping'?'vocabulary-admission.v4':'vocabulary-admission.v1';
     const routingFor=(step:string)=>{
       if(step!=='sense_mapping')return {config,adapter,apiKey,baseUrl};
       const failures=vocabularySenseMappingAvailabilityFailures(job.jobId);
@@ -298,7 +320,7 @@ export function createVocabularyReflectionProvider(options:{environment?:NodeJS.
       const word=getDb().prepare('SELECT id AS wordId,hanzi,traditional,pinyin,meaning FROM lexical_words WHERE id=?').get(admission.wordId);
       const response=await runCall('pure_cue_promotion',{sourceContent:original,wordId:admission.wordId,word,catalog,senses,
         evidence:projectVocabularyReflectionInput(job),intendedSense:senses.find(sense=>sense.senseId===admission.senseIds[0]),
-        localAssessment:resolution.diagnosis,localPlan:resolution.localPlan??null,...promotion.input},promotionSchema,coherent?'pure-cue-integration':'pure-cue-promotion',coherent?'1':'3');
+        localAssessment:resolution.diagnosis,localPlan:resolution.localPlan??null,...promotion.input},promotionSchema,coherent?'pure-cue-integration':'pure-cue-promotion',coherent?'2':'3');
       try{
         if(validateJsonSchema(response.value,promotionSchema).length)throw new VocabularyReflectionOutputError('Promotion failed strict output schema');
         const promoted=promotion.normalize(response.value,response.invocationId);fence();
@@ -308,7 +330,7 @@ export function createVocabularyReflectionProvider(options:{environment?:NodeJS.
           for(const sense of senses)linkVocabularyInvocationSense({invocationId:response.invocationId,senseId:sense.senseId,senseVersion:sense.version,role:'input'},actor);
         }
         const operations=[...(coherent?resolution.localPlan?.operations??[]:[]),...promoted.operations];
-        const diagnosis=coherent?`${typeof resolution.diagnosis==='string'?resolution.diagnosis:JSON.stringify(resolution.diagnosis)}\n\nShared practice: ${promoted.assessment.rationale}`:promoted.assessment.rationale;
+        const diagnosis=coherent?(typeof resolution.diagnosis==='string'?resolution.diagnosis:JSON.stringify(resolution.diagnosis)):promoted.assessment.rationale;
         return {kind:'exercise_improvement',result:{diagnosis,admission,pureCueReferral:referral,pureCuePromotion:promoted.assessment,
           ...(response.invocationId?{invocationId:response.invocationId}:{}),proposal:operations.length?{operations,rationale:diagnosis,
             bases:[{contentId:original.contentId,expectedVersion:original.version},...promoted.bases],...(response.invocationId?{invocationId:response.invocationId}:{})}:null}};
@@ -334,7 +356,9 @@ export function createVocabularyReflectionProvider(options:{environment?:NodeJS.
             outputSchemaName:`vocabulary_reflection_${stage}_v${schemaVersion(stage)}`,promptVersion:admissionPromptVersion(stage),schemaVersion:schemaVersion(stage),inputProjectionVersion:projectionVersion(stage)}),
           maxOutputTokens:config.maxOutputTokens,temperature:null,timeoutMs:config.timeoutMs,cachePrompt:true};},
         call:(stage,input,schema)=>runCall(stage,input,schema,stagePrompt(stage),admissionPromptVersion(stage)),
-        normalize:(value,invocationId)=>normalizeVocabularyReflectionOutput(job,value,invocationId,!!value&&typeof value==='object'&&'pureCueReferral' in value)});
+        normalize:(value,invocationId)=>value&&typeof value==='object'&&'summary' in value
+          ?normalizeVocabularySingleImprovementOutput(job,value,invocationId)
+          :normalizeVocabularyReflectionOutput(job,value,invocationId)});
     }
     if(job.kind==='exercise_improvement')throw new VocabularyReflectionOutputError('Exercise has no supported improvement contract');
     const result=await runCall(kind,projectVocabularyReflectionInput(job),feedbackSchema,kind,'4');

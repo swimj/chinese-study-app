@@ -475,6 +475,22 @@ test('retirement HTTP contract preserves source identity and rejects policy meta
   assert.equal(applied.status,200);assert.equal(getVocabularyContentForMaintenance('one')!.availability,'retired');assert.equal(getVocabularyContentForMaintenance('one')!.version,2);
 });
 
+test('proposal learning roles survive create, edit and read while unknown roles are rejected',()=>{
+  const original=proposal();
+  const tagged={...original,operations:[{...original.operations[0]!,learningRole:'source_repair'},
+    {operationKey:'additional',strategy:'create',scope:{kind:'shared'},learningRole:'enrichment',rationale:'A further retrieval route',content:draft('additional')}]};
+  const created=call('post',`${base}/proposals`,{body:tagged});assert.equal(created.status,200);
+  const params={id:String(created.body.proposalId)};
+  const roles=(body:Record<string,unknown>)=>(body.operations as {learningRole?:string}[]).map(operation=>operation.learningRole);
+  assert.deepEqual(roles(call('get',`${base}/proposals/:id`,{params}).body),['source_repair','enrichment']);
+  const edited={...tagged,operations:[tagged.operations[1]!]};
+  const saved=call('put',`${base}/proposals/:id`,{params,body:{expectedVersion:1,draft:edited}});assert.equal(saved.status,200);
+  assert.deepEqual(roles(call('get',`${base}/proposals/:id`,{params}).body),['enrichment']);
+  for(const learningRole of ['other',null,{},['enrichment']])assert.equal(call('post',`${base}/proposals`,{body:{...original,operations:[{...original.operations[0]!,learningRole}]}}).status,400);
+  const legacy=call('post',`${base}/proposals`,{body:original});assert.equal(legacy.status,200);
+  assert.deepEqual(roles(legacy.body),[undefined]);
+});
+
 test('default-selection finding is read-only in workspace and review batch and resolves with explicit none',()=>{
   sql.prepare("INSERT INTO vocabulary_default_selection_readiness(word_id,status,expected_catalog_version,workflow_id,recommendation_json,last_error,created_at,updated_at) VALUES ('a','failed',0,'inventory','{\"senseIds\":[]}',?,?,?)").run('The model selected no useful senses; operator selection is required.',at,at);
   const created=call('post',`${base}/proposals`,{body:{...proposal(),caseId}});assert.equal(created.status,200);

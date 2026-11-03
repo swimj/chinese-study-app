@@ -141,62 +141,79 @@ fallback handling.
 ### Coherent exercise-local planning
 
 `single-improvement.md` is standalone and includes neither `reasoning.md` nor
-`improvement.md`. It trusts selected coverage, assesses faithful production of the
-exact target, interprets actual responses and substantive reactions, and owns one
-coherent plan. The original cue's disposition leads that plan. Its output contains:
+`improvement.md`. It assesses the encounter, develops practice within the
+originating meaning or circumstance, and lets that content determine what
+happens to the source. Its output is an editorial recommendation:
 
-- `diagnosis` and original-source `operations`, preserving source accepted answers;
-- `responseExercises`, create-only exercises for supplied uniquely resolved actual
-  raw response identities, with exact `wordId`, `prompt`, and `rationale`;
-- nullable `pureCueReferral`, containing candidate forms, shared purpose, rationale,
-  and complete `draft` with prompt, semantic axis, and reveal teaching note.
+| Field | Meaning |
+| --- | --- |
+| `summary` | Brief operator diagnosis and recommendation |
+| `source` | `keep`, `revise`, or `retire`, with a prompt only for revision |
+| `sharedExercise` | Nullable complete shared cue, supplied answer references, reveal teaching note, and rationale |
+| `additionalExercises` | Target or response-word additions, each with answer reference, prompt, rationale, and `refinement` or `enrichment` role |
 
-Response drafts do not inspect or reconcile the response word's repertoire and
-receive no invented sense mapping; later assessment can establish one. Raw
-unresolved responses remain useful evidence without authorizing an invented ID.
-Original retirement can coexist with response-word creations and a shared draft,
-but not another create/update/replace operation for the same source.
+`exercise-improvement-authoring.ts` projects only the source, intended-use
+description, historical encounters, and supplied words. Call-local references
+such as `target` and `response_1` identify answers without asking the model to
+repeat dictionary IDs or source accepted forms. Raw unresolved responses remain
+available for shared-practice judgment and subsequent operator identity review;
+individual additions require a uniquely resolved supplied word.
 
-This stage determines whether shared practice is useful and authors it completely.
-Local refinements should add actual useful construction or meaning rather than
-cosmetic target exclusivity against the compared response. It does not demand
-absolute uniqueness. An optional clarifier is labeled optional in its rationale;
-operator edits and selection of parts remain deliberate, without enforced
-component dependencies.
+The adapter maps `revise` to `update_existing`, preserving source identity,
+answer criteria, and existing learner controls. Retirement can coexist with
+additional target or response-word exercises and a shared cue. The application
+supplies operation keys, source versions, and answer forms. Internal proposals
+retain the established operations format and optional `learningRole` metadata;
+existing saved proposals remain readable without that metadata. Source repairs
+and target refinements retain the originating sense mapping. Optional target
+enrichment and response-word additions receive no invented sense association;
+later assessment can establish one.
 
-Single improvement uses prompt version 5, schema version 4, and projection
-`vocabulary-admission.v4`. Mapping uses prompt version 4, schema version 1,
-and the same projection. Exact source, catalog, mapping, and lexical checks
-fence publication and approval. Stage identities retain actual projected input,
-schema, and contract. Short wire references translate back to canonical IDs;
-unknown references fail validation before persistence.
+Word-specific refinements must make a distinctive construction or meaning
+available through the cue. Optional enrichment comes from examples surfaced
+while assessing the source, or from an explicit learner request; it is not a
+separate exercise search. Enrichment has the same naturalness and answer-fairness
+standard as source repairs. The operator summary defaults to a few short
+sentences, while individual rationales explain each item's contribution.
+Integration rationale remains separately recorded rather than being appended
+to that summary. Operator edits and selection of parts remain deliberate,
+without enforced component dependencies.
 
-The single-improvement brief preserves the earlier purpose, linguistic reasoning,
-reaction distinctions, content-design guidance, and positive controls. Its examples
-include correct-answer readability, useful requested construction practice, selected
-uncommon referents, and genuine syntactic building blocks. The 违反/违法 and
-遭到/遭受 examples carry the legacy promotion prompt's important distinction
-between overlapping glosses and worthwhile natural production patterns into the
-stage that owns that decision. Shared cases and local-only cases illustrate
-judgment rather than lexical bans or compulsory cue formats. See the
-[prompt development guide](../../../docs/prompt-development.md).
+Single improvement uses prompt version 6, schema version 5, and projection
+`vocabulary-exercise-authoring.v1`. Mapping uses prompt version 4, schema version 1,
+and projection `vocabulary-admission.v4`. Exact source, catalog, mapping, and
+lexical checks fence publication and approval. Stage identities retain actual
+projected input, schema, and contract; unknown supplied references fail validation.
+
+The brief incorporates the reviewed prose draft from PR #442. It preserves
+cue-first diagnosis, learner feedback as evidence, selected uncommon coverage,
+actual lexical contribution, construction and rhythm, and reveal-time teaching.
+The 违反/违法 and 遭到/遭受 examples retain the distinction between overlapping
+glosses and worthwhile natural production patterns. Examples show no-change,
+repair without shared practice, shared practice with a distinctive refinement,
+and optional enrichment. The former repeated decision/checklist material and
+additional illustrative examples are consolidated into that reviewed sequence;
+storage instructions are replaced by three complete editorial-output examples.
+See the [prompt development guide](../../../docs/prompt-development.md).
 
 ### Shared-cue integration
 
 `pure-cue-integration.md` receives `localAssessment`, `localPlan`, `referral`,
 resolved `candidates`, and eligible `existingCues`. Lookup includes active general
 production pure cues overlapping candidates within source scope and owner.
-Its output has only `decision`, `existingContentId`, `teachingNote`, and `rationale`.
+Its output has `decision`, `existingContentId`, `semanticAxis`, `teachingNote`, and `rationale`.
 
-| Decision | Existing ID | Note output | Backend result |
-| --- | --- | --- | --- |
-| `reuse` | Supplied compatible cue already accepting every candidate | null | Record assessment; no shared edit |
-| `extend` | Supplied compatible cue missing a candidate | Integrated full note | Preserve stimulus, axis, forms, and all members; add every candidate |
-| `create` | null | null | Use exact upstream draft and every candidate |
+| Decision | Existing ID | Axis output | Note output | Backend result |
+| --- | --- | --- | --- | --- |
+| `reuse` | Supplied compatible cue already accepting every candidate | null | null | Record assessment; no shared edit |
+| `extend` | Supplied compatible cue missing a candidate | null | Integrated full note | Preserve stimulus, axis, forms, and all members; add every candidate |
+| `create` | null | Derived from the authored shared task | null | Preserve the upstream prompt and teaching note; include every candidate |
 
-Integration uses prompt version 1, schema version 3, and projection
-`vocabulary-admission.v4`. It chooses a destination without a second pedagogical
-veto. An incompatible existing cue leads to creation, not rejection of the plan.
+Integration uses prompt version 2, schema version 4, and projection
+`vocabulary-integration.v2`. It chooses a destination without a second pedagogical
+veto. Creation derives the semantic axis from the authored cue, answers, note,
+and rationale; it does not broaden or redesign that task. An incompatible
+existing cue leads to creation, not rejection of the plan.
 Extension notes preserve accumulated teaching and cover the complete resulting
 membership, mostly in English with Chinese examples where useful. The prompt
 retains natural-production guidance and requires actual grammatical, collocational,
@@ -206,7 +223,9 @@ Unresolved shared identities withhold the complete proposal as `pendingPlan`.
 Operator identity selection records a separate immutable resolution and resumes
 the saved local plan plus integration into one proposal. It does not repeat
 mapping or local planning, and does not apply content. Source, catalog, selected
-lexical identities, and inspected shared-cue versions fence resumed work.
+lexical identities, and inspected shared-cue versions fence resumed work. Historical
+pending plans may already contain an authored axis; they remain resumable. No
+database migration or rewriting of saved proposals is required.
 
 ### Legacy referral resolution
 
@@ -246,7 +265,8 @@ responses, and reactions as distinct evidence; it makes fresh applicable mapping
 and assessment calls rather than reusing the parent's assessment.
 
 The caller separates invocation scope from serving policy. A mapped single sense
-is always the scope of local improvement. Repertoire calls receive a captured
+is the scope of source repair and target refinement. Optional enrichment is
+identified separately and is not automatically assigned that source sense. Repertoire calls receive a captured
 review/default sense list, retained in backend mapping evidence and admission as
 `generationScope`. Mutable serving versions do not enter provider inputs or
 content cache/approval fences. An explicit empty invocation returns no proposal
@@ -260,13 +280,17 @@ single/general cases; use `--cases` for up to eight named cases, including 泞 a
 the separate worked-example smoke cases. 他, 有所 and 笏 are demonstrated in the
 briefs and provide contract smoke evidence, not unseen lexical judgments.
 
-`--baseline-revision` reads the retained v4/v5 general brief and matching
-single-retirement schema from Git. Requests, rendered messages, schemas, hashes,
+`--baseline-revision` reads the retained general or single-improvement brief from
+Git and selects its historical contract. The pre-authoring baseline `11387643`
+uses the frozen single-improvement v4 schema and original input fields; current
+single cases project the same source, sense, lexical snapshots, and encounters
+into the supplied-reference authoring contract. Requests, rendered messages, schemas, hashes,
 model settings, raw responses and validation are saved in a new archive. General
 outputs use the rendered reference schema plus shared exercise/stimulus guards,
 so historical nullable references retain their original contract rather than
 receiving current binding policy. Single outputs receive partial standalone
-identity/answer/prompt/retirement checks rather than the database-backed normalizer.
+source-decision, supplied-answer, prompt, and completeness checks rather than the
+database-backed normalizer; historical variants retain their operation checks.
 Mapping gets schema checks only. Source/version, ownership, referential semantics
 and application fences require database-backed behavior tests.
 
@@ -337,9 +361,10 @@ provider's `ensureSenses` dependency. Injecting a reflection adapter alone does
 not replace the independent sense-generation provider. Keep mapper judgments,
 inventory quality, and deterministic inability-to-proceed checks separate.
 
-### Coherent-plan comparison evidence (2026-11-02)
+### Historical coherent-plan comparison evidence (2026-11-02)
 
-The coherent-plan change compared eight synthetic single-exercise cases with
+This evidence predates the editorial output contract above. The coherent-plan
+change compared eight synthetic single-exercise cases with
 Sol high: 原因/缘故, 有关/关于, 稠密/密集, 声调/拼音, 框/筐, 违反/违法,
 遭到/遭受, and correct-answer 犹豫 readability feedback. The harness freezes
 baseline schema/input separately: baseline `407ba42b` excludes `responseExercises`,
@@ -372,4 +397,37 @@ live candidate used `a5ff5b00`; subsequent editorial tightening labels the 中�
 excursion optional and makes retirement of redundant single-answer sources
 explicit in the 提醒 example. Those two edits were reviewed but not rerun live.
 The fixture IDs begin `comparison-`; pass up to eight with the trial script's
-`--cases` option. No trial applied proposals or mutated hosted content.
+`--cases` option. No trial applied proposals or mutated hosted content. This
+historical run does not establish behavior of the current authoring contract.
+
+### Editorial-contract comparison evidence (2026-11-03)
+
+Eight paired synthetic single-stage cases compare baseline `11387643` with the
+working authoring contract using the same registered Sol high settings. Baseline
+requests retain the v4 operation schema and input; candidate requests project
+those fixtures into supplied word references and the v5 editorial schema. All
+16 successful outputs passed strict schema and the standalone content guards.
+Initial sandbox transport failures are retained separately from the successful
+network-enabled runs.
+
+Both variants kept the fair frame/basket control, repaired the missing pitch
+focus, preserved shared notice practice with a distinct 有关 predicate, and
+shared population practice with optional 密集 scheduling enrichment. The candidate
+repaired 犹豫 readability with a compact direct definition. Its operator summaries
+averaged 36.6 whitespace-separated words, versus 64.0 in the baseline diagnoses;
+this measures this small sample's presentation length, not judgment quality.
+
+For 遭到/遭受, baseline retained exclusive 遭到 criticism practice on collocational
+preference and added a loss example. Candidate shared the original criticism cue,
+qualified the usage tendency in its teaching note, and added no enrichment.
+That result avoids using preference alone to exclude the response. The relative
+naturalness and value of repeated shared practice remain operator judgments.
+These fixtures closely resemble prompt examples and establish bounded contract
+and behavioral evidence, not held-out reliability. Shared-cue integration and
+proposal application were not part of these provider calls.
+
+Exact requests, wire schemas, responses, settings, hashes, and editorial findings
+are retained under `/private/tmp/exercise-authoring-20261103`, including
+`comparison-review.json` and `comparison-manifest.json`. The `baseline` directory
+contains transport failures; `baseline-network` and `candidate` contain the
+successful paired calls. No proposals were applied or hosted content changed.

@@ -221,21 +221,48 @@ test('integration reuse requires all proposed identities and validates the autho
   assert.throws(()=>prepared.normalize({decision:'reuse',rationale:'Reuse.',existingContentId:'cue',teachingNote:null}),/reuse cannot/);
   assert.throws(()=>prepareVocabularyPureCueIntegration(job(),original,{...authoredPlan,draft:{...authoredPlan.draft,prompt:'Use 放大 or 扩大.'}}),/exposes/);
 });
+test('integration derives an axis for a new authored exercise while preserving its prompt and teaching note',async()=>{
+  const {prepareVocabularyPureCueIntegration,vocabularyPureCueIntegrationSchema}=await import('../server/vocabulary/pure-cue-promotion.ts');
+  const {validateJsonSchema}=await import('../server/llm/json-schema-validator.ts');
+  const plan={...referral,draft:{prompt:authoredPlan.draft.prompt,teachingNote:authoredPlan.draft.teachingNote}};
+  const prepared=prepareVocabularyPureCueIntegration(job(),original,plan);
+  const reply={decision:'create',rationale:'No compatible destination.',existingContentId:null,teachingNote:null,semanticAxis:'Making the size or extent larger.'};
+  assert.deepEqual(validateJsonSchema(reply,vocabularyPureCueIntegrationSchema),[]);
+  const result=prepared.normalize(reply);
+  const body=result.operations[0]!.content.body as {prompt:string;reveal:{axisNote:string;teachingNote:string}};
+  assert.equal(body.prompt,plan.draft.prompt);
+  assert.deepEqual(body.reveal,{axisNote:reply.semanticAxis,teachingNote:plan.draft.teachingNote});
+  for(const semanticAxis of [undefined,null,'','   '])assert.throws(()=>prepared.normalize({...reply,semanticAxis}),/requires stimulus and semantic axis/);
+});
+test('integration preserves existing axes and applies privacy checks to newly derived axes',async()=>{
+  const {prepareVocabularyPureCueIntegration}=await import('../server/vocabulary/pure-cue-promotion.ts');
+  const input=job();
+  input.evidence.evidence[0]!.feedback=[{protocolVersion:1,actionId:'reaction',clientActionId:'reaction',sequence:1,
+    occurredAt:at,kind:'feedback',payload:{encounterId:'encounter',feedback:'comment',comment:'My private learner experience'}}];
+  cue();
+  const plan={...referral,draft:{prompt:authoredPlan.draft.prompt,teachingNote:authoredPlan.draft.teachingNote}};
+  const prepared=prepareVocabularyPureCueIntegration(input,original,plan);
+  assert.throws(()=>prepared.normalize({decision:'create',rationale:'Create.',existingContentId:null,teachingNote:null,semanticAxis:'My private learner experience'}),/copies private learner evidence/);
+  for(const decision of ['reuse','extend'])assert.throws(()=>prepared.normalize({decision,rationale:'Compatible.',existingContentId:'cue',teachingNote:decision==='extend'?'Integrated teaching.':null,semanticAxis:'A replacement axis'}),/preserve the existing semantic axis/);
+  const extended=prepared.normalize({decision:'extend',rationale:'Compatible.',existingContentId:'cue',teachingNote:'Integrated teaching.',semanticAxis:null});
+  assert.equal((extended.operations[0]!.content.body as {reveal:{axisNote:string}}).reveal.axisNote,'Size or extent');
+});
 test('response refinements use only uniquely resolved submitted identities and never inherit source teaching or sense',async()=>{
-  const {normalizeVocabularyReflectionOutput,vocabularySingleImprovementSchema}=await import('../server/vocabulary/reflection-provider.ts');
+  const {normalizeVocabularySingleImprovementOutput,vocabularySingleImprovementSchema}=await import('../server/vocabulary/reflection-provider.ts');
   const {validateJsonSchema}=await import('../server/llm/json-schema-validator.ts');
   const input=job();
   input.evidence.evidence[0]!.responses=[{protocolVersion:1,actionId:'answer',clientActionId:'answer',sequence:1,occurredAt:at,kind:'response',payload:{encounterId:'encounter',response:'扩大',outcome:'rejected'}}];
-  const output={diagnosis:'Shared size task plus optional wider scope example.',operations:[],responseExercises:[{wordId:'other',prompt:'Broaden the scope of the investigation.',rationale:'Optional clarifying case.'}],pureCueReferral:null};
+  const output={summary:'Shared size task plus optional wider scope example.',source:{decision:'keep',prompt:null},
+    additionalExercises:[{answer:'response_1',role:'enrichment',prompt:'Broaden the scope of the investigation.',rationale:'Optional clarifying case.'}],sharedExercise:null};
   assert.deepEqual(validateJsonSchema(output,vocabularySingleImprovementSchema),[]);
-  const result=normalizeVocabularyReflectionOutput(input,output,null,true);
+  const result=normalizeVocabularySingleImprovementOutput(input,output);
   if(result.kind!=='exercise_improvement')assert.fail();
   const content=result.result.proposal!.operations[0]!.content;
   if(content.kind!=='exercise')assert.fail();
   assert.deepEqual(content.words,[{wordId:'other',relation:'target'}]);
   assert.deepEqual(content.answers,[{wordId:'other',acceptedForms:['扩大','擴大']}]);
   assert.equal((content.body as {reveal?:unknown}).reveal,undefined);
-  assert.throws(()=>normalizeVocabularyReflectionOutput(input,{...output,responseExercises:[{...output.responseExercises[0],wordId:'outside'}]},null,true),/supplied unambiguous/);
+  assert.throws(()=>normalizeVocabularySingleImprovementOutput(input,{...output,additionalExercises:[{...output.additionalExercises[0],answer:'outside'}]}),/Unknown supplied word reference/);
   db.exec("INSERT INTO lexical_words VALUES ('homograph','扩大',NULL,'other','other sense')");
-  assert.throws(()=>normalizeVocabularyReflectionOutput(input,output,null,true),/supplied unambiguous/);
+  assert.throws(()=>normalizeVocabularySingleImprovementOutput(input,output),/supplied unambiguous word/);
 });
