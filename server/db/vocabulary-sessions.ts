@@ -9,7 +9,7 @@ import { advanceVocabularySession, projectVocabularySession, isCleanSolidifySess
 import type { VocabularyPersistedSession, VocabularySessionCompletion } from '../../src/domain/vocabulary-session-api.ts';
 export type { VocabularyPersistedSession, VocabularySessionCompletion } from '../../src/domain/vocabulary-session-api.ts';
 import { getDb } from './connection.ts';
-import { nextReviewSchedule } from './review-policy.ts';
+import { nextReviewSchedule, reviewElapsedHours, latestReviewTimestamp, type ReviewTiming } from './review-policy.ts';
 import { REVIEW_PHASE_RECENCY_GUARD_HOURS } from './types.ts';
 import { requestWordReserveReconciliation } from './word-reserve.ts';
 import { createVocabularyPracticePreparation } from '../vocabulary/preparation.ts';
@@ -320,8 +320,8 @@ function effect(completionId: string, sessionId: string, key: string, kind: stri
 }
 function hoursAfter(now: string, hours: number): string { return new Date(Date.parse(now) + hours * 3_600_000).toISOString(); }
 function nextUtcDay(now: string): string { return new Date(Date.parse(`${now.slice(0, 10)}T00:00:00.000Z`) + 86_400_000).toISOString(); }
-function nextScheduler(before: VocabularySchedulerState, clean: boolean, rejectedCount: number, mode: string, cleanSolidify: boolean): VocabularySchedulerState {
-  const scheduled = nextReviewSchedule(before, { failureCount: rejectedCount, successful: mode !== 'solidify' && clean });
+function nextScheduler(before: VocabularySchedulerState, clean: boolean, rejectedCount: number, mode: string, cleanSolidify: boolean, elapsedHours?: number): VocabularySchedulerState {
+  const scheduled = nextReviewSchedule(before, { failureCount: rejectedCount, successful: mode !== 'solidify' && clean, elapsedHours });
   const intervalHours = mode === 'solidify' ? 24 : scheduled.intervalHours;
   const easeFactor = scheduled.easeFactor;
   return { ...before, intervalHours, easeFactor, cleanCoveredSessions: cleanSolidify ? (before.cleanCoveredSessions ?? 0) + 1 : 0 };
@@ -336,6 +336,13 @@ function applyReviewRecencyGuard(wordId: string, now: string): { before: { earli
     VALUES (?,?,'review',?) ON CONFLICT(learner_id,word_id) DO UPDATE SET
       study_phase=excluded.study_phase,earliest_next_study_at=excluded.earliest_next_study_at`).run(learnerId, wordId, next);
   return { before: before ? { ...before } : null, after: { earliestNextStudyAt: next } };
+}
+
+function reviewTiming(responses: Extract<VocabularySessionAction, { kind: 'response' }>[], reviewMode: boolean): ReviewTiming {
+  if (!responses.length) throw new Error('Review timing requires a response');
+  const ordered = [...responses].sort((a, b) => a.sequence - b.sequence);
+  return { firstReviewedAt: ordered[0].occurredAt, lastReviewedAt: ordered[ordered.length - 1].occurredAt,
+    creditElapsed: reviewMode && !responses.some(response => response.payload.helpUsed) };
 }
 
 function applyLearningEffects(completionId: string, context: StoredContext, projection: VocabularySessionProjection, now: string): void {
@@ -363,6 +370,8 @@ function applyLearningEffects(completionId: string, context: StoredContext, proj
     const rejectedProductionCount = production.filter((response) => response.payload.outcome === 'rejected').length;
     const clean = production.length > 0 && rejectedProductionCount === 0;
     const lapse = rejectedProductionCount > 0;
+    const reviewMode = word.initialMode === 'practice' || word.initialMode === 'maintain';
+    const productionTiming = production.length ? reviewTiming(production, reviewMode) : null;
     // Older retained sessions can contain several skills. Only actual general production
     // work updates review intervals; selecting another skill never supplies that evidence.
     const productionCompleted = word.covered && production.length > 0 && (selectedSkill === undefined || selectedSkill === 'production');
@@ -371,20 +380,21 @@ function applyLearningEffects(completionId: string, context: StoredContext, proj
     const solidifyCovered = word.covered && word.initialMode === 'solidify'
       && (selectedSkill === undefined || selectedSkill === 'production');
     if (productionCompleted || solidifyCovered || word.teachingCompleted) {
-      const scheduler = nextScheduler(schedule.schedulerState, clean, rejectedProductionCount, mode, isCleanSolidifySession(word));
+      const scheduler = nextScheduler(schedule.schedulerState, clean, rejectedProductionCount, mode, isCleanSolidifySession(word),
+        productionTiming ? reviewElapsedHours(schedule.lastPractisedAt, productionTiming) : undefined);
       const refresh = mode === 'maintain' && lapse;
       const next = mode === 'solidify' || word.teachingCompleted ? nextUtcDay(now)
         : refresh ? now : clean || lapse ? hoursAfter(now, scheduler.intervalHours) : schedule.nextEligibleAt;
       getDb().prepare(`UPDATE learner_word_schedules SET next_eligible_at = ?,last_practised_at = ?,policy_version = ?,scheduler_state_json = ?,
         state_version = state_version + 1,refresh_requested_at = ?,refresh_until = ? WHERE learner_id = ? AND word_id = ?`)
-        .run(next, now, VOCABULARY_SESSION_POLICY.version, JSON.stringify(scheduler), refresh ? now : schedule.refreshRequestedAt,
+        .run(next, latestReviewTimestamp(schedule.lastPractisedAt, productionTiming?.lastReviewedAt ?? now), VOCABULARY_SESSION_POLICY.version, JSON.stringify(scheduler), refresh ? now : schedule.refreshRequestedAt,
           refresh ? hoursAfter(now, 72) : schedule.refreshUntil, learnerId, word.wordId);
       effect(completionId, context.sessionId, `production/${word.wordId}`, 'production_schedule_applied', schedule, getVocabularyWordSchedule(word.wordId), now, word.wordId);
     }
     const recognition = encounters.filter((entry) => entry.snapshot.kind === 'recognition').flatMap((entry) => entry.effectiveResponses);
     if (recognition.length && (word.covered || selectedSkill === undefined)) {
       const rejected = recognition.filter((response) => response.payload.outcome === 'rejected').length;
-      const applied = applyVocabularyRecognition(word.wordId, rejected, now);
+      const applied = applyVocabularyRecognition(word.wordId, rejected, now, reviewTiming(recognition, reviewMode));
       effect(completionId, context.sessionId, `recognition/${word.wordId}`, 'recognition_outcome', applied.before,
         { schedule: applied.after, responseActionIds: recognition.map((response) => response.actionId),
           accepted: recognition.length - rejected, rejected }, now, word.wordId);
@@ -392,7 +402,7 @@ function applyLearningEffects(completionId: string, context: StoredContext, proj
     const contextual = encounters.filter((entry) => entry.snapshot.kind === 'contrast').flatMap((entry) => entry.effectiveResponses);
     if (contextual.length && (word.covered || selectedSkill === undefined)) {
       const rejected = contextual.filter((response) => response.payload.outcome === 'rejected').length;
-      const applied = applyVocabularyContextualSelection(word.wordId, rejected, now);
+      const applied = applyVocabularyContextualSelection(word.wordId, rejected, now, reviewTiming(contextual, reviewMode));
       effect(completionId, context.sessionId, `contextual/${word.wordId}`, 'contextual_selection_outcome', applied.before,
         { schedule: applied.after, responseActionIds: contextual.map((response) => response.actionId), accepted: contextual.length - rejected, rejected }, now, word.wordId);
     }

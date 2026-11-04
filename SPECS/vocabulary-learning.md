@@ -145,6 +145,13 @@ select the most urgent eligible skill for each word; completing that work applie
 a six-hour shared recency guard. Independent pure cues share the review portion
 of the mix and interleave with ordinary word exercises.
 
+Clean, unassisted Practice/Maintain recall earns spacing credit for retention
+beyond the previous scheduled interval. The next interval multiplies the previous
+interval plus half of the additional elapsed time by the existing ease factor.
+Credit belongs only to the exercised word skill. Early reviews and missing study
+history receive ordinary interval growth; mistakes retain the lapse policy.
+Solidify and independent pure-cue scheduling retain their own policies.
+
 ### Teaching and answer reveal
 
 Introductions preserve the progressive teaching walkthrough, back-navigation,

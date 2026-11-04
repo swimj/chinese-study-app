@@ -221,6 +221,22 @@ also applies the shared six-hour word recency guard, preventing another due skil
 from immediately bringing that word back. Production lapses shorten its interval
 to six hours; Maintain retains its temporary-refresh policy.
 
+Clean Practice/Maintain word-skill recall uses
+`(interval + max(0, elapsed - interval) / 2) × ease`, rounded up to hours before
+the existing ±1-hour jitter. A four-day interval recalled after twelve days at
+2.5 ease therefore earns about twenty days. Elapsed time runs from that skill's
+stored last-study timestamp to its first effective response in the session;
+help-used responses earn no extra elapsed credit. Failures still reset to six
+hours, and no-response coverage grants no recall credit. The policy applies to
+production, recognition and contextual selection, including Maintain review,
+but not Solidify or independent pure cues.
+
+Word-skill last-study timestamps record the latest effective response, preserving
+a newer stored timestamp when an older session closes. Older history may still
+contain finalization timestamps; it remains usable conservatively without a
+backfill. Due dates and the shared recency guard remain anchored to finalization,
+while delayed finalization/retries cannot increase the elapsed retention credit.
+
 ### Preview and admission
 
 Home previews the same final admission plan as Start, counting each selected word
