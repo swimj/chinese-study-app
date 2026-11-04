@@ -342,6 +342,10 @@ exercise collections.
 
 ### Operator review
 
+Operator mode does not initiate learner dashboard, attention, or session-recovery
+work. Returning to learner navigation resumes those reads. An existing study
+session and its pending completion remain intact across operator navigation.
+
 The operator's default surface is a cross-learner proposal inbox for scanning
 suggestions and approving changes. Each entry leads with the served content
 retained from the learner's encounters: the cue and accepted answers, in

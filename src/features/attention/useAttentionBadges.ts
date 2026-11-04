@@ -7,15 +7,16 @@ import {
 } from '../../services/api';
 import { useWhatsNewAttention } from './useWhatsNewAttention';
 
-export function useAttentionBadges() {
+export function useAttentionBadges(enabled = true) {
   const [reflectionGenerating, setReflectionGenerating] = useState(false);
   const [reflectionUnseenCount, setReflectionUnseenCount] = useState(0);
   const [failedReflectionRunIds, setFailedReflectionRunIds] = useState<string[]>([]);
-  const updates = useWhatsNewAttention();
+  const updates = useWhatsNewAttention(enabled);
   const refreshUpdates = updates.refresh;
 
   const refreshGeneration = useRef(0);
   const refresh = useCallback(async () => {
+    if (!enabled) return;
     const generation = ++refreshGeneration.current;
     const attention = await fetchAttentionBadges();
     if (generation !== refreshGeneration.current) return;
@@ -25,7 +26,7 @@ export function useAttentionBadges() {
       throw new Error('Attention badges response is missing failedReflectionRunIds.');
     }
     setFailedReflectionRunIds(attention.failedReflectionRunIds);
-  }, []);
+  }, [enabled]);
   const refreshAll = useCallback(async () => {
     // Either attention source can still refresh if the other one is unavailable.
     const results = await Promise.allSettled([refresh(), refreshUpdates()]);
@@ -44,6 +45,7 @@ export function useAttentionBadges() {
   }, []);
 
   useEffect(() => {
+    if (!enabled) return;
     void refreshAll().catch(() => undefined);
     function onVisibility() {
       if (document.visibilityState === 'visible') {
@@ -58,11 +60,12 @@ export function useAttentionBadges() {
       if (document.visibilityState === 'visible') void refresh().catch(() => undefined);
     }, 5000);
     return () => {
+      refreshGeneration.current++;
       document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('focus', onFocus);
       window.clearInterval(poll);
     };
-  }, [refreshAll]);
+  }, [enabled, refreshAll]);
 
   return {
     reflectionUnseenCount,

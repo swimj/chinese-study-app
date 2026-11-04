@@ -4,13 +4,13 @@ import { WHATS_NEW_BADGE_WINDOW_MS } from '../../domain/whats-new-attention';
 import { fetchWhatsNewAttention, updateWhatsNewAttention } from '../../services/api';
 import { activeUnexposedWhatsNewPostIds, activeWhatsNewPostIds } from './whats-new-attention';
 
-export function useWhatsNewAttention() {
+export function useWhatsNewAttention(enabled = true) {
   const [snapshot, setSnapshot] = useState<{ attention: WhatsNewAttention; receivedAt: number } | null>(null);
   const [clock, setClock] = useState(Date.now);
   // Serialize reads and writes so an older response cannot restore cleared badges.
   const queue = useRef<Promise<unknown>>(Promise.resolve());
-  const active = useRef(true);
-  useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
+  const active = useRef(enabled);
+  useEffect(() => { active.current = enabled; return () => { active.current = false; }; }, [enabled]);
   const run = useCallback((request: () => Promise<WhatsNewAttention>): Promise<void> => {
     const result = queue.current.catch(() => undefined).then(async () => {
       if (!active.current) return;

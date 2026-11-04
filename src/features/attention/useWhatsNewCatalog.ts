@@ -2,12 +2,13 @@ import { useCallback, useEffect, useState } from 'react';
 import type { WhatsNewPost } from '../../domain/whats-new';
 import { fetchWhatsNew } from '../../services/api';
 
-export function useWhatsNewCatalog() {
+export function useWhatsNewCatalog(enabled = true) {
   const [posts, setPosts] = useState<WhatsNewPost[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const retry = useCallback(() => setAttempt(value => value + 1), []);
   useEffect(() => {
+    if (!enabled) return;
     let active = true;
     let generation = 0;
     async function load() {
@@ -21,7 +22,7 @@ export function useWhatsNewCatalog() {
     }
     void load();
     return () => { active = false; };
-  }, [attempt]);
+  }, [enabled, attempt]);
   return { posts, error, retry };
 }
 

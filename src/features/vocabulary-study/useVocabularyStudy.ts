@@ -49,8 +49,10 @@ export function assessVocabularyResponse(acceptedAnswers: readonly string[], res
   return normalized.length > 0 && acceptedAnswers.some((answer) => normalizeProductionAnswerForProfile(answer, 'mandarin') === normalized) ? 'accepted' : 'rejected';
 }
 type RecognitionDeparture = (study: VocabularyStudy, advance: () => Promise<void>) => Promise<void>;
-export type VocabularyStudyOptions = { onSessionEnded?: () => void | Promise<void>; onActiveChange?: (active: boolean) => void };
+/** Disabling learner reads preserves existing commands and pending completion deadlines. */
+export type VocabularyStudyOptions = { enabled?: boolean; onSessionEnded?: () => void | Promise<void>; onActiveChange?: (active: boolean) => void };
 export function useVocabularyStudy(options: VocabularyStudyOptions = {}) {
+  const enabled = options.enabled ?? true;
   const latestOptions = useRef(options); latestOptions.current = options;
   const [study, setStudy] = useState<VocabularyStudy | null>(null);
   const studyRef = useRef<VocabularyStudy | null>(null);
@@ -309,18 +311,23 @@ export function useVocabularyStudy(options: VocabularyStudyOptions = {}) {
 
   useEffect(() => {
     mounted.current = true;
-    void fetchCurrentVocabularyCompletion().then((pending) => { if (mounted.current && pending && !studyRef.current) receive(pending); })
-      .catch((reason) => { if (mounted.current) setError(message(reason)); });
     return () => { mounted.current = false; };
   }, []);
+  useEffect(() => {
+    if (!enabled || studyRef.current) return;
+    let current = true;
+    void fetchCurrentVocabularyCompletion().then((pending) => { if (current && mounted.current && pending && !studyRef.current) receive(pending); })
+      .catch((reason) => { if (current && mounted.current) setError(message(reason)); });
+    return () => { current = false; };
+  }, [enabled]);
   useEffect(()=>{
-    if(completion?.status!=='closed')return;
+    if(!enabled||completion?.status!=='closed')return;
     let current=true;const epoch=summaryModeEpoch.current;const completionId=completion.completionId;
     void fetchVocabularyWords().then(({words})=>{
       if(current&&mounted.current&&summaryModeEpoch.current===epoch&&completionRef.current?.completionId===completionId)setSummaryModes(Object.fromEntries(words.map((word)=>[word.wordId,word.mode])));
     }).catch(()=>undefined);
     return ()=>{current=false;};
-  },[completion?.completionId,completion?.status]);
+  },[enabled,completion?.completionId,completion?.status]);
   useEffect(() => {
     if (completion?.status !== 'closed' || busy || error || keepSummaryOpenRef.current) return;
     reset();
@@ -332,6 +339,7 @@ export function useVocabularyStudy(options: VocabularyStudyOptions = {}) {
     }
   }, [study, completion]);
   useEffect(() => {
+    if (!enabled && !studyRef.current && !completionRef.current) return;
     const timer = window.setInterval(() => {
       setClock(Date.now());
       const current = completionRef.current;
@@ -342,7 +350,7 @@ export function useVocabularyStudy(options: VocabularyStudyOptions = {}) {
       }
     }, 500);
     const reconcile = () => {
-      if (document.visibilityState !== 'visible' || !completionRef.current || operation.current) return;
+      if (latestOptions.current.enabled === false || document.visibilityState !== 'visible' || !completionRef.current || operation.current) return;
       const id = completionRef.current.sessionId;
       void fetchVocabularyCompletion(id).then((value) => { if (mounted.current && completionRef.current?.sessionId === id && value) receiveCompletion(value); }).catch(() => undefined);
     };
@@ -353,7 +361,7 @@ export function useVocabularyStudy(options: VocabularyStudyOptions = {}) {
     };
     document.addEventListener('visibilitychange', visibility);window.addEventListener('focus',visibility);window.addEventListener('blur',visibility);
     return () => { window.clearInterval(timer); document.removeEventListener('visibilitychange', visibility);window.removeEventListener('focus',visibility);window.removeEventListener('blur',visibility); };
-  }, []);
+  }, [enabled]);
   const active = study !== null;
   useEffect(() => { latestOptions.current.onActiveChange?.(active); }, [active]);
   const encounter = study?.currentEncounter;

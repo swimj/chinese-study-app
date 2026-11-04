@@ -65,12 +65,20 @@ function App({ onSignOut, accountScope = 'trusted-local' }: { onSignOut?: () => 
   const [wordsView, setWordsView] = useState<'stash' | 'my-words'>('stash');
   const [backendStatus, setBackendStatus] = useState<BackendStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const attention = useAttentionBadges();
-  const updatesCatalog = useWhatsNewCatalog();
+  const learnerMode = currentPage !== 'operator-usage';
+  const attention = useAttentionBadges(learnerMode);
+  const updatesCatalog = useWhatsNewCatalog(learnerMode);
   const [feedbackAttention,setFeedbackAttention]=useState({unseenCount:0,hasFailure:false,generating:false});
   async function refreshFeedbackAttention(){setFeedbackAttention(await fetchVocabularyAttention());}
-  useEffect(()=>{void refreshFeedbackAttention().catch(()=>undefined);const timer=window.setInterval(()=>{if(document.visibilityState==='visible')void refreshFeedbackAttention().catch(()=>undefined);},5000);return()=>window.clearInterval(timer);},[]);
-  const studySession = useVocabularyStudy({ onSessionEnded: reloadDashboard });
+  useEffect(() => {
+    if (!learnerMode) return;
+    void refreshFeedbackAttention().catch(() => undefined);
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void refreshFeedbackAttention().catch(() => undefined);
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [learnerMode]);
+  const studySession = useVocabularyStudy({ enabled: learnerMode, onSessionEnded: reloadDashboard });
   const priorityPage = usePriorityPageController({
     currentPage,
     setCurrentPage,
@@ -79,6 +87,7 @@ function App({ onSignOut, accountScope = 'trusted-local' }: { onSignOut?: () => 
   const contentPage = useContentDiagnosticsController({ currentPage, setCurrentPage, setError });
 
   useEffect(() => {
+    if (!learnerMode) return;
     async function loadData() {
       try {
         await reloadDashboard();
@@ -88,7 +97,7 @@ function App({ onSignOut, accountScope = 'trusted-local' }: { onSignOut?: () => 
     }
 
     loadData();
-  }, []);
+  }, [learnerMode]);
 
   useEffect(() => {
     if (currentPage === 'operator-usage') {
@@ -142,6 +151,7 @@ function App({ onSignOut, accountScope = 'trusted-local' }: { onSignOut?: () => 
   }, [guideToStash, currentPage, wordsView, stashVisitedKey]);
 
   async function reloadDashboard() {
+    if (!learnerMode) return;
     const statusResponse = await fetchStatus();
     setBackendStatus(statusResponse);
   }

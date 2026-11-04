@@ -11,6 +11,13 @@ the learner navigation. Access requires the signed-in Clerk user id, or the
 trusted-local learner identity, to be allowed by `APP_OPERATOR_CLERK_USER_IDS`.
 An empty allowlist denies access.
 
+In the Mandarin app, operator mode suspends learner status loading, attention
+polling, update-feed loading, and session recovery. Home readiness previews run
+only on Home. Returning to learner navigation resumes learner reads. An already
+started study session retains its state and pending completion deadline; entering
+operator mode does not cancel it. Requests already sent and other open learner
+tabs can still perform learner work.
+
 ## Views
 
 | View | What it supports | Related explanation |

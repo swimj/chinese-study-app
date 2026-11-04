@@ -73,6 +73,11 @@ wiring; full automated mounted-controller/fetch-race coverage is not implied.
 
 ## Browser regression checks
 
+`tests/browser/operator-learner-isolation.html` mounts the real Mandarin app
+with mocked transport and reports its checks on the page. It verifies both
+operator entry hashes, focus/visibility and polling isolation, Home re-entry,
+and late preview/recovery responses after returning to operator mode.
+
 
 ### Comparing a replacement UI with the earlier app
 
