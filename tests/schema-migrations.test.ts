@@ -469,3 +469,31 @@ test('default useful selection upgrade preserves prior coverage without interpre
     assert.deepEqual(db.prepare('SELECT * FROM vocabulary_sense_coverage_history').all(),before);assertSchemaCurrent(db);
   }finally{db.close();}
 });
+
+test('dispatch polling indexes preserve populated evidence and lifecycle fields across upgrade',()=>{
+  const {db}=copy('dispatch-polling-upgrade',true);
+  try {
+    const index=schemaMigrations.findIndex(item=>item.id==='app_schema:0065_vocabulary_dispatch_polling_indexes');
+    assert.ok(index>0);
+    migrateDatabase(db,schemaMigrations.slice(0,index));
+    const at='2026-11-04T04:05:23.470Z';
+    db.prepare('INSERT INTO learners VALUES(?,?,?,NULL)').run('dispatch-learner','Retained learner',at);
+    const evidence=JSON.stringify({context:{retained:'x'.repeat(512*1024)},actions:[],projection:{fixture:true}});
+    for(const status of ['queued','running','succeeded','failed']) {
+      db.prepare(`INSERT INTO vocabulary_sessions VALUES(?,'dispatch-learner',1,'{}',?,?,'closed')`).run(status,at,at);
+      db.prepare(`INSERT INTO vocabulary_session_completions VALUES(?,'dispatch-learner',?,1,0,?,?,'closed','{}','{}','fixture',?,NULL)`).run(status,status,at,at,at);
+      db.prepare(`INSERT INTO vocabulary_post_session_dispatches VALUES(?,'dispatch-learner',?,?,?,?,?,?,?,?,?)`)
+        .run(status,status,status,evidence,status,at,status==='running'?'retained-token':null,
+          status==='running'?'2026-11-04T04:06:23.470Z':null,status==='failed'?'retained-error':null,
+          status==='succeeded'?' {"caseIds": ["retained-case"]} ':null);
+    }
+    const tables=['learners','vocabulary_sessions','vocabulary_session_completions','vocabulary_post_session_dispatches'];
+    const before=tables.map(table=>db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all());
+    assert.deepEqual(migrateDatabase(db),schemaMigrations.slice(index).map(item=>item.id));
+    assert.deepEqual(migrateDatabase(db),[]);
+    tables.forEach((table,i)=>assert.deepEqual(db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all(),before[i]));
+    assert.throws(()=>db.exec("UPDATE vocabulary_post_session_dispatches SET evidence_json='{}' WHERE dispatch_id='succeeded'"),/immutable/);
+    assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
+    assertSchemaCurrent(db);
+  } finally {db.close();}
+});

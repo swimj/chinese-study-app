@@ -43,6 +43,7 @@ beforeEach(()=>{
   for(const name of ['0023_session_debrief.sql','0048_vocabulary_connections.sql','0049_vocabulary_sense_readiness.sql','0050_vocabulary_improvement_admission.sql','0051_vocabulary_pure_cue_promotion.sql'])sql.exec(fs.readFileSync(new URL(`../server/db/migrations/${name}`,import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0054_vocabulary_provider_retry_routing.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0061_vocabulary_sense_mapping_retries.sql',import.meta.url),'utf8'));
+  sql.exec(fs.readFileSync(new URL('../server/db/migrations/0065_vocabulary_dispatch_polling_indexes.sql',import.meta.url),'utf8'));
   sql.exec(`INSERT INTO learner_words(learner_id,word_id,in_stash,added_at,mode,mode_changed_at) VALUES ('alice','a',1,'2026-01-01','practice','2026-01-01');
     INSERT INTO learner_word_schedules(learner_id,word_id,next_eligible_at,policy_version,scheduler_state_json)
       VALUES ('alice','a','2026-10-20T10:00:00.000Z','test','{"intervalHours":24,"easeFactor":2.5,"enabled":1,"cleanCoveredSessions":0}');`);
@@ -128,6 +129,39 @@ test('authoring rejects malformed source decisions, invented refs and answer lea
 function worker(provider:{isConfigured():boolean;run(job:VocabularyReflectionJob):Promise<VocabularyReflectionResult>},controls=()=>({maintenanceMode:false,providerWorkEnabled:true})) {
   return createVocabularyProcessingWorker({provider,now:()=>clock,controls,providerWork:permitted});
 }
+
+test('idle dispatch polling uses active indexes with large retained evidence and preserves lease expiry',async()=>{
+  const evidence=JSON.stringify({retained:'x'.repeat(512*1024)});
+  const seed=(id:string,status:string,expiresAt:string|null=null)=>{
+    sql.prepare(`INSERT INTO vocabulary_sessions VALUES(?,'alice',1,'{}',?,?,'closed')`).run(id,at,at);
+    sql.prepare(`INSERT INTO vocabulary_session_completions VALUES(?,'alice',?,1,0,?,?,'closed','{}','{}','fixture',?,NULL)`).run(id,id,at,at,at);
+    sql.prepare(`INSERT INTO vocabulary_post_session_dispatches(dispatch_id,learner_id,session_id,completion_id,evidence_json,status,created_at,active_token,expires_at)
+      VALUES(?,'alice',?,?,?,?,?,?,?)`).run(id,id,id,evidence,status,at,status==='running'?`token-${id}`:null,expiresAt);
+  };
+  for(let i=0;i<16;i++)seed(`history-${i}`,i%2?'succeeded':'failed');
+  seed('expired','running',new Date(clock).toISOString());
+  seed('live','running',new Date(clock+60_000).toISOString());
+  const before=sql.prepare("SELECT * FROM vocabulary_post_session_dispatches WHERE status IN ('succeeded','failed') ORDER BY dispatch_id").all();
+  const statements=new Set<string>();
+  const prepare=sql.prepare.bind(sql);
+  sql.prepare=(query:string)=>{if(query.includes('vocabulary_post_session_dispatches'))statements.add(query);return prepare(query);};
+  const processing=worker({isConfigured:()=>false,run:async()=>{throw new Error('Unexpected provider call');}});
+  try {
+    assert.equal(await processing.step(),true);
+    assert.equal(await processing.step(),false);
+  } finally {await processing.stop();sql.prepare=prepare;}
+  assert.equal(statements.size,2,'Check the actual worker expiry UPDATE and queue SELECT');
+  for(const query of statements) {
+    const plan=prepare(`EXPLAIN QUERY PLAN ${query}`).all(...Array.from(query.matchAll(/\?/g),()=>new Date(clock).toISOString())) as {detail:string}[];
+    const expected=query.trimStart().startsWith('UPDATE')?'idx_vocabulary_dispatch_running_expiry':'idx_vocabulary_dispatch_queued';
+    assert.ok(plan.some(row=>row.detail.includes(expected)),JSON.stringify(plan));
+    assert.ok(!plan.some(row=>/SCAN (?:d|vocabulary_post_session_dispatches)$/.test(row.detail)),JSON.stringify(plan));
+  }
+  assert.deepEqual(prepare("SELECT * FROM vocabulary_post_session_dispatches WHERE dispatch_id LIKE 'history-%' ORDER BY dispatch_id").all(),before);
+  assert.deepEqual({...prepare("SELECT status,active_token,expires_at,last_error FROM vocabulary_post_session_dispatches WHERE dispatch_id='expired'").get()},
+    {status:'failed',active_token:null,expires_at:null,last_error:'ingestion_interrupted'});
+  assert.equal(prepare("SELECT status FROM vocabulary_post_session_dispatches WHERE dispatch_id='live'").get()!.status,'running');
+});
 
 test('provider-disabled worker still closes and ingests; maintenance and disabled learner fence work',async()=>{
   const completion=pending();let calls=0;let state={maintenanceMode:true,providerWorkEnabled:false};

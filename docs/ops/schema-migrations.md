@@ -166,6 +166,26 @@ This data migration requires the stopped-writer procedure above; the app-only
 upgrade route is insufficient. Populated preservation, rollback, repeat and
 fresh-schema coverage live in `tests/shared-dictionary-baselines-migration.test.ts`.
 
+## Dispatch polling indexes (`0065`)
+
+`0065_vocabulary_dispatch_polling_indexes` adds partial indexes on queued
+dispatch creation order and running dispatch expiry. It changes no dispatch
+rows, evidence, completion records, statuses, leases, or retry policy. Index
+construction reads the existing dispatch table, including large retained
+evidence; allow for this one-time scan during rehearsal and stopped-writer
+migration. It does not rebuild the table or move evidence to another store.
+
+On a populated restored database, compare dispatch IDs, statuses, lease fields,
+errors, result JSON and evidence bytes before/after, and confirm session and
+completion records are unchanged. Verify the worker's queued SELECT uses
+`idx_vocabulary_dispatch_queued` and its expiry UPDATE uses
+`idx_vocabulary_dispatch_running_expiry` with `EXPLAIN QUERY PLAN`. Include
+an empty active queue with large terminal history, an old queued item, a live
+lease and an expired lease; preserve disabled-learner and explicit retry behavior.
+The local migration and processing tests cover preservation and indexed worker
+queries; after release, compare idle background SQLite load and CPU throttling.
+Use the schema-release procedure above, not the app-only upgrade route.
+
 ## Writing the next migration
 
 Give the release agent a concise rehearsal note alongside the migration's tests
