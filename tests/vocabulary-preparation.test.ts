@@ -1,6 +1,6 @@
 import { generalExerciseInvocation } from '../server/vocabulary/general-exercise-authoring.ts';
 import { writeVocabularyDefaultUsefulSenses,getVocabularyWordSenseCoverage } from '../server/db/vocabulary-sense-coverage.ts';
-import { listVocabularyExercises,getVocabularySenses } from '../server/db/vocabulary-content.ts';
+import { listVocabularyExercises,getVocabularySenses,createVocabularySense,updateVocabularySense } from '../server/db/vocabulary-content.ts';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { experimentOutputSchema } from '../server/word-content-lab/vocabulary-experiments/contracts.ts';
@@ -552,6 +552,7 @@ test('a partially unmapped source is operator-visible and consumes no provider a
   const {senseId}=getVocabularySenses('w1')[0]!;
   // Preserve an established inventory while attaching a new source: the importer cannot invent source mappings.
   db.exec("INSERT INTO vocabulary_word_catalogs VALUES ('unmapped',1,'2026-10-29')");
+  createVocabularySense({wordId:'unmapped',description:{label:'hello',notes:[]}},{kind:'service',id:'fixture'});
   claimSharedWordIntroductionStage('unmapped','bootstrap','unmapped',now,new Date(Date.now()+300_000).toISOString());
   finishSharedWordIntroductionBootstrap('unmapped','unmapped',{...content,id:'unmapped-doc',word:{...content.word,wordId:'unmapped'},uses:[...content.uses,{id:'u2',label:'another greeting',notes:[],exampleIds:['e1']}]},'fixture');
   const preparation=createVocabularyPracticePreparation({provider:{model:'fake',isConfigured:()=>true,generationKey:()=> 'unmapped',generate:async()=>assert.fail('No provider for unmapped source')}}),work=preparation.ensure('unmapped')!;
@@ -585,4 +586,23 @@ test('valid empty automatic output retains its invocation and recommendation in 
   const attention=preparation.listFailed()[0]!;
   assert.equal(attention.invocationId,invocation.id);assert.equal(attention.lastError,'no_faithful_exercises');assert.equal(attention.retryable,true);
   assert.equal(preparation.listQueued().length,0);
+});
+
+
+for(const state of ['queued','failed'] as const)test(`empty inventory stops ${state} practice without fresh demand or provider calls`,async()=>{
+  const preparation=createVocabularyPracticePreparation({provider:{model:'fake',isConfigured:()=>true,generationKey:()=> 'empty',generate:async()=>assert.fail('No authoring for empty inventory')}});
+  const work=preparation.ensure('w1')!;
+  if(state==='failed')db.prepare("UPDATE vocabulary_practice_preparation SET status='failed',last_error='provider_failed' WHERE work_id=?").run(work.workId);
+  for(const sense of getVocabularySenses('w1'))updateVocabularySense(sense.senseId,sense.version,{description:sense.description,status:'retired'},{kind:'service',id:'fixture'});
+  assert.equal(preparation.ensure('w1'),null);
+  if(state==='queued'){
+    assert.equal(await preparation.preflight(work.workId),false);
+    assert.equal(preparation.listQueued().length,0);
+    assert.equal(db.prepare('SELECT status FROM vocabulary_practice_preparation WHERE work_id=?').get(work.workId)!.status,'ready');
+  }else{
+    assert.equal(preparation.listFailed()[0]!.retryable,false);
+    assert.throws(()=>preparation.retry(work.workId,'operator'),/Empty inventory/);
+    assert.equal(db.prepare('SELECT status FROM vocabulary_practice_preparation WHERE work_id=?').get(work.workId)!.status,'failed');
+  }
+  assert.equal(db.prepare('SELECT attempt_count FROM vocabulary_practice_preparation WHERE work_id=?').get(work.workId)!.attempt_count,0);
 });

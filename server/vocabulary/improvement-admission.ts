@@ -61,6 +61,13 @@ export async function runVocabularyImprovementAdmission(options: {
   };
   fence();
   const inventory = readiness.senses.filter(sense=>sense.status==='active');
+  if(!inventory.length){
+    fence();
+    return {kind:'exercise_improvement',result:{diagnosis:'The established inventory has no eligible target-level senses. This word is ineligible for new sessions; its historical content remains unchanged.',proposal:null,
+      admission:{outcome:'no_senses_requested',rationale:'Established empty inventory; no mapping or authoring demand.',wordId,
+        sourceContentId:original.contentId,sourceContentVersion:original.version,catalogVersion:readiness.catalog.version,
+        senseIds:[],sourceMapping:{...expectedMapping}}}};
+  }
   const ids = new Set(inventory.map(sense=>sense.senseId));
   const word = getDb().prepare('SELECT id AS wordId,hanzi,traditional,pinyin,meaning FROM lexical_words WHERE id=?')
     .get(wordId) as {wordId:string;hanzi:string;traditional:string|null;pinyin:string;meaning:string}|undefined;

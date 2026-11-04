@@ -40,10 +40,16 @@ belong there and in task instructions, not in this frontier.
   teaching completion commits at closure. The implementation guide describes
   reserve sizing and preparation compatibility; historical learner state and
   established sense identities survive source refresh.
-  Canonical sense inventory and default-useful selection are distinct; unknown
-  selection initializes asynchronously from teaching imports or an ID-preserving
-  selector. Model-empty findings need operator review; explicit canonical/document
-  scopes remain usable independently.
+  Canonical sense inventory and default-useful selection are distinct. Inventory
+  tracks uses of the exact target, excluding meanings realized only in larger
+  compounds or fixed expressions while allowing grammatical constructions.
+  An established empty inventory is a settled result: the word stays stashed but
+  cannot participate in new sessions, including shared answers or contrast choices.
+  Retained sessions and history are preserved. Unknown selection initializes from
+  teaching imports or an ID-preserving selector; an empty inventory resolves it
+  to `[]`. A nonempty inventory with no model-selected useful senses needs operator
+  review; explicit canonical/document scopes remain usable independently for
+  nonempty inventories.
 - **Reflection:** private learner lessons and internal content proposals run
   independently. An improvement case retains its encounter group and numbered
   holistic assessment jobs; only one job may be queued or running within it.

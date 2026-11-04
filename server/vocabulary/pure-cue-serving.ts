@@ -1,3 +1,4 @@
+import {vocabularyExerciseAnswersEligibleSql} from '../db/vocabulary-sense-eligibility.ts';
 import {createHash} from 'node:crypto';
 import {getDb} from '../db/connection.ts';
 import {requireLearnerId} from '../db/learner-context.ts';
@@ -7,6 +8,7 @@ import type {VocabularyContent} from '../../src/domain/vocabulary-content.ts';
 
 const eligibleContent=`c.kind='exercise' AND c.exercise_type='pure_cue' AND c.exercise_role='general' AND c.availability='active'
   AND (c.access_scope='shared' OR c.owner_learner_id=:learner)
+  AND ${vocabularyExerciseAnswersEligibleSql('c.content_id')}
   AND NOT EXISTS(SELECT 1 FROM learner_content_deactivations d WHERE d.learner_id=:learner AND d.content_id=c.content_id)
   AND EXISTS(SELECT 1 FROM exercise_answer_words a JOIN learner_words w ON w.word_id=a.word_id AND w.learner_id=:learner
     LEFT JOIN learner_owned_word_skill_state s ON s.learner_id=w.learner_id AND s.word_id=w.word_id AND s.skill_id='production'

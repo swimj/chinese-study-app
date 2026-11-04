@@ -168,3 +168,10 @@ export function deferWordPreparationForSenses(workId:string,retryAt:string,now=n
   time(now);time(retryAt);
   getDb().prepare("UPDATE word_preparation_work SET next_attempt_at=?,last_error='Waiting for canonical sense readiness',updated_at=? WHERE work_id=? AND status='queued'").run(retryAt,now,workId);
 }
+
+/** An established empty inventory has no authoring demand; preserve jobs and attempt evidence. */
+export function pauseEmptyInventoryPreparation(wordId: string, diagnostic: string, now = new Date().toISOString()): void {
+  time(now);
+  getDb().prepare("UPDATE word_preparation_work SET status='paused',last_error=?,updated_at=? WHERE word_id=? AND status='queued'")
+    .run(diagnostic, now, wordId);
+}

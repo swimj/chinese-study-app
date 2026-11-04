@@ -92,11 +92,20 @@ stage-result cache.
 
 ## Single-word production admission
 
-`improvement-admission.ts` ensures an established active sense inventory through
+`improvement-admission.ts` ensures an established sense inventory through
 `sense-readiness.ts`. Readiness reuses canonical senses or requests the shared
 inventory/default-selection call. It creates senses, not teaching or exercises.
-Partial unestablished inventories and established inventories without active
-senses require operator attention.
+The inventory tracks uses of the exact target, including grammatical constructions
+and uncommon uses, but excludes meanings realized only through larger compounds
+or fixed expressions. The call first establishes lexical ownership, then marks
+default usefulness among those eligible uses.
+
+Partial unestablished inventories require operator attention. An established
+inventory with no active senses is a valid result: improvement returns
+`no_senses_requested` without mapping or authoring. Unknown defaults resolve to
+`[]`, and the word is ineligible for new sessions while its stash membership and
+history are retained. A nonempty inventory with all `defaultUseful:false` instead
+retains the empty-selection recommendation for operator review.
 
 The backend identifies dictionary fallback sources before requesting mapping.
 Current authored general production practice accepting the word in the same
@@ -115,11 +124,14 @@ identify one intended use.
 | Mapping outcome | Required sense IDs | Subsequent work |
 | --- | --- | --- |
 | `single_sense` | Exactly one supplied active ID | Record mapping; assess a coherent local plan with the intended sense and encounter evidence |
-| `inventory_gap` | None | Retain an operator finding without expanding inventory |
-| `unmappable` | None | Retain an operator finding |
+| `inventory_gap` | None | Retain a finding for an absent eligible target use without expanding inventory |
+| `unmappable` | None | Retain a finding for no defensible single target use, including compound-only meanings |
 
 Mapping describes authorial intent, not historical grading fairness. Its internal
-sense context was not necessarily visible to the learner.
+sense context was not necessarily visible to the learner. The prompt's worked
+examples distinguish a missing eligible sense from a compound-only use excluded
+by inventory policy; an older compound-derived inventory entry does not establish
+that the exercise targets the right lexical unit.
 
 ### Coherent exercise-local planning
 
@@ -308,6 +320,14 @@ runner exercises current admission and pure-cue stages through normal post-sessi
 processing; its fixtures describe session actions rather than direct mapper input.
 See the [trial procedure](../../../docs/testing.md#vocabulary-backend-provider-trials)
 for isolated preparation, authorized live calls and retained evidence.
+
+Inventory generation and default selection send the simplified target spelling,
+pinyin and gloss hints as the lexical word input. Traditional forms remain in
+lexical records; these calls group uses under the simplified target. Glosses may
+be incomplete or absent and do not bound the inventory or useful selection.
+Word IDs remain with the caller for persistence
+and provenance; selection uses call-local sense IDs to identify its choices.
+Neither output contract requires a word ID.
 
 For inventory generation and readiness routing, use
 `tests/vocabulary-sense-readiness.test.ts` and

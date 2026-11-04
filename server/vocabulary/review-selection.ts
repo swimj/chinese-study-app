@@ -1,3 +1,4 @@
+import { vocabularySessionWordEligibleSql } from '../db/vocabulary-sense-eligibility.ts';
 import { getDb } from '../db/connection.ts';
 import { requireLearnerId } from '../db/learner-context.ts';
 import { reviewUrgency, compareReviewCandidates } from '../db/review-policy.ts';
@@ -36,6 +37,7 @@ export function selectVocabularyReviewSkills(options: {
     LEFT JOIN learner_owned_word_skill_relevance r ON r.word_id = s.word_id AND r.learner_id = w.learner_id AND r.skill_id = s.skill_id
     LEFT JOIN learner_owned_word_skill_state legacy ON legacy.word_id = s.word_id AND legacy.learner_id = w.learner_id AND legacy.skill_id = s.skill_id
     WHERE w.mode IN ('practice', 'maintain') AND w.dismissed_at IS NULL
+      AND ${vocabularySessionWordEligibleSql('w.word_id')}
       AND s.enabled != 0 AND COALESCE(legacy.enabled, 1) != 0
       AND COALESCE(r.relevance_state, 'active') != 'suppressed'
       AND (a.earliest_next_study_at IS NULL OR a.earliest_next_study_at <= ?)
