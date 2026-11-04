@@ -200,6 +200,28 @@ test('owner checks and exact snapshot/assessment validation reject cross-learner
   });
 });
 
+test('presentation validation compares exact answer sets while preserving snapshots and strict grading criteria',()=>alice(()=>{
+  contents.forms=createVocabularyContent({contentId:'forms',kind:'exercise',payloadVersion:1,body:{prompt:'Write the character.'},
+    accessScope:'shared',availability:'active',originKind:'human',words:[{wordId:'a',relation:'target'}],
+    exerciseType:'word',skill:'production',exerciseRole:'general',assessment:{match:'exact'},
+    answers:[{wordId:'a',acceptedForms:['字','字兒']}]},{kind:'operator',id:'test'});
+  createVocabularySession(context(),now);
+  const original=snapshot('forms');assert.ok(original.assessment);
+  const attempt=(acceptedAnswers:readonly string[],criteria=original.assessment!.criteria)=>actions({kind:'presentation',payload:{
+    encounterId:'forms',wordId:'a',snapshot:{...original,assessment:{acceptedAnswers,criteria}},
+  }});
+  for(const answers of [[],['字'],['字','字兒','extra'],['字','字儿'],[' 字','字兒']]) {
+    assert.throws(()=>appendVocabularySessionActions('session',attempt(answers),now),/answer contract/);
+  }
+  assert.throws(()=>appendVocabularySessionActions('session',attempt(['字兒','字'],{match:'changed'}),now),/answer contract/);
+  assert.equal(count('session_actions'),0);
+  const log=attempt(['字兒','字','字兒']);
+  appendVocabularySessionActions('session',log,now);
+  assert.deepEqual(getVocabularySession('session').actions,log);
+  appendVocabularySessionActions('session',log,now);
+  assert.equal(count('session_actions'),1);
+}));
+
 test('teaching requires explicit completion and recognition self-assessment retains null response',()=>alice(()=>{
   const bootstrap={schemaVersion:1,id:'bootstrap-new',word:{wordId:'new',hanzi:'字',traditional:null,pinyin:'zì'},
     uses:[{id:'u1',label:'character',notes:[],exampleIds:['e1']}],examples:[{id:'e1',text:'字',translation:'Character',pronunciation:'zì'}]};

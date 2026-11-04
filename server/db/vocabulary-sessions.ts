@@ -183,8 +183,10 @@ function validatePresentation(action: Extract<VocabularySessionAction, { kind: '
     if (content.exerciseRole !== (snapshot.role === 'general' ? 'general' : 'teaching')) throw new VocabularySessionInputError('Exercise serving role mismatch');
     if ((snapshot.schedulingScope === 'pure_cue') !== (content.exerciseType === 'pure_cue')) throw new VocabularySessionInputError('Exercise schedule scope mismatch');
     const answers = content.answers.flatMap((answer) => answer.acceptedForms);
+    // Answer membership is authoritative; current rows and retained revisions can
+    // enumerate the same forms in different orders. Keep the served snapshot intact.
     if (!snapshot.assessment || !isDeepStrictEqual(snapshot.assessment.criteria, content.assessment)
-      || !isDeepStrictEqual(snapshot.assessment.acceptedAnswers, answers)) throw new VocabularySessionInputError('Encounter answer contract does not match retained content version');
+      || !isDeepStrictEqual(new Set(snapshot.assessment.acceptedAnswers), new Set(answers))) throw new VocabularySessionInputError('Encounter answer contract does not match retained content version');
   }
   if (action.payload.wordId && !content.words.some((word) => word.wordId === action.payload.wordId)) throw new VocabularySessionInputError('Encounter content is not associated with selected word');
 }
