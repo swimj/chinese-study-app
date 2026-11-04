@@ -54,6 +54,12 @@ const toSimplified = Converter({ from: 'tw', to: 'cn' });
 // `tw` uses Taiwan glyph conventions; `twp` would also replace vocabulary.
 const toTraditional = Converter({ from: 'cn', to: 'tw' });
 
+// Taiwan phrase exceptions require traditional context: 顯著 preserves 著,
+// whereas sending the already-simplified 显著 straight to tw2s produces 显着.
+function normalizeToSimplified(text: string): string {
+  return toSimplified(toTraditional(text));
+}
+
 export function effectiveSentenceCharacterPresentation(
   main: CharacterPresentation,
   preference: SentenceCharacterPresentation = DEFAULT_SENTENCE_CHARACTER_PRESENTATION,
@@ -68,8 +74,7 @@ export function sentenceCharacterLanguage(script: SentenceCharacterPresentation)
 /** Normalize a display copy, including mixed sources, without changing authored records. */
 export function convertSentenceCharacters(text: string, script: SentenceCharacterPresentation): string {
   const convert = (part: string): string => {
-    const simplified = toSimplified(part);
-    return script === 'simplified' ? simplified : toTraditional(simplified);
+    return script === 'simplified' ? normalizeToSimplified(part) : toTraditional(part);
   };
   // Equivalent forms joined by a comparison separator or explicitly labeled
   // Simplified/Traditional are instructional content: preserve both forms.
@@ -78,13 +83,13 @@ export function convertSentenceCharacters(text: string, script: SentenceCharacte
   const labeledComparison = /\b(Simplified|Traditional)\b[^\p{Script=Han}\n]*?(\p{Script=Han}+)[^\p{Script=Han}\n]*?\b(Simplified|Traditional)\b[^\p{Script=Han}\n]*?(\p{Script=Han}+)/giu;
   const protectedRanges: { start: number; end: number }[] = [];
   for (const match of text.matchAll(comparison)) {
-    if (match[1] !== match[2] && toSimplified(match[1]) === toSimplified(match[2])) {
+    if (match[1] !== match[2] && normalizeToSimplified(match[1]) === normalizeToSimplified(match[2])) {
       protectedRanges.push({ start: match.index, end: match.index + match[0].length });
     }
   }
   for (const match of text.matchAll(labeledComparison)) {
     if (match[1].toLowerCase() !== match[3].toLowerCase()
-      && match[2] !== match[4] && toSimplified(match[2]) === toSimplified(match[4])) {
+      && match[2] !== match[4] && normalizeToSimplified(match[2]) === normalizeToSimplified(match[4])) {
       protectedRanges.push({ start: match.index, end: match.index + match[0].length });
     }
   }
