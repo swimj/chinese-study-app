@@ -55,8 +55,8 @@ function snapshot(id: string, role?: VocabularyEncounterSnapshot['role']): Vocab
 }
 const finish: Input={kind:'finish_for_now',payload:{}};
 const immediate: Input={kind:'finish_immediately',payload:{}};
-function closeSelected(skill: 'recognition' | 'production' | 'contextual_selection', outcomes: boolean[], uncovered = false) {
-  sql.prepare("UPDATE learner_words SET mode='practice' WHERE learner_id='alice' AND word_id='a'").run();
+function closeSelected(skill: 'recognition' | 'production' | 'contextual_selection', outcomes: boolean[], uncovered = false, closedAt = later, mode: 'practice' | 'solidify' | 'maintain' = 'practice', helpUsed = false) {
+  sql.prepare("UPDATE learner_words SET mode=? WHERE learner_id='alice' AND word_id='a'").run(mode);
   const contentId = skill === 'production' ? 'one' : 'selected';
   if (skill !== 'production') contents.selected = createVocabularyContent({contentId,kind:'exercise',payloadVersion:1,
     body:skill === 'contextual_selection' ? {prompt:'Choose',choices:[{wordId:'a',label:'字'},{wordId:'b',label:'別'}]} : {prompt:'Recognize'},
@@ -64,14 +64,14 @@ function closeSelected(skill: 'recognition' | 'production' | 'contextual_selecti
     exerciseType:skill === 'recognition' ? 'recognition' : 'contrast',skill,exerciseRole:'general',
     assessment:skill === 'recognition' ? {responseMode:'self_assessment'} : {responseMode:'word_choice',correctWordId:'a'},
     answers:[{wordId:'a',acceptedForms:['字']}]},{kind:'operator',id:'test'});
-  createVocabularySession({sessionId:'session',words:[{wordId:'a',mode:'practice',selectedSkill:skill}]},now);
+  createVocabularySession({sessionId:'session',words:[{wordId:'a',mode,selectedSkill:skill,solidifySkills:[skill === 'recognition' ? 'recognition' : 'production']}]},now);
   const inputs: Input[] = outcomes.flatMap((accepted,index) => {
     const encounterId = `encounter-${index}`;
     const served = snapshot(contentId);
     if (skill === 'contextual_selection') served.kind = 'contrast';
     return [{kind:'presentation',payload:{encounterId,wordId:'a',snapshot:served}},
       {kind:'response',payload:{encounterId,response:skill === 'recognition' ? null : accepted ? '字' : 'wrong',
-        outcome:accepted ? 'accepted' : 'rejected',
+        outcome:accepted ? 'accepted' : 'rejected',helpUsed,
         ...(skill === 'recognition' ? {selfAssessment:accepted ? 'accepted' : 'rejected'} : {}),
         ...(skill === 'contextual_selection' ? {selectedWordId:accepted ? 'a' : 'b'} : {})}}] as Input[];
   });
@@ -79,7 +79,7 @@ function closeSelected(skill: 'recognition' | 'production' | 'contextual_selecti
   const log = actions(...inputs);
   appendVocabularySessionActions('session',log,now);
   const staged = stageVocabularySessionCompletion('session',log.length,now);
-  return closeVocabularySessionCompletion('session',staged.completionId,later);
+  return closeVocabularySessionCompletion('session',staged.completionId,closedAt);
 }
 
 for (const skill of ['recognition','contextual_selection'] as const) test(`completed selected ${skill} retains production schedule and establishes the shared review guard`,()=>alice(()=>{
@@ -88,7 +88,7 @@ for (const skill of ['recognition','contextual_selection'] as const) test(`compl
   assert.equal(completed.report.words.a.covered,true);
   assert.deepEqual(getVocabularyWordSchedule('a'),before);
   assert.equal(sql.prepare("SELECT count(*) n FROM learner_state_effects WHERE kind='production_schedule_applied'").get()!.n,0);
-  assert.equal(sql.prepare("SELECT last_studied_at FROM learner_owned_word_skill_state WHERE learner_id='alice' AND word_id='a' AND skill_id=?").get(skill)!.last_studied_at,later);
+  assert.equal(sql.prepare("SELECT last_studied_at FROM learner_owned_word_skill_state WHERE learner_id='alice' AND word_id='a' AND skill_id=?").get(skill)!.last_studied_at,now);
   assert.equal(sql.prepare("SELECT earliest_next_study_at FROM learner_owned_word_study_admission_state WHERE learner_id='alice' AND word_id='a'").get()!.earliest_next_study_at,'2026-10-17T16:00:16.000Z');
 }));
 
@@ -155,12 +155,12 @@ for (const skill of ['recognition','contextual_selection','production'] as const
     assert.equal(schedule.intervalHours,6);
     assert.equal(schedule.easeFactor,expected);
   }));
-  test(`${skill} closure grows the existing interval with the retained good-review policy`, () => alice(() => {
+  test(`${skill} on-time closure grows the existing interval with the retained good-review policy`, () => alice(() => {
     if (skill === 'production') {
       sql.prepare("UPDATE learner_word_schedules SET scheduler_state_json=json_set(scheduler_state_json,'$.intervalHours',72,'$.easeFactor',2.2) WHERE learner_id='alice' AND word_id='a'").run();
     } else {
       sql.prepare('INSERT INTO learner_owned_word_skill_state VALUES (?,?,?,?,?,?,?,?)')
-        .run('alice','a',skill,72,2.2,1,now,'2026-10-01T00:00:00.000Z');
+        .run('alice','a',skill,72,2.2,1,now,'2026-10-14T10:00:00.000Z');
     }
     closeSelected(skill,[true]);
     const interval = skill === 'production' ? getVocabularyWordSchedule('a')!.schedulerState.intervalHours
@@ -168,3 +168,85 @@ for (const skill of ['recognition','contextual_selection','production'] as const
     assert.ok(interval >= 158 && interval <= 160);
   }));
 }
+
+function seedOverdue(skill: 'production' | 'recognition' | 'contextual_selection') {
+  const last = '2026-10-05T10:00:00.000Z'; // 12 days ago, with a 4-day interval.
+  if (skill === 'production') {
+    sql.prepare("UPDATE learner_word_schedules SET last_practised_at=?,scheduler_state_json=json_set(scheduler_state_json,'$.intervalHours',96,'$.easeFactor',2.5) WHERE learner_id='alice' AND word_id='a'").run(last);
+  } else {
+    sql.prepare('INSERT INTO learner_owned_word_skill_state VALUES (?,?,?,?,?,?,?,?)').run('alice','a',skill,96,2.5,1,now,last);
+  }
+}
+function readSchedule(skill: 'production' | 'recognition' | 'contextual_selection') {
+  if (skill === 'production') {
+    const row = getVocabularyWordSchedule('a')!;
+    return { interval: row.schedulerState.intervalHours, last: row.lastPractisedAt };
+  }
+  const row = sql.prepare("SELECT interval_hours,last_studied_at FROM learner_owned_word_skill_state WHERE learner_id='alice' AND word_id='a' AND skill_id=?").get(skill)!;
+  return { interval: Number(row.interval_hours), last: row.last_studied_at };
+}
+for (const skill of ['production','recognition','contextual_selection'] as const) {
+  test(`${skill} overdue recall earns half-gap credit despite delayed closure and replay`, () => alice(() => {
+    seedOverdue(skill);
+    const closedAt = '2026-11-17T10:00:00.000Z';
+    closeSelected(skill,[true],false,closedAt);
+    const after = readSchedule(skill);
+    assert.ok(after.interval >= 479 && after.interval <= 481, String(after.interval));
+    assert.equal(after.last, now);
+    const effects = sql.prepare('SELECT count(*) n FROM learner_state_effects').get()!.n;
+    closeVocabularySessionCompletion('session',undefined,'2026-12-17T10:00:00.000Z');
+    assert.deepEqual(readSchedule(skill),after);
+    assert.equal(sql.prepare('SELECT count(*) n FROM learner_state_effects').get()!.n,effects);
+    if (skill !== 'production') assert.equal(getVocabularyWordSchedule('a')!.schedulerState.intervalHours,24);
+    else assert.equal(sql.prepare('SELECT count(*) n FROM learner_owned_word_skill_state').get()!.n,0);
+  }));
+  test(`${skill} assisted recall does not earn overdue credit`, () => alice(() => {
+    seedOverdue(skill);
+    closeSelected(skill,[true],false,later,'practice',true);
+    assert.ok(readSchedule(skill).interval >= 239 && readSchedule(skill).interval <= 241);
+  }));
+}
+test('Maintain clean recall receives the same elapsed credit', () => alice(() => {
+  seedOverdue('production');
+  closeSelected('production',[true],false,later,'maintain');
+  assert.ok(readSchedule('production').interval >= 479 && readSchedule('production').interval <= 481);
+}));
+for (const skill of ['production','recognition'] as const) test(`Solidify ${skill} receives no elapsed credit`, () => alice(() => {
+  seedOverdue(skill);
+  closeSelected(skill,[true],false,later,'solidify');
+  const interval = readSchedule(skill).interval;
+  assert.ok(skill === 'production' ? interval === 24 : interval >= 239 && interval <= 241);
+}));
+
+for (const skill of ['production','recognition','contextual_selection'] as const) test(`${skill} older session preserves newer study timestamp`, () => alice(() => {
+  seedOverdue(skill);
+  const newerStudy = '2026-10-18T10:00:00.000Z';
+  if (skill === 'production') sql.prepare("UPDATE learner_word_schedules SET last_practised_at=? WHERE learner_id='alice' AND word_id='a'").run(newerStudy);
+  else sql.prepare("UPDATE learner_owned_word_skill_state SET last_studied_at=? WHERE learner_id='alice' AND word_id='a' AND skill_id=?").run(newerStudy,skill);
+  closeSelected(skill,[true],false,'2026-10-19T10:00:00.000Z');
+  const after = readSchedule(skill);
+  assert.equal(after.last,newerStudy);
+  assert.ok(after.interval >= 239 && after.interval <= 241);
+}));
+
+test('extra work uses the first effective recall for credit and the last response for study time', () => alice(() => {
+  seedOverdue('production');
+  sql.prepare("UPDATE learner_words SET mode='practice' WHERE learner_id='alice' AND word_id='a'").run();
+  createVocabularySession({sessionId:'session',words:[{wordId:'a',mode:'practice',selectedSkill:'production'}]},now);
+  const log = actions(
+    {kind:'presentation',payload:{encounterId:'first',wordId:'a',snapshot:snapshot('one')}},
+    {kind:'response',payload:{encounterId:'first',response:'字',outcome:'accepted'}},
+    {kind:'word_wrap',payload:{wordId:'a',reason:'policy'}},
+    {kind:'word_more',payload:{wordId:'a'}},
+    {kind:'presentation',payload:{encounterId:'extra',wordId:'a',snapshot:snapshot('one')}},
+    {kind:'response',payload:{encounterId:'extra',response:'字',outcome:'accepted'}},
+    {kind:'word_wrap',payload:{wordId:'a',reason:'policy'}},finish);
+  const resumedAt = '2026-10-20T10:00:00.000Z';
+  for (const action of log.slice(3)) action.occurredAt = resumedAt;
+  appendVocabularySessionActions('session',log,resumedAt);
+  const staged = stageVocabularySessionCompletion('session',log.length,resumedAt);
+  closeVocabularySessionCompletion('session',staged.completionId,'2026-10-21T10:00:00.000Z');
+  const after = readSchedule('production');
+  assert.ok(after.interval >= 479 && after.interval <= 481);
+  assert.equal(after.last,resumedAt);
+}));

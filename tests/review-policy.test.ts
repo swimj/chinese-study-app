@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { nextReviewSchedule, reviewUrgency, compareReviewCandidates, type RankedReviewCandidate } from '../server/db/review-policy.ts';
+import { nextReviewSchedule, reviewElapsedHours, reviewUrgency, compareReviewCandidates, type RankedReviewCandidate } from '../server/db/review-policy.ts';
 import { applyIntervalHourFuzz } from '../server/db/interval-schedule.ts';
 
 // Numeric boundaries retained from the legacy review behavior; both persistence
@@ -38,4 +38,23 @@ test('review ranking preserves urgency, epsilon, due-date, word and skill tie br
   assert.ok(compareReviewCandidates(candidate({urgency:2.0000001,nextDueAt:null}), candidate({nextDueAt:now})) > 0);
   assert.ok(compareReviewCandidates(candidate({wordId:'a'}),candidate({wordId:'b'})) < 0);
   assert.ok(compareReviewCandidates(candidate({}),candidate({skillId:'recognition'})) < 0);
+});
+
+for (const [elapsedHours, expected] of [[48, 240], [96, 240], [288, 480], [2400, 3120]]) {
+  test(`clean review credits half of extra elapsed hours (${elapsedHours})`, () => {
+    assert.equal(nextReviewSchedule({ intervalHours: 96, easeFactor: 2.5 },
+      { failureCount: 0, successful: true, elapsedHours }, hours => hours).intervalHours, expected);
+  });
+}
+test('elapsed credit never overrides lapse or absence of recall', () => {
+  const before = { intervalHours: 96, easeFactor: 2.5 };
+  assert.equal(nextReviewSchedule(before, {failureCount: 1, successful: true, elapsedHours: 2400}).intervalHours, 6);
+  assert.deepEqual(nextReviewSchedule(before, {failureCount: 0, successful: false, elapsedHours: 2400}), before);
+});
+test('elapsed evidence tolerates absent and newer history but rejects malformed timestamps', () => {
+  const timing = { firstReviewedAt: now, lastReviewedAt: now, creditElapsed: true };
+  assert.equal(reviewElapsedHours(null, timing), undefined);
+  assert.equal(reviewElapsedHours('2026-10-28T00:00:00.000Z', timing), 0);
+  assert.equal(reviewElapsedHours('2026-10-01T00:00:00.000Z', {...timing, creditElapsed: false}), undefined);
+  assert.throws(() => reviewElapsedHours('invalid', timing));
 });

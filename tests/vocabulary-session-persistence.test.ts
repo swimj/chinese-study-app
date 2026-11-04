@@ -258,7 +258,7 @@ test('recognition scheduling applies at close once, preserving production and ot
   assert.deepEqual(sql.prepare("SELECT * FROM learner_owned_word_skill_state ORDER BY learner_id,skill_id").all(),others);
   closeVocabularySessionCompletion('session',staged.completionId,later);
   const after=sql.prepare("SELECT * FROM learner_owned_word_skill_state WHERE learner_id='alice' AND word_id='new' AND skill_id='recognition'").get();
-  assert.equal(after?.interval_hours,24);assert.equal(after?.last_studied_at,later);
+  assert.equal(after?.interval_hours,24);assert.equal(after?.last_studied_at,now);
   closeVocabularySessionCompletion('session',staged.completionId,'2026-10-18T10:00:00.000Z');
   assert.deepEqual(sql.prepare("SELECT * FROM learner_owned_word_skill_state WHERE learner_id='alice' AND word_id='new' AND skill_id='recognition'").get(),after);
   assert.deepEqual(sql.prepare("SELECT * FROM learner_owned_word_skill_state WHERE learner_id='bob' OR skill_id='production' ORDER BY learner_id,skill_id").all(),others);
@@ -418,7 +418,7 @@ test('selected recognition completion advances only recognition and applies shar
   assert.deepEqual(getVocabularyWordSchedule('b'),productionBefore);
   const recognitionAfter=sql.prepare("SELECT * FROM learner_owned_word_skill_state WHERE learner_id='alice' AND word_id='b' AND skill_id='recognition'").get();
   assert.notDeepEqual(recognitionAfter,recognitionBefore);
-  assert.equal(recognitionAfter?.last_studied_at,later);
+  assert.equal(recognitionAfter?.last_studied_at,now);
   assert.equal(sql.prepare("SELECT count(*) AS n FROM learner_state_effects WHERE kind='production_schedule_applied'").get()?.n,0);
   const recency=sql.prepare("SELECT * FROM learner_owned_word_study_admission_state WHERE learner_id='alice' AND word_id='b'").get();
   assert.equal(recency?.study_phase,'review');
@@ -498,7 +498,7 @@ test('one-time Enough recovery previews without writes and closes historically w
   assert.equal(plan.closedAt,'2026-10-17T10:00:15.000Z');
   const result=applyEnoughRecovery('stuck',plan.digest,recoveryDay);
   assert.equal(result.recoveredAt,recoveryDay);assert.equal(result.status,'closed');
-  assert.equal(getVocabularyWordSchedule('b')!.lastPractisedAt,plan.closedAt);
+  assert.equal(getVocabularyWordSchedule('b')!.lastPractisedAt,now);
   assert.equal(getVocabularySession('stuck').completion?.metadata.activeDurationMs,null);
   assert.deepEqual(getVocabularySession('stuck').actions,log);
   assert.equal(count('vocabulary_post_session_dispatches'),1);
