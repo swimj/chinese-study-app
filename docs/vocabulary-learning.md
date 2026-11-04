@@ -294,6 +294,12 @@ explains repair stages.
 
 ### Dispatch and model routing
 
+Dispatch polling uses partial indexes for queued work in creation order and
+running work by lease expiry. Completed and failed dispatch evidence remains
+available for investigation without entering either active-work index. Queue
+membership follows status, not session age, so old queued work and expired
+claims remain discoverable after an interruption.
+
 `processing-worker.ts` closes due completions and ingests evidence even when
 provider work is disabled. Learner-feedback and exercise-improvement jobs have
 separate claims and outcomes. Teaching issues stay manual. Failed calls and
