@@ -342,8 +342,11 @@ exercise collections.
 
 ### Operator review
 
-The operator's default surface is a cross-learner proposal inbox for scanning
-suggestions and approving changes. Each entry leads with the served content
+The operator's default surface is a cross-learner improvement-case inbox for
+reviewing assessments and approving changes. Cases retain their creation order
+through reassessment; judgments with and without proposals share the same review
+identity. Normal cards are available from bounded queue batches, with full
+evidence and authored editing data loaded on demand. Each entry leads with the served content
 retained from the learner's encounters: the cue and accepted answers, in
 encounter order. An encounter without a retained snapshot is labeled
 unavailable. Diagnosis, current versus proposed learning content, and recipient

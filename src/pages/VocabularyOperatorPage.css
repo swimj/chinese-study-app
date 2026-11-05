@@ -139,3 +139,18 @@
 .vocabulary-pure-cue-identities label { display: grid; gap: .3rem; min-width: 0; }
 .vocabulary-pure-cue-identities select { width: 100%; min-width: 0; max-width: 100%; }
 .vocabulary-pure-cue-identities p { overflow-wrap: anywhere; }
+
+.vocabulary-case-heading, .vocabulary-case-navigation { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .75rem; }
+.vocabulary-case-heading h2 { margin: 0; }
+.vocabulary-case-heading { margin-bottom: 1rem; }
+.vocabulary-case-navigation { margin: 1rem 0; }
+.vocabulary-case-navigation > span { flex: 1; text-align: center; color: var(--text-secondary); }
+.vocabulary-case-card .vocabulary-operator-actions { margin-bottom: .75rem; }
+.vocabulary-case-review-page input[type="search"] { min-width: 0; width: 100%; padding: .6rem; font: inherit; color: inherit; background: var(--surface); border: 1px solid var(--border); border-radius: .4rem; }
+.vocabulary-case-review-page .vocabulary-operator-page { margin-top: 1rem; }
+.vocabulary-case-card .vocabulary-source-summary article + article { border-top: 1px solid var(--border); padding-top: .75rem; }
+@container (max-width: 540px) {
+  .vocabulary-case-navigation > span { order: 3; flex-basis: 100%; }
+  .vocabulary-case-navigation button { flex: 1; }
+  .vocabulary-case-review-page > header { align-items: flex-start; flex-wrap: wrap; }
+}

@@ -93,6 +93,24 @@ before declaring parity. Keep the screenshots and baseline identity with the
 review evidence so the next iteration can use the same comparison.
 
 
+### Case review queue
+
+`/tests/browser/vocabulary-case-review.html` exercises the production case queue
+page with compact synthetic cards and explicit full-workspace hydration. Visible
+request counters distinguish queue/history/card reads from workspace, full proposal,
+and attention reads. Fixture controls complete/fail a reassessment, change shared
+source metadata without changing case version, resolve a case externally, lose an
+approval acknowledgement, and fail pending approval. `?usage` mounts the production
+operator container; `?narrow&largeText` uses a 480px panel with enlarged text.
+The fixture uses local synthetic responses and never calls a provider.
+
+Verify in-batch navigation makes no detail fetch, near-boundary batch prefetch,
+case identity through reassessment, cursor after Done, lazy Archive/Needs attention,
+exact-request approval retry, full editor hydration and unsaved-change guards.
+`vocabulary-case-queue-model.test.ts` covers the active window projection, equal-case-
+version source changes, deduplication, removal cursor, and retry/approval visibility.
+Backend/API coverage lives in `vocabulary-case-queue.test.ts`.
+
 ### Current browser fixtures
 
 `/tests/browser/service-access.html` exercises the real service-access boundary

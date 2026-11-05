@@ -475,6 +475,31 @@ allowing reflection-first canonical senses to obtain later teaching examples
 without changing their descriptions or replaying historical encounters. Retained
 legacy description-source links remain readable for their original documents.
 
+## Case queue and full review workspace
+
+`VocabularyCaseReviewPage` consumes the display-only `VocabularyCaseQueueItem`
+projection from the case queue API. `CaseReviewCard` renders the served prompt,
+response/reaction summaries, assessment-associated provenance, and proposed
+operation rows without constructing a `VocabularyContentProposal`. Queue batches
+exclude raw authored bodies and provider output. The selected card can navigate
+within the loaded window without a detail request; near-boundary prefetch retains
+at most three twenty-card pages. History uses its own on-demand paginated query.
+
+The full `VocabularyOperatorPage` editor mounts only after Details or Edit is
+requested. Its explicit detail mode hydrates the saved proposal and case workspace,
+disables the broad legacy list refresh and detail-prefetch effects, and reports
+case changes to the compact queue. It retains authored bases, source snapshots,
+operation inclusion, structured editing, and exact-version approval. The operational
+attention mode fetches its failures and cases only while that view is mounted.
+
+Case identity drives selection and creation-time order. Case version protects
+review transitions, while refreshed source/staleness projections remain meaningful
+even at the same case version. Outstanding refreshes are fenced when a mutation
+starts; an uncertain approval acknowledgement keeps the exact request and selected
+case until retry. Failed newer jobs are visible alongside the previous successful
+assessment. Alternative proposal cards carry their own assessment provenance and
+never claim the case's current job authored an earlier draft.
+
 ## Compact proposal editing
 
 Review batches and case workspaces include read-only sense labels alongside the

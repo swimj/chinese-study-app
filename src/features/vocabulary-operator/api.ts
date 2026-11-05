@@ -11,7 +11,7 @@ export type VocabularyCaseWorkspace={assessment?:VocabularyAssessmentReview;reas
   pureCueIdentityOptions?:{form:string;choices:{wordId:string;hanzi:string;traditional:string|null;pinyin:string;meaning:string}[]}[];
   reassessmentSource?:VocabularyReassessmentSource|null;
   reassessment?:{caseId:string;jobId:string;status:string;error:string|null}|null;
-  jobs:{jobId:string;kind:string;status:string;attemptNumber:number;error:string|null;secondOpinion:boolean;result:VocabularySecondOpinion['result']}[];proposals:VocabularyContentProposal[]};
+  jobs:{jobId:string;caseSequence?:number;kind:string;status:string;attemptNumber:number;error:string|null;secondOpinion:boolean;result:VocabularySecondOpinion['result']}[];proposals:VocabularyContentProposal[]};
 export type VocabularyReviewSnapshot={currentSources?:VocabularyContent[];assessment?:VocabularyAssessmentReview|null;coverageChanged?:boolean;senseLabels?:VocabularySenseLabel[];defaultSelectionFinding?:VocabularyDefaultSelectionFinding|null;proposal:VocabularyContentProposal;case:VocabularyReflectionCase|null;reassessment:{eligible:boolean;unavailableReason?:string|null;source:VocabularyReassessmentSource|null;latest:{caseId:string;jobId:string;status:string;error:string|null}|null}|null;previews:{operationKey:string;source:VocabularyContent|null;result:VocabularyContentDraft}[]};
 export type VocabularyProposalPreview={proposal:VocabularyContentProposal;
   previews:{operationKey:string;source:VocabularyContent|null;result:VocabularyContent}[];

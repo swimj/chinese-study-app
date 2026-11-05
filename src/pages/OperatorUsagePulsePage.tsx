@@ -6,7 +6,7 @@ import { ModelInvocationsPanel } from './ModelInvocationsPanel';
 import './OperatorUsagePulsePage.css';
 import { PreparationFailuresPanel } from './PreparationFailuresPanel';
 import { ContentQualityPanel } from './ContentQualityPanel';
-import { VocabularyOperatorPage } from './VocabularyOperatorPage';
+import { VocabularyCaseReviewPage } from './VocabularyCaseReviewPage';
 import type { VocabularyOperatorApi } from '../features/vocabulary-operator/api';
 import {
   fetchOperatorUsagePulse,
@@ -63,7 +63,7 @@ export function OperatorUsagePulsePage({ initialTab = 'usage', improvementApi }:
       {tab === 'banner' && <ServiceBannerPanel />}
     </div>}
     {openedImprovement && <div role="tabpanel" id="operator-panel-improvement" aria-labelledby="operator-tab-improvement" tabIndex={0} hidden={tab !== 'improvement'}>
-      <VocabularyOperatorPage api={improvementApi} />
+      <VocabularyCaseReviewPage api={improvementApi} />
     </div>}
   </section>;
 }

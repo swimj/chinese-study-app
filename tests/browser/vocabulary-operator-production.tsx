@@ -17,6 +17,7 @@ async function main(){
   const approvals:VocabularyApprovalRequest[]=[];
   const unavailableCoverage=async()=>{throw new Error('Historical export does not include editable canonical sense coverage.');};
   const api:VocabularyOperatorApi={
+  caseQueue:async()=>{throw new Error('Historical replay does not expose the current case queue');},caseCard:async()=>{throw new Error('Historical replay does not expose the current case queue');},resolveCaseReview:async()=>{throw new Error('Historical replay cannot resolve current cases');},reassessCaseReview:async()=>{throw new Error('Historical replay cannot queue reassessment');},
     resolvePureCueIdentities:async()=>{throw new Error('Historical replay cannot queue an assessment.');},
     wordSenseCoverage:unavailableCoverage,caseSenseCoverage:unavailableCoverage,saveDefaultUsefulSenses:unavailableCoverage,saveWordSenseCoverage:unavailableCoverage,saveCaseSenseCoverage:unavailableCoverage,
     approvalRequests:async()=>({items:approvals}),
