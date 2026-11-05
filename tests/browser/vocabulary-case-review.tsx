@@ -2,7 +2,7 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import '../../src/styles.css';
 import { VocabularyCaseReviewPage } from '../../src/pages/VocabularyCaseReviewPage';
-import { OperatorUsagePulsePage } from '../../src/pages/OperatorUsagePulsePage';
+import { OperatorShell } from '../../src/OperatorApp';
 import { vocabularyOperatorApi, type VocabularyOperatorApi, type VocabularyCaseWorkspace } from '../../src/features/vocabulary-operator/api';
 import type { VocabularyCaseQueueItem } from '../../src/domain/vocabulary-case-queue';
 import type { VocabularyContent } from '../../src/domain/vocabulary-content';
@@ -82,4 +82,4 @@ button('Fail pending approval', () => { const request = requests.find(value => v
 button('Reset counters', () => { for (const key of Object.keys(counts)) counts[key] = 0; count('mutations'); counts.mutations = 0; counter.textContent = Object.entries(counts).map(([name, value]) => `${name}: ${value}`).join(' · '); });
 if (params.has('narrow')) document.getElementById('root')!.style.maxWidth = '480px';
 if (params.has('largeText')) document.documentElement.style.fontSize = '21px';
-createRoot(document.getElementById('root')!).render(params.has('usage') ? <OperatorUsagePulsePage initialTab="improvement" improvementApi={api} /> : <VocabularyCaseReviewPage api={api} />);
+createRoot(document.getElementById('root')!).render(params.has('usage') ? <OperatorShell tab="improvement"><VocabularyCaseReviewPage api={api} /></OperatorShell> : <VocabularyCaseReviewPage api={api} />);

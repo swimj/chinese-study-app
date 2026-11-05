@@ -342,6 +342,11 @@ exercise collections.
 
 ### Operator review
 
+Operator routes (`/operator/<view>`) mount a separate workspace without learner
+navigation, dashboard reads, attention polling, or session recovery. Returning
+to study loads `/` as a new page; the operator shell does not preserve an in-memory
+study session across that boundary. Operator API authorization remains required.
+
 The operator's default surface is a cross-learner improvement-case inbox for
 reviewing assessments and approving changes. Cases retain their creation order
 through reassessment; judgments with and without proposals share the same review

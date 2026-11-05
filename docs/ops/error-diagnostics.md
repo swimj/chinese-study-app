@@ -120,7 +120,7 @@ queries, dashboard interpretation, and the complete label policy.
 
 ## Shared word preparation failures
 
-Open the bookmark-only operator view at `#operator-usage` and select
+Open the bookmark-only operator view at `/operator/failures` and select
 **Preparation failures**. Access requires an operator identity allowed by
 `APP_OPERATOR_CLERK_USER_IDS`; an empty allowlist fails closed. Each entry
 identifies the word and preparation stage (`bootstrap`, `teaching`, or `review`),
