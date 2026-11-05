@@ -549,8 +549,8 @@ all 12 study items before handing the fixture back.
 
 Start the backend with that directory, the printed learner, and seed; point Vite's
 `VITE_API_BASE` at that API. The presentation fixture is
-`/tests/browser/vocabulary-ui.html`, the operator fixture is
-`/tests/browser/vocabulary-operator.html`, and the real-hook cancellation regression
+`/tests/browser/vocabulary-ui.html`, the operator review fixture is
+`/tests/browser/vocabulary-case-review.html`, and the real-hook cancellation regression
 fixture is `/tests/browser/vocabulary-controller.html` (also `?mode=undo`).
 The prompt experiment harness retains offline inputs, outputs, variants, and
 review notes; see [its handoff](implementation/vocabulary-prompt-handoff.md).
