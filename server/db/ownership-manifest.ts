@@ -43,6 +43,8 @@ export const durableOwnershipManifest: readonly DurableOwnershipEntry[] = [
   operationalEntry('vocabulary_case_sense_coverage', 'operator review coverage associated with private reflection cases'),
   operationalEntry('vocabulary_sense_coverage_history', 'immutable operator/service coverage decisions; case history stays internal'),
   operationalEntry('reflection_cases', 'internal vocabulary processing and provenance; no shared access to private source evidence'),
+  operationalEntry('vocabulary_case_reviews', 'internal review lifecycle; no shared access to private case evidence'),
+  operationalEntry('vocabulary_case_lineage', 'internal case provenance; no shared access to private source evidence'),
   operationalEntry('reflection_case_evidence', 'internal vocabulary processing and provenance; no shared access to private source evidence'),
   operationalEntry('vocabulary_reflection_jobs', 'internal vocabulary processing and provenance; no shared access to private source evidence'),
   operationalEntry('teacher_judgments', 'internal vocabulary processing and provenance; no shared access to private source evidence'),

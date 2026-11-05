@@ -108,24 +108,18 @@ edits; their captured `generationScope` identifies the original invocation input
 Approval/application revalidate their source evidence. Sense policy is edited
 through the coverage endpoints, separately from content proposals.
 
-`POST /api/operator/vocabulary/cases/:id/reassessments` accepts `modelChoice` and
-required `expectedContentVersion`, plus optional `originProposal` containing
-`proposalId` and `expectedVersion` when started from a proposal. Omission identifies
-the case itself as the originating item. Successful publication closes that item
-atomically with the new result; changed or approved proposals are preserved.
-The durable request event retains this identity; requests predating that metadata
-do not automatically close an inferred origin. It queues an independent assessment pinned to
-that current source version and returns the new `caseId` and `jobId`. The operator
-must confirm a version change shown by the review surface before submission. A
-source version that changed since the read is a conflict; the request does not
-silently assess the newer version. Case and review reads expose the historical
-assessed version and current version for this decision. Reassessment performs
-fresh mapping where applicable and fresh assessment with the retained learner
-responses, reactions and served snapshots, including across reassessment chains.
-The input identifies whether those encounters came from the current source version.
-It does not resolve or apply the original proposal or judgment. Succeeded
-assessments with open attention findings can also be reassessed; unfinished jobs
-are not eligible. Review reads include an explicit unavailability reason.
+`POST /api/operator/vocabulary/cases/:id/reassessments` accepts `modelChoice`,
+required `expectedContentVersion`, and optional `originProposal` with
+`proposalId` and `expectedVersion`. It returns the canonical `caseId` and the new
+`jobId`; the case identity does not change. The source version is pinned at
+submission and a changed version requires operator confirmation. One queued or
+running job is allowed per case. Reassessment freezes case review mutations
+until termination; success selects the new assessment and supersedes the prior
+current proposal, while failure preserves it. Historical proposals retain their
+assessment-job provenance. Advisory opinions do not select a new authoritative
+assessment. Workspaces expose `case.review` and each job's `caseSequence`,
+separately from the provider retry `attemptNumber`. Source changes remain
+conflicts rather than silently changing the requested assessment.
 
 `POST /api/operator/vocabulary/cases/:id/pure-cue-resolutions` accepts `modelChoice`,
 `expectedContentVersion` and `selections` of `{form, wordId}`. For a pending lexical

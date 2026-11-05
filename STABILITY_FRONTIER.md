@@ -45,8 +45,12 @@ belong there and in task instructions, not in this frontier.
   selector. Model-empty findings need operator review; explicit canonical/document
   scopes remain usable independently.
 - **Reflection:** private learner lessons and internal content proposals run
-  independently. Operators approve content applications. Backend judgment can
-  compensate scheduling without learner approval or content publication.
+  independently. An improvement case retains its encounter group and numbered
+  holistic assessment jobs; only one job may be queued or running within it.
+  Reassessment freezes case review mutations until termination and preserves
+  earlier assessments as provenance. Operators approve exact content revisions;
+  case resolution is distinct from job completion and queued approval. Backend
+  judgment can compensate scheduling without learner approval or content publication.
 - **Hosted boundary:** Mandarin, invite-only desktop web, one-origin frontend
   and Express API, shared SQLite, Clerk identity, and Fly/Litestream are the
   current beta baseline. Hosted dogfood history is valued data; the preserved

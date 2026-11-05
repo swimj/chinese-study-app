@@ -1,3 +1,4 @@
+import { backfillVocabularyCaseReviews } from './vocabulary-case-review-migration.ts';
 import { assertVocabularyCutoverReady } from './vocabulary-cutover.ts';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
@@ -224,6 +225,10 @@ export const schemaMigrations: readonly SchemaMigration[] = [{
 }, {
   id: 'app_schema:0065_vocabulary_dispatch_polling_indexes',
   sql: fs.readFileSync(new URL('./migrations/0065_vocabulary_dispatch_polling_indexes.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0066_vocabulary_case_reviews',
+  sql: fs.readFileSync(new URL('./migrations/0066_vocabulary_case_reviews.sql', import.meta.url), 'utf8'),
+  after: backfillVocabularyCaseReviews,
 }];
 
 function checksum(value: string): string {

@@ -1,3 +1,4 @@
+import { installCaseReviewSchema } from './helpers/case-review-schema.ts';
 import { ensureVocabularySenses } from '../server/vocabulary/sense-readiness.ts';
 import { recoverVocabularySenseDependencies } from '../server/db/vocabulary-reflection.ts';
 import assert from 'node:assert/strict';
@@ -47,6 +48,7 @@ beforeEach(()=>{
   sql.exec(`INSERT INTO learner_words(learner_id,word_id,in_stash,added_at,mode,mode_changed_at) VALUES ('alice','a',1,'2026-01-01','practice','2026-01-01');
     INSERT INTO learner_word_schedules(learner_id,word_id,next_eligible_at,policy_version,scheduler_state_json)
       VALUES ('alice','a','2026-10-20T10:00:00.000Z','test','{"intervalHours":24,"easeFactor":2.5,"enabled":1,"cleanCoveredSessions":0}');`);
+  installCaseReviewSchema(sql);
   for(const id of ['one','two'])createVocabularyContent({contentId:id,kind:'exercise',payloadVersion:1,body:{prompt:`Prompt ${id}`},exerciseType:'definition',skill:'production',exerciseRole:'general',assessment:{match:'exact'},
     accessScope:'shared',availability:'active',originKind:'human',words:[{wordId:'a',relation:'target'}],answers:[{wordId:'a',acceptedForms:['字']}]},{kind:'operator',id:'editor'});
 });

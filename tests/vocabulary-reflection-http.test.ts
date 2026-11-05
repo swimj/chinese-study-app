@@ -1,3 +1,4 @@
+import { installCaseReviewSchema } from './helpers/case-review-schema.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -49,6 +50,7 @@ beforeEach(()=>{
     CREATE TABLE word_content_documents(content_id TEXT PRIMARY KEY,word_id TEXT,publication_id TEXT,content_json TEXT);
     CREATE TABLE shared_content_publications(publication_id TEXT PRIMARY KEY,publication_status TEXT);`);
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0043_vocabulary_import.sql',import.meta.url),'utf8').split('CREATE TRIGGER')[0]!);
+  installCaseReviewSchema(sql);
   createVocabularyContent(draft(),{kind:'operator',id:'editor'});
   const completion=alice(()=>{
     createVocabularySession({sessionId:'session',words:[{wordId:'a',mode:'practice'}]},at);
@@ -219,6 +221,8 @@ test('practice preparation diagnostics and explicit retry require allowlisted au
 });
 
 test('second opinion endpoints require operator authority, current version, and strict request fields',()=>{
+  const original=claimVocabularyReflectionJob({kind:'exercise_improvement',now:later})!;
+  recordVocabularyImprovementResult(original.jobId,original.leaseToken,{diagnosis:'Original assessment',proposal:null},later);
   const created=call('post',`${base}/proposals`,{body:{...proposal(),caseId}});
   const id=String(created.body.proposalId),route=`${base}/proposals/:id/second-opinions`;
   assert.equal(call('post',route,{params:{id},body:{expectedVersion:2}}).status,409);
@@ -322,7 +326,7 @@ for(const outcome of ['inventory_gap','unmappable','needs_operator'] as const)te
 });
 
 test('reassessment endpoint validates model and authority and queues the selected independent assessment',()=>{
-  sql.exec('ALTER TABLE vocabulary_reflection_jobs ADD COLUMN model_choice TEXT');
+
   const job=claimVocabularyReflectionJob({kind:'exercise_improvement',now:later})!;
   recordVocabularyImprovementResult(job.jobId,job.leaseToken,{diagnosis:'No change',proposal:null},later);
   sql.prepare("INSERT INTO vocabulary_improvement_stages VALUES (?,'sense_mapping','hash','{}',?,NULL,?)")
@@ -334,7 +338,7 @@ test('reassessment endpoint validates model and authority and queues the selecte
   assert.equal(call('post',route,{params,body:{modelChoice:'openai:gpt-6-sol-high',expectedContentVersion:1}}).status,403);
   process.env.APP_OPERATOR_CLERK_USER_IDS='editor';
   const response=call('post',route,{params,body:{modelChoice:'openai:gpt-6-sol-high',expectedContentVersion:1}});
-  assert.equal(response.status,200);assert.notEqual(response.body.caseId,caseId);assert.equal(wakes,1);
+  assert.equal(response.status,200);assert.equal(response.body.caseId,caseId);assert.equal(wakes,1);
   assert.equal(call('post',route,{params,body:{modelChoice:'openai:gpt-6-sol-high',expectedContentVersion:1}}).status,409);
   assert.equal((call('get',`${base}/cases/:id`,{params}).body.reassessment as {jobId:string}).jobId,response.body.jobId);
 });
@@ -572,7 +576,7 @@ test('unknown word defaults remain in attention after content approval and resol
 });
 
 test('pure cue resolution route validates identity selections and authority before queueing',()=>{
-  sql.exec("ALTER TABLE vocabulary_reflection_jobs ADD COLUMN model_choice TEXT;ALTER TABLE lexical_words ADD COLUMN traditional TEXT;ALTER TABLE lexical_words ADD COLUMN meaning TEXT NOT NULL DEFAULT 'word';INSERT INTO lexical_words(id,hanzi,pinyin) VALUES ('b','别','bié'),('c','别','biè');");
+  sql.exec("ALTER TABLE lexical_words ADD COLUMN traditional TEXT;ALTER TABLE lexical_words ADD COLUMN meaning TEXT NOT NULL DEFAULT 'word';INSERT INTO lexical_words(id,hanzi,pinyin) VALUES ('b','别','bié'),('c','别','biè');");
   const work=claimVocabularyReflectionJob({kind:'exercise_improvement',now:later})!;
   recordVocabularyImprovementResult(work.jobId,work.leaseToken,{diagnosis:'Review identities',proposal:null,
     admission:{outcome:'single_sense',rationale:'Shared use',wordId:'a',sourceContentId:'one',sourceContentVersion:1,catalogVersion:getVocabularySenseCatalog('a').version,senseIds:[],sourceMapping:{senseId:null,establishedAt:null}},
@@ -583,12 +587,12 @@ test('pure cue resolution route validates identity selections and authority befo
   assert.equal(call('post',route,{params,body:{...body,selections:[body.selections[0],body.selections[0]]}}).status,400);
   assert.equal(call('post',route,{params,body:{...body,selections:[{form:'字',wordId:'a'},{form:'别',wordId:'missing'}]}}).status,409);
   process.env.APP_OPERATOR_CLERK_USER_IDS='someone-else';assert.equal(call('post',route,{params,body}).status,403);process.env.APP_OPERATOR_CLERK_USER_IDS='editor';
-  const result=call('post',route,{params,body});assert.equal(result.status,200);assert.equal(wakes,1);assert.notEqual(result.body.caseId,caseId);
+  const result=call('post',route,{params,body});assert.equal(result.status,200);assert.equal(wakes,1);assert.equal(result.body.caseId,caseId);
   assert.equal(getVocabularyContentForMaintenance('one')!.version,1);assert.equal(sql.prepare('SELECT count(*) n FROM content_proposals').get()!.n,0);
 });
 
  test('reassessment validates and retains the exact originating proposal',()=>{
-  sql.exec('ALTER TABLE vocabulary_reflection_jobs ADD COLUMN model_choice TEXT');
+
   const job=claimVocabularyReflectionJob({kind:'exercise_improvement',now:later})!;
   recordVocabularyImprovementResult(job.jobId,job.leaseToken,{diagnosis:'Original',proposal:null},later);
   const original=call('post',`${base}/proposals`,{body:{...proposal(),caseId}}).body;

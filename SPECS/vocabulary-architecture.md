@@ -75,19 +75,30 @@ and application validate source versions and effect scope. Application records
 an idempotent receipt; stale bases or changed drafts require renewed validation
 and approval. Advisory second opinions cannot authorize or apply changes.
 
+An improvement review case owns an immutable encounter group and a continuing
+operator review lifecycle. Holistic reflection jobs are numbered within that
+case; model invocations and provider retries belong to a job. Only one job may
+be queued or running per case. Advisory opinions retain their exact reviewed
+proposal version and do not become the authoritative assessment.
+
 Operator reassessment pins the current source identity and version at submission.
 A difference from the historical assessed version requires explicit operator
-confirmation. Source identity and version govern reassessment consistency;
-structural content comparisons do not substitute for version authority. A later
-source revision invalidates queued or in-flight work and proposals based on that
-version. Fresh mapping and assessment belong to the new case. Its link to the
-original assessment preserves provenance and historical encounter evidence.
-Publication and dismissal of the unchanged originating review item commit
-atomically. The durable request records the selected item and proposal version;
-completion preserves later edits and explicit approval or resolution.
-The assessment distinguishes those served snapshots from its pinned current
-source. Retry retains the pinned version; it does not silently move the request
-to another revision.
+confirmation. Queuing reassessment freezes the case's proposal and review edits,
+resolution, approval, and review-scope changes until that job terminates. Shared
+word policy retains its own authority and consistency checks. Successful
+publication atomically selects the new assessment and supersedes the prior
+current proposal; failure or timeout leaves the prior review material intact.
+The case identity and original creation time remain stable. Previous jobs,
+proposals, invocations, and decisions remain attributable within the case.
+
+Source identity and version govern reassessment consistency. A later source
+revision invalidates queued or in-flight work and proposals based on that version.
+Fresh mapping and assessment belong to the new job. Original served snapshots
+remain distinct from its pinned current source. Retry retains the pinned version;
+it does not silently move to another source or supersede a newer assessment.
+Case review resolution is separate from job completion and approval progress:
+queued authorization is not successful application. Pending and failed approvals
+remain attributable, and application receipts prevent duplicate effects.
 
 Exercise-local assessment owns the coherent content plan, including the source's
 disposition, a complete shared draft, and any target or response-word practice.

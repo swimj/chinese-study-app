@@ -149,21 +149,18 @@ The second opinion reviews the no-change judgment; it does not create or apply a
 proposal. Closed reviews remain in Archive, with their retained jobs and results in the case evidence.
 
 **Reassess current exercise** runs a fresh assessment with the selected model,
-defaulting to GPT-6 Sol high. It assesses the current exercise version with fresh
-sense mapping where applicable and places its independent result in the review
-queue. If the source version differs from the original assessment, the control
-shows the version change and requires confirmation to proceed on the current
-version. The assessment uses retained learner responses and reactions, distinguishing
-the historical served snapshots from the current source. A further source change
-requires a new request against the current version. The control refreshes current source metadata before
-submission. Stale proposals and unsaved proposal edits do not prevent reassessing
-the live exercise; saved sense coverage is used, and the old result, draft text and
-item selections remain intact while assessment runs. On successful completion,
-the originating item leaves its queue and remains in Archive, linked through the
-retained reassessment evidence. A proposal edited, approved, or resolved after
-submission is preserved. Failed reassessments leave the origin open. A succeeded assessment in Needs attention because
-useful coverage is unknown can be corrected and reassessed there. Neither result
-is applied automatically.
+defaulting to GPT-6 Sol high. It pins the current source version and performs
+fresh sense mapping where applicable. A changed source version is shown for
+confirmation before submission. The original served content and learner responses
+remain historical evidence.
+
+Reassessment adds a numbered job to the same case. While queued or running, the
+case's saved proposal, review decisions, and review-scope edits are frozen.
+Success selects the replacement assessment; failure or timeout restores review
+of the previous result. Earlier assessments and proposals remain retained.
+Only one job may be queued or running within the case. Second opinions remain
+advisory and do not replace its current assessment. Content is applied only after
+explicit approval and successful application.
 
 **Sense coverage** initially edits this review. It distinguishes inherited word
 defaults, a review override and unknown defaults. Check desired uses or choose
@@ -183,7 +180,7 @@ approval; **Refresh snapshot** updates the evidence without discarding draft edi
 When a newer saved revision exists, **Load current proposal** opens that revision
 with the usual confirmation before discarding unsaved edits.
 Unsaved scope edits and pending saves block navigation and resolution; loading
-coverage does not. A new reassessment copies the saved review selection.
+coverage does not. A new reassessment uses the saved review selection within the same case.
 
 A model finding about missing useful defaults appears beside **Sense coverage**
 and in **Needs attention → Word defaults need attention**, including after its
