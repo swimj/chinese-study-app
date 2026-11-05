@@ -11,10 +11,23 @@ their realization. Broader exploration is retained in the
 ## Words, uses, and exercises
 
 A word has a stable identity and a hanzi/pinyin representation. Senses describe
-uses of that word and can evolve independently of exercises. A learner ordinarily
-studies a word's common uses. Sense associations may be unresolved; word-level
-study and content improvement remain available. Creating a new content version
-does not discard an established identity-level association.
+distinct uses of that exact learning target and can evolve independently of
+exercises. Uses in grammatical constructions can qualify; meanings realized only
+through larger compounds or fixed expressions belong to those larger expressions.
+The inventory can include uncommon, literary and technical uses, while default
+selection chooses which normally deserve teaching and practice.
+
+An established inventory with no eligible senses makes the word ineligible for
+new sessions. Learners can keep it in their stash; its history and progress are
+preserved. It cannot enter teaching, recognition or production, appear as an
+accepted answer on a shared exercise, or participate as a contrast choice. This
+restriction does not rewrite an already retained session. Learner explanations
+and customization for these words are outside the current interface.
+
+Sense associations may be unresolved without establishing that a word has no
+eligible uses; word-level study and content improvement remain available in that
+case. Creating a new content version does not discard an established
+identity-level association.
 
 Exercises contain their own authored material, assessment, accepted answers,
 word relationships, and serving role. Several exercises can explore the same

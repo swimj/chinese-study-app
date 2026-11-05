@@ -92,7 +92,7 @@ test('lexical-only generation records exact invocation provenance and sense outp
   await ensureVocabularySenses('w1',{ workflowId:'next',provider:instance });assert.equal(calls,1);
   const invocation = db.prepare('SELECT * FROM model_invocations WHERE actor_id=?').get(VOCABULARY_SENSE_SERVICE)!;
   assert.equal(invocation.model,'gpt-5.6-luna');assert.equal(invocation.workflow_id,'workflow');assert.equal(invocation.attempt_number,1);
-  assert.equal(invocation.prompt_name,'vocabulary-sense-inventory');assert.equal(invocation.prompt_version,'2');
+  assert.equal(invocation.prompt_name,'vocabulary-sense-inventory');assert.equal(invocation.prompt_version,'7');
   const selectionHistory=db.prepare("SELECT snapshot_json FROM vocabulary_sense_coverage_history WHERE scope='word' AND subject_id='w1'").get()!;
   const selectionEvent=db.prepare("SELECT data_json FROM backend_events WHERE name='vocabulary.sense_coverage.updated' AND entity_id='w1'").get()!;
   const reason={invocationId:invocation.id,workflowId:'workflow',attemptNumber:1,senseIds:resolveVocabularySenseCoverage('w1').includedSenseIds};
@@ -103,6 +103,10 @@ test('lexical-only generation records exact invocation provenance and sense outp
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM invocation_sense_links WHERE role='output'").get()!.n,2);
   assert.equal(sent.reasoning_effort,'high');
   const messages=sent.messages as Array<{content:string}>;assert.deepEqual(Object.keys(JSON.parse(messages[1]!.content)),['word']);
+  const lexicalInput=JSON.parse(messages[1]!.content).word;
+  assert.deepEqual(Object.keys(lexicalInput).sort(),['hanzi','meanings','pinyin']);
+  assert.ok(result.senses.every(sense=>sense.wordId==='w1'));
+  assert.equal(invocation.input_projection_version,'simplified-lexical-evidence-v3');
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM content_items').get()!.n,0);
   assert.equal(db.prepare('SELECT status FROM vocabulary_sense_readiness').get()!.status,'ready');
 });
@@ -141,7 +145,7 @@ test('interrupted expired sense work is fenced and scheduled after backoff',asyn
 });
 
 test('invalid, unbounded or duplicate inventories never establish a catalog',async () => {
-  for (const output of [{senses:[]},{senses:Array.from({length:17},(_,i)=>({label:String(i),notes:[]}))},
+  for (const output of [{senses:Array.from({length:17},(_,i)=>({label:String(i),notes:[]}))},
     {senses:[{label:'same',notes:[]},{label:' SAME ',notes:[]}]},{senses:[{label:' ',notes:[]}]},
     {senses:[{label:'x'.repeat(601),notes:[]}]}]) {
     await assert.rejects(ensureVocabularySenses('w1',{workflowId:'bad',provider:provider(()=>output)}),VocabularySenseReadinessPending);
@@ -152,7 +156,7 @@ test('invalid, unbounded or duplicate inventories never establish a catalog',asy
   }
 });
 
-test('empty established and partial unestablished inventories are surfaced for review, never silently overwritten',async () => {
+test('partial inventories require review and established empty inventories are retained without regeneration',async () => {
   createVocabularySense({wordId:'w1',description:{label:'partial'}},actor);
   await assert.rejects(ensureVocabularySenses('w1',{workflowId:'partial',provider:provider(()=>assert.fail('no call'))}),/Partial sense inventory/);
   bootstrap();
@@ -162,7 +166,8 @@ test('empty established and partial unestablished inventories are surfaced for r
   // Retiring the only sense is an explicit editorial operation; readiness must not reverse it.
   const {updateVocabularySense}=await import('../server/db/vocabulary-content.ts');
   const sense=getVocabularySenses('w1')[0]!;updateVocabularySense(sense.senseId,sense.version,{description:sense.description,status:'retired'},actor);
-  await assert.rejects(ensureVocabularySenses('w1',{workflowId:'empty',provider:provider(()=>assert.fail('no call'))}),/no active senses/);
+  const empty=await ensureVocabularySenses('w1',{workflowId:'empty',provider:provider(()=>assert.fail('no call'))});
+  assert.deepEqual(empty.senses,[]);assert.equal(empty.source,'existing');
 });
 
 
@@ -180,5 +185,21 @@ test('sense retries have durable 30/60 second delays and retain lifetime history
   const ready=await ensureVocabularySenses('w1',{...options,provider:provider()});assert.equal(ready.source,'generated');
   const attempts=db.prepare("SELECT attempt_number,cycle_attempt,outcome FROM vocabulary_preparation_attempts ORDER BY attempt_number").all();
   assert.deepEqual(attempts.map(row=>[row.attempt_number,row.cycle_attempt,row.outcome]),[[1,1,'failed'],[2,2,'failed'],[3,3,'failed'],[4,1,'ready']]);
+  assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
+});
+
+
+test('empty generation establishes a stable catalog and empty defaults without retries or operator-selection failure',async()=>{
+  let calls=0;
+  const instance=provider(()=>{calls++;return {senses:[]};});
+  const generated=await ensureVocabularySenses('w1',{workflowId:'empty',provider:instance});
+  assert.deepEqual(generated.senses,[]);assert.notEqual(generated.catalog.establishedAt,null);
+  assert.equal(generated.source,'generated');
+  assert.deepEqual(getVocabularyWordSenseCoverage('w1').defaultUsefulSenseIds,[]);
+  assert.equal(db.prepare('SELECT status FROM vocabulary_sense_readiness').get()!.status,'ready');
+  assert.equal(db.prepare('SELECT outcome FROM vocabulary_preparation_attempts').get()!.outcome,'ready');
+  assert.equal(db.prepare('SELECT COUNT(*) n FROM vocabulary_default_selection_readiness').get()!.n,0);
+  const again=await ensureVocabularySenses('w1',{workflowId:'again',provider:instance});
+  assert.equal(again.source,'existing');assert.equal(calls,1);assert.deepEqual(again.catalog,generated.catalog);
   assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
 });

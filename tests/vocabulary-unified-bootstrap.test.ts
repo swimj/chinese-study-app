@@ -138,3 +138,23 @@ test('canonical edits during enrichment still reject immutable document publicat
   await assert.rejects(service.generate('word','bootstrap','claim'),/source or catalog changed/);
   assert.equal(db.prepare('SELECT count(*) n FROM word_content_documents').get()!.n,0);
 });
+
+
+test('empty inventory stops all queued teaching stages without enrichment calls or consumed attempts',async()=>{
+  runWithLearnerId('learner',()=>enqueueWordPreparation('word','teaching'));
+  let inventoryCalls=0;
+  const emptyEnsure:typeof ensureVocabularySenses=(wordId,options)=>ensureVocabularySenses(wordId,{...options,
+    provider:{isConfigured:()=>true,generate:async()=>{inventoryCalls++;return {senses:[]};}}});
+  const worker=createWordPreparationWorker({provider:provider(),ensureSenses:emptyEnsure,
+    controls:()=>({maintenanceMode:false,providerWorkEnabled:true}),providerWork:async work=>work()});
+  await worker.drain();await worker.stop();
+  for(const stage of ['bootstrap','teaching'] as const){
+    const work=getWordPreparationWork('word',stage)!;
+    assert.equal(work.status,'paused');assert.equal(work.attemptCount,0);
+    assert.match(work.lastError!,/No eligible target-level senses/);
+  }
+  assert.equal(inventoryCalls,1);assert.equal(calls,0);
+  assert.deepEqual(resolveVocabularySenseCoverage('word').includedSenseIds,[]);
+  assert.equal(resolveVocabularySenseCoverage('word').selectionEstablished,true);
+  assert.equal(getSharedWordIntroductionContent('word'),null);
+});

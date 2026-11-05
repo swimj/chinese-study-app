@@ -1,3 +1,4 @@
+import { isVocabularySessionWordEligible } from '../db/vocabulary-sense-eligibility.ts';
 import type { VocabularySessionPayload } from '../../src/domain/vocabulary-session-payload.ts';
 import { selectSequentialBootstrapReveal } from '../../src/domain/word-content/reveal.ts';
 import { reconcileVocabularyPreparationReserve } from './preparation-reserve.ts';
@@ -79,7 +80,7 @@ function contrastEligible(content:VocabularyContent,wordId:string):boolean {
   if(!state)return false;
   const choices=object(content.body).choices;
   return Array.isArray(choices)&&choices.length>=2&&choices.every((choice)=>{
-    const id=object(choice).wordId;if(typeof id!=='string')return false;
+    const id=object(choice).wordId;if(typeof id!=='string'||!isVocabularySessionWordEligible(id))return false;
     const member=getVocabularyLearnerWord(id);return member!==null&&member.dismissedAt===null&&member.mode!=='unstudied';
   });
 }

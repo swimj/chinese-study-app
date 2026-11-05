@@ -98,6 +98,8 @@ test('selector uses call-local IDs on the wire and persists only decoded canonic
   inventory();let wireIds:string[]=[],enumIds:string[]=[];
   const adapter=createOpenAiCompatibleAdapter({id:'openai',defaultBaseUrl:'https://example.invalid',apiKeyEnvironmentVariable:'KEY',structuredOutputMode:'json_schema',maxTokensField:'max_completion_tokens',fetchImplementation:async(_url,init)=>{
     const request=JSON.parse(String(init?.body));const input=JSON.parse(request.messages[1].content);
+    assert.deepEqual(input.word,{hanzi:'函',pinyin:'hán',meanings:['letter; case']});
+    assert.ok(input.senses.every((sense:Record<string,unknown>)=>!Object.hasOwn(sense,'wordId')));
     wireIds=input.senses.map((sense:{senseId:string})=>sense.senseId);enumIds=request.response_format.json_schema.schema.properties.senseIds.items.enum;
     return new Response(JSON.stringify({choices:[{message:{content:JSON.stringify({senseIds:['s2']})},finish_reason:'stop'}],usage:{prompt_tokens:10,completion_tokens:10}}),{status:200});
   }});
@@ -113,4 +115,16 @@ for(const bad of [['letter'],['s99'],['s1','s1']])test(`selector rejects foreign
   const provider=createUsefulSelectionProvider({environment:{OPENAI_API_KEY:'fake'},adapter});
   await assert.rejects(provider.select({word:{wordId:'word',hanzi:'函',traditional:null,pinyin:'hán',meanings:['letter']},senses:getVocabularySenses('word')},{workflowId:'invalid-wire',attemptNumber:1,onInvocation:()=>{}}),/invalid/);
   assert.equal(getVocabularyWordSenseCoverage('word').defaultUsefulSenseIds,null);
+});
+
+
+test('established empty catalog initializes empty defaults without a selector call',async()=>{
+  establishVocabularySenseCatalog('word',getVocabularySenseCatalog('word').version,actor);
+  assert.equal(defaultUsefulInitializationPlan('word').kind,'empty');
+  const coverage=await ensureVocabularyDefaultUsefulSelection('word',{workflowId:'empty',provider:{
+    isConfigured:()=>true,select:async()=>assert.fail('No selector for an empty inventory'),
+  }});
+  assert.deepEqual(coverage.defaultUsefulSenseIds,[]);
+  assert.equal(defaultUsefulInitializationPlan('word').kind,'known');
+  assert.equal(db.prepare('SELECT COUNT(*) n FROM vocabulary_default_selection_readiness').get()!.n,0);
 });

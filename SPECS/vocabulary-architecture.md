@@ -139,15 +139,25 @@ these contracts or by passing implementation tests.
 
 ### Canonical senses and useful selection
 
+For now, inventory generation groups uses under the supplied simplified spelling
+and pronunciation, without a separate inventory for each traditional spelling.
+Traditional forms remain lexical data but are not supplied to inventory or
+default-selection models. Glosses are optional, non-exhaustive hints; supported
+uses can be included and selected even when absent from those hints.
+
 Three separate records answer different questions:
 
-- The **canonical inventory** describes all supported meanings and uses, including
-  peripheral, literary, technical and bound-form senses. Each sense has a stable
-  identity and version.
+- The **canonical inventory** describes distinct uses of the exact learning target,
+  including peripheral, literary and technical uses. Grammatical constructions
+  can support a target's own use; meanings realized only through larger compounds
+  or fixed expressions belong to those larger targets. Each sense has a stable
+  identity and version. An established inventory with zero active senses is a
+  valid, settled result, distinct from an inventory that has not been established.
 - The **default useful selection** chooses which senses normally deserve teaching
-  and mapped production practice. Null means unknown; an operator-saved `[]` means
-  explicitly none. A review can supply its own selection, including an uncommon
-  use, without changing the word defaults.
+  and mapped production practice. Null means unknown; `[]` means explicitly none,
+  either saved by an operator or derived from an established empty inventory.
+  A review can supply its own selection, including an uncommon use, without
+  changing the word defaults.
 - An **invocation scope** records the exact canonical targets that a content call
   will address. Later changes to defaults do not retarget that call or invalidate
   its result. Source, mapping and canonical-version changes still fence publication.
@@ -155,9 +165,19 @@ Three separate records answer different questions:
 Unknown defaults initialize asynchronously when needed. Active senses imported
 from teaching establish their useful selection deterministically. Inventory-only
 words receive a selector decision over existing sense IDs; it cannot create or
-rewrite senses. A model recommendation of no useful senses preserves the inventory
-and remains unknown with an operator finding. It never becomes an operator's
-explicit none decision. A concurrent operator decision takes precedence.
+rewrite senses. An established empty inventory resolves unknown defaults to `[]`
+without a selector call. A nonempty inventory whose model recommendation selects
+no useful senses preserves the inventory and leaves defaults unknown with an
+operator finding. That recommendation does not become an operator's explicit none
+decision. A concurrent operator decision takes precedence.
+
+An established empty inventory makes the word ineligible for new sessions across
+teaching, recognition, production, shared accepted-answer sets and contrast
+choices. Stash membership, learner schedules, content history and retained session
+snapshots are preserved. Empty inventories create no authoring demand; pending work
+settles without provider calls or discarding its evidence. Content improvement
+records `no_senses_requested` before mapping or authoring. This eligibility boundary takes
+precedence over the nonempty-inventory selection rules below.
 
 | Consumer | Unknown defaults | Explicit none | Selected set |
 | --- | --- | --- | --- |
@@ -175,8 +195,9 @@ ordinary content approval. General preparation likewise retains its immutable
 source document's full mapped canonical scope across policy edits. Prepared
 teaching packages preserve document/component coherence.
 
-Unmapped fallback exercises, recognition and historical encounters retain their
-serving rules. Missing or stale document-to-sense mappings raise an operator finding
+For words without an established empty inventory, unmapped fallback exercises and
+recognition retain their serving rules. Historical encounters retain their exact
+served material. Missing or stale document-to-sense mappings raise an operator finding
 before new generation; runtime does not invent reconciliation or remap old sources.
 Coverage changes never imply retirement. A proposal may separately retire a general
 production exercise, subject to exact source, mapping and catalog checks. Operators

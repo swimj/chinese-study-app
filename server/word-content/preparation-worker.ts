@@ -1,9 +1,10 @@
-import { VocabularySenseReadinessPending,VocabularySenseReadinessError } from '../vocabulary/sense-readiness.ts';
+import { isVocabularySessionWordEligible } from '../db/vocabulary-sense-eligibility.ts';
+import { VocabularySenseReadinessPending,VocabularySenseReadinessError,VocabularyEmptySenseInventory } from '../vocabulary/sense-readiness.ts';
 import type { ensureVocabularySenses } from '../vocabulary/sense-readiness.ts';
 import { runWithLearnerId } from '../db/learner-context.ts';
 import { randomUUID } from 'node:crypto';
 import {
-  deferWordPreparationForSenses,listDueWordPreparation, beginWordPreparationAttempt, markWordPreparationReady,
+  pauseEmptyInventoryPreparation,deferWordPreparationForSenses,listDueWordPreparation, beginWordPreparationAttempt, markWordPreparationReady,
   failWordPreparationAttempt, recoverExpiredWordPreparation, pauseUnavailableWordPreparation,
   type WordPreparationWork,
 } from '../db/preparation-work.ts';
@@ -45,6 +46,10 @@ export function createWordPreparationWorker(options: {
     if (working.has(work.workId)) return false;
     working.add(work.workId);
     try {
+      if (!isVocabularySessionWordEligible(work.wordId)) {
+        pauseEmptyInventoryPreparation(work.wordId,new VocabularyEmptySenseInventory().message,isoNow());
+        return true;
+      }
       if (preparation.ready(work.wordId, work.stage)) {
         markWordPreparationReady(work.workId, isoNow());
         return true;
@@ -62,7 +67,8 @@ export function createWordPreparationWorker(options: {
         if (!enabled()) return false;
         try{if(work.stage==='bootstrap')await preparation.prepareBootstrapSenses(work.wordId,work.workId);else preparation.validatePreparedSource(work.wordId);}
         catch(error){
-          if(error instanceof VocabularySenseReadinessPending)deferWordPreparationForSenses(work.workId,error.retryAt,isoNow());
+          if(error instanceof VocabularyEmptySenseInventory)pauseEmptyInventoryPreparation(work.wordId,error.message,isoNow());
+          else if(error instanceof VocabularySenseReadinessPending)deferWordPreparationForSenses(work.workId,error.retryAt,isoNow());
           else if(error instanceof VocabularySenseReadinessError)pauseUnavailableWordPreparation(work.workId,error.message,isoNow());
           else throw error;
           return true;

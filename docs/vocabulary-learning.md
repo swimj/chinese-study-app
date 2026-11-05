@@ -124,6 +124,20 @@ creates a new identity and retires the predecessor atomically. Expected versions
 reject stale changes. Session composition captures authored versions and current
 identity-level sense mappings. Later serving uses that retained material.
 
+`sense-readiness.ts` distinguishes an unestablished catalog from an established
+catalog with zero active senses. The latter is a valid result and does not call
+the inventory provider again. `sense-inventory-contract.ts` accepts an empty
+`senses` array; readiness establishes the catalog and resolves unknown useful
+defaults to `[]`. A nonempty inventory with no selected defaults instead retains
+the operator-review recommendation.
+
+`server/db/vocabulary-sense-eligibility.ts` supplies the shared empty-inventory
+check that excludes those words from new session admission, ordinary and pure-cue accepted answers, and contrast choices.
+It applies before capacity allocation and when retaining the session's content.
+Stash membership, learner scheduling and historical content are not deleted.
+Existing session payloads keep their pinned material. The learner interface has
+no dedicated explanation or customization flow for this state.
+
 `content_words` describes targets and contextual relationships. Accepted-answer
 membership is separate; an answer word must also have a content relationship.
 General selectors exclude teaching. Maintain prefers current curated versions;
@@ -365,7 +379,11 @@ lifecycle changes can change membership. The existing reserve tables and setting
 triggers remain authoritative. Vocabulary add, enrollment, stash, dismissal, mode
 and closure writes request reconciliation; the periodic word-preparation runtime
 reconciles pending learners. Preview and Start also reconcile before composition.
-Only bootstrap and teaching jobs are queued for reserve candidates.
+Only bootstrap and teaching jobs are queued for reserve candidates. Established
+empty inventories are excluded from the reserve, freeing their slots for eligible
+words. If bootstrap establishes an empty inventory, dependent queued work is
+paused with its attempt evidence retained; reconciliation does not regenerate an
+inventory to manufacture teaching demand.
 
 ### Preparation compatibility
 
@@ -402,14 +420,20 @@ The shared teaching pipeline generates the introduction first, then exercises
 conditioned on that delivered material. A failed companion call preserves the
 successful introduction. No session waits for either workflow.
 
-A wholly unprepared word therefore uses four authoring calls: lexical bootstrap,
+For a wholly unprepared word with eligible selected senses, the pipeline uses
+five authoring calls: inventory/default selection, example enrichment,
 introduction, teaching exercises, and the independent general-practice pool.
-The first three establish a ready teaching repertoire; general practice is
-prepared after committed teaching completion. These are shared artifacts, not
-per-learner or per-session calls. The general v5 and teaching-exercise v2
+The first four establish a ready teaching repertoire; general practice is
+prepared after committed teaching completion. An empty inventory stops after
+inventory generation. These are shared artifacts, not per-learner or per-session
+calls. The general v5 and teaching-exercise v2
 briefs come from the retained [editorial trials](implementation/vocabulary-prompt-handoff.md).
 Existing artifacts are reused; retry creates additional attributable attempts.
-General authoring trusts selected senses, including specialized learning needs.
+General preparation creates no demand for a word with an established empty
+inventory. A queued general-practice job settles as ready with a no-demand
+diagnostic, without an authoring call. Content-improvement admission records
+`no_senses_requested` before mapping or authoring when readiness returns that state. General authoring for
+nonempty inventories trusts selected senses, including specialized learning needs.
 Each new automatic exercise binds to one supplied sense so future serving policy
 can include or exclude it. Unmapped legacy/manual content keeps its existing rules.
 An empty authoring result preserves its valid invocation and recommendation,

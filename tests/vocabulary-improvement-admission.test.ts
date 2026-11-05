@@ -975,3 +975,15 @@ function installCaseReviewScopeFixture():void {
   db.exec(readFileSync(new URL('../server/db/migrations/0066_vocabulary_case_reviews.sql',import.meta.url),'utf8').split('CREATE TABLE vocabulary_reflection_jobs_next')[0]!);
   db.exec("ALTER TABLE vocabulary_reflection_jobs ADD COLUMN review_case_id TEXT;ALTER TABLE vocabulary_reflection_jobs ADD COLUMN case_sequence INTEGER DEFAULT 1;ALTER TABLE vocabulary_reflection_jobs ADD COLUMN status TEXT DEFAULT 'succeeded';ALTER TABLE vocabulary_reflection_jobs ADD COLUMN reassessment_source_job_id TEXT;ALTER TABLE vocabulary_reflection_jobs ADD COLUMN second_opinion_json TEXT;INSERT INTO vocabulary_case_reviews(case_id,created_at) VALUES ('case','2026-11-04T00:00:00.000Z');INSERT INTO vocabulary_case_lineage VALUES ('case','case');");
 }
+
+for(const prefix of ['', '[bootstrap] '])test(`${prefix}established empty inventory stops mapping and authoring while preserving source`,async()=>{
+  for(const sense of getVocabularySenses('word'))updateVocabularySense(sense.senseId,sense.version,{description:sense.description,status:'retired'},actor);
+  const trial=provider(()=>assert.fail('No mapping or authoring call for empty inventory'));
+  const before=getVocabularyContentForMaintenance(original.contentId);
+  const result=await trial.provider.run(job());
+  assert.equal(result.kind,'exercise_improvement');
+  if(result.kind!=='exercise_improvement')throw new Error('Unexpected result');
+  assert.equal(result.result.admission?.outcome,'no_senses_requested');
+  assert.equal(result.result.proposal,null);assert.equal(trial.requests.length,0);
+  assert.deepEqual(getVocabularyContentForMaintenance(original.contentId),before);
+});
