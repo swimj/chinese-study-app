@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { OPERATOR_TABS, operatorPath, type OperatorTab } from '../features/operator/routes';
 
 /** Operator-only chrome. It does not depend on learner controllers or navigation. */
@@ -8,14 +8,16 @@ export function OperatorShell({ tab, onNavigate, children, onSignOut }: {
   children: ReactNode;
   onSignOut?: () => Promise<void>;
 }) {
-  return <div className="operator-shell">
-    <aside className="operator-rail">
+  const [railOpen, setRailOpen] = useState(false);
+  return <div className={`operator-shell${railOpen ? " operator-rail-open" : ""}`}>
+    <button className="operator-rail-toggle secondary-button" aria-expanded={railOpen} aria-controls="operator-rail" onClick={() => setRailOpen(value => !value)}>☰ <span>Operator views</span></button>
+    <aside className="operator-rail" id="operator-rail">
       <h1>Operator</h1>
       <nav aria-label="Operator views">{OPERATOR_TABS.map(item => <a key={item.id}
         href={operatorPath(item.id)} aria-current={tab === item.id ? 'page' : undefined}
         onClick={event => {
           if (!onNavigate || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-          event.preventDefault(); onNavigate(item.id);
+          event.preventDefault(); setRailOpen(false); onNavigate(item.id);
         }}>{item.label}</a>)}</nav>
       <a className="operator-return" href="/">Return to study</a>
       {onSignOut && <button className="secondary-button" onClick={() => void onSignOut()}>Sign out</button>}

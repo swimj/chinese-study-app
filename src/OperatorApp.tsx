@@ -25,6 +25,6 @@ export default function OperatorApp({ onSignOut }: { onSignOut?: () => Promise<v
   }
   return <OperatorShell tab={tab} onNavigate={navigate} onSignOut={onSignOut}>
     {tab !== 'improvement' && (tab ? <OperatorPanel key={tab} tab={tab} /> : <section><h2>Operator view not found</h2><a href="/operator/usage">Open usage</a></section>)}
-    {openedImprovement && <div hidden={tab !== 'improvement'}><OperatorPanel tab="improvement" /></div>}
+    {openedImprovement && <div className="operator-review-workspace" hidden={tab !== 'improvement'}><OperatorPanel tab="improvement" /></div>}
   </OperatorShell>;
 }

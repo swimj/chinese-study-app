@@ -15,3 +15,26 @@
   .operator-rail .operator-return { margin: .5rem 0 0; }
   .operator-main { padding: .75rem; }
 }
+
+/* Operator review owns the viewport; other operator panels retain document scrolling. */
+.operator-shell { background: var(--surface); grid-template-columns: 12.8rem minmax(0, 1fr); }
+.operator-rail { display: flex; flex-direction: column; background: var(--canvas); padding: 1.75rem .9rem 1.25rem; }
+.operator-rail a[aria-current=page] { background: var(--accent-soft); color: var(--accent); font-weight: 650; }
+.operator-rail .operator-return { margin-top: auto; padding-top: 1.5rem; }
+.operator-main { padding: 0 2rem; }
+.operator-review-workspace:not([hidden]) { height: 100dvh; display: flex; flex-direction: column; }
+.operator-rail-toggle { display: none; }
+@media (max-width: 850px) {
+  .operator-shell { grid-template-columns: 10.9rem minmax(0, 1fr); }
+  .operator-main { padding: 0 1.25rem; }
+}
+@media (max-width: 620px) {
+  .operator-shell { grid-template-columns: minmax(0, 1fr); }
+  .operator-rail { display: none; }
+  .operator-rail-open .operator-rail { display: flex; position: fixed; inset: 3.3rem auto 0 0; width: min(16rem, 90vw); height: calc(100dvh - 3.3rem); z-index: 20; box-shadow: .6rem 0 2rem #0002; border-right: 1px solid var(--border); }
+  .operator-rail nav { flex-direction: column; }
+  .operator-rail-toggle { display: block; position: absolute; top: .7rem; left: 1rem; z-index: 21; padding: .4rem .6rem; }
+  .operator-rail-toggle span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .operator-main { padding: 0 1rem; }
+  .operator-main .vocabulary-case-review-page > header { padding-left: 2.9rem; }
+}

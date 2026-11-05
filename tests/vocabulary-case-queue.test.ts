@@ -30,10 +30,10 @@ beforeEach(()=>{
   sql.prepare("INSERT INTO vocabulary_reflection_session_evidence VALUES ('completion','editor','session','{}',?)").run(at);
 });
 afterEach(()=>{sql.close();setDb(null);fs.rmSync(directory,{recursive:true,force:true});for(const [k,v]of Object.entries(environment)){if(v===undefined)delete process.env[k];else process.env[k]=v;}});
-function seedCase(id:string,options:{createdAt?:string;resolvedAt?:string;proposal?:boolean;blob?:string;state?:'open'|'resolved';noAssessment?:boolean}={}){
+function seedCase(id:string,options:{createdAt?:string;resolvedAt?:string;proposal?:boolean;blob?:string;state?:'open'|'resolved';noAssessment?:boolean;pure?:boolean}={}){
   const createdAt=options.createdAt??at,blob=options.blob??'';
   const response=(actionId:string,text:string)=>({actionId,payload:{response:text,outcome:'rejected'},trace:blob});
-  const evidence=[{encounterId:`encounter-${id}`,presentedAt:'2026-11-03T08:00:00.000Z',wordId:'word',snapshot:{contentId:'source',contentVersion:1,kind:'production',role:'general',body:{prompt:'Served cue',wordReference:{unneededRaw:blob}},assessment:{acceptedAnswers:['字'],criteria:{match:'exact',unneededRaw:blob}}},responses:[response('undone','wrong'),response('effective','字')],effectiveResponses:[response('effective','字')],feedback:[{actionId:'old',payload:{feedback:'negative'}},{actionId:'new',payload:{feedback:'positive'}},{actionId:'comment',payload:{feedback:'comment',comment:'Useful comment'}}],skipped:false}];
+  const evidence=[{encounterId:`encounter-${id}`,presentedAt:'2026-11-03T08:00:00.000Z',wordId:'word',snapshot:{...(options.pure?{schedulingScope:'pure_cue'}:{}),contentId:'source',contentVersion:1,kind:'production',role:'general',body:{...(options.pure?{material:{reveal:{axisNote:'Stored axis',teachingNote:'Original note'}}}:{}),prompt:'Served cue',wordReference:{unneededRaw:blob}},assessment:{acceptedAnswers:['字'],criteria:{match:'exact',unneededRaw:blob}}},responses:[response('undone','wrong'),response('effective','字')],effectiveResponses:[response('effective','字')],feedback:[{actionId:'old',payload:{feedback:'negative'}},{actionId:'new',payload:{feedback:'positive'}},{actionId:'comment',payload:{feedback:'comment',comment:'Useful comment'}}],skipped:false}];
   sql.prepare(`INSERT INTO reflection_cases(case_id,completion_id,learner_id,kind,subject_key,word_id,content_id,status,evidence_snapshot_json,created_at) VALUES (?,'completion','editor','exercise_improvement',?,'word','source','completed',?,?)`).run(id,id,JSON.stringify(evidence),createdAt);
   sql.prepare('INSERT INTO vocabulary_case_reviews(case_id,state,created_at,resolved_at) VALUES (?,?,?,?)').run(id,options.state??'open',createdAt,options.resolvedAt??null);
   sql.prepare('INSERT INTO vocabulary_case_lineage VALUES (?,?)').run(id,id);
@@ -196,4 +196,14 @@ test('retired-source unresolved finding remains visible and closes without a fab
   const event=sql.prepare("SELECT data_json FROM backend_events WHERE entity_id=? AND name='vocabulary.reflection.admission_case_closed'").get(before.caseId)!;
   const data=JSON.parse(event.data_json as string);assert.equal(data.reason,'');assert.equal(data.outcome,'unmappable');assert.equal(data.context.sourceAvailability,'retired');
   assert.equal(getVocabularyContentForMaintenance('source')!.availability,'retired');assert.equal(getVocabularyContentForMaintenance('source')!.version,1);
+});
+
+test('pure cue display projects stored axis and teaching note from evidence and proposed content',()=>{
+ const id=seedCase('pure',{proposal:true,pure:true})!;
+
+ sql.prepare("UPDATE content_proposals SET operations_json=json_set(operations_json,'$[0].content.exerciseType','pure_cue','$[0].content.body.reveal.axisNote','Stored axis','$[0].content.body.reveal.teachingNote','Revised note') WHERE proposal_id=?").run(id);
+ const item=getVocabularyCaseCard('pure','editor');assert.equal(item.wordLabel,'字');
+ assert.deepEqual(item.served[0].pureCue,{axisNote:'Stored axis',teachingNote:'Original note'});
+ assert.deepEqual(item.proposal!.operations[0].pureCue,{axisNote:'Stored axis',teachingNote:'Revised note'});
+ assert.equal(item.requiresDetails,false);
 });

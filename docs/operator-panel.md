@@ -119,11 +119,16 @@ Open `/operator/improvement`, or select **Content improvement** using the
 oldest creation time first. Each case displays its current assessment and saved
 proposal, or the judgment that proposed no change. Reassessment retains the
 same case identity and queue position.
-The entry leads with **Original served content**: each encounter that retains
-a snapshot shows its cue and accepted answers, in encounter order. An encounter
-without a snapshot says that snapshot is unavailable. Diagnosis, current and
-proposed content, accepted answers, and recipient scope follow. A case with no
-retained snapshot states that the original served content is unavailable.
+The entry leads with **Original served content** and its first chronological
+encounter. The adjacent encounter-count control expands the remaining retained
+snapshots and their responses, reactions, skips, and undone actions. Ordinary
+word cases omit only accepted forms identical to the heading; alternate accepted
+forms remain visible. Pure cues retain the original accepted set and use the
+stored semantic axis as their heading, falling back to “Content review” when
+unavailable. Their proposal shows the accepted-set change and a disclosure for
+the revised teaching note. A case without a snapshot states that the original
+served content is unavailable. Sense-based proposals use expandable sense rows
+with exercise counts. Unresolved findings and action blockers remain visible.
 The compact card includes the content needed for ordinary review. If richer
 authored content cannot be represented faithfully, **Review full content before
 approval** opens the complete workspace and approval remains there.
@@ -244,13 +249,16 @@ Awaiting review loads compact case cards in creation-time order, with case ID as
 the stable tie-breaker. The batch contains served cue and response summaries,
 assessment provenance, proposed content, current source comparisons, and relevant
 status. Previous and next navigation within loaded batches uses that local data.
-The next batch loads near the end of the window; the browser retains at most
-three batches of twenty cards per review or archive view. Previous navigation can
-load an earlier batch after it leaves the window.
+A neighboring batch loads at the window boundary; the browser retains one batch
+of twenty cards per review or archive view. The count shows the matching total,
+independent of the loaded subset. Navigation wraps across the full result set.
 
-**Details** loads full encounter history, retained proposals, numbered case jobs,
-raw evidence, and source-based manual authoring. **Edit proposal** opens the full
-authored revision and preserves inclusion choices and unsaved edits. Compact
+The bottom action bar stays outside the scrolling evidence. **Note** opens and
+focuses the optional session draft. **More** exposes editing, second opinions,
+and reassessment. **Details** discloses routine provenance and retained proposal
+selection; **Full review workspace** opens full encounter history, numbered case
+jobs, raw evidence, and source-based manual authoring. **Edit proposal** opens the
+full authored revision and preserves inclusion choices and unsaved edits. Compact
 render projections are never submitted as authored content. The proposal selector
 opens a retained alternative without changing the case's current assessment;
 its provenance remains attached to the assessment that authored it. Dismissing
