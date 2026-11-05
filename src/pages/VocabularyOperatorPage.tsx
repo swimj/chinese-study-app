@@ -3,7 +3,7 @@ import { caseReviewLocked } from '../features/vocabulary-operator/case-queue-mod
 import { AssessmentReview } from '../features/vocabulary-operator/AssessmentReview';
 import { PureCueIdentityResolution } from '../features/vocabulary-operator/PureCueIdentityResolution';
 import { vocabularyPhraseClozeError } from '../domain/vocabulary-production-coverage';
-import type { VocabularyDefaultSelectionAttention,VocabularyDefaultSelectionFinding,VocabularySenseCoverageWorkspace } from '../domain/vocabulary-sense-coverage';
+import type { VocabularyDefaultSelectionFinding,VocabularySenseCoverageWorkspace } from '../domain/vocabulary-sense-coverage';
 import type { VocabularyRepairTargetWorkspace } from '../domain/vocabulary-reflection';
 import { repairTargetBlocksMutation } from '../features/vocabulary-operator/sense-coverage';
 import { ReassessmentDialog } from '../features/vocabulary-operator/ReassessmentDialog';
@@ -14,13 +14,13 @@ import { useEffect,useRef,useState } from 'react';
 import type { VocabularyContent,VocabularyContentDraft,VocabularyJson } from '../domain/vocabulary-content';
 import type { VocabularyApprovalRequest,VocabularyContentProposal,VocabularyProposalDraft,VocabularyProposalOperation,VocabularySenseLabel,VocabularyReflectionCase } from '../domain/vocabulary-reflection';
 import { getEffectiveVocabularyEncounterReactions } from '../domain/vocabulary-session';
-import { vocabularyOperatorApi,type VocabularyOperatorApi,type VocabularyCaseWorkspace,type VocabularyFailedDispatch,type VocabularyFailedPreparation,type VocabularyProposalPreview,type VocabularyReassessmentModel,type VocabularyReviewSnapshot } from '../features/vocabulary-operator/api';
+import { vocabularyOperatorApi,type VocabularyOperatorApi,type VocabularyCaseWorkspace,type VocabularyProposalPreview,type VocabularyReassessmentModel,type VocabularyReviewSnapshot } from '../features/vocabulary-operator/api';
 import { CompactProposalReview } from '../features/vocabulary-operator/CompactProposalReview';
 import { editableProposalDraft,readableSenseProse,selectedOperations,selectedProposalDraft,toggleOperation } from '../features/vocabulary-operator/proposal-review';
 import { ApiRequestError } from '../services/api';
 import './VocabularyOperatorPage.css';
 import { OperatorPrefetchCache } from '../features/vocabulary-operator/prefetch-cache';
-import { approvalNeedsAttention, mergeApprovalRequests } from '../features/vocabulary-operator/approval-state';
+import { mergeApprovalRequests } from '../features/vocabulary-operator/approval-state';
 import { ProposalSecondOpinion } from '../features/vocabulary-operator/ProposalSecondOpinion';
 import { ContentImprovementEntry, proposalServedEvidence, ReadableJson } from '../features/vocabulary-operator/content-improvement-entry';
 
@@ -55,30 +55,23 @@ function AuthoredContent({content,expandDetails=false}:{content:VocabularyConten
   </div>;
 }
 export type VocabularyDetailActivity = {dirty:boolean;busy:boolean};
-export type VocabularyOperatorDetail = {caseId:string;proposalId?:string;edit?:boolean;history?:boolean;liveReview:VocabularyCaseQueueItem|null;onChanged:(caseId:string,savedProposalId?:string)=>Promise<void>;onSelectProposal:(proposalId:string)=>void};
-type VocabularyOperatorPageProps = {api?:VocabularyOperatorApi;detailOnly:VocabularyOperatorDetail;onActivity?:(activity:VocabularyDetailActivity)=>void} | {api?:VocabularyOperatorApi;attentionOnly:true;onActivity?:(activity:VocabularyDetailActivity)=>void};
-/** Detail editing and operational attention embedded in the compact review workspace. */
+export type VocabularyOperatorDetail = ({caseId:string;proposalId?:string} | {caseId:null;proposalId:string}) & {edit?:boolean;history?:boolean;liveReview:VocabularyCaseQueueItem|null;onChanged:(caseId:string|null,savedProposalId?:string)=>Promise<void>;onSelectProposal:(proposalId:string)=>void};
+type VocabularyOperatorPageProps = {api?:VocabularyOperatorApi;detailOnly:VocabularyOperatorDetail;onActivity?:(activity:VocabularyDetailActivity)=>void};
+/** On-demand authored editor and retained evidence for cases or standalone proposals. */
 export function VocabularyOperatorPage(props:VocabularyOperatorPageProps) {
   const api=props.api??vocabularyOperatorApi;
-  const detailOnly='detailOnly' in props?props.detailOnly:undefined;
-  const attentionOnly='attentionOnly' in props;
+  const detailOnly=props.detailOnly;
   const onActivity=props.onActivity;
-  const queue=attentionOnly?'attention':detailOnly?.history?'history':'detail';
+  const queue=detailOnly.history?'history':'detail';
   const [editing,setEditing]=useState(false);
   const [detailsOpen,setDetailsOpen]=useState(false);
   const pageRef=useRef<HTMLElement>(null);
-  const queueRequest=useRef(0);
-  const interacting=useRef(false);
-  const [kind,setKind]=useState<VocabularyReflectionCase['kind']>('exercise_improvement');
   const [caseNotes,setCaseNotes]=useState('');
   const [confirmReassessment,setConfirmReassessment]=useState<string|null>(null);
   const [reassessmentOpen,setReassessmentOpen]=useState(false);
   const [reassessmentModel,setReassessmentModel]=useState<VocabularyReassessmentModel>('openai:gpt-6-sol-high');
-  const [cases,setCases]=useState<VocabularyReflectionCase[]>([]),[proposals,setProposals]=useState<VocabularyContentProposal[]>([]),[dispatches,setDispatches]=useState<VocabularyFailedDispatch[]>([]);
+  const [proposals,setProposals]=useState<VocabularyContentProposal[]>([]);
   const [approvalRequests,setApprovalRequests]=useState<VocabularyApprovalRequest[]>([]);
-  const [defaultSelectionFindings,setDefaultSelectionFindings]=useState<VocabularyDefaultSelectionAttention[]>([]);
-  const [selectedDefaultWord,setSelectedDefaultWord]=useState<VocabularyDefaultSelectionAttention|null>(null);
-  const [preparationFailures,setPreparationFailures]=useState<VocabularyFailedPreparation[]>([]);
   const [reviewCase,setReviewCase]=useState<VocabularyReflectionCase|null>(null);
   const [reviewAssessment,setReviewAssessment]=useState<VocabularyReviewSnapshot['assessment']>(null);
   const [reviewReassessment,setReviewReassessment]=useState<VocabularyReviewSnapshot['reassessment']>(null);
@@ -98,7 +91,6 @@ export function VocabularyOperatorPage(props:VocabularyOperatorPageProps) {
   const [repairTarget,setRepairTarget]=useState<VocabularyRepairTargetWorkspace|null>(null);
   const [coverageChanged,setCoverageChanged]=useState(false),[scopeEditing,setScopeEditing]=useState(false);
   const [defaultSelectionFinding,setDefaultSelectionFinding]=useState<VocabularyDefaultSelectionFinding|null>(null);
-  const [cacheRevision,setCacheRevision]=useState(0);
   const [freshReassessmentSource,setFreshReassessmentSource]=useState<{caseId:string;source:import('../features/vocabulary-operator/api').VocabularyReassessmentSource}|null>(null);
   const [busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
   const [refreshError,setRefreshError]=useState('');
@@ -106,7 +98,6 @@ export function VocabularyOperatorPage(props:VocabularyOperatorPageProps) {
   const approvalSubmission=useRef<{requestId:string;proposalId:string;expectedVersion:number;notes:string}|null>(null);
   const [approvalUnconfirmed,setApprovalUnconfirmed]=useState(false);
   const dirty=draftText!==savedText||excludedKeys.size>0;
-  interacting.current=busy||dirty||scopeEditing;
   const promotionNeedsAttention=workspace?.pureCuePromotion?.outcome==='needs_operator';
   const admissionNeedsAttention=workspace?.admission?.outcome==='unmappable'||workspace?.admission?.outcome==='inventory_gap'||workspace?.admission?.outcome==='needs_coverage';
   let draft:VocabularyProposalDraft|null=null;try{const value:unknown=JSON.parse(draftText);if(editableProposalDraft(value))draft=value;}catch{/* Keep invalid editing text intact. */}
@@ -114,48 +105,72 @@ export function VocabularyOperatorPage(props:VocabularyOperatorPageProps) {
   const invalidCue=activeOperations.some(operation=>operation.strategy!=='retire'&&vocabularyPhraseClozeError(operation.content.body)!==null);
   const zeroSelected=draft!==null&&activeOperations.length===0;
   const selectedApproval=selected?approvalRequests.find(item=>item.proposalId===selected.proposalId&&item.expectedVersion===selected.version&&(item.status==='queued'||item.status==='running')):undefined;
-  const caseLocked=caseReviewLocked(detailOnly?.caseId,detailOnly?.liveReview,(selected?reviewCase:workspace?.case)?.review);
+  const caseLocked=caseReviewLocked(detailOnly.caseId??undefined,detailOnly?.liveReview,(selected?reviewCase:workspace?.case)?.review);
   const detailStale=!!detailOnly?.liveReview&&(detailOnly.liveReview.stale||!!selected&&(detailOnly.liveReview.proposal?.proposalId!==selected.proposalId||detailOnly.liveReview.proposal.version!==selected.version));
   useEffect(()=>{onActivity?.({dirty,busy:busy||scopeEditing||approvalUnconfirmed||reassessmentOpen});},[dirty,busy,scopeEditing,approvalUnconfirmed,reassessmentOpen,onActivity]);
   const repairCase=selected?reviewCase:workspace?.case;
   const repairBlocked=queue!=='history'&&repairCase?.kind==='exercise_improvement'&&repairTargetBlocksMutation(repairCase.caseId,repairTarget);
   const editable=!repairBlocked&&!caseLocked&&!selectedApproval&&(selected===null||!['applied','closed'].includes(selected.status));
-  async function loadCases(){return {items:(await Promise.all(Object.keys(kinds).map(value=>api.cases(value as VocabularyReflectionCase['kind'])))).flatMap(result=>result.items)};}
   async function reload(savedProposalId?:string){
-    if(detailOnly){const result=await api.workspace(detailOnly.caseId);setWorkspace(result);setProposals(result.proposals);setReviewCase(result.case);await detailOnly.onChanged(detailOnly.caseId,savedProposalId??selected?.proposalId);return result.proposals;}
-    const request=++queueRequest.current;const [caseList,dispatchList,preparationList,approvalList]=await Promise.all([loadCases(),api.dispatches(),api.preparationFailures(),api.approvalRequests()]);const failedIds=[...new Set(approvalList.items.filter(item=>item.status==='attention').map(item=>item.proposalId))];const failedProposals=await Promise.all(failedIds.map(id=>api.proposal(id)));if(request!==queueRequest.current)return failedProposals;setCases(caseList.items);setDispatches(dispatchList.items);setPreparationFailures(preparationList.items);setDefaultSelectionFindings(preparationList.defaultSelectionFindings??[]);setApprovalRequests(items=>mergeApprovalRequests(items,approvalList.items));setProposals(failedProposals);return failedProposals;}
-  useEffect(()=>{
-    if(detailOnly)return;
-    let active=true;
-    let timer:ReturnType<typeof setTimeout>;
-    async function refresh(initial=false){
-      try {
-        if(!initial&&(interacting.current||document.visibilityState==='hidden'||pageRef.current?.closest('[hidden]')))return;
-        await reload();if(active)setRefreshError('');
-      }catch(cause){if(active)setRefreshError(message(cause));}
-      finally{if(active){clearTimeout(timer);timer=setTimeout(()=>void refresh(),15000);}}
+    let proposals:VocabularyContentProposal[];
+    if(detailOnly.caseId){
+      const result=await api.workspace(detailOnly.caseId);
+      setWorkspace(result);setProposals(result.proposals);setReviewCase(result.case);proposals=result.proposals;
+    }else{
+      const proposalId=savedProposalId??selected?.proposalId??detailOnly.proposalId;
+      if(!proposalId)throw new Error('Standalone details require a proposal identity.');
+      const proposal=await api.proposal(proposalId);proposals=[proposal];setProposals(proposals);
     }
-    const onFocus=()=>{clearTimeout(timer);void refresh();};
-    void refresh(true);
-    window.addEventListener('focus',onFocus);
-    document.addEventListener('visibilitychange',onFocus);
-    return()=>{active=false;queueRequest.current++;selectedRequest.current++;clearTimeout(timer);window.removeEventListener('focus',onFocus);document.removeEventListener('visibilitychange',onFocus);};
-  },[api,!!detailOnly,attentionOnly]);
+    await detailOnly.onChanged(detailOnly.caseId,savedProposalId??selected?.proposalId);
+    return proposals;
+  }
   useEffect(()=>{
-    if(!detailOnly)return;let active=true;setBusy(true);setError('');
-    void (async()=>{const full=await api.workspace(detailOnly.caseId);if(!active)return;setWorkspace(full);setSenseLabels(full.senseLabels??[]);setProposals(full.proposals);setReviewCase(full.case);
-      if(detailOnly.proposalId){const value=await api.proposal(detailOnly.proposalId);if(!active)return;await loadProposal(value);if(!active)return;setWorkspace(full);setEditing(!!detailOnly.edit);}
+    let active=true;setBusy(true);setError('');
+    void (async()=>{
+      const full=detailOnly.caseId?await api.workspace(detailOnly.caseId):null;
+      if(!active)return;
+      setWorkspace(full);setSenseLabels(full?.senseLabels??[]);setProposals(full?.proposals??[]);setReviewCase(full?.case??null);
+      setDefaultSelectionFinding(full?.defaultSelectionFinding??null);
+      if(detailOnly.proposalId){
+        const value=await api.proposal(detailOnly.proposalId);if(!active)return;
+        await loadProposal(value);if(!active)return;
+        setWorkspace(full);setEditing(!!detailOnly.edit);
+      }
       setDetailsOpen(true);
     })().catch(cause=>{if(active)setError(message(cause));}).finally(()=>{if(active)setBusy(false);});
     return()=>{active=false;selectedRequest.current++;};
-  },[api,detailOnly?.caseId,detailOnly?.proposalId]);
+  },[api,detailOnly.caseId,detailOnly.proposalId]);
+  const hasActiveCaseWork=!!workspace?.jobs.some(job=>['queued','running'].includes(job.status))||!!workspace?.case.review?.activeJob;
+  useEffect(()=>{
+    // Compact review supplies live status itself. Attention's pinned editor needs
+    // status refreshes, without installing over its authored proposal or draft.
+    if(detailOnly.liveReview||!detailOnly.caseId||busy||dirty||scopeEditing||reassessmentOpen||approvalUnconfirmed)return;
+    const caseId=detailOnly.caseId;
+    let active=true,inFlight=false,timer:ReturnType<typeof setTimeout>;
+    const schedule=()=>{if(active){clearTimeout(timer);timer=setTimeout(()=>void refreshStatus(),hasActiveCaseWork?3000:15000);}};
+    async function refreshStatus(){
+      if(inFlight)return;
+      if(document.visibilityState==='hidden'||pageRef.current?.closest('[hidden]')){schedule();return;}
+      inFlight=true;
+      const request=selectedRequest.current;
+      try{
+        const result=await api.workspace(caseId);
+        if(!active||request!==selectedRequest.current)return;
+        setWorkspace(result);setReviewCase(result.case);setProposals(result.proposals);
+        setReviewReassessment(previous=>previous?{...previous,latest:result.reassessment??null,source:result.reassessmentSource??null,eligible:!!result.reassessmentSource}:previous);
+        setRefreshError('');
+      }catch(cause){if(active&&request===selectedRequest.current)setRefreshError(`Case status could not refresh: ${message(cause)}`);}
+      finally{inFlight=false;schedule();}
+    }
+    const onFocus=()=>{clearTimeout(timer);void refreshStatus();};
+    schedule();window.addEventListener('focus',onFocus);document.addEventListener('visibilitychange',onFocus);
+    return()=>{active=false;clearTimeout(timer);window.removeEventListener('focus',onFocus);document.removeEventListener('visibilitychange',onFocus);};
+  },[api,detailOnly.caseId,!!detailOnly.liveReview,hasActiveCaseWork,busy,dirty,scopeEditing,reassessmentOpen,approvalUnconfirmed]);
   async function run(work:()=>Promise<void>,success?:string){selectedRequest.current++;setBusy(true);setError('');setNotice('');try{await work();if(success)setNotice(success);}catch(cause){setError(message(cause));}finally{setBusy(false);}}
   function maySwitch(){if(scopeEditing)return false;return !dirty||window.confirm('Discard your unsaved edits and open another item?');}
   function resetReview(){setPreview(null);approvalSubmission.current=null;setApprovalUnconfirmed(false);}
   function install(value:VocabularyContentProposal){setFreshReassessmentSource(null);setCoverageChanged(false);setExcludedKeys(new Set());setSnapshotOutdated(false);setSelected(value);setEditing(false);const text=pretty(draftOf(value));setDraftText(text);setSavedText(text);setReviewNote('');setReason('');setDetailsOpen(false);resetReview();}
   function changeDraft(next:VocabularyProposalDraft){setDraftText(pretty(next));resetReview();}
-  async function loadCase(id:string){setSelectedDefaultWord(null);setFreshReassessmentSource(null);setCoverageChanged(false);workspaceSerial.current++;workspaceRequest.current=null;setWorkspaceLoading(false);setReviewCase(null);setDisplay(null);const request=++selectedRequest.current;const value=await api.workspace(id);if(request!==selectedRequest.current)return;setWorkspace(value);setSenseLabels(value.senseLabels??[]);setDefaultSelectionFinding(value.defaultSelectionFinding??null);setExcludedKeys(new Set());setSelected(null);setExcludedKeys(new Set());setDraftText('');setSavedText('');setReason('');setCaseNotes('');setEditing(false);setDetailsOpen(false);resetReview();}
-  function openCase(id:string){if(!maySwitch())return;void run(()=>loadCase(id));}
   async function fetchSnapshot(value:VocabularyContentProposal):Promise<ReviewSnapshot>{
     if(['applied','closed'].includes(value.status)){
       const [proposal,workspace]=await Promise.all([api.proposal(value.proposalId),value.caseId?api.workspace(value.caseId):Promise.resolve(null)]);
@@ -167,7 +182,6 @@ export function VocabularyOperatorPage(props:VocabularyOperatorPageProps) {
     return item;
   }
   async function loadProposal(value:VocabularyContentProposal){
-    setSelectedDefaultWord(null);
     workspaceSerial.current++;workspaceRequest.current=null;setWorkspaceLoading(false);
     const request=++selectedRequest.current,epoch=cache.current.epoch();
     const snapshot=cache.current.get(snapshotKey(value))??await fetchSnapshot(value);
@@ -196,21 +210,12 @@ export function VocabularyOperatorPage(props:VocabularyOperatorPageProps) {
     setCoverageChanged(snapshot.coverageChanged??false);
     setSnapshotOutdated(snapshot.proposal.version!==value.version||snapshot.proposal.status!==value.status||snapshot.proposal.operations.some(operation=>operation.strategy!=='create'&&snapshot.previews.find(item=>item.operationKey===operation.operationKey)?.source?.version!==operation.expectedVersion));
   }
-  function openWordDefaults(value:VocabularyDefaultSelectionAttention){
-    if(scopeEditing||busy)return;
-    setSelectedDefaultWord(value);
-  }
-  function wordDefaultsSaved(value:VocabularySenseCoverageWorkspace){
-    setSelectedDefaultWord(null);scopeSaved('word',value);
-  }
   function scopeSaved(scope:'case'|'word',value:VocabularySenseCoverageWorkspace){
     const request=selectedRequest.current;
     const caseId=value.review?.caseId??(selected?reviewCase?.caseId:workspace?.case.caseId)??'';
     if(scope==='case'&&!caseId)return;
-    queueRequest.current++;
     cache.current.invalidateWhere(snapshot=>scopeAffectsProposal(snapshot.proposal,scope,caseId,value.word.wordId)||scope==='word'&&snapshot.case?.wordId===value.word.wordId);
-    setCacheRevision(revision=>revision+1);resetReview();setFreshReassessmentSource(null);setConfirmReassessment(null);
-    if(scope==='word')setDefaultSelectionFindings(previous=>previous.filter(item=>item.wordId!==value.word.wordId));
+    resetReview();setFreshReassessmentSource(null);setConfirmReassessment(null);
     if(scope==='word'&&value.word.wordId===(selected?reviewCase?.wordId:workspace?.case.wordId))setDefaultSelectionFinding(null);
     setSenseLabels(previous=>mergeSenseLabels(previous,value.word.wordId,value.senses.map(sense=>({senseId:sense.senseId,wordId:sense.wordId,label:typeof sense.description==='string'?sense.description:sense.description&&typeof sense.description==='object'&&!Array.isArray(sense.description)&&typeof sense.description.label==='string'?sense.description.label:'Sense label unavailable'}))));
     if(selected)void refreshSelectedSnapshot(selected).catch(cause=>{if(selectedRequest.current===request)setRefreshError(`Coverage was saved, but proposal evidence could not refresh: ${message(cause)}`);});
@@ -237,9 +242,7 @@ export function VocabularyOperatorPage(props:VocabularyOperatorPageProps) {
   function invalidateOnConflict(cause:unknown,value:VocabularyContentProposal){if(cause instanceof ApiRequestError&&cause.status===409){cache.current.delete(snapshotKey(value));setSnapshotOutdated(true);}throw cause;}
   function inspect(){if(!selected||dirty||scopeEditing||busy)return;void run(async()=>{try{setPreview(await api.preview(selected.proposalId,selected.version));}catch(cause){invalidateOnConflict(cause,selected);}},'Preview validated. Review the cue, expected answers, scope and identity effects.');}
   async function advanceAfterResolution() {
-    queueRequest.current++;
-    if(detailOnly)await detailOnly.onChanged(detailOnly.caseId,selected?.proposalId);
-    else await reload();
+    await detailOnly.onChanged(detailOnly.caseId,selected?.proposalId);
   }
   function approveAndApply(){if(!selected||dirty||scopeEditing||repairBlocked)return;void run(async()=>{
     approvalSubmission.current??={requestId:crypto.randomUUID(),proposalId:selected.proposalId,expectedVersion:selected.version,notes:reviewNote};
@@ -248,8 +251,6 @@ export function VocabularyOperatorPage(props:VocabularyOperatorPageProps) {
     try{result=await api.requestApproval(submission.proposalId,submission.expectedVersion,submission.requestId,submission.notes);}
     catch(cause){setApprovalUnconfirmed(!(cause instanceof ApiRequestError&&cause.status>=400&&cause.status<500));invalidateOnConflict(cause,selected);throw cause;}
     setApprovalUnconfirmed(false);
-    // Invalidate any refresh started before this acknowledgement so it cannot restore the card.
-    queueRequest.current++;
     setApprovalRequests(items=>mergeApprovalRequests(items,[result]));
     await advanceAfterResolution();
     setNotice(result.status==='succeeded'?'Applied.':result.status==='attention'?'Approval needs attention.':'Approval queued.');
@@ -259,52 +260,10 @@ export function VocabularyOperatorPage(props:VocabularyOperatorPageProps) {
     if(!workspace||scopeEditing||busy||caseLocked)return;const caseId=workspace.case.caseId;
     void run(async()=>{if(detailOnly&&workspace.case.review)await api.resolveCaseReview(caseId,workspace.case.review.version,reason);else await api.closeCase(caseId,reason);await reload();if(closeView)setWorkspace(null);else setWorkspace(await api.workspace(caseId));},'Case closed; its evidence remains retained.');
   }
-  const approvalFailures=approvalRequests.filter(item=>approvalNeedsAttention(item,proposals));
   const queuedApprovals=approvalRequests.filter(item=>item.status==='queued'||item.status==='running');
-  const queuedApprovalIds=queuedApprovals.map(item=>item.requestId).sort().join('|');
-  useEffect(()=>{
-    if(detailOnly||!queuedApprovalIds)return;
-    let active=true,timer:ReturnType<typeof setTimeout>;
-    async function poll(){
-      try{
-        const result=await api.approvalRequests();
-        if(!active)return;
-        setApprovalRequests(items=>mergeApprovalRequests(items,result.items));
-        setProposals(items=>items.map(proposal=>{
-          const completed=result.items.find(item=>item.proposalId===proposal.proposalId&&item.expectedVersion===proposal.version&&item.status==='succeeded');
-          return completed?{...proposal,status:'applied',resolvedAt:completed.updatedAt}:proposal;
-        }));
-      }catch(cause){if(active)setRefreshError(message(cause));}
-      finally{if(active)timer=setTimeout(()=>void poll(),2000);}
-    }
-    timer=setTimeout(()=>void poll(),2000);
-    return()=>{active=false;clearTimeout(timer);};
-  },[api,queuedApprovalIds]);
-  const visibleCases=cases.filter(item=>item.kind===kind);
-  useEffect(()=>{if(detailOnly||busy||dirty||!workspace||selected||!workspace.jobs.some(job=>job.secondOpinion&&['queued','running'].includes(job.status)))return;let active=true;const timer=setTimeout(()=>{void api.workspace(workspace.case.caseId).then(value=>{if(active)setWorkspace(value);}).catch(cause=>{if(active)setError(message(cause));});},3000);return()=>{active=false;clearTimeout(timer);};},[api,workspace,selected,busy,dirty]);
-  useEffect(()=>{if(detailOnly||!workspace?.reassessment||!['queued','running'].includes(workspace.reassessment.status)||busy)return;let active=true;const caseId=workspace.case.caseId;const timer=setTimeout(()=>{void api.workspace(caseId).then(async value=>{if(!active)return;setWorkspace(value);if(!value.reassessment||!['queued','running'].includes(value.reassessment.status))await reload();}).catch(cause=>{if(active)setError(message(cause));});},3000);return()=>{active=false;clearTimeout(timer);};},[api,workspace,busy,dirty]);
-  useEffect(()=>{
-    if(detailOnly||!selected?.caseId||!reviewReassessment?.latest||!['queued','running'].includes(reviewReassessment.latest.status)||busy)return;
-    let active=true;const value=selected;
-    const timer=setTimeout(()=>{
-      // The source proposal can leave the open batch when reassessment succeeds.
-      // Its retained case remains the authority for the replacement job's status.
-      void api.workspace(value.caseId!).then(async workspace=>{
-        if(!active)return;
-        setReviewReassessment(previous=>previous?{...previous,latest:workspace.reassessment??null,
-          source:workspace.reassessmentSource??null,eligible:!!workspace.reassessmentSource}:previous);
-        setReviewAssessment(workspace.assessment??null);
-        if(!workspace.reassessment||!['queued','running'].includes(workspace.reassessment.status)){
-          cache.current.delete(snapshotKey(value));
-          await reload();
-        }
-      }).catch(cause=>{if(active)setError(message(cause));});
-    },3000);
-    return()=>{active=false;clearTimeout(timer);};
-  },[api,selected,reviewReassessment,busy,dirty]);
   const proposalOutdated=!!selected&&proposals.some(item=>item.proposalId===selected.proposalId&&(item.version!==selected.version||(['applied','closed'].includes(item.status)&&item.status!==selected.status)));
   const itemOutdated=!!selected&&(snapshotOutdated||proposalOutdated||coverageChanged||detailStale);
-  const noChangeVisible=!!detailOnly&&!!workspace&&workspace.case.status==='completed'&&!selected&&!draftText;
+  const noChangeVisible=!!workspace&&workspace.case.kind==='exercise_improvement'&&workspace.case.status==='completed'&&!selected&&!draftText;
   const reassessmentCase=selected?reviewCase:workspace?.case;
   const liveCase=detailOnly?.liveReview?.caseId===reassessmentCase?.caseId?detailOnly?.liveReview:null;
   const reassessmentLatest=liveCase
@@ -351,29 +310,16 @@ export function VocabularyOperatorPage(props:VocabularyOperatorPageProps) {
     </div>:<button disabled={reassessmentDisabled} onClick={()=>submitReassessment()}>Submit reassessment</button>}
     {reassessmentLatest&&<span role="status">{reassessmentPending?'Reassessment '+reassessmentLatest.status:reassessmentLatest.status==='failed'?'Reassessment failed. You can reassess again.':'Reassessment complete'}</span>}
   </div></ReassessmentDialog></>:null;
-  const scopeEditor=!selectedDefaultWord&&queue!=='history'&&scopeCase?.kind==='exercise_improvement'&&scopeCase.wordId?<>
+  const scopeEditor=queue!=='history'&&scopeCase?.kind==='exercise_improvement'&&scopeCase.wordId?<>
     {!canReassess&&repairTargetControl}
     {repairTarget?.caseId===scopeCase.caseId&&!repairTarget.available&&<><ScopeCoverageEditor key={scopeCase.wordId} api={api} wordId={scopeCase.wordId} disabled={busy||dirty||!!selectedApproval||approvalUnconfirmed||caseLocked} finding={defaultSelectionFinding} onActivity={setScopeEditing} onSaved={scopeSaved} repertoire={selected&&editable&&reviewAssessment?.admission?.outcome==='repertoire_bootstrap'?{proposal:selected,onSaved:value=>{void run(async()=>{await loadProposal(value);await reload(value.proposalId);},'Defaults and proposal updated.');}}:undefined}/></>}
   </>:null;
   const caseEntryVisible=!!workspace&&!selected&&!draftText&&!noChangeVisible;
-  return <section ref={pageRef} className="vocabulary-operator-page" tabIndex={0} aria-label={attentionOnly?"Needs attention":"Case details"}>
-    <header><h2>{detailOnly?"Case details":"Needs attention"}</h2><button className="secondary-button" disabled={busy} onClick={()=>void run(async()=>{await reload();},'Queues refreshed.')}>Refresh</button></header>
+  return <section ref={pageRef} className="vocabulary-operator-page" tabIndex={0} aria-label={detailOnly.caseId?'Case details':'Proposal details'}>
+    <header><h2>{detailOnly.caseId?'Case details':'Proposal details'}</h2><button className="secondary-button" disabled={busy} onClick={()=>void run(async()=>{await reload();},'Details refreshed.')}>Refresh</button></header>
     {refreshError&&<p role="alert" className="vocabulary-operator-error">{refreshError}</p>}{error&&<p role="alert" className="vocabulary-operator-error">{error}</p>}{notice&&<p role="status">{notice}</p>}
     {queuedApprovals.length>0&&<p role="status">{queuedApprovals.length} approval{queuedApprovals.length===1?'':'s'} queued</p>}
-    {queue==='attention'&&approvalFailures.length>0&&<section aria-label="Approval failures"><h2>Approvals need attention</h2><ul>{approvalFailures.map(item=><li key={item.requestId}>
-      <p><strong>{proposals.find(proposal=>proposal.proposalId===item.proposalId)?proposalTitle(proposals.find(proposal=>proposal.proposalId===item.proposalId)!):item.proposalId}</strong> · revision {item.expectedVersion}</p><p role="alert">{item.error??'Approval could not complete.'}</p>
-      <button disabled={busy} onClick={()=>void run(async()=>{const retried=await api.retryApproval(item.requestId);setApprovalRequests(items=>mergeApprovalRequests(items,[retried]));},'Approval queued.')}>Retry approval</button>
-      <button className="secondary-button" disabled={busy} onClick={()=>void run(async()=>{const proposal=await api.proposal(item.proposalId);await loadProposal(proposal);})}>Open proposal</button>
-      <details><summary>Request details</summary><p>Proposal: {item.proposalId}</p><p>Request: {item.requestId}</p><p>Attempts: {item.attempts}</p></details>
-    </li>)}</ul></section>}
-    {queue==='attention'&&(defaultSelectionFindings.length>0||selectedDefaultWord)&&<section aria-label="Word defaults need attention"><h2>Word defaults need attention</h2><ul>{defaultSelectionFindings.map(item=><li key={item.wordId}><p><strong>{item.hanzi}</strong> · {item.reason}</p><button className="secondary-button" disabled={busy||scopeEditing} onClick={()=>openWordDefaults(item)}>Review word defaults</button>{item.caseId&&<button className="secondary-button" disabled={busy||scopeEditing} onClick={()=>openCase(item.caseId!)}>Open assessment</button>}</li>)}</ul>{selectedDefaultWord&&<h3>{selectedDefaultWord.hanzi}</h3>}{selectedDefaultWord&&<ScopeCoverageEditor key={selectedDefaultWord.wordId} api={api} wordId={selectedDefaultWord.wordId} disabled={busy} onActivity={setScopeEditing} onSaved={(_scope,value)=>wordDefaultsSaved(value)}/>}{selectedDefaultWord&&<button className="secondary-button" disabled={busy||scopeEditing} onClick={()=>setSelectedDefaultWord(null)}>Close word defaults</button>}</section>}
-    {queue==='attention'&&preparationFailures.length>0&&<section aria-label="Practice preparation failures"><h2>Practice preparation needs attention</h2><ul>{preparationFailures.map(item=><li key={item.workId}><span>Word {item.wordId} · attempt {item.attemptCount} of 3</span>{item.retryable?<button disabled={busy} onClick={()=>void run(async()=>{await api.retryPreparation(item.workId);await reload();},'Preparation queued for another retry cycle.')}>Retry preparation</button>:<p>Attempt limit reached; inspect the retained invocation before changing preparation.</p>}<details><summary>Failure details</summary><p>{item.lastError}</p><p>Invocation: {item.invocationId??'No retained invocation'}</p><p>Source: {item.sourceContentId}</p></details></li>)}</ul></section>}
-    {queue==='attention'&&dispatches.length>0&&<section aria-label="Evidence processing failures"><h2>Evidence needs processing</h2><ul>{dispatches.map(item=><li key={item.dispatchId}><span>Session {item.sessionId} · learner {item.learnerId}</span><button disabled={busy} onClick={()=>void run(async()=>{await api.retryDispatch(item.dispatchId);await reload();},'Evidence processing queued.')}>Retry evidence processing</button><details><summary>Failure details</summary><p>{item.error}</p></details></li>)}</ul></section>}
-    <div className={queue==='attention'?"vocabulary-operator-layout":"vocabulary-operator-single"}>{queue==='attention'&&<aside aria-label="Review queues">
-      {queue==='attention'&&<section><h2>Cases</h2><label>Inbox<select value={kind} disabled={busy} onChange={event=>setKind(event.target.value as VocabularyReflectionCase['kind'])}>{Object.entries(kinds).map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label>
-        {visibleCases.length===0?<p>No open cases in this inbox.</p>:<ul className="vocabulary-operator-list">{visibleCases.map(item=><li key={item.caseId}><button disabled={busy||scopeEditing} aria-pressed={workspace?.case.caseId===item.caseId} onClick={()=>openCase(item.caseId)}>{item.wordId??item.contentId??'Content issue'}<span>{item.evidence.length} encounter{item.evidence.length===1?'':'s'} · {new Date(item.createdAt).toLocaleString()}</span></button></li>)}</ul>}
-      </section>}
-    </aside>}<div className="vocabulary-operator-detail">
+    <div className="vocabulary-operator-single"><div className="vocabulary-operator-detail">
       {(selected||draftText)&&<ContentImprovementEntry assessedVersion={(selected?reviewCase:workspace?.case)?.reassessmentSource?.version} label="Proposal review" evidence={selected?proposalServedEvidence(selected.caseId,reviewCase?{caseId:reviewCase.caseId,evidence:reviewCase.evidence}:null):workspace?.case.evidence??null}><h2>{selected?proposalTitle(selected):'New correction draft'}</h2>{selected&&<p>{readableSenseProse(proposalSummary(selected),senseLabels)}</p>}{selectedApproval&&<p role="status">Approval queued · revision {selectedApproval.expectedVersion}</p>}{dirty&&<p role="status">Unsaved changes</p>}{itemOutdated&&<p role="alert">{coverageChanged?'The proposal was assessed against earlier evidence. Compare the current source below, then dismiss, reassess, or draft a separate correction.':'This proposal or its source has changed or is unavailable.'} <button disabled={busy||scopeEditing} onClick={()=>{cache.current.invalidateWhere(snapshot=>snapshot.proposal.proposalId===selected!.proposalId);void refreshSelectedSnapshot(selected!).catch(cause=>setError(message(cause)));}}>Refresh snapshot</button>{proposalOutdated&&<button disabled={busy||scopeEditing} onClick={()=>{cache.current.invalidateWhere(snapshot=>snapshot.proposal.proposalId===selected!.proposalId);openProposal(proposals.find(item=>item.proposalId===selected!.proposalId)??selected!);}}>Load current proposal</button>}</p>}
 
         {scopeEditor}
@@ -410,7 +356,7 @@ export function VocabularyOperatorPage(props:VocabularyOperatorPageProps) {
           {preview&&<section><h3>Schedule and relationship effects</h3><div className="vocabulary-operator-table" role="region" aria-label="Identity relationship effects" tabIndex={0}><table><caption>Identity-bound relationships; no automatic transfer</caption><thead><tr><th>Change</th><th>Scope</th><th>Learner schedules for this cue</th><th>Deactivations</th><th>Teaching references</th><th>Sense relationships</th><th>Curation records</th></tr></thead><tbody>{preview.operations.map(item=><tr key={item.operationKey}><th>{labels[item.strategy]}</th><td>{item.scope.kind==='shared'?'Shared':`Private: ${item.scope.learnerId}`}</td><td>{item.schedulesRemainOnSource}</td><td>{item.deactivationsRemainOnSource}</td><td>{item.teachingBindingsRemainOnSource+item.sourceIntroductionExercises}</td><td>{item.sourceSenseMappings}</td><td>{item.sourceCurations}</td></tr>)}</tbody></table></div></section>}
           {editable&&<><button className="secondary-button" disabled={busy||scopeEditing||dirty||itemOutdated||approvalUnconfirmed} onClick={inspect}>Validate proposal and show relationship effects</button><label>Approval note (optional)<textarea value={reviewNote} disabled={busy||approvalUnconfirmed} onChange={event=>setReviewNote(event.target.value)}/></label><label>Dismissal reason (optional)<textarea value={reason} disabled={busy} onChange={event=>setReason(event.target.value)}/></label></>}
         </section>}
-        {workspace&&!selected&&queue!=='attention'&&<section><h3>Assessment</h3><ReadableJson value={workspace.diagnosis??null}/><label>Reason (optional)<textarea value={reason} disabled={busy||queue==='history'} onChange={event=>setReason(event.target.value)}/></label>{detailOnly&&queue==='detail'&&<label>Question for second opinion (optional)<textarea value={caseNotes} disabled={busy} onChange={event=>setCaseNotes(event.target.value)}/></label>}</section>}
+        {workspace&&!selected&&<section><h3>Assessment</h3><ReadableJson value={workspace.diagnosis??null}/><label>Reason (optional)<textarea value={reason} disabled={busy||queue==='history'} onChange={event=>setReason(event.target.value)}/></label>{workspace.case.kind==='exercise_improvement'&&queue==='detail'&&<label>Question for second opinion (optional)<textarea value={caseNotes} disabled={busy} onChange={event=>setCaseNotes(event.target.value)}/></label>}</section>}
         {selected?.caseId&&!workspace&&<p role="status">{workspaceLoading?'Loading case details…':<button className="secondary-button" onClick={()=>void loadWorkspaceForProposal(selected)}>Load case details</button>}</p>}
         {detailOnly&&workspace&&workspace.proposals.length>1&&<section aria-label="Retained proposals"><h3>Retained proposals</h3><ul>{workspace.proposals.map(value=><li key={value.proposalId}><button className="secondary-button" disabled={busy||scopeEditing} onClick={()=>{if(maySwitch())detailOnly.onSelectProposal(value.proposalId);}}>{value.rationale||value.proposalId} · revision {value.version} · {value.status}</button></li>)}</ul></section>}
         {workspace&&<section aria-label="Case evidence"><h2>{kinds[workspace.case.kind]}</h2><p className="vocabulary-operator-meta">Learner {workspace.case.learnerId} · {workspace.case.status}</p>

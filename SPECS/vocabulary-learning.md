@@ -371,8 +371,13 @@ unavailable. Diagnosis, current versus proposed learning content, and recipient
 scope follow, and are visible before approval. When the entry has no retained
 served snapshot, it states that the original served content is unavailable and
 does not present current or proposed content as the original. Evidence and
-manual editing are available on drill-in. Operational failures and unresolved
-cases are separate from ready suggestions. Second opinions are retained,
+manual editing are available on drill-in. Awaiting review includes teaching cases
+without an assessment and completed judgments that need an operator decision.
+Needs attention retains failed application, preparation and evidence-processing
+work, unknown word defaults requiring intervention, and cases without a reviewable
+assessment or proposal. A failure with an earlier reviewable assessment remains
+with that case. Moving between these surfaces preserves access to unresolved work;
+queue reads neither resolve records nor authorize retries. Second opinions are retained,
 advisory reviews bound to an exact proposal version; they do not replace edits
 or authorize application. Operators can also request a fresh improvement
 assessment of the current exercise version using a chosen model. If that version

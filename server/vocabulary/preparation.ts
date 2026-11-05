@@ -233,8 +233,20 @@ export function createVocabularyPracticePreparation(options: { provider?: Vocabu
       throw new Error('Vocabulary practice generation failed; inspect its retained invocation');
     }
   }
+  function failureDetails(row:Pick<VocabularyPracticeWork,'workId'|'wordId'|'sourceContentId'|'attemptCount'|'invocationId'|'lastError'>) {
+    const source=getSharedWordIntroductionContent(row.wordId);
+    const retryable=isVocabularySessionWordEligible(row.wordId)&&Boolean(source&&source.id===row.sourceContentId&&productionSource(source))
+      &&!row.lastError?.startsWith('source_mapping_requires_operator')
+      &&!(row.lastError?.startsWith('selection_requires_operator:')&&resolveVocabularySenseCoverage(row.wordId).word.defaultUsefulSenseIds===null&&!defaultUsefulSelectionRetryable(row.wordId));
+    return {...row,retryable};
+  }
   return {
     isConfigured: () => provider.isConfigured(),ensure,preflight,claim,run,
+    failed(workId:string) {
+      const row=getDb().prepare(`SELECT work_id AS workId,word_id AS wordId,source_content_id AS sourceContentId,attempt_count AS attemptCount,invocation_id AS invocationId,last_error AS lastError FROM vocabulary_practice_preparation WHERE work_id=? AND status='failed'`).get(workId) as Pick<VocabularyPracticeWork,'workId'|'wordId'|'sourceContentId'|'attemptCount'|'invocationId'|'lastError'>|undefined;
+      if(!row)throw new Error('Expected failed practice preparation');
+      return failureDetails(row);
+    },
     listQueued(limit = 20): VocabularyPracticeWork[] {
       if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new Error('Invalid preparation batch size');
       return getDb().prepare(`SELECT ${projection} FROM vocabulary_practice_preparation WHERE status='queued' AND next_attempt_at<=? ORDER BY next_attempt_at,created_at,work_id LIMIT ?`).all(now(),limit) as VocabularyPracticeWork[];
@@ -245,7 +257,7 @@ export function createVocabularyPracticePreparation(options: { provider?: Vocabu
       const rows = getDb().prepare(`SELECT work_id AS workId,word_id AS wordId,source_content_id AS sourceContentId,
         attempt_count AS attemptCount,invocation_id AS invocationId,last_error AS lastError
         FROM vocabulary_practice_preparation WHERE status='failed' ORDER BY updated_at DESC,work_id LIMIT ?`).all(limit) as Array<Pick<VocabularyPracticeWork,'workId'|'wordId'|'sourceContentId'|'attemptCount'|'invocationId'|'lastError'>>;
-      return rows.map(row => ({...row,retryable:(()=>{const source=getSharedWordIntroductionContent(row.wordId);return isVocabularySessionWordEligible(row.wordId)&&Boolean(source&&source.id===row.sourceContentId&&productionSource(source))&&!row.lastError?.startsWith('source_mapping_requires_operator')&&!(row.lastError?.startsWith('selection_requires_operator:')&&resolveVocabularySenseCoverage(row.wordId).word.defaultUsefulSenseIds===null&&!defaultUsefulSelectionRetryable(row.wordId));})()}));
+      return rows.map(row => failureDetails(row));
     },
     recoverExpired(): void {
       const rows=getDb().prepare(`SELECT work_id,active_token FROM vocabulary_practice_preparation WHERE status='running' AND expires_at<=?`).all(now()) as Array<{work_id:string;active_token:string}>;

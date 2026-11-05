@@ -553,3 +553,23 @@ verify that an unresolved target read leaves Apply/Edit available. Combine
 `targetReadFailure=1&targetPending=1` to check that approval rejection is visible
 on the card. With `targetPending=1`, use Fail target refresh then Refresh: the
 known pending restriction must remain. Release target reads completes held reads.
+
+### Needs attention
+
+`/tests/browser/vocabulary-attention.html` mounts the production operator shell and
+case-review entry with synthetic attention responses. Click Needs attention. Its
+29 items cover every type, the twenty-item page boundary, standalone approvals,
+learner-feedback jobs, and nonretryable preparation. `?narrow&largeText` renders a
+480px viewport with enlarged text; `?empty`, `?slow`, and `?saveFailure` cover
+alternate states. No provider calls or persistent application data are used.
+
+Verify defaults failure retains checked senses and blocks navigation; successful
+save removes the finding; retry advances only on acknowledgement; failed retry
+retains the item; type filtering, full-count wrap and remembered selection work;
+and Open proposal reaches a standalone editor without a workspace request. Open
+the feedback case, retry, then use Finish feedback to observe job completion while
+the editor stays open. Hold/release reads exercise responses crossing navigation
+and edits. Expand sense notes and details, use keyboard controls, and inspect long
+labels in the narrow fixture. `vocabulary-attention.test.ts` covers authoritative
+membership, teaching-case review/closure, legacy fallbacks, preparation pagination,
+anchor refresh, approval staleness, HTTP validation and operator access.
