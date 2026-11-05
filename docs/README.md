@@ -92,6 +92,9 @@ These routes do not certify full reconciliation of the older package guides.
 
 ## Operations guides
 
+- [Sense inventory reconciliation](ops/sense-inventory-reconciliation.md): reviewed
+  dependency reports and transactional stopped-writer correction of existing senses.
+
 **Target:** maintained procedures and safety conditions, with learner use,
 hosted operations, and contributor development clearly separated.
 

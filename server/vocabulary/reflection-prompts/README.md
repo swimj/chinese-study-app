@@ -336,3 +336,12 @@ into `ensureVocabularySenses`, then supply the latter as the reflection
 provider's `ensureSenses` dependency. Injecting a reflection adapter alone does
 not replace the independent sense-generation provider. Keep mapper judgments,
 inventory quality, and deterministic inability-to-proceed checks separate.
+
+
+The [inventory comparison and reconciliation procedure](../../../docs/testing.md#sense-inventory-comparison-and-reconciliation)
+uses `scripts/reconcile-sense-inventory.ts` to prepare the exact runtime lexical
+input, compare frozen baseline and candidate calls, and check an independently
+authored semantic reconciliation against snapshot and candidate hashes. Deterministic
+coverage checks do not certify linguistic judgment. The separate [stopped-writer
+reconciliation procedure](../../../docs/ops/sense-inventory-reconciliation.md)
+adds dependency reporting and transactional retain/retire application.

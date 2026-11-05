@@ -398,6 +398,54 @@ quality separately from schema validation. See the
 [prompt evaluation notes](../server/vocabulary/reflection-prompts/README.md#local-evaluation-seams)
 for validation limits and bounded evidence.
 
+### Sense inventory comparison and reconciliation
+
+[`scripts/reconcile-sense-inventory.ts`](../scripts/reconcile-sense-inventory.ts)
+connects fresh inventory generation to a separate, reviewable assessment of
+existing canonical identities. Its read-only preparation commands are:
+
+- `export --database ABSOLUTE_DB --word-ids ID,ID --out NEW_JSON` opens SQLite
+  read-only and captures lexical inputs, catalog/sense versions, coverage and
+  direct content, import, learner-sense, stash and bootstrap dependencies in one
+  read transaction. Use an identified local snapshot for hosted-data review.
+- `trial --input SNAPSHOTS_JSON --archive ABSOLUTE_DIRECTORY --variant NAME`
+  prepares exact requests for 1–32 words. It sends the same `{word}` lexical input
+  as runtime; existing inventories are retained for comparison but withheld from
+  generation. `--baseline-revision 17a5a357` freezes the historical v2 prompt and
+  nonempty schema. The candidate uses the current prompt and v3 empty-capable
+  schema. Authorized live runs add `--allow-provider-calls` and an explicit
+  `--max-provider-calls` budget of at most 32. Run baseline and candidate batches
+  sequentially with unique variant names. Requests, outputs and hashes are retained.
+- `check --snapshot CASE_SNAPSHOT --candidate CANDIDATE_JSON --judgment REVIEW_JSON
+  --out NEW_REPORT` validates a semantic review against the exact snapshot and
+  candidate hashes. Each active old sense and candidate index must occur exactly
+  once in explicit retain, revise, retire, create or restructure groups. Retain
+  can match one candidate or keep an omitted existing use; revise is one-to-one.
+  Split/merge decisions need restructure groups.
+
+The [synthetic fixtures](../scripts/fixtures/sense-inventory-cases.json) include
+motivating failures, related targets and construction-dependent controls. The
+[retained comparison review](../scripts/fixtures/sense-inventory-review.json)
+records generated inventories, exact-call hashes, agent judgments and limits,
+including the failed baseline 垂 call. Its reconciliation demonstrations use
+synthetic existing inventories; they do not establish production migration
+readiness. Mapping-prompt linguistic comparisons were not run in that trial.
+Live trials create a judgment template for each successful candidate. An agent or
+operator supplies the semantic judgment and rationale; the checker verifies
+coverage, identity and structural consistency, not linguistic truth. Its reports
+always state `semanticJudgmentVerified:false` and `applyReady:false`.
+
+`report` expands the reviewed retirements into source, content, teaching-binding,
+preparation and pending-work dependencies. `hash-plan` binds the approved batch;
+`apply` validates it again under an immediate write lock and applies conservative
+retain/retire decisions atomically. See the [reconciliation runbook](ops/sense-inventory-reconciliation.md)
+for content decisions, stopped-writer rehearsal, receipts and recovery.
+
+`tests/sense-inventory-reconciliation.test.ts` covers structural comparison and
+read-only CLI export. `tests/sense-inventory-reconciliation-apply.test.ts` uses
+migrated SQLite fixtures to cover dependency decisions, stale-plan rejection,
+multiword rollback, idempotence, preparation refresh, and preserved learner history.
+
 ## When changing…
 
 | Area | Run first |
