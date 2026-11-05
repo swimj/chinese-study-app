@@ -1,7 +1,10 @@
+import { isVocabularySessionWordEligible } from '../db/vocabulary-sense-eligibility.ts';
+import { VocabularySenseReadinessPending,VocabularySenseReadinessError,VocabularyEmptySenseInventory } from '../vocabulary/sense-readiness.ts';
+import type { ensureVocabularySenses } from '../vocabulary/sense-readiness.ts';
 import { runWithLearnerId } from '../db/learner-context.ts';
 import { randomUUID } from 'node:crypto';
 import {
-  listDueWordPreparation, beginWordPreparationAttempt, markWordPreparationReady,
+  pauseEmptyInventoryPreparation,deferWordPreparationForSenses,listDueWordPreparation, beginWordPreparationAttempt, markWordPreparationReady,
   failWordPreparationAttempt, recoverExpiredWordPreparation, pauseUnavailableWordPreparation,
   type WordPreparationWork,
 } from '../db/preparation-work.ts';
@@ -13,6 +16,7 @@ import type { WordIntroductionProvider } from './provider.ts';
 
 export function createWordPreparationWorker(options: {
   provider?: WordIntroductionProvider;
+  ensureSenses?:typeof ensureVocabularySenses;
   now?: () => number;
   concurrency?: number;
   pollMs?: number;
@@ -20,7 +24,7 @@ export function createWordPreparationWorker(options: {
   controls?: () => { maintenanceMode: boolean; providerWorkEnabled: boolean };
   onError?: (error: unknown) => void;
 } = {}) {
-  const preparation = createSharedWordPreparation(options.provider);
+  const preparation = createSharedWordPreparation(options.provider,{ensureSenses:options.ensureSenses,canPublish:()=>!controls().maintenanceMode&&controls().providerWorkEnabled});
   const now = options.now ?? Date.now;
   const isoNow = () => new Date(now()).toISOString();
   const concurrency = options.concurrency ?? 2;
@@ -42,6 +46,10 @@ export function createWordPreparationWorker(options: {
     if (working.has(work.workId)) return false;
     working.add(work.workId);
     try {
+      if (!isVocabularySessionWordEligible(work.wordId)) {
+        pauseEmptyInventoryPreparation(work.wordId,new VocabularyEmptySenseInventory().message,isoNow());
+        return true;
+      }
       if (preparation.ready(work.wordId, work.stage)) {
         markWordPreparationReady(work.workId, isoNow());
         return true;
@@ -57,6 +65,15 @@ export function createWordPreparationWorker(options: {
       }
       return await providerWork(async () => {
         if (!enabled()) return false;
+        try{if(work.stage==='bootstrap')await preparation.prepareBootstrapSenses(work.wordId,work.workId);else preparation.validatePreparedSource(work.wordId);}
+        catch(error){
+          if(error instanceof VocabularyEmptySenseInventory)pauseEmptyInventoryPreparation(work.wordId,error.message,isoNow());
+          else if(error instanceof VocabularySenseReadinessPending)deferWordPreparationForSenses(work.workId,error.retryAt,isoNow());
+          else if(error instanceof VocabularySenseReadinessError)pauseUnavailableWordPreparation(work.workId,error.message,isoNow());
+          else throw error;
+          return true;
+        }
+        if(!enabled())return false;
         const token = randomUUID();
         const startedAt = isoNow();
         const expiresAt = new Date(now() + 5 * 60_000).toISOString();

@@ -8,8 +8,8 @@ export type ModelTarget = {
 export const modelTargets: ModelTarget[] = [
   { id: 'gpt-5.6-terra-high', provider: 'openai', model: 'gpt-5.6-terra', reasoningEffort: 'high' },
   { id: 'gpt-5.6-terra-xhigh', provider: 'openai', model: 'gpt-5.6-terra', reasoningEffort: 'xhigh' },
-  { id: 'gpt-5.6-luna-high', provider: 'openai', model: 'gpt-5.6-luna', reasoningEffort: 'high' },
-  { id: 'gpt-5.6-luna-xhigh', provider: 'openai', model: 'gpt-5.6-luna', reasoningEffort: 'xhigh' },
+  { id: 'gpt-6-luna-high', provider: 'openai', model: 'gpt-6-luna', reasoningEffort: 'high' },
+  { id: 'gpt-6-luna-xhigh', provider: 'openai', model: 'gpt-6-luna', reasoningEffort: 'xhigh' },
   { id: 'gpt-5.4-mini-high', provider: 'openai', model: 'gpt-5.4-mini', reasoningEffort: 'high' },
   { id: 'gpt-5.4-mini-xhigh', provider: 'openai', model: 'gpt-5.4-mini', reasoningEffort: 'xhigh' },
   { id: 'glm-5.3-flash-high', provider: 'zai', model: 'glm-5.3-flash', reasoningEffort: 'high' },

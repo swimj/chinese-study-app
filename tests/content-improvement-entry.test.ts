@@ -99,3 +99,16 @@ test('an entry without a served snapshot says so and does not present another ve
   assert.equal(servedContentLead([]).status, 'unavailable');
   assert.equal(servedContentLead(null).status, 'unavailable');
 });
+
+test('identical served snapshots render once while retaining every response and comment',()=>{
+  const first=encounter('first',servedPrompt,['报备']),second=encounter('second',servedPrompt,['报备']);
+  for(const [index,item] of [first,second].entries()){
+    const response={protocolVersion:1 as const,actionId:`response-${index}`,clientActionId:`response-${index}`,sequence:1,occurredAt:at,kind:'response' as const,payload:{encounterId:item.encounterId,response:index?'报告':'备案',outcome:'rejected' as const}};
+    item.responses=[response];item.effectiveResponses=[response];
+  }
+  const html=renderToStaticMarkup(createElement(ContentImprovementEntry,{evidence:[first,second],label:'Review'}));
+  assert.equal(html.split(servedPrompt).length-1,1);assert.match(html,/备案/);assert.match(html,/报告/);
+  second.snapshot={...second.snapshot,body:{prompt:'Different rendered wording'}};
+  const mixed=renderToStaticMarkup(createElement(ContentImprovementEntry,{evidence:[first,second],label:'Review'}));
+  assert.match(mixed,/Different rendered wording/);assert.match(mixed,/Give the office/);
+});

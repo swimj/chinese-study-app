@@ -3,6 +3,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { after, before, test } from 'node:test';
+import { createVocabularySense,establishVocabularySenseCatalog,getVocabularySenseCatalog } from '../server/db/vocabulary-content.ts';
+import { writeVocabularyDefaultUsefulSenses } from '../server/db/vocabulary-sense-coverage.ts';
 import { getDb } from '../server/db/connection.ts';
 import { runWithLearnerId } from '../server/db/learner-context.ts';
 import { listModelInvocations } from '../server/db/model-invocations.ts';
@@ -81,8 +83,12 @@ test('word schema rejection and shared bootstrap domain rejection invalidate the
   const word = content.word;
   getDb().prepare(`INSERT INTO lexical_words (id, hanzi, traditional, pinyin, meaning, meanings_json, examples_json, priority, created_at)
     VALUES (?, ?, ?, ?, 'meaning', '["meaning"]', '[]', 10, '2026-10-06')`).run('validation-bootstrap', word.hanzi, word.traditional, word.pinyin);
+  const actor={kind:'service' as const,id:'validation-fixture'};
+  createVocabularySense({senseId:'validation-use',wordId:'validation-bootstrap',description:{label:'label',notes:[]}},actor);
+  establishVocabularySenseCatalog('validation-bootstrap',getVocabularySenseCatalog('validation-bootstrap').version,actor);
+  writeVocabularyDefaultUsefulSenses('validation-bootstrap',0,['validation-use'],actor);
   // Valid schema, invalid reference: the use names an example that was never generated.
-  const output = { uses: [{ id: 'use', label: 'label', notes: [], exampleIds: ['missing'] }],
+  const output = { uses: [{ id: 'validation-use', exampleIds: ['missing'] }],
     examples: [{ id: 'example', text: 'Example.', translation: 'Example.', pronunciation: null }] };
   const shared = createSharedWordPreparation(createWordIntroductionProvider(providerOptions(JSON.stringify(output))));
   await rejectedInvocation(() => shared.generate('validation-bootstrap', 'bootstrap', 'unclaimed-token'));
@@ -107,7 +113,7 @@ test('concurrent word domain rejection targets its own row; publication failure 
 
 test('shared teaching and review domain validation invalidate calls after schema validation succeeds', async () => {
   const bootstrap = createSharedWordPreparation(createWordIntroductionProvider(providerOptions(JSON.stringify({
-    uses: content.uses, examples: content.examples,
+    uses: [{id:'validation-use',exampleIds:content.examples.map(example=>example.id)}], examples: content.examples,
   }))));
   const now = new Date();
   assert.equal(bootstrap.claim('validation-bootstrap', 'bootstrap', 'bootstrap-token', now.toISOString(),

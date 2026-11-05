@@ -1,3 +1,4 @@
+import { writeVocabularyWordSenseCoverage } from '../server/db/vocabulary-sense-coverage.ts';
 import { isVocabularyProductionProxied } from '../server/vocabulary/production-coverage.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -6,7 +7,7 @@ import {beforeEach,afterEach,test} from 'node:test';
 import {setDb} from '../server/db/connection.ts';
 import {runWithLearnerId} from '../server/db/learner-context.ts';
 import {addVocabularyWord,changeVocabularyMode,dismissVocabularyWord} from '../server/db/vocabulary-learners.ts';
-import {createVocabularyContent} from '../server/db/vocabulary-content.ts';
+import {createVocabularySense,mapVocabularyContentSense,createVocabularyContent,establishVocabularySenseCatalog,getVocabularySenseCatalog} from '../server/db/vocabulary-content.ts';
 import {composeVocabularyStudy,remainingVocabularyNewWordQuota,localNewWordDay} from '../server/vocabulary/composition.ts';
 import type {DeckManifest} from '../server/decks/manifest.ts';
 let db:DatabaseSync;let ready:Set<string>;let requested:string[];
@@ -27,7 +28,7 @@ beforeEach(()=>{
     CREATE TABLE teaching_completions(learner_id TEXT,source_kind TEXT,completed_at TEXT);
     INSERT INTO learners VALUES('alice'),('bob');
   `);
-  for(const file of ['0039_vocabulary_content.sql','0041_vocabulary_learner_state.sql','0047_vocabulary_dismissal.sql','0052_vocabulary_automatic_promotion_pause.sql'])db.exec(fs.readFileSync(new URL(`../server/db/migrations/${file}`,import.meta.url),'utf8'));
+  for(const file of ['0062_vocabulary_sense_coverage.sql','0064_vocabulary_default_useful_senses.sql','0039_vocabulary_content.sql','0041_vocabulary_learner_state.sql','0047_vocabulary_dismissal.sql','0052_vocabulary_automatic_promotion_pause.sql'])db.exec(fs.readFileSync(new URL(`../server/db/migrations/${file}`,import.meta.url),'utf8'));
   ready=new Set();requested=[];
 });
 afterEach(()=>db.close());
@@ -247,4 +248,72 @@ test('private targeted exception is learner-scoped, respects deactivation and pr
   db.prepare("INSERT INTO learner_content_deactivations VALUES('alice','pure',?)").run(now);
   assert.equal(isVocabularyProductionProxied('word'),true,'learner deactivation does not rewrite shared repertoire coverage');
   assert.deepEqual(compose().dueWordIds,[]);
+}));
+
+
+test('excluded mapped targeted senses no longer defeat shared pure-cue production proxy',()=>owner(()=>{
+  reviewWord('covered',96);
+  coverageExercise('pure-covered','covered',{pure:true});
+  coverageExercise('targeted-covered','covered');
+  createVocabularySense({senseId:'covered-sense',wordId:'covered',description:'marginal use'},{kind:'operator',id:'test'});
+  mapVocabularyContentSense({contentId:'targeted-covered',wordId:'covered',expectedContentVersion:1,
+    expectedMapping:{senseId:null,establishedAt:null},senseId:'covered-sense'},{kind:'operator',id:'test'});
+  assert.equal(isVocabularyProductionProxied('covered'),false);
+  writeVocabularyWordSenseCoverage('covered',0,['covered-sense'],{kind:'operator',id:'test'});
+  assert.equal(isVocabularyProductionProxied('covered'),true);
+  assert.deepEqual(compose().reviewSelections,[]);
+}));
+
+test('new unselected senses do not defeat an existing pure-cue proxy',()=>owner(()=>{
+  reviewWord('covered',96);
+  coverageExercise('pure-covered','covered',{pure:true});
+  createVocabularySense({senseId:'initial-sense',wordId:'covered',description:'initial use'},{kind:'operator',id:'test'});
+  writeVocabularyWordSenseCoverage('covered',0,[],{kind:'operator',id:'test'});
+  createVocabularySense({senseId:'later-sense',wordId:'covered',description:'later use'},{kind:'operator',id:'test'});
+  coverageExercise('later-targeted','covered');
+  mapVocabularyContentSense({contentId:'later-targeted',wordId:'covered',expectedContentVersion:1,
+    expectedMapping:{senseId:null,establishedAt:null},senseId:'later-sense'},{kind:'operator',id:'test'});
+  assert.equal(isVocabularyProductionProxied('covered'),true);
+}));
+
+
+test('established empty inventories stay stashed but are absent from every word admission and preparation lane',()=>owner(()=>{
+  settings('daily_new_word_limit',10);
+  for(const id of ['empty-stash','empty-diet','unknown-stash','unknown-diet','active-stash','empty-solidify']) {
+    lexical(id);prepared(id);
+    if(!id.endsWith('diet'))addVocabularyWord(id);
+  }
+  changeVocabularyMode('empty-solidify','solidify',1);
+  for(const id of ['empty-practice','empty-maintain']) {
+    reviewWord(id,48);skill(id,'recognition',96);skill(id,'contextual_selection',192);
+  }
+  changeVocabularyMode('empty-maintain','maintain',2);
+  createVocabularySense({wordId:'active-stash',description:{label:'eligible use'}},{kind:'operator',id:'test'});
+  for(const id of ['empty-stash','empty-diet','empty-solidify','empty-practice','empty-maintain','active-stash']) {
+    establishVocabularySenseCatalog(id,getVocabularySenseCatalog(id).version,{kind:'operator',id:'test'});
+  }
+  const learnerBefore=db.prepare('SELECT * FROM learner_words ORDER BY word_id').all();
+  const scheduleBefore=db.prepare('SELECT * FROM learner_word_schedules ORDER BY word_id').all();
+  const plan=composeVocabularyStudy({now,manifest:null,teachingReady:(id)=>ready.has(id),requestTeaching:(id)=>requested.push(id),canUseSkill:()=>true});
+  assert.ok(plan.newWordIds.includes('unknown-stash'));assert.ok(plan.newWordIds.includes('active-stash'));
+  assert.ok(plan.newWordIds.includes('unknown-diet'));
+  assert.equal(plan.newWordIds.some(id=>id.startsWith('empty-')),false);
+  assert.deepEqual(plan.dueWordIds,[]);assert.deepEqual(plan.reviewSelections,[]);
+  ready.clear();requested=[];compose();
+  assert.equal(requested.some(id=>id.startsWith('empty-')),false);
+  assert.deepEqual(db.prepare('SELECT * FROM learner_words ORDER BY word_id').all(),learnerBefore);
+  assert.deepEqual(db.prepare('SELECT * FROM learner_word_schedules ORDER BY word_id').all(),scheduleBefore);
+}));
+
+
+test('a pure cue containing an empty-inventory answer does not proxy an otherwise eligible review word',()=>owner(()=>{
+  reviewWord('word',48);lexical('empty');
+  createVocabularyContent({contentId:'mixed-pure',kind:'exercise',payloadVersion:1,body:{prompt:'Either answer'},
+    accessScope:'shared',availability:'active',originKind:'human',words:[{wordId:'word',relation:'target'},{wordId:'empty',relation:'target'}],
+    exerciseType:'pure_cue',skill:'production',exerciseRole:'general',assessment:{match:'prepared'},
+    answers:[{wordId:'word',acceptedForms:['word']},{wordId:'empty',acceptedForms:['empty']}]},{kind:'operator',id:'test'});
+  assert.equal(isVocabularyProductionProxied('word'),true);
+  establishVocabularySenseCatalog('empty',0,{kind:'operator',id:'test'});
+  assert.equal(isVocabularyProductionProxied('word'),false);
+  assert.deepEqual(compose().reviewSelections,[{wordId:'word',skillId:'production'}]);
 }));

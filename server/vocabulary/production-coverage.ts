@@ -1,3 +1,5 @@
+import { vocabularyExerciseAnswersEligibleSql, isVocabularySessionWordEligible } from '../db/vocabulary-sense-eligibility.ts';
+import { resolveVocabularySenseCoverage } from '../db/vocabulary-sense-coverage.ts';
 import type { VocabularyJson } from '../../src/domain/vocabulary-content.ts';
 import { getDb } from '../db/connection.ts';
 import { requireLearnerId } from '../db/learner-context.ts';
@@ -15,17 +17,20 @@ export function isVocabularyProductionProxied(wordId: string): boolean {
     JOIN content_items c ON c.content_id = a.exercise_id
     WHERE a.word_id = ? AND c.kind = 'exercise' AND c.exercise_type = 'pure_cue'
       AND c.exercise_role = 'general' AND c.access_scope = 'shared' AND c.availability = 'active'
+      AND ${vocabularyExerciseAnswersEligibleSql('c.content_id')}
     LIMIT 1`).get(wordId);
-  const targeted = pure ? getDb().prepare(`SELECT c.body_json FROM content_words w
+  const targeted = pure ? getDb().prepare(`SELECT c.body_json,w.sense_id FROM content_words w
     JOIN content_items c USING(content_id)
     WHERE w.word_id = ? AND w.relation = 'target' AND c.kind = 'exercise'
       AND c.exercise_role = 'general' AND c.skill = 'production'
       AND c.exercise_type NOT IN ('pure_cue', 'contrast')
       AND COALESCE(json_extract(c.assessment_json, '$.responseMode'), '') != 'word_choice'
-      AND c.access_scope = 'shared' AND c.availability = 'active'`).all(wordId) as { body_json: string }[] : [];
+      AND c.access_scope = 'shared' AND c.availability = 'active'
+      AND ${vocabularyExerciseAnswersEligibleSql('c.content_id')}`).all(wordId) as { body_json: string;sense_id:string|null }[] : [];
+  const coverage=resolveVocabularySenseCoverage(wordId),included=new Set(coverage.includedSenseIds),excluded=new Set(coverage.word.excludedSenseIds);
   return isProductionProxied({
     hasSharedPureCue: Boolean(pure),
-    hasSharedTargetedCue: targeted.some((row) => !isVocabularyDefinitionFallback({ body: JSON.parse(row.body_json) as VocabularyJson })),
+    hasSharedTargetedCue: targeted.some((row) => (row.sense_id===null||(coverage.selectionEstablished?included.has(row.sense_id):!excluded.has(row.sense_id)))&&!isVocabularyDefinitionFallback({ body: JSON.parse(row.body_json) as VocabularyJson })),
   });
 }
 
@@ -33,6 +38,7 @@ export function isVocabularyProductionProxied(wordId: string): boolean {
 export function canServeVocabularyReviewProduction(wordId: string, mode: 'practice' | 'maintain'): boolean {
   const proxied = isVocabularyProductionProxied(wordId);
   const hasUsableTargetedCue = proxied && listVocabularyExercises({ wordId, mode }).some((content) => content.kind === 'exercise'
+    && content.answers.every(answer=>isVocabularySessionWordEligible(answer.wordId))
     && content.skill === 'production' && content.exerciseType !== 'pure_cue' && content.exerciseType !== 'contrast'
     && object(content.assessment).responseMode !== 'word_choice'
     && !isVocabularyDefinitionFallback(content)

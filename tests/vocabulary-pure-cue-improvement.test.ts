@@ -22,6 +22,8 @@ beforeEach(() => {
     CREATE TABLE lexical_words(id TEXT PRIMARY KEY,hanzi TEXT,traditional TEXT,pinyin TEXT,meaning TEXT);
     INSERT INTO lexical_words VALUES ('target','放大',NULL,'fang4 da4','enlarge'),('other','扩大','擴大','kuo4 da4','expand'),('retained','增加',NULL,'zeng1 jia1','increase');`);
   db.exec(readFileSync(new URL('../server/db/migrations/0039_vocabulary_content.sql', import.meta.url), 'utf8'));
+  db.exec(readFileSync(new URL('../server/db/migrations/0062_vocabulary_sense_coverage.sql', import.meta.url), 'utf8'));
+  db.exec(readFileSync(new URL('../server/db/migrations/0064_vocabulary_default_useful_senses.sql', import.meta.url), 'utf8'));
   original = createVocabularyContent({ contentId: 'cue', kind: 'exercise', payloadVersion: 1,
     body: { prompt: 'Increase the size or extent.', instruction: 'Keep this instruction.', stimulus: { kind: 'direct_text', text: 'Increase the size or extent.' },
       reveal: { axisNote: 'Size or extent', teachingNote: 'Increasing size or extent.', example: 'Keep this example.' } },
@@ -178,9 +180,9 @@ test('repair preserves banked no-op and surrounding-whitespace rejection cases',
   }
 });
 
-test('operator reassessment excludes historical candidate responses and fences by source version',()=>{
+test('operator reassessment retains historical candidate responses and fences by source version',()=>{
   const prepared=prepareVocabularyPureCueImprovement({...job(),reassessmentSourceJobId:'previous',reassessmentSource:original},original);
-  assert.deepEqual(prepared.input.responseCandidates,[]);
+  assert.deepEqual(prepared.input.responseCandidates.map(item=>item.rawResponse),['擴大']);
   prepared.fence();
   updateVocabularyContent('cue',original.version,{...original,body:{prompt:'Updated task.'}},actor);
   assert.throws(()=>prepared.fence(),error=>error instanceof Error&&error.constructor.name==='VocabularyReflectionConflict');

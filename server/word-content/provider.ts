@@ -14,7 +14,7 @@ import type { FetchImplementation } from '../llm/http.ts';
 import { materializeTeachingPart } from '../../src/domain/word-content/materialize.ts';
 import type { ProviderRunRequest } from '../llm/types.ts';
 
-export const WORD_INTRODUCTION_MODEL = 'gpt-5.6-luna';
+export const WORD_INTRODUCTION_MODEL = 'gpt-6-luna';
 const TIMEOUT_MS = 180_000;
 const MAX_OUTPUT_TOKENS = 16_000;
 const TEACHING_EXERCISE_PROMPT = new URL('../word-content-lab/vocabulary-experiments/prompts/teaching-exercises-v2.md',import.meta.url);
@@ -64,6 +64,11 @@ const bootstrapSchema = object({
     pronunciation: nullableString,
   }), 1),
 });
+
+function canonicalBootstrapSchema(input:WordBootstrapInput):JsonSchema {
+  const uses={...array(object({id:{type:'string',enum:input.canonicalSenses!.map(sense=>sense.senseId)},exampleIds:array(string,1)}),input.canonicalSenses!.length),maxItems:input.canonicalSenses!.length};
+  return object({uses,examples:bootstrapSchema.properties!.examples!});
+}
 
 const teachingPartSchema: JsonSchema = { anyOf: [
   oneOfKinds('text', { text: string }),
@@ -135,14 +140,16 @@ export function createWordIntroductionProvider(options: {
     if (!apiKey) throw new Error('Introduction generation is not configured.');
     const trial: ExperimentInput | null = stage === 'practice' && generationOptions.teaching
       ? { role:'teaching_exercises',content:input as WordContentDocument,introduction:generationOptions.teaching } : null;
-    const schema = trial ? experimentOutputSchema(trial) : schemaFor(stage);
-    const prompt = await readFile(trial ? TEACHING_EXERCISE_PROMPT : new URL(`./prompts/${stage}.md`,import.meta.url),'utf8');
+    const canonical=stage==='bootstrap'&&'canonicalSenses' in input&&input.canonicalSenses!==undefined;
+    if(canonical&&input.canonicalSenses!.length===0)throw new Error('Canonical enrichment requires selected senses');
+    const schema = canonical?canonicalBootstrapSchema(input as WordBootstrapInput):trial ? experimentOutputSchema(trial) : schemaFor(stage);
+    const prompt = await readFile(trial ? TEACHING_EXERCISE_PROMPT : new URL(`./prompts/${canonical?'bootstrap-enrichment':stage}.md`,import.meta.url),'utf8');
     const result = await adapter.run({
       model: WORD_INTRODUCTION_MODEL,
       reasoningEffort: 'high',
       systemPrompt: prompt,
       userPrompt: JSON.stringify(trial ? projectExperimentInput(trial) : stage === 'practice' ? practiceInput(input as WordContentDocument) : input),
-      outputSchemaName: trial ? 'vocabulary_teaching_exercises_v1' : `intro_lab_${stage}_${stage === 'teaching' ? 'v2' : 'v1'}`,
+      outputSchemaName: canonical?'vocabulary_bootstrap_enrichment_v1':trial ? 'vocabulary_teaching_exercises_v1' : `intro_lab_${stage}_${stage === 'teaching' ? 'v2' : 'v1'}`,
       outputSchema: schema,
       maxOutputTokens: MAX_OUTPUT_TOKENS,
       temperature: null,
@@ -150,7 +157,7 @@ export function createWordIntroductionProvider(options: {
       cachePrompt: true,
       invocationActor: generationOptions.invocationActor,
       provenance: { workflowId: generationOptions.workflowId,stepName: trial ? 'teaching_exercises' : stage==='teaching' ? 'introduction' : stage,
-        promptName: trial ? 'vocabulary-teaching-exercises' : stage==='teaching' ? 'vocabulary-introduction' : `vocabulary-${stage}`,promptVersion: trial ? 'v2' : 'v1',
+        promptName: canonical?'vocabulary-bootstrap-enrichment':trial ? 'vocabulary-teaching-exercises' : stage==='teaching' ? 'vocabulary-introduction' : `vocabulary-${stage}`,promptVersion: trial ? 'v2' : 'v1',
         schemaVersion: stage === 'teaching' ? '2' : '1',inputProjectionVersion: trial ? 'delivered-introduction-v1' : 'full-v1' },
     }, {
       apiKey,

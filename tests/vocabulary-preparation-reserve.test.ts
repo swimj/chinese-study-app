@@ -14,6 +14,8 @@ test('vocabulary reserve preserves bounded preparation and lifecycle admission',
   const stages = await import('../server/db/word-introductions.ts');
   const { teachingReady } = await import('../server/vocabulary/teaching-readiness.ts');
   const { createVocabularyPracticePreparation } = await import('../server/vocabulary/preparation.ts');
+  const { writeVocabularyDefaultUsefulSenses } = await import('../server/db/vocabulary-sense-coverage.ts');
+  const { getVocabularySenses, getVocabularySenseCatalog, establishVocabularySenseCatalog, updateVocabularySense } = await import('../server/db/vocabulary-content.ts');
   const { getWordPreparationWork } = await import('../server/db/preparation-work.ts');
   const { getDb } = await import('../server/db/connection.ts');
   const learners = await import('../server/db/vocabulary-learners.ts');
@@ -129,6 +131,8 @@ test('vocabulary reserve preserves bounded preparation and lifecycle admission',
       assert.equal(historical.words[wordId].teaching,null,'historical material does not qualify for new teaching');
       assert.ok(sqlite.prepare("SELECT 1 FROM learner_word_reserve_requests WHERE learner_id='reserve-a'").get());
       sqlite.prepare("UPDATE word_introduction_preparation SET active_stage=NULL,lease_token=NULL,lease_expires_at=NULL WHERE word_id=?").run(wordId);
+      // Explicit editorial fixture: the retained imported source is approved for practice.
+      writeVocabularyDefaultUsefulSenses(wordId,0,getVocabularySenses(wordId).filter(sense=>sense.status==='active').map(sense=>sense.senseId),{kind:'service',id:'reserve-fixture'});
       const practice=createVocabularyPracticePreparation().ensure(wordId)!;
       reconcile();
       assert.equal(stages.getSharedWordIntroductionPreparation(wordId)?.contentId,old.contentId,'queued practice finishes against its retained source before refresh');
@@ -147,6 +151,21 @@ test('vocabulary reserve preserves bounded preparation and lifecycle admission',
       assert.equal(teachingReady(wordId),true);
       assert.notEqual(stages.getSharedWordTeachingPackageId(wordId),old.packageId,'current package wins over retained older package');
       assert.equal(count('vocabulary_practice_preparation'),1,'refresh adds no historical general-practice backfill');
+    }));
+    await t.test('established empty inventory leaves reserve without restashing or repeated preparation demand', () => owner(() => {
+      const wordId=reserve.getWordReserveCandidates()[0];
+      const actor={kind:'operator' as const,id:'reserve-fixture'};
+      for(const sense of getVocabularySenses(wordId).filter(sense=>sense.status==='active')) {
+        updateVocabularySense(sense.senseId,sense.version,{description:sense.description,status:'retired'},actor);
+      }
+      if(getVocabularySenseCatalog(wordId).establishedAt===null)establishVocabularySenseCatalog(wordId,getVocabularySenseCatalog(wordId).version,actor);
+      const before=learners.getVocabularyLearnerWord(wordId);
+      const workBefore=sqlite.prepare('SELECT * FROM word_preparation_work WHERE word_id=? ORDER BY stage').all(wordId);
+      assert.equal(teachingReady(wordId),false);
+      reconcile();reconcile();
+      assert.equal(reserve.getWordReserveCandidates().includes(wordId),false);
+      assert.deepEqual(learners.getVocabularyLearnerWord(wordId),before);
+      assert.deepEqual(sqlite.prepare('SELECT * FROM word_preparation_work WHERE word_id=? ORDER BY stage').all(wordId),workBefore);
     }));
   } finally {
     sqlite.close();

@@ -32,4 +32,6 @@ export type WordBootstrapInput = {
   traditional: string | null;
   pinyin: string;
   guidance: string;
+  /** Runtime enrichment receives the already-selected canonical uses; the local lab may omit it. */
+  canonicalSenses?: {senseId:string;label:string;notes:string[]}[];
 };

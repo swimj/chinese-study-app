@@ -26,7 +26,7 @@ export function linkVocabularyInvocationSense(input: SenseLink,actor: Vocabulary
  * Learner and service calls stay attributable to their original actors; no private evidence is published. */
 export function linkVocabularyPublicationOutput(db: DatabaseSync,invocationId: string | null | undefined,
   sourceKind: 'bootstrap' | 'teaching_package' | 'teaching_exercise' | 'production_cue' | 'production_cue_supplement',
-  sourceId: string,sourceSubId = '',options: { allowUnresolvedLegacy?: boolean } = {}): void {
+  sourceId: string,sourceSubId = '',options: { allowUnresolvedLegacy?: boolean;bootstrapSenseRole?:'input'|'output' } = {}): void {
   if (invocationId == null) return;
   const invocation = db.prepare('SELECT actor_kind,actor_id FROM model_invocations WHERE id=?').get(invocationId) as { actor_kind: 'learner' | 'service'; actor_id: string } | undefined;
   if (!invocation) {
@@ -43,8 +43,8 @@ export function linkVocabularyPublicationOutput(db: DatabaseSync,invocationId: s
   // guards also reject private derivation, independently of the request's ambient learner.
   if (sourceKind === 'bootstrap') {
     const senses = db.prepare('SELECT sense_id,imported_sense_version FROM legacy_sense_imports WHERE source_content_id=?').all(sourceId) as Array<{ sense_id: string; imported_sense_version: number }>;
-    for (const sense of senses) db.prepare('INSERT OR IGNORE INTO invocation_sense_links VALUES (?,?,?,\'output\')')
-      .run(invocationId,sense.sense_id,sense.imported_sense_version);
+    for (const sense of senses) db.prepare('INSERT OR IGNORE INTO invocation_sense_links VALUES (?,?,?,?)')
+      .run(invocationId,sense.sense_id,sense.imported_sense_version,options.bootstrapSenseRole??'output');
     return;
   }
   const content = db.prepare('SELECT content_id,imported_content_version FROM legacy_content_imports WHERE source_kind=? AND source_id=? AND source_sub_id=?')

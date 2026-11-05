@@ -65,8 +65,8 @@ import {
 
 export const LUNA_REFLECTION_MODEL_CONFIG = {
   provider: 'openai',
-  modelConfig: 'gpt-5.6-luna-high',
-  providerModel: 'gpt-5.6-luna',
+  modelConfig: 'gpt-6-luna-high',
+  providerModel: 'gpt-6-luna',
   reasoningEffort: 'high',
   maxOutputTokens: 50_000,
   timeoutMs: PROVIDER_REQUEST_TIMEOUT_MS,

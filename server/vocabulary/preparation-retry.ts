@@ -1,15 +1,17 @@
 import { randomUUID } from 'node:crypto';
 import { getDb } from '../db/connection.ts';
 
-type Kind = 'practice' | 'sense';
+type Kind = 'practice' | 'sense' | 'selection';
 const target = (kind:Kind) => kind==='practice'
-  ? {table:'vocabulary_practice_preparation',key:'work_id'} : {table:'vocabulary_sense_readiness',key:'word_id'};
+  ? {table:'vocabulary_practice_preparation',key:'work_id'} : {table:kind==='selection'?'vocabulary_default_selection_readiness':'vocabulary_sense_readiness',key:'word_id'};
+const journalKind=(kind:Kind)=>kind==='selection'?'sense':kind;
+const journalId=(kind:Kind,id:string)=>kind==='selection'?`default-selection:${id}`:id;
 export function recordPreparationAttempt(kind:Kind,id:string,token:string,at:string):void {
   const {table,key}=target(kind);
   getDb().prepare(`INSERT INTO vocabulary_preparation_attempts
     (attempt_id,preparation_kind,work_id,attempt_number,cycle_attempt,started_at)
     SELECT ?,?,?,total_attempt_count,attempt_count,? FROM ${table} WHERE ${key}=? AND active_token=?`)
-    .run(token,kind,id,at,id,token);
+    .run(token,journalKind(kind),journalId(kind,id),at,id,token);
 }
 export function linkPreparationInvocation(token:string,invocationId:string):void {
   getDb().prepare('UPDATE vocabulary_preparation_attempts SET invocation_id=? WHERE attempt_id=? AND outcome IS NULL').run(invocationId,token);

@@ -1,14 +1,19 @@
+import { installCaseReviewSchema } from './helpers/case-review-schema.ts';
+import { ensureVocabularySenses } from '../server/vocabulary/sense-readiness.ts';
+import { recoverVocabularySenseDependencies } from '../server/db/vocabulary-reflection.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { beforeEach,afterEach,test } from 'node:test';
 import { setDb } from '../server/db/connection.ts';
 import { runWithLearnerId } from '../server/db/learner-context.ts';
-import { createVocabularyContent,createVocabularySense,establishVocabularySenseCatalog,getVocabularySenseCatalog,getVocabularySenses,getVocabularyContent } from '../server/db/vocabulary-content.ts';
+import { createVocabularyContent,mapVocabularyContentSense,createVocabularySense,establishVocabularySenseCatalog,getVocabularySenseCatalog,getVocabularySenses,getVocabularyContent } from '../server/db/vocabulary-content.ts';
+import { writeVocabularyDefaultUsefulSenses } from '../server/db/vocabulary-sense-coverage.ts';
 import { createVocabularySession,appendVocabularySessionActions,stageVocabularySessionCompletion,cancelVocabularySessionCompletion,closeVocabularySessionCompletion } from '../server/db/vocabulary-sessions.ts';
 import { VocabularyReflectionConflict,claimVocabularyReflectionJob,retryVocabularyReflectionJob,retryOwnVocabularyFeedback,retryVocabularyPostSessionDispatch,listOwnVocabularyMessages,recordVocabularyFeedbackJudgment } from '../server/db/vocabulary-reflection.ts';
 import { createVocabularyProcessingWorker } from '../server/vocabulary/processing-worker.ts';
-import { createVocabularyReflectionProvider,normalizeVocabularyReflectionOutput } from '../server/vocabulary/reflection-provider.ts';
+import { createVocabularyReflectionProvider,normalizeVocabularyReflectionOutput,normalizeVocabularySingleImprovementOutput } from '../server/vocabulary/reflection-provider.ts';
+import { projectVocabularyImprovementInput } from '../server/vocabulary/exercise-improvement-authoring.ts';
 import { createOpenAiCompatibleAdapter } from '../server/llm/openai-compatible.ts';
 import { installModelInvocationLedger } from '../server/llm/invocation-ledger.ts';
 import type { VocabularyReflectionJob,VocabularyReflectionResult } from '../src/domain/vocabulary-reflection.ts';
@@ -28,7 +33,7 @@ beforeEach(()=>{
     CREATE TABLE lexical_words(id TEXT PRIMARY KEY,hanzi TEXT,traditional TEXT,pinyin TEXT,meaning TEXT);
     CREATE TABLE word_preparation_work(id TEXT);INSERT INTO learners VALUES ('alice',NULL,'Alice'),('bob',NULL,'Bob');
     INSERT INTO lexical_words VALUES ('a','字',NULL,'zì','character');`);
-  for(const name of ['0039_vocabulary_content.sql','0025_model_invocations.sql','0026_model_invocation_outcomes.sql','0040_model_provenance.sql'])sql.exec(fs.readFileSync(new URL(`../server/db/migrations/${name}`,import.meta.url),'utf8'));
+  for(const name of ['0062_vocabulary_sense_coverage.sql','0064_vocabulary_default_useful_senses.sql','0039_vocabulary_content.sql','0025_model_invocations.sql','0026_model_invocation_outcomes.sql','0040_model_provenance.sql'])sql.exec(fs.readFileSync(new URL(`../server/db/migrations/${name}`,import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0041_vocabulary_learner_state.sql',import.meta.url),'utf8').split('-- Do not use the words view')[0]!);
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0047_vocabulary_dismissal.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0052_vocabulary_automatic_promotion_pause.sql',import.meta.url),'utf8'));
@@ -39,9 +44,11 @@ beforeEach(()=>{
   for(const name of ['0023_session_debrief.sql','0048_vocabulary_connections.sql','0049_vocabulary_sense_readiness.sql','0050_vocabulary_improvement_admission.sql','0051_vocabulary_pure_cue_promotion.sql'])sql.exec(fs.readFileSync(new URL(`../server/db/migrations/${name}`,import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0054_vocabulary_provider_retry_routing.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0061_vocabulary_sense_mapping_retries.sql',import.meta.url),'utf8'));
+  sql.exec(fs.readFileSync(new URL('../server/db/migrations/0065_vocabulary_dispatch_polling_indexes.sql',import.meta.url),'utf8'));
   sql.exec(`INSERT INTO learner_words(learner_id,word_id,in_stash,added_at,mode,mode_changed_at) VALUES ('alice','a',1,'2026-01-01','practice','2026-01-01');
     INSERT INTO learner_word_schedules(learner_id,word_id,next_eligible_at,policy_version,scheduler_state_json)
       VALUES ('alice','a','2026-10-20T10:00:00.000Z','test','{"intervalHours":24,"easeFactor":2.5,"enabled":1,"cleanCoveredSessions":0}');`);
+  installCaseReviewSchema(sql);
   for(const id of ['one','two'])createVocabularyContent({contentId:id,kind:'exercise',payloadVersion:1,body:{prompt:`Prompt ${id}`},exerciseType:'definition',skill:'production',exerciseRole:'general',assessment:{match:'exact'},
     accessScope:'shared',availability:'active',originKind:'human',words:[{wordId:'a',relation:'target'}],answers:[{wordId:'a',acceptedForms:['字']}]},{kind:'operator',id:'editor'});
 });
@@ -62,9 +69,101 @@ function result(job:VocabularyReflectionJob):VocabularyReflectionResult {
   return job.kind==='learner_feedback'?{kind:'learner_feedback',judgment:{diagnosis:'A useful distinction',message:'A private lesson',unfairEncounterIds:[]}}
     :{kind:'exercise_improvement',result:{diagnosis:'Keep the cue',proposal:null}};
 }
+async function authoringJob(){
+  pending();const processing=worker({isConfigured:()=>false,run:async job=>result(job)});
+  await processing.step();await processing.stop();
+  return claimVocabularyReflectionJob({kind:'exercise_improvement',now:new Date(clock).toISOString()})!;
+}
+const keepOutput=()=>({summary:'The original cue works.',source:{decision:'keep',prompt:null},sharedExercise:null,additionalExercises:[]});
+test('editorial decisions preserve source identity and permit retirement with target enrichment',async()=>{
+  const job=await authoringJob();
+  const keep=normalizeVocabularySingleImprovementOutput(job,keepOutput());
+  assert.equal(keep.kind,'exercise_improvement');if(keep.kind!=='exercise_improvement')throw new Error('Expected improvement');
+  assert.equal(keep.result.proposal,null);
+  const revise=normalizeVocabularySingleImprovementOutput(job,{...keepOutput(),source:{decision:'revise',prompt:'A written symbol'}});
+  if(revise.kind!=='exercise_improvement')throw new Error('Expected improvement');
+  const repair=revise.result.proposal!.operations[0]!;
+  assert.equal(repair.strategy,'update_existing');assert.equal(repair.content.contentId,'one');
+  assert.equal(repair.learningRole,'source_repair');assert.deepEqual(repair.content.answers,[{wordId:'a',acceptedForms:['字']}]);
+  const enriched=normalizeVocabularySingleImprovementOutput(job,{...keepOutput(),source:{decision:'retire',prompt:null},additionalExercises:[{answer:'target',role:'enrichment',prompt:'A separate written symbol',rationale:'A further use surfaced in the assessment.'}]});
+  if(enriched.kind!=='exercise_improvement')throw new Error('Expected improvement');
+  assert.deepEqual(enriched.result.proposal!.operations.map(op=>[op.strategy,op.learningRole]),[['retire','source_repair'],['create','enrichment']]);
+  assert.notEqual(enriched.result.proposal!.operations[1]!.content.contentId,'one');
+  assert.equal(alice(()=>getVocabularyContent('one'))!.availability,'active','normalization does not apply the recommendation');
+});
+test('authoring references preserve unresolved responses without inventing individual word identities',async()=>{
+  const job=await authoringJob();
+  const sense=createVocabularySense({wordId:'a',description:{label:'written character'}},{kind:'operator',id:'editor'});
+  const input=projectVocabularyImprovementInput(job,alice(()=>getVocabularyContent('one'))!,sense);
+  assert.deepEqual(input.words.map(word=>[word.ref,word.form,word.canAuthorIndividual]),[['target','字',true],['response_1','wrong',false]]);
+  assert.ok(!JSON.stringify(input).includes('wordId'));assert.ok(!JSON.stringify(input).includes('contentId'));
+  job.evidence.evidence[0]!.snapshot.body.material={prompt:'Old stored prompt',instruction:'Use the formal register.',reveal:{teachingNote:'The historical note.'}};
+  job.evidence.evidence[0]!.snapshot.body.explanation='The explanation actually shown.';
+  const historical=projectVocabularyImprovementInput(job,{...alice(()=>getVocabularyContent('one'))!,body:{prompt:'Current source',reveal:{teachingNote:'The current note.'}}},sense);
+  assert.equal(historical.encounters[0]!.prompt,'Prompt one');
+  assert.equal(historical.encounters[0]!.instruction,'Use the formal register.');
+  assert.deepEqual(historical.encounters[0]!.postAnswer,{reveal:{teachingNote:'The historical note.'},explanation:'The explanation actually shown.'});
+  assert.deepEqual(historical.source.postAnswer,{reveal:{teachingNote:'The current note.'}});
+  assert.throws(()=>normalizeVocabularySingleImprovementOutput(job,{...keepOutput(),source:{decision:'retire',prompt:null},sharedExercise:{answers:['target','response_1'],prompt:'A shared task',teachingNote:'Use each form in its familiar patterns.',rationale:'Both express the task.'}}),/Shared exercise requires supplied unambiguous words/);
+  assert.throws(()=>normalizeVocabularySingleImprovementOutput(job,{...keepOutput(),additionalExercises:[{answer:'response_1',role:'enrichment',prompt:'Another task',rationale:'Further practice'}]}),/unambiguous word/);
+  sql.prepare('INSERT INTO lexical_words VALUES (?,?,?,?,?)').run('b','wrong',null,'wrong','test response');
+  const shared=normalizeVocabularySingleImprovementOutput(job,{...keepOutput(),source:{decision:'retire',prompt:null},sharedExercise:{answers:['target','response_1'],prompt:'A shared task',teachingNote:'Use each form in its familiar patterns.',rationale:'Both express the task.'}});
+  if(shared.kind!=='exercise_improvement')throw new Error('Expected improvement');
+  assert.deepEqual(shared.result.pureCueReferral!.candidateWords,['字','wrong']);
+  assert.equal(shared.result.pureCueReferral!.draft!.semanticAxis,undefined);
+  const resolved=normalizeVocabularySingleImprovementOutput(job,{...keepOutput(),additionalExercises:[{answer:'response_1',role:'refinement',prompt:'Another task',rationale:'A construction contrast'}]});
+  if(resolved.kind!=='exercise_improvement')throw new Error('Expected improvement');
+  assert.deepEqual(resolved.result.proposal!.operations[0]!.content.answers,[{wordId:'b',acceptedForms:['wrong']}]);
+});
+test('authoring rejects malformed source decisions, invented refs and answer leakage',async()=>{
+  const job=await authoringJob();
+  for(const source of [{decision:'keep',prompt:'A rewrite'},{decision:'retire',prompt:''},{decision:'revise',prompt:null}]){
+    assert.throws(()=>normalizeVocabularySingleImprovementOutput(job,{...keepOutput(),source}),/prompt/);
+  }
+  assert.throws(()=>normalizeVocabularySingleImprovementOutput(job,{...keepOutput(),source:{decision:'revise',prompt:'Recall 字'}}),/exposes an accepted answer/);
+  assert.throws(()=>normalizeVocabularySingleImprovementOutput(job,{...keepOutput(),additionalExercises:[{answer:'invented',role:'enrichment',prompt:'A task',rationale:'Value'}]}),/Unknown supplied word/);
+  const shared={answers:['target','response_9'],prompt:'A task',teachingNote:'Guidance',rationale:'Value'};
+  assert.throws(()=>normalizeVocabularySingleImprovementOutput(job,{...keepOutput(),sharedExercise:shared}),/Unknown supplied word/);
+  assert.throws(()=>normalizeVocabularySingleImprovementOutput(job,{...keepOutput(),sharedExercise:{...shared,answers:['response_1','response_1']}}),/target and distinct/);
+  sql.prepare('INSERT INTO lexical_words VALUES (?,?,?,?,?)').run('b','wrong',null,'wrong','test response');
+  assert.throws(()=>normalizeVocabularySingleImprovementOutput(job,{...keepOutput(),sharedExercise:{...shared,answers:['target','response_1'],prompt:'Recall wrong'}}),/exposes an accepted answer/);
+});
 function worker(provider:{isConfigured():boolean;run(job:VocabularyReflectionJob):Promise<VocabularyReflectionResult>},controls=()=>({maintenanceMode:false,providerWorkEnabled:true})) {
   return createVocabularyProcessingWorker({provider,now:()=>clock,controls,providerWork:permitted});
 }
+
+test('idle dispatch polling uses active indexes with large retained evidence and preserves lease expiry',async()=>{
+  const evidence=JSON.stringify({retained:'x'.repeat(512*1024)});
+  const seed=(id:string,status:string,expiresAt:string|null=null)=>{
+    sql.prepare(`INSERT INTO vocabulary_sessions VALUES(?,'alice',1,'{}',?,?,'closed')`).run(id,at,at);
+    sql.prepare(`INSERT INTO vocabulary_session_completions VALUES(?,'alice',?,1,0,?,?,'closed','{}','{}','fixture',?,NULL)`).run(id,id,at,at,at);
+    sql.prepare(`INSERT INTO vocabulary_post_session_dispatches(dispatch_id,learner_id,session_id,completion_id,evidence_json,status,created_at,active_token,expires_at)
+      VALUES(?,'alice',?,?,?,?,?,?,?)`).run(id,id,id,evidence,status,at,status==='running'?`token-${id}`:null,expiresAt);
+  };
+  for(let i=0;i<16;i++)seed(`history-${i}`,i%2?'succeeded':'failed');
+  seed('expired','running',new Date(clock).toISOString());
+  seed('live','running',new Date(clock+60_000).toISOString());
+  const before=sql.prepare("SELECT * FROM vocabulary_post_session_dispatches WHERE status IN ('succeeded','failed') ORDER BY dispatch_id").all();
+  const statements=new Set<string>();
+  const prepare=sql.prepare.bind(sql);
+  sql.prepare=(query:string)=>{if(query.includes('vocabulary_post_session_dispatches'))statements.add(query);return prepare(query);};
+  const processing=worker({isConfigured:()=>false,run:async()=>{throw new Error('Unexpected provider call');}});
+  try {
+    assert.equal(await processing.step(),true);
+    assert.equal(await processing.step(),false);
+  } finally {await processing.stop();sql.prepare=prepare;}
+  assert.equal(statements.size,2,'Check the actual worker expiry UPDATE and queue SELECT');
+  for(const query of statements) {
+    const plan=prepare(`EXPLAIN QUERY PLAN ${query}`).all(...Array.from(query.matchAll(/\?/g),()=>new Date(clock).toISOString())) as {detail:string}[];
+    const expected=query.trimStart().startsWith('UPDATE')?'idx_vocabulary_dispatch_running_expiry':'idx_vocabulary_dispatch_queued';
+    assert.ok(plan.some(row=>row.detail.includes(expected)),JSON.stringify(plan));
+    assert.ok(!plan.some(row=>/SCAN (?:d|vocabulary_post_session_dispatches)$/.test(row.detail)),JSON.stringify(plan));
+  }
+  assert.deepEqual(prepare("SELECT * FROM vocabulary_post_session_dispatches WHERE dispatch_id LIKE 'history-%' ORDER BY dispatch_id").all(),before);
+  assert.deepEqual({...prepare("SELECT status,active_token,expires_at,last_error FROM vocabulary_post_session_dispatches WHERE dispatch_id='expired'").get()},
+    {status:'failed',active_token:null,expires_at:null,last_error:'ingestion_interrupted'});
+  assert.equal(prepare("SELECT status FROM vocabulary_post_session_dispatches WHERE dispatch_id='live'").get()!.status,'running');
+});
 
 test('provider-disabled worker still closes and ingests; maintenance and disabled learner fence work',async()=>{
   const completion=pending();let calls=0;let state={maintenanceMode:true,providerWorkEnabled:false};
@@ -123,11 +222,12 @@ test('strict real injected provider retains service provenance and rejects forge
   let payload:unknown={diagnosis:'An alternate fits',lesson:'The original cue also permits this answer.',unfairEncounterIds:['session-one']};
   const sense=createVocabularySense({wordId:'a',description:{label:'written character'}},{kind:'operator',id:'editor'});
   establishVocabularySenseCatalog('a',getVocabularySenseCatalog('a').version,{kind:'operator',id:'editor'});
+  writeVocabularyDefaultUsefulSenses('a',0,[sense.senseId],{kind:'operator',id:'editor'});
   const adapter=createOpenAiCompatibleAdapter({id:'openai',defaultBaseUrl:'https://example.invalid',apiKeyEnvironmentVariable:'KEY',structuredOutputMode:'json_schema',maxTokensField:'max_tokens',
     fetchImplementation:async(_url,init)=>{
-      const request=JSON.parse(String(init?.body)) as {response_format:{json_schema:{name:string}}};
+      const request=JSON.parse(String(init?.body)) as {messages:Array<{content:string}>;response_format:{json_schema:{name:string}}};
       lastRequest=request as typeof request & {messages:{role:string;content:string}[]};
-      const value=request.response_format.json_schema.name.includes('sense_mapping')?{outcome:'single_sense',rationale:'A written character.',senseIds:[sense.senseId]}:payload;
+      const value=request.response_format.json_schema.name.includes('sense_mapping')?{outcome:'single_sense',rationale:'A written character.',senseIds:[JSON.parse(request.messages[1]!.content).senses[0].senseId]}:payload;
       return new Response(JSON.stringify({id:'provider-1',model:'resolved',choices:[{message:{content:JSON.stringify(value)},finish_reason:'stop'}],usage:{prompt_tokens:100,completion_tokens:10}}),{status:200});
     }});
   const provider=createVocabularyReflectionProvider({random:()=>0,environment:{OPENAI_API_KEY:'never-save-token'},adapter,
@@ -142,9 +242,11 @@ test('strict real injected provider retains service provenance and rejects forge
   const improve=claimVocabularyReflectionJob({kind:'exercise_improvement',now:new Date(clock).toISOString()})!;
   const valid={diagnosis:'Repair the overloaded cue',operations:[{sourceContentId:'one',strategy:'update_existing',rationale:'A faithful wording',prompt:'A written character',acceptedAnswers:['字']}]};
   assert.equal(normalizeVocabularyReflectionOutput(improve,valid).kind,'exercise_improvement');
-  payload={...valid,pureCueReferral:null};assert.equal((await provider.run(improve)).kind,'exercise_improvement');
-  const improvementInvocation=sql.prepare("SELECT * FROM model_invocations WHERE prompt_name='vocabulary-reflection-single-improvement'").get()!;
-  assert.equal(improvementInvocation.prompt_version,'3');assert.equal(improvementInvocation.schema_version,'2');assert.equal(improvementInvocation.input_projection_version,'vocabulary-admission.v2');
+  payload={summary:valid.diagnosis,source:{decision:'revise',prompt:'A written character'},additionalExercises:[],sharedExercise:null};assert.equal((await provider.run(improve)).kind,'exercise_improvement');
+  const improvementInvocation=sql.prepare("SELECT * FROM model_invocations WHERE prompt_name='vocabulary-reflection-single-improvement'").get();
+  assert.ok(improvementInvocation,'Selected sense assessment must reach the active single-improvement call');
+  assert.equal(improvementInvocation.actor_kind,'service');assert.equal(improvementInvocation.learner_id,null);assert.equal(improvementInvocation.workflow_id,improve.jobId);
+  assert.equal(improvementInvocation.prompt_version,'5');assert.equal(improvementInvocation.schema_version,'4');assert.equal(improvementInvocation.input_projection_version,'vocabulary-exercise-authoring.v1');
   assert.equal(improvementInvocation.prompt_template,`\n\n${fs.readFileSync(new URL('../server/vocabulary/reflection-prompts/single-improvement.md',import.meta.url),'utf8')}`);
   assert.throws(()=>normalizeVocabularyReflectionOutput(improve,{...valid,operations:[{...valid.operations[0],acceptedAnswers:['invented']}]}),/answer criteria/);
   assert.throws(()=>normalizeVocabularyReflectionOutput(improve,{...valid,operations:[{...valid.operations[0],sourceContentId:'two'}]}),/source identities/);
@@ -199,7 +301,7 @@ for(const source of [
   await ingestOnly.step();await ingestOnly.stop();
   const job=claimVocabularyReflectionJob({kind:'exercise_improvement',now:new Date(clock).toISOString()})!;
   for(const strategy of ['create','update_existing','replace'] as const) {
-    const proposal=normalizeVocabularyReflectionOutput(job,{diagnosis:'Clarify the productive use',pureCueReferral:null,
+    const proposal=normalizeVocabularyReflectionOutput(job,{diagnosis:'Clarify the productive use',responseExercises:[],pureCueReferral:null,
       operations:[{sourceContentId:'fallback',strategy,rationale:'Use a concrete context',prompt:'A single written symbol in this sentence',acceptedAnswers:['字']}]},null,true);
     assert.equal(proposal.kind,'exercise_improvement');
     if(proposal.kind!=='exercise_improvement'||!proposal.result.proposal)throw new Error('Expected improvement proposal');
@@ -210,7 +312,7 @@ for(const source of [
     assert.equal(operation.content.accessScope,'private');assert.equal(operation.content.ownerLearnerId,'alice');
     assert.deepEqual(operation.content.answers,[{wordId:'a',acceptedForms:['字']}]);
   }
-  const unchanged=normalizeVocabularyReflectionOutput(job,{diagnosis:'Retain the existing prompt',pureCueReferral:null,
+  const unchanged=normalizeVocabularyReflectionOutput(job,{diagnosis:'Retain the existing prompt',responseExercises:[],pureCueReferral:null,
     operations:[{sourceContentId:'fallback',strategy:'create',rationale:'Keep wording',prompt:'Prompt fallback',acceptedAnswers:['字']}]},null,true);
   if(unchanged.kind!=='exercise_improvement'||!unchanged.result.proposal)throw new Error('Expected unchanged fixture proposal');
   assert.deepEqual(unchanged.result.proposal.operations[0]!.content.body,
@@ -341,18 +443,20 @@ function mappingTrial(reply:(attempt:number)=>{status?:number;value?:unknown;raw
   const sense=createVocabularySense({wordId:'a',description:{label:'written character'}},{kind:'operator',id:'editor'});
   establishVocabularySenseCatalog('a',getVocabularySenseCatalog('a').version,{kind:'operator',id:'editor'});
   const fetchImplementation:typeof fetch=async(_url,init)=>{
-    const request=JSON.parse(String(init?.body)) as {model:string;response_format:{type:string;json_schema:{name:string}};reasoning_effort:string};requests.push(request);
+    const request=JSON.parse(String(init?.body)) as {model:string;messages:Array<{role:string;content:string}>;response_format:{type:string;json_schema:{name:string}};reasoning_effort:string};requests.push(request);
+    const input=JSON.parse(request.messages.find(message=>message.role==='user')!.content) as {senses?:Array<{senseId:string}>};
     let value:unknown={diagnosis:'Fair cue',lesson:'A useful lesson',unfairEncounterIds:[]};
     let rawText:string|undefined;
-    if(request.model==='gpt-6-luna'||request.model==='glm-5.3-flash') {
+    if(Array.isArray(input.senses)) {
       models.push(request.model);
       const response=reply(models.length);
       if(response.status)return new Response('Provider unavailable',{status:response.status});
-      value=response.value??{outcome:'single_sense',rationale:'A written character.',senseIds:[sense.senseId]};
+      assert.equal(input.senses.length,1);assert.notEqual(input.senses[0]!.senseId,sense.senseId);
+      value=response.value??{outcome:'single_sense',rationale:'A written character.',senseIds:[input.senses[0]!.senseId]};
       rawText=response.rawText;
     } else if(request.response_format.json_schema.name.includes('single_improvement')) {
       if(repairFailsOnce&&++repairs===1)return new Response('Authoring unavailable',{status:503});
-      value={diagnosis:'Keep this exercise',operations:[],pureCueReferral:null};
+      value={summary:'Keep this exercise',source:{decision:'keep',prompt:null},additionalExercises:[],sharedExercise:null};
     }
     return new Response(JSON.stringify({model:request.model,choices:[{message:{content:rawText??JSON.stringify(value)},finish_reason:'stop'}]}),{status:200});
   };
@@ -399,10 +503,17 @@ test('successful fallback mapping is reused when later authoring needs explicit 
     await processing.step();clock+=30_000;await processing.step();clock+=60_000;await processing.step();await processing.step();
     assert.equal(mappingJobRow().status,'failed');assert.equal(mappingJobRow().failures,3);
     assert.equal(trial.models.length,4);
-    const stored=JSON.parse(String(sql.prepare("SELECT input_json FROM vocabulary_improvement_stages WHERE stage='sense_mapping'").get()!.input_json));
+    const mappingStage=sql.prepare("SELECT input_json,result_json,input_hash FROM vocabulary_improvement_stages WHERE stage='sense_mapping'").get()!;
+    const stored=JSON.parse(String(mappingStage.input_json));
     assert.equal(stored.contract.model,'glm-5.3-flash');assert.equal(stored.contract.provider,'zai');
+    const wireInput=JSON.parse(stored.contract.modelInput);
+    assert.equal(wireInput.senses[0].senseId,'s1');
+    assert.notEqual(stored.input.senses[0].senseId,wireInput.senses[0].senseId);
+    assert.deepEqual(JSON.parse(String(mappingStage.result_json)).senseIds,[stored.input.senses[0].senseId]);
     retryVocabularyReflectionJob(String(mappingJobRow().job_id),'editor',new Date(clock).toISOString());
     await processing.step();assert.equal(mappingJobRow().status,'succeeded');assert.equal(trial.models.length,4);
+    const reused=sql.prepare("SELECT input_hash FROM vocabulary_improvement_stages WHERE stage='sense_mapping'").all();
+    assert.equal(reused.length,1);assert.equal(reused[0]!.input_hash,mappingStage.input_hash);
   } finally {await processing.stop();}
 });
 
@@ -518,4 +629,54 @@ test('an expired mapping lease cannot consume retry budget or revive unknown wor
     await processing.step();assert.equal(mappingJobRow().status,'failed');
     assert.equal(mappingJobRow().last_error,'provider_outcome_unknown');assert.equal(trial.models.length,1);
   } finally {await processing.stop();}
+});
+
+test('model-empty inventory attention does not revoke a live mapped single-sense repair',async()=>{
+  sql.exec(`CREATE TABLE lexical_word_meanings(id TEXT PRIMARY KEY,word_id TEXT,text TEXT,position INTEGER);
+    CREATE TABLE word_introduction_preparation(word_id TEXT PRIMARY KEY,content_id TEXT,package_id TEXT,preparation_epoch INTEGER,active_stage TEXT,lease_token TEXT,lease_expires_at TEXT);`);
+  pending();let release!:()=>void,entered!:(job:VocabularyReflectionJob)=>void;
+  const held=new Promise<void>(resolve=>{release=resolve;});
+  const started=new Promise<VocabularyReflectionJob>(resolve=>{entered=resolve;});
+  const processing=worker({isConfigured:()=>true,run:async job=>{
+    if(job.kind==='learner_feedback')return result(job);
+    const ready=await ensureVocabularySenses('a',{workflowId:job.jobId,now:()=>new Date(clock).toISOString(),provider:{isConfigured:()=>true,generate:async()=>({senses:[{label:'written character',notes:[],defaultUseful:false}]})}});
+    const sense=ready.senses[0]!,mappingAt=new Date(clock).toISOString();
+    mapVocabularyContentSense({contentId:'one',wordId:'a',expectedContentVersion:1,expectedMapping:{senseId:null,establishedAt:null},senseId:sense.senseId,establishedAt:mappingAt},{kind:'service',id:'test'});
+    entered(job);await held;
+    return {kind:'exercise_improvement',result:{diagnosis:'The mapped use remains valuable despite unknown default usefulness.',proposal:null,
+      admission:{outcome:'single_sense',rationale:'Written character.',wordId:'a',sourceContentId:'one',sourceContentVersion:1,catalogVersion:ready.catalog.version,senseIds:[sense.senseId],sourceMapping:{senseId:sense.senseId,establishedAt:mappingAt},generationScope:{selectionEstablished:true,senseIds:[sense.senseId],source:{kind:'mapped_source'}}}}};
+  }});
+  const flight=processing.step();const job=await started;
+  try{
+    assert.equal(sql.prepare("SELECT status FROM vocabulary_default_selection_readiness WHERE word_id='a'").get()!.status,'failed');
+    await processing.step();
+    const live=sql.prepare('SELECT status,lease_token FROM vocabulary_reflection_jobs WHERE job_id=?').get(job.jobId)!;
+    assert.equal(live.status,'running');assert.equal(live.lease_token,job.leaseToken);
+  }finally{release();await flight;await processing.stop();}
+  assert.equal(sql.prepare('SELECT status FROM vocabulary_reflection_jobs WHERE job_id=?').get(job.jobId)!.status,'succeeded');
+});
+
+for(const kind of ['sense','selection'] as const)for(const state of ['queued','failed'] as const)test(`${kind} ${state} prerequisite cannot revoke a live caller but its expired caller is recovered`,async()=>{
+  pending();const ingest=worker({isConfigured:()=>false,run:async job=>result(job)});await ingest.step();await ingest.stop();
+  const job=claimVocabularyReflectionJob({kind:'exercise_improvement',now:new Date(clock).toISOString(),leaseMs:1000})!;
+  const table=kind==='sense'?'vocabulary_sense_readiness':'vocabulary_default_selection_readiness';
+  sql.prepare(`INSERT INTO ${table}(word_id,status,attempt_count,total_attempt_count,expected_catalog_version,workflow_id,created_at,updated_at) VALUES ('a',?,1,1,0,?,?,?)`).run(state,job.jobId,at,at);
+  assert.equal(recoverVocabularySenseDependencies(new Date(clock).toISOString()),0);
+  assert.equal(sql.prepare('SELECT lease_token FROM vocabulary_reflection_jobs WHERE job_id=?').get(job.jobId)!.lease_token,job.leaseToken);
+  clock+=1000;assert.equal(recoverVocabularySenseDependencies(new Date(clock).toISOString()),1);
+  const recovered=sql.prepare('SELECT status,lease_token,attempt_number FROM vocabulary_reflection_jobs WHERE job_id=?').get(job.jobId)!;
+  assert.equal(recovered.status,kind==='selection'||state==='queued'?'queued':'failed');assert.equal(recovered.lease_token,null);assert.equal(recovered.attempt_number,1);
+  assert.equal(sql.prepare(`SELECT attempt_count FROM ${table} WHERE word_id='a'`).get()!.attempt_count,1);
+});
+
+test('expired selector lease still recovers its crashed caller before the caller lease expires',async()=>{
+  pending();const ingest=worker({isConfigured:()=>false,run:async job=>result(job)});await ingest.step();await ingest.stop();
+  const job=claimVocabularyReflectionJob({kind:'exercise_improvement',now:new Date(clock).toISOString(),leaseMs:30*60_000})!;
+  sql.prepare(`INSERT INTO vocabulary_default_selection_readiness(word_id,status,attempt_count,total_attempt_count,active_token,expires_at,expected_catalog_version,workflow_id,created_at,updated_at)
+    VALUES ('a','running',1,1,'selector-old',?,0,?,?,?)`).run(new Date(clock+300_000).toISOString(),job.jobId,at,at);
+  clock+=300_000;assert.equal(recoverVocabularySenseDependencies(new Date(clock).toISOString()),1);
+  const waiting=sql.prepare('SELECT status,lease_token,next_attempt_at FROM vocabulary_reflection_jobs WHERE job_id=?').get(job.jobId)!;
+  assert.equal(waiting.status,'queued');assert.equal(waiting.lease_token,null);assert.equal(waiting.next_attempt_at,new Date(clock+30_000).toISOString());
+  const selector=sql.prepare('SELECT status,active_token,attempt_count,total_attempt_count FROM vocabulary_default_selection_readiness').get()!;
+  assert.equal(selector.status,'queued');assert.equal(selector.active_token,null);assert.equal(selector.attempt_count,1);assert.equal(selector.total_attempt_count,1);
 });

@@ -25,7 +25,7 @@ const OPENROUTER = {
 
 export const REFLECTION_MODEL_ARMS = [
   {
-    choice: 'openai:gpt-5.6-luna-high',
+    choice: 'openai:gpt-6-luna-high',
     label: 'Luna high',
     enabledByDefault: true,
     dogfoodSelectionWeight: { smallBundle: 30, largeBundle: 20 },
@@ -100,10 +100,20 @@ export const REFLECTION_MODEL_ARMS = [
 
 export type ReflectionModelChoice = (typeof REFLECTION_MODEL_ARMS)[number]['choice'];
 
-export const LUNA_REFLECTION_MODEL_CHOICE = 'openai:gpt-5.6-luna-high' satisfies ReflectionModelChoice;
+export const LUNA_REFLECTION_MODEL_CHOICE = 'openai:gpt-6-luna-high' satisfies ReflectionModelChoice;
 
 export function isReflectionModelChoice(value: unknown): value is ReflectionModelChoice {
   return typeof value === 'string' && REFLECTION_MODEL_ARMS.some((arm) => arm.choice === value);
+}
+
+/** Resolve saved routing IDs without rewriting the original run's provenance. */
+export function reflectionChoiceForStoredModel(model: string): ReflectionModelChoice | null {
+  if (model === 'gpt-5.6-luna-high' || model === 'openai:gpt-5.6-luna-high') {
+    return LUNA_REFLECTION_MODEL_CHOICE;
+  }
+  return REFLECTION_MODEL_ARMS.find(arm => (
+    arm.choice === model || arm.choice.slice(arm.choice.indexOf(':') + 1) === model
+  ))?.choice ?? null;
 }
 
 export function isOfferedReflectionModelChoice(value: unknown): value is ReflectionModelChoice {

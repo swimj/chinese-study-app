@@ -1,0 +1,466 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-04",
+  "reviewer": "Codex agent; not operator-approved linguistic judgments",
+  "scope": "Eight synthetic lexical inputs, one baseline and one candidate attempt each; bounded evidence, not a reliability estimate or production reconciliation. No learner data or production mutation.",
+  "baselineRevision": "17a5a35750d741e2e3b541b7144ae79c98944da5",
+  "model": "gpt-5.6-luna",
+  "settings": {
+    "reasoningEffort": "high",
+    "maxOutputTokens": 8000,
+    "temperature": null,
+    "timeoutMs": 180000
+  },
+  "attempts": 16,
+  "validGeneratedInventories": 15,
+  "failure": "Baseline 垂 timed out; no retry was made.",
+  "archive": "tmp/sense-inventory-review/{baseline-approved,candidate-approved}/",
+  "hashEncoding": "SHA-256 of JSON.stringify(value), matching inventoryHash in scripts/lib/sense-inventory-reconciliation.ts.",
+  "arms": {
+    "baseline": {
+      "resolvedRevision": "17a5a35750d741e2e3b541b7144ae79c98944da5",
+      "source": "git",
+      "systemPromptSha256": "21f12cc03925eb086f454b8941c93fbea4e6c6979b71bf199f405d8ef3685daf",
+      "providerSourceSha256": "dc1188520283ef584d69d0284191af73eb88e8e1cff01fcea11a0dd5f0dd9643",
+      "outputSchemaSha256": "cb067e2ec43570062e6ec79f90452cffad5bb5a060e0ea9906f2cce74c7c28c2",
+      "inputSha256": "ac33dc852e9807edbe8d5efb8c9d4774def105ee0fcc43af393f0a1ffea56a21"
+    },
+    "candidate": {
+      "resolvedRevision": "17a5a35750d741e2e3b541b7144ae79c98944da5",
+      "source": "working-tree",
+      "systemPromptSha256": "38e16b3f83ecb811679969a294a3eea4d3fd65a30447e7dcbaaf98626af852ac",
+      "providerSourceSha256": "2d0b69c6166b6b1fc46e10a0adff405322aea5179254be6a6f4677d0969501c1",
+      "outputSchemaSha256": "2e05118e0488f79d1bf318f0339807156a8b56e4707b5218f689e238c712912d",
+      "inputSha256": "ac33dc852e9807edbe8d5efb8c9d4774def105ee0fcc43af393f0a1ffea56a21"
+    }
+  },
+  "cases": [
+    {
+      "word": "垂",
+      "judgment": "observed_expected_boundary",
+      "review": "Candidate retains one physical hanging/drooping use, grouping lowered-head posture with it. Baseline timed out; no paired quality comparison exists for this case.",
+      "baseline": {
+        "requestSha256": "d0a1825bb06afde0f3c66e9cef734a79929da99f0fbdabca26d17c4472267010",
+        "snapshotSha256": "2af76cc43c105a3a3860fe6ee796b8ed1fbf8fc4b4f73192eaa5487fa09db9d8",
+        "failure": {
+          "name": "TimeoutError"
+        }
+      },
+      "candidate": {
+        "requestSha256": "f6e73e7af1f7f8729041b02d9c239677cd024c0765d92770a359e5542172ddca",
+        "snapshotSha256": "2af76cc43c105a3a3860fe6ee796b8ed1fbf8fc4b4f73192eaa5487fa09db9d8",
+        "output": {
+          "senses": [
+            {
+              "label": "hang down or droop",
+              "defaultUseful": true,
+              "notes": [
+                "A verb describing something hanging downward or drooping, including a person lowering the head; the same core use covers physical objects and posture.",
+                "Common in constructions such as 垂到水面 and 垂着头."
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "word": "过时",
+      "judgment": "observed_expected_boundary",
+      "review": "Baseline selected a deadline sense illustrated through 过时不候. Candidate retains only outdated/out of fashion, matching the agreed target boundary.",
+      "baseline": {
+        "requestSha256": "353aa45265b1b710f505f07cb532129fb36bb85b17f561f2780af5418be2aeba",
+        "snapshotSha256": "0a4714993eeec533a7d104a6c2d0e649fb345fb366f9bb15cb26d7fde23d9521",
+        "output": {
+          "senses": [
+            {
+              "label": "outdated; out of fashion",
+              "defaultUseful": true,
+              "notes": [
+                "Describes something no longer current, useful, or fashionable, such as technology, ideas, information, or clothing: 这种说法已经过时了.",
+                "Often corresponds to “outdated,” “obsolete,” or “old-fashioned,” depending on context."
+              ]
+            },
+            {
+              "label": "past the appointed time; expired",
+              "defaultUseful": true,
+              "notes": [
+                "Means that a specified time or deadline has passed, especially for an appointment, validity period, or rule: 过时不候 means “no waiting after the appointed time.”",
+                "This use is more formal or notice-like than “late”; it focuses on being beyond the allowed or scheduled time."
+              ]
+            }
+          ]
+        }
+      },
+      "candidate": {
+        "requestSha256": "020383b237707d0d3fb65d598c97aef73ad578aa305f13587c33600b4040c63f",
+        "snapshotSha256": "0a4714993eeec533a7d104a6c2d0e649fb345fb366f9bb15cb26d7fde23d9521",
+        "output": {
+          "senses": [
+            {
+              "label": "outdated; out of fashion",
+              "defaultUseful": true,
+              "notes": [
+                "Describes ideas, styles, methods, technology, or things that are no longer current or fashionable.",
+                "Commonly used predicatively or before a noun; it can imply that something is obsolete or no longer suitable, not merely old."
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "word": "有所",
+      "judgment": "construction_control_retained",
+      "review": "Candidate retains the degree/change construction. It drops baseline separate have-something-to-pursue use; whether that constitutes a useful distinct target use remains editorial judgment.",
+      "baseline": {
+        "requestSha256": "117eed65a0ce27ab1c328ca20861f077e1e9b7fa9e324eb0c60487514339b042",
+        "snapshotSha256": "7108909ca0cef4e3adacb1780379d896e6896c54880334fc7348c05af1c0ba3c",
+        "output": {
+          "senses": [
+            {
+              "label": "somewhat; to some extent",
+              "defaultUseful": true,
+              "notes": [
+                "A formal written pattern, usually 所有? no: 有所 + verb or adjective, indicating a limited change, effect, difference, or improvement.",
+                "Common in news, formal speech, and practical writing; it often corresponds to “show some improvement” or “be somewhat different,” rather than a strong degree."
+              ]
+            },
+            {
+              "label": "have something to do, pursue, or possess",
+              "defaultUseful": false,
+              "notes": [
+                "A more literary or bound-form use in patterns such as 有所作为, 有所追求, or 各有所好, where 所 nominalizes the following action or quality.",
+                "Useful mainly for recognizing fixed expressions and formal prose; do not normally treat standalone 有所 as an ordinary substitute for 有一些."
+              ]
+            }
+          ]
+        }
+      },
+      "candidate": {
+        "requestSha256": "1fbf630362dd571b1b8321dabeac73866891f538f113d7953c9295a42fc011b2",
+        "snapshotSha256": "7108909ca0cef4e3adacb1780379d896e6896c54880334fc7348c05af1c0ba3c",
+        "output": {
+          "senses": [
+            {
+              "label": "to some extent; show a certain degree of change",
+              "defaultUseful": true,
+              "notes": [
+                "A formal construction meaning that something occurs or changes to an unspecified, usually limited degree, as in 有所改善 or 有所不同.",
+                "Typically used before a verb or adjective and is more common in careful speech and writing than in casual conversation."
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "word": "不堪",
+      "judgment": "construction_control_retained",
+      "review": "Candidate retains inability-to-bear and post-adjective extreme-degree constructions. Baseline third unfit/incapable grouping disappears; this is consistent with reducing close divisions but not independently verified exhaustiveness.",
+      "baseline": {
+        "requestSha256": "0ff13d1812ab84f6eed11407994b405f2ca114accdb3b340914032d2cc45ceff",
+        "snapshotSha256": "056de7a3005087a4004b7311b223944ade123dcddb5c9a51442c884eff2b1de9",
+        "output": {
+          "senses": [
+            {
+              "label": "cannot bear or withstand",
+              "defaultUseful": true,
+              "notes": [
+                "Verb-like and usually formal; means being unable to endure a person, burden, situation, or action.",
+                "Common constructions include 不堪忍受, 不堪其扰, 不堪重负, and 不堪回首."
+              ]
+            },
+            {
+              "label": "unbearably; extremely",
+              "defaultUseful": true,
+              "notes": [
+                "Placed after an adjective to show that a state has reached an excessive or distressing degree, as in 疲惫不堪 and 狼狈不堪.",
+                "This is not a fully general everyday intensifier; it is especially common in established descriptive phrases and has a formal or literary tone."
+              ]
+            },
+            {
+              "label": "unfit for or incapable of",
+              "defaultUseful": true,
+              "notes": [
+                "Used in compact formal constructions for something that cannot meet a use, standard, or challenge, as in 不堪一击, 不堪入目, and 不堪大用.",
+                "This overlaps with the core idea of not being able to withstand, but the construction focuses on suitability or adequacy rather than personal endurance."
+              ]
+            }
+          ]
+        }
+      },
+      "candidate": {
+        "requestSha256": "0767d0674d346b9bfac86c0e0ca27a92b46189fd1c5f769bca22f2f0ea7e2ab7",
+        "snapshotSha256": "056de7a3005087a4004b7311b223944ade123dcddb5c9a51442c884eff2b1de9",
+        "output": {
+          "senses": [
+            {
+              "label": "cannot bear or withstand",
+              "defaultUseful": true,
+              "notes": [
+                "Used in constructions such as 不堪忍受, 不堪回首, and 不堪重负 to mean being unable to endure, tolerate, or withstand something.",
+                "Often somewhat formal or literary, but common in both written Chinese and set collocations."
+              ]
+            },
+            {
+              "label": "extremely; to an unbearable degree",
+              "defaultUseful": true,
+              "notes": [
+                "Usually follows a descriptive word, as in 疲惫不堪 or 狼狈不堪, and intensifies an already negative or undesirable state.",
+                "The sense is stronger than ordinary 很: it suggests reaching an extreme, often unpleasant, degree."
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "word": "泡沫",
+      "judgment": "review_possible_over_exclusion",
+      "review": "Physical and figurative controls survive. Candidate omits baseline foamed-material use; that may have independent shortened-noun usage and needs review before calling the narrower inventory fully correct.",
+      "baseline": {
+        "requestSha256": "c43f09a862ef02b99be4c1666851c42fdcccd9eaa757890b4a90afd3028183db",
+        "snapshotSha256": "2b1cd6999b2d791ec680efff35db5e32f9717a3ba0ec5b6ac275296d694d2846",
+        "output": {
+          "senses": [
+            {
+              "label": "foam or froth",
+              "defaultUseful": true,
+              "notes": [
+                "A mass of small bubbles on or in a liquid, such as soap lather, beer foam, or sea foam. It normally refers to the foamy mass rather than one individual bubble; 气泡 is used for a single air bubble."
+              ]
+            },
+            {
+              "label": "bubble or inflated, short-lived value",
+              "defaultUseful": true,
+              "notes": [
+                "A figurative bubble that looks substantial but is fragile, exaggerated, or ultimately unsustainable. Common in economic and social contexts such as 房地产泡沫, 股市泡沫, and 泡沫破裂; it can also describe a hollow or short-lived prosperity more generally, usually with a critical tone."
+              ]
+            },
+            {
+              "label": "foamed material",
+              "defaultUseful": false,
+              "notes": [
+                "A technical or commercial use for lightweight cellular material, especially in compounds such as 泡沫塑料 and 泡沫板. In this sense 泡沫 often functions as a bound or shortened form, so it is useful mainly for recognizing specialized compounds rather than as a default standalone word."
+              ]
+            }
+          ]
+        }
+      },
+      "candidate": {
+        "requestSha256": "0a5a12e13659b725b291c1c43f86c95d2f4bd42596835be7bf4711ef3291672f",
+        "snapshotSha256": "2b1cd6999b2d791ec680efff35db5e32f9717a3ba0ec5b6ac275296d694d2846",
+        "output": {
+          "senses": [
+            {
+              "label": "Foam or lather",
+              "defaultUseful": true,
+              "notes": [
+                "A noun for a mass of small bubbles on or in a liquid, such as soap lather, shaving foam, or froth.",
+                "Used for a visible, usually temporary layer or accumulation of bubbles in ordinary concrete contexts."
+              ]
+            },
+            {
+              "label": "Speculative or inflated bubble",
+              "defaultUseful": true,
+              "notes": [
+                "A figurative noun for an overinflated, fragile situation or asset market whose apparent value is not sustainable.",
+                "Common in economic and financial discussion, especially with property, housing, or stock markets; it emphasizes the bubble's instability and eventual risk of bursting."
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "word": "藤椒",
+      "judgment": "core_control_retained",
+      "review": "Concrete seasoning use remains, with dish names illustrating the ingredient rather than becoming new component senses. Botanical detail in generated notes was not independently verified.",
+      "baseline": {
+        "requestSha256": "469a0c5c57d899036ae7f307df2125a8830e3cf313288b1baed47bd9a326e87d",
+        "snapshotSha256": "b4c270b9fc9e9ddfa7d0a6c88a398b43e19dee954e7aff6691ccd3d68b346e7f",
+        "output": {
+          "senses": [
+            {
+              "label": "green Sichuan pepper",
+              "defaultUseful": true,
+              "notes": [
+                "A fragrant, citrusy, tongue-tingling peppercorn used as a Sichuan cooking ingredient; it may refer to the fresh or dried spice and to products made from it, such as 藤椒油.",
+                "Especially common on menus and in food descriptions, often in compounds such as 藤椒味, 藤椒鸡 and 藤椒鱼."
+              ]
+            }
+          ]
+        }
+      },
+      "candidate": {
+        "requestSha256": "5013415ef570167ab0cc3b6aa0d93386e71b8ddb9b20b164fde5ab4929f2ccd9",
+        "snapshotSha256": "b4c270b9fc9e9ddfa7d0a6c88a398b43e19dee954e7aff6691ccd3d68b346e7f",
+        "output": {
+          "senses": [
+            {
+              "label": "green Sichuan pepper",
+              "defaultUseful": true,
+              "notes": [
+                "A fragrant, tongue-tingling Sichuan pepper used as a seasoning, especially in sauces, hot pots, and dishes such as 藤椒鸡. It commonly refers to the fresh green peppercorn or the corresponding dried spice; 藤椒 is more specific than the general 花椒."
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "word": "葡",
+      "judgment": "observed_expected_empty_inventory",
+      "review": "Baseline retains a grape bound-form sense with defaultUseful false. Candidate returns an empty inventory as expected under the agreed policy.",
+      "baseline": {
+        "requestSha256": "aa5992d35d3f36bea1e9b3ab5556c48ebbf8d329ed3c36267cbed66fd9a6147b",
+        "snapshotSha256": "f7a8a35efd358251f62d66538d4afb0b338b39c77ccf29bcb75c745f211a50e2",
+        "output": {
+          "senses": [
+            {
+              "label": "grape (bound form in 葡萄)",
+              "defaultUseful": false,
+              "notes": [
+                "葡 is not normally used as a standalone everyday word; it is the first bound element of 葡萄, “grape,” and related compounds such as 葡萄酒.",
+                "The useful vocabulary lies in the compounds, not in learning 葡 as an independent lexical item."
+              ]
+            }
+          ]
+        }
+      },
+      "candidate": {
+        "requestSha256": "112d42256e2ddf861a187a313f9f1cc61f2396ba8d7de28140c85484da5d245f",
+        "snapshotSha256": "f7a8a35efd358251f62d66538d4afb0b338b39c77ccf29bcb75c745f211a50e2",
+        "output": {
+          "senses": []
+        }
+      }
+    },
+    {
+      "word": "与",
+      "judgment": "mixed_boundary_evidence",
+      "review": "Candidate drops baseline 与其-derived rather-than sense and retains conjunction/preposition uses. Literary give/grant is unselected but retained; its notes refer to fixed constructions, so target-level support still needs editorial review.",
+      "baseline": {
+        "requestSha256": "20d75cf2a47183e04891d1c44d17ae7b6593937076f19bebd8ef5157df9c9500",
+        "snapshotSha256": "c319fe09107448766075f975450123fb9e6f4ded57a878f72f1df735d984a418",
+        "output": {
+          "senses": [
+            {
+              "label": "and; as well as",
+              "defaultUseful": true,
+              "notes": [
+                "A formal or written conjunction, broadly equivalent to 和 or 以及. Common in formal prose, titles, announcements, and set phrases, but less natural than 和 in ordinary conversation."
+              ]
+            },
+            {
+              "label": "with; to; in relation to",
+              "defaultUseful": true,
+              "notes": [
+                "A formal preposition marking association, comparison, interaction, or a recipient, as in 与他合作, 与现实相比, and 与用户沟通. It often corresponds to 和, 跟, or 对 in colloquial speech."
+              ]
+            },
+            {
+              "label": "rather than (与其……不如……)",
+              "defaultUseful": true,
+              "notes": [
+                "A common fixed comparison pattern meaning “rather than A, it is better to B.” 与其 normally appears with 不如, 宁可, or a similar contrasting expression; the construction is somewhat formal but useful in speech and writing."
+              ]
+            },
+            {
+              "label": "give; grant; transfer",
+              "defaultUseful": false,
+              "notes": [
+                "A formal, literary, or classical verb meaning “give,” “grant,” or “transfer,” retained mainly in fixed expressions and compounds such as 赠与 and 授与. Do not confuse it with the modern everyday verb 给."
+              ]
+            }
+          ]
+        }
+      },
+      "candidate": {
+        "requestSha256": "8e0b17aecb278209dcf8c8b53d4aa7a11affa11ab6f4e1409f032df87ce3bf75",
+        "snapshotSha256": "c319fe09107448766075f975450123fb9e6f4ded57a878f72f1df735d984a418",
+        "output": {
+          "senses": [
+            {
+              "label": "and; as well as",
+              "defaultUseful": true,
+              "notes": [
+                "Conjunction linking nouns, noun phrases, or clauses. More formal and written than 和 or 跟, but common in formal prose and set grammatical patterns."
+              ]
+            },
+            {
+              "label": "with; together with; in relation to",
+              "defaultUseful": true,
+              "notes": [
+                "Preposition introducing a companion, counterpart, or party in a relationship, comparison, cooperation, or interaction. Frequent in formal and written Mandarin; everyday speech usually prefers 和 or 跟."
+              ]
+            },
+            {
+              "label": "give; grant",
+              "defaultUseful": false,
+              "notes": [
+                "A literary or classical verb meaning to give or grant. It survives in some compact formal or fixed constructions, but is not the normal modern standalone verb for everyday 'give'; use 给 for that meaning."
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "reconciliationDemonstration": {
+    "scope": "Generated baseline inventories used as synthetic existing records with explicit synthetic identities/version 1. Agent semantic judgments were checked by the CLI. These are not inspected production inventories, approved repairs, or a migration rehearsal.",
+    "cases": [
+      {
+        "wordId": "fixture:过时",
+        "snapshotSha256": "0e00641f7914651c5c9e14e202945300f2950d6009fe85234bf624ef93e15cbb",
+        "candidateSha256": "6d345442aeb792a2afabf9577298cfe7f056de5ff7acefb8827ffac93a8143ce",
+        "reviewer": "Codex semantic review of synthetic inventories, not production approval",
+        "structurallyValid": true,
+        "semanticJudgmentVerified": false,
+        "applyReady": false,
+        "emptyInventory": false,
+        "groups": [
+          {
+            "existingSenseIds": [
+              "synthetic:过时:0"
+            ],
+            "candidateIndexes": [
+              0
+            ],
+            "decision": "retain",
+            "rationale": "Both inventories describe the same outdated/out-of-fashion target use."
+          },
+          {
+            "existingSenseIds": [
+              "synthetic:过时:1"
+            ],
+            "candidateIndexes": [],
+            "decision": "retire",
+            "rationale": "The baseline deadline sense is supported here only by the larger expression 过时不候, excluded by the agreed target policy."
+          }
+        ]
+      },
+      {
+        "wordId": "fixture:葡",
+        "snapshotSha256": "0459b647990c195330506d89a89b645695f5e87697f95e47ed02718d9a7a3cb9",
+        "candidateSha256": "312b0e2ee0587b60c2cbb4686a7843daf724c50ff73a3eb9520885afb5ea883e",
+        "reviewer": "Codex semantic review of synthetic inventories, not production approval",
+        "structurallyValid": true,
+        "semanticJudgmentVerified": false,
+        "applyReady": false,
+        "emptyInventory": true,
+        "groups": [
+          {
+            "existingSenseIds": [
+              "synthetic:葡:0"
+            ],
+            "candidateIndexes": [],
+            "decision": "retire",
+            "rationale": "The baseline grape meaning belongs to 葡萄; the target has no eligible use in this fixture."
+          }
+        ]
+      }
+    ],
+    "remaining": "An actual apply needs an exact stopped-writer snapshot, comprehensive dependency audit, approved semantic plan, transactional apply, and restore/integrity rehearsal."
+  }
+}

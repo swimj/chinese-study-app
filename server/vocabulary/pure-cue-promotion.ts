@@ -3,16 +3,21 @@ import { isDeepStrictEqual } from 'node:util';
 import type { JsonSchema } from '../../src/domain/reflection-result-schema.ts';
 import type { VocabularyContent, VocabularyContentDraft } from '../../src/domain/vocabulary-content.ts';
 import type { VocabularyPureCueReferral, VocabularyPureCuePromotion, VocabularyProposalOperation, VocabularyReflectionJob } from '../../src/domain/vocabulary-reflection.ts';
-import { getVocabularyEncounterReactions } from '../../src/domain/vocabulary-session.ts';
+import { exactVocabularyWordMatches, vocabularyResponseWordMatches, type VocabularyResponseWord } from './response-word-matching.ts';
+import { copiesPrivateVocabularyEvidence } from './shared-evidence-guard.ts';
 import { getDb } from '../db/connection.ts';
 import { getVocabularyContentForMaintenance } from '../db/vocabulary-content.ts';
 
 const text:JsonSchema={type:'string'};
 const object=(properties:Record<string,JsonSchema>):JsonSchema=>({type:'object',properties,required:Object.keys(properties),additionalProperties:false});
 export const vocabularyPureCueReferralSchema:JsonSchema={anyOf:[{type:'null'},object({candidateWords:{type:'array',items:text,minItems:2,maxItems:8},sharedPurpose:text,rationale:text})]};
+export const vocabularyPureCuePlanSchema:JsonSchema={anyOf:[{type:'null'},object({candidateWords:{type:'array',items:text,minItems:2,maxItems:8},sharedPurpose:text,rationale:text,
+  draft:{...object({prompt:text,semanticAxis:text,teachingNote:text}),required:['prompt','teachingNote']}})]};
+export const vocabularyPureCueIntegrationSchema=object({decision:{type:'string',enum:['reuse','extend','create']},rationale:text,
+  existingContentId:{type:['string','null']},semanticAxis:{type:['string','null']},teachingNote:{type:['string','null']}});
 export const vocabularyPureCuePromotionSchema=object({decision:{type:'string',enum:['reject','reuse','extend','create']},rationale:text,
   existingContentId:{type:['string','null']},prompt:{type:['string','null']},semanticAxis:{type:['string','null']},teachingNote:{type:['string','null']},memberWordIds:{type:'array',items:text}});
-type Word={wordId:string;hanzi:string;traditional:string|null;pinyin:string;meaning:string};
+export type Word=VocabularyResponseWord;
 type Decision={decision:'reject'|'reuse'|'extend'|'create';rationale:string;existingContentId:string|null;prompt:string|null;semanticAxis:string|null;teachingNote:string|null;memberWordIds:string[]};
 export type PromotionResult={assessment:VocabularyPureCuePromotion;operations:VocabularyProposalOperation[];bases:{contentId:string;expectedVersion:number}[]};
 const wordQuery='SELECT id AS wordId,hanzi,traditional,pinyin,meaning FROM lexical_words';
@@ -20,9 +25,27 @@ const wordQuery='SELECT id AS wordId,hanzi,traditional,pinyin,meaning FROM lexic
 export function validateVocabularyPureCueReferral(referral:VocabularyPureCueReferral):void {
   if(!referral.sharedPurpose.trim()||!referral.rationale.trim()||referral.candidateWords.some(word=>!word.trim()||word!==word.trim())
     ||new Set(referral.candidateWords).size!==referral.candidateWords.length)throw new Error('Invalid pure-cue referral');
+  if(referral.draft&&Object.values(referral.draft).some(value=>!value.trim()))throw new Error('Pure-cue plan requires complete authored content');
+}
+export function pureCueIdentityOptions(targetId:string,referral:VocabularyPureCueReferral):{form:string;choices:Word[]}[] {
+  const target=getDb().prepare(`${wordQuery} WHERE id=?`).get(targetId) as Word|undefined;
+  if(!target)throw new Error('Pure-cue target disappeared');
+  return referral.candidateWords.map(form=>({form,choices:form===target.hanzi||form===target.traditional?[target]:
+    exactVocabularyWordMatches(form)})).map(option=>({...option,choices:option.choices.map(word=>({...word}))}));
+}
+export const PURE_CUE_RESOLUTION_CONTRACT='operator-pure-cue-resolution-v1';
+export type PureCueResolution={actorId:string;recordedAt:string;sourceJobId:string;original:VocabularyContent;
+  admission:import('../../src/domain/vocabulary-reflection.ts').VocabularyImprovementAdmission;
+  diagnosis:import('../../src/domain/vocabulary-content.ts').VocabularyJson;referral:VocabularyPureCueReferral;
+  selections:Record<string,string>;candidates:Word[];
+  localPlan?:import('../../src/domain/vocabulary-reflection.ts').VocabularyImprovementResultInput['proposal'];responseCandidateSnapshots?:Word[]};
+export function getPureCueResolution(jobId:string):PureCueResolution|null {
+  const row=getDb().prepare("SELECT result_json FROM vocabulary_improvement_stages WHERE job_id=? AND stage='pure_cue_promotion' AND input_hash=?")
+    .get(jobId,PURE_CUE_RESOLUTION_CONTRACT) as {result_json:string}|undefined;
+  return row?JSON.parse(row.result_json) as PureCueResolution:null;
 }
 /** Referral forms are suggestions. Resolve exact lexical identities; never pick a pronunciation arbitrarily. */
-export function prepareVocabularyPureCuePromotion(job:VocabularyReflectionJob,original:VocabularyContent,referral:VocabularyPureCueReferral):{
+export function prepareVocabularyPureCuePromotion(job:VocabularyReflectionJob,original:VocabularyContent,referral:VocabularyPureCueReferral,selections:Record<string,string>={}):{
   input:{referral:VocabularyPureCueReferral;candidates:Word[];existingCues:VocabularyContent[]};
   attention:PromotionResult|null;contents:VocabularyContent[];fence:()=>void;
   normalize:(value:unknown,invocationId?:string|null)=>PromotionResult;
@@ -32,10 +55,12 @@ export function prepareVocabularyPureCuePromotion(job:VocabularyReflectionJob,or
   if(!targetId)throw new Error('Pure-cue referral requires a word target');
   const target=getDb().prepare(`${wordQuery} WHERE id=?`).get(targetId) as Word|undefined;
   if(!target)throw new Error('Pure-cue target disappeared');
-  const resolve=()=>referral.candidateWords.map(form=>{
-    // The source already disambiguates its own lexical identity.
-    if(form===target.hanzi||form===target.traditional)return [target];
-    return getDb().prepare(`${wordQuery} WHERE hanzi=? OR traditional=? ORDER BY id`).all(form,form) as Word[];
+  const resolve=()=>pureCueIdentityOptions(targetId,referral).map(({form,choices})=>{
+    const selected=selections[form];
+    if(!selected)return choices;
+    const word=choices.find(word=>word.wordId===selected);
+    if(!word)throw new Error('Selected pure-cue lexical identity no longer matches the referral');
+    return [word];
   });
   const matches=resolve();
   const candidates=[...new Map(matches.filter(items=>items.length===1).map(items=>[items[0]!.wordId,items[0]!])).values()];
@@ -85,12 +110,8 @@ export function prepareVocabularyPureCuePromotion(job:VocabularyReflectionJob,or
       ||output.memberWordIds.every(id=>existingAnswers.some(answer=>answer.wordId===id))))fail('extension must preserve stimulus, axis and all existing members, and add a member');
     if(typeof output.teachingNote!=='string'||!output.teachingNote.trim())fail('creation and extension require a teaching note');
     const teachingNote=output.teachingNote!;
-    const privateFragments=job.evidence.evidence.flatMap(encounter=>[
-      ...getVocabularyEncounterReactions(encounter).flatMap(reaction=>reaction.payload.comment?[reaction.payload.comment.trim()]:[]),
-      ...encounter.responses.flatMap(response=>response.payload.response&&response.payload.response.length>=12?[response.payload.response]:[]),
-    ]).filter(fragment=>fragment.length>=4);
     const authoredText=[output.prompt,output.semanticAxis,teachingNote].filter((value):value is string=>typeof value==='string');
-    if(original.accessScope==='shared'&&privateFragments.some(fragment=>authoredText.some(value=>value.includes(fragment))))fail('shared cue copies private learner evidence');
+    if(copiesPrivateVocabularyEvidence(job,original.accessScope,authoredText))fail('shared cue copies private learner evidence');
     const answers=output.memberWordIds.map(id=>{
       const retained=existingAnswers.find(answer=>answer.wordId===id);if(retained)return retained;
       const word=candidates.find(word=>word.wordId===id);if(!word)return fail('new member not supplied');
@@ -115,8 +136,50 @@ export function prepareVocabularyPureCuePromotion(job:VocabularyReflectionJob,or
     }
     const body=content.body as {prompt?:string};
     if(!body.prompt||answers.some(answer=>answer.acceptedForms.some(form=>body.prompt!.includes(form))))fail('stimulus exposes an accepted answer');
-    const common={operationKey:'pure-cue-promotion',scope:original.accessScope==='shared'?{kind:'shared' as const}:{kind:'learner' as const,learnerId:original.ownerLearnerId!},rationale:output.rationale,content};
+    const common={learningRole:'shared' as const,operationKey:'pure-cue-promotion',scope:original.accessScope==='shared'?{kind:'shared' as const}:{kind:'learner' as const,learnerId:original.ownerLearnerId!},rationale:output.rationale,content};
     const operation:VocabularyProposalOperation=existing?{...common,strategy:'update_existing',sourceContentId:existing.contentId,expectedVersion:existing.version}:{...common,strategy:'create'};
     return {assessment,operations:[operation],bases};
   }};
+}
+
+/** Validate authored practice before resolving its storage destination or deriving its axis. */
+export function validateVocabularyPureCueDraft(job:VocabularyReflectionJob,original:VocabularyContent,referral:VocabularyPureCueReferral):void {
+  validateVocabularyPureCueReferral(referral);
+  if(!referral.draft)throw new Error('Pure-cue integration requires an authored plan');
+  const text=[referral.draft.prompt,referral.draft.semanticAxis,referral.draft.teachingNote].filter((value):value is string=>typeof value==='string');
+  if(copiesPrivateVocabularyEvidence(job,original.accessScope,text))throw new Error('Shared cue copies private learner evidence');
+  const forms=[...referral.candidateWords,...(original.kind==='exercise'?original.answers.flatMap(answer=>answer.acceptedForms):[]),
+    ...pureCueIdentityOptions(job.evidence.wordId!,referral).flatMap(option=>option.choices.flatMap(word=>[word.hanzi,...(word.traditional?[word.traditional]:[])]))];
+  if(forms.some(form=>form&&referral.draft!.prompt.includes(form)))throw new Error('Shared stimulus exposes an accepted answer');
+}
+
+export function prepareVocabularyPureCueIntegration(job:VocabularyReflectionJob,original:VocabularyContent,referral:VocabularyPureCueReferral,selections:Record<string,string>={}) {
+  validateVocabularyPureCueDraft(job,original,referral);
+  const prepared=prepareVocabularyPureCuePromotion(job,original,referral,selections);
+  const ids=prepared.input.candidates.map(word=>word.wordId);
+  const creation=(rationale:string,semanticAxis:string|null):Decision=>({decision:'create',rationale,existingContentId:null,
+    prompt:referral.draft!.prompt,teachingNote:referral.draft!.teachingNote,semanticAxis,memberWordIds:ids});
+  return {...prepared,normalize(value:unknown,invocationId?:string|null):PromotionResult {
+    if(!value||typeof value!=='object')throw new Error('Invalid pure-cue integration output');
+    const result=value as {decision:'reuse'|'extend'|'create';rationale:string;existingContentId:string|null;semanticAxis?:string|null;teachingNote:string|null};
+    if(result.decision==='create'){
+      if(result.existingContentId!==null||result.teachingNote!==null)throw new Error('Creation must preserve the proposed shared cue');
+      // Historical integration replies predate the axis field and retain their authored axis.
+      const axis=result.semanticAxis===undefined?referral.draft!.semanticAxis??null:result.semanticAxis;
+      return prepared.normalize(creation(result.rationale,axis),invocationId);
+    }
+    if(result.decision!=='reuse'&&result.decision!=='extend')throw new Error('Integration cannot reject an authored shared task');
+    if(result.semanticAxis!==undefined&&result.semanticAxis!==null)throw new Error('Reuse and extension must preserve the existing semantic axis');
+    const existing=prepared.input.existingCues.find(cue=>cue.contentId===result.existingContentId);
+    if(!existing||existing.kind!=='exercise')throw new Error('Integration destination was not supplied');
+    return prepared.normalize({...result,prompt:null,semanticAxis:null,memberWordIds:result.decision==='reuse'?ids:
+      [...new Set([...existing.answers.map(answer=>answer.wordId),...ids])]},invocationId);
+  }};
+}
+
+/** Only exact, unambiguous response identities may receive new individual practice. */
+export function vocabularyResponseCandidates(job:Pick<VocabularyReflectionJob,'evidence'>):Word[] {
+  return [...new Map(vocabularyResponseWordMatches(job).flatMap(({word})=>{
+    return word&&word.wordId!==job.evidence.wordId?[[word.wordId,{...word}] as const]:[];
+  })).values()];
 }

@@ -94,16 +94,49 @@ and queues an advisory review of the retained no-change judgment. Case workspace
 jobs expose the advisory status and result; the existing job retry and case close
 routes apply. This path does not create or apply a content proposal.
 
-`POST /api/operator/vocabulary/cases/:id/reassessments` accepts `modelChoice` and
-required `expectedContentVersion`. It queues an independent assessment pinned to
-that current source version and returns the new `caseId` and `jobId`. The operator
-must confirm a version change shown by the review surface before submission. A
-source version that changed since the read is a conflict; the request does not
-silently assess the newer version. Case and review reads expose the historical
-assessed version and current version for this decision. Reassessment performs
-fresh mapping where applicable and fresh assessment without the original learner
-responses or reactions. It preserves the original case as historical context and
-does not resolve or apply its proposal or judgment.
+`GET/PUT /api/operator/vocabulary/words/:id/sense-coverage` reads or edits shared
+word selection. PUT requires `expectedVersion` and explicit `includedSenseIds`
+(or compatible `excludedSenseIds`). An empty list explicitly selects none.
+Responses include canonical senses, selection status and mapped production counts.
+Historical case coverage is no longer an editable API.
+
+`GET/PUT /api/operator/vocabulary/cases/:id/repair-target` reads or changes pending
+single-exercise target intent. A selected sense requires reassessment; reset clears
+pending intent. Application and manual editing enforce this intent server-side.
+`POST /api/operator/vocabulary/proposals/:id/word-defaults-revision` accepts
+`expectedVersion`, `expectedWordVersion`, and `includedSenseIds`. It atomically
+saves word defaults and the repertoire selection, returning `{proposal, coverage}`.
+Deselected exercises remain in proposal history for restoration. Newly selected
+senses without retained exercises require generation; an empty result requires
+dismissal or new generation. Conflicts leave both defaults and proposal unchanged.
+All routes require operator authority. Source content, mappings and catalog versions
+remain approval/application checks; shared-default edits alone do not invalidate
+captured generation results.
+
+`POST /api/operator/vocabulary/cases/:id/reassessments` accepts `modelChoice`,
+required `expectedContentVersion`, and optional `originProposal` with
+`proposalId` and `expectedVersion`. It returns the canonical `caseId` and the new
+`jobId`; the case identity does not change. The source version is pinned at
+submission and a changed version requires operator confirmation. One queued or
+running job is allowed per case. Reassessment freezes case review mutations
+until termination; success selects the new assessment and supersedes the prior
+current proposal, while failure preserves it. Historical proposals retain their
+assessment-job provenance. Advisory opinions do not select a new authoritative
+assessment. Workspaces expose `case.review` and each job's `caseSequence`,
+separately from the provider retry `attemptNumber`. Source changes remain
+conflicts rather than silently changing the requested assessment.
+
+`POST /api/operator/vocabulary/cases/:id/pure-cue-resolutions` accepts `modelChoice`,
+`expectedContentVersion` and `selections` of `{form, wordId}`. For a pending lexical
+identity finding, it validates exact dictionary choices and queues a promotion-only
+continuation with the retained referral and evidence. Source, mapping, catalog or
+identity drift is a conflict. The returned `caseId` and `jobId` identify an
+assessment, not approval or application. Case reads supply `pureCueIdentityOptions`.
+
+Review batches include `currentSources` for all proposal evidence bases, including
+create-only proposals. Batch and workspace `assessment` metadata attributes the
+finalized contributing invocations and sense mapping, separately from proposal
+authorship.
 
 Proposal detail/list and case reads include `resolvedAt`: receipt application time
 for applied proposals, latest closure event time for dismissed proposals or closed
@@ -137,6 +170,13 @@ and improvement dispatch.
 authoring work. `POST /api/operator/vocabulary/practice-preparation/:id/retry`
 queues an explicitly authorized retry within the attempt limit; worker gates
 still govern provider execution.
+
+The operator practice-preparation failure response includes
+`defaultSelectionFindings`: word-level unknown-default findings with `wordId`,
+`hanzi`, nullable originating `caseId`, reason, recommended sense IDs and invocation
+ID. The projection is read-only and independent of proposal/case completion. Saving
+explicit word defaults, including `[]`, removes that word from the projection.
+
 
 Mandarin legacy `/api/study-sessions/*` writes, legacy word completion/dismissal,
 introduction open/complete, review-summary commits, learner proposal/application,
@@ -690,7 +730,7 @@ whose session/flow does not already have a successful artifact.
 
 The reflection service has a backend-only comparison-arm registry. Initial
 bundles with at most 10 included items sample GLM-5.3 Flash high at 70% and
-GPT-5.6 Luna high at 30%. Larger bundles sample GPT-6 Sol high at 60%, GLM at
+GPT-6 Luna high at 30%. Larger bundles sample GPT-6 Sol high at 60%, GLM at
 20%, and Luna at 20%. Ordinary and pure-cue bundles are routed independently
 using their actual item counts. Explicit choices and manual second opinions
 do not use these weights. Terra, GLM Flash max, and Gemini remain registered
@@ -709,6 +749,9 @@ rewrites the failed attempt. Missing runs return `404`. Concluded runs that
 cannot be retried, same-model retries whose source model is no longer a
 configured comparison arm return `409`. An explicit current model may
 retry a retained bundle whose source model has been retired.
+Saved GPT-5.6 Luna choices resolve to GPT-6 Luna for new retry calls. Historical
+run metadata and pricing stay unchanged; a retry that only resumes persistence
+keeps the model provenance of its already completed call.
 
 ### Queue and detail
 
@@ -1142,3 +1185,103 @@ Feedback messages also expose nullable `dismissedAt`. Owner-only POST actions
 Dismissal excludes a message from unread attention without changing its body,
 seen time, scheduling or content-improvement state. GET retains dismissed
 messages for the learner’s history.
+
+### Case review queue and history
+
+`GET /api/operator/vocabulary/attention-queue` returns `{items,total,offset}`.
+It accepts `offset` (nonnegative), `limit` (1–50, default 20), optional `anchorId`
+for preserving selection during refresh, and optional `kind`: `defaults`,
+`approval`, `preparation`, `dispatch`, or `case`. Each display item has a stable
+`id`, title, reason, creation time, optional case identity, and type-specific
+existing action identifiers. Eligibility and retry hints are derived from current
+source records; mutations still enforce their own authority and version checks.
+The read does not resolve work or enqueue provider calls. Full case and proposal
+payloads are loaded only on drill-in through their existing endpoints.
+
+`GET /api/operator/vocabulary/case-queue` returns a bounded display projection of
+canonical improvement cases. Parameters are `view=review|history` (default
+`review`), `limit` (1–50, default 20), and the opaque `cursor` returned by the
+previous page. `direction=next|previous` defaults to `next`; `edge=first|last`
+selects a queue end, preserving a supplied cursor's archive time window.
+The response is `{items,nextCursor,previousCursor,anchorCursor,total,startIndex}`.
+`total` counts the matching queue independently of the loaded page; `startIndex`
+is its zero-based global offset. `anchorCursor` retains query/time context even
+when a page has neither a previous nor a next page. Identity selection uses
+keyset order in either direction; exact counts scan matching indexed identities,
+without hydrating their evidence or proposal bodies. Review orders unresolved
+cases by original creation time, then case ID, oldest first. Queued approvals and
+approval failures stay out of that ready-review list; their operational status
+is available through the existing attention endpoints. Teaching cases are reviewable before an assessment or proposal exists. Other
+cases without a completed assessment or proposal remain in Needs attention when
+no job is queued or running.
+
+History orders resolved cases by resolution time and case ID, newest first.
+Without `search`, it shows the last 12 hours; the cursor preserves that time
+window across pages. A nonempty `search` spans retained history and searches case
+and proposal IDs, word ID, Hanzi, Pinyin, proposal rationale, and original served
+cue text. Search is literal (SQL wildcard characters have no special meaning),
+at most 200 characters, and is only available for History. Cursors are bound to
+their view and search query.
+
+Each item contains case version/state, numbered current and active job identity,
+the current proposal reference, readable served evidence (including nullable
+`presentedAt`) and proposed changes,
+model attribution, current source/version comparisons, and concise advisory
+opinion status. These are display-only projections, not complete authored drafts.
+Raw encounter snapshots, model requests/results, and full editing bodies are
+omitted. `latestJob` retains the most recent job's status, sequence, advisory flag,
+and error code even after a failed reassessment releases its freeze; the previous
+authoritative assessment remains displayed. `requiresDetails` means the authored material cannot be faithfully
+reviewed through the compact card and needs the existing full workspace before
+approval. `assessment` belongs to the displayed proposal; `currentAssessment`
+identifies the case's authoritative judgment, which can differ for a retained
+alternative. Up to 20 unresolved alternative references are included alongside
+`alternativeCount`; the full workspace retains every alternative.
+
+`GET /api/operator/vocabulary/case-queue/:id` refreshes one card. Optional
+`proposalId` selects a retained proposal belonging to that canonical case without
+changing the case's current selection. Existing case-workspace and proposal
+detail routes provide complete editing and historical evidence on demand.
+
+`POST /api/operator/vocabulary/case-queue/:id/resolve` takes a positive
+`expectedVersion` and optional text `reason`, and returns the updated card.
+Omitted, empty, and whitespace notes are accepted for teaching and unresolved
+assessments as well as completed no-change judgments. Closure events retain the
+operator-supplied `reason` separately from assessment outcome and source context.
+`needsDecision` and `finding` describe the retained assessment, not a required
+comment; `reassessment.reason` explains an ineligible current source.
+This is the Done action for no-proposal or unresolved assessments; ordinary
+proposal cards use the exact-version proposal dismissal route. Dismissing a
+proposal resolves its case only when no unresolved alternatives remain.
+`POST /api/operator/vocabulary/case-queue/:id/reassess` takes `expectedVersion`,
+`expectedContentVersion`, `modelChoice`, and optional
+`originProposal: {proposalId,expectedVersion}`. It returns `{caseId,jobId,item}`.
+Both compare the case review version atomically with the mutation: a stale card
+returns 409 instead of acting on an unseen newer assessment. Existing proposal
+approval continues to authorize an exact saved proposal version. All these
+routes require operator authority; invalid queries return 400.
+
+### Operator sense selection
+
+Word defaults and pending repair targets have separate endpoints and lifecycles,
+described in the operator vocabulary API above. Word
+selection changes shared policy; repair intent stays pending until reassessment.
+Neither operation applies proposed content. Invalid payloads return 400 and
+version conflicts return 409.
+
+### Exercise retirement proposals
+
+Vocabulary content proposals support `retire` alongside `create`, `update_existing`
+and `replace`. Retirement names the exact `sourceContentId`, `expectedVersion`,
+access scope, rationale and compulsory comparison `content` snapshot. The server
+retires the live active general production source without creating a successor.
+Save, preview, exact-version approval and idempotent application use the same
+proposal routes; retirement never writes repair intent or word defaults.
+
+Operator case workspaces and proposal review-batch snapshots include nullable
+`defaultSelectionFinding`: `status: needs_operator`, `reason`, `invocationId` and
+`recommendedSenseIds`. It is read-only and returns null after any explicit shared
+selection, including none. The finding does not block single-sense generation or
+content approval. Practice-preparation failures expose prerequisite selection and
+source-mapping findings; `retryable` is false while mappings need operator review
+or a model-empty recommendation awaits a selection.

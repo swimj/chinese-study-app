@@ -1,3 +1,4 @@
+import { retryPreparationWithReadiness } from './word-content/retry-preparation.ts';
 import { registerVocabularyStatisticsRoutes } from './vocabulary/statistics-routes.ts';
 import { createVocabularyCutoverFence } from './vocabulary/cutover-routes.ts';
 import { addVocabularyStashByHanzi, updateVocabularyStashPriority } from './db/vocabulary-stash.ts';
@@ -534,7 +535,7 @@ export function createApp(options: CreateAppOptions = {}) {
       return;
     }
     try {
-      retryWordPreparation(req.params.workId, res.locals.operatorSubject);
+      retryPreparationWithReadiness(req.params.workId, res.locals.operatorSubject);
       options.wakeWordPreparation?.();
       res.json({ queued: true });
     } catch (error) {

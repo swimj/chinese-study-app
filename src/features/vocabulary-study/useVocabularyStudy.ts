@@ -275,6 +275,9 @@ export function useVocabularyStudy(options: VocabularyStudyOptions = {}) {
     await queue.current!.flush();
     await enqueue(covered ? {type:'enough'} : {type:'skip',scope:'word'});
     const current=studyRef.current;if(!current)return;
+    // Wrapping the last open word while finishing completes the session.
+    // A rejected next request would block the queue needed to save completion.
+    if(current.session.projection.phase==='completed')return;
     await queue.current!.enqueue(crypto.randomUUID(),async(clientId)=>{
       const result=await nextVocabularyStudy(current.session.sessionId,clientId,{});receive(result);return result;
     });

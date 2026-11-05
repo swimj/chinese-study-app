@@ -10,7 +10,7 @@ vocabulary reactions.
 
 ## Reading the ledger
 
-The operator page (`#operator-usage`) shows a single table of current non-null
+The operator page (`/operator/quality`) shows a single table of current non-null
 learner/content ratings, defaulting to the last seven UTC days by last-change
 time. Date bounds, item text, content type, and vote can be filtered in the
 table; column headings sort it. A table control switches between individual

@@ -7,6 +7,7 @@ import { createVocabularyPracticePreparation,type VocabularyPracticeProvider } f
  * Provider calls are fenced by hosted controls; late returns cannot publish during maintenance or shutdown. */
 export function createVocabularyPracticeWorker(options: {
   provider?: VocabularyPracticeProvider;
+  ensureDefaults?:NonNullable<Parameters<typeof createVocabularyPracticePreparation>[0]>['ensureDefaults'];
   now?: () => number;
   concurrency?: number;
   pollMs?: number;
@@ -25,11 +26,12 @@ export function createVocabularyPracticeWorker(options: {
   function allowed():boolean {const state=controls();return !stopped&&!state.maintenanceMode&&state.providerWorkEnabled;}
   // Pausing new dispatch must not reject an already-running sibling's valid publication.
   function canDispatch(): boolean { return allowed() && now() >= providerBackoffUntil; }
-  const preparation=createVocabularyPracticePreparation({provider:options.provider,now:()=>new Date(now()).toISOString(),canPublish:allowed});
+  const preparation=createVocabularyPracticePreparation({provider:options.provider,ensureDefaults:options.ensureDefaults,now:()=>new Date(now()).toISOString(),canPublish:allowed});
   async function process(workId:string):Promise<boolean> {
     try {
       return await providerWork(async()=>{
         if(!canDispatch()||!preparation.isConfigured())return false;
+        if(!await preparation.preflight(workId))return true;
         const token=preparation.claim(workId);if(!token)return false;
         try{await preparation.run(workId,token);}
         catch(error){

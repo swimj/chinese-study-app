@@ -30,6 +30,8 @@ beforeEach(() => {
     INSERT INTO learners VALUES ('a'),('b');
     INSERT INTO lexical_words VALUES ('w1'),('w2'),('w3');`);
   db.exec(fs.readFileSync(new URL('../server/db/migrations/0039_vocabulary_content.sql', import.meta.url),'utf8'));
+  db.exec(fs.readFileSync(new URL('../server/db/migrations/0062_vocabulary_sense_coverage.sql', import.meta.url),'utf8'));
+  db.exec(fs.readFileSync(new URL('../server/db/migrations/0064_vocabulary_default_useful_senses.sql', import.meta.url),'utf8'));
   setDb(db);
 });
 afterEach(() => {
@@ -247,4 +249,34 @@ test('contrast authoring validates choice identities and the single correct targ
   assert.deepEqual(getVocabularyContentForMaintenance('contrast'),initial);
   assert.equal(eventCount(),events);
   assert.equal((db.prepare('SELECT COUNT(*) AS n FROM content_items').get() as {n:number}).n,1);
+});
+
+test('shared production exclusions preserve recognition, unmapped cues, identities and history',async()=>{
+  const {writeVocabularyWordSenseCoverage}=await import('../server/db/vocabulary-sense-coverage.ts');
+  createVocabularySense({senseId:'s1',wordId:'w1',description:'greeting'},actor);
+  createVocabularyContent(draft('mapped',{words:[{wordId:'w1',relation:'target',senseId:'s1',senseMappingEstablishedAt:'2026-10-29T00:00:00.000Z'}]}),actor);
+  createVocabularyContent(draft('unmapped'),actor);
+  createVocabularyContent(draft('recognition',{skill:'recognition',words:[{wordId:'w1',relation:'target',senseId:'s1',senseMappingEstablishedAt:'2026-10-29T00:00:00.000Z'}]}),actor);
+  writeVocabularyWordSenseCoverage('w1',0,['s1'],actor);
+  assert.deepEqual(asA(()=>listVocabularyExercises({wordId:'w1',mode:'practice'})).map(content=>content.contentId),['recognition','unmapped']);
+  assert.equal(getVocabularyContentForMaintenance('mapped')?.availability,'active');
+  assert.throws(()=>writeVocabularyWordSenseCoverage('w1',0,[],actor),/coverage changed/);
+  assert.throws(()=>writeVocabularyWordSenseCoverage('w1',1,['unknown'],actor),/belonging/);
+  assert.equal(db.prepare('SELECT count(*) n FROM vocabulary_sense_coverage_history').get()!.n,1);
+  assert.throws(()=>db.exec("UPDATE vocabulary_sense_coverage_history SET actor_id='changed'"),/immutable/);
+  assert.throws(()=>db.exec('DELETE FROM vocabulary_sense_coverage_history'),/immutable/);
+});
+
+test('explicit useful selection does not admit later senses or retired selected senses',async()=>{
+  const {writeVocabularyDefaultUsefulSenses}=await import('../server/db/vocabulary-sense-coverage.ts');
+  createVocabularySense({senseId:'selected',wordId:'w1',description:'greeting'},actor);
+  createVocabularyContent(draft('selected-cue',{words:[{wordId:'w1',relation:'target',senseId:'selected',senseMappingEstablishedAt:'2026-10-29T00:00:00.000Z'}]}),actor);
+  assert.deepEqual(asA(()=>listVocabularyExercises({wordId:'w1',mode:'practice'})).map(content=>content.contentId),['selected-cue'],'unknown defaults preserve existing serving');
+  writeVocabularyDefaultUsefulSenses('w1',0,['selected'],actor);
+  createVocabularySense({senseId:'later',wordId:'w1',description:'a later use'},actor);
+  createVocabularyContent(draft('later-cue',{words:[{wordId:'w1',relation:'target',senseId:'later',senseMappingEstablishedAt:'2026-10-29T00:00:00.000Z'}]}),actor);
+  assert.deepEqual(asA(()=>listVocabularyExercises({wordId:'w1',mode:'practice'})).map(content=>content.contentId),['selected-cue']);
+  updateVocabularySense('selected',1,{description:'greeting',status:'retired'},actor);
+  assert.deepEqual(asA(()=>listVocabularyExercises({wordId:'w1',mode:'practice'})),[]);
+  assert.equal(getVocabularyContentForMaintenance('selected-cue')!.availability,'active');
 });

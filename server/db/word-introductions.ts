@@ -1,3 +1,4 @@
+import { getVocabularySenseCatalog,getVocabularySenses } from './vocabulary-content.ts';
 import { VOCABULARY_PREPARATION_EPOCH } from './preparation-compatibility.ts';
 import { importLegacyVocabularyWord } from './vocabulary-import.ts';
 import { linkVocabularyPublicationOutput } from './vocabulary-provenance.ts';
@@ -326,6 +327,7 @@ export function saveSharedWordIntroductionComponent(
 
 export function finishSharedWordIntroductionBootstrap(
   wordId: string, token: string, input: WordContentDocument, model: string, invocationId?: string | null,
+  canonical?:{catalogVersion:number;senseVersions:{senseId:string;version:number}[];senseIds:string[]},
 ): SavedWordContent {
   const content = parseWordContent(input);
   const sourceModel = modelName(model);
@@ -336,14 +338,21 @@ export function finishSharedWordIntroductionBootstrap(
   return transaction(() => {
     const row = requireLiveClaim(wordId, 'bootstrap', token);
     if (row.content_id !== null) throw new WordIntroductionError('conflict', 'Word bootstrap already prepared');
+    if(canonical&&(getVocabularySenseCatalog(wordId).version!==canonical.catalogVersion||canonical.senseVersions.some(pin=>!getVocabularySenses(wordId).some(sense=>sense.senseId===pin.senseId&&sense.version===pin.version&&sense.status==='active'))))throw new WordIntroductionError('conflict','Canonical sense source or catalog changed before bootstrap publication');
+    if(canonical&&(content.uses.length!==canonical.senseIds.length||content.uses.some(use=>!canonical.senseIds.includes(use.id))))throw new WordIntroductionError('invalid_source','Bootstrap must enrich exactly the selected canonical senses');
     const saved = insertContent(content, sourceModel);
+    if(canonical)for(const use of content.uses){
+      const sense=getVocabularySenses(wordId).find(sense=>sense.senseId===use.id&&sense.status==='active');
+      if(!sense)throw new WordIntroductionError('conflict','Canonical source sense is unavailable');
+      getDb().prepare('INSERT INTO legacy_sense_imports(source_content_id,source_use_id,sense_id,imported_sense_version) VALUES (?,?,?,?)').run(content.id,use.id,sense.senseId,sense.version);
+    }
     getDb().prepare(`
       UPDATE word_introduction_preparation
       SET content_id = ?, preparation_epoch = ?, active_stage = NULL, lease_token = NULL, lease_expires_at = NULL
       WHERE word_id = ?
     `).run(content.id, VOCABULARY_PREPARATION_EPOCH, wordId);
     importLegacyVocabularyWord(getDb(),wordId,{ originKind: 'model' });
-    linkVocabularyPublicationOutput(getDb(),invocationId,'bootstrap',content.id);
+    linkVocabularyPublicationOutput(getDb(),invocationId,'bootstrap',content.id,'',{bootstrapSenseRole:canonical?'input':'output'});
     return saved;
   });
 }

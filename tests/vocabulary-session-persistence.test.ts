@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import { DatabaseSync, backup } from 'node:sqlite';
 import os from 'node:os';
@@ -6,7 +7,8 @@ import path from 'node:path';
 import { afterEach, beforeEach, test } from 'node:test';
 import { setDb } from '../server/db/connection.ts';
 import { runWithLearnerId } from '../server/db/learner-context.ts';
-import { createVocabularyContent } from '../server/db/vocabulary-content.ts';
+import { writeVocabularyDefaultUsefulSenses } from '../server/db/vocabulary-sense-coverage.ts';
+import { createVocabularyContent,createVocabularySense } from '../server/db/vocabulary-content.ts';
 import { changeVocabularyMode, getVocabularyLearnerWord, getVocabularyWordSchedule } from '../server/db/vocabulary-learners.ts';
 import { createVocabularySession, appendVocabularySessionActions, getVocabularySession, stageVocabularySessionCompletion,
   cancelVocabularySessionCompletion, closeVocabularySessionCompletion, listDueVocabularySessionCompletions } from '../server/db/vocabulary-sessions.ts';
@@ -20,7 +22,7 @@ const alice = <T>(work: () => T) => runWithLearnerId('alice', work);
 type Input = VocabularySessionAction extends infer A ? A extends VocabularySessionAction ? Pick<A, 'kind' | 'payload'> : never : never;
 beforeEach(() => {
   sql = new DatabaseSync(':memory:'); setDb(sql); sql.exec(`PRAGMA foreign_keys=ON;
-    CREATE TABLE learners(learner_id TEXT PRIMARY KEY);
+    CREATE TABLE learners(learner_id TEXT PRIMARY KEY,disabled_at TEXT);
     CREATE TABLE word_introduction_preparation(preparation_epoch INTEGER DEFAULT 0,word_id TEXT PRIMARY KEY, content_id TEXT, package_id TEXT, active_stage TEXT, lease_token TEXT, lease_expires_at TEXT);
     CREATE TABLE word_content_documents(content_id TEXT PRIMARY KEY, word_id TEXT, publication_id TEXT, content_json TEXT);
     CREATE TABLE shared_content_publications(publication_id TEXT PRIMARY KEY, publication_status TEXT);
@@ -34,15 +36,16 @@ beforeEach(() => {
     CREATE TABLE learner_owned_word_skill_state(learner_id TEXT,word_id TEXT,skill_id TEXT,interval_hours REAL,ease_factor REAL,enabled INTEGER,next_due_at TEXT,last_studied_at TEXT,PRIMARY KEY(learner_id,word_id,skill_id));
     CREATE TABLE learner_owned_word_skill_relevance(learner_id TEXT,word_id TEXT,skill_id TEXT,relevance_state TEXT,PRIMARY KEY(learner_id,word_id,skill_id));
     CREATE TABLE learner_owned_word_study_admission_state(learner_id TEXT,word_id TEXT,study_phase TEXT,earliest_next_study_at TEXT,PRIMARY KEY(learner_id,word_id));
-    INSERT INTO learners VALUES ('alice'),('bob');
+    INSERT INTO learners(learner_id) VALUES ('alice'),('bob');
     INSERT INTO lexical_words(id,created_at) VALUES ('a','2026-01-01T00:00:00.000Z'),('b','2026-01-01T00:00:00.000Z'),('new','2026-01-01T00:00:00.000Z');
     INSERT INTO learner_word_state VALUES ('alice','a','learning',2,NULL),('alice','b','review',0,NULL),('alice','new','unstudied',0,NULL);
   `);
-  for (const name of ['0039_vocabulary_content.sql','0041_vocabulary_learner_state.sql','0042_vocabulary_sessions.sql','0047_vocabulary_dismissal.sql','0052_vocabulary_automatic_promotion_pause.sql','0023_session_debrief.sql','0048_vocabulary_connections.sql']) {
+  for (const name of ['0062_vocabulary_sense_coverage.sql','0064_vocabulary_default_useful_senses.sql','0039_vocabulary_content.sql','0041_vocabulary_learner_state.sql','0042_vocabulary_sessions.sql','0047_vocabulary_dismissal.sql','0052_vocabulary_automatic_promotion_pause.sql','0023_session_debrief.sql','0048_vocabulary_connections.sql']) {
     sql.exec(fs.readFileSync(new URL(`../server/db/migrations/${name}`,import.meta.url),'utf8'));
   }
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0045_vocabulary_provenance_links.sql',import.meta.url),'utf8').split('CREATE TABLE vocabulary_practice_preparation')[1]!.replace(/^/, 'CREATE TABLE vocabulary_practice_preparation'));
   sql.exec("ALTER TABLE vocabulary_practice_preparation ADD COLUMN next_attempt_at TEXT NOT NULL DEFAULT ''; ALTER TABLE vocabulary_practice_preparation ADD COLUMN total_attempt_count INTEGER NOT NULL DEFAULT 0;");
+  sql.exec(fs.readFileSync(new URL('../server/db/migrations/0043_vocabulary_import.sql',import.meta.url),'utf8').split('CREATE TRIGGER')[0]!);
   contents = {};
   alice(() => {
     for (const [id, word, skill, role, type] of [
@@ -197,12 +200,37 @@ test('owner checks and exact snapshot/assessment validation reject cross-learner
   });
 });
 
+test('presentation validation compares exact answer sets while preserving snapshots and strict grading criteria',()=>alice(()=>{
+  contents.forms=createVocabularyContent({contentId:'forms',kind:'exercise',payloadVersion:1,body:{prompt:'Write the character.'},
+    accessScope:'shared',availability:'active',originKind:'human',words:[{wordId:'a',relation:'target'}],
+    exerciseType:'word',skill:'production',exerciseRole:'general',assessment:{match:'exact'},
+    answers:[{wordId:'a',acceptedForms:['字','字兒']}]},{kind:'operator',id:'test'});
+  createVocabularySession(context(),now);
+  const original=snapshot('forms');assert.ok(original.assessment);
+  const attempt=(acceptedAnswers:readonly string[],criteria=original.assessment!.criteria)=>actions({kind:'presentation',payload:{
+    encounterId:'forms',wordId:'a',snapshot:{...original,assessment:{acceptedAnswers,criteria}},
+  }});
+  for(const answers of [[],['字'],['字','字兒','extra'],['字','字儿'],[' 字','字兒']]) {
+    assert.throws(()=>appendVocabularySessionActions('session',attempt(answers),now),/answer contract/);
+  }
+  assert.throws(()=>appendVocabularySessionActions('session',attempt(['字兒','字'],{match:'changed'}),now),/answer contract/);
+  assert.equal(count('session_actions'),0);
+  const log=attempt(['字兒','字','字兒']);
+  appendVocabularySessionActions('session',log,now);
+  assert.deepEqual(getVocabularySession('session').actions,log);
+  appendVocabularySessionActions('session',log,now);
+  assert.equal(count('session_actions'),1);
+}));
+
 test('teaching requires explicit completion and recognition self-assessment retains null response',()=>alice(()=>{
   const bootstrap={schemaVersion:1,id:'bootstrap-new',word:{wordId:'new',hanzi:'字',traditional:null,pinyin:'zì'},
     uses:[{id:'u1',label:'character',notes:[],exampleIds:['e1']}],examples:[{id:'e1',text:'字',translation:'Character',pronunciation:'zì'}]};
   sql.prepare("INSERT INTO word_introduction_preparation(word_id,content_id) VALUES ('new','bootstrap-new')").run();
   sql.prepare("INSERT INTO shared_content_publications VALUES ('published','available')").run();
   sql.prepare("INSERT INTO word_content_documents VALUES ('bootstrap-new','new','published',?)").run(JSON.stringify(bootstrap));
+  const sense=createVocabularySense({senseId:'new-character',wordId:'new',description:{label:'character',notes:[]}},{kind:'service',id:'session-fixture'});
+  sql.prepare('INSERT INTO legacy_sense_imports VALUES (?,?,?,?)').run(bootstrap.id,'u1',sense.senseId,sense.version);
+  writeVocabularyDefaultUsefulSenses('new',0,[sense.senseId],{kind:'service',id:'session-fixture'});
   createVocabularySession(context(),now);
   const teaching: Input[]=[present('intro','new')];
   for(let index=0;index<3;index++)for(const contentId of ['recognize','produce']) {
@@ -252,7 +280,7 @@ test('recognition scheduling applies at close once, preserving production and ot
   assert.deepEqual(sql.prepare("SELECT * FROM learner_owned_word_skill_state ORDER BY learner_id,skill_id").all(),others);
   closeVocabularySessionCompletion('session',staged.completionId,later);
   const after=sql.prepare("SELECT * FROM learner_owned_word_skill_state WHERE learner_id='alice' AND word_id='new' AND skill_id='recognition'").get();
-  assert.equal(after?.interval_hours,24);assert.equal(after?.last_studied_at,later);
+  assert.equal(after?.interval_hours,24);assert.equal(after?.last_studied_at,now);
   closeVocabularySessionCompletion('session',staged.completionId,'2026-10-18T10:00:00.000Z');
   assert.deepEqual(sql.prepare("SELECT * FROM learner_owned_word_skill_state WHERE learner_id='alice' AND word_id='new' AND skill_id='recognition'").get(),after);
   assert.deepEqual(sql.prepare("SELECT * FROM learner_owned_word_skill_state WHERE learner_id='bob' OR skill_id='production' ORDER BY learner_id,skill_id").all(),others);
@@ -412,7 +440,7 @@ test('selected recognition completion advances only recognition and applies shar
   assert.deepEqual(getVocabularyWordSchedule('b'),productionBefore);
   const recognitionAfter=sql.prepare("SELECT * FROM learner_owned_word_skill_state WHERE learner_id='alice' AND word_id='b' AND skill_id='recognition'").get();
   assert.notDeepEqual(recognitionAfter,recognitionBefore);
-  assert.equal(recognitionAfter?.last_studied_at,later);
+  assert.equal(recognitionAfter?.last_studied_at,now);
   assert.equal(sql.prepare("SELECT count(*) AS n FROM learner_state_effects WHERE kind='production_schedule_applied'").get()?.n,0);
   const recency=sql.prepare("SELECT * FROM learner_owned_word_study_admission_state WHERE learner_id='alice' AND word_id='b'").get();
   assert.equal(recency?.study_phase,'review');
@@ -474,4 +502,88 @@ for(const lapse of [false,true]) test(`strong pure-cue closure ${lapse?'returns 
   closeVocabularySessionCompletion('strong-session',staged.completionId,'2026-10-18T00:00:00.000Z');
   assert.deepEqual(sql.prepare("SELECT * FROM learner_pure_cue_schedules WHERE learner_id='alice' AND content_id='cue'").get(),row);
   assert.equal(sql.prepare("SELECT count(*) n FROM learner_state_effects WHERE kind='pure_cue_schedule_applied'").get()!.n,1);
+}));
+
+// One-time recovery reuses the production close path without changing live study.
+import { previewEnoughRecovery, applyEnoughRecovery } from '../scripts/lib/recover-enough-session.ts';
+function stuckEnoughSession() {
+  createVocabularySession({sessionId:'stuck',words:[{wordId:'b',mode:'practice'}]},now);
+  const log=actions(present('b','b'),response('b',false),finish,{kind:'word_wrap',payload:{wordId:'b',reason:'enough'}});
+  appendVocabularySessionActions('stuck',log,now);
+  return log;
+}
+const recoveryDay='2026-10-18T10:00:00.000Z';
+test('one-time Enough recovery previews without writes and closes historically with downstream dispatch once',()=>alice(()=>{
+  const log=stuckEnoughSession();const before=sql.prepare('SELECT total_changes() n').get()!.n;
+  const plan=previewEnoughRecovery('stuck',recoveryDay);
+  assert.equal(sql.prepare('SELECT total_changes() n').get()!.n,before);
+  assert.equal(plan.closedAt,'2026-10-17T10:00:15.000Z');
+  const result=applyEnoughRecovery('stuck',plan.digest,recoveryDay);
+  assert.equal(result.recoveredAt,recoveryDay);assert.equal(result.status,'closed');
+  assert.equal(getVocabularyWordSchedule('b')!.lastPractisedAt,now);
+  assert.equal(getVocabularySession('stuck').completion?.metadata.activeDurationMs,null);
+  assert.deepEqual(getVocabularySession('stuck').actions,log);
+  assert.equal(count('vocabulary_post_session_dispatches'),1);
+  assert.equal(sql.prepare('SELECT status FROM vocabulary_post_session_dispatches').get()!.status,'queued');
+  assert.equal(count('learner_word_reserve_requests'),1);
+  assert.throws(()=>applyEnoughRecovery('stuck',plan.digest,recoveryDay),/no completion revision/);
+  assert.equal(count('vocabulary_post_session_dispatches'),1);
+}));
+test('one-time Enough recovery refuses stale preview and subsequent learner choices',()=>alice(()=>{
+  stuckEnoughSession();const plan=previewEnoughRecovery('stuck',recoveryDay);
+  sql.prepare("UPDATE learner_word_schedules SET state_version=state_version+1 WHERE learner_id='alice' AND word_id='b'").run();
+  assert.throws(()=>applyEnoughRecovery('stuck',plan.digest,recoveryDay),/plan changed/);
+  assert.equal(count('vocabulary_session_completions'),0);
+  changeVocabularyMode('b','practice',getVocabularyLearnerWord('b')!.stateVersion);
+  assert.throws(()=>previewEnoughRecovery('stuck',recoveryDay),/state changed/);
+}));
+test('one-time Enough recovery refuses later study and wrong ownership',()=>alice(()=>{
+  stuckEnoughSession();
+  assert.throws(()=>runWithLearnerId('bob',()=>previewEnoughRecovery('stuck',recoveryDay)),/not found/);
+  createVocabularySession({sessionId:'later-session',words:[]},recoveryDay);
+  assert.throws(()=>previewEnoughRecovery('stuck',recoveryDay),/Subsequent/);
+}));
+test('one-time Enough recovery rolls back staging and effects when closure fails',()=>alice(()=>{
+  stuckEnoughSession();const plan=previewEnoughRecovery('stuck',recoveryDay);
+  sql.exec("CREATE TRIGGER fail_recovery BEFORE INSERT ON vocabulary_post_session_dispatches BEGIN SELECT RAISE(ABORT,'injected failure'); END;");
+  const before=getVocabularyWordSchedule('b');
+  assert.throws(()=>applyEnoughRecovery('stuck',plan.digest,recoveryDay),/injected failure/);
+  assert.equal(count('vocabulary_session_completions'),0);assert.equal(count('learner_state_effects'),0);
+  assert.equal(getVocabularySession('stuck').status,'active');assert.deepEqual(getVocabularyWordSchedule('b'),before);
+  sql.exec('DROP TRIGGER fail_recovery');
+  assert.equal(applyEnoughRecovery('stuck',plan.digest,recoveryDay).status,'closed');
+}));
+test('one-time Enough recovery rejects ordinary unfinished sessions',()=>alice(()=>{
+  createVocabularySession({sessionId:'stuck',words:[{wordId:'b',mode:'practice'}]},now);
+  appendVocabularySessionActions('stuck',actions(present('b','b')),now);
+  assert.throws(()=>previewEnoughRecovery('stuck',recoveryDay),/Final action/);
+}));
+
+test('one-time Enough recovery rejects disabled learners and later schedule writes',()=>alice(()=>{
+  stuckEnoughSession();
+  sql.prepare("UPDATE learners SET disabled_at=? WHERE learner_id='alice'").run(recoveryDay);
+  assert.throws(()=>previewEnoughRecovery('stuck',recoveryDay),/enabled learner/);
+  sql.prepare("UPDATE learners SET disabled_at=NULL WHERE learner_id='alice'").run();
+  sql.prepare("UPDATE learner_word_schedules SET last_practised_at=? WHERE learner_id='alice' AND word_id='b'").run(recoveryDay);
+  assert.throws(()=>previewEnoughRecovery('stuck',recoveryDay),/Scheduling changed/);
+}));
+
+test('one-time Enough CLI previews a read-only copy and applies only a confirmed plan',async()=>alice(async()=>{
+  stuckEnoughSession();
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'enough-recovery-cli-'));
+  const file=path.join(dir,'study.db');
+  try {
+    await backup(sql,file);
+    const cli=['--import','tsx','scripts/recover-enough-session.ts',`--database=${file}`,'--learner-id=alice','--session-id=stuck'];
+    const before=fs.readFileSync(file);
+    const plan=JSON.parse(execFileSync(process.execPath,cli,{encoding:'utf8'}));
+    assert.deepEqual(fs.readFileSync(file),before);
+    const result=JSON.parse(execFileSync(process.execPath,[...cli,'--apply=true',`--confirm-plan=${plan.digest}`],{encoding:'utf8'}));
+    assert.equal(result.status,'closed');
+    const copy=new DatabaseSync(file,{readOnly:true});
+    try {
+      assert.equal(copy.prepare("SELECT closed_at FROM vocabulary_sessions WHERE session_id='stuck'").get()!.closed_at,plan.closedAt);
+      assert.equal(copy.prepare('SELECT count(*) n FROM vocabulary_post_session_dispatches').get()!.n,1);
+    } finally {copy.close();}
+  } finally {fs.rmSync(dir,{recursive:true,force:true});}
 }));

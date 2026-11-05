@@ -12,9 +12,13 @@ export type EstimatedRunCost = {
   pricing: ModelTokenPricing;
 };
 
-// Current estimate, separate from raw artifacts. Luna/Terra rates verified
+// Model-specific estimates, separate from raw artifacts. GPT-5.6 Luna/Terra rates verified
 // 2026-09-02 against OpenAI's pricing page (2026-07-30 list, not Sol promo).
 const pricingByModel: Readonly<Record<string, ModelTokenPricing>> = {
+  // OpenAI Standard short-context rates, verified 2026-11-05: https://developers.openai.com/api/docs/pricing
+  'gpt-6-luna': { inputPerMillionUsd: 0.1, cachedInputPerMillionUsd: 0.01, cacheWriteInputPerMillionUsd: 0.125, outputPerMillionUsd: 0.5 },
+  'gpt-6-luna-high': { inputPerMillionUsd: 0.1, cachedInputPerMillionUsd: 0.01, cacheWriteInputPerMillionUsd: 0.125, outputPerMillionUsd: 0.5 },
+  'gpt-6-luna-xhigh': { inputPerMillionUsd: 0.1, cachedInputPerMillionUsd: 0.01, cacheWriteInputPerMillionUsd: 0.125, outputPerMillionUsd: 0.5 },
   'gpt-5.6-terra-high': { inputPerMillionUsd: 2, cachedInputPerMillionUsd: 0.2, cacheWriteInputPerMillionUsd: 2.5, outputPerMillionUsd: 12 },
   'gpt-5.6-terra-xhigh': { inputPerMillionUsd: 2, cachedInputPerMillionUsd: 0.2, cacheWriteInputPerMillionUsd: 2.5, outputPerMillionUsd: 12 },
   'gpt-5.6-terra-max': { inputPerMillionUsd: 2, cachedInputPerMillionUsd: 0.2, cacheWriteInputPerMillionUsd: 2.5, outputPerMillionUsd: 12 },

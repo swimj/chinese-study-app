@@ -1,13 +1,23 @@
-Assess the authored single-word exercise first: does it express a discernible single use, bundle distinct uses into a laundry list, or provide no defensible intended content? Only a discernible single use needs an association with the supplied active sense inventory. Supplied senses do not require a sense association in every response. This is an admission decision for future content improvement, not a judgment of whether a learner's historical answer was fair. Use the authored exercise and answer contract; learner reactions must not redefine its intended meaning.
+# Identify the exercise’s intended sense
 
-Keep the exercise separate from lexical background. The word's dictionary meaning and sense inventory describe what the word can mean; they are not the authored retrieval task. A laundry list requires distinct uses bundled in the exercise itself. An underspecified sentence can still identify a use through its object, situation, and target word; an empty placeholder for a polysemous word supplies no such evidence. Do not choose a sense or a laundry-list classification solely from background metadata.
+Read the authored exercise in `sourceContent` with its target word and accepted answers. Determine the intended use, then compare it with the supplied `senses`.
 
-Return exactly one outcome:
-- single_sense: a defensible intended use maps to one supplied sense. Poor wording or missing direction can still have interpretable intent. Return exactly that sense ID.
-- laundry_list: the exercise bundles distinct uses into a gloss list rather than one coherent retrieval task. Return no sense IDs. This routes the old exercise toward replacement by a word-level repertoire; do not map its glosses, require inventory coverage of them, or classify it as inventory_gap because an old gloss is missing. Several near-synonymous glosses describing one use are not a laundry list.
-- inventory_gap: the exercise has a defensible single intended use that is absent from the supplied inventory. Explain the apparent gap; do not invent IDs or extend the inventory. Return no sense IDs.
-- unmappable: the authored material does not give enough evidence to defensibly determine intended content. Explain the limitation and return no sense IDs. Do not guess just to enable repair.
+The exercise’s wording and construction establish what it is trying to practice. The dictionary meaning describes the word more broadly. A compact definition or several near-synonymous glosses can express one use; imperfect wording can still have a discernible intended use.
 
-The inventory represents useful learning coverage, not a lossless transcription of every dictionary gloss. Peripheral dictionary entries need not survive bootstrap. Judge a single-use cue against its actual intended content, not every possible meaning in lexical background; do not dismiss a genuinely missing intended use just to permit repair.
+The canonical inventory tracks uses of the exact target expression, including uncommon, literary or technical uses, but excludes meanings realized only through larger compounds or fixed expressions. Distinguish a target functioning in a grammatical construction from a component of a larger lexical item. A compound-only use is outside the inventory's scope, not a missing sense to add. Assess lexical ownership before matching a label, including when an older supplied entry describes the larger expression's meaning.
 
-Return outcome, rationale, and senseIds. A mapping retained in the authored snapshot is historical evidence to assess, not authority to ignore conflicting authored content. An established intended sense does not supply missing instructions to a learner. For example, a photo-printing cloze targeting enlargement can map to enlargement while still failing to communicate larger versus smaller. This call does not decide that fairness question, repair content, or publish changes.
+Return one outcome:
+
+- `single_sense`: the intended use maps to one supplied sense. Return that sense’s reference in `senseIds`.
+- `inventory_gap`: the exercise has a discernible single intended use of the exact target, eligible under this inventory scope, that is absent from the supplied inventory. Briefly describe the missing use and return an empty `senseIds` array.
+- `unmappable`: the exercise does not establish a defensible single intended use of the exact target, including when its intended meaning belongs only to a larger compound or fixed expression. Briefly explain why and return an empty `senseIds` array.
+
+Worked mapping decisions:
+- Target 垂, a cue meaning “hang or droop downward,” with a supplied physical hanging/drooping sense: `single_sense`. A sentence about lowering one's head can map to that sense when it expresses the same physical use; a different object does not by itself establish a missing sense.
+- Target 垂, a cue asking for “critically ill” through 病情____, or a cue completing 病情____危: `unmappable`. The intended lexical item is 垂危. The first completion is also malformed with 垂 alone, but retaining 危 in the second does not make the compound's use a target-level sense. Do not report an `inventory_gap` for that compound-only meaning or map it to an older compound-derived entry.
+- Target 垂, a cue asking for “set an example” through 垂范, or target 过时 with a use supported only by 过时不候: `unmappable` for the same lexical-boundary reason. If the target itself is the whole larger expression, assess that expression against its own inventory instead.
+- Target 有所, “Has improved to some extent” with 情况____改善: map to the supplied sense describing its unspecified-degree contribution. This is a grammatical construction using the target, so dependence on surrounding language does not make it unmappable. If that eligible intended use is absent, return `inventory_gap`.
+- Target 泡沫, a clear cue about an inflated housing market, with only a literal soap-bubble sense supplied: `inventory_gap` for the figurative use. Its omission is different from intentionally excluding a component meaning inside a larger word.
+- A cue combining unrelated intended meanings without establishing one use: `unmappable`. A short list of near-synonymous glosses for one coherent meaning can still be `single_sense`; do not confuse imperfect wording with multiple senses.
+
+Return only `outcome`, `rationale`, and `senseIds`. Keep the rationale brief and explain the meaning using readable sense labels or descriptions. Copy references exactly from the supplied inventory into `senseIds`.

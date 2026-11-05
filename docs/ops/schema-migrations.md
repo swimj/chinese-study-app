@@ -166,6 +166,71 @@ This data migration requires the stopped-writer procedure above; the app-only
 upgrade route is insufficient. Populated preservation, rollback, repeat and
 fresh-schema coverage live in `tests/shared-dictionary-baselines-migration.test.ts`.
 
+## Dispatch polling indexes (`0065`)
+
+`0065_vocabulary_dispatch_polling_indexes` adds partial indexes on queued
+dispatch creation order and running dispatch expiry. It changes no dispatch
+rows, evidence, completion records, statuses, leases, or retry policy. Index
+construction reads the existing dispatch table, including large retained
+evidence; allow for this one-time scan during rehearsal and stopped-writer
+migration. It does not rebuild the table or move evidence to another store.
+
+On a populated restored database, compare dispatch IDs, statuses, lease fields,
+errors, result JSON and evidence bytes before/after, and confirm session and
+completion records are unchanged. Verify the worker's queued SELECT uses
+`idx_vocabulary_dispatch_queued` and its expiry UPDATE uses
+`idx_vocabulary_dispatch_running_expiry` with `EXPLAIN QUERY PLAN`. Include
+an empty active queue with large terminal history, an old queued item, a live
+lease and an expired lease; preserve disabled-learner and explicit retry behavior.
+The local migration and processing tests cover preservation and indexed worker
+queries; after release, compare idle background SQLite load and CPU throttling.
+Use the schema-release procedure above, not the app-only upgrade route.
+
+## Case review ownership (`0066`)
+
+`0066_vocabulary_case_reviews` rebuilds the reflection-job table to allow
+numbered jobs within a canonical case and adds explicit review ownership,
+legacy lineage, proposal assessment provenance, and queue/history indexes.
+Historical case, job, proposal, invocation, and application IDs remain retained.
+Legacy sibling proposals remain unresolved alternatives; a newer no-change
+assessment is not resolved merely because an earlier proposal was closed.
+
+Run `node --import tsx scripts/inspect-vocabulary-case-review-migration.ts /absolute/path/app.db`
+for the read-only preflight. It reports lineage and active-work conflicts without
+content payloads.
+Multiple active jobs in one legacy chain make migration fail atomically; finish
+or explicitly resolve that work before the stopped-writer migration. Existing
+approval journal records remain required for replay of pending authorizations.
+
+The migration scans retained job/results and proposals and rebuilds the job
+table, requiring temporary disk and memory proportional to that history. On an
+isolated restored database, run the populated migration tests and compare IDs,
+raw evidence/results, proposal/application receipts, learner state, and queued
+work. Check integrity/FKs, canonical lineage, sequence ordering, current pointers,
+no-change visibility, and journal replay. Confirm failed/timed-out reassessment
+unfreezes the prior review and successful application resolves only the intended
+case. Use the schema-release rehearsal and stopped-writer procedure; this is not
+an app-only upgrade. The queue/API/UI stack is released together.
+
+## Pending repair targets (`0067`)
+
+`0067_vocabulary_repair_targets` adds a per-case repair-intent table, immutable repertoire-revision
+selection records, and a nullable captured-target field on reflection jobs. Existing jobs receive no inferred
+operator target. Historical case coverage and coverage history remain unchanged;
+the application no longer uses those rows as editable generation policy. Content,
+sense bindings, proposals, application receipts and learner history are preserved.
+The migration creates empty tables and adds a nullable column; it does not scan
+or rewrite authored content.
+
+Rehearse on a populated restore: compare existing content/bindings, case scope
+rows and proposal receipts before/after; verify the new intent and repertoire-revision tables are empty and
+existing jobs have null captured targets, then run integrity and foreign-key
+checks. Exercise set/reset, failed and successful reassessment, no-proposal
+results, and the approval worker against pending intent. Source content must stay
+unchanged until proposal application. Use the stopped-writer schema release,
+not app-only upgrade. Inventory reconciliation follows this migration and needs
+fresh snapshots and reviewed plans against the migrated schema.
+
 ## Writing the next migration
 
 Give the release agent a concise rehearsal note alongside the migration's tests

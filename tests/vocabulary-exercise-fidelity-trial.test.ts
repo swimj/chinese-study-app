@@ -1,0 +1,96 @@
+import {fidelityGeneralContentErrors} from '../scripts/lib/exercise-fidelity-validation.ts';
+import {generalExerciseSchema,generalExerciseInvocation,type GeneralExerciseSource} from '../server/vocabulary/general-exercise-authoring.ts';
+import assert from 'node:assert/strict';
+import {mkdtempSync,readFileSync,rmSync} from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import {execFileSync,spawnSync} from 'node:child_process';
+import {test} from 'node:test';
+
+function trial(options:string[],check:(archive:string)=>void,env=process.env){
+  const archive=mkdtempSync(path.join(os.tmpdir(),'fidelity-trial-'));
+  try{
+    const run=spawnSync(process.execPath,['--import','tsx','scripts/review-exercise-fidelity-trial.ts','--archive',archive,'--variant','check',...options],{encoding:'utf8',env});
+    assert.equal(run.status,0,run.stderr);check(archive);
+  }finally{rmSync(archive,{recursive:true,force:true});}
+}
+test('offline fidelity default stays bounded and captures production strict-schema wire references',()=>trial([],archive=>{
+  const index=JSON.parse(readFileSync(path.join(archive,'check-index.json'),'utf8'));
+  assert.equal(index.live,false);assert.equal(index.cases.length,6);assert.equal(index.modelChoice,'openai:gpt-6-luna-high');
+  for(const name of index.cases){
+    const request=JSON.parse(readFileSync(path.join(archive,'check',name,'request.json'),'utf8'));
+    const wire=JSON.parse(readFileSync(path.join(archive,'check',name,'wire-request.json'),'utf8'));
+    assert.equal(request.request.model,'gpt-6-luna');assert.equal(request.decodeAliases,true);
+    assert.equal(wire.response_format.type,'json_schema');assert.equal(wire.response_format.json_schema.strict,true);
+    assert.equal(wire.max_completion_tokens,name.startsWith('general-')?24000:50000);
+    assert.ok(!request.request.userPrompt.includes(`sense-${name.split('-')[1]}-1`));
+  }
+}));
+test('offline fidelity can select a registered non-strict arm and reflection settings',()=>trial(['--model-choice','zai:glm-5.3-flash-high','--profile','reflection','--cases','general-簋'],archive=>{
+  const wire=JSON.parse(readFileSync(path.join(archive,'check','general-簋','wire-request.json'),'utf8'));
+  assert.equal(wire.model,'glm-5.3-flash');assert.deepEqual(wire.response_format,{type:'json_object'});
+  assert.match(wire.messages[0].content,/JSON Schema/);assert.ok(wire.max_tokens>0);
+}));
+
+
+// Historical reference policy must not be replaced by current publication policy.
+test('fidelity trials preserve nullable historical bindings while current wire rejects them',()=>{
+  const source:GeneralExerciseSource={word:{wordId:'word',hanzi:'得以',traditional:'得以',pinyin:'déyǐ'},
+    uses:[{id:'canonical-use',label:'become able because conditions permit',notes:[],exampleIds:[]}],examples:[]};
+  const historical=generalExerciseSchema(source);
+  historical.properties!.exercises.minItems=1;
+  historical.properties!.exercises.items!.properties!.sourceUseId={type:['string','null'],enum:[null,'canonical-use']};
+  const current=generalExerciseInvocation(source).outputSchema;
+  const item={id:'one',sourceUseId:null,stimulus:{kind:'direct_text',text:'Be able to do something because conditions permit it.'},teachingNote:null};
+  assert.deepEqual(fidelityGeneralContentErrors(source,{exercises:[item]},historical),[]);
+  assert.ok(fidelityGeneralContentErrors(source,{exercises:[item]},current).length);
+  assert.deepEqual(fidelityGeneralContentErrors(source,{exercises:[{...item,sourceUseId:'s1'}]},current),[]);
+  for(const schema of [historical,current]){
+    const sourceUseId=schema===historical?null:'s1';
+    assert.ok(fidelityGeneralContentErrors(source,{exercises:[{...item,sourceUseId:'unknown'}]},schema).length);
+    assert.match(fidelityGeneralContentErrors(source,{exercises:[{...item,sourceUseId,stimulus:{kind:'direct_text',text:'The answer is 得以.'}}]},schema).join(' '),/exposes.*answer/);
+    assert.match(fidelityGeneralContentErrors(source,{exercises:[{...item,sourceUseId,stimulus:{kind:'phrase_cloze',frame:'Become able.',text:'没有空格。'}}]},schema).join(' '),/blank|cloze/i);
+  }
+  assert.ok(fidelityGeneralContentErrors(source,{exercises:[]},historical).length);
+  assert.deepEqual(fidelityGeneralContentErrors(source,{exercises:[]},current),[]);
+});
+
+test('single authoring trial projects supplied references and retains source and encounter meanings',()=>trial(['--cases','comparison-稠密-密集'],archive=>{
+  const captured=JSON.parse(readFileSync(path.join(archive,'check','comparison-稠密-密集','request.json'),'utf8'));
+  const input=JSON.parse(captured.request.userPrompt);
+  assert.equal(captured.request.outputSchemaName,'vocabulary_reflection_single_improvement_v4');
+  assert.deepEqual(Object.keys(captured.request.outputSchema.properties),['summary','source','sharedExercise','additionalExercises']);
+  assert.deepEqual(input.words.map((word:{ref:string;form:string})=>[word.ref,word.form]),[['target','稠密'],['response_1','密集']]);
+  assert.equal(input.source.prompt,captured.fixture.input.sourceContent.body.prompt);
+  assert.equal(input.encounters[0].responses[0].response,'密集');
+  assert.ok(!captured.request.userPrompt.includes('comparison-word-'));
+  assert.ok(!captured.request.userPrompt.includes('comparison-source-'));
+}));
+
+test('single trial freezes legacy v4 schema and input for the pre-authoring baseline',()=>{
+  // Retain the exact historical sources in a temporary Git repository: the CLI
+  // must exercise revision reads even in a shallow CI checkout.
+  const baseline=mkdtempSync(path.join(os.tmpdir(),'fidelity-baseline-'));
+  const fixture=path.resolve('tests/fixtures/exercise-fidelity-v4');
+  const env={...process.env,GIT_DIR:path.join(baseline,'.git'),GIT_WORK_TREE:fixture};
+  const git=(args:string[])=>execFileSync('git',args,{env,encoding:'utf8'}).trim();
+  try{
+    git(['init','--quiet']);
+    git(['add','server']);
+    git(['-c','user.name=Fixture','-c','user.email=fixture@example.invalid','-c','commit.gpgsign=false','-c','core.hooksPath=/dev/null','commit','--quiet','-m','Retained pre-authoring baseline']);
+    const revision=git(['rev-parse','HEAD']);
+    trial(['--cases','comparison-稠密-密集','--baseline-revision',revision],archive=>{
+      const captured=JSON.parse(readFileSync(path.join(archive,'check','comparison-稠密-密集','request.json'),'utf8'));
+      const input=JSON.parse(captured.request.userPrompt);
+      assert.equal(captured.request.outputSchemaName,'vocabulary_reflection_single_improvement_v4');
+      assert.deepEqual(Object.keys(captured.request.outputSchema.properties),['diagnosis','operations','responseExercises','pureCueReferral']);
+      assert.ok(input.responseCandidates[0].wordId);
+      assert.ok(input.sourceContent.contentId);
+      const referral=captured.request.outputSchema.properties.pureCueReferral.anyOf.find((schema:{type:string})=>schema.type==='object');
+      assert.ok(referral.properties.draft.required.includes('semanticAxis'));
+      assert.equal(captured.request.systemPrompt,`\n\n${readFileSync(path.join(fixture,'server/vocabulary/reflection-prompts/single-improvement.md'),'utf8')}`);
+      const index=JSON.parse(readFileSync(path.join(archive,'check-index.json'),'utf8'));
+      assert.equal(index.resolvedRevision,revision);
+    },env);
+  }finally{rmSync(baseline,{recursive:true,force:true});}
+});

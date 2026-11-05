@@ -2,6 +2,10 @@
 export class OperatorPrefetchCache<T> {
   private readonly entries = new Map<string, { value: T; bytes: number }>();
   private bytes = 0;
+  private generation = 0;
+  epoch():number { return this.generation; }
+  invalidateWhere(predicate:(value:T)=>boolean):void { this.generation++; for(const [key,entry] of this.entries)if(predicate(entry.value))this.delete(key); }
+  setIfCurrent(key:string,value:T,epoch:number):boolean { if(epoch!==this.generation)return false;this.set(key,value);return true; }
   constructor(private readonly maxEntries = 20, private readonly maxBytes = 4 * 1024 * 1024) {}
   get(key: string): T | undefined { return this.entries.get(key)?.value; }
   set(key: string, value: T): void {

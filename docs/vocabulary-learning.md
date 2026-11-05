@@ -72,6 +72,11 @@ subsequent sessions; admission to a new session does not guarantee an exercise
 will be shown. Account and private-content access checks remain live. The current
 card's personal notes remain a separate indexed learner lookup.
 
+Presentation validation compares accepted-answer forms with the retained content
+version as sets of exact strings: order and duplicate entries do not change
+membership. Grading criteria and source material must still match exactly. This
+comparison preserves the frozen snapshot and its display order.
+
 A connection-scoped cache holds at most 64 session runtimes, keyed by learner
 and session. SQLite remains authoritative. Every access probes session ownership,
 status and the latest indexed action sequence/identity. A mismatch, eviction or
@@ -118,6 +123,20 @@ including initial and current versions. Update preserves identity; replacement
 creates a new identity and retires the predecessor atomically. Expected versions
 reject stale changes. Session composition captures authored versions and current
 identity-level sense mappings. Later serving uses that retained material.
+
+`sense-readiness.ts` distinguishes an unestablished catalog from an established
+catalog with zero active senses. The latter is a valid result and does not call
+the inventory provider again. `sense-inventory-contract.ts` accepts an empty
+`senses` array; readiness establishes the catalog and resolves unknown useful
+defaults to `[]`. A nonempty inventory with no selected defaults instead retains
+the operator-review recommendation.
+
+`server/db/vocabulary-sense-eligibility.ts` supplies the shared empty-inventory
+check that excludes those words from new session admission, ordinary and pure-cue accepted answers, and contrast choices.
+It applies before capacity allocation and when retaining the session's content.
+Stash membership, learner scheduling and historical content are not deleted.
+Existing session payloads keep their pinned material. The learner interface has
+no dedicated explanation or customization flow for this state.
 
 `content_words` describes targets and contextual relationships. Accepted-answer
 membership is separate; an answer word must also have a content relationship.
@@ -167,10 +186,12 @@ use their own eligibility. The initial vocabulary UI and operator proposals do
 not expose suppression or its reversal.
 
 Solidify freezes its enabled recognition/production directions in `solidifySkills`
-when the session starts. Daily coverage requires that subset, and ordinary warmup
-still uses the introduction. A single enabled direction can cover the day but
-cannot qualify for automatic graduation; both disabled excludes the word from
-admission. A later skill-setting change affects subsequent sessions, not the
+when the session starts. Daily coverage requires that subset. For familiar priming,
+the warmup uses retained introduction material in a
+[separate reveal sequence](implementation/vocabulary-ui.md#introduction-and-warmup),
+rather than replaying the teaching walkthrough. A single enabled direction can
+cover the day but cannot qualify for automatic graduation; both disabled excludes
+the word from admission. A later skill-setting change affects subsequent sessions, not the
 active session's frozen directions or coverage requirements; see the
 [retained payload](#retained-session-payload-and-hot-path-work).
 
@@ -218,6 +239,22 @@ word and updates only the exercised skill at closure. Completed review assessmen
 also applies the shared six-hour word recency guard, preventing another due skill
 from immediately bringing that word back. Production lapses shorten its interval
 to six hours; Maintain retains its temporary-refresh policy.
+
+Clean Practice/Maintain word-skill recall uses
+`(interval + max(0, elapsed - interval) / 2) × ease`, rounded up to hours before
+the existing ±1-hour jitter. A four-day interval recalled after twelve days at
+2.5 ease therefore earns about twenty days. Elapsed time runs from that skill's
+stored last-study timestamp to its first effective response in the session;
+help-used responses earn no extra elapsed credit. Failures still reset to six
+hours, and no-response coverage grants no recall credit. The policy applies to
+production, recognition and contextual selection, including Maintain review,
+but not Solidify or independent pure cues.
+
+Word-skill last-study timestamps record the latest effective response, preserving
+a newer stored timestamp when an older session closes. Older history may still
+contain finalization timestamps; it remains usable conservatively without a
+backfill. Due dates and the shared recency guard remain anchored to finalization,
+while delayed finalization/retries cannot increase the elapsed retention credit.
 
 ### Preview and admission
 
@@ -292,6 +329,12 @@ explains repair stages.
 
 ### Dispatch and model routing
 
+Dispatch polling uses partial indexes for queued work in creation order and
+running work by lease expiry. Completed and failed dispatch evidence remains
+available for investigation without entering either active-work index. Queue
+membership follows status, not session age, so old queued work and expired
+claims remain discoverable after an interruption.
+
 `processing-worker.ts` closes due completions and ingests evidence even when
 provider work is disabled. Learner-feedback and exercise-improvement jobs have
 separate claims and outcomes. Teaching issues stay manual. Failed calls and
@@ -299,12 +342,15 @@ expired unknown outcomes require explicit retry, except for sense-mapping availa
 failures and preparation dependencies within their bounded automatic retry cycles; lease tokens fence late results.
 Maintenance and disabled-learner checks protect dispatch and publication.
 
-Individual reflection jobs select Luna, GLM, or Sol with equal probability,
+Individual reflection jobs select GPT-6 Luna, GLM, or Sol with equal probability,
 regardless of how many encounters their evidence contains. The separate batched
 policy retains GLM/Luna at 70/30 for up to ten items and Sol/GLM/Luna at 60/20/20
 for larger bundles; vocabulary jobs do not currently batch unrelated cases. Selection is
 retained across stages and retries for learner feedback, improvements, and AI
-second opinions, except for sense mapping. The admission step that maps an authored
+second opinions, except for sense mapping. Saved GPT-5.6 Luna routes and reflection
+retries resolve to GPT-6 Luna for new calls; original run metadata and pricing remain
+historical. Sense-inventory and general-practice authoring also use GPT-6 Luna with
+high reasoning. The admission step that maps an authored
 exercise to the existing sense inventory starts with OpenAI `gpt-6-luna` with high
 reasoning, including operator reassessments. Mapping availability failures receive
 three attempts, with 30- and 60-second backoff. After the third consecutive failure,
@@ -336,7 +382,11 @@ lifecycle changes can change membership. The existing reserve tables and setting
 triggers remain authoritative. Vocabulary add, enrollment, stash, dismissal, mode
 and closure writes request reconciliation; the periodic word-preparation runtime
 reconciles pending learners. Preview and Start also reconcile before composition.
-Only bootstrap and teaching jobs are queued for reserve candidates.
+Only bootstrap and teaching jobs are queued for reserve candidates. Established
+empty inventories are excluded from the reserve, freeing their slots for eligible
+words. If bootstrap establishes an empty inventory, dependent queued work is
+paused with its attempt evidence retained; reconciliation does not regenerate an
+inventory to manufacture teaching demand.
 
 ### Preparation compatibility
 
@@ -373,13 +423,31 @@ The shared teaching pipeline generates the introduction first, then exercises
 conditioned on that delivered material. A failed companion call preserves the
 successful introduction. No session waits for either workflow.
 
-A wholly unprepared word therefore uses four authoring calls: lexical bootstrap,
+For a wholly unprepared word with eligible selected senses, the pipeline uses
+five authoring calls: inventory/default selection, example enrichment,
 introduction, teaching exercises, and the independent general-practice pool.
-The first three establish a ready teaching repertoire; general practice is
-prepared after committed teaching completion. These are shared artifacts, not
-per-learner or per-session calls. The starting general v4 and teaching-exercise v2
+The first four establish a ready teaching repertoire; general practice is
+prepared after committed teaching completion. An empty inventory stops after
+inventory generation. These are shared artifacts, not per-learner or per-session
+calls. The general v5 and teaching-exercise v2
 briefs come from the retained [editorial trials](implementation/vocabulary-prompt-handoff.md).
 Existing artifacts are reused; retry creates additional attributable attempts.
+General preparation creates no demand for a word with an established empty
+inventory. A queued general-practice job settles as ready with a no-demand
+diagnostic, without an authoring call. Content-improvement admission records
+`no_senses_requested` before mapping or authoring when readiness returns that state. General authoring for
+nonempty inventories trusts selected senses, including specialized learning needs.
+Each new automatic exercise binds to one supplied sense so future serving policy
+can include or exclude it. Unmapped legacy/manual content keeps its existing rules.
+An empty authoring result preserves its valid invocation and recommendation,
+publishes no exercises, and requires operator review without automatic retries.
+An explicit operator retry can start another bounded cycle; selected coverage
+is unchanged. The v5 prompt and empty-output schema change generation identity,
+but each source keeps its existing automatic lifecycle: earlier ready pools,
+queued/running work and exhausted budgets are retained. A prompt rollout does
+not add a second pool or reset attempts. Unstarted work binds the current authoring
+contract when claimed. Operator content review and explicit retries remain
+separate from automatic preparation.
 
 ### Preparation retries
 
@@ -494,8 +562,8 @@ all 12 study items before handing the fixture back.
 
 Start the backend with that directory, the printed learner, and seed; point Vite's
 `VITE_API_BASE` at that API. The presentation fixture is
-`/tests/browser/vocabulary-ui.html`, the operator fixture is
-`/tests/browser/vocabulary-operator.html`, and the real-hook cancellation regression
+`/tests/browser/vocabulary-ui.html`, the operator review fixture is
+`/tests/browser/vocabulary-case-review.html`, and the real-hook cancellation regression
 fixture is `/tests/browser/vocabulary-controller.html` (also `?mode=undo`).
 The prompt experiment harness retains offline inputs, outputs, variants, and
 review notes; see [its handoff](implementation/vocabulary-prompt-handoff.md).

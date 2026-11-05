@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
+import { vocabularySingleImprovementSchema } from '../server/vocabulary/exercise-improvement-authoring.ts';
+import { validateJsonSchema } from '../server/llm/json-schema-validator.ts';
 
 const original = readFileSync(new URL('../server/reflection/prompts/staged-diagnosis.md', import.meta.url), 'utf8');
 const reasoning = readFileSync(new URL('../server/vocabulary/reflection-prompts/reasoning.md', import.meta.url), 'utf8');
@@ -45,4 +47,27 @@ test('shared vocabulary reasoning leaves output and operation authority to curre
   assert.ok(reasoning.includes('Contrast creation, production suppression, bootstrap, and post-reveal teaching\nchanges are diagnostic considerations only; do not fabricate those operations.'));
   assert.ok(reasoning.includes('each option need not prove a distinct pedagogical dimension.'));
   assert.ok(reasoning.includes('The current\nimprovement call can author wording only within its supplied answer contract.'));
+});
+
+
+// These guard documented prompt lineage, not model quality. Live trial results
+// and editorial disagreements are retained separately in the prompt README.
+test('general repertoire preserves the full v4 authoring guidance and keeps examples exploratory',()=>{
+  const baseline=readFileSync(new URL('../server/word-content-lab/vocabulary-experiments/prompts/general-exercises-v4.md',import.meta.url),'utf8');
+  const current=readFileSync(new URL('../server/word-content-lab/vocabulary-experiments/prompts/general-exercises-v5.md',import.meta.url),'utf8');
+  for(const paragraph of baseline.trim().split('\n\n').filter(part=>!part.startsWith('#')&&!part.startsWith('Return only `exercises`'))){
+    assert.ok(current.includes(paragraph),`retained baseline paragraph: ${paragraph.slice(0,70)}`);
+  }
+  assert.match(current,/starting points for\nexploration, not templates/);
+  assert.match(current,/No example format is an essential hallmark/);
+  assert.match(current,/classification quiz/);
+  assert.doesNotMatch(current,/source exercise under review|Explain no extra fields/);
+});
+
+test('worked authoring outputs are valid examples of the active JSON contract',()=>{
+  const brief=readFileSync(new URL('../server/vocabulary/reflection-prompts/single-improvement.md',import.meta.url),'utf8');
+  const examples=[...brief.matchAll(/```json\n([\s\S]*?)\n```/g)].map(match=>JSON.parse(match[1]!));
+  assert.equal(examples.length,3);
+  for(const example of examples)assert.deepEqual(validateJsonSchema(example,vocabularySingleImprovementSchema),[]);
+  assert.deepEqual(examples.map(example=>example.source.decision),['keep','revise','retire']);
 });

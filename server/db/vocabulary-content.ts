@@ -1,5 +1,6 @@
+import { resolveVocabularySenseCoverage } from './vocabulary-sense-coverage.ts';
 import { randomUUID } from 'node:crypto';
-import { vocabularyAuthoredPromptBody } from '../../src/domain/vocabulary-production-coverage.ts';
+import { vocabularyAuthoredPromptBody,vocabularyPhraseClozeError } from '../../src/domain/vocabulary-production-coverage.ts';
 import type { VocabularyActor, VocabularyBackendEvent, VocabularyContent, VocabularyContentDraft,
   VocabularyJson, VocabularyMode, VocabularySense, VocabularySenseCatalog, VocabularyTeachingBinding,
   VocabularyWordRelationship } from '../../src/domain/vocabulary-content.ts';
@@ -127,6 +128,7 @@ function expectVersion(content: VocabularyContent, expected: number): void {
 function validateDraft(draft: VocabularyContentDraft): void {
   positive(draft.payloadVersion, 'payload version');
   json(draft.body);
+  const clozeError=draft.availability==='retired'?null:vocabularyPhraseClozeError(draft.body);if(clozeError)throw new Error(clozeError);
   if (draft.contentId !== undefined) nonempty(draft.contentId, 'content identity');
   if ((draft.accessScope === 'private') !== (typeof draft.ownerLearnerId === 'string' && draft.ownerLearnerId.trim().length > 0)) {
     throw new Error('Private content requires its owner; shared content has no owner');
@@ -281,7 +283,8 @@ export function listVocabularyExercises(input: { wordId: string; mode: Vocabular
     AND (c.access_scope='shared' OR c.owner_learner_id=?)
     AND (? != 'maintain' OR (s.suitability='curated' AND s.assessed_content_version=c.version))
     ORDER BY c.content_id`).all(input.wordId,input.mode,learnerId,input.mode) as Array<{ content_id: string }>;
-  return rows.map((row) => requiredContent(row.content_id));
+  const coverage=resolveVocabularySenseCoverage(input.wordId),included=new Set(coverage.includedSenseIds),excluded=new Set(coverage.word.excludedSenseIds);
+  return rows.map((row) => requiredContent(row.content_id)).filter(content=>content.kind!=='exercise'||content.skill!=='production'||!content.words.some(word=>word.wordId===input.wordId&&word.senseId!=null&&(coverage.selectionEstablished?!included.has(word.senseId):excluded.has(word.senseId))));
 }
 /** Resolves exact teaching versions, but current retirement/quarantine/access always gates fresh serving. */
 export function getVocabularyTeachingExercises(introductionId: string): VocabularyContent[] {

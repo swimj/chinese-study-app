@@ -75,15 +75,44 @@ and application validate source versions and effect scope. Application records
 an idempotent receipt; stale bases or changed drafts require renewed validation
 and approval. Advisory second opinions cannot authorize or apply changes.
 
+An improvement review case owns an immutable encounter group and a continuing
+operator review lifecycle. Holistic reflection jobs are numbered within that
+case; model invocations and provider retries belong to a job. Only one job may
+be queued or running per case. Advisory opinions retain their exact reviewed
+proposal version and do not become the authoritative assessment.
+
 Operator reassessment pins the current source identity and version at submission.
 A difference from the historical assessed version requires explicit operator
-confirmation. Source identity and version govern reassessment consistency;
-structural content comparisons do not substitute for version authority. A later
-source revision invalidates queued or in-flight work and proposals based on that
-version. Fresh mapping and assessment belong to the new case. Its link to the
-original assessment preserves provenance without making its encounters evidence
-for the new assessment. Retry retains the pinned version; it does not silently
-move the request to another revision.
+confirmation. Queuing reassessment freezes the case's proposal and review edits,
+resolution, approval, and repair-target changes until that job terminates. Shared
+word policy retains its own authority and consistency checks. Successful
+publication atomically selects the new assessment and supersedes the prior
+current proposal; failure or timeout leaves the prior review material intact.
+The case identity and original creation time remain stable. Previous jobs,
+proposals, invocations, and decisions remain attributable within the case.
+
+Source identity and version govern reassessment consistency. A later source
+revision invalidates queued or in-flight work and proposals based on that version.
+The new job maps the source unless it captures an operator-selected repair target.
+Original served snapshots
+remain distinct from its pinned current source. Retry retains the pinned version;
+it does not silently move to another source or supersede a newer assessment.
+Case review resolution is separate from job completion and approval progress:
+queued authorization is not successful application. Pending and failed approvals
+remain attributable, and application receipts prevent duplicate effects.
+
+Exercise-local assessment owns the coherent content plan, including the source's
+disposition, a complete shared draft, and any target or response-word practice.
+The [content repair contract](vocabulary-learning.md#content-repair-boundaries)
+defines source repair, distinctive refinements, and optional enrichment.
+Shared-cue integration chooses a compatible destination or creates that exact
+draft; it cannot veto the established pedagogical plan. Proposed shared answers
+and response-word additions require uniquely resolved lexical identities;
+unresolved responses serve as encounter evidence for target improvement.
+Operator editorial changes and deliberate selection of proposal parts
+remain authoritative; generated components do not impose automatic dependency
+propagation. New response-word exercises retain exact lexical identity without
+inventing canonical sense mappings.
 
 Learner feedback and bounded scheduling compensation have authority independent
 of content review. Reading a lesson is not content approval, and applying a
@@ -108,3 +137,104 @@ data changes use versioned migrations and the
 must satisfy the [release runbook](../docs/ops/hosted-beta-deployment.md).
 Migration and release evidence are specific to an operation, not implied by
 these contracts or by passing implementation tests.
+
+### Canonical senses and useful selection
+
+For now, inventory generation groups uses under the supplied simplified spelling
+and pronunciation, without a separate inventory for each traditional spelling.
+Traditional forms remain lexical data but are not supplied to inventory or
+default-selection models. Glosses are optional, non-exhaustive hints; supported
+uses can be included and selected even when absent from those hints.
+
+Three separate records answer different questions:
+
+- The **canonical inventory** describes distinct uses of the exact learning target,
+  including peripheral, literary and technical uses. Grammatical constructions
+  can support a target's own use; meanings realized only through larger compounds
+  or fixed expressions belong to those larger targets. Each sense has a stable
+  identity and version. An established inventory with zero active senses is a
+  valid, settled result, distinct from an inventory that has not been established.
+- The **default useful selection** chooses which senses normally deserve teaching
+  and mapped production practice. Null means unknown; `[]` means explicitly none,
+  either saved by an operator or derived from an established empty inventory.
+  Repertoire bootstrap captures this shared selection; there is no separate
+  editable case-level repertoire selection.
+- An **invocation scope** records the exact canonical targets that a content call
+  will address. Later changes to defaults do not retarget that call or invalidate
+  its result. Source, mapping and canonical-version changes still fence publication.
+
+Unknown defaults initialize asynchronously when needed. Active senses imported
+from teaching establish their useful selection deterministically. Inventory-only
+words receive a selector decision over existing sense IDs; it cannot create or
+rewrite senses. An established empty inventory resolves unknown defaults to `[]`
+without a selector call. A nonempty inventory whose model recommendation selects
+no useful senses preserves the inventory and leaves defaults unknown with an
+operator finding. That recommendation does not become an operator's explicit none
+decision. A concurrent operator decision takes precedence.
+
+An established empty inventory makes the word ineligible for new sessions across
+teaching, recognition, production, shared accepted-answer sets and contrast
+choices. Stash membership, learner schedules, content history and retained session
+snapshots are preserved. Empty inventories create no authoring demand; pending work
+settles without provider calls or discarding its evidence. Content improvement
+records `no_senses_requested` before mapping or authoring. This eligibility boundary takes
+precedence over the nonempty-inventory selection rules below.
+
+| Consumer | Unknown defaults | Explicit none | Selected set |
+| --- | --- | --- | --- |
+| Mapped general production serving | Preserve exclusion-based eligibility | Filter all mapped production senses | Serve only active selected senses |
+| New automatic general practice demand | Record a durable prerequisite and initialize asynchronously | No new demand | Create demand when the immutable source intersects selection |
+| Teaching bootstrap | Initialize defaults before capturing enrichment targets | Operator disposition; no enrichment call | Enrich the captured canonical IDs |
+| Teaching/review components for a document | Use the document's canonical scope | Use the document's canonical scope | Use the document's canonical scope |
+| Repertoire invocation inheriting defaults | Initialize, then capture scope; unresolved findings remain visible | No generation or retirement | Author against the captured IDs |
+| Single-sense improvement | Map the full inventory and improve the mapped use | Same | Same |
+
+Repertoire bootstrap captures word defaults. In repertoire review, saving the
+selected defaults also updates the proposal in one transaction. Apply writes only
+its included exercises. Deselected exercises remain retained with that proposal:
+reselecting their sense restores them without a model call. A newly selected sense
+without retained exercises requires generation. Removing all proposed exercises
+requires dismissal or new generation; it never implies source retirement. Selection
+changes preserve an intended source replacement when exercises remain.
+Shared-default edits outside repertoire review do not retarget or invalidate an
+existing proposal.
+General preparation retains its immutable source document's mapped canonical
+scope across policy edits; teaching packages preserve document/component coherence.
+
+Single-exercise assessment records its observed source binding and proposed target
+separately. Assessment never changes source content or its sense binding. Only
+operator application publishes the reviewed content and binding together. An
+operator can set a pending target sense, even the currently assessed sense. That
+intent blocks application and manual proposal editing until reassessment uses it;
+reassessment skips automated mapping and can still find no faithful repair.
+Reset discards pending intent and restores the current assessment's target without
+bypassing independent stale-source, catalog or approval checks. Failed reassessment
+leaves the intent pending. Successful reassessment records the accepted intent,
+including when it produces no proposal; older alternatives cannot bypass it.
+Historical case-scope rows remain audit evidence and do not supply generation policy.
+
+For words without an established empty inventory, unmapped fallback exercises and
+recognition retain their serving rules. Historical encounters retain their exact
+served material. Missing or stale document-to-sense mappings raise an operator finding
+before new generation; runtime does not invent reconciliation or remap old sources.
+Coverage changes never imply retirement. A proposal may separately retire a general
+production exercise, subject to exact source, mapping and catalog checks. Operators
+edit sense policy directly with scope-version checks; content proposals never change it.
+
+Exercise improvement trusts the mapped sense's necessity, including specialized
+or personalized uses, and judges fidelity of the exact lexical target rather
+than serving popularity. It can propose retiring an individual exercise when no
+faithful repair is apparent; it does not propose sense exclusion. A nonempty
+requested scope whose model returns no faithful exercises can propose retiring
+only the assessed source. This quality decision is distinct from an empty
+requested scope, which performs no generation and proposes no content change.
+Every retirement remains operator-reviewed. New automatic repertoire exercises
+must reference a supplied selected sense; an absent or unknown reference fails
+validation rather than receiving an invented binding. Legacy and manually authored
+unmapped content retain their existing behavior. This reference requirement does
+not prescribe cue types or require exercises for every selected sense. An empty
+automatic preparation result instead publishes nothing and stops for operator
+attention, preserving the valid invocation and recommendation.
+
+Excluding a proposal operation does not apply, retire or change sense policy.
+Excluding a replacement retains its source. An empty selection cannot be applied.

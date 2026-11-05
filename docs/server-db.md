@@ -535,3 +535,28 @@ records the bounded in-place wording repair before a guarded update. The
 correction transaction owns application and audit together. See the
 [API map](api.md#operator-content-improvement) for historical read access. Migrations
 `0032` and `0033` require the offline schema migration procedure.
+
+### Vocabulary sense coverage
+
+`server/db/vocabulary-sense-coverage.ts` owns `vocabulary_word_sense_coverage`,
+`vocabulary_case_sense_coverage` and append-only
+`vocabulary_sense_coverage_history` (migration `0062`). Word defaults exclude
+active senses from shared general production. Case selections override that
+coverage for a review; SQL null inherits and `[]` selects none. Versioned writes
+and backend events preserve operator/service provenance without altering sense
+identity, authored content or learner history.
+
+Migration `0063_vocabulary_proposal_drop_actions` rebuilds
+`application_content_changes` to admit `retire`, preserving previous receipt rows
+and foreign keys and retaining immutable application history. Retirement points
+to the retired source revision and its content-history change; it creates no
+replacement content identity.
+
+Migration `0064` creates `vocabulary_default_selection_readiness`, owned by
+`server/vocabulary/default-useful-selection.ts`. Its lease, due time and bounded
+attempt count are separate from inventory creation. Recommendations retain their
+invocation and canonical IDs; model-empty findings remain unknown until an operator
+chooses useful senses. Shared default-useful IDs are nullable coverage state in
+`0061`; schema installation does not initialize that data. The
+[default-selection procedure](ops/default-useful-selection.md) runs repeatable
+bounded initialization separately from schema migration.

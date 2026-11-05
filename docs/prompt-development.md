@@ -27,10 +27,12 @@ reasoning guidance.
 For example, the [legacy pure-cue promotion prompt](../server/reflection/prompts/pure-cue-promotion.md)
 explains transferable language sense and natural production patterns before
 its detailed judgments and examples. The
-[vocabulary promotion prompt](../server/vocabulary/reflection-prompts/pure-cue-promotion.md)
-has a different call contract and narrower responsibility. Compare their
-linguistic guidance separately from their input fields and allowed actions;
-the legacy word-reconciliation actions do not belong in the vocabulary call.
+[vocabulary integration prompt](../server/vocabulary/reflection-prompts/pure-cue-integration.md)
+chooses a compatible shared destination for an exercise already authored by
+[single-exercise assessment](../server/vocabulary/reflection-prompts/single-improvement.md).
+Compare their linguistic guidance separately from their input fields and
+authority: integration needs natural-fit judgments, but does not author a new
+exercise or reconcile both words' repertoires.
 
 ## Adapt the contract explicitly
 

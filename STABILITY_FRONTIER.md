@@ -40,9 +40,27 @@ belong there and in task instructions, not in this frontier.
   teaching completion commits at closure. The implementation guide describes
   reserve sizing and preparation compatibility; historical learner state and
   established sense identities survive source refresh.
+  Canonical sense inventory and default-useful selection are distinct. Inventory
+  tracks uses of the exact target, excluding meanings realized only in larger
+  compounds or fixed expressions while allowing grammatical constructions.
+  An established empty inventory is a settled result: the word stays stashed but
+  cannot participate in new sessions, including shared answers or contrast choices.
+  Retained sessions and history are preserved. Unknown selection initializes from
+  teaching imports or an ID-preserving selector; an empty inventory resolves it
+  to `[]`. A nonempty inventory with no model-selected useful senses needs operator
+  review; explicit canonical/document scopes remain usable independently for
+  nonempty inventories.
 - **Reflection:** private learner lessons and internal content proposals run
-  independently. Operators approve content applications. Backend judgment can
-  compensate scheduling without learner approval or content publication.
+  independently. An improvement case retains its encounter group and numbered
+  holistic assessment jobs; only one job may be queued or running within it.
+  Single-exercise repair targets are pending operator intent; assessment leaves
+  source content and sense bindings unchanged until proposal application. Word
+  defaults alone define repertoire bootstrap selection. Historical case scopes
+  remain evidence, with no runtime policy authority.
+  Reassessment freezes case review mutations until termination and preserves
+  earlier assessments as provenance. Operators approve exact content revisions;
+  case resolution is distinct from job completion and queued approval. Backend
+  judgment can compensate scheduling without learner approval or content publication.
 - **Hosted boundary:** Mandarin, invite-only desktop web, one-origin frontend
   and Express API, shared SQLite, Clerk identity, and Fly/Litestream are the
   current beta baseline. Hosted dogfood history is valued data; the preserved

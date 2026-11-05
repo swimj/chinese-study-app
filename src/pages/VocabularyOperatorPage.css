@@ -104,3 +104,180 @@
 .vocabulary-reassessment-confirmation { flex-basis: 100%; }
 .vocabulary-reassessment-confirmation p { margin: .5rem 0; }
 .vocabulary-reassessment-confirmation button + button { margin-left: .5rem; }
+
+.vocabulary-repertoire-header { display: flex; flex-wrap: wrap; gap: .5rem 1.5rem; margin: 1rem 0; color: var(--text-secondary, #52676e); }
+.vocabulary-repertoire-header strong { color: var(--text, #172b32); margin-right: .35rem; }
+.vocabulary-source-summary { margin: .75rem 0; }
+.vocabulary-source-summary summary, .vocabulary-item-details summary, .vocabulary-full-draft summary { cursor: pointer; }
+.vocabulary-source-effect { margin: .35rem 0; font-weight: 600; }
+.vocabulary-operator-page .vocabulary-sense-group { padding: 0; margin: 1.25rem 0; border: 0; background: transparent; }
+.vocabulary-operator-page .vocabulary-sense-group > h3 { display: flex; gap: .75rem; align-items: baseline; margin: 0; padding: .5rem 0; border-bottom: 1px solid var(--border, #cad5d7); }
+.vocabulary-group-count { font-size: .9rem; font-weight: 400; color: var(--text-secondary, #52676e); white-space: nowrap; }
+.vocabulary-proposed-row { padding: .8rem 0; border-bottom: 1px solid var(--border, #cad5d7); min-width: 0; }
+.vocabulary-proposed-row-heading { display: flex; flex-wrap: wrap; gap: .5rem 1rem; align-items: center; justify-content: space-between; }
+.vocabulary-operator-page label.vocabulary-inclusion { display: flex; flex-direction: row; align-items: center; gap: .65rem; margin: 0; font-weight: 500; min-height: 2rem; }
+.vocabulary-inclusion input { width: 1.15rem; height: 1.15rem; flex: 0 0 auto; accent-color: #087a7b; }
+.vocabulary-proposed-row-heading select { width: auto; max-width: 100%; }
+.vocabulary-proposed-row .vocabulary-operator-cue { margin: .5rem 0; font-size: 1.1rem; }
+.vocabulary-proposed-excluded { background: var(--surface-muted, #f4f6f6); padding-inline: .65rem; }
+.vocabulary-proposed-excluded > .vocabulary-operator-cue { color: var(--text-secondary, #52676e); }
+.vocabulary-item-details { margin-top: .5rem; font-size: .95rem; }
+.vocabulary-compact-review pre { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 100%; }
+.vocabulary-cue-editor { display: grid; gap: .5rem; }
+.vocabulary-operator-page .vocabulary-cue-editor label { margin: .5rem 0; }
+
+.vocabulary-sense-coverage { border: 1px solid var(--border, #cad5d7); border-radius: .6rem; padding: .75rem; }
+.vocabulary-sense-coverage > summary { padding: .2rem; }
+.vocabulary-sense-coverage h3 { margin: .75rem 0 .25rem; }
+.vocabulary-sense-coverage fieldset { margin: .75rem 0; padding: .5rem .75rem; }
+.vocabulary-coverage-sense + .vocabulary-coverage-sense { border-top: 1px solid var(--border, #cad5d7); }
+.vocabulary-coverage-sense > details { margin: 0 0 .6rem 1.75rem; }
+.vocabulary-coverage-sense ul { padding-left: 1.25rem; }
+.vocabulary-sense-coverage .vocabulary-operator-actions { gap: .5rem; margin: .75rem 0; }
+
+.vocabulary-pure-cue-identities { min-width: 0; display: grid; gap: .75rem; }
+.vocabulary-pure-cue-identities label { display: grid; gap: .3rem; min-width: 0; }
+.vocabulary-pure-cue-identities select { width: 100%; min-width: 0; max-width: 100%; }
+.vocabulary-pure-cue-identities p { overflow-wrap: anywhere; }
+
+.vocabulary-case-heading, .vocabulary-case-navigation { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .75rem; }
+.vocabulary-case-heading h2 { margin: 0; }
+.vocabulary-case-heading { margin-bottom: 1rem; }
+.vocabulary-case-navigation { margin: 1rem 0; }
+.vocabulary-case-navigation > span { flex: 1; text-align: center; color: var(--text-secondary); }
+.vocabulary-case-card .vocabulary-operator-actions { margin-bottom: .75rem; }
+.vocabulary-case-review-page input[type="search"] { min-width: 0; width: 100%; padding: .6rem; font: inherit; color: inherit; background: var(--surface); border: 1px solid var(--border); border-radius: .4rem; }
+.vocabulary-case-review-page .vocabulary-operator-page { margin-top: 1rem; }
+.vocabulary-case-card .vocabulary-source-summary article + article { border-top: 1px solid var(--border); padding-top: .75rem; }
+@container (max-width: 540px) {
+  .vocabulary-case-navigation > span { order: 3; flex-basis: 100%; }
+  .vocabulary-case-navigation button { flex: 1; }
+  .vocabulary-case-review-page > header { align-items: flex-start; flex-wrap: wrap; }
+}
+
+/* The card scrolls inside its review frame; actions remain outside that scroll. */
+.vocabulary-case-frame { display: flex; flex-direction: column; height: min(76dvh, 58rem); min-height: 17.5rem; border: 1px solid var(--border); border-radius: .8rem; overflow: hidden; background: var(--surface); }
+.vocabulary-case-scroll { min-height: 5rem; flex: 1; overflow: auto; overscroll-behavior: contain; padding: .9rem; }
+.vocabulary-case-scroll .vocabulary-case-card { margin: 0; border: 0; padding: .3rem; }
+.vocabulary-case-action-frame { flex: 0 0 auto; max-height: 65%; overflow: auto; padding: .6rem .9rem; border-top: 1px solid var(--border); background: var(--surface); }
+.vocabulary-case-frame > .vocabulary-operator-actions { margin: 0; padding: .3rem .9rem; }
+.vocabulary-case-action-frame .vocabulary-operator-actions { margin: .4rem 0; gap: .4rem; }
+.vocabulary-case-action-frame button { padding: .5rem .75rem; }
+.vocabulary-case-action-frame .vocabulary-reassessment-control { margin-top: .4rem; }
+.vocabulary-review-note { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; }
+.vocabulary-review-note form { flex-basis: 100%; }
+.vocabulary-review-note textarea { min-height: 3rem; }
+.vocabulary-case-card .vocabulary-sense-group { margin: .5rem 0; }
+.vocabulary-case-card .vocabulary-sense-group > summary { cursor: pointer; padding: .65rem 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.vocabulary-case-card .vocabulary-group-count { margin-left: .5rem; white-space: normal; }
+
+.vocabulary-case-action-frame .vocabulary-operator-actions { flex-direction: row; flex-wrap: wrap; }
+.vocabulary-case-frame > .vocabulary-operator-actions { flex-direction: row; }
+
+/* Compact review surface. Full-detail editors keep their existing layout. */
+.vocabulary-case-review-page { width: 100%; max-width: none; height: 100dvh; min-height: 0; display: flex; flex-direction: column; }
+.vocabulary-case-review-page > header { display: flex; align-items: center; justify-content: space-between; gap: .75rem; flex-shrink: 0; padding: 1.35rem 0 .85rem; margin: 0; }
+.vocabulary-case-review-page > header h2 { font-size: 1.3rem; margin: 0; }
+.vocabulary-case-review-page button { border-radius: .375rem; padding: .5rem .7rem; line-height: 1.35; font-weight: 500; min-height: 0; box-shadow: none; transform: none; }
+.vocabulary-review-toolbar { display: flex; justify-content: space-between; flex-wrap: wrap; align-items: center; gap: 0 1rem; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.vocabulary-review-toolbar .vocabulary-operator-tabs { gap: 1rem; margin: 0; }
+.vocabulary-review-toolbar .vocabulary-operator-tabs button { padding: .8rem 0; border-radius: 0; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--text-secondary); font-size: .88rem; }
+.vocabulary-review-toolbar .vocabulary-operator-tabs button[aria-pressed=true] { border-bottom-color: var(--accent); color: var(--accent); }
+.vocabulary-review-toolbar .vocabulary-case-navigation { display: flex; gap: .5rem; margin: 0 0 0 auto; padding: 0; border: 0; font-size: .85rem; white-space: nowrap; }
+.vocabulary-case-frame { flex: 1; height: auto; min-height: 0; border: 0; border-radius: 0; overflow: visible; }
+.vocabulary-case-scroll { min-height: 5rem; padding: 1.5rem .25rem 1.75rem 0; scrollbar-gutter: stable; }
+.vocabulary-case-scroll .vocabulary-case-card { padding: 0; }
+.vocabulary-case-card .vocabulary-case-heading { gap: 1.25rem; margin-bottom: 1.35rem; align-items: baseline; }
+.vocabulary-case-card .vocabulary-case-heading h2 { font-size: 1.8rem; font-weight: 500; margin: 0; }
+.vocabulary-case-card .vocabulary-case-heading .vocabulary-operator-meta { font-size: .8rem; }
+.vocabulary-case-card .vocabulary-served-label { color: var(--text-secondary); font-size: .82rem; font-weight: 600; margin: 0 0 .75rem; }
+.vocabulary-case-card .vocabulary-served-lead { border-bottom: 1px solid var(--border); margin-bottom: 1.5rem; padding-bottom: 1.5rem; }
+.vocabulary-case-card .vocabulary-operator-cue { font-weight: 500; line-height: 1.6; margin: 0 0 .85rem; }
+.vocabulary-response-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: .5rem 1.25rem; }
+.vocabulary-response-row > div { display: flex; flex-wrap: wrap; align-items: baseline; gap: .35rem .75rem; }
+.vocabulary-response { display: inline-block; }
+.vocabulary-response small { color: var(--text-secondary); font-size: .8rem; }
+.vocabulary-case-card .vocabulary-encounter-toggle { background: transparent; color: var(--text-secondary); font-size: .8rem; padding: 0; line-height: inherit; }
+.vocabulary-encounter-toggle > span { display: inline-block; width: .75em; }
+.vocabulary-encounter-history[hidden] { display: none; }
+.vocabulary-case-card .vocabulary-encounter-history section { border: 0; border-top: 1px solid var(--border); border-radius: 0; margin: 1rem 0 0; padding: .75rem 0 0; }
+.vocabulary-case-card .vocabulary-sense-group { margin: 0; border-bottom: 1px solid var(--border); }
+.vocabulary-case-card .vocabulary-sense-group > summary { display: flex; align-items: baseline; gap: .75rem; padding: 1rem 0; border: 0; }
+.vocabulary-sense-group > summary::before { content: '›'; width: .75rem; }
+.vocabulary-sense-group[open] > summary::before { transform: rotate(90deg); }
+.vocabulary-sense-group > summary strong { flex: 1; }
+.vocabulary-case-card .vocabulary-group-count { font-size: .8rem; color: var(--text-secondary); margin: 0; }
+.vocabulary-proposed-row { margin-left: 1.55rem; }
+.vocabulary-pure-proposal { border-top: 1px solid var(--border); padding: 1rem 0; }
+.vocabulary-answer-change { display: flex; flex-wrap: wrap; gap: .65rem; align-items: baseline; }
+.vocabulary-answer-change strong { color: var(--accent); font-weight: 500; }
+.vocabulary-case-card .vocabulary-case-provenance { border: 0; border-top: 1px solid var(--border); border-radius: 0; margin: 1.5rem 0 0; padding: 1.25rem 0 0; font-size: .9rem; }
+.vocabulary-case-action-frame { flex-shrink: 0; border-top: 1px solid var(--border); padding: .85rem 0 1.1rem; max-height: 55dvh; overflow: auto; }
+.vocabulary-case-action-frame .vocabulary-operator-actions { margin: 0; gap: .5rem; flex-direction: row; align-items: center; }
+.vocabulary-action-spacer { flex: 1; }
+.vocabulary-more-actions { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; padding-top: .75rem; }
+.vocabulary-case-action-frame .vocabulary-reassessment-control { margin: 0; }
+.vocabulary-review-note form { margin-bottom: .8rem; }
+@media (max-width: 620px) {
+  .vocabulary-case-review-page > header h2 { font-size: 1.1rem; }
+  .vocabulary-case-review-page button { font-size: .88rem; }
+  .vocabulary-review-toolbar .vocabulary-operator-tabs { gap: .75rem; }
+  .vocabulary-review-toolbar .vocabulary-operator-tabs button { font-size: .8rem; }
+  .vocabulary-case-action-frame { padding-bottom: .75rem; }
+}
+
+.vocabulary-review-toolbar .vocabulary-case-navigation > span { order: 0; flex-basis: auto; }
+.vocabulary-review-toolbar .vocabulary-case-navigation button { flex: 0; }
+
+.vocabulary-case-action-frame { display: flex; flex-direction: column; }
+.vocabulary-review-note { order: -2; }
+.vocabulary-more-actions { order: -1; padding: 0 0 .75rem; }
+.vocabulary-case-review-page:focus { outline: none; }
+
+.vocabulary-repair-target { min-width: 0; padding: .65rem 0; }
+.vocabulary-repair-target label { display: grid; gap: .3rem; min-width: 0; flex: 1 1 16rem; }
+.vocabulary-repair-target-row { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem .75rem; }
+.vocabulary-repair-target-controls { padding: .5rem 0; }
+.vocabulary-repair-target .vocabulary-operator-actions { margin: 0; }
+.vocabulary-repair-target select { width: 100%; min-width: 0; max-width: 100%; }
+.vocabulary-repair-target p { margin: .5rem 0; }
+.vocabulary-case-action-frame > .vocabulary-repair-target { order: -2; }
+
+.vocabulary-operator-page .vocabulary-repair-target, .vocabulary-operator-page .vocabulary-sense-coverage { border: 0; border-radius: 0; padding: .5rem 0; }
+.vocabulary-repair-target > summary, .vocabulary-sense-coverage > summary { color: var(--text-secondary); }
+
+.vocabulary-reassessment-dialog { width: min(30rem, calc(100vw - 2rem)); max-height: calc(100dvh - 2rem); box-sizing: border-box; overflow: auto; padding: 1rem; border: 1px solid var(--border); border-radius: .75rem; background: var(--surface); color: var(--text); }
+.vocabulary-reassessment-dialog::backdrop { background: rgb(0 0 0 / 25%); }
+.vocabulary-reassessment-dialog > header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
+.vocabulary-reassessment-dialog h3 { margin: 0; }
+.vocabulary-reassessment-dialog .vocabulary-reassessment-control { display: flex; flex-direction: column; align-items: stretch; gap: .75rem; }
+.vocabulary-reassessment-dialog select { width: 100%; min-width: 0; }
+.vocabulary-reassessment-dialog .vocabulary-repair-target-row { flex-direction: column; align-items: stretch; }
+.vocabulary-reassessment-dialog .vocabulary-repair-target label { flex: none; margin: .25rem 0; }
+.vocabulary-reused-cue { border-left: 3px solid #4784ba; background: #f1f7fc; padding: 1rem 1.1rem; margin: 0 0 1rem; overflow-wrap: anywhere; }
+.vocabulary-reused-cue-heading { display: flex; align-items: baseline; flex-wrap: wrap; gap: .5rem .75rem; margin: 0 0 .85rem; }
+.vocabulary-reuse-badge { display: inline-flex; align-items: baseline; gap: .35rem; border: 1px solid #b7d2e9; border-radius: .35rem; padding: .15rem .5rem; color: #205782; background: #e4f0fb; font-size: .85rem; font-weight: 600; }
+.vocabulary-reused-cue > p:not(.vocabulary-reused-cue-heading) { margin: 0 0 .85rem; }
+.vocabulary-reused-cue summary { cursor: pointer; color: #205782; }
+
+.vocabulary-attention-page { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.vocabulary-attention-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; padding: .85rem 0; }
+.vocabulary-attention-toolbar label { display: flex; align-items: center; gap: .5rem; margin: 0; }
+.vocabulary-attention-toolbar select { width: auto; max-width: 100%; }
+.vocabulary-attention-toolbar .vocabulary-case-navigation { display: flex; align-items: center; gap: .5rem; margin-left: auto; }
+.vocabulary-attention-card { overflow-wrap: anywhere; }
+.vocabulary-attention-card .vocabulary-case-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: .75rem; }
+.vocabulary-attention-card .vocabulary-sense-coverage { border: 0; padding: 0; }
+.vocabulary-attention-card .vocabulary-sense-coverage > summary { display: none; }
+.vocabulary-attention-editor { flex: 1; min-height: 0; overflow: auto; }
+.vocabulary-attention-back { align-self: flex-start; margin: .75rem 0; }
+.vocabulary-attention-page .vocabulary-case-action-frame > div:empty { display: none; }
+.vocabulary-attention-page .vocabulary-case-action-frame > div + .vocabulary-operator-actions { margin-top: .5rem; }
+.vocabulary-operator-page > .vocabulary-attention-page { border: 0; border-radius: 0; padding: 0; margin: 0; background: transparent; }
+.vocabulary-attention-toolbar .vocabulary-case-navigation { margin: 0 0 0 auto; flex-wrap: nowrap; font-size: .85rem; }
+.vocabulary-attention-toolbar .vocabulary-case-navigation > span { order: 0; flex-basis: auto; white-space: nowrap; }
+.vocabulary-attention-toolbar .vocabulary-case-navigation button { flex: 0; }
+.vocabulary-attention-toolbar select { font-size: .85rem; }
+.vocabulary-attention-card fieldset { border: 0; padding: 0; margin: .75rem 0; }
+.vocabulary-attention-page .vocabulary-case-action-frame { flex-direction: row; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.vocabulary-attention-page .vocabulary-case-action-frame > .vocabulary-operator-actions { flex: 1; margin-top: 0; }

@@ -10,7 +10,7 @@ import { beforeEach,afterEach,test } from 'node:test';
 import { setDb } from '../server/db/connection.ts';
 import { runWithLearnerId } from '../server/db/learner-context.ts';
 import { adoptVocabularyPureCues } from '../server/vocabulary/pure-cue-serving.ts';
-import { createVocabularyContent,replaceVocabularyContent,updateVocabularyContent,getVocabularyContent,createVocabularySense,establishVocabularySenseCatalog,getVocabularySenseCatalog } from '../server/db/vocabulary-content.ts';
+import { createVocabularyContent,replaceVocabularyContent,updateVocabularyContent,getVocabularyContent,createVocabularySense,establishVocabularySenseCatalog,getVocabularySenseCatalog,getVocabularySenses,updateVocabularySense } from '../server/db/vocabulary-content.ts';
 import { createVocabularySession as createStoredSession,stageVocabularySessionCompletion,cancelVocabularySessionCompletion,closeVocabularySessionCompletion } from '../server/db/vocabulary-sessions.ts';
 import { addVocabularyWord,dismissVocabularyWord,getVocabularyLearnerWord,getVocabularyWordSchedule,enrollVocabularyDietWord } from '../server/db/vocabulary-learners.ts';
 import { startVocabularyStudy as startRuntime,composeVocabularySessionPayload,previewVocabularyStudy as previewRuntime,getVocabularyStudy,nextVocabularyExercise,commandVocabularyStudy } from '../server/vocabulary/study.ts';
@@ -57,7 +57,7 @@ beforeEach(()=>{
     INSERT INTO learner_word_state VALUES('alice','a','learning',2,NULL),('alice','b','review',0,NULL),('alice','new','unstudied',0,NULL);
     ALTER TABLE learner_word_state ADD COLUMN personal_notes TEXT NOT NULL DEFAULT '';
   `);
-  for(const file of ['0039_vocabulary_content.sql','0041_vocabulary_learner_state.sql','0042_vocabulary_sessions.sql','0047_vocabulary_dismissal.sql','0052_vocabulary_automatic_promotion_pause.sql','0023_session_debrief.sql','0048_vocabulary_connections.sql'])db.exec(fs.readFileSync(new URL(`../server/db/migrations/${file}`,import.meta.url),'utf8'));
+  for(const file of ['0062_vocabulary_sense_coverage.sql','0064_vocabulary_default_useful_senses.sql','0039_vocabulary_content.sql','0041_vocabulary_learner_state.sql','0042_vocabulary_sessions.sql','0047_vocabulary_dismissal.sql','0052_vocabulary_automatic_promotion_pause.sql','0023_session_debrief.sql','0048_vocabulary_connections.sql'])db.exec(fs.readFileSync(new URL(`../server/db/migrations/${file}`,import.meta.url),'utf8'));
   owner(()=>{
     exercise('general-1','a');exercise('general-2','a');exercise('teach-a','a','teaching');exercise('teach-new','new','teaching');
     for(const [wordId,contentId] of [['a','intro-a'],['new','intro-new']])createVocabularyContent({contentId,kind:'introduction',payloadVersion:1,
@@ -448,14 +448,21 @@ test('new and replacement pure cues adopt independently after an eligible accept
   assert.equal(view.currentEncounter?.snapshot.contentId,'replacement-pure');assert.equal(view.currentWordId,null);
 }));
 
-test('a pure cue with multiple accepted members retains all forms and credits none of their word schedules',()=>owner(()=>{
+test('a frozen pure cue with reordered accepted answers serves and retries, retaining all forms and crediting no word schedules',()=>owner(()=>{
   const cue=createVocabularyContent({contentId:'multiple-pure',kind:'exercise',payloadVersion:1,body:{prompt:'One of these expressions fits.'},exerciseType:'pure_cue',skill:'production',exerciseRole:'general',
     assessment:{match:'prepared'},accessScope:'shared',availability:'active',originKind:'human',words:[{wordId:'a',relation:'target'},{wordId:'b',relation:'target'}],
     answers:[{wordId:'a',acceptedForms:['甲']},{wordId:'b',acceptedForms:['乙']}]},actor);
   const beforeA=getVocabularyWordSchedule('a'),beforeB=getVocabularyWordSchedule('b');
   adoptVocabularyPureCues(new Date(Date.now()-7*3_600_000).toISOString());
-  createVocabularySession({sessionId:'multi-session',words:[]});let view=nextVocabularyExercise('multi-session','next');
-  assert.equal(view.currentEncounter?.snapshot.contentId,cue.contentId);assert.deepEqual(view.currentEncounter?.snapshot.assessment?.acceptedAnswers,['甲','乙']);
+  const context:VocabularySessionInitialContext={sessionId:'multi-session',words:[],reviewOrder:[{kind:'pure_cue',id:cue.contentId}]};
+  const payload=composeVocabularySessionPayload(context);
+  const retained=payload.snapshots[`${cue.contentId}/general`];assert.ok(retained.assessment);
+  // An already-open session can retain a different enumeration of the same answer set.
+  retained.assessment={...retained.assessment,acceptedAnswers:['乙','甲']};
+  createStoredSession({...context,payload});let view=nextVocabularyExercise('multi-session','next');
+  assert.equal(view.currentEncounter?.snapshot.contentId,cue.contentId);assert.deepEqual(view.currentEncounter?.snapshot.assessment?.acceptedAnswers,['乙','甲']);
+  const presented=view.session.actions;
+  view=nextVocabularyExercise('multi-session','next');assert.deepEqual(view.session.actions,presented);
   view=commandVocabularyStudy('multi-session','answer',{type:'response',response:'甲'});assert.deepEqual(view.session.projection.coveredWordIds,[]);
   view=commandVocabularyStudy('multi-session','finish',{type:'finishForNow'});
   const staged=stageVocabularySessionCompletion('multi-session',view.session.actions.length);closeVocabularySessionCompletion('multi-session',staged.completionId);
@@ -1070,4 +1077,70 @@ test('live HTTP actions never wake background workers; Start schedules a wake af
   call('POST /api/vocabulary/sessions/:id/next',id,{clientActionId:'route-next'});
   call('POST /api/vocabulary/sessions/:id/commands',id,{clientActionId:'route-command',command:{type:'skip'}});
   await new Promise<void>(resolve=>setImmediate(resolve));assert.equal(wakes,0);
+}));
+
+
+function makeInventoryEmpty(wordId:string):void {
+  for(const sense of getVocabularySenses(wordId).filter(sense=>sense.status==='active')) {
+    updateVocabularySense(sense.senseId,sense.version,{description:sense.description,status:'retired'},actor);
+  }
+  if(getVocabularySenseCatalog(wordId).establishedAt===null)establishVocabularySenseCatalog(wordId,getVocabularySenseCatalog(wordId).version,actor);
+}
+
+test('empty inventories block fresh admission while stashes and retained word sessions survive',()=>owner(()=>{
+  addVocabularyWord('new');
+  const retained=startVocabularyStudy();
+  const stashed=getVocabularyLearnerWord('new');
+  for(const wordId of ['a','b','new'])makeInventoryEmpty(wordId);
+  const requested:string[]=[];
+  const preview=previewVocabularyStudy({requestTeaching:id=>requested.push(id)});
+  assert.equal(preview.itemCount,0);assert.equal(preview.preparationPending,false);assert.deepEqual(requested,[]);
+  assert.throws(()=>startVocabularyStudy(),/No ready study material/);
+  assert.deepEqual(getVocabularyLearnerWord('new'),stashed);
+  assert.deepEqual(getVocabularyStudy(retained.session.sessionId).session.context.words,retained.session.context.words);
+  assert.ok(nextVocabularyExercise(retained.session.sessionId,'still-retained').currentEncounter);
+}));
+
+test('pure cues with an empty-inventory answer stop fresh admission without changing retained cues or schedules',()=>owner(()=>{
+  const cue=createVocabularyContent({contentId:'mixed-pure',kind:'exercise',payloadVersion:1,body:{prompt:'Retrieve either'},
+    accessScope:'shared',availability:'active',originKind:'human',words:[{wordId:'a',relation:'target'},{wordId:'b',relation:'target'}],exerciseType:'pure_cue',
+    skill:'production',exerciseRole:'general',assessment:{match:'prepared'},answers:[{wordId:'a',acceptedForms:['甲']},{wordId:'b',acceptedForms:['乙']}]},actor);
+  db.prepare(`INSERT INTO learner_pure_cue_schedules(learner_id,content_id,policy_version,scheduler_state_json) VALUES('alice',?,'test',?)`)
+    .run(cue.contentId,JSON.stringify({intervalHours:24,easeFactor:2.5,enabled:1,cleanCoveredSessions:0}));
+  createVocabularySession({sessionId:'retained-pure',words:[]});
+  const schedules=db.prepare('SELECT * FROM learner_pure_cue_schedules').all();
+  makeInventoryEmpty('a');
+  assert.deepEqual(selectVocabularyPureCueCandidates({ordinaryReviewCount:20,sessionSeed:'empty'}),[]);
+  assert.deepEqual(db.prepare('SELECT * FROM learner_pure_cue_schedules').all(),schedules);
+  const retained=nextVocabularyExercise('retained-pure','still-retained');
+  assert.equal(retained.currentEncounter?.snapshot.contentId,cue.contentId);
+  assert.deepEqual(retained.currentEncounter?.snapshot.assessment?.acceptedAnswers,['甲','乙']);
+}));
+
+test('contrast choices with empty inventories cannot enter a fresh session but retained contrasts remain usable',()=>owner(()=>{
+  contrastContent();
+  db.prepare("INSERT INTO learner_owned_word_skill_state VALUES('alice','a','contextual_selection',6,2.5,1,NULL,NULL)").run();
+  db.prepare("UPDATE learner_words SET mode='practice' WHERE word_id='a'").run();
+  createVocabularySession({sessionId:'retained-contrast',words:[{wordId:'a',mode:'practice',selectedSkill:'contextual_selection'}]});
+  makeInventoryEmpty('b');
+  const fresh=startVocabularyStudy();
+  assert.equal(fresh.session.context.words.some(word=>word.selectedSkill==='contextual_selection'),false);
+  assert.equal(nextVocabularyExercise('retained-contrast','still-retained').currentEncounter?.snapshot.kind,'contrast');
+}));
+
+
+test('shared ordinary cues with an empty-inventory alternative are excluded from fresh pools but retained sessions keep them',()=>owner(()=>{
+  const shared=createVocabularyContent({contentId:'shared-alternatives',kind:'exercise',payloadVersion:1,body:{prompt:'Either expression'},
+    accessScope:'shared',availability:'active',originKind:'human',words:[{wordId:'a',relation:'target'},{wordId:'b',relation:'target'}],
+    exerciseType:'word',skill:'production',exerciseRole:'general',assessment:{match:'prepared'},
+    answers:[{wordId:'a',acceptedForms:['甲']},{wordId:'b',acceptedForms:['乙']}]},actor);
+  db.prepare("UPDATE learner_words SET mode='practice' WHERE word_id='a'").run();
+  db.prepare("UPDATE content_items SET availability='retired' WHERE content_id IN ('general-1','general-2')").run();
+  createVocabularySession({sessionId:'retained-shared',words:[{wordId:'a',mode:'practice'}]});
+  makeInventoryEmpty('b');
+  const fresh=startVocabularyStudy();
+  const payload=composeVocabularySessionPayload({sessionId:'fresh-pool',words:[{wordId:'a',mode:'practice'}]});
+  assert.equal(JSON.stringify(payload).includes(shared.contentId),false);
+  assert.ok(fresh.session.context.words.some(word=>word.wordId==='a'));
+  assert.equal(nextVocabularyExercise('retained-shared','next').currentEncounter?.snapshot.contentId,shared.contentId);
 }));

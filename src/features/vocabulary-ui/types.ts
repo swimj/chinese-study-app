@@ -94,6 +94,7 @@ export type VocabularySessionViewProps = {
   };
   completion: VocabularyCompletionView | null;
   busy: boolean;
+  saving?: boolean;
   error: string | null;
   onResponseChange: (value: string) => void;
   onPrimary: () => void;
