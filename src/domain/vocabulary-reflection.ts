@@ -25,6 +25,11 @@ export type VocabularyReflectionCase = {
   /** Authoritative resolution time; absent in older clients and null when unresolved or unavailable. */
   resolvedAt?: string | null;
 };
+export type VocabularyRepairTarget = {senseId:string;version:number};
+export type VocabularyRepairTargetWorkspace = {
+  caseId:string;wordId:string;version:number;currentSenseId:string|null;pendingSenseId:string|null;
+  senses:{senseId:string;label:string}[];available:boolean;blocked:boolean;editable:boolean;
+};
 export type VocabularyReflectionJob = {
   jobId: string; caseId: string; learnerId: string;
   kind: 'learner_feedback' | 'exercise_improvement';
@@ -32,6 +37,7 @@ export type VocabularyReflectionJob = {
   attemptNumber: number; leaseToken: string; leaseExpiresAt: string;
   evidence: VocabularyReflectionCase;
   reassessmentSourceJobId?: string;
+  repairTarget?: VocabularyRepairTarget;
   /** Current authored version explicitly selected by the operator; encounters remain historical. */
   reassessmentSource?: VocabularyContent;
   secondOpinion?: { requestId: string; proposal: VocabularyContentProposal | null; notes: string; diagnosis?: VocabularyJson };
@@ -46,6 +52,7 @@ export type VocabularyGenerationScope = {
   senseIds: string[];
   /** Captured provenance only; later serving-policy versions do not invalidate content. */
   source: {kind:'mapped_source'}
+    | {kind:'operator_target';caseId:string;capturedVersion:number}
     | {kind:'review_override';caseId:string;capturedVersion:number}
     | {kind:'word_defaults';wordId:string;capturedVersion:number};
 };
@@ -54,6 +61,7 @@ export type VocabularyImprovementAdmission = {
   rationale: string; wordId: string; sourceContentId: string; sourceContentVersion: number;
   catalogVersion: number; senseIds: string[]; invocationId?: string;
   generationScope?: VocabularyGenerationScope | null;
+  repairTargetVersion?: number;
   sourceMapping: { senseId: string | null; establishedAt: string | null };
 };
 export type VocabularyPureCueReferral = { candidateWords: string[]; sharedPurpose: string; rationale: string;

@@ -1,3 +1,4 @@
+import type { saveRepertoireWordDefaults } from '../server/db/vocabulary-repertoire-revision.ts';
 import { installCaseReviewSchema } from './helpers/case-review-schema.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -465,9 +466,8 @@ test('coverage endpoints require operator access, validate shape and reject stal
   assert.equal(call('put',route,{params,learner:'editor',body:{expectedVersion:0,excludedSenseIds:[]}}).status,200);
   assert.equal(call('put',route,{params,learner:'editor',body:{expectedVersion:0,excludedSenseIds:[]}}).status,409);
   assert.equal(call('put',route,{params,learner:'editor',body:{expectedVersion:1,excludedSenseIds:['foreign']}}).status,400);
-  const review='/api/operator/vocabulary/cases/:id/sense-coverage';
-  const result=call('put',review,{params:{id:caseId},learner:'editor',body:{expectedVersion:0,includedSenseIds:[]}});
-  assert.equal(result.status,200);assert.deepEqual((result.body.review as {includedSenseIds:string[]}).includedSenseIds,[]);
+  assert.equal(handlers.has('get /api/operator/vocabulary/cases/:id/sense-coverage'),false);
+  assert.equal(handlers.has('put /api/operator/vocabulary/cases/:id/sense-coverage'),false);
 });
 
 
@@ -559,7 +559,7 @@ test('coverage workspace counts actual mapped active general production beyond c
   createVocabularyContent({...draft('teaching-count'),words,exerciseRole:'teaching'},actor);
   createVocabularyContent({...draft('retired-count'),words,availability:'retired'},actor);
   const before=sql.prepare('SELECT total_changes() n').get()!.n;
-  const result=call('get',`${base}/cases/:id/sense-coverage`,{params:{id:caseId}});
+  const result=call('get',`${base}/words/:id/sense-coverage`,{params:{id:'a'}});
   assert.equal(result.status,200);assert.deepEqual(result.body.productionExerciseCounts,{'counted-sense':3});
   assert.equal(sql.prepare('SELECT total_changes() n').get()!.n,before);
 });
@@ -611,4 +611,54 @@ test('pure cue resolution route validates identity selections and authority befo
   assert.equal(result.status,200);
   const request=sql.prepare("SELECT data_json FROM backend_events WHERE name='vocabulary.reflection.reassessment_requested' AND entity_id=?").get(caseId)!;
   assert.deepEqual(JSON.parse(String(request.data_json)).origin,{kind:'proposal',proposalId:original.proposalId,expectedVersion:1});
+});
+
+test('repair target routes require operator authority and versioned explicit intent; reset leaves source unchanged',()=>{
+  const sense=createVocabularySense({senseId:'http-target',wordId:'a',description:'Written character'},{kind:'operator',id:'editor'});
+  const job=claimVocabularyReflectionJob({kind:'exercise_improvement',now:later})!;
+  const result=recordVocabularyImprovementResult(job.jobId,job.leaseToken,{diagnosis:'Mapped target',proposal:null,
+    admission:{outcome:'single_sense',rationale:'One use',wordId:'a',sourceContentId:'one',sourceContentVersion:1,
+      catalogVersion:getVocabularySenseCatalog('a').version,senseIds:[sense.senseId],sourceMapping:{senseId:null,establishedAt:null}}},later);
+  assert.equal(result.proposalId,null);
+  const route=`${base}/cases/:id/repair-target`,params={id:caseId};
+  process.env.APP_OPERATOR_CLERK_USER_IDS='someone-else';
+  assert.equal(call('get',route,{params}).status,403);
+  assert.equal(call('put',route,{params,body:{expectedVersion:0,senseId:sense.senseId}}).status,403);
+  process.env.APP_OPERATOR_CLERK_USER_IDS='editor';
+  const opened=call('get',route,{params});assert.equal(opened.status,200);assert.equal(opened.body.currentSenseId,sense.senseId);assert.equal(opened.body.version,0);
+  const before=getVocabularyContentForMaintenance('one');
+  for(const body of [{expectedVersion:-1,senseId:sense.senseId},{expectedVersion:0},{expectedVersion:0,senseId:['http-target']},{expectedVersion:0,senseId:'foreign'},{expectedVersion:0,senseId:sense.senseId,extra:true}])
+    assert.equal(call('put',route,{params,body}).status,400);
+  const saved=call('put',route,{params,body:{expectedVersion:0,senseId:sense.senseId}});
+  assert.equal(saved.status,200);assert.equal(saved.body.blocked,true);assert.equal(saved.body.pendingSenseId,sense.senseId);
+  assert.equal(call('put',route,{params,body:{expectedVersion:0,senseId:null}}).status,409);
+  const reset=call('put',route,{params,body:{expectedVersion:1,senseId:null}});
+  assert.equal(reset.status,200);assert.equal(reset.body.blocked,false);assert.equal(reset.body.pendingSenseId,null);assert.equal(reset.body.currentSenseId,sense.senseId);
+  assert.deepEqual(getVocabularyContentForMaintenance('one'),before);
+});
+
+
+test('repertoire default selection route validates both versions and returns an atomic restored proposal',()=>{
+  const first=createVocabularySense({senseId:'first',wordId:'a',description:'Written character'},{kind:'operator',id:'editor'});
+  const second=createVocabularySense({senseId:'second',wordId:'a',description:'Writing style'},{kind:'operator',id:'editor'});
+  const job=claimVocabularyReflectionJob({kind:'exercise_improvement',now:later})!;
+  const result=recordVocabularyImprovementResult(job.jobId,job.leaseToken,{diagnosis:'Repertoire',proposal:{rationale:'Selected uses',operations:[
+    {operationKey:'first',strategy:'replace',sourceContentId:'one',expectedVersion:1,scope:{kind:'shared'},rationale:'First use',content:{...draft('first-item'),words:[{wordId:'a',relation:'target',senseId:first.senseId}]}},
+    {operationKey:'second',strategy:'create',scope:{kind:'shared'},rationale:'Second use',content:{...draft('second-item'),words:[{wordId:'a',relation:'target',senseId:second.senseId}]}},
+  ]},admission:{outcome:'repertoire_bootstrap',rationale:'Useful uses',wordId:'a',sourceContentId:'one',sourceContentVersion:1,catalogVersion:getVocabularySenseCatalog('a').version,senseIds:[],sourceMapping:{senseId:null,establishedAt:null},generationScope:{selectionEstablished:true,senseIds:['first','second'],source:{kind:'word_defaults',wordId:'a',capturedVersion:0}}}},later);
+  const route=`${base}/proposals/:id/word-defaults-revision`,params={id:result.proposalId!};
+  for(const body of [{expectedVersion:1},{expectedVersion:1,expectedWordVersion:-1,includedSenseIds:['second']},{expectedVersion:1,expectedWordVersion:0,includedSenseIds:'second'},{expectedVersion:1,expectedWordVersion:0,includedSenseIds:['second'],extra:true}])assert.equal(call('post',route,{params,body}).status,400);
+  process.env.APP_OPERATOR_CLERK_USER_IDS='someone-else';
+  assert.equal(call('post',route,{params,body:{expectedVersion:1,expectedWordVersion:0,includedSenseIds:['second']}}).status,403);
+  process.env.APP_OPERATOR_CLERK_USER_IDS='editor';
+  const saved=call('post',route,{params,body:{expectedVersion:1,expectedWordVersion:0,includedSenseIds:['second']}});
+  const savedValue=saved.body as ReturnType<typeof saveRepertoireWordDefaults>;
+  assert.equal(saved.status,200);assert.equal(savedValue.proposal.version,2);assert.equal(savedValue.proposal.operations.length,1);
+  assert.deepEqual(savedValue.coverage.includedSenseIds,['second']);
+  assert.equal(call('post',route,{params,body:{expectedVersion:1,expectedWordVersion:1,includedSenseIds:['first','second']}}).status,409);
+  assert.equal(call('post',route,{params,body:{expectedVersion:2,expectedWordVersion:0,includedSenseIds:['first','second']}}).status,409);
+  const restored=call('post',route,{params,body:{expectedVersion:2,expectedWordVersion:1,includedSenseIds:['first','second']}});
+  const restoredValue=restored.body as ReturnType<typeof saveRepertoireWordDefaults>;
+  assert.equal(restored.status,200);assert.equal(restoredValue.proposal.operations.length,2);
+  assert.deepEqual(restoredValue.coverage.includedSenseIds,['first','second']);
 });

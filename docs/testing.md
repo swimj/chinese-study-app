@@ -507,3 +507,31 @@ reflection/teaching order, deterministic import initialization, selector leases,
 operator precedence, model-empty attention and repeatable read-only batch plans.
 `tests/vocabulary-preparation.test.ts` covers completion prerequisites and preserving
 ready pools and retry budgets across authoring-contract revisions.
+
+### Repair targets and repertoire revisions
+
+`vocabulary-reflection.test.ts` and `vocabulary-reflection-http.test.ts` cover
+pending target set/reset, failed and successful reassessment, captured-target
+validation, stale alternatives/retries, approval admission, and application-time
+binding changes. `vocabulary-improvement-admission.test.ts` checks source
+immutability and mapping bypass for explicit operator targets.
+`vocabulary-repertoire-revision.test.ts` covers narrowing without losing source
+replacement intent and restoring retained exercises without undoing manual edits
+or deletions. Reflection tests cover atomic default/proposal saves, remove/restore
+cycles, selected-only application, conflicts, and missing-exercise generation requirements. `schema-migrations.test.ts`
+checks populated migration preservation and absence of inferred operator intent.
+
+The compact review browser fixture supports `hideControls=1`, `narrow=1`, and
+`largeText=1`. Open Reassess, set its target/model options, and submit. Check
+Escape/Close dismissal and focus return, same-sense selection, pending Apply/Edit blocking,
+failed reassessment and Reset. With `repertoire=1`, open Word defaults on the card,
+deselect a sense and Save defaults and update proposal; its group disappears.
+Reselect and save to restore the same exercises. Check empty-selection errors
+and Discard edits recovery. Fixture
+transport establishes UI behavior; backend tests establish persistence and guards.
+
+The compact fixture supports `targetReadFailure=1` and `holdTargetRead=1` to
+verify that an unresolved target read leaves Apply/Edit available. Combine
+`targetReadFailure=1&targetPending=1` to check that approval rejection is visible
+on the card. With `targetPending=1`, use Fail target refresh then Refresh: the
+known pending restriction must remain. Release target reads completes held reads.

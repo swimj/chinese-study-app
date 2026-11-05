@@ -1,3 +1,4 @@
+import { captureVocabularyRepairTarget, acceptVocabularyRepairTarget, assertVocabularyRepairTargetApplicable, vocabularyRepairTargetConflict } from './vocabulary-repair-target.ts';
 import { canonicalVocabularyCaseId, getVocabularyCaseReview, assertVocabularyCaseEditable, assertVocabularyCaseCanQueue, touchVocabularyCaseReview, clearVocabularyCaseApprovalAttention, resolveVocabularyCaseProposal, setVocabularyCaseApprovalPending, VocabularyReflectionConflict } from './vocabulary-case-reviews.ts';
 export { VocabularyReflectionConflict } from './vocabulary-case-reviews.ts';
 import { isDeepStrictEqual } from 'node:util';
@@ -16,7 +17,7 @@ import { requireLearnerId } from './learner-context.ts';
 import { isOperatorSubject, parseOperatorAllowlist } from '../operator-access.ts';
 import { isVocabularyProviderEncounter } from '../vocabulary/reflection-eligibility.ts';
 import { createVocabularyContent, updateVocabularyContent, replaceVocabularyContent, getVocabularySenseCatalog,
-  getVocabularyContentForMaintenance, getVocabularySenses, emitBackendEvent } from './vocabulary-content.ts';
+  getVocabularyContentForMaintenance, mapVocabularyContentSense, getVocabularySenses, emitBackendEvent } from './vocabulary-content.ts';
 import { isOfferedReflectionModelChoice, type ReflectionModelChoice } from '../reflection/model-arms.ts';
 import { resolveSharedDictionaryBaselineRevision } from './dictionary-baseline-sharing.ts';
 
@@ -88,6 +89,7 @@ function queueCaseJob(caseId:string,at:string,dedupeKey:string,values:{sourceJob
   getDb().prepare(`INSERT INTO vocabulary_reflection_jobs(job_id,case_id,kind,dedupe_key,status,next_attempt_at,created_at,review_case_id,case_sequence,reassessment_source_job_id,reassessment_source_json,second_opinion_json,model_choice)
     VALUES (?,?,'exercise_improvement',?,'queued',?,?,?,?,?,?,?,?)`).run(jobId,caseId,dedupeKey,at,at,caseId,sequence,values.sourceJobId??null,values.source?encode(values.source):null,values.opinion?encode(values.opinion):null,values.modelChoice??null);
   if(values.sourceJobId&&!values.opinion)clearVocabularyCaseApprovalAttention(caseId);
+  if(values.sourceJobId&&!values.opinion){const repairTarget=captureVocabularyRepairTarget(caseId);if(repairTarget)getDb().prepare('UPDATE vocabulary_reflection_jobs SET repair_target_json=? WHERE job_id=?').run(encode(repairTarget),jobId);}
   touchVocabularyCaseReview(caseId);return jobId;
 }
 function createCase(learnerId: string, completionId: string, kind: VocabularyReflectionCase['kind'], subjectKey: string,
@@ -160,7 +162,7 @@ export function ingestVocabularySessionEvidence(learnerId: string, completionId:
 }
 
 type JobRow = { job_id: string; case_id: string; kind: VocabularyReflectionJob['kind']; status: string; attempt_number: number;
-  review_case_id:string|null;case_sequence:number;
+  review_case_id:string|null;case_sequence:number;repair_target_json?:string|null;
   lease_token: string | null; lease_expires_at: string | null; result_json: string | null; second_opinion_json?: string | null; reassessment_source_job_id?: string | null; reassessment_source_json?: string | null };
 function job(id: string): JobRow {
   const row = getDb().prepare('SELECT * FROM vocabulary_reflection_jobs WHERE job_id=?').get(id) as JobRow | undefined;
@@ -194,6 +196,7 @@ export function claimVocabularyReflectionJob(input: { kind?: VocabularyReflectio
     const evidence = getVocabularyReflectionCase(row.case_id);
     return { jobId: row.job_id,caseId: row.case_id,learnerId: evidence.learnerId,kind: row.kind,
       caseSequence:row.case_sequence,attemptNumber: row.attempt_number+1,leaseToken: token,leaseExpiresAt: expires,evidence,
+      ...(row.repair_target_json ? {repairTarget:JSON.parse(row.repair_target_json) as import('../../src/domain/vocabulary-reflection.ts').VocabularyRepairTarget}:{}),
       ...(row.reassessment_source_json ? { reassessmentSource: JSON.parse(row.reassessment_source_json) as VocabularyContent } : {}),
       ...(row.reassessment_source_job_id ? { reassessmentSourceJobId: row.reassessment_source_job_id } : {}),
       ...(row.second_opinion_json ? { secondOpinion: JSON.parse(row.second_opinion_json) as VocabularyReflectionJob['secondOpinion'] } : {}) };
@@ -481,7 +484,7 @@ function createProposal(draft: VocabularyProposalDraft, actor: VocabularyActor, 
 }
 /** Operator/manual authoring uses the same proposal and approval machinery as generated repairs. */
 export function createVocabularyProposal(draft: VocabularyProposalDraft, actorId: string): VocabularyContentProposal {
-  const actor = operator(actorId); return atomic(() => {assertVocabularyCaseEditable(draft.caseId??null);const value=createProposal(draft,actor,timestamp());if(value.caseId)getDb().prepare("UPDATE vocabulary_case_reviews SET current_proposal_id=?,state='open',resolved_at=NULL,approval_request_id=NULL,approval_state=NULL,version=version+1 WHERE case_id=?").run(value.proposalId,canonicalVocabularyCaseId(value.caseId));return value;});
+  const actor = operator(actorId); return atomic(() => {assertVocabularyCaseEditable(draft.caseId??null);assertVocabularyRepairTargetApplicable(draft.caseId??null,draft.caseId?caseAdmission(draft.caseId):undefined);assertRepairBindings(draft,draft.caseId?caseAdmission(draft.caseId):undefined);const value=createProposal(draft,actor,timestamp());if(value.caseId)getDb().prepare('UPDATE content_proposals SET assessment_job_id=? WHERE proposal_id=?').run(currentAssessmentJob(value.caseId)?.job_id??null,value.proposalId);if(value.caseId)getDb().prepare("UPDATE vocabulary_case_reviews SET current_proposal_id=?,state='open',resolved_at=NULL,approval_request_id=NULL,approval_state=NULL,version=version+1 WHERE case_id=?").run(value.proposalId,canonicalVocabularyCaseId(value.caseId));return value;});
 }
 export function recordVocabularyImprovementResult(jobId: string, token: string, input: VocabularyImprovementResultInput, at = timestamp()): { judgmentId: string; proposalId: string | null } {
   return atomic(() => {
@@ -529,6 +532,11 @@ export function recordVocabularyImprovementResult(jobId: string, token: string, 
       const remaining=created?.proposalId??(getDb().prepare("SELECT p.proposal_id FROM content_proposals p JOIN vocabulary_case_lineage l ON l.member_case_id=p.case_id WHERE l.case_id=? AND p.status NOT IN ('applied','closed') ORDER BY p.created_at,p.proposal_id LIMIT 1").get(row.review_case_id) as {proposal_id:string}|undefined)?.proposal_id??null;
       getDb().prepare('UPDATE vocabulary_case_reviews SET current_proposal_id=? WHERE case_id=?').run(remaining,row.review_case_id);
     }
+    if(!row.second_opinion_json&&row.review_case_id){
+      const captured=row.repair_target_json?JSON.parse(row.repair_target_json) as import('../../src/domain/vocabulary-reflection.ts').VocabularyRepairTarget:undefined;
+      if(captured&&(input.admission?.repairTargetVersion!==captured.version||input.admission.outcome!=='single_sense'||input.admission.senseIds.length!==1||input.admission.senseIds[0]!==captured.senseId))throw new VocabularyReflectionConflict('Assessment did not honor the captured repair target');
+      acceptVocabularyRepairTarget(row.review_case_id,captured,at);
+    }
     finish(jobId,token,input,output,at);
     if (!row.second_opinion_json&&(needsAttention || input.pureCuePromotion?.outcome === 'needs_operator')) getDb().prepare("UPDATE reflection_cases SET status='open' WHERE case_id=?").run(row.case_id);
     return output;
@@ -544,6 +552,8 @@ export function saveVocabularyProposal(proposalId: string, expectedVersion: numb
   return atomic(() => {
     const value = expectedProposal(proposalId,expectedVersion);
     assertVocabularyCaseEditable(value.caseId);
+    assertVocabularyRepairTargetApplicable(value.caseId,proposalAdmission(value));
+    assertRepairBindings(draft,proposalAdmission(value));
     if (value.status === 'applied' || value.status === 'closed') throw new VocabularyReflectionConflict('Resolved proposals cannot be edited');
     if ((draft.caseId ?? value.caseId) !== value.caseId) throw new Error('Proposal evidence origin is immutable');
     if(value.caseId){touchVocabularyCaseReview(value.caseId);clearVocabularyCaseApprovalAttention(value.caseId);}
@@ -553,8 +563,9 @@ export function saveVocabularyProposal(proposalId: string, expectedVersion: numb
 }
 /** Read-only freshness for queue display; validation remains authoritative at approval/application. */
 export function vocabularyProposalCoverageChanged(value:VocabularyContentProposal):boolean {
+  if(vocabularyRepairTargetConflict(value.caseId,proposalAdmission(value)))return true;
   if(value.bases.some(base=>getVocabularyContentForMaintenance(base.contentId)?.version!==base.expectedVersion))return true;
-  const admission=value.authorKind==='service'?proposalAdmission(value):undefined;
+  const admission=proposalAdmission(value);
   if(!admission)return false;
   const source=getVocabularyContentForMaintenance(admission.sourceContentId);
   const mapping=source?.words.find(word=>word.wordId===admission.wordId);
@@ -564,12 +575,23 @@ export function vocabularyProposalCoverageChanged(value:VocabularyContentProposa
     ||!!(admission.sourceMapping&&((mapping.senseId??null)!==admission.sourceMapping.senseId
       ||(mapping.senseMappingEstablishedAt??null)!==admission.sourceMapping.establishedAt));
 }
+function assertRepairBindings(value:Pick<VocabularyProposalDraft,'operations'>,admission:VocabularyImprovementAdmission|undefined):void {
+  if(admission?.outcome!=='single_sense')return;
+  for(const operation of value.operations){
+    if(operation.strategy==='retire')continue;
+    for(const word of operation.content.words)if(word.wordId===admission.wordId&&word.relation==='target'&&word.senseId!==admission.senseIds[0]
+      &&!(operation.content.kind==='exercise'&&operation.content.exerciseType==='pure_cue'&&word.senseId==null))
+      throw new VocabularyReflectionConflict('Changing the repair sense requires a target override and reassessment');
+  }
+}
 function currentBases(value: VocabularyContentProposal): void {
+  assertVocabularyRepairTargetApplicable(value.caseId,proposalAdmission(value));
+  assertRepairBindings(value,proposalAdmission(value));
   for (const base of value.bases) {
     const content = getVocabularyContentForMaintenance(base.contentId);
     if (!content || content.version !== base.expectedVersion) throw new VocabularyReflectionConflict('Proposal content base changed; revise and review again');
   }
-  const admission=value.authorKind==='service'?proposalAdmission(value):undefined;
+  const admission=proposalAdmission(value);
   if(admission) {
     const source=getVocabularyContentForMaintenance(admission.sourceContentId);
     const mapping=source?.words.find(word=>word.wordId===admission.wordId);
@@ -589,6 +611,15 @@ function executeOperation(operation:VocabularyProposalOperation,actor:Vocabulary
   if(operation.strategy!=='create'&&!source)throw new Error('Unknown vocabulary content');
   if(operation.strategy!=='create'&&source!.version!==operation.expectedVersion)throw new VocabularyReflectionConflict('Proposal content base changed; revise and review again');
   if(source)validateNonreplacementSource(operation,source);
+  if(operation.strategy==='update_existing'&&source){
+    for(const word of operation.content.words){
+      const previous=source.words.find(item=>item.wordId===word.wordId);
+      if(previous&&((previous.senseId??null)!==(word.senseId??null)||(previous.senseMappingEstablishedAt??null)!==(word.senseMappingEstablishedAt??null)))
+        mapVocabularyContentSense({contentId:source.contentId,wordId:word.wordId,expectedContentVersion:source.version,
+          expectedMapping:{senseId:previous.senseId??null,establishedAt:previous.senseMappingEstablishedAt??null},senseId:word.senseId??null,
+          ...(word.senseMappingEstablishedAt?{establishedAt:word.senseMappingEstablishedAt}:{})},actor);
+    }
+  }
   const result=operation.strategy==='create'?createVocabularyContent(operation.content,actor)
     :operation.strategy==='update_existing'?updateVocabularyContent(operation.sourceContentId,operation.expectedVersion,operation.content,actor)
     :operation.strategy==='retire'?updateVocabularyContent(operation.sourceContentId,operation.expectedVersion,{...source!,availability:'retired'},actor)
@@ -706,6 +737,7 @@ function applyVocabularyProposalInternal(proposalId: string, expectedVersion: nu
 export function recordVocabularyApprovalIntent(input:{requestId:string;proposalId:string;expectedVersion:number;actorId:string}): void {
   const actor=operator(input.actorId);
   const value=expectedProposal(input.proposalId,input.expectedVersion);assertVocabularyCaseEditable(value.caseId);
+  assertVocabularyRepairTargetApplicable(value.caseId,proposalAdmission(value));
   setVocabularyCaseApprovalPending(input.proposalId,input.requestId,true);
   event('vocabulary.reflection.approval_requested',input.proposalId,{requestId:input.requestId,expectedVersion:input.expectedVersion},actor);
 }
@@ -795,6 +827,10 @@ function retryJob(jobId: string, learnerId: string | null, at: string): void {
   const row = job(jobId), evidence = getVocabularyReflectionCase(row.case_id);
   if (learnerId !== null && (row.kind !== 'learner_feedback' || evidence.learnerId !== learnerId)) throw new Error('Reflection job does not belong to current learner');
   if (row.status !== 'failed') throw new VocabularyReflectionConflict('Only failed reflection jobs can be retried');
+  if(row.review_case_id&&!row.second_opinion_json){
+    const captured=row.repair_target_json?JSON.parse(row.repair_target_json):undefined;
+    if(!isDeepStrictEqual(captured,captureVocabularyRepairTarget(row.review_case_id)))throw new VocabularyReflectionConflict('Repair target changed; request a fresh reassessment instead of retrying');
+  }
   if(row.review_case_id){assertVocabularyCaseCanQueue(row.review_case_id);if(getDb().prepare('SELECT 1 FROM vocabulary_reflection_jobs WHERE review_case_id=? AND case_sequence>?').get(row.review_case_id,row.case_sequence))throw new VocabularyReflectionConflict('Only the latest failed case job can be retried; request a fresh reassessment');if(row.reassessment_source_job_id&&currentAssessmentJob(row.review_case_id)?.job_id!==row.reassessment_source_job_id)throw new VocabularyReflectionConflict('A newer assessment superseded this failed job; request a fresh reassessment');touchVocabularyCaseReview(row.review_case_id);}
   getDb().prepare(`UPDATE vocabulary_reflection_jobs SET status='queued',next_attempt_at=?,last_error=NULL,lease_token=NULL,lease_expires_at=NULL WHERE job_id=?`)
     .run(timestamp(at),jobId);
@@ -986,6 +1022,8 @@ export function requestVocabularySecondOpinion(proposalId: string, expectedVersi
   return atomic(() => {
     const value = expectedProposal(proposalId,expectedVersion);
     assertVocabularyCaseEditable(value.caseId);
+    assertVocabularyRepairTargetApplicable(value.caseId,proposalAdmission(value));
+    assertRepairBindings(value,proposalAdmission(value));
     if (value.status === 'applied' || value.status === 'closed') throw new VocabularyReflectionConflict('Resolved proposals cannot request a second opinion');
     const existing = listVocabularySecondOpinions(proposalId,actorId).find(item => item.proposalVersion === expectedVersion);
     if (existing) return existing;
@@ -1070,6 +1108,7 @@ export function requestVocabularyPureCueResolution(caseId:string,actorId:string,
     const evidence=getVocabularyReflectionCase(caseId),local=caseImprovementResult(caseId);
     if(evidence.status==='closed'||!evidence.wordId||local?.pureCuePromotion?.outcome!=='needs_operator'||!local.pureCueReferral||!local.admission)
       throw new VocabularyReflectionConflict('A pending lexical identity assessment is required');
+    assertVocabularyRepairTargetApplicable(caseId,local.admission);
     const original=getVocabularyContentForMaintenance(local.admission.sourceContentId);
     if(!original||original.availability!=='active'||original.version!==expectedContentVersion||original.version!==local.admission.sourceContentVersion
       ||getVocabularySenseCatalog(evidence.wordId).version!==local.admission.catalogVersion)

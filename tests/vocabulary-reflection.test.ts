@@ -1,6 +1,8 @@
+import { getVocabularyRepairTarget, setVocabularyRepairTarget } from '../server/db/vocabulary-repair-target.ts';
+import { saveRepertoireWordDefaults } from '../server/db/vocabulary-repertoire-revision.ts';
 import { getVocabularyCaseReview } from '../server/db/vocabulary-case-reviews.ts';
 import { installCaseReviewSchema } from './helpers/case-review-schema.ts';
-import { getVocabularySenseCoverageWorkspace,setVocabularyCaseSenseCoverage,writeVocabularyDefaultUsefulSenses,resolveVocabularySenseCoverage,writeVocabularyWordSenseCoverage,writeVocabularyCaseSenseCoverage } from '../server/db/vocabulary-sense-coverage.ts';
+import { getVocabularySenseCoverageWorkspace,writeVocabularyDefaultUsefulSenses,resolveVocabularySenseCoverage,writeVocabularyWordSenseCoverage } from '../server/db/vocabulary-sense-coverage.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { DatabaseSync, backup } from 'node:sqlite';
@@ -349,21 +351,21 @@ test('lease expiry and retries fence old workers and retain evidence', () => {
   assert.equal(Number(sql.prepare('SELECT count(*) n FROM teacher_judgments').get()!.n),1);
 });
 
-for(const drift of ['source','mapping','catalog','word coverage','review coverage'] as const)test(`sense-admitted content distinguishes canonical evidence from serving policy (${drift})`,()=>{
+for(const drift of ['source','mapping','catalog','word coverage'] as const)test(`sense-admitted content distinguishes canonical evidence from serving policy (${drift})`,()=>{
   const sense=createVocabularySense({wordId:'a',description:'A written character'},actor);
   mapVocabularyContentSense({contentId:'one',wordId:'a',expectedContentVersion:1,expectedMapping:{senseId:null,establishedAt:null},senseId:sense.senseId,establishedAt:at},actor);
   ingest([present('one'),response('one')]);
   const work=claimVocabularyReflectionJob({kind:'exercise_improvement',now:judgedAt})!;
   const admission={outcome:'single_sense' as const,rationale:'Identifiable use',wordId:'a',sourceContentId:'one',sourceContentVersion:1,
     catalogVersion:getVocabularySenseCatalog('a').version,senseIds:[sense.senseId],sourceMapping:{senseId:sense.senseId,establishedAt:at}};
-  const result=recordVocabularyImprovementResult(work.jobId,work.leaseToken,{diagnosis:'Repair',proposal:{operations:[op('replace','one','fresh')],rationale:'Useful repair'},admission},judgedAt);
+  const repair=op('replace','one','fresh');repair.content.words=[{wordId:'a',relation:'target',senseId:sense.senseId,senseMappingEstablishedAt:judgedAt}];
+  const result=recordVocabularyImprovementResult(work.jobId,work.leaseToken,{diagnosis:'Repair',proposal:{operations:[repair],rationale:'Useful repair'},admission},judgedAt);
   assert.equal(listVocabularyProposalReviewBatch('editor',{startProposalId:result.proposalId!}).items[0]!.coverageChanged,false);
   const review=approveVocabularyProposal(result.proposalId!,1,'editor');
   if(drift==='source')updateVocabularyContent('one',1,{...getVocabularyContentForMaintenance('one')!,body:{prompt:'An independently revised cue'}},actor);
   else if(drift==='mapping')mapVocabularyContentSense({contentId:'one',wordId:'a',expectedContentVersion:1,expectedMapping:admission.sourceMapping,senseId:null,establishedAt:judgedAt},actor);
   else if(drift==='catalog')updateVocabularySense(sense.senseId,sense.version,{description:sense.description,status:'retired'},actor);
   else if(drift==='word coverage')writeVocabularyWordSenseCoverage('a',0,[sense.senseId],actor);
-  else writeVocabularyCaseSenseCoverage(work.caseId,0,[],actor);
   const changesBefore=sql.prepare('SELECT total_changes() n').get()!.n;
   assert.equal(listVocabularyProposalReviewBatch('editor',{startProposalId:result.proposalId!}).items[0]!.coverageChanged,drift==='source'||drift==='mapping'||drift==='catalog');
   assert.equal(sql.prepare('SELECT total_changes() n').get()!.n,changesBefore);
@@ -423,10 +425,12 @@ test('real provider content edits remain applicable while serving selection chan
   }};
   const provider=createVocabularyReflectionProvider({random:()=>0,environment:{OPENAI_API_KEY:'fake'},adapter,
     ensureSenses:async()=>({catalog:getVocabularySenseCatalog('a'),senses:getVocabularySenses('a'),source:'existing'})});
+  const sourceBeforeAssessment=getVocabularyContentForMaintenance('one');
   const assessed=await provider.run(work);if(assessed.kind!=='exercise_improvement')assert.fail('Expected improvement');
+  assert.deepEqual(getVocabularyContentForMaintenance('one'),sourceBeforeAssessment);
   assert.equal(calls,2);assert.deepEqual(assessed.result.admission?.generationScope,{selectionEstablished:true,senseIds:[sense.senseId],source:{kind:'mapped_source'}});
   const recorded=recordVocabularyImprovementResult(work.jobId,work.leaseToken,assessed.result,judgedAt);
-  writeVocabularyWordSenseCoverage('a',2,[sense.senseId],actor);writeVocabularyCaseSenseCoverage(work.caseId,0,[],actor);
+  writeVocabularyWordSenseCoverage('a',2,[sense.senseId],actor);
   assert.doesNotThrow(()=>previewVocabularyProposal(recorded.proposalId!,1,'editor'));
   const review=approveVocabularyProposal(recorded.proposalId!,1,'editor');
   applyVocabularyProposal(recorded.proposalId!,1,review,'independent-content-policy','editor');
@@ -1034,40 +1038,21 @@ test('an application failure after validation rolls back its review, content cha
 });
 
 
-test('review coverage distinguishes inherit from none and reassessment retains explicit selection',()=>{
-
+for(const route of ['reassessment','proposal opinion','case opinion'] as const)for(const selection of ['set','none','inherit'] as const)test(`historical case scope remains unchanged and does not override word defaults via ${route} (${selection})`,()=>{
   const sense=createVocabularySense({wordId:'a',description:'written character'},actor);
   ingest([present('one'),response('one')]);
   const work=claimVocabularyReflectionJob({kind:'exercise_improvement',now:judgedAt})!;
-  writeVocabularyWordSenseCoverage('a',0,[sense.senseId],actor);
-  assert.deepEqual(resolveVocabularySenseCoverage('a',work.caseId).includedSenseIds,[]);
-  writeVocabularyCaseSenseCoverage(work.caseId,0,[sense.senseId],actor);
-  assert.deepEqual(resolveVocabularySenseCoverage('a',work.caseId).includedSenseIds,[sense.senseId]);
-  recordVocabularyImprovementResult(work.jobId,work.leaseToken,{diagnosis:'Review',proposal:null},judgedAt);
-  const child=requestVocabularyReassessment(work.caseId,'editor','openai:gpt-6-sol-high',1);
-  assert.deepEqual(resolveVocabularySenseCoverage('a',child.caseId).review?.includedSenseIds,[sense.senseId]);
-  assert.throws(()=>writeVocabularyCaseSenseCoverage(work.caseId,1,[],actor),/frozen/);
-  const now=new Date(Date.now()+1000).toISOString(),running=claimVocabularyReflectionJob({kind:'exercise_improvement',now})!;
-  failVocabularyReflectionJob(running.jobId,running.leaseToken,'failed',now,now);
-  writeVocabularyCaseSenseCoverage(work.caseId,1,[],actor);
-  assert.deepEqual(resolveVocabularySenseCoverage('a',work.caseId).review?.includedSenseIds,[]);
-  writeVocabularyCaseSenseCoverage(work.caseId,2,null,actor);
-  assert.equal(resolveVocabularySenseCoverage('a',work.caseId).review?.includedSenseIds,null);
-  assert.deepEqual(resolveVocabularySenseCoverage('a',work.caseId).includedSenseIds,[]);
-});
-
-for(const route of ['reassessment','proposal opinion','case opinion'] as const)for(const selection of ['set','none','inherit'] as const)test(`case coverage remains ${selection} via ${route}`,()=>{
-
-  const sense=createVocabularySense({wordId:'a',description:'written character'},actor);
-  ingest([present('one'),response('one')]);
-  const work=claimVocabularyReflectionJob({kind:'exercise_improvement',now:judgedAt})!;
-  writeVocabularyCaseSenseCoverage(work.caseId,0,selection==='inherit'?null:selection==='none'?[]:[sense.senseId],actor);
+  writeVocabularyDefaultUsefulSenses('a',0,[sense.senseId],actor);
+  sql.prepare('INSERT INTO vocabulary_case_sense_coverage(case_id,version,included_sense_ids_json,updated_at) VALUES (?,1,?,?)')
+    .run(work.caseId,selection==='inherit'?null:JSON.stringify(selection==='none'?[]:[sense.senseId]),at);
+  const historical=sql.prepare('SELECT * FROM vocabulary_case_sense_coverage').all();
   const result=recordVocabularyImprovementResult(work.jobId,work.leaseToken,{diagnosis:'Review',proposal:route==='proposal opinion'?{operations:[op()],rationale:'Repair'}:null},judgedAt);
-  let childId:string;
-  if(route==='reassessment')childId=requestVocabularyReassessment(work.caseId,'editor','openai:gpt-6-sol-high',1).caseId;
-  else if(route==='proposal opinion'){const opinion=requestVocabularySecondOpinion(result.proposalId!,1,'editor');childId=(sql.prepare('SELECT case_id FROM vocabulary_reflection_jobs WHERE job_id=?').get(opinion.jobId) as {case_id:string}).case_id;}
-  else {requestVocabularyCaseSecondOpinion(work.caseId,'editor','Try another view');childId=(sql.prepare('SELECT case_id FROM vocabulary_reflection_jobs WHERE case_id=? AND second_opinion_json IS NOT NULL').get(work.caseId) as {case_id:string}).case_id;}
-  assert.deepEqual(resolveVocabularySenseCoverage('a',childId).review?.includedSenseIds,selection==='inherit'?null:selection==='none'?[]:[sense.senseId]);
+  if(route==='reassessment')requestVocabularyReassessment(work.caseId,'editor','openai:gpt-6-sol-high',1);
+  else if(route==='proposal opinion')requestVocabularySecondOpinion(result.proposalId!,1,'editor');
+  else requestVocabularyCaseSecondOpinion(work.caseId,'editor','Try another view');
+  assert.deepEqual(sql.prepare('SELECT * FROM vocabulary_case_sense_coverage').all(),historical);
+  assert.deepEqual(resolveVocabularySenseCoverage('a').includedSenseIds,[sense.senseId]);
+  assert.equal(resolveVocabularySenseCoverage('a').review,null);
 });
 
 
@@ -1113,9 +1098,9 @@ test('unknown useful selection remains an actionable attention case and can reas
   ingest([present('one'),response('one')]);const work=claimVocabularyReflectionJob({kind:'exercise_improvement',now:judgedAt})!;
   recordVocabularyImprovementResult(work.jobId,work.leaseToken,{diagnosis:'Choose useful senses',proposal:null,admission:{outcome:'needs_coverage',rationale:'Selection is unknown',wordId:'a',sourceContentId:'one',sourceContentVersion:1,catalogVersion:getVocabularySenseCatalog('a').version,senseIds:[],sourceMapping:{senseId:null,establishedAt:null}}},judgedAt);
   assert.equal(getVocabularyReflectionCase(work.caseId).status,'open');
-  writeVocabularyCaseSenseCoverage(work.caseId,0,[sense.senseId],actor);
+  writeVocabularyDefaultUsefulSenses('a',0,[sense.senseId],actor);
   const next=requestVocabularyReassessment(work.caseId,'editor','openai:gpt-6-sol-high',1);
-  assert.equal(next.caseId,work.caseId);assert.deepEqual(resolveVocabularySenseCoverage('a',next.caseId).includedSenseIds,[sense.senseId]);
+  assert.equal(next.caseId,work.caseId);assert.deepEqual(resolveVocabularySenseCoverage('a').includedSenseIds,[sense.senseId]);
   assert.deepEqual(getVocabularyReflectionCase(work.caseId).evidence,work.evidence.evidence);
 });
 
@@ -1455,7 +1440,6 @@ test('case attempts are sequential, reassessment freezes all review mutations, t
   assert.throws(()=>closeVocabularyProposal(made.proposalId!,1,'editor'),/frozen/);
   assert.throws(()=>closeVocabularyCase(original.caseId,'editor','Done'),/frozen/);
   assert.throws(()=>requestVocabularySecondOpinion(made.proposalId!,1,'editor'),/frozen/);
-  assert.throws(()=>writeVocabularyCaseSenseCoverage(original.caseId,0,[],actor),/frozen/);
   const now=new Date(Date.now()+1000).toISOString(),running=claimVocabularyReflectionJob({kind:'exercise_improvement',now,leaseMs:10})!;
   assert.equal(running.caseSequence,2);assert.equal(running.attemptNumber,1);
   const runningVersion=getVocabularyCaseReview(original.caseId)!.version;
@@ -1519,7 +1503,7 @@ test('approval journal reconciles orphan locks, retains attention, and reconstru
 });
 
 
-test('operator coverage aliases use canonical versions while historical job coverage stays on its original case',()=>{
+test('historical scope aliases retain evidence while the word workspace exposes shared defaults only',()=>{
   const sense=createVocabularySense({wordId:'a',description:'written character'},actor);
   ingest([present('one'),response('one')]);
   const work=claimVocabularyReflectionJob({kind:'exercise_improvement',now:judgedAt})!;
@@ -1529,16 +1513,11 @@ test('operator coverage aliases use canonical versions while historical job cove
     SELECT ?,completion_id,learner_id,kind,subject_key||':legacy-child',word_id,content_id,status,evidence_snapshot_json,created_at FROM reflection_cases WHERE case_id=?`).run(alias,work.caseId);
   sql.prepare('INSERT INTO vocabulary_case_lineage(member_case_id,case_id) VALUES (?,?)').run(alias,work.caseId);
   sql.prepare('INSERT INTO vocabulary_case_sense_coverage(case_id,version,included_sense_ids_json,updated_at) VALUES (?,?,?,?)').run(alias,7,JSON.stringify([sense.senseId]),at);
-  writeVocabularyCaseSenseCoverage(work.caseId,0,[],actor);
-  const opened=getVocabularySenseCoverageWorkspace('case',alias,'editor');
-  assert.equal(opened.review?.caseId,work.caseId);assert.equal(opened.review?.version,1);assert.deepEqual(opened.review?.includedSenseIds,[]);
-  const saved=setVocabularyCaseSenseCoverage(alias,opened.review!.version,[sense.senseId],'editor');
-  assert.equal(saved.review?.caseId,work.caseId);assert.equal(saved.review?.version,2);assert.deepEqual(saved.review?.includedSenseIds,[sense.senseId]);
-  assert.deepEqual(saved,getVocabularySenseCoverageWorkspace('case',work.caseId,'editor'));
-  assert.throws(()=>setVocabularyCaseSenseCoverage(alias,1,[],'editor'),/coverage changed/);
-  assert.equal(resolveVocabularySenseCoverage('a',alias).review?.caseId,alias);
-  assert.equal(resolveVocabularySenseCoverage('a',alias).review?.version,7);
-  assert.deepEqual(resolveVocabularySenseCoverage('a',alias).review?.includedSenseIds,[sense.senseId]);
+  const historical=sql.prepare('SELECT * FROM vocabulary_case_sense_coverage').all();
+  writeVocabularyDefaultUsefulSenses('a',0,[],actor);
+  const opened=getVocabularySenseCoverageWorkspace('word','a','editor');
+  assert.equal(opened.review,null);assert.deepEqual(opened.includedSenseIds,[]);
+  assert.deepEqual(sql.prepare('SELECT * FROM vocabulary_case_sense_coverage').all(),historical);
 });
 
 test('pending approval excludes direct approval and application, allowing only its exact journal request and proposal',()=>{
@@ -1566,4 +1545,160 @@ test('pending approval excludes direct approval and application, allowing only i
     assert.equal(getVocabularyCaseReview(work.caseId)?.currentProposalId,sibling.proposalId);
     assert.equal(getVocabularyContentForMaintenance('one')!.version,2);assert.equal(getVocabularyContentForMaintenance('two')!.version,1);
   }finally{fs.rmSync(directory,{recursive:true,force:true});}
+});
+
+function repairTargetFixture() {
+  const original=createVocabularySense({wordId:'a',description:'written character'},actor);
+  const alternative=createVocabularySense({wordId:'a',description:'writing style'},actor);
+  ingest([present('one'),response('one')]);
+  const work=claimVocabularyReflectionJob({kind:'exercise_improvement',now:judgedAt})!;
+  const admission={outcome:'single_sense' as const,rationale:'Mapped target',wordId:'a',sourceContentId:'one',sourceContentVersion:1,
+    catalogVersion:getVocabularySenseCatalog('a').version,senseIds:[original.senseId],sourceMapping:{senseId:null,establishedAt:null}};
+  const operation=op();operation.content.words=[{wordId:'a',relation:'target',senseId:original.senseId,senseMappingEstablishedAt:judgedAt}];
+  const result=recordVocabularyImprovementResult(work.jobId,work.leaseToken,{diagnosis:'Repair',proposal:{operations:[operation],rationale:'Repair'},admission},judgedAt);
+  return {work,admission,operation,proposalId:result.proposalId!,original,alternative};
+}
+
+for(const same of [true,false])test(`pending target blocks editing/application without mutating source; reset restores the assessed target (same=${same})`,()=>{
+  const f=repairTargetFixture(),before=getVocabularyContentForMaintenance('one');
+  const approval=approveVocabularyProposal(f.proposalId,1,'editor');
+  const desired=same?f.original.senseId:f.alternative.senseId;
+  const saved=setVocabularyRepairTarget(f.work.caseId,0,desired,'editor');
+  assert.equal(saved.pendingSenseId,desired);assert.equal(saved.currentSenseId,f.original.senseId);assert.equal(saved.blocked,true);
+  assert.deepEqual(getVocabularyContentForMaintenance('one'),before);
+  assert.throws(()=>saveVocabularyProposal(f.proposalId,1,{operations:[f.operation],rationale:'Manual tweak'},'editor'),/reassess or reset/);
+  assert.throws(()=>applyVocabularyProposal(f.proposalId,1,approval,'pending-target','editor'),/reassess or reset/);
+  assert.throws(()=>recordVocabularyApprovalIntent({requestId:'blocked-intent',proposalId:f.proposalId,expectedVersion:1,actorId:'editor'}),/reassess or reset/);
+  assert.equal(getVocabularyCaseReview(f.work.caseId)!.approvalState,null);
+  assert.throws(()=>setVocabularyRepairTarget(f.work.caseId,0,null,'editor'),/changed/);
+  const reset=setVocabularyRepairTarget(f.work.caseId,saved.version,null,'editor');
+  assert.equal(reset.blocked,false);assert.equal(reset.pendingSenseId,null);assert.equal(reset.currentSenseId,f.original.senseId);
+  assert.deepEqual(getVocabularyContentForMaintenance('one'),before);
+  const reviewed=approveVocabularyProposal(f.proposalId,1,'editor');
+  applyVocabularyProposal(f.proposalId,1,reviewed,'reset-target','editor');
+  assert.equal(getVocabularyContentForMaintenance('one')!.words[0]!.senseId,f.original.senseId);
+});
+
+test('failed target reassessment leaves intent pending and reset does not erase independent source staleness',()=>{
+  const f=repairTargetFixture(),pending=setVocabularyRepairTarget(f.work.caseId,0,f.alternative.senseId,'editor');
+  requestVocabularyReassessment(f.work.caseId,'editor','openai:gpt-6-sol-high',1);
+  assert.throws(()=>setVocabularyRepairTarget(f.work.caseId,pending.version,null,'editor'),/frozen/);
+  const now=new Date(Date.now()+1000).toISOString(),job=claimVocabularyReflectionJob({kind:'exercise_improvement',now})!;
+  assert.deepEqual(job.repairTarget,{senseId:f.alternative.senseId,version:pending.version});
+  failVocabularyReflectionJob(job.jobId,job.leaseToken,'Provider unavailable',now,now);
+  assert.equal(getVocabularyRepairTarget(f.work.caseId,'editor').blocked,true);
+  assert.throws(()=>approveVocabularyProposal(f.proposalId,1,'editor'),/reassess or reset/);
+  updateVocabularyContent('one',1,{...getVocabularyContentForMaintenance('one')!,body:{prompt:'Changed elsewhere'}},actor);
+  setVocabularyRepairTarget(f.work.caseId,pending.version,null,'editor');
+  assert.throws(()=>retryVocabularyReflectionJob(job.jobId,'editor'),/target.*changed|target.*stale|fresh reassessment|reassess/i);
+  assert.throws(()=>approveVocabularyProposal(f.proposalId,1,'editor'),/content base changed|sense evidence changed/);
+});
+
+for(const producesRepair of [true,false])test(`matching target reassessment consumes pending intent and keeps older proposals ineligible (repair=${producesRepair})`,()=>{
+  const f=repairTargetFixture(),before=getVocabularyContentForMaintenance('one');
+  const oldAlternative=createVocabularyProposal({caseId:f.work.caseId,operations:[f.operation],rationale:'Another repair of the original sense'},'editor');
+  const pending=setVocabularyRepairTarget(f.work.caseId,0,f.alternative.senseId,'editor');
+  requestVocabularyReassessment(f.work.caseId,'editor','openai:gpt-6-sol-high',1);
+  const now=new Date(Date.now()+1000).toISOString(),job=claimVocabularyReflectionJob({kind:'exercise_improvement',now})!;
+  const replacement=op();replacement.content.words=[{wordId:'a',relation:'target',senseId:f.alternative.senseId,senseMappingEstablishedAt:now}];
+  const result=recordVocabularyImprovementResult(job.jobId,job.leaseToken,{diagnosis:'Operator-directed assessment',proposal:producesRepair?{operations:[replacement],rationale:'Repair this use'}:null,
+    admission:{...f.admission,senseIds:[f.alternative.senseId],repairTargetVersion:pending.version}},now);
+  const current=getVocabularyRepairTarget(f.work.caseId,'editor');
+  assert.equal(current.blocked,false);assert.equal(current.pendingSenseId,null);assert.equal(current.currentSenseId,f.alternative.senseId);
+  assert.deepEqual(getVocabularyContentForMaintenance('one'),before);
+  assert.throws(()=>approveVocabularyProposal(f.proposalId,1,'editor'),/cannot be approved|closed|resolved|predates/);
+  assert.throws(()=>approveVocabularyProposal(oldAlternative.proposalId,1,'editor'),/cannot be approved|closed|resolved|predates/);
+  if(producesRepair){
+    const reviewed=approveVocabularyProposal(result.proposalId!,1,'editor');
+    applyVocabularyProposal(result.proposalId!,1,reviewed,'new-target','editor');
+    assert.equal(getVocabularyContentForMaintenance('one')!.words[0]!.senseId,f.alternative.senseId);
+  }
+});
+
+function repertoireSelectionFixture(omittedSelectedSense=false){
+  const first=createVocabularySense({wordId:'a',description:'written character'},actor);
+  const second=createVocabularySense({wordId:'a',description:'writing style'},actor);
+  const third=createVocabularySense({wordId:'a',description:'a name'},actor);
+  const selected=[first.senseId,second.senseId,...(omittedSelectedSense?[third.senseId]:[])];
+  writeVocabularyDefaultUsefulSenses('a',0,selected,actor);
+  ingest([present('one'),response('one')]);const work=claimVocabularyReflectionJob({kind:'exercise_improvement',now:judgedAt})!;
+  const operations=[op('replace','one','first-item'),{...op('create','one','second-item'),operationKey:'second'}];
+  operations.forEach((operation,index)=>{operation.content.words=[{wordId:'a',relation:'target',senseId:[first.senseId,second.senseId][index]!,senseMappingEstablishedAt:judgedAt}];});
+  const result=recordVocabularyImprovementResult(work.jobId,work.leaseToken,{diagnosis:'Repertoire',proposal:{operations,rationale:'Useful repertoire'},admission:{outcome:'repertoire_bootstrap',rationale:'First repertoire',wordId:'a',sourceContentId:'one',sourceContentVersion:1,
+    catalogVersion:getVocabularySenseCatalog('a').version,senseIds:[],sourceMapping:{senseId:null,establishedAt:null},generationScope:{selectionEstablished:true,senseIds:selected,source:{kind:'word_defaults',wordId:'a',capturedVersion:1}}}},judgedAt);
+  return {first,second,third,proposalId:result.proposalId!,operations};
+}
+test('repertoire selection saves defaults atomically and restores retained exercises without a model call',()=>{
+  const f=repertoireSelectionFixture();
+  const before=getVocabularyContentForMaintenance('one'),jobs=sql.prepare('SELECT * FROM vocabulary_reflection_jobs').all();
+  const narrowed=saveRepertoireWordDefaults(f.proposalId,1,1,[f.second.senseId],'editor');
+  assert.equal(narrowed.proposal.version,2);assert.equal(narrowed.proposal.operations.length,1);
+  assert.equal(narrowed.proposal.operations[0]!.strategy,'replace');
+  assert.equal(narrowed.proposal.operations[0]!.content.words[0]!.senseId,f.second.senseId);
+  assert.deepEqual(narrowed.coverage.includedSenseIds,[f.second.senseId]);
+  const restored=saveRepertoireWordDefaults(f.proposalId,2,2,[f.first.senseId,f.second.senseId],'editor');
+  assert.deepEqual(restored.proposal.operations,f.operations);
+  assert.deepEqual(getVocabularyContentForMaintenance('one'),before);assert.deepEqual(sql.prepare('SELECT * FROM vocabulary_reflection_jobs').all(),jobs);
+  assert.equal(sql.prepare('SELECT count(*) AS count FROM vocabulary_repertoire_revisions').get()!.count,2);
+});
+test('repertoire selection preserves manual edits while restoring hidden items',()=>{
+  const f=repertoireSelectionFixture();
+  const narrowed=saveRepertoireWordDefaults(f.proposalId,1,1,[f.second.senseId],'editor').proposal;
+  const edited=structuredClone(narrowed.operations);edited[0]!.content.body={prompt:'Manually improved retained exercise'};
+  saveVocabularyProposal(f.proposalId,2,{operations:edited,rationale:narrowed.rationale},'editor');
+  const restored=saveRepertoireWordDefaults(f.proposalId,3,2,[f.first.senseId,f.second.senseId],'editor').proposal;
+  assert.deepEqual(restored.operations[0],f.operations[0]);
+  assert.equal(restored.operations[1]!.strategy,'create');
+  assert.deepEqual(restored.operations[1]!.content.body,{prompt:'Manually improved retained exercise'});
+});
+test('repertoire Apply writes only selected exercises and preserves the hidden source version in history',()=>{
+  const f=repertoireSelectionFixture();
+  const narrowed=saveRepertoireWordDefaults(f.proposalId,1,1,[f.second.senseId],'editor').proposal;
+  const approval=approveVocabularyProposal(f.proposalId,narrowed.version,'editor');
+  applyVocabularyProposal(f.proposalId,narrowed.version,approval,'selected-only','editor');
+  assert.equal(getVocabularyContentForMaintenance('first-item'),null);
+  assert.equal(getVocabularyContentForMaintenance('second-item')!.words[0]!.senseId,f.second.senseId);
+  assert.equal(getVocabularyContentForMaintenance('one')!.availability,'retired');
+  const original=JSON.parse((sql.prepare('SELECT snapshot_json FROM proposal_revision_history WHERE proposal_id=? AND version=1').get(f.proposalId) as {snapshot_json:string}).snapshot_json);
+  assert.deepEqual(original.operations,f.operations);
+});
+test('an already-selected sense omitted by generation does not prevent saving other selection changes',()=>{
+  const f=repertoireSelectionFixture(true);
+  const result=saveRepertoireWordDefaults(f.proposalId,1,1,[f.second.senseId,f.third.senseId],'editor');
+  assert.deepEqual(result.coverage.includedSenseIds,[f.second.senseId,f.third.senseId].sort());
+  assert.equal(result.proposal.operations.length,1);
+  saveRepertoireWordDefaults(f.proposalId,2,2,[f.second.senseId],'editor');
+  assert.throws(()=>saveRepertoireWordDefaults(f.proposalId,3,3,[f.second.senseId,f.third.senseId],'editor'),/no retained exercises/);
+});
+test('repertoire selection rolls back both defaults and proposal on conflicts or missing generated exercises',()=>{
+  const f=repertoireSelectionFixture();
+  const before=resolveVocabularySenseCoverage('a'),history=sql.prepare('SELECT * FROM vocabulary_sense_coverage_history').all();
+  for(const work of [
+    ()=>saveRepertoireWordDefaults(f.proposalId,2,1,[f.second.senseId],'editor'),
+    ()=>saveRepertoireWordDefaults(f.proposalId,1,0,[f.second.senseId],'editor'),
+    ()=>saveRepertoireWordDefaults(f.proposalId,1,1,[f.third.senseId],'editor'),
+    ()=>saveRepertoireWordDefaults(f.proposalId,1,1,[],'editor'),
+  ]){
+    assert.throws(work);assert.deepEqual(resolveVocabularySenseCoverage('a'),before);
+    assert.deepEqual(sql.prepare('SELECT * FROM vocabulary_sense_coverage_history').all(),history);
+    assert.equal(getVocabularyProposal(f.proposalId,'editor').version,1);
+  }
+  updateVocabularyContent('one',1,{...getVocabularyContentForMaintenance('one')!,body:{prompt:'Source changed'}},actor);
+  assert.throws(()=>saveRepertoireWordDefaults(f.proposalId,1,1,[f.second.senseId],'editor'),/Source or inventory changed/);
+  assert.deepEqual(resolveVocabularySenseCoverage('a'),before);
+});
+
+
+
+test('successful publication must honor the captured sense as well as its intent version',()=>{
+  const f=repairTargetFixture(),pending=setVocabularyRepairTarget(f.work.caseId,0,f.alternative.senseId,'editor');
+  requestVocabularyReassessment(f.work.caseId,'editor','openai:gpt-6-sol-high',1);
+  const now=new Date(Date.now()+1000).toISOString(),job=claimVocabularyReflectionJob({kind:'exercise_improvement',now})!;
+  const before=getVocabularyContentForMaintenance('one');
+  assert.throws(()=>recordVocabularyImprovementResult(job.jobId,job.leaseToken,{diagnosis:'Wrong target',proposal:null,
+    admission:{...f.admission,repairTargetVersion:pending.version}},now),/captured repair target/);
+  assert.equal(getVocabularyRepairTarget(f.work.caseId,'editor').pendingSenseId,f.alternative.senseId);
+  assert.equal(getVocabularyProposal(f.proposalId,'editor').status,'awaiting_review');
+  assert.equal(sql.prepare('SELECT status FROM vocabulary_reflection_jobs WHERE job_id=?').get(job.jobId)!.status,'running');
+  assert.deepEqual(getVocabularyContentForMaintenance('one'),before);
 });

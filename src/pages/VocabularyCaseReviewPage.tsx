@@ -2,6 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import type { VocabularyCaseQueueItem, VocabularyCaseQueueQuery } from '../domain/vocabulary-case-queue';
 import { ApiRequestError } from '../services/api';
 import { vocabularyOperatorApi, type VocabularyOperatorApi, type VocabularyReassessmentModel } from '../features/vocabulary-operator/api';
+import type { VocabularyRepairTargetWorkspace } from '../domain/vocabulary-reflection';
+import { repairTargetBlocksMutation } from '../features/vocabulary-operator/sense-coverage';
+import { ScopeCoverageEditor } from '../features/vocabulary-operator/ScopeCoverageEditor';
+import { ReassessmentDialog } from '../features/vocabulary-operator/ReassessmentDialog';
+import { RepairTargetEditor } from '../features/vocabulary-operator/RepairTargetEditor';
 import { CaseReviewCard } from '../features/vocabulary-operator/CaseReviewCard';
 import { CASE_QUEUE_BATCH_SIZE, approvalOutcomeUncertain, canInstallCaseRefresh, caseCanReview, canRetryLatestCaseJob, queueWindowItems, removeCaseFromWindow, replaceCaseProjection, selectionAfterCaseRemoval, shouldSaveReviewNote, type CaseQueueWindow } from '../features/vocabulary-operator/case-queue-model';
 import { shortcutEventBlocked } from '../lib/keyboard';
@@ -28,6 +33,10 @@ export function VocabularyCaseReviewPage({ api = vocabularyOperatorApi }: { api?
   const [detail, setDetail] = useState<{ caseId: string; proposalId?: string; edit: boolean } | null>(null);
   const [detailActivity, setDetailActivity] = useState<VocabularyDetailActivity>({ dirty: false, busy: false });
   const [approvalUnconfirmed, setApprovalUnconfirmed] = useState(false);
+  const [repairTarget,setRepairTarget]=useState<VocabularyRepairTargetWorkspace|null>(null);
+  const [targetSaving,setTargetSaving]=useState(false);
+  const [reassessmentOpen,setReassessmentOpen]=useState(false);
+  const [wordDefaultsEditing, setWordDefaultsEditing] = useState(false);
   const approval = useRef<{ requestId: string; proposalId: string; version: number; notes: string } | null>(null);
   const pageRef = useRef<HTMLElement>(null), generation = useRef(0);
   const [showDetails, setShowDetails] = useState(false), [moreOpen, setMoreOpen] = useState(false);
@@ -36,22 +45,22 @@ export function VocabularyCaseReviewPage({ api = vocabularyOperatorApi }: { api?
   const [noteOpen, setNoteOpen] = useState(false);
   const [noteSaved, setNoteSaved] = useState('');
   const savedQueues = useRef<Partial<Record<'review' | 'history', { pages: CaseQueueWindow; selectedId: string | null; query: string }>>>({});
-  const current = useRef({ pages, selectedId, view, query, busy, loadingMore, detailActivity, detail, approvalUnconfirmed });
-  current.current = { pages, selectedId, view, query, busy, loadingMore, detailActivity, detail, approvalUnconfirmed };
+  const current = useRef({ pages, selectedId, view, query, busy, loadingMore, detailActivity, detail, approvalUnconfirmed, wordDefaultsEditing, reassessmentOpen });
+  current.current = { pages, selectedId, view, query, busy, loadingMore, detailActivity, detail, approvalUnconfirmed, wordDefaultsEditing, reassessmentOpen };
   function refreshContext(state:typeof current.current) {
-    return {view:state.view,query:state.query,selectedId:state.selectedId,detailKey:state.detail?`${state.detail.caseId}:${state.detail.proposalId??''}`:null,busy:state.busy||state.loadingMore||state.detailActivity.busy,dirty:state.detailActivity.dirty,approvalUnconfirmed:state.approvalUnconfirmed};
+    return {view:state.view,query:state.query,selectedId:state.selectedId,detailKey:state.detail?`${state.detail.caseId}:${state.detail.proposalId??''}`:null,busy:state.busy||state.loadingMore||state.detailActivity.busy,dirty:state.detailActivity.dirty || state.wordDefaultsEditing || state.reassessmentOpen,approvalUnconfirmed:state.approvalUnconfirmed};
   }
   const items = queueWindowItems(pages);
   const selected = items.find(item => item.caseId === selectedId) ?? null;
   const item = alternative?.caseId === selectedId ? alternative : selected;
   const index = items.findIndex(entry => entry.caseId === selectedId);
-  const blocked = busy || detailActivity.busy || approvalUnconfirmed || loadingMore;
+  const blocked = wordDefaultsEditing || busy || targetSaving || detailActivity.busy || approvalUnconfirmed || loadingMore;
 
   function mayLeaveDetails(): boolean {
-    if (detailActivity.busy || busy || approvalUnconfirmed) return false;
+    if (wordDefaultsEditing || detailActivity.busy || busy || approvalUnconfirmed) return false;
     return !detailActivity.dirty || window.confirm('Discard your unsaved edits and leave this case?');
   }
-  function clearSelectionState() { setShowDetails(false); setMoreOpen(false); setAlternative(null); setNoteOpen(false); setNoteSaved(''); setConfirmSource(null); setDetail(null); setDetailActivity({ dirty: false, busy: false }); approval.current = null; setApprovalUnconfirmed(false); }
+  function clearSelectionState() { setReassessmentOpen(false); setRepairTarget(null); setShowDetails(false); setMoreOpen(false); setAlternative(null); setNoteOpen(false); setNoteSaved(''); setConfirmSource(null); setDetail(null); setDetailActivity({ dirty: false, busy: false }); approval.current = null; setApprovalUnconfirmed(false); }
   function selectCase(id: string) {
     if (id === selectedId || !mayLeaveDetails()) return;
     clearSelectionState(); setSelectedId(id); setError(''); setNotice('');
@@ -66,7 +75,7 @@ export function VocabularyCaseReviewPage({ api = vocabularyOperatorApi }: { api?
   }
   async function refresh(initial = false) {
     const state = current.current;
-    if (state.view === 'attention' || state.loadingMore || state.approvalUnconfirmed || (!initial && (!visible(pageRef.current) || state.busy || state.detailActivity.busy || state.detailActivity.dirty))) return;
+    if (state.view === 'attention' || state.loadingMore || state.approvalUnconfirmed || (!initial && (!visible(pageRef.current) || state.busy || state.detailActivity.busy || state.detailActivity.dirty || state.wordDefaultsEditing || state.reassessmentOpen))) return;
     const request = ++generation.current;
     const started=refreshContext(state);
     const before = queueWindowItems(state.pages), oldIndex = before.findIndex(entry => entry.caseId === state.selectedId);
@@ -187,7 +196,7 @@ export function VocabularyCaseReviewPage({ api = vocabularyOperatorApi }: { api?
       if (!fresh.reassessment.eligible || !source) throw new Error(fresh.reassessment.reason ?? 'This case cannot be reassessed.');
       if (source.currentVersion !== source.assessedVersion && confirmedVersion !== source.currentVersion) { setConfirmSource({ caseId: fresh.caseId, version: source.currentVersion }); return; }
       const result = await api.reassessCaseReview(fresh.caseId, fresh.version, model, source.currentVersion, fresh.proposal ? { proposalId: fresh.proposal.proposalId, expectedVersion: fresh.proposal.version } : undefined);
-      installCard(result.item); setConfirmSource(null); setNotice('Reassessment queued.');
+      installCard(result.item); setConfirmSource(null); setReassessmentOpen(false); setNotice('Reassessment queued.');
     });
   }
   function secondOpinion() {
@@ -212,6 +221,7 @@ export function VocabularyCaseReviewPage({ api = vocabularyOperatorApi }: { api?
     if(proposalId&&proposalId!==card.currentProposalId)setAlternative(await api.caseCard(caseId,proposalId));
   }
   const reviewLocked = !item || item.state === 'resolved' || item.frozen || item.approvalState === 'pending' || blocked;
+  const repairBlocked=item?.kind==='exercise_improvement'&&view==='review'&&repairTargetBlocksMutation(item.caseId,repairTarget);
   const proposalResolved = item?.proposal && ['applied', 'closed'].includes(item.proposal.status);
   return <section ref={pageRef} className="vocabulary-operator-page vocabulary-case-review-page" aria-label="Content improvement" tabIndex={0} onKeyDown={event => {
     if (detail || view === 'attention') return;
@@ -235,23 +245,29 @@ export function VocabularyCaseReviewPage({ api = vocabularyOperatorApi }: { api?
         {detail ? <>
           <button className="secondary-button" disabled={detailActivity.busy || busy} onClick={() => { if (mayLeaveDetails()) { setDetail(null); setDetailActivity({ dirty: false, busy: false }); void refresh(); } }}>Back to case</button>
           <VocabularyOperatorPage key={`${detail.caseId}:${detail.proposalId ?? ''}`} api={api} detailOnly={{ ...detail, history: view === 'history', liveReview: item?.caseId === detail.caseId ? item : null, onChanged: detailsChanged, onSelectProposal: proposalId => void run(async () => { const projection = await api.caseCard(detail.caseId, proposalId); setAlternative(projection); setDetailActivity({ dirty: false, busy: false }); setDetail({ ...detail, proposalId, edit: false }); }) }} onActivity={setDetailActivity} />
-        </> : <div className="vocabulary-case-frame"><div key={item.caseId} className="vocabulary-case-scroll" tabIndex={0} aria-label="Case content"><CaseReviewCard key={item.caseId} item={item} showDetails={showDetails} onDetails={() => openDetails()}>
+        </> : <div className="vocabulary-case-frame"><div key={item.caseId} className="vocabulary-case-scroll" tabIndex={0} aria-label="Case content"><CaseReviewCard key={item.caseId} item={item} showDetails={showDetails} onDetails={() => openDetails()} wordDefaults={view === 'review' && item.wordId && item.assessment?.outcome === 'repertoire_bootstrap' && <ScopeCoverageEditor key={item.caseId} api={api} wordId={item.wordId} disabled={busy || targetSaving || approvalUnconfirmed || item.frozen || item.state !== 'open' || item.approvalState === 'pending'} onActivity={setWordDefaultsEditing} onSaved={() => { void run(async () => { installCard(await api.caseCard(item.caseId, item.proposal?.proposalId)); }, 'Word defaults saved.'); }} repertoire={item.proposal && !proposalResolved ? {proposal:item.proposal,onSaved:proposal => { void run(async () => { installCard(await api.caseCard(item.caseId, proposal.proposalId)); }, 'Defaults and proposal updated.'); }} : undefined} />}>
           {item.alternativeCount > 0 && <label>Proposal<select disabled={blocked} value={item.proposal?.proposalId ?? ''} onChange={event => { const id = event.target.value; void run(async () => setAlternative(await api.caseCard(item.caseId, id || undefined))); }}><option value={item.currentProposalId ?? ''}>Current proposal</option>{item.alternatives.filter(proposal => proposal.proposalId !== item.currentProposalId).map(proposal => <option key={proposal.proposalId} value={proposal.proposalId}>{proposal.rationale || proposal.proposalId} · revision {proposal.version} · {proposal.status}</option>)}</select></label>}
           {item.alternativeCount > item.alternatives.length && <button className="secondary-button" onClick={() => openDetails()}>All retained proposals</button>}
         </CaseReviewCard></div>
           {view === 'review' && <div className="vocabulary-case-action-frame" aria-label="Case review actions">
             <div className="vocabulary-review-note">{noteOpen && <form onSubmit={event => {event.preventDefault(); setNoteOpen(false); setNoteSaved('Draft saved for this review session.'); noteButton.current?.focus();}}><label>Note or question<textarea ref={noteInput} value={reason} disabled={reviewLocked} onChange={event => setReason(event.target.value)} onKeyDown={event => {if (shouldSaveReviewNote(event.nativeEvent)) {event.preventDefault(); event.currentTarget.form?.requestSubmit();}}} /></label><button type="submit" disabled={reviewLocked}>Save draft</button></form>}{noteSaved && <span role="status" className="vocabulary-operator-meta">{noteSaved}</span>}</div>
             <div className="vocabulary-operator-actions">
-              {item.proposal && !proposalResolved && <button disabled={reviewLocked && !approvalUnconfirmed || busy || item.stale || item.requiresDetails} onClick={approve}>{approvalUnconfirmed ? 'Retry approval' : 'Approve and apply'}</button>}
+              {item.proposal && !proposalResolved && <button disabled={reviewLocked && !approvalUnconfirmed || busy || item.stale || item.requiresDetails || repairBlocked} onClick={approve}>{approvalUnconfirmed ? 'Retry approval' : 'Approve and apply'}</button>}
               {!proposalResolved && <button className="secondary-button" disabled={reviewLocked || (!item.proposal && !item.currentAssessment && !item.needsDecision)} onClick={resolve}>{item.proposal ? 'Dismiss proposal' : 'Done'}</button>}
+              {item.reassessment.eligible && <button className="secondary-button" disabled={reviewLocked || !!item.activeJob} aria-haspopup="dialog" onClick={() => setReassessmentOpen(true)}>Reassess{repairTarget?.blocked?' · target pending':''}</button>}
               <button ref={noteButton} className="secondary-button" disabled={reviewLocked} aria-expanded={noteOpen} onClick={() => {setNoteOpen(true); setNoteSaved('');}}>Note{reason ? ' · draft' : ''}</button><span className="vocabulary-action-spacer" /><button className="secondary-button" aria-expanded={showDetails} onClick={() => setShowDetails(value => !value)}>Details</button><button className="secondary-button" aria-expanded={moreOpen} onClick={() => setMoreOpen(value => !value)}>More</button>
             </div>
             {moreOpen && <div className="vocabulary-more-actions">
-              {item.proposal && !proposalResolved && <button className="secondary-button" disabled={reviewLocked} onClick={() => openDetails(true)}>Edit proposal</button>}
+              {item.proposal && !proposalResolved && <button className="secondary-button" disabled={reviewLocked || repairBlocked} onClick={() => openDetails(true)}>Edit proposal</button>}
               {item.kind === 'exercise_improvement' && (item.proposal || item.currentAssessment) && (!item.advisoryOpinion || item.advisoryOpinion.status === 'failed') && <button className="secondary-button" disabled={reviewLocked || !!item.activeJob || item.stale || !!proposalResolved} onClick={secondOpinion}>{item.advisoryOpinion?.status === 'failed' ? 'Retry second opinion' : 'Second opinion'}</button>}
               {canRetryLatestCaseJob(item) && !item.latestJob?.advisory && <button className="secondary-button" disabled={reviewLocked} onClick={() => void run(async () => { await api.retryJob(item.latestJob!.jobId); installCard(await api.caseCard(item.caseId)); }, 'Assessment queued.')}>Retry assessment {item.latestJob?.sequence}</button>}
-            {item.reassessment.eligible && <div className="vocabulary-reassessment-control"><label>Model for reassessment<select value={model} disabled={reviewLocked || !!item.activeJob} onChange={event => setModel(event.target.value as VocabularyReassessmentModel)}><option value="openai:gpt-6-sol-high">GPT-6 Sol high</option><option value="openai:gpt-5.6-luna-high">Luna high</option><option value="zai:glm-5.3-flash-high">GLM-5.3 Flash high</option></select></label><button className="secondary-button" disabled={reviewLocked || !!item.activeJob} onClick={() => reassess()}>Reassess</button>{confirmSource?.caseId === item.caseId && <div className="vocabulary-reassessment-confirmation"><p>Source changed from v{item.reassessment.source?.assessedVersion} to v{confirmSource.version}. Reassessment uses the current version.</p><button disabled={reviewLocked} onClick={() => reassess(confirmSource.version)}>Reassess current version</button><button className="secondary-button" onClick={() => setConfirmSource(null)}>Cancel</button></div>}</div>}
+
             </div>}
+            <ReassessmentDialog open={reassessmentOpen} onClose={()=>{setReassessmentOpen(false);setConfirmSource(null);}} busy={busy||targetSaving}>
+              {error&&<p role="alert">{error}</p>}
+            {item.kind==='exercise_improvement'&&<RepairTargetEditor key={item.caseId} api={api} caseId={item.caseId} revision={item.version} disabled={reviewLocked} onState={setRepairTarget} onActivity={setTargetSaving} onSaved={async()=>{installCard(await api.caseCard(item.caseId,item.proposal?.proposalId));}}/>}
+            {item.reassessment.eligible && <div className="vocabulary-reassessment-control"><label>Model for reassessment<select value={model} disabled={reviewLocked || !!item.activeJob} onChange={event => setModel(event.target.value as VocabularyReassessmentModel)}><option value="openai:gpt-6-sol-high">GPT-6 Sol high</option><option value="openai:gpt-5.6-luna-high">Luna high</option><option value="zai:glm-5.3-flash-high">GLM-5.3 Flash high</option></select></label><button disabled={reviewLocked || !!item.activeJob} onClick={() => reassess()}>Submit reassessment</button>{confirmSource?.caseId === item.caseId && <div className="vocabulary-reassessment-confirmation"><p>Source changed from v{item.reassessment.source?.assessedVersion} to v{confirmSource.version}. Reassessment uses the current version.</p><button disabled={reviewLocked} onClick={() => reassess(confirmSource.version)}>Reassess current version</button><button className="secondary-button" onClick={() => setConfirmSource(null)}>Cancel</button></div>}</div>}
+            </ReassessmentDialog>
           </div>}
           {view === 'history' && <div className="vocabulary-case-action-frame"><button className="secondary-button" aria-expanded={showDetails} onClick={() => setShowDetails(value => !value)}>Details</button></div>}
         </div>}

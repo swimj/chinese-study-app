@@ -53,6 +53,10 @@ belong there and in task instructions, not in this frontier.
 - **Reflection:** private learner lessons and internal content proposals run
   independently. An improvement case retains its encounter group and numbered
   holistic assessment jobs; only one job may be queued or running within it.
+  Single-exercise repair targets are pending operator intent; assessment leaves
+  source content and sense bindings unchanged until proposal application. Word
+  defaults alone define repertoire bootstrap selection. Historical case scopes
+  remain evidence, with no runtime policy authority.
   Reassessment freezes case review mutations until termination and preserves
   earlier assessments as provenance. Operators approve exact content revisions;
   case resolution is distinct from job completion and queued approval. Backend

@@ -84,7 +84,7 @@ proposal version and do not become the authoritative assessment.
 Operator reassessment pins the current source identity and version at submission.
 A difference from the historical assessed version requires explicit operator
 confirmation. Queuing reassessment freezes the case's proposal and review edits,
-resolution, approval, and review-scope changes until that job terminates. Shared
+resolution, approval, and repair-target changes until that job terminates. Shared
 word policy retains its own authority and consistency checks. Successful
 publication atomically selects the new assessment and supersedes the prior
 current proposal; failure or timeout leaves the prior review material intact.
@@ -93,7 +93,8 @@ proposals, invocations, and decisions remain attributable within the case.
 
 Source identity and version govern reassessment consistency. A later source
 revision invalidates queued or in-flight work and proposals based on that version.
-Fresh mapping and assessment belong to the new job. Original served snapshots
+The new job maps the source unless it captures an operator-selected repair target.
+Original served snapshots
 remain distinct from its pinned current source. Retry retains the pinned version;
 it does not silently move to another source or supersede a newer assessment.
 Case review resolution is separate from job completion and approval progress:
@@ -156,8 +157,8 @@ Three separate records answer different questions:
 - The **default useful selection** chooses which senses normally deserve teaching
   and mapped production practice. Null means unknown; `[]` means explicitly none,
   either saved by an operator or derived from an established empty inventory.
-  A review can supply its own selection, including an uncommon use, without
-  changing the word defaults.
+  Repertoire bootstrap captures this shared selection; there is no separate
+  editable case-level repertoire selection.
 - An **invocation scope** records the exact canonical targets that a content call
   will address. Later changes to defaults do not retarget that call or invalidate
   its result. Source, mapping and canonical-version changes still fence publication.
@@ -188,12 +189,29 @@ precedence over the nonempty-inventory selection rules below.
 | Repertoire invocation inheriting defaults | Initialize, then capture scope; unresolved findings remain visible | No generation or retirement | Author against the captured IDs |
 | Single-sense improvement | Map the full inventory and improve the mapped use | Same | Same |
 
-An explicit review override supplies repertoire scope directly. Reassessment copies
-that override; null inherits shared defaults when the new invocation captures its
-scope. Default or review edits do not invalidate completed content generation or
-ordinary content approval. General preparation likewise retains its immutable
-source document's full mapped canonical scope across policy edits. Prepared
-teaching packages preserve document/component coherence.
+Repertoire bootstrap captures word defaults. In repertoire review, saving the
+selected defaults also updates the proposal in one transaction. Apply writes only
+its included exercises. Deselected exercises remain retained with that proposal:
+reselecting their sense restores them without a model call. A newly selected sense
+without retained exercises requires generation. Removing all proposed exercises
+requires dismissal or new generation; it never implies source retirement. Selection
+changes preserve an intended source replacement when exercises remain.
+Shared-default edits outside repertoire review do not retarget or invalidate an
+existing proposal.
+General preparation retains its immutable source document's mapped canonical
+scope across policy edits; teaching packages preserve document/component coherence.
+
+Single-exercise assessment records its observed source binding and proposed target
+separately. Assessment never changes source content or its sense binding. Only
+operator application publishes the reviewed content and binding together. An
+operator can set a pending target sense, even the currently assessed sense. That
+intent blocks application and manual proposal editing until reassessment uses it;
+reassessment skips automated mapping and can still find no faithful repair.
+Reset discards pending intent and restores the current assessment's target without
+bypassing independent stale-source, catalog or approval checks. Failed reassessment
+leaves the intent pending. Successful reassessment records the accepted intent,
+including when it produces no proposal; older alternatives cannot bypass it.
+Historical case-scope rows remain audit evidence and do not supply generation policy.
 
 For words without an established empty inventory, unmapped fallback exercises and
 recognition retain their serving rules. Historical encounters retain their exact

@@ -3,7 +3,7 @@ import type { VocabularyDefaultSelectionFinding,VocabularySenseCoverageWorkspace
 import { apiRequest } from '../../services/api';
 import type { VocabularyCaseQueueItem,VocabularyCaseQueuePage,VocabularyCaseQueueQuery } from '../../domain/vocabulary-case-queue';
 import type { VocabularyContent,VocabularyContentDraft } from '../../domain/vocabulary-content';
-import type { VocabularyAssessmentReview, VocabularyApprovalRequest, VocabularySecondOpinion, VocabularyContentProposal, VocabularyProposalDraft, VocabularyProposalApplication, VocabularySenseLabel, VocabularyProposalOperation, VocabularyReflectionCase, VocabularyImprovementAdmission, VocabularyPureCueReferral, VocabularyPureCuePromotion } from '../../domain/vocabulary-reflection';
+import type { VocabularyRepairTargetWorkspace, VocabularyAssessmentReview, VocabularyApprovalRequest, VocabularySecondOpinion, VocabularyContentProposal, VocabularyProposalDraft, VocabularyProposalApplication, VocabularySenseLabel, VocabularyProposalOperation, VocabularyReflectionCase, VocabularyImprovementAdmission, VocabularyPureCueReferral, VocabularyPureCuePromotion } from '../../domain/vocabulary-reflection';
 
 export type VocabularyReassessmentModel = 'openai:gpt-5.6-luna-high' | 'zai:glm-5.3-flash-high' | 'openai:gpt-6-sol-high';
 export type VocabularyReassessmentSource={contentId:string;assessedVersion:number;currentVersion:number};
@@ -33,9 +33,10 @@ export const vocabularyOperatorApi={
   reassessCaseReview:(caseId:string,expectedVersion:number,modelChoice:VocabularyReassessmentModel,expectedContentVersion:number,originProposal?:{proposalId:string;expectedVersion:number})=>write<{caseId:string;jobId:string;item:VocabularyCaseQueueItem}>(`/case-queue/${id(caseId)}/reassess`,{expectedVersion,modelChoice,expectedContentVersion,originProposal}),
   saveDefaultUsefulSenses:(wordId:string,expectedVersion:number,includedSenseIds:string[])=>write<VocabularySenseCoverageWorkspace>(`/words/${id(wordId)}/sense-coverage`,{expectedVersion,includedSenseIds},'PUT'),
   wordSenseCoverage:(wordId:string)=>apiRequest<VocabularySenseCoverageWorkspace>(`${root}/words/${id(wordId)}/sense-coverage`),
-  caseSenseCoverage:(caseId:string)=>apiRequest<VocabularySenseCoverageWorkspace>(`${root}/cases/${id(caseId)}/sense-coverage`),
+  repairTarget:(caseId:string)=>apiRequest<VocabularyRepairTargetWorkspace>(`${root}/cases/${id(caseId)}/repair-target`),
+  saveRepairTarget:(caseId:string,expectedVersion:number,senseId:string|null)=>write<VocabularyRepairTargetWorkspace>(`/cases/${id(caseId)}/repair-target`,{expectedVersion,senseId},'PUT'),
+  saveRepertoireWordDefaults:(proposalId:string,expectedVersion:number,expectedWordVersion:number,includedSenseIds:string[])=>write<{proposal:VocabularyContentProposal;coverage:VocabularySenseCoverageWorkspace}>(`/proposals/${id(proposalId)}/word-defaults-revision`,{expectedVersion,expectedWordVersion,includedSenseIds}),
   saveWordSenseCoverage:(wordId:string,expectedVersion:number,excludedSenseIds:string[])=>write<VocabularySenseCoverageWorkspace>(`/words/${id(wordId)}/sense-coverage`,{expectedVersion,excludedSenseIds},'PUT'),
-  saveCaseSenseCoverage:(caseId:string,expectedVersion:number,includedSenseIds:string[]|null)=>write<VocabularySenseCoverageWorkspace>(`/cases/${id(caseId)}/sense-coverage`,{expectedVersion,includedSenseIds},'PUT'),
   cases:(kind:VocabularyReflectionCase['kind'])=>apiRequest<{items:VocabularyReflectionCase[]}>(`${root}/cases?kind=${kind}`),
   noProposalCases:(status:'completed'|'closed'='completed')=>apiRequest<{items:VocabularyReflectionCase[]}>(`${root}/no-proposal-cases?status=${status}`),
   resolvePureCueIdentities:(caseId:string,modelChoice:VocabularyReassessmentModel,expectedContentVersion:number,selections:{form:string;wordId:string}[])=>write<{caseId:string;jobId:string}>(`/cases/${id(caseId)}/pure-cue-resolutions`,{modelChoice,expectedContentVersion,selections}),

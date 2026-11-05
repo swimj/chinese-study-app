@@ -94,19 +94,24 @@ and queues an advisory review of the retained no-change judgment. Case workspace
 jobs expose the advisory status and result; the existing job retry and case close
 routes apply. This path does not create or apply a content proposal.
 
-`GET /api/operator/vocabulary/words/:id/sense-coverage` and the corresponding
-`cases/:id/sense-coverage` return canonical senses, effective selection, inheritance,
-versions, `selectionEstablished`, and `productionExerciseCounts` keyed by sense ID.
-Counts use actual active mapped general production across content scopes, rather
-than only the current case's sources. PUT requires `expectedVersion`; word scope
-accepts explicit `includedSenseIds` (or compatible `excludedSenseIds`), while case
-scope accepts nullable `includedSenseIds`. `[]` explicitly selects none; case null
-inherits, including an unknown shared default. All routes require operator access.
-Review-batch snapshots expose `coverageChanged`, computed without writes from
-actual source, mapping and canonical catalog evidence. Content-only proposals remain valid after review or shared-default
-edits; their captured `generationScope` identifies the original invocation inputs.
-Approval/application revalidate their source evidence. Sense policy is edited
-through the coverage endpoints, separately from content proposals.
+`GET/PUT /api/operator/vocabulary/words/:id/sense-coverage` reads or edits shared
+word selection. PUT requires `expectedVersion` and explicit `includedSenseIds`
+(or compatible `excludedSenseIds`). An empty list explicitly selects none.
+Responses include canonical senses, selection status and mapped production counts.
+Historical case coverage is no longer an editable API.
+
+`GET/PUT /api/operator/vocabulary/cases/:id/repair-target` reads or changes pending
+single-exercise target intent. A selected sense requires reassessment; reset clears
+pending intent. Application and manual editing enforce this intent server-side.
+`POST /api/operator/vocabulary/proposals/:id/word-defaults-revision` accepts
+`expectedVersion`, `expectedWordVersion`, and `includedSenseIds`. It atomically
+saves word defaults and the repertoire selection, returning `{proposal, coverage}`.
+Deselected exercises remain in proposal history for restoration. Newly selected
+senses without retained exercises require generation; an empty result requires
+dismissal or new generation. Conflicts leave both defaults and proposal unchanged.
+All routes require operator authority. Source content, mappings and catalog versions
+remain approval/application checks; shared-default edits alone do not invalidate
+captured generation results.
 
 `POST /api/operator/vocabulary/cases/:id/reassessments` accepts `modelChoice`,
 required `expectedContentVersion`, and optional `originProposal` with
@@ -1242,15 +1247,13 @@ returns 409 instead of acting on an unseen newer assessment. Existing proposal
 approval continues to authorize an exact saved proposal version. All these
 routes require operator authority; invalid queries return 400.
 
-### Operator sense coverage
+### Operator sense selection
 
-`GET/PUT /api/operator/vocabulary/words/:id/sense-coverage` reads or edits shared
-word selection. `GET/PUT /api/operator/vocabulary/cases/:id/sense-coverage` reads
-or edits this review's requested scope. PUT requires a nonnegative
-`expectedVersion` and distinct active sense IDs belonging to the word: word
-requests use `includedSenseIds` (or compatible `excludedSenseIds`), case requests use nullable `includedSenseIds`
-(null inherits word defaults; [] requests none). Invalid payloads return 400;
-version conflicts return 409. These policy edits do not invalidate content proposals.
+Word defaults and pending repair targets have separate endpoints and lifecycles,
+described in the operator vocabulary API above. Word
+selection changes shared policy; repair intent stays pending until reassessment.
+Neither operation applies proposed content. Invalid payloads return 400 and
+version conflicts return 409.
 
 ### Exercise retirement proposals
 
@@ -1259,7 +1262,7 @@ and `replace`. Retirement names the exact `sourceContentId`, `expectedVersion`,
 access scope, rationale and compulsory comparison `content` snapshot. The server
 retires the live active general production source without creating a successor.
 Save, preview, exact-version approval and idempotent application use the same
-proposal routes; retirement never writes review coverage or word defaults.
+proposal routes; retirement never writes repair intent or word defaults.
 
 Operator case workspaces and proposal review-batch snapshots include nullable
 `defaultSelectionFinding`: `status: needs_operator`, `reason`, `invocationId` and

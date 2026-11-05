@@ -4,6 +4,10 @@ import { AssessmentReview } from '../features/vocabulary-operator/AssessmentRevi
 import { PureCueIdentityResolution } from '../features/vocabulary-operator/PureCueIdentityResolution';
 import { vocabularyPhraseClozeError } from '../domain/vocabulary-production-coverage';
 import type { VocabularyDefaultSelectionAttention,VocabularyDefaultSelectionFinding,VocabularySenseCoverageWorkspace } from '../domain/vocabulary-sense-coverage';
+import type { VocabularyRepairTargetWorkspace } from '../domain/vocabulary-reflection';
+import { repairTargetBlocksMutation } from '../features/vocabulary-operator/sense-coverage';
+import { ReassessmentDialog } from '../features/vocabulary-operator/ReassessmentDialog';
+import { RepairTargetEditor } from '../features/vocabulary-operator/RepairTargetEditor';
 import { ScopeCoverageEditor } from '../features/vocabulary-operator/ScopeCoverageEditor';
 import { mergeSenseLabels,scopeAffectsProposal } from '../features/vocabulary-operator/sense-coverage';
 import { useEffect,useRef,useState,type ReactNode } from 'react';
@@ -71,6 +75,7 @@ export function VocabularyOperatorPage({api=vocabularyOperatorApi,previewOnly=fa
   const [noProposalCases,setNoProposalCases]=useState<VocabularyReflectionCase[]>([]);
   const [caseNotes,setCaseNotes]=useState('');
   const [confirmReassessment,setConfirmReassessment]=useState<string|null>(null);
+  const [reassessmentOpen,setReassessmentOpen]=useState(false);
   const [reassessmentModel,setReassessmentModel]=useState<VocabularyReassessmentModel>('openai:gpt-6-sol-high');
   const [cases,setCases]=useState<VocabularyReflectionCase[]>([]),[proposals,setProposals]=useState<VocabularyContentProposal[]>([]),[dispatches,setDispatches]=useState<VocabularyFailedDispatch[]>([]);
   const [approvalRequests,setApprovalRequests]=useState<VocabularyApprovalRequest[]>([]);
@@ -94,6 +99,7 @@ export function VocabularyOperatorPage({api=vocabularyOperatorApi,previewOnly=fa
   const cache=useRef(new OperatorPrefetchCache<ReviewSnapshot>());
   const prefetchChain=useRef<Promise<void>>(Promise.resolve());
   const [snapshotOutdated,setSnapshotOutdated]=useState(false);
+  const [repairTarget,setRepairTarget]=useState<VocabularyRepairTargetWorkspace|null>(null);
   const [coverageChanged,setCoverageChanged]=useState(false),[scopeEditing,setScopeEditing]=useState(false);
   const [defaultSelectionFinding,setDefaultSelectionFinding]=useState<VocabularyDefaultSelectionFinding|null>(null);
   const [cacheRevision,setCacheRevision]=useState(0);
@@ -115,8 +121,10 @@ export function VocabularyOperatorPage({api=vocabularyOperatorApi,previewOnly=fa
   const selectedApproval=selected?approvalRequests.find(item=>item.proposalId===selected.proposalId&&item.expectedVersion===selected.version&&(item.status==='queued'||item.status==='running')):undefined;
   const caseLocked=caseReviewLocked(detailOnly?.caseId,detailOnly?.liveReview,(selected?reviewCase:workspace?.case)?.review);
   const detailStale=!!detailOnly?.liveReview&&(detailOnly.liveReview.stale||!!selected&&(detailOnly.liveReview.proposal?.proposalId!==selected.proposalId||detailOnly.liveReview.proposal.version!==selected.version));
-  useEffect(()=>{onActivity?.({dirty,busy:busy||scopeEditing||approvalUnconfirmed});},[dirty,busy,scopeEditing,approvalUnconfirmed,onActivity]);
-  const editable=!caseLocked&&!selectedApproval&&(selected===null||!['applied','closed'].includes(selected.status));
+  useEffect(()=>{onActivity?.({dirty,busy:busy||scopeEditing||approvalUnconfirmed||reassessmentOpen});},[dirty,busy,scopeEditing,approvalUnconfirmed,reassessmentOpen,onActivity]);
+  const repairCase=selected?reviewCase:workspace?.case;
+  const repairBlocked=!previewOnly&&queue!=='history'&&repairCase?.kind==='exercise_improvement'&&repairTargetBlocksMutation(repairCase.caseId,repairTarget);
+  const editable=!repairBlocked&&!caseLocked&&!selectedApproval&&(selected===null||!['applied','closed'].includes(selected.status));
   async function loadCases(){return {items:(await Promise.all(Object.keys(kinds).map(value=>api.cases(value as VocabularyReflectionCase['kind'])))).flatMap(result=>result.items)};}
   async function reload(savedProposalId?:string){
     if(detailOnly){const result=await api.workspace(detailOnly.caseId);setWorkspace(result);setProposals(result.proposals);setReviewCase(result.case);await detailOnly.onChanged(detailOnly.caseId,savedProposalId??selected?.proposalId);return result.proposals;}
@@ -174,7 +182,7 @@ export function VocabularyOperatorPage({api=vocabularyOperatorApi,previewOnly=fa
     const snapshot=cache.current.get(snapshotKey(value))??await fetchSnapshot(value);
     if(request!==selectedRequest.current)return;
     if(!cache.current.setIfCurrent(snapshotKey(snapshot.proposal),snapshot,epoch))return;
-    setSenseLabels(snapshot.senseLabels??[]);setDefaultSelectionFinding(snapshot.defaultSelectionFinding??null);setWorkspace(null);setReviewCase(snapshot.case);setReviewReassessment(snapshot.reassessment);setReviewAssessment(detailOnly?detailOnly.liveReview?.assessment?{origin:detailOnly.liveReview.assessment.origin,models:detailOnly.liveReview.assessment.models}:null:snapshot.assessment);install(snapshot.proposal);setCoverageChanged(snapshot.coverageChanged??false);setDisplay(snapshot.previews);setCurrentSources(snapshot.currentSources??[]);
+    setSenseLabels(snapshot.senseLabels??[]);setDefaultSelectionFinding(snapshot.defaultSelectionFinding??null);setWorkspace(null);setReviewCase(snapshot.case);setReviewReassessment(snapshot.reassessment);setReviewAssessment(snapshot.assessment);install(snapshot.proposal);setCoverageChanged(snapshot.coverageChanged??false);setDisplay(snapshot.previews);setCurrentSources(snapshot.currentSources??[]);
     setSnapshotOutdated(!['applied','closed'].includes(snapshot.proposal.status)&&snapshot.proposal.operations.some(operation=>operation.strategy!=='create'&&snapshot.previews.find(item=>item.operationKey===operation.operationKey)?.source?.version!==operation.expectedVersion));
   }
   async function loadWorkspaceForProposal(value:VocabularyContentProposal){
@@ -192,7 +200,7 @@ export function VocabularyOperatorPage({api=vocabularyOperatorApi,previewOnly=fa
     if(request!==selectedRequest.current||!cache.current.setIfCurrent(snapshotKey(snapshot.proposal),snapshot,epoch))return;
     // Refresh evidence without installing over the edited full pool or inclusion set.
     setProposals(previous=>previous.map(item=>item.proposalId===snapshot.proposal.proposalId?snapshot.proposal:item));
-    setReviewCase(snapshot.case);setReviewReassessment(snapshot.reassessment);setReviewAssessment(detailOnly?detailOnly.liveReview?.assessment?{origin:detailOnly.liveReview.assessment.origin,models:detailOnly.liveReview.assessment.models}:null:snapshot.assessment);setDisplay(snapshot.previews);setCurrentSources(snapshot.currentSources??[]);
+    setReviewCase(snapshot.case);setReviewReassessment(snapshot.reassessment);setReviewAssessment(snapshot.assessment);setDisplay(snapshot.previews);setCurrentSources(snapshot.currentSources??[]);
     setSenseLabels(snapshot.senseLabels??[]);setDefaultSelectionFinding(snapshot.defaultSelectionFinding??null);
     setCoverageChanged(snapshot.coverageChanged??false);
     setSnapshotOutdated(snapshot.proposal.version!==value.version||snapshot.proposal.status!==value.status||snapshot.proposal.operations.some(operation=>operation.strategy!=='create'&&snapshot.previews.find(item=>item.operationKey===operation.operationKey)?.source?.version!==operation.expectedVersion));
@@ -219,7 +227,7 @@ export function VocabularyOperatorPage({api=vocabularyOperatorApi,previewOnly=fa
     if(scope==='word')void reload().catch(cause=>{if(selectedRequest.current===request)setRefreshError(message(cause));});
     setNotice(scope==='word'?'Word defaults saved. Serving selection updated.':'Review coverage saved. New reassessments use this selection.');
   }
-  function startDraft(source:VocabularyContent){if(!maySwitch())return;if(selected&&reviewCase)setWorkspace({case:reviewCase,sources:[source],jobs:[],proposals:[],assessment:reviewAssessment??undefined,senseLabels});if(queue==='history')cursors.current.history=selected?`proposal:${selected.proposalId}`:workspace?`case:${workspace.case.caseId}`:undefined;setQueue('review');initialSelection.current=true;setCurrentSources([source]);setDisplay([{operationKey:'repair-1',source,result:authored(source)}]);setDetailsOpen(false);const next:VocabularyProposalDraft={caseId:selected?.caseId??workspace?.case.caseId,
+  function startDraft(source:VocabularyContent){if(repairBlocked||!maySwitch())return;if(selected&&reviewCase)setWorkspace({case:reviewCase,sources:[source],jobs:[],proposals:[],assessment:reviewAssessment??undefined,senseLabels});if(queue==='history')cursors.current.history=selected?`proposal:${selected.proposalId}`:workspace?`case:${workspace.case.caseId}`:undefined;setQueue('review');initialSelection.current=true;setCurrentSources([source]);setDisplay([{operationKey:'repair-1',source,result:authored(source)}]);setDetailsOpen(false);const next:VocabularyProposalDraft={caseId:selected?.caseId??workspace?.case.caseId,
     rationale:'',operations:[{operationKey:'repair-1',scope:source.accessScope==='shared'?{kind:'shared'}:{kind:'learner',learnerId:source.ownerLearnerId!},
       strategy:'update_existing',sourceContentId:source.contentId,expectedVersion:source.version,rationale:'',content:authored(source)}]};setExcludedKeys(new Set());setSelected(null);setCoverageChanged(false);setSnapshotOutdated(false);setEditing(true);setSavedText('');changeDraft(next);setNotice('');}
   function strategy(index:number,next:'create'|'update_existing'|'replace'|'retire') {
@@ -234,7 +242,7 @@ export function VocabularyOperatorPage({api=vocabularyOperatorApi,previewOnly=fa
     const changed:VocabularyProposalOperation=next==='create'?{...common,strategy:'create'}:{...common,strategy:next,sourceContentId:sourceId,expectedVersion:sourceVersion};
     changeDraft({...draft,bases:base?draft.bases??[base]:draft.bases,operations:draft.operations.map((old,i)=>i===index?changed:old)});
   }
-  function save(){if(scopeEditing||busy)return;void run(async()=>{if(!draft)throw new Error('Fix the JSON draft before saving.');if(invalidCue)throw new Error('Fix the Mandarin cloze before saving.');if(!activeOperations.length)throw new Error('Select at least one change to save, or dismiss the proposal.');const outgoing=selectedProposalDraft(draft,excludedKeys);const value=selected?await api.save(selected.proposalId,selected.version,outgoing):await api.create(outgoing);await loadProposal(value);await reload(value.proposalId);},'New version saved.');}
+  function save(){if(scopeEditing||busy||repairBlocked)return;void run(async()=>{if(!draft)throw new Error('Fix the JSON draft before saving.');if(invalidCue)throw new Error('Fix the Mandarin cloze before saving.');if(!activeOperations.length)throw new Error('Select at least one change to save, or dismiss the proposal.');const outgoing=selectedProposalDraft(draft,excludedKeys);const value=selected?await api.save(selected.proposalId,selected.version,outgoing):await api.create(outgoing);await loadProposal(value);await reload(value.proposalId);},'New version saved.');}
   function invalidateOnConflict(cause:unknown,value:VocabularyContentProposal){if(cause instanceof ApiRequestError&&cause.status===409){cache.current.delete(snapshotKey(value));setSnapshotOutdated(true);}throw cause;}
   function inspect(){if(!selected||dirty||scopeEditing||busy)return;void run(async()=>{try{setPreview(await api.preview(selected.proposalId,selected.version));}catch(cause){invalidateOnConflict(cause,selected);}},'Preview validated. Review the cue, expected answers, scope and identity effects.');}
   async function advanceAfterResolution(key:string,status:'queued'|'closed') {
@@ -251,7 +259,7 @@ export function VocabularyOperatorPage({api=vocabularyOperatorApi,previewOnly=fa
     } catch(cause) { setNextLoad(next??null);setError(`The action succeeded, but the next item could not load: ${message(cause)}`); }
     finally { void reload().catch(cause=>setRefreshError(message(cause))); }
   }
-  function approveAndApply(){if(!selected||dirty||scopeEditing)return;void run(async()=>{
+  function approveAndApply(){if(!selected||dirty||scopeEditing||repairBlocked)return;void run(async()=>{
     approvalSubmission.current??={requestId:crypto.randomUUID(),proposalId:selected.proposalId,expectedVersion:selected.version,notes:reviewNote};
     const submission=approvalSubmission.current;
     let result:VocabularyApprovalRequest;
@@ -389,21 +397,32 @@ export function VocabularyOperatorPage({api=vocabularyOperatorApi,previewOnly=fa
     const latest={...result,status:'queued',error:null};
     if(selected){setReviewReassessment({eligible:true,source,latest});cache.current.delete(snapshotKey(selected));}
     else setWorkspace(previous=>previous?.case.caseId===reassessmentCase.caseId?{...previous,reassessmentSource:source,reassessment:latest}:previous);
-    await reload();setNotice('Reassessment queued.');
+    setReassessmentOpen(false);await reload();setNotice('Reassessment queued.');
   });
   const reassessmentDisabled=busy||dirty||scopeEditing||reassessmentPending||caseLocked;
   const reassessmentUnavailableReason=selected?reviewReassessment?.unavailableReason:workspace?.reassessmentUnavailableReason;
-  const reassessmentControl=canReassess&&reassessmentCase?<div className="vocabulary-reassessment-control">
+  const scopeCase=selected?reviewCase:workspace?.case;
+  const repairTargetControl=scopeCase?.kind==='exercise_improvement'&&scopeCase.wordId?(
+    <RepairTargetEditor key={scopeCase.caseId} api={api} caseId={scopeCase.caseId} revision={scopeCase.review?.version} disabled={busy||dirty||!!selectedApproval||approvalUnconfirmed||caseLocked} onState={setRepairTarget} onActivity={setScopeEditing} onSaved={async()=>{setEditing(false);resetReview();await reload();}}/>
+  ):null;
+  const reassessmentControl=canReassess&&reassessmentCase?<>
+    <button className="secondary-button" aria-haspopup="dialog" disabled={reassessmentDisabled} onClick={()=>setReassessmentOpen(true)}>Reassess{repairTarget?.blocked?' · target pending':''}</button>
+    <ReassessmentDialog open={reassessmentOpen} onClose={()=>{setReassessmentOpen(false);setConfirmReassessment(null);}} busy={busy||scopeEditing}>
+    {error&&<p role="alert">{error}</p>}
+    {repairTargetControl}
+    <div className="vocabulary-reassessment-control">
     <label>Model for reassessment<select aria-label="Model for reassessment" disabled={reassessmentDisabled} value={reassessmentModel} onChange={event=>setReassessmentModel(event.target.value as VocabularyReassessmentModel)}><option value="openai:gpt-6-sol-high">GPT-6 Sol high</option><option value="openai:gpt-5.6-luna-high">Luna high</option><option value="zai:glm-5.3-flash-high">GLM-5.3 Flash high</option></select></label>
     {confirmingReassessment&&reassessmentSource?<div className="vocabulary-reassessment-confirmation" role="group" aria-label="Confirm changed source version">
-      <p>Source changed from v{reassessmentSource.assessedVersion} to v{reassessmentSource.currentVersion}. Reassessment uses the current exercise and saved sense coverage.</p>
+      <p>Source changed from v{reassessmentSource.assessedVersion} to v{reassessmentSource.currentVersion}. Reassessment uses the current exercise.</p>
       <button className="secondary-button" autoFocus disabled={reassessmentDisabled} onClick={()=>submitReassessment(reassessmentSource.currentVersion)}>Reassess v{reassessmentSource.currentVersion}</button>
       <button className="secondary-button" disabled={busy} onClick={()=>setConfirmReassessment(null)}>Cancel</button>
-    </div>:<button className="secondary-button" disabled={reassessmentDisabled} onClick={()=>submitReassessment()}>Reassess current exercise</button>}
+    </div>:<button disabled={reassessmentDisabled} onClick={()=>submitReassessment()}>Submit reassessment</button>}
     {reassessmentLatest&&<span role="status">{reassessmentPending?'Reassessment '+reassessmentLatest.status:reassessmentLatest.status==='failed'?'Reassessment failed. You can reassess again.':'Reassessment complete'}</span>}
-  </div>:null;
-  const scopeCase=selected?reviewCase:workspace?.case;
-  const scopeEditor=!selectedDefaultWord&&!previewOnly&&queue!=='history'&&scopeCase?.kind==='exercise_improvement'&&scopeCase.wordId?<ScopeCoverageEditor key={scopeCase.caseId} api={api} caseId={scopeCase.caseId} wordId={scopeCase.wordId} disabled={busy||!!selectedApproval||approvalUnconfirmed||caseLocked} finding={defaultSelectionFinding} onActivity={setScopeEditing} onSaved={scopeSaved}/>:null;
+  </div></ReassessmentDialog></>:null;
+  const scopeEditor=!selectedDefaultWord&&!previewOnly&&queue!=='history'&&scopeCase?.kind==='exercise_improvement'&&scopeCase.wordId?<>
+    {!canReassess&&repairTargetControl}
+    {repairTarget?.caseId===scopeCase.caseId&&!repairTarget.available&&<><ScopeCoverageEditor key={scopeCase.wordId} api={api} wordId={scopeCase.wordId} disabled={busy||dirty||!!selectedApproval||approvalUnconfirmed||caseLocked} finding={defaultSelectionFinding} onActivity={setScopeEditing} onSaved={scopeSaved} repertoire={selected&&editable&&reviewAssessment?.admission?.outcome==='repertoire_bootstrap'?{proposal:selected,onSaved:value=>{void run(async()=>{await loadProposal(value);await reload(value.proposalId);},'Defaults and proposal updated.');}}:undefined}/></>}
+  </>:null;
   const caseEntryVisible=itemVisible&&!!workspace&&!selected&&!draftText&&!noChangeVisible;
   return <section ref={pageRef} className="vocabulary-operator-page" tabIndex={0} aria-label="Content improvement" onKeyDown={event=>{
     if(detailOnly||attentionOnly)return;
@@ -446,7 +465,7 @@ export function VocabularyOperatorPage({api=vocabularyOperatorApi,previewOnly=fa
         {draft&&<CompactProposalReview currentSources={currentSources} bases={draft.bases??[]} stale={itemOutdated} onDraftCorrection={startDraft} operations={draft.operations} previews={display??[]} senses={senseLabels} excluded={excludedKeys} disabled={!editable||busy||approvalUnconfirmed} editing={editing} toggle={key=>{setExcludedKeys(keys=>toggleOperation(keys,key));resetReview();}} onChange={(key,change)=>changeDraft({...draft,operations:draft.operations.map(operation=>operation.operationKey===key?change(operation):operation)})} onStrategy={strategy}/>}
         {zeroSelected&&<p role="status">No changes selected. <button className="secondary-button" disabled={busy} onClick={()=>{setExcludedKeys(new Set());if(draft?.operations.length===0&&selected)changeDraft(draftOf(selected));resetReview();}}>Restore selection</button></p>}
         {dirty&&!editing&&editable&&<div className="vocabulary-operator-actions"><button disabled={busy||scopeEditing||!draft||zeroSelected||invalidCue||approvalUnconfirmed} onClick={save}>Save changes</button></div>}
-        {selected&&<ProposalSecondOpinion expanded={detailsOpen} key={selected.proposalId} api={api} proposal={selected} eligible={!previewOnly&&editable&&reviewCase?.kind==='exercise_improvement'} disabled={busy||scopeEditing||dirty||itemOutdated||approvalUnconfirmed} actions={secondOpinionAction=>editable?<div className="vocabulary-operator-actions vocabulary-review-actions"><button disabled={busy||scopeEditing||dirty||itemOutdated||zeroSelected} onClick={approveAndApply}>{approvalUnconfirmed?'Retry approval':previewOnly?'Approve in local preview':'Approve and apply'}</button><button className="secondary-button" disabled={busy||approvalUnconfirmed} onClick={()=>{if(!editing)void loadWorkspaceForProposal(selected);setEditing(!editing);}}>{editing?'Close editor':'Edit proposal'}</button><button className="secondary-button" disabled={busy||scopeEditing||(!zeroSelected&&dirty)||proposalOutdated||approvalUnconfirmed} onClick={dismissProposal}>Dismiss</button>{previewOnly?<button className="secondary-button" disabled title="Historical preview; no model calls run here">Ask AI for a second opinion</button>:secondOpinionAction}{reassessmentControl}</div>:null}/>}
+        {selected&&<ProposalSecondOpinion expanded={detailsOpen} key={selected.proposalId} api={api} proposal={selected} eligible={!previewOnly&&editable&&reviewCase?.kind==='exercise_improvement'} disabled={busy||scopeEditing||dirty||itemOutdated||approvalUnconfirmed} actions={secondOpinionAction=>editable||repairBlocked?<div className="vocabulary-operator-actions vocabulary-review-actions"><button disabled={repairBlocked||busy||scopeEditing||dirty||itemOutdated||zeroSelected} onClick={approveAndApply}>{approvalUnconfirmed?'Retry approval':previewOnly?'Approve in local preview':'Approve and apply'}</button><button className="secondary-button" disabled={busy||approvalUnconfirmed||repairBlocked&&!editing} onClick={()=>{if(!editing)void loadWorkspaceForProposal(selected);setEditing(!editing);}}>{editing?'Close editor':'Edit proposal'}</button><button className="secondary-button" disabled={busy||scopeEditing||(!zeroSelected&&dirty)||proposalOutdated||approvalUnconfirmed} onClick={dismissProposal}>Dismiss</button>{previewOnly?<button className="secondary-button" disabled title="Historical preview; no model calls run here">Ask AI for a second opinion</button>:secondOpinionAction}{reassessmentControl}</div>:null}/>}
         {editing&&<div className="vocabulary-proposal-editor"><h3>Edit proposal</h3>
         {draft?<label>Diagnosis and overall rationale<textarea disabled={!editable||busy||approvalUnconfirmed} value={draft.rationale} onChange={event=>changeDraft({...draft,rationale:event.target.value})}/></label>:<p role="status">The JSON draft is incomplete. Fix it below before saving.</p>}
         <details className="vocabulary-full-draft"><summary>Full authored draft</summary><label>Draft JSON (including excluded items)<textarea className="vocabulary-operator-json" rows={18} value={draftText} disabled={busy||!editable||approvalUnconfirmed} spellCheck={false} onChange={event=>{setDraftText(event.target.value);resetReview();}}/></label></details>
@@ -487,7 +506,7 @@ export function VocabularyOperatorPage({api=vocabularyOperatorApi,previewOnly=fa
           {encounter.responses.length?<ul>{encounter.responses.map(response=><li key={response.actionId}>{response.payload.response??'No answer'} · {response.payload.outcome}{!encounter.effectiveResponses.some(item=>item.actionId===response.actionId)?' · undone':''}</li>)}</ul>:<p>{previewOnly?'Response details were excluded from this preview.':'No answer was submitted.'}</p>}
           {getEffectiveVocabularyEncounterReactions(encounter).map(reaction=><p key={reaction.actionId}><strong>Learner reaction:</strong> {reaction.payload.comment||reaction.payload.feedback}</p>)}
           <h4>Retained encounter and reaction history</h4><pre>{pretty(encounter)}</pre></article>)}
-        {workspace.case.kind!=='learner_feedback'&&<><h3>{workspace.case.kind==='teaching_review'?'Current introduction and teaching repertoire':'Current authored content'}</h3><p>Draft from the current version below. The encounters above preserve what was actually served.</p>{workspace.sources.map(source=><article key={source.contentId} className="vocabulary-operator-source"><h4>{source.kind==='introduction'?'Introduction':source.kind==='exercise'&&source.exerciseRole==='teaching'?'Teaching exercise':'General exercise'} · version {source.version}</h4><AuthoredContent content={source} expandDetails/><p className="vocabulary-operator-meta">{source.contentId} · {source.accessScope} · {source.availability}</p><button disabled={busy||scopeEditing||caseLocked} onClick={()=>startDraft(source)}>{selected?'Create a separate correction':'Draft a correction'}</button></article>)}</>}
+        {workspace.case.kind!=='learner_feedback'&&<><h3>{workspace.case.kind==='teaching_review'?'Current introduction and teaching repertoire':'Current authored content'}</h3><p>Draft from the current version below. The encounters above preserve what was actually served.</p>{workspace.sources.map(source=><article key={source.contentId} className="vocabulary-operator-source"><h4>{source.kind==='introduction'?'Introduction':source.kind==='exercise'&&source.exerciseRole==='teaching'?'Teaching exercise':'General exercise'} · version {source.version}</h4><AuthoredContent content={source} expandDetails/><p className="vocabulary-operator-meta">{source.contentId} · {source.accessScope} · {source.availability}</p><button disabled={busy||scopeEditing||caseLocked||repairBlocked} onClick={()=>startDraft(source)}>{selected?'Create a separate correction':'Draft a correction'}</button></article>)}</>}
         {(workspace.case.kind==='teaching_review'||admissionNeedsAttention||promotionNeedsAttention)&&<div className="vocabulary-operator-close"><label>Review note (optional)<textarea value={reason} onChange={event=>setReason(event.target.value)}/></label><button className="secondary-button" disabled={busy||scopeEditing||caseLocked||workspace.case.status==='closed'} onClick={()=>resolveCurrentCase(false)}>{workspace.case.kind==='teaching_review'?'Close teaching case':promotionNeedsAttention?'Close pure cue assessment':'Close sense assessment'}</button></div>}
       </section>}</details>}
     </div></div>

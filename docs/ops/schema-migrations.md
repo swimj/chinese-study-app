@@ -212,6 +212,25 @@ unfreezes the prior review and successful application resolves only the intended
 case. Use the schema-release rehearsal and stopped-writer procedure; this is not
 an app-only upgrade. The queue/API/UI stack is released together.
 
+## Pending repair targets (`0067`)
+
+`0067_vocabulary_repair_targets` adds a per-case repair-intent table, immutable repertoire-revision
+selection records, and a nullable captured-target field on reflection jobs. Existing jobs receive no inferred
+operator target. Historical case coverage and coverage history remain unchanged;
+the application no longer uses those rows as editable generation policy. Content,
+sense bindings, proposals, application receipts and learner history are preserved.
+The migration creates empty tables and adds a nullable column; it does not scan
+or rewrite authored content.
+
+Rehearse on a populated restore: compare existing content/bindings, case scope
+rows and proposal receipts before/after; verify the new intent and repertoire-revision tables are empty and
+existing jobs have null captured targets, then run integrity and foreign-key
+checks. Exercise set/reset, failed and successful reassessment, no-proposal
+results, and the approval worker against pending intent. Source content must stay
+unchanged until proposal application. Use the stopped-writer schema release,
+not app-only upgrade. Inventory reconciliation follows this migration and needs
+fresh snapshots and reviewed plans against the migrated schema.
+
 ## Writing the next migration
 
 Give the release agent a concise rehearsal note alongside the migration's tests

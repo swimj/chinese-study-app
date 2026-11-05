@@ -1,6 +1,7 @@
 import type { VocabularySenseCoverageWorkspace } from '../../src/domain/vocabulary-sense-coverage';
 import React from 'react';
 import {createRoot} from 'react-dom/client';
+import { OperatorShell } from '../../src/OperatorApp';
 import {VocabularyOperatorPage} from '../../src/pages/VocabularyOperatorPage';
 import type {VocabularyOperatorApi} from '../../src/features/vocabulary-operator/api';
 import {ApiRequestError} from '../../src/services/api';
@@ -87,6 +88,10 @@ if(new URLSearchParams(location.search).has('coherent')){
 const contents=new Map([general,pepper,crave,intro,teaching].map(item=>[item.contentId,item]));
 const staleSource=new URLSearchParams(location.search).has('staleSource');
 const assessmentReview:VocabularyAssessmentReview={origin:new URLSearchParams(location.search).has('reassessment')?'reassessment':'automatic',models:[{invocationId:'mapping-model',stage:'sense_mapping',provider:'openai',model:'gpt-6-luna',resolvedModel:null},{invocationId:'local-model',stage:'single_improvement',provider:'zai',model:'glm-5.3-flash',resolvedModel:null},{invocationId:'promotion-model',stage:'pure_cue_promotion',provider:'openai',model:'gpt-6-sol',resolvedModel:null}],admission:{outcome:'single_sense',rationale:'The served exercise asks for advance reporting. Other useful senses remain outside this repair.',wordId:'word-baobei',sourceContentId:general.contentId,sourceContentVersion:1,catalogVersion:1,senseIds:[reviewSenseLabels[0]!.senseId],sourceMapping:{senseId:null,establishedAt:null},generationScope:{selectionEstablished:true,senseIds:[reviewSenseLabels[0]!.senseId],source:{kind:'mapped_source'}}}};
+if(new URLSearchParams(location.search).has('many')&&assessmentReview.admission){
+  assessmentReview.models=[{invocationId:'repertoire-model',stage:'repertoire',provider:'openai',model:'gpt-6-sol',resolvedModel:null}];
+  assessmentReview.admission={...assessmentReview.admission,outcome:'repertoire_bootstrap',rationale:'Bootstrap the selected useful senses from the dictionary fallback.',senseIds:[],generationScope:{selectionEstablished:true,senseIds:reviewSenseLabels.map(sense=>sense.senseId),source:{kind:'word_defaults',wordId:'word-baobei',capturedVersion:1}}};
+}
 if(new URLSearchParams(location.search).has('coherent')&&assessmentReview.admission){
   displaySenseLabels.push({senseId:'density',wordId:'word-baobei',label:'Dense distribution of population or vegetation'});
   assessmentReview.admission={...assessmentReview.admission,rationale:'The originating cue describes dense population.',senseIds:['density'],generationScope:{selectionEstablished:true,senseIds:['density'],source:{kind:'mapped_source'}}};
@@ -169,10 +174,12 @@ let loseApprovalAck=new URLSearchParams(location.search).has('lostAck');
 const api:VocabularyOperatorApi={
   caseQueue:async()=>{throw new Error('Use vocabulary-case-review.html for case queue coverage');},caseCard:async()=>{throw new Error('Use vocabulary-case-review.html for case queue coverage');},resolveCaseReview:async()=>{throw new Error('Use vocabulary-case-review.html for case queue coverage');},reassessCaseReview:async()=>{throw new Error('Use vocabulary-case-review.html for case queue coverage');},
   resolvePureCueIdentities:async(parentId,modelChoice,expectedContentVersion,selections)=>{document.body.dataset.identitySelections=JSON.stringify(selections);document.body.dataset.identityModel=modelChoice;document.body.dataset.identityVersion=String(expectedContentVersion);reassessmentRequest={parentId,caseId:'resolved-promotion',jobId:'resolved-promotion-job',status:'queued',error:null};return reassessmentRequest;},
-  wordSenseCoverage:async wordId=>scopeRead(()=>coverage(wordId)),caseSenseCoverage:async caseId=>scopeRead(()=>coverage(fixtureWord(caseId),caseId)),
+  wordSenseCoverage:async wordId=>scopeRead(()=>coverage(wordId)),
+  repairTarget:async caseId=>({caseId,wordId:fixtureWord(caseId),version:0,currentSenseId:null,pendingSenseId:null,senses:[],available:false,blocked:false,editable:true}),
+  saveRepairTarget:async()=>{throw new Error('Use vocabulary-case-review fixture for target overrides');},
+  reviseRepertoireToWordDefaults:async()=>{throw new Error('Use reconciliation tests for repertoire revision');},
   saveDefaultUsefulSenses:async(wordId,version,ids)=>saveCoverage('word',wordId,version,ids),
   saveWordSenseCoverage:async(wordId,version,excluded)=>saveCoverage('word',wordId,version,reviewSenseLabels.filter(sense=>!excluded.includes(sense.senseId)).map(sense=>sense.senseId)),
-  saveCaseSenseCoverage:async(caseId,version,ids)=>saveCoverage('case',caseId,version,ids),
   approvalRequests:async()=>({items:structuredClone([...approvalRequests.values()])}),
   requestApproval:async(id,version,requestId,notes)=>{if(new URLSearchParams(location.search).has('stale'))throw new ApiRequestError('The proposal revision changed; reload this proposal.',409);const existing=approvalRequests.get(requestId);if(existing)return structuredClone(existing);const item=receipt(id,version,requestId,notes);approvalRequests.set(requestId,item);scheduleApproval(item);document.body.dataset.approvalRequests=String(approvalRequests.size);if(loseApprovalAck){loseApprovalAck=false;throw new Error('Approval acknowledgement lost. Retry to recover the same request.');}return structuredClone(item);},
   retryApproval:async requestId=>{const item=approvalRequests.get(requestId)!;item.status='queued';item.error=null;item.updatedAt=new Date().toISOString();scheduleApproval(item);return structuredClone(item);},
@@ -207,4 +214,4 @@ if (new URLSearchParams(location.search).has('slow')) {
   api.preview=async(id,version)=>{await delay();return originalPreview(id,version);};
   api.reviewBatch=async(id,limit)=>{await delay();return originalBatch(id,limit);};
 }
-createRoot(document.getElementById('root')!).render(<React.StrictMode>{new URLSearchParams(location.search).has('holdCoverage')&&<button onClick={()=>heldScopeSaves.splice(0).forEach(resolve=>resolve())}>Finish pending coverage save</button>}{<VocabularyOperatorPage api={api}/>}</React.StrictMode>);
+createRoot(document.getElementById('root')!).render(<React.StrictMode>{new URLSearchParams(location.search).has('holdCoverage')&&<button onClick={()=>heldScopeSaves.splice(0).forEach(resolve=>resolve())}>Finish pending coverage save</button>}{new URLSearchParams(location.search).has('shell')?<OperatorShell tab="improvement"><VocabularyOperatorPage api={api}/></OperatorShell>:<VocabularyOperatorPage api={api}/>}</React.StrictMode>);

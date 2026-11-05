@@ -1,4 +1,3 @@
-import { assertVocabularyCaseEditable, canonicalVocabularyCaseId, touchVocabularyCaseReview } from './vocabulary-case-reviews.ts';
 import { createHash,randomUUID } from 'node:crypto';
 import type { VocabularyActor } from '../../src/domain/vocabulary-content.ts';
 import type { VocabularyEffectiveSenseCoverage,VocabularyWordSenseCoverage,VocabularyCaseSenseCoverage,VocabularySenseCoverageWorkspace } from '../../src/domain/vocabulary-sense-coverage.ts';
@@ -13,35 +12,25 @@ function authorize(actorId:string):void {
 function wordExists(wordId:string):void {
   if(!getDb().prepare('SELECT 1 FROM lexical_words WHERE id=?').get(wordId))throw new Error('Unknown vocabulary word');
 }
-function caseWord(caseId:string):string {
-  const row=getDb().prepare('SELECT word_id FROM reflection_cases WHERE case_id=?').get(caseId) as {word_id:string|null}|undefined;
-  if(!row?.word_id)throw new Error('Unknown vocabulary word review');
-  return row.word_id;
-}
 export function getVocabularyWordSenseCoverage(wordId:string):VocabularyWordSenseCoverage {
   wordExists(wordId);
   const row=getDb().prepare('SELECT version,excluded_sense_ids_json,default_useful_sense_ids_json FROM vocabulary_word_sense_coverage WHERE word_id=?').get(wordId) as {version:number;excluded_sense_ids_json:string;default_useful_sense_ids_json:string|null}|undefined;
   return {wordId,version:row?.version??0,excludedSenseIds:row?JSON.parse(row.excluded_sense_ids_json) as string[]:[],defaultUsefulSenseIds:row?.default_useful_sense_ids_json?JSON.parse(row.default_useful_sense_ids_json) as string[]:null};
 }
-function reviewCoverage(caseId:string,wordId:string):VocabularyCaseSenseCoverage {
-  const row=getDb().prepare('SELECT version,included_sense_ids_json FROM vocabulary_case_sense_coverage WHERE case_id=?').get(caseId) as {version:number;included_sense_ids_json:string|null}|undefined;
-  return {caseId,wordId,version:row?.version??0,includedSenseIds:row?.included_sense_ids_json?JSON.parse(row.included_sense_ids_json) as string[]:null};
-}
-export function resolveVocabularySenseCoverage(wordId:string,caseId?:string):VocabularyEffectiveSenseCoverage {
-  const word=getVocabularyWordSenseCoverage(wordId),review=caseId?reviewCoverage(caseId,wordId):null;
+/** Shared word policy only. Historical case scopes are retained as audit records. */
+export function resolveVocabularySenseCoverage(wordId:string):VocabularyEffectiveSenseCoverage {
+  const word=getVocabularyWordSenseCoverage(wordId);
   const active=getVocabularySenses(wordId).filter(sense=>sense.status==='active').map(sense=>sense.senseId).sort();
-  const selected=review?.includedSenseIds;
-  const selectionEstablished=(selected!==null&&selected!==undefined)||word.defaultUsefulSenseIds!==null;
-  const includedSenseIds=selectionEstablished?active.filter(id=>selected!==null&&selected!==undefined?selected.includes(id):word.defaultUsefulSenseIds!.includes(id)):[];
-  // Policy context is metadata; generation captures its own targets independently.
-  const fingerprint=createHash('sha256').update(JSON.stringify({word,review,active,includedSenseIds,selectionEstablished})).digest('hex');
-  return {word,review,includedSenseIds,selectionEstablished,fingerprint};
+  const selectionEstablished=word.defaultUsefulSenseIds!==null;
+  const includedSenseIds=selectionEstablished?active.filter(id=>word.defaultUsefulSenseIds!.includes(id)):[];
+  const fingerprint=createHash('sha256').update(JSON.stringify({word,active,includedSenseIds,selectionEstablished})).digest('hex');
+  return {word,review:null,includedSenseIds,selectionEstablished,fingerprint};
 }
-export function getVocabularySenseCoverageWorkspace(scope:'word'|'case',id:string,actorId:string):VocabularySenseCoverageWorkspace {
-  authorize(actorId);if(scope==='case')id=canonicalVocabularyCaseId(id);const wordId=scope==='word'?id:caseWord(id);
+export function getVocabularySenseCoverageWorkspace(scope:'word',wordId:string,actorId:string):VocabularySenseCoverageWorkspace {
+  authorize(actorId);
   const counts=getDb().prepare(`SELECT w.sense_id,count(DISTINCT c.content_id) AS count FROM content_words w JOIN content_items c USING(content_id)
     WHERE w.word_id=? AND w.relation='target' AND w.sense_id IS NOT NULL AND c.kind='exercise' AND c.exercise_role='general' AND c.skill='production' AND c.availability='active' GROUP BY w.sense_id`).all(wordId) as {sense_id:string;count:number}[];
-  return {...resolveVocabularySenseCoverage(wordId,scope==='case'?id:undefined),senses:getVocabularySenses(wordId),productionExerciseCounts:Object.fromEntries(counts.map(row=>[row.sense_id,row.count]))};
+  return {...resolveVocabularySenseCoverage(wordId),senses:getVocabularySenses(wordId),productionExerciseCounts:Object.fromEntries(counts.map(row=>[row.sense_id,row.count]))};
 }
 function ids(value:string[],wordId:string):string[] {
   const known=new Set(getVocabularySenses(wordId).filter(sense=>sense.status==='active').map(sense=>sense.senseId));
@@ -74,30 +63,9 @@ export function writeVocabularyWordSenseCoverage(wordId:string,expectedVersion:n
   const excluded=ids(excludedSenseIds,wordId);
   return writeVocabularyDefaultUsefulSenses(wordId,expectedVersion,getVocabularySenses(wordId).filter(sense=>sense.status==='active'&&!excluded.includes(sense.senseId)).map(sense=>sense.senseId),actor);
 }
-export function writeVocabularyCaseSenseCoverage(caseId:string,expectedVersion:number,includedSenseIds:string[]|null,actor:VocabularyActor):VocabularyEffectiveSenseCoverage {
-  const actorId=actor.id;return atomic(()=>{
-    caseId=canonicalVocabularyCaseId(caseId);assertVocabularyCaseEditable(caseId);
-    const wordId=caseWord(caseId),before=reviewCoverage(caseId,wordId);if(before.version!==expectedVersion)throw new VocabularySenseCoverageConflict('Review sense coverage changed; reload before saving');
-    const included=includedSenseIds===null?null:ids(includedSenseIds,wordId),version=before.version+1;
-    getDb().prepare('INSERT INTO vocabulary_case_sense_coverage(case_id,version,included_sense_ids_json,updated_at) VALUES (?,?,?,?) ON CONFLICT(case_id) DO UPDATE SET version=excluded.version,included_sense_ids_json=excluded.included_sense_ids_json,updated_at=excluded.updated_at').run(caseId,version,included===null?null:JSON.stringify(included),new Date().toISOString());
-    touchVocabularyCaseReview(caseId);
-    history('case',caseId,version,{caseId,wordId,version,includedSenseIds:included},actor);return resolveVocabularySenseCoverage(wordId,caseId);
-  });
-}
-export function inheritVocabularyCaseSenseCoverage(sourceCaseId:string,childCaseId:string,actorId:string):void {
-  const row=getDb().prepare('SELECT included_sense_ids_json FROM vocabulary_case_sense_coverage WHERE case_id=?').get(sourceCaseId) as {included_sense_ids_json:string|null}|undefined;
-  if(!row?.included_sense_ids_json)return;
-  const source=reviewCoverage(sourceCaseId,caseWord(sourceCaseId));
-  if(source.includedSenseIds!==null)setVocabularyCaseSenseCoverage(childCaseId,0,source.includedSenseIds,actorId);
-}
-
 export function setVocabularyWordSenseCoverage(wordId:string,expectedVersion:number,excludedSenseIds:string[],actorId:string):VocabularySenseCoverageWorkspace {
   authorize(actorId);writeVocabularyWordSenseCoverage(wordId,expectedVersion,excludedSenseIds,{kind:'operator',id:actorId});return getVocabularySenseCoverageWorkspace('word',wordId,actorId);
 }
-export function setVocabularyCaseSenseCoverage(caseId:string,expectedVersion:number,includedSenseIds:string[]|null,actorId:string):VocabularySenseCoverageWorkspace {
-  authorize(actorId);caseId=canonicalVocabularyCaseId(caseId);writeVocabularyCaseSenseCoverage(caseId,expectedVersion,includedSenseIds,{kind:'operator',id:actorId});return getVocabularySenseCoverageWorkspace('case',caseId,actorId);
-}
-
 export function setVocabularyDefaultUsefulSenses(wordId:string,expectedVersion:number,includedSenseIds:string[],actorId:string):VocabularySenseCoverageWorkspace {
   authorize(actorId);writeVocabularyDefaultUsefulSenses(wordId,expectedVersion,includedSenseIds,{kind:'operator',id:actorId});return getVocabularySenseCoverageWorkspace('word',wordId,actorId);
 }
