@@ -168,39 +168,39 @@ proposal. Closed reviews remain in Archive, with their retained jobs and results
 
 **Reassess current exercise** runs a fresh assessment with the selected model,
 defaulting to GPT-6 Sol high. It pins the current source version and performs
-fresh sense mapping where applicable. A changed source version is shown for
+fresh sense mapping unless an operator target sense has been selected. A changed source version is shown for
 confirmation before submission. The original served content and learner responses
 remain historical evidence.
 
 Reassessment adds a numbered job to the same case. While queued or running, the
-case's saved proposal, review decisions, and review-scope edits are frozen.
+case's saved proposal, review decisions, and target-sense edits are frozen.
 Success selects the replacement assessment; failure or timeout restores review
 of the previous result. Earlier assessments and proposals remain retained.
 Only one job may be queued or running within the case. Second opinions remain
 advisory and do not replace its current assessment. Content is applied only after
 explicit approval and successful application.
 
-**Sense coverage** initially edits this review. It distinguishes inherited word
-defaults, a review override and unknown defaults. Check desired uses or choose
-**Select none**, then save. **Use word defaults** clears the review override;
-unknown shared defaults remain unknown. **Edit word defaults** opens the shared
-selection, with counts of mapped general production exercises affected by removing
-uses. **Back to review coverage** returns to the review's effective selection.
-Each sense's real notes are available in its disclosure. Word-default changes update mapped practice selection and can seed the scope of
-future teaching and content invocations; they do not retarget work already
-requested or retire content.
+**Word defaults** edits the shared useful-sense selection. Repertoire bootstrap
+uses those defaults. After removing unwanted senses, **Revise to word defaults**
+saves a narrower version of the current repertoire proposal without a model call.
+Adding senses beyond its captured selection requires reassessment and generation.
+If no exercises remain, dismiss the proposal or generate again; narrowing never
+turns an empty result into source retirement. Shared-default edits affect mapped
+practice selection but do not themselves apply or invalidate a content proposal.
 
-Saving coverage preserves unsaved proposal edits and item selections while
-refreshing the displayed evidence and reassessment state. Content proposals keep
-their assessed targets and remain approvable after selection edits. Source, mapping,
-canonical catalog or explicit assessment evidence changes require review before
-approval; **Refresh snapshot** updates the evidence without discarding draft edits.
-When a newer saved revision exists, **Load current proposal** opens that revision
-with the usual confirmation before discarding unsaved edits.
-Unsaved scope edits and pending saves block navigation and resolution; loading
-coverage does not. A new reassessment uses the saved review selection within the same case.
+For single-exercise improvement, **Target sense** records the intended repair.
+Selecting a target, including the current sense, requires reassessment before
+application and disables manual proposal editing. **Reset** discards the pending
+choice and restores the current assessment target. It does not bypass other
+approval or source-freshness checks. Failed reassessment leaves the choice pending;
+successful reassessment uses it without another mapping call. Source content and
+sense bindings remain unchanged until operator application.
 
-A model finding about missing useful defaults appears beside **Sense coverage**
+Manual text editing and pending target-sense reassessment are separate paths.
+Unsaved edits and pending saves block navigation. Historical case-scope selections
+remain evidence rather than editable policy.
+
+A model finding about missing useful defaults appears beside **Word defaults**
 and in **Needs attention → Word defaults need attention**, including after its
 exercise repair is approved.
 **Review word defaults** opens the shared selection. This finding is independent

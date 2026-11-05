@@ -233,3 +233,24 @@
 .vocabulary-review-note { order: -2; }
 .vocabulary-more-actions { order: -1; padding: 0 0 .75rem; }
 .vocabulary-case-review-page:focus { outline: none; }
+
+.vocabulary-repair-target { min-width: 0; padding: .65rem 0; }
+.vocabulary-repair-target label { display: grid; gap: .3rem; min-width: 0; flex: 1 1 16rem; }
+.vocabulary-repair-target-row { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem .75rem; }
+.vocabulary-repair-target-controls { padding: .5rem 0; }
+.vocabulary-repair-target .vocabulary-operator-actions { margin: 0; }
+.vocabulary-repair-target select { width: 100%; min-width: 0; max-width: 100%; }
+.vocabulary-repair-target p { margin: .5rem 0; }
+.vocabulary-case-action-frame > .vocabulary-repair-target { order: -2; }
+
+.vocabulary-operator-page .vocabulary-repair-target, .vocabulary-operator-page .vocabulary-sense-coverage { border: 0; border-radius: 0; padding: .5rem 0; }
+.vocabulary-repair-target > summary, .vocabulary-sense-coverage > summary { color: var(--text-secondary); }
+
+.vocabulary-reassessment-dialog { width: min(30rem, calc(100vw - 2rem)); max-height: calc(100dvh - 2rem); box-sizing: border-box; overflow: auto; padding: 1rem; border: 1px solid var(--border); border-radius: .75rem; background: var(--surface); color: var(--text); }
+.vocabulary-reassessment-dialog::backdrop { background: rgb(0 0 0 / 25%); }
+.vocabulary-reassessment-dialog > header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
+.vocabulary-reassessment-dialog h3 { margin: 0; }
+.vocabulary-reassessment-dialog .vocabulary-reassessment-control { display: flex; flex-direction: column; align-items: stretch; gap: .75rem; }
+.vocabulary-reassessment-dialog select { width: 100%; min-width: 0; }
+.vocabulary-reassessment-dialog .vocabulary-repair-target-row { flex-direction: column; align-items: stretch; }
+.vocabulary-reassessment-dialog .vocabulary-repair-target label { flex: none; margin: .25rem 0; }

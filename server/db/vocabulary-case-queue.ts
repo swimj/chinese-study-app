@@ -102,13 +102,16 @@ function readCards(wanted:{caseId:string;proposalId?:string}[]):VocabularyCaseQu
     CASE WHEN json_extract(cj.result_json,'$.input.pureCuePromotion.outcome')='needs_operator' THEN json_extract(cj.result_json,'$.input.pureCuePromotion.rationale') ELSE json_extract(cj.result_json,'$.input.admission.rationale') END AS findingMessage,
     src.kind='exercise' AND src.exercise_role='general' AND src.skill='production' AND src.availability='active' AND (src.access_scope='shared' OR src.owner_learner_id=c.learner_id) AS sourceEligible,
     EXISTS(SELECT 1 FROM proposal_content_bases b LEFT JOIN content_items s ON s.content_id=b.content_id WHERE b.proposal_id=p.proposal_id AND (s.version IS NULL OR s.version!=b.expected_content_version))
-      OR (p.author_kind='service' AND json_extract(dj.result_json,'$.input.admission.wordId') IS NOT NULL AND
+      OR (json_extract(dj.result_json,'$.input.admission.wordId') IS NOT NULL AND
        (coalesce(catalog.sense_catalog_version,0)!=json_extract(dj.result_json,'$.input.admission.catalogVersion') OR mapping.content_id IS NULL
         OR (json_type(dj.result_json,'$.input.admission.sourceMapping')='object' AND
-          (mapping.sense_id IS NOT json_extract(dj.result_json,'$.input.admission.sourceMapping.senseId') OR mapping.sense_mapping_established_at IS NOT json_extract(dj.result_json,'$.input.admission.sourceMapping.establishedAt'))))) AS stale,
+          (mapping.sense_id IS NOT json_extract(dj.result_json,'$.input.admission.sourceMapping.senseId') OR mapping.sense_mapping_established_at IS NOT json_extract(dj.result_json,'$.input.admission.sourceMapping.establishedAt')))))
+      OR repair.pending_sense_id IS NOT NULL
+      OR (repair.accepted_version IS NOT NULL AND repair.accepted_version IS NOT json_extract(dj.result_json,'$.input.admission.repairTargetVersion')) AS stale,
     c.kind='teaching_review' OR json_extract(cj.result_json,'$.input.admission.outcome') IN ('unmappable','inventory_gap','needs_coverage') OR json_extract(cj.result_json,'$.input.pureCuePromotion.outcome')='needs_operator' AS needsResolution
     FROM json_each(?) requested JOIN vocabulary_case_reviews r ON r.case_id=json_extract(requested.value,'$.caseId')
     JOIN reflection_cases c ON c.case_id=r.case_id LEFT JOIN lexical_words w ON w.id=c.word_id
+    LEFT JOIN vocabulary_case_repair_targets repair ON repair.case_id=r.case_id
     LEFT JOIN content_proposals p ON p.proposal_id=coalesce(json_extract(requested.value,'$.proposalId'),r.current_proposal_id)
     LEFT JOIN vocabulary_reflection_jobs cj ON cj.job_id=r.current_job_id
     LEFT JOIN vocabulary_reflection_jobs dj ON dj.job_id=CASE WHEN p.proposal_id IS NULL THEN r.current_job_id ELSE p.assessment_job_id END

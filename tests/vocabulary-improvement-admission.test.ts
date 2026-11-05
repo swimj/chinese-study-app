@@ -116,7 +116,7 @@ test('single sense admission preserves target, supplies sense context, and reuse
   assert.match(trial.requests[1]!.systemPrompt,/# Review a Mandarin production exercise/);
   assert.deepEqual(trial.requests.map(request=>request.provenance?.stepName),['sense_mapping','single_improvement']);
   assert.ok(trial.requests.every(request=>request.reasoningEffort==='high'));
-  assert.equal(getVocabularyContentForMaintenance('original')!.words[0]!.senseId,'size');
+  assert.deepEqual(getVocabularyContentForMaintenance('original'),original);
   assert.equal(getVocabularyContentForMaintenance('original')!.version,1);
   assert.equal(result.result.proposal!.operations[0]!.content.words[0]!.senseId,'size');
   assert.equal(db.prepare('SELECT count(*) n FROM content_items').get()!.n,1);
@@ -211,7 +211,7 @@ test('successful mapping survives a later provider failure, while operator remap
   assert.equal(db.prepare('SELECT count(*) n FROM vocabulary_improvement_stages').get()!.n,1);
   await trial.provider.run({...job(),attemptNumber:2});assert.equal(trial.requests.length,3);
   const mapping=getVocabularyContentForMaintenance('original')!.words[0]!;
-  mapVocabularyContentSense({contentId:'original',wordId:'word',expectedContentVersion:1,expectedMapping:{senseId:mapping.senseId!,establishedAt:mapping.senseMappingEstablishedAt!},senseId:'effect'},actor);
+  mapVocabularyContentSense({contentId:'original',wordId:'word',expectedContentVersion:1,expectedMapping:{senseId:mapping.senseId??null,establishedAt:mapping.senseMappingEstablishedAt??null},senseId:'effect'},actor);
   await assert.rejects(()=>trial.provider.run({...job(),attemptNumber:3}),/changed since the retained/);assert.equal(trial.requests.length,3);
 });
 
@@ -591,15 +591,14 @@ bootstrapTest('explicit empty repertoire invocation is no-action and never retir
   assert.equal(getVocabularyContentForMaintenance('original')!.availability,'active');
 });
 
-bootstrapTest('explicit review override supplies repertoire invocation independently of shared serving selection',async()=>{
-  const {writeVocabularyCaseSenseCoverage,writeVocabularyWordSenseCoverage}=await import('../server/db/vocabulary-sense-coverage.ts');
+bootstrapTest('historical review coverage cannot override word defaults for repertoire generation',async()=>{
+  const {writeVocabularyWordSenseCoverage}=await import('../server/db/vocabulary-sense-coverage.ts');
   db.exec("CREATE TABLE reflection_cases(case_id TEXT PRIMARY KEY,word_id TEXT); INSERT INTO reflection_cases VALUES ('case','word');");
-  installCaseReviewScopeFixture();
-  writeVocabularyWordSenseCoverage('word',1,['effect'],actor);writeVocabularyCaseSenseCoverage('case',0,['effect'],actor);
-  const trial=provider((_request,index)=>({exercises:repertoire.exercises.filter(exercise=>exercise.sourceUseId==='effect')}));
+  db.prepare('INSERT INTO vocabulary_case_sense_coverage VALUES (?,?,?,?)').run('case',1,JSON.stringify(['effect']),at);
+  writeVocabularyWordSenseCoverage('word',1,['effect'],actor);
+  const trial=provider(()=>({exercises:repertoire.exercises.filter(exercise=>exercise.sourceUseId==='size')}));
   const result=await trial.provider.run(job());if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
-  assert.deepEqual(result.result.admission?.generationScope,{selectionEstablished:true,senseIds:['effect'],source:{kind:'review_override',caseId:'case',capturedVersion:1}});
-  assert.deepEqual(JSON.parse(trial.requests[0]!.userPrompt).content.uses.map((use:{id:string})=>use.id),['s1']);
+  assert.deepEqual(result.result.admission?.generationScope,{selectionEstablished:true,senseIds:['size'],source:{kind:'word_defaults',wordId:'word',capturedVersion:2}});
 });
 
 
@@ -608,16 +607,6 @@ test('unknown default usefulness does not block explicitly mapped single-sense i
   const trial=provider((_request,index)=>index===1?single:repair),result=await trial.provider.run(job());
   if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
   assert.equal(result.result.admission?.outcome,'single_sense');assert.ok(result.result.proposal);assert.equal(trial.requests.length,2);
-});
-test('explicit review selection admits a use even when shared usefulness is unknown',async()=>{
-  const {writeVocabularyCaseSenseCoverage}=await import('../server/db/vocabulary-sense-coverage.ts');
-  db.exec("UPDATE vocabulary_word_sense_coverage SET default_useful_sense_ids_json=NULL; CREATE TABLE reflection_cases(case_id TEXT PRIMARY KEY,word_id TEXT); INSERT INTO reflection_cases VALUES ('case','word');");
-  installCaseReviewScopeFixture();
-  writeVocabularyCaseSenseCoverage('case',0,['effect'],actor);
-  const trial=provider((_request,index)=>index===1?{...single,senseIds:['effect']}:repair),result=await trial.provider.run(job());
-  if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
-  assert.equal(trial.requests.length,2);assert.equal(result.result.admission?.outcome,'single_sense');assert.ok(result.result.proposal);
-  assert.deepEqual(JSON.parse(trial.requests[1]!.userPrompt).intendedSense,{description:{label:'amplify an effect or significance'}});
 });
 
 bootstrapTest('unknown default usefulness makes fallback generation an explicit attention finding',async()=>{
@@ -647,14 +636,14 @@ bootstrapTest('repertoire waits for useful initialization without a mapping call
 const retirement={decision:'retire',prompt:null};
 test('single assessment proposes exercise retirement without changing selected senses or live content',async()=>{
   const {resolveVocabularySenseCoverage}=await import('../server/db/vocabulary-sense-coverage.ts');
-  const before=resolveVocabularySenseCoverage('word','case');
+  const before=resolveVocabularySenseCoverage('word');
   const trial=provider((_request,index)=>index===1?single:{...repair,summary:'Exercise-level mismatch, not a coverage decision.',source:retirement});
   const result=await trial.provider.run(job());if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
   const operation=result.result.proposal!.operations[0]!;
   assert.equal(operation.strategy,'retire');assert.equal(operation.content.contentId,'original');
-  assert.deepEqual(operation.content.body,original.body);assert.equal(operation.content.words[0]!.senseId,'size');
+  assert.deepEqual(operation.content.body,original.body);assert.deepEqual(operation.content.words,original.words);
   assert.equal(getVocabularyContentForMaintenance('original')!.availability,'active');
-  assert.deepEqual(resolveVocabularySenseCoverage('word','case'),before);
+  assert.deepEqual(resolveVocabularySenseCoverage('word'),before);
   assert.deepEqual(await trial.provider.run({...job(),attemptNumber:2}),result);assert.equal(trial.requests.length,2);
 });
 
@@ -671,8 +660,8 @@ test('source retirement may coexist with optional target enrichment mapped to th
   assert.deepEqual(result.result.proposal!.operations.map(operation=>operation.strategy),['retire','create']);
   assert.equal(result.result.proposal!.operations[1]!.learningRole,'enrichment');
   const mapping=result.result.admission!.sourceMapping!;
-  assert.equal(mapping.senseId,'size');assert.ok(mapping.establishedAt);
-  assert.deepEqual(result.result.proposal!.operations[1]!.content.words,[{wordId:'word',relation:'target',senseId:'size',senseMappingEstablishedAt:mapping.establishedAt}]);
+  assert.deepEqual(mapping,{senseId:null,establishedAt:null});
+  const addedWord=result.result.proposal!.operations[1]!.content.words[0]!;assert.equal(addedWord.senseId,'size');assert.ok(addedWord.senseMappingEstablishedAt);
   const addedBody=result.result.proposal!.operations[1]!.content.body as {prompt:string;instruction:string;reveal?:unknown;stimulus:unknown};
   assert.equal(addedBody.prompt,'Make the map larger so the street names are readable.');
   assert.equal(addedBody.instruction,'');assert.equal(addedBody.reveal,undefined);
@@ -692,14 +681,14 @@ test('retirement can retain an independent shared-practice referral',async()=>{
 
 bootstrapTest('empty faithful repertoire proposes only source retirement and preserves selected coverage',async()=>{
   const {resolveVocabularySenseCoverage}=await import('../server/db/vocabulary-sense-coverage.ts');
-  const before=resolveVocabularySenseCoverage('word','case');
+  const before=resolveVocabularySenseCoverage('word');
   const trial=provider((_request,index)=>({exercises:[]}));
   const result=await trial.provider.run(job());if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
   assert.deepEqual(result.result.proposal!.operations.map(operation=>operation.strategy),['retire']);
   assert.deepEqual(result.result.proposal!.operations[0]!.content.body,original.body);
   assert.match(String(result.result.diagnosis),/without changing the selected sense coverage/);
   assert.match(String(result.result.diagnosis),/0 other active general production exercises existed.*Retiring this source would leave none/);
-  assert.deepEqual(resolveVocabularySenseCoverage('word','case'),before);
+  assert.deepEqual(resolveVocabularySenseCoverage('word'),before);
   assert.equal(getVocabularyContentForMaintenance('original')!.availability,'active');
 });
 
@@ -970,12 +959,6 @@ for(const invalid of ['resolved-answer-leak','resolved-private-note'] as const)t
   assert.equal(result.result.pureCuePromotion!.outcome,'create');
 });
 
-function installCaseReviewScopeFixture():void {
-  db.exec('CREATE TABLE content_proposals(proposal_id TEXT PRIMARY KEY)');
-  db.exec(readFileSync(new URL('../server/db/migrations/0066_vocabulary_case_reviews.sql',import.meta.url),'utf8').split('CREATE TABLE vocabulary_reflection_jobs_next')[0]!);
-  db.exec("ALTER TABLE vocabulary_reflection_jobs ADD COLUMN review_case_id TEXT;ALTER TABLE vocabulary_reflection_jobs ADD COLUMN case_sequence INTEGER DEFAULT 1;ALTER TABLE vocabulary_reflection_jobs ADD COLUMN status TEXT DEFAULT 'succeeded';ALTER TABLE vocabulary_reflection_jobs ADD COLUMN reassessment_source_job_id TEXT;ALTER TABLE vocabulary_reflection_jobs ADD COLUMN second_opinion_json TEXT;INSERT INTO vocabulary_case_reviews(case_id,created_at) VALUES ('case','2026-11-04T00:00:00.000Z');INSERT INTO vocabulary_case_lineage VALUES ('case','case');");
-}
-
 for(const prefix of ['', '[bootstrap] '])test(`${prefix}established empty inventory stops mapping and authoring while preserving source`,async()=>{
   for(const sense of getVocabularySenses('word'))updateVocabularySense(sense.senseId,sense.version,{description:sense.description,status:'retired'},actor);
   const trial=provider(()=>assert.fail('No mapping or authoring call for empty inventory'));
@@ -986,4 +969,31 @@ for(const prefix of ['', '[bootstrap] '])test(`${prefix}established empty invent
   assert.equal(result.result.admission?.outcome,'no_senses_requested');
   assert.equal(result.result.proposal,null);assert.equal(trial.requests.length,0);
   assert.deepEqual(getVocabularyContentForMaintenance(original.contentId),before);
+});
+
+for(const senseId of ['size','effect'])test(`operator target ${senseId} skips mapping and binds only proposed content`,async()=>{
+  const trial=provider(()=>repair);
+  const result=await trial.provider.run({...job(),repairTarget:{senseId,version:4},reassessmentSourceJobId:'prior',reassessmentSource:original});
+  if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
+  assert.deepEqual(trial.requests.map(request=>request.provenance?.stepName),['single_improvement']);
+  assert.equal(result.result.admission?.repairTargetVersion,4);
+  assert.deepEqual(result.result.admission?.sourceMapping,{senseId:null,establishedAt:null});
+  assert.equal(result.result.proposal!.operations[0]!.content.words[0]!.senseId,senseId);
+  assert.deepEqual(getVocabularyContentForMaintenance('original'),original);
+});
+test('operator target can produce no repair without mutating its source',async()=>{
+  const trial=provider(()=>({...repair,source:{decision:'keep',prompt:null},additionalExercises:[]}));
+  const result=await trial.provider.run({...job(),repairTarget:{senseId:'size',version:2},reassessmentSourceJobId:'prior',reassessmentSource:original});
+  if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
+  assert.equal(result.result.proposal,null);assert.equal(result.result.admission?.repairTargetVersion,2);
+  assert.deepEqual(getVocabularyContentForMaintenance('original'),original);
+});
+
+bootstrapTest('explicit repair intent takes precedence over fallback repertoire routing',async()=>{
+  const trial=provider(()=>repair);
+  const result=await trial.provider.run({...job(),repairTarget:{senseId:'size',version:1},reassessmentSourceJobId:'prior',reassessmentSource:original});
+  if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
+  assert.equal(result.result.admission?.outcome,'single_sense');
+  assert.deepEqual(trial.requests.map(request=>request.provenance?.stepName),['single_improvement']);
+  assert.deepEqual(getVocabularyContentForMaintenance('original'),original);
 });

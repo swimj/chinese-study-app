@@ -117,7 +117,7 @@ publication/approval fences without reclassifying valid provider output as malfo
 
 After sense readiness, deterministic source routing separates dictionary
 fallback bootstrap from authored-cue assessment. An uncovered fallback captures
-the effective selected senses from defaults or a review override and invokes the
+the selected senses from shared word defaults and invokes the
 shared general-exercise contract: the full general v5 brief, structured direct
 and cloze stimuli, optional teaching notes, and shared validation. It retains the
 reflection job's selected model and source publication scope. The first generated
@@ -187,7 +187,7 @@ the holistic job sequence. A partial unique index admits only one queued/running
 job per canonical case.
 
 Reassessment freezes proposal saves, dismissal, approval, case resolution, and
-case-scope edits. A failed or expired job releases that freeze without replacing
+repair-target edits. A failed or expired job releases that freeze without replacing
 the current result. A successful authoritative result changes current pointers
 and supersedes the previous current proposal atomically; retained alternatives
 remain explicitly unresolved until reviewed. Advisory opinions never change
@@ -349,28 +349,41 @@ The migration makes no provider calls and applies no proposed content.
 
 ## Scoped production coverage
 
-`server/db/vocabulary-sense-coverage.ts` owns nullable shared default-useful IDs,
-compatible excluded IDs and review included IDs. A null shared selection is
-unknown (`selectionEstablished: false`), while `[]` is explicitly none. A null
-review selection inherits defaults; an explicit review selection establishes that
-review's effective coverage even when shared defaults remain unknown. Each scope has a compare-and-swap version,
-immutable change history and backend events. Mapping receives every active
-sense and no mutable policy metadata. A single mapped sense is the explicit
-input to local improvement, even when currently excluded from serving. A
-fallback bootstrap captures review IDs or shared defaults once for its
-repertoire invocation. A captured scope records whether selection is established. Unknown repertoire
-scope initializes shared defaults asynchronously; unresolved findings record `needs_coverage`; an explicit empty scope records `no_senses_requested`,
-does not call authoring, and leaves the source active without a proposal.
+`server/db/vocabulary-sense-coverage.ts` owns nullable shared default-useful IDs
+and compatible excluded IDs. Null is unknown; `[]` explicitly selects none.
+Word selection has a compare-and-swap version, immutable change history and
+backend events. Historical case scope rows are retained but do not resolve policy.
+Mapping receives every active sense and no serving-policy metadata. Its chosen
+sense is evidence for a proposed repair, including excluded uses; assessment
+never writes the source mapping. Proposal application commits the reviewed binding
+and authored content together. Preview uses the same transitions and rolls back.
 
-Admission retains `generationScope`: exact sense IDs plus mapped-source,
-review-override or word-default provenance. Captured policy versions are audit
-evidence, not approval or publication dependencies. Backend-normalized mapping
-evidence persists the first requested scope in the existing stage-result cache;
-`canonical-generation-scope-v1` identifies that backend normalization without changing the mapper's wire schema. Retrying the same assessment preserves its
-scope and completed content results after serving policy changes. A new
-reassessment can request a new scope. Content calls, their cache identities and
-publication fences omit mutable serving metadata. Source content, mapping,
-canonical catalog and publication-authority fences remain active. Serving policy metadata does not invalidate ordinary content approval/application.
+Fallback bootstrap captures shared defaults once for its repertoire invocation.
+Unknown defaults initialize asynchronously; unresolved selection records
+`needs_coverage`. An explicitly empty scope records `no_senses_requested` without
+authoring or retiring the source. `generationScope` retains the invocation's exact
+sense IDs and provenance. Retries keep those inputs even after policy edits.
+Source, mapping, catalog and publication-authority checks still guard application.
+
+The repertoire editor saves shared defaults and proposal selection atomically
+through `saveRepertoireWordDefaults`. Proposal revision history retains excluded
+exercises; selection revisions in `vocabulary_repertoire_revisions` distinguish
+selection changes from authored edits. Reselecting a sense restores its retained
+exercises, while manual edits to included exercises survive later selection changes.
+The new proposal version contains only included operations, so application writes
+only the exercises shown. An intended source replacement is preserved without
+altering the source before application. Newly selected senses without retained
+exercises require generation. An empty result rejects the entire save and requires
+dismissal or new generation, never a synthesized retirement.
+
+`vocabulary_case_repair_targets` holds versioned pending and accepted single-sense
+intent. Reassessment captures that intent in the job's `repair_target_json`, skips
+automated mapping, and authors against the specified active sense. Pending intent
+blocks proposal editing/application, including retained alternatives. Reset clears
+only the pending choice. Successful result publication accepts the captured intent
+atomically, even for a no-repair judgment, and older proposals remain ineligible;
+a failed job leaves the intent pending. Manual binding changes cannot bypass this
+path. Case versions also change when intent changes.
 
 Shared defaults filter mapped general production at `listVocabularyExercises`
 and shared production-proxy checks. Established selection admits only active
@@ -387,12 +400,18 @@ policy versions; source/catalog/version changes still fence publication.
 Unmapped content stays eligible under the existing fallback policy. A sense
 coverage change does not rewrite content, learner attempts or served snapshots.
 
-Operator GET/PUT routes are `/api/operator/vocabulary/words/:id/sense-coverage`
-and `/api/operator/vocabulary/cases/:id/sense-coverage`. PUT requires the current
-nonnegative `expectedVersion` and shared `includedSenseIds` (or compatible `excludedSenseIds`), versus nullable
-review `includedSenseIds`. Shared exclusion controls explicitly establish the
-complementary useful selection; they do not interpret an absent selection. Review reassessment retains the case override and freezes case-scope edits while queued or running;
-proposal edits remain separate editorial inputs and are not reassessment input.
+Operator word selection uses `/api/operator/vocabulary/words/:id/sense-coverage`.
+Pending repair intent uses `/api/operator/vocabulary/cases/:id/repair-target`.
+Both require expected versions; the latter accepts a sense ID or null to reset.
+Reassess opens a compact dialog containing target controls, the model picker, and
+submission. Closing it preserves saved pending target intent; the Reassess button
+marks that pending state and reopens access to Reset. Unknown target state does not
+block Apply/Edit locally; backend mutation checks remain authoritative and their
+errors appear in the review. A failed refresh retains the last known target state
+for the same case, including a pending restriction. Background queue refresh
+pauses while the dialog is open. Reassessment freezes target edits while queued or running. Manual proposal text
+edits are available only with a settled assessed target and remain separate from
+reassessment input.
 
 ## Explicit retirement proposals
 
@@ -406,8 +425,12 @@ Retirement retains a compulsory comparison snapshot, but execution reads the exa
 live source rather than applying that snapshot as an authored edit. Preview and
 application use the same ordered content transitions; preview rolls back history,
 events and writes. A failure in another operation rolls back the entire application.
-Sense selection is configured directly through review coverage or word defaults;
-content proposals never mutate that policy.
+Shared sense selection is configured directly through word defaults;
+content proposals never mutate that policy. The compact repertoire card exposes
+Word defaults directly above its proposed sense groups. Operators can save the
+shared selection and update the proposal together without opening the full detail
+editor. Removed groups return when their senses are reselected and saved. Unsaved selection edits block case navigation
+and proposal actions until saved or discarded.
 
 ## Shared inventory, useful selection and teaching enrichment
 

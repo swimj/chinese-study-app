@@ -1,6 +1,8 @@
+import { getVocabularyRepairTarget, setVocabularyRepairTarget } from '../db/vocabulary-repair-target.ts';
+import { saveRepertoireWordDefaults } from '../db/vocabulary-repertoire-revision.ts';
 import { retryReflectionWithReadiness } from '../word-content/retry-preparation.ts';
 import { resolveDefaultUsefulSelectionAttention } from './default-useful-selection.ts';
-import { VocabularySenseCoverageConflict,listVocabularyDefaultSelectionFindings,setVocabularyDefaultUsefulSenses,getVocabularySenseCoverageWorkspace,setVocabularyWordSenseCoverage,setVocabularyCaseSenseCoverage } from '../db/vocabulary-sense-coverage.ts';
+import { VocabularySenseCoverageConflict,listVocabularyDefaultSelectionFindings,setVocabularyDefaultUsefulSenses,getVocabularySenseCoverageWorkspace,setVocabularyWordSenseCoverage } from '../db/vocabulary-sense-coverage.ts';
 import type { Express,Request,Response } from 'express';
 import type { VocabularyContentDraft, VocabularyJson } from '../../src/domain/vocabulary-content.ts';
 import type { VocabularyProposalDraft, VocabularyProposalOperation, VocabularyContentProposal, VocabularyReflectionCase } from '../../src/domain/vocabulary-reflection.ts';
@@ -113,20 +115,27 @@ export function registerVocabularyReflectionRoutes(app:Express,options:{wake?:()
     if(input.originProposal!==undefined){const proposal=object(input.originProposal,['proposalId','expectedVersion']);origin={kind:'proposal',proposalId:text(proposal.proposalId),expectedVersion:version(proposal.expectedVersion)};}
     const result=reassessVocabularyCaseReview(text(req.params.id),version(input.expectedVersion),actor,input.modelChoice as import('../reflection/model-arms.ts').ReflectionModelChoice,version(input.expectedContentVersion),origin);options.wake?.();return result;
   }));
-  for(const scope of ['word','case'] as const) {
-    const path=`${base}/${scope==='word'?'words':'cases'}/:id/sense-coverage`;
-    app.get(path,gate,handle((req,actor)=>{object(req.query,[]);return getVocabularySenseCoverageWorkspace(scope,text(req.params.id),actor);}));
-    app.put(path,gate,handle((req,actor)=>{
-      const input=object(req.body,scope==='word'?['expectedVersion','excludedSenseIds','includedSenseIds']:['expectedVersion','includedSenseIds']);
-      if(scope==='word'&&input.excludedSenseIds!==undefined&&input.includedSenseIds!==undefined)throw new VocabularyReflectionRequestError('Choose included useful senses or excluded senses, not both');
-      const key=scope==='word'&&input.includedSenseIds===undefined?'excludedSenseIds':'includedSenseIds';
-      if(!Number.isSafeInteger(input.expectedVersion)||Number(input.expectedVersion)<0)throw new VocabularyReflectionRequestError('Expected nonnegative coverage version');
-      const selected=scope==='case'&&input[key]===null?null:list(input[key]).map(text);
-      const value=scope==='word'?(key==='includedSenseIds'?setVocabularyDefaultUsefulSenses(text(req.params.id),Number(input.expectedVersion),selected!,actor):setVocabularyWordSenseCoverage(text(req.params.id),Number(input.expectedVersion),selected!,actor)):setVocabularyCaseSenseCoverage(text(req.params.id),Number(input.expectedVersion),selected,actor);
-      if(scope==='word'){resolveDefaultUsefulSelectionAttention(text(req.params.id));options.wake?.();}
-      return value;
-    }));
-  }
+  app.get(`${base}/words/:id/sense-coverage`,gate,handle((req,actor)=>{object(req.query,[]);return getVocabularySenseCoverageWorkspace('word',text(req.params.id),actor);}));
+  app.put(`${base}/words/:id/sense-coverage`,gate,handle((req,actor)=>{
+    const input=object(req.body,['expectedVersion','excludedSenseIds','includedSenseIds']);
+    if(input.excludedSenseIds!==undefined&&input.includedSenseIds!==undefined)throw new VocabularyReflectionRequestError('Choose included useful senses or excluded senses, not both');
+    if(!Number.isSafeInteger(input.expectedVersion)||Number(input.expectedVersion)<0)throw new VocabularyReflectionRequestError('Expected nonnegative version');
+    const key=input.includedSenseIds===undefined?'excludedSenseIds':'includedSenseIds';const selected=list(input[key]).map(text);
+    const value=key==='includedSenseIds'?setVocabularyDefaultUsefulSenses(text(req.params.id),Number(input.expectedVersion),selected,actor):setVocabularyWordSenseCoverage(text(req.params.id),Number(input.expectedVersion),selected,actor);
+    resolveDefaultUsefulSelectionAttention(text(req.params.id));options.wake?.();return value;
+  }));
+  app.get(`${base}/cases/:id/repair-target`,gate,handle((req,actor)=>{object(req.query,[]);return getVocabularyRepairTarget(text(req.params.id),actor);}));
+  app.put(`${base}/cases/:id/repair-target`,gate,handle((req,actor)=>{
+    const input=object(req.body,['expectedVersion','senseId']);
+    if(!Number.isSafeInteger(input.expectedVersion)||Number(input.expectedVersion)<0)throw new VocabularyReflectionRequestError('Expected nonnegative version');
+    return setVocabularyRepairTarget(text(req.params.id),Number(input.expectedVersion),input.senseId===null?null:text(input.senseId),actor);
+  }));
+  app.post(`${base}/proposals/:id/word-defaults-revision`,gate,handle((req,actor)=>{
+    const input=object(req.body,['expectedVersion','expectedWordVersion','includedSenseIds']);
+    if(!Number.isSafeInteger(input.expectedWordVersion)||Number(input.expectedWordVersion)<0)throw new VocabularyReflectionRequestError('Expected nonnegative word version');
+    const value=saveRepertoireWordDefaults(text(req.params.id),version(input.expectedVersion),Number(input.expectedWordVersion),list(input.includedSenseIds).map(text),actor);
+    resolveDefaultUsefulSelectionAttention(value.coverage.word.wordId);options.wake?.();return value;
+  }));
   const practicePreparation=createVocabularyPracticePreparation();
   app.get(`${base}/practice-preparation/failures`,gate,handle((req,actor)=>{object(req.query,[]);return {items:practicePreparation.listFailed(),defaultSelectionFindings:listVocabularyDefaultSelectionFindings(actor)};}));
   app.post(`${base}/practice-preparation/:id/retry`,gate,handle((req,actor)=>{

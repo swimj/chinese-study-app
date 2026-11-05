@@ -543,3 +543,28 @@ test('case review migration refuses multiple in-flight ancestors atomically inst
     assert.equal(db.prepare("SELECT 1 FROM sqlite_schema WHERE name='vocabulary_case_reviews'").get(),undefined);
   }finally{db.close();}
 });
+
+test('repair target migration preserves legacy scopes and assessments without inventing operator intent',()=>{
+  const {db}=copy('repair-target-upgrade',true);
+  try {
+    const reviewIndex=schemaMigrations.findIndex(item=>item.id==='app_schema:0066_vocabulary_case_reviews');
+    const targetIndex=schemaMigrations.findIndex(item=>item.id==='app_schema:0067_vocabulary_repair_targets');
+    assert.ok(targetIndex>reviewIndex);
+    migrateDatabase(db,schemaMigrations.slice(0,reviewIndex));seedCaseReviewLineage(db);
+    migrateDatabase(db,schemaMigrations.slice(0,targetIndex));
+    db.exec(`INSERT INTO vocabulary_case_sense_coverage VALUES ('root',2,'["historical-sense"]','2026-11-04T00:00:00.000Z');
+      INSERT INTO vocabulary_sense_coverage_history VALUES ('legacy-scope','case','root',2,'{"includedSenseIds":["historical-sense"]}','operator','2026-11-04T00:00:00.000Z');`);
+    const preserved=['vocabulary_case_sense_coverage','vocabulary_sense_coverage_history','vocabulary_case_reviews','content_proposals','proposal_revision_history','reflection_cases'];
+    const before=preserved.map(table=>db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all());
+    const jobs=db.prepare('SELECT job_id,result_json,status FROM vocabulary_reflection_jobs ORDER BY job_id').all();
+    migrateDatabase(db);
+    preserved.forEach((table,i)=>assert.deepEqual(db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all(),before[i]));
+    assert.deepEqual(db.prepare('SELECT job_id,result_json,status FROM vocabulary_reflection_jobs ORDER BY job_id').all(),jobs);
+    assert.deepEqual(db.prepare('SELECT * FROM vocabulary_case_repair_targets').all(),[]);
+    assert.deepEqual(db.prepare('SELECT * FROM vocabulary_repertoire_revisions').all(),[]);
+    assert.equal(db.prepare('SELECT count(*) AS n FROM vocabulary_reflection_jobs WHERE repair_target_json IS NOT NULL').get()!.n,0);
+    assert.deepEqual(migrateDatabase(db),[]);
+    assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
+    assertSchemaCurrent(db);
+  } finally {db.close();}
+});

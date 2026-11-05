@@ -31,7 +31,7 @@ function Encounter({ encounter, title, children }: { encounter: VocabularyServed
 }
 
 /** Render-only projection: deliberately cannot be passed to the authored-content editor. */
-export function CaseReviewCard({ item, children, onDetails, showDetails = false }: { item: VocabularyCaseQueueItem; children?: ReactNode; onDetails: () => void; showDetails?: boolean }) {
+export function CaseReviewCard({ item, children, onDetails, showDetails = false, wordDefaults }: { wordDefaults?: ReactNode; item: VocabularyCaseQueueItem; children?: ReactNode; onDetails: () => void; showDetails?: boolean }) {
   const [historyOpen, setHistoryOpen] = useState(false);
   const encounters = [...item.served].sort((a, b) => a.presentedAt && b.presentedAt ? a.presentedAt.localeCompare(b.presentedAt) : a.presentedAt ? -1 : b.presentedAt ? 1 : 0);
   const first = encounters[0];
@@ -58,6 +58,7 @@ export function CaseReviewCard({ item, children, onDetails, showDetails = false 
     {item.activeJob && <p role="status">{item.frozen ? 'Reassessment' : 'Assessment'} {item.activeJob.sequence} {item.activeJob.status === 'queued' ? 'queued' : 'running'}{item.frozen ? ' · review is paused' : ''}</p>}
     {item.latestJob?.status === 'failed' && <p role="alert" className="vocabulary-operator-error">{item.latestJob.advisory ? 'Second opinion' : 'Assessment'} {item.latestJob.sequence} failed: {item.latestJob.error === 'source_conflict' ? 'The source changed. Reassess the current source.' : item.latestJob.error === 'provider_outcome_unknown' ? 'The provider outcome is unknown. Retrying may make another call.' : item.latestJob.error ?? 'Processing failed.'}</p>}
     {item.approvalState && <p role="status">{item.approvalState === 'pending' ? 'Approval queued; application is not yet confirmed.' : 'Approval needs attention.'}</p>}
+    {wordDefaults}
     <h3 className="vocabulary-served-label">{repertoire ? 'Default selected senses' : 'Proposed improvement'}</h3>
     {item.proposal ? <div className="vocabulary-compact-review">
       {item.proposal.rationale && item.proposal.rationale.trim() !== item.assessment?.diagnosis.trim() && <p>{item.proposal.rationale}</p>}

@@ -11,7 +11,7 @@ import type { JsonSchema } from '../../src/domain/reflection-result-schema.ts';
 import type { VocabularyContent, VocabularySense } from '../../src/domain/vocabulary-content.ts';
 import type { VocabularyGenerationScope,VocabularyReflectionJob, VocabularyReflectionResult } from '../../src/domain/vocabulary-reflection.ts';
 import { getDb } from '../db/connection.ts';
-import { getVocabularyContentForMaintenance, getVocabularySenseCatalog, mapVocabularyContentSense } from '../db/vocabulary-content.ts';
+import { getVocabularyContentForMaintenance, getVocabularySenseCatalog } from '../db/vocabulary-content.ts';
 import { linkVocabularyInvocationContent, linkVocabularyInvocationSense } from '../db/vocabulary-provenance.ts';
 import { invalidateServiceInvocation } from '../llm/invocation-ledger.ts';
 import { validateJsonSchema } from '../llm/json-schema-validator.ts';
@@ -48,7 +48,7 @@ export async function runVocabularyImprovementAdmission(options: {
   if (!current || current.version !== original.version || current.availability !== 'active') throw new VocabularyReflectionConflict('Improvement source changed before admission');
   const originalMapping = current.words.find(word=>word.wordId===wordId);
   if (!originalMapping) throw new VocabularyReflectionConflict('Improvement source has no target relationship');
-  let expectedMapping = {senseId: originalMapping.senseId??null,establishedAt: originalMapping.senseMappingEstablishedAt??null};
+  const expectedMapping = {senseId: originalMapping.senseId??null,establishedAt: originalMapping.senseMappingEstablishedAt??null};
   let assertLifecycle:()=>void=()=>{};
   const fence = () => {
     assertPublish();
@@ -62,6 +62,7 @@ export async function runVocabularyImprovementAdmission(options: {
   fence();
   const inventory = readiness.senses.filter(sense=>sense.status==='active');
   if(!inventory.length){
+    if(job.repairTarget)throw new VocabularyReflectionConflict('Operator repair target is no longer active');
     fence();
     return {kind:'exercise_improvement',result:{diagnosis:'The established inventory has no eligible target-level senses. This word is ineligible for new sessions; its historical content remains unchanged.',proposal:null,
       admission:{outcome:'no_senses_requested',rationale:'Established empty inventory; no mapping or authoring demand.',wordId,
@@ -116,7 +117,7 @@ export async function runVocabularyImprovementAdmission(options: {
       AND COALESCE(json_extract(c.assessment_json,'$.responseMode'),'')!='word_choice'
     ORDER BY c.content_id`).all(wordId,original.contentId,original.accessScope,original.ownerLearnerId??null) as {content_id:string;version:number}[])
     .filter(row=>{const content=getVocabularyContentForMaintenance(row.content_id);return content&&!isVocabularyDefinitionFallback(content);});
-  const bootstrap=isVocabularyDefinitionFallback(current);
+  const bootstrap=!job.repairTarget&&isVocabularyDefinitionFallback(current);
   const covered=bootstrap?authoredPractice():[];
   if(covered.length) {
     fence();
@@ -134,6 +135,11 @@ export async function runVocabularyImprovementAdmission(options: {
     if(!routeCached)getDb().prepare("INSERT INTO vocabulary_improvement_stages(job_id,stage,input_hash,input_json,result_json,invocation_id,recorded_at) VALUES (?,'sense_mapping',?,?,?,?,?)")
       .run(job.jobId,routeHash,routeInput,JSON.stringify(value),null,new Date().toISOString());
     mapped={value};
+  }else if(job.repairTarget){
+    if(!ids.has(job.repairTarget.senseId))throw new VocabularyReflectionConflict('Operator repair target is no longer active');
+    mapped={value:{outcome:'single_sense',rationale:'Use the operator-selected repair target.',senseIds:[job.repairTarget.senseId],
+      generationScope:{selectionEstablished:true,senseIds:[job.repairTarget.senseId],source:{kind:'operator_target',caseId:job.caseId,capturedVersion:job.repairTarget.version}},
+      observedMapping:{...expectedMapping},mappingTimestamp:new Date().toISOString()}};
   }else mapped = await stage<MappingEvidence>('sense_mapping',base,vocabularySenseMappingSchema,value=>{
     const result = value as Mapping;
     if(!result.rationale.trim() || new Set(result.senseIds).size!==result.senseIds.length || result.senseIds.some(id=>!ids.has(id))
@@ -149,21 +155,20 @@ export async function runVocabularyImprovementAdmission(options: {
     const cached=getDb().prepare("SELECT result_json FROM vocabulary_improvement_stages WHERE job_id=? AND stage='sense_mapping' AND input_hash=?").get(job.jobId,scopeHash) as {result_json:string}|undefined;
     if(cached)mapped.value.generationScope=JSON.parse(cached.result_json) as VocabularyGenerationScope;
     else {
-      let selected=resolveVocabularySenseCoverage(wordId,job.caseId);
-      if(!selected.selectionEstablished)try{await (options.ensureDefaults??ensureVocabularyDefaultUsefulSelection)(wordId,{workflowId:job.jobId,canPublish:options.canPublish});selected=resolveVocabularySenseCoverage(wordId,job.caseId);}
+      let selected=resolveVocabularySenseCoverage(wordId);
+      if(!selected.selectionEstablished)try{await (options.ensureDefaults??ensureVocabularyDefaultUsefulSelection)(wordId,{workflowId:job.jobId,canPublish:options.canPublish});selected=resolveVocabularySenseCoverage(wordId);}
       catch(error){if(!(error instanceof VocabularySenseSelectionRequired))throw error;}
       fence();
-      mapped.value.generationScope={selectionEstablished:selected.selectionEstablished,senseIds:[...selected.includedSenseIds],source:selected.review?.includedSenseIds!==null&&selected.review?.includedSenseIds!==undefined?{kind:'review_override',caseId:job.caseId,capturedVersion:selected.review.version}:{kind:'word_defaults',wordId,capturedVersion:selected.word.version}};
+      mapped.value.generationScope={selectionEstablished:selected.selectionEstablished,senseIds:[...selected.includedSenseIds],source:{kind:'word_defaults',wordId,capturedVersion:selected.word.version}};
       getDb().prepare("INSERT INTO vocabulary_improvement_stages(job_id,stage,input_hash,input_json,result_json,invocation_id,recorded_at) VALUES (?,'sense_mapping',?,?,?,?,?)").run(job.jobId,scopeHash,scopeInput,JSON.stringify(mapped.value.generationScope),null,new Date().toISOString());
     }
   }
   const before = mapped.value.observedMapping;
   const sameBefore = expectedMapping.senseId===before.senseId && expectedMapping.establishedAt===before.establishedAt;
-  const samePublished = mapped.value.outcome==='single_sense' && expectedMapping.senseId===mapped.value.senseIds[0]
-    && expectedMapping.establishedAt===mapped.value.mappingTimestamp;
-  if(!sameBefore&&!samePublished) throw new Error('Sense mapping changed since the retained admission decision');
+  if(!sameBefore) throw new VocabularyReflectionConflict('Sense mapping changed since the retained admission decision');
   const {observedMapping:_observed,mappingTimestamp:_timestamp,...mappingDecision}=mapped.value;
   const admission = {...mappingDecision,wordId,sourceContentId:original.contentId,sourceContentVersion:original.version,catalogVersion:readiness.catalog.version,sourceMapping:{...expectedMapping},
+    ...(job.repairTarget?{repairTargetVersion:job.repairTarget.version}:{}),
     ...(mapped.invocationId?{invocationId:mapped.invocationId}:{})};
   if (mapped.value.outcome==='unmappable'||mapped.value.outcome==='inventory_gap') {
     fence();
@@ -176,13 +181,6 @@ export async function runVocabularyImprovementAdmission(options: {
   }
   if (mapped.value.outcome==='single_sense') {
     fence();
-    if(expectedMapping.senseId!==mapped.value.senseIds[0] || !expectedMapping.establishedAt) {
-      const establishedAt = mapped.value.mappingTimestamp;
-      mapVocabularyContentSense({contentId:original.contentId,wordId,expectedContentVersion:original.version,expectedCatalogVersion:readiness.catalog.version,
-        expectedMapping,senseId:mapped.value.senseIds[0]!,establishedAt},{kind:'service',id:serviceId,reason:{jobId:job.jobId,mappingInvocationId:mapped.invocationId??null}});
-      expectedMapping={senseId:mapped.value.senseIds[0]!,establishedAt};
-    }
-    admission.sourceMapping={...expectedMapping};
     const responseCandidates=vocabularyResponseCandidates(job);
     const authoringWords=vocabularyImprovementWords(job);
     const responseFence=()=>{if(!isDeepStrictEqual(vocabularyResponseCandidates(job),responseCandidates)
@@ -190,7 +188,7 @@ export async function runVocabularyImprovementAdmission(options: {
     const result = await stage<ImprovementResult>('single_improvement',projectVocabularyImprovementInput(job,original,inventory.find(sense=>sense.senseId===mapped.value.senseIds[0])!),options.improvementSchema,(value,invocationId)=>{
       const normalized = options.normalize(value,invocationId);
       if(normalized.kind!=='exercise_improvement')throw new Error('Unexpected improvement result');
-      for(const op of normalized.result.proposal?.operations??[])op.content.words=op.content.words.map(word=>word.wordId===wordId?{...word,senseId:mapped.value.senseIds[0],senseMappingEstablishedAt:expectedMapping.establishedAt}:word);
+      for(const op of normalized.result.proposal?.operations??[])if(op.strategy!=='retire')op.content.words=op.content.words.map(word=>word.wordId===wordId?{...word,senseId:mapped.value.senseIds[0],senseMappingEstablishedAt:mapped.value.mappingTimestamp}:word);
       return normalized;
     },{fence:responseFence,contents:[],senses:inventory.filter(sense=>sense.senseId===mapped.value.senseIds[0])});
     fence();
