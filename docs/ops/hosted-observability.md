@@ -13,7 +13,7 @@ remainder), so the first occurrence of a slow request leaves evidence without
 new instrumentation or a reproduction. These measurements do not provide
 distributed tracing, CPU profiles, or long-retention analytics.
 
-A separate operator **usage pulse** page (`#operator-usage`, gated by
+A separate operator **usage pulse** page (`/operator/usage`, gated by
 `APP_OPERATOR_CLERK_USER_IDS`) provides content-free cohort product-usage
 snapshots (DAU, sessions, new words, practice, review outcomes, acceptance totals,
 mean stash, total active time, and sparse scenario counts). The

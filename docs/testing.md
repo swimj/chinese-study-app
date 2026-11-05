@@ -73,6 +73,12 @@ wiring; full automated mounted-controller/fetch-race coverage is not implied.
 
 ## Browser regression checks
 
+`tests/browser/operator-learner-isolation.html` mounts the actual application root
+with mocked transport. It checks pathname entry, operator rail navigation and
+browser Back, focus/visibility/polling isolation, a full-page study-return link,
+and learner mounting at `/` even with an obsolete operator hash. It does not
+exercise live Clerk sign-in redirects or preserve study sessions across page loads.
+
 
 ### Comparing a replacement UI with the earlier app
 

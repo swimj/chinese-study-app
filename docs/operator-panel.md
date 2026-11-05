@@ -1,15 +1,20 @@
 # Operator panel
 
 This guide explains how an authorized operator reaches and uses the application’s
-bookmark-only operator panel. It describes the available views and their
+operator workspace. It describes the available views and their
 workflows; the [API reference](api.md#operator-view) defines the HTTP contracts.
 
 ## Access
 
-Open the application with `#operator-usage` in the URL. The panel is not part of
-the learner navigation. Access requires the signed-in Clerk user id, or the
+Open `/operator/usage`, or bookmark a specific view such as
+`/operator/improvement`. The workspace has its own operator rail and does not
+mount learner dashboard, attention, or session-recovery controllers. Its
+**Return to study** link loads `/` as a new page; study state is not preserved
+across this full-page boundary. The old operator hashes are not routes. Access requires the signed-in Clerk user id, or the
 trusted-local learner identity, to be allowed by `APP_OPERATOR_CLERK_USER_IDS`.
-An empty allowlist denies access.
+An empty allowlist denies access. Rail navigation retains the opened improvement
+workspace in this operator page, including draft edits and pending review state.
+Leaving the page via Return to study does not retain that in-memory workspace.
 
 ## Views
 
@@ -109,7 +114,7 @@ approval and evidence guarantees, and the
 [provider pipeline](implementation/vocabulary-content-improvement.md) explains
 how judgments and proposals are produced.
 
-Open `#operator-usage` and select **Content improvement** using the
+Open `/operator/improvement`, or select **Content improvement** using the
 [operator allowlist](#access). Awaiting review presents stable improvement cases,
 oldest creation time first. Each case displays its current assessment and saved
 proposal, or the judgment that proposed no change. Reassessment retains the
