@@ -289,7 +289,7 @@ for (const outcome of ['inventory_gap','unmappable'] as const) test(`${outcome} 
   assert.deepEqual(getVocabularyCaseWorkspace(work.caseId,'editor').admission,admission);
   assert.equal(claimVocabularyReflectionJob({kind:'exercise_improvement',now:judgedAt}),null);
   assert.ok(claimVocabularyReflectionJob({kind:'learner_feedback',now:judgedAt}));
-  assert.throws(()=>closeVocabularyCase(work.caseId,'editor',''),/nonempty/);
+  assert.throws(()=>closeVocabularyCase(work.caseId,'editor',null as unknown as string),/Expected text reason/);
   assert.equal(getVocabularyReflectionCase(work.caseId).status,'open');
   closeVocabularyCase(work.caseId,'editor','Recorded for later attention');
   assert.equal(getVocabularyReflectionCase(work.caseId).status,'closed');
@@ -463,9 +463,11 @@ test('content drift rejects applications; teaching cases use manual proposals on
   const review = approveVocabularyProposal(proposal.proposalId,1,'editor');
   updateVocabularyContent('teach',1,{ ...draft('teach','new','teaching'),body: 'Intervening repair' },actor);
   assert.throws(() => applyVocabularyProposal(proposal.proposalId,1,review,'stale-source','editor'),/base changed/);
-  assert.throws(()=>closeVocabularyCase(teaching.caseId,'editor',''),/nonempty/);
+  assert.throws(()=>closeVocabularyCase(teaching.caseId,'editor',null as unknown as string),/Expected text reason/);
   assert.equal(getVocabularyReflectionCase(teaching.caseId).status,'open');
-  closeVocabularyTeachingCase(teaching.caseId,'editor','Reviewed alongside exact introduction');
+  closeVocabularyTeachingCase(teaching.caseId,'editor','');
+  const closure=sql.prepare("SELECT data_json FROM backend_events WHERE entity_id=? AND name='vocabulary.reflection.teaching_case_closed'").get(teaching.caseId)!;
+  assert.equal(JSON.parse(closure.data_json as string).reason,'');
   assert.equal(listVocabularyReflectionCases('teaching_review','editor').length,0);
   const privateContent = createVocabularyContent({ ...draft('private'),accessScope: 'private',ownerLearnerId: 'alice' },actor);
   assert.throws(() => createVocabularyProposal({ operations: [{ ...op('replace',privateContent.contentId,'leak'),content: draft('leak') }],rationale: 'Wrong scope' },'editor'),/ownership/);
@@ -610,7 +612,7 @@ test('unresolved pure-cue referral stays inspectable alongside a local proposal 
   const workspace=getVocabularyCaseWorkspace(work.caseId,'editor');
   assert.deepEqual(workspace.pureCueReferral,pureCueReferral);assert.deepEqual(workspace.pureCuePromotion,pureCuePromotion);
   assert.equal(workspace.case.status,'open');assert.ok(result.proposalId);assert.equal(getVocabularyContentForMaintenance('one')!.version,1);
-  assert.throws(()=>closeVocabularyCase(work.caseId,'editor',''),/nonempty/);
+  assert.throws(()=>closeVocabularyCase(work.caseId,'editor',null as unknown as string),/Expected text reason/);
   assert.equal(getVocabularyReflectionCase(work.caseId).status,'open');
   closeVocabularyCase(work.caseId,'editor','Deferred unresolved lexical identity');
   assert.equal(getVocabularyCaseWorkspace(work.caseId,'editor').case.status,'closed');

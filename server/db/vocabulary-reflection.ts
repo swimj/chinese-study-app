@@ -735,7 +735,8 @@ export function completeVocabularyApprovalRequest(input: {
   });
 }
 export function closeVocabularyTeachingCase(caseId: string, actorId: string, reason: string): void {
-  const actor = operator(actorId); nonempty(reason);
+  const actor = operator(actorId);
+  if (typeof reason !== 'string') throw new TypeError('Expected text reason');
   atomic(() => {
     caseId=canonicalVocabularyCaseId(caseId);assertVocabularyCaseEditable(caseId);
     if (getVocabularyReflectionCase(caseId).kind !== 'teaching_review') throw new Error('Expected a teaching case');
@@ -769,10 +770,11 @@ export function closeVocabularyCase(caseId: string, actorId: string, reason = ''
     if (evidence.kind !== 'exercise_improvement' || (!noProposal && !unresolved)) {
       throw new VocabularyReflectionConflict('Only manual teaching or unresolved assessment cases can be closed');
     }
-    if (!(evidence.status === 'completed' && noProposal && !unresolved)) nonempty(reason);
     for(const p of getDb().prepare("SELECT p.proposal_id,p.version FROM content_proposals p JOIN vocabulary_case_lineage l ON l.member_case_id=p.case_id WHERE l.case_id=? AND p.status NOT IN ('closed','applied')").all(caseId) as {proposal_id:string;version:number}[])closeVocabularyProposal(p.proposal_id,p.version,actorId,reason);
     getDb().prepare("UPDATE reflection_cases SET status='closed' WHERE case_id=?").run(caseId);
-    const closedAt=timestamp();event('vocabulary.reflection.admission_case_closed',caseId,{ reason,outcome: admission?.outcome??null },actor,closedAt);
+    const sourceId=admission?.sourceContentId??evidence.contentId;
+    const sourceAvailability=sourceId?(getDb().prepare('SELECT availability FROM content_items WHERE content_id=?').get(sourceId) as {availability:string}|undefined)?.availability??null:null;
+    const closedAt=timestamp();event('vocabulary.reflection.admission_case_closed',caseId,{ reason,outcome: admission?.outcome??null,context:{pureCueOutcome:improvement?.pureCuePromotion?.outcome??null,sourceAvailability} },actor,closedAt);
     resolveVocabularyCaseProposal(caseId,closedAt);
   });
 }

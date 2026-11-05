@@ -313,16 +313,20 @@ for(const reason of [undefined,'','  ','Reviewed without a change.'])test(`compl
   assert.equal(getVocabularyContentForMaintenance('one')!.version,1);
 });
 
-for(const outcome of ['inventory_gap','unmappable','needs_operator'] as const)test(`${outcome} assessment closure still requires a reason even without a proposal`,()=>{
+for(const outcome of ['inventory_gap','unmappable','needs_operator'] as const)for(const reason of [undefined,'','  '])test(`${outcome} assessment closes with optional note ${JSON.stringify(reason)}`,()=>{
   const job=claimVocabularyReflectionJob({kind:'exercise_improvement',now:later})!;
   const unresolved=outcome==='needs_operator'
     ?{pureCuePromotion:{outcome,rationale:'Ambiguous candidate',candidateWordIds:['a'],existingContentId:null}}
     :{admission:{outcome,rationale:'Inspect the intended use',wordId:'a',sourceContentId:'one',sourceContentVersion:1,catalogVersion:1,senseIds:[],sourceMapping:{senseId:null,establishedAt:null}}};
   recordVocabularyImprovementResult(job.jobId,job.leaseToken,{diagnosis:'Manual review needed',proposal:null,...unresolved},later);
   const params={id:caseId},route=`${base}/cases/:id/close`;
-  for(const reason of [undefined,'','  '])assert.equal(call('post',route,{params,body:{reason}}).status,400);
-  assert.equal((call('get',`${base}/cases/:id`,{params}).body.case as {status:string}).status,'open');
-  assert.equal(call('post',route,{params,body:{reason:'Deferred after reviewing the unresolved assessment'}}).status,200);
+  assert.equal(call('post',route,{params,body:{reason:null}}).status,400);
+  assert.equal(call('post',route,{params,body:{reason}}).status,200);
+  const closure=sql.prepare("SELECT data_json FROM backend_events WHERE entity_id=? AND name='vocabulary.reflection.admission_case_closed'").get(caseId)!;
+  const data=JSON.parse(closure.data_json as string);
+  assert.equal(data.reason,reason??'');assert.equal(data.outcome,outcome==='needs_operator'?null:outcome);
+  assert.equal(data.context.pureCueOutcome,outcome==='needs_operator'?'needs_operator':null);
+  assert.equal(getVocabularyContentForMaintenance('one')!.version,1);
 });
 
 test('reassessment endpoint validates model and authority and queues the selected independent assessment',()=>{
