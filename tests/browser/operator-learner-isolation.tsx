@@ -33,6 +33,7 @@ async function run(){
     const reviewWorkspace=document.querySelector('.vocabulary-case-review-page');
     const quality=document.querySelector<HTMLAnchorElement>('a[href="/operator/quality"]');quality!.click();await wait(100);
     check(location.pathname==='/operator/quality','rail navigation owns distinct URL');
+    if(reviewWorkspace){const before=requests.filter(path=>path.includes('/case-queue')).length;window.dispatchEvent(new Event('focus'));document.dispatchEvent(new Event('visibilitychange'));await wait(5300);check(requests.filter(path=>path.includes('/case-queue')).length===before,'hidden review workspace does not refresh on focus/visibility/poll');}
     history.back();await wait(150);check(location.pathname===route,'browser back restores operator route');
     if(reviewWorkspace)check(document.querySelector('.vocabulary-case-review-page')===reviewWorkspace,'operator rail retains the existing review workspace');
     check(requests.every(path=>path.startsWith('/api/operator/')),'operator tab navigation does not start learner controllers');

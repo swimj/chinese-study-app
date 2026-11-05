@@ -3,6 +3,7 @@ import type { VocabularyCaseReview, VocabularyContentProposal, VocabularyProposa
 /** Display-only data. These projections are never accepted as authored content or saved drafts. */
 export type VocabularyServedReview = {
   encounterId:string; presentedAt:string|null; contentId:string|null; contentVersion:number|null; kind:string|null; role:string|null;
+  pureCue?:{axisNote:string|null;teachingNote:string|null};
   prompt:string|null; choices:{id:string;text:string}[]; acceptedAnswers:string[];
   responses:{actionId:string;text:string|null;outcome:string;undone:boolean}[];
   reactions:{actionId:string;feedback:string;comment:string|null;undone:boolean}[];
@@ -12,6 +13,7 @@ export type VocabularyOperationReview = {
   operationKey:string; strategy:VocabularyProposalOperation['strategy']; learningRole?:VocabularyProposalOperation['learningRole'];
   scopeLabel:string; groupLabel:string; prompt:string|null; acceptedAnswers:string[]; rationale:string;
   sourceContentId:string|null; expectedVersion:number|null; otherChanges:string[];
+  pureCue?:{axisNote:string|null;teachingNote:string|null};
 };
 export type VocabularyAssessmentSummary = {
   jobId:string; sequence:number; origin:'automatic'|'reassessment'|'identity_resolution';

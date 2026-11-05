@@ -18,6 +18,13 @@ if (cards[2]) { cards[2].served.push({ ...structuredClone(cards[2].served[0]), e
 if (cards[3]) { cards[3].requiresDetails = true; cards[3].proposal!.operations[0].otherChanges = ['Teaching explanation also changes; inspect full content.']; }
 if (cards[4]) { cards[4].alternatives = [{ proposalId: 'retained-alternative', version: 2, status: 'awaiting_review', rationale: 'Retained operator-edited alternative' }]; cards[4].alternativeCount = 1; }
 if (params.has('blocked') && cards[0]) { const item=cards[0]; item.proposal=null; item.currentProposalId=null; item.needsDecision=true; item.finding={kind:'unmappable',message:'The served cue does not identify one intended sense.'}; item.assessment!.outcome='unmappable'; item.reassessment={eligible:false,reason:'The source exercise is retired.',source:null}; }
+if (params.has('design') && cards[0]) {
+ const first=cards[0];first.served.push({...structuredClone(first.served[0]),encounterId:'later',presentedAt:'2026-11-03T14:00:00Z',prompt:'A distinct later snapshot.',responses:[{actionId:'later-response',text:'报备',outcome:'accepted',undone:true}],skipped:true,presentationUndone:true});
+ const pure=cards[1];pure.wordId=null;pure.wordLabel=null;pure.proposal=structuredClone(first.proposal);pure.proposal!.proposalId='pure-proposal';pure.currentProposalId='pure-proposal';pure.served[0].pureCue={axisNote:'Shared purpose from stored cue',teachingNote:'Original teaching note'};pure.proposal!.operations[0].pureCue={axisNote:'Shared purpose from stored cue',teachingNote:'Revised note preserving distinctions between all accepted forms.'};pure.proposal!.operations[0].acceptedAnswers=['报备','报告'];pure.proposal!.operations[0].sourceContentId=pure.served[0].contentId;pure.proposal!.operations[0].expectedVersion=pure.served[0].contentVersion;
+ cards[2].assessment!.outcome='repertoire_bootstrap';
+ cards[3].proposal=null;cards[3].requiresDetails=false;cards[3].needsDecision=true;cards[3].finding={kind:'unmappable',message:'The intended sense is unresolved.'};cards[3].reassessment={eligible:false,reason:'The source exercise is retired.',source:null};
+ cards[4].stale=true;cards[4].sources[0].version=2;
+}
 const archived = caseReviewFixture(99); archived.state = 'resolved'; archived.resolvedAt = new Date().toISOString(); archived.proposal!.status = 'applied'; cards.push(archived);
 const counts: Record<string, number> = { queue: 0, history: 0, card: 0, workspace: 0, proposal: 0, fullSnapshot: 0, attention: 0, mutations: 0, broadLists: 0 };
 const requests: VocabularyApprovalRequest[] = []; let activeCase = cards[0]?.caseId, lostAck = false, rejectApproval = false, holdQueue = false; const pendingQueue: (()=>void)[]=[];
@@ -81,6 +88,6 @@ button('Reject next approval with 409',()=>{rejectApproval=true;});
 button('Lose next approval ACK', () => { lostAck = true; });
 button('Fail pending approval', () => { const request = requests.find(value => value.status === 'queued'); if (!request) return; request.status = 'attention'; request.error = 'Source version changed before application'; request.updatedAt = new Date().toISOString(); const item = cards.find(value => value.approvalRequestId === request.requestId)!; item.approvalState = 'attention'; item.version++; });
 button('Reset counters', () => { for (const key of Object.keys(counts)) counts[key] = 0; count('mutations'); counts.mutations = 0; counter.textContent = Object.entries(counts).map(([name, value]) => `${name}: ${value}`).join(' · '); });
-if (params.has('narrow')) document.getElementById('root')!.style.maxWidth = '480px';
+
 if (params.has('largeText')) document.documentElement.style.fontSize = '21px';
-createRoot(document.getElementById('root')!).render(params.has('usage') ? <OperatorShell tab="improvement"><VocabularyCaseReviewPage api={api} /></OperatorShell> : <VocabularyCaseReviewPage api={api} />);
+if (params.has('narrow')) { controls.style.display='none'; const url=new URL(location.href);url.searchParams.delete('narrow');const frame=document.createElement('iframe');frame.src=url.href;frame.title='Narrow operator review';frame.style.cssText='width:480px;max-width:100%;height:100dvh;border:0;display:block';document.getElementById('root')!.append(frame); } else createRoot(document.getElementById('root')!).render(params.has('usage') ? <OperatorShell tab="improvement"><VocabularyCaseReviewPage api={api} /></OperatorShell> : <VocabularyCaseReviewPage api={api} />);
