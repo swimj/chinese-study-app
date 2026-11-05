@@ -1183,7 +1183,14 @@ messages for the learner’s history.
 `GET /api/operator/vocabulary/case-queue` returns a bounded display projection of
 canonical improvement cases. Parameters are `view=review|history` (default
 `review`), `limit` (1–50, default 20), and the opaque `cursor` returned by the
-previous page. The response is `{items,nextCursor}`. Review orders unresolved
+previous page. `direction=next|previous` defaults to `next`; `edge=first|last`
+selects a queue end, preserving a supplied cursor's archive time window.
+The response is `{items,nextCursor,previousCursor,anchorCursor,total,startIndex}`.
+`total` counts the matching queue independently of the loaded page; `startIndex`
+is its zero-based global offset. `anchorCursor` retains query/time context even
+when a page has neither a previous nor a next page. Identity selection uses
+keyset order in either direction; exact counts scan matching indexed identities,
+without hydrating their evidence or proposal bodies. Review orders unresolved
 cases by original creation time, then case ID, oldest first. Queued approvals and
 approval failures stay out of that ready-review list; their operational status
 is available through the existing attention endpoints. Cases without a completed
@@ -1198,7 +1205,8 @@ at most 200 characters, and is only available for History. Cursors are bound to
 their view and search query.
 
 Each item contains case version/state, numbered current and active job identity,
-the current proposal reference, readable served evidence and proposed changes,
+the current proposal reference, readable served evidence (including nullable
+`presentedAt`) and proposed changes,
 model attribution, current source/version comparisons, and concise advisory
 opinion status. These are display-only projections, not complete authored drafts.
 Raw encounter snapshots, model requests/results, and full editing bodies are

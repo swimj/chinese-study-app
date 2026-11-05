@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { approvalOutcomeUncertain, canInstallCaseRefresh, caseReviewLocked, caseCanReview, canRetryLatestCaseJob, queueWindowItems, removeCaseFromWindow, replaceCaseProjection, selectionAfterCaseRemoval, type CaseQueueWindow, type CaseRefreshContext } from '../src/features/vocabulary-operator/case-queue-model.ts';
+import { shouldSaveReviewNote, approvalOutcomeUncertain, canInstallCaseRefresh, caseReviewLocked, caseCanReview, canRetryLatestCaseJob, queueWindowItems, removeCaseFromWindow, replaceCaseProjection, selectionAfterCaseRemoval, type CaseQueueWindow, type CaseRefreshContext } from '../src/features/vocabulary-operator/case-queue-model.ts';
 import { caseReviewFixture } from './fixtures/case-review-data.ts';
 
 test('queue projections replace equal-version shared-source metadata without moving stable case identity', () => {
   const original = caseReviewFixture(), other = caseReviewFixture(2);
-  const pages: CaseQueueWindow = [{ cursor: null, page: { items: [original, other], nextCursor: null } }];
+  const pages: CaseQueueWindow = [{ cursor: null, page: { items: [original, other], nextCursor: null, previousCursor: null, anchorCursor: null, startIndex: 0, total: 3 } }];
   const changed = { ...original, stale: true, sources: original.sources.map(source => ({ ...source, version: 2 })) };
   const updated = queueWindowItems(replaceCaseProjection(pages, changed));
   assert.deepEqual(updated.map(item => item.caseId), [original.caseId, other.caseId]);
@@ -17,7 +17,7 @@ test('queue projections replace equal-version shared-source metadata without mov
 
 test('overlapping refreshed pages deduplicate a case and retain the newest projection', () => {
   const first = caseReviewFixture(), second = caseReviewFixture(2), third = caseReviewFixture(3);
-  const entries: CaseQueueWindow = [{ cursor: null, page: { items: [first, second], nextCursor: 'next' } }, { cursor: 'next', page: { items: [{ ...second, version: 2 }, third], nextCursor: null } }];
+  const entries: CaseQueueWindow = [{ cursor: null, page: { items: [first, second], nextCursor: 'next', previousCursor: null, anchorCursor: null, startIndex: 0, total: 3 } }, { cursor: 'next', page: { items: [{ ...second, version: 2 }, third], nextCursor: null, previousCursor: null, anchorCursor: null, startIndex: 0, total: 3 } }];
   const items = queueWindowItems(entries);
   assert.deepEqual(items.map(item => item.caseId), [first.caseId, second.caseId, third.caseId]);
   assert.equal(items[1].version, 2);
@@ -80,4 +80,12 @@ test('matching fresh case projection clears frozen and pending flags from a pinn
   assert.equal(caseReviewLocked(current.caseId,null,{frozen:true,approvalState:null}),true);
   assert.equal(caseReviewLocked(undefined,undefined,{frozen:true,approvalState:null}),true);
   assert.equal(caseReviewLocked('other-case',current,{frozen:true,approvalState:null}),true);
+});
+
+test('Enter closes a review note draft while multiline and Chinese IME retain their keystrokes',()=>{
+  const enter={key:'Enter',shiftKey:false,isComposing:false,keyCode:13};
+  assert.equal(shouldSaveReviewNote(enter),true);
+  assert.equal(shouldSaveReviewNote({...enter,shiftKey:true}),false);
+  assert.equal(shouldSaveReviewNote({...enter,isComposing:true}),false);
+  assert.equal(shouldSaveReviewNote({...enter,keyCode:229}),false);
 });

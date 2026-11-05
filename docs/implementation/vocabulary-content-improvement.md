@@ -482,8 +482,26 @@ projection from the case queue API. `CaseReviewCard` renders the served prompt,
 response/reaction summaries, assessment-associated provenance, and proposed
 operation rows without constructing a `VocabularyContentProposal`. Queue batches
 exclude raw authored bodies and provider output. The selected card can navigate
-within the loaded window without a detail request; near-boundary prefetch retains
-at most three twenty-card pages. History uses its own on-demand paginated query.
+within its twenty-card page without a detail request. Previous/next and unmodified
+Left/Right keys cross page boundaries with bidirectional keyset reads and wrap at
+both ends of the matching queue. Native text inputs and select controls retain
+their arrow keys. The counter shows the global position and exact matching total;
+only one page of compact cards is retained. History uses its own on-demand query
+and retains its cursor time window when wrapping.
+
+The card header shows the earliest original encounter timestamp; a case without
+that retained evidence explicitly shows its case-opened time. Sense groups start
+collapsed with exercise counts. Repeated assessment rationale is shown once, and
+unchanged current source snapshots are omitted. Changed-source information lives
+with the original served content and the existing approval/second-opinion guards
+remain authoritative. The action frame stays outside the scrolling card.
+
+Review notes are per-case drafts for the mounted review session. Opening a note
+focuses its field; Enter saves and closes the draft, Shift+Enter adds a newline,
+and IME composition does not submit. Drafts survive case/queue navigation and
+refresh reads but are lost on a browser reload or leaving the mounted view. A
+review action persists its supplied note through the existing action protocol;
+saving a draft alone does not write to the server or approve a proposal.
 
 The full `VocabularyOperatorPage` editor mounts only after Details or Edit is
 requested. Its explicit detail mode hydrates the saved proposal and case workspace,

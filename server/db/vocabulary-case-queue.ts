@@ -33,10 +33,12 @@ export function listVocabularyCaseQueue(actorId:string,input:VocabularyCaseQueue
   const cursor=input.cursor?decodeCursor(input.cursor,view,search):null;
   const since=cursor?.since??(view==='history'&&!search?new Date(Date.parse(now)-12*60*60*1000).toISOString():null);
   const until=cursor?.until??(view==='history'&&!search?now:null);
+  if(input.direction!==undefined&&!['next','previous'].includes(input.direction)||input.edge!==undefined&&!['first','last'].includes(input.edge))throw new TypeError('Invalid case queue direction');
+  const backwards=input.edge==='last'||(!input.edge&&input.direction==='previous');
   const order=view==='review'?'r.created_at':'r.resolved_at',direction=view==='review'?'ASC':'DESC';
   const where=[view==='review'?"r.state='open' AND r.approval_state IS NULL AND (r.current_job_id IS NOT NULL OR r.current_proposal_id IS NOT NULL)":"r.state='resolved' AND r.resolved_at IS NOT NULL"];
   const params:(string|number)[]=[];
-  if(cursor){where.push(`(${order},r.case_id) ${view==='review'?'>':'<'} (?,?)`);params.push(cursor.at,cursor.id);}
+
   if(since&&until){where.push('r.resolved_at>=? AND r.resolved_at<=?');params.push(since,until);}
   if(search){
     const like=`%${search.replace(/[\\%_]/g,'\\$&')}%`;
@@ -45,11 +47,18 @@ export function listVocabularyCaseQueue(actorId:string,input:VocabularyCaseQueue
       OR EXISTS(SELECT 1 FROM json_each(c.evidence_snapshot_json) se WHERE json_extract(se.value,'$.snapshot.body.prompt') LIKE ? ESCAPE '\\'))`);
     params.push(...Array<string>(7).fill(like));
   }
-  const rows=getDb().prepare(`SELECT r.case_id AS caseId,${order} AS at FROM vocabulary_case_reviews r
-    JOIN reflection_cases c ON c.case_id=r.case_id LEFT JOIN lexical_words w ON w.id=c.word_id
-    WHERE ${where.join(' AND ')} ORDER BY ${order} ${direction},r.case_id ${direction} LIMIT ?`).all(...params,limit+1) as {caseId:string;at:string}[];
-  const selected=rows.slice(0,limit),last=selected.at(-1);
-  return {items:readCards(selected),nextCursor:rows.length>limit&&last?Buffer.from(JSON.stringify({v:1,view,search,at:last.at,id:last.caseId,since,until} satisfies Cursor)).toString('base64url'):null};
+  const from=`FROM vocabulary_case_reviews r ${search?'JOIN reflection_cases c ON c.case_id=r.case_id LEFT JOIN lexical_words w ON w.id=c.word_id':''} WHERE ${where.join(' AND ')}`;
+  const total=(getDb().prepare(`SELECT count(*) AS total ${from}`).get(...params) as {total:number}).total;
+  const compare=view==='review'?'>':'<',reverseCompare=view==='review'?'<':'>';
+  const boundary=cursor&&!input.edge?` AND (${order},r.case_id) ${backwards?reverseCompare:compare} (?,?)`:'';
+  const ordered=backwards?(direction==='ASC'?'DESC':'ASC'):direction;
+  const rows=getDb().prepare(`SELECT r.case_id AS caseId,${order} AS at ${from}${boundary} ORDER BY ${order} ${ordered},r.case_id ${ordered} LIMIT ?`)
+    .all(...params,...(boundary?[cursor!.at,cursor!.id]:[]),limit) as {caseId:string;at:string}[];
+  if(backwards)rows.reverse();
+  const first=rows[0],last=rows.at(-1);
+  const startIndex=first?(getDb().prepare(`SELECT count(*) AS count ${from} AND (${order},r.case_id) ${reverseCompare} (?,?)`).get(...params,first.at,first.caseId) as {count:number}).count:0;
+  const encode=(row:{at:string;caseId:string})=>Buffer.from(JSON.stringify({v:1,view,search,at:row.at,id:row.caseId,since,until} satisfies Cursor)).toString('base64url');
+  return {items:readCards(rows),total,startIndex,anchorCursor:first?encode(first):input.cursor??null,previousCursor:first&&startIndex>0?encode(first):null,nextCursor:last&&startIndex+rows.length<total?encode(last):null};
 }
 
 export function getVocabularyCaseCard(caseId:string,actorId:string,proposalId?:string):VocabularyCaseQueueItem {
@@ -125,7 +134,7 @@ function readCards(wanted:{caseId:string;proposalId?:string}[]):VocabularyCaseQu
       reassessment:{eligible,reason:eligible?null:row.state==='resolved'?'This case is resolved.':row.activeJobId?'A case job is queued or running.':row.approvalState==='pending'?'Case approval is queued or running.':!row.currentJobId?'A completed assessment is required.':!source?'The current source is unavailable or is not an active general production exercise.':'Only exercise improvement cases can be reassessed.',source}};
     return [row.caseId,item];
   }));
-  const served=db.prepare(`SELECT c.case_id AS caseId,json_extract(e.value,'$.encounterId') AS encounterId,
+  const served=db.prepare(`SELECT c.case_id AS caseId,json_extract(e.value,'$.encounterId') AS encounterId,json_extract(e.value,'$.presentedAt') AS presentedAt,
     json_extract(e.value,'$.snapshot.contentId') AS contentId,json_extract(e.value,'$.snapshot.contentVersion') AS contentVersion,
     json_extract(e.value,'$.snapshot.kind') AS kind,json_extract(e.value,'$.snapshot.role') AS role,
     json_extract(e.value,'$.snapshot.body.prompt') AS prompt,json_extract(e.value,'$.snapshot.body.choices') AS choices,
@@ -136,12 +145,12 @@ function readCards(wanted:{caseId:string;proposalId?:string}[]):VocabularyCaseQu
     CASE WHEN json_type(e.value,'$.effectiveFeedback')='array' THEN (SELECT json_group_array(json_extract(v.value,'$.actionId')) FROM json_each(e.value,'$.effectiveFeedback') v) END AS effectiveReactions,
     json_extract(e.value,'$.skipped') AS skipped,json_extract(e.value,'$.presentationUndone') AS presentationUndone
     FROM json_each(?) selected JOIN reflection_cases c ON c.case_id=json_extract(selected.value,'$.caseId'),json_each(c.evidence_snapshot_json) e
-    ORDER BY c.case_id,CAST(e.key AS INTEGER)`).all(selected) as {caseId:string;encounterId:string;contentId:string|null;contentVersion:number|null;kind:string|null;role:string|null;prompt:string|null;choices:string|null;acceptedAnswers:string|null;responses:string;effectiveResponses:string;reactions:string;effectiveReactions:string|null;skipped:number;presentationUndone:number}[];
+    ORDER BY c.case_id,CAST(e.key AS INTEGER)`).all(selected) as {caseId:string;encounterId:string;presentedAt:string|null;contentId:string|null;contentVersion:number|null;kind:string|null;role:string|null;prompt:string|null;choices:string|null;acceptedAnswers:string|null;responses:string;effectiveResponses:string;reactions:string;effectiveReactions:string|null;skipped:number;presentationUndone:number}[];
   for(const row of served){
     const responseIds=new Set(parseList<string>(row.effectiveResponses)),reactions=parseList<Omit<VocabularyServedReview['reactions'][number],'undone'>>(row.reactions);
     const latest=reactions.filter(r=>r.feedback!=='comment').at(-1);
     const reactionIds=new Set(row.effectiveReactions===null?reactions.filter(r=>r.feedback==='comment'||(r===latest&&r.feedback!=='withdrawn')).map(r=>r.actionId):parseList<string>(row.effectiveReactions));
-    cards.get(row.caseId)!.served.push({encounterId:row.encounterId,contentId:row.contentId,contentVersion:row.contentVersion,kind:row.kind,role:row.role,prompt:row.prompt,choices:parseList(row.choices),acceptedAnswers:parseList(row.acceptedAnswers),
+    cards.get(row.caseId)!.served.push({encounterId:row.encounterId,presentedAt:row.presentedAt,contentId:row.contentId,contentVersion:row.contentVersion,kind:row.kind,role:row.role,prompt:row.prompt,choices:parseList(row.choices),acceptedAnswers:parseList(row.acceptedAnswers),
       responses:parseList<Omit<VocabularyServedReview['responses'][number],'undone'>>(row.responses).map(r=>({...r,undone:!responseIds.has(r.actionId)})),reactions:reactions.map(r=>({...r,undone:!reactionIds.has(r.actionId)})),skipped:!!row.skipped,presentationUndone:!!row.presentationUndone});
   }
   type OperationRow={caseId:string;operationKey:string;strategy:VocabularyOperationReview['strategy'];learningRole:VocabularyOperationReview['learningRole']|null;scopeKind:string;scopeLearnerId:string|null;prompt:string|null;kind:string;rationale:string;answers:string|null;words:string|null;sourceContentId:string|null;expectedVersion:number|null;criteriaChanged:number;revealChanged:number;instructionsChanged:number;additionalBody:number;stimulusKind:string|null;stimulusText:string|null;sourceAnswers:string|null};

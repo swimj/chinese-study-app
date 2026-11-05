@@ -95,10 +95,10 @@ export function registerVocabularyReflectionRoutes(app:Express,options:{wake?:()
   app.post(`${feedback}/:messageId/restore`,handle(req=>{noBody(req);restoreOwnVocabularyMessage(text(req.params.messageId));return {ok:true};}));
   app.post(`${feedback}/jobs/:jobId/retry`,handle(req=>{noBody(req);retryOwnVocabularyFeedback(text(req.params.jobId));options.wake?.();return {ok:true};}));
   app.get(`${base}/case-queue`,gate,handle((req,actor)=>{
-    object(req.query,['view','limit','cursor','search']);
+    object(req.query,['view','limit','cursor','search','direction','edge']);
     const raw=req.query.limit;if(raw!==undefined&&(typeof raw!=='string'||!/^\d+$/.test(raw)))throw new VocabularyReflectionRequestError('Expected case queue limit');
     return listVocabularyCaseQueue(actor,{view:choice(req.query.view??'review',['review','history'] as const),limit:raw===undefined?20:Number(raw),
-      ...(req.query.cursor===undefined?{}:{cursor:text(req.query.cursor)}),...(req.query.search===undefined?{}:{search:optionalText(req.query.search)})});
+      ...(req.query.direction===undefined?{}:{direction:choice(req.query.direction,['next','previous'] as const)}),...(req.query.edge===undefined?{}:{edge:choice(req.query.edge,['first','last'] as const)}),...(req.query.cursor===undefined?{}:{cursor:text(req.query.cursor)}),...(req.query.search===undefined?{}:{search:optionalText(req.query.search)})});
   }));
   app.get(`${base}/case-queue/:id`,gate,handle((req,actor)=>{
     object(req.query,['proposalId']);return getVocabularyCaseCard(text(req.params.id),actor,req.query.proposalId===undefined?undefined:text(req.query.proposalId));

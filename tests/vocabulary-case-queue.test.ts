@@ -33,7 +33,7 @@ afterEach(()=>{sql.close();setDb(null);fs.rmSync(directory,{recursive:true,force
 function seedCase(id:string,options:{createdAt?:string;resolvedAt?:string;proposal?:boolean;blob?:string;state?:'open'|'resolved';noAssessment?:boolean}={}){
   const createdAt=options.createdAt??at,blob=options.blob??'';
   const response=(actionId:string,text:string)=>({actionId,payload:{response:text,outcome:'rejected'},trace:blob});
-  const evidence=[{encounterId:`encounter-${id}`,wordId:'word',snapshot:{contentId:'source',contentVersion:1,kind:'production',role:'general',body:{prompt:'Served cue',wordReference:{unneededRaw:blob}},assessment:{acceptedAnswers:['字'],criteria:{match:'exact',unneededRaw:blob}}},responses:[response('undone','wrong'),response('effective','字')],effectiveResponses:[response('effective','字')],feedback:[{actionId:'old',payload:{feedback:'negative'}},{actionId:'new',payload:{feedback:'positive'}},{actionId:'comment',payload:{feedback:'comment',comment:'Useful comment'}}],skipped:false}];
+  const evidence=[{encounterId:`encounter-${id}`,presentedAt:'2026-11-03T08:00:00.000Z',wordId:'word',snapshot:{contentId:'source',contentVersion:1,kind:'production',role:'general',body:{prompt:'Served cue',wordReference:{unneededRaw:blob}},assessment:{acceptedAnswers:['字'],criteria:{match:'exact',unneededRaw:blob}}},responses:[response('undone','wrong'),response('effective','字')],effectiveResponses:[response('effective','字')],feedback:[{actionId:'old',payload:{feedback:'negative'}},{actionId:'new',payload:{feedback:'positive'}},{actionId:'comment',payload:{feedback:'comment',comment:'Useful comment'}}],skipped:false}];
   sql.prepare(`INSERT INTO reflection_cases(case_id,completion_id,learner_id,kind,subject_key,word_id,content_id,status,evidence_snapshot_json,created_at) VALUES (?,'completion','editor','exercise_improvement',?,'word','source','completed',?,?)`).run(id,id,JSON.stringify(evidence),createdAt);
   sql.prepare('INSERT INTO vocabulary_case_reviews(case_id,state,created_at,resolved_at) VALUES (?,?,?,?)').run(id,options.state??'open',createdAt,options.resolvedAt??null);
   sql.prepare('INSERT INTO vocabulary_case_lineage VALUES (?,?)').run(id,id);
@@ -54,7 +54,7 @@ test('compact cards retain normal review evidence while excluding raw snapshots 
   seedCase('a',{proposal:true,blob:'NEVER_SEND_RAW_'.repeat(20_000)});
   const page=listVocabularyCaseQueue('editor',{},now),item=page.items[0];
   assert.equal(page.items.length,1);assert.equal(item.assessment?.diagnosis,'The cue is acceptable.');
-  assert.equal(item.served[0].prompt,'Served cue');assert.deepEqual(item.served[0].acceptedAnswers,['字']);
+  assert.equal(item.served[0].presentedAt,'2026-11-03T08:00:00.000Z');assert.notEqual(item.served[0].presentedAt,item.createdAt);assert.equal(item.served[0].prompt,'Served cue');assert.deepEqual(item.served[0].acceptedAnswers,['字']);
   assert.deepEqual(item.served[0].responses.map(r=>[r.text,r.undone]),[['wrong',true],['字',false]]);
   assert.deepEqual(item.served[0].reactions.map(r=>[r.feedback,r.undone]),[['negative',true],['positive',false],['comment',false]]);
   assert.equal(item.proposal?.operations[0].prompt,'Proposed cue');assert.equal(item.sources[0].prompt,'Original cue');assert.equal(item.stale,false);
@@ -150,4 +150,36 @@ test('HTTP queue validates limits and case versions and keeps operator authoriza
   assert.equal(call('post','case-queue/:id/resolve',{expectedVersion:99}).status,409);
   process.env.APP_OPERATOR_CLERK_USER_IDS='someone-else';assert.equal(call('get','case-queue').status,403);
   assert.throws(()=>listVocabularyCaseQueue('editor'),/Operator access/);
+});
+
+test('both keyset directions expose exact filtered totals and global ordinals, with cheap end wrapping',()=>{
+  for(const id of ['a','b','c','d','e'])seedCase(id);
+  const first=listVocabularyCaseQueue('editor',{limit:2},now);
+  assert.equal(first.total,5);assert.equal(first.startIndex,0);assert.equal(first.previousCursor,null);
+  const next=listVocabularyCaseQueue('editor',{limit:2,cursor:first.nextCursor!},now);
+  assert.deepEqual(next.items.map(item=>item.caseId),['c','d']);assert.equal(next.startIndex,2);assert.equal(next.total,5);
+  const back=listVocabularyCaseQueue('editor',{limit:2,cursor:next.previousCursor!,direction:'previous'},now);
+  assert.deepEqual(back.items.map(item=>item.caseId),['a','b']);assert.equal(back.startIndex,0);
+  const last=listVocabularyCaseQueue('editor',{limit:2,edge:'last'},now);
+  assert.deepEqual(last.items.map(item=>item.caseId),['d','e']);assert.equal(last.startIndex,3);assert.equal(last.nextCursor,null);
+  const wrap=listVocabularyCaseQueue('editor',{limit:2,cursor:last.previousCursor!,edge:'first'},now);
+  assert.deepEqual(wrap.items.map(item=>item.caseId),['a','b']);assert.equal(wrap.total,5);
+  resolveVocabularyCaseReview('a',first.items[0].version,'editor');
+  const refreshed=listVocabularyCaseQueue('editor',{limit:2,cursor:first.nextCursor!},now);
+  assert.equal(refreshed.startIndex,1);assert.equal(refreshed.total,4);
+});
+test('archive wrapping retains cursor time boundaries and reverse sort including ties',()=>{
+  for(const id of ['a','b','c'])seedCase(id,{state:'resolved',resolvedAt:at});
+  const first=listVocabularyCaseQueue('editor',{view:'history',limit:1},now);
+  const last=listVocabularyCaseQueue('editor',{view:'history',limit:1,cursor:first.nextCursor!,edge:'last'},'2026-11-06T00:00:00.000Z');
+  assert.equal(last.items[0].caseId,'a');assert.equal(last.total,3);assert.equal(last.startIndex,2);
+  const previous=listVocabularyCaseQueue('editor',{view:'history',limit:1,cursor:last.previousCursor!,direction:'previous'},'2026-11-06T00:00:00.000Z');
+  assert.equal(previous.items[0].caseId,'b');assert.equal(previous.startIndex,1);
+});
+
+test('review end traversal uses existing ordered index in both directions',()=>{
+  seedCase('a');
+  const plans=['ASC','DESC'].map(direction=>sql.prepare(`EXPLAIN QUERY PLAN SELECT r.case_id,r.created_at FROM vocabulary_case_reviews r WHERE r.state='open' AND r.approval_state IS NULL AND (r.current_job_id IS NOT NULL OR r.current_proposal_id IS NOT NULL) ORDER BY r.created_at ${direction},r.case_id ${direction} LIMIT 20`).all());
+  for(const plan of plans){const details=JSON.stringify(plan);assert.match(details,/idx_vocabulary_case_review_queue/);assert.doesNotMatch(details,/TEMP B-TREE/);}
+  console.log(JSON.stringify({caseQueueEndPlans:plans}));
 });
