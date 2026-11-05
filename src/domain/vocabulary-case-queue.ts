@@ -41,7 +41,8 @@ export type VocabularyCaseQueueItem = {
   stale:boolean;
   /** Rare content without a faithful compact rendering must be reviewed in the full workspace before approval. */
   requiresDetails:boolean;
-  requiresResolutionReason:boolean;
+  needsDecision:boolean;
+  finding:{kind:'unmappable'|'inventory_gap'|'needs_coverage'|'needs_operator';message:string}|null;
   reassessment:{eligible:boolean;reason:string|null;source:{contentId:string;assessedVersion:number;currentVersion:number}|null};
 };
 export type VocabularyCaseQueuePage = {items:VocabularyCaseQueueItem[];nextCursor:string|null;previousCursor:string|null;anchorCursor:string|null;total:number;startIndex:number};

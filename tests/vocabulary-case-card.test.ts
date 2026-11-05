@@ -23,3 +23,10 @@ test('unchanged source is omitted, changed source is inside original evidence wi
   assert.ok(html.indexOf('Source changed')<html.indexOf('Assessment provenance'));
   item.reassessment.eligible=false;assert.doesNotMatch(render(item),/Reassessment uses/);
 });
+
+test('known assessment finding and retired-source blocker are visible without requiring operator prose',()=>{
+  const item=caseReviewFixture();item.proposal=null;item.needsDecision=true;
+  item.finding={kind:'unmappable',message:'The cue does not identify one sense.'};
+  item.reassessment={eligible:false,reason:'The source exercise is retired.',source:null};
+  const html=render(item);assert.match(html,/Intended sense unresolved/);assert.match(html,/The cue does not identify one sense/);assert.match(html,/Reassessment unavailable: The source exercise is retired/);
+});

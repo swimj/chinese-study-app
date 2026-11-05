@@ -377,8 +377,11 @@ automatically. The original encounter group, responses, and reactions remain
 historical evidence, distinct from the current source and proposed content.
 
 Operators can inspect supporting evidence and edit proposals before approval.
-Dismissal and closing a completed no-change review accept an optional reason;
-teaching and unresolved sense or promotion assessments require a resolution.
+Dismissal and case closure accept an optional operator note, including teaching
+and unresolved sense or promotion assessments. Known assessment findings and
+source blockers remain system context; they do not become operator-authored notes.
+Closure does not repair or reactivate content, establish a sense mapping, or
+change reassessment eligibility.
 Resolved proposals and reviews remain searchable. Navigation and background
 refresh preserve the selection, unsaved draft, and exact reviewed version.
 The [operator guide](../docs/operator-panel.md#content-improvement-workflow)

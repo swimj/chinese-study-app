@@ -1225,7 +1225,12 @@ changing the case's current selection. Existing case-workspace and proposal
 detail routes provide complete editing and historical evidence on demand.
 
 `POST /api/operator/vocabulary/case-queue/:id/resolve` takes a positive
-`expectedVersion` and optional `reason`, and returns the updated card.
+`expectedVersion` and optional text `reason`, and returns the updated card.
+Omitted, empty, and whitespace notes are accepted for teaching and unresolved
+assessments as well as completed no-change judgments. Closure events retain the
+operator-supplied `reason` separately from assessment outcome and source context.
+`needsDecision` and `finding` describe the retained assessment, not a required
+comment; `reassessment.reason` explains an ineligible current source.
 This is the Done action for no-proposal or unresolved assessments; ordinary
 proposal cards use the exact-version proposal dismissal route. Dismissing a
 proposal resolves its case only when no unresolved alternatives remain.

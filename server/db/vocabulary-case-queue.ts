@@ -76,7 +76,7 @@ type BaseRow={
   latestJobId:string|null;latestSequence:number|null;latestStatus:'queued'|'running'|'succeeded'|'failed'|null;latestError:string|null;latestAdvisory:number;
   proposalId:string|null;proposalVersion:number|null;proposalStatus:NonNullable<VocabularyCaseQueueItem['proposal']>['status']|null;authorKind:'operator'|'service'|null;rationale:string|null;
   assessmentJobId:string|null;assessmentSequence:number|null;origin:VocabularyAssessmentSummary['origin'];diagnosis:string;outcome:string|null;scopeKind:string|null;scopeSenseIds:string|null;
-  sourceId:string|null;assessedVersion:number|null;sourceVersion:number|null;sourceEligible:number;stale:number;needsResolution:number;
+  sourceId:string|null;assessedVersion:number|null;sourceVersion:number|null;sourceAvailability:string|null;findingKind:string|null;findingMessage:string|null;sourceEligible:number;stale:number;needsResolution:number;
 };
 /** A fixed set of batch queries; no workspace/proposal hydration or per-item prepared statements. */
 function readCards(wanted:{caseId:string;proposalId?:string}[]):VocabularyCaseQueueItem[] {
@@ -97,7 +97,9 @@ function readCards(wanted:{caseId:string;proposalId?:string}[]):VocabularyCaseQu
     coalesce(json_extract(dj.result_json,'$.input.admission.generationScope.senseIds'),json_extract(dj.result_json,'$.input.admission.senseIds')) AS scopeSenseIds,
     src.content_id AS sourceId,coalesce(json_extract(cj.reassessment_source_json,'$.version'),
       CASE WHEN json_extract(cj.result_json,'$.input.admission.sourceContentId')=src.content_id THEN json_extract(cj.result_json,'$.input.admission.sourceContentVersion') END,
-      json_extract(c.evidence_snapshot_json,'$[0].snapshot.contentVersion')) AS assessedVersion,src.version AS sourceVersion,
+      json_extract(c.evidence_snapshot_json,'$[0].snapshot.contentVersion')) AS assessedVersion,src.version AS sourceVersion,src.availability AS sourceAvailability,
+    CASE WHEN json_extract(cj.result_json,'$.input.pureCuePromotion.outcome')='needs_operator' THEN 'needs_operator' ELSE json_extract(cj.result_json,'$.input.admission.outcome') END AS findingKind,
+    CASE WHEN json_extract(cj.result_json,'$.input.pureCuePromotion.outcome')='needs_operator' THEN json_extract(cj.result_json,'$.input.pureCuePromotion.rationale') ELSE json_extract(cj.result_json,'$.input.admission.rationale') END AS findingMessage,
     src.kind='exercise' AND src.exercise_role='general' AND src.skill='production' AND src.availability='active' AND (src.access_scope='shared' OR src.owner_learner_id=c.learner_id) AS sourceEligible,
     EXISTS(SELECT 1 FROM proposal_content_bases b LEFT JOIN content_items s ON s.content_id=b.content_id WHERE b.proposal_id=p.proposal_id AND (s.version IS NULL OR s.version!=b.expected_content_version))
       OR (p.author_kind='service' AND json_extract(dj.result_json,'$.input.admission.wordId') IS NOT NULL AND
@@ -130,8 +132,8 @@ function readCards(wanted:{caseId:string;proposalId?:string}[]):VocabularyCaseQu
       latestJob:row.latestJobId?{jobId:row.latestJobId,sequence:row.latestSequence!,status:row.latestStatus!,error:row.latestError,advisory:!!row.latestAdvisory}:null,
       assessment:row.assessmentJobId?{jobId:row.assessmentJobId,sequence:row.assessmentSequence!,origin:row.origin,models:[],outcome:row.outcome,scopeLabel:null,diagnosis:row.diagnosis}:null,
       served:[],proposal:row.proposalId?{proposalId:row.proposalId,version:row.proposalVersion!,status:row.proposalStatus!,authorKind:row.authorKind!,isCurrent:row.proposalId===row.currentProposalId,rationale:row.rationale!,operations:[]}:null,
-      alternatives:[],alternativeCount:0,sources:[],advisoryOpinion:null,stale:!!row.stale,requiresDetails:false,requiresResolutionReason:!!row.needsResolution,
-      reassessment:{eligible,reason:eligible?null:row.state==='resolved'?'This case is resolved.':row.activeJobId?'A case job is queued or running.':row.approvalState==='pending'?'Case approval is queued or running.':!row.currentJobId?'A completed assessment is required.':!source?'The current source is unavailable or is not an active general production exercise.':'Only exercise improvement cases can be reassessed.',source}};
+      alternatives:[],alternativeCount:0,sources:[],advisoryOpinion:null,stale:!!row.stale,requiresDetails:false,needsDecision:!!row.needsResolution,finding:row.findingKind&&['unmappable','inventory_gap','needs_coverage','needs_operator'].includes(row.findingKind)?{kind:row.findingKind as NonNullable<VocabularyCaseQueueItem['finding']>['kind'],message:row.findingMessage??''}:null,
+      reassessment:{eligible,reason:eligible?null:row.state==='resolved'?'This case is resolved.':row.activeJobId?'A case job is queued or running.':row.approvalState==='pending'?'Case approval is queued or running.':!row.currentJobId?'A completed assessment is required.':row.sourceAvailability==='retired'?'The source exercise is retired.':!source?'The current source is unavailable or is not an active general production exercise.':'Only exercise improvement cases can be reassessed.',source}};
     return [row.caseId,item];
   }));
   const served=db.prepare(`SELECT c.case_id AS caseId,json_extract(e.value,'$.encounterId') AS encounterId,json_extract(e.value,'$.presentedAt') AS presentedAt,

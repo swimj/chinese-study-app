@@ -183,3 +183,17 @@ test('review end traversal uses existing ordered index in both directions',()=>{
   for(const plan of plans){const details=JSON.stringify(plan);assert.match(details,/idx_vocabulary_case_review_queue/);assert.doesNotMatch(details,/TEMP B-TREE/);}
   console.log(JSON.stringify({caseQueueEndPlans:plans}));
 });
+
+test('retired-source unresolved finding remains visible and closes without a fabricated note or source change',()=>{
+  seedCase('unresolved');
+  sql.prepare("UPDATE vocabulary_reflection_jobs SET result_json=json_set(result_json,'$.input.admission',json(?)) WHERE job_id='job-unresolved'").run(JSON.stringify({outcome:'unmappable',rationale:'The served cue does not identify one intended sense.',sourceContentId:'source'}));
+  sql.exec("UPDATE content_items SET availability='retired' WHERE content_id='source'");
+  const before=getVocabularyCaseCard('unresolved','editor');
+  assert.equal(before.needsDecision,true);assert.deepEqual(before.finding,{kind:'unmappable',message:'The served cue does not identify one intended sense.'});
+  assert.equal(before.reassessment.eligible,false);assert.equal(before.reassessment.reason,'The source exercise is retired.');
+  assert.throws(()=>reassessVocabularyCaseReview(before.caseId,before.version,'editor','openai:gpt-6-sol-high',1),/unavailable|active|retired/i);
+  const after=resolveVocabularyCaseReview(before.caseId,before.version,'editor','');assert.equal(after.state,'resolved');
+  const event=sql.prepare("SELECT data_json FROM backend_events WHERE entity_id=? AND name='vocabulary.reflection.admission_case_closed'").get(before.caseId)!;
+  const data=JSON.parse(event.data_json as string);assert.equal(data.reason,'');assert.equal(data.outcome,'unmappable');assert.equal(data.context.sourceAvailability,'retired');
+  assert.equal(getVocabularyContentForMaintenance('source')!.availability,'retired');assert.equal(getVocabularyContentForMaintenance('source')!.version,1);
+});
