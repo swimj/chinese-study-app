@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
-import type { VocabularyCaseQueueItem } from '../domain/vocabulary-case-queue';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import type { VocabularyCaseQueueItem, VocabularyCaseQueueQuery } from '../domain/vocabulary-case-queue';
 import { ApiRequestError } from '../services/api';
 import { vocabularyOperatorApi, type VocabularyOperatorApi, type VocabularyReassessmentModel } from '../features/vocabulary-operator/api';
 import { CaseReviewCard } from '../features/vocabulary-operator/CaseReviewCard';
-import { CASE_QUEUE_BATCH_SIZE, CASE_QUEUE_WINDOW_PAGES, approvalOutcomeUncertain, canInstallCaseRefresh, caseCanReview, canRetryLatestCaseJob, queueWindowItems, removeCaseFromWindow, replaceCaseProjection, selectionAfterCaseRemoval, type CaseQueueWindow } from '../features/vocabulary-operator/case-queue-model';
-import { resolveReviewNavigation } from '../features/vocabulary-operator/review-navigation';
+import { CASE_QUEUE_BATCH_SIZE, approvalOutcomeUncertain, canInstallCaseRefresh, caseCanReview, canRetryLatestCaseJob, queueWindowItems, removeCaseFromWindow, replaceCaseProjection, selectionAfterCaseRemoval, shouldSaveReviewNote, type CaseQueueWindow } from '../features/vocabulary-operator/case-queue-model';
+import { shortcutEventBlocked } from '../lib/keyboard';
 import { VocabularyOperatorPage, type VocabularyDetailActivity } from './VocabularyOperatorPage';
 import './VocabularyOperatorPage.css';
 
@@ -20,56 +20,64 @@ export function VocabularyCaseReviewPage({ api = vocabularyOperatorApi }: { api?
   const [search, setSearch] = useState(''), [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true), [loadingMore, setLoadingMore] = useState(false), [busy, setBusy] = useState(false);
   const [error, setError] = useState(''), [notice, setNotice] = useState('');
-  const [reason, setReason] = useState(''), [model, setModel] = useState<VocabularyReassessmentModel>('openai:gpt-6-sol-high');
+  const [notes, setNotes] = useState<Record<string, string>>({});
+  const reason = selectedId ? notes[selectedId] ?? '' : '';
+  function setReason(value: string) { if (selectedId) setNotes(previous => ({...previous, [selectedId]: value})); }
+  const [model, setModel] = useState<VocabularyReassessmentModel>('openai:gpt-6-sol-high');
   const [confirmSource, setConfirmSource] = useState<{ caseId: string; version: number } | null>(null);
   const [detail, setDetail] = useState<{ caseId: string; proposalId?: string; edit: boolean } | null>(null);
   const [detailActivity, setDetailActivity] = useState<VocabularyDetailActivity>({ dirty: false, busy: false });
   const [approvalUnconfirmed, setApprovalUnconfirmed] = useState(false);
   const approval = useRef<{ requestId: string; proposalId: string; version: number; notes: string } | null>(null);
-  const pageRef = useRef<HTMLElement>(null), generation = useRef(0), moreRequest = useRef(false);
-  const priorCursors = useRef<(string | null)[]>([]);
-  const savedQueues = useRef<Partial<Record<'review' | 'history', { pages: CaseQueueWindow; selectedId: string | null; prior: (string | null)[]; query: string }>>>({});
-  const current = useRef({ pages, selectedId, view, query, busy, detailActivity, detail, approvalUnconfirmed });
-  current.current = { pages, selectedId, view, query, busy, detailActivity, detail, approvalUnconfirmed };
+  const pageRef = useRef<HTMLElement>(null), generation = useRef(0);
+  const frameRef = useRef<HTMLDivElement>(null);
+  const [frameHeight, setFrameHeight] = useState(400);
+  const frameEntered = useRef(false);
+  const noteInput = useRef<HTMLTextAreaElement>(null);
+  const noteButton = useRef<HTMLButtonElement>(null);
+  const [noteOpen, setNoteOpen] = useState(false);
+  const [noteSaved, setNoteSaved] = useState('');
+  const savedQueues = useRef<Partial<Record<'review' | 'history', { pages: CaseQueueWindow; selectedId: string | null; query: string }>>>({});
+  const current = useRef({ pages, selectedId, view, query, busy, loadingMore, detailActivity, detail, approvalUnconfirmed });
+  current.current = { pages, selectedId, view, query, busy, loadingMore, detailActivity, detail, approvalUnconfirmed };
   function refreshContext(state:typeof current.current) {
-    return {view:state.view,query:state.query,selectedId:state.selectedId,detailKey:state.detail?`${state.detail.caseId}:${state.detail.proposalId??''}`:null,busy:state.busy||state.detailActivity.busy,dirty:state.detailActivity.dirty,approvalUnconfirmed:state.approvalUnconfirmed};
+    return {view:state.view,query:state.query,selectedId:state.selectedId,detailKey:state.detail?`${state.detail.caseId}:${state.detail.proposalId??''}`:null,busy:state.busy||state.loadingMore||state.detailActivity.busy,dirty:state.detailActivity.dirty,approvalUnconfirmed:state.approvalUnconfirmed};
   }
   const items = queueWindowItems(pages);
   const selected = items.find(item => item.caseId === selectedId) ?? null;
   const item = alternative?.caseId === selectedId ? alternative : selected;
   const index = items.findIndex(entry => entry.caseId === selectedId);
-  const nextCursor = pages.at(-1)?.page.nextCursor ?? null;
-  const blocked = busy || detailActivity.busy || approvalUnconfirmed;
+  const blocked = busy || detailActivity.busy || approvalUnconfirmed || loadingMore;
 
   function mayLeaveDetails(): boolean {
     if (detailActivity.busy || busy || approvalUnconfirmed) return false;
     return !detailActivity.dirty || window.confirm('Discard your unsaved edits and leave this case?');
   }
-  function clearSelectionState() { setAlternative(null); setReason(''); setConfirmSource(null); setDetail(null); setDetailActivity({ dirty: false, busy: false }); approval.current = null; setApprovalUnconfirmed(false); }
+  function clearSelectionState() { setAlternative(null); setNoteOpen(false); setNoteSaved(''); setConfirmSource(null); setDetail(null); setDetailActivity({ dirty: false, busy: false }); approval.current = null; setApprovalUnconfirmed(false); }
   function selectCase(id: string) {
     if (id === selectedId || !mayLeaveDetails()) return;
     clearSelectionState(); setSelectedId(id); setError(''); setNotice('');
   }
   function changeView(next: View) {
     if (next === view || !mayLeaveDetails()) return;
-    if (view !== 'attention') savedQueues.current[view] = { pages, selectedId, prior: priorCursors.current, query };
+    if (view !== 'attention') savedQueues.current[view] = { pages, selectedId, query };
     const saved = next !== 'attention' ? savedQueues.current[next] : undefined;
     const restore = saved && (next !== 'history' || saved.query === query) ? saved : undefined;
-    generation.current++; moreRequest.current = false; priorCursors.current = restore?.prior ?? [];
+    generation.current++;
     clearSelectionState(); setPages(restore?.pages ?? []); setSelectedId(restore?.selectedId ?? null); setLoadingMore(false); setView(next); setError(''); setNotice('');
   }
   async function refresh(initial = false) {
     const state = current.current;
-    if (state.view === 'attention' || state.approvalUnconfirmed || (!initial && (!visible(pageRef.current) || state.busy || state.detailActivity.busy || state.detailActivity.dirty))) return;
+    if (state.view === 'attention' || state.loadingMore || state.approvalUnconfirmed || (!initial && (!visible(pageRef.current) || state.busy || state.detailActivity.busy || state.detailActivity.dirty))) return;
     const request = ++generation.current;
     const started=refreshContext(state);
     const before = queueWindowItems(state.pages), oldIndex = before.findIndex(entry => entry.caseId === state.selectedId);
-    const entries = initial || !state.pages.length ? [{ cursor: null }] : state.pages;
+    const entries: Omit<CaseQueueWindow[number], 'page'>[] = initial || !state.pages.length ? [{ cursor: state.pages[0]?.page.anchorCursor ?? null, edge: 'first' }] : state.pages;
     try {
-      const updated = await Promise.all(entries.map(async entry => ({ cursor: entry.cursor, page: await api.caseQueue({ view: state.view as 'review' | 'history', limit: CASE_QUEUE_BATCH_SIZE, ...(entry.cursor ? { cursor: entry.cursor } : {}), ...(state.view === 'history' && state.query ? { search: state.query } : {}) }) })));
+      const updated = await Promise.all(entries.map(async entry => ({ cursor: entry.cursor, direction: entry.direction, edge: entry.edge, page: await api.caseQueue({ direction: entry.direction, edge: entry.edge, view: state.view as 'review' | 'history', limit: CASE_QUEUE_BATCH_SIZE, ...(entry.cursor ? { cursor: entry.cursor } : {}), ...(state.view === 'history' && state.query ? { search: state.query } : {}) }) })));
       if (request !== generation.current||!canInstallCaseRefresh(started,refreshContext(current.current))) return;
       const fresh = queueWindowItems(updated);
-      setPages(updated);
+      setPages(updated.map(entry => entry.edge && !entry.cursor && entry.page.anchorCursor ? {...entry, cursor: entry.page.anchorCursor} : entry));
       if (state.selectedId && !fresh.some(entry => entry.caseId === state.selectedId)) clearSelectionState();
       setSelectedId(previous => fresh.some(entry => entry.caseId === previous) ? previous : fresh[Math.max(0, Math.min(oldIndex, fresh.length - 1))]?.caseId ?? null);
       // A selected alternative has its own exact proposal projection; don't replace it with current.
@@ -88,7 +96,7 @@ export function VocabularyCaseReviewPage({ api = vocabularyOperatorApi }: { api?
   }, [api, view, query]);
   useEffect(() => {
     if (view !== 'history') return;
-    const timer = setTimeout(() => { if (query !== search.trim()) { generation.current++; priorCursors.current = []; setPages([]); setSelectedId(null); setQuery(search.trim()); } }, 300);
+    const timer = setTimeout(() => { if (query !== search.trim()) { generation.current++;  setPages([]); setSelectedId(null); setQuery(search.trim()); } }, 300);
     return () => clearTimeout(timer);
   }, [search, view, query]);
   useEffect(() => {
@@ -98,39 +106,46 @@ export function VocabularyCaseReviewPage({ api = vocabularyOperatorApi }: { api?
     window.addEventListener('focus', focus); document.addEventListener('visibilitychange', focus);
     return () => { clearInterval(poll); window.removeEventListener('focus', focus); document.removeEventListener('visibilitychange', focus); };
   }, [api, view, query, alternative, items.some(entry => entry.activeJob || entry.approvalState === 'pending')]);
-  async function loadMore() {
-    const state = current.current, cursor = state.pages.at(-1)?.page.nextCursor;
-    if (!cursor || state.view === 'attention' || moreRequest.current || state.detailActivity.dirty) return;
-    moreRequest.current = true; setLoadingMore(true); const request = generation.current;
-    try {
-      const page = await api.caseQueue({ view: state.view, cursor, limit: CASE_QUEUE_BATCH_SIZE, ...(state.view === 'history' && state.query ? { search: state.query } : {}) });
-      if (request !== generation.current) return;
-      setPages(previous => {
-        if (previous.some(entry => entry.cursor === cursor)) return previous;
-        const next = [...previous, { cursor, page }];
-        if (next.length > CASE_QUEUE_WINDOW_PAGES) {
-          const first = next[0];
-          if (first.page.items.some(entry => entry.caseId === current.current.selectedId)) return previous;
-          priorCursors.current.push(first.cursor); next.shift();
-        }
-        return next;
-      });
-    } catch (cause) { if (request === generation.current) setError(errorMessage(cause)); }
-    finally { moreRequest.current = false; setLoadingMore(false); }
-  }
-  useEffect(() => {
-    if (view !== 'attention' && !detail && index >= Math.max(0, items.length - 5) && items.length > 0 && nextCursor) void loadMore();
-  }, [index, items.length, nextCursor, view, detail]);
-  async function loadPrevious() {
-    if (!mayLeaveDetails() || !priorCursors.current.length || view === 'attention') return;
-    const cursor = priorCursors.current.at(-1) ?? null, request = ++generation.current;
+  async function navigate(direction: 'next' | 'previous') {
+    if (!mayLeaveDetails() || loadingMore || view === 'attention') return;
+    const adjacent = items[index + (direction === 'next' ? 1 : -1)];
+    if (adjacent) { selectCase(adjacent.caseId); return; }
+    const page = pages[0]?.page;
+    if (!page) return;
+    const cursor = direction === 'next' ? page.nextCursor : page.previousCursor;
+    const edge = cursor ? undefined : direction === 'next' ? 'first' : 'last';
+    const queryInput: VocabularyCaseQueueQuery = { view, limit: CASE_QUEUE_BATCH_SIZE, direction, ...(edge ? {edge} : {}),
+      ...(cursor || page.anchorCursor ? {cursor: cursor ?? page.anchorCursor!} : {}),
+      ...(view === 'history' && query ? {search: query} : {}) };
+    const request = ++generation.current;
     setLoadingMore(true);
     try {
-      const page = await api.caseQueue({ view, limit: CASE_QUEUE_BATCH_SIZE, ...(cursor ? { cursor } : {}), ...(view === 'history' && query ? { search: query } : {}) });
+      const next = await api.caseQueue(queryInput);
       if (request !== generation.current) return;
-      priorCursors.current.pop(); clearSelectionState(); setPages(previous => [{ cursor, page }, ...previous].slice(0, CASE_QUEUE_WINDOW_PAGES)); setSelectedId(page.items.at(-1)?.caseId ?? null);
-    } catch (cause) { setError(errorMessage(cause)); } finally { setLoadingMore(false); }
+      clearSelectionState();
+      const id = (direction === 'next' ? next.items[0] : next.items.at(-1))?.caseId ?? null;
+      setPages([{cursor: queryInput.cursor ?? null, direction, edge, page: next}]);
+      setSelectedId(id);
+    } catch (cause) { if (request === generation.current) setError(errorMessage(cause)); }
+    finally { setLoadingMore(false); }
   }
+  useLayoutEffect(() => {
+    const resize = () => { if (frameRef.current) setFrameHeight(Math.max(400, window.innerHeight - Math.max(16, frameRef.current.getBoundingClientRect().top) - 16)); };
+    const enter = frameRef.current && !frameEntered.current;
+    if (enter) { frameEntered.current = true; setFrameHeight(Math.max(400, window.innerHeight - 136)); }
+    else resize();
+    const animation = requestAnimationFrame(() => {
+      if (enter && frameRef.current && frameRef.current.getBoundingClientRect().top > 120) {
+        window.scrollBy(0, frameRef.current.getBoundingClientRect().top - 120); resize();
+      }
+    });
+     window.addEventListener('resize', resize); window.addEventListener('scroll', resize);
+    return () => {cancelAnimationFrame(animation); window.removeEventListener('resize', resize); window.removeEventListener('scroll', resize);};
+  }, [selectedId, view, detail, noteOpen]);
+  useEffect(() => { setNoteOpen(false); setNoteSaved(''); if (!detail && document.activeElement === document.body) pageRef.current?.focus({preventScroll: true}); }, [selectedId]);
+  useEffect(() => { if (noteOpen) noteInput.current?.focus(); }, [noteOpen]);
+  // A resolved final card may leave an empty local page while other cases remain.
+  useEffect(() => { if (!loading && !busy && view !== 'attention' && !items.length && pages[0]?.page.total) void refresh(true); }, [items.length, pages[0]?.page.total, busy, loading, loadingMore, view]);
   function installCard(card: VocabularyCaseQueueItem, advance = false) {
     generation.current++;
     if (current.current.view === 'review' && !caseCanReview(card)) {
@@ -165,7 +180,7 @@ export function VocabularyCaseReviewPage({ api = vocabularyOperatorApi }: { api?
       setApprovalUnconfirmed(false); approval.current = null;
       // Persisted ACK is enough to advance even if the following display refresh fails.
       installCard({ ...card, approvalState: 'pending', approvalRequestId: request.requestId });
-      setReason('');
+      setNotes(previous => { const next = {...previous}; delete next[card.caseId]; return next; }); setNoteSaved('');
     }, 'Approval queued.');
   }
   function resolve() {
@@ -174,7 +189,7 @@ export function VocabularyCaseReviewPage({ api = vocabularyOperatorApi }: { api?
       const result = card.proposal
         ? (await api.close(card.proposal.proposalId, card.proposal.version, reason), await api.caseCard(card.caseId))
         : await api.resolveCaseReview(card.caseId, card.version, reason);
-      installCard(result, true); setReason('');
+      installCard(result, true); setNotes(previous => { const next = {...previous}; delete next[card.caseId]; return next; }); setNoteSaved('');
     }, card.proposal ? 'Proposal dismissed.' : 'Case resolved.');
   }
   function reassess(confirmedVersion?: number) {
@@ -216,8 +231,8 @@ export function VocabularyCaseReviewPage({ api = vocabularyOperatorApi }: { api?
   return <section ref={pageRef} className="vocabulary-operator-page vocabulary-case-review-page" aria-label="Content improvement" tabIndex={0} onKeyDown={event => {
     if (detail || view === 'attention') return;
     const target = event.target instanceof HTMLElement ? event.target : null;
-    const next = resolveReviewNavigation(event.nativeEvent, { index, count: items.length, busy: blocked, nativeTarget: !!target?.closest('input,textarea,select,button,summary,[contenteditable="true"]') });
-    if (next !== null) { event.preventDefault(); selectCase(items[next].caseId); }
+    if (shortcutEventBlocked(event.nativeEvent) || event.shiftKey || blocked || target?.closest('input,textarea,select,[role="slider"],[role="listbox"],[role="combobox"],[contenteditable="true"]')) return;
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); void navigate(event.key === 'ArrowLeft' ? 'previous' : 'next'); }
   }}>
     <header><h2>Content improvement</h2><button className="secondary-button" disabled={blocked || detailActivity.dirty || view === 'attention'} onClick={() => void refresh()}>Refresh</button></header>
     <nav className="vocabulary-operator-tabs" aria-label="Review queues">{([['review', 'Awaiting review'], ['attention', 'Needs attention'], ['history', 'Archive']] as const).map(([value, label]) => <button key={value} aria-pressed={view === value} disabled={blocked} onClick={() => changeView(value)}>{label}</button>)}</nav>
@@ -228,18 +243,19 @@ export function VocabularyCaseReviewPage({ api = vocabularyOperatorApi }: { api?
       {!loading && items.length === 0 && <p role="status">{view === 'history' ? query ? 'No matching archived cases.' : 'No resolutions in the last 12 hours.' : 'No cases awaiting review.'}</p>}
       {item && <>
         <nav className="vocabulary-case-navigation" aria-label="Case navigation">
-          <button className="secondary-button" aria-label="Previous case" aria-keyshortcuts="ArrowLeft" disabled={blocked || (index <= 0 && !priorCursors.current.length)} onClick={() => index > 0 ? selectCase(items[index - 1].caseId) : void loadPrevious()}>← Previous</button>
-          <span aria-live="polite">{index + 1} / {items.length} loaded{nextCursor ? ' · more available' : ''}</span>
-          <button className="secondary-button" aria-label="Next case" aria-keyshortcuts="ArrowRight" disabled={blocked || index >= items.length - 1} onClick={() => selectCase(items[index + 1].caseId)}>Next →</button>
+          <button className="secondary-button" aria-label="Previous case" aria-keyshortcuts="ArrowLeft" disabled={blocked || pages[0]?.page.total === 1} onClick={() => void navigate('previous')}>← Previous</button>
+          <span aria-live="polite">{(pages[0]?.page.startIndex ?? 0) + index + 1} / {pages[0]?.page.total ?? items.length}</span>
+          <button className="secondary-button" aria-label="Next case" aria-keyshortcuts="ArrowRight" disabled={blocked || pages[0]?.page.total === 1} onClick={() => void navigate('next')}>Next →</button>
         </nav>
         {detail ? <>
           <button className="secondary-button" disabled={detailActivity.busy || busy} onClick={() => { if (mayLeaveDetails()) { setDetail(null); setDetailActivity({ dirty: false, busy: false }); void refresh(); } }}>Back to case</button>
           <VocabularyOperatorPage key={`${detail.caseId}:${detail.proposalId ?? ''}`} api={api} detailOnly={{ ...detail, history: view === 'history', liveReview: item?.caseId === detail.caseId ? item : null, onChanged: detailsChanged, onSelectProposal: proposalId => void run(async () => { const projection = await api.caseCard(detail.caseId, proposalId); setAlternative(projection); setDetailActivity({ dirty: false, busy: false }); setDetail({ ...detail, proposalId, edit: false }); }) }} onActivity={setDetailActivity} />
-        </> : <CaseReviewCard item={item} onDetails={() => openDetails()}>
+        </> : <div ref={frameRef} className="vocabulary-case-frame" style={{height: frameHeight}}><div key={item.caseId} className="vocabulary-case-scroll" tabIndex={0} aria-label="Case content"><CaseReviewCard key={item.caseId} item={item} onDetails={() => openDetails()}>
           {item.alternativeCount > 0 && <label>Proposal<select disabled={blocked} value={item.proposal?.proposalId ?? ''} onChange={event => { const id = event.target.value; void run(async () => setAlternative(await api.caseCard(item.caseId, id || undefined))); }}><option value={item.currentProposalId ?? ''}>Current proposal</option>{item.alternatives.filter(proposal => proposal.proposalId !== item.currentProposalId).map(proposal => <option key={proposal.proposalId} value={proposal.proposalId}>{proposal.rationale || proposal.proposalId} · revision {proposal.version} · {proposal.status}</option>)}</select></label>}
           {item.alternativeCount > item.alternatives.length && <button className="secondary-button" onClick={() => openDetails()}>All retained proposals</button>}
-          {view === 'review' && <>
-            {item.requiresResolutionReason && !item.proposal ? <label>Case resolution<textarea value={reason} disabled={reviewLocked} onChange={event => setReason(event.target.value)} /></label> : <details><summary>Review note</summary><label>Note or question<textarea value={reason} disabled={reviewLocked} onChange={event => setReason(event.target.value)} /></label></details>}
+        </CaseReviewCard></div>
+          {view === 'review' && <div className="vocabulary-case-action-frame" aria-label="Case review actions">
+            {item.requiresResolutionReason && !item.proposal ? <label>Case resolution<textarea value={reason} disabled={reviewLocked} onChange={event => setReason(event.target.value)} /></label> : <div className="vocabulary-review-note"><button ref={noteButton} className="secondary-button" disabled={reviewLocked} aria-expanded={noteOpen} onClick={() => {setNoteOpen(true); setNoteSaved('');}}>Review note{reason ? ' · draft' : ''}</button>{noteOpen && <form onSubmit={event => {event.preventDefault(); setNoteOpen(false); setNoteSaved('Draft saved for this review session.'); noteButton.current?.focus();}}><label>Note or question<textarea ref={noteInput} value={reason} disabled={reviewLocked} onChange={event => setReason(event.target.value)} onKeyDown={event => {if (shouldSaveReviewNote(event.nativeEvent)) {event.preventDefault(); event.currentTarget.form?.requestSubmit();}}} /></label><button type="submit" disabled={reviewLocked}>Save draft</button></form>}{noteSaved && <span role="status" className="vocabulary-operator-meta">{noteSaved}</span>}</div>}
             <div className="vocabulary-operator-actions">
               {item.proposal && !proposalResolved && <button disabled={reviewLocked && !approvalUnconfirmed || busy || item.stale || item.requiresDetails} onClick={approve}>{approvalUnconfirmed ? 'Retry approval' : 'Approve and apply'}</button>}
               {!proposalResolved && <button className="secondary-button" disabled={reviewLocked || (!item.proposal && item.requiresResolutionReason && !reason.trim()) || (!item.proposal && !item.currentAssessment && !item.requiresResolutionReason)} onClick={resolve}>{item.proposal ? 'Dismiss proposal' : 'Done'}</button>}
@@ -248,11 +264,11 @@ export function VocabularyCaseReviewPage({ api = vocabularyOperatorApi }: { api?
               {canRetryLatestCaseJob(item) && !item.latestJob?.advisory && <button className="secondary-button" disabled={reviewLocked} onClick={() => void run(async () => { await api.retryJob(item.latestJob!.jobId); installCard(await api.caseCard(item.caseId)); }, 'Assessment queued.')}>Retry assessment {item.latestJob?.sequence}</button>}
             </div>
             {item.reassessment.eligible && <div className="vocabulary-reassessment-control"><label>Model for reassessment<select value={model} disabled={reviewLocked || !!item.activeJob} onChange={event => setModel(event.target.value as VocabularyReassessmentModel)}><option value="openai:gpt-6-sol-high">GPT-6 Sol high</option><option value="openai:gpt-5.6-luna-high">Luna high</option><option value="zai:glm-5.3-flash-high">GLM-5.3 Flash high</option></select></label><button className="secondary-button" disabled={reviewLocked || !!item.activeJob} onClick={() => reassess()}>Reassess</button>{confirmSource?.caseId === item.caseId && <div className="vocabulary-reassessment-confirmation"><p>Source changed from v{item.reassessment.source?.assessedVersion} to v{confirmSource.version}. Reassessment uses the current version.</p><button disabled={reviewLocked} onClick={() => reassess(confirmSource.version)}>Reassess current version</button><button className="secondary-button" onClick={() => setConfirmSource(null)}>Cancel</button></div>}</div>}
-          </>}
+          </div>}
           <div className="vocabulary-operator-actions"><button className="secondary-button" disabled={blocked} onClick={() => openDetails()}>Details</button></div>
-        </CaseReviewCard>}
+        </div>}
       </>}
-      {nextCursor && <button className="secondary-button" disabled={blocked || loadingMore || detailActivity.dirty} onClick={() => void loadMore()}>{loadingMore ? 'Loading cases…' : 'Load more cases'}</button>}
+      {loadingMore && <p role="status">Loading cases…</p>}
     </>}
   </section>;
 }

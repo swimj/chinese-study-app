@@ -154,3 +154,22 @@
   .vocabulary-case-navigation button { flex: 1; }
   .vocabulary-case-review-page > header { align-items: flex-start; flex-wrap: wrap; }
 }
+
+/* The card scrolls inside its review frame; actions remain outside that scroll. */
+.vocabulary-case-frame { display: flex; flex-direction: column; height: min(76dvh, 58rem); min-height: 17.5rem; border: 1px solid var(--border); border-radius: .8rem; overflow: hidden; background: var(--surface); }
+.vocabulary-case-scroll { min-height: 5rem; flex: 1; overflow: auto; overscroll-behavior: contain; padding: .9rem; }
+.vocabulary-case-scroll .vocabulary-case-card { margin: 0; border: 0; padding: .3rem; }
+.vocabulary-case-action-frame { flex: 0 0 auto; max-height: 65%; overflow: auto; padding: .6rem .9rem; border-top: 1px solid var(--border); background: var(--surface); }
+.vocabulary-case-frame > .vocabulary-operator-actions { margin: 0; padding: .3rem .9rem; }
+.vocabulary-case-action-frame .vocabulary-operator-actions { margin: .4rem 0; gap: .4rem; }
+.vocabulary-case-action-frame button { padding: .5rem .75rem; }
+.vocabulary-case-action-frame .vocabulary-reassessment-control { margin-top: .4rem; }
+.vocabulary-review-note { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; }
+.vocabulary-review-note form { flex-basis: 100%; }
+.vocabulary-review-note textarea { min-height: 3rem; }
+.vocabulary-case-card .vocabulary-sense-group { margin: .5rem 0; }
+.vocabulary-case-card .vocabulary-sense-group > summary { cursor: pointer; padding: .65rem 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.vocabulary-case-card .vocabulary-group-count { margin-left: .5rem; white-space: normal; }
+
+.vocabulary-case-action-frame .vocabulary-operator-actions { flex-direction: row; flex-wrap: wrap; }
+.vocabulary-case-frame > .vocabulary-operator-actions { flex-direction: row; }

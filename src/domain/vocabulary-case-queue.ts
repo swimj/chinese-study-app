@@ -2,7 +2,7 @@ import type { VocabularyCaseReview, VocabularyContentProposal, VocabularyProposa
 
 /** Display-only data. These projections are never accepted as authored content or saved drafts. */
 export type VocabularyServedReview = {
-  encounterId:string; contentId:string|null; contentVersion:number|null; kind:string|null; role:string|null;
+  encounterId:string; presentedAt:string|null; contentId:string|null; contentVersion:number|null; kind:string|null; role:string|null;
   prompt:string|null; choices:{id:string;text:string}[]; acceptedAnswers:string[];
   responses:{actionId:string;text:string|null;outcome:string;undone:boolean}[];
   reactions:{actionId:string;feedback:string;comment:string|null;undone:boolean}[];
@@ -44,5 +44,5 @@ export type VocabularyCaseQueueItem = {
   requiresResolutionReason:boolean;
   reassessment:{eligible:boolean;reason:string|null;source:{contentId:string;assessedVersion:number;currentVersion:number}|null};
 };
-export type VocabularyCaseQueuePage = {items:VocabularyCaseQueueItem[];nextCursor:string|null};
-export type VocabularyCaseQueueQuery = {view?:'review'|'history';limit?:number;cursor?:string;search?:string};
+export type VocabularyCaseQueuePage = {items:VocabularyCaseQueueItem[];nextCursor:string|null;previousCursor:string|null;anchorCursor:string|null;total:number;startIndex:number};
+export type VocabularyCaseQueueQuery = {view?:'review'|'history';limit?:number;cursor?:string;search?:string;direction?:'next'|'previous';edge?:'first'|'last'};

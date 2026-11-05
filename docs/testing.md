@@ -104,7 +104,9 @@ approval acknowledgement, and fail pending approval. `?usage` mounts the product
 operator container; `?narrow&largeText` uses a 480px panel with enlarged text.
 The fixture uses local synthetic responses and never calls a provider.
 
-Verify in-batch navigation makes no detail fetch, near-boundary batch prefetch,
+Verify in-batch navigation makes no detail fetch, cross-page and end-wrap navigation,
+exact totals, encounter time labels, collapsed sense counts, source drift, note
+focus/Enter/IME behavior, action visibility in the outer operator container,
 case identity through reassessment, cursor after Done, lazy Archive/Needs attention,
 exact-request approval retry, full editor hydration and unsaved-change guards.
 `vocabulary-case-queue-model.test.ts` covers the active window projection, equal-case-

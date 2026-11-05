@@ -1,8 +1,7 @@
-import type { VocabularyCaseQueueItem, VocabularyCaseQueuePage } from '../../domain/vocabulary-case-queue';
+import type { VocabularyCaseQueueItem, VocabularyCaseQueuePage, VocabularyCaseQueueQuery } from '../../domain/vocabulary-case-queue';
 
 export const CASE_QUEUE_BATCH_SIZE = 20;
-export const CASE_QUEUE_WINDOW_PAGES = 3;
-export type CaseQueueWindow = { cursor: string | null; page: VocabularyCaseQueuePage }[];
+export type CaseQueueWindow = { cursor: string | null; direction?: VocabularyCaseQueueQuery['direction']; edge?: VocabularyCaseQueueQuery['edge']; page: VocabularyCaseQueuePage }[];
 
 export type CaseRefreshContext = {
   view:string;query:string;selectedId:string|null;detailKey:string|null;
@@ -37,7 +36,7 @@ export function replaceCaseProjection(pages: CaseQueueWindow, item: VocabularyCa
 }
 
 export function removeCaseFromWindow(pages: CaseQueueWindow, caseId: string): CaseQueueWindow {
-  return pages.map(entry => ({ ...entry, page: { ...entry.page, items: entry.page.items.filter(item => item.caseId !== caseId) } }));
+  return pages.map(entry => ({ ...entry, page: { ...entry.page, total: Math.max(0, entry.page.total - (entry.page.items.some(item => item.caseId === caseId) ? 1 : 0)), items: entry.page.items.filter(item => item.caseId !== caseId) } }));
 }
 
 /** The next case stays in the resolved case's slot, including last/only-case boundaries. */
@@ -55,4 +54,8 @@ export function caseCanReview(item: VocabularyCaseQueueItem): boolean {
 export function canRetryLatestCaseJob(item: VocabularyCaseQueueItem): boolean {
   return item.state === 'open' && !item.activeJob && item.approvalState !== 'pending'
     && item.latestJob?.status === 'failed' && item.latestJob.error !== 'source_conflict';
+}
+
+export function shouldSaveReviewNote(event: {key:string;shiftKey:boolean;isComposing:boolean;keyCode:number}): boolean {
+  return event.key === 'Enter' && !event.shiftKey && !event.isComposing && event.keyCode !== 229;
 }
