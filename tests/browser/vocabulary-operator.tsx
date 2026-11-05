@@ -2,13 +2,13 @@ import type { VocabularySenseCoverageWorkspace } from '../../src/domain/vocabula
 import React from 'react';
 import {createRoot} from 'react-dom/client';
 import {VocabularyOperatorPage} from '../../src/pages/VocabularyOperatorPage';
-import {OperatorUsagePulsePage} from '../../src/pages/OperatorUsagePulsePage';
 import type {VocabularyOperatorApi} from '../../src/features/vocabulary-operator/api';
 import {ApiRequestError} from '../../src/services/api';
 import type {VocabularyContent} from '../../src/domain/vocabulary-content';
 import type {VocabularyAssessmentReview,VocabularyApprovalRequest,VocabularyContentProposal,VocabularyReflectionCase,VocabularySecondOpinion} from '../../src/domain/vocabulary-reflection';
 import type {VocabularyEncounterEvidence,VocabularySessionAction} from '../../src/domain/vocabulary-session';
 import '../../src/styles.css';
+if(new URLSearchParams(location.search).has('usage'))location.replace(`./vocabulary-case-review.html${location.search}`);
 const at='2026-10-17T12:00:00.000Z';
 const general:VocabularyContent={contentId:'exercise-general-with-a-long-identity-for-narrow-panels',kind:'exercise',payloadVersion:1,
   body:{prompt:'Notify the relevant people in advance so your planned absence is on record.',reveal:{example:'明天我想调休，先向主管报备一下。',translation:'I want to take time off tomorrow, so I will let my supervisor know first.'}},
@@ -167,6 +167,7 @@ if(new URLSearchParams(location.search).has('scopeSibling')){
 }
 let loseApprovalAck=new URLSearchParams(location.search).has('lostAck');
 const api:VocabularyOperatorApi={
+  caseQueue:async()=>{throw new Error('Use vocabulary-case-review.html for case queue coverage');},caseCard:async()=>{throw new Error('Use vocabulary-case-review.html for case queue coverage');},resolveCaseReview:async()=>{throw new Error('Use vocabulary-case-review.html for case queue coverage');},reassessCaseReview:async()=>{throw new Error('Use vocabulary-case-review.html for case queue coverage');},
   resolvePureCueIdentities:async(parentId,modelChoice,expectedContentVersion,selections)=>{document.body.dataset.identitySelections=JSON.stringify(selections);document.body.dataset.identityModel=modelChoice;document.body.dataset.identityVersion=String(expectedContentVersion);reassessmentRequest={parentId,caseId:'resolved-promotion',jobId:'resolved-promotion-job',status:'queued',error:null};return reassessmentRequest;},
   wordSenseCoverage:async wordId=>scopeRead(()=>coverage(wordId)),caseSenseCoverage:async caseId=>scopeRead(()=>coverage(fixtureWord(caseId),caseId)),
   saveDefaultUsefulSenses:async(wordId,version,ids)=>saveCoverage('word',wordId,version,ids),
@@ -206,4 +207,4 @@ if (new URLSearchParams(location.search).has('slow')) {
   api.preview=async(id,version)=>{await delay();return originalPreview(id,version);};
   api.reviewBatch=async(id,limit)=>{await delay();return originalBatch(id,limit);};
 }
-createRoot(document.getElementById('root')!).render(<React.StrictMode>{new URLSearchParams(location.search).has('holdCoverage')&&<button onClick={()=>heldScopeSaves.splice(0).forEach(resolve=>resolve())}>Finish pending coverage save</button>}{new URLSearchParams(location.search).has('usage')?<OperatorUsagePulsePage initialTab="improvement" improvementApi={api}/>:<VocabularyOperatorPage api={api}/>}</React.StrictMode>);
+createRoot(document.getElementById('root')!).render(<React.StrictMode>{new URLSearchParams(location.search).has('holdCoverage')&&<button onClick={()=>heldScopeSaves.splice(0).forEach(resolve=>resolve())}>Finish pending coverage save</button>}{<VocabularyOperatorPage api={api}/>}</React.StrictMode>);

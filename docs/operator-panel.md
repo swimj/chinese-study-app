@@ -110,13 +110,18 @@ approval and evidence guarantees, and the
 how judgments and proposals are produced.
 
 Open `#operator-usage` and select **Content improvement** using the
-[operator allowlist](#access). Opening a proposal displays its saved version and source content.
+[operator allowlist](#access). Awaiting review presents stable improvement cases,
+oldest creation time first. Each case displays its current assessment and saved
+proposal, or the judgment that proposed no change. Reassessment retains the
+same case identity and queue position.
 The entry leads with **Original served content**: each encounter that retains
 a snapshot shows its cue and accepted answers, in encounter order. An encounter
 without a snapshot says that snapshot is unavailable. Diagnosis, current and
 proposed content, accepted answers, and recipient scope follow. A case with no
 retained snapshot states that the original served content is unavailable.
-Changed answer criteria and retained teaching are expanded in the comparison.
+The compact card includes the content needed for ordinary review. If richer
+authored content cannot be represented faithfully, **Review full content before
+approval** opens the complete workspace and approval remains there.
 
 “Approve and apply” queues the displayed version and advances after the backend
 persists the request. Queued requests are hidden from Awaiting review while they
@@ -213,7 +218,8 @@ practice beyond resolving that exercise. The summary explains the overall
 recommendation, and item rationales explain their individual contributions.
 
 Proposal items share expected answers and scope labels and group by readable
-sense labels. Each item has an inclusion checkbox. Turning a replacement off
+sense labels. **Edit proposal** loads the exact full saved revision. In the editor,
+each item has an inclusion checkbox. Turning a replacement off
 keeps its source active. Turning it back on restores its edits. Save the selected
 items as a new revision before approval; an empty selection offers restore or
 dismissal. A failed save retains the draft and selections.
@@ -226,37 +232,44 @@ item; Item details contains the full authored record.
 
 ### Queue navigation and refresh
 
-The review queue preloads nearby proposal details in bounded batches. A cached
-card appears immediately; approval remains subject to server validation. Coverage
-saves invalidate affected snapshots (same case for review edits, same word for
-shared edits), and an epoch fence rejects older in-flight prefetch responses. After a
-successful action the next known item opens while the queue refreshes. If it cannot load, the completed
-action remains recorded and a retry control is shown.
+Awaiting review loads compact case cards in creation-time order, with case ID as
+the stable tie-breaker. The batch contains served cue and response summaries,
+assessment provenance, proposed content, current source comparisons, and relevant
+status. Previous and next navigation within loaded batches uses that local data.
+The next batch loads near the end of the window; the browser retains at most
+three batches of twenty cards per review or archive view. Previous navigation can
+load an earlier batch after it leaves the window.
 
-The operator panel's Content improvement tab presents an Awaiting review queue,
-an attention inbox and Archive. Open entries in each view lead with the original
-served content described above. Previous and next controls navigate one item at
-a time; applying or dismissing advances to the next available item. Cards keep scope and identity consequences
-visible before approval; one Details disclosure contains full rationale,
-relationship effects, encounter history, optional review notes and source-based
-manual authoring. Edit proposal edits the displayed draft. Creating a separate
-correction starts a new proposal from the current source.
+**Details** loads full encounter history, retained proposals, numbered case jobs,
+raw evidence, and source-based manual authoring. **Edit proposal** opens the full
+authored revision and preserves inclusion choices and unsaved edits. Compact
+render projections are never submitted as authored content. The proposal selector
+opens a retained alternative without changing the case's current assessment;
+its provenance remains attached to the assessment that authored it. Dismissing
+one proposal keeps the case open if another unresolved alternative remains.
 
-Left and Right navigate the displayed queue while preserving text editing and
-native control keys. Each queue remembers its selected identity while moving
-between queues; the operator panel keeps the review mounted while visiting Usage
-or another operator tab. The cursor survives these visits for the current panel
-session. Archive defaults to resolutions from the last 12 hours, using receipt or closure
-event timestamps. Search spans all loaded resolved proposals and closed no-change
-reviews. Records without retained resolution timestamps are searchable but do not
-enter the default time window.
+Left and Right navigate while preserving text editing and native control keys.
+Each queue remembers its selected identity while moving between views; the
+operator panel keeps the review mounted while visiting another operator tab.
+Resolving a case advances at the same position, falling back to the previous case
+at the end. Approval advances on its persisted acknowledgement; an uncertain
+acknowledgement holds the current case so retry uses the same request identity.
 
-Queue lists refresh every 15 seconds while the panel and document are visible,
-and on window focus or visibility change. Refresh pauses during work or unsaved
-draft edits and never installs a different proposal version. A changed selected
-proposal requires explicit reload and validation before applying. Pending second
-opinions use their existing three-second polling cycle. These are reads; provider
-retry and application remain explicit operator actions.
+Archive and Needs attention load only while their views are open. Archive defaults
+to resolutions from the last twelve hours, using the case's retained resolution
+time, and loads further results in pages. Search spans retained case IDs, word
+labels, proposal rationales, and original served prompts through the server;
+raw provider documents and arbitrary JSON keys are not archive search fields.
+
+Loaded queue batches refresh every fifteen seconds while the panel and document
+are visible, and on focus or visibility change. Active case jobs use a three-second
+refresh. Refresh preserves the selected case and updates shared-source staleness
+even when its case revision has not changed. Unsaved edits, active mutations, and
+uncertain approval acknowledgements pause replacement of the displayed data.
+The full editor keeps its reviewed revision pinned; newer work requires explicit
+reload. Failed reassessment leaves the previous judgment visible with an explicit
+retry. A source-version conflict instead offers reassessment of the current source.
+These reads do not authorize provider work or content application.
 
 ## Content sharing
 
