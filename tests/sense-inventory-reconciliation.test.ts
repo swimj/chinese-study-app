@@ -116,8 +116,29 @@ test('CLI export uses exact runtime lexical input and leaves the database unchan
     assert.equal(exported[0]!.word.traditional,'垂');
     assert.equal(request.outputSchema.properties.senses.minItems, 0);
     assert.equal(fs.existsSync(path.join(archive, 'prepared', '000', 'response.json')), false);
-    execFileSync(process.execPath, ['--import', 'tsx', 'scripts/reconcile-sense-inventory.ts', 'trial', '--input', out, '--archive', archive, '--variant', 'historical', '--baseline-revision', '17a5a357'], { stdio: 'pipe' });
+    // Exercise real revision reads without depending on the checkout's history.
+    const fixture = path.resolve('tests/fixtures/sense-inventory-v2');
+    const env = { ...process.env, GIT_DIR: path.join(root, 'baseline.git'), GIT_WORK_TREE: fixture };
+    const git = (args: string[]) => execFileSync('git', args, { cwd: fixture, env, encoding: 'utf8' }).trim();
+    git(['init', '--quiet']);
+    git(['add', 'server']);
+    git(['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', '-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null', 'commit', '--quiet', '-m', 'Retained v2 sense inventory baseline']);
+    const revision = git(['rev-parse', 'HEAD']);
+    execFileSync(process.execPath, ['--import', 'tsx', 'scripts/reconcile-sense-inventory.ts', 'trial', '--input', out, '--archive', archive, '--variant', 'historical', '--baseline-revision', revision], { stdio: 'pipe', env });
     const historical = JSON.parse(fs.readFileSync(path.join(archive, 'historical', '000', 'request.json'), 'utf8'));
     assert.deepEqual(JSON.parse(historical.userPrompt), {word:expected});
+    const systemPrompt = fs.readFileSync(path.join(fixture, 'server/vocabulary/reflection-prompts/sense-inventory.md'), 'utf8');
+    const providerSource = fs.readFileSync(path.join(fixture, 'server/vocabulary/sense-readiness.ts'), 'utf8');
+    assert.equal(historical.systemPrompt, systemPrompt);
+    assert.equal(historical.outputSchemaName, 'vocabulary_sense_inventory_v2');
+    assert.equal(historical.outputSchema.properties.senses.minItems, 1);
+    const manifest = JSON.parse(fs.readFileSync(path.join(archive, 'historical', 'manifest.json'), 'utf8'));
+    assert.equal(manifest.resolvedRevision, revision);
+    assert.equal(manifest.source, 'git');
+    assert.equal(manifest.systemPromptSha256, inventoryHash(systemPrompt));
+    assert.equal(manifest.providerSourceSha256, inventoryHash(providerSource));
+    assert.equal(manifest.outputSchemaSha256, inventoryHash(historical.outputSchema));
+    assert.equal(manifest.live, false);
+    assert.equal(fs.existsSync(path.join(archive, 'historical', '000', 'response.json')), false);
   } finally { setDb(null); db?.close(); fs.rmSync(root, { recursive: true, force: true }); }
 });

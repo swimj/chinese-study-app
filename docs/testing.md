@@ -405,7 +405,11 @@ retain/retire decisions atomically. See the [reconciliation runbook](ops/sense-i
 for content decisions, stopped-writer rehearsal, receipts and recovery.
 
 `tests/sense-inventory-reconciliation.test.ts` covers structural comparison and
-read-only CLI export. `tests/sense-inventory-reconciliation-apply.test.ts` uses
+read-only CLI export, current request preparation, and historical v2 requests.
+The historical test commits [retained source snapshots](../tests/fixtures/sense-inventory-v2/README.md)
+to a temporary Git repository and exercises the real CLI's revision reads,
+schema selection, and provenance without requiring checkout history or provider
+calls. `tests/sense-inventory-reconciliation-apply.test.ts` uses
 migrated SQLite fixtures to cover dependency decisions, stale-plan rejection,
 multiword rollback, idempotence, preparation refresh, and preserved learner history.
 
