@@ -90,3 +90,20 @@ export function listVocabularyDefaultSelectionFindings(actorId:string):import('.
     ORDER BY r.updated_at,r.word_id`).all() as {wordId:string;hanzi:string;caseId:string|null}[];
   return rows.map(row=>{const finding=getVocabularyDefaultSelectionFinding(row.wordId);if(!finding)throw new Error('Unknown selection attention lost its finding during a synchronous read');return {...row,...finding};});
 }
+
+/** Maintenance reconciliation removes retired identities without selecting new senses. */
+export function pruneVocabularyWordSenseCoverage(wordId:string,expectedVersion:number,actor:VocabularyActor):VocabularyWordSenseCoverage {
+  return atomic(()=>{
+    const before=getVocabularyWordSenseCoverage(wordId);
+    if(before.version!==expectedVersion)throw new VocabularySenseCoverageConflict('Word sense coverage changed; reload before saving');
+    const active=new Set(getVocabularySenses(wordId).filter(sense=>sense.status==='active').map(sense=>sense.senseId));
+    const selected=before.defaultUsefulSenseIds===null?(active.size===0?[]:null):before.defaultUsefulSenseIds.filter(id=>active.has(id));
+    const excluded=before.excludedSenseIds.filter(id=>active.has(id));
+    if(JSON.stringify(selected)===JSON.stringify(before.defaultUsefulSenseIds)&&JSON.stringify(excluded)===JSON.stringify(before.excludedSenseIds))return before;
+    const next={...before,version:before.version+1,excludedSenseIds:excluded,defaultUsefulSenseIds:selected};
+    getDb().prepare('INSERT INTO vocabulary_word_sense_coverage(word_id,version,excluded_sense_ids_json,default_useful_sense_ids_json,updated_at) VALUES (?,?,?,?,?) ON CONFLICT(word_id) DO UPDATE SET version=excluded.version,excluded_sense_ids_json=excluded.excluded_sense_ids_json,default_useful_sense_ids_json=excluded.default_useful_sense_ids_json,updated_at=excluded.updated_at')
+      .run(wordId,next.version,JSON.stringify(excluded),selected===null?null:JSON.stringify(selected),new Date().toISOString());
+    history('word',wordId,next.version,next,actor);
+    return next;
+  });
+}
