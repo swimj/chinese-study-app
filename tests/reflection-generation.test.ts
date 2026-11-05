@@ -134,7 +134,7 @@ describe('initial reflection generation orchestration', () => {
       reflectionFlowVersion: 'initial_post_session_reflection.v6',
       generatedAt,
       provider: 'openai',
-      model: 'gpt-5.6-luna-high',
+      model: 'gpt-6-luna-high',
       promptVersion: STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION,
       evidenceBundle: finalEvidence,
       result: { ...ordinaryDiagnosisResult(), schemaVersion: 'session_reflection_result.v10' },
@@ -147,8 +147,8 @@ describe('initial reflection generation orchestration', () => {
       startedAt: generatedAt,
       completedAt: generatedAt,
       provider: 'openai',
-      model: 'gpt-5.6-luna-high',
-      providerModel: 'gpt-5.6-luna',
+      model: 'gpt-6-luna-high',
+      providerModel: 'gpt-6-luna',
       promptVersion: STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION,
       responseId: 'response-1',
       finishReason: 'stop',
@@ -167,22 +167,22 @@ describe('initial reflection generation orchestration', () => {
         reasoningTokens: 2,
         totalTokens: 15,
       },
-      pricingSnapshotId: 'openai-gpt-5.6-luna-standard-short-context-2026-07-30',
-      pricingAsOf: '2026-07-30',
+      pricingSnapshotId: 'openai-gpt-6-luna-standard-short-context-2026-10-30',
+      pricingAsOf: '2026-10-30',
       pricingBasis: {
-        id: 'openai-gpt-5.6-luna-standard-short-context-2026-07-30',
-        pricingAsOf: '2026-07-30',
+        id: 'openai-gpt-6-luna-standard-short-context-2026-10-30',
+        pricingAsOf: '2026-10-30',
         provider: 'openai',
-        providerModel: 'gpt-5.6-luna',
+        providerModel: 'gpt-6-luna',
         serviceTier: 'standard',
         contextBand: 'short',
         currency: 'USD',
-        inputPerMillionUsd: 0.2,
-        cachedInputPerMillionUsd: 0.02,
-        cacheWriteInputPerMillionUsd: 0.25,
-        outputPerMillionUsd: 1.2,
+        inputPerMillionUsd: 0.1,
+        cachedInputPerMillionUsd: 0.01,
+        cacheWriteInputPerMillionUsd: 0.125,
+        outputPerMillionUsd: 0.5,
       },
-      estimatedCostUsd: 0.000008,
+      estimatedCostUsd: 0.0000035,
       evidenceBundle,
     });
   });
@@ -209,7 +209,7 @@ describe('initial reflection generation orchestration', () => {
 
     assert.equal(started?.sourceSessionId, 'session-1');
     assert.equal(started?.provider, 'openai');
-    assert.equal(started?.model, 'gpt-5.6-luna-high');
+    assert.equal(started?.model, 'gpt-6-luna-high');
     assert.equal(started?.evidenceBundle, evidenceBundle);
     assert.equal(started?.clientRequestId, providerRequestId);
     assert.match(providerRequestId ?? '', /^[0-9a-f-]{36}$/);
@@ -435,7 +435,7 @@ describe('initial reflection generation orchestration', () => {
     });
 
     await assert.rejects(
-      () => service.generate('session-1', {}, 'openai:gpt-5.6-luna-high'),
+      () => service.generate('session-1', {}, 'openai:gpt-6-luna-high'),
       LunaReflectionProviderError,
     );
     assert.equal(diagnosisCalls, 1);
@@ -454,8 +454,8 @@ describe('initial reflection generation orchestration', () => {
       questions: [],
     });
     assert.deepEqual(runRecords.map((run) => [run.state, run.model, run.resultSchemaVersion]), [
-      ['succeeded', 'gpt-5.6-luna-high', 'staged_reflection_diagnosis_result.v3'],
-      ['failed', 'gpt-5.6-luna-high', 'pure_cue_promotion_result.v2'],
+      ['succeeded', 'gpt-6-luna-high', 'staged_reflection_diagnosis_result.v3'],
+      ['failed', 'gpt-6-luna-high', 'pure_cue_promotion_result.v2'],
       ['succeeded', 'glm-5.3-flash-max', 'pure_cue_promotion_result.v2'],
     ]);
   });
@@ -551,7 +551,7 @@ describe('initial reflection generation orchestration', () => {
       },
     });
 
-    await service.generate('session-1', {}, 'openai:gpt-5.6-luna-high');
+    await service.generate('session-1', {}, 'openai:gpt-6-luna-high');
 
     const expected = [
       { schema: 'session_reflection_bundle.v4', eligibleItemCount: 2, includedItemCount: 2 },
@@ -790,7 +790,7 @@ describe('initial reflection generation orchestration', () => {
     );
     assert.deepEqual(selected, []);
 
-    await service.retry('failed-gemini-run', 'openai:gpt-5.6-luna-high');
+    await service.retry('failed-gemini-run', 'openai:gpt-6-luna-high');
     assert.deepEqual(selected, ['luna']);
   });
 
@@ -888,9 +888,28 @@ describe('initial reflection generation orchestration', () => {
     });
 
     await service.retry('failed-run');
-    await service.generate('session-1', {}, 'openai:gpt-5.6-luna-high');
-    await service.retry('failed-run', 'openai:gpt-5.6-luna-high');
+    await service.generate('session-1', {}, 'openai:gpt-6-luna-high');
+    await service.retry('failed-run', 'openai:gpt-6-luna-high');
     assert.deepEqual(selected, ['glm', 'luna', 'luna']);
+  });
+
+  test('retries a saved GPT-5.6 Luna run with GPT-6 Luna and retains its source', async () => {
+    const source = currentDiagnosisRetrySource('legacy-luna-run', bundle(), {
+      provider: 'openai', model: 'gpt-5.6-luna-high', providerModel: 'gpt-5.6-luna',
+    });
+    const runs: RecordReflectionGenerationRunInput[] = [];
+    const service = createInitialReflectionGenerationService({
+      findExistingArtifact: () => null,
+      provider: stagedProvider(async () => diagnosisSuccess()),
+      getContinuationRetrySource: () => source,
+      materializeArtifact: () => ({ created: true, artifact: artifactDetail('upgraded-luna', 1) }),
+      recordRun: run => { runs.push(run); },
+    });
+    await service.retry('legacy-luna-run');
+    assert.equal(runs.length, 1);
+    assert.equal(runs[0]!.model, 'gpt-6-luna-high');
+    assert.equal(runs[0]!.providerModel, 'gpt-6-luna');
+    assert.equal(source.model, 'gpt-5.6-luna-high');
   });
 
   test('refuses same-model retry when the stored model is no longer a current choice', async () => {
@@ -927,7 +946,7 @@ describe('initial reflection generation orchestration', () => {
     );
     assert.deepEqual(selected, []);
 
-    await service.retry('failed-retired-run', 'openai:gpt-5.6-luna-high');
+    await service.retry('failed-retired-run', 'openai:gpt-6-luna-high');
     assert.deepEqual(selected, ['luna']);
   });
 });
@@ -948,8 +967,8 @@ function diagnosisSuccess() {
     result: stagedDiagnosisResult(),
     metadata: {
       provider: 'openai',
-      modelConfig: 'gpt-5.6-luna-high',
-      providerModel: 'gpt-5.6-luna',
+      modelConfig: 'gpt-6-luna-high',
+      providerModel: 'gpt-6-luna',
       promptVersion: STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION,
       responseId: 'response-1',
       finishReason: 'stop',
@@ -972,7 +991,7 @@ function artifactDetail(artifactId: string, proposalCount: number): ReflectionAr
     reflectionFlowVersion: 'initial_post_session_reflection.v2',
     generatedAt,
     provider: 'openai',
-    model: 'gpt-5.6-luna-high',
+    model: 'gpt-6-luna-high',
     promptVersion: 'reflection-v3',
     bundleSchemaVersion: 'session_reflection_bundle.v2',
     resultSchemaVersion: 'session_reflection_result.v7',
@@ -1055,8 +1074,8 @@ function currentDiagnosisRetrySource(
     runId,
     stage: 'diagnosis',
     provider: overrides.provider ?? 'openai',
-    model: overrides.model ?? 'gpt-5.6-luna-high',
-    providerModel: overrides.providerModel ?? 'gpt-5.6-luna',
+    model: overrides.model ?? 'gpt-6-luna-high',
+    providerModel: overrides.providerModel ?? 'gpt-6-luna',
     promptVersion: STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION,
     continuation: {
       continuationId: `continuation-${runId}`,

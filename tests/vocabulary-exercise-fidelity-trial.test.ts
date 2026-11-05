@@ -16,11 +16,11 @@ function trial(options:string[],check:(archive:string)=>void,env=process.env){
 }
 test('offline fidelity default stays bounded and captures production strict-schema wire references',()=>trial([],archive=>{
   const index=JSON.parse(readFileSync(path.join(archive,'check-index.json'),'utf8'));
-  assert.equal(index.live,false);assert.equal(index.cases.length,6);assert.equal(index.modelChoice,'openai:gpt-5.6-luna-high');
+  assert.equal(index.live,false);assert.equal(index.cases.length,6);assert.equal(index.modelChoice,'openai:gpt-6-luna-high');
   for(const name of index.cases){
     const request=JSON.parse(readFileSync(path.join(archive,'check',name,'request.json'),'utf8'));
     const wire=JSON.parse(readFileSync(path.join(archive,'check',name,'wire-request.json'),'utf8'));
-    assert.equal(request.request.model,'gpt-5.6-luna');assert.equal(request.decodeAliases,true);
+    assert.equal(request.request.model,'gpt-6-luna');assert.equal(request.decodeAliases,true);
     assert.equal(wire.response_format.type,'json_schema');assert.equal(wire.response_format.json_schema.strict,true);
     assert.equal(wire.max_completion_tokens,name.startsWith('general-')?24000:50000);
     assert.ok(!request.request.userPrompt.includes(`sense-${name.split('-')[1]}-1`));

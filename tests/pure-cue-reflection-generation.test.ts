@@ -25,7 +25,7 @@ const wire: PureCueReflectionResultV1Wire = {
   schemaVersion: 'pure_cue_reflection_result.v2', itemResults: [{ submittedWord: 'C', decision: 'extend', reason: null, repair: null, learnerExplanation: 'C fits this situation.', rationale: 'C is valid.', extension: { teachingNote: 'A, B or C', responseWordPlan: { deactivateCueIds: [], distinctiveCueDrafts: [] } } }],
 };
 const metadata = (promptVersion = PURE_CUE_REFLECTION_PROMPT_VERSION): LunaReflectionRunMetadata => ({
-  provider: 'openai', modelConfig: 'gpt-5.6-luna-high', providerModel: 'gpt-5.6-luna', promptVersion, responseId: 'response', finishReason: 'stop',
+  provider: 'openai', modelConfig: 'gpt-6-luna-high', providerModel: 'gpt-6-luna', promptVersion, responseId: 'response', finishReason: 'stop',
   usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, cachedInputTokens: null, cacheWriteInputTokens: null, reasoningTokens: null },
 });
 const ordinary: SessionReflectionBundleV4 = {
@@ -50,7 +50,7 @@ function harness(options: { ordinary?: boolean; pureFails?: boolean; ordinaryFai
   const service = createInitialReflectionGenerationService({
     ...boundaries, provider, now: () => time, buildPureCueBundle: () => bundle,
     buildBundle: () => { if (!options.ordinary) throw new ReflectionEvidenceError('no_qualifying_evidence', 'No ordinary evidence'); return ordinary; },
-    getPureCueRetrySource: (id) => { const run = runs.find((entry) => entry.runId === id); return run ? { bundle: run.evidenceBundle as PureCueReflectionBundleV1, model: 'gpt-5.6-luna-high' } : null; },
+    getPureCueRetrySource: (id) => { const run = runs.find((entry) => entry.runId === id); return run ? { bundle: run.evidenceBundle as PureCueReflectionBundleV1, model: 'gpt-6-luna-high' } : null; },
     startRun: (input) => { starts.push(input); }, recordRun: (input) => { runs.push(input); },
     materializeArtifact: (input) => { artifacts.push(input); return { created: true, artifact: { artifactId: `artifact-${artifacts.length}`, proposals: [] } } as ReturnType<NonNullable<import('../server/reflection/generation.ts').InitialReflectionGenerationDependencies['materializeArtifact']>>; },
   });
@@ -96,7 +96,7 @@ test('dedicated provider sends its own prompt and strict wire schema, then norma
   let body: Record<string, unknown> | null = null;
   const provider = createLunaReflectionProvider({ environment: { OPENAI_API_KEY: 'test' }, fetchImplementation: async (_url, init) => {
     body = JSON.parse(String(init?.body));
-    return new Response(JSON.stringify({ id: 'response', model: 'gpt-5.6-luna', choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(wire) } }], usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 } }), { status: 200, headers: { 'content-type': 'application/json' } });
+    return new Response(JSON.stringify({ id: 'response', model: 'gpt-6-luna', choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(wire) } }], usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 } }), { status: 200, headers: { 'content-type': 'application/json' } });
   } });
   const output = await provider.generatePureCueReflection!(bundle);
   assert.equal(output.metadata.promptVersion, PURE_CUE_REFLECTION_PROMPT_VERSION);

@@ -17,6 +17,7 @@ import { migrateSharedDictionaryBaselines } from '../server/db/dictionary-baseli
 import { createVocabularyApprovalRequests } from '../server/vocabulary/approval-requests.ts';
 import { completeVocabularyApprovalRequest, recordVocabularyApprovalIntent } from '../server/db/vocabulary-reflection.ts';
 import { createVocabularyReflectionProvider, projectVocabularyReflectionInput } from '../server/vocabulary/reflection-provider.ts';
+import { vocabularyReflectionModelChoice } from '../server/db/vocabulary-reflection-routing.ts';
 import type { ProviderAdapter } from '../server/llm/types.ts';
 import { createVocabularySession, appendVocabularySessionActions, stageVocabularySessionCompletion, closeVocabularySessionCompletion } from '../server/db/vocabulary-sessions.ts';
 import { ingestVocabularySessionEvidence, getVocabularyReflectionCase, listVocabularyReflectionCases,
@@ -142,6 +143,12 @@ function historicalDictionaryBaselineJob(migrate=true) {
   sql.prepare("UPDATE vocabulary_reflection_jobs SET model_choice='openai:gpt-5.6-luna-high' WHERE job_id=?").run(work.jobId);
   return {id,work};
 }
+
+test('saved Luna routing upgrades without rerolling or changing the retained route', () => {
+  const { work } = historicalDictionaryBaselineJob(false);
+  assert.equal(vocabularyReflectionModelChoice(work.jobId, () => assert.fail('must retain the saved route')), 'openai:gpt-6-luna-high');
+  assert.equal(sql.prepare('SELECT model_choice FROM vocabulary_reflection_jobs WHERE job_id=?').get(work.jobId)!.model_choice, 'openai:gpt-5.6-luna-high');
+});
 
 function migrateDictionaryBaselines() {
   sql.exec('BEGIN IMMEDIATE');
@@ -868,7 +875,7 @@ test('reassessment queues an independent model-selected job and prevents concurr
   assert.equal(sql.prepare('SELECT model_choice FROM vocabulary_reflection_jobs WHERE job_id=?').get(child.jobId)!.model_choice,'openai:gpt-6-sol-high');
   failVocabularyReflectionJob(child.jobId,child.leaseToken,'failed',now,now);
   assert.equal(batch()?.latest?.status,'failed');
-  const another=requestVocabularyReassessment(caseId,'editor','openai:gpt-5.6-luna-high',1);
+  const another=requestVocabularyReassessment(caseId,'editor','openai:gpt-6-luna-high',1);
   assert.throws(()=>retryVocabularyReflectionJob(child.jobId,'editor',now),/already (?:in progress|queued or running)/);
   sql.prepare("UPDATE vocabulary_reflection_jobs SET created_at='2000-01-01T00:00:00.000Z' WHERE job_id=?").run(another.jobId);
   assert.equal(getVocabularyCaseWorkspace(caseId,'editor').reassessment?.jobId,another.jobId);

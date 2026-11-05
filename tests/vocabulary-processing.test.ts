@@ -444,13 +444,13 @@ function mappingTrial(reply:(attempt:number)=>{status?:number;value?:unknown;raw
   establishVocabularySenseCatalog('a',getVocabularySenseCatalog('a').version,{kind:'operator',id:'editor'});
   const fetchImplementation:typeof fetch=async(_url,init)=>{
     const request=JSON.parse(String(init?.body)) as {model:string;messages:Array<{role:string;content:string}>;response_format:{type:string;json_schema:{name:string}};reasoning_effort:string};requests.push(request);
+    const input=JSON.parse(request.messages.find(message=>message.role==='user')!.content) as {senses?:Array<{senseId:string}>};
     let value:unknown={diagnosis:'Fair cue',lesson:'A useful lesson',unfairEncounterIds:[]};
     let rawText:string|undefined;
-    if(request.model==='gpt-6-luna'||request.model==='glm-5.3-flash') {
+    if(Array.isArray(input.senses)) {
       models.push(request.model);
       const response=reply(models.length);
       if(response.status)return new Response('Provider unavailable',{status:response.status});
-      const input=JSON.parse(request.messages.find(message=>message.role==='user')!.content) as {senses:Array<{senseId:string}>};
       assert.equal(input.senses.length,1);assert.notEqual(input.senses[0]!.senseId,sense.senseId);
       value=response.value??{outcome:'single_sense',rationale:'A written character.',senseIds:[input.senses[0]!.senseId]};
       rawText=response.rawText;

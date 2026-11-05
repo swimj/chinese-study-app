@@ -44,7 +44,8 @@ still produces one package, as defined by the
 ## Authoring and validation
 
 The [provider module](../server/word-content/provider.ts) makes separate model
-API calls to generate teaching beats and practice exercises. The teaching
+API calls using GPT-6 Luna with high reasoning for bootstrap, teaching beats,
+practice exercises, and review. The teaching
 generation call receives the complete bootstrap document. The practice
 generation call receives a projection without the structured `examples` array
 or each use's `exampleIds`, retaining the document identity, word, use labels,

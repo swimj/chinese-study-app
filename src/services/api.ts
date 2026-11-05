@@ -347,7 +347,7 @@ export type GenerateSessionReflectionResult = {
 };
 
 export type ReflectionModelChoice =
-  | 'openai:gpt-5.6-luna-high'
+  | 'openai:gpt-6-luna-high'
   | 'zai:glm-5.3-flash-max'
   | 'zai:glm-5.3-flash-high'
   | 'openrouter:gemini-3.6-flash'
