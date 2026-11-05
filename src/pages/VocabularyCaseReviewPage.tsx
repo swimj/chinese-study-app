@@ -11,6 +11,7 @@ import { CaseReviewCard } from '../features/vocabulary-operator/CaseReviewCard';
 import { CASE_QUEUE_BATCH_SIZE, approvalOutcomeUncertain, canInstallCaseRefresh, caseCanReview, canRetryLatestCaseJob, queueWindowItems, removeCaseFromWindow, replaceCaseProjection, selectionAfterCaseRemoval, shouldSaveReviewNote, type CaseQueueWindow } from '../features/vocabulary-operator/case-queue-model';
 import { shortcutEventBlocked } from '../lib/keyboard';
 import { VocabularyOperatorPage, type VocabularyDetailActivity } from './VocabularyOperatorPage';
+import { VocabularyAttentionPage, type AttentionPosition } from './VocabularyAttentionPage';
 import './VocabularyOperatorPage.css';
 
 type View = 'review' | 'history' | 'attention';
@@ -18,6 +19,7 @@ const errorMessage = (error: unknown) => error instanceof Error ? error.message 
 const visible = (element: HTMLElement | null) => document.visibilityState !== 'hidden' && !element?.closest('[hidden]');
 
 export function VocabularyCaseReviewPage({ api = vocabularyOperatorApi }: { api?: VocabularyOperatorApi }) {
+  const attentionPosition = useRef<AttentionPosition>({selectedId: null, kind: '', offset: 0});
   const [view, setView] = useState<View>('review');
   const [pages, setPages] = useState<CaseQueueWindow>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -212,7 +214,8 @@ export function VocabularyCaseReviewPage({ api = vocabularyOperatorApi }: { api?
     if (!item || blocked) return;
     setDetail({ caseId: item.caseId, ...(item.proposal ? { proposalId: item.proposal.proposalId } : {}), edit });
   }
-  async function detailsChanged(caseId: string,savedProposalId?:string) {
+  async function detailsChanged(caseId: string|null,savedProposalId?:string) {
+    if (!caseId) throw new Error('Compact case review requires a case identity.');
     const card = await api.caseCard(caseId); installCard(card, true);
     const open=current.current.detail;
     if(open?.caseId!==caseId||!caseCanReview(card))return;
@@ -229,7 +232,7 @@ export function VocabularyCaseReviewPage({ api = vocabularyOperatorApi }: { api?
     if (shortcutEventBlocked(event.nativeEvent) || event.shiftKey || blocked || target?.closest('input,textarea,select,[role="slider"],[role="listbox"],[role="combobox"],[contenteditable="true"]')) return;
     if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); void navigate(event.key === 'ArrowLeft' ? 'previous' : 'next'); }
   }}>
-    <header><h2>Content improvement</h2><button className="secondary-button" disabled={blocked || detailActivity.dirty || view === 'attention'} onClick={() => void refresh()}>Refresh</button></header>
+    <header><h2>Content improvement</h2>{view !== 'attention' && <button className="secondary-button" disabled={blocked || detailActivity.dirty} onClick={() => void refresh()}>Refresh</button>}</header>
     <div className="vocabulary-review-toolbar">    <nav className="vocabulary-operator-tabs" aria-label="Review queues">{([['review', 'Awaiting review'], ['attention', 'Needs attention'], ['history', 'Archive']] as const).map(([value, label]) => <button key={value} aria-pressed={view === value} disabled={blocked} onClick={() => changeView(value)}>{label}</button>)}</nav>{item && view !== 'attention' && <>        <nav className="vocabulary-case-navigation" aria-label="Case navigation">
           <button className="secondary-button" aria-label="Previous case" aria-keyshortcuts="ArrowLeft" disabled={blocked || pages[0]?.page.total === 1} onClick={() => void navigate('previous')}>←</button>
           <span aria-live="polite">{(pages[0]?.page.startIndex ?? 0) + index + 1} / {pages[0]?.page.total ?? items.length}</span>
@@ -237,7 +240,7 @@ export function VocabularyCaseReviewPage({ api = vocabularyOperatorApi }: { api?
         </nav>
 </>}</div>
     {error && <p role="alert" className="vocabulary-operator-error">{error}</p>}{notice && <p role="status">{notice}</p>}
-    {view === 'attention' ? <VocabularyOperatorPage api={api} attentionOnly onActivity={setDetailActivity} /> : <>
+    {view === 'attention' ? <VocabularyAttentionPage api={api} position={attentionPosition} onActivity={setDetailActivity} /> : <>
       {view === 'history' && <form onSubmit={event => event.preventDefault()}><label>Search archive<input type="search" value={search} disabled={!!detail} onChange={event => setSearch(event.target.value)} /></label>{!query && <p className="vocabulary-operator-meta">Last 12 hours</p>}</form>}
       {loading && <p role="status">Loading cases…</p>}
       {!loading && items.length === 0 && <p role="status">{view === 'history' ? query ? 'No matching archived cases.' : 'No resolutions in the last 12 hours.' : 'No cases awaiting review.'}</p>}

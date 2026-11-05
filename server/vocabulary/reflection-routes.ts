@@ -1,3 +1,4 @@
+import { listVocabularyAttention } from '../db/vocabulary-attention.ts';
 import { getVocabularyRepairTarget, setVocabularyRepairTarget } from '../db/vocabulary-repair-target.ts';
 import { saveRepertoireWordDefaults } from '../db/vocabulary-repertoire-revision.ts';
 import { retryReflectionWithReadiness } from '../word-content/retry-preparation.ts';
@@ -137,6 +138,14 @@ export function registerVocabularyReflectionRoutes(app:Express,options:{wake?:()
     resolveDefaultUsefulSelectionAttention(value.coverage.word.wordId);options.wake?.();return value;
   }));
   const practicePreparation=createVocabularyPracticePreparation();
+  app.get(`${base}/attention-queue`,gate,handle((req,actor)=>{
+    object(req.query,['offset','limit','kind','anchorId']);
+    for(const key of ['offset','limit'] as const)if(req.query[key]!==undefined&&(typeof req.query[key]!=='string'||!/^\d+$/.test(req.query[key])))throw new VocabularyReflectionRequestError('Expected attention queue pagination');
+    return listVocabularyAttention(actor,{offset:req.query.offset===undefined?0:Number(req.query.offset),limit:req.query.limit===undefined?20:Number(req.query.limit),
+      ...(req.query.kind===undefined?{}:{kind:choice(req.query.kind,['defaults','approval','preparation','dispatch','case'] as const)}),
+      ...(req.query.anchorId===undefined?{}:{anchorId:text(req.query.anchorId)})},
+      {approvals:getVocabularyApprovalRequests().list(),preparationFailure:practicePreparation.failed});
+  }));
   app.get(`${base}/practice-preparation/failures`,gate,handle((req,actor)=>{object(req.query,[]);return {items:practicePreparation.listFailed(),defaultSelectionFindings:listVocabularyDefaultSelectionFindings(actor)};}));
   app.post(`${base}/practice-preparation/:id/retry`,gate,handle((req,actor)=>{
     noBody(req);practicePreparation.retry(text(req.params.id),actor);options.wake?.();return {ok:true};

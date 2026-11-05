@@ -220,13 +220,44 @@ word defaults, including **Select none**, resolves it.
 
 Current assessment uses missing or ambiguous dictionary forms as evidence for
 target improvement, without proposing them as answers. Historical saved
-assessments with unresolved shared answers appear in Needs attention with
-**Resolve candidate identities**. Select the intended entry for
+assessments with unresolved shared answers remain in their review case. Open
+the full review workspace for **Resolve candidate identities**. Select the intended entry for
 each ambiguous form, then queue the integration assessment. The complete content
 plan waits for this resolution; choosing identities resumes that plan without
 applying it or repeating the source assessment. If a form has no matching
 entry, this control cannot create one: reassess or close the assessment with a
 resolution. Source or dictionary changes can require a fresh assessment.
+
+### Needs attention
+
+Needs attention presents one actionable item at a time, with a type filter and
+previous/next navigation. It loads bounded pages only while open. Items are ordered
+by creation time with a stable identity tie-breaker. Refresh preserves the selected
+identity where possible and pauses while an editor or unsaved defaults are open.
+
+The queue includes unknown word defaults requiring intervention, failed approval
+application, practice preparation and evidence dispatch, and cases with no ordinary
+review destination. Failed learner-feedback jobs remain accessible here. Teaching
+cases without an assessment appear in Awaiting review. Failed reassessment and
+second opinions with an earlier reviewable result stay with that case.
+
+Word defaults open directly as selectable senses. Saving an explicit selection,
+including none, resolves the word finding without revising an existing proposal.
+Established empty inventories and ordinary queued/running work require no attention.
+Retry uses the retained request or work identity and leaves the actionable queue
+once acknowledged. Failure returns the same item. Stale application requests open
+their case or standalone proposal for revision rather than offering a stale retry.
+
+**Open case** and **Open proposal** retain access to the full authored editor,
+identity resolution, job evidence and existing closure controls. **Back to attention**
+returns to the selected item if it still needs attention. Details discloses request,
+source and invocation identifiers. There is no generic dismissal of operational
+failures. Unclassified legacy cases remain visible; a source-conflict failure may
+require investigation when no successful assessment exists to reassess.
+
+Inventory-gap judgments remain attached to their cases and retained in Archive
+when closed. Closure is not inventory reconciliation. Needs attention does not
+create an independent inventory-defect record from those judgments.
 
 ### Selecting and editing proposal items
 

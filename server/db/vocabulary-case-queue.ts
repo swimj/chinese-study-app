@@ -24,6 +24,9 @@ function decodeCursor(raw:string,view:Cursor['view'],search:string):Cursor {
   if(view==='history'&&!search&&(!value.since||!value.until))throw new TypeError('Invalid case queue cursor');
   return value;
 }
+/** Shared membership rule: attention only hides cases with a reachable review home. */
+export const vocabularyReviewQueueEligibilitySql = "r.state='open' AND r.approval_state IS NULL AND (r.current_job_id IS NOT NULL OR r.current_proposal_id IS NOT NULL OR EXISTS (SELECT 1 FROM reflection_cases teaching WHERE teaching.case_id=r.case_id AND teaching.kind='teaching_review'))";
+
 /** Only this bounded identity scan touches the queue index; rich JSON is projected after LIMIT. */
 export function listVocabularyCaseQueue(actorId:string,input:VocabularyCaseQueueQuery={},now=new Date().toISOString()):VocabularyCaseQueuePage {
   authorize(actorId);
@@ -36,7 +39,7 @@ export function listVocabularyCaseQueue(actorId:string,input:VocabularyCaseQueue
   if(input.direction!==undefined&&!['next','previous'].includes(input.direction)||input.edge!==undefined&&!['first','last'].includes(input.edge))throw new TypeError('Invalid case queue direction');
   const backwards=input.edge==='last'||(!input.edge&&input.direction==='previous');
   const order=view==='review'?'r.created_at':'r.resolved_at',direction=view==='review'?'ASC':'DESC';
-  const where=[view==='review'?"r.state='open' AND r.approval_state IS NULL AND (r.current_job_id IS NOT NULL OR r.current_proposal_id IS NOT NULL)":"r.state='resolved' AND r.resolved_at IS NOT NULL"];
+  const where=[view==='review'?vocabularyReviewQueueEligibilitySql:"r.state='resolved' AND r.resolved_at IS NOT NULL"];
   const params:(string|number)[]=[];
 
   if(since&&until){where.push('r.resolved_at>=? AND r.resolved_at<=?');params.push(since,until);}

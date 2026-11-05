@@ -529,8 +529,12 @@ saving a draft alone does not write to the server or approve a proposal.
 The `VocabularyOperatorPage` editor mounts only after Details or Edit is requested.
 Its required detail mode hydrates the saved proposal and case workspace and reports
 case changes to the compact queue. It retains authored bases, source snapshots,
-operation inclusion, structured editing, and exact-version approval. Its separate
-attention mode fetches failures and cases only while Needs attention is mounted.
+operation inclusion, structured editing, and exact-version approval. Standalone
+proposals hydrate without a case workspace. `VocabularyAttentionPage` uses the
+bounded attention projection while mounted and opens this editor on demand.
+The projection reads existing source records; it does not maintain a second
+resolution lifecycle. Review eligibility is shared with the case queue so cases
+without another review destination remain reachable.
 
 Case identity drives selection and creation-time order. Case version protects
 review transitions, while refreshed source/staleness projections remain meaningful

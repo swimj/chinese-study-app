@@ -1,4 +1,5 @@
 import type { VocabularyDefaultSelectionAttention } from '../../domain/vocabulary-sense-coverage';
+import type { VocabularyAttentionPage, VocabularyAttentionQuery } from '../../domain/vocabulary-attention';
 import type { VocabularyDefaultSelectionFinding,VocabularySenseCoverageWorkspace } from '../../domain/vocabulary-sense-coverage';
 import { apiRequest } from '../../services/api';
 import type { VocabularyCaseQueueItem,VocabularyCaseQueuePage,VocabularyCaseQueueQuery } from '../../domain/vocabulary-case-queue';
@@ -24,6 +25,10 @@ const root='/api/operator/vocabulary';
 const id=(value:string)=>encodeURIComponent(value);
 const write=<T>(path:string,body:unknown,method='POST')=>apiRequest<T>(`${root}${path}`,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
 export const vocabularyOperatorApi={
+  attentionQueue:(query:VocabularyAttentionQuery={})=>{
+    const params=new URLSearchParams();for(const [key,value] of Object.entries(query))if(value!==undefined)params.set(key,String(value));
+    return apiRequest<VocabularyAttentionPage>(`${root}/attention-queue?${params}`);
+  },
   caseQueue:(query:VocabularyCaseQueueQuery={})=>{
     const params=new URLSearchParams();for(const [key,value] of Object.entries(query))if(value!==undefined)params.set(key,String(value));
     return apiRequest<VocabularyCaseQueuePage>(`${root}/case-queue?${params}`);

@@ -1188,6 +1188,16 @@ messages for the learner’s history.
 
 ### Case review queue and history
 
+`GET /api/operator/vocabulary/attention-queue` returns `{items,total,offset}`.
+It accepts `offset` (nonnegative), `limit` (1–50, default 20), optional `anchorId`
+for preserving selection during refresh, and optional `kind`: `defaults`,
+`approval`, `preparation`, `dispatch`, or `case`. Each display item has a stable
+`id`, title, reason, creation time, optional case identity, and type-specific
+existing action identifiers. Eligibility and retry hints are derived from current
+source records; mutations still enforce their own authority and version checks.
+The read does not resolve work or enqueue provider calls. Full case and proposal
+payloads are loaded only on drill-in through their existing endpoints.
+
 `GET /api/operator/vocabulary/case-queue` returns a bounded display projection of
 canonical improvement cases. Parameters are `view=review|history` (default
 `review`), `limit` (1–50, default 20), and the opaque `cursor` returned by the
@@ -1201,8 +1211,9 @@ keyset order in either direction; exact counts scan matching indexed identities,
 without hydrating their evidence or proposal bodies. Review orders unresolved
 cases by original creation time, then case ID, oldest first. Queued approvals and
 approval failures stay out of that ready-review list; their operational status
-is available through the existing attention endpoints. Cases without a completed
-assessment or proposal remain in Needs Attention.
+is available through the existing attention endpoints. Teaching cases are reviewable before an assessment or proposal exists. Other
+cases without a completed assessment or proposal remain in Needs attention when
+no job is queued or running.
 
 History orders resolved cases by resolution time and case ID, newest first.
 Without `search`, it shows the last 12 hours; the cursor preserves that time

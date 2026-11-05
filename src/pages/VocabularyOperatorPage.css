@@ -259,3 +259,25 @@
 .vocabulary-reuse-badge { display: inline-flex; align-items: baseline; gap: .35rem; border: 1px solid #b7d2e9; border-radius: .35rem; padding: .15rem .5rem; color: #205782; background: #e4f0fb; font-size: .85rem; font-weight: 600; }
 .vocabulary-reused-cue > p:not(.vocabulary-reused-cue-heading) { margin: 0 0 .85rem; }
 .vocabulary-reused-cue summary { cursor: pointer; color: #205782; }
+
+.vocabulary-attention-page { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.vocabulary-attention-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; padding: .85rem 0; }
+.vocabulary-attention-toolbar label { display: flex; align-items: center; gap: .5rem; margin: 0; }
+.vocabulary-attention-toolbar select { width: auto; max-width: 100%; }
+.vocabulary-attention-toolbar .vocabulary-case-navigation { display: flex; align-items: center; gap: .5rem; margin-left: auto; }
+.vocabulary-attention-card { overflow-wrap: anywhere; }
+.vocabulary-attention-card .vocabulary-case-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: .75rem; }
+.vocabulary-attention-card .vocabulary-sense-coverage { border: 0; padding: 0; }
+.vocabulary-attention-card .vocabulary-sense-coverage > summary { display: none; }
+.vocabulary-attention-editor { flex: 1; min-height: 0; overflow: auto; }
+.vocabulary-attention-back { align-self: flex-start; margin: .75rem 0; }
+.vocabulary-attention-page .vocabulary-case-action-frame > div:empty { display: none; }
+.vocabulary-attention-page .vocabulary-case-action-frame > div + .vocabulary-operator-actions { margin-top: .5rem; }
+.vocabulary-operator-page > .vocabulary-attention-page { border: 0; border-radius: 0; padding: 0; margin: 0; background: transparent; }
+.vocabulary-attention-toolbar .vocabulary-case-navigation { margin: 0 0 0 auto; flex-wrap: nowrap; font-size: .85rem; }
+.vocabulary-attention-toolbar .vocabulary-case-navigation > span { order: 0; flex-basis: auto; white-space: nowrap; }
+.vocabulary-attention-toolbar .vocabulary-case-navigation button { flex: 0; }
+.vocabulary-attention-toolbar select { font-size: .85rem; }
+.vocabulary-attention-card fieldset { border: 0; padding: 0; margin: .75rem 0; }
+.vocabulary-attention-page .vocabulary-case-action-frame { flex-direction: row; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.vocabulary-attention-page .vocabulary-case-action-frame > .vocabulary-operator-actions { flex: 1; margin-top: 0; }
