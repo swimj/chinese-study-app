@@ -118,7 +118,7 @@ if (positionals[0] === 'export') {
   for (const [index, snapshot] of snapshots.entries()) {
     const caseDirectory = path.join(directory, String(index).padStart(3, '0'));
     await mkdir(caseDirectory, { mode: 0o700 });
-    const request: ProviderRunRequest = { model: 'gpt-5.6-luna', reasoningEffort: 'high', systemPrompt,
+    const request: ProviderRunRequest = { model: 'gpt-6-luna', reasoningEffort: 'high', systemPrompt,
       userPrompt: JSON.stringify({ word: revision ? snapshot.word : modelLexicalWord(snapshot.word) }), outputSchemaName: revision ? 'vocabulary_sense_inventory_v2' : 'vocabulary_sense_inventory_v3', outputSchema,
       maxOutputTokens: 8000, temperature: null, timeoutMs: 180_000, cachePrompt: true };
     await save(path.join(caseDirectory, 'snapshot.json'), snapshot);

@@ -59,6 +59,7 @@ import {
   REFLECTION_MODEL_ARMS,
   isOfferedReflectionModelChoice,
   isReflectionModelChoice,
+  reflectionChoiceForStoredModel,
   LUNA_REFLECTION_MODEL_CHOICE,
   type ReflectionModelChoice,
 } from './model-arms.ts';
@@ -78,11 +79,7 @@ export type InitialReflectionGenerationResult = {
 export { isReflectionModelChoice, type ReflectionModelChoice } from './model-arms.ts';
 
 export function choiceForStoredModel(model: string): ReflectionModelChoice | null {
-  const match = REFLECTION_MODEL_ARMS.map((arm) => arm.choice).find((choice) => {
-    const separator = choice.indexOf(':');
-    return separator >= 0 && choice.slice(separator + 1) === model;
-  });
-  return match ?? null;
+  return reflectionChoiceForStoredModel(model);
 }
 
 function offeredChoiceForStoredModel(model: string): ReflectionModelChoice | null {
@@ -206,7 +203,7 @@ export function createInitialReflectionGenerationService(
   const inFlight = new Map<string, Promise<InitialReflectionGenerationResult>>();
   const configuredProviders: Partial<Record<ReflectionModelChoice, LunaReflectionProvider>> = {
     ...dependencies.comparisonProviders,
-    'openai:gpt-5.6-luna-high': provider,
+    [LUNA_REFLECTION_MODEL_CHOICE]: provider,
     'zai:glm-5.3-flash-max': glmProvider,
   };
   for (const arm of REFLECTION_MODEL_ARMS) {

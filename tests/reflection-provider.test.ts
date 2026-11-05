@@ -244,7 +244,7 @@ function responseEnvelope(
 ): JsonValue {
   return {
     id: 'response-1',
-    model: 'gpt-5.6-luna-2026-07-01',
+    model: 'gpt-6-luna-2026-07-01',
     choices: [{
       finish_reason: 'stop',
       message: { content },
@@ -472,7 +472,7 @@ describe('production Luna reflection provider', () => {
       { role: 'system', content: 'Production reflection system prompt.' },
       { role: 'user', content: JSON.stringify(bundle) },
     ]);
-    assert.equal(request.body.model, 'gpt-5.6-luna');
+    assert.equal(request.body.model, 'gpt-6-luna');
     assert.equal(request.body.reasoning_effort, 'high');
     assert.equal(request.body.max_completion_tokens, 50_000);
     assert.equal(Object.hasOwn(request.body, 'temperature'), false);
@@ -485,8 +485,8 @@ describe('production Luna reflection provider', () => {
       },
     });
     assert.ok(request.signal instanceof AbortSignal);
-    assert.equal(LUNA_REFLECTION_MODEL_CONFIG.modelConfig, 'gpt-5.6-luna-high');
-    assert.equal(LUNA_REFLECTION_MODEL_CONFIG.providerModel, 'gpt-5.6-luna');
+    assert.equal(LUNA_REFLECTION_MODEL_CONFIG.modelConfig, 'gpt-6-luna-high');
+    assert.equal(LUNA_REFLECTION_MODEL_CONFIG.providerModel, 'gpt-6-luna');
     assert.equal(LUNA_REFLECTION_MODEL_CONFIG.timeoutMs, PROVIDER_REQUEST_TIMEOUT_MS);
     const wireOperation = validWireResult.itemResults[0]!.proposals[0]!.operation;
     const canonicalOperation = generated.result.itemResults[0]!.proposals[0]!.operation;
@@ -501,8 +501,8 @@ describe('production Luna reflection provider', () => {
     assert.deepEqual(generated.result, validCanonicalResult);
     assert.deepEqual(generated.metadata, {
       provider: 'openai',
-      modelConfig: 'gpt-5.6-luna-high',
-      providerModel: 'gpt-5.6-luna',
+      modelConfig: 'gpt-6-luna-high',
+      providerModel: 'gpt-6-luna',
       promptVersion: 'reflection-v9',
       responseId: 'response-1',
       finishReason: 'stop',
@@ -897,8 +897,8 @@ describe('production Luna reflection provider', () => {
     assert.match(error.diagnostic?.issues[0]?.message ?? '', /length/);
     assert.deepEqual(error.metadata, {
       provider: 'openai',
-      modelConfig: 'gpt-5.6-luna-high',
-      providerModel: 'gpt-5.6-luna',
+      modelConfig: 'gpt-6-luna-high',
+      providerModel: 'gpt-6-luna',
       promptVersion: 'reflection-v9',
       responseId: 'response-1',
       finishReason: 'length',

@@ -345,11 +345,16 @@ describe('LLM provider model batch and viewer', () => {
   });
 
   test('registers the shortlisted model configurations with their reasoning levels', () => {
+    assert.deepEqual(getModelTarget('gpt-6-luna-high'), { id: 'gpt-6-luna-high', provider: 'openai', model: 'gpt-6-luna', reasoningEffort: 'high' });
+    assert.equal(estimateRunCost('gpt-6-luna-high', {
+      inputTokens: 1_000, cachedInputTokens: 400, cacheWriteInputTokens: null,
+      outputTokens: 200, reasoningTokens: null, totalTokens: 1_200,
+    })?.usd, 0.000164);
     assert.deepEqual(modelTargets.map((target) => target.id), [
       'gpt-5.6-terra-high',
       'gpt-5.6-terra-xhigh',
-      'gpt-5.6-luna-high',
-      'gpt-5.6-luna-xhigh',
+      'gpt-6-luna-high',
+      'gpt-6-luna-xhigh',
       'gpt-5.4-mini-high',
       'gpt-5.4-mini-xhigh',
       'glm-5.3-flash-high',

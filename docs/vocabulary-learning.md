@@ -342,12 +342,15 @@ expired unknown outcomes require explicit retry, except for sense-mapping availa
 failures and preparation dependencies within their bounded automatic retry cycles; lease tokens fence late results.
 Maintenance and disabled-learner checks protect dispatch and publication.
 
-Individual reflection jobs select Luna, GLM, or Sol with equal probability,
+Individual reflection jobs select GPT-6 Luna, GLM, or Sol with equal probability,
 regardless of how many encounters their evidence contains. The separate batched
 policy retains GLM/Luna at 70/30 for up to ten items and Sol/GLM/Luna at 60/20/20
 for larger bundles; vocabulary jobs do not currently batch unrelated cases. Selection is
 retained across stages and retries for learner feedback, improvements, and AI
-second opinions, except for sense mapping. The admission step that maps an authored
+second opinions, except for sense mapping. Saved GPT-5.6 Luna routes and reflection
+retries resolve to GPT-6 Luna for new calls; original run metadata and pricing remain
+historical. Sense-inventory and general-practice authoring also use GPT-6 Luna with
+high reasoning. The admission step that maps an authored
 exercise to the existing sense inventory starts with OpenAI `gpt-6-luna` with high
 reasoning, including operator reassessments. Mapping availability failures receive
 three attempts, with 30- and 60-second backoff. After the third consecutive failure,

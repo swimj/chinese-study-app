@@ -71,6 +71,7 @@ test('generous general generation retains service invocation, exact prompt/sourc
   const preparation = createVocabularyPracticePreparation({ provider });
   const work = preparation.ensure('w1')!;assert.equal(work.status,'queued');assert.equal(preparation.listQueued().length,1);
   await preparation.prepare('w1');await preparation.prepare('w1');assert.equal(calls,1);
+  assert.equal(sent.model, 'gpt-6-luna');assert.equal(sent.reasoning_effort, 'high');
   const rows = db.prepare("SELECT * FROM content_items WHERE exercise_role='general'").all() as Array<{ origin_kind: string; access_scope: string }>;assert.equal(rows.length,6);
   assert.ok(rows.every((row) => row.origin_kind === 'model' && row.access_scope === 'shared'));
   const invocation = db.prepare("SELECT * FROM model_invocations WHERE actor_id=?").get(VOCABULARY_PRACTICE_SERVICE)!;
@@ -187,6 +188,7 @@ test('actual teaching-exercise transport retains delivered text and changes gene
   const teaching={id:'intro',wordContentId:content.id,beats:[{id:'b',parts:[{kind:'text' as const,text:'A familiar greeting.'}]}]};
   const adapted=await provider.generatePractice(content,{teaching,invocationActor:{kind:'service',serviceId:'teaching-test'}});
   assert.deepEqual(adapted,{rehearsals:[{id:'r',stimulus:{kind:'direct_text',text:'Hello.'}}]});
+  assert.equal(sent.model, 'gpt-6-luna');assert.equal(sent.reasoning_effort, 'high');
   const messages=sent.messages as Array<{content:string}>;assert.equal(JSON.parse(messages[1]!.content).deliveredIntroduction.beats[0].parts[0].text,'A familiar greeting.');
   assert.match(messages[0]!.content,/exact introduction delivered/);
   const projected=JSON.parse(messages[1]!.content);assert.equal(projected.role,'teaching_exercises');assert.deepEqual(projected.content,content);
@@ -399,7 +401,7 @@ test('changed shared authoring prompt and empty-output contract intentionally ch
   const priorKey=createHash('sha256').update(JSON.stringify(priorIdentity)).digest('hex');
   const active=generalExerciseInvocation(content);
   const activeKey=createHash('sha256').update(JSON.stringify({prompt:active.systemPrompt,promptVersion:active.promptVersion,schema:active.outputSchema,
-    model:'gpt-5.6-luna',reasoning:'high',maxOutputTokens:24_000,inputProjectionVersion:active.inputProjectionVersion})).digest('hex');
+    model:'gpt-6-luna',reasoning:'high',maxOutputTokens:24_000,inputProjectionVersion:active.inputProjectionVersion})).digest('hex');
   const key=createVocabularyPracticeProvider({environment:{OPENAI_API_KEY:'fake'}}).generationKey(content);
   assert.equal(key,activeKey);assert.notEqual(key,priorKey);
 });

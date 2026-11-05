@@ -730,7 +730,7 @@ whose session/flow does not already have a successful artifact.
 
 The reflection service has a backend-only comparison-arm registry. Initial
 bundles with at most 10 included items sample GLM-5.3 Flash high at 70% and
-GPT-5.6 Luna high at 30%. Larger bundles sample GPT-6 Sol high at 60%, GLM at
+GPT-6 Luna high at 30%. Larger bundles sample GPT-6 Sol high at 60%, GLM at
 20%, and Luna at 20%. Ordinary and pure-cue bundles are routed independently
 using their actual item counts. Explicit choices and manual second opinions
 do not use these weights. Terra, GLM Flash max, and Gemini remain registered
@@ -749,6 +749,9 @@ rewrites the failed attempt. Missing runs return `404`. Concluded runs that
 cannot be retried, same-model retries whose source model is no longer a
 configured comparison arm return `409`. An explicit current model may
 retry a retained bundle whose source model has been retired.
+Saved GPT-5.6 Luna choices resolve to GPT-6 Luna for new retry calls. Historical
+run metadata and pricing stay unchanged; a retry that only resumes persistence
+keeps the model provenance of its already completed call.
 
 ### Queue and detail
 

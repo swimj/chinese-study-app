@@ -17,7 +17,7 @@ import { vocabularySenseInventorySchema as schema, validateVocabularySenseInvent
 import { isOutputTruncationFinishReason, type ProviderAdapter } from '../llm/types.ts';
 
 export const VOCABULARY_SENSE_SERVICE = 'vocabulary-sense-readiness';
-export const VOCABULARY_SENSE_MODEL = 'gpt-5.6-luna';
+export const VOCABULARY_SENSE_MODEL = 'gpt-6-luna';
 const actor = { kind: 'service' as const, id: VOCABULARY_SENSE_SERVICE };
 const timeoutMs = 180_000;
 const prompt = readFileSync(new URL('./reflection-prompts/sense-inventory.md',import.meta.url),'utf8');

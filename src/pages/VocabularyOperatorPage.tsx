@@ -343,7 +343,7 @@ export function VocabularyOperatorPage(props:VocabularyOperatorPageProps) {
     {error&&<p role="alert">{error}</p>}
     {repairTargetControl}
     <div className="vocabulary-reassessment-control">
-    <label>Model for reassessment<select aria-label="Model for reassessment" disabled={reassessmentDisabled} value={reassessmentModel} onChange={event=>setReassessmentModel(event.target.value as VocabularyReassessmentModel)}><option value="openai:gpt-6-sol-high">GPT-6 Sol high</option><option value="openai:gpt-5.6-luna-high">Luna high</option><option value="zai:glm-5.3-flash-high">GLM-5.3 Flash high</option></select></label>
+    <label>Model for reassessment<select aria-label="Model for reassessment" disabled={reassessmentDisabled} value={reassessmentModel} onChange={event=>setReassessmentModel(event.target.value as VocabularyReassessmentModel)}><option value="openai:gpt-6-sol-high">GPT-6 Sol high</option><option value="openai:gpt-6-luna-high">Luna high</option><option value="zai:glm-5.3-flash-high">GLM-5.3 Flash high</option></select></label>
     {confirmingReassessment&&reassessmentSource?<div className="vocabulary-reassessment-confirmation" role="group" aria-label="Confirm changed source version">
       <p>Source changed from v{reassessmentSource.assessedVersion} to v{reassessmentSource.currentVersion}. Reassessment uses the current exercise.</p>
       <button className="secondary-button" autoFocus disabled={reassessmentDisabled} onClick={()=>submitReassessment(reassessmentSource.currentVersion)}>Reassess v{reassessmentSource.currentVersion}</button>

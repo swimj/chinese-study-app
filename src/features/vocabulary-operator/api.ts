@@ -5,7 +5,7 @@ import type { VocabularyCaseQueueItem,VocabularyCaseQueuePage,VocabularyCaseQueu
 import type { VocabularyContent,VocabularyContentDraft } from '../../domain/vocabulary-content';
 import type { VocabularyRepairTargetWorkspace, VocabularyAssessmentReview, VocabularyApprovalRequest, VocabularySecondOpinion, VocabularyContentProposal, VocabularyProposalDraft, VocabularyProposalApplication, VocabularySenseLabel, VocabularyProposalOperation, VocabularyReflectionCase, VocabularyImprovementAdmission, VocabularyPureCueReferral, VocabularyPureCuePromotion } from '../../domain/vocabulary-reflection';
 
-export type VocabularyReassessmentModel = 'openai:gpt-5.6-luna-high' | 'zai:glm-5.3-flash-high' | 'openai:gpt-6-sol-high';
+export type VocabularyReassessmentModel = 'openai:gpt-6-luna-high' | 'zai:glm-5.3-flash-high' | 'openai:gpt-6-sol-high';
 export type VocabularyReassessmentSource={contentId:string;assessedVersion:number;currentVersion:number};
 export type VocabularyCaseWorkspace={assessment?:VocabularyAssessmentReview;reassessmentUnavailableReason?:string|null;senseLabels?:VocabularySenseLabel[];defaultSelectionFinding?:VocabularyDefaultSelectionFinding|null;case:VocabularyReflectionCase;sources:VocabularyContent[];diagnosis?:import('../../domain/vocabulary-content').VocabularyJson;admission?:VocabularyImprovementAdmission;pureCueReferral?:VocabularyPureCueReferral|null;pureCuePromotion?:VocabularyPureCuePromotion;
   pureCueIdentityOptions?:{form:string;choices:{wordId:string;hanzi:string;traditional:string|null;pinyin:string;meaning:string}[]}[];

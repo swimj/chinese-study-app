@@ -20,7 +20,7 @@ import { createVocabularyContent,getVocabularySenseCatalog,emitBackendEvent } fr
 import { linkVocabularyInvocationContent,linkVocabularyInvocationSense } from '../db/vocabulary-provenance.ts';
 
 export const VOCABULARY_PRACTICE_SERVICE = 'vocabulary-practice-authoring';
-export const VOCABULARY_PRACTICE_MODEL = 'gpt-5.6-luna';
+export const VOCABULARY_PRACTICE_MODEL = 'gpt-6-luna';
 const TIMEOUT = 180_000;
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 export type VocabularyPracticeProvider = {

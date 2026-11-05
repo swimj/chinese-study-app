@@ -15,7 +15,7 @@ import type { VocabularyContent, VocabularyJson } from '../../src/domain/vocabul
 import type { VocabularyReflectionJob, VocabularyReflectionResult, VocabularyProposalOperation } from '../../src/domain/vocabulary-reflection.ts';
 import type { JsonSchema } from '../../src/domain/reflection-result-schema.ts';
 import { getEffectiveVocabularyEncounterReactions } from '../../src/domain/vocabulary-session.ts';
-import { REFLECTION_MODEL_ARMS, isOfferedReflectionModelChoice, type ReflectionModelChoice } from '../reflection/model-arms.ts';
+import { LUNA_REFLECTION_MODEL_CHOICE, REFLECTION_MODEL_ARMS, isOfferedReflectionModelChoice, type ReflectionModelChoice } from '../reflection/model-arms.ts';
 import { LUNA_REFLECTION_MODEL_CONFIG, type ReflectionProviderConfig } from '../reflection/luna-provider.ts';
 import { reflectionConfigForChoice, routeIndividualReflectionModel } from '../reflection/model-routing.ts';
 import { vocabularyReflectionModelChoice, vocabularySenseMappingAvailabilityFailures } from '../db/vocabulary-reflection-routing.ts';
@@ -33,7 +33,7 @@ import { adaptVocabularyImprovementOutput, vocabularySingleImprovementSchema } f
 export { vocabularySingleImprovementSchema } from './exercise-improvement-authoring.ts';
 import { runVocabularyImprovementAdmission, type VocabularySenseEnsurer } from './improvement-admission.ts';
 
-const SENSE_MAPPING_CONFIG:ReflectionProviderConfig={...LUNA_REFLECTION_MODEL_CONFIG,modelConfig:'gpt-6-luna-high',providerModel:'gpt-6-luna'};
+const SENSE_MAPPING_CONFIG = LUNA_REFLECTION_MODEL_CONFIG;
 
 export const VOCABULARY_REFLECTION_SERVICE_ID='vocabulary-reflection';
 export class VocabularyReflectionOutputError extends Error {}
@@ -220,7 +220,7 @@ export function createVocabularyReflectionProvider(options:{environment?:NodeJS.
       if(failures>=6)throw new Error('Sense mapping retry budget is exhausted');
       const fallback=failures>=3;
       const mappingConfig:ReflectionProviderConfig=fallback?GLM_FLASH_HIGH_REFLECTION_MODEL_CONFIG:SENSE_MAPPING_CONFIG;
-      const mappingAdapter=adapterFor(fallback?'zai:glm-5.3-flash-high':'openai:gpt-5.6-luna-high',mappingConfig);
+      const mappingAdapter=adapterFor(fallback?'zai:glm-5.3-flash-high':LUNA_REFLECTION_MODEL_CHOICE,mappingConfig);
       const mappingKey=environment[mappingConfig.apiKeyEnvironmentVariable]?.trim();
       if(!mappingKey)throw new Error(`Vocabulary sense mapping provider ${mappingConfig.provider} is not configured`);
       const mappingBaseUrl=mappingConfig.baseUrlEnvironmentVariable?environment[mappingConfig.baseUrlEnvironmentVariable]?.trim()||null:null;

@@ -195,13 +195,13 @@ describe('reflection HTTP API', { concurrency: false }, () => {
       method: 'POST',
       body: {
         proposalIds: ['proposal-b', 'proposal-a'],
-        model: 'openai:gpt-5.6-luna-high',
+        model: 'openai:gpt-6-luna-high',
       },
     });
     assert.equal(response.status, 201);
     assert.deepEqual(receivedSecondOpinionRequest, {
       proposalIds: ['proposal-b', 'proposal-a'],
-      model: 'openai:gpt-5.6-luna-high',
+      model: 'openai:gpt-6-luna-high',
       helpInboxIds: [],
     });
     assert.deepEqual(lifecycleEvents.map((event) => event.event), [
@@ -215,11 +215,11 @@ describe('reflection HTTP API', { concurrency: false }, () => {
   test('passes selected explanation inbox ids to second-opinion generation', async () => {
     const response = await request('/api/deferred-reflection-second-opinions', {
       method: 'POST',
-      body: { proposalIds: [], helpInboxIds: ['inbox-a'], model: 'openai:gpt-5.6-luna-high' },
+      body: { proposalIds: [], helpInboxIds: ['inbox-a'], model: 'openai:gpt-6-luna-high' },
     });
     assert.equal(response.status, 201);
     assert.deepEqual(receivedSecondOpinionRequest, {
-      proposalIds: [], model: 'openai:gpt-5.6-luna-high', helpInboxIds: ['inbox-a'],
+      proposalIds: [], model: 'openai:gpt-6-luna-high', helpInboxIds: ['inbox-a'],
     });
   });
 
@@ -232,7 +232,7 @@ describe('reflection HTTP API', { concurrency: false }, () => {
       method: 'POST',
       body: {
         proposalIds: ['proposal-b', 'proposal-a'],
-        model: 'openai:gpt-5.6-luna-high',
+        model: 'openai:gpt-6-luna-high',
       },
     });
 
@@ -249,7 +249,7 @@ describe('reflection HTTP API', { concurrency: false }, () => {
         status: '500',
         elapsedMs: errorLogs[0]?.metadata.elapsedMs ?? '',
         proposalCount: '2',
-        model: 'openai:gpt-5.6-luna-high',
+        model: 'openai:gpt-6-luna-high',
         errorName: 'Error',
         errorMessage: 'Invalid curated reflection bundle V1: duplicate session action id',
       },
@@ -397,7 +397,7 @@ describe('reflection HTTP API', { concurrency: false }, () => {
         reflectionFlowVersion: 'initial_post_session_reflection.v6',
         generatedAt,
         provider: 'openai',
-        model: 'gpt-5.6-luna-high',
+        model: 'gpt-6-luna-high',
         promptVersion: 'reflection-staged-v4',
         bundleSchemaVersion: 'session_reflection_bundle.v6',
         resultSchemaVersion: 'session_reflection_result.v10',
@@ -422,8 +422,8 @@ describe('reflection HTTP API', { concurrency: false }, () => {
       startedAt: generatedAt,
       completedAt: '2026-07-29T12:00:01.000Z',
       provider: 'openai',
-      model: 'gpt-5.6-luna-high',
-      providerModel: 'gpt-5.6-luna',
+      model: 'gpt-6-luna-high',
+      providerModel: 'gpt-6-luna',
       promptVersion: 'reflection-v2',
       responseId: 'response-failed',
       finishReason: 'length',
@@ -635,7 +635,7 @@ describe('reflection HTTP API', { concurrency: false }, () => {
         tagCounts: Record<string, number>;
       }>;
     }).arms;
-    const arm = arms.find((entry) => entry.modelArm === 'gpt-5.6-luna-high');
+    const arm = arms.find((entry) => entry.modelArm === 'gpt-6-luna-high');
     assert(arm);
     assert.equal(arm.dismissCount, 1);
     assert.equal(arm.taggedItemCount, 1);
@@ -770,8 +770,8 @@ describe('reflection HTTP API', { concurrency: false }, () => {
       startedAt: generatedAt,
       completedAt: '2026-07-29T12:00:01.000Z',
       provider: 'openai',
-      model: 'gpt-5.6-luna-high',
-      providerModel: 'gpt-5.6-luna',
+      model: 'gpt-6-luna-high',
+      providerModel: 'gpt-6-luna',
       promptVersion: 'reflection-v2',
       responseId: null,
       finishReason: null,
@@ -1169,7 +1169,7 @@ function materializeInformational(
     reflectionFlowVersion: 'initial_post_session_reflection.v6',
     generatedAt,
     provider: 'openai',
-    model: 'gpt-5.6-luna-high',
+    model: 'gpt-6-luna-high',
     promptVersion: 'reflection-staged-v4',
     evidenceBundle: bundle(sessionId),
     result: {
@@ -1199,7 +1199,7 @@ function materializationInput(
     reflectionFlowVersion: 'initial_post_session_reflection.v6',
     generatedAt,
     provider: 'openai',
-    model: 'gpt-5.6-luna-high',
+    model: 'gpt-6-luna-high',
     promptVersion: 'reflection-staged-v4',
     evidenceBundle: bundle(sessionId),
     result: result(operation),
