@@ -8,6 +8,7 @@ import { isOfferedReflectionModelChoice } from '../reflection/model-arms.ts';
 import { createVocabularyPracticePreparation } from './preparation.ts';
 import { createOperatorAllowlistMiddleware } from '../operator-access.ts';
 import { getVocabularyApprovalRequests } from './approval-requests.ts';
+import { listVocabularyCaseQueue,getVocabularyCaseCard,resolveVocabularyCaseReview,reassessVocabularyCaseReview } from '../db/vocabulary-case-queue.ts';
 import { getVocabularyCaseWorkspace, listVocabularyReflectionCases, listVocabularyProposals, listVocabularyProposalReviewBatch, getVocabularyProposal,
   requestVocabularyPureCueResolution, requestVocabularyReassessment, requestVocabularySecondOpinion, listVocabularySecondOpinions, listVocabularyNoProposalCases, requestVocabularyCaseSecondOpinion, createVocabularyProposal, saveVocabularyProposal, previewVocabularyProposal, approveVocabularyProposal,
   applyVocabularyProposal, closeVocabularyProposal, closeVocabularyCase, listOwnVocabularyMessages,
@@ -93,6 +94,25 @@ export function registerVocabularyReflectionRoutes(app:Express,options:{wake?:()
   app.post(`${feedback}/:messageId/dismiss`,handle(req=>{noBody(req);dismissOwnVocabularyMessage(text(req.params.messageId));return {ok:true};}));
   app.post(`${feedback}/:messageId/restore`,handle(req=>{noBody(req);restoreOwnVocabularyMessage(text(req.params.messageId));return {ok:true};}));
   app.post(`${feedback}/jobs/:jobId/retry`,handle(req=>{noBody(req);retryOwnVocabularyFeedback(text(req.params.jobId));options.wake?.();return {ok:true};}));
+  app.get(`${base}/case-queue`,gate,handle((req,actor)=>{
+    object(req.query,['view','limit','cursor','search']);
+    const raw=req.query.limit;if(raw!==undefined&&(typeof raw!=='string'||!/^\d+$/.test(raw)))throw new VocabularyReflectionRequestError('Expected case queue limit');
+    return listVocabularyCaseQueue(actor,{view:choice(req.query.view??'review',['review','history'] as const),limit:raw===undefined?20:Number(raw),
+      ...(req.query.cursor===undefined?{}:{cursor:text(req.query.cursor)}),...(req.query.search===undefined?{}:{search:optionalText(req.query.search)})});
+  }));
+  app.get(`${base}/case-queue/:id`,gate,handle((req,actor)=>{
+    object(req.query,['proposalId']);return getVocabularyCaseCard(text(req.params.id),actor,req.query.proposalId===undefined?undefined:text(req.query.proposalId));
+  }));
+  app.post(`${base}/case-queue/:id/resolve`,gate,handle((req,actor)=>{
+    const input=object(req.body,['expectedVersion','reason']);return resolveVocabularyCaseReview(text(req.params.id),version(input.expectedVersion),actor,optionalText(input.reason));
+  }));
+  app.post(`${base}/case-queue/:id/reassess`,gate,handle((req,actor)=>{
+    const input=object(req.body,['expectedVersion','expectedContentVersion','modelChoice','originProposal']);
+    if(!isOfferedReflectionModelChoice(input.modelChoice))throw new VocabularyReflectionRequestError('Unsupported assessment model');
+    let origin:import('../db/vocabulary-reflection.ts').ReassessmentOrigin={kind:'case'};
+    if(input.originProposal!==undefined){const proposal=object(input.originProposal,['proposalId','expectedVersion']);origin={kind:'proposal',proposalId:text(proposal.proposalId),expectedVersion:version(proposal.expectedVersion)};}
+    const result=reassessVocabularyCaseReview(text(req.params.id),version(input.expectedVersion),actor,input.modelChoice as import('../reflection/model-arms.ts').ReflectionModelChoice,version(input.expectedContentVersion),origin);options.wake?.();return result;
+  }));
   for(const scope of ['word','case'] as const) {
     const path=`${base}/${scope==='word'?'words':'cases'}/:id/sense-coverage`;
     app.get(path,gate,handle((req,actor)=>{object(req.query,[]);return getVocabularySenseCoverageWorkspace(scope,text(req.params.id),actor);}));

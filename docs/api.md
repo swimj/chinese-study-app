@@ -1178,6 +1178,57 @@ Dismissal excludes a message from unread attention without changing its body,
 seen time, scheduling or content-improvement state. GET retains dismissed
 messages for the learner’s history.
 
+### Case review queue and history
+
+`GET /api/operator/vocabulary/case-queue` returns a bounded display projection of
+canonical improvement cases. Parameters are `view=review|history` (default
+`review`), `limit` (1–50, default 20), and the opaque `cursor` returned by the
+previous page. The response is `{items,nextCursor}`. Review orders unresolved
+cases by original creation time, then case ID, oldest first. Queued approvals and
+approval failures stay out of that ready-review list; their operational status
+is available through the existing attention endpoints. Cases without a completed
+assessment or proposal remain in Needs Attention.
+
+History orders resolved cases by resolution time and case ID, newest first.
+Without `search`, it shows the last 12 hours; the cursor preserves that time
+window across pages. A nonempty `search` spans retained history and searches case
+and proposal IDs, word ID, Hanzi, Pinyin, proposal rationale, and original served
+cue text. Search is literal (SQL wildcard characters have no special meaning),
+at most 200 characters, and is only available for History. Cursors are bound to
+their view and search query.
+
+Each item contains case version/state, numbered current and active job identity,
+the current proposal reference, readable served evidence and proposed changes,
+model attribution, current source/version comparisons, and concise advisory
+opinion status. These are display-only projections, not complete authored drafts.
+Raw encounter snapshots, model requests/results, and full editing bodies are
+omitted. `latestJob` retains the most recent job's status, sequence, advisory flag,
+and error code even after a failed reassessment releases its freeze; the previous
+authoritative assessment remains displayed. `requiresDetails` means the authored material cannot be faithfully
+reviewed through the compact card and needs the existing full workspace before
+approval. `assessment` belongs to the displayed proposal; `currentAssessment`
+identifies the case's authoritative judgment, which can differ for a retained
+alternative. Up to 20 unresolved alternative references are included alongside
+`alternativeCount`; the full workspace retains every alternative.
+
+`GET /api/operator/vocabulary/case-queue/:id` refreshes one card. Optional
+`proposalId` selects a retained proposal belonging to that canonical case without
+changing the case's current selection. Existing case-workspace and proposal
+detail routes provide complete editing and historical evidence on demand.
+
+`POST /api/operator/vocabulary/case-queue/:id/resolve` takes a positive
+`expectedVersion` and optional `reason`, and returns the updated card.
+This is the Done action for no-proposal or unresolved assessments; ordinary
+proposal cards use the exact-version proposal dismissal route. Dismissing a
+proposal resolves its case only when no unresolved alternatives remain.
+`POST /api/operator/vocabulary/case-queue/:id/reassess` takes `expectedVersion`,
+`expectedContentVersion`, `modelChoice`, and optional
+`originProposal: {proposalId,expectedVersion}`. It returns `{caseId,jobId,item}`.
+Both compare the case review version atomically with the mutation: a stale card
+returns 409 instead of acting on an unseen newer assessment. Existing proposal
+approval continues to authorize an exact saved proposal version. All these
+routes require operator authority; invalid queries return 400.
+
 ### Operator sense coverage
 
 `GET/PUT /api/operator/vocabulary/words/:id/sense-coverage` reads or edits shared
