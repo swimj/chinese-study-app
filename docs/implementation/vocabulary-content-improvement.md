@@ -526,12 +526,11 @@ refresh reads but are lost on a browser reload or leaving the mounted view. A
 review action persists its supplied note through the existing action protocol;
 saving a draft alone does not write to the server or approve a proposal.
 
-The full `VocabularyOperatorPage` editor mounts only after Details or Edit is
-requested. Its explicit detail mode hydrates the saved proposal and case workspace,
-disables the broad legacy list refresh and detail-prefetch effects, and reports
+The `VocabularyOperatorPage` editor mounts only after Details or Edit is requested.
+Its required detail mode hydrates the saved proposal and case workspace and reports
 case changes to the compact queue. It retains authored bases, source snapshots,
-operation inclusion, structured editing, and exact-version approval. The operational
-attention mode fetches its failures and cases only while that view is mounted.
+operation inclusion, structured editing, and exact-version approval. Its separate
+attention mode fetches failures and cases only while Needs attention is mounted.
 
 Case identity drives selection and creation-time order. Case version protects
 review transitions, while refreshed source/staleness projections remain meaningful

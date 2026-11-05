@@ -157,54 +157,17 @@ the bracket shortcuts address Helpful / Not helpful separately.
 `?pure=1` checks that accepted input 诉求 fills the cloze instead of the first
 accepted member 意见, during both immediate and acknowledged reveal. The motion fixture
 `?slow=1` checks opaque paper while the next encounter is delayed;
-`/tests/browser/vocabulary-operator.html` exercises the proposal-first internal review surface (ready suggestions, Archive search, proposal edits, and `?second=pending|failed|result`; `?narrow=1&large=1` checks compact enlarged-text layout; `?reassessment` enables reassessment and `?reassessment=changed` checks explicit confirmation of a changed source version; `?reassessment=complete` checks completion polling after the originating proposal leaves the open batch; `?slow` exercises delayed reads, `?failNext` exercises navigation recovery, and `?stale` or `?staleApply` exercises a validation conflict)
-with an in-memory API (`?empty=1` for empty lists, `?noProposal=1` for a no-change judgment). Combine `noProposal=1&noProposalCount=3`
-with `mixedReview=1` to verify Done keeps queue position across cases and proposals.
-`failDone=1` checks a failed closure; `failDoneNext=1` checks retrying navigation
-after a successful closure.
 `tests/vocabulary-proposal-review.test.ts` covers compact grouping, readable sense
 references, reversible inclusion, malformed draft guards, structured cue editing,
 cloze validation, consequential change signals and retained evidence bases.
-The operator browser fixture also accepts `?many=1` for a nine-item repertoire,
-`?actions=1` for retirement, `?criteriaOnly=1` for unchanged cues with changed
-answer criteria/reveal, and `?saveFailure=1` for a recoverable failed save.
-Combine `?many=1&narrow=1&large=1` to check wrapping and enlarged text.
-
 `tests/vocabulary-sense-coverage-ui.test.ts` covers affected scope selection,
-exercise impact, label merging and read-versus-write navigation policy. Operator
-fixture variants: `?scope=1` enables coverage/reassessment; `?unknownCoverage=1`
-starts with unknown defaults; `?needsCoverage=1` provides an attention case;
-`?holdCoverage=1` keeps a save pending until its fixture button releases it;
-`?scopeSibling=1` adds another review for the same word.
-`?slowCoverageRead=1` delays plain scope reads for navigation checks;
-`?defaultSelectionFinding=1` shows an actual empty model recommendation beside an
-approvable content proposal. Approve it and check that **Needs attention → Word
-defaults need attention** retains the finding until an explicit word selection is
-saved. `?sourceDriftAfterCoverage=1` changes source evidence
-after a scope save so the refreshed snapshot must block approval.
-`?scope=1&many=1&multiwordLabels=1` checks that editing one word keeps other-word labels.
-
-`?holdApproval=1` retains an acknowledged approval in the queue while advancing
-the review card; `?approvalQueued=1` hydrates pending work;
-`?approvalAttention=1` shows a failed request with retry and proposal controls;
-`?lostAck=1` exercises exact-request retry after a lost acknowledgement. The first awaiting-review proposal's served snapshot uses a different cue and accepted-answer set from the current item and the proposed cue. `?noSnapshot=1` opens that proposal with no retained case snapshot. These fixtures are separate
-from `npm test`. Add `?usage=1` to place the review in the operator panel's
-Content improvement tab, including its narrow and enlarged-text variants. Check
-Left/Right navigation, preserved selection after visiting Usage or Archive, the
-single Details disclosure, optional-reason Dismiss/Done, and second-opinion
-one-click requests and optional questions under Details. `?stale=1` exercises preview failure with edit
-and dismissal recovery; `?applyFailure=1` checks retrying an approved version
-after a failed application response; `?refresh=1` adds an incoming proposal after load for
-background refresh checks. `?oldArchive=1` provides a resolution older than 12
-hours that appears only through search. `vocabulary-operator-navigation.test.ts` covers
-arrow bounds and native input, composition, repeat and modifier guards. The
-separate `/tests/browser/vocabulary-operator-production.html` preview reads a
-locally installed sanitized excerpt from
-`tests/browser/.local/operator-production-preview.json` (gitignored). It replays
-historical proposals with their original acceptance/application provenance;
-actions only mutate browser memory, not production. Missing excerpts produce an
-explicit error. Keep retrieved records out of source control and distinguish
-legacy operation schema versions from local proposal revisions. Use the [disposable vocabulary fixture](vocabulary-learning.md#contributor-verification)
+exercise impact, label merging and read-versus-write navigation policy. The compact
+review browser fixture's `?repertoire=1&usage=1` scenario opens a real case card
+in the operator panel. Open Word defaults directly on the card, toggle a sense,
+use Save defaults and update proposal, then reselect and save to restore it. Unsaved defaults block
+approval and navigation; Discard edits restores access. Add `&narrow=1` to check the
+embedded layout. These browser scenarios are separate from `npm test`.
+Use the [disposable vocabulary fixture](vocabulary-learning.md#contributor-verification)
 for end-to-end study against the actual API and SQLite. The older session fixtures
 below retain coverage of the previous controller, not the current Mandarin path.
 
