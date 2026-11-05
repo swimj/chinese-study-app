@@ -358,15 +358,15 @@ assessment of the current exercise version using a chosen model. If that version
 differs from the original assessment's source version, the operator sees both
 versions and must explicitly choose to proceed on the current version. Each
 reassessment performs fresh sense mapping where applicable and fresh assessment,
-including when the source version is unchanged. It produces a separate review
-item. Successful publication dismisses the originating proposal or closes the
-originating judgment, including when the new result needs attention. Failure
-leaves the origin open. Proposal edits or approval/resolution after submission
-are preserved; sibling proposals are unaffected. Neither result is applied
-automatically. The
-original encounters, responses, and reactions are retained as historical evidence
-for the assessment of the pinned current source. Their served snapshots remain
-distinct from the current exercise and proposed content.
+including when the source version is unchanged. Each reassessment is a new
+numbered holistic job inside the same review case. Its queued/running lifetime
+freezes the saved proposal and case review state. Successful publication replaces
+the current assessment; failure or timeout preserves the previous assessment and
+allows review again. Earlier assessments and proposals remain historical evidence.
+Only one case job may be queued or running; advisory second opinions do not
+replace the authoritative assessment. Neither assessment result applies content
+automatically. The original encounter group, responses, and reactions remain
+historical evidence, distinct from the current source and proposed content.
 
 Operators can inspect supporting evidence and edit proposals before approval.
 Dismissal and closing a completed no-change review accept an optional reason;

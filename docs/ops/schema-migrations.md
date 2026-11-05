@@ -186,6 +186,32 @@ The local migration and processing tests cover preservation and indexed worker
 queries; after release, compare idle background SQLite load and CPU throttling.
 Use the schema-release procedure above, not the app-only upgrade route.
 
+## Case review ownership (`0066`)
+
+`0066_vocabulary_case_reviews` rebuilds the reflection-job table to allow
+numbered jobs within a canonical case and adds explicit review ownership,
+legacy lineage, proposal assessment provenance, and queue/history indexes.
+Historical case, job, proposal, invocation, and application IDs remain retained.
+Legacy sibling proposals remain unresolved alternatives; a newer no-change
+assessment is not resolved merely because an earlier proposal was closed.
+
+Run `node --import tsx scripts/inspect-vocabulary-case-review-migration.ts /absolute/path/app.db`
+for the read-only preflight. It reports lineage and active-work conflicts without
+content payloads.
+Multiple active jobs in one legacy chain make migration fail atomically; finish
+or explicitly resolve that work before the stopped-writer migration. Existing
+approval journal records remain required for replay of pending authorizations.
+
+The migration scans retained job/results and proposals and rebuilds the job
+table, requiring temporary disk and memory proportional to that history. On an
+isolated restored database, run the populated migration tests and compare IDs,
+raw evidence/results, proposal/application receipts, learner state, and queued
+work. Check integrity/FKs, canonical lineage, sequence ordering, current pointers,
+no-change visibility, and journal replay. Confirm failed/timed-out reassessment
+unfreezes the prior review and successful application resolves only the intended
+case. Use the schema-release rehearsal and stopped-writer procedure; this is not
+an app-only upgrade. The queue/API/UI stack is released together.
+
 ## Writing the next migration
 
 Give the release agent a concise rehearsal note alongside the migration's tests

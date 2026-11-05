@@ -153,12 +153,14 @@ count is context for review rather than a guarantee about later serving.
 
 ### Encounter grouping and reassessment
 
-An operator-requested reassessment creates a separate case and pins the current
-exercise identity and version at submission. When it differs from the historical
+An operator-requested reassessment creates a numbered job within the same
+canonical review case and pins the current exercise identity and version at
+submission. When it differs from the historical
 assessed source version, the operator must confirm the current version before
 queueing work. It requests fresh mapping where applicable and authors a fresh
 assessment with the selected model, even for an unchanged source version; the
-child does not reuse the parent job's mapping. An authored single-sense assessment can invoke shared integration; a dictionary
+new job does not reuse the previous job's mapping. An authored single-sense
+assessment can invoke shared integration; a dictionary
 fallback uses its deterministic covered-or-bootstrap route. Pure cues use their standalone assessment.
 The resulting proposal is based on the pinned current version. The original
 encounters, responses and reactions remain model input across reassessment chains,
@@ -173,6 +175,27 @@ exercises and versions remain separate; retained historical cases are unchanged.
 Source version and sense-state fences reject subsequent changes before accepting
 results, and proposal application revalidates its bases. Failures remain available
 for explicit retry against the same pinned source.
+
+Canonical review ownership lives in `vocabulary_case_reviews`; its current job
+and proposal pointers select the authoritative review material. Historical child
+cases remain in `reflection_cases`, linked through `vocabulary_case_lineage`.
+Jobs retain original historical references and have a canonical `review_case_id`
+and `case_sequence`. New jobs use the canonical case directly. Generated
+proposals retain `assessment_job_id`, so viewing or reviewing an older proposal
+uses its own assessment provenance. Provider retry count remains separate from
+the holistic job sequence. A partial unique index admits only one queued/running
+job per canonical case.
+
+Reassessment freezes proposal saves, dismissal, approval, case resolution, and
+case-scope edits. A failed or expired job releases that freeze without replacing
+the current result. A successful authoritative result changes current pointers
+and supersedes the previous current proposal atomically; retained alternatives
+remain explicitly unresolved until reviewed. Advisory opinions never change
+those pointers. Case versions change with job transitions, proposal revisions,
+and review decisions. Approval journal replay reconstructs pending locks and
+clears orphan admission intents; failed approvals have a separate attention
+state and can be corrected or reassessed. Successful application resolves a case
+only when no unresolved alternative proposal remains.
 
 ### Existing pure-cue assessment
 
@@ -227,8 +250,8 @@ The operator workspace lists exact dictionary matches. Multiple matches can be
 resolved by selecting one. With no match, the selector cannot create or substitute
 an entry; it offers reassessment or closing the assessment. Selection through
 `POST /api/operator/vocabulary/cases/:id/pure-cue-resolutions` validates the source,
-catalog, target mapping, and matching lexical snapshots, then creates a separate
-child case/job with an immutable resolution record. The child resumes the saved
+catalog, target mapping, and matching lexical snapshots, then creates the next
+case job with an immutable resolution record. The job resumes the saved
 plan and integrates shared content into one reviewable proposal; it does not
 repeat mapping or local planning. Source and lexical changes fence publication.
 Identity resolution never applies content. Failed work can retry its retained
@@ -368,7 +391,7 @@ Operator GET/PUT routes are `/api/operator/vocabulary/words/:id/sense-coverage`
 and `/api/operator/vocabulary/cases/:id/sense-coverage`. PUT requires the current
 nonnegative `expectedVersion` and shared `includedSenseIds` (or compatible `excludedSenseIds`), versus nullable
 review `includedSenseIds`. Shared exclusion controls explicitly establish the
-complementary useful selection; they do not interpret an absent selection. Review reassessment copies overrides into the child case;
+complementary useful selection; they do not interpret an absent selection. Review reassessment retains the case override and freezes case-scope edits while queued or running;
 proposal edits remain separate editorial inputs and are not reassessment input.
 
 ## Explicit retirement proposals

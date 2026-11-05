@@ -10,18 +10,25 @@ export type VocabularyApprovalRequest = {
 };
 
 export type VocabularyReflectionSubject = { kind: 'word'; wordId: string } | { kind: 'pureCue'; contentId: string };
+export type VocabularyCaseReview = {
+  caseId:string; state:'open'|'resolved'; version:number; currentJobId:string|null; currentProposalId:string|null;
+  approvalRequestId:string|null; approvalState:'pending'|'attention'|null; createdAt:string; resolvedAt:string|null;
+  activeJob:{jobId:string;sequence:number;status:'queued'|'running'}|null; frozen:boolean;
+};
 export type VocabularyReflectionCase = {
   caseId: string; completionId: string; learnerId: string;
   kind: 'learner_feedback' | 'exercise_improvement' | 'teaching_review';
   wordId: string | null; contentId: string | null; status: 'open' | 'completed' | 'closed';
   evidence: VocabularyEncounterEvidence[]; createdAt: string;
   reassessmentSource?: {contentId:string;version:number};
+  review?: VocabularyCaseReview;
   /** Authoritative resolution time; absent in older clients and null when unresolved or unavailable. */
   resolvedAt?: string | null;
 };
 export type VocabularyReflectionJob = {
   jobId: string; caseId: string; learnerId: string;
   kind: 'learner_feedback' | 'exercise_improvement';
+  caseSequence?: number;
   attemptNumber: number; leaseToken: string; leaseExpiresAt: string;
   evidence: VocabularyReflectionCase;
   reassessmentSourceJobId?: string;
