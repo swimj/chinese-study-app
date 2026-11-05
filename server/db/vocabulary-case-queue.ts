@@ -76,6 +76,7 @@ type BaseRow={
   latestJobId:string|null;latestSequence:number|null;latestStatus:'queued'|'running'|'succeeded'|'failed'|null;latestError:string|null;latestAdvisory:number;
   proposalId:string|null;proposalVersion:number|null;proposalStatus:NonNullable<VocabularyCaseQueueItem['proposal']>['status']|null;authorKind:'operator'|'service'|null;rationale:string|null;
   assessmentJobId:string|null;assessmentSequence:number|null;origin:VocabularyAssessmentSummary['origin'];diagnosis:string;outcome:string|null;scopeKind:string|null;scopeSenseIds:string|null;
+  reusedContentId:string|null;reusedPrompt:string|null;reusedAnswers:string|null;reusedTeachingNote:string|null;reuseRationale:string|null;reusedVersion:number|null;reusedExpectedVersion:number|null;reusedAvailability:string|null;
   sourceId:string|null;assessedVersion:number|null;sourceVersion:number|null;sourceAvailability:string|null;findingKind:string|null;findingMessage:string|null;sourceEligible:number;stale:number;needsResolution:number;
 };
 /** A fixed set of batch queries; no workspace/proposal hydration or per-item prepared statements. */
@@ -95,6 +96,11 @@ function readCards(wanted:{caseId:string;proposalId?:string}[]):VocabularyCaseQu
     ${textDiagnosis('dj.result_json')} AS diagnosis,json_extract(dj.result_json,'$.input.admission.outcome') AS outcome,
     json_extract(dj.result_json,'$.input.admission.generationScope.source.kind') AS scopeKind,
     coalesce(json_extract(dj.result_json,'$.input.admission.generationScope.senseIds'),json_extract(dj.result_json,'$.input.admission.senseIds')) AS scopeSenseIds,
+    CASE WHEN json_extract(dj.result_json,'$.input.pureCuePromotion.outcome')='reuse' THEN json_extract(dj.result_json,'$.input.pureCuePromotion.existingContentId') END AS reusedContentId,
+    ${prompt('reused.body_json')} AS reusedPrompt,json_extract(reused.body_json,'$.reveal.teachingNote') AS reusedTeachingNote,
+    json_extract(dj.result_json,'$.input.pureCuePromotion.rationale') AS reuseRationale,reused.version AS reusedVersion,reused.availability AS reusedAvailability,
+    reusedBase.expected_content_version AS reusedExpectedVersion,
+    (SELECT json_group_array(json(answer.accepted_forms_json)) FROM exercise_answer_words answer WHERE answer.exercise_id=reused.content_id ORDER BY answer.word_id) AS reusedAnswers,
     src.content_id AS sourceId,coalesce(json_extract(cj.reassessment_source_json,'$.version'),
       CASE WHEN json_extract(cj.result_json,'$.input.admission.sourceContentId')=src.content_id THEN json_extract(cj.result_json,'$.input.admission.sourceContentVersion') END,
       json_extract(c.evidence_snapshot_json,'$[0].snapshot.contentVersion')) AS assessedVersion,src.version AS sourceVersion,src.availability AS sourceAvailability,
@@ -115,6 +121,8 @@ function readCards(wanted:{caseId:string;proposalId?:string}[]):VocabularyCaseQu
     LEFT JOIN content_proposals p ON p.proposal_id=coalesce(json_extract(requested.value,'$.proposalId'),r.current_proposal_id)
     LEFT JOIN vocabulary_reflection_jobs cj ON cj.job_id=r.current_job_id
     LEFT JOIN vocabulary_reflection_jobs dj ON dj.job_id=CASE WHEN p.proposal_id IS NULL THEN r.current_job_id ELSE p.assessment_job_id END
+    LEFT JOIN content_items reused ON json_extract(dj.result_json,'$.input.pureCuePromotion.outcome')='reuse' AND reused.content_id=json_extract(dj.result_json,'$.input.pureCuePromotion.existingContentId')
+    LEFT JOIN proposal_content_bases reusedBase ON reusedBase.proposal_id=p.proposal_id AND reusedBase.content_id=json_extract(dj.result_json,'$.input.pureCuePromotion.existingContentId')
     LEFT JOIN vocabulary_reflection_jobs a ON a.review_case_id=r.case_id AND a.status IN ('queued','running')
     LEFT JOIN vocabulary_reflection_jobs latest ON latest.job_id=(SELECT last.job_id FROM vocabulary_reflection_jobs last WHERE last.review_case_id=r.case_id ORDER BY last.case_sequence DESC LIMIT 1)
     LEFT JOIN vocabulary_improvement_stages resolution ON resolution.job_id=dj.job_id AND resolution.stage='pure_cue_promotion' AND resolution.input_hash='operator-pure-cue-resolution-v1'
@@ -134,6 +142,7 @@ function readCards(wanted:{caseId:string;proposalId?:string}[]):VocabularyCaseQu
       activeJob:row.activeJobId?{jobId:row.activeJobId,sequence:row.activeSequence!,status:row.activeStatus!}:null,frozen:!!row.frozen,
       latestJob:row.latestJobId?{jobId:row.latestJobId,sequence:row.latestSequence!,status:row.latestStatus!,error:row.latestError,advisory:!!row.latestAdvisory}:null,
       assessment:row.assessmentJobId?{jobId:row.assessmentJobId,sequence:row.assessmentSequence!,origin:row.origin,models:[],outcome:row.outcome,scopeLabel:null,diagnosis:row.diagnosis}:null,
+      ...(row.reusedContentId?{reusedSharedCue:{contentId:row.reusedContentId,prompt:row.reusedPrompt,acceptedAnswers:parseList<string[]>(row.reusedAnswers).flat(),teachingNote:row.reusedTeachingNote,rationale:row.reuseRationale??'',version:row.reusedVersion,expectedVersion:row.reusedExpectedVersion,availability:row.reusedAvailability}}:{}),
       served:[],proposal:row.proposalId?{proposalId:row.proposalId,version:row.proposalVersion!,status:row.proposalStatus!,authorKind:row.authorKind!,isCurrent:row.proposalId===row.currentProposalId,rationale:row.rationale!,operations:[]}:null,
       alternatives:[],alternativeCount:0,sources:[],advisoryOpinion:null,stale:!!row.stale,requiresDetails:false,needsDecision:!!row.needsResolution,finding:row.findingKind&&['unmappable','inventory_gap','needs_coverage','needs_operator'].includes(row.findingKind)?{kind:row.findingKind as NonNullable<VocabularyCaseQueueItem['finding']>['kind'],message:row.findingMessage??''}:null,
       reassessment:{eligible,reason:eligible?null:row.state==='resolved'?'This case is resolved.':row.activeJobId?'A case job is queued or running.':row.approvalState==='pending'?'Case approval is queued or running.':!row.currentJobId?'A completed assessment is required.':row.sourceAvailability==='retired'?'The source exercise is retired.':!source?'The current source is unavailable or is not an active general production exercise.':'Only exercise improvement cases can be reassessed.',source}};

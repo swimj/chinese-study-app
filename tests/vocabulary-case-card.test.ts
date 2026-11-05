@@ -55,3 +55,19 @@ test('an unresolved finding does not repeat identical diagnosis prose',()=>{
  assert.equal(render(item).split('No single intended sense.').length-1,1);
  item.assessment!.diagnosis='A distinct observation.';assert.match(render(item),/A distinct observation/);
 });
+
+test('reused shared cue is visible before edits, inspectable, and never a selectable operation',()=>{
+ const item=caseReviewFixture();item.reusedSharedCue={contentId:'shared-existing',prompt:'四周显得格外____。',acceptedAnswers:['静','宁静'],teachingNote:'Quiet versus tranquil.',rationale:'Both answers already accepted.',version:1,expectedVersion:1,availability:'active'};
+ const html=render(item);assert.match(html,/Reuse existing/);assert.match(html,/Shared practice/);assert.match(html,/静 · 宁静/);assert.match(html,/<details><summary>Inspect shared cue/);assert.match(html,/Quiet versus tranquil/);
+ assert.ok(html.indexOf('Reuse existing')<html.indexOf('vocabulary-sense-group'));
+ const card=html.slice(html.indexOf('aria-label="Reused shared practice"'),html.indexOf('</article>',html.indexOf('aria-label="Reused shared practice"')));
+ assert.doesNotMatch(card,/checkbox|<button/);
+ item.proposal=null;assert.match(render(item),/Reuse existing/);
+ delete item.reusedSharedCue;assert.doesNotMatch(render(item),/Reuse existing/);
+});
+test('reused cue discloses missing, retired, and changed content without claiming availability',()=>{
+ const item=caseReviewFixture();item.reusedSharedCue={contentId:'missing',prompt:null,acceptedAnswers:[],teachingNote:null,rationale:'Reuse decision',version:null,expectedVersion:1,availability:null};
+ assert.match(render(item),/referenced shared cue is unavailable/);assert.doesNotMatch(render(item),/Current version/);
+ item.reusedSharedCue.availability='retired';item.reusedSharedCue.version=2;
+ assert.match(render(item),/referenced shared cue is retired/);assert.match(render(item),/Assessed version 1/);assert.match(render(item),/Current version 2/);
+});

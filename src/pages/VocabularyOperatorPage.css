@@ -254,3 +254,8 @@
 .vocabulary-reassessment-dialog select { width: 100%; min-width: 0; }
 .vocabulary-reassessment-dialog .vocabulary-repair-target-row { flex-direction: column; align-items: stretch; }
 .vocabulary-reassessment-dialog .vocabulary-repair-target label { flex: none; margin: .25rem 0; }
+.vocabulary-reused-cue { border-left: 3px solid #4784ba; background: #f1f7fc; padding: 1rem 1.1rem; margin: 0 0 1rem; overflow-wrap: anywhere; }
+.vocabulary-reused-cue-heading { display: flex; align-items: baseline; flex-wrap: wrap; gap: .5rem .75rem; margin: 0 0 .85rem; }
+.vocabulary-reuse-badge { display: inline-flex; align-items: baseline; gap: .35rem; border: 1px solid #b7d2e9; border-radius: .35rem; padding: .15rem .5rem; color: #205782; background: #e4f0fb; font-size: .85rem; font-weight: 600; }
+.vocabulary-reused-cue > p:not(.vocabulary-reused-cue-heading) { margin: 0 0 .85rem; }
+.vocabulary-reused-cue summary { cursor: pointer; color: #205782; }

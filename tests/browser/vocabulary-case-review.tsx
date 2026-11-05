@@ -46,6 +46,17 @@ if(params.has('repertoire')&&cards[0]){
 }
 function wordCoverage():VocabularySenseCoverageWorkspace{return {word:{wordId:'word',version:repertoireSelectionVersion,defaultUsefulSenseIds:[...repertoireSelection],excludedSenseIds:repertoireSenses.filter(sense=>!repertoireSelection.includes(sense.senseId)).map(sense=>sense.senseId)},review:null,includedSenseIds:[...repertoireSelection],selectionEstablished:true,fingerprint:String(repertoireSelectionVersion),senses:repertoireSenses.map(sense=>({senseId:sense.senseId,wordId:'word',description:{label:sense.label},status:'active',version:1,createdAt:'2026-11-01T00:00:00.000Z',updatedAt:'2026-11-01T00:00:00.000Z'}))};}
 function repertoireAdmission(){return {outcome:'repertoire_bootstrap' as const,rationale:'Bootstrap the selected word repertoire.',wordId:'word',sourceContentId:'source',sourceContentVersion:1,catalogVersion:1,senseIds:[],sourceMapping:{senseId:null,establishedAt:null},generationScope:{selectionEstablished:true,senseIds:repertoireSenses.map(sense=>sense.senseId),source:{kind:'word_defaults' as const,wordId:'word',capturedVersion:1}}};}
+if (params.has('reuse') && cards[0]) {
+ const item=cards[0]; item.wordLabel='静';
+ item.served[0].prompt='夜深了，四周一点声音也没有，显得特别____。';item.served[0].acceptedAnswers=['静'];item.served[0].responses[0].text='宁静';item.served[0].reactions=[];
+ item.proposal!.operations[0].prompt=item.served[0].prompt;item.proposal!.operations[0].acceptedAnswers=['静'];item.proposal!.operations[0].groupLabel='Quiet; silent';
+ item.assessment!.diagnosis='Retire the single-answer exercise in favor of existing shared practice.';
+ item.proposal!.rationale=item.assessment!.diagnosis;
+ item.proposal!.operations[0].strategy='retire';
+ item.reusedSharedCue={contentId:'existing-shared-cue',prompt:'清晨，村子里还没有人出门，四周显得格外____。',acceptedAnswers:['静','靜','宁静','寧靜'],teachingNote:'静 emphasizes the lack of sound; 宁静 adds a sense of serenity.',rationale:'The existing cue already accepts both natural responses and teaches their distinction.',version:1,expectedVersion:1,availability:'active'};
+ if(params.get('reuse')==='missing') Object.assign(item.reusedSharedCue,{prompt:null,acceptedAnswers:[],teachingNote:null,version:null,availability:null});
+ if(params.get('reuse')==='retired') item.reusedSharedCue.availability='retired';
+}
 const archived = caseReviewFixture(99); archived.state = 'resolved'; archived.resolvedAt = new Date().toISOString(); archived.proposal!.status = 'applied'; cards.push(archived);
 const counts: Record<string, number> = { queue: 0, history: 0, card: 0, workspace: 0, proposal: 0, fullSnapshot: 0, attention: 0, mutations: 0, broadLists: 0 };
 const requests: VocabularyApprovalRequest[] = []; let activeCase = cards[0]?.caseId, lostAck = false, rejectApproval = false, holdQueue = false; const pendingQueue: (()=>void)[]=[];
