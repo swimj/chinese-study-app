@@ -108,6 +108,9 @@ and attention reads. Fixture controls complete/fail a reassessment, change share
 source metadata without changing case version, resolve a case externally, lose an
 approval acknowledgement, and fail pending approval. `?usage` mounts the production
 operator container; `?narrow&largeText` uses a 480px panel with enlarged text.
+`?reuse` shows existing shared practice before edits; `?reuse=missing` and
+`?reuse=retired` exercise unavailable references. Combine with `narrow&largeText`
+to check wrapping and keyboard access to the cue disclosure.
 The fixture uses local synthetic responses and never calls a provider.
 
 Verify in-batch navigation makes no detail fetch, cross-page and end-wrap navigation,

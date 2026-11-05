@@ -60,6 +60,17 @@ export function CaseReviewCard({ item, children, onDetails, showDetails = false,
     {item.approvalState && <p role="status">{item.approvalState === 'pending' ? 'Approval queued; application is not yet confirmed.' : 'Approval needs attention.'}</p>}
     {wordDefaults}
     <h3 className="vocabulary-served-label">{repertoire ? 'Default selected senses' : 'Proposed improvement'}</h3>
+    {item.reusedSharedCue && <article className="vocabulary-reused-cue" aria-label="Reused shared practice">
+      <p className="vocabulary-reused-cue-heading"><span className="vocabulary-reuse-badge"><span aria-hidden="true">↗</span> Reuse existing</span><strong>Shared practice</strong></p>
+      {item.reusedSharedCue.prompt !== null && <p className="vocabulary-operator-cue">{item.reusedSharedCue.prompt}</p>}
+      {item.reusedSharedCue.acceptedAnswers.length > 0 && <p><strong>Accepted answers:</strong> {item.reusedSharedCue.acceptedAnswers.join(' · ')}</p>}
+      {item.reusedSharedCue.availability !== 'active' && <p className="vocabulary-operator-error">{item.reusedSharedCue.availability === null ? 'The referenced shared cue is unavailable.' : `The referenced shared cue is ${item.reusedSharedCue.availability}.`}</p>}
+      <details><summary>Inspect shared cue</summary>
+        {item.reusedSharedCue.teachingNote && <p>{item.reusedSharedCue.teachingNote}</p>}
+        {item.reusedSharedCue.rationale && <p>{item.reusedSharedCue.rationale}</p>}
+        <p className="vocabulary-operator-meta">{item.reusedSharedCue.expectedVersion !== null && item.reusedSharedCue.expectedVersion !== item.reusedSharedCue.version && <>Assessed version {item.reusedSharedCue.expectedVersion} · </>}{item.reusedSharedCue.version !== null && <>Current version {item.reusedSharedCue.version} · </>}{item.reusedSharedCue.contentId}</p>
+      </details>
+    </article>}
     {item.proposal ? <div className="vocabulary-compact-review">
       {item.proposal.rationale && item.proposal.rationale.trim() !== item.assessment?.diagnosis.trim() && <p>{item.proposal.rationale}</p>}
       {item.proposal.operations.filter(operation => operation.pureCue).map(operation => <article className="vocabulary-pure-proposal" key={operation.operationKey}><p className="vocabulary-operator-meta">{strategies[operation.strategy]} · {operation.scopeLabel}</p>{operation.prompt !== first?.prompt && <p className="vocabulary-operator-cue">{operation.prompt}</p>}<p className="vocabulary-answer-change"><span>{(item.served.find(encounter => encounter.contentId === operation.sourceContentId && encounter.contentVersion === operation.expectedVersion)?.acceptedAnswers ?? item.sources.find(source => source.contentId === operation.sourceContentId && source.version === operation.expectedVersion)?.acceptedAnswers ?? []).join(' · ') || (operation.strategy === 'create' ? 'New cue' : 'Assessed accepted answers unavailable')}</span><span aria-label="changes to">→</span><strong>{operation.acceptedAnswers.join(' · ') || 'No accepted answers'}</strong></p>{operation.pureCue?.axisNote && operation.pureCue.axisNote !== first?.pureCue?.axisNote && <p>Purpose: {operation.pureCue.axisNote}</p>}{operation.pureCue?.teachingNote && <details><summary>Revised teaching note</summary><p>{operation.pureCue.teachingNote}</p></details>}{operation.rationale && !repeated.has(operation.rationale.trim()) && <p>{operation.rationale}</p>}{operation.otherChanges.filter(change => change !== 'reveal' && change !== 'expected answers').map(change => <p key={change}>{change}</p>)}</article>)}

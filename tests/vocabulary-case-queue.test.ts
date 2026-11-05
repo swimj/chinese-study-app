@@ -207,3 +207,32 @@ test('pure cue display projects stored axis and teaching note from evidence and 
  assert.deepEqual(item.proposal!.operations[0].pureCue,{axisNote:'Stored axis',teachingNote:'Revised note'});
  assert.equal(item.requiresDetails,false);
 });
+
+test('shared-cue reuse is read-only context attached to the displayed assessment, including alternatives and drift',()=>{
+  const proposalId=seedCase('reuse',{proposal:true})!;
+  const cue=createVocabularyContent({contentId:'shared-cue',kind:'exercise',payloadVersion:1,body:{prompt:'四周显得格外____。',reveal:{teachingNote:'Both forms fit this scene.'}},exerciseType:'pure_cue',skill:'production',exerciseRole:'general',assessment:{match:'exact'},accessScope:'shared',availability:'active',originKind:'human',words:[{wordId:'word',relation:'target'}],answers:[{wordId:'word',acceptedForms:['静','宁静']}]},{kind:'operator',id:'editor'});
+  const promotion={outcome:'reuse',existingContentId:cue.contentId,rationale:'Existing shared practice already accepts both answers.',raw:'DO_NOT_PROJECT'};
+  sql.prepare("UPDATE vocabulary_reflection_jobs SET result_json=json_set(result_json,'$.input.pureCuePromotion',json(?)) WHERE job_id='job-reuse'").run(JSON.stringify(promotion));
+  sql.prepare('INSERT INTO proposal_content_bases VALUES (?,?,?)').run(proposalId,cue.contentId,1);
+  const item=getVocabularyCaseCard('reuse','editor');
+  assert.deepEqual(item.reusedSharedCue,{contentId:'shared-cue',prompt:'四周显得格外____。',acceptedAnswers:['静','宁静'],teachingNote:'Both forms fit this scene.',rationale:promotion.rationale,version:1,expectedVersion:1,availability:'active'});
+  assert.equal(item.proposal?.operations.length,1);assert.equal(item.stale,false);assert.ok(!JSON.stringify(item).includes('DO_NOT_PROJECT'));
+  assert.deepEqual(listVocabularyCaseQueue('editor',{},now).items[0].reusedSharedCue,item.reusedSharedCue);
+  sql.prepare(`INSERT INTO vocabulary_reflection_jobs(job_id,case_id,kind,dedupe_key,status,next_attempt_at,result_json,created_at,review_case_id,case_sequence) VALUES ('new-reuse-job','reuse','exercise_improvement','new-reuse-job','succeeded',?,?,?,'reuse',2)`).run(at,JSON.stringify({input:{diagnosis:'New judgment',proposal:null}}),at);
+  sql.exec("UPDATE vocabulary_case_reviews SET current_job_id='new-reuse-job',current_proposal_id=NULL WHERE case_id='reuse'");
+  assert.equal(getVocabularyCaseCard('reuse','editor').reusedSharedCue,undefined);
+  assert.deepEqual(getVocabularyCaseCard('reuse','editor',proposalId).reusedSharedCue,item.reusedSharedCue);
+  updateVocabularyContent(cue.contentId,1,{...cue,body:{prompt:'Updated shared cue'},availability:'retired'},{kind:'operator',id:'editor'});
+  const stale=getVocabularyCaseCard('reuse','editor',proposalId);assert.equal(stale.stale,true);
+  assert.equal(stale.reusedSharedCue?.version,2);assert.equal(stale.reusedSharedCue?.expectedVersion,1);assert.equal(stale.reusedSharedCue?.availability,'retired');assert.equal(stale.reusedSharedCue?.prompt,'Updated shared cue');
+});
+
+test('reuse with unavailable content remains visible, while create and extend are not presented as reuse',()=>{
+  seedCase('missing');
+  for(const outcome of ['create','extend','reuse']){
+    sql.prepare("UPDATE vocabulary_reflection_jobs SET result_json=json_set(result_json,'$.input.pureCuePromotion',json(?)) WHERE job_id='job-missing'").run(JSON.stringify({outcome,existingContentId:'missing-content',rationale:'Retained reuse decision'}));
+    const item=getVocabularyCaseCard('missing','editor');
+    if(outcome!=='reuse')assert.equal(item.reusedSharedCue,undefined);
+    else assert.deepEqual(item.reusedSharedCue,{contentId:'missing-content',prompt:null,acceptedAnswers:[],teachingNote:null,rationale:'Retained reuse decision',version:null,expectedVersion:null,availability:null});
+  }
+});

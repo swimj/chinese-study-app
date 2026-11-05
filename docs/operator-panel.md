@@ -133,6 +133,12 @@ The compact card includes the content needed for ordinary review. If richer
 authored content cannot be represented faithfully, **Review full content before
 approval** opens the complete workspace and approval remains there.
 
+When an assessment reuses shared practice, a blue **↗ Reuse existing · Shared
+practice** card shows the existing cue and accepted answers before the proposed
+changes. **Inspect shared cue** reveals its teaching note, reuse reasoning, and
+content identity/version. This read-only card is not an additional change to
+approve. Unavailable or retired referenced cues are labeled explicitly.
+
 “Approve and apply” queues the displayed version and advances after the backend
 persists the request. Queued requests are hidden from Awaiting review while they
 finish. Acknowledgement does not mean the content has been applied. The backend
