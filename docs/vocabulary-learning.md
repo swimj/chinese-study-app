@@ -72,6 +72,11 @@ subsequent sessions; admission to a new session does not guarantee an exercise
 will be shown. Account and private-content access checks remain live. The current
 card's personal notes remain a separate indexed learner lookup.
 
+Presentation validation compares accepted-answer forms with the retained content
+version as sets of exact strings: order and duplicate entries do not change
+membership. Grading criteria and source material must still match exactly. This
+comparison preserves the frozen snapshot and its display order.
+
 A connection-scoped cache holds at most 64 session runtimes, keyed by learner
 and session. SQLite remains authoritative. Every access probes session ownership,
 status and the latest indexed action sequence/identity. A mismatch, eviction or

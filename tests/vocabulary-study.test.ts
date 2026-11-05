@@ -448,14 +448,21 @@ test('new and replacement pure cues adopt independently after an eligible accept
   assert.equal(view.currentEncounter?.snapshot.contentId,'replacement-pure');assert.equal(view.currentWordId,null);
 }));
 
-test('a pure cue with multiple accepted members retains all forms and credits none of their word schedules',()=>owner(()=>{
+test('a frozen pure cue with reordered accepted answers serves and retries, retaining all forms and crediting no word schedules',()=>owner(()=>{
   const cue=createVocabularyContent({contentId:'multiple-pure',kind:'exercise',payloadVersion:1,body:{prompt:'One of these expressions fits.'},exerciseType:'pure_cue',skill:'production',exerciseRole:'general',
     assessment:{match:'prepared'},accessScope:'shared',availability:'active',originKind:'human',words:[{wordId:'a',relation:'target'},{wordId:'b',relation:'target'}],
     answers:[{wordId:'a',acceptedForms:['甲']},{wordId:'b',acceptedForms:['乙']}]},actor);
   const beforeA=getVocabularyWordSchedule('a'),beforeB=getVocabularyWordSchedule('b');
   adoptVocabularyPureCues(new Date(Date.now()-7*3_600_000).toISOString());
-  createVocabularySession({sessionId:'multi-session',words:[]});let view=nextVocabularyExercise('multi-session','next');
-  assert.equal(view.currentEncounter?.snapshot.contentId,cue.contentId);assert.deepEqual(view.currentEncounter?.snapshot.assessment?.acceptedAnswers,['甲','乙']);
+  const context:VocabularySessionInitialContext={sessionId:'multi-session',words:[],reviewOrder:[{kind:'pure_cue',id:cue.contentId}]};
+  const payload=composeVocabularySessionPayload(context);
+  const retained=payload.snapshots[`${cue.contentId}/general`];assert.ok(retained.assessment);
+  // An already-open session can retain a different enumeration of the same answer set.
+  retained.assessment={...retained.assessment,acceptedAnswers:['乙','甲']};
+  createStoredSession({...context,payload});let view=nextVocabularyExercise('multi-session','next');
+  assert.equal(view.currentEncounter?.snapshot.contentId,cue.contentId);assert.deepEqual(view.currentEncounter?.snapshot.assessment?.acceptedAnswers,['乙','甲']);
+  const presented=view.session.actions;
+  view=nextVocabularyExercise('multi-session','next');assert.deepEqual(view.session.actions,presented);
   view=commandVocabularyStudy('multi-session','answer',{type:'response',response:'甲'});assert.deepEqual(view.session.projection.coveredWordIds,[]);
   view=commandVocabularyStudy('multi-session','finish',{type:'finishForNow'});
   const staged=stageVocabularySessionCompletion('multi-session',view.session.actions.length);closeVocabularySessionCompletion('multi-session',staged.completionId);
