@@ -14,6 +14,8 @@ import { createSharedWordPreparation } from './shared-preparation.ts';
 import { WordPreparationProviderError, PREPARATION_PROVIDER_BACKOFF_MS } from './provider-failure.ts';
 import type { WordIntroductionProvider } from './provider.ts';
 
+const RECOVERY_CHECK_INTERVAL_MS = 30_000;
+
 export function createWordPreparationWorker(options: {
   provider?: WordIntroductionProvider;
   ensureSenses?:typeof ensureVocabularySenses;
@@ -36,6 +38,7 @@ export function createWordPreparationWorker(options: {
   let draining: Promise<void> | null = null;
   let stepping: Promise<boolean> | null = null;
   let providerBackoffUntil = 0;
+  let nextRecoveryCheckAt = Number.NEGATIVE_INFINITY;
   const working = new Set<string>();
   function enabled() {
     const state = controls();
@@ -103,7 +106,12 @@ export function createWordPreparationWorker(options: {
     } finally { working.delete(work.workId); }
   }
   async function runStep(): Promise<boolean> {
-    recoverExpiredWordPreparation(isoNow());
+    if (stopped || controls().maintenanceMode) return false;
+    const checkedAt = now();
+    if (checkedAt >= nextRecoveryCheckAt) {
+      recoverExpiredWordPreparation(new Date(checkedAt).toISOString());
+      nextRecoveryCheckAt = checkedAt + RECOVERY_CHECK_INTERVAL_MS;
+    }
     if (!enabled()) return false;
     const due = listDueWordPreparation(isoNow());
     // SQL excludes unfinished dependencies; withdrawn sources enter the batch once to become operator-visible.
@@ -128,7 +136,7 @@ export function createWordPreparationWorker(options: {
     timer = undefined;
     void drain().catch((error: unknown) => options.onError?.(error)).finally(() => {
       if (!stopped && timer === undefined) {
-        timer = setTimeout(wake, options.pollMs ?? 5_000);
+        timer = setTimeout(wake, options.pollMs ?? 30_000);
         timer.unref();
       }
     });

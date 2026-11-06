@@ -422,9 +422,22 @@ quotas before filtering for preparation readiness. Failed slots remain reserved
 to bound replacement demand. `server/db/word-reserve.ts` owns reconciliation.
 
 The worker in `server/word-content/preparation-worker.ts` runs in the backend
-process, polls every five seconds, and permits two concurrent stages. Existing
-introduction/review leases remain publication authority; the work journal does
-not replace them. Maintenance/provider controls and shutdown draining apply.
+process, polls every 30 seconds, and permits two concurrent stages. The surrounding
+runtime also polls for pending reserve-reconciliation requests every 30 seconds.
+Explicit wakes after learner actions or operator retries run immediately; due
+retries and work without a wake wait for the next poll. Existing introduction/review
+leases remain publication authority; the work journal does not replace them.
+Maintenance/provider controls and shutdown draining apply.
+Expired-attempt recovery uses a 30-second check interval, independently of the
+dispatch polling and explicit wakes for new work. Failed checks retry
+on the next worker step. An empty check is read-only. When the check finds an
+expired attempt, recovery acquires a write transaction and re-reads expired jobs
+before updating their outcomes and leases. An attempt expiring after an empty
+check waits for a later check.
+During maintenance, idle polls read service controls but skip recovery and
+preparation queue access. Recovery resumes on its next due check after maintenance
+ends, even if provider dispatch is disabled or unconfigured. Stopped workers do
+not poll; shutdown waits for already-running work to finish.
 No migration regenerates the corpus or invalidates compatible authored content.
 
 ## Session completion persistence
