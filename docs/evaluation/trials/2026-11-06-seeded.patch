@@ -1,0 +1,33 @@
+diff --git a/src/features/vocabulary-operator/ScopeCoverageEditor.tsx b/src/features/vocabulary-operator/ScopeCoverageEditor.tsx
+index d611a8c3..7f72c520 100644
+--- a/src/features/vocabulary-operator/ScopeCoverageEditor.tsx
++++ b/src/features/vocabulary-operator/ScopeCoverageEditor.tsx
+@@ -26,6 +26,7 @@ export function ScopeCoverageEditor({api,wordId,disabled,finding,onActivity,onSa
+     finally{if(token===serial.current&&mounted.current)setPending(false);}
+   }
+   async function save(){
++    if(repertoire){setDraft(null);setReassessOpen(false);return;}
+     if(!current||!draft)return;const token=++serial.current;setPending(true);setSaving(true);setError('');
+     try{
+       const result=repertoire?await api.saveRepertoireWordDefaults(repertoire.proposal.proposalId,repertoire.proposal.version,draft.expectedVersion,selected):null;
+@@ -34,7 +35,7 @@ export function ScopeCoverageEditor({api,wordId,disabled,finding,onActivity,onSa
+       setCurrent(value);setDraft(null);setReassessOpen(false);
+       if(result&&repertoire)repertoire.onSaved(result.proposal);else onSaved('word',value);
+     }
+-    catch(cause){if(token===serial.current&&mounted.current)setError(cause instanceof Error?cause.message:'Could not save word defaults.');}
++    catch(cause){setDraft(null);if(token===serial.current&&mounted.current)setError(cause instanceof Error?cause.message:'Could not save word defaults.');}
+     finally{if(token===serial.current&&mounted.current){setPending(false);setSaving(false);}}
+   }
+   async function saveAndReassess(){
+diff --git a/src/pages/VocabularyOperatorPage.css b/src/pages/VocabularyOperatorPage.css
+index ccda6bc7..25b61eb2 100644
+--- a/src/pages/VocabularyOperatorPage.css
++++ b/src/pages/VocabularyOperatorPage.css
+@@ -308,3 +308,7 @@
+ .vocabulary-operator-page button.vocabulary-sense-chip[aria-pressed="true"] { background: var(--accent-soft, #e2eee8); border-color: var(--accent, #326458); box-shadow: inset 0 0 0 1px var(--accent, #326458); }
+ .vocabulary-sense-chip:focus-visible { outline: 2px solid var(--accent, #326458); outline-offset: 3px; }
+ .vocabulary-selection-reassessment { border-left: 3px solid var(--accent, #326458); padding: .25rem .8rem .8rem; margin-top: .75rem; }
++
++@media (max-width: 600px) {
++  .vocabulary-case-action-frame { height: 2.25rem; max-height: 2.25rem; overflow: hidden; flex: none; }
++}
