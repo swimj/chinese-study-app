@@ -678,6 +678,6 @@ test('original model draft route is operator-only and manual drafts have no mode
   const created=call('post',`${base}/proposals`,{body:proposal()});
   const params={id:String(created.body.proposalId)},route=`${base}/proposals/:id/original-model-draft`;
   assert.deepEqual(call('get',route,{params}),{status:200,body:{proposal:null}});
-  process.env.APP_AUTH_MODE='clerk';
-  assert.equal(call('get',route,{params,learner:'alice'}).status,403);
+  process.env.APP_OPERATOR_CLERK_USER_IDS='';
+  assert.equal(call('get',route,{params}).status,403);
 });
