@@ -78,3 +78,9 @@ A build establishes compilation, while interaction and visual claims need
 rendered verification. Distinguish implementation, test results, publication,
 deployment, and observed learner behavior in review and handoff evidence. Name
 material gaps so a reviewer can assess what has and has not been established.
+
+For substantial behavior-changing work, the coordinator proposes an early
+user-task evaluation approach and prepares its brief, following the
+[coordinator procedure](evaluation/coordinator.md). This complements the
+deterministic checks above and preserves human decisions about consequential
+product expectations.

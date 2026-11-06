@@ -593,3 +593,8 @@ chip keyboard toggles, Discard edits, and wrapping with `narrow=1&largeText=1`.
 rollback, retained proposals and captured-scope publication. Admission provider tests
 establish exact selection despite later defaults, retry reuse and pre-call catalog,
 identity and routing fences. Browser fixtures use no providers or application data.
+
+For task-level UI observations, use the [independent evaluator
+procedure](evaluation/independent-ui-evaluation.md) with any suitable preview.
+The [coordinator procedure](evaluation/coordinator.md) owns early planning,
+preview preparation, triage, and delivery reporting.

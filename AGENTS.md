@@ -145,6 +145,14 @@ its reason; do not bypass it through another route.
 
 ## Verification and delivery
 
+For substantial work affecting user-facing behavior, propose a task-level
+evaluation approach early alongside the implementation plan. Identify
+representative user goals, consequential expectations, suitable previews, and
+where independent UI evaluation will help. Prepare the brief yourself and carry
+evaluation through delivery using the [coordinator procedure](docs/evaluation/coordinator.md).
+Use proportional judgment for smaller changes; reporting the plan is not a new
+approval gate.
+
 Choose checks that establish the requested behavior and cover affected risks.
 Use the [testing map](docs/testing.md) to find focused Node tests and
 [contributor commands](docs/scripts.md#contributor-setup-and-local-checks) to run
