@@ -419,7 +419,14 @@ bootstrap, teaching, review and their operational attempts are shared. The
 reserve target is twice the configured limit, at most 40, counting queued and
 ready candidates. Reconciliation must preserve stash/diet/deck policy and compute
 quotas before filtering for preparation readiness. Failed slots remain reserved
-to bound replacement demand. `server/db/word-reserve.ts` owns reconciliation.
+to bound replacement demand.
+
+[`server/vocabulary/preparation-reserve.ts`](../server/vocabulary/preparation-reserve.ts)
+selects candidates through the vocabulary admission planner and queues their
+bootstrap/teaching work. [`server/db/word-reserve.ts`](../server/db/word-reserve.ts)
+persists learner-private membership and reconciliation requests. The
+[teaching-reserve explanation](vocabulary-learning.md#teaching-reserve) describes
+membership policy and the actions that request reconciliation.
 
 The worker in `server/word-content/preparation-worker.ts` runs in the backend
 process, polls every 30 seconds, and permits two concurrent stages. The surrounding
