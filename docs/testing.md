@@ -1,5 +1,8 @@
 # Testing map
 
+Use the [preview testbed](preview-testbed.md) to discover and launch presentation,
+application-shell, and isolated real-backend scenarios.
+
 This map helps contributors select checks for affected behavior and understand
 what those checks exercise. The [development principles](development-principles.md#preserve-behavior-across-implementation-changes)
 describe how to preserve implementation and regression evidence during a change.
