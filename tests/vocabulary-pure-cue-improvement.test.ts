@@ -112,6 +112,19 @@ test('lexical lookup trims surrounding whitespace while preserving the actual su
   assert.equal(improvement(prepared.normalize(decision())).proposal!.operations.length,1);
 });
 
+test('a pronunciation report of an accepted member is not an extension candidate', () => {
+  const input = job('放大');
+  const encounter = input.evidence.evidence[0]!;
+  const reported = response('放大', 'rejected');
+  reported.payload.selfAssessment = 'rejected';
+  encounter.responses = [reported];
+  encounter.effectiveResponses = [reported];
+  const prepared = prepareVocabularyPureCueImprovement(input, original);
+  assert.deepEqual(prepared.input.responseCandidates, []);
+  const genuine = prepareVocabularyPureCueImprovement(job('擴大'), original);
+  assert.deepEqual(genuine.input.responseCandidates.map(item => item.rawResponse), ['擴大']);
+});
+
 test('accepted, undone, ineffective and empty responses cannot authorize extension', () => {
   for (const condition of ['accepted', 'undone', 'ineffective', 'empty'] as const) {
     const input = job(condition === 'empty' ? null : '扩大');

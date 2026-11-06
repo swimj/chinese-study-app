@@ -18,7 +18,7 @@ import { createVocabularyContent, emitBackendEvent, getVocabularyContentForMaint
 import { migrateSharedDictionaryBaselines } from '../server/db/dictionary-baseline-sharing.ts';
 import { createVocabularyApprovalRequests } from '../server/vocabulary/approval-requests.ts';
 import { completeVocabularyApprovalRequest, recordVocabularyApprovalIntent } from '../server/db/vocabulary-reflection.ts';
-import { createVocabularyReflectionProvider, projectVocabularyReflectionInput } from '../server/vocabulary/reflection-provider.ts';
+import { createVocabularyReflectionProvider, normalizeVocabularyReflectionOutput, projectVocabularyReflectionInput } from '../server/vocabulary/reflection-provider.ts';
 import { vocabularyReflectionModelChoice } from '../server/db/vocabulary-reflection-routing.ts';
 import type { ProviderAdapter } from '../server/llm/types.ts';
 import { createVocabularySession, appendVocabularySessionActions, stageVocabularySessionCompletion, closeVocabularySessionCompletion } from '../server/db/vocabulary-sessions.ts';
@@ -270,6 +270,72 @@ function lessonResponses(caseId: string): { actionId: string; response: string |
   const evidence = getVocabularyReflectionCase(caseId).evidence;
   return evidence.flatMap(encounter => encounter.responses.map(action => ({ actionId: action.actionId, response: action.payload.response, outcome: action.payload.outcome })));
 }
+test('a matching written answer marked wrong lapses scheduling without opening feedback, unlike a typed miss', () => {
+  const marked = { kind: 'response' as const, payload: { encounterId: 'said', response: '字', outcome: 'rejected' as const, selfAssessment: 'rejected' as const } };
+  const { ids, completion } = ingest([present('one','a','said'), marked, wrap()]);
+  assert.deepEqual(ids, []);
+  assert.equal(completion.report.words.a!.covered, true);
+  assert.equal(completion.report.words.a!.hasRejectedResponse, true);
+  assert.equal(completion.report.words.a!.successfulRecall, false);
+  assert.equal(completion.report.encounters[0]?.effectiveResponses[0]?.payload.response, '字');
+  const schedule = JSON.parse(String(sql.prepare("SELECT scheduler_state_json FROM learner_word_schedules WHERE word_id='a'").get()!.scheduler_state_json)) as { intervalHours: number; easeFactor: number };
+  assert.equal(schedule.intervalHours, 6);
+  assert.equal(schedule.easeFactor, 2.35);
+  assert.throws(() => close([present('one','a','bad'), { kind: 'response', payload: { encounterId: 'bad', response: '别', outcome: 'rejected', selfAssessment: 'rejected' } }], 'bad-mark'), /accepted written answer/);
+  const typedMiss = close([present('one','a','miss'), typed('miss','别字','rejected'), wrap()], 'typed-miss');
+  const typedKinds = ingestVocabularySessionEvidence('alice', typedMiss.completionId, typedMiss.report, closedAt).map(id => getVocabularyReflectionCase(id).kind);
+  assert.ok(typedKinds.includes('learner_feedback'));
+  assert.ok(typedKinds.includes('exercise_improvement'));
+  assert.equal(typedMiss.report.encounters[0]?.effectiveResponses[0]?.payload.selfAssessment, undefined);
+});
+
+for (const contentId of ['one', 'cue', 'teach']) test(`pronunciation encounters with comments and negative reactions do not open cases: ${contentId}`, () => {
+  const wordId = contentId === 'cue' ? null : contentId === 'teach' ? 'new' : 'a';
+  const { ids, completion } = ingest([...(contentId === 'teach' ? [present('intro', 'new')] : []), present(contentId, wordId, 'said'),
+    { kind: 'response', payload: { encounterId: 'said', response: '字', outcome: 'rejected', selfAssessment: 'rejected' } },
+    { kind: 'feedback', payload: { encounterId: 'said', feedback: 'negative' } },
+    { kind: 'feedback', payload: { encounterId: 'said', feedback: 'comment', comment: 'I said it wrong.' } }]);
+  assert.deepEqual(ids, []);
+  const encounter = completion.report.encounters.find(item => item.encounterId === 'said')!;
+  assert.equal(encounter.effectiveResponses[0]!.payload.selfAssessment, 'rejected');
+  assert.equal(encounter.feedback.length, 2);
+});
+
+test('mixed cases retain pronunciation lapses internally but omit their entire encounters from model input and compensation', () => {
+  const { ids } = ingest([present('one','a','said'),
+    { kind: 'response', payload: { encounterId: 'said', response: '字', outcome: 'rejected', selfAssessment: 'rejected' } },
+    { kind: 'feedback', payload: { encounterId: 'said', feedback: 'comment', comment: 'pronunciation-private-marker' } },
+    present('one','a','written'), typed('written','别字','rejected'), wrap()]);
+  assert.deepEqual(ids.map(id => getVocabularyReflectionCase(id).kind).sort(), ['exercise_improvement','learner_feedback']);
+  for (const id of ids) assert.deepEqual(getVocabularyReflectionCase(id).evidence.map(item => item.encounterId), ['said','written']);
+  const before = sql.prepare("SELECT next_eligible_at, scheduler_state_json FROM learner_word_schedules WHERE word_id='a'").get()!;
+  const feedback = claimVocabularyReflectionJob({ kind: 'learner_feedback', now: judgedAt })!;
+  const projected = JSON.stringify(projectVocabularyReflectionInput(feedback));
+  assert.equal(projected.includes('pronunciation-private-marker'), false);
+  assert.equal(projected.includes('"encounterId":"said"'), false);
+  assert.equal(projected.includes('"encounterId":"written"'), true);
+  assert.throws(() => normalizeVocabularyReflectionOutput(feedback, { diagnosis: 'Unfair', lesson: 'Lesson', unfairEncounterIds: ['said'] }), /supplied rejected/);
+  // Only the supplied written rejection is excused; the hidden genuine lapse still blocks compensation.
+  recordVocabularyFeedbackJudgment(feedback.jobId, feedback.leaseToken, { diagnosis: 'Unfair written cue', message: 'Lesson', unfairEncounterIds: ['written'] }, judgedAt);
+  const after = sql.prepare("SELECT next_eligible_at, scheduler_state_json FROM learner_word_schedules WHERE word_id='a'").get()!;
+  assert.deepEqual(after, before);
+});
+
+test('undoing a pronunciation report before close leaves an ordinary success', () => {
+  const completion = close([
+    present('one','a','said'),
+    { kind: 'response', payload: { encounterId: 'said', response: '字', outcome: 'rejected', selfAssessment: 'rejected' } },
+    { kind: 'undo', payload: { undoesActionId: 'withdrawn-1' } },
+    typed('said','字','accepted'), wrap(),
+  ], 'withdrawn');
+  const ids = ingestVocabularySessionEvidence('alice', completion.completionId, completion.report, closedAt);
+  assert.deepEqual(ids, []);
+  assert.equal(completion.report.words.a!.hasRejectedResponse, false);
+  assert.equal(completion.report.words.a!.successfulRecall, true);
+  const schedule = JSON.parse(String(sql.prepare("SELECT scheduler_state_json FROM learner_word_schedules WHERE word_id='a'").get()!.scheduler_state_json)) as { easeFactor: number };
+  assert.equal(schedule.easeFactor, 2.5);
+});
+
 test('an undone production submission does not create a lesson or improvement case or change the retained correction schedule', () => {
   const completion = close([
     present('one','a','clean-one'), typed('clean-one','accidental','rejected'),

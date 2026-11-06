@@ -62,8 +62,9 @@ assessment, but the learner need not read the full reasoning or a session recap.
 Feedback is versioned `vocabulary-reflection-feedback.v4`; the exact prompt,
 schema, projected inputs, settings and provider outputs are retained by the common
 invocation ledger. JSON schema is v1; input projection is
-`vocabulary-reflection.v2` for the explicit reaction fields. Earlier prompts are
-recoverable from Git and retained trial invocations for evaluation comparisons.
+`vocabulary-reflection.v3`, which excludes entire pronunciation-failure
+encounters, including their comments and reactions, from model evidence.
+Earlier prompts are recoverable from Git and retained trial invocations for evaluation comparisons.
 Structural tests establish dispatch and provenance, not linguistic effectiveness.
 The standalone editorial framing needs live comparison against retained feedback
 outputs before claiming a quality gain. See the
@@ -73,7 +74,7 @@ outputs before claiming a quality gain. See the
 
 `pure-cue-improvement.md` is the standalone contract for an existing pure cue,
 using prompt version 1, schema version 1, and projection
-`vocabulary-admission.v1`. Its input contains complete original `sourceContent`,
+`vocabulary-admission.v2`. Its input contains complete original `sourceContent`,
 projected encounter evidence, original `currentMembers`, and lexical resolutions
 of effective rejected responses in `responseCandidates`. Raw responses remain
 useful evidence when resolution is missing or ambiguous, but only a uniquely
@@ -179,7 +180,7 @@ to that summary. Operator edits and selection of parts remain deliberate,
 without enforced component dependencies.
 
 Single improvement uses prompt version 5, schema version 4, and projection
-`vocabulary-exercise-authoring.v1`. Mapping uses prompt version 4, schema version 1,
+`vocabulary-exercise-authoring.v2`. Mapping uses prompt version 5, schema version 1,
 and projection `vocabulary-admission.v4`. Exact source, catalog, mapping, and
 lexical checks fence publication and approval. Stage identities retain actual
 projected input, schema, and contract; unknown supplied references fail validation.
@@ -205,7 +206,7 @@ Its output has `decision`, `existingContentId`, `semanticAxis`, `teachingNote`, 
 | `create` | null | Derived from the authored shared task | null | Preserve the upstream prompt and teaching note; include every candidate |
 
 Integration uses prompt version 1, schema version 3, and projection
-`vocabulary-integration.v1`. It chooses a destination without a second pedagogical
+`vocabulary-integration.v2`. It chooses a destination without a second pedagogical
 veto. Creation derives the semantic axis from the authored cue, answers, note,
 and rationale; it does not broaden or redesign that task. An incompatible
 existing cue leads to creation, not rejection of the plan.
@@ -256,7 +257,7 @@ or `originalDiagnosis` when no proposal exists. The input also includes retained
 encounter `evidence` and optional `operatorNotes`. It returns a `verdict` of
 `support`, `revise`, or `reject`, with a concise `rationale`; it neither rewrites
 nor applies content. This call uses prompt version 2, schema version 1, and
-projection `vocabulary-second-opinion.v1`.
+projection `vocabulary-second-opinion.v2`.
 
 ## Verification and retained evidence
 

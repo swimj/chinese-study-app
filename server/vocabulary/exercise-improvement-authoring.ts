@@ -1,3 +1,4 @@
+import { eligibleVocabularyReflectionJob } from './reflection-eligibility.ts';
 import type { JsonSchema } from '../../src/domain/reflection-result-schema.ts';
 import type { VocabularyContent, VocabularyJson, VocabularySense } from '../../src/domain/vocabulary-content.ts';
 import type { VocabularyReflectionJob, VocabularyPureCueReferral } from '../../src/domain/vocabulary-reflection.ts';
@@ -25,6 +26,7 @@ const wordQuery='SELECT id AS wordId,hanzi,traditional,pinyin,meaning FROM lexic
 
 /** References denote supplied forms. Unresolved forms remain encounter evidence only. */
 export function vocabularyImprovementWords(job:VocabularyReflectionJob):SuppliedWord[] {
+  job=eligibleVocabularyReflectionJob(job);
   const target=getDb().prepare(`${wordQuery} WHERE id=?`).get(job.evidence.wordId) as Word|undefined;
   if(!target)throw new Error('Improvement target is unavailable');
   const words:SuppliedWord[]=[{ref:'target',form:target.hanzi,word:target}];
@@ -55,12 +57,14 @@ function exerciseText(body:VocabularyJson):{prompt:string;instruction:string;pos
   return {prompt,instruction:typeof material.instruction==='string'?material.instruction:'',postAnswer:Object.keys(postAnswer).length?postAnswer:null};
 }
 export function projectVocabularyImprovementInput(job:VocabularyReflectionJob,original:VocabularyContent,intendedSense:VocabularySense) {
+  job=eligibleVocabularyReflectionJob(job);
   return {
     words:vocabularyImprovementWords(job).map(({ref,form,word})=>({ref,form,lexical:word?{hanzi:word.hanzi,traditional:word.traditional,pinyin:word.pinyin,meaning:word.meaning}:null,canAuthorIndividual:word!==null})),
     source:exerciseText(original.body),intendedSense:{description:intendedSense.description},
     ...(job.reassessmentSource?{assessmentOrigin:'operator_reassessment; encounters retain their historical served cues'}:{}),
     encounters:job.evidence.evidence.map(encounter=>({...exerciseText(encounter.snapshot.body),
-      responses:encounter.responses.map(response=>({response:response.payload.response,outcome:response.payload.outcome,effective:encounter.effectiveResponses.some(effective=>effective.actionId===response.actionId)})),
+      responses:encounter.responses.map(response=>({response:response.payload.response,outcome:response.payload.outcome,
+        effective:encounter.effectiveResponses.some(effective=>effective.actionId===response.actionId)})),
       reactions:getEffectiveVocabularyEncounterReactions(encounter).map(({payload})=>({reaction:payload.feedback,...(payload.comment!==undefined?{comment:payload.comment}:{})})),
       skipped:encounter.skipped,presentationUndone:encounter.presentationUndone})),
   };

@@ -73,7 +73,8 @@ export function projectVocabularyReflectionInput(job:VocabularyReflectionJob):un
     :{kind:'pureCue',contentId:job.evidence.contentId},words,
     sourceContent:content,...(job.reassessmentSource?{assessmentOrigin:{kind:'operator_reassessment',sourceJobId:job.reassessmentSourceJobId??null,sessionEvidence:job.evidence.evidence.every(item=>item.snapshot.contentId===content?.contentId&&item.snapshot.contentVersion===content?.version)?'same_source':'historical_source'}}:{}),encounters:job.evidence.evidence.map(item=>({encounterId:item.encounterId,wordId:item.wordId,
       purpose:item.snapshot.role,mode:item.mode,served:item.snapshot,responses:item.responses.map(response=>({actionId:response.actionId,
-        response:response.payload.response,outcome:response.payload.outcome,effective:item.effectiveResponses.some(effective=>effective.actionId===response.actionId)})),
+        response:response.payload.response,outcome:response.payload.outcome,
+        effective:item.effectiveResponses.some(effective=>effective.actionId===response.actionId)})),
       reactions:getEffectiveVocabularyEncounterReactions(item).map(({payload})=>({encounterId:payload.encounterId,reaction:payload.feedback,...(payload.comment!==undefined?{comment:payload.comment}:{})})),skipped:item.skipped,presentationUndone:item.presentationUndone}))};
 }
 export function normalizeVocabularyReflectionOutput(job:VocabularyReflectionJob,value:unknown,invocationId?:string|null,withReferral=false):VocabularyReflectionResult {
@@ -84,11 +85,12 @@ export function normalizeVocabularyReflectionOutput(job:VocabularyReflectionJob,
   if(job.kind==='learner_feedback') {
     const result=value as {diagnosis:string;lesson:string;unfairEncounterIds:string[]};
     nonempty(result.diagnosis);nonempty(result.lesson);
-    if(new Set(result.unfairEncounterIds).size!==result.unfairEncounterIds.length||result.unfairEncounterIds.some(id=>
+    const unfairEncounterIds=result.unfairEncounterIds;
+    if(new Set(unfairEncounterIds).size!==unfairEncounterIds.length||unfairEncounterIds.some(id=>
       !job.evidence.evidence.some(item=>item.encounterId===id&&item.responses.some(response=>response.payload.outcome==='rejected')))) {
       throw new VocabularyReflectionOutputError('Unfair judgment must reference a supplied rejected encounter');
     }
-    return {kind:'learner_feedback',judgment:{diagnosis:result.diagnosis,message:result.lesson,unfairEncounterIds:result.unfairEncounterIds,
+    return {kind:'learner_feedback',judgment:{diagnosis:result.diagnosis,message:result.lesson,unfairEncounterIds,
       ...(invocationId?{invocationId}:{})}};
   }
   const result=value as {diagnosis:string;operations:{sourceContentId:string;strategy:'create'|'update_existing'|'replace'|'retire';rationale:string;prompt:string;acceptedAnswers:string[]}[]};
@@ -186,7 +188,7 @@ export function createVocabularyReflectionProvider(options:{environment?:NodeJS.
     if(job.evidence.kind==='teaching_review')throw new VocabularyReflectionOutputError('Teaching belongs to the manual inbox');
     job=eligibleVocabularyReflectionJob(job);
     if(!job.evidence.evidence.length&&!job.reassessmentSourceJobId){
-      const diagnosis='Provider review is deferred for non-production exercises; original evidence remains in the session log.';
+      const diagnosis='No eligible encounter evidence remains for provider review; original evidence remains in the session log.';
       return job.kind==='learner_feedback'?{kind:'learner_feedback',judgment:{diagnosis,message:null,unfairEncounterIds:[]}}
         :{kind:'exercise_improvement',result:{diagnosis,proposal:null}};
     }
@@ -211,9 +213,10 @@ export function createVocabularyReflectionProvider(options:{environment?:NodeJS.
     const stagePrompt=(stage:string)=>stage==='sense_mapping'?'sense-mapping':stage==='pure_cue_promotion'?'pure-cue-integration':'single-improvement';
     const admissionPromptVersion=(stage:string)=>stage==='single_improvement'?'5':stage==='sense_mapping'?'5':stage==='pure_cue_promotion'?'1':'2';
     const schemaVersion=(step:string)=>step==='single_improvement'?'4':step==='pure_cue_promotion'?'3':'1';
-    const projectionVersion=(step:string)=>step==='second_opinion'?'vocabulary-second-opinion.v1'
-      :step==='feedback'||step==='improvement'?'vocabulary-reflection.v2'
-      :step==='single_improvement'?'vocabulary-exercise-authoring.v1':step==='pure_cue_promotion'?'vocabulary-integration.v1':step==='sense_mapping'?'vocabulary-admission.v4':'vocabulary-admission.v1';
+    const projectionVersion=(step:string)=>step==='second_opinion'?'vocabulary-second-opinion.v2'
+      :step==='feedback'||step==='improvement'?'vocabulary-reflection.v3'
+      :step==='single_improvement'?'vocabulary-exercise-authoring.v2':step==='pure_cue_promotion'?'vocabulary-integration.v2':step==='sense_mapping'?'vocabulary-admission.v4'
+      :step==='pure_cue_improvement'?'vocabulary-admission.v2':'vocabulary-admission.v1';
     const routingFor=(step:string)=>{
       if(step!=='sense_mapping')return {config,adapter,apiKey,baseUrl};
       const failures=vocabularySenseMappingAvailabilityFailures(job.jobId);

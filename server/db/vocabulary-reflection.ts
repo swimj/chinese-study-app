@@ -12,11 +12,11 @@ import type { VocabularyActor, VocabularyJson, VocabularyContent } from '../../s
 import { VOCABULARY_COMPENSATION_POLICY, type VocabularySecondOpinion, type VocabularyReflectionCase, type VocabularyReflectionJob,
   type VocabularyFeedbackJudgmentInput, type VocabularyProposalDraft, type VocabularyContentProposal,
   type VocabularyAssessmentReview, type VocabularySenseLabel, type VocabularyProposalOperation, type VocabularyProposalApplication, type VocabularyImprovementResultInput, type VocabularyImprovementAdmission, type VocabularyPureCuePromotion, type VocabularyPureCueReferral, type VocabularyReflectionResult } from '../../src/domain/vocabulary-reflection.ts';
-import { getEffectiveVocabularyEncounterReactions, type VocabularySessionProjection, type VocabularyEncounterEvidence } from '../../src/domain/vocabulary-session.ts';
+import { getEffectiveVocabularyEncounterReactions, isLearnerPronunciationRejection, type VocabularySessionProjection, type VocabularyEncounterEvidence } from '../../src/domain/vocabulary-session.ts';
 import { config, getDb } from './connection.ts';
 import { requireLearnerId } from './learner-context.ts';
 import { isOperatorSubject, parseOperatorAllowlist } from '../operator-access.ts';
-import { isVocabularyProviderEncounter } from '../vocabulary/reflection-eligibility.ts';
+import { isGeneralProductionEncounter, isVocabularyProviderEncounter, isVocabularyPronunciationEncounter } from '../vocabulary/reflection-eligibility.ts';
 import { createVocabularyContent, updateVocabularyContent, replaceVocabularyContent, getVocabularySenseCatalog,
   getVocabularyContentForMaintenance, mapVocabularyContentSense, getVocabularySenses, emitBackendEvent } from './vocabulary-content.ts';
 import { isOfferedReflectionModelChoice, type ReflectionModelChoice } from '../reflection/model-arms.ts';
@@ -124,27 +124,31 @@ export function ingestVocabularySessionEvidence(learnerId: string, completionId:
     }
     const at = timestamp(recordedAt);
     db.prepare('INSERT INTO vocabulary_reflection_session_evidence VALUES (?,?,?,?,?)').run(completionId,learnerId,projection.sessionId,encoded,at);
-    const rejected = (item: VocabularyEncounterEvidence) => item.responses.some(response => response.payload.outcome === 'rejected');
-    const effectiveRejection = (item: VocabularyEncounterEvidence) => item.effectiveResponses.some(response => response.payload.outcome === 'rejected');
+    const contentRejection = (item: VocabularyEncounterEvidence, responses: VocabularyEncounterEvidence['responses']) => responses.some(response =>
+      response.payload.outcome === 'rejected' && !isLearnerPronunciationRejection(item.snapshot.kind, response.payload, item.snapshot.assessment?.acceptedAnswers ?? []));
+    // A pronunciation report is a real production miss for scheduling, but it is not a written-answer defect.
+    const rejected = (item: VocabularyEncounterEvidence) => contentRejection(item, item.responses);
+    const effectiveRejection = (item: VocabularyEncounterEvidence) => contentRejection(item, item.effectiveResponses);
     const comment = (item: VocabularyEncounterEvidence) => getEffectiveVocabularyEncounterReactions(item).some(reaction => reaction.payload.feedback === 'comment' || !!reaction.payload.comment?.trim());
     const negative = (item: VocabularyEncounterEvidence) => getEffectiveVocabularyEncounterReactions(item).some(reaction => reaction.payload.feedback === 'negative');
     // Teaching review retains recorded observations. Provider lesson and improvement jobs use effective evidence.
-    const issue = (item: VocabularyEncounterEvidence) => rejected(item) || comment(item) || item.skipped || negative(item);
-    const providerIssue = (item: VocabularyEncounterEvidence) => !item.presentationUndone
+    const issue = (item: VocabularyEncounterEvidence) => !isVocabularyPronunciationEncounter(item) && (rejected(item) || comment(item) || item.skipped || negative(item));
+    const providerIssue = (item: VocabularyEncounterEvidence) => isVocabularyProviderEncounter(item) && !item.presentationUndone
       && (effectiveRejection(item) || comment(item) || item.skipped || negative(item));
     // The session log retains undone responses. Provider jobs use only the responses that survived Undo.
     const effectiveEvidence = (items: VocabularyEncounterEvidence[]) => items.map(item => ({ ...item, responses: [...item.effectiveResponses] }));
     const cases: string[] = [];
-    const general = projection.encounters.filter(isVocabularyProviderEncounter);
+    // Retain all production evidence internally: pronunciation lapses must still veto compensation.
+    const general = projection.encounters.filter(isGeneralProductionEncounter);
     const wordIds = new Set(general.flatMap(item => item.wordId === null || item.snapshot.schedulingScope === 'pure_cue' ? [] : [item.wordId]));
     for (const wordId of wordIds) {
       const encounters = general.filter(item => item.wordId === wordId && item.snapshot.schedulingScope !== 'pure_cue');
-      if (encounters.some(item => effectiveRejection(item) || comment(item))) cases.push(createCase(learnerId,completionId,'learner_feedback',`word/${wordId}`,wordId,null,effectiveEvidence(encounters),at));
+      if (encounters.some(item => isVocabularyProviderEncounter(item) && (effectiveRejection(item) || comment(item)))) cases.push(createCase(learnerId,completionId,'learner_feedback',`word/${wordId}`,wordId,null,effectiveEvidence(encounters),at));
     }
     const pureIds = new Set(general.filter(item => item.snapshot.schedulingScope === 'pure_cue').map(item => item.snapshot.contentId));
     for (const contentId of pureIds) {
       const encounters = general.filter(item => item.snapshot.schedulingScope === 'pure_cue' && item.snapshot.contentId === contentId);
-      if (encounters.some(item => effectiveRejection(item) || comment(item))) cases.push(createCase(learnerId,completionId,'learner_feedback',`pure/${contentId}`,null,contentId,effectiveEvidence(encounters),at));
+      if (encounters.some(item => isVocabularyProviderEncounter(item) && (effectiveRejection(item) || comment(item)))) cases.push(createCase(learnerId,completionId,'learner_feedback',`pure/${contentId}`,null,contentId,effectiveEvidence(encounters),at));
     }
     const exercises = new Map<string, VocabularyEncounterEvidence[]>();
     for (const encounter of general.filter(item => !item.presentationUndone)) {
@@ -299,8 +303,10 @@ function compensate(evidence: VocabularyReflectionCase, judgmentId: string, inpu
     && (pure ? encounter.snapshot.schedulingScope === 'pure_cue' : encounter.snapshot.schedulingScope !== 'pure_cue')
     && (pure ? encounter.snapshot.contentId === evidence.contentId : encounter.wordId === evidence.wordId)
     && encounter.effectiveResponses.some(response => response.payload.outcome === 'rejected'));
-  // Mixed genuine/unfair failures retain the conservative current schedule.
-  if (effectiveRejected.length === 0 || effectiveRejected.some(encounter => !unfair.has(encounter.encounterId))) return;
+  const pronunciationReport = (encounter: VocabularyEncounterEvidence) => encounter.effectiveResponses.some(response =>
+    isLearnerPronunciationRejection(encounter.snapshot.kind, response.payload, encounter.snapshot.assessment?.acceptedAnswers ?? []));
+  // A pronunciation report is the lapse the learner requested. It blocks compensation even when a model lists that encounter as an unfair written rejection.
+  if (effectiveRejected.length === 0 || effectiveRejected.some(encounter => !unfair.has(encounter.encounterId) || pronunciationReport(encounter))) return;
   if (!pure) {
     const completion = getDb().prepare(`SELECT report_json FROM vocabulary_session_completions
       WHERE completion_id=? AND learner_id=? AND status='closed'`)

@@ -45,7 +45,7 @@ export function VocabularySessionContent(props: VocabularySessionViewProps) {
   const sendNoteShortcut = mac ? 'Meta+Enter' : 'Control+Enter';
   const primaryInFooter = response.primaryPlacement === 'footer' && !response.revealActions;
   const primaryButton = <button type={primaryInFooter ? 'button' : 'submit'}
-    className={`${response.shortcuts?.includes('Space') ? 'vocab-primary' : 'vocab-secondary'}${props.cardMotion?.confirmingPrimary ? ' is-confirming-action' : ''}`}
+    className={`${response.shortcuts?.includes('Space') ? 'vocab-primary' : 'vocab-secondary'}${props.cardMotion?.confirmingPrimary || response.confirming ? ' is-confirming-action' : ''}`}
     aria-keyshortcuts={response.primaryEnabled ? response.shortcuts?.join(' ') : undefined}
     disabled={!response.primaryEnabled || props.busy} onClick={primaryInFooter ? props.onPrimary : undefined}>
     {response.visible && !response.revealed ? <span className="vocab-action-label"><span>{response.primaryLabel}</span><span className="vocab-action-width" aria-hidden="true">Check answer</span><span className="vocab-action-width" aria-hidden="true">No clue</span></span> : response.primaryLabel}<ShortcutHint shortcuts={response.shortcuts} /></button>;
@@ -112,7 +112,7 @@ export function VocabularySessionContent(props: VocabularySessionViewProps) {
         {presentation.supportingContent && <div className="vocab-supporting">{presentation.supportingContent}</div>}
 
         {response.revealed && <section className={`vocab-answer vocab-answer-${response.assessment}${presentation.recognition ? ' vocab-answer-recognition' : ''}`} aria-label="Answer">
-          {!presentation.recognition && <p className="vocab-eyebrow">{response.assessment === 'accepted' ? 'That works' : response.assessment === 'rejected' ? 'Not quite — expected answer' : 'Answer'}</p>}
+          {!presentation.recognition && <p className="vocab-eyebrow">{response.writtenFormAccepted && response.assessment === 'rejected' ? 'Marked wrong' : response.assessment === 'accepted' ? 'That works' : response.assessment === 'rejected' ? 'Not quite — expected answer' : 'Answer'}</p>}
           {response.answer}
           {response.message && <p className="vocab-answer-message">{response.message}</p>}
         </section>}
@@ -138,6 +138,7 @@ export function VocabularySessionContent(props: VocabularySessionViewProps) {
       <footer className="vocab-card-footer">
         <div className="vocab-word-controls">
           <div className="vocab-continuation-slot" ref={setActionTarget} />
+          {primaryInFooter && response.overrideAction}
           {primaryInFooter && primaryButton}
           {primaryInFooter && <Action control={controls.skip} onClick={props.onSkip}>Skip exercise</Action>}
           {props.stopWord && props.onStopWord && <Action control={props.stopWord} onClick={props.onStopWord}>Come back later</Action>}

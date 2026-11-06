@@ -127,8 +127,14 @@ The shortcut guide in the study UI lists the available keys. Shortcuts follow
 controller availability; typing, IME composition, native button activation and
 modal dialogs retain their own keyboard behavior. Space invokes the emphasized
 reveal or continuation action. Recognition ratings save before advancing; save
-retry preserves the departure until acknowledgement. Contrast supports numbered
-selection followed by Enter confirmation.
+retry preserves the departure until acknowledgement. After a correct written
+production answer, 1 marks the attempt wrong and Space or Enter continues with
+an ordinary success. Either choice saves before the card leaves. Undo before
+that choice discards the local reveal and restores the typed answer. Returning
+to an answered encounter derives its written-match display from the retained
+response; pronunciation rejections preserve the accepted characters, including
+the chosen pure-cue member. Contrast
+supports numbered selection followed by Enter confirmation.
 
 Answer inputs take focus when they become enabled, including after motion or
 Undo. Opening reactions leaves the comment field unfocused; Escape toggles focus

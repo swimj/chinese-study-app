@@ -89,8 +89,23 @@ export function VocabularyStudy({ controller, hideStartButton = false, character
     else if (c.revealed || encounter?.skipped) return c.next();
     else c.submitResponse(c.input.trim().length ? c.input : null);
   }
+  function confirmProduction(override: boolean, fromKeyboard = false) {
+    if (!canAct || !c.pendingProductionOverride || ratingTimer.current) return;
+    const submit = () => c.commitProductionAnswer(override, async (savedStudy, advance) => {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      await motion.runPrimary(advance, { depart: true, outcome: getVocabularyCardOutcome(savedStudy) });
+    });
+    if (!fromKeyboard) { submit(); return; }
+    setConfirmingRating(override ? 'rejected' : 'accepted');
+    ratingTimer.current = setTimeout(() => {
+      ratingTimer.current = undefined;
+      submit();
+      setConfirmingRating(null);
+    }, 180);
+  }
   function primary(fromKeyboard = false) {
     if (!canAct || composing.current) return;
+    if (c.pendingProductionOverride) { confirmProduction(false, fromKeyboard); return; }
     void motion.runPrimary(performPrimary, {fromKeyboard: fromKeyboard && c.revealed, depart: c.revealed && !(recognition && c.assessment === 'unassessed'), outcome: getVocabularyCardOutcome(study!)});
   }
   function rateRecognition(value: 'accepted' | 'rejected', fromKeyboard = false) {
@@ -114,7 +129,8 @@ export function VocabularyStudy({ controller, hideStartButton = false, character
   const submitted = encounter?.effectiveResponses.at(-1)?.payload;
   // A pure cue has no preferred member. Keep the learner's accepted input both
   // during optimistic reveal and when replaying the persisted response.
-  const answerForms = encounter?.snapshot.schedulingScope === 'pure_cue' && assessment === 'accepted'
+  const pronunciationMarked = c.writtenFormMatched && assessment === 'rejected';
+  const answerForms = encounter?.snapshot.schedulingScope === 'pure_cue' && (assessment === 'accepted' || pronunciationMarked)
     ? (submitted?.response ?? c.input).trim() || expectedAnswer : expectedAnswer;
   const criteria = materialObject(encounter?.snapshot.assessment?.criteria);
   const choices = materialObject(material).choices;
@@ -146,12 +162,15 @@ export function VocabularyStudy({ controller, hideStartButton = false, character
     response: { visible: !intro && !recognition && !contrast && !encounter?.skipped && wordProgress?.workStatus !== 'wrapped' && wordProgress?.workStatus !== 'skipped', value: c.input, placeholder: 'What Chinese comes to mind?', disabled: !canAct,
       revealed: c.revealed, assessment,
       answer: <>
-        {assessment === 'rejected' && !recognition && !contrast && <p className="vocab-submitted-answer">{submitted?.response || c.input ? <>Your answer: <span lang="zh">{submitted?.response ?? c.input}</span></> : 'No answer entered.'}</p>}
+        {assessment === 'rejected' && !recognition && !contrast && !pronunciationMarked && <p className="vocab-submitted-answer">{submitted?.response || c.input ? <>Your answer: <span lang="zh">{submitted?.response ?? c.input}</span></> : 'No answer entered.'}</p>}
         {encounter && <VocabularyAnswer snapshot={encounter.snapshot} word={word} characterPresentation={characterPresentation} sentenceCharacterPresentation={sentenceCharacterPresentation} />}
         {contrast && <VocabularyContrastAnswer material={material} selectedWordId={submitted?.selectedWordId ?? (selectedChoice === null ? undefined : String(displayedChoices[selectedChoice]?.wordId))} correctWordId={typeof criteria.correctWordId === 'string' ? criteria.correctWordId : undefined} sentenceCharacterPresentation={sentenceCharacterPresentation} />}
         {word && <VocabularyPersonalNotes word={word} />}
 
       </>,
+      writtenFormAccepted: c.writtenFormMatched && (assessment === 'accepted' || assessment === 'rejected'),
+      confirming: confirmingRating === 'accepted' && c.pendingProductionOverride,
+      overrideAction: c.pendingProductionOverride ? <button type="button" aria-keyshortcuts="1" className={`vocab-secondary${confirmingRating === 'rejected' ? ' is-confirming-action' : ''}`} disabled={!canAct} onClick={() => confirmProduction(true)}>Wrong<ShortcutHint shortcut="1" /></button> : undefined,
       revealActions: c.revealed && recognition && assessment === 'unassessed' && <div className="vocab-recognition-actions" role="group" aria-label="How did you remember this word?">
           <button type="button" aria-keyshortcuts="2 Space" className={`vocab-primary${confirmingRating === 'accepted' ? ' is-confirming-action' : ''}`} disabled={!canAct} onClick={() => rateRecognition('accepted')}>Correct<ShortcutHint shortcuts={['2', 'Space']} /></button>
           <button type="button" aria-keyshortcuts="1" className={`vocab-secondary${confirmingRating === 'rejected' ? ' is-confirming-action' : ''}`} disabled={!canAct} onClick={() => rateRecognition('rejected')}>Forgot<ShortcutHint shortcut="1" /></button>
@@ -173,7 +192,7 @@ export function VocabularyStudy({ controller, hideStartButton = false, character
       skip: control(!intro && encounter?.snapshot.role !== 'teaching' && assessment !== 'accepted' && study.controls.canSkip && !completed && !encounter?.skipped && wordProgress?.workStatus !== 'wrapped'),
       another: control(!c.revealed && !encounter?.skipped && wordProgress?.workStatus !== 'wrapped' && !intro && !recognition && encounter?.snapshot.role !== 'teaching' && study.controls.canNext && !completed),
       enough: control(study.controls.canEnough && !completed), more: control(study.controls.canMore && !completed),
-      undo: control(study.controls.canUndo && !completed),
+      undo: control((study.controls.canUndo || c.pendingProductionOverride) && !completed),
       finishForNow: control(study.controls.canFinishForNow && !completed), finishImmediately: control(study.controls.canFinishImmediately && !completed),
       changeMode: control(false),
     },
@@ -222,7 +241,7 @@ export function VocabularyStudy({ controller, hideStartButton = false, character
       const input = surface.current?.querySelector<HTMLTextAreaElement>('.vocab-reaction-drawer.is-open textarea:not(:disabled)');
       if (input === document.activeElement) surface.current?.focus(); else input?.focus();
     },
-    forgot: () => rateRecognition('rejected', true), correct: () => rateRecognition('accepted', true),
+    forgot: () => { if (c.pendingProductionOverride) confirmProduction(true, true); else rateRecognition('rejected', true); }, correct: () => rateRecognition('accepted', true),
     undo: props.onUndo, another: props.onAnother, skip: props.onSkip, enough: props.onEnough,
     more: props.onMore, finish: props.onFinishForNow, reactions: () => setReactionOpen((value) => !value),
     helpful: () => { setReactionOpen(true); c.react(c.reaction === 'helpful' ? null : 'helpful'); },
@@ -245,6 +264,7 @@ export function VocabularyStudy({ controller, hideStartButton = false, character
       if (!intro && props.response.primaryEnabled) available.add('primary');
       if (props.response.visible && !c.revealed) { available.add('noClue'); available.add('focusInput'); }
       if (recognition && c.revealed && assessment === 'unassessed') { available.add('correct'); available.add('forgot'); }
+      if (c.pendingProductionOverride) available.add('forgot');
       if (contrast && !c.revealed) {
         for (const { command } of choiceShortcuts) available.add(command);
       }

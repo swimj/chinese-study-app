@@ -1,3 +1,4 @@
+import { eligibleVocabularyReflectionJob } from './reflection-eligibility.ts';
 import { VocabularyReflectionConflict } from '../db/vocabulary-reflection.ts';
 import { pureCueStimulusRepairErrors } from '../../src/domain/pure-cue-repair.ts';
 import { isDeepStrictEqual } from 'node:util';
@@ -27,8 +28,10 @@ function record(value:VocabularyJson|undefined):Record<string,VocabularyJson>{
 export function prepareVocabularyPureCueImprovement(job:VocabularyReflectionJob,original:VocabularyContent){
   if(original.kind!=='exercise'||original.exerciseType!=='pure_cue'||original.skill!=='production'||original.exerciseRole!=='general')throw new Error('Pure-cue review requires a general production pure cue');
   if(original.accessScope==='private'&&original.ownerLearnerId!==job.learnerId)throw new Error('Pure-cue review source access mismatch');
+  job=eligibleVocabularyReflectionJob(job);
   const rawResponses=[...new Set(job.evidence.evidence.filter(encounter=>!encounter.presentationUndone).flatMap(encounter=>encounter.effectiveResponses
-    .filter(response=>response.payload.outcome==='rejected').flatMap(response=>response.payload.response?.trim()?[response.payload.response]:[])))];
+    .filter(response=>response.payload.outcome==='rejected')
+    .flatMap(response=>response.payload.response?.trim()?[response.payload.response]:[])))];
   const members=()=>original.answers.map(answer=>{
     const word=getDb().prepare(`${wordQuery} WHERE id=?`).get(answer.wordId) as Word|undefined;
     if(!word)throw new Error('Pure-cue member lexical identity is missing');return word;

@@ -1,8 +1,29 @@
 import type { VocabularySessionPayload } from './vocabulary-session-payload';
 import type { BootstrapRevealSnapshot } from './word-content/reveal';
 import type { WordContentDocument } from './word-content/types';
+import { normalizeProductionAnswerForProfile } from '../study-profile';
 
 /** Shared, side-effect-free interpretation of the authoritative vocabulary session log. */
+/** Written-form match used by production grading. Pronunciation is a separate learner report. */
+export function productionWrittenFormAccepted(acceptedAnswers: readonly string[], response: string | null): boolean {
+  if (response === null) return false;
+  const normalized = normalizeProductionAnswerForProfile(response, 'mandarin');
+  return normalized.length > 0 && acceptedAnswers.some((answer) => normalizeProductionAnswerForProfile(answer, 'mandarin') === normalized);
+}
+
+/**
+ * The learner typed an accepted written form and then reported the pronunciation as wrong.
+ * The stored text stays the matching answer; outcome and selfAssessment are both rejected.
+ */
+export function isLearnerPronunciationRejection(
+  kind: string,
+  payload: { response: string | null; outcome: 'accepted' | 'rejected'; selfAssessment?: 'accepted' | 'rejected' },
+  acceptedAnswers: readonly string[],
+): boolean {
+  return kind === 'production' && payload.outcome === 'rejected' && payload.selfAssessment === 'rejected'
+    && productionWrittenFormAccepted(acceptedAnswers, payload.response);
+}
+
 export const VOCABULARY_SESSION_PROTOCOL_VERSION = 1 as const;
 export const VOCABULARY_SESSION_POLICY = {
   version: 'vocabulary-session.v6',
@@ -478,7 +499,8 @@ function applyAction(state: VocabularySessionProjection, action: VocabularySessi
       invariant(encounter.responses.length === 0, 'another response requires a fresh encounter');
       invariant(action.payload.selectedWordId === undefined || encounter.snapshot.kind === 'contrast', 'word choice requires contrast');
       invariant(encounter.snapshot.kind !== 'contrast' || typeof action.payload.selectedWordId === 'string', 'contrast requires selected word identity');
-      invariant(action.payload.selfAssessment === undefined || encounter.snapshot.kind === 'recognition', 'self assessment requires recognition');
+      const pronunciation = isLearnerPronunciationRejection(encounter.snapshot.kind, action.payload, encounter.snapshot.assessment?.acceptedAnswers ?? []);
+      invariant(action.payload.selfAssessment === undefined || encounter.snapshot.kind === 'recognition' || pronunciation, 'production self assessment is only a pronunciation rejection of the accepted written form');
       invariant(action.payload.selfAssessment === undefined || action.payload.selfAssessment === action.payload.outcome, 'self assessment outcome mismatch');
       encounter.responses.push(action);
       if (word === null) return;

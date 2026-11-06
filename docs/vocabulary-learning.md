@@ -282,7 +282,11 @@ request; this ordering is owned by `useVocabularyStudy`, not independently
 performed by the server's session-creation function.
 
 Recognition records learner self-assessment. Typed production compares normalized
-input with the retained accepted-answer forms. Contrast validates a selected
+input with the retained accepted-answer forms. When that comparison accepts the
+written form, the learner can mark the attempt wrong before it is saved. The
+server retains the matching text, a rejected outcome, and that pronunciation
+self-assessment. A production self-assessment on any other written form is
+rejected. Contrast validates a selected
 served word identity against the retained correct-choice criteria. The server
 verifies the outcome against the served assessment before retaining the response.
 
@@ -475,6 +479,11 @@ effective general-production evidence: an undone response does not open an
 improvement case and is omitted from its stored encounters, and
 presentation-undone encounters are excluded. Teaching-review selection uses
 the recorded encounters, including observations Undo retained.
+
+Pronunciation-failure encounters, including their comments and reactions, do
+not trigger post-session review and are excluded from model inputs even in
+mixed cases for the same exercise or word. Internal case evidence retains them
+so compensation cannot erase a genuine pronunciation lapse.
 
 Automatic scheduling compensation is independent of content application. The
 initial policy compensates general production and independent pure-cue scheduling,

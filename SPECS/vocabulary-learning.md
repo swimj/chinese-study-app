@@ -181,17 +181,31 @@ translation, then sense. Each Space press or Reveal activation advances one beat
 a missing translation is skipped. Continue follows the final reveal. It does not
 replay the introduction, assess correctness, or award recall credit.
 Recognition ratings advance immediately after saving; production reveals its
-result before the learner continues.
+result before the learner continues. After a correct written production answer
+is shown, the learner can mark that attempt wrong. The submitted characters
+still match an accepted written form. The attempt counts as a production failure
+for streaks, reinforcement, coverage, and scheduling. The entire encounter,
+including its reactions and comments, is excluded from
+post-session lesson and content-review triggers and model inputs, even when
+another encounter for the same word or exercise merits review. It remains in
+history and scheduling evidence and cannot be judged an unfair written
+rejection. A typed answer outside the accepted forms remains a
+written failure and keeps the existing feedback path. Continuing without the
+mark records an ordinary success. Undo before saving restores the typed answer.
+Undo after saving withdraws the latest committed transition.
 
 The answer reveal shows the exercise's mapped sense when one is available,
 with lexical meaning as the fallback. It retains pronunciation, authored usage
 notes and explanations. Cloze reveals stay tied to the answered prompt: show its
 mapped sense or lexical meaning, and a translation only when linked to the
 completed cloze. A correct pure-cue response fills the blank with the learner's
-accepted input, preserving their choice among accepted members. Cloze reveals
+accepted input, preserving their choice among accepted members. A pronunciation
+rejection of a matching written form keeps that same input in the blank. Cloze reveals
 do not introduce a different example sentence. Other eligible reveals retain source examples. A Word reference
-disclosure exposes the full retained teaching source. Rejected production shows
-the learner's submitted answer alongside the expected answer. Personal notes
+disclosure exposes the full retained teaching source. A written production failure shows
+the learner's submitted answer alongside the expected answer. A matching written
+form that the learner marked wrong shows the accepted answer and that pronunciation
+failure, without presenting the characters as a written miss. Personal notes
 are visible after reveal and reflect the learner's current notes rather than
 the frozen exercise. Creating and editing personal notes is paused while their
 relationship to words, exercises, and senses is being decided. Learner reactions
