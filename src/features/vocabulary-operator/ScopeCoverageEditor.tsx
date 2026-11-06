@@ -5,6 +5,7 @@ import type { VocabularyContentProposal } from '../../domain/vocabulary-reflecti
 import type { VocabularyOperatorApi, VocabularyReassessmentModel, VocabularyReassessmentSource } from './api';
 import type { VocabularyCaseQueueItem } from '../../domain/vocabulary-case-queue';
 import { coverageImpact,scopeBlocksNavigation } from './sense-coverage';
+import { SenseDetails } from './SenseDetails';
 type Selection={ids:string[];expectedVersion:number};
 function notes(value:VocabularySenseCoverageWorkspace['senses'][number]['description']):string[]{return value&&typeof value==='object'&&!Array.isArray(value)&&Array.isArray(value.notes)?value.notes.filter((note):note is string=>typeof note==='string'):[];}
 function label(value:VocabularySenseCoverageWorkspace['senses'][number]['description']):string {
@@ -61,15 +62,14 @@ export function ScopeCoverageEditor({api,wordId,disabled,finding,onActivity,onSa
     <button className="secondary-button" disabled={pending||disabled} onClick={()=>{setDraft(null);setError('');setReassessOpen(false);}}>Discard edits</button>
   </div>;
   return <section className="vocabulary-sense-coverage" aria-label="Selected senses">
-    <div className="vocabulary-selection-heading"><strong>Selected senses{draft?' · unsaved':''}</strong>{current&&(!current.selectionEstablished||selected.length>0)&&<button className="secondary-button" disabled={pending||disabled} onClick={()=>choose([])}>Select none</button>}</div>
+    <div className="vocabulary-selection-heading"><strong>Selected senses{draft?' · unsaved':''}</strong></div>
     {finding&&<p role="status">{finding.reason}</p>}
     {pending&&<p role="status">{saving?'Saving selection…':'Loading senses…'}</p>}
     {error&&<p role="alert" className="vocabulary-operator-error">{error} <button disabled={pending||disabled} onClick={()=>void load()}>Reload selection</button></p>}
     {current&&<>
       {!current.selectionEstablished&&!draft&&<p role="status">Useful senses have not been selected.</p>}
       {current.selectionEstablished&&selected.length===0&&!draft&&<p role="status">No senses selected.</p>}
-      <div className="vocabulary-sense-chips" role="group" aria-label="Useful senses">{current.senses.filter(sense=>sense.status==='active').map(sense=><button key={sense.senseId} type="button" className="vocabulary-sense-chip" aria-pressed={selected.includes(sense.senseId)} disabled={pending||disabled} onClick={()=>choose(selected.includes(sense.senseId)?selected.filter(id=>id!==sense.senseId):[...selected,sense.senseId])}>{label(sense.description)}</button>)}</div>
-      {current.senses.some(sense=>sense.status==='active'&&notes(sense.description).length>0)&&<details><summary>Sense notes</summary>{current.senses.filter(sense=>sense.status==='active'&&notes(sense.description).length>0).map(sense=><div key={sense.senseId}><strong>{label(sense.description)}</strong><ul>{notes(sense.description).map((note,index)=><li key={index}>{note}</li>)}</ul></div>)}</details>}
+      <div className="vocabulary-sense-chips" role="group" aria-label="Useful senses">{current.senses.filter(sense=>sense.status==='active').map(sense=><SenseDetails key={sense.senseId} label={label(sense.description)} notes={notes(sense.description)}><button type="button" className="vocabulary-sense-chip" aria-pressed={selected.includes(sense.senseId)} disabled={pending||disabled} onClick={()=>choose(selected.includes(sense.senseId)?selected.filter(id=>id!==sense.senseId):[...selected,sense.senseId])}>{label(sense.description)}</button></SenseDetails>)}</div>
       {draft&&impact>0&&<p role="status">{impact} mapped general production {impact===1?'exercise':'exercises'} will stop being selected. Content remains active.</p>}
       {draft&&draft.expectedVersion!==current.word.version&&<p role="alert">Word defaults changed. Discard edits before selecting from the current version.</p>}
       {actionsContainer?createPortal(actions,actionsContainer):actions}

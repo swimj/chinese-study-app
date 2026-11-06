@@ -26,3 +26,9 @@ export function vocabularyPhraseClozeError(body:VocabularyJson):string|null {
   return stimulus.kind==='phrase_cloze'&&(typeof stimulus.text!=='string'||stimulus.text.match(/_+/g)?.join('|')!=='____')
     ?'Mandarin cloze must contain exactly one ____ blank.':null;
 }
+
+/** Some retained frames include the cloze itself. Include that exact text only once. */
+export function vocabularyPhraseClozePrompt(frame: string, text: string): string {
+  const cleanFrame = frame.trim(), cleanText = text.trim();
+  return cleanText && cleanFrame.endsWith(cleanText) ? cleanFrame : [cleanFrame, cleanText].filter(Boolean).join('\n');
+}

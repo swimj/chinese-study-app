@@ -1,3 +1,4 @@
+import { vocabularyPhraseClozePrompt } from '../../src/domain/vocabulary-production-coverage.ts';
 import { isVocabularySessionWordEligible } from '../db/vocabulary-sense-eligibility.ts';
 import { ensureVocabularyDefaultUsefulSelection,retryDefaultUsefulSelection,defaultUsefulSelectionRetryable } from './default-useful-selection.ts';
 import { VocabularySenseReadinessPending,VocabularySenseSelectionRequired } from './sense-readiness.ts';
@@ -206,7 +207,7 @@ export function createVocabularyPracticePreparation(options: { provider?: Vocabu
           const mapping = sourceSenses.find((sense) => sense.source_use_id === exercise.sourceUseId);
           if(!mapping)throw new Error('Vocabulary preparation lost its canonical use binding');
           const created = createVocabularyContent({ contentId: `vocabulary-practice-content:${hash([workId,exercise.id])}`,
-            kind: 'exercise',payloadVersion: 1,body: { prompt: exercise.stimulus.kind === 'direct_text' ? exercise.stimulus.text : `${exercise.stimulus.frame}\n${exercise.stimulus.text}`,
+            kind: 'exercise',payloadVersion: 1,body: { prompt: exercise.stimulus.kind === 'direct_text' ? exercise.stimulus.text : vocabularyPhraseClozePrompt(exercise.stimulus.frame, exercise.stimulus.text),
               instruction: '',stimulus: exercise.stimulus as unknown as VocabularyJson,reveal: { teachingNote: exercise.teachingNote },
               source: { kind: 'general_exercises',bootstrapContentId: source!.id,localId: exercise.id,promptVersion: GENERAL_EXERCISE_CONTRACT.promptVersion,model: provider.model } },
             exerciseType: exercise.stimulus.kind === 'phrase_cloze' ? 'cloze' : 'definition_gloss',skill: 'production',exerciseRole: 'general',

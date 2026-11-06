@@ -35,7 +35,7 @@ test('pure cue uses the stored axis, direct accepted delta, and teaching note wi
   const item=caseReviewFixture();item.wordLabel=null;item.wordId=null;
   item.served[0].pureCue={axisNote:'Stored semantic purpose',teachingNote:'Original explanation'};
   const operation=item.proposal!.operations[0];operation.pureCue={axisNote:'Stored semantic purpose',teachingNote:'Revised explanation'};operation.acceptedAnswers=['报备','报告'];
-  const html=render(item);assert.match(html,/<h2>Stored semantic purpose<\/h2>/);assert.match(html,/Revised teaching note/);assert.match(html,/Revised explanation/);assert.match(html,/changes to/);assert.doesNotMatch(html,/vocabulary-sense-group/);assert.match(html,/Accepted answers/);
+  const html=render(item);assert.match(html,/<h2>Stored semantic purpose<\/h2>/);assert.match(html,/Teaching note:/);assert.match(html,/Revised explanation/);assert.match(html,/changes to/);assert.doesNotMatch(html,/vocabulary-sense-group/);assert.match(html,/Accepted answers/);
   item.served[0].pureCue.axisNote=null;assert.match(render(item),/<h2>Content review<\/h2>/);
 });
 test('chronological first encounter leads; collapsed history retains distinct snapshots and undone evidence',()=>{
@@ -90,4 +90,27 @@ test('pure cue answer display simplifies and deduplicates without mutating store
  item.served[0].acceptedAnswers=['报备','報備','报告','報告'];
  const html=render(item);assert.match(html,/报备 · 报告/);assert.doesNotMatch(html,/報備|報告/);
  assert.deepEqual(item.served[0].acceptedAnswers,['报备','報備','报告','報告']);
+});
+
+test('source repairs show one summary without an empty disclosure; additional exercises retain reasons',()=>{
+ const item=caseReviewFixture(); const op=item.proposal!.operations[0];
+ const html=render(item);
+ assert.match(html,/vocabulary-review-item--plain/);
+ assert.doesNotMatch(html,/Proposal 1:|official-record context distinguishes/);
+ assert.equal(html.split(item.assessment!.diagnosis).length-1,1);
+ op.learningRole='enrichment';op.strategy='create';
+ assert.match(render(item),/official-record context distinguishes/);
+ assert.doesNotMatch(render(item),/vocabulary-review-item--plain/);
+});
+test('compact model identifies the author rather than mapping or shared integration',()=>{
+ const item=caseReviewFixture();item.assessment!.models.unshift({invocationId:'map',stage:'sense_mapping',provider:'zai',model:'mapping-model',resolvedModel:null});
+ item.assessment!.models.push({invocationId:'integration',stage:'pure_cue_promotion',provider:'zai',model:'integration-model',resolvedModel:null});
+ assert.match(render(item),/Content model.*gpt-6-sol/);assert.doesNotMatch(render(item),/mapping-model|integration-model/);
+ item.proposal!.authorKind='operator';assert.match(render(item),/Operator correction/);assert.doesNotMatch(render(item),/Content model/);
+});
+test('repeated encounter history keeps outcomes while omitting identical cue and metadata',()=>{
+ const item=caseReviewFixture();item.served.push({...structuredClone(item.served[0]),encounterId:'repeat',presentedAt:'2026-11-01T10:00:00Z',responses:[{actionId:'repeat-response',text:'报备',outcome:'accepted',undone:false}]});
+ const html=render(item);assert.equal(html.split('Before taking leave').length-1,1);assert.match(html,/accepted/);assert.doesNotMatch(html,/· general|· production|· version 1/);
+ item.served[1].prompt='A changed cue';item.served[1].contentVersion=2;
+ assert.match(render(item),/A changed cue/);assert.match(render(item),/version 2/);
 });

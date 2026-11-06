@@ -1,3 +1,4 @@
+import { vocabularyPhraseClozePrompt } from '../../src/domain/vocabulary-production-coverage.ts';
 import { getVocabularyRepertoireSelection } from '../db/vocabulary-repertoire-selection.ts';
 import { projectVocabularyImprovementInput, vocabularyImprovementWords } from './exercise-improvement-authoring.ts';
 import { isVocabularyDefinitionFallback } from '../../src/domain/vocabulary-production-coverage.ts';
@@ -259,7 +260,7 @@ export async function runVocabularyImprovementAdmission(options: {
     }
     const authoredOperations=repertoire.exercises.map((exercise,index)=>({sourceContentId:original.contentId,
       strategy:index===0?'replace':'create',rationale:diagnosis,
-      prompt:exercise.stimulus.kind==='direct_text'?exercise.stimulus.text:`${exercise.stimulus.frame}\n${exercise.stimulus.text}`,
+      prompt:exercise.stimulus.kind==='direct_text'?exercise.stimulus.text:vocabularyPhraseClozePrompt(exercise.stimulus.frame, exercise.stimulus.text),
       acceptedAnswers:original.answers.flatMap(answer=>answer.acceptedForms)}));
     const normalized=options.normalize({diagnosis,operations:authoredOperations.length?authoredOperations:[{sourceContentId:original.contentId,
       strategy:'retire',rationale:diagnosis,prompt:'',acceptedAnswers:original.answers.flatMap(answer=>answer.acceptedForms)}]},invocationId);
@@ -267,7 +268,7 @@ export async function runVocabularyImprovementAdmission(options: {
     const timestamp=new Date().toISOString();
     normalized.result.proposal.operations.slice(0,repertoire.exercises.length).forEach((op,index)=>{
       const exercise=repertoire.exercises[index]!;
-      op.content.body={prompt:exercise.stimulus.kind==='direct_text'?exercise.stimulus.text:`${exercise.stimulus.frame}\n${exercise.stimulus.text}`,
+      op.content.body={prompt:exercise.stimulus.kind==='direct_text'?exercise.stimulus.text:vocabularyPhraseClozePrompt(exercise.stimulus.frame, exercise.stimulus.text),
         instruction:'',stimulus:exercise.stimulus,reveal:{teachingNote:exercise.teachingNote},
         source:{kind:'vocabulary_repertoire',assessedContentId:original.contentId,assessedContentVersion:original.version,
           localId:exercise.id,promptVersion:GENERAL_EXERCISE_CONTRACT.promptVersion,invocationId:invocationId??null}};

@@ -78,3 +78,12 @@ test('compact review labels learning roles while historical operations retain th
  assert.match(historical,/Replace exercise/);
  assert.doesNotMatch(historical,/Distinctive refinement|Optional enrichment|Shared practice|Source exercise/);
 });
+
+test('editing a retained cloze with a complete frame saves its sentence once',()=>{
+ const text='请查收此____。',frame=`A formal letter: ${text}`;
+ const content={...operation().content,body:{prompt:`${frame}\n${text}`,stimulus:{kind:'phrase_cloze',frame,text}}};
+ const cue=editableCue(content);assert.ok(cue);
+ const changed=updateCue(content,cue);
+ assert.equal((changed.body as {prompt:string}).prompt,frame);
+ assert.equal((content.body as {prompt:string}).prompt,`${frame}\n${text}`);
+});

@@ -1,0 +1,8 @@
+.vocabulary-sense-with-details { display: inline-flex; align-items: center; max-width: 100%; gap: .15rem; }
+.vocabulary-sense-with-details > .vocabulary-sense-chip { min-width: 0; }
+.vocabulary-sense-info { flex: 0 0 auto; padding: .4rem; background: transparent; }
+.vocabulary-sense-details { position: fixed; z-index: 1100; width: min(25rem, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow: auto; box-sizing: border-box; padding: 1rem; border: 1px solid var(--border); border-radius: .65rem; background: var(--surface); color: var(--text); box-shadow: var(--shadow-card); overflow-wrap: anywhere; }
+.vocabulary-sense-details-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: .75rem; }
+.vocabulary-sense-details-heading > button { flex: 0 0 auto; padding: .15rem .5rem; }
+.vocabulary-sense-details ul { margin-bottom: 0; padding-left: 1.2rem; }
+.vocabulary-sense-details li + li { margin-top: .65rem; }
