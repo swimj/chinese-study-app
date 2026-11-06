@@ -78,9 +78,8 @@ npm run testbed -- start reconciliation
 The actual `/operator/improvement?view=attention` route opens Needs attention
 with a synthetic 挂钩 reconciliation: three
 canonical senses imported from an original teaching source and a replacement
-teaching document with four unmapped uses. Two mapping preparation failures share
-one expandable reconciliation item; an unrelated provider failure for the same
-word remains separate. An active learner requests replacement content. Compare uses, save/reload a
+teaching document with four unmapped uses. Three preparation failures on the same source (two mapping failures and one
+generation failure) share one expandable reconciliation item. An active learner requests replacement content. Compare uses, save/reload a
 linguistic resolution, inspect missing-handler blockers, and apply a supported
 existing-sense resolution through the real backend.
 

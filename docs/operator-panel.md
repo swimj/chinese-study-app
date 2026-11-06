@@ -61,10 +61,10 @@ item. The matcher appears within the selected attention item. The compatibility
 URL `/operator/reconciliation` opens Needs attention; reconciliation has no separate
 rail tab. Compare canonical senses and defaults with the teaching uses, notes and examples.
 
-One item groups mapping failures that share a current or reviewed teaching-source
+One item groups preparation failures that share a current or reviewed teaching-source
 resolution. Expand **Individual cases** to inspect the source and each retained
-preparation failure. Unrelated failures and reflection cases remain separate, even
-when they concern the same word. Grouping does not merge or delete their records.
+preparation failure. Failures on sources outside the resolution and unrelated reflection cases remain
+separate, even when they concern the same word. Grouping does not merge or delete their records.
 Matched teaching uses group beside their chosen canonical sense as you assign them;
 unassigned and excluded uses remain in separate groups. This grouping reflects
 operator choices, not automated semantic matching.
@@ -89,7 +89,7 @@ both are ready. Other ready study and already-running sessions remain available.
 Retry failed preparation under unchanged authority. If canonical senses or defaults
 change while replacement is incomplete, a new reviewed resolution is required.
 Completed reconciliations leave Needs attention when no current mismatch or newer
-decision remains. Their covered mapping failures also leave the active queue while
+decision remains. Their covered preparation failures also leave the active queue while
 the original records and resolution history remain retained. Completed reconciliation
 does not permanently lock future default edits.
 

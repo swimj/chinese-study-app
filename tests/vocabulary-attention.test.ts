@@ -163,17 +163,17 @@ const preparationDependencies={approvals:[] as VocabularyApprovalRequest[],prepa
   const row=sql.prepare('SELECT source_content_id,last_error FROM vocabulary_practice_preparation WHERE work_id=?').get(workId)!;
   return {workId,wordId:'word',sourceContentId:String(row.source_content_id),attemptCount:1,invocationId:null,lastError:String(row.last_error),retryable:false};
 }};
-test('one reconciliation groups exact mapping failures while preserving unrelated work on the same word',()=>{
+test('one reconciliation groups failures by replaced source regardless of error label',()=>{
   seedReconciliationSource();seedReconciliationSource('older-document',false);
-  seedPreparation('mapping-a');seedPreparation('mapping-b');seedPreparation('provider-failure','document','generation_failed');seedPreparation('older-mapping','older-document');
+  seedPreparation('mapping-a');seedPreparation('mapping-b');seedPreparation('provider-failure','document','generation_failed');seedPreparation('older-mapping','older-document');seedPreparation('older-provider','older-document','generation_failed');
   seed('unrelated-case','exercise_improvement');
   const page=listVocabularyAttention('editor',{},preparationDependencies);
   assert.equal(page.total,4);
-  assert.deepEqual(page.items.map(item=>item.id),['case:unrelated-case','preparation:older-mapping','preparation:provider-failure','reconciliation:word']);
+  assert.deepEqual(page.items.map(item=>item.id),['case:unrelated-case','preparation:older-mapping','preparation:older-provider','reconciliation:word']);
   const group=page.items.find(item=>item.kind==='reconciliation')!;
   assert.equal(group.kind,'reconciliation');
   if(group.kind!=='reconciliation')throw new Error('Missing group');
-  assert.deepEqual(group.children.map(child=>child.id),['source:document','preparation:mapping-a','preparation:mapping-b']);
+  assert.deepEqual(group.children.map(child=>child.id),['source:document','preparation:mapping-a','preparation:mapping-b','preparation:provider-failure']);
   assert.equal(group.progress.status,'not_required');
   const filtered=listVocabularyAttention('editor',{kind:'reconciliation',limit:1,anchorId:group.id},dependencies);
   assert.equal(filtered.total,1);assert.equal(filtered.offset,0);assert.equal(filtered.items[0].id,group.id);
@@ -198,7 +198,8 @@ test('pending resolution stays grouped and completion clears only covered failur
   assert.equal(group.kind==='reconciliation'&&group.children.some(child=>child.id==='preparation:mapping'),true);
   sql.prepare("UPDATE sense_content_reconciliations SET completed_at=? WHERE resolution_id='resolution'").run(now);
   page=listVocabularyAttention('editor',{},preparationDependencies);
-  assert.deepEqual(page.items.map(item=>item.id),['preparation:provider']);
+  assert.deepEqual(page.items.map(item=>item.id),[]);
+  assert.equal(sql.prepare("SELECT status FROM vocabulary_practice_preparation WHERE work_id='provider'").get()!.status,'failed');
   assert.equal(sql.prepare("SELECT status FROM vocabulary_practice_preparation WHERE work_id='mapping'").get()!.status,'failed');
   assert.equal(sql.prepare('SELECT count(*) n FROM sense_content_reconciliations').get()!.n,1);
   sql.prepare(`INSERT INTO sense_content_reconciliations(resolution_id,word_id,version,status,draft_json,snapshot_json,actor_id,created_at,updated_at)

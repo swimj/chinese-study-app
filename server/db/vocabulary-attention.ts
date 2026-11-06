@@ -51,14 +51,14 @@ export function listVocabularyAttention(actorId:string,input:VocabularyAttention
       r.resolution_id,r.completed_at,coalesce(t.mismatch,0) AS mismatch,coalesce(r.status,'unresolved') AS status,r.applied_plan_json,r.snapshot_json,t.content_id AS current_source_id,pending.applied_plan_json AS pending_plan_json
     FROM lexical_words w LEFT JOIN teaching_sources t ON t.word_id=w.id LEFT JOIN latest_reconciliations r ON r.word_id=w.id LEFT JOIN pending_applied_reconciliations pending ON pending.word_id=w.id
     WHERE t.mismatch=1 OR (r.status IS NOT NULL AND (r.status!='applied' OR r.completed_at IS NULL))
-  ), mapping_failures AS (
+  ), unresolved_preparation_failures AS (
     SELECT p.* FROM vocabulary_practice_preparation p
-      WHERE p.status='failed' AND p.last_error='source_mapping_requires_operator'
+      WHERE p.status='failed'
       AND NOT EXISTS(SELECT 1 FROM sense_content_reconciliations done
         WHERE done.word_id=p.word_id AND done.status='applied' AND done.completed_at IS NOT NULL
         AND p.source_content_id IN (SELECT value FROM json_each(done.applied_plan_json,'$.retireSourceIds')))
   ), grouped_failures AS (
-    SELECT p.work_id,g.word_id FROM mapping_failures p JOIN reconciliation_groups g ON g.word_id=p.word_id
+    SELECT p.work_id,g.word_id FROM unresolved_preparation_failures p JOIN reconciliation_groups g ON g.word_id=p.word_id
       WHERE p.source_content_id=g.source_content_id
         OR p.source_content_id IN (SELECT value FROM json_each(g.applied_plan_json,'$.retireSourceIds'))
         OR p.source_content_id IN (SELECT value FROM json_each(g.pending_plan_json,'$.retireSourceIds'))
@@ -83,7 +83,7 @@ export function listVocabularyAttention(actorId:string,input:VocabularyAttention
     SELECT 'preparation:'||p.work_id,'preparation',p.work_id,w.hanzi,p.created_at,NULL
       FROM vocabulary_practice_preparation p JOIN lexical_words w ON w.id=p.word_id WHERE p.status='failed'
       AND NOT EXISTS(SELECT 1 FROM grouped_failures member WHERE member.work_id=p.work_id)
-      AND NOT (coalesce(p.last_error,'')='source_mapping_requires_operator' AND NOT EXISTS(SELECT 1 FROM mapping_failures unresolved WHERE unresolved.work_id=p.work_id))
+      AND EXISTS(SELECT 1 FROM unresolved_preparation_failures unresolved WHERE unresolved.work_id=p.work_id)
     UNION ALL
     SELECT 'dispatch:'||d.dispatch_id,'dispatch',d.dispatch_id,'Session evidence',d.created_at,NULL
       FROM vocabulary_post_session_dispatches d WHERE d.status='failed'
@@ -117,12 +117,12 @@ export function listVocabularyAttention(actorId:string,input:VocabularyAttention
         };
         const failures=db.prepare(`${candidates} SELECT p.work_id,p.source_content_id,p.created_at,p.last_error FROM grouped_failures member
           JOIN vocabulary_practice_preparation p ON p.work_id=member.work_id WHERE member.word_id=? ORDER BY p.created_at,p.work_id`)
-          .all(JSON.stringify(approvals),JSON.stringify(approvals),row.sourceId) as Array<{work_id:string;source_content_id:string;created_at:string;last_error:string}>;
+          .all(JSON.stringify(approvals),JSON.stringify(approvals),row.sourceId) as Array<{work_id:string;source_content_id:string;created_at:string;last_error:string|null}>;
         const progress=senseContentReconciliationProgress(row.sourceId);
         return {...base,kind:'reconciliation',wordId:row.sourceId,sourceContentId:group.source_content_id,resolutionId:group.resolution_id,status:group.status,progress,
           reason:group.status==='applied'&&group.completed_at!==null&&group.mismatch===1?'Teaching and current sense scope differ again; start another resolution.':group.status==='applied'?`Replacement ${progress.status}`:group.status==='unresolved'?'Teaching and canonical sense scope differ.':'Saved sense resolution',
           children:[...(group.source_content_id?[{id:`source:${group.source_content_id}`,kind:'source' as const,sourceId:group.source_content_id,sourceContentId:group.source_content_id,caseId:null,createdAt:group.created_at,reason:group.source_content_id===group.current_source_id?'Current teaching source':'Retained teaching source reviewed by operator'}]:[]),
-            ...failures.map(failure=>({id:`preparation:${failure.work_id}`,kind:'preparation' as const,sourceId:failure.work_id,sourceContentId:failure.source_content_id,caseId:null,reason:failure.last_error,createdAt:failure.created_at}))]};
+            ...failures.map(failure=>({id:`preparation:${failure.work_id}`,kind:'preparation' as const,sourceId:failure.work_id,sourceContentId:failure.source_content_id,caseId:null,reason:failure.last_error??'Practice preparation failed.',createdAt:failure.created_at}))]};
       }
       case 'defaults': {
         const finding=getVocabularyDefaultSelectionFinding(row.sourceId);if(!finding)throw new Error('Attention finding changed during synchronous read');

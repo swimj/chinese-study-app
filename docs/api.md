@@ -1236,10 +1236,10 @@ existing action identifiers. Eligibility and retry hints are derived from curren
 source records; mutations still enforce their own authority and version checks.
 Reconciliation items use `id: "reconciliation:<wordId>"` and include `wordId`,
 `sourceContentId`, `resolutionId`, decision `status`, replacement `progress`, and
-`children`. Children identify a source or an explicitly related mapping-preparation
+`children`. Children identify a source or an explicitly related preparation
 failure with `id`, `kind`, `sourceId`, `sourceContentId`, `caseId`, `reason` and
 `createdAt`. Counts and offsets apply after grouping. Unrelated same-word failures
-remain separate. Completed resolutions and their covered mapping failures leave
+remain separate. Completed resolutions and their covered preparation failures leave
 active attention without deleting source records.
 The read does not resolve work or enqueue provider calls. Full case and proposal
 payloads are loaded only on drill-in through their existing endpoints.

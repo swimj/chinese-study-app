@@ -43,9 +43,9 @@ stopped-writer apply operation.
 
 [`vocabulary-attention.ts`](../../server/db/vocabulary-attention.ts) projects a stable
 `reconciliation:<wordId>` item for a current source mismatch, a saved decision, or
-an incomplete applied replacement. It groups only mapping failures whose source is
-covered by that current/reviewed resolution; provider failures and unrelated
-reflection cases remain separate. Source identity and individual failure records
+an incomplete applied replacement. It groups preparation failures whose source is
+covered by that current/reviewed resolution, regardless of error label. Failures
+on sources outside the resolution and unrelated reflection cases remain separate. Source identity and individual failure records
 are disclosed as children. Grouping affects the queue projection, preserving the
 underlying records and history. Completed replacements remove covered failures
 from active attention; a new mismatch or decision can keep the word actionable.

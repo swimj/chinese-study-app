@@ -125,3 +125,17 @@ TODO. A subsequent focused queue regression also passed (18 attention tests tota
 a new scope mismatch after completed reconciliation re-enters attention with an
 explicit instruction to start another resolution. Completed covered failures leave
 the active queue while retaining their records; unrelated failures remain separate.
+
+## Correction: group by replaced source
+
+Justin identified that the fixture's supposedly unrelated generation failure used
+the same teaching source. The preceding evaluation accepted the wrong grouping
+expectation. Preparation failures now share the reconciliation when their source
+is covered by its replacement, regardless of error label. Failures outside that
+source remain separate; completed replacements remove covered failures from active
+attention while preserving their original records.
+
+All 19 focused attention and testbed tests passed. The implementing agent verified
+the corrected browser fixture shows one attention item and an expanded Individual
+cases (3) disclosure containing both mapping failures and the generation failure
+with their shared source. This correction was not rerun by the independent evaluator.
