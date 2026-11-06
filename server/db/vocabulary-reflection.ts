@@ -126,34 +126,37 @@ export function ingestVocabularySessionEvidence(learnerId: string, completionId:
     const rejected = (item: VocabularyEncounterEvidence) => item.responses.some(response => response.payload.outcome === 'rejected');
     const effectiveRejection = (item: VocabularyEncounterEvidence) => item.effectiveResponses.some(response => response.payload.outcome === 'rejected');
     const comment = (item: VocabularyEncounterEvidence) => getEffectiveVocabularyEncounterReactions(item).some(reaction => reaction.payload.feedback === 'comment' || !!reaction.payload.comment?.trim());
-    const issue = (item: VocabularyEncounterEvidence) => rejected(item) || comment(item) || item.skipped
-      || getEffectiveVocabularyEncounterReactions(item).some(reaction => reaction.payload.feedback === 'negative');
-    // The session log retains undone responses. A learner lesson uses only the responses that survived Undo.
-    const lessonEvidence = (items: VocabularyEncounterEvidence[]) => items.map(item => ({ ...item, responses: [...item.effectiveResponses] }));
+    const negative = (item: VocabularyEncounterEvidence) => getEffectiveVocabularyEncounterReactions(item).some(reaction => reaction.payload.feedback === 'negative');
+    // Teaching review retains recorded observations. Provider lesson and improvement jobs use effective evidence.
+    const issue = (item: VocabularyEncounterEvidence) => rejected(item) || comment(item) || item.skipped || negative(item);
+    const providerIssue = (item: VocabularyEncounterEvidence) => !item.presentationUndone
+      && (effectiveRejection(item) || comment(item) || item.skipped || negative(item));
+    // The session log retains undone responses. Provider jobs use only the responses that survived Undo.
+    const effectiveEvidence = (items: VocabularyEncounterEvidence[]) => items.map(item => ({ ...item, responses: [...item.effectiveResponses] }));
     const cases: string[] = [];
     const general = projection.encounters.filter(isVocabularyProviderEncounter);
     const wordIds = new Set(general.flatMap(item => item.wordId === null || item.snapshot.schedulingScope === 'pure_cue' ? [] : [item.wordId]));
     for (const wordId of wordIds) {
       const encounters = general.filter(item => item.wordId === wordId && item.snapshot.schedulingScope !== 'pure_cue');
-      if (encounters.some(item => effectiveRejection(item) || comment(item))) cases.push(createCase(learnerId,completionId,'learner_feedback',`word/${wordId}`,wordId,null,lessonEvidence(encounters),at));
+      if (encounters.some(item => effectiveRejection(item) || comment(item))) cases.push(createCase(learnerId,completionId,'learner_feedback',`word/${wordId}`,wordId,null,effectiveEvidence(encounters),at));
     }
     const pureIds = new Set(general.filter(item => item.snapshot.schedulingScope === 'pure_cue').map(item => item.snapshot.contentId));
     for (const contentId of pureIds) {
       const encounters = general.filter(item => item.snapshot.schedulingScope === 'pure_cue' && item.snapshot.contentId === contentId);
-      if (encounters.some(item => effectiveRejection(item) || comment(item))) cases.push(createCase(learnerId,completionId,'learner_feedback',`pure/${contentId}`,null,contentId,lessonEvidence(encounters),at));
+      if (encounters.some(item => effectiveRejection(item) || comment(item))) cases.push(createCase(learnerId,completionId,'learner_feedback',`pure/${contentId}`,null,contentId,effectiveEvidence(encounters),at));
     }
     const exercises = new Map<string, VocabularyEncounterEvidence[]>();
-    for (const encounter of general) {
+    for (const encounter of general.filter(item => !item.presentationUndone)) {
       const key = JSON.stringify([encounter.snapshot.contentId, encounter.snapshot.contentVersion]);
       const encounters = exercises.get(key) ?? [];
       encounters.push(encounter);
       exercises.set(key, encounters);
     }
     for (const [key, encounters] of exercises) {
-      if (!encounters.some(issue)) continue;
+      if (!encounters.some(providerIssue)) continue;
       const first = encounters[0]!;
       cases.push(createCase(learnerId,completionId,'exercise_improvement',`exercise/${key}`,
-        first.wordId,first.snapshot.contentId,encounters,at));
+        first.wordId,first.snapshot.contentId,effectiveEvidence(encounters),at));
     }
     for (const encounter of projection.encounters.filter(item => item.snapshot.role !== 'general' && issue(item))) {
       const teaching = projection.encounters.filter(item => item.snapshot.role !== 'general' && item.wordId === encounter.wordId);

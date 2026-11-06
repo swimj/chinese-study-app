@@ -290,7 +290,11 @@ judgments need not be narrated to the
 learner. The lesson must still agree with those judgments and avoid implying an
 answer was wrong under constraints the learner could not see.
 
-Teaching issues enter a manual inbox paired
+Exercise-improvement selection follows the same effective-evidence rule for
+general production. An undone response does not open an improvement case and is
+omitted from its stored encounters; a later effective rejection, comment,
+negative reaction, or skip for that exercise still can. Presentation-undone
+encounters are excluded. Teaching issues enter a manual inbox paired
 with the introduction and repertoire; automated exercise improvement does not
 repair them. Connections can reuse encountered vocabulary through
 its existing independent background workflow.

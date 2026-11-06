@@ -470,8 +470,11 @@ keeps only each encounter's effective responses. An undone response remains in
 the session projection and completion report, and it is absent from the lesson.
 A later effective rejection or comment for the same subject still queues a
 lesson from the retained evidence. Re-ingesting one closed completion returns
-the original lesson cases. Exercise-improvement and teaching-review selection
-use the recorded encounters, including observations Undo retained.
+the original lesson cases. Exercise-improvement selection uses the same
+effective general-production evidence: an undone response does not open an
+improvement case and is omitted from its stored encounters, and
+presentation-undone encounters are excluded. Teaching-review selection uses
+the recorded encounters, including observations Undo retained.
 
 Automatic scheduling compensation is independent of content application. The
 initial policy compensates general production and independent pure-cue scheduling,
