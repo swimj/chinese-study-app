@@ -16,7 +16,7 @@ import { getEffectiveVocabularyEncounterReactions, isLearnerPronunciationRejecti
 import { config, getDb } from './connection.ts';
 import { requireLearnerId } from './learner-context.ts';
 import { isOperatorSubject, parseOperatorAllowlist } from '../operator-access.ts';
-import { isVocabularyProviderEncounter } from '../vocabulary/reflection-eligibility.ts';
+import { isGeneralProductionEncounter, isVocabularyProviderEncounter, isVocabularyPronunciationEncounter } from '../vocabulary/reflection-eligibility.ts';
 import { createVocabularyContent, updateVocabularyContent, replaceVocabularyContent, getVocabularySenseCatalog,
   getVocabularyContentForMaintenance, mapVocabularyContentSense, getVocabularySenses, emitBackendEvent } from './vocabulary-content.ts';
 import { isOfferedReflectionModelChoice, type ReflectionModelChoice } from '../reflection/model-arms.ts';
@@ -132,22 +132,23 @@ export function ingestVocabularySessionEvidence(learnerId: string, completionId:
     const comment = (item: VocabularyEncounterEvidence) => getEffectiveVocabularyEncounterReactions(item).some(reaction => reaction.payload.feedback === 'comment' || !!reaction.payload.comment?.trim());
     const negative = (item: VocabularyEncounterEvidence) => getEffectiveVocabularyEncounterReactions(item).some(reaction => reaction.payload.feedback === 'negative');
     // Teaching review retains recorded observations. Provider lesson and improvement jobs use effective evidence.
-    const issue = (item: VocabularyEncounterEvidence) => rejected(item) || comment(item) || item.skipped || negative(item);
-    const providerIssue = (item: VocabularyEncounterEvidence) => !item.presentationUndone
+    const issue = (item: VocabularyEncounterEvidence) => !isVocabularyPronunciationEncounter(item) && (rejected(item) || comment(item) || item.skipped || negative(item));
+    const providerIssue = (item: VocabularyEncounterEvidence) => isVocabularyProviderEncounter(item) && !item.presentationUndone
       && (effectiveRejection(item) || comment(item) || item.skipped || negative(item));
     // The session log retains undone responses. Provider jobs use only the responses that survived Undo.
     const effectiveEvidence = (items: VocabularyEncounterEvidence[]) => items.map(item => ({ ...item, responses: [...item.effectiveResponses] }));
     const cases: string[] = [];
-    const general = projection.encounters.filter(isVocabularyProviderEncounter);
+    // Retain all production evidence internally: pronunciation lapses must still veto compensation.
+    const general = projection.encounters.filter(isGeneralProductionEncounter);
     const wordIds = new Set(general.flatMap(item => item.wordId === null || item.snapshot.schedulingScope === 'pure_cue' ? [] : [item.wordId]));
     for (const wordId of wordIds) {
       const encounters = general.filter(item => item.wordId === wordId && item.snapshot.schedulingScope !== 'pure_cue');
-      if (encounters.some(item => effectiveRejection(item) || comment(item))) cases.push(createCase(learnerId,completionId,'learner_feedback',`word/${wordId}`,wordId,null,effectiveEvidence(encounters),at));
+      if (encounters.some(item => isVocabularyProviderEncounter(item) && (effectiveRejection(item) || comment(item)))) cases.push(createCase(learnerId,completionId,'learner_feedback',`word/${wordId}`,wordId,null,effectiveEvidence(encounters),at));
     }
     const pureIds = new Set(general.filter(item => item.snapshot.schedulingScope === 'pure_cue').map(item => item.snapshot.contentId));
     for (const contentId of pureIds) {
       const encounters = general.filter(item => item.snapshot.schedulingScope === 'pure_cue' && item.snapshot.contentId === contentId);
-      if (encounters.some(item => effectiveRejection(item) || comment(item))) cases.push(createCase(learnerId,completionId,'learner_feedback',`pure/${contentId}`,null,contentId,effectiveEvidence(encounters),at));
+      if (encounters.some(item => isVocabularyProviderEncounter(item) && (effectiveRejection(item) || comment(item)))) cases.push(createCase(learnerId,completionId,'learner_feedback',`pure/${contentId}`,null,contentId,effectiveEvidence(encounters),at));
     }
     const exercises = new Map<string, VocabularyEncounterEvidence[]>();
     for (const encounter of general.filter(item => !item.presentationUndone)) {

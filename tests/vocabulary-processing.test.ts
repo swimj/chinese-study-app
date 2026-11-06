@@ -235,7 +235,7 @@ test('strict real injected provider retains service provenance and rejects forge
   const output=await provider.run(job);assert.equal(output.kind,'learner_feedback');
   const invocation=sql.prepare('SELECT * FROM model_invocations').get()!;assert.equal(invocation.actor_kind,'service');assert.equal(invocation.learner_id,null);
   assert.equal(invocation.prompt_name,'vocabulary-reflection-feedback');assert.equal(invocation.workflow_id,job.jobId);assert.ok(!JSON.stringify(invocation).includes('never-save-token'));
-  assert.equal(invocation.prompt_version,'5');assert.equal(invocation.schema_version,'1');assert.equal(invocation.input_projection_version,'vocabulary-reflection.v3');
+  assert.equal(invocation.prompt_version,'6');assert.equal(invocation.schema_version,'1');assert.equal(invocation.input_projection_version,'vocabulary-reflection.v4');
   assert.equal(invocation.prompt_template,fs.readFileSync(new URL('../server/vocabulary/reflection-prompts/feedback.md',import.meta.url),'utf8'));
   payload={diagnosis:'Claim',lesson:'Lesson',unfairEncounterIds:['invented']};await assert.rejects(()=>provider.run(job),/supplied rejected/);
   assert.equal(sql.prepare("SELECT count(*) n FROM model_invocations WHERE status='invalid_response'").get()!.n,1);
@@ -246,7 +246,7 @@ test('strict real injected provider retains service provenance and rejects forge
   const improvementInvocation=sql.prepare("SELECT * FROM model_invocations WHERE prompt_name='vocabulary-reflection-single-improvement'").get();
   assert.ok(improvementInvocation,'Selected sense assessment must reach the active single-improvement call');
   assert.equal(improvementInvocation.actor_kind,'service');assert.equal(improvementInvocation.learner_id,null);assert.equal(improvementInvocation.workflow_id,improve.jobId);
-  assert.equal(improvementInvocation.prompt_version,'6');assert.equal(improvementInvocation.schema_version,'4');assert.equal(improvementInvocation.input_projection_version,'vocabulary-exercise-authoring.v2');
+  assert.equal(improvementInvocation.prompt_version,'7');assert.equal(improvementInvocation.schema_version,'4');assert.equal(improvementInvocation.input_projection_version,'vocabulary-exercise-authoring.v3');
   assert.equal(improvementInvocation.prompt_template,`\n\n${fs.readFileSync(new URL('../server/vocabulary/reflection-prompts/single-improvement.md',import.meta.url),'utf8')}`);
   assert.throws(()=>normalizeVocabularyReflectionOutput(improve,{...valid,operations:[{...valid.operations[0],acceptedAnswers:['invented']}]}),/answer criteria/);
   assert.throws(()=>normalizeVocabularyReflectionOutput(improve,{...valid,operations:[{...valid.operations[0],sourceContentId:'two'}]}),/source identities/);

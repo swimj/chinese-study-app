@@ -57,10 +57,9 @@ export function useVocabularyStudy(options: VocabularyStudyOptions = {}) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [input, setInput] = useState('');
-  const [localResponse, setLocalResponse] = useState<{ encounterId: string; outcome: 'accepted' | 'rejected' | 'unassessed' } | null>(null);
+  const [localResponse, setLocalResponse] = useState<{ encounterId: string; outcome: 'accepted' | 'rejected' | 'unassessed'; writtenFormAccepted?: boolean } | null>(null);
   const [pendingCorrect, setPendingCorrect] = useState<{ encounterId: string; response: string } | null>(null);
   const pendingCorrectRef = useRef<{ encounterId: string; response: string } | null>(null);
-  const [writtenFormMatched, setWrittenFormMatched] = useState(false);
   const responseLock = useRef<string | null>(null);
   const recognitionDeparture = useRef<{ encounterId: string; run: RecognitionDeparture } | null>(null);
   const activeClock = useRef<ActiveSessionClock | null>(null);
@@ -108,7 +107,7 @@ export function useVocabularyStudy(options: VocabularyStudyOptions = {}) {
     if (!mounted.current) return;
     setStudy(value);
     if (previous !== value.currentEncounter?.encounterId) {
-      setInput(''); setLocalResponse(null); pendingCorrectRef.current = null; setPendingCorrect(null); setWrittenFormMatched(false);
+      setInput(''); setLocalResponse(null); pendingCorrectRef.current = null; setPendingCorrect(null);
       setComment(''); setReaction(null); setReactionStatus('idle'); responseLock.current = null; recognitionDeparture.current = null;
     }
     receiveCompletion(value.session.completion?.status === 'cancelled' ? null : value.session.completion);
@@ -177,7 +176,7 @@ export function useVocabularyStudy(options: VocabularyStudyOptions = {}) {
   function reset() {
     if (queue.current!.pending) throw new Error('Finish saving your study work before leaving.');
     studyRef.current = null; completionRef.current = null; deadline.current = null; activeClock.current=null; stagedDuration.current=null;
-    setStudy(null); setCompletion(null); setError(null); setInput(''); setLocalResponse(null); pendingCorrectRef.current = null; setPendingCorrect(null); setWrittenFormMatched(false); responseLock.current = null; recognitionDeparture.current = null;
+    setStudy(null); setCompletion(null); setError(null); setInput(''); setLocalResponse(null); pendingCorrectRef.current = null; setPendingCorrect(null); responseLock.current = null; recognitionDeparture.current = null;
     setComment(''); setReaction(null); setReactionStatus('idle'); setDismissedWordIds([]);
     setSummaryModes({});
     keepSummaryOpenRef.current = false; setKeepSummaryOpen(false);
@@ -237,8 +236,8 @@ export function useVocabularyStudy(options: VocabularyStudyOptions = {}) {
     const writtenMatch = assessVocabularyResponse(encounter.snapshot.assessment?.acceptedAnswers ?? [], response) === 'accepted';
     if (encounter.snapshot.kind === 'production' && writtenMatch && !selfAssessment && !selectedWordId && !options?.commitHeld) {
       const pending = { encounterId: encounter.encounterId, response: response ?? '' };
-      pendingCorrectRef.current = pending; setPendingCorrect(pending); setWrittenFormMatched(true);
-      setLocalResponse({ encounterId: encounter.encounterId, outcome: 'accepted' }); setError(null);
+      pendingCorrectRef.current = pending; setPendingCorrect(pending);
+      setLocalResponse({ encounterId: encounter.encounterId, outcome: 'accepted', writtenFormAccepted: true }); setError(null);
       return;
     }
     responseLock.current = encounter.encounterId;
@@ -246,8 +245,7 @@ export function useVocabularyStudy(options: VocabularyStudyOptions = {}) {
     const criteria = encounter.snapshot.assessment?.criteria;
     const correctWordId = criteria !== null && typeof criteria === 'object' && !Array.isArray(criteria) ? criteria.correctWordId : null;
     const outcome = selectedWordId ? selectedWordId === correctWordId ? 'accepted' : 'rejected' : selfAssessment ?? (writtenMatch ? 'accepted' : 'rejected');
-    if (writtenMatch) setWrittenFormMatched(true);
-    setLocalResponse({ encounterId: encounter.encounterId, outcome }); setError(null);
+    setLocalResponse({ encounterId: encounter.encounterId, outcome, writtenFormAccepted: encounter.snapshot.kind === 'production' && writtenMatch }); setError(null);
     void enqueue({ type: 'response', response, ...(selfAssessment ? { selfAssessment } : {}), ...(selectedWordId ? { selectedWordId } : {}) })
       .then(async () => {
         // Save the chosen outcome before the card leaves, and do not race a manual navigation.
@@ -285,7 +283,7 @@ export function useVocabularyStudy(options: VocabularyStudyOptions = {}) {
   }
   const undo = () => exclusive(async () => {
     if (pendingCorrectRef.current) {
-      pendingCorrectRef.current = null; setPendingCorrect(null); setLocalResponse(null); setWrittenFormMatched(false);
+      pendingCorrectRef.current = null; setPendingCorrect(null); setLocalResponse(null);
       return;
     }
     await resumeBoundary(async () => {
@@ -406,13 +404,17 @@ export function useVocabularyStudy(options: VocabularyStudyOptions = {}) {
   const active = study !== null;
   useEffect(() => { latestOptions.current.onActiveChange?.(active); }, [active]);
   const encounter = study?.currentEncounter;
-  const assessed = encounter?.effectiveResponses.at(-1)?.payload.outcome;
+  const savedResponse = encounter?.effectiveResponses.at(-1)?.payload;
+  const assessed = savedResponse?.outcome;
   const local = localResponse?.encounterId === encounter?.encounterId ? localResponse : null;
   const extraPracticeWordId=study?.currentWordId&&study.session.projection.words[study.currentWordId]?.workNumber>1?study.currentWordId:null;
   return { study, completion, active, busy, saving: queue.current.pending, error, input, setInput, comment, setComment, reaction,
     reactionStatus, remainingSeconds, clock, activeDurationMs:activeClock.current?Math.floor(getActiveSessionDurationMs(activeClock.current,clock)):0, dismissedWordIds, revealed: Boolean(assessed || local), assessment: assessed ?? local?.outcome ?? 'unassessed' as const,
     start, reset, next, send, submitResponse, commitProductionAnswer, revealRecognition, retrySave, undo, endWord, changeSummaryMode, summaryModes, extraPracticeWordId, keepSummaryOpen, keepSummaryOpenNow: keepOpen,
-    pendingProductionOverride: Boolean(pendingCorrect && pendingCorrect.encounterId === encounter?.encounterId), writtenFormMatched,
+    pendingProductionOverride: Boolean(pendingCorrect && pendingCorrect.encounterId === encounter?.encounterId),
+    writtenFormMatched: savedResponse
+      ? encounter?.snapshot.kind === 'production' && productionWrittenFormAccepted(encounter.snapshot.assessment?.acceptedAnswers ?? [], savedResponse.response)
+      : local?.writtenFormAccepted ?? false,
     finishForNow: () => send({ type: 'finishForNow' }), finishImmediately: () => send({ type: 'finishImmediately' }),
     resume, requeue, returnHome: () => exclusive(returnHome),
     react: (value: 'helpful' | 'not-helpful' | null) => { setReaction(value); if (value) submitReaction(value === 'helpful' ? 'positive' : 'negative'); else submitReaction('withdrawn'); },

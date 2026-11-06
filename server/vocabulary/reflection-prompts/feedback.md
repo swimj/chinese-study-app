@@ -49,11 +49,6 @@ The user message contains one subject and its encounter evidence:
 - `responses` records raw `response` text or null, the recorded `outcome`, and
   whether the response is `effective`. A rejection records the app's check;
   it does not by itself establish that the response was linguistically wrong.
-  A production response whose `selfAssessment` is `rejected` while `response`
-  matches an accepted written form is a pronunciation report: the characters
-  matched, and the learner reported saying the word wrong. Do not describe
-  those characters as the wrong answer, and do not include that encounter in
-  `unfairEncounterIds`.
   No submitted word means there is no comparison word to invent.
 - `reactions` contains learner input, including ratings and optional `comment`.
   Feedback is the lesson you give the learner. Comments can identify concerns

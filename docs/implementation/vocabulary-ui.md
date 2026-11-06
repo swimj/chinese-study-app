@@ -130,7 +130,10 @@ reveal or continuation action. Recognition ratings save before advancing; save
 retry preserves the departure until acknowledgement. After a correct written
 production answer, 1 marks the attempt wrong and Space or Enter continues with
 an ordinary success. Either choice saves before the card leaves. Undo before
-that choice discards the local reveal and restores the typed answer. Contrast
+that choice discards the local reveal and restores the typed answer. Returning
+to an answered encounter derives its written-match display from the retained
+response; pronunciation rejections preserve the accepted characters, including
+the chosen pure-cue member. Contrast
 supports numbered selection followed by Enter confirmation.
 
 Answer inputs take focus when they become enabled, including after motion or

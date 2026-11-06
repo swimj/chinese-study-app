@@ -1,3 +1,4 @@
+import { isVocabularyProviderEncounter } from './reflection-eligibility.ts';
 import type { VocabularyReflectionJob } from '../../src/domain/vocabulary-reflection.ts';
 import { getDb } from '../db/connection.ts';
 
@@ -10,7 +11,7 @@ export function exactVocabularyWordMatches(form:string):VocabularyResponseWord[]
 }
 
 export function vocabularyResponseWordMatches(job:Pick<VocabularyReflectionJob,'evidence'>): {form:string;matches:VocabularyResponseWord[];word:VocabularyResponseWord|null}[] {
-  const forms=[...new Set(job.evidence.evidence.flatMap(encounter=>encounter.responses.flatMap(response=>{
+  const forms=[...new Set(job.evidence.evidence.filter(isVocabularyProviderEncounter).flatMap(encounter=>encounter.responses.flatMap(response=>{
     const form=response.payload.response?.trim();
     return form?[form]:[];
   })))];

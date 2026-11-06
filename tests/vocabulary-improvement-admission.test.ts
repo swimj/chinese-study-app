@@ -46,6 +46,16 @@ function job(kind:VocabularyReflectionJob['kind']='exercise_improvement'):Vocabu
   return {jobId:'job',caseId:'case',learnerId:'learner',kind,attemptNumber:1,leaseToken:'lease',leaseExpiresAt:'2026-10-20T00:00:00.000Z',evidence:{caseId:'case',completionId:'completion',learnerId:'learner',kind,wordId:'word',contentId:'original',status:'open',createdAt:at,
     evidence:[{encounterId:'encounter',wordId:'word',workNumber:1,presentedActionId:'presented',presentedAt:at,mode:'practice',snapshot:{contentId:'original',contentVersion:1,kind:'production',role:'general',body:{prompt:'请把这张照片____后再打印。'},assessment:{acceptedAnswers:['放大']}},responses:[],effectiveResponses:[],feedback:[],effectiveFeedback:[],skipped:false,presentationUndone:false}]}};
 }
+function addPronunciationEncounter(input:VocabularyReflectionJob):void {
+  const encounter=structuredClone(input.evidence.evidence[0]!);
+  encounter.encounterId='pronunciation-private-marker';
+  encounter.snapshot.body={prompt:'pronunciation-private-marker'};
+  encounter.responses=[{protocolVersion:1,actionId:'pronunciation-private-marker',clientActionId:'pronunciation-private-marker',sequence:3,occurredAt:at,kind:'response',payload:{encounterId:encounter.encounterId,response:'放大',outcome:'rejected',selfAssessment:'rejected'}}];
+  encounter.effectiveResponses=[...encounter.responses];
+  encounter.feedback=[{protocolVersion:1,actionId:'private-comment',clientActionId:'private-comment',sequence:4,occurredAt:at,kind:'feedback',payload:{encounterId:encounter.encounterId,feedback:'comment',comment:'pronunciation-private-marker'}}];
+  encounter.effectiveFeedback=[...encounter.feedback];
+  input.evidence.evidence.unshift(encounter);
+}
 const readiness:VocabularySenseEnsurer=async()=>({catalog:getVocabularySenseCatalog('word'),senses:getVocabularySenses('word'),source:'existing'});
 function provider(reply:(request:ProviderRunRequest,index:number)=>unknown|Promise<unknown>,options:{ensureDefaults?:typeof ensureVocabularyDefaultUsefulSelection;ensureSenses?:VocabularySenseEnsurer;ledger?:boolean;adapterId?:string}={}) {
   const requests:ProviderRunRequest[]=[];
@@ -101,7 +111,7 @@ test('improvement receives effective learner reactions and comments while mappin
   assert.deepEqual(projected.reactions,[{reaction:'comment',comment:reactions[1]!.payload.comment}]);
   assert.equal(projected.feedback,undefined);
   assert.equal(encounter.feedback.length,3); // Historical wire evidence is unchanged.
-  assert.equal(trial.requests[1]!.provenance!.inputProjectionVersion,'vocabulary-exercise-authoring.v2');
+  assert.equal(trial.requests[1]!.provenance!.inputProjectionVersion,'vocabulary-exercise-authoring.v3');
 });
 
 test('single sense admission preserves target, supplies sense context, and reuses both completed stages on retry',async()=>{
@@ -238,13 +248,15 @@ function pureCueJob(wordAssociated=false):VocabularyReflectionJob {
 test('learner feedback bypasses sense readiness and admission',async()=>{
   const ensureSenses:VocabularySenseEnsurer=async()=>{throw new Error('Unexpected sense dependency');};
   const feedback=provider(()=>({diagnosis:'No answer submitted.',lesson:'A useful explanation.',unfairEncounterIds:[]}),{ensureSenses});
-  assert.equal((await feedback.provider.run(job('learner_feedback'))).kind,'learner_feedback');
+  const input=job('learner_feedback');addPronunciationEncounter(input);
+  assert.equal((await feedback.provider.run(input)).kind,'learner_feedback');
+  assert.equal(feedback.requests[0]!.userPrompt.includes('pronunciation-private-marker'),false);
   assert.equal(feedback.requests.length,1);
   assert.equal(db.prepare('SELECT count(*) n FROM vocabulary_improvement_stages').get()!.n,0);
 });
 
 for(const wordAssociated of [false,true])test(`pure-cue dedicated review supplies all lexical members without individual repertoire (word-associated=${wordAssociated})`,async()=>{
-  const input=pureCueJob(wordAssociated);
+  const input=pureCueJob(wordAssociated);addPronunciationEncounter(input);
   const ensureSenses:VocabularySenseEnsurer=async()=>{throw new Error('Unexpected sense dependency');};
   const trial=provider(()=>pureExplanation,{ensureSenses});
   const result=await trial.provider.run(input);if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
@@ -253,6 +265,8 @@ for(const wordAssociated of [false,true])test(`pure-cue dedicated review supplie
   assert.equal(trial.requests.length,1);
   assert.equal(trial.requests[0]!.provenance!.stepName,'pure_cue_improvement');
   const projected=JSON.parse(trial.requests[0]!.userPrompt);
+  assert.equal(trial.requests[0]!.userPrompt.includes('pronunciation-private-marker'),false);
+  assert.equal(projected.evidence.encounters.length,1);
   assert.deepEqual(projected.currentMembers.map((word:{wordId:string})=>word.wordId).sort(),['other-word','word']);
   assert.deepEqual(projected.evidence.words.map((word:{wordId:string})=>word.wordId).sort(),['other-word','word']);
   assert.deepEqual(projected.evidence.subject,{kind:'pureCue',contentId:'pure-cue'});
@@ -342,10 +356,12 @@ const createPromotion={decision:'create',rationale:'A shared enlargement task.',
 for(const localRepair of [false,true])test(`referral composes with local repair=${localRepair}; promotion caches and never publishes`,async()=>{
   secondWord();
   const input=job();input.evidence.evidence[0]!.responses=[{protocolVersion:1,actionId:'answer',clientActionId:'answer',sequence:2,occurredAt:at,kind:'response',payload:{encounterId:'encounter',outcome:'rejected',response:'扩大'}}];
+  addPronunciationEncounter(input);
   const trial=provider(request=>request.provenance!.stepName==='sense_mapping'?single:request.provenance!.stepName==='single_improvement'
     ?{...repair,source:localRepair?repair.source:{decision:'keep',prompt:null},sharedExercise}:createPromotion,{ledger:true});
   const result=await trial.provider.run(input);if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
   assert.deepEqual(trial.requests.map(request=>request.provenance!.stepName),['sense_mapping','single_improvement','pure_cue_promotion']);
+  assert.ok(trial.requests.every(request=>!request.userPrompt.includes('pronunciation-private-marker')));
   assert.deepEqual(result.result.pureCueReferral,referral);assert.equal(result.result.pureCuePromotion!.outcome,'create');
   assert.equal(result.result.proposal!.operations.length,localRepair?2:1);
   assert.equal(result.result.proposal!.operations.at(-1)!.content.kind,'exercise');
@@ -354,7 +370,7 @@ for(const localRepair of [false,true])test(`referral composes with local repair=
   assert.equal(promotionInput.evidence.encounters[0].responses[0].response,'扩大');
   assert.match(promotionInput.intendedSense.senseId,/^s[12]$/);assert.equal(promotionInput.sourceContent.contentId,'original');
   assert.deepEqual(promotionInput.candidates.map((word:{wordId:string})=>word.wordId),['word','other-word']);
-  assert.equal(trial.requests[1]!.provenance!.promptVersion,'6');assert.equal(trial.requests[1]!.provenance!.schemaVersion,'4');
+  assert.equal(trial.requests[1]!.provenance!.promptVersion,'7');assert.equal(trial.requests[1]!.provenance!.schemaVersion,'4');
   assert.match(trial.requests[1]!.systemPrompt,/# Review a Mandarin production exercise/);
   assert.doesNotMatch(trial.requests[1]!.systemPrompt,/## Learner feedback and proposal rationales/);
   assert.equal(trial.requests[2]!.provenance!.promptVersion,'1');assert.equal(trial.requests[2]!.provenance!.schemaVersion,'3');
@@ -1027,4 +1043,25 @@ bootstrapTest('queue-captured repertoire rejects newly authored coverage before 
   createVocabularyContent({...original,contentId:'new-authored',body:{prompt:'An authored retrieval cue'}},actor);
   const trial=provider(()=>repertoire);
   await assert.rejects(()=>trial.provider.run(job()),/no longer bootstrap/);assert.equal(trial.requests.length,0);
+});
+
+for (const kind of ['learner_feedback','exercise_improvement'] as const) test(`retained pronunciation-only ${kind} job makes no provider calls`,async()=>{
+  const input=job(kind);addPronunciationEncounter(input);input.evidence.evidence.pop();
+  const trial=provider(()=>{throw new Error('No model should run');});
+  const result=await trial.provider.run(input);
+  assert.equal(trial.requests.length,0);
+  if(result.kind==='learner_feedback')assert.equal(result.judgment.message,null);
+  else assert.equal(result.result.proposal,null);
+  assert.equal(input.evidence.evidence[0]!.responses.length,1);
+});
+
+test('second opinions exclude pronunciation encounter text and reactions',async()=>{
+  const input=job();addPronunciationEncounter(input);
+  input.secondOpinion={requestId:'opinion',proposal:null,notes:'Review the cue',diagnosis:'No repair'};
+  const trial=provider(()=>({verdict:'support',rationale:'The cue works.'}));
+  await trial.provider.run(input);
+  assert.equal(trial.requests.length,1);
+  assert.equal(trial.requests[0]!.provenance!.stepName,'second_opinion');
+  assert.equal(trial.requests[0]!.userPrompt.includes('pronunciation-private-marker'),false);
+  assert.equal(JSON.parse(trial.requests[0]!.userPrompt).evidence.encounters.length,1);
 });

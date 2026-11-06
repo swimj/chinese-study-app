@@ -289,25 +289,36 @@ test('a matching written answer marked wrong lapses scheduling without opening f
   assert.equal(typedMiss.report.encounters[0]?.effectiveResponses[0]?.payload.selfAssessment, undefined);
 });
 
-test('a comment can teach from a pronunciation report, but that report cannot be excused as an unfair written rejection', () => {
-  const marked = { kind: 'response' as const, payload: { encounterId: 'said', response: '字', outcome: 'rejected' as const, selfAssessment: 'rejected' as const } };
-  const completion = close([present('one','a','said'), marked,
-    { kind: 'feedback', payload: { encounterId: 'said', feedback: 'comment', comment: 'I said it wrong.' } }, wrap()], 'commented');
-  const ids = ingestVocabularySessionEvidence('alice', completion.completionId, completion.report, closedAt);
-  const lesson = ids.map(id => getVocabularyReflectionCase(id)).find(item => item.kind === 'learner_feedback');
-  assert.ok(lesson);
+for (const contentId of ['one', 'cue', 'teach']) test(`pronunciation encounters with comments and negative reactions do not open cases: ${contentId}`, () => {
+  const wordId = contentId === 'cue' ? null : contentId === 'teach' ? 'new' : 'a';
+  const { ids, completion } = ingest([...(contentId === 'teach' ? [present('intro', 'new')] : []), present(contentId, wordId, 'said'),
+    { kind: 'response', payload: { encounterId: 'said', response: '字', outcome: 'rejected', selfAssessment: 'rejected' } },
+    { kind: 'feedback', payload: { encounterId: 'said', feedback: 'negative' } },
+    { kind: 'feedback', payload: { encounterId: 'said', feedback: 'comment', comment: 'I said it wrong.' } }]);
+  assert.deepEqual(ids, []);
+  const encounter = completion.report.encounters.find(item => item.encounterId === 'said')!;
+  assert.equal(encounter.effectiveResponses[0]!.payload.selfAssessment, 'rejected');
+  assert.equal(encounter.feedback.length, 2);
+});
+
+test('mixed cases retain pronunciation lapses internally but omit their entire encounters from model input and compensation', () => {
+  const { ids } = ingest([present('one','a','said'),
+    { kind: 'response', payload: { encounterId: 'said', response: '字', outcome: 'rejected', selfAssessment: 'rejected' } },
+    { kind: 'feedback', payload: { encounterId: 'said', feedback: 'comment', comment: 'pronunciation-private-marker' } },
+    present('one','a','written'), typed('written','别字','rejected'), wrap()]);
+  assert.deepEqual(ids.map(id => getVocabularyReflectionCase(id).kind).sort(), ['exercise_improvement','learner_feedback']);
+  for (const id of ids) assert.deepEqual(getVocabularyReflectionCase(id).evidence.map(item => item.encounterId), ['said','written']);
   const before = sql.prepare("SELECT next_eligible_at, scheduler_state_json FROM learner_word_schedules WHERE word_id='a'").get()!;
   const feedback = claimVocabularyReflectionJob({ kind: 'learner_feedback', now: judgedAt })!;
   const projected = JSON.stringify(projectVocabularyReflectionInput(feedback));
-  assert.equal(projected.includes('"selfAssessment":"rejected"'), true);
-  assert.equal(projected.includes('"response":"字"'), true);
-  const normalized = normalizeVocabularyReflectionOutput(feedback, { diagnosis: 'The learner reported the pronunciation', lesson: 'Listen and say it again', unfairEncounterIds: ['said'] });
-  assert.equal(normalized.kind, 'learner_feedback');
-  if (normalized.kind === 'learner_feedback') assert.deepEqual(normalized.judgment.unfairEncounterIds, []);
-  recordVocabularyFeedbackJudgment(feedback.jobId, feedback.leaseToken, { diagnosis: 'The learner reported the pronunciation', message: 'Listen and say it again', unfairEncounterIds: ['said'] }, judgedAt);
+  assert.equal(projected.includes('pronunciation-private-marker'), false);
+  assert.equal(projected.includes('"encounterId":"said"'), false);
+  assert.equal(projected.includes('"encounterId":"written"'), true);
+  assert.throws(() => normalizeVocabularyReflectionOutput(feedback, { diagnosis: 'Unfair', lesson: 'Lesson', unfairEncounterIds: ['said'] }), /supplied rejected/);
+  // Only the supplied written rejection is excused; the hidden genuine lapse still blocks compensation.
+  recordVocabularyFeedbackJudgment(feedback.jobId, feedback.leaseToken, { diagnosis: 'Unfair written cue', message: 'Lesson', unfairEncounterIds: ['written'] }, judgedAt);
   const after = sql.prepare("SELECT next_eligible_at, scheduler_state_json FROM learner_word_schedules WHERE word_id='a'").get()!;
-  assert.equal(after.next_eligible_at, before.next_eligible_at);
-  assert.equal(after.scheduler_state_json, before.scheduler_state_json);
+  assert.deepEqual(after, before);
 });
 
 test('undoing a pronunciation report before close leaves an ordinary success', () => {

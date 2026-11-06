@@ -146,7 +146,10 @@ that the rating is saved and the outgoing card reflects the acknowledged recall
 before requesting the successor. `?production=1` starts on a production card.
 Submitting the accepted form 字 reveals the answer and offers Wrong (pointer or
 1) beside Next; a non-matching answer saves immediately and does not offer that
-control. `?covered=1` checks the covered card's rightward
+control. Add `&pure=1&retained=1` to restore a saved pronunciation rejection
+with multiple accepted members; the retained-answer check verifies its label and
+chosen member. Undo withdraws that response, allowing a fresh written-miss check.
+Add `&narrow=1` for a 420px panel with enlarged text. `?covered=1` checks the covered card's rightward
 departure; `?retry=1` fails the first save so Retry save must retain the departure.
 `/tests/browser/vocabulary-ui.html` provides presentation scenarios, including
 `?state=Cloze%20reveal` for an old snapshot containing an unrelated bootstrap

@@ -480,6 +480,11 @@ improvement case and is omitted from its stored encounters, and
 presentation-undone encounters are excluded. Teaching-review selection uses
 the recorded encounters, including observations Undo retained.
 
+Pronunciation-failure encounters, including their comments and reactions, do
+not trigger post-session review and are excluded from model inputs even in
+mixed cases for the same exercise or word. Internal case evidence retains them
+so compensation cannot erase a genuine pronunciation lapse.
+
 Automatic scheduling compensation is independent of content application. The
 initial policy compensates general production and independent pure-cue scheduling,
 delaying current eligibility by at most 24 hours when every effective rejection

@@ -184,11 +184,15 @@ Recognition ratings advance immediately after saving; production reveals its
 result before the learner continues. After a correct written production answer
 is shown, the learner can mark that attempt wrong. The submitted characters
 still match an accepted written form. The attempt counts as a production failure
-for streaks, reinforcement, coverage, and scheduling. It does not by itself
-queue a lesson or an exercise-improvement case, and it cannot be judged an
-unfair written rejection. A typed answer outside the accepted forms remains a
+for streaks, reinforcement, coverage, and scheduling. The entire encounter,
+including its reactions and comments, is excluded from
+post-session lesson and content-review triggers and model inputs, even when
+another encounter for the same word or exercise merits review. It remains in
+history and scheduling evidence and cannot be judged an unfair written
+rejection. A typed answer outside the accepted forms remains a
 written failure and keeps the existing feedback path. Continuing without the
-mark records an ordinary success. Undo withdraws the committed attempt.
+mark records an ordinary success. Undo before saving restores the typed answer.
+Undo after saving withdraws the latest committed transition.
 
 The answer reveal shows the exercise's mapped sense when one is available,
 with lexical meaning as the fallback. It retains pronunciation, authored usage

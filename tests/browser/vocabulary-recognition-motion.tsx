@@ -4,6 +4,7 @@
 // ?reduced=1 forces reduced motion and verifies no departure/tuck ghosts.
 // ?narrow=1 uses a 420px panel at 125% text; open Covered in this session for the tray.
 // ?slow=1 holds Correct's successor while checking the underlying paper stays opaque.
+// ?production=1&pure=1&retained=1 restores a saved pronunciation rejection.
 // ?production=1&save-delay=1 starts on a production card with a delayed answer save.
 import { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -40,11 +41,12 @@ append({ kind: 'response', payload: { encounterId: 'covered-recognition', respon
 append({ kind: 'word_wrap', payload: { wordId: 'covered-word', reason: 'policy' } });
 if (!covered) append({ kind: 'presentation', payload: { encounterId: 'intro', wordId: 'word', snapshot: { kind: 'introduction', role: 'teaching', contentId: 'intro', contentVersion: 1, body: { prompt: '字' }, assessment: null } } });
 append({ kind: 'presentation', payload: { encounterId: 'recognition', wordId: 'word', snapshot: { kind: 'recognition', role: covered ? 'general' : 'teaching', contentId: 'recognition', contentVersion: 1, body: { prompt: '字' }, assessment: { acceptedAnswers: ['字'] } } } });
-if (query.has('production')) append({ kind: 'presentation', payload: { encounterId: 'production', wordId: 'word', snapshot: { kind: 'production', role: 'teaching', contentId: 'production', contentVersion: 1, body: { prompt: 'A written character' }, assessment: { acceptedAnswers: ['字'] } } } });
+if (query.has('production')) append({ kind: 'presentation', payload: { encounterId: 'production', wordId: query.has('pure') ? null : 'word', snapshot: { kind: 'production', role: query.has('pure') ? 'general' : 'teaching', ...(query.has('pure') ? { schedulingScope: 'pure_cue' as const } : {}), contentId: 'production', contentVersion: 1, body: { prompt: query.has('pure') ? '写一个____。' : 'A written character' }, assessment: { acceptedAnswers: query.has('pure') ? ['字', '汉字'] : ['字'] } } } });
+if (query.has('retained')) append({ kind: 'response', payload: { encounterId: 'production', response: query.has('pure') ? '汉字' : '字', outcome: 'rejected', selfAssessment: 'rejected' } });
 function study(): Study {
   const projection = projectVocabularySession(context, actions);
   return { session: { sessionId: 'motion', status: 'active', context, actions, projection, completion: null },
-    words: [{ wordId: 'word', hanzi: '字', traditional: null, pinyin: 'zì', meaning: 'character' }, { wordId: 'covered-word', hanzi: '鼓舞', traditional: null, pinyin: 'gǔ wǔ', meaning: 'encourage' }], currentWordId: 'word', currentEncounter: projection.encounters.at(-1)!, notice: null,
+    words: [{ wordId: 'word', hanzi: '字', traditional: null, pinyin: 'zì', meaning: 'character' }, { wordId: 'covered-word', hanzi: '鼓舞', traditional: null, pinyin: 'gǔ wǔ', meaning: 'encourage' }], currentWordId: 'word', currentEncounter: projection.encounters.filter(encounter => !encounter.presentationUndone).at(-1)!, notice: null,
     controls: { canNext: true, canSkip: true, canEnough: true, canMore: false, canUndo: true, canFinishForNow: true, canFinishImmediately: false, canChangeMode: true } };
 }
 let failed = false;
@@ -72,11 +74,15 @@ window.fetch = async (input, init) => {
       append({ kind: 'word_more', payload: { wordId: command.wordId } });
       return Response.json(study());
     }
+    if (command.type === 'undo') {
+      append({ kind: 'undo', payload: { undoesActionId: study().session.projection.latestUndoableActionId! } });
+      return Response.json(study());
+    }
     if (query.has('retry') && !failed) { failed = true; return Response.json({ error: 'Fixture save failure' }, { status: 503 }); }
     if (command.type !== 'response') throw new Error(`Unexpected command ${command.type}`);
     if (query.has('save-delay')) await new Promise(resolve => setTimeout(resolve, 1500));
     append({ kind: 'response', payload: { encounterId: study().currentEncounter!.encounterId, response: command.response ?? null,
-      outcome: command.selfAssessment ?? (command.response === '字' ? 'accepted' : 'rejected'),
+      outcome: command.selfAssessment ?? (study().currentEncounter!.snapshot.assessment!.acceptedAnswers.includes(command.response ?? '') ? 'accepted' : 'rejected'),
       ...(command.selfAssessment ? { selfAssessment: command.selfAssessment } : {}) } });
     if (covered && command.selfAssessment === 'accepted') append({ kind: 'word_wrap', payload: { wordId: 'word', reason: 'policy' } });
     return Response.json(study());
@@ -126,6 +132,15 @@ function Fixture() {
   const controller = useVocabularyStudy();
   const begun = useRef(false);
   useEffect(() => { if (!begun.current) { begun.current = true; void controller.start(); } }, []);
+  const [retainedResult, setRetainedResult] = useState('Retained answer check pending');
+  useEffect(() => {
+    if (!query.has('retained') || !controller.study || controller.busy) return;
+    const response = controller.study.currentEncounter?.effectiveResponses.at(-1)?.payload;
+    if (response?.selfAssessment !== 'rejected') return;
+    const label = document.querySelector('.vocab-answer .vocab-eyebrow')?.textContent;
+    const preserved = !query.has('pure') || document.querySelector('.desk-cloze-answer')?.textContent === '汉字';
+    setRetainedResult(`${controller.writtenFormMatched && label === 'Marked wrong' && preserved ? 'PASS' : 'FAIL'}: retained pronunciation answer label and accepted member`);
+  }, [controller.study, controller.busy, controller.writtenFormMatched]);
   const [sidebarResult, setSidebarResult] = useState('Shuffle the covered word after typing an answer');
   const verifiedRequeues = useRef(0);
   useEffect(() => {
@@ -138,6 +153,7 @@ function Fixture() {
   return <>
     {narrow && <style>{':root { font-size: 125%; }'}</style>}
     <div style={{ fontSize: '.7rem', lineHeight: 1.4 }}>
+      {query.has('retained') && <output id="retained-result" style={{ display: 'block' }}>{retainedResult}</output>}
       <output id="motion-result" data-result={result} style={{ display: 'block' }}>{result}</output>
       <output id="another-result" style={{ display: 'block' }}>{anotherResult}</output>
       <output id="paper-result" style={{ display: 'block' }}>{paperResult}</output>
