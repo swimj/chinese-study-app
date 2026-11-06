@@ -1,0 +1,35 @@
+.sense-reconciliation-page { max-width: 76rem; padding: 1.5rem 0 3rem; color: var(--text); }
+.sense-reconciliation-page header { display:flex; justify-content:space-between; align-items:center; gap:1rem; margin-bottom:1.5rem; }
+.sense-reconciliation-page h1 { font-size:1.65rem; margin:.2rem 0; }
+.sense-reconciliation-page h2 { margin:.8rem 0; font-size:1.8rem; }
+.sense-reconciliation-page h2 span { font-size:1rem; font-weight:400; color:var(--muted); }
+.sense-reconciliation-page h3 { font-size:1.1rem; margin:0 0 .75rem; }
+.sense-reconciliation-page h4 { font-size:1rem; margin:0 0 .6rem; }
+.reconciliation-eyebrow,.reconciliation-column-label { color:var(--muted); font-size:.9rem; margin:0 0 .6rem; }
+.reconciliation-word-picker { max-width:36rem; }
+.sense-reconciliation-page label { display:flex; flex-direction:column; gap:.35rem; margin:.75rem 0; }
+.sense-reconciliation-page select,.sense-reconciliation-page textarea { width:100%; min-width:0; box-sizing:border-box; padding:.6rem; font:inherit; color:var(--text); background:var(--surface); border:1px solid var(--border); border-radius:.35rem; }
+.sense-reconciliation-page textarea { resize:vertical; }
+.reconciliation-summary { border-bottom:1px solid var(--border); padding:.5rem 0 1.2rem; }
+.reconciliation-statuses { display:flex; flex-wrap:wrap; gap:.6rem 2rem; }
+.reconciliation-statuses span { display:flex; gap:.5rem; flex-wrap:wrap; }
+.reconciliation-statuses strong { font-weight:600; text-transform:capitalize; }
+.reconciliation-editor { border:0; margin:0; padding:0; min-width:0; }
+.reconciliation-comparison { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.3fr); gap:2rem; padding:1.5rem 0; }
+.reconciliation-comparison section { min-width:0; }
+.reconciliation-sense,.reconciliation-use { border-bottom:1px solid var(--border); padding:.8rem 0 1.2rem; overflow-wrap:anywhere; }
+.reconciliation-sense label { flex-direction:row; align-items:flex-start; gap:.65rem; }
+.reconciliation-sense input { flex:none; margin-top:.25rem; width:1.1rem; height:1.1rem; }
+.sense-reconciliation-page ul { padding-left:1.3rem; line-height:1.6; }
+.sense-reconciliation-page summary { cursor:pointer; padding:.35rem 0; }
+.sense-reconciliation-page blockquote { margin:.5rem 0; border-left:2px solid var(--border); padding:.1rem .8rem; }
+.sense-reconciliation-page blockquote p { margin:.3rem 0; }
+.reconciliation-decision,.reconciliation-plan,.reconciliation-progress { border-top:1px solid var(--border); padding:1.2rem 0; }
+.reconciliation-consequence { color:var(--muted); line-height:1.5; }
+.reconciliation-actions { display:flex; flex-wrap:wrap; gap:.65rem; margin-top:1rem; }
+.reconciliation-error,.reconciliation-blockers { background:var(--surface); border-left:3px solid var(--accent); padding:.8rem 1rem; }
+.reconciliation-notice { color:var(--accent); }
+.reconciliation-plan code { display:block; overflow-wrap:anywhere; margin:.4rem 0; }
+.reconciliation-plan dd { margin:.5rem 0 1rem; }
+@container (max-width: 700px) { .reconciliation-comparison { grid-template-columns:minmax(0,1fr); gap:1.3rem; } }
+@media (max-width:620px) { .sense-reconciliation-page header { padding-left:2.8rem; align-items:flex-start; } .sense-reconciliation-page h1 { font-size:1.3rem; } }

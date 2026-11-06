@@ -4,6 +4,7 @@ export const OPERATOR_TABS = [
   { id: 'sharing', label: 'Content sharing' },
   { id: 'quality', label: 'Content quality' },
   { id: 'improvement', label: 'Content improvement' },
+  { id: 'reconciliation', label: 'Sense reconciliation' },
   { id: 'failures', label: 'Preparation failures' },
   { id: 'whats-new', label: 'What’s new' },
   { id: 'banner', label: 'Service banner' },

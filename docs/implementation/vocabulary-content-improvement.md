@@ -29,6 +29,42 @@ flowchart TD
   Review --> Proposal
 ```
 
+## Sense/content reconciliation
+
+The separate operator route `/operator/reconciliation` compares prepared teaching
+with canonical senses. It addresses source disagreement rather than asking ordinary
+exercise improvement to silently choose a winner. The
+[contract](../../SPECS/sense-content-reconciliation.md) owns the semantic decisions;
+[`sense-content-reconciliation.ts`](../../server/db/sense-content-reconciliation.ts)
+owns saved judgments and live application. It reuses inventory snapshot/dependency
+collection from the offline reconciliation report, without invoking that tool's
+stopped-writer apply operation.
+
+Each saved version captures a linguistic draft and source snapshot. Planning checks
+use accounting, selected identities, source drift, active generation, unresolved
+proposals/jobs, private dependencies and an active replacement requester. Blockers
+are durable judgments plus computed capability/dependency findings, not provider
+failures. The first handler always regenerates the affected teaching unit and practice;
+mapped/rejected legacy uses remain editorial evidence rather than edits to immutable
+source documents. Existing active general content is retained unless its source pins
+or teaching bindings require retirement.
+
+Apply rechecks the reviewed fingerprint under an immediate transaction, retires the
+source/package and affected content closure, updates defaults if changed, resets and
+queues replacement teaching, and stores applied authority. Exact replay is idempotent.
+Neither saving nor applying changes learner progress or captured session payloads.
+
+[`sense-content-reconciliation-state.ts`](../../server/db/sense-content-reconciliation-state.ts)
+compares replacement scope/mappings and publication state with the applied authority.
+The shared authoring and general-practice paths capture reconciliation identity and
+check it before publication. Once replacement teaching is ready, durable practice
+demand wakes ordinary preparation without waiting for another teaching completion.
+Fresh session composition, shared cues and contrast choices exclude affected words
+while replacement is pending or failed. Retained sessions use their original payload.
+Canonical/default changes during replacement require another resolution; a later
+draft does not remove the previous applied gate. A completed reconciliation receipt
+ends that replacement gate rather than permanently freezing future default edits.
+
 ## Reading the flow
 
 - **Sense readiness** reuses canonical inventory. Establishment can request the

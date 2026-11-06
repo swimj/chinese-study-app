@@ -1,5 +1,6 @@
 import { vocabularyPhraseClozePrompt } from '../../src/domain/vocabulary-production-coverage.ts';
 import { isVocabularySessionWordEligible } from '../db/vocabulary-sense-eligibility.ts';
+import { senseContentReconciliationGenerationToken, assertSenseContentReconciliationGeneration, settleSenseContentReconciliation } from '../db/sense-content-reconciliation-state.ts';
 import { ensureVocabularyDefaultUsefulSelection,retryDefaultUsefulSelection,defaultUsefulSelectionRetryable } from './default-useful-selection.ts';
 import { VocabularySenseReadinessPending,VocabularySenseSelectionRequired } from './sense-readiness.ts';
 import { resolveVocabularySenseCoverage } from '../db/vocabulary-sense-coverage.ts';
@@ -162,6 +163,7 @@ export function createVocabularyPracticePreparation(options: { provider?: Vocabu
   async function run(workId: string,token: string): Promise<VocabularyContent[]> {
     const work = readWork(workId);
     if (!work || work.status !== 'running' || work.activeToken !== token || work.expiresAt! <= now()) throw new Error('Vocabulary preparation lease is not active');
+    const reconciliation = senseContentReconciliationGenerationToken(work.wordId);
     let invocationId: string | null | undefined;
     let source: WordContentDocument | null = null;
     let retryable=false,emptyOutput=false;
@@ -169,6 +171,7 @@ export function createVocabularyPracticePreparation(options: { provider?: Vocabu
     const sourceSenses = getDb().prepare(`SELECT sense_id,imported_sense_version,source_use_id FROM legacy_sense_imports WHERE source_content_id=?`)
       .all(work.sourceContentId) as Array<{ sense_id: string; imported_sense_version: number; source_use_id: string }>;
     try {
+      assertSenseContentReconciliationGeneration(work.wordId, reconciliation);
       const bootstrap=getSharedWordIntroductionContent(work.wordId);
       source = bootstrap?productionSource(bootstrap):null;
       if (!source || source.id !== work.sourceContentId || generationKey(source) !== work.generationKey) throw new Error('Vocabulary preparation source changed');
@@ -196,6 +199,7 @@ export function createVocabularyPracticePreparation(options: { provider?: Vocabu
         throw new Error('Vocabulary practice authored no exercises; operator review required');
       }
       return atomic(() => {
+        assertSenseContentReconciliationGeneration(work.wordId, reconciliation);
         if (options.canPublish && !options.canPublish()) throw new Error('Vocabulary preparation publication is currently blocked');
         const current = readWork(workId);
         if (!current || current.status !== 'running' || current.activeToken !== token || current.expiresAt! <= now()) throw new Error('Vocabulary preparation lease changed');
@@ -222,6 +226,7 @@ export function createVocabularyPracticePreparation(options: { provider?: Vocabu
         getDb().prepare(`UPDATE vocabulary_practice_preparation SET status='ready',active_token=NULL,expires_at=NULL,updated_at=?,last_error=NULL
           WHERE work_id=? AND status='running' AND active_token=?`).run(now(),workId,token);
         completePreparationAttempt(token,now());
+        settleSenseContentReconciliation(work.wordId);
         return content;
       });
     } catch (error) {

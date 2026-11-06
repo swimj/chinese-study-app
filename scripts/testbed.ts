@@ -57,7 +57,7 @@ try {
     apiPort=await freePort();
     const dataDir=path.join(runDir,'data');env.APP_DATA_DIR=dataDir;
     prepare('scripts/prepare-vocabulary-fixtures.ts',dataDir);
-    prepare('scripts/testbed/prepare-operator.ts',dataDir);
+    prepare(scenario.id==='reconciliation'?'scripts/testbed/prepare-reconciliation.ts':'scripts/testbed/prepare-operator.ts',dataDir);
     backend=spawn(process.execPath,['--import','tsx','scripts/testbed/backend.ts',`--port=${apiPort}`],{cwd:root,env,stdio:['ignore','pipe','pipe']});
     const log=fs.createWriteStream(path.join(runDir,'backend.log'));
     backend.stdout!.pipe(log,{end:false});backend.stderr!.pipe(log,{end:false});
@@ -74,7 +74,7 @@ try {
   // Vite's default .env loading and inherited VITE_* values must not select hosted services.
   for(const key of Object.keys(process.env)) if(key.startsWith('VITE_')) delete process.env[key];
   const origin=`http://127.0.0.1:${port}`;
-  const entry=scenario.archetype==='presentation'?`/tests/browser/${scenario.fixture}.html`:'/operator/improvement';
+  const entry=scenario.entryPath??(scenario.archetype==='presentation'?`/tests/browser/${scenario.fixture}.html`:'/operator/improvement');
   const previewUrl=`${origin}${entry}${scenario.query?'?'+scenario.query:''}`;
   const escape=(text:string)=>text.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;');
   const catalog=`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Chinese Study preview testbed</title><style>body{font:18px/1.5 system-ui;max-width:70rem;margin:2rem auto;padding:0 1rem}td,th{text-align:left;vertical-align:top;padding:.7rem;border-bottom:1px solid #ccc}table{width:100%}code{overflow-wrap:anywhere}a{color:#075d73}</style><h1>Preview testbed</h1><p>Running: <strong>${escape(scenario.title)}</strong> · ${scenario.archetype}</p><p><a href="${escape(previewUrl)}">Open preview</a></p><p>${escape(scenario.limits)}</p><p>${scenario.archetype==='real-backend'?'Reload preserves saved data. Stop and rerun the launch command for a fresh database.':'Reload the preview to restore its starting state.'}</p><h2>Scenario catalog</h2><table><thead><tr><th>Scenario</th><th>Fixture level and purpose</th><th>Launch</th></tr></thead><tbody>${scenarios.map(s=>`<tr><td>${escape(s.title)}</td><td>${s.archetype}<br>${escape(s.purpose)}</td><td><code>npm run testbed -- start ${s.id}</code></td></tr>`).join('')}</tbody></table></html>`;

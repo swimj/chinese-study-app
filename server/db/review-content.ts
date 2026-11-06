@@ -359,13 +359,14 @@ function publishReviewProjection(kind: 'production_cue' | 'production_cue_supple
 }
 
 export function finishSharedWordReviewPreparation(
-  wordId: string, token: string, exercises: readonly AuthoredReviewExercise[], model: string, invocationId?: string | null,
+  wordId: string, token: string, exercises: readonly AuthoredReviewExercise[], model: string, invocationId?: string | null, assertPublication?: () => void,
 ): { cueIds: string[]; supplementIds: string[] } {
   if (!Array.isArray(exercises) || exercises.length < 1 || exercises.length > 3) {
     throw new Error('Review preparation needs one to three authored exercises');
   }
   if (!model.trim()) throw new Error('Review model name is required');
   return transaction(() => {
+    assertPublication?.();
     const prepared = preparationRow(wordId);
     if (!prepared || prepared.ready_at !== null || prepared.lease_token !== token
       || prepared.lease_expires_at === null || prepared.lease_expires_at <= new Date().toISOString()) {

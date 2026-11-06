@@ -25,6 +25,7 @@ Leaving the page via Return to study does not retain that in-memory workspace.
 | Content sharing | Weekly exact-content reuse counts, learner-originated cue reuse, and inspectable examples | [Sharing metrics](#content-sharing) |
 | Content quality | Review content-quality signals and filter the triage queue | [Content quality](content-quality.md) |
 | Content improvement | Review vocabulary judgments and proposals, request second opinions, and apply approved corrections | [Content improvement workflow](#content-improvement-workflow) |
+| Sense reconciliation | Compare teaching uses with canonical senses, save linguistic decisions, inspect blockers, and apply supported replacement plans | [Sense reconciliation](#sense-reconciliation) |
 | Preparation failures | Inspect paused shared preparation work and retry eligible stages | [Error diagnostics](ops/error-diagnostics.md#shared-word-preparation-failures) |
 | What’s New | Edit and publish learner-facing update posts | [What’s New](whats-new.md#manual-operator-editor) |
 | Service banner | Set planned downtime, edit a custom message, or clear the active banner | [Banner API](api.md#operator-view) and [hosted upgrade runbook](ops/hosted-beta-deployment.md#post-a-pre-upgrade-banner) |
@@ -53,6 +54,36 @@ local to this browser, without account-level sync. Timestamp
 cells show the date, time, and UTC offset at that instant, including daylight
 saving changes. Display choices leave date filters, day grouping, summary
 periods, and stored timestamps on their UTC boundaries.
+
+## Sense reconciliation
+
+Open `/operator/reconciliation`. The word list includes current teaching documents
+with missing/stale canonical mappings and words with saved resolutions. Compare the
+canonical senses and default selection with the teaching uses, notes and examples.
+For each use, record its relationship to an existing canonical sense, reject it,
+or describe a transformation the system cannot yet apply. Save an overall rationale.
+
+Saving a draft or resolved decision preserves editorial work without changing live
+content. A resolved decision can remain blocked: the application plan names missing
+handlers, pending content decisions, active work or changed source evidence. Review
+current evidence explicitly after a source change; reloading is not approval of a
+different plan.
+
+The first supported handler keeps canonical identities, accepts a nonempty set of
+existing senses as defaults, and replaces the affected teaching unit and general
+practice. The preview identifies content retained or retired. Apply retires affected
+current content and queues replacement in one transaction. Teaching and practice
+progress remain visible separately; fresh study of the affected word waits until
+both are ready. Other ready study and already-running sessions remain available.
+Retry failed preparation under unchanged authority. If canonical senses or defaults
+change while replacement is incomplete, a new reviewed resolution is required.
+Completed reconciliation does not permanently lock future default edits.
+
+Additions, sense revisions, retirement, merges/splits, and empty-default dispositions
+can be described and saved as development gaps; this first handler cannot apply them.
+No linguistic result is inferred merely because reflection generated exercises.
+See the [delivery contract](../SPECS/sense-content-reconciliation.md) and
+[implementation](implementation/vocabulary-content-improvement.md#sensecontent-reconciliation).
 
 ## Usage metrics
 

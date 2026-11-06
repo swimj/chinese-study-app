@@ -52,6 +52,8 @@ encounters and ratings and requires the offline schema-upgrade procedure.
 | [`session-word-outcomes.ts`](../server/db/session-word-outcomes.ts) | Immutable session-attributed introduction/Practice outcomes and deterministic distinct new/graduated word reports |
 | [`session-debrief.ts`](../server/db/session-debrief.ts) | Learner-private exact inventories and interests snapshots, debrief queue/results, attempt cost and latency records, fenced completion and explicit retry |
 | [`preparation-work.ts`](../server/db/preparation-work.ts) | Shared word/stage demand, three-attempt budget, restart recovery, failure diagnostics and audited operator retry; migration 0018 |
+| [`sense-content-reconciliation.ts`](../server/db/sense-content-reconciliation.ts) | Operator-authorized saved judgments, versioned dependency plans, atomic live application and replacement retry |
+| [`sense-content-reconciliation-state.ts`](../server/db/sense-content-reconciliation-state.ts) | Applied canonical authority, generation publication fences, replacement readiness and durable practice demand |
 | [`usage-pulse.ts`](../server/db/usage-pulse.ts) | Content-free daily cohort usage snapshots and live today pulse for the operator page |
 | [`learner-context.ts`](../server/db/learner-context.ts) | Required learner context for private persistence operations |
 | [`hanzi-lookup.ts`](../server/db/hanzi-lookup.ts) | Mandarin punctuation-stripped hanzi lookup key, matching production normalization |
@@ -75,6 +77,15 @@ Domain-oriented re-export shims (navigation only; implementation stays in `persi
 | [`analytics.ts`](../server/db/analytics.ts) | Failure rates from saved exercise summaries and forward-only daily compensation counters, active-session-time metrics |
 
 ## Reflection persistence
+
+Migration `0069_sense_content_reconciliation` adds operator-owned current resolution
+records and immutable per-version history. A resolution stores the linguistic draft,
+reviewed source snapshot, applied plan and canonical authority. Draft/resolved rows
+have no serving authority; an applied row governs fresh serving until required
+replacement teaching and practice are ready. Saving a later draft preserves the
+previous applied authority. The migration creates empty tables and guards without
+rewriting existing content, senses or learner records. See the
+[migration rehearsal note](ops/sense-inventory-reconciliation.md#live-reconciliation-migration-rehearsal).
 
 Pure-cue response reflection has an independent provider call and stored bundle,
 using the same artifacts, run log, authorization, and inbox. Its

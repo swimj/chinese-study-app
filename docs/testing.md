@@ -375,6 +375,23 @@ for validation limits and bounded evidence.
 
 ### Sense inventory comparison and reconciliation
 
+The live operator workflow is covered separately by
+`tests/sense-content-reconciliation.test.ts`: saved unsupported decisions without
+live effects, stale evidence, atomic rollback and replay, preserved canonical
+identities, applied authority across a later draft, replacement failure/retry,
+and progress through ordinary workers with injected providers.
+`tests/sense-content-reconciliation-routes.test.ts` exercises the HTTP boundary;
+`tests/reconciliation-testbed.test.ts` verifies the synthetic A → C / replacement B
+fixture and its unmapped-source failure. These tests do not establish linguistic
+correctness or production repair readiness.
+
+Use `npm run testbed -- start reconciliation` for the actual operator route with
+SQLite save/apply persistence. The [preview scenario](preview-testbed.md#sense-reconciliation-scenario)
+keeps providers disabled, so replacement stays pending. UI evaluation should
+distinguish saving a judgment, applying supported consequences, and waiting for
+replacement; include an unsupported decision, reload, source drift, failure/retry
+where available, narrow layout, enlarged text and keyboard access.
+
 [`scripts/reconcile-sense-inventory.ts`](../scripts/reconcile-sense-inventory.ts)
 connects fresh inventory generation to a separate, reviewable assessment of
 existing canonical identities. Its read-only preparation commands are:

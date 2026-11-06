@@ -4,6 +4,8 @@ import { createVocabularyCutoverFence } from './vocabulary/cutover-routes.ts';
 import { addVocabularyStashByHanzi, updateVocabularyStashPriority } from './db/vocabulary-stash.ts';
 import { registerVocabularyStudyRoutes } from './vocabulary/study-routes.ts';
 import { registerVocabularyReflectionRoutes } from './vocabulary/reflection-routes.ts';
+import { registerSenseContentReconciliationRoutes } from './vocabulary/reconciliation-routes.ts';
+import { listSenseContentReconciliationPracticeDemand } from './db/sense-content-reconciliation-state.ts';
 import { createVocabularyProcessingWorker } from './vocabulary/processing-worker.ts';
 import { getVocabularyApprovalRequests } from './vocabulary/approval-requests.ts';
 import { createVocabularyPracticeWorker } from './vocabulary/preparation-worker.ts';
@@ -433,6 +435,7 @@ export function createApp(options: CreateAppOptions = {}) {
   registerVocabularyStudyRoutes(app, options.wakeVocabulary);
   registerVocabularyStatisticsRoutes(app);
   registerVocabularyReflectionRoutes(app, {wake: options.wakeVocabulary});
+  registerSenseContentReconciliationRoutes(app, {wake: () => { options.wakeWordPreparation?.(); options.wakeVocabulary?.(); }});
   app.get('/api/operator/content-quality', createOperatorAllowlistMiddleware(), (req, res) => {
     if (Object.values(req.query).some(value => typeof value !== 'string')) {
       res.status(400).json({ error: 'Expected string quality filters' }); return;
@@ -2656,7 +2659,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     }), onError: () => console.error('Session completion worker failed') });
   if (dbConfig.studyProfile !== 'mandarin') sessionCompletions.wake();
   const vocabularyProcessing = createVocabularyProcessingWorker({onError: error => console.error(error)});
-  const vocabularyPreparation = createVocabularyPracticeWorker({onError: error => console.error(error)});
+  const vocabularyPreparation = createVocabularyPracticeWorker({demand:listSenseContentReconciliationPracticeDemand,onError: error => console.error(error)});
   const vocabularyApprovals = getVocabularyApprovalRequests();
   if (dbConfig.studyProfile === 'mandarin') vocabularyApprovals.wake();
   const wakeVocabulary = () => { vocabularyProcessing.wake(); vocabularyPreparation.wake(); sessionDebriefs.wake(); };

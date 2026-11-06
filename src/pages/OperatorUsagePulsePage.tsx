@@ -1,4 +1,5 @@
 import { ServiceBannerPanel } from './ServiceBannerPanel';
+import { SenseReconciliationPage } from './SenseReconciliationPage';
 import { ContentSharingPanel } from './ContentSharingPanel';
 import { WhatsNewEditor } from './WhatsNewEditor';
 import { useEffect, useState } from 'react';
@@ -24,6 +25,7 @@ export function OperatorPanel({ tab, improvementApi }: { tab: OperatorTab; impro
     {tab === 'sharing' && <ContentSharingPanel />}
     {tab === 'quality' && <ContentQualityPanel />}
     {tab === 'improvement' && <VocabularyCaseReviewPage api={improvementApi} />}
+    {tab === 'reconciliation' && <SenseReconciliationPage />}
     {tab === 'failures' && <PreparationFailuresPanel />}
     {tab === 'whats-new' && <WhatsNewEditor />}
     {tab === 'banner' && <ServiceBannerPanel />}

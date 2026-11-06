@@ -1,4 +1,5 @@
 import { isVocabularySessionWordEligible } from '../db/vocabulary-sense-eligibility.ts';
+import { isSenseContentReconciliationPending } from '../db/sense-content-reconciliation-state.ts';
 import { isCompatibleVocabularyIntroduction } from '../db/preparation-compatibility.ts';
 import type { VocabularyContent } from '../../src/domain/vocabulary-content.ts';
 import { getDb } from '../db/connection.ts';
@@ -16,8 +17,9 @@ export function skillEnabled(wordId:string,skill:'recognition'|'production'|'con
 }
 function suppressed(wordId:string):boolean {return !skillEnabled(wordId,'production');}
 export function eligible(content:VocabularyContent):boolean {
-  return content.availability==='active'&&(content.accessScope==='shared'||content.ownerLearnerId===requireLearnerId())
-    &&(content.kind!=='exercise'||content.answers.every(answer=>isVocabularySessionWordEligible(answer.wordId)))
+  return content.availability==='active'&&!content.words.some(word=>isSenseContentReconciliationPending(word.wordId))
+    &&(content.accessScope==='shared'||content.ownerLearnerId===requireLearnerId())
+    &&(content.kind!=='exercise'||content.answers.every(answer=>isVocabularySessionWordEligible(answer.wordId)&&!isSenseContentReconciliationPending(answer.wordId)))
     &&!getDb().prepare('SELECT 1 FROM learner_content_deactivations WHERE learner_id=? AND content_id=?').get(requireLearnerId(),content.contentId)
 ;
 }
@@ -30,7 +32,7 @@ export function compatibleIntroductions(wordId:string):VocabularyContent[] {
   return introductions(wordId).filter(content=>isCompatibleVocabularyIntroduction(wordId,content.body));
 }
 export function teachingReady(wordId:string):boolean {
-  if(!isVocabularySessionWordEligible(wordId)||!skillEnabled(wordId,'recognition')||suppressed(wordId))return false;
+  if(isSenseContentReconciliationPending(wordId)||!isVocabularySessionWordEligible(wordId)||!skillEnabled(wordId,'recognition')||suppressed(wordId))return false;
   const baselineRecognition=getDictionaryBaseline(wordId,'recognition','teaching');
   const contentReady=compatibleIntroductions(wordId).some((intro)=>{
     const exercises=getVocabularyTeachingExercises(intro.contentId).filter((entry)=>eligible(entry)&&entry.kind==='exercise'&&skillEnabled(wordId,entry.skill));

@@ -1,4 +1,5 @@
 import {vocabularyExerciseAnswersEligibleSql} from '../db/vocabulary-sense-eligibility.ts';
+import {isSenseContentReconciliationPending} from '../db/sense-content-reconciliation-state.ts';
 import {createHash} from 'node:crypto';
 import {getDb} from '../db/connection.ts';
 import {requireLearnerId} from '../db/learner-context.ts';
@@ -29,7 +30,11 @@ export function selectVocabularyPureCueCandidates(input:{ordinaryReviewCount:num
     WHERE s.learner_id=:learner AND COALESCE(json_extract(s.scheduler_state_json,'$.enabled'),1)=1 AND ${eligibleContent}
     ORDER BY c.created_at,c.content_id`).all({learner:requireLearnerId()}) as {content_id:string;scheduler_state_json:string;last_practised_at:string|null;next_eligible_at:string|null}[];
   const contents=new Map<string,VocabularyContent>();
-  const cues=rows.map((row):PureCue=>{
+  const cues=rows.filter(row=>{
+    const content=getVocabularyContent(row.content_id);
+    return content?.kind==='exercise'&&content.answers.every(answer=>!isSenseContentReconciliationPending(answer.wordId))
+      &&content.words.every(word=>!isSenseContentReconciliationPending(word.wordId));
+  }).map((row):PureCue=>{
     const content=getVocabularyContent(row.content_id);if(!content||content.kind!=='exercise')throw new Error('Eligible pure cue disappeared');contents.set(content.contentId,content);
     const state=JSON.parse(row.scheduler_state_json) as {intervalHours:number;easeFactor:number;strongSince?:string|null;strongSuccesses?:number;resetUntil?:string|null;maintenanceIdentity?:string};
     const active=state.resetUntil==null||state.resetUntil<=now;

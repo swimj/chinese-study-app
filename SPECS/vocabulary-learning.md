@@ -320,6 +320,16 @@ refresh choices. Provider failure does not invalidate session completion.
 
 ### Content repair boundaries
 
+An operator can reconcile divergent teaching and canonical sense views without
+forcing a linguistic judgment to wait for implementation support. Saving a resolved
+decision does not itself change live content. The application preview accounts for
+affected teaching and practice, identifies missing operations, and permits apply
+only when all required consequences are supported. Required replacement content
+may leave the affected word waiting while unrelated ready study remains available.
+Already-composed sessions keep their captured material and completion semantics.
+The [sense/content reconciliation contract](sense-content-reconciliation.md)
+defines this workflow and its bounded first implementation.
+
 A dictionary fallback without current authored production practice in its
 publication scope and owner can seed a selected general-practice repertoire.
 Existing authored practice, including shared pure cues accepting the word,

@@ -5,6 +5,7 @@ export interface PreviewScenario {
   archetype: Archetype;
   fixture?: 'vocabulary-case-review' | 'vocabulary-attention';
   query: string;
+  entryPath?: string;
   purpose: string;
   limits: string;
 }
@@ -20,6 +21,7 @@ export const scenarios: readonly PreviewScenario[] = [
   {id:'attention-failure',title:'Failed default selection save',archetype:'app-simulated',fixture:'vocabulary-attention',query:'shell=1&saveFailure=1&clean=1',purpose:'Check that a failed save preserves selections and a retry can complete.',limits:simulated},
   {id:'empty',title:'Empty operator review',archetype:'app-simulated',fixture:'vocabulary-case-review',query:'shell=1&empty=1&hideControls=1',purpose:'Inspect the empty review entry point.',limits:simulated},
   {id:'persist',title:'Save and Apply with SQLite',archetype:'real-backend',query:'',purpose:'Open a review proposal, edit and save it, reload, and apply the saved revision.',limits:'Real application, HTTP handlers, SQLite, and approval journal/worker. Synthetic encounter, failed-assessment state, and manual proposal; trusted-local authentication. Provider workers are absent and provider work is disabled. This is not a provider-generated assessment, repertoire, or hosted-auth test.'},
+  {id:'reconciliation',title:'Reconcile teaching and canonical senses',archetype:'real-backend',entryPath:'/operator/reconciliation',query:'',purpose:'Resolve the different teaching and canonical views of 挂钩, save and reopen the decision, inspect application blockers, and apply a supported resolution.',limits:'Real application, HTTP handlers, SQLite, and resolution/application semantics. Synthetic original and replacement teaching documents with a three-sense canonical inventory. Trusted-local authentication. Provider workers are absent and provider work is disabled: replacement content remains pending; this does not validate provider generation or hosted authentication.'},
 ];
 export function scenarioById(id: string): PreviewScenario {
   const scenario = scenarios.find(value => value.id === id);

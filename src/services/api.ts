@@ -1,4 +1,5 @@
 import type { ServiceBannerRequest } from '../domain/service-banner';
+import type { SenseContentReconciliationWorkspace, SenseContentReconciliationSave, SenseContentReconciliationWord } from '../domain/sense-content-reconciliation';
 import type { SessionCompletion, StageSessionCompletionRequest } from '../domain/session-completion';
 import type { StudyIntroductionOrder } from '../domain/introduction-order';
 import type { WhatsNewPost, WhatsNewWriteRequest } from '../domain/whats-new';
@@ -1610,3 +1611,13 @@ export async function fetchVocabularyWordCollection(view: MyWordsView, query: st
 }
 
 export const enrollVocabularyWord = (id:string) => vocabularyRequest<unknown>(`/words/${encodeURIComponent(id)}`, {});
+
+const reconciliationPath = (wordId: string) => `/api/operator/vocabulary/reconciliation/${encodeURIComponent(wordId)}`;
+export const fetchSenseReconciliationWords = () => apiRequest<SenseContentReconciliationWord[]>('/api/operator/vocabulary/reconciliation');
+export const fetchSenseReconciliation = (wordId: string) => apiRequest<SenseContentReconciliationWorkspace>(reconciliationPath(wordId));
+export const saveSenseReconciliation = (wordId: string, input: SenseContentReconciliationSave) =>
+  apiRequest<SenseContentReconciliationWorkspace>(reconciliationPath(wordId), {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(input)});
+export const applySenseReconciliation = (wordId: string, input: {expectedVersion:number;planFingerprint:string}) =>
+  apiRequest<SenseContentReconciliationWorkspace>(`${reconciliationPath(wordId)}/apply`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(input)});
+export const retrySenseReconciliation = (wordId: string) =>
+  apiRequest<SenseContentReconciliationWorkspace>(`${reconciliationPath(wordId)}/retry`, {method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});

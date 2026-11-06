@@ -35,6 +35,11 @@ architectural requirement.
 
 ## Design rationale and archives
 
+The [sense/content reconciliation deliverable](sense-content-reconciliation.md)
+defines the agreed operator workflow for resolving divergent teaching and canonical
+sense snapshots, with 挂钩 as the first case. It is an implementation target, not a
+description of shipped reconciliation behavior.
+
 The [specification archive](archive/README.md) retains earlier runtime designs
 for historical investigation. Current study and review questions start with the
 contracts above. Useful surviving explanations belong in those current owners;

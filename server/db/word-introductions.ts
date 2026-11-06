@@ -294,7 +294,7 @@ export function getSharedWordIntroductionComponent(
 }
 
 export function saveSharedWordIntroductionComponent(
-  wordId: string, token: string, input: Omit<SavedIntroductionComponent, 'createdAt'>,
+  wordId: string, token: string, input: Omit<SavedIntroductionComponent, 'createdAt'>, assertPublication?: () => void,
 ): SavedIntroductionComponent {
   componentKey(input.stage, input.generationKey);
   const model = modelName(input.model);
@@ -306,6 +306,7 @@ export function saveSharedWordIntroductionComponent(
     throw new WordIntroductionError('invalid_source', 'Component invocation id must be nonempty or null');
   }
   return transaction(() => {
+    assertPublication?.();
     requireComponentClaim(wordId, token, input.contentId);
     const existing = readComponent(input.contentId, input.stage, input.generationKey);
     if (existing) {
@@ -327,7 +328,7 @@ export function saveSharedWordIntroductionComponent(
 
 export function finishSharedWordIntroductionBootstrap(
   wordId: string, token: string, input: WordContentDocument, model: string, invocationId?: string | null,
-  canonical?:{catalogVersion:number;senseVersions:{senseId:string;version:number}[];senseIds:string[]},
+  canonical?:{catalogVersion:number;senseVersions:{senseId:string;version:number}[];senseIds:string[]}, assertPublication?: () => void,
 ): SavedWordContent {
   const content = parseWordContent(input);
   const sourceModel = modelName(model);
@@ -336,6 +337,7 @@ export function finishSharedWordIntroductionBootstrap(
   }
   assertWordIdentity(content);
   return transaction(() => {
+    assertPublication?.();
     const row = requireLiveClaim(wordId, 'bootstrap', token);
     if (row.content_id !== null) throw new WordIntroductionError('conflict', 'Word bootstrap already prepared');
     if(canonical&&(getVocabularySenseCatalog(wordId).version!==canonical.catalogVersion||canonical.senseVersions.some(pin=>!getVocabularySenses(wordId).some(sense=>sense.senseId===pin.senseId&&sense.version===pin.version&&sense.status==='active'))))throw new WordIntroductionError('conflict','Canonical sense source or catalog changed before bootstrap publication');
@@ -359,11 +361,12 @@ export function finishSharedWordIntroductionBootstrap(
 
 export function finishSharedWordIntroductionTeaching(
   wordId: string, token: string, input: TeachingPackage, model: string,
-  componentKeys?: { teaching: string; practice: string },
+  componentKeys?: { teaching: string; practice: string }, assertPublication?: () => void,
 ): SavedTeachingPackage {
   const teaching = parseTeachingPackage(input);
   const sourceModel = modelName(model);
   return transaction(() => {
+    assertPublication?.();
     const row = requireLiveClaim(wordId, 'teaching', token);
     if (row.package_id !== null) throw new WordIntroductionError('conflict', 'Word teaching already prepared');
     if (row.content_id === null || teaching.wordContentId !== row.content_id) {
