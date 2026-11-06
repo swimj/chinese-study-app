@@ -44,7 +44,7 @@ export function CaseReviewCard({ item, children, onDetails, showDetails = false,
   return <section className="vocabulary-improvement-entry vocabulary-case-card" aria-label="Improvement case">
     <div className="vocabulary-case-heading"><h2>{item.wordLabel ?? first?.pureCue?.axisNote ?? 'Content review'}</h2><span className="vocabulary-operator-meta">{encounterTime ? `Encounter · ${new Date(encounterTime).toLocaleString()}` : `Case opened · ${new Date(item.createdAt).toLocaleString()}`}</span></div>
     <div className="vocabulary-served-lead" aria-label="Original served content">
-      <p className="vocabulary-served-label">Original served content</p>
+      <p className="vocabulary-served-label">{item.kind === 'teaching_review' ? 'Teaching encounter' : 'Original served content'}</p>
       {item.served.length === 0 && <p>The original served content is not available for this case.</p>}
       {first && <Encounter encounter={first} title={item.wordLabel}>{encounters.length > 1 && <button className="vocabulary-encounter-toggle" aria-expanded={historyOpen} onClick={() => setHistoryOpen(open => !open)}><span aria-hidden="true">{historyOpen ? '▾' : '▸'}</span> {encounters.length - 1} more encounters</button>}</Encounter>}
       <div className="vocabulary-encounter-history" hidden={!historyOpen}>{encounters.slice(1).map(encounter => <section key={encounter.encounterId}><p className="vocabulary-operator-meta">{encounter.presentedAt ? new Date(encounter.presentedAt).toLocaleString() : 'Encounter time unavailable'} · {encounter.role} · {encounter.kind}{encounter.contentVersion !== null ? ` · version ${encounter.contentVersion}` : ''}</p><Encounter encounter={encounter} title={null} /></section>)}</div>
@@ -53,7 +53,7 @@ export function CaseReviewCard({ item, children, onDetails, showDetails = false,
     </div>
     {item.assessment?.diagnosis && !repertoire && item.assessment.diagnosis.trim() !== item.finding?.message.trim() && <p>{item.assessment.diagnosis}</p>}
     {item.finding && <p className="vocabulary-case-finding"><strong>{{unmappable:'Intended sense unresolved',inventory_gap:'Sense inventory gap',needs_coverage:'Useful senses need review',needs_operator:'Candidate identity unresolved'}[item.finding.kind]}</strong>{item.finding.message && ` · ${item.finding.message}`}</p>}
-    {item.state === 'open' && !item.reassessment.eligible && item.reassessment.reason && <p className="vocabulary-operator-meta">Reassessment unavailable: {item.reassessment.reason}</p>}
+    {item.kind !== 'teaching_review' && item.state === 'open' && !item.reassessment.eligible && item.reassessment.reason && <p className="vocabulary-operator-meta">Reassessment unavailable: {item.reassessment.reason}</p>}
     {item.state === 'resolved' && <p><strong>Resolved</strong>{item.resolvedAt ? ` · ${new Date(item.resolvedAt).toLocaleString()}` : ''}</p>}
     {item.activeJob && <p role="status">{item.frozen ? 'Reassessment' : 'Assessment'} {item.activeJob.sequence} {item.activeJob.status === 'queued' ? 'queued' : 'running'}{item.frozen ? ' · review is paused' : ''}</p>}
     {item.latestJob?.status === 'failed' && <p role="alert" className="vocabulary-operator-error">{item.latestJob.advisory ? 'Second opinion' : 'Assessment'} {item.latestJob.sequence} failed: {item.latestJob.error === 'source_conflict' ? 'The source changed. Reassess the current source.' : item.latestJob.error === 'provider_outcome_unknown' ? 'The provider outcome is unknown. Retrying may make another call.' : item.latestJob.error ?? 'Processing failed.'}</p>}

@@ -281,3 +281,6 @@
 .vocabulary-attention-card fieldset { border: 0; padding: 0; margin: .75rem 0; }
 .vocabulary-attention-page .vocabulary-case-action-frame { flex-direction: row; flex-wrap: wrap; align-items: center; gap: .5rem; }
 .vocabulary-attention-page .vocabulary-case-action-frame > .vocabulary-operator-actions { flex: 1; margin-top: 0; }
+
+/* Inline-size containment needs an explicit width inside the case flex column. */
+.vocabulary-full-review { width: 100%; min-width: 0; flex-shrink: 0; }
