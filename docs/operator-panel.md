@@ -341,7 +341,11 @@ render projections are never submitted as authored content.
 exercise case without a proposal, it drafts a correction from the current source.
 Phrase clozes expose their English frame and Mandarin sentence separately.
 **Save** retains the changed proposal; **Approve and apply** separately changes
-live content. **Cancel** discards unsaved edits. Accepted answers, senses, teaching
+live content. **Cancel** discards unsaved edits. **Reset to original** restores the model’s first proposed cue, including after
+saved operator edits. This action sits beside Edit cue and saves a new proposal
+revision without opening the editor. Approve and apply remains separate.
+The reset is available only when that operation has a retained model-authored
+baseline with the same cue type; manual corrections have no model baseline. Accepted answers, senses, teaching
 notes, and other operations remain intact. The original served encounter remains
 historical evidence. Source/proposal conflicts require reopening the current
 content, and unsupported structured cues use the full workspace.

@@ -3,15 +3,18 @@ import type { VocabularyContentProposal, VocabularyProposalDraft } from '../../d
 import type { VocabularyOperatorApi } from './api';
 import { editableCue, updateCue, type EditableCue } from './proposal-review';
 
-export type CueEdit={proposal:VocabularyContentProposal|null;draft:VocabularyProposalDraft;operationKey:string;cue:EditableCue};
+export type CueEdit={proposal:VocabularyContentProposal|null;draft:VocabularyProposalDraft;operationKey:string;cue:EditableCue;originalCue:EditableCue|null};
 export async function loadCueEdit(api:VocabularyOperatorApi,item:VocabularyCaseQueueItem,operationKey:string|null):Promise<CueEdit> {
+  let originalCue:EditableCue|null=null;
   let proposal:VocabularyContentProposal|null=null,draft:VocabularyProposalDraft;
   if(operationKey!==null){
     if(!item.proposal)throw new Error('Proposed cue requires a proposal.');
-    const batch=await api.reviewBatch(item.proposal.proposalId,1);
+    const [batch,original]=await Promise.all([api.reviewBatch(item.proposal.proposalId,1),api.originalModelProposal(item.proposal.proposalId)]);
     const snapshot=batch.items.find(entry=>entry.proposal.proposalId===item.proposal!.proposalId);
     if(!snapshot||snapshot.proposal.version!==item.proposal.version||snapshot.coverageChanged)throw new Error('This proposal changed. Refresh the case before editing.');
     proposal=snapshot.proposal;
+    const originalOperation=original.proposal?.operations.find(operation=>operation.operationKey===operationKey);
+    if(originalOperation&&originalOperation.strategy!=='retire'&&originalOperation.content.kind==='exercise')originalCue=editableCue(originalOperation.content);
     draft={...(proposal.caseId?{caseId:proposal.caseId}:{}),operations:proposal.operations,rationale:proposal.rationale,bases:proposal.bases};
   }else{
     if(item.proposal)throw new Error('Edit the proposed cue when a proposal exists.');
@@ -27,7 +30,7 @@ export async function loadCueEdit(api:VocabularyOperatorApi,item:VocabularyCaseQ
   if(!operation||operation.strategy==='retire'||operation.content.kind!=='exercise')throw new Error('This operation does not have an editable cue.');
   const cue=editableCue(operation.content);
   if(!cue)throw new Error('This cue needs the full authored-content editor.');
-  return {proposal,draft,operationKey,cue};
+  return {proposal,draft,operationKey,cue,originalCue:originalCue?.kind===cue.kind?originalCue:null};
 }
 export function cueEditDraft(edit:CueEdit,cue:EditableCue):VocabularyProposalDraft {
   return {...edit.draft,operations:edit.draft.operations.map(operation=>operation.operationKey===edit.operationKey?{...operation,content:updateCue(operation.content,cue)}:operation)};

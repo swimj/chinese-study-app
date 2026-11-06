@@ -9,14 +9,14 @@ const source:VocabularyContent={contentId:'source',version:4,createdAt:'2026-01-
 test('quick proposal edit changes only selected cue fields and preserves other operations and provenance',async()=>{
  const item=caseReviewFixture();
  const proposal:VocabularyContentProposal={proposalId:item.proposal!.proposalId,caseId:'lineage-child',version:1,status:'awaiting_review',rationale:'Original rationale',bases:[{contentId:'source',expectedVersion:4}],invocationId:'call',authorKind:'service',authorId:'model',operations:[{operationKey:'repair',strategy:'update_existing',sourceContentId:'source',expectedVersion:4,scope:{kind:'shared'},rationale:'Operation rationale',content:source},{operationKey:'other',strategy:'create',scope:{kind:'shared'},rationale:'Other',content:{...source,contentId:'other'}}]};
- const api={...vocabularyOperatorApi,reviewBatch:async()=>({items:[{proposal,case:null,reassessment:null,previews:[]}],nextProposalId:null})};
+ const api={...vocabularyOperatorApi,originalModelProposal:async()=>({proposal:structuredClone(proposal)}),reviewBatch:async()=>({items:[{proposal,case:null,reassessment:null,previews:[]}],nextProposalId:null})};
  const edit=await loadCueEdit(api,item,'repair');
  const draft=cueEditDraft(edit,{kind:'phrase_cloze',frame:'New frame',text:'新____文字'});
  assert.equal(draft.operations[1],proposal.operations[1]);
  assert.deepEqual(draft.operations[0].content.answers,source.answers);
  assert.deepEqual(draft.operations[0].content.words,source.words);
  assert.deepEqual(draft.operations[0].content.body,{prompt:'New frame\n新____文字',stimulus:{kind:'phrase_cloze',frame:'New frame',text:'新____文字'},reveal:{teachingNote:'Keep teaching'}});
- assert.equal(draft.caseId,'lineage-child');assert.equal(draft.rationale,'Original rationale');assert.deepEqual(draft.bases,proposal.bases);
+ assert.deepEqual(edit.originalCue,{kind:'phrase_cloze',frame:'Frame',text:'____文字'});assert.equal(draft.caseId,'lineage-child');assert.equal(draft.rationale,'Original rationale');assert.deepEqual(draft.bases,proposal.bases);
  proposal.version=2;await assert.rejects(()=>loadCueEdit(api,item,'repair'),/changed/);
 });
 test('quick current cue edit creates a source-version-bound correction without changing live content',async()=>{
@@ -28,4 +28,15 @@ test('quick current cue edit creates a source-version-bound correction without c
  assert.equal(edit.draft.caseId,item.caseId);assert.equal(source.version,4);
  const result=cueEditDraft(edit,{kind:'phrase_cloze',frame:'Edited frame',text:'____文字'});
  assert.notDeepEqual(result.operations[0].content.body,source.body);assert.equal(source.body&&typeof source.body==='object'&&!Array.isArray(source.body)&&source.body.prompt,'Frame\n____文字');
+});
+test('reset restores original model wording while preserving current non-cue edits and saved revision fence',async()=>{
+ const item=caseReviewFixture();item.proposal!.version=3;
+ const original:VocabularyContentProposal={proposalId:item.proposal!.proposalId,caseId:item.caseId,version:1,status:'awaiting_review',rationale:'Model rationale',bases:[{contentId:'source',expectedVersion:4}],invocationId:'model-call',authorKind:'service',authorId:'model',operations:[{operationKey:'repair',strategy:'update_existing',sourceContentId:'source',expectedVersion:4,scope:{kind:'shared'},rationale:'Original',content:source}]};
+ const current=structuredClone(original);current.version=3;current.rationale='Saved editorial reasoning';current.operations[0].content={...source,body:{prompt:'Edited',stimulus:{kind:'phrase_cloze',frame:'Edited frame',text:'Edited ____'},reveal:{teachingNote:'Saved teaching change'}}};
+ const api={...vocabularyOperatorApi,originalModelProposal:async()=>({proposal:original}),reviewBatch:async()=>({items:[{proposal:current,case:null,reassessment:null,previews:[]}],nextProposalId:null})};
+ const edit=await loadCueEdit(api,item,'repair');
+ assert.equal(edit.proposal!.version,3);assert.ok(edit.originalCue);
+ const reset=cueEditDraft(edit,edit.originalCue);
+ assert.equal(reset.rationale,'Saved editorial reasoning');
+ assert.deepEqual(reset.operations[0].content.body,{prompt:'Frame\n____文字',stimulus:{kind:'phrase_cloze',frame:'Frame',text:'____文字'},reveal:{teachingNote:'Saved teaching change'}});
 });

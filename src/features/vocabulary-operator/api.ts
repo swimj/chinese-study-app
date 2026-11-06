@@ -57,6 +57,7 @@ export const vocabularyOperatorApi={
   retryApproval:(requestId:string)=>write<VocabularyApprovalRequest>(`/approval-requests/${id(requestId)}/retry`,{}),
   proposals:()=>apiRequest<{items:VocabularyContentProposal[]}>(`${root}/proposals`),
   reviewBatch:(startProposalId:string,limit=20)=>apiRequest<{items:VocabularyReviewSnapshot[];nextProposalId:string|null}>(`${root}/proposals/review-batch?limit=${limit}&startProposalId=${id(startProposalId)}`),
+  originalModelProposal:(proposalId:string)=>apiRequest<{proposal:VocabularyContentProposal|null}>(`${root}/proposals/${id(proposalId)}/original-model-draft`),
   proposal:(proposalId:string)=>apiRequest<VocabularyContentProposal>(`${root}/proposals/${id(proposalId)}`),
   secondOpinions:(proposalId:string)=>apiRequest<{items:VocabularySecondOpinion[]}>(`${root}/proposals/${id(proposalId)}/second-opinions`),
   requestSecondOpinion:(proposalId:string,expectedVersion:number,notes='')=>write<VocabularySecondOpinion>(`/proposals/${id(proposalId)}/second-opinions`,{expectedVersion,notes}),

@@ -12,7 +12,7 @@ import { createVocabularyPracticePreparation } from './preparation.ts';
 import { createOperatorAllowlistMiddleware } from '../operator-access.ts';
 import { getVocabularyApprovalRequests } from './approval-requests.ts';
 import { listVocabularyCaseQueue,getVocabularyCaseCard,setVocabularyCaseDeferred,resolveVocabularyCaseReview,reassessVocabularyCaseReview,addVocabularyCaseNote } from '../db/vocabulary-case-queue.ts';
-import { getVocabularyCaseWorkspace, listVocabularyReflectionCases, listVocabularyProposals, listVocabularyProposalReviewBatch, getVocabularyProposal,
+import { getVocabularyCaseWorkspace, listVocabularyReflectionCases, listVocabularyProposals, listVocabularyProposalReviewBatch, getVocabularyProposal, getVocabularyOriginalModelProposal,
   requestVocabularyPureCueResolution, requestVocabularyReassessment, requestVocabularySecondOpinion, listVocabularySecondOpinions, listVocabularyNoProposalCases, requestVocabularyCaseSecondOpinion, createVocabularyProposal, saveVocabularyProposal, previewVocabularyProposal, approveVocabularyProposal,
   applyVocabularyProposal, closeVocabularyProposal, closeVocabularyCase, listOwnVocabularyMessages,
   getOwnVocabularyFeedbackAttention,listOwnVocabularyFeedbackFailures,listOwnVocabularyFeedbackJobs, markOwnVocabularyMessageSeen, dismissOwnVocabularyMessage, restoreOwnVocabularyMessage, retryOwnVocabularyFeedback,
@@ -241,6 +241,7 @@ export function registerVocabularyReflectionRoutes(app:Express,options:{wake?:()
     return listVocabularyProposalReviewBatch(actor,{limit,...(req.query.startProposalId===undefined?{}:{startProposalId:text(req.query.startProposalId)})});
   }));
   app.post(`${base}/proposals`,gate,handle((req,actor)=>createVocabularyProposal(parseVocabularyProposalDraft(req.body),actor)));
+  app.get(`${base}/proposals/:id/original-model-draft`,gate,handle((req,actor)=>({proposal:getVocabularyOriginalModelProposal(text(req.params.id),actor)})));
   app.get(`${base}/proposals/:id`,gate,handle((req,actor)=>getVocabularyProposal(text(req.params.id),actor)));
   app.get(`${base}/proposals/:id/second-opinions`,gate,handle((req,actor)=>({items:listVocabularySecondOpinions(text(req.params.id),actor)})));
   app.post(`${base}/proposals/:id/second-opinions`,gate,handle((req,actor)=>{
