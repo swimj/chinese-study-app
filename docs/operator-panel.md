@@ -60,6 +60,9 @@ periods, and stored timestamps on their UTC boundaries.
 Open `/operator/reconciliation`. The word list includes current teaching documents
 with missing/stale canonical mappings and words with saved resolutions. Compare the
 canonical senses and default selection with the teaching uses, notes and examples.
+Matched teaching uses group beside their chosen canonical sense as you assign them;
+unassigned and excluded uses remain in separate groups. This grouping reflects
+operator choices, not automated semantic matching.
 For each use, record its relationship to an existing canonical sense, reject it,
 or describe a transformation the system cannot yet apply. Save an overall rationale.
 

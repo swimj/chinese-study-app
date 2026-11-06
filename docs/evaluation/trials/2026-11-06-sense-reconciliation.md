@@ -72,3 +72,16 @@ were visible; affected items included readable summaries; save/apply succeeded;
 a later draft retained all four teaching uses and prior judgments while replacement
 remained pending; saving and applying that later resolution also succeeded. This
 follow-up is implementation-informed verification, not another independent pass.
+
+## Operator-selected grouping follow-up
+
+The operator requested that teaching uses align with their chosen canonical sense.
+The comparison now groups uses by explicit operator assignments, including multiple
+uses per sense, with separate unassigned and excluded groups. No automatic semantic
+matching is performed. A fresh UI-only evaluator verified assigning two uses to one
+sense, remapping, exclusion/restoration, reason preservation, focus staying on the
+moved selector, Tab advancing to its reason, and saved grouping surviving reload.
+The build passed for this UI-only follow-up.
+At 600 by 850 pixels the groups stacked, and wrapped descriptions, controls,
+expanded Chinese/English examples and reasons remained readable. No defects were
+observed in the grouping pass; application and provider behavior were outside it.

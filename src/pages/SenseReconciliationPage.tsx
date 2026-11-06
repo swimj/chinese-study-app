@@ -61,6 +61,25 @@ export function SenseReconciliationPage({api=defaultApi}: {api?:SenseReconciliat
   function updateUse(index:number,patch:Partial<SenseContentReconciliationDraft['uses'][number]>) {
     setDraft(value=>value?{...value,uses:value.uses.map((use,i)=>i===index?{...use,...patch}:use)}:value);
   }
+  const focusUse=useRef<string|null>(null);
+  useEffect(()=>{
+    if(focusUse.current){document.getElementById(`reconciliation-use-${focusUse.current}`)?.focus();focusUse.current=null;}
+  },[draft]);
+  function renderUses(uses:NonNullable<SenseContentReconciliationWorkspace['teaching']>['uses']) {
+    if(!workspace||!draft)return null;
+    return <>{uses.map(use=>{
+                const index=draft.uses.findIndex(row=>row.useId===use.id),decision=draft.uses[index];
+                if(!decision)return <p key={use.id} role="alert">Teaching changed. Reload before reviewing.</p>;
+                return <div className="reconciliation-use" key={use.id}><h4>{use.label}</h4>
+                  {use.notes.length>0&&<ul>{use.notes.map((note,i)=><li key={i}>{note}</li>)}</ul>}
+                  {use.examples.length>0&&<details><summary>Examples ({use.examples.length})</summary>{use.examples.map((example,i)=><blockquote key={i}><p lang="zh">{example.text}</p><p>{example.translation}</p></blockquote>)}</details>}
+                  <label>Resolution<select id={`reconciliation-use-${use.id}`} value={decision.decision==='map'?`map:${decision.senseId??''}`:decision.decision} onChange={e=>{
+                    focusUse.current=use.id;const value=e.target.value;updateUse(index,value.startsWith('map:')?{decision:'map',senseId:value.slice(4)}:{decision:value as 'reject'|'unsupported',senseId:null});
+                  }}><option value="unsupported">Not yet assessed</option>{workspace.senses.map(sense=><option key={sense.senseId} value={`map:${sense.senseId}`}>Same sense: {sense.label}</option>)}<option value="reject">Exclude this teaching use</option></select></label>
+                  <label>Reason (required to apply)<textarea rows={2} value={decision.rationale} onChange={e=>updateUse(index,{rationale:e.target.value})}/></label>
+                </div>;
+              })}</>;
+  }
   const plan=workspace?.plan;
   return <div className="sense-reconciliation-page">
     <header><div><p className="reconciliation-eyebrow">Operator · shared content</p><h1>Sense reconciliation</h1></div>
@@ -80,32 +99,29 @@ export function SenseReconciliationPage({api=defaultApi}: {api?:SenseReconciliat
           </div>
         </section>
         <fieldset disabled={busy||applied} className="reconciliation-editor">
-          <div className="reconciliation-comparison">
-            <section aria-labelledby="canonical-heading"><h3 id="canonical-heading">Canonical senses</h3>
-              <p className="reconciliation-column-label">Selected for ordinary learning</p>
-              {workspace.senses.map(sense=><div className="reconciliation-sense" key={sense.senseId}>
+          <div className="reconciliation-group-headings"><h3>Canonical senses</h3><h3>Matched teaching uses</h3></div>
+          {workspace.senses.map(sense=>{
+            const uses=(workspace.teaching?.uses??[]).filter(use=>draft.uses.some(row=>row.useId===use.id&&row.decision==='map'&&row.senseId===sense.senseId));
+            return <section className="reconciliation-comparison" key={sense.senseId} aria-label={sense.label}>
+              <div className="reconciliation-sense">
                 <label><input type="checkbox" checked={draft.defaultSenseIds.includes(sense.senseId)} onChange={e=>setDraft({...draft,defaultSenseIds:e.target.checked?[...draft.defaultSenseIds,sense.senseId]:draft.defaultSenseIds.filter(id=>id!==sense.senseId)})}/><strong>{sense.label}</strong></label>
+                <p className="reconciliation-column-label">Include in ordinary learning</p>
                 {sense.notes.length>0&&<ul>{sense.notes.map((note,i)=><li key={i}>{note}</li>)}</ul>}
-              </div>)}
-              {draft.defaultSenseIds.filter(id=>!workspace.senses.some(sense=>sense.senseId===id)).map(id=><div className="reconciliation-sense" key={id}><label><input type="checkbox" checked onChange={()=>setDraft({...draft,defaultSenseIds:draft.defaultSenseIds.filter(selected=>selected!==id)})}/><strong>Unavailable sense: {id}</strong></label></div>)}
-              {!workspace.senses.length&&<p>No active canonical senses.</p>}
-            </section>
-            <section aria-labelledby="teaching-heading"><h3 id="teaching-heading">Teaching uses</h3>
-              <p className="reconciliation-column-label">Resolve each use against the resulting inventory</p>
-              {workspace.teaching?.uses.map(use=>{
-                const index=draft.uses.findIndex(row=>row.useId===use.id),decision=draft.uses[index];
-                if(!decision)return <p key={use.id} role="alert">Teaching changed. Reload before reviewing.</p>;
-                return <div className="reconciliation-use" key={use.id}><h4>{use.label}</h4>
-                  {use.notes.length>0&&<ul>{use.notes.map((note,i)=><li key={i}>{note}</li>)}</ul>}
-                  {use.examples.length>0&&<details><summary>Examples ({use.examples.length})</summary>{use.examples.map((example,i)=><blockquote key={i}><p lang="zh">{example.text}</p><p>{example.translation}</p></blockquote>)}</details>}
-                  <label>Resolution<select value={decision.decision==='map'?`map:${decision.senseId??''}`:decision.decision} onChange={e=>{
-                    const value=e.target.value;updateUse(index,value.startsWith('map:')?{decision:'map',senseId:value.slice(4)}:{decision:value as 'reject'|'unsupported',senseId:null});
-                  }}><option value="unsupported">Needs another operation</option>{workspace.senses.map(sense=><option key={sense.senseId} value={`map:${sense.senseId}`}>Same sense: {sense.label}</option>)}<option value="reject">Exclude this teaching use</option></select></label>
-                  <label>Reason (required to apply)<textarea rows={2} value={decision.rationale} onChange={e=>updateUse(index,{rationale:e.target.value})}/></label>
-                </div>;
-              })??<p>No current teaching source.</p>}
-            </section>
-          </div>
+              </div>
+              <div>{uses.length?renderUses(uses):<p className="reconciliation-column-label">No teaching uses matched</p>}</div>
+            </section>;
+          })}
+          {draft.defaultSenseIds.filter(id=>!workspace.senses.some(sense=>sense.senseId===id)).map(id=><div className="reconciliation-sense" key={id}><label><input type="checkbox" checked onChange={()=>setDraft({...draft,defaultSenseIds:draft.defaultSenseIds.filter(selected=>selected!==id)})}/><strong>Unavailable sense: {id}</strong></label></div>)}
+          {(['unassigned','excluded'] as const).map(group=>{
+            const uses=(workspace.teaching?.uses??[]).filter(use=>{
+              const row=draft.uses.find(row=>row.useId===use.id);
+              return group==='excluded'?row?.decision==='reject':row?.decision!=='reject'&&!(row?.decision==='map'&&workspace.senses.some(sense=>sense.senseId===row.senseId));
+            });
+            return uses.length>0&&<section className="reconciliation-comparison" key={group} aria-label={group==='unassigned'?'Unassigned teaching uses':'Excluded teaching uses'}>
+              <h3>{group==='unassigned'?'Unassigned teaching uses':'Excluded teaching uses'}</h3><div>{renderUses(uses)}</div>
+            </section>;
+          })}
+          {!workspace.teaching&&<p>No current teaching source.</p>}
           <section className="reconciliation-decision"><h3>Resulting decision</h3>
             <label>Rationale (required to apply)<textarea rows={3} value={draft.rationale} onChange={e=>setDraft({...draft,rationale:e.target.value})}/></label>
             <label>Additional inventory changes<textarea rows={2} placeholder="Add, revise, merge, or split senses; one requested change per line" value={draft.unsupportedChanges.join('\n')} onChange={e=>setDraft({...draft,unsupportedChanges:e.target.value.split('\n')})}/></label>

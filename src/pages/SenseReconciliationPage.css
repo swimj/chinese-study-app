@@ -15,7 +15,7 @@
 .reconciliation-statuses span { display:flex; gap:.5rem; flex-wrap:wrap; }
 .reconciliation-statuses strong { font-weight:600; text-transform:capitalize; }
 .reconciliation-editor { border:0; margin:0; padding:0; min-width:0; }
-.reconciliation-comparison { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.3fr); gap:2rem; padding:1.5rem 0; }
+.reconciliation-group-headings,.reconciliation-comparison { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.3fr); gap:2rem; padding:1.5rem 0; }
 .reconciliation-comparison section { min-width:0; }
 .reconciliation-sense,.reconciliation-use { border-bottom:1px solid var(--border); padding:.8rem 0 1.2rem; overflow-wrap:anywhere; }
 .reconciliation-sense label { flex-direction:row; align-items:flex-start; gap:.65rem; }
@@ -33,3 +33,9 @@
 .reconciliation-plan dd { margin:.5rem 0 1rem; }
 @container (max-width: 700px) { .reconciliation-comparison { grid-template-columns:minmax(0,1fr); gap:1.3rem; } }
 @media (max-width:620px) { .sense-reconciliation-page header { padding-left:2.8rem; align-items:flex-start; } .sense-reconciliation-page h1 { font-size:1.3rem; } }
+
+.reconciliation-comparison { border-bottom:1px solid var(--border); }
+.reconciliation-comparison > * { min-width:0; }
+.reconciliation-comparison .reconciliation-sense { border-bottom:0; }
+.reconciliation-group-headings { padding-bottom:0; }
+@container (max-width: 700px) { .reconciliation-group-headings { display:none; } }
