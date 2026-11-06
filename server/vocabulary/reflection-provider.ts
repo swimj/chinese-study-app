@@ -211,12 +211,12 @@ export function createVocabularyReflectionProvider(options:{environment?:NodeJS.
       const systemPrompt=promptFile==='feedback'?task:`${reasoning}\n\n${task}`;prompts.set(promptFile,systemPrompt);return systemPrompt;
     };
     const stagePrompt=(stage:string)=>stage==='sense_mapping'?'sense-mapping':stage==='pure_cue_promotion'?'pure-cue-integration':'single-improvement';
-    const admissionPromptVersion=(stage:string)=>stage==='single_improvement'?'7':stage==='sense_mapping'?'5':stage==='pure_cue_promotion'?'1':'2';
+    const admissionPromptVersion=(stage:string)=>stage==='single_improvement'?'5':stage==='sense_mapping'?'5':stage==='pure_cue_promotion'?'1':'2';
     const schemaVersion=(step:string)=>step==='single_improvement'?'4':step==='pure_cue_promotion'?'3':'1';
     const projectionVersion=(step:string)=>step==='second_opinion'?'vocabulary-second-opinion.v2'
-      :step==='feedback'||step==='improvement'?'vocabulary-reflection.v4'
-      :step==='single_improvement'?'vocabulary-exercise-authoring.v3':step==='pure_cue_promotion'?'vocabulary-integration.v2':step==='sense_mapping'?'vocabulary-admission.v4'
-      :step==='pure_cue_improvement'?'vocabulary-admission.v3':'vocabulary-admission.v1';
+      :step==='feedback'||step==='improvement'?'vocabulary-reflection.v3'
+      :step==='single_improvement'?'vocabulary-exercise-authoring.v2':step==='pure_cue_promotion'?'vocabulary-integration.v2':step==='sense_mapping'?'vocabulary-admission.v4'
+      :step==='pure_cue_improvement'?'vocabulary-admission.v2':'vocabulary-admission.v1';
     const routingFor=(step:string)=>{
       if(step!=='sense_mapping')return {config,adapter,apiKey,baseUrl};
       const failures=vocabularySenseMappingAvailabilityFailures(job.jobId);
@@ -332,7 +332,7 @@ export function createVocabularyReflectionProvider(options:{environment?:NodeJS.
     }
     if(original?.kind==='exercise'&&original.exerciseType==='pure_cue'){
       const review=prepareVocabularyPureCueImprovement(job,original);review.fence();
-      const response=await runCall('pure_cue_improvement',{sourceContent:original,evidence:projectVocabularyReflectionInput(job),...review.input},vocabularyPureCueImprovementSchema,'pure-cue-improvement','3');
+      const response=await runCall('pure_cue_improvement',{sourceContent:original,evidence:projectVocabularyReflectionInput(job),...review.input},vocabularyPureCueImprovementSchema,'pure-cue-improvement','1');
       if(context?.canPublish&&!context.canPublish())throw new Error('Reflection lost publication authority');
       review.fence();
       try{return review.normalize(response.value,response.invocationId);}
@@ -355,7 +355,7 @@ export function createVocabularyReflectionProvider(options:{environment?:NodeJS.
           :normalizeVocabularyReflectionOutput(job,value,invocationId)});
     }
     if(job.kind==='exercise_improvement')throw new VocabularyReflectionOutputError('Exercise has no supported improvement contract');
-    const result=await runCall(kind,projectVocabularyReflectionInput(job),feedbackSchema,kind,'6');
+    const result=await runCall(kind,projectVocabularyReflectionInput(job),feedbackSchema,kind,'4');
     try{return normalizeVocabularyReflectionOutput(job,result.value,result.invocationId);}
     catch(error){invalidateServiceInvocation(result.invocationId,VOCABULARY_REFLECTION_SERVICE_ID);throw error;}
   }};
