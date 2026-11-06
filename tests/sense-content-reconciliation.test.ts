@@ -200,3 +200,10 @@ test('bootstrap publication checks the reconciliation fence within the write tra
   }), /authority changed/);
   assert.equal(db.prepare("SELECT 1 FROM word_content_documents WHERE content_id='must-not-publish'").get(), undefined);
 });
+
+test('a complete mapping can apply without per-use reasons or an overall rationale', () => {
+  const input=draft(); input.rationale=''; input.uses.forEach(use=>{use.rationale='';});
+  const state=saveSenseContentReconciliation('word',{expectedVersion:null,status:'resolved',draft:input},actor.id);
+  assert.deepEqual(state.plan!.blockers,[]);
+  assert.equal(apply(state).resolution!.status,'applied');
+});

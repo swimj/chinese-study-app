@@ -64,7 +64,10 @@ Matched teaching uses group beside their chosen canonical sense as you assign th
 unassigned and excluded uses remain in separate groups. This grouping reflects
 operator choices, not automated semantic matching.
 For each use, record its relationship to an existing canonical sense, reject it,
-or describe a transformation the system cannot yet apply. Save an overall rationale.
+or describe a transformation the system cannot yet apply. Drag a teaching card to
+a sense, or use its Move handle and a destination button with keyboard/click.
+Descriptions, examples, fallback selection and optional notes live under Details.
+Neither per-use reasons nor an overall rationale are required to apply.
 
 Saving a draft or resolved decision preserves editorial work without changing live
 content. A resolved decision can remain blocked: the application plan names missing

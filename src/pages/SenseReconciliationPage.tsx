@@ -62,6 +62,20 @@ export function SenseReconciliationPage({api=defaultApi}: {api?:SenseReconciliat
     setDraft(value=>value?{...value,uses:value.uses.map((use,i)=>i===index?{...use,...patch}:use)}:value);
   }
   const focusUse=useRef<string|null>(null);
+  const [movingUse,setMovingUse]=useState<string|null>(null);
+  const draggedUse=useRef<string|null>(null);
+  function moveUse(useId:string,target:string) {
+    if(busy||applied||!draft)return;
+    const index=draft.uses.findIndex(use=>use.useId===useId);
+    if(index<0)return;
+    focusUse.current=useId;
+    updateUse(index,target==='unassigned'?{decision:'unsupported',senseId:null}:target==='excluded'?{decision:'reject',senseId:null}:{decision:'map',senseId:target});
+    setMovingUse(null);draggedUse.current=null;
+  }
+  function dropTarget(target:string) {
+    return {onDragOver:(event:React.DragEvent)=>{if(draggedUse.current&&!busy&&!applied)event.preventDefault();},
+      onDrop:(event:React.DragEvent)=>{event.preventDefault();if(draggedUse.current)moveUse(draggedUse.current,target);}};
+  }
   useEffect(()=>{
     if(focusUse.current){document.getElementById(`reconciliation-use-${focusUse.current}`)?.focus();focusUse.current=null;}
   },[draft]);
@@ -70,13 +84,18 @@ export function SenseReconciliationPage({api=defaultApi}: {api?:SenseReconciliat
     return <>{uses.map(use=>{
                 const index=draft.uses.findIndex(row=>row.useId===use.id),decision=draft.uses[index];
                 if(!decision)return <p key={use.id} role="alert">Teaching changed. Reload before reviewing.</p>;
-                return <div className="reconciliation-use" key={use.id}><h4>{use.label}</h4>
-                  {use.notes.length>0&&<ul>{use.notes.map((note,i)=><li key={i}>{note}</li>)}</ul>}
-                  {use.examples.length>0&&<details><summary>Examples ({use.examples.length})</summary>{use.examples.map((example,i)=><blockquote key={i}><p lang="zh">{example.text}</p><p>{example.translation}</p></blockquote>)}</details>}
-                  <label>Resolution<select id={`reconciliation-use-${use.id}`} value={decision.decision==='map'?`map:${decision.senseId??''}`:decision.decision} onChange={e=>{
-                    focusUse.current=use.id;const value=e.target.value;updateUse(index,value.startsWith('map:')?{decision:'map',senseId:value.slice(4)}:{decision:value as 'reject'|'unsupported',senseId:null});
-                  }}><option value="unsupported">Not yet assessed</option>{workspace.senses.map(sense=><option key={sense.senseId} value={`map:${sense.senseId}`}>Same sense: {sense.label}</option>)}<option value="reject">Exclude this teaching use</option></select></label>
-                  <label>Reason (required to apply)<textarea rows={2} value={decision.rationale} onChange={e=>updateUse(index,{rationale:e.target.value})}/></label>
+                return <div className="reconciliation-use" key={use.id}>
+                  <div className="reconciliation-use-title"><button type="button" id={`reconciliation-use-${use.id}`} className="reconciliation-drag" aria-label={`Move ${use.label}`} aria-pressed={movingUse===use.id}
+                    draggable={!busy&&!applied} onDragStart={event=>{draggedUse.current=use.id;event.dataTransfer.setData('text/plain',use.id);event.dataTransfer.effectAllowed='move';setMovingUse(use.id);}}
+                    onDragEnd={()=>{draggedUse.current=null;setMovingUse(null);}} onClick={()=>setMovingUse(movingUse===use.id?null:use.id)}>⠿</button><h4>{use.label}</h4></div>
+                  <details><summary>Details</summary>
+                    {use.notes.length>0&&<ul>{use.notes.map((note,i)=><li key={i}>{note}</li>)}</ul>}
+                    {use.examples.map((example,i)=><blockquote key={i}><p lang="zh">{example.text}</p><p>{example.translation}</p></blockquote>)}
+                    <label>Move to<select value={decision.decision==='map'?`map:${decision.senseId??''}`:decision.decision} onChange={e=>{
+                      const value=e.target.value;moveUse(use.id,value.startsWith('map:')?value.slice(4):value==='reject'?'excluded':'unassigned');
+                    }}><option value="unsupported">Unassigned</option>{workspace.senses.map(sense=><option key={sense.senseId} value={`map:${sense.senseId}`}>{sense.label}</option>)}<option value="reject">Excluded</option></select></label>
+                    <label>Note (optional)<textarea rows={2} value={decision.rationale} onChange={e=>updateUse(index,{rationale:e.target.value})}/></label>
+                  </details>
                 </div>;
               })}</>;
   }
@@ -102,13 +121,13 @@ export function SenseReconciliationPage({api=defaultApi}: {api?:SenseReconciliat
           <div className="reconciliation-group-headings"><h3>Canonical senses</h3><h3>Matched teaching uses</h3></div>
           {workspace.senses.map(sense=>{
             const uses=(workspace.teaching?.uses??[]).filter(use=>draft.uses.some(row=>row.useId===use.id&&row.decision==='map'&&row.senseId===sense.senseId));
-            return <section className="reconciliation-comparison" key={sense.senseId} aria-label={sense.label}>
+            return <section className="reconciliation-comparison" key={sense.senseId} aria-label={sense.label} {...dropTarget(sense.senseId)}>
               <div className="reconciliation-sense">
                 <label><input type="checkbox" checked={draft.defaultSenseIds.includes(sense.senseId)} onChange={e=>setDraft({...draft,defaultSenseIds:e.target.checked?[...draft.defaultSenseIds,sense.senseId]:draft.defaultSenseIds.filter(id=>id!==sense.senseId)})}/><strong>{sense.label}</strong></label>
-                <p className="reconciliation-column-label">Include in ordinary learning</p>
-                {sense.notes.length>0&&<ul>{sense.notes.map((note,i)=><li key={i}>{note}</li>)}</ul>}
+
+                {sense.notes.length>0&&<details><summary>Details</summary><ul>{sense.notes.map((note,i)=><li key={i}>{note}</li>)}</ul></details>}
               </div>
-              <div>{uses.length?renderUses(uses):<p className="reconciliation-column-label">No teaching uses matched</p>}</div>
+              <div>{renderUses(uses)}{movingUse?<button type="button" className="reconciliation-drop" onClick={()=>moveUse(movingUse,sense.senseId)}>Match here</button>:!uses.length&&<p className="reconciliation-drop">Drop teaching uses here</p>}</div>
             </section>;
           })}
           {draft.defaultSenseIds.filter(id=>!workspace.senses.some(sense=>sense.senseId===id)).map(id=><div className="reconciliation-sense" key={id}><label><input type="checkbox" checked onChange={()=>setDraft({...draft,defaultSenseIds:draft.defaultSenseIds.filter(selected=>selected!==id)})}/><strong>Unavailable sense: {id}</strong></label></div>)}
@@ -117,15 +136,15 @@ export function SenseReconciliationPage({api=defaultApi}: {api?:SenseReconciliat
               const row=draft.uses.find(row=>row.useId===use.id);
               return group==='excluded'?row?.decision==='reject':row?.decision!=='reject'&&!(row?.decision==='map'&&workspace.senses.some(sense=>sense.senseId===row.senseId));
             });
-            return uses.length>0&&<section className="reconciliation-comparison" key={group} aria-label={group==='unassigned'?'Unassigned teaching uses':'Excluded teaching uses'}>
-              <h3>{group==='unassigned'?'Unassigned teaching uses':'Excluded teaching uses'}</h3><div>{renderUses(uses)}</div>
+            return <section className="reconciliation-comparison" key={group} aria-label={group==='unassigned'?'Unassigned teaching uses':'Excluded teaching uses'} {...dropTarget(group)}>
+              <h3>{group==='unassigned'?'Unassigned teaching uses':'Excluded teaching uses'}</h3><div>{renderUses(uses)}{movingUse?<button type="button" className="reconciliation-drop" onClick={()=>moveUse(movingUse,group)}>Move here</button>:!uses.length&&<p className="reconciliation-drop">Drop teaching uses here</p>}</div>
             </section>;
           })}
           {!workspace.teaching&&<p>No current teaching source.</p>}
-          <section className="reconciliation-decision"><h3>Resulting decision</h3>
-            <label>Rationale (required to apply)<textarea rows={3} value={draft.rationale} onChange={e=>setDraft({...draft,rationale:e.target.value})}/></label>
+          <section className="reconciliation-decision"><details><summary>Notes and inventory changes</summary>
+            <label>Note (optional)<textarea rows={3} value={draft.rationale} onChange={e=>setDraft({...draft,rationale:e.target.value})}/></label>
             <label>Additional inventory changes<textarea rows={2} placeholder="Add, revise, merge, or split senses; one requested change per line" value={draft.unsupportedChanges.join('\n')} onChange={e=>setDraft({...draft,unsupportedChanges:e.target.value.split('\n')})}/></label>
-            <p className="reconciliation-consequence">You can save the linguistic decision even when an application operation is missing.</p>
+            </details>
             <div className="reconciliation-actions"><button className="secondary-button" onClick={()=>save('draft')}>Save draft</button><button onClick={()=>save('resolved')}>Save resolution</button></div>
           </section>
         </fieldset>

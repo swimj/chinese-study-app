@@ -108,14 +108,12 @@ function makePlan(row: Stored, current: InventorySnapshot): SenseContentReconcil
   if (dependencyFingerprint(source) !== dependencyFingerprint(current)) block('source_changed', 'Source or dependencies changed. Re-review the current source before applying.', [row.word_id]);
   const material = teaching(source), active = new Set(source.senses.filter(sense => sense.status === 'active').map(sense => sense.senseId));
   if (!material) block('missing_teaching_source', 'No current teaching document is available to reconcile.', [row.word_id]);
-  if (!draft.rationale.trim()) block('resolution_rationale', 'Record the linguistic rationale for this resolution.');
   if (draft.defaultSenseIds.some(id => !active.has(id))) block('inventory_change_handler', 'Adding, revising, merging or splitting canonical identities requires an inventory-change handler.', draft.defaultSenseIds.filter(id => !active.has(id)));
   if (!draft.defaultSenseIds.length) block('empty_selection_handler', 'Applying an empty selected scope requires an explicit no-content disposition handler.', [row.word_id]);
   for (const change of draft.unsupportedChanges.filter(value => value.trim())) block('unsupported_change', `Inventory transformation handler required: ${change}`, [row.word_id]);
   const useIds = new Set(material?.uses.map(use => use.id) ?? []);
   if (draft.uses.length !== useIds.size || draft.uses.some(use => !useIds.has(use.useId))) block('use_accounting', 'Every source teaching use needs exactly one decision.', [...useIds]);
   for (const use of draft.uses) {
-    if (!use.rationale.trim()) block('use_rationale', 'Record why this teaching use is mapped or rejected.', [use.useId]);
     if (use.decision === 'unsupported') block('use_handler', 'This teaching use requires a decision or an unsupported transformation handler.', [use.useId]);
     if (use.decision === 'map' && (!use.senseId || !active.has(use.senseId))) block('sense_mapping', 'Map the teaching use to an active canonical sense.', [use.useId]);
   }

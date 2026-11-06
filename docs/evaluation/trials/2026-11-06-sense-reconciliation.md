@@ -85,3 +85,18 @@ The build passed for this UI-only follow-up.
 At 600 by 850 pixels the groups stacked, and wrapped descriptions, controls,
 expanded Chinese/English examples and reasons remained readable. No defects were
 observed in the grouping pass; application and provider behavior were outside it.
+
+## Compact drag matching and optional reasons
+
+The next operator iteration replaces expanded use forms with compact cards and
+move handles. Drag targets accept matching, exclusion and return to unassigned;
+click/keyboard destination buttons and a Details selector provide alternatives.
+Notes, descriptions and examples are disclosed on demand. Both per-use reasons
+and the overall rationale are optional, including at the application boundary.
+
+A fresh UI-only evaluator verified native pointer dragging, click-based remapping,
+exclusion and unassignment, Space/Return keyboard operation, and readable details.
+It completed all four mappings and saved/applied without entering any notes:
+Resolved/Ready became Applied/Pending, retiring the four fixture content items.
+Starting another resolution retained editable mappings and pending replacements.
+The build, 12 domain tests (including no-reason apply), and three HTTP tests passed.

@@ -95,7 +95,7 @@ promise eventual exposure to a sense with no usable authored exercises.
 ## Resolve first, apply when supported
 
 The operator can save the desired resulting inventory, defaults, use relationships,
-and rationale without changing live senses or content. The saved decision retains
+and optional rationale without changing live senses or content. The saved decision retains
 the exact source versions and evidence on which it was based.
 
 The workspace presents three independent dimensions:
@@ -186,6 +186,7 @@ The operator workspace at `/operator/reconciliation` saves draft or resolved use
 decisions against a retained source snapshot. Its first application handler preserves
 canonical identities and versions, accepts a nonempty selection of existing active
 senses, and records each teaching use as mapped to an existing sense or rejected.
+Written reasons are optional; a complete supported mapping can be applied without them.
 Mapping is retained as the operator's judgment; the handler replaces the legacy
 teaching unit rather than rewriting its immutable document or import mappings.
 

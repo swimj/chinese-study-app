@@ -116,7 +116,8 @@ operator authority; these routes do not authorize arbitrary sense mutations.
 
 The draft contains `defaultSenseIds`, per-use `{useId, decision, senseId, rationale}`
 decisions, an overall `rationale`, and free-text `unsupportedChanges`. Decisions are
-`map`, `reject`, or `unsupported`. Saving preserves linguistic work without changing
+`map`, `reject`, or `unsupported`. Rationale strings may be empty; written reasons
+are optional. Saving preserves linguistic work without changing
 inventory, content eligibility, or provider demand. `refreshSource` explicitly
 captures current evidence while retaining the submitted judgment for re-review.
 
