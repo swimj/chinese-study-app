@@ -71,3 +71,9 @@ test('reused cue discloses missing, retired, and changed content without claimin
  item.reusedSharedCue.availability='retired';item.reusedSharedCue.version=2;
  assert.match(render(item),/referenced shared cue is retired/);assert.match(render(item),/Assessed version 1/);assert.match(render(item),/Current version 2/);
 });
+
+test('teaching encounters identify their source without an exercise reassessment prerequisite',()=>{
+ const item=caseReviewFixture();item.kind='teaching_review';item.proposal=null;
+ item.reassessment={eligible:false,reason:'A completed assessment is required.',source:null};
+ assert.match(render(item),/Teaching encounter/);assert.doesNotMatch(render(item),/A completed assessment is required/);
+});

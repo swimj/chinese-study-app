@@ -291,8 +291,8 @@ export function VocabularyOperatorPage(props:VocabularyOperatorPageProps) {
     setReassessmentOpen(false);await reload();setNotice('Reassessment queued.');
   });
   const reassessmentDisabled=busy||dirty||scopeEditing||reassessmentPending||caseLocked;
-  const reassessmentUnavailableReason=selected?reviewReassessment?.unavailableReason:workspace?.reassessmentUnavailableReason;
   const scopeCase=selected?reviewCase:workspace?.case;
+  const reassessmentUnavailableReason=scopeCase?.kind==='teaching_review'?undefined:selected?reviewReassessment?.unavailableReason:workspace?.reassessmentUnavailableReason;
   const repairTargetControl=scopeCase?.kind==='exercise_improvement'&&scopeCase.wordId?(
     <RepairTargetEditor key={scopeCase.caseId} api={api} caseId={scopeCase.caseId} revision={scopeCase.review?.version} disabled={busy||dirty||!!selectedApproval||approvalUnconfirmed||caseLocked} onState={setRepairTarget} onActivity={setScopeEditing} onSaved={async()=>{setEditing(false);resetReview();await reload();}}/>
   ):null;
@@ -315,7 +315,7 @@ export function VocabularyOperatorPage(props:VocabularyOperatorPageProps) {
     {repairTarget?.caseId===scopeCase.caseId&&!repairTarget.available&&<><ScopeCoverageEditor key={scopeCase.wordId} api={api} wordId={scopeCase.wordId} disabled={busy||dirty||!!selectedApproval||approvalUnconfirmed||caseLocked} finding={defaultSelectionFinding} onActivity={setScopeEditing} onSaved={scopeSaved} repertoire={selected&&editable&&reviewAssessment?.admission?.outcome==='repertoire_bootstrap'?{proposal:selected,onSaved:value=>{void run(async()=>{await loadProposal(value);await reload(value.proposalId);},'Defaults and proposal updated.');}}:undefined}/></>}
   </>:null;
   const caseEntryVisible=!!workspace&&!selected&&!draftText&&!noChangeVisible;
-  return <section ref={pageRef} className="vocabulary-operator-page" tabIndex={0} aria-label={detailOnly.caseId?'Case details':'Proposal details'}>
+  return <section ref={pageRef} className="vocabulary-operator-page vocabulary-full-review" tabIndex={0} aria-label={detailOnly.caseId?'Case details':'Proposal details'}>
     <header><h2>{detailOnly.caseId?'Case details':'Proposal details'}</h2><button className="secondary-button" disabled={busy} onClick={()=>void run(async()=>{await reload();},'Details refreshed.')}>Refresh</button></header>
     {refreshError&&<p role="alert" className="vocabulary-operator-error">{refreshError}</p>}{error&&<p role="alert" className="vocabulary-operator-error">{error}</p>}{notice&&<p role="status">{notice}</p>}
     {queuedApprovals.length>0&&<p role="status">{queuedApprovals.length} approval{queuedApprovals.length===1?'':'s'} queued</p>}
