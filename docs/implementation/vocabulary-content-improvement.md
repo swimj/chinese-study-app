@@ -403,8 +403,9 @@ coverage change does not rewrite content, learner attempts or served snapshots.
 Operator word selection uses `/api/operator/vocabulary/words/:id/sense-coverage`.
 Pending repair intent uses `/api/operator/vocabulary/cases/:id/repair-target`.
 Both require expected versions; the latter accepts a sense ID or null to reset.
-Reassess opens a compact dialog containing target controls, the model picker, and
-submission. Closing it preserves saved pending target intent; the Reassess button
+Reassess opens a compact dialog containing word-case target controls, the model
+picker, and submission. Pure-cue cases omit the word target editor and use their
+standalone assessment path. Closing it preserves saved pending target intent; the Reassess button
 marks that pending state and reopens access to Reset. Unknown target state does not
 block Apply/Edit locally; backend mutation checks remain authoritative and their
 errors appear in the review. A failed refresh retains the last known target state

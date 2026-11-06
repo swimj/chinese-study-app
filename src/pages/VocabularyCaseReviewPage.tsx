@@ -232,7 +232,7 @@ export function VocabularyCaseReviewPage({ api = vocabularyOperatorApi }: { api?
     if (shortcutEventBlocked(event.nativeEvent) || event.shiftKey || blocked || target?.closest('input,textarea,select,[role="slider"],[role="listbox"],[role="combobox"],[contenteditable="true"]')) return;
     if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); void navigate(event.key === 'ArrowLeft' ? 'previous' : 'next'); }
   }}>
-    <header><h2>Content improvement</h2>{view !== 'attention' && <button className="secondary-button" disabled={blocked || detailActivity.dirty} onClick={() => void refresh()}>Refresh</button>}</header>
+    <header><h2>Content improvement</h2></header>
     <div className="vocabulary-review-toolbar">    <nav className="vocabulary-operator-tabs" aria-label="Review queues">{([['review', 'Awaiting review'], ['attention', 'Needs attention'], ['history', 'Archive']] as const).map(([value, label]) => <button key={value} aria-pressed={view === value} disabled={blocked} onClick={() => changeView(value)}>{label}</button>)}</nav>{item && view !== 'attention' && <>        <nav className="vocabulary-case-navigation" aria-label="Case navigation">
           <button className="secondary-button" aria-label="Previous case" aria-keyshortcuts="ArrowLeft" disabled={blocked || pages[0]?.page.total === 1} onClick={() => void navigate('previous')}>←</button>
           <span aria-live="polite">{(pages[0]?.page.startIndex ?? 0) + index + 1} / {pages[0]?.page.total ?? items.length}</span>

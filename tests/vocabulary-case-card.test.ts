@@ -6,15 +6,15 @@ import { CaseReviewCard } from '../src/features/vocabulary-operator/CaseReviewCa
 import { caseReviewFixture } from './fixtures/case-review-data.ts';
 const render=(item=caseReviewFixture())=>renderToStaticMarkup(React.createElement(CaseReviewCard,{item,onDetails:()=>{}}));
 test('compact case uses encounter time and explicitly labels missing evidence fallback',()=>{
-  const item=caseReviewFixture();assert.match(render(item),/Encounter ·/);assert.doesNotMatch(render(item),/Case opened/);
+  const item=caseReviewFixture();assert.doesNotMatch(render(item),/Encounter ·/);assert.doesNotMatch(render(item),/Case opened/);
   item.served[0].presentedAt=null;assert.match(render(item),/Case opened ·/);assert.doesNotMatch(render(item),/Encounter ·/);
 });
 test('sense groups collapse with counts and repetitive repertoire explanations appear only once',()=>{
   const item=caseReviewFixture();item.assessment!.outcome='repertoire_bootstrap';
   item.assessment!.diagnosis=item.proposal!.rationale=item.proposal!.operations[0].rationale='Repeated bootstrap reason';
-  const html=render(item);assert.match(html,/Default selected senses/);assert.doesNotMatch(html,/Repertoire assessment/);
+  const html=render(item);assert.match(html,/Repertoire bootstrap/);assert.doesNotMatch(html,/Repertoire assessment/);
   assert.match(html,/<details class="vocabulary-sense-group"><summary>/);assert.match(html,/1 exercise/);
-  assert.equal(html.split('Repeated bootstrap reason').length-1,1);
+  assert.equal(html.split('Repeated bootstrap reason').length-1,0);assert.doesNotMatch(html,/Assessment reasoning/);
 });
 test('unchanged source is omitted, changed source is inside original evidence with accurate unavailable actions',()=>{
   const item=caseReviewFixture();assert.doesNotMatch(render(item),/Source changed|Current source/);
@@ -47,7 +47,7 @@ test('routine provenance is disclosed separately; alternatives and full workspac
  const item=caseReviewFixture();assert.doesNotMatch(render(item),/Assessment provenance|Proposal revision/);
  const html=renderToStaticMarkup(React.createElement(CaseReviewCard,{item,showDetails:true,onDetails:()=>{}},'Retained alternatives'));
  assert.match(html,/Assessment provenance/);assert.match(html,/Proposal revision/);assert.match(html,/Retained alternatives/);assert.match(html,/Full review workspace/);
- item.served[0].acceptedAnswers=['报备','報備'];assert.match(render(item),/Also accepted/);assert.match(render(item),/報備/);
+ item.served[0].acceptedAnswers=['报备','報備'];assert.doesNotMatch(render(item),/Also accepted|報備/);
 });
 
 test('an unresolved finding does not repeat identical diagnosis prose',()=>{
@@ -58,8 +58,8 @@ test('an unresolved finding does not repeat identical diagnosis prose',()=>{
 
 test('reused shared cue is visible before edits, inspectable, and never a selectable operation',()=>{
  const item=caseReviewFixture();item.reusedSharedCue={contentId:'shared-existing',prompt:'四周显得格外____。',acceptedAnswers:['静','宁静'],teachingNote:'Quiet versus tranquil.',rationale:'Both answers already accepted.',version:1,expectedVersion:1,availability:'active'};
- const html=render(item);assert.match(html,/Reuse existing/);assert.match(html,/Shared practice/);assert.match(html,/静 · 宁静/);assert.match(html,/<details><summary>Inspect shared cue/);assert.match(html,/Quiet versus tranquil/);
- assert.ok(html.indexOf('Reuse existing')<html.indexOf('vocabulary-sense-group'));
+ const html=render(item);assert.match(html,/Reuse existing/);assert.match(html,/vocabulary-review-item--reuse/);assert.match(html,/静 · 宁静/);assert.match(html,/<details class="vocabulary-review-item vocabulary-review-item--reuse"/);assert.match(html,/Quiet versus tranquil/);
+ assert.ok(html.indexOf('Reuse existing')<html.indexOf('vocabulary-review-item--update_existing'));
  const card=html.slice(html.indexOf('aria-label="Reused shared practice"'),html.indexOf('</article>',html.indexOf('aria-label="Reused shared practice"')));
  assert.doesNotMatch(card,/checkbox|<button/);
  item.proposal=null;assert.match(render(item),/Reuse existing/);
@@ -76,4 +76,18 @@ test('teaching encounters identify their source without an exercise reassessment
  const item=caseReviewFixture();item.kind='teaching_review';item.proposal=null;
  item.reassessment={eligible:false,reason:'A completed assessment is required.',source:null};
  assert.match(render(item),/Teaching encounter/);assert.doesNotMatch(render(item),/A completed assessment is required/);
+});
+
+test('single exercise review groups by action rather than mapped sense and keeps diagnosis',()=>{
+ const item=caseReviewFixture();const html=render(item);
+ assert.doesNotMatch(html,/vocabulary-sense-group|Also accepted/);
+ assert.match(html,/vocabulary-review-item--update_existing/);
+ assert.ok(html.indexOf('Proposed improvement')<html.indexOf(item.assessment!.diagnosis));
+ assert.doesNotMatch(html,/Shared content/);
+});
+test('pure cue answer display simplifies and deduplicates without mutating stored forms',()=>{
+ const item=caseReviewFixture();item.served[0].pureCue={axisNote:'Report',teachingNote:null};
+ item.served[0].acceptedAnswers=['报备','報備','报告','報告'];
+ const html=render(item);assert.match(html,/报备 · 报告/);assert.doesNotMatch(html,/報備|報告/);
+ assert.deepEqual(item.served[0].acceptedAnswers,['报备','報備','报告','報告']);
 });

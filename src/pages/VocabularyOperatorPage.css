@@ -284,3 +284,18 @@
 
 /* Inline-size containment needs an explicit width inside the case flex column. */
 .vocabulary-full-review { width: 100%; min-width: 0; flex-shrink: 0; }
+
+.vocabulary-case-card .vocabulary-improvement-heading { margin: 0 0 .8rem; font-size: 1.1rem; font-weight: 650; }
+.vocabulary-case-card .vocabulary-review-item { margin: .65rem 0; border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: .4rem; background: color-mix(in srgb, var(--accent) 5%, var(--surface)); }
+.vocabulary-case-card .vocabulary-review-item--reuse { border-left-color: #397db0; background: color-mix(in srgb, #397db0 7%, var(--surface)); }
+.vocabulary-case-card .vocabulary-review-item--retire { border-left-color: #a46b42; background: color-mix(in srgb, #a46b42 7%, var(--surface)); }
+.vocabulary-case-card .vocabulary-review-item--replace { border-left-color: #8366a4; background: color-mix(in srgb, #8366a4 7%, var(--surface)); }
+.vocabulary-review-item > summary { display: flex; align-items: baseline; flex-wrap: wrap; gap: .45rem .75rem; padding: .85rem; cursor: pointer; list-style: none; }
+.vocabulary-review-item > summary::-webkit-details-marker { display: none; }
+.vocabulary-review-item > summary::before { content: '›'; display: inline-block; }
+.vocabulary-review-item[open] > summary::before { transform: rotate(90deg); }
+.vocabulary-review-action { font-size: .85rem; font-weight: 650; }
+.vocabulary-review-item-label { flex: 1 1 18rem; min-width: 0; overflow-wrap: anywhere; font-weight: 500; }
+.vocabulary-review-item-body { padding: 0 1rem .8rem; }
+.vocabulary-review-item-body > :last-child { margin-bottom: 0; }
+.vocabulary-review-item summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
