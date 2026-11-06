@@ -537,12 +537,30 @@ already ends with its exact cloze sentence, that sentence is included once.
 Compact review still displays the saved prompt faithfully; retained proposals
 are not silently rewritten by this presentation rule.
 
-Review notes are per-case drafts for the mounted review session. Opening a note
-focuses its field; Enter saves and closes the draft, Shift+Enter adds a newline,
-and IME composition does not submit. Drafts survive case/queue navigation and
-refresh reads but are lost on a browser reload or leaving the mounted view. A
-review action persists its supplied note through the existing action protocol;
-saving a draft alone does not write to the server or approve a proposal.
+Standalone case notes are immutable operator records in `backend_events`, exposed
+on the compact card. Saving a note compares the case version and writes the note
+and version increment in one transaction; a client request identity makes an
+identical retry idempotent even after the case advances. Notes remain separate
+from action commentary and do not resolve a case or enter model context. The card's
+activity projection follows canonical lineage across closure events, proposal
+reviews, editorial snapshots, and second-opinion questions. It retains the latest
+20 nonempty operator commentaries (plus explicit opinion-only reassessment
+receipts), with a truncation flag, so archived Done reasons remain retrievable.
+Service explanations and empty quick actions are omitted.
+
+Action dialogs own unsaved text until submission or cancellation. Reassessment
+can carry operator editorial instructions and an explicitly selected successful
+second opinion from the displayed assessment/proposal. Admission resolves the
+opinion on the server and captures its verdict, rationale, and identity in an
+immutable job-linked event. Claim and retry read that snapshot; later opinion
+changes cannot rewrite an admitted request. The invocation wrapper supplies
+`operatorEditorial` to exercise, pure-cue, and repertoire authoring, with an
+`editorial.v1` projection suffix. Mapping and ordinary jobs keep their existing
+inputs, and the linguistic prompt files remain unchanged. The wrapper directs
+the model to assess advisory analysis independently and retain source, target,
+privacy, and output-contract boundaries. Provider quality still requires separate
+behavioral evaluation; structural tests establish capture and call composition.
+
 
 The `VocabularyOperatorPage` editor mounts only after Details or Edit is requested.
 Its required detail mode hydrates the saved proposal and case workspace and reports

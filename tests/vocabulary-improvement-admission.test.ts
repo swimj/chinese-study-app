@@ -1075,3 +1075,29 @@ bootstrapTest('repertoire proposal saves an embedded cloze sentence once',async(
  const body=result.result.proposal!.operations[2]!.content.body as {prompt:string};
  assert.equal(body.prompt,cloze.frame);
 });
+
+
+test('editorial direction reaches authoring separately from mapping and ordinary encounter evidence',async()=>{
+  const input=job();input.editorial={instructions:'Use a shorter cue.',secondOpinion:{requestId:'opinion',jobId:'advisory',verdict:'revise',rationale:'The direction is not explicit.'}};
+  const p=provider((_request,index)=>index===1?single:repair);
+  await p.provider.run(input);
+  const mapping=JSON.parse(p.requests[0].userPrompt),authoring=JSON.parse(p.requests[1].userPrompt);
+  assert.equal(mapping.operatorEditorial,undefined);
+  assert.deepEqual(authoring.operatorEditorial,input.editorial);
+  assert.match(p.requests[1].systemPrompt,/Operator editorial context/);
+  assert.match(p.requests[1].provenance!.inputProjectionVersion!,/editorial.v1/);
+  assert.equal(authoring.encounters[0].reactions.length,0);
+});
+
+bootstrapTest('editorial context composes with the shared repertoire call without changing its output contract',async()=>{
+  const input=job();input.editorial={instructions:'Prefer concise English frames.'};
+  const p=provider(()=>repertoire);
+  const result=await p.provider.run(input);
+  assert.equal(result.kind,'exercise_improvement');assert.equal(p.requests.length,1);
+  const request=p.requests[0],wire=JSON.parse(request.userPrompt);
+  assert.equal(request.provenance!.stepName,'repertoire');assert.deepEqual(wire.operatorEditorial,input.editorial);
+  assert.equal(wire.role,'general_exercises');assert.ok(wire.content.uses.length);
+  assert.match(request.systemPrompt,/Operator editorial context/);
+  assert.match(request.provenance!.inputProjectionVersion!,/editorial.v1/);
+  assert.deepEqual(Object.keys(request.outputSchema.properties!),['exercises']);
+});

@@ -11,7 +11,7 @@ import { vocabularyAuthoredPromptBody,vocabularyPhraseClozeError } from '../../s
 import type { VocabularyActor, VocabularyJson, VocabularyContent } from '../../src/domain/vocabulary-content.ts';
 import { VOCABULARY_COMPENSATION_POLICY, type VocabularySecondOpinion, type VocabularyReflectionCase, type VocabularyReflectionJob,
   type VocabularyFeedbackJudgmentInput, type VocabularyProposalDraft, type VocabularyContentProposal,
-  type VocabularyAssessmentReview, type VocabularySenseLabel, type VocabularyProposalOperation, type VocabularyProposalApplication, type VocabularyImprovementResultInput, type VocabularyImprovementAdmission, type VocabularyPureCuePromotion, type VocabularyPureCueReferral, type VocabularyReflectionResult } from '../../src/domain/vocabulary-reflection.ts';
+  type VocabularyReassessmentEditorial, type VocabularyAssessmentReview, type VocabularySenseLabel, type VocabularyProposalOperation, type VocabularyProposalApplication, type VocabularyImprovementResultInput, type VocabularyImprovementAdmission, type VocabularyPureCuePromotion, type VocabularyPureCueReferral, type VocabularyReflectionResult } from '../../src/domain/vocabulary-reflection.ts';
 import { getEffectiveVocabularyEncounterReactions, isLearnerPronunciationRejection, type VocabularySessionProjection, type VocabularyEncounterEvidence } from '../../src/domain/vocabulary-session.ts';
 import { config, getDb } from './connection.ts';
 import { requireLearnerId } from './learner-context.ts';
@@ -205,7 +205,9 @@ export function claimVocabularyReflectionJob(input: { kind?: VocabularyReflectio
     getDb().prepare(`UPDATE vocabulary_reflection_jobs SET status='running',lease_token=?,lease_expires_at=?,
       attempt_number=attempt_number+1,last_error=NULL WHERE job_id=?`).run(token,expires,row.job_id);
     const evidence = getVocabularyReflectionCase(row.case_id);
+    const editorial=getDb().prepare("SELECT data_json FROM backend_events WHERE job_id=? AND name='vocabulary.reflection.reassessment_editorial_captured'").get(row.job_id) as {data_json:string}|undefined;
     return { jobId: row.job_id,caseId: row.case_id,learnerId: evidence.learnerId,kind: row.kind,
+      ...(editorial?{editorial:JSON.parse(editorial.data_json) as VocabularyReassessmentEditorial}:{}),
       caseSequence:row.case_sequence,attemptNumber: row.attempt_number+1,leaseToken: token,leaseExpiresAt: expires,evidence,
       ...(row.repair_target_json ? {repairTarget:JSON.parse(row.repair_target_json) as import('../../src/domain/vocabulary-reflection.ts').VocabularyRepairTarget}:{}),
       ...(row.reassessment_source_json ? { reassessmentSource: JSON.parse(row.reassessment_source_json) as VocabularyContent } : {}),
@@ -1089,7 +1091,7 @@ export function requestVocabularyCaseSecondOpinion(caseId:string, actorId:string
 export type ReassessmentOrigin = {kind:'case'} | {kind:'proposal';proposalId:string;expectedVersion:number};
 
 /** Queue a fresh assessment of the operator-selected current authored version. */
-export function requestVocabularyReassessment(caseId:string, actorId:string, modelChoice:ReflectionModelChoice, expectedContentVersion:number, origin:ReassessmentOrigin={kind:'case'}): {caseId:string;jobId:string} {
+export function requestVocabularyReassessment(caseId:string, actorId:string, modelChoice:ReflectionModelChoice, expectedContentVersion:number, origin:ReassessmentOrigin={kind:'case'},editorial?:VocabularyReassessmentEditorial): {caseId:string;jobId:string} {
   const actor=operator(actorId);
   if(!isOfferedReflectionModelChoice(modelChoice)) throw new Error('Unsupported assessment model');
   return atomic(()=>{
@@ -1113,6 +1115,7 @@ export function requestVocabularyReassessment(caseId:string, actorId:string, mod
     const content=getVocabularyContentForMaintenance(metadata.contentId)!;
     const at=timestamp(), requestId=randomUUID();
     const jobId=queueCaseJob(caseId,at,`reassessment/${requestId}`,{sourceJobId:source.job_id,source:content,modelChoice});
+    if(editorial)emitBackendEvent({name:'vocabulary.reflection.reassessment_editorial_captured',entityKind:'reflection',entityId:caseId,jobId,actorKind:'operator',actorId,data:editorial,occurredAt:at});
     event('vocabulary.reflection.reassessment_requested',caseId,{requestId,caseId,jobId,sourceJobId:source.job_id,modelChoice,sourceContentId:content.contentId,sourceContentVersion:content.version,origin},actor);
     return {caseId,jobId};
   });

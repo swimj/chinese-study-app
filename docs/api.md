@@ -1262,11 +1262,31 @@ proposal cards use the exact-version proposal dismissal route. Dismissing a
 proposal resolves its case only when no unresolved alternatives remain.
 `POST /api/operator/vocabulary/case-queue/:id/reassess` takes `expectedVersion`,
 `expectedContentVersion`, `modelChoice`, and optional
-`originProposal: {proposalId,expectedVersion}`. It returns `{caseId,jobId,item}`.
+`originProposal: {proposalId,expectedVersion}` and
+`editorial: {instructions,secondOpinionRequestId?}`. Instructions are optional
+text up to 10,000 characters. The selected second opinion must be successful and
+belong to the displayed assessment or exact proposal version; the server captures
+its result rather than trusting submitted opinion text. It returns
+`{caseId,jobId,item}`.
 Both compare the case review version atomically with the mutation: a stale card
 returns 409 instead of acting on an unseen newer assessment. Existing proposal
 approval continues to authorize an exact saved proposal version. All these
 routes require operator authority; invalid queries return 400.
+
+`POST /api/operator/vocabulary/case-queue/:id/notes` takes `expectedVersion`,
+`requestId` (nonempty, at most 200 characters), and `text` (nonempty after
+trimming, at most 10,000 characters). It returns the updated card with optional
+`notes: [{noteId,text,createdAt,actorId}]`. New notes require an open editable
+case. Replaying the same request identity, case, actor, and trimmed text returns
+the current card without appending again; conflicting reuse returns 409. Notes
+persist independently of assessment and closure, and do not become model input.
+Cards also expose optional `activity` with up to 20 recent action commentaries:
+`{activityId,action,text,createdAt,actorId,secondOpinionRequestId?}`. Actions are
+`done`, `dismiss`, `approve`, `reassess`, or `second_opinion`. `activityHasMore`
+indicates older retained entries beyond this compact projection. Activity follows
+canonical case lineage and includes nonempty operator commentary; reassessment
+may additionally retain an explicitly selected opinion reference without text.
+Standalone notes remain in `notes` rather than appearing twice.
 
 ### Operator sense selection
 

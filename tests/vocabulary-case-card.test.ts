@@ -114,3 +114,15 @@ test('repeated encounter history keeps outcomes while omitting identical cue and
  item.served[1].prompt='A changed cue';item.served[1].contentVersion=2;
  assert.match(render(item),/A changed cue/);assert.match(render(item),/version 2/);
 });
+
+
+test('completed second opinions offer a direct reassessment handoff only while review is available',()=>{
+ const item=caseReviewFixture();
+ item.advisoryOpinion={requestId:'opinion',jobId:'opinion-job',sequence:2,status:'succeeded',attemptNumber:1,error:null,result:{verdict:'revise',rationale:'Clarify the requested action.'}};
+ const html=()=>renderToStaticMarkup(React.createElement(CaseReviewCard,{item,onDetails:()=>{},onReassessOpinion:()=>{}}));
+ assert.match(html(),/Clarify the requested action.*Reassess with this opinion/);
+ item.frozen=true;assert.match(html(),/disabled=""[^>]*>Reassess with this opinion/);
+ item.frozen=false;item.advisoryOpinion.status='failed';assert.doesNotMatch(html(),/Reassess with this opinion/);
+ item.advisoryOpinion.status='succeeded';item.reassessment.eligible=false;assert.doesNotMatch(html(),/Reassess with this opinion/);
+ item.reassessment.eligible=true;item.state='resolved';assert.doesNotMatch(html(),/Reassess with this opinion/);
+});

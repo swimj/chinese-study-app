@@ -11,7 +11,7 @@ import { isOfferedReflectionModelChoice } from '../reflection/model-arms.ts';
 import { createVocabularyPracticePreparation } from './preparation.ts';
 import { createOperatorAllowlistMiddleware } from '../operator-access.ts';
 import { getVocabularyApprovalRequests } from './approval-requests.ts';
-import { listVocabularyCaseQueue,getVocabularyCaseCard,resolveVocabularyCaseReview,reassessVocabularyCaseReview } from '../db/vocabulary-case-queue.ts';
+import { listVocabularyCaseQueue,getVocabularyCaseCard,resolveVocabularyCaseReview,reassessVocabularyCaseReview,addVocabularyCaseNote } from '../db/vocabulary-case-queue.ts';
 import { getVocabularyCaseWorkspace, listVocabularyReflectionCases, listVocabularyProposals, listVocabularyProposalReviewBatch, getVocabularyProposal,
   requestVocabularyPureCueResolution, requestVocabularyReassessment, requestVocabularySecondOpinion, listVocabularySecondOpinions, listVocabularyNoProposalCases, requestVocabularyCaseSecondOpinion, createVocabularyProposal, saveVocabularyProposal, previewVocabularyProposal, approveVocabularyProposal,
   applyVocabularyProposal, closeVocabularyProposal, closeVocabularyCase, listOwnVocabularyMessages,
@@ -109,12 +109,20 @@ export function registerVocabularyReflectionRoutes(app:Express,options:{wake?:()
   app.post(`${base}/case-queue/:id/resolve`,gate,handle((req,actor)=>{
     const input=object(req.body,['expectedVersion','reason']);return resolveVocabularyCaseReview(text(req.params.id),version(input.expectedVersion),actor,optionalText(input.reason));
   }));
+  app.post(`${base}/case-queue/:id/notes`,gate,handle((req,actor)=>{
+    const input=object(req.body,['expectedVersion','requestId','text']);
+    const note=text(input.text),requestId=text(input.requestId);
+    if(note.length>10000||requestId.length>200)throw new VocabularyReflectionRequestError('Note or request identity is too long');
+    return addVocabularyCaseNote(text(req.params.id),version(input.expectedVersion),actor,requestId,note);
+  }));
   app.post(`${base}/case-queue/:id/reassess`,gate,handle((req,actor)=>{
-    const input=object(req.body,['expectedVersion','expectedContentVersion','modelChoice','originProposal']);
+    const input=object(req.body,['expectedVersion','expectedContentVersion','modelChoice','originProposal','editorial']);
     if(!isOfferedReflectionModelChoice(input.modelChoice))throw new VocabularyReflectionRequestError('Unsupported assessment model');
     let origin:import('../db/vocabulary-reflection.ts').ReassessmentOrigin={kind:'case'};
     if(input.originProposal!==undefined){const proposal=object(input.originProposal,['proposalId','expectedVersion']);origin={kind:'proposal',proposalId:text(proposal.proposalId),expectedVersion:version(proposal.expectedVersion)};}
-    const result=reassessVocabularyCaseReview(text(req.params.id),version(input.expectedVersion),actor,input.modelChoice as import('../reflection/model-arms.ts').ReflectionModelChoice,version(input.expectedContentVersion),origin);options.wake?.();return result;
+    let editorial:import('../../src/domain/vocabulary-reflection.ts').VocabularyReassessmentEditorialInput|undefined;
+    if(input.editorial!==undefined){const value=object(input.editorial,['instructions','secondOpinionRequestId']);const instructions=optionalText(value.instructions);if(instructions.length>10000)throw new VocabularyReflectionRequestError('Editorial instructions are too long');editorial={instructions,...(value.secondOpinionRequestId===undefined?{}:{secondOpinionRequestId:text(value.secondOpinionRequestId)})};}
+    const result=reassessVocabularyCaseReview(text(req.params.id),version(input.expectedVersion),actor,input.modelChoice as import('../reflection/model-arms.ts').ReflectionModelChoice,version(input.expectedContentVersion),origin,editorial);options.wake?.();return result;
   }));
   app.get(`${base}/words/:id/sense-coverage`,gate,handle((req,actor)=>{object(req.query,[]);return getVocabularySenseCoverageWorkspace('word',text(req.params.id),actor);}));
   app.put(`${base}/words/:id/sense-coverage`,gate,handle((req,actor)=>{

@@ -303,9 +303,30 @@ A neighboring batch loads at the window boundary; the browser retains one batch
 of twenty cards per review or archive view. The count shows the matching total,
 independent of the loaded subset. Navigation wraps across the full result set.
 
-The bottom action bar stays outside the scrolling evidence. **Note** opens and
-focuses the optional session draft. **More** exposes editing, second opinions,
-and reassessment. **Details** discloses routine provenance and retained proposal
+The bottom action bar stays outside the scrolling evidence. **Done**, **Dismiss
+proposal**, and **Approve and apply** retain their direct action paths. **More**
+offers their optional note/reason dialogs, proposal editing, and second opinions.
+Each dialog submits only its own text; Cancel discards it, and a failed request
+retains it for retry. **Reassess** opens its model/target dialog with optional
+editorial direction. **Reassess with this opinion**, beside a completed second
+opinion, opens the same dialog with that opinion attached and space for optional
+operator direction. The attachment identifies the opinion, discloses its rationale,
+and can be removed before submission. Ordinary **Reassess** starts without an
+attachment. These inputs accompany the new assessment, while standalone case
+notes do not automatically become model instructions.
+
+**Add note** in the case's Notes section opens an inline editor. **Save note**
+persists a nonempty note without resolving the case; **Cancel** discards the
+unsaved text. Saved notes remain visible when returning to the case or its archive.
+The separate **Action notes** disclosure shows commentary attached to completion,
+approval, dismissal, reassessment, or second-opinion requests; it retains the
+latest twenty such entries.
+Enter submits, Shift+Enter inserts a newline, and composition keystrokes remain
+available to Chinese input methods. Navigation asks before discarding unsaved
+note text. An uncertain save retains its request for retry without duplicating
+the note.
+
+**Details** discloses routine provenance and retained proposal
 selection; **Full review workspace** opens full encounter history, numbered case
 jobs, raw evidence, and source-based manual authoring. **Edit proposal** opens the
 full authored revision and preserves inclusion choices and unsaved edits. Compact

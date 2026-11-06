@@ -8,20 +8,20 @@ import { setDb,getDb } from '../server/db/connection.ts';
 import { installLearnerContextSqlFunction } from '../server/db/learner-context.ts';
 import { createBaselineSchema } from '../server/db/persistence.ts';
 import { migrateDatabase } from '../server/db/migrations.ts';
-import { createVocabularyContent,getVocabularyContentForMaintenance,updateVocabularyContent } from '../server/db/vocabulary-content.ts';
-import { createVocabularyProposal } from '../server/db/vocabulary-reflection.ts';
-import { listVocabularyCaseQueue,getVocabularyCaseCard,resolveVocabularyCaseReview,reassessVocabularyCaseReview } from '../server/db/vocabulary-case-queue.ts';
+import { createVocabularyContent,getVocabularyContentForMaintenance,updateVocabularyContent,emitBackendEvent } from '../server/db/vocabulary-content.ts';
+import { createVocabularyProposal,claimVocabularyReflectionJob,retryVocabularyReflectionJob,approveVocabularyProposal,closeVocabularyProposal } from '../server/db/vocabulary-reflection.ts';
+import { listVocabularyCaseQueue,getVocabularyCaseCard,resolveVocabularyCaseReview,reassessVocabularyCaseReview,addVocabularyCaseNote } from '../server/db/vocabulary-case-queue.ts';
 import { startRequestTiming,runWithRequestTiming } from '../server/request-timing.ts';
 import { registerVocabularyReflectionRoutes } from '../server/vocabulary/reflection-routes.ts';
 import type { Express,Request,Response,RequestHandler } from 'express';
 
 const at='2026-11-04T10:00:00.000Z',now='2026-11-04T12:00:00.000Z';
 let sql:DatabaseSync,directory:string,environment:Record<string,string|undefined>;
-beforeEach(()=>{
+beforeEach(context=>{
   environment=Object.fromEntries(['APP_MODE','APP_AUTH_MODE','APP_DATA_DIR','APP_LEARNER_ID','APP_OPERATOR_CLERK_USER_IDS'].map(k=>[k,process.env[k]]));
   directory=fs.mkdtempSync(path.join(os.tmpdir(),'case-queue-'));
   Object.assign(process.env,{APP_MODE:'study',APP_AUTH_MODE:'trusted_local',APP_DATA_DIR:directory,APP_LEARNER_ID:'editor',APP_OPERATOR_CLERK_USER_IDS:'editor'});
-  sql=new DatabaseSync(':memory:');sql.exec('PRAGMA foreign_keys=ON');setDb(sql);installLearnerContextSqlFunction();createBaselineSchema();migrateDatabase(getDb());
+  sql=new DatabaseSync(context.name.startsWith('standalone notes persist')?path.join(directory,'notes-reopen.db'):':memory:');sql.exec('PRAGMA foreign_keys=ON');setDb(sql);installLearnerContextSqlFunction();createBaselineSchema();migrateDatabase(getDb());
   sql.prepare('INSERT INTO learners(learner_id,display_name,created_at) VALUES (?,?,?)').run('editor','Fixture operator',at);
   sql.prepare("INSERT INTO lexical_words(id,hanzi,pinyin,meaning,examples_json,priority,created_at,normalized_hanzi) VALUES ('word','字','zì','character','[]',1,?,'字')").run(at);
   createVocabularyContent({contentId:'source',kind:'exercise',payloadVersion:1,body:{prompt:'Original cue'},exerciseType:'definition',skill:'production',exerciseRole:'general',assessment:{match:'exact'},accessScope:'shared',availability:'active',originKind:'human',words:[{wordId:'word',relation:'target'}],answers:[{wordId:'word',acceptedForms:['字']}]},{kind:'operator',id:'editor'});
@@ -148,6 +148,11 @@ test('HTTP queue validates limits and case versions and keeps operator authoriza
   assert.equal(call('get','case-queue',{}, {limit:'51'}).status,400);
   assert.equal(call('post','case-queue/:id/resolve',{}).status,400);
   assert.equal(call('post','case-queue/:id/resolve',{expectedVersion:99}).status,409);
+  assert.equal(call('post','case-queue/:id/notes',{expectedVersion:1,requestId:'note',text:''}).status,400);
+  assert.equal(call('post','case-queue/:id/notes',{expectedVersion:1,requestId:'note',text:'Useful note'}).status,200);
+  assert.equal(call('post','case-queue/:id/notes',{expectedVersion:1,requestId:'note',text:'Useful note'}).status,200);
+  assert.equal(call('post','case-queue/:id/reassess',{expectedVersion:2,expectedContentVersion:1,modelChoice:'openai:gpt-6-sol-high',editorial:{instructions:123}}).status,400);
+  assert.equal(call('post','case-queue/:id/reassess',{expectedVersion:2,expectedContentVersion:1,modelChoice:'openai:gpt-6-sol-high',editorial:{instructions:'Revise',secondOpinionRequestId:'missing'}}).status,409);
   process.env.APP_OPERATOR_CLERK_USER_IDS='someone-else';assert.equal(call('get','case-queue').status,403);
   assert.throws(()=>listVocabularyCaseQueue('editor'),/Operator access/);
 });
@@ -247,4 +252,89 @@ test('compact cloze projection faithfully displays the saved prompt even when st
  assert.equal(card.proposal!.operations[0].prompt,body.prompt);
  const saved=sql.prepare('SELECT operations_json AS operations FROM content_proposals WHERE proposal_id=?').get(proposalId) as {operations:string};
  assert.equal(JSON.parse(saved.operations)[0].content.body.prompt,body.prompt);
+});
+
+
+test('standalone notes persist independently, replay once, and preserve case and source state',()=>{
+  seedCase('notes');seedCase('other');
+  const before=getVocabularyCaseCard('notes','editor');
+  const saved=addVocabularyCaseNote('notes',before.version,'editor','request-note','  Consider a shorter cue.  ');
+  assert.equal(saved.version,before.version+1);assert.equal(saved.state,'open');assert.equal(saved.proposal,null);
+  assert.equal(saved.notes?.length,1);assert.equal(saved.notes![0].text,'Consider a shorter cue.');assert.equal(saved.notes![0].actorId,'editor');
+  const filename=path.join(directory,'notes-reopen.db');sql.close();
+  sql=new DatabaseSync(filename);sql.exec('PRAGMA foreign_keys=ON');setDb(sql);installLearnerContextSqlFunction();
+  assert.deepEqual(getVocabularyCaseCard('notes','editor').notes,saved.notes);
+  assert.deepEqual(listVocabularyCaseQueue('editor',{},now).items.find(c=>c.caseId==='notes')!.notes,saved.notes);
+  assert.deepEqual(addVocabularyCaseNote('notes',before.version,'editor','request-note','Consider a shorter cue.').notes,saved.notes);
+  assert.throws(()=>addVocabularyCaseNote('notes',saved.version,'editor','request-note','different'),/already used/);
+  assert.throws(()=>addVocabularyCaseNote('other',1,'editor','request-note','Consider a shorter cue.'),/already used/);
+  assert.throws(()=>addVocabularyCaseNote('notes',before.version,'editor','new-request','New note'),/changed/);
+  assert.throws(()=>addVocabularyCaseNote('notes',saved.version,'editor','new-request',' '),/Expected note/);
+  const closed=resolveVocabularyCaseReview('notes',saved.version,'editor','Reviewed and retained.');
+  sql.close();sql=new DatabaseSync(filename);sql.exec('PRAGMA foreign_keys=ON');setDb(sql);installLearnerContextSqlFunction();
+  assert.equal(getVocabularyCaseCard('notes','editor').activity?.[0].text,'Reviewed and retained.');
+  assert.deepEqual(closed.notes,saved.notes);
+  assert.throws(()=>addVocabularyCaseNote('notes',closed.version,'editor','new-request','New note'),/resolved/);
+  assert.equal(getVocabularyContentForMaintenance('source')!.version,1);
+  assert.equal(sql.prepare("SELECT count(*) AS n FROM backend_events WHERE name='vocabulary.reflection.case_note_added'").get()!.n,1);
+});
+
+test('reassessment pins only the explicitly selected current second opinion with editorial directions',()=>{
+  seedCase('editorial');
+  sql.prepare(`INSERT INTO vocabulary_reflection_jobs(job_id,case_id,kind,dedupe_key,status,next_attempt_at,created_at,review_case_id,case_sequence,second_opinion_json,result_json)
+    VALUES ('opinion','editorial','exercise_improvement','opinion','succeeded',?,?,'editorial',2,?,?)`).run(at,at,JSON.stringify({requestId:'opinion-request',proposal:null,notes:'Question'}),JSON.stringify({input:{secondOpinion:{verdict:'revise',rationale:'The cue invites a phrase.'}}}));
+  const card=getVocabularyCaseCard('editorial','editor');
+  assert.equal(card.advisoryOpinion?.requestId,'opinion-request');
+  assert.throws(()=>reassessVocabularyCaseReview('editorial',card.version,'editor','openai:gpt-6-sol-high',1,{kind:'case'},{instructions:'Shorten it',secondOpinionRequestId:'wrong'}),/second opinion/);
+  const queued=reassessVocabularyCaseReview('editorial',card.version,'editor','openai:gpt-6-sol-high',1,{kind:'case'},{instructions:'  Shorten the cue.  ',secondOpinionRequestId:'opinion-request'});
+  assert.equal(queued.item.frozen,true);
+  assert.deepEqual(queued.item.activity?.map(({action,text,secondOpinionRequestId})=>({action,text,secondOpinionRequestId})),[{action:'reassess',text:'Shorten the cue.',secondOpinionRequestId:'opinion-request'}]);
+  // The job retains the selected result even if the advisory record later changes.
+  sql.prepare("UPDATE vocabulary_reflection_jobs SET result_json='{}' WHERE job_id='opinion'").run();
+  const claimed=claimVocabularyReflectionJob()!;assert.equal(claimed.jobId,queued.jobId);
+  assert.deepEqual(claimed.editorial,{instructions:'Shorten the cue.',secondOpinion:{requestId:'opinion-request',jobId:'opinion',verdict:'revise',rationale:'The cue invites a phrase.'}});
+  sql.prepare("UPDATE vocabulary_reflection_jobs SET status='failed',lease_token=NULL,lease_expires_at=NULL,last_error='provider_error' WHERE job_id=?").run(queued.jobId);
+  retryVocabularyReflectionJob(queued.jobId,'editor');
+  assert.deepEqual(claimVocabularyReflectionJob()!.editorial,claimed.editorial);
+});
+
+test('plain reassessment does not implicitly capture notes or advisory context',()=>{
+  seedCase('plain');const saved=addVocabularyCaseNote('plain',1,'editor','plain-note','Case comment, not model direction.');
+  const queued=reassessVocabularyCaseReview('plain',saved.version,'editor','openai:gpt-6-sol-high',1,{kind:'case'},{instructions:'  '});
+  const claimed=claimVocabularyReflectionJob()!;assert.equal(claimed.jobId,queued.jobId);assert.equal(claimed.editorial,undefined);
+});
+
+
+test('archived Done commentary remains distinct from standalone notes',()=>{
+  seedCase('done-note');
+  const noted=addVocabularyCaseNote('done-note',1,'editor','standing-note','A standalone observation.');
+  const closed=resolveVocabularyCaseReview('done-note',noted.version,'editor','No repair needed after checking the wording.');
+  assert.equal(closed.notes?.length,1);assert.equal(closed.activity?.length,1);
+  assert.deepEqual(closed.activity?.map(({action,text,actorId})=>({action,text,actorId})),[{action:'done',text:'No repair needed after checking the wording.',actorId:'editor'}]);
+  assert.deepEqual(getVocabularyCaseCard('done-note','editor').activity,closed.activity);
+  assert.deepEqual(listVocabularyCaseQueue('editor',{view:'history'}).items.find(item=>item.caseId==='done-note')?.activity,closed.activity);
+});
+
+test('case activity follows lineage for proposal approval and dismissal while excluding empty commentary',()=>{
+  seedCase('canonical');const proposal=seedCase('member',{proposal:true})!;
+  approveVocabularyProposal(proposal,1,'editor','The revised cue preserves the target.');
+  closeVocabularyProposal(proposal,1,'editor','Prefer the newer proposal.');
+  sql.prepare("UPDATE vocabulary_case_lineage SET case_id='canonical' WHERE member_case_id='member'").run();
+  const card=getVocabularyCaseCard('canonical','editor');
+  assert.deepEqual(card.activity?.map(({action,text})=>({action,text})).sort((a,b)=>a.action.localeCompare(b.action)),[
+    {action:'approve',text:'The revised cue preserves the target.'},{action:'dismiss',text:'Prefer the newer proposal.'}]);
+  assert.equal(card.notes,undefined);
+  const emptyProposal=seedCase('empty-comment',{proposal:true})!;closeVocabularyProposal(emptyProposal,1,'editor',' ');
+  assert.equal(getVocabularyCaseCard('empty-comment','editor').activity,undefined);
+});
+
+test('action commentary is bounded and excludes service explanations without truncating standalone notes',()=>{
+  seedCase('many');const stamp=(n:number)=>`2026-11-04T10:${String(n).padStart(2,'0')}:00.000Z`;
+  for(let n=0;n<25;n++)emitBackendEvent({name:'vocabulary.reflection.admission_case_closed',entityKind:'reflection',entityId:'many',actorKind:'operator',actorId:'editor',occurredAt:stamp(n),data:{reason:`Reason ${n}`}});
+  emitBackendEvent({name:'vocabulary.reflection.admission_case_closed',entityKind:'reflection',entityId:'many',actorKind:'service',actorId:'service',data:{reason:'Not human commentary'}});
+  addVocabularyCaseNote('many',1,'editor','many-note','Keep this separate.');
+  const card=getVocabularyCaseCard('many','editor');
+  assert.equal(card.activity?.length,20);assert.equal(card.activityHasMore,true);
+  assert.equal(card.activity![0].text,'Reason 5');assert.equal(card.activity!.at(-1)!.text,'Reason 24');
+  assert.equal(card.notes?.[0].text,'Keep this separate.');
 });

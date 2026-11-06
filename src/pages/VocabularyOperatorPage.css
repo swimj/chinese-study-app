@@ -310,3 +310,11 @@
 .vocabulary-selection-reassessment { border-left: 3px solid var(--accent, #326458); padding: .25rem .8rem .8rem; margin-top: .75rem; }
 
 .vocabulary-review-item--plain { cursor: default; }
+
+.vocabulary-operator-page .vocabulary-case-notes { border: 0; border-top: 1px solid var(--border); border-radius: 0; padding: 1rem 0 0; margin-top: 1.5rem; }
+.vocabulary-case-notes > header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.vocabulary-case-notes article { border-left: 2px solid var(--border); padding-left: 0.75rem; }
+.vocabulary-case-note-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.vocabulary-case-notes textarea, .vocabulary-reassessment-dialog textarea { display: block; width: 100%; min-height: 7rem; resize: vertical; }
+.vocabulary-operator-page .vocabulary-action-checkbox { display: flex; flex-direction: row; align-items: center; gap: 0.5rem; }
+.vocabulary-action-checkbox input { width: auto; }

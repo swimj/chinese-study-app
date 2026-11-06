@@ -36,6 +36,24 @@ at this boundary. Comments accumulate, and withdrawn ratings are excluded from
 effective reactions. Assessment treats reactions as evidence while judging their
 linguistic claims and requested remedies independently.
 
+## Optional reassessment editorial context
+
+The provider wrapper can append an operator-context contract to single-exercise,
+existing pure-cue, and repertoire authoring calls. Their linguistic prompt files
+remain intact. The user JSON gains `operatorEditorial`, containing operator
+instructions and, when explicitly selected, the captured second-opinion verdict,
+rationale, and identity. This is separate from learner reactions and standalone
+case notes. The wrapper asks authoring to address the request while preserving
+source/target boundaries, assess advisory analysis independently, and keep private
+commentary out of shared learning content. It never expands the output schema.
+
+These calls add `+editorial.v1` to the input-projection version; stage caching
+includes the exact composed system prompt and editorial input. Mapping, learner
+feedback, and jobs without editorial input retain their ordinary contracts.
+Database and provider-stub tests cover immutable capture, retry, and composed
+inputs. They do not establish the linguistic quality of model responses; no live
+provider comparison is implied by those tests.
+
 ## Learner feedback
 
 `feedback.md` is a standalone, purpose-led teaching prompt: learning goal,
