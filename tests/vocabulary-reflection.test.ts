@@ -97,6 +97,7 @@ function snapshot(id: string): VocabularyEncounterSnapshot {
 }
 function present(id: string,wordId: string|null='a',encounterId=id): Input { return { kind: 'presentation',payload: { encounterId,wordId,snapshot: snapshot(id) } }; }
 function response(encounterId: string,outcome: 'accepted'|'rejected'='rejected'): Input { return { kind: 'response',payload: { encounterId,response: outcome === 'accepted' ? '字' : 'answer',outcome } }; }
+function typed(encounterId: string,text: string,outcome: 'accepted'|'rejected'): Input { return { kind: 'response',payload: { encounterId,response: text,outcome } }; }
 function wrap(): Input { return { kind: 'word_wrap',payload: { wordId: 'a',reason: 'enough' } }; }
 function close(inputs: Input[],sessionId='session') {
   return alice(() => {
@@ -263,6 +264,116 @@ test('ingestion retains uncovered/no-answer/overlapping-word evidence and routes
   assert.throws(() => ingestVocabularySessionEvidence('alice',completion.completionId,{ ...completion.report,encounters: [] }),/exact closed/);
   assert.throws(() => sql.exec("UPDATE reflection_case_evidence SET snapshot_json='{}'"),/immutable/);
   assert.deepEqual(sql.prepare('PRAGMA foreign_key_check').all(),[]);
+});
+
+function lessonResponses(caseId: string): { actionId: string; response: string | null; outcome: string }[] {
+  const evidence = getVocabularyReflectionCase(caseId).evidence;
+  return evidence.flatMap(encounter => encounter.responses.map(action => ({ actionId: action.actionId, response: action.payload.response, outcome: action.payload.outcome })));
+}
+test('an undone production submission does not create a lesson or improvement case or change the retained correction schedule', () => {
+  const completion = close([
+    present('one','a','clean-one'), typed('clean-one','accidental','rejected'),
+    { kind: 'undo', payload: { undoesActionId: 'clean-1' } }, response('clean-one','accepted'),
+  ], 'clean');
+  const ids = ingestVocabularySessionEvidence('alice', completion.completionId, completion.report, closedAt);
+  assert.deepEqual(ids.map(id => getVocabularyReflectionCase(id).kind), []);
+  const encounter = completion.report.encounters[0]!;
+  assert.equal(encounter.responses[0]?.payload.response, 'accidental');
+  assert.deepEqual(encounter.effectiveResponses.map(action => action.payload.response), ['字']);
+  assert.equal(completion.report.words.a!.hasRejectedResponse, false);
+  assert.equal(completion.report.words.a!.covered, true);
+  const schedule = JSON.parse(String(sql.prepare("SELECT scheduler_state_json FROM learner_word_schedules WHERE word_id='a'").get()!.scheduler_state_json)) as { intervalHours: number; easeFactor: number };
+  assert.equal(schedule.easeFactor, 2.5);
+  assert.notEqual(schedule.intervalHours, 6);
+  assert.equal(alice(listOwnVocabularyMessages).length, 0);
+});
+
+test('undo without a replacement response supplies no learner lesson or improvement case', () => {
+  const completion = close([
+    present('one','a','abandoned-one'), typed('abandoned-one','accidental','rejected'),
+    { kind: 'undo', payload: { undoesActionId: 'abandoned-1' } },
+  ], 'abandoned');
+  assert.equal(completion.report.encounters[0]?.effectiveResponses.length, 0);
+  assert.equal(completion.report.encounters[0]?.responses.length, 1);
+  const ids = ingestVocabularySessionEvidence('alice', completion.completionId, completion.report, closedAt);
+  assert.deepEqual(ids.map(id => getVocabularyReflectionCase(id).kind), []);
+  assert.equal(claimVocabularyReflectionJob({ kind: 'learner_feedback', now: judgedAt }), null);
+  assert.equal(claimVocabularyReflectionJob({ kind: 'exercise_improvement', now: judgedAt }), null);
+});
+
+test('a retained production rejection reaches feedback and improvement while the undone response and a recognition lapse do not', () => {
+  const base = draft('recognition');
+  if (base.kind !== 'exercise') throw new Error('Expected exercise fixture');
+  contents.recognition = createVocabularyContent({ ...base, skill: 'recognition', exerciseType: 'recognition',
+    assessment: { responseMode: 'self_assessment' } }, actor);
+  const completion = close([
+    present('one','a','kept-one'), typed('kept-one','accidental','rejected'),
+    { kind: 'undo', payload: { undoesActionId: 'kept-1' } }, typed('kept-one','kept-miss','rejected'),
+    present('two','a','kept-two'), typed('kept-two','ordinary-miss','rejected'),
+    present('recognition','a','kept-recognition'),
+    { kind: 'response', payload: { encounterId: 'kept-recognition', response: null, outcome: 'rejected', selfAssessment: 'rejected' } },
+    present('cue', null, 'kept-cue'), typed('kept-cue','pure-miss','rejected'),
+    wrap(),
+  ], 'kept');
+  const ids = ingestVocabularySessionEvidence('alice', completion.completionId, completion.report, closedAt);
+  assert.deepEqual(new Set(ingestVocabularySessionEvidence('alice', completion.completionId, completion.report, closedAt)), new Set(ids));
+  const cases = ids.map(id => getVocabularyReflectionCase(id));
+  const lessons = cases.filter(item => item.kind === 'learner_feedback');
+  const improvements = cases.filter(item => item.kind === 'exercise_improvement');
+  const word = lessons.find(item => item.wordId === 'a');
+  const pure = lessons.find(item => item.contentId === 'cue');
+  if (!word || !pure) assert.fail('Expected separate word and pure-cue lessons');
+  assert.deepEqual(lessonResponses(word.caseId).map(item => item.response), ['kept-miss','ordinary-miss']);
+  assert.equal(JSON.stringify(word.evidence).includes('accidental'), false);
+  assert.deepEqual(word.evidence.map(encounter => encounter.encounterId), ['kept-one','kept-two']);
+  assert.deepEqual(lessonResponses(pure.caseId).map(item => item.response), ['pure-miss']);
+  assert.equal(completion.report.encounters.find(encounter => encounter.encounterId === 'kept-one')?.responses[0]?.payload.response, 'accidental');
+  assert.deepEqual(new Set(improvements.flatMap(item => item.evidence.map(encounter => encounter.encounterId))), new Set(['kept-one','kept-two','kept-cue']));
+  assert.equal(JSON.stringify(improvements.map(item => item.evidence)).includes('accidental'), false);
+  assert.deepEqual(lessonResponses(improvements.find(item => item.evidence[0]?.encounterId === 'kept-one')!.caseId).map(item => item.response), ['kept-miss']);
+  const feedback = claimVocabularyReflectionJob({ kind: 'learner_feedback', now: judgedAt })!;
+  const projected = JSON.stringify(projectVocabularyReflectionInput(feedback));
+  assert.equal(projected.includes('accidental'), false);
+  assert.equal(projected.includes('kept-miss') || projected.includes('pure-miss'), true);
+  const schedule = JSON.parse(String(sql.prepare("SELECT scheduler_state_json FROM learner_word_schedules WHERE word_id='a'").get()!.scheduler_state_json)) as { easeFactor: number };
+  assert.equal(schedule.easeFactor, 2.2);
+});
+
+test('an effective comment still creates a lesson and improvement after the rejected submission was undone', () => {
+  const completion = close([
+    present('one','a','noted-one'), typed('noted-one','accidental','rejected'),
+    { kind: 'feedback', payload: { encounterId: 'noted-one', feedback: 'comment', comment: 'The cue was unclear.' } },
+    { kind: 'undo', payload: { undoesActionId: 'noted-1' } }, response('noted-one','accepted'),
+  ], 'noted');
+  const ids = ingestVocabularySessionEvidence('alice', completion.completionId, completion.report, closedAt);
+  const lesson = ids.map(id => getVocabularyReflectionCase(id)).find(item => item.kind === 'learner_feedback');
+  const improvement = ids.map(id => getVocabularyReflectionCase(id)).find(item => item.kind === 'exercise_improvement');
+  if (!lesson) assert.fail('Expected a comment lesson');
+  if (!improvement) assert.fail('Expected a comment improvement case');
+  assert.deepEqual(lessonResponses(lesson.caseId), [{ actionId: 'noted-4', response: '字', outcome: 'accepted' }]);
+  assert.deepEqual(lessonResponses(improvement.caseId), [{ actionId: 'noted-4', response: '字', outcome: 'accepted' }]);
+  assert.equal(lesson.evidence[0]?.effectiveFeedback.some(action => action.payload.comment === 'The cue was unclear.'), true);
+  assert.equal(JSON.stringify(lesson.evidence).includes('accidental'), false);
+  assert.equal(JSON.stringify(improvement.evidence).includes('accidental'), false);
+});
+
+test('a presentation-undone production encounter does not enter exercise improvement while a retained sibling encounter still does', () => {
+  const completion = close([
+    present('one','a','kept-one'), typed('kept-one','kept-miss','rejected'),
+    { kind: 'exercise_skip', payload: { encounterId: 'kept-one' }, transitionId: 'retry' } as Input & { transitionId: string },
+    { kind: 'exercise_exclude', payload: { encounterId: 'kept-one' }, transitionId: 'retry' } as Input & { transitionId: string },
+    { ...present('one','a','gone-one'), transitionId: 'retry' } as Input & { transitionId: string },
+    { kind: 'undo', payload: { undoesActionId: 'presentation-undone-3' } },
+    wrap(),
+  ], 'presentation-undone');
+  assert.equal(completion.report.encounters.find(item => item.encounterId === 'kept-one')?.presentationUndone, false);
+  assert.equal(completion.report.encounters.find(item => item.encounterId === 'gone-one')?.presentationUndone, true);
+  const ids = ingestVocabularySessionEvidence('alice', completion.completionId, completion.report, closedAt);
+  const improvements = ids.map(id => getVocabularyReflectionCase(id)).filter(item => item.kind === 'exercise_improvement');
+  assert.equal(improvements.length, 1);
+  assert.deepEqual(improvements[0]!.evidence.map(item => item.encounterId), ['kept-one']);
+  assert.deepEqual(lessonResponses(improvements[0]!.caseId).map(item => item.response), ['kept-miss']);
+  assert.equal(JSON.stringify(improvements[0]!.evidence).includes('gone-one'), false);
 });
 
 test('word feedback and improvement jobs run independently; automatic compensation and message reads never depend on proposals', () => {

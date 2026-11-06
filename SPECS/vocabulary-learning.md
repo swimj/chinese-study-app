@@ -279,13 +279,22 @@ production encounters are eligible for provider jobs. Recognition and contrast
 remain fully recorded in session evidence but produce no provider calls and are
 excluded from word-level feedback aggregation. Lessons are read-only and can
 summarize a word across eligible encounters. An independent
-pure cue has its own feedback subject. A lesson prioritizes a concise, useful
-language takeaway. Discussion of the exercise or its fairness is optional and
-serves that teaching purpose; internal judgments need not be narrated to the
+pure cue has its own feedback subject. Lesson selection uses effective
+evidence. Undo keeps the original response in the session log and withdraws it
+from that selection: an undone response does not create a lesson and is omitted
+from the lesson. A later effective rejection or comment for the same word or
+pure cue still creates a lesson from the evidence that remains effective. A
+lesson prioritizes a concise, useful language takeaway. Discussion of the
+exercise or its fairness is optional and serves that teaching purpose; internal
+judgments need not be narrated to the
 learner. The lesson must still agree with those judgments and avoid implying an
 answer was wrong under constraints the learner could not see.
 
-Teaching issues enter a manual inbox paired
+Exercise-improvement selection follows the same effective-evidence rule for
+general production. An undone response does not open an improvement case and is
+omitted from its stored encounters; a later effective rejection, comment,
+negative reaction, or skip for that exercise still can. Presentation-undone
+encounters are excluded. Teaching issues enter a manual inbox paired
 with the introduction and repertoire; automated exercise improvement does not
 repair them. Connections can reuse encountered vocabulary through
 its existing independent background workflow.
