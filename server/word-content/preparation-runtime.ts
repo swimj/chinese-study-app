@@ -27,7 +27,7 @@ export function startWordPreparationRuntime() {
     }
     worker.wake();
   }
-  const timer = setInterval(wake, 5_000);
+  const timer = setInterval(wake, 30_000);
   timer.unref();
   wake();
   return { wake, canPrepare, async stop() { stopped = true; clearInterval(timer); await worker.stop(); } };

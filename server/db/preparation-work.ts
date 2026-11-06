@@ -127,6 +127,10 @@ export function failWordPreparationAttempt(workId: string, token: string, diagno
 /** A crash consumes the already recorded attempt. Never retry while its publication lease may still be live. */
 export function recoverExpiredWordPreparation(now = new Date().toISOString()): void {
   time(now);
+  // Idle checks must not reserve SQLite's writer slot. This read is only a hint:
+  // another process can complete or renew a lease before we acquire the lock.
+  if (!getDb().prepare(`SELECT 1 FROM word_preparation_work
+    WHERE status = 'running' AND expires_at <= ? LIMIT 1`).get(now)) return;
   transaction(() => {
     const rows = getDb().prepare(`SELECT ${projection} FROM word_preparation_work
       WHERE status = 'running' AND expires_at <= ?`).all(now) as WordPreparationWork[];
