@@ -189,13 +189,22 @@ precedence over the nonempty-inventory selection rules below.
 | Repertoire invocation inheriting defaults | Initialize, then capture scope; unresolved findings remain visible | No generation or retirement | Author against the captured IDs |
 | Single-sense improvement | Map the full inventory and improve the mapped use | Same | Same |
 
-Repertoire bootstrap captures word defaults. In repertoire review, saving the
-selected defaults also updates the proposal in one transaction. Apply writes only
+Repertoire bootstrap captures word defaults. In repertoire review, **Save selection**
+updates shared defaults and the proposal in one transaction. Apply writes only
 its included exercises. Deselected exercises remain retained with that proposal:
 reselecting their sense restores them without a model call. A newly selected sense
 without retained exercises requires generation. Removing all proposed exercises
 requires dismissal or new generation; it never implies source retirement. Selection
 changes preserve an intended source replacement when exercises remain.
+
+For an expanded selection, the explicit **Save selection and reassess** action
+saves shared defaults and queues reassessment atomically. It captures the exact
+selected senses for that invocation; later default edits do not change them,
+including on retry. Shared defaults take effect when the job is admitted. If
+admission fails, neither defaults nor a job is saved. If generation later fails,
+the saved defaults remain and the previous proposal returns to review. The old
+proposal is retained until successful reassessment replaces it; selecting senses
+never applies content. Source and canonical-catalog changes still fence generation.
 Shared-default edits outside repertoire review do not retarget or invalidate an
 existing proposal.
 General preparation retains its immutable source document's mapped canonical

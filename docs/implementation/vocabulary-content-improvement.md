@@ -376,6 +376,15 @@ altering the source before application. Newly selected senses without retained
 exercises require generation. An empty result rejects the entire save and requires
 dismissal or new generation, never a synthesized retirement.
 
+`saveRepertoireWordDefaultsAndReassess` provides the explicit generation path.
+A savepoint covers defaults, version-checked exact-origin reassessment admission,
+and an `operator-repertoire-selection-v1` capture in `vocabulary_improvement_stages`.
+The worker validates its word/catalog and active senses, then uses that scope rather
+than rereading defaults. Retries keep the capture. Publication checks the resulting
+admission against the capture before replacing the earlier proposal. Queue failure
+rolls back defaults; later generation failure keeps the saved policy and restores
+review of the retained proposal.
+
 `vocabulary_case_repair_targets` holds versioned pending and accepted single-sense
 intent. Reassessment captures that intent in the job's `repair_target_json`, skips
 automated mapping, and authors against the specified active sense. Pending intent
@@ -428,9 +437,9 @@ application use the same ordered content transitions; preview rolls back history
 events and writes. A failure in another operation rolls back the entire application.
 Shared sense selection is configured directly through word defaults;
 content proposals never mutate that policy. The compact repertoire card exposes
-Word defaults directly above its proposed sense groups. Operators can save the
+Selected senses as toggle chips directly above its proposed sense groups. Operators can save the
 shared selection and update the proposal together without opening the full detail
-editor. Removed groups return when their senses are reselected and saved. Unsaved selection edits block case navigation
+editor. Removed groups return when their senses are reselected and saved. New senses can be saved with an explicit reassessment and model choice. Unsaved selection edits block case navigation
 and proposal actions until saved or discarded.
 
 ## Shared inventory, useful selection and teaching enrichment

@@ -40,6 +40,7 @@ export const vocabularyOperatorApi={
   wordSenseCoverage:(wordId:string)=>apiRequest<VocabularySenseCoverageWorkspace>(`${root}/words/${id(wordId)}/sense-coverage`),
   repairTarget:(caseId:string)=>apiRequest<VocabularyRepairTargetWorkspace>(`${root}/cases/${id(caseId)}/repair-target`),
   saveRepairTarget:(caseId:string,expectedVersion:number,senseId:string|null)=>write<VocabularyRepairTargetWorkspace>(`/cases/${id(caseId)}/repair-target`,{expectedVersion,senseId},'PUT'),
+  saveRepertoireWordDefaultsAndReassess:(proposalId:string,input:{expectedVersion:number;expectedWordVersion:number;expectedCaseVersion:number;expectedContentVersion:number;includedSenseIds:string[];modelChoice:VocabularyReassessmentModel})=>write<{coverage:VocabularySenseCoverageWorkspace;caseId:string;jobId:string;item:VocabularyCaseQueueItem}>(`/proposals/${id(proposalId)}/word-defaults-reassessment`,input),
   saveRepertoireWordDefaults:(proposalId:string,expectedVersion:number,expectedWordVersion:number,includedSenseIds:string[])=>write<{proposal:VocabularyContentProposal;coverage:VocabularySenseCoverageWorkspace}>(`/proposals/${id(proposalId)}/word-defaults-revision`,{expectedVersion,expectedWordVersion,includedSenseIds}),
   saveWordSenseCoverage:(wordId:string,expectedVersion:number,excludedSenseIds:string[])=>write<VocabularySenseCoverageWorkspace>(`/words/${id(wordId)}/sense-coverage`,{expectedVersion,excludedSenseIds},'PUT'),
   cases:(kind:VocabularyReflectionCase['kind'])=>apiRequest<{items:VocabularyReflectionCase[]}>(`${root}/cases?kind=${kind}`),

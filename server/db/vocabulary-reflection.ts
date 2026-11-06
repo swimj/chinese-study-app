@@ -1,3 +1,4 @@
+import { getVocabularyRepertoireSelection } from './vocabulary-repertoire-selection.ts';
 import { captureVocabularyRepairTarget, acceptVocabularyRepairTarget, assertVocabularyRepairTargetApplicable, vocabularyRepairTargetConflict } from './vocabulary-repair-target.ts';
 import { canonicalVocabularyCaseId, getVocabularyCaseReview, assertVocabularyCaseEditable, assertVocabularyCaseCanQueue, touchVocabularyCaseReview, clearVocabularyCaseApprovalAttention, resolveVocabularyCaseProposal, setVocabularyCaseApprovalPending, VocabularyReflectionConflict } from './vocabulary-case-reviews.ts';
 export { VocabularyReflectionConflict } from './vocabulary-case-reviews.ts';
@@ -520,6 +521,11 @@ export function recordVocabularyImprovementResult(jobId: string, token: string, 
       }
       if (needsAttention && input.proposal !== null) throw new Error('Unresolved sense admission cannot propose automatic repairs');
     }
+    const repertoireSelection = getVocabularyRepertoireSelection(jobId);
+    if (repertoireSelection && (input.admission?.outcome !== 'repertoire_bootstrap'
+      || input.admission.wordId !== repertoireSelection.wordId || input.admission.catalogVersion !== repertoireSelection.catalogVersion
+      || !isDeepStrictEqual(input.admission.generationScope, repertoireSelection.generationScope)))
+      throw new VocabularyReflectionConflict('Assessment did not honor the captured repertoire selection');
     const judgmentId = randomUUID();
     getDb().prepare('INSERT INTO teacher_judgments VALUES (?,?,?,?,?,?)').run(judgmentId,row.case_id,jobId,input.invocationId ?? null,encode(input.diagnosis),at);
     const created = input.proposal === null ? null : createProposal({ ...input.proposal,caseId: row.case_id,

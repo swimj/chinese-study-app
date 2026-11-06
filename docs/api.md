@@ -109,6 +109,13 @@ saves word defaults and the repertoire selection, returning `{proposal, coverage
 Deselected exercises remain in proposal history for restoration. Newly selected
 senses without retained exercises require generation; an empty result requires
 dismissal or new generation. Conflicts leave both defaults and proposal unchanged.
+`POST /api/operator/vocabulary/proposals/:id/word-defaults-reassessment` accepts
+`expectedVersion`, `expectedWordVersion`, `expectedCaseVersion`,
+`expectedContentVersion`, `includedSenseIds`, and `modelChoice`. It atomically saves
+shared defaults, captures the exact nonempty selection and admits reassessment,
+returning `{coverage, caseId, jobId, item}`. Admission conflicts roll back all writes.
+Generation failures retain the saved defaults and original proposal. Success uses
+the existing reassessment replacement flow; no content is automatically applied.
 All routes require operator authority. Source content, mappings and catalog versions
 remain approval/application checks; shared-default edits alone do not invalidate
 captured generation results.

@@ -1,6 +1,6 @@
 import { listVocabularyAttention } from '../db/vocabulary-attention.ts';
 import { getVocabularyRepairTarget, setVocabularyRepairTarget } from '../db/vocabulary-repair-target.ts';
-import { saveRepertoireWordDefaults } from '../db/vocabulary-repertoire-revision.ts';
+import { saveRepertoireWordDefaults, saveRepertoireWordDefaultsAndReassess } from '../db/vocabulary-repertoire-revision.ts';
 import { retryReflectionWithReadiness } from '../word-content/retry-preparation.ts';
 import { resolveDefaultUsefulSelectionAttention } from './default-useful-selection.ts';
 import { VocabularySenseCoverageConflict,listVocabularyDefaultSelectionFindings,setVocabularyDefaultUsefulSenses,getVocabularySenseCoverageWorkspace,setVocabularyWordSenseCoverage } from '../db/vocabulary-sense-coverage.ts';
@@ -135,6 +135,16 @@ export function registerVocabularyReflectionRoutes(app:Express,options:{wake?:()
     const input=object(req.body,['expectedVersion','expectedWordVersion','includedSenseIds']);
     if(!Number.isSafeInteger(input.expectedWordVersion)||Number(input.expectedWordVersion)<0)throw new VocabularyReflectionRequestError('Expected nonnegative word version');
     const value=saveRepertoireWordDefaults(text(req.params.id),version(input.expectedVersion),Number(input.expectedWordVersion),list(input.includedSenseIds).map(text),actor);
+    resolveDefaultUsefulSelectionAttention(value.coverage.word.wordId);options.wake?.();return value;
+  }));
+  app.post(`${base}/proposals/:id/word-defaults-reassessment`,gate,handle((req,actor)=>{
+    const input=object(req.body,['expectedVersion','expectedWordVersion','expectedCaseVersion','expectedContentVersion','includedSenseIds','modelChoice']);
+    if(!Number.isSafeInteger(input.expectedWordVersion)||Number(input.expectedWordVersion)<0)throw new VocabularyReflectionRequestError('Expected nonnegative word version');
+    if(!isOfferedReflectionModelChoice(input.modelChoice))throw new VocabularyReflectionRequestError('Unsupported assessment model');
+    const value=saveRepertoireWordDefaultsAndReassess(text(req.params.id),{
+      expectedVersion:version(input.expectedVersion),expectedWordVersion:Number(input.expectedWordVersion),expectedCaseVersion:version(input.expectedCaseVersion),
+      expectedContentVersion:version(input.expectedContentVersion),includedSenseIds:list(input.includedSenseIds).map(text),modelChoice:input.modelChoice,
+    },actor);
     resolveDefaultUsefulSelectionAttention(value.coverage.word.wordId);options.wake?.();return value;
   }));
   const practicePreparation=createVocabularyPracticePreparation();

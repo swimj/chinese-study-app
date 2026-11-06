@@ -192,13 +192,17 @@ Only one job may be queued or running within the case. Second opinions remain
 advisory and do not replace its current assessment. Content is applied only after
 explicit approval and successful application.
 
-**Word defaults** edits the shared useful-sense selection. Repertoire bootstrap
-uses those defaults. After removing unwanted senses, **Revise to word defaults**
-saves a narrower version of the current repertoire proposal without a model call.
-Adding senses beyond its captured selection requires reassessment and generation.
-If no exercises remain, dismiss the proposal or generate again; narrowing never
-turns an empty result into source retirement. Shared-default edits affect mapped
-practice selection but do not themselves apply or invalidate a content proposal.
+**Selected senses** shows the shared useful-sense selection as toggle chips.
+Toggling creates a draft with **Save selection** and **Discard edits**. Saving in
+repertoire review updates defaults and the proposal together without a model call;
+reselecting a retained sense restores its exercises. A new sense without retained
+exercises requires **Save selection and reassess** and an explicit model choice.
+That action saves shared defaults immediately and queues generation for exactly
+the selected senses. If queuing fails, the selection remains unsaved. If generation
+fails later, the defaults remain saved and the previous proposal returns to review.
+The existing proposal is replaced only after successful reassessment and still
+requires approval before application. If no exercises remain, dismiss the proposal;
+selection changes never imply source retirement.
 
 For single-exercise improvement, **Target sense** records the intended repair.
 Selecting a target, including the current sense, requires reassessment before
@@ -212,7 +216,7 @@ Manual text editing and pending target-sense reassessment are separate paths.
 Unsaved edits and pending saves block navigation. Historical case-scope selections
 remain evidence rather than editable policy.
 
-A model finding about missing useful defaults appears beside **Word defaults**
+A model finding about missing useful defaults appears beside **Selected senses**
 and in **Needs attention → Word defaults need attention**, including after its
 exercise repair is approved.
 **Review word defaults** opens the shared selection. This finding is independent
@@ -247,7 +251,7 @@ review destination. Failed learner-feedback jobs remain accessible here. Teachin
 cases without an assessment appear in Awaiting review. Failed reassessment and
 second opinions with an earlier reviewable result stay with that case.
 
-Word defaults open directly as selectable senses. Saving an explicit selection,
+Selected senses appear directly as toggle chips. Saving an explicit selection,
 including none, resolves the word finding without revising an existing proposal.
 Established empty inventories and ordinary queued/running work require no attention.
 Retry uses the retained request or work identity and leaves the actionable queue

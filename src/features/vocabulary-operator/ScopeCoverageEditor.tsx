@@ -2,16 +2,18 @@ import { createPortal } from 'react-dom';
 import { useEffect,useRef,useState,type ReactNode } from 'react';
 import type { VocabularySenseCoverageWorkspace,VocabularyDefaultSelectionFinding } from '../../domain/vocabulary-sense-coverage';
 import type { VocabularyContentProposal } from '../../domain/vocabulary-reflection';
-import type { VocabularyOperatorApi } from './api';
+import type { VocabularyOperatorApi, VocabularyReassessmentModel, VocabularyReassessmentSource } from './api';
+import type { VocabularyCaseQueueItem } from '../../domain/vocabulary-case-queue';
 import { coverageImpact,scopeBlocksNavigation } from './sense-coverage';
 type Selection={ids:string[];expectedVersion:number};
 function notes(value:VocabularySenseCoverageWorkspace['senses'][number]['description']):string[]{return value&&typeof value==='object'&&!Array.isArray(value)&&Array.isArray(value.notes)?value.notes.filter((note):note is string=>typeof note==='string'):[];}
 function label(value:VocabularySenseCoverageWorkspace['senses'][number]['description']):string {
   return typeof value==='string'?value:value&&typeof value==='object'&&!Array.isArray(value)&&typeof value.label==='string'?value.label:'Sense label unavailable';
 }
-export function ScopeCoverageEditor({api,wordId,disabled,finding,onActivity,onSaved,children,repertoire,expanded=false,actionsContainer}:{expanded?:boolean;actionsContainer?:HTMLElement|null;repertoire?:{proposal:Pick<VocabularyContentProposal,'proposalId'|'version'>;onSaved:(proposal:VocabularyContentProposal)=>void};api:VocabularyOperatorApi;wordId:string;disabled:boolean;finding?:VocabularyDefaultSelectionFinding|null;onActivity:(active:boolean)=>void;onSaved:(scope:'word',value:VocabularySenseCoverageWorkspace)=>void;children?:ReactNode}) {
+export function ScopeCoverageEditor({api,wordId,disabled,finding,onActivity,onSaved,children,repertoire,actionsContainer}:{expanded?:boolean;actionsContainer?:HTMLElement|null;repertoire?:{proposal:Pick<VocabularyContentProposal,'proposalId'|'version'>;onSaved:(proposal:VocabularyContentProposal)=>void;reassessment?:{caseVersion:number;source:VocabularyReassessmentSource;onQueued:(item:VocabularyCaseQueueItem)=>void}};api:VocabularyOperatorApi;wordId:string;disabled:boolean;finding?:VocabularyDefaultSelectionFinding|null;onActivity:(active:boolean)=>void;onSaved:(scope:'word',value:VocabularySenseCoverageWorkspace)=>void;children?:ReactNode}) {
   const [current,setCurrent]=useState<VocabularySenseCoverageWorkspace|null>(null),[draft,setDraft]=useState<Selection|null>(null);
   const [saving,setSaving]=useState(false),[pending,setPending]=useState(false),[error,setError]=useState('');
+  const [reassessOpen,setReassessOpen]=useState(false),[model,setModel]=useState<VocabularyReassessmentModel>('openai:gpt-6-sol-high');
   const serial=useRef(0),mounted=useRef(true);
   const selected=draft?.ids??current?.includedSenseIds??[],impact=current?coverageImpact(current,selected):0;
   useEffect(()=>{onActivity(scopeBlocksNavigation(saving,!!draft));},[saving,draft,onActivity]);
@@ -29,28 +31,54 @@ export function ScopeCoverageEditor({api,wordId,disabled,finding,onActivity,onSa
       const result=repertoire?await api.saveRepertoireWordDefaults(repertoire.proposal.proposalId,repertoire.proposal.version,draft.expectedVersion,selected):null;
       const value=result?result.coverage:await api.saveDefaultUsefulSenses(wordId,draft.expectedVersion,selected);
       if(token!==serial.current||!mounted.current)return;
-      setCurrent(value);setDraft(null);
+      setCurrent(value);setDraft(null);setReassessOpen(false);
       if(result&&repertoire)repertoire.onSaved(result.proposal);else onSaved('word',value);
     }
     catch(cause){if(token===serial.current&&mounted.current)setError(cause instanceof Error?cause.message:'Could not save word defaults.');}
     finally{if(token===serial.current&&mounted.current){setPending(false);setSaving(false);}}
   }
-  function choose(ids:string[]){setError('');if(current)setDraft(previous=>({ids,expectedVersion:previous?.expectedVersion??current.word.version}));}
-  const actions=current&&<div className="vocabulary-operator-actions"><button disabled={pending||disabled||!draft} onClick={()=>void save()}>{repertoire?'Save defaults and update proposal':'Save word defaults'}</button><button className="secondary-button" disabled={pending||disabled} onClick={()=>choose([])}>Select none</button>{draft&&<button className="secondary-button" disabled={pending||disabled} onClick={()=>{setDraft(null);setError('');}}>Discard edits</button>}</div>;
-  return <details open={expanded||undefined} className="vocabulary-sense-coverage"><summary>Word defaults{draft?' · unsaved':''}</summary>
-    <div role="group" aria-label="Shared word defaults">
-      {finding&&<p role="status">{finding.reason}</p>}
-      {pending&&<p role="status">{saving?'Saving word defaults…':'Loading word defaults…'}</p>}
-      {error&&<p role="alert" className="vocabulary-operator-error">{error} <button disabled={pending||disabled} onClick={()=>void load()}>Reload defaults</button></p>}
-      {current&&<>
-        {!expanded&&!current.selectionEstablished&&!draft&&<p role="status">Useful senses have not been selected.</p>}
-        {current.selectionEstablished&&selected.length===0&&!draft&&<p role="status">No senses selected.</p>}
-        <fieldset disabled={pending||disabled}><legend>Useful senses</legend>{current.senses.filter(sense=>sense.status==='active').map(sense=><div className="vocabulary-coverage-sense" key={sense.senseId}><label className="vocabulary-operator-checkbox"><input type="checkbox" checked={selected.includes(sense.senseId)} onChange={()=>choose(selected.includes(sense.senseId)?selected.filter(id=>id!==sense.senseId):[...selected,sense.senseId])}/><span>{label(sense.description)}</span></label>{notes(sense.description).length>0&&<details><summary>Sense notes</summary><ul>{notes(sense.description).map((note,index)=><li key={index}>{note}</li>)}</ul></details>}</div>)}</fieldset>
-        {draft&&impact>0&&<p role="status">{impact} mapped general production {impact===1?'exercise':'exercises'} will stop being selected. Content remains active.</p>}
-        {draft&&draft.expectedVersion!==current.word.version&&<p role="alert">Word defaults changed. Discard edits before selecting from the current version.</p>}
-        {actionsContainer?createPortal(actions,actionsContainer):actions}
-        {children}
-      </>}
-    </div>
-  </details>;
+  async function saveAndReassess(){
+    if(!current||!draft||!repertoire?.reassessment)return;
+    const token=++serial.current;setPending(true);setSaving(true);setError('');
+    try {
+      const result=await api.saveRepertoireWordDefaultsAndReassess(repertoire.proposal.proposalId,{
+        expectedVersion:repertoire.proposal.version,expectedWordVersion:draft.expectedVersion,
+        expectedCaseVersion:repertoire.reassessment.caseVersion,expectedContentVersion:repertoire.reassessment.source.currentVersion,
+        includedSenseIds:selected,modelChoice:model,
+      });
+      if(token!==serial.current||!mounted.current)return;
+      setCurrent(result.coverage);setDraft(null);setReassessOpen(false);repertoire.reassessment.onQueued(result.item);
+    } catch(cause){if(token===serial.current&&mounted.current)setError(cause instanceof Error?cause.message:'Could not save selection and queue reassessment.');}
+    finally{if(token===serial.current&&mounted.current){setPending(false);setSaving(false);}}
+  }
+  function choose(ids:string[]){
+    setError('');setReassessOpen(false);
+    if(current)setDraft(previous=>current.selectionEstablished&&ids.length===current.includedSenseIds.length&&ids.every(id=>current.includedSenseIds.includes(id))?null:{ids,expectedVersion:previous?.expectedVersion??current.word.version});
+  }
+  const actions=current&&draft&&<div className="vocabulary-operator-actions">
+    <button disabled={pending||disabled} onClick={()=>void save()}>Save selection</button>
+    {repertoire?.reassessment&&<button className="secondary-button" disabled={pending||disabled||!selected.length} aria-expanded={reassessOpen} onClick={()=>setReassessOpen(value=>!value)}>Save selection and reassess…</button>}
+    <button className="secondary-button" disabled={pending||disabled} onClick={()=>{setDraft(null);setError('');setReassessOpen(false);}}>Discard edits</button>
+  </div>;
+  return <section className="vocabulary-sense-coverage" aria-label="Selected senses">
+    <div className="vocabulary-selection-heading"><strong>Selected senses{draft?' · unsaved':''}</strong>{current&&(!current.selectionEstablished||selected.length>0)&&<button className="secondary-button" disabled={pending||disabled} onClick={()=>choose([])}>Select none</button>}</div>
+    {finding&&<p role="status">{finding.reason}</p>}
+    {pending&&<p role="status">{saving?'Saving selection…':'Loading senses…'}</p>}
+    {error&&<p role="alert" className="vocabulary-operator-error">{error} <button disabled={pending||disabled} onClick={()=>void load()}>Reload selection</button></p>}
+    {current&&<>
+      {!current.selectionEstablished&&!draft&&<p role="status">Useful senses have not been selected.</p>}
+      {current.selectionEstablished&&selected.length===0&&!draft&&<p role="status">No senses selected.</p>}
+      <div className="vocabulary-sense-chips" role="group" aria-label="Useful senses">{current.senses.filter(sense=>sense.status==='active').map(sense=><button key={sense.senseId} type="button" className="vocabulary-sense-chip" aria-pressed={selected.includes(sense.senseId)} disabled={pending||disabled} onClick={()=>choose(selected.includes(sense.senseId)?selected.filter(id=>id!==sense.senseId):[...selected,sense.senseId])}>{label(sense.description)}</button>)}</div>
+      {current.senses.some(sense=>sense.status==='active'&&notes(sense.description).length>0)&&<details><summary>Sense notes</summary>{current.senses.filter(sense=>sense.status==='active'&&notes(sense.description).length>0).map(sense=><div key={sense.senseId}><strong>{label(sense.description)}</strong><ul>{notes(sense.description).map((note,index)=><li key={index}>{note}</li>)}</ul></div>)}</details>}
+      {draft&&impact>0&&<p role="status">{impact} mapped general production {impact===1?'exercise':'exercises'} will stop being selected. Content remains active.</p>}
+      {draft&&draft.expectedVersion!==current.word.version&&<p role="alert">Word defaults changed. Discard edits before selecting from the current version.</p>}
+      {actionsContainer?createPortal(actions,actionsContainer):actions}
+      {draft&&reassessOpen&&repertoire?.reassessment&&<div className="vocabulary-selection-reassessment" role="group" aria-label="Save selection and reassess">
+        <p>Saves shared defaults now and generates a new proposal for exactly these senses. The existing proposal stays until reassessment succeeds.</p>
+        <label>Model for reassessment<select value={model} disabled={pending||disabled} onChange={event=>setModel(event.target.value as VocabularyReassessmentModel)}><option value="openai:gpt-6-sol-high">GPT-6 Sol high</option><option value="openai:gpt-6-luna-high">Luna high</option><option value="zai:glm-5.3-flash-high">GLM-5.3 Flash high</option></select></label>
+        <button disabled={pending||disabled||!selected.length} onClick={()=>void saveAndReassess()}>Save selection and reassess</button>
+      </div>}
+      {children}
+    </>}
+  </section>;
 }

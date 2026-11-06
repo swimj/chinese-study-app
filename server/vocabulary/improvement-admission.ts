@@ -1,3 +1,4 @@
+import { getVocabularyRepertoireSelection } from '../db/vocabulary-repertoire-selection.ts';
 import { projectVocabularyImprovementInput, vocabularyImprovementWords } from './exercise-improvement-authoring.ts';
 import { isVocabularyDefinitionFallback } from '../../src/domain/vocabulary-production-coverage.ts';
 import { ensureVocabularyDefaultUsefulSelection } from './default-useful-selection.ts';
@@ -43,6 +44,9 @@ export async function runVocabularyImprovementAdmission(options: {
     || original.answers.length !== 1 || original.answers[0]!.wordId !== wordId) throw new Error('Sense admission requires a single-word general exercise');
   const assertPublish = () => { if (options.canPublish && !options.canPublish()) throw new Error('Improvement admission lost publication authority'); };
   assertPublish();
+  const capturedSelection = getVocabularyRepertoireSelection(job.jobId);
+  if (capturedSelection && (capturedSelection.wordId !== wordId || capturedSelection.catalogVersion !== getVocabularySenseCatalog(wordId).version))
+    throw new VocabularyReflectionConflict('The captured repertoire selection is no longer valid; request a fresh reassessment');
   const readiness = await (options.ensureSenses ?? ensureVocabularySenses)(wordId,{ workflowId: job.jobId,attemptNumber: job.attemptNumber,canPublish: options.canPublish });
   let current = getVocabularyContentForMaintenance(original.contentId);
   if (!current || current.version !== original.version || current.availability !== 'active') throw new VocabularyReflectionConflict('Improvement source changed before admission');
@@ -61,6 +65,10 @@ export async function runVocabularyImprovementAdmission(options: {
   };
   fence();
   const inventory = readiness.senses.filter(sense=>sense.status==='active');
+  if (capturedSelection && (capturedSelection.catalogVersion !== readiness.catalog.version
+    || !capturedSelection.generationScope.selectionEstablished || !capturedSelection.generationScope.senseIds.length
+    || capturedSelection.generationScope.senseIds.some(id => !inventory.some(sense => sense.senseId === id))))
+    throw new VocabularyReflectionConflict('The captured repertoire selection is no longer valid; request a fresh reassessment');
   if(!inventory.length){
     if(job.repairTarget)throw new VocabularyReflectionConflict('Operator repair target is no longer active');
     fence();
@@ -119,6 +127,7 @@ export async function runVocabularyImprovementAdmission(options: {
     .filter(row=>{const content=getVocabularyContentForMaintenance(row.content_id);return content&&!isVocabularyDefinitionFallback(content);});
   const bootstrap=!job.repairTarget&&isVocabularyDefinitionFallback(current);
   const covered=bootstrap?authoredPractice():[];
+  if (capturedSelection && (!bootstrap || covered.length)) throw new VocabularyReflectionConflict('The selected repertoire can no longer bootstrap from this source; request a fresh assessment');
   if(covered.length) {
     fence();
     return {kind:'exercise_improvement',result:{diagnosis:'Authored production practice already covers this word in the same publication scope. The dictionary fallback does not require another repertoire bootstrap.',proposal:null,
@@ -154,7 +163,11 @@ export async function runVocabularyImprovementAdmission(options: {
     const scopeHash=createHash('sha256').update(scopeInput).digest('hex');
     const cached=getDb().prepare("SELECT result_json FROM vocabulary_improvement_stages WHERE job_id=? AND stage='sense_mapping' AND input_hash=?").get(job.jobId,scopeHash) as {result_json:string}|undefined;
     if(cached)mapped.value.generationScope=JSON.parse(cached.result_json) as VocabularyGenerationScope;
-    else {
+    else if (capturedSelection) {
+      mapped.value.generationScope = structuredClone(capturedSelection.generationScope);
+      getDb().prepare("INSERT INTO vocabulary_improvement_stages(job_id,stage,input_hash,input_json,result_json,invocation_id,recorded_at) VALUES (?,'sense_mapping',?,?,?,?,?)")
+        .run(job.jobId,scopeHash,scopeInput,JSON.stringify(mapped.value.generationScope),null,new Date().toISOString());
+    } else {
       let selected=resolveVocabularySenseCoverage(wordId);
       if(!selected.selectionEstablished)try{await (options.ensureDefaults??ensureVocabularyDefaultUsefulSelection)(wordId,{workflowId:job.jobId,canPublish:options.canPublish});selected=resolveVocabularySenseCoverage(wordId);}
       catch(error){if(!(error instanceof VocabularySenseSelectionRequired))throw error;}
