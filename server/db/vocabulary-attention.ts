@@ -45,6 +45,7 @@ export function listVocabularyAttention(actorId:string,input:VocabularyAttention
       AND NOT EXISTS (SELECT 1 FROM vocabulary_case_lineage child WHERE child.member_case_id=c.case_id AND child.case_id!=c.case_id)
       AND NOT coalesce((${vocabularyReviewQueueEligibilitySql}),0)
       AND coalesce(r.approval_state,'')!='pending'
+      AND r.deferred_at IS NULL
       AND NOT EXISTS (SELECT 1 FROM vocabulary_reflection_jobs active WHERE (active.review_case_id=c.case_id OR active.case_id=c.case_id) AND active.status IN ('queued','running'))
       AND NOT EXISTS (SELECT 1 FROM content_proposals cp JOIN json_each(?) a ON cp.proposal_id=json_extract(a.value,'$.proposalId')
         LEFT JOIN vocabulary_case_lineage lineage ON lineage.member_case_id=cp.case_id

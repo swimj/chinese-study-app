@@ -25,7 +25,7 @@ export type VocabularyAdvisorySummary = {
   attemptNumber:number; error:string|null; result:VocabularySecondOpinionVerdict|null;
 };
 export type VocabularyCaseQueueItem = {
-  caseId:string; version:number; state:VocabularyCaseReview['state']; createdAt:string; resolvedAt:string|null;
+  caseId:string; version:number; state:VocabularyCaseReview['state']; deferredAt?:string|null; createdAt:string; resolvedAt:string|null;
   kind:'exercise_improvement'|'teaching_review'; learnerId:string; wordId:string|null; wordLabel:string|null; contentId:string|null;
   approvalState:VocabularyCaseReview['approvalState']; approvalRequestId:string|null;
   currentProposalId:string|null; currentAssessment:{jobId:string;sequence:number}|null;
@@ -54,4 +54,4 @@ export type VocabularyCaseQueueItem = {
   reassessment:{eligible:boolean;reason:string|null;source:{contentId:string;assessedVersion:number;currentVersion:number}|null};
 };
 export type VocabularyCaseQueuePage = {items:VocabularyCaseQueueItem[];nextCursor:string|null;previousCursor:string|null;anchorCursor:string|null;total:number;startIndex:number};
-export type VocabularyCaseQueueQuery = {view?:'review'|'history';limit?:number;cursor?:string;search?:string;direction?:'next'|'previous';edge?:'first'|'last'};
+export type VocabularyCaseQueueQuery = {view?:'review'|'history'|'deferred';limit?:number;cursor?:string;search?:string;direction?:'next'|'previous';edge?:'first'|'last'};

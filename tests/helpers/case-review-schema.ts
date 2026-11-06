@@ -9,5 +9,6 @@ export function installCaseReviewSchema(db:DatabaseSync):void {
   db.exec('PRAGMA foreign_keys=OFF');
   try{db.exec(fs.readFileSync(new URL('../../server/db/migrations/0066_vocabulary_case_reviews.sql',import.meta.url),'utf8'));backfillVocabularyCaseReviews(db);}finally{db.exec('PRAGMA foreign_keys=ON');}
   db.exec(fs.readFileSync(new URL('../../server/db/migrations/0067_vocabulary_repair_targets.sql',import.meta.url),'utf8'));
+  db.exec(fs.readFileSync(new URL('../../server/db/migrations/0068_vocabulary_case_deferral.sql',import.meta.url),'utf8'));
   if(db.prepare('PRAGMA foreign_key_check').all().length)throw new Error('Case review fixture foreign keys failed');
 }

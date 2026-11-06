@@ -607,3 +607,22 @@ job status, selected reflection model, evidence, results, and invocation history
 The [runtime routing policy](../vocabulary-learning.md#dispatch-and-model-routing)
 uses this counter for bounded Luna retries and ZAI fallback. This schema change
 requires the offline migration route; the app-only upgrade route does not apply.
+
+## Case deferral rehearsal
+
+`0068_vocabulary_case_deferral` adds nullable `deferred_at` to
+`vocabulary_case_reviews` and an index for the Deferred view. Existing rows start
+with NULL; case state, revision, proposals, jobs, learner evidence and content
+are preserved. There is no table rebuild or content backfill. Index creation
+scans the case-review table; resource use has not been measured on a restored
+hosted database.
+
+On the isolated restored database, retain the pre-migration case count and a
+representative open/resolved case with its proposal and evidence. Verify those
+values are unchanged and all existing `deferred_at` values are NULL after the
+migration. Defer an open case, restart/reload and verify it appears only in
+Deferred; return it to review and verify its proposal and content are unchanged.
+Check a stale case version is rejected. Run the migration runner's normal
+integrity/FK checks. Deferral is an operator attention classification, not case
+resolution or content publication; deployment still requires the schema-upgrade
+route and separately authorized cutover.
