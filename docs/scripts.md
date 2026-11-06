@@ -1,5 +1,8 @@
 # Scripts catalog
 
+For a browsable scenario catalog and disposable operator previews, use the
+[preview testbed](preview-testbed.md): `npm run testbed -- list`.
+
 This catalog helps contributors and operators find script commands and the
 procedures needed to run them safely. Scripts live under `scripts/`; run with
 `node --import tsx scripts/<name>.ts` unless `package.json` defines an npm script.

@@ -1,4 +1,5 @@
 import React from 'react';
+import App from '../../src/App';
 import { createRoot } from 'react-dom/client';
 import '../../src/styles.css';
 import { VocabularyCaseReviewPage } from '../../src/pages/VocabularyCaseReviewPage';
@@ -12,7 +13,7 @@ import type { VocabularyEncounterEvidence } from '../../src/domain/vocabulary-se
 import { ApiRequestError } from '../../src/services/api';
 import { caseReviewFixture } from '../fixtures/case-review-data';
 
-const params = new URLSearchParams(location.search);
+const params = new URLSearchParams(location.search || import.meta.env.VITE_TESTBED_QUERY || '');
 const cards = Array.from({ length: params.has('empty') ? 0 : params.has('repertoire') ? 1 : 85 }, (_, index) => caseReviewFixture(index + 1));
 if (cards[1]) { cards[1].proposal = null; cards[1].currentProposalId = null; cards[1].assessment!.diagnosis = 'The original cue is appropriate. The learner’s response changes the intended meaning.'; }
 if (cards[2]) { cards[2].served.push({ ...structuredClone(cards[2].served[0]), encounterId: 'second-encounter', responses: [{ actionId: 'second-response', text: '稠密', outcome: 'rejected', undone: true }] }); cards[2].proposal!.operations.push({ ...cards[2].proposal!.operations[0], operationKey: 'enrichment', strategy: 'create', learningRole: 'enrichment', groupLabel: 'Dense distribution', prompt: 'A dense cluster of closely scheduled interviews: 明天上午的面试安排得很____。', acceptedAnswers: ['密集'], sourceContentId: null, expectedVersion: null }); }
@@ -159,6 +160,11 @@ button('Lose next approval ACK', () => { lostAck = true; });
 button('Fail pending approval', () => { const request = requests.find(value => value.status === 'queued'); if (!request) return; request.status = 'attention'; request.error = 'Source version changed before application'; request.updatedAt = new Date().toISOString(); const item = cards.find(value => value.approvalRequestId === request.requestId)!; item.approvalState = 'attention'; item.version++; });
 button('Reset counters', () => { for (const key of Object.keys(counts)) counts[key] = 0; count('mutations'); counts.mutations = 0; counter.textContent = Object.entries(counts).map(([name, value]) => `${name}: ${value}`).join(' · '); });
 
+// The testbed's app archetype uses the real root and route with this same API fixture.
+if (params.has('shell')) {
+  Object.assign(vocabularyOperatorApi, api);
+  window.fetch = async input => { throw new Error(`Unsupported simulated request: ${String(input)}`); };
+}
 if(params.has('hideControls'))controls.style.display='none';
 if (params.has('largeText')) document.documentElement.style.fontSize = '21px';
-if (params.has('narrow')) { controls.style.display='none'; const url=new URL(location.href);url.searchParams.delete('narrow');url.searchParams.set('hideControls','1');const frame=document.createElement('iframe');frame.src=url.href;frame.title='Narrow operator review';frame.style.cssText='width:480px;max-width:100%;height:100dvh;border:0;display:block';document.getElementById('root')!.append(frame); } else createRoot(document.getElementById('root')!).render(params.has('usage') ? <OperatorShell tab="improvement"><VocabularyCaseReviewPage api={api} /></OperatorShell> : <VocabularyCaseReviewPage api={api} />);
+if (params.has('narrow')) { controls.style.display='none'; const url=new URL(location.href);url.searchParams.delete('narrow');url.searchParams.set('hideControls','1');const frame=document.createElement('iframe');frame.src=url.href;frame.title='Narrow operator review';frame.style.cssText='width:480px;max-width:100%;height:100dvh;border:0;display:block';document.getElementById('root')!.append(frame); } else createRoot(document.getElementById('root')!).render(params.has('shell') ? <App/> : params.has('usage') ? <OperatorShell tab="improvement"><VocabularyCaseReviewPage api={api} /></OperatorShell> : <VocabularyCaseReviewPage api={api} />);

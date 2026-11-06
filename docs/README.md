@@ -154,3 +154,5 @@ and the referenced documents.
 | 2026-10-07 | The service-boundary document mixes guarantees, alternatives, the hosted package, one-time migration, and acceptance scenarios. The frontier combines direction, constraints, and unresolved decisions. These documents still need clearer responsibilities. |
 | 2026-10-07 | Legacy in-repo plans and vision copies need a retention decision: useful conclusions need current explanatory homes, and retained historical material needs a deliberate reference role alongside the Steward workspace. |
 | 2026-10-08 | The local introduction lab is an exploratory development aid. Its longer-term role and the documentation needed for it remain undecided; a reusable local prompt-development workflow has not been specified. |
+
+Contributor previews: [Preview testbed](preview-testbed.md) provides the scenario catalog, fixture levels, launch/reset commands, and evidence boundaries.

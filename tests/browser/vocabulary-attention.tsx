@@ -1,4 +1,5 @@
 import React from 'react';
+import App from '../../src/App';
 import { createRoot } from 'react-dom/client';
 import '../../src/styles.css';
 import { VocabularyCaseReviewPage } from '../../src/pages/VocabularyCaseReviewPage';
@@ -10,7 +11,7 @@ import type { VocabularyContent } from '../../src/domain/vocabulary-content';
 import type { VocabularyContentProposal, VocabularyApprovalRequest } from '../../src/domain/vocabulary-reflection';
 import { ApiRequestError } from '../../src/services/api';
 
-const params = new URLSearchParams(location.search);
+const params = new URLSearchParams(location.search || import.meta.env.VITE_TESTBED_QUERY || '');
 const at = '2026-11-05T12:00:00.000Z';
 const copy = <T,>(value: T): T => structuredClone(value);
 const finding = {status:'needs_operator' as const,reason:'No useful senses were selected from the nonempty inventory.',invocationId:'selector-invocation',recommendedSenseIds:[]};
@@ -82,6 +83,11 @@ const api:VocabularyOperatorApi={...vocabularyOperatorApi,
   preview:async id=>{const value=getProposal(id);return {proposal:value,previews:value.operations.map(operation=>({operationKey:operation.operationKey,source,result:{...operation.content,contentId:operation.content.contentId??source.contentId,version:2,createdAt:at,updatedAt:at}})),operations:[]};},
   approvalRequests:async()=>({items:[]}),cases:async()=>({items:[]}),dispatches:async()=>({items:[]}),preparationFailures:async()=>({items:[]}),
 };
+// The testbed's app archetype uses the real root and route with this same API fixture.
+if (params.has('shell')) {
+  Object.assign(vocabularyOperatorApi, api);
+  window.fetch = async input => { throw new Error(`Unsupported simulated request: ${String(input)}`); };
+}
 if(params.has('largeText'))document.documentElement.style.fontSize='22px';
 if(params.has('narrow')){
   controls.hidden=true;
@@ -89,4 +95,4 @@ if(params.has('narrow')){
   const frame=document.createElement('iframe');frame.src=url.href;frame.title='Narrow attention review';
   frame.style.cssText='width:480px;max-width:100%;height:100dvh;border:0;display:block';
   document.getElementById('root')!.append(frame);
-}else createRoot(document.getElementById('root')!).render(<React.StrictMode><OperatorShell tab="improvement"><VocabularyCaseReviewPage api={api}/></OperatorShell></React.StrictMode>);
+}else createRoot(document.getElementById('root')!).render(params.has('shell') ? <App/> : <React.StrictMode><OperatorShell tab="improvement"><VocabularyCaseReviewPage api={api}/></OperatorShell></React.StrictMode>);
