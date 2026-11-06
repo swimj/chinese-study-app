@@ -1226,7 +1226,7 @@ their view and search query.
 Each item contains case version/state, numbered current and active job identity,
 the current proposal reference, readable served evidence (including nullable
 `presentedAt`) and proposed changes,
-model attribution, current source/version comparisons, and concise advisory
+the stored semantic axis for reused shared cues, model attribution, current source/version comparisons, and concise advisory
 opinion status. These are display-only projections, not complete authored drafts.
 Raw encounter snapshots, model requests/results, and full editing bodies are
 omitted. `latestJob` retains the most recent job's status, sequence, advisory flag,

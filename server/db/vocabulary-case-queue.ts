@@ -79,7 +79,7 @@ type BaseRow={
   latestJobId:string|null;latestSequence:number|null;latestStatus:'queued'|'running'|'succeeded'|'failed'|null;latestError:string|null;latestAdvisory:number;
   proposalId:string|null;proposalVersion:number|null;proposalStatus:NonNullable<VocabularyCaseQueueItem['proposal']>['status']|null;authorKind:'operator'|'service'|null;rationale:string|null;
   assessmentJobId:string|null;assessmentSequence:number|null;origin:VocabularyAssessmentSummary['origin'];diagnosis:string;outcome:string|null;scopeKind:string|null;scopeSenseIds:string|null;
-  reusedContentId:string|null;reusedPrompt:string|null;reusedAnswers:string|null;reusedTeachingNote:string|null;reuseRationale:string|null;reusedVersion:number|null;reusedExpectedVersion:number|null;reusedAvailability:string|null;
+  reusedAxisNote:string|null;reusedContentId:string|null;reusedPrompt:string|null;reusedAnswers:string|null;reusedTeachingNote:string|null;reuseRationale:string|null;reusedVersion:number|null;reusedExpectedVersion:number|null;reusedAvailability:string|null;
   sourceId:string|null;assessedVersion:number|null;sourceVersion:number|null;sourceAvailability:string|null;findingKind:string|null;findingMessage:string|null;sourceEligible:number;stale:number;needsResolution:number;
 };
 /** A fixed set of batch queries; no workspace/proposal hydration or per-item prepared statements. */
@@ -100,7 +100,7 @@ function readCards(wanted:{caseId:string;proposalId?:string}[]):VocabularyCaseQu
     json_extract(dj.result_json,'$.input.admission.generationScope.source.kind') AS scopeKind,
     coalesce(json_extract(dj.result_json,'$.input.admission.generationScope.senseIds'),json_extract(dj.result_json,'$.input.admission.senseIds')) AS scopeSenseIds,
     CASE WHEN json_extract(dj.result_json,'$.input.pureCuePromotion.outcome')='reuse' THEN json_extract(dj.result_json,'$.input.pureCuePromotion.existingContentId') END AS reusedContentId,
-    ${prompt('reused.body_json')} AS reusedPrompt,json_extract(reused.body_json,'$.reveal.teachingNote') AS reusedTeachingNote,
+    json_extract(reused.body_json,'$.reveal.axisNote') AS reusedAxisNote,${prompt('reused.body_json')} AS reusedPrompt,json_extract(reused.body_json,'$.reveal.teachingNote') AS reusedTeachingNote,
     json_extract(dj.result_json,'$.input.pureCuePromotion.rationale') AS reuseRationale,reused.version AS reusedVersion,reused.availability AS reusedAvailability,
     reusedBase.expected_content_version AS reusedExpectedVersion,
     (SELECT json_group_array(json(answer.accepted_forms_json)) FROM exercise_answer_words answer WHERE answer.exercise_id=reused.content_id ORDER BY answer.word_id) AS reusedAnswers,
@@ -145,7 +145,7 @@ function readCards(wanted:{caseId:string;proposalId?:string}[]):VocabularyCaseQu
       activeJob:row.activeJobId?{jobId:row.activeJobId,sequence:row.activeSequence!,status:row.activeStatus!}:null,frozen:!!row.frozen,
       latestJob:row.latestJobId?{jobId:row.latestJobId,sequence:row.latestSequence!,status:row.latestStatus!,error:row.latestError,advisory:!!row.latestAdvisory}:null,
       assessment:row.assessmentJobId?{jobId:row.assessmentJobId,sequence:row.assessmentSequence!,origin:row.origin,models:[],outcome:row.outcome,scopeLabel:null,diagnosis:row.diagnosis}:null,
-      ...(row.reusedContentId?{reusedSharedCue:{contentId:row.reusedContentId,prompt:row.reusedPrompt,acceptedAnswers:parseList<string[]>(row.reusedAnswers).flat(),teachingNote:row.reusedTeachingNote,rationale:row.reuseRationale??'',version:row.reusedVersion,expectedVersion:row.reusedExpectedVersion,availability:row.reusedAvailability}}:{}),
+      ...(row.reusedContentId?{reusedSharedCue:{axisNote:row.reusedAxisNote,contentId:row.reusedContentId,prompt:row.reusedPrompt,acceptedAnswers:parseList<string[]>(row.reusedAnswers).flat(),teachingNote:row.reusedTeachingNote,rationale:row.reuseRationale??'',version:row.reusedVersion,expectedVersion:row.reusedExpectedVersion,availability:row.reusedAvailability}}:{}),
       served:[],proposal:row.proposalId?{proposalId:row.proposalId,version:row.proposalVersion!,status:row.proposalStatus!,authorKind:row.authorKind!,isCurrent:row.proposalId===row.currentProposalId,rationale:row.rationale!,operations:[]}:null,
       alternatives:[],alternativeCount:0,sources:[],advisoryOpinion:null,stale:!!row.stale,requiresDetails:false,needsDecision:!!row.needsResolution,finding:row.findingKind&&['unmappable','inventory_gap','needs_coverage','needs_operator'].includes(row.findingKind)?{kind:row.findingKind as NonNullable<VocabularyCaseQueueItem['finding']>['kind'],message:row.findingMessage??''}:null,
       reassessment:{eligible,reason:eligible?null:row.state==='resolved'?'This case is resolved.':row.activeJobId?'A case job is queued or running.':row.approvalState==='pending'?'Case approval is queued or running.':!row.currentJobId?'A completed assessment is required.':row.sourceAvailability==='retired'?'The source exercise is retired.':!source?'The current source is unavailable or is not an active general production exercise.':'Only exercise improvement cases can be reassessed.',source}};

@@ -34,7 +34,7 @@ export type VocabularyCaseQueueItem = {
   /** Assessment attached to the displayed proposal, or the current judgment for a no-proposal card. */
   assessment:VocabularyAssessmentSummary|null;
   /** Existing shared practice selected by this assessment; never an editable proposal operation. */
-  reusedSharedCue?:{contentId:string;prompt:string|null;acceptedAnswers:string[];teachingNote:string|null;rationale:string;version:number|null;expectedVersion:number|null;availability:string|null};
+  reusedSharedCue?:{axisNote?:string|null;contentId:string;prompt:string|null;acceptedAnswers:string[];teachingNote:string|null;rationale:string;version:number|null;expectedVersion:number|null;availability:string|null};
   served:VocabularyServedReview[];
   proposal:{proposalId:string;version:number;status:VocabularyContentProposal['status'];authorKind:'operator'|'service';
     isCurrent:boolean;rationale:string;operations:VocabularyOperationReview[]}|null;

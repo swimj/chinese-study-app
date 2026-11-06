@@ -119,25 +119,31 @@ Open `/operator/improvement`, or select **Content improvement** using the
 oldest creation time first. Each case displays its current assessment and saved
 proposal, or the judgment that proposed no change. Reassessment retains the
 same case identity and queue position.
-The entry leads with **Original served content** and its first chronological
-encounter. The adjacent encounter-count control expands the remaining retained
-snapshots and their responses, reactions, skips, and undone actions. Ordinary
-word cases omit only accepted forms identical to the heading; alternate accepted
-forms remain visible. Pure cues retain the original accepted set and use the
-stored semantic axis as their heading, falling back to “Content review” when
-unavailable. Their proposal shows the accepted-set change and a disclosure for
-the revised teaching note. A case without a snapshot states that the original
-served content is unavailable. Sense-based proposals use expandable sense rows
-with exercise counts. Unresolved findings and action blockers remain visible.
-The compact card includes the content needed for ordinary review. If richer
-authored content cannot be represented faithfully, **Review full content before
-approval** opens the complete workspace and approval remains there.
+The entry leads with the original served content and its first chronological
+encounter. Teaching cases identify the source as a **Teaching encounter**. The
+encounter-count control expands retained snapshots and their responses, reactions,
+skips, and undone actions. Pure cues display accepted answers in simplified form,
+with script duplicates removed for display only. Ordinary word encounters omit
+that answer list. Missing snapshots are explicitly identified.
 
-When an assessment reuses shared practice, a blue **↗ Reuse existing · Shared
-practice** card shows the existing cue and accepted answers before the proposed
-changes. **Inspect shared cue** reveals its teaching note, reuse reasoning, and
-content identity/version. This read-only card is not an additional change to
-approve. Unavailable or retired referenced cues are labeled explicitly.
+Single-exercise review retains the assessment reasoning under **Proposed
+improvement** and presents each change as an expandable item with an action icon
+and color accent. Mapped senses remain in Details. Repertoire review uses a
+**Repertoire bootstrap** heading and expandable sense groups with exercise counts;
+it omits routine bootstrap reasoning. Source-repair items omit redundant accepted
+answers. Pure-cue items summarize their action and semantic axis, expanding to the
+prompt, accepted-set change, and revised teaching note.
+
+Existing shared practice appears as a blue **↗ Reuse existing** item. Expanding it
+shows accepted answers, teaching note, reuse reasoning, and content identity/version.
+It is read-only context, not an additional change to approve. Unavailable or
+retired references remain visibly labeled even when the item is collapsed.
+
+Unresolved findings and action blockers remain visible. Rich authored content
+that cannot be represented faithfully requires **Review full content before
+approval** in the complete workspace. Awaiting review and Archive refresh
+automatically while idle and visible, with faster polling during pending work;
+editing and reassessment configuration pause refresh.
 
 “Approve and apply” queues the displayed version and advances after the backend
 persists the request. Queued requests are hidden from Awaiting review while they
