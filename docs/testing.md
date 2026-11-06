@@ -166,8 +166,8 @@ cloze validation, consequential change signals and retained evidence bases.
 `tests/vocabulary-sense-coverage-ui.test.ts` covers affected scope selection,
 exercise impact, label merging and read-versus-write navigation policy. The compact
 review browser fixture's `?repertoire=1&usage=1` scenario opens a real case card
-in the operator panel. Open Word defaults directly on the card, toggle a sense,
-use Save defaults and update proposal, then reselect and save to restore it. Unsaved defaults block
+in the operator panel. Use Selected senses directly on the card, toggle a chip,
+use Save selection, then reselect and save to restore it. Unsaved defaults block
 approval and navigation; Discard edits restores access. Add `&narrow=1` to check the
 embedded layout. These browser scenarios are separate from `npm test`.
 Use the [disposable vocabulary fixture](vocabulary-learning.md#contributor-verification)
@@ -542,8 +542,7 @@ checks populated migration preservation and absence of inferred operator intent.
 The compact review browser fixture supports `hideControls=1`, `narrow=1`, and
 `largeText=1`. Open Reassess, set its target/model options, and submit. Check
 Escape/Close dismissal and focus return, same-sense selection, pending Apply/Edit blocking,
-failed reassessment and Reset. With `repertoire=1`, open Word defaults on the card,
-deselect a sense and Save defaults and update proposal; its group disappears.
+failed reassessment and Reset. With `repertoire=1`, toggle a Selected senses chip off and Save selection; its group disappears.
 Reselect and save to restore the same exercises. Check empty-selection errors
 and Discard edits recovery. Fixture
 transport establishes UI behavior; backend tests establish persistence and guards.
@@ -551,7 +550,7 @@ transport establishes UI behavior; backend tests establish persistence and guard
 The compact fixture supports `targetReadFailure=1` and `holdTargetRead=1` to
 verify that an unresolved target read leaves Apply/Edit available. Combine
 `targetReadFailure=1&targetPending=1` to check that approval rejection is visible
-on the card. With `targetPending=1`, use Fail target refresh then Refresh: the
+on the card. With `targetPending=1`, use Fail target refresh then refocus the page to trigger automatic refresh: the
 known pending restriction must remain. Release target reads completes held reads.
 
 ### Needs attention
@@ -573,3 +572,15 @@ and edits. Expand sense notes and details, use keyboard controls, and inspect lo
 labels in the narrow fixture. `vocabulary-attention.test.ts` covers authoritative
 membership, teaching-case review/closure, legacy fallbacks, preparation pagination,
 anchor refresh, approval staleness, HTTP validation and operator access.
+
+
+The compact repertoire fixture includes an ungenerated mathematical-function sense.
+Selecting it leaves a draft; ordinary Save selection rejects missing retained
+exercises. Open Save selection and reassess, choose a model, and submit: the old
+proposal remains frozen while the selection is saved. `?repertoire=1&selectionQueueFailure=1`
+keeps the draft and reports queue failure. Verify both compact and full review,
+chip keyboard toggles, Discard edits, and wrapping with `narrow=1&largeText=1`.
+`vocabulary-reflection.test.ts` and HTTP coverage establish atomic queue admission,
+rollback, retained proposals and captured-scope publication. Admission provider tests
+establish exact selection despite later defaults, retry reuse and pre-call catalog,
+identity and routing fences. Browser fixtures use no providers or application data.

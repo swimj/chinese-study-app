@@ -26,10 +26,10 @@ if (params.has('design') && cards[0]) {
  cards[3].proposal=null;cards[3].requiresDetails=false;cards[3].needsDecision=true;cards[3].finding={kind:'unmappable',message:'The intended sense is unresolved.'};cards[3].reassessment={eligible:false,reason:'The source exercise is retired.',source:null};
  cards[4].stale=true;cards[4].sources[0].version=2;
 }
-const repertoireSenses=[{senseId:'sense-letter',label:'Formal letter or correspondence'},{senseId:'sense-envelope',label:'Envelope'},{senseId:'sense-case',label:'Literary case for books'}];
+const repertoireSenses=[{senseId:'sense-letter',label:'Formal letter or correspondence'},{senseId:'sense-envelope',label:'Envelope'},{senseId:'sense-case',label:'Literary case for books'},{senseId:'sense-function',label:'A mathematical function mapping each input to a corresponding output'}];
 const repertoirePrompts=['A formal invitation sent in writing: 敬请查收邀请____。','A letter asking for confirmation: 我们已致____询问。','An envelope containing a letter.','A protective case for a set of books.'];
 const repertoireIds=['sense-letter','sense-letter','sense-envelope','sense-case'];
-let repertoireSelection=repertoireSenses.map(sense=>sense.senseId),repertoireSelectionVersion=1;
+let repertoireSelection=repertoireSenses.slice(0,3).map(sense=>sense.senseId),repertoireSelectionVersion=1;
 let retainedRepertoire:VocabularyContentProposal['operations']|null=null;
 let retainedRepertoireProjection:NonNullable<VocabularyCaseQueueItem['proposal']>['operations']|null=null;
 const repertoireSource='A formal letter; an envelope; a literary case or box.';
@@ -44,8 +44,13 @@ if(params.has('repertoire')&&cards[0]){
    learningRole:'source_repair',scopeLabel:'Shared',groupLabel:repertoireSenses.find(sense=>sense.senseId===repertoireIds[index])!.label,
    prompt,acceptedAnswers:['函'],rationale:'Teach this selected use of 函.',sourceContentId:index===0?'source':null,expectedVersion:index===0?1:null,otherChanges:[]}));
 }
+if(params.has('teaching')&&cards[0]){
+ const item=cards[0];item.kind='teaching_review';item.proposal=null;item.currentProposalId=null;item.assessment=null;item.currentAssessment=null;item.needsDecision=true;
+ item.reassessment={eligible:false,reason:'A completed assessment is required.',source:null};
+ item.served[0].role='introduction';item.served[0].kind='introduction';item.served[0].prompt='Introduction';
+}
 function wordCoverage():VocabularySenseCoverageWorkspace{return {word:{wordId:'word',version:repertoireSelectionVersion,defaultUsefulSenseIds:[...repertoireSelection],excludedSenseIds:repertoireSenses.filter(sense=>!repertoireSelection.includes(sense.senseId)).map(sense=>sense.senseId)},review:null,includedSenseIds:[...repertoireSelection],selectionEstablished:true,fingerprint:String(repertoireSelectionVersion),senses:repertoireSenses.map(sense=>({senseId:sense.senseId,wordId:'word',description:{label:sense.label},status:'active',version:1,createdAt:'2026-11-01T00:00:00.000Z',updatedAt:'2026-11-01T00:00:00.000Z'}))};}
-function repertoireAdmission(){return {outcome:'repertoire_bootstrap' as const,rationale:'Bootstrap the selected word repertoire.',wordId:'word',sourceContentId:'source',sourceContentVersion:1,catalogVersion:1,senseIds:[],sourceMapping:{senseId:null,establishedAt:null},generationScope:{selectionEstablished:true,senseIds:repertoireSenses.map(sense=>sense.senseId),source:{kind:'word_defaults' as const,wordId:'word',capturedVersion:1}}};}
+function repertoireAdmission(){return {outcome:'repertoire_bootstrap' as const,rationale:'Bootstrap the selected word repertoire.',wordId:'word',sourceContentId:'source',sourceContentVersion:1,catalogVersion:1,senseIds:[],sourceMapping:{senseId:null,establishedAt:null},generationScope:{selectionEstablished:true,senseIds:repertoireSenses.slice(0,3).map(sense=>sense.senseId),source:{kind:'word_defaults' as const,wordId:'word',capturedVersion:1}}};}
 if (params.has('reuse') && cards[0]) {
  const item=cards[0]; item.wordLabel='静';
  item.served[0].prompt='夜深了，四周一点声音也没有，显得特别____。';item.served[0].acceptedAnswers=['静'];item.served[0].responses[0].text='宁静';item.served[0].reactions=[];
@@ -85,7 +90,7 @@ function workspace(id: string): VocabularyCaseWorkspace {
     const feedback: VocabularyEncounterEvidence['feedback'] = entry.reactions.map((reaction,index) => ({protocolVersion:1,actionId:reaction.actionId,clientActionId:reaction.actionId,sequence:index+20,occurredAt:item.createdAt,kind:'feedback',payload:{encounterId:entry.encounterId,feedback:'comment',comment:reaction.comment??reaction.feedback}}));
     return { encounterId: entry.encounterId, wordId: 'word',workNumber:1,presentedActionId:'presentation',presentedAt:item.createdAt,mode:'practice', snapshot: { contentId: 'source', contentVersion: 1, role: 'general', kind: 'production', body: { prompt: entry.prompt??'' }, assessment: { acceptedAnswers: entry.acceptedAnswers, criteria: {} } }, responses, effectiveResponses:responses.filter(response=>!entry.responses.find(value=>value.actionId===response.actionId)?.undone),feedback,effectiveFeedback:feedback.filter(reaction=>!entry.reactions.find(value=>value.actionId===reaction.actionId)?.undone), skipped:entry.skipped,presentationUndone:entry.presentationUndone };
   });
-  return { case: { caseId: id, completionId: 'completion', learnerId: 'fixture-learner', kind: item.kind, wordId: 'word', contentId: 'source', createdAt: item.createdAt, status: item.state === 'resolved' ? 'closed' : 'completed', evidence, review: { ...item, currentJobId: item.currentAssessment?.jobId ?? null } }, sources: [original], proposals: [...(item.proposal ? [fullProposal(item.proposal.proposalId)] : []), ...item.alternatives.map(value => fullProposal(value.proposalId))], diagnosis: item.assessment?.diagnosis, senseLabels: params.has('repertoire')?repertoireSenses.map(sense=>({...sense,wordId:'word'})):[], ...(params.has('repertoire')?{admission:repertoireAdmission()}:{}), assessment: item.assessment ? { origin: item.assessment.origin, models: item.assessment.models,...(params.has('repertoire')?{admission:repertoireAdmission()}: {}) } : undefined, jobs: [{ jobId: item.currentAssessment?.jobId ?? 'first', caseSequence: 1, kind: 'exercise_improvement', status: 'succeeded', attemptNumber: 1, error: null, secondOpinion: false, result: null }], reassessmentSource: item.reassessment.source, reassessment: item.latestJob && item.latestJob.sequence > 1 ? { caseId: id, jobId: item.latestJob.jobId, status: item.latestJob.status, error: item.latestJob.error } : null };
+  return { case: { caseId: id, completionId: 'completion', learnerId: 'fixture-learner', kind: item.kind, wordId: 'word', contentId: 'source', createdAt: item.createdAt, status: item.state === 'resolved' ? 'closed' : 'completed', evidence, review: { ...item, currentJobId: item.currentAssessment?.jobId ?? null } }, sources: [original], proposals: [...(item.proposal ? [fullProposal(item.proposal.proposalId)] : []), ...item.alternatives.map(value => fullProposal(value.proposalId))], diagnosis: item.assessment?.diagnosis, senseLabels: params.has('repertoire')?repertoireSenses.map(sense=>({...sense,wordId:'word'})):[], ...(params.has('repertoire')?{admission:repertoireAdmission()}:{}), assessment: item.assessment ? { origin: item.assessment.origin, models: item.assessment.models,...(params.has('repertoire')?{admission:repertoireAdmission()}: {}) } : undefined, jobs: [{ jobId: item.currentAssessment?.jobId ?? 'first', caseSequence: 1, kind: 'exercise_improvement', status: 'succeeded', attemptNumber: 1, error: null, secondOpinion: false, result: null }], reassessmentUnavailableReason:item.reassessment.reason,reassessmentSource: item.reassessment.source, reassessment: item.latestJob && item.latestJob.sequence > 1 ? { caseId: id, jobId: item.latestJob.jobId, status: item.latestJob.status, error: item.latestJob.error } : null };
 }
 const targets=new Map<string,{version:number;currentSenseId:string;pendingSenseId:string|null}>();
 function target(id:string){const item=card(id);if(!item.wordId)throw new Error('Unknown vocabulary word review');let intent=targets.get(id);if(!intent){intent={version:0,currentSenseId:'sense-advance',pendingSenseId:params.has('targetPending')?'sense-register':null};targets.set(id,intent);}return {caseId:id,wordId:item.wordId!,...intent,senses:[{senseId:'sense-advance',label:'report in advance'},{senseId:'sense-register',label:'register on record'}],available:!params.has('repertoire'),blocked:intent.pendingSenseId!==null,editable:item.state==='open'&&!item.frozen&&item.approvalState!=='pending'};}
@@ -94,6 +99,15 @@ const heldTargetReads:(()=>void)[]=[];
 const api: VocabularyOperatorApi = { ...vocabularyOperatorApi,
   wordSenseCoverage:async()=>copy(wordCoverage()),
   saveDefaultUsefulSenses:async(_id,version,ids)=>{if(version!==repertoireSelectionVersion)throw new ApiRequestError('Word defaults changed',409);repertoireSelection=[...ids];repertoireSelectionVersion++;return copy(wordCoverage());},
+  saveRepertoireWordDefaultsAndReassess:async(id,input)=>{
+    const item=cards.find(value=>value.proposal?.proposalId===id)!;editable(item);
+    if(params.has('selectionQueueFailure'))throw new ApiRequestError('Could not queue reassessment. Selection was not saved.',409);
+    if(item.proposal!.version!==input.expectedVersion||item.version!==input.expectedCaseVersion||repertoireSelectionVersion!==input.expectedWordVersion)throw new ApiRequestError('Selection or case changed',409);
+    if(!input.includedSenseIds.length)throw new ApiRequestError('Select at least one sense',409);
+    const queued=await api.reassessCaseReview(item.caseId,input.expectedCaseVersion,input.modelChoice,input.expectedContentVersion,{proposalId:id,expectedVersion:input.expectedVersion});
+    repertoireSelection=[...input.includedSenseIds];repertoireSelectionVersion++;
+    return {...queued,coverage:copy(wordCoverage())};
+  },
   saveRepertoireWordDefaults:async(id,version,wordVersion,ids)=>{
     const item=cards.find(value=>value.proposal?.proposalId===id)!;editable(item);const previous=fullProposal(id);
     if(previous.version!==version)throw new ApiRequestError('Proposal changed',409);

@@ -1,3 +1,7 @@
+import type { ReflectionModelChoice } from '../reflection/model-arms.ts';
+import { reassessVocabularyCaseReview } from './vocabulary-case-queue.ts';
+import { getVocabularySenseCatalog } from './vocabulary-content.ts';
+import { captureVocabularyRepertoireSelection } from './vocabulary-repertoire-selection.ts';
 import type { VocabularyContentProposal, VocabularyImprovementResultInput, VocabularyProposalOperation } from '../../src/domain/vocabulary-reflection.ts';
 import { getDb } from './connection.ts';
 import { getVocabularyProposal, saveVocabularyProposal, vocabularyProposalCoverageChanged } from './vocabulary-reflection.ts';
@@ -98,4 +102,34 @@ export function reviseRepertoireToWordDefaults(proposalId:string,expectedVersion
     db.prepare('INSERT INTO vocabulary_repertoire_revisions(proposal_id,proposal_version,sense_ids_json) VALUES (?,?,?)').run(proposalId,result.version,JSON.stringify(selection.includedSenseIds));
     db.exec('RELEASE repertoire_revision');return result;
   }catch(error){db.exec('ROLLBACK TO repertoire_revision; RELEASE repertoire_revision');throw error;}
+}
+
+/** Explicitly save shared policy and queue generation; the existing proposal stays intact. */
+export function saveRepertoireWordDefaultsAndReassess(proposalId: string, input: {
+  expectedVersion: number; expectedWordVersion: number; expectedCaseVersion: number;
+  expectedContentVersion: number; includedSenseIds: string[]; modelChoice: ReflectionModelChoice;
+}, actorId: string) {
+  const db = getDb();
+  db.exec('SAVEPOINT repertoire_defaults_reassessment');
+  try {
+    const proposal = getVocabularyProposal(proposalId, actorId);
+    if (proposal.version !== input.expectedVersion) throw new VocabularyReflectionConflict('Proposal version changed; reload before saving');
+    if (!proposal.caseId) throw new VocabularyReflectionConflict('Repertoire reassessment requires its originating case');
+    const row = db.prepare('SELECT j.result_json FROM content_proposals p JOIN vocabulary_reflection_jobs j ON j.job_id=p.assessment_job_id WHERE p.proposal_id=?')
+      .get(proposalId) as {result_json: string | null} | undefined;
+    const admission = row?.result_json ? (JSON.parse(row.result_json) as {input: VocabularyImprovementResultInput}).input.admission : undefined;
+    if (admission?.outcome !== 'repertoire_bootstrap') throw new VocabularyReflectionConflict('Only an assessed repertoire can save its selection and reassess');
+    if (!input.includedSenseIds.length) throw new VocabularyReflectionConflict('Select at least one sense to reassess. Dismiss the proposal to remove all proposed exercises.');
+    if (vocabularyProposalCoverageChanged(proposal)) throw new VocabularyReflectionConflict('Source or inventory changed; reassess the current source before saving its selection');
+    const coverage = setVocabularyDefaultUsefulSenses(admission.wordId, input.expectedWordVersion, input.includedSenseIds, actorId);
+    const queued = reassessVocabularyCaseReview(proposal.caseId, input.expectedCaseVersion, actorId, input.modelChoice, input.expectedContentVersion,
+      {kind: 'proposal', proposalId, expectedVersion: input.expectedVersion});
+    captureVocabularyRepertoireSelection(queued.jobId, {wordId: admission.wordId, catalogVersion: getVocabularySenseCatalog(admission.wordId).version,
+      generationScope: {selectionEstablished: true, senseIds: [...coverage.includedSenseIds], source: {kind: 'word_defaults', wordId: admission.wordId, capturedVersion: coverage.word.version}}});
+    db.exec('RELEASE repertoire_defaults_reassessment');
+    return {...queued, coverage};
+  } catch (error) {
+    db.exec('ROLLBACK TO repertoire_defaults_reassessment; RELEASE repertoire_defaults_reassessment');
+    throw error;
+  }
 }

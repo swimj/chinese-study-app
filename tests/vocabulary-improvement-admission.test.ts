@@ -1,3 +1,4 @@
+import { captureVocabularyRepertoireSelection } from '../server/db/vocabulary-repertoire-selection.ts';
 import { VocabularySenseReadinessPending } from '../server/vocabulary/sense-readiness.ts';
 import type { ensureVocabularyDefaultUsefulSelection } from '../server/vocabulary/default-useful-selection.ts';
 import { writeVocabularyDefaultUsefulSenses } from '../server/db/vocabulary-sense-coverage.ts';
@@ -996,4 +997,34 @@ bootstrapTest('explicit repair intent takes precedence over fallback repertoire 
   assert.equal(result.result.admission?.outcome,'single_sense');
   assert.deepEqual(trial.requests.map(request=>request.provenance?.stepName),['single_improvement']);
   assert.deepEqual(getVocabularyContentForMaintenance('original'),original);
+});
+
+for(const failFirst of [false,true])bootstrapTest(`queue-captured repertoire selection survives edits before worker and retry (failure=${failFirst})`,async()=>{
+  const scope={selectionEstablished:true,senseIds:['size'],source:{kind:'word_defaults' as const,wordId:'word',capturedVersion:1}};
+  captureVocabularyRepertoireSelection('job',{wordId:'word',catalogVersion:getVocabularySenseCatalog('word').version,generationScope:scope});
+  writeVocabularyDefaultUsefulSenses('word',1,['effect'],actor);
+  const trial=provider((_request,index)=>{if(failFirst&&index===1)throw new Error('Provider failed');return {exercises:repertoire.exercises.filter(exercise=>exercise.sourceUseId==='size')};});
+  if(failFirst)await assert.rejects(()=>trial.provider.run(job()),/Provider failed/);
+  const result=await trial.provider.run({...job(),attemptNumber:failFirst?2:1});
+  if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
+  assert.deepEqual(result.result.admission?.generationScope,scope);
+  for(const request of trial.requests)assert.equal(JSON.parse(request.userPrompt).content.uses.length,1);
+  assert.equal(trial.requests.length,failFirst?2:1);
+});
+for(const invalid of ['catalog','sense','word'] as const)bootstrapTest(`queue-captured repertoire rejects stale ${invalid} before provider`,async()=>{
+  captureVocabularyRepertoireSelection('job',{wordId:invalid==='word'?'other':'word',catalogVersion:getVocabularySenseCatalog('word').version+(invalid==='catalog'?1:0),generationScope:{selectionEstablished:true,senseIds:[invalid==='sense'?'missing':'size'],source:{kind:'word_defaults',wordId:'word',capturedVersion:1}}});
+  const trial=provider(()=>repertoire);
+  await assert.rejects(()=>trial.provider.run(job()),/captured repertoire selection/);assert.equal(trial.requests.length,0);
+});
+test('queue-captured repertoire cannot force authored content into the bootstrap route',async()=>{
+  captureVocabularyRepertoireSelection('job',{wordId:'word',catalogVersion:getVocabularySenseCatalog('word').version,generationScope:{selectionEstablished:true,senseIds:['size'],source:{kind:'word_defaults',wordId:'word',capturedVersion:1}}});
+  const trial=provider(()=>repertoire);
+  await assert.rejects(()=>trial.provider.run(job()),/no longer bootstrap/);assert.equal(trial.requests.length,0);
+});
+
+bootstrapTest('queue-captured repertoire rejects newly authored coverage before provider',async()=>{
+  captureVocabularyRepertoireSelection('job',{wordId:'word',catalogVersion:getVocabularySenseCatalog('word').version,generationScope:{selectionEstablished:true,senseIds:['size'],source:{kind:'word_defaults',wordId:'word',capturedVersion:1}}});
+  createVocabularyContent({...original,contentId:'new-authored',body:{prompt:'An authored retrieval cue'}},actor);
+  const trial=provider(()=>repertoire);
+  await assert.rejects(()=>trial.provider.run(job()),/no longer bootstrap/);assert.equal(trial.requests.length,0);
 });

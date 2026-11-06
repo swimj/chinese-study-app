@@ -661,4 +661,15 @@ test('repertoire default selection route validates both versions and returns an 
   const restoredValue=restored.body as ReturnType<typeof saveRepertoireWordDefaults>;
   assert.equal(restored.status,200);assert.equal(restoredValue.proposal.operations.length,2);
   assert.deepEqual(restoredValue.coverage.includedSenseIds,['first','second']);
+  const queueRoute=`${base}/proposals/:id/word-defaults-reassessment`;
+  const card=call('get',`${base}/case-queue/:id`,{params:{id:job.caseId}}).body;
+  const reassessInput={expectedVersion:3,expectedWordVersion:2,expectedCaseVersion:card.version,expectedContentVersion:1,includedSenseIds:['first'],modelChoice:'openai:gpt-6-sol-high'};
+  for(const body of [{...reassessInput,modelChoice:'bad'},{...reassessInput,expectedWordVersion:-1},{...reassessInput,expectedCaseVersion:0},{...reassessInput,includedSenseIds:'first'},{...reassessInput,extra:true}])assert.equal(call('post',queueRoute,{params,body}).status,400);
+  process.env.APP_OPERATOR_CLERK_USER_IDS='someone-else';
+  assert.equal(call('post',queueRoute,{params,body:reassessInput}).status,403);process.env.APP_OPERATOR_CLERK_USER_IDS='editor';
+  assert.equal(call('post',queueRoute,{params,body:{...reassessInput,expectedCaseVersion:card.version+1}}).status,409);
+  const queued=call('post',queueRoute,{params,body:reassessInput});
+  assert.equal(queued.status,200);assert.equal(queued.body.item.frozen,true);assert.equal(queued.body.item.proposal.version,3);
+  assert.deepEqual(queued.body.coverage.includedSenseIds,['first']);assert.equal(queued.body.coverage.word.version,3);
+
 });
