@@ -139,3 +139,19 @@ All 19 focused attention and testbed tests passed. The implementing agent verifi
 the corrected browser fixture shows one attention item and an expanded Individual
 cases (3) disclosure containing both mapping failures and the generation failure
 with their shared source. This correction was not rerun by the independent evaluator.
+
+## Compact matching and drag edge scrolling
+
+Removed inherited operator card spacing and put Details alongside labels. At
+1142×774 with saved matches, and 1280×720 with unassigned uses, the three targets
+and four teaching cards fit together after scrolling the heading out of view.
+Native dragging to a visible target succeeded in the isolated fixture. Drag start
+no longer inserts destination buttons that shift the layout; click/keyboard move
+selection still exposes those buttons. The existing user's saved choices remained
+intact. Narrow/enlarged-text layouts were not rechecked in this pass.
+
+The browser regression at `/tests/browser/drag-edge-scroll.html` runs the production
+hook against a real scroll pane with synthetic drag events. It passed center
+no-scroll, held upper/lower edge scrolling, and stop-on-drop/cancellation checks.
+The automation's immediate native drag did not establish held-edge behavior; that
+claim is supported by the synthetic event regression. Build passed.

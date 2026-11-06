@@ -71,6 +71,8 @@ operator choices, not automated semantic matching.
 For each use, record its relationship to an existing canonical sense, reject it,
 or describe a transformation the system cannot yet apply. Drag a teaching card to
 a sense, or use its Move handle and a destination button with keyboard/click.
+Holding a drag near the top or bottom of the review pane scrolls toward offscreen
+targets; dropping or cancelling stops the scroll.
 Descriptions, examples, fallback selection and optional notes live under Details.
 Neither per-use reasons nor an overall rationale are required to apply.
 

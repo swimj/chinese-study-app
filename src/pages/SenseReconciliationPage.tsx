@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { SenseContentReconciliationDraft, SenseContentReconciliationWorkspace } from '../domain/sense-content-reconciliation';
 import { fetchSenseReconciliation, saveSenseReconciliation, applySenseReconciliation, retrySenseReconciliation } from '../services/api';
 import './SenseReconciliationPage.css';
+import { useDragEdgeScroll } from '../hooks/useDragEdgeScroll';
 
 const defaultApi = {get:fetchSenseReconciliation,save:saveSenseReconciliation,apply:applySenseReconciliation,retry:retrySenseReconciliation};
 export type SenseReconciliationApi = typeof defaultApi;
@@ -66,6 +67,7 @@ export function SenseReconciliationPage({wordId,api=defaultApi,onActivity}: {wor
   const focusUse=useRef<string|null>(null);
   const [movingUse,setMovingUse]=useState<string|null>(null);
   const draggedUse=useRef<string|null>(null);
+  const startDragScroll=useDragEdgeScroll();
   function moveUse(useId:string,target:string) {
     if(busy||applied||!draft)return;
     const index=draft.uses.findIndex(use=>use.useId===useId);
@@ -88,7 +90,7 @@ export function SenseReconciliationPage({wordId,api=defaultApi,onActivity}: {wor
                 if(!decision)return <p key={use.id} role="alert">Teaching changed. Reload before reviewing.</p>;
                 return <div className="reconciliation-use" key={use.id}>
                   <div className="reconciliation-use-title"><button type="button" id={`reconciliation-use-${use.id}`} className="reconciliation-drag" aria-label={`Move ${use.label}`} aria-pressed={movingUse===use.id}
-                    draggable={!busy&&!applied} onDragStart={event=>{draggedUse.current=use.id;event.dataTransfer.setData('text/plain',use.id);event.dataTransfer.effectAllowed='move';setMovingUse(use.id);}}
+                    draggable={!busy&&!applied} onDragStart={event=>{draggedUse.current=use.id;startDragScroll(event.currentTarget,event.clientY);event.dataTransfer.setData('text/plain',use.id);event.dataTransfer.effectAllowed='move';}}
                     onDragEnd={()=>{draggedUse.current=null;setMovingUse(null);}} onClick={()=>setMovingUse(movingUse===use.id?null:use.id)}>⠿</button><h4>{use.label}</h4></div>
                   <details><summary>Details</summary>
                     {use.notes.length>0&&<ul>{use.notes.map((note,i)=><li key={i}>{note}</li>)}</ul>}

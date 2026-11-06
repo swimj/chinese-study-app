@@ -55,3 +55,34 @@
 .reconciliation-related { margin:.5rem 0; }
 .reconciliation-related > article { padding:.75rem 0; border-bottom:1px solid var(--border); }
 .reconciliation-related dd { margin:0 0 .5rem; overflow-wrap:anywhere; }
+
+/* Keep ordinary matching visible together; descriptions stay behind Details. */
+.reconciliation-embedded .reconciliation-summary { padding:0 0 .5rem; }
+.reconciliation-embedded .reconciliation-reload { margin-bottom:.35rem; }
+.reconciliation-group-headings { padding:.5rem 0 .25rem; gap:1rem; }
+.reconciliation-group-headings h3 { margin:0; }
+.reconciliation-comparison { padding:.35rem 0; gap:1rem; align-items:start; }
+.reconciliation-comparison h3 { margin:.35rem 0; }
+.reconciliation-sense label { margin:.15rem 0; }
+.reconciliation-sense summary { padding:.1rem 0; }
+.reconciliation-use { position:relative; padding:.3rem .45rem; margin:0 0 .25rem; }
+.reconciliation-use:last-child { margin-bottom:0; }
+.reconciliation-use-title { min-height:1.75rem; padding-right:4.5rem; gap:.4rem; }
+.reconciliation-use .reconciliation-drag { padding:.05rem .35rem; min-height:1.65rem; }
+.reconciliation-use > details > summary { position:absolute; right:.45rem; top:.35rem; padding:0; }
+.reconciliation-use > details[open] { padding-top:.35rem; }
+.reconciliation-drop { margin:0; padding:.4rem; }
+.reconciliation-decision { padding:.5rem 0; }
+@container (max-width: 700px) {
+  .reconciliation-comparison { gap:.35rem; }
+}
+.vocabulary-operator-page .reconciliation-embedded section { border:0; border-bottom:1px solid var(--border); border-radius:0; margin:0; padding:.35rem 0; }
+.vocabulary-operator-page .reconciliation-embedded details { margin:0; }
+.vocabulary-operator-page .reconciliation-embedded .reconciliation-sense label { margin:.15rem 0; }
+.vocabulary-operator-page .reconciliation-embedded h3 { margin:.25rem 0; }
+.vocabulary-operator-page .reconciliation-embedded .reconciliation-use-title h4 { margin:0; }
+.vocabulary-operator-page .reconciliation-embedded .reconciliation-editor { margin:.35rem 0; }
+.reconciliation-sense { position:relative; min-height:2rem; }
+.vocabulary-operator-page .reconciliation-embedded .reconciliation-sense label { padding-right:4.5rem; }
+.reconciliation-sense > details > summary { position:absolute; right:0; top:.25rem; padding:0; }
+.reconciliation-sense > details[open] { padding-top:.35rem; }

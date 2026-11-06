@@ -615,3 +615,10 @@ For task-level UI observations, use the [independent evaluator
 procedure](evaluation/independent-ui-evaluation.md) with any suitable preview.
 The [coordinator procedure](evaluation/coordinator.md) owns early planning,
 preview preparation, triage, and delivery reporting.
+
+### Drag edge scrolling
+
+`/tests/browser/drag-edge-scroll.html` exercises the production scroll hook in a
+real DOM scroll pane. Run regression checks center no-scroll, continued upper/lower
+edge scrolling, and cleanup on drop/cancellation using synthetic drag events.
+Native dragging and matching use the reconciliation testbed separately.
