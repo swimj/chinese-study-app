@@ -5,7 +5,7 @@ import type { VocabularyStudy, VocabularyStudyCommand } from '../../domain/vocab
 import type { VocabularyWordMode, VocabularyReactionKind } from '../../domain/vocabulary-session';
 import type { VocabularySessionCompletion } from '../../domain/vocabulary-session-api';
 import { createActiveSessionClock, finishActiveSessionClock, getActiveSessionDurationMs, updateActiveSessionClockForVisibility, type ActiveSessionClock } from '../session/active-session-time';
-import { normalizeProductionAnswerForProfile } from '../../study-profile';
+import { productionWrittenFormAccepted } from '../../domain/vocabulary-session';
 import { startVocabularySession, nextVocabularyStudy, commandVocabularyStudy, stageVocabularyCompletion,
   fetchVocabularyCompletion, cancelVocabularyCompletion, closeVocabularyCompletion, fetchCurrentVocabularyCompletion,
   fetchVocabularyStudy, dismissVocabularyWord, fetchVocabularyWords, setVocabularyWordMode } from '../../services/api';
@@ -44,9 +44,7 @@ export function createVocabularyCommandQueue(onChange: () => void = () => undefi
 function message(reason: unknown): string { return reason instanceof Error ? reason.message : 'Your study work could not be saved.'; }
 
 export function assessVocabularyResponse(acceptedAnswers: readonly string[], response: string | null): 'accepted' | 'rejected' {
-  if (response === null) return 'rejected';
-  const normalized = normalizeProductionAnswerForProfile(response, 'mandarin');
-  return normalized.length > 0 && acceptedAnswers.some((answer) => normalizeProductionAnswerForProfile(answer, 'mandarin') === normalized) ? 'accepted' : 'rejected';
+  return productionWrittenFormAccepted(acceptedAnswers, response) ? 'accepted' : 'rejected';
 }
 type RecognitionDeparture = (study: VocabularyStudy, advance: () => Promise<void>) => Promise<void>;
 export type VocabularyStudyOptions = { onSessionEnded?: () => void | Promise<void>; onActiveChange?: (active: boolean) => void };
@@ -60,6 +58,9 @@ export function useVocabularyStudy(options: VocabularyStudyOptions = {}) {
   const [error, setError] = useState<string | null>(null);
   const [input, setInput] = useState('');
   const [localResponse, setLocalResponse] = useState<{ encounterId: string; outcome: 'accepted' | 'rejected' | 'unassessed' } | null>(null);
+  const [pendingCorrect, setPendingCorrect] = useState<{ encounterId: string; response: string } | null>(null);
+  const pendingCorrectRef = useRef<{ encounterId: string; response: string } | null>(null);
+  const [writtenFormMatched, setWrittenFormMatched] = useState(false);
   const responseLock = useRef<string | null>(null);
   const recognitionDeparture = useRef<{ encounterId: string; run: RecognitionDeparture } | null>(null);
   const activeClock = useRef<ActiveSessionClock | null>(null);
@@ -107,7 +108,8 @@ export function useVocabularyStudy(options: VocabularyStudyOptions = {}) {
     if (!mounted.current) return;
     setStudy(value);
     if (previous !== value.currentEncounter?.encounterId) {
-      setInput(''); setLocalResponse(null); setComment(''); setReaction(null); setReactionStatus('idle'); responseLock.current = null; recognitionDeparture.current = null;
+      setInput(''); setLocalResponse(null); pendingCorrectRef.current = null; setPendingCorrect(null); setWrittenFormMatched(false);
+      setComment(''); setReaction(null); setReactionStatus('idle'); responseLock.current = null; recognitionDeparture.current = null;
     }
     receiveCompletion(value.session.completion?.status === 'cancelled' ? null : value.session.completion);
   }
@@ -175,7 +177,7 @@ export function useVocabularyStudy(options: VocabularyStudyOptions = {}) {
   function reset() {
     if (queue.current!.pending) throw new Error('Finish saving your study work before leaving.');
     studyRef.current = null; completionRef.current = null; deadline.current = null; activeClock.current=null; stagedDuration.current=null;
-    setStudy(null); setCompletion(null); setError(null); setInput(''); setLocalResponse(null); responseLock.current = null; recognitionDeparture.current = null;
+    setStudy(null); setCompletion(null); setError(null); setInput(''); setLocalResponse(null); pendingCorrectRef.current = null; setPendingCorrect(null); setWrittenFormMatched(false); responseLock.current = null; recognitionDeparture.current = null;
     setComment(''); setReaction(null); setReactionStatus('idle'); setDismissedWordIds([]);
     setSummaryModes({});
     keepSummaryOpenRef.current = false; setKeepSummaryOpen(false);
@@ -190,8 +192,20 @@ export function useVocabularyStudy(options: VocabularyStudyOptions = {}) {
     }
     receive(await startVocabularySession(previewSeed));
   });
+  async function commitHeldProduction() {
+    const pending = pendingCorrectRef.current;
+    const encounter = studyRef.current?.currentEncounter;
+    if (!pending || !encounter || pending.encounterId !== encounter.encounterId || encounter.effectiveResponses.length || encounter.skipped) {
+      if (pending && pending.encounterId === encounter?.encounterId) { pendingCorrectRef.current = null; setPendingCorrect(null); }
+      return;
+    }
+    pendingCorrectRef.current = null; setPendingCorrect(null);
+    responseLock.current = encounter.encounterId;
+    await enqueue({ type: 'response', response: pending.response });
+  }
   async function advance(options: { wordId?: string; another?: boolean } = {}) {
     await queue.current!.flush();
+    await commitHeldProduction();
     const current = studyRef.current; if (!current) return;
     const id = current.session.sessionId;
     await queue.current!.enqueue(crypto.randomUUID(), async (clientId) => {
@@ -199,32 +213,55 @@ export function useVocabularyStudy(options: VocabularyStudyOptions = {}) {
     });
   }
   const next = (options: { wordId?: string; another?: boolean } = {}) => exclusive(() => advance(options));
-  const send = (command: VocabularyStudyCommand) => exclusive(async () => { await queue.current!.flush(); await enqueue(command); });
-  async function advanceRecognition() {
+  const send = (command: VocabularyStudyCommand) => exclusive(async () => {
+    await queue.current!.flush();
+    await commitHeldProduction();
+    if (command.type === 'skip' && command.scope === 'word') {
+      const wordId = studyRef.current?.currentWordId;
+      const word = wordId ? studyRef.current?.session.projection.words[wordId] : undefined;
+      if (word && word.workStatus !== 'open') return;
+    }
+    await enqueue(command);
+  });
+  async function advanceAfterResponse() {
     const current = studyRef.current;
-    if (!current || current.session.projection.phase === 'completed' || current.currentEncounter?.snapshot.kind !== 'recognition'
-      || !current.currentEncounter.effectiveResponses.length) return;
+    const encounter = current?.currentEncounter;
+    if (!current || current.session.projection.phase === 'completed' || !encounter?.effectiveResponses.length) return;
     const departure = recognitionDeparture.current;
-    if (departure?.encounterId === current.currentEncounter.encounterId) await departure.run(current, () => advance());
-    else await advance();
+    if (departure?.encounterId === encounter.encounterId) await departure.run(current, () => advance());
+    else if (encounter.snapshot.kind === 'recognition') await advance();
   }
-  function submitResponse(response: string | null = input, selfAssessment?: 'accepted' | 'rejected', selectedWordId?: string, departRecognition?: RecognitionDeparture) {
+  function submitResponse(response: string | null = input, selfAssessment?: 'accepted' | 'rejected', selectedWordId?: string, depart?: RecognitionDeparture, options?: { commitHeld?: boolean }) {
     const encounter = studyRef.current?.currentEncounter;
     if (!encounter || responseLock.current === encounter.encounterId || encounter.effectiveResponses.length || encounter.skipped || queue.current!.error) return;
+    const writtenMatch = assessVocabularyResponse(encounter.snapshot.assessment?.acceptedAnswers ?? [], response) === 'accepted';
+    if (encounter.snapshot.kind === 'production' && writtenMatch && !selfAssessment && !selectedWordId && !options?.commitHeld) {
+      const pending = { encounterId: encounter.encounterId, response: response ?? '' };
+      pendingCorrectRef.current = pending; setPendingCorrect(pending); setWrittenFormMatched(true);
+      setLocalResponse({ encounterId: encounter.encounterId, outcome: 'accepted' }); setError(null);
+      return;
+    }
     responseLock.current = encounter.encounterId;
-    if (selfAssessment && departRecognition) recognitionDeparture.current = { encounterId: encounter.encounterId, run: departRecognition };
+    if (depart) recognitionDeparture.current = { encounterId: encounter.encounterId, run: depart };
     const criteria = encounter.snapshot.assessment?.criteria;
     const correctWordId = criteria !== null && typeof criteria === 'object' && !Array.isArray(criteria) ? criteria.correctWordId : null;
-    const outcome = selectedWordId ? selectedWordId === correctWordId ? 'accepted' : 'rejected' : selfAssessment ?? assessVocabularyResponse(encounter.snapshot.assessment?.acceptedAnswers ?? [], response);
+    const outcome = selectedWordId ? selectedWordId === correctWordId ? 'accepted' : 'rejected' : selfAssessment ?? (writtenMatch ? 'accepted' : 'rejected');
+    if (writtenMatch) setWrittenFormMatched(true);
     setLocalResponse({ encounterId: encounter.encounterId, outcome }); setError(null);
     void enqueue({ type: 'response', response, ...(selfAssessment ? { selfAssessment } : {}), ...(selectedWordId ? { selectedWordId } : {}) })
       .then(async () => {
-        // Recognition was already revealed before the learner rated it.
-        // Save the rating before advancing, and do not race a manual navigation.
-        if (selfAssessment && studyRef.current?.currentEncounter?.encounterId === encounter.encounterId
-          && studyRef.current.session.projection.phase !== 'completed') await exclusive(advanceRecognition);
+        // Save the chosen outcome before the card leaves, and do not race a manual navigation.
+        if ((selfAssessment || options?.commitHeld) && studyRef.current?.currentEncounter?.encounterId === encounter.encounterId
+          && studyRef.current.session.projection.phase !== 'completed') await exclusive(advanceAfterResponse);
       })
       .catch((reason) => { if (mounted.current) setError(`${message(reason)} Your answer is still waiting to be saved. Retry before continuing.`); });
+  }
+  function commitProductionAnswer(override: boolean, depart?: RecognitionDeparture) {
+    const pending = pendingCorrectRef.current;
+    const encounter = studyRef.current?.currentEncounter;
+    if (!pending || pending.encounterId !== encounter?.encounterId) return;
+    pendingCorrectRef.current = null; setPendingCorrect(null);
+    submitResponse(pending.response, override ? 'rejected' : undefined, undefined, depart, { commitHeld: true });
   }
   function revealRecognition() {
     const encounter = studyRef.current?.currentEncounter;
@@ -234,8 +271,8 @@ export function useVocabularyStudy(options: VocabularyStudyOptions = {}) {
   const retrySave = () => exclusive(async () => {
     await queue.current!.retry();
     const current=studyRef.current;
-    if(current?.session.projection.phase!=='completed'&&current?.currentEncounter?.snapshot.kind==='recognition'
-      &&current.currentEncounter.effectiveResponses.length)await advanceRecognition();
+    if(current?.session.projection.phase!=='completed'&&current?.currentEncounter?.effectiveResponses.length
+      &&(current.currentEncounter.snapshot.kind==='recognition'||recognitionDeparture.current?.encounterId===current.currentEncounter.encounterId))await advanceAfterResponse();
     if (studyRef.current?.session.projection.phase === 'completed') await stage();
     if (completionRef.current?.status === 'failed' || completionRef.current?.status === 'pending') await close();
   });
@@ -246,10 +283,17 @@ export function useVocabularyStudy(options: VocabularyStudyOptions = {}) {
       await queue.current!.flush(); await cancel(); await work();
     } finally { suppressStage.current = false; }
   }
-  const undo = () => exclusive(() => resumeBoundary(async () => {
-    await enqueue({ type: 'undo' }); setLocalResponse(null); responseLock.current = null;
-  }));
+  const undo = () => exclusive(async () => {
+    if (pendingCorrectRef.current) {
+      pendingCorrectRef.current = null; setPendingCorrect(null); setLocalResponse(null); setWrittenFormMatched(false);
+      return;
+    }
+    await resumeBoundary(async () => {
+      await enqueue({ type: 'undo' }); setLocalResponse(null); responseLock.current = null;
+    });
+  });
   const resume = (wordId?: string) => exclusive(() => resumeBoundary(async () => {
+    await commitHeldProduction();
     if (studyRef.current?.session.projection.phase === 'completed') await enqueue({ type: 'resume' });
     if (wordId) {
       const word = studyRef.current?.session.projection.words[wordId];
@@ -262,6 +306,7 @@ export function useVocabularyStudy(options: VocabularyStudyOptions = {}) {
     }
   }));
   const requeue = (wordId: string) => exclusive(() => resumeBoundary(async () => {
+    await commitHeldProduction();
     const current=studyRef.current;if(!current)return;
     const word=current.session.projection.words[wordId];
     if(!word?.covered||word.teachingDeferred||word.workStatus==='open')return;
@@ -273,7 +318,10 @@ export function useVocabularyStudy(options: VocabularyStudyOptions = {}) {
   }));
   const endWord = (covered: boolean) => exclusive(async () => {
     await queue.current!.flush();
-    await enqueue(covered ? {type:'enough'} : {type:'skip',scope:'word'});
+    await commitHeldProduction();
+    const wordId = studyRef.current?.currentWordId;
+    const open = wordId ? studyRef.current?.session.projection.words[wordId]?.workStatus === 'open' : false;
+    if (open) await enqueue(covered ? {type:'enough'} : {type:'skip',scope:'word'});
     const current=studyRef.current;if(!current)return;
     // Wrapping the last open word while finishing completes the session.
     // A rejected next request would block the queue needed to save completion.
@@ -292,6 +340,7 @@ export function useVocabularyStudy(options: VocabularyStudyOptions = {}) {
       setSummaryModes((modes)=>({...modes,[wordId]:mode}));return;
     }
     await resumeBoundary(async()=>{
+      await commitHeldProduction();
       if(studyRef.current?.session.projection.phase==='completed')await enqueue({type:'resume'});
       await enqueue({type:'mode',wordId,mode});
       await enqueue({type:'finishForNow'});
@@ -362,7 +411,8 @@ export function useVocabularyStudy(options: VocabularyStudyOptions = {}) {
   const extraPracticeWordId=study?.currentWordId&&study.session.projection.words[study.currentWordId]?.workNumber>1?study.currentWordId:null;
   return { study, completion, active, busy, saving: queue.current.pending, error, input, setInput, comment, setComment, reaction,
     reactionStatus, remainingSeconds, clock, activeDurationMs:activeClock.current?Math.floor(getActiveSessionDurationMs(activeClock.current,clock)):0, dismissedWordIds, revealed: Boolean(assessed || local), assessment: assessed ?? local?.outcome ?? 'unassessed' as const,
-    start, reset, next, send, submitResponse, revealRecognition, retrySave, undo, endWord, changeSummaryMode, summaryModes, extraPracticeWordId, keepSummaryOpen, keepSummaryOpenNow: keepOpen,
+    start, reset, next, send, submitResponse, commitProductionAnswer, revealRecognition, retrySave, undo, endWord, changeSummaryMode, summaryModes, extraPracticeWordId, keepSummaryOpen, keepSummaryOpenNow: keepOpen,
+    pendingProductionOverride: Boolean(pendingCorrect && pendingCorrect.encounterId === encounter?.encounterId), writtenFormMatched,
     finishForNow: () => send({ type: 'finishForNow' }), finishImmediately: () => send({ type: 'finishImmediately' }),
     resume, requeue, returnHome: () => exclusive(returnHome),
     react: (value: 'helpful' | 'not-helpful' | null) => { setReaction(value); if (value) submitReaction(value === 'helpful' ? 'positive' : 'negative'); else submitReaction('withdrawn'); },

@@ -60,7 +60,9 @@ export function projectVocabularyImprovementInput(job:VocabularyReflectionJob,or
     source:exerciseText(original.body),intendedSense:{description:intendedSense.description},
     ...(job.reassessmentSource?{assessmentOrigin:'operator_reassessment; encounters retain their historical served cues'}:{}),
     encounters:job.evidence.evidence.map(encounter=>({...exerciseText(encounter.snapshot.body),
-      responses:encounter.responses.map(response=>({response:response.payload.response,outcome:response.payload.outcome,effective:encounter.effectiveResponses.some(effective=>effective.actionId===response.actionId)})),
+      responses:encounter.responses.map(response=>({response:response.payload.response,outcome:response.payload.outcome,
+        ...(response.payload.selfAssessment?{selfAssessment:response.payload.selfAssessment}:{}),
+        effective:encounter.effectiveResponses.some(effective=>effective.actionId===response.actionId)})),
       reactions:getEffectiveVocabularyEncounterReactions(encounter).map(({payload})=>({reaction:payload.feedback,...(payload.comment!==undefined?{comment:payload.comment}:{})})),
       skipped:encounter.skipped,presentationUndone:encounter.presentationUndone})),
   };

@@ -1,10 +1,9 @@
 import { vocabularyTeachingSource } from '../vocabulary/teaching-source.ts';
 import { randomUUID } from 'node:crypto';
 import { schedulePureCueAssessment } from '../../src/domain/pure-cues.ts';
-import { normalizeProductionAnswerForProfile } from '../../src/study-profile.ts';
 import { isDeepStrictEqual } from 'node:util';
 import { SESSION_COMPLETION_UNDO_MS } from '../../src/domain/session-completion.ts';
-import { advanceVocabularySession, projectVocabularySession, isCleanSolidifySession, VOCABULARY_SESSION_POLICY, type VocabularySessionAction,
+import { advanceVocabularySession, projectVocabularySession, isCleanSolidifySession, productionWrittenFormAccepted, VOCABULARY_SESSION_POLICY, type VocabularySessionAction,
   type VocabularySessionInitialContext, type VocabularySessionProjection } from '../../src/domain/vocabulary-session.ts';
 import type { VocabularyPersistedSession, VocabularySessionCompletion } from '../../src/domain/vocabulary-session-api.ts';
 export type { VocabularyPersistedSession, VocabularySessionCompletion } from '../../src/domain/vocabulary-session-api.ts';
@@ -160,7 +159,6 @@ export function createVocabularySession(context: VocabularySessionInitialContext
     return getVocabularySession(context.sessionId, now);
   });
 }
-function normalizeResponse(response: string | null): string { return normalizeProductionAnswerForProfile(response ?? '', 'mandarin'); }
 /** Validate immutable content identity and the exact source body/assessment retained by the trusted serving adapter. */
 function validatePresentation(action: Extract<VocabularySessionAction, { kind: 'presentation' }>, payload: VocabularySessionInitialContext['payload']): void {
   const snapshot = action.payload.snapshot;
@@ -213,11 +211,12 @@ export function appendVocabularySessionActions(sessionId: string, incoming: read
       if (action.kind === 'response') {
         const presentation = all.find((entry): entry is Extract<VocabularySessionAction, { kind: 'presentation' }> => entry.kind === 'presentation' && entry.payload.encounterId === action.payload.encounterId);
         if (!presentation?.payload.snapshot.assessment) throw new VocabularySessionInputError('Response has no served assessment');
-        const normalized = normalizeResponse(action.payload.response);
         const selfAssessment = action.payload.selfAssessment;
-        if (selfAssessment !== undefined && presentation.payload.snapshot.kind !== 'recognition') throw new VocabularySessionInputError('Self assessment is only valid for recognition');
-        let accepted = selfAssessment !== undefined ? selfAssessment === 'accepted'
-          : normalized.length > 0 && presentation.payload.snapshot.assessment.acceptedAnswers.some((answer) => normalizeResponse(answer) === normalized);
+        const writtenMatch = productionWrittenFormAccepted(presentation.payload.snapshot.assessment.acceptedAnswers, action.payload.response);
+        if (selfAssessment !== undefined && presentation.payload.snapshot.kind !== 'recognition'
+          && !(presentation.payload.snapshot.kind === 'production' && selfAssessment === 'rejected' && writtenMatch))
+          throw new VocabularySessionInputError('A production self-assessment can only mark an accepted written answer wrong.');
+        let accepted = selfAssessment !== undefined ? selfAssessment === 'accepted' : writtenMatch;
         if (presentation.payload.snapshot.kind === 'contrast') {
           const criteria = presentation.payload.snapshot.assessment.criteria;
           const material = presentation.payload.snapshot.body.material;

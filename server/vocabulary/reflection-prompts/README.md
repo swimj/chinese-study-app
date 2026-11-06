@@ -59,10 +59,12 @@ when it helps teach. It can combine related encounters without treating differen
 exercises as one fairness judgment. Language claims must agree with the internal
 assessment, but the learner need not read the full reasoning or a session recap.
 
-Feedback is versioned `vocabulary-reflection-feedback.v4`; the exact prompt,
+Feedback is versioned `vocabulary-reflection-feedback.v5`; the exact prompt,
 schema, projected inputs, settings and provider outputs are retained by the common
 invocation ledger. JSON schema is v1; input projection is
-`vocabulary-reflection.v2` for the explicit reaction fields. Earlier prompts are
+`vocabulary-reflection.v3`, which adds an optional production `selfAssessment`
+when the learner reports a pronunciation mistake on a matching written form.
+Earlier prompts are
 recoverable from Git and retained trial invocations for evaluation comparisons.
 Structural tests establish dispatch and provenance, not linguistic effectiveness.
 The standalone editorial framing needs live comparison against retained feedback
@@ -72,8 +74,8 @@ outputs before claiming a quality gain. See the
 ## Existing pure-cue review
 
 `pure-cue-improvement.md` is the standalone contract for an existing pure cue,
-using prompt version 1, schema version 1, and projection
-`vocabulary-admission.v1`. Its input contains complete original `sourceContent`,
+using prompt version 2, schema version 1, and projection
+`vocabulary-admission.v2`. Its input contains complete original `sourceContent`,
 projected encounter evidence, original `currentMembers`, and lexical resolutions
 of effective rejected responses in `responseCandidates`. Raw responses remain
 useful evidence when resolution is missing or ambiguous, but only a uniquely
@@ -178,8 +180,8 @@ Integration rationale remains separately recorded rather than being appended
 to that summary. Operator edits and selection of parts remain deliberate,
 without enforced component dependencies.
 
-Single improvement uses prompt version 5, schema version 4, and projection
-`vocabulary-exercise-authoring.v1`. Mapping uses prompt version 4, schema version 1,
+Single improvement uses prompt version 6, schema version 4, and projection
+`vocabulary-exercise-authoring.v2`. Mapping uses prompt version 4, schema version 1,
 and projection `vocabulary-admission.v4`. Exact source, catalog, mapping, and
 lexical checks fence publication and approval. Stage identities retain actual
 projected input, schema, and contract; unknown supplied references fail validation.

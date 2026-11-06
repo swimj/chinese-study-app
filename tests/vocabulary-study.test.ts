@@ -345,6 +345,53 @@ test('recognition can be due while production is suppressed and produces no prod
   assert.equal(db.prepare("SELECT count(*) AS n FROM learner_state_effects WHERE kind='recognition_outcome' AND word_id='b'").get()?.n,1);
 }));
 
+test('correct hanzi can be marked wrong, while a typed miss cannot be reclassified',()=>owner(()=>{
+  let view=focusedA();const id=view.session.sessionId;
+  assert.equal(view.currentEncounter?.snapshot.kind,'production');
+  view=commandVocabularyStudy(id,'accepted',{type:'response',response:'甲'});
+  assert.equal(view.currentEncounter?.effectiveResponses[0]?.payload.outcome,'accepted');
+  assert.equal(view.currentEncounter?.effectiveResponses[0]?.payload.selfAssessment,undefined);
+  assert.equal(view.session.projection.words.a.covered,true);
+  assert.equal(view.session.projection.words.a.successfulRecall,true);
+  view=commandVocabularyStudy(id,'undo-accepted',{type:'undo'});
+  assert.equal(view.currentEncounter?.effectiveResponses.length,0);
+  assert.equal(view.session.projection.words.a.covered,false);
+  assert.throws(()=>commandVocabularyStudy(id,'bad-override',{type:'response',response:'错',selfAssessment:'rejected'}),/accepted written answer/);
+  assert.throws(()=>commandVocabularyStudy(id,'accept-mark',{type:'response',response:'甲',selfAssessment:'accepted'}),/accepted written answer/);
+  view=commandVocabularyStudy(id,'override',{type:'response',response:'甲',selfAssessment:'rejected'});
+  const marked=view.currentEncounter?.effectiveResponses[0]?.payload;
+  assert.equal(marked?.response,'甲');
+  assert.equal(marked?.outcome,'rejected');
+  assert.equal(marked?.selfAssessment,'rejected');
+  assert.equal(view.session.projection.words.a.covered,false);
+  assert.equal(view.session.projection.words.a.hasRejectedResponse,true);
+  assert.equal(view.session.projection.words.a.successfulProductionResponses,0);
+  assert.equal(view.session.projection.words.a.skillProgress.production.rejectedResponses,1);
+  assert.equal(view.session.projection.words.a.skillProgress.production.consecutiveAccepted,0);
+  view=commandVocabularyStudy(id,'undo-override',{type:'undo'});
+  assert.equal(view.currentEncounter?.effectiveResponses.length,0);
+  assert.equal(view.session.projection.words.a.skillProgress.production.rejectedResponses,0);
+  view=commandVocabularyStudy(id,'miss',{type:'response',response:'错'});
+  assert.equal(view.currentEncounter?.effectiveResponses[0]?.payload.outcome,'rejected');
+  assert.equal(view.currentEncounter?.effectiveResponses[0]?.payload.response,'错');
+  assert.equal(view.currentEncounter?.effectiveResponses[0]?.payload.selfAssessment,undefined);
+}));
+
+test('a pronunciation rejection requires three later accepts before practice coverage',()=>owner(()=>{
+  let view=focusedA();const id=view.session.sessionId;
+  view=commandVocabularyStudy(id,'override',{type:'response',response:'甲',selfAssessment:'rejected'});
+  assert.equal(view.session.projection.words.a.covered,false);
+  for(let index=0;index<3;index++){
+    view=nextVocabularyExercise(id,`next-${index}`,{wordId:'a'});
+    assert.equal(view.currentEncounter?.snapshot.kind,'production');
+    view=commandVocabularyStudy(id,`accept-${index}`,{type:'response',response:'甲'});
+    assert.equal(view.session.projection.words.a.skillProgress.production.consecutiveAccepted,index+1);
+  }
+  assert.equal(view.session.projection.words.a.covered,true);
+  assert.equal(view.session.projection.words.a.successfulRecall,true);
+  assert.equal(view.session.projection.words.a.skillProgress.production.rejectedResponses,1);
+}));
+
 test('Undo of another restores prior exercise while preserving feedback on the undone presentation',()=>owner(()=>{
   const start=focusedA();const id=start.session.sessionId;
   const first=nextVocabularyExercise(id,'first',{wordId:'a'}).currentEncounter!;

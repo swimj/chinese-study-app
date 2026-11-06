@@ -12,7 +12,7 @@ import type { VocabularyActor, VocabularyJson, VocabularyContent } from '../../s
 import { VOCABULARY_COMPENSATION_POLICY, type VocabularySecondOpinion, type VocabularyReflectionCase, type VocabularyReflectionJob,
   type VocabularyFeedbackJudgmentInput, type VocabularyProposalDraft, type VocabularyContentProposal,
   type VocabularyAssessmentReview, type VocabularySenseLabel, type VocabularyProposalOperation, type VocabularyProposalApplication, type VocabularyImprovementResultInput, type VocabularyImprovementAdmission, type VocabularyPureCuePromotion, type VocabularyPureCueReferral, type VocabularyReflectionResult } from '../../src/domain/vocabulary-reflection.ts';
-import { getEffectiveVocabularyEncounterReactions, type VocabularySessionProjection, type VocabularyEncounterEvidence } from '../../src/domain/vocabulary-session.ts';
+import { getEffectiveVocabularyEncounterReactions, isLearnerPronunciationRejection, type VocabularySessionProjection, type VocabularyEncounterEvidence } from '../../src/domain/vocabulary-session.ts';
 import { config, getDb } from './connection.ts';
 import { requireLearnerId } from './learner-context.ts';
 import { isOperatorSubject, parseOperatorAllowlist } from '../operator-access.ts';
@@ -124,8 +124,11 @@ export function ingestVocabularySessionEvidence(learnerId: string, completionId:
     }
     const at = timestamp(recordedAt);
     db.prepare('INSERT INTO vocabulary_reflection_session_evidence VALUES (?,?,?,?,?)').run(completionId,learnerId,projection.sessionId,encoded,at);
-    const rejected = (item: VocabularyEncounterEvidence) => item.responses.some(response => response.payload.outcome === 'rejected');
-    const effectiveRejection = (item: VocabularyEncounterEvidence) => item.effectiveResponses.some(response => response.payload.outcome === 'rejected');
+    const contentRejection = (item: VocabularyEncounterEvidence, responses: VocabularyEncounterEvidence['responses']) => responses.some(response =>
+      response.payload.outcome === 'rejected' && !isLearnerPronunciationRejection(item.snapshot.kind, response.payload, item.snapshot.assessment?.acceptedAnswers ?? []));
+    // A pronunciation report is a real production miss for scheduling, but it is not a written-answer defect.
+    const rejected = (item: VocabularyEncounterEvidence) => contentRejection(item, item.responses);
+    const effectiveRejection = (item: VocabularyEncounterEvidence) => contentRejection(item, item.effectiveResponses);
     const comment = (item: VocabularyEncounterEvidence) => getEffectiveVocabularyEncounterReactions(item).some(reaction => reaction.payload.feedback === 'comment' || !!reaction.payload.comment?.trim());
     const negative = (item: VocabularyEncounterEvidence) => getEffectiveVocabularyEncounterReactions(item).some(reaction => reaction.payload.feedback === 'negative');
     // Teaching review retains recorded observations. Provider lesson and improvement jobs use effective evidence.
@@ -299,8 +302,10 @@ function compensate(evidence: VocabularyReflectionCase, judgmentId: string, inpu
     && (pure ? encounter.snapshot.schedulingScope === 'pure_cue' : encounter.snapshot.schedulingScope !== 'pure_cue')
     && (pure ? encounter.snapshot.contentId === evidence.contentId : encounter.wordId === evidence.wordId)
     && encounter.effectiveResponses.some(response => response.payload.outcome === 'rejected'));
-  // Mixed genuine/unfair failures retain the conservative current schedule.
-  if (effectiveRejected.length === 0 || effectiveRejected.some(encounter => !unfair.has(encounter.encounterId))) return;
+  const pronunciationReport = (encounter: VocabularyEncounterEvidence) => encounter.effectiveResponses.some(response =>
+    isLearnerPronunciationRejection(encounter.snapshot.kind, response.payload, encounter.snapshot.assessment?.acceptedAnswers ?? []));
+  // A pronunciation report is the lapse the learner requested. It blocks compensation even when a model lists that encounter as an unfair written rejection.
+  if (effectiveRejected.length === 0 || effectiveRejected.some(encounter => !unfair.has(encounter.encounterId) || pronunciationReport(encounter))) return;
   if (!pure) {
     const completion = getDb().prepare(`SELECT report_json FROM vocabulary_session_completions
       WHERE completion_id=? AND learner_id=? AND status='closed'`)

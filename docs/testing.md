@@ -143,7 +143,10 @@ a word. These are browser checks with mocked transport, separate from `npm test`
 `/tests/browser/vocabulary-recognition-motion.html` uses the real
 controller and card surface: reveal, then Correct or Forgot. Its PASS result checks
 that the rating is saved and the outgoing card reflects the acknowledged recall
-before requesting the successor. `?covered=1` checks the covered card's rightward
+before requesting the successor. `?production=1` starts on a production card.
+Submitting the accepted form 字 reveals the answer and offers Wrong (pointer or
+1) beside Next; a non-matching answer saves immediately and does not offer that
+control. `?covered=1` checks the covered card's rightward
 departure; `?retry=1` fails the first save so Retry save must retain the departure.
 `/tests/browser/vocabulary-ui.html` provides presentation scenarios, including
 `?state=Cloze%20reveal` for an old snapshot containing an unrelated bootstrap

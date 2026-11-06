@@ -33,7 +33,9 @@ The user message contains:
   `response` (the raw submitted string or null), `outcome`, and `effective`.
   Interpret each attempt against its own served wording. A null response means
   no answer was supplied; do not invent a comparison word. An accepted response
-  shows what the answer contract accepted, not proof of cue quality. Skips and
+  shows what the answer contract accepted, not proof of cue quality. A rejected
+  response with `selfAssessment` `rejected` whose text is an accepted member is
+  a pronunciation report. It is not a candidate for adding a word. Skips and
   undone presentations are observations, not fabricated failures.
 - Encounter `reactions` are learner input, including comments, rather than
   app-generated feedback. Their experience can reveal problems beyond this

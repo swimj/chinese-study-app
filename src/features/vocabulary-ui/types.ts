@@ -70,9 +70,15 @@ export type VocabularySessionViewProps = {
     disabled: boolean;
     revealed: boolean;
     assessment: 'accepted' | 'rejected' | 'unassessed';
+    /** The submitted characters matched an accepted written form, including a pronunciation rejection. */
+    writtenFormAccepted?: boolean;
     answer: ReactNode;
     /** Rating controls remain reachable while long reveal content scrolls. */
     revealActions?: ReactNode;
+    /** Production pronunciation report, shown with the continuation control. */
+    overrideAction?: ReactNode;
+    /** Keyboard confirmation pulse owned by the study surface rather than card motion. */
+    confirming?: boolean;
     message?: string;
     /** Completed-word continuation sits beside the word-level controls. */
     primaryPlacement?: 'response' | 'footer';

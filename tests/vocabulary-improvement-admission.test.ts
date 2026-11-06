@@ -101,7 +101,7 @@ test('improvement receives effective learner reactions and comments while mappin
   assert.deepEqual(projected.reactions,[{reaction:'comment',comment:reactions[1]!.payload.comment}]);
   assert.equal(projected.feedback,undefined);
   assert.equal(encounter.feedback.length,3); // Historical wire evidence is unchanged.
-  assert.equal(trial.requests[1]!.provenance!.inputProjectionVersion,'vocabulary-exercise-authoring.v1');
+  assert.equal(trial.requests[1]!.provenance!.inputProjectionVersion,'vocabulary-exercise-authoring.v2');
 });
 
 test('single sense admission preserves target, supplies sense context, and reuses both completed stages on retry',async()=>{
@@ -354,7 +354,7 @@ for(const localRepair of [false,true])test(`referral composes with local repair=
   assert.equal(promotionInput.evidence.encounters[0].responses[0].response,'扩大');
   assert.match(promotionInput.intendedSense.senseId,/^s[12]$/);assert.equal(promotionInput.sourceContent.contentId,'original');
   assert.deepEqual(promotionInput.candidates.map((word:{wordId:string})=>word.wordId),['word','other-word']);
-  assert.equal(trial.requests[1]!.provenance!.promptVersion,'5');assert.equal(trial.requests[1]!.provenance!.schemaVersion,'4');
+  assert.equal(trial.requests[1]!.provenance!.promptVersion,'6');assert.equal(trial.requests[1]!.provenance!.schemaVersion,'4');
   assert.match(trial.requests[1]!.systemPrompt,/# Review a Mandarin production exercise/);
   assert.doesNotMatch(trial.requests[1]!.systemPrompt,/## Learner feedback and proposal rationales/);
   assert.equal(trial.requests[2]!.provenance!.promptVersion,'1');assert.equal(trial.requests[2]!.provenance!.schemaVersion,'3');

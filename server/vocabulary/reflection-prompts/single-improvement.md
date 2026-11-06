@@ -48,6 +48,7 @@ Use the cue’s wording and the learner’s feedback to support your explanation
 The application’s accepted or rejected outcome records what happened; assess the language yourself.
 A rejected answer can be natural.
 A correct answer can coexist with an awkward or unhelpful exercise.
+A production response with `selfAssessment` `rejected` whose text matches an accepted written form is a pronunciation report. The characters matched. Do not treat it as an incorrectly written answer, a cue defect, or an unfair rejection, and do not put that encounter in `unfairEncounterIds`.
 
 Learner feedback can reveal many kinds of difficulty: for example, excessive reading effort, unclear focus, an unnatural sentence, or difficulty connecting a paraphrase to an expression.
 Take the reported experience seriously.

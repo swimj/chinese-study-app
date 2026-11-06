@@ -114,7 +114,8 @@ window.fetch = async (input, init) => {
     const directionCorrect = accepted ? left === !covered : ghost?.classList.contains('desk-tuck');
     const nextResult = (isReducedMotion ? !document.querySelector('.desk-tuck, .desk-departure') : ghost && projected === (accepted && !covered ? 1 : 0) && directionCorrect) ? `PASS: saved rating, ${isReducedMotion ? 'zero ghosts' : 'animated departure'}, then next encounter` : `FAIL: ghost=${Boolean(ghost)} recall=${projected} left=${left}`;
     if (covered && accepted) append({ kind: 'word_more', payload: { wordId: 'word' } });
-    append({ kind: 'presentation', payload: { encounterId: 'production', wordId: 'word', snapshot: { kind: 'production', role: covered ? 'general' : 'teaching', contentId: 'production', contentVersion: 1, body: { prompt: 'A written character' }, assessment: { acceptedAnswers: ['字'] } } } });
+    const successorId = `production-${actions.length}`;
+    append({ kind: 'presentation', payload: { encounterId: successorId, wordId: 'word', snapshot: { kind: 'production', role: covered ? 'general' : 'teaching', contentId: successorId, contentVersion: 1, body: { prompt: 'A written character' }, assessment: { acceptedAnswers: ['字'] } } } });
     const successor = study();
     result = nextResult;
     return Response.json(successor);

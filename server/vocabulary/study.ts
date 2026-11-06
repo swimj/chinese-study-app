@@ -8,10 +8,9 @@ import { vocabularyTeachingSource } from './teaching-source.ts';
 import { vocabularyRevealSnapshot } from './reveal-snapshot.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
-import { normalizeProductionAnswerForProfile } from '../../src/study-profile.ts';
 import type { VocabularyContent, VocabularyJson } from '../../src/domain/vocabulary-content.ts';
 import type { VocabularyStudy, VocabularyStudyCommand, VocabularyStudyWord, VocabularySessionPreview } from '../../src/domain/vocabulary-study-api.ts';
-import { getPendingVocabularySkills, isVocabularyWordReadyToCover, isVocabularyTeachingComplete, projectVocabularySession, advanceVocabularySession, VOCABULARY_SESSION_POLICY, type VocabularyEncounterSnapshot, type VocabularySessionAction, type VocabularySessionInitialContext,
+import { getPendingVocabularySkills, isVocabularyWordReadyToCover, isVocabularyTeachingComplete, productionWrittenFormAccepted, projectVocabularySession, advanceVocabularySession, VOCABULARY_SESSION_POLICY, type VocabularyEncounterSnapshot, type VocabularySessionAction, type VocabularySessionInitialContext,
   type VocabularySessionJson, type VocabularySessionProjection, type VocabularyTeachingRequirements } from '../../src/domain/vocabulary-session.ts';
 import type { VocabularyPersistedSession } from '../../src/domain/vocabulary-session-api.ts';
 import { getDb } from '../db/connection.ts';
@@ -426,10 +425,12 @@ export function commandVocabularyStudy(sessionId:string,clientActionId:string,co
         const target=needEncounter();if(target.snapshot.kind==='introduction')throw new VocabularySessionInputError('Continue from the introduction before answering');
         if(target.effectiveResponses.length||target.skipped)throw new VocabularySessionConflictError('Exercise already answered or skipped');
         if(target.snapshot.kind==='recognition'&&command.selfAssessment===undefined)throw new VocabularySessionInputError('Recognition requires remembered/not-remembered assessment');
-        if(command.selfAssessment!==undefined&&target.snapshot.kind!=='recognition')throw new VocabularySessionInputError('Self assessment is only available for recognition');
-        const normalize=(value:string)=>normalizeProductionAnswerForProfile(value,'mandarin');
-        let accepted=command.selfAssessment!==undefined?command.selfAssessment==='accepted':command.response!==null&&normalize(command.response).length>0
-          &&target.snapshot.assessment!.acceptedAnswers.some((answer)=>normalize(answer)===normalize(command.response!));
+        const answers=target.snapshot.assessment?.acceptedAnswers??[];
+        const writtenMatch=productionWrittenFormAccepted(answers,command.response);
+        if(command.selfAssessment!==undefined&&target.snapshot.kind!=='recognition'
+          &&!(target.snapshot.kind==='production'&&command.selfAssessment==='rejected'&&writtenMatch))
+          throw new VocabularySessionInputError('A production self-assessment can only mark an accepted written answer wrong.');
+        let accepted=command.selfAssessment!==undefined?command.selfAssessment==='accepted':writtenMatch;
         if(target.snapshot.kind==='contrast') {
           const criteria=object(target.snapshot.assessment?.criteria??null);const choices=object(target.snapshot.body.material??null).choices;
           if(!command.selectedWordId||!Array.isArray(choices)||!choices.some((choice)=>object(choice).wordId===command.selectedWordId))throw new VocabularySessionInputError('Select one of the served contrast choices');
