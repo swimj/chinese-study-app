@@ -1,19 +1,22 @@
 # Pure-cue elicitation
 
-Status: accepted implementation contract, updated 2026-10-01. This specifies the full
-vertical authorized in the pure-cue task; individual stack layers implement
-the foundation, session integration, and reflection integration in order.
-It supersedes the exploratory choices in
-[`pure-cue design memo`](../notes/active/2026-09-18-pure-cue-elicitation-memo.md).
+This document explains independent shared cues, their scheduling and production
+proxy policy. The [vocabulary product contract](vocabulary-learning.md#content-repair-boundaries)
+owns content assessment and operator review; the
+[architecture contract](vocabulary-architecture.md#generation-review-and-application-authority)
+owns application and evidence boundaries. Current provider mechanisms are described
+in the [content-improvement guide](../docs/implementation/vocabulary-content-improvement.md).
+
+The final historical section retains the earlier staged-reflection and
+compensation contract for interpreting legacy records. Its call boundaries,
+learner-acceptance flow, and operation-coupled compensation do not govern current
+vocabulary processing. The [design memo](../notes/active/2026-09-18-pure-cue-elicitation-memo.md)
+retains the earlier exploration.
 
 ## Ownership and admission
 
-Word-owned production remains the default. Every word-owned cue accepts exactly
-its owner. The release migration resets all existing accepted sets to that
-owner, including shared and inactive cues, and removes the legacy 48-hour
-alternate-answer recheck scheduler. It does not infer pure cues or proxy status:
-subsequent practice and reflection make those semantic decisions. Old in-flight
-multi-answer/recheck commits are rejected; restart study after this cutover.
+Every word-owned cue accepts its owner. A shared answer set belongs to an
+independent pure cue, with its own content identity and practice history.
 
 A pure cue is a shared standalone elicitation: stimulus, semantic-axis note,
 teaching note, and accepted word IDs. Its scheduling and assessment history are learner-private.
@@ -27,8 +30,9 @@ and study-profile-aware. No model participates in live grading.
 
 The axis describes a useful communicative slot: a referent, act, or situation
 that each accepted word naturally expresses. Overlapping dictionary glosses
-alone do not establish such a slot. Prefer a natural Mandarin cloze, optionally
-with a concise English frame; a simple referent can warrant a bare gloss.
+alone do not establish such a slot. Choose a compact definition or a natural
+Mandarin cloze, optionally with a concise English frame, according to what best
+evokes the shared meaning or construction.
 The frame and cloze together are one stimulus, not two retrieval routes.
 
 The stimulus may be a minimal-context cloze. Accepted members need not be exact
@@ -39,22 +43,14 @@ an exhaustive comparison of the originating pair. One compact teaching note
 provides reveal-time nuance and boundaries. It is edited holistically, not
 stored as separate per-member records, and never adds hidden grading conditions.
 
-Successful authorized promotion publishes new content as `shared_trial`.
-Extensions update shared accepted membership and the holistic teaching note
-for future assessments, preserving the stimulus and axis. An explicitly
-authorized pure-cue repair may instead revise only the stimulus in place when
-the displayed wording admitted a reasonable response outside the established
-axis. The cue ID, axis, accepted members, and teaching note remain fixed. Each
-stimulus revision retains its before/after text and authorizing learner-private
-invocation. For an extension, the existing teaching note and member identities
-serve as accumulated context alongside the incoming
-pair; fetching every member's full lexical context is not required. The proposal
-must not overwrite a newer membership or teaching-note state unseen in its
-evidence. Existing-cue extensions also become stale if a stimulus repair has
-changed the wording they assessed. Served snapshots freeze reveal text as well as accepted answers;
-extensions do not revise frozen history. No extra per-learner content approval is
-required. Shared publication retirement/quarantine controls serving globally.
-Proposal evidence, source responses, provenance, and compensation remain private.
+Extensions update shared accepted membership and the holistic teaching note for
+future assessments, preserving the stimulus and axis. A stimulus repair preserves
+cue identity, axis, accepted members, and teaching note. Both require operator
+application under the [content repair contract](vocabulary-learning.md#content-repair-boundaries).
+An intervening change to the assessed content makes the proposal stale. Served
+snapshots freeze reveal text and accepted answers, so later revisions do not
+change an earlier assessment. Shared content carries no authority to expose
+private learner evidence.
 
 A shared pure cue is adopted automatically when at least one accepted member
 belongs to the learner's review-stage vocabulary. This does not enroll its other
@@ -111,9 +107,43 @@ The frontend owns covering, reinforcement, drain, and Undo. A covered pure-cue
 assessment uses its own deferred commit intent, independent attempt history,
 and server-validated, idempotent scheduler projection.
 
-## Coordinated cleanup and production coverage
+## Production coverage
 
-Reflection, not set membership alone, decides whether the stimulus expresses a
+`proxied` is a derived word-level
+content property: eligible shared pure coverage exists and no eligible shared
+targeted cue remains. It means useful production is represented by a broader
+elicitation, not that production is worthless. It is never stored as a learner
+relevance state. Existing explicit learner suppression is untouched. Proxied
+production cannot be admitted through definition fallback; an existing usable
+private targeted cue may still serve. Recognition is unchanged. New distinctive
+shared targeted content naturally changes the derived coverage back to targeted.
+Automatic content assessment does not reconcile whole word repertoires.
+
+## Communicative cue wording
+
+Pre-answer cues evoke a meaning, intention, or natural utterance rather than
+asking the learner to identify a linguistic category. In particular, cues do
+not reference “bound form” as the reason to retrieve a target. Linguistic
+analysis can support diagnosis or useful post-answer teaching, but is not a
+substitute for a communicative production cue. Difficulty writing a natural
+cue still does not, by itself, establish low production value.
+
+## Historical reflection and compensation contract
+
+The following sections describe the pre-vocabulary reflection system. They retain
+its coordinated cleanup, retry, acceptance, and compensation rules to interpret
+legacy artifacts. Current exercise-local planning and shared-cue integration are
+owned by the [content repair contract](vocabulary-learning.md#content-repair-boundaries).
+Current scheduling correction is independent of content application, as described
+in [reactions and feedback](vocabulary-learning.md#reactions-feedback-content-repair-and-authority).
+
+The original cutover reset word-owned accepted sets to their owner and removed
+the 48-hour alternate-answer recheck scheduler. It did not infer pure cues or proxy
+status. In-flight multi-answer/recheck commits were rejected under that cutover.
+
+### Coordinated cleanup and production coverage
+
+In the historical coordinated flow, reflection, not set membership alone, decides whether the stimulus expresses a
 shared semantic axis. The model explicitly selects an existing pure cue to
 extend or proposes a new one. The adapter supplies current intersecting cues
 and validates the selected identity; it does not infer semantic equivalence.
@@ -143,20 +173,9 @@ cues are retired without shared coverage; do not claim that retirement alone
 has repaired a recurring fallback ambiguity. No new suppression policy follows
 from this edge case.
 
-The policy is symmetric, but the two words may have different leftovers.
-Unrelated cues are not implicitly removed. `proxied` is a derived word-level
-content property: eligible shared pure coverage exists and no eligible shared
-targeted cue remains. It means useful production is represented by a broader
-elicitation, not that production is worthless. It is never stored as a learner
-relevance state. Existing explicit learner suppression is untouched. Proxied
-production cannot be admitted through definition fallback; an existing usable
-private targeted cue may still serve. Recognition is unchanged. New distinctive
-shared targeted content naturally changes the derived coverage back to targeted;
-automatic semantic refinement remains out of scope.
+### Staged reflection
 
-## Staged reflection
-
-Before diagnosis, initial and second-opinion bundle assembly greedily keeps
+In the historical staged flow, before diagnosis, initial and second-opinion bundle assembly greedily keeps
 items in stable order only when neither their target nor identified response
 word has appeared in an already admitted item. Overlapping items are silently
 omitted from best-effort reflection; counts remain available in continuation
@@ -197,7 +216,7 @@ reviewable and applicable under their V1 operation contract. New pure-cue
 generation and failed-run retries use only V2; old results are not regenerated
 or reinterpreted as stimulus repairs.
 Second opinions may reuse compatible original diagnosis evidence independently
-of old flow, prompt, and result versions; see `session-reflection-generation.md`.
+of old flow, prompt, and result versions; see [the archived reflection contract](archive/session-reflection-generation.md).
 There is no age-based compatibility window.
 
 Final new results cannot propose new multi-answer word-owned cues. Ordinary
@@ -207,11 +226,11 @@ first-stage content deltas for routed items to merge or discard. Unrelated
 ordinary items remain available. All content and compensation effects still
 require explicit proposal acceptance.
 
-## False-lapse compensation
+### False-lapse compensation
 
-### Pure-cue response reflection
+#### Pure-cue response reflection
 
-A completed pure-cue assessment whose first response was rejected, nonempty,
+In the historical response-reflection flow, a completed pure-cue assessment whose first response was rejected, nonempty,
 and resolves unambiguously to a known word C is eligible for a separate provider
 call. The existing stimulus, axis, and accepted members A/B are trusted context.
 The decision is whether C naturally answers that exact stimulus. This does not
@@ -285,7 +304,10 @@ Accepted stimulus repair for an unfair source response uses this same
 restore-once mechanism. It preserves cue identity and the scheduling policy for
 future assessments; restoration compensates only the source lapse.
 
-### Word-production compensation
+#### Word-production compensation
+
+The historical word-production flow required the following snapshot and
+application behavior.
 
 Capture the originating production skill state and word admission state before
 projecting a new lapsed review action. All source events in that action share
@@ -327,7 +349,7 @@ Missing snapshots report `unavailable`; a repeated restore reports
 compensation effect. Obsolete reflection work is read-only after the
 generation-contract cutover.
 
-## Non-goals
+### Historical non-goals
 
 No live model grading, refinement ladder, member-balancing penalty, scripted
 semantic promotion of legacy cues, global session time planner, or daily
@@ -338,13 +360,3 @@ revise membership. Existing mixed axis notes are not semantically migrated
 or repaired by the generation prompt; the new teaching field supplies a landing
 spot for separate operator cleanup. New and upgraded databases initialize that
 field without interpreting existing text.
-
-
-### Communicative cue wording
-
-Pre-answer cues evoke a meaning, intention, or natural utterance rather than
-asking the learner to identify a linguistic category. In particular, cues do
-not reference “bound form” as the reason to retrieve a target. Linguistic
-analysis can support diagnosis or useful post-answer teaching, but is not a
-substitute for a communicative production cue. Difficulty writing a natural
-cue still does not, by itself, establish low production value.

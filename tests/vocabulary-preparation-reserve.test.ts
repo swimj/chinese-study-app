@@ -15,7 +15,7 @@ test('vocabulary reserve preserves bounded preparation and lifecycle admission',
   const { teachingReady } = await import('../server/vocabulary/teaching-readiness.ts');
   const { createVocabularyPracticePreparation } = await import('../server/vocabulary/preparation.ts');
   const { writeVocabularyDefaultUsefulSenses } = await import('../server/db/vocabulary-sense-coverage.ts');
-  const { getVocabularySenses } = await import('../server/db/vocabulary-content.ts');
+  const { getVocabularySenses, getVocabularySenseCatalog, establishVocabularySenseCatalog, updateVocabularySense } = await import('../server/db/vocabulary-content.ts');
   const { getWordPreparationWork } = await import('../server/db/preparation-work.ts');
   const { getDb } = await import('../server/db/connection.ts');
   const learners = await import('../server/db/vocabulary-learners.ts');
@@ -152,6 +152,52 @@ test('vocabulary reserve preserves bounded preparation and lifecycle admission',
       assert.notEqual(stages.getSharedWordTeachingPackageId(wordId),old.packageId,'current package wins over retained older package');
       assert.equal(count('vocabulary_practice_preparation'),1,'refresh adds no historical general-practice backfill');
     }));
+    await t.test('established empty inventory leaves reserve without restashing or repeated preparation demand', () => owner(() => {
+      const wordId=reserve.getWordReserveCandidates()[0];
+      const actor={kind:'operator' as const,id:'reserve-fixture'};
+      for(const sense of getVocabularySenses(wordId).filter(sense=>sense.status==='active')) {
+        updateVocabularySense(sense.senseId,sense.version,{description:sense.description,status:'retired'},actor);
+      }
+      if(getVocabularySenseCatalog(wordId).establishedAt===null)establishVocabularySenseCatalog(wordId,getVocabularySenseCatalog(wordId).version,actor);
+      const before=learners.getVocabularyLearnerWord(wordId);
+      const workBefore=sqlite.prepare('SELECT * FROM word_preparation_work WHERE word_id=? ORDER BY stage').all(wordId);
+      assert.equal(teachingReady(wordId),false);
+      reconcile();reconcile();
+      assert.equal(reserve.getWordReserveCandidates().includes(wordId),false);
+      assert.deepEqual(learners.getVocabularyLearnerWord(wordId),before);
+      assert.deepEqual(sqlite.prepare('SELECT * FROM word_preparation_work WHERE word_id=? ORDER BY stage').all(wordId),workBefore);
+    }));
+    await t.test('runtime polls reserve requests every 30 seconds and explicit wakes retain the twice-daily-limit buffer', async t => {
+      const { startWordPreparationRuntime } = await import('../server/word-content/preparation-runtime.ts');
+      sqlite.prepare("UPDATE service_controls SET enabled=0 WHERE control_key='provider_work_enabled'").run();
+      owner(() => { db.setDailyNewWordLimit(0); reconcile(); });
+      t.mock.timers.enable({ apis: ['Date', 'setTimeout', 'setInterval'], now: Date.now() });
+      const settle = () => new Promise<void>(resolve => setImmediate(resolve));
+      const runtime = startWordPreparationRuntime();
+      try {
+        await settle();
+        owner(() => { db.setDailyNewWordLimit(2); reserve.requestWordReserveReconciliation(); });
+        t.mock.timers.tick(29_999); await settle();
+        assert.equal(owner(() => reserve.getWordReserveCandidates().length), 0);
+        assert.ok(reserve.listPendingWordReserveLearners().includes('reserve-a'));
+        t.mock.timers.tick(1); await settle();
+        assert.equal(owner(() => reserve.getWordReserveCandidates().length), 4);
+        assert.equal(reserve.listPendingWordReserveLearners().includes('reserve-a'), false);
+
+        owner(() => { db.setDailyNewWordLimit(3); reserve.requestWordReserveReconciliation(); });
+        runtime.wake(); await settle();
+        assert.equal(owner(() => reserve.getWordReserveCandidates().length), 6);
+        assert.equal(reserve.listPendingWordReserveLearners().includes('reserve-a'), false);
+        await runtime.stop();
+        owner(() => { db.setDailyNewWordLimit(0); reserve.requestWordReserveReconciliation(); });
+        t.mock.timers.tick(30_000); await settle();
+        assert.equal(owner(() => reserve.getWordReserveCandidates().length), 6);
+        assert.ok(reserve.listPendingWordReserveLearners().includes('reserve-a'));
+      } finally {
+        await runtime.stop(); t.mock.timers.reset();
+        sqlite.prepare("UPDATE service_controls SET enabled=1 WHERE control_key='provider_work_enabled'").run();
+      }
+    });
   } finally {
     sqlite.close();
     const { closeDbConnection } = await import('../server/db/connection.ts'); closeDbConnection();

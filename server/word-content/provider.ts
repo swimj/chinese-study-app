@@ -14,7 +14,7 @@ import type { FetchImplementation } from '../llm/http.ts';
 import { materializeTeachingPart } from '../../src/domain/word-content/materialize.ts';
 import type { ProviderRunRequest } from '../llm/types.ts';
 
-export const WORD_INTRODUCTION_MODEL = 'gpt-5.6-luna';
+export const WORD_INTRODUCTION_MODEL = 'gpt-6-luna';
 const TIMEOUT_MS = 180_000;
 const MAX_OUTPUT_TOKENS = 16_000;
 const TEACHING_EXERCISE_PROMPT = new URL('../word-content-lab/vocabulary-experiments/prompts/teaching-exercises-v2.md',import.meta.url);

@@ -1,10 +1,9 @@
+import { modelLexicalWord } from './model-lexical-word.ts';
 import { readFileSync } from 'node:fs';
 import { getVocabularyWordSenseCoverage,writeVocabularyDefaultUsefulSenses } from '../db/vocabulary-sense-coverage.ts';
 import { recordPreparationAttempt,linkPreparationInvocation,completePreparationAttempt,failPreparationAttempt } from './preparation-retry.ts';
 import { randomUUID } from 'node:crypto';
 import type { VocabularySense, VocabularySenseCatalog } from '../../src/domain/vocabulary-content.ts';
-import type { WordContentDocument } from '../../src/domain/word-content/types.ts';
-import type { JsonSchema } from '../../src/domain/reflection-result-schema.ts';
 import { config, getDb } from '../db/connection.ts';
 import { isOperatorSubject, parseOperatorAllowlist } from '../operator-access.ts';
 import { createVocabularySense, establishVocabularySenseCatalog, getVocabularySenseCatalog,
@@ -14,21 +13,15 @@ import { linkVocabularyInvocationSense } from '../db/vocabulary-provenance.ts';
 import { createOpenAiCompatibleAdapter } from '../llm/openai-compatible.ts';
 import { fetchImplementationForProvider } from '../llm/proxy-fetch.ts';
 import { invalidateServiceInvocation } from '../llm/invocation-ledger.ts';
-import { validateJsonSchema } from '../llm/json-schema-validator.ts';
+import { vocabularySenseInventorySchema as schema, validateVocabularySenseInventory, type VocabularySenseInventory as Inventory } from './sense-inventory-contract.ts';
 import { isOutputTruncationFinishReason, type ProviderAdapter } from '../llm/types.ts';
 
 export const VOCABULARY_SENSE_SERVICE = 'vocabulary-sense-readiness';
-export const VOCABULARY_SENSE_MODEL = 'gpt-5.6-luna';
+export const VOCABULARY_SENSE_MODEL = 'gpt-6-luna';
 const actor = { kind: 'service' as const, id: VOCABULARY_SENSE_SERVICE };
 const timeoutMs = 180_000;
 const prompt = readFileSync(new URL('./reflection-prompts/sense-inventory.md',import.meta.url),'utf8');
-const schema: JsonSchema = { type: 'object', additionalProperties: false, required: ['senses'], properties: {
-  senses: { type: 'array', minItems: 1, maxItems: 16, items: { type: 'object', additionalProperties: false,
-    required: ['label','notes','defaultUseful'], properties: { label: { type: 'string' },defaultUseful:{type:'boolean'},
-      notes: { type: 'array', maxItems: 8, items: { type: 'string' } } } } },
-} };
 export type VocabularySenseLexicalWord = NonNullable<ReturnType<typeof getSharedIntroductionLexicalWord>>;
-type Inventory = { senses: Array<{ label: string; notes: string[];defaultUseful:boolean }> };
 export type VocabularySenseProvider = {
   isConfigured(): boolean;
   generate(word: VocabularySenseLexicalWord, options: {
@@ -40,6 +33,9 @@ export type VocabularySenseReadiness = {
 };
 export class VocabularySenseReadinessError extends Error {}
 export class VocabularySenseSelectionRequired extends VocabularySenseReadinessError {}
+export class VocabularyEmptySenseInventory extends VocabularySenseReadinessError {
+  constructor() { super('No eligible target-level senses; this word is ineligible for sessions.'); }
+}
 /** The caller must durably defer its dependent job; this is not a failed reflection invocation. */
 export class VocabularySenseReadinessPending extends VocabularySenseReadinessError {
   constructor(readonly retryAt:string) { super('Sense readiness is running or waiting for automatic retry'); }
@@ -55,11 +51,11 @@ export function createVocabularySenseProvider(options: { environment?: NodeJS.Pr
     async generate(word, context) {
       if (!environment.OPENAI_API_KEY?.trim()) throw new VocabularySenseReadinessError('Sense provider is not configured');
       const result = await adapter.run({ model: VOCABULARY_SENSE_MODEL, reasoningEffort: 'high', systemPrompt: prompt,
-        userPrompt: JSON.stringify({ word }), outputSchemaName: 'vocabulary_sense_inventory_v2', outputSchema: schema,
+        userPrompt: JSON.stringify({ word: modelLexicalWord(word) }), outputSchemaName: 'vocabulary_sense_inventory_v3', outputSchema: schema,
         maxOutputTokens: 8000, temperature: null, timeoutMs, cachePrompt: true,
         invocationActor: { kind: 'service', serviceId: VOCABULARY_SENSE_SERVICE },
         provenance: { workflowId: context.workflowId, attemptNumber: context.attemptNumber, stepName: 'sense_inventory',
-          promptName: 'vocabulary-sense-inventory', promptVersion: '2', schemaVersion: '2', inputProjectionVersion: 'lexical-word-v1' } },
+          promptName: 'vocabulary-sense-inventory', promptVersion: '7', schemaVersion: '3', inputProjectionVersion: 'simplified-lexical-evidence-v3' } },
       { apiKey: environment.OPENAI_API_KEY.trim(), baseUrl: environment.OPENAI_BASE_URL?.trim() || null });
       context.onInvocation(result.invocationId);
       try {
@@ -73,14 +69,8 @@ export function createVocabularySenseProvider(options: { environment?: NodeJS.Pr
   };
 }
 function validateInventory(value: unknown): Inventory {
-  if (validateJsonSchema(value,schema).length) throw new VocabularySenseReadinessError('Sense inventory failed validation');
-  const inventory = value as Inventory;
-  const labels = inventory.senses.map(sense => sense.label.trim().toLowerCase());
-  if (labels.some(label => !label || label.length > 600) || new Set(labels).size !== labels.length
-    || inventory.senses.some(sense => sense.notes.some(note => !note.trim() || note.length > 1600))) {
-    throw new VocabularySenseReadinessError('Sense inventory contains blank or duplicate descriptions');
-  }
-  return inventory;
+  try { return validateVocabularySenseInventory(value); }
+  catch (error) { throw new VocabularySenseReadinessError(error instanceof Error ? error.message : 'Invalid sense inventory'); }
 }
 function atomic<T>(operation: () => T): T {
   const db = getDb(); const nested = db.isTransaction; const name = `senses_${randomUUID().replaceAll('-','')}`;
@@ -92,7 +82,6 @@ function existing(wordId: string): VocabularySenseReadiness | null {
   const catalog = getVocabularySenseCatalog(wordId);
   if (catalog.establishedAt === null) return null;
   const senses = getVocabularySenses(wordId).filter(sense => sense.status === 'active');
-  if (!senses.length) throw new VocabularySenseReadinessError('Established sense catalog has no active senses; operator review required');
   return { catalog,senses,source: 'existing' };
 }
 function publishGuard(options: { canPublish?: () => boolean }): void {
@@ -171,8 +160,8 @@ export async function ensureVocabularySenses(wordId: string, options: {
       establishVocabularySenseCatalog(wordId,getVocabularySenseCatalog(wordId).version,actor);
       const currentCoverage=getVocabularyWordSenseCoverage(wordId);
       const recommendation={invocationId:invocationId??null,workflowId:options.workflowId,attemptNumber:attempt,senseIds:selected};
-      emitBackendEvent({name:'vocabulary.default_selection.recommended',entityKind:'word',entityId:wordId,actorKind:'service',actorId:VOCABULARY_SENSE_SERVICE,data:{...recommendation,applied:currentCoverage.defaultUsefulSenseIds===null&&selected.length>0}});
-      if(currentCoverage.defaultUsefulSenseIds===null){if(selected.length)writeVocabularyDefaultUsefulSenses(wordId,currentCoverage.version,selected,{...actor,reason:recommendation});else recordEmptyUsefulRecommendation(wordId,options.workflowId,invocationId,'inventory');}
+      emitBackendEvent({name:'vocabulary.default_selection.recommended',entityKind:'word',entityId:wordId,actorKind:'service',actorId:VOCABULARY_SENSE_SERVICE,data:{...recommendation,applied:currentCoverage.defaultUsefulSenseIds===null&&(selected.length>0||inventory.senses.length===0)}});
+      if(currentCoverage.defaultUsefulSenseIds===null){if(selected.length||inventory.senses.length===0)writeVocabularyDefaultUsefulSenses(wordId,currentCoverage.version,selected,{...actor,reason:recommendation});else recordEmptyUsefulRecommendation(wordId,options.workflowId,invocationId,'inventory');}
       db.prepare("UPDATE vocabulary_sense_readiness SET status='ready',active_token=NULL,expires_at=NULL,last_error=NULL,updated_at=? WHERE word_id=? AND active_token=?")
         .run(now(),wordId,token);
       completePreparationAttempt(token,now());

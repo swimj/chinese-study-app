@@ -7,7 +7,7 @@ import {beforeEach,afterEach,test} from 'node:test';
 import {setDb} from '../server/db/connection.ts';
 import {runWithLearnerId} from '../server/db/learner-context.ts';
 import {addVocabularyWord,changeVocabularyMode,dismissVocabularyWord} from '../server/db/vocabulary-learners.ts';
-import {createVocabularySense,mapVocabularyContentSense,createVocabularyContent} from '../server/db/vocabulary-content.ts';
+import {createVocabularySense,mapVocabularyContentSense,createVocabularyContent,establishVocabularySenseCatalog,getVocabularySenseCatalog} from '../server/db/vocabulary-content.ts';
 import {composeVocabularyStudy,remainingVocabularyNewWordQuota,localNewWordDay} from '../server/vocabulary/composition.ts';
 import type {DeckManifest} from '../server/decks/manifest.ts';
 let db:DatabaseSync;let ready:Set<string>;let requested:string[];
@@ -274,4 +274,46 @@ test('new unselected senses do not defeat an existing pure-cue proxy',()=>owner(
   mapVocabularyContentSense({contentId:'later-targeted',wordId:'covered',expectedContentVersion:1,
     expectedMapping:{senseId:null,establishedAt:null},senseId:'later-sense'},{kind:'operator',id:'test'});
   assert.equal(isVocabularyProductionProxied('covered'),true);
+}));
+
+
+test('established empty inventories stay stashed but are absent from every word admission and preparation lane',()=>owner(()=>{
+  settings('daily_new_word_limit',10);
+  for(const id of ['empty-stash','empty-diet','unknown-stash','unknown-diet','active-stash','empty-solidify']) {
+    lexical(id);prepared(id);
+    if(!id.endsWith('diet'))addVocabularyWord(id);
+  }
+  changeVocabularyMode('empty-solidify','solidify',1);
+  for(const id of ['empty-practice','empty-maintain']) {
+    reviewWord(id,48);skill(id,'recognition',96);skill(id,'contextual_selection',192);
+  }
+  changeVocabularyMode('empty-maintain','maintain',2);
+  createVocabularySense({wordId:'active-stash',description:{label:'eligible use'}},{kind:'operator',id:'test'});
+  for(const id of ['empty-stash','empty-diet','empty-solidify','empty-practice','empty-maintain','active-stash']) {
+    establishVocabularySenseCatalog(id,getVocabularySenseCatalog(id).version,{kind:'operator',id:'test'});
+  }
+  const learnerBefore=db.prepare('SELECT * FROM learner_words ORDER BY word_id').all();
+  const scheduleBefore=db.prepare('SELECT * FROM learner_word_schedules ORDER BY word_id').all();
+  const plan=composeVocabularyStudy({now,manifest:null,teachingReady:(id)=>ready.has(id),requestTeaching:(id)=>requested.push(id),canUseSkill:()=>true});
+  assert.ok(plan.newWordIds.includes('unknown-stash'));assert.ok(plan.newWordIds.includes('active-stash'));
+  assert.ok(plan.newWordIds.includes('unknown-diet'));
+  assert.equal(plan.newWordIds.some(id=>id.startsWith('empty-')),false);
+  assert.deepEqual(plan.dueWordIds,[]);assert.deepEqual(plan.reviewSelections,[]);
+  ready.clear();requested=[];compose();
+  assert.equal(requested.some(id=>id.startsWith('empty-')),false);
+  assert.deepEqual(db.prepare('SELECT * FROM learner_words ORDER BY word_id').all(),learnerBefore);
+  assert.deepEqual(db.prepare('SELECT * FROM learner_word_schedules ORDER BY word_id').all(),scheduleBefore);
+}));
+
+
+test('a pure cue containing an empty-inventory answer does not proxy an otherwise eligible review word',()=>owner(()=>{
+  reviewWord('word',48);lexical('empty');
+  createVocabularyContent({contentId:'mixed-pure',kind:'exercise',payloadVersion:1,body:{prompt:'Either answer'},
+    accessScope:'shared',availability:'active',originKind:'human',words:[{wordId:'word',relation:'target'},{wordId:'empty',relation:'target'}],
+    exerciseType:'pure_cue',skill:'production',exerciseRole:'general',assessment:{match:'prepared'},
+    answers:[{wordId:'word',acceptedForms:['word']},{wordId:'empty',acceptedForms:['empty']}]},{kind:'operator',id:'test'});
+  assert.equal(isVocabularyProductionProxied('word'),true);
+  establishVocabularySenseCatalog('empty',0,{kind:'operator',id:'test'});
+  assert.equal(isVocabularyProductionProxied('word'),false);
+  assert.deepEqual(compose().reviewSelections,[{wordId:'word',skillId:'production'}]);
 }));

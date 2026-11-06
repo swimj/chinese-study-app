@@ -61,6 +61,17 @@ test('introduction rendering preserves ordered materialized authored text withou
   assert.match(second,/saw it yourself/);assert.doesNotMatch(second,/sourcePackageId|private-id/);
 });
 
+test('study teaching renders significant correctly from mixed script without rewriting source material', () => {
+  const source = '這次效果显著。';
+  const material = { beats: [{ id: 'example', parts: [{ text: source, source: { kind: 'example', field: 'sentence' } }] }] };
+  for (const script of ['simplified', 'traditional'] as const) {
+    const html = renderToStaticMarkup(createElement('div', {}, renderVocabularyTeaching(material, 0, script)));
+    assert.match(html, script === 'simplified' ? /这次效果显著。/ : /這次效果顯著。/);
+    assert.doesNotMatch(html, /显着/);
+  }
+  assert.equal(material.beats[0].parts[0].text, source);
+});
+
 test('reveal renderer includes authored explanations but excludes hidden metadata and answer contracts',()=>{
   const html=renderToStaticMarkup(createElement('div',{},renderVocabularyReveal({reveal:{englishFrame:'Seen firsthand',exampleSentence:'我亲眼看见了。',axisNote:'Direct evidence'},
     source:{promptTemplate:'private prompt'},assessment:{acceptedAnswers:['hidden']}})));

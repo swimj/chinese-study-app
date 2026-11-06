@@ -1,105 +1,140 @@
 # Vocabulary content-improvement architecture
 
-The adaptive vocabulary content-improvement pipeline shares canonical inventory
-and default-useful sense selection with teaching bootstrap, then separates sense admission,
-local exercise repair, optional pure-cue promotion, and existing pure-cue review.
-This implementation reference describes current provider-call boundaries,
-retained stage results and publication fences. The
-[architecture contract](../../SPECS/vocabulary-architecture.md) prescribes the
-authority boundaries; the [operator workflow](../operator-panel.md#content-improvement-workflow)
+This reference explains how vocabulary improvement routes source exercises,
+retains coherent plans, integrates shared content, and fences publication. The
+[architecture contract](../../SPECS/vocabulary-architecture.md) owns authority
+boundaries; the [operator workflow](../operator-panel.md#content-improvement-workflow)
 explains review controls.
 
-![Provider-call flow for backend vocabulary content improvement. Blue boxes are model calls; other nodes are backend decisions and persistence.](../diagrams/content-improvement-provider-flow.png)
+```mermaid
+flowchart TD
+  Source[General production source] --> Pure{Existing pure cue?}
+  Pure -->|Yes| Review[Standalone pure-cue assessment]
+  Pure -->|No| Ready[Canonical sense readiness]
+  Ready --> Fallback{Dictionary fallback?}
+  Fallback -->|Yes| Practice{Current authored practice in same scope and owner?}
+  Practice -->|Yes| Covered[Record already covered]
+  Practice -->|No| Bootstrap[Selected repertoire bootstrap]
+  Fallback -->|No| Map[Map authored intended use]
+  Map -->|Single sense| Local[Coherent local plan and concrete shared draft]
+  Map -->|Unmappable or inventory gap| Attention[Operator attention]
+  Local --> Shared{Shared draft?}
+  Shared -->|No| Proposal[Proposal or no-change finding]
+  Shared -->|Yes| Identities{Resolved identities?}
+  Identities -->|No| Pending[Withhold pending plan for operator resolution]
+  Pending --> Identities
+  Identities -->|Yes| Integrate[Reuse, extend, or create exact draft]
+  Integrate --> Proposal
+  Bootstrap --> Proposal
+  Review --> Proposal
+```
 
 ## Reading the flow
 
-- **Sense readiness** reuses the canonical inventory. Fresh establishment makes
-  one inventory/default-useful selection call, preserving real peripheral senses
-  without selecting them automatically. Legacy documents alone do not establish
-  or remap an inventory; unresolved legacy state requires operator/cutover work.
-- **Mapping** assesses the authored exercise. A single intended sense admits local
-  improvement; a laundry list routes to a fresh repertoire. An unmappable cue or
-  inventory gap stops generation with an operator finding. The mapped sense is
-  authorial context, not a clue the learner necessarily saw.
-- **Local improvement** trusts the selected sense and preserves accepted answers.
-  It can repair the exercise or propose retiring the individual source when no
-  faithful exact-target repair is apparent. It does not reassess sense popularity.
-  Local drafts and a pure-cue referral are independently optional. Raw responses
-  and learner reactions inform assessment without dictating the result.
-- **Repertoire generation** shares ordinary preparation's general-exercise
-  authoring call and validation, using the reflection job's selected model.
-  Captured requested sense IDs, seeded from defaults or a review override, supply
-  uses and available examples. The adapter
-  preserves structured clozes and post-answer teaching notes in a proposal: one
-  operation replaces the source and the others add exercises. An empty faithful
-  model output after a nonempty request instead proposes source retirement
-  without changing coverage. An empty requested scope makes no authoring call
-  and leaves the source unchanged. Generation leaves
-  the live exercise pool unchanged until operator application.
-- **Promotion** resolves referral words to lexical identities and examines
-  overlapping pure cues in the same publication scope. It can reject the referral,
-  reuse a suitable cue, extend membership and update its integrated teaching note,
-  or propose a new cue. Extension preserves the stimulus, axis and existing answers.
-  Promotion does not reconcile individual words'
-  exercise collections. Unresolved identities retain an operator finding and any
-  local drafts.
-- **Application** remains operator-controlled. New or extended pure cues join any
-  local repairs in a reviewable proposal. Reuse and rejection are retained
-  assessments; neither publishes an edit.
+- **Sense readiness** reuses canonical inventory. Establishment can request the
+  shared inventory/default-useful selection call. Readiness creates senses,
+  not teaching or practice content; unresolved legacy state requires operator work.
+- **Routing** identifies dictionary fallback sources deterministically. Current
+  active authored general production exercises accepting the word, including
+  pure cues, count as practice only within the source's publication scope and
+  owner. Learner adoption, scheduling, deactivation, and selected serving senses
+  do not determine this content lifecycle. Covered fallbacks record no proposal;
+  uncovered fallbacks bootstrap selected practice without a mapping model call.
+- **Mapping** identifies the intended use of an authored exercise and compares it
+  with the supplied inventory. Unmappable content or inventory gaps stop with operator attention. Intended sense is authorial context,
+  not a clue the learner necessarily saw.
+- **Local planning** receives the mapped intended use, judges the original cue,
+  and produces one coherent plan: a source decision, additional target or
+  response-word exercises, and an optional complete shared draft. It can retire the original
+  without excluding its sense. Raw responses and reactions inform the judgment.
+- **Integration** inspects eligible overlapping shared cues. It reuses a compatible
+  cue already accepting all candidates, extends a compatible cue preserving all
+  existing content except its integrated teaching note, or creates the exact
+  upstream prompt and teaching note with an axis derived from that task. It
+  does not repeat the pedagogical decision. Unresolved
+  identities withhold the complete plan for operator resolution.
+- **Application** requires operator review. Shared changes and local refinements
+  form one proposal; reuse is an assessment without a shared edit. Operators can
+  trim or edit parts deliberately, including optional clarifiers.
 
-The ordinary single-sense path makes two calls, or three with promotion, plus one
-if sense generation is necessary. Completed admission stages are retained by exact
-input and contract, so an unchanged retry reuses their outputs. Failed provider
-work requires explicit retry, except sense preparation, which retries automatically
-within its three-attempt cycle. Source and sense changes fence stale results.
+Authored single-sense assessment makes a mapping call and a local planning call,
+with one integration call when shared practice is proposed. Fallback bootstrap
+uses general-exercise authoring without a mapping or local planning call. Sense
+readiness can add a prerequisite inventory call. Completed stages are retained
+by exact input and contract. Failed provider work requires explicit retry,
+except bounded prerequisite preparation. Source and sense changes fence results.
 
 Only general production encounters enter provider work. Recognition and contrast
 remain fully recorded in the session log but create no provider calls, including
 within mixed-word feedback aggregation. Teaching issues go to a manual inbox.
 
-## Admission, repair and promotion
+## Routing, local planning and shared integration
 
-### Single-word assessment
+### Exercise-local authoring
 
-Single-word local improvement drafts wording changes, additional variants, or
-individual-exercise retirement while preserving its accepted-answer membership. Operators can
-edit the full authored draft, including its answer relationships, before preview.
-Automatic proposals for sense exclusion, new contrast clusters or learner suppression are not
-supplied by this adapter. Single-word admission can additionally propose pure-cue
-creation or membership extension through the separate shared-practice assessment
-below.
+Single-word planning returns `{summary, source, sharedExercise, additionalExercises}`.
+The source decision is `keep`, `revise`, or `retire`; only revision carries a
+prompt. Shared practice includes its actual cue, answer references, teaching
+note, and rationale. Additions use the same fields for target and response words,
+with a `refinement` or `enrichment` role. Refinements develop a distinctive use
+within the originating circumstance. Enrichment retains helpful examples surfaced
+by the assessment or answers a learner request; it does not trigger a separate
+search, and follows the same answer-fairness standard.
 
-Single-word production improvement first establishes the word's sense inventory
-and separately assesses the authored cue before attempting a sense association.
-A defensible single sense admits a sense-specific local assessment with
-independently optional local operations and a shared-practice referral. A gloss
-laundry list spanning distinct senses automatically generates a fresh repertoire proposal: one replacement retires the laundry list
-and additional exercises extend the pool, without retiring other cues. The
-repertoire draws on the word's effective selected senses; the discarded list has no sense
-association or requirement to preserve its old glosses. Reflection invokes the same
-general-exercise authoring contract as ordinary preparation, retaining the complete
-general v5 brief, structured direct/cloze stimuli, optional teaching notes, and
-output validation. It keeps the reflection job's selected model. Established
-senses supply the lexical uses and any retained examples; missing examples are
-not invented. The response adapter preserves the source's accepted answers and
-publication scope and creates proposal operations instead of publishing exercises.
-All content application requires operator approval. An uninterpretable exercise or an
-apparent inventory gap for a single intended use stays in the operator inbox
-with its mapping rationale;
-neither triggers automatic repair or sense expansion. Operators can close these
-findings after inspection. Learner feedback and compensation remain independent.
+`exercise-improvement-authoring.ts` presents the source and encounters separately,
+with intended-use description and supplied word references (`target`, `response_1`,
+and so on). The model receives readable lexical information when a word is
+uniquely identified. The adapter supplies stored source versions and
+accepted forms when it translates the output into operations. Individual additions
+and shared answers require `canAuthorIndividual: true`. Missing or ambiguous
+forms remain encounter evidence for diagnosis and target improvement; validation
+rejects their use as proposed answers.
+`revise` maps to `update_existing`, preserving identity and existing learner
+controls. The application retains its internal operation format; the model does
+not choose storage operations. Optional `learningRole` metadata lets the operator
+review identify source repair, shared practice, refinements, and enrichment.
+Old proposals without that metadata remain editable.
 
-Selected senses are intentional, including uncommon or personalized uses. The
-assessment judges the exact target's contribution rather than deciding whether
-the selected meaning is generally useful. Making a compound-fragment cue more
-selective is insufficient when it still retrieves a different lexical unit;
+Source repairs and all target additions, including optional enrichment, receive
+the source's mapped sense and mapping timestamp. This assumes the additional
+target practice develops the same sense. Response-word additions receive no
+invented sense association; a later assessment can establish one. Operators can
+edit complete authored proposals before preview. The adapter does not propose sense exclusion or learner
+suppression.
+
+The mapped intended use can be uncommon or excluded from current serving
+coverage. Local assessment judges the exact target's contribution within that
+use; it does not receive or revise serving selections. Making a compound-fragment
+cue more selective is insufficient when it still retrieves a different lexical unit;
 genuine construction practice and good direct cues for obscure selected nouns
-remain valid. An empty operations array retains the current exercise. A `retire` operation
-has an empty wire prompt and retains the source comparison snapshot, identity
-and version. Normalization uses that snapshot; source drift is handled by the
-publication/approval fences without reclassifying valid provider output as
-malformed. It cannot accompany local create/update/replace operations for
-that source; an independent shared-practice referral may still accompany it.
+remain valid. A `keep` decision retains the source; `retire` removes that
+exercise while allowing additional target or response-word practice and a shared
+cue. Both decisions use a null authored prompt. Normalization retains the source
+comparison snapshot, identity and version; source drift is handled by the
+publication/approval fences without reclassifying valid provider output as malformed.
+
+### Dictionary fallback and sense mapping
+
+After sense readiness, deterministic source routing separates dictionary
+fallback bootstrap from authored-cue assessment. An uncovered fallback captures
+the selected senses from shared word defaults and invokes the
+shared general-exercise contract: the full general v5 brief, structured direct
+and cloze stimuli, optional teaching notes, and shared validation. It retains the
+reflection job's selected model and source publication scope. The first generated
+exercise replaces the fallback and others add practice without retiring unrelated
+content. Established senses supply uses and retained examples; missing examples
+are not invented. An empty selected scope makes no authoring call. Current
+same-scope, same-owner authored production practice prevents another bootstrap,
+including pure cues accepting the target.
+
+Authored cues instead receive a separate mapping call. A defensible single sense
+admits coherent local planning. An uninterpretable source or inventory gap retains
+its rationale in operator attention without automatic inventory expansion. The
+three outcomes are `single_sense`, `inventory_gap`, and `unmappable`. Learner
+feedback and compensation have independent authority.
+
+### Repertoire authoring outcomes
+
 Repertoire authoring returns only `exercises`, with no sense-exclusion fields.
 Every new automatic item must identify a supplied use; null or unknown references
 are rejected rather than assigned an arbitrary sense. Aliases translate back to
@@ -116,19 +151,51 @@ report the assessment-time count of other active general production exercises
 in the same publication scope, including when retirement would leave none. That
 count is context for review rather than a guarantee about later serving.
 
-An operator-requested reassessment creates a separate case and pins the current
-exercise identity and version at submission. When it differs from the historical
+### Encounter grouping and reassessment
+
+An operator-requested reassessment creates a numbered job within the same
+canonical review case and pins the current exercise identity and version at
+submission. When it differs from the historical
 assessed source version, the operator must confirm the current version before
-queueing work. The selected model performs fresh mapping and final assessment,
-even for an unchanged source version; the child does not reuse the parent job's
-mapping. A single-sense assessment can invoke promotion when referred; a laundry
-list runs repertoire generation. Pure cues use their standalone assessment.
+queueing work. It requests fresh mapping where applicable and authors a fresh
+assessment with the selected model, even for an unchanged source version; the
+new job does not reuse the previous job's mapping. An authored single-sense
+assessment can invoke shared integration; a dictionary
+fallback uses its deterministic covered-or-bootstrap route. Pure cues use their standalone assessment.
 The resulting proposal is based on the pinned current version. The original
-encounters remain historical context; their responses and reactions are not
-supplied as learner evidence for the independent operator assessment.
+encounters, responses and reactions remain model input across reassessment chains,
+including historical proposals. The input supplies the current source separately
+from each encounter's frozen served cue, responses, and effective reactions. It
+identifies operator reassessment as the assessment origin. Stored versions support the backend consistency checks.
+Successful assessments that need operator attention can also be reassessed.
+
+Within each completion, exercise improvement groups all encounters for the same
+exercise identity and served version when any encounter reports an issue. Different
+exercises and versions remain separate; retained historical cases are unchanged.
 Source version and sense-state fences reject subsequent changes before accepting
 results, and proposal application revalidates its bases. Failures remain available
 for explicit retry against the same pinned source.
+
+Canonical review ownership lives in `vocabulary_case_reviews`; its current job
+and proposal pointers select the authoritative review material. Historical child
+cases remain in `reflection_cases`, linked through `vocabulary_case_lineage`.
+Jobs retain original historical references and have a canonical `review_case_id`
+and `case_sequence`. New jobs use the canonical case directly. Generated
+proposals retain `assessment_job_id`, so viewing or reviewing an older proposal
+uses its own assessment provenance. Provider retry count remains separate from
+the holistic job sequence. A partial unique index admits only one queued/running
+job per canonical case.
+
+Reassessment freezes proposal saves, dismissal, approval, case resolution, and
+repair-target edits. A failed or expired job releases that freeze without replacing
+the current result. A successful authoritative result changes current pointers
+and supersedes the previous current proposal atomically; retained alternatives
+remain explicitly unresolved until reviewed. Advisory opinions never change
+those pointers. Case versions change with job transitions, proposal revisions,
+and review decisions. Approval journal replay reconstructs pending locks and
+clears orphan admission intents; failed approvals have a separate attention
+state and can be corrected or reassessed. Successful application resolves a case
+only when no unresolved alternative proposal remains.
 
 ### Existing pure-cue assessment
 
@@ -146,42 +213,74 @@ The call uses prompt/schema version 1 and projection `vocabulary-admission.v1`,
 retains invocation provenance and source/lexical fences, and does not use the
 admission stage-result cache.
 
-### Promotion
+### Shared integration and unresolved identities
 
-A referral supplies advisory written forms, a shared purpose, and rationale;
-local operations retain their original answer contract. Raw responses can suggest
-an alternative even without a resolved lexical record. `pure-cue-promotion.ts`
-resolves the forms to lexical identities, using the source to disambiguate its own
-target. Missing or ambiguous candidates remain an operator-attention finding.
-Resolved candidates lead to a same-job assessment of active, overlapping pure
-cues in the source's publication scope and owner. It can reject, reuse, extend,
-or create. Extension preserves the existing prompt, reveal axis, all answer
-members and their accepted forms; every added member must suit that same task.
-Creation and extension author complete, mostly English teaching notes, preserving
-useful accumulated nuance on extension. Creation authors a new shared-purpose
-cue from resolved candidates. Both become operations alongside any local edits in one manual proposal; rejection and reuse
-remain recorded assessments. Private reactions inform judgment without becoming
-shared authored text. This stage does not reconcile the participating words'
-exercise repertoires or change scheduling and compensation.
+`single-improvement.md` owns the pedagogical judgment and authors the complete
+shared exercise. The adapter translates supplied answer references into the
+internal referral used for integration; this persistence boundary does not appear
+in the authoring prompt. A short `summary` carries the
+overall operator recommendation. Each exercise's rationale explains its own
+contribution. The separately stored integration rationale is not appended to the
+operator summary.
+
+`exercise-improvement-authoring.ts` uses the shared response lookup to trim
+submitted forms and match each exactly against `lexical_words.hanzi` or
+`traditional`. One matching record supplies a lexical identity and permits both
+individual authoring and inclusion as a shared answer. Zero matches (such as a
+missing entry or nonmatching response) and multiple matches leave the identity unresolved.
+Several senses within one record do not create this ambiguity. The target already
+has an identity through its source exercise. Contextual disambiguation is not part
+of this lookup; the model receives the raw form as encounter evidence even when
+no identity is supplied.
+
+`pure-cue-promotion.ts` uses the same exact-form lookup for shared candidates and
+supplies eligible active overlapping pure cues in the same publication scope and owner. `pure-cue-integration.md`
+receives the assessment, local plan, referral, candidates, and existing cues.
+Its only decisions are reuse, extend, and create. The backend supplies all
+resolved candidates deterministically. Extension retains every existing member,
+accepted form, stimulus, and axis while integrating the note; creation uses the
+upstream prompt and note unchanged and derives its semantic axis from that task.
+The derived axis cannot broaden or redesign the authored practice. Identity,
+privacy, and answer-leak guards apply even when integration selects reuse.
+
+Historical saved assessments can contain shared answers whose identities are
+missing or ambiguous. Their complete local proposal is retained as `pendingPlan`
+until identity resolution; current authoring does not produce such plans.
+The operator workspace lists exact dictionary matches. Multiple matches can be
+resolved by selecting one. With no match, the selector cannot create or substitute
+an entry; it offers reassessment or closing the assessment. Selection through
+`POST /api/operator/vocabulary/cases/:id/pure-cue-resolutions` validates the source,
+catalog, target mapping, and matching lexical snapshots, then creates the next
+case job with an immutable resolution record. The job resumes the saved
+plan and integrates shared content into one reviewable proposal; it does not
+repeat mapping or local planning. Source and lexical changes fence publication.
+Identity resolution never applies content. Failed work can retry its retained
+choices; changed evidence requires fresh review.
+
+Persisted pre-plan referrals without an authored draft use the legacy
+`pure-cue-promotion.md` contract when identity resolution resumes them. Those
+records can reject, reuse, extend, or create and produce promotion-only proposals,
+leaving the parent's separate local proposal and editorial changes untouched.
+They do not define the current coherent-plan call boundary. Operator editorial
+trims and edits to ordinary proposals are deliberate review choices, not automatic
+dependencies that integration restores or enforces. Historical pending plans
+with an authored axis are supported, as are saved proposals without learning-role
+metadata.
 
 ### Versions and retained stage results
 
-`single-improvement.md` uses prompt version 4 and schema
-version 3; mapping uses prompt version 3 and schema version 1. Repertoire uses
-the shared general-exercise prompt v5 and schema version 2. Its retained stage
-identity includes that authoring contract, so older repertoire stage results do
-not satisfy a new invocation. Existing saved proposals and second opinions remain
-bound to their original versions; an upgrade does not regenerate them.
-Mapper, single improvement and promotion use call-local sense projection
-`vocabulary-admission.v3`; shared repertoire uses `general-exercises-v2`.
-Canonical IDs remain in cached source evidence and normalized generation scope;
-the model receives short references, including nested relationship and admission
-fields. Repertoire use/example references are shortened too. Unknown aliases
-fail validation before canonical persistence. Stage identities retain the exact
-wire input/schema along with projection version. Promotion uses prompt version 3
-and schema version 2. Admission stages retain and reuse
-results by exact contract/input within the same job, with publication fences for
-source and sense state and, for promotion, resolved identities and inspected cues.
+The [prompt contract guide](../../server/vocabulary/reflection-prompts/README.md)
+records the active prompt, schema, and input-projection versions for each call.
+The provider retains those versions with the exact invocation content.
+
+Stage identity includes exact projected input, schema, prompt contract, and
+projection version. Canonical IDs stay in retained evidence while wire inputs
+use short sense references for mapping and supplied word references for
+exercise authoring; unknown aliases fail validation. Results are reused
+within the same job only for the same contract and input. Source, canonical
+inventory, mappings, resolved lexical identities, and inspected cue versions fence
+publication. Existing saved proposals and second opinions retain their original
+versions; a contract upgrade does not regenerate them.
 
 Sense establishment reuses an existing canonical inventory before requesting
 the shared inventory/default-selection call. It does not regenerate teaching or
@@ -248,43 +347,52 @@ Encounter evidence, learner state, provider results and stage caches remain
 immutable. A second opinion is advisory and does not regenerate a proposal.
 The migration makes no provider calls and applies no proposed content.
 
-## Updating the picture
-
-The [rendering source](../diagrams/render-content-improvement-flow.py) keeps layout,
-labels, and colors editable. Regenerate the checked-in PNG with Python and Pillow:
-
-```sh
-python3 docs/diagrams/render-content-improvement-flow.py
-```
-
-The renderer uses Arial on macOS or DejaVu Sans elsewhere; `--font` and
-`--bold-font` accept alternate TrueType font paths. Inspect the rendered image
-when changing labels or routing, and keep this explanation aligned with it.
-
 ## Scoped production coverage
 
-`server/db/vocabulary-sense-coverage.ts` owns nullable shared default-useful IDs,
-compatible excluded IDs and review included IDs. A null shared selection is
-unknown (`selectionEstablished: false`), while `[]` is explicitly none. A null
-review selection inherits defaults; an explicit review selection establishes that
-review's effective coverage even when shared defaults remain unknown. Each scope has a compare-and-swap version,
-immutable change history and backend events. Mapping still receives every active
-sense and no mutable policy metadata. A single mapped sense is the explicit
-input to local improvement, even when currently excluded from serving. A
-laundry-list assessment captures review IDs or shared defaults once for its
-repertoire invocation. A captured scope records whether selection is established. Unknown repertoire
-scope initializes shared defaults asynchronously; unresolved findings record `needs_coverage`; an explicit empty scope records `no_senses_requested`,
-does not call authoring, and leaves the source active without a proposal.
+`server/db/vocabulary-sense-coverage.ts` owns nullable shared default-useful IDs
+and compatible excluded IDs. Null is unknown; `[]` explicitly selects none.
+Word selection has a compare-and-swap version, immutable change history and
+backend events. Historical case scope rows are retained but do not resolve policy.
+Mapping receives every active sense and no serving-policy metadata. Its chosen
+sense is evidence for a proposed repair, including excluded uses; assessment
+never writes the source mapping. Proposal application commits the reviewed binding
+and authored content together. Preview uses the same transitions and rolls back.
 
-Admission retains `generationScope`: exact sense IDs plus mapped-source,
-review-override or word-default provenance. Captured policy versions are audit
-evidence, not approval or publication dependencies. Backend-normalized mapping
-evidence persists the first requested scope in the existing stage-result cache;
-`canonical-generation-scope-v1` identifies that backend normalization without changing the mapper's wire schema. Retrying the same assessment preserves its
-scope and completed content results after serving policy changes. A new
-reassessment can request a new scope. Content calls, their cache identities and
-publication fences omit mutable serving metadata. Source content, mapping,
-canonical catalog and publication-authority fences remain active. Serving policy metadata does not invalidate ordinary content approval/application.
+Fallback bootstrap captures shared defaults once for its repertoire invocation.
+Unknown defaults initialize asynchronously; unresolved selection records
+`needs_coverage`. An explicitly empty scope records `no_senses_requested` without
+authoring or retiring the source. `generationScope` retains the invocation's exact
+sense IDs and provenance. Retries keep those inputs even after policy edits.
+Source, mapping, catalog and publication-authority checks still guard application.
+
+The repertoire editor saves shared defaults and proposal selection atomically
+through `saveRepertoireWordDefaults`. Proposal revision history retains excluded
+exercises; selection revisions in `vocabulary_repertoire_revisions` distinguish
+selection changes from authored edits. Reselecting a sense restores its retained
+exercises, while manual edits to included exercises survive later selection changes.
+The new proposal version contains only included operations, so application writes
+only the exercises shown. An intended source replacement is preserved without
+altering the source before application. Newly selected senses without retained
+exercises require generation. An empty result rejects the entire save and requires
+dismissal or new generation, never a synthesized retirement.
+
+`saveRepertoireWordDefaultsAndReassess` provides the explicit generation path.
+A savepoint covers defaults, version-checked exact-origin reassessment admission,
+and an `operator-repertoire-selection-v1` capture in `vocabulary_improvement_stages`.
+The worker validates its word/catalog and active senses, then uses that scope rather
+than rereading defaults. Retries keep the capture. Publication checks the resulting
+admission against the capture before replacing the earlier proposal. Queue failure
+rolls back defaults; later generation failure keeps the saved policy and restores
+review of the retained proposal.
+
+`vocabulary_case_repair_targets` holds versioned pending and accepted single-sense
+intent. Reassessment captures that intent in the job's `repair_target_json`, skips
+automated mapping, and authors against the specified active sense. Pending intent
+blocks proposal editing/application, including retained alternatives. Reset clears
+only the pending choice. Successful result publication accepts the captured intent
+atomically, even for a no-repair judgment, and older proposals remain ineligible;
+a failed job leaves the intent pending. Manual binding changes cannot bypass this
+path. Case versions also change when intent changes.
 
 Shared defaults filter mapped general production at `listVocabularyExercises`
 and shared production-proxy checks. Established selection admits only active
@@ -301,12 +409,19 @@ policy versions; source/catalog/version changes still fence publication.
 Unmapped content stays eligible under the existing fallback policy. A sense
 coverage change does not rewrite content, learner attempts or served snapshots.
 
-Operator GET/PUT routes are `/api/operator/vocabulary/words/:id/sense-coverage`
-and `/api/operator/vocabulary/cases/:id/sense-coverage`. PUT requires the current
-nonnegative `expectedVersion` and shared `includedSenseIds` (or compatible `excludedSenseIds`), versus nullable
-review `includedSenseIds`. Shared exclusion controls explicitly establish the
-complementary useful selection; they do not interpret an absent selection. Review reassessment copies overrides into the child case;
-proposal edits remain separate editorial inputs and are not reassessment input.
+Operator word selection uses `/api/operator/vocabulary/words/:id/sense-coverage`.
+Pending repair intent uses `/api/operator/vocabulary/cases/:id/repair-target`.
+Both require expected versions; the latter accepts a sense ID or null to reset.
+Reassess opens a compact dialog containing word-case target controls, the model
+picker, and submission. Pure-cue cases omit the word target editor and use their
+standalone assessment path. Closing it preserves saved pending target intent; the Reassess button
+marks that pending state and reopens access to Reset. Unknown target state does not
+block Apply/Edit locally; backend mutation checks remain authoritative and their
+errors appear in the review. A failed refresh retains the last known target state
+for the same case, including a pending restriction. Background queue refresh
+pauses while the dialog is open. Reassessment freezes target edits while queued or running. Manual proposal text
+edits are available only with a settled assessed target and remain separate from
+reassessment input.
 
 ## Explicit retirement proposals
 
@@ -320,8 +435,12 @@ Retirement retains a compulsory comparison snapshot, but execution reads the exa
 live source rather than applying that snapshot as an authored edit. Preview and
 application use the same ordered content transitions; preview rolls back history,
 events and writes. A failure in another operation rolls back the entire application.
-Sense selection is configured directly through review coverage or word defaults;
-content proposals never mutate that policy.
+Shared sense selection is configured directly through word defaults;
+content proposals never mutate that policy. The compact repertoire card exposes
+Selected senses as toggle chips directly above its proposed sense groups. Operators can save the
+shared selection and update the proposal together without opening the full detail
+editor. Removed groups return when their senses are reselected and saved. New senses can be saved with an explicit reassessment and model choice. Unsaved selection edits block case navigation
+and proposal actions until saved or discarded.
 
 ## Shared inventory, useful selection and teaching enrichment
 
@@ -347,10 +466,9 @@ findings. Maintenance, lost leases and source races defer work under a fresh cla
 without invalidating a structurally valid model response. Provider orchestration
 and administrative retries live above database persistence modules.
 
-A laundry-list reflection first persists its validated mapping. A separate
-backend-only record captures generation scope in the same stage store. Selection
-initialization can wait or fail without repeating the mapper or marking its
-invocation invalid. Captured scope is immutable on retry. Single-sense improvement
+A fallback bootstrap records its deterministic route and captures generation
+scope in the retained stage store. Selection initialization can wait or fail
+without making a mapping call or invalidating a provider invocation. Captured scope is immutable on retry. Single-sense improvement
 never waits for useful selection.
 
 Teaching completion synchronously records general-practice demand in its completion
@@ -390,6 +508,52 @@ allowing reflection-first canonical senses to obtain later teaching examples
 without changing their descriptions or replaying historical encounters. Retained
 legacy description-source links remain readable for their original documents.
 
+## Case queue and full review workspace
+
+`VocabularyCaseReviewPage` consumes the display-only `VocabularyCaseQueueItem`
+projection from the case queue API. `CaseReviewCard` renders the served prompt,
+response/reaction summaries, assessment-associated provenance, and proposed
+operation rows without constructing a `VocabularyContentProposal`. Queue batches
+exclude raw authored bodies and provider output. The selected card can navigate
+within its twenty-card page without a detail request. Previous/next and unmodified
+Left/Right keys cross page boundaries with bidirectional keyset reads and wrap at
+both ends of the matching queue. Native text inputs and select controls retain
+their arrow keys. The counter shows the global position and exact matching total;
+only one page of compact cards is retained. History uses its own on-demand query
+and retains its cursor time window when wrapping.
+
+The card header shows the earliest original encounter timestamp; a case without
+that retained evidence explicitly shows its case-opened time. Sense groups start
+collapsed with exercise counts. Repeated assessment rationale is shown once, and
+unchanged current source snapshots are omitted. Changed-source information lives
+with the original served content and the existing approval/second-opinion guards
+remain authoritative. The action frame stays outside the scrolling card.
+
+Review notes are per-case drafts for the mounted review session. Opening a note
+focuses its field; Enter saves and closes the draft, Shift+Enter adds a newline,
+and IME composition does not submit. Drafts survive case/queue navigation and
+refresh reads but are lost on a browser reload or leaving the mounted view. A
+review action persists its supplied note through the existing action protocol;
+saving a draft alone does not write to the server or approve a proposal.
+
+The `VocabularyOperatorPage` editor mounts only after Details or Edit is requested.
+Its required detail mode hydrates the saved proposal and case workspace and reports
+case changes to the compact queue. It retains authored bases, source snapshots,
+operation inclusion, structured editing, and exact-version approval. Standalone
+proposals hydrate without a case workspace. `VocabularyAttentionPage` uses the
+bounded attention projection while mounted and opens this editor on demand.
+The projection reads existing source records; it does not maintain a second
+resolution lifecycle. Review eligibility is shared with the case queue so cases
+without another review destination remain reachable.
+
+Case identity drives selection and creation-time order. Case version protects
+review transitions, while refreshed source/staleness projections remain meaningful
+even at the same case version. Outstanding refreshes are fenced when a mutation
+starts; an uncertain approval acknowledgement keeps the exact request and selected
+case until retry. Failed newer jobs are visible alongside the previous successful
+assessment. Alternative proposal cards carry their own assessment provenance and
+never claim the case's current job authored an earlier draft.
+
 ## Compact proposal editing
 
 Review batches and case workspaces include read-only sense labels alongside the
@@ -398,7 +562,9 @@ useful senses. The review groups authored items by their target sense and shows
 common answer forms and access scope once. Unmapped items remain in general
 practice. Known full sense identifiers and unambiguous eight-character UUID
 references become readable labels in visible rationale prose; Details retains the
-original explanation and identifiers.
+original explanation and identifiers. Items with learning-role metadata show
+source repair, shared practice, refinement, or optional enrichment alongside
+their target. Saving edits or selecting items preserves that metadata.
 
 Each item has an inclusion checkbox. Unchecking it removes the operation from the
 next saved revision while retaining its edited draft locally until saving or

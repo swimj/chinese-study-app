@@ -62,7 +62,7 @@ linking to the intended guarantees they realize and any known gaps.
 - [Architecture map](architecture.md): runtime layout and code navigation;
   currently identifies itself as navigation-only.
 - [Vocabulary content-improvement architecture](implementation/vocabulary-content-improvement.md):
-  rendered provider-call flow, sense admission, and optional pure-cue promotion.
+  source routing, exercise-local proposals, shared-cue integration, and operator application.
 - [API map](api.md), [database map](server-db.md), and
   [frontend map](../SPECS/frontend-architecture-map.md): focused code references.
 - [Operator panel guide](operator-panel.md): how to reach and use the
@@ -91,6 +91,9 @@ retains teaching rationale and earlier package-based realization. The
 These routes do not certify full reconciliation of the older package guides.
 
 ## Operations guides
+
+- [Sense inventory reconciliation](ops/sense-inventory-reconciliation.md): reviewed
+  dependency reports and transactional stopped-writer correction of existing senses.
 
 **Target:** maintained procedures and safety conditions, with learner use,
 hosted operations, and contributor development clearly separated.
@@ -146,7 +149,7 @@ and the referenced documents.
 | Date added | Outstanding description |
 | --- | --- |
 | 2026-10-07 | The root README mixes product/repository orientation with former local-study clone advice and French try-out instructions. Its retained material needs appropriate current guides or an explicit historical role. |
-| 2026-10-28 | Vocabulary product and architecture contracts have separate owners, and the earlier lifecycle/reflection contracts are archived. The older word-content representation/generation/serving guides and other feature sources listed in SPECS/README.md still need their retained mechanisms and current applicability reconciled; closure requires explicit current versus historical ownership in those sources. |
+| 2026-10-28 | Vocabulary product and architecture contracts have separate owners, and the earlier lifecycle/reflection contracts are archived. Pure-cue reflection and compensation mechanisms are explicitly historical, with current vocabulary repair owned by vocabulary-learning.md. The older word-content representation/generation/serving guides and other feature sources listed in SPECS/README.md still need their retained mechanisms and current applicability reconciled; closure requires explicit current versus historical ownership in those sources. |
 | 2026-10-07 | `architecture.md` is primarily a navigation map. The system-level explanation of components, data flow, state boundaries, and mechanisms remains missing. |
 | 2026-10-07 | The service-boundary document mixes guarantees, alternatives, the hosted package, one-time migration, and acceptance scenarios. The frontier combines direction, constraints, and unresolved decisions. These documents still need clearer responsibilities. |
 | 2026-10-07 | Legacy in-repo plans and vision copies need a retention decision: useful conclusions need current explanatory homes, and retained historical material needs a deliberate reference role alongside the Steward workspace. |

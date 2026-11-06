@@ -10,6 +10,7 @@ import {
   resolveClerkAuthGatePhase,
   resolveClerkAuthMountedComponent,
 } from './clerk-auth-gate';
+import { isOperatorPath } from '../features/operator/routes';
 import { ServiceAccessBoundary } from './ServiceAccessBoundary';
 import { ClerkAuthLoadingView, ClerkAuthSignInView, ClerkAuthSignUpView } from './ClerkAuthGateViews';
 
@@ -66,12 +67,13 @@ export function ClerkAuthenticationBoundary({ children }: { children: (signOut?:
     void loadClerkClient(publishableKey).then(async (loadedClient) => {
       if (cancelled) return;
       const origin = window.location.origin;
+      const destination = isOperatorPath(window.location.pathname) ? `${origin}${window.location.pathname}` : origin;
       await loadedClient.load({
         ui: { ClerkUI: await loadClerkUi(deriveClerkDomain(publishableKey)) },
-        signInForceRedirectUrl: origin,
-        signUpForceRedirectUrl: origin,
-        signInFallbackRedirectUrl: origin,
-        signUpFallbackRedirectUrl: origin,
+        signInForceRedirectUrl: destination,
+        signUpForceRedirectUrl: destination,
+        signInFallbackRedirectUrl: destination,
+        signUpFallbackRedirectUrl: destination,
       });
       if (cancelled) return;
 
@@ -106,13 +108,14 @@ export function ClerkAuthenticationBoundary({ children }: { children: (signOut?:
   useEffect(() => {
     if (!client || signedIn || error || !authTarget.current) return;
     const origin = window.location.origin;
+    const destination = isOperatorPath(window.location.pathname) ? `${origin}${window.location.pathname}` : origin;
     const redirectOptions = {
-      forceRedirectUrl: origin,
-      fallbackRedirectUrl: origin,
-      signInForceRedirectUrl: origin,
-      signInFallbackRedirectUrl: origin,
-      signUpForceRedirectUrl: origin,
-      signUpFallbackRedirectUrl: origin,
+      forceRedirectUrl: destination,
+      fallbackRedirectUrl: destination,
+      signInForceRedirectUrl: destination,
+      signInFallbackRedirectUrl: destination,
+      signUpForceRedirectUrl: destination,
+      signUpFallbackRedirectUrl: destination,
     };
     if (resolveClerkAuthMountedComponent(invitationTicket) === 'sign-up') {
       client.mountSignUp(authTarget.current, redirectOptions);

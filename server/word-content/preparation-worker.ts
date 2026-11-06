@@ -1,9 +1,10 @@
-import { VocabularySenseReadinessPending,VocabularySenseReadinessError } from '../vocabulary/sense-readiness.ts';
+import { isVocabularySessionWordEligible } from '../db/vocabulary-sense-eligibility.ts';
+import { VocabularySenseReadinessPending,VocabularySenseReadinessError,VocabularyEmptySenseInventory } from '../vocabulary/sense-readiness.ts';
 import type { ensureVocabularySenses } from '../vocabulary/sense-readiness.ts';
 import { runWithLearnerId } from '../db/learner-context.ts';
 import { randomUUID } from 'node:crypto';
 import {
-  deferWordPreparationForSenses,listDueWordPreparation, beginWordPreparationAttempt, markWordPreparationReady,
+  pauseEmptyInventoryPreparation,deferWordPreparationForSenses,listDueWordPreparation, beginWordPreparationAttempt, markWordPreparationReady,
   failWordPreparationAttempt, recoverExpiredWordPreparation, pauseUnavailableWordPreparation,
   type WordPreparationWork,
 } from '../db/preparation-work.ts';
@@ -12,6 +13,8 @@ import { HostedProviderWorkUnavailableError, runHostedProviderWork } from '../ho
 import { createSharedWordPreparation } from './shared-preparation.ts';
 import { WordPreparationProviderError, PREPARATION_PROVIDER_BACKOFF_MS } from './provider-failure.ts';
 import type { WordIntroductionProvider } from './provider.ts';
+
+const RECOVERY_CHECK_INTERVAL_MS = 30_000;
 
 export function createWordPreparationWorker(options: {
   provider?: WordIntroductionProvider;
@@ -35,6 +38,7 @@ export function createWordPreparationWorker(options: {
   let draining: Promise<void> | null = null;
   let stepping: Promise<boolean> | null = null;
   let providerBackoffUntil = 0;
+  let nextRecoveryCheckAt = Number.NEGATIVE_INFINITY;
   const working = new Set<string>();
   function enabled() {
     const state = controls();
@@ -45,6 +49,10 @@ export function createWordPreparationWorker(options: {
     if (working.has(work.workId)) return false;
     working.add(work.workId);
     try {
+      if (!isVocabularySessionWordEligible(work.wordId)) {
+        pauseEmptyInventoryPreparation(work.wordId,new VocabularyEmptySenseInventory().message,isoNow());
+        return true;
+      }
       if (preparation.ready(work.wordId, work.stage)) {
         markWordPreparationReady(work.workId, isoNow());
         return true;
@@ -62,7 +70,8 @@ export function createWordPreparationWorker(options: {
         if (!enabled()) return false;
         try{if(work.stage==='bootstrap')await preparation.prepareBootstrapSenses(work.wordId,work.workId);else preparation.validatePreparedSource(work.wordId);}
         catch(error){
-          if(error instanceof VocabularySenseReadinessPending)deferWordPreparationForSenses(work.workId,error.retryAt,isoNow());
+          if(error instanceof VocabularyEmptySenseInventory)pauseEmptyInventoryPreparation(work.wordId,error.message,isoNow());
+          else if(error instanceof VocabularySenseReadinessPending)deferWordPreparationForSenses(work.workId,error.retryAt,isoNow());
           else if(error instanceof VocabularySenseReadinessError)pauseUnavailableWordPreparation(work.workId,error.message,isoNow());
           else throw error;
           return true;
@@ -97,7 +106,12 @@ export function createWordPreparationWorker(options: {
     } finally { working.delete(work.workId); }
   }
   async function runStep(): Promise<boolean> {
-    recoverExpiredWordPreparation(isoNow());
+    if (stopped || controls().maintenanceMode) return false;
+    const checkedAt = now();
+    if (checkedAt >= nextRecoveryCheckAt) {
+      recoverExpiredWordPreparation(new Date(checkedAt).toISOString());
+      nextRecoveryCheckAt = checkedAt + RECOVERY_CHECK_INTERVAL_MS;
+    }
     if (!enabled()) return false;
     const due = listDueWordPreparation(isoNow());
     // SQL excludes unfinished dependencies; withdrawn sources enter the batch once to become operator-visible.
@@ -122,7 +136,7 @@ export function createWordPreparationWorker(options: {
     timer = undefined;
     void drain().catch((error: unknown) => options.onError?.(error)).finally(() => {
       if (!stopped && timer === undefined) {
-        timer = setTimeout(wake, options.pollMs ?? 5_000);
+        timer = setTimeout(wake, options.pollMs ?? 30_000);
         timer.unref();
       }
     });

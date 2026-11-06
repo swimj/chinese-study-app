@@ -469,3 +469,102 @@ test('default useful selection upgrade preserves prior coverage without interpre
     assert.deepEqual(db.prepare('SELECT * FROM vocabulary_sense_coverage_history').all(),before);assertSchemaCurrent(db);
   }finally{db.close();}
 });
+
+test('dispatch polling indexes preserve populated evidence and lifecycle fields across upgrade',()=>{
+  const {db}=copy('dispatch-polling-upgrade',true);
+  try {
+    const index=schemaMigrations.findIndex(item=>item.id==='app_schema:0065_vocabulary_dispatch_polling_indexes');
+    assert.ok(index>0);
+    migrateDatabase(db,schemaMigrations.slice(0,index));
+    const at='2026-11-04T04:05:23.470Z';
+    db.prepare('INSERT INTO learners VALUES(?,?,?,NULL)').run('dispatch-learner','Retained learner',at);
+    const evidence=JSON.stringify({context:{retained:'x'.repeat(512*1024)},actions:[],projection:{fixture:true}});
+    for(const status of ['queued','running','succeeded','failed']) {
+      db.prepare(`INSERT INTO vocabulary_sessions VALUES(?,'dispatch-learner',1,'{}',?,?,'closed')`).run(status,at,at);
+      db.prepare(`INSERT INTO vocabulary_session_completions VALUES(?,'dispatch-learner',?,1,0,?,?,'closed','{}','{}','fixture',?,NULL)`).run(status,status,at,at,at);
+      db.prepare(`INSERT INTO vocabulary_post_session_dispatches VALUES(?,'dispatch-learner',?,?,?,?,?,?,?,?,?)`)
+        .run(status,status,status,evidence,status,at,status==='running'?'retained-token':null,
+          status==='running'?'2026-11-04T04:06:23.470Z':null,status==='failed'?'retained-error':null,
+          status==='succeeded'?' {"caseIds": ["retained-case"]} ':null);
+    }
+    const tables=['learners','vocabulary_sessions','vocabulary_session_completions','vocabulary_post_session_dispatches'];
+    const before=tables.map(table=>db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all());
+    assert.deepEqual(migrateDatabase(db),schemaMigrations.slice(index).map(item=>item.id));
+    assert.deepEqual(migrateDatabase(db),[]);
+    tables.forEach((table,i)=>assert.deepEqual(db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all(),before[i]));
+    assert.throws(()=>db.exec("UPDATE vocabulary_post_session_dispatches SET evidence_json='{}' WHERE dispatch_id='succeeded'"),/immutable/);
+    assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
+    assertSchemaCurrent(db);
+  } finally {db.close();}
+});
+
+function seedCaseReviewLineage(db:DatabaseSync,active=false){
+  const at='2026-11-04T00:00:00.000Z';
+  db.exec('BEGIN');
+  db.prepare("INSERT INTO learners VALUES ('case-learner','Fixture',?,NULL)").run(at);
+  db.prepare("INSERT INTO vocabulary_sessions VALUES ('case-session','case-learner',1,'{}',?,?,'closed')").run(at,at);
+  db.prepare("INSERT INTO vocabulary_session_completions VALUES ('case-completion','case-learner','case-session',1,0,?,?,'closed','{}','{}','fixture',?,NULL)").run(at,at,at);
+  db.prepare("INSERT INTO vocabulary_reflection_session_evidence VALUES ('case-completion','case-learner','case-session','{}',?)").run(at);
+  for(const [id,status] of [['root','closed'],['successor','completed'],['opinion','completed']])db.prepare("INSERT INTO reflection_cases(case_id,completion_id,learner_id,kind,subject_key,status,evidence_snapshot_json,created_at) VALUES (?,'case-completion','case-learner','exercise_improvement',?,?,'[]',?)").run(id,id,status,at);
+  db.prepare("INSERT INTO content_proposals VALUES ('old-proposal','root',1,'closed','[]','Retained','service','fixture',NULL,?,?)").run(at,at);
+  db.prepare("INSERT INTO proposal_revision_history VALUES ('old-proposal',1,'{}','service','fixture',?)").run(at);
+  const insert=db.prepare("INSERT INTO vocabulary_reflection_jobs(job_id,case_id,kind,dedupe_key,status,next_attempt_at,created_at,result_json,reassessment_source_job_id,second_opinion_json) VALUES (?,?,'exercise_improvement',?,?,?,?,?,?,?)");
+  insert.run('z-initial','root','root',active?'queued':'succeeded',at,at,JSON.stringify({input:{proposal:{}},output:{proposalId:'old-proposal'}}),null,null);
+  insert.run('a-successor','successor','successor',active?'queued':'succeeded',at,at,JSON.stringify({input:{proposal:null},output:{proposalId:null}}),'z-initial',null);
+  insert.run('0-opinion','opinion','opinion','succeeded',at,at,JSON.stringify({input:{proposal:null,secondOpinion:{verdict:'support',rationale:'Advisory'}}}),null,JSON.stringify({proposal:{caseId:'root'}}));
+  db.exec('COMMIT');
+}
+
+test('case review migration preserves a tied historical chain and keeps its latest no-change assessment open',()=>{
+  const {db}=copy('case-review-chain',true);
+  try{
+    const index=schemaMigrations.findIndex(item=>item.id==='app_schema:0066_vocabulary_case_reviews');migrateDatabase(db,schemaMigrations.slice(0,index));seedCaseReviewLineage(db);
+    const cases=db.prepare('SELECT * FROM reflection_cases ORDER BY case_id').all(),history=db.prepare('SELECT * FROM proposal_revision_history').all();
+    const originalJobs=db.prepare('SELECT job_id,case_id,result_json,second_opinion_json,reassessment_source_job_id FROM vocabulary_reflection_jobs ORDER BY job_id').all();
+    migrateDatabase(db);migrateDatabase(db);
+    assert.deepEqual(db.prepare('SELECT * FROM reflection_cases ORDER BY case_id').all(),cases);assert.deepEqual(db.prepare('SELECT * FROM proposal_revision_history').all(),history);
+    assert.deepEqual(db.prepare('SELECT job_id,case_id,result_json,second_opinion_json,reassessment_source_job_id FROM vocabulary_reflection_jobs ORDER BY job_id').all(),originalJobs);
+    const review=db.prepare('SELECT * FROM vocabulary_case_reviews').get()!;
+    assert.equal(review.case_id,'root');assert.equal(review.state,'open');assert.equal(review.current_job_id,'a-successor');assert.equal(review.current_proposal_id,null);assert.equal(review.resolved_at,null);
+    const jobs=db.prepare('SELECT job_id,review_case_id,case_sequence FROM vocabulary_reflection_jobs ORDER BY case_sequence').all();
+    assert.deepEqual(jobs.map(j=>j.job_id),['z-initial','0-opinion','a-successor']);assert.ok(jobs.every(j=>j.review_case_id==='root'));
+    assert.equal(db.prepare("SELECT assessment_job_id FROM content_proposals WHERE proposal_id='old-proposal'").get()!.assessment_job_id,'z-initial');
+    assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);assertSchemaCurrent(db);
+  }finally{db.close();}
+});
+
+test('case review migration refuses multiple in-flight ancestors atomically instead of losing provider work',()=>{
+  const {db}=copy('case-review-active-chain',true);
+  try{
+    const index=schemaMigrations.findIndex(item=>item.id==='app_schema:0066_vocabulary_case_reviews');migrateDatabase(db,schemaMigrations.slice(0,index));seedCaseReviewLineage(db,true);
+    const before=db.prepare('SELECT * FROM vocabulary_reflection_jobs ORDER BY job_id').all();
+    assert.throws(()=>migrateDatabase(db),/2 active jobs/);
+    assert.deepEqual(db.prepare('SELECT * FROM vocabulary_reflection_jobs ORDER BY job_id').all(),before);
+    assert.equal(db.prepare("SELECT 1 FROM sqlite_schema WHERE name='vocabulary_case_reviews'").get(),undefined);
+  }finally{db.close();}
+});
+
+test('repair target migration preserves legacy scopes and assessments without inventing operator intent',()=>{
+  const {db}=copy('repair-target-upgrade',true);
+  try {
+    const reviewIndex=schemaMigrations.findIndex(item=>item.id==='app_schema:0066_vocabulary_case_reviews');
+    const targetIndex=schemaMigrations.findIndex(item=>item.id==='app_schema:0067_vocabulary_repair_targets');
+    assert.ok(targetIndex>reviewIndex);
+    migrateDatabase(db,schemaMigrations.slice(0,reviewIndex));seedCaseReviewLineage(db);
+    migrateDatabase(db,schemaMigrations.slice(0,targetIndex));
+    db.exec(`INSERT INTO vocabulary_case_sense_coverage VALUES ('root',2,'["historical-sense"]','2026-11-04T00:00:00.000Z');
+      INSERT INTO vocabulary_sense_coverage_history VALUES ('legacy-scope','case','root',2,'{"includedSenseIds":["historical-sense"]}','operator','2026-11-04T00:00:00.000Z');`);
+    const preserved=['vocabulary_case_sense_coverage','vocabulary_sense_coverage_history','vocabulary_case_reviews','content_proposals','proposal_revision_history','reflection_cases'];
+    const before=preserved.map(table=>db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all());
+    const jobs=db.prepare('SELECT job_id,result_json,status FROM vocabulary_reflection_jobs ORDER BY job_id').all();
+    migrateDatabase(db);
+    preserved.forEach((table,i)=>assert.deepEqual(db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all(),before[i]));
+    assert.deepEqual(db.prepare('SELECT job_id,result_json,status FROM vocabulary_reflection_jobs ORDER BY job_id').all(),jobs);
+    assert.deepEqual(db.prepare('SELECT * FROM vocabulary_case_repair_targets').all(),[]);
+    assert.deepEqual(db.prepare('SELECT * FROM vocabulary_repertoire_revisions').all(),[]);
+    assert.equal(db.prepare('SELECT count(*) AS n FROM vocabulary_reflection_jobs WHERE repair_target_json IS NOT NULL').get()!.n,0);
+    assert.deepEqual(migrateDatabase(db),[]);
+    assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
+    assertSchemaCurrent(db);
+  } finally {db.close();}
+});

@@ -16,3 +16,8 @@ export function mergeSenseLabels(previous:readonly VocabularySenseLabel[],wordId
 }
 
 export function scopeBlocksNavigation(saving:boolean,hasDraft:boolean):boolean{return saving||hasDraft;}
+
+/** Known pending intent blocks locally; the backend authorizes every mutation. */
+export function repairTargetBlocksMutation(caseId:string,target:{caseId:string;blocked:boolean}|null):boolean {
+  return target?.caseId===caseId&&target.blocked;
+}

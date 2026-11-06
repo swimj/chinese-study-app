@@ -1,3 +1,4 @@
+import { isVocabularySessionWordEligible } from '../db/vocabulary-sense-eligibility.ts';
 import { ensureVocabularyDefaultUsefulSelection,retryDefaultUsefulSelection,defaultUsefulSelectionRetryable } from './default-useful-selection.ts';
 import { VocabularySenseReadinessPending,VocabularySenseSelectionRequired } from './sense-readiness.ts';
 import { resolveVocabularySenseCoverage } from '../db/vocabulary-sense-coverage.ts';
@@ -19,7 +20,7 @@ import { createVocabularyContent,getVocabularySenseCatalog,emitBackendEvent } fr
 import { linkVocabularyInvocationContent,linkVocabularyInvocationSense } from '../db/vocabulary-provenance.ts';
 
 export const VOCABULARY_PRACTICE_SERVICE = 'vocabulary-practice-authoring';
-export const VOCABULARY_PRACTICE_MODEL = 'gpt-5.6-luna';
+export const VOCABULARY_PRACTICE_MODEL = 'gpt-6-luna';
 const TIMEOUT = 180_000;
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 export type VocabularyPracticeProvider = {
@@ -91,6 +92,7 @@ export function createVocabularyPracticePreparation(options: { provider?: Vocabu
   }
   function generationKey(content:WordContentDocument):string { return provider.generationKey(content); }
   function ensure(wordId: string): VocabularyPracticeWork | null {
+    if(!isVocabularySessionWordEligible(wordId))return null;
     const bootstrap=getSharedWordIntroductionContent(wordId);if(!bootstrap)return null;
     // A source owns one automatic lifecycle across prompt revisions, including ready-empty and exhausted work.
     const existing=getDb().prepare(`SELECT ${projection} FROM vocabulary_practice_preparation WHERE word_id=? AND source_content_id=? ORDER BY CASE status WHEN 'ready' THEN 0 WHEN 'running' THEN 1 WHEN 'queued' THEN 2 ELSE 3 END,created_at,work_id LIMIT 1`).get(wordId,bootstrap.id) as VocabularyPracticeWork|undefined;
@@ -116,6 +118,9 @@ export function createVocabularyPracticePreparation(options: { provider?: Vocabu
   }
   async function preflight(workId:string):Promise<boolean> {
     const work=readWork(workId);if(!work||work.status!=='queued')return false;
+    if(!isVocabularySessionWordEligible(work.wordId)){
+      getDb().prepare("UPDATE vocabulary_practice_preparation SET status='ready',last_error='No automatic practice demand for the selected senses.',updated_at=? WHERE work_id=? AND status='queued'").run(now(),workId);return false;
+    }
     const source=getSharedWordIntroductionContent(work.wordId);
     if(!source||source.id!==work.sourceContentId||!productionSource(source)){
       getDb().prepare("UPDATE vocabulary_practice_preparation SET status='failed',last_error='source_mapping_requires_operator',updated_at=? WHERE work_id=? AND status='queued'").run(now(),workId);return false;
@@ -228,8 +233,20 @@ export function createVocabularyPracticePreparation(options: { provider?: Vocabu
       throw new Error('Vocabulary practice generation failed; inspect its retained invocation');
     }
   }
+  function failureDetails(row:Pick<VocabularyPracticeWork,'workId'|'wordId'|'sourceContentId'|'attemptCount'|'invocationId'|'lastError'>) {
+    const source=getSharedWordIntroductionContent(row.wordId);
+    const retryable=isVocabularySessionWordEligible(row.wordId)&&Boolean(source&&source.id===row.sourceContentId&&productionSource(source))
+      &&!row.lastError?.startsWith('source_mapping_requires_operator')
+      &&!(row.lastError?.startsWith('selection_requires_operator:')&&resolveVocabularySenseCoverage(row.wordId).word.defaultUsefulSenseIds===null&&!defaultUsefulSelectionRetryable(row.wordId));
+    return {...row,retryable};
+  }
   return {
     isConfigured: () => provider.isConfigured(),ensure,preflight,claim,run,
+    failed(workId:string) {
+      const row=getDb().prepare(`SELECT work_id AS workId,word_id AS wordId,source_content_id AS sourceContentId,attempt_count AS attemptCount,invocation_id AS invocationId,last_error AS lastError FROM vocabulary_practice_preparation WHERE work_id=? AND status='failed'`).get(workId) as Pick<VocabularyPracticeWork,'workId'|'wordId'|'sourceContentId'|'attemptCount'|'invocationId'|'lastError'>|undefined;
+      if(!row)throw new Error('Expected failed practice preparation');
+      return failureDetails(row);
+    },
     listQueued(limit = 20): VocabularyPracticeWork[] {
       if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new Error('Invalid preparation batch size');
       return getDb().prepare(`SELECT ${projection} FROM vocabulary_practice_preparation WHERE status='queued' AND next_attempt_at<=? ORDER BY next_attempt_at,created_at,work_id LIMIT ?`).all(now(),limit) as VocabularyPracticeWork[];
@@ -240,7 +257,7 @@ export function createVocabularyPracticePreparation(options: { provider?: Vocabu
       const rows = getDb().prepare(`SELECT work_id AS workId,word_id AS wordId,source_content_id AS sourceContentId,
         attempt_count AS attemptCount,invocation_id AS invocationId,last_error AS lastError
         FROM vocabulary_practice_preparation WHERE status='failed' ORDER BY updated_at DESC,work_id LIMIT ?`).all(limit) as Array<Pick<VocabularyPracticeWork,'workId'|'wordId'|'sourceContentId'|'attemptCount'|'invocationId'|'lastError'>>;
-      return rows.map(row => ({...row,retryable:(()=>{const source=getSharedWordIntroductionContent(row.wordId);return Boolean(source&&source.id===row.sourceContentId&&productionSource(source))&&!row.lastError?.startsWith('source_mapping_requires_operator')&&!(row.lastError?.startsWith('selection_requires_operator:')&&resolveVocabularySenseCoverage(row.wordId).word.defaultUsefulSenseIds===null&&!defaultUsefulSelectionRetryable(row.wordId));})()}));
+      return rows.map(row => failureDetails(row));
     },
     recoverExpired(): void {
       const rows=getDb().prepare(`SELECT work_id,active_token FROM vocabulary_practice_preparation WHERE status='running' AND expires_at<=?`).all(now()) as Array<{work_id:string;active_token:string}>;
@@ -250,6 +267,7 @@ export function createVocabularyPracticePreparation(options: { provider?: Vocabu
       if (!operatorId.trim()) throw new Error('Operator authority is required');
       atomic(() => {
         const work=readWork(workId);if(!work||work.status!=='failed')throw new Error('Preparation is not retryable');
+        if(!isVocabularySessionWordEligible(work.wordId))throw new Error('Empty inventory has no practice demand');
         const source=getSharedWordIntroductionContent(work.wordId);if(!source||source.id!==work.sourceContentId||!productionSource(source))throw new Error('Source mappings require operator review before retry');
         if(work.lastError?.startsWith('selection_requires_operator:')&&resolveVocabularySenseCoverage(work.wordId).word.defaultUsefulSenseIds===null)retryDefaultUsefulSelection(work.wordId,operatorId);
         const changed = getDb().prepare(`UPDATE vocabulary_practice_preparation SET status='queued',attempt_count=0,last_error=CASE WHEN last_error LIKE 'selection_requires_operator:%' THEN 'default_selection_pending' ELSE NULL END,invocation_id=NULL,updated_at=?,next_attempt_at=?

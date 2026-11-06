@@ -11,20 +11,29 @@ import {
   isOfferedReflectionModelChoice,
   isReflectionModelChoice,
   LUNA_REFLECTION_MODEL_CHOICE,
+  reflectionChoiceForStoredModel,
 } from '../server/reflection/model-arms.ts';
 
 describe('reflection comparison-arm registry', () => {
+  test('upgrades saved Luna routes without offering the legacy model for new requests', () => {
+    for (const model of ['gpt-5.6-luna-high', 'openai:gpt-5.6-luna-high', 'gpt-6-luna-high', 'openai:gpt-6-luna-high']) {
+      assert.equal(reflectionChoiceForStoredModel(model), 'openai:gpt-6-luna-high');
+    }
+    assert.equal(isReflectionModelChoice('openai:gpt-5.6-luna-high'), false);
+    assert.equal(isOfferedReflectionModelChoice('openai:gpt-5.6-luna-high'), false);
+    assert.equal(reflectionChoiceForStoredModel('unknown'), null);
+  });
   test('registers six comparison arms and offers three by default', () => {
     const choices = REFLECTION_MODEL_ARMS.map((arm) => arm.choice);
     assert.deepEqual(choices, [
-      'openai:gpt-5.6-luna-high',
+      'openai:gpt-6-luna-high',
       'zai:glm-5.3-flash-max',
       'zai:glm-5.3-flash-high',
       'openrouter:gemini-3.6-flash',
       'openai:gpt-5.6-terra-high',
       'openai:gpt-6-sol-high',
     ]);
-    assert.equal(LUNA_REFLECTION_MODEL_CHOICE, 'openai:gpt-5.6-luna-high');
+    assert.equal(LUNA_REFLECTION_MODEL_CHOICE, 'openai:gpt-6-luna-high');
     assert.equal(isReflectionModelChoice('openai:gpt-5.6-terra-high'), true);
     assert.equal(isReflectionModelChoice('zai:glm-5.3-flash-high'), true);
     assert.equal(isReflectionModelChoice('zai:glm-5.3-flash-max'), true);
@@ -40,7 +49,7 @@ describe('reflection comparison-arm registry', () => {
     assert.deepEqual(
       REFLECTION_MODEL_ARMS.filter((arm) => arm.enabledByDefault).map((arm) => arm.choice),
       [
-        'openai:gpt-5.6-luna-high',
+        'openai:gpt-6-luna-high',
         'zai:glm-5.3-flash-high',
         'openai:gpt-6-sol-high',
       ],
@@ -60,7 +69,7 @@ describe('reflection comparison-arm registry', () => {
           .map((arm) => [arm.choice, arm.dogfoodSelectionWeight]),
       ),
       {
-        'openai:gpt-5.6-luna-high': { smallBundle: 30, largeBundle: 20 },
+        'openai:gpt-6-luna-high': { smallBundle: 30, largeBundle: 20 },
         'zai:glm-5.3-flash-high': { smallBundle: 70, largeBundle: 20 },
         'openai:gpt-6-sol-high': { smallBundle: 0, largeBundle: 60 },
       },

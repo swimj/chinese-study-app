@@ -12,7 +12,7 @@ import { wordContentFixtures } from '../src/features/introduction-lab/samples.ts
 const { values } = parseArgs({ options: {
   archive: { type: 'string' }, samples: { type: 'string' }, 'input-directory': { type: 'string' },
   role: { type: 'string', default: 'general_exercises' }, prompt: { type: 'string' },
-  variant: { type: 'string' }, model: { type: 'string', default: 'gpt-5.6-luna' },
+  variant: { type: 'string' }, model: { type: 'string', default: 'gpt-6-luna' },
   reasoning: { type: 'string', default: 'high' }, 'max-output-tokens': { type: 'string', default: '12000' },
   'allow-provider-calls': { type: 'boolean', default: false },
 } });

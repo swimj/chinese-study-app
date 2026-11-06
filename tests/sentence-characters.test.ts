@@ -21,9 +21,10 @@ describe('sentence character presentation', () => {
       '𠮷正在学习，㑇和㐷，發展與頭髮。',
     ];
     for (const sample of samples) {
-      const simplified = fullSimplified(sample);
+      const traditional = fullTraditional(sample);
+      const simplified = fullSimplified(traditional);
       assert.equal(convertSentenceCharacters(sample, 'simplified'), simplified);
-      assert.equal(convertSentenceCharacters(sample, 'traditional'), fullTraditional(simplified));
+      assert.equal(convertSentenceCharacters(sample, 'traditional'), traditional);
     }
   });
   test('the main preference wins unless it requests both', () => {
@@ -49,13 +50,26 @@ describe('sentence character presentation', () => {
       '頭髮，發展，乾燥，乾淨，自行車，軟件。');
   });
 
+  test('retains 著 in significant across simplified, traditional, and mixed sources', () => {
+    for (const source of ['这次效果显著。', '這次效果顯著。', '這次效果显著。', '这次效果顯著。']) {
+      assert.equal(convertSentenceCharacters(source, 'simplified'), '这次效果显著。');
+      assert.equal(convertSentenceCharacters(source, 'traditional'), '這次效果顯著。');
+    }
+    assert.equal(convertSentenceCharacters('他看著著名作家的著作，著手研究显著的变化。', 'simplified'),
+      '他看着著名作家的著作，着手研究显著的变化。');
+    assert.equal(formatSentenceAnswer({ hanzi: '显著', traditional: '顯著' }, 'simplified'), '显著');
+    assert.deepEqual(convertClozeParts(['這次效果显', '。'], null, 'simplified', '著'),
+      { parts: ['这次效果显', '。'], answer: null });
+  });
+
   test('preserves explicit equivalent character comparisons in instructional prose', () => {
     const note = 'Compare 学习 / 學習 and 后/後, then read 这句话。';
     assert.equal(convertSentenceCharacters(note, 'traditional'),
       'Compare 学习 / 學習 and 后/後, then read 這句話。');
     assert.equal(convertSentenceCharacters(note, 'simplified'), note);
     assert.equal(convertSentenceCharacters('学习 / 阅读', 'traditional'), '學習 / 閱讀');
-    for (const comparison of ['学习 vs 學習', '学习 versus 學習', '后→後', '后 ↔ 後',
+    for (const comparison of ['学习 vs 學習', '学习 versus 學習', '后→後', '后 ↔ 後', '显著 / 顯著',
+      'Simplified 显著; Traditional 顯著',
       'Simplified 学习; Traditional 學習', 'Traditional: 學習; Simplified: 学习']) {
       assert.equal(convertSentenceCharacters(`${comparison}，然后学习。`, 'traditional'),
         `${comparison}，然後學習。`);

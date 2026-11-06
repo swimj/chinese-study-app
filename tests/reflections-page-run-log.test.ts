@@ -181,7 +181,7 @@ describe('reflection run log presentation', () => {
     );
     assert.doesNotMatch(
       markup,
-      /<option value="openai:gpt-5.6-luna-high" selected="">Luna high<\/option>/,
+      /<option value="openai:gpt-6-luna-high" selected="">Luna high<\/option>/,
     );
     assert.doesNotMatch(markup, /Gemini 3.6 Flash/);
     assert.match(markup, />Get a second opinion \(2\)</);
@@ -198,8 +198,8 @@ describe('reflection run log presentation', () => {
     }));
 
     assert.doesNotMatch(markup, /Luna is the only available model until/);
-    assert.match(markup, /value="openai:gpt-5.6-luna-high"/);
-    assert.doesNotMatch(markup, /value="openai:gpt-5.6-luna-high" disabled=""/);
+    assert.match(markup, /value="openai:gpt-6-luna-high"/);
+    assert.doesNotMatch(markup, /value="openai:gpt-6-luna-high" disabled=""/);
     assert.doesNotMatch(markup, /value="zai:glm-5.3-flash-max"/);
     assert.match(markup, /<option value="zai:glm-5.3-flash-high">GLM-5.3 Flash high<\/option>/);
     assert.doesNotMatch(markup, /value="openai:gpt-5.6-terra-high"/);
@@ -323,7 +323,7 @@ function unreadableArtifact(
     reflectionFlowVersion: 'initial_post_session_reflection.v1',
     generatedAt: '2026-07-29T12:00:00.000Z',
     provider: 'openai',
-    model: 'gpt-5.6-luna-high',
+    model: 'gpt-6-luna-high',
     promptVersion: 'reflection-v3',
     bundleSchemaVersion: 'session_reflection_bundle.v2',
     resultSchemaVersion: 'session_reflection_result.v5',
@@ -434,7 +434,7 @@ function explanationArtifact(): ReflectionArtifactDetailDto {
     reflectionFlowVersion: CURRENT_INITIAL_REFLECTION_FLOW_VERSION,
     generatedAt,
     provider: 'openai-compatible',
-    model: 'gpt-5.6-luna',
+    model: 'gpt-6-luna',
     promptVersion: STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION,
     bundleSchemaVersion: evidenceBundle.schemaVersion,
     resultSchemaVersion: result.schemaVersion,
@@ -569,7 +569,7 @@ function deferredProposalArtifact(
     reflectionFlowVersion: 'initial_post_session_reflection.v1',
     generatedAt,
     provider: 'openai-compatible',
-    model: 'gpt-5.6-luna',
+    model: 'gpt-6-luna',
     promptVersion: 'reflection-v2',
     bundleSchemaVersion: evidenceBundle.schemaVersion,
     resultSchemaVersion: result.schemaVersion,
@@ -624,8 +624,8 @@ function run(overrides: {
     startedAt: overrides.startedAt ?? '2026-07-29T12:00:00.000Z',
     completedAt: overrides.completedAt ?? '2026-07-29T12:00:01.000Z',
     provider: 'openai',
-    model: 'gpt-5.6-luna-high',
-    providerModel: 'gpt-5.6-luna',
+    model: 'gpt-6-luna-high',
+    providerModel: 'gpt-6-luna',
     promptVersion: 'reflection-v2',
     responseId: overrides.responseId === undefined ? 'response-1' : overrides.responseId,
     clientRequestId: overrides.clientRequestId === undefined ? null : overrides.clientRequestId,

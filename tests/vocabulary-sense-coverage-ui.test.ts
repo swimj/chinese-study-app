@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mergeSenseLabels,scopeBlocksNavigation,coverageImpact,scopeAffectsProposal } from '../src/features/vocabulary-operator/sense-coverage.ts';
+import { repairTargetBlocksMutation,mergeSenseLabels,scopeBlocksNavigation,coverageImpact,scopeAffectsProposal } from '../src/features/vocabulary-operator/sense-coverage.ts';
 import type { VocabularySenseCoverageWorkspace } from '../src/domain/vocabulary-sense-coverage.ts';
 import type { VocabularyContentProposal } from '../src/domain/vocabulary-reflection.ts';
 function workspace(known=true):VocabularySenseCoverageWorkspace{return {word:{wordId:'word',version:known?1:0,defaultUsefulSenseIds:known?['first','second']:null,excludedSenseIds:[]},review:null,includedSenseIds:known?['first','second']:[],selectionEstablished:known,fingerprint:'fixture',senses:['first','second'].map(senseId=>({senseId,wordId:'word',description:{label:senseId},status:'active',version:1,createdAt:'2026-10-29',updatedAt:'2026-10-29'})),productionExerciseCounts:{first:6,second:2}};}
@@ -22,4 +22,12 @@ test('a scope refresh preserves sense labels for other words',()=>{
 });
 test('plain scope reads do not lock navigation; unsaved edits and writes do',()=>{
  assert.equal(scopeBlocksNavigation(false,false),false);assert.equal(scopeBlocksNavigation(false,true),true);assert.equal(scopeBlocksNavigation(true,false),true);
+});
+
+test('only known pending intent for this case blocks locally; unknown state defers to backend guards',()=>{
+ assert.equal(repairTargetBlocksMutation('case',null),false);
+ assert.equal(repairTargetBlocksMutation('case',{caseId:'other',blocked:false}),false);
+ assert.equal(repairTargetBlocksMutation('case',{caseId:'other',blocked:true}),false);
+ assert.equal(repairTargetBlocksMutation('case',{caseId:'case',blocked:true}),true);
+ assert.equal(repairTargetBlocksMutation('case',{caseId:'case',blocked:false}),false);
 });

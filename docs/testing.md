@@ -73,6 +73,12 @@ wiring; full automated mounted-controller/fetch-race coverage is not implied.
 
 ## Browser regression checks
 
+`tests/browser/operator-learner-isolation.html` mounts the actual application root
+with mocked transport. It checks pathname entry, operator rail navigation and
+browser Back, focus/visibility/polling isolation, a full-page study-return link,
+and learner mounting at `/` even with an obsolete operator hash. It does not
+exercise live Clerk sign-in redirects or preserve study sessions across page loads.
+
 
 ### Comparing a replacement UI with the earlier app
 
@@ -93,6 +99,29 @@ before declaring parity. Keep the screenshots and baseline identity with the
 review evidence so the next iteration can use the same comparison.
 
 
+### Case review queue
+
+`/tests/browser/vocabulary-case-review.html` exercises the production case queue
+page with compact synthetic cards and explicit full-workspace hydration. Visible
+request counters distinguish queue/history/card reads from workspace, full proposal,
+and attention reads. Fixture controls complete/fail a reassessment, change shared
+source metadata without changing case version, resolve a case externally, lose an
+approval acknowledgement, and fail pending approval. `?usage` mounts the production
+operator container; `?narrow&largeText` uses a 480px panel with enlarged text.
+`?reuse` shows existing shared practice before edits; `?reuse=missing` and
+`?reuse=retired` exercise unavailable references. Combine with `narrow&largeText`
+to check wrapping and keyboard access to the cue disclosure.
+The fixture uses local synthetic responses and never calls a provider.
+
+Verify in-batch navigation makes no detail fetch, cross-page and end-wrap navigation,
+exact totals, encounter time labels, collapsed sense counts, source drift, note
+focus/Enter/IME behavior, action visibility in the outer operator container,
+case identity through reassessment, cursor after Done, lazy Archive/Needs attention,
+exact-request approval retry, full editor hydration and unsaved-change guards.
+`vocabulary-case-queue-model.test.ts` covers the active window projection, equal-case-
+version source changes, deduplication, removal cursor, and retry/approval visibility.
+Backend/API coverage lives in `vocabulary-case-queue.test.ts`.
+
 ### Current browser fixtures
 
 `/tests/browser/service-access.html` exercises the real service-access boundary
@@ -107,7 +136,11 @@ account response fencing are covered by `operator-only-access.test.ts`,
 
 The current Mandarin flow uses `/tests/browser/vocabulary-controller.html`
 (and `?mode=undo`) to exercise cancellation and delayed acknowledgements through
-the real hook. `/tests/browser/vocabulary-recognition-motion.html` uses the real
+the real hook. Its `?mode=enough` and `?mode=skip` cases end the last open word
+while finishing and verify completion stages and closes without requesting another
+exercise. `?mode=enough-active` checks that active study advances after wrapping
+a word. These are browser checks with mocked transport, separate from `npm test`.
+`/tests/browser/vocabulary-recognition-motion.html` uses the real
 controller and card surface: reveal, then Correct or Forgot. Its PASS result checks
 that the rating is saved and the outgoing card reflects the acknowledged recall
 before requesting the successor. `/tests/browser/vocabulary-production-override.html`
@@ -123,54 +156,25 @@ Both support narrow-panel and enlarged-text controls.
 `/tests/browser/vocabulary-contrast-keyboard.html` exercises 1–9/0 selection
 and Enter submission through the active controller; `?count=3` checks bounds
 and `?production=1` checks Escape priority for the open reaction note.
+The reaction note accepts Cmd+Enter on Mac and Ctrl+Enter elsewhere through
+the Send note control. In this fixture, `#contrast-result` exposes
+`data-reactions` for checking written comments separately from answer submissions.
+Exercise plain Enter, IME composition, blank input, and the delayed pending save;
+the bracket shortcuts address Helpful / Not helpful separately.
 `?pure=1` checks that accepted input 诉求 fills the cloze instead of the first
 accepted member 意见, during both immediate and acknowledged reveal. The motion fixture
 `?slow=1` checks opaque paper while the next encounter is delayed;
-`/tests/browser/vocabulary-operator.html` exercises the proposal-first internal review surface (ready suggestions, Archive search, proposal edits, and `?second=pending|failed|result`; `?narrow=1&large=1` checks compact enlarged-text layout; `?reassessment` enables reassessment and `?reassessment=changed` checks explicit confirmation of a changed source version; `?slow` exercises delayed reads, `?failNext` exercises navigation recovery, and `?stale` or `?staleApply` exercises a validation conflict)
-with an in-memory API (`?empty=1` for empty lists, `?noProposal=1` for a no-change judgment).
 `tests/vocabulary-proposal-review.test.ts` covers compact grouping, readable sense
 references, reversible inclusion, malformed draft guards, structured cue editing,
 cloze validation, consequential change signals and retained evidence bases.
-The operator browser fixture also accepts `?many=1` for a nine-item repertoire,
-`?actions=1` for retirement, `?criteriaOnly=1` for unchanged cues with changed
-answer criteria/reveal, and `?saveFailure=1` for a recoverable failed save.
-Combine `?many=1&narrow=1&large=1` to check wrapping and enlarged text.
-
 `tests/vocabulary-sense-coverage-ui.test.ts` covers affected scope selection,
-exercise impact, label merging and read-versus-write navigation policy. Operator
-fixture variants: `?scope=1` enables coverage/reassessment; `?unknownCoverage=1`
-starts with unknown defaults; `?needsCoverage=1` provides an attention case;
-`?holdCoverage=1` keeps a save pending until its fixture button releases it;
-`?scopeSibling=1` adds another review for the same word.
-`?slowCoverageRead=1` delays plain scope reads for navigation checks;
-`?defaultSelectionFinding=1` shows an actual empty model recommendation beside an
-approvable content proposal. Approve it and check that **Needs attention → Word
-defaults need attention** retains the finding until an explicit word selection is
-saved. `?sourceDriftAfterCoverage=1` changes source evidence
-after a scope save so the refreshed snapshot must block approval.
-`?scope=1&many=1&multiwordLabels=1` checks that editing one word keeps other-word labels.
-
-`?holdApproval=1` retains an acknowledged approval in the queue while advancing
-the review card; `?approvalQueued=1` hydrates pending work;
-`?approvalAttention=1` shows a failed request with retry and proposal controls;
-`?lostAck=1` exercises exact-request retry after a lost acknowledgement. The first awaiting-review proposal's served snapshot uses a different cue and accepted-answer set from the current item and the proposed cue. `?noSnapshot=1` opens that proposal with no retained case snapshot. These fixtures are separate
-from `npm test`. Add `?usage=1` to place the review in the operator panel's
-Content improvement tab, including its narrow and enlarged-text variants. Check
-Left/Right navigation, preserved selection after visiting Usage or Archive, the
-single Details disclosure, optional-reason Dismiss/Done, and second-opinion
-one-click requests and optional questions under Details. `?stale=1` exercises preview failure with edit
-and dismissal recovery; `?applyFailure=1` checks retrying an approved version
-after a failed application response; `?refresh=1` adds an incoming proposal after load for
-background refresh checks. `?oldArchive=1` provides a resolution older than 12
-hours that appears only through search. `vocabulary-operator-navigation.test.ts` covers
-arrow bounds and native input, composition, repeat and modifier guards. The
-separate `/tests/browser/vocabulary-operator-production.html` preview reads a
-locally installed sanitized excerpt from
-`tests/browser/.local/operator-production-preview.json` (gitignored). It replays
-historical proposals with their original acceptance/application provenance;
-actions only mutate browser memory, not production. Missing excerpts produce an
-explicit error. Keep retrieved records out of source control and distinguish
-legacy operation schema versions from local proposal revisions. Use the [disposable vocabulary fixture](vocabulary-learning.md#contributor-verification)
+exercise impact, label merging and read-versus-write navigation policy. The compact
+review browser fixture's `?repertoire=1&usage=1` scenario opens a real case card
+in the operator panel. Use Selected senses directly on the card, toggle a chip,
+use Save selection, then reselect and save to restore it. Unsaved defaults block
+approval and navigation; Discard edits restores access. Add `&narrow=1` to check the
+embedded layout. These browser scenarios are separate from `npm test`.
+Use the [disposable vocabulary fixture](vocabulary-learning.md#contributor-verification)
 for end-to-end study against the actual API and SQLite. The older session fixtures
 below retain coverage of the previous controller, not the current Mandarin path.
 
@@ -264,6 +268,7 @@ All HTTP is intercepted, so these fixtures do not modify learner data.
 | `reflection-generation.test.ts` | Prelookup idempotency, provider/materialization/run metadata, included/eligible counts, in-process coalescing, exact saved-bundle failure retry, and model selection | `server/reflection/generation.ts` with injected dependencies |
 | `reflection-generation-isolation.test.ts` | Real enrichment/provider failures preserve completed session, summary, and attempt state while recording available run usage | Reflection generation stack + temporary SQLite |
 | `reflection-run-pricing.test.ts` | Pinned token-category pricing math, partial usage handling, and unknown-rate unavailability | `server/reflection/run-pricing.ts` |
+| `model-invocation-cost-backfill.test.ts` | Read-only preview, exact-plan confirmation, shared live/backfill cache accounting, preserved evidence/known spend, skipped unsupported usage, atomic rollback and repeatability | Temporary SQLite + `hosted:backfill-luna-costs` CLI |
 | `reflection-store.test.ts` | Seven-table schema, session-backed and sessionless provenance, retained failed-run bundles/retryability, immutable run-price reconstruction, atomic artifact/review persistence, queue/detail, review/invocation lifecycle | Dynamic `server/db.ts` |
 | `reflection-application.test.ts` | Suppression/contrast/cue adapters, effect attribution, application outcomes, and requested-correct reflection through generation, acceptance, and application | Dynamic `server/db.ts`, real provider with mocked transport |
 | `reflection-persistence-reload.test.ts` | Queue/detail/review/application/effect reconstruction across fresh Node processes | Shared temporary `APP_DATA_DIR` |
@@ -362,6 +367,58 @@ comparisons, run baseline and candidate sequentially, and review linguistic
 quality separately from schema validation. See the
 [prompt evaluation notes](../server/vocabulary/reflection-prompts/README.md#local-evaluation-seams)
 for validation limits and bounded evidence.
+
+### Sense inventory comparison and reconciliation
+
+[`scripts/reconcile-sense-inventory.ts`](../scripts/reconcile-sense-inventory.ts)
+connects fresh inventory generation to a separate, reviewable assessment of
+existing canonical identities. Its read-only preparation commands are:
+
+- `export --database ABSOLUTE_DB --word-ids ID,ID --out NEW_JSON` opens SQLite
+  read-only and captures lexical inputs, catalog/sense versions, coverage and
+  direct content, import, learner-sense, stash and bootstrap dependencies in one
+  read transaction. Use an identified local snapshot for hosted-data review.
+- `trial --input SNAPSHOTS_JSON --archive ABSOLUTE_DIRECTORY --variant NAME`
+  prepares exact requests for 1–32 words. It sends the same `{word}` lexical input
+  as runtime; existing inventories are retained for comparison but withheld from
+  generation. `--baseline-revision 17a5a357` freezes the historical v2 prompt and
+  nonempty schema. The candidate uses the current prompt and v3 empty-capable
+  schema. Authorized live runs add `--allow-provider-calls` and an explicit
+  `--max-provider-calls` budget of at most 32. Run baseline and candidate batches
+  sequentially with unique variant names. Requests, outputs and hashes are retained.
+- `check --snapshot CASE_SNAPSHOT --candidate CANDIDATE_JSON --judgment REVIEW_JSON
+  --out NEW_REPORT` validates a semantic review against the exact snapshot and
+  candidate hashes. Each active old sense and candidate index must occur exactly
+  once in explicit retain, revise, retire, create or restructure groups. Retain
+  can match one candidate or keep an omitted existing use; revise is one-to-one.
+  Split/merge decisions need restructure groups.
+
+The [synthetic fixtures](../scripts/fixtures/sense-inventory-cases.json) include
+motivating failures, related targets and construction-dependent controls. The
+[retained comparison review](../scripts/fixtures/sense-inventory-review.json)
+records generated inventories, exact-call hashes, agent judgments and limits,
+including the failed baseline 垂 call. Its reconciliation demonstrations use
+synthetic existing inventories; they do not establish production migration
+readiness. Mapping-prompt linguistic comparisons were not run in that trial.
+Live trials create a judgment template for each successful candidate. An agent or
+operator supplies the semantic judgment and rationale; the checker verifies
+coverage, identity and structural consistency, not linguistic truth. Its reports
+always state `semanticJudgmentVerified:false` and `applyReady:false`.
+
+`report` expands the reviewed retirements into source, content, teaching-binding,
+preparation and pending-work dependencies. `hash-plan` binds the approved batch;
+`apply` validates it again under an immediate write lock and applies conservative
+retain/retire decisions atomically. See the [reconciliation runbook](ops/sense-inventory-reconciliation.md)
+for content decisions, stopped-writer rehearsal, receipts and recovery.
+
+`tests/sense-inventory-reconciliation.test.ts` covers structural comparison and
+read-only CLI export, current request preparation, and historical v2 requests.
+The historical test commits [retained source snapshots](../tests/fixtures/sense-inventory-v2/README.md)
+to a temporary Git repository and exercises the real CLI's revision reads,
+schema selection, and provenance without requiring checkout history or provider
+calls. `tests/sense-inventory-reconciliation-apply.test.ts` uses
+migrated SQLite fixtures to cover dependency decisions, stale-plan rejection,
+multiword rollback, idempotence, preparation refresh, and preserved learner history.
 
 ## When changing…
 
@@ -472,3 +529,62 @@ reflection/teaching order, deterministic import initialization, selector leases,
 operator precedence, model-empty attention and repeatable read-only batch plans.
 `tests/vocabulary-preparation.test.ts` covers completion prerequisites and preserving
 ready pools and retry budgets across authoring-contract revisions.
+
+### Repair targets and repertoire revisions
+
+`vocabulary-reflection.test.ts` and `vocabulary-reflection-http.test.ts` cover
+pending target set/reset, failed and successful reassessment, captured-target
+validation, stale alternatives/retries, approval admission, and application-time
+binding changes. `vocabulary-improvement-admission.test.ts` checks source
+immutability and mapping bypass for explicit operator targets.
+`vocabulary-repertoire-revision.test.ts` covers narrowing without losing source
+replacement intent and restoring retained exercises without undoing manual edits
+or deletions. Reflection tests cover atomic default/proposal saves, remove/restore
+cycles, selected-only application, conflicts, and missing-exercise generation requirements. `schema-migrations.test.ts`
+checks populated migration preservation and absence of inferred operator intent.
+
+The compact review browser fixture supports `hideControls=1`, `narrow=1`, and
+`largeText=1`. Open Reassess, set its target/model options, and submit. Check
+Escape/Close dismissal and focus return, same-sense selection, pending Apply/Edit blocking,
+failed reassessment and Reset. With `repertoire=1`, toggle a Selected senses chip off and Save selection; its group disappears.
+Reselect and save to restore the same exercises. Check empty-selection errors
+and Discard edits recovery. Fixture
+transport establishes UI behavior; backend tests establish persistence and guards.
+
+The compact fixture supports `targetReadFailure=1` and `holdTargetRead=1` to
+verify that an unresolved target read leaves Apply/Edit available. Combine
+`targetReadFailure=1&targetPending=1` to check that approval rejection is visible
+on the card. With `targetPending=1`, use Fail target refresh then refocus the page to trigger automatic refresh: the
+known pending restriction must remain. Release target reads completes held reads.
+
+### Needs attention
+
+`/tests/browser/vocabulary-attention.html` mounts the production operator shell and
+case-review entry with synthetic attention responses. Click Needs attention. Its
+29 items cover every type, the twenty-item page boundary, standalone approvals,
+learner-feedback jobs, and nonretryable preparation. `?narrow&largeText` renders a
+480px viewport with enlarged text; `?empty`, `?slow`, and `?saveFailure` cover
+alternate states. No provider calls or persistent application data are used.
+
+Verify defaults failure retains checked senses and blocks navigation; successful
+save removes the finding; retry advances only on acknowledgement; failed retry
+retains the item; type filtering, full-count wrap and remembered selection work;
+and Open proposal reaches a standalone editor without a workspace request. Open
+the feedback case, retry, then use Finish feedback to observe job completion while
+the editor stays open. Hold/release reads exercise responses crossing navigation
+and edits. Expand sense notes and details, use keyboard controls, and inspect long
+labels in the narrow fixture. `vocabulary-attention.test.ts` covers authoritative
+membership, teaching-case review/closure, legacy fallbacks, preparation pagination,
+anchor refresh, approval staleness, HTTP validation and operator access.
+
+
+The compact repertoire fixture includes an ungenerated mathematical-function sense.
+Selecting it leaves a draft; ordinary Save selection rejects missing retained
+exercises. Open Save selection and reassess, choose a model, and submit: the old
+proposal remains frozen while the selection is saved. `?repertoire=1&selectionQueueFailure=1`
+keeps the draft and reports queue failure. Verify both compact and full review,
+chip keyboard toggles, Discard edits, and wrapping with `narrow=1&largeText=1`.
+`vocabulary-reflection.test.ts` and HTTP coverage establish atomic queue admission,
+rollback, retained proposals and captured-scope publication. Admission provider tests
+establish exact selection despite later defaults, retry reuse and pre-call catalog,
+identity and routing fences. Browser fixtures use no providers or application data.

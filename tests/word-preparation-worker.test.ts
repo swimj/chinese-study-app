@@ -9,7 +9,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { after, before, test } from 'node:test';
 import { createBaselineFixture } from './helpers/baseline-database.ts';
 import { migrateDatabase } from '../server/db/migrations.ts';
-import { setDb } from '../server/db/connection.ts';
+import { getDb, setDb } from '../server/db/connection.ts';
 import { wordContentFixtures } from './fixtures/word-content.ts';
 import {
   enqueueWordPreparation as enqueue, getWordPreparationWork, listWordPreparationFailures,
@@ -63,6 +63,282 @@ function fake(overrides: Partial<WordIntroductionProvider> = {}): WordIntroducti
 }
 const controls = () => ({ maintenanceMode: false, providerWorkEnabled: true });
 const providerWork = async <T>(work: () => Promise<T>) => work();
+
+function overrideDatabaseMethods(overrides: Partial<Pick<DatabaseSync, 'prepare' | 'exec'>>) {
+  const descriptors = Object.getOwnPropertyDescriptors(sqlite);
+  Object.assign(getDb(), overrides);
+  return () => {
+    for (const method of Object.keys(overrides)) {
+      const descriptor = descriptors[method];
+      if (descriptor) Object.defineProperty(sqlite, method, descriptor);
+      else Reflect.deleteProperty(sqlite, method);
+    }
+  };
+}
+
+function runningPreparation(id: string, clock: number, leaseMs: number) {
+  word(id);
+  const startedAt = new Date(clock).toISOString();
+  const expiresAt = new Date(clock + leaseMs).toISOString();
+  const work = enqueueWordPreparation(id, 'bootstrap', startedAt);
+  assert.equal(claimSharedWordIntroductionStage(id, 'bootstrap', id, startedAt, expiresAt), 'claimed');
+  assert.ok(beginWordPreparationAttempt(work.workId, id, null, startedAt, expiresAt));
+  return work;
+}
+
+test('idle recovery and dispatch do not contend with another SQLite writer', async () => {
+  const clock = Date.now();
+  const work = runningPreparation('unexpired-read-only', clock, 60_000);
+  const writer = new DatabaseSync(path.join(dataDir, 'app.db'));
+  const worker = createWordPreparationWorker({ controls, providerWork, provider: fake(), now: () => clock });
+  writer.exec('BEGIN IMMEDIATE');
+  try {
+    // A second BEGIN IMMEDIATE would fail here, even without updating any rows.
+    recoverExpiredWordPreparation(new Date(clock).toISOString());
+    assert.equal(await worker.step(), false);
+    assert.equal(getWordPreparationWork(work.wordId, work.stage)?.status, 'running');
+  } finally {
+    writer.exec('ROLLBACK');
+    writer.close();
+    await worker.stop();
+  }
+  recoverExpiredWordPreparation(new Date(clock + 60_001).toISOString());
+  const resumed = createWordPreparationWorker({ controls, providerWork, provider: fake(), now: () => clock + 90_001 });
+  try { await resumed.drain(); } finally { await resumed.stop(); }
+});
+
+test('recovery rechecks leases after acquiring the write lock instead of trusting the preflight', async () => {
+  const clock = Date.now();
+  const renewed = runningPreparation('renewed-between-check-and-lock', clock, 1_000);
+  const expired = runningPreparation('expired-between-check-and-lock', clock, 60_000);
+  const writer = new DatabaseSync(path.join(dataDir, 'app.db'));
+  const db = getDb();
+  const exec = db.exec.bind(db);
+  let acquisitions = 0;
+  const restore = overrideDatabaseMethods({ exec: sql => {
+    if (sql === 'BEGIN IMMEDIATE') {
+      acquisitions++;
+      // Another connection changes which job is expired after the read hint.
+      writer.exec('BEGIN IMMEDIATE');
+      writer.prepare('UPDATE word_preparation_work SET expires_at=? WHERE work_id=?')
+        .run(new Date(clock + 60_000).toISOString(), renewed.workId);
+      writer.prepare('UPDATE word_preparation_work SET expires_at=? WHERE work_id=?')
+        .run(new Date(clock + 1_000).toISOString(), expired.workId);
+      writer.exec('COMMIT');
+    }
+    exec(sql);
+  } });
+  try {
+    recoverExpiredWordPreparation(new Date(clock + 2_000).toISOString());
+    assert.equal(acquisitions, 1);
+    assert.equal(getWordPreparationWork(renewed.wordId, renewed.stage)?.status, 'running');
+    assert.equal(sqlite.prepare('SELECT outcome FROM word_preparation_attempts WHERE attempt_id=?').get(renewed.wordId)!.outcome, null);
+    assert.equal(getWordPreparationWork(expired.wordId, expired.stage)?.status, 'queued');
+    assert.equal(sqlite.prepare('SELECT outcome FROM word_preparation_attempts WHERE attempt_id=?').get(expired.wordId)!.outcome, 'interrupted');
+  } finally { restore(); writer.close(); }
+  recoverExpiredWordPreparation(new Date(clock + 60_001).toISOString());
+  const resumed = createWordPreparationWorker({ controls, providerWork, provider: fake(), now: () => clock + 90_001 });
+  try { await resumed.drain(); } finally { await resumed.stop(); }
+});
+
+test('explicit steps do not bypass the 30-second recovery cadence or delay queued work', async () => {
+  let clock = Date.now();
+  const start = clock;
+  let maintenanceMode = false;
+  const worker = createWordPreparationWorker({ provider: fake(), providerWork, now: () => clock,
+    controls: () => ({ maintenanceMode, providerWorkEnabled: true }) });
+  const prepare = getDb().prepare.bind(getDb());
+  let recoveryReads = 0;
+  const restore = overrideDatabaseMethods({ prepare: sql => {
+    if (/SELECT 1 FROM word_preparation_work/.test(sql)) recoveryReads++;
+    return prepare(sql);
+  } });
+  try {
+    assert.equal(await worker.step(), false);
+    assert.equal(recoveryReads, 1);
+    const expired = runningPreparation('expired-after-idle-check', start, 1_000);
+    clock = start + 5_000;
+    word('dispatch-between-recovery-checks');
+    enqueueWordPreparation('dispatch-between-recovery-checks', 'bootstrap', new Date(clock).toISOString());
+    await worker.drain();
+    assert.equal(getWordPreparationWork('dispatch-between-recovery-checks', 'bootstrap')?.status, 'ready');
+    for (const elapsed of [10_000, 15_000, 20_000, 25_000, 29_999]) {
+      clock = start + elapsed;
+      assert.equal(await worker.step(), false);
+    }
+    assert.equal(recoveryReads, 1);
+    assert.equal(getWordPreparationWork(expired.wordId, expired.stage)?.status, 'running');
+    clock = start + 30_000;
+    assert.equal(await worker.step(), false);
+    assert.equal(recoveryReads, 2);
+    assert.equal(getWordPreparationWork(expired.wordId, expired.stage)?.status, 'queued');
+    clock = start + 60_000;
+    maintenanceMode = true;
+    assert.equal(await worker.step(), false);
+    assert.equal(recoveryReads, 2);
+    maintenanceMode = false;
+    await worker.drain();
+    assert.equal(recoveryReads, 3);
+    assert.equal(getWordPreparationWork(expired.wordId, expired.stage)?.status, 'ready');
+  } finally { restore(); await worker.stop(); }
+});
+
+test('a failed recovery read is retried on the next step without waiting 30 seconds', async () => {
+  const worker = createWordPreparationWorker({ controls, providerWork, provider: fake() });
+  const prepare = getDb().prepare.bind(getDb());
+  let recoveryReads = 0;
+  const restore = overrideDatabaseMethods({ prepare: sql => {
+    if (/SELECT 1 FROM word_preparation_work/.test(sql) && ++recoveryReads === 1) throw new Error('Temporary read failure');
+    return prepare(sql);
+  } });
+  try {
+    await assert.rejects(worker.step(), /Temporary read failure/);
+    assert.equal(await worker.step(), false);
+    assert.equal(recoveryReads, 2);
+  } finally { restore(); await worker.stop(); }
+});
+
+test('30-second fallback dispatch catches missed wakes and retries while explicit wakes run immediately', async t => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: Date.now() });
+  const settle = () => new Promise<void>(resolve => setImmediate(resolve));
+  let calls = 0;
+  let failNext = false;
+  const base = fake();
+  const worker = createWordPreparationWorker({ controls, providerWork, provider: fake({
+    generateBootstrap: async input => {
+      calls++;
+      if (failNext) { failNext = false; return { uses: [], examples: [] }; }
+      return base.generateBootstrap(input);
+    },
+  }) });
+  try {
+    worker.wake();
+    await settle();
+    word('missed-wake-dispatch');
+    enqueueWordPreparation('missed-wake-dispatch', 'bootstrap');
+    t.mock.timers.tick(29_999); await settle();
+    assert.equal(calls, 0);
+    assert.equal(getWordPreparationWork('missed-wake-dispatch', 'bootstrap')?.status, 'queued');
+    t.mock.timers.tick(1); await settle();
+    assert.equal(calls, 1);
+    assert.equal(getWordPreparationWork('missed-wake-dispatch', 'bootstrap')?.status, 'ready');
+
+    word('immediate-wake-retry');
+    enqueueWordPreparation('immediate-wake-retry', 'bootstrap');
+    failNext = true;
+    worker.wake(); await settle();
+    assert.equal(calls, 2, 'explicit wake dispatches without waiting for the next interval');
+    assert.equal(getWordPreparationWork('immediate-wake-retry', 'bootstrap')?.attemptCount, 1);
+    t.mock.timers.tick(29_999); await settle();
+    assert.equal(calls, 2);
+    t.mock.timers.tick(1); await settle();
+    assert.equal(calls, 3);
+    assert.equal(getWordPreparationWork('immediate-wake-retry', 'bootstrap')?.status, 'ready');
+    assert.equal(getWordPreparationWork('immediate-wake-retry', 'bootstrap')?.attemptCount, 2);
+  } finally { await worker.stop(); t.mock.timers.reset(); }
+});
+
+test('maintenance polls only service controls and defers expired recovery until reopening', async () => {
+  word('maintenance-recovery');
+  let clock = Date.now();
+  const startedAt = new Date(clock).toISOString();
+  const expiresAt = new Date(clock + 1_000).toISOString();
+  const work = enqueueWordPreparation('maintenance-recovery', 'bootstrap', startedAt);
+  assert.equal(claimSharedWordIntroductionStage(work.wordId, work.stage, 'expired-maintenance', startedAt, expiresAt), 'claimed');
+  assert.ok(beginWordPreparationAttempt(work.workId, 'expired-maintenance', null, startedAt, expiresAt));
+  const original = getWordPreparationWork(work.wordId, work.stage);
+  clock += 2_000;
+  const worker = createWordPreparationWorker({ provider: fake(), now: () => clock });
+  let restoreDatabaseMethods = () => {};
+  sqlite.prepare("UPDATE service_controls SET enabled=1 WHERE control_key='maintenance_mode'").run();
+  try {
+    // Exercise the production control reader, but fail on recovery transactions or queue reads.
+    const db = getDb();
+    const prepare = db.prepare.bind(db);
+    let controlReads = 0;
+    restoreDatabaseMethods = overrideDatabaseMethods({
+      prepare: sql => {
+        controlReads++;
+        assert.match(sql, /FROM service_controls/);
+        return prepare(sql);
+      },
+      exec: () => assert.fail('Maintenance must not open a recovery transaction'),
+    });
+    assert.equal(await worker.step(), false);
+    await worker.drain();
+    assert.ok(controlReads > 0);
+    restoreDatabaseMethods();
+    assert.deepEqual(getWordPreparationWork(work.wordId, work.stage), original);
+
+    // Recovery is independent of provider dispatch once maintenance ends.
+    sqlite.prepare("UPDATE service_controls SET enabled=0 WHERE control_key IN ('maintenance_mode','provider_work_enabled')").run();
+    assert.equal(await worker.step(), false);
+    const recovered = getWordPreparationWork(work.wordId, work.stage)!;
+    assert.equal(recovered.status, 'queued');
+    assert.equal(recovered.attemptCount, 1);
+    assert.equal(recovered.activeToken, null);
+    assert.equal(sqlite.prepare("SELECT outcome FROM word_preparation_attempts WHERE attempt_id='expired-maintenance'").get()!.outcome, 'interrupted');
+
+    sqlite.prepare("UPDATE service_controls SET enabled=1 WHERE control_key='provider_work_enabled'").run();
+    clock += 31_000;
+    await worker.drain();
+    assert.equal(getWordPreparationWork(work.wordId, work.stage)?.status, 'ready');
+    assert.equal(getWordPreparationWork(work.wordId, work.stage)?.attemptCount, 2);
+  } finally {
+    restoreDatabaseMethods();
+    await worker.stop();
+    sqlite.prepare("UPDATE service_controls SET enabled=0 WHERE control_key='maintenance_mode'").run();
+    sqlite.prepare("UPDATE service_controls SET enabled=1 WHERE control_key='provider_work_enabled'").run();
+  }
+});
+
+test('expired recovery still runs with an unconfigured provider outside maintenance', async () => {
+  word('unconfigured-recovery');
+  const clock = Date.now();
+  const startedAt = new Date(clock).toISOString();
+  const expiresAt = new Date(clock + 1_000).toISOString();
+  const work = enqueueWordPreparation('unconfigured-recovery', 'bootstrap', startedAt);
+  assert.equal(claimSharedWordIntroductionStage(work.wordId, work.stage, 'expired-unconfigured', startedAt, expiresAt), 'claimed');
+  assert.ok(beginWordPreparationAttempt(work.workId, 'expired-unconfigured', null, startedAt, expiresAt));
+  const worker = createWordPreparationWorker({ controls, providerWork,
+    provider: fake({ isConfigured: () => false }), now: () => clock + 2_000 });
+  try {
+    assert.equal(await worker.step(), false);
+    assert.equal(getWordPreparationWork(work.wordId, work.stage)?.status, 'queued');
+    assert.equal(getWordPreparationWork(work.wordId, work.stage)?.attemptCount, 1);
+  } finally { await worker.stop(); }
+  const resumed = createWordPreparationWorker({ controls, providerWork, provider: fake(), now: () => clock + 33_000 });
+  try { await resumed.drain(); } finally { await resumed.stop(); }
+});
+
+test('stopped worker steps do not read controls or access the database', async () => {
+  const worker = createWordPreparationWorker({ provider: fake(),
+    controls: () => assert.fail('Stopped worker must not read controls') });
+  await worker.stop();
+  setDb(null);
+  try {
+    assert.equal(await worker.step(), false);
+    await worker.drain();
+    worker.wake();
+  } finally { setDb(sqlite); }
+});
+
+test('worker rechecks maintenance after provider-work admission before claiming an attempt', async () => {
+  word('maintenance-admission');
+  const work = enqueueWordPreparation('maintenance-admission', 'bootstrap');
+  let maintenanceMode = false;
+  const worker = createWordPreparationWorker({ provider: fake(),
+    controls: () => ({ maintenanceMode, providerWorkEnabled: true }),
+    providerWork: async work => { maintenanceMode = true; return work(); },
+  });
+  try {
+    assert.equal(await worker.step(), false);
+    assert.equal(getWordPreparationWork(work.wordId, work.stage)?.status, 'queued');
+    assert.equal(getWordPreparationWork(work.wordId, work.stage)?.attemptCount, 0);
+  } finally { await worker.stop(); }
+  const resumed = createWordPreparationWorker({ controls, providerWork, provider: fake() });
+  try { await resumed.drain(); } finally { await resumed.stop(); }
+});
 
 test('shared demand deduplicates, generates teaching without pins, and defers review until requested', async () => {
   word('dedup');

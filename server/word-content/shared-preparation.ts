@@ -1,6 +1,6 @@
 import { ensureVocabularyDefaultUsefulSelection } from '../vocabulary/default-useful-selection.ts';
 import { getVocabularySenseCatalog,getVocabularySenses } from '../db/vocabulary-content.ts';
-import { ensureVocabularySenses,VocabularySenseSelectionRequired } from '../vocabulary/sense-readiness.ts';
+import { ensureVocabularySenses,VocabularySenseSelectionRequired,VocabularyEmptySenseInventory } from '../vocabulary/sense-readiness.ts';
 import { resolveVocabularySenseCoverage } from '../db/vocabulary-sense-coverage.ts';
 import { getDb } from '../db/connection.ts';
 import { linkVocabularyInvocationSense } from '../db/vocabulary-provenance.ts';
@@ -35,6 +35,7 @@ export function createSharedWordPreparation(provider: WordIntroductionProvider =
   function assertPublication(){if(options.canPublish&&!options.canPublish())throw new Error('Shared authoring publication is currently blocked');}
   async function prepareBootstrapSenses(wordId:string,workflowId:string){
     const ready=await (options.ensureSenses??ensureVocabularySenses)(wordId,{workflowId,canPublish:options.canPublish});
+    if(!ready.senses.length)throw new VocabularyEmptySenseInventory();
     await ensureVocabularyDefaultUsefulSelection(wordId,{workflowId,canPublish:options.canPublish});
     const coverage=resolveVocabularySenseCoverage(wordId);
     if(!coverage.selectionEstablished)throw new VocabularySenseSelectionRequired('Default useful senses are unknown; operator selection or the explicit legacy cutover is required.');

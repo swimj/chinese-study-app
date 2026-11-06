@@ -210,6 +210,7 @@ manual acceptance, and lifecycle procedures are in the
 | `npm run hosted:sentinel -- --data-dir=/data --sentinel-id=<id> --actor-id=<id>` | Add an immutable restore-proof marker |
 | `npm run hosted:invite -- --email-env=<NAME>` | Create one Clerk invitation whose email link returns to `CLERK_AUTHORIZED_PARTY`. Read the address from that env var; do not pass the email on the command line. Run from an operator checkout, not `fly ssh`. |
 | `npm run hosted:inspect -- --data-dir=/data --litestream-socket=/data/litestream.sock` | Print bounded database, backup-freshness, and baked release-identity diagnostics |
+| `npm run hosted:backfill-luna-costs -- --data-dir=/data` | Preview missing GPT-6 Luna cost estimates from saved usage; the [accounting repair procedure](ops/hosted-beta-deployment.md#backfill-missing-gpt-6-luna-invocation-costs) owns confirmed application |
 | `npm run hosted:inspect-client-incidents -- --data-dir=/data --limit=20` | Read uploaded client transport incidents; optionally select one with `--diagnostic-id=<id>` |
 | `npm run hosted:inspect-study-commits -- --data-dir=/data --limit=20` | Read recent private study-commit failure records; optionally select one with `--diagnostic-id=<id>` |
 | `npm run hosted:observe -- --app=<app> --machine=<id> [--queries=<file>]` | Read release/runtime identity and bounded ad hoc SQLite queries from a cloud checkout ([setup and evidence limits](ops/cloud-production-observation.md)) |

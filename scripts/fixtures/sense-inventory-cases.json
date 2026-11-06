@@ -1,0 +1,171 @@
+[
+  {
+    "word": {
+      "wordId": "fixture:垂",
+      "hanzi": "垂",
+      "traditional": null,
+      "pinyin": "chuí",
+      "meanings": [
+        "hang down",
+        "droop",
+        "approach",
+        "hand down to posterity"
+      ]
+    },
+    "catalog": {
+      "version": 0,
+      "establishedAt": null
+    },
+    "senses": [],
+    "coverage": null,
+    "dependencies": {
+      "fixture": "Synthetic lexical evidence; no production inventory or learner data."
+    }
+  },
+  {
+    "word": {
+      "wordId": "fixture:过时",
+      "hanzi": "过时",
+      "traditional": null,
+      "pinyin": "guò shí",
+      "meanings": [
+        "outdated",
+        "past the appointed time"
+      ]
+    },
+    "catalog": {
+      "version": 0,
+      "establishedAt": null
+    },
+    "senses": [],
+    "coverage": null,
+    "dependencies": {
+      "fixture": "Synthetic lexical evidence; no production inventory or learner data."
+    }
+  },
+  {
+    "word": {
+      "wordId": "fixture:有所",
+      "hanzi": "有所",
+      "traditional": null,
+      "pinyin": "yǒu suǒ",
+      "meanings": [
+        "somewhat",
+        "to some extent"
+      ]
+    },
+    "catalog": {
+      "version": 0,
+      "establishedAt": null
+    },
+    "senses": [],
+    "coverage": null,
+    "dependencies": {
+      "fixture": "Synthetic lexical evidence; no production inventory or learner data."
+    }
+  },
+  {
+    "word": {
+      "wordId": "fixture:不堪",
+      "hanzi": "不堪",
+      "traditional": null,
+      "pinyin": "bù kān",
+      "meanings": [
+        "cannot bear",
+        "extremely"
+      ]
+    },
+    "catalog": {
+      "version": 0,
+      "establishedAt": null
+    },
+    "senses": [],
+    "coverage": null,
+    "dependencies": {
+      "fixture": "Synthetic lexical evidence; no production inventory or learner data."
+    }
+  },
+  {
+    "word": {
+      "wordId": "fixture:泡沫",
+      "hanzi": "泡沫",
+      "traditional": null,
+      "pinyin": "pào mò",
+      "meanings": [
+        "foam",
+        "bubble"
+      ]
+    },
+    "catalog": {
+      "version": 0,
+      "establishedAt": null
+    },
+    "senses": [],
+    "coverage": null,
+    "dependencies": {
+      "fixture": "Synthetic lexical evidence; no production inventory or learner data."
+    }
+  },
+  {
+    "word": {
+      "wordId": "fixture:藤椒",
+      "hanzi": "藤椒",
+      "traditional": null,
+      "pinyin": "téng jiāo",
+      "meanings": [
+        "green Sichuan pepper"
+      ]
+    },
+    "catalog": {
+      "version": 0,
+      "establishedAt": null
+    },
+    "senses": [],
+    "coverage": null,
+    "dependencies": {
+      "fixture": "Synthetic lexical evidence; no production inventory or learner data."
+    }
+  },
+  {
+    "word": {
+      "wordId": "fixture:葡",
+      "hanzi": "葡",
+      "traditional": null,
+      "pinyin": "pú",
+      "meanings": [
+        "grape (in 葡萄)"
+      ]
+    },
+    "catalog": {
+      "version": 0,
+      "establishedAt": null
+    },
+    "senses": [],
+    "coverage": null,
+    "dependencies": {
+      "fixture": "Synthetic lexical evidence; no production inventory or learner data."
+    }
+  },
+  {
+    "word": {
+      "wordId": "fixture:与",
+      "hanzi": "与",
+      "traditional": null,
+      "pinyin": "yǔ",
+      "meanings": [
+        "and",
+        "with",
+        "give"
+      ]
+    },
+    "catalog": {
+      "version": 0,
+      "establishedAt": null
+    },
+    "senses": [],
+    "coverage": null,
+    "dependencies": {
+      "fixture": "Synthetic lexical evidence; no production inventory or learner data."
+    }
+  }
+]

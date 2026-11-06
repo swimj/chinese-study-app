@@ -62,6 +62,7 @@ export function editableProposalDraft(value:unknown):value is VocabularyProposal
   if(item.bases!==undefined&&!list(item.bases,value=>{const base=record(value);return !!base&&string(base.contentId)&&positive(base.expectedVersion);}))return false;
   return list(item.operations,value=>{
     const op=record(value);if(!op||!string(op.operationKey)||!string(op.rationale)||!['create','update_existing','replace','retire'].includes(String(op.strategy)))return false;
+    if(op.learningRole!==undefined&&(!string(op.learningRole)||!['source_repair','refinement','enrichment','shared'].includes(op.learningRole)))return false;
     if(op.strategy!=='create'&&(!string(op.sourceContentId)||!positive(op.expectedVersion)))return false;
     const scope=record(op.scope),content=record(op.content);if(!scope||!content||!['shared','learner'].includes(String(scope.kind))||(scope.kind==='learner'&&!string(scope.learnerId)))return false;
     if(!('body' in content)||!list(content.words,value=>{const word=record(value);return !!word&&string(word.wordId)&&['target','context'].includes(String(word.relation))&&(word.senseId==null||string(word.senseId));}))return false;

@@ -1,8 +1,9 @@
+import { setVocabularyCaseApprovalPending, setVocabularyCaseApprovalAttention, reconcileVocabularyCaseApprovals } from '../db/vocabulary-case-reviews.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { VocabularyApprovalRequest } from '../../src/domain/vocabulary-reflection.ts';
 import { config } from '../db/connection.ts';
-import { completeVocabularyApprovalRequest, getVocabularyProposal, VocabularyReflectionConflict } from '../db/vocabulary-reflection.ts';
+import { completeVocabularyApprovalRequest, recordVocabularyApprovalIntent, getVocabularyProposal, VocabularyReflectionConflict } from '../db/vocabulary-reflection.ts';
 import { getHostedServiceControls } from '../db/hosted-operations.ts';
 
 type Authorization = Pick<VocabularyApprovalRequest,'requestId'|'proposalId'|'expectedVersion'|'actorId'|'notes'>;
@@ -42,6 +43,7 @@ export function createVocabularyApprovalRequests(options:{
       }
       if(end!==bytes.length)fs.truncateSync(options.filePath,end);
     }
+    reconcileVocabularyCaseApprovals([...items.values()]);
     loaded=true;
   }
   function append(item:VocabularyApprovalRequest):VocabularyApprovalRequest {
@@ -70,15 +72,19 @@ export function createVocabularyApprovalRequests(options:{
     const active=[...items.values()].find(item=>item.proposalId===input.proposalId&&item.expectedVersion===input.expectedVersion
       &&['queued','running'].includes(item.status));
     if(active)throw new VocabularyReflectionConflict('This proposal revision already has a queued approval');
+    // If journal admission fails, retaining intent conservatively protects this
+    // revision from automatic reassessment dismissal; only the journal can apply it.
+    recordVocabularyApprovalIntent(input);
     const at=iso();
-    return append({...input,status:'queued',attempts:0,createdAt:at,updatedAt:at,error:null,application:null});
+    try{return append({...input,status:'queued',attempts:0,createdAt:at,updatedAt:at,error:null,application:null});}catch(error){setVocabularyCaseApprovalPending(input.proposalId,input.requestId,false);throw error;}
   }
   function retry(requestId:string,actorId:string):VocabularyApprovalRequest {
     load();const item=items.get(requestId);
     if(!item)throw new VocabularyReflectionConflict('Unknown approval request');
     if(item.actorId!==actorId)throw new VocabularyReflectionConflict('Approval request belongs to another operator');
     if(item.status!=='attention')throw new VocabularyReflectionConflict('Only attention requests can be retried');
-    return append({...item,status:'queued',attempts:0,updatedAt:iso(),error:null});
+    recordVocabularyApprovalIntent({requestId:item.requestId,proposalId:item.proposalId,expectedVersion:item.expectedVersion,actorId});
+    try{return append({...item,status:'queued',attempts:0,updatedAt:iso(),error:null});}catch(error){setVocabularyCaseApprovalPending(item.proposalId,item.requestId,false);throw error;}
   }
   function compact():void {
     load();
@@ -112,12 +118,15 @@ export function createVocabularyApprovalRequests(options:{
         ||['SQLITE_BUSY','SQLITE_LOCKED','EIO','ENOSPC','EMFILE','ENFILE'].some(value=>code.startsWith(value));
       const message=error instanceof Error?error.message:'Approval failed';
       // Replay always calls complete first, including after a committed application whose log append failed.
-      append({...running,status:transient&&running.attempts<3?'queued':'attention',updatedAt:iso(),error:message});
+      const pending=transient&&running.attempts<3;
+      append({...running,status:pending?'queued':'attention',updatedAt:iso(),error:message});
+      if(!pending)setVocabularyCaseApprovalAttention(running.proposalId,running.requestId);
       if(!transient&&!(error instanceof VocabularyReflectionConflict)&&!(error instanceof TypeError))options.onError?.(error);
       return true;
     }
     // Journal failure after SQLite commit must leave this running for receipt reconciliation.
     append({...running,status:'succeeded',updatedAt:iso(),error:null,application});
+    setVocabularyCaseApprovalPending(running.proposalId,running.requestId,false);
     if(now()-lastCompacted>=60_000)compact();
     return true;
   }
@@ -138,7 +147,7 @@ export function getVocabularyApprovalRequests() {
   const filePath=path.join(config.dataDir,'vocabulary-approval-requests.jsonl');
   if(runtimePath!==filePath) {
     runtime?.stop();runtime=createVocabularyApprovalRequests({filePath,onError:error=>console.error('Vocabulary approval worker failed',error)});
-    runtimePath=filePath;
+    runtimePath=filePath;runtime.list();
   }
   return runtime!;
 }

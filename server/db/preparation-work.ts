@@ -127,6 +127,10 @@ export function failWordPreparationAttempt(workId: string, token: string, diagno
 /** A crash consumes the already recorded attempt. Never retry while its publication lease may still be live. */
 export function recoverExpiredWordPreparation(now = new Date().toISOString()): void {
   time(now);
+  // Idle checks must not reserve SQLite's writer slot. This read is only a hint:
+  // another process can complete or renew a lease before we acquire the lock.
+  if (!getDb().prepare(`SELECT 1 FROM word_preparation_work
+    WHERE status = 'running' AND expires_at <= ? LIMIT 1`).get(now)) return;
   transaction(() => {
     const rows = getDb().prepare(`SELECT ${projection} FROM word_preparation_work
       WHERE status = 'running' AND expires_at <= ?`).all(now) as WordPreparationWork[];
@@ -167,4 +171,11 @@ export function retryWordPreparation(workId: string, actorId: string, now = new 
 export function deferWordPreparationForSenses(workId:string,retryAt:string,now=new Date().toISOString()):void {
   time(now);time(retryAt);
   getDb().prepare("UPDATE word_preparation_work SET next_attempt_at=?,last_error='Waiting for canonical sense readiness',updated_at=? WHERE work_id=? AND status='queued'").run(retryAt,now,workId);
+}
+
+/** An established empty inventory has no authoring demand; preserve jobs and attempt evidence. */
+export function pauseEmptyInventoryPreparation(wordId: string, diagnostic: string, now = new Date().toISOString()): void {
+  time(now);
+  getDb().prepare("UPDATE word_preparation_work SET status='paused',last_error=?,updated_at=? WHERE word_id=? AND status='queued'")
+    .run(diagnostic, now, wordId);
 }

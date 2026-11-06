@@ -59,7 +59,7 @@ export function isVocabularyPronunciationLapse(input: {
 }
 export const VOCABULARY_SESSION_PROTOCOL_VERSION = 1 as const;
 export const VOCABULARY_SESSION_POLICY = {
-  version: 'vocabulary-session.v5',
+  version: 'vocabulary-session.v6',
   interveningExercisesBeforeWordReturn: 2,
   /** Compatibility constant; word coverage is determined by the mode-specific skill policy below. */
   productionResponsesToCover: 1,

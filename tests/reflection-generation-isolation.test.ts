@@ -110,8 +110,8 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
       startedAt: generatedAt,
       completedAt: generatedAt,
       provider: 'openai',
-      model: 'gpt-5.6-luna-high',
-      providerModel: 'gpt-5.6-luna',
+      model: 'gpt-6-luna-high',
+      providerModel: 'gpt-6-luna',
       promptVersion: STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION,
       responseId: null,
       clientRequestId: run.clientRequestId,
@@ -180,8 +180,8 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
       reasoningTokens: null,
       totalTokens: 20,
     });
-    assert.equal(run?.estimatedCostUsd, 0.000014);
-    assert.equal(run?.pricingAsOf, '2026-07-30');
+    assert.equal(run?.estimatedCostUsd, 0.000006);
+    assert.equal(run?.pricingAsOf, '2026-10-30');
   });
 
   test('a truncated response preserves study state and records its available usage', async () => {
@@ -191,7 +191,7 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
       systemPrompt: 'Test reflection prompt.',
       fetchImplementation: providerFetch({
         id: 'response-truncated',
-        model: 'gpt-5.6-luna',
+        model: 'gpt-6-luna',
         choices: [{
           finish_reason: 'length',
           message: { content: '{"partial":' },
@@ -231,7 +231,7 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
       reasoningTokens: null,
       totalTokens: 28,
     });
-    assert.equal(run?.estimatedCostUsd, 0.0000136);
+    assert.equal(run?.estimatedCostUsd, 0.000006);
   });
 
   test('does not promote an explicitly ordinary strict known-word lapse even with shared-axis tags', async () => {
@@ -268,7 +268,7 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
     const generated = await service.generate(
       'session-1',
       supplement(),
-      'openai:gpt-5.6-luna-high',
+      'openai:gpt-6-luna-high',
     );
     const artifact = dbModule.getReflectionArtifactDetail(generated.artifactId);
     assert.equal(promotionCalls, 0);
@@ -300,7 +300,7 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
       reflectionFlowVersion: 'initial_post_session_reflection.v6',
       generatedAt,
       provider: 'openai',
-      model: 'gpt-5.6-luna-high',
+      model: 'gpt-6-luna-high',
       promptVersion: STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION,
       evidenceBundle: sourceEvidence,
       result: {
@@ -366,7 +366,7 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
 
     const generated = await service.generateDeferredSecondOpinion(
       [sourceProposalId],
-      'openai:gpt-5.6-luna-high',
+      'openai:gpt-6-luna-high',
     );
     const artifact = dbModule.getReflectionArtifactDetail(generated.artifactId);
     assert.equal(artifact.sourceSessionId, null);
@@ -516,7 +516,7 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
     const generated = await service.generate(
       'session-1',
       { schemaVersion: 'session_reflection_evidence_supplement.v1', items: [] },
-      'openai:gpt-5.6-luna-high',
+      'openai:gpt-6-luna-high',
     );
     const artifact = dbModule.getReflectionArtifactDetail(generated.artifactId);
     assert.equal(artifact.bundleSchemaVersion, 'session_reflection_bundle.v6');
@@ -678,8 +678,8 @@ function stagedPromotionBundle(): SessionReflectionBundleV4 {
 function stagedMetadata(promptVersion: string) {
   return {
     provider: 'openai',
-    modelConfig: 'gpt-5.6-luna-high',
-    providerModel: 'gpt-5.6-luna',
+    modelConfig: 'gpt-6-luna-high',
+    providerModel: 'gpt-6-luna',
     promptVersion,
     responseId: `response-${promptVersion}`,
     finishReason: 'stop',
@@ -927,7 +927,7 @@ function providerFetch(body: JsonValue, status = 200): typeof globalThis.fetch {
 function responseEnvelope(result: JsonValue): JsonValue {
   return {
     id: 'response-invalid-result',
-    model: 'gpt-5.6-luna',
+    model: 'gpt-6-luna',
     choices: [{
       finish_reason: 'stop',
       message: { content: JSON.stringify(result) },

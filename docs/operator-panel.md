@@ -1,15 +1,20 @@
 # Operator panel
 
 This guide explains how an authorized operator reaches and uses the application’s
-bookmark-only operator panel. It describes the available views and their
+operator workspace. It describes the available views and their
 workflows; the [API reference](api.md#operator-view) defines the HTTP contracts.
 
 ## Access
 
-Open the application with `#operator-usage` in the URL. The panel is not part of
-the learner navigation. Access requires the signed-in Clerk user id, or the
+Open `/operator/usage`, or bookmark a specific view such as
+`/operator/improvement`. The workspace has its own operator rail and does not
+mount learner dashboard, attention, or session-recovery controllers. Its
+**Return to study** link loads `/` as a new page; study state is not preserved
+across this full-page boundary. The old operator hashes are not routes. Access requires the signed-in Clerk user id, or the
 trusted-local learner identity, to be allowed by `APP_OPERATOR_CLERK_USER_IDS`.
-An empty allowlist denies access.
+An empty allowlist denies access. Rail navigation retains the opened improvement
+workspace in this operator page, including draft edits and pending review state.
+Leaving the page via Return to study does not retain that in-memory workspace.
 
 ## Views
 
@@ -109,14 +114,36 @@ approval and evidence guarantees, and the
 [provider pipeline](implementation/vocabulary-content-improvement.md) explains
 how judgments and proposals are produced.
 
-Open `#operator-usage` and select **Content improvement** using the
-[operator allowlist](#access). Opening a proposal displays its saved version and source content.
-The entry leads with **Original served content**: each encounter that retains
-a snapshot shows its cue and accepted answers, in encounter order. An encounter
-without a snapshot says that snapshot is unavailable. Diagnosis, current and
-proposed content, accepted answers, and recipient scope follow. A case with no
-retained snapshot states that the original served content is unavailable.
-Changed answer criteria and retained teaching are expanded in the comparison.
+Open `/operator/improvement`, or select **Content improvement** using the
+[operator allowlist](#access). Awaiting review presents stable improvement cases,
+oldest creation time first. Each case displays its current assessment and saved
+proposal, or the judgment that proposed no change. Reassessment retains the
+same case identity and queue position.
+The entry leads with the original served content and its first chronological
+encounter. Teaching cases identify the source as a **Teaching encounter**. The
+encounter-count control expands retained snapshots and their responses, reactions,
+skips, and undone actions. Pure cues display accepted answers in simplified form,
+with script duplicates removed for display only. Ordinary word encounters omit
+that answer list. Missing snapshots are explicitly identified.
+
+Single-exercise review retains the assessment reasoning under **Proposed
+improvement** and presents each change as an expandable item with an action icon
+and color accent. Mapped senses remain in Details. Repertoire review uses a
+**Repertoire bootstrap** heading and expandable sense groups with exercise counts;
+it omits routine bootstrap reasoning. Source-repair items omit redundant accepted
+answers. Pure-cue items summarize their action and semantic axis, expanding to the
+prompt, accepted-set change, and revised teaching note.
+
+Existing shared practice appears as a blue **↗ Reuse existing** item. Expanding it
+shows accepted answers, teaching note, reuse reasoning, and content identity/version.
+It is read-only context, not an additional change to approve. Unavailable or
+retired references remain visibly labeled even when the item is collapsed.
+
+Unresolved findings and action blockers remain visible. Rich authored content
+that cannot be represented faithfully requires **Review full content before
+approval** in the complete workspace. Awaiting review and Archive refresh
+automatically while idle and visible, with faster polling during pending work;
+editing and reassessment configuration pause refresh.
 
 “Approve and apply” queues the displayed version and advances after the backend
 persists the request. Queued requests are hidden from Awaiting review while they
@@ -143,45 +170,53 @@ Completed exercise judgments that propose no change also appear in Awaiting
 review, including retained historical judgments. The entry leads with that same
 served content, then the rationale. The operator can draft a correction from
 current content, request an advisory second opinion with a question, or close
-the review with an optional reason.
+the review with an optional note. Teaching and unresolved assessments also accept
+an empty note; their retained finding remains visible independently of that note.
+A retired source is explicitly identified as unavailable for reassessment. Closing
+the case does not reactivate it or settle its sense mapping. **Done** advances at the same queue position,
+or to the preceding item when closing the last entry.
 The second opinion reviews the no-change judgment; it does not create or apply a
 proposal. Closed reviews remain in Archive, with their retained jobs and results in the case evidence.
 
 **Reassess current exercise** runs a fresh assessment with the selected model,
-defaulting to GPT-6 Sol high. It assesses the current exercise version with fresh
-sense mapping where applicable and places its independent result in the review
-queue. If the source version differs from the original assessment, the control
-shows the version change and requires confirmation to proceed on the current
-version. The original encounter stays available as historical context, not learner
-evidence for the independent assessment. A further source change requires a new request
-against the current version. The control refreshes current source metadata before
-submission. Stale proposals and unsaved proposal edits do not prevent reassessing
-the live exercise; saved sense coverage is used, and the old result, draft text and
-item selections remain intact. A succeeded assessment in Needs attention because
-useful coverage is unknown can be corrected and reassessed there. Neither result
-is applied automatically.
+defaulting to GPT-6 Sol high. It pins the current source version and performs
+fresh sense mapping unless an operator target sense has been selected. A changed source version is shown for
+confirmation before submission. The original served content and learner responses
+remain historical evidence.
 
-**Sense coverage** initially edits this review. It distinguishes inherited word
-defaults, a review override and unknown defaults. Check desired uses or choose
-**Select none**, then save. **Use word defaults** clears the review override;
-unknown shared defaults remain unknown. **Edit word defaults** opens the shared
-selection, with counts of mapped general production exercises affected by removing
-uses. **Back to review coverage** returns to the review's effective selection.
-Each sense's real notes are available in its disclosure. Word-default changes update mapped practice selection and can seed the scope of
-future teaching and content invocations; they do not retarget work already
-requested or retire content.
+Reassessment adds a numbered job to the same case. While queued or running, the
+case's saved proposal, review decisions, and target-sense edits are frozen.
+Success selects the replacement assessment; failure or timeout restores review
+of the previous result. Earlier assessments and proposals remain retained.
+Only one job may be queued or running within the case. Second opinions remain
+advisory and do not replace its current assessment. Content is applied only after
+explicit approval and successful application.
 
-Saving coverage preserves unsaved proposal edits and item selections while
-refreshing the displayed evidence and reassessment state. Content proposals keep
-their assessed targets and remain approvable after selection edits. Source, mapping,
-canonical catalog or explicit assessment evidence changes require review before
-approval; **Refresh snapshot** updates the evidence without discarding draft edits.
-When a newer saved revision exists, **Load current proposal** opens that revision
-with the usual confirmation before discarding unsaved edits.
-Unsaved scope edits and pending saves block navigation and resolution; loading
-coverage does not. A new reassessment copies the saved review selection.
+**Selected senses** shows the shared useful-sense selection as toggle chips.
+Toggling creates a draft with **Save selection** and **Discard edits**. Saving in
+repertoire review updates defaults and the proposal together without a model call;
+reselecting a retained sense restores its exercises. A new sense without retained
+exercises requires **Save selection and reassess** and an explicit model choice.
+That action saves shared defaults immediately and queues generation for exactly
+the selected senses. If queuing fails, the selection remains unsaved. If generation
+fails later, the defaults remain saved and the previous proposal returns to review.
+The existing proposal is replaced only after successful reassessment and still
+requires approval before application. If no exercises remain, dismiss the proposal;
+selection changes never imply source retirement.
 
-A model finding about missing useful defaults appears beside **Sense coverage**
+For single-exercise improvement, **Target sense** records the intended repair.
+Selecting a target, including the current sense, requires reassessment before
+application and disables manual proposal editing. **Reset** discards the pending
+choice and restores the current assessment target. It does not bypass other
+approval or source-freshness checks. Failed reassessment leaves the choice pending;
+successful reassessment uses it without another mapping call. Source content and
+sense bindings remain unchanged until operator application.
+
+Manual text editing and pending target-sense reassessment are separate paths.
+Unsaved edits and pending saves block navigation. Historical case-scope selections
+remain evidence rather than editable policy.
+
+A model finding about missing useful defaults appears beside **Selected senses**
 and in **Needs attention → Word defaults need attention**, including after its
 exercise repair is approved.
 **Review word defaults** opens the shared selection. This finding is independent
@@ -191,10 +226,60 @@ provides the originating context when available. Closing the word editor returns
 the existing draft and item selections. Saving explicit
 word defaults, including **Select none**, resolves it.
 
+### Resolving shared-practice identities
+
+Current assessment uses missing or ambiguous dictionary forms as evidence for
+target improvement, without proposing them as answers. Historical saved
+assessments with unresolved shared answers remain in their review case. Open
+the full review workspace for **Resolve candidate identities**. Select the intended entry for
+each ambiguous form, then queue the integration assessment. The complete content
+plan waits for this resolution; choosing identities resumes that plan without
+applying it or repeating the source assessment. If a form has no matching
+entry, this control cannot create one: reassess or close the assessment with a
+resolution. Source or dictionary changes can require a fresh assessment.
+
+### Needs attention
+
+Needs attention presents one actionable item at a time, with a type filter and
+previous/next navigation. It loads bounded pages only while open. Items are ordered
+by creation time with a stable identity tie-breaker. Refresh preserves the selected
+identity where possible and pauses while an editor or unsaved defaults are open.
+
+The queue includes unknown word defaults requiring intervention, failed approval
+application, practice preparation and evidence dispatch, and cases with no ordinary
+review destination. Failed learner-feedback jobs remain accessible here. Teaching
+cases without an assessment appear in Awaiting review. Failed reassessment and
+second opinions with an earlier reviewable result stay with that case.
+
+Selected senses appear directly as toggle chips. Saving an explicit selection,
+including none, resolves the word finding without revising an existing proposal.
+Established empty inventories and ordinary queued/running work require no attention.
+Retry uses the retained request or work identity and leaves the actionable queue
+once acknowledged. Failure returns the same item. Stale application requests open
+their case or standalone proposal for revision rather than offering a stale retry.
+
+**Open case** and **Open proposal** retain access to the full authored editor,
+identity resolution, job evidence and existing closure controls. **Back to attention**
+returns to the selected item if it still needs attention. Details discloses request,
+source and invocation identifiers. There is no generic dismissal of operational
+failures. Unclassified legacy cases remain visible; a source-conflict failure may
+require investigation when no successful assessment exists to reassess.
+
+Inventory-gap judgments remain attached to their cases and retained in Archive
+when closed. Closure is not inventory reconciliation. Needs attention does not
+create an independent inventory-defect record from those judgments.
+
 ### Selecting and editing proposal items
 
+Exercise-local plans label each item's contribution: **Source exercise**, **Shared
+practice**, **Distinctive refinement**, or **Optional enrichment**. A refinement
+practices a distinctive use within the original circumstance; enrichment adds
+practice beyond resolving that exercise. The summary explains the overall
+recommendation, and item rationales explain their individual contributions.
+
 Proposal items share expected answers and scope labels and group by readable
-sense labels. Each item has an inclusion checkbox. Turning a replacement off
+sense labels. **Edit proposal** loads the exact full saved revision. In the editor,
+each item has an inclusion checkbox. Turning a replacement off
 keeps its source active. Turning it back on restores its edits. Save the selected
 items as a new revision before approval; an empty selection offers restore or
 dismissal. A failed save retains the draft and selections.
@@ -207,37 +292,47 @@ item; Item details contains the full authored record.
 
 ### Queue navigation and refresh
 
-The review queue preloads nearby proposal details in bounded batches. A cached
-card appears immediately; approval remains subject to server validation. Coverage
-saves invalidate affected snapshots (same case for review edits, same word for
-shared edits), and an epoch fence rejects older in-flight prefetch responses. After a
-successful action the next known item opens while the queue refreshes. If it cannot load, the completed
-action remains recorded and a retry control is shown.
+Awaiting review loads compact case cards in creation-time order, with case ID as
+the stable tie-breaker. The batch contains served cue and response summaries,
+assessment provenance, proposed content, current source comparisons, and relevant
+status. Previous and next navigation within loaded batches uses that local data.
+A neighboring batch loads at the window boundary; the browser retains one batch
+of twenty cards per review or archive view. The count shows the matching total,
+independent of the loaded subset. Navigation wraps across the full result set.
 
-The operator panel's Content improvement tab presents an Awaiting review queue,
-an attention inbox and Archive. Open entries in each view lead with the original
-served content described above. Previous and next controls navigate one item at
-a time; applying or dismissing advances to the next available item. Cards keep scope and identity consequences
-visible before approval; one Details disclosure contains full rationale,
-relationship effects, encounter history, optional review notes and source-based
-manual authoring. Edit proposal edits the displayed draft. Creating a separate
-correction starts a new proposal from the current source.
+The bottom action bar stays outside the scrolling evidence. **Note** opens and
+focuses the optional session draft. **More** exposes editing, second opinions,
+and reassessment. **Details** discloses routine provenance and retained proposal
+selection; **Full review workspace** opens full encounter history, numbered case
+jobs, raw evidence, and source-based manual authoring. **Edit proposal** opens the
+full authored revision and preserves inclusion choices and unsaved edits. Compact
+render projections are never submitted as authored content. The proposal selector
+opens a retained alternative without changing the case's current assessment;
+its provenance remains attached to the assessment that authored it. Dismissing
+one proposal keeps the case open if another unresolved alternative remains.
 
-Left and Right navigate the displayed queue while preserving text editing and
-native control keys. Each queue remembers its selected identity while moving
-between queues; the operator panel keeps the review mounted while visiting Usage
-or another operator tab. The cursor survives these visits for the current panel
-session. Archive defaults to resolutions from the last 12 hours, using receipt or closure
-event timestamps. Search spans all loaded resolved proposals and closed no-change
-reviews. Records without retained resolution timestamps are searchable but do not
-enter the default time window.
+Left and Right navigate while preserving text editing and native control keys.
+Each queue remembers its selected identity while moving between views; the
+operator panel keeps the review mounted while visiting another operator tab.
+Resolving a case advances at the same position, falling back to the previous case
+at the end. Approval advances on its persisted acknowledgement; an uncertain
+acknowledgement holds the current case so retry uses the same request identity.
 
-Queue lists refresh every 15 seconds while the panel and document are visible,
-and on window focus or visibility change. Refresh pauses during work or unsaved
-draft edits and never installs a different proposal version. A changed selected
-proposal requires explicit reload and validation before applying. Pending second
-opinions use their existing three-second polling cycle. These are reads; provider
-retry and application remain explicit operator actions.
+Archive and Needs attention load only while their views are open. Archive defaults
+to resolutions from the last twelve hours, using the case's retained resolution
+time, and loads further results in pages. Search spans retained case IDs, word
+labels, proposal rationales, and original served prompts through the server;
+raw provider documents and arbitrary JSON keys are not archive search fields.
+
+Loaded queue batches refresh every fifteen seconds while the panel and document
+are visible, and on focus or visibility change. Active case jobs use a three-second
+refresh. Refresh preserves the selected case and updates shared-source staleness
+even when its case revision has not changed. Unsaved edits, active mutations, and
+uncertain approval acknowledgements pause replacement of the displayed data.
+The full editor keeps its reviewed revision pinned; newer work requires explicit
+reload. Failed reassessment leaves the previous judgment visible with an explicit
+retry. A source-version conflict instead offers reassessment of the current source.
+These reads do not authorize provider work or content application.
 
 ## Content sharing
 

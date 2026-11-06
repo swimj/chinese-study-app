@@ -1,6 +1,6 @@
 import { generalExerciseInvocation } from '../server/vocabulary/general-exercise-authoring.ts';
 import { writeVocabularyDefaultUsefulSenses,getVocabularyWordSenseCoverage } from '../server/db/vocabulary-sense-coverage.ts';
-import { listVocabularyExercises,getVocabularySenses } from '../server/db/vocabulary-content.ts';
+import { listVocabularyExercises,getVocabularySenses,createVocabularySense,updateVocabularySense } from '../server/db/vocabulary-content.ts';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { experimentOutputSchema } from '../server/word-content-lab/vocabulary-experiments/contracts.ts';
@@ -71,6 +71,7 @@ test('generous general generation retains service invocation, exact prompt/sourc
   const preparation = createVocabularyPracticePreparation({ provider });
   const work = preparation.ensure('w1')!;assert.equal(work.status,'queued');assert.equal(preparation.listQueued().length,1);
   await preparation.prepare('w1');await preparation.prepare('w1');assert.equal(calls,1);
+  assert.equal(sent.model, 'gpt-6-luna');assert.equal(sent.reasoning_effort, 'high');
   const rows = db.prepare("SELECT * FROM content_items WHERE exercise_role='general'").all() as Array<{ origin_kind: string; access_scope: string }>;assert.equal(rows.length,6);
   assert.ok(rows.every((row) => row.origin_kind === 'model' && row.access_scope === 'shared'));
   const invocation = db.prepare("SELECT * FROM model_invocations WHERE actor_id=?").get(VOCABULARY_PRACTICE_SERVICE)!;
@@ -187,6 +188,7 @@ test('actual teaching-exercise transport retains delivered text and changes gene
   const teaching={id:'intro',wordContentId:content.id,beats:[{id:'b',parts:[{kind:'text' as const,text:'A familiar greeting.'}]}]};
   const adapted=await provider.generatePractice(content,{teaching,invocationActor:{kind:'service',serviceId:'teaching-test'}});
   assert.deepEqual(adapted,{rehearsals:[{id:'r',stimulus:{kind:'direct_text',text:'Hello.'}}]});
+  assert.equal(sent.model, 'gpt-6-luna');assert.equal(sent.reasoning_effort, 'high');
   const messages=sent.messages as Array<{content:string}>;assert.equal(JSON.parse(messages[1]!.content).deliveredIntroduction.beats[0].parts[0].text,'A familiar greeting.');
   assert.match(messages[0]!.content,/exact introduction delivered/);
   const projected=JSON.parse(messages[1]!.content);assert.equal(projected.role,'teaching_exercises');assert.deepEqual(projected.content,content);
@@ -399,7 +401,7 @@ test('changed shared authoring prompt and empty-output contract intentionally ch
   const priorKey=createHash('sha256').update(JSON.stringify(priorIdentity)).digest('hex');
   const active=generalExerciseInvocation(content);
   const activeKey=createHash('sha256').update(JSON.stringify({prompt:active.systemPrompt,promptVersion:active.promptVersion,schema:active.outputSchema,
-    model:'gpt-5.6-luna',reasoning:'high',maxOutputTokens:24_000,inputProjectionVersion:active.inputProjectionVersion})).digest('hex');
+    model:'gpt-6-luna',reasoning:'high',maxOutputTokens:24_000,inputProjectionVersion:active.inputProjectionVersion})).digest('hex');
   const key=createVocabularyPracticeProvider({environment:{OPENAI_API_KEY:'fake'}}).generationKey(content);
   assert.equal(key,activeKey);assert.notEqual(key,priorKey);
 });
@@ -552,6 +554,7 @@ test('a partially unmapped source is operator-visible and consumes no provider a
   const {senseId}=getVocabularySenses('w1')[0]!;
   // Preserve an established inventory while attaching a new source: the importer cannot invent source mappings.
   db.exec("INSERT INTO vocabulary_word_catalogs VALUES ('unmapped',1,'2026-10-29')");
+  createVocabularySense({wordId:'unmapped',description:{label:'hello',notes:[]}},{kind:'service',id:'fixture'});
   claimSharedWordIntroductionStage('unmapped','bootstrap','unmapped',now,new Date(Date.now()+300_000).toISOString());
   finishSharedWordIntroductionBootstrap('unmapped','unmapped',{...content,id:'unmapped-doc',word:{...content.word,wordId:'unmapped'},uses:[...content.uses,{id:'u2',label:'another greeting',notes:[],exampleIds:['e1']}]},'fixture');
   const preparation=createVocabularyPracticePreparation({provider:{model:'fake',isConfigured:()=>true,generationKey:()=> 'unmapped',generate:async()=>assert.fail('No provider for unmapped source')}}),work=preparation.ensure('unmapped')!;
@@ -585,4 +588,23 @@ test('valid empty automatic output retains its invocation and recommendation in 
   const attention=preparation.listFailed()[0]!;
   assert.equal(attention.invocationId,invocation.id);assert.equal(attention.lastError,'no_faithful_exercises');assert.equal(attention.retryable,true);
   assert.equal(preparation.listQueued().length,0);
+});
+
+
+for(const state of ['queued','failed'] as const)test(`empty inventory stops ${state} practice without fresh demand or provider calls`,async()=>{
+  const preparation=createVocabularyPracticePreparation({provider:{model:'fake',isConfigured:()=>true,generationKey:()=> 'empty',generate:async()=>assert.fail('No authoring for empty inventory')}});
+  const work=preparation.ensure('w1')!;
+  if(state==='failed')db.prepare("UPDATE vocabulary_practice_preparation SET status='failed',last_error='provider_failed' WHERE work_id=?").run(work.workId);
+  for(const sense of getVocabularySenses('w1'))updateVocabularySense(sense.senseId,sense.version,{description:sense.description,status:'retired'},{kind:'service',id:'fixture'});
+  assert.equal(preparation.ensure('w1'),null);
+  if(state==='queued'){
+    assert.equal(await preparation.preflight(work.workId),false);
+    assert.equal(preparation.listQueued().length,0);
+    assert.equal(db.prepare('SELECT status FROM vocabulary_practice_preparation WHERE work_id=?').get(work.workId)!.status,'ready');
+  }else{
+    assert.equal(preparation.listFailed()[0]!.retryable,false);
+    assert.throws(()=>preparation.retry(work.workId,'operator'),/Empty inventory/);
+    assert.equal(db.prepare('SELECT status FROM vocabulary_practice_preparation WHERE work_id=?').get(work.workId)!.status,'failed');
+  }
+  assert.equal(db.prepare('SELECT attempt_count FROM vocabulary_practice_preparation WHERE work_id=?').get(work.workId)!.attempt_count,0);
 });

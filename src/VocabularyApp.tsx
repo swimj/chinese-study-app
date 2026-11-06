@@ -21,15 +21,7 @@ import { usePriorityPageController } from './features/priority/usePriorityPageCo
 import { PriorityPage } from './pages/PriorityPage';
 import { useContentDiagnosticsController } from './features/content/useContentDiagnosticsController';
 import { ContentDiagnosticsPage } from './pages/ContentDiagnosticsPage';
-import { OperatorUsagePulsePage } from './pages/OperatorUsagePulsePage';
 import { useAttentionBadges } from './features/attention/useAttentionBadges';
-
-const OPERATOR_USAGE_HASH = '#operator-usage';
-
-function readInitialPage(): AppPageKey {
-  if (typeof window === 'undefined') return 'home';
-  return [OPERATOR_USAGE_HASH, '#operator-vocabulary'].includes(window.location.hash) ? 'operator-usage' : 'home';
-}
 
 function App({ onSignOut, accountScope = 'trusted-local' }: { onSignOut?: () => Promise<void>; accountScope?: string }) {
   const gettingStartedKey = `getting-started-seen:v1:${accountScope}`;
@@ -49,8 +41,7 @@ function App({ onSignOut, accountScope = 'trusted-local' }: { onSignOut?: () => 
     catch { return true; }
   });
   const guideToSettings = !gettingStartedUnseen && !stashUnseen && settingsUnseen;
-  const [currentPage, setCurrentPage] = useState<AppPageKey>(readInitialPage);
-  const [operatorInitialTab, setOperatorInitialTab] = useState<'usage' | 'improvement'>(() => window.location.hash === '#operator-vocabulary' ? 'improvement' : 'usage');
+  const [currentPage, setCurrentPage] = useState<AppPageKey>('home');
   const [aboutView, setAboutView] = useState<AboutView>('getting-started');
   const [selectedUpdateId, setSelectedUpdateId] = useState<string | null>(null);
   const homeUpdatesCollapsedKey = `home-updates-collapsed:v1:${accountScope}`;
@@ -88,34 +79,6 @@ function App({ onSignOut, accountScope = 'trusted-local' }: { onSignOut?: () => 
     }
 
     loadData();
-  }, []);
-
-  useEffect(() => {
-    if (currentPage === 'operator-usage') {
-      if (window.location.hash !== OPERATOR_USAGE_HASH) {
-        window.location.hash = OPERATOR_USAGE_HASH;
-      }
-      return;
-    }
-    setOperatorInitialTab('usage');
-    if (window.location.hash === OPERATOR_USAGE_HASH) {
-      history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
-    }
-  }, [currentPage]);
-
-  useEffect(() => {
-    function onHashChange() {
-      if (window.location.hash === '#operator-vocabulary') {
-        setOperatorInitialTab('improvement');
-        setCurrentPage('operator-usage');
-        history.replaceState(null, '', `${window.location.pathname}${window.location.search}${OPERATOR_USAGE_HASH}`);
-      }
-      if (window.location.hash === OPERATOR_USAGE_HASH) {
-        setCurrentPage('operator-usage');
-      }
-    }
-    window.addEventListener('hashchange', onHashChange);
-    return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
 
   useEffect(() => {
@@ -325,8 +288,6 @@ function App({ onSignOut, accountScope = 'trusted-local' }: { onSignOut?: () => 
           onSelectKind={(kind) => void contentPage.selectKind(kind)}
           onSearch={() => void contentPage.submitSearch()}
         />
-      ) : currentPage === 'operator-usage' ? (
-        <OperatorUsagePulsePage key={operatorInitialTab} initialTab={operatorInitialTab} />
       ) : null}
 
     </AppChrome>

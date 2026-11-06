@@ -350,6 +350,40 @@ fly ssh console --app <app-name> --command \
 
 ## Operator recovery
 
+### Backfill missing GPT-6 Luna invocation costs
+
+`hosted:backfill-luna-costs` estimates unknown direct-OpenAI `gpt-6-luna`
+invocation costs from retained token usage. It covers terminal attempts, including
+failed or invalid responses with usage, and preserves known costs, running calls,
+and original invocation evidence. Missing or invalid usage, requests outside the
+Standard/default 30-minute cache pricing basis, and input beyond 272K tokens are
+reported as skipped. The command makes no provider calls.
+
+Run this as a separate accounting repair after deploying the command, rather
+than as part of the application-only upgrade pipeline. Preview opens the existing
+database read-only without application startup or schema migration:
+
+```bash
+fly ssh console --app <app-name> --command \
+  'npm run --silent hosted:backfill-luna-costs -- --data-dir=/data'
+```
+
+Review the candidate IDs, skipped reasons, total estimated USD, and plan digest.
+Apply that exact plan with an attributable operator:
+
+```bash
+fly ssh console --app <app-name> --command \
+  'npm run --silent hosted:backfill-luna-costs -- --data-dir=/data --apply=true --actor-id=<operator> --confirm-plan=<digest>'
+```
+
+Apply rechecks the evidence and pricing inside one write transaction; a changed
+plan refuses all updates. Each repaired row stores `estimated` spend and the
+pinned pricing basis, with operator, UTC repair time, and plan digest in
+`pricing_json.backfill`. Retain the command output as operation evidence.
+Preview again to verify the repaired IDs are absent. Repeating a freshly
+previewed plan changes no already-priced rows. Service controls are independent
+of this accounting-only repair.
+
 ### Recover failed cue repairs from correct requested reviews
 
 `hosted:recover-correct-cue-repairs` selects the latest accepted current-contract
@@ -481,3 +515,67 @@ restore by overwriting `/data/app.db` on the live Machine.
   an acknowledged recovery point.
 - Never log Clerk secrets, provider keys, S3 keys, bearer tokens, learner notes,
   raw provider responses, or replica URLs in tickets or deployment evidence.
+
+## One-time recovery of the Enough-for-today session
+
+`scripts/recover-enough-session.ts` repairs the specific failure where the last
+“Enough for today” action completed a finishing vocabulary session, but the
+client's extra Next request prevented completion staging. It is an incident
+script, not an active-session recovery interface. It changes no schema and
+starts no server or workers. Use the same reviewed code for rehearsal and apply.
+
+The script requires an explicit learner and session. Preview opens an existing
+SQLite file read-only and returns the exact action boundary, covered/uncovered
+word IDs, historical times, and a digest. It refuses existing completion
+revisions, subsequent or overlapping study, later learning effects, changed word
+mode versions, and later scheduling timestamps. It cannot prove the absence of
+unlogged manual SQL changes; inspect the incident history before use.
+
+Stage time is the final retained action's timestamp; close time is 15 seconds
+later, matching the ordinary Undo window. Unknown active duration stays null.
+Completion, learning effects, and downstream queue timestamps use that historical
+close time. The JSON receipt separately records the actual recovery time. Retain
+the preview and receipt as private operator evidence; output contains IDs and
+counts but no answer text. Reserve reconciliation's request time also becomes
+historical; queue processing happens when workers resume.
+
+1. Identify the session through read-only diagnostics and verify the failure
+   signature and absence of intervening activity. Follow this runbook's
+   maintenance procedure: disable provider work, enable maintenance, drain
+   providers, sync replication, and take a fresh recoverable snapshot. Keep
+   learner writes and workers quiescent through preview and apply.
+2. Rehearse on a consistent disposable database copy. Preview:
+
+   ```bash
+   node --import tsx scripts/recover-enough-session.ts \
+     --database=/absolute/path/study.db --learner-id=LEARNER --session-id=SESSION
+   ```
+
+   Review the IDs, boundary and timestamps. Apply **to the copy** using its digest:
+
+   ```bash
+   node --import tsx scripts/recover-enough-session.ts \
+     --database=/absolute/path/study.db --learner-id=LEARNER --session-id=SESSION \
+     --apply=true --confirm-plan=DIGEST
+   ```
+
+   Compare schedules, coverage, unchanged action history, completion/effect rows,
+   and queued downstream work. Account for any UTC date boundary in the proposed
+   close time. Do not infer successful recovery from the exit code alone.
+3. Preview the live file again during maintenance, review that plan, and apply
+   its digest with the same command. The script rechecks under `BEGIN IMMEDIATE`
+   and stages/closes in one transaction. A changed plan or failed closure rolls
+   back all recovery writes. A repeated invocation refuses the existing revision
+   rather than applying effects twice. If output is lost, inspect the completion
+   and dispatch before retrying; do not delete records to make a retry pass.
+4. Retain the receipt and verify one closed completion and one post-session
+   dispatch, historical scheduling, and unchanged answers. Reopen using the
+   normal maintenance procedure. Verify evidence ingestion and the applicable
+   reflection, Connections, reserve reconciliation, and teaching-preparation
+   work progress through their ordinary workers. Queued work is not evidence
+   that provider processing succeeded. Check Home/history and service health.
+
+A refusal is a stop for investigation, not a reason to weaken the checks. This
+script does not reconcile later study, recover browser-only duration, or replay
+model calls itself. Running it on production is a separate operator action from
+reviewing or merging its PR.

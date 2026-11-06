@@ -180,9 +180,9 @@ test('repair preserves banked no-op and surrounding-whitespace rejection cases',
   }
 });
 
-test('operator reassessment excludes historical candidate responses and fences by source version',()=>{
+test('operator reassessment retains historical candidate responses and fences by source version',()=>{
   const prepared=prepareVocabularyPureCueImprovement({...job(),reassessmentSourceJobId:'previous',reassessmentSource:original},original);
-  assert.deepEqual(prepared.input.responseCandidates,[]);
+  assert.deepEqual(prepared.input.responseCandidates.map(item=>item.rawResponse),['擴大']);
   prepared.fence();
   updateVocabularyContent('cue',original.version,{...original,body:{prompt:'Updated task.'}},actor);
   assert.throws(()=>prepared.fence(),error=>error instanceof Error&&error.constructor.name==='VocabularyReflectionConflict');

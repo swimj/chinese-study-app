@@ -1,3 +1,4 @@
+import { vocabularySessionWordEligibleSql } from '../db/vocabulary-sense-eligibility.ts';
 import { getWordReserveCandidates } from '../db/word-reserve.ts';
 import { getDb } from '../db/connection.ts';
 import { requireLearnerId } from '../db/learner-context.ts';
@@ -61,6 +62,7 @@ export function planVocabularyNewWords(options:{limit:number;seed:string;now:str
     FROM learner_words w JOIN learner_word_schedules s USING(learner_id,word_id)
     LEFT JOIN learner_owned_user_word_priority p ON p.learner_id=w.learner_id AND p.word_id=w.word_id
     WHERE w.learner_id=? AND w.mode='unstudied' AND w.in_stash=1 AND w.dismissed_at IS NULL
+      AND ${vocabularySessionWordEligibleSql('w.word_id')}
       AND (s.next_eligible_at IS NULL OR s.next_eligible_at<=?)
       AND COALESCE(json_extract(s.scheduler_state_json,'$.enabled'),1)=1 ORDER BY w.word_id`).all(PRIORITY_TIER_TOP,learner,now) as {id:string;overlayUpdatedAt:string;isTop:number}[])
     .map((entry):UnstudiedStashCandidate=>({...entry,isTop:entry.isTop===1,isRequired:false})).filter(entry=>!options.excludedIds?.has(entry.id));
@@ -71,6 +73,7 @@ export function planVocabularyNewWords(options:{limit:number;seed:string;now:str
     LEFT JOIN learner_owned_user_word_priority p ON p.word_id=l.id AND p.learner_id=?
     LEFT JOIN learner_word_schedules s ON s.word_id=l.id AND s.learner_id=?
     WHERE (w.word_id IS NULL OR (w.mode='unstudied' AND w.in_stash=0 AND w.dismissed_at IS NULL))
+      AND ${vocabularySessionWordEligibleSql('l.id')}
       AND (p.word_id IS NULL OR p.priority_tier>=0)
       AND (s.next_eligible_at IS NULL OR s.next_eligible_at<=?)
       AND COALESCE(json_extract(s.scheduler_state_json,'$.enabled'),1)=1
@@ -120,6 +123,7 @@ export function composeVocabularyStudy(options:{
   const newIds=plan.newWordIds;
   const learningWordIds=(getDb().prepare(`SELECT w.word_id FROM learner_words w JOIN learner_word_schedules s USING(learner_id,word_id)
     WHERE w.learner_id=? AND w.mode='solidify' AND w.dismissed_at IS NULL
+      AND ${vocabularySessionWordEligibleSql('w.word_id')}
       AND (s.next_eligible_at IS NULL OR s.next_eligible_at<=?)
     ORDER BY w.added_at,w.word_id`).all(learner,now) as {word_id:string}[]).map((row)=>row.word_id)
     .filter((wordId)=>!options.canUseSkill||options.canUseSkill(wordId,'recognition')||options.canUseSkill(wordId,'production'));

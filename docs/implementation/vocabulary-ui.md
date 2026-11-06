@@ -216,7 +216,7 @@ can only populate that same epoch. Read-only `coverageChanged` snapshots expose
 actual source, mapping and canonical catalog drift for service and operator
 proposals, including explicit assessment evidence bases. Review/default edits do
 not retarget captured generation scope or block content approval. See the
-[content-improvement implementation](vocabulary-content-improvement.md#single-word-assessment)
+[content-improvement implementation](vocabulary-content-improvement.md#versions-and-retained-stage-results)
 for generation and evidence fences.
 The editor invalidates metadata and preview caches after a policy save while
 retaining proposal drafts, inclusion toggles and valid content approval. The current
@@ -224,6 +224,21 @@ review snapshot is fetched again without installing over those edit buffers. Sco
 responses replace labels only for their word, preserving other proposal targets. Reassessment refreshes current source
 metadata, confirms a version change, then updates only reassessment status; it
 never installs a replacement proposal over unsaved text or selection toggles.
+
+The main review card displays the assessment origin, contributing stage models,
+and sense mapping outcome and generation scope. Model attribution follows the
+invocations referenced by the finalized result; abandoned attempts are excluded.
+A lexical-resolution continuation also retains the model that supplied its prior
+local diagnosis. Mapping rationale stays in a disclosure. Identical served
+snapshots appear once with each encounter's responses, reactions and undo state.
+
+Stale reviews expand the current source and its expected answers alongside the
+proposal's assessed version. Reloading the snapshot does not update proposal
+bases. Operators can dismiss, reassess, or draft a separate correction from a
+current source. That correction preserves the case evidence, starts from current
+content, and follows ordinary save and approval with current-version validation.
+The original proposal remains unchanged. Ineligible reassessments display the
+reason supplied by the same backend eligibility projection used for review.
 
 The failure response also projects failed default selectors whose shared word
 selection is unknown. The word-level attention section reads those findings

@@ -105,8 +105,10 @@ sentences and explanations also needs phrase context.
   only that one form. Word labels do not trigger sentence conversion.
 - [Sentence conversion](../src/domain/sentence-characters.ts) uses OpenCC
   JavaScript, pinned in [package.json](../package.json). It normalizes text to
-  Simplified before producing the requested script, so mixed sources need no
-  preliminary script detection. Phrase dictionaries distinguish uses such as
+  Taiwan Traditional first, then converts to Simplified when requested, so mixed
+  sources need no preliminary script detection. This gives phrase exceptions
+  consistent input: `显著` becomes `顯著` before simplification, preserving 著.
+  Phrase dictionaries distinguish uses such as
   `发展 → 發展` and `头发 → 頭髮`. The Traditional path uses Taiwan character
   variants without regional vocabulary substitution.
 - [Cloze rendering](../src/features/session/ClozePrompt.tsx) finds blanks in the

@@ -1,3 +1,4 @@
+import { modelLexicalWord } from './model-lexical-word.ts';
 import { vocabularySenseReferences } from './model-sense-references.ts';
 import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
@@ -25,9 +26,9 @@ export function createUsefulSelectionProvider(options:{environment?:NodeJS.Proce
   const adapter=options.adapter??createOpenAiCompatibleAdapter({id:'openai',defaultBaseUrl:'https://api.openai.com/v1',apiKeyEnvironmentVariable:'OPENAI_API_KEY',structuredOutputMode:'json_schema',maxTokensField:'max_completion_tokens',fetchImplementation:fetchImplementationForProvider('openai',timeoutMs)});
   return {isConfigured:()=>Boolean(environment.OPENAI_API_KEY?.trim()),async select(input,context){
     const references=vocabularySenseReferences(input.senses.map(sense=>sense.senseId));
-    const wire={...input,senses:input.senses.map(sense=>({...sense,senseId:references.alias(sense.senseId)}))};
+    const wire={word:modelLexicalWord(input.word),senses:input.senses.map(({wordId: _wordId,...sense})=>({...sense,senseId:references.alias(sense.senseId)}))};
     const schema:JsonSchema={type:'object',additionalProperties:false,required:['senseIds'],properties:{senseIds:{type:'array',items:{type:'string',enum:input.senses.map(sense=>references.alias(sense.senseId))}}}};
-    const result=await adapter.run({model:VOCABULARY_SENSE_MODEL,reasoningEffort:'high',systemPrompt:prompt,userPrompt:JSON.stringify(wire),outputSchemaName:'vocabulary_default_useful_selection_v1',outputSchema:schema,maxOutputTokens:4000,temperature:null,timeoutMs,cachePrompt:true,invocationActor:{kind:'service',serviceId:VOCABULARY_SENSE_SERVICE},provenance:{workflowId:context.workflowId,attemptNumber:context.attemptNumber,stepName:'default_useful_selection',promptName:'vocabulary-default-useful-selection',promptVersion:'1',schemaVersion:'1',inputProjectionVersion:'canonical-inventory-local-senses-v1'}},{apiKey:environment.OPENAI_API_KEY?.trim()??'',baseUrl:environment.OPENAI_BASE_URL?.trim()||null});
+    const result=await adapter.run({model:VOCABULARY_SENSE_MODEL,reasoningEffort:'high',systemPrompt:prompt,userPrompt:JSON.stringify(wire),outputSchemaName:'vocabulary_default_useful_selection_v1',outputSchema:schema,maxOutputTokens:4000,temperature:null,timeoutMs,cachePrompt:true,invocationActor:{kind:'service',serviceId:VOCABULARY_SENSE_SERVICE},provenance:{workflowId:context.workflowId,attemptNumber:context.attemptNumber,stepName:'default_useful_selection',promptName:'vocabulary-default-useful-selection',promptVersion:'6',schemaVersion:'1',inputProjectionVersion:'canonical-inventory-local-senses-v3'}},{apiKey:environment.OPENAI_API_KEY?.trim()??'',baseUrl:environment.OPENAI_BASE_URL?.trim()||null});
     context.onInvocation(result.invocationId);
     try{if(isOutputTruncationFinishReason(result.finishReason))throw new Error('truncated');const value:unknown=JSON.parse(result.rawText);if(validateJsonSchema(value,schema).length)throw new Error('schema');const selected=(value as {senseIds:string[]}).senseIds;if(new Set(selected).size!==selected.length)throw new Error('duplicate');return {senseIds:selected.map(id=>references.canonical(id))};}
     catch{invalidateServiceInvocation(result.invocationId,VOCABULARY_SENSE_SERVICE);throw new Error('Default useful selection output is invalid');}
@@ -35,11 +36,11 @@ export function createUsefulSelectionProvider(options:{environment?:NodeJS.Proce
 }
 function atomic<T>(work:()=>T):T {const db=getDb(),point=`selection_${randomUUID().replaceAll('-','')}`;db.exec(`SAVEPOINT ${point}`);try{const result=work();db.exec(`RELEASE ${point}`);return result;}catch(error){db.exec(`ROLLBACK TO ${point}; RELEASE ${point}`);throw error;}}
 /** Pure census: imported teaching senses already embody an editorial decision. */
-export function defaultUsefulInitializationPlan(wordId:string):{kind:'known'|'imported'|'selector'|'attention';senseIds:string[];reason?:string} {
+export function defaultUsefulInitializationPlan(wordId:string):{kind:'known'|'empty'|'imported'|'selector'|'attention';senseIds:string[];reason?:string} {
   const coverage=getVocabularyWordSenseCoverage(wordId);if(coverage.defaultUsefulSenseIds!==null)return {kind:'known',senseIds:coverage.defaultUsefulSenseIds};
   if(getVocabularySenseCatalog(wordId).establishedAt===null)return {kind:'attention',senseIds:[],reason:'Canonical inventory is not established; operator inventory review is required.'};
   const senses=getVocabularySenses(wordId).filter(sense=>sense.status==='active');
-  if(!senses.length)return {kind:'attention',senseIds:[],reason:'No active canonical senses are available.'};
+  if(!senses.length)return {kind:'empty',senseIds:[]};
   let brokenImport=false;
   const importFlags=senses.map(sense=>{const description=sense.description;if(!description||typeof description!=='object'||Array.isArray(description))return false;const source=description.source;if(!source||typeof source!=='object'||Array.isArray(source)||typeof source.contentId!=='string'||typeof source.useId!=='string')return false;
     const valid=Boolean(getDb().prepare('SELECT 1 FROM legacy_sense_imports WHERE source_content_id=? AND source_use_id=? AND sense_id=? AND imported_sense_version=?').get(source.contentId,source.useId,sense.senseId,sense.version));if(!valid)brokenImport=true;return valid;});
@@ -56,6 +57,12 @@ export async function ensureVocabularyDefaultUsefulSelection(wordId:string,optio
   const now=options.now??(()=>new Date().toISOString());const before=getVocabularyWordSenseCoverage(wordId);if(before.defaultUsefulSenseIds!==null){resolveDefaultUsefulSelectionAttention(wordId);return before;}
   const plan=defaultUsefulInitializationPlan(wordId);if(plan.kind==='attention')throw new VocabularySenseSelectionRequired(plan.reason);
   if(options.canPublish&&!options.canPublish())throw new VocabularySenseReadinessPending(new Date(Date.parse(now())+30_000).toISOString());
+  if(plan.kind==='empty')return atomic(()=>{
+    const current=getVocabularyWordSenseCoverage(wordId);if(current.defaultUsefulSenseIds!==null)return current;
+    if(defaultUsefulInitializationPlan(wordId).kind!=='empty')throw new VocabularySenseReadinessPending(new Date(Date.parse(now())+30_000).toISOString());
+    writeVocabularyDefaultUsefulSenses(wordId,current.version,[],{...actor,reason:{workflowId:options.workflowId,source:'empty_inventory'}});
+    resolveDefaultUsefulSelectionAttention(wordId);return getVocabularyWordSenseCoverage(wordId);
+  });
   if(plan.kind==='imported')return atomic(()=>{const current=getVocabularyWordSenseCoverage(wordId);if(current.defaultUsefulSenseIds!==null)return current;const fresh=defaultUsefulInitializationPlan(wordId);if(fresh.kind!=='imported')throw new VocabularySenseReadinessPending(new Date(Date.parse(now())+30_000).toISOString());writeVocabularyDefaultUsefulSenses(wordId,current.version,fresh.senseIds,{...actor,reason:{workflowId:options.workflowId,source:'imported_teaching'}});return getVocabularyWordSenseCoverage(wordId);});
   const db=getDb(),catalog=getVocabularySenseCatalog(wordId),senses=getVocabularySenses(wordId).filter(sense=>sense.status==='active'),word=getSharedIntroductionLexicalWord(wordId);
   if(!word||catalog.establishedAt===null)throw new VocabularySenseSelectionRequired('Canonical inventory must be established before useful selection.');
