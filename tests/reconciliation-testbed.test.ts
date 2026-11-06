@@ -27,10 +27,12 @@ test('reconciliation preview seeds separate canonical and teaching sources with 
       assert.equal(db.prepare('SELECT count(*) n FROM legacy_sense_imports WHERE source_content_id=?').get(ids.replacementContentId)!.n,0);
       assert.equal(db.prepare('SELECT content_id FROM word_introduction_preparation WHERE word_id=?').get(ids.wordId)!.content_id,ids.replacementContentId);
       assert.equal(db.prepare('SELECT last_error FROM vocabulary_practice_preparation WHERE work_id=?').get(ids.practiceWorkId)!.last_error,'source_mapping_requires_operator');
+      assert.equal(db.prepare("SELECT count(*) n FROM vocabulary_practice_preparation WHERE word_id=? AND last_error='source_mapping_requires_operator'").get(ids.wordId)!.n,2);
+      assert.equal(db.prepare("SELECT count(*) n FROM vocabulary_practice_preparation WHERE word_id=? AND last_error='generation_failed'").get(ids.wordId)!.n,1);
       assert.equal(db.prepare('SELECT in_stash FROM learner_words WHERE word_id=? AND learner_id=?').get(ids.wordId,'dev-learner')!.in_stash,1);
       assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
     } finally {db.close();}
-    assert.equal(scenarioById('reconciliation').entryPath,'/operator/reconciliation');
+    assert.equal(scenarioById('reconciliation').entryPath,'/operator/improvement');
     assert.match(scenarioById('reconciliation').limits,/replacement content remains pending/);
     const refused=spawnSync(process.execPath,['--import','tsx','scripts/testbed/prepare-reconciliation.ts',`--data-dir=${dataDir}`],{env,encoding:'utf8'});
     assert.notEqual(refused.status,0,'Re-seeding must not overwrite a previously explored case');

@@ -31,14 +31,26 @@ flowchart TD
 
 ## Sense/content reconciliation
 
-The separate operator route `/operator/reconciliation` compares prepared teaching
-with canonical senses. It addresses source disagreement rather than asking ordinary
+The matcher embedded in **Content improvement → Needs attention** compares prepared
+teaching with canonical senses. `/operator/reconciliation` is a compatibility entry
+to that queue. It addresses source disagreement rather than asking ordinary
 exercise improvement to silently choose a winner. The
 [contract](../../SPECS/sense-content-reconciliation.md) owns the semantic decisions;
 [`sense-content-reconciliation.ts`](../../server/db/sense-content-reconciliation.ts)
 owns saved judgments and live application. It reuses inventory snapshot/dependency
 collection from the offline reconciliation report, without invoking that tool's
 stopped-writer apply operation.
+
+[`vocabulary-attention.ts`](../../server/db/vocabulary-attention.ts) projects a stable
+`reconciliation:<wordId>` item for a current source mismatch, a saved decision, or
+an incomplete applied replacement. It groups only mapping failures whose source is
+covered by that current/reviewed resolution; provider failures and unrelated
+reflection cases remain separate. Source identity and individual failure records
+are disclosed as children. Grouping affects the queue projection, preserving the
+underlying records and history. Completed replacements remove covered failures
+from active attention; a new mismatch or decision can keep the word actionable.
+Queue counting and pagination operate on grouped identities before displayed
+items load their progress and child records.
 
 Each saved version captures a linguistic draft and source snapshot. Planning checks
 use accounting, selected identities, source drift, active generation, unresolved

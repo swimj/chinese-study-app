@@ -182,8 +182,13 @@ sessions is a separate policy outside this delivery.
 
 ## First implementation boundary
 
-The operator workspace at `/operator/reconciliation` saves draft or resolved use
-decisions against a retained source snapshot. Its first application handler preserves
+The operator workspace lives inside **Content improvement → Needs attention** and
+saves draft or resolved use decisions against a retained source snapshot. Attention
+groups records that share a current/reviewed teaching-source resolution into one
+item with expandable individual evidence. Unrelated same-word cases stay separate;
+grouping preserves the original records rather than merging their histories.
+Completed resolutions leave active attention once required replacements are ready
+and no new mismatch or decision remains. Its first application handler preserves
 canonical identities and versions, accepts a nonempty selection of existing active
 senses, and records each teaching use as mapped to an existing sense or rejected.
 Written reasons are optional; a complete supported mapping can be applied without them.

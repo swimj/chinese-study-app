@@ -1,8 +1,11 @@
+import type { SenseContentReconciliationProgress } from './sense-content-reconciliation.ts';
 import type { VocabularyReflectionCase } from './vocabulary-reflection.ts';
 import type { VocabularyDefaultSelectionFinding } from './vocabulary-sense-coverage.ts';
 
+export type VocabularyReconciliationAttentionChild = {id:string;kind:'source'|'preparation';sourceId:string;sourceContentId:string;caseId:null;reason:string;createdAt:string};
 type AttentionBase = {id:string;title:string;reason:string;createdAt:string;caseId:string|null};
 export type VocabularyAttentionItem = AttentionBase & (
+  | {kind:'reconciliation';wordId:string;sourceContentId:string|null;resolutionId:string|null;status:'unresolved'|'draft'|'resolved'|'applied';progress:SenseContentReconciliationProgress;children:VocabularyReconciliationAttentionChild[]}
   | {kind:'defaults';wordId:string;finding:VocabularyDefaultSelectionFinding}
   | {kind:'approval';requestId:string;proposalId:string;expectedVersion:number;attempts:number;retryable:boolean}
   | {kind:'preparation';workId:string;wordId:string;sourceContentId:string;attemptCount:number;invocationId:string|null;retryable:boolean}

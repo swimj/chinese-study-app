@@ -4,7 +4,6 @@ export const OPERATOR_TABS = [
   { id: 'sharing', label: 'Content sharing' },
   { id: 'quality', label: 'Content quality' },
   { id: 'improvement', label: 'Content improvement' },
-  { id: 'reconciliation', label: 'Sense reconciliation' },
   { id: 'failures', label: 'Preparation failures' },
   { id: 'whats-new', label: 'What’s new' },
   { id: 'banner', label: 'Service banner' },
@@ -14,6 +13,7 @@ export function isOperatorPath(pathname: string): boolean {
   return pathname === '/operator' || pathname.startsWith('/operator/');
 }
 export function operatorTabFromPath(pathname: string): OperatorTab | null {
+  if (pathname === '/operator/reconciliation') return 'improvement';
   if (pathname === '/operator' || pathname === '/operator/') return 'usage';
   return OPERATOR_TABS.find(tab => pathname === `/operator/${tab.id}`)?.id ?? null;
 }

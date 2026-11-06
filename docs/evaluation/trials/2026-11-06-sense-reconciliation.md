@@ -100,3 +100,28 @@ It completed all four mappings and saved/applied without entering any notes:
 Resolved/Ready became Applied/Pending, retiring the four fixture content items.
 Starting another resolution retained editable mappings and pending replacements.
 The build, 12 domain tests (including no-reason apply), and three HTTP tests passed.
+
+## Needs attention integration
+
+Reconciliation now lives in Content improvement > Needs attention. The separate
+rail entry is removed; its old URL opens Needs attention. The synthetic fixture
+contains two source-mapping failures sharing one resolution and an unrelated
+same-word provider failure. Grouping preserves every original record; expandable
+individual cases expose the shared source and both preparation records.
+
+A fresh browser-only evaluator, without source/API inspection, verified grouping,
+inspection of both records, and separate navigation to the unrelated failure. It
+mapped all four uses, saved without reasons, left and returned with mappings intact,
+and applied. Refresh retained the grouped item with both replacements pending.
+Unsaved matching disabled queue navigation, type filtering and Refresh; switching
+review tabs prompted, and cancel preserved edits. Layout and independent scrolling
+worked at 1280 and 760 pixels. The old route opened Needs attention without a
+separate reconciliation sidebar entry. No defects were observed in that scope.
+Browser-level reload/beforeunload, enlarged text and keyboard-only operation were
+not rechecked in this pass.
+
+The build passed. The full suite passed 2,585 tests, with one skip and one existing
+TODO. A subsequent focused queue regression also passed (18 attention tests total):
+a new scope mismatch after completed reconciliation re-enters attention with an
+explicit instruction to start another resolution. Completed covered failures leave
+the active queue while retaining their records; unrelated failures remain separate.

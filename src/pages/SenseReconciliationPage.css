@@ -48,3 +48,10 @@
 .reconciliation-comparison { padding:.7rem 0; }
 .reconciliation-use { padding:.5rem .7rem; margin-bottom:.5rem; border:1px solid var(--border); border-radius:.4rem; }
 .reconciliation-sense { padding:.1rem 0; }
+
+.reconciliation-embedded { padding:.5rem 0 1rem; max-width:none; }
+.reconciliation-reload { float:right; margin:0 0 .75rem .75rem; }
+.reconciliation-summary::after { content:""; display:block; clear:both; }
+.reconciliation-related { margin:.5rem 0; }
+.reconciliation-related > article { padding:.75rem 0; border-bottom:1px solid var(--border); }
+.reconciliation-related dd { margin:0 0 .5rem; overflow-wrap:anywhere; }

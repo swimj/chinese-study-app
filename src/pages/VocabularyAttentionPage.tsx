@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 'react';
 import type { VocabularyAttentionItem, VocabularyAttentionKind, VocabularyAttentionPage as AttentionPage } from '../domain/vocabulary-attention';
 import type { VocabularyOperatorApi } from '../features/vocabulary-operator/api';
+import { SenseReconciliationPage } from './SenseReconciliationPage';
 import { ScopeCoverageEditor } from '../features/vocabulary-operator/ScopeCoverageEditor';
 import { shortcutEventBlocked } from '../lib/keyboard';
 import { VocabularyOperatorPage, type VocabularyDetailActivity, type VocabularyOperatorDetail } from './VocabularyOperatorPage';
 
 const labels: Record<VocabularyAttentionKind, string> = {
-  defaults: 'Word defaults', approval: 'Application', preparation: 'Practice preparation', dispatch: 'Evidence processing', case: 'Case processing',
+  reconciliation: 'Sense reconciliation', defaults: 'Word defaults', approval: 'Application', preparation: 'Practice preparation', dispatch: 'Evidence processing', case: 'Case processing',
 };
 const message = (cause: unknown) => cause instanceof Error ? cause.message : 'The request could not finish.';
 const batchSize = 20;
@@ -124,6 +125,16 @@ export function VocabularyAttentionPage({ api, onActivity, position }: { api: Vo
           <article className="vocabulary-case-card vocabulary-attention-card" key={item.id}>
             <div className="vocabulary-case-heading"><h2>{item.title}</h2><span className="vocabulary-operator-meta">{labels[item.kind]}</span></div>
             <p>{item.reason}</p>
+            {item.kind === 'reconciliation' && <>
+              <details className="reconciliation-related"><summary>{item.children.some(child=>child.kind==='preparation')?`Individual cases (${item.children.filter(child=>child.kind==='preparation').length})`:'Source details'}</summary>
+                {item.children.map(child=><article key={child.id}>
+                  <h3>{child.kind==='source'?'Teaching source':'Practice preparation'}</h3>
+                  <p>{child.reason}</p>
+                  <dl><dt>Source</dt><dd><code>{child.sourceContentId}</code></dd><dt>Record</dt><dd><code>{child.sourceId}</code></dd></dl>
+                </article>)}
+              </details>
+              <SenseReconciliationPage key={item.id} wordId={item.wordId} onActivity={setEditorActivity}/>
+            </>}
             {item.kind === 'defaults' && <ScopeCoverageEditor api={api} wordId={item.wordId} disabled={busy || loading} expanded onActivity={setScopeEditing} onSaved={defaultsSaved} actionsContainer={actionsContainer}/>}
             {item.kind === 'approval' && <p>Approved revision {item.expectedVersion} · application not completed</p>}
             {details && <section className="vocabulary-case-provenance" aria-label="Attention details">

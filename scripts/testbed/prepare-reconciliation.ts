@@ -59,6 +59,15 @@ try {
   db.prepare("UPDATE word_preparation_work SET status='ready',source_content_id=CASE WHEN stage='teaching' THEN ? ELSE NULL END WHERE word_id=? AND stage IN ('bootstrap','teaching')").run(replacement.id,wordId);
   const practice=createVocabularyPracticePreparation().ensure(wordId);
   if(practice?.status!=='failed'||practice.lastError!=='source_mapping_requires_operator')throw new Error('Fixture must reproduce the unmapped-source practice failure');
+  // Two mapping failures share this resolution; a provider failure must remain separate.
+  const columns=(db.prepare('PRAGMA table_info(vocabulary_practice_preparation)').all() as {name:string}[]).map(column=>column.name);
+  for(const [id,key,error] of [
+    ['testbed:mapping-duplicate','testbed:older-contract','source_mapping_requires_operator'],
+    ['testbed:unrelated-provider','testbed:provider-contract','generation_failed'],
+  ]) {
+    db.prepare(`INSERT INTO vocabulary_practice_preparation (${columns.join(',')}) SELECT ${columns.map(column=>['work_id','generation_key','last_error'].includes(column)?'?':column).join(',')} FROM vocabulary_practice_preparation WHERE work_id=?`)
+      .run(...columns.filter(column=>['work_id','generation_key','last_error'].includes(column)).map(column=>column==='work_id'?id:column==='generation_key'?key:error),practice.workId);
+  }
   writeVocabularyDefaultUsefulSenses(wordId,getVocabularyWordSenseCoverage(wordId).version,canonical.map(sense=>sense.senseId),actor);
   const mappings=db.prepare('SELECT count(*) AS n FROM legacy_sense_imports WHERE source_content_id=?').get(replacement.id)!;
   if(mappings.n!==0)throw new Error('Replacement must not acquire inferred canonical mappings');

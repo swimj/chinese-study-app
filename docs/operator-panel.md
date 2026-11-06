@@ -24,8 +24,7 @@ Leaving the page via Return to study does not retain that in-memory workspace.
 | Model invocations | Inspect attributed provider calls, filter and group rows, compare spend summaries, and refresh the ledger | [Operator API](api.md#operator-view) |
 | Content sharing | Weekly exact-content reuse counts, learner-originated cue reuse, and inspectable examples | [Sharing metrics](#content-sharing) |
 | Content quality | Review content-quality signals and filter the triage queue | [Content quality](content-quality.md) |
-| Content improvement | Review vocabulary judgments and proposals, request second opinions, and apply approved corrections | [Content improvement workflow](#content-improvement-workflow) |
-| Sense reconciliation | Compare teaching uses with canonical senses, save linguistic decisions, inspect blockers, and apply supported replacement plans | [Sense reconciliation](#sense-reconciliation) |
+| Content improvement | Review vocabulary judgments and proposals, reconcile sense conflicts in Needs attention, and apply approved corrections | [Content improvement workflow](#content-improvement-workflow) |
 | Preparation failures | Inspect paused shared preparation work and retry eligible stages | [Error diagnostics](ops/error-diagnostics.md#shared-word-preparation-failures) |
 | What’s New | Edit and publish learner-facing update posts | [What’s New](whats-new.md#manual-operator-editor) |
 | Service banner | Set planned downtime, edit a custom message, or clear the active banner | [Banner API](api.md#operator-view) and [hosted upgrade runbook](ops/hosted-beta-deployment.md#post-a-pre-upgrade-banner) |
@@ -57,9 +56,15 @@ periods, and stored timestamps on their UTC boundaries.
 
 ## Sense reconciliation
 
-Open `/operator/reconciliation`. The word list includes current teaching documents
-with missing/stale canonical mappings and words with saved resolutions. Compare the
-canonical senses and default selection with the teaching uses, notes and examples.
+Open **Content improvement → Needs attention** and select a Sense reconciliation
+item. The matcher appears within the selected attention item. The compatibility
+URL `/operator/reconciliation` opens Needs attention; reconciliation has no separate
+rail tab. Compare canonical senses and defaults with the teaching uses, notes and examples.
+
+One item groups mapping failures that share a current or reviewed teaching-source
+resolution. Expand **Individual cases** to inspect the source and each retained
+preparation failure. Unrelated failures and reflection cases remain separate, even
+when they concern the same word. Grouping does not merge or delete their records.
 Matched teaching uses group beside their chosen canonical sense as you assign them;
 unassigned and excluded uses remain in separate groups. This grouping reflects
 operator choices, not automated semantic matching.
@@ -83,7 +88,10 @@ progress remain visible separately; fresh study of the affected word waits until
 both are ready. Other ready study and already-running sessions remain available.
 Retry failed preparation under unchanged authority. If canonical senses or defaults
 change while replacement is incomplete, a new reviewed resolution is required.
-Completed reconciliation does not permanently lock future default edits.
+Completed reconciliations leave Needs attention when no current mismatch or newer
+decision remains. Their covered mapping failures also leave the active queue while
+the original records and resolution history remain retained. Completed reconciliation
+does not permanently lock future default edits.
 
 Additions, sense revisions, retirement, merges/splits, and empty-default dispositions
 can be described and saved as development gaps; this first handler cannot apply them.
@@ -291,7 +299,8 @@ by creation time with a stable identity tie-breaker. Refresh preserves the selec
 identity where possible and pauses while an editor or unsaved defaults are open.
 
 The queue includes unknown word defaults requiring intervention, failed approval
-application, practice preparation and evidence dispatch, and cases with no ordinary
+application, practice preparation and evidence dispatch, grouped sense reconciliations,
+and cases with no ordinary
 review destination. Failed learner-feedback jobs remain accessible here. Teaching
 cases without an assessment appear in Awaiting review. Failed reassessment and
 second opinions with an earlier reviewable result stay with that case.
@@ -299,6 +308,9 @@ second opinions with an earlier reviewable result stay with that case.
 Selected senses appear directly as toggle chips. Saving an explicit selection,
 including none, resolves the word finding without revising an existing proposal.
 Established empty inventories and ordinary queued/running work require no attention.
+Sense reconciliation keeps its grouped attention item during required replacement
+preparation, including pending and failed stages. Its matcher and source records
+remain inspectable there.
 Retry uses the retained request or work identity and leaves the actionable queue
 once acknowledged. Failure returns the same item. Stale application requests open
 their case or standalone proposal for revision rather than offering a stale retry.

@@ -8,9 +8,10 @@ import { setDb,getDb } from '../server/db/connection.ts';
 import { installLearnerContextSqlFunction } from '../server/db/learner-context.ts';
 import { createBaselineSchema } from '../server/db/persistence.ts';
 import { migrateDatabase } from '../server/db/migrations.ts';
-import { createVocabularyContent,getVocabularyContentForMaintenance,updateVocabularyContent } from '../server/db/vocabulary-content.ts';
+import { createVocabularySense,createVocabularyContent,getVocabularyContentForMaintenance,updateVocabularyContent } from '../server/db/vocabulary-content.ts';
 import { createVocabularyProposal,saveVocabularyProposal } from '../server/db/vocabulary-reflection.ts';
 import { listVocabularyCaseQueue,getVocabularyCaseCard,resolveVocabularyCaseReview,reassessVocabularyCaseReview } from '../server/db/vocabulary-case-queue.ts';
+import { writeVocabularyDefaultUsefulSenses } from '../server/db/vocabulary-sense-coverage.ts';
 import { listVocabularyAttention } from '../server/db/vocabulary-attention.ts';
 import type { VocabularyApprovalRequest } from '../src/domain/vocabulary-reflection.ts';
 import { registerVocabularyReflectionRoutes } from '../server/vocabulary/reflection-routes.ts';
@@ -145,4 +146,102 @@ test('review approval without a retained journal entry remains reachable as a ca
   seed('orphan','exercise_improvement','succeeded');
   sql.exec("UPDATE vocabulary_case_reviews SET approval_state='attention',approval_request_id='missing-request' WHERE case_id='orphan'");
   const page=listVocabularyAttention('editor',{},dependencies);assert.equal(page.total,1);assert.equal(page.items[0].caseId,'orphan');assert.equal(page.items[0].kind,'case');
+});
+
+function seedReconciliationSource(contentId='document',current=true):void {
+  sql.prepare(`INSERT INTO shared_content_publications(publication_id,content_kind,content_id,learning_purpose_key,publication_status,published_at,status_updated_at)
+    VALUES (?,'word_content',?,'word','available',?,?)`).run(`publication-${contentId}`,contentId,at,at);
+  sql.prepare(`INSERT INTO word_content_documents(content_id,word_id,content_json,model,created_at,publication_id)
+    VALUES (?,'word',?,'fixture',?,?)`).run(contentId,JSON.stringify({uses:[{id:'unmapped'}]}),at,`publication-${contentId}`);
+  if(current)sql.prepare(`INSERT INTO word_introduction_preparation(word_id,content_id) VALUES ('word',?)`).run(contentId);
+}
+function seedPreparation(id:string,source='document',error='source_mapping_requires_operator'):void {
+  sql.prepare(`INSERT INTO vocabulary_practice_preparation(work_id,word_id,source_content_id,generation_key,status,created_at,updated_at,last_error)
+    VALUES (?,'word',?,?,'failed',?,?,?)`).run(id,source,id,at,at,error);
+}
+const preparationDependencies={approvals:[] as VocabularyApprovalRequest[],preparationFailure:(workId:string)=>{
+  const row=sql.prepare('SELECT source_content_id,last_error FROM vocabulary_practice_preparation WHERE work_id=?').get(workId)!;
+  return {workId,wordId:'word',sourceContentId:String(row.source_content_id),attemptCount:1,invocationId:null,lastError:String(row.last_error),retryable:false};
+}};
+test('one reconciliation groups exact mapping failures while preserving unrelated work on the same word',()=>{
+  seedReconciliationSource();seedReconciliationSource('older-document',false);
+  seedPreparation('mapping-a');seedPreparation('mapping-b');seedPreparation('provider-failure','document','generation_failed');seedPreparation('older-mapping','older-document');
+  seed('unrelated-case','exercise_improvement');
+  const page=listVocabularyAttention('editor',{},preparationDependencies);
+  assert.equal(page.total,4);
+  assert.deepEqual(page.items.map(item=>item.id),['case:unrelated-case','preparation:older-mapping','preparation:provider-failure','reconciliation:word']);
+  const group=page.items.find(item=>item.kind==='reconciliation')!;
+  assert.equal(group.kind,'reconciliation');
+  if(group.kind!=='reconciliation')throw new Error('Missing group');
+  assert.deepEqual(group.children.map(child=>child.id),['source:document','preparation:mapping-a','preparation:mapping-b']);
+  assert.equal(group.progress.status,'not_required');
+  const filtered=listVocabularyAttention('editor',{kind:'reconciliation',limit:1,anchorId:group.id},dependencies);
+  assert.equal(filtered.total,1);assert.equal(filtered.offset,0);assert.equal(filtered.items[0].id,group.id);
+  const last=listVocabularyAttention('editor',{offset:3,limit:1},dependencies);
+  assert.equal(last.total,4);assert.equal(last.items[0].id,group.id);
+});
+test('source divergence is discoverable before any preparation failure exists',()=>{
+  seedReconciliationSource();
+  const page=listVocabularyAttention('editor',{},dependencies);
+  assert.equal(page.total,1);const item=page.items[0];assert.equal(item.kind,'reconciliation');
+  assert.equal(item.kind==='reconciliation'&&item.children.length,1);
+});
+test('pending resolution stays grouped and completion clears only covered failures without deleting evidence',()=>{
+  seedReconciliationSource();seedPreparation('mapping');seedPreparation('provider','document','generation_failed');
+  sql.prepare(`INSERT INTO sense_content_reconciliations(resolution_id,word_id,version,status,draft_json,snapshot_json,applied_plan_json,authority_json,actor_id,created_at,updated_at,applied_at)
+    VALUES ('resolution','word',2,'applied','{}',?,'{"retireSourceIds":["document"],"replacementTeachingRequired":true,"replacementPracticeRequired":true}','{}','editor',?,?,?)`)
+    .run(JSON.stringify({dependencies:{introductionPreparation:[{content_id:'document'}]}}),at,at,at);
+  sql.exec("UPDATE word_introduction_preparation SET content_id=NULL WHERE word_id='word'");
+  let page=listVocabularyAttention('editor',{},preparationDependencies);
+  const group=page.items.find(item=>item.kind==='reconciliation')!;
+  assert.equal(group.kind==='reconciliation'&&group.progress.status,'failed');
+  assert.equal(group.kind==='reconciliation'&&group.children.some(child=>child.id==='preparation:mapping'),true);
+  sql.prepare("UPDATE sense_content_reconciliations SET completed_at=? WHERE resolution_id='resolution'").run(now);
+  page=listVocabularyAttention('editor',{},preparationDependencies);
+  assert.deepEqual(page.items.map(item=>item.id),['preparation:provider']);
+  assert.equal(sql.prepare("SELECT status FROM vocabulary_practice_preparation WHERE work_id='mapping'").get()!.status,'failed');
+  assert.equal(sql.prepare('SELECT count(*) n FROM sense_content_reconciliations').get()!.n,1);
+  sql.prepare(`INSERT INTO sense_content_reconciliations(resolution_id,word_id,version,status,draft_json,snapshot_json,actor_id,created_at,updated_at)
+    VALUES ('next','word',3,'draft','{}',?,'editor',?,?)`).run(JSON.stringify({dependencies:{reconciliationTeachingEvidence:{contentId:'document'}}}),now,now);
+  page=listVocabularyAttention('editor',{kind:'reconciliation'},dependencies);
+  assert.equal(page.total,1);assert.equal(page.items[0].kind==='reconciliation'&&page.items[0].status,'draft');
+});
+
+test('a later draft keeps failures covered by the prior incomplete application grouped',()=>{
+  seedReconciliationSource();seedPreparation('old-mapping');seedReconciliationSource('replacement',false);
+  sql.prepare(`INSERT INTO sense_content_reconciliations(resolution_id,word_id,version,status,draft_json,snapshot_json,applied_plan_json,authority_json,actor_id,created_at,updated_at,applied_at)
+    VALUES ('applied','word',2,'applied','{}',?,'{"retireSourceIds":["document"],"replacementTeachingRequired":true,"replacementPracticeRequired":true}','{}','editor',?,?,?)`)
+    .run(JSON.stringify({dependencies:{introductionPreparation:[{content_id:'document'}]}}),at,at,at);
+  sql.exec("UPDATE word_introduction_preparation SET content_id='replacement' WHERE word_id='word'");
+  sql.prepare(`INSERT INTO sense_content_reconciliations(resolution_id,word_id,version,status,draft_json,snapshot_json,actor_id,created_at,updated_at)
+    VALUES ('draft','word',3,'draft','{}',?,'editor',?,?)`).run(JSON.stringify({dependencies:{introductionPreparation:[{content_id:'replacement'}]}}),now,now);
+  const page=listVocabularyAttention('editor',{},dependencies);
+  assert.equal(page.total,1);const group=page.items[0];assert.equal(group.kind,'reconciliation');
+  assert.equal(group.kind==='reconciliation'&&group.children.some(child=>child.id==='preparation:old-mapping'),true);
+  assert.equal(group.kind==='reconciliation'&&group.sourceContentId,'replacement');
+});
+
+test('failed preparation without an error label remains ordinary attention',()=>{
+  seedReconciliationSource('document',false);seedPreparation('unknown');
+  sql.exec("UPDATE vocabulary_practice_preparation SET last_error=NULL WHERE work_id='unknown'");
+  const page=listVocabularyAttention('editor',{},preparationDependencies);
+  assert.equal(page.total,1);assert.equal(page.items[0].id,'preparation:unknown');
+});
+
+test('completed aligned reconciliation leaves attention and a later default mismatch requests a new resolution',()=>{
+  seedReconciliationSource();
+  const actor={kind:'operator' as const,id:'editor'};
+  const first=createVocabularySense({wordId:'word',description:{label:'Existing meaning'}},actor);
+  const second=createVocabularySense({wordId:'word',description:{label:'Additional meaning'}},actor);
+  sql.prepare("INSERT INTO legacy_sense_imports(source_content_id,source_use_id,sense_id,imported_sense_version) VALUES ('document','unmapped',?,?)").run(first.senseId,first.version);
+  const coverage=writeVocabularyDefaultUsefulSenses('word',0,[first.senseId],actor);
+  sql.prepare(`INSERT INTO sense_content_reconciliations(resolution_id,word_id,version,status,draft_json,snapshot_json,applied_plan_json,authority_json,actor_id,created_at,updated_at,applied_at,completed_at)
+    VALUES ('done','word',2,'applied','{}','{}','{"retireSourceIds":[],"replacementTeachingRequired":true,"replacementPracticeRequired":true}','{}','editor',?,?,?,?)`).run(at,at,at,now);
+  assert.equal(listVocabularyAttention('editor',{},dependencies).total,0);
+  writeVocabularyDefaultUsefulSenses('word',coverage.word.version,[first.senseId,second.senseId],actor);
+  const page=listVocabularyAttention('editor',{},dependencies);
+  assert.equal(page.total,1);const group=page.items[0];assert.equal(group.kind,'reconciliation');
+  assert.equal(group.reason,'Teaching and current sense scope differ again; start another resolution.');
+  assert.equal(group.kind==='reconciliation'&&group.progress.status,'ready');
+  assert.equal(sql.prepare("SELECT completed_at FROM sense_content_reconciliations WHERE resolution_id='done'").get()!.completed_at,now);
 });

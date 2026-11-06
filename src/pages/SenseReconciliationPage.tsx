@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import type { SenseContentReconciliationDraft, SenseContentReconciliationWorkspace, SenseContentReconciliationWord } from '../domain/sense-content-reconciliation';
-import { fetchSenseReconciliationWords, fetchSenseReconciliation, saveSenseReconciliation, applySenseReconciliation, retrySenseReconciliation } from '../services/api';
+import type { SenseContentReconciliationDraft, SenseContentReconciliationWorkspace } from '../domain/sense-content-reconciliation';
+import { fetchSenseReconciliation, saveSenseReconciliation, applySenseReconciliation, retrySenseReconciliation } from '../services/api';
 import './SenseReconciliationPage.css';
 
-const defaultApi = {list:fetchSenseReconciliationWords,get:fetchSenseReconciliation,save:saveSenseReconciliation,apply:applySenseReconciliation,retry:retrySenseReconciliation};
+const defaultApi = {get:fetchSenseReconciliation,save:saveSenseReconciliation,apply:applySenseReconciliation,retry:retrySenseReconciliation};
 export type SenseReconciliationApi = typeof defaultApi;
 function initialDraft(workspace: SenseContentReconciliationWorkspace): SenseContentReconciliationDraft {
   return workspace.resolution?.draft ?? {
@@ -13,8 +13,7 @@ function initialDraft(workspace: SenseContentReconciliationWorkspace): SenseCont
   };
 }
 
-export function SenseReconciliationPage({api=defaultApi}: {api?:SenseReconciliationApi}) {
-  const [words,setWords]=useState<SenseContentReconciliationWord[]>([]);
+export function SenseReconciliationPage({wordId,api=defaultApi,onActivity}: {wordId:string;api?:SenseReconciliationApi;onActivity?:(activity:{dirty:boolean;busy:boolean})=>void}) {
   const [workspace,setWorkspace]=useState<SenseContentReconciliationWorkspace|null>(null);
   const [draft,setDraft]=useState<SenseContentReconciliationDraft|null>(null);
   const [busy,setBusy]=useState(false),[loading,setLoading]=useState(true);
@@ -33,11 +32,14 @@ export function SenseReconciliationPage({api=defaultApi}: {api?:SenseReconciliat
     catch(e){if(token===request.current)setError(e instanceof Error?e.message:'Could not load reconciliation.');}
     finally{if(token===request.current)setBusy(false);}
   }
-  useEffect(()=>{let active=true;void api.list().then(async items=>{
-    if(!active)return;setWords(items);
-    if(items.length){const value=await api.get(items[0].wordId);if(active)install(value);}
-  }).catch(e=>{if(active)setError(e instanceof Error?e.message:'Could not load reconciliation.');}).finally(()=>{if(active)setLoading(false);});
-  return()=>{active=false;request.current++;};},[api]);
+  useEffect(()=>{let active=true;setLoading(true);
+    void api.get(wordId).then(value=>{if(active)install(value);})
+      .catch(e=>{if(active)setError(e instanceof Error?e.message:'Could not load reconciliation.');})
+      .finally(()=>{if(active)setLoading(false);});
+    return()=>{active=false;request.current++;};
+  },[api,wordId]);
+  useEffect(()=>{onActivity?.({dirty,busy:busy||loading});},[onActivity,dirty,busy,loading]);
+  useEffect(()=>()=>onActivity?.({dirty:false,busy:false}),[onActivity]);
   useEffect(()=>{
     if(!dirty)return;const warn=(event:BeforeUnloadEvent)=>{event.preventDefault();event.returnValue='';};
     const guard=(event:MouseEvent)=>{
@@ -100,20 +102,17 @@ export function SenseReconciliationPage({api=defaultApi}: {api?:SenseReconciliat
               })}</>;
   }
   const plan=workspace?.plan;
-  return <div className="sense-reconciliation-page">
-    <header><div><p className="reconciliation-eyebrow">Operator · shared content</p><h1>Sense reconciliation</h1></div>
-      {workspace&&<button className="secondary-button" disabled={busy} onClick={()=>void open(workspace.wordId)}>Reload</button>}</header>
+  const applicationBlockers=plan?.blockers.filter(blocker=>blocker.code!=='linguistic_resolution')??[];
+  return <div className="sense-reconciliation-page reconciliation-embedded">
     {error&&<p role="alert" className="reconciliation-error">{error}</p>}
     {notice&&<p role="status" className="reconciliation-notice">{notice}</p>}
-    {loading?<p role="status">Loading reconciliations…</p>:words.length===0?<p>No teaching conflicts or saved resolutions.</p>:<>
-      <label className="reconciliation-word-picker">Word<select value={workspace?.wordId??''} disabled={busy} onChange={e=>void open(e.target.value)}>
-        {!workspace&&<option value="">Select a word</option>}{words.map(word=><option key={word.wordId} value={word.wordId}>{word.hanzi} · {word.reason}</option>)}
-      </select></label>
+    {loading?<p role="status">Loading reconciliation…</p>:<>
       {workspace&&draft&&<>
-        <section className="reconciliation-summary"><h2>{workspace.hanzi} <span>{workspace.pinyin}</span></h2>
+        <section className="reconciliation-summary">
+          <button className="secondary-button reconciliation-reload" disabled={busy} onClick={()=>void open(wordId)}>Reload resolution</button>
           <div className="reconciliation-statuses" aria-label="Reconciliation status">
             <span>Decision <strong>{dirty?'Unsaved changes':workspace.resolution?.status??'Not started'}</strong></span>
-            <span>Application <strong>{applied?'Applied':plan?.blockers.length?'Blocked':workspace.resolution?.status==='resolved'?'Ready':'Not ready'}</strong></span>
+            <span>Application <strong>{applied?'Applied':dirty?'Save changes':applicationBlockers.length?'Blocked':workspace.resolution?.status==='resolved'?'Ready':workspace.resolution?.status==='draft'?'Awaiting confirmation':'Not ready'}</strong></span>
             <span>Replacement <strong>{workspace.progress.status==='not_required'?'Not started':workspace.progress.status.replaceAll('_',' ')}</strong></span>
           </div>
         </section>
@@ -151,7 +150,7 @@ export function SenseReconciliationPage({api=defaultApi}: {api?:SenseReconciliat
         {workspace.resolution&&<section className="reconciliation-plan" aria-labelledby="application-heading"><h3 id="application-heading">Application plan</h3>
           {dirty&&<p>Save your changes to update this plan.</p>}
           {plan&&<>
-            {plan.blockers.length>0&&<div className="reconciliation-blockers"><h4>Application blocked</h4><ul>{plan.blockers.map((blocker,index)=><li key={`${blocker.code}:${index}`}>{blocker.message}{blocker.objectIds.length>0&&<span> ({blocker.objectIds.map(id=>workspace.teaching?.uses.find(use=>use.id===id)?.label??workspace.senses.find(sense=>sense.senseId===id)?.label??(id===workspace.wordId?workspace.hanzi:id)).join(', ')})</span>}</li>)}</ul></div>}
+            {applicationBlockers.length>0&&<div className="reconciliation-blockers"><h4>Application blocked</h4><ul>{applicationBlockers.map((blocker,index)=><li key={`${blocker.code}:${index}`}>{blocker.message}{blocker.objectIds.length>0&&<span> ({blocker.objectIds.map(id=>workspace.teaching?.uses.find(use=>use.id===id)?.label??workspace.senses.find(sense=>sense.senseId===id)?.label??(id===workspace.wordId?workspace.hanzi:id)).join(', ')})</span>}</li>)}</ul></div>}
             <ul className="reconciliation-effects">
               <li>{applied?'Retired':'Will retire'} {plan.retireContentIds.length} content items from future serving; {applied?'retained':'will retain'} {plan.retainedContentIds.length}.</li>
               <li>Teaching: {plan.replacementTeachingRequired?'compatible replacement required':'no replacement required'}.</li>
