@@ -95,7 +95,7 @@ export function createVocabularyPracticePreparation(options: { provider?: Vocabu
   function resolveSource(work:Pick<VocabularyPracticeWork,'wordId'|'sourceContentId'|'reconciliationId'>):{source:GeneralExerciseSource;senses:Array<{source_use_id:string;sense_id:string;imported_sense_version:number}>}|null {
     if(work.reconciliationId){
       const canonical=reconciliationPracticeSource(work.wordId);
-      if(!canonical||canonical.resolutionId!==work.reconciliationId||canonical.authority!==senseContentReconciliationAuthority(work.wordId))return null;
+      if(!canonical||!canonical.replacementRequired||canonical.resolutionId!==work.reconciliationId||canonical.authority!==senseContentReconciliationAuthority(work.wordId))return null;
       return canonical;
     }
     const source=getSharedWordIntroductionContent(work.wordId);
@@ -107,6 +107,7 @@ export function createVocabularyPracticePreparation(options: { provider?: Vocabu
     if(!isVocabularySessionWordEligible(wordId))return null;
     const canonical=reconciliationPracticeSource(wordId);
     if(canonical){
+      if(!canonical.replacementRequired)return null;
       const existing=getDb().prepare(`SELECT ${projection} FROM vocabulary_practice_preparation WHERE reconciliation_id=?`).get(canonical.resolutionId) as VocabularyPracticeWork|undefined;
       if(existing)return existing;
       if(canonical.authority!==senseContentReconciliationAuthority(wordId))return null;

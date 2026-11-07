@@ -8,7 +8,7 @@ import { isOperatorSubject, parseOperatorAllowlist } from '../operator-access.ts
 import { inventoryHash, type InventorySnapshot } from '../vocabulary/sense-inventory-reconciliation.ts';
 import { config, getDb } from './connection.ts';
 import { snapshotInventoryForReconciliation } from './sense-inventory-reconciliation-report.ts';
-import { getVocabularyContentForMaintenance, updateVocabularyContent, getVocabularySenses } from './vocabulary-content.ts';
+import { getVocabularyContentForMaintenance, updateVocabularyContent, getVocabularySenses, mapVocabularyContentSense } from './vocabulary-content.ts';
 import { getVocabularyWordSenseCoverage, writeVocabularyDefaultUsefulSenses } from './vocabulary-sense-coverage.ts';
 import { VOCABULARY_PREPARATION_EPOCH } from './preparation-compatibility.ts';
 import { senseContentReconciliationAuthority, senseContentReconciliationProgress } from './sense-content-reconciliation-state.ts';
@@ -126,13 +126,32 @@ function makePlan(row: Stored, current: InventorySnapshot): SenseContentReconcil
   for (const [key, id] of [['pendingReflectionJobs', 'job_id'], ['pendingDispatches', 'dispatch_id'], ['pendingProposals', 'proposal_id']] as const) {
     for (const item of rows(current, key)) block('pending_content_decision', `Resolve existing ${key} before applying; automatic disposition is not supported.`, [String(item[id])]);
   }
+  const covered = new Set(draft.uses.filter(use => use.decision === 'map' && use.senseId).map(use => use.senseId!));
+  const replacementPracticeRequired = draft.defaultSenseIds.some(id => !covered.has(id));
+  const repertoireMappings: NonNullable<SenseContentReconciliationPlan['repertoireMappings']> = [];
   const retireSourceIds = material ? [material.contentId] : [], retirePackageIds = material?.packageId ? [material.packageId] : [];
   const invalid = new Set([...retireSourceIds, ...retirePackageIds]);
   const contents = rows(source, 'contents'), bindings = rows(source, 'introductionBindings'), retire = new Set<string>();
   for (const content of contents.filter(item => item.availability === 'active')) {
-    // Replace target teaching as one coherent unit, and any content with an explicit pin to it.
-    const target = rows(source, 'contentWords').some(word => word.content_id === content.content_id && word.word_id === row.word_id && word.relation === 'target');
-    if (target && content.kind === 'introduction' || references(JSON.parse(String(content.body_json)), invalid)) retire.add(String(content.content_id));
+    const targetWord = rows(source, 'contentWords').find(word => word.content_id === content.content_id && word.word_id === row.word_id && word.relation === 'target');
+    const sourceDependent = references(JSON.parse(String(content.body_json)), invalid);
+    if (targetWord && content.kind === 'introduction') retire.add(String(content.content_id));
+    else if (sourceDependent) {
+      // Repertoire provenance remains historical. The operator's use mapping can
+      // establish current compatibility without replacing its authored content.
+      if (!replacementPracticeRequired && content.kind === 'exercise' && content.exercise_role === 'general' && targetWord) {
+        const importedUses = rows(source, 'imports').filter(item => item.source_content_id === material?.contentId && item.sense_id === targetWord.sense_id);
+        const decisions = importedUses.map(item => draft.uses.find(use => use.useId === item.source_use_id));
+        const targets = new Set(decisions.map(use => use?.decision === 'map' ? use.senseId : use?.decision === 'reject' ? null : undefined));
+        if (!decisions.length || targets.size !== 1 || targets.has(undefined)) {
+          block('repertoire_mapping_handler', 'This exercise cannot be attributed unambiguously to a resolved teaching use.', [String(content.content_id)]);
+        } else {
+          const target = [...targets][0];
+          if (target === null) retire.add(String(content.content_id));
+          else if (target !== targetWord.sense_id) repertoireMappings.push({contentId: String(content.content_id), fromSenseId: String(targetWord.sense_id), toSenseId: target!});
+        }
+      } else retire.add(String(content.content_id));
+    }
   }
   let changed = true;
   while (changed) {
@@ -142,9 +161,12 @@ function makePlan(row: Stored, current: InventorySnapshot): SenseContentReconcil
     }
   }
   for (const content of contents.filter(item => retire.has(String(item.content_id)))) if (content.access_scope !== 'shared') block('private_content_handler', 'This dependency is private; shared reconciliation cannot retire it.', [String(content.content_id)]);
+  for (const mapping of repertoireMappings.filter(mapping => !retire.has(mapping.contentId))) {
+    if (contents.find(content => content.content_id === mapping.contentId)?.access_scope !== 'shared') block('private_content_handler', 'This dependency is private; shared reconciliation cannot remap it.', [mapping.contentId]);
+  }
   const retainedContentIds = contents.filter(content => content.availability === 'active' && !retire.has(String(content.content_id))).map(content => String(content.content_id));
   const result = { blockers, retireContentIds: sorted(retire), retireSourceIds, retirePackageIds, retainedContentIds,
-    replacementTeachingRequired: true, replacementPracticeRequired: true };
+    replacementTeachingRequired: true, replacementPracticeRequired, repertoireMappings: repertoireMappings.filter(mapping => !retire.has(mapping.contentId)) };
   return { ...result, fingerprint: inventoryHash({ resolutionId: row.resolution_id, version: row.version, source: dependencyFingerprint(source), current: dependencyFingerprint(current), draft, ...result }) };
 }
 
@@ -264,6 +286,13 @@ export function applySenseContentReconciliation(wordId: string, input: { expecte
     for (const id of plan.retireContentIds) {
       const content = getVocabularyContentForMaintenance(id); if (!content) throw new Error('Reviewed reconciliation content disappeared');
       updateVocabularyContent(id, content.version, { ...content, availability: 'retired' }, actor);
+    }
+    for (const mapping of plan.repertoireMappings ?? []) {
+      const content = getVocabularyContentForMaintenance(mapping.contentId);
+      const word = content?.words.find(word => word.wordId === row.word_id);
+      if (!content || !word || word.senseId !== mapping.fromSenseId) throw new Error('Reviewed repertoire mapping disappeared');
+      mapVocabularyContentSense({contentId: mapping.contentId, wordId: row.word_id, expectedContentVersion: content.version,
+        expectedMapping: {senseId: word.senseId, establishedAt: word.senseMappingEstablishedAt ?? null}, senseId: mapping.toSenseId}, actor);
     }
     for (const id of plan.retireSourceIds) retirePublication('word_content', id, actorId, `Sense reconciliation ${row.resolution_id}`, now);
     for (const id of plan.retirePackageIds) retirePublication('teaching_package', id, actorId, `Sense reconciliation ${row.resolution_id}`, now);

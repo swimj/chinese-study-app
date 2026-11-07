@@ -56,10 +56,14 @@ Each saved version captures a linguistic draft and source snapshot. Planning che
 use accounting, selected identities, source drift, active generation, unresolved
 proposals/jobs, private dependencies and an active replacement requester. Blockers
 are durable judgments plus computed capability/dependency findings, not provider
-failures. The first handler always regenerates the affected teaching unit and practice;
-mapped/rejected legacy uses remain editorial evidence rather than edits to immutable
-source documents. Existing active general content is retained unless its source pins
-or teaching bindings require retirement.
+failures. The handler regenerates the affected teaching unit. When every selected
+default sense has at least one mapped teaching use, it carries compatible general
+repertoire forward and skips practice generation. Teaching-bound exercises remain
+part of teaching replacement. Current exercise sense links follow unambiguous
+operator mappings; ambiguous translations block application. Immutable source
+documents, import mappings and historical generation provenance remain unchanged.
+When a selected sense has no mapped use, the handler requests full selected-scope
+practice generation and retires affected source-dependent repertoire.
 
 Apply rechecks the reviewed fingerprint under an immediate transaction, retires the
 source/package and affected content closure, updates defaults if changed, resets and
@@ -70,7 +74,10 @@ Neither saving nor applying changes learner progress or captured session payload
 compares replacement scope/mappings and publication state with the applied authority.
 The shared authoring and general-practice paths capture reconciliation identity and
 check it before publication. Applied reconciliation immediately supplies durable
-practice demand from its selected canonical sense snapshot. Practice authoring does
+practice demand from its selected canonical sense snapshot only when its recorded
+plan requires practice replacement. A carry-forward plan suppresses both canonical
+and ordinary teaching-triggered bootstrap under that applied authority, including
+after teaching completion. Practice authoring does
 not read or wait for replacement teaching; both replacements are checked against
 the same applied authority. The existing first-learning path still authors from
 its teaching source. Replacement teaching becoming ready does not request a second

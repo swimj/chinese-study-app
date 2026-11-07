@@ -19,6 +19,7 @@ export type SenseContentReconciliationPlan = {
   blockers: Array<{ code: string; message: string; objectIds: string[] }>;
   retireContentIds: string[]; retireSourceIds: string[]; retirePackageIds: string[]; retainedContentIds: string[];
   replacementTeachingRequired: boolean; replacementPracticeRequired: boolean;
+  repertoireMappings?: Array<{ contentId: string; fromSenseId: string; toSenseId: string }>;
 };
 export type SenseContentReconciliationProgress = {
   status: 'not_required' | 'pending' | 'ready' | 'failed';

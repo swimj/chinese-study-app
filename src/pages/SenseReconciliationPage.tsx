@@ -156,8 +156,9 @@ export function SenseReconciliationPage({wordId,api=defaultApi,onActivity}: {wor
             <ul className="reconciliation-effects">
               <li>{applied?'Retired':'Will retire'} {plan.retireContentIds.length} content items from future serving; {applied?'retained':'will retain'} {plan.retainedContentIds.length}.</li>
               <li>Teaching: {plan.replacementTeachingRequired?'compatible replacement required':'no replacement required'}.</li>
-              <li>Repertoire: {plan.replacementPracticeRequired?'compatible replacement required':'no replacement required'}.</li>
+              <li>Repertoire: {plan.replacementPracticeRequired?'regenerate selected senses':'retain existing repertoire; no bootstrap'}.</li>
             </ul>
+            {!!plan.repertoireMappings?.length&&<details><summary>Exercise sense updates ({plan.repertoireMappings.length})</summary><ul>{plan.repertoireMappings.map(mapping=><li key={`${mapping.contentId}:${mapping.fromSenseId}`}><p>{workspace.affectedContent.find(content=>content.contentId===mapping.contentId)?.summary}</p>{workspace.senses.find(sense=>sense.senseId===mapping.fromSenseId)?.label??mapping.fromSenseId} → {workspace.senses.find(sense=>sense.senseId===mapping.toSenseId)?.label??mapping.toSenseId}</li>)}</ul></details>}
             <details><summary>Affected content</summary><dl><dt>Retire</dt><dd>{plan.retireContentIds.map(id=><div key={id}><p>{workspace.affectedContent.find(content=>content.contentId===id)?.summary}</p><code>{id}</code></div>)}</dd><dt>Retain</dt><dd>{plan.retainedContentIds.map(id=><div key={id}><p>{workspace.affectedContent.find(content=>content.contentId===id)?.summary}</p><code>{id}</code></div>)}</dd></dl></details>
           </>}
           {!applied&&<><p className="reconciliation-consequence">Applying changes future content eligibility. Affected study waits for required replacements. Existing sessions and learner progress are preserved.</p>
@@ -169,7 +170,7 @@ export function SenseReconciliationPage({wordId,api=defaultApi,onActivity}: {wor
               if(window.confirm('Revalidate this decision against the current source? Review the refreshed comparison and plan before applying.'))save('draft',true);
             }}>Revalidate against current source</button>}</div></>}
         </section>}
-        {workspace.progress.status!=='not_required'&&<section className="reconciliation-progress"><h3>Replacement content</h3><p>Teaching: <strong>{workspace.progress.teachingStatus}</strong> · Repertoire: <strong>{workspace.progress.practiceStatus}</strong></p>
+        {workspace.progress.status!=='not_required'&&<section className="reconciliation-progress"><h3>Replacement content</h3><p>Teaching: <strong>{workspace.progress.teachingStatus.replaceAll('_',' ')}</strong> · Repertoire: <strong>{workspace.progress.practiceStatus.replaceAll('_',' ')}</strong></p>
           {workspace.progress.errors.map((message,index)=><p role="alert" key={index}>{message}</p>)}
           <div className="reconciliation-actions"><button className="secondary-button" disabled={busy} onClick={()=>void open(workspace.wordId)}>Refresh status</button>
             {applied&&<button className="secondary-button" disabled={busy} onClick={()=>save('draft',true)}>Start another resolution</button>}

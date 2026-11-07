@@ -83,7 +83,9 @@ records and immutable per-version history. A resolution stores the linguistic dr
 reviewed source snapshot, applied plan, canonical authority, and canonical practice
 authoring snapshot with sense versions. Draft/resolved rows
 have no serving authority; an applied row governs fresh serving until required
-replacement teaching and practice are ready. Saving a later draft preserves the
+replacements are ready. The applied plan records whether repertoire generation
+is required or teaching-use coverage validates carry-forward; it can also record
+unambiguous exercise sense-link updates. Saving a later draft preserves the
 previous applied authority. Practice jobs identify either a teaching source or a
 reconciliation; the latter has no teaching-source foreign key. The migration
 creates reconciliation tables and rebuilds the practice queue while preserving

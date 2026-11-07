@@ -13,7 +13,7 @@ import { runWithLearnerId } from '../server/db/learner-context.ts';
 import { enqueueWordPreparation } from '../server/db/preparation-work.ts';
 import { claimSharedWordIntroductionStage, finishSharedWordIntroductionBootstrap, finishSharedWordIntroductionTeaching, getSharedWordIntroductionContent } from '../server/db/word-introductions.ts';
 import { normalizePracticeRehearsals } from '../server/word-content/authoring.ts';
-import { getVocabularySenses, updateVocabularySense } from '../server/db/vocabulary-content.ts';
+import { getVocabularySenses, updateVocabularySense, createVocabularyContent, getVocabularyContentForMaintenance } from '../server/db/vocabulary-content.ts';
 import { getVocabularyWordSenseCoverage, writeVocabularyDefaultUsefulSenses } from '../server/db/vocabulary-sense-coverage.ts';
 import { getSenseContentReconciliationWorkspace, saveSenseContentReconciliation, applySenseContentReconciliation,
   retrySenseContentReconciliation, listSenseContentReconciliationWords } from '../server/db/sense-content-reconciliation.ts';
@@ -73,6 +73,12 @@ function draft(): SenseContentReconciliationDraft {
     uses: state.teaching!.uses.map(use => ({ useId: use.id, decision: 'map', senseId: state.senses.find(sense => sense.label === (use.id === 'associate' ? 'tie' : use.id))!.senseId, rationale: 'Equivalent underlying meaning.' })) };
 }
 function resolved(): SenseContentReconciliationWorkspace { return saveSenseContentReconciliation('word', { expectedVersion: null, status: 'resolved', draft: draft() }, actor.id); }
+function resolvedMissing(): SenseContentReconciliationWorkspace {
+  const input = draft();
+  const missing = input.defaultSenseIds[0]!;
+  input.uses.forEach(use => { if (use.senseId === missing) use.senseId = input.defaultSenseIds[1]!; });
+  return saveSenseContentReconciliation('word', {expectedVersion:null,status:'resolved',draft:input}, actor.id);
+}
 function apply(state = resolved()): SenseContentReconciliationWorkspace {
   assert.deepEqual(state.plan!.blockers, []);
   return applySenseContentReconciliation('word', { expectedVersion: state.resolution!.version, planFingerprint: state.plan!.fingerprint }, actor.id);
@@ -130,7 +136,7 @@ test('injected apply failure rolls back content retirements and resolution effec
   assert.equal(getSenseContentReconciliationWorkspace('word', actor.id).resolution!.status, 'resolved');
 });
 test('replacement teaching and repertoire progress through real workers with fake providers', async () => {
-  apply(); await prepareTeaching();
+  apply(resolvedMissing()); await prepareTeaching();
   assert.equal(senseContentReconciliationProgress('word').teachingStatus, 'ready');
   assert.equal(senseContentReconciliationProgress('word').practiceStatus, 'pending');
   assert.deepEqual(listSenseContentReconciliationPracticeDemand(), ['word']);
@@ -215,6 +221,7 @@ function repertoireProvider(generate?:VocabularyPracticeProvider['generate']):Vo
 }
 test('canonical repertoire publishes before teaching exists and later teaching does not duplicate it', async()=>{
   const input=draft();input.defaultSenseIds=input.defaultSenseIds.slice(0,2);
+  input.uses.forEach(use=>{if(use.senseId===input.defaultSenseIds[0])use.senseId=input.defaultSenseIds[1]!;});
   const state=apply(saveSenseContentReconciliation('word',{expectedVersion:null,status:'resolved',draft:input},actor.id));
   assert.equal(getSharedWordIntroductionContent('word'),null);
   assert.deepEqual(listSenseContentReconciliationPracticeDemand(),['word']);
@@ -256,7 +263,7 @@ test('canonical repertoire publishes before teaching exists and later teaching d
   assert.equal(restarted.ensure('word')!.reconciliationId,null);
 });
 test('canonical failure groups with resolution and retries without a teaching pointer',async()=>{
-  const state=apply();let calls=0;
+  const state=apply(resolvedMissing());let calls=0;
   const preparation=createVocabularyPracticePreparation({provider:repertoireProvider(async()=>{calls++;return {exercises:[]};})});
   const work=preparation.ensure('word')!;
   await assert.rejects(()=>preparation.run(work.workId,preparation.claim(work.workId)!),/no exercises/);
@@ -275,7 +282,7 @@ test('canonical failure groups with resolution and retries without a teaching po
   assert.equal(calls,1);
 });
 test('canonical publication rejects changed defaults and stale retry without publishing content',async()=>{
-  apply();
+  apply(resolvedMissing());
   const preparation=createVocabularyPracticePreparation({provider:repertoireProvider(async source=>{
     const coverage=getVocabularyWordSenseCoverage('word');
     writeVocabularyDefaultUsefulSenses('word',coverage.version,coverage.defaultUsefulSenseIds!.slice(0,1),actor);
@@ -293,4 +300,103 @@ test('an applied reconciliation cannot silently fall back to teaching when its c
   apply();db.exec('UPDATE sense_content_reconciliations SET practice_source_json=NULL');
   assert.throws(()=>senseContentReconciliationProgress('word'),/missing its canonical practice snapshot/);
   assert.throws(()=>createVocabularyPracticePreparation({provider:repertoireProvider()}).ensure('word'),/missing its canonical practice snapshot/);
+});
+
+function seedRepertoire(ambiguous = false, privateContent = false): string {
+  const input = draft();
+  for (const use of input.uses) db.prepare('INSERT INTO legacy_sense_imports(source_content_id,source_use_id,sense_id,imported_sense_version) VALUES (?,?,?,1)').run('source-B',use.useId,ambiguous && use.useId === 'connect' ? input.uses.find(item => item.useId === 'hook')!.senseId : use.senseId);
+  const senseId = input.uses.find(use => use.useId === 'hook')!.senseId!;
+  createVocabularyContent({contentId:'retained-general',kind:'exercise',payloadVersion:1,
+    body:{prompt:'Recall a hook.',source:{kind:'general_exercises',bootstrapContentId:'source-B',localId:'general'}},
+    exerciseType:'definition_gloss',skill:'production',exerciseRole:'general',assessment:{responseMode:'hanzi_entry',matchingProfile:'mandarin'},
+    accessScope:privateContent?'private':'shared',ownerLearnerId:privateContent?'learner':null,availability:'active',originKind:'model',authorKind:'service',authorId:'fixture',
+    words:[{wordId:'word',relation:'target',senseId,senseMappingEstablishedAt:new Date().toISOString()}],
+    answers:[{wordId:'word',acceptedForms:['挂钩']}]},actor);
+  return senseId;
+}
+test('covered selection preserves repertoire and skips generation through teaching completion and restart',async()=>{
+  seedRepertoire();
+  const before = getVocabularyContentForMaintenance('retained-general');
+  const coverage = getVocabularyWordSenseCoverage('word');
+  const state = resolved();
+  assert.equal(state.plan!.replacementPracticeRequired,false);
+  assert.ok(state.plan!.retainedContentIds.includes('retained-general'));
+  assert.ok(state.plan!.retireContentIds.length>0);
+  apply(state);
+  assert.deepEqual(getVocabularyWordSenseCoverage('word'),coverage);
+  assert.deepEqual(getVocabularyContentForMaintenance('retained-general'),before);
+  assert.equal(senseContentReconciliationProgress('word').practiceStatus,'not_required');
+  assert.equal(isSenseContentReconciliationPending('word'),true);
+  assert.deepEqual(listSenseContentReconciliationPracticeDemand(),[]);
+  let calls=0;
+  const preparation=createVocabularyPracticePreparation({provider:repertoireProvider(async()=>{calls++;throw new Error('Unexpected repertoire generation');})});
+  assert.equal(preparation.ensure('word'),null);
+  await prepareTeaching();
+  assert.equal(senseContentReconciliationProgress('word').status,'ready');
+  assert.ok(db.prepare('SELECT completed_at FROM sense_content_reconciliations').get()!.completed_at);
+  await preparation.prepare('word');
+  assert.equal(createVocabularyPracticePreparation({provider:repertoireProvider()}).ensure('word'),null);
+  assert.equal(calls,0);
+  assert.equal(db.prepare('SELECT count(*) n FROM vocabulary_practice_preparation WHERE reconciliation_id IS NOT NULL').get()!.n,0);
+  assert.equal(getVocabularyContentForMaintenance('retained-general')!.availability,'active');
+});
+test('covered many-to-one mapping carries repertoire forward with an audited canonical binding',()=>{
+  const oldSense = seedRepertoire(), input=draft();
+  const target = input.uses.find(use=>use.useId==='tie')!.senseId!;
+  input.defaultSenseIds=[target];
+  input.uses.forEach(use=>{use.senseId=target;});
+  const state=saveSenseContentReconciliation('word',{expectedVersion:null,status:'resolved',draft:input},actor.id);
+  assert.equal(state.plan!.replacementPracticeRequired,false);
+  assert.deepEqual(state.plan!.repertoireMappings,[{contentId:'retained-general',fromSenseId:oldSense,toSenseId:target}]);
+  const before=getVocabularyContentForMaintenance('retained-general')!;
+  apply(state);
+  const after=getVocabularyContentForMaintenance('retained-general')!;
+  assert.equal(after.words[0]!.senseId,target);
+  assert.equal(after.version,before.version);
+  assert.deepEqual(after.body,before.body);
+  assert.equal(db.prepare("SELECT sense_id FROM legacy_sense_imports WHERE source_content_id='source-B' AND source_use_id='hook'").get()!.sense_id,oldSense);
+});
+test('one uncovered selected sense requires full generation and source-dependent repertoire retirement',()=>{
+  seedRepertoire();
+  const state=resolvedMissing();
+  assert.equal(state.plan!.replacementPracticeRequired,true);
+  assert.ok(state.plan!.retireContentIds.includes('retained-general'));
+  apply(state);
+  assert.equal(senseContentReconciliationProgress('word').practiceStatus,'pending');
+  assert.deepEqual(listSenseContentReconciliationPracticeDemand(),['word']);
+});
+test('ambiguous teaching-use attribution is saved but blocks retaining repertoire',()=>{
+  seedRepertoire(true);const input=draft();
+  const state=saveSenseContentReconciliation('word',{expectedVersion:null,status:'resolved',draft:input},actor.id);
+  assert.equal(state.plan!.replacementPracticeRequired,false);
+  assert.ok(state.plan!.blockers.some(blocker=>blocker.code==='repertoire_mapping_handler'));
+  assert.throws(()=>apply(state));
+});
+
+test('private repertoire remapping is blocked by the shared reconciliation handler',()=>{
+  seedRepertoire(false,true);
+  const input=draft(),target=input.uses.find(use=>use.useId==='tie')!.senseId!;
+  input.defaultSenseIds=[target];input.uses.forEach(use=>{use.senseId=target;});
+  const state=saveSenseContentReconciliation('word',{expectedVersion:null,status:'resolved',draft:input},actor.id);
+  assert.ok(state.plan!.blockers.some(blocker=>blocker.code==='private_content_handler'));
+});
+test('covered reconciliation still retires the complete teaching flow',()=>{
+  seedRepertoire();
+  const state=resolved();
+  const teaching=db.prepare("SELECT content_id FROM content_items WHERE kind='introduction' OR exercise_role='teaching'").all();
+  assert.equal(state.plan!.replacementPracticeRequired,false);
+  assert.ok(teaching.length>0);
+  assert.ok(teaching.every(row=>state.plan!.retireContentIds.includes(String(row.content_id))));
+  assert.ok(state.plan!.retainedContentIds.includes('retained-general'));
+});
+
+test('an already-applied generation plan keeps its recorded policy despite complete teaching coverage',()=>{
+  const state=apply();
+  const oldPlan={...state.plan!,replacementPracticeRequired:true};
+  delete oldPlan.repertoireMappings;
+  db.prepare('UPDATE sense_content_reconciliations SET applied_plan_json=? WHERE resolution_id=?').run(JSON.stringify(oldPlan),state.resolution!.resolutionId);
+  assert.equal(getSenseContentReconciliationWorkspace('word',actor.id).plan!.replacementPracticeRequired,true);
+  assert.equal(senseContentReconciliationProgress('word').practiceStatus,'pending');
+  assert.deepEqual(listSenseContentReconciliationPracticeDemand(),['word']);
+  assert.equal(createVocabularyPracticePreparation({provider:repertoireProvider()}).ensure('word')!.reconciliationId,state.resolution!.resolutionId);
 });
