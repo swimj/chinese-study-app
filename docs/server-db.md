@@ -593,6 +593,4 @@ Migration `0064` creates `vocabulary_default_selection_readiness`, owned by
 attempt count are separate from inventory creation. Recommendations retain their
 invocation and canonical IDs; model-empty findings remain unknown until an operator
 chooses useful senses. Shared default-useful IDs are nullable coverage state in
-`0061`; schema installation does not initialize that data. The
-[default-selection procedure](ops/default-useful-selection.md) runs repeatable
-bounded initialization separately from schema migration.
+`0061`; schema installation does not initialize that data.

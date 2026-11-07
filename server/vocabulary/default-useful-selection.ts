@@ -103,20 +103,6 @@ export function retryDefaultUsefulSelection(wordId:string,operatorId:string):voi
   emitBackendEvent({name:'vocabulary.default_selection.retry_requested',entityKind:'word',entityId:wordId,actorKind:'operator',actorId:operatorId,data:{wordId}});
 }
 
-/** Bounded, restartable cutover: dry-run never creates jobs or contacts a model. */
-export async function initializeDefaultUsefulBatch(options:{apply:boolean;includeModelSelection?:boolean;afterWordId?:string;limit?:number;provider?:UsefulSelectionProvider}):Promise<{items:{wordId:string;kind:string;outcome:string;reason?:string}[];nextWordId:string|null}> {
-  const limit=options.limit??100;if(!Number.isSafeInteger(limit)||limit<1||limit>1000)throw new Error('Batch limit must be between 1 and 1000');
-  const words=getDb().prepare(`SELECT DISTINCT word_id FROM senses WHERE status='active' AND word_id>? ORDER BY word_id LIMIT ?`).all(options.afterWordId??'',limit) as {word_id:string}[];
-  const items=[];
-  for(const {word_id:wordId} of words){const plan=defaultUsefulInitializationPlan(wordId);
-    if(!options.apply||plan.kind==='known'||plan.kind==='attention'||(plan.kind==='selector'&&!options.includeModelSelection)){items.push({wordId,kind:plan.kind,outcome:options.apply?'skipped':'dry_run',...(plan.reason?{reason:plan.reason}:{})});continue;}
-    try{await ensureVocabularyDefaultUsefulSelection(wordId,{workflowId:`default-useful-cutover:${wordId}`,provider:options.provider});items.push({wordId,kind:plan.kind,outcome:'initialized'});}
-    catch(error){items.push({wordId,kind:plan.kind,outcome:error instanceof VocabularySenseReadinessPending?'deferred':'needs_operator',reason:error instanceof Error?error.message:'Initialization failed'});}
-  }
-  return {items,nextWordId:words.length===limit?words.at(-1)!.word_id:null};
-}
-
-
 /** A saved operator decision resolves prerequisite attention without consuming authoring attempts. */
 export function resolveDefaultUsefulSelectionAttention(wordId:string):void {
   if(getVocabularyWordSenseCoverage(wordId).defaultUsefulSenseIds===null)return;
