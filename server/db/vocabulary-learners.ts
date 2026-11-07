@@ -94,7 +94,6 @@ export function enrollVocabularyDietWord(wordId: string): VocabularyLearnerWord 
       VALUES (?,?,'vocabulary-v1',?)`).run(learnerId,wordId,JSON.stringify({intervalHours:24,easeFactor:2.5,enabled:1,cleanCoveredSessions:0}));
     emitBackendEvent({name:'vocabulary.word.enrolled',learnerId,actorKind:'learner',actorId:learnerId,entityKind:'word',entityId:wordId,
       data:{source:'selected_diet_word',inStash:false}});
-    requestWordReserveReconciliation();
     return requireWord(wordId);
   });
 }

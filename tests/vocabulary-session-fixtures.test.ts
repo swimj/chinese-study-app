@@ -29,11 +29,13 @@ test('full vocabulary fixture serves progression boundaries and persists a decli
     const {startVocabularyStudy,nextVocabularyExercise,commandVocabularyStudy}=await import('../server/vocabulary/study.ts');
     const {getVocabularyLearnerWord,getVocabularyWordSchedule}=await import('../server/db/vocabulary-learners.ts');
     const {getVocabularyContent}=await import('../server/db/vocabulary-content.ts');
+    const {reconcileVocabularyPreparationReserve}=await import('../server/vocabulary/preparation-reserve.ts');
     const {vocabularyRevealSnapshot}=await import('../server/vocabulary/reveal-snapshot.ts');
     const {stageVocabularySessionCompletion,closeVocabularySessionCompletion,getVocabularySession}=await import('../server/db/vocabulary-sessions.ts');
     try {
       runWithLearnerId('dev-learner',()=>{
         const expected=[...manifest.scenarios.teaching,...manifest.scenarios.solidify,...manifest.scenarios.practice] as string[];
+        reconcileVocabularyPreparationReserve(now); // Background maintenance precedes learner Start.
         let study=startVocabularyStudy();const sessionId=study.session.sessionId;
         assert.equal(manifest.fixtureVersion,3);
         assert.equal(expected.length,12);

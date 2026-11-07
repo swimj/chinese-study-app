@@ -268,8 +268,7 @@ objective and independent pure cue once, rather than counting repeated exercises
 or dictionary entries. The ready count remains visible in the compact Connections
 view. Initial loading and settings changes refresh the preview; background
 preparation polling retains the last usable count. Zero ready items offer Check
-again. Preview and Start reconcile the stable teaching reserve through the
-shared, idempotent preparation queue. Planning then reads readiness and existing cue schedules without creating sessions,
+again. Preview and Start consume reserve readiness hints and existing cue schedules without reconciling or waking preparation. Preview does not create sessions,
 enrolling words, establishing senses, or adopting/updating cue schedules. Start
 reuses the preview's sampling seed while creating its own fresh session identity;
 intervening readiness, schedule, or settings changes can still change admission.
@@ -387,19 +386,48 @@ configured model and retry policies.
 
 ### Teaching reserve
 
-`preparation-reserve.ts` maintains up to twice the configured daily new-word
-limit (maximum 40), independent of the remaining intake today. It shares the
-stash/diet admission planner, prefers existing members, and uses a stable reserve
-seed. Preparation failure retains its slot; source, priority, quota and learner
-lifecycle changes can change membership. The existing reserve tables and settings
-triggers remain authoritative. Vocabulary add, enrollment, stash, dismissal, mode
-and closure writes request reconciliation; the periodic word-preparation runtime
-reconciles pending learners. Preview and Start also reconcile before composition.
-Only bootstrap and teaching jobs are queued for reserve candidates. Established
-empty inventories are excluded from the reserve, freeing their slots for eligible
-words. If bootstrap establishes an empty inventory, dependent queued work is
-paused with its attempt evidence retained; reconciliation does not regenerate an
-inventory to manufacture teaching demand.
+`preparation-reserve.ts` maintains a normal buffer of twice the configured daily
+new-word limit and retains explicit top choices even when that limit is zero.
+Membership is capped at 40: newest top choices take precedence, followed by
+stable fallback members. Priority writes admit top words immediately; maintenance
+uses the stash/diet planner to replenish the remaining buffer. Eviction affects
+membership only; generated material, outstanding jobs and failure evidence remain.
+
+Migration `0070_background_teaching_reserve` adds nullable readiness/check
+timestamps and schedules existing reserve owners for an initial check. It does
+not infer readiness from old membership or create work for dormant nonmembers.
+Vocabulary add, stash, dismissal, mode, settings, priority and closure writes
+request reconciliation. Diet enrollment during Start does not request it.
+
+The preparation runtime processes at most five pending learners and five overdue
+reserve owners per 30-second tick, yielding before work and between learners.
+Wakes share one in-flight pass. Audits are due five minutes after the oldest member
+check; backlog can extend that delay. Empty or partial buffers retain durable
+replenishment requests so future eligibility can be discovered without a visit.
+Failed passes retain requests and rotate their audit priority. Disabled learners
+and maintenance mode are excluded; shutdown stops workers and awaits maintenance.
+Provider-disabled operation may still discover already-published usable content.
+
+Usable content establishes readiness even if an older operational job is paused.
+Otherwise failed members keep their slots, compatibility refresh respects leases
+and retry budgets, and only reserve members request bootstrap/teaching work.
+Established empty inventories are excluded. Periodic checks pick up publication
+and manual edits without cross-learner cancellation or publication fanout.
+
+Composition examines only ready reserve members, resolves newest usable coherent
+teaching, and reuses that resolution in the frozen payload. Readiness is not a
+version pin. Missing material is skipped; `vocabulary.reserve.stale_hint` records
+one diagnostic per membership/readiness epoch rather than one per Home poll.
+Operators can inspect the private diagnostic references read-only with:
+
+```sh
+node --import tsx scripts/inspect-reserve-diagnostics.ts --database=/absolute/path/app.db --limit=20
+```
+
+This command shows observation, learner, word and readiness timestamps; it neither
+changes readiness nor retries work. Repeated distinct readiness epochs remain
+separately diagnosable. These diagnostics are not reflection cases and do not
+close or reset existing failure records.
 
 ### Preparation compatibility
 

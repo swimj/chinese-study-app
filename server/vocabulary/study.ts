@@ -2,9 +2,8 @@ import { isVocabularySessionWordEligible } from '../db/vocabulary-sense-eligibil
 import { isSenseContentReconciliationPending } from '../db/sense-content-reconciliation-state.ts';
 import type { VocabularySessionPayload } from '../../src/domain/vocabulary-session-payload.ts';
 import { selectSequentialBootstrapReveal } from '../../src/domain/word-content/reveal.ts';
-import { reconcileVocabularyPreparationReserve } from './preparation-reserve.ts';
 import { getDictionaryBaseline, sharedDictionaryBaselineId } from './dictionary-baseline.ts';
-import { skillEnabled, eligible, introductions, compatibleIntroductions, teachingReady } from './teaching-readiness.ts';
+import { skillEnabled, eligible, introductions, compatibleIntroductions, resolveVocabularyTeaching, type ResolvedVocabularyTeaching } from './teaching-readiness.ts';
 import { vocabularyTeachingSource } from './teaching-source.ts';
 import { vocabularyRevealSnapshot } from './reveal-snapshot.ts';
 import { createHash, randomUUID } from 'node:crypto';
@@ -57,9 +56,9 @@ function baseline(wordId:string,kind:'recognition'|'production',role:'teaching'|
     words:[{wordId,relation:'target'}]}, {kind:'service',id:'vocabulary-dictionary-baseline-v1',reason:{source:'existing lexical dictionary facts',senseMapping:'unresolved'}});
   return eligible(content)?content:null;
 }
-function teaching(wordId:string):{intro:VocabularyContent;exercises:VocabularyContent[];requirements:VocabularyTeachingRequirements}|null {
-  for(const intro of compatibleIntroductions(wordId)) {
-    const exercises=getVocabularyTeachingExercises(intro.contentId).filter((entry)=>eligible(entry)
+function teaching(wordId:string,resolved?:ResolvedVocabularyTeaching):{intro:VocabularyContent;exercises:VocabularyContent[];requirements:VocabularyTeachingRequirements}|null {
+  for(const intro of resolved?[resolved.intro]:compatibleIntroductions(wordId)) {
+    const exercises=resolved?[...resolved.exercises]:getVocabularyTeachingExercises(intro.contentId).filter((entry)=>eligible(entry)
       &&entry.kind==='exercise'&&skillEnabled(wordId,entry.skill));
     if(!exercises.some((entry)=>entry.kind==='exercise'&&entry.skill==='production'))continue;
     const recognition=exercises.some((entry)=>entry.kind==='exercise'&&entry.skill==='recognition')?null:baseline(wordId,'recognition','teaching');
@@ -137,7 +136,7 @@ function snapshot(content:VocabularyContent,role:VocabularyEncounterSnapshot['ro
   };
 }
 /** Expensive content discovery happens once, before the first encounter. */
-export function composeVocabularySessionPayload(context:VocabularySessionInitialContext):VocabularySessionPayload {
+export function composeVocabularySessionPayload(context:VocabularySessionInitialContext,resolvedTeaching:ReadonlyMap<string,NonNullable<ReturnType<typeof teaching>>>=new Map()):VocabularySessionPayload {
   if(context.words.some(word=>isSenseContentReconciliationPending(word.wordId)))throw new VocabularySessionInputError('Replacement study content is being prepared.');
   const payload:VocabularySessionPayload={version:1,words:{},pureCues:[],snapshots:{}};
   const empty=projectVocabularySession(context,[]);
@@ -145,7 +144,7 @@ export function composeVocabularySessionPayload(context:VocabularySessionInitial
     payload.snapshots[`${content.contentId}/${role}`]=snapshot(content,role,empty);
   };
   for(const word of context.words) {
-    const ready=teaching(word.wordId);
+    const ready=resolvedTeaching.get(word.wordId)??teaching(word.wordId);
     const priming=ready?.intro??introductions(word.wordId)[0]??null;
     const general={solidify:availableGeneral(word.wordId,'solidify'),practice:availableGeneral(word.wordId,'practice'),maintain:availableGeneral(word.wordId,'maintain')};
     const recognition=baseline(word.wordId,'recognition','general');
@@ -204,16 +203,16 @@ export function getVocabularyStudy(sessionId:string):VocabularyStudy {
       canFinishForNow:active&&session.projection.phase==='active',canFinishImmediately:active&&session.projection.phase==='finishing',canChangeMode:active&&wordId!==null},
     notice:word?.teachingDeferred?'This word is now Unstudied. Fresh teaching will start in your next session.':session.projection.phase==='finishing'?'Finish the words already started, or finish immediately.':null};
 }
-function composeCurrentStudy(requestTeaching:(wordId:string)=>void, timeZone?:string):VocabularyComposition {
+function composeCurrentStudy(resolved:Map<string,ResolvedVocabularyTeaching>, timeZone?:string):VocabularyComposition {
   const contentUsable = (wordId:string,skill:'recognition'|'production'|'contextual_selection'):boolean => {
     if(isSenseContentReconciliationPending(wordId))return false;
     if(skill!=='contextual_selection')return true;
     const mode=getVocabularyLearnerWord(wordId)?.mode;
     return mode!==undefined&&mode!=='unstudied'&&listVocabularyExercises({wordId,mode}).some((entry)=>eligible(entry)&&contrastEligible(entry,wordId));
   };
-  return composeVocabularyStudy({teachingReady,timeZone,
+  return composeVocabularyStudy({teachingReady:wordId=>{const material=resolveVocabularyTeaching(wordId);if(material)resolved.set(wordId,material);return material!==null;},timeZone,
     canUseSkill:(wordId,skill)=>skillEnabled(wordId,skill)&&contentUsable(wordId,skill),
-    isReviewContentUsable:contentUsable,requestTeaching});
+    isReviewContentUsable:contentUsable});
 }
 /** Shared final admission, including the independent pure-cue cap and interleaving. */
 function planVocabularyStudy(composition:VocabularyComposition, samplingSeed:string, adoptPureCues:boolean) {
@@ -244,40 +243,39 @@ function planVocabularyStudy(composition:VocabularyComposition, samplingSeed:str
       ...admittedReview.filter((entry)=>entry.kind==='word').map((entry)=>reviewWords.find((word)=>word.wordId===entry.id)!)];
     return {words:admittedWords,reviewOrder:admittedReview};
 }
-export function previewVocabularyStudy(options:{requestTeaching?:(wordId:string)=>void;prepareReserve?:()=>void;previewSeed?:string;timeZone?:string}={}):VocabularySessionPreview {
-  (options.prepareReserve??reconcileVocabularyPreparationReserve)();
+export function previewVocabularyStudy(options:{previewSeed?:string;timeZone?:string}={}):VocabularySessionPreview {
   const previewSeed=options.previewSeed??randomUUID();
-  const composition=composeCurrentStudy(()=>{}, options.timeZone);
+  const composition=composeCurrentStudy(new Map(), options.timeZone);
   const planned=planVocabularyStudy(composition,previewSeed,false);
-  // Preparation demand is the same bounded, idempotent queue used by Start.
-  const request=options.requestTeaching??(()=>{});
-  composition.requestedPreparationWordIds.forEach(request);
+
   return {previewSeed,itemCount:planned.words.length+planned.reviewOrder.filter((entry)=>entry.kind==='pure_cue').length,
-    preparationPending:composition.requestedPreparationWordIds.length>0||hasPendingReconciliation()};
+    preparationPending:composition.preparationPending||hasPendingReconciliation()};
 }
 function hasPendingReconciliation():boolean {
   return (getDb().prepare(`SELECT r.word_id FROM sense_content_reconciliations r
     JOIN learner_words w ON w.word_id=r.word_id WHERE r.status='applied' AND w.learner_id=? AND w.dismissed_at IS NULL`).all(requireLearnerId()) as {word_id:string}[]).some(row=>isSenseContentReconciliationPending(row.word_id));
 }
-export function startVocabularyStudy(options:{requestTeaching?:(wordId:string)=>void;prepareReserve?:()=>void;previewSeed?:string;timeZone?:string}={}):VocabularyStudy {
-  (options.prepareReserve??reconcileVocabularyPreparationReserve)();
-  const composition=composeCurrentStudy(options.requestTeaching??(()=>{}), options.timeZone);
+export function startVocabularyStudy(options:{previewSeed?:string;timeZone?:string}={}):VocabularyStudy {
+  const resolved=new Map<string,ResolvedVocabularyTeaching>();
+  const composition=composeCurrentStudy(resolved, options.timeZone);
   return atomic(()=>{
     const sessionId=randomUUID();
     const planned=planVocabularyStudy(composition,options.previewSeed??sessionId,true);
     if(planned.words.length===0&&planned.reviewOrder.length===0)throw new VocabularySessionInputError(hasPendingReconciliation()
       ?'Replacement study content is being prepared. Try again shortly; other ready work can be studied when available.'
-      :composition.requestedPreparationWordIds.length
+      :composition.preparationPending
       ?'Your new-word introductions are being prepared. Try starting again shortly; other ready work can be studied when available.'
       :'No ready study material is available.');
+    const retainedTeaching=new Map<string,NonNullable<ReturnType<typeof teaching>>>();
     for(const word of planned.words)if(word.mode==='unstudied') {
       if(!ensureVocabularySensesFromBootstrap(word.wordId))throw new Error('Ready teaching lost its sense source');
       enrollVocabularyDietWord(word.wordId);
-      const ready=teaching(word.wordId);if(!ready)throw new Error('Ready teaching lost its exercise source');
+      const ready=teaching(word.wordId,resolved.get(word.wordId));if(!ready)throw new Error('Ready teaching lost its exercise source');
       word.teachingRequirements=ready.requirements;
+      retainedTeaching.set(word.wordId,ready);
     }
     const context:VocabularySessionInitialContext={sessionId,words:planned.words,composition:composition.settings,reviewOrder:planned.reviewOrder};
-    context.payload=composeVocabularySessionPayload(context);
+    context.payload=composeVocabularySessionPayload(context,retainedTeaching);
     const created=createVocabularySession(context);
     return nextVocabularyExercise(created.sessionId,randomUUID());
   });

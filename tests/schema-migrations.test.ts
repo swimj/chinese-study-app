@@ -572,3 +572,28 @@ test('repair target migration preserves legacy scopes and assessments without in
     assertSchemaCurrent(db);
   } finally {db.close();}
 });
+
+test('background reserve migration retains membership and work while conservatively scheduling existing owners',()=>{
+  const {db,file}=copy('background-reserve-upgrade',true);
+  try {
+    const before=schemaMigrations.filter(m=>m.id!=='app_schema:0070_background_teaching_reserve');
+    migrateDatabase(db,before);
+    db.exec(`INSERT INTO learners(learner_id,display_name,created_at) VALUES('reserve-owner','Owner','2026-11-01'),('reserve-dormant','Dormant','2026-11-01');
+      INSERT INTO lexical_words(id,hanzi,pinyin,meaning,examples_json,priority,created_at) VALUES('reserve-word','词','ci','word','[]',1,'2026-11-01');
+      INSERT INTO learner_word_preparation_reserve VALUES('reserve-owner','reserve-word','2026-11-01');
+      INSERT INTO word_preparation_work(work_id,word_id,stage,status,requested_by_learner_id,created_at,updated_at,next_attempt_at)
+        VALUES('reserve-failure','reserve-word','bootstrap','paused','reserve-owner','2026-11-01','2026-11-01','2026-11-01');`);
+    const work=db.prepare('SELECT * FROM word_preparation_work').all();
+    migrateDatabase(db);
+    assert.deepEqual({...db.prepare("SELECT * FROM learner_word_preparation_reserve WHERE learner_id='reserve-owner'").get()},
+      {learner_id:'reserve-owner',word_id:'reserve-word',added_at:'2026-11-01',ready_at:null,checked_at:null});
+    assert.deepEqual(db.prepare('SELECT * FROM word_preparation_work').all(),work);
+    assert.deepEqual(db.prepare('SELECT learner_id FROM learner_word_reserve_requests').all().map(row=>row.learner_id),['reserve-owner']);
+    assert.deepEqual(migrateDatabase(db),[]);
+    assertSchemaCurrent(db);
+    const version=db.prepare('PRAGMA data_version').get();
+    const inspection=spawnSync(process.execPath,['--import','tsx','scripts/inspect-reserve-diagnostics.ts',`--database=${file}`],{encoding:'utf8'});
+    assert.equal(inspection.status,0,inspection.stderr);assert.deepEqual(JSON.parse(inspection.stdout),{findings:[]});
+    assert.deepEqual(db.prepare('PRAGMA data_version').get(),version,'operator inspection does not write');
+  }finally{db.close();}
+});

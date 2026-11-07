@@ -18,8 +18,8 @@ import { startVocabularyStudy as startRuntime,composeVocabularySessionPayload,pr
 import type { VocabularyStudy } from '../src/domain/vocabulary-study-api.ts';
 import type { VocabularyContent } from '../src/domain/vocabulary-content.ts';
 // These player fixtures isolate composition from shared-provider reserve storage.
-const startVocabularyStudy=(options:Parameters<typeof startRuntime>[0]={})=>startRuntime({prepareReserve:()=>{},...options});
-const previewVocabularyStudy=(options:Parameters<typeof previewRuntime>[0]={})=>previewRuntime({prepareReserve:()=>{},...options});
+const startVocabularyStudy=(options:Parameters<typeof startRuntime>[0]={})=>startRuntime({...options});
+const previewVocabularyStudy=(options:Parameters<typeof previewRuntime>[0]={})=>previewRuntime({...options});
 let db:DatabaseSync;
 const owner=<T>(fn:()=>T)=>runWithLearnerId('alice',fn);
 const actor={kind:'operator' as const,id:'test'};
@@ -41,7 +41,7 @@ function exercise(id:string,wordId:string,role:'teaching'|'general'='general',pu
 beforeEach(()=>{
   db=new DatabaseSync(':memory:');setDb(db);db.exec(`PRAGMA foreign_keys=ON;
     CREATE TABLE learners(learner_id TEXT PRIMARY KEY);
-    CREATE TABLE learner_word_preparation_reserve(learner_id TEXT,word_id TEXT,added_at TEXT,PRIMARY KEY(learner_id,word_id));
+    CREATE TABLE learner_word_preparation_reserve(learner_id TEXT,word_id TEXT,added_at TEXT,ready_at TEXT,checked_at TEXT,PRIMARY KEY(learner_id,word_id));
     CREATE TABLE learner_word_reserve_requests(learner_id TEXT PRIMARY KEY,requested_at TEXT);
     CREATE TABLE learner_owned_review_session_summaries(learner_id TEXT,session_id TEXT,PRIMARY KEY(learner_id,session_id));
     CREATE TABLE lexical_words(id TEXT PRIMARY KEY,hanzi TEXT,traditional TEXT,pinyin TEXT,meaning TEXT,created_at TEXT,priority INTEGER DEFAULT 0);
@@ -65,6 +65,8 @@ beforeEach(()=>{
   db.exec(fs.readFileSync(new URL('../server/db/migrations/0069_sense_content_reconciliation.sql',import.meta.url),'utf8'));
   owner(()=>{
     exercise('general-1','a');exercise('general-2','a');exercise('teach-a','a','teaching');exercise('teach-new','new','teaching');
+    // These teaching members have already passed background readiness before the request under test.
+    db.prepare("INSERT INTO learner_word_preparation_reserve VALUES('alice','new',?,?,?),('alice','a',?,?,?)").run('2026-01-01','2026-01-01','2026-01-01','2026-01-01','2026-01-01','2026-01-01');
     for(const [wordId,contentId] of [['a','intro-a'],['new','intro-new']])createVocabularyContent({contentId,kind:'introduction',payloadVersion:1,
       body:{beats:[{kind:'explanation',text:`Introduction ${wordId}`}]},accessScope:'shared',availability:'active',originKind:'human',words:[{wordId,relation:'target'}],
       teachingExercises:[{exerciseId:wordId==='a'?'teach-a':'teach-new',exerciseVersion:1}]},actor);
@@ -78,9 +80,9 @@ test('Home preview counts the same final admission as Start without session, enr
   const snapshot=()=>JSON.stringify((db.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all() as {name:string}[])
     .map(({name})=>({name,rows:db.prepare(`SELECT * FROM "${name.replaceAll('"','""')}"`).all()})));
   const before=snapshot();const changes=db.prepare('SELECT total_changes() AS n').get()!.n;
-  const preview=previewVocabularyStudy({requestTeaching:()=>{}});
+  const preview=previewVocabularyStudy({});
   assert.equal(snapshot(),before);assert.equal(db.prepare('SELECT total_changes() AS n').get()!.n,changes);
-  const started=startVocabularyStudy({previewSeed:preview.previewSeed,requestTeaching:()=>{}});
+  const started=startVocabularyStudy({previewSeed:preview.previewSeed});
   const count=started.session.context.words.length+(started.session.context.reviewOrder??[]).filter((entry)=>entry.kind==='pure_cue').length;
   assert.equal(preview.itemCount,count);assert.ok(count>0);
   assert.notEqual(started.session.sessionId,preview.previewSeed);
@@ -91,13 +93,13 @@ test('Home preview refreshes zero readiness and current settings, retaining boun
   db.prepare("UPDATE learner_word_schedules SET next_eligible_at='2999-01-01T00:00:00.000Z' WHERE word_id!='new'").run();
   db.prepare("UPDATE content_items SET availability='retired' WHERE content_id='intro-new'").run();
   const requested:string[]=[];
-  const empty=previewVocabularyStudy({requestTeaching:(id)=>requested.push(id)});
-  assert.equal(empty.itemCount,0);assert.equal(empty.preparationPending,true);assert.ok(requested.includes('new'));
+  const empty=previewVocabularyStudy({});
+  assert.equal(empty.itemCount,0);assert.equal(empty.preparationPending,true);assert.deepEqual(requested,[]);
   const beforeFailure=db.prepare('SELECT total_changes() AS n').get()!.n;
-  assert.throws(()=>previewVocabularyStudy({requestTeaching:()=>{throw new Error('Preparation unavailable');}}),/Preparation unavailable/);
+  assert.doesNotThrow(()=>previewVocabularyStudy({}));
   assert.equal(db.prepare('SELECT total_changes() AS n').get()!.n,beforeFailure);
   db.prepare("INSERT OR REPLACE INTO learner_settings VALUES('alice','daily_new_word_limit','0','2026-10-24')").run();
-  const limited=previewVocabularyStudy({requestTeaching:()=>{throw new Error('Quota zero must not request preparation');}});
+  const limited=previewVocabularyStudy({});
   assert.equal(limited.itemCount,0);assert.equal(limited.preparationPending,false);
 }));
 
@@ -109,9 +111,9 @@ test('preview does not count teaching whose generated recognition baseline is de
     accessScope:'shared',availability:'active',originKind:'human',assessment:{responseMode:'self_assessment'},
     words:[{wordId:'new',relation:'target'}],answers:[{wordId:'new',acceptedForms:['新']}]},actor);
   db.prepare("INSERT INTO learner_content_deactivations VALUES('alice',?,'2026-10-24T00:00:00.000Z')").run(id);
-  const preview=previewVocabularyStudy({requestTeaching:()=>{}});
+  const preview=previewVocabularyStudy({});
   assert.equal(preview.itemCount,0);
-  assert.throws(()=>startVocabularyStudy({previewSeed:preview.previewSeed,requestTeaching:()=>{}}),/introductions are being prepared/);
+  assert.throws(()=>startVocabularyStudy({previewSeed:preview.previewSeed}),/introductions are being prepared/);
 }));
 
 test('preview and Start reuse the same fractional pure-cue draw without adopting or updating schedules during preview',()=>owner(()=>{
@@ -134,12 +136,12 @@ test('preview and Start reuse the same fractional pure-cue draw without adopting
   const counts=new Set<number>();let chosen:ReturnType<typeof previewVocabularyStudy>|undefined;
   for(let index=0;index<50;index++) {
     const seed=`00000000-0000-4000-8000-${String(index).padStart(12,'0')}`;
-    const preview=previewVocabularyStudy({previewSeed:seed,requestTeaching:()=>{}});counts.add(preview.itemCount);
+    const preview=previewVocabularyStudy({previewSeed:seed});counts.add(preview.itemCount);
     if(chosen===undefined||preview.itemCount>chosen.itemCount)chosen=preview;
   }
   assert.equal(counts.size,2);assert.ok(chosen);
   assert.equal(JSON.stringify(db.prepare('SELECT * FROM learner_pure_cue_schedules ORDER BY content_id').all()),before);
-  const started=startVocabularyStudy({previewSeed:chosen.previewSeed,requestTeaching:()=>{}});
+  const started=startVocabularyStudy({previewSeed:chosen.previewSeed});
   assert.equal(chosen.itemCount,started.session.context.words.length+(started.session.context.reviewOrder??[]).filter((entry)=>entry.kind==='pure_cue').length);
   assert.ok(started.session.context.reviewOrder?.some((entry)=>entry.id===strongId));
 }));
@@ -480,11 +482,14 @@ test('fresh diet enrollment admits only selected ready words, honors quota and r
   db.prepare("INSERT INTO lexical_words VALUES('fresh','丁',NULL,'dīng','fourth','2026-01-01',100),('not-ready','戊',NULL,'wù','fifth','2026-01-01',200)").run();
   exercise('teach-fresh','fresh','teaching');createVocabularyContent({contentId:'intro-fresh',kind:'introduction',payloadVersion:1,body:{beats:[{text:'Introduce 丁'}]},
     accessScope:'shared',availability:'active',originKind:'human',words:[{wordId:'fresh',relation:'target'}],teachingExercises:[{exerciseId:'teach-fresh',exerciseVersion:1}]},actor);
-  const requested:string[]=[];const view=startVocabularyStudy({requestTeaching:(id)=>{requested.push(id);}});
+  db.exec("DELETE FROM learner_word_preparation_reserve; INSERT INTO learner_word_preparation_reserve VALUES('alice','fresh','2026-01-01','2026-01-01','2026-01-01')");
+  const requestsBefore=db.prepare('SELECT * FROM learner_word_reserve_requests').all();
+  const requested:string[]=[];const view=startVocabularyStudy({});
+  assert.deepEqual(db.prepare('SELECT * FROM learner_word_reserve_requests').all(),requestsBefore);
   assert.equal(view.currentWordId,'fresh');assert.equal(view.currentEncounter?.snapshot.kind,'introduction');
   assert.equal(view.session.context.words.filter((entry)=>entry.mode==='unstudied').length,1);
   assert.equal(getVocabularyLearnerWord('fresh')?.inStash,false);assert.equal(getVocabularyLearnerWord('not-ready'),null);
-  assert.equal(view.session.context.composition?.introductionOrder,'first');assert.deepEqual(requested,['not-ready']);
+  assert.equal(view.session.context.composition?.introductionOrder,'first');assert.deepEqual(requested,[]);
 }));
 
 test('new and replacement pure cues adopt independently after an eligible accepted member, without copying state or deactivation',()=>owner(()=>{
@@ -1110,7 +1115,7 @@ test('session preview and start reject invalid time zones', () => owner(() => {
   }
 }));
 
-test('live HTTP actions never wake background workers; Start schedules a wake after its response',async()=>owner(async()=>{
+test('Preview, Start and live HTTP actions never wake background workers',async()=>owner(async()=>{
   db.prepare("INSERT OR REPLACE INTO learner_settings VALUES('alice','daily_new_word_limit','0','2026-10-27')").run();
   const routes=new Map<string,(req:Request,res:Response)=>void>();
   const register=(method:string)=>(path:string,handler:(req:Request,res:Response)=>void)=>{routes.set(`${method} ${path}`,handler);};
@@ -1123,7 +1128,7 @@ test('live HTTP actions never wake background workers; Start schedules a wake af
   };
   const started=call('POST /api/vocabulary/sessions','');
   assert.equal(wakes,0,'no synchronous worker work before response');
-  await new Promise<void>(resolve=>setImmediate(resolve));assert.equal(wakes,1);wakes=0;
+  await new Promise<void>(resolve=>setImmediate(resolve));assert.equal(wakes,0);
   const id=started.session.sessionId;
   call('GET /api/vocabulary/sessions/:id',id);
   call('POST /api/vocabulary/sessions/:id/next',id,{clientActionId:'route-next'});
@@ -1145,7 +1150,7 @@ test('empty inventories block fresh admission while stashes and retained word se
   const stashed=getVocabularyLearnerWord('new');
   for(const wordId of ['a','b','new'])makeInventoryEmpty(wordId);
   const requested:string[]=[];
-  const preview=previewVocabularyStudy({requestTeaching:id=>requested.push(id)});
+  const preview=previewVocabularyStudy({});
   assert.equal(preview.itemCount,0);assert.equal(preview.preparationPending,false);assert.deepEqual(requested,[]);
   assert.throws(()=>startVocabularyStudy(),/No ready study material/);
   assert.deepEqual(getVocabularyLearnerWord('new'),stashed);
@@ -1287,4 +1292,30 @@ test('pure cue metadata checks reconciliation for target relationships and alter
     assert.deepEqual(select(),[]);
     db.prepare('DELETE FROM sense_content_reconciliations WHERE word_id=?').run(wordId);
   }
+}));
+
+test('reserve admission resolves newest usable introduction and freezes its coherent binding',()=>owner(()=>{
+  addVocabularyWord('new');
+  exercise('teach-newer','new','teaching');
+  createVocabularyContent({contentId:'intro-newer',kind:'introduction',payloadVersion:1,body:{beats:[{text:'Newer teaching'}]},
+    accessScope:'shared',availability:'active',originKind:'human',words:[{wordId:'new',relation:'target'}],
+    teachingExercises:[{exerciseId:'teach-newer',exerciseVersion:1}]},actor);
+  db.prepare("UPDATE content_items SET updated_at='2026-10-20T00:00:00.000Z' WHERE content_id='intro-newer'").run();
+  db.prepare("UPDATE content_items SET updated_at='2026-10-19T00:00:00.000Z' WHERE content_id='intro-new'").run();
+  const first=startVocabularyStudy();
+  assert.equal(first.currentEncounter?.snapshot.contentId,'intro-newer');
+  assert.ok(first.session.context.words.find(w=>w.wordId==='new')?.teachingRequirements?.requiredExerciseContentIds.includes('teach-newer'));
+  const prior=getVocabularyContent('intro-new')!;
+  updateVocabularyContent(prior.contentId,prior.version,{...prior,body:{beats:[{text:'Most recent revision of older identity'}]}},actor);
+  const next=startVocabularyStudy();assert.equal(next.currentEncounter?.snapshot.contentId,'intro-new');
+  assert.equal(getVocabularyStudy(first.session.sessionId).currentEncounter?.snapshot.contentId,'intro-newer');
+}));
+
+
+test('a stale ready hint with an unresolved partial sense inventory is skipped and diagnosed',()=>owner(()=>{
+  addVocabularyWord('new');
+  db.prepare("UPDATE vocabulary_word_catalogs SET senses_established_at=NULL WHERE word_id='new'").run();
+  assert.doesNotThrow(()=>previewVocabularyStudy());
+  const findings=db.prepare("SELECT entity_id FROM backend_events WHERE name='vocabulary.reserve.stale_hint'").all();
+  assert.ok(findings.some(row=>row.entity_id==='new'));
 }));

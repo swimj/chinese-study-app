@@ -37,8 +37,9 @@ belong there and in task instructions, not in this frontier.
   its repertoire while controls choose dynamically within it. Unresolved sense
   associations allow word fallback. Teaching preparation runs ahead of admission;
   general practice queues when
-  teaching completion commits at closure. The implementation guide describes
-  reserve sizing and preparation compatibility; historical learner state and
+  teaching completion commits at closure. Background reserve membership supplies best-effort readiness hints; session
+  composition resolves current teaching without reserve maintenance or preparation
+  nudges. The implementation guide describes reserve sizing and preparation compatibility; historical learner state and
   established sense identities survive source refresh.
   Canonical sense inventory and default-useful selection are distinct. Inventory
   tracks uses of the exact target, excluding meanings realized only in larger

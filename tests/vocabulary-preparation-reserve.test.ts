@@ -104,11 +104,11 @@ test('vocabulary reserve preserves bounded preparation and lifecycle admission',
     await t.test('new readiness is visible to the next Start without changing an existing payload', () => owner(() => {
       sqlite.prepare("DELETE FROM learner_owned_daily_new_word_intake WHERE learner_id='reserve-a'").run();
       const candidates = reserve.getWordReserveCandidates();
-      publish(candidates[0]);
+      publish(candidates[0]); reconcile();
       const first = startVocabularyStudy();
       assert.ok(first.session.context.words.some(word => word.wordId === candidates[0]));
       assert.ok(!first.session.context.words.some(word => word.wordId === candidates[1]));
-      publish(candidates[1]);
+      publish(candidates[1]); reconcile();
       assert.deepEqual(getVocabularyStudy(first.session.sessionId).session.context.words, first.session.context.words);
       const next = startVocabularyStudy();
       assert.ok(next.session.context.words.some(word => word.wordId === candidates[1]));
@@ -167,12 +167,82 @@ test('vocabulary reserve preserves bounded preparation and lifecycle admission',
       assert.deepEqual(learners.getVocabularyLearnerWord(wordId),before);
       assert.deepEqual(sqlite.prepare('SELECT * FROM word_preparation_work WHERE word_id=? ORDER BY stage').all(wordId),workBefore);
     }));
+    await t.test('empty reserve retries later eligibility without another learner mutation',()=>{
+      db.bootstrapLearner({learnerId:'reserve-empty'});
+      db.runWithLearnerId('reserve-empty',()=>{
+        db.setDailyNewWordLimit(1);db.setUnstudiedAdmissionSource('stash_only');learners.addVocabularyWord('reserve-58');
+        sqlite.prepare("UPDATE learner_word_schedules SET next_eligible_at='2026-12-01T00:00:00.000Z' WHERE learner_id='reserve-empty'").run();
+        reconcile('2026-11-01T00:00:00.000Z');assert.deepEqual(reserve.getWordReserveCandidates(),[]);
+        assert.ok(reserve.listPendingWordReserveLearners().includes('reserve-empty'));
+        reconcile('2026-12-02T00:00:00.000Z');assert.deepEqual(reserve.getWordReserveCandidates(),['reserve-58']);
+      });
+      sqlite.prepare("UPDATE learners SET disabled_at=? WHERE learner_id='reserve-empty'").run(now);
+      assert.ok(!reserve.listPendingWordReserveLearners().includes('reserve-empty'),'disabled learners do not consume maintenance');
+    });
+    await t.test('explicit tops enter immediately at zero daily quota, newest forty win and eviction preserves work',()=>{
+      db.bootstrapLearner({learnerId:'reserve-top'});
+      db.runWithLearnerId('reserve-top',()=>{
+        db.setDailyNewWordLimit(0);
+        for(let i=0;i<45;i++){
+          const id=`reserve-${String(i).padStart(2,'0')}`;learners.addVocabularyWord(id);
+          sqlite.prepare(`INSERT INTO learner_owned_user_word_priority(learner_id,word_id,bump_count,force_top,priority_tier,required_for_next_session,updated_at)
+            VALUES('reserve-top',?,1,1,1,0,?)`).run(id,new Date(Date.parse(now)+i*1000).toISOString());
+        }
+        const immediate=reserve.getWordReserveCandidates();
+        assert.equal(immediate.length,40);assert.ok(immediate.includes('reserve-44'));assert.ok(!immediate.includes('reserve-00'));
+        const victim=(sqlite.prepare("SELECT r.word_id FROM learner_word_preparation_reserve r JOIN learner_owned_user_word_priority p USING(learner_id,word_id) WHERE r.learner_id='reserve-top' ORDER BY p.updated_at,r.word_id LIMIT 1").get() as {word_id:string}).word_id;
+        const artifacts=count('content_items'),work=sqlite.prepare('SELECT * FROM word_preparation_work ORDER BY work_id').all();
+        sqlite.prepare("UPDATE learner_owned_user_word_priority SET updated_at='2999-01-01' WHERE learner_id='reserve-top' AND word_id='reserve-00'").run();
+        assert.ok(reserve.getWordReserveCandidates().includes('reserve-00'));assert.ok(!reserve.getWordReserveCandidates().includes(victim));
+        assert.equal(count('content_items'),artifacts);assert.deepEqual(sqlite.prepare('SELECT * FROM word_preparation_work ORDER BY work_id').all(),work);
+        sqlite.prepare("UPDATE learner_word_schedules SET next_eligible_at='2999-01-01T00:00:00.000Z' WHERE learner_id='reserve-top' AND word_id='reserve-44'").run();
+        reconcile();assert.equal(reserve.getWordReserveCandidates().length,40);
+        assert.ok(reserve.getWordReserveCandidates().includes('reserve-44'),'future study date does not discard explicit preparation intent');
+        assert.ok(getWordPreparationWork('reserve-44','bootstrap'),'explicit top still prepares with automatic daily intake zero');
+        assert.equal(remainingVocabularyNewWordQuota(),0);
+      });
+    });
+    await t.test('settled reserve audits see manual ready teaching despite paused old work, without session visits',async t=>{
+      const content=await import('../server/db/vocabulary-content.ts');
+      const {startWordPreparationRuntime}=await import('../server/word-content/preparation-runtime.ts');
+      const {requireLearnerId}=await import('../server/db/learner-context.ts');
+      sqlite.prepare("UPDATE service_controls SET enabled=0 WHERE control_key='provider_work_enabled'").run();
+      const tickNow=Date.now();t.mock.timers.enable({apis:['Date','setInterval','setTimeout'],now:tickNow});
+      const settle=async()=>{for(let i=0;i<30;i++)await new Promise<void>(resolve=>setImmediate(resolve));};
+      const id='reserve-59';
+      owner(()=>{
+        learners.addVocabularyWord(id);db.setDailyNewWordLimit(1);db.setUnstudiedAdmissionSource('stash_only');
+        reserve.replaceWordReserveCandidates([id]);reserve.setWordReserveReadiness(id,false,new Date().toISOString());reserve.finishWordReserveReconciliation();
+        if(getVocabularySenseCatalog(id).establishedAt===null){content.createVocabularySense({wordId:id,description:{label:'ready'}},{kind:'operator',id:'test'});establishVocabularySenseCatalog(id,getVocabularySenseCatalog(id).version,{kind:'operator',id:'test'});}
+        const exercise=content.createVocabularyContent({contentId:'audit-teach',kind:'exercise',payloadVersion:1,body:{prompt:'Ready'},exerciseType:'word',skill:'production',exerciseRole:'teaching',assessment:{match:'prepared'},answers:[{wordId:id,acceptedForms:['你好']}],accessScope:'shared',availability:'active',originKind:'human',words:[{wordId:id,relation:'target'}]},{kind:'operator',id:'test'});
+        content.createVocabularyContent({contentId:'audit-intro',kind:'introduction',payloadVersion:1,body:{text:'Ready'},accessScope:'shared',availability:'active',originKind:'human',words:[{wordId:id,relation:'target'}],teachingExercises:[{exerciseId:exercise.contentId,exerciseVersion:exercise.version}]},{kind:'operator',id:'test'});
+        getDb().prepare("INSERT OR IGNORE INTO word_preparation_work(work_id,word_id,stage,status,requested_by_learner_id,created_at,updated_at,next_attempt_at) VALUES('audit-paused',?,'bootstrap','paused','reserve-a',?,?,?)").run(id,now,now,now);
+      });
+      const paused=sqlite.prepare("SELECT * FROM word_preparation_work WHERE work_id='audit-paused'").get();
+      db.runWithLearnerId('reserve-top',()=>reserve.requestWordReserveReconciliation());
+      assert.ok(paused,'fixture retains a real paused job');
+      const calls:string[]=[];let fail=true;
+      const runtime=startWordPreparationRuntime({reconcile:()=>{const learner=requireLearnerId();calls.push(learner);if(learner==='reserve-top'&&fail){fail=false;throw new Error('Transient fixture');}reconcile();}});
+      try{
+        runtime.wake();runtime.wake();assert.equal(calls.length,0,'wakes never execute maintenance synchronously');await settle();
+        assert.equal(calls.filter(id=>id==='reserve-top').length,1,'overlapping wakes use one pass');
+        assert.ok(reserve.listPendingWordReserveLearners().includes('reserve-top'),'failure retains durable retry');
+        assert.equal(owner(()=>reserve.getReadyWordReserveCandidates(new Date().toISOString()).some(row=>row.wordId===id)),false);
+        t.mock.timers.tick(300_000);await settle();
+        assert.ok(owner(()=>reserve.getReadyWordReserveCandidates(new Date().toISOString()).some(row=>row.wordId===id)),'periodic audit discovers publication without a request');
+        assert.deepEqual(sqlite.prepare("SELECT * FROM word_preparation_work WHERE work_id='audit-paused'").get(),paused,'usable manual teaching does not reset old paused failure');
+        const before=calls.length;
+        sqlite.prepare("UPDATE service_controls SET enabled=1 WHERE control_key='maintenance_mode'").run();
+        runtime.wake();await settle();assert.equal(calls.length,before);
+        await runtime.stop();t.mock.timers.tick(300_000);runtime.wake();await settle();assert.equal(calls.length,before);
+      }finally{await runtime.stop();t.mock.timers.reset();sqlite.prepare("UPDATE service_controls SET enabled=0 WHERE control_key='maintenance_mode'").run();sqlite.prepare("UPDATE service_controls SET enabled=1 WHERE control_key='provider_work_enabled'").run();}
+    });
     await t.test('runtime polls reserve requests every 30 seconds and explicit wakes retain the twice-daily-limit buffer', async t => {
       const { startWordPreparationRuntime } = await import('../server/word-content/preparation-runtime.ts');
       sqlite.prepare("UPDATE service_controls SET enabled=0 WHERE control_key='provider_work_enabled'").run();
       owner(() => { db.setDailyNewWordLimit(0); reconcile(); });
       t.mock.timers.enable({ apis: ['Date', 'setTimeout', 'setInterval'], now: Date.now() });
-      const settle = () => new Promise<void>(resolve => setImmediate(resolve));
+      const settle = async () => {for(let i=0;i<12;i++)await new Promise<void>(resolve => setImmediate(resolve));};
       const runtime = startWordPreparationRuntime();
       try {
         await settle();
@@ -193,6 +263,10 @@ test('vocabulary reserve preserves bounded preparation and lifecycle admission',
         t.mock.timers.tick(30_000); await settle();
         assert.equal(owner(() => reserve.getWordReserveCandidates().length), 6);
         assert.ok(reserve.listPendingWordReserveLearners().includes('reserve-a'));
+        const restarted=startWordPreparationRuntime();
+        try{await settle();assert.equal(owner(()=>reserve.getWordReserveCandidates().length),0);
+          assert.ok(!reserve.listPendingWordReserveLearners().includes('reserve-a'),'new runtime consumes durable demand without a session visit');
+        }finally{await restarted.stop();}
       } finally {
         await runtime.stop(); t.mock.timers.reset();
         sqlite.prepare("UPDATE service_controls SET enabled=1 WHERE control_key='provider_work_enabled'").run();
