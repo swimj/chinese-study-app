@@ -12,7 +12,7 @@ import { createVocabularySense,establishVocabularySenseCatalog,getVocabularySens
 import { getVocabularyWordSenseCoverage,writeVocabularyDefaultUsefulSenses } from '../server/db/vocabulary-sense-coverage.ts';
 import { claimSharedWordIntroductionStage,finishSharedWordIntroductionBootstrap } from '../server/db/word-introductions.ts';
 import { ensureVocabularySenses,VocabularySenseReadinessPending,VocabularySenseSelectionRequired } from '../server/vocabulary/sense-readiness.ts';
-import { createUsefulSelectionProvider,defaultUsefulInitializationPlan,ensureVocabularyDefaultUsefulSelection,initializeDefaultUsefulBatch } from '../server/vocabulary/default-useful-selection.ts';
+import { createUsefulSelectionProvider,defaultUsefulInitializationPlan,ensureVocabularyDefaultUsefulSelection } from '../server/vocabulary/default-useful-selection.ts';
 let root:string,baseline:string,db:DatabaseSync;
 const actor={kind:'service' as const,id:'fixture'};
 before(()=>{root=fs.mkdtempSync(path.join(os.tmpdir(),'default-useful-'));const folder=path.join(root,'baseline');createBaselineFixture(folder);baseline=path.join(folder,'app.db');});
@@ -67,17 +67,6 @@ test('publication maintenance defers selector without losing inventory or perman
   assert.equal(getVocabularyWordSenseCoverage('word').defaultUsefulSenseIds,null);assert.equal(getVocabularySenses('word').length,2);
   assert.equal(db.prepare('SELECT status,attempt_count FROM vocabulary_default_selection_readiness').get()!.status,'queued');
 });
-test('imported batch selection requires model opt-in and remains bounded and repeatable',async()=>{
-  imported();const changes=db.prepare('SELECT total_changes() n').get()!.n;let calls=0;
-  const provider={isConfigured:()=>true,async select(){calls++;return {senseIds:[getVocabularySenses('word')[0]!.senseId]};}};
-  const dry=await initializeDefaultUsefulBatch({apply:false,limit:1,provider});assert.equal(dry.items[0]!.kind,'selector');
-  const skipped=await initializeDefaultUsefulBatch({apply:true,limit:1,provider});assert.equal(skipped.items[0]!.outcome,'skipped');
-  assert.equal(db.prepare('SELECT total_changes() n').get()!.n,changes);assert.equal(calls,0);
-  const applied=await initializeDefaultUsefulBatch({apply:true,includeModelSelection:true,limit:1,provider});assert.equal(applied.items[0]!.outcome,'initialized');assert.equal(calls,1);
-  const version=getVocabularyWordSenseCoverage('word').version;
-  const repeat=await initializeDefaultUsefulBatch({apply:true,includeModelSelection:true,limit:1,provider});assert.equal(repeat.items[0]!.kind,'known');assert.equal(calls,1);assert.equal(getVocabularyWordSenseCoverage('word').version,version);
-});
-
 test('an explicit operator none decision is preserved while a fresh inventory recommendation is audited',async()=>{
   writeVocabularyDefaultUsefulSenses('word',0,[],actor);
   await ensureVocabularySenses('word',{workflowId:'manual-first',provider:{isConfigured:()=>true,generate:async()=>({senses:[{label:'letter',notes:[],defaultUseful:true}]})}});

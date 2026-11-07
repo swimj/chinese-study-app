@@ -567,8 +567,7 @@ Operator workspace and review-batch metadata include a read-only
 `defaultSelectionFinding` when model-empty or exhausted initialization needs review.
 It carries the reason, recommended IDs and invocation ID, and disappears whenever
 an explicit word policy is saved. This finding never blocks single-sense content
-approval. [The initialization procedure](../ops/default-useful-selection.md) describes
-bounded dry runs and explicitly enabled model-backed batches.
+approval.
 
 Reveal snapshots prefer explicit source-use links in the selected document,
 allowing reflection-first canonical senses to obtain later teaching examples
