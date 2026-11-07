@@ -317,3 +317,19 @@ test('a pure cue containing an empty-inventory answer does not proxy an otherwis
   assert.equal(isVocabularyProductionProxied('word'),false);
   assert.deepEqual(compose().reviewSelections,[{wordId:'word',skillId:'production'}]);
 }));
+
+test('review SQL owns basic flags and keeps content eligibility separate from Solidify',()=>owner(()=>{
+  reviewWord('default-flags',48); // Missing optional legacy/relevance rows default to usable.
+  reviewWord('disabled',48);skill('disabled','production',48);
+  db.prepare("UPDATE learner_owned_word_skill_state SET enabled=0 WHERE word_id='disabled'").run();
+  reviewWord('suppressed',48);skill('suppressed','recognition',72);skill('suppressed','contextual_selection',96);
+  db.prepare("INSERT INTO learner_owned_word_skill_relevance VALUES('alice','suppressed','production','suppressed'),('alice','suppressed','contextual_selection','suppressed'),('bob','default-flags','production','suppressed')").run();
+  lexical('solidify');addVocabularyWord('solidify');changeVocabularyMode('solidify','solidify',1);
+  const checked:string[]=[];const solidify:string[]=[];
+  const plan=composeVocabularyStudy({now,manifest:null,teachingReady:()=>false,requestTeaching:()=>{},
+    canUseSkill:(id,kind)=>{solidify.push(`${id}/${kind}`);return false;},
+    isReviewContentUsable:(id,kind)=>{checked.push(`${id}/${kind}`);return true;}});
+  assert.deepEqual(plan.reviewSelections,[{wordId:'suppressed',skillId:'recognition'},{wordId:'default-flags',skillId:'production'}]);
+  assert.deepEqual(new Set(checked),new Set(['default-flags/production','suppressed/recognition']));
+  assert.deepEqual(solidify,['solidify/recognition','solidify/production']);
+}));

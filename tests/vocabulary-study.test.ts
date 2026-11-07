@@ -1223,3 +1223,23 @@ test('reconciliation excludes shared cues with a blocked alternative from fresh 
   const payload=composeVocabularySessionPayload({sessionId:'recon-pool',words:[{wordId:'a',mode:'practice'}]});
   assert.equal(JSON.stringify(payload).includes(shared.contentId),false);
 }));
+
+test('ordinary review trusts SQL flags while Solidify still checks its recall directions',()=>owner(()=>{
+  addVocabularyWord('b');
+  db.prepare("UPDATE learner_words SET dismissed_at='2026-01-01' WHERE word_id!='b'").run();
+  db.prepare("UPDATE learner_words SET mode='practice' WHERE word_id='b'").run();
+  db.prepare("UPDATE learner_word_schedules SET next_eligible_at=NULL,last_practised_at=NULL WHERE word_id='b'").run();
+  db.prepare("INSERT OR REPLACE INTO learner_settings VALUES('alice','daily_new_word_limit','0','2026-01-01')").run();
+  const prepare=db.prepare.bind(db);const reads:string[]=[];
+  db.prepare=((sql:string)=>{if(/^SELECT (enabled|relevance_state) FROM learner_owned_word_skill_/.test(sql))reads.push(sql);return prepare(sql);}) as typeof db.prepare;
+  try {
+    const preview=previewVocabularyStudy();
+    assert.equal(preview.itemCount,1);
+    assert.equal(reads.length,0); // Baseline: two prepared/executed lookups per review objective.
+    db.prepare("UPDATE learner_words SET mode='solidify' WHERE word_id='b'").run();
+    db.prepare("INSERT INTO learner_owned_word_skill_state VALUES('alice','b','recognition',24,2.5,0,NULL,NULL),('alice','b','production',24,2.5,0,NULL,NULL)").run();
+    reads.length=0;
+    assert.equal(previewVocabularyStudy().itemCount,0);
+    assert.equal(reads.length,4);
+  } finally {db.prepare=prepare;}
+}));

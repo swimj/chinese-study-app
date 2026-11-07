@@ -205,12 +205,15 @@ export function getVocabularyStudy(sessionId:string):VocabularyStudy {
     notice:word?.teachingDeferred?'This word is now Unstudied. Fresh teaching will start in your next session.':session.projection.phase==='finishing'?'Finish the words already started, or finish immediately.':null};
 }
 function composeCurrentStudy(requestTeaching:(wordId:string)=>void, timeZone?:string):VocabularyComposition {
-  return composeVocabularyStudy({teachingReady,timeZone,canUseSkill:(wordId,skill)=>{
-    if(isSenseContentReconciliationPending(wordId)||!skillEnabled(wordId,skill))return false;
+  const contentUsable = (wordId:string,skill:'recognition'|'production'|'contextual_selection'):boolean => {
+    if(isSenseContentReconciliationPending(wordId))return false;
     if(skill!=='contextual_selection')return true;
     const mode=getVocabularyLearnerWord(wordId)?.mode;
     return mode!==undefined&&mode!=='unstudied'&&listVocabularyExercises({wordId,mode}).some((entry)=>eligible(entry)&&contrastEligible(entry,wordId));
-  },requestTeaching});
+  };
+  return composeVocabularyStudy({teachingReady,timeZone,
+    canUseSkill:(wordId,skill)=>skillEnabled(wordId,skill)&&contentUsable(wordId,skill),
+    isReviewContentUsable:contentUsable,requestTeaching});
 }
 /** Shared final admission, including the independent pure-cue cap and interleaving. */
 function planVocabularyStudy(composition:VocabularyComposition, samplingSeed:string, adoptPureCues:boolean) {
