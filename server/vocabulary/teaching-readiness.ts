@@ -15,7 +15,6 @@ export function skillEnabled(wordId:string,skill:'recognition'|'production'|'con
     .get(requireLearnerId(),wordId,skill) as {relevance_state:string}|undefined;
   return disabled?.enabled!==0&&relevance?.relevance_state!=='suppressed';
 }
-function suppressed(wordId:string):boolean {return !skillEnabled(wordId,'production');}
 export function eligible(content:VocabularyContent):boolean {
   return content.availability==='active'&&!content.words.some(word=>isSenseContentReconciliationPending(word.wordId))
     &&(content.accessScope==='shared'||content.ownerLearnerId===requireLearnerId())
@@ -34,13 +33,12 @@ export function compatibleIntroductions(wordId:string,newest=false):VocabularyCo
 export type ResolvedVocabularyTeaching = {intro:VocabularyContent;exercises:VocabularyContent[]};
 /** Resolve current coherent material only; compatibility refresh and generation belong to maintenance. */
 export function resolveVocabularyTeaching(wordId:string):ResolvedVocabularyTeaching|null {
-  if(!isVocabularySessionWordEligible(wordId)||isSenseContentReconciliationPending(wordId)
-    ||!skillEnabled(wordId,'recognition')||suppressed(wordId))return null;
+  if(!isVocabularySessionWordEligible(wordId)||isSenseContentReconciliationPending(wordId))return null;
   try {if(!canEnsureVocabularySensesFromBootstrap(wordId))return null;}
   catch(error){if(error instanceof VocabularySenseReadinessError)return null;throw error;}
   const baselineRecognition=getDictionaryBaseline(wordId,'recognition','teaching');
   for(const intro of compatibleIntroductions(wordId,true)) {
-    const exercises=getVocabularyTeachingExercises(intro.contentId).filter((entry)=>eligible(entry)&&entry.kind==='exercise'&&skillEnabled(wordId,entry.skill));
+    const exercises=getVocabularyTeachingExercises(intro.contentId).filter((entry)=>eligible(entry)&&entry.kind==='exercise'&&(entry.skill==='recognition'||entry.skill==='production'));
     if(exercises.some((entry)=>entry.kind==='exercise'&&entry.skill==='production')
       &&(exercises.some((entry)=>entry.kind==='exercise'&&entry.skill==='recognition')||baselineRecognition===null||eligible(baselineRecognition)))return {intro,exercises};
   }

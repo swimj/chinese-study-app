@@ -42,8 +42,8 @@ function lexical(wordId:string):VocabularyStudyWord {
     .get(requireLearnerId(),wordId) as VocabularyStudyWord|undefined;
   if(!row)throw new VocabularySessionInputError('Unknown lexical word');return {...row};
 }
-function baseline(wordId:string,kind:'recognition'|'production',role:'teaching'|'general'):VocabularyContent|null {
-  if(!skillEnabled(wordId,kind))return null;
+function baseline(wordId:string,kind:'recognition'|'production',role:'teaching'|'general',fixedLearningSkills=false):VocabularyContent|null {
+  if(role!=='teaching'&&!fixedLearningSkills&&!skillEnabled(wordId,kind))return null;
   const existing=getDictionaryBaseline(wordId,kind,role);if(existing)return eligible(existing)?existing:null;
   const word=lexical(wordId);const id=sharedDictionaryBaselineId(wordId,kind,role);
   const content=createVocabularyContent({contentId:id,kind:'exercise',payloadVersion:1,
@@ -59,7 +59,7 @@ function baseline(wordId:string,kind:'recognition'|'production',role:'teaching'|
 function teaching(wordId:string,resolved?:ResolvedVocabularyTeaching):{intro:VocabularyContent;exercises:VocabularyContent[];requirements:VocabularyTeachingRequirements}|null {
   for(const intro of resolved?[resolved.intro]:compatibleIntroductions(wordId)) {
     const exercises=resolved?[...resolved.exercises]:getVocabularyTeachingExercises(intro.contentId).filter((entry)=>eligible(entry)
-      &&entry.kind==='exercise'&&skillEnabled(wordId,entry.skill));
+      &&entry.kind==='exercise'&&(entry.skill==='recognition'||entry.skill==='production'));
     if(!exercises.some((entry)=>entry.kind==='exercise'&&entry.skill==='production'))continue;
     const recognition=exercises.some((entry)=>entry.kind==='exercise'&&entry.skill==='recognition')?null:baseline(wordId,'recognition','teaching');
     if(recognition)exercises.unshift(recognition);
@@ -91,14 +91,15 @@ function availableGeneral(wordId:string,mode:'solidify'|'practice'|'maintain'):V
     &&(object(object(entry.body).source).kind!=='dictionary_baseline'
       ||entry.contentId===getDictionaryBaseline(wordId,entry.skill==='recognition'?'recognition':'production','general')?.contentId)
     &&(allowFallback||entry.skill!=='production'||!isVocabularyDefinitionFallback(entry))
-    &&(isContrast(entry)?contrastEligible(entry,wordId):entry.skill==='recognition'?skillEnabled(wordId,'recognition'):skillEnabled(wordId,'production')));
+    &&(mode==='solidify'?!isContrast(entry)&&(entry.skill==='recognition'||entry.skill==='production')
+      :isContrast(entry)?contrastEligible(entry,wordId):entry.skill==='recognition'?skillEnabled(wordId,'recognition'):skillEnabled(wordId,'production')));
   // Persisted baselines remain fallback material, even after a previous session
   // created them. They must not compete with eligible authored production.
   if(pool.some((entry)=>entry.kind==='exercise'&&entry.skill==='production'&&!isContrast(entry)&&!isVocabularyDefinitionFallback(entry))) {
     pool=pool.filter((entry)=>entry.kind!=='exercise'||entry.skill!=='production'||!isVocabularyDefinitionFallback(entry));
   }
   // Recognition remains its own self-assessed objective and never supplies production coverage.
-  const recognize=baseline(wordId,'recognition','general');
+  const recognize=baseline(wordId,'recognition','general',mode==='solidify');
   if(mode==='maintain') {
     if(pool.length)return pool;
     const direct=allowFallback?baseline(wordId,'production','general'):null;
@@ -107,7 +108,7 @@ function availableGeneral(wordId:string,mode:'solidify'|'practice'|'maintain'):V
     return direct?[direct]:[];
   }
   if(!pool.some((entry)=>entry.kind==='exercise'&&entry.skill==='production'&&!isContrast(entry))) {
-    const direct=allowFallback?baseline(wordId,'production','general'):null;if(direct)pool.push(direct);
+    const direct=allowFallback?baseline(wordId,'production','general',mode==='solidify'):null;if(direct)pool.push(direct);
   }
   if(recognize&&!pool.some((entry)=>entry.contentId===recognize.contentId))pool.push(recognize);
   return pool;
@@ -144,13 +145,21 @@ export function composeVocabularySessionPayload(context:VocabularySessionInitial
     payload.snapshots[`${content.contentId}/${role}`]=snapshot(content,role,empty);
   };
   for(const word of context.words) {
-    const ready=resolvedTeaching.get(word.wordId)??teaching(word.wordId);
-    const priming=ready?.intro??introductions(word.wordId)[0]??null;
-    const general={solidify:availableGeneral(word.wordId,'solidify'),practice:availableGeneral(word.wordId,'practice'),maintain:availableGeneral(word.wordId,'maintain')};
-    const recognition=baseline(word.wordId,'recognition','general');
-    if(recognition&&!general.maintain.some(content=>content.kind==='exercise'&&content.skill==='recognition'))general.maintain.push(recognition);
-    payload.words[word.wordId]={lexical:lexical(word.wordId),teaching:ready,priming,general};
-    if(ready){retain(ready.intro,'teaching');ready.exercises.forEach(content=>retain(content,'teaching'));}
+    // Teaching can reach Solidify through completion and More. Graduation to
+    // Practice is applied at closure, so it needs no additional session pool.
+    const ready=word.mode==='unstudied'||word.mode==='solidify'
+      ?resolvedTeaching.get(word.wordId)??teaching(word.wordId):null;
+    const retainedTeaching=word.mode==='unstudied'?ready:null;
+    const priming=word.mode==='solidify'?(ready?.intro??introductions(word.wordId)[0]??null):null;
+    const mode=word.mode==='unstudied'?'solidify':word.mode;
+    const general:VocabularySessionPayload['words'][string]['general']={solidify:[],practice:[],maintain:[]};
+    general[mode]=availableGeneral(word.wordId,mode);
+    if(mode==='maintain') {
+      const recognition=baseline(word.wordId,'recognition','general');
+      if(recognition&&!general.maintain.some(content=>content.kind==='exercise'&&content.skill==='recognition'))general.maintain.push(recognition);
+    }
+    payload.words[word.wordId]={lexical:lexical(word.wordId),teaching:retainedTeaching,priming,general};
+    if(retainedTeaching){retain(retainedTeaching.intro,'teaching');retainedTeaching.exercises.forEach(content=>retain(content,'teaching'));}
     if(priming)retain(priming,'priming');
     Object.values(general).flat().forEach(content=>retain(content,'general'));
   }
@@ -200,7 +209,7 @@ export function getVocabularyStudy(sessionId:string):VocabularyStudy {
   return {session:{...session,context:publicContext},words:payload?session.context.words.map(word=>({...payload.words[word.wordId].lexical,...(word.wordId===wordId?{personalNotes:liveNotes?.personal_notes??''}:{})})):session.context.words.map(word=>lexical(word.wordId)),currentEncounter:encounter,currentWordId:wordId,
     controls:{canNext:active,canSkip:active&&encounter!==null,canEnough:active&&word?.workStatus==='open'&&word.mode!=='unstudied',
       canMore:active&&word!==null&&!word.teachingDeferred&&(word.workStatus==='wrapped'||word.workStatus==='skipped'),canUndo:active&&session.projection.latestUndoableActionId!==null,
-      canFinishForNow:active&&session.projection.phase==='active',canFinishImmediately:active&&session.projection.phase==='finishing',canChangeMode:active&&wordId!==null},
+      canFinishForNow:active&&session.projection.phase==='active',canFinishImmediately:active&&session.projection.phase==='finishing',canChangeMode:false},
     notice:word?.teachingDeferred?'This word is now Unstudied. Fresh teaching will start in your next session.':session.projection.phase==='finishing'?'Finish the words already started, or finish immediately.':null};
 }
 function composeCurrentStudy(resolved:Map<string,ResolvedVocabularyTeaching>, timeZone?:string):VocabularyComposition {
@@ -211,7 +220,7 @@ function composeCurrentStudy(resolved:Map<string,ResolvedVocabularyTeaching>, ti
     return mode!==undefined&&mode!=='unstudied'&&listVocabularyExercises({wordId,mode}).some((entry)=>eligible(entry)&&contrastEligible(entry,wordId));
   };
   return composeVocabularyStudy({teachingReady:wordId=>{const material=resolveVocabularyTeaching(wordId);if(material)resolved.set(wordId,material);return material!==null;},timeZone,
-    canUseSkill:(wordId,skill)=>skillEnabled(wordId,skill)&&contentUsable(wordId,skill),
+    isLearningContentUsable:wordId=>!isSenseContentReconciliationPending(wordId),
     isReviewContentUsable:contentUsable});
 }
 /** Shared final admission, including the independent pure-cue cap and interleaving. */
@@ -224,8 +233,7 @@ function planVocabularyStudy(composition:VocabularyComposition, samplingSeed:str
       const candidate=getVocabularyLearnerWord(wordId);
       const selectedSkill=composition.reviewSelections.find((entry)=>entry.wordId===wordId)?.skillId;
       if(candidate) {
-        const solidifySkills=candidate.mode==='solidify'?(['recognition','production'] as const).filter((skill)=>skillEnabled(wordId,skill)):undefined;
-        if(solidifySkills?.length===0)continue;
+        const solidifySkills: Array<'recognition'|'production'>|undefined=candidate.mode==='solidify'?['recognition','production']:undefined;
         words.push({wordId,mode:candidate.mode,...(selectedSkill?{selectedSkill}:{}),...(solidifySkills?{solidifySkills}:{})});
       }
     }
@@ -463,7 +471,7 @@ export function commandVocabularyStudy(sessionId:string,clientActionId:string,co
         if(word.workStatus==='open')throw new VocabularySessionConflictError('This word is already queued for practice');
         builder.push({kind:'word_more',payload:{wordId:id}});break;
       }
-      case 'mode':builder.push({kind:'mode_change',payload:{wordId:needWord(),mode:command.mode}});break;
+      case 'mode':throw new VocabularySessionInputError('Mode can be changed after successful session closure.');
       case 'undo': {
         const latest=session.projection.latestUndoableActionId;if(!latest)throw new VocabularySessionConflictError('No latest transition can be undone');
         builder.push({kind:'undo',payload:{undoesActionId:latest}});break;

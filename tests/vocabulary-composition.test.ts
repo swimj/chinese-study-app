@@ -138,7 +138,7 @@ test('suppressed or unavailable objectives fall back to eligible recognition wit
   db.prepare("INSERT INTO learner_owned_word_skill_relevance VALUES('alice','a','production','suppressed')").run();
   reviewWord('b',96);skill('b','recognition',48);skill('b','contextual_selection',240);
   const plan=composeVocabularyStudy({now,teachingReady:()=>false,
-    canUseSkill:(id,kind)=>kind==='recognition'||(id==='a'&&kind==='contextual_selection')});
+    isReviewContentUsable:(id,kind)=>kind==='recognition'||(id==='a'&&kind==='contextual_selection')});
   assert.deepEqual(plan.reviewSelections,[{wordId:'a',skillId:'recognition'},{wordId:'b',skillId:'recognition'}]);
 }));
 
@@ -153,7 +153,7 @@ test('word recency guard blocks every review skill, and future or disabled objec
 
 test('contextual review participates in the same one-objective choice when usable',()=>owner(()=>{
   reviewWord('a',48);skill('a','contextual_selection',96);
-  const plan=composeVocabularyStudy({now,teachingReady:()=>false,canUseSkill:()=>true});
+  const plan=composeVocabularyStudy({now,teachingReady:()=>false,isReviewContentUsable:()=>true});
   assert.deepEqual(plan.reviewSelections,[{wordId:'a',skillId:'contextual_selection'}]);
 }));
 
@@ -168,13 +168,13 @@ test('shared session cap redistributes capacity between review and Solidify lane
   assert.equal(db.prepare('SELECT count(*) AS n FROM learner_words').get()?.n,1200);
 }));
 
-test('Solidify admits any word with an enabled recall direction, including recognition behind a disabled production schedule',()=>owner(()=>{
+test('Solidify ignores review enablement but retains word content admission checks',()=>owner(()=>{
   for(const id of ['recognition-only','production-only','neither']) {
     lexical(id);addVocabularyWord(id);changeVocabularyMode(id,'solidify',1);
   }
   db.prepare("UPDATE learner_word_schedules SET scheduler_state_json=json_set(scheduler_state_json,'$.enabled',0) WHERE word_id='recognition-only'").run();
   const plan=composeVocabularyStudy({now,teachingReady:()=>false,
-    canUseSkill:(id,kind)=>(id==='recognition-only'&&kind==='recognition')||(id==='production-only'&&kind==='production')});
+    isLearningContentUsable:id=>id!=='neither'});
   assert.deepEqual(new Set(plan.dueWordIds),new Set(['recognition-only','production-only']));
   assert.deepEqual(plan.reviewSelections,[]);
 }));
@@ -295,7 +295,7 @@ test('established empty inventories stay stashed but are absent from every word 
   }
   const learnerBefore=db.prepare('SELECT * FROM learner_words ORDER BY word_id').all();
   const scheduleBefore=db.prepare('SELECT * FROM learner_word_schedules ORDER BY word_id').all();
-  const plan=composeVocabularyStudy({now,teachingReady:(id)=>ready.has(id),canUseSkill:()=>true});
+  const plan=composeVocabularyStudy({now,teachingReady:(id)=>ready.has(id),isReviewContentUsable:()=>true});
   assert.ok(plan.newWordIds.includes('unknown-stash'));assert.ok(plan.newWordIds.includes('active-stash'));
   assert.ok(plan.newWordIds.includes('unknown-diet'));
   assert.equal(plan.newWordIds.some(id=>id.startsWith('empty-')),false);
@@ -328,11 +328,11 @@ test('review SQL owns basic flags and keeps content eligibility separate from So
   lexical('solidify');addVocabularyWord('solidify');changeVocabularyMode('solidify','solidify',1);
   const checked:string[]=[];const solidify:string[]=[];
   const plan=composeVocabularyStudy({now,teachingReady:()=>false,
-    canUseSkill:(id,kind)=>{solidify.push(`${id}/${kind}`);return false;},
+    isLearningContentUsable:id=>{solidify.push(id);return false;},
     isReviewContentUsable:(id,kind)=>{checked.push(`${id}/${kind}`);return true;}});
   assert.deepEqual(plan.reviewSelections,[{wordId:'suppressed',skillId:'recognition'},{wordId:'default-flags',skillId:'production'}]);
   assert.deepEqual(new Set(checked),new Set(['default-flags/production','suppressed/recognition']));
-  assert.deepEqual(solidify,['solidify/recognition','solidify/production']);
+  assert.deepEqual(solidify,['solidify']);
 }));
 
 test('sparse due review skips content checks for the future population',async(t)=>owner(()=>{

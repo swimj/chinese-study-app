@@ -12,8 +12,8 @@ import { setDb } from '../server/db/connection.ts';
 import { runWithLearnerId } from '../server/db/learner-context.ts';
 import { adoptVocabularyPureCues } from '../server/vocabulary/pure-cue-serving.ts';
 import { createVocabularyContent,replaceVocabularyContent,updateVocabularyContent,getVocabularyContent,createVocabularySense,establishVocabularySenseCatalog,getVocabularySenseCatalog,getVocabularySenses,updateVocabularySense } from '../server/db/vocabulary-content.ts';
-import { createVocabularySession as createStoredSession,stageVocabularySessionCompletion,cancelVocabularySessionCompletion,closeVocabularySessionCompletion } from '../server/db/vocabulary-sessions.ts';
-import { addVocabularyWord,dismissVocabularyWord,getVocabularyLearnerWord,getVocabularyWordSchedule,enrollVocabularyDietWord } from '../server/db/vocabulary-learners.ts';
+import { appendVocabularySessionActions,createVocabularySession as createStoredSession,stageVocabularySessionCompletion,cancelVocabularySessionCompletion,closeVocabularySessionCompletion } from '../server/db/vocabulary-sessions.ts';
+import { changeVocabularyMode,addVocabularyWord,dismissVocabularyWord,getVocabularyLearnerWord,getVocabularyWordSchedule,enrollVocabularyDietWord } from '../server/db/vocabulary-learners.ts';
 import { startVocabularyStudy as startRuntime,composeVocabularySessionPayload,previewVocabularyStudy as previewRuntime,getVocabularyStudy,nextVocabularyExercise,commandVocabularyStudy } from '../server/vocabulary/study.ts';
 import type { VocabularyStudy } from '../src/domain/vocabulary-study-api.ts';
 import type { VocabularyContent } from '../src/domain/vocabulary-content.ts';
@@ -26,7 +26,7 @@ const actor={kind:'operator' as const,id:'test'};
 function createVocabularySession(context:VocabularySessionInitialContext) {
   const reviewOrder=context.reviewOrder??selectVocabularyPureCueCandidates({ordinaryReviewCount:context.words.filter(word=>word.mode==='practice'||word.mode==='maintain').length,sessionSeed:context.sessionId})
     .map(cue=>({kind:'pure_cue' as const,id:cue.contentId}));
-  const frozen={...context,reviewOrder};
+  const frozen={...context,words:context.words.map(word=>({...word,mode:getVocabularyLearnerWord(word.wordId)!.mode})),reviewOrder};
   return createStoredSession({...frozen,payload:composeVocabularySessionPayload(frozen)});
 }
 function exercise(id:string,wordId:string,role:'teaching'|'general'='general',pure=false):VocabularyContent {
@@ -241,8 +241,8 @@ test('word-level baseline keeps Maintain usable without inventing curation or us
   assert.match(view.currentEncounter!.snapshot.contentId,/baseline.*production/);
   assert.equal(db.prepare("SELECT count(*) AS n FROM content_mode_suitability WHERE suitability='curated'").get()?.n,0);
   assert.equal(db.prepare("SELECT count(*) AS n FROM backend_events WHERE name='vocabulary.maintain.baseline_selected'").get()?.n,1);
-  view=commandVocabularyStudy('maintain','mode',{type:'mode',mode:'practice'});
-  assert.equal(view.session.projection.words.b.mode,'practice');assert.equal(getVocabularyLearnerWord('b')?.mode,'maintain');
+  assert.throws(()=>commandVocabularyStudy('maintain','mode',{type:'mode',mode:'practice'}),/successful session closure/);
+  assert.equal(view.session.projection.words.b.mode,'maintain');
 }));
 
 test('dictionary baselines are shared across learners without duplicating the repertoire or sharing learner controls',()=>{
@@ -307,6 +307,9 @@ test('Unstudied teaching requires delivered introduction, self-assessed recognit
   }
   assert.equal(firstRecognition?.effectiveResponses[0].payload.response,null);
   assert.equal(view.session.projection.words.new.teachingCompleted,true);assert.equal(getVocabularyLearnerWord('new')?.mode,'unstudied');
+  setDb(db); // More still works from the durable narrowed repertoire.
+  view=nextVocabularyExercise('new-session','after-teaching-more',{wordId:'new'});
+  assert.equal(view.session.projection.words.new.mode,'solidify');assert.equal(view.currentEncounter?.snapshot.role,'general');
 }));
 
 test('independent pure cues expose no selected word and never credit their accepted answer word',()=>owner(()=>{
@@ -526,33 +529,29 @@ test('a frozen pure cue with reordered accepted answers serves and retries, reta
   assert.deepEqual(getVocabularyWordSchedule('a'),beforeA);assert.deepEqual(getVocabularyWordSchedule('b'),beforeB);
 }));
 
-test('resetting any established mode stops current work and defers teaching to a fresh session',()=>owner(()=>{
-  for(const mode of ['solidify','practice','maintain'] as const) {
+test('new mode commands cannot alter any active or finishing session mode',()=>owner(()=>{
+  for(const mode of ['unstudied','solidify','practice','maintain'] as const) {
     db.prepare('UPDATE learner_words SET mode=? WHERE word_id=?').run(mode,'a');
-    const id=`reset-${mode}`;createVocabularySession({sessionId:id,words:[{wordId:'a',mode}]});
-    nextVocabularyExercise(id,`${id}-next`);
-    let view=commandVocabularyStudy(id,`${id}-reset`,{type:'mode',mode:'unstudied'});
-    assert.equal(view.session.projection.words.a.workStatus,'skipped');assert.equal(view.controls.canMore,false);
-    assert.equal(view.session.projection.words.a.teachingCompleted,false);assert.match(view.notice!,/next session/);
-    assert.throws(()=>commandVocabularyStudy(id,`${id}-more`,{type:'more'}),/next session/);
-    view=commandVocabularyStudy(id,`${id}-finish`,{type:'finishForNow'});
-    const staged=stageVocabularySessionCompletion(id,view.session.actions.length);closeVocabularySessionCompletion(id,staged.completionId);
-    assert.equal(getVocabularyLearnerWord('a')?.mode,'unstudied');
-    assert.equal(db.prepare('SELECT count(*) AS n FROM teaching_completions WHERE word_id=?').get('a')?.n,0);
+    const id=`fixed-${mode}`;createVocabularySession({sessionId:id,words:[{wordId:'a',mode}]});
+    const before=nextVocabularyExercise(id,`${id}-next`);
+    assert.equal(before.controls.canChangeMode,false);
+    assert.throws(()=>commandVocabularyStudy(id,'change',{type:'mode',mode:'practice'}),/successful session closure/);
+    assert.deepEqual(getVocabularyStudy(id).session.actions,before.session.actions);
+    const finishing=before.session.projection.phase==='completed'?before:commandVocabularyStudy(id,'finish',{type:'finishForNow'});
+    assert.throws(()=>commandVocabularyStudy(id,'change-finishing',{type:'mode',mode:'unstudied'}),/successful session closure/);
+    assert.deepEqual(getVocabularyStudy(id).session.actions,finishing.session.actions);
   }
 }));
 
-test('explicit Unstudied to Practice override uses general work without fabricating teaching completion',()=>owner(()=>{
-  createVocabularySession({sessionId:'override',words:[{wordId:'new',mode:'unstudied',teachingRequirements:{introductionContentId:'intro-new',
-    requiredExerciseContentIds:['teach-new'],minimumRecognitionResponses:0,minimumProductionResponses:1}}]});
-  let view=nextVocabularyExercise('override','intro');assert.equal(view.currentEncounter?.snapshot.role,'teaching');
-  commandVocabularyStudy('override','override-mode',{type:'mode',mode:'practice'});
-  view=nextVocabularyExercise('override','general');assert.equal(view.currentEncounter?.snapshot.role,'general');
-  commandVocabularyStudy('override','enough',{type:'enough'});view=commandVocabularyStudy('override','finish',{type:'finishForNow'});
-  assert.equal(view.session.projection.words.new.teachingCompleted,false);
-  const staged=stageVocabularySessionCompletion('override',view.session.actions.length);closeVocabularySessionCompletion('override',staged.completionId);
-  assert.equal(getVocabularyLearnerWord('new')?.mode,'practice');
-  assert.equal(db.prepare('SELECT count(*) AS n FROM teaching_completions WHERE word_id=?').get('new')?.n,0);
+test('retained historical mode actions replay and acknowledged retries stay idempotent',()=>owner(()=>{
+  const initial=focusedA();const id=initial.session.sessionId;
+  const command={type:'mode' as const,wordId:'a',mode:'solidify' as const};
+  appendVocabularySessionActions(id,[{protocolVersion:1,actionId:'historical-mode',clientActionId:'historical-mode',
+    sequence:initial.session.actions.length+1,occurredAt:'2026-11-01T00:00:00.000Z',kind:'mode_change',payload:{wordId:'a',mode:'solidify'},commandInput:command}]);
+  setDb(db);
+  const replay=getVocabularyStudy(id);assert.equal(replay.session.projection.words.a.mode,'solidify');
+  assert.deepEqual(commandVocabularyStudy(id,'historical-mode',command).session.actions,replay.session.actions);
+  assert.throws(()=>commandVocabularyStudy(id,'new-mode',command),/successful session closure/);
 }));
 
 test('Word skip keeps unanswered work uncovered while Enough explicitly covers with no invented response',()=>owner(()=>{
@@ -646,19 +645,26 @@ test('finishing permits an explicit covered requeue and immediate finish preserv
   assert.equal(view.session.projection.words.a.successfulRecall,true);
 }));
 
-test('summary mode change replaces pending completion revision while preserving its evidence',()=>owner(()=>{
+test('pending and failed completion reject mode edits; closed future edits preserve session evidence',()=>owner(()=>{
   let view=focusedA('solidify');const id=view.session.sessionId;productionExercise(id,'first');
   view=commandVocabularyStudy(id,'answer',{type:'response',response:'甲'});
   view=commandVocabularyStudy(id,'finish',{type:'finishForNow'});
-  const before=view.session.projection.encounters;const first=stageVocabularySessionCompletion(id,view.session.actions.length);
-  cancelVocabularySessionCompletion(id,first.completionId);commandVocabularyStudy(id,'resume',{type:'resume'});
-  commandVocabularyStudy(id,'summary-mode',{type:'mode',wordId:'a',mode:'maintain'});
-  view=commandVocabularyStudy(id,'finish-again',{type:'finishForNow'});
-  const second=stageVocabularySessionCompletion(id,view.session.actions.length);
-  assert.equal(second.revisionNumber,2);assert.notEqual(second.completionId,first.completionId);
-  assert.deepEqual(second.report.encounters,before);assert.equal(second.report.words.a.mode,'maintain');
-  assert.equal(getVocabularyLearnerWord('a')?.mode,'solidify');closeVocabularySessionCompletion(id,second.completionId);
+  const staged=stageVocabularySessionCompletion(id,view.session.actions.length);
+  assert.throws(()=>commandVocabularyStudy(id,'pending-mode',{type:'mode',wordId:'a',mode:'maintain'}),/completion revision/);
+  db.prepare("UPDATE vocabulary_session_completions SET status='failed' WHERE completion_id=?").run(staged.completionId);setDb(db);
+  assert.throws(()=>commandVocabularyStudy(id,'failed-mode',{type:'mode',wordId:'a',mode:'maintain'}),/completion revision/);
+  closeVocabularySessionCompletion(id,staged.completionId);
+  const closed=getVocabularyStudy(id).session;
+  const learner=getVocabularyLearnerWord('a')!;
+  assert.equal(learner.mode,'practice');assert.equal(learner.automaticPromotionPaused,false);
+  const held=changeVocabularyMode('a','solidify',learner.stateVersion);assert.equal(held.automaticPromotionPaused,true);
+  const heldAgain=changeVocabularyMode('a','solidify',held.stateVersion);
+  assert.equal(heldAgain.automaticPromotionPaused,true);assert.equal(heldAgain.stateVersion,held.stateVersion+1);
+  changeVocabularyMode('a','maintain',heldAgain.stateVersion);
   assert.equal(getVocabularyLearnerWord('a')?.mode,'maintain');
+  const after=getVocabularyStudy(id).session;
+  assert.deepEqual(after.actions,closed.actions);assert.deepEqual(after.context,closed.context);assert.deepEqual(after.projection,closed.projection);
+  assert.deepEqual(after.completion?.report,closed.completion?.report);assert.equal(after.completion?.closedAt,closed.completion?.closedAt);
 }));
 
 test('dismissed learned words cannot enter the independently due recognition lane',()=>owner(()=>{
@@ -868,7 +874,7 @@ test('independent pure cue shares the review queue and completes lapse reinforce
   assert.equal(db.prepare("SELECT count(*) AS n FROM learner_pure_cue_schedules WHERE content_id='queue-pure' AND last_practised_at IS NOT NULL").get()?.n,1);
 }));
 
-test('teaching retains admission-time skill availability when later settings change',()=>owner(()=>{
+test('teaching uses both recall directions despite later review skill settings',()=>owner(()=>{
   createVocabularyContent({contentId:'authored-recognition',kind:'exercise',payloadVersion:1,body:{prompt:'新'},
     exerciseType:'recognition',skill:'recognition',exerciseRole:'teaching',assessment:{responseMode:'self_assessment'},
     accessScope:'shared',availability:'active',originKind:'human',words:[{wordId:'new',relation:'target'}],
@@ -890,7 +896,7 @@ test('teaching retains admission-time skill availability when later settings cha
     assert.equal(stopped.notice,null);
     assert.equal(stopped.session.projection.encounters.length,2);
     assert.notEqual(stopped.currentEncounter?.snapshot.kind,'introduction');
-    assert.equal(composeVocabularySessionPayload({sessionId:'later',words:[{wordId:'new',mode:'unstudied'}]}).words.new.teaching,null);
+    assert.ok(composeVocabularySessionPayload({sessionId:'later',words:[{wordId:'new',mode:'unstudied'}]}).words.new.teaching);
     assert.equal(stopped.session.projection.words.new.workStatus,'open');
     assert.equal(stopped.session.projection.words.new.covered,false);
     assert.equal(stopped.session.projection.words.new.teachingCompleted,false);
@@ -898,52 +904,35 @@ test('teaching retains admission-time skill availability when later settings cha
   }
 }));
 
-test('Solidify with suppressed production covers recognition only without automatic graduation',()=>owner(()=>{
+for(const restriction of ['disabled','suppressed'] as const)for(const authored of [true,false])
+test(`Solidify retains both directions with ${restriction} review skills and ${authored?'authored':'fallback'} production`,()=>owner(()=>{
   db.prepare("UPDATE learner_words SET dismissed_at='2026-10-17T00:00:00.000Z' WHERE word_id IN ('b','new')").run();
-  db.prepare("INSERT INTO learner_owned_word_skill_relevance VALUES('alice','a','production','suppressed')").run();
+  if(restriction==='disabled')db.prepare("INSERT INTO learner_owned_word_skill_state VALUES('alice','a','recognition',24,2.5,0,NULL,NULL),('alice','a','production',24,2.5,0,NULL,NULL)").run();
+  else db.prepare("INSERT INTO learner_owned_word_skill_relevance VALUES('alice','a','recognition','suppressed'),('alice','a','production','suppressed')").run();
+  if(!authored)db.prepare("UPDATE content_items SET availability='retired' WHERE content_id IN ('general-1','general-2')").run();
   db.prepare("UPDATE learner_word_schedules SET scheduler_state_json=json_set(scheduler_state_json,'$.enabled',0) WHERE word_id='a'").run();
   let view=startVocabularyStudy();const id=view.session.sessionId;
-  assert.deepEqual(view.session.context.words.find((word)=>word.wordId==='a')?.solidifySkills,['recognition']);
-  // Priming may be unavailable once a required teaching direction is suppressed.
-  if(view.currentEncounter?.snapshot.kind==='introduction')view=nextVocabularyExercise(id,'recognition');
-  assert.equal(view.currentEncounter?.snapshot.kind,'recognition');
-  view=commandVocabularyStudy(id,'recognized',{type:'response',response:null,selfAssessment:'accepted'});
+  assert.deepEqual(view.session.context.words.find(word=>word.wordId==='a')?.solidifySkills,['recognition','production']);
+  if(view.currentEncounter?.snapshot.kind==='introduction')view=nextVocabularyExercise(id,'recall');
+  const served=new Set<string>();
+  for(let step=0;step<4&&!view.session.projection.words.a.covered;step++) {
+    const kind=view.currentEncounter!.snapshot.kind;
+    assert.ok(kind==='recognition'||kind==='production');served.add(kind);
+    view=commandVocabularyStudy(id,`answer-${step}`,kind==='recognition'
+      ?{type:'response',response:null,selfAssessment:'accepted'}:{type:'response',response:'甲'});
+    if(served.size===1)assert.equal(view.session.projection.words.a.covered,false);
+    if(!view.session.projection.words.a.covered)view=nextVocabularyExercise(id,`next-${step}`);
+  }
+  assert.deepEqual([...served].sort(),['production','recognition']);
   assert.equal(view.session.projection.words.a.covered,true);
-  assert.equal(view.session.projection.words.a.recommendedMode,null);
-  assert.equal(view.session.projection.encounters.some((entry)=>entry.snapshot.kind==='production'),false);
+  assert.equal(view.session.projection.words.a.recommendedMode,'practice');
   view=commandVocabularyStudy(id,'finish',{type:'finishForNow'});
   const staged=stageVocabularySessionCompletion(id,view.session.actions.length,'2026-10-23T10:00:00.000Z');
   closeVocabularySessionCompletion(id,staged.completionId,'2026-10-23T10:00:16.000Z');
-  assert.equal(getVocabularyLearnerWord('a')?.mode,'solidify');
-  assert.equal(getVocabularyWordSchedule('a')?.schedulerState.cleanCoveredSessions,0);
-  assert.equal(getVocabularyWordSchedule('a')?.nextEligibleAt,'2026-10-24T00:00:00.000Z');
-  assert.equal(view.session.projection.words.a.productionResponses,0);
+  assert.equal(getVocabularyLearnerWord('a')?.mode,'practice');
   assert.equal(getVocabularyWordSchedule('a')?.schedulerState.enabled,0);
-}));
-
-test('Solidify with disabled recognition covers production only and cannot automatically graduate',()=>owner(()=>{
-  db.prepare("UPDATE learner_words SET dismissed_at='2026-10-17T00:00:00.000Z' WHERE word_id IN ('b','new')").run();
-  db.prepare("INSERT INTO learner_owned_word_skill_state VALUES('alice','a','recognition',24,2.5,0,NULL,NULL)").run();
-  let view=startVocabularyStudy();const id=view.session.sessionId;
-  assert.deepEqual(view.session.context.words.find((word)=>word.wordId==='a')?.solidifySkills,['production']);
-  if(view.currentEncounter?.snapshot.kind==='introduction')view=nextVocabularyExercise(id,'production');
-  assert.equal(view.currentEncounter?.snapshot.kind,'production');
-  view=commandVocabularyStudy(id,'produced',{type:'response',response:'甲'});
-  assert.equal(view.session.projection.words.a.covered,true);
-  assert.equal(view.session.projection.words.a.recommendedMode,null);
-  assert.equal(view.session.projection.encounters.some((entry)=>entry.snapshot.kind==='recognition'),false);
-  view=commandVocabularyStudy(id,'finish',{type:'finishForNow'});
-  const staged=stageVocabularySessionCompletion(id,view.session.actions.length,'2026-10-23T10:00:00.000Z');
-  closeVocabularySessionCompletion(id,staged.completionId,'2026-10-23T10:00:16.000Z');
-  assert.equal(getVocabularyLearnerWord('a')?.mode,'solidify');
-  assert.equal(getVocabularyWordSchedule('a')?.schedulerState.cleanCoveredSessions,0);
-  assert.equal(getVocabularyWordSchedule('a')?.nextEligibleAt,'2026-10-24T00:00:00.000Z');
-}));
-
-test('Solidify with both recall directions disabled is excluded instead of creating unfinishable work',()=>owner(()=>{
-  db.prepare("INSERT INTO learner_owned_word_skill_state VALUES('alice','a','recognition',24,2.5,0,NULL,NULL),('alice','a','production',24,2.5,0,NULL,NULL)").run();
-  const view=startVocabularyStudy();
-  assert.equal(view.session.context.words.some((word)=>word.wordId==='a'),false);
+  if(restriction==='disabled')assert.equal(db.prepare("SELECT COUNT(*) AS n FROM learner_owned_word_skill_state WHERE word_id='a' AND enabled=0").get()!.n,2);
+  else assert.equal(db.prepare("SELECT COUNT(*) AS n FROM learner_owned_word_skill_relevance WHERE word_id='a' AND relevance_state='suppressed'").get()!.n,2);
 }));
 
 
@@ -1230,7 +1219,7 @@ test('reconciliation excludes shared cues with a blocked alternative from fresh 
   assert.equal(JSON.stringify(payload).includes(shared.contentId),false);
 }));
 
-test('ordinary review trusts SQL flags while Solidify still checks its recall directions',()=>owner(()=>{
+test('ordinary review trusts SQL flags and Solidify ignores review skill flags',()=>owner(()=>{
   addVocabularyWord('b');
   db.prepare("UPDATE learner_words SET dismissed_at='2026-01-01' WHERE word_id!='b'").run();
   db.prepare("UPDATE learner_words SET mode='practice' WHERE word_id='b'").run();
@@ -1245,8 +1234,8 @@ test('ordinary review trusts SQL flags while Solidify still checks its recall di
     db.prepare("UPDATE learner_words SET mode='solidify' WHERE word_id='b'").run();
     db.prepare("INSERT INTO learner_owned_word_skill_state VALUES('alice','b','recognition',24,2.5,0,NULL,NULL),('alice','b','production',24,2.5,0,NULL,NULL)").run();
     reads.length=0;
-    assert.equal(previewVocabularyStudy().itemCount,0);
-    assert.equal(reads.length,4);
+    assert.equal(previewVocabularyStudy().itemCount,1);
+    assert.equal(reads.length,0);
   } finally {db.prepare=prepare;}
 }));
 
@@ -1318,4 +1307,33 @@ test('a stale ready hint with an unresolved partial sense inventory is skipped a
   assert.doesNotThrow(()=>previewVocabularyStudy());
   const findings=db.prepare("SELECT entity_id FROM backend_events WHERE name='vocabulary.reserve.stale_hint'").all();
   assert.ok(findings.some(row=>row.entity_id==='new'));
+}));
+
+for(const mode of ['unstudied','solidify','practice','maintain'] as const)test(`measure reachable payload ${mode}`, {skip:process.env.RUN_PAYLOAD_BENCHMARK!=='1'},()=>owner(()=>{
+  db.prepare("INSERT INTO content_mode_suitability(content_id,mode,suitability,assessed_content_version) VALUES('general-1','maintain','curated',1)").run();
+  const context:VocabularySessionInitialContext={sessionId:'payload-measure',words:[{wordId:'a',mode,selectedSkill:'production'}]};
+  composeVocabularySessionPayload(context); // Separate one-time baseline creation from retained assembly.
+  const prepare=db.prepare.bind(db);let contentReads=0;let calls=0;
+  Object.defineProperty(db,'prepare',{configurable:true,value:(sql:string)=>{calls++;if(/FROM content_items|JOIN content_words|FROM content_words|FROM content_answers/i.test(sql))contentReads++;return prepare(sql);}});
+  let payload:ReturnType<typeof composeVocabularySessionPayload>;const start=performance.now();
+  try{payload=composeVocabularySessionPayload(context);}finally{delete (db as unknown as {prepare?:unknown}).prepare;}
+  console.log(JSON.stringify({benchmark:'reachable-payload',mode,bytes:Buffer.byteLength(JSON.stringify(payload)),contentReads,prepareCalls:calls,elapsedMs:Number((performance.now()-start).toFixed(3))}));
+}));
+
+for(const mode of ['unstudied','solidify','practice','maintain'] as const)test(`${mode} retains only reachable session material`,()=>owner(()=>{
+  const payload=composeVocabularySessionPayload({sessionId:'reachable',words:[{wordId:'a',mode,selectedSkill:'production'}]});
+  const word=payload.words.a;const reachable=mode==='unstudied'?'solidify':mode;
+  for(const pool of ['solidify','practice','maintain'] as const)if(pool!==reachable)assert.deepEqual(word.general[pool],[]);
+  assert.ok(word.general[reachable].length>0);
+  assert.equal(word.teaching!==null,mode==='unstudied');assert.equal(word.priming!==null,mode==='solidify');
+  const snapshots=Object.values(payload.snapshots);
+  assert.equal(snapshots.some(entry=>entry.role==='teaching'),mode==='unstudied');
+  assert.equal(snapshots.some(entry=>entry.role==='priming'),mode==='solidify');
+}));
+
+test('Solidify preserves current usable priming identity without retaining teaching exercises',()=>owner(()=>{
+  createVocabularyContent({contentId:'newer-incomplete',kind:'introduction',payloadVersion:1,body:{beats:[]},accessScope:'shared',availability:'active',originKind:'human',words:[{wordId:'a',relation:'target'}],teachingExercises:[]},actor);
+  const payload=composeVocabularySessionPayload({sessionId:'priming-choice',words:[{wordId:'a',mode:'solidify'}]});
+  assert.equal(payload.words.a.priming?.contentId,'intro-a');assert.equal(payload.words.a.teaching,null);
+  assert.equal(payload.snapshots['teach-a/teaching'],undefined);
 }));

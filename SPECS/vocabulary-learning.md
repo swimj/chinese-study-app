@@ -71,8 +71,8 @@ within a session does not add another qualifying session.
 Explicitly choosing Solidify means staying there until the learner chooses to
 move on. That choice persists across sessions and prevents further automatic
 graduation, including when Solidify was already the current mode. Choosing a
-different mode clears that preference. Pending session choices remain undoable
-and become durable at finalization; a newer external choice is preserved.
+different mode clears that preference. Direct choices apply to future sessions;
+a newer external choice is preserved when an older session closes.
 
 Scheduling supplies candidates to bounded session composition. A due date does
 not promise exhaustive practice. Recognition has separate scheduling and does
@@ -144,10 +144,12 @@ remains available. Ordinary review and Solidify do not depend on reserve capacit
 Start freezes a session payload: admitted words and starting states, eligible
 content versions, teaching repertoires, answer criteria, and reveal/source facts.
 The player chooses dynamically within that payload as the learner answers,
-skips, changes modes, asks for More, or undoes an action. Composition does not
+skips, asks for More, or undoes an action. Teaching completion can move an
+Unstudied word to Solidify within the session; other automatic promotion applies
+at closure. Composition does not
 prescribe a fixed sequence. Publication, edits, retirement, content deactivation,
 and external skill/proxy changes affect subsequent sessions. Account and private
-content access checks remain live. A reset to Unstudied still defers teaching.
+content access checks remain live.
 
 ### Exercise actions and coverage
 
@@ -251,9 +253,11 @@ Already queued words cannot be added again. Undo reverses the queue request.
 “I’m satisfied” ends that extra practice and returns to the session queue.
 Finish for now includes explicitly queued extra practice among the work to finish;
 Finish immediately can leave that extra practice unfinished while retaining coverage.
-Mode changes live in the session summary and Words panel. Resetting a word
-to Unstudied defers fresh teaching to a subsequent session; an explicit forward
-mode choice does not fabricate teaching completion.
+Mode changes are available in a successfully closed session summary and the
+Words panel, affecting future sessions. Active sessions and pending or failed
+completion summaries keep their established modes and deterministic transitions.
+Resetting a word to Unstudied defers fresh teaching to a subsequent session; an
+explicit forward mode choice does not fabricate teaching completion.
 
 Model calls never block the live flow. Background generation is best effort;
 ready material and explicit continuation choices carry the session when it is
@@ -278,15 +282,16 @@ reverses the latest supported learner interaction, including its automatic
 companion actions, while retaining historical observations.
 Closing applies learner effects once and makes the completed session available
 for post-session processing. A failed close remains retryable without duplicate effects.
-Changing mode in a pending summary cancels that revision and stages a new boundary.
-Closed-session mode changes are new commands, not historical undo.
+Successful closure enables summary mode choices as new learner-state commands.
+They preserve the completed session evidence and effects. Pending or failed
+closure leaves those choices disabled, independently of the elapsed countdown.
 
 The summary distinguishes newly studied words, words leaving Solidify, other
 covered words, and words left for another session. Each word retains its
 pronunciation, meaning, learning-mode choice, and any exceptional outcome. Elapsed
 study time excludes time spent away from the active session. Successful closure
-returns the learner to Home unless they choose “Keep summary open” or perform a
-summary edit. Keeping the summary open does not extend the Undo deadline.
+returns the learner to Home unless they choose “Keep summary open”. Keeping the
+summary open does not extend the Undo deadline.
 Saving failures keep the summary available with an explicit retry.
 
 ## Reactions, feedback, content repair, and authority
