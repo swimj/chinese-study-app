@@ -23,13 +23,14 @@ export function assertSenseContentReconciliationGeneration(wordId: string, token
   if (row && row.completed_at === null && row.authority_json !== senseContentReconciliationAuthority(wordId)) throw new Error('Reconciliation authority changed; operator review required');
 }
 
-export type ReconciliationPracticeSource = {resolutionId:string;authority:string;source:GeneralExerciseSource;senses:Array<{source_use_id:string;sense_id:string;imported_sense_version:number}>};
+export type ReconciliationPracticeSource = {resolutionId:string;authority:string;replacementRequired:boolean;source:GeneralExerciseSource;senses:Array<{source_use_id:string;sense_id:string;imported_sense_version:number}>};
 export function reconciliationPracticeSource(wordId:string):ReconciliationPracticeSource|null {
-  const row=getDb().prepare("SELECT resolution_id,authority_json,practice_source_json,completed_at FROM sense_content_reconciliations WHERE word_id=? AND status='applied' ORDER BY rowid DESC LIMIT 1").get(wordId);
+  const row=getDb().prepare("SELECT resolution_id,authority_json,practice_source_json,applied_plan_json,completed_at FROM sense_content_reconciliations WHERE word_id=? AND status='applied' ORDER BY rowid DESC LIMIT 1").get(wordId);
   if(!row)return null;
   if(!row.practice_source_json)throw new Error('Applied reconciliation is missing its canonical practice snapshot');
   if(row.completed_at!==null&&row.authority_json!==senseContentReconciliationAuthority(wordId))return null;
-  return {resolutionId:String(row.resolution_id),authority:String(row.authority_json),...JSON.parse(String(row.practice_source_json))};
+  const plan = JSON.parse(String(row.applied_plan_json)) as SenseContentReconciliationPlan;
+  return {resolutionId:String(row.resolution_id),authority:String(row.authority_json),replacementRequired:plan.replacementPracticeRequired,...JSON.parse(String(row.practice_source_json))};
 }
 
 const empty: SenseContentReconciliationProgress = { status: 'not_required', teachingStatus: 'not_required', practiceStatus: 'not_required', errors: [] };

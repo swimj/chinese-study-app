@@ -127,7 +127,9 @@ The plan exposes a fingerprint, precise blockers, retained/retired content and
 source/package IDs, and required replacement stages. Apply requires the resolved
 version and unchanged dependency plan. The first handler preserves sense identities,
 changes only nonempty defaults over existing active senses, and replaces affected
-teaching and practice. Unsupported inventory changes remain blocked. Progress
+teaching. `replacementPracticeRequired` is false when every selected default sense
+has at least one mapped teaching use; otherwise it requires full selected-scope
+practice generation. Unsupported inventory changes remain blocked. Progress
 distinguishes `not_required`, `pending`, `ready`, and `failed`, including stage errors.
 Invalid input returns 400, unauthorized access 403, unknown words 404, and stale or
 blocked application/retry 409. Internal failures return 500 without exposing internals.

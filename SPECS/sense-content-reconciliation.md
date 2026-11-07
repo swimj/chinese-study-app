@@ -196,15 +196,21 @@ Mapping is retained as the operator's judgment; the handler replaces the legacy
 teaching unit rather than rewriting its immutable document or import mappings.
 
 Application retires the current source/package and affected introduction/binding
-dependencies, retains unrelated compatible general content, and requests replacement
-teaching and practice. Post-reconciliation repertoire authoring starts from the
-resolved selected canonical senses, without waiting for a replacement teaching
-source or package. Teaching and repertoire are independent replacement jobs under
-the same applied authority; either may finish first. Fresh serving of the affected
-word still waits until both are ready. The ordinary first-learning preparation path
-continues to author practice from its teaching source.
-This conservative replacement policy is specific to the first handler, not a generic
-requirement to regenerate every product surface after every policy edit.
+dependencies and requests replacement teaching. If every selected default sense
+has at least one mapped teaching use, the resolution validates carried-forward
+repertoire and skips repertoire bootstrap. This is a linguistic coverage rule;
+it does not count existing exercises or require each teaching use to map to a
+different sense. Valid general exercises retain historical source provenance while
+their current sense links follow the operator's resolution. Ambiguous translations
+of existing exercise links block application instead of guessing.
+
+If any selected sense lacks a mapped teaching use, repertoire authoring regenerates
+the entire selected set from the resolved canonical senses; it does not generate
+only the missing delta. It starts without waiting for replacement teaching. Both
+required replacements share the applied authority and may finish in either order.
+Fresh serving waits for all required replacements; when repertoire is carried
+forward, only teaching remains pending. The ordinary first-learning preparation
+path continues to author practice from its teaching source.
 
 Requested additions, sense revisions, merges, splits, retirements, or an empty
 selection can be recorded, but their application needs another handler. Pending

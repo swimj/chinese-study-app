@@ -628,3 +628,13 @@ controlled-provider reconciliation tests.
 real DOM scroll pane. Run regression checks center no-scroll, continued upper/lower
 edge scrolling, and cleanup on drop/cancellation using synthetic drag events.
 Native dragging and matching use the reconciliation testbed separately.
+
+### Reconciliation repertoire reuse
+
+`tests/sense-content-reconciliation.test.ts` covers complete teaching-use coverage
+skipping bootstrap, many uses mapping to one sense, unchanged defaults, retained
+exercise provenance, audited sense-link updates, and ambiguous/private remapping
+blockers. It checks teaching replacement completion and restarted preparation do
+not enqueue practice after a carry-forward decision. Missing selected-sense
+coverage exercises full canonical generation, existing publication fences/retry,
+and both completion orders. Already-applied plans retain their recorded policy.
