@@ -193,7 +193,7 @@ export function createVocabularyReflectionProvider(options:{environment?:NodeJS.
         :{kind:'exercise_improvement',result:{diagnosis,proposal:null}};
     }
     if(context?.canPublish&&!context.canPublish())throw new Error('Reflection lost publication authority');
-    const choice=vocabularyReflectionModelChoice(job.jobId,()=>routeIndividualReflectionModel(options.random));
+    const choice=vocabularyReflectionModelChoice(job.jobId,()=>routeIndividualReflectionModel(options.random,job.kind));
     if(!isOfferedReflectionModelChoice(choice))throw new Error(`Stored reflection model is no longer offered: ${choice}`);
     const config=reflectionConfigForChoice(choice);
     const adapter=adapterFor(choice);
