@@ -106,7 +106,7 @@ export function planVocabularyNewWords(options:{limit:number;seed:string;now:str
 /** New-model state is the only lifecycle predicate; source material and lexical deck identities can be shared. */
 export function composeVocabularyStudy(options:{
   teachingReady:(wordId:string)=>boolean; now?:string;
-  canUseSkill?: (wordId: string, skillId: VocabularyReviewSkill) => boolean;
+  isLearningContentUsable?: (wordId: string) => boolean;
   /** Review SQL has already established enablement and relevance; only content checks remain. */
   isReviewContentUsable?: (wordId: string, skillId: VocabularyReviewSkill) => boolean; timeZone?: string;
 }):VocabularyComposition {
@@ -123,8 +123,8 @@ export function composeVocabularyStudy(options:{
       AND ${vocabularySessionWordEligibleSql('w.word_id')}
       AND (s.next_eligible_at IS NULL OR s.next_eligible_at<=?)
     ORDER BY w.added_at,w.word_id`).all(learner,now) as {word_id:string}[]).map((row)=>row.word_id)
-    .filter((wordId)=>!options.canUseSkill||options.canUseSkill(wordId,'recognition')||options.canUseSkill(wordId,'production'));
-  const reviewCandidates=selectVocabularyReviewSkills({now,canUseSkill:options.isReviewContentUsable??options.canUseSkill});
+    .filter((wordId)=>!options.isLearningContentUsable||options.isLearningContentUsable(wordId));
+  const reviewCandidates=selectVocabularyReviewSkills({now,canUseSkill:options.isReviewContentUsable});
   const slots=allocateSessionBucketSlots({review:reviewCandidates.length,learning:learningWordIds.length,unstudied:newIds.length});
   const newWordIds=newIds.slice(0,slots.unstudied);
   const reviewSelections=reviewCandidates.slice(0,slots.review);

@@ -329,22 +329,14 @@ export function useVocabularyStudy(options: VocabularyStudyOptions = {}) {
     });
   });
   const changeSummaryMode = (wordId:string,mode:VocabularyWordMode) => exclusive(async()=>{
+    if(completionRef.current?.status!=='closed')throw new Error('Mode can be changed after successful session closure.');
     keepOpen();
     summaryModeEpoch.current++;
-    if(completionRef.current?.status==='closed') {
-      const row=(await fetchVocabularyWords()).words.find((entry)=>entry.wordId===wordId);
-      if(!row)throw new Error('This word is no longer available.');
-      if(row.mode!==mode)await setVocabularyWordMode(wordId,mode,row.stateVersion);
-      setSummaryModes((modes)=>({...modes,[wordId]:mode}));return;
-    }
-    await resumeBoundary(async()=>{
-      await commitHeldProduction();
-      if(studyRef.current?.session.projection.phase==='completed')await enqueue({type:'resume'});
-      await enqueue({type:'mode',wordId,mode});
-      await enqueue({type:'finishForNow'});
-      if(studyRef.current?.session.projection.phase==='finishing')await enqueue({type:'finishImmediately'});
-    });
-    await stage();
+    const row=(await fetchVocabularyWords()).words.find((entry)=>entry.wordId===wordId);
+    if(!row)throw new Error('This word is no longer available.');
+    // Choosing Solidify again also records the explicit pause on graduation.
+    await setVocabularyWordMode(wordId,mode,row.stateVersion);
+    setSummaryModes((modes)=>({...modes,[wordId]:mode}));
   });
   function submitReaction(reaction: VocabularyReactionKind, note?: string) {
     if (queue.current!.error) return;

@@ -209,7 +209,7 @@ export function VocabularyStudy({ controller, hideStartButton = false, character
           detail: c.dismissedWordIds.includes(entry.wordId) ? 'Dismissed from study.' : outcome.teachingCompleted ? '' : outcome.covered ? outcome.successfulRecall ? '' : 'Work covered; this does not claim successful recall.' : 'Unfinished; remains due for another session.',
           canPractise: completionUndoOpen,
           mode:c.summaryModes[entry.wordId]??outcome.recommendedMode??outcome.mode, modeLabel:modeChoices.find((choice)=>choice.value===(c.summaryModes[entry.wordId]??outcome.recommendedMode??outcome.mode))?.label,
-          modeChoices:modeChoices.map((choice)=>({...choice,enabled:canAct&&Boolean(c.completion&&(c.completion.status==='closed'||completionUndoOpen))})),
+          modeChoices:modeChoices.map((choice)=>({...choice,enabled:canAct&&c.completion?.status==='closed'})),
           canDismiss: !outcome.covered && !c.dismissedWordIds.includes(entry.wordId) && Boolean(c.completion),
         };
       }),

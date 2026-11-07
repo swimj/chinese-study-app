@@ -333,6 +333,9 @@ recognition fallback, and live HTTP routes that do not wake workers. Its SQL
 assertions guard against full context/history reads and live content discovery.
 The optional scaling experiment is documented in
 [vocabulary runtime](vocabulary-learning.md#retained-session-payload-and-hot-path-work).
+The [composition comparison](evaluation/trials/2026-11-07-session-composition.md)
+records reserve, review, cue and payload work counts, lifecycle coverage, and
+the summary-mode browser checks.
 
 `vocabulary-session-incremental.test.ts` compares ordinary incremental updates
 with full replay through teaching, reactions, pure cues, mode changes and Undo.
@@ -644,3 +647,22 @@ blockers. It checks teaching replacement completion and restarted preparation do
 not enqueue practice after a carry-forward decision. Missing selected-sense
 coverage exercises full canonical generation, existing publication fences/retry,
 and both completion orders. Already-applied plans retain their recorded policy.
+
+
+### Session composition repertoire boundary
+
+`tests/vocabulary-study.test.ts` verifies reachable pools, teaching-to-Solidify
+More, fixed active modes, legacy mode replay/retries, and future-state edits after
+closure. `RUN_PAYLOAD_BENCHMARK=1 node --import tsx --test --test-name-pattern='measure reachable payload' tests/vocabulary-study.test.ts`
+reports serialized payload bytes and SQL query preparations for the same small
+synthetic repertoire in each starting mode. Baselines are materialized before
+measurement; wall-clock samples exclude HTTP and hosted contention.
+
+`/tests/browser/vocabulary-summary-mode.html` runs the real study controller and
+surface with simulated completion transport. Keep the summary open, verify mode
+choices are disabled while pending, then choose a future mode after closure.
+`?fail=1` fails close; select Allow close and use Retry to recover. `?narrow=1`
+uses a 420px panel and enlarged text. The evidence counter records session mode
+commands, completion cancellations, and future-state writes; ordinary summary
+mode changes should issue only the latter after closure. Backend tests separately
+establish persistence and command rejection.

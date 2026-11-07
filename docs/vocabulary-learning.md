@@ -62,10 +62,13 @@ single frontend transition so an automatic staging effect cannot race them.
 ## Retained session payload and hot-path work
 
 The immutable `vocabulary_sessions.context_json` includes the versioned payload:
-lexical facts, all mode-dependent exercise pools for admitted words, teaching and
-priming material, selected pure cues, and complete encounter templates with
-answer and reveal facts. The player selects dynamically within those pools as
-the learner answers, skips, changes modes, requests More or undoes an action.
+lexical facts, reachable exercise pools for admitted words, selected pure cues,
+and complete encounter templates with answer and reveal facts. Unstudied words
+retain teaching plus Solidify general material for More after teaching completion.
+Solidify retains its priming introduction and general pool; Practice and Maintain
+retain their own general pools. Automatic graduation applies at closure. The
+player selects dynamically within those pools as the learner answers, skips,
+requests More or undoes an action.
 Teaching recognition rotates examples within its retained source. Publication,
 edits, retirement, deactivation and external skill or proxy changes affect
 subsequent sessions; admission to a new session does not guarantee an exercise
@@ -175,7 +178,7 @@ scheduler records. Mode changes preserve schedules. Recognition and contextual
 selection retain their independent skill scheduling. Pure cues retain independent
 learner schedules. Learner reactions do not implicitly deactivate an exercise.
 
-Session composition reads existing learner-owned production skill enablement and
+Practice/Maintain composition reads existing learner-owned production skill enablement and
 relevance records. At composition, production relevance `suppressed` excludes
 individual-word production, including authored exercises, despite the legacy command name
 `suppress_definition_production`. This is the intended skill-level meaning in
@@ -185,15 +188,14 @@ member; other suppressed members remain accepted answers. Recognition and contra
 use their own eligibility. The initial vocabulary UI and operator proposals do
 not expose suppression or its reversal.
 
-Solidify freezes its enabled recognition/production directions in `solidifySkills`
-when the session starts. Daily coverage requires that subset. For familiar priming,
-the warmup uses retained introduction material in a
-[separate reveal sequence](implementation/vocabulary-ui.md#introduction-and-warmup),
-rather than replaying the teaching walkthrough. A single enabled direction can
-cover the day but cannot qualify for automatic graduation; both disabled excludes
-the word from admission. A later skill-setting change affects subsequent sessions, not the
-active session's frozen directions or coverage requirements; see the
-[retained payload](#retained-session-payload-and-hot-path-work).
+New teaching and Solidify use fixed recognition and production directions, regardless
+of review skill enablement or relevance. Solidify freezes both in `solidifySkills`
+at session start; daily coverage and automatic graduation require both directions.
+Content validity, reconciliation, and availability checks still apply. Familiar
+priming uses retained introduction material in a
+[separate reveal sequence](implementation/vocabulary-ui.md#introduction-and-warmup).
+Previously retained sessions keep their recorded skill subset and coverage rules;
+see the [retained payload](#retained-session-payload-and-hot-path-work).
 
 Initial policies are deliberately simple: ordinary Solidify covering is daily,
 Practice uses spacing and shortens after a lapse, Maintain receives temporary
@@ -206,9 +208,9 @@ session does not add another qualifying session. Uncovered work remains eligible
 
 An explicit Solidify choice, including choosing the current mode, persists
 `learner_words.automatic_promotion_paused`. That word stays in Solidify until the
-learner manually changes mode. Choosing another mode clears the pause. Session
-choices take effect at finalization and follow ordinary Undo/cancellation; direct
-word-panel choices apply immediately. The pause is frozen into session context,
+learner manually changes mode. Choosing another mode clears the pause. Closed
+summary and word-panel choices apply immediately to future sessions. The pause
+is frozen into session context,
 and a newer external choice takes precedence when an older session closes.
 Automatic Maintain is disabled. Refresh gives a bounded three-day priority window.
 These are versioned policy choices, not claims of measured mastery.
@@ -316,13 +318,16 @@ until the learner ends it with “I’m satisfied” or leaves it. Finish for no
 for that explicitly queued work, including requests made while finishing;
 Finish immediately can end the session before extra practice is finished.
 
-Extra practice retains prior coverage and rejoins the ordinary queue when finished. Summary
-mode edits cancel and restage pending completion; closed-session edits are new
-learner commands. Unstudied defers fresh teaching to the next session.
+Extra practice retains prior coverage and rejoins the ordinary queue when finished.
+Summary mode choices require successful closure and issue learner-state commands
+for future sessions. The API rejects new session mode commands while retaining
+historical mode actions for replay and acknowledged retries. Old payloads remain
+usable; new payloads keep the same versioned shape with empty unreachable pools.
+Unstudied defers fresh teaching to the next session.
 
 The controller closes the pending revision at its 15-second deadline and
-returns to Home after successful closure. “Keep summary open” and summary edits
-retain the report while finalization proceeds. Cancellation and Undo operate
+returns to Home after successful closure. “Keep summary open” retains the report
+while finalization proceeds and makes post-closure choices available. Cancellation and Undo operate
 only within the pending window; keeping the report open does not extend it.
 Save failures preserve the report and expose retry. The controller records
 active study duration across visibility and focus changes, freezing that value

@@ -49,6 +49,10 @@ visits. Mutation requests and bounded periodic audits recover after restart or
 publication. Session composition only resolves current usable material for ready
 reserve candidates; discrepancies produce bounded diagnostics, not foreground
 repair. The resolved teaching is carried into the frozen session payload.
+The payload covers modes reachable through deterministic session transitions.
+Discretionary mode commands affect future sessions; successfully closed summaries
+can issue them without rewriting completed evidence. Historical session mode
+actions remain replayable.
 
 ## Content identity, ownership, and revision
 
