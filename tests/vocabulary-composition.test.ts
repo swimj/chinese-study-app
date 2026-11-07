@@ -333,3 +333,29 @@ test('review SQL owns basic flags and keeps content eligibility separate from So
   assert.deepEqual(new Set(checked),new Set(['default-flags/production','suppressed/recognition']));
   assert.deepEqual(solidify,['solidify/recognition','solidify/production']);
 }));
+
+test('sparse due review skips content checks for the future population',async(t)=>owner(()=>{
+  const checked:string[]=[];
+  for(let index=0;index<1000;index++) {
+    const id=`sparse-${String(index).padStart(4,'0')}`;
+    reviewWord(id,index<3?48:12);skill(id,'contextual_selection',index<3?48:12);
+  }
+  const started=performance.now();
+  const plan=composeVocabularyStudy({now,manifest:null,teachingReady:()=>false,requestTeaching:()=>{},
+    isReviewContentUsable:(id,kind)=>{checked.push(`${id}/${kind}`);return true;}});
+  t.diagnostic(`Sparse review: ${checked.length} content checks for 2000 scheduled objectives; ${ (performance.now()-started).toFixed(2)} ms composition`);
+  assert.deepEqual(plan.reviewSelections.map(row=>row.wordId),['sparse-0000','sparse-0001','sparse-0002']);
+  assert.equal(checked.length,6); // Baseline: 2000 callbacks over the same fixture.
+}));
+
+test('due filtering preserves null dates, no-recall urgency, boundaries and content rejection',()=>owner(()=>{
+  for(const id of ['boundary','future-no-recall','null-due','no-recall','young-null','content-rejected'])reviewWord(id,id==='young-null'?12:24);
+  db.prepare("UPDATE learner_word_schedules SET next_eligible_at=NULL WHERE word_id IN ('null-due','young-null','no-recall')").run();
+  db.prepare("UPDATE learner_word_schedules SET last_practised_at=NULL WHERE word_id IN ('future-no-recall','no-recall')").run();
+  db.prepare("UPDATE learner_word_schedules SET next_eligible_at='2026-10-17T10:00:00.001Z' WHERE word_id='future-no-recall'").run();
+  const checked:string[]=[];
+  const plan=composeVocabularyStudy({now,manifest:null,teachingReady:()=>false,requestTeaching:()=>{},
+    isReviewContentUsable:(id)=>{checked.push(id);return id!=='content-rejected';}});
+  assert.deepEqual(plan.reviewSelections.map(row=>row.wordId),['no-recall','boundary','null-due']);
+  assert.deepEqual(new Set(checked),new Set(['boundary','null-due','no-recall','content-rejected']));
+}));

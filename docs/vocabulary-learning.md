@@ -235,7 +235,10 @@ their coverage never becomes word credit.
 Composition retains the shared 1,000-item cap and 50/30/20 review/learning/new
 bucket weights, mapped to Practice/Maintain, Solidify, and Unstudied. Unused bucket
 capacity is redistributed. Review selects the most urgent eligible skill for each
-word and updates only the exercised skill at closure. Completed review assessment
+word and updates only the exercised skill at closure. Its schedule query establishes
+skill enablement and relevance, and due filtering precedes content-dependent
+eligibility checks. Solidify checks its recall directions independently.
+Completed review assessment
 also applies the shared six-hour word recency guard, preventing another due skill
 from immediately bringing that word back. Production lapses shorten its interval
 to six hours; Maintain retains its temporary-refresh policy.

@@ -44,10 +44,10 @@ export function selectVocabularyReviewSkills(options: {
   `).all(learnerId, learnerId, learnerId, options.now) as ScheduleRow[];
   const best = new Map<string, Candidate>();
   for (const row of rows) {
-    if (options.canUseSkill ? !options.canUseSkill(row.word_id, row.skill_id) : row.skill_id === 'contextual_selection') continue;
     // A newly enabled objective has no recall evidence and is immediately eligible.
     const urgency = reviewUrgency(row.interval_hours, row.last_studied_at || null, options.now);
     if (urgency < 1 || (row.next_due_at !== null && row.next_due_at > options.now)) continue;
+    if (options.canUseSkill ? !options.canUseSkill(row.word_id, row.skill_id) : row.skill_id === 'contextual_selection') continue;
     if (row.skill_id === 'production' && !canServeVocabularyReviewProduction(row.word_id, row.mode)) continue;
     const candidate: Candidate = { wordId: row.word_id, skillId: row.skill_id, urgency, nextDueAt: row.next_due_at };
     const previous = best.get(candidate.wordId);
