@@ -21,14 +21,18 @@ beforeEach(()=>{fs.copyFileSync(baseline,path.join(root,'current.db'));db=new Da
   db.exec("INSERT INTO lexical_words(id,hanzi,traditional,pinyin,meaning,meanings_json,examples_json,priority,created_at) VALUES ('word','函',NULL,'hán','letter; case','[\"letter\",\"case\"]','[]',1,'2026-10-29')");});
 afterEach(()=>{setDb(null);db.close();});
 function inventory(){for(const [id,label] of [['letter','formal correspondence'],['case','literary case']] as const)createVocabularySense({senseId:id,wordId:'word',description:{label,notes:[]} },actor);establishVocabularySenseCatalog('word',getVocabularySenseCatalog('word').version,actor);}
-function imported(){const now=new Date().toISOString();claimSharedWordIntroductionStage('word','bootstrap','claim',now,new Date(Date.now()+300_000).toISOString());finishSharedWordIntroductionBootstrap('word','claim',{schemaVersion:1,id:'document',word:{wordId:'word',hanzi:'函',traditional:null,pinyin:'hán'},uses:[{id:'u1',label:'formal correspondence',notes:[],exampleIds:['e1']}],examples:[{id:'e1',text:'来函',translation:'A letter received',pronunciation:null}]},'fixture');}
-test('imported active teaching senses deterministically initialize defaults without a model',async()=>{
-  imported();const senses=getVocabularySenses('word');assert.equal(defaultUsefulInitializationPlan('word').kind,'imported');
-  const result=await ensureVocabularyDefaultUsefulSelection('word',{workflowId:'legacy',provider:{isConfigured:()=>true,select:async()=>assert.fail('Imported senses must not call selector')}});
-  assert.deepEqual(result.defaultUsefulSenseIds,senses.filter(sense=>sense.status==='active').map(sense=>sense.senseId));
-  assert.equal(db.prepare('SELECT count(*) n FROM vocabulary_default_selection_readiness').get()!.n,0);
-  const history=db.prepare("SELECT snapshot_json FROM vocabulary_sense_coverage_history WHERE subject_id='word'").get()!;
-  assert.equal(JSON.parse(String(history.snapshot_json)).reason.source,'imported_teaching');
+function imported(){const now=new Date().toISOString();claimSharedWordIntroductionStage('word','bootstrap','claim',now,new Date(Date.now()+300_000).toISOString());finishSharedWordIntroductionBootstrap('word','claim',{schemaVersion:1,id:'document',word:{wordId:'word',hanzi:'函',traditional:null,pinyin:'hán'},uses:[{id:'u1',label:'formal correspondence',notes:[],exampleIds:['e1']},{id:'u2',label:'literary case',notes:[],exampleIds:['e1']}],examples:[{id:'e1',text:'来函',translation:'A letter received',pronunciation:null}]},'fixture');}
+test('imported teaching senses use the selector and can exclude a teaching use',async()=>{
+  imported();const senses=getVocabularySenses('word');assert.equal(defaultUsefulInitializationPlan('word').kind,'selector');
+  const selected=senses.find(sense=>(sense.description as {label:string}).label==='formal correspondence')!.senseId;
+  const imports=db.prepare('SELECT * FROM legacy_sense_imports ORDER BY source_use_id').all();let calls=0;
+  const provider={isConfigured:()=>true,async select(input:{senses:typeof senses}){calls++;assert.deepEqual(input.senses,senses);return {senseIds:[selected]};}};
+  const result=await ensureVocabularyDefaultUsefulSelection('word',{workflowId:'legacy',provider});
+  assert.deepEqual(result.defaultUsefulSenseIds,[selected]);assert.equal(calls,1);
+  assert.equal(db.prepare('SELECT status FROM vocabulary_default_selection_readiness').get()!.status,'ready');
+  assert.deepEqual(getVocabularySenses('word'),senses);
+  assert.deepEqual(db.prepare('SELECT * FROM legacy_sense_imports ORDER BY source_use_id').all(),imports);
+  await ensureVocabularyDefaultUsefulSelection('word',{workflowId:'repeat',provider});assert.equal(calls,1);
 });
 test('selector uses existing IDs without editing inventory and reuses established policy',async()=>{
   inventory();const before=getVocabularySenses('word');let calls=0;
@@ -63,11 +67,15 @@ test('publication maintenance defers selector without losing inventory or perman
   assert.equal(getVocabularyWordSenseCoverage('word').defaultUsefulSenseIds,null);assert.equal(getVocabularySenses('word').length,2);
   assert.equal(db.prepare('SELECT status,attempt_count FROM vocabulary_default_selection_readiness').get()!.status,'queued');
 });
-test('cutover dry-run is read-only; imported application is bounded and repeatable',async()=>{
-  imported();const changes=db.prepare('SELECT total_changes() n').get()!.n;
-  const dry=await initializeDefaultUsefulBatch({apply:false,limit:1});assert.equal(dry.items[0]!.kind,'imported');assert.equal(db.prepare('SELECT total_changes() n').get()!.n,changes);
-  const applied=await initializeDefaultUsefulBatch({apply:true,limit:1});assert.equal(applied.items[0]!.outcome,'initialized');
-  const version=getVocabularyWordSenseCoverage('word').version;const repeat=await initializeDefaultUsefulBatch({apply:true,limit:1});assert.equal(repeat.items[0]!.kind,'known');assert.equal(getVocabularyWordSenseCoverage('word').version,version);
+test('imported batch selection requires model opt-in and remains bounded and repeatable',async()=>{
+  imported();const changes=db.prepare('SELECT total_changes() n').get()!.n;let calls=0;
+  const provider={isConfigured:()=>true,async select(){calls++;return {senseIds:[getVocabularySenses('word')[0]!.senseId]};}};
+  const dry=await initializeDefaultUsefulBatch({apply:false,limit:1,provider});assert.equal(dry.items[0]!.kind,'selector');
+  const skipped=await initializeDefaultUsefulBatch({apply:true,limit:1,provider});assert.equal(skipped.items[0]!.outcome,'skipped');
+  assert.equal(db.prepare('SELECT total_changes() n').get()!.n,changes);assert.equal(calls,0);
+  const applied=await initializeDefaultUsefulBatch({apply:true,includeModelSelection:true,limit:1,provider});assert.equal(applied.items[0]!.outcome,'initialized');assert.equal(calls,1);
+  const version=getVocabularyWordSenseCoverage('word').version;
+  const repeat=await initializeDefaultUsefulBatch({apply:true,includeModelSelection:true,limit:1,provider});assert.equal(repeat.items[0]!.kind,'known');assert.equal(calls,1);assert.equal(getVocabularyWordSenseCoverage('word').version,version);
 });
 
 test('an explicit operator none decision is preserved while a fresh inventory recommendation is audited',async()=>{
@@ -78,13 +86,23 @@ test('an explicit operator none decision is preserved while a fresh inventory re
   assert.equal(JSON.parse(String(event.data_json)).applied,false);assert.equal(JSON.parse(String(event.data_json)).senseIds.length,1);
 });
 
-test('stale canonical import links raise attention without invoking selection or changing defaults',async()=>{
-  imported();const sense=getVocabularySenses('word')[0]!;
-  const {updateVocabularySense}=await import('../server/db/vocabulary-content.ts');
-  updateVocabularySense(sense.senseId,sense.version,{description:sense.description,status:'active'},actor);
-  assert.equal(defaultUsefulInitializationPlan('word').kind,'attention');
-  await assert.rejects(ensureVocabularyDefaultUsefulSelection('word',{workflowId:'stale',provider:{isConfigured:()=>true,select:async()=>assert.fail('Stale source must be reviewed')}}),/mappings are missing or stale/);
-  assert.equal(getVocabularyWordSenseCoverage('word').defaultUsefulSenseIds,null);
+for(const discrepancy of ['stale','missing'])test(`${discrepancy} teaching import links do not block canonical default selection`,async()=>{
+  imported();let sense=getVocabularySenses('word')[0]!;
+  if(discrepancy==='stale'){
+    const {updateVocabularySense}=await import('../server/db/vocabulary-content.ts');
+    updateVocabularySense(sense.senseId,sense.version,{description:sense.description,status:'active'},actor);
+  }else sense=createVocabularySense({wordId:'word',description:{label:'unmapped canonical sense',source:{contentId:'document',useId:'unmapped'}}},actor);
+  assert.equal(defaultUsefulInitializationPlan('word').kind,'selector');
+  let calls=0;
+  const result=await ensureVocabularyDefaultUsefulSelection('word',{workflowId:discrepancy,provider:{isConfigured:()=>true,async select(){calls++;return {senseIds:[sense.senseId]};}}});
+  assert.equal(calls,1);assert.deepEqual(result.defaultUsefulSenseIds,[sense.senseId]);
+});
+for(const selected of [[],['existing']])test(`existing imported default policy is not reselected (${selected.length})`,async()=>{
+  imported();const ids=selected.length?[getVocabularySenses('word')[0]!.senseId]:[];
+  writeVocabularyDefaultUsefulSenses('word',0,ids,actor);
+  const before=getVocabularyWordSenseCoverage('word');
+  const result=await ensureVocabularyDefaultUsefulSelection('word',{workflowId:'existing',provider:{isConfigured:()=>true,select:async()=>assert.fail('Existing defaults must be preserved')}});
+  assert.deepEqual(result,before);
 });
 test('an unestablished partial inventory cannot be assigned defaults implicitly',async()=>{
   createVocabularySense({senseId:'partial',wordId:'word',description:'A partial sense'},actor);

@@ -35,17 +35,13 @@ export function createUsefulSelectionProvider(options:{environment?:NodeJS.Proce
   }};
 }
 function atomic<T>(work:()=>T):T {const db=getDb(),point=`selection_${randomUUID().replaceAll('-','')}`;db.exec(`SAVEPOINT ${point}`);try{const result=work();db.exec(`RELEASE ${point}`);return result;}catch(error){db.exec(`ROLLBACK TO ${point}; RELEASE ${point}`);throw error;}}
-/** Pure census: imported teaching senses already embody an editorial decision. */
-export function defaultUsefulInitializationPlan(wordId:string):{kind:'known'|'empty'|'imported'|'selector'|'attention';senseIds:string[];reason?:string} {
+/** Inventory provenance does not establish which senses are useful by default. */
+export function defaultUsefulInitializationPlan(wordId:string):{kind:'known'|'empty'|'selector'|'attention';senseIds:string[];reason?:string} {
   const coverage=getVocabularyWordSenseCoverage(wordId);if(coverage.defaultUsefulSenseIds!==null)return {kind:'known',senseIds:coverage.defaultUsefulSenseIds};
   if(getVocabularySenseCatalog(wordId).establishedAt===null)return {kind:'attention',senseIds:[],reason:'Canonical inventory is not established; operator inventory review is required.'};
   const senses=getVocabularySenses(wordId).filter(sense=>sense.status==='active');
   if(!senses.length)return {kind:'empty',senseIds:[]};
-  let brokenImport=false;
-  const importFlags=senses.map(sense=>{const description=sense.description;if(!description||typeof description!=='object'||Array.isArray(description))return false;const source=description.source;if(!source||typeof source!=='object'||Array.isArray(source)||typeof source.contentId!=='string'||typeof source.useId!=='string')return false;
-    const valid=Boolean(getDb().prepare('SELECT 1 FROM legacy_sense_imports WHERE source_content_id=? AND source_use_id=? AND sense_id=? AND imported_sense_version=?').get(source.contentId,source.useId,sense.senseId,sense.version));if(!valid)brokenImport=true;return valid;});
-  if(brokenImport)return {kind:'attention',senseIds:[],reason:'Imported teaching sense mappings are missing or stale; operator source review is required.'};
-  return {kind:importFlags.every(Boolean)?'imported':'selector',senseIds:senses.map(sense=>sense.senseId).sort()};
+  return {kind:'selector',senseIds:senses.map(sense=>sense.senseId).sort()};
 }
 export function recordEmptyUsefulRecommendation(wordId:string,workflowId:string,invocationId:string|null|undefined,source:'inventory'|'selector'):void {
   const at=new Date().toISOString();
@@ -63,7 +59,6 @@ export async function ensureVocabularyDefaultUsefulSelection(wordId:string,optio
     writeVocabularyDefaultUsefulSenses(wordId,current.version,[],{...actor,reason:{workflowId:options.workflowId,source:'empty_inventory'}});
     resolveDefaultUsefulSelectionAttention(wordId);return getVocabularyWordSenseCoverage(wordId);
   });
-  if(plan.kind==='imported')return atomic(()=>{const current=getVocabularyWordSenseCoverage(wordId);if(current.defaultUsefulSenseIds!==null)return current;const fresh=defaultUsefulInitializationPlan(wordId);if(fresh.kind!=='imported')throw new VocabularySenseReadinessPending(new Date(Date.parse(now())+30_000).toISOString());writeVocabularyDefaultUsefulSenses(wordId,current.version,fresh.senseIds,{...actor,reason:{workflowId:options.workflowId,source:'imported_teaching'}});return getVocabularyWordSenseCoverage(wordId);});
   const db=getDb(),catalog=getVocabularySenseCatalog(wordId),senses=getVocabularySenses(wordId).filter(sense=>sense.status==='active'),word=getSharedIntroductionLexicalWord(wordId);
   if(!word||catalog.establishedAt===null)throw new VocabularySenseSelectionRequired('Canonical inventory must be established before useful selection.');
   const failed=db.prepare("SELECT last_error FROM vocabulary_default_selection_readiness WHERE word_id=? AND status='failed'").get(wordId) as {last_error:string|null}|undefined;

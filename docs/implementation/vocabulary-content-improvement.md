@@ -517,10 +517,11 @@ finding retains the inventory, stores its recommendation/invocation and leaves
 usefulness unknown for operator review. Mapping can still improve a single use.
 
 `ensureVocabularyDefaultUsefulSelection` conditionally initializes unknown defaults.
-It selects active teaching-imported identities deterministically when their exact
-source links are valid. Inventory-only words use `default-useful-selection.md`, an
-adaptation of the inventory brief's full editorial reasoning that only returns
-existing sense IDs. The selector cannot rewrite labels, notes, sense versions or
+Every established nonempty inventory uses `default-useful-selection.md`, including
+teaching-imported senses. The prompt adapts the inventory brief's full editorial
+reasoning and only returns existing sense IDs. Teaching source mappings remain
+preparation prerequisites; their absence or staleness does not block default
+selection over an established canonical inventory. The selector cannot rewrite labels, notes, sense versions or
 inventory membership. An operator's concurrent selection wins; the recommendation
 remains auditable. Explicit `[]` is preserved and suppresses unknown-selection findings.
 
@@ -567,7 +568,7 @@ Operator workspace and review-batch metadata include a read-only
 It carries the reason, recommended IDs and invocation ID, and disappears whenever
 an explicit word policy is saved. This finding never blocks single-sense content
 approval. [The initialization procedure](../ops/default-useful-selection.md) describes
-bounded dry runs, deterministic imports and optional model-backed batches.
+bounded dry runs and explicitly enabled model-backed batches.
 
 Reveal snapshots prefer explicit source-use links in the selected document,
 allowing reflection-first canonical senses to obtain later teaching examples

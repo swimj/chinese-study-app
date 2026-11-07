@@ -181,10 +181,12 @@ Three separate records answer different questions:
   will address. Later changes to defaults do not retarget that call or invalidate
   its result. Source, mapping and canonical-version changes still fence publication.
 
-Unknown defaults initialize asynchronously when needed. Active senses imported
-from teaching establish their useful selection deterministically. Inventory-only
-words receive a selector decision over existing sense IDs; it cannot create or
-rewrite senses. An established empty inventory resolves unknown defaults to `[]`
+Unknown defaults initialize asynchronously when needed. Every established nonempty
+inventory receives a selector decision over existing sense IDs, including senses
+imported from teaching. Teaching provenance does not establish default usefulness,
+and missing or stale teaching links do not block selection over canonical senses.
+The selector cannot create or rewrite senses. Existing default selections are
+preserved. An established empty inventory resolves unknown defaults to `[]`
 without a selector call. A nonempty inventory whose model recommendation selects
 no useful senses preserves the inventory and leaves defaults unknown with an
 operator finding. That recommendation does not become an operator's explicit none
