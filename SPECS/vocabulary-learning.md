@@ -126,6 +126,21 @@ identities and learner progress. General practice becomes eligible for preparati
 when teaching completion commits at session closure. Newly ready material can
 enter a subsequent session, including on the same day.
 
+New-word admission consumes a background-maintained reserve. Stash and diet
+planning choose reserve membership; readiness is a best-effort hint rather than a
+content-version guarantee. Moving a word to top admits it immediately, including
+when automatic daily intake is zero. The reserve holds at most 40 words; newest
+top choices displace fallback members, then the oldest top choices. Existing
+content, jobs and failure evidence survive eviction.
+
+Preview and Start greedily take usable ready top members, then other ready
+reserve members, within remaining daily quota and session capacity. Fewer or zero
+new words is acceptable. Neither path plans, repairs, queues or wakes preparation.
+Current usable teaching is resolved at composition, preferring the latest
+published update while preserving coherent exercise bindings, and then frozen.
+A stale hint is skipped and recorded for operator investigation; other ready work
+remains available. Ordinary review and Solidify do not depend on reserve capacity.
+
 Start freezes a session payload: admitted words and starting states, eligible
 content versions, teaching repertoires, answer criteria, and reveal/source facts.
 The player chooses dynamically within that payload as the learner answers,

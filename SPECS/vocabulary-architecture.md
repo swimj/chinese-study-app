@@ -42,6 +42,14 @@ provider dispatch have separate control boundaries so pausing model work does
 not prevent durable closure. Background authoring and repair use retained work
 and bounded retries rather than unbounded speculative generation.
 
+The teaching reserve owns new-word preparation demand. Durable membership stores
+readiness hints, not preparation versions. Background maintenance handles source
+planning, compatibility, blocked work and readiness independently of session
+visits. Mutation requests and bounded periodic audits recover after restart or
+publication. Session composition only resolves current usable material for ready
+reserve candidates; discrepancies produce bounded diagnostics, not foreground
+repair. The resolved teaching is carried into the frozen session payload.
+
 ## Content identity, ownership, and revision
 
 Current content and immutable full revision history preserve identity separately

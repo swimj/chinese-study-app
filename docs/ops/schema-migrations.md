@@ -626,3 +626,20 @@ Check a stale case version is rejected. Run the migration runner's normal
 integrity/FK checks. Deferral is an operator attention classification, not case
 resolution or content publication; deployment still requires the schema-upgrade
 route and separately authorized cutover.
+
+## Background teaching reserve
+
+`0070_background_teaching_reserve` adds nullable `ready_at` and `checked_at` hints
+and a check-time index to existing reserve membership. Existing hints start NULL;
+only existing reserve owners receive reconciliation requests. Priority triggers
+admit eligible top words immediately and enforce the 40-member cap. The migration
+performs no table rebuild and deletes no content, preparation jobs, attempts or
+session history. Later membership eviction likewise preserves those records.
+
+Use the stopped-writer schema release procedure above, not an app-only upgrade.
+On a restored copy, retain membership and preparation-work snapshots, apply the
+migration and verify unchanged membership/work, NULL hints, requests for existing
+owners only, and the migration runner's integrity/FK checks. The populated
+upgrade regression is in `tests/schema-migrations.test.ts`; runtime recovery and
+bounded top admission are covered by `tests/vocabulary-preparation-reserve.test.ts`.
+These local fixtures do not replace a separately authorized hosted rehearsal.

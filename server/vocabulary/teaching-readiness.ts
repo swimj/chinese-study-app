@@ -5,7 +5,7 @@ import type { VocabularyContent } from '../../src/domain/vocabulary-content.ts';
 import { getDb } from '../db/connection.ts';
 import { requireLearnerId } from '../db/learner-context.ts';
 import { getVocabularyContent, getVocabularyTeachingExercises } from '../db/vocabulary-content.ts';
-import { canEnsureVocabularySensesFromBootstrap } from './sense-readiness.ts';
+import { canEnsureVocabularySensesFromBootstrap, VocabularySenseReadinessError } from './sense-readiness.ts';
 import { getDictionaryBaseline } from './dictionary-baseline.ts';
 
 export function skillEnabled(wordId:string,skill:'recognition'|'production'|'contextual_selection'):boolean {
@@ -23,21 +23,27 @@ export function eligible(content:VocabularyContent):boolean {
     &&!getDb().prepare('SELECT 1 FROM learner_content_deactivations WHERE learner_id=? AND content_id=?').get(requireLearnerId(),content.contentId)
 ;
 }
-export function introductions(wordId:string):VocabularyContent[] {
+export function introductions(wordId:string,newest=false):VocabularyContent[] {
   return (getDb().prepare(`SELECT c.content_id FROM content_items c JOIN content_words w USING(content_id)
-    WHERE w.word_id=? AND w.relation='target' AND c.kind='introduction' ORDER BY c.created_at,c.content_id`).all(wordId) as {content_id:string}[])
+    WHERE w.word_id=? AND w.relation='target' AND c.kind='introduction' ORDER BY ${newest?'c.updated_at DESC,c.content_id DESC':'c.created_at,c.content_id'}`).all(wordId) as {content_id:string}[])
     .map((row)=>getVocabularyContent(row.content_id)).filter((content):content is VocabularyContent=>content!==null&&eligible(content));
 }
-export function compatibleIntroductions(wordId:string):VocabularyContent[] {
-  return introductions(wordId).filter(content=>isCompatibleVocabularyIntroduction(wordId,content.body));
+export function compatibleIntroductions(wordId:string,newest=false):VocabularyContent[] {
+  return introductions(wordId,newest).filter(content=>isCompatibleVocabularyIntroduction(wordId,content.body));
 }
-export function teachingReady(wordId:string):boolean {
-  if(isSenseContentReconciliationPending(wordId)||!isVocabularySessionWordEligible(wordId)||!skillEnabled(wordId,'recognition')||suppressed(wordId))return false;
+export type ResolvedVocabularyTeaching = {intro:VocabularyContent;exercises:VocabularyContent[]};
+/** Resolve current coherent material only; compatibility refresh and generation belong to maintenance. */
+export function resolveVocabularyTeaching(wordId:string):ResolvedVocabularyTeaching|null {
+  if(!isVocabularySessionWordEligible(wordId)||isSenseContentReconciliationPending(wordId)
+    ||!skillEnabled(wordId,'recognition')||suppressed(wordId))return null;
+  try {if(!canEnsureVocabularySensesFromBootstrap(wordId))return null;}
+  catch(error){if(error instanceof VocabularySenseReadinessError)return null;throw error;}
   const baselineRecognition=getDictionaryBaseline(wordId,'recognition','teaching');
-  const contentReady=compatibleIntroductions(wordId).some((intro)=>{
+  for(const intro of compatibleIntroductions(wordId,true)) {
     const exercises=getVocabularyTeachingExercises(intro.contentId).filter((entry)=>eligible(entry)&&entry.kind==='exercise'&&skillEnabled(wordId,entry.skill));
-    return exercises.some((entry)=>entry.kind==='exercise'&&entry.skill==='production')
-      &&(exercises.some((entry)=>entry.kind==='exercise'&&entry.skill==='recognition')||baselineRecognition===null||eligible(baselineRecognition));
-  });
-  return contentReady&&canEnsureVocabularySensesFromBootstrap(wordId);
+    if(exercises.some((entry)=>entry.kind==='exercise'&&entry.skill==='production')
+      &&(exercises.some((entry)=>entry.kind==='exercise'&&entry.skill==='recognition')||baselineRecognition===null||eligible(baselineRecognition)))return {intro,exercises};
+  }
+  return null;
 }
+export function teachingReady(wordId:string):boolean {return resolveVocabularyTeaching(wordId)!==null;}

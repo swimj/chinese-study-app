@@ -8,14 +8,14 @@ import {setDb} from '../server/db/connection.ts';
 import {runWithLearnerId} from '../server/db/learner-context.ts';
 import {addVocabularyWord,changeVocabularyMode,dismissVocabularyWord} from '../server/db/vocabulary-learners.ts';
 import {createVocabularySense,mapVocabularyContentSense,createVocabularyContent,establishVocabularySenseCatalog,getVocabularySenseCatalog} from '../server/db/vocabulary-content.ts';
-import {composeVocabularyStudy,remainingVocabularyNewWordQuota,localNewWordDay} from '../server/vocabulary/composition.ts';
+import {composeVocabularyStudy,planVocabularyNewWords,remainingVocabularyNewWordQuota,localNewWordDay} from '../server/vocabulary/composition.ts';
 import type {DeckManifest} from '../server/decks/manifest.ts';
 let db:DatabaseSync;let ready:Set<string>;let requested:string[];
 const now='2026-10-17T10:00:00.000Z';const owner=<T>(fn:()=>T)=>runWithLearnerId('alice',fn);
 beforeEach(()=>{
   db=new DatabaseSync(':memory:');setDb(db);db.exec(`PRAGMA foreign_keys=ON;
     CREATE TABLE learners(learner_id TEXT PRIMARY KEY);
-    CREATE TABLE learner_word_preparation_reserve(learner_id TEXT,word_id TEXT,added_at TEXT,PRIMARY KEY(learner_id,word_id));
+    CREATE TABLE learner_word_preparation_reserve(learner_id TEXT,word_id TEXT,added_at TEXT,ready_at TEXT,checked_at TEXT,PRIMARY KEY(learner_id,word_id));
     CREATE TABLE learner_word_reserve_requests(learner_id TEXT PRIMARY KEY,requested_at TEXT);
     CREATE TABLE lexical_words(id TEXT PRIMARY KEY,hanzi TEXT,pinyin TEXT,priority INTEGER,created_at TEXT);
     CREATE TABLE learner_word_state(learner_id TEXT,word_id TEXT,status TEXT,learning_streak INTEGER,last_learning_covered_on TEXT);
@@ -34,9 +34,9 @@ beforeEach(()=>{
 afterEach(()=>db.close());
 function settings(name:string,value:unknown){db.prepare("INSERT OR REPLACE INTO learner_settings VALUES('alice',?,?,?)").run(name,JSON.stringify(value),now);}
 function lexical(id:string,priority=0){db.prepare('INSERT INTO lexical_words VALUES(?,?,?,?,?)').run(id,id,'a',priority,now);}
-function prepared(id:string){ready.add(id);createVocabularyContent({contentId:`intro-${id}`,kind:'introduction',payloadVersion:1,body:{text:id},
+function prepared(id:string){ready.add(id);db.prepare("INSERT OR IGNORE INTO learner_word_preparation_reserve VALUES('alice',?,?,?,?)").run(id,now,now,now);createVocabularyContent({contentId:`intro-${id}`,kind:'introduction',payloadVersion:1,body:{text:id},
   accessScope:'shared',availability:'active',originKind:'human',words:[{wordId:id,relation:'target'}],teachingExercises:[]},{kind:'operator',id:'test'});}
-function compose(manifest:DeckManifest|null=null){return composeVocabularyStudy({now,manifest,teachingReady:(id)=>ready.has(id),requestTeaching:(id)=>{requested.push(id);}});}
+function compose(){return composeVocabularyStudy({now,teachingReady:(id)=>ready.has(id)});}
 
 test('daily UTC quota combines retained historical intake and new completed teaching, not admission',()=>owner(()=>{
   settings('daily_new_word_limit',5);
@@ -80,20 +80,21 @@ test('stash-only admission honors top priority and does not consume ready corpus
   assert.deepEqual(compose().newWordIds,['top']);
 }));
 
-test('weighted deck choice uses lexical membership while lifecycle eligibility uses only new learner state',()=>owner(()=>{
+test('composition consumes preselected reserve members without reapplying deck planning',()=>owner(()=>{
   settings('daily_new_word_limit',2);settings('stash_diet_split',0);
   const manifest:DeckManifest={meta:{manifestVersion:1},decks:[{id:'easy',order:0,hsk:{version:'2.0',level:1},stratum:null,size:1},{id:'hard',order:1,hsk:{version:'2.0',level:6},stratum:null,size:1},{id:'tail',order:2,hsk:null,stratum:null,size:0}],assignments:{'easy|a':'easy','hard|a':'hard'}};
   settings('diet_profile',{version:1,weights:{easy:1},provenance:[],updatedAt:now});
   for(const id of ['easy','hard']){lexical(id);prepared(id);}
-  const plan=compose(manifest);assert.equal(plan.newWordIds[0],'easy');assert.deepEqual(plan.newWordIds,['easy','hard']);
+  const background=planVocabularyNewWords({limit:2,seed:'fixture',now,manifest});assert.deepEqual(background.newWordIds,['easy','hard']);
+  const plan=compose();assert.equal(plan.newWordIds[0],'easy');assert.deepEqual(plan.newWordIds,['easy','hard']);
 }));
 
-test('unready teaching queues bounded demand without enrollment and dismissed words remain excluded',()=>owner(()=>{
+test('unready teaching does not queue demand or enroll words and dismissed words remain excluded',()=>owner(()=>{
   settings('daily_new_word_limit',2);settings('unstudied_admission_source','stash_only');
   for(const id of ['pending','dismissed'])lexical(id);
   addVocabularyWord('pending');addVocabularyWord('dismissed');dismissVocabularyWord('dismissed');prepared('dismissed');
   const before=db.prepare('SELECT count(*) AS n FROM learner_words').get()?.n;
-  const plan=compose();assert.deepEqual(plan.newWordIds,[]);assert.deepEqual(requested,['pending']);
+  const plan=compose();assert.deepEqual(plan.newWordIds,[]);assert.deepEqual(requested,[]);
   assert.equal(db.prepare('SELECT count(*) AS n FROM learner_words').get()?.n,before);
 }));
 
@@ -136,7 +137,7 @@ test('suppressed or unavailable objectives fall back to eligible recognition wit
   reviewWord('a',96);skill('a','recognition',48);
   db.prepare("INSERT INTO learner_owned_word_skill_relevance VALUES('alice','a','production','suppressed')").run();
   reviewWord('b',96);skill('b','recognition',48);skill('b','contextual_selection',240);
-  const plan=composeVocabularyStudy({now,manifest:null,teachingReady:()=>false,requestTeaching:()=>{},
+  const plan=composeVocabularyStudy({now,teachingReady:()=>false,
     canUseSkill:(id,kind)=>kind==='recognition'||(id==='a'&&kind==='contextual_selection')});
   assert.deepEqual(plan.reviewSelections,[{wordId:'a',skillId:'recognition'},{wordId:'b',skillId:'recognition'}]);
 }));
@@ -152,7 +153,7 @@ test('word recency guard blocks every review skill, and future or disabled objec
 
 test('contextual review participates in the same one-objective choice when usable',()=>owner(()=>{
   reviewWord('a',48);skill('a','contextual_selection',96);
-  const plan=composeVocabularyStudy({now,manifest:null,teachingReady:()=>false,requestTeaching:()=>{},canUseSkill:()=>true});
+  const plan=composeVocabularyStudy({now,teachingReady:()=>false,canUseSkill:()=>true});
   assert.deepEqual(plan.reviewSelections,[{wordId:'a',skillId:'contextual_selection'}]);
 }));
 
@@ -172,7 +173,7 @@ test('Solidify admits any word with an enabled recall direction, including recog
     lexical(id);addVocabularyWord(id);changeVocabularyMode(id,'solidify',1);
   }
   db.prepare("UPDATE learner_word_schedules SET scheduler_state_json=json_set(scheduler_state_json,'$.enabled',0) WHERE word_id='recognition-only'").run();
-  const plan=composeVocabularyStudy({now,manifest:null,teachingReady:()=>false,requestTeaching:()=>{},
+  const plan=composeVocabularyStudy({now,teachingReady:()=>false,
     canUseSkill:(id,kind)=>(id==='recognition-only'&&kind==='recognition')||(id==='production-only'&&kind==='production')});
   assert.deepEqual(new Set(plan.dueWordIds),new Set(['recognition-only','production-only']));
   assert.deepEqual(plan.reviewSelections,[]);
@@ -294,7 +295,7 @@ test('established empty inventories stay stashed but are absent from every word 
   }
   const learnerBefore=db.prepare('SELECT * FROM learner_words ORDER BY word_id').all();
   const scheduleBefore=db.prepare('SELECT * FROM learner_word_schedules ORDER BY word_id').all();
-  const plan=composeVocabularyStudy({now,manifest:null,teachingReady:(id)=>ready.has(id),requestTeaching:(id)=>requested.push(id),canUseSkill:()=>true});
+  const plan=composeVocabularyStudy({now,teachingReady:(id)=>ready.has(id),canUseSkill:()=>true});
   assert.ok(plan.newWordIds.includes('unknown-stash'));assert.ok(plan.newWordIds.includes('active-stash'));
   assert.ok(plan.newWordIds.includes('unknown-diet'));
   assert.equal(plan.newWordIds.some(id=>id.startsWith('empty-')),false);
@@ -326,7 +327,7 @@ test('review SQL owns basic flags and keeps content eligibility separate from So
   db.prepare("INSERT INTO learner_owned_word_skill_relevance VALUES('alice','suppressed','production','suppressed'),('alice','suppressed','contextual_selection','suppressed'),('bob','default-flags','production','suppressed')").run();
   lexical('solidify');addVocabularyWord('solidify');changeVocabularyMode('solidify','solidify',1);
   const checked:string[]=[];const solidify:string[]=[];
-  const plan=composeVocabularyStudy({now,manifest:null,teachingReady:()=>false,requestTeaching:()=>{},
+  const plan=composeVocabularyStudy({now,teachingReady:()=>false,
     canUseSkill:(id,kind)=>{solidify.push(`${id}/${kind}`);return false;},
     isReviewContentUsable:(id,kind)=>{checked.push(`${id}/${kind}`);return true;}});
   assert.deepEqual(plan.reviewSelections,[{wordId:'suppressed',skillId:'recognition'},{wordId:'default-flags',skillId:'production'}]);
@@ -341,7 +342,7 @@ test('sparse due review skips content checks for the future population',async(t)
     reviewWord(id,index<3?48:12);skill(id,'contextual_selection',index<3?48:12);
   }
   const started=performance.now();
-  const plan=composeVocabularyStudy({now,manifest:null,teachingReady:()=>false,requestTeaching:()=>{},
+  const plan=composeVocabularyStudy({now,teachingReady:()=>false,
     isReviewContentUsable:(id,kind)=>{checked.push(`${id}/${kind}`);return true;}});
   t.diagnostic(`Sparse review: ${checked.length} content checks for 2000 scheduled objectives; ${ (performance.now()-started).toFixed(2)} ms composition`);
   assert.deepEqual(plan.reviewSelections.map(row=>row.wordId),['sparse-0000','sparse-0001','sparse-0002']);
@@ -354,8 +355,42 @@ test('due filtering preserves null dates, no-recall urgency, boundaries and cont
   db.prepare("UPDATE learner_word_schedules SET last_practised_at=NULL WHERE word_id IN ('future-no-recall','no-recall')").run();
   db.prepare("UPDATE learner_word_schedules SET next_eligible_at='2026-10-17T10:00:00.001Z' WHERE word_id='future-no-recall'").run();
   const checked:string[]=[];
-  const plan=composeVocabularyStudy({now,manifest:null,teachingReady:()=>false,requestTeaching:()=>{},
+  const plan=composeVocabularyStudy({now,teachingReady:()=>false,
     isReviewContentUsable:(id)=>{checked.push(id);return id!=='content-rejected';}});
   assert.deepEqual(plan.reviewSelections.map(row=>row.wordId),['no-recall','boundary','null-due']);
   assert.deepEqual(new Set(checked),new Set(['boundary','null-due','no-recall','content-rejected']));
+}));
+
+test('new-word admission resolves only ready reserve hints, with greedy top fallback and no planning',t=>owner(()=>{
+  settings('daily_new_word_limit',2);
+  for(const id of ['top-stale','top-ready','fallback','outside']){lexical(id);prepared(id);}
+  db.prepare("DELETE FROM learner_word_preparation_reserve WHERE word_id='outside'").run();
+  ready.delete('top-stale');
+  db.prepare("INSERT INTO learner_owned_user_word_priority VALUES('alice','top-stale',1,'2026-10-18'),('alice','top-ready',1,'2026-10-17')").run();
+  const tried:string[]=[];
+  const run=()=>composeVocabularyStudy({now,teachingReady:id=>{tried.push(id);return ready.has(id);}});
+  const plan=run();assert.deepEqual(plan.newWordIds,['top-ready','fallback']);
+  assert.deepEqual(tried,['top-stale','top-ready','fallback']);
+  assert.equal(db.prepare("SELECT count(*) AS n FROM backend_events WHERE name='vocabulary.reserve.stale_hint'").get()!.n,1);
+  run();assert.equal(db.prepare("SELECT count(*) AS n FROM backend_events WHERE name='vocabulary.reserve.stale_hint'").get()!.n,1,'repeated polling deduplicates the same readiness epoch');
+  assert.deepEqual(runWithLearnerId('bob',()=>run().newWordIds),[]);
+  t.diagnostic('Ready-hint mismatch skipped; ready top then fallback filled quota; no corpus admission.');
+}));
+
+test('large prepared corpus does not amplify composition readiness work',t=>owner(()=>{
+  settings('daily_new_word_limit',2);
+  for(let i=0;i<1000;i++){
+    const id=`corpus-${i}`;lexical(id);
+    createVocabularyContent({contentId:`intro-${id}`,kind:'introduction',payloadVersion:1,body:{text:id},accessScope:'shared',availability:'active',originKind:'human',words:[{wordId:id,relation:'target'}],teachingExercises:[]},{kind:'operator',id:'test'});
+  }
+  for(const id of ['selected-a','selected-b']){lexical(id);prepared(id);}
+  // Reproduce the prior corpus-discovery step on the identical fixture.
+  let baselineChecks=0;
+  (db.prepare("SELECT DISTINCT w.word_id FROM content_items c JOIN content_words w USING(content_id) WHERE c.kind='introduction' AND c.availability='active' AND w.relation='target' AND (c.access_scope='shared' OR c.owner_learner_id=?)").all('alice') as {word_id:string}[]).filter(row=>{baselineChecks++;return ready.has(row.word_id);});
+  let checks=0;
+  const start=performance.now();
+  const plan=composeVocabularyStudy({now,teachingReady:id=>{checks++;return ready.has(id);}});
+  const elapsed=performance.now()-start;
+  assert.equal(baselineChecks,1002);assert.equal(checks,2);assert.deepEqual(plan.newWordIds,['selected-a','selected-b']);
+  t.diagnostic(`Reserve readiness: ${baselineChecks} prior corpus checks → ${checks} current checks; ${elapsed.toFixed(2)} ms composition (synthetic fixture, callback work only).`);
 }));

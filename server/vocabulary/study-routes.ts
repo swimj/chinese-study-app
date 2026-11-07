@@ -72,8 +72,8 @@ export function registerVocabularyStudyRoutes(app: Express, wake: () => void = (
       res.status(status).json({error:status===500?'This study action could not be saved. Please retry.':(error as Error).message});
     }
   };
-  app.get('/api/vocabulary/session-preview',handle(req=>previewVocabularyStudy({timeZone:parseVocabularyTimeZone(req.query.timeZone)}),true));
-  app.post('/api/vocabulary/sessions',handle(req=>startVocabularyStudy({previewSeed:parseVocabularyPreviewSeed(record(req.body??{}).previewSeed),timeZone:parseVocabularyTimeZone(record(req.body??{}).timeZone)}),true));
+  app.get('/api/vocabulary/session-preview',handle(req=>previewVocabularyStudy({timeZone:parseVocabularyTimeZone(req.query.timeZone)})));
+  app.post('/api/vocabulary/sessions',handle(req=>startVocabularyStudy({previewSeed:parseVocabularyPreviewSeed(record(req.body??{}).previewSeed),timeZone:parseVocabularyTimeZone(record(req.body??{}).timeZone)})));
   app.get('/api/vocabulary/sessions/:id',handle(req=>getVocabularyStudy(req.params.id)));
   app.post('/api/vocabulary/sessions/:id/next',handle(req=>{
     const b=record(req.body); if(b.another!==undefined&&typeof b.another!=='boolean') throw new VocabularySessionInputError('Invalid another flag');
