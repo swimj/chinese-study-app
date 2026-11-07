@@ -21,7 +21,7 @@ export type VocabularyProposalPreview={proposal:VocabularyContentProposal;
     schedulesRemainOnSource:number;deactivationsRemainOnSource:number;teachingBindingsRemainOnSource:number;
     sourceSenseMappings:number;sourceCurations:number;sourceIntroductionExercises:number;transfersRelationships:false}[]};
 export type VocabularyFailedDispatch={dispatchId:string;learnerId:string;sessionId:string;error:string};
-export type VocabularyFailedPreparation={workId:string;wordId:string;sourceContentId:string;attemptCount:number;invocationId:string|null;lastError:string|null;retryable:boolean};
+export type VocabularyFailedPreparation={workId:string;wordId:string;sourceContentId:string|null;reconciliationId?:string|null;attemptCount:number;invocationId:string|null;lastError:string|null;retryable:boolean};
 const root='/api/operator/vocabulary';
 const id=(value:string)=>encodeURIComponent(value);
 const write=<T>(path:string,body:unknown,method='POST')=>apiRequest<T>(`${root}${path}`,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});

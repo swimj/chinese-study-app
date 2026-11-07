@@ -1,0 +1,88 @@
+.sense-reconciliation-page { max-width: 76rem; padding: 1.5rem 0 3rem; color: var(--text); }
+.sense-reconciliation-page header { display:flex; justify-content:space-between; align-items:center; gap:1rem; margin-bottom:1.5rem; }
+.sense-reconciliation-page h1 { font-size:1.65rem; margin:.2rem 0; }
+.sense-reconciliation-page h2 { margin:.8rem 0; font-size:1.8rem; }
+.sense-reconciliation-page h2 span { font-size:1rem; font-weight:400; color:var(--muted); }
+.sense-reconciliation-page h3 { font-size:1.1rem; margin:0 0 .75rem; }
+.sense-reconciliation-page h4 { font-size:1rem; margin:0 0 .6rem; }
+.reconciliation-eyebrow,.reconciliation-column-label { color:var(--muted); font-size:.9rem; margin:0 0 .6rem; }
+.reconciliation-word-picker { max-width:36rem; }
+.sense-reconciliation-page label { display:flex; flex-direction:column; gap:.35rem; margin:.75rem 0; }
+.sense-reconciliation-page select,.sense-reconciliation-page textarea { width:100%; min-width:0; box-sizing:border-box; padding:.6rem; font:inherit; color:var(--text); background:var(--surface); border:1px solid var(--border); border-radius:.35rem; }
+.sense-reconciliation-page textarea { resize:vertical; }
+.reconciliation-summary { border-bottom:1px solid var(--border); padding:.5rem 0 1.2rem; }
+.reconciliation-statuses { display:flex; flex-wrap:wrap; gap:.6rem 2rem; }
+.reconciliation-statuses span { display:flex; gap:.5rem; flex-wrap:wrap; }
+.reconciliation-statuses strong { font-weight:600; text-transform:capitalize; }
+.reconciliation-editor { border:0; margin:0; padding:0; min-width:0; }
+.reconciliation-group-headings,.reconciliation-comparison { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.3fr); gap:2rem; padding:1.5rem 0; }
+.reconciliation-comparison section { min-width:0; }
+.reconciliation-sense,.reconciliation-use { border-bottom:1px solid var(--border); padding:.8rem 0 1.2rem; overflow-wrap:anywhere; }
+.reconciliation-sense label { flex-direction:row; align-items:flex-start; gap:.65rem; }
+.reconciliation-sense input { flex:none; margin-top:.25rem; width:1.1rem; height:1.1rem; }
+.sense-reconciliation-page ul { padding-left:1.3rem; line-height:1.6; }
+.sense-reconciliation-page summary { cursor:pointer; padding:.35rem 0; }
+.sense-reconciliation-page blockquote { margin:.5rem 0; border-left:2px solid var(--border); padding:.1rem .8rem; }
+.sense-reconciliation-page blockquote p { margin:.3rem 0; }
+.reconciliation-decision,.reconciliation-plan,.reconciliation-progress { border-top:1px solid var(--border); padding:1.2rem 0; }
+.reconciliation-consequence { color:var(--muted); line-height:1.5; }
+.reconciliation-actions { display:flex; flex-wrap:wrap; gap:.65rem; margin-top:1rem; }
+.reconciliation-error,.reconciliation-blockers { background:var(--surface); border-left:3px solid var(--accent); padding:.8rem 1rem; }
+.reconciliation-notice { color:var(--accent); }
+.reconciliation-plan code { display:block; overflow-wrap:anywhere; margin:.4rem 0; }
+.reconciliation-plan dd { margin:.5rem 0 1rem; }
+@container (max-width: 700px) { .reconciliation-comparison { grid-template-columns:minmax(0,1fr); gap:1.3rem; } }
+@media (max-width:620px) { .sense-reconciliation-page header { padding-left:2.8rem; align-items:flex-start; } .sense-reconciliation-page h1 { font-size:1.3rem; } }
+
+.reconciliation-comparison { border-bottom:1px solid var(--border); }
+.reconciliation-comparison > * { min-width:0; }
+.reconciliation-comparison .reconciliation-sense { border-bottom:0; }
+.reconciliation-group-headings { padding-bottom:0; }
+@container (max-width: 700px) { .reconciliation-group-headings { display:none; } }
+
+.reconciliation-use-title { display:flex; align-items:center; gap:.6rem; }
+.reconciliation-use-title h4 { margin:0; }
+.reconciliation-use .reconciliation-drag { cursor:grab; padding:.25rem .5rem; background:transparent; color:var(--text); border:1px solid var(--border); }
+.reconciliation-drag[aria-pressed="true"] { outline:2px solid var(--accent); }
+.reconciliation-drop { border:1px dashed var(--border); border-radius:.4rem; padding:.7rem; color:var(--muted); background:transparent; width:100%; box-sizing:border-box; }
+.reconciliation-comparison { padding:.7rem 0; }
+.reconciliation-use { padding:.5rem .7rem; margin-bottom:.5rem; border:1px solid var(--border); border-radius:.4rem; }
+.reconciliation-sense { padding:.1rem 0; }
+
+.reconciliation-embedded { padding:.5rem 0 1rem; max-width:none; }
+.reconciliation-reload { float:right; margin:0 0 .75rem .75rem; }
+.reconciliation-summary::after { content:""; display:block; clear:both; }
+.reconciliation-related { margin:.5rem 0; }
+.reconciliation-related > article { padding:.75rem 0; border-bottom:1px solid var(--border); }
+.reconciliation-related dd { margin:0 0 .5rem; overflow-wrap:anywhere; }
+
+/* Keep ordinary matching visible together; descriptions stay behind Details. */
+.reconciliation-embedded .reconciliation-summary { padding:0 0 .5rem; }
+.reconciliation-embedded .reconciliation-reload { margin-bottom:.35rem; }
+.reconciliation-group-headings { padding:.5rem 0 .25rem; gap:1rem; }
+.reconciliation-group-headings h3 { margin:0; }
+.reconciliation-comparison { padding:.35rem 0; gap:1rem; align-items:start; }
+.reconciliation-comparison h3 { margin:.35rem 0; }
+.reconciliation-sense label { margin:.15rem 0; }
+.reconciliation-sense summary { padding:.1rem 0; }
+.reconciliation-use { position:relative; padding:.3rem .45rem; margin:0 0 .25rem; }
+.reconciliation-use:last-child { margin-bottom:0; }
+.reconciliation-use-title { min-height:1.75rem; padding-right:4.5rem; gap:.4rem; }
+.reconciliation-use .reconciliation-drag { padding:.05rem .35rem; min-height:1.65rem; }
+.reconciliation-use > details > summary { position:absolute; right:.45rem; top:.35rem; padding:0; }
+.reconciliation-use > details[open] { padding-top:.35rem; }
+.reconciliation-drop { margin:0; padding:.4rem; }
+.reconciliation-decision { padding:.5rem 0; }
+@container (max-width: 700px) {
+  .reconciliation-comparison { gap:.35rem; }
+}
+.vocabulary-operator-page .reconciliation-embedded section { border:0; border-bottom:1px solid var(--border); border-radius:0; margin:0; padding:.35rem 0; }
+.vocabulary-operator-page .reconciliation-embedded details { margin:0; }
+.vocabulary-operator-page .reconciliation-embedded .reconciliation-sense label { margin:.15rem 0; }
+.vocabulary-operator-page .reconciliation-embedded h3 { margin:.25rem 0; }
+.vocabulary-operator-page .reconciliation-embedded .reconciliation-use-title h4 { margin:0; }
+.vocabulary-operator-page .reconciliation-embedded .reconciliation-editor { margin:.35rem 0; }
+.reconciliation-sense { position:relative; min-height:2rem; }
+.vocabulary-operator-page .reconciliation-embedded .reconciliation-sense label { padding-right:4.5rem; }
+.reconciliation-sense > details > summary { position:absolute; right:0; top:.25rem; padding:0; }
+.reconciliation-sense > details[open] { padding-top:.35rem; }

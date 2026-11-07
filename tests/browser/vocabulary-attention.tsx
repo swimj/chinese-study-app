@@ -26,6 +26,7 @@ let items: VocabularyAttentionItem[] = params.has('empty') ? [] : [
   {...base,id:'preparation:exhausted',kind:'preparation',title:'A very long preparation target label that must wrap without hiding controls',reason:'Attempt limit reached. Inspect the retained invocation before changing preparation.',workId:'exhausted-preparation',wordId:'word-long',sourceContentId:'source-with-a-long-stable-identity',attemptCount:9,invocationId:null,retryable:false},
   ...Array.from({length:22},(_,index):VocabularyAttentionItem=>({...base,id:`dispatch:extra-${index}`,kind:'dispatch',title:`Retained session ${index+1}`,reason:'Evidence processing requires an explicit retry.',dispatchId:`extra-${index}`,sessionId:`session-${index}`,learnerId:'fixture-learner'})),
 ];
+if (params.has('canonical')) items = [{...base,id:'preparation:failed',kind:'preparation',title:'挂钩',reason:'Repertoire replacement failed while teaching is still pending.',workId:'failed-preparation',wordId:'word-guagou',sourceContentId:null,reconciliationId:'resolution-canonical-snapshot',attemptCount:3,invocationId:'preparation-call',retryable:true}];
 let slow=params.has('slow'),failSave=params.has('saveFailure'),failRetry=false,holdRead=false;
 const heldReads:(()=>void)[]=[];
 const counters:Record<string,number>={attention:0,workspace:0,proposal:0,snapshot:0,save:0,retry:0};

@@ -29,6 +29,58 @@ flowchart TD
   Review --> Proposal
 ```
 
+## Sense/content reconciliation
+
+The matcher embedded in **Content improvement → Needs attention** compares prepared
+teaching with canonical senses. `/operator/reconciliation` is a compatibility entry
+to that queue. It addresses source disagreement rather than asking ordinary
+exercise improvement to silently choose a winner. The
+[contract](../../SPECS/sense-content-reconciliation.md) owns the semantic decisions;
+[`sense-content-reconciliation.ts`](../../server/db/sense-content-reconciliation.ts)
+owns saved judgments and live application. It reuses inventory snapshot/dependency
+collection from the offline reconciliation report, without invoking that tool's
+stopped-writer apply operation.
+
+[`vocabulary-attention.ts`](../../server/db/vocabulary-attention.ts) projects a stable
+`reconciliation:<wordId>` item for a current source mismatch, a saved decision, or
+an incomplete applied replacement. It groups preparation failures whose source is
+covered by that current/reviewed resolution, regardless of error label. Failures
+on sources outside the resolution and unrelated reflection cases remain separate. Source identity and individual failure records
+are disclosed as children. Grouping affects the queue projection, preserving the
+underlying records and history. Completed replacements remove covered failures
+from active attention; a new mismatch or decision can keep the word actionable.
+Queue counting and pagination operate on grouped identities before displayed
+items load their progress and child records.
+
+Each saved version captures a linguistic draft and source snapshot. Planning checks
+use accounting, selected identities, source drift, active generation, unresolved
+proposals/jobs, private dependencies and an active replacement requester. Blockers
+are durable judgments plus computed capability/dependency findings, not provider
+failures. The first handler always regenerates the affected teaching unit and practice;
+mapped/rejected legacy uses remain editorial evidence rather than edits to immutable
+source documents. Existing active general content is retained unless its source pins
+or teaching bindings require retirement.
+
+Apply rechecks the reviewed fingerprint under an immediate transaction, retires the
+source/package and affected content closure, updates defaults if changed, resets and
+queues replacement teaching, and stores applied authority. Exact replay is idempotent.
+Neither saving nor applying changes learner progress or captured session payloads.
+
+[`sense-content-reconciliation-state.ts`](../../server/db/sense-content-reconciliation-state.ts)
+compares replacement scope/mappings and publication state with the applied authority.
+The shared authoring and general-practice paths capture reconciliation identity and
+check it before publication. Applied reconciliation immediately supplies durable
+practice demand from its selected canonical sense snapshot. Practice authoring does
+not read or wait for replacement teaching; both replacements are checked against
+the same applied authority. The existing first-learning path still authors from
+its teaching source. Replacement teaching becoming ready does not request a second
+repertoire bootstrap after reconciliation practice has already completed.
+Fresh session composition, shared cues and contrast choices exclude affected words
+while replacement is pending or failed. Retained sessions use their original payload.
+Canonical/default changes during replacement require another resolution; a later
+draft does not remove the previous applied gate. A completed reconciliation receipt
+ends that replacement gate rather than permanently freezing future default edits.
+
 ## Reading the flow
 
 - **Sense readiness** reuses canonical inventory. Establishment can request the

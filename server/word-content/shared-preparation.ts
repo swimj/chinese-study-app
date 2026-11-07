@@ -1,4 +1,5 @@
 import { ensureVocabularyDefaultUsefulSelection } from '../vocabulary/default-useful-selection.ts';
+import { senseContentReconciliationGenerationToken, assertSenseContentReconciliationGeneration, settleSenseContentReconciliation } from '../db/sense-content-reconciliation-state.ts';
 import { getVocabularySenseCatalog,getVocabularySenses } from '../db/vocabulary-content.ts';
 import { ensureVocabularySenses,VocabularySenseSelectionRequired,VocabularyEmptySenseInventory } from '../vocabulary/sense-readiness.ts';
 import { resolveVocabularySenseCoverage } from '../db/vocabulary-sense-coverage.ts';
@@ -74,6 +75,9 @@ export function createSharedWordPreparation(provider: WordIntroductionProvider =
       else releaseSharedWordIntroductionStage(wordId, token);
     },
     async generate(wordId: string, stage: WordPreparationStage, token: string): Promise<void> {
+      const reconciliation = senseContentReconciliationGenerationToken(wordId);
+      const assertReconciliation = () => assertSenseContentReconciliationGeneration(wordId, reconciliation);
+      assertReconciliation();
       let invocationId: string | null | undefined;
       const generationOptions = { workflowId: token,invocationActor: { kind: 'service' as const,serviceId: SERVICE_ID },onInvocation: (id: string | null | undefined) => { invocationId = id; } };
       if (stage === 'bootstrap') {
@@ -97,8 +101,8 @@ export function createSharedWordPreparation(provider: WordIntroductionProvider =
           if(seen.size!==selected.canonicalSenses.length)throw new Error('Enrichment must include every selected canonical sense');
           return normalizeWordContent({...output,uses}, { wordId, hanzi: lexical.hanzi, traditional: lexical.traditional, pinyin: lexical.pinyin }, `word-content:${randomUUID()}`);
         },SERVICE_ID);
-        assertPublication();
-        finishSharedWordIntroductionBootstrap(wordId, token, content, provider.model,invocationId,{catalogVersion:selected.ready.catalog.version,senseVersions:selected.senseVersions,senseIds:selected.canonicalSenses.map(sense=>sense.senseId)});
+        assertPublication();assertReconciliation();
+        finishSharedWordIntroductionBootstrap(wordId, token, content, provider.model,invocationId,{catalogVersion:selected.ready.catalog.version,senseVersions:selected.senseVersions,senseIds:selected.canonicalSenses.map(sense=>sense.senseId)}, () => { assertPublication(); assertReconciliation(); });
         return;
       }
       const content = getSharedWordIntroductionContent(wordId);
@@ -121,9 +125,9 @@ export function createSharedWordPreparation(provider: WordIntroductionProvider =
           const payload = validateWordProviderOutput(componentInvocation, () => part === 'teaching'
             ? { beats: normalizeTeachingBeats(output, content!) }
             : { rehearsals: normalizePracticeRehearsals(output, content!) },SERVICE_ID);
-          assertPublication();assertSource();
+          assertPublication();assertSource();assertReconciliation();
           saveSharedWordIntroductionComponent(wordId, token, { contentId: content!.id, stage: part,
-            generationKey: keys[part], payload, model: provider.model, invocationId: componentInvocation ?? null });
+            generationKey: keys[part], payload, model: provider.model, invocationId: componentInvocation ?? null }, () => { assertPublication(); assertSource(); assertReconciliation(); });
           return payload;
         }
         // Preserve a successful introduction across exercise failure. Exercises consume exactly these beats.
@@ -138,8 +142,8 @@ export function createSharedWordPreparation(provider: WordIntroductionProvider =
         const teaching = { schemaVersion: 1 as const, id: `word-teaching:${randomUUID()}`, wordContentId: content.id,
           beats: (lesson.payload as { beats: import('../../src/domain/word-content/types.ts').TeachingPackage['beats'] }).beats,
           rehearsals: (practice.payload as { rehearsals: import('../../src/domain/word-content/types.ts').TeachingPackage['rehearsals'] }).rehearsals };
-        assertPublication();assertSource();
-        finishSharedWordIntroductionTeaching(wordId, token, teaching, provider.model, keys);
+        assertPublication();assertSource();assertReconciliation();
+        finishSharedWordIntroductionTeaching(wordId, token, teaching, provider.model, keys, () => { assertPublication(); assertSource(); assertReconciliation(); }, () => settleSenseContentReconciliation(wordId));
       } else {
         let output: unknown;
         try { output = await provider.generateReview(content, generationOptions); }
@@ -147,8 +151,8 @@ export function createSharedWordPreparation(provider: WordIntroductionProvider =
         linkSourceSenses(invocationId,content.id);
         const batch = randomUUID();
         const exercises = validateWordProviderOutput(invocationId, () => normalizeReviewExercises(output, content, (id) => `word-review:${batch}:${id}`),SERVICE_ID);
-        assertPublication();assertSource();
-        finishSharedWordReviewPreparation(wordId, token, exercises, provider.model,invocationId);
+        assertPublication();assertSource();assertReconciliation();
+        finishSharedWordReviewPreparation(wordId, token, exercises, provider.model,invocationId, () => { assertPublication(); assertSource(); assertReconciliation(); });
       }
     },
   };

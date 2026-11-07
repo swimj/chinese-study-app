@@ -100,6 +100,38 @@ word selection. PUT requires `expectedVersion` and explicit `includedSenseIds`
 Responses include canonical senses, selection status and mapped production counts.
 Historical case coverage is no longer an editable API.
 
+### Sense/content reconciliation
+
+The Needs attention matcher uses the routes below; queue discovery and grouped
+child records come from `GET /api/operator/vocabulary/attention-queue`.
+All routes below use `/api/operator/vocabulary/reconciliation` and require operator
+authorization. Word IDs in paths are URL-encoded. The domain layer also enforces
+operator authority; these routes do not authorize arbitrary sense mutations.
+
+| Route | Contract |
+| --- | --- |
+| `GET /` | List words with divergent prepared teaching mappings or a saved resolution |
+| `GET /:wordId` | Return retained source comparison, active senses, saved resolution, application plan and replacement progress |
+| `POST /:wordId` | Save `{expectedVersion, status: "draft" \| "resolved", draft, refreshSource?}`; `expectedVersion` is null for a first save |
+| `POST /:wordId/apply` | Apply `{expectedVersion, planFingerprint}`; exact replay returns the applied workspace |
+| `POST /:wordId/retry` | Empty body; retry failed replacement work under unchanged applied authority |
+
+The draft contains `defaultSenseIds`, per-use `{useId, decision, senseId, rationale}`
+decisions, an overall `rationale`, and free-text `unsupportedChanges`. Decisions are
+`map`, `reject`, or `unsupported`. Rationale strings may be empty; written reasons
+are optional. Saving preserves linguistic work without changing
+inventory, content eligibility, or provider demand. `refreshSource` explicitly
+captures current evidence while retaining the submitted judgment for re-review.
+
+The plan exposes a fingerprint, precise blockers, retained/retired content and
+source/package IDs, and required replacement stages. Apply requires the resolved
+version and unchanged dependency plan. The first handler preserves sense identities,
+changes only nonempty defaults over existing active senses, and replaces affected
+teaching and practice. Unsupported inventory changes remain blocked. Progress
+distinguishes `not_required`, `pending`, `ready`, and `failed`, including stage errors.
+Invalid input returns 400, unauthorized access 403, unknown words 404, and stale or
+blocked application/retry 409. Internal failures return 500 without exposing internals.
+
 `GET/PUT /api/operator/vocabulary/cases/:id/repair-target` reads or changes pending
 single-exercise target intent. A selected sense requires reassessment; reset clears
 pending intent. Application and manual editing enforce this intent server-side.
@@ -176,7 +208,8 @@ and improvement dispatch.
 `GET /api/operator/vocabulary/practice-preparation/failures` lists retained failed
 authoring work. `POST /api/operator/vocabulary/practice-preparation/:id/retry`
 queues an explicitly authorized retry within the attempt limit; worker gates
-still govern provider execution.
+still govern provider execution. Work identifies either a teaching `sourceContentId`
+or a `reconciliationId`; canonical reconciliation work has a null teaching source.
 
 The operator practice-preparation failure response includes
 `defaultSelectionFindings`: word-level unknown-default findings with `wordId`,
@@ -1198,10 +1231,18 @@ messages for the learner’s history.
 `GET /api/operator/vocabulary/attention-queue` returns `{items,total,offset}`.
 It accepts `offset` (nonnegative), `limit` (1–50, default 20), optional `anchorId`
 for preserving selection during refresh, and optional `kind`: `defaults`,
-`approval`, `preparation`, `dispatch`, or `case`. Each display item has a stable
+`approval`, `preparation`, `dispatch`, `case`, or `reconciliation`. Each display item has a stable
 `id`, title, reason, creation time, optional case identity, and type-specific
 existing action identifiers. Eligibility and retry hints are derived from current
 source records; mutations still enforce their own authority and version checks.
+Reconciliation items use `id: "reconciliation:<wordId>"` and include `wordId`,
+`sourceContentId`, `resolutionId`, decision `status`, replacement `progress`, and
+`children`. Children identify a source or an explicitly related preparation
+failure with `id`, `kind`, `sourceId`, nullable `sourceContentId`, optional
+`reconciliationId`, `caseId`, `reason` and
+`createdAt`. Counts and offsets apply after grouping. Unrelated same-word failures
+remain separate. Completed resolutions and their covered preparation failures leave
+active attention without deleting source records.
 The read does not resolve work or enqueue provider calls. Full case and proposal
 payloads are loaded only on drill-in through their existing endpoints.
 

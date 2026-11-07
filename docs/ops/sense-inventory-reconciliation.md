@@ -6,6 +6,12 @@ senses unchanged or retire them. It preserves retained learner sessions, progres
 immutable source documents and version history. It does not merge, split, add or
 rewrite senses, or adopt a generated candidate's default-useful selection.
 
+For live operator reconciliation of divergent teaching snapshots while preserving
+canonical identities, use the separate
+[Sense reconciliation workspace](../operator-panel.md#sense-reconciliation).
+Its application is version-fenced and queues replacements. The offline commands
+below retain their stopped-writer boundary and do not save that workspace's drafts.
+
 Use the [inventory policy](../../SPECS/vocabulary-architecture.md#canonical-senses-and-useful-selection)
 to judge linguistic scope and the [comparison tooling](../testing.md#sense-inventory-comparison-and-reconciliation)
 to generate candidates. Model output is a proposal. An omitted use alone is not
@@ -116,7 +122,7 @@ using the hosted runbook, then observe replacement preparation and representativ
 new sessions before treating the repair as delivered.
 
 
-Run this workflow after migration `0067_vocabulary_repair_targets`. Export fresh
+Run the offline inventory workflow after migration `0067_vocabulary_repair_targets`. Export fresh
 version-2 dependency snapshots and regenerate reports/plans; pre-cleanup dry-run
 artifacts remain evidence but cannot authorize application. Historical case scopes
 are preserved byte-for-byte and no longer pruned. Open cases whose pending or
@@ -124,3 +130,33 @@ accepted repair target names a retiring sense block reconciliation: reset pendin
 intent, reassess with a retained sense, or explicitly resolve the case first.
 Resolved repair intent remains historical evidence. Reconciliation never chooses
 another repair sense or changes an operator's pending instruction.
+
+## Live reconciliation migration rehearsal
+
+Migration `0069_sense_content_reconciliation` creates empty current-resolution and
+immutable revision-history tables, with an index and history guards. It also
+rebuilds `vocabulary_practice_preparation` to support either an ordinary teaching
+source or a reconciliation's canonical snapshot as the authoring authority. The
+copy scans the existing practice queue and preserves its rows; existing work stays
+on the teaching-source path. It does not regenerate content or change learner state.
+Budget temporary storage for a copy of the practice table and its indexes; cost
+has not been measured on a hosted copy.
+The release is schema-changing and must use the ordinary isolated rehearsal and
+stopped-writer migration procedure, not the application-only upgrade route.
+
+On a populated restored database, verify that migration records the new schema,
+the two new tables are empty, and every prior practice job retains its identity,
+teaching source, generation key, status, lease, invocation, attempts, retry timing,
+and error. Verify attempt history still refers to those jobs, the queue indexes
+exist, and existing senses/content/session records are preserved. Run the ordinary
+foreign-key/integrity checks. Check that rerunning the migration is a
+ledger no-op and a fresh database has the same schema. No application of a resolution
+is implied by deployment.
+
+Separately rehearse an explicitly approved bounded resolution on a disposable copy:
+save and reopen a blocked decision without live effects; inspect the dependency
+plan; apply a supported decision; verify retirement, queued preparation, unchanged
+canonical identities and retained sessions; and verify exact replay. Exercise
+replacement failure/retry and late-publication fencing with controlled providers.
+Record simulated generation separately from any authorized real provider work.
+Do not treat fixture success as approval to apply a real linguistic decision.

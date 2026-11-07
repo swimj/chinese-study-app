@@ -27,6 +27,8 @@ export type DurableOwnershipEntry = {
  * new durable object cannot land without an explicit classification.
  */
 export const durableOwnershipManifest: readonly DurableOwnershipEntry[] = [
+  operationalEntry('sense_content_reconciliations', 'operator resolution and private dependency evidence; operator-only access'),
+  operationalEntry('sense_content_reconciliation_history', 'immutable operator resolution revisions and application evidence'),
   privateEntry('vocabulary_sessions', 'learner-owned vocabulary evidence or state', 'retain exact new protocol evidence; legacy history remains separate'),
   privateEntry('session_actions', 'learner-owned vocabulary evidence or state', 'retain exact new protocol evidence; legacy history remains separate'),
   privateEntry('exercise_encounters', 'learner-owned vocabulary evidence or state', 'retain exact new protocol evidence; legacy history remains separate'),

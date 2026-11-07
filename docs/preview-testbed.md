@@ -69,6 +69,27 @@ runtimes. Child processes receive an allowlisted environment without inherited
 application settings or provider credentials. Vite ignores repository `.env`
 files. Authentication is explicitly trusted-local and listeners bind to loopback.
 
+## Sense reconciliation scenario
+
+```sh
+npm run testbed -- start reconciliation
+```
+
+The actual `/operator/improvement?view=attention` route opens Needs attention
+with a synthetic 挂钩 reconciliation: three
+canonical senses imported from an original teaching source and a replacement
+teaching document with four unmapped uses. Three preparation failures on the same source (two mapping failures and one
+generation failure) share one expandable reconciliation item. An active learner requests replacement content. Compare uses, save/reload a
+linguistic resolution, inspect missing-handler blockers, and apply a supported
+existing-sense resolution through the real backend.
+
+Provider work remains disabled and provider runtimes are absent. Application and
+pending replacement are real persisted behavior; replacement generation does not
+complete in this preview. The fixture does not establish linguistic correctness,
+provider reliability, or production repair readiness. `reconciliation-fixture.json`
+records synthetic identities for coordinator-side checks. Reload preserves edits;
+stop and relaunch for a fresh directory and database, as in the Save/Apply scenario.
+
 ## Reset, cleanup, and evidence
 
 For simulated fixtures, reload the printed preview URL to restore in-memory

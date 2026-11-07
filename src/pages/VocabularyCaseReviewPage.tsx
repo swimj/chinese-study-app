@@ -25,7 +25,7 @@ export function VocabularyCaseReviewPage({ api = vocabularyOperatorApi }: { api?
   const attentionPosition = useRef<AttentionPosition>({selectedId: null, kind: '', offset: 0});
   const [cueEdit,setCueEdit]=useState<{operationKey:string|null}|null>(null);
   const [cueActivity,setCueActivity]=useState({dirty:false,busy:false});
-  const [view, setView] = useState<View>('review');
+  const [view, setView] = useState<View>(()=>window.location.pathname==='/operator/reconciliation'||new URLSearchParams(window.location.search).get('view')==='attention'?'attention':'review');
   const [pages, setPages] = useState<CaseQueueWindow>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [alternative, setAlternative] = useState<VocabularyCaseQueueItem | null>(null);

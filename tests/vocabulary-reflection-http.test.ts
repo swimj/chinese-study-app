@@ -51,6 +51,7 @@ beforeEach(()=>{
     CREATE TABLE word_content_documents(content_id TEXT PRIMARY KEY,word_id TEXT,publication_id TEXT,content_json TEXT);
     CREATE TABLE shared_content_publications(publication_id TEXT PRIMARY KEY,publication_status TEXT);`);
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0043_vocabulary_import.sql',import.meta.url),'utf8').split('CREATE TRIGGER')[0]!);
+  sql.exec(fs.readFileSync(new URL('../server/db/migrations/0069_sense_content_reconciliation.sql',import.meta.url),'utf8'));
   installCaseReviewSchema(sql);
   createVocabularyContent(draft(),{kind:'operator',id:'editor'});
   const completion=alice(()=>{
@@ -203,7 +204,7 @@ test('practice preparation diagnostics and explicit retry require allowlisted au
   sql.prepare("INSERT INTO word_content_documents VALUES ('source','a','publication',?)").run(JSON.stringify(source));
   sql.exec("INSERT INTO shared_content_publications VALUES ('publication','available');INSERT INTO word_introduction_preparation(word_id,content_id) VALUES ('a','source')");
   sql.prepare('INSERT INTO legacy_sense_imports VALUES (?,?,?,?)').run('source','u1',sense.senseId,sense.version);
-  sql.exec("INSERT INTO vocabulary_practice_preparation(work_id,word_id,source_content_id,attempt_count,invocation_id,last_error,status,updated_at,next_attempt_at) VALUES ('work','a','source',3,'invocation','interrupted_unknown_outcome','failed','2026-10-17','2026-10-17')");
+  sql.exec("INSERT INTO model_invocations(id) VALUES ('invocation'); INSERT INTO vocabulary_practice_preparation(work_id,word_id,source_content_id,generation_key,created_at,attempt_count,invocation_id,last_error,status,updated_at,next_attempt_at) VALUES ('work','a','source','fixture','2026-10-17',3,'invocation','interrupted_unknown_outcome','failed','2026-10-17','2026-10-17')");
   const path=`${base}/practice-preparation`;
   process.env.APP_OPERATOR_CLERK_USER_IDS='someone-else';
   assert.equal(call('get',`${path}/failures`).status,403);

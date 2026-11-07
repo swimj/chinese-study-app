@@ -58,6 +58,10 @@ beforeEach(()=>{
     ALTER TABLE learner_word_state ADD COLUMN personal_notes TEXT NOT NULL DEFAULT '';
   `);
   for(const file of ['0062_vocabulary_sense_coverage.sql','0064_vocabulary_default_useful_senses.sql','0039_vocabulary_content.sql','0041_vocabulary_learner_state.sql','0042_vocabulary_sessions.sql','0047_vocabulary_dismissal.sql','0052_vocabulary_automatic_promotion_pause.sql','0023_session_debrief.sql','0048_vocabulary_connections.sql'])db.exec(fs.readFileSync(new URL(`../server/db/migrations/${file}`,import.meta.url),'utf8'));
+  db.exec('CREATE TABLE model_invocations(id TEXT PRIMARY KEY,status TEXT,actor_kind TEXT,learner_id TEXT); CREATE TABLE word_content_documents(content_id TEXT PRIMARY KEY);');
+  db.exec(fs.readFileSync(new URL('../server/db/migrations/0045_vocabulary_provenance_links.sql',import.meta.url),'utf8'));
+  db.exec("ALTER TABLE vocabulary_practice_preparation ADD COLUMN next_attempt_at TEXT NOT NULL DEFAULT ''; ALTER TABLE vocabulary_practice_preparation ADD COLUMN total_attempt_count INTEGER NOT NULL DEFAULT 0;");
+  db.exec(fs.readFileSync(new URL('../server/db/migrations/0069_sense_content_reconciliation.sql',import.meta.url),'utf8'));
   owner(()=>{
     exercise('general-1','a');exercise('general-2','a');exercise('teach-a','a','teaching');exercise('teach-new','new','teaching');
     for(const [wordId,contentId] of [['a','intro-a'],['new','intro-new']])createVocabularyContent({contentId,kind:'introduction',payloadVersion:1,
@@ -1190,4 +1194,32 @@ test('shared ordinary cues with an empty-inventory alternative are excluded from
   assert.equal(JSON.stringify(payload).includes(shared.contentId),false);
   assert.ok(fresh.session.context.words.some(word=>word.wordId==='a'));
   assert.equal(nextVocabularyExercise('retained-shared','next').currentEncounter?.snapshot.contentId,shared.contentId);
+}));
+
+function blockReconciledWord(wordId:string):void {
+  db.prepare(`INSERT INTO sense_content_reconciliations
+    (resolution_id,word_id,version,status,draft_json,snapshot_json,applied_plan_json,authority_json,practice_source_json,actor_id,created_at,updated_at,applied_at)
+    VALUES (?, ?, 1, 'applied','{}','{}','{}','{}',?,'test','2026-11-06','2026-11-06','2026-11-06')`).run(`resolution-${wordId}`,wordId,JSON.stringify({source:{word:{wordId,hanzi:'字',traditional:null,pinyin:'zì'},uses:[],examples:[]},senses:[]}));
+}
+test('failed reconciliation blocks fresh study while retained sessions and learner state survive',()=>owner(()=>{
+  addVocabularyWord('new');
+  const retained=startVocabularyStudy();
+  const learner=db.prepare('SELECT * FROM learner_words ORDER BY word_id').all();
+  for(const wordId of ['a','b','new'])blockReconciledWord(wordId);
+  const preview=previewVocabularyStudy();
+  assert.equal(preview.itemCount,0);
+  assert.equal(preview.preparationPending,true);
+  assert.throws(()=>startVocabularyStudy(),/Replacement study content/);
+  assert.deepEqual(getVocabularyStudy(retained.session.sessionId).session.context.words,retained.session.context.words);
+  assert.ok(nextVocabularyExercise(retained.session.sessionId,'retained-during-reconciliation').currentEncounter);
+  assert.deepEqual(db.prepare('SELECT * FROM learner_words ORDER BY word_id').all(),learner);
+}));
+test('reconciliation excludes shared cues with a blocked alternative from fresh pools',()=>owner(()=>{
+  const shared=createVocabularyContent({contentId:'recon-alternatives',kind:'exercise',payloadVersion:1,body:{prompt:'Either'},
+    accessScope:'shared',availability:'active',originKind:'human',words:[{wordId:'a',relation:'target'},{wordId:'b',relation:'target'}],
+    exerciseType:'word',skill:'production',exerciseRole:'general',assessment:{match:'prepared'},
+    answers:[{wordId:'a',acceptedForms:['甲']},{wordId:'b',acceptedForms:['乙']}]},actor);
+  blockReconciledWord('b');
+  const payload=composeVocabularySessionPayload({sessionId:'recon-pool',words:[{wordId:'a',mode:'practice'}]});
+  assert.equal(JSON.stringify(payload).includes(shared.contentId),false);
 }));

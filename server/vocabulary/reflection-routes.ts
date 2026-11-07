@@ -165,7 +165,7 @@ export function registerVocabularyReflectionRoutes(app:Express,options:{wake?:()
     object(req.query,['offset','limit','kind','anchorId']);
     for(const key of ['offset','limit'] as const)if(req.query[key]!==undefined&&(typeof req.query[key]!=='string'||!/^\d+$/.test(req.query[key])))throw new VocabularyReflectionRequestError('Expected attention queue pagination');
     return listVocabularyAttention(actor,{offset:req.query.offset===undefined?0:Number(req.query.offset),limit:req.query.limit===undefined?20:Number(req.query.limit),
-      ...(req.query.kind===undefined?{}:{kind:choice(req.query.kind,['defaults','approval','preparation','dispatch','case'] as const)}),
+      ...(req.query.kind===undefined?{}:{kind:choice(req.query.kind,['defaults','approval','preparation','dispatch','case','reconciliation'] as const)}),
       ...(req.query.anchorId===undefined?{}:{anchorId:text(req.query.anchorId)})},
       {approvals:getVocabularyApprovalRequests().list(),preparationFailure:practicePreparation.failed});
   }));

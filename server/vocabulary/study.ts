@@ -1,4 +1,5 @@
 import { isVocabularySessionWordEligible } from '../db/vocabulary-sense-eligibility.ts';
+import { isSenseContentReconciliationPending } from '../db/sense-content-reconciliation-state.ts';
 import type { VocabularySessionPayload } from '../../src/domain/vocabulary-session-payload.ts';
 import { selectSequentialBootstrapReveal } from '../../src/domain/word-content/reveal.ts';
 import { reconcileVocabularyPreparationReserve } from './preparation-reserve.ts';
@@ -79,7 +80,7 @@ function contrastEligible(content:VocabularyContent,wordId:string):boolean {
   if(!state)return false;
   const choices=object(content.body).choices;
   return Array.isArray(choices)&&choices.length>=2&&choices.every((choice)=>{
-    const id=object(choice).wordId;if(typeof id!=='string'||!isVocabularySessionWordEligible(id))return false;
+    const id=object(choice).wordId;if(typeof id!=='string'||!isVocabularySessionWordEligible(id)||isSenseContentReconciliationPending(id))return false;
     const member=getVocabularyLearnerWord(id);return member!==null&&member.dismissedAt===null&&member.mode!=='unstudied';
   });
 }
@@ -137,6 +138,7 @@ function snapshot(content:VocabularyContent,role:VocabularyEncounterSnapshot['ro
 }
 /** Expensive content discovery happens once, before the first encounter. */
 export function composeVocabularySessionPayload(context:VocabularySessionInitialContext):VocabularySessionPayload {
+  if(context.words.some(word=>isSenseContentReconciliationPending(word.wordId)))throw new VocabularySessionInputError('Replacement study content is being prepared.');
   const payload:VocabularySessionPayload={version:1,words:{},pureCues:[],snapshots:{}};
   const empty=projectVocabularySession(context,[]);
   const retain=(content:VocabularyContent,role:VocabularyEncounterSnapshot['role'])=>{
@@ -204,7 +206,7 @@ export function getVocabularyStudy(sessionId:string):VocabularyStudy {
 }
 function composeCurrentStudy(requestTeaching:(wordId:string)=>void, timeZone?:string):VocabularyComposition {
   return composeVocabularyStudy({teachingReady,timeZone,canUseSkill:(wordId,skill)=>{
-    if(!skillEnabled(wordId,skill))return false;
+    if(isSenseContentReconciliationPending(wordId)||!skillEnabled(wordId,skill))return false;
     if(skill!=='contextual_selection')return true;
     const mode=getVocabularyLearnerWord(wordId)?.mode;
     return mode!==undefined&&mode!=='unstudied'&&listVocabularyExercises({wordId,mode}).some((entry)=>eligible(entry)&&contrastEligible(entry,wordId));
@@ -248,7 +250,11 @@ export function previewVocabularyStudy(options:{requestTeaching?:(wordId:string)
   const request=options.requestTeaching??(()=>{});
   composition.requestedPreparationWordIds.forEach(request);
   return {previewSeed,itemCount:planned.words.length+planned.reviewOrder.filter((entry)=>entry.kind==='pure_cue').length,
-    preparationPending:composition.requestedPreparationWordIds.length>0};
+    preparationPending:composition.requestedPreparationWordIds.length>0||hasPendingReconciliation()};
+}
+function hasPendingReconciliation():boolean {
+  return (getDb().prepare(`SELECT r.word_id FROM sense_content_reconciliations r
+    JOIN learner_words w ON w.word_id=r.word_id WHERE r.status='applied' AND w.learner_id=? AND w.dismissed_at IS NULL`).all(requireLearnerId()) as {word_id:string}[]).some(row=>isSenseContentReconciliationPending(row.word_id));
 }
 export function startVocabularyStudy(options:{requestTeaching?:(wordId:string)=>void;prepareReserve?:()=>void;previewSeed?:string;timeZone?:string}={}):VocabularyStudy {
   (options.prepareReserve??reconcileVocabularyPreparationReserve)();
@@ -256,7 +262,9 @@ export function startVocabularyStudy(options:{requestTeaching?:(wordId:string)=>
   return atomic(()=>{
     const sessionId=randomUUID();
     const planned=planVocabularyStudy(composition,options.previewSeed??sessionId,true);
-    if(planned.words.length===0&&planned.reviewOrder.length===0)throw new VocabularySessionInputError(composition.requestedPreparationWordIds.length
+    if(planned.words.length===0&&planned.reviewOrder.length===0)throw new VocabularySessionInputError(hasPendingReconciliation()
+      ?'Replacement study content is being prepared. Try again shortly; other ready work can be studied when available.'
+      :composition.requestedPreparationWordIds.length
       ?'Your new-word introductions are being prepared. Try starting again shortly; other ready work can be studied when available.'
       :'No ready study material is available.');
     for(const word of planned.words)if(word.mode==='unstudied') {

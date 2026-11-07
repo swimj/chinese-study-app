@@ -1,3 +1,4 @@
+import { canonicalExerciseSource } from './canonical-exercise-source.ts';
 import { vocabularyPhraseClozePrompt } from '../../src/domain/vocabulary-production-coverage.ts';
 import { getVocabularyRepertoireSelection } from '../db/vocabulary-repertoire-selection.ts';
 import { projectVocabularyImprovementInput, vocabularyImprovementWords } from './exercise-improvement-authoring.ts';
@@ -5,7 +6,7 @@ import { isVocabularyDefinitionFallback } from '../../src/domain/vocabulary-prod
 import { ensureVocabularyDefaultUsefulSelection } from './default-useful-selection.ts';
 import { VocabularySenseSelectionRequired } from './sense-readiness.ts';
 import { resolveVocabularySenseCoverage } from '../db/vocabulary-sense-coverage.ts';
-import { GENERAL_EXERCISE_CONTRACT,generalExerciseSchema,validateGeneralExerciseOutput,type GeneralExerciseSource } from './general-exercise-authoring.ts';
+import { GENERAL_EXERCISE_CONTRACT,generalExerciseSchema,validateGeneralExerciseOutput } from './general-exercise-authoring.ts';
 import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { VocabularyReflectionConflict } from '../db/vocabulary-reflection.ts';
@@ -223,30 +224,7 @@ export async function runVocabularyImprovementAdmission(options: {
         bases:[{contentId:original.contentId,expectedVersion:original.version},...promoted.bases],
         ...(local.invocationId?{invocationId:local.invocationId}:{})}:null}};
   }
-  const authoringSource:GeneralExerciseSource={word:{wordId,hanzi:word.hanzi,traditional:word.traditional,pinyin:word.pinyin},
-    uses:selectedInventory.map(sense=>{
-      const description=sense.description;
-      if(typeof description==='string'&&description.trim())return {id:sense.senseId,label:description,notes:[],exampleIds:[]};
-      if(!description||typeof description!=='object'||Array.isArray(description)||typeof description.label!=='string'
-        ||(description.notes!==undefined&&(!Array.isArray(description.notes)||description.notes.some(note=>typeof note!=='string'))))throw new Error('Sense lacks authoring evidence');
-      return {id:sense.senseId,label:description.label,notes:(description.notes??[]) as string[],exampleIds:[]};
-    }),examples:[]};
-  // Imported inventories retain useful example evidence; generated inventories legitimately have none.
-  const examples:Array<GeneralExerciseSource['examples'][number]>=[];
-  authoringSource.uses.forEach((use,index)=>{
-    const description=selectedInventory[index]!.description;
-    if(!description||typeof description!=='object'||Array.isArray(description)||!Array.isArray(description.examples))return;
-    for(const [exampleIndex,value] of description.examples.entries()){
-      if(!value||typeof value!=='object')throw new Error('Invalid sense example evidence');
-      const example=value as Record<string,unknown>;
-      if(typeof example.text!=='string'||typeof example.translation!=='string'
-        ||(example.pronunciation!==null&&typeof example.pronunciation!=='string'))throw new Error('Invalid sense example evidence');
-      const id=`${use.id}:example:${exampleIndex+1}`;
-      examples.push({id,text:example.text,translation:example.translation,pronunciation:example.pronunciation});
-      (use.exampleIds as string[]).push(id);
-    }
-  });
-  const input:GeneralExerciseSource={...authoringSource,examples};
+  const input=canonicalExerciseSource({wordId,hanzi:word.hanzi,traditional:word.traditional,pinyin:word.pinyin},selectedInventory);
   const result = await stage<ImprovementResult>('repertoire',input,generalExerciseSchema(input),(value,invocationId)=>{
     const repertoire=validateGeneralExerciseOutput(input,value);
     let diagnosis=mapped.value.rationale;

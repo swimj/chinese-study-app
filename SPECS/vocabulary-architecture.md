@@ -148,6 +148,16 @@ these contracts or by passing implementation tests.
 
 ### Canonical senses and useful selection
 
+Sense/content reconciliation separates saved linguistic judgment from live
+application. A resolution retains the source and sense versions it examined;
+unsupported transformations remain saved with explicit application blockers.
+An applicable resolution atomically changes current eligibility, selected policy,
+and durable replacement requirements. Replacement publication verifies the applied
+resolution and its canonical authority. Fresh serving waits for required compatible
+content; retained session snapshots and learner progress remain unchanged. See the
+[reconciliation contract](sense-content-reconciliation.md) for decision boundaries
+and the first handler's scope.
+
 For now, inventory generation groups uses under the supplied simplified spelling
 and pronunciation, without a separate inventory for each traditional spelling.
 Traditional forms remain lexical data but are not supplied to inventory or
