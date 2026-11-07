@@ -9,8 +9,13 @@ import { getVocabularyCaseCard,vocabularyReviewQueueEligibilitySql } from './voc
 type PreparationFailure = {workId:string;wordId:string;sourceContentId:string|null;reconciliationId?:string|null;attemptCount:number;invocationId:string|null;lastError:string|null;retryable:boolean};
 type Dependencies = {approvals:VocabularyApprovalRequest[];preparationFailure:(workId:string)=>PreparationFailure};
 type Candidate = {id:string;kind:VocabularyAttentionItem['kind'];sourceId:string;title:string;createdAt:string;caseId:string|null};
+type ReconciliationGroup = {
+  word_id:string;source_content_id:string|null;current_source_id:string|null;resolution_id:string|null;
+  status:'unresolved'|'draft'|'resolved'|'applied';created_at:string;completed_at:string|null;mismatch:number;
+};
+type GroupedFailure = {word_id:string;work_id:string;source_content_id:string|null;reconciliation_id:string|null;created_at:string;last_error:string|null};
 
-/** Only identities and labels are scanned; authored content, encounters and job results are loaded on demand. */
+/** Classify queue identities first, then batch reconciliation details for the displayed page. */
 export function listVocabularyAttention(actorId:string,input:VocabularyAttentionQuery,dependencies:Dependencies):VocabularyAttentionPage {
   if(!isOperatorSubject(actorId,parseOperatorAllowlist(),config.authMode))throw new Error('Operator access required');
   let offset=input.offset??0;
@@ -109,16 +114,29 @@ export function listVocabularyAttention(actorId:string,input:VocabularyAttention
     if(anchor)offset=Math.floor(anchor.position/limit)*limit;
   }
   const rows=db.prepare(`${candidates} SELECT * FROM attention ${filter} ORDER BY createdAt,id LIMIT ? OFFSET ?`).all(...args,limit,offset) as Candidate[];
+  const reconciliationIds=rows.filter(row=>row.kind==='reconciliation').map(row=>row.sourceId);
+  const groups=new Map<string,ReconciliationGroup>();
+  const groupedFailures=new Map<string,GroupedFailure[]>();
+  if(reconciliationIds.length){
+    const pageArgs=[JSON.stringify(approvals),JSON.stringify(approvals),JSON.stringify(reconciliationIds)];
+    const pageGroups=db.prepare(`${candidates} SELECT word_id,source_content_id,current_source_id,resolution_id,status,created_at,completed_at,mismatch
+      FROM reconciliation_groups WHERE word_id IN (SELECT value FROM json_each(?))`).all(...pageArgs) as ReconciliationGroup[];
+    for(const group of pageGroups)groups.set(group.word_id,group);
+    const failures=db.prepare(`${candidates} SELECT member.word_id,p.work_id,p.source_content_id,p.reconciliation_id,p.created_at,p.last_error
+      FROM grouped_failures member JOIN vocabulary_practice_preparation p ON p.work_id=member.work_id
+      WHERE member.word_id IN (SELECT value FROM json_each(?)) ORDER BY p.created_at,p.work_id`).all(...pageArgs) as GroupedFailure[];
+    for(const failure of failures){
+      const wordFailures=groupedFailures.get(failure.word_id)??[];
+      wordFailures.push(failure);groupedFailures.set(failure.word_id,wordFailures);
+    }
+  }
   const items=rows.map((row):VocabularyAttentionItem=>{
     const base={id:row.id,title:row.title,createdAt:row.createdAt,caseId:row.caseId};
     switch(row.kind){
       case 'reconciliation': {
-        const group=db.prepare(`${candidates} SELECT * FROM reconciliation_groups WHERE word_id=?`).get(JSON.stringify(approvals),JSON.stringify(approvals),row.sourceId) as {
-          word_id:string;source_content_id:string|null;current_source_id:string|null;resolution_id:string|null;status:'unresolved'|'draft'|'resolved'|'applied';created_at:string;completed_at:string|null;mismatch:number;
-        };
-        const failures=db.prepare(`${candidates} SELECT p.work_id,p.source_content_id,p.reconciliation_id,p.created_at,p.last_error FROM grouped_failures member
-          JOIN vocabulary_practice_preparation p ON p.work_id=member.work_id WHERE member.word_id=? ORDER BY p.created_at,p.work_id`)
-          .all(JSON.stringify(approvals),JSON.stringify(approvals),row.sourceId) as Array<{work_id:string;source_content_id:string|null;reconciliation_id:string|null;created_at:string;last_error:string|null}>;
+        const group=groups.get(row.sourceId);
+        if(!group)throw new Error('Reconciliation group disappeared while loading attention');
+        const failures=groupedFailures.get(row.sourceId)??[];
         const progress=senseContentReconciliationProgress(row.sourceId);
         return {...base,kind:'reconciliation',wordId:row.sourceId,sourceContentId:group.source_content_id,resolutionId:group.resolution_id,status:group.status,progress,
           reason:group.status==='applied'&&group.completed_at!==null&&group.mismatch===1?'Teaching and current sense scope differ again; start another resolution.':group.status==='applied'?`Replacement ${progress.status}`:group.status==='unresolved'?'Teaching and canonical sense scope differ.':'Saved sense resolution',
