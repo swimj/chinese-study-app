@@ -324,8 +324,11 @@ their case or standalone proposal for revision rather than offering a stale retr
 identity resolution, job evidence and existing closure controls. **Back to attention**
 returns to the selected item if it still needs attention. Details discloses request,
 source and invocation identifiers. There is no generic dismissal of operational
-failures. Unclassified legacy cases remain visible; a source-conflict failure may
-require investigation when no successful assessment exists to reassess.
+failures. Unclassified legacy cases remain visible. A case whose source is known
+to have changed or been retired offers **Dismiss**; its job and evidence remain
+in Archive. Reading the item does not dismiss it. When an applied proposal changes
+a source, other idle, unreviewable attention cases for that exact source resolve
+with their evidence retained. Active work and reviewable cases remain available.
 
 Inventory-gap judgments remain attached to their cases and retained in Archive
 when closed. Closure is not inventory reconciliation. Needs attention does not

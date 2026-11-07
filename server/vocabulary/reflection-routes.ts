@@ -14,7 +14,7 @@ import { getVocabularyApprovalRequests } from './approval-requests.ts';
 import { listVocabularyCaseQueue,getVocabularyCaseCard,setVocabularyCaseDeferred,resolveVocabularyCaseReview,reassessVocabularyCaseReview,addVocabularyCaseNote } from '../db/vocabulary-case-queue.ts';
 import { getVocabularyCaseWorkspace, listVocabularyReflectionCases, listVocabularyProposals, listVocabularyProposalReviewBatch, getVocabularyProposal, getVocabularyOriginalModelProposal,
   requestVocabularyPureCueResolution, requestVocabularyReassessment, requestVocabularySecondOpinion, listVocabularySecondOpinions, listVocabularyNoProposalCases, requestVocabularyCaseSecondOpinion, createVocabularyProposal, saveVocabularyProposal, previewVocabularyProposal, approveVocabularyProposal,
-  applyVocabularyProposal, closeVocabularyProposal, closeVocabularyCase, listOwnVocabularyMessages,
+  applyVocabularyProposal, closeVocabularyProposal, closeVocabularyCase, dismissSupersededVocabularyCase, listOwnVocabularyMessages,
   getOwnVocabularyFeedbackAttention,listOwnVocabularyFeedbackFailures,listOwnVocabularyFeedbackJobs, markOwnVocabularyMessageSeen, dismissOwnVocabularyMessage, restoreOwnVocabularyMessage, retryOwnVocabularyFeedback,
   retryVocabularyReflectionJob, listVocabularyFailedDispatches, retryVocabularyPostSessionDispatch, VocabularyReflectionConflict } from '../db/vocabulary-reflection.ts';
 
@@ -207,6 +207,7 @@ export function registerVocabularyReflectionRoutes(app:Express,options:{wake?:()
   }));
   app.get(`${base}/cases/:id`,gate,handle((req,actor)=>getVocabularyCaseWorkspace(text(req.params.id),actor)));
   app.post(`${base}/cases/:id/close`,gate,handle((req,actor)=>{const input=object(req.body,['reason']);closeVocabularyCase(text(req.params.id),actor,optionalText(input.reason));return {ok:true};}));
+  app.post(`${base}/cases/:id/dismiss-superseded`,gate,handle((req,actor)=>{object(req.body,[]);dismissSupersededVocabularyCase(text(req.params.id),actor);return {ok:true};}));
   app.get(`${base}/proposals`,gate,handle((req,actor)=>{
     object(req.query,['status']);const status=req.query.status===undefined?undefined:choice(req.query.status,['draft','awaiting_review','approved','applied','closed'] as const);
     return {items:listVocabularyProposals(actor,status)};

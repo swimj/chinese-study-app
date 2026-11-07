@@ -84,6 +84,42 @@ function apply(state = resolved()): SenseContentReconciliationWorkspace {
   assert.deepEqual(state.plan!.blockers, []);
   return applySenseContentReconciliation('word', { expectedVersion: state.resolution!.version, planFingerprint: state.plan!.fingerprint }, actor.id);
 }
+function addRelatedReflectionJob(status: 'failed' | 'queued' | 'running', reviewState: 'open' | 'resolved'): void {
+  const at = '2026-11-07T00:00:00.000Z';
+  db.prepare(`INSERT INTO vocabulary_sessions(session_id,learner_id,protocol_version,context_json,started_at,status)
+    VALUES ('session','learner',1,'{}',?,'closed')`).run(at);
+  db.prepare(`INSERT INTO vocabulary_session_completions(completion_id,learner_id,session_id,revision_number,through_sequence,staged_at,close_at,status,input_json,report_json,policy_version,closed_at)
+    VALUES ('completion','learner','session',1,0,?,?,'closed','{}','{}','fixture',?)`).run(at,at,at);
+  db.prepare(`INSERT INTO vocabulary_reflection_session_evidence(completion_id,learner_id,session_id,projection_json,created_at)
+    VALUES ('completion','learner','session','{}',?)`).run(at);
+  for (const id of ['root-case','child-case']) db.prepare(`INSERT INTO reflection_cases
+    (case_id,completion_id,learner_id,kind,subject_key,word_id,status,evidence_snapshot_json,created_at)
+    VALUES (?,'completion','learner','exercise_improvement',?,'word','open','{}',?)`).run(id,id,at);
+  db.prepare(`INSERT INTO vocabulary_case_reviews(case_id,state,created_at,resolved_at) VALUES ('root-case',?,?,?)`)
+    .run(reviewState,at,reviewState === 'resolved' ? at : null);
+  for (const id of ['root-case','child-case']) db.prepare('INSERT INTO vocabulary_case_lineage(member_case_id,case_id) VALUES (?,?)').run(id,'root-case');
+  db.prepare(`INSERT INTO vocabulary_reflection_jobs(job_id,case_id,review_case_id,kind,dedupe_key,status,next_attempt_at,created_at,lease_token,lease_expires_at)
+    VALUES ('job','child-case','root-case','exercise_improvement','job',?,?,?,?,?)`)
+    .run(status,at,at,status === 'running' ? 'lease' : null,status === 'running' ? '2099-01-01T00:00:00.000Z' : null);
+}
+
+test('a failed assessment stops blocking when its review case resolves, without discarding saved decisions or evidence', () => {
+  addRelatedReflectionJob('failed','open');
+  const saved = resolved();
+  assert.ok(saved.plan!.blockers.some(blocker => blocker.message === 'A related assessment failed. Resolve its case before applying.'));
+  db.prepare("UPDATE vocabulary_case_reviews SET state='resolved',resolved_at=? WHERE case_id='root-case'").run('2026-11-07T01:00:00.000Z');
+  const refreshed = getSenseContentReconciliationWorkspace('word',actor.id);
+  assert.deepEqual(refreshed.plan!.blockers,[]);
+  assert.equal(refreshed.resolution!.version,saved.resolution!.version);
+  apply(refreshed);
+  assert.equal(db.prepare("SELECT status FROM vocabulary_reflection_jobs WHERE job_id='job'").get()!.status,'failed');
+});
+
+for (const status of ['queued','running'] as const) test(`${status} assessment still blocks even on a resolved case`, () => {
+  addRelatedReflectionJob(status,'resolved');
+  const state = resolved();
+  assert.ok(state.plan!.blockers.some(blocker => blocker.message.includes('assessment is queued or running') && blocker.objectIds.includes('job')));
+});
 function provider(fail = false): WordIntroductionProvider {
   return { model: 'fixture', isConfigured: () => true, generationKey: async () => 'fixture',
     generateBootstrap: async input => {

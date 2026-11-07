@@ -243,8 +243,9 @@ function readCards(wanted:{caseId:string;proposalId?:string}[]):VocabularyCaseQu
         WHEN 'vocabulary.reflection.case_second_opinion_requested' THEN json_extract(e.data_json,'$.notes') ELSE json_extract(e.data_json,'$.reason') END AS text,
       e.occurred_at AS createdAt,e.actor_id AS actorId,json_extract(e.data_json,'$.secondOpinion.requestId') AS secondOpinionRequestId,
       json_extract(e.data_json,'$.requestId') AS noteId
-    FROM members m JOIN backend_events e ON e.entity_kind='reflection' AND e.entity_id=m.memberId AND e.actor_kind='operator'
-    WHERE e.name IN ('vocabulary.reflection.case_note_added','vocabulary.reflection.admission_case_closed','vocabulary.reflection.teaching_case_closed',
+    FROM members m JOIN backend_events e ON e.entity_kind='reflection' AND e.entity_id=m.memberId
+      AND (e.actor_kind='operator' OR (e.actor_kind='service' AND e.name='vocabulary.reflection.case_source_conflict_resolved'))
+    WHERE e.name IN ('vocabulary.reflection.case_note_added','vocabulary.reflection.admission_case_closed','vocabulary.reflection.teaching_case_closed','vocabulary.reflection.case_source_superseded','vocabulary.reflection.case_source_conflict_resolved',
       'vocabulary.reflection.reassessment_editorial_captured','vocabulary.reflection.case_second_opinion_requested')
     UNION ALL
     SELECT m.caseId,r.review_id,CASE r.disposition WHEN 'approved' THEN 'approve' ELSE 'dismiss' END,

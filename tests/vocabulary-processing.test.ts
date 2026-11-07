@@ -7,10 +7,10 @@ import { DatabaseSync } from 'node:sqlite';
 import { beforeEach,afterEach,test } from 'node:test';
 import { setDb } from '../server/db/connection.ts';
 import { runWithLearnerId } from '../server/db/learner-context.ts';
-import { createVocabularyContent,mapVocabularyContentSense,createVocabularySense,establishVocabularySenseCatalog,getVocabularySenseCatalog,getVocabularySenses,getVocabularyContent } from '../server/db/vocabulary-content.ts';
+import { createVocabularyContent,updateVocabularyContent,mapVocabularyContentSense,createVocabularySense,establishVocabularySenseCatalog,getVocabularySenseCatalog,getVocabularySenses,getVocabularyContent,getVocabularyContentForMaintenance } from '../server/db/vocabulary-content.ts';
 import { writeVocabularyDefaultUsefulSenses } from '../server/db/vocabulary-sense-coverage.ts';
 import { createVocabularySession,appendVocabularySessionActions,stageVocabularySessionCompletion,cancelVocabularySessionCompletion,closeVocabularySessionCompletion } from '../server/db/vocabulary-sessions.ts';
-import { VocabularyReflectionConflict,claimVocabularyReflectionJob,retryVocabularyReflectionJob,retryOwnVocabularyFeedback,retryVocabularyPostSessionDispatch,listOwnVocabularyMessages,recordVocabularyFeedbackJudgment } from '../server/db/vocabulary-reflection.ts';
+import { VocabularyReflectionConflict,VocabularyReflectionSourceConflict,claimVocabularyReflectionJob,retryVocabularyReflectionJob,retryOwnVocabularyFeedback,retryVocabularyPostSessionDispatch,listOwnVocabularyMessages,recordVocabularyFeedbackJudgment } from '../server/db/vocabulary-reflection.ts';
 import { createVocabularyProcessingWorker } from '../server/vocabulary/processing-worker.ts';
 import { createVocabularyReflectionProvider,normalizeVocabularyReflectionOutput,normalizeVocabularySingleImprovementOutput } from '../server/vocabulary/reflection-provider.ts';
 import { projectVocabularyImprovementInput } from '../server/vocabulary/exercise-improvement-authoring.ts';
@@ -472,14 +472,45 @@ test('expired sense preparation fences its crashed reflection and resumes after 
   await processing.stop();
 });
 
- test('source conflicts remain distinct from provider failures',async()=>{
+test('other assessment conflicts do not masquerade as superseded sources',async()=>{
   pending();
   const processing=worker({isConfigured:()=>true,run:async job=>{
     if(job.kind==='exercise_improvement')throw new VocabularyReflectionConflict('source changed');
     return result(job);
   }});
   await processing.step();
-  assert.equal(sql.prepare("SELECT last_error FROM vocabulary_reflection_jobs WHERE kind='exercise_improvement'").get()!.last_error,'source_conflict');
+  assert.equal(sql.prepare("SELECT last_error FROM vocabulary_reflection_jobs WHERE kind='exercise_improvement'").get()!.last_error,'assessment_conflict');
+  assert.equal(sql.prepare("SELECT state FROM vocabulary_case_reviews").get()!.state,'open');
+  await processing.stop();
+});
+
+test('a confirmed superseded source closes an unreviewed case while retaining its failed job',async()=>{
+  pending();
+  const processing=worker({isConfigured:()=>true,run:async job=>{
+    if(job.kind==='exercise_improvement'){
+      const source=getVocabularyContentForMaintenance('one')!;
+      updateVocabularyContent('one',source.version,{...source,body:{prompt:'Revised cue'}},{kind:'operator',id:'editor'});
+      throw new VocabularyReflectionSourceConflict('Source was superseded');
+    }
+    return result(job);
+  }});
+  await processing.step();
+  const failed=sql.prepare("SELECT job_id,last_error,status FROM vocabulary_reflection_jobs WHERE kind='exercise_improvement'").get()!;
+  assert.equal(failed.status,'failed');assert.equal(failed.last_error,'source_conflict');
+  assert.equal(sql.prepare('SELECT state FROM vocabulary_case_reviews').get()!.state,'resolved');
+  const closure=sql.prepare("SELECT data_json FROM backend_events WHERE name='vocabulary.reflection.case_source_conflict_resolved'").get()!;
+  assert.equal(JSON.parse(String(closure.data_json)).jobId,failed.job_id);
+  await processing.stop();
+});
+
+test('a source conflict is not enough to close a case without confirmed supersession',async()=>{
+  pending();
+  const processing=worker({isConfigured:()=>true,run:async job=>{
+    if(job.kind==='exercise_improvement')throw new VocabularyReflectionSourceConflict('Unverified source change');
+    return result(job);
+  }});
+  await processing.step();
+  assert.equal(sql.prepare('SELECT state FROM vocabulary_case_reviews').get()!.state,'open');
   await processing.stop();
 });
 

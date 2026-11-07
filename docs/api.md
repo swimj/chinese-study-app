@@ -1247,6 +1247,10 @@ remain separate. Completed resolutions and their covered preparation failures le
 active attention without deleting source records.
 The read does not resolve work or enqueue provider calls. Full case and proposal
 payloads are loaded only on drill-in through their existing endpoints.
+Case items report `sourceSuperseded` when their assessed source is confirmed
+changed or retired. `POST /api/operator/vocabulary/cases/:id/dismiss-superseded`
+rechecks that condition and the absence of outstanding proposals in its write
+transaction before resolving the case; it retains the job and case evidence.
 
 `GET /api/operator/vocabulary/case-queue` returns a bounded display projection of
 canonical improvement cases. Parameters are `view=review|history` (default

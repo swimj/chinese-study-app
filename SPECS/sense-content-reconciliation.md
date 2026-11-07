@@ -136,6 +136,9 @@ The first transaction applies the whole supported resolution:
 A missing handler blocks this transaction rather than allowing partial application.
 The implementation should use existing versioned persistence and preparation
 machinery where it fits; a general plugin framework is not part of the deliverable.
+Failed assessment jobs belonging to resolved review cases are retained history,
+not outstanding decisions. Queued or running jobs still block application until
+they settle; open cases, dispatches, and proposals still need a disposition.
 
 Generation happens outside the transaction. Publication verifies that the resolution
 and relevant dependencies are still current, then activates a coherent replacement

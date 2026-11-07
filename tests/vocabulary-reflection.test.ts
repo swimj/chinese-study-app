@@ -245,7 +245,7 @@ test('scope migration does not authorize admission against later substantive dic
   await assert.rejects(()=>provider.run(work),/source changed before admission/);
   const admission={outcome:'laundry_list' as const,rationale:'Review',wordId:'a',sourceContentId:id,sourceContentVersion:3,
     catalogVersion:getVocabularySenseCatalog('a').version,senseIds:[],sourceMapping:{senseId:null,establishedAt:null}};
-  assert.throws(()=>recordVocabularyImprovementResult(work.jobId,work.leaseToken,{diagnosis:'Review',proposal:null,admission},judgedAt),/must describe the source encounter/);
+  assert.throws(()=>recordVocabularyImprovementResult(work.jobId,work.leaseToken,{diagnosis:'Review',proposal:null,admission},judgedAt),/source version changed before publication/);
   assert.equal(sql.prepare('SELECT count(*) n FROM teacher_judgments').get()!.n,0);
 });
 
@@ -644,6 +644,36 @@ test('replacement retains source schedules/deactivations and teaching links; fai
   assert.throws(() => applyVocabularyProposal(broken.proposalId,1,brokenReview,'broken','editor'),/UNIQUE/);
   assert.equal(getVocabularyContentForMaintenance('created-first'),null);
   assert.equal(sql.prepare('SELECT count(*) n FROM proposal_applications WHERE proposal_id=?').get(broken.proposalId)!.n,0);
+});
+
+test('applying a source revision resolves only matching idle attention cases and retains their jobs', () => {
+  const {cases}=ingest([present('one'),response('one'),present('two'),response('two')]);
+  const improvements=cases.filter(item=>item.kind==='exercise_improvement');
+  assert.equal(improvements.length,2);
+  for(let i=0;i<2;i++){
+    const job=claimVocabularyReflectionJob({kind:'exercise_improvement',now:judgedAt})!;
+    failVocabularyReflectionJob(job.jobId,job.leaseToken,'provider_failed',judgedAt,judgedAt);
+  }
+  const target=improvements.find(item=>item.contentId==='one')!,other=improvements.find(item=>item.contentId==='two')!;
+  assert.equal(getVocabularyCaseReview(target.caseId)!.state,'open');
+  const proposal=createVocabularyProposal({operations:[op('update_existing','one','one')],rationale:'Repair source'},'editor');
+  const review=approveVocabularyProposal(proposal.proposalId,1,'editor');
+  applyVocabularyProposal(proposal.proposalId,1,review,'supersede-attention','editor');
+  assert.equal(getVocabularyCaseReview(target.caseId)!.state,'resolved');
+  assert.equal(getVocabularyCaseReview(other.caseId)!.state,'open');
+  assert.equal(sql.prepare("SELECT count(*) n FROM vocabulary_reflection_jobs WHERE case_id=? AND status='failed'").get(target.caseId)!.n,1);
+  assert.equal(sql.prepare("SELECT count(*) n FROM backend_events WHERE entity_id=? AND name='vocabulary.reflection.case_source_superseded'").get(target.caseId)!.n,1);
+});
+
+test('applying a source revision leaves an active matching assessment to finish under its lease', () => {
+  const {cases}=ingest([present('one'),response('one')]);
+  const item=cases.find(value=>value.kind==='exercise_improvement')!;
+  const job=claimVocabularyReflectionJob({kind:'exercise_improvement',now:judgedAt})!;
+  const proposal=createVocabularyProposal({operations:[op('update_existing','one','one')],rationale:'Repair source'},'editor');
+  const review=approveVocabularyProposal(proposal.proposalId,1,'editor');
+  applyVocabularyProposal(proposal.proposalId,1,review,'active-attention','editor');
+  assert.equal(getVocabularyCaseReview(item.caseId)!.state,'open');
+  assert.equal(sql.prepare('SELECT status FROM vocabulary_reflection_jobs WHERE job_id=?').get(job.jobId)!.status,'running');
 });
 
 test('content drift rejects applications; teaching cases use manual proposals only; scope cannot broaden', () => {

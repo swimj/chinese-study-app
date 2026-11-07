@@ -5,6 +5,7 @@ import { isOperatorSubject,parseOperatorAllowlist } from '../operator-access.ts'
 import { config,getDb } from './connection.ts';
 import { getVocabularyDefaultSelectionFinding } from './vocabulary-sense-coverage.ts';
 import { getVocabularyCaseCard,vocabularyReviewQueueEligibilitySql } from './vocabulary-case-queue.ts';
+import { isVocabularyCaseSourceSuperseded } from './vocabulary-case-source.ts';
 
 type PreparationFailure = {workId:string;wordId:string;sourceContentId:string|null;reconciliationId?:string|null;attemptCount:number;invocationId:string|null;lastError:string|null;retryable:boolean};
 type Dependencies = {approvals:VocabularyApprovalRequest[];preparationFailure:(workId:string)=>PreparationFailure};
@@ -168,7 +169,9 @@ export function listVocabularyAttention(actorId:string,input:VocabularyAttention
       case 'case': {
         const record=db.prepare('SELECT kind FROM reflection_cases WHERE case_id=?').get(row.sourceId) as {kind:VocabularyReflectionCase['kind']};
         const job=db.prepare(`SELECT job_id AS jobId,status,last_error AS error FROM vocabulary_reflection_jobs WHERE review_case_id=? OR case_id=? ORDER BY case_sequence DESC,created_at DESC,job_id DESC LIMIT 1`).get(row.sourceId,row.sourceId) as {jobId:string;status:string;error:string|null}|undefined;
-        return {...base,kind:'case',caseId:row.sourceId,caseKind:record.kind,jobId:job?.status==='failed'?job.jobId:null,retryable:job?.status==='failed'&&job.error!=='source_conflict',reason:job?.status==='failed'?job.error??'Processing failed.':'This case has no completed assessment or proposal.'};
+        const sourceSuperseded=record.kind==='exercise_improvement'&&isVocabularyCaseSourceSuperseded(row.sourceId);
+        const outstanding=sourceSuperseded&&db.prepare("SELECT 1 FROM content_proposals p JOIN vocabulary_case_lineage l ON l.member_case_id=p.case_id WHERE l.case_id=? AND p.status NOT IN ('closed','applied') LIMIT 1").get(row.sourceId);
+        return {...base,kind:'case',caseId:row.sourceId,caseKind:record.kind,jobId:job?.status==='failed'?job.jobId:null,retryable:!sourceSuperseded&&job?.status==='failed'&&job.error!=='source_conflict',sourceSuperseded,dismissible:sourceSuperseded&&!outstanding,reason:sourceSuperseded?'The source has changed or been retired.':job?.status==='failed'?job.error==='source_conflict'?'Assessment encountered a conflict. Open the case to investigate.':job.error??'Processing failed.':'This case has no completed assessment or proposal.'};
       }
     }
   });

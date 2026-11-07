@@ -4,7 +4,8 @@ import { VocabularySenseMappingUnavailable, isSenseMappingAvailabilityFailure } 
 import { GLM_FLASH_HIGH_REFLECTION_MODEL_CONFIG } from '../reflection/glm-provider.ts';
 import { projectVocabularySenseReferences } from './model-sense-references.ts';
 import type { ensureVocabularyDefaultUsefulSelection } from './default-useful-selection.ts';
-import { VocabularyReflectionConflict } from '../db/vocabulary-reflection.ts';
+import { VocabularyReflectionConflict, VocabularyReflectionSourceConflict } from '../db/vocabulary-reflection.ts';
+import { isVocabularyCaseSourceSuperseded } from '../db/vocabulary-case-source.ts';
 import { getVocabularyContentForMaintenance, getVocabularySenseCatalog, getVocabularySenses } from '../db/vocabulary-content.ts';
 import { GENERAL_EXERCISE_CONTRACT,generalExerciseInvocation,normalizeGeneralExerciseReferences,type GeneralExerciseSource } from './general-exercise-authoring.ts';
 import { vocabularyAuthoredPromptBody } from '../../src/domain/vocabulary-production-coverage.ts';
@@ -49,7 +50,8 @@ function nonempty(value:string):void{if(!value.trim())throw new VocabularyReflec
 function source(job:VocabularyReflectionJob,checkCurrent=true):VocabularyContent|null {
   if(job.reassessmentSourceJobId||job.reassessmentSource) {
     const pinned=job.reassessmentSource,current=checkCurrent&&pinned?getVocabularyContentForMaintenance(pinned.contentId):null;
-    if(!pinned||(checkCurrent&&(!current||current.version!==pinned.version||current.availability!=='active')))throw new VocabularyReflectionConflict('Reassessment source version changed; request a new assessment');
+    if(pinned&&current&&(current.version>pinned.version||current.availability==='retired'))throw new VocabularyReflectionSourceConflict('Reassessment source was superseded');
+    if(!pinned||(checkCurrent&&(!current||current.version!==pinned.version||current.availability!=='active')))throw new VocabularyReflectionConflict('Reassessment source is unavailable');
     if(pinned.accessScope==='private'&&pinned.ownerLearnerId!==job.learnerId)throw new VocabularyReflectionOutputError('Reflection source access mismatch');
     return pinned;
   }
@@ -278,6 +280,8 @@ The input's operatorEditorial contains optional operator instructions and an exp
         return {value,invocationId:result.invocationId};
       }catch(error){invalidateServiceInvocation(result.invocationId,VOCABULARY_REFLECTION_SERVICE_ID);throw error;}
     };
+    if(job.kind==='exercise_improvement'&&isVocabularyCaseSourceSuperseded(job.caseId,job.jobId))
+      throw new VocabularyReflectionSourceConflict('Assessment source changed before admission');
     if (job.secondOpinion) {
       if (job.kind !== 'exercise_improvement') throw new VocabularyReflectionOutputError('Second opinion requires an improvement job');
       const schema=object({verdict:{type:'string',enum:['support','revise','reject']},rationale:text});
