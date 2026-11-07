@@ -230,7 +230,9 @@ only selects already admitted work. The effective presentation log determines
 rotation. The frozen context records each review word's `selectedSkill` and a
 `reviewOrder` containing word and independent pure-cue entries. Pure cues interleave
 with word exercises and use the same first-success / three-after-rejection rule;
-their coverage never becomes word credit.
+their coverage never becomes word credit. Pure-cue admission selects from schedule
+metadata and current relationship eligibility, then hydrates the chosen cues during
+composition. The session freezes their content before play begins.
 
 Composition retains the shared 1,000-item cap and 50/30/20 review/learning/new
 bucket weights, mapped to Practice/Maintain, Solidify, and Unstudied. Unused bucket
