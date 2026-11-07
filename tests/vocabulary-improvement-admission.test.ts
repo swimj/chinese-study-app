@@ -12,6 +12,7 @@ import { createVocabularyContent,createVocabularySense,establishVocabularySenseC
 import { createVocabularyPracticeProvider } from '../server/vocabulary/preparation.ts';
 import type { WordContentDocument } from '../src/domain/word-content/types.ts';
 import { createVocabularyReflectionProvider } from '../server/vocabulary/reflection-provider.ts';
+import { VocabularyReflectionSourceConflict } from '../server/db/vocabulary-case-reviews.ts';
 import type { VocabularySenseEnsurer } from '../server/vocabulary/improvement-admission.ts';
 import type { VocabularyContent } from '../src/domain/vocabulary-content.ts';
 import type { VocabularyReflectionJob } from '../src/domain/vocabulary-reflection.ts';
@@ -30,7 +31,10 @@ beforeEach(context=>{
     CREATE TABLE lexical_words(id TEXT PRIMARY KEY,hanzi TEXT,traditional TEXT,pinyin TEXT,meaning TEXT);
     INSERT INTO lexical_words VALUES ('word','放大',NULL,'fang4 da4','enlarge; amplify');
     CREATE TABLE model_invocations(id TEXT PRIMARY KEY,actor_kind TEXT,actor_id TEXT,learner_id TEXT,status TEXT,spend_usd REAL,requesting_learner_id TEXT,timestamp TEXT,invocation_type TEXT);
-    CREATE TABLE vocabulary_reflection_jobs(job_id TEXT PRIMARY KEY,kind TEXT NOT NULL CHECK(kind IN ('learner_feedback','exercise_improvement')),model_choice TEXT);
+    CREATE TABLE reflection_cases(case_id TEXT PRIMARY KEY,kind TEXT,word_id TEXT,evidence_snapshot_json TEXT);
+    CREATE TABLE vocabulary_case_lineage(member_case_id TEXT PRIMARY KEY REFERENCES reflection_cases(case_id),case_id TEXT NOT NULL REFERENCES reflection_cases(case_id));
+    CREATE TABLE vocabulary_reflection_jobs(job_id TEXT PRIMARY KEY,kind TEXT NOT NULL CHECK(kind IN ('learner_feedback','exercise_improvement')),model_choice TEXT,
+      review_case_id TEXT REFERENCES reflection_cases(case_id),case_sequence INTEGER NOT NULL DEFAULT 1,reassessment_source_json TEXT);
     INSERT INTO vocabulary_reflection_jobs(job_id,kind,model_choice) VALUES ('job','exercise_improvement',NULL);`);
   for(const name of ['0062_vocabulary_sense_coverage','0064_vocabulary_default_useful_senses','0039_vocabulary_content','0045_vocabulary_provenance_links','0050_vocabulary_improvement_admission','0051_vocabulary_pure_cue_promotion'])
     db.exec(readFileSync(new URL(`../server/db/migrations/${name}.sql`,import.meta.url),'utf8'));
@@ -96,6 +100,29 @@ const repertoire={exercises:[
   {id:'effect',sourceUseId:'effect',stimulus:{kind:'direct_text',text:'Make a small problem seem much more significant.'},teachingNote:null},
   {id:'cloze',sourceUseId:'size',stimulus:{kind:'phrase_cloze',frame:'Enlarge the image.',text:'这张图太小了，请把它____一点。'},teachingNote:'Natural size request.'},
 ]};
+
+// Most provider scenarios supply evidence directly on the job. Persist it here
+// to exercise the admission guard's canonical-case and historical-source lookup.
+for(const sourceState of ['current','revised','retired'] as const)test(`persisted case lineage ${sourceState==='current'?'admits current':'rejects '+sourceState} source before provider work`,async()=>{
+  const input=job();
+  for(const caseId of ['case','canonical-case'])db.prepare('INSERT INTO reflection_cases VALUES (?,?,?,?)')
+    .run(caseId,'exercise_improvement','word',JSON.stringify(caseId==='canonical-case'?input.evidence.evidence:[]));
+  db.prepare('INSERT INTO vocabulary_case_lineage VALUES (?,?)').run('case','canonical-case');
+  db.prepare('UPDATE vocabulary_reflection_jobs SET review_case_id=? WHERE job_id=?').run('canonical-case','job');
+  if(sourceState!=='current')updateVocabularyContent('original',original.version,{
+    ...original,...(sourceState==='retired'?{availability:'retired' as const}:{body:{prompt:'A revised source.'}}),
+  },actor);
+  const trial=provider((_request,index)=>index===1?single:repair);
+  if(sourceState==='current'){
+    assert.equal((await trial.provider.run(input)).kind,'exercise_improvement');
+    assert.equal(trial.requests.length,2);
+  }else{
+    await assert.rejects(()=>trial.provider.run(input),VocabularyReflectionSourceConflict);
+    assert.equal(trial.requests.length,0);
+    assert.equal(db.prepare('SELECT count(*) n FROM vocabulary_improvement_stages').get()!.n,0);
+  }
+  assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
+});
 
 test('improvement receives effective learner reactions and comments while mapping remains authored-content only',async()=>{
   const input=job(),encounter=input.evidence.evidence[0]!;
@@ -556,7 +583,7 @@ test('reassessment rejects a version race before any provider call',async()=>{
   const {version,createdAt,updatedAt,...draft}=original;
   updateVocabularyContent('original',version,{...draft,body:{prompt:'New version.'}},actor);
   const again=provider(()=>single);
-  await assert.rejects(()=>again.provider.run({...job(),reassessmentSourceJobId:'old',reassessmentSource:original}),/Reassessment source version changed/);
+  await assert.rejects(()=>again.provider.run({...job(),reassessmentSourceJobId:'old',reassessmentSource:original}),VocabularyReflectionSourceConflict);
   assert.equal(again.requests.length,0);
 });
 
@@ -612,7 +639,8 @@ bootstrapTest('explicit empty repertoire invocation is no-action and never retir
 
 bootstrapTest('historical review coverage cannot override word defaults for repertoire generation',async()=>{
   const {writeVocabularyWordSenseCoverage}=await import('../server/db/vocabulary-sense-coverage.ts');
-  db.exec("CREATE TABLE reflection_cases(case_id TEXT PRIMARY KEY,word_id TEXT); INSERT INTO reflection_cases VALUES ('case','word');");
+  db.prepare('INSERT INTO reflection_cases(case_id,kind,word_id,evidence_snapshot_json) VALUES (?,?,?,?)')
+    .run('case','exercise_improvement','word',JSON.stringify(job().evidence.evidence));
   db.prepare('INSERT INTO vocabulary_case_sense_coverage VALUES (?,?,?,?)').run('case',1,JSON.stringify(['effect']),at);
   writeVocabularyWordSenseCoverage('word',1,['effect'],actor);
   const trial=provider(()=>({exercises:repertoire.exercises.filter(exercise=>exercise.sourceUseId==='size')}));
@@ -818,7 +846,7 @@ test('resolved identity continuation fences source and dictionary changes before
   await assert.rejects(()=>trial.provider.run(input),/Selected lexical identities changed/);
   assert.equal(trial.requests.length,1);
   updateVocabularyContent('original',1,{...original,body:{prompt:'Changed source'}},actor);
-  await assert.rejects(()=>trial.provider.run(input),/source.*changed|version changed/i);
+  await assert.rejects(()=>trial.provider.run(input),VocabularyReflectionSourceConflict);
   assert.equal(trial.requests.length,1);
 });
 
