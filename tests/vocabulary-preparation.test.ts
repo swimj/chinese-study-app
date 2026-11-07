@@ -524,13 +524,13 @@ test('canonical edits during general generation still fence publication',async()
 
 test('teaching transaction can durably request unknown-policy work without a model or authoring attempt',async()=>{
   db.exec('UPDATE vocabulary_word_sense_coverage SET default_useful_sense_ids_json=NULL');
-  let calls=0,initializations=0;
+  let calls=0,initializations=0,selections=0;
   const provider={model:'fake',isConfigured:()=>true,generationKey:()=> 'prerequisite',async generate(){calls++;return output();}};
   const preparation=createVocabularyPracticePreparation({provider});
   db.exec('BEGIN IMMEDIATE');const work=preparation.ensure('w1')!;db.exec('COMMIT');
   assert.equal(work.lastError,'default_selection_pending');assert.equal(work.attemptCount,0);assert.equal(calls,0);
-  const worker=createVocabularyPracticeWorker({provider,ensureDefaults:async(wordId,options)=>{initializations++;const {ensureVocabularyDefaultUsefulSelection}=await import('../server/vocabulary/default-useful-selection.ts');return ensureVocabularyDefaultUsefulSelection(wordId,options);},controls:()=>({maintenanceMode:false,providerWorkEnabled:true}),providerWork:async action=>action()});
-  assert.equal(await worker.step(),true);await worker.stop();assert.equal(initializations,1);assert.equal(calls,1);
+  const worker=createVocabularyPracticeWorker({provider,ensureDefaults:async(wordId,options)=>{initializations++;const {ensureVocabularyDefaultUsefulSelection}=await import('../server/vocabulary/default-useful-selection.ts');return ensureVocabularyDefaultUsefulSelection(wordId,{...options,provider:{isConfigured:()=>true,async select(input){selections++;assert.equal(db.isTransaction,false);assert.equal(calls,0);return {senseIds:[input.senses[0]!.senseId]};}}});},controls:()=>({maintenanceMode:false,providerWorkEnabled:true}),providerWork:async action=>action()});
+  assert.equal(await worker.step(),true);await worker.stop();assert.equal(initializations,1);assert.equal(selections,1);assert.equal(calls,1);
   assert.equal(db.prepare('SELECT status FROM vocabulary_practice_preparation WHERE work_id=?').get(work.workId)!.status,'ready');
   assert.equal(getVocabularyWordSenseCoverage('w1').defaultUsefulSenseIds?.length,1);
 });

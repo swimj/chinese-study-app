@@ -45,9 +45,9 @@ belong there and in task instructions, not in this frontier.
   compounds or fixed expressions while allowing grammatical constructions.
   An established empty inventory is a settled result: the word stays stashed but
   cannot participate in new sessions, including shared answers or contrast choices.
-  Retained sessions and history are preserved. Unknown selection initializes from
-  teaching imports or an ID-preserving selector; an empty inventory resolves it
-  to `[]`. A nonempty inventory with no model-selected useful senses needs operator
+  Retained sessions and history are preserved. Unknown selection for every nonempty
+  established inventory uses an ID-preserving selector, including teaching imports;
+  an empty inventory resolves it to `[]`. A nonempty inventory with no model-selected useful senses needs operator
   review; explicit canonical/document scopes remain usable independently for
   nonempty inventories.
 - **Reflection:** private learner lessons and internal content proposals run

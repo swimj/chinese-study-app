@@ -7,48 +7,39 @@ schema migration and usefulness initialization are separate operations.
 
 `initialize-vocabulary-defaults.ts` requires an explicit database path, uses
 read-only mode by default, and requires the current schema. It reports each word
-as known, imported, selector or attention. Imported active senses with valid exact
-source links initialize deterministically. Inventory-only words need a selector
-over their existing canonical IDs. Missing/stale canonical import links or versions, and model-empty recommendations,
-require operator review. This differs from missing uses in a newer current teaching
-document: valid active canonical import links can initialize defaults even when
-that newer document has unresolved uses. The latter is preparation attention; it
-does not block this initializer or rewrite a prepared package. This procedure
-does not reconcile either kind of source discrepancy.
+as known, selector or attention. Every established nonempty inventory with unknown
+defaults needs a selector over its existing canonical IDs, including senses
+imported from teaching. Source provenance does not establish usefulness. Missing
+or stale teaching mappings remain a separate preparation concern; this initializer
+neither blocks on those links nor repairs them. Model-empty recommendations require
+operator review and leave defaults unknown.
 
 ```sh
 node --import tsx scripts/initialize-vocabulary-defaults.ts --database /absolute/rehearsal/app.db --limit 100
-node --import tsx scripts/initialize-vocabulary-defaults.ts --database /absolute/rehearsal/app.db --limit 100 --apply
+node --import tsx scripts/initialize-vocabulary-defaults.ts --database /absolute/rehearsal/app.db --limit 100 --apply --include-model-selection
 ```
 
-The first command creates neither jobs nor provider calls. The second applies only
-deterministic import selections. Known policies, including explicit none, are
-unchanged. A report's `nextWordId` is a cursor; continue with `--after VALUE` to
-review another bounded batch. Repeating a batch preserves prior decisions and
+The first command creates neither jobs nor provider calls. The second requires the
+normal OpenAI provider and initializes unknown selections in a bounded batch.
+Without `--include-model-selection`, `--apply` skips words requiring selection;
+there is no deterministic teaching-import batch. Known policies, including explicit
+none, are unchanged. A report's `nextWordId` is a cursor; continue with `--after VALUE`
+to review another bounded batch. Repeating a batch preserves prior decisions and
 completed selector work.
 
-To initialize inventory-only words, configure the normal OpenAI provider and add
-`--include-model-selection` alongside `--apply`. Each selector has a durable lease
-and bounded retry budget. A deferred result reports its next attempt state; rerun
-after its due time. Exhaustion requires an explicit operator retry or manual
-selection. The report retains failures without aborting unrelated words.
+Each selector has a durable lease and bounded retry budget. A deferred result
+reports its next attempt state; rerun after its due time. Exhaustion requires an
+explicit operator retry or manual selection. The report retains failures without
+aborting unrelated words.
 
-For a one-time serving-policy cutover, account for every word in the preflight
-census. The 2026-10-30 read-only cohort at source revision `e960db93` contained:
-
-1. 531 words whose 929 active canonical senses have exact teaching-import links:
-   apply deterministic initialization in bounded batches.
-2. 67 inventory-only words: run selector initialization in bounded batches, or
-   record an explicit operator selection for each word.
-3. Review all remaining unknown selections, model-empty recommendations and other
-   operator findings. Retain their invocation evidence and an explicit disposition.
-
-Do not call the corpus cutover complete merely because the deterministic batches
-finished. A mapped single-sense improvement intentionally does not initialize
-word defaults, so some inventory-only words may never encounter a lazy trigger.
-Rerun the dry-run census and account for every unresolved word before claiming
-completion. Lazy initialization remains useful for subsequent words; serving
-continues using its unknown-policy fallback until selection is established.
+For a corpus-wide serving-policy cutover, account for every unknown selection in
+the preflight census. Run selector initialization in bounded batches or record an
+explicit operator selection for each word. Retain invocation evidence and an
+explicit disposition for model-empty recommendations and other operator findings.
+A mapped single-sense improvement intentionally does not initialize word defaults,
+so some words may never encounter a lazy trigger. Rerun the dry-run census before
+claiming completion. Serving continues using its unknown-policy fallback until
+selection is established.
 
 Before a hosted application, follow the [stopped-writer procedure](schema-migrations.md)
 for direct database work and retain database identity, source revision, dry-run and
