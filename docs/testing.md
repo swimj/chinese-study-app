@@ -380,6 +380,12 @@ The live operator workflow is covered separately by
 live effects, stale evidence, atomic rollback and replay, preserved canonical
 identities, applied authority across a later draft, replacement failure/retry,
 and progress through ordinary workers with injected providers.
+It also checks read access while another connection reserves the WAL writer,
+single-snapshot saves, and compatibility with previously saved offline snapshots.
+`tests/sense-inventory-reconciliation-snapshot.test.ts` checks embedded references,
+the complete teaching-binding closure, and equivalent active dependencies in
+online and offline snapshots. `tests/vocabulary-attention.test.ts` checks batched
+reconciliation hydration across pages with bounded classification-query counts.
 `tests/sense-content-reconciliation-routes.test.ts` exercises the HTTP boundary;
 `tests/reconciliation-testbed.test.ts` verifies the synthetic A → C / replacement B
 fixture and its unmapped-source failure. These tests do not establish linguistic

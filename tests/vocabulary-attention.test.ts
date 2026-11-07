@@ -163,6 +163,37 @@ const preparationDependencies={approvals:[] as VocabularyApprovalRequest[],prepa
   const row=sql.prepare('SELECT source_content_id,last_error FROM vocabulary_practice_preparation WHERE work_id=?').get(workId)!;
   return {workId,wordId:'word',sourceContentId:String(row.source_content_id),attemptCount:1,invocationId:null,lastError:String(row.last_error),retryable:false};
 }};
+test('reconciliation page hydration batches queries and keeps each word’s failures separate',t=>{
+  for(let index=0;index<25;index++){
+    const id=`batch-${String(index).padStart(2,'0')}`,source=`document-${id}`,publication=`publication-${id}`;
+    sql.prepare('INSERT INTO lexical_words(id,hanzi,pinyin,meaning,examples_json,priority,created_at) VALUES (?,?,?,?,?,1,?)')
+      .run(id,id,'zì','character','[]',at);
+    sql.prepare(`INSERT INTO shared_content_publications(publication_id,content_kind,content_id,learning_purpose_key,publication_status,published_at,status_updated_at)
+      VALUES (?,'word_content',?,?,'available',?,?)`).run(publication,source,id,at,at);
+    sql.prepare(`INSERT INTO word_content_documents(content_id,word_id,content_json,model,created_at,publication_id)
+      VALUES (?,?,?,'fixture',?,?)`).run(source,id,JSON.stringify({uses:[{id:'unmapped'}]}),at,publication);
+    sql.prepare('INSERT INTO word_introduction_preparation(word_id,content_id) VALUES (?,?)').run(id,source);
+    sql.prepare(`INSERT INTO vocabulary_practice_preparation(work_id,word_id,source_content_id,generation_key,status,created_at,updated_at,last_error)
+      VALUES (?,?,?,?,'failed',?,?,'generation_failed')`).run(`work-${id}`,id,source,id,at,at);
+  }
+  const statements:string[]=[],prepare=sql.prepare.bind(sql);
+  t.mock.method(sql,'prepare',(query:string)=>{statements.push(query);return prepare(query);});
+  const page=listVocabularyAttention('editor',{limit:20,anchorId:'reconciliation:batch-22'},dependencies);
+  assert.equal(page.total,25);assert.equal(page.offset,20);assert.equal(page.items.length,5);
+  for(const [index,item] of page.items.entries()){
+    assert.equal(item.kind,'reconciliation');
+    if(item.kind!=='reconciliation')throw new Error('Expected reconciliation');
+    const id=`batch-${20+index}`;
+    assert.equal(item.wordId,id);
+    assert.deepEqual(item.children.map(child=>child.id),[`source:document-${id}`,`preparation:work-${id}`]);
+  }
+  const smallPageQueries=statements.filter(query=>query.startsWith('WITH latest_reconciliations')).length;
+  statements.length=0;
+  assert.equal(listVocabularyAttention('editor',{limit:20,anchorId:'reconciliation:batch-00'},dependencies).items.length,20);
+  const fullPageQueries=statements.filter(query=>query.startsWith('WITH latest_reconciliations')).length;
+  assert.equal(fullPageQueries,smallPageQueries,'Corpus classification queries must not grow with the displayed card count');
+  assert.ok(fullPageQueries<=5,`Expected bounded classification queries, got ${fullPageQueries}`);
+});
 test('one reconciliation groups failures by replaced source regardless of error label',()=>{
   seedReconciliationSource();seedReconciliationSource('older-document',false);
   seedPreparation('mapping-a');seedPreparation('mapping-b');seedPreparation('provider-failure','document','generation_failed');seedPreparation('older-mapping','older-document');seedPreparation('older-provider','older-document','generation_failed');

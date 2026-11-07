@@ -24,9 +24,9 @@ const sorted = (items: Iterable<string>): string[] => [...new Set(items)].sort()
 function authorize(actorId: string): void {
   if (!isOperatorSubject(actorId, parseOperatorAllowlist(), config.authMode)) throw new SenseContentReconciliationError('Operator access required', 403);
 }
-function atomic<T>(work: () => T): T {
+function atomic<T>(work: () => T, mode: 'read' | 'write' = 'write'): T {
   const db = getDb(), nested = db.isTransaction, point = `reconcile_${randomUUID().replaceAll('-', '')}`;
-  db.exec(nested ? `SAVEPOINT ${point}` : 'BEGIN IMMEDIATE');
+  db.exec(nested ? `SAVEPOINT ${point}` : mode === 'read' ? 'BEGIN' : 'BEGIN IMMEDIATE');
   try { const value = work(); db.exec(nested ? `RELEASE ${point}` : 'COMMIT'); return value; }
   catch (error) { db.exec(nested ? `ROLLBACK TO ${point}` : 'ROLLBACK'); if (nested) db.exec(`RELEASE ${point}`); throw error; }
 }
@@ -35,7 +35,7 @@ function stored(wordId: string): Stored | null {
 }
 function snapshot(wordId: string): InventorySnapshot {
   if (!getDb().prepare('SELECT 1 FROM lexical_words WHERE id=?').get(wordId)) throw new SenseContentReconciliationError('Unknown vocabulary word', 404);
-  const current = snapshotInventoryForReconciliation(getDb(), wordId);
+  const current = snapshotInventoryForReconciliation(getDb(), wordId, { mode: 'online' });
   if (!teaching(current)) {
     const previous = getDb().prepare("SELECT snapshot_json FROM sense_content_reconciliations WHERE word_id=? AND status='applied' ORDER BY rowid DESC LIMIT 1").get(wordId);
     // A pending replacement has no current pointer. Retain the last reviewed
@@ -183,8 +183,8 @@ function contentSummary(value: unknown): string {
   visit(value);
   return (texts.length ? [...new Set(texts)].join(' · ') : JSON.stringify(value)).slice(0, 500);
 }
-function workspace(wordId: string): SenseContentReconciliationWorkspace {
-  const current = snapshot(wordId), row = stored(wordId);
+function workspace(wordId: string, current = snapshot(wordId)): SenseContentReconciliationWorkspace {
+  const row = stored(wordId);
   const display = row ? JSON.parse(row.snapshot_json) as InventorySnapshot : current;
   const defaults = getVocabularyWordSenseCoverage(wordId).defaultUsefulSenseIds ?? [];
   return { wordId, hanzi: current.word.hanzi, pinyin: current.word.pinyin,
@@ -197,7 +197,7 @@ function workspace(wordId: string): SenseContentReconciliationWorkspace {
     progress: senseContentReconciliationProgress(wordId) };
 }
 export function getSenseContentReconciliationWorkspace(wordId: string, actorId: string): SenseContentReconciliationWorkspace {
-  authorize(actorId); return atomic(() => workspace(wordId));
+  authorize(actorId); return atomic(() => workspace(wordId), 'read');
 }
 export function listSenseContentReconciliationWords(actorId: string): SenseContentReconciliationWord[] {
   authorize(actorId);
@@ -220,7 +220,7 @@ export function listSenseContentReconciliationWords(actorId: string): SenseConte
       if (defaults !== null && JSON.stringify(sorted(defaults)) !== JSON.stringify(sorted(mappings.map(mapping => String(mapping.sense_id))))) return [{ wordId: word.wordId, hanzi: word.hanzi, pinyin: word.pinyin, reason: 'Teaching and selected default scope differ' }];
       return saved;
     });
-  });
+  }, 'read');
 }
 export function saveSenseContentReconciliation(wordId: string, input: SenseContentReconciliationSave, actorId: string): SenseContentReconciliationWorkspace {
   authorize(actorId); validateSave(input);
@@ -241,7 +241,8 @@ export function saveSenseContentReconciliation(wordId: string, input: SenseConte
       VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(resolution_id) DO UPDATE SET version=excluded.version,status=excluded.status,draft_json=excluded.draft_json,
       snapshot_json=excluded.snapshot_json,actor_id=excluded.actor_id,updated_at=excluded.updated_at`)
       .run(continuing?.resolution_id ?? randomUUID(), wordId, (before?.version ?? 0) + 1, input.status, JSON.stringify(draft), source, actorId, continuing?.created_at ?? now, now);
-    history(stored(wordId)!, actorId); return workspace(wordId);
+    // Saving changes only the judgment/history, not the dependencies just read.
+    history(stored(wordId)!, actorId); return workspace(wordId, current);
   });
 }
 
