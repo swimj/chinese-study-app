@@ -9,7 +9,7 @@ import { installLearnerContextSqlFunction } from '../server/db/learner-context.t
 import { createBaselineSchema } from '../server/db/persistence.ts';
 import { migrateDatabase } from '../server/db/migrations.ts';
 import { createVocabularySense,createVocabularyContent,getVocabularyContentForMaintenance,updateVocabularyContent } from '../server/db/vocabulary-content.ts';
-import { createVocabularyProposal,saveVocabularyProposal } from '../server/db/vocabulary-reflection.ts';
+import { dismissSupersededVocabularyCase,createVocabularyProposal,saveVocabularyProposal } from '../server/db/vocabulary-reflection.ts';
 import { listVocabularyCaseQueue,getVocabularyCaseCard,resolveVocabularyCaseReview,reassessVocabularyCaseReview } from '../server/db/vocabulary-case-queue.ts';
 import { writeVocabularyDefaultUsefulSenses } from '../server/db/vocabulary-sense-coverage.ts';
 import { listVocabularyAttention } from '../server/db/vocabulary-attention.ts';
@@ -72,6 +72,29 @@ test('failed reassessment stays with the earlier reviewable assessment; queued r
   seed('initial','exercise_improvement');assert.equal(listVocabularyAttention('editor',{},dependencies).total,1);
   sql.exec("UPDATE vocabulary_reflection_jobs SET status='queued' WHERE case_id='initial'");
   assert.equal(listVocabularyAttention('editor',{},dependencies).total,0);
+});
+test('a superseded source is visible and dismissible without changing the case on read',()=>{
+  seed('obsolete','exercise_improvement');
+  const source=getVocabularyContentForMaintenance('source')!;
+  sql.prepare('UPDATE vocabulary_reflection_jobs SET reassessment_source_json=? WHERE job_id=?').run(JSON.stringify(source),'job-obsolete');
+  let item=listVocabularyAttention('editor',{},dependencies).items[0];
+  assert.equal(item.kind==='case'&&item.sourceSuperseded,false);
+  assert.equal(item.kind==='case'&&item.retryable,true);
+  updateVocabularyContent('source',source.version,{...source,body:{prompt:'Updated cue'}},{kind:'operator',id:'editor'});
+  item=listVocabularyAttention('editor',{},dependencies).items[0];
+  assert.equal(item.kind==='case'&&item.sourceSuperseded,true);
+  assert.equal(item.kind==='case'&&item.dismissible,true);
+  assert.equal(item.kind==='case'&&item.retryable,false);
+  assert.match(item.reason,/source has changed/i);
+  assert.equal(sql.prepare("SELECT state FROM vocabulary_case_reviews WHERE case_id='obsolete'").get()!.state,'open');
+  sql.prepare("UPDATE vocabulary_reflection_jobs SET status='queued' WHERE job_id='job-obsolete'").run();
+  assert.throws(()=>dismissSupersededVocabularyCase('obsolete','editor'),/active case work/);
+  assert.equal(sql.prepare("SELECT state FROM vocabulary_case_reviews WHERE case_id='obsolete'").get()!.state,'open');
+  sql.prepare("UPDATE vocabulary_reflection_jobs SET status='failed' WHERE job_id='job-obsolete'").run();
+  dismissSupersededVocabularyCase('obsolete','editor');
+  assert.equal(listVocabularyAttention('editor',{},dependencies).total,0);
+  assert.equal(sql.prepare("SELECT state FROM vocabulary_case_reviews WHERE case_id='obsolete'").get()!.state,'resolved');
+  assert.equal(sql.prepare("SELECT status FROM vocabulary_reflection_jobs WHERE job_id='job-obsolete'").get()!.status,'failed');
 });
 test('word defaults outlive their case and clear only with an established selection',()=>{
   seed('case','exercise_improvement','succeeded');

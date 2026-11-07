@@ -21,12 +21,13 @@ let items: VocabularyAttentionItem[] = params.has('empty') ? [] : [
   {...base,id:'approval:standalone',kind:'approval',title:'报备',reason:'Application stopped after a temporary database failure.',requestId:'standalone-request',proposalId:'standalone-proposal',expectedVersion:1,attempts:1,retryable:true},
   {...base,id:'preparation:failed',kind:'preparation',title:'密集',reason:'Practice preparation could not finish after its bounded retries.',workId:'failed-preparation',wordId:'word-miji',sourceContentId:'source-practice',attemptCount:3,invocationId:'preparation-call',retryable:true},
   {...base,id:'dispatch:failed',kind:'dispatch',title:'Study session',reason:'Encounter evidence processing failed before review cases could be created.',dispatchId:'failed-dispatch',sessionId:'session-with-retained-evidence',learnerId:'fixture-learner'},
-  {...base,id:'case:feedback',kind:'case',title:'Learner feedback',reason:'The feedback provider outcome is unknown. Retrying may make another call.',caseId:'feedback-case',caseKind:'learner_feedback',jobId:'feedback-job',retryable:true},
+  {...base,id:'case:feedback',kind:'case',title:'Learner feedback',reason:'The feedback provider outcome is unknown. Retrying may make another call.',caseId:'feedback-case',caseKind:'learner_feedback',jobId:'feedback-job',retryable:true,sourceSuperseded:false,dismissible:false},
   {...base,id:'approval:stale',kind:'approval',title:'报备 · source changed',reason:'The approved source version has changed. Revise the proposal before applying it.',requestId:'stale-request',proposalId:'stale-proposal',expectedVersion:1,attempts:2,retryable:false},
   {...base,id:'preparation:exhausted',kind:'preparation',title:'A very long preparation target label that must wrap without hiding controls',reason:'Attempt limit reached. Inspect the retained invocation before changing preparation.',workId:'exhausted-preparation',wordId:'word-long',sourceContentId:'source-with-a-long-stable-identity',attemptCount:9,invocationId:null,retryable:false},
   ...Array.from({length:22},(_,index):VocabularyAttentionItem=>({...base,id:`dispatch:extra-${index}`,kind:'dispatch',title:`Retained session ${index+1}`,reason:'Evidence processing requires an explicit retry.',dispatchId:`extra-${index}`,sessionId:`session-${index}`,learnerId:'fixture-learner'})),
 ];
 if (params.has('canonical')) items = [{...base,id:'preparation:failed',kind:'preparation',title:'挂钩',reason:'Repertoire replacement failed while teaching is still pending.',workId:'failed-preparation',wordId:'word-guagou',sourceContentId:null,reconciliationId:'resolution-canonical-snapshot',attemptCount:3,invocationId:'preparation-call',retryable:true}];
+if (params.has('superseded')) items = [{...base,id:'case:superseded',kind:'case',title:'他',reason:'The source has changed or been retired.',caseId:'superseded',caseKind:'exercise_improvement',jobId:'superseded-job',retryable:false,sourceSuperseded:true,dismissible:true}];
 let slow=params.has('slow'),failSave=params.has('saveFailure'),failRetry=false,holdRead=false;
 const heldReads:(()=>void)[]=[];
 const counters:Record<string,number>={attention:0,workspace:0,proposal:0,snapshot:0,save:0,retry:0};
@@ -58,6 +59,9 @@ const proposals=new Map(['standalone-proposal','stale-proposal'].map(id=>[id,pro
 function getProposal(id:string){const result=proposals.get(id);if(!result)throw new Error('Unknown fixture proposal');return copy(result);}
 let feedbackStatus='failed';
 function workspace(id:string):VocabularyCaseWorkspace{
+  if(id==='superseded')return {case:{caseId:id,completionId:'fixture-completion',learnerId:'fixture-learner',kind:'exercise_improvement',wordId:null,contentId:'source',status:'open',createdAt:at,evidence:[{
+    encounterId:'served-encounter',wordId:'word-ta',workNumber:1,presentedActionId:'presentation',presentedAt:at,mode:'practice',snapshot:{contentId:'source',contentVersion:1,role:'general',kind:'production',body:{prompt:'He is a teacher.'},assessment:{acceptedAnswers:['他'],criteria:{}}},responses:[],effectiveResponses:[],feedback:[],effectiveFeedback:[],skipped:true,presentationUndone:false,
+  }]},sources:[{...source,version:2,body:{prompt:'He works as a teacher.'},answers:[{wordId:'word-ta',acceptedForms:['他']}]}],proposals:[],jobs:[{jobId:'superseded-job',kind:'exercise_improvement',status:'failed',attemptNumber:1,error:'source_conflict',secondOpinion:false,result:null}],reassessmentUnavailableReason:'The earlier assessment did not complete.'};
   if(id!=='feedback-case')throw new Error('Unexpected workspace lookup: standalone proposals have no case.');
   return {case:{caseId:id,completionId:'fixture-completion',learnerId:'fixture-learner',kind:'learner_feedback',wordId:null,contentId:null,status:feedbackStatus==='succeeded'?'completed':'open',createdAt:at,evidence:[{
     encounterId:'served-encounter',wordId:'word-baobei',workNumber:1,presentedActionId:'presentation',presentedAt:at,mode:'practice',snapshot:{contentId:'source',contentVersion:1,role:'general',kind:'production',body:{prompt:'Before taking leave, you should ____ your supervisor.'},assessment:{acceptedAnswers:['报备'],criteria:{}}},responses:[],effectiveResponses:[],feedback:[],effectiveFeedback:[],skipped:true,presentationUndone:false,
@@ -74,6 +78,7 @@ const api:VocabularyOperatorApi={...vocabularyOperatorApi,
   retryPreparation:async id=>{await retry(id==='failed-preparation'?'preparation:failed':'preparation:exhausted');return {ok:true};},
   retryDispatch:async id=>{await retry(id==='failed-dispatch'?'dispatch:failed':`dispatch:${id}`);return {ok:true};},
   retryJob:async()=>{await retry('case:feedback');feedbackStatus='queued';return {ok:true};},
+  dismissSupersededCase:async id=>{await delay();remove(`case:${id}`);return {ok:true};},
   workspace:async id=>{count('workspace');await delay();return copy(workspace(id));},
   proposal:async id=>{count('proposal');await delay();return getProposal(id);},
   reviewBatch:async id=>{count('snapshot');await delay();const value=getProposal(id);return {items:[{proposal:value,case:null,reassessment:null,assessment:null,senseLabels:[],coverageChanged:false,currentSources:[source],previews:value.operations.map(operation=>({operationKey:operation.operationKey,source,result:operation.content}))}],nextProposalId:null};},

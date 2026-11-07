@@ -2,6 +2,8 @@ import { getDb } from './connection.ts';
 import type { VocabularyCaseReview } from '../../src/domain/vocabulary-reflection.ts';
 
 export class VocabularyReflectionConflict extends Error {}
+/** The exact assessment source is known to have been replaced or revised. */
+export class VocabularyReflectionSourceConflict extends VocabularyReflectionConflict {}
 export function canonicalVocabularyCaseId(caseId:string):string {
   return (getDb().prepare('SELECT case_id FROM vocabulary_case_lineage WHERE member_case_id=?').get(caseId) as {case_id:string}|undefined)?.case_id??caseId;
 }

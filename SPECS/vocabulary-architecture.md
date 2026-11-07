@@ -101,6 +101,13 @@ proposals, invocations, and decisions remain attributable within the case.
 
 Source identity and version govern reassessment consistency. A later source
 revision invalidates queued or in-flight work and proposals based on that version.
+When an initial assessment confirms its source has been superseded, recording
+the failed outcome also resolves its otherwise unreviewable case. A failed
+reassessment or advisory opinion preserves earlier review material. Operators can
+dismiss an unreviewable case whose source is known to be superseded; reading it
+does not resolve it. Applying a source revision also resolves other idle,
+unreviewable attention cases for that exact source, preserving their evidence.
+Cases with active work, reviewable material, or deferred attention remain separate.
 The new job maps the source unless it captures an operator-selected repair target.
 Original served snapshots
 remain distinct from its pinned current source. Retry retains the pinned version;

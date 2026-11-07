@@ -10,7 +10,7 @@ export type VocabularyAttentionItem = AttentionBase & (
   | {kind:'approval';requestId:string;proposalId:string;expectedVersion:number;attempts:number;retryable:boolean}
   | {kind:'preparation';workId:string;wordId:string;sourceContentId:string|null;reconciliationId?:string|null;attemptCount:number;invocationId:string|null;retryable:boolean}
   | {kind:'dispatch';dispatchId:string;sessionId:string;learnerId:string}
-  | {kind:'case';caseId:string;caseKind:VocabularyReflectionCase['kind'];jobId:string|null;retryable:boolean}
+  | {kind:'case';caseId:string;caseKind:VocabularyReflectionCase['kind'];jobId:string|null;retryable:boolean;sourceSuperseded:boolean;dismissible:boolean}
 );
 export type VocabularyAttentionKind = VocabularyAttentionItem['kind'];
 export type VocabularyAttentionQuery = {offset?:number;limit?:number;kind?:VocabularyAttentionKind;anchorId?:string};

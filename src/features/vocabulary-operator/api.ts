@@ -67,6 +67,7 @@ export const vocabularyOperatorApi={
   retryJob:(jobId:string)=>write<{ok:true}>(`/jobs/${id(jobId)}/retry`,{}),
   retryDispatch:(dispatchId:string)=>write<{ok:true}>(`/dispatches/${id(dispatchId)}/retry`,{}),
   closeCase:(caseId:string,reason:string)=>write<{ok:true}>(`/cases/${id(caseId)}/close`,{reason}),
+  dismissSupersededCase:(caseId:string)=>write<{ok:true}>(`/cases/${id(caseId)}/dismiss-superseded`,{}),
   create:(draft:VocabularyProposalDraft)=>write<VocabularyContentProposal>('/proposals',draft),
   save:(proposalId:string,expectedVersion:number,draft:VocabularyProposalDraft)=>write<VocabularyContentProposal>(`/proposals/${id(proposalId)}`,{expectedVersion,draft},'PUT'),
   preview:(proposalId:string,expectedVersion:number)=>write<VocabularyProposalPreview>(`/proposals/${id(proposalId)}/preview`,{expectedVersion}),

@@ -1,7 +1,9 @@
 import { getVocabularyRepertoireSelection } from './vocabulary-repertoire-selection.ts';
 import { captureVocabularyRepairTarget, acceptVocabularyRepairTarget, assertVocabularyRepairTargetApplicable, vocabularyRepairTargetConflict } from './vocabulary-repair-target.ts';
-import { canonicalVocabularyCaseId, getVocabularyCaseReview, assertVocabularyCaseEditable, assertVocabularyCaseCanQueue, touchVocabularyCaseReview, clearVocabularyCaseApprovalAttention, resolveVocabularyCaseProposal, setVocabularyCaseApprovalPending, VocabularyReflectionConflict } from './vocabulary-case-reviews.ts';
-export { VocabularyReflectionConflict } from './vocabulary-case-reviews.ts';
+import { canonicalVocabularyCaseId, getVocabularyCaseReview, assertVocabularyCaseEditable, assertVocabularyCaseCanQueue, touchVocabularyCaseReview, clearVocabularyCaseApprovalAttention, resolveVocabularyCaseProposal, setVocabularyCaseApprovalPending, VocabularyReflectionConflict, VocabularyReflectionSourceConflict } from './vocabulary-case-reviews.ts';
+export { VocabularyReflectionConflict, VocabularyReflectionSourceConflict } from './vocabulary-case-reviews.ts';
+import { isVocabularyCaseSourceSuperseded } from './vocabulary-case-source.ts';
+import { resolveSupersededAttentionCases } from './vocabulary-superseded-attention.ts';
 import { isDeepStrictEqual } from 'node:util';
 import { getPureCueResolution, pureCueIdentityOptions, vocabularyResponseCandidates, PURE_CUE_RESOLUTION_CONTRACT, type PureCueResolution } from '../vocabulary/pure-cue-promotion.ts';
 import { getVocabularyDefaultSelectionFinding } from './vocabulary-sense-coverage.ts';
@@ -239,9 +241,21 @@ export function finishVocabularyReflectionJob(jobId: string, token: string, resu
 export function failVocabularyReflectionJob(jobId: string, token: string, failureCode: string, retryAt: string, at = timestamp()): void {
   nonempty(failureCode); timestamp(retryAt); timestamp(at);
   atomic(() => {
-    leased(jobId,token,at);
+    const row=leased(jobId,token,at);
     getDb().prepare(`UPDATE vocabulary_reflection_jobs SET status='failed',last_error=?,next_attempt_at=?,lease_token=NULL,
       lease_expires_at=NULL WHERE job_id=?`).run(failureCode,retryAt,jobId);
+    if(failureCode==='source_conflict' && row.review_case_id && isVocabularyCaseSourceSuperseded(row.review_case_id,jobId)) {
+      const review=getVocabularyCaseReview(row.review_case_id);
+      if(review?.state==='open' && !review.currentJobId && !row.second_opinion_json && review.approvalState!=='pending') {
+        const reason='Assessment source was superseded';
+        const proposal=getDb().prepare("SELECT 1 FROM content_proposals p JOIN vocabulary_case_lineage l ON l.member_case_id=p.case_id WHERE l.case_id=? AND p.status NOT IN ('closed','applied') LIMIT 1").get(row.review_case_id);
+        if(!proposal){
+          getDb().prepare("UPDATE reflection_cases SET status='closed' WHERE case_id=?").run(row.review_case_id);
+          event('vocabulary.reflection.case_source_conflict_resolved',row.review_case_id,{reason,jobId},undefined,at);
+          resolveVocabularyCaseProposal(row.review_case_id,at);
+        }
+      }
+    }
   });
 }
 /** Persist backoff and provider transition under the same lease as the failed call. */
@@ -517,6 +531,7 @@ export function recordVocabularyImprovementResult(jobId: string, token: string, 
     if (previous !== null) return previous.output as { judgmentId: string; proposalId: string | null };
     const row = leased(jobId,token,at);
     if (row.kind !== 'exercise_improvement') throw new Error('Improvement result requires improvement job');
+    if(row.review_case_id&&isVocabularyCaseSourceSuperseded(row.review_case_id,jobId))throw new VocabularyReflectionSourceConflict('Assessment source version changed before publication');
     if (row.second_opinion_json) {
       if (!input.secondOpinion || !['support','revise','reject'].includes(input.secondOpinion.verdict)
         || !input.secondOpinion.rationale.trim() || input.proposal !== null) throw new Error('Second opinion requires an advisory verdict only');
@@ -524,7 +539,8 @@ export function recordVocabularyImprovementResult(jobId: string, token: string, 
     const pinned=row.reassessment_source_json ? JSON.parse(row.reassessment_source_json) as VocabularyContent : null;
     if(row.reassessment_source_job_id||pinned) {
       const current=pinned?getVocabularyContentForMaintenance(pinned.contentId):null;
-      if(!pinned||!current||current.version!==pinned.version||current.availability!=='active')throw new VocabularyReflectionConflict('Reassessment source version changed before publication');
+      if(pinned&&current&&(current.version>pinned.version||current.availability==='retired'))throw new VocabularyReflectionSourceConflict('Reassessment source version changed before publication');
+      if(!pinned||!current||current.version!==pinned.version||current.availability!=='active')throw new VocabularyReflectionConflict('Reassessment source is unavailable before publication');
     }
     const needsAttention = input.admission?.outcome === 'unmappable' || input.admission?.outcome === 'inventory_gap' || input.admission?.outcome === 'needs_coverage';
     if (input.admission) {
@@ -758,7 +774,9 @@ function applyVocabularyProposalInternal(proposalId: string, expectedVersion: nu
     }
     getDb().prepare("UPDATE content_proposals SET status='applied' WHERE proposal_id=?").run(proposalId);
     event('vocabulary.reflection.proposal_applied',proposalId,{ applicationId,version: expectedVersion },actor,appliedAt);
-    if(value.caseId)resolveVocabularyCaseProposal(value.caseId,appliedAt,value.proposalId);return receipt;
+    if(value.caseId)resolveVocabularyCaseProposal(value.caseId,appliedAt,value.proposalId);
+    resolveSupersededAttentionCases(changes.flatMap(change=>change.sourceContentId?[change.sourceContentId]:[]),value.caseId?canonicalVocabularyCaseId(value.caseId):null,applicationId,actorId,appliedAt);
+    return receipt;
   });
 }
 
@@ -828,7 +846,8 @@ export function closeVocabularyCase(caseId: string, actorId: string, reason = ''
     const noProposal = improvement?.proposal === null;
     const unresolved = (admission !== undefined && ['unmappable','inventory_gap','needs_coverage'].includes(admission.outcome))
       || improvement?.pureCuePromotion?.outcome === 'needs_operator';
-    if (evidence.kind !== 'exercise_improvement' || (!noProposal && !unresolved)) {
+    const hasProposal=getDb().prepare("SELECT 1 FROM content_proposals p JOIN vocabulary_case_lineage l ON l.member_case_id=p.case_id WHERE l.case_id=? AND p.status NOT IN ('closed','applied') LIMIT 1").get(caseId);
+    if (evidence.kind !== 'exercise_improvement' || (!noProposal && !unresolved && (!isVocabularyCaseSourceSuperseded(caseId)||!!hasProposal))) {
       throw new VocabularyReflectionConflict('Only manual teaching or unresolved assessment cases can be closed');
     }
     for(const p of getDb().prepare("SELECT p.proposal_id,p.version FROM content_proposals p JOIN vocabulary_case_lineage l ON l.member_case_id=p.case_id WHERE l.case_id=? AND p.status NOT IN ('closed','applied')").all(caseId) as {proposal_id:string;version:number}[])closeVocabularyProposal(p.proposal_id,p.version,actorId,reason);
@@ -837,6 +856,21 @@ export function closeVocabularyCase(caseId: string, actorId: string, reason = ''
     const sourceAvailability=sourceId?(getDb().prepare('SELECT availability FROM content_items WHERE content_id=?').get(sourceId) as {availability:string}|undefined)?.availability??null:null;
     const closedAt=timestamp();event('vocabulary.reflection.admission_case_closed',caseId,{ reason,outcome: admission?.outcome??null,context:{pureCueOutcome:improvement?.pureCuePromotion?.outcome??null,sourceAvailability} },actor,closedAt);
     resolveVocabularyCaseProposal(caseId,closedAt);
+  });
+}
+
+/** Dismissal from the superseded-source UI must recheck its exact preconditions. */
+export function dismissSupersededVocabularyCase(caseId:string,actorId:string):void {
+  atomic(()=>{
+    const id=canonicalVocabularyCaseId(caseId);
+    const review=getVocabularyCaseReview(id);
+    if(review?.state!=='open')throw new VocabularyReflectionConflict('This case is resolved');
+    if(review.approvalState==='pending'||getDb().prepare("SELECT 1 FROM vocabulary_reflection_jobs WHERE (review_case_id=? OR case_id=?) AND status IN ('queued','running') LIMIT 1").get(id,id))
+      throw new VocabularyReflectionConflict('Wait for active case work to finish before dismissing');
+    if(!isVocabularyCaseSourceSuperseded(id))throw new VocabularyReflectionConflict('The source is no longer confirmed superseded');
+    if(getDb().prepare("SELECT 1 FROM content_proposals p JOIN vocabulary_case_lineage l ON l.member_case_id=p.case_id WHERE l.case_id=? AND p.status NOT IN ('closed','applied') LIMIT 1").get(id))
+      throw new VocabularyReflectionConflict('Review or dismiss outstanding proposals first');
+    closeVocabularyCase(id,actorId,'Assessment source was superseded');
   });
 }
 

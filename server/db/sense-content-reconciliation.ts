@@ -123,8 +123,28 @@ function makePlan(row: Stored, current: InventorySnapshot): SenseContentReconcil
     for (const work of rows(current, key)) if (work.status === 'running' || work.active_token != null) block('active_generation', `Wait for active ${key} work to settle.`, [String(work[id])]);
   }
   for (const key of ['introductionPreparation', 'reviewPreparation']) for (const work of rows(current, key)) if (work.lease_token != null) block('active_generation', 'Wait for the active source generation lease to settle.', [row.word_id]);
-  for (const [key, id] of [['pendingReflectionJobs', 'job_id'], ['pendingDispatches', 'dispatch_id'], ['pendingProposals', 'proposal_id']] as const) {
-    for (const item of rows(current, key)) block('pending_content_decision', `Resolve existing ${key} before applying; automatic disposition is not supported.`, [String(item[id])]);
+  // Keep failed job evidence in snapshots, including older saved snapshots, but a
+  // failed attempt on a resolved review case no longer requires a disposition.
+  // Active jobs still block even if their case has been resolved: they must not
+  // publish against content changed by this application.
+  const failedJobIds = rows(current, 'pendingReflectionJobs').filter(job=>job.status === 'failed').map(job=>String(job.job_id));
+  const resolvedFailedJobs = new Set((getDb().prepare(`SELECT j.job_id FROM vocabulary_reflection_jobs j
+    LEFT JOIN vocabulary_case_lineage l ON l.member_case_id=j.case_id
+    JOIN vocabulary_case_reviews r ON r.case_id=COALESCE(j.review_case_id,l.case_id,j.case_id)
+    WHERE j.status='failed' AND r.state='resolved' AND j.job_id IN (SELECT value FROM json_each(?))`)
+    .all(JSON.stringify(failedJobIds)) as {job_id:string}[]).map(job=>job.job_id));
+  for (const item of rows(current, 'pendingReflectionJobs')) {
+    if (item.status === 'failed' && resolvedFailedJobs.has(String(item.job_id))) continue;
+    const message = item.status === 'failed'
+      ? 'A related assessment failed. Resolve its case before applying.'
+      : 'A related assessment is queued or running. Wait for it to finish and resolve its case before applying.';
+    block('pending_content_decision', message, [String(item.job_id)]);
+  }
+  for (const [key, id, message] of [
+    ['pendingDispatches', 'dispatch_id', 'A related feedback dispatch has not completed. Resolve it before applying.'],
+    ['pendingProposals', 'proposal_id', 'A related content proposal is still open. Review or close it before applying.'],
+  ] as const) {
+    for (const item of rows(current, key)) block('pending_content_decision', message, [String(item[id])]);
   }
   const covered = new Set(draft.uses.filter(use => use.decision === 'map' && use.senseId).map(use => use.senseId!));
   const replacementPracticeRequired = draft.defaultSenseIds.some(id => !covered.has(id));
