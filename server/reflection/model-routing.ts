@@ -26,9 +26,10 @@ export function routeBatchedReflectionModel(itemCount: number, random = Math.ran
   return arms[arms.length-1]!.choice;
 }
 
-/** Equal-probability policy for individual reflection jobs, regardless of evidence count. */
-export function routeIndividualReflectionModel(random = Math.random): ReflectionModelChoice {
-  const arms = REFLECTION_MODEL_ARMS.filter(arm => arm.enabledByDefault);
+/** Equal-probability policy; learner feedback excludes GLM's JSON-object-only route. */
+export function routeIndividualReflectionModel(random = Math.random, kind?: 'learner_feedback' | 'exercise_improvement'): ReflectionModelChoice {
+  const arms = REFLECTION_MODEL_ARMS.filter(arm => arm.enabledByDefault
+    && (kind !== 'learner_feedback' || reflectionConfigForChoice(arm.choice).provider !== 'zai'));
   if (!arms.length) throw new Error('No offered reflection model');
   return arms[Math.min(Math.floor(random() * arms.length), arms.length - 1)]!.choice;
 }

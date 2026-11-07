@@ -338,14 +338,13 @@ test('incomplete teaching reactions enter manual inbox without model work',async
   assert.equal(Number(sql.prepare('SELECT count(*) n FROM vocabulary_reflection_jobs').get()!.n),0);await processing.stop();
 });
 
-test('reflection retains GLM after failure and recreation regardless of recorded learner spend',async()=>{
-  pending();const ingestOnly=worker({isConfigured:()=>false,run:async job=>result(job)});await ingestOnly.step();await ingestOnly.stop();
-  const job=claimVocabularyReflectionJob({kind:'learner_feedback',now:new Date(clock).toISOString()})!;
+test('improvement retains GLM after failure and recreation regardless of recorded learner spend',async()=>{
+  const job:VocabularyReflectionJob={...await authoringJob(),secondOpinion:{requestId:'routing-test',proposal:null,notes:'Check the cue',diagnosis:'Keep it'}};
   const requests:import('../server/llm/types.ts').ProviderRunRequest[]=[];
   let fail=true;
   const adapter:import('../server/llm/types.ts').ProviderAdapter={id:'zai',defaultBaseUrl:'https://unused.invalid',apiKeyEnvironmentVariable:'ZAI_API_KEY',structuredOutputMode:'json_object',async run(request){
     requests.push(request);if(fail)throw new Error('temporary failure');
-    return {provider:'zai',model:request.model,responseId:null,structuredOutputMode:'json_object',rawText:JSON.stringify({diagnosis:'Fair cue',lesson:'Lesson',unfairEncounterIds:[]}),finishReason:'stop',rawResponse:null,usage:{inputTokens:null,cachedInputTokens:null,cacheWriteInputTokens:null,outputTokens:null,reasoningTokens:null,totalTokens:null},invocationId:null};
+    return {provider:'zai',model:request.model,responseId:null,structuredOutputMode:'json_object',rawText:JSON.stringify({verdict:'support',rationale:'The cue works.'}),finishReason:'stop',rawResponse:null,usage:{inputTokens:null,cachedInputTokens:null,cacheWriteInputTokens:null,outputTokens:null,reasoningTokens:null,totalTokens:null},invocationId:null};
   }};
   const environment={ZAI_API_KEY:'test'};
   sql.prepare(`INSERT INTO model_invocations(id,timestamp,provider,model,invocation_type,spend_usd,spend_source,status,actor_kind,actor_id,requesting_learner_id)
@@ -369,9 +368,58 @@ test('reflection retains GLM after failure and recreation regardless of recorded
 });
 
 
-test('routed GLM transport uses its credentials, endpoint and JSON-object protocol',async()=>{
+test('new feedback uses schema-constrained OpenAI routes and retains its choice after failure',async()=>{
   pending();const ingestOnly=worker({isConfigured:()=>false,run:async job=>result(job)});await ingestOnly.step();await ingestOnly.stop();
   const job=claimVocabularyReflectionJob({kind:'learner_feedback',now:new Date(clock).toISOString()})!;
+  installModelInvocationLedger();
+  for(const [ticket,model] of [[0.25,'gpt-6-luna'],[0.75,'gpt-6-sol']] as const){
+    sql.prepare('UPDATE vocabulary_reflection_jobs SET model_choice=NULL WHERE job_id=?').run(job.jobId);
+    const calls:string[]=[];let fail=true;
+    const fetchImplementation:typeof fetch=async(url,init)=>{
+      assert.equal(String(url),'https://api.openai.com/v1/chat/completions');
+      const body=JSON.parse(String(init?.body));calls.push(body.model);
+      assert.equal(body.response_format.type,'json_schema');assert.equal(body.response_format.json_schema.strict,true);
+      if(fail)throw new Error('temporary failure');
+      return new Response(JSON.stringify({choices:[{message:{content:JSON.stringify({diagnosis:'Fair cue',lesson:'Lesson',unfairEncounterIds:[]})},finish_reason:'stop'}]}),{status:200});
+    };
+    const options={environment:{OPENAI_API_KEY:'test'},fetchImplementation};
+    const first=createVocabularyReflectionProvider({...options,random:()=>ticket});
+    await assert.rejects(()=>first.run(job),/temporary failure/);fail=false;
+    const retry=createVocabularyReflectionProvider({...options,random:()=>assert.fail('Must retain the feedback route')});
+    assert.equal((await retry.run({...job,attemptNumber:2})).kind,'learner_feedback');
+    assert.deepEqual(calls,[model,model]);
+    assert.equal(sql.prepare('SELECT model_choice FROM vocabulary_reflection_jobs WHERE job_id=?').get(job.jobId)!.model_choice,`openai:${model}-high`);
+  }
+});
+
+test('feedback pinned to either GLM route uses Luna on retry without rewriting saved provenance',async()=>{
+  pending();const ingestOnly=worker({isConfigured:()=>false,run:async job=>result(job)});await ingestOnly.step();await ingestOnly.stop();
+  const job=claimVocabularyReflectionJob({kind:'learner_feedback',now:new Date(clock).toISOString()})!;
+  installModelInvocationLedger();
+  sql.prepare(`INSERT INTO model_invocations(id,timestamp,provider,model,invocation_type,spend_source,status,actor_kind,actor_id,requesting_learner_id,workflow_id)
+    VALUES ('original-glm',?,'zai','glm-5.3-flash','vocabulary_reflection_feedback_v1','unknown','invalid_response','service','vocabulary-reflection','alice',?)`).run(at,job.jobId);
+  const original=sql.prepare("SELECT * FROM model_invocations WHERE id='original-glm'").get();
+  let calls=0;
+  const provider=createVocabularyReflectionProvider({environment:{OPENAI_API_KEY:'test'},random:()=>assert.fail('Stored feedback route must resolve deterministically'),
+    fetchImplementation:async(url,init)=>{
+      calls++;assert.equal(String(url),'https://api.openai.com/v1/chat/completions');
+      const body=JSON.parse(String(init?.body));assert.equal(body.model,'gpt-6-luna');
+      assert.equal(body.response_format.json_schema.strict,true);
+      return new Response(JSON.stringify({choices:[{message:{content:JSON.stringify({diagnosis:'Fair cue',lesson:'Lesson',unfairEncounterIds:[]})},finish_reason:'stop'}]}),{status:200});
+    }});
+  for(const choice of ['zai:glm-5.3-flash-high','zai:glm-5.3-flash-max']){
+    sql.prepare('UPDATE vocabulary_reflection_jobs SET model_choice=? WHERE job_id=?').run(choice,job.jobId);
+    assert.equal((await provider.run({...job,attemptNumber:2})).kind,'learner_feedback');
+    assert.equal(sql.prepare('SELECT model_choice FROM vocabulary_reflection_jobs WHERE job_id=?').get(job.jobId)!.model_choice,choice);
+  }
+  assert.equal(calls,2);
+  assert.deepEqual(sql.prepare("SELECT * FROM model_invocations WHERE id='original-glm'").get(),original);
+  const retries=sql.prepare("SELECT provider,model,attempt_number FROM model_invocations WHERE id!='original-glm'").all();
+  assert.deepEqual(retries.map(row=>[row.provider,row.model,row.attempt_number]),[['openai','gpt-6-luna',2],['openai','gpt-6-luna',2]]);
+});
+
+test('improvement GLM transport uses its credentials, endpoint and JSON-object protocol',async()=>{
+  const job:VocabularyReflectionJob={...await authoringJob(),secondOpinion:{requestId:'transport-test',proposal:null,notes:'Check the cue',diagnosis:'Keep it'}};
   installModelInvocationLedger();
   const provider=createVocabularyReflectionProvider({environment:{ZAI_API_KEY:'zai-test'},random:()=>0.5,
     fetchImplementation:async(url,init)=>{
@@ -380,7 +428,7 @@ test('routed GLM transport uses its credentials, endpoint and JSON-object protoc
       const body=JSON.parse(String(init?.body));
       assert.equal(body.model,'glm-5.3-flash');assert.deepEqual(body.response_format,{type:'json_object'});
       assert.equal(body.max_tokens,131072);assert.equal(body.max_completion_tokens,undefined);
-      return new Response(JSON.stringify({choices:[{message:{content:JSON.stringify({diagnosis:'Fair cue',lesson:'Lesson',unfairEncounterIds:[]})},finish_reason:'stop'}]}),{status:200});
+      return new Response(JSON.stringify({choices:[{message:{content:JSON.stringify({verdict:'support',rationale:'The cue works.'})},finish_reason:'stop'}]}),{status:200});
     }});
   await provider.run(job);
   const invocation=sql.prepare('SELECT provider,model,workflow_id FROM model_invocations').get()!;
