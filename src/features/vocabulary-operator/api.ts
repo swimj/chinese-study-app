@@ -35,6 +35,7 @@ export const vocabularyOperatorApi={
     return apiRequest<VocabularyCaseQueuePage>(`${root}/case-queue?${params}`);
   },
   caseCard:(caseId:string,proposalId?:string)=>apiRequest<VocabularyCaseQueueItem>(`${root}/case-queue/${id(caseId)}${proposalId?`?proposalId=${id(proposalId)}`:''}`),
+  setCaseDeferred:(caseId:string,expectedVersion:number,deferred:boolean)=>write<VocabularyCaseQueueItem>(`/case-queue/${id(caseId)}/deferred`,{expectedVersion,deferred}),
   resolveCaseReview:(caseId:string,expectedVersion:number,reason='')=>write<VocabularyCaseQueueItem>(`/case-queue/${id(caseId)}/resolve`,{expectedVersion,reason}),
   addCaseNote:(caseId:string,expectedVersion:number,requestId:string,text:string)=>write<VocabularyCaseQueueItem>(`/case-queue/${id(caseId)}/notes`,{expectedVersion,requestId,text}),
   reassessCaseReview:(caseId:string,expectedVersion:number,modelChoice:VocabularyReassessmentModel,expectedContentVersion:number,originProposal?:{proposalId:string;expectedVersion:number},editorial?:VocabularyReassessmentEditorialInput)=>write<{caseId:string;jobId:string;item:VocabularyCaseQueueItem}>(`/case-queue/${id(caseId)}/reassess`,{expectedVersion,modelChoice,expectedContentVersion,originProposal,editorial}),
@@ -56,6 +57,7 @@ export const vocabularyOperatorApi={
   retryApproval:(requestId:string)=>write<VocabularyApprovalRequest>(`/approval-requests/${id(requestId)}/retry`,{}),
   proposals:()=>apiRequest<{items:VocabularyContentProposal[]}>(`${root}/proposals`),
   reviewBatch:(startProposalId:string,limit=20)=>apiRequest<{items:VocabularyReviewSnapshot[];nextProposalId:string|null}>(`${root}/proposals/review-batch?limit=${limit}&startProposalId=${id(startProposalId)}`),
+  originalModelProposal:(proposalId:string)=>apiRequest<{proposal:VocabularyContentProposal|null}>(`${root}/proposals/${id(proposalId)}/original-model-draft`),
   proposal:(proposalId:string)=>apiRequest<VocabularyContentProposal>(`${root}/proposals/${id(proposalId)}`),
   secondOpinions:(proposalId:string)=>apiRequest<{items:VocabularySecondOpinion[]}>(`${root}/proposals/${id(proposalId)}/second-opinions`),
   requestSecondOpinion:(proposalId:string,expectedVersion:number,notes='')=>write<VocabularySecondOpinion>(`/proposals/${id(proposalId)}/second-opinions`,{expectedVersion,notes}),

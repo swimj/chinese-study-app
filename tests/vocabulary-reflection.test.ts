@@ -1,3 +1,4 @@
+import { getVocabularyOriginalModelProposal } from '../server/db/vocabulary-reflection.ts';
 import { getVocabularyCaseCard } from '../server/db/vocabulary-case-queue.ts';
 import { getVocabularyRepertoireSelection } from '../server/db/vocabulary-repertoire-selection.ts';
 import { getVocabularyRepairTarget, setVocabularyRepairTarget } from '../server/db/vocabulary-repair-target.ts';
@@ -1941,4 +1942,18 @@ test('repertoire result must honor captured scope and only successful reassessme
   const completed=recordVocabularyImprovementResult(job.jobId,job.leaseToken,result,now);
   assert.ok(completed.proposalId);assert.equal(getVocabularyProposal(f.proposalId,'editor').status,'closed');
   assert.equal(getVocabularyCaseCard(queued.caseId,'editor').currentProposalId,completed.proposalId);
+});
+
+test('original model proposal remains immutable across saved edits and manual drafts have no model baseline',()=>{
+  ingest([present('one'),response('one')]);
+  const work=claimVocabularyReflectionJob({kind:'exercise_improvement',now:judgedAt})!;
+  const result=recordVocabularyImprovementResult(work.jobId,work.leaseToken,{diagnosis:'Repair',proposal:{operations:[op()],rationale:'Original model rationale'}},judgedAt);
+  const original=getVocabularyOriginalModelProposal(result.proposalId!,'editor')!;
+  assert.equal(original.version,1);
+  const edited=op();edited.content={...edited.content,body:{prompt:'Operator edited wording'}};
+  saveVocabularyProposal(result.proposalId!,1,{operations:[edited],rationale:'Edited'},'editor');
+  assert.deepEqual(getVocabularyOriginalModelProposal(result.proposalId!,'editor'),original);
+  assert.throws(()=>getVocabularyOriginalModelProposal(result.proposalId!,'alice'),/Operator/);
+  const manual=createVocabularyProposal({operations:[op()],rationale:'Manual'},'editor');
+  assert.equal(getVocabularyOriginalModelProposal(manual.proposalId,'editor'),null);
 });

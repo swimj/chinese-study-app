@@ -558,7 +558,11 @@ test('repair target migration preserves legacy scopes and assessments without in
     const before=preserved.map(table=>db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all());
     const jobs=db.prepare('SELECT job_id,result_json,status FROM vocabulary_reflection_jobs ORDER BY job_id').all();
     migrateDatabase(db);
-    preserved.forEach((table,i)=>assert.deepEqual(db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all(),before[i]));
+    preserved.forEach((table,i)=>{
+      // Later additive migrations may add fields; retain every pre-existing column.
+      const columns=Object.keys(before[i][0]??{}).join(',')||'*';
+      assert.deepEqual(db.prepare(`SELECT ${columns} FROM ${table} ORDER BY rowid`).all(),before[i]);
+    });
     assert.deepEqual(db.prepare('SELECT job_id,result_json,status FROM vocabulary_reflection_jobs ORDER BY job_id').all(),jobs);
     assert.deepEqual(db.prepare('SELECT * FROM vocabulary_case_repair_targets').all(),[]);
     assert.deepEqual(db.prepare('SELECT * FROM vocabulary_repertoire_revisions').all(),[]);

@@ -11,8 +11,8 @@ import { isOfferedReflectionModelChoice } from '../reflection/model-arms.ts';
 import { createVocabularyPracticePreparation } from './preparation.ts';
 import { createOperatorAllowlistMiddleware } from '../operator-access.ts';
 import { getVocabularyApprovalRequests } from './approval-requests.ts';
-import { listVocabularyCaseQueue,getVocabularyCaseCard,resolveVocabularyCaseReview,reassessVocabularyCaseReview,addVocabularyCaseNote } from '../db/vocabulary-case-queue.ts';
-import { getVocabularyCaseWorkspace, listVocabularyReflectionCases, listVocabularyProposals, listVocabularyProposalReviewBatch, getVocabularyProposal,
+import { listVocabularyCaseQueue,getVocabularyCaseCard,setVocabularyCaseDeferred,resolveVocabularyCaseReview,reassessVocabularyCaseReview,addVocabularyCaseNote } from '../db/vocabulary-case-queue.ts';
+import { getVocabularyCaseWorkspace, listVocabularyReflectionCases, listVocabularyProposals, listVocabularyProposalReviewBatch, getVocabularyProposal, getVocabularyOriginalModelProposal,
   requestVocabularyPureCueResolution, requestVocabularyReassessment, requestVocabularySecondOpinion, listVocabularySecondOpinions, listVocabularyNoProposalCases, requestVocabularyCaseSecondOpinion, createVocabularyProposal, saveVocabularyProposal, previewVocabularyProposal, approveVocabularyProposal,
   applyVocabularyProposal, closeVocabularyProposal, closeVocabularyCase, listOwnVocabularyMessages,
   getOwnVocabularyFeedbackAttention,listOwnVocabularyFeedbackFailures,listOwnVocabularyFeedbackJobs, markOwnVocabularyMessageSeen, dismissOwnVocabularyMessage, restoreOwnVocabularyMessage, retryOwnVocabularyFeedback,
@@ -100,11 +100,16 @@ export function registerVocabularyReflectionRoutes(app:Express,options:{wake?:()
   app.get(`${base}/case-queue`,gate,handle((req,actor)=>{
     object(req.query,['view','limit','cursor','search','direction','edge']);
     const raw=req.query.limit;if(raw!==undefined&&(typeof raw!=='string'||!/^\d+$/.test(raw)))throw new VocabularyReflectionRequestError('Expected case queue limit');
-    return listVocabularyCaseQueue(actor,{view:choice(req.query.view??'review',['review','history'] as const),limit:raw===undefined?20:Number(raw),
+    return listVocabularyCaseQueue(actor,{view:choice(req.query.view??'review',['review','history','deferred'] as const),limit:raw===undefined?20:Number(raw),
       ...(req.query.direction===undefined?{}:{direction:choice(req.query.direction,['next','previous'] as const)}),...(req.query.edge===undefined?{}:{edge:choice(req.query.edge,['first','last'] as const)}),...(req.query.cursor===undefined?{}:{cursor:text(req.query.cursor)}),...(req.query.search===undefined?{}:{search:optionalText(req.query.search)})});
   }));
   app.get(`${base}/case-queue/:id`,gate,handle((req,actor)=>{
     object(req.query,['proposalId']);return getVocabularyCaseCard(text(req.params.id),actor,req.query.proposalId===undefined?undefined:text(req.query.proposalId));
+  }));
+  app.post(`${base}/case-queue/:id/deferred`,gate,handle((req,actor)=>{
+    const input=object(req.body,['expectedVersion','deferred']);
+    if(typeof input.deferred!=='boolean')throw new VocabularyReflectionRequestError('Expected deferred boolean');
+    return setVocabularyCaseDeferred(text(req.params.id),version(input.expectedVersion),actor,input.deferred);
   }));
   app.post(`${base}/case-queue/:id/resolve`,gate,handle((req,actor)=>{
     const input=object(req.body,['expectedVersion','reason']);return resolveVocabularyCaseReview(text(req.params.id),version(input.expectedVersion),actor,optionalText(input.reason));
@@ -236,6 +241,7 @@ export function registerVocabularyReflectionRoutes(app:Express,options:{wake?:()
     return listVocabularyProposalReviewBatch(actor,{limit,...(req.query.startProposalId===undefined?{}:{startProposalId:text(req.query.startProposalId)})});
   }));
   app.post(`${base}/proposals`,gate,handle((req,actor)=>createVocabularyProposal(parseVocabularyProposalDraft(req.body),actor)));
+  app.get(`${base}/proposals/:id/original-model-draft`,gate,handle((req,actor)=>({proposal:getVocabularyOriginalModelProposal(text(req.params.id),actor)})));
   app.get(`${base}/proposals/:id`,gate,handle((req,actor)=>getVocabularyProposal(text(req.params.id),actor)));
   app.get(`${base}/proposals/:id/second-opinions`,gate,handle((req,actor)=>({items:listVocabularySecondOpinions(text(req.params.id),actor)})));
   app.post(`${base}/proposals/:id/second-opinions`,gate,handle((req,actor)=>{

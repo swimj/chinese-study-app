@@ -673,3 +673,11 @@ test('repertoire default selection route validates both versions and returns an 
   assert.deepEqual(queued.body.coverage.includedSenseIds,['first']);assert.equal(queued.body.coverage.word.version,3);
 
 });
+
+test('original model draft route is operator-only and manual drafts have no model baseline',()=>{
+  const created=call('post',`${base}/proposals`,{body:proposal()});
+  const params={id:String(created.body.proposalId)},route=`${base}/proposals/:id/original-model-draft`;
+  assert.deepEqual(call('get',route,{params}),{status:200,body:{proposal:null}});
+  process.env.APP_OPERATOR_CLERK_USER_IDS='';
+  assert.equal(call('get',route,{params}).status,403);
+});

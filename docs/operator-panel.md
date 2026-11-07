@@ -119,6 +119,11 @@ Open `/operator/improvement`, or select **Content improvement** using the
 oldest creation time first. Each case displays its current assessment and saved
 proposal, or the judgment that proposed no change. Reassessment retains the
 same case identity and queue position.
+
+**Defer** moves an open case into **Deferred**, retaining its proposals and evidence.
+**Return to review** restores it to immediate attention. Deferral persists across
+reloads and new assessments; there are no dates or automatic resurfacing. Pending
+jobs and approvals must finish before changing its attention placement.
 The entry leads with the original served content and its first chronological
 encounter. Teaching cases identify the source as a **Teaching encounter**. The
 encounter-count control expands responses, reactions, skips, and undone actions.
@@ -330,7 +335,22 @@ the note.
 selection; **Full review workspace** opens full encounter history, numbered case
 jobs, raw evidence, and source-based manual authoring. **Edit proposal** opens the
 full authored revision and preserves inclusion choices and unsaved edits. Compact
-render projections are never submitted as authored content. The proposal selector
+render projections are never submitted as authored content.
+
+**Edit cue** opens a text-only editor inside an expanded proposed item. On an
+exercise case without a proposal, it drafts a correction from the current source.
+Phrase clozes expose their English frame and Mandarin sentence separately.
+**Save** retains the changed proposal; **Approve and apply** separately changes
+live content. **Cancel** discards unsaved edits. **Reset to original** restores the model’s first proposed cue, including after
+saved operator edits. This action sits beside Edit cue and saves a new proposal
+revision without opening the editor. Approve and apply remains separate.
+The reset is available only when that operation has a retained model-authored
+baseline with the same cue type; manual corrections have no model baseline. Accepted answers, senses, teaching
+notes, and other operations remain intact. The original served encounter remains
+historical evidence. Source/proposal conflicts require reopening the current
+content, and unsupported structured cues use the full workspace.
+
+The proposal selector
 opens a retained alternative without changing the case's current assessment;
 its provenance remains attached to the assessment that authored it. Dismissing
 one proposal keeps the case open if another unresolved alternative remains.

@@ -232,6 +232,9 @@ export const schemaMigrations: readonly SchemaMigration[] = [{
 }, {
   id: 'app_schema:0067_vocabulary_repair_targets',
   sql: fs.readFileSync(new URL('./migrations/0067_vocabulary_repair_targets.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0068_vocabulary_case_deferral',
+  sql: fs.readFileSync(new URL('./migrations/0068_vocabulary_case_deferral.sql', import.meta.url), 'utf8'),
 }];
 
 function checksum(value: string): string {

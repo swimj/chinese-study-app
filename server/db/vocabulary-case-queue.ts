@@ -6,7 +6,7 @@ import type { VocabularyCaseQueueItem, VocabularyCaseQueuePage, VocabularyCaseQu
 import type { ReflectionModelChoice } from '../reflection/model-arms.ts';
 import { isOperatorSubject, parseOperatorAllowlist } from '../operator-access.ts';
 import { config, getDb } from './connection.ts';
-import { canonicalVocabularyCaseId, VocabularyReflectionConflict } from './vocabulary-case-reviews.ts';
+import { canonicalVocabularyCaseId, getVocabularyCaseReview, VocabularyReflectionConflict } from './vocabulary-case-reviews.ts';
 import { closeVocabularyCase, requestVocabularyReassessment, type ReassessmentOrigin } from './vocabulary-reflection.ts';
 
 function authorize(actorId:string):void {
@@ -15,7 +15,7 @@ function authorize(actorId:string):void {
 const parseList=<T>(value:string|null):T[]=>value===null?[]:JSON.parse(value) as T[];
 const textDiagnosis=(column:string)=>`CASE WHEN json_type(${column},'$.input.diagnosis')='text' THEN json_extract(${column},'$.input.diagnosis') ELSE coalesce(${['assessment','diagnosis','rationale'].map(key=>`CASE WHEN json_type(${column},'$.input.diagnosis.${key}')='text' THEN json_extract(${column},'$.input.diagnosis.${key}') END`).join(',')},'') END`;
 const prompt=(column:string)=>`CASE WHEN json_type(${column},'$.prompt')='text' THEN json_extract(${column},'$.prompt') WHEN json_type(${column})='text' THEN json_extract(${column},'$') END`;
-type Cursor={v:1;view:'review'|'history';search:string;at:string;id:string;since:string|null;until:string|null};
+type Cursor={v:1;view:'review'|'history'|'deferred';search:string;at:string;id:string;since:string|null;until:string|null};
 function validTime(value:unknown):value is string{return typeof value==='string'&&Number.isFinite(Date.parse(value))&&new Date(value).toISOString()===value;}
 function decodeCursor(raw:string,view:Cursor['view'],search:string):Cursor {
   if(raw.length>4096)throw new TypeError('Invalid case queue cursor');
@@ -23,7 +23,7 @@ function decodeCursor(raw:string,view:Cursor['view'],search:string):Cursor {
   try{value=JSON.parse(Buffer.from(raw,'base64url').toString('utf8')) as Cursor;}catch{throw new TypeError('Invalid case queue cursor');}
   if(!value||value.v!==1||value.view!==view||value.search!==search||!validTime(value.at)||typeof value.id!=='string'||!value.id
     ||(value.since!==null&&!validTime(value.since))||(value.until!==null&&!validTime(value.until)))throw new TypeError('Invalid case queue cursor');
-  if(view==='review'&&(value.since!==null||value.until!==null))throw new TypeError('Invalid case queue cursor');
+  if(view!=='history'&&(value.since!==null||value.until!==null))throw new TypeError('Invalid case queue cursor');
   if(view==='history'&&!search&&(!value.since||!value.until))throw new TypeError('Invalid case queue cursor');
   return value;
 }
@@ -34,15 +34,15 @@ export const vocabularyReviewQueueEligibilitySql = "r.state='open' AND r.approva
 export function listVocabularyCaseQueue(actorId:string,input:VocabularyCaseQueueQuery={},now=new Date().toISOString()):VocabularyCaseQueuePage {
   authorize(actorId);
   const view=input.view??'review',limit=input.limit??20,search=(input.search??'').trim();
-  if(!['review','history'].includes(view)||!Number.isSafeInteger(limit)||limit<1||limit>50||search.length>200||!validTime(now))throw new TypeError('Invalid case queue query');
-  if(view==='review'&&search)throw new TypeError('Search is available in case history');
+  if(!['review','history','deferred'].includes(view)||!Number.isSafeInteger(limit)||limit<1||limit>50||search.length>200||!validTime(now))throw new TypeError('Invalid case queue query');
+  if(view!=='history'&&search)throw new TypeError('Search is available in case history');
   const cursor=input.cursor?decodeCursor(input.cursor,view,search):null;
   const since=cursor?.since??(view==='history'&&!search?new Date(Date.parse(now)-12*60*60*1000).toISOString():null);
   const until=cursor?.until??(view==='history'&&!search?now:null);
   if(input.direction!==undefined&&!['next','previous'].includes(input.direction)||input.edge!==undefined&&!['first','last'].includes(input.edge))throw new TypeError('Invalid case queue direction');
   const backwards=input.edge==='last'||(!input.edge&&input.direction==='previous');
-  const order=view==='review'?'r.created_at':'r.resolved_at',direction=view==='review'?'ASC':'DESC';
-  const where=[view==='review'?vocabularyReviewQueueEligibilitySql:"r.state='resolved' AND r.resolved_at IS NOT NULL"];
+  const order=view!=='history'?'r.created_at':'r.resolved_at',direction=view!=='history'?'ASC':'DESC';
+  const where=[view==='review'?`${vocabularyReviewQueueEligibilitySql} AND r.deferred_at IS NULL`:view==='deferred'?"r.state='open' AND r.deferred_at IS NOT NULL":"r.state='resolved' AND r.resolved_at IS NOT NULL"];
   const params:(string|number)[]=[];
 
   if(since&&until){where.push('r.resolved_at>=? AND r.resolved_at<=?');params.push(since,until);}
@@ -55,7 +55,7 @@ export function listVocabularyCaseQueue(actorId:string,input:VocabularyCaseQueue
   }
   const from=`FROM vocabulary_case_reviews r ${search?'JOIN reflection_cases c ON c.case_id=r.case_id LEFT JOIN lexical_words w ON w.id=c.word_id':''} WHERE ${where.join(' AND ')}`;
   const total=(getDb().prepare(`SELECT count(*) AS total ${from}`).get(...params) as {total:number}).total;
-  const compare=view==='review'?'>':'<',reverseCompare=view==='review'?'<':'>';
+  const compare=view!=='history'?'>':'<',reverseCompare=view!=='history'?'<':'>';
   const boundary=cursor&&!input.edge?` AND (${order},r.case_id) ${backwards?reverseCompare:compare} (?,?)`:'';
   const ordered=backwards?(direction==='ASC'?'DESC':'ASC'):direction;
   const rows=getDb().prepare(`SELECT r.case_id AS caseId,${order} AS at ${from}${boundary} ORDER BY ${order} ${ordered},r.case_id ${ordered} LIMIT ?`)
@@ -75,7 +75,7 @@ export function getVocabularyCaseCard(caseId:string,actorId:string,proposalId?:s
 }
 
 type BaseRow={
-  caseId:string;version:number;state:VocabularyCaseQueueItem['state'];createdAt:string;resolvedAt:string|null;
+  caseId:string;version:number;state:VocabularyCaseQueueItem['state'];deferredAt:string|null;createdAt:string;resolvedAt:string|null;
   kind:VocabularyCaseQueueItem['kind'];learnerId:string;wordId:string|null;wordLabel:string|null;contentId:string|null;
   approvalState:VocabularyCaseQueueItem['approvalState'];approvalRequestId:string|null;currentProposalId:string|null;
   currentJobId:string|null;currentSequence:number|null;activeJobId:string|null;activeSequence:number|null;activeStatus:'queued'|'running'|null;frozen:number;
@@ -89,7 +89,7 @@ type BaseRow={
 function readCards(wanted:{caseId:string;proposalId?:string}[]):VocabularyCaseQueueItem[] {
   if(!wanted.length)return [];
   const db=getDb(),ids=JSON.stringify(wanted);
-  const rows=db.prepare(`SELECT r.case_id AS caseId,r.version,r.state,r.created_at AS createdAt,r.resolved_at AS resolvedAt,
+  const rows=db.prepare(`SELECT r.case_id AS caseId,r.version,r.state,r.created_at AS createdAt,r.resolved_at AS resolvedAt,r.deferred_at AS deferredAt,
     c.kind,c.learner_id AS learnerId,c.word_id AS wordId,w.hanzi AS wordLabel,c.content_id AS contentId,
     r.approval_state AS approvalState,r.approval_request_id AS approvalRequestId,r.current_proposal_id AS currentProposalId,
     cj.job_id AS currentJobId,cj.case_sequence AS currentSequence,
@@ -142,7 +142,7 @@ function readCards(wanted:{caseId:string;proposalId?:string}[]):VocabularyCaseQu
   const cards=new Map<string,VocabularyCaseQueueItem>(rows.map(row=>{
     const source=row.sourceEligible&&row.sourceId&&row.assessedVersion!==null&&row.sourceVersion!==null?{contentId:row.sourceId,assessedVersion:row.assessedVersion,currentVersion:row.sourceVersion}:null;
     const eligible=row.kind==='exercise_improvement'&&row.state==='open'&&!!row.currentJobId&&!!source&&!row.activeJobId&&row.approvalState!=='pending';
-    const item:VocabularyCaseQueueItem={caseId:row.caseId,version:row.version,state:row.state,createdAt:row.createdAt,resolvedAt:row.resolvedAt,kind:row.kind,learnerId:row.learnerId,wordId:row.wordId,wordLabel:row.wordLabel,contentId:row.contentId,
+    const item:VocabularyCaseQueueItem={caseId:row.caseId,version:row.version,state:row.state,deferredAt:row.deferredAt,createdAt:row.createdAt,resolvedAt:row.resolvedAt,kind:row.kind,learnerId:row.learnerId,wordId:row.wordId,wordLabel:row.wordLabel,contentId:row.contentId,
       approvalState:row.approvalState,approvalRequestId:row.approvalRequestId,currentProposalId:row.currentProposalId,
       currentAssessment:row.currentJobId?{jobId:row.currentJobId,sequence:row.currentSequence!}:null,
       activeJob:row.activeJobId?{jobId:row.activeJobId,sequence:row.activeSequence!,status:row.activeStatus!}:null,frozen:!!row.frozen,
@@ -330,4 +330,18 @@ export function addVocabularyCaseNote(caseId:string,expectedVersion:number,actor
     touchVocabularyCaseReview(id);
     return getVocabularyCaseCard(id,actorId);
   },replay);
+}
+
+/** Deferral changes attention placement only; provider results never clear it. */
+export function setVocabularyCaseDeferred(caseId:string,expectedVersion:number,actorId:string,deferred:boolean):VocabularyCaseQueueItem {
+  if(typeof deferred!=='boolean')throw new TypeError('Expected deferred boolean');
+  return changeCase(caseId,expectedVersion,actorId,id=>{
+    const review=getVocabularyCaseReview(id);
+    if(!review)throw new Error('Unknown vocabulary review case');
+    if(review.state!=='open')throw new VocabularyReflectionConflict('This case is resolved');
+    if(review.activeJob)throw new VocabularyReflectionConflict('A case job is queued or running');
+    if(review.approvalState)throw new VocabularyReflectionConflict('Resolve the case approval before changing attention');
+    getDb().prepare('UPDATE vocabulary_case_reviews SET deferred_at=?,version=version+1 WHERE case_id=?').run(deferred?new Date().toISOString():null,id);
+    return getVocabularyCaseCard(id,actorId);
+  });
 }

@@ -10,7 +10,8 @@ import { createBaselineSchema } from '../server/db/persistence.ts';
 import { migrateDatabase } from '../server/db/migrations.ts';
 import { createVocabularyContent,getVocabularyContentForMaintenance,updateVocabularyContent,emitBackendEvent } from '../server/db/vocabulary-content.ts';
 import { createVocabularyProposal,claimVocabularyReflectionJob,retryVocabularyReflectionJob,approveVocabularyProposal,closeVocabularyProposal } from '../server/db/vocabulary-reflection.ts';
-import { listVocabularyCaseQueue,getVocabularyCaseCard,resolveVocabularyCaseReview,reassessVocabularyCaseReview,addVocabularyCaseNote } from '../server/db/vocabulary-case-queue.ts';
+import { listVocabularyCaseQueue,getVocabularyCaseCard,setVocabularyCaseDeferred,resolveVocabularyCaseReview,reassessVocabularyCaseReview,addVocabularyCaseNote } from '../server/db/vocabulary-case-queue.ts';
+import { listVocabularyAttention } from '../server/db/vocabulary-attention.ts';
 import { startRequestTiming,runWithRequestTiming } from '../server/request-timing.ts';
 import { registerVocabularyReflectionRoutes } from '../server/vocabulary/reflection-routes.ts';
 import type { Express,Request,Response,RequestHandler } from 'express';
@@ -153,7 +154,12 @@ test('HTTP queue validates limits and case versions and keeps operator authoriza
   assert.equal(call('post','case-queue/:id/notes',{expectedVersion:1,requestId:'note',text:'Useful note'}).status,200);
   assert.equal(call('post','case-queue/:id/reassess',{expectedVersion:2,expectedContentVersion:1,modelChoice:'openai:gpt-6-sol-high',editorial:{instructions:123}}).status,400);
   assert.equal(call('post','case-queue/:id/reassess',{expectedVersion:2,expectedContentVersion:1,modelChoice:'openai:gpt-6-sol-high',editorial:{instructions:'Revise',secondOpinionRequestId:'missing'}}).status,409);
+  assert.equal(call('post','case-queue/:id/deferred',{expectedVersion:1,deferred:'true'}).status,400);
+  assert.equal(call('post','case-queue/:id/deferred',{expectedVersion:99,deferred:true}).status,409);
+  assert.equal(call('post','case-queue/:id/deferred',{expectedVersion:getVocabularyCaseCard('a','editor').version,deferred:true}).status,200);
+  assert.equal(call('get','case-queue',{}, {view:'deferred'}).status,200);
   process.env.APP_OPERATOR_CLERK_USER_IDS='someone-else';assert.equal(call('get','case-queue').status,403);
+  assert.equal(call('post','case-queue/:id/deferred',{expectedVersion:2,deferred:false}).status,403);
   assert.throws(()=>listVocabularyCaseQueue('editor'),/Operator access/);
 });
 
@@ -337,4 +343,47 @@ test('action commentary is bounded and excludes service explanations without tru
   assert.equal(card.activity?.length,20);assert.equal(card.activityHasMore,true);
   assert.equal(card.activity![0].text,'Reason 5');assert.equal(card.activity!.at(-1)!.text,'Reason 24');
   assert.equal(card.notes?.[0].text,'Keep this separate.');
+});
+
+test('deferral preserves pending proposal and evidence while moving between stable queues',()=>{
+  for(const id of ['a','b','c'])seedCase(id,{proposal:true});
+  const before=getVocabularyCaseCard('a','editor');
+  const deferred=setVocabularyCaseDeferred('a',before.version,'editor',true);
+  assert.equal(deferred.state,'open');assert.ok(deferred.deferredAt);assert.equal(deferred.version,before.version+1);
+  assert.deepEqual(deferred.proposal,before.proposal);assert.deepEqual(deferred.served,before.served);
+  assert.deepEqual(listVocabularyCaseQueue('editor').items.map(i=>i.caseId),['b','c']);
+  for(const id of ['b','c'])setVocabularyCaseDeferred(id,getVocabularyCaseCard(id,'editor').version,'editor',true);
+  const first=listVocabularyCaseQueue('editor',{view:'deferred',limit:2});
+  assert.deepEqual(first.items.map(i=>i.caseId),['a','b']);assert.equal(first.total,3);
+  const last=listVocabularyCaseQueue('editor',{view:'deferred',limit:2,cursor:first.nextCursor!});
+  assert.deepEqual(last.items.map(i=>i.caseId),['c']);assert.equal(last.startIndex,2);
+  assert.throws(()=>listVocabularyCaseQueue('editor',{cursor:first.nextCursor!}),/cursor/);
+  assert.throws(()=>setVocabularyCaseDeferred('a',before.version,'editor',false),/changed/);
+  const restored=setVocabularyCaseDeferred('a',deferred.version,'editor',false);
+  assert.equal(restored.deferredAt,null);assert.deepEqual(restored.proposal,before.proposal);
+  assert.deepEqual(listVocabularyCaseQueue('editor').items.map(i=>i.caseId),['a']);
+});
+test('deferral survives assessment changes and rejects active jobs, approvals and resolved cases',()=>{
+  seedCase('a');const first=getVocabularyCaseCard('a','editor');
+  const deferred=setVocabularyCaseDeferred('a',first.version,'editor',true);
+  const job=reassessVocabularyCaseReview('a',deferred.version,'editor','openai:gpt-6-sol-high',1);
+  assert.throws(()=>setVocabularyCaseDeferred('a',job.item.version,'editor',false),/queued or running/);
+  sql.prepare("UPDATE vocabulary_reflection_jobs SET status='failed',last_error='test' WHERE job_id=?").run(job.jobId);
+  assert.equal(getVocabularyCaseCard('a','editor').deferredAt,deferred.deferredAt);
+  assert.equal(listVocabularyCaseQueue('editor').total,0);assert.equal(listVocabularyCaseQueue('editor',{view:'deferred'}).total,1);
+  sql.exec("UPDATE vocabulary_case_reviews SET approval_state='pending' WHERE case_id='a'");
+  assert.throws(()=>setVocabularyCaseDeferred('a',getVocabularyCaseCard('a','editor').version,'editor',false),/approval/);
+  sql.exec("UPDATE vocabulary_case_reviews SET approval_state=NULL,state='resolved',resolved_at='2026-11-06T00:00:00.000Z' WHERE case_id='a'");
+  assert.throws(()=>setVocabularyCaseDeferred('a',getVocabularyCaseCard('a','editor').version,'editor',false),/resolved/);
+  assert.equal(listVocabularyCaseQueue('editor',{view:'deferred'}).total,0);
+});
+
+test('deferring an unassessed case gives it a durable review home without leaving it in attention',()=>{
+  seedCase('initial',{noAssessment:true});
+  const dependencies={approvals:[],preparationFailure:()=>{throw new Error('Unexpected preparation failure');}};
+  const initial=listVocabularyAttention('editor',{},dependencies);
+  assert.ok(initial.items.some(item=>item.caseId==='initial'));
+  setVocabularyCaseDeferred('initial',getVocabularyCaseCard('initial','editor').version,'editor',true);
+  assert.ok(!listVocabularyAttention('editor',{},dependencies).items.some(item=>item.caseId==='initial'));
+  assert.equal(listVocabularyCaseQueue('editor',{view:'deferred'}).items[0].caseId,'initial');
 });

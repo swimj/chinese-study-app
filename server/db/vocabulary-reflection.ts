@@ -428,6 +428,15 @@ function withProposalResolution(value: VocabularyContentProposal): VocabularyCon
   return { ...value,resolvedAt };
 }
 export function getVocabularyProposal(proposalId: string, actorId: string): VocabularyContentProposal { operator(actorId); return withProposalResolution(proposal(proposalId)); }
+/** Immutable first model-authored draft; operator revisions never replace this baseline. */
+export function getVocabularyOriginalModelProposal(proposalId:string,actorId:string):VocabularyContentProposal|null {
+  operator(actorId);
+  proposal(proposalId); // Require an existing proposal, including for absent historical snapshots.
+  const row=getDb().prepare('SELECT snapshot_json FROM proposal_revision_history WHERE proposal_id=? AND version=1').get(proposalId) as {snapshot_json:string}|undefined;
+  if(!row)return null;
+  const original=JSON.parse(row.snapshot_json) as VocabularyContentProposal;
+  return original.authorKind==='service'?original:null;
+}
 function validateNonreplacementSource(operation:VocabularyProposalOperation,source:VocabularyContent):void {
   if(operation.strategy!=='retire')return;
   if(source.kind!=='exercise'||source.exerciseRole!=='general'||source.skill!=='production'||source.availability!=='active')throw new Error('Drop actions require an active general production exercise');

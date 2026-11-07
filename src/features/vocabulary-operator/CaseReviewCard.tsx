@@ -12,7 +12,7 @@ function answers(forms: string[]): string {
   return [...new Set(forms.map(form => convertSentenceCharacters(form, 'simplified')))].join(' · ');
 }
 
-function Operation({ operation, item, summary }: { operation: VocabularyOperationReview; item: VocabularyCaseQueueItem; summary: string }) {
+function Operation({ operation, item, summary, editCue }: { editCue?: (key:string)=>ReactNode; operation: VocabularyOperationReview; item: VocabularyCaseQueueItem; summary: string }) {
   const pure = operation.pureCue;
   const before = item.served.find(encounter => encounter.contentId === operation.sourceContentId && encounter.contentVersion === operation.expectedVersion)?.acceptedAnswers
     ?? item.sources.find(source => source.contentId === operation.sourceContentId && source.version === operation.expectedVersion)?.acceptedAnswers;
@@ -24,10 +24,12 @@ function Operation({ operation, item, summary }: { operation: VocabularyOperatio
   const hasDetails = !!pure || privateScope || showAnswers || !!rationale || changes.length > 0;
   const heading = <><span className="vocabulary-review-action"><span aria-hidden="true">{icons[operation.strategy]}</span> {strategies[operation.strategy]}{operation.learningRole && operation.learningRole !== 'shared' ? ` · ${roles[operation.learningRole]}` : ''}</span><span className="vocabulary-review-item-label">{label}</span></>;
   const className = `vocabulary-review-item vocabulary-review-item--${operation.strategy}`;
-  if (!hasDetails) return <div className={`${className} vocabulary-review-item--plain`}>{heading}</div>;
+  const cueActions = operation.strategy !== 'retire' ? editCue?.(operation.operationKey) : null;
+  if (!hasDetails) return <div className={`${className} vocabulary-review-item--plain`}>{heading}{cueActions && <div className="vocabulary-review-item-body">{cueActions}</div>}</div>;
   return <details className={className}>
     <summary>{heading}</summary>
     <div className="vocabulary-review-item-body">
+      {cueActions}
       {privateScope && <p className="vocabulary-operator-meta">{operation.scopeLabel}</p>}
       {pure?.axisNote && <p><strong>Axis:</strong> {pure.axisNote}</p>}
       {pure ? <p className="vocabulary-answer-change"><span>{before ? answers(before) : operation.strategy === 'create' ? 'New cue' : 'Assessed accepted answers unavailable'}</span><span aria-label="changes to">→</span><strong>{answers(operation.acceptedAnswers) || 'No accepted answers'}</strong></p>
@@ -67,7 +69,7 @@ function Encounter({ encounter, baseline, children }: { encounter: VocabularySer
 }
 
 /** Render-only projection: deliberately cannot be passed to the authored-content editor. */
-export function CaseReviewCard({ item, children, onDetails, showDetails = false, wordDefaults, onReassessOpinion, reassessmentDisabled = false }: { onReassessOpinion?: () => void; reassessmentDisabled?: boolean; wordDefaults?: ReactNode; item: VocabularyCaseQueueItem; children?: ReactNode; onDetails: () => void; showDetails?: boolean }) {
+export function CaseReviewCard({ item, children, onDetails, showDetails = false, wordDefaults, editCue, onReassessOpinion, reassessmentDisabled = false }: { editCue?: (key:string|null)=>ReactNode; onReassessOpinion?: () => void; reassessmentDisabled?: boolean; wordDefaults?: ReactNode; item: VocabularyCaseQueueItem; children?: ReactNode; onDetails: () => void; showDetails?: boolean }) {
   const [historyOpen, setHistoryOpen] = useState(false);
   const encounters = [...item.served].sort((a, b) => a.presentedAt && b.presentedAt ? a.presentedAt.localeCompare(b.presentedAt) : a.presentedAt ? -1 : b.presentedAt ? 1 : 0);
   const first = encounters[0];
@@ -89,6 +91,7 @@ export function CaseReviewCard({ item, children, onDetails, showDetails = false,
     {item.stale && <p role="alert" className="vocabulary-operator-error">Source or sense mapping changed.{item.state === 'open' && <> Approval and second opinion are unavailable.{item.proposal && ' You can edit or dismiss this proposal.'}{item.reassessment.eligible && ' Reassessment uses the current source.'}</>}</p>}
     {changedSources.length > 0 && <details className="vocabulary-source-summary" ><summary>Source changed{changedSources.length === 1 ? '' : 's'}</summary>{changedSources.map(source => <article key={source.contentId}><p className="vocabulary-operator-meta">Assessed v{source.expectedVersion} · {source.version === null ? 'unavailable' : `current v${source.version}`}{source.availability ? ` · ${source.availability}` : ''}</p>{source.prompt !== null && <p className="vocabulary-operator-cue">{source.prompt}</p>}{source.acceptedAnswers.length > 0 && <p><strong>Accepted answers:</strong> {source.acceptedAnswers.join(' · ')}</p>}</article>)}</details>}
     </div>
+    {!item.proposal && editCue?.(null)}
     <h3 className="vocabulary-improvement-heading">{repertoire ? <><span aria-hidden="true">📖</span> Repertoire bootstrap</> : 'Proposed improvement'}</h3>
     {item.proposal?.authorKind === 'operator' ? <p className="vocabulary-operator-meta">Operator correction</p> : author && <p className="vocabulary-operator-meta" aria-label="Content model">{author.resolvedModel ?? author.model}</p>}
     {summary && !repertoire && summary.trim() !== item.finding?.message.trim() && <p>{summary}</p>}
@@ -104,8 +107,8 @@ export function CaseReviewCard({ item, children, onDetails, showDetails = false,
       {item.reusedSharedCue.availability !== 'active' && <p className="vocabulary-operator-error">{item.reusedSharedCue.availability === null ? 'The referenced shared cue is unavailable.' : `The referenced shared cue is ${item.reusedSharedCue.availability}.`}</p>}
     </>}
     {item.proposal ? <div className="vocabulary-compact-review">
-      {item.proposal.operations.filter(operation => operation.pureCue || !repertoire).map(operation => <Operation key={operation.operationKey} item={item} operation={operation} summary={summary} />)}
-      {repertoire && [...groups].map(([label, operations]) => { const exercises = operations.filter(operation => !operation.pureCue); return exercises.length > 0 && <details className="vocabulary-sense-group" key={label}><summary><strong>{label}</strong> <span className="vocabulary-group-count">{exercises.length} {exercises.length === 1 ? 'exercise' : 'exercises'}</span></summary>{exercises.map(operation => <Operation key={operation.operationKey} item={item} operation={operation} summary={summary} />)}</details>; })}
+      {item.proposal.operations.filter(operation => operation.pureCue || !repertoire).map(operation => <Operation key={operation.operationKey} item={item} operation={operation} summary={summary} editCue={editCue} />)}
+      {repertoire && [...groups].map(([label, operations]) => { const exercises = operations.filter(operation => !operation.pureCue); return exercises.length > 0 && <details className="vocabulary-sense-group" key={label}><summary><strong>{label}</strong> <span className="vocabulary-group-count">{exercises.length} {exercises.length === 1 ? 'exercise' : 'exercises'}</span></summary>{exercises.map(operation => <Operation key={operation.operationKey} item={item} operation={operation} summary={summary} editCue={editCue} />)}</details>; })}
     </div> : <p><strong>{item.needsDecision ? 'Needs a decision' : item.currentAssessment ? 'No change proposed' : 'Awaiting assessment'}</strong></p>}
     {item.advisoryOpinion && <div className="vocabulary-second-opinion" aria-label="Second opinion"><p><strong>Second opinion · job {item.advisoryOpinion.sequence}</strong></p>{item.advisoryOpinion.result ? <><p>{{ support: 'Supports this judgment', revise: 'Suggests revision', reject: 'Recommends against this judgment' }[item.advisoryOpinion.result.verdict]}</p><p>{item.advisoryOpinion.result.rationale}</p>{onReassessOpinion && item.advisoryOpinion.status === 'succeeded' && item.reassessment.eligible && item.state === 'open' && <button className="secondary-button" aria-haspopup="dialog" disabled={reassessmentDisabled || item.frozen || !!item.activeJob || item.approvalState === 'pending'} onClick={onReassessOpinion}>Reassess with this opinion</button>}</> : <p role="status">{item.advisoryOpinion.status === 'queued' ? 'Queued' : item.advisoryOpinion.status === 'running' ? 'Reviewing…' : 'Review failed'}</p>}</div>}
     {item.requiresDetails && <p><button className="secondary-button" onClick={onDetails}>Review full content before approval</button></p>}
