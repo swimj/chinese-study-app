@@ -87,6 +87,12 @@ the result against your task's objective and constraints. Give each subagent a
 clear scope, relevant context, and expected outcome.
 Request concise results with evidence, relevant changes, and unresolved questions.
 
+Choose each subagent's model and reasoning level to fit the subtask's difficulty,
+consequences, and context needs, while considering cost. A stronger coordinator
+can use a cheaper model for straightforward work; a cheaper coordinator can
+delegate a bounded task requiring greater intelligence to a stronger model.
+Adjust the choice when evidence from the work warrants it.
+
 Keep tightly coupled work together when delegation would add more coordination
 than value, avoid duplicating effort, and coordinate concurrent edits explicitly.
 Independently dispatched tasks belong in separate worktrees. Graphite stacks
