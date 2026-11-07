@@ -39,7 +39,12 @@ exercise improvement to silently choose a winner. The
 [`sense-content-reconciliation.ts`](../../server/db/sense-content-reconciliation.ts)
 owns saved judgments and live application. It reuses inventory snapshot/dependency
 collection from the offline reconciliation report, without invoking that tool's
-stopped-writer apply operation.
+stopped-writer apply operation. Online snapshots collect the dependencies used by
+the application plan; the offline report additionally audits preserved learner
+history. Relational dependency reads are scoped to the word and affected content
+closure. Embedded JSON references still require discovery scans so indirect
+dependencies are retained. Opening a workspace uses a read transaction, and saving
+a judgment reuses its checked dependency snapshot when returning the workspace.
 
 [`vocabulary-attention.ts`](../../server/db/vocabulary-attention.ts) projects a stable
 `reconciliation:<wordId>` item for a current source mismatch, a saved decision, or
@@ -50,7 +55,9 @@ are disclosed as children. Grouping affects the queue projection, preserving the
 underlying records and history. Completed replacements remove covered failures
 from active attention; a new mismatch or decision can keep the word actionable.
 Queue counting and pagination operate on grouped identities before displayed
-items load their progress and child records.
+items load their progress and child records. Reconciliation groups and failures
+are fetched in page-sized batches rather than rerunning the queue projection for
+each displayed word.
 
 Each saved version captures a linguistic draft and source snapshot. Planning checks
 use accounting, selected identities, source drift, active generation, unresolved

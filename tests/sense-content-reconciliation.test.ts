@@ -24,6 +24,7 @@ import { createVocabularyPracticeWorker } from '../server/vocabulary/preparation
 import type { WordContentDocument } from '../src/domain/word-content/types.ts';
 import type { WordIntroductionProvider } from '../server/word-content/provider.ts';
 import type { SenseContentReconciliationDraft, SenseContentReconciliationWorkspace } from '../src/domain/sense-content-reconciliation.ts';
+import { snapshotInventoryForReconciliation } from '../server/db/sense-inventory-reconciliation-report.ts';
 
 let root: string, baseline: string, db: DatabaseSync;
 let previousAllowlist: string | undefined;
@@ -114,6 +115,30 @@ test('stale evidence survives ordinary save; only explicit refresh updates its s
   assert.ok(saved.plan!.blockers.some(blocker => blocker.code === 'source_changed'));
   const refreshed = saveSenseContentReconciliation('word', { expectedVersion: saved.resolution!.version, status: 'resolved', draft: saved.resolution!.draft, refreshSource: true }, actor.id);
   assert.ok(!refreshed.plan!.blockers.some(blocker => blocker.code === 'source_changed'));
+});
+test('opening a reconciliation remains readable while another connection reserves the WAL writer', () => {
+  db.exec('PRAGMA journal_mode=WAL');
+  const writer=new DatabaseSync(path.join(root,'current.db'));
+  writer.exec('BEGIN IMMEDIATE');
+  try {
+    assert.equal(getSenseContentReconciliationWorkspace('word',actor.id).wordId,'word');
+    assert.equal(listSenseContentReconciliationWords(actor.id)[0]?.wordId,'word');
+  } finally { writer.exec('ROLLBACK');writer.close(); }
+});
+test('saving reads dependencies once and preserves compatibility with an offline saved snapshot', t => {
+  const input=draft();
+  db.exec('BEGIN');
+  const legacySnapshot=snapshotInventoryForReconciliation(db,'word');
+  db.exec('COMMIT');
+  const statements:string[]=[],prepare=db.prepare.bind(db);
+  t.mock.method(db,'prepare',(query:string)=>{statements.push(query);return prepare(query);});
+  const saved=saveSenseContentReconciliation('word',{expectedVersion:null,status:'resolved',draft:input},actor.id);
+  assert.equal(statements.filter(query=>query.startsWith('SELECT id,hanzi,traditional,pinyin,meaning FROM lexical_words')).length,1);
+  assert.ok(!statements.some(query=>/\b(vocabulary_sessions|vocabulary_session_completions|learner_pure_cue_schedules)\b/.test(query)), 'Online save must not scan retained learner history');
+  db.prepare('UPDATE sense_content_reconciliations SET snapshot_json=? WHERE resolution_id=?').run(JSON.stringify(legacySnapshot),saved.resolution!.resolutionId);
+  const reopened=getSenseContentReconciliationWorkspace('word',actor.id);
+  assert.deepEqual(reopened.plan,saved.plan);
+  assert.deepEqual(reopened.affectedContent,saved.affectedContent);
 });
 test('apply replaces teaching atomically while preserving canonical identities and retained sources', () => {
   const state = resolved(), senses = getVocabularySenses('word'), token = senseContentReconciliationGenerationToken('word');

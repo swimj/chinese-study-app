@@ -26,10 +26,15 @@ function rows(snapshot: InventorySnapshot, key: string): Row[] {
   return value as Row[];
 }
 
-/** Read-only, exact snapshot. Caller owns a read transaction or the stopped-writer apply transaction. */
-export function snapshotInventoryForReconciliation(database: DatabaseSync, wordId: string): InventorySnapshot {
+/** Exact dependency snapshot; offline mode also audits preserved learner history. Caller owns the transaction. */
+export function snapshotInventoryForReconciliation(
+  database: DatabaseSync, wordId: string, options: { mode?: 'offline' | 'online' } = {},
+): InventorySnapshot {
   if (!database.isTransaction) throw new Error('Inventory dependency snapshot requires a transaction');
   const all = (sql: string, ...args: string[]): Row[] => database.prepare(sql).all(...args) as Row[];
+  // Live reconciliation preserves learner history without auditing it on every read.
+  const includePreservedHistory = options.mode !== 'online';
+  const idsJson = (ids: Iterable<string>): string => JSON.stringify([...ids]);
   const lexical = database.prepare('SELECT id,hanzi,traditional,pinyin,meaning FROM lexical_words WHERE id=?').get(wordId) as
     { id: string; hanzi: string; traditional: string | null; pinyin: string; meaning: string } | undefined;
   if (!lexical) throw new Error(`Unknown word ${wordId}`);
@@ -43,48 +48,54 @@ export function snapshotInventoryForReconciliation(database: DatabaseSync, wordI
   const sourceIds = new Set(sourceDocuments.map(row => String(row.content_id)));
   const packageIds = new Set(packages.map(row => String(row.package_id)));
   const refs = new Set([wordId, ...sourceIds, ...packageIds, ...senses.map(sense => sense.senseId)]);
-  const allWords = all('SELECT * FROM content_words ORDER BY content_id,word_id');
-  const allAnswers = all('SELECT * FROM exercise_answer_words ORDER BY exercise_id,word_id');
-  const allBindings = all('SELECT * FROM introduction_exercises ORDER BY introduction_id,position');
-  const allContent = all('SELECT * FROM content_items ORDER BY content_id');
   const contentIds = new Set([
-    ...allWords.filter(row => row.word_id === wordId).map(row => String(row.content_id)),
-    ...allAnswers.filter(row => row.word_id === wordId).map(row => String(row.exercise_id)),
-    ...allContent.filter(row => intersects(jsonStrings(row.body_json), refs)).map(row => String(row.content_id)),
+    ...all('SELECT content_id FROM content_words WHERE word_id=?', wordId).map(row => String(row.content_id)),
+    ...all('SELECT exercise_id FROM exercise_answer_words WHERE word_id=?', wordId).map(row => String(row.exercise_id)),
   ]);
-  // A shared teaching exercise can bind several introductions; retain the complete binding closure.
-  let expanded = true;
-  while (expanded) {
-    expanded = false;
-    for (const binding of allBindings) if (contentIds.has(String(binding.introduction_id)) || contentIds.has(String(binding.exercise_id))) {
-      for (const id of [String(binding.introduction_id), String(binding.exercise_id)]) if (!contentIds.has(id)) { contentIds.add(id); expanded = true; }
+  // Embedded provenance can point to this word without a relational word mapping.
+  // Keep that discovery complete, but load full rows only for the selected closure.
+  for (const row of all('SELECT content_id,body_json FROM content_items ORDER BY content_id')) {
+    if (intersects(jsonStrings(row.body_json), refs)) contentIds.add(String(row.content_id));
+  }
+  // A shared teaching exercise can bind several introductions. Build adjacency once
+  // rather than rescanning every binding for each expansion of the closure.
+  const neighbors = new Map<string, string[]>();
+  for (const binding of all('SELECT introduction_id,exercise_id FROM introduction_exercises')) {
+    const introductionId = String(binding.introduction_id), exerciseId = String(binding.exercise_id);
+    for (const [from, to] of [[introductionId, exerciseId], [exerciseId, introductionId]] as const) {
+      const adjacent = neighbors.get(from);
+      if (adjacent) adjacent.push(to); else neighbors.set(from, [to]);
     }
   }
-  const contents = allContent.filter(row => contentIds.has(String(row.content_id)));
+  const pending = [...contentIds];
+  for (let index = 0; index < pending.length; index++) {
+    for (const id of neighbors.get(pending[index]!) ?? []) if (!contentIds.has(id)) { contentIds.add(id); pending.push(id); }
+  }
+  const selectedContent = idsJson(contentIds);
+  const contents = all('SELECT * FROM content_items WHERE content_id IN (SELECT value FROM json_each(?)) ORDER BY content_id', selectedContent);
   for (const id of contentIds) refs.add(id);
-  const contentWords = allWords.filter(row => contentIds.has(String(row.content_id)));
-  const answers = allAnswers.filter(row => contentIds.has(String(row.exercise_id)));
-  const introductionBindings = allBindings.filter(row => contentIds.has(String(row.introduction_id)));
-  const cases = all('SELECT * FROM reflection_cases ORDER BY case_id').filter(row => row.word_id === wordId
+  const contentWords = all('SELECT * FROM content_words WHERE content_id IN (SELECT value FROM json_each(?)) ORDER BY content_id,word_id', selectedContent);
+  const answers = all('SELECT * FROM exercise_answer_words WHERE exercise_id IN (SELECT value FROM json_each(?)) ORDER BY exercise_id,word_id', selectedContent);
+  const introductionBindings = all('SELECT * FROM introduction_exercises WHERE introduction_id IN (SELECT value FROM json_each(?)) ORDER BY introduction_id,position', selectedContent);
+  const cases = all('SELECT case_id,word_id,content_id,evidence_snapshot_json FROM reflection_cases ORDER BY case_id').filter(row => row.word_id === wordId
     || contentIds.has(String(row.content_id)) || intersects(jsonStrings(row.evidence_snapshot_json), refs));
   const caseIds = new Set(cases.map(row => String(row.case_id)));
-  const pendingReflectionJobs = all("SELECT * FROM vocabulary_reflection_jobs WHERE status!='succeeded' ORDER BY job_id").filter(row => caseIds.has(String(row.case_id)));
+  const pendingReflectionJobs = all("SELECT * FROM vocabulary_reflection_jobs WHERE status!='succeeded' AND case_id IN (SELECT value FROM json_each(?)) ORDER BY job_id", idsJson(caseIds));
   const pendingDispatches = all("SELECT * FROM vocabulary_post_session_dispatches WHERE status!='succeeded' ORDER BY dispatch_id")
     .filter(row => intersects(jsonStrings(row.evidence_json), refs));
-  const allProposalBases = all('SELECT * FROM proposal_content_bases ORDER BY proposal_id,content_id');
-  const basedProposals = new Set(allProposalBases.filter(row => contentIds.has(String(row.content_id))).map(row => String(row.proposal_id)));
+  const basedProposals = new Set(all('SELECT proposal_id FROM proposal_content_bases WHERE content_id IN (SELECT value FROM json_each(?))', selectedContent).map(row => String(row.proposal_id)));
   const pendingProposals = all("SELECT * FROM content_proposals WHERE status NOT IN ('applied','closed') ORDER BY proposal_id")
     .filter(row => caseIds.has(String(row.case_id)) || basedProposals.has(String(row.proposal_id)) || intersects(jsonStrings(row.operations_json), refs));
   const proposalIds = new Set(pendingProposals.map(row => String(row.proposal_id)));
-  const retainedSessions = all('SELECT session_id,learner_id,status,context_json FROM vocabulary_sessions ORDER BY session_id')
-    .filter(row => intersects(jsonStrings(row.context_json), refs));
+  const retainedSessions = includePreservedHistory ? all('SELECT session_id,learner_id,status,context_json FROM vocabulary_sessions ORDER BY session_id')
+    .filter(row => intersects(jsonStrings(row.context_json), refs)) : [];
   const sessionIds = new Set(retainedSessions.map(row => String(row.session_id)));
-  const pendingCompletions = all("SELECT completion_id,session_id,learner_id,status,input_json FROM vocabulary_session_completions WHERE status IN ('pending','failed') ORDER BY completion_id")
-    .filter(row => sessionIds.has(String(row.session_id)) || intersects(jsonStrings(row.input_json), refs));
+  const pendingCompletions = includePreservedHistory ? all("SELECT completion_id,session_id,learner_id,status,input_json FROM vocabulary_session_completions WHERE status IN ('pending','failed') ORDER BY completion_id")
+    .filter(row => sessionIds.has(String(row.session_id)) || intersects(jsonStrings(row.input_json), refs)) : [];
   const publicationIds = new Set([...sourceDocuments, ...packages].map(row => String(row.publication_id)));
-  const publications = all('SELECT * FROM shared_content_publications ORDER BY publication_id').filter(row => publicationIds.has(String(row.publication_id)));
+  const publications = all('SELECT * FROM shared_content_publications WHERE publication_id IN (SELECT value FROM json_each(?)) ORDER BY publication_id', idsJson(publicationIds));
   const imports = all('SELECT i.* FROM legacy_sense_imports i JOIN senses s USING(sense_id) WHERE s.word_id=? ORDER BY i.source_content_id,i.source_use_id', wordId);
-  const contentImports = all('SELECT * FROM legacy_content_imports ORDER BY source_kind,source_id,source_sub_id').filter(row => contentIds.has(String(row.content_id)));
+  const contentImports = all('SELECT * FROM legacy_content_imports WHERE content_id IN (SELECT value FROM json_each(?)) ORDER BY source_kind,source_id,source_sub_id', selectedContent);
   const coverage = database.prepare('SELECT * FROM vocabulary_word_sense_coverage WHERE word_id=?').get(wordId) as Row | undefined;
   return {
     word: { wordId, hanzi: lexical.hanzi, traditional: lexical.traditional, pinyin: lexical.pinyin, meanings: meanings.length ? meanings.map(row => String(row.text)) : [lexical.meaning] },
@@ -92,7 +103,7 @@ export function snapshotInventoryForReconciliation(database: DatabaseSync, wordI
     dependencies: {
       reportVersion: 2,
       contents, contentWords, answers, introductionBindings,
-      suitability: all('SELECT * FROM content_mode_suitability ORDER BY content_id,mode').filter(row => contentIds.has(String(row.content_id))),
+      suitability: all('SELECT * FROM content_mode_suitability WHERE content_id IN (SELECT value FROM json_each(?)) ORDER BY content_id,mode', selectedContent),
       sourceDocuments, packages, imports, contentImports, publications,
       introductionPreparation: all('SELECT * FROM word_introduction_preparation WHERE word_id=?', wordId),
       wordPreparation: all('SELECT * FROM word_preparation_work WHERE word_id=? ORDER BY work_id', wordId),
@@ -104,19 +115,19 @@ export function snapshotInventoryForReconciliation(database: DatabaseSync, wordI
         JOIN vocabulary_case_reviews review USING(case_id) JOIN reflection_cases c USING(case_id)
         WHERE c.word_id=? AND review.state='open' ORDER BY target.case_id`, wordId),
       pendingReflectionJobs, pendingDispatches, pendingProposals,
-      pendingProposalBases: allProposalBases.filter(row => proposalIds.has(String(row.proposal_id))),
+      pendingProposalBases: all('SELECT * FROM proposal_content_bases WHERE proposal_id IN (SELECT value FROM json_each(?)) ORDER BY proposal_id,content_id', idsJson(proposalIds)),
       pendingCompletions,
-      learnerSenses: all('SELECT * FROM learner_senses WHERE word_id=? ORDER BY learner_id,sense_id', wordId),
-      stashed: all('SELECT * FROM learner_words WHERE word_id=? ORDER BY learner_id', wordId),
-      wordSchedules: all('SELECT * FROM learner_word_schedules WHERE word_id=? ORDER BY learner_id', wordId),
-      pureCueSchedules: all('SELECT * FROM learner_pure_cue_schedules ORDER BY learner_id,content_id').filter(row => contentIds.has(String(row.content_id))),
-      reserve: all('SELECT * FROM learner_word_preparation_reserve WHERE word_id=? ORDER BY learner_id', wordId),
+      learnerSenses: includePreservedHistory ? all('SELECT * FROM learner_senses WHERE word_id=? ORDER BY learner_id,sense_id', wordId) : [],
+      stashed: includePreservedHistory ? all('SELECT * FROM learner_words WHERE word_id=? ORDER BY learner_id', wordId) : [],
+      wordSchedules: includePreservedHistory ? all('SELECT * FROM learner_word_schedules WHERE word_id=? ORDER BY learner_id', wordId) : [],
+      pureCueSchedules: includePreservedHistory ? all('SELECT * FROM learner_pure_cue_schedules WHERE content_id IN (SELECT value FROM json_each(?)) ORDER BY learner_id,content_id', selectedContent) : [],
+      reserve: includePreservedHistory ? all('SELECT * FROM learner_word_preparation_reserve WHERE word_id=? ORDER BY learner_id', wordId) : [],
       retainedSessions: retainedSessions.map(({ context_json: _context, ...row }) => row),
-      preservedCounts: {
+      preservedCounts: includePreservedHistory ? {
         encounters: Number(database.prepare('SELECT COUNT(DISTINCT encounter_id) n FROM encounter_words WHERE word_id=?').get(wordId)?.n ?? 0),
         teachingCompletions: Number(database.prepare('SELECT COUNT(*) n FROM teaching_completions WHERE word_id=?').get(wordId)?.n ?? 0),
         senseHistory: Number(database.prepare('SELECT COUNT(*) n FROM sense_revision_history h JOIN senses s USING(sense_id) WHERE s.word_id=?').get(wordId)?.n ?? 0),
-      },
+      } : {},
     },
   };
 }
