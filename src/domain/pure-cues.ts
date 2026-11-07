@@ -62,10 +62,13 @@ export type PureCueAssessmentSummary = {
   terminalRating: Exclude<PureCueRating, 'forgot'> | null;
 };
 
-export type PureCueSelection = {
-  fragile: PureCue[];
-  strong: PureCue[];
-  selected: PureCue[];
+/** Selection needs scheduling facts, not exercise text or accepted-answer payloads. */
+export type PureCueSelectionCandidate = Pick<PureCue,
+  'id' | 'active' | 'maintenanceIdentity' | 'lastStudiedAt' | 'nextDueAt' | 'strongSince' | 'strongSuccesses'>;
+export type PureCueSelection<T extends PureCueSelectionCandidate = PureCue> = {
+  fragile: T[];
+  strong: T[];
+  selected: T[];
 };
 
 export function dueAtWithResetDelay(from: string, existingDueAt: string | null = null): string {
@@ -142,7 +145,7 @@ export function schedulePureCueAssessment(
   };
 }
 
-export function selectPureCuesForSession({
+export function selectPureCuesForSession<T extends PureCueSelectionCandidate>({
   learnerId,
   cues,
   ordinaryReviewCount,
@@ -150,11 +153,11 @@ export function selectPureCuesForSession({
   random = Math.random,
 }: {
   learnerId: string;
-  cues: readonly PureCue[];
+  cues: readonly T[];
   ordinaryReviewCount: number;
   now: string;
   random?: () => number;
-}): PureCueSelection {
+}): PureCueSelection<T> {
   if (!learnerId.trim()) throw new Error('Pure cue selection requires a learner id.');
   assertNonNegativeInteger(ordinaryReviewCount, 'Ordinary review count');
   assertCanonicalIsoTimestamp(now, 'Pure cue selection clock');
@@ -253,13 +256,13 @@ export function derivePureCueAssessment(
   return covered;
 }
 
-function sampleStrongCuesWithoutReplacement(
-  candidates: readonly PureCue[],
+function sampleStrongCuesWithoutReplacement<T extends PureCueSelectionCandidate>(
+  candidates: readonly T[],
   count: number,
   random: () => number,
-): PureCue[] {
+): T[] {
   const remaining = [...candidates];
-  const selected: PureCue[] = [];
+  const selected: T[] = [];
   while (selected.length < count) {
     const selectedIndex = Math.floor(sampleUnitInterval(random) * remaining.length);
     selected.push(remaining.splice(selectedIndex, 1)[0]!);
@@ -267,7 +270,7 @@ function sampleStrongCuesWithoutReplacement(
   return selected;
 }
 
-function isOutsideStrongRecency(cue: PureCue, now: string): boolean {
+function isOutsideStrongRecency(cue: PureCueSelectionCandidate, now: string): boolean {
   return Date.parse(now) - Date.parse(cue.lastStudiedAt ?? cue.strongSince!)
     >= PURE_CUE_STRONG_RECENCY_HOURS * 60 * 60 * 1_000;
 }
@@ -285,7 +288,7 @@ function strongCueDailyRoll(learnerId: string, cueId: string, now: string): numb
   return ((hash ^ (hash >>> 16)) >>> 0) / 0x100000000;
 }
 
-function comparePureCues(left: PureCue, right: PureCue): number {
+function comparePureCues(left: PureCueSelectionCandidate, right: PureCueSelectionCandidate): number {
   return left.nextDueAt.localeCompare(right.nextDueAt) || left.id.localeCompare(right.id);
 }
 

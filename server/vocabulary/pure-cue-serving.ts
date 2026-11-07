@@ -4,7 +4,7 @@ import {createHash} from 'node:crypto';
 import {getDb} from '../db/connection.ts';
 import {requireLearnerId} from '../db/learner-context.ts';
 import {getVocabularyContent} from '../db/vocabulary-content.ts';
-import {dueAtWithResetDelay,selectPureCuesForSession,type PureCue} from '../../src/domain/pure-cues.ts';
+import {dueAtWithResetDelay,selectPureCuesForSession,type PureCueSelectionCandidate} from '../../src/domain/pure-cues.ts';
 import type {VocabularyContent} from '../../src/domain/vocabulary-content.ts';
 
 const eligibleContent=`c.kind='exercise' AND c.exercise_type='pure_cue' AND c.exercise_role='general' AND c.availability='active'
@@ -29,19 +29,24 @@ export function selectVocabularyPureCueCandidates(input:{ordinaryReviewCount:num
     FROM learner_pure_cue_schedules s JOIN content_items c USING(content_id)
     WHERE s.learner_id=:learner AND COALESCE(json_extract(s.scheduler_state_json,'$.enabled'),1)=1 AND ${eligibleContent}
     ORDER BY c.created_at,c.content_id`).all({learner:requireLearnerId()}) as {content_id:string;scheduler_state_json:string;last_practised_at:string|null;next_eligible_at:string|null}[];
-  const contents=new Map<string,VocabularyContent>();
   const cues=rows.filter(row=>{
-    const content=getVocabularyContent(row.content_id);
-    return content?.kind==='exercise'&&content.answers.every(answer=>!isSenseContentReconciliationPending(answer.wordId))
-      &&content.words.every(word=>!isSenseContentReconciliationPending(word.wordId));
-  }).map((row):PureCue=>{
-    const content=getVocabularyContent(row.content_id);if(!content||content.kind!=='exercise')throw new Error('Eligible pure cue disappeared');contents.set(content.contentId,content);
+    // Reconciliation gates need identities only; body, assessment and accepted forms
+    // are loaded after scheduling chooses this cue.
+    const words=getDb().prepare(`SELECT word_id FROM content_words WHERE content_id=?
+      UNION SELECT word_id FROM exercise_answer_words WHERE exercise_id=?`)
+      .all(row.content_id,row.content_id) as {word_id:string}[];
+    return words.every(word=>!isSenseContentReconciliationPending(word.word_id));
+  }).map((row):PureCueSelectionCandidate=>{
     const state=JSON.parse(row.scheduler_state_json) as {intervalHours:number;easeFactor:number;strongSince?:string|null;strongSuccesses?:number;resetUntil?:string|null;maintenanceIdentity?:string};
     const active=state.resetUntil==null||state.resetUntil<=now;
-    return {id:content.contentId,maintenanceIdentity:state.maintenanceIdentity,kind:'pure',stimulus:'',axisNote:'',teachingNote:'',acceptedWordIds:content.answers.map((answer)=>answer.wordId),active,
-      intervalHours:state.intervalHours,easeFactor:state.easeFactor,lastStudiedAt:row.last_practised_at,nextDueAt:row.next_eligible_at??now,
+    return {id:row.content_id,maintenanceIdentity:state.maintenanceIdentity,active,
+      lastStudiedAt:row.last_practised_at,nextDueAt:row.next_eligible_at??now,
       strongSince:state.strongSince??null,strongSuccesses:state.strongSuccesses??0};
   });
   let draw=0;const random=()=>parseInt(createHash('sha256').update(`${input.sessionSeed}/${draw++}`).digest('hex').slice(0,8),16)/0x100000000;
-  return selectPureCuesForSession({learnerId:requireLearnerId(),cues,ordinaryReviewCount:input.ordinaryReviewCount,now,random}).selected.map((cue)=>contents.get(cue.id)!);
+  return selectPureCuesForSession({learnerId:requireLearnerId(),cues,ordinaryReviewCount:input.ordinaryReviewCount,now,random}).selected.map((cue)=>{
+    const content=getVocabularyContent(cue.id);
+    if(!content||content.kind!=='exercise')throw new Error('Selected pure cue disappeared');
+    return content;
+  });
 }

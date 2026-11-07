@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { Express, Request, Response } from 'express';
 import { registerVocabularyStudyRoutes } from '../server/vocabulary/study-routes.ts';
 import type { VocabularySessionInitialContext } from '../src/domain/vocabulary-session.ts';
@@ -1242,4 +1243,48 @@ test('ordinary review trusts SQL flags while Solidify still checks its recall di
     assert.equal(previewVocabularyStudy().itemCount,0);
     assert.equal(reads.length,4);
   } finally {db.prepare=prepare;}
+}));
+
+test('pure cue selection hydrates only scheduled winners while preserving order and frozen content',async(t)=>owner(()=>{
+  const now='2026-11-07T12:00:00.000Z';
+  const past='2026-01-01T00:00:00.000Z';const future='2027-01-01T00:00:00.000Z';
+  const cues:import('../src/domain/pure-cues.ts').PureCue[]=[];
+  for(let index=0;index<300;index++) {
+    const id=`hydration-${String(index).padStart(3,'0')}`;exercise(id,'b','general',true);
+    const strong=index>=9;const reset=index>=6&&index<9;const due=index<3||strong;
+    const state={intervalHours:24,easeFactor:2.5,strongSince:strong?past:null,strongSuccesses:0,resetUntil:reset?future:null};
+    db.prepare("INSERT INTO learner_pure_cue_schedules(learner_id,content_id,last_practised_at,next_eligible_at,policy_version,scheduler_state_json) VALUES('alice',?,?,?,'test',?)")
+      .run(id,past,due?past:future,JSON.stringify(state));
+    cues.push({id,kind:'pure',stimulus:'',axisNote:'',teachingNote:'',acceptedWordIds:['b'],active:!reset,
+      ...state,lastStudiedAt:past,nextDueAt:due?past:future});
+  }
+  let draw=0;const seed='fixed-hydration-seed';
+  const random=()=>parseInt(createHash('sha256').update(`${seed}/${draw++}`).digest('hex').slice(0,8),16)/0x100000000;
+  const expected=selectPureCuesForSession({learnerId:'alice',cues,ordinaryReviewCount:20,now,random}).selected.map(cue=>cue.id);
+  assert.ok(expected.length>3,'fixture includes a strong maintenance winner');
+  const prepare=db.prepare.bind(db);let contentReads=0;
+  db.prepare=((sql:string)=>{if(sql==='SELECT * FROM content_items WHERE content_id = ?')contentReads++;return prepare(sql);}) as typeof db.prepare;
+  try {
+    const started=performance.now();
+    const selected=selectVocabularyPureCueCandidates({ordinaryReviewCount:20,sessionSeed:seed,now,adopt:false});
+    assert.deepEqual(selected.map(cue=>cue.contentId),expected);
+    assert.equal(contentReads,selected.length); // Baseline: 600 hydrations for these 300 candidates.
+    assert.ok(selected.every(cue=>cue.kind==='exercise'&&cue.answers[0]?.acceptedForms[0]==='乙'));
+    t.diagnostic(`Pure cues: ${contentReads} full-content hydrations for 300 candidates / ${selected.length} winners; ${(performance.now()-started).toFixed(2)} ms selection`);
+  } finally {db.prepare=prepare;}
+}));
+
+test('pure cue metadata checks reconciliation for target relationships and alternative answers',()=>owner(()=>{
+  createVocabularyContent({contentId:'pure-reconciliation',kind:'exercise',payloadVersion:1,body:{prompt:'Either'},
+    accessScope:'shared',availability:'active',originKind:'human',words:[{wordId:'a',relation:'target'},{wordId:'b',relation:'target'}],
+    exerciseType:'pure_cue',skill:'production',exerciseRole:'general',assessment:{match:'prepared'},
+    answers:[{wordId:'b',acceptedForms:['乙']}]},actor);
+  adoptVocabularyPureCues('2026-01-01T00:00:00.000Z');
+  const select=()=>selectVocabularyPureCueCandidates({ordinaryReviewCount:20,sessionSeed:'reconciliation',now:'2026-11-07T12:00:00.000Z',adopt:false});
+  assert.deepEqual(select().map(cue=>cue.contentId),['pure-reconciliation']);
+  for(const wordId of ['a','b']) {
+    blockReconciledWord(wordId);
+    assert.deepEqual(select(),[]);
+    db.prepare('DELETE FROM sense_content_reconciliations WHERE word_id=?').run(wordId);
+  }
 }));
