@@ -229,6 +229,12 @@ export function createVocabularyReflectionProvider(options:{environment?:NodeJS.
       const mappingBaseUrl=mappingConfig.baseUrlEnvironmentVariable?environment[mappingConfig.baseUrlEnvironmentVariable]?.trim()||null:null;
       return {config:mappingConfig,adapter:mappingAdapter,apiKey:mappingKey,baseUrl:mappingBaseUrl};
     };
+    const editorialFor=(step:string)=>job.editorial&&['single_improvement','pure_cue_improvement','repertoire'].includes(step)?job.editorial:undefined;
+    const editorialSystem=(step:string,prompt:string)=>editorialFor(step)?`${prompt}
+
+## Operator editorial context
+The input's operatorEditorial contains optional operator instructions and an explicitly selected second opinion. Address the instructions alongside the normal assessment; evaluate the second opinion as advisory analysis, not a verdict to obey. Preserve the selected target, source boundaries, and output contract. If a requested change conflicts with those constraints, preserve the constraints and explain the limitation where the normal output contract permits an explanation. Never add output fields. Keep private operator commentary out of shared learning content.`:prompt;
+    const editorialProjection=(step:string,version:string)=>editorialFor(step)?`${version}+editorial.v1`:version;
     const projectCall=(step:string,input:unknown,schema:JsonSchema)=>{
       const shared=step==='repertoire'?generalExerciseInvocation(input as GeneralExerciseSource):null;
       const projected=!shared&&['sense_mapping','single_improvement','pure_cue_promotion'].includes(step)?projectVocabularySenseReferences(input):null;
@@ -237,13 +243,15 @@ export function createVocabularyReflectionProvider(options:{environment?:NodeJS.
         const senses=(projected!.input as {senses:Array<{senseId:string}>}).senses;
         wireSchema.properties!.senseIds.items={type:'string',enum:senses.map(sense=>sense.senseId)};
       }
-      return {shared,projected,wireSchema,userPrompt:shared?.userPrompt??JSON.stringify(projected?.input??input)};
+      const basePrompt=shared?.userPrompt??JSON.stringify(projected?.input??input);
+      const editorial=editorialFor(step);
+      return {shared,projected,wireSchema,userPrompt:editorial?JSON.stringify({...JSON.parse(basePrompt),operatorEditorial:editorial}):basePrompt};
     };
     const runCall=async (step:string,input:unknown,schema:JsonSchema,promptFile:string,promptVersion:string)=>{
       if(context?.canPublish&&!context.canPublish())throw new Error('Reflection lost publication authority');
       const {config,adapter,apiKey,baseUrl}=routingFor(step);
       const {shared,projected,wireSchema,userPrompt}=projectCall(step,input,schema);
-      const systemPrompt=shared?.systemPrompt??await promptFor(promptFile);
+      const systemPrompt=editorialSystem(step,shared?.systemPrompt??await promptFor(promptFile));
       const callSchemaVersion=promptFile==='pure-cue-promotion'?'2':schemaVersion(step);
       const result=await adapter.run({model:config.providerModel,reasoningEffort:config.reasoningEffort,
         systemPrompt,userPrompt,
@@ -251,7 +259,7 @@ export function createVocabularyReflectionProvider(options:{environment?:NodeJS.
         maxOutputTokens:config.maxOutputTokens,temperature:null,timeoutMs:config.timeoutMs,cachePrompt:true,
         invocationActor:{kind:'service',serviceId:VOCABULARY_REFLECTION_SERVICE_ID,requestingLearnerId:job.learnerId},
         provenance:{workflowId:job.jobId,stepName:step,attemptNumber:job.attemptNumber,promptName:shared?.promptName??`vocabulary-reflection-${promptFile}`,
-          promptVersion:shared?.promptVersion??promptVersion,schemaVersion:shared?.schemaVersion??callSchemaVersion,inputProjectionVersion:shared?.inputProjectionVersion??projectionVersion(step)}},
+          promptVersion:shared?.promptVersion??promptVersion,schemaVersion:shared?.schemaVersion??callSchemaVersion,inputProjectionVersion:editorialProjection(step,shared?.inputProjectionVersion??projectionVersion(step))}},
         {apiKey,baseUrl}).catch((error:unknown)=>{
           if(step==='sense_mapping'&&isSenseMappingAvailabilityFailure(error))throw new VocabularySenseMappingUnavailable();
           throw error;
@@ -346,8 +354,8 @@ export function createVocabularyReflectionProvider(options:{environment?:NodeJS.
         stageIdentity:async(stage,schema,input)=>{
           const {config,adapter,baseUrl}=routingFor(stage);
           return {provider:adapter.id,baseUrl:baseUrl??adapter.defaultBaseUrl,
-          model:config.providerModel,reasoningEffort:config.reasoningEffort,schema:projectCall(stage,input,schema).wireSchema,modelInput:projectCall(stage,input,schema).userPrompt,...(stage==='repertoire'?GENERAL_EXERCISE_CONTRACT:{systemPrompt:await promptFor(stagePrompt(stage)),
-            outputSchemaName:`vocabulary_reflection_${stage}_v${schemaVersion(stage)}`,promptVersion:admissionPromptVersion(stage),schemaVersion:schemaVersion(stage),inputProjectionVersion:projectionVersion(stage)}),
+          model:config.providerModel,reasoningEffort:config.reasoningEffort,schema:projectCall(stage,input,schema).wireSchema,modelInput:projectCall(stage,input,schema).userPrompt,...(stage==='repertoire'?{...GENERAL_EXERCISE_CONTRACT,systemPrompt:editorialSystem(stage,GENERAL_EXERCISE_CONTRACT.systemPrompt),inputProjectionVersion:editorialProjection(stage,GENERAL_EXERCISE_CONTRACT.inputProjectionVersion)}:{systemPrompt:editorialSystem(stage,await promptFor(stagePrompt(stage))),
+            outputSchemaName:`vocabulary_reflection_${stage}_v${schemaVersion(stage)}`,promptVersion:admissionPromptVersion(stage),schemaVersion:schemaVersion(stage),inputProjectionVersion:editorialProjection(stage,projectionVersion(stage))}),
           maxOutputTokens:config.maxOutputTokens,temperature:null,timeoutMs:config.timeoutMs,cachePrompt:true};},
         call:(stage,input,schema)=>runCall(stage,input,schema,stagePrompt(stage),admissionPromptVersion(stage)),
         normalize:(value,invocationId)=>value&&typeof value==='object'&&'summary' in value

@@ -81,6 +81,14 @@ case; model invocations and provider retries belong to a job. Only one job may
 be queued or running per case. Advisory opinions retain their exact reviewed
 proposal version and do not become the authoritative assessment.
 
+Standalone operator case notes persist independently of review actions. Saving a
+note neither resolves the case nor supplies instructions to a model. Action
+commentary belongs to its explicit action. Reassessment may include optional
+operator editorial instructions and an explicitly selected second opinion;
+submission captures that opinion's exact result for retries. Its analysis remains
+advisory, and editorial requests do not silently change the selected target,
+authoring boundaries, or application authority.
+
 Operator reassessment pins the current source identity and version at submission.
 A difference from the historical assessed version requires explicit operator
 confirmation. Queuing reassessment freezes the case's proposal and review edits,

@@ -82,7 +82,7 @@ test('matching fresh case projection clears frozen and pending flags from a pinn
   assert.equal(caseReviewLocked('other-case',current,{frozen:true,approvalState:null}),true);
 });
 
-test('Enter closes a review note draft while multiline and Chinese IME retain their keystrokes',()=>{
+test('Enter submits a case note while multiline and Chinese IME retain their keystrokes',()=>{
   const enter={key:'Enter',shiftKey:false,isComposing:false,keyCode:13};
   assert.equal(shouldSaveReviewNote(enter),true);
   assert.equal(shouldSaveReviewNote({...enter,shiftKey:true}),false);

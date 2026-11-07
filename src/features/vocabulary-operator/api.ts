@@ -1,3 +1,4 @@
+import type { VocabularyReassessmentEditorialInput } from '../../domain/vocabulary-reflection';
 import type { VocabularyDefaultSelectionAttention } from '../../domain/vocabulary-sense-coverage';
 import type { VocabularyAttentionPage, VocabularyAttentionQuery } from '../../domain/vocabulary-attention';
 import type { VocabularyDefaultSelectionFinding,VocabularySenseCoverageWorkspace } from '../../domain/vocabulary-sense-coverage';
@@ -35,7 +36,8 @@ export const vocabularyOperatorApi={
   },
   caseCard:(caseId:string,proposalId?:string)=>apiRequest<VocabularyCaseQueueItem>(`${root}/case-queue/${id(caseId)}${proposalId?`?proposalId=${id(proposalId)}`:''}`),
   resolveCaseReview:(caseId:string,expectedVersion:number,reason='')=>write<VocabularyCaseQueueItem>(`/case-queue/${id(caseId)}/resolve`,{expectedVersion,reason}),
-  reassessCaseReview:(caseId:string,expectedVersion:number,modelChoice:VocabularyReassessmentModel,expectedContentVersion:number,originProposal?:{proposalId:string;expectedVersion:number})=>write<{caseId:string;jobId:string;item:VocabularyCaseQueueItem}>(`/case-queue/${id(caseId)}/reassess`,{expectedVersion,modelChoice,expectedContentVersion,originProposal}),
+  addCaseNote:(caseId:string,expectedVersion:number,requestId:string,text:string)=>write<VocabularyCaseQueueItem>(`/case-queue/${id(caseId)}/notes`,{expectedVersion,requestId,text}),
+  reassessCaseReview:(caseId:string,expectedVersion:number,modelChoice:VocabularyReassessmentModel,expectedContentVersion:number,originProposal?:{proposalId:string;expectedVersion:number},editorial?:VocabularyReassessmentEditorialInput)=>write<{caseId:string;jobId:string;item:VocabularyCaseQueueItem}>(`/case-queue/${id(caseId)}/reassess`,{expectedVersion,modelChoice,expectedContentVersion,originProposal,editorial}),
   saveDefaultUsefulSenses:(wordId:string,expectedVersion:number,includedSenseIds:string[])=>write<VocabularySenseCoverageWorkspace>(`/words/${id(wordId)}/sense-coverage`,{expectedVersion,includedSenseIds},'PUT'),
   wordSenseCoverage:(wordId:string)=>apiRequest<VocabularySenseCoverageWorkspace>(`${root}/words/${id(wordId)}/sense-coverage`),
   repairTarget:(caseId:string)=>apiRequest<VocabularyRepairTargetWorkspace>(`${root}/cases/${id(caseId)}/repair-target`),

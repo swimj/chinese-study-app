@@ -1,3 +1,6 @@
+import type { VocabularyReassessmentEditorialInput, VocabularyReassessmentEditorial } from '../../src/domain/vocabulary-reflection.ts';
+import { emitBackendEvent } from './vocabulary-content.ts';
+import { assertVocabularyCaseEditable, touchVocabularyCaseReview } from './vocabulary-case-reviews.ts';
 import { randomUUID } from 'node:crypto';
 import type { VocabularyCaseQueueItem, VocabularyCaseQueuePage, VocabularyCaseQueueQuery, VocabularyServedReview, VocabularyOperationReview, VocabularyAssessmentSummary, VocabularyAdvisorySummary } from '../../src/domain/vocabulary-case-queue.ts';
 import type { ReflectionModelChoice } from '../reflection/model-arms.ts';
@@ -225,16 +228,60 @@ function readCards(wanted:{caseId:string;proposalId?:string}[]):VocabularyCaseQu
       (SELECT candidate.job_id FROM vocabulary_reflection_jobs candidate JOIN vocabulary_reflection_jobs current ON current.job_id=json_extract(selected.value,'$.currentJobId')
         WHERE candidate.review_case_id=json_extract(selected.value,'$.caseId') AND candidate.case_sequence>current.case_sequence AND candidate.second_opinion_json IS NOT NULL AND json_extract(candidate.second_opinion_json,'$.proposal') IS NULL ORDER BY candidate.case_sequence DESC LIMIT 1) END)`).all(selected) as (Omit<VocabularyAdvisorySummary,'result'>&{caseId:string;result:string|null})[];
   for(const {caseId,result,...opinion} of opinions)cards.get(caseId)!.advisoryOpinion={...opinion,result:result?JSON.parse(result) as VocabularyAdvisorySummary['result']:null};
+  // Project commentary through canonical lineage, never raw event or job payloads.
+  const commentary=db.prepare(`WITH selectedCases AS (
+    SELECT json_extract(value,'$.caseId') AS caseId FROM json_each(?)
+  ), members AS (
+    SELECT s.caseId,l.member_case_id AS memberId FROM selectedCases s JOIN vocabulary_case_lineage l ON l.case_id=s.caseId
+  ), commentary AS (
+    SELECT m.caseId,e.event_id AS activityId,
+      CASE e.name WHEN 'vocabulary.reflection.case_note_added' THEN 'note'
+        WHEN 'vocabulary.reflection.reassessment_editorial_captured' THEN 'reassess'
+        WHEN 'vocabulary.reflection.case_second_opinion_requested' THEN 'second_opinion' ELSE 'done' END AS action,
+      CASE e.name WHEN 'vocabulary.reflection.case_note_added' THEN json_extract(e.data_json,'$.text')
+        WHEN 'vocabulary.reflection.reassessment_editorial_captured' THEN json_extract(e.data_json,'$.instructions')
+        WHEN 'vocabulary.reflection.case_second_opinion_requested' THEN json_extract(e.data_json,'$.notes') ELSE json_extract(e.data_json,'$.reason') END AS text,
+      e.occurred_at AS createdAt,e.actor_id AS actorId,json_extract(e.data_json,'$.secondOpinion.requestId') AS secondOpinionRequestId,
+      json_extract(e.data_json,'$.requestId') AS noteId
+    FROM members m JOIN backend_events e ON e.entity_kind='reflection' AND e.entity_id=m.memberId AND e.actor_kind='operator'
+    WHERE e.name IN ('vocabulary.reflection.case_note_added','vocabulary.reflection.admission_case_closed','vocabulary.reflection.teaching_case_closed',
+      'vocabulary.reflection.reassessment_editorial_captured','vocabulary.reflection.case_second_opinion_requested')
+    UNION ALL
+    SELECT m.caseId,r.review_id,CASE r.disposition WHEN 'approved' THEN 'approve' ELSE 'dismiss' END,
+      CASE WHEN json_type(r.notes_json)='text' THEN json_extract(r.notes_json,'$') ELSE json_extract(r.notes_json,'$.reason') END,
+      r.reviewed_at,r.operator_id,NULL,NULL
+    FROM members m JOIN content_proposals p ON p.case_id=m.memberId JOIN proposal_reviews r ON r.proposal_id=p.proposal_id
+    UNION ALL
+    SELECT m.caseId,o.request_id,'second_opinion',json_extract(j.second_opinion_json,'$.notes'),o.requested_at,o.requested_by,NULL,NULL
+    FROM members m JOIN content_proposals p ON p.case_id=m.memberId JOIN vocabulary_second_opinions o ON o.proposal_id=p.proposal_id
+      JOIN vocabulary_reflection_jobs j ON j.job_id=o.job_id
+  ), ranked AS (
+    SELECT *,row_number() OVER(PARTITION BY caseId,action='note' ORDER BY createdAt DESC,activityId DESC) AS position,
+      count(*) OVER(PARTITION BY caseId,action='note') AS total
+    FROM commentary WHERE (typeof(text)='text' AND length(trim(text))>0) OR secondOpinionRequestId IS NOT NULL
+  ) SELECT * FROM ranked WHERE action='note' OR position<=20 ORDER BY createdAt,activityId`).all(selected) as {
+    caseId:string;activityId:string;action:'note'|NonNullable<VocabularyCaseQueueItem['activity']>[number]['action'];text:string;createdAt:string;actorId:string;secondOpinionRequestId:string|null;noteId:string|null;position:number;total:number
+  }[];
+  for(const row of commentary){
+    const card=cards.get(row.caseId)!;
+    if(row.action==='note')(card.notes??=[]).push({noteId:row.noteId!,text:row.text,createdAt:row.createdAt,actorId:row.actorId});
+    else {
+      (card.activity??=[]).push({activityId:row.activityId,action:row.action,text:row.text,createdAt:row.createdAt,actorId:row.actorId,
+        ...(row.secondOpinionRequestId?{secondOpinionRequestId:row.secondOpinionRequestId}:{})});
+      if(row.total>20)card.activityHasMore=true;
+    }
+  }
   return wanted.map(w=>cards.get(w.caseId)!);
 }
 
 /** Case-version comparison and its operation share a write transaction; no stale-card TOCTOU. */
-function changeCase<T>(caseId:string,expectedVersion:number,actorId:string,work:(id:string)=>T):T {
+function changeCase<T>(caseId:string,expectedVersion:number,actorId:string,work:(id:string)=>T,replay?:()=>T|null):T {
   authorize(actorId);
   if(!Number.isSafeInteger(expectedVersion)||expectedVersion<1)throw new TypeError('Expected positive case version');
   const db=getDb(),nested=db.isTransaction,point=`case_review_${randomUUID().replaceAll('-','')}`;
   db.exec(nested?`SAVEPOINT ${point}`:'BEGIN IMMEDIATE');
   try{
+    const prior=replay?.();if(prior){db.exec(nested?`RELEASE ${point}`:'COMMIT');return prior;}
     const id=canonicalVocabularyCaseId(caseId),row=db.prepare('SELECT version FROM vocabulary_case_reviews WHERE case_id=?').get(id) as {version:number}|undefined;
     if(!row)throw new Error('Unknown vocabulary review case');
     if(row.version!==expectedVersion)throw new VocabularyReflectionConflict('Case review changed; refresh before acting');
@@ -248,6 +295,39 @@ export function resolveVocabularyCaseReview(caseId:string,expectedVersion:number
     closeVocabularyCase(id,actorId,reason);return getVocabularyCaseCard(id,actorId);
   });
 }
-export function reassessVocabularyCaseReview(caseId:string,expectedVersion:number,actorId:string,modelChoice:ReflectionModelChoice,expectedContentVersion:number,origin:ReassessmentOrigin={kind:'case'}):{caseId:string;jobId:string;item:VocabularyCaseQueueItem} {
-  return changeCase(caseId,expectedVersion,actorId,id=>{const result=requestVocabularyReassessment(id,actorId,modelChoice,expectedContentVersion,origin);return {...result,item:getVocabularyCaseCard(id,actorId)};});
+export function reassessVocabularyCaseReview(caseId:string,expectedVersion:number,actorId:string,modelChoice:ReflectionModelChoice,expectedContentVersion:number,origin:ReassessmentOrigin={kind:'case'},editorial?:VocabularyReassessmentEditorialInput):{caseId:string;jobId:string;item:VocabularyCaseQueueItem} {
+  return changeCase(caseId,expectedVersion,actorId,id=>{
+    let captured:VocabularyReassessmentEditorial|undefined;
+    if(editorial){
+      if(typeof editorial.instructions!=='string'||editorial.instructions.length>10000)throw new TypeError('Expected editorial instructions of at most 10000 characters');
+      captured={instructions:editorial.instructions.trim()};
+      if(editorial.secondOpinionRequestId!==undefined){
+        const opinion=getVocabularyCaseCard(id,actorId,origin.kind==='proposal'?origin.proposalId:undefined).advisoryOpinion;
+        if(!opinion||opinion.requestId!==editorial.secondOpinionRequestId||opinion.status!=='succeeded'||!opinion.result)
+          throw new VocabularyReflectionConflict('The selected second opinion is no longer available for this assessment');
+        captured.secondOpinion={requestId:opinion.requestId,jobId:opinion.jobId,...opinion.result};
+      }
+      if(!captured.instructions&&!captured.secondOpinion)captured=undefined;
+    }
+    const result=requestVocabularyReassessment(id,actorId,modelChoice,expectedContentVersion,origin,captured);return {...result,item:getVocabularyCaseCard(id,actorId)};
+  });
+}
+
+/** Notes are immutable operator records, separate from commentary attached to actions. */
+export function addVocabularyCaseNote(caseId:string,expectedVersion:number,actorId:string,requestId:string,text:string):VocabularyCaseQueueItem {
+  authorize(actorId);
+  if(typeof requestId!=='string'||!requestId.trim()||requestId.length>200)throw new TypeError('Expected note request identity');
+  if(typeof text!=='string'||!text.trim()||text.length>10000)throw new TypeError('Expected note text of at most 10000 characters');
+  const id=canonicalVocabularyCaseId(caseId),note=text.trim();
+  const existing=()=>getDb().prepare("SELECT entity_id,actor_id,data_json FROM backend_events WHERE name='vocabulary.reflection.case_note_added' AND json_extract(data_json,'$.requestId')=?").get(requestId) as {entity_id:string;actor_id:string;data_json:string}|undefined;
+  const replay=()=>{const row=existing();if(!row)return null;if(row.entity_id!==id||row.actor_id!==actorId||JSON.parse(row.data_json).text!==note)throw new VocabularyReflectionConflict('Note request identity was already used for different content');return getVocabularyCaseCard(id,actorId);};
+  const prior=replay();if(prior)return prior;
+  return changeCase(id,expectedVersion,actorId,()=>{
+    const review=getVocabularyCaseCard(id,actorId);
+    if(review.state!=='open')throw new VocabularyReflectionConflict('This case is resolved');
+    assertVocabularyCaseEditable(id);
+    emitBackendEvent({name:'vocabulary.reflection.case_note_added',entityKind:'reflection',entityId:id,actorKind:'operator',actorId,data:{requestId,text:note}});
+    touchVocabularyCaseReview(id);
+    return getVocabularyCaseCard(id,actorId);
+  },replay);
 }

@@ -30,6 +30,11 @@ export type VocabularyRepairTargetWorkspace = {
   caseId:string;wordId:string;version:number;currentSenseId:string|null;pendingSenseId:string|null;
   senses:{senseId:string;label:string}[];available:boolean;blocked:boolean;editable:boolean;
 };
+export type VocabularyReassessmentEditorialInput = {instructions:string;secondOpinionRequestId?:string};
+export type VocabularyReassessmentEditorial = {
+  instructions:string;
+  secondOpinion?:{requestId:string;jobId:string;verdict:VocabularySecondOpinionVerdict['verdict'];rationale:string};
+};
 export type VocabularyReflectionJob = {
   jobId: string; caseId: string; learnerId: string;
   kind: 'learner_feedback' | 'exercise_improvement';
@@ -38,6 +43,7 @@ export type VocabularyReflectionJob = {
   evidence: VocabularyReflectionCase;
   reassessmentSourceJobId?: string;
   repairTarget?: VocabularyRepairTarget;
+  editorial?: VocabularyReassessmentEditorial;
   /** Current authored version explicitly selected by the operator; encounters remain historical. */
   reassessmentSource?: VocabularyContent;
   secondOpinion?: { requestId: string; proposal: VocabularyContentProposal | null; notes: string; diagnosis?: VocabularyJson };
