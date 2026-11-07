@@ -69,8 +69,12 @@ Neither saving nor applying changes learner progress or captured session payload
 [`sense-content-reconciliation-state.ts`](../../server/db/sense-content-reconciliation-state.ts)
 compares replacement scope/mappings and publication state with the applied authority.
 The shared authoring and general-practice paths capture reconciliation identity and
-check it before publication. Once replacement teaching is ready, durable practice
-demand wakes ordinary preparation without waiting for another teaching completion.
+check it before publication. Applied reconciliation immediately supplies durable
+practice demand from its selected canonical sense snapshot. Practice authoring does
+not read or wait for replacement teaching; both replacements are checked against
+the same applied authority. The existing first-learning path still authors from
+its teaching source. Replacement teaching becoming ready does not request a second
+repertoire bootstrap after reconciliation practice has already completed.
 Fresh session composition, shared cues and contrast choices exclude affected words
 while replacement is pending or failed. Retained sessions use their original payload.
 Canonical/default changes during replacement require another resolution; a later

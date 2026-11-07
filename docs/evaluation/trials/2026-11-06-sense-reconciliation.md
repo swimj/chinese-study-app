@@ -155,3 +155,29 @@ hook against a real scroll pane with synthetic drag events. It passed center
 no-scroll, held upper/lower edge scrolling, and stop-on-drop/cancellation checks.
 The automation's immediate native drag did not establish held-edge behavior; that
 claim is supported by the synthetic event regression. Build passed.
+
+## Canonical repertoire independent of replacement teaching
+
+Post-reconciliation authoring now captures canonical definitions, retained examples,
+and sense versions at application. The real practice worker consumes this snapshot
+without a teaching source. Ordinary first-learning preparation retains its existing
+source requirement and publication path. Completion still requires both replacements.
+
+Controlled-provider tests exercise repertoire finishing before teaching, exact
+selected-sense evidence and bindings, retry without a teaching pointer, no duplicate
+bootstrap when teaching subsequently arrives, and rejection after authority drift.
+Independent backend review caught a completion-order defect: teaching finishing
+second also needed to settle the repair inside its publication transaction. The
+fix and practice-first completion checks passed reviewer revalidation.
+
+The populated migration fixture checks preservation of queued/running/ready/failed
+ordinary jobs, leases, attempts and retry metadata, batch rollback, reopen/replay,
+fresh-schema parity and SQLite integrity. Provider responses are simulated; no
+hosted migration or real provider generation is established by these checks.
+
+The attention fixture's canonical-job detail was rendered at 480px with enlarged
+text: it shows the reconciliation identity instead of a blank teaching source.
+
+Final verification: build passed; full suite passed 2,616 tests, with one existing
+skip and one existing TODO. Older HTTP/session fixtures were updated to apply the
+real reconciliation migration after the first broad run exposed missing schema.

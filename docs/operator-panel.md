@@ -85,8 +85,9 @@ different plan.
 The first supported handler keeps canonical identities, accepts a nonempty set of
 existing senses as defaults, and replaces the affected teaching unit and general
 practice. The preview identifies content retained or retired. Apply retires affected
-current content and queues replacement in one transaction. Teaching and practice
-progress remain visible separately; fresh study of the affected word waits until
+current content and queues replacement in one transaction. Repertoire starts from
+the resolved canonical senses without waiting for replacement teaching. Teaching
+and practice progress remain visible separately; fresh study of the affected word waits until
 both are ready. Other ready study and already-running sessions remain available.
 Retry failed preparation under unchanged authority. If canonical senses or defaults
 change while replacement is incomplete, a new reviewed resolution is required.

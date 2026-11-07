@@ -188,8 +188,8 @@ test('source divergence is discoverable before any preparation failure exists',(
 });
 test('pending resolution stays grouped and completion clears only covered failures without deleting evidence',()=>{
   seedReconciliationSource();seedPreparation('mapping');seedPreparation('provider','document','generation_failed');
-  sql.prepare(`INSERT INTO sense_content_reconciliations(resolution_id,word_id,version,status,draft_json,snapshot_json,applied_plan_json,authority_json,actor_id,created_at,updated_at,applied_at)
-    VALUES ('resolution','word',2,'applied','{}',?,'{"retireSourceIds":["document"],"replacementTeachingRequired":true,"replacementPracticeRequired":true}','{}','editor',?,?,?)`)
+  sql.prepare(`INSERT INTO sense_content_reconciliations(resolution_id,word_id,version,status,draft_json,snapshot_json,applied_plan_json,authority_json,practice_source_json,actor_id,created_at,updated_at,applied_at)
+    VALUES ('resolution','word',2,'applied','{}',?,'{"retireSourceIds":["document"],"replacementTeachingRequired":true,"replacementPracticeRequired":true}','{}','{"source":{"word":{"wordId":"word","hanzi":"字","traditional":null,"pinyin":"zì"},"uses":[],"examples":[]},"senses":[]}','editor',?,?,?)`)
     .run(JSON.stringify({dependencies:{introductionPreparation:[{content_id:'document'}]}}),at,at,at);
   sql.exec("UPDATE word_introduction_preparation SET content_id=NULL WHERE word_id='word'");
   let page=listVocabularyAttention('editor',{},preparationDependencies);
@@ -210,8 +210,8 @@ test('pending resolution stays grouped and completion clears only covered failur
 
 test('a later draft keeps failures covered by the prior incomplete application grouped',()=>{
   seedReconciliationSource();seedPreparation('old-mapping');seedReconciliationSource('replacement',false);
-  sql.prepare(`INSERT INTO sense_content_reconciliations(resolution_id,word_id,version,status,draft_json,snapshot_json,applied_plan_json,authority_json,actor_id,created_at,updated_at,applied_at)
-    VALUES ('applied','word',2,'applied','{}',?,'{"retireSourceIds":["document"],"replacementTeachingRequired":true,"replacementPracticeRequired":true}','{}','editor',?,?,?)`)
+  sql.prepare(`INSERT INTO sense_content_reconciliations(resolution_id,word_id,version,status,draft_json,snapshot_json,applied_plan_json,authority_json,practice_source_json,actor_id,created_at,updated_at,applied_at)
+    VALUES ('applied','word',2,'applied','{}',?,'{"retireSourceIds":["document"],"replacementTeachingRequired":true,"replacementPracticeRequired":true}','{}','{"source":{"word":{"wordId":"word","hanzi":"字","traditional":null,"pinyin":"zì"},"uses":[],"examples":[]},"senses":[]}','editor',?,?,?)`)
     .run(JSON.stringify({dependencies:{introductionPreparation:[{content_id:'document'}]}}),at,at,at);
   sql.exec("UPDATE word_introduction_preparation SET content_id='replacement' WHERE word_id='word'");
   sql.prepare(`INSERT INTO sense_content_reconciliations(resolution_id,word_id,version,status,draft_json,snapshot_json,actor_id,created_at,updated_at)
@@ -236,8 +236,8 @@ test('completed aligned reconciliation leaves attention and a later default mism
   const second=createVocabularySense({wordId:'word',description:{label:'Additional meaning'}},actor);
   sql.prepare("INSERT INTO legacy_sense_imports(source_content_id,source_use_id,sense_id,imported_sense_version) VALUES ('document','unmapped',?,?)").run(first.senseId,first.version);
   const coverage=writeVocabularyDefaultUsefulSenses('word',0,[first.senseId],actor);
-  sql.prepare(`INSERT INTO sense_content_reconciliations(resolution_id,word_id,version,status,draft_json,snapshot_json,applied_plan_json,authority_json,actor_id,created_at,updated_at,applied_at,completed_at)
-    VALUES ('done','word',2,'applied','{}','{}','{"retireSourceIds":[],"replacementTeachingRequired":true,"replacementPracticeRequired":true}','{}','editor',?,?,?,?)`).run(at,at,at,now);
+  sql.prepare(`INSERT INTO sense_content_reconciliations(resolution_id,word_id,version,status,draft_json,snapshot_json,applied_plan_json,authority_json,practice_source_json,actor_id,created_at,updated_at,applied_at,completed_at)
+    VALUES ('done','word',2,'applied','{}','{}','{"retireSourceIds":[],"replacementTeachingRequired":true,"replacementPracticeRequired":true}','{}','{"source":{"word":{"wordId":"word","hanzi":"字","traditional":null,"pinyin":"zì"},"uses":[],"examples":[]},"senses":[]}','editor',?,?,?,?)`).run(at,at,at,now);
   assert.equal(listVocabularyAttention('editor',{},dependencies).total,0);
   writeVocabularyDefaultUsefulSenses('word',coverage.word.version,[first.senseId,second.senseId],actor);
   const page=listVocabularyAttention('editor',{},dependencies);

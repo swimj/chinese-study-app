@@ -130,7 +130,7 @@ export function VocabularyAttentionPage({ api, onActivity, position }: { api: Vo
                 {item.children.map(child=><article key={child.id}>
                   <h3>{child.kind==='source'?'Teaching source':'Practice preparation'}</h3>
                   <p>{child.reason}</p>
-                  <dl><dt>Source</dt><dd><code>{child.sourceContentId}</code></dd><dt>Record</dt><dd><code>{child.sourceId}</code></dd></dl>
+                  <dl><dt>{child.reconciliationId ? 'Canonical resolution' : 'Source'}</dt><dd><code>{child.reconciliationId ?? child.sourceContentId}</code></dd><dt>Record</dt><dd><code>{child.sourceId}</code></dd></dl>
                 </article>)}
               </details>
               <SenseReconciliationPage key={item.id} wordId={item.wordId} onActivity={setEditorActivity}/>
@@ -140,7 +140,7 @@ export function VocabularyAttentionPage({ api, onActivity, position }: { api: Vo
             {details && <section className="vocabulary-case-provenance" aria-label="Attention details">
               <p>Opened {new Date(item.createdAt).toLocaleString()}</p>
               {item.kind === 'approval' && <><p>Request: {item.requestId}</p><p>Proposal: {item.proposalId}</p><p>Attempts: {item.attempts}</p></>}
-              {item.kind === 'preparation' && <><p>Attempt: {item.attemptCount}</p><p>Source: {item.sourceContentId}</p><p>Invocation: {item.invocationId ?? 'No retained invocation'}</p></>}
+              {item.kind === 'preparation' && <><p>Attempt: {item.attemptCount}</p><p>{item.reconciliationId ? 'Canonical resolution' : 'Source'}: {item.reconciliationId ?? item.sourceContentId}</p><p>Invocation: {item.invocationId ?? 'No retained invocation'}</p></>}
               {item.kind === 'dispatch' && <><p>Session: {item.sessionId}</p><p>Learner: {item.learnerId}</p></>}
               {item.kind === 'defaults' && <p>Invocation: {item.finding.invocationId ?? 'No retained invocation'}</p>}
               {item.caseId && <p>Case: {item.caseId}</p>}

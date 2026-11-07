@@ -57,7 +57,11 @@ beforeEach(()=>{
     INSERT INTO learner_word_state VALUES('alice','a','learning',2,NULL),('alice','b','review',0,NULL),('alice','new','unstudied',0,NULL);
     ALTER TABLE learner_word_state ADD COLUMN personal_notes TEXT NOT NULL DEFAULT '';
   `);
-  for(const file of ['0069_sense_content_reconciliation.sql','0062_vocabulary_sense_coverage.sql','0064_vocabulary_default_useful_senses.sql','0039_vocabulary_content.sql','0041_vocabulary_learner_state.sql','0042_vocabulary_sessions.sql','0047_vocabulary_dismissal.sql','0052_vocabulary_automatic_promotion_pause.sql','0023_session_debrief.sql','0048_vocabulary_connections.sql'])db.exec(fs.readFileSync(new URL(`../server/db/migrations/${file}`,import.meta.url),'utf8'));
+  for(const file of ['0062_vocabulary_sense_coverage.sql','0064_vocabulary_default_useful_senses.sql','0039_vocabulary_content.sql','0041_vocabulary_learner_state.sql','0042_vocabulary_sessions.sql','0047_vocabulary_dismissal.sql','0052_vocabulary_automatic_promotion_pause.sql','0023_session_debrief.sql','0048_vocabulary_connections.sql'])db.exec(fs.readFileSync(new URL(`../server/db/migrations/${file}`,import.meta.url),'utf8'));
+  db.exec('CREATE TABLE model_invocations(id TEXT PRIMARY KEY,status TEXT,actor_kind TEXT,learner_id TEXT); CREATE TABLE word_content_documents(content_id TEXT PRIMARY KEY);');
+  db.exec(fs.readFileSync(new URL('../server/db/migrations/0045_vocabulary_provenance_links.sql',import.meta.url),'utf8'));
+  db.exec("ALTER TABLE vocabulary_practice_preparation ADD COLUMN next_attempt_at TEXT NOT NULL DEFAULT ''; ALTER TABLE vocabulary_practice_preparation ADD COLUMN total_attempt_count INTEGER NOT NULL DEFAULT 0;");
+  db.exec(fs.readFileSync(new URL('../server/db/migrations/0069_sense_content_reconciliation.sql',import.meta.url),'utf8'));
   owner(()=>{
     exercise('general-1','a');exercise('general-2','a');exercise('teach-a','a','teaching');exercise('teach-new','new','teaching');
     for(const [wordId,contentId] of [['a','intro-a'],['new','intro-new']])createVocabularyContent({contentId,kind:'introduction',payloadVersion:1,
@@ -1194,8 +1198,8 @@ test('shared ordinary cues with an empty-inventory alternative are excluded from
 
 function blockReconciledWord(wordId:string):void {
   db.prepare(`INSERT INTO sense_content_reconciliations
-    (resolution_id,word_id,version,status,draft_json,snapshot_json,applied_plan_json,authority_json,actor_id,created_at,updated_at,applied_at)
-    VALUES (?, ?, 1, 'applied','{}','{}','{}','{}','test','2026-11-06','2026-11-06','2026-11-06')`).run(`resolution-${wordId}`,wordId);
+    (resolution_id,word_id,version,status,draft_json,snapshot_json,applied_plan_json,authority_json,practice_source_json,actor_id,created_at,updated_at,applied_at)
+    VALUES (?, ?, 1, 'applied','{}','{}','{}','{}',?,'test','2026-11-06','2026-11-06','2026-11-06')`).run(`resolution-${wordId}`,wordId,JSON.stringify({source:{word:{wordId,hanzi:'字',traditional:null,pinyin:'zì'},uses:[],examples:[]},senses:[]}));
 }
 test('failed reconciliation blocks fresh study while retained sessions and learner state survive',()=>owner(()=>{
   addVocabularyWord('new');

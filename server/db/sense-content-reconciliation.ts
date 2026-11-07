@@ -1,3 +1,4 @@
+import { canonicalExerciseSource } from '../vocabulary/canonical-exercise-source.ts';
 import { randomUUID } from 'node:crypto';
 import type { SenseContentReconciliationDraft, SenseContentReconciliationPlan, SenseContentReconciliationResolution,
   SenseContentReconciliationSave, SenseContentReconciliationWord, SenseContentReconciliationWorkspace } from '../../src/domain/sense-content-reconciliation.ts';
@@ -7,7 +8,7 @@ import { isOperatorSubject, parseOperatorAllowlist } from '../operator-access.ts
 import { inventoryHash, type InventorySnapshot } from '../vocabulary/sense-inventory-reconciliation.ts';
 import { config, getDb } from './connection.ts';
 import { snapshotInventoryForReconciliation } from './sense-inventory-reconciliation-report.ts';
-import { getVocabularyContentForMaintenance, updateVocabularyContent } from './vocabulary-content.ts';
+import { getVocabularyContentForMaintenance, updateVocabularyContent, getVocabularySenses } from './vocabulary-content.ts';
 import { getVocabularyWordSenseCoverage, writeVocabularyDefaultUsefulSenses } from './vocabulary-sense-coverage.ts';
 import { VOCABULARY_PREPARATION_EPOCH } from './preparation-compatibility.ts';
 import { senseContentReconciliationAuthority, senseContentReconciliationProgress } from './sense-content-reconciliation-state.ts';
@@ -269,8 +270,11 @@ export function applySenseContentReconciliation(wordId: string, input: { expecte
     const draft = JSON.parse(row.draft_json) as SenseContentReconciliationDraft, coverage = getVocabularyWordSenseCoverage(wordId);
     if (JSON.stringify(sorted(coverage.defaultUsefulSenseIds ?? [])) !== JSON.stringify(sorted(draft.defaultSenseIds))) writeVocabularyDefaultUsefulSenses(wordId, coverage.version, draft.defaultSenseIds, actor);
     queueReplacement(wordId, learnerId, now);
-    getDb().prepare("UPDATE sense_content_reconciliations SET status='applied',version=version+1,applied_plan_json=?,authority_json=?,actor_id=?,applied_at=?,updated_at=? WHERE resolution_id=?")
-      .run(JSON.stringify(plan), senseContentReconciliationAuthority(wordId), actorId, now, now, row.resolution_id);
+    const lexical = getDb().prepare('SELECT id AS wordId,hanzi,traditional,pinyin FROM lexical_words WHERE id=?').get(wordId) as {wordId:string;hanzi:string;traditional:string|null;pinyin:string};
+    const selected = getVocabularySenses(wordId).filter(sense => draft.defaultSenseIds.includes(sense.senseId));
+    const practiceSource = {source:canonicalExerciseSource(lexical,selected),senses:selected.map(sense=>({source_use_id:sense.senseId,sense_id:sense.senseId,imported_sense_version:sense.version}))};
+    getDb().prepare("UPDATE sense_content_reconciliations SET status='applied',version=version+1,applied_plan_json=?,authority_json=?,practice_source_json=?,actor_id=?,applied_at=?,updated_at=? WHERE resolution_id=?")
+      .run(JSON.stringify(plan), senseContentReconciliationAuthority(wordId), JSON.stringify(practiceSource), actorId, now, now, row.resolution_id);
     history(stored(wordId)!, actorId); return workspace(wordId);
   });
 }
@@ -285,7 +289,7 @@ export function retrySenseContentReconciliation(wordId: string, actorId: string)
     db.prepare(`UPDATE word_preparation_work SET status='queued',attempt_count=0,last_error=NULL,next_attempt_at=?,updated_at=?
       WHERE word_id=? AND stage IN ('bootstrap','teaching') AND status='paused'`).run(now, now, wordId);
     db.prepare(`UPDATE vocabulary_practice_preparation SET status='queued',attempt_count=0,last_error=NULL,next_attempt_at=?,updated_at=?
-      WHERE word_id=? AND status='failed' AND source_content_id=(SELECT content_id FROM word_introduction_preparation WHERE word_id=?)`).run(now, now, wordId, wordId);
+      WHERE word_id=? AND status='failed' AND reconciliation_id=?`).run(now, now, wordId, row.resolution_id);
     return workspace(wordId);
   });
 }

@@ -1,3 +1,5 @@
+import { createVocabularyPracticePreparation, type VocabularyPracticeProvider } from '../server/vocabulary/preparation.ts';
+import { listVocabularyAttention } from '../server/db/vocabulary-attention.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -206,4 +208,89 @@ test('a complete mapping can apply without per-use reasons or an overall rationa
   const state=saveSenseContentReconciliation('word',{expectedVersion:null,status:'resolved',draft:input},actor.id);
   assert.deepEqual(state.plan!.blockers,[]);
   assert.equal(apply(state).resolution!.status,'applied');
+});
+
+function repertoireProvider(generate?:VocabularyPracticeProvider['generate']):VocabularyPracticeProvider {
+  return {model:'fixture',isConfigured:()=>true,generationKey:()=> 'canonical-fixture',generate:generate??(async source=>({exercises:[{id:'canonical-general',sourceUseId:source.uses[0]!.id,stimulus:{kind:'direct_text',text:'A hook for hanging something.'},teachingNote:null}]}))};
+}
+test('canonical repertoire publishes before teaching exists and later teaching does not duplicate it', async()=>{
+  const input=draft();input.defaultSenseIds=input.defaultSenseIds.slice(0,2);
+  const state=apply(saveSenseContentReconciliation('word',{expectedVersion:null,status:'resolved',draft:input},actor.id));
+  assert.equal(getSharedWordIntroductionContent('word'),null);
+  assert.deepEqual(listSenseContentReconciliationPracticeDemand(),['word']);
+  let calls=0;
+  const provider=repertoireProvider(async source=>{
+    calls++;
+    assert.deepEqual(source.uses.map(use=>use.id).sort(),input.defaultSenseIds.slice().sort());
+    assert.equal(source.uses.some(use=>use.id==='associate'),false);
+    assert.ok(source.examples.length>0);
+    assert.ok(source.uses.every(use=>use.notes[0]===`Meaning ${use.label}`));
+    return {exercises:source.uses.map(use=>({id:use.id,sourceUseId:use.id,stimulus:{kind:'direct_text',text:`Recall ${use.label}.`},teachingNote:null}))};
+  });
+  const worker=createVocabularyPracticeWorker({demand:listSenseContentReconciliationPracticeDemand,provider,controls:()=>({maintenanceMode:false,providerWorkEnabled:true}),providerWork:work=>work()});
+  await worker.drain();await worker.stop();
+  assert.equal(calls,1);
+  assert.equal(senseContentReconciliationProgress('word').practiceStatus,'ready');
+  assert.equal(senseContentReconciliationProgress('word').teachingStatus,'pending');
+  assert.equal(isSenseContentReconciliationPending('word'),true);
+  assert.equal(getSharedWordIntroductionContent('word'),null);
+  const work=db.prepare('SELECT * FROM vocabulary_practice_preparation WHERE reconciliation_id=?').get(state.resolution!.resolutionId)!;
+  assert.equal(work.source_content_id,null);
+  const authored=db.prepare("SELECT body_json FROM content_items WHERE exercise_role='general'").all();
+  assert.equal(authored.length,2);
+  assert.ok(authored.every(row=>JSON.parse(String(row.body_json)).source.reconciliationId===state.resolution!.resolutionId));
+  const bindings=db.prepare("SELECT w.sense_id,s.version FROM content_words w JOIN content_items c USING(content_id) JOIN senses s USING(sense_id) WHERE c.exercise_role='general'").all();
+  const snapshot=JSON.parse(String(db.prepare('SELECT practice_source_json FROM sense_content_reconciliations WHERE resolution_id=?').get(state.resolution!.resolutionId)!.practice_source_json));
+  assert.ok(bindings.every(row=>snapshot.senses.some((sense:{sense_id:string;imported_sense_version:number})=>sense.sense_id===row.sense_id&&sense.imported_sense_version===row.version)));
+  await prepareTeaching();
+  assert.equal(senseContentReconciliationProgress('word').status,'ready');
+  assert.ok(db.prepare('SELECT completed_at FROM sense_content_reconciliations').get()!.completed_at);
+  assert.equal(listVocabularyAttention(actor.id,{}, {approvals:[],preparation:createVocabularyPracticePreparation({provider})}).total,0);
+  const restarted=createVocabularyPracticePreparation({provider});
+  assert.equal(restarted.ensure('word')!.workId,work.work_id);
+  await restarted.prepare('word');assert.equal(calls,1);
+  assert.equal(db.prepare('SELECT count(*) n FROM vocabulary_practice_preparation').get()!.n,1);
+  const coverage=getVocabularyWordSenseCoverage('word');
+  writeVocabularyDefaultUsefulSenses('word',coverage.version,input.defaultSenseIds.slice(0,1),actor);
+  assert.equal(isSenseContentReconciliationPending('word'),false);
+  assert.equal(restarted.ensure('word')!.reconciliationId,null);
+});
+test('canonical failure groups with resolution and retries without a teaching pointer',async()=>{
+  const state=apply();let calls=0;
+  const preparation=createVocabularyPracticePreparation({provider:repertoireProvider(async()=>{calls++;return {exercises:[]};})});
+  const work=preparation.ensure('word')!;
+  await assert.rejects(()=>preparation.run(work.workId,preparation.claim(work.workId)!),/no exercises/);
+  assert.equal(senseContentReconciliationProgress('word').practiceStatus,'failed');
+  const attention=listVocabularyAttention(actor.id,{}, {approvals:[],preparation});
+  assert.equal(attention.total,1);
+  const group=attention.items[0]!;assert.equal(group.kind,'reconciliation');
+  if(group.kind!=='reconciliation')throw new Error('Missing reconciliation');
+  assert.ok(group.children.some(child=>child.reconciliationId===state.resolution!.resolutionId&&child.sourceContentId===null));
+  retrySenseContentReconciliation('word',actor.id);
+  const restarted=createVocabularyPracticePreparation({provider:repertoireProvider()});
+  await restarted.prepare('word');
+  assert.equal(senseContentReconciliationProgress('word').practiceStatus,'ready');
+  assert.equal(getSharedWordIntroductionContent('word'),null);
+  assert.equal(db.prepare('SELECT count(*) n FROM vocabulary_preparation_attempts WHERE work_id=?').get(work.workId)!.n,2);
+  assert.equal(calls,1);
+});
+test('canonical publication rejects changed defaults and stale retry without publishing content',async()=>{
+  apply();
+  const preparation=createVocabularyPracticePreparation({provider:repertoireProvider(async source=>{
+    const coverage=getVocabularyWordSenseCoverage('word');
+    writeVocabularyDefaultUsefulSenses('word',coverage.version,coverage.defaultUsefulSenseIds!.slice(0,1),actor);
+    return {exercises:[{id:'stale',sourceUseId:source.uses[0]!.id,stimulus:{kind:'direct_text',text:'Recall this word.'},teachingNote:null}]};
+  })});
+  const work=preparation.ensure('word')!;
+  await assert.rejects(()=>preparation.run(work.workId,preparation.claim(work.workId)!));
+  assert.equal(db.prepare("SELECT count(*) n FROM content_items WHERE exercise_role='general'").get()!.n,0);
+  assert.equal(preparation.failed(work.workId).lastError,'reconciliation_authority_changed');
+  assert.equal(preparation.failed(work.workId).retryable,false);
+  assert.throws(()=>retrySenseContentReconciliation('word',actor.id),/authority changed/);
+});
+
+test('an applied reconciliation cannot silently fall back to teaching when its canonical snapshot is missing',()=>{
+  apply();db.exec('UPDATE sense_content_reconciliations SET practice_source_json=NULL');
+  assert.throws(()=>senseContentReconciliationProgress('word'),/missing its canonical practice snapshot/);
+  assert.throws(()=>createVocabularyPracticePreparation({provider:repertoireProvider()}).ensure('word'),/missing its canonical practice snapshot/);
 });

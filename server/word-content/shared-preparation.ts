@@ -1,5 +1,5 @@
 import { ensureVocabularyDefaultUsefulSelection } from '../vocabulary/default-useful-selection.ts';
-import { senseContentReconciliationGenerationToken, assertSenseContentReconciliationGeneration } from '../db/sense-content-reconciliation-state.ts';
+import { senseContentReconciliationGenerationToken, assertSenseContentReconciliationGeneration, settleSenseContentReconciliation } from '../db/sense-content-reconciliation-state.ts';
 import { getVocabularySenseCatalog,getVocabularySenses } from '../db/vocabulary-content.ts';
 import { ensureVocabularySenses,VocabularySenseSelectionRequired,VocabularyEmptySenseInventory } from '../vocabulary/sense-readiness.ts';
 import { resolveVocabularySenseCoverage } from '../db/vocabulary-sense-coverage.ts';
@@ -143,7 +143,7 @@ export function createSharedWordPreparation(provider: WordIntroductionProvider =
           beats: (lesson.payload as { beats: import('../../src/domain/word-content/types.ts').TeachingPackage['beats'] }).beats,
           rehearsals: (practice.payload as { rehearsals: import('../../src/domain/word-content/types.ts').TeachingPackage['rehearsals'] }).rehearsals };
         assertPublication();assertSource();assertReconciliation();
-        finishSharedWordIntroductionTeaching(wordId, token, teaching, provider.model, keys, () => { assertPublication(); assertSource(); assertReconciliation(); });
+        finishSharedWordIntroductionTeaching(wordId, token, teaching, provider.model, keys, () => { assertPublication(); assertSource(); assertReconciliation(); }, () => settleSenseContentReconciliation(wordId));
       } else {
         let output: unknown;
         try { output = await provider.generateReview(content, generationOptions); }

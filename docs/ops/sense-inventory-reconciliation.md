@@ -134,14 +134,22 @@ another repair sense or changes an operator's pending instruction.
 ## Live reconciliation migration rehearsal
 
 Migration `0069_sense_content_reconciliation` creates empty current-resolution and
-immutable revision-history tables, with an index and history guards. It does not
-scan or transform the existing corpus, regenerate content, or change learner state.
+immutable revision-history tables, with an index and history guards. It also
+rebuilds `vocabulary_practice_preparation` to support either an ordinary teaching
+source or a reconciliation's canonical snapshot as the authoring authority. The
+copy scans the existing practice queue and preserves its rows; existing work stays
+on the teaching-source path. It does not regenerate content or change learner state.
+Budget temporary storage for a copy of the practice table and its indexes; cost
+has not been measured on a hosted copy.
 The release is schema-changing and must use the ordinary isolated rehearsal and
 stopped-writer migration procedure, not the application-only upgrade route.
 
 On a populated restored database, verify that migration records the new schema,
-the two new tables are empty, existing senses/content/session records are preserved,
-and foreign-key/integrity checks pass. Check that rerunning the migration is a
+the two new tables are empty, and every prior practice job retains its identity,
+teaching source, generation key, status, lease, invocation, attempts, retry timing,
+and error. Verify attempt history still refers to those jobs, the queue indexes
+exist, and existing senses/content/session records are preserved. Run the ordinary
+foreign-key/integrity checks. Check that rerunning the migration is a
 ledger no-op and a fresh database has the same schema. No application of a resolution
 is implied by deployment.
 

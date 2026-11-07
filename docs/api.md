@@ -208,7 +208,8 @@ and improvement dispatch.
 `GET /api/operator/vocabulary/practice-preparation/failures` lists retained failed
 authoring work. `POST /api/operator/vocabulary/practice-preparation/:id/retry`
 queues an explicitly authorized retry within the attempt limit; worker gates
-still govern provider execution.
+still govern provider execution. Work identifies either a teaching `sourceContentId`
+or a `reconciliationId`; canonical reconciliation work has a null teaching source.
 
 The operator practice-preparation failure response includes
 `defaultSelectionFindings`: word-level unknown-default findings with `wordId`,
@@ -1237,7 +1238,8 @@ source records; mutations still enforce their own authority and version checks.
 Reconciliation items use `id: "reconciliation:<wordId>"` and include `wordId`,
 `sourceContentId`, `resolutionId`, decision `status`, replacement `progress`, and
 `children`. Children identify a source or an explicitly related preparation
-failure with `id`, `kind`, `sourceId`, `sourceContentId`, `caseId`, `reason` and
+failure with `id`, `kind`, `sourceId`, nullable `sourceContentId`, optional
+`reconciliationId`, `caseId`, `reason` and
 `createdAt`. Counts and offsets apply after grouping. Unrelated same-word failures
 remain separate. Completed resolutions and their covered preparation failures leave
 active attention without deleting source records.

@@ -80,11 +80,14 @@ Domain-oriented re-export shims (navigation only; implementation stays in `persi
 
 Migration `0069_sense_content_reconciliation` adds operator-owned current resolution
 records and immutable per-version history. A resolution stores the linguistic draft,
-reviewed source snapshot, applied plan and canonical authority. Draft/resolved rows
+reviewed source snapshot, applied plan, canonical authority, and canonical practice
+authoring snapshot with sense versions. Draft/resolved rows
 have no serving authority; an applied row governs fresh serving until required
 replacement teaching and practice are ready. Saving a later draft preserves the
-previous applied authority. The migration creates empty tables and guards without
-rewriting existing content, senses or learner records. See the
+previous applied authority. Practice jobs identify either a teaching source or a
+reconciliation; the latter has no teaching-source foreign key. The migration
+creates reconciliation tables and rebuilds the practice queue while preserving
+existing jobs, without rewriting content, senses or learner records. See the
 [migration rehearsal note](ops/sense-inventory-reconciliation.md#live-reconciliation-migration-rehearsal).
 
 Pure-cue response reflection has an independent provider call and stored bundle,

@@ -197,7 +197,12 @@ teaching unit rather than rewriting its immutable document or import mappings.
 
 Application retires the current source/package and affected introduction/binding
 dependencies, retains unrelated compatible general content, and requests replacement
-teaching and practice. Fresh serving of the affected word waits until both are ready.
+teaching and practice. Post-reconciliation repertoire authoring starts from the
+resolved selected canonical senses, without waiting for a replacement teaching
+source or package. Teaching and repertoire are independent replacement jobs under
+the same applied authority; either may finish first. Fresh serving of the affected
+word still waits until both are ready. The ordinary first-learning preparation path
+continues to author practice from its teaching source.
 This conservative replacement policy is specific to the first handler, not a generic
 requirement to regenerate every product surface after every policy edit.
 

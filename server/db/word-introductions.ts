@@ -361,7 +361,7 @@ export function finishSharedWordIntroductionBootstrap(
 
 export function finishSharedWordIntroductionTeaching(
   wordId: string, token: string, input: TeachingPackage, model: string,
-  componentKeys?: { teaching: string; practice: string }, assertPublication?: () => void,
+  componentKeys?: { teaching: string; practice: string }, assertPublication?: () => void, onPublished?: () => void,
 ): SavedTeachingPackage {
   const teaching = parseTeachingPackage(input);
   const sourceModel = modelName(model);
@@ -405,6 +405,7 @@ export function finishSharedWordIntroductionTeaching(
         getDb().prepare("INSERT OR IGNORE INTO invocation_content_links VALUES (?,?,?,'input')").run(practice.invocationId,intro.content_id,intro.imported_content_version);
       }
     }
+    onPublished?.();
     return saved;
   });
 }

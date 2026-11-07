@@ -616,6 +616,12 @@ procedure](evaluation/independent-ui-evaluation.md) with any suitable preview.
 The [coordinator procedure](evaluation/coordinator.md) owns early planning,
 preview preparation, triage, and delivery reporting.
 
+The attention browser fixture accepts `?canonical&view=attention` to display a
+practice failure tied to a canonical reconciliation rather than a teaching source.
+Combine with `narrow&largeText` to verify the source identity disclosure wraps.
+This fixture simulates API responses; worker independence is covered by the
+controlled-provider reconciliation tests.
+
 ### Drag edge scrolling
 
 `/tests/browser/drag-edge-scroll.html` exercises the production scroll hook in a

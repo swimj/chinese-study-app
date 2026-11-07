@@ -46,6 +46,7 @@ beforeEach(() => {
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0045_vocabulary_provenance_links.sql',import.meta.url),'utf8').split('CREATE TABLE vocabulary_practice_preparation')[1]!.replace(/^/, 'CREATE TABLE vocabulary_practice_preparation'));
   sql.exec("ALTER TABLE vocabulary_practice_preparation ADD COLUMN next_attempt_at TEXT NOT NULL DEFAULT ''; ALTER TABLE vocabulary_practice_preparation ADD COLUMN total_attempt_count INTEGER NOT NULL DEFAULT 0;");
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0043_vocabulary_import.sql',import.meta.url),'utf8').split('CREATE TRIGGER')[0]!);
+  sql.exec(fs.readFileSync(new URL('../server/db/migrations/0069_sense_content_reconciliation.sql',import.meta.url),'utf8'));
   contents = {};
   alice(() => {
     for (const [id, word, skill, role, type] of [

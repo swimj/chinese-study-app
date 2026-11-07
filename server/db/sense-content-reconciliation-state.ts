@@ -1,3 +1,4 @@
+import type { GeneralExerciseSource } from '../vocabulary/general-exercise-authoring.ts';
 import type { SenseContentReconciliationPlan, SenseContentReconciliationProgress } from '../../src/domain/sense-content-reconciliation.ts';
 import { getDb } from './connection.ts';
 import { parseWordContent } from '../../src/domain/word-content/validation.ts';
@@ -22,11 +23,21 @@ export function assertSenseContentReconciliationGeneration(wordId: string, token
   if (row && row.completed_at === null && row.authority_json !== senseContentReconciliationAuthority(wordId)) throw new Error('Reconciliation authority changed; operator review required');
 }
 
+export type ReconciliationPracticeSource = {resolutionId:string;authority:string;source:GeneralExerciseSource;senses:Array<{source_use_id:string;sense_id:string;imported_sense_version:number}>};
+export function reconciliationPracticeSource(wordId:string):ReconciliationPracticeSource|null {
+  const row=getDb().prepare("SELECT resolution_id,authority_json,practice_source_json,completed_at FROM sense_content_reconciliations WHERE word_id=? AND status='applied' ORDER BY rowid DESC LIMIT 1").get(wordId);
+  if(!row)return null;
+  if(!row.practice_source_json)throw new Error('Applied reconciliation is missing its canonical practice snapshot');
+  if(row.completed_at!==null&&row.authority_json!==senseContentReconciliationAuthority(wordId))return null;
+  return {resolutionId:String(row.resolution_id),authority:String(row.authority_json),...JSON.parse(String(row.practice_source_json))};
+}
+
 const empty: SenseContentReconciliationProgress = { status: 'not_required', teachingStatus: 'not_required', practiceStatus: 'not_required', errors: [] };
 export function senseContentReconciliationProgress(wordId: string): SenseContentReconciliationProgress {
   const db = getDb();
-  const row = db.prepare("SELECT applied_plan_json,authority_json,completed_at FROM sense_content_reconciliations WHERE word_id=? AND status='applied' ORDER BY rowid DESC LIMIT 1").get(wordId);
+  const row = db.prepare("SELECT resolution_id,practice_source_json,applied_plan_json,authority_json,completed_at FROM sense_content_reconciliations WHERE word_id=? AND status='applied' ORDER BY rowid DESC LIMIT 1").get(wordId);
   if (!row) return { ...empty, errors: [] };
+  if(!row.practice_source_json)throw new Error('Applied reconciliation is missing its canonical practice snapshot');
   const plan = JSON.parse(String(row.applied_plan_json)) as SenseContentReconciliationPlan;
   if (row.completed_at !== null) return { status: 'ready', teachingStatus: plan.replacementTeachingRequired ? 'ready' : 'not_required', practiceStatus: plan.replacementPracticeRequired ? 'ready' : 'not_required', errors: [] };
   if (row.authority_json !== senseContentReconciliationAuthority(wordId)) return { status: 'failed', teachingStatus: 'failed', practiceStatus: 'failed', errors: ['Canonical inventory or defaults changed after application; review a new resolution.'] };
@@ -59,9 +70,8 @@ export function senseContentReconciliationProgress(wordId: string): SenseContent
     }
   }
   let practiceStatus: SenseContentReconciliationProgress['practiceStatus'] = plan.replacementPracticeRequired ? 'pending' : 'not_required';
-  if (plan.replacementPracticeRequired && current && !plan.retireSourceIds.includes(String(current.content_id))) {
-    const work = db.prepare(`SELECT status,last_error FROM vocabulary_practice_preparation WHERE word_id=? AND source_content_id=?
-      ORDER BY created_at DESC,work_id DESC LIMIT 1`).get(wordId, current.content_id);
+  if (plan.replacementPracticeRequired) {
+    const work = db.prepare('SELECT status,last_error FROM vocabulary_practice_preparation WHERE reconciliation_id=?').get(row.resolution_id);
     if (work?.status === 'ready' && work.last_error === null) practiceStatus = 'ready';
     if (work?.status === 'failed') { practiceStatus = 'failed'; errors.push(`Practice: ${work.last_error ?? 'Preparation failed'}`); }
   }
@@ -81,6 +91,6 @@ export function settleSenseContentReconciliation(wordId: string): void {
 /** Worker demand persists through restart and does not depend on another teaching completion. */
 export function listSenseContentReconciliationPracticeDemand(): string[] {
   return (getDb().prepare("SELECT DISTINCT word_id FROM sense_content_reconciliations WHERE status='applied' ORDER BY word_id").all() as Array<{ word_id: string }>)
-    .filter(row => { const progress = senseContentReconciliationProgress(row.word_id); return progress.teachingStatus === 'ready' && progress.practiceStatus === 'pending'; })
+    .filter(row => { const progress = senseContentReconciliationProgress(row.word_id); return progress.practiceStatus === 'pending'; })
     .map(row => row.word_id);
 }
