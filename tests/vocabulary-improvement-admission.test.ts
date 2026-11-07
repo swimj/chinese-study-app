@@ -1065,3 +1065,13 @@ test('second opinions exclude pronunciation encounter text and reactions',async(
   assert.equal(trial.requests[0]!.userPrompt.includes('pronunciation-private-marker'),false);
   assert.equal(JSON.parse(trial.requests[0]!.userPrompt).evidence.encounters.length,1);
 });
+
+bootstrapTest('repertoire proposal saves an embedded cloze sentence once',async()=>{
+ const wire=structuredClone(repertoire);
+ const cloze=wire.exercises[2]!.stimulus;
+ cloze.frame=`Enlarge the image: ${cloze.text}`;
+ const trial=provider(()=>wire);
+ const result=await trial.provider.run(job());if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
+ const body=result.result.proposal!.operations[2]!.content.body as {prompt:string};
+ assert.equal(body.prompt,cloze.frame);
+});

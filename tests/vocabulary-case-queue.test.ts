@@ -236,3 +236,15 @@ test('reuse with unavailable content remains visible, while create and extend ar
     else assert.deepEqual(item.reusedSharedCue,{axisNote:null,contentId:'missing-content',prompt:null,acceptedAnswers:[],teachingNote:null,rationale:'Retained reuse decision',version:null,expectedVersion:null,availability:null});
   }
 });
+
+test('compact cloze projection faithfully displays the saved prompt even when structured fields would assemble differently',()=>{
+ const proposalId=seedCase('duplicate',{proposal:true})!;
+ const cloze='____传来一阵狗叫声。';
+ const frame=`From far away came the sound of a dog barking: ${cloze}`;
+ const body={prompt:`${frame}\n${cloze}`,stimulus:{kind:'phrase_cloze',frame,text:cloze}};
+ sql.prepare("UPDATE content_proposals SET operations_json=json_set(operations_json,'$[0].content.body',json(?)) WHERE proposal_id=?").run(JSON.stringify(body),proposalId);
+ const card=getVocabularyCaseCard('duplicate','editor');
+ assert.equal(card.proposal!.operations[0].prompt,body.prompt);
+ const saved=sql.prepare('SELECT operations_json AS operations FROM content_proposals WHERE proposal_id=?').get(proposalId) as {operations:string};
+ assert.equal(JSON.parse(saved.operations)[0].content.body.prompt,body.prompt);
+});

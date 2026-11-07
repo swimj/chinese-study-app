@@ -524,10 +524,18 @@ and retains its cursor time window when wrapping.
 
 The card header shows the earliest original encounter timestamp; a case without
 that retained evidence explicitly shows its case-opened time. Sense groups start
-collapsed with exercise counts. Repeated assessment rationale is shown once, and
-unchanged current source snapshots are omitted. Changed-source information lives
+collapsed with exercise counts. The assessment summary is the single overall explanation; proposal rationale
+is a fallback when no assessment summary is available. Source-repair rationales
+do not create a second explanation or empty disclosure. Shared/additional
+exercise rationales remain available. Repeated encounter cues and unchanged
+metadata are omitted from expanded history, and unchanged current source
+snapshots are omitted. Changed-source information lives
 with the original served content and the existing approval/second-opinion guards
 remain authoritative. The action frame stays outside the scrolling card.
+Phrase-cloze authoring and structured editing share prompt assembly: when a frame
+already ends with its exact cloze sentence, that sentence is included once.
+Compact review still displays the saved prompt faithfully; retained proposals
+are not silently rewritten by this presentation rule.
 
 Review notes are per-case drafts for the mounted review session. Opening a note
 focuses its field; Enter saves and closes the draft, Shift+Enter adds a newline,

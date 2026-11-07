@@ -121,18 +121,21 @@ proposal, or the judgment that proposed no change. Reassessment retains the
 same case identity and queue position.
 The entry leads with the original served content and its first chronological
 encounter. Teaching cases identify the source as a **Teaching encounter**. The
-encounter-count control expands retained snapshots and their responses, reactions,
-skips, and undone actions. Pure cues display accepted answers in simplified form,
+encounter-count control expands responses, reactions, skips, and undone actions.
+Repeated cue text and unchanged metadata are omitted; differing snapshots remain visible. Pure cues display accepted answers in simplified form,
 with script duplicates removed for display only. Ordinary word encounters omit
 that answer list. Missing snapshots are explicitly identified.
 
-Single-exercise review retains the assessment reasoning under **Proposed
-improvement** and presents each change as an expandable item with an action icon
-and color accent. Mapped senses remain in Details. Repertoire review uses a
+Single-exercise review shows one summary under **Proposed improvement** and
+the content-generating model. Each change has an action icon and color accent;
+items expand only when they have additional review information. Shared and
+additional exercises retain their individual rationales. Mapped senses remain in Details. Repertoire review uses a
 **Repertoire bootstrap** heading and expandable sense groups with exercise counts;
 it omits routine bootstrap reasoning. Source-repair items omit redundant accepted
-answers. Pure-cue items summarize their action and semantic axis, expanding to the
-prompt, accepted-set change, and revised teaching note.
+answers. Pure-cue items summarize their action and cue, expanding to the semantic axis,
+accepted-set change, teaching note, and any distinct exercise rationale.
+Sense chips retain their selection action; hovering reveals sense notes, and the
+adjacent details control opens them for keyboard or pointer inspection.
 
 Existing shared practice appears as a blue **↗ Reuse existing** item. Expanding it
 shows accepted answers, teaching note, reuse reasoning, and content identity/version.

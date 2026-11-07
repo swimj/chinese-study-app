@@ -1,3 +1,4 @@
+import { vocabularyPhraseClozePrompt } from '../../domain/vocabulary-production-coverage';
 import type { VocabularyContentDraft,VocabularyJson } from '../../domain/vocabulary-content';
 import type { VocabularyProposalDraft,VocabularyProposalOperation,VocabularySenseLabel } from '../../domain/vocabulary-reflection';
 
@@ -16,7 +17,7 @@ export function updateCue(content:VocabularyContentDraft,cue:EditableCue):Vocabu
   const previous=editableCue(content);if(!previous)throw new Error('This cue needs the full authored draft editor');
   if(previous.kind!==cue.kind)throw new Error('Structured cue editing preserves the stimulus kind');
   const body=object(content.body)!;
-  return {...content,body:{...body,prompt:cue.kind==='phrase_cloze'?`${cue.frame}\n${cue.text}`:cue.text,...(body.stimulus===undefined?{}:{stimulus:{...cue}})}};
+  return {...content,body:{...body,prompt:cue.kind==='phrase_cloze'?vocabularyPhraseClozePrompt(cue.frame, cue.text):cue.text,...(body.stimulus===undefined?{}:{stimulus:{...cue}})}};
 }
 export function operationScope(operation:VocabularyProposalOperation):string{return operation.scope.kind==='shared'?'Shared content':`Private content · learner ${operation.scope.learnerId}`;}
 export function operationAnswers(operation:VocabularyProposalOperation):string {

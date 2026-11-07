@@ -1,3 +1,4 @@
+import { vocabularyPhraseClozePrompt } from '../src/domain/vocabulary-production-coverage.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { generalExerciseInvocation,validateGeneralExerciseOutput,type GeneralExerciseSource } from '../server/vocabulary/general-exercise-authoring.ts';
@@ -17,4 +18,11 @@ test('specialized selected uses retain exact-target guards on the shared current
   assert.throws(()=>validateGeneralExerciseOutput(source,{exercises:[{...exercise,stimulus:{kind:'direct_text',text:'The answer is 笏.'}}]}),/exposes.*answer/);
   assert.throws(()=>validateGeneralExerciseOutput(source,{exercises:[exercise,exercise]}),/unique|duplicate/i);
   assert.throws(()=>validateGeneralExerciseOutput(source,{exercises:[{...exercise,stimulus:{kind:'phrase_cloze',frame:'A ceremonial tablet.',text:'没有空格。'}}]}),/blank|cloze/i);
+});
+
+test('cloze prompt assembly preserves the frame but never repeats its exact trailing sentence',()=>{
+ const text='____传来一阵狗叫声。';
+ assert.equal(vocabularyPhraseClozePrompt('From far away came barking.',text),`From far away came barking.\n${text}`);
+ assert.equal(vocabularyPhraseClozePrompt(`From far away came barking: ${text}`,text),`From far away came barking: ${text}`);
+ assert.equal(vocabularyPhraseClozePrompt(`Compare ${text} with another scene.`,text),`Compare ${text} with another scene.\n${text}`);
 });
