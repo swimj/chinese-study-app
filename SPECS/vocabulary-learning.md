@@ -100,18 +100,20 @@ dismissal, and study mode are distinct. Re-adding a word or choosing a mode is a
 explicit way to resume it. Existing content deactivation remains effective.
 
 Production suppression is learner-specific and stops individual-word production
-training across dictionary baselines and authored cues. It expresses a judgment
-about the value of practising that skill for the word: even a good cue may not
-make the training useful. Recognition and contrast remain independently eligible.
+training in Practice and Maintain across dictionary baselines and authored cues.
+It expresses a judgment about the value of practising that skill for the word:
+even a good cue may not make the training useful. Recognition and contrast remain
+independently eligible.
 Changing mode, requesting refresh, or improving content does not clear suppression.
 A suppressed word cannot qualify a pure cue for scheduling, but remains an accepted
 answer when another eligible member qualifies that cue. The initial vocabulary
 UI and reflection proposal contracts do not create or reverse suppression;
 existing suppression records remain effective under these semantics.
 
-Solidify practises only enabled skills. Completing those skills covers the word
-for the day, but automatic graduation requires both recognition and production.
-A word with neither skill enabled is omitted from ordinary Solidify admission.
+New teaching and Solidify practise both recognition and production, regardless of
+review skill enablement or suppression. Review settings are preserved for later
+Practice/Maintain sessions. Previously retained sessions keep their recorded
+recall requirements.
 
 ## Live session and completion
 
