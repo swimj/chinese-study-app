@@ -232,6 +232,10 @@ nominated meaning and members. The axis describes a graspable expressive instinc
 keeping necessary sense/construction boundaries but omitting incidental story
 details and pair-specific explanation. Different scenes can practice the same
 axis; actual stimulus compatibility with all members still governs reuse.
+Integration drafts a source-derived axis and stimulus before comparing existing
+destinations. Three complete realizations illustrate a physical referent,
+abstract meaning, and construction-dependent use. This is reasoning guidance in
+one call, not an information-isolation boundary.
 An incompatible existing cue leads to creation, not rejection of the plan.
 Extension notes preserve accumulated teaching and cover the complete resulting
 membership, mostly in English with Chinese examples where useful.

@@ -166,7 +166,7 @@ Destination choices and meaningful population/unrelatedness boundaries were
 preserved in these samples. An independent check verified all 23 replay user
 messages are byte-for-byte identical to their original candidate messages.
 
-No further prompt changes were made after replay. Fashion/apparel remains a
+That replay was closed without further prompt edits. Fashion/apparel remains a
 questionable upstream nomination; integration correctly preserves that decision
 rather than secretly vetoing it. GLM's schema/teaching weaknesses remain visible.
 This is an experimental draft for review, not a claim that either nomination or
@@ -197,3 +197,59 @@ The database-backed tests cover current two-stage output, unchanged local plans,
 privacy/answer leakage, preserved extension/reuse content, historical authored-plan
 continuation, and versioned stage evidence. No schema migration or hosted content
 repair was performed.
+
+## Source-first drafting and worked-example round
+
+A subsequent user review requested another round after establishing two design
+points: stimulus-authoring examples belong in integration, and integration should
+form an axis and draft stimulus from the words and nominated source before
+consulting existing destinations. The prompt was reorganized into that sequence,
+followed by teaching for the selected content. It includes three complete output
+examples for a bicycle referent, happy/pleased meaning, and topic-modifying use
+of 关于/有关. These demonstrate final axis/stimulus/teaching together without
+adding a scissors-specific answer or changing single-stage authority. Independent
+pre-run review found the order and examples coherent; all examples satisfy the
+active integration schema. No single-improvement or fixture edit was made.
+
+Round `candidate-source-first-examples` again used the original candidate's exact
+integration requests: eight Luna, seven Sol, and eight GLM calls. All 23 inputs
+were verified byte-for-byte, and all 23 outputs passed structural/application
+guards. Sol fashion remains skipped because its original single result was
+invalid; it was not regenerated. All 23 destination decisions matched the previous
+replay. These counts are contract evidence, not linguistic quality scores.
+
+Content findings from coordinator and independent review:
+
+- Sol's scissors axis cleanly names the referent, and its precise “A pair of
+  scissors” stimulus remains intact.
+- Luna restores the precise scissors frame after the previous overly broad
+  cutting-tool frame, but its axis still includes the 一把 construction.
+- GLM's population axis drops the member-list/construction explanation, and its
+  interruption axis is clearer. Its scissors axis still adds countability/把
+  scope, and unrelatedness still includes unnecessary form detail.
+- The frozen fashion/apparel judgment is faithfully realized again, with the
+  same unresolved grouping concern. This integration-only round cannot establish
+  improvement in nomination quality.
+- GLM introduces one new note-quality slip in the retained-member extension:
+  其他 “can also appear directly before the noun as 其他的” conflates the direct
+  其他 + noun pattern with 其他的 + noun. The earlier note distinguished them.
+  This remains a misleading-wording sample, not grounds for another special rule.
+
+This is still a small, non-held-out, one-draw experiment. Examples and ordering
+changed together, so the observed differences cannot be attributed to either
+alone, and the model's internal reasoning order is not observable. Existing cues
+are supplied in the same request; source-first reasoning is prompt guidance,
+not enforced information isolation. The archived projection supplies the candidate
+and local assessment but omits production's complete `sourceContent` object;
+this round therefore exercises source-first reasoning from that nominated
+material, not a full production input replay.
+
+The HTML report now uses explicit round descriptions, per-round visibility
+checkboxes, and comparison columns at least 340 CSS pixels wide with local
+horizontal scrolling. All earlier outputs and failures are retained. The renderer
+remains offline and self-contained.
+
+Focused prompt/example and eval-harness checks passed (12 tests). Rendered checks
+at 1440 and 480 CSS pixels verified round hiding, the all-hidden state, minimum
+column widths, and keyboard horizontal scrolling without page overflow. No
+browser warnings or errors were observed.

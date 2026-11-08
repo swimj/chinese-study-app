@@ -1070,6 +1070,273 @@
           }
         }
       ]
+    },
+    {
+      "variant": "candidate-source-first-examples",
+      "modelChoice": "openai:gpt-6-luna-high",
+      "promptHashes": {
+        "single": "069246d92f0a57085057c58bd9eb80370d9076ac78c500ae34ecb88288679a1f",
+        "integration": "1de8da16e3d55dc6831fcb89cb2847a0d044aa1a9e4a8a7b8113bd47f61f5f39"
+      },
+      "fixtureSha256": "e8a24c61b84d1524d8cef550e5870dd1ab86fcac3dc15ed3f52d92f615b85c77",
+      "cases": [
+        {
+          "case": "extend-retained-member",
+          "status": "completed",
+          "integration": {
+            "decision": "extend",
+            "axis": null,
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "fashion-apparel-overlap",
+          "status": "completed",
+          "integration": {
+            "decision": "create",
+            "axis": "An interest in fashion or clothing styles and designs.",
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "fixed-construction-incompatible",
+          "status": "completed",
+          "integration": {
+            "decision": "create",
+            "axis": "The reason or cause behind something.",
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "interruption-construction",
+          "status": "completed",
+          "integration": {
+            "decision": "create",
+            "axis": "Interrupting an ongoing conversation.",
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "population-vs-timing",
+          "status": "completed",
+          "integration": {
+            "decision": "create",
+            "axis": "Describing a place as having a high population density.",
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "reuse-other-scene",
+          "status": "completed",
+          "integration": {
+            "decision": "reuse",
+            "axis": null,
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "same-members-different-sense",
+          "status": "completed",
+          "integration": {
+            "decision": "create",
+            "axis": "Saying that a matter has no connection to a person.",
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "scissors-referent",
+          "status": "completed",
+          "integration": {
+            "decision": "create",
+            "axis": "Naming scissors as a cutting tool, including in the measure-word phrase 一把____。",
+            "valid": true,
+            "errors": []
+          }
+        }
+      ]
+    },
+    {
+      "variant": "candidate-source-first-examples",
+      "modelChoice": "openai:gpt-6-sol-high",
+      "promptHashes": {
+        "single": "069246d92f0a57085057c58bd9eb80370d9076ac78c500ae34ecb88288679a1f",
+        "integration": "1de8da16e3d55dc6831fcb89cb2847a0d044aa1a9e4a8a7b8113bd47f61f5f39"
+      },
+      "fixtureSha256": "e8a24c61b84d1524d8cef550e5870dd1ab86fcac3dc15ed3f52d92f615b85c77",
+      "cases": [
+        {
+          "case": "extend-retained-member",
+          "status": "completed",
+          "integration": {
+            "decision": "extend",
+            "axis": null,
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "fashion-apparel-overlap",
+          "status": "no_archived_integration_request"
+        },
+        {
+          "case": "fixed-construction-incompatible",
+          "status": "completed",
+          "integration": {
+            "decision": "create",
+            "axis": "The reason or cause behind something.",
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "interruption-construction",
+          "status": "completed",
+          "integration": {
+            "decision": "create",
+            "axis": "Interrupting an ongoing conversation.",
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "population-vs-timing",
+          "status": "completed",
+          "integration": {
+            "decision": "create",
+            "axis": "Describing a place as densely populated.",
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "reuse-other-scene",
+          "status": "completed",
+          "integration": {
+            "decision": "reuse",
+            "axis": null,
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "same-members-different-sense",
+          "status": "completed",
+          "integration": {
+            "decision": "create",
+            "axis": "Saying that a matter has no connection to a person or does not concern them.",
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "scissors-referent",
+          "status": "completed",
+          "integration": {
+            "decision": "create",
+            "axis": "Scissors, the handheld cutting tool.",
+            "valid": true,
+            "errors": []
+          }
+        }
+      ]
+    },
+    {
+      "variant": "candidate-source-first-examples",
+      "modelChoice": "zai:glm-5.3-flash-high",
+      "promptHashes": {
+        "single": "069246d92f0a57085057c58bd9eb80370d9076ac78c500ae34ecb88288679a1f",
+        "integration": "1de8da16e3d55dc6831fcb89cb2847a0d044aa1a9e4a8a7b8113bd47f61f5f39"
+      },
+      "fixtureSha256": "e8a24c61b84d1524d8cef550e5870dd1ab86fcac3dc15ed3f52d92f615b85c77",
+      "cases": [
+        {
+          "case": "extend-retained-member",
+          "status": "completed",
+          "integration": {
+            "decision": "extend",
+            "axis": null,
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "fashion-apparel-overlap",
+          "status": "completed",
+          "integration": {
+            "decision": "create",
+            "axis": "Naming fashion or clothing as an area of interest or attention.",
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "fixed-construction-incompatible",
+          "status": "completed",
+          "integration": {
+            "decision": "create",
+            "axis": "The reason or cause behind something.",
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "interruption-construction",
+          "status": "completed",
+          "integration": {
+            "decision": "create",
+            "axis": "Describing something cutting off an ongoing activity such as a conversation.",
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "population-vs-timing",
+          "status": "completed",
+          "integration": {
+            "decision": "create",
+            "axis": "Describing an area as densely populated.",
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "reuse-other-scene",
+          "status": "completed",
+          "integration": {
+            "decision": "reuse",
+            "axis": null,
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "same-members-different-sense",
+          "status": "completed",
+          "integration": {
+            "decision": "create",
+            "axis": "Stating that a matter has no connection with someone or something, in the pattern 跟/与……无关 or 跟……没关系.",
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "scissors-referent",
+          "status": "completed",
+          "integration": {
+            "decision": "create",
+            "axis": "Naming scissors as a countable object, naturally taking the measure word 把.",
+            "valid": true,
+            "errors": []
+          }
+        }
+      ]
     }
   ]
 }

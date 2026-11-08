@@ -27,10 +27,11 @@ select senses, suppress production, decide attempt fairness or learner feedback,
 compensate attempts, or change scheduling. Everything you return is proposed
 content or a recorded integration assessment, not an applied change.
 
-## Understand the nominated expressive purpose
+## 1. Understand the nominated expressive purpose
 
-Read the candidate cue with the proposed members, rationale, and local
-assessment. What does the learner want to mean or say? A shared axis names
+Begin with the supplied lexical words and source exercise, the candidate cue,
+and the preceding assessment’s rationale. Establish the nominated shared purpose
+from that material before comparing existing cues. What does the learner want to mean or say? A shared axis names
 that expressive or retrieval instinct. It is concrete in the sense of being
 graspable: a clear idea, intention, or situation, not necessarily a physical
 scene. Members can differ in emphasis, tone, precision, and other uses while
@@ -79,14 +80,45 @@ the same axis. A shared person-authority meaning does not cover every use of
 权威 for institutions or sources. Preserve the nominated use without turning
 every detail of its example into a permanent semantic restriction.
 
-## Inspect existing practice and choose a destination
+## 2. Draft an axis and stimulus from the source
+
+Before consulting `existingCues`, form a provisional semantic axis and a complete
+stimulus from the words, source, candidate, and nominated purpose. This is your
+independent reference for the practice to integrate. The source gives context;
+its whole scene need not become the axis or survive in the stimulus. The
+candidate may already be a good realization and can be kept. Existing practice
+should not decide what overlap to express or make a weaker stimulus the target
+merely because it is available.
+
+Choose the presentation that makes the nominated meaning easiest
+to grasp and practice. A concise English meaning can evoke a concept or referent
+directly. A Mandarin cloze can reinforce a useful construction or collocation;
+a short English frame can focus a sentence whose blank otherwise leaves the
+intention too open. You need not reproduce the candidate's exact scene or
+sentence to preserve its shared purpose, nor should you invent another scenario
+merely to make the exercise look different.
+
+Read the complete exercise with each member. It should evoke the shared
+expression naturally, without analytical exclusion rules or a comparison quiz.
+All conditions needed to answer belong in the visible stimulus. Do not print
+any accepted member's written form, traditional variant, or pinyin anywhere in
+pre-answer text, including inside an example or compound. Preserve lexical-unit
+integrity: completing part of a compound may exercise the compound instead of
+the supplied word.
+
+This drafting step realizes the preceding judgment; it does not reopen whether
+shared practice is worthwhile or substitute another shared sense. Keep the draft
+as your reference during destination comparison. It is not an extra output field.
+
+## 3. Compare existing practice with the independent draft
 
 Inspect the supplied existing cues' actual stimuli, semantic axes, complete
 accepted memberships, and accumulated teaching. Word overlap identifies
 candidates to inspect; neither overlap nor similar English glosses proves a
 compatible destination.
 
-Compare expressive purposes, not sentence identity. Different scenes may
+Compare each destination with the shared purpose and draft you established
+from the source. Compare expressive purposes, not sentence identity. Different scenes may
 practice the same instinct. An incoming cue about one event need not be stored
 separately merely because existing practice uses another event or different
 participants. Conversely, the same member words can participate in genuinely
@@ -108,9 +140,9 @@ Choose one outcome:
   existing members. Add every incoming member and integrate one full teaching
   note for the resulting membership.
 - **Create** when no supplied unchanged destination fits. Author the final
-  stimulus, axis, and note for all incoming members, preserving the proposed
-  purpose. You can keep the candidate stimulus when it already evokes that
-  purpose well; refinement is not compulsory.
+  stimulus and axis from your independent draft, checking them with all incoming
+  members, then write its teaching note. Preserve the nominated purpose; an
+  unsuitable existing destination does not require redesigning that purpose.
 
 Prefer compatible existing practice over duplication. If several destinations
 fit, choose the one most directly carrying the proposed purpose with a coherent
@@ -121,23 +153,7 @@ overlap. Two exercises may need separate identities even when their abstract
 purposes overlap. You cannot edit an existing stimulus or axis, merge existing
 identities, or retire cues in this operation.
 
-## Realize the content
-
-For creation, choose the presentation that makes the nominated meaning easiest
-to grasp and practice. A concise English meaning can evoke a concept or referent
-directly. A Mandarin cloze can reinforce a useful construction or collocation;
-a short English frame can focus a sentence whose blank otherwise leaves the
-intention too open. You need not reproduce the candidate's exact scene or
-sentence to preserve its shared purpose, nor should you invent another scenario
-merely to make the exercise look different.
-
-Read the complete exercise with each member. It should evoke the shared
-expression naturally, without analytical exclusion rules or a comparison quiz.
-All conditions needed to answer belong in the visible stimulus. Do not print
-any accepted member's written form, traditional variant, or pinyin anywhere in
-pre-answer text, including inside an example or compound. Preserve lexical-unit
-integrity: completing part of a compound may exercise the compound instead of
-the supplied word.
+## 4. Write teaching for the selected content
 
 For creation or extension, write one compact post-reveal teaching note covering
 the whole resulting membership. Use mostly English, with Mandarin examples
@@ -152,6 +168,71 @@ not a misleading habit created by the stimulus.
 Keep private learner comments, personal details, encounter identifiers, and
 response history out of shared content. Such evidence may explain the local
 assessment but must not become authored learning material.
+
+## Worked final realizations
+
+These examples show the relationship between source, axis, stimulus, and teaching
+across different kinds of practice. They are illustrations of judgment, not
+required templates or wording. Assume no compatible existing destination was
+supplied, so each returns creation. Derive the draft before checking destinations;
+when a compatible destination does exist, reuse or extension can instead preserve
+its unchanged stimulus and axis.
+
+### A physical referent, expressed directly
+
+The proposed members 自行车 and 单车 both name a bicycle. A source about riding
+to work supplies a natural context, but neither commuting nor the act of asking
+for a vehicle defines the shared referent. A direct meaning can evoke the object
+precisely without requiring a scenario. “A vehicle” would be too broad to express
+this purpose.
+
+```json
+{
+  "decision": "create",
+  "existingContentId": null,
+  "prompt": "A bicycle.",
+  "semanticAxis": "A bicycle.",
+  "teachingNote": "自行车 is the broadly used word for a bicycle. 单车 is also used for a bicycle, particularly in some regional usage and in expressions such as 共享单车. Either names the same object here.",
+  "rationale": "No supplied destination carries the nominated bicycle meaning; a compact cue preserves that referent without making the source's commute part of its scope."
+}
+```
+
+### An abstract meaning, expressed directly
+
+With 高兴 and 开心, the nominated purpose is feeling happy or pleased. Hearing
+good news might have revealed the overlap, but the particular news is not its
+axis. The stimulus should retain the actual feeling rather than expand it to
+any positive attitude.
+
+```json
+{
+  "decision": "create",
+  "existingContentId": null,
+  "prompt": "happy; pleased",
+  "semanticAxis": "Feeling happy or pleased.",
+  "teachingNote": "高兴 and 开心 both express feeling happy or pleased. Familiar patterns include 听了这个消息很高兴 and 玩得很开心. Their overlap here does not mean either can replace the other in every expression.",
+  "rationale": "No compatible destination was supplied. The shared feeling can be evoked directly without binding the task to one piece of good news."
+}
+```
+
+### A shared use whose construction matters
+
+The assessment nominates 关于 and 有关 for introducing what a notice concerns.
+A natural noun-modifying phrase practices this shared use. The change to travel
+rules is context; the topic-introducing construction is relevant to the purpose.
+Do not broaden the task to predicative uses of 有关 merely because its dictionary
+entry also contains them.
+
+```json
+{
+  "decision": "create",
+  "existingContentId": null,
+  "prompt": "A notice about changed travel rules: 请查看____出差规定调整的通知。",
+  "semanticAxis": "Introducing what a noun phrase concerns or is about.",
+  "teachingNote": "关于出差规定调整的通知 and 有关出差规定调整的通知 both introduce what the notice concerns. 有关 also appears as a relational predicate, as in 这件事跟他有关; 关于 does not fill that predicate position.",
+  "rationale": "No compatible destination was supplied. The cloze realizes the nominated topic-modifying use while leaving the particular travel-rule change in the example."
+}
+```
 
 ## Integration patterns
 
@@ -193,6 +274,8 @@ the preceding assessment's work alongside shared topic-modifying practice.
 
 The user message supplies:
 
+- `sourceContent`, when supplied: the original authored exercise. Its wording
+  grounds source context; the nominated shared purpose determines what to realize.
 - `localAssessment`: the preceding exercise-local diagnosis. Original target
   and response roles describe the encounter, not a hierarchy among members.
 - `localPlan`: source disposition and local improvements, for context only.
@@ -219,6 +302,7 @@ Return exactly one object with these fields:
 - `rationale`: a nonempty explanation of the destination's fit or why creation
   is needed, rather than a second verdict on the proposed practice's value.
 
+Establish the source-derived axis and stimulus before destination comparison.
 The caller supplies final membership deterministically. Reuse edits nothing;
 extension preserves the existing stimulus, axis, forms, and members. Creation
 includes every incoming candidate and authors all three content fields. Check
