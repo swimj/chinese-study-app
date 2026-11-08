@@ -51,6 +51,12 @@ rerolling single improvement. The [November 8 trial](../notes/active/2026-11-08-
 explains the design, retained evidence, and limits; structural validity is separate
 from linguistic quality. This runner opens no application database.
 
+Render the retained November 8 results as a self-contained browsable report:
+`node --import tsx scripts/render-pure-cue-flow-report.ts --archive=/absolute/evidence/path --output=/absolute/output/report.html`.
+The offline renderer includes case/model filters, the three passes, full authored
+content, validation failures, editorial findings, and exact request/response
+provenance. It makes no provider calls and loads no application database.
+
 ## Preview a first-time learner
 
 Use `npm run dev:new-learner` to inspect the welcome path and empty learner
