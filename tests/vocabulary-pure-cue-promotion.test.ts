@@ -193,7 +193,7 @@ test('explicit dictionary selection disambiguates only a matching identity and f
 });
 
 const authoredPlan={...referral,draft:{prompt:'Increase the size or extent.',semanticAxis:'Size or extent',teachingNote:'Use either expression for making the extent larger.'}};
-test('integration creation preserves the upstream draft and cannot reject or author substitute content',async()=>{
+test('historical integration creation preserves its complete authored draft and cannot reject',async()=>{
   const {prepareVocabularyPureCueIntegration}=await import('../server/vocabulary/pure-cue-promotion.ts');
   const prepared=prepareVocabularyPureCueIntegration(job(),original,authoredPlan);
   const result=prepared.normalize({decision:'create',rationale:'No existing destination fits this task.',existingContentId:null,teachingNote:null});
@@ -201,7 +201,7 @@ test('integration creation preserves the upstream draft and cannot reject or aut
   assert.equal(body.prompt,authoredPlan.draft.prompt);
   assert.deepEqual(body.reveal,{axisNote:authoredPlan.draft.semanticAxis,teachingNote:authoredPlan.draft.teachingNote});
   assert.throws(()=>prepared.normalize({decision:'reject',rationale:'Changed my mind.',existingContentId:null,teachingNote:null}),/cannot reject/);
-  assert.throws(()=>prepared.normalize({decision:'create',rationale:'Create',existingContentId:null,teachingNote:'Replace upstream note'}),/preserve/);
+  assert.throws(()=>prepared.normalize({decision:'create',rationale:'Create',existingContentId:null,teachingNote:'Replace upstream note'}),/requires final stimulus/);
 });
 test('integration extension preserves all old members and adds every proposed candidate',async()=>{
   const {prepareVocabularyPureCueIntegration}=await import('../server/vocabulary/pure-cue-promotion.ts');
@@ -221,17 +221,22 @@ test('integration reuse requires all proposed identities and validates the autho
   assert.throws(()=>prepared.normalize({decision:'reuse',rationale:'Reuse.',existingContentId:'cue',teachingNote:null}),/reuse cannot/);
   assert.throws(()=>prepareVocabularyPureCueIntegration(job(),original,{...authoredPlan,draft:{...authoredPlan.draft,prompt:'Use 放大 or 扩大.'}}),/exposes/);
 });
-test('integration derives an axis for a new authored exercise while preserving its prompt and teaching note',async()=>{
+test('integration authors final stimulus, axis and teaching for a nominated shared candidate',async()=>{
   const {prepareVocabularyPureCueIntegration,vocabularyPureCueIntegrationSchema}=await import('../server/vocabulary/pure-cue-promotion.ts');
   const {validateJsonSchema}=await import('../server/llm/json-schema-validator.ts');
-  const plan={...referral,draft:{prompt:authoredPlan.draft.prompt,teachingNote:authoredPlan.draft.teachingNote}};
+  const plan={...referral,draft:{prompt:authoredPlan.draft.prompt}};
   const prepared=prepareVocabularyPureCueIntegration(job(),original,plan);
-  const reply={decision:'create',rationale:'No compatible destination.',existingContentId:null,teachingNote:null,semanticAxis:'Making the size or extent larger.'};
+  const reply={decision:'create',rationale:'No compatible destination.',existingContentId:null,prompt:'Make a visible object larger.',teachingNote:'Use either expression for enlargement.',semanticAxis:'Making the size or extent larger.'};
   assert.deepEqual(validateJsonSchema(reply,vocabularyPureCueIntegrationSchema),[]);
   const result=prepared.normalize(reply);
   const body=result.operations[0]!.content.body as {prompt:string;reveal:{axisNote:string;teachingNote:string}};
-  assert.equal(body.prompt,plan.draft.prompt);
-  assert.deepEqual(body.reveal,{axisNote:reply.semanticAxis,teachingNote:plan.draft.teachingNote});
+  assert.equal(body.prompt,reply.prompt);assert.notEqual(body.prompt,plan.draft.prompt);
+  assert.deepEqual(body.reveal,{axisNote:reply.semanticAxis,teachingNote:reply.teachingNote});
+  const {prompt:_prompt,...oldShape}=reply;
+  assert.ok(validateJsonSchema(oldShape,vocabularyPureCueIntegrationSchema).length);
+  assert.throws(()=>prepared.normalize(oldShape),/requires final stimulus/);
+  for(const prompt of [null,'','   '])assert.throws(()=>prepared.normalize({...reply,prompt}),/requires stimulus and semantic axis/);
+  for(const teachingNote of [null,'','   '])assert.throws(()=>prepared.normalize({...reply,teachingNote}),/require a teaching note/);
   for(const semanticAxis of [undefined,null,'','   '])assert.throws(()=>prepared.normalize({...reply,semanticAxis}),/requires stimulus and semantic axis/);
 });
 test('integration preserves existing axes and applies privacy checks to newly derived axes',async()=>{
@@ -242,7 +247,7 @@ test('integration preserves existing axes and applies privacy checks to newly de
   cue();
   const plan={...referral,draft:{prompt:authoredPlan.draft.prompt,teachingNote:authoredPlan.draft.teachingNote}};
   const prepared=prepareVocabularyPureCueIntegration(input,original,plan);
-  assert.throws(()=>prepared.normalize({decision:'create',rationale:'Create.',existingContentId:null,teachingNote:null,semanticAxis:'My private learner experience'}),/copies private learner evidence/);
+  assert.throws(()=>prepared.normalize({decision:'create',rationale:'Create.',existingContentId:null,prompt:'Make something larger.',teachingNote:'Both expressions describe enlargement.',semanticAxis:'My private learner experience'}),/copies private learner evidence/);
   for(const decision of ['reuse','extend'])assert.throws(()=>prepared.normalize({decision,rationale:'Compatible.',existingContentId:'cue',teachingNote:decision==='extend'?'Integrated teaching.':null,semanticAxis:'A replacement axis'}),/preserve the existing semantic axis/);
   const extended=prepared.normalize({decision:'extend',rationale:'Compatible.',existingContentId:'cue',teachingNote:'Integrated teaching.',semanticAxis:null});
   assert.equal((extended.operations[0]!.content.body as {reveal:{axisNote:string}}).reveal.axisNote,'Size or extent');

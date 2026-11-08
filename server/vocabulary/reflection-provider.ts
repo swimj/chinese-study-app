@@ -213,11 +213,11 @@ export function createVocabularyReflectionProvider(options:{environment?:NodeJS.
       const systemPrompt=promptFile==='feedback'?task:`${reasoning}\n\n${task}`;prompts.set(promptFile,systemPrompt);return systemPrompt;
     };
     const stagePrompt=(stage:string)=>stage==='sense_mapping'?'sense-mapping':stage==='pure_cue_promotion'?'pure-cue-integration':'single-improvement';
-    const admissionPromptVersion=(stage:string)=>stage==='single_improvement'?'5':stage==='sense_mapping'?'5':stage==='pure_cue_promotion'?'1':'2';
-    const schemaVersion=(step:string)=>step==='single_improvement'?'4':step==='pure_cue_promotion'?'3':'1';
+    const admissionPromptVersion=(stage:string)=>stage==='single_improvement'?'6':stage==='sense_mapping'?'5':'2';
+    const schemaVersion=(step:string)=>step==='single_improvement'?'5':step==='pure_cue_promotion'?'4':'1';
     const projectionVersion=(step:string)=>step==='second_opinion'?'vocabulary-second-opinion.v2'
       :step==='feedback'||step==='improvement'?'vocabulary-reflection.v3'
-      :step==='single_improvement'?'vocabulary-exercise-authoring.v2':step==='pure_cue_promotion'?'vocabulary-integration.v2':step==='sense_mapping'?'vocabulary-admission.v4'
+      :step==='single_improvement'?'vocabulary-exercise-authoring.v3':step==='pure_cue_promotion'?'vocabulary-integration.v3':step==='sense_mapping'?'vocabulary-admission.v4'
       :step==='pure_cue_improvement'?'vocabulary-admission.v2':'vocabulary-admission.v1';
     const routingFor=(step:string)=>{
       if(step!=='sense_mapping')return {config,adapter,apiKey,baseUrl};
@@ -326,7 +326,7 @@ The input's operatorEditorial contains optional operator instructions and an exp
       const word=getDb().prepare('SELECT id AS wordId,hanzi,traditional,pinyin,meaning FROM lexical_words WHERE id=?').get(admission.wordId);
       const response=await runCall('pure_cue_promotion',{sourceContent:original,wordId:admission.wordId,word,catalog,senses,
         evidence:projectVocabularyReflectionInput(job),intendedSense:senses.find(sense=>sense.senseId===admission.senseIds[0]),
-        localAssessment:resolution.diagnosis,localPlan:resolution.localPlan??null,...promotion.input},promotionSchema,coherent?'pure-cue-integration':'pure-cue-promotion',coherent?'1':'3');
+        localAssessment:resolution.diagnosis,localPlan:resolution.localPlan??null,...promotion.input},promotionSchema,coherent?'pure-cue-integration':'pure-cue-promotion',coherent?'2':'3');
       try{
         if(validateJsonSchema(response.value,promotionSchema).length)throw new VocabularyReflectionOutputError('Promotion failed strict output schema');
         const promoted=promotion.normalize(response.value,response.invocationId);fence();

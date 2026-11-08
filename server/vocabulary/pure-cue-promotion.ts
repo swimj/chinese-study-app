@@ -12,9 +12,9 @@ const text:JsonSchema={type:'string'};
 const object=(properties:Record<string,JsonSchema>):JsonSchema=>({type:'object',properties,required:Object.keys(properties),additionalProperties:false});
 export const vocabularyPureCueReferralSchema:JsonSchema={anyOf:[{type:'null'},object({candidateWords:{type:'array',items:text,minItems:2,maxItems:8},sharedPurpose:text,rationale:text})]};
 export const vocabularyPureCuePlanSchema:JsonSchema={anyOf:[{type:'null'},object({candidateWords:{type:'array',items:text,minItems:2,maxItems:8},sharedPurpose:text,rationale:text,
-  draft:{...object({prompt:text,semanticAxis:text,teachingNote:text}),required:['prompt','teachingNote']}})]};
+  draft:{...object({prompt:text,semanticAxis:text,teachingNote:text}),required:['prompt']}})]};
 export const vocabularyPureCueIntegrationSchema=object({decision:{type:'string',enum:['reuse','extend','create']},rationale:text,
-  existingContentId:{type:['string','null']},semanticAxis:{type:['string','null']},teachingNote:{type:['string','null']}});
+  existingContentId:{type:['string','null']},prompt:{type:['string','null']},semanticAxis:{type:['string','null']},teachingNote:{type:['string','null']}});
 export const vocabularyPureCuePromotionSchema=object({decision:{type:'string',enum:['reject','reuse','extend','create']},rationale:text,
   existingContentId:{type:['string','null']},prompt:{type:['string','null']},semanticAxis:{type:['string','null']},teachingNote:{type:['string','null']},memberWordIds:{type:'array',items:text}});
 export type Word=VocabularyResponseWord;
@@ -142,7 +142,7 @@ export function prepareVocabularyPureCuePromotion(job:VocabularyReflectionJob,or
   }};
 }
 
-/** Validate authored practice before resolving its storage destination or deriving its axis. */
+/** Validate the nominated shared task before resolving a destination or authoring its final content. */
 export function validateVocabularyPureCueDraft(job:VocabularyReflectionJob,original:VocabularyContent,referral:VocabularyPureCueReferral):void {
   validateVocabularyPureCueReferral(referral);
   if(!referral.draft)throw new Error('Pure-cue integration requires an authored plan');
@@ -157,18 +157,24 @@ export function prepareVocabularyPureCueIntegration(job:VocabularyReflectionJob,
   validateVocabularyPureCueDraft(job,original,referral);
   const prepared=prepareVocabularyPureCuePromotion(job,original,referral,selections);
   const ids=prepared.input.candidates.map(word=>word.wordId);
-  const creation=(rationale:string,semanticAxis:string|null):Decision=>({decision:'create',rationale,existingContentId:null,
-    prompt:referral.draft!.prompt,teachingNote:referral.draft!.teachingNote,semanticAxis,memberWordIds:ids});
+
   return {...prepared,normalize(value:unknown,invocationId?:string|null):PromotionResult {
     if(!value||typeof value!=='object')throw new Error('Invalid pure-cue integration output');
-    const result=value as {decision:'reuse'|'extend'|'create';rationale:string;existingContentId:string|null;semanticAxis?:string|null;teachingNote:string|null};
+    const result=value as {decision:'reuse'|'extend'|'create';rationale:string;existingContentId:string|null;prompt?:string|null;semanticAxis?:string|null;teachingNote:string|null};
     if(result.decision==='create'){
-      if(result.existingContentId!==null||result.teachingNote!==null)throw new Error('Creation must preserve the proposed shared cue');
-      // Historical integration replies predate the axis field and retain their authored axis.
-      const axis=result.semanticAxis===undefined?referral.draft!.semanticAxis??null:result.semanticAxis;
-      return prepared.normalize(creation(result.rationale,axis),invocationId);
+      if(result.existingContentId!==null)throw new Error('Creation cannot select an existing cue');
+      if(result.prompt===undefined){
+        // Only historical replies may reuse a complete authored plan. Live calls
+        // require the current schema, including an explicit final prompt field.
+        if(!referral.draft!.teachingNote||result.teachingNote!==null)throw new Error('Creation requires final stimulus, semantic axis and teaching note');
+        return prepared.normalize({decision:'create',rationale:result.rationale,existingContentId:null,
+          prompt:referral.draft!.prompt,teachingNote:referral.draft!.teachingNote,
+          semanticAxis:result.semanticAxis===undefined?referral.draft!.semanticAxis??null:result.semanticAxis,memberWordIds:ids},invocationId);
+      }
+      return prepared.normalize({...result,prompt:result.prompt,semanticAxis:result.semanticAxis??null,memberWordIds:ids},invocationId);
     }
     if(result.decision!=='reuse'&&result.decision!=='extend')throw new Error('Integration cannot reject an authored shared task');
+    if(result.prompt!==undefined&&result.prompt!==null)throw new Error('Reuse and extension must preserve the existing stimulus');
     if(result.semanticAxis!==undefined&&result.semanticAxis!==null)throw new Error('Reuse and extension must preserve the existing semantic axis');
     const existing=prepared.input.existingCues.find(cue=>cue.contentId===result.existingContentId);
     if(!existing||existing.kind!=='exercise')throw new Error('Integration destination was not supplied');
