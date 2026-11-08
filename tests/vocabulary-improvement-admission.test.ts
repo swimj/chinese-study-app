@@ -203,7 +203,7 @@ bootstrapTest('dictionary fallback automatically proposes one source replacement
   assert.equal(db.prepare('SELECT count(*) n FROM content_items').get()!.n,2);
   assert.equal(trial.requests[0]!.provenance!.stepName,'repertoire');
   assert.deepEqual(result.result.admission!.senseIds,[]);
-  assert.deepEqual(trial.requests.map(request=>request.provenance!.promptVersion),['v5']);
+  assert.deepEqual(trial.requests.map(request=>request.provenance!.promptVersion),['v5.1']);
   for(const [index,op] of result.result.proposal!.operations.entries()){
     const authored=repertoire.exercises[index]!;
     const body=op.content.body as {prompt:string;instruction:string;stimulus:unknown;reveal?:unknown;source:{kind:string;assessedContentId:string}};
@@ -386,23 +386,31 @@ for(const localRepair of [false,true])test(`referral composes with local repair=
   secondWord();
   const input=job();input.evidence.evidence[0]!.responses=[{protocolVersion:1,actionId:'answer',clientActionId:'answer',sequence:2,occurredAt:at,kind:'response',payload:{encounterId:'encounter',outcome:'rejected',response:'扩大'}}];
   addPronunciationEncounter(input);
+  const source = localRepair
+    ? { decision: 'revise', prompt: '先____这张图，再检查放大后的效果。' }
+    : { decision: 'keep', prompt: null };
+  const candidate = localRepair ? { ...sharedExercise, prompt: '把图上的区域____一点，再比较放大前后的效果。' } : sharedExercise;
+  const final = localRepair ? { ...createPromotion, prompt: '____图上的区域，再检查放大后的效果。' } : createPromotion;
   const trial=provider(request=>request.provenance!.stepName==='sense_mapping'?single:request.provenance!.stepName==='single_improvement'
-    ?{...repair,source:localRepair?repair.source:{decision:'keep',prompt:null},sharedExercise}:createPromotion,{ledger:true});
+    ?{...repair,source,sharedExercise:candidate}:final,{ledger:true});
   const result=await trial.provider.run(input);if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
   assert.deepEqual(trial.requests.map(request=>request.provenance!.stepName),['sense_mapping','single_improvement','pure_cue_promotion']);
   assert.ok(trial.requests.every(request=>!request.userPrompt.includes('pronunciation-private-marker')));
-  assert.deepEqual(result.result.pureCueReferral,referral);assert.equal(result.result.pureCuePromotion!.outcome,'create');
-  assert.equal(result.result.proposal!.operations.length,localRepair?2:1);
-  assert.equal(result.result.proposal!.operations.at(-1)!.content.kind,'exercise');
+  assert.deepEqual(result.result.pureCueReferral,{...referral,draft:{prompt:candidate.prompt}});
+  assert.equal(result.result.pureCuePromotion!.outcome,'create');
+  const operations = result.result.proposal!.operations;
+  assert.equal(operations.length,localRepair?2:1);
+  if (localRepair) assert.equal((operations[0]!.content.body as {prompt:string}).prompt,source.prompt);
+  assert.equal((operations.at(-1)!.content.body as {prompt:string}).prompt,final.prompt);
   assert.equal(db.prepare('SELECT count(*) n FROM content_items').get()!.n,1);
   const promotionInput=JSON.parse(trial.requests[2]!.userPrompt);
   assert.equal(promotionInput.evidence.encounters[0].responses[0].response,'扩大');
   assert.match(promotionInput.intendedSense.senseId,/^s[12]$/);assert.equal(promotionInput.sourceContent.contentId,'original');
   assert.deepEqual(promotionInput.candidates.map((word:{wordId:string})=>word.wordId),['word','other-word']);
-  assert.equal(trial.requests[1]!.provenance!.promptVersion,'6');assert.equal(trial.requests[1]!.provenance!.schemaVersion,'5');
+  assert.equal(trial.requests[1]!.provenance!.promptVersion,'7');assert.equal(trial.requests[1]!.provenance!.schemaVersion,'5');
   assert.match(trial.requests[1]!.systemPrompt,/# Review a Mandarin production exercise/);
   assert.doesNotMatch(trial.requests[1]!.systemPrompt,/## Learner feedback and proposal rationales/);
-  assert.equal(trial.requests[2]!.provenance!.promptVersion,'2');assert.equal(trial.requests[2]!.provenance!.schemaVersion,'4');
+  assert.equal(trial.requests[2]!.provenance!.promptVersion,'3');assert.equal(trial.requests[2]!.provenance!.schemaVersion,'4');
   const replay=await trial.provider.run({...input,attemptNumber:2});assert.deepEqual(replay,result);assert.equal(trial.requests.length,3);
   assert.equal(db.prepare("SELECT count(*) n FROM vocabulary_improvement_stages WHERE stage='pure_cue_promotion'").get()!.n,1);
 });
@@ -512,7 +520,7 @@ bootstrapTest('reflection repertoire reaches the same general invocation as prep
   assert.deepEqual(sent.response_format.json_schema.schema,reflected.outputSchema);
   assert.equal(reflected.model,'gpt-6-sol');assert.equal(reflected.reasoningEffort,'high');
   assert.equal(reflected.provenance!.promptName,'vocabulary-general-exercises');
-  assert.equal(reflected.provenance!.promptVersion,'v5');
+  assert.equal(reflected.provenance!.promptVersion,'v5.1');
 });
 
 bootstrapTest('a single mapped repertoire exercise preserves private publication scope and answers',async()=>{
@@ -529,12 +537,12 @@ bootstrapTest('a single mapped repertoire exercise preserves private publication
   assert.equal(db.prepare('SELECT count(*) n FROM content_items').get()!.n,2);
 });
 
-for(const malformed of ['missing-blank','answer-in-frame','duplicate-id'] as const)bootstrapTest(`repertoire shared validation rejects ${malformed}`,async()=>{
+for(const malformed of ['missing-blank','duplicate-id'] as const)bootstrapTest(`repertoire shared validation rejects ${malformed}`,async()=>{
   const exercises=structuredClone(repertoire.exercises);
   if(malformed==='duplicate-id')exercises[1]!.id=exercises[0]!.id;
-  else exercises[2]!.stimulus={kind:'phrase_cloze',frame:malformed==='answer-in-frame'?'Use 放大.':'Enlarge the image.',text:malformed==='missing-blank'?'这张图太小了。':'把图片____。'};
+  else exercises[2]!.stimulus={kind:'phrase_cloze',frame:'Enlarge the image.',text:'这张图太小了。'};
   const trial=provider(()=>({exercises}));
-  await assert.rejects(()=>trial.provider.run(job()),/blank|exposes an accepted answer|duplicate/i);
+  await assert.rejects(()=>trial.provider.run(job()),/blank|duplicate/i);
   assert.equal(db.prepare("SELECT count(*) n FROM vocabulary_improvement_stages WHERE stage='repertoire'").get()!.n,0);
 });
 
@@ -857,7 +865,7 @@ test('historical authored identity continuation retains its local plan and uses 
   const input=resolvedPromotionJob(true);
   const trial=provider(request=>{
     assert.equal(request.provenance!.promptName,'vocabulary-reflection-pure-cue-integration');
-    assert.equal(request.provenance!.promptVersion,'2');assert.equal(request.provenance!.schemaVersion,'4');
+    assert.equal(request.provenance!.promptVersion,'3');assert.equal(request.provenance!.schemaVersion,'4');
     const wire=JSON.parse(request.userPrompt);
     assert.equal(wire.referral.draft.teachingNote,'Retained historical teaching.');
     assert.equal(wire.localPlan.operations[0].operationKey,'local-retirement');

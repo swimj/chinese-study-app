@@ -120,11 +120,11 @@ not character offsets or example-list indexes. Supply one to four indexes in
 ascending order, with no duplicates. The server computes the blank spans.
 `frame` is null or a concise English meaning/situation frame.
 
-Hide every occurrence that would reveal the answer. Check the entire stimulus,
-including frames and Mandarin stems: neither simplified nor traditional target
-forms nor target pinyin may appear before answering. If the supplied example
-cannot support a natural, useful cloze under these rules, author a circumstance
-cue instead. Do not distort the source just to reuse it.
+Keep the target's written forms and pinyin out of direct cues. An example cloze
+can retain a separate occurrence of the target in natural context. Select
+blanks that create a meaningful retrieval task. If the supplied example cannot
+support a useful cloze, author a circumstance cue instead. Preserve the source
+sentence.
 
 ## Optional post-reveal reinforcement
 
@@ -183,8 +183,8 @@ do not turn a compound-completion trick into the target's review exercise.
   natural contextual material where useful, not a roundabout definition.
 - The set contains one to three exercises and at least one source-example cloze
   or circumstance, with useful breadth rather than mechanical sense enumeration.
-- No target written form or pinyin leaks anywhere before reveal; lexical units
-  remain intact.
+- Direct cues omit the target's written forms and pinyin. Every cloze blanks
+  the complete lexical unit at each selected position.
 - Every source example reference comes from this input, and cloze occurrence
   indexes are valid for the exact source sentence.
 - Supplements enrich fair definition cues after recall; all other cue types have

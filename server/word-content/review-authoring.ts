@@ -87,7 +87,9 @@ export function normalizeReviewExercises(
     });
     const snapshot = materializeExercise(exercise, [content]);
     const forms = [content.word.hanzi, content.word.traditional].filter((form): form is string => form !== null);
-    if (forms.some((form) => snapshot.stimulus.text.includes(form))) throw new Error('Review stimulus exposes its target answer.');
+    if (source.kind === 'direct_text' && forms.some((form) => snapshot.stimulus.text.includes(form))) {
+      throw new Error('Review stimulus exposes its target answer.');
+    }
     let supplement: ReviewSupplementSource | null = null;
     if (item.supplement !== null) {
       if (item.cueType !== 'definition_gloss') throw new Error('Only definition_gloss supports a review supplement.');

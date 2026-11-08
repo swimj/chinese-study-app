@@ -16,6 +16,8 @@ test('specialized selected uses retain exact-target guards on the shared current
   assert.throws(()=>validateGeneralExerciseOutput(source,{exercises:[{...exercise,sourceUseId:'unknown'}]}),/failed validation/);
   assert.throws(()=>validateGeneralExerciseOutput(source,{exercises:[{...exercise,sourceUseId:null}]}),/failed validation/);
   assert.throws(()=>validateGeneralExerciseOutput(source,{exercises:[{...exercise,stimulus:{kind:'direct_text',text:'The answer is 笏.'}}]}),/exposes.*answer/);
+  const cloze = { ...exercise, stimulus: { kind: 'phrase_cloze', frame: 'A second ceremonial court tablet.', text: '他已有一块笏，又借了一块____。' } };
+  assert.deepEqual(validateGeneralExerciseOutput(source, { exercises: [cloze] }), { exercises: [cloze] });
   assert.throws(()=>validateGeneralExerciseOutput(source,{exercises:[exercise,exercise]}),/unique|duplicate/i);
   assert.throws(()=>validateGeneralExerciseOutput(source,{exercises:[{...exercise,stimulus:{kind:'phrase_cloze',frame:'A ceremonial tablet.',text:'没有空格。'}}]}),/blank|cloze/i);
 });

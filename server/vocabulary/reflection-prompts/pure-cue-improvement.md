@@ -114,8 +114,9 @@ Choose one decision for this source:
 
 If extension would require changing the prompt or axis to accommodate a word,
 it is not a valid extension. Do not broaden the shared purpose to absorb a
-related answer. If the evidence supports no faithful repair, retain uncertainty
-instead of manufacturing one. Explain material limitations in the diagnosis.
+related answer. If addressing the concern would require changing the established
+axis, explain that limitation in `diagnosis`. If the evidence supports no
+faithful repair, retain uncertainty instead of manufacturing one.
 
 ### 3. Write the proposed content
 
@@ -125,7 +126,7 @@ English; use Chinese only where it helps illustrate the language point. Treat
 the existing note as accumulated teaching: preserve useful nuance and
 boundaries while integrating the additions into a coherent account, rather
 than appending an isolated paragraph. Do not manufacture sharp distinctions
-for every pair. Member-bearing examples belong here, after answering.
+for every pair. Use the reveal note for examples that explain member usage.
 
 The teaching should refine the useful instinct built by the stimulus. It must
 not rescue acceptance with hidden conditions or claim universal
@@ -135,9 +136,10 @@ For a repair, write a clear, natural replacement `prompt`. A concise English
 frame can clarify a Mandarin cloze; together they form one stimulus. Evoke the
 shared expressive purpose directly, without awkward restrictions designed only
 to exclude a response. Check the completed exercise with every current member.
-Do not reveal any accepted member's written form, traditional variant, or pinyin
-in the pre-answer text. Preserve lexical-unit integrity: filling part of a
-compound may exercise the compound rather than the supplied word.
+Keep accepted written forms and pinyin out of direct cues. A cloze can retain
+another occurrence in natural context while keeping the blank a meaningful
+retrieval task. Preserve lexical-unit integrity: filling part of a compound may
+exercise the compound rather than the supplied word.
 
 The diagnosis explains the linguistic judgment, relevant learner experience,
 and why the chosen proposal or lack of change follows. Keep it distinct from
@@ -151,7 +153,7 @@ References to new words assume eligible unambiguous candidate IDs are supplied.
 
 ### Visible cloze misses the established axis
 
-Suppose the axis is two experts making the same recommendation, with 相同 and
+Suppose the axis is describing recommendations as the same, with 相同 and
 同样 accepted. The learner sees `两位专家提出了____的建议。` and submits 不同.
 `两位专家提出了不同的建议` is natural because the sentence leaves agreement open.
 Choose `repair` with the prompt

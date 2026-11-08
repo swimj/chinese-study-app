@@ -157,7 +157,7 @@ export function createWordIntroductionProvider(options: {
       cachePrompt: true,
       invocationActor: generationOptions.invocationActor,
       provenance: { workflowId: generationOptions.workflowId,stepName: trial ? 'teaching_exercises' : stage==='teaching' ? 'introduction' : stage,
-        promptName: canonical?'vocabulary-bootstrap-enrichment':trial ? 'vocabulary-teaching-exercises' : stage==='teaching' ? 'vocabulary-introduction' : `vocabulary-${stage}`,promptVersion: trial ? 'v2' : 'v1',
+        promptName: canonical?'vocabulary-bootstrap-enrichment':trial ? 'vocabulary-teaching-exercises' : stage==='teaching' ? 'vocabulary-introduction' : `vocabulary-${stage}`,promptVersion: trial ? 'v2.1' : stage === 'practice' || stage === 'review' ? 'v2' : 'v1',
         schemaVersion: stage === 'teaching' ? '2' : '1',inputProjectionVersion: trial ? 'delivered-introduction-v1' : 'full-v1' },
     }, {
       apiKey,
@@ -193,7 +193,7 @@ export function createWordIntroductionProvider(options: {
     generatePractice: (content, generationOptions) => generate('practice', content, generationOptions),
     generationKey: async (stage,teaching) => createHash('sha256').update(JSON.stringify({
       prompt: await readFile(stage==='practice'&&teaching ? TEACHING_EXERCISE_PROMPT : new URL(`./prompts/${stage}.md`,import.meta.url),'utf8'),
-      promptVersion:stage==='practice'&&teaching?'v2':'v1',
+      promptVersion:stage==='practice'?(teaching?'v2.1':'v2'):'v1',
       schema:stage==='practice'&&teaching?'vocabulary-exercises-schema-v1':schemaFor(stage), model: WORD_INTRODUCTION_MODEL, reasoning: 'high',
       maxOutputTokens: MAX_OUTPUT_TOKENS, inputVersion: stage === 'practice' ? teaching ? 'delivered-introduction-v1' : 'without-examples-v1' : 'full-v1',
       deliveredIntroduction: stage === 'practice' ? teaching ?? null : null,

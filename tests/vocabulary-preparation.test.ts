@@ -76,7 +76,7 @@ test('generous general generation retains service invocation, exact prompt/sourc
   assert.ok(rows.every((row) => row.origin_kind === 'model' && row.access_scope === 'shared'));
   const invocation = db.prepare("SELECT * FROM model_invocations WHERE actor_id=?").get(VOCABULARY_PRACTICE_SERVICE)!;
   assert.equal(invocation.actor_kind,'service');assert.equal(invocation.learner_id,null);assert.equal(invocation.status,'completed');
-  assert.equal(invocation.prompt_name,'vocabulary-general-exercises');assert.equal(invocation.prompt_version,'v5');
+  assert.equal(invocation.prompt_name,'vocabulary-general-exercises');assert.equal(invocation.prompt_version,'v5.1');
   assert.ok(invocation.prompt_template);assert.ok(invocation.prompt_hash);assert.ok(invocation.request_snapshot_json);assert.ok(invocation.response_snapshot_json);
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM invocation_content_links WHERE invocation_id=? AND role='output'").get(invocation.id)!.n,6);
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM invocation_sense_links WHERE invocation_id=? AND role='input'").get(invocation.id)!.n,1);
@@ -193,7 +193,7 @@ test('actual teaching-exercise transport retains delivered text and changes gene
   assert.match(messages[0]!.content,/exact introduction delivered/);
   const projected=JSON.parse(messages[1]!.content);assert.equal(projected.role,'teaching_exercises');assert.deepEqual(projected.content,content);
   const invocation=db.prepare("SELECT prompt_name,prompt_version,step_name,response_snapshot_json FROM model_invocations WHERE actor_id='teaching-test'").get()!;
-  assert.equal(invocation.prompt_name,'vocabulary-teaching-exercises');assert.equal(invocation.prompt_version,'v2');assert.equal(invocation.step_name,'teaching_exercises');
+  assert.equal(invocation.prompt_name,'vocabulary-teaching-exercises');assert.equal(invocation.prompt_version,'v2.1');assert.equal(invocation.step_name,'teaching_exercises');
   assert.match(String(invocation.response_snapshot_json),/sourceUseId/);assert.match(String(invocation.response_snapshot_json),/teachingNote/);
   assert.notEqual(await provider.generationKey('practice',teaching),await provider.generationKey('practice',{...teaching,beats:[]}));
   assert.notEqual(await provider.generationKey('practice',teaching),await provider.generationKey('practice'));

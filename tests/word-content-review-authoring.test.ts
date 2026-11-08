@@ -69,10 +69,10 @@ test('does not accept rehearsal contracts, generated answer policy, or invalid c
   ]) assert.throws(() => normalizeReviewExercises({ exercises: [exercise, circumstance()] }, content, idFor));
 });
 
-test('rejects source mistakes and answer leakage before publishing', () => {
+test('rejects invalid cloze references and answer forms in direct cues', () => {
   for (const change of [
     { exampleId: 'missing' }, { occurrenceIndexes: [-1] }, { occurrenceIndexes: [1] },
-    { occurrenceIndexes: [0, 0] }, { frame: 'Recall 报备' },
+    { occurrenceIndexes: [0, 0] },
   ]) {
     const candidate = cloze();
     assert.throws(() => normalizeReviewExercises({ exercises: [{ ...candidate, stimulus: { ...candidate.stimulus, ...change } }] }, content, idFor));

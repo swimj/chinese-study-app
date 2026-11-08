@@ -108,7 +108,8 @@ export function validatePracticeExercises(rehearsals:TeachingPackage['rehearsals
   const forms = [word.hanzi, word.traditional].filter((form): form is string => form !== null);
   for (const exercise of rehearsals) {
     const snapshot = materializeExercise(exercise, contents);
-    if (forms.some((form) => snapshot.instruction.includes(form) || snapshot.stimulus.text.includes(form))) {
+    if (exercise.stimulus.kind === 'direct_text'
+      && forms.some((form) => snapshot.instruction.includes(form) || snapshot.stimulus.text.includes(form))) {
       throw new Error('Generated rehearsal exposes its target answer.');
     }
   }

@@ -246,7 +246,7 @@ test('strict real injected provider retains service provenance and rejects forge
   const improvementInvocation=sql.prepare("SELECT * FROM model_invocations WHERE prompt_name='vocabulary-reflection-single-improvement'").get();
   assert.ok(improvementInvocation,'Selected sense assessment must reach the active single-improvement call');
   assert.equal(improvementInvocation.actor_kind,'service');assert.equal(improvementInvocation.learner_id,null);assert.equal(improvementInvocation.workflow_id,improve.jobId);
-  assert.equal(improvementInvocation.prompt_version,'6');assert.equal(improvementInvocation.schema_version,'5');assert.equal(improvementInvocation.input_projection_version,'vocabulary-exercise-authoring.v3');
+  assert.equal(improvementInvocation.prompt_version,'7');assert.equal(improvementInvocation.schema_version,'5');assert.equal(improvementInvocation.input_projection_version,'vocabulary-exercise-authoring.v3');
   assert.equal(improvementInvocation.prompt_template,`\n\n${fs.readFileSync(new URL('../server/vocabulary/reflection-prompts/single-improvement.md',import.meta.url),'utf8')}`);
   assert.throws(()=>normalizeVocabularyReflectionOutput(improve,{...valid,operations:[{...valid.operations[0],acceptedAnswers:['invented']}]}),/answer criteria/);
   assert.throws(()=>normalizeVocabularyReflectionOutput(improve,{...valid,operations:[{...valid.operations[0],sourceContentId:'two'}]}),/source identities/);
@@ -264,7 +264,7 @@ test('strict real injected provider retains service provenance and rejects forge
     assert.equal(opinion.result.proposal,null);assert.equal(opinion.result.secondOpinion?.verdict,'revise');
   }
   const opinionInvocation=sql.prepare("SELECT * FROM model_invocations WHERE prompt_name='vocabulary-reflection-second-opinion'").get()!;
-  assert.equal(opinionInvocation.workflow_id,improve.jobId);assert.equal(opinionInvocation.prompt_version,'2');
+  assert.equal(opinionInvocation.workflow_id,improve.jobId);assert.equal(opinionInvocation.prompt_version,'3');
   assert.equal(opinionInvocation.prompt_template,`${fs.readFileSync(new URL('../server/vocabulary/reflection-prompts/reasoning.md',import.meta.url),'utf8')}\n\n${fs.readFileSync(new URL('../server/vocabulary/reflection-prompts/second-opinion.md',import.meta.url),'utf8')}`);
   const noChangeJob:VocabularyReflectionJob={...improve,secondOpinion:{requestId:'no-change',proposal:null,notes:'Check the answer',diagnosis:'No correction needed'}};
   await provider.run(noChangeJob);

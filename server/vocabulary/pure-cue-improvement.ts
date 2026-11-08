@@ -1,3 +1,4 @@
+import { directCueContainsAcceptedForm } from '../../src/domain/cloze-prompt.ts';
 import { eligibleVocabularyReflectionJob } from './reflection-eligibility.ts';
 import { VocabularyReflectionConflict } from '../db/vocabulary-reflection.ts';
 import { pureCueStimulusRepairErrors } from '../../src/domain/pure-cue-repair.ts';
@@ -72,7 +73,7 @@ export function prepareVocabularyPureCueImprovement(job:VocabularyReflectionJob,
     const authoredText=[output.prompt,output.teachingNote].filter((text):text is string=>typeof text==='string');
     if(copiesPrivateVocabularyEvidence(job,original.accessScope,authoredText))throw new Error('Shared pure-cue text cannot copy private learner evidence');
     const prompt=updatedBody.prompt;
-    if(typeof prompt!=='string'||answers.some(answer=>answer.acceptedForms.some(form=>prompt.includes(form))))throw new Error('Pure-cue stimulus exposes an accepted answer');
+    if(typeof prompt!=='string'||directCueContainsAcceptedForm(prompt,answers.flatMap(answer=>answer.acceptedForms)))throw new Error('Pure-cue stimulus exposes an accepted answer');
     const {version:_version,createdAt:_created,updatedAt:_updated,...draft}=original;
     const operation:VocabularyProposalOperation={operationKey:'pure-cue-review',scope:original.accessScope==='shared'?{kind:'shared'}:{kind:'learner',learnerId:original.ownerLearnerId!},
       strategy:'update_existing',sourceContentId:original.contentId,expectedVersion:original.version,rationale:output.diagnosis,content:{...draft,body:updatedBody,answers,words}};

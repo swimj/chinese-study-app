@@ -173,9 +173,9 @@ English gloss is appropriate when it faithfully evokes a shared referent.
 The frame and cloze form one stimulus, not separate retrieval routes.
 
 For a newly created stimulus, check what the learner sees before answering.
-Do not include the written form or pinyin of any accepted member anywhere in
-that text, even in a contextual example or fixed phrase. Put member-bearing
-examples in the post-reveal teaching note instead.
+Keep accepted written forms and pinyin out of direct cues. A cloze can retain
+another occurrence in natural context while keeping the blank a meaningful
+retrieval task. Use the post-reveal teaching note for usage examples.
 
 The `semanticAxis` describes the shared expressive purpose and its scope, not an
 exhaustive list or pair-specific comparison. All constraints needed to answer

@@ -76,10 +76,11 @@ test('extends only the reviewed cue, preserving members, axis and stimulus with 
 });
 
 test('repair changes only the stimulus and retains every answer and reveal field', () => {
-  const result = improvement(prepareVocabularyPureCueImprovement(job(), original).normalize(decision({ decision: 'repair', addedWordIds: [], prompt: 'Make the size or extent greater.', teachingNote: null })));
+  const prompt = '请先把图片____，再检查放大后的效果。';
+  const result = improvement(prepareVocabularyPureCueImprovement(job(), original).normalize(decision({ decision: 'repair', addedWordIds: [], prompt, teachingNote: null })));
   const content = result.proposal!.operations[0]!.content;
   assert.deepEqual(content, { ...Object.fromEntries(Object.entries(original).filter(([key]) => !['version', 'createdAt', 'updatedAt'].includes(key))),
-    body: { ...(original.body as object), prompt: 'Make the size or extent greater.', stimulus: { kind: 'direct_text', text: 'Make the size or extent greater.' } } });
+    body: { ...(original.body as object), prompt, stimulus: { kind: 'direct_text', text: prompt } } });
   assert.throws(() => prepareVocabularyPureCueImprovement(job(), original).normalize(decision({ decision: 'repair', addedWordIds: [], prompt: 'Use 放大.', teachingNote: null })), /stimulus repair must preserve|exposes an accepted answer/);
   for (const overrides of [{ addedWordIds: ['other'] }, { teachingNote: 'A replacement lesson' }]) {
     assert.throws(() => prepareVocabularyPureCueImprovement(job(), original).normalize(decision({ decision: 'repair', addedWordIds: [], prompt: 'Make it larger.', teachingNote: null, ...overrides })), /stimulus repair must preserve membership and teaching/);
