@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {validateJsonSchema} from '../server/llm/json-schema-validator.ts';
-import {pureCueFlowCases,pureCueFlowSchemas,singleTrialInput,fixedSingleOutput,integrationTrialInput,singleOutputErrors,integrationOutputErrors} from '../scripts/lib/pure-cue-flow-cases.ts';
+import {pureCueFlowCases,pureCueFlowSchemas,singleTrialInput,fixedSingleOutput,integrationTrialInput,singleOutputErrors,integrationOutputErrors,decodeIntegrationReplay} from '../scripts/lib/pure-cue-flow-cases.ts';
 
 test('representative flow cases contain four chains and four isolated integration tasks',()=>{
   const cases=pureCueFlowCases();assert.equal(cases.length,8);assert.equal(new Set(cases.map(c=>c.id)).size,8);
@@ -37,4 +37,13 @@ test('integration guards enforce deterministic destinations while leaving lingui
   assert.deepEqual(integrationOutputErrors(input,extend,'candidate'),[]);
   assert(integrationOutputErrors(input,{...extend,semanticAxis:'New axis'},'candidate').length);
   assert(integrationOutputErrors(input,{...extend,decision:'reuse',teachingNote:null},'candidate').some(e=>e.includes('lacks incoming')));
+});
+
+test('integration replay keeps exact archived user text and refuses schema/model drift',()=>{
+  const fixture=pureCueFlowCases().find(c=>c.id==='reuse-other-scene')!,input=integrationTrialInput(fixture,fixedSingleOutput(fixture,'candidate'),'candidate');
+  const schema=pureCueFlowSchemas('candidate').integration,userPrompt=JSON.stringify(input,null,2)+'\n';
+  const archive={request:{model:'test-model',outputSchema:schema,userPrompt}};
+  const replay=decodeIntegrationReplay(archive,schema,'test-model');assert.equal(replay.userPrompt,userPrompt);assert.deepEqual(replay.input,input);
+  assert.throws(()=>decodeIntegrationReplay(archive,schema,'other-model'),/differs/);
+  assert.throws(()=>decodeIntegrationReplay(archive,pureCueFlowSchemas('baseline').integration,'test-model'),/differs/);
 });

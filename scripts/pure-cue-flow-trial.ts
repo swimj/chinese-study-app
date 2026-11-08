@@ -11,13 +11,13 @@ import {validateJsonSchema} from '../server/llm/json-schema-validator.ts';
 import {reflectionConfigForChoice} from '../server/reflection/model-routing.ts';
 import {isOfferedReflectionModelChoice,LUNA_REFLECTION_MODEL_CHOICE} from '../server/reflection/model-arms.ts';
 import type {ProviderRunRequest,ProviderRawResult} from '../server/llm/types.ts';
-import {pureCueFlowCases,pureCueFlowSchemas,singleTrialInput,integrationTrialInput,fixedSingleOutput,singleOutputErrors,integrationOutputErrors,
+import {pureCueFlowCases,pureCueFlowSchemas,singleTrialInput,integrationTrialInput,fixedSingleOutput,singleOutputErrors,integrationOutputErrors,decodeIntegrationReplay,
   type FlowContract,type PureCueFlowCase,type TrialSingleOutput,type TrialIntegrationOutput} from './lib/pure-cue-flow-cases.ts';
 
 const BASELINE='8b3f0aa1e2adce8173cfc3767ceb6b717c8cece3';
 const root=fileURLToPath(new URL('..',import.meta.url));
 const hash=(value:string)=>createHash('sha256').update(value).digest('hex');
-const {values}=parseArgs({options:{archive:{type:'string'},variant:{type:'string'},contract:{type:'string',default:'candidate'},cases:{type:'string'},'model-choice':{type:'string',default:LUNA_REFLECTION_MODEL_CHOICE},'baseline-revision':{type:'string',default:BASELINE},'allow-provider-calls':{type:'boolean',default:false}}});
+const {values}=parseArgs({options:{archive:{type:'string'},variant:{type:'string'},contract:{type:'string',default:'candidate'},cases:{type:'string'},'model-choice':{type:'string',default:LUNA_REFLECTION_MODEL_CHOICE},'baseline-revision':{type:'string',default:BASELINE},'allow-provider-calls':{type:'boolean',default:false},'replay-integration-from':{type:'string'}}});
 function required(value:string|undefined,name:string):string {if(!value?.trim())throw new Error(`Expected --${name}`);return value;}
 const archive=path.resolve(required(values.archive,'archive')),variant=required(values.variant,'variant');
 if(!/^[A-Za-z0-9_-]+$/.test(variant))throw new Error('Variant must be filesystem safe');
@@ -34,6 +34,29 @@ const schemas=pureCueFlowSchemas(contract),all=pureCueFlowCases();
 const requested=values.cases?.split(',')??all.map(c=>c.id);
 if(new Set(requested).size!==requested.length||requested.length<1||requested.length>8||requested.some(id=>!all.some(c=>c.id===id)))throw new Error('Select one to eight distinct known cases');
 const selected=all.filter(c=>requested.includes(c.id));
+const replayFrom=values['replay-integration-from'];
+if(replayFrom&&(!path.isAbsolute(replayFrom)||contract!=='candidate'))throw new Error('Replay requires an absolute candidate archive path and candidate contract');
+const replayInputs=new Map<string,ReturnType<typeof decodeIntegrationReplay>&{sourceFile:string;sourceSha256:string}>();
+let replayManifest:unknown=null;
+const replaySkipped:Record<string,string>={};
+if(replayFrom){
+  const modelDirectory=path.join(replayFrom,modelSlug);
+  replayManifest=JSON.parse(await readFile(path.join(modelDirectory,'manifest.json'),'utf8')) as unknown;
+  const sourceReview=JSON.parse(await readFile(path.join(modelDirectory,'review.json'),'utf8')) as {reviews:Array<{case:string;status:string}>};
+  for(const fixture of selected){
+    const sourceFile=path.join(modelDirectory,fixture.id,'integration','request.json');
+    let raw:string;
+    try{raw=await readFile(sourceFile,'utf8');}catch(error){
+      if(typeof error==='object'&&error!==null&&'code'in error&&error.code==='ENOENT'){
+        replaySkipped[fixture.id]=sourceReview.reviews.find(item=>item.case===fixture.id)?.status??'no_archived_integration_request';continue;
+      }
+      throw error;
+    }
+    const originalFixture=JSON.parse(await readFile(path.join(modelDirectory,fixture.id,'fixture.json'),'utf8')) as unknown;
+    if(JSON.stringify(originalFixture)!==JSON.stringify(fixture))throw new Error('Replay fixture differs from frozen case');
+    replayInputs.set(fixture.id,{...decodeIntegrationReplay(JSON.parse(raw) as unknown,schemas.integration,config.providerModel),sourceFile,sourceSha256:hash(raw)});
+  }
+}
 const live=values['allow-provider-calls'];
 const apiKey=process.env[config.apiKeyEnvironmentVariable]?.trim();
 if(live&&!apiKey)throw new Error(`${config.apiKeyEnvironmentVariable} is not configured`);
@@ -43,6 +66,7 @@ await mkdir(directory,{recursive:true,mode:0o700});
 const manifest={format:'pure-cue-flow-trial.v1',variant,contract,baselineRevision:baseline,sourceRevision,live,modelChoice:choice,
   settings:{provider:config.provider,model:config.providerModel,reasoningEffort:config.reasoningEffort,maxOutputTokens:config.maxOutputTokens,timeoutMs:config.timeoutMs,temperature:null,cachePrompt:true,structuredOutputMode:config.structuredOutputMode,additionalRequestBody:config.additionalRequestBody??null},
   promptHashes:Object.fromEntries(Object.entries(prompts).map(([key,text])=>[key,hash(text)])),schemaHashes:Object.fromEntries(Object.entries(schemas).map(([key,schema])=>[key,hash(JSON.stringify(schema))])),
+  replay:replayFrom?{sourceDirectory:replayFrom,sourceManifest:replayManifest,inputs:Object.fromEntries([...replayInputs].map(([id,input])=>[id,{sourceFile:input.sourceFile,sourceSha256:input.sourceSha256,userPromptSha256:hash(input.userPrompt)}])),skipped:replaySkipped}:null,
   cases:selected.map(c=>c.id),fixtureSha256:hash(JSON.stringify(selected)),startedAt:new Date().toISOString(),
   limitations:'Synthetic prompt behavior and partial contract guards only. No admission mapping, dictionary identity resolution, database normalization/application, historical snapshots, live learner data, or learner outcomes. Local-plan content is a simplified semantic projection, not a persistence-ready proposal; the synthetic retained member 另外的 does not establish a production lexical identity. Human reviewFocus is withheld from provider messages. One sample per case/model/variant is not a reliability estimate.',
   inputMapping:{single:'Same cue/word/encounter projection for both variants; candidate omits shared teachingNote output.',integration:'Resolved members and local-plan decisions carry from the actual single result. Baseline keeps upstream prompt/note on create; candidate authors final prompt/axis/note. Fixed integration-only candidates use the same visible candidate and intended overlap; only baseline supplies an upstream note.'}};
@@ -51,9 +75,9 @@ await writeFile(path.join(directory,'manifest.json'),JSON.stringify(manifest,nul
 const reviews:Array<Record<string,unknown>>=[];
 async function save(file:string,value:unknown):Promise<void> {await writeFile(file,JSON.stringify(value,null,2)+'\n',{flag:'wx',mode:0o600});}
 type StageResult={parsed:unknown;valid:boolean;structuralErrors:string[];contentErrors:string[];response:ProviderRawResult|null};
-async function runStage(fixture:PureCueFlowCase,stage:'single'|'integration',input:unknown,contentErrors:(value:unknown)=>string[]):Promise<StageResult> {
+async function runStage(fixture:PureCueFlowCase,stage:'single'|'integration',input:unknown,contentErrors:(value:unknown)=>string[],exactUserPrompt?:string):Promise<StageResult> {
   const stageDir=path.join(directory,fixture.id,stage);await mkdir(stageDir,{recursive:true,mode:0o700});
-  const request:ProviderRunRequest={model:config.providerModel,reasoningEffort:config.reasoningEffort,systemPrompt:prompts[stage],userPrompt:JSON.stringify(input),
+  const request:ProviderRunRequest={model:config.providerModel,reasoningEffort:config.reasoningEffort,systemPrompt:prompts[stage],userPrompt:exactUserPrompt??JSON.stringify(input),
     outputSchemaName:`vocabulary_reflection_${stage==='single'?'single_improvement':'pure_cue_promotion'}_v${stage==='single'?(contract==='baseline'?'4':'5'):(contract==='baseline'?'3':'4')}`,
     outputSchema:schemas[stage],maxOutputTokens:config.maxOutputTokens,temperature:null,timeoutMs:config.timeoutMs,cachePrompt:true,clientRequestId:randomUUID()};
   await save(path.join(stageDir,'request.json'),{request,hashes:{systemPrompt:hash(request.systemPrompt),userPrompt:hash(request.userPrompt),outputSchema:hash(JSON.stringify(request.outputSchema))}});
@@ -87,6 +111,12 @@ let next=0;
 await Promise.all(Array.from({length:Math.min(3,selected.length)},async()=>{while(next<selected.length){
   const fixture=selected[next++]!;await mkdir(path.join(directory,fixture.id),{recursive:true,mode:0o700});
   await save(path.join(directory,fixture.id,'fixture.json'),fixture);
+  if(replayFrom){
+    const replay=replayInputs.get(fixture.id);
+    if(!replay){reviews.push({case:fixture.id,reviewFocus:fixture.reviewFocus,status:'no_archived_integration_request',sourceStatus:replaySkipped[fixture.id],single:null});continue;}
+    const integration=await runStage(fixture,'integration',replay.input,value=>integrationOutputErrors(replay.input,value as TrialIntegrationOutput,contract),replay.userPrompt);
+    reviews.push({case:fixture.id,reviewFocus:fixture.reviewFocus,status:live?(integration.valid?'completed':'integration_failed'):'integration_prepared',single:null,integration,replaySource:replay.sourceFile});continue;
+  }
   let single:TrialSingleOutput;let singleResult:StageResult|null=null;
   if(fixture.kind==='chain'){
     singleResult=await runStage(fixture,'single',singleTrialInput(fixture),value=>singleOutputErrors(fixture,value as TrialSingleOutput));

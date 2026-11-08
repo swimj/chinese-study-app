@@ -1,3 +1,4 @@
+import {isDeepStrictEqual} from 'node:util';
 import type {JsonSchema} from '../../src/domain/reflection-result-schema.ts';
 
 export type FlowContract = 'baseline' | 'candidate';
@@ -109,4 +110,17 @@ export function integrationOutputErrors(input:ReturnType<typeof integrationTrial
     }
   }
   return errors;
+}
+
+/** Replays the exact archived user string; only the integration prompt may change. */
+export function decodeIntegrationReplay(value:unknown,schema:JsonSchema,model:string):{input:ReturnType<typeof integrationTrialInput>;userPrompt:string} {
+  if(!value||typeof value!=='object'||!('request'in value))throw new Error('Replay archive lacks request');
+  const request=value.request;
+  if(!request||typeof request!=='object'||!('model'in request)||request.model!==model
+    ||!('outputSchema'in request)||!isDeepStrictEqual(request.outputSchema,schema)
+    ||!('userPrompt'in request)||typeof request.userPrompt!=='string')throw new Error('Replay model/schema/user prompt differs from selected contract');
+  const input:unknown=JSON.parse(request.userPrompt);
+  if(!input||typeof input!=='object'||!('candidates'in input)||!Array.isArray(input.candidates)
+    ||!('existingCues'in input)||!Array.isArray(input.existingCues)||!('referral'in input))throw new Error('Replay input lacks integration evidence');
+  return {input:input as ReturnType<typeof integrationTrialInput>,userPrompt:request.userPrompt};
 }
