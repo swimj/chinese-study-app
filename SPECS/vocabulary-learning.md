@@ -373,15 +373,21 @@ source exercise's mapped sense. Response-word additions create exercises only fo
 unambiguous lexical identities established from actual responses; they do not
 reconcile the response word's repertoire or invent a sense association.
 
-A shared proposal contains its actual visible cue, intended answers, and complete
-teaching note. Integration chooses reuse, extension, or creation without a second
-pedagogical veto, deriving a semantic axis from the authored task when creating
-a new shared exercise. Existing-cue lookup respects publication scope and owner.
-Reuse requires all proposed candidates already to be members of a compatible
-cue. Extension preserves its stimulus, axis, existing members and accepted forms,
-while integrating its accumulated teaching note. Creation preserves the authored
-shared prompt and teaching note unchanged. Notes are mostly English, with Chinese
-where useful.
+The exercise-local assessment decides whether shared practice is worthwhile and
+what its members share. It nominates the intended answers, a candidate cue, and
+a rationale identifying the shared expressive purpose. Integration realizes that
+judgment through reuse, extension, or creation without a second pedagogical veto.
+It owns the final shared stimulus, semantic axis, and teaching note; creation may
+refine the candidate's presentation while preserving its intended meaning and all
+proposed members. The axis describes a graspable expressive instinct rather than
+the incidental details of an example scene.
+
+Existing-cue lookup respects publication scope and owner. Reuse requires all
+proposed candidates already to be members of a compatible cue. Different example
+scenes can practice the same shared purpose, but every incoming and retained
+member must naturally answer the actual destination stimulus. Extension preserves
+its stimulus, axis, existing members and accepted forms while integrating its
+accumulated teaching note. Notes are mostly English, with Chinese where useful.
 
 A submitted form can become an answer in shared or individual practice only when
 it matches one dictionary identity. Missing or ambiguous forms inform the

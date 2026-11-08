@@ -47,3 +47,20 @@ test('integration replay keeps exact archived user text and refuses schema/model
   assert.throws(()=>decodeIntegrationReplay(archive,schema,'other-model'),/differs/);
   assert.throws(()=>decodeIntegrationReplay(archive,pureCueFlowSchemas('baseline').integration,'test-model'),/differs/);
 });
+
+test('frozen candidate trial schemas match the active production contracts',async()=>{
+  const {vocabularySingleImprovementSchema}=await import('../server/vocabulary/exercise-improvement-authoring.ts');
+  const {vocabularyPureCueIntegrationSchema}=await import('../server/vocabulary/pure-cue-promotion.ts');
+  assert.deepEqual(pureCueFlowSchemas('candidate').single,vocabularySingleImprovementSchema);
+  assert.deepEqual(pureCueFlowSchemas('candidate').integration,vocabularyPureCueIntegrationSchema);
+});
+
+test('trial answer references match exact production call-local identities',()=>{
+  const fixture=pureCueFlowCases().find(c=>c.id==='reuse-other-scene')!;
+  for(const ref of ['response_0','response_01','1','response_']){
+    const output=fixedSingleOutput(fixture,'candidate');
+    output.sharedExercise!.answers=['target',ref];
+    assert(singleOutputErrors(fixture,output).includes('Unknown supplied answer reference'));
+    assert.throws(()=>integrationTrialInput(fixture,output,'candidate'),/Unknown supplied/);
+  }
+});

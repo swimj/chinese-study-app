@@ -16,7 +16,7 @@ flowchart TD
   Practice -->|Yes| Covered[Record already covered]
   Practice -->|No| Bootstrap[Selected repertoire bootstrap]
   Fallback -->|No| Map[Map authored intended use]
-  Map -->|Single sense| Local[Coherent local plan and concrete shared draft]
+  Map -->|Single sense| Local[Coherent local plan and shared candidate]
   Map -->|Unmappable or inventory gap| Attention[Operator attention]
   Local --> Shared{Shared draft?}
   Shared -->|No| Proposal[Proposal or no-change finding]
@@ -111,13 +111,13 @@ ends that replacement gate rather than permanently freezing future default edits
   not a clue the learner necessarily saw.
 - **Local planning** receives the mapped intended use, judges the original cue,
   and produces one coherent plan: a source decision, additional target or
-  response-word exercises, and an optional complete shared draft. It can retire the original
+  response-word exercises, and an optional shared-practice candidate. It can retire the original
   without excluding its sense. Raw responses and reactions inform the judgment.
 - **Integration** inspects eligible overlapping shared cues. It reuses a compatible
   cue already accepting all candidates, extends a compatible cue preserving all
-  existing content except its integrated teaching note, or creates the exact
-  upstream prompt and teaching note with an axis derived from that task. It
-  does not repeat the pedagogical decision. Unresolved
+  existing content except its integrated teaching note, or authors a new stimulus,
+  axis, and note realizing the nominated shared purpose. It can refine the
+  candidate's presentation but does not repeat the pedagogical decision. Unresolved
   identities withhold the complete plan for operator resolution.
 - **Application** requires operator review. Shared changes and local refinements
   form one proposal; reuse is an assessment without a shared edit. Operators can
@@ -281,8 +281,9 @@ admission stage-result cache.
 
 ### Shared integration and unresolved identities
 
-`single-improvement.md` owns the pedagogical judgment and authors the complete
-shared exercise. The adapter translates supplied answer references into the
+`single-improvement.md` owns the pedagogical judgment and nominates a shared
+candidate with answers, a cue, and a rationale describing its expressive purpose.
+It does not author the final axis or teaching note. The adapter translates supplied answer references into the
 internal referral used for integration; this persistence boundary does not appear
 in the authoring prompt. A short `summary` carries the
 overall operator recommendation. Each exercise's rationale explains its own
@@ -304,10 +305,15 @@ supplies eligible active overlapping pure cues in the same publication scope and
 receives the assessment, local plan, referral, candidates, and existing cues.
 Its only decisions are reuse, extend, and create. The backend supplies all
 resolved candidates deterministically. Extension retains every existing member,
-accepted form, stimulus, and axis while integrating the note; creation uses the
-upstream prompt and note unchanged and derives its semantic axis from that task.
-The derived axis cannot broaden or redesign the authored practice. Identity,
-privacy, and answer-leak guards apply even when integration selects reuse.
+accepted form, stimulus, and axis while integrating the note; creation authors
+the final prompt, semantic axis, and teaching note. The candidate's presentation
+can change while its nominated meaning and membership are preserved. The adapter
+retains the candidate rationale as shared-purpose context rather than copying its
+example sentence into that field. Identity, privacy, and answer-leak guards apply
+even when integration selects reuse. Lookup remains bounded to eligible cues
+sharing an incoming member; semantic similarity without member overlap is not a
+retrieval mechanism. Destination judgment compares expressive purposes and actual
+stimulus compatibility, rather than requiring identical example scenes.
 
 Historical saved assessments can contain shared answers whose identities are
 missing or ambiguous. Their complete local proposal is retained as `pendingPlan`

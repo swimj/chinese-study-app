@@ -1,0 +1,1075 @@
+{
+  "baselineRevision": "8b3f0aa1e2adce8173cfc3767ceb6b717c8cece3",
+  "scope": "Synthetic prompt experiment; counts are structural checks, not linguistic quality scores. Raw exact calls retained locally in tmp/pure-cue-flow-eval-2026-11-08.",
+  "batches": [
+    {
+      "variant": "baseline",
+      "modelChoice": "openai:gpt-6-luna-high",
+      "promptHashes": {
+        "single": "4d97ed582fb5e80618a38ce6855b6d8b8d00561a7a84aabe350b9b1a056df20e",
+        "integration": "0e3404056b5e684633fd084b5b9572b7dda3171f6cfb71873e4561395b15d6d4"
+      },
+      "fixtureSha256": "e8a24c61b84d1524d8cef550e5870dd1ab86fcac3dc15ed3f52d92f615b85c77",
+      "cases": [
+        {
+          "case": "extend-retained-member",
+          "status": "completed",
+          "integration": {
+            "decision": "extend",
+            "axis": null,
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "fashion-apparel-overlap",
+          "status": "no_shared_candidate",
+          "nomination": {
+            "shared": false,
+            "source": {
+              "decision": "revise",
+              "prompt": "The styles and trends popular at a particular time, especially in clothing—not the clothes themselves."
+            },
+            "summary": "服装 is a natural response: the cue explicitly includes clothing, and the Mandarin sentence fits interest in clothing and its designs. But 服装 means clothing, not fashion as a field of styles and trends. Revise the cue to focus on that intended meaning rather than treating the two concepts as interchangeable.",
+            "rationale": null,
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "fixed-construction-incompatible",
+          "status": "completed",
+          "integration": {
+            "decision": "create",
+            "axis": "Expressing the reason or cause behind something.",
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "interruption-construction",
+          "status": "completed",
+          "nomination": {
+            "shared": true,
+            "source": {
+              "decision": "retire",
+              "prompt": null
+            },
+            "summary": "打断 was rejected, but it naturally completes the sentence; 中断 does too. Since both describe the interruption of an ongoing conversation here, retire the single-answer exercise in favor of shared practice.",
+            "rationale": "Accepts both natural answers while practicing how an ongoing conversation can be interrupted.",
+            "valid": true,
+            "errors": []
+          },
+          "integration": {
+            "decision": "create",
+            "axis": "An event interrupts or breaks off an ongoing conversation.",
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "population-vs-timing",
+          "status": "completed",
+          "nomination": {
+            "shared": true,
+            "source": {
+              "decision": "retire",
+              "prompt": null
+            },
+            "summary": "密集 naturally completes the population cue, so the rejection does not mean the learner’s answer was unnatural. The review request does not identify a specific difficulty; replace the single-answer task with shared practice, and offer an optional example for 密集’s use with closely scheduled events.",
+            "rationale": "Lets either natural expression answer the population-density task.",
+            "valid": true,
+            "errors": []
+          },
+          "integration": {
+            "decision": "create",
+            "axis": "Describing an area as densely populated in the construction 这个地区人口____。",
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "reuse-other-scene",
+          "status": "completed",
+          "integration": {
+            "decision": "reuse",
+            "axis": null,
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "same-members-different-sense",
+          "status": "completed",
+          "integration": {
+            "decision": "create",
+            "axis": "Expressing that a matter has no connection to the speaker, in the construction 这件事跟我……。",
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "scissors-referent",
+          "status": "completed",
+          "nomination": {
+            "shared": true,
+            "source": {
+              "decision": "retire",
+              "prompt": null
+            },
+            "summary": "剪子 is a natural, colloquial word for scissors and fits 一把剪子. The cue clearly evokes the intended tool, so the rejection reflects the single-answer format rather than a poor response. Retire it in favor of shared practice.",
+            "rationale": "Accepts both natural ways to name the tool in the original sentence.",
+            "valid": true,
+            "errors": []
+          },
+          "integration": {
+            "decision": "create",
+            "axis": "Naming a pair of scissors as the requested object in 请给我一把____。",
+            "valid": true,
+            "errors": []
+          }
+        }
+      ]
+    },
+    {
+      "variant": "baseline",
+      "modelChoice": "openai:gpt-6-sol-high",
+      "promptHashes": {
+        "single": "4d97ed582fb5e80618a38ce6855b6d8b8d00561a7a84aabe350b9b1a056df20e",
+        "integration": "0e3404056b5e684633fd084b5b9572b7dda3171f6cfb71873e4561395b15d6d4"
+      },
+      "fixtureSha256": "e8a24c61b84d1524d8cef550e5870dd1ab86fcac3dc15ed3f52d92f615b85c77",
+      "cases": [
+        {
+          "case": "extend-retained-member",
+          "status": "completed",
+          "integration": {
+            "decision": "extend",
+            "axis": null,
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "fashion-apparel-overlap",
+          "status": "completed",
+          "nomination": {
+            "shared": true,
+            "source": {
+              "decision": "revise",
+              "prompt": "She follows fashion beyond clothing, including makeup and hairstyles: 她对____很感兴趣，除了服装，也关注妆容和发型的流行趋势。"
+            },
+            "summary": "The cue explicitly says “fashion or clothing,” and 服装 naturally fits someone following new designs. Keep that meaning as shared practice, and revise the original to cue 时尚 as a broader field that includes more than clothes.",
+            "rationale": "Accepts both natural answers to the original cue while clarifying their difference in scope.",
+            "valid": true,
+            "errors": []
+          },
+          "integration": {
+            "decision": "create",
+            "axis": "Expressing interest in fashion or clothing with 对…很感兴趣, alongside following the latest designs.",
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "fixed-construction-incompatible",
+          "status": "completed",
+          "integration": {
+            "decision": "create",
+            "axis": "Naming the reason or cause behind something.",
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "interruption-construction",
+          "status": "completed",
+          "nomination": {
+            "shared": true,
+            "source": {
+              "decision": "revise",
+              "prompt": "Our conversation stops midway when the phone rings: 电话突然响了，我们的谈话暂时____了。"
+            },
+            "summary": "打断 naturally completes the phone-bell sentence, so rejecting it treats a valid answer as wrong. Revise the source to practice 谈话中断了, where the conversation itself stops, and use the original sentence as shared practice for both words.",
+            "rationale": "Accepts both natural ways to describe the bell interrupting the conversation.",
+            "valid": true,
+            "errors": []
+          },
+          "integration": {
+            "decision": "create",
+            "axis": "Describing a sudden phone bell interrupting the continuity of a conversation, in the construction 铃声____了我们的谈话。",
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "population-vs-timing",
+          "status": "completed",
+          "nomination": {
+            "shared": true,
+            "source": {
+              "decision": "retire",
+              "prompt": null
+            },
+            "summary": "Both 稠密 and 密集 naturally complete the population cue, so the rejected answer was reasonable. Retire the single-answer exercise in favor of shared practice. The optional interview example practices 密集 for events scheduled close together.",
+            "rationale": "Accepts both natural expressions for population density.",
+            "valid": true,
+            "errors": []
+          },
+          "integration": {
+            "decision": "create",
+            "axis": "Describing an area as densely populated with 人口稠密 or 人口密集.",
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "reuse-other-scene",
+          "status": "completed",
+          "integration": {
+            "decision": "reuse",
+            "axis": null,
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "same-members-different-sense",
+          "status": "completed",
+          "integration": {
+            "decision": "create",
+            "axis": "Stating that a matter has nothing to do with a person in the construction 这件事跟我____。",
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "scissors-referent",
+          "status": "completed",
+          "nomination": {
+            "shared": true,
+            "source": {
+              "decision": "retire",
+              "prompt": null
+            },
+            "summary": "剪子 is a natural answer to 请给我一把____, not a different cutting tool. Retire the single-answer exercise and use the same cue as shared practice for 剪刀 and 剪子.",
+            "rationale": "Practices the natural 一把…… expression without rejecting a valid name for the tool.",
+            "valid": true,
+            "errors": []
+          },
+          "integration": {
+            "decision": "create",
+            "axis": "Requesting a pair of scissors using 请给我一把____。",
+            "valid": true,
+            "errors": []
+          }
+        }
+      ]
+    },
+    {
+      "variant": "baseline",
+      "modelChoice": "zai:glm-5.3-flash-high",
+      "promptHashes": {
+        "single": "4d97ed582fb5e80618a38ce6855b6d8b8d00561a7a84aabe350b9b1a056df20e",
+        "integration": "0e3404056b5e684633fd084b5b9572b7dda3171f6cfb71873e4561395b15d6d4"
+      },
+      "fixtureSha256": "e8a24c61b84d1524d8cef550e5870dd1ab86fcac3dc15ed3f52d92f615b85c77",
+      "cases": [
+        {
+          "case": "extend-retained-member",
+          "status": "completed",
+          "integration": {
+            "decision": "extend",
+            "axis": null,
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "fashion-apparel-overlap",
+          "status": "single_failed",
+          "nomination": {
+            "shared": false,
+            "source": {
+              "decision": "revise",
+              "prompt": "Fashion — current styles and trends — as a field of interest: 她对____很感兴趣，经常关注最新的设计。"
+            },
+            "summary": "The English frame says 'fashion or clothing', so 服装 (clothing) is an understandable response, and both words also read naturally in the sentence. 服装 and 时尚 name different things, so no shared cue applies; the repair is to focus the frame on fashion and current trends, which only 时尚 expresses. An optional extra sentence practices 时尚's 'stylish' use.",
+            "rationale": null,
+            "valid": false,
+            "errors": [
+              "$.additionalExercises[0].rationale: required property is missing"
+            ]
+          }
+        },
+        {
+          "case": "fixed-construction-incompatible",
+          "status": "completed",
+          "integration": {
+            "decision": "create",
+            "axis": "Producing the noun for the reason or cause behind something, covering 原因 in general reason/cause naming and 缘故 in its characteristic patterns such as 不知什么缘故 and 是天气的缘故.",
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "interruption-construction",
+          "status": "completed",
+          "nomination": {
+            "shared": true,
+            "source": {
+              "decision": "retire",
+              "prompt": null
+            },
+            "summary": "The learner's 打断 is a fully natural answer: 电话铃声打断了我们的谈话 is idiomatic, and 中断 is equally acceptable in this slot. The single-answer exercise was rightly rejected for no linguistic reason. Replace it with shared practice, and use the teaching note to distinguish the two: 打断 centers on cutting into someone's speech or action (别打断他), while 中断 centers on an ongoing activity or process coming to a stop (会议中断，网络中断). An optional enrichment adds practice with 中断 for a connection dropping, where 打断 does not fit.",
+            "rationale": "Both words naturally complete the conversation-interruption slot, so the task becomes shared practice instead of unfairly rejecting 打断.",
+            "valid": true,
+            "errors": []
+          },
+          "integration": {
+            "decision": "create",
+            "axis": "Producing a verb for something cutting short an ongoing conversation or activity: completing the slot in 突然响起的电话铃声____了我们的谈话。 with 打断 (cutting into someone's speech or action) or 中断 (an ongoing activity or process coming to a stop). Scope is the shared interruption-of-an-ongoing-event construction; uses where only one word fits, such as a connection dropping (网络中断), are outside this shared task.",
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "population-vs-timing",
+          "status": "completed",
+          "nomination": {
+            "shared": true,
+            "source": {
+              "decision": "retire",
+              "prompt": null
+            },
+            "summary": "Both 稠密 and 密集 naturally complete the population cue, so retire the single-answer exercise in favor of shared practice. The optional interview example adds practice with 密集 for events scheduled close together.",
+            "rationale": "Lets either natural expression answer the population-density task.",
+            "valid": true,
+            "errors": []
+          },
+          "integration": {
+            "decision": "create",
+            "axis": "Completing the population cue 这个地区人口____。 to describe an area as densely populated; both 人口稠密 and 人口密集 answer the same population-density task.",
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "reuse-other-scene",
+          "status": "completed",
+          "integration": {
+            "decision": "reuse",
+            "axis": null,
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "same-members-different-sense",
+          "status": "completed",
+          "integration": {
+            "decision": "create",
+            "axis": "Expressing that a matter is unrelated to a person: stating lack of connection between a matter and oneself in the pattern 这件事跟我____， accepting both the colloquial 没关系 and the more formal 无关.",
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "scissors-referent",
+          "status": "completed",
+          "nomination": {
+            "shared": true,
+            "source": {
+              "decision": "retire",
+              "prompt": null
+            },
+            "summary": "Both 剪刀 and 剪子 are natural answers to the scissors cue; 剪子 is the colloquial term and fits 请给我一把____ perfectly. The rejection was unfair. Replace the single-answer exercise with shared practice and a teaching note on register.",
+            "rationale": "Lets either natural expression answer the scissors task and explains the register difference.",
+            "valid": true,
+            "errors": []
+          },
+          "integration": {
+            "decision": "create",
+            "axis": "Producing the everyday noun for a pair of scissors in the request frame 请给我一把____, where both 剪刀 and its colloquial variant 剪子 are natural and both take the measure word 把.",
+            "valid": true,
+            "errors": []
+          }
+        }
+      ]
+    },
+    {
+      "variant": "candidate",
+      "modelChoice": "openai:gpt-6-luna-high",
+      "promptHashes": {
+        "single": "069246d92f0a57085057c58bd9eb80370d9076ac78c500ae34ecb88288679a1f",
+        "integration": "c35f062bb5c4692090211bac5dc1ccaaccf66d0233ceac9735d046d909c88052"
+      },
+      "fixtureSha256": "e8a24c61b84d1524d8cef550e5870dd1ab86fcac3dc15ed3f52d92f615b85c77",
+      "cases": [
+        {
+          "case": "extend-retained-member",
+          "status": "completed",
+          "integration": {
+            "decision": "extend",
+            "axis": null,
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "fashion-apparel-overlap",
+          "status": "completed",
+          "nomination": {
+            "shared": true,
+            "source": {
+              "decision": "revise",
+              "prompt": "She has a good sense of fashion: 她的穿搭很有____感。"
+            },
+            "summary": "服装 is a natural answer to the cue as written, which explicitly includes clothing. Use the original task for shared practice, and revise the single-answer source to practice 时尚 in the distinctive collocation 时尚感.",
+            "rationale": "Both words naturally describe what she is interested in while following new designs, so this preserves the original task without treating 服装 as wrong.",
+            "valid": true,
+            "errors": []
+          },
+          "integration": {
+            "decision": "create",
+            "axis": "Fashion or clothing as an area of interest, especially in relation to new designs and trends.",
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "fixed-construction-incompatible",
+          "status": "completed",
+          "integration": {
+            "decision": "create",
+            "axis": "Naming the reason or cause behind something.",
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "interruption-construction",
+          "status": "completed",
+          "nomination": {
+            "shared": true,
+            "source": {
+              "decision": "retire",
+              "prompt": null
+            },
+            "summary": "打断自然 fits the sentence, so its rejection does not show that it is a bad answer. Retire the single-answer exercise in favor of shared practice, and add a 中断-specific construction where the conversation itself comes to a halt.",
+            "rationale": "Both words naturally describe the phone ring breaking in on an ongoing conversation.",
+            "valid": true,
+            "errors": []
+          },
+          "integration": {
+            "decision": "create",
+            "axis": "Interrupting an ongoing conversation and breaking its flow.",
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "population-vs-timing",
+          "status": "completed",
+          "nomination": {
+            "shared": true,
+            "source": {
+              "decision": "retire",
+              "prompt": null
+            },
+            "summary": "Both 稠密 and 密集 naturally complete the population cue, so retire the single-answer exercise in favor of shared practice. The optional interview example adds practice with 密集 for events scheduled close together.",
+            "rationale": "Lets either natural expression answer the population-density task.",
+            "valid": true,
+            "errors": []
+          },
+          "integration": {
+            "decision": "create",
+            "axis": "Describing an area as densely populated.",
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "reuse-other-scene",
+          "status": "completed",
+          "integration": {
+            "decision": "reuse",
+            "axis": null,
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "same-members-different-sense",
+          "status": "completed",
+          "integration": {
+            "decision": "create",
+            "axis": "Expressing that a matter has no connection to the speaker.",
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "scissors-referent",
+          "status": "completed",
+          "nomination": {
+            "shared": true,
+            "source": {
+              "decision": "retire",
+              "prompt": null
+            },
+            "summary": "剪子 is a natural colloquial name for scissors and fits 请给我一把____ just as 剪刀 does, so the rejection reflects an overly narrow answer key. Retire the single-answer exercise in favor of shared practice.",
+            "rationale": "Both words naturally name the cutting tool and fit the 一把____ construction.",
+            "valid": true,
+            "errors": []
+          },
+          "integration": {
+            "decision": "create",
+            "axis": "Asking for scissors using the 一把 construction.",
+            "valid": true,
+            "errors": []
+          }
+        }
+      ]
+    },
+    {
+      "variant": "candidate",
+      "modelChoice": "openai:gpt-6-sol-high",
+      "promptHashes": {
+        "single": "069246d92f0a57085057c58bd9eb80370d9076ac78c500ae34ecb88288679a1f",
+        "integration": "c35f062bb5c4692090211bac5dc1ccaaccf66d0233ceac9735d046d909c88052"
+      },
+      "fixtureSha256": "e8a24c61b84d1524d8cef550e5870dd1ab86fcac3dc15ed3f52d92f615b85c77",
+      "cases": [
+        {
+          "case": "extend-retained-member",
+          "status": "completed",
+          "integration": {
+            "decision": "extend",
+            "axis": null,
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "fashion-apparel-overlap",
+          "status": "single_failed",
+          "nomination": {
+            "shared": true,
+            "source": {
+              "decision": "revise",
+              "prompt": "She wants to keep her style fashionable and follows new clothing designs: 她追求____，经常关注最新的服装设计。"
+            },
+            "summary": "服装 is a natural answer: the cue explicitly says “fashion or clothing,” and the sentence mentions new designs. Revise the original to practice 追求时尚, a distinctive way to express interest in fashionable style, and use shared practice for the broader interest-in-designs cue.",
+            "rationale": "Both words naturally express an interest relevant to new clothing designs, though 时尚 refers to fashion or trends more broadly and 服装 to clothing.",
+            "valid": false,
+            "errors": [
+              "Stimulus exposes accepted answer"
+            ]
+          }
+        },
+        {
+          "case": "fixed-construction-incompatible",
+          "status": "completed",
+          "integration": {
+            "decision": "create",
+            "axis": "Naming the reason or cause behind an event or situation.",
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "interruption-construction",
+          "status": "completed",
+          "nomination": {
+            "shared": true,
+            "source": {
+              "decision": "retire",
+              "prompt": null
+            },
+            "summary": "打断 is a natural answer here: a sudden phone ring can 打断 or 中断 a conversation. Retire the single-answer exercise and use the same situation for shared practice.",
+            "rationale": "Practices both natural ways to express an interruption of the conversation.",
+            "valid": true,
+            "errors": []
+          },
+          "integration": {
+            "decision": "create",
+            "axis": "Interrupting the flow of an ongoing conversation.",
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "population-vs-timing",
+          "status": "completed",
+          "nomination": {
+            "shared": true,
+            "source": {
+              "decision": "retire",
+              "prompt": null
+            },
+            "summary": "Both 稠密 and 密集 naturally complete the population cue. Retire the single-answer exercise in favor of shared practice. An optional interview example practices 密集 for events scheduled close together.",
+            "rationale": "Accepts both natural ways to describe a dense distribution of population.",
+            "valid": true,
+            "errors": []
+          },
+          "integration": {
+            "decision": "create",
+            "axis": "Describing a place as having a dense concentration of population.",
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "reuse-other-scene",
+          "status": "completed",
+          "integration": {
+            "decision": "reuse",
+            "axis": null,
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "same-members-different-sense",
+          "status": "completed",
+          "integration": {
+            "decision": "create",
+            "axis": "Saying that a matter has no connection to a person.",
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "scissors-referent",
+          "status": "completed",
+          "nomination": {
+            "shared": true,
+            "source": {
+              "decision": "retire",
+              "prompt": null
+            },
+            "summary": "一把剪子 and 一把剪刀 are both natural ways to ask for scissors. The rejected answer fits the cue, so retire the single-answer exercise and use it as shared practice; 剪子 is more colloquial.",
+            "rationale": "Practices either natural way to request the cutting tool.",
+            "valid": true,
+            "errors": []
+          },
+          "integration": {
+            "decision": "create",
+            "axis": "Naming a pair of scissors when asking for one.",
+            "valid": true,
+            "errors": []
+          }
+        }
+      ]
+    },
+    {
+      "variant": "candidate",
+      "modelChoice": "zai:glm-5.3-flash-high",
+      "promptHashes": {
+        "single": "069246d92f0a57085057c58bd9eb80370d9076ac78c500ae34ecb88288679a1f",
+        "integration": "c35f062bb5c4692090211bac5dc1ccaaccf66d0233ceac9735d046d909c88052"
+      },
+      "fixtureSha256": "e8a24c61b84d1524d8cef550e5870dd1ab86fcac3dc15ed3f52d92f615b85c77",
+      "cases": [
+        {
+          "case": "extend-retained-member",
+          "status": "completed",
+          "integration": {
+            "decision": "extend",
+            "axis": null,
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "fashion-apparel-overlap",
+          "status": "integration_failed",
+          "nomination": {
+            "shared": true,
+            "source": {
+              "decision": "retire",
+              "prompt": null
+            },
+            "summary": "The cue's own frame says 'fashion or clothing', so 服装 is a natural answer to the sentence, not an error; the exercise labels a genuinely two-answer task as single-answer. Convert it to shared practice where either word completes 她对____很感兴趣. An optional extra practices 时尚's adjectival 'stylish' use, which 服装 cannot fill.",
+            "rationale": "Both 时尚 and 服装 naturally name the area of interest in this slot; the frame already evokes both, so shared practice accepts either natural answer while a teaching note can distinguish fashion-as-trend from clothing as such.",
+            "valid": true,
+            "errors": []
+          },
+          "integration": {
+            "decision": "create",
+            "axis": "Expressing interest in (or involvement with) the world of fashion and clothing as an area or field, where either 时尚 (fashion as a trend/style phenomenon) or 服装 (clothing as such) naturally names that area of interest.",
+            "valid": false,
+            "errors": [
+              "$.rationale: required property is missing"
+            ]
+          }
+        },
+        {
+          "case": "fixed-construction-incompatible",
+          "status": "integration_failed",
+          "integration": {
+            "decision": "create",
+            "axis": "Naming the reason or cause behind something, as a compact meaning that can be produced directly without a fixed sentence frame.",
+            "valid": false,
+            "errors": [
+              "$.existingContentId_note: unknown property"
+            ]
+          }
+        },
+        {
+          "case": "interruption-construction",
+          "status": "completed",
+          "nomination": {
+            "shared": true,
+            "source": {
+              "decision": "retire",
+              "prompt": null
+            },
+            "summary": "The phone-ring sentence is a natural expression of an interrupted conversation for both words: 电话铃声打断了我们的谈话 and 中断了我们的谈话 both work, so rejecting 打断 was unfair. The cue evokes a shared meaning rather than a distinctive use of 中断, so retire the single-answer exercise in favor of shared practice.",
+            "rationale": "Both 中断 and 打断 naturally describe something cutting off an ongoing activity such as a conversation; the cue lets either natural answer express that interruption.",
+            "valid": true,
+            "errors": []
+          },
+          "integration": {
+            "decision": "create",
+            "axis": "Describing something cutting off an ongoing activity, such as a conversation, so that either natural answer expresses the interruption.",
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "population-vs-timing",
+          "status": "completed",
+          "nomination": {
+            "shared": true,
+            "source": {
+              "decision": "retire",
+              "prompt": null
+            },
+            "summary": "Both 稠密 and 密集 naturally complete the population cue (人口稠密 / 人口密集 are both standard), so the rejected response was a natural answer; retire the single-answer exercise in favor of shared practice. The optional interview example adds practice with 密集 for events scheduled close together.",
+            "rationale": "Lets either natural expression answer the population-density task; both 人口稠密 and 人口密集 describe a densely populated area.",
+            "valid": true,
+            "errors": []
+          },
+          "integration": {
+            "decision": "create",
+            "axis": "Describing a place as densely populated, where either 稠密 or 密集 naturally completes the population-density expression (人口稠密 / 人口密集).",
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "reuse-other-scene",
+          "status": "completed",
+          "integration": {
+            "decision": "reuse",
+            "axis": null,
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "same-members-different-sense",
+          "status": "completed",
+          "integration": {
+            "decision": "create",
+            "axis": "Stating that a matter has no connection with a person — saying that something does not concern or involve someone.",
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "scissors-referent",
+          "status": "completed",
+          "nomination": {
+            "shared": true,
+            "source": {
+              "decision": "retire",
+              "prompt": null
+            },
+            "summary": "Both 剪刀 and 剪子 are natural, colloquially standard names for scissors, and both fit the measure word 把 in the cue 请给我一把____. Rejecting 剪子 treats an equally natural answer as a mistake, so the single-answer exercise should be retired in favor of shared practice for the scissors concept.",
+            "rationale": "Both words naturally name the cutting tool and complete the request with 把, so either answer should be accepted; a teaching note can mention that 剪子 is the more colloquial variant.",
+            "valid": true,
+            "errors": []
+          },
+          "integration": {
+            "decision": "create",
+            "axis": "Naming the cutting tool scissors in a request, compatible with the measure word 把 (一把剪刀 / 一把剪子).",
+            "valid": true,
+            "errors": []
+          }
+        }
+      ]
+    },
+    {
+      "variant": "candidate-lexical-contribution",
+      "modelChoice": "openai:gpt-6-luna-high",
+      "promptHashes": {
+        "single": "069246d92f0a57085057c58bd9eb80370d9076ac78c500ae34ecb88288679a1f",
+        "integration": "5f19b51447387869616e2724923b4d52c895355a04fe4fb6c8c6dc047710e48f"
+      },
+      "fixtureSha256": "e8a24c61b84d1524d8cef550e5870dd1ab86fcac3dc15ed3f52d92f615b85c77",
+      "cases": [
+        {
+          "case": "extend-retained-member",
+          "status": "completed",
+          "integration": {
+            "decision": "extend",
+            "axis": null,
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "fashion-apparel-overlap",
+          "status": "completed",
+          "integration": {
+            "decision": "create",
+            "axis": "Naming fashion or clothing as the subject of someone's interest, especially in relation to new designs.",
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "fixed-construction-incompatible",
+          "status": "completed",
+          "integration": {
+            "decision": "create",
+            "axis": "The reason or cause behind an event or situation.",
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "interruption-construction",
+          "status": "completed",
+          "integration": {
+            "decision": "create",
+            "axis": "Interrupting or breaking into an ongoing conversation.",
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "population-vs-timing",
+          "status": "completed",
+          "integration": {
+            "decision": "create",
+            "axis": "Describing a place as having a dense population.",
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "reuse-other-scene",
+          "status": "completed",
+          "integration": {
+            "decision": "reuse",
+            "axis": null,
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "same-members-different-sense",
+          "status": "completed",
+          "integration": {
+            "decision": "create",
+            "axis": "Saying that something has no connection to a particular person.",
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "scissors-referent",
+          "status": "completed",
+          "integration": {
+            "decision": "create",
+            "axis": "Naming the hand tool used for cutting.",
+            "valid": true,
+            "errors": []
+          }
+        }
+      ]
+    },
+    {
+      "variant": "candidate-lexical-contribution",
+      "modelChoice": "openai:gpt-6-sol-high",
+      "promptHashes": {
+        "single": "069246d92f0a57085057c58bd9eb80370d9076ac78c500ae34ecb88288679a1f",
+        "integration": "5f19b51447387869616e2724923b4d52c895355a04fe4fb6c8c6dc047710e48f"
+      },
+      "fixtureSha256": "e8a24c61b84d1524d8cef550e5870dd1ab86fcac3dc15ed3f52d92f615b85c77",
+      "cases": [
+        {
+          "case": "extend-retained-member",
+          "status": "completed",
+          "integration": {
+            "decision": "extend",
+            "axis": null,
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "fashion-apparel-overlap",
+          "status": "no_archived_integration_request"
+        },
+        {
+          "case": "fixed-construction-incompatible",
+          "status": "completed",
+          "integration": {
+            "decision": "create",
+            "axis": "Naming the reason or cause of something.",
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "interruption-construction",
+          "status": "completed",
+          "integration": {
+            "decision": "create",
+            "axis": "Interrupting an ongoing conversation.",
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "population-vs-timing",
+          "status": "completed",
+          "integration": {
+            "decision": "create",
+            "axis": "Describing a place as densely populated.",
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "reuse-other-scene",
+          "status": "completed",
+          "integration": {
+            "decision": "reuse",
+            "axis": null,
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "same-members-different-sense",
+          "status": "completed",
+          "integration": {
+            "decision": "create",
+            "axis": "Saying that a matter has no connection to or involvement with a person.",
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "scissors-referent",
+          "status": "completed",
+          "integration": {
+            "decision": "create",
+            "axis": "Naming scissors, the handheld cutting tool.",
+            "valid": true,
+            "errors": []
+          }
+        }
+      ]
+    },
+    {
+      "variant": "candidate-lexical-contribution",
+      "modelChoice": "zai:glm-5.3-flash-high",
+      "promptHashes": {
+        "single": "069246d92f0a57085057c58bd9eb80370d9076ac78c500ae34ecb88288679a1f",
+        "integration": "5f19b51447387869616e2724923b4d52c895355a04fe4fb6c8c6dc047710e48f"
+      },
+      "fixtureSha256": "e8a24c61b84d1524d8cef550e5870dd1ab86fcac3dc15ed3f52d92f615b85c77",
+      "cases": [
+        {
+          "case": "extend-retained-member",
+          "status": "completed",
+          "integration": {
+            "decision": "extend",
+            "axis": null,
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "fashion-apparel-overlap",
+          "status": "completed",
+          "integration": {
+            "decision": "create",
+            "axis": "Naming the domain of fashion or clothing as an object of interest — expressing that someone cares about and follows what is fashionable or what people wear.",
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "fixed-construction-incompatible",
+          "status": "completed",
+          "integration": {
+            "decision": "create",
+            "axis": "Naming the reason or cause behind something, directly rather than through a specific scene or construction.",
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "interruption-construction",
+          "status": "completed",
+          "integration": {
+            "decision": "create",
+            "axis": "Something cutting off an ongoing activity — an event or action that brings a conversation or other in-progress activity to a stop, so that either natural description of the interruption expresses the meaning.",
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "population-vs-timing",
+          "status": "completed",
+          "integration": {
+            "decision": "create",
+            "axis": "Describing an area as densely populated: 人口 followed by a word meaning densely/closely packed (人口稠密 / 人口密集).",
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "reuse-other-scene",
+          "status": "completed",
+          "integration": {
+            "decision": "reuse",
+            "axis": null,
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "same-members-different-sense",
+          "status": "completed",
+          "integration": {
+            "decision": "create",
+            "axis": "Saying that a matter has no connection with someone or does not concern them.",
+            "valid": true,
+            "errors": []
+          }
+        },
+        {
+          "case": "scissors-referent",
+          "status": "integration_failed",
+          "integration": {
+            "decision": "create",
+            "axis": "Naming the scissors as an object — the learner wants to refer to the cutting tool, including in requests using the measure word 把.",
+            "valid": false,
+            "errors": [
+              "$.rationale: required property is missing"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

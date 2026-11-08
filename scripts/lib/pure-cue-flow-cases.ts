@@ -65,7 +65,7 @@ export function singleTrialInput(fixture:PureCueFlowCase) {
     source:{prompt:fixture.sourcePrompt,instruction:'',postAnswer:null},intendedSense:{description:{label:fixture.intendedSense}},
     encounters:[{prompt:fixture.sourcePrompt,instruction:'',postAnswer:null,responses:[{response:fixture.words[1]!.hanzi,outcome:'rejected',effective:true}],reactions:[{reaction:'review',...(fixture.comment?{comment:fixture.comment}:{})}],skipped:false,presentationUndone:false}]};
 }
-function resolveRef(fixture:PureCueFlowCase,ref:string):TrialWord {const index=ref==='target'?0:Number(ref.replace(/^response_/,''));const found=fixture.words[index];if(!found)throw new Error('Unknown supplied answer reference');return found;}
+function resolveRef(fixture:PureCueFlowCase,ref:string):TrialWord {const found=fixture.words.find((_word,index)=>ref===(index===0?'target':`response_${index}`));if(!found)throw new Error('Unknown supplied answer reference');return found;}
 export function integrationTrialInput(fixture:PureCueFlowCase,output:TrialSingleOutput,contract:FlowContract) {
   const shared=output.sharedExercise;if(!shared)throw new Error('No shared candidate to integrate');
   const candidates=shared.answers.map(ref=>resolveRef(fixture,ref));

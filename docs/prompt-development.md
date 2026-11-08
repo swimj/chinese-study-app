@@ -28,11 +28,13 @@ For example, the [legacy pure-cue promotion prompt](../server/reflection/prompts
 explains transferable language sense and natural production patterns before
 its detailed judgments and examples. The
 [vocabulary integration prompt](../server/vocabulary/reflection-prompts/pure-cue-integration.md)
-chooses a compatible shared destination for an exercise already authored by
+realizes a shared-practice candidate nominated by
 [single-exercise assessment](../server/vocabulary/reflection-prompts/single-improvement.md).
 Compare their linguistic guidance separately from their input fields and
-authority: integration needs natural-fit judgments, but does not author a new
-exercise or reconcile both words' repertoires.
+authority: single assessment owns the pedagogical judgment, while integration
+owns the final shared content and compatible destination. Integration preserves
+the nominated purpose and members without re-deciding its learning value or
+reconciling both words' repertoires.
 
 ## Adapt the contract explicitly
 
