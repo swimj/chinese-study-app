@@ -59,7 +59,7 @@ export function exerciseAuthoringTrialErrors(fixture:ExerciseFidelityCase,value:
   if(output.sharedExercise){
     const shared=output.sharedExercise;
     if(!shared.answers.includes('target')||new Set(shared.answers).size!==shared.answers.length)errors.push('Shared task lacks target or repeats answers');
-    if(!shared.rationale.trim()||!shared.teachingNote.trim())errors.push('Incomplete shared exercise');
+    if(!shared.rationale.trim())errors.push('Incomplete shared candidate');
     promptErrors(shared.prompt,shared.answers);
   }
   return errors;

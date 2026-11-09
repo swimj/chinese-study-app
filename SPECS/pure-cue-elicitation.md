@@ -30,7 +30,11 @@ and study-profile-aware. No model participates in live grading.
 
 The axis describes a useful communicative slot: a referent, act, or situation
 that each accepted word naturally expresses. Overlapping dictionary glosses
-alone do not establish such a slot. Choose a compact definition or a natural
+alone do not establish such a slot. The axis names a graspable meaning or
+intention that can be retrieved by feel. A stimulus can make that meaning concrete
+without its incidental participants, timing, or scene becoming axis boundaries.
+Keep sense and construction boundaries that define the shared expressive purpose.
+Choose a compact definition or a natural
 Mandarin cloze, optionally with a concise English frame, according to what best
 evokes the shared meaning or construction.
 The frame and cloze together are one stimulus, not two retrieval routes.

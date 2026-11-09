@@ -13,12 +13,12 @@ const object=(properties:Record<string,JsonSchema>):JsonSchema=>({type:'object',
 export const vocabularySingleImprovementSchema=object({
   summary:text,
   source:object({decision:{type:'string',enum:['keep','revise','retire']},prompt:{type:['string','null']}}),
-  sharedExercise:{anyOf:[{type:'null'},object({answers:{type:'array',items:text,minItems:2,maxItems:8},prompt:text,teachingNote:text,rationale:text})]},
+  sharedExercise:{anyOf:[{type:'null'},object({answers:{type:'array',items:text,minItems:2,maxItems:8},prompt:text,rationale:text})]},
   additionalExercises:{type:'array',items:object({answer:text,role:{type:'string',enum:['refinement','enrichment']},prompt:text,rationale:text})},
 });
 export type ExerciseImprovementOutput={
   summary:string;source:{decision:'keep'|'revise'|'retire';prompt:string|null};
-  sharedExercise:null|{answers:string[];prompt:string;teachingNote:string;rationale:string};
+  sharedExercise:null|{answers:string[];prompt:string;rationale:string};
   additionalExercises:{answer:string;role:'refinement'|'enrichment';prompt:string;rationale:string}[];
 };
 type SuppliedWord={ref:string;form:string;word:Word|null};
@@ -104,10 +104,10 @@ export function adaptVocabularyImprovementOutput(job:VocabularyReflectionJob,ori
   let pureCueReferral:VocabularyPureCueReferral|null=null;
   if(output.sharedExercise){
     const shared=output.sharedExercise;
-    nonempty(shared.prompt);nonempty(shared.teachingNote);nonempty(shared.rationale);
+    nonempty(shared.prompt);nonempty(shared.rationale);
     if(!shared.answers.includes('target')||new Set(shared.answers).size!==shared.answers.length)throw new Error('Shared answers require target and distinct supplied responses');
     if(shared.answers.some(ref=>!lookup(ref).word))throw new Error('Shared exercise requires supplied unambiguous words');
-    pureCueReferral={candidateWords:shared.answers.map(ref=>lookup(ref).form),sharedPurpose:shared.prompt,rationale:shared.rationale,draft:{prompt:shared.prompt,teachingNote:shared.teachingNote}};
+    pureCueReferral={candidateWords:shared.answers.map(ref=>lookup(ref).form),sharedPurpose:shared.rationale,rationale:shared.rationale,draft:{prompt:shared.prompt}};
   }
   return {legacy:{diagnosis:output.summary,operations,responseExercises,pureCueReferral},roles:[...roles,...responseRoles]};
 }

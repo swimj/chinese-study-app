@@ -71,8 +71,8 @@ export type VocabularyImprovementAdmission = {
   sourceMapping: { senseId: string | null; establishedAt: string | null };
 };
 export type VocabularyPureCueReferral = { candidateWords: string[]; sharedPurpose: string; rationale: string;
-  /** Absent only on historical referrals made before coherent exercise planning. */
-  draft?: {prompt:string;semanticAxis?:string;teachingNote:string};
+  /** Candidate prompt; complete teaching/axis fields occur on historical authored plans. */
+  draft?: {prompt:string;semanticAxis?:string;teachingNote?:string};
 };
 export type VocabularyPureCuePromotion = {
   outcome: 'reject' | 'reuse' | 'extend' | 'create' | 'needs_operator';

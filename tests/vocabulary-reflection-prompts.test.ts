@@ -71,3 +71,16 @@ test('worked authoring outputs are valid examples of the active JSON contract',(
   for(const example of examples)assert.deepEqual(validateJsonSchema(example,vocabularySingleImprovementSchema),[]);
   assert.deepEqual(examples.map(example=>example.source.decision),['keep','revise','retire']);
 });
+
+test('worked integration realizations satisfy the active output contract',async()=>{
+  const {vocabularyPureCueIntegrationSchema}=await import('../server/vocabulary/pure-cue-promotion.ts');
+  const brief=readFileSync(new URL('../server/vocabulary/reflection-prompts/pure-cue-integration.md',import.meta.url),'utf8');
+  const examples=[...brief.matchAll(/```json\n([\s\S]*?)\n```/g)].map(match=>JSON.parse(match[1]!));
+  assert.equal(examples.length,3);
+  for(const example of examples){
+    assert.deepEqual(validateJsonSchema(example,vocabularyPureCueIntegrationSchema),[]);
+    assert.equal(example.decision,'create');
+    assert.equal(example.existingContentId,null);
+    for(const field of ['prompt','semanticAxis','teachingNote','rationale'])assert(example[field].trim());
+  }
+});

@@ -40,6 +40,23 @@ experiments; the separate `vocabulary-prompt-trial.ts` live runner requires expl
 provider-call authorization. The [prompt handoff](implementation/vocabulary-prompt-handoff.md)
 describes retained evidence and commands.
 
+`scripts/pure-cue-flow-trial.ts` compares a frozen baseline with the working
+single-improvement/integration prompts on eight synthetic pure-cue cases. Pass
+`--archive=/absolute/evidence/path --variant=<name> --contract=baseline|candidate
+--model-choice=<offered-choice>`; add `--allow-provider-calls` only for an authorized
+live trial with the provider credentials configured. Each variant/model manifest
+refuses accidental repeats. Candidate integration can replay exact saved inputs
+with `--replay-integration-from=/absolute/evidence/path/candidate`, without
+rerolling single improvement. The [November 8 trial](../notes/active/2026-11-08-pure-cue-flow-evaluation.md)
+explains the design, retained evidence, and limits; structural validity is separate
+from linguistic quality. This runner opens no application database.
+
+Render the retained November 8 results as a self-contained browsable report:
+`node --import tsx scripts/render-pure-cue-flow-report.ts --archive=/absolute/evidence/path --output=/absolute/output/report.html`.
+The offline renderer includes case/model filters, the three passes, full authored
+content, validation failures, editorial findings, and exact request/response
+provenance. It makes no provider calls and loads no application database.
+
 ## Preview a first-time learner
 
 Use `npm run dev:new-learner` to inspect the welcome path and empty learner

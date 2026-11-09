@@ -129,11 +129,12 @@ queued authorization is not successful application. Pending and failed approvals
 remain attributable, and application receipts prevent duplicate effects.
 
 Exercise-local assessment owns the coherent content plan, including the source's
-disposition, a complete shared draft, and any target or response-word practice.
+disposition, a shared-practice candidate, and any target or response-word practice.
 The [content repair contract](vocabulary-learning.md#content-repair-boundaries)
 defines source repair, distinctive refinements, and optional enrichment.
-Shared-cue integration chooses a compatible destination or creates that exact
-draft; it cannot veto the established pedagogical plan. Proposed shared answers
+Shared-cue integration owns destination selection and final shared content. It
+may refine the candidate's presentation while preserving the nominated meaning
+and all proposed members; it cannot veto the established pedagogical plan. Proposed shared answers
 and response-word additions require uniquely resolved lexical identities;
 unresolved responses serve as encounter evidence for target improvement.
 Operator editorial changes and deliberate selection of proposal parts

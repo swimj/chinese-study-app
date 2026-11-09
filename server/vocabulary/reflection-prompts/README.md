@@ -19,7 +19,7 @@ content proposals have independent authority.
 | [feedback.md](feedback.md) | Teach from the encounter and assess unfair grading | Standalone |
 | [sense-mapping.md](sense-mapping.md) | Categorize an authored exercise's intended use | Standalone |
 | [single-improvement.md](single-improvement.md) | Diagnose encounters and author a coherent recommendation | Standalone |
-| [pure-cue-integration.md](pure-cue-integration.md) | Reuse, extend, or create an authored shared exercise | Standalone |
+| [pure-cue-integration.md](pure-cue-integration.md) | Realize a nominated shared purpose through reuse, extension, or creation | Standalone |
 | [pure-cue-improvement.md](pure-cue-improvement.md) | Assess an existing shared exercise | Standalone |
 | [second-opinion.md](second-opinion.md) | Independently review a proposal or no-change judgment | Preceded by `reasoning.md` |
 | [pure-cue-promotion.md](pure-cue-promotion.md) | Resume a saved referral without an authored draft | Standalone compatibility path |
@@ -163,7 +163,7 @@ happens to the source. Its output is an editorial recommendation:
 | --- | --- |
 | `summary` | Brief operator diagnosis and recommendation |
 | `source` | `keep`, `revise`, or `retire`, with a prompt only for revision |
-| `sharedExercise` | Nullable complete shared cue, supplied answer references, reveal teaching note, and rationale |
+| `sharedExercise` | Nullable shared candidate: supplied answer references, candidate cue, and purpose/value rationale |
 | `additionalExercises` | Target or response-word additions, each with answer reference, prompt, rationale, and `refinement` or `enrichment` role |
 
 `exercise-improvement-authoring.ts` projects only the source, intended-use
@@ -197,8 +197,8 @@ Integration rationale remains separately recorded rather than being appended
 to that summary. Operator edits and selection of parts remain deliberate,
 without enforced component dependencies.
 
-Single improvement uses prompt version 5, schema version 4, and projection
-`vocabulary-exercise-authoring.v2`. Mapping uses prompt version 5, schema version 1,
+Single improvement uses prompt version 6, schema version 5, and projection
+`vocabulary-exercise-authoring.v3`. Mapping uses prompt version 5, schema version 1,
 and projection `vocabulary-admission.v4`. Exact source, catalog, mapping, and
 lexical checks fence publication and approval. Stage identities retain actual
 projected input, schema, and contract; unknown supplied references fail validation.
@@ -215,23 +215,37 @@ examples demonstrate the editorial output contract.
 `pure-cue-integration.md` receives `localAssessment`, `localPlan`, `referral`,
 resolved `candidates`, and eligible `existingCues`. Lookup includes active general
 production pure cues overlapping candidates within source scope and owner.
-Its output has `decision`, `existingContentId`, `semanticAxis`, `teachingNote`, and `rationale`.
+Its output has `decision`, `existingContentId`, `prompt`, `semanticAxis`,
+`teachingNote`, and `rationale`.
 
-| Decision | Existing ID | Axis output | Note output | Backend result |
+| Decision | Existing ID | Prompt/axis output | Note output | Backend result |
 | --- | --- | --- | --- | --- |
 | `reuse` | Supplied compatible cue already accepting every candidate | null | null | Record assessment; no shared edit |
 | `extend` | Supplied compatible cue missing a candidate | null | Integrated full note | Preserve stimulus, axis, forms, and all members; add every candidate |
-| `create` | null | Derived from the authored shared task | null | Preserve the upstream prompt and teaching note; include every candidate |
+| `create` | null | Final stimulus and shared expressive axis | Full note | Create final content with every candidate |
 
-Integration uses prompt version 1, schema version 3, and projection
-`vocabulary-integration.v2`. It chooses a destination without a second pedagogical
-veto. Creation derives the semantic axis from the authored cue, answers, note,
-and rationale; it does not broaden or redesign that task. An incompatible
-existing cue leads to creation, not rejection of the plan.
+Integration uses prompt version 2, schema version 4, and projection
+`vocabulary-integration.v3`. Single improvement owns the shared-practice judgment;
+integration owns final realization and destination without a second pedagogical
+veto. Creation can refine the candidate's presentation while preserving its
+nominated meaning and members. The axis describes a graspable expressive instinct,
+keeping necessary sense/construction boundaries but omitting incidental story
+details and pair-specific explanation. Different scenes can practice the same
+axis; actual stimulus compatibility with all members still governs reuse.
+Integration drafts a source-derived axis and stimulus before comparing existing
+destinations. Three complete realizations illustrate a physical referent,
+abstract meaning, and construction-dependent use. This is reasoning guidance in
+one call, not an information-isolation boundary.
+An incompatible existing cue leads to creation, not rejection of the plan.
 Extension notes preserve accumulated teaching and cover the complete resulting
-membership, mostly in English with Chinese examples where useful. The prompt
-retains natural-production guidance and requires actual grammatical, collocational,
-and meaning compatibility rather than mere membership overlap.
+membership, mostly in English with Chinese examples where useful.
+
+New candidate drafts contain a prompt without a teaching note. Historical saved
+drafts can include a note and axis. Current provider replies always use the full
+current output schema; the internal adapter also retains the interpretation of
+already materialized older integration replies. Stage caches include prompt,
+schema, and projection identity, preventing a fresh call from silently consuming
+an older stage result under the new contract.
 
 Historical assessments with unresolved shared identities retain the complete
 proposal as `pendingPlan`; current authoring rejects unresolved shared answers.

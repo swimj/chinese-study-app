@@ -1474,7 +1474,7 @@ for(const drift of ['none','before_queue','during_integration'] as const)test(`o
     assert.equal(step,'pure_cue_promotion');assert.deepEqual(input.localPlan.operations.map((operation:{strategy:string})=>operation.strategy),['retire','create']);
     assert.deepEqual(input.referral.draft,referral.draft);
     if(drift==='during_integration')sql.prepare("UPDATE lexical_words SET hanzi='丁',meaning='changed identity' WHERE id='new'").run();
-    const value={decision:'create',rationale:'Create the authored shared task.',existingContentId:null,semanticAxis:'The shared purpose.',teachingNote:null};
+    const value={decision:'create',rationale:'Create the authored shared task.',existingContentId:null,prompt:referral.draft.prompt,semanticAxis:'The shared purpose.',teachingNote:referral.draft.teachingNote};
     return {provider:'fake',model:'fake',responseId:null,structuredOutputMode:'json_schema',rawText:JSON.stringify(value),finishReason:'stop',rawResponse:null,
       usage:{inputTokens:null,cachedInputTokens:null,cacheWriteInputTokens:null,outputTokens:null,reasoningTokens:null,totalTokens:null},invocationId:null};
   }};
