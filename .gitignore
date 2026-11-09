@@ -24,3 +24,6 @@ data/ui-fixtures/
 
 # Read-only production excerpts for local operator review; never publish.
 tests/browser/.local/
+
+# Cohorts, retained provider responses, and maintenance rehearsal evidence.
+tmp/bulk-repertoire/

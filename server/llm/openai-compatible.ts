@@ -30,7 +30,7 @@ export type OpenAiCompatibleOptions = {
   additionalRequestBody?: Record<string, JsonValue>;
 };
 
-function requestBody(
+export function requestBody(
   request: ProviderRunRequest,
   mode: StructuredOutputMode,
   maxTokensField: OpenAiCompatibleOptions['maxTokensField'],
@@ -67,7 +67,7 @@ function requestBody(
   return { ...body, ...additionalRequestBody };
 }
 
-function parseResponse(
+export function parseResponse(
   provider: string,
   mode: StructuredOutputMode,
   rawResponse: JsonValue,

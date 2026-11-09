@@ -1,4 +1,5 @@
-import { vocabularyPhraseClozePrompt } from '../../src/domain/vocabulary-production-coverage.ts';
+import { generalExerciseContent } from './general-exercise-content.ts';
+import { authoredVocabularyRepertoire } from '../db/vocabulary-authored-repertoire.ts';
 import { isVocabularySessionWordEligible } from '../db/vocabulary-sense-eligibility.ts';
 import { senseContentReconciliationGenerationToken, assertSenseContentReconciliationGeneration, settleSenseContentReconciliation, reconciliationPracticeSource, senseContentReconciliationAuthority } from '../db/sense-content-reconciliation-state.ts';
 import { ensureVocabularyDefaultUsefulSelection,retryDefaultUsefulSelection,defaultUsefulSelectionRetryable } from './default-useful-selection.ts';
@@ -8,7 +9,7 @@ import { preparationProviderFailure, WordPreparationProviderError } from '../wor
 import { recordPreparationAttempt,linkPreparationInvocation,completePreparationAttempt,failPreparationAttempt } from './preparation-retry.ts';
 import { createHash,randomUUID } from 'node:crypto';
 import type { WordContentDocument } from '../../src/domain/word-content/types.ts';
-import type { VocabularyContent,VocabularyJson } from '../../src/domain/vocabulary-content.ts';
+import type { VocabularyContent } from '../../src/domain/vocabulary-content.ts';
 import { GENERAL_EXERCISE_CONTRACT,generalExerciseInvocation, normalizeGeneralExerciseReferences, validateGeneralExerciseOutput, type GeneralExerciseOutput, type GeneralExerciseSource } from './general-exercise-authoring.ts';
 import { createOpenAiCompatibleAdapter } from '../llm/openai-compatible.ts';
 import { fetchImplementationForProvider } from '../llm/proxy-fetch.ts';
@@ -130,6 +131,7 @@ export function createVocabularyPracticePreparation(options: { provider?: Vocabu
       }
       return existing;
     }
+    if(authoredVocabularyRepertoire(wordId).length)return null;
     const key=generationKey(bootstrap),workId=`vocabulary-practice:${hash([wordId,bootstrap.id,key])}`;
     const content=productionSource(bootstrap),coverage=resolveVocabularySenseCoverage(wordId);
     const mapped=getDb().prepare('SELECT sense_id FROM legacy_sense_imports WHERE source_content_id=?').all(bootstrap.id) as {sense_id:string}[];
@@ -140,6 +142,9 @@ export function createVocabularyPracticePreparation(options: { provider?: Vocabu
   }
   async function preflight(workId:string):Promise<boolean> {
     const work=readWork(workId);if(!work||work.status!=='queued')return false;
+    if(!work.reconciliationId&&authoredVocabularyRepertoire(work.wordId).length){
+      getDb().prepare("UPDATE vocabulary_practice_preparation SET status='ready',last_error=?,updated_at=? WHERE work_id=? AND status='queued'").run('Existing authored repertoire satisfies automatic demand',now(),workId);return false;
+    }
     if(!isVocabularySessionWordEligible(work.wordId)){
       getDb().prepare("UPDATE vocabulary_practice_preparation SET status='ready',last_error='No automatic practice demand for the selected senses.',updated_at=? WHERE work_id=? AND status='queued'").run(now(),workId);return false;
     }
@@ -225,19 +230,20 @@ export function createVocabularyPracticePreparation(options: { provider?: Vocabu
         if (!resolveSource(work) || getVocabularySenseCatalog(work.wordId).version !== catalogue.version || generationKey(source!)!==work.generationKey) {
           throw new Error('Vocabulary preparation source changed');
         }
+        // Another authoring path can publish while this provider request is in flight.
+        if(!work.reconciliationId&&authoredVocabularyRepertoire(work.wordId).length){
+          getDb().prepare("UPDATE vocabulary_practice_preparation SET status='ready',active_token=NULL,expires_at=NULL,last_error='Existing authored repertoire satisfies automatic demand',updated_at=? WHERE work_id=? AND active_token=?").run(now(),workId,token);
+          completePreparationAttempt(token,now());return [];
+        }
         const content = wire.exercises.map((exercise) => {
           const mapping = sourceSenses.find((sense) => sense.source_use_id === exercise.sourceUseId);
           if(!mapping)throw new Error('Vocabulary preparation lost its canonical use binding');
-          const created = createVocabularyContent({ contentId: `vocabulary-practice-content:${hash([workId,exercise.id])}`,
-            kind: 'exercise',payloadVersion: 1,body: { prompt: exercise.stimulus.kind === 'direct_text' ? exercise.stimulus.text : vocabularyPhraseClozePrompt(exercise.stimulus.frame, exercise.stimulus.text),
-              instruction: '',stimulus: exercise.stimulus as unknown as VocabularyJson,reveal: { teachingNote: exercise.teachingNote },
-              source: { kind: 'general_exercises',...(work.reconciliationId?{reconciliationId:work.reconciliationId}:{bootstrapContentId:work.sourceContentId}),localId: exercise.id,promptVersion: GENERAL_EXERCISE_CONTRACT.promptVersion,model: provider.model } },
-            exerciseType: exercise.stimulus.kind === 'phrase_cloze' ? 'cloze' : 'definition_gloss',skill: 'production',exerciseRole: 'general',
-            assessment: { responseMode: 'hanzi_entry',matchingProfile: 'mandarin' },accessScope: 'shared',availability: 'active',originKind: 'model',
-            authorKind: 'service',authorId: VOCABULARY_PRACTICE_SERVICE,
-            words: [{ wordId: work.wordId,relation: 'target',senseId: mapping.sense_id,
-              senseMappingEstablishedAt: now() }],
-            answers: [{ wordId: work.wordId,acceptedForms: [...new Set([source!.word.hanzi,source!.word.traditional].filter((form): form is string => form !== null))] }] },actor);
+          const created = createVocabularyContent(generalExerciseContent({
+            contentId: `vocabulary-practice-content:${hash([workId,exercise.id])}`, word: source!.word, exercise,
+            senseId: mapping.sense_id, now: now(), serviceId: VOCABULARY_PRACTICE_SERVICE,
+            source: { kind: 'general_exercises', ...(work.reconciliationId?{reconciliationId:work.reconciliationId}:{bootstrapContentId:work.sourceContentId}),
+              localId: exercise.id, promptVersion: GENERAL_EXERCISE_CONTRACT.promptVersion, model: provider.model },
+          }),actor);
           if (invocationId != null) linkVocabularyInvocationContent({ invocationId,contentId: created.contentId,contentVersion: created.version,role: 'output' },actor);
           return created;
         });

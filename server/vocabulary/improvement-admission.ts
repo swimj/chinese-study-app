@@ -1,3 +1,4 @@
+import { authoredVocabularyRepertoire } from '../db/vocabulary-authored-repertoire.ts';
 import { canonicalExerciseSource } from './canonical-exercise-source.ts';
 import { vocabularyPhraseClozePrompt } from '../../src/domain/vocabulary-production-coverage.ts';
 import { getVocabularyRepertoireSelection } from '../db/vocabulary-repertoire-selection.ts';
@@ -119,14 +120,7 @@ export async function runVocabularyImprovementAdmission(options: {
   }
   // Lifecycle is a backend decision over current authored content, independent
   // of learner adoption, deactivation, scheduling and selected serving senses.
-  const authoredPractice = () => (getDb().prepare(`SELECT DISTINCT c.content_id,c.version FROM content_items c
-    JOIN exercise_answer_words a ON a.exercise_id=c.content_id AND a.word_id=?
-    WHERE c.content_id!=? AND c.kind='exercise' AND c.exercise_role='general' AND c.skill='production'
-      AND c.availability='active' AND c.access_scope=? AND c.owner_learner_id IS ?
-      AND c.exercise_type!='contrast'
-      AND COALESCE(json_extract(c.assessment_json,'$.responseMode'),'')!='word_choice'
-    ORDER BY c.content_id`).all(wordId,original.contentId,original.accessScope,original.ownerLearnerId??null) as {content_id:string;version:number}[])
-    .filter(row=>{const content=getVocabularyContentForMaintenance(row.content_id);return content&&!isVocabularyDefinitionFallback(content);});
+  const authoredPractice = () => authoredVocabularyRepertoire(wordId,{accessScope:original.accessScope,ownerLearnerId:original.ownerLearnerId,excludeContentId:original.contentId});
   const bootstrap=!job.repairTarget&&isVocabularyDefinitionFallback(current);
   const covered=bootstrap?authoredPractice():[];
   if (capturedSelection && (!bootstrap || covered.length)) throw new VocabularyReflectionConflict('The selected repertoire can no longer bootstrap from this source; request a fresh assessment');
