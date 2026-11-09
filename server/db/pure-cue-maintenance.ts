@@ -80,8 +80,14 @@ function buildPlan(input: unknown, actorId: string) {
   const targets: unknown[] = [];
   const seenSources = new Set<string>();
   const scope = { kind: 'shared' } as const;
-  const pending = getDb().prepare(`SELECT 1 FROM proposal_content_bases b JOIN content_proposals p USING(proposal_id)
-    WHERE b.content_id = ? AND p.status IN ('draft', 'awaiting_review', 'approved') LIMIT 1`);
+  type Overlap = { proposalId: string; proposalVersion: number; expectedVersion: number; status: string; applying: number };
+  const overlaps: (Overlap & { contentId: string })[] = [];
+  const pending = getDb().prepare(`SELECT p.proposal_id AS proposalId, p.version AS proposalVersion,
+      b.expected_content_version AS expectedVersion, p.status,
+      EXISTS(SELECT 1 FROM vocabulary_case_reviews r WHERE r.current_proposal_id=p.proposal_id AND r.approval_state='pending') AS applying
+    FROM proposal_content_bases b JOIN content_proposals p USING(proposal_id)
+    WHERE b.content_id = ? AND p.status IN ('draft', 'awaiting_review', 'approved')
+    ORDER BY p.proposal_id`);
 
   for (const raw of manifest.changes) {
     const row = fields(raw, 'cue change', ['contentId', 'expectedVersion', 'rationale', 'edit', 'split']);
@@ -89,7 +95,10 @@ function buildPlan(input: unknown, actorId: string) {
     const source = activeSharedExercise(base);
     if (source.exerciseType !== 'pure_cue' || seenSources.has(base.contentId)) throw new Error('Expected a distinct pure cue');
     seenSources.add(base.contentId);
-    if (pending.get(base.contentId)) throw new Error(`Pending proposal references ${base.contentId}`);
+    for (const overlap of pending.all(base.contentId) as Overlap[]) {
+      if (overlap.status === 'approved' || overlap.applying) throw new Error(`Approval already recorded for ${base.contentId}`);
+      overlaps.push({ contentId: base.contentId, ...overlap });
+    }
     const reason = text(row.rationale, 'cue rationale');
     const common = { sourceContentId: base.contentId, expectedVersion: base.expectedVersion, scope, rationale: reason, operationKey: base.contentId };
     if ((row.edit === undefined) === (row.split === undefined)) throw new Error('Expected either edit or split');
@@ -135,8 +144,8 @@ function buildPlan(input: unknown, actorId: string) {
     }
   }
   const proposal: VocabularyProposalDraft = { rationale, operations };
-  const digest = createHash('sha256').update(JSON.stringify({ actorId, proposal, targets })).digest('hex');
-  return { digest, proposal, targets };
+  const digest = createHash('sha256').update(JSON.stringify({ actorId, proposal, targets, overlaps })).digest('hex');
+  return { digest, proposal, targets, overlaps };
 }
 
 export function maintainPureCues(input: unknown, actorId: string, confirmPlan?: string) {

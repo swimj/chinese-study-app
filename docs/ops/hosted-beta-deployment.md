@@ -381,9 +381,11 @@ npm run --silent hosted:maintain-pure-cues -- \
   --confirm-plan=<digest>
 ```
 
-Apply rechecks service controls, source versions, pending proposals, and split
-sense eligibility under one write transaction. It records the operator's approval and application
-receipt through the normal proposal writer. A split retires the shared cue and
+The preview lists overlapping drafts and proposals awaiting review. They remain
+in review with their original source versions. An approved proposal or pending
+approval blocks the batch. Apply rechecks service controls, source versions,
+proposal overlap, and split sense eligibility under one write transaction. It
+records approval and an application receipt through the normal proposal writer. A split retires the shared cue and
 creates the individual exercises together. Historical cue versions and learner
 schedules stay attached to the retired identity. If output is lost, look up the
 application by its `pure-cue-maintenance/<digest>` idempotency key. A repeated

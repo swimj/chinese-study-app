@@ -2020,18 +2020,24 @@ test('maintenance applies a reviewed cue edit and complete split atomically, wit
     strategy: 'update_existing', operationKey: 'pending', scope: { kind: 'shared' }, rationale: 'Another edit',
     sourceContentId: edit.contentId, expectedVersion: 1, content: edit,
   }] }, actor.id);
-  assert.throws(() => maintainPureCues(manifest, actor.id, preview.digest), /Pending proposal/);
+  assert.throws(() => maintainPureCues(manifest, actor.id, preview.digest), /plan changed/);
+  approveVocabularyProposal(pending.proposalId, pending.version, actor.id);
+  assert.throws(() => maintainPureCues(manifest, actor.id), /Approval already recorded/);
   closeVocabularyProposal(pending.proposalId, pending.version, actor.id);
+  const overlapping = createVocabularyProposal({ rationale: pending.rationale, operations: pending.operations }, actor.id);
+  const refreshed = maintainPureCues(manifest, actor.id);
+  if (refreshed.status !== 'preview') assert.fail('Expected preview');
+  assert.equal(refreshed.overlaps[0]?.proposalId, overlapping.proposalId);
 
   // Fail a late write, after the cue update, retirement and new exercise have executed.
   sql.exec("CREATE TRIGGER refuse_receipt BEFORE INSERT ON proposal_applications BEGIN SELECT RAISE(ABORT,'receipt failed'); END");
-  assert.throws(() => maintainPureCues(manifest, actor.id, preview.digest), /receipt failed/);
+  assert.throws(() => maintainPureCues(manifest, actor.id, refreshed.digest), /receipt failed/);
   assert.deepEqual(getVocabularyContentForMaintenance(edit.contentId), edit);
   assert.deepEqual(getVocabularyContentForMaintenance(shared.contentId), shared);
-  assert.equal(sql.prepare('SELECT COUNT(*) n FROM content_proposals').get()?.n, 1);
+  assert.equal(sql.prepare('SELECT COUNT(*) n FROM content_proposals').get()?.n, 2);
   sql.exec('DROP TRIGGER refuse_receipt');
 
-  const result = maintainPureCues(manifest, actor.id, preview.digest);
+  const result = maintainPureCues(manifest, actor.id, refreshed.digest);
   if (result.status !== 'applied') assert.fail('Expected receipt');
   assert.deepEqual(result.receipt.changes.map(change => change.strategy), ['update_existing', 'retire', 'create', 'create']);
   const updated = getVocabularyContentForMaintenance(edit.contentId)!;
@@ -2044,6 +2050,8 @@ test('maintenance applies a reviewed cue edit and complete split atomically, wit
   assert.equal(created?.words[0]?.senseId, sense.senseId);
   assert.equal(created?.kind, 'exercise');
   assert.deepEqual(created.answers, [{ wordId: 'b', acceptedForms: ['乙'] }]);
-  assert.throws(() => maintainPureCues(manifest, actor.id, preview.digest), /already applied/);
+  assert.equal(getVocabularyProposal(overlapping.proposalId, actor.id).status, 'awaiting_review');
+  assert.throws(() => previewVocabularyProposal(overlapping.proposalId, overlapping.version, actor.id), /base changed/);
+  assert.throws(() => maintainPureCues(manifest, actor.id, refreshed.digest), /already applied/);
   assert.deepEqual(sql.prepare('PRAGMA foreign_key_check').all(), []);
 });
