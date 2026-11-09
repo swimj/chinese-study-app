@@ -31,12 +31,22 @@ test('known assessment finding and retired-source blocker are visible without re
   const html=render(item);assert.match(html,/Intended sense unresolved/);assert.match(html,/The cue does not identify one sense/);assert.match(html,/Reassessment unavailable: The source exercise is retired/);
 });
 
-test('pure cue uses the stored axis, direct accepted delta, and teaching note without an artificial sense',()=>{
+test('pure cue heading identifies the accepted answers and proposal details retain the axis and answer change',()=>{
   const item=caseReviewFixture();item.wordLabel=null;item.wordId=null;
   item.served[0].pureCue={axisNote:'Stored semantic purpose',teachingNote:'Original explanation'};
   const operation=item.proposal!.operations[0];operation.pureCue={axisNote:'Stored semantic purpose',teachingNote:'Revised explanation'};operation.acceptedAnswers=['报备','报告'];
-  const html=render(item);assert.match(html,/<h2>Stored semantic purpose<\/h2>/);assert.match(html,/Teaching note:/);assert.match(html,/Revised explanation/);assert.match(html,/changes to/);assert.doesNotMatch(html,/vocabulary-sense-group/);assert.match(html,/Accepted answers/);
-  item.served[0].pureCue.axisNote=null;assert.match(render(item),/<h2>Content review<\/h2>/);
+  const html=render(item);
+  const heading=/<h2>.*报备.*Pure cue.*<\/h2>/;
+  assert.match(html,heading);
+  assert.match(html,/<details class="vocabulary-review-item[^>]*>.*Cue axis:<\/strong> Stored semantic purpose/);
+  assert.match(html,/Teaching note:<\/strong> Revised explanation/);
+  assert.match(html,/changes to/);
+  assert.doesNotMatch(html,/vocabulary-sense-group/);
+  assert.match(html,/Accepted answers/);
+  item.served[0].pureCue.axisNote=null;
+  assert.match(render(item),heading);
+  item.served[0].acceptedAnswers=[];
+  assert.match(render(item),/<h2>Pure cue<\/h2>/);
 });
 test('chronological first encounter leads; collapsed history retains distinct snapshots and undone evidence',()=>{
   const item=caseReviewFixture(); const earlier=structuredClone(item.served[0]);earlier.encounterId='earlier';earlier.presentedAt='2020-01-01T00:00:00Z';earlier.prompt='Earlier distinct cue';earlier.responses=[{actionId:'older-response',text:'first accepted response',outcome:'accepted',undone:true}];earlier.skipped=true;earlier.presentationUndone=true;
