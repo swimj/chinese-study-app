@@ -4,9 +4,43 @@ import {test} from 'node:test';
 import {createElement} from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {CompactProposalReview} from '../src/features/vocabulary-operator/CompactProposalReview.tsx';
+import {CaseReviewCard} from '../src/features/vocabulary-operator/CaseReviewCard.tsx';
+import {caseReviewFixture} from './fixtures/case-review-data.ts';
 import type {VocabularyProposalOperation,VocabularySenseLabel} from '../src/domain/vocabulary-reflection.ts';
 import {editableProposalDraft,selectedProposalDraft,consequentialContentChanges,editableCue,updateCue,groupOperations,readableSenseProse,selectedOperations,toggleOperation,sourceConsequences} from '../src/features/vocabulary-operator/proposal-review.ts';
 const senses:VocabularySenseLabel[]=[{senseId:'12345678-1111-4000-8000-111111111111',wordId:'word',label:'formal correspondence'},{senseId:'23456789-1111-4000-8000-111111111111',wordId:'word',label:'envelope'}];
+
+test('compact pure cue review identifies the prompt repair and distinguishes it from an answer change', () => {
+  const item = caseReviewFixture();
+  item.wordLabel = null;
+  const [served] = item.served;
+  served.prompt = 'a plan for achieving an important goal';
+  served.acceptedAnswers = ['战略', '戰略', '策略'];
+  served.pureCue = { axisNote: 'Choosing a strategy for a goal.', teachingNote: null };
+  const [operation] = item.proposal!.operations;
+  operation.prompt = 'A strategy for achieving an important goal';
+  operation.acceptedAnswers = ['策略', '战略', '戰略'];
+  operation.pureCue = served.pureCue;
+  const render = () => renderToStaticMarkup(createElement(CaseReviewCard, { item, onDetails: () => {} }));
+
+  const repair = render();
+  assert.match(repair, /<h2>.*战略 \/ 策略.*Pure cue.*<\/h2>/);
+  assert.match(repair, /Prompt as served<\/p><p[^>]*>a plan for achieving an important goal/);
+  assert.match(repair, /Update prompt<\/span><span[^>]*>A strategy for achieving an important goal/);
+  assert.match(repair, /Cue axis:<\/strong> Choosing a strategy for a goal/);
+  assert.doesNotMatch(repair, /class="vocabulary-answer-change"/);
+
+  operation.prompt = served.prompt;
+  operation.acceptedAnswers.push('方略');
+  const extension = render();
+  assert.match(extension, /Update accepted answers<\/span>/);
+  assert.match(extension, /changes to">→<\/span><strong>策略 · 战略 · 方略/);
+
+  operation.expectedVersion = 2;
+  const withoutBaseline = render();
+  assert.match(withoutBaseline, /Update pure cue<\/span>/);
+  assert.doesNotMatch(withoutBaseline, /class="vocabulary-answer-change"/);
+});
 function operation(key='first'):VocabularyProposalOperation{return {operationKey:key,strategy:'replace',sourceContentId:'source',expectedVersion:1,scope:{kind:'shared'},rationale:'Faithful repair',content:{contentId:`content-${key}`,kind:'exercise',payloadVersion:1,body:{prompt:'A letter',reveal:{note:'Retain this editorial note'},source:{kind:'original'}},accessScope:'shared',availability:'active',originKind:'human',exerciseType:'definition',skill:'production',exerciseRole:'general',assessment:{match:'exact'},words:[{wordId:'word',relation:'target',senseId:senses[0]!.senseId}],answers:[{wordId:'word',acceptedForms:['函']}]}};}
 test('grouping keeps one readable heading per sense and preserves unmapped practice',()=>{
  const first=operation(),second=operation('second'),third=operation('third');third.content.words=[{wordId:'word',relation:'target'}];
