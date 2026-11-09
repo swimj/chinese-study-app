@@ -343,10 +343,25 @@ with the introduction and repertoire; automated exercise improvement does not
 repair them. Connections can reuse encountered vocabulary through
 its existing independent background workflow.
 
-A designated teacher judgment may make a bounded automatic scheduling correction.
-Reading the lesson and approving a content proposal are unrelated to that
-correction. It applies once to current state and preserves explicit mode and
-refresh choices. Provider failure does not invalidate session completion.
+The separate learner-feedback judgment can reverse a written lapse once per
+session and affected production schedule. Every effective rejection for that
+word's production skill or independent pure cue must be judged unfair. A genuine
+miss or pronunciation lapse in the same group keeps the lapse in effect.
+Coverage must have produced a scheduling effect in the originating session.
+
+The correction restores the pre-lapse interval, ease, and scheduling clock.
+A previously strong pure cue also regains its strong status and progress. The
+schedule stays out of selection, including strong maintenance, for at least 24
+hours from the judgment. Later applicable due dates and reset constraints still
+apply. The next assessment uses the restored schedule and ordinary recall
+rules. Another unfair lapse can start a fresh break. The correction can replace
+scheduling changes from intervening study
+while preserving its attempt history, the learner's explicit mode, and active
+requested refresh. It grants no success credit. When the pre-lapse schedule is
+unavailable, the existing schedule stays in place.
+
+Reading the lesson and applying a content repair are separate from the scheduling
+decision. Provider failure does not invalidate session completion.
 
 ### Content repair boundaries
 

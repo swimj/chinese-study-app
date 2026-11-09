@@ -13,6 +13,7 @@ export type VocabularyLearnerWord = {
 export type VocabularySchedulerState = {
   intervalHours: number; easeFactor: number; enabled: number; cleanCoveredSessions: number;
   legacyAdmissionAt?: string | null;
+  resetUntil?: string | null;
 };
 export type VocabularyWordSchedule = {
   wordId: string; nextEligibleAt: string | null; lastPractisedAt: string | null;
@@ -174,13 +175,20 @@ export function requestVocabularyRefresh(wordId: string, now = new Date().toISOS
     if (word.mode !== 'maintain') throw new VocabularyStateInputError('Temporary refresh is for Maintain words');
     const until = new Date(Date.parse(now) + 3 * 86_400_000).toISOString();
     const updated = getDb().prepare(`UPDATE learner_word_schedules SET refresh_requested_at = ?, refresh_until = ?,
-      next_eligible_at = ?, state_version = state_version + 1 WHERE learner_id = ? AND word_id = ?`)
+      next_eligible_at = MAX(?, COALESCE(json_extract(scheduler_state_json, '$.resetUntil'), '')),
+      state_version = state_version + 1 WHERE learner_id = ? AND word_id = ?`)
       .run(now, until, now, word.learnerId, wordId);
     if (updated.changes !== 1) throw new Error('Enrolled word has no production schedule');
     emitBackendEvent({ name: 'vocabulary.refresh.requested', learnerId: word.learnerId,
       entityKind: 'word', entityId: wordId, data: { until } });
     return getVocabularyWordSchedule(wordId)!;
   });
+}
+
+export function isActiveVocabularyRefreshRequest(learnerId: string, wordId: string, until: string | null, now: string): boolean {
+  return until !== null && until > now && !!getDb().prepare(`SELECT 1 FROM backend_events WHERE name='vocabulary.refresh.requested'
+    AND learner_id=? AND entity_kind='word' AND entity_id=? AND json_extract(data_json,'$.until')=? LIMIT 1`)
+    .get(learnerId, wordId, until);
 }
 /** Candidate ordering guarantees refresh priority without promising every due word. */
 export function listVocabularyCandidates(limit = 30, now = new Date().toISOString(),

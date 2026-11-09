@@ -118,9 +118,8 @@ export type VocabularyProposalApplication = {
     sourceContentId: string | null; sourceVersion: number | null; resultContentId: string; resultVersion: number }[];
 };
 export const VOCABULARY_COMPENSATION_POLICY = {
-  version: 'vocabulary-unfair-feedback.v1',
-  /** Relax the current due time by one day only when every effective rejection was unfair. Never replay an old schedule. */
-  maximumDelayMs: 24 * 60 * 60 * 1000,
+  version: 'vocabulary-unfair-feedback.v2',
+  breakMs: 24 * 60 * 60 * 1000,
 } as const;
 
 export type VocabularySecondOpinionVerdict = { verdict: 'support' | 'revise' | 'reject'; rationale: string };

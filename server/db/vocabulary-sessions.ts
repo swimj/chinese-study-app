@@ -17,7 +17,7 @@ import { applyVocabularyContextualSelection } from './vocabulary-contextual-sele
 import { applyVocabularyRecognition } from './vocabulary-recognition.ts';
 import { requireLearnerId } from './learner-context.ts';
 import { emitBackendEvent, getVocabularyContentVersion } from './vocabulary-content.ts';
-import { getVocabularyLearnerWord, getVocabularyWordSchedule, type VocabularySchedulerState } from './vocabulary-learners.ts';
+import { getVocabularyLearnerWord, getVocabularyWordSchedule, isActiveVocabularyRefreshRequest, type VocabularySchedulerState } from './vocabulary-learners.ts';
 
 export class VocabularySessionInputError extends Error {}
 export class VocabularySessionConflictError extends Error {}
@@ -386,10 +386,13 @@ function applyLearningEffects(completionId: string, context: StoredContext, proj
       const refresh = mode === 'maintain' && lapse;
       const next = mode === 'solidify' || word.teachingCompleted ? nextUtcDay(now)
         : refresh ? now : clean || lapse ? hoursAfter(now, scheduler.intervalHours) : schedule.nextEligibleAt;
+      const automaticRefresh = refresh && !isActiveVocabularyRefreshRequest(learnerId, word.wordId, schedule.refreshUntil, now);
       getDb().prepare(`UPDATE learner_word_schedules SET next_eligible_at = ?,last_practised_at = ?,policy_version = ?,scheduler_state_json = ?,
         state_version = state_version + 1,refresh_requested_at = ?,refresh_until = ? WHERE learner_id = ? AND word_id = ?`)
-        .run(next, latestReviewTimestamp(schedule.lastPractisedAt, productionTiming?.lastReviewedAt ?? now), VOCABULARY_SESSION_POLICY.version, JSON.stringify(scheduler), refresh ? now : schedule.refreshRequestedAt,
-          refresh ? hoursAfter(now, 72) : schedule.refreshUntil, learnerId, word.wordId);
+        .run(scheduler.resetUntil && scheduler.resetUntil > (next ?? now) ? scheduler.resetUntil : next,
+          latestReviewTimestamp(schedule.lastPractisedAt, productionTiming?.lastReviewedAt ?? now), VOCABULARY_SESSION_POLICY.version,
+          JSON.stringify(scheduler), automaticRefresh ? now : schedule.refreshRequestedAt,
+          automaticRefresh ? hoursAfter(now, 72) : schedule.refreshUntil, learnerId, word.wordId);
       effect(completionId, context.sessionId, `production/${word.wordId}`, 'production_schedule_applied', schedule, getVocabularyWordSchedule(word.wordId), now, word.wordId);
     }
     const recognition = encounters.filter((entry) => entry.snapshot.kind === 'recognition').flatMap((entry) => entry.effectiveResponses);

@@ -11,7 +11,7 @@ import { failPreparationAttempt } from '../vocabulary/preparation-retry.ts';
 import { randomUUID } from 'node:crypto';
 import { vocabularyAuthoredPromptBody,vocabularyPhraseClozeError } from '../../src/domain/vocabulary-production-coverage.ts';
 import type { VocabularyActor, VocabularyJson, VocabularyContent } from '../../src/domain/vocabulary-content.ts';
-import { VOCABULARY_COMPENSATION_POLICY, type VocabularySecondOpinion, type VocabularyReflectionCase, type VocabularyReflectionJob,
+import { type VocabularySecondOpinion, type VocabularyReflectionCase, type VocabularyReflectionJob,
   type VocabularyFeedbackJudgmentInput, type VocabularyProposalDraft, type VocabularyContentProposal,
   type VocabularyReassessmentEditorial, type VocabularyAssessmentReview, type VocabularySenseLabel, type VocabularyProposalOperation, type VocabularyProposalApplication, type VocabularyImprovementResultInput, type VocabularyImprovementAdmission, type VocabularyPureCuePromotion, type VocabularyPureCueReferral, type VocabularyReflectionResult } from '../../src/domain/vocabulary-reflection.ts';
 import { getEffectiveVocabularyEncounterReactions, isLearnerPronunciationRejection, type VocabularySessionProjection, type VocabularyEncounterEvidence } from '../../src/domain/vocabulary-session.ts';
@@ -23,6 +23,7 @@ import { createVocabularyContent, updateVocabularyContent, replaceVocabularyCont
   getVocabularyContentForMaintenance, mapVocabularyContentSense, getVocabularySenses, emitBackendEvent } from './vocabulary-content.ts';
 import { isOfferedReflectionModelChoice, type ReflectionModelChoice } from '../reflection/model-arms.ts';
 import { resolveSharedDictionaryBaselineRevision } from './dictionary-baseline-sharing.ts';
+import { compensateUnfairVocabularyLapse } from './vocabulary-lapse-compensation.ts';
 
 function atomic<T>(work: () => T): T {
   const db = getDb(), nested = db.isTransaction, point = `reflection_${randomUUID().replaceAll('-', '')}`;
@@ -308,62 +309,6 @@ export function deferVocabularyReflectionForSense(jobId:string,token:string,retr
       lease_token=NULL,lease_expires_at=NULL WHERE job_id=?`).run(retryAt,jobId);
   });
 }
-function compensate(evidence: VocabularyReflectionCase, judgmentId: string, input: VocabularyFeedbackJudgmentInput, at: string): void {
-  const unfair = new Set(input.unfairEncounterIds);
-  if ([...unfair].some(id => !evidence.evidence.some(encounter => encounter.encounterId === id))) throw new Error('Unfair judgment references unknown encounter');
-  const pure = evidence.wordId === null;
-  // V1 compensates production only. Recognition and contrast remain lesson evidence,
-  // but their independent schedules must neither trigger nor veto this adjustment.
-  const effectiveRejected = evidence.evidence.filter(encounter =>
-    encounter.snapshot.role === 'general' && encounter.snapshot.kind === 'production'
-    && (pure ? encounter.snapshot.schedulingScope === 'pure_cue' : encounter.snapshot.schedulingScope !== 'pure_cue')
-    && (pure ? encounter.snapshot.contentId === evidence.contentId : encounter.wordId === evidence.wordId)
-    && encounter.effectiveResponses.some(response => response.payload.outcome === 'rejected'));
-  const pronunciationReport = (encounter: VocabularyEncounterEvidence) => encounter.effectiveResponses.some(response =>
-    isLearnerPronunciationRejection(encounter.snapshot.kind, response.payload, encounter.snapshot.assessment?.acceptedAnswers ?? []));
-  // A pronunciation report is the lapse the learner requested. It blocks compensation even when a model lists that encounter as an unfair written rejection.
-  if (effectiveRejected.length === 0 || effectiveRejected.some(encounter => !unfair.has(encounter.encounterId) || pronunciationReport(encounter))) return;
-  if (!pure) {
-    const completion = getDb().prepare(`SELECT report_json FROM vocabulary_session_completions
-      WHERE completion_id=? AND learner_id=? AND status='closed'`)
-      .get(evidence.completionId,evidence.learnerId) as { report_json: string } | undefined;
-    if (!completion) throw new Error('Feedback compensation requires its original closed completion');
-    const word = (JSON.parse(completion.report_json) as VocabularySessionProjection).words[evidence.wordId!];
-    if (!word) throw new Error('Feedback word is missing from its original completion');
-    // Later study must not make unfinished work in this session eligible for compensation.
-    if (!word.covered) return;
-  }
-  const table = pure ? 'learner_pure_cue_schedules' : 'learner_word_schedules';
-  const column = pure ? 'content_id' : 'word_id';
-  const subject = pure ? evidence.contentId! : evidence.wordId!;
-  const row = getDb().prepare(`SELECT next_eligible_at,state_version,scheduler_state_json FROM ${table} WHERE learner_id=? AND ${column}=?`)
-    .get(evidence.learnerId,subject) as { next_eligible_at: string | null; state_version: number; scheduler_state_json:string } | undefined;
-  if (!row) throw new Error('Feedback compensation requires an existing subject schedule');
-  if (!pure) {
-    const refresh = getDb().prepare('SELECT refresh_until FROM learner_word_schedules WHERE learner_id=? AND word_id=?')
-      .get(evidence.learnerId,subject) as { refresh_until: string | null };
-    // The existing durable request event distinguishes an explicit refresh from the
-    // automatic refresh that the unfair lapse itself may have caused at closure.
-    if (refresh.refresh_until !== null && refresh.refresh_until > at
-      && getDb().prepare(`SELECT 1 FROM backend_events WHERE name='vocabulary.refresh.requested'
-        AND learner_id=? AND entity_kind='word' AND entity_id=? AND json_extract(data_json,'$.until')=? LIMIT 1`)
-        .get(evidence.learnerId,subject,refresh.refresh_until)) return;
-  }
-  const key = `${VOCABULARY_COMPENSATION_POLICY.version}/${evidence.completionId}/${pure ? 'pure' : 'word'}/${subject}`;
-  if (getDb().prepare('SELECT 1 FROM learner_state_effects WHERE effect_key=?').get(key)) return;
-  const before = row.next_eligible_at;
-  const after = before === null ? null
-    : new Date(Date.parse(before)+VOCABULARY_COMPENSATION_POLICY.maximumDelayMs).toISOString();
-  const scheduler=JSON.parse(row.scheduler_state_json) as Record<string,VocabularyJson>;
-  const adjusted=pure&&after!==null?{...scheduler,resetUntil:typeof scheduler.resetUntil==='string'&&scheduler.resetUntil>after?scheduler.resetUntil:after}:scheduler;
-  if (before !== after || encode(scheduler)!==encode(adjusted)) getDb().prepare(`UPDATE ${table} SET next_eligible_at=?,scheduler_state_json=?,state_version=state_version+1 WHERE learner_id=? AND ${column}=?`)
-    .run(after,encode(adjusted),evidence.learnerId,subject);
-  getDb().prepare(`INSERT INTO learner_state_effects(effect_id,learner_id,word_id,pure_cue_content_id,completion_id,judgment_id,
-    effect_key,kind,before_json,after_json,applied_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(randomUUID(),evidence.learnerId,
-      evidence.wordId,pure ? evidence.contentId : null,evidence.completionId,judgmentId,key,'unfair_feedback_compensation',
-      encode({ nextEligibleAt: before,...(pure?{schedulerState:scheduler}:{}),policy: VOCABULARY_COMPENSATION_POLICY.version }),encode({ nextEligibleAt: after,...(pure?{schedulerState:adjusted}:{}) }),at);
-  event('vocabulary.reflection.compensation_applied',judgmentId,{ effectKey: key, before, after });
-}
 export function recordVocabularyFeedbackJudgment(jobId: string, token: string, input: VocabularyFeedbackJudgmentInput, at = timestamp()): { judgmentId: string; messageId: string | null } {
   return atomic(() => {
     timestamp(at);
@@ -375,7 +320,7 @@ export function recordVocabularyFeedbackJudgment(jobId: string, token: string, i
     getDb().prepare('INSERT INTO teacher_judgments VALUES (?,?,?,?,?,?)').run(judgmentId,row.case_id,jobId,input.invocationId ?? null,encode(input.diagnosis),at);
     if (messageId !== null) getDb().prepare(`INSERT INTO learner_messages(message_id,learner_id,case_id,judgment_id,source_key,body_json,created_at)
       VALUES (?,?,?,?,?,?,?)`).run(messageId,evidence.learnerId,evidence.caseId,judgmentId,`feedback/${jobId}`,encode(input.message),at);
-    compensate(evidence,judgmentId,input,at);
+    compensateUnfairVocabularyLapse(evidence,judgmentId,input.unfairEncounterIds,at);
     const output = { judgmentId,messageId }; finish(jobId,token,input,output,at);
     event('vocabulary.reflection.feedback_recorded',judgmentId,{ caseId: evidence.caseId,messageId }); return output;
   });
