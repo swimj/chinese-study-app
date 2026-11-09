@@ -12,6 +12,7 @@ type ScheduleRow = {
 };
 type Snapshot = {
   scheduler: SchedulerState; lastPractisedAt: string | null;
+  nextEligibleAt: string | null;
   refreshRequestedAt: string | null; refreshUntil: string | null;
 };
 
@@ -37,18 +38,19 @@ function readSnapshot(json: string, pure: boolean): Snapshot | null {
     ? typeof raw.scheduler_state_json === 'string' ? parseSnapshotObject(raw.scheduler_state_json) as SchedulerState | null : null
     : raw.schedulerState as SchedulerState | null | undefined;
   const lastPractisedAt = pure ? raw.last_practised_at : raw.lastPractisedAt;
+  const nextEligibleAt = pure ? raw.next_eligible_at : raw.nextEligibleAt;
   const refreshRequestedAt = pure ? null : raw.refreshRequestedAt;
   const refreshUntil = pure ? null : raw.refreshUntil;
   if (!scheduler || !Number.isFinite(scheduler.intervalHours) || scheduler.intervalHours <= 0
     || !Number.isFinite(scheduler.easeFactor) || scheduler.easeFactor <= 0
-    || !isTimestampOrNull(lastPractisedAt)
+    || !isTimestampOrNull(lastPractisedAt) || !isTimestampOrNull(nextEligibleAt)
     || !isTimestampOrNull(refreshRequestedAt) || !isTimestampOrNull(refreshUntil)
     || !isTimestampOrNull(scheduler.resetUntil ?? null)
     || (scheduler.cleanCoveredSessions !== undefined
       && (!Number.isSafeInteger(scheduler.cleanCoveredSessions) || scheduler.cleanCoveredSessions < 0))) return null;
   if (pure && (!isTimestampOrNull(scheduler.strongSince ?? null)
     || !Number.isSafeInteger(scheduler.strongSuccesses ?? 0) || (scheduler.strongSuccesses ?? 0) < 0)) return null;
-  return { scheduler, lastPractisedAt, refreshRequestedAt, refreshUntil };
+  return { scheduler, lastPractisedAt, nextEligibleAt, refreshRequestedAt, refreshUntil };
 }
 
 /** Called in the transaction that records and completes the learner's feedback judgment. */
@@ -108,22 +110,22 @@ export function compensateUnfairVocabularyLapse(
     const state = JSON.parse(current.scheduler_state_json) as SchedulerState;
     const breakUntil = new Date(Date.parse(at) + VOCABULARY_COMPENSATION_POLICY.breakMs).toISOString();
     const strongSince = prior.scheduler.strongSince ?? null;
-    // A regular due date or maintenance lottery must not delay the fresh check.
     const dueAt = [breakUntil, state.resetUntil ?? '', prior.scheduler.resetUntil ?? ''].sort().at(-1)!;
     const adjusted = { ...state, intervalHours: prior.scheduler.intervalHours, easeFactor: prior.scheduler.easeFactor,
-      cleanCoveredSessions: prior.scheduler.cleanCoveredSessions ?? 0, resetUntil: dueAt, recheckAt: dueAt };
+      cleanCoveredSessions: prior.scheduler.cleanCoveredSessions ?? 0, resetUntil: dueAt, postCompensationEarliestCheckAt: dueAt };
     if (pure) {
       db.prepare(`UPDATE learner_pure_cue_schedules SET next_eligible_at=?,last_practised_at=?,scheduler_state_json=?,state_version=state_version+1
         WHERE learner_id=? AND content_id=?`).run(dueAt, prior.lastPractisedAt,
           JSON.stringify({ ...adjusted, strongSince, strongSuccesses: prior.scheduler.strongSuccesses ?? 0 }), learnerId, subject);
     } else {
+      const nextEligibleAt = [dueAt, current.next_eligible_at ?? '', prior.nextEligibleAt ?? ''].sort().at(-1)!;
       // Roll back a refresh created by this lapse only while it is still the current
       // refresh and the learner has not made an explicit request for that window.
       const restoreRefresh = prior.refreshUntil !== lapsed.refreshUntil
         && current.refresh_until === lapsed.refreshUntil && current.refresh_requested_at === lapsed.refreshRequestedAt
         && !isActiveVocabularyRefreshRequest(learnerId, subject, current.refresh_until ?? null, at);
       db.prepare(`UPDATE learner_word_schedules SET next_eligible_at=?,last_practised_at=?,scheduler_state_json=?,refresh_requested_at=?,refresh_until=?,
-        state_version=state_version+1 WHERE learner_id=? AND word_id=?`).run(dueAt, prior.lastPractisedAt, JSON.stringify(adjusted),
+        state_version=state_version+1 WHERE learner_id=? AND word_id=?`).run(nextEligibleAt, prior.lastPractisedAt, JSON.stringify(adjusted),
           restoreRefresh ? prior.refreshRequestedAt : current.refresh_requested_at ?? null,
           restoreRefresh ? prior.refreshUntil : current.refresh_until ?? null, learnerId, subject);
     }

@@ -239,21 +239,13 @@ function planVocabularyStudy(composition:VocabularyComposition, samplingSeed:str
     }
     const reviewWords=words.filter((word)=>word.mode==='practice'||word.mode==='maintain');
     const pure=planVocabularyPureCues({ordinaryReviewCount:reviewWords.length,sessionSeed:samplingSeed,adopt:adoptPureCues});
-    const recheckByWord=new Map(composition.reviewSelections.map(entry=>[entry.wordId,entry.recheckAt]));
     type ReviewEntry={kind:'word'|'pure_cue';id:string};
-    const reviewOrder:ReviewEntry[]=[];
-    const rechecks:(ReviewEntry&{recheckAt:string})[]=pure.rechecks.map(cue=>({kind:'pure_cue',id:cue.content.contentId,recheckAt:cue.recheckAt}));
-    for(const word of reviewWords) {
-      const recheckAt=recheckByWord.get(word.wordId);
-      if(recheckAt===undefined)reviewOrder.push({kind:'word',id:word.wordId});
-      else rechecks.push({kind:'word',id:word.wordId,recheckAt});
-    }
+    const reviewOrder:ReviewEntry[]=reviewWords.map(word=>({kind:'word',id:word.wordId}));
     for(const cue of pure.routine) {
       const index=parseInt(createHash('sha256').update(`${samplingSeed}/${cue.contentId}`).digest('hex').slice(0,8),16)%(reviewOrder.length+1);
       reviewOrder.splice(index,0,{kind:'pure_cue',id:cue.contentId});
     }
-    const requiredReview=rechecks.sort((a,b)=>a.recheckAt.localeCompare(b.recheckAt)||a.id.localeCompare(b.id))
-      .map(({kind,id})=>({kind,id}));
+    const requiredReview:ReviewEntry[]=pure.rechecks.map(cue=>({kind:'pure_cue',id:cue.contentId}));
     const slots=allocateSessionBucketSlots({review:requiredReview.length+reviewOrder.length,learning:words.filter((word)=>word.mode==='solidify').length,unstudied:words.filter((word)=>word.mode==='unstudied').length});
     const admittedReview=[...requiredReview,...reviewOrder].slice(0,slots.review);
     const admittedWords=[...words.filter((word)=>word.mode==='unstudied').slice(0,slots.unstudied),

@@ -546,12 +546,14 @@ completion reports remain intact, as do explicit mode and active requested
 refresh. An automatic Maintain refresh is reversed if the originating lapse
 created it and it is still the current refresh.
 
-The scheduler sets a pending recheck for 24 hours after judgment, subject to a
-later reset gate. The recheck supersedes ordinary due dates, elapsed-interval
-eligibility, and strong-cue sampling. Due rechecks take priority within the
-review bucket. A refresh preserves the scheduled recheck, and completion
-clears it only when covered production was assessed after the break. Earlier
-responses still enter the session history. The judgment, schedule write, and compensation receipt commit
+The scheduler records the end of the pause 24 hours after judgment, subject to
+a later reset gate. For regular words, the pause only gates production.
+Ordinary due dates, interval eligibility, and skill ranking apply once it ends.
+For independent pure cues, the recheck takes priority within the review bucket
+and bypasses routine strong-cue sampling. A refresh preserves the pause, and
+completion clears its timestamp only when covered production was assessed after
+the break. Earlier responses still enter the session history. The judgment,
+schedule write, and compensation receipt commit
 together. The receipt records actual before and after state, the source effect
 key when present, and an unavailable reason when reliable evidence is missing.
 Pending judgments can use existing completion receipts. Completed judgments

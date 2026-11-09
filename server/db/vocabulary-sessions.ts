@@ -380,13 +380,13 @@ function applyLearningEffects(completionId: string, context: StoredContext, proj
     // Uncovered work preserves eligibility; its observations still enter post-session jobs.
     const solidifyCovered = word.covered && word.initialMode === 'solidify'
       && (selectedSkill === undefined || selectedSkill === 'production');
-    const recheckAt = schedule.schedulerState.recheckAt;
-    const recheckCompleted = productionCompleted && productionTiming !== null && recheckAt != null
-      && productionTiming.firstReviewedAt >= recheckAt;
-    if (recheckAt != null ? recheckCompleted : productionCompleted || solidifyCovered || word.teachingCompleted) {
+    const earliestCheckAt = schedule.schedulerState.postCompensationEarliestCheckAt;
+    const recheckCompleted = productionCompleted && productionTiming !== null && earliestCheckAt != null
+      && productionTiming.firstReviewedAt >= earliestCheckAt;
+    if (earliestCheckAt != null ? recheckCompleted : productionCompleted || solidifyCovered || word.teachingCompleted) {
       const scheduler = nextScheduler(schedule.schedulerState, clean, rejectedProductionCount, mode, isCleanSolidifySession(word),
         productionTiming ? reviewElapsedHours(schedule.lastPractisedAt, productionTiming) : undefined);
-      delete scheduler.recheckAt;
+      delete scheduler.postCompensationEarliestCheckAt;
       const refresh = mode === 'maintain' && lapse;
       const next = mode === 'solidify' || word.teachingCompleted ? nextUtcDay(now)
         : refresh ? now : clean || lapse ? hoursAfter(now, scheduler.intervalHours) : schedule.nextEligibleAt;
@@ -416,7 +416,7 @@ function applyLearningEffects(completionId: string, context: StoredContext, proj
     }
     if (word.covered && (word.initialMode === 'practice' || word.initialMode === 'maintain')
       && encounters.some((entry) => entry.snapshot.role === 'general' && entry.effectiveResponses.length > 0
-        && (entry.snapshot.kind !== 'production' || recheckAt == null || recheckCompleted))) {
+        && (entry.snapshot.kind !== 'production' || earliestCheckAt == null || recheckCompleted))) {
       const guard = applyReviewRecencyGuard(word.wordId, now);
       effect(completionId, context.sessionId, `recency/${word.wordId}`, 'review_recency_guard_applied', guard.before, guard.after, now, word.wordId);
     }
@@ -431,10 +431,10 @@ function applyLearningEffects(completionId: string, context: StoredContext, proj
     if (!cue.covered) continue;
     const before = getDb().prepare('SELECT * FROM learner_pure_cue_schedules WHERE learner_id = ? AND content_id = ?').get(learnerId, cue.contentId) as { scheduler_state_json: string; last_practised_at: string | null; next_eligible_at: string | null } | undefined;
     const scheduler = before ? JSON.parse(before.scheduler_state_json) as VocabularySchedulerState : { intervalHours: 24, easeFactor: 2.5, enabled: 1, cleanCoveredSessions: 0 };
-    if (scheduler.recheckAt != null) {
-      const recheckAt = scheduler.recheckAt;
+    if (scheduler.postCompensationEarliestCheckAt != null) {
+      const earliestCheckAt = scheduler.postCompensationEarliestCheckAt;
       if (projection.encounters.some(entry => entry.snapshot.schedulingScope === 'pure_cue' && entry.snapshot.contentId === cue.contentId
-        && entry.effectiveResponses.some(response => response.occurredAt < recheckAt))) continue;
+        && entry.effectiveResponses.some(response => response.occurredAt < earliestCheckAt))) continue;
     }
     const historical = scheduler as VocabularySchedulerState & {strongSince?:string|null;strongSuccesses?:number};
     const scheduled = schedulePureCueAssessment({id:cue.contentId,kind:'pure',stimulus:'',axisNote:'',teachingNote:'',acceptedWordIds:[],active:true,
@@ -443,7 +443,7 @@ function applyLearningEffects(completionId: string, context: StoredContext, proj
       {failureCount:cue.rejectedResponses,terminalRating:cue.rejectedResponses>0?null:'good'},now);
     const next = {...scheduler,intervalHours:scheduled.intervalHours,easeFactor:scheduled.easeFactor,
       strongSince:scheduled.strongSince,strongSuccesses:scheduled.strongSuccesses,cleanCoveredSessions:cue.rejectedResponses>0?0:(scheduler.cleanCoveredSessions??0)+1};
-    delete next.recheckAt;
+    delete next.postCompensationEarliestCheckAt;
     getDb().prepare(`INSERT INTO learner_pure_cue_schedules(learner_id,content_id,next_eligible_at,last_practised_at,policy_version,scheduler_state_json)
       VALUES (?,?,?,?,?,?) ON CONFLICT(learner_id,content_id) DO UPDATE SET next_eligible_at = excluded.next_eligible_at,last_practised_at = excluded.last_practised_at,
       policy_version = excluded.policy_version,scheduler_state_json = excluded.scheduler_state_json,state_version = state_version + 1`)

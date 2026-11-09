@@ -350,11 +350,12 @@ miss or pronunciation lapse in the same group keeps the lapse in effect.
 Coverage must have produced a scheduling effect in the originating session.
 
 The correction restores the pre-lapse interval, ease, and scheduling clock.
-A previously strong pure cue also regains its strong status and progress. The
-schedule gets a required recheck due 24 hours from the judgment. This recheck
-takes priority over routine review, including strong-cue sampling. An independent
-reset constraint can defer it. The learner's next completed assessment uses the
-restored interval and ordinary recall rules. Another unfair lapse starts a fresh
+A previously strong pure cue also regains its strong status and progress.
+Production pauses for 24 hours from the judgment. A regular word then follows
+its ordinary eligibility and review ranking. A pure cue gets a required
+recheck that takes priority over routine review, including strong-cue sampling.
+An independent reset constraint can extend the pause. The next completed
+assessment uses the restored interval and ordinary recall rules. Another unfair lapse starts a fresh
 break. The correction can replace scheduling changes from intervening study while
 preserving its attempt history, the learner's explicit mode, and active
 requested refresh. It grants no success credit. When the pre-lapse schedule is
