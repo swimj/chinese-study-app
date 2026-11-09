@@ -11,7 +11,7 @@ type ScheduleRow = {
   refresh_requested_at?: string | null; refresh_until?: string | null;
 };
 type Snapshot = {
-  scheduler: SchedulerState; nextEligibleAt: string | null; lastPractisedAt: string | null;
+  scheduler: SchedulerState; lastPractisedAt: string | null;
   refreshRequestedAt: string | null; refreshUntil: string | null;
 };
 
@@ -36,24 +36,19 @@ function readSnapshot(json: string, pure: boolean): Snapshot | null {
   const scheduler = pure
     ? typeof raw.scheduler_state_json === 'string' ? parseSnapshotObject(raw.scheduler_state_json) as SchedulerState | null : null
     : raw.schedulerState as SchedulerState | null | undefined;
-  const nextEligibleAt = pure ? raw.next_eligible_at : raw.nextEligibleAt;
   const lastPractisedAt = pure ? raw.last_practised_at : raw.lastPractisedAt;
   const refreshRequestedAt = pure ? null : raw.refreshRequestedAt;
   const refreshUntil = pure ? null : raw.refreshUntil;
   if (!scheduler || !Number.isFinite(scheduler.intervalHours) || scheduler.intervalHours <= 0
     || !Number.isFinite(scheduler.easeFactor) || scheduler.easeFactor <= 0
-    || !isTimestampOrNull(nextEligibleAt) || !isTimestampOrNull(lastPractisedAt)
+    || !isTimestampOrNull(lastPractisedAt)
     || !isTimestampOrNull(refreshRequestedAt) || !isTimestampOrNull(refreshUntil)
     || !isTimestampOrNull(scheduler.resetUntil ?? null)
     || (scheduler.cleanCoveredSessions !== undefined
       && (!Number.isSafeInteger(scheduler.cleanCoveredSessions) || scheduler.cleanCoveredSessions < 0))) return null;
   if (pure && (!isTimestampOrNull(scheduler.strongSince ?? null)
     || !Number.isSafeInteger(scheduler.strongSuccesses ?? 0) || (scheduler.strongSuccesses ?? 0) < 0)) return null;
-  return { scheduler, nextEligibleAt, lastPractisedAt, refreshRequestedAt, refreshUntil };
-}
-
-function latestDate(floor: string, ...dates: (string | null | undefined)[]): string {
-  return dates.reduce<string>((latest, date) => date && date > latest ? date : latest, floor);
+  return { scheduler, lastPractisedAt, refreshRequestedAt, refreshUntil };
 }
 
 /** Called in the transaction that records and completes the learner's feedback judgment. */
@@ -112,15 +107,11 @@ export function compensateUnfairVocabularyLapse(
   if (current && prior && lapsed && reason === null) {
     const state = JSON.parse(current.scheduler_state_json) as SchedulerState;
     const breakUntil = new Date(Date.parse(at) + VOCABULARY_COMPENSATION_POLICY.breakMs).toISOString();
-    const currentDue = !pure || state.strongSince == null ? current.next_eligible_at : null;
     const strongSince = prior.scheduler.strongSince ?? null;
-    // Strong maintenance ignores dormant SRS dates. Carry a currently fragile
-    // cue's applicable due date into the gate when restoring it to strong.
-    const resetUntil = latestDate(breakUntil, state.resetUntil, prior.scheduler.resetUntil,
-      pure && strongSince !== null ? currentDue : null);
+    // A regular due date or maintenance lottery must not delay the fresh check.
+    const dueAt = [breakUntil, state.resetUntil ?? '', prior.scheduler.resetUntil ?? ''].sort().at(-1)!;
     const adjusted = { ...state, intervalHours: prior.scheduler.intervalHours, easeFactor: prior.scheduler.easeFactor,
-      cleanCoveredSessions: prior.scheduler.cleanCoveredSessions ?? 0, resetUntil };
-    const dueAt = latestDate(resetUntil, currentDue, prior.nextEligibleAt);
+      cleanCoveredSessions: prior.scheduler.cleanCoveredSessions ?? 0, resetUntil: dueAt, recheckAt: dueAt };
     if (pure) {
       db.prepare(`UPDATE learner_pure_cue_schedules SET next_eligible_at=?,last_practised_at=?,scheduler_state_json=?,state_version=state_version+1
         WHERE learner_id=? AND content_id=?`).run(dueAt, prior.lastPractisedAt,

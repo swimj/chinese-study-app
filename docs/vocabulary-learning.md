@@ -546,11 +546,12 @@ completion reports remain intact, as do explicit mode and active requested
 refresh. An automatic Maintain refresh is reversed if the originating lapse
 created it and it is still the current refresh.
 
-The due date respects the prior and current applicable dates and a floor 24
-hours after judgment. A scheduler reset gate also protects that break from
-strong-cue sampling, a new word refresh, or closure of another already-open
-session. A strong cue's dormant fragile due date remains separate from its
-maintenance gate. The judgment, schedule write, and compensation receipt commit
+The scheduler sets a pending recheck for 24 hours after judgment, subject to a
+later reset gate. The recheck supersedes ordinary due dates, elapsed-interval
+eligibility, and strong-cue sampling. Due rechecks take priority within the
+review bucket. A refresh preserves the scheduled recheck, and completion
+clears it only when covered production was assessed after the break. Earlier
+responses still enter the session history. The judgment, schedule write, and compensation receipt commit
 together. The receipt records actual before and after state, the source effect
 key when present, and an unavailable reason when reliable evidence is missing.
 Pending judgments can use existing completion receipts. Completed judgments

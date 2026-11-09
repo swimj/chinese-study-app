@@ -14,6 +14,8 @@ export type VocabularySchedulerState = {
   intervalHours: number; easeFactor: number; enabled: number; cleanCoveredSessions: number;
   legacyAdmissionAt?: string | null;
   resetUntil?: string | null;
+  /** One required production assessment after unfair-lapse compensation. */
+  recheckAt?: string | null;
 };
 export type VocabularyWordSchedule = {
   wordId: string; nextEligibleAt: string | null; lastPractisedAt: string | null;
@@ -175,7 +177,8 @@ export function requestVocabularyRefresh(wordId: string, now = new Date().toISOS
     if (word.mode !== 'maintain') throw new VocabularyStateInputError('Temporary refresh is for Maintain words');
     const until = new Date(Date.parse(now) + 3 * 86_400_000).toISOString();
     const updated = getDb().prepare(`UPDATE learner_word_schedules SET refresh_requested_at = ?, refresh_until = ?,
-      next_eligible_at = MAX(?, COALESCE(json_extract(scheduler_state_json, '$.resetUntil'), '')),
+      next_eligible_at = COALESCE(json_extract(scheduler_state_json, '$.recheckAt'),
+        MAX(?, COALESCE(json_extract(scheduler_state_json, '$.resetUntil'), ''))),
       state_version = state_version + 1 WHERE learner_id = ? AND word_id = ?`)
       .run(now, until, now, word.learnerId, wordId);
     if (updated.changes !== 1) throw new Error('Enrolled word has no production schedule');

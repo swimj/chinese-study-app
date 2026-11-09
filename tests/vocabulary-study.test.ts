@@ -146,6 +146,29 @@ test('preview and Start reuse the same fractional pure-cue draw without adopting
   assert.ok(started.session.context.reviewOrder?.some((entry)=>entry.id===strongId));
 }));
 
+test('Start puts due word and strong-cue rechecks ahead of routine review',()=>owner(()=>{
+  db.exec(`UPDATE learner_words SET mode='practice' WHERE word_id='a';
+    UPDATE learner_word_schedules SET scheduler_state_json=json_set(scheduler_state_json,
+      '$.intervalHours',720,'$.recheckAt','2020-01-01T00:00:00.000Z'),
+      last_practised_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE word_id='a';`);
+  exercise('recheck-strong','b','general',true);
+  exercise('routine-fragile','b','general',true);
+  adoptVocabularyPureCues();
+  db.exec(`UPDATE learner_pure_cue_schedules SET next_eligible_at='2020-01-01T00:00:00.000Z';
+    UPDATE learner_pure_cue_schedules SET scheduler_state_json=json_set(scheduler_state_json,
+      '$.strongSince','2020-01-01T00:00:00.000Z','$.strongSuccesses',3,'$.recheckAt','2020-01-02T00:00:00.000Z'),
+      last_practised_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE content_id='recheck-strong';`);
+  const preview=previewVocabularyStudy({previewSeed:'required-rechecks'});
+  const started=startVocabularyStudy({previewSeed:preview.previewSeed});
+  assert.deepEqual(started.session.context.reviewOrder?.slice(0,2),[
+    {kind:'word',id:'a'},{kind:'pure_cue',id:'recheck-strong'},
+  ]);
+  assert.ok(started.session.context.reviewOrder?.some(entry=>entry.id==='routine-fragile'));
+  assert.equal(started.session.context.words.find(word=>word.wordId==='a')?.selectedSkill,'production');
+  assert.equal(preview.itemCount,started.session.context.words.length+
+    (started.session.context.reviewOrder??[]).filter(entry=>entry.kind==='pure_cue').length);
+}));
+
 function focusedA(mode:'solidify'|'practice'='practice'):VocabularyStudy {
   db.prepare("UPDATE learner_words SET mode=? WHERE word_id='a'").run(mode);
   createVocabularySession({sessionId:'focused-a',words:[{wordId:'a',mode,selectedSkill:'production'}]});

@@ -351,12 +351,12 @@ Coverage must have produced a scheduling effect in the originating session.
 
 The correction restores the pre-lapse interval, ease, and scheduling clock.
 A previously strong pure cue also regains its strong status and progress. The
-schedule stays out of selection, including strong maintenance, for at least 24
-hours from the judgment. Later applicable due dates and reset constraints still
-apply. The next assessment uses the restored schedule and ordinary recall
-rules. Another unfair lapse can start a fresh break. The correction can replace
-scheduling changes from intervening study
-while preserving its attempt history, the learner's explicit mode, and active
+schedule gets a required recheck due 24 hours from the judgment. This recheck
+takes priority over routine review, including strong-cue sampling. An independent
+reset constraint can defer it. The learner's next completed assessment uses the
+restored interval and ordinary recall rules. Another unfair lapse starts a fresh
+break. The correction can replace scheduling changes from intervening study while
+preserving its attempt history, the learner's explicit mode, and active
 requested refresh. It grants no success credit. When the pre-lapse schedule is
 unavailable, the existing schedule stays in place.
 

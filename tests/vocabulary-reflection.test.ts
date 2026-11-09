@@ -471,7 +471,7 @@ test('word feedback and improvement jobs run independently; automatic compensati
   sql.exec('DROP TRIGGER fail_compensation_receipt');
   const result = recordVocabularyFeedbackJudgment(feedback.jobId,feedback.leaseToken,input,judgedAt);
   assert.deepEqual(recordVocabularyFeedbackJudgment(feedback.jobId,feedback.leaseToken,input,judgedAt),result);
-  assert.equal(sql.prepare("SELECT next_eligible_at FROM learner_word_schedules WHERE word_id='a'").get()!.next_eligible_at,'2026-10-20T10:00:00.000Z');
+  assert.equal(sql.prepare("SELECT next_eligible_at FROM learner_word_schedules WHERE word_id='a'").get()!.next_eligible_at,'2026-10-18T11:00:00.000Z');
   assert.equal(sql.prepare("SELECT mode FROM learner_words WHERE word_id='a'").get()!.mode,'maintain');
   assert.equal(wordSchedule().refresh_until,null,'the lapse-triggered automatic refresh was reversed');
   assert.equal(Number(sql.prepare("SELECT count(*) n FROM learner_state_effects WHERE judgment_id IS NOT NULL").get()!.n),1);
@@ -570,20 +570,22 @@ for (const strong of [false,true]) test(`a covered pure-cue lapse restores ${str
   const input = { diagnosis: 'An accepted member can fit',message: null,unfairEncounterIds: ['cue-0'] };
   const result = recordVocabularyFeedbackJudgment(feedback.jobId,feedback.leaseToken,input,delayed);
   const restored = cueSchedule();
-  assert.deepEqual(scheduler(restored),{ ...state,resetUntil: strong ? breakUntil : laterReset });
-  assert.equal(restored.next_eligible_at,strong ? '2027-01-01T00:00:00.000Z' : laterReset);
+  const dueAt = strong ? breakUntil : laterReset;
+  assert.deepEqual(scheduler(restored),{ ...state,resetUntil: dueAt,recheckAt: dueAt });
+  assert.equal(restored.next_eligible_at,dueAt);
   assert.equal(restored.last_practised_at,'2026-10-01T00:00:00.000Z');
-  const selection = () => alice(() => selectVocabularyPureCueCandidates({ordinaryReviewCount:20,sessionSeed:'compensation',now:delayed,adopt:false}));
-  assert.deepEqual(selection(),[]);
-  if (strong) {
-    // Isolate the reset gate from recency, daily sampling, and dormant due dates.
-    sql.exec('SAVEPOINT compare_gate');
-    sql.exec("UPDATE learner_pure_cue_schedules SET scheduler_state_json=json_remove(scheduler_state_json,'$.resetUntil') WHERE learner_id='alice'");
-    assert.deepEqual(selection().map(cue => cue.contentId),['cue']);
-    sql.exec('ROLLBACK TO compare_gate; RELEASE compare_gate');
-  }
+  const selection = (now: string) => alice(() => selectVocabularyPureCueCandidates({ordinaryReviewCount:0,sessionSeed:'compensation',now,adopt:false}));
+  assert.deepEqual(selection('2026-11-01T23:59:59.999Z'),[]);
+  if (!strong) assert.deepEqual(selection(breakUntil),[]);
+  assert.deepEqual(selection(dueAt).map(cue => cue.contentId),['cue']);
   assert.deepEqual(recordVocabularyFeedbackJudgment(feedback.jobId,feedback.leaseToken,input,breakUntil),result);
   assert.deepEqual(cueSchedule(),restored);
+  const doneAt = new Date(Date.parse(dueAt)+16_000).toISOString();
+  close([present('cue',null,'rechecked-cue'),response('rechecked-cue','accepted')],'fresh-cue',dueAt,doneAt);
+  const rechecked = scheduler(cueSchedule());
+  assert.equal(rechecked.recheckAt,undefined);
+  if (strong) assert.equal(rechecked.strongSuccesses,state.strongSuccesses+1);
+  assert.deepEqual(selection(doneAt),[]);
   assert.deepEqual(wordSchedule('b'),wordBefore);
   assert.deepEqual(bobSchedule(),bobBefore);
 });
@@ -617,23 +619,26 @@ for (const recall of ['correct','fair miss','unfair again'] as const) test(
   `production resumes normal scheduling after the compensation break (${recall})`, () => {
   sql.exec(`CREATE TABLE learner_owned_word_skill_relevance(learner_id TEXT,word_id TEXT,skill_id TEXT,relevance_state TEXT);
     UPDATE learner_word_schedules SET scheduler_state_json=json_set(scheduler_state_json,'$.intervalHours',720,'$.easeFactor',2.8),
-    last_practised_at='2026-08-01T00:00:00.000Z',next_eligible_at='2026-09-01T00:00:00.000Z' WHERE word_id='a';`);
+    last_practised_at='2026-10-16T00:00:00.000Z',next_eligible_at='2026-11-15T00:00:00.000Z' WHERE word_id='a';`);
   const prior = wordSchedule();
   const { completion } = ingest([present('two','a','undone'),response('undone'),{kind:'undo',payload:{undoesActionId:'session-1'}},
     present('one'),response('one'),present('two'),response('two'),wrap()]);
   assert.equal(completion.report.encounters[0]?.effectiveResponses.length,0);
   assert.equal(completion.report.encounters[0]?.responses.length,1);
   assert.equal(scheduler(wordSchedule()).intervalHours,6);
+  sql.exec(`INSERT INTO learner_owned_word_skill_state
+    (learner_id,word_id,skill_id,enabled,interval_hours,ease_factor,last_studied_at,next_due_at)
+    VALUES ('alice','a','recognition',1,6,2.5,'2026-10-01T00:00:00.000Z','2026-10-01T06:00:00.000Z');`);
   const delayed = '2026-11-01T11:00:00.000Z', breakUntil = '2026-11-02T11:00:00.000Z';
   const feedback = claimVocabularyReflectionJob({kind:'learner_feedback',now:delayed})!;
   recordVocabularyFeedbackJudgment(feedback.jobId,feedback.leaseToken,{diagnosis:'Unfair',message:null,unfairEncounterIds:['one','two']},delayed);
   const restored = wordSchedule();
   assert.equal(restored.last_practised_at,prior.last_practised_at);
   assert.equal(restored.next_eligible_at,breakUntil);
-  assert.deepEqual(scheduler(restored),{...scheduler(prior),resetUntil:breakUntil});
-  const due = (now: string) => alice(() => selectVocabularyReviewSkills({now,canUseSkill:(word,skill) => word === 'a' && skill === 'production'}));
-  assert.deepEqual(due('2026-11-02T10:59:59.999Z'),[]);
-  assert.deepEqual(due(breakUntil),[{wordId:'a',skillId:'production'}]);
+  assert.deepEqual(scheduler(restored),{...scheduler(prior),resetUntil:breakUntil,recheckAt:breakUntil});
+  const due = (now: string) => alice(() => selectVocabularyReviewSkills({now,canUseSkill:word => word === 'a'}));
+  assert.deepEqual(due('2026-11-02T10:59:59.999Z'),[{wordId:'a',skillId:'recognition'}]);
+  assert.deepEqual(due(breakUntil),[{wordId:'a',skillId:'production',recheckAt:breakUntil}]);
 
   contents.fresh = createVocabularyContent(draft('fresh'),actor);
   const nextClosedAt = '2026-11-02T11:00:16.000Z';
@@ -641,9 +646,10 @@ for (const recall of ['correct','fair miss','unfair again'] as const) test(
     'fresh-check',breakUntil,nextClosedAt);
   const nextSchedule = wordSchedule();
   assert.equal(nextSchedule.last_practised_at,breakUntil);
+  assert.equal(scheduler(nextSchedule).recheckAt,undefined);
   if (recall === 'correct') {
     const elapsedHours = (Date.parse(breakUntil) - Date.parse(String(prior.last_practised_at))) / 3_600_000;
-    const grown = Math.ceil((720 + (elapsedHours - 720) / 2) * 2.8);
+    const grown = Math.ceil((720 + Math.max(0,elapsedHours - 720) / 2) * 2.8);
     assert.ok(Math.abs(scheduler(nextSchedule).intervalHours - grown) <= 1);
     assert.equal(scheduler(nextSchedule).easeFactor,2.8);
     return;
@@ -696,7 +702,7 @@ test('an older session restores the schedule it displaced at closure, even after
   assert.equal(scheduler(restored).intervalHours,scheduler(atLapse).intervalHours);
   assert.equal(scheduler(restored).easeFactor,scheduler(atLapse).easeFactor);
   assert.equal(restored.last_practised_at,atLapse.last_practised_at);
-  assert.equal(restored.next_eligible_at,atLapse.next_eligible_at);
+  assert.equal(restored.next_eligible_at,'2026-10-23T11:00:00.000Z');
   assert.deepEqual(history(),attempts);
   assert.deepEqual(reports(),completedReports);
   assert.deepEqual(wordSchedule('a','bob'),otherLearner);
@@ -949,7 +955,7 @@ test('a genuine recognition lapse does not veto compensation for an unfair produ
   recordVocabularyFeedbackJudgment(feedback.jobId,feedback.leaseToken,{ diagnosis: 'The cue was unfair; pronunciation needs work',
     message: 'Separate learning signals',unfairEncounterIds: ['one'] },judgedAt);
   assert.equal(sql.prepare("SELECT next_eligible_at FROM learner_word_schedules WHERE word_id='a'").get()!.next_eligible_at,
-    '2026-10-20T10:00:00.000Z');
+    '2026-10-18T11:00:00.000Z');
   assert.deepEqual(sql.prepare("SELECT * FROM learner_owned_word_skill_state WHERE skill_id='recognition'").get(),recognitionBefore);
 });
 
@@ -966,15 +972,17 @@ test('a delayed unfair judgment preserves an explicitly requested active refresh
   const restored = wordSchedule();
   assert.equal(restored.refresh_requested_at,before!.refresh_requested_at);
   assert.equal(restored.refresh_until,before!.refresh_until);
-  assert.equal(restored.next_eligible_at,'2026-10-20T10:00:00.000Z');
+  assert.equal(restored.next_eligible_at,'2026-10-18T11:00:00.000Z');
   assert.equal(scheduler(restored).intervalHours,24);
   assert.equal(scheduler(restored).easeFactor,2.5);
   assert.equal(sql.prepare("SELECT mode FROM learner_words WHERE word_id='a'").get()!.mode,'maintain');
-  assert.equal(alice(() => requestVocabularyRefresh('a','2026-10-17T12:00:00.000Z')).nextEligibleAt,'2026-10-18T11:00:00.000Z');
+  const afterRefresh = alice(() => requestVocabularyRefresh('a','2026-10-17T12:00:00.000Z'));
+  assert.equal(afterRefresh.nextEligibleAt,'2026-10-18T11:00:00.000Z');
   const subsequent = alice(() => stageVocabularySessionCompletion('retained',laterSequence,'2026-10-17T12:00:00.000Z'));
   alice(() => closeVocabularySessionCompletion('retained',subsequent.completionId,'2026-10-17T12:00:16.000Z'));
   assert.equal(wordSchedule().next_eligible_at,'2026-10-18T11:00:00.000Z');
   assert.equal(wordSchedule().refresh_requested_at,'2026-10-17T12:00:00.000Z');
+  assert.deepEqual(scheduler(wordSchedule()),afterRefresh.schedulerState);
   assert.equal(alice(listOwnVocabularyMessages).length,1);
 });
 
