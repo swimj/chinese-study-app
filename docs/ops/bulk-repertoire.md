@@ -36,8 +36,9 @@ npm run content:bulk-repertoire -- generate \
 
 Load `OPENAI_API_KEY` and optionally `OPENAI_BASE_URL` through protected
 environment configuration. A generation run without `--allow-provider-calls`
-only records its configuration. Trial variants use separate run directories;
-the same cohort can compare `gpt-6-sol/high`, `gpt-6-astra/low` (Light), and
+only records or checks its configuration; it does not validate retained outputs.
+Trial variants use separate run directories. The same cohort can compare
+`gpt-6-sol/high`, `gpt-6-astra/low` (Light), and
 `gpt-6.1-terra/high`.
 
 The ordinary inventory and useful-selection providers build and validate the
@@ -45,8 +46,11 @@ prerequisite calls. Known inventories/defaults are reused. Partial inventories
 need operator review. An explicit empty selection remains empty. General
 repertoire uses the same canonical projection, prompt, schema, local sense
 references, and validation as ordinary authoring. No prompts are rewritten by
-this command. Empty inventory, selection, or repertoire outcomes stay in the
-report and cannot be applied automatically.
+this command. The `result.json` in each numbered word directory records `ready`,
+`empty_inventory`, `empty_selection`, or `empty_repertoire`. The generation summary's
+`completed` count includes all four outcomes; `bundle` includes only `ready`
+results. Inspect those status fields to assess readiness. The `report` command
+summarizes provider-call costs, not per-word readiness.
 
 The rolling dispatcher replenishes slots independently. Provider remaining/reset
 headers govern request/token pacing, with bounded 429/5xx retries. Its initial
@@ -62,13 +66,16 @@ before output parsing, including refusals and malformed output. Attempts retain
 timing, request identity, usage, and pricing evidence. Each successful stage is
 cached before its dependent stage starts.
 
-Resume with the same command and run directory. Configuration and request hashes
-must match. Completed output is replayed through current prompt builders and
-validators without provider calls. A retained successful attempt can recover a
-missing stage file. Concurrent runs are excluded by `run.lock`. After verifying
-that its owning local process is dead, `--recover-run-lock` permits recovery.
-An uncertain attempt blocks dispatch until explicitly retried with
-`--retry-uncertain`; that retry may incur duplicate provider spend.
+Resume with the same command and run directory, including `--allow-provider-calls`
+and an available `OPENAI_API_KEY`. Configuration and request hashes must match.
+Completed output is replayed through current prompt builders and validators
+without provider calls; unfinished stages can make new paid calls.
+A retained successful attempt can recover a missing stage file. Concurrent runs
+are excluded by `run.lock`. After verifying that its owning local process is dead,
+`--recover-run-lock` permits recovery.
+An uncertain attempt blocks another dispatch of that request unless
+`--retry-uncertain` is supplied; other words can continue. Inspect retained
+evidence before opting in because that retry may incur duplicate provider spend.
 
 ```sh
 npm run content:bulk-repertoire -- report --input=<run-directory> --out=<cost-report.json>
