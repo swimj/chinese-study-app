@@ -257,11 +257,13 @@ hours, and no-response coverage grants no recall credit. The policy applies to
 production, recognition and contextual selection, including Maintain review,
 but not Solidify or independent pure cues.
 
-Word-skill last-study timestamps record the latest effective response, preserving
-a newer stored timestamp when an older session closes. Older history may still
-contain finalization timestamps; it remains usable conservatively without a
-backfill. Due dates and the shared recency guard remain anchored to finalization,
-while delayed finalization/retries cannot increase the elapsed retention credit.
+Session closure sets a word-skill's scheduling clock from the latest effective
+response, preserving a newer stored timestamp when an older session closes.
+[Unfair-lapse compensation](#feedback-and-scheduling-compensation) can restore
+the production clock independently of the attempt log. Older schedules can
+still contain finalization timestamps. Due dates and the shared recency guard
+use finalization time, so delayed finalization and retries cannot increase the
+elapsed retention credit.
 
 ### Preview and admission
 
@@ -540,19 +542,36 @@ not trigger post-session review and are excluded from model inputs even in
 mixed cases for the same exercise or word. Internal case evidence retains them
 so compensation cannot erase a genuine pronunciation lapse.
 
-Automatic scheduling compensation is independent of content application. The
-initial policy compensates general production and independent pure-cue scheduling,
-delaying current eligibility by at most 24 hours when every effective rejection
-within that scope was judged unfair. Word-scoped compensation also requires that
-the word was covered in the original finalized session. Uncovered words retain
-their scheduling eligibility, learner feedback, and content improvement work,
-even if a later session covers the word. Recognition and contrast receive no
-provider lessons, content-improvement calls, or automatic compensation. Their
-full evidence remains in the session log, and their encounters are excluded
-from mixed-word feedback aggregation. Mixed genuine/unfair production
-mistakes retain the conservative schedule; unrelated skills do not veto production
-compensation. Explicit mode and active learner-requested refresh choices are not
-reversed; receipts prevent duplicate adjustment.
+The learner-feedback judgment is the sole authority for scheduling compensation.
+The decision covers all effective general-production rejections for one word
+or independent pure cue in the originating completion. A genuine or pronunciation
+lapse in that group blocks compensation. Recognition and contrast keep their
+separate schedules. Uncovered work can still receive feedback and content review,
+while compensation requires a lapse effect from the original closure.
+
+Closure records the schedule immediately before and after its write in
+`learner_state_effects`. Compensation looks up that receipt by completion,
+learner, and subject. It restores interval, ease, the last-practised scheduling
+clock, and the covered-session counter from the prior schedule. Pure cues also
+recover their strong timestamp and maintenance success count. Subsequent study
+can have changed these fields by judgment time. Its session actions and
+completion reports remain intact, as do explicit mode and active requested
+refresh. An automatic Maintain refresh is reversed if the originating lapse
+created it and it is still the current refresh.
+
+The scheduler records the end of the pause 24 hours after judgment, subject to
+a later reset gate. For regular words, `postCompensationEarliestCheckAt` only gates production.
+Ordinary due dates, interval eligibility, and skill ranking apply once it ends.
+For independent pure cues, `postCompensationRecheckAt` schedules a recheck that
+takes priority within the review bucket and bypasses routine strong-cue sampling.
+A refresh preserves the pause, and
+completion clears its timestamp only when covered production was assessed after
+the break. Earlier responses still enter the session history. The judgment,
+schedule write, and compensation receipt commit
+together. The receipt records actual before and after state, the source effect
+key when present, and an unavailable reason when reliable evidence is missing.
+Pending judgments can use existing completion receipts. Completed judgments
+replay their saved results, and historical receipts block repeat compensation.
 
 ## Events and model provenance
 

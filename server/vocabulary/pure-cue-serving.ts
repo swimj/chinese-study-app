@@ -4,6 +4,7 @@ import {createHash} from 'node:crypto';
 import {getDb} from '../db/connection.ts';
 import {requireLearnerId} from '../db/learner-context.ts';
 import {getVocabularyContent} from '../db/vocabulary-content.ts';
+import type {VocabularyPureCueSchedulerState} from '../db/vocabulary-learners.ts';
 import {dueAtWithResetDelay,selectPureCuesForSession,type PureCueSelectionCandidate} from '../../src/domain/pure-cues.ts';
 import type {VocabularyContent} from '../../src/domain/vocabulary-content.ts';
 
@@ -23,7 +24,12 @@ export function adoptVocabularyPureCues(now=new Date().toISOString()):void {
     ON CONFLICT(learner_id,content_id) DO NOTHING`).run({learner:requireLearnerId(),due:dueAtWithResetDelay(now),
       state:JSON.stringify({intervalHours:24,easeFactor:2.5,enabled:1,cleanCoveredSessions:0,strongSince:null,strongSuccesses:0,adoptedAt:now})});
 }
-export function selectVocabularyPureCueCandidates(input:{ordinaryReviewCount:number;sessionSeed:string;now?:string;adopt?:boolean}):VocabularyContent[] {
+type PureCueSelectionInput={ordinaryReviewCount:number;sessionSeed:string;now?:string;adopt?:boolean};
+export function selectVocabularyPureCueCandidates(input:PureCueSelectionInput):VocabularyContent[] {
+  const {rechecks,routine}=planVocabularyPureCues(input);
+  return [...rechecks,...routine];
+}
+export function planVocabularyPureCues(input:PureCueSelectionInput):{rechecks:VocabularyContent[];routine:VocabularyContent[]} {
   const now=input.now??new Date().toISOString();if(input.adopt!==false)adoptVocabularyPureCues(now);
   const rows=getDb().prepare(`SELECT c.content_id,s.scheduler_state_json,s.last_practised_at,s.next_eligible_at
     FROM learner_pure_cue_schedules s JOIN content_items c USING(content_id)
@@ -36,17 +42,23 @@ export function selectVocabularyPureCueCandidates(input:{ordinaryReviewCount:num
       UNION SELECT word_id FROM exercise_answer_words WHERE exercise_id=?`)
       .all(row.content_id,row.content_id) as {word_id:string}[];
     return words.every(word=>!isSenseContentReconciliationPending(word.word_id));
-  }).map((row):PureCueSelectionCandidate=>{
-    const state=JSON.parse(row.scheduler_state_json) as {intervalHours:number;easeFactor:number;strongSince?:string|null;strongSuccesses?:number;resetUntil?:string|null;maintenanceIdentity?:string};
+  }).map((row):PureCueSelectionCandidate & {recheckAt:string|null}=>{
+    const state=JSON.parse(row.scheduler_state_json) as VocabularyPureCueSchedulerState;
     const active=state.resetUntil==null||state.resetUntil<=now;
     return {id:row.content_id,maintenanceIdentity:state.maintenanceIdentity,active,
       lastStudiedAt:row.last_practised_at,nextDueAt:row.next_eligible_at??now,
-      strongSince:state.strongSince??null,strongSuccesses:state.strongSuccesses??0};
+      strongSince:state.strongSince??null,strongSuccesses:state.strongSuccesses??0,recheckAt:state.postCompensationRecheckAt??null};
   });
   let draw=0;const random=()=>parseInt(createHash('sha256').update(`${input.sessionSeed}/${draw++}`).digest('hex').slice(0,8),16)/0x100000000;
-  return selectPureCuesForSession({learnerId:requireLearnerId(),cues,ordinaryReviewCount:input.ordinaryReviewCount,now,random}).selected.map((cue)=>{
-    const content=getVocabularyContent(cue.id);
+  const rechecks=cues.flatMap(cue=>cue.active&&cue.recheckAt!==null&&cue.recheckAt<=now
+    ? [{id:cue.id,recheckAt:cue.recheckAt}] : []);
+  const routine=selectPureCuesForSession({learnerId:requireLearnerId(),cues:cues.filter(cue=>cue.recheckAt===null),
+    ordinaryReviewCount:input.ordinaryReviewCount,now,random}).selected;
+  const hydrate=(id:string)=>{
+    const content=getVocabularyContent(id);
     if(!content||content.kind!=='exercise')throw new Error('Selected pure cue disappeared');
     return content;
-  });
+  };
+  return {rechecks:rechecks.sort((a,b)=>a.recheckAt.localeCompare(b.recheckAt)||a.id.localeCompare(b.id))
+    .map(cue=>hydrate(cue.id)),routine:routine.map(cue=>hydrate(cue.id))};
 }

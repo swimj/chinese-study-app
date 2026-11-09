@@ -92,7 +92,13 @@ creates reconciliation tables and rebuilds the practice queue while preserving
 existing jobs, without rewriting content, senses or learner records. See the
 [migration rehearsal note](ops/sense-inventory-reconciliation.md#live-reconciliation-migration-rehearsal).
 
-Pure-cue response reflection has an independent provider call and stored bundle,
+The vocabulary feedback path uses `learner_state_effects` for both closure's
+immutable pre-lapse snapshots and judgment-linked compensation receipts. The
+[compensation module](../server/db/vocabulary-lapse-compensation.ts) writes the
+outcome in the feedback judgment transaction. Compensation uses the existing
+schedule JSON for reset gates and requires no schema migration.
+
+In the earlier runtime, pure-cue response reflection used an independent provider call and stored bundle,
 using the same artifacts, run log, authorization, and inbox. Its
 `reconcile_pure_cue_response` adapter can extend the source cue, revise teaching,
 and change only C's word-owned cues. `pure_cue_assessment_scheduler_snapshots`

@@ -9,7 +9,7 @@ export type VocabularyReviewSelection = { wordId: string; skillId: VocabularyRev
 type Candidate = VocabularyReviewSelection & { urgency: number; nextDueAt: string | null };
 type ScheduleRow = {
   word_id: string; mode: 'practice' | 'maintain'; skill_id: VocabularyReviewSkill; interval_hours: number;
-  last_studied_at: string | null; next_due_at: string | null; enabled: number;
+  last_studied_at: string | null; next_due_at: string | null; enabled: number; post_compensation_earliest_check_at: string | null;
 };
 
 /** Select a single due objective per established review word, using its current model's schedule. */
@@ -25,10 +25,11 @@ export function selectVocabularyReviewSkills(options: {
       SELECT s.word_id, 'production' AS skill_id,
         json_extract(s.scheduler_state_json, '$.intervalHours') AS interval_hours,
         s.last_practised_at AS last_studied_at, s.next_eligible_at AS next_due_at,
-        COALESCE(json_extract(s.scheduler_state_json, '$.enabled'), 1) AS enabled
+        COALESCE(json_extract(s.scheduler_state_json, '$.enabled'), 1) AS enabled,
+        json_extract(s.scheduler_state_json, '$.postCompensationEarliestCheckAt') AS post_compensation_earliest_check_at
       FROM learner_word_schedules s WHERE s.learner_id = ?
       UNION ALL
-      SELECT word_id, skill_id, interval_hours, last_studied_at, next_due_at, enabled
+      SELECT word_id, skill_id, interval_hours, last_studied_at, next_due_at, enabled, NULL
       FROM learner_owned_word_skill_state WHERE learner_id = ? AND skill_id IN ('recognition', 'contextual_selection')
     )
     SELECT s.*, w.mode FROM schedules s
@@ -44,6 +45,7 @@ export function selectVocabularyReviewSkills(options: {
   `).all(learnerId, learnerId, learnerId, options.now) as ScheduleRow[];
   const best = new Map<string, Candidate>();
   for (const row of rows) {
+    if (row.post_compensation_earliest_check_at !== null && row.post_compensation_earliest_check_at > options.now) continue;
     // A newly enabled objective has no recall evidence and is immediately eligible.
     const urgency = reviewUrgency(row.interval_hours, row.last_studied_at || null, options.now);
     if (urgency < 1 || (row.next_due_at !== null && row.next_due_at > options.now)) continue;

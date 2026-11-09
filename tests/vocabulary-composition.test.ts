@@ -133,6 +133,22 @@ test('review ties use next due time then word and skill identity',()=>owner(()=>
   assert.deepEqual(compose().reviewSelections,[{wordId:'a',skillId:'recognition'},{wordId:'b',skillId:'production'}]);
 }));
 
+test('the post-compensation gate delays production and preserves ordinary admission and ranking after expiry',()=>owner(()=>{
+  reviewWord('urgent',96);
+  reviewWord('compensated',48);skill('compensated','recognition',72);
+  reviewWord('interval-not-elapsed',12);
+  reviewWord('future-due',96);
+  reviewWord('gate-still-active',240);
+  db.exec(`UPDATE learner_word_schedules SET scheduler_state_json=json_set(scheduler_state_json,'$.postCompensationEarliestCheckAt','2026-10-17T09:00:00.000Z')
+    WHERE word_id IN ('compensated','interval-not-elapsed','future-due');
+    UPDATE learner_word_schedules SET scheduler_state_json=json_set(scheduler_state_json,'$.postCompensationEarliestCheckAt','2026-10-17T11:00:00.000Z')
+    WHERE word_id='gate-still-active';
+    UPDATE learner_word_schedules SET next_eligible_at='2026-10-18T00:00:00.000Z' WHERE word_id='future-due';`);
+  assert.deepEqual(compose().reviewSelections,[
+    {wordId:'urgent',skillId:'production'},{wordId:'compensated',skillId:'recognition'},
+  ]);
+}));
+
 test('suppressed or unavailable objectives fall back to eligible recognition without duplicating a word',()=>owner(()=>{
   reviewWord('a',96);skill('a','recognition',48);
   db.prepare("INSERT INTO learner_owned_word_skill_relevance VALUES('alice','a','production','suppressed')").run();
