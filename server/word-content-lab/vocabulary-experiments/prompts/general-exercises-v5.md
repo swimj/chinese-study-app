@@ -25,7 +25,7 @@ of the exact target within that selected coverage.
 
 Return only `exercises` in the supplied schema. Each has a unique local `id`, `sourceUseId` (the supplied use ID anchoring this exercise), `stimulus`, and `teachingNote` (brief post-answer clarification or null). The learner types the target expression; the app supplies its written answer forms. Do not author response instructions or accepted answers.
 
-Use `direct_text` with English `text`, or `phrase_cloze` with a concise English `frame` and natural Mandarin `text` containing exactly one `____` blank for the entire target. Do not expose the target's Chinese forms or pinyin anywhere in the visible stimulus. Use Simplified Chinese for authored contextual phrases.
+Use `direct_text` with English `text`, or `phrase_cloze` with a concise English `frame` and natural Mandarin `text` containing exactly one `____` blank for the entire target. Keep the target's Chinese forms and pinyin out of direct cues. A cloze may retain another occurrence in natural context while keeping the blank a meaningful retrieval task. Use Simplified Chinese for authored contextual phrases.
 
 Anchor each exercise to one supplied use reference. Choose a faithful connection
 to that use rather than an arbitrary association; if no supplied use fits, omit
@@ -200,8 +200,8 @@ none must resemble this one to qualify.
 
 Return only the specified JSON object. Before returning, read the actual cues
 as the learner will encounter them: each should offer a graspable retrieval
-experience, preserve the supplied sense and exact target, and reveal neither
-its written form nor its pinyin. A teaching note comes after recall and must
+experience and preserve the supplied sense and exact target. Direct cues omit
+the target's written forms and pinyin. A teaching note comes after recall and must
 not supply missing pre-answer meaning. Keep the repertoire open to useful
 experiments while removing clear linguistic errors and forced tasks. Do not
 turn these worked starting points into a mandatory recipe.

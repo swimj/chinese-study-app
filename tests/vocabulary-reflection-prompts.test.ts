@@ -18,7 +18,6 @@ test('vocabulary reflection retains detailed linguistic guidance and worked exam
     'If your explanation must narrow or correct the cue',
     'Determine whether the response is the intended target,',
     'A cue should evoke an intended meaning or utterance,',
-    'Check each new cue as the learner will see it before answering.',
     'A minimal-context exercise need not constrain every possible communication',
     'The goal is strong evocation, not proof that no other word could ever fit.',
     'Preserve lexical-unit integrity.',
@@ -35,7 +34,7 @@ test('vocabulary reflection retains detailed linguistic guidance and worked exam
     assert.ok(passage, `source passage exists: ${opening}`);
     assert.ok(reasoning.includes(passage), `retained verbatim: ${opening}`);
   }
-  for (const example of ['`提醒` / `提示`', '`式` / `样式`', '`包庇`', '`遇见`', '`郗`', '`考察`', '`考查`']) {
+  for (const example of ['`提醒` / `提示`', '`式` / `样式`', '`包庇`', '`遇见`', '`郗`', '`考察`', '`考查`', '`to abuse one\'s power,\nas in 滥用权力`']) {
     assert.ok(reasoning.includes(example), `retained adapted example: ${example}`);
   }
 });
@@ -52,11 +51,12 @@ test('shared vocabulary reasoning leaves output and operation authority to curre
 
 // These guard documented prompt lineage, not model quality. Live trial results
 // and editorial disagreements are retained separately in the prompt README.
-test('general repertoire preserves the full v4 authoring guidance and keeps examples exploratory',()=>{
+test('general repertoire preserves v4 authoring guidance around the revised answer form policy',()=>{
   const baseline=readFileSync(new URL('../server/word-content-lab/vocabulary-experiments/prompts/general-exercises-v4.md',import.meta.url),'utf8');
   const current=readFileSync(new URL('../server/word-content-lab/vocabulary-experiments/prompts/general-exercises-v5.md',import.meta.url),'utf8');
   for(const paragraph of baseline.trim().split('\n\n').filter(part=>!part.startsWith('#')&&!part.startsWith('Return only `exercises`'))){
-    assert.ok(current.includes(paragraph),`retained baseline paragraph: ${paragraph.slice(0,70)}`);
+    const retained = paragraph.split("Do not expose the target's Chinese forms or pinyin anywhere in the visible stimulus.");
+    for (const passage of retained) assert.ok(current.includes(passage.trim()), `retained baseline passage: ${passage.slice(0,70)}`);
   }
   assert.match(current,/starting points for\nexploration, not templates/);
   assert.match(current,/No example format is an essential hallmark/);

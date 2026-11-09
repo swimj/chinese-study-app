@@ -1,3 +1,4 @@
+import { directCueContainsAcceptedForm } from '../../src/domain/cloze-prompt.ts';
 import { copiesPrivateVocabularyEvidence } from './shared-evidence-guard.ts';
 import { linkVocabularyInvocationContent, linkVocabularyInvocationSense } from '../db/vocabulary-provenance.ts';
 import { VocabularySenseMappingUnavailable, isSenseMappingAvailabilityFailure } from './sense-mapping-retry.ts';
@@ -121,7 +122,7 @@ export function normalizeVocabularyReflectionOutput(job:VocabularyReflectionJob,
     if(copiesPrivateVocabularyEvidence(job,original.accessScope,[operation.prompt])) {
       throw new VocabularyReflectionOutputError('Shared authored content cannot copy private learner evidence');
     }
-    if(accepted.some(answer=>answer.trim()&&operation.prompt.includes(answer)))throw new VocabularyReflectionOutputError('Retrieval prompt exposes an accepted answer');
+    if(directCueContainsAcceptedForm(operation.prompt,accepted))throw new VocabularyReflectionOutputError('Retrieval prompt exposes an accepted answer');
     const previousBody=original.body!==null&&typeof original.body==='object'&&!Array.isArray(original.body)?original.body:{};
     const body:Record<string,VocabularyJson>={...previousBody,prompt:operation.prompt};
     if('stimulus' in body)body.stimulus={kind:'direct_text',text:operation.prompt};
@@ -141,7 +142,7 @@ export function normalizeVocabularyReflectionOutput(job:VocabularyReflectionJob,
       if(!candidate)throw new VocabularyReflectionOutputError('Response exercise requires a supplied unambiguous response identity');
       nonempty(exercise.prompt);nonempty(exercise.rationale);
       const acceptedForms=[...new Set([candidate.hanzi,...(candidate.traditional?[candidate.traditional]:[])])];
-      if(acceptedForms.some(form=>exercise.prompt.includes(form)))throw new VocabularyReflectionOutputError('Response prompt exposes an accepted answer');
+      if(directCueContainsAcceptedForm(exercise.prompt,acceptedForms))throw new VocabularyReflectionOutputError('Response prompt exposes an accepted answer');
       if(copiesPrivateVocabularyEvidence(job,original.accessScope,[exercise.prompt]))throw new VocabularyReflectionOutputError('Shared authored content cannot copy private learner evidence');
       operations.push({operationKey:`response-${index+1}`,strategy:'create',rationale:exercise.rationale,
         scope:original.accessScope==='shared'?{kind:'shared'}:{kind:'learner',learnerId:original.ownerLearnerId!},
@@ -213,7 +214,7 @@ export function createVocabularyReflectionProvider(options:{environment?:NodeJS.
       const systemPrompt=promptFile==='feedback'?task:`${reasoning}\n\n${task}`;prompts.set(promptFile,systemPrompt);return systemPrompt;
     };
     const stagePrompt=(stage:string)=>stage==='sense_mapping'?'sense-mapping':stage==='pure_cue_promotion'?'pure-cue-integration':'single-improvement';
-    const admissionPromptVersion=(stage:string)=>stage==='single_improvement'?'6':stage==='sense_mapping'?'5':'2';
+    const admissionPromptVersion=(stage:string)=>stage==='single_improvement'?'7':stage==='sense_mapping'?'5':'3';
     const schemaVersion=(step:string)=>step==='single_improvement'?'5':step==='pure_cue_promotion'?'4':'1';
     const projectionVersion=(step:string)=>step==='second_opinion'?'vocabulary-second-opinion.v2'
       :step==='feedback'||step==='improvement'?'vocabulary-reflection.v3'
@@ -294,7 +295,7 @@ The input's operatorEditorial contains optional operator instructions and an exp
         return content;
       });
       const response=await runCall('second_opinion',{proposal:job.secondOpinion.proposal,operatorNotes:job.secondOpinion.notes,
-        sources,originalDiagnosis:job.secondOpinion.diagnosis ?? null,evidence:projectVocabularyReflectionInput(job)},schema,'second-opinion','2');
+        sources,originalDiagnosis:job.secondOpinion.diagnosis ?? null,evidence:projectVocabularyReflectionInput(job)},schema,'second-opinion','3');
       try {
         if(validateJsonSchema(response.value,schema).length)throw new VocabularyReflectionOutputError('Second opinion failed its strict schema');
         const opinion=response.value as import('../../src/domain/vocabulary-reflection.ts').VocabularySecondOpinionVerdict;
@@ -326,7 +327,7 @@ The input's operatorEditorial contains optional operator instructions and an exp
       const word=getDb().prepare('SELECT id AS wordId,hanzi,traditional,pinyin,meaning FROM lexical_words WHERE id=?').get(admission.wordId);
       const response=await runCall('pure_cue_promotion',{sourceContent:original,wordId:admission.wordId,word,catalog,senses,
         evidence:projectVocabularyReflectionInput(job),intendedSense:senses.find(sense=>sense.senseId===admission.senseIds[0]),
-        localAssessment:resolution.diagnosis,localPlan:resolution.localPlan??null,...promotion.input},promotionSchema,coherent?'pure-cue-integration':'pure-cue-promotion',coherent?'2':'3');
+        localAssessment:resolution.diagnosis,localPlan:resolution.localPlan??null,...promotion.input},promotionSchema,coherent?'pure-cue-integration':'pure-cue-promotion',coherent?'3':'4');
       try{
         if(validateJsonSchema(response.value,promotionSchema).length)throw new VocabularyReflectionOutputError('Promotion failed strict output schema');
         const promoted=promotion.normalize(response.value,response.invocationId);fence();
@@ -344,7 +345,7 @@ The input's operatorEditorial contains optional operator instructions and an exp
     }
     if(original?.kind==='exercise'&&original.exerciseType==='pure_cue'){
       const review=prepareVocabularyPureCueImprovement(job,original);review.fence();
-      const response=await runCall('pure_cue_improvement',{sourceContent:original,evidence:projectVocabularyReflectionInput(job),...review.input},vocabularyPureCueImprovementSchema,'pure-cue-improvement','1');
+      const response=await runCall('pure_cue_improvement',{sourceContent:original,evidence:projectVocabularyReflectionInput(job),...review.input},vocabularyPureCueImprovementSchema,'pure-cue-improvement','2');
       if(context?.canPublish&&!context.canPublish())throw new Error('Reflection lost publication authority');
       review.fence();
       try{return review.normalize(response.value,response.invocationId);}

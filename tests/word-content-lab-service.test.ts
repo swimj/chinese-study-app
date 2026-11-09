@@ -5,6 +5,7 @@ import path from 'node:path';
 import { afterEach, test } from 'node:test';
 import type { IntroductionLexicalInput } from '../src/domain/word-content/lab.ts';
 import type { WordContentDocument } from '../src/domain/word-content/types.ts';
+import { materializeExercise } from '../src/domain/word-content/materialize.ts';
 import {
   createIntroductionLabService, IntroductionLabError,
 } from '../server/word-content-lab/service.ts';
@@ -150,12 +151,12 @@ test('generation requests reject concurrency and malformed lexical input', async
   await first;
 });
 
-test('generated rehearsal cannot reveal its answer in instructions or unhidden occurrences', async () => {
-  for (const stimulus of [
-    { kind: 'direct_text', text: 'Type 報備.' },
-    { kind: 'example_cloze', exampleId: 'visit', occurrenceIndexes: [1], frame: null },
+test('generated rehearsals allow cloze repeats and reject direct answers or extra instructions', async () => {
+  for (const rehearsal of [
+    { id: 'leak', stimulus: { kind: 'direct_text', text: 'Type 報備.' } },
+    { ...teachingWire().rehearsals[0], instruction: 'Recall 报备.' },
   ]) {
-    const { lab } = await service(provider({ generatePractice: async () => ({ rehearsals: [{ id: 'leak', stimulus }],
+    const { lab } = await service(provider({ generatePractice: async () => ({ rehearsals: [rehearsal],
     }) }));
     const content = await lab.bootstrap(lexical);
     await assert.rejects(lab.generateTeaching(content.id), (error) => (
@@ -164,12 +165,12 @@ test('generated rehearsal cannot reveal its answer in instructions or unhidden o
     assert.equal((await lab.listDrafts()).length, 1);
   }
   const { lab } = await service(provider({ generatePractice: async () => ({
-    rehearsals: [{ ...teachingWire().rehearsals[0], instruction: 'Recall 报备.' }],
+    rehearsals: [{ id: 'repeat', stimulus: { kind: 'example_cloze', exampleId: 'visit', occurrenceIndexes: [1], frame: null } }],
   }) }));
   const content = await lab.bootstrap(lexical);
-  await assert.rejects(lab.generateTeaching(content.id), (error) => (
-    error instanceof IntroductionLabError && error.status === 502
-  ));
+  const draft = await lab.generateTeaching(content.id);
+  const rehearsal = draft.teaching!.rehearsals[0]!;
+  assert.equal(materializeExercise(rehearsal, [draft.content]).stimulus.text, '他报备以后又____。');
 });
 
 

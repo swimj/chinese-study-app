@@ -21,7 +21,7 @@ cannot settle a language claim.
 
 When a proposal is present, compare the complete operations with their source versions. Check that the
 proposed retrieval prompts preserve the intended capability and answer contract,
-do not expose accepted answers, and do not copy private learner evidence into
+keep accepted forms out of direct cues, and do not copy private learner evidence into
 shared content. Consider whether replacement discards worthwhile practice,
 whether a new variant adds value, and whether the proposed scope fits the reason
 for change. For pure cues, assess the shared expressive purpose and each accepted

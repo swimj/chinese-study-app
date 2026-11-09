@@ -20,7 +20,7 @@ export function generalExerciseSchema(content:GeneralExerciseSource):JsonSchema 
     teachingNote:{type:['string','null']}})}});
 }
 export const GENERAL_EXERCISE_CONTRACT = {systemPrompt:prompt,outputSchemaName:'vocabulary_general_exercises_v2',
-  promptName:'vocabulary-general-exercises',promptVersion:'v5',schemaVersion:'2',inputProjectionVersion:'general-exercises-v2'};
+  promptName:'vocabulary-general-exercises',promptVersion:'v5.1',schemaVersion:'2',inputProjectionVersion:'general-exercises-v2'};
 /** Both callers use this exact prompt, response schema, and provenance contract. */
 export function generalExerciseInvocation(content:GeneralExerciseSource) {
   const refs=vocabularySenseReferences(content.uses.map(use=>use.id));

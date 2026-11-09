@@ -275,7 +275,7 @@ stimulus, axis, current members and accepted forms while replacing the complete
 teaching note; repair changes only the stimulus. The accumulated teaching note
 integrates all members, mostly in English with Chinese where helpful. Both
 changes require manual application and leave individual word repertoires alone.
-The call uses prompt/schema version 1 and projection `vocabulary-admission.v1`,
+The call uses prompt version 2, schema version 1, and projection `vocabulary-admission.v2`,
 retains invocation provenance and source/lexical fences, and does not use the
 admission stage-result cache.
 
@@ -309,8 +309,10 @@ accepted form, stimulus, and axis while integrating the note; creation authors
 the final prompt, semantic axis, and teaching note. The candidate's presentation
 can change while its nominated meaning and membership are preserved. The adapter
 retains the candidate rationale as shared-purpose context rather than copying its
-example sentence into that field. Identity, privacy, and answer-leak guards apply
-even when integration selects reuse. Lookup remains bounded to eligible cues
+example sentence into that field. Nomination guards check identity and privacy
+before integration. A visible accepted form blocks a direct cue. For flat
+prompts, the same blank parser used to render the cue identifies clozes and
+allows accepted forms in their context. Lookup remains bounded to eligible cues
 sharing an incoming member; semantic similarity without member overlap is not a
 retrieval mechanism. Destination judgment compares expressive purposes and actual
 stimulus compatibility, rather than requiring identical example scenes.

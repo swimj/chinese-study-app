@@ -1,3 +1,4 @@
+import { directCueContainsAcceptedForm } from '../../src/domain/cloze-prompt.ts';
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import type { JsonSchema } from '../../src/domain/reflection-result-schema.ts';
@@ -135,7 +136,7 @@ export function prepareVocabularyPureCuePromotion(job:VocabularyReflectionJob,or
         availability:'active',originKind:'model',authorKind:'service',authorId:'vocabulary-reflection'};
     }
     const body=content.body as {prompt?:string};
-    if(!body.prompt||answers.some(answer=>answer.acceptedForms.some(form=>body.prompt!.includes(form))))fail('stimulus exposes an accepted answer');
+    if(!body.prompt||directCueContainsAcceptedForm(body.prompt,answers.flatMap(answer=>answer.acceptedForms)))fail('stimulus exposes an accepted answer');
     const common={learningRole:'shared' as const,operationKey:'pure-cue-promotion',scope:original.accessScope==='shared'?{kind:'shared' as const}:{kind:'learner' as const,learnerId:original.ownerLearnerId!},rationale:output.rationale,content};
     const operation:VocabularyProposalOperation=existing?{...common,strategy:'update_existing',sourceContentId:existing.contentId,expectedVersion:existing.version}:{...common,strategy:'create'};
     return {assessment,operations:[operation],bases};
@@ -150,7 +151,7 @@ export function validateVocabularyPureCueDraft(job:VocabularyReflectionJob,origi
   if(copiesPrivateVocabularyEvidence(job,original.accessScope,text))throw new Error('Shared cue copies private learner evidence');
   const forms=[...referral.candidateWords,...(original.kind==='exercise'?original.answers.flatMap(answer=>answer.acceptedForms):[]),
     ...pureCueIdentityOptions(job.evidence.wordId!,referral).flatMap(option=>option.choices.flatMap(word=>[word.hanzi,...(word.traditional?[word.traditional]:[])]))];
-  if(forms.some(form=>form&&referral.draft!.prompt.includes(form)))throw new Error('Shared stimulus exposes an accepted answer');
+  if(directCueContainsAcceptedForm(referral.draft.prompt,forms))throw new Error('Shared stimulus exposes an accepted answer');
 }
 
 export function prepareVocabularyPureCueIntegration(job:VocabularyReflectionJob,original:VocabularyContent,referral:VocabularyPureCueReferral,selections:Record<string,string>={}) {

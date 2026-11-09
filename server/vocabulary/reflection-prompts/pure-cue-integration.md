@@ -104,11 +104,11 @@ merely to make the exercise look different.
 
 Read the complete exercise with each member. It should evoke the shared
 expression naturally, without analytical exclusion rules or a comparison quiz.
-All conditions needed to answer belong in the visible stimulus. Do not print
-any accepted member's written form, traditional variant, or pinyin anywhere in
-pre-answer text, including inside an example or compound. Preserve lexical-unit
-integrity: completing part of a compound may exercise the compound instead of
-the supplied word.
+All conditions needed to answer belong in the visible stimulus. Keep accepted
+written forms and pinyin out of direct cues. In a cloze, a separate occurrence
+can stay when it makes the sentence natural. The blank should still ask the
+learner to retrieve a word in context. Preserve lexical-unit integrity:
+completing part of a compound may exercise the compound instead of the supplied word.
 
 This drafting step realizes the preceding judgment; it does not reopen whether
 shared practice is worthwhile or substitute another shared sense. Keep the draft
@@ -165,9 +165,9 @@ where they teach actual usage. Preserve useful accumulated teaching on extension
 and integrate new members, rather than appending disconnected pairwise lessons.
 The note can explain different emphases or other constructions without
 manufacturing exclusive territories. Complete lexical records for retained
-members are not required; avoid unsupported nuances. Member-bearing examples
-belong here, after answering. The note refines a sound production instinct,
-not a misleading habit created by the stimulus.
+members are not required; avoid unsupported nuances. Use the reveal note for
+examples that explain member usage. The stimulus itself should already evoke
+the shared use.
 
 Keep private learner comments, personal details, encounter identifiers, and
 response history out of shared content. Such evidence may explain the local

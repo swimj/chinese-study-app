@@ -63,10 +63,9 @@ A stimulus is one of:
 
 A `phrase_cloze` carries its own frame and phrase, for example English
 “Give advance notice.” with Mandarin “来之前先____。”. The parser requires a
-nonempty frame, exactly one `____` blank, and surrounding phrase text. Exercise
-validation rejects visible accepted Chinese answer forms in its instruction,
-frame, or phrase. Materialization joins frame and phrase on separate lines
-without looking up a source example.
+nonempty frame, exactly one `____` blank, and surrounding phrase text. Accepted
+forms may occur in cloze context. Materialization joins frame and phrase on
+separate lines without looking up a source example.
 
 An `example_cloze` instead retains a source reference and chosen spans.
 Offsets are half-open **Unicode code-point** offsets. Blanks are ordered,
@@ -169,7 +168,7 @@ order.
 [Domain tests](../tests/word-content.test.ts) exercise roundtrips, references,
 Unicode spans, source drift, snapshot detachment, and explicit answer contracts.
 They also check phrase clozes without a source example, malformed blanks, missing
-frames, and exposed answer forms.
+frames, and visible answer forms in cloze context.
 [Compatibility tests](../tests/word-content-compat.test.ts) cover old/new review
 matching and retained supplement identity. These checks establish representation
 and matching behavior; they do not assess whether a generated explanation or cue

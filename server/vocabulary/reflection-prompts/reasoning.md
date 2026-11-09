@@ -243,11 +243,11 @@ These describe cue designs, not additional output fields or permission to change
 the source exercise's type, relationships, or answer membership. The current
 improvement call can author wording only within its supplied answer contract.
 
-Check each new cue as the learner will see it before answering. Its text must
-not give away the target's written form or pinyin, including inside an English
-frame, Mandarin example, or fixed phrase. For `滥用`, `to abuse one's power, as
-in 滥用权力` spoils the exercise. Evoke the use without printing the answer;
-target-bearing examples belong in post-reveal teaching instead.
+Check each new cue as the learner will see it before answering. Keep accepted
+written forms and pinyin out of direct cues. For `滥用`, `to abuse one's power,
+as in 滥用权力` supplies the answer to a direct cue. In a cloze, a separate
+occurrence can stay when it makes the sentence natural. The blank should still
+ask the learner to retrieve a word in context.
 
 A minimal-context exercise need not constrain every possible communication to
 the target. When the blank admits a very wide range of valid communications,
@@ -436,8 +436,8 @@ Before returning, confirm that:
 - the output follows the current call's schema and contains only supplied IDs;
 - cue quality was assessed independently of answer correctness, and neither
   the explanation nor a supplement was used to rescue missing cue meaning;
-- every proposed exercise naturally evokes its authored answer contract without
-  exposing an accepted answer's written form or pinyin;
+- every proposed exercise naturally evokes its authored answer contract,
+  and direct cues omit accepted written forms and pinyin;
 - a low-value-production judgment considers an ideal cue rather than merely a
   poor current exercise, and unsupported operations remain diagnostic only;
 - contrast rests on a useful difference in natural usage;

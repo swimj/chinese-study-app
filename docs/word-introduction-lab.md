@@ -95,8 +95,9 @@ contract and stores an empty instruction. The
 [generation explanation](word-content-generation.md#authoring-and-validation)
 describes that division and its validation limits.
 
-The lab rejects generated rehearsals that expose an accepted Chinese answer
-form. Its player hides answer-bearing surrounding content during recall.
+The lab rejects generated direct rehearsals that expose an accepted Chinese
+answer form. Clozes may include accepted forms in the visible context. Its
+player hides answer-bearing surrounding content during recall.
 Imported drafts preserve authored content after representation/reference
 validation, including source-example clozes supported by older packages and
 samples. Reopening a package starts a fresh preview.

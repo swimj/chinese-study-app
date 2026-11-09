@@ -401,7 +401,7 @@ export function finishSharedWordReviewPreparation(
         throw new Error('Authored review must accept exactly its lexical target');
       }
       const forms = [content.word.hanzi, content.word.traditional].filter((form): form is string => form !== null);
-      if (forms.some((form) => snapshot.text.includes(form))) {
+      if (exercise.stimulus.kind === 'direct_text' && forms.some((form) => snapshot.text.includes(form))) {
         throw new Error('Authored review stimulus reveals its target');
       }
       getDb().prepare(`

@@ -35,6 +35,11 @@ use. Teaching exercises belong exclusively to teaching and familiar priming;
 the general practice pool excludes them. An introduction binds exact authored
 teaching exercise versions so its repertoire remains coherent.
 
+Generated direct production cues must omit accepted written answer forms.
+Cloze validation permits those forms in visible context, including a repeat
+of the word used in the blank. Authors should still choose blanks that offer
+meaningful retrieval practice. Review and reassessment can correct weak cues.
+
 Authored study content is shared in the current product, including corpus-based
 dictionary fallbacks, bootstrap teaching, and generated practice repertoires.
 Learner-private authored content remains a conceptual and storage capability;

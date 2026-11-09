@@ -224,7 +224,9 @@ Check the participants, action, arguments, and intended meaning.
 Grammatical analysis can inform your design, but the learner should be trying to express something, not solve a classification puzzle.
 
 Aim for strong evocation without making the language awkward to eliminate every imaginable alternative.
-Preserve the actual target word’s contribution, and keep accepted written forms and pinyin out of pre-answer text.
+Preserve the actual target word’s contribution. Keep accepted written forms and
+pinyin out of direct cues. A cloze can retain another occurrence in natural
+context while keeping the blank a meaningful retrieval task.
 
 ### Let the resulting practice determine what happens to the source
 

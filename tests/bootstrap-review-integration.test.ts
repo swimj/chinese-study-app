@@ -47,10 +47,14 @@ before(async () => {
 });
 after(() => { sqlite?.close(); if (dir) fs.rmSync(dir, { recursive: true, force: true }); });
 
-function prepare(suffix: string) {
+function prepare(suffix: string, retainTargetOccurrence = false) {
   const original = wordContentFixtures[0]!;
   const wordId = `word-${suffix}`;
-  const content = { ...original.content, id: `content-${suffix}`, word: { ...original.content.word, wordId } };
+  const content = { ...original.content, id: `content-${suffix}`, word: { ...original.content.word, wordId },
+    examples: original.content.examples.map(example => retainTargetOccurrence && example.id === 'property'
+      ? { ...example, text: `${example.text}上次也报备过。`, translation: `${example.translation} We reported it last time too.` }
+      : example),
+  };
   const teaching = {
     ...original.teaching, id: `teaching-${suffix}`, wordContentId: content.id,
     rehearsals: original.teaching.rehearsals.map((exercise) => ({
@@ -122,11 +126,11 @@ function recognitionFor(wordId: string): SessionStudyItem {
 }
 
 test('published bootstrap exercise serves as ordinary shared production with exact source and reflection evidence', () => {
-  const source = prepare('serve');
+  const source = prepare('serve', true);
   const item = production(source.wordId);
   assert.equal(item.production?.cueId, source.cueId);
   assert.equal(item.production?.cueType, 'minimal_context');
-  assert.match(item.production!.text, /____/);
+  assert.match(item.production!.text, /____.*上次也报备过。/s);
   assert.ok(!item.production!.text.includes('dry dictionary fallback'));
   assert.deepEqual(item.contentRef, { type: 'production_cue', taskId: item.production!.taskId, cueId: source.cueId });
   assert.equal(item.rehearsal, undefined);

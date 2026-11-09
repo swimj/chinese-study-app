@@ -185,12 +185,13 @@ test('authored phrase clozes survive snapshots and answer matching without a sou
   assert.deepEqual(pkg.rehearsals[0], snapshot);
 });
 
-test('phrase clozes reject malformed blanks, missing frames, and exposed simplified or traditional answers', () => {
+test('phrase clozes accept visible answer forms and still require a valid blank and frame', () => {
   const valid = { kind: 'phrase_cloze', frame: 'Give advance notice.', text: '先____。' };
   for (const stimulus of [
     { ...valid, text: '先通知。' }, { ...valid, text: '____以后再____。' },
     { ...valid, text: '先_____。' }, { ...valid, text: '____' },
     { ...valid, frame: '' }, { ...valid, frame: null },
-    { ...valid, frame: 'Use 報備.' }, { ...valid, text: '报备以后再____。' },
   ]) assert.throws(() => parseContentExercise({ ...rehearsal(), stimulus }));
+  const stimulus = { ...valid, frame: 'Repeat the notification (報備).', text: '之前报备过一次，今天还得再____。' };
+  assert.deepEqual(parseContentExercise({ ...rehearsal(), stimulus }).stimulus, stimulus);
 });

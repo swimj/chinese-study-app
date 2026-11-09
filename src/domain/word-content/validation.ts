@@ -209,13 +209,6 @@ function exercise(value: unknown, path: string): ContentExercise {
     && (result.acceptedAnswers.length !== 1 || result.acceptedAnswers[0].wordId !== intent.wordId)) {
     fail(`${path}.acceptedAnswers`, 'target contract must accept exactly its owner');
   }
-  if (result.stimulus.kind === 'phrase_cloze') {
-    const visible = `${result.instruction}\n${result.stimulus.frame}\n${result.stimulus.text}`;
-    if (result.acceptedAnswers.some((entry) => [entry.hanzi, entry.traditional]
-      .some((form) => form !== null && visible.includes(form)))) {
-      fail(`${path}.stimulus`, 'phrase cloze exposes an accepted answer');
-    }
-  }
   if (result.stimulus.kind === 'example_cloze') {
     const forms = new Set(result.acceptedAnswers.flatMap((entry) => [entry.hanzi, entry.traditional]));
     for (const blank of result.stimulus.blanks) {

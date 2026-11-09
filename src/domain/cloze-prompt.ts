@@ -24,3 +24,8 @@ export function clozePromptParts(text: string): string[] {
   return parts;
 }
 
+/** Flat production cues use the same blank markers as the learner UI. */
+export function directCueContainsAcceptedForm(prompt: string, forms: readonly string[]): boolean {
+  return forms.some(form => form.trim() && prompt.includes(form)) && clozePromptParts(prompt).length === 1;
+}
+
