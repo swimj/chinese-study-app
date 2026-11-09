@@ -119,11 +119,7 @@ A frame such as “uneasy and apprehensive while waiting for news” can communi
 Clarifying an exercise may show that both the target and a submitted word naturally express the meaning or intention it evokes.
 A **pure cue** is a production exercise that accepts multiple words expressing that shared meaning or intention.
 It lets the learner practice a useful way of expressing something without treating an equally natural answer as a mistake.
-Each pure cue includes a teaching note shown to the learner when the answers are revealed.
-The note helps the learner understand the shared use and carry it into further practice with appropriate distinctions between the words.
-You decide whether shared practice is worthwhile and what shared meaning or intention it should exercise.
-A subsequent integration step chooses an existing shared destination or realizes a new exercise with its final cue, semantic axis, and teaching note.
-It preserves your shared-practice judgment and the rest of your local proposal; you do not need to manage that collection or author the final teaching note here.
+Decide whether that practice is worthwhile and which shared use it should exercise.
 
 Assess the words against the actual cue you propose, including any clarification you have made.
 For a cloze, put each word into the blank and read the completed sentence: does it express the relevant meaning, fit the surrounding grammatical construction and its arguments, and sound natural in the sentence’s phrasing and rhythm?
@@ -132,12 +128,13 @@ Conversely, words that fit the same blank but express different meanings do not 
 
 A compact definition has no fixed sentence slot.
 Judge whether each word naturally expresses the concept it evokes; they need not substitute for each other in every construction.
+
 For either kind of cue, identify the meaning or intention the learner can retrieve by feel.
 It should be concrete in the sense of being graspable: a clear idea, intention, or situation, not necessarily a physical scene.
 Mere thematic relatedness or a category containing both words does not establish that shared instinct.
 Ask what production habit repeated practice would build and whether it is useful beyond this particular comparison.
 A shared candidate should earn its place as useful practice, rather than merely improve on a defective source.
-Differences in emphasis, register, and use in other constructions can belong in the post-answer teaching note; they need not disqualify natural answers to the same expressive task.
+Words that differ in emphasis, register, or use in other constructions can still be natural answers to the same expressive task.
 
 **原因 / 缘故**
 
@@ -145,13 +142,7 @@ A compact shared cue can be enough:
 
 > the reason or cause behind something
 
-The teaching note helps the learner transfer that shared meaning appropriately:
-
-> 原因 is broadly useful, including 分析原因 and 事故的原因.
-> Learn 缘故 through familiar constructions such as 不知什么缘故 and 是天气的缘故.
-> Both name reasons, but this shared meaning does not make 缘故 a replacement for 原因 in every sentence.
-
-The note provides usable patterns and guides transfer into other constructions.
+> **Rationale.** Both words name reasons. 原因 is broadly useful, including 分析原因 and 事故的原因. 不知什么缘故 and 是天气的缘故 are familiar uses of 缘故. The direct cue practices the reason meaning shared across these constructions.
 
 Shared clozes can also practice natural constructions:
 
@@ -172,10 +163,6 @@ Finding overlap in another circumstance does not address the diagnosed gap or ju
 A pure cue is appropriate when its particular shared pattern serves the originating exercise and is itself worth reinforcing.
 If that repair establishes worthwhile word-specific practice, propose it without adding a pure cue merely because both words fit the original English gloss.
 Repair without shared practice is a successful outcome.
-
-When proposing shared practice, supply the intended answers, a candidate cue, and a brief rationale identifying their shared expressive purpose and its contribution to the local proposal.
-The cue demonstrates the practice you intend; integration may refine its realization while preserving that purpose.
-Do not draft an axis, search for existing shared destinations, or add a separate shared-content planning procedure.
 
 ### Consider useful word-specific practice within the same circumstance
 
@@ -286,10 +273,9 @@ The original population-density task supports both:
 
 > Densely populated: 这个地区人口____。
 
-Propose shared practice for that meaning. Integration’s final teaching could explain:
+Propose shared practice for that meaning.
 
-> Both 人口稠密 and 人口密集 describe a densely populated area.
-> 密集 also describes events scheduled close together, as in 面试安排得很密集.
+> **Rationale.** 人口稠密 and 人口密集 both naturally describe a densely populated area. Accept either to practice describing population density. 密集’s use for closely scheduled interviews is separate practice.
 
 A further case can show 密集’s temporal use:
 
@@ -373,9 +359,7 @@ Retirement may accompany shared practice or additional exercises, including opti
 
 - `answers`: distinct supplied word references, including `target` and at least one submitted word;
 - `prompt`: a complete candidate retrieval cue demonstrating the intended shared practice;
-- `rationale`: a brief explanation of the shared meaning or intention and this practice’s contribution to the proposal.
-
-These three fields nominate shared practice. Integration owns the final shared cue, axis, teaching note, and choice of destination; it does not reconsider whether your candidate deserves shared practice.
+- `rationale`: briefly name the shared use, why it is worth practicing together, and how it serves the local proposal. Describe the use clearly enough to preserve if the cue is reworded.
 
 Every shared answer must have supplied `lexical` information and `canAuthorIndividual: true`.
 When no submitted word meets that condition, return `sharedExercise: null` and assess the target’s exercise using the available encounter evidence.
@@ -432,7 +416,7 @@ For the population-density encounter, with 稠密 as `target` and 密集 as `res
   "sharedExercise": {
     "answers": ["target", "response_1"],
     "prompt": "Densely populated: 这个地区人口____。",
-    "rationale": "Lets either natural expression answer the population-density task."
+    "rationale": "人口稠密 and 人口密集 both naturally describe a densely populated area. Accept either to practice describing population density. 密集’s use for closely scheduled interviews is separate practice."
   },
   "additionalExercises": [
     {
