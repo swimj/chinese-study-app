@@ -131,7 +131,10 @@ Teaching preparation runs ahead of admission and retains failed work for retry
 and operator recovery. Preparation refresh preserves historical artifacts, established sense
 identities and learner progress. General practice becomes eligible for preparation
 when teaching completion commits at session closure. Newly ready material can
-enter a subsequent session, including on the same day.
+enter a subsequent session, including on the same day. Existing active shared
+authored repertoire satisfies automatic general-practice demand across learners;
+another learner's teaching does not authorize duplicate repertoire generation.
+Teaching readiness remains independent of repertoire readiness.
 
 New-word admission consumes a background-maintained reserve. Stash and diet
 planning choose reserve membership; readiness is a best-effort hint rather than a

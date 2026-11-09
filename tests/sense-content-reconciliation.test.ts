@@ -321,7 +321,9 @@ test('canonical repertoire publishes before teaching exists and later teaching d
   const coverage=getVocabularyWordSenseCoverage('word');
   writeVocabularyDefaultUsefulSenses('word',coverage.version,input.defaultSenseIds.slice(0,1),actor);
   assert.equal(isSenseContentReconciliationPending('word'),false);
-  assert.equal(restarted.ensure('word')!.reconciliationId,null);
+  // Narrowing defaults does not authorize another ordinary repertoire when authored practice exists.
+  assert.equal(restarted.ensure('word'),null);
+  await restarted.prepare('word');assert.equal(calls,1);
 });
 test('canonical failure groups with resolution and retries without a teaching pointer',async()=>{
   const state=apply(resolvedMissing());let calls=0;
