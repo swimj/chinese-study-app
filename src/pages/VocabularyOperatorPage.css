@@ -188,7 +188,8 @@
 .vocabulary-case-scroll { min-height: 5rem; padding: 1.5rem .25rem 1.75rem 0; scrollbar-gutter: stable; }
 .vocabulary-case-scroll .vocabulary-case-card { padding: 0; }
 .vocabulary-case-card .vocabulary-case-heading { gap: 1.25rem; margin-bottom: 1.35rem; align-items: baseline; }
-.vocabulary-case-card .vocabulary-case-heading h2 { font-size: 1.8rem; font-weight: 500; margin: 0; }
+.vocabulary-case-card .vocabulary-case-heading h2 { font-size: 1.8rem; font-weight: 500; margin: 0; overflow-wrap: anywhere; }
+.vocabulary-pure-cue-kind { color: var(--text-secondary); font-size: .85rem; margin-inline-start: .25rem; white-space: nowrap; }
 .vocabulary-case-card .vocabulary-case-heading .vocabulary-operator-meta { font-size: .8rem; }
 .vocabulary-case-card .vocabulary-served-label { color: var(--text-secondary); font-size: .82rem; font-weight: 600; margin: 0 0 .75rem; }
 .vocabulary-case-card .vocabulary-served-lead { border-bottom: 1px solid var(--border); margin-bottom: 1.5rem; padding-bottom: 1.5rem; }

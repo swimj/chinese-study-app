@@ -177,9 +177,12 @@ jobs and approvals must finish before changing its attention placement.
 The entry leads with the original served content and its first chronological
 encounter. Teaching cases identify the source as a **Teaching encounter**. The
 encounter-count control expands responses, reactions, skips, and undone actions.
-Repeated cue text and unchanged metadata are omitted; differing snapshots remain visible. Pure cues display accepted answers in simplified form,
-with script duplicates removed for display only. Ordinary word encounters omit
-that answer list. Missing snapshots are explicitly identified.
+Repeated cue text and unchanged metadata are omitted. Differing snapshots remain
+visible. Pure cue headings identify the cue by its accepted answers, and the
+encounter labels the learner-facing prompt as **Prompt as served**. Pure cues
+display accepted answers in simplified form, with script duplicates removed for
+display only. Ordinary word encounters omit that answer list. Missing snapshots
+are explicitly identified.
 
 Single-exercise review shows one summary under **Proposed improvement** and
 the content-generating model. Each change has an action icon and color accent;
@@ -187,8 +190,10 @@ items expand only when they have additional review information. Shared and
 additional exercises retain their individual rationales. Mapped senses remain in Details. Repertoire review uses a
 **Repertoire bootstrap** heading and expandable sense groups with exercise counts;
 it omits routine bootstrap reasoning. Source-repair items omit redundant accepted
-answers. Pure-cue items summarize their action and cue, expanding to the semantic axis,
-accepted-set change, teaching note, and any distinct exercise rationale.
+answers. Pure cue updates identify prompt or accepted answer changes when the
+matching source version is available. Expanding the item shows the cue axis,
+any accepted answer change, the teaching note, and any distinct exercise rationale.
+If a change only affects written variants, the comparison shows the original forms.
 Sense chips retain their selection action; hovering reveals sense notes, and the
 adjacent details control opens them for keyboard or pointer inspection.
 

@@ -8,21 +8,37 @@ const outcomes: Record<string, string> = { single_sense: 'Exercise improvement',
 const stages: Record<string, string> = { sense_mapping: 'Sense mapping', single_improvement: 'Exercise improvement', pure_cue_promotion: 'Shared cue integration', pure_cue_improvement: 'Pure cue improvement', repertoire: 'Repertoire', exercise_improvement: 'Exercise improvement' };
 
 const icons = { create: '+', update_existing: '↻', replace: '⇄', retire: '−' };
-function answers(forms: string[]): string {
-  return [...new Set(forms.map(form => convertSentenceCharacters(form, 'simplified')))].join(' · ');
+function answers(forms: string[], separator = ' · '): string {
+  return [...new Set(forms.map(form => convertSentenceCharacters(form, 'simplified')))].join(separator);
 }
 
 function Operation({ operation, item, summary, editCue }: { editCue?: (key:string)=>ReactNode; operation: VocabularyOperationReview; item: VocabularyCaseQueueItem; summary: string }) {
   const pure = operation.pureCue;
-  const before = item.served.find(encounter => encounter.contentId === operation.sourceContentId && encounter.contentVersion === operation.expectedVersion)?.acceptedAnswers
-    ?? item.sources.find(source => source.contentId === operation.sourceContentId && source.version === operation.expectedVersion)?.acceptedAnswers;
-  const label = operation.prompt ?? pure?.axisNote ?? 'Exercise';
+  const hasPureCueBase = pure && operation.sourceContentId !== null && operation.expectedVersion !== null;
+  const served = hasPureCueBase ? item.served.find(encounter => encounter.contentId === operation.sourceContentId && encounter.contentVersion === operation.expectedVersion) : undefined;
+  const source = hasPureCueBase ? item.sources.find(source => source.contentId === operation.sourceContentId && source.version === operation.expectedVersion) : undefined;
+  const beforePrompt = served?.prompt ?? source?.prompt;
+  const beforeAnswers = served?.acceptedAnswers.length ? served.acceptedAnswers : source?.acceptedAnswers;
+  const promptChanged = beforePrompt != null && operation.prompt != null && beforePrompt !== operation.prompt;
+  const beforeForms = new Set(beforeAnswers);
+  const proposedForms = new Set(pure ? operation.acceptedAnswers : []);
+  const answersChanged = beforeForms.size > 0 && (beforeForms.size !== proposedForms.size || [...beforeForms].some(form => !proposedForms.has(form)));
+  const proposedAnswers = answers(operation.acceptedAnswers);
+  const previousAnswers = answers(beforeAnswers ?? []);
+  const showRawForms = answersChanged && previousAnswers === proposedAnswers;
+  const label = operation.prompt ?? (pure ? proposedAnswers || 'Pure cue' : 'Exercise');
+  const action = strategies[operation.strategy];
+  const pureAction = operation.strategy === 'update_existing' && (promptChanged || answersChanged)
+    ? `Update ${promptChanged && answersChanged ? 'prompt and accepted answers' : promptChanged ? 'prompt' : 'accepted answers'}`
+    : `${action} pure cue`;
   const rationale = operation.learningRole !== 'source_repair' && operation.rationale.trim() !== summary.trim() ? operation.rationale : '';
   const changes = operation.otherChanges.filter(change => !pure || !['reveal', 'expected answers'].includes(change));
   const privateScope = operation.scopeLabel.startsWith('Private');
   const showAnswers = !pure && operation.learningRole !== 'source_repair' && operation.acceptedAnswers.length > 0;
+  const showPureAnswers = pure && operation.strategy !== 'retire' && !answersChanged
+    && (operation.strategy !== 'update_existing' || !beforeForms.size);
   const hasDetails = !!pure || privateScope || showAnswers || !!rationale || changes.length > 0;
-  const heading = <><span className="vocabulary-review-action"><span aria-hidden="true">{icons[operation.strategy]}</span> {strategies[operation.strategy]}{operation.learningRole && operation.learningRole !== 'shared' ? ` · ${roles[operation.learningRole]}` : ''}</span><span className="vocabulary-review-item-label">{label}</span></>;
+  const heading = <><span className="vocabulary-review-action"><span aria-hidden="true">{icons[operation.strategy]}</span> {pure ? pureAction : action}{!pure && operation.learningRole && operation.learningRole !== 'shared' ? ` · ${roles[operation.learningRole]}` : ''}</span><span className="vocabulary-review-item-label">{label}</span></>;
   const className = `vocabulary-review-item vocabulary-review-item--${operation.strategy}`;
   const cueActions = operation.strategy !== 'retire' ? editCue?.(operation.operationKey) : null;
   if (!hasDetails) return <div className={`${className} vocabulary-review-item--plain`}>{heading}{cueActions && <div className="vocabulary-review-item-body">{cueActions}</div>}</div>;
@@ -31,9 +47,9 @@ function Operation({ operation, item, summary, editCue }: { editCue?: (key:strin
     <div className="vocabulary-review-item-body">
       {cueActions}
       {privateScope && <p className="vocabulary-operator-meta">{operation.scopeLabel}</p>}
-      {pure?.axisNote && <p><strong>Axis:</strong> {pure.axisNote}</p>}
-      {pure ? <p className="vocabulary-answer-change"><span>{before ? answers(before) : operation.strategy === 'create' ? 'New cue' : 'Assessed accepted answers unavailable'}</span><span aria-label="changes to">→</span><strong>{answers(operation.acceptedAnswers) || 'No accepted answers'}</strong></p>
-        : showAnswers && <p><strong>Accepted answers:</strong> {answers(operation.acceptedAnswers)}</p>}
+      {pure?.axisNote && <p><strong>Cue axis:</strong> {pure.axisNote}</p>}
+      {pure && operation.strategy !== 'retire' && answersChanged && <p className="vocabulary-answer-change"><span>{showRawForms ? [...beforeForms].join(' · ') : previousAnswers}</span><span aria-label="changes to">→</span><strong>{(showRawForms ? [...proposedForms].join(' · ') : proposedAnswers) || 'No accepted answers'}</strong></p>}
+      {(showAnswers || showPureAnswers) && <p><strong>Accepted answers:</strong> {proposedAnswers || 'No accepted answers'}</p>}
       {pure?.teachingNote && <p><strong>Teaching note:</strong> {pure.teachingNote}</p>}
       {rationale && <p>{rationale}</p>}
       {changes.length > 0 && <ul>{changes.map((change, index) => <li key={index}>{change}</li>)}</ul>}
@@ -57,7 +73,10 @@ function ReusedCue({ cue }: { cue: NonNullable<VocabularyCaseQueueItem['reusedSh
 function Encounter({ encounter, baseline, children }: { encounter: VocabularyServedReview; baseline?: VocabularyServedReview; children?: ReactNode }) {
   const accepted = encounter.pureCue && (!baseline || answers(encounter.acceptedAnswers) !== answers(baseline.acceptedAnswers)) ? answers(encounter.acceptedAnswers) : null;
   return <article className="vocabulary-encounter">
-    {(!baseline || encounter.prompt !== baseline.prompt) && <p className="vocabulary-operator-cue">{encounter.prompt ?? 'The original served content is unavailable.'}</p>}
+    {(!baseline || encounter.prompt !== baseline.prompt) && <>
+      {encounter.pureCue && encounter.prompt !== null && <p className="vocabulary-served-label">Prompt as served</p>}
+      <p className="vocabulary-operator-cue">{encounter.prompt ?? 'The original served content is unavailable.'}</p>
+    </>}
     {encounter.choices.length > 0 && JSON.stringify(encounter.choices) !== JSON.stringify(baseline?.choices) && <ol>{encounter.choices.map(choice => <li key={choice.id}>{choice.text}</li>)}</ol>}
     {accepted && <p><strong>Accepted answers:</strong> {accepted}</p>}
     <div className="vocabulary-response-row"><div>
@@ -73,6 +92,7 @@ export function CaseReviewCard({ item, children, onDetails, showDetails = false,
   const [historyOpen, setHistoryOpen] = useState(false);
   const encounters = [...item.served].sort((a, b) => a.presentedAt && b.presentedAt ? a.presentedAt.localeCompare(b.presentedAt) : a.presentedAt ? -1 : b.presentedAt ? 1 : 0);
   const first = encounters[0];
+  const pureCueTitle = first?.pureCue ? answers(first.acceptedAnswers, ' / ') : '';
   const groups = new Map<string, VocabularyOperationReview[]>();
   for (const operation of item.proposal?.operations ?? []) groups.set(operation.groupLabel, [...(groups.get(operation.groupLabel) ?? []), operation]);
   const encounterTime = first?.presentedAt;
@@ -82,7 +102,9 @@ export function CaseReviewCard({ item, children, onDetails, showDetails = false,
   const author = authorStages.flatMap(stage => item.assessment?.models.filter(model => model.stage === stage) ?? [])[0];
   const changedSources = item.sources.filter(source => source.version !== source.expectedVersion);
   return <section className="vocabulary-improvement-entry vocabulary-case-card" aria-label="Improvement case">
-    <div className="vocabulary-case-heading"><h2>{item.wordLabel ?? first?.pureCue?.axisNote ?? 'Content review'}</h2><span className="vocabulary-operator-meta">{encounterTime ? new Date(encounterTime).toLocaleString() : `Case opened · ${new Date(item.createdAt).toLocaleString()}`}</span></div>
+    <div className="vocabulary-case-heading"><h2>{item.wordLabel ?? (first?.pureCue
+      ? pureCueTitle ? <><span lang="zh-Hans">{pureCueTitle}</span> <small className="vocabulary-pure-cue-kind">Pure cue</small></> : 'Pure cue'
+      : 'Content review')}</h2><span className="vocabulary-operator-meta">{encounterTime ? new Date(encounterTime).toLocaleString() : `Case opened · ${new Date(item.createdAt).toLocaleString()}`}</span></div>
     <div className="vocabulary-served-lead" aria-label="Original served content">
       {item.kind === 'teaching_review' && <p className="vocabulary-served-label">Teaching encounter</p>}
       {item.served.length === 0 && <p>The original served content is not available for this case.</p>}
