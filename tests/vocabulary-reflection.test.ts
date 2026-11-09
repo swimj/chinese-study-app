@@ -619,7 +619,9 @@ for (const recall of ['correct','fair miss','unfair again'] as const) test(
   `production resumes normal scheduling after the compensation break (${recall})`, () => {
   sql.exec(`CREATE TABLE learner_owned_word_skill_relevance(learner_id TEXT,word_id TEXT,skill_id TEXT,relevance_state TEXT);
     UPDATE learner_word_schedules SET scheduler_state_json=json_set(scheduler_state_json,'$.intervalHours',720,'$.easeFactor',2.8),
-    last_practised_at='2026-10-16T00:00:00.000Z',next_eligible_at='2026-11-15T00:00:00.000Z' WHERE word_id='a';`);
+    last_practised_at='2026-09-17T09:00:00.000Z',next_eligible_at='2026-10-17T09:00:00.000Z' WHERE word_id='a';`);
+  const due = (now: string) => alice(() => selectVocabularyReviewSkills({now,canUseSkill:word => word === 'a'}));
+  assert.deepEqual(due(at),[{wordId:'a',skillId:'production'}]);
   const prior = wordSchedule();
   const { completion } = ingest([present('two','a','undone'),response('undone'),{kind:'undo',payload:{undoesActionId:'session-1'}},
     present('one'),response('one'),present('two'),response('two'),wrap()]);
@@ -629,19 +631,18 @@ for (const recall of ['correct','fair miss','unfair again'] as const) test(
   sql.exec(`INSERT INTO learner_owned_word_skill_state
     (learner_id,word_id,skill_id,enabled,interval_hours,ease_factor,last_studied_at,next_due_at)
     VALUES ('alice','a','recognition',1,6,2.5,'2026-10-01T00:00:00.000Z','2026-10-01T06:00:00.000Z');`);
-  const delayed = '2026-11-01T11:00:00.000Z', breakUntil = '2026-11-02T11:00:00.000Z';
-  const feedback = claimVocabularyReflectionJob({kind:'learner_feedback',now:delayed})!;
-  recordVocabularyFeedbackJudgment(feedback.jobId,feedback.leaseToken,{diagnosis:'Unfair',message:null,unfairEncounterIds:['one','two']},delayed);
+  const breakUntil = '2026-10-18T11:00:00.000Z';
+  const feedback = claimVocabularyReflectionJob({kind:'learner_feedback',now:judgedAt})!;
+  recordVocabularyFeedbackJudgment(feedback.jobId,feedback.leaseToken,{diagnosis:'Unfair',message:null,unfairEncounterIds:['one','two']},judgedAt);
   const restored = wordSchedule();
   assert.equal(restored.last_practised_at,prior.last_practised_at);
   assert.equal(restored.next_eligible_at,breakUntil);
   assert.deepEqual(scheduler(restored),{...scheduler(prior),resetUntil:breakUntil,recheckAt:breakUntil});
-  const due = (now: string) => alice(() => selectVocabularyReviewSkills({now,canUseSkill:word => word === 'a'}));
-  assert.deepEqual(due('2026-11-02T10:59:59.999Z'),[{wordId:'a',skillId:'recognition'}]);
+  assert.deepEqual(due('2026-10-18T10:59:59.999Z'),[{wordId:'a',skillId:'recognition'}]);
   assert.deepEqual(due(breakUntil),[{wordId:'a',skillId:'production',recheckAt:breakUntil}]);
 
   contents.fresh = createVocabularyContent(draft('fresh'),actor);
-  const nextClosedAt = '2026-11-02T11:00:16.000Z';
+  const nextClosedAt = '2026-10-18T11:00:16.000Z';
   const next = close([present('fresh'),response('fresh',recall === 'correct' ? 'accepted' : 'rejected'),wrap()],
     'fresh-check',breakUntil,nextClosedAt);
   const nextSchedule = wordSchedule();
@@ -655,9 +656,9 @@ for (const recall of ['correct','fair miss','unfair again'] as const) test(
     return;
   }
   assert.equal(scheduler(nextSchedule).intervalHours,6);
-  assert.equal(nextSchedule.next_eligible_at,'2026-11-02T17:00:16.000Z');
+  assert.equal(nextSchedule.next_eligible_at,'2026-10-18T17:00:16.000Z');
   ingestVocabularySessionEvidence('alice',next.completionId,next.report,nextClosedAt);
-  const nextJudgedAt = '2026-11-02T12:00:00.000Z';
+  const nextJudgedAt = '2026-10-18T12:00:00.000Z';
   const nextFeedback = claimVocabularyReflectionJob({kind:'learner_feedback',now:nextJudgedAt})!;
   recordVocabularyFeedbackJudgment(nextFeedback.jobId,nextFeedback.leaseToken,{diagnosis:recall,message:null,
     unfairEncounterIds:recall === 'unfair again' ? ['fresh'] : []},nextJudgedAt);
@@ -667,16 +668,17 @@ for (const recall of ['correct','fair miss','unfair again'] as const) test(
     assert.equal(scheduler(wordSchedule()).intervalHours,720);
     assert.equal(scheduler(wordSchedule()).easeFactor,2.8);
     assert.equal(wordSchedule().last_practised_at,prior.last_practised_at);
-    assert.equal(wordSchedule().next_eligible_at,'2026-11-03T12:00:00.000Z');
+    assert.equal(wordSchedule().next_eligible_at,'2026-10-19T12:00:00.000Z');
   }
 });
 
-test('an older session restores the schedule it displaced at closure, even after a subsequent genuine review', () => {
+test('overlapping sessions can capture a future due date that must yield to the compensation recheck', () => {
   sql.exec(`INSERT INTO learner_words(learner_id,word_id,in_stash,added_at,mode,mode_changed_at)
     VALUES ('bob','a',0,'2026-01-01','practice','2026-01-01');
     INSERT INTO learner_word_schedules(learner_id,word_id,policy_version,scheduler_state_json)
     VALUES ('bob','a','test','{"intervalHours":48,"easeFactor":2.2}');
-    UPDATE learner_word_schedules SET scheduler_state_json=json_set(scheduler_state_json,'$.intervalHours',96)
+    UPDATE learner_word_schedules SET scheduler_state_json=json_set(scheduler_state_json,'$.intervalHours',96),
+      last_practised_at='2026-10-13T09:00:00.000Z',next_eligible_at='2026-10-17T09:00:00.000Z'
       WHERE learner_id='alice' AND word_id='a';`);
   const otherLearner = wordSchedule('a','bob'), otherWord = wordSchedule('b');
   const earlierSequence = play([present('one'),response('one'),wrap()],'earlier');
@@ -696,13 +698,17 @@ test('an older session restores the schedule it displaced at closure, even after
   const reports = () => sql.prepare('SELECT report_json FROM vocabulary_session_completions ORDER BY session_id').all();
   const attempts = history(), completedReports = reports();
   const delayed = '2026-10-22T11:00:00.000Z';
+  const recheckAt = '2026-10-23T11:00:00.000Z';
+  // The newer session's clean recall advanced the due date before the earlier lapse closed.
+  assert.ok(String(atLapse.next_eligible_at) > recheckAt);
   const feedback = claimVocabularyReflectionJob({kind:'learner_feedback',now:delayed})!;
   const result = recordVocabularyFeedbackJudgment(feedback.jobId,feedback.leaseToken,{diagnosis:'Unfair',message:null,unfairEncounterIds:['one']},delayed);
   const restored = wordSchedule();
   assert.equal(scheduler(restored).intervalHours,scheduler(atLapse).intervalHours);
   assert.equal(scheduler(restored).easeFactor,scheduler(atLapse).easeFactor);
   assert.equal(restored.last_practised_at,atLapse.last_practised_at);
-  assert.equal(restored.next_eligible_at,'2026-10-23T11:00:00.000Z');
+  assert.equal(restored.next_eligible_at,recheckAt);
+  assert.equal(scheduler(restored).recheckAt,recheckAt);
   assert.deepEqual(history(),attempts);
   assert.deepEqual(reports(),completedReports);
   assert.deepEqual(wordSchedule('a','bob'),otherLearner);
