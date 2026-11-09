@@ -129,9 +129,11 @@ reporting retain their own UTC-day policies.
 
 Teaching preparation runs ahead of admission and retains failed work for retry
 and operator recovery. Preparation refresh preserves historical artifacts, established sense
-identities and learner progress. General practice becomes eligible for preparation
-when teaching completion commits at session closure. Newly ready material can
-enter a subsequent session, including on the same day. Existing active shared
+identities and learner progress. Ordinary learner-triggered general-practice
+preparation becomes eligible when teaching completion commits at session closure.
+Operator-authorized repertoire preparation can proceed independently of teaching.
+Newly ready material can enter a subsequent session, including on the same day.
+Existing active shared
 authored repertoire satisfies automatic general-practice demand across learners;
 another learner's teaching does not authorize duplicate repertoire generation.
 Teaching readiness remains independent of repertoire readiness.
