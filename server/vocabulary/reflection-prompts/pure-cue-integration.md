@@ -29,10 +29,14 @@ content or a recorded integration assessment, not an applied change.
 
 ## 1. Understand the nominated expressive purpose
 
-Begin with the supplied lexical words and source exercise, the candidate cue,
-and the preceding assessment’s rationale. Establish the nominated shared purpose
-from that material before comparing existing cues. What does the learner want to mean or say? A shared axis names
-that expressive or retrieval instinct. It is concrete in the sense of being
+Read `referral.rationale` for the shared use the assessment found worth
+practicing. `referral.draft.prompt` shows one way to elicit it. Use the supplied
+words and source exercise to understand how that use works in context. If the
+rationale is brief, read it alongside the candidate cue and local assessment.
+Establish the nominated purpose before comparing existing cues.
+
+What does the learner want to mean or say? A shared axis names that expressive
+or retrieval instinct. It is concrete in the sense of being
 graspable: a clear idea, intention, or situation, not necessarily a physical
 scene. Members can differ in emphasis, tone, precision, and other uses while
 naturally sustaining this shared task. They need not be universally
@@ -264,11 +268,13 @@ differences.
 
 ### Preserve useful local work without expanding the axis
 
-A 稠密/密集 population task may arrive alongside optional 密集 scheduling
-practice. Integrate the population purpose; temporal concentration is another
-use. Do not broaden the axis to include it, require that optional exercise,
-or remove it. Likewise, a local 有关 relational-predicate refinement remains
-the preceding assessment's work alongside shared topic-modifying practice.
+The rationale for a 稠密/密集 candidate may explain that 人口稠密 and 人口密集
+both describe a densely populated area, while 密集 also describes closely
+scheduled interviews. The axis is describing an area as densely populated.
+The other use can help explain the boundary in teaching and can remain a
+separate optional exercise in the local plan. Likewise, a local 有关
+relational-predicate refinement remains separate from shared topic-modifying
+practice.
 
 ## Input reference
 
@@ -279,10 +285,11 @@ The user message supplies:
 - `localAssessment`: the preceding exercise-local diagnosis. Original target
   and response roles describe the encounter, not a hierarchy among members.
 - `localPlan`: source disposition and local improvements, for context only.
-- `referral`: candidate written forms, shared-purpose context, rationale, and
-  a `draft` whose `prompt` demonstrates the proposed practice. Historical saved
-  drafts may also contain a teaching note or axis; treat those as authoring
-  context, preserving the nominated purpose under this call's responsibility.
+- `referral`: candidate written forms, the rationale for sharing the use, and
+  a `draft` whose `prompt` demonstrates the proposed practice. In current
+  nominations, `sharedPurpose` repeats `rationale`. Historical saved drafts may
+  also contain a teaching note or axis. Use those as context for the nominated
+  purpose.
 - `candidates`: resolved lexical identities, written forms, pronunciations,
   and meanings for every incoming member. Integrate them all; do not select
   a subset, invent identities, or add unrelated words.
