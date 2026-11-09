@@ -457,6 +457,11 @@ procedure. Later code-only changes are classified separately by the release runb
 
 ### Post-teaching practice preparation
 
+This section describes ordinary learner-triggered demand. The
+[repertoire preparation guide](implementation/repertoire-preparation.md)
+explains the shared authoring machinery and operator-driven batch path, which
+can prepare general repertoire independently of teaching completion.
+
 Successful session closure queues general practice for completed teaching in the
 same transaction as learning effects. Undo before closure and failed closure
 create no practice demand. Queueing does not require configured credentials;

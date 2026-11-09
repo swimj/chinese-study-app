@@ -82,7 +82,8 @@ accounts of the mechanisms and causal relationships behind that structure.
 | --- | --- |
 | How are current content identities and learner eligibility represented? | [Content identity and eligibility](vocabulary-learning.md#content-identity-and-eligibility) |
 | How does teaching become ready and lead to general practice? | [Background preparation](vocabulary-learning.md#background-work-and-operator-repair) |
-| How can an operator prepare repertoire for tracked words in bulk? | [Bulk repertoire maintenance](ops/bulk-repertoire.md) |
+| What can another repertoire-preparation scenario reuse, and which policies need adapting? | [Repertoire generation and application](implementation/repertoire-preparation.md) |
+| How can an operator fill missing repertoire for tracked words in bulk? | [Bulk repertoire maintenance](ops/bulk-repertoire.md) |
 | How do reactions produce reviewable content changes? | [Content-improvement pipeline](implementation/vocabulary-content-improvement.md) |
 | How do I interpret earlier package records and source artifacts? | [Representation](word-content-representation.md), [generation](word-content-generation.md), and [serving](word-content-serving.md) retain the earlier package account and shared preparation context; current vocabulary selection is owned above. |
 
