@@ -1987,3 +1987,71 @@ test('original model proposal remains immutable across saved edits and manual dr
   const manual=createVocabularyProposal({operations:[op()],rationale:'Manual'},'editor');
   assert.equal(getVocabularyOriginalModelProposal(manual.proposalId,'editor'),null);
 });
+
+test('maintenance applies a reviewed cue edit and complete split atomically, without transferring schedules', async () => {
+  const { maintainPureCues } = await import('../server/db/pure-cue-maintenance.ts');
+  const { createHostedOperationsSchema } = await import('../server/db/hosted-operations.ts');
+  createHostedOperationsSchema();
+  const base = draft('maintenance-shared', 'a', 'general', 'pure_cue');
+  const body = { prompt: 'Original cue', stimulus: { kind: 'direct_text', text: 'Original cue' },
+    reveal: { axisNote: 'Old axis', teachingNote: 'Keep this note' } };
+  const shared = createVocabularyContent({ ...base, body, words: [{ wordId: 'a', relation: 'target' }, { wordId: 'b', relation: 'target' }],
+    answers: [{ wordId: 'a', acceptedForms: ['甲'] }, { wordId: 'b', acceptedForms: ['乙'] }] }, actor);
+  const edit = createVocabularyContent({ ...base, contentId: 'maintenance-edit', body }, actor);
+  const sense = createVocabularySense({ wordId: 'b', description: { label: 'Sense B' } }, actor);
+  sql.prepare(`INSERT INTO learner_pure_cue_schedules(learner_id,content_id,next_eligible_at,policy_version,scheduler_state_json)
+    VALUES ('alice',?,?,'test','{}')`).run(shared.contentId, at);
+  const schedule = sql.prepare('SELECT * FROM learner_pure_cue_schedules WHERE content_id=?').get(shared.contentId);
+  const manifest = { rationale: 'Reviewed cue maintenance', changes: [
+    { contentId: edit.contentId, expectedVersion: 1, rationale: 'Tighten axis', edit: { axis: 'New axis' } },
+    { contentId: shared.contentId, expectedVersion: 1, rationale: 'Separate distinct uses', split: [
+      { wordId: 'a', stimulus: 'A separate cue for the first use', teachingNote: 'Explain the first use' },
+      { wordId: 'b', senseId: sense.senseId, stimulus: 'A separate cue for the second use', teachingNote: 'Explain the second use' },
+    ] },
+  ] };
+  const preview = maintainPureCues(manifest, actor.id);
+  assert.equal(preview.status, 'preview');
+  assert.equal(sql.prepare('SELECT COUNT(*) n FROM content_proposals').get()?.n, 0);
+  assert.throws(() => maintainPureCues(manifest, actor.id, preview.digest), /maintenance mode/);
+  sql.exec("UPDATE service_controls SET enabled=(control_key='maintenance_mode')");
+  assert.throws(() => maintainPureCues({ ...manifest, rationale: 'Changed' }, actor.id, preview.digest), /plan changed/);
+
+  const pending = createVocabularyProposal({ rationale: 'Pending work', operations: [{
+    strategy: 'update_existing', operationKey: 'pending', scope: { kind: 'shared' }, rationale: 'Another edit',
+    sourceContentId: edit.contentId, expectedVersion: 1, content: edit,
+  }] }, actor.id);
+  assert.throws(() => maintainPureCues(manifest, actor.id, preview.digest), /plan changed/);
+  approveVocabularyProposal(pending.proposalId, pending.version, actor.id);
+  assert.throws(() => maintainPureCues(manifest, actor.id), /Approval already recorded/);
+  closeVocabularyProposal(pending.proposalId, pending.version, actor.id);
+  const overlapping = createVocabularyProposal({ rationale: pending.rationale, operations: pending.operations }, actor.id);
+  const refreshed = maintainPureCues(manifest, actor.id);
+  if (refreshed.status !== 'preview') assert.fail('Expected preview');
+  assert.equal(refreshed.overlaps[0]?.proposalId, overlapping.proposalId);
+
+  // Fail a late write, after the cue update, retirement and new exercise have executed.
+  sql.exec("CREATE TRIGGER refuse_receipt BEFORE INSERT ON proposal_applications BEGIN SELECT RAISE(ABORT,'receipt failed'); END");
+  assert.throws(() => maintainPureCues(manifest, actor.id, refreshed.digest), /receipt failed/);
+  assert.deepEqual(getVocabularyContentForMaintenance(edit.contentId), edit);
+  assert.deepEqual(getVocabularyContentForMaintenance(shared.contentId), shared);
+  assert.equal(sql.prepare('SELECT COUNT(*) n FROM content_proposals').get()?.n, 2);
+  sql.exec('DROP TRIGGER refuse_receipt');
+
+  const result = maintainPureCues(manifest, actor.id, refreshed.digest);
+  if (result.status !== 'applied') assert.fail('Expected receipt');
+  assert.deepEqual(result.receipt.changes.map(change => change.strategy), ['update_existing', 'retire', 'create', 'create']);
+  const updated = getVocabularyContentForMaintenance(edit.contentId)!;
+  assert.deepEqual(updated.body, { ...body, reveal: { ...body.reveal, axisNote: 'New axis' } });
+  const retired = getVocabularyContentForMaintenance(shared.contentId)!;
+  assert.equal(retired.availability, 'retired');
+  assert.deepEqual(retired.body, shared.body);
+  assert.deepEqual(sql.prepare('SELECT * FROM learner_pure_cue_schedules WHERE content_id=?').get(shared.contentId), schedule);
+  const created = getVocabularyContentForMaintenance(result.receipt.changes[3]!.resultContentId);
+  assert.equal(created?.words[0]?.senseId, sense.senseId);
+  assert.equal(created?.kind, 'exercise');
+  assert.deepEqual(created.answers, [{ wordId: 'b', acceptedForms: ['乙'] }]);
+  assert.equal(getVocabularyProposal(overlapping.proposalId, actor.id).status, 'awaiting_review');
+  assert.throws(() => previewVocabularyProposal(overlapping.proposalId, overlapping.version, actor.id), /base changed/);
+  assert.throws(() => maintainPureCues(manifest, actor.id, refreshed.digest), /already applied/);
+  assert.deepEqual(sql.prepare('PRAGMA foreign_key_check').all(), []);
+});

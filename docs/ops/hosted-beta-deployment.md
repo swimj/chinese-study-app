@@ -350,6 +350,52 @@ fly ssh console --app <app-name> --command \
 
 ## Operator recovery
 
+### Apply a reviewed pure cue batch
+
+Use the released maintenance command to apply an editorial batch to active
+shared pure cues. Each manifest change supplies the cue's `contentId`,
+`expectedVersion`, and `rationale`. Supply an `edit` with any of `axis`,
+`stimulus`, and `teachingNote`, or a `split` array with a draft for each
+accepted member. A split draft supplies `wordId`, `stimulus`, `teachingNote`,
+and the eligible `senseId` when the inventory is established. The enclosing
+JSON object has a batch `rationale` and a `changes` array.
+
+Rehearse on a disposable, consistent copy. Use the operator's allowlisted Clerk
+subject and keep the manifest, preview, and receipt in private operator evidence.
+Preview opens the existing database read-only. It returns the resolved operations
+and their digest without making provider calls.
+
+```bash
+npm run --silent hosted:maintain-pure-cues -- \
+  --data-dir=/absolute/data --manifest=/absolute/batch.json --actor-id=<operator>
+```
+
+For production, follow the maintenance procedure to disable provider work, enter
+maintenance, wait for active provider work to drain, and sync replication. Take
+a fresh recoverable snapshot. Preview on the live file and compare the operations
+with the approved editorial batch. Pass its exact digest to the same command.
+
+```bash
+npm run --silent hosted:maintain-pure-cues -- \
+  --data-dir=/data --manifest=/absolute/batch.json --actor-id=<operator> \
+  --confirm-plan=<digest>
+```
+
+The preview lists overlapping drafts and proposals awaiting review. They remain
+in review with their original source versions. An approved proposal or pending
+approval blocks the batch. Apply rechecks service controls, source versions,
+proposal overlap, and split sense eligibility under one write transaction. It
+records approval and an application receipt through the normal proposal writer. A split retires the shared cue and
+creates the individual exercises together. Historical cue versions and learner
+schedules stay attached to the retired identity. If output is lost, look up the
+application by its `pure-cue-maintenance/<digest>` idempotency key. A repeated
+application reports the existing receipt ID.
+
+Verify the receipt against the expected revisions, confirm new exercises have
+only their intended member, and check source history and schedule retention.
+Check general production coverage and current mode eligibility for split words.
+Reopen with the standard controls and verify health.
+
 ### Backfill missing GPT-6 Luna invocation costs
 
 `hosted:backfill-luna-costs` estimates unknown direct-OpenAI `gpt-6-luna`
