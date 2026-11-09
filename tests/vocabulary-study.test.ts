@@ -156,7 +156,7 @@ test('Start prioritizes a due strong-cue recheck while a word still needs to be 
   adoptVocabularyPureCues();
   db.exec(`UPDATE learner_pure_cue_schedules SET next_eligible_at='2020-01-01T00:00:00.000Z';
     UPDATE learner_pure_cue_schedules SET scheduler_state_json=json_set(scheduler_state_json,
-      '$.strongSince','2020-01-01T00:00:00.000Z','$.strongSuccesses',3,'$.postCompensationEarliestCheckAt','2020-01-02T00:00:00.000Z'),
+      '$.strongSince','2020-01-01T00:00:00.000Z','$.strongSuccesses',3,'$.postCompensationRecheckAt','2020-01-02T00:00:00.000Z'),
       last_practised_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE content_id='recheck-strong';`);
   const preview=previewVocabularyStudy({previewSeed:'required-rechecks'});
   const started=startVocabularyStudy({previewSeed:preview.previewSeed});

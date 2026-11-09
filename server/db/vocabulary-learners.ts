@@ -10,12 +10,21 @@ export type VocabularyLearnerWord = {
   automaticPromotionPaused: boolean;
   stateVersion: number; scopeEstablishedAt: string | null; dismissedAt: string | null;
 };
-export type VocabularySchedulerState = {
+type VocabularyScheduleState = {
   intervalHours: number; easeFactor: number; enabled: number; cleanCoveredSessions: number;
-  legacyAdmissionAt?: string | null;
   resetUntil?: string | null;
+};
+export type VocabularySchedulerState = VocabularyScheduleState & {
+  legacyAdmissionAt?: string | null;
   /** Earliest allowed production check following unfair-lapse compensation. */
   postCompensationEarliestCheckAt?: string | null;
+};
+export type VocabularyPureCueSchedulerState = VocabularyScheduleState & {
+  strongSince?: string | null;
+  strongSuccesses?: number;
+  maintenanceIdentity?: string;
+  /** Due time for a required recheck that bypasses strong-cue maintenance sampling. */
+  postCompensationRecheckAt?: string | null;
 };
 export type VocabularyWordSchedule = {
   wordId: string; nextEligibleAt: string | null; lastPractisedAt: string | null;

@@ -17,7 +17,8 @@ import { applyVocabularyContextualSelection } from './vocabulary-contextual-sele
 import { applyVocabularyRecognition } from './vocabulary-recognition.ts';
 import { requireLearnerId } from './learner-context.ts';
 import { emitBackendEvent, getVocabularyContentVersion } from './vocabulary-content.ts';
-import { getVocabularyLearnerWord, getVocabularyWordSchedule, isActiveVocabularyRefreshRequest, type VocabularySchedulerState } from './vocabulary-learners.ts';
+import { getVocabularyLearnerWord, getVocabularyWordSchedule, isActiveVocabularyRefreshRequest,
+  type VocabularyPureCueSchedulerState, type VocabularySchedulerState } from './vocabulary-learners.ts';
 
 export class VocabularySessionInputError extends Error {}
 export class VocabularySessionConflictError extends Error {}
@@ -430,20 +431,20 @@ function applyLearningEffects(completionId: string, context: StoredContext, proj
   for (const cue of projection.pureCueOutcomes) {
     if (!cue.covered) continue;
     const before = getDb().prepare('SELECT * FROM learner_pure_cue_schedules WHERE learner_id = ? AND content_id = ?').get(learnerId, cue.contentId) as { scheduler_state_json: string; last_practised_at: string | null; next_eligible_at: string | null } | undefined;
-    const scheduler = before ? JSON.parse(before.scheduler_state_json) as VocabularySchedulerState : { intervalHours: 24, easeFactor: 2.5, enabled: 1, cleanCoveredSessions: 0 };
-    if (scheduler.postCompensationEarliestCheckAt != null) {
-      const earliestCheckAt = scheduler.postCompensationEarliestCheckAt;
+    const scheduler: VocabularyPureCueSchedulerState = before ? JSON.parse(before.scheduler_state_json) as VocabularyPureCueSchedulerState
+      : { intervalHours: 24, easeFactor: 2.5, enabled: 1, cleanCoveredSessions: 0 };
+    const recheckAt = scheduler.postCompensationRecheckAt;
+    if (recheckAt != null) {
       if (projection.encounters.some(entry => entry.snapshot.schedulingScope === 'pure_cue' && entry.snapshot.contentId === cue.contentId
-        && entry.effectiveResponses.some(response => response.occurredAt < earliestCheckAt))) continue;
+        && entry.effectiveResponses.some(response => response.occurredAt < recheckAt))) continue;
     }
-    const historical = scheduler as VocabularySchedulerState & {strongSince?:string|null;strongSuccesses?:number};
     const scheduled = schedulePureCueAssessment({id:cue.contentId,kind:'pure',stimulus:'',axisNote:'',teachingNote:'',acceptedWordIds:[],active:true,
       intervalHours:scheduler.intervalHours,easeFactor:scheduler.easeFactor,lastStudiedAt:before?.last_practised_at??null,nextDueAt:before?.next_eligible_at??now,
-      strongSince:historical.strongSince??null,strongSuccesses:historical.strongSuccesses??0},
+      strongSince:scheduler.strongSince??null,strongSuccesses:scheduler.strongSuccesses??0},
       {failureCount:cue.rejectedResponses,terminalRating:cue.rejectedResponses>0?null:'good'},now);
     const next = {...scheduler,intervalHours:scheduled.intervalHours,easeFactor:scheduled.easeFactor,
       strongSince:scheduled.strongSince,strongSuccesses:scheduled.strongSuccesses,cleanCoveredSessions:cue.rejectedResponses>0?0:(scheduler.cleanCoveredSessions??0)+1};
-    delete next.postCompensationEarliestCheckAt;
+    delete next.postCompensationRecheckAt;
     getDb().prepare(`INSERT INTO learner_pure_cue_schedules(learner_id,content_id,next_eligible_at,last_practised_at,policy_version,scheduler_state_json)
       VALUES (?,?,?,?,?,?) ON CONFLICT(learner_id,content_id) DO UPDATE SET next_eligible_at = excluded.next_eligible_at,last_practised_at = excluded.last_practised_at,
       policy_version = excluded.policy_version,scheduler_state_json = excluded.scheduler_state_json,state_version = state_version + 1`)

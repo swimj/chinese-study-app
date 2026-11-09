@@ -3,9 +3,9 @@ import { VOCABULARY_COMPENSATION_POLICY, type VocabularyReflectionCase } from '.
 import { isLearnerPronunciationRejection, type VocabularySessionProjection } from '../../src/domain/vocabulary-session.ts';
 import { getDb } from './connection.ts';
 import { emitBackendEvent } from './vocabulary-content.ts';
-import { isActiveVocabularyRefreshRequest, type VocabularySchedulerState } from './vocabulary-learners.ts';
+import { isActiveVocabularyRefreshRequest, type VocabularyPureCueSchedulerState } from './vocabulary-learners.ts';
 
-type SchedulerState = VocabularySchedulerState & { strongSince?: string | null; strongSuccesses?: number };
+type SchedulerState = Omit<VocabularyPureCueSchedulerState, 'postCompensationRecheckAt'>;
 type ScheduleRow = {
   next_eligible_at: string | null; last_practised_at: string | null; scheduler_state_json: string;
   refresh_requested_at?: string | null; refresh_until?: string | null;
@@ -112,11 +112,12 @@ export function compensateUnfairVocabularyLapse(
     const strongSince = prior.scheduler.strongSince ?? null;
     const dueAt = [breakUntil, state.resetUntil ?? '', prior.scheduler.resetUntil ?? ''].sort().at(-1)!;
     const adjusted = { ...state, intervalHours: prior.scheduler.intervalHours, easeFactor: prior.scheduler.easeFactor,
-      cleanCoveredSessions: prior.scheduler.cleanCoveredSessions ?? 0, resetUntil: dueAt, postCompensationEarliestCheckAt: dueAt };
+      cleanCoveredSessions: prior.scheduler.cleanCoveredSessions ?? 0, resetUntil: dueAt };
     if (pure) {
       db.prepare(`UPDATE learner_pure_cue_schedules SET next_eligible_at=?,last_practised_at=?,scheduler_state_json=?,state_version=state_version+1
         WHERE learner_id=? AND content_id=?`).run(dueAt, prior.lastPractisedAt,
-          JSON.stringify({ ...adjusted, strongSince, strongSuccesses: prior.scheduler.strongSuccesses ?? 0 }), learnerId, subject);
+          JSON.stringify({ ...adjusted, strongSince, strongSuccesses: prior.scheduler.strongSuccesses ?? 0,
+            postCompensationRecheckAt: dueAt }), learnerId, subject);
     } else {
       const nextEligibleAt = [dueAt, current.next_eligible_at ?? '', prior.nextEligibleAt ?? ''].sort().at(-1)!;
       // Roll back a refresh created by this lapse only while it is still the current
@@ -125,7 +126,8 @@ export function compensateUnfairVocabularyLapse(
         && current.refresh_until === lapsed.refreshUntil && current.refresh_requested_at === lapsed.refreshRequestedAt
         && !isActiveVocabularyRefreshRequest(learnerId, subject, current.refresh_until ?? null, at);
       db.prepare(`UPDATE learner_word_schedules SET next_eligible_at=?,last_practised_at=?,scheduler_state_json=?,refresh_requested_at=?,refresh_until=?,
-        state_version=state_version+1 WHERE learner_id=? AND word_id=?`).run(nextEligibleAt, prior.lastPractisedAt, JSON.stringify(adjusted),
+        state_version=state_version+1 WHERE learner_id=? AND word_id=?`).run(nextEligibleAt, prior.lastPractisedAt,
+          JSON.stringify({ ...adjusted, postCompensationEarliestCheckAt: dueAt }),
           restoreRefresh ? prior.refreshRequestedAt : current.refresh_requested_at ?? null,
           restoreRefresh ? prior.refreshUntil : current.refresh_until ?? null, learnerId, subject);
     }

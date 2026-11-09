@@ -571,7 +571,7 @@ for (const strong of [false,true]) test(`a covered pure-cue lapse restores ${str
   const result = recordVocabularyFeedbackJudgment(feedback.jobId,feedback.leaseToken,input,delayed);
   const restored = cueSchedule();
   const dueAt = strong ? breakUntil : laterReset;
-  assert.deepEqual(scheduler(restored),{ ...state,resetUntil: dueAt,postCompensationEarliestCheckAt: dueAt });
+  assert.deepEqual(scheduler(restored),{ ...state,resetUntil: dueAt,postCompensationRecheckAt: dueAt });
   assert.equal(restored.next_eligible_at,dueAt);
   assert.equal(restored.last_practised_at,'2026-10-01T00:00:00.000Z');
   const selection = (now: string) => alice(() => selectVocabularyPureCueCandidates({ordinaryReviewCount:0,sessionSeed:'compensation',now,adopt:false}));
@@ -583,7 +583,7 @@ for (const strong of [false,true]) test(`a covered pure-cue lapse restores ${str
   const doneAt = new Date(Date.parse(dueAt)+16_000).toISOString();
   close([present('cue',null,'rechecked-cue'),response('rechecked-cue','accepted')],'fresh-cue',dueAt,doneAt);
   const rechecked = scheduler(cueSchedule());
-  assert.equal(rechecked.postCompensationEarliestCheckAt,undefined);
+  assert.equal(rechecked.postCompensationRecheckAt,undefined);
   if (strong) assert.equal(rechecked.strongSuccesses,state.strongSuccesses+1);
   assert.deepEqual(selection(doneAt),[]);
   assert.deepEqual(wordSchedule('b'),wordBefore);

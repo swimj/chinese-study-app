@@ -547,10 +547,11 @@ refresh. An automatic Maintain refresh is reversed if the originating lapse
 created it and it is still the current refresh.
 
 The scheduler records the end of the pause 24 hours after judgment, subject to
-a later reset gate. For regular words, the pause only gates production.
+a later reset gate. For regular words, `postCompensationEarliestCheckAt` only gates production.
 Ordinary due dates, interval eligibility, and skill ranking apply once it ends.
-For independent pure cues, the recheck takes priority within the review bucket
-and bypasses routine strong-cue sampling. A refresh preserves the pause, and
+For independent pure cues, `postCompensationRecheckAt` schedules a recheck that
+takes priority within the review bucket and bypasses routine strong-cue sampling.
+A refresh preserves the pause, and
 completion clears its timestamp only when covered production was assessed after
 the break. Earlier responses still enter the session history. The judgment,
 schedule write, and compensation receipt commit
