@@ -286,6 +286,13 @@ immediately,” which explains that unfinished words remain due. Both paths reta
 responses and reactions for uncovered words. Incomplete teaching does not graduate;
 unfinished practice does not receive covering credit.
 
+While wrap-up work is active, the learner can explicitly return to ordinary
+all-due session behavior. This preserves answers, coverage and the current work,
+and restores selection of unstarted work from the session's existing composition.
+It changes the session's finishing choice, not any word's learning mode. Once
+wrap-up reaches the summary, the completion cancellation rules below apply;
+durably closed sessions cannot be reopened.
+
 The summary has a 15-second cancellation window. Returning to study cancels that
 completion and resumes with the same observations. Undo cancels completion and
 reverses the latest supported learner interaction, including its automatic

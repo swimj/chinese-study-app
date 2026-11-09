@@ -90,7 +90,7 @@ export type VocabularySessionViewProps = {
   history?: VocabularySessionHistoryWord[];
   wordWork?: { extraPractice: boolean; enoughLabel?: string };
   progress: { encountered: number; covered: number; remaining: number; elapsedLabel: string };
-  controls: Record<'skip' | 'another' | 'enough' | 'more' | 'undo' | 'finishForNow' | 'finishImmediately' | 'changeMode', VocabularyControl>;
+  controls: Record<'skip' | 'another' | 'enough' | 'more' | 'undo' | 'finishForNow' | 'finishImmediately' | 'resumeAllDue' | 'changeMode', VocabularyControl>;
   reactionInput: {
     open?: boolean;
     visible: boolean;
@@ -110,6 +110,7 @@ export type VocabularySessionViewProps = {
   onMore: () => void;
   onUndo: () => void;
   onFinishForNow: () => void;
+  onResumeAllDue: () => void;
   /** Invoked only after the learner accepts the unfinished-word warning. */
   onFinishImmediately: () => void;
   /** Legacy adapter callback; live cards show mode as a label, not a switch. */

@@ -54,6 +54,23 @@ test('incremental pure-cue outcomes preserve ordering, misses, Undo and finishin
     present('cue3', null), response('cue3'), present('cue4', null), response('cue4'),
     { kind: 'finish_for_now', payload: {} }]));
 });
+test('returning from active wrap-up preserves progress and Undo restores wrap-up in both projections', () => {
+  const prefix: Input[] = [present('one'), response('one'),
+    { kind: 'finish_for_now', payload: {} }];
+  const resumed = actions([...prefix, { kind: 'resume', payload: {} }]);
+  const before = projectVocabularySession(context, actions(prefix));
+  assert.equal(before.phase, 'finishing');
+  const after = projectVocabularySession(context, resumed);
+  assert.equal(after.phase, 'active');
+  assert.deepEqual(after.words, before.words);
+  assert.deepEqual(after.encounters, before.encounters);
+  parity(resumed);
+  const undone = actions([...prefix, { kind: 'resume', payload: {} },
+    { kind: 'undo', payload: { undoesActionId: 'a4' } }]);
+  assert.equal(projectVocabularySession(context, undone).phase, 'finishing');
+  parity(undone);
+  assert.throws(() => projectVocabularySession(context, actions([{ kind: 'resume', payload: {} }])), /resume requires/);
+});
 test('incremental projection rehydrates safely after Undo and rejects invalid appended identities', () => {
   const log = actions([present('one'), response('one'), { kind: 'undo', payload: { undoesActionId: 'a2' } }, response('one')]);
   const prior = structuredClone(projectVocabularySession(context, log.slice(0, 3)));

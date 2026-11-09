@@ -438,6 +438,80 @@ test('cancel then resume preserves acknowledged answers without opening a replac
   assert.equal(db.prepare("SELECT count(*) AS n FROM vocabulary_session_completions WHERE status='pending'").get()?.n,0);
 }));
 
+test('active wrap-up can return to its unstarted due work without changing modes or repeating effects',()=>owner(()=>{
+  changeVocabularyMode('a','practice',getVocabularyLearnerWord('a')!.stateVersion);
+  addVocabularyWord('new');changeVocabularyMode('new','practice',getVocabularyLearnerWord('new')!.stateVersion);
+  exercise('general-b','b');exercise('general-new','new');
+  const id='return-all-due';
+  createVocabularySession({sessionId:id,words:['a','b','new'].map(wordId=>({wordId,mode:'practice',selectedSkill:'production'}))});
+  const schedules=['a','b','new'].map(getVocabularyWordSchedule);
+  nextVocabularyExercise(id,'first',{wordId:'a'});
+  commandVocabularyStudy(id,'first-answer',{type:'response',response:'甲'});
+  nextVocabularyExercise(id,'second',{wordId:'b'});
+  const finishing=commandVocabularyStudy(id,'finish',{type:'finishForNow'});
+  assert.equal(finishing.session.projection.phase,'finishing');
+  assert.equal(finishing.session.projection.words.new.admitted,false);
+  const resumed=commandVocabularyStudy(id,'resume',{type:'resume'});
+  assert.equal(resumed.session.projection.phase,'active');
+  assert.deepEqual(resumed.session.context,finishing.session.context);
+  assert.deepEqual(resumed.currentEncounter,finishing.currentEncounter);
+  assert.deepEqual(resumed.session.projection.words,finishing.session.projection.words);
+  assert.deepEqual(commandVocabularyStudy(id,'resume',{type:'resume'}).session.actions,resumed.session.actions);
+  const undone=commandVocabularyStudy(id,'undo-resume',{type:'undo'});
+  assert.equal(undone.session.projection.phase,'finishing');
+  assert.deepEqual(undone.session.projection.words,resumed.session.projection.words);
+  commandVocabularyStudy(id,'resume-again',{type:'resume'});
+  commandVocabularyStudy(id,'second-answer',{type:'response',response:'乙'});
+  let view=nextVocabularyExercise(id,'third');
+  assert.equal(view.currentWordId,'new');
+  view=commandVocabularyStudy(id,'third-answer',{type:'response',response:'新'});
+  view=nextVocabularyExercise(id,'done');
+  assert.equal(view.session.projection.phase,'completed');
+  assert.deepEqual([...view.session.projection.coveredWordIds].sort(),['a','b','new']);
+  assert.equal(view.session.actions.filter(action=>action.kind==='mode_change').length,0);
+  assert.equal(view.session.actions.filter(action=>action.kind==='response').length,3);
+  assert.deepEqual(['a','b','new'].map(getVocabularyWordSchedule),schedules);
+  const staged=stageVocabularySessionCompletion(id,view.session.actions.length);
+  assert.throws(()=>commandVocabularyStudy(id,'resume-pending',{type:'resume'}),/Cancel the completion/);
+  closeVocabularySessionCompletion(id,staged.completionId);
+  const effects=db.prepare('SELECT * FROM learner_state_effects ORDER BY rowid').all();
+  assert.ok(effects.length>0);
+  closeVocabularySessionCompletion(id,staged.completionId);
+  assert.deepEqual(db.prepare('SELECT * FROM learner_state_effects ORDER BY rowid').all(),effects);
+  assert.throws(()=>commandVocabularyStudy(id,'resume-closed',{type:'resume'}),/Cancel the completion/);
+}));
+
+test('return from wrap-up restores unstarted independent cues and ordinary exhaustion completes',()=>owner(()=>{
+  changeVocabularyMode('a','practice',getVocabularyLearnerWord('a')!.stateVersion);exercise('unstarted-cue','b','general',true);
+  const id='return-cue';
+  createVocabularySession({sessionId:id,words:[{wordId:'a',mode:'practice',selectedSkill:'production'}],
+    reviewOrder:[{kind:'word',id:'a'},{kind:'pure_cue',id:'unstarted-cue'}]});
+  nextVocabularyExercise(id,'first',{wordId:'a'});
+  assert.equal(commandVocabularyStudy(id,'finish',{type:'finishForNow'}).session.projection.phase,'finishing');
+  commandVocabularyStudy(id,'resume',{type:'resume'});
+  commandVocabularyStudy(id,'answer',{type:'response',response:'甲'});
+  let view=nextVocabularyExercise(id,'cue');
+  assert.equal(view.currentEncounter?.snapshot.schedulingScope,'pure_cue');
+  assert.equal(view.currentEncounter?.snapshot.contentId,'unstarted-cue');
+  commandVocabularyStudy(id,'cue-answer',{type:'response',response:'乙'});
+  view=nextVocabularyExercise(id,'done');
+  assert.equal(view.session.projection.phase,'completed');
+  assert.equal(view.session.projection.pureCueOutcomes[0].covered,true);
+}));
+
+test('return from wrap-up with no unstarted work finishes through ordinary Next',()=>owner(()=>{
+  changeVocabularyMode('a','practice',getVocabularyLearnerWord('a')!.stateVersion);
+  const id='return-last';createVocabularySession({sessionId:id,words:[{wordId:'a',mode:'practice',selectedSkill:'production'}],reviewOrder:[]});
+  nextVocabularyExercise(id,'first');
+  commandVocabularyStudy(id,'finish',{type:'finishForNow'});
+  commandVocabularyStudy(id,'resume',{type:'resume'});
+  commandVocabularyStudy(id,'answer',{type:'response',response:'甲'});
+  const view=nextVocabularyExercise(id,'done');
+  assert.equal(view.session.projection.phase,'completed');
+  assert.equal(view.session.projection.finishReason,'wrapped_up');
+  assert.equal(view.session.actions.filter(action=>action.kind==='response').length,1);
+}));
+
 function contrastContent(){return createVocabularyContent({contentId:'contrast',kind:'exercise',payloadVersion:1,
   body:{prompt:'Choose the expression for this context.',choices:[{wordId:'a',hanzi:'甲'},{wordId:'b',hanzi:'乙'}],reveal:{correctWordId:'a',explanation:'The first expression fits.'}},
   exerciseType:'contrast',skill:'production',exerciseRole:'general',assessment:{responseMode:'word_choice',correctWordId:'a'},

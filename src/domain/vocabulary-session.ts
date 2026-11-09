@@ -577,7 +577,7 @@ function applyAction(state: VocabularySessionProjection, action: VocabularySessi
       } else if (action.payload.mode !== 'unstudied') word.teachingDeferred = false;
       word.mode = action.payload.mode; word.explicitModeChoice = action.payload.mode; return;
     }
-    case 'resume': invariant(state.phase === 'completed', 'resume requires completed work and cancellation of its pending revision'); state.phase = 'active'; state.finishReason = null; return;
+    case 'resume': invariant(state.phase === 'finishing' || state.phase === 'completed', 'resume requires finishing or completed work and cancellation of any pending revision'); state.phase = 'active'; state.finishReason = null; return;
     case 'finish_for_now': invariant(state.phase === 'active', 'finish requested outside active phase'); state.phase = 'finishing'; return;
     case 'finish_immediately': invariant(state.phase === 'finishing', 'immediate finish requires finishing phase'); state.phase = 'completed'; state.finishReason = 'finish_immediately'; return;
     case 'undo': throw new Error('Vocabulary session invariant violated: Undo must be interpreted by replay');

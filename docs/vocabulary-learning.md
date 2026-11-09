@@ -281,6 +281,14 @@ never filled with estimated durations.
 
 ## Session actions and completion
 
+During active wrap-up, “Complete everything due” records `resume` to return the
+projection from `finishing` to `active`. The current encounter and prior progress
+are retained; ordinary selection can serve unstarted words and pure cues from
+the frozen composition. No new composition or learning effects are created by
+this choice. Undo returns to wrap-up. If no eligible work remains, ordinary Next
+reaches completion. The same action also serves summary cancellation, behind
+the existing pending-revision and durable-closure fences.
+
 The study controller flushes queued work and retrieves any pending or failed
 prior completion before Start. It closes that completion before requesting a
 new session. Failed closure leaves Start retryable and prevents the new session
