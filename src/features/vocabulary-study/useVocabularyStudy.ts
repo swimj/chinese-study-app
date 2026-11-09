@@ -292,7 +292,8 @@ export function useVocabularyStudy(options: VocabularyStudyOptions = {}) {
   });
   const resume = (wordId?: string) => exclusive(() => resumeBoundary(async () => {
     await commitHeldProduction();
-    if (studyRef.current?.session.projection.phase === 'completed') await enqueue({ type: 'resume' });
+    const phase = studyRef.current?.session.projection.phase;
+    if (phase === 'completed' || (phase === 'finishing' && wordId === undefined)) await enqueue({ type: 'resume' });
     if (wordId) {
       const word = studyRef.current?.session.projection.words[wordId];
       if (word?.workStatus === 'wrapped' || word?.workStatus === 'skipped') await enqueue({ type: 'more', wordId });

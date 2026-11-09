@@ -87,6 +87,7 @@ export function VocabularySessionContent(props: VocabularySessionViewProps) {
 
     {props.phase === 'finishing' && <div className="vocab-finishing" role="status">
       <div><strong>Wrapping up</strong><span>No new words. Finish the work already open.</span></div>
+      <Action control={controls.resumeAllDue} onClick={props.onResumeAllDue}>Complete everything due</Action>
       <Action control={controls.finishImmediately} onClick={() => setConfirmFinish(true)}>Finish immediately</Action>
     </div>}
     {props.error && <div className="vocab-error" role="alert">{props.error}</div>}

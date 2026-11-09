@@ -651,6 +651,17 @@ and both completion orders. Already-applied plans retain their recorded policy.
 
 ### Session composition repertoire boundary
 
+`/tests/browser/vocabulary-finish-return.html` mounts the production study
+controller, reducer and surface with simulated HTTP. It starts with a covered
+word, an open production exercise, and an unstarted due word. Choose Finish for
+now, then Complete everything due: the current card and typed input should be
+preserved, Undo should restore wrap-up, and normal continuation should reach
+the unstarted word. `?last=1` omits unstarted work so the final answer and Next
+exercise reach completion. `?narrow=1` uses a 420px panel with 125% text.
+Reload resets the fixture. It does not establish HTTP or persistence behavior;
+`vocabulary-study.test.ts` covers those domain transitions in temporary SQLite,
+including independent cues, retries, closure fencing and duplicate effects.
+
 `tests/vocabulary-study.test.ts` verifies reachable pools, teaching-to-Solidify
 More, fixed active modes, legacy mode replay/retries, and future-state edits after
 closure. `RUN_PAYLOAD_BENCHMARK=1 node --import tsx --test --test-name-pattern='measure reachable payload' tests/vocabulary-study.test.ts`

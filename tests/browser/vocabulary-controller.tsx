@@ -8,7 +8,8 @@ import type {VocabularySessionCompletion} from '../../src/domain/vocabulary-sess
 const mode=new URLSearchParams(location.search).get('mode')??'resume';
 const ending=mode==='enough'||mode==='skip';
 const continuing=mode==='enough-active';
-const context:VocabularySessionInitialContext={sessionId:'fixture',words:[{wordId:'word',mode:'practice'}]};
+const moreFinishing=mode==='more-finishing';
+const context:VocabularySessionInitialContext={sessionId:'fixture',words:[{wordId:'word',mode:'practice'},...(moreFinishing?[{wordId:'other',mode:'practice' as const}]:[])]};
 const time=()=>new Date().toISOString();
 const initial:VocabularySessionAction[]=[
   {kind:'presentation',payload:{encounterId:'encounter',wordId:'word',snapshot:{contentId:'content',contentVersion:1,kind:'production',role:'general',body:{prompt:'A prepared cue'},assessment:{acceptedAnswers:['字']}}}},
@@ -17,6 +18,12 @@ const initial:VocabularySessionAction[]=[
   {kind:'finish_immediately',payload:{}},
 ].map((action,index)=>({...action,actionId:`action-${index+1}`,clientActionId:`client-${index+1}`,protocolVersion:1,sequence:index+1,occurredAt:time()} as VocabularySessionAction));
 let actions=ending?initial.filter((action)=>action.kind==='presentation'||action.kind==='finish_for_now').map((action,index)=>({...action,sequence:index+1,actionId:`action-${index+1}`,clientActionId:`client-${index+1}`})):continuing?initial.slice(0,1):[...initial],completion:VocabularySessionCompletion|null=null,status:'active'|'finalizing'|'closed'='active';
+if(moreFinishing) {
+  const presentation=initial[0];if(presentation.kind!=='presentation')throw new Error('Expected presentation');
+  actions=[{...presentation,payload:{...presentation.payload,wordId:'other',encounterId:'other'}},...initial.slice(0,2),
+    {...initial[2],kind:'word_wrap',payload:{wordId:'word',reason:'policy'}},initial[2]]
+    .map((action,index)=>({...action,sequence:index+1,actionId:`action-${index+1}`,clientActionId:`client-${index+1}`})) as VocabularySessionAction[];
+}
 let stageCalls=0,cancelCalls=0,resumeCalls=0,undoCalls=0,nextCalls=0,endCalls=0;
 function study():VocabularyStudy {
   const projection=projectVocabularySession(context,actions);
@@ -56,8 +63,8 @@ window.fetch=async(input,init)=>{
     if(status!=='active')return Response.json({error:'Cancel the completion revision before resuming study'},{status:409});
     const projection=projectVocabularySession(context,actions);
     const end=body.command.type==='enough'||body.command.type==='skip';
-    const kind=body.command.type==='enough'?'word_wrap':body.command.type==='skip'?'word_skip':body.command.type;
-    const payload=end?{wordId:'word',...(kind==='word_wrap'?{reason:'enough'}:{})}:body.command.type==='undo'?{undoesActionId:projection.latestUndoableActionId!}:{};
+    const kind=body.command.type==='more'?'word_more':body.command.type==='enough'?'word_wrap':body.command.type==='skip'?'word_skip':body.command.type;
+    const payload=end||body.command.type==='more'?{wordId:'word',...(kind==='word_wrap'?{reason:'enough'}:{})}:body.command.type==='undo'?{undoesActionId:projection.latestUndoableActionId!}:{};
     if(end)endCalls++;
     if(body.command.type==='resume')resumeCalls++;else if(body.command.type==='undo')undoCalls++;
     actions.push({kind,payload,actionId:`action-${actions.length+1}`,clientActionId:body.clientActionId,sequence:actions.length+1,protocolVersion:1,occurredAt:time()} as VocabularySessionAction);
@@ -70,6 +77,10 @@ function Fixture(){
   const [result,setResult]=useState('Running');const begun=useRef(false),transitioned=useRef(false),checked=useRef(false);
   const controller=useVocabularyStudy();
   useEffect(()=>{
+    if(moreFinishing&&controller.study&&!controller.busy&&!transitioned.current){transitioned.current=true;void controller.resume('word');}
+    if(moreFinishing&&transitioned.current&&!controller.busy&&nextCalls===1){
+      setResult(resumeCalls===0&&stageCalls===0&&controller.study?.session.projection.phase==='finishing'&&controller.study.session.projection.words.word.workNumber===2&&!controller.error?'PASS':'FAIL More changed wrap-up');
+    }
     if((ending||continuing)&&controller.study&&!controller.busy&&!transitioned.current){
       transitioned.current=true;controller.keepSummaryOpenNow();void controller.endWord(mode!=='skip');
     }
@@ -84,11 +95,11 @@ function Fixture(){
   },[controller.study,controller.busy,controller.completion]);
   useEffect(()=>{if(!begun.current){begun.current=true;void controller.start();}},[]);
   useEffect(()=>{
-    if(!ending&&!continuing&&controller.completion?.status==='pending'&&!transitioned.current){transitioned.current=true;void(mode==='undo'?controller.undo():controller.resume());}
+    if(!ending&&!continuing&&!moreFinishing&&controller.completion?.status==='pending'&&!transitioned.current){transitioned.current=true;void(mode==='undo'?controller.undo():controller.resume());}
   },[controller.completion]);
   useEffect(()=>{
     const phase=controller.study?.session.projection.phase;
-    if(!ending&&!continuing&&transitioned.current&&!controller.busy&&phase&&phase!=='completed'&&!checked.current){
+    if(!ending&&!continuing&&!moreFinishing&&transitioned.current&&!controller.busy&&phase&&phase!=='completed'&&!checked.current){
       checked.current=true;
       const valid=stageCalls===1&&cancelCalls===1&&(mode==='undo'?undoCalls===1&&phase==='finishing':resumeCalls===1&&phase==='active')
         &&controller.study?.session.projection.encounters[0].responses.length===1&&!controller.error;

@@ -108,8 +108,11 @@ for pronunciation before reveal without exposing the hidden reading in the DOM.
 The session bottom line counts remaining words and pure cues, rather than the
 number of exercises or reinforcement repetitions. Open extra practice counts as
 remaining work; deferred, skipped, and completed items do not. During wrap-up,
-unstarted items are excluded. There is one remaining-work count, with no separate
-mistake pile. Sidebar returns, Try another way, and mistake departures share a
+unstarted items are excluded. The wrap-up banner offers “Complete everything due”
+to restore ordinary selection and its remaining-work count while keeping the
+current card and input. The action is available during active wrap-up; summary
+cancellation follows the completion rules. There is one remaining-work count,
+with no separate mistake pile. Sidebar returns, Try another way, and mistake departures share a
 slow tuck-behind motion (about 1.3 seconds). Sidebar returns animate a copy while
 preserving the current card and input. Mistakes retain their immediate rattle;
 their departure tucks back into the same stack. Reduced motion skips the movement.
