@@ -12,6 +12,13 @@ function answers(forms: string[], separator = ' · '): string {
   return [...new Set(forms.map(form => convertSentenceCharacters(form, 'simplified')))].join(separator);
 }
 
+function historyTime(presentedAt: string | null, firstPresentedAt: string | null | undefined): string {
+  if (!presentedAt) return 'Encounter time unavailable';
+  const date = new Date(presentedAt);
+  const first = firstPresentedAt ? new Date(firstPresentedAt) : null;
+  return first && date.toDateString() === first.toDateString() ? date.toLocaleTimeString() : date.toLocaleString();
+}
+
 function Operation({ operation, item, summary, editCue }: { editCue?: (key:string)=>ReactNode; operation: VocabularyOperationReview; item: VocabularyCaseQueueItem; summary: string }) {
   const pure = operation.pureCue;
   const hasPureCueBase = pure && operation.sourceContentId !== null && operation.expectedVersion !== null;
@@ -110,7 +117,7 @@ export function CaseReviewCard({ item, children, onDetails, showDetails = false,
       {item.kind === 'teaching_review' && <p className="vocabulary-served-label">Teaching encounter</p>}
       {item.served.length === 0 && <p>The original served content is not available for this case.</p>}
       {first && <Encounter encounter={first}>{encounters.length > 1 && <button className="vocabulary-encounter-toggle" aria-expanded={historyOpen} onClick={() => setHistoryOpen(open => !open)}><span aria-hidden="true">{historyOpen ? '▾' : '▸'}</span> {encounters.length - 1} more encounters</button>}</Encounter>}
-      <div className="vocabulary-encounter-history" hidden={!historyOpen}>{encounters.slice(1).map(encounter => <section key={encounter.encounterId}><p className="vocabulary-operator-meta">{encounter.presentedAt ? new Date(encounter.presentedAt).toLocaleString() : 'Encounter time unavailable'}{encounter.role !== first?.role && ` · ${encounter.role}`}{encounter.kind !== first?.kind && ` · ${encounter.kind}`}{encounter.contentVersion !== null && encounter.contentVersion !== first?.contentVersion ? ` · version ${encounter.contentVersion}` : ''}</p><Encounter encounter={encounter} baseline={first} /></section>)}</div>
+      <div className="vocabulary-encounter-history" hidden={!historyOpen}>{encounters.slice(1).map(encounter => <section key={encounter.encounterId}><p className="vocabulary-operator-meta">{historyTime(encounter.presentedAt, first?.presentedAt)}{encounter.role !== first?.role && ` · ${encounter.role}`}{encounter.kind !== first?.kind && ` · ${encounter.kind}`}{encounter.contentVersion !== null && encounter.contentVersion !== first?.contentVersion ? ` · version ${encounter.contentVersion}` : ''}</p><Encounter encounter={encounter} baseline={first} /></section>)}</div>
     {item.stale && <p role="alert" className="vocabulary-operator-error">Source or sense mapping changed.{item.state === 'open' && <> Approval and second opinion are unavailable.{item.proposal && ' You can edit or dismiss this proposal.'}{item.reassessment.eligible && ' Reassessment uses the current source.'}</>}</p>}
     {changedSources.length > 0 && <details className="vocabulary-source-summary" ><summary>Source changed{changedSources.length === 1 ? '' : 's'}</summary>{changedSources.map(source => <article key={source.contentId}><p className="vocabulary-operator-meta">Assessed v{source.expectedVersion} · {source.version === null ? 'unavailable' : `current v${source.version}`}{source.availability ? ` · ${source.availability}` : ''}</p>{source.prompt !== null && <p className="vocabulary-operator-cue">{source.prompt}</p>}{source.acceptedAnswers.length > 0 && <p><strong>Accepted answers:</strong> {source.acceptedAnswers.join(' · ')}</p>}</article>)}</details>}
     </div>
@@ -118,7 +125,7 @@ export function CaseReviewCard({ item, children, onDetails, showDetails = false,
     <h3 className="vocabulary-improvement-heading">{selectedRepertoire ? 'Selected repertoire' : repertoire ? <><span aria-hidden="true">📖</span> Repertoire bootstrap</> : 'Proposed improvement'}</h3>
     {item.proposal?.authorKind === 'operator' ? <p className="vocabulary-operator-meta">Operator correction</p> : author && <p className="vocabulary-operator-meta" aria-label="Content model">{author.resolvedModel ?? author.model}</p>}
     {summary && (!repertoire || !item.proposal) && summary.trim() !== item.finding?.message.trim() && <p>{summary}</p>}
-    {item.finding && <p className="vocabulary-case-finding"><strong>{{unmappable:'Intended sense unresolved',inventory_gap:'Sense inventory gap',needs_coverage:'Useful senses need review',needs_operator:'Candidate identity unresolved',selected_repertoire:'Selected repertoire',needs_repertoire:'Repertoire needs review'}[item.finding.kind]}</strong>{item.finding.message && ` · ${item.finding.message}`}</p>}
+    {item.finding && <p className="vocabulary-case-finding"><strong>{{unmappable:'Intended sense unresolved',inventory_gap:'Sense inventory gap',needs_coverage:'Useful senses need review',needs_operator:'Candidate identity unresolved',response_identity:'Response identity unresolved',needs_repertoire:'Repertoire needs review'}[item.finding.kind]}</strong>{item.finding.message && ` · ${item.finding.message}`}</p>}
     {item.kind !== 'teaching_review' && item.state === 'open' && !item.reassessment.eligible && item.reassessment.reason && <p className="vocabulary-operator-meta">Reassessment unavailable: {item.reassessment.reason}</p>}
     {item.state === 'resolved' && <p><strong>Resolved</strong>{item.resolvedAt ? ` · ${new Date(item.resolvedAt).toLocaleString()}` : ''}</p>}
     {item.activeJob && <p role="status">{item.frozen ? 'Reassessment' : 'Assessment'} {item.activeJob.sequence} {item.activeJob.status === 'queued' ? 'queued' : 'running'}{item.frozen ? ' · review is paused' : ''}</p>}

@@ -201,7 +201,9 @@
 .vocabulary-case-card .vocabulary-encounter-toggle { background: transparent; color: var(--text-secondary); font-size: .8rem; padding: 0; line-height: inherit; }
 .vocabulary-encounter-toggle > span { display: inline-block; width: .75em; }
 .vocabulary-encounter-history[hidden] { display: none; }
-.vocabulary-case-card .vocabulary-encounter-history section { border: 0; border-top: 1px solid var(--border); border-radius: 0; margin: 1rem 0 0; padding: .75rem 0 0; }
+.vocabulary-case-card .vocabulary-encounter-history section { display: flex; flex-wrap: wrap; align-items: baseline; gap: .25rem .75rem; border: 0; border-top: 1px solid var(--border); border-radius: 0; margin: 1rem 0 0; padding: .75rem 0 0; }
+.vocabulary-case-card .vocabulary-encounter-history section > p { margin: 0; }
+.vocabulary-case-card .vocabulary-encounter-history section > article { min-width: 0; }
 .vocabulary-case-card .vocabulary-sense-group { margin: 0; border-bottom: 1px solid var(--border); }
 .vocabulary-case-card .vocabulary-sense-group > summary { display: flex; align-items: baseline; gap: .75rem; padding: 1rem 0; border: 0; }
 .vocabulary-sense-group > summary::before { content: '›'; width: .75rem; }

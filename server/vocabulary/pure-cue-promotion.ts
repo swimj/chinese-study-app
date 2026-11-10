@@ -185,7 +185,7 @@ export function prepareVocabularyPureCueIntegration(job:VocabularyReflectionJob,
 }
 
 /** Only exact, unambiguous response identities may receive new individual practice. */
-export function vocabularyResponseCandidates(job:Pick<VocabularyReflectionJob,'evidence'>):Word[] {
+export function vocabularyResponseCandidates(job:Pick<VocabularyReflectionJob,'evidence'|'responseIdentitySelection'>):Word[] {
   return [...new Map(vocabularyResponseWordMatches(job).flatMap(({word})=>{
     return word&&word.wordId!==job.evidence.wordId?[[word.wordId,{...word}] as const]:[];
   })).values()];

@@ -7,23 +7,33 @@ export class VocabularyReflectionSourceConflict extends VocabularyReflectionConf
 export function canonicalVocabularyCaseId(caseId:string):string {
   return (getDb().prepare('SELECT case_id FROM vocabulary_case_lineage WHERE member_case_id=?').get(caseId) as {case_id:string}|undefined)?.case_id??caseId;
 }
+/** A reassessment remains pending until it succeeds or the operator abandons it. */
+export const pendingReassessmentSql = (job:string) => `(${job}.reassessment_source_job_id IS NOT NULL AND ${job}.second_opinion_json IS NULL
+  AND (${job}.status IN ('queued','running','failed') OR (${job}.status='succeeded' AND json_array_length(${job}.result_json,'$.input.responseIdentityOptions')>0))
+  AND NOT EXISTS (SELECT 1 FROM backend_events abandoned WHERE abandoned.job_id=${job}.job_id AND abandoned.name='vocabulary.reflection.reassessment_abandoned'))`;
+export function pendingVocabularyReassessment(caseId:string):{jobId:string;status:string;sourceJobId:string}|null {
+  return (getDb().prepare(`SELECT j.job_id AS jobId,j.status,j.reassessment_source_job_id AS sourceJobId FROM vocabulary_reflection_jobs j
+    WHERE j.job_id=(SELECT latest.job_id FROM vocabulary_reflection_jobs latest WHERE latest.review_case_id=? ORDER BY latest.case_sequence DESC,latest.created_at DESC,latest.job_id DESC LIMIT 1)
+    AND ${pendingReassessmentSql('j')}`).get(canonicalVocabularyCaseId(caseId)) as {jobId:string;status:string;sourceJobId:string}|undefined)??null;
+}
 export function getVocabularyCaseReview(caseId:string):VocabularyCaseReview|null {
   const id=canonicalVocabularyCaseId(caseId);
   const row=getDb().prepare(`SELECT case_id AS caseId,state,version,current_job_id AS currentJobId,current_proposal_id AS currentProposalId,approval_request_id AS approvalRequestId,approval_state AS approvalState,created_at AS createdAt,resolved_at AS resolvedAt FROM vocabulary_case_reviews WHERE case_id=?`).get(id) as Omit<VocabularyCaseReview,'activeJob'|'frozen'>|undefined;
   if(!row)return null;
   const activeJob=getDb().prepare(`SELECT job_id AS jobId,case_sequence AS sequence,status,reassessment_source_job_id IS NOT NULL AND second_opinion_json IS NULL AS replacing FROM vocabulary_reflection_jobs WHERE review_case_id=? AND status IN ('queued','running')`).get(id) as {jobId:string;sequence:number;status:'queued'|'running';replacing:number}|undefined;
-  return {...row,activeJob:activeJob?{jobId:activeJob.jobId,sequence:activeJob.sequence,status:activeJob.status}:null,frozen:!!activeJob?.replacing};
+  return {...row,activeJob:activeJob?{jobId:activeJob.jobId,sequence:activeJob.sequence,status:activeJob.status}:null,frozen:!!pendingVocabularyReassessment(id)};
 }
 export function assertVocabularyCaseEditable(caseId:string|null,approval?:{requestId:string;proposalId:string}):void {
   const review=caseId?getVocabularyCaseReview(caseId):null;
-  if(review?.frozen)throw new VocabularyReflectionConflict('This case is frozen while reassessment is queued or running');
+  if(review?.frozen)throw new VocabularyReflectionConflict('This case is frozen until reassessment succeeds or is abandoned');
   if(review?.approvalState==='pending'&&(!approval||review.approvalRequestId!==approval.requestId||review.currentProposalId!==approval.proposalId))throw new VocabularyReflectionConflict('Case approval is queued or running');
 }
-export function assertVocabularyCaseCanQueue(caseId:string):void {
+export function assertVocabularyCaseCanQueue(caseId:string,continuePending=false):void {
   const review=getVocabularyCaseReview(caseId);
   if(!review)throw new Error('Unknown improvement review case');
   if(review.state==='resolved')throw new VocabularyReflectionConflict('This case is resolved');
   if(review.activeJob)throw new VocabularyReflectionConflict('A case job is already queued or running');
+  if(review.frozen&&!continuePending)throw new VocabularyReflectionConflict('Finish or abandon the pending reassessment first');
   if(review.approvalState==='pending')throw new VocabularyReflectionConflict('Case approval is queued or running');
 }
 export function touchVocabularyCaseReview(caseId:string):void {
@@ -35,7 +45,9 @@ export function resolveVocabularyCaseProposal(caseId:string,at:string,resolvedPr
   const id=canonicalVocabularyCaseId(caseId);
   const pending=getDb().prepare(`SELECT p.proposal_id FROM content_proposals p JOIN vocabulary_case_lineage l ON l.member_case_id=p.case_id WHERE l.case_id=? AND p.status NOT IN ('applied','closed') ORDER BY p.created_at,p.proposal_id LIMIT 1`).get(id) as {proposal_id:string}|undefined;
   const current=getVocabularyCaseReview(id);
-  getDb().prepare('UPDATE vocabulary_case_reviews SET current_proposal_id=?,state=?,resolved_at=?,approval_request_id=NULL,approval_state=NULL,version=version+1 WHERE case_id=?').run(pending?.proposal_id??resolvedProposalId??current?.currentProposalId??null,pending?'open':'resolved',pending?null:at,id);
+  const identityPending=!!getDb().prepare(`SELECT 1 FROM vocabulary_case_reviews r JOIN reflection_cases c ON c.case_id=r.case_id JOIN vocabulary_reflection_jobs j ON j.job_id=r.current_job_id WHERE r.case_id=? AND c.status!='closed' AND json_array_length(j.result_json,'$.input.responseIdentityOptions')>0`).get(id);
+  const open=!!pending||identityPending;
+  getDb().prepare('UPDATE vocabulary_case_reviews SET current_proposal_id=?,state=?,resolved_at=?,approval_request_id=NULL,approval_state=NULL,version=version+1 WHERE case_id=?').run(pending?.proposal_id??(open?null:resolvedProposalId??current?.currentProposalId??null),open?'open':'resolved',open?null:at,id);
 }
 export function setVocabularyCaseApprovalPending(proposalId:string,requestId:string,pending:boolean):void {
   const row=getDb().prepare('SELECT case_id FROM content_proposals WHERE proposal_id=?').get(proposalId) as {case_id:string|null}|undefined;

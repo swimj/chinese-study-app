@@ -273,7 +273,7 @@ those pointers. Case versions change with job transitions, proposal revisions,
 and review decisions. Approval journal replay reconstructs pending locks and
 clears orphan admission intents; failed approvals have a separate attention
 state and can be corrected or reassessed. Successful application resolves a case
-only when no unresolved alternative proposal remains.
+only when no unresolved alternative proposal or response identity decision remains.
 
 ### Existing pure-cue assessment
 
@@ -306,11 +306,15 @@ operator summary.
 submitted forms and match each exactly against `lexical_words.hanzi` or
 `traditional`. One matching record supplies a lexical identity and permits both
 individual authoring and inclusion as a shared answer. Zero matches (such as a
-missing entry or nonmatching response) and multiple matches leave the identity unresolved.
+missing entry or nonmatching response) leave the identity unresolved and the
+response remains evidence. Multiple matches pause single-exercise authoring for
+operator selection. The captured selection is specific to the resumed job and
+is checked against the exact candidate snapshots before and during model work;
+dictionary drift requires refreshed candidates. Existing proposals remain available
+while an assessment is paused. The choice does not itself apply content.
 Several senses within one record do not create this ambiguity. The target already
 has an identity through its source exercise. Contextual disambiguation is not part
-of this lookup; the model receives the raw form as encounter evidence even when
-no identity is supplied.
+of this lookup; the model receives the raw form as encounter evidence.
 
 `pure-cue-promotion.ts` uses the same exact-form lookup for shared candidates and
 supplies eligible active overlapping pure cues in the same publication scope and owner. `pure-cue-integration.md`

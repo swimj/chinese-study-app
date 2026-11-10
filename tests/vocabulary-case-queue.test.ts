@@ -10,7 +10,7 @@ import { createBaselineSchema } from '../server/db/persistence.ts';
 import { migrateDatabase } from '../server/db/migrations.ts';
 import { createVocabularyContent,createVocabularySense,establishVocabularySenseCatalog,getVocabularySenseCatalog,getVocabularyContentForMaintenance,updateVocabularyContent,emitBackendEvent } from '../server/db/vocabulary-content.ts';
 import { createVocabularyProposal,claimVocabularyReflectionJob,recordVocabularyImprovementResult,retryVocabularyReflectionJob,approveVocabularyProposal,applyVocabularyProposal,closeVocabularyProposal } from '../server/db/vocabulary-reflection.ts';
-import { listVocabularyCaseQueue,getVocabularyCaseCard,setVocabularyCaseDeferred,resolveVocabularyCaseReview,proposeVocabularyCaseRetirement,getVocabularyFallbackRepertoire,generateVocabularyFallbackRepertoire,reassessVocabularyCaseReview,addVocabularyCaseNote } from '../server/db/vocabulary-case-queue.ts';
+import { abandonVocabularyReassessment,listVocabularyCaseQueue,getVocabularyCaseCard,setVocabularyCaseDeferred,resolveVocabularyCaseReview,proposeVocabularyCaseRetirement,getVocabularyFallbackRepertoire,generateVocabularyFallbackRepertoire,reassessVocabularyCaseReview,addVocabularyCaseNote } from '../server/db/vocabulary-case-queue.ts';
 import { getVocabularyRepertoireSelection } from '../server/db/vocabulary-repertoire-selection.ts';
 import { getVocabularyWordSenseCoverage, writeVocabularyDefaultUsefulSenses } from '../server/db/vocabulary-sense-coverage.ts';
 import { listVocabularyAttention } from '../server/db/vocabulary-attention.ts';
@@ -92,7 +92,7 @@ test('case mutations compare the captured case version atomically and return upd
   assert.equal(queued.caseId,'a');assert.equal(queued.item.frozen,true);assert.equal(queued.item.activeJob?.sequence,2);assert.ok(queued.item.version>current.version);
   assert.throws(()=>resolveVocabularyCaseReview('a',queued.item.version,'editor'),/frozen/);
   sql.prepare("UPDATE vocabulary_reflection_jobs SET status='failed',last_error='provider_outcome_unknown' WHERE job_id=?").run(queued.jobId);
-  const failed=getVocabularyCaseCard('a','editor');assert.equal(failed.frozen,false);assert.equal(failed.currentAssessment?.sequence,1);assert.equal(failed.latestJob?.sequence,2);assert.equal(failed.latestJob?.status,'failed');assert.equal(failed.latestJob?.error,'provider_outcome_unknown');assert.equal(failed.latestJob?.advisory,false);
+  const failed=getVocabularyCaseCard('a','editor');assert.equal(failed.frozen,true);assert.equal(failed.currentAssessment?.sequence,1);assert.equal(failed.latestJob?.sequence,2);assert.equal(failed.latestJob?.status,'failed');assert.equal(failed.latestJob?.error,'provider_outcome_unknown');assert.equal(failed.latestJob?.advisory,false);
   seedCase('b');const done=resolveVocabularyCaseReview('b',getVocabularyCaseCard('b','editor').version,'editor');assert.equal(done.state,'resolved');
 });
 test('alternative cards use their own assessment provenance and cannot cross case boundaries',()=>{
@@ -441,10 +441,12 @@ test('deferral survives assessment changes and rejects active jobs, approvals an
   seedCase('a');const first=getVocabularyCaseCard('a','editor');
   const deferred=setVocabularyCaseDeferred('a',first.version,'editor',true);
   const job=reassessVocabularyCaseReview('a',deferred.version,'editor','openai:gpt-6-sol-high',1);
-  assert.throws(()=>setVocabularyCaseDeferred('a',job.item.version,'editor',false),/queued or running/);
+  assert.throws(()=>setVocabularyCaseDeferred('a',job.item.version,'editor',false),/queued or running|abandon/);
   sql.prepare("UPDATE vocabulary_reflection_jobs SET status='failed',last_error='test' WHERE job_id=?").run(job.jobId);
   assert.equal(getVocabularyCaseCard('a','editor').deferredAt,deferred.deferredAt);
   assert.equal(listVocabularyCaseQueue('editor').total,0);assert.equal(listVocabularyCaseQueue('editor',{view:'deferred'}).total,1);
+  assert.throws(()=>setVocabularyCaseDeferred('a',getVocabularyCaseCard('a','editor').version,'editor',false),/abandon/);
+  abandonVocabularyReassessment('a',getVocabularyCaseCard('a','editor').version,job.jobId,'editor');
   sql.exec("UPDATE vocabulary_case_reviews SET approval_state='pending' WHERE case_id='a'");
   assert.throws(()=>setVocabularyCaseDeferred('a',getVocabularyCaseCard('a','editor').version,'editor',false),/approval/);
   sql.exec("UPDATE vocabulary_case_reviews SET approval_state=NULL,state='resolved',resolved_at='2026-11-06T00:00:00.000Z' WHERE case_id='a'");

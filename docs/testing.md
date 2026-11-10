@@ -115,6 +115,9 @@ operator container; `?narrow&largeText` uses a 480px panel with enlarged text.
 `?reuse=retired` exercise unavailable references. Combine with `narrow&largeText`
 to check wrapping and keyboard access to the cue disclosure.
 The fixture uses local synthetic responses and never calls a provider.
+`?identities&usage` starts with an ambiguous response awaiting a dictionary
+choice; the reassessment controls and completion/failure buttons simulate the
+queue lifecycle. Add `narrow&largeText` to inspect the selection in a small panel.
 
 Verify in-batch navigation makes no detail fetch, cross-page and end-wrap navigation,
 exact totals, encounter time labels, collapsed sense counts, source drift, note

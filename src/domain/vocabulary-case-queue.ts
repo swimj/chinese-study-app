@@ -1,4 +1,4 @@
-import type { VocabularyCaseReview, VocabularyContentProposal, VocabularyProposalOperation, VocabularySecondOpinionVerdict } from './vocabulary-reflection';
+import type { VocabularyCaseReview, VocabularyContentProposal, VocabularyProposalOperation, VocabularySecondOpinionVerdict, VocabularyResponseIdentityOption, VocabularyReassessmentEditorial } from './vocabulary-reflection';
 
 /** Display-only data. These projections are never accepted as authored content or saved drafts. */
 export type VocabularyServedReview = {
@@ -50,8 +50,12 @@ export type VocabularyCaseQueueItem = {
   /** Rare content without a faithful compact rendering must be reviewed in the full workspace before approval. */
   requiresDetails:boolean;
   needsDecision:boolean;
+  responseIdentityOptions?:VocabularyResponseIdentityOption[];
+  availableResponseIdentityOptions?:VocabularyResponseIdentityOption[];
+  priorResponseIdentities?:Record<string,string>;
+  pendingEditorial?:VocabularyReassessmentEditorial;
   repertoireReviewAvailable?:boolean;
-  finding:{kind:'unmappable'|'inventory_gap'|'needs_coverage'|'needs_operator'|'needs_repertoire';message:string}|null;
+  finding:{kind:'unmappable'|'inventory_gap'|'needs_coverage'|'needs_operator'|'needs_repertoire'|'response_identity';message:string}|null;
   reassessment:{eligible:boolean;reason:string|null;source:{contentId:string;assessedVersion:number;currentVersion:number}|null};
 };
 export type VocabularyFallbackRepertoire = {

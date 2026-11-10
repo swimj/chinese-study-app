@@ -36,14 +36,18 @@ export function VocabularyCaseReviewPage({ api = vocabularyOperatorApi }: { api?
   const [action,setAction]=useState<'approve'|'resolve'|'opinion'|null>(null);
   const [actionText,setActionText]=useState('');
   const [editorialText,setEditorialText]=useState('');
+  const [responseChoices,setResponseChoices]=useState<Record<string,string>>({});
   const [attachedOpinion,setAttachedOpinion]=useState<VocabularyCaseQueueItem['advisoryOpinion']>(null);
   const [noteActivity,setNoteActivity]=useState({dirty:false,busy:false});
   function closeAction(){setAction(null);setActionText('');}
   function openAction(value:NonNullable<typeof action>){setError('');setMoreOpen(false);setActionText('');setAction(value);}
-  function openReassessment(opinion: VocabularyCaseQueueItem['advisoryOpinion'] = null){setError('');setEditorialText('');setAttachedOpinion(opinion);setReassessmentOpen(true);}
-  function closeReassessment(){setReassessmentOpen(false);setConfirmSource(null);setEditorialText('');setAttachedOpinion(null);}
+  function openReassessment(opinion: VocabularyCaseQueueItem['advisoryOpinion'] = null){
+    if(!item)return;const card=item;
+    void run(async()=>{const fresh=await api.caseCard(card.caseId,card.proposal?.proposalId);installCard(fresh);if(fresh.version!==card.version)throw new Error('This case changed. Review it before requesting reassessment.');setEditorialText('');setResponseChoices(fresh.priorResponseIdentities??{});setAttachedOpinion(opinion);setReassessmentOpen(true);});
+  }
+  function closeReassessment(){setReassessmentOpen(false);setConfirmSource(null);setEditorialText('');setResponseChoices({});setAttachedOpinion(null);}
   const [model, setModel] = useState<VocabularyReassessmentModel>('openai:gpt-6-sol-high');
-  const [confirmSource, setConfirmSource] = useState<{ caseId: string; version: number } | null>(null);
+  const [confirmSource, setConfirmSource] = useState<{ caseId: string; version: number; refreshIdentities: boolean } | null>(null);
   const [detail, setDetail] = useState<{ caseId: string; proposalId?: string; edit: boolean } | null>(null);
   const [detailActivity, setDetailActivity] = useState<VocabularyDetailActivity>({ dirty: false, busy: false });
   const [approvalUnconfirmed, setApprovalUnconfirmed] = useState(false);
@@ -63,6 +67,7 @@ export function VocabularyCaseReviewPage({ api = vocabularyOperatorApi }: { api?
   const items = queueWindowItems(pages);
   const selected = items.find(item => item.caseId === selectedId) ?? null;
   const item = alternative?.caseId === selectedId ? alternative : selected;
+  const identityOptions=item?.responseIdentityOptions??item?.availableResponseIdentityOptions;
   const index = items.findIndex(entry => entry.caseId === selectedId);
   const blocked = wordDefaultsEditing || busy || targetSaving || detailActivity.busy || noteActivity.busy || cueActivity.busy || approvalUnconfirmed || loadingMore;
 
@@ -222,7 +227,7 @@ function approve(reason = '') {
       installCard(result, true); closeAction();
     }, card.proposal ? 'Proposal dismissed.' : 'Case resolved.');
   }
-  function reassess(confirmedVersion?: number) {
+  function reassess(confirmedVersion?: number, refreshIdentities = false) {
     if (!item) return; const card = item;
     void run(async () => {
       const fresh = await api.caseCard(card.caseId, card.proposal?.proposalId);
@@ -230,8 +235,12 @@ function approve(reason = '') {
       if (fresh.version !== card.version) throw new Error('This case changed since it was displayed. Review the updated case before requesting reassessment.');
       const source = fresh.reassessment.source;
       if (!fresh.reassessment.eligible || !source) throw new Error(fresh.reassessment.reason ?? 'This case cannot be reassessed.');
-      if (source.currentVersion !== source.assessedVersion && confirmedVersion !== source.currentVersion) { setConfirmSource({ caseId: fresh.caseId, version: source.currentVersion }); return; }
-      const result = await api.reassessCaseReview(fresh.caseId, fresh.version, model, source.currentVersion, fresh.proposal ? { proposalId: fresh.proposal.proposalId, expectedVersion: fresh.proposal.version } : undefined, {instructions:editorialText.trim(),...(attachedOpinion?{secondOpinionRequestId:attachedOpinion.requestId}:{})});
+      if (source.currentVersion !== source.assessedVersion && confirmedVersion !== source.currentVersion) { setConfirmSource({ caseId: fresh.caseId, version: source.currentVersion, refreshIdentities }); return; }
+      const freshOptions=fresh.responseIdentityOptions??fresh.availableResponseIdentityOptions;
+      if(!refreshIdentities&&JSON.stringify(freshOptions??[])!==JSON.stringify(identityOptions??[])){setResponseChoices({});throw new Error('Response dictionary candidates changed. Review the updated choices.');}
+      const identities=refreshIdentities||!identityOptions?.length?undefined:{options:identityOptions,selections:identityOptions.map(option=>({form:option.form,wordId:responseChoices[option.form]??''}))};
+      if(identities?.selections.some(identity=>!identity.wordId))throw new Error('Choose an entry for each response.');
+      const result = await api.reassessCaseReview(fresh.caseId, fresh.version, model, source.currentVersion, fresh.proposal ? { proposalId: fresh.proposal.proposalId, expectedVersion: fresh.proposal.version } : undefined, {instructions:editorialText.trim(),...(attachedOpinion?{secondOpinionRequestId:attachedOpinion.requestId}:{})},identities);
       installCard(result.item); closeReassessment(); setNotice('Reassessment queued.');
     });
   }
@@ -260,6 +269,8 @@ function approve(reason = '') {
     if(proposalId&&proposalId!==card.currentProposalId)setAlternative(await api.caseCard(caseId,proposalId));
   }
   const reviewLocked = noteActivity.dirty || !item || item.state === 'resolved' || item.frozen || item.approvalState === 'pending' || blocked || !!cueEdit;
+  const identityContinuation = !!item?.responseIdentityOptions?.length && (!item.frozen || (item.latestJob?.status === 'succeeded' && item.latestJob.jobId === item.currentAssessment?.jobId));
+  const continuationLocked = noteActivity.dirty || !item || item.state === 'resolved' || item.approvalState === 'pending' || blocked || !!cueEdit || (!!item.frozen && !identityContinuation);
   const repairBlocked=item?.kind==='exercise_improvement'&&view!=='history'&&repairTargetBlocksMutation(item.caseId,repairTarget);
   const proposalResolved = item?.proposal && ['applied', 'closed'].includes(item.proposal.status);
   const [repertoireRefresh, setRepertoireRefresh] = useState(0);
@@ -301,14 +312,15 @@ function approve(reason = '') {
           {(view === 'review' || view === 'deferred') && <div className="vocabulary-case-action-frame" aria-label="Case review actions">
             <div className="vocabulary-operator-actions">
               {item.proposal && !proposalResolved && <button disabled={reviewLocked && !approvalUnconfirmed || busy || item.stale || item.requiresDetails || repairBlocked} onClick={()=>{if(approvalUnconfirmed||mayLeaveDetails())approve();}}>{approvalUnconfirmed ? 'Retry approval' : 'Approve and apply'}</button>}
-              {!proposalResolved && <button className="secondary-button" disabled={reviewLocked || (!item.proposal && !item.currentAssessment && !item.needsDecision)} onClick={()=>{if(mayLeaveDetails())resolve();}}>{item.proposal ? 'Dismiss proposal' : 'Done'}</button>}
+              {!proposalResolved && <button className="secondary-button" disabled={reviewLocked || (!item.proposal && !item.currentAssessment && !item.needsDecision)} onClick={()=>{if(mayLeaveDetails())resolve();}}>{item.proposal ? 'Dismiss proposal' : item.responseIdentityOptions?.length?'Close case':'Done'}</button>}
               {!item.proposal && item.reassessment.eligible && item.reassessment.source?.currentVersion === item.reassessment.source?.assessedVersion &&
                 (item.finding?.kind === 'unmappable' || item.finding?.kind === 'inventory_gap') &&
                 <button className="secondary-button" disabled={reviewLocked || item.stale || !!item.activeJob || !!repairBlocked}
                   onClick={() => void run(async () => { installCard(await api.proposeCaseRetirement(item.caseId, item.version)); }, 'Retirement proposed. Ready for review.')}>
                   Retire exercise…
                 </button>}
-              {item.reassessment.eligible && <button className="secondary-button" disabled={reviewLocked || !!item.activeJob} aria-haspopup="dialog" onClick={() => openReassessment()}>Reassess{repairTarget?.blocked?' · target pending':''}</button>}
+              {item.reassessment.eligible && <button className="secondary-button" disabled={(item.responseIdentityOptions?.length ? continuationLocked : reviewLocked) || !!item.activeJob} aria-haspopup="dialog" onClick={() => openReassessment()}>{item.responseIdentityOptions?.length?'Choose response identities':'Reassess'}{repairTarget?.blocked?' · target pending':''}</button>}
+              {item.frozen && !item.activeJob && item.latestJob && <button className="secondary-button" disabled={blocked || !!cueEdit || noteActivity.dirty} onClick={()=>void run(async()=>{installCard(await api.abandonReassessment(item.caseId,item.version,item.latestJob!.jobId));},'Reassessment abandoned; the earlier assessment is available.')}>Abandon reassessment</button>}
               <button className="secondary-button" disabled={reviewLocked || !!item.activeJob} onClick={()=>void run(async()=>{const card=await api.setCaseDeferred(item.caseId,item.version,!item.deferredAt);savedQueues.current={};installCard(card,true);},item.deferredAt?'Returned to review.':'Case deferred.')}>{item.deferredAt?'Return to review':'Defer'}</button>
               <span className="vocabulary-action-spacer" /><button className="secondary-button" aria-expanded={showDetails} onClick={() => setShowDetails(value => !value)}>Details</button><button className="secondary-button" aria-expanded={moreOpen} onClick={() => setMoreOpen(value => !value)}>More</button>
             </div>
@@ -317,15 +329,15 @@ function approve(reason = '') {
               {item.proposal&&!proposalResolved&&<button className="secondary-button" disabled={reviewLocked||item.stale||item.requiresDetails||repairBlocked} onClick={()=>openAction('approve')}>Approve with note…</button>}
               {item.proposal && !proposalResolved && <button className="secondary-button" disabled={reviewLocked || repairBlocked} onClick={() => openDetails(true)}>Edit proposal</button>}
               {item.kind === 'exercise_improvement' && (item.proposal || item.currentAssessment) && (!item.advisoryOpinion || item.advisoryOpinion.status === 'failed') && <button className="secondary-button" disabled={reviewLocked || !!item.activeJob || item.stale || !!proposalResolved} onClick={()=>item.advisoryOpinion?.status==='failed'?secondOpinion():openAction('opinion')}>{item.advisoryOpinion?.status === 'failed' ? 'Retry second opinion' : 'Second opinion'}</button>}
-              {canRetryLatestCaseJob(item) && !item.latestJob?.advisory && <button className="secondary-button" disabled={reviewLocked} onClick={() => void run(async () => { await api.retryJob(item.latestJob!.jobId); installCard(await api.caseCard(item.caseId)); }, 'Assessment queued.')}>Retry assessment {item.latestJob?.sequence}</button>}
+              {canRetryLatestCaseJob(item) && !item.latestJob?.advisory && <button className="secondary-button" disabled={blocked || !!cueEdit || noteActivity.dirty} onClick={() => void run(async () => { await api.retryJob(item.latestJob!.jobId); installCard(await api.caseCard(item.caseId)); }, 'Assessment queued.')}>Retry assessment {item.latestJob?.sequence}</button>}
 
             </div>}
-            <ReassessmentDialog open={reassessmentOpen} onClose={closeReassessment} busy={busy||targetSaving}>
+            <ReassessmentDialog open={reassessmentOpen} onClose={closeReassessment} busy={busy||targetSaving} title={item.responseIdentityOptions?.length?'Continue assessment':'Reassess exercise'}>
               {error&&<p role="alert">{error}</p>}
             {item.kind==='exercise_improvement'&&item.wordId&&<RepairTargetEditor key={item.caseId} api={api} caseId={item.caseId} revision={item.version} disabled={reviewLocked} onState={setRepairTarget} onActivity={setTargetSaving} onSaved={async()=>{installCard(await api.caseCard(item.caseId,item.proposal?.proposalId));}}/>}
-            {item.reassessment.eligible && <div className="vocabulary-reassessment-control"><label>Model for reassessment<select value={model} disabled={reviewLocked || !!item.activeJob} onChange={event => setModel(event.target.value as VocabularyReassessmentModel)}><option value="openai:gpt-6-sol-high">GPT-6 Sol high</option><option value="openai:gpt-6-luna-high">Luna high</option><option value="zai:glm-5.3-flash-high">GLM-5.3 Flash high</option></select></label><label>Editorial direction (optional)<textarea value={editorialText} maxLength={10000} disabled={reviewLocked} onChange={event=>setEditorialText(event.target.value)}/></label>
-              {attachedOpinion?.result&&<section aria-label="Attached second opinion"><div className="vocabulary-operator-actions"><strong>Second opinion · {attachedOpinion.sequence}</strong><button type="button" className="secondary-button" disabled={reviewLocked} onClick={()=>setAttachedOpinion(null)}>Remove opinion</button></div><details><summary>{{support:'Supports this judgment',revise:'Suggests revision',reject:'Recommends against this judgment'}[attachedOpinion.result.verdict]}</summary><p>{attachedOpinion.result.rationale}</p></details></section>}
-              <button disabled={reviewLocked || !!item.activeJob} onClick={() => reassess()}>Submit reassessment</button>{confirmSource?.caseId === item.caseId && <div className="vocabulary-reassessment-confirmation"><p>Source changed from v{item.reassessment.source?.assessedVersion} to v{confirmSource.version}. Reassessment uses the current version.</p><button disabled={reviewLocked} onClick={() => reassess(confirmSource.version)}>Reassess current version</button><button className="secondary-button" onClick={() => setConfirmSource(null)}>Cancel</button></div>}</div>}
+            {item.reassessment.eligible && <div className="vocabulary-reassessment-control">{identityOptions?.map(option=><label key={option.form}>Dictionary entry for {option.form}<select value={responseChoices[option.form]??''} disabled={continuationLocked} onChange={event=>setResponseChoices({...responseChoices,[option.form]:event.target.value})}><option value="">Choose an entry</option>{option.choices.map(word=><option key={word.wordId} value={word.wordId}>{word.hanzi} · {word.pinyin} · {word.meaning}</option>)}</select></label>)}<label>Model for {item.responseIdentityOptions?.length?'assessment':'reassessment'}<select value={model} disabled={continuationLocked || !!item.activeJob} onChange={event => setModel(event.target.value as VocabularyReassessmentModel)}><option value="openai:gpt-6-sol-high">GPT-6 Sol high</option><option value="openai:gpt-6-luna-high">Luna high</option><option value="zai:glm-5.3-flash-high">GLM-5.3 Flash high</option></select></label>{item.pendingEditorial&&<details><summary>Retained editorial direction</summary>{item.pendingEditorial.instructions&&<p>{item.pendingEditorial.instructions}</p>}{item.pendingEditorial.secondOpinion&&<p>Second opinion · {item.pendingEditorial.secondOpinion.verdict} · {item.pendingEditorial.secondOpinion.rationale}</p>}</details>}<label>{item.pendingEditorial?'Additional editorial direction (optional)':'Editorial direction (optional)'}<textarea value={editorialText} maxLength={10000} disabled={continuationLocked} onChange={event=>setEditorialText(event.target.value)}/></label>
+              {attachedOpinion?.result&&<section aria-label="Attached second opinion"><div className="vocabulary-operator-actions"><strong>Second opinion · {attachedOpinion.sequence}</strong><button type="button" className="secondary-button" disabled={continuationLocked} onClick={()=>setAttachedOpinion(null)}>Remove opinion</button></div><details><summary>{{support:'Supports this judgment',revise:'Suggests revision',reject:'Recommends against this judgment'}[attachedOpinion.result.verdict]}</summary><p>{attachedOpinion.result.rationale}</p></details></section>}
+              <button disabled={continuationLocked || !!item.activeJob || !!identityOptions?.some(option=>!option.choices.some(choice=>choice.wordId===responseChoices[option.form]))} onClick={() => reassess()}>{item.responseIdentityOptions?.length?'Continue assessment':'Submit reassessment'}</button>{item.responseIdentityOptions?.length&&<button className="secondary-button" disabled={continuationLocked || !!item.activeJob} onClick={()=>reassess(undefined,true)}>Refresh candidates</button>}{confirmSource?.caseId === item.caseId && <div className="vocabulary-reassessment-confirmation"><p>Source changed from v{item.reassessment.source?.assessedVersion} to v{confirmSource.version}. Reassessment uses the current version.</p><button disabled={continuationLocked} onClick={() => reassess(confirmSource.version,confirmSource.refreshIdentities)}>Reassess current version</button><button className="secondary-button" onClick={() => setConfirmSource(null)}>Cancel</button></div>}</div>}
             </ReassessmentDialog>
             <ReassessmentDialog open={action!==null} onClose={closeAction} busy={busy||approvalUnconfirmed} title={action==='approve'?'Approve with note':action==='resolve'?(item.proposal?'Dismiss with reason':'Done with note'):'Second opinion'}>
               <form onSubmit={event=>{event.preventDefault();if(action==='approve')approve(actionText);else if(action==='resolve')resolve(actionText);else if(action==='opinion')secondOpinion(actionText);}}>

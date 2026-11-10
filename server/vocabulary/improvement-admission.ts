@@ -21,6 +21,7 @@ import { invalidateServiceInvocation } from '../llm/invocation-ledger.ts';
 import { validateJsonSchema } from '../llm/json-schema-validator.ts';
 import { prepareVocabularyPureCueIntegration, vocabularyPureCueIntegrationSchema, vocabularyResponseCandidates, type PromotionResult } from './pure-cue-promotion.ts';
 import { ensureVocabularySenses } from './sense-readiness.ts';
+import { ambiguousVocabularyResponses, vocabularyResponseWordMatches } from './response-word-matching.ts';
 
 const serviceId = 'vocabulary-reflection';
 const text: JsonSchema = { type: 'string' };
@@ -208,6 +209,12 @@ export async function runVocabularyImprovementAdmission(options: {
   }
   if (mapped.value.outcome==='single_sense') {
     fence();
+    const ambiguous=ambiguousVocabularyResponses(job);
+    const unresolved=vocabularyResponseWordMatches(job).some(({form,matches,word:response})=>form!==word.hanzi&&form!==word.traditional&&matches.length>1&&!response);
+    if(unresolved){
+      fence();
+      return {kind:'exercise_improvement',result:{diagnosis:'Choose the dictionary entry for each ambiguous response before assessment.',proposal:null,admission,responseIdentityOptions:ambiguous}};
+    }
     const responseCandidates=vocabularyResponseCandidates(job);
     const authoringWords=vocabularyImprovementWords(job);
     const responseFence=()=>{if(!isDeepStrictEqual(vocabularyResponseCandidates(job),responseCandidates)
@@ -221,7 +228,7 @@ export async function runVocabularyImprovementAdmission(options: {
     fence();
     const local=result.value.result;
     if(!local.pureCueReferral)return {kind:'exercise_improvement',result:{...local,admission}};
-    const promotion=prepareVocabularyPureCueIntegration(job,original,local.pureCueReferral);
+    const promotion=prepareVocabularyPureCueIntegration(job,original,local.pureCueReferral,job.responseIdentitySelection?.selections);
     const promoted=promotion.attention??(await stage<PromotionResult>('pure_cue_promotion',{
       ...base,evidence:options.projectedInput,intendedSense:inventory.find(sense=>sense.senseId===mapped.value.senseIds[0]),
       localAssessment:local.diagnosis,localPlan:local.proposal,...promotion.input,

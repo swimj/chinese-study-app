@@ -436,9 +436,13 @@ its stimulus, axis, existing members and accepted forms while integrating its
 accumulated teaching note. Notes are mostly English, with Chinese where useful.
 
 A submitted form can become an answer in shared or individual practice only when
-it matches one dictionary identity. Missing or ambiguous forms inform the
-diagnosis and target improvement as encounter evidence; they do not become
-proposed answers or require identity resolution to review the source repair.
+its dictionary identity is established. Before single-exercise assessment, a
+form with multiple exact dictionary matches pauses for an operator to select an
+entry. A form with no match remains encounter evidence without becoming an
+authored answer. The identity choice belongs to that assessment and does not
+itself propose or apply content. Earlier proposals remain available while an
+assessment waits for a choice. The exercise-local assessment retains its
+independent judgment about whether a source repair or shared practice is useful.
 The operator can edit and select individual parts deliberately; optional local
 clarifiers are not enforced prerequisites for shared practice. Enrichment meets
 the same answer-fairness standard as repairs. The operator receives a
@@ -490,10 +494,14 @@ differs from the original assessment's source version, the operator sees both
 versions and must explicitly choose to proceed on the current version. Each
 reassessment performs fresh sense mapping where applicable and fresh assessment,
 including when the source version is unchanged. Each reassessment is a new
-numbered holistic job inside the same review case. Its queued/running lifetime
-freezes the saved proposal and case review state. Successful publication replaces
-the current assessment; failure or timeout preserves the previous assessment and
-allows review again. Earlier assessments and proposals remain historical evidence.
+numbered holistic job inside the same review case. Reassessment freezes the saved proposal and case review state while queued, running,
+waiting for response identity, or failed. Successful publication replaces the
+current assessment; failure or timeout retains the lock until retry succeeds or
+the operator abandons reassessment. Abandonment restores review of the previous
+assessment and preserves the failed work as historical evidence. Earlier assessments and proposals remain historical evidence.
+An assessment paused for response identity is not a completed teaching judgment:
+it keeps any previous proposal locked and retains operator direction for its
+continuation.
 Only one case job may be queued or running; advisory second opinions do not
 replace the authoritative assessment. Neither assessment result applies content
 automatically. The original encounter group, responses, and reactions remain
