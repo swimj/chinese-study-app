@@ -14,12 +14,31 @@ import { ApiRequestError } from '../../src/services/api';
 import { caseReviewFixture } from '../fixtures/case-review-data';
 
 const params = new URLSearchParams(location.search || import.meta.env.VITE_TESTBED_QUERY || '');
-const cards = Array.from({ length: params.has('empty') ? 0 : params.has('repertoire') ? 1 : 85 }, (_, index) => caseReviewFixture(index + 1));
+const odds = params.has('odds');
+const cards = Array.from({ length: params.has('empty') ? 0 : params.has('repertoire') ? 1 : odds ? 3 : 85 }, (_, index) => caseReviewFixture(index + 1));
 if (cards[1]) { cards[1].proposal = null; cards[1].currentProposalId = null; cards[1].assessment!.diagnosis = 'The original cue is appropriate. The learner’s response changes the intended meaning.'; }
 if (cards[2]) { cards[2].served.push({ ...structuredClone(cards[2].served[0]), encounterId: 'second-encounter', responses: [{ actionId: 'second-response', text: '稠密', outcome: 'rejected', undone: true }] }); cards[2].proposal!.operations.push({ ...cards[2].proposal!.operations[0], operationKey: 'enrichment', strategy: 'create', learningRole: 'enrichment', groupLabel: 'Dense distribution', prompt: 'A dense cluster of closely scheduled interviews: 明天上午的面试安排得很____。', acceptedAnswers: ['密集'], sourceContentId: null, expectedVersion: null }); }
 if (cards[3]) { cards[3].requiresDetails = true; cards[3].proposal!.operations[0].otherChanges = ['Teaching explanation also changes; inspect full content.']; }
 if (cards[4]) { cards[4].alternatives = [{ proposalId: 'retained-alternative', version: 2, status: 'awaiting_review', rationale: 'Retained operator-edited alternative' }]; cards[4].alternativeCount = 1; }
 if (params.has('blocked') && cards[0]) { const item=cards[0]; item.proposal=null; item.currentProposalId=null; item.needsDecision=true; item.finding={kind:'unmappable',message:'The served cue does not identify one intended sense.'}; item.assessment!.outcome='unmappable'; item.reassessment={eligible:false,reason:'The source exercise is retired.',source:null}; }
+if (odds) {
+  const examples = [
+    {word:'脱', cue:'治疗后，病人终于____离危险。', outcome:'unmappable', message:'The intended phrase is 脱离危险.'},
+    {word:'钗', cue:'hairpin', outcome:'needs_coverage', message:'Useful senses have not been selected.'},
+    {word:'处置', cue:'to handle, to take care of, to punish', outcome:'needs_repertoire', message:'A dictionary fallback was served.'},
+  ] as const;
+  examples.forEach(({word,cue,outcome,message},index) => {
+    const item=cards[index];
+    item.proposal=null;
+    item.currentProposalId=null;
+    item.needsDecision=true;
+    item.finding={kind:outcome,message};
+    item.repertoireReviewAvailable=word==='处置';
+    item.wordLabel=word;
+    item.assessment={...item.assessment!,outcome,diagnosis:message};
+    Object.assign(item.served[0],{prompt:cue,acceptedAnswers:[word],responses:[],reactions:[]});
+  });
+}
 if (params.has('design') && cards[0]) {
  const first=cards[0];first.served.push({...structuredClone(first.served[0]),encounterId:'later',presentedAt:'2026-11-03T14:00:00Z',prompt:'A distinct later snapshot.',responses:[{actionId:'later-response',text:'报备',outcome:'accepted',undone:true}],skipped:true,presentationUndone:true});
  const pure=cards[1];pure.wordId=null;pure.wordLabel=null;pure.proposal=structuredClone(first.proposal);pure.proposal!.proposalId='pure-proposal';pure.currentProposalId='pure-proposal';pure.served[0].pureCue={axisNote:'Shared purpose from stored cue',teachingNote:'Original teaching note'};pure.proposal!.operations[0].pureCue={axisNote:'Shared purpose from stored cue',teachingNote:'Revised note preserving distinctions between all accepted forms.'};pure.proposal!.operations[0].acceptedAnswers=['报备','报告'];pure.proposal!.operations[0].sourceContentId=pure.served[0].contentId;pure.proposal!.operations[0].expectedVersion=pure.served[0].contentVersion;
@@ -31,6 +50,13 @@ const repertoireSenses=[{senseId:'sense-letter',label:'Formal letter or correspo
 const repertoirePrompts=['A formal invitation sent in writing: 敬请查收邀请____。','A letter asking for confirmation: 我们已致____询问。','An envelope containing a letter.','A protective case for a set of books.'];
 const repertoireIds=['sense-letter','sense-letter','sense-envelope','sense-case'];
 let repertoireSelection=repertoireSenses.slice(0,3).map(sense=>sense.senseId),repertoireSelectionVersion=1;
+const fallbackSenses=[
+  {senseId:'handle',label:'Handle or deal with a matter'},
+  {senseId:'punish',label:'Punish or take disciplinary action against someone'},
+  {senseId:'dispose',label:'Dispose of or arrange the disposition of something'},
+];
+let hairpinDefaults: string[] | null = null;
+let generatedSenseIds: string[] | null = null;
 let retainedRepertoire:VocabularyContentProposal['operations']|null=null;
 let retainedRepertoireProjection:NonNullable<VocabularyCaseQueueItem['proposal']>['operations']|null=null;
 const repertoireSource='A formal letter; an envelope; a literary case or box.';
@@ -104,8 +130,39 @@ let resolveBeforeNote=params.has('resolveBeforeNote');
 function recordComment(item:VocabularyCaseQueueItem,action:NonNullable<VocabularyCaseQueueItem['activity']>[number]['action'],text:string,secondOpinionRequestId?:string){if(!text.trim()&&!secondOpinionRequestId)return;item.activity??=[];item.activity.push({activityId:crypto.randomUUID(),action,text,createdAt:new Date().toISOString(),actorId:'fixture',...(secondOpinionRequestId?{secondOpinionRequestId}:{})});}
 const api: VocabularyOperatorApi = { ...vocabularyOperatorApi,
   addCaseNote:async(id,version,requestId,text)=>{count('mutations');const item=card(id);const prior=item.notes?.find(note=>note.noteId===requestId);if(prior)return copy(item);if(resolveBeforeNote){resolveBeforeNote=false;item.state='resolved';item.resolvedAt=new Date().toISOString();item.version++;throw new ApiRequestError('Case changed',409);}editable(item);if(version!==item.version)throw new ApiRequestError('Case changed',409);item.notes??=[];item.notes.push({noteId:requestId,text,createdAt:new Date().toISOString(),actorId:'fixture'});item.version++;if(loseNoteAck){loseNoteAck=false;throw new Error('Simulated lost note acknowledgement');}return copy(item);},
-  wordSenseCoverage:async()=>copy(wordCoverage()),
-  saveDefaultUsefulSenses:async(_id,version,ids)=>{if(version!==repertoireSelectionVersion)throw new ApiRequestError('Word defaults changed',409);repertoireSelection=[...ids];repertoireSelectionVersion++;return copy(wordCoverage());},
+  wordSenseCoverage:async()=>{
+    const value=wordCoverage();
+    if (!odds) return copy(value);
+    return {...value,word:{...value.word,version:hairpinDefaults===null?0:1,defaultUsefulSenseIds:hairpinDefaults},
+      selectionEstablished:hairpinDefaults!==null,includedSenseIds:hairpinDefaults??[],
+      senses:[{...value.senses[0],senseId:'hairpin',description:{label:'A traditional ornamental hairpin'}}]};
+  },
+  saveDefaultUsefulSenses:async(id,version,ids)=>{
+    if(odds){hairpinDefaults=[...ids];return api.wordSenseCoverage(id);}
+    if(version!==repertoireSelectionVersion)throw new ApiRequestError('Word defaults changed',409);
+    repertoireSelection=[...ids];repertoireSelectionVersion++;return copy(wordCoverage());
+  },
+  proposeCaseRetirement:async(id,version)=>{
+    const item=card(id);
+    if(item.version!==version||item.proposal)throw new ApiRequestError('Case changed',409);
+    const rationale='Retire the exercise without a replacement.';
+    await api.create({caseId:id,rationale,operations:[{operationKey:'retire-source',strategy:'retire',sourceContentId:'source',
+      expectedVersion:1,scope:{kind:'shared'},rationale,content:{...source(),body:{prompt:item.served[0].prompt}}}]});
+    return copy(item);
+  },
+  fallbackRepertoire:async(id)=>({sourceVersion:1,catalogVersion:1,wordVersion:1,
+    defaultSenseIds:card(id).wordLabel==='处置'?['handle','punish']:[],senses:card(id).wordLabel==='处置'?fallbackSenses:[],
+    exercises:card(id).wordLabel==='处置'?[
+      {contentId:'old-1',senseId:'dispose',prompt:'Decide what to do with the old office furniture.'},
+      {contentId:'old-2',senseId:'dispose',prompt:'How should we dispose of the seized goods?'}]:[],
+  }),
+  generateFallbackRepertoire:async(id,input)=>{
+    const queued=await api.reassessCaseReview(id,input.expectedVersion,input.modelChoice,input.expectedContentVersion);
+    card(id).reassessment.eligible=false;
+    queued.item.reassessment.eligible=false;
+    generatedSenseIds=input.senseIds;
+    return queued;
+  },
   saveRepertoireWordDefaultsAndReassess:async(id,input)=>{
     const item=cards.find(value=>value.proposal?.proposalId===id)!;editable(item);
     if(params.has('selectionQueueFailure'))throw new ApiRequestError('Could not queue reassessment. Selection was not saved.',409);
@@ -157,7 +214,28 @@ const api: VocabularyOperatorApi = { ...vocabularyOperatorApi,
 };
 button('Release target reads',()=>heldTargetReads.splice(0).forEach(resolve=>resolve()));
 button('Fail target refresh',()=>{failTargetReads=true;for(const item of cards)item.version++;});
-button('Finish reassessment', () => { const item = cards.find(value => value.activeJob && !value.latestJob?.advisory); if (!item) return; const intent=targets.get(item.caseId);if(intent?.pendingSenseId){intent.currentSenseId=intent.pendingSenseId;intent.pendingSenseId=null;intent.version++;}item.currentAssessment = { jobId: item.activeJob!.jobId, sequence: item.activeJob!.sequence }; item.assessment = { ...item.assessment!, ...item.currentAssessment, origin: 'reassessment', diagnosis: 'Fresh assessment completed within the same case.' }; item.latestJob!.status = 'succeeded'; item.frozen = false; item.activeJob = null; item.version++; });
+button('Finish reassessment', () => {
+  const item = cards.find(value => value.activeJob && !value.latestJob?.advisory);
+  if (!item) return;
+  const intent=targets.get(item.caseId);
+  if(intent?.pendingSenseId){intent.currentSenseId=intent.pendingSenseId;intent.pendingSenseId=null;intent.version++;}
+  item.currentAssessment={jobId:item.activeJob!.jobId,sequence:item.activeJob!.sequence};
+  item.assessment={...item.assessment!,...item.currentAssessment,origin:'reassessment',diagnosis:'Fresh assessment completed within the same case.'};
+  item.latestJob!.status='succeeded';item.frozen=false;item.activeJob=null;item.reassessment.eligible=true;item.version++;
+  if(odds && generatedSenseIds && item.wordLabel==='处置'){
+    const senseIds=generatedSenseIds;
+    generatedSenseIds=null;
+    const rationale='Generate additional practice for the selected senses.';
+    item.finding=null;item.needsDecision=false;item.assessment.outcome='selected_repertoire';item.assessment.diagnosis=rationale;
+    void api.create({caseId:item.caseId,rationale,operations:senseIds.map(senseId=>({
+      operationKey:senseId,strategy:'create',scope:{kind:'shared'},rationale,
+      content:{...source(),contentId:`generated-${senseId}`,body:{prompt:senseId==='punish'?'What penalty will the school impose for cheating?':'How did the team deal with the emergency?'},
+        words:[{wordId:'word',relation:'target',senseId}]},
+    }))}).then(()=>{
+      item.proposal!.operations.forEach(op=>{op.groupLabel=fallbackSenses.find(sense=>sense.senseId===op.operationKey)!.label;});
+    });
+  }
+});
 button('Fail reassessment', () => { const item = cards.find(value => value.activeJob); if (!item) return; item.latestJob!.status = 'failed'; item.latestJob!.error = 'provider_failed'; item.activeJob = null; item.frozen = false; item.version++; });
 button('Change shared source', () => { for (const item of cards) { item.sources[0].version = 2; item.sources[0].prompt = 'Updated shared source: file advance notice with your supervisor.'; item.reassessment.source!.currentVersion = 2; item.stale = true; } });
 button('Resolve first case externally', () => { const item = cards.find(value => value.state === 'open'); if (item) { item.state = 'resolved'; item.version++; item.resolvedAt = new Date().toISOString(); } });

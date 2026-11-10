@@ -50,8 +50,24 @@ export type VocabularyCaseQueueItem = {
   /** Rare content without a faithful compact rendering must be reviewed in the full workspace before approval. */
   requiresDetails:boolean;
   needsDecision:boolean;
-  finding:{kind:'unmappable'|'inventory_gap'|'needs_coverage'|'needs_operator';message:string}|null;
+  repertoireReviewAvailable?:boolean;
+  finding:{kind:'unmappable'|'inventory_gap'|'needs_coverage'|'needs_operator'|'needs_repertoire';message:string}|null;
   reassessment:{eligible:boolean;reason:string|null;source:{contentId:string;assessedVersion:number;currentVersion:number}|null};
+};
+export type VocabularyFallbackRepertoire = {
+  sourceVersion: number;
+  catalogVersion: number;
+  wordVersion: number;
+  defaultSenseIds: string[];
+  senses: {senseId: string; label: string}[];
+  exercises: {contentId: string; prompt: string; senseId: string | null}[];
+};
+export type VocabularyFallbackGenerationInput = {
+  expectedVersion: number;
+  expectedContentVersion: number;
+  expectedCatalogVersion: number;
+  expectedWordVersion: number;
+  senseIds: string[];
 };
 export type VocabularyCaseQueuePage = {items:VocabularyCaseQueueItem[];nextCursor:string|null;previousCursor:string|null;anchorCursor:string|null;total:number;startIndex:number};
 export type VocabularyCaseQueueQuery = {view?:'review'|'history'|'deferred';limit?:number;cursor?:string;search?:string;direction?:'next'|'previous';edge?:'first'|'last'};

@@ -1320,6 +1320,13 @@ returns 409 instead of acting on an unseen newer assessment. Existing proposal
 approval continues to authorize an exact saved proposal version. All these
 routes require operator authority; invalid queries return 400.
 
+`GET /api/operator/vocabulary/case-queue/:id/fallback-repertoire` returns the
+active sense inventory, default sense IDs, and published practice in the
+fallback's scope. The POST route at the same path takes `expectedVersion`,
+`expectedContentVersion`, `expectedCatalogVersion`, `expectedWordVersion`,
+`senseIds`, and `modelChoice`. It queues a versioned generation request
+and returns `{caseId,jobId,item}`. The requested senses apply to that job.
+
 `POST /api/operator/vocabulary/case-queue/:id/notes` takes `expectedVersion`,
 `requestId` (nonempty, at most 200 characters), and `text` (nonempty after
 trimming, at most 10,000 characters). It returns the updated card with optional

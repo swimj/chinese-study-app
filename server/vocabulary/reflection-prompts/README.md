@@ -127,7 +127,10 @@ history are retained. A nonempty inventory with all `defaultUseful:false` instea
 retains the empty-selection recommendation for operator review.
 
 The backend identifies dictionary fallback sources before requesting mapping.
-Current authored general production practice accepting the word in the same
+A new fallback assessment with saved useful defaults opens an operator repertoire
+review. An explicit **Generate for selected** request invokes the same shared
+general-exercise prompt for the captured senses and proposes additions.
+In legacy bootstrap, current authored general production practice accepting the word in the same
 publication scope and owner, including pure cues, records `already_covered`
 without a proposal. Otherwise the fallback takes `repertoire_bootstrap` directly:
 it captures selected scope and invokes shared general-exercise authoring without

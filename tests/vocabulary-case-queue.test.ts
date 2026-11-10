@@ -8,9 +8,11 @@ import { setDb,getDb } from '../server/db/connection.ts';
 import { installLearnerContextSqlFunction } from '../server/db/learner-context.ts';
 import { createBaselineSchema } from '../server/db/persistence.ts';
 import { migrateDatabase } from '../server/db/migrations.ts';
-import { createVocabularyContent,getVocabularyContentForMaintenance,updateVocabularyContent,emitBackendEvent } from '../server/db/vocabulary-content.ts';
-import { createVocabularyProposal,claimVocabularyReflectionJob,retryVocabularyReflectionJob,approveVocabularyProposal,applyVocabularyProposal,closeVocabularyProposal } from '../server/db/vocabulary-reflection.ts';
-import { listVocabularyCaseQueue,getVocabularyCaseCard,setVocabularyCaseDeferred,resolveVocabularyCaseReview,proposeVocabularyCaseRetirement,reassessVocabularyCaseReview,addVocabularyCaseNote } from '../server/db/vocabulary-case-queue.ts';
+import { createVocabularyContent,createVocabularySense,establishVocabularySenseCatalog,getVocabularySenseCatalog,getVocabularyContentForMaintenance,updateVocabularyContent,emitBackendEvent } from '../server/db/vocabulary-content.ts';
+import { createVocabularyProposal,claimVocabularyReflectionJob,recordVocabularyImprovementResult,retryVocabularyReflectionJob,approveVocabularyProposal,applyVocabularyProposal,closeVocabularyProposal } from '../server/db/vocabulary-reflection.ts';
+import { listVocabularyCaseQueue,getVocabularyCaseCard,setVocabularyCaseDeferred,resolveVocabularyCaseReview,proposeVocabularyCaseRetirement,getVocabularyFallbackRepertoire,generateVocabularyFallbackRepertoire,reassessVocabularyCaseReview,addVocabularyCaseNote } from '../server/db/vocabulary-case-queue.ts';
+import { getVocabularyRepertoireSelection } from '../server/db/vocabulary-repertoire-selection.ts';
+import { getVocabularyWordSenseCoverage, writeVocabularyDefaultUsefulSenses } from '../server/db/vocabulary-sense-coverage.ts';
 import { listVocabularyAttention } from '../server/db/vocabulary-attention.ts';
 import { startRequestTiming,runWithRequestTiming } from '../server/request-timing.ts';
 import { registerVocabularyReflectionRoutes } from '../server/vocabulary/reflection-routes.ts';
@@ -31,10 +33,10 @@ beforeEach(context=>{
   sql.prepare("INSERT INTO vocabulary_reflection_session_evidence VALUES ('completion','editor','session','{}',?)").run(at);
 });
 afterEach(()=>{sql.close();setDb(null);fs.rmSync(directory,{recursive:true,force:true});for(const [k,v]of Object.entries(environment)){if(v===undefined)delete process.env[k];else process.env[k]=v;}});
-function seedCase(id:string,options:{createdAt?:string;resolvedAt?:string;proposal?:boolean;blob?:string;state?:'open'|'resolved';noAssessment?:boolean;pure?:boolean}={}){
+function seedCase(id:string,options:{createdAt?:string;resolvedAt?:string;proposal?:boolean;blob?:string;state?:'open'|'resolved';noAssessment?:boolean;pure?:boolean;sourceVersion?:number}={}){
   const createdAt=options.createdAt??at,blob=options.blob??'';
   const response=(actionId:string,text:string)=>({actionId,payload:{response:text,outcome:'rejected'},trace:blob});
-  const evidence=[{encounterId:`encounter-${id}`,presentedAt:'2026-11-03T08:00:00.000Z',wordId:'word',snapshot:{...(options.pure?{schedulingScope:'pure_cue'}:{}),contentId:'source',contentVersion:1,kind:'production',role:'general',body:{...(options.pure?{material:{reveal:{axisNote:'Stored axis',teachingNote:'Original note'}}}:{}),prompt:'Served cue',wordReference:{unneededRaw:blob}},assessment:{acceptedAnswers:['字'],criteria:{match:'exact',unneededRaw:blob}}},responses:[response('undone','wrong'),response('effective','字')],effectiveResponses:[response('effective','字')],feedback:[{actionId:'old',payload:{feedback:'negative'}},{actionId:'new',payload:{feedback:'positive'}},{actionId:'comment',payload:{feedback:'comment',comment:'Useful comment'}}],skipped:false}];
+  const evidence=[{encounterId:`encounter-${id}`,presentedAt:'2026-11-03T08:00:00.000Z',wordId:'word',snapshot:{...(options.pure?{schedulingScope:'pure_cue'}:{}),contentId:'source',contentVersion:options.sourceVersion??1,kind:'production',role:'general',body:{...(options.pure?{material:{reveal:{axisNote:'Stored axis',teachingNote:'Original note'}}}:{}),prompt:'Served cue',wordReference:{unneededRaw:blob}},assessment:{acceptedAnswers:['字'],criteria:{match:'exact',unneededRaw:blob}}},responses:[response('undone','wrong'),response('effective','字')],effectiveResponses:[response('effective','字')],feedback:[{actionId:'old',payload:{feedback:'negative'}},{actionId:'new',payload:{feedback:'positive'}},{actionId:'comment',payload:{feedback:'comment',comment:'Useful comment'}}],skipped:false}];
   sql.prepare(`INSERT INTO reflection_cases(case_id,completion_id,learner_id,kind,subject_key,word_id,content_id,status,evidence_snapshot_json,created_at) VALUES (?,'completion','editor','exercise_improvement',?,'word','source','completed',?,?)`).run(id,id,JSON.stringify(evidence),createdAt);
   sql.prepare('INSERT INTO vocabulary_case_reviews(case_id,state,created_at,resolved_at) VALUES (?,?,?,?)').run(id,options.state??'open',createdAt,options.resolvedAt??null);
   sql.prepare('INSERT INTO vocabulary_case_lineage VALUES (?,?)').run(id,id);
@@ -224,6 +226,61 @@ test('retired-source unresolved finding remains visible and closes without a fab
   const event=sql.prepare("SELECT data_json FROM backend_events WHERE entity_id=? AND name='vocabulary.reflection.admission_case_closed'").get(before.caseId)!;
   const data=JSON.parse(event.data_json as string);assert.equal(data.reason,'');assert.equal(data.outcome,'unmappable');assert.equal(data.context.sourceAvailability,'retired');
   assert.equal(getVocabularyContentForMaintenance('source')!.availability,'retired');assert.equal(getVocabularyContentForMaintenance('source')!.version,1);
+});
+
+test('fallback repertoire shows off-default exercises and captures a versioned generation selection without saving defaults',()=>{
+  const actor={kind:'operator' as const,id:'editor'};
+  const original=getVocabularyContentForMaintenance('source')!;
+  const fallback=updateVocabularyContent('source',1,{...original,body:{prompt:'character',source:{kind:'dictionary_baseline'}}},actor);
+  createVocabularySense({wordId:'word',senseId:'default-sense',description:'Default sense'},actor);
+  createVocabularySense({wordId:'word',senseId:'other-sense',description:'Other sense'},actor);
+  establishVocabularySenseCatalog('word',getVocabularySenseCatalog('word').version,actor);
+  writeVocabularyDefaultUsefulSenses('word',0,['default-sense'],actor);
+  createVocabularyContent({...original,contentId:'off-default',body:{prompt:'Existing practice for a different use'},
+    words:[{wordId:'word',relation:'target',senseId:'other-sense',senseMappingEstablishedAt:at}]},actor);
+  seedCase('fallback',{sourceVersion:fallback.version});
+  sql.prepare("UPDATE vocabulary_reflection_jobs SET result_json=json_set(result_json,'$.input.admission',json(?)) WHERE job_id='job-fallback'")
+    .run(JSON.stringify({outcome:'already_covered',wordId:'word',sourceContentId:'source',sourceContentVersion:fallback.version,
+      catalogVersion:getVocabularySenseCatalog('word').version,senseIds:[],rationale:'Legacy coverage finding'}));
+  const before=getVocabularyCaseCard('fallback','editor');
+  assert.equal(before.repertoireReviewAvailable,true);
+  const workspace=getVocabularyFallbackRepertoire(before.caseId,'editor');
+  assert.deepEqual(workspace.defaultSenseIds,['default-sense']);
+  assert.deepEqual(workspace.exercises,[{contentId:'off-default',senseId:'other-sense',prompt:'Existing practice for a different use'}]);
+  const input={expectedVersion:before.version,expectedContentVersion:workspace.sourceVersion,
+    expectedCatalogVersion:workspace.catalogVersion,expectedWordVersion:workspace.wordVersion,senseIds:['default-sense','other-sense']};
+  const queue=(request=input)=>generateVocabularyFallbackRepertoire(before.caseId,request,'editor','openai:gpt-6-sol-high');
+  assert.throws(()=>queue({...input,expectedWordVersion:input.expectedWordVersion-1}),/selection changed/);
+  assert.throws(()=>queue({...input,senseIds:['missing']}),/active senses/);
+  const queued=queue();
+  assert.equal(queued.item.frozen,true);
+  assert.throws(()=>queue(),/Case review changed/);
+  const capture=getVocabularyRepertoireSelection(queued.jobId)!;
+  assert.deepEqual(capture.generationScope,{
+    selectionEstablished:true,senseIds:input.senseIds,source:{kind:'review_override',caseId:before.caseId,capturedVersion:before.version},
+  });
+  const job=claimVocabularyReflectionJob()!;
+  assert.equal(job.jobId,queued.jobId);
+  const rationale='Add selected practice';
+  const {proposalId}=recordVocabularyImprovementResult(job.jobId,job.leaseToken,{
+    diagnosis:rationale,
+    admission:{outcome:'selected_repertoire',wordId:'word',catalogVersion:capture.catalogVersion,
+      sourceContentId:fallback.contentId,sourceContentVersion:fallback.version,senseIds:[],rationale,
+      sourceMapping:{senseId:null,establishedAt:null},generationScope:capture.generationScope},
+    proposal:{rationale,bases:[{contentId:fallback.contentId,expectedVersion:fallback.version}],operations:[{
+      operationKey:'additional-practice',strategy:'create',scope:{kind:'shared'},rationale,
+      content:{...original,contentId:'generated-practice',body:{prompt:'Practice the default use'},
+        words:[{wordId:'word',relation:'target',senseId:'default-sense',senseMappingEstablishedAt:at}]},
+    }]},
+  });
+  assert.ok(proposalId);
+  assert.equal(getVocabularyContentForMaintenance('generated-practice'),null);
+  const reviewId=approveVocabularyProposal(proposalId,1,'editor');
+  applyVocabularyProposal(proposalId,1,reviewId,'generate-test','editor');
+  assert.equal(getVocabularyContentForMaintenance('generated-practice')?.availability,'active');
+  assert.equal(getVocabularyContentForMaintenance('source')?.version,fallback.version);
+  assert.deepEqual(getVocabularyWordSenseCoverage('word').defaultUsefulSenseIds,['default-sense']);
+  assert.equal(getVocabularyContentForMaintenance('off-default')?.availability,'active');
 });
 
 test('pure cue display projects stored axis and teaching note from evidence and proposed content',()=>{

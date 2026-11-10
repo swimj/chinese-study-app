@@ -1,6 +1,6 @@
 import { getVocabularyOriginalModelProposal } from '../server/db/vocabulary-reflection.ts';
-import { getVocabularyCaseCard } from '../server/db/vocabulary-case-queue.ts';
-import { getVocabularyRepertoireSelection } from '../server/db/vocabulary-repertoire-selection.ts';
+import { getVocabularyCaseCard, getVocabularyFallbackRepertoire, generateVocabularyFallbackRepertoire } from '../server/db/vocabulary-case-queue.ts';
+import { captureVocabularyRepertoireSelection, getVocabularyRepertoireSelection } from '../server/db/vocabulary-repertoire-selection.ts';
 import { getVocabularyRepairTarget, setVocabularyRepairTarget } from '../server/db/vocabulary-repair-target.ts';
 import { saveRepertoireWordDefaults, saveRepertoireWordDefaultsAndReassess } from '../server/db/vocabulary-repertoire-revision.ts';
 import { getVocabularyCaseReview } from '../server/db/vocabulary-case-reviews.ts';
@@ -191,14 +191,26 @@ test('historical private dictionary encounters generate shared repertoires after
   assert.throws(()=>projectVocabularyReflectionInput({...work,learnerId:'bob'}),/source access mismatch/);
   const trial=dictionaryRepertoireProvider('shared',2);
   const result=await trial.provider.run(work);if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
-  assert.equal(trial.calls,1);assert.equal(result.result.admission?.sourceContentVersion,2);
-  assert.deepEqual(result.result.proposal!.operations.map(operation=>operation.scope),[{kind:'shared'},{kind:'shared'}]);
-  const recorded=recordVocabularyImprovementResult(work.jobId,work.leaseToken,result.result,judgedAt);
+  assert.equal(trial.calls,0);assert.equal(result.result.admission?.sourceContentVersion,2);
+  assert.equal(result.result.admission?.outcome,'needs_repertoire');
+  recordVocabularyImprovementResult(work.jobId,work.leaseToken,result.result,judgedAt);
+  const card=getVocabularyCaseCard(work.caseId,'editor');
+  const repertoire=getVocabularyFallbackRepertoire(work.caseId,'editor');
+  const queued=generateVocabularyFallbackRepertoire(work.caseId,{
+    expectedVersion:card.version,expectedContentVersion:repertoire.sourceVersion,expectedWordVersion:repertoire.wordVersion,
+    expectedCatalogVersion:repertoire.catalogVersion,senseIds:repertoire.defaultSenseIds,
+  },'editor','openai:gpt-6-sol-high');
+  const generation=claimVocabularyReflectionJob({kind:'exercise_improvement'})!;
+  assert.equal(generation.jobId,queued.jobId);
+  const generated=await trial.provider.run(generation);if(generated.kind!=='exercise_improvement')assert.fail('Expected improvement');
+  assert.equal(trial.calls,1);
+  assert.deepEqual(generated.result.proposal!.operations.map(operation=>operation.scope),[{kind:'shared'},{kind:'shared'}]);
+  const recorded=recordVocabularyImprovementResult(generation.jobId,generation.leaseToken,generated.result);
   const review=approveVocabularyProposal(recorded.proposalId!,1,'editor');
   applyVocabularyProposal(recorded.proposalId!,1,review,'migrated-repertoire','editor');
   const proposal=getVocabularyProposal(recorded.proposalId!,'editor');
   for(const operation of proposal.operations)assert.equal(getVocabularyContentForMaintenance(operation.content.contentId!)!.accessScope,'shared');
-  assert.equal(getVocabularyContentForMaintenance(id)!.availability,'retired');
+  assert.equal(getVocabularyContentForMaintenance(id)!.availability,'active');
   assert.equal(JSON.stringify(getVocabularyReflectionCase(work.caseId).evidence),evidenceBefore);
   assert.equal(work.evidence.evidence[0]!.snapshot.contentVersion,1);
   assert.deepEqual(sql.prepare('PRAGMA foreign_key_check').all(),[]);
@@ -206,6 +218,8 @@ test('historical private dictionary encounters generate shared repertoires after
 
 test('scope migration rebases a retained private repertoire and requires approval of its new shared version',async()=>{
   const {id,work}=historicalDictionaryBaselineJob(false);
+  captureVocabularyRepertoireSelection(work.jobId,{wordId:'a',catalogVersion:getVocabularySenseCatalog('a').version,
+    generationScope:{selectionEstablished:true,senseIds:['character','script'],source:{kind:'word_defaults',wordId:'a',capturedVersion:1}}});
   const trial=dictionaryRepertoireProvider('private',1);
   const result=await trial.provider.run(work);if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
   const recorded=recordVocabularyImprovementResult(work.jobId,work.leaseToken,result.result,judgedAt);

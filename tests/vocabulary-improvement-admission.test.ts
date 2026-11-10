@@ -1,4 +1,5 @@
 import { captureVocabularyRepertoireSelection } from '../server/db/vocabulary-repertoire-selection.ts';
+import { createHash } from 'node:crypto';
 import { VocabularySenseReadinessPending } from '../server/vocabulary/sense-readiness.ts';
 import type { ensureVocabularyDefaultUsefulSelection } from '../server/vocabulary/default-useful-selection.ts';
 import { writeVocabularyDefaultUsefulSenses } from '../server/db/vocabulary-sense-coverage.ts';
@@ -95,11 +96,53 @@ const repair={summary:'Make the intended direction explicit.',source:{decision:'
 // Select fixture provenance before creating content; model stubs never mutate
 // a source or its retained revision to force a routing comparison.
 const bootstrapTest:typeof test=(name,fn)=>test(`[bootstrap] ${String(name)}`,fn);
+// Jobs admitted before defaults were established can finish their retained route.
+function retainBootstrapRoute(source=original): void {
+  const catalog=getVocabularySenseCatalog('word');
+  const senses=getVocabularySenses('word').filter(sense=>sense.status==='active');
+  const input=JSON.stringify({contract:'deterministic-repertoire-bootstrap-v1',sourceContent:source,catalog,senses});
+  const hash=createHash('sha256').update(input).digest('hex');
+  const mapping={outcome:'repertoire_bootstrap',rationale:'Continue the retained fallback bootstrap.',senseIds:[],
+    generationScope:null,observedMapping:{senseId:null,establishedAt:null},mappingTimestamp:at};
+  db.prepare('INSERT INTO vocabulary_improvement_stages VALUES (?,?,?,?,?,NULL,?)').run('job','sense_mapping',hash,input,JSON.stringify(mapping),at);
+}
 const repertoire={exercises:[
   {id:'anchor',sourceUseId:'size',stimulus:{kind:'direct_text',text:'Make the image larger.'},teachingNote:'Image size.'},
   {id:'effect',sourceUseId:'effect',stimulus:{kind:'direct_text',text:'Make a small problem seem much more significant.'},teachingNote:null},
   {id:'cloze',sourceUseId:'size',stimulus:{kind:'phrase_cloze',frame:'Enlarge the image.',text:'这张图太小了，请把它____一点。'},teachingNote:'Natural size request.'},
 ]};
+
+for (const hasExisting of [false,true]) bootstrapTest(`known defaults leave fallback for operator review (existing=${hasExisting})`,async()=>{
+  writeVocabularyDefaultUsefulSenses('word',1,['size'],actor);
+  if(hasExisting)createVocabularyContent({...original,contentId:'outside-defaults',body:{prompt:'Exaggerate the problem.'},
+    words:[{wordId:'word',relation:'target',senseId:'effect',senseMappingEstablishedAt:at}]},actor);
+  const trial=provider(()=>assert.fail('Fallback review should make no provider calls'));
+  const result=await trial.provider.run(job());
+  if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
+  assert.equal(result.result.admission?.outcome,'needs_repertoire');
+  assert.deepEqual(result.result.admission?.generationScope?.senseIds,['size']);
+  assert.equal(result.result.proposal,null);
+  assert.equal(trial.requests.length,0);
+});
+
+for (const empty of [false,true]) bootstrapTest(`operator generation adds selected practice without retiring fallback (empty=${empty})`,async()=>{
+  writeVocabularyDefaultUsefulSenses('word',1,['size'],actor);
+  createVocabularyContent({...original,contentId:'outside-defaults',body:{prompt:'Exaggerate the problem.'},
+    words:[{wordId:'word',relation:'target',senseId:'effect',senseMappingEstablishedAt:at}]},actor);
+  const scope={selectionEstablished:true,senseIds:['size'],source:{kind:'review_override' as const,caseId:'case',capturedVersion:1}};
+  captureVocabularyRepertoireSelection('job',{wordId:'word',catalogVersion:getVocabularySenseCatalog('word').version,generationScope:scope});
+  const trial=provider(()=>({exercises:empty?[]:[repertoire.exercises[0]]}));
+  const result=await trial.provider.run(job());
+  if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
+  assert.equal(trial.requests.length,1);
+  assert.deepEqual(JSON.parse(trial.requests[0].userPrompt).content.uses.map((use:{label:string})=>use.label),['make an image or object larger']);
+  assert.equal(result.result.admission?.outcome,'selected_repertoire');
+  assert.deepEqual(result.result.admission?.generationScope,scope);
+  if(empty)assert.equal(result.result.proposal,null);
+  else assert.deepEqual(result.result.proposal?.operations.map(op=>[op.strategy,op.content.words[0].senseId]),[['create','size']]);
+  assert.equal(getVocabularyContentForMaintenance('original')?.availability,'active');
+  assert.equal(getVocabularyContentForMaintenance('outside-defaults')?.availability,'active');
+});
 
 // Most provider scenarios supply evidence directly on the job. Persist it here
 // to exercise the admission guard's canonical-case and historical-source lookup.
@@ -191,7 +234,8 @@ test('mapping provider failures propagate without fallback or retained mapping e
   assert.equal(db.prepare('SELECT count(*) n FROM vocabulary_improvement_stages').get()!.n,0);
 });
 
-bootstrapTest('dictionary fallback automatically proposes one source replacement plus additions, preserving unrelated cues',async()=>{
+bootstrapTest('retained fallback bootstrap proposes one source replacement plus additions, preserving unrelated cues',async()=>{
+  retainBootstrapRoute();
   createVocabularyContent({...original,contentId:'other'},actor);
   const trial=provider((_request,index)=>repertoire);
   const result=await trial.provider.run(job());if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
@@ -256,6 +300,7 @@ test('successful mapping survives a later provider failure, while operator remap
 });
 
 bootstrapTest('repertoire cannot leak accepted answers',async()=>{
+  retainBootstrapRoute();
   const trial=provider((_request,index)=>({...repertoire,exercises:repertoire.exercises.map(exercise=>({...exercise,stimulus:{kind:'direct_text',text:'Use 放大 here.'}}))}));
   await assert.rejects(()=>trial.provider.run(job()),/exposes.*answer/);
   assert.equal(db.prepare('SELECT count(*) n FROM vocabulary_improvement_stages').get()!.n,2);
@@ -345,6 +390,7 @@ test('cache identity retains actual prompts and schema and separates provider co
 });
 
 for(const invalid of ['foreign-sense'] as const)bootstrapTest(`repertoire rejects ${invalid}`,async()=>{
+  retainBootstrapRoute();
   const exercises=repertoire.exercises.map(exercise=>({...exercise,sourceUseId:'unknown'}));
   const trial=provider((_request,index)=>({...repertoire,exercises}));
   await assert.rejects(()=>trial.provider.run(job()),/output schema/);
@@ -354,6 +400,7 @@ for(const invalid of ['foreign-sense'] as const)bootstrapTest(`repertoire reject
 bootstrapTest('fallback replacement uses the inventory without mapping or preserving every old gloss',async()=>{
   createVocabularyContent({...original,contentId:'list',body:{prompt:'enlarge an image; amplify significance; a specialist gloss absent from the inventory',source:{kind:'dictionary_baseline'}}},actor);
   const input=job();input.evidence.contentId='list';input.evidence.evidence[0]!.snapshot.contentId='list';
+  retainBootstrapRoute(getVocabularyContentForMaintenance('list')!);
   const exercises=repertoire.exercises.filter(exercise=>exercise.sourceUseId==='size');
   const trial=provider((_request,index)=>({...repertoire,exercises}));
   const result=await trial.provider.run(input);
@@ -499,6 +546,7 @@ for (const spend of [0.1, 100]) {
 bootstrapTest('reflection repertoire reaches the same general invocation as preparation while retaining its selected model',async()=>{
   db.prepare("UPDATE vocabulary_reflection_jobs SET model_choice='openai:gpt-6-sol-high'").run();
   for(const senseId of ['size','effect'])updateVocabularySense(senseId,1,{status:'active',description:{label:senseId,notes:[],examples:[{text:'把图片放大。',translation:'Enlarge the image.',pronunciation:null}]}},actor);
+  retainBootstrapRoute();
   const trial=provider((_request,index)=>repertoire);
   await trial.provider.run(job());
   const reflected=trial.requests[0]!;
@@ -526,6 +574,7 @@ bootstrapTest('reflection repertoire reaches the same general invocation as prep
 bootstrapTest('a single mapped repertoire exercise preserves private publication scope and answers',async()=>{
   createVocabularyContent({...original,contentId:'private-source',accessScope:'private',ownerLearnerId:'learner'},actor);
   const input=job();input.evidence.contentId='private-source';input.evidence.evidence[0]!.snapshot.contentId='private-source';
+  retainBootstrapRoute(getVocabularyContentForMaintenance('private-source')!);
   const trial=provider((_request,index)=>({exercises:[{...repertoire.exercises[0],sourceUseId:'size'}]}));
   const result=await trial.provider.run(input);if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
   const operations=result.result.proposal!.operations;assert.equal(operations.length,1);
@@ -538,6 +587,7 @@ bootstrapTest('a single mapped repertoire exercise preserves private publication
 });
 
 for(const malformed of ['missing-blank','duplicate-id'] as const)bootstrapTest(`repertoire shared validation rejects ${malformed}`,async()=>{
+  retainBootstrapRoute();
   const exercises=structuredClone(repertoire.exercises);
   if(malformed==='duplicate-id')exercises[1]!.id=exercises[0]!.id;
   else exercises[2]!.stimulus={kind:'phrase_cloze',frame:'Enlarge the image.',text:'这张图太小了。'};
@@ -547,6 +597,7 @@ for(const malformed of ['missing-blank','duplicate-id'] as const)bootstrapTest(`
 });
 
 for(const change of ['source','catalog','authority'] as const)bootstrapTest(`repertoire publication fences ${change} changes during generation`,async()=>{
+  retainBootstrapRoute();
   let allowed=true;
   const trial=provider((_request,index)=>{
     if(change==='source')updateVocabularyContent('original',1,{...original,body:{prompt:'Edited by operator'}},actor);
@@ -559,6 +610,7 @@ for(const change of ['source','catalog','authority'] as const)bootstrapTest(`rep
 });
 
 bootstrapTest('repertoire retries reuse exact new-contract output and retain old-contract evidence without consuming it',async()=>{
+  retainBootstrapRoute();
   db.prepare('INSERT INTO vocabulary_improvement_stages VALUES (?,?,?,?,?,?,?)').run('job','repertoire','old-contract',JSON.stringify({contract:{promptName:'vocabulary-reflection-repertoire',promptVersion:'2'}}),JSON.stringify({obsolete:true}),null,at);
   const trial=provider((_request,index)=>repertoire,{ledger:true});
   const result=await trial.provider.run(job());
@@ -635,6 +687,7 @@ for(const during of ['mapping','improvement'] as const)test(`serving-policy chan
 });
 
 for(const failFirst of [false,true])bootstrapTest(`repertoire scope survives policy changes and retry (first call fails=${failFirst})`,async()=>{
+  retainBootstrapRoute();
   const {writeVocabularyWordSenseCoverage}=await import('../server/db/vocabulary-sense-coverage.ts');
   const trial=provider((_request,index)=>{
     if(index===1){writeVocabularyWordSenseCoverage('word',1,['effect'],actor);if(failFirst)throw new Error('Provider failed');}
@@ -659,6 +712,7 @@ bootstrapTest('explicit empty repertoire invocation is no-action and never retir
 });
 
 bootstrapTest('historical review coverage cannot override word defaults for repertoire generation',async()=>{
+  retainBootstrapRoute();
   const {writeVocabularyWordSenseCoverage}=await import('../server/db/vocabulary-sense-coverage.ts');
   db.prepare('INSERT INTO reflection_cases(case_id,kind,word_id,evidence_snapshot_json) VALUES (?,?,?,?)')
     .run('case','exercise_improvement','word',JSON.stringify(job().evidence.evidence));
@@ -748,6 +802,7 @@ test('retirement can retain an independent shared-practice referral',async()=>{
 });
 
 bootstrapTest('empty faithful repertoire proposes only source retirement and preserves selected coverage',async()=>{
+  retainBootstrapRoute();
   const {resolveVocabularySenseCoverage}=await import('../server/db/vocabulary-sense-coverage.ts');
   const before=resolveVocabularySenseCoverage('word');
   const trial=provider((_request,index)=>({exercises:[]}));
@@ -786,6 +841,7 @@ for(const reassessment of [false,true])test(`valid retirement output stays compl
 });
 
 bootstrapTest('empty repertoire reports other active production content in the same publication scope',async()=>{
+  retainBootstrapRoute();
   if(original.kind!=='exercise')assert.fail('Expected exercise fixture');
   createVocabularyContent({...original,contentId:'other'},actor);
   createVocabularyContent({...original,contentId:'private',accessScope:'private',ownerLearnerId:'learner'},actor);
@@ -803,6 +859,7 @@ for(const outcome of ['single_sense','repertoire_bootstrap'])(outcome==='single_
   createVocabularySense({senseId:size,wordId:'word',description:{label:'image enlargement',notes:[],examples:[{text:'把图片放大。',translation:'Enlarge the image.',pronunciation:null}]}},actor);
   createVocabularySense({senseId:effect,wordId:'word',description:{label:'amplify an effect'}},actor);
   writeVocabularyDefaultUsefulSenses('word',1,[size,effect],actor);
+  if(outcome==='repertoire_bootstrap')retainBootstrapRoute();
   const trial=provider((_request,index)=>outcome==='single_sense'?(index===1?{...single,senseIds:[size]}:repair):{exercises:[{...repertoire.exercises[0],sourceUseId:size}]});
   const result=await trial.provider.run(job());if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
   for(const request of trial.requests){
@@ -825,6 +882,7 @@ test('mapper rejects unlisted call-local IDs and records invalid output without 
 
 
 bootstrapTest('new repertoire items reject missing sense binding instead of inventing one',async()=>{
+  retainBootstrapRoute();
   const trial=provider((_request,index)=>({exercises:[{...repertoire.exercises[0],sourceUseId:null}]}));
   await assert.rejects(()=>trial.provider.run(job()),/strict output schema/);
   assert.equal(getVocabularyContentForMaintenance('original')!.availability,'active');
@@ -906,6 +964,7 @@ for(const shape of ['compact_definition','synonymous_glosses'] as const)test(`au
   assert.deepEqual(trial.requests[0]!.outputSchema.properties!.outcome.enum,['single_sense','unmappable','inventory_gap']);
 });
 for(const kind of ['targeted','pure_cue'] as const)bootstrapTest(`current ${kind} practice prevents repeat bootstrap`,async()=>{
+  retainBootstrapRoute();
   if(original.kind!=='exercise')assert.fail('Expected exercise');
   createVocabularyContent({...original,contentId:'authored',exerciseType:kind,body:{prompt:'An authored retrieval task.',source:{kind:'authored_prompt'}}},actor);
   const trial=provider(()=>{throw new Error('No provider call expected');});
@@ -921,15 +980,18 @@ for(const scope of ['other_owner','shared','recognition','retired','teaching','f
   createVocabularyContent({...original,contentId:'other',accessScope:scope==='shared'?'shared':'private',ownerLearnerId:scope==='shared'?null:scope==='other_owner'?'another':'learner',
     availability:scope==='retired'?'retired':'active',exerciseRole:scope==='teaching'?'teaching':'general',skill:scope==='recognition'?'recognition':'production',
     body:{prompt:'Current other content.',source:{kind:scope==='fallback'?'dictionary_baseline':'authored_prompt'}}},actor);
+  retainBootstrapRoute(getVocabularyContentForMaintenance('private-source')!);
   const trial=provider(()=>repertoire);const result=await trial.provider.run(input);if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
   assert.equal(result.result.admission!.outcome,'repertoire_bootstrap');assert.ok(result.result.proposal);assert.equal(trial.requests.length,1);
 });
 bootstrapTest('new authored practice during bootstrap fences publication',async()=>{
+  retainBootstrapRoute();
   const trial=provider(()=>{createVocabularyContent({...original,contentId:'new-authored',body:{prompt:'New authored retrieval.'}},actor);return repertoire;});
   await assert.rejects(()=>trial.provider.run(job()),/Authored production practice changed/);
   assert.equal(db.prepare("SELECT count(*) n FROM vocabulary_improvement_stages WHERE stage='repertoire'").get()!.n,0);
 });
 bootstrapTest('retry checks current authored coverage before consuming a retained repertoire',async()=>{
+  retainBootstrapRoute();
   const trial=provider(()=>repertoire);await trial.provider.run(job());
   createVocabularyContent({...original,contentId:'new-authored',body:{prompt:'New authored retrieval.'}},actor);
   const result=await trial.provider.run({...job(),attemptNumber:2});if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
@@ -939,6 +1001,7 @@ bootstrapTest('retry checks current authored coverage before consuming a retaine
 test('legacy dictionary supplement uses deterministic bootstrap without mapping',async()=>{
   const {version,createdAt,updatedAt,...draft}=original;
   const current=updateVocabularyContent('original',version,{...draft,body:{prompt:'enlarge; amplify',source:{kind:'production_cue_supplement',cueId:null}}},actor);
+  retainBootstrapRoute(current);
   const trial=provider(()=>repertoire);
   const result=await trial.provider.run({...job(),reassessmentSourceJobId:'prior',reassessmentSource:current});
   if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
@@ -1143,6 +1206,7 @@ test('second opinions exclude pronunciation encounter text and reactions',async(
 });
 
 bootstrapTest('repertoire proposal saves an embedded cloze sentence once',async()=>{
+  retainBootstrapRoute();
  const wire=structuredClone(repertoire);
  const cloze=wire.exercises[2]!.stimulus;
  cloze.frame=`Enlarge the image: ${cloze.text}`;
@@ -1166,6 +1230,7 @@ test('editorial direction reaches authoring separately from mapping and ordinary
 });
 
 bootstrapTest('editorial context composes with the shared repertoire call without changing its output contract',async()=>{
+  retainBootstrapRoute();
   const input=job();input.editorial={instructions:'Prefer concise English frames.'};
   const p=provider(()=>repertoire);
   const result=await p.provider.run(input);

@@ -1,8 +1,13 @@
 import type { VocabularyReassessmentEditorialInput, VocabularyReassessmentEditorial } from '../../src/domain/vocabulary-reflection.ts';
-import { emitBackendEvent, getVocabularyContentForMaintenance } from './vocabulary-content.ts';
+import { emitBackendEvent, getVocabularyContentForMaintenance, getVocabularySenseCatalog } from './vocabulary-content.ts';
+import { authoredVocabularyRepertoire } from './vocabulary-authored-repertoire.ts';
+import { getVocabularyRepairTarget, captureVocabularyRepairTarget } from './vocabulary-repair-target.ts';
+import { resolveVocabularySenseCoverage } from './vocabulary-sense-coverage.ts';
+import { captureVocabularyRepertoireSelection } from './vocabulary-repertoire-selection.ts';
+import { isVocabularyDefinitionFallback } from '../../src/domain/vocabulary-production-coverage.ts';
 import { assertVocabularyCaseEditable, touchVocabularyCaseReview } from './vocabulary-case-reviews.ts';
 import { randomUUID } from 'node:crypto';
-import type { VocabularyCaseQueueItem, VocabularyCaseQueuePage, VocabularyCaseQueueQuery, VocabularyServedReview, VocabularyOperationReview, VocabularyAssessmentSummary, VocabularyAdvisorySummary } from '../../src/domain/vocabulary-case-queue.ts';
+import type { VocabularyCaseQueueItem, VocabularyCaseQueuePage, VocabularyCaseQueueQuery, VocabularyServedReview, VocabularyOperationReview, VocabularyAssessmentSummary, VocabularyAdvisorySummary, VocabularyFallbackRepertoire, VocabularyFallbackGenerationInput } from '../../src/domain/vocabulary-case-queue.ts';
 import type { ReflectionModelChoice } from '../reflection/model-arms.ts';
 import { isOperatorSubject, parseOperatorAllowlist } from '../operator-access.ts';
 import { config, getDb } from './connection.ts';
@@ -83,7 +88,7 @@ type BaseRow={
   proposalId:string|null;proposalVersion:number|null;proposalStatus:NonNullable<VocabularyCaseQueueItem['proposal']>['status']|null;authorKind:'operator'|'service'|null;rationale:string|null;
   assessmentJobId:string|null;assessmentSequence:number|null;origin:VocabularyAssessmentSummary['origin'];diagnosis:string;outcome:string|null;scopeKind:string|null;scopeSenseIds:string|null;
   reusedAxisNote:string|null;reusedContentId:string|null;reusedPrompt:string|null;reusedAnswers:string|null;reusedTeachingNote:string|null;reuseRationale:string|null;reusedVersion:number|null;reusedExpectedVersion:number|null;reusedAvailability:string|null;
-  sourceId:string|null;assessedVersion:number|null;sourceVersion:number|null;sourceAvailability:string|null;findingKind:string|null;findingMessage:string|null;sourceEligible:number;stale:number;needsResolution:number;
+  sourceId:string|null;assessedVersion:number|null;sourceVersion:number|null;sourceAvailability:string|null;findingKind:string|null;findingMessage:string|null;sourceEligible:number;stale:number;needsResolution:number;repertoireReviewAvailable:number;
 };
 /** A fixed set of batch queries; no workspace/proposal hydration or per-item prepared statements. */
 function readCards(wanted:{caseId:string;proposalId?:string}[]):VocabularyCaseQueueItem[] {
@@ -113,6 +118,11 @@ function readCards(wanted:{caseId:string;proposalId?:string}[]):VocabularyCaseQu
     CASE WHEN json_extract(cj.result_json,'$.input.pureCuePromotion.outcome')='needs_operator' THEN 'needs_operator' ELSE json_extract(cj.result_json,'$.input.admission.outcome') END AS findingKind,
     CASE WHEN json_extract(cj.result_json,'$.input.pureCuePromotion.outcome')='needs_operator' THEN json_extract(cj.result_json,'$.input.pureCuePromotion.rationale') ELSE json_extract(cj.result_json,'$.input.admission.rationale') END AS findingMessage,
     src.kind='exercise' AND src.exercise_role='general' AND src.skill='production' AND src.availability='active' AND (src.access_scope='shared' OR src.owner_learner_id=c.learner_id) AS sourceEligible,
+    CASE WHEN json_extract(cj.result_json,'$.input.admission.outcome') IN ('needs_repertoire','needs_coverage','already_covered','selected_repertoire')
+      THEN EXISTS(SELECT 1 FROM vocabulary_word_sense_coverage coverage
+        JOIN json_each(coverage.default_useful_sense_ids_json) selected
+        JOIN senses s ON s.sense_id=selected.value AND s.word_id=c.word_id AND s.status='active'
+        WHERE coverage.word_id=c.word_id) ELSE 0 END AS repertoireReviewAvailable,
     EXISTS(SELECT 1 FROM proposal_content_bases b LEFT JOIN content_items s ON s.content_id=b.content_id WHERE b.proposal_id=p.proposal_id AND (s.version IS NULL OR s.version!=b.expected_content_version))
       OR (json_extract(dj.result_json,'$.input.admission.wordId') IS NOT NULL AND
        (coalesce(catalog.sense_catalog_version,0)!=json_extract(dj.result_json,'$.input.admission.catalogVersion') OR mapping.content_id IS NULL
@@ -120,7 +130,7 @@ function readCards(wanted:{caseId:string;proposalId?:string}[]):VocabularyCaseQu
           (mapping.sense_id IS NOT json_extract(dj.result_json,'$.input.admission.sourceMapping.senseId') OR mapping.sense_mapping_established_at IS NOT json_extract(dj.result_json,'$.input.admission.sourceMapping.establishedAt')))))
       OR repair.pending_sense_id IS NOT NULL
       OR (repair.accepted_version IS NOT NULL AND repair.accepted_version IS NOT json_extract(dj.result_json,'$.input.admission.repairTargetVersion')) AS stale,
-    c.kind='teaching_review' OR json_extract(cj.result_json,'$.input.admission.outcome') IN ('unmappable','inventory_gap','needs_coverage') OR json_extract(cj.result_json,'$.input.pureCuePromotion.outcome')='needs_operator' AS needsResolution
+    c.kind='teaching_review' OR json_extract(cj.result_json,'$.input.admission.outcome') IN ('unmappable','inventory_gap','needs_coverage','needs_repertoire') OR json_extract(cj.result_json,'$.input.pureCuePromotion.outcome')='needs_operator' AS needsResolution
     FROM json_each(?) requested JOIN vocabulary_case_reviews r ON r.case_id=json_extract(requested.value,'$.caseId')
     JOIN reflection_cases c ON c.case_id=r.case_id LEFT JOIN lexical_words w ON w.id=c.word_id
     LEFT JOIN vocabulary_case_repair_targets repair ON repair.case_id=r.case_id
@@ -149,8 +159,9 @@ function readCards(wanted:{caseId:string;proposalId?:string}[]):VocabularyCaseQu
       latestJob:row.latestJobId?{jobId:row.latestJobId,sequence:row.latestSequence!,status:row.latestStatus!,error:row.latestError,advisory:!!row.latestAdvisory}:null,
       assessment:row.assessmentJobId?{jobId:row.assessmentJobId,sequence:row.assessmentSequence!,origin:row.origin,models:[],outcome:row.outcome,scopeLabel:null,diagnosis:row.diagnosis}:null,
       ...(row.reusedContentId?{reusedSharedCue:{axisNote:row.reusedAxisNote,contentId:row.reusedContentId,prompt:row.reusedPrompt,acceptedAnswers:parseList<string[]>(row.reusedAnswers).flat(),teachingNote:row.reusedTeachingNote,rationale:row.reuseRationale??'',version:row.reusedVersion,expectedVersion:row.reusedExpectedVersion,availability:row.reusedAvailability}}:{}),
+      ...(row.repertoireReviewAvailable?{repertoireReviewAvailable:true}:{}),
       served:[],proposal:row.proposalId?{proposalId:row.proposalId,version:row.proposalVersion!,status:row.proposalStatus!,authorKind:row.authorKind!,isCurrent:row.proposalId===row.currentProposalId,rationale:row.rationale!,operations:[]}:null,
-      alternatives:[],alternativeCount:0,sources:[],advisoryOpinion:null,stale:!!row.stale,requiresDetails:false,needsDecision:!!row.needsResolution,finding:row.findingKind&&['unmappable','inventory_gap','needs_coverage','needs_operator'].includes(row.findingKind)?{kind:row.findingKind as NonNullable<VocabularyCaseQueueItem['finding']>['kind'],message:row.findingMessage??''}:null,
+      alternatives:[],alternativeCount:0,sources:[],advisoryOpinion:null,stale:!!row.stale,requiresDetails:false,needsDecision:!!row.needsResolution,finding:row.findingKind&&['unmappable','inventory_gap','needs_coverage','needs_operator','needs_repertoire'].includes(row.findingKind)?{kind:row.findingKind as NonNullable<VocabularyCaseQueueItem['finding']>['kind'],message:row.findingMessage??''}:null,
       reassessment:{eligible,reason:eligible?null:row.state==='resolved'?'This case is resolved.':row.activeJobId?'A case job is queued or running.':row.approvalState==='pending'?'Case approval is queued or running.':!row.currentJobId?'A completed assessment is required.':row.sourceAvailability==='retired'?'The source exercise is retired.':!source?'The current source is unavailable or is not an active general production exercise.':'Only exercise improvement cases can be reassessed.',source}};
     return [row.caseId,item];
   }));
@@ -321,6 +332,61 @@ export function proposeVocabularyCaseRetirement(caseId: string, expectedVersion:
       }],
     }, actorId);
     return getVocabularyCaseCard(id, actorId);
+  });
+}
+function fallbackRepertoireInputs(card: VocabularyCaseQueueItem, actorId: string) {
+  const ref = card.reassessment.source;
+  if (!card.wordId || card.proposal || !card.reassessment.eligible || !ref ||
+      ref.currentVersion !== ref.assessedVersion || captureVocabularyRepairTarget(card.caseId)) {
+    throw new VocabularyReflectionConflict('Review the current fallback before generating practice');
+  }
+  const source = getVocabularyContentForMaintenance(ref.contentId);
+  if (source?.kind !== 'exercise' || !isVocabularyDefinitionFallback(source) ||
+      source.answers.length !== 1 || source.answers[0]?.wordId !== card.wordId) {
+    throw new VocabularyReflectionConflict('This case does not have a current dictionary fallback');
+  }
+  const coverage = resolveVocabularySenseCoverage(card.wordId);
+  if (!coverage.includedSenseIds.length) throw new VocabularyReflectionConflict('Select useful defaults before generating practice');
+  return {source, wordId: card.wordId, coverage,
+    catalogVersion: getVocabularySenseCatalog(card.wordId).version, senses: getVocabularyRepairTarget(card.caseId, actorId).senses};
+}
+
+export function getVocabularyFallbackRepertoire(caseId: string, actorId: string): VocabularyFallbackRepertoire {
+  const card = getVocabularyCaseCard(caseId, actorId);
+  const {source, wordId, coverage, catalogVersion, senses} = fallbackRepertoireInputs(card, actorId);
+  const authored = authoredVocabularyRepertoire(wordId, {
+    accessScope: source.accessScope, ownerLearnerId: source.ownerLearnerId, excludeContentId: source.contentId,
+  });
+  const exercises = authored.map(exercise => {
+    const body = exercise.body;
+    return {contentId: exercise.contentId,
+      prompt: typeof body === 'string' ? body : body && typeof body === 'object' && !Array.isArray(body) && typeof body.prompt === 'string' ? body.prompt : '',
+      senseId: exercise.words.find(word => word.wordId === wordId && word.relation === 'target')?.senseId ?? null};
+  });
+  return {sourceVersion: source.version, catalogVersion, wordVersion: coverage.word.version,
+    defaultSenseIds: coverage.includedSenseIds, senses, exercises};
+}
+
+export function generateVocabularyFallbackRepertoire(caseId: string, input: VocabularyFallbackGenerationInput,
+  actorId: string, modelChoice: ReflectionModelChoice) {
+  return changeCase(caseId, input.expectedVersion, actorId, id => {
+    const card = getVocabularyCaseCard(id, actorId);
+    const {source, wordId, coverage, catalogVersion, senses} = fallbackRepertoireInputs(card, actorId);
+    if (source.version !== input.expectedContentVersion || catalogVersion !== input.expectedCatalogVersion ||
+        coverage.word.version !== input.expectedWordVersion) {
+      throw new VocabularyReflectionConflict('The fallback or sense selection changed; reopen the repertoire');
+    }
+    const senseIds = [...new Set(input.senseIds)].sort();
+    if (!senseIds.length || senseIds.length !== input.senseIds.length ||
+        senseIds.some(id => !senses.some(sense => sense.senseId === id))) {
+      throw new VocabularyReflectionConflict('Select distinct active senses from the current inventory');
+    }
+    const queued = requestVocabularyReassessment(id, actorId, modelChoice, source.version);
+    captureVocabularyRepertoireSelection(queued.jobId, {wordId, catalogVersion, generationScope: {
+      selectionEstablished: true, senseIds,
+      source: {kind: 'review_override', caseId: id, capturedVersion: card.version},
+    }});
+    return {...queued, item: getVocabularyCaseCard(id, actorId)};
   });
 }
 export function reassessVocabularyCaseReview(caseId:string,expectedVersion:number,actorId:string,modelChoice:ReflectionModelChoice,expectedContentVersion:number,origin:ReassessmentOrigin={kind:'case'},editorial?:VocabularyReassessmentEditorialInput):{caseId:string;jobId:string;item:VocabularyCaseQueueItem} {
