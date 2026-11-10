@@ -390,16 +390,17 @@ Already-composed sessions keep their captured material and completion semantics.
 The [sense/content reconciliation contract](sense-content-reconciliation.md)
 defines this workflow and its bounded first implementation.
 
-When a dictionary fallback is reported for a word with saved useful defaults,
-Content Improvement shows the inventory and published practice in the fallback's
-scope. An operator can request additional exercises for a selection initialized
-from the defaults. This selection applies to one generation request. The
-resulting proposal adds practice without retiring the fallback or other exercises.
-An empty result leaves the case available for review. Legacy fallback bootstrap
-can continue its existing path when defaults still need initialization or the
-job already retained that route. Existing authored practice, including shared
-pure cues accepting the word, prevents duplicate legacy bootstrap. Authored
-exercises receive local assessment of their intended use.
+A reported dictionary fallback with no authored general production practice in
+its publication scope and owner automatically seeds a first repertoire proposal
+from useful defaults, including defaults established during sense bootstrap.
+An explicitly empty selection makes no authoring request.
+When authored practice already exists, including shared pure cues accepting the
+word, saved useful defaults support an operator review of gaps in that practice.
+The operator can request additional exercises for a selection initialized from
+the defaults. This selection applies to one generation request. The resulting
+proposal adds practice without retiring the fallback or other exercises.
+An empty result leaves the case available for review. Authored exercises receive
+local assessment of their intended use.
 Prepared and reflection-proposed exercises use concise direct evocations and
 contextual clozes chosen for the target's own lexical contribution, with optional
 post-answer teaching. Reflection proposes content; application requires operator

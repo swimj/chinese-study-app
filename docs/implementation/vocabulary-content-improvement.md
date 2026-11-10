@@ -13,7 +13,7 @@ flowchart TD
   Pure -->|No| Ready[Canonical sense readiness]
   Ready --> Fallback{Dictionary fallback?}
   Fallback -->|Yes| Practice{Current authored practice in same scope and owner?}
-  Practice -->|Yes| Covered[Record already covered]
+  Practice -->|Yes| Covered[Offer repertoire review with saved useful defaults]
   Practice -->|No| Bootstrap[Selected repertoire bootstrap]
   Fallback -->|No| Map[Map authored intended use]
   Map -->|Single sense| Local[Coherent local plan and shared candidate]
@@ -104,8 +104,9 @@ ends that replacement gate rather than permanently freezing future default edits
   active authored general production exercises accepting the word, including
   pure cues, count as practice only within the source's publication scope and
   owner. Learner adoption, scheduling, deactivation, and selected serving senses
-  do not determine this content lifecycle. Covered fallbacks record no proposal;
-  uncovered fallbacks bootstrap selected practice without a mapping model call.
+  do not determine this content lifecycle. A fallback with existing practice and
+  saved useful defaults can open repertoire review. A fallback with no authored
+  practice bootstraps selected practice without a mapping model call.
 - **Mapping** identifies the intended use of an authored exercise and compares it
   with the supplied inventory. Unmappable content or inventory gaps stop with operator attention. Intended sense is authorial context,
   not a clue the learner necessarily saw.
@@ -182,8 +183,9 @@ publication/approval fences without reclassifying valid provider output as malfo
 ### Dictionary fallback and sense mapping
 
 After sense readiness, deterministic source routing separates dictionary
-fallback cases from authored-cue assessment. With saved useful defaults, a new
-fallback assessment records `needs_repertoire` without generating exercises.
+fallback cases from authored-cue assessment. A new fallback assessment with
+existing authored practice and saved useful defaults records `needs_repertoire`
+without generating exercises.
 **Review repertoire** displays the active inventory and published exercises in
 the source's publication scope, including exercises for nondefault senses.
 **Generate for selected** captures an explicit case selection and queues the
@@ -191,8 +193,9 @@ shared authoring flow. It uses the normal proposal review for additions and
 preserves existing content. Earlier no-change fallback assessments can also
 open the repertoire review.
 
-In the legacy bootstrap path, an uncovered fallback captures
-the selected senses from shared word defaults and invokes the
+With no authored practice in scope, a fallback assessment automatically captures
+the selected senses from shared word defaults, including defaults established
+during sense readiness. It invokes the
 shared general-exercise contract: the full general v5 brief, structured direct
 and cloze stimuli, optional teaching notes, and shared validation. It retains the
 reflection job's selected model and source publication scope. The first generated

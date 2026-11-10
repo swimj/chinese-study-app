@@ -126,7 +126,9 @@ export async function runVocabularyImprovementAdmission(options: {
   const routeInput=bootstrap?JSON.stringify({contract:'deterministic-repertoire-bootstrap-v1',sourceContent:original,catalog:readiness.catalog,senses:inventory}):'';
   const routeHash=bootstrap?createHash('sha256').update(routeInput).digest('hex'):'';
   const routeCached=bootstrap?getDb().prepare("SELECT result_json FROM vocabulary_improvement_stages WHERE job_id=? AND stage='sense_mapping' AND input_hash=?").get(job.jobId,routeHash) as {result_json:string}|undefined:undefined;
-  if (bootstrap && !capturedSelection && !routeCached) {
+  const covered=bootstrap&&!generateForReview?authoredPractice():[];
+  // Sense readiness can save defaults without creating any authored practice.
+  if (covered.length && !capturedSelection && !routeCached) {
     const coverage = resolveVocabularySenseCoverage(wordId);
     if (coverage.selectionEstablished) {
       const outcome = coverage.includedSenseIds.length ? 'needs_repertoire' : 'no_senses_requested';
@@ -142,7 +144,6 @@ export async function runVocabularyImprovementAdmission(options: {
       }}};
     }
   }
-  const covered=bootstrap&&!generateForReview?authoredPractice():[];
   if (capturedSelection && (!bootstrap || covered.length)) throw new VocabularyReflectionConflict('The selected repertoire can no longer bootstrap from this source; request a fresh assessment');
   if(covered.length) {
     fence();
