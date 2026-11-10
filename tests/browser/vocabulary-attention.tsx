@@ -28,6 +28,7 @@ let items: VocabularyAttentionItem[] = params.has('empty') ? [] : [
 ];
 if (params.has('canonical')) items = [{...base,id:'preparation:failed',kind:'preparation',title:'挂钩',reason:'Repertoire replacement failed while teaching is still pending.',workId:'failed-preparation',wordId:'word-guagou',sourceContentId:null,reconciliationId:'resolution-canonical-snapshot',attemptCount:3,invocationId:'preparation-call',retryable:true}];
 if (params.has('superseded')) items = [{...base,id:'case:superseded',kind:'case',title:'他',reason:'The source has changed or been retired.',caseId:'superseded',caseKind:'exercise_improvement',jobId:'superseded-job',retryable:false,sourceSuperseded:true,dismissible:true}];
+if (params.has('assessmentFailure')) items = [{...base,id:'case:assessment',kind:'case',title:'罪',reason:'Assessment output failed validation.',caseId:'assessment-case',caseKind:'exercise_improvement',jobId:'assessment-job',retryable:true,sourceSuperseded:false,dismissible:false}];
 let slow=params.has('slow'),failSave=params.has('saveFailure'),failRetry=false,holdRead=false;
 const heldReads:(()=>void)[]=[];
 const counters:Record<string,number>={attention:0,workspace:0,proposal:0,snapshot:0,save:0,retry:0};
@@ -59,6 +60,7 @@ const proposals=new Map(['standalone-proposal','stale-proposal'].map(id=>[id,pro
 function getProposal(id:string){const result=proposals.get(id);if(!result)throw new Error('Unknown fixture proposal');return copy(result);}
 let feedbackStatus='failed';
 function workspace(id:string):VocabularyCaseWorkspace{
+  if(id==='assessment-case')return {case:{caseId:id,completionId:'fixture-completion',learnerId:'fixture-learner',kind:'exercise_improvement',wordId:null,contentId:'source',status:'open',createdAt:at,evidence:[]},sources:[source],proposals:[],jobs:[{jobId:'assessment-job',kind:'exercise_improvement',status:'failed',attemptNumber:4,error:'invalid_output',secondOpinion:false,result:null}],reassessmentUnavailableReason:'The assessment did not complete.'};
   if(id==='superseded')return {case:{caseId:id,completionId:'fixture-completion',learnerId:'fixture-learner',kind:'exercise_improvement',wordId:null,contentId:'source',status:'open',createdAt:at,evidence:[{
     encounterId:'served-encounter',wordId:'word-ta',workNumber:1,presentedActionId:'presentation',presentedAt:at,mode:'practice',snapshot:{contentId:'source',contentVersion:1,role:'general',kind:'production',body:{prompt:'He is a teacher.'},assessment:{acceptedAnswers:['他'],criteria:{}}},responses:[],effectiveResponses:[],feedback:[],effectiveFeedback:[],skipped:true,presentationUndone:false,
   }]},sources:[{...source,version:2,body:{prompt:'He works as a teacher.'},answers:[{wordId:'word-ta',acceptedForms:['他']}]}],proposals:[],jobs:[{jobId:'superseded-job',kind:'exercise_improvement',status:'failed',attemptNumber:1,error:'source_conflict',secondOpinion:false,result:null}],reassessmentUnavailableReason:'The earlier assessment did not complete.'};
@@ -77,7 +79,7 @@ const api:VocabularyOperatorApi={...vocabularyOperatorApi,
   retryApproval:async id=>{await retry(id==='stale-request'?'approval:stale':'approval:standalone');return request(id==='stale-request'?'stale-proposal':'standalone-proposal',id);},
   retryPreparation:async id=>{await retry(id==='failed-preparation'?'preparation:failed':'preparation:exhausted');return {ok:true};},
   retryDispatch:async id=>{await retry(id==='failed-dispatch'?'dispatch:failed':`dispatch:${id}`);return {ok:true};},
-  retryJob:async()=>{await retry('case:feedback');feedbackStatus='queued';return {ok:true};},
+  retryJob:async id=>{await retry(id==='assessment-job'?'case:assessment':'case:feedback');feedbackStatus='queued';return {ok:true};},
   dismissSupersededCase:async id=>{await delay();remove(`case:${id}`);return {ok:true};},
   workspace:async id=>{count('workspace');await delay();return copy(workspace(id));},
   proposal:async id=>{count('proposal');await delay();return getProposal(id);},

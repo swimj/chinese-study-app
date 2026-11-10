@@ -389,9 +389,13 @@ Each attempt runs through ordinary worker controls and lease fencing; expired un
 outcomes require manual retry rather than automatically making another call.
 
 Timeouts, recognized network failures, and HTTP 401/403/408/429/5xx responses qualify
-as availability failures. Missing credentials, other HTTP errors (including provider
-incompatibility), invalid JSON, truncation, and schema/domain validation failures
-require manual retry without automatically switching models. OpenAI requires
+as availability failures. Missing credentials and other HTTP errors (including
+provider incompatibility) require manual retry. An assessment that returns invalid
+JSON, truncation, or an explicit schema/domain validation failure is retried at most
+three times, for four total attempts in that retry cycle. The durable budget spans
+stages, is separate from availability retries, and resets on explicit operator retry.
+Successful stages are retained; validation retries keep the selected model and run
+under the usual source and lease fences. OpenAI requires
 `OPENAI_API_KEY` and honors `OPENAI_BASE_URL`; fallback requires `ZAI_API_KEY`.
 Cached mapping evidence includes the actual provider/model configuration in its
 identity. A successful fallback mapping retains that identity when later authoring

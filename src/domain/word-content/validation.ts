@@ -5,9 +5,10 @@ import type {
 } from './types';
 
 type RecordValue = Record<string, unknown>;
+export class WordContentValidationError extends Error {}
 
 function fail(path: string, message: string): never {
-  throw new Error(`${path}: ${message}`);
+  throw new WordContentValidationError(`${path}: ${message}`);
 }
 
 function object(value: unknown, path: string, keys: readonly string[]): RecordValue {

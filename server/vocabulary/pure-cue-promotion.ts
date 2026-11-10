@@ -8,6 +8,7 @@ import { exactVocabularyWordMatches, vocabularyResponseWordMatches, type Vocabul
 import { copiesPrivateVocabularyEvidence } from './shared-evidence-guard.ts';
 import { getDb } from '../db/connection.ts';
 import { getVocabularyContentForMaintenance } from '../db/vocabulary-content.ts';
+import { InvalidAssessmentOutput } from './assessment-output-validation.ts';
 
 const text:JsonSchema={type:'string'};
 const object=(properties:Record<string,JsonSchema>):JsonSchema=>({type:'object',properties,required:Object.keys(properties),additionalProperties:false});
@@ -25,8 +26,8 @@ const wordQuery='SELECT id AS wordId,hanzi,traditional,pinyin,meaning FROM lexic
 
 export function validateVocabularyPureCueReferral(referral:VocabularyPureCueReferral):void {
   if(!referral.sharedPurpose.trim()||!referral.rationale.trim()||referral.candidateWords.some(word=>!word.trim()||word!==word.trim())
-    ||new Set(referral.candidateWords).size!==referral.candidateWords.length)throw new Error('Invalid pure-cue referral');
-  if(referral.draft&&Object.values(referral.draft).some(value=>!value.trim()))throw new Error('Pure-cue plan requires complete authored content');
+    ||new Set(referral.candidateWords).size!==referral.candidateWords.length)throw new InvalidAssessmentOutput('Invalid pure-cue referral');
+  if(referral.draft&&Object.values(referral.draft).some(value=>!value.trim()))throw new InvalidAssessmentOutput('Pure-cue plan requires complete authored content');
 }
 export function pureCueIdentityOptions(targetId:string,referral:VocabularyPureCueReferral):{form:string;choices:Word[]}[] {
   const target=getDb().prepare(`${wordQuery} WHERE id=?`).get(targetId) as Word|undefined;
@@ -87,7 +88,7 @@ export function prepareVocabularyPureCuePromotion(job:VocabularyReflectionJob,or
   const attention:PromotionResult|null=unresolved?{assessment:{outcome:'needs_operator',rationale:'Referral written forms do not resolve to at least two unambiguous lexical identities including the target. Review the candidate words before promotion.',candidateWordIds:ids,existingContentId:null},operations:[],bases:[]}:null;
   return {input:{referral,candidates,existingCues},attention,contents:existingCues,fence,normalize(value,invocationId){
     const output=value as Decision;
-    const fail=(message:string):never=>{throw new Error(`Invalid pure-cue promotion: ${message}`);};
+    const fail=(message:string):never=>{throw new InvalidAssessmentOutput(`Invalid pure-cue promotion: ${message}`);};
     if(!output.rationale.trim()||new Set(output.memberWordIds).size!==output.memberWordIds.length)fail('empty rationale or duplicate members');
     const assessment:VocabularyPureCuePromotion={outcome:output.decision,rationale:output.rationale,candidateWordIds:ids,existingContentId:output.existingContentId,...(invocationId?{invocationId}:{})};
     if(output.decision==='reject'){
@@ -122,9 +123,9 @@ export function prepareVocabularyPureCuePromotion(job:VocabularyReflectionJob,or
     if(output.decision==='extend'&&existing?.kind==='exercise'){
       const {version:_version,createdAt:_created,updatedAt:_updated,...draft}=existing;
       const body=draft.body;
-      if(body===null||typeof body!=='object'||Array.isArray(body))return fail('existing cue requires an object body');
+      if(body===null||typeof body!=='object'||Array.isArray(body))throw new Error('Existing cue requires an object body');
       const reveal=body.reveal;
-      if(reveal!==undefined&&(reveal===null||typeof reveal!=='object'||Array.isArray(reveal)))return fail('existing cue requires an object reveal');
+      if(reveal!==undefined&&(reveal===null||typeof reveal!=='object'||Array.isArray(reveal)))throw new Error('Existing cue requires an object reveal');
       content={...draft,body:{...body,reveal:{...reveal,teachingNote}},answers,words:[...draft.words.map(word=>output.memberWordIds.includes(word.wordId)?{...word,relation:'target' as const}:word),...output.memberWordIds.filter(id=>!draft.words.some(word=>word.wordId===id)).map(wordId=>({wordId,relation:'target' as const}))]};
     }else{
       if(!output.prompt?.trim()||!output.semanticAxis?.trim())fail('new cue requires stimulus and semantic axis');
@@ -146,12 +147,12 @@ export function prepareVocabularyPureCuePromotion(job:VocabularyReflectionJob,or
 /** Validate the nominated shared task before resolving a destination or authoring its final content. */
 export function validateVocabularyPureCueDraft(job:VocabularyReflectionJob,original:VocabularyContent,referral:VocabularyPureCueReferral):void {
   validateVocabularyPureCueReferral(referral);
-  if(!referral.draft)throw new Error('Pure-cue integration requires an authored plan');
+  if(!referral.draft)throw new InvalidAssessmentOutput('Pure-cue integration requires an authored plan');
   const text=[referral.draft.prompt,referral.draft.semanticAxis,referral.draft.teachingNote].filter((value):value is string=>typeof value==='string');
-  if(copiesPrivateVocabularyEvidence(job,original.accessScope,text))throw new Error('Shared cue copies private learner evidence');
+  if(copiesPrivateVocabularyEvidence(job,original.accessScope,text))throw new InvalidAssessmentOutput('Shared cue copies private learner evidence');
   const forms=[...referral.candidateWords,...(original.kind==='exercise'?original.answers.flatMap(answer=>answer.acceptedForms):[]),
     ...pureCueIdentityOptions(job.evidence.wordId!,referral).flatMap(option=>option.choices.flatMap(word=>[word.hanzi,...(word.traditional?[word.traditional]:[])]))];
-  if(directCueContainsAcceptedForm(referral.draft.prompt,forms))throw new Error('Shared stimulus exposes an accepted answer');
+  if(directCueContainsAcceptedForm(referral.draft.prompt,forms))throw new InvalidAssessmentOutput('Shared stimulus exposes an accepted answer');
 }
 
 export function prepareVocabularyPureCueIntegration(job:VocabularyReflectionJob,original:VocabularyContent,referral:VocabularyPureCueReferral,selections:Record<string,string>={}) {
@@ -160,25 +161,25 @@ export function prepareVocabularyPureCueIntegration(job:VocabularyReflectionJob,
   const ids=prepared.input.candidates.map(word=>word.wordId);
 
   return {...prepared,normalize(value:unknown,invocationId?:string|null):PromotionResult {
-    if(!value||typeof value!=='object')throw new Error('Invalid pure-cue integration output');
+    if(!value||typeof value!=='object')throw new InvalidAssessmentOutput('Invalid pure-cue integration output');
     const result=value as {decision:'reuse'|'extend'|'create';rationale:string;existingContentId:string|null;prompt?:string|null;semanticAxis?:string|null;teachingNote:string|null};
     if(result.decision==='create'){
-      if(result.existingContentId!==null)throw new Error('Creation cannot select an existing cue');
+      if(result.existingContentId!==null)throw new InvalidAssessmentOutput('Creation cannot select an existing cue');
       if(result.prompt===undefined){
         // Only historical replies may reuse a complete authored plan. Live calls
         // require the current schema, including an explicit final prompt field.
-        if(!referral.draft!.teachingNote||result.teachingNote!==null)throw new Error('Creation requires final stimulus, semantic axis and teaching note');
+        if(!referral.draft!.teachingNote||result.teachingNote!==null)throw new InvalidAssessmentOutput('Creation requires final stimulus, semantic axis and teaching note');
         return prepared.normalize({decision:'create',rationale:result.rationale,existingContentId:null,
           prompt:referral.draft!.prompt,teachingNote:referral.draft!.teachingNote,
           semanticAxis:result.semanticAxis===undefined?referral.draft!.semanticAxis??null:result.semanticAxis,memberWordIds:ids},invocationId);
       }
       return prepared.normalize({...result,prompt:result.prompt,semanticAxis:result.semanticAxis??null,memberWordIds:ids},invocationId);
     }
-    if(result.decision!=='reuse'&&result.decision!=='extend')throw new Error('Integration cannot reject an authored shared task');
-    if(result.prompt!==undefined&&result.prompt!==null)throw new Error('Reuse and extension must preserve the existing stimulus');
-    if(result.semanticAxis!==undefined&&result.semanticAxis!==null)throw new Error('Reuse and extension must preserve the existing semantic axis');
+    if(result.decision!=='reuse'&&result.decision!=='extend')throw new InvalidAssessmentOutput('Integration cannot reject an authored shared task');
+    if(result.prompt!==undefined&&result.prompt!==null)throw new InvalidAssessmentOutput('Reuse and extension must preserve the existing stimulus');
+    if(result.semanticAxis!==undefined&&result.semanticAxis!==null)throw new InvalidAssessmentOutput('Reuse and extension must preserve the existing semantic axis');
     const existing=prepared.input.existingCues.find(cue=>cue.contentId===result.existingContentId);
-    if(!existing||existing.kind!=='exercise')throw new Error('Integration destination was not supplied');
+    if(!existing||existing.kind!=='exercise')throw new InvalidAssessmentOutput('Integration destination was not supplied');
     return prepared.normalize({...result,prompt:null,semanticAxis:null,memberWordIds:result.decision==='reuse'?ids:
       [...new Set([...existing.answers.map(answer=>answer.wordId),...ids])]},invocationId);
   }};

@@ -5,11 +5,12 @@ import { getDb } from '../db/connection.ts';
 import { runWithLearnerId } from '../db/learner-context.ts';
 import { listDueVocabularySessionCompletions, closeVocabularySessionCompletion } from '../db/vocabulary-sessions.ts';
 import { ingestVocabularySessionEvidence, claimVocabularyReflectionJob, recoverVocabularyReflectionJobs,
-  finishVocabularyReflectionJob, failVocabularyReflectionJob, failVocabularySenseMappingCall, deferVocabularyReflectionForSense, recoverVocabularySenseDependencies, VocabularyReflectionConflict, VocabularyReflectionSourceConflict } from '../db/vocabulary-reflection.ts';
+  finishVocabularyReflectionJob, failVocabularyReflectionJob, failVocabularyAssessmentValidation, failVocabularySenseMappingCall, deferVocabularyReflectionForSense, recoverVocabularySenseDependencies, VocabularyReflectionConflict, VocabularyReflectionSourceConflict } from '../db/vocabulary-reflection.ts';
 import { getHostedServiceControls } from '../db/hosted-operations.ts';
 import { runHostedProviderWork, HostedProviderWorkUnavailableError } from '../hosted-runtime-controls.ts';
 import type { VocabularySessionProjection } from '../../src/domain/vocabulary-session.ts';
 import { createVocabularyReflectionProvider, VocabularyReflectionOutputError, type VocabularyReflectionProvider } from './reflection-provider.ts';
+import { InvalidAssessmentOutput } from './assessment-output-validation.ts';
 
 /** Closure/ingestion are local durable work. Provider calls are independent per case kind. */
 export function createVocabularyProcessingWorker(options:{provider?:VocabularyReflectionProvider;now?:()=>number;pollMs?:number;
@@ -80,7 +81,8 @@ export function createVocabularyProcessingWorker(options:{provider?:VocabularyRe
         try{
           if(error instanceof VocabularySenseReadinessPending)deferVocabularyReflectionForSense(work.jobId,work.leaseToken,error.retryAt,iso());
           else if(error instanceof VocabularySenseMappingUnavailable)failVocabularySenseMappingCall(work.jobId,work.leaseToken,iso());
-          else failVocabularyReflectionJob(work.jobId,work.leaseToken,error instanceof VocabularyReflectionSourceConflict?'source_conflict':error instanceof VocabularyReflectionConflict?'assessment_conflict':error instanceof VocabularyReflectionOutputError?'invalid_output':'provider_failed',iso(),iso());
+          else if(error instanceof InvalidAssessmentOutput&&work.kind==='exercise_improvement'&&error.stage)failVocabularyAssessmentValidation(work.jobId,work.leaseToken,error.stage,iso());
+          else failVocabularyReflectionJob(work.jobId,work.leaseToken,error instanceof VocabularyReflectionSourceConflict?'source_conflict':error instanceof VocabularyReflectionConflict?'assessment_conflict':error instanceof VocabularyReflectionOutputError||error instanceof InvalidAssessmentOutput?'invalid_output':'provider_failed',iso(),iso());
         }
         catch(stale){if(!(stale instanceof VocabularyReflectionConflict))throw stale;}
       }

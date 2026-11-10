@@ -11,6 +11,7 @@ import { exactVocabularyWordMatches, type VocabularyResponseWord } from './respo
 import { getDb } from '../db/connection.ts';
 import { getVocabularyContentForMaintenance } from '../db/vocabulary-content.ts';
 import { validateJsonSchema } from '../llm/json-schema-validator.ts';
+import { InvalidAssessmentOutput } from './assessment-output-validation.ts';
 
 const text:JsonSchema={type:'string'};
 const properties:Record<string,JsonSchema>={diagnosis:text,decision:{type:'string',enum:['extend','repair','explanation_only']},
@@ -48,32 +49,33 @@ export function prepareVocabularyPureCueImprovement(job:VocabularyReflectionJob,
     if(!isDeepStrictEqual(members(),currentMembers)||!isDeepStrictEqual(resolve(),responseCandidates))throw new Error('Pure-cue review lexical evidence changed');
   };
   return {input:{currentMembers,responseCandidates},fence,normalize(value:unknown,invocationId?:string|null):VocabularyReflectionResult{
-    if(validateJsonSchema(value,vocabularyPureCueImprovementSchema).length)throw new Error('Pure-cue review failed strict output schema');
+    if(validateJsonSchema(value,vocabularyPureCueImprovementSchema).length)throw new InvalidAssessmentOutput('Pure-cue review failed strict output schema');
     const output=value as Output;
-    if(!output.diagnosis.trim()||new Set(output.addedWordIds).size!==output.addedWordIds.length)throw new Error('Invalid pure-cue review diagnosis or duplicate members');
+    if(!output.diagnosis.trim()||new Set(output.addedWordIds).size!==output.addedWordIds.length)throw new InvalidAssessmentOutput('Invalid pure-cue review diagnosis or duplicate members');
     const commonResult={diagnosis:{decision:output.decision,reason:output.reason,assessment:output.diagnosis},...(invocationId?{invocationId}:{})};
     if(output.decision==='explanation_only'){
-      if(!output.reason||output.addedWordIds.length||output.prompt!==null||output.teachingNote!==null)throw new Error('Explanation-only pure-cue review cannot carry a draft');
+      if(!output.reason||output.addedWordIds.length||output.prompt!==null||output.teachingNote!==null)throw new InvalidAssessmentOutput('Explanation-only pure-cue review cannot carry a draft');
       return {kind:'exercise_improvement',result:{...commonResult,proposal:null}};
     }
-    if(output.reason!==null)throw new Error('Pure-cue repair or extension cannot have an explanation-only reason');
+    if(output.reason!==null)throw new InvalidAssessmentOutput('Pure-cue repair or extension cannot have an explanation-only reason');
     const body=record(original.body);
     let updatedBody=body,answers=original.answers,words=original.words;
     if(output.decision==='extend'){
-      if(!output.addedWordIds.length||output.prompt!==null||!output.teachingNote?.trim()||output.addedWordIds.some(id=>!candidates.some(word=>word.wordId===id)))throw new Error('Pure-cue extension requires new unambiguous submitted words and a complete teaching note');
+      if(!output.addedWordIds.length||output.prompt!==null||!output.teachingNote?.trim()||output.addedWordIds.some(id=>!candidates.some(word=>word.wordId===id)))throw new InvalidAssessmentOutput('Pure-cue extension requires new unambiguous submitted words and a complete teaching note');
       answers=[...answers,...output.addedWordIds.map(id=>{const word=candidates.find(word=>word.wordId===id)!;return {wordId:id,acceptedForms:[...new Set([word.hanzi,...(word.traditional?[word.traditional]:[])])]};})];
       words=[...words.map(word=>output.addedWordIds.includes(word.wordId)?{...word,relation:'target' as const}:word),...output.addedWordIds.filter(id=>!words.some(word=>word.wordId===id)).map(wordId=>({wordId,relation:'target' as const}))];
       updatedBody={...body,reveal:{...record(body.reveal),teachingNote:output.teachingNote!}};
     }else{
-      if(output.addedWordIds.length||output.teachingNote!==null||!output.prompt?.trim())throw new Error('Pure-cue stimulus repair must preserve membership and teaching');
+      if(output.addedWordIds.length||output.teachingNote!==null||!output.prompt?.trim())throw new InvalidAssessmentOutput('Pure-cue stimulus repair must preserve membership and teaching');
       const repairErrors=pureCueStimulusRepairErrors(body.prompt,output.prompt);
-      if(repairErrors.length)throw new Error(repairErrors.join('; '));
+      if(repairErrors.length)throw new InvalidAssessmentOutput(repairErrors.join('; '));
       updatedBody={...body,prompt:output.prompt!,...('stimulus' in body?{stimulus:{kind:'direct_text',text:output.prompt!}}:{})};
     }
     const authoredText=[output.prompt,output.teachingNote].filter((text):text is string=>typeof text==='string');
-    if(copiesPrivateVocabularyEvidence(job,original.accessScope,authoredText))throw new Error('Shared pure-cue text cannot copy private learner evidence');
+    if(copiesPrivateVocabularyEvidence(job,original.accessScope,authoredText))throw new InvalidAssessmentOutput('Shared pure-cue text cannot copy private learner evidence');
     const prompt=updatedBody.prompt;
-    if(typeof prompt!=='string'||directCueContainsAcceptedForm(prompt,answers.flatMap(answer=>answer.acceptedForms)))throw new Error('Pure-cue stimulus exposes an accepted answer');
+    if(typeof prompt!=='string')throw new Error('Pure-cue source has no prompt');
+    if(directCueContainsAcceptedForm(prompt,answers.flatMap(answer=>answer.acceptedForms)))throw new InvalidAssessmentOutput('Pure-cue stimulus exposes an accepted answer');
     const {version:_version,createdAt:_created,updatedAt:_updated,...draft}=original;
     const operation:VocabularyProposalOperation={operationKey:'pure-cue-review',scope:original.accessScope==='shared'?{kind:'shared'}:{kind:'learner',learnerId:original.ownerLearnerId!},
       strategy:'update_existing',sourceContentId:original.contentId,expectedVersion:original.version,rationale:output.diagnosis,content:{...draft,body:updatedBody,answers,words}};

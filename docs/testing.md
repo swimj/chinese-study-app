@@ -118,6 +118,8 @@ The fixture uses local synthetic responses and never calls a provider.
 `?identities&usage` starts with an ambiguous response awaiting a dictionary
 choice; the reassessment controls and completion/failure buttons simulate the
 queue lifecycle. Add `narrow&largeText` to inspect the selection in a small panel.
+`/tests/browser/vocabulary-attention.html?assessmentFailure&view=attention` starts
+with a failed assessment; the fixture can fail the next retry or acknowledge it.
 
 Verify in-batch navigation makes no detail fetch, cross-page and end-wrap navigation,
 exact totals, encounter time labels, collapsed sense counts, source drift, note

@@ -22,6 +22,7 @@ import { validateJsonSchema } from '../llm/json-schema-validator.ts';
 import { prepareVocabularyPureCueIntegration, vocabularyPureCueIntegrationSchema, vocabularyResponseCandidates, type PromotionResult } from './pure-cue-promotion.ts';
 import { ensureVocabularySenses } from './sense-readiness.ts';
 import { ambiguousVocabularyResponses, vocabularyResponseWordMatches } from './response-word-matching.ts';
+import { InvalidAssessmentOutput } from './assessment-output-validation.ts';
 
 const serviceId = 'vocabulary-reflection';
 const text: JsonSchema = { type: 'string' };
@@ -99,9 +100,9 @@ export async function runVocabularyImprovementAdmission(options: {
     fence();extra?.fence();
     let value:T;
     try {
-      if (validateJsonSchema(response.value,schema).length) throw new Error('Improvement stage failed strict output schema');
+      if (validateJsonSchema(response.value,schema).length) throw new InvalidAssessmentOutput('Improvement stage failed strict output schema');
       value = normalize(response.value,response.invocationId);
-    } catch (error) { invalidateServiceInvocation(response.invocationId,serviceId); throw error; }
+    } catch (error) { invalidateServiceInvocation(response.invocationId,serviceId); throw error instanceof InvalidAssessmentOutput?error.atStage(name):error; }
     fence();extra?.fence();
     const db = getDb();
     db.exec('SAVEPOINT vocabulary_improvement_stage');
@@ -168,7 +169,7 @@ export async function runVocabularyImprovementAdmission(options: {
     const result = value as Mapping;
     if(!result.rationale.trim() || new Set(result.senseIds).size!==result.senseIds.length || result.senseIds.some(id=>!ids.has(id))
       || (result.outcome==='single_sense'&&result.senseIds.length!==1)
-      || (result.outcome!=='single_sense'&&result.senseIds.length!==0)) throw new Error('Invalid mapping outcome or supplied sense references');
+      || (result.outcome!=='single_sense'&&result.senseIds.length!==0)) throw new InvalidAssessmentOutput('Invalid mapping outcome or supplied sense references');
     let generationScope:VocabularyGenerationScope|null=null;
     if(result.outcome==='single_sense')generationScope={selectionEstablished:true,senseIds:[...result.senseIds],source:{kind:'mapped_source'}};
     return {...result,generationScope,observedMapping:{...expectedMapping},mappingTimestamp:new Date().toISOString()};

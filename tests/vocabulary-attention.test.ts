@@ -9,8 +9,8 @@ import { installLearnerContextSqlFunction } from '../server/db/learner-context.t
 import { createBaselineSchema } from '../server/db/persistence.ts';
 import { migrateDatabase } from '../server/db/migrations.ts';
 import { createVocabularySense,createVocabularyContent,getVocabularyContentForMaintenance,updateVocabularyContent } from '../server/db/vocabulary-content.ts';
-import { dismissSupersededVocabularyCase,createVocabularyProposal,saveVocabularyProposal } from '../server/db/vocabulary-reflection.ts';
-import { listVocabularyCaseQueue,getVocabularyCaseCard,resolveVocabularyCaseReview,reassessVocabularyCaseReview } from '../server/db/vocabulary-case-queue.ts';
+import { dismissSupersededVocabularyCase,createVocabularyProposal,saveVocabularyProposal,closeVocabularyProposal } from '../server/db/vocabulary-reflection.ts';
+import { abandonVocabularyReassessment,listVocabularyCaseQueue,getVocabularyCaseCard,resolveVocabularyCaseReview,reassessVocabularyCaseReview,setVocabularyCaseDeferred } from '../server/db/vocabulary-case-queue.ts';
 import { writeVocabularyDefaultUsefulSenses } from '../server/db/vocabulary-sense-coverage.ts';
 import { listVocabularyAttention } from '../server/db/vocabulary-attention.ts';
 import type { VocabularyApprovalRequest } from '../src/domain/vocabulary-reflection.ts';
@@ -65,13 +65,47 @@ test('teaching without an assessment gains an ordinary review home and remains c
   assert.equal(listVocabularyCaseQueue('editor').total,0);
   assert.equal(listVocabularyAttention('editor',{},dependencies).total,0);
 });
-test('failed reassessment stays with the earlier reviewable assessment; queued retry leaves attention',()=>{
+for(const deferred of [false,true])test(`failed reassessment locks the prior review until abandoned, deferred=${deferred}`,()=>{
   seed('review','exercise_improvement','succeeded');
-  sql.prepare(`INSERT INTO vocabulary_reflection_jobs(job_id,case_id,kind,dedupe_key,status,next_attempt_at,created_at,review_case_id,case_sequence,last_error) VALUES ('retry','review','exercise_improvement','retry','failed',?,?,'review',2,'failed')`).run(at,at);
+  if(deferred){const card=getVocabularyCaseCard('review','editor');setVocabularyCaseDeferred('review',card.version,'editor',true);}
+  sql.prepare(`INSERT INTO vocabulary_reflection_jobs(job_id,case_id,kind,dedupe_key,status,next_attempt_at,created_at,review_case_id,case_sequence,last_error,reassessment_source_job_id) VALUES ('retry','review','exercise_improvement','retry','failed',?,?,'review',2,'validation_failed','job-review')`).run(at,at);
+  const item=listVocabularyAttention('editor',{},dependencies).items[0];
+  assert.equal(item.id,'case:review');assert.equal(item.kind==='case'&&item.abandonable,true);
+  const card=getVocabularyCaseCard('review','editor');assert.equal(card.frozen,true);
+  assert.throws(()=>resolveVocabularyCaseReview('review',card.version,'editor'),/frozen/);
+  assert.equal(listVocabularyCaseQueue('editor',deferred?{view:'deferred'}:{}).total,1);
+  const restored=abandonVocabularyReassessment('review',card.version,'retry','editor');
+  assert.equal(restored.frozen,false);assert.equal(restored.currentAssessment?.jobId,'job-review');
   assert.equal(listVocabularyAttention('editor',{},dependencies).total,0);
-  seed('initial','exercise_improvement');assert.equal(listVocabularyAttention('editor',{},dependencies).total,1);
-  sql.exec("UPDATE vocabulary_reflection_jobs SET status='queued' WHERE case_id='initial'");
+  assert.equal(listVocabularyCaseQueue('editor',deferred?{view:'deferred'}:{}).total,1);
+});
+test('abandonment restores an earlier unresolved finding as open',()=>{
+  seed('review','exercise_improvement','succeeded');
+  sql.prepare("UPDATE vocabulary_reflection_jobs SET result_json=json_set(result_json,'$.input.admission.outcome','inventory_gap') WHERE job_id='job-review'").run();
+  sql.prepare(`INSERT INTO vocabulary_reflection_jobs(job_id,case_id,kind,dedupe_key,status,next_attempt_at,created_at,review_case_id,case_sequence,last_error,reassessment_source_job_id) VALUES ('retry','review','exercise_improvement','retry','failed',?,?,'review',2,'validation_failed','job-review')`).run(at,at);
+  const card=getVocabularyCaseCard('review','editor');
+  abandonVocabularyReassessment('review',card.version,'retry','editor');
+  assert.equal(sql.prepare("SELECT status FROM reflection_cases WHERE case_id='review'").get()!.status,'open');
+});
+test('failed application and failed reassessment remain separately visible',()=>{
+  seed('review','exercise_improvement','succeeded');
+  const proposal=createVocabularyProposal({caseId:'review',rationale:'Repair',operations:[{operationKey:'repair',scope:{kind:'shared'},strategy:'retire',sourceContentId:'source',expectedVersion:1,rationale:'Retire',content:getVocabularyContentForMaintenance('source')!}]},'editor');
+  sql.prepare(`INSERT INTO vocabulary_reflection_jobs(job_id,case_id,kind,dedupe_key,status,next_attempt_at,created_at,review_case_id,case_sequence,last_error) VALUES ('retry','review','exercise_improvement','retry','failed',?,?,'review',2,'validation_failed')`).run(at,at);
+  sql.exec("UPDATE vocabulary_case_reviews SET approval_state='attention',approval_request_id='request' WHERE case_id='review'");
+  const approval:VocabularyApprovalRequest={requestId:'request',proposalId:proposal.proposalId,expectedVersion:1,actorId:'editor',notes:null,status:'attention',attempts:1,createdAt:at,updatedAt:at,error:'application failed',application:null};
+  const items=listVocabularyAttention('editor',{}, {...dependencies,approvals:[approval]}).items;
+  assert.deepEqual(items.map(item=>item.kind).sort(),['approval','case']);
+  const failed=items.find(item=>item.kind==='case')!;assert.equal(failed.kind==='case'&&failed.retryable,false);assert.match(failed.reason,/Resolve the application/);
+});
+test('a failed opinion ceases to be actionable when its exact proposal is revised or dismissed',()=>{
+  seed('review','exercise_improvement','succeeded');
+  const proposal=createVocabularyProposal({caseId:'review',rationale:'Repair',operations:[{operationKey:'repair',scope:{kind:'shared'},strategy:'retire',sourceContentId:'source',expectedVersion:1,rationale:'Retire',content:getVocabularyContentForMaintenance('source')!}]},'editor');
+  sql.prepare(`INSERT INTO vocabulary_reflection_jobs(job_id,case_id,kind,dedupe_key,status,next_attempt_at,created_at,review_case_id,case_sequence,last_error,second_opinion_json) VALUES ('opinion','review','exercise_improvement','opinion','failed',?,?,'review',2,'validation_failed',?)`).run(at,at,JSON.stringify({requestId:'opinion',proposal,notes:''}));
+  assert.equal(listVocabularyAttention('editor',{},dependencies).items[0].reason,'Second opinion output failed validation.');
+  saveVocabularyProposal(proposal.proposalId,1,{rationale:'Revised',operations:proposal.operations},'editor');
   assert.equal(listVocabularyAttention('editor',{},dependencies).total,0);
+  closeVocabularyProposal(proposal.proposalId,2,'editor');
+  assert.equal(getVocabularyCaseCard('review','editor').state,'resolved');
 });
 test('a superseded source is visible and dismissible without changing the case on read',()=>{
   seed('obsolete','exercise_improvement');

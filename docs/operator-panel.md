@@ -263,7 +263,8 @@ reselecting a retained sense restores its exercises. A new sense without retaine
 exercises requires **Save selection and reassess** and an explicit model choice.
 That action saves shared defaults immediately and queues generation for exactly
 the selected senses. If queuing fails, the selection remains unsaved. If generation
-fails later, the defaults remain saved and the previous proposal returns to review.
+fails later, the defaults remain saved and the previous proposal stays locked until
+the reassessment succeeds or is abandoned.
 The existing proposal is replaced only after successful reassessment and still
 requires approval before application. If no exercises remain, dismiss the proposal;
 selection changes never imply source retirement.
@@ -321,9 +322,11 @@ identity where possible and pauses while an editor or unsaved defaults are open.
 The queue includes unknown word defaults requiring intervention, failed approval
 application, practice preparation and evidence dispatch, grouped sense reconciliations,
 and cases with no ordinary
-review destination. Failed learner-feedback jobs remain accessible here. Teaching
-cases without an assessment appear in Awaiting review. Failed reassessment and
-second opinions with an earlier reviewable result stay with that case.
+review destination. Failed learner-feedback, assessment, reassessment and second
+opinion jobs appear here. An earlier valid assessment or proposal remains visible but locked in its review
+queue while the failure is actionable here. Retry or abandon reassessment to
+continue. Teaching cases without an
+assessment appear in Awaiting review.
 
 Selected senses appear directly as toggle chips. Saving an explicit selection,
 including none, resolves the word finding without revising an existing proposal.
@@ -446,8 +449,9 @@ refresh. Refresh preserves the selected case and updates shared-source staleness
 even when its case revision has not changed. Unsaved edits, active mutations, and
 uncertain approval acknowledgements pause replacement of the displayed data.
 The full editor keeps its reviewed revision pinned; newer work requires explicit
-reload. Failed reassessment leaves the previous judgment visible with an explicit
-retry. A source-version conflict instead offers reassessment of the current source.
+reload. Failed reassessment leaves the previous judgment visible and locked;
+Needs attention offers retry or abandonment. After abandoning a source-conflicted
+reassessment, the operator can assess the current source.
 These reads do not authorize provider work or content application.
 
 ## Content sharing

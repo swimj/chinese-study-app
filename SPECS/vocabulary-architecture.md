@@ -242,7 +242,7 @@ saves shared defaults and queues reassessment atomically. It captures the exact
 selected senses for that invocation; later default edits do not change them,
 including on retry. Shared defaults take effect when the job is admitted. If
 admission fails, neither defaults nor a job is saved. If generation later fails,
-the saved defaults remain and the previous proposal returns to review. The old
+the saved defaults remain and the previous proposal stays locked until the reassessment is abandoned or succeeds. The old
 proposal is retained until successful reassessment replaces it; selecting senses
 never applies content. Source and canonical-catalog changes still fence generation.
 Shared-default edits outside repertoire review do not retarget or invalidate an

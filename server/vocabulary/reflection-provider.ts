@@ -34,6 +34,7 @@ import { getPureCueResolution, prepareVocabularyPureCuePromotion, prepareVocabul
 import { adaptVocabularyImprovementOutput, vocabularySingleImprovementSchema } from './exercise-improvement-authoring.ts';
 export { vocabularySingleImprovementSchema } from './exercise-improvement-authoring.ts';
 import { runVocabularyImprovementAdmission, type VocabularySenseEnsurer } from './improvement-admission.ts';
+import { InvalidAssessmentOutput } from './assessment-output-validation.ts';
 
 const SENSE_MAPPING_CONFIG = LUNA_REFLECTION_MODEL_CONFIG;
 
@@ -47,7 +48,7 @@ const improvementSchema=object({diagnosis:text,operations:{type:'array',items:ob
   strategy:{type:'string',enum:['create','update_existing','replace','retire']},rationale:text,prompt:text,acceptedAnswers:{type:'array',items:text}})}});
 const legacySingleImprovementSchema=object({...improvementSchema.properties!,
   responseExercises:{type:'array',items:object({wordId:text,prompt:text,rationale:text})},pureCueReferral:vocabularyPureCuePlanSchema});
-function nonempty(value:string):void{if(!value.trim())throw new VocabularyReflectionOutputError('Reflection output contains empty text');}
+function nonempty(value:string):void{if(!value.trim())throw new InvalidAssessmentOutput('Reflection output contains empty text');}
 function source(job:VocabularyReflectionJob,checkCurrent=true):VocabularyContent|null {
   if(job.reassessmentSourceJobId||job.reassessmentSource) {
     const pinned=job.reassessmentSource,current=checkCurrent&&pinned?getVocabularyContentForMaintenance(pinned.contentId):null;
@@ -83,7 +84,7 @@ export function projectVocabularyReflectionInput(job:VocabularyReflectionJob):un
 export function normalizeVocabularyReflectionOutput(job:VocabularyReflectionJob,value:unknown,invocationId?:string|null,withReferral=false):VocabularyReflectionResult {
   job=eligibleVocabularyReflectionJob(job);
   const schema=job.kind==='learner_feedback'?feedbackSchema:withReferral?legacySingleImprovementSchema:improvementSchema;
-  if(validateJsonSchema(value,schema).length)throw new VocabularyReflectionOutputError('Reflection output failed its strict schema');
+  if(validateJsonSchema(value,schema).length)throw new InvalidAssessmentOutput('Reflection output failed its strict schema');
   if(job.evidence.kind==='teaching_review'||job.evidence.evidence.some(item=>item.snapshot.role!=='general'))throw new VocabularyReflectionOutputError('Teaching belongs to the manual inbox');
   if(job.kind==='learner_feedback') {
     const result=value as {diagnosis:string;lesson:string;unfairEncounterIds:string[]};
@@ -91,7 +92,7 @@ export function normalizeVocabularyReflectionOutput(job:VocabularyReflectionJob,
     const unfairEncounterIds=result.unfairEncounterIds;
     if(new Set(unfairEncounterIds).size!==unfairEncounterIds.length||unfairEncounterIds.some(id=>
       !job.evidence.evidence.some(item=>item.encounterId===id&&item.responses.some(response=>response.payload.outcome==='rejected')))) {
-      throw new VocabularyReflectionOutputError('Unfair judgment must reference a supplied rejected encounter');
+      throw new InvalidAssessmentOutput('Unfair judgment must reference a supplied rejected encounter');
     }
     return {kind:'learner_feedback',judgment:{diagnosis:result.diagnosis,message:result.lesson,unfairEncounterIds,
       ...(invocationId?{invocationId}:{})}};
@@ -104,14 +105,14 @@ export function normalizeVocabularyReflectionOutput(job:VocabularyReflectionJob,
   if(!original||original.kind!=='exercise'||original.exerciseRole!=='general')throw new VocabularyReflectionOutputError('Improvement requires a general exercise');
   if(referral)validateVocabularyPureCueDraft(job,original,referral);
   const accepted=original.answers.flatMap(answer=>answer.acceptedForms);
-  if(result.operations.filter(operation=>operation.strategy!=='create').length>1)throw new VocabularyReflectionOutputError('A source can only be updated, replaced, or retired once');
+  if(result.operations.filter(operation=>operation.strategy!=='create').length>1)throw new InvalidAssessmentOutput('A source can only be updated, replaced, or retired once');
   const operations:VocabularyProposalOperation[]=result.operations.map((operation,index)=>{
     nonempty(operation.rationale);
     if(operation.sourceContentId!==original.contentId||!isDeepStrictEqual([...operation.acceptedAnswers].sort(),[...accepted].sort())) {
-      throw new VocabularyReflectionOutputError('Repair cannot invent source identities or change answer criteria');
+      throw new InvalidAssessmentOutput('Repair cannot invent source identities or change answer criteria');
     }
     if(operation.strategy==='retire') {
-      if(operation.prompt!=='')throw new VocabularyReflectionOutputError('Retirement cannot contain a replacement prompt');
+      if(operation.prompt!=='')throw new InvalidAssessmentOutput('Retirement cannot contain a replacement prompt');
       // Normalize the examined snapshot, like authored changes. The admission
       // fence handles concurrent source drift without invalidating valid output.
       const {version:_version,createdAt:_created,updatedAt:_updated,...content}=original;
@@ -120,9 +121,9 @@ export function normalizeVocabularyReflectionOutput(job:VocabularyReflectionJob,
     }
     nonempty(operation.prompt);
     if(copiesPrivateVocabularyEvidence(job,original.accessScope,[operation.prompt])) {
-      throw new VocabularyReflectionOutputError('Shared authored content cannot copy private learner evidence');
+      throw new InvalidAssessmentOutput('Shared authored content cannot copy private learner evidence');
     }
-    if(directCueContainsAcceptedForm(operation.prompt,accepted))throw new VocabularyReflectionOutputError('Retrieval prompt exposes an accepted answer');
+    if(directCueContainsAcceptedForm(operation.prompt,accepted))throw new InvalidAssessmentOutput('Retrieval prompt exposes an accepted answer');
     const previousBody=original.body!==null&&typeof original.body==='object'&&!Array.isArray(original.body)?original.body:{};
     const body:Record<string,VocabularyJson>={...previousBody,prompt:operation.prompt};
     if('stimulus' in body)body.stimulus={kind:'direct_text',text:operation.prompt};
@@ -139,11 +140,11 @@ export function normalizeVocabularyReflectionOutput(job:VocabularyReflectionJob,
     const responseExercises=(value as {responseExercises:{wordId:string;prompt:string;rationale:string}[]}).responseExercises;
     for(const [index,exercise] of responseExercises.entries()){
       const candidate=candidates.find(word=>word.wordId===exercise.wordId);
-      if(!candidate)throw new VocabularyReflectionOutputError('Response exercise requires a supplied unambiguous response identity');
+      if(!candidate)throw new InvalidAssessmentOutput('Response exercise requires a supplied unambiguous response identity');
       nonempty(exercise.prompt);nonempty(exercise.rationale);
       const acceptedForms=[...new Set([candidate.hanzi,...(candidate.traditional?[candidate.traditional]:[])])];
-      if(directCueContainsAcceptedForm(exercise.prompt,acceptedForms))throw new VocabularyReflectionOutputError('Response prompt exposes an accepted answer');
-      if(copiesPrivateVocabularyEvidence(job,original.accessScope,[exercise.prompt]))throw new VocabularyReflectionOutputError('Shared authored content cannot copy private learner evidence');
+      if(directCueContainsAcceptedForm(exercise.prompt,acceptedForms))throw new InvalidAssessmentOutput('Response prompt exposes an accepted answer');
+      if(copiesPrivateVocabularyEvidence(job,original.accessScope,[exercise.prompt]))throw new InvalidAssessmentOutput('Shared authored content cannot copy private learner evidence');
       operations.push({operationKey:`response-${index+1}`,strategy:'create',rationale:exercise.rationale,
         scope:original.accessScope==='shared'?{kind:'shared'}:{kind:'learner',learnerId:original.ownerLearnerId!},
         content:{contentId:randomUUID(),kind:'exercise',payloadVersion:1,body:{prompt:exercise.prompt,instruction:'',stimulus:{kind:'direct_text',text:exercise.prompt},
@@ -268,18 +269,19 @@ The input's operatorEditorial contains optional operator instructions and an exp
           throw error;
         });
       try {
-        if(isOutputTruncationFinishReason(result.finishReason))throw new VocabularyReflectionOutputError('Reflection output was truncated');
-        let value:unknown=JSON.parse(result.rawText);
+        if(isOutputTruncationFinishReason(result.finishReason))throw new InvalidAssessmentOutput('Reflection output was truncated',step);
+        let value:unknown;
+        try{value=JSON.parse(result.rawText);}catch(error){if(error instanceof SyntaxError)throw new InvalidAssessmentOutput('Reflection output was not valid JSON',step,{cause:error});throw error;}
         if(shared||projected){
-          if(validateJsonSchema(value,wireSchema).length)throw new VocabularyReflectionOutputError('Improvement stage failed strict output schema');
+          if(validateJsonSchema(value,wireSchema).length)throw new InvalidAssessmentOutput('Improvement stage failed strict output schema',step);
           if(shared)value=normalizeGeneralExerciseReferences(input as GeneralExerciseSource,value);
           else if(step==='sense_mapping'){
             const mapped=value as {senseIds:string[]};
-            value={...mapped,senseIds:mapped.senseIds.map(id=>projected!.references.canonical(id))};
+            value={...mapped,senseIds:mapped.senseIds.map(id=>{try{return projected!.references.canonical(id);}catch(error){throw new InvalidAssessmentOutput('Unknown call-local sense reference',step,{cause:error});}})};
           }
         }
         return {value,invocationId:result.invocationId};
-      }catch(error){invalidateServiceInvocation(result.invocationId,VOCABULARY_REFLECTION_SERVICE_ID);throw error;}
+      }catch(error){invalidateServiceInvocation(result.invocationId,VOCABULARY_REFLECTION_SERVICE_ID);throw error instanceof InvalidAssessmentOutput?error.atStage(step):error;}
     };
     if(job.kind==='exercise_improvement'&&isVocabularyCaseSourceSuperseded(job.caseId,job.jobId))
       throw new VocabularyReflectionSourceConflict('Assessment source changed before admission');
@@ -297,13 +299,13 @@ The input's operatorEditorial contains optional operator instructions and an exp
       const response=await runCall('second_opinion',{proposal:job.secondOpinion.proposal,operatorNotes:job.secondOpinion.notes,
         sources,originalDiagnosis:job.secondOpinion.diagnosis ?? null,evidence:projectVocabularyReflectionInput(job)},schema,'second-opinion','3');
       try {
-        if(validateJsonSchema(response.value,schema).length)throw new VocabularyReflectionOutputError('Second opinion failed its strict schema');
+        if(validateJsonSchema(response.value,schema).length)throw new InvalidAssessmentOutput('Second opinion failed its strict schema');
         const opinion=response.value as import('../../src/domain/vocabulary-reflection.ts').VocabularySecondOpinionVerdict;
         nonempty(opinion.rationale);
         if(context?.canPublish&&!context.canPublish())throw new VocabularyReflectionOutputError('Second opinion lost publication authority');
         return {kind:'exercise_improvement',result:{diagnosis:opinion.rationale,proposal:null,secondOpinion:opinion,
           ...(response.invocationId?{invocationId:response.invocationId}:{})}};
-      } catch(error) {invalidateServiceInvocation(response.invocationId,VOCABULARY_REFLECTION_SERVICE_ID);throw error;}
+      } catch(error) {invalidateServiceInvocation(response.invocationId,VOCABULARY_REFLECTION_SERVICE_ID);throw error instanceof InvalidAssessmentOutput?error.atStage('second_opinion'):error;}
     }
     const original=job.kind==='exercise_improvement'?source(job):null;
     const resolution=job.reassessmentSourceJobId?getPureCueResolution(job.jobId):null;
@@ -329,7 +331,7 @@ The input's operatorEditorial contains optional operator instructions and an exp
         evidence:projectVocabularyReflectionInput(job),intendedSense:senses.find(sense=>sense.senseId===admission.senseIds[0]),
         localAssessment:resolution.diagnosis,localPlan:resolution.localPlan??null,...promotion.input},promotionSchema,coherent?'pure-cue-integration':'pure-cue-promotion',coherent?'3':'4');
       try{
-        if(validateJsonSchema(response.value,promotionSchema).length)throw new VocabularyReflectionOutputError('Promotion failed strict output schema');
+        if(validateJsonSchema(response.value,promotionSchema).length)throw new InvalidAssessmentOutput('Promotion failed strict output schema');
         const promoted=promotion.normalize(response.value,response.invocationId);fence();
         if(response.invocationId){
           const actor={kind:'service' as const,id:VOCABULARY_REFLECTION_SERVICE_ID};
@@ -341,7 +343,7 @@ The input's operatorEditorial contains optional operator instructions and an exp
         return {kind:'exercise_improvement',result:{diagnosis,admission,pureCueReferral:referral,pureCuePromotion:promoted.assessment,
           ...(response.invocationId?{invocationId:response.invocationId}:{}),proposal:operations.length?{operations,rationale:diagnosis,
             bases:[{contentId:original.contentId,expectedVersion:original.version},...promoted.bases],...(response.invocationId?{invocationId:response.invocationId}:{})}:null}};
-      }catch(error){invalidateServiceInvocation(response.invocationId,VOCABULARY_REFLECTION_SERVICE_ID);throw error;}
+      }catch(error){invalidateServiceInvocation(response.invocationId,VOCABULARY_REFLECTION_SERVICE_ID);throw error instanceof InvalidAssessmentOutput?error.atStage('pure_cue_promotion'):error;}
     }
     if(original?.kind==='exercise'&&original.exerciseType==='pure_cue'){
       const review=prepareVocabularyPureCueImprovement(job,original);review.fence();
@@ -349,7 +351,7 @@ The input's operatorEditorial contains optional operator instructions and an exp
       if(context?.canPublish&&!context.canPublish())throw new Error('Reflection lost publication authority');
       review.fence();
       try{return review.normalize(response.value,response.invocationId);}
-      catch(error){invalidateServiceInvocation(response.invocationId,VOCABULARY_REFLECTION_SERVICE_ID);throw error;}
+      catch(error){invalidateServiceInvocation(response.invocationId,VOCABULARY_REFLECTION_SERVICE_ID);throw error instanceof InvalidAssessmentOutput?error.atStage('pure_cue_improvement'):error;}
     }
     if(job.kind==='exercise_improvement'&&job.evidence.wordId!==null&&original?.kind==='exercise'
       &&original.skill==='production'&&original.exerciseType!=='pure_cue'&&original.answers.length===1&&original.answers[0]?.wordId===job.evidence.wordId
@@ -370,6 +372,6 @@ The input's operatorEditorial contains optional operator instructions and an exp
     if(job.kind==='exercise_improvement')throw new VocabularyReflectionOutputError('Exercise has no supported improvement contract');
     const result=await runCall(kind,projectVocabularyReflectionInput(job),feedbackSchema,kind,'4');
     try{return normalizeVocabularyReflectionOutput(job,result.value,result.invocationId);}
-    catch(error){invalidateServiceInvocation(result.invocationId,VOCABULARY_REFLECTION_SERVICE_ID);throw error;}
+    catch(error){invalidateServiceInvocation(result.invocationId,VOCABULARY_REFLECTION_SERVICE_ID);throw error instanceof InvalidAssessmentOutput?error.atStage(kind):error;}
   }};
 }
