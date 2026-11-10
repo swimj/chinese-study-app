@@ -4,7 +4,7 @@ import type { VocabularyCaseQueueItem, VocabularyOperationReview, VocabularyServ
 
 const strategies = { create: 'Add', update_existing: 'Update', replace: 'Replace', retire: 'Retire' };
 const roles = { source_repair: 'Source repair', refinement: 'Refinement', enrichment: 'Enrichment', shared: 'Shared practice' };
-const outcomes: Record<string, string> = { single_sense: 'Exercise improvement', repertoire_bootstrap: 'Default selected senses', already_covered: 'Authored practice already exists', laundry_list: 'Default selected senses', unmappable: 'Sense needs review', inventory_gap: 'Sense inventory needs review', needs_coverage: 'Useful senses need review', no_senses_requested: 'No senses selected' };
+const outcomes: Record<string, string> = { single_sense: 'Exercise improvement', repertoire_bootstrap: 'Default selected senses', selected_repertoire: 'Selected repertoire', needs_repertoire: 'Repertoire needs review', already_covered: 'Authored practice already exists', laundry_list: 'Default selected senses', unmappable: 'Sense needs review', inventory_gap: 'Sense inventory needs review', needs_coverage: 'Useful senses need review', no_senses_requested: 'No senses selected' };
 const stages: Record<string, string> = { sense_mapping: 'Sense mapping', single_improvement: 'Exercise improvement', pure_cue_promotion: 'Shared cue integration', pure_cue_improvement: 'Pure cue improvement', repertoire: 'Repertoire', exercise_improvement: 'Exercise improvement' };
 
 const icons = { create: '+', update_existing: '↻', replace: '⇄', retire: '−' };
@@ -96,7 +96,8 @@ export function CaseReviewCard({ item, children, onDetails, showDetails = false,
   const groups = new Map<string, VocabularyOperationReview[]>();
   for (const operation of item.proposal?.operations ?? []) groups.set(operation.groupLabel, [...(groups.get(operation.groupLabel) ?? []), operation]);
   const encounterTime = first?.presentedAt;
-  const repertoire = ['repertoire_bootstrap', 'laundry_list'].includes(item.assessment?.outcome ?? '');
+  const selectedRepertoire = item.assessment?.outcome === 'selected_repertoire';
+  const repertoire = selectedRepertoire || ['repertoire_bootstrap', 'laundry_list'].includes(item.assessment?.outcome ?? '');
   const summary = item.assessment?.diagnosis || item.proposal?.rationale || '';
   const authorStages = ['repertoire', 'single_improvement', 'pure_cue_improvement', 'exercise_improvement'];
   const author = authorStages.flatMap(stage => item.assessment?.models.filter(model => model.stage === stage) ?? [])[0];
@@ -114,10 +115,10 @@ export function CaseReviewCard({ item, children, onDetails, showDetails = false,
     {changedSources.length > 0 && <details className="vocabulary-source-summary" ><summary>Source changed{changedSources.length === 1 ? '' : 's'}</summary>{changedSources.map(source => <article key={source.contentId}><p className="vocabulary-operator-meta">Assessed v{source.expectedVersion} · {source.version === null ? 'unavailable' : `current v${source.version}`}{source.availability ? ` · ${source.availability}` : ''}</p>{source.prompt !== null && <p className="vocabulary-operator-cue">{source.prompt}</p>}{source.acceptedAnswers.length > 0 && <p><strong>Accepted answers:</strong> {source.acceptedAnswers.join(' · ')}</p>}</article>)}</details>}
     </div>
     {!item.proposal && editCue?.(null)}
-    <h3 className="vocabulary-improvement-heading">{repertoire ? <><span aria-hidden="true">📖</span> Repertoire bootstrap</> : 'Proposed improvement'}</h3>
+    <h3 className="vocabulary-improvement-heading">{selectedRepertoire ? 'Selected repertoire' : repertoire ? <><span aria-hidden="true">📖</span> Repertoire bootstrap</> : 'Proposed improvement'}</h3>
     {item.proposal?.authorKind === 'operator' ? <p className="vocabulary-operator-meta">Operator correction</p> : author && <p className="vocabulary-operator-meta" aria-label="Content model">{author.resolvedModel ?? author.model}</p>}
-    {summary && !repertoire && summary.trim() !== item.finding?.message.trim() && <p>{summary}</p>}
-    {item.finding && <p className="vocabulary-case-finding"><strong>{{unmappable:'Intended sense unresolved',inventory_gap:'Sense inventory gap',needs_coverage:'Useful senses need review',needs_operator:'Candidate identity unresolved'}[item.finding.kind]}</strong>{item.finding.message && ` · ${item.finding.message}`}</p>}
+    {summary && (!repertoire || !item.proposal) && summary.trim() !== item.finding?.message.trim() && <p>{summary}</p>}
+    {item.finding && <p className="vocabulary-case-finding"><strong>{{unmappable:'Intended sense unresolved',inventory_gap:'Sense inventory gap',needs_coverage:'Useful senses need review',needs_operator:'Candidate identity unresolved',selected_repertoire:'Selected repertoire',needs_repertoire:'Repertoire needs review'}[item.finding.kind]}</strong>{item.finding.message && ` · ${item.finding.message}`}</p>}
     {item.kind !== 'teaching_review' && item.state === 'open' && !item.reassessment.eligible && item.reassessment.reason && <p className="vocabulary-operator-meta">Reassessment unavailable: {item.reassessment.reason}</p>}
     {item.state === 'resolved' && <p><strong>Resolved</strong>{item.resolvedAt ? ` · ${new Date(item.resolvedAt).toLocaleString()}` : ''}</p>}
     {item.activeJob && <p role="status">{item.frozen ? 'Reassessment' : 'Assessment'} {item.activeJob.sequence} {item.activeJob.status === 'queued' ? 'queued' : 'running'}{item.frozen ? ' · review is paused' : ''}</p>}

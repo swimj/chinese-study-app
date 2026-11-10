@@ -182,7 +182,16 @@ publication/approval fences without reclassifying valid provider output as malfo
 ### Dictionary fallback and sense mapping
 
 After sense readiness, deterministic source routing separates dictionary
-fallback bootstrap from authored-cue assessment. An uncovered fallback captures
+fallback cases from authored-cue assessment. With saved useful defaults, a new
+fallback assessment records `needs_repertoire` without generating exercises.
+**Review repertoire** displays the active inventory and published exercises in
+the source's publication scope, including exercises for nondefault senses.
+**Generate for selected** captures an explicit case selection and queues the
+shared authoring flow. It uses the normal proposal review for additions and
+preserves existing content. Earlier no-change fallback assessments can also
+open the repertoire review.
+
+In the legacy bootstrap path, an uncovered fallback captures
 the selected senses from shared word defaults and invokes the
 shared general-exercise contract: the full general v5 brief, structured direct
 and cloze stimuli, optional teaching notes, and shared validation. It retains the

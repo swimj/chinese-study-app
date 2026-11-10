@@ -63,7 +63,7 @@ export type VocabularyGenerationScope = {
     | {kind:'word_defaults';wordId:string;capturedVersion:number};
 };
 export type VocabularyImprovementAdmission = {
-  outcome: 'single_sense' | 'repertoire_bootstrap' | 'already_covered' | 'laundry_list' | 'unmappable' | 'inventory_gap' | 'no_senses_requested' | 'needs_coverage';
+  outcome: 'single_sense' | 'repertoire_bootstrap' | 'selected_repertoire' | 'already_covered' | 'laundry_list' | 'unmappable' | 'inventory_gap' | 'no_senses_requested' | 'needs_coverage' | 'needs_repertoire';
   rationale: string; wordId: string; sourceContentId: string; sourceContentVersion: number;
   catalogVersion: number; senseIds: string[]; invocationId?: string;
   generationScope?: VocabularyGenerationScope | null;

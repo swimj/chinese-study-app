@@ -506,7 +506,8 @@ export function recordVocabularyImprovementResult(jobId: string, token: string, 
       if (needsAttention && input.proposal !== null) throw new Error('Unresolved sense admission cannot propose automatic repairs');
     }
     const repertoireSelection = getVocabularyRepertoireSelection(jobId);
-    if (repertoireSelection && (input.admission?.outcome !== 'repertoire_bootstrap'
+    if (repertoireSelection && (input.admission?.outcome !==
+        (repertoireSelection.generationScope.source.kind === 'review_override' ? 'selected_repertoire' : 'repertoire_bootstrap')
       || input.admission.wordId !== repertoireSelection.wordId || input.admission.catalogVersion !== repertoireSelection.catalogVersion
       || !isDeepStrictEqual(input.admission.generationScope, repertoireSelection.generationScope)))
       throw new VocabularyReflectionConflict('Assessment did not honor the captured repertoire selection');

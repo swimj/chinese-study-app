@@ -187,7 +187,7 @@ test('in-flight automatic authoring retains its real attempt but cannot duplicat
   }}});
   const work=preparation.ensure('w1')!;assert.equal(await preparation.preflight(work.workId),true);
   const token=preparation.claim(work.workId)!;assert.ok(token);assert.deepEqual(await preparation.run(work.workId,token),[]);
-  assert.equal(calls,1);assert.deepEqual(authoredVocabularyRepertoire('w1').map(row=>row.content_id),['manual-repertoire']);
+  assert.equal(calls,1);assert.deepEqual(authoredVocabularyRepertoire('w1').map(content=>content.contentId),['manual-repertoire']);
   const settled=db.prepare('SELECT status,attempt_count,total_attempt_count,active_token FROM vocabulary_practice_preparation WHERE work_id=?').get(work.workId)!;
   assert.equal(settled.status,'ready');assert.equal(settled.attempt_count,1);assert.equal(settled.total_attempt_count,1);assert.equal(settled.active_token,null);
   const attempt=db.prepare('SELECT * FROM vocabulary_preparation_attempts WHERE attempt_id=?').get(token)!;assert.equal(attempt.outcome,'ready');assert.ok(attempt.finished_at);

@@ -11,7 +11,7 @@ import { isOfferedReflectionModelChoice } from '../reflection/model-arms.ts';
 import { createVocabularyPracticePreparation } from './preparation.ts';
 import { createOperatorAllowlistMiddleware } from '../operator-access.ts';
 import { getVocabularyApprovalRequests } from './approval-requests.ts';
-import { listVocabularyCaseQueue,getVocabularyCaseCard,setVocabularyCaseDeferred,resolveVocabularyCaseReview,proposeVocabularyCaseRetirement,reassessVocabularyCaseReview,addVocabularyCaseNote } from '../db/vocabulary-case-queue.ts';
+import { listVocabularyCaseQueue,getVocabularyCaseCard,setVocabularyCaseDeferred,resolveVocabularyCaseReview,proposeVocabularyCaseRetirement,getVocabularyFallbackRepertoire,generateVocabularyFallbackRepertoire,reassessVocabularyCaseReview,addVocabularyCaseNote } from '../db/vocabulary-case-queue.ts';
 import { getVocabularyCaseWorkspace, listVocabularyReflectionCases, listVocabularyProposals, listVocabularyProposalReviewBatch, getVocabularyProposal, getVocabularyOriginalModelProposal,
   requestVocabularyPureCueResolution, requestVocabularyReassessment, requestVocabularySecondOpinion, listVocabularySecondOpinions, listVocabularyNoProposalCases, requestVocabularyCaseSecondOpinion, createVocabularyProposal, saveVocabularyProposal, previewVocabularyProposal, approveVocabularyProposal,
   applyVocabularyProposal, closeVocabularyProposal, closeVocabularyCase, dismissSupersededVocabularyCase, listOwnVocabularyMessages,
@@ -117,6 +117,22 @@ export function registerVocabularyReflectionRoutes(app:Express,options:{wake?:()
   app.post(`${base}/case-queue/:id/retirement-proposal`,gate,handle((req,actor)=>{
     const input=object(req.body,['expectedVersion']);
     return proposeVocabularyCaseRetirement(text(req.params.id),version(input.expectedVersion),actor);
+  }));
+  app.get(`${base}/case-queue/:id/fallback-repertoire`,gate,handle((req,actor)=>{
+    object(req.query,[]);
+    return getVocabularyFallbackRepertoire(text(req.params.id),actor);
+  }));
+  app.post(`${base}/case-queue/:id/fallback-repertoire`,gate,handle((req,actor)=>{
+    const input=object(req.body,['expectedVersion','expectedContentVersion','expectedCatalogVersion','expectedWordVersion','senseIds','modelChoice']);
+    const model=input.modelChoice;
+    if(!isOfferedReflectionModelChoice(model))throw new VocabularyReflectionRequestError('Unsupported assessment model');
+    const result=generateVocabularyFallbackRepertoire(text(req.params.id),{
+      expectedVersion:version(input.expectedVersion),expectedContentVersion:version(input.expectedContentVersion),
+      expectedCatalogVersion:version(input.expectedCatalogVersion),expectedWordVersion:version(input.expectedWordVersion),
+      senseIds:list(input.senseIds).map(text),
+    },actor,model);
+    options.wake?.();
+    return result;
   }));
   app.post(`${base}/case-queue/:id/notes`,gate,handle((req,actor)=>{
     const input=object(req.body,['expectedVersion','requestId','text']);

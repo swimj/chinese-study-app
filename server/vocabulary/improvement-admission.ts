@@ -122,7 +122,27 @@ export async function runVocabularyImprovementAdmission(options: {
   // of learner adoption, deactivation, scheduling and selected serving senses.
   const authoredPractice = () => authoredVocabularyRepertoire(wordId,{accessScope:original.accessScope,ownerLearnerId:original.ownerLearnerId,excludeContentId:original.contentId});
   const bootstrap=!job.repairTarget&&isVocabularyDefinitionFallback(current);
-  const covered=bootstrap?authoredPractice():[];
+  const generateForReview = capturedSelection?.generationScope.source.kind === 'review_override';
+  const routeInput=bootstrap?JSON.stringify({contract:'deterministic-repertoire-bootstrap-v1',sourceContent:original,catalog:readiness.catalog,senses:inventory}):'';
+  const routeHash=bootstrap?createHash('sha256').update(routeInput).digest('hex'):'';
+  const routeCached=bootstrap?getDb().prepare("SELECT result_json FROM vocabulary_improvement_stages WHERE job_id=? AND stage='sense_mapping' AND input_hash=?").get(job.jobId,routeHash) as {result_json:string}|undefined:undefined;
+  if (bootstrap && !capturedSelection && !routeCached) {
+    const coverage = resolveVocabularySenseCoverage(wordId);
+    if (coverage.selectionEstablished) {
+      const outcome = coverage.includedSenseIds.length ? 'needs_repertoire' : 'no_senses_requested';
+      const rationale = outcome === 'needs_repertoire'
+        ? 'A dictionary fallback was served. Review existing practice and choose which senses to generate for.'
+        : 'No useful senses are selected for production.';
+      fence();
+      return {kind:'exercise_improvement',result:{diagnosis:rationale,proposal:null,admission:{
+        outcome,rationale,wordId,sourceContentId:original.contentId,sourceContentVersion:original.version,
+        catalogVersion:readiness.catalog.version,senseIds:[],sourceMapping:{...expectedMapping},
+        generationScope:{selectionEstablished:true,senseIds:[...coverage.includedSenseIds],
+          source:{kind:'word_defaults',wordId,capturedVersion:coverage.word.version}},
+      }}};
+    }
+  }
+  const covered=bootstrap&&!generateForReview?authoredPractice():[];
   if (capturedSelection && (!bootstrap || covered.length)) throw new VocabularyReflectionConflict('The selected repertoire can no longer bootstrap from this source; request a fresh assessment');
   if(covered.length) {
     fence();
@@ -130,13 +150,10 @@ export async function runVocabularyImprovementAdmission(options: {
       admission:{outcome:'already_covered',rationale:'Current authored production practice already exists.',wordId,sourceContentId:original.contentId,sourceContentVersion:original.version,
         catalogVersion:readiness.catalog.version,senseIds:[],sourceMapping:{...expectedMapping}}}};
   }
-  if(bootstrap)assertLifecycle=()=>{if(authoredPractice().length)throw new VocabularyReflectionConflict('Authored production practice changed during repertoire bootstrap');};
-  const routeInput=JSON.stringify({contract:'deterministic-repertoire-bootstrap-v1',sourceContent:original,catalog:readiness.catalog,senses:inventory});
-  const routeHash=createHash('sha256').update(routeInput).digest('hex');
-  const routeCached=bootstrap?getDb().prepare("SELECT result_json FROM vocabulary_improvement_stages WHERE job_id=? AND stage='sense_mapping' AND input_hash=?").get(job.jobId,routeHash) as {result_json:string}|undefined:undefined;
+  if(bootstrap&&!generateForReview)assertLifecycle=()=>{if(authoredPractice().length)throw new VocabularyReflectionConflict('Authored production practice changed during repertoire bootstrap');};
   let mapped:{value:MappingEvidence;invocationId?:string};
   if(bootstrap){
-    const value:MappingEvidence=routeCached?JSON.parse(routeCached.result_json) as MappingEvidence:{outcome:'repertoire_bootstrap',rationale:'Dictionary fallback has no current authored production practice in its publication scope; bootstrap the selected repertoire.',senseIds:[],generationScope:null,observedMapping:{...expectedMapping},mappingTimestamp:new Date().toISOString()};
+    const value:MappingEvidence=routeCached?JSON.parse(routeCached.result_json) as MappingEvidence:{outcome:'repertoire_bootstrap',rationale:generateForReview?'Generate additional practice for the operator-selected senses.':'Dictionary fallback has no current authored production practice in its publication scope; bootstrap the selected repertoire.',senseIds:[],generationScope:null,observedMapping:{...expectedMapping},mappingTimestamp:new Date().toISOString()};
     if(!routeCached)getDb().prepare("INSERT INTO vocabulary_improvement_stages(job_id,stage,input_hash,input_json,result_json,invocation_id,recorded_at) VALUES (?,'sense_mapping',?,?,?,?,?)")
       .run(job.jobId,routeHash,routeInput,JSON.stringify(value),null,new Date().toISOString());
     mapped={value};
@@ -176,7 +193,7 @@ export async function runVocabularyImprovementAdmission(options: {
   const sameBefore = expectedMapping.senseId===before.senseId && expectedMapping.establishedAt===before.establishedAt;
   if(!sameBefore) throw new VocabularyReflectionConflict('Sense mapping changed since the retained admission decision');
   const {observedMapping:_observed,mappingTimestamp:_timestamp,...mappingDecision}=mapped.value;
-  const admission = {...mappingDecision,wordId,sourceContentId:original.contentId,sourceContentVersion:original.version,catalogVersion:readiness.catalog.version,sourceMapping:{...expectedMapping},
+  const admission = {...mappingDecision,outcome:generateForReview?'selected_repertoire' as const:mappingDecision.outcome,wordId,sourceContentId:original.contentId,sourceContentVersion:original.version,catalogVersion:readiness.catalog.version,sourceMapping:{...expectedMapping},
     ...(job.repairTarget?{repairTargetVersion:job.repairTarget.version}:{}),
     ...(mapped.invocationId?{invocationId:mapped.invocationId}:{})};
   if (mapped.value.outcome==='unmappable'||mapped.value.outcome==='inventory_gap') {
@@ -222,6 +239,10 @@ export async function runVocabularyImprovementAdmission(options: {
   const result = await stage<ImprovementResult>('repertoire',input,generalExerciseSchema(input),(value,invocationId)=>{
     const repertoire=validateGeneralExerciseOutput(input,value);
     let diagnosis=mapped.value.rationale;
+    if(generateForReview&&!repertoire.exercises.length) {
+      return {kind:'exercise_improvement',result:{diagnosis:'No exercises were generated for the selected senses.',proposal:null,
+        ...(invocationId?{invocationId}:{})}};
+    }
     if(!repertoire.exercises.length){
       const remaining=getDb().prepare(`SELECT count(*) AS count FROM content_items c
         JOIN content_words w ON w.content_id=c.content_id AND w.word_id=? AND w.relation='target'
@@ -231,7 +252,7 @@ export async function runVocabularyImprovementAdmission(options: {
       diagnosis=`${mapped.value.rationale}\n\nAuthoring returned no exercises for the selected exact target. The authoring contract provides no explanatory rationale. Propose retiring this source without changing the selected sense coverage. At assessment time, ${remaining.count} other active general production exercise${remaining.count===1?'':'s'} existed for this word in the same publication scope.${remaining.count===0?' Retiring this source would leave none in that scope.':''}`;
     }
     const authoredOperations=repertoire.exercises.map((exercise,index)=>({sourceContentId:original.contentId,
-      strategy:index===0?'replace':'create',rationale:diagnosis,
+      strategy:index===0&&!generateForReview?'replace':'create',rationale:diagnosis,
       prompt:exercise.stimulus.kind==='direct_text'?exercise.stimulus.text:vocabularyPhraseClozePrompt(exercise.stimulus.frame, exercise.stimulus.text),
       acceptedAnswers:original.answers.flatMap(answer=>answer.acceptedForms)}));
     const normalized=options.normalize({diagnosis,operations:authoredOperations.length?authoredOperations:[{sourceContentId:original.contentId,
