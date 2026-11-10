@@ -17,7 +17,7 @@ import { getDb } from '../db/connection.ts';
 import { allocateSessionBucketSlots, DEFAULT_SESSION_BUCKET_WEIGHTS } from '../../src/domain/session-limits.ts';
 import { composeVocabularyStudy, type VocabularyComposition } from './composition.ts';
 import { planVocabularyPureCues } from './pure-cue-serving.ts';
-import { isVocabularyProductionProxied } from './production-coverage.ts';
+import { hasExplicitlyEmptyProductionDefaults, isVocabularyProductionProxied } from './production-coverage.ts';
 import { isVocabularyDefinitionFallback } from '../../src/domain/vocabulary-production-coverage.ts';
 import { ensureVocabularySensesFromBootstrap } from './sense-readiness.ts';
 import { requireLearnerId } from '../db/learner-context.ts';
@@ -84,7 +84,8 @@ function contrastEligible(content:VocabularyContent,wordId:string):boolean {
   });
 }
 function availableGeneral(wordId:string,mode:'solidify'|'practice'|'maintain'):VocabularyContent[] {
-  const allowFallback=mode==='solidify'||!isVocabularyProductionProxied(wordId);
+  const allowProduction=mode==='solidify'||!hasExplicitlyEmptyProductionDefaults(wordId);
+  const allowFallback=allowProduction&&(mode==='solidify'||!isVocabularyProductionProxied(wordId));
   let pool=listVocabularyExercises({wordId,mode}).filter((entry)=>eligible(entry)&&entry.kind==='exercise'&&entry.exerciseType!=='pure_cue'
     // Scope repair retains old baseline identities. Only serve this learner's
     // selected baseline, rather than every migrated copy for the same word.
@@ -92,7 +93,7 @@ function availableGeneral(wordId:string,mode:'solidify'|'practice'|'maintain'):V
       ||entry.contentId===getDictionaryBaseline(wordId,entry.skill==='recognition'?'recognition':'production','general')?.contentId)
     &&(allowFallback||entry.skill!=='production'||!isVocabularyDefinitionFallback(entry))
     &&(mode==='solidify'?!isContrast(entry)&&(entry.skill==='recognition'||entry.skill==='production')
-      :isContrast(entry)?contrastEligible(entry,wordId):entry.skill==='recognition'?skillEnabled(wordId,'recognition'):skillEnabled(wordId,'production')));
+      :isContrast(entry)?contrastEligible(entry,wordId):entry.skill==='recognition'?skillEnabled(wordId,'recognition'):allowProduction&&skillEnabled(wordId,'production')));
   // Persisted baselines remain fallback material, even after a previous session
   // created them. They must not compete with eligible authored production.
   if(pool.some((entry)=>entry.kind==='exercise'&&entry.skill==='production'&&!isContrast(entry)&&!isVocabularyDefinitionFallback(entry))) {

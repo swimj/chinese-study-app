@@ -427,6 +427,8 @@ The migration makes no provider calls and applies no proposed content.
 and compatible excluded IDs. Null is unknown; `[]` explicitly selects none.
 Word selection has a compare-and-swap version, immutable change history and
 backend events. Historical case scope rows are retained but do not resolve policy.
+In coverage review, **No useful senses** saves an explicit empty selection and
+excludes individual-word production from Practice and Maintain for all learners.
 Mapping receives every active sense and no serving-policy metadata. Its chosen
 sense is evidence for a proposed repair, including excluded uses; assessment
 never writes the source mapping. Proposal application commits the reviewed binding
