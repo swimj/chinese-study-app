@@ -499,6 +499,10 @@ reassessment input.
 
 ## Explicit retirement proposals
 
+For an unresolved sense or inventory gap on an unchanged, active exercise,
+**Retire exercise…** on the case card creates an operator retirement proposal.
+The operator reviews and applies it through the ordinary approval flow.
+
 A proposal can `retire` an active general production exercise without creating a
 successor. Approval changes only its live availability and version. Its content
 identity, schedules, deactivations, teaching references, and historical encounters

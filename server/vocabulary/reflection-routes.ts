@@ -11,7 +11,7 @@ import { isOfferedReflectionModelChoice } from '../reflection/model-arms.ts';
 import { createVocabularyPracticePreparation } from './preparation.ts';
 import { createOperatorAllowlistMiddleware } from '../operator-access.ts';
 import { getVocabularyApprovalRequests } from './approval-requests.ts';
-import { listVocabularyCaseQueue,getVocabularyCaseCard,setVocabularyCaseDeferred,resolveVocabularyCaseReview,reassessVocabularyCaseReview,addVocabularyCaseNote } from '../db/vocabulary-case-queue.ts';
+import { listVocabularyCaseQueue,getVocabularyCaseCard,setVocabularyCaseDeferred,resolveVocabularyCaseReview,proposeVocabularyCaseRetirement,reassessVocabularyCaseReview,addVocabularyCaseNote } from '../db/vocabulary-case-queue.ts';
 import { getVocabularyCaseWorkspace, listVocabularyReflectionCases, listVocabularyProposals, listVocabularyProposalReviewBatch, getVocabularyProposal, getVocabularyOriginalModelProposal,
   requestVocabularyPureCueResolution, requestVocabularyReassessment, requestVocabularySecondOpinion, listVocabularySecondOpinions, listVocabularyNoProposalCases, requestVocabularyCaseSecondOpinion, createVocabularyProposal, saveVocabularyProposal, previewVocabularyProposal, approveVocabularyProposal,
   applyVocabularyProposal, closeVocabularyProposal, closeVocabularyCase, dismissSupersededVocabularyCase, listOwnVocabularyMessages,
@@ -113,6 +113,10 @@ export function registerVocabularyReflectionRoutes(app:Express,options:{wake?:()
   }));
   app.post(`${base}/case-queue/:id/resolve`,gate,handle((req,actor)=>{
     const input=object(req.body,['expectedVersion','reason']);return resolveVocabularyCaseReview(text(req.params.id),version(input.expectedVersion),actor,optionalText(input.reason));
+  }));
+  app.post(`${base}/case-queue/:id/retirement-proposal`,gate,handle((req,actor)=>{
+    const input=object(req.body,['expectedVersion']);
+    return proposeVocabularyCaseRetirement(text(req.params.id),version(input.expectedVersion),actor);
   }));
   app.post(`${base}/case-queue/:id/notes`,gate,handle((req,actor)=>{
     const input=object(req.body,['expectedVersion','requestId','text']);

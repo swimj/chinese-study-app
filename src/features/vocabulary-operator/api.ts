@@ -37,6 +37,7 @@ export const vocabularyOperatorApi={
   caseCard:(caseId:string,proposalId?:string)=>apiRequest<VocabularyCaseQueueItem>(`${root}/case-queue/${id(caseId)}${proposalId?`?proposalId=${id(proposalId)}`:''}`),
   setCaseDeferred:(caseId:string,expectedVersion:number,deferred:boolean)=>write<VocabularyCaseQueueItem>(`/case-queue/${id(caseId)}/deferred`,{expectedVersion,deferred}),
   resolveCaseReview:(caseId:string,expectedVersion:number,reason='')=>write<VocabularyCaseQueueItem>(`/case-queue/${id(caseId)}/resolve`,{expectedVersion,reason}),
+  proposeCaseRetirement:(caseId:string,expectedVersion:number)=>write<VocabularyCaseQueueItem>(`/case-queue/${id(caseId)}/retirement-proposal`,{expectedVersion}),
   addCaseNote:(caseId:string,expectedVersion:number,requestId:string,text:string)=>write<VocabularyCaseQueueItem>(`/case-queue/${id(caseId)}/notes`,{expectedVersion,requestId,text}),
   reassessCaseReview:(caseId:string,expectedVersion:number,modelChoice:VocabularyReassessmentModel,expectedContentVersion:number,originProposal?:{proposalId:string;expectedVersion:number},editorial?:VocabularyReassessmentEditorialInput)=>write<{caseId:string;jobId:string;item:VocabularyCaseQueueItem}>(`/case-queue/${id(caseId)}/reassess`,{expectedVersion,modelChoice,expectedContentVersion,originProposal,editorial}),
   saveDefaultUsefulSenses:(wordId:string,expectedVersion:number,includedSenseIds:string[])=>write<VocabularySenseCoverageWorkspace>(`/words/${id(wordId)}/sense-coverage`,{expectedVersion,includedSenseIds},'PUT'),

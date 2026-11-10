@@ -1,5 +1,5 @@
 import type { VocabularyReassessmentEditorialInput, VocabularyReassessmentEditorial } from '../../src/domain/vocabulary-reflection.ts';
-import { emitBackendEvent } from './vocabulary-content.ts';
+import { emitBackendEvent, getVocabularyContentForMaintenance } from './vocabulary-content.ts';
 import { assertVocabularyCaseEditable, touchVocabularyCaseReview } from './vocabulary-case-reviews.ts';
 import { randomUUID } from 'node:crypto';
 import type { VocabularyCaseQueueItem, VocabularyCaseQueuePage, VocabularyCaseQueueQuery, VocabularyServedReview, VocabularyOperationReview, VocabularyAssessmentSummary, VocabularyAdvisorySummary } from '../../src/domain/vocabulary-case-queue.ts';
@@ -7,7 +7,7 @@ import type { ReflectionModelChoice } from '../reflection/model-arms.ts';
 import { isOperatorSubject, parseOperatorAllowlist } from '../operator-access.ts';
 import { config, getDb } from './connection.ts';
 import { canonicalVocabularyCaseId, getVocabularyCaseReview, VocabularyReflectionConflict } from './vocabulary-case-reviews.ts';
-import { closeVocabularyCase, requestVocabularyReassessment, type ReassessmentOrigin } from './vocabulary-reflection.ts';
+import { closeVocabularyCase, createVocabularyProposal, requestVocabularyReassessment, type ReassessmentOrigin } from './vocabulary-reflection.ts';
 
 function authorize(actorId:string):void {
   if(!isOperatorSubject(actorId,parseOperatorAllowlist(),config.authMode))throw new Error('Operator access required');
@@ -294,6 +294,33 @@ export function resolveVocabularyCaseReview(caseId:string,expectedVersion:number
     const proposal=getDb().prepare("SELECT 1 FROM content_proposals p JOIN vocabulary_case_lineage l ON l.member_case_id=p.case_id WHERE l.case_id=? AND p.status NOT IN ('closed','applied') LIMIT 1").get(id);
     if(proposal)throw new VocabularyReflectionConflict('Review or dismiss outstanding proposals before marking the case Done');
     closeVocabularyCase(id,actorId,reason);return getVocabularyCaseCard(id,actorId);
+  });
+}
+export function proposeVocabularyCaseRetirement(caseId: string, expectedVersion: number, actorId: string): VocabularyCaseQueueItem {
+  return changeCase(caseId, expectedVersion, actorId, id => {
+    const card = getVocabularyCaseCard(id, actorId);
+    const sourceRef = card.reassessment.source;
+    if (card.state !== 'open' || card.proposal || card.activeJob || card.stale || !card.reassessment.eligible ||
+        !sourceRef || sourceRef.currentVersion !== sourceRef.assessedVersion ||
+        (card.finding?.kind !== 'unmappable' && card.finding?.kind !== 'inventory_gap')) {
+      throw new VocabularyReflectionConflict('Review the current unresolved exercise before proposing retirement');
+    }
+    const source = getVocabularyContentForMaintenance(sourceRef.contentId);
+    if (!source || source.kind !== 'exercise' || source.availability !== 'active') {
+      throw new VocabularyReflectionConflict('The source exercise is unavailable');
+    }
+    const { version, createdAt: _createdAt, updatedAt: _updatedAt, ...content } = source;
+    const rationale = 'Retire the exercise without a replacement.';
+    createVocabularyProposal({
+      caseId: id,
+      rationale,
+      operations: [{
+        operationKey: 'retire-source', strategy: 'retire', sourceContentId: source.contentId,
+        expectedVersion: version, content, rationale,
+        scope: source.accessScope === 'shared' ? { kind: 'shared' } : { kind: 'learner', learnerId: source.ownerLearnerId! },
+      }],
+    }, actorId);
+    return getVocabularyCaseCard(id, actorId);
   });
 }
 export function reassessVocabularyCaseReview(caseId:string,expectedVersion:number,actorId:string,modelChoice:ReflectionModelChoice,expectedContentVersion:number,origin:ReassessmentOrigin={kind:'case'},editorial?:VocabularyReassessmentEditorialInput):{caseId:string;jobId:string;item:VocabularyCaseQueueItem} {

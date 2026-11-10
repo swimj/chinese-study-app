@@ -291,6 +291,12 @@ function approve(reason = '') {
             <div className="vocabulary-operator-actions">
               {item.proposal && !proposalResolved && <button disabled={reviewLocked && !approvalUnconfirmed || busy || item.stale || item.requiresDetails || repairBlocked} onClick={()=>{if(approvalUnconfirmed||mayLeaveDetails())approve();}}>{approvalUnconfirmed ? 'Retry approval' : 'Approve and apply'}</button>}
               {!proposalResolved && <button className="secondary-button" disabled={reviewLocked || (!item.proposal && !item.currentAssessment && !item.needsDecision)} onClick={()=>{if(mayLeaveDetails())resolve();}}>{item.proposal ? 'Dismiss proposal' : 'Done'}</button>}
+              {!item.proposal && item.reassessment.eligible && item.reassessment.source?.currentVersion === item.reassessment.source?.assessedVersion &&
+                (item.finding?.kind === 'unmappable' || item.finding?.kind === 'inventory_gap') &&
+                <button className="secondary-button" disabled={reviewLocked || item.stale || !!item.activeJob || !!repairBlocked}
+                  onClick={() => void run(async () => { installCard(await api.proposeCaseRetirement(item.caseId, item.version)); }, 'Retirement proposed. Ready for review.')}>
+                  Retire exercise…
+                </button>}
               {item.reassessment.eligible && <button className="secondary-button" disabled={reviewLocked || !!item.activeJob} aria-haspopup="dialog" onClick={() => openReassessment()}>Reassess{repairTarget?.blocked?' · target pending':''}</button>}
               <button className="secondary-button" disabled={reviewLocked || !!item.activeJob} onClick={()=>void run(async()=>{const card=await api.setCaseDeferred(item.caseId,item.version,!item.deferredAt);savedQueues.current={};installCard(card,true);},item.deferredAt?'Returned to review.':'Case deferred.')}>{item.deferredAt?'Return to review':'Defer'}</button>
               <span className="vocabulary-action-spacer" /><button className="secondary-button" aria-expanded={showDetails} onClick={() => setShowDetails(value => !value)}>Details</button><button className="secondary-button" aria-expanded={moreOpen} onClick={() => setMoreOpen(value => !value)}>More</button>

@@ -9,8 +9,8 @@ import { installLearnerContextSqlFunction } from '../server/db/learner-context.t
 import { createBaselineSchema } from '../server/db/persistence.ts';
 import { migrateDatabase } from '../server/db/migrations.ts';
 import { createVocabularyContent,getVocabularyContentForMaintenance,updateVocabularyContent,emitBackendEvent } from '../server/db/vocabulary-content.ts';
-import { createVocabularyProposal,claimVocabularyReflectionJob,retryVocabularyReflectionJob,approveVocabularyProposal,closeVocabularyProposal } from '../server/db/vocabulary-reflection.ts';
-import { listVocabularyCaseQueue,getVocabularyCaseCard,setVocabularyCaseDeferred,resolveVocabularyCaseReview,reassessVocabularyCaseReview,addVocabularyCaseNote } from '../server/db/vocabulary-case-queue.ts';
+import { createVocabularyProposal,claimVocabularyReflectionJob,retryVocabularyReflectionJob,approveVocabularyProposal,applyVocabularyProposal,closeVocabularyProposal } from '../server/db/vocabulary-reflection.ts';
+import { listVocabularyCaseQueue,getVocabularyCaseCard,setVocabularyCaseDeferred,resolveVocabularyCaseReview,proposeVocabularyCaseRetirement,reassessVocabularyCaseReview,addVocabularyCaseNote } from '../server/db/vocabulary-case-queue.ts';
 import { listVocabularyAttention } from '../server/db/vocabulary-attention.ts';
 import { startRequestTiming,runWithRequestTiming } from '../server/request-timing.ts';
 import { registerVocabularyReflectionRoutes } from '../server/vocabulary/reflection-routes.ts';
@@ -193,6 +193,23 @@ test('review end traversal uses existing ordered index in both directions',()=>{
   const plans=['ASC','DESC'].map(direction=>sql.prepare(`EXPLAIN QUERY PLAN SELECT r.case_id,r.created_at FROM vocabulary_case_reviews r WHERE r.state='open' AND r.approval_state IS NULL AND (r.current_job_id IS NOT NULL OR r.current_proposal_id IS NOT NULL) ORDER BY r.created_at ${direction},r.case_id ${direction} LIMIT 20`).all());
   for(const plan of plans){const details=JSON.stringify(plan);assert.match(details,/idx_vocabulary_case_review_queue/);assert.doesNotMatch(details,/TEMP B-TREE/);}
   console.log(JSON.stringify({caseQueueEndPlans:plans}));
+});
+
+test('unresolved sense retirement creates a reviewable proposal for the assessed exercise',()=>{
+  seedCase('unresolved');
+  sql.prepare("UPDATE vocabulary_reflection_jobs SET result_json=json_set(result_json,'$.input.admission',json(?)) WHERE job_id='job-unresolved'")
+    .run(JSON.stringify({outcome:'unmappable',rationale:'Only a compound use.',wordId:'word',catalogVersion:0,senseIds:[],sourceContentId:'source',sourceContentVersion:1}));
+  const before=getVocabularyCaseCard('unresolved','editor');
+  const drafted=proposeVocabularyCaseRetirement(before.caseId,before.version,'editor');
+  assert.deepEqual(drafted.proposal?.operations.map(op=>op.strategy),['retire']);
+  assert.equal(getVocabularyContentForMaintenance('source')?.availability,'active');
+  assert.throws(()=>proposeVocabularyCaseRetirement(before.caseId,before.version,'editor'),/Case review changed/);
+  assert.throws(()=>proposeVocabularyCaseRetirement(drafted.caseId,drafted.version,'editor'),/before proposing retirement/);
+  const proposal=drafted.proposal!;
+  const reviewId=approveVocabularyProposal(proposal.proposalId,proposal.version,'editor');
+  applyVocabularyProposal(proposal.proposalId,proposal.version,reviewId,'retirement-test','editor');
+  assert.equal(getVocabularyContentForMaintenance('source')?.availability,'retired');
+  assert.equal(getVocabularyCaseCard(before.caseId,'editor').served[0]?.prompt,'Served cue');
 });
 
 test('retired-source unresolved finding remains visible and closes without a fabricated note or source change',()=>{
