@@ -249,8 +249,9 @@ remain historical evidence.
 
 Reassessment adds a numbered job to the same case. While queued or running, the
 case's saved proposal, review decisions, and target-sense edits are frozen.
-Success selects the replacement assessment; failure or timeout restores review
-of the previous result. Earlier assessments and proposals remain retained.
+The lock continues while response identity is pending and after failure or timeout.
+Success selects the replacement assessment; abandoning the reassessment restores
+review of the previous result. Earlier assessments and proposals remain retained.
 Only one job may be queued or running within the case. Second opinions remain
 advisory and do not replace its current assessment. Content is applied only after
 explicit approval and successful application.
@@ -291,8 +292,17 @@ word defaults, including **Select none**, resolves it.
 
 ### Resolving shared-practice identities
 
-Current assessment uses missing or ambiguous dictionary forms as evidence for
-target improvement, without proposing them as answers. Historical saved
+Before single-exercise assessment, an ambiguous response pauses the case in
+Awaiting review. Choose the matching dictionary entry to continue assessment;
+the choice applies to that assessment and does not approve any content. Refresh
+candidates if the dictionary changed. A response with no exact dictionary match
+remains evidence without an authored answer identity. A reassessment that pauses
+keeps any earlier proposal locked until the new assessment completes or is abandoned. Opening
+Reassess on an existing case also presents its ambiguous response candidates. A
+previous operator choice is selected again when its exact candidate snapshot is
+unchanged; the operator can choose another entry. Any editorial direction and
+attached opinion from a paused assessment carry into its continuation.
+Historical saved
 assessments with unresolved shared answers remain in their review case. Open
 the full review workspace for **Resolve candidate identities**. Select the intended entry for
 each ambiguous form, then queue the integration assessment. The complete content

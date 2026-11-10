@@ -11,7 +11,7 @@ import { isOfferedReflectionModelChoice } from '../reflection/model-arms.ts';
 import { createVocabularyPracticePreparation } from './preparation.ts';
 import { createOperatorAllowlistMiddleware } from '../operator-access.ts';
 import { getVocabularyApprovalRequests } from './approval-requests.ts';
-import { listVocabularyCaseQueue,getVocabularyCaseCard,setVocabularyCaseDeferred,resolveVocabularyCaseReview,proposeVocabularyCaseRetirement,getVocabularyFallbackRepertoire,generateVocabularyFallbackRepertoire,reassessVocabularyCaseReview,addVocabularyCaseNote } from '../db/vocabulary-case-queue.ts';
+import { listVocabularyCaseQueue,getVocabularyCaseCard,setVocabularyCaseDeferred,resolveVocabularyCaseReview,proposeVocabularyCaseRetirement,getVocabularyFallbackRepertoire,generateVocabularyFallbackRepertoire,reassessVocabularyCaseReview,abandonVocabularyReassessment,addVocabularyCaseNote } from '../db/vocabulary-case-queue.ts';
 import { getVocabularyCaseWorkspace, listVocabularyReflectionCases, listVocabularyProposals, listVocabularyProposalReviewBatch, getVocabularyProposal, getVocabularyOriginalModelProposal,
   requestVocabularyPureCueResolution, requestVocabularyReassessment, requestVocabularySecondOpinion, listVocabularySecondOpinions, listVocabularyNoProposalCases, requestVocabularyCaseSecondOpinion, createVocabularyProposal, saveVocabularyProposal, previewVocabularyProposal, approveVocabularyProposal,
   applyVocabularyProposal, closeVocabularyProposal, closeVocabularyCase, dismissSupersededVocabularyCase, listOwnVocabularyMessages,
@@ -111,6 +111,9 @@ export function registerVocabularyReflectionRoutes(app:Express,options:{wake?:()
     if(typeof input.deferred!=='boolean')throw new VocabularyReflectionRequestError('Expected deferred boolean');
     return setVocabularyCaseDeferred(text(req.params.id),version(input.expectedVersion),actor,input.deferred);
   }));
+  app.post(`${base}/case-queue/:id/abandon-reassessment`,gate,handle((req,actor)=>{
+    const input=object(req.body,['expectedVersion','jobId']);return abandonVocabularyReassessment(text(req.params.id),version(input.expectedVersion),text(input.jobId),actor);
+  }));
   app.post(`${base}/case-queue/:id/resolve`,gate,handle((req,actor)=>{
     const input=object(req.body,['expectedVersion','reason']);return resolveVocabularyCaseReview(text(req.params.id),version(input.expectedVersion),actor,optionalText(input.reason));
   }));
@@ -141,13 +144,21 @@ export function registerVocabularyReflectionRoutes(app:Express,options:{wake?:()
     return addVocabularyCaseNote(text(req.params.id),version(input.expectedVersion),actor,requestId,note);
   }));
   app.post(`${base}/case-queue/:id/reassess`,gate,handle((req,actor)=>{
-    const input=object(req.body,['expectedVersion','expectedContentVersion','modelChoice','originProposal','editorial']);
+    const input=object(req.body,['expectedVersion','expectedContentVersion','modelChoice','originProposal','editorial','responseIdentities']);
     if(!isOfferedReflectionModelChoice(input.modelChoice))throw new VocabularyReflectionRequestError('Unsupported assessment model');
     let origin:import('../db/vocabulary-reflection.ts').ReassessmentOrigin={kind:'case'};
     if(input.originProposal!==undefined){const proposal=object(input.originProposal,['proposalId','expectedVersion']);origin={kind:'proposal',proposalId:text(proposal.proposalId),expectedVersion:version(proposal.expectedVersion)};}
     let editorial:import('../../src/domain/vocabulary-reflection.ts').VocabularyReassessmentEditorialInput|undefined;
     if(input.editorial!==undefined){const value=object(input.editorial,['instructions','secondOpinionRequestId']);const instructions=optionalText(value.instructions);if(instructions.length>10000)throw new VocabularyReflectionRequestError('Editorial instructions are too long');editorial={instructions,...(value.secondOpinionRequestId===undefined?{}:{secondOpinionRequestId:text(value.secondOpinionRequestId)})};}
-    const result=reassessVocabularyCaseReview(text(req.params.id),version(input.expectedVersion),actor,input.modelChoice as import('../reflection/model-arms.ts').ReflectionModelChoice,version(input.expectedContentVersion),origin,editorial);options.wake?.();return result;
+    let identities:import('../../src/domain/vocabulary-reflection.ts').VocabularyResponseIdentitySelection|undefined;
+    if(input.responseIdentities!==undefined){
+      const value=object(input.responseIdentities,['options','selections']);
+      const options=list(value.options).map(entry=>{const option=object(entry,['form','choices']);return {form:text(option.form),choices:list(option.choices).map(entry=>{const word=object(entry,['wordId','hanzi','traditional','pinyin','meaning']);return {wordId:text(word.wordId),hanzi:text(word.hanzi),traditional:word.traditional===null?null:text(word.traditional),pinyin:optionalText(word.pinyin),meaning:optionalText(word.meaning)};})};});
+      const selections=list(value.selections).map(entry=>{const selected=object(entry,['form','wordId']);return {form:text(selected.form),wordId:text(selected.wordId)};});
+      if(new Set(selections.map(entry=>entry.form)).size!==selections.length)throw new VocabularyReflectionRequestError('Duplicate response identity');
+      identities={options,selections:Object.fromEntries(selections.map(({form,wordId})=>[form,wordId]))};
+    }
+    const result=reassessVocabularyCaseReview(text(req.params.id),version(input.expectedVersion),actor,input.modelChoice as import('../reflection/model-arms.ts').ReflectionModelChoice,version(input.expectedContentVersion),origin,editorial,identities);options.wake?.();return result;
   }));
   app.get(`${base}/words/:id/sense-coverage`,gate,handle((req,actor)=>{object(req.query,[]);return getVocabularySenseCoverageWorkspace('word',text(req.params.id),actor);}));
   app.put(`${base}/words/:id/sense-coverage`,gate,handle((req,actor)=>{

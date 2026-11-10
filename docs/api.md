@@ -1284,7 +1284,7 @@ the stored semantic axis for reused shared cues, model attribution, current sour
 opinion status. These are display-only projections, not complete authored drafts.
 Raw encounter snapshots, model requests/results, and full editing bodies are
 omitted. `latestJob` retains the most recent job's status, sequence, advisory flag,
-and error code even after a failed reassessment releases its freeze; the previous
+and error code while a failed reassessment retains its freeze; the previous
 authoritative assessment remains displayed. `requiresDetails` means the authored material cannot be faithfully
 reviewed through the compact card and needs the existing full workspace before
 approval. `assessment` belongs to the displayed proposal; `currentAssessment`
@@ -1307,10 +1307,24 @@ comment; `reassessment.reason` explains an ineligible current source.
 This is the Done action for no-proposal or unresolved assessments; ordinary
 proposal cards use the exact-version proposal dismissal route. Dismissing a
 proposal resolves its case only when no unresolved alternatives remain.
+`POST /api/operator/vocabulary/case-queue/:id/abandon-reassessment` takes the
+positive `expectedVersion` and exact `jobId` of a failed or identity-paused
+reassessment. It restores the preceding assessment, releases its review lock,
+and retains the abandoned job as history. Stale versions, running jobs, and
+already-abandoned jobs return a conflict.
+
 `POST /api/operator/vocabulary/case-queue/:id/reassess` takes `expectedVersion`,
 `expectedContentVersion`, `modelChoice`, and optional
 `originProposal: {proposalId,expectedVersion}` and
-`editorial: {instructions,secondOpinionRequestId?}`. Instructions are optional
+`editorial: {instructions,secondOpinionRequestId?}`, and
+`responseIdentities: {options,selections}` for ambiguous responses, where
+`options` is the displayed array of `{form,choices}` snapshots and `selections`
+is an array of `{form,wordId}`. The single-card read supplies current options
+for existing assessments and captured options for pending identity decisions.
+The server checks the snapshots and selections against the current dictionary
+before queuing; omitting choices queues a fresh assessment to refresh the
+candidates. A continuation retains any direction and attached opinion from the
+paused assessment, along with any new direction. Instructions are optional
 text up to 10,000 characters. The selected second opinion must be successful and
 belong to the displayed assessment or exact proposal version; the server captures
 its result rather than trusting submitted opinion text. It returns

@@ -38,7 +38,7 @@ beforeEach(()=>{
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0052_vocabulary_automatic_promotion_pause.sql',import.meta.url),'utf8'));
   sql.exec(`CREATE TABLE learner_settings(learner_id TEXT,setting_key TEXT,value_json TEXT,updated_at TEXT,PRIMARY KEY(learner_id,setting_key));
     CREATE TABLE learner_owned_review_session_summaries(learner_id TEXT,session_id TEXT,PRIMARY KEY(learner_id,session_id));`);
-  sql.exec("ALTER TABLE lexical_words ADD COLUMN hanzi TEXT NOT NULL DEFAULT '字';ALTER TABLE lexical_words ADD COLUMN pinyin TEXT NOT NULL DEFAULT 'zì';");
+  sql.exec("ALTER TABLE lexical_words ADD COLUMN hanzi TEXT NOT NULL DEFAULT '字';ALTER TABLE lexical_words ADD COLUMN traditional TEXT;ALTER TABLE lexical_words ADD COLUMN pinyin TEXT NOT NULL DEFAULT 'zì';ALTER TABLE lexical_words ADD COLUMN meaning TEXT NOT NULL DEFAULT 'character';");
 
   for(const name of ['0042_vocabulary_sessions.sql','0044_vocabulary_reflection.sql','0061_vocabulary_sense_mapping_retries.sql','0059_vocabulary_reassessment.sql','0060_vocabulary_reassessment_source.sql','0055_vocabulary_feedback_dismissal.sql'])sql.exec(fs.readFileSync(new URL(`../server/db/migrations/${name}`,import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0063_vocabulary_proposal_drop_actions.sql',import.meta.url),'utf8'));
@@ -85,6 +85,22 @@ function call(method:string,route:string,input:{body?:unknown;params?:Record<str
 }
 function proposal(){return {operations:[{operationKey:'repair',scope:{kind:'shared'},rationale:'A clearer cue',strategy:'update_existing',sourceContentId:'one',expectedVersion:1,
   content:{...draft(),body:{prompt:'A written symbol used in a language'}}}],rationale:'Improve the exact cue'};}
+
+test('reassessment validates response choices through the operator HTTP route',()=>{
+  sql.exec("INSERT INTO lexical_words(id,hanzi,pinyin,meaning) VALUES ('candidate-a','private response','one','first'),('candidate-b','private response','two','second')");
+  const job=claimVocabularyReflectionJob({kind:'exercise_improvement',now:later})!;
+  recordVocabularyImprovementResult(job.jobId,job.leaseToken,{diagnosis:'Earlier assessment',proposal:null},later);
+  const route=`${base}/case-queue/:id/reassess`,params={id:caseId};
+  const card=call('get',`${base}/case-queue/:id`,{params}).body;
+  const options=card.availableResponseIdentityOptions as {form:string;choices:{wordId:string}[]}[];
+  assert.equal(options[0].choices.length,2);
+  const body={expectedVersion:card.version,expectedContentVersion:1,modelChoice:'openai:gpt-6-sol-high',responseIdentities:{options,selections:[{form:'private response',wordId:'candidate-b'}]}};
+  assert.equal(call('post',route,{params,body:{...body,responseIdentities:{...body.responseIdentities,selections:[...body.responseIdentities.selections,...body.responseIdentities.selections]}}}).status,400);
+  assert.equal(call('post',route,{params,body:{...body,responseIdentities:{...body.responseIdentities,selections:[{form:'private response',wordId:'a'}]}}}).status,409);
+  const result=call('post',route,{params,body});assert.equal(result.status,200);
+  const child=claimVocabularyReflectionJob({kind:'exercise_improvement',now:new Date(Date.now()+1000).toISOString()})!;
+  assert.equal(child.jobId,result.body.jobId);assert.equal(child.responseIdentitySelection?.selections['private response'],'candidate-b');
+});
 
 test('feedback is private and read-only; only own failed feedback can be retried',()=>{
   const job=claimVocabularyReflectionJob({kind:'learner_feedback',now:later})!;
@@ -581,7 +597,7 @@ test('unknown word defaults remain in attention after content approval and resol
 });
 
 test('pure cue resolution route validates identity selections and authority before queueing',()=>{
-  sql.exec("ALTER TABLE lexical_words ADD COLUMN traditional TEXT;ALTER TABLE lexical_words ADD COLUMN meaning TEXT NOT NULL DEFAULT 'word';INSERT INTO lexical_words(id,hanzi,pinyin) VALUES ('b','别','bié'),('c','别','biè');");
+  sql.exec("INSERT INTO lexical_words(id,hanzi,pinyin) VALUES ('b','别','bié'),('c','别','biè');");
   const work=claimVocabularyReflectionJob({kind:'exercise_improvement',now:later})!;
   recordVocabularyImprovementResult(work.jobId,work.leaseToken,{diagnosis:'Review identities',proposal:null,
     admission:{outcome:'single_sense',rationale:'Shared use',wordId:'a',sourceContentId:'one',sourceContentVersion:1,catalogVersion:getVocabularySenseCatalog('a').version,senseIds:[],sourceMapping:{senseId:null,establishedAt:null}},

@@ -35,6 +35,8 @@ export type VocabularyReassessmentEditorial = {
   instructions:string;
   secondOpinion?:{requestId:string;jobId:string;verdict:VocabularySecondOpinionVerdict['verdict'];rationale:string};
 };
+export type VocabularyResponseIdentityOption = {form:string;choices:{wordId:string;hanzi:string;traditional:string|null;pinyin:string;meaning:string}[]};
+export type VocabularyResponseIdentitySelection = {options:VocabularyResponseIdentityOption[];selections:Record<string,string>};
 export type VocabularyReflectionJob = {
   jobId: string; caseId: string; learnerId: string;
   kind: 'learner_feedback' | 'exercise_improvement';
@@ -44,6 +46,7 @@ export type VocabularyReflectionJob = {
   reassessmentSourceJobId?: string;
   repairTarget?: VocabularyRepairTarget;
   editorial?: VocabularyReassessmentEditorial;
+  responseIdentitySelection?: VocabularyResponseIdentitySelection;
   /** Current authored version explicitly selected by the operator; encounters remain historical. */
   reassessmentSource?: VocabularyContent;
   secondOpinion?: { requestId: string; proposal: VocabularyContentProposal | null; notes: string; diagnosis?: VocabularyJson };
@@ -88,6 +91,7 @@ export type VocabularyImprovementResultInput = {
   /** Complete local plan held until shared candidate identities can be resolved. */
   pendingPlan?: Omit<VocabularyProposalDraft,'caseId'> | null;
   responseCandidateSnapshots?: {wordId:string;hanzi:string;traditional:string|null;pinyin:string;meaning:string}[];
+  responseIdentityOptions?: VocabularyResponseIdentityOption[];
 };
 export type VocabularyReflectionResult = { kind: 'learner_feedback'; judgment: VocabularyFeedbackJudgmentInput }
   | { kind: 'exercise_improvement'; result: VocabularyImprovementResultInput };

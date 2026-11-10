@@ -1,6 +1,6 @@
 import { getVocabularyRepertoireSelection } from './vocabulary-repertoire-selection.ts';
 import { captureVocabularyRepairTarget, acceptVocabularyRepairTarget, assertVocabularyRepairTargetApplicable, vocabularyRepairTargetConflict } from './vocabulary-repair-target.ts';
-import { canonicalVocabularyCaseId, getVocabularyCaseReview, assertVocabularyCaseEditable, assertVocabularyCaseCanQueue, touchVocabularyCaseReview, clearVocabularyCaseApprovalAttention, resolveVocabularyCaseProposal, setVocabularyCaseApprovalPending, VocabularyReflectionConflict, VocabularyReflectionSourceConflict } from './vocabulary-case-reviews.ts';
+import { canonicalVocabularyCaseId, getVocabularyCaseReview, pendingVocabularyReassessment, assertVocabularyCaseEditable, assertVocabularyCaseCanQueue, touchVocabularyCaseReview, clearVocabularyCaseApprovalAttention, resolveVocabularyCaseProposal, setVocabularyCaseApprovalPending, VocabularyReflectionConflict, VocabularyReflectionSourceConflict } from './vocabulary-case-reviews.ts';
 export { VocabularyReflectionConflict, VocabularyReflectionSourceConflict } from './vocabulary-case-reviews.ts';
 import { isVocabularyCaseSourceSuperseded } from './vocabulary-case-source.ts';
 import { resolveSupersededAttentionCases } from './vocabulary-superseded-attention.ts';
@@ -9,7 +9,7 @@ import { getPureCueResolution, pureCueIdentityOptions, vocabularyResponseCandida
 import { getVocabularyDefaultSelectionFinding } from './vocabulary-sense-coverage.ts';
 import { failPreparationAttempt } from '../vocabulary/preparation-retry.ts';
 import { randomUUID } from 'node:crypto';
-import { vocabularyAuthoredPromptBody,vocabularyPhraseClozeError } from '../../src/domain/vocabulary-production-coverage.ts';
+import { isVocabularyDefinitionFallback,vocabularyAuthoredPromptBody,vocabularyPhraseClozeError } from '../../src/domain/vocabulary-production-coverage.ts';
 import type { VocabularyActor, VocabularyJson, VocabularyContent } from '../../src/domain/vocabulary-content.ts';
 import { type VocabularySecondOpinion, type VocabularyReflectionCase, type VocabularyReflectionJob,
   type VocabularyFeedbackJudgmentInput, type VocabularyProposalDraft, type VocabularyContentProposal,
@@ -24,6 +24,7 @@ import { createVocabularyContent, updateVocabularyContent, replaceVocabularyCont
 import { isOfferedReflectionModelChoice, type ReflectionModelChoice } from '../reflection/model-arms.ts';
 import { resolveSharedDictionaryBaselineRevision } from './dictionary-baseline-sharing.ts';
 import { compensateUnfairVocabularyLapse } from './vocabulary-lapse-compensation.ts';
+import { ambiguousVocabularyResponses } from '../vocabulary/response-word-matching.ts';
 
 function atomic<T>(work: () => T): T {
   const db = getDb(), nested = db.isTransaction, point = `reflection_${randomUUID().replaceAll('-', '')}`;
@@ -87,8 +88,8 @@ export function listVocabularyNoProposalCases(actorId:string,status:'completed'|
 function currentAssessmentJob(caseId:string):JobRow|undefined {
   return getDb().prepare('SELECT j.* FROM vocabulary_case_reviews r JOIN vocabulary_reflection_jobs j ON j.job_id=r.current_job_id WHERE r.case_id=?').get(canonicalVocabularyCaseId(caseId)) as JobRow|undefined;
 }
-function queueCaseJob(caseId:string,at:string,dedupeKey:string,values:{sourceJobId?:string;source?:VocabularyContent;opinion?:VocabularyReflectionJob['secondOpinion']&{parentCaseId?:string};modelChoice?:string}={}):string {
-  caseId=canonicalVocabularyCaseId(caseId);assertVocabularyCaseCanQueue(caseId);
+function queueCaseJob(caseId:string,at:string,dedupeKey:string,values:{sourceJobId?:string;source?:VocabularyContent;continuePending?:boolean;opinion?:VocabularyReflectionJob['secondOpinion']&{parentCaseId?:string};modelChoice?:string}={}):string {
+  caseId=canonicalVocabularyCaseId(caseId);assertVocabularyCaseCanQueue(caseId,values.continuePending);
   const sequence=Number(getDb().prepare('SELECT coalesce(max(case_sequence),0)+1 AS n FROM vocabulary_reflection_jobs WHERE review_case_id=?').get(caseId)!.n),jobId=randomUUID();
   getDb().prepare(`INSERT INTO vocabulary_reflection_jobs(job_id,case_id,kind,dedupe_key,status,next_attempt_at,created_at,review_case_id,case_sequence,reassessment_source_job_id,reassessment_source_json,second_opinion_json,model_choice)
     VALUES (?,?,'exercise_improvement',?,'queued',?,?,?,?,?,?,?,?)`).run(jobId,caseId,dedupeKey,at,at,caseId,sequence,values.sourceJobId??null,values.source?encode(values.source):null,values.opinion?encode(values.opinion):null,values.modelChoice??null);
@@ -209,8 +210,10 @@ export function claimVocabularyReflectionJob(input: { kind?: VocabularyReflectio
       attempt_number=attempt_number+1,last_error=NULL WHERE job_id=?`).run(token,expires,row.job_id);
     const evidence = getVocabularyReflectionCase(row.case_id);
     const editorial=getDb().prepare("SELECT data_json FROM backend_events WHERE job_id=? AND name='vocabulary.reflection.reassessment_editorial_captured'").get(row.job_id) as {data_json:string}|undefined;
+    const identities=getDb().prepare("SELECT data_json FROM backend_events WHERE job_id=? AND name='vocabulary.reflection.response_identities_captured'").get(row.job_id) as {data_json:string}|undefined;
     return { jobId: row.job_id,caseId: row.case_id,learnerId: evidence.learnerId,kind: row.kind,
       ...(editorial?{editorial:JSON.parse(editorial.data_json) as VocabularyReassessmentEditorial}:{}),
+      ...(identities?{responseIdentitySelection:JSON.parse(identities.data_json) as import('../../src/domain/vocabulary-reflection.ts').VocabularyResponseIdentitySelection}:{}),
       caseSequence:row.case_sequence,attemptNumber: row.attempt_number+1,leaseToken: token,leaseExpiresAt: expires,evidence,
       ...(row.repair_target_json ? {repairTarget:JSON.parse(row.repair_target_json) as import('../../src/domain/vocabulary-reflection.ts').VocabularyRepairTarget}:{}),
       ...(row.reassessment_source_json ? { reassessmentSource: JSON.parse(row.reassessment_source_json) as VocabularyContent } : {}),
@@ -488,6 +491,8 @@ export function recordVocabularyImprovementResult(jobId: string, token: string, 
       if(!pinned||!current||current.version!==pinned.version||current.availability!=='active')throw new VocabularyReflectionConflict('Reassessment source is unavailable before publication');
     }
     const needsAttention = input.admission?.outcome === 'unmappable' || input.admission?.outcome === 'inventory_gap' || input.admission?.outcome === 'needs_coverage';
+    const needsIdentity = !!input.responseIdentityOptions?.length;
+    if(needsIdentity && (input.proposal!==null || input.admission?.outcome!=='single_sense'))throw new Error('Unresolved response identities cannot propose repairs');
     if (input.admission) {
       const evidence = getVocabularyReflectionCase(row.case_id), admission = input.admission;
       if (admission.wordId !== evidence.wordId || !(pinned ? pinned.contentId===admission.sourceContentId && pinned.version===admission.sourceContentVersion : evidence.evidence.some(item => {
@@ -519,17 +524,17 @@ export function recordVocabularyImprovementResult(jobId: string, token: string, 
     if(created)getDb().prepare('UPDATE content_proposals SET assessment_job_id=? WHERE proposal_id=?').run(jobId,created.proposalId);
     if(!row.second_opinion_json&&row.review_case_id){
       const prior=getVocabularyCaseReview(row.review_case_id)?.currentProposalId;
-      if(row.reassessment_source_job_id&&prior){const closed=getDb().prepare("UPDATE content_proposals SET status='closed' WHERE proposal_id=? AND status IN ('draft','awaiting_review','approved')").run(prior);if(closed.changes)event('vocabulary.reflection.proposal_closed',prior,{reason:'Superseded by case reassessment',version:proposal(prior).version,successorCaseId:row.review_case_id,successorJobId:jobId});}
+      if(!needsIdentity&&row.reassessment_source_job_id&&prior){const closed=getDb().prepare("UPDATE content_proposals SET status='closed' WHERE proposal_id=? AND status IN ('draft','awaiting_review','approved')").run(prior);if(closed.changes)event('vocabulary.reflection.proposal_closed',prior,{reason:'Superseded by case reassessment',version:proposal(prior).version,successorCaseId:row.review_case_id,successorJobId:jobId});}
       const remaining=created?.proposalId??(getDb().prepare("SELECT p.proposal_id FROM content_proposals p JOIN vocabulary_case_lineage l ON l.member_case_id=p.case_id WHERE l.case_id=? AND p.status NOT IN ('applied','closed') ORDER BY p.created_at,p.proposal_id LIMIT 1").get(row.review_case_id) as {proposal_id:string}|undefined)?.proposal_id??null;
       getDb().prepare('UPDATE vocabulary_case_reviews SET current_proposal_id=? WHERE case_id=?').run(remaining,row.review_case_id);
     }
-    if(!row.second_opinion_json&&row.review_case_id){
+    if(!needsIdentity&&!row.second_opinion_json&&row.review_case_id){
       const captured=row.repair_target_json?JSON.parse(row.repair_target_json) as import('../../src/domain/vocabulary-reflection.ts').VocabularyRepairTarget:undefined;
       if(captured&&(input.admission?.repairTargetVersion!==captured.version||input.admission.outcome!=='single_sense'||input.admission.senseIds.length!==1||input.admission.senseIds[0]!==captured.senseId))throw new VocabularyReflectionConflict('Assessment did not honor the captured repair target');
       acceptVocabularyRepairTarget(row.review_case_id,captured,at);
     }
     finish(jobId,token,input,output,at);
-    if (!row.second_opinion_json&&(needsAttention || input.pureCuePromotion?.outcome === 'needs_operator')) getDb().prepare("UPDATE reflection_cases SET status='open' WHERE case_id=?").run(row.case_id);
+    if (!row.second_opinion_json&&(needsAttention || needsIdentity || input.pureCuePromotion?.outcome === 'needs_operator')) getDb().prepare("UPDATE reflection_cases SET status='open' WHERE case_id=?").run(row.case_id);
     return output;
   });
 }
@@ -836,11 +841,12 @@ function retryJob(jobId: string, learnerId: string | null, at: string): void {
   const row = job(jobId), evidence = getVocabularyReflectionCase(row.case_id);
   if (learnerId !== null && (row.kind !== 'learner_feedback' || evidence.learnerId !== learnerId)) throw new Error('Reflection job does not belong to current learner');
   if (row.status !== 'failed') throw new VocabularyReflectionConflict('Only failed reflection jobs can be retried');
+  if(getDb().prepare("SELECT 1 FROM backend_events WHERE job_id=? AND name='vocabulary.reflection.reassessment_abandoned'").get(jobId))throw new VocabularyReflectionConflict('This reassessment was abandoned');
   if(row.review_case_id&&!row.second_opinion_json){
     const captured=row.repair_target_json?JSON.parse(row.repair_target_json):undefined;
     if(!isDeepStrictEqual(captured,captureVocabularyRepairTarget(row.review_case_id)))throw new VocabularyReflectionConflict('Repair target changed; request a fresh reassessment instead of retrying');
   }
-  if(row.review_case_id){assertVocabularyCaseCanQueue(row.review_case_id);if(getDb().prepare('SELECT 1 FROM vocabulary_reflection_jobs WHERE review_case_id=? AND case_sequence>?').get(row.review_case_id,row.case_sequence))throw new VocabularyReflectionConflict('Only the latest failed case job can be retried; request a fresh reassessment');if(row.reassessment_source_job_id&&currentAssessmentJob(row.review_case_id)?.job_id!==row.reassessment_source_job_id)throw new VocabularyReflectionConflict('A newer assessment superseded this failed job; request a fresh reassessment');touchVocabularyCaseReview(row.review_case_id);}
+  if(row.review_case_id){assertVocabularyCaseCanQueue(row.review_case_id,true);if(getDb().prepare('SELECT 1 FROM vocabulary_reflection_jobs WHERE review_case_id=? AND case_sequence>?').get(row.review_case_id,row.case_sequence))throw new VocabularyReflectionConflict('Only the latest failed case job can be retried; request a fresh reassessment');if(row.reassessment_source_job_id&&currentAssessmentJob(row.review_case_id)?.job_id!==row.reassessment_source_job_id)throw new VocabularyReflectionConflict('A newer assessment superseded this failed job; request a fresh reassessment');touchVocabularyCaseReview(row.review_case_id);}
   getDb().prepare(`UPDATE vocabulary_reflection_jobs SET status='queued',next_attempt_at=?,last_error=NULL,lease_token=NULL,lease_expires_at=NULL WHERE job_id=?`)
     .run(timestamp(at),jobId);
   // A manual restart gets a fresh cycle unless a successful mapping must retain
@@ -881,8 +887,9 @@ function reassessmentSummary(evidence: VocabularyReflectionCase): ReassessmentSu
   const source=evidence.kind==='exercise_improvement'&&(evidence.status==='completed'||evidence.status==='open')
     ? currentAssessmentJob(evidence.caseId) : undefined;
   if(!source) return {eligible:false,unavailableReason:evidence.kind!=='exercise_improvement'?'Only exercise improvement assessments can be reassessed.':evidence.status==='closed'?'This assessment is closed.':'A successful assessment is required before reassessment.',source:null,latest:null};
-  const latest=db.prepare(`SELECT case_id AS caseId,job_id AS jobId,status,last_error AS error FROM vocabulary_reflection_jobs
-    WHERE review_case_id=? AND reassessment_source_job_id IS NOT NULL AND second_opinion_json IS NULL ORDER BY case_sequence DESC LIMIT 1`).get(evidence.caseId) as ReassessmentSummary['latest'] | undefined;
+  const latest=db.prepare(`SELECT * FROM (SELECT case_id AS caseId,job_id AS jobId,status,last_error AS error FROM vocabulary_reflection_jobs
+    WHERE review_case_id=? AND reassessment_source_job_id IS NOT NULL AND second_opinion_json IS NULL ORDER BY case_sequence DESC LIMIT 1) candidate
+    WHERE NOT EXISTS (SELECT 1 FROM backend_events e WHERE e.job_id=candidate.jobId AND e.name='vocabulary.reflection.reassessment_abandoned')`).get(evidence.caseId) as ReassessmentSummary['latest'] | undefined;
   const current=reassessmentSource(evidence);
   return {eligible:current!==null,unavailableReason:current?null:'The current source is unavailable or is not an active general production exercise.',source:current,latest:latest??null};
 }
@@ -978,8 +985,8 @@ export function getVocabularyCaseWorkspace(caseId: string, actorId: string): {as
   operator(actorId);
   caseId=canonicalVocabularyCaseId(caseId);
   const evidence=getVocabularyReflectionCase(caseId);
-  const jobRows=getDb().prepare(`SELECT job_id AS jobId,case_sequence AS caseSequence,kind,status,attempt_number AS attemptNumber,last_error AS error,second_opinion_json,result_json FROM vocabulary_reflection_jobs WHERE review_case_id=? ORDER BY case_sequence`).all(caseId) as { jobId:string;caseSequence:number;kind:string;status:string;attemptNumber:number;error:string|null;second_opinion_json:string|null;result_json:string|null }[];
-  const jobs=jobRows.map(({second_opinion_json,result_json,...row})=>({...row,secondOpinion:!!second_opinion_json,result:result_json?(JSON.parse(result_json) as {input:VocabularyImprovementResultInput}).input.secondOpinion??null:null}));
+  const jobRows=getDb().prepare(`SELECT job_id AS jobId,case_sequence AS caseSequence,kind,status,attempt_number AS attemptNumber,last_error AS error,second_opinion_json,result_json,EXISTS(SELECT 1 FROM backend_events e WHERE e.job_id=vocabulary_reflection_jobs.job_id AND e.name='vocabulary.reflection.reassessment_abandoned') AS abandoned FROM vocabulary_reflection_jobs WHERE review_case_id=? ORDER BY case_sequence`).all(caseId) as { jobId:string;caseSequence:number;kind:string;status:string;attemptNumber:number;error:string|null;second_opinion_json:string|null;result_json:string|null;abandoned:number }[];
+  const jobs=jobRows.map(({second_opinion_json,result_json,abandoned,...row})=>({...row,abandoned:!!abandoned,secondOpinion:!!second_opinion_json,result:result_json?(JSON.parse(result_json) as {input:VocabularyImprovementResultInput}).input.secondOpinion??null:null}));
   const ids=new Set(evidence.evidence.map(item=>item.snapshot.contentId));
   for(const id of [...ids]) {
     for(const row of getDb().prepare('SELECT introduction_id FROM introduction_exercises WHERE exercise_id=?').all(id) as {introduction_id:string}[])ids.add(row.introduction_id);
@@ -992,9 +999,10 @@ export function getVocabularyCaseWorkspace(caseId: string, actorId: string): {as
   if(improvement?.pureCuePromotion?.existingContentId)ids.add(improvement.pureCuePromotion.existingContentId);
   const sources=[...ids].map(id=>getVocabularyContentForMaintenance(id)).filter((value):value is VocabularyContent=>value!==null);
   const admission = caseAdmission(caseId);
-  const reassessment=getDb().prepare(`SELECT child.case_id AS caseId,child.job_id AS jobId,child.status,child.last_error AS error
+  const reassessment=getDb().prepare(`SELECT * FROM (SELECT child.case_id AS caseId,child.job_id AS jobId,child.status,child.last_error AS error
     FROM vocabulary_reflection_jobs child JOIN vocabulary_reflection_jobs source ON source.job_id=child.reassessment_source_job_id
-    WHERE child.review_case_id=? AND child.second_opinion_json IS NULL ORDER BY child.case_sequence DESC LIMIT 1`).get(caseId) as {caseId:string;jobId:string;status:string;error:string|null}|undefined;
+    WHERE child.review_case_id=? AND child.second_opinion_json IS NULL ORDER BY child.case_sequence DESC LIMIT 1) candidate
+    WHERE NOT EXISTS (SELECT 1 FROM backend_events e WHERE e.job_id=candidate.jobId AND e.name='vocabulary.reflection.reassessment_abandoned')`).get(caseId) as {caseId:string;jobId:string;status:string;error:string|null}|undefined;
   const proposals=(getDb().prepare('SELECT p.proposal_id FROM content_proposals p JOIN vocabulary_case_lineage l ON l.member_case_id=p.case_id WHERE l.case_id=? ORDER BY p.updated_at DESC,p.proposal_id')
     .all(caseId) as {proposal_id:string}[]).map(row=>withProposalResolution(proposal(row.proposal_id)));
   return {assessment:assessmentReview(caseId),reassessmentUnavailableReason:reassessmentSummary(evidence).unavailableReason,...(improvement?.pureCuePromotion?.outcome==='needs_operator'&&improvement.pureCueReferral&&evidence.wordId?{pureCueIdentityOptions:pureCueIdentityOptions(evidence.wordId,improvement.pureCueReferral)}:{}),senseLabels:senseLabels([...(evidence.wordId?[evidence.wordId]:[]),...sources.flatMap(source=>source.words.map(word=>word.wordId))]),defaultSelectionFinding:evidence.wordId?getVocabularyDefaultSelectionFinding(evidence.wordId):null,case:evidence,jobs,reassessmentSource:reassessmentSummary(evidence).source,reassessment:reassessment??null,proposals,sources,...(improvement ? {diagnosis:improvement.diagnosis} : {}),...(admission ? {admission} : {}),...(improvement?.pureCueReferral?{pureCueReferral:improvement.pureCueReferral}:{}),...(improvement?.pureCuePromotion?{pureCuePromotion:improvement.pureCuePromotion}:{})};
@@ -1080,7 +1088,7 @@ export function requestVocabularyCaseSecondOpinion(caseId:string, actorId:string
 export type ReassessmentOrigin = {kind:'case'} | {kind:'proposal';proposalId:string;expectedVersion:number};
 
 /** Queue a fresh assessment of the operator-selected current authored version. */
-export function requestVocabularyReassessment(caseId:string, actorId:string, modelChoice:ReflectionModelChoice, expectedContentVersion:number, origin:ReassessmentOrigin={kind:'case'},editorial?:VocabularyReassessmentEditorial): {caseId:string;jobId:string} {
+export function requestVocabularyReassessment(caseId:string, actorId:string, modelChoice:ReflectionModelChoice, expectedContentVersion:number, origin:ReassessmentOrigin={kind:'case'},editorial?:VocabularyReassessmentEditorial,identities?:import('../../src/domain/vocabulary-reflection.ts').VocabularyResponseIdentitySelection): {caseId:string;jobId:string} {
   const actor=operator(actorId);
   if(!isOfferedReflectionModelChoice(modelChoice)) throw new Error('Unsupported assessment model');
   return atomic(()=>{
@@ -1090,7 +1098,22 @@ export function requestVocabularyReassessment(caseId:string, actorId:string, mod
     const db=getDb();
     const source=currentAssessmentJob(caseId);
     if(!source) throw new VocabularyReflectionConflict('Completed assessment evidence is unavailable');
-    assertVocabularyCaseCanQueue(caseId);
+    const pending=caseImprovementResult(caseId)?.responseIdentityOptions;
+    if(pending?.length){
+      const prior=db.prepare("SELECT data_json FROM backend_events WHERE job_id=? AND name='vocabulary.reflection.reassessment_editorial_captured'").get(source.job_id) as {data_json:string}|undefined;
+      if(prior){
+        const retained=JSON.parse(prior.data_json) as VocabularyReassessmentEditorial;
+        editorial={instructions:[retained.instructions,editorial?.instructions].filter(Boolean).join('\n\n'),...(editorial?.secondOpinion?{secondOpinion:editorial.secondOpinion}:retained.secondOpinion?{secondOpinion:retained.secondOpinion}:{})};
+      }
+    }
+    if(identities){
+      const current=ambiguousVocabularyResponses({evidence});
+      if((pending?.length&&!isDeepStrictEqual(identities.options,pending))||!isDeepStrictEqual(current,identities.options)||Object.keys(identities.selections).length!==identities.options.length||identities.options.some(option=>!option.choices.some(choice=>choice.wordId===identities.selections[option.form])))
+        throw new VocabularyReflectionConflict('Response dictionary identities changed; review the candidates again');
+      if(!identities.options.length)throw new VocabularyReflectionConflict('This assessment has no ambiguous response identities');
+    }
+    const continuation=!!pending?.length&&pendingVocabularyReassessment(caseId)?.jobId===source.job_id;
+    assertVocabularyCaseCanQueue(caseId,continuation);
     if(origin.kind==='proposal') {
       const value=expectedProposal(origin.proposalId,origin.expectedVersion);
       if(!value.caseId||canonicalVocabularyCaseId(value.caseId)!==caseId||!['draft','awaiting_review','approved'].includes(value.status))
@@ -1102,9 +1125,13 @@ export function requestVocabularyReassessment(caseId:string, actorId:string, mod
     if(!Number.isSafeInteger(expectedContentVersion)||expectedContentVersion!==metadata.currentVersion)
       throw new VocabularyReflectionConflict('Assessment source version changed; review the current version before reassessing');
     const content=getVocabularyContentForMaintenance(metadata.contentId)!;
+    if(identities&&!pending?.length&&(content.kind!=='exercise'||content.exerciseType==='pure_cue'||isVocabularyDefinitionFallback(content)
+      ||content.answers.length!==1||content.answers[0]?.wordId!==evidence.wordId||evidence.evidence.some(encounter=>encounter.snapshot.schedulingScope==='pure_cue')))
+      throw new VocabularyReflectionConflict('Response identity selection is unavailable for this assessment');
     const at=timestamp(), requestId=randomUUID();
-    const jobId=queueCaseJob(caseId,at,`reassessment/${requestId}`,{sourceJobId:source.job_id,source:content,modelChoice});
+    const jobId=queueCaseJob(caseId,at,`reassessment/${requestId}`,{sourceJobId:source.job_id,source:content,modelChoice,continuePending:continuation});
     if(editorial)emitBackendEvent({name:'vocabulary.reflection.reassessment_editorial_captured',entityKind:'reflection',entityId:caseId,jobId,actorKind:'operator',actorId,data:editorial,occurredAt:at});
+    if(identities)emitBackendEvent({name:'vocabulary.reflection.response_identities_captured',entityKind:'reflection',entityId:caseId,jobId,actorKind:'operator',actorId,data:identities,occurredAt:at});
     event('vocabulary.reflection.reassessment_requested',caseId,{requestId,caseId,jobId,sourceJobId:source.job_id,modelChoice,sourceContentId:content.contentId,sourceContentVersion:content.version,origin},actor);
     return {caseId,jobId};
   });

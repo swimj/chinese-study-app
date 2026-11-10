@@ -174,10 +174,11 @@ description, historical encounters, and supplied words. Call-local references
 such as `target` and `response_1` identify answers without asking the model to
 repeat dictionary IDs or source accepted forms. The input marks
 eligibility with `canAuthorIndividual`. The target has a known identity;
-submitted forms require exactly one dictionary match. Both individual additions
-and shared answers require a resolved supplied word. Missing or ambiguous forms
-serve as encounter evidence for diagnosis and target improvement; validation
-rejects their use as proposed answers.
+submitted forms resolve through a unique dictionary match or an operator choice
+among exact matches before this call. Both individual additions and shared
+answers require a resolved supplied word. Missing forms remain encounter evidence
+for diagnosis and target improvement; validation rejects their use as proposed
+answers.
 
 The adapter maps `revise` to `update_existing`, preserving source identity,
 answer criteria, and existing learner controls. Retirement can coexist with

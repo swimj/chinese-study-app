@@ -125,6 +125,17 @@ test('repeated encounter history keeps outcomes while omitting identical cue and
  assert.match(render(item),/A changed cue/);assert.match(render(item),/version 2/);
 });
 
+test('encounter history omits the date only when it matches the leading encounter',()=>{
+ const item=caseReviewFixture();const first=item.served[0];
+ item.served.push({...structuredClone(first),encounterId:'same-day',presentedAt:'2026-10-31T23:30:00.000Z'});
+ let html=render(item);
+ assert.match(html,new RegExp(new Date(item.served[1].presentedAt!).toLocaleTimeString().replace(/[.*+?^${}()|[\]\\]/g,'\\$&')));
+ assert.equal(html.split(new Date(first.presentedAt!).toLocaleDateString()).length-1,1);
+ item.served[1].presentedAt='2026-11-03T14:00:00.000Z';html=render(item);
+ assert.ok(html.includes(new Date(item.served[1].presentedAt).toLocaleString()));
+ item.served[1].presentedAt=null;assert.match(render(item),/Encounter time unavailable/);
+});
+
 
 test('completed second opinions offer a direct reassessment handoff only while review is available',()=>{
  const item=caseReviewFixture();

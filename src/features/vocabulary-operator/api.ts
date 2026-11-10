@@ -13,7 +13,7 @@ export type VocabularyCaseWorkspace={assessment?:VocabularyAssessmentReview;reas
   pureCueIdentityOptions?:{form:string;choices:{wordId:string;hanzi:string;traditional:string|null;pinyin:string;meaning:string}[]}[];
   reassessmentSource?:VocabularyReassessmentSource|null;
   reassessment?:{caseId:string;jobId:string;status:string;error:string|null}|null;
-  jobs:{jobId:string;caseSequence?:number;kind:string;status:string;attemptNumber:number;error:string|null;secondOpinion:boolean;result:VocabularySecondOpinion['result']}[];proposals:VocabularyContentProposal[]};
+  jobs:{jobId:string;caseSequence?:number;kind:string;status:string;attemptNumber:number;error:string|null;abandoned?:boolean;secondOpinion:boolean;result:VocabularySecondOpinion['result']}[];proposals:VocabularyContentProposal[]};
 export type VocabularyReviewSnapshot={currentSources?:VocabularyContent[];assessment?:VocabularyAssessmentReview|null;coverageChanged?:boolean;senseLabels?:VocabularySenseLabel[];defaultSelectionFinding?:VocabularyDefaultSelectionFinding|null;proposal:VocabularyContentProposal;case:VocabularyReflectionCase|null;reassessment:{eligible:boolean;unavailableReason?:string|null;source:VocabularyReassessmentSource|null;latest:{caseId:string;jobId:string;status:string;error:string|null}|null}|null;previews:{operationKey:string;source:VocabularyContent|null;result:VocabularyContentDraft}[]};
 export type VocabularyProposalPreview={proposal:VocabularyContentProposal;
   previews:{operationKey:string;source:VocabularyContent|null;result:VocabularyContent}[];
@@ -42,7 +42,8 @@ export const vocabularyOperatorApi={
   generateFallbackRepertoire:(caseId:string,input:VocabularyFallbackGenerationInput & {modelChoice:VocabularyReassessmentModel})=>
     write<{caseId:string;jobId:string;item:VocabularyCaseQueueItem}>(`/case-queue/${id(caseId)}/fallback-repertoire`,input),
   addCaseNote:(caseId:string,expectedVersion:number,requestId:string,text:string)=>write<VocabularyCaseQueueItem>(`/case-queue/${id(caseId)}/notes`,{expectedVersion,requestId,text}),
-  reassessCaseReview:(caseId:string,expectedVersion:number,modelChoice:VocabularyReassessmentModel,expectedContentVersion:number,originProposal?:{proposalId:string;expectedVersion:number},editorial?:VocabularyReassessmentEditorialInput)=>write<{caseId:string;jobId:string;item:VocabularyCaseQueueItem}>(`/case-queue/${id(caseId)}/reassess`,{expectedVersion,modelChoice,expectedContentVersion,originProposal,editorial}),
+  abandonReassessment:(caseId:string,expectedVersion:number,jobId:string)=>write<VocabularyCaseQueueItem>(`/case-queue/${id(caseId)}/abandon-reassessment`,{expectedVersion,jobId}),
+  reassessCaseReview:(caseId:string,expectedVersion:number,modelChoice:VocabularyReassessmentModel,expectedContentVersion:number,originProposal?:{proposalId:string;expectedVersion:number},editorial?:VocabularyReassessmentEditorialInput,responseIdentities?:{options:import('../../domain/vocabulary-reflection').VocabularyResponseIdentityOption[];selections:{form:string;wordId:string}[]})=>write<{caseId:string;jobId:string;item:VocabularyCaseQueueItem}>(`/case-queue/${id(caseId)}/reassess`,{expectedVersion,modelChoice,expectedContentVersion,originProposal,editorial,responseIdentities}),
   saveDefaultUsefulSenses:(wordId:string,expectedVersion:number,includedSenseIds:string[])=>write<VocabularySenseCoverageWorkspace>(`/words/${id(wordId)}/sense-coverage`,{expectedVersion,includedSenseIds},'PUT'),
   wordSenseCoverage:(wordId:string)=>apiRequest<VocabularySenseCoverageWorkspace>(`${root}/words/${id(wordId)}/sense-coverage`),
   repairTarget:(caseId:string)=>apiRequest<VocabularyRepairTargetWorkspace>(`${root}/cases/${id(caseId)}/repair-target`),

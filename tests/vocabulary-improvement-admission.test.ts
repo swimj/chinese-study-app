@@ -483,8 +483,7 @@ for(const localRepair of [false,true])test(`referral composes with local repair=
   assert.equal(db.prepare("SELECT count(*) n FROM vocabulary_improvement_stages WHERE stage='pure_cue_promotion'").get()!.n,1);
 });
 
-for(const identity of ['missing','ambiguous'] as const)test(`${identity} response remains evidence while source repair is actionable`,async()=>{
-  if(identity==='ambiguous')db.exec("INSERT INTO lexical_words VALUES ('a','扩大',NULL,'a','expand'),('b','扩大',NULL,'b','expand')");
+test('missing response remains evidence while source repair is actionable',async()=>{
   const trial=provider(request=>{
     if(request.provenance!.stepName==='sense_mapping')return single;
     const wire=JSON.parse(request.userPrompt);
@@ -498,11 +497,37 @@ for(const identity of ['missing','ambiguous'] as const)test(`${identity} respons
   assert.equal(trial.requests.length,2);
 });
 
-for(const identity of ['missing','ambiguous'] as const)test(`shared authoring rejects ${identity} response identity before caching`,async()=>{
-  if(identity==='ambiguous')db.exec("INSERT INTO lexical_words VALUES ('a','扩大',NULL,'a','expand'),('b','扩大',NULL,'b','expand')");
+test('shared authoring rejects a missing response identity before caching',async()=>{
   const trial=provider(request=>request.provenance!.stepName==='sense_mapping'?single:{...repair,sharedExercise});
   await assert.rejects(()=>trial.provider.run(submittedJob()),/Shared exercise requires supplied unambiguous words/);
   assert.equal(db.prepare("SELECT count(*) n FROM vocabulary_improvement_stages WHERE stage='single_improvement'").get()!.n,0);
+});
+
+test('ambiguous response pauses before authoring and the selected identity reaches shared integration',async()=>{
+  db.exec("INSERT INTO lexical_words VALUES ('a','扩大',NULL,'a','expand'),('b','扩大',NULL,'b','broaden')");
+  const input=submittedJob();
+  const trial=provider(request=>request.provenance!.stepName==='sense_mapping'?single:request.provenance!.stepName==='single_improvement'?{...repair,sharedExercise}:createPromotion);
+  const pending=await trial.provider.run(input);if(pending.kind!=='exercise_improvement')assert.fail('Expected improvement');
+  assert.equal(pending.result.proposal,null);assert.equal(trial.requests.length,1);
+  const options=pending.result.responseIdentityOptions!;
+  assert.deepEqual(options.map(option=>[option.form,option.choices.map(word=>word.wordId)]),[['扩大',['a','b']]]);
+  input.responseIdentitySelection={options,selections:{'扩大':'b'}};
+  const result=await trial.provider.run({...input,attemptNumber:2});if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
+  assert.equal(JSON.parse(trial.requests[1]!.userPrompt).words[1].lexical.pinyin,'b');
+  assert.deepEqual(JSON.parse(trial.requests[2]!.userPrompt).candidates.map((word:{wordId:string})=>word.wordId),['word','b']);
+  assert.equal(result.result.pureCuePromotion!.outcome,'create');
+});
+test('a newly ambiguous second response re-presents all ambiguous identities',async()=>{
+  db.exec("INSERT INTO lexical_words VALUES ('a','扩大',NULL,'a','expand'),('b','扩大',NULL,'b','broaden'),('c','增加',NULL,'c','increase')");
+  const input=submittedJob();
+  input.evidence.evidence[0]!.responses.push({protocolVersion:1,actionId:'answer-two',clientActionId:'answer-two',sequence:3,occurredAt:at,kind:'response',payload:{encounterId:'encounter',outcome:'rejected',response:'增加'}});
+  const trial=provider(()=>single);
+  const first=await trial.provider.run(input);if(first.kind!=='exercise_improvement')assert.fail('Expected improvement');
+  input.responseIdentitySelection={options:first.result.responseIdentityOptions!,selections:{'扩大':'a'}};
+  db.exec("INSERT INTO lexical_words VALUES ('d','增加',NULL,'d','additional')");
+  const next=await trial.provider.run({...input,attemptNumber:2});if(next.kind!=='exercise_improvement')assert.fail('Expected improvement');
+  assert.deepEqual(next.result.responseIdentityOptions!.map(option=>option.form),['扩大','增加']);
+  assert.equal(trial.requests.length,1);
 });
 
 test('candidate and integration stages retain prior-contract evidence without consuming it on retry',async()=>{
@@ -1055,25 +1080,21 @@ test('single improvement receives exact response identities and can add only res
   assert.deepEqual(getVocabularyContentForMaintenance('original')!.body,sourceBefore!.body);
 });
 test('alias resolution during authoring cannot silently renumber supplied word references',async()=>{
-  const {vocabularyResponseCandidates}=await import('../server/vocabulary/pure-cue-promotion.ts');
-  const {vocabularyImprovementWords}=await import('../server/vocabulary/exercise-improvement-authoring.ts');
   const {VocabularyReflectionConflict}=await import('../server/db/vocabulary-reflection.ts');
   db.exec("INSERT INTO lexical_words VALUES ('expanded','扩大','擴大','kuo4 da4','expand'),('homograph','扩大',NULL,'another reading','another sense'),('increased','增加',NULL,'zeng1 jia1','increase')");
   const input=job();
   input.evidence.evidence[0]!.responses=['扩大','擴大','增加'].map((response,index)=>({protocolVersion:1,actionId:`answer-${index}`,clientActionId:`answer-${index}`,sequence:index+1,occurredAt:at,kind:'response',payload:{encounterId:'encounter',outcome:'rejected',response}}));
-  const candidatesBefore=vocabularyResponseCandidates(input);
+  const matches=(await import('../server/vocabulary/response-word-matching.ts')).vocabularyResponseWordMatches(input);
+  input.responseIdentitySelection={options:[{form:'扩大',choices:matches[0]!.matches}],selections:{'扩大':'expanded'}};
   const trial=provider(request=>{
     if(request.provenance!.stepName==='sense_mapping')return single;
     const wire=JSON.parse(request.userPrompt);
-    assert.deepEqual(wire.words.map((word:{ref:string;form:string})=>[word.ref,word.form]),[['target','放大'],['response_1','扩大'],['response_2','擴大'],['response_3','增加']]);
-    assert.equal(wire.words[1].canAuthorIndividual,false);assert.equal(wire.words[2].canAuthorIndividual,true);
+    assert.deepEqual(wire.words.map((word:{ref:string;form:string})=>[word.ref,word.form]),[['target','放大'],['response_1','扩大'],['response_2','增加']]);
+    assert.equal(wire.words[1].canAuthorIndividual,true);
     db.exec("DELETE FROM lexical_words WHERE id='homograph'");
-    // The old resolved-identity fence cannot see this change, but response_2 now names a different word.
-    assert.deepEqual(vocabularyResponseCandidates(input),candidatesBefore);
-    assert.equal(vocabularyImprovementWords(input).find(word=>word.ref==='response_2')!.word!.wordId,'increased');
     return {...repair,source:{decision:'keep',prompt:null},additionalExercises:[{answer:'response_2',role:'enrichment',prompt:'Broaden the scope of an investigation.',rationale:'Practice the expansion use.'}]};
   },{ledger:true});
-  await assert.rejects(()=>trial.provider.run(input),error=>error instanceof VocabularyReflectionConflict&&/lexical identities changed/.test(error.message));
+  await assert.rejects(()=>trial.provider.run(input),error=>error instanceof VocabularyReflectionConflict&&/dictionary identities changed/.test(error.message));
   assert.equal(db.prepare("SELECT count(*) n FROM vocabulary_improvement_stages WHERE stage='single_improvement'").get()!.n,0);
   assert.equal(db.prepare("SELECT status FROM model_invocations WHERE id='invocation-2'").get()!.status,'completed');
   assert.equal(db.prepare('SELECT count(*) n FROM content_items').get()!.n,1);
