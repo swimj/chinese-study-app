@@ -70,7 +70,12 @@ export function ScopeCoverageEditor({api,wordId,disabled,finding,onActivity,onSa
       {!current.selectionEstablished&&!draft&&<p role="status">Useful senses have not been selected.</p>}
       {current.selectionEstablished&&selected.length===0&&!draft&&<p role="status">No senses selected.</p>}
       <div className="vocabulary-sense-chips" role="group" aria-label="Useful senses">{current.senses.filter(sense=>sense.status==='active').map(sense=><SenseDetails key={sense.senseId} label={label(sense.description)} notes={notes(sense.description)}><button type="button" className="vocabulary-sense-chip" aria-pressed={selected.includes(sense.senseId)} disabled={pending||disabled} onClick={()=>choose(selected.includes(sense.senseId)?selected.filter(id=>id!==sense.senseId):[...selected,sense.senseId])}>{label(sense.description)}</button></SenseDetails>)}</div>
-      {draft&&impact>0&&<p role="status">{impact} mapped general production {impact===1?'exercise':'exercises'} will stop being selected. Content remains active.</p>}
+      {!repertoire && (!current.selectionEstablished || current.includedSenseIds.length > 0 || selected.length > 0) &&
+        <button type="button" className="secondary-button" disabled={pending || disabled}
+          aria-pressed={!!draft && selected.length === 0} onClick={() => choose([])}>No useful senses</button>}
+      {draft && selected.length === 0 && !repertoire &&
+        <p role="status">Individual-word production will stop for all learners in Practice and Maintain.</p>}
+      {draft&&impact>0&&(selected.length>0||repertoire)&&<p role="status">{impact} mapped general production {impact===1?'exercise':'exercises'} will stop being selected. Content remains active.</p>}
       {draft&&draft.expectedVersion!==current.word.version&&<p role="alert">Word defaults changed. Discard edits before selecting from the current version.</p>}
       {actionsContainer?createPortal(actions,actionsContainer):actions}
       {draft&&reassessOpen&&repertoire?.reassessment&&<div className="vocabulary-selection-reassessment" role="group" aria-label="Save selection and reassess">

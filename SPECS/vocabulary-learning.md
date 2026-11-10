@@ -115,6 +115,11 @@ answer when another eligible member qualifies that cue. The initial vocabulary
 UI and reflection proposal contracts do not create or reverse suppression;
 existing suppression records remain effective under these semantics.
 
+An explicit empty shared default sense selection also makes individual-word
+production ineligible in Practice and Maintain for all learners, including
+dictionary fallback and authored exercises. Unknown defaults retain legacy
+eligibility. Recognition, contrast, and pure cues have their own eligibility.
+
 New teaching and Solidify practise both recognition and production, regardless of
 review skill enablement or suppression. Review settings are preserved for later
 Practice/Maintain sessions. Previously retained sessions keep their recorded

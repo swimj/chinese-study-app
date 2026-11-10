@@ -11,6 +11,8 @@ import { beforeEach,afterEach,test } from 'node:test';
 import { setDb } from '../server/db/connection.ts';
 import { runWithLearnerId } from '../server/db/learner-context.ts';
 import { adoptVocabularyPureCues } from '../server/vocabulary/pure-cue-serving.ts';
+import { writeVocabularyDefaultUsefulSenses } from '../server/db/vocabulary-sense-coverage.ts';
+import { selectVocabularyReviewSkills } from '../server/vocabulary/review-selection.ts';
 import { createVocabularyContent,replaceVocabularyContent,updateVocabularyContent,getVocabularyContent,createVocabularySense,establishVocabularySenseCatalog,getVocabularySenseCatalog,getVocabularySenses,updateVocabularySense } from '../server/db/vocabulary-content.ts';
 import { appendVocabularySessionActions,createVocabularySession as createStoredSession,stageVocabularySessionCompletion,cancelVocabularySessionCompletion,closeVocabularySessionCompletion } from '../server/db/vocabulary-sessions.ts';
 import { changeVocabularyMode,addVocabularyWord,dismissVocabularyWord,getVocabularyLearnerWord,getVocabularyWordSchedule,enrollVocabularyDietWord } from '../server/db/vocabulary-learners.ts';
@@ -1049,6 +1051,25 @@ for(const mode of ['solidify','practice','maintain'] as const)test(`${mode} excl
   db.prepare("INSERT INTO learner_content_deactivations VALUES('alice','z-authored-b','2026-10-28T00:00:00.000Z')").run();
   const later=createVocabularySession({sessionId:'after-deactivation',words:[{wordId:'b',mode,selectedSkill:'production'}]});
   assert.ok(later.context.payload!.words.b.general[mode].some(content=>content.contentId===fallbackId));
+}));
+
+for (const mode of ['practice', 'maintain'] as const) test(`${mode} with explicitly empty defaults admits recognition and freezes no word production`,()=>owner(()=>{
+  db.prepare("UPDATE learner_words SET mode=? WHERE word_id='b'").run(mode);
+  const before=createVocabularySession({sessionId:'before-empty-defaults',words:[{wordId:'b',mode,selectedSkill:'production'}]});
+  const fallback=before.context.payload!.words.b.general[mode].find(content=>content.skill==='production');
+  assert.equal(fallback?.exerciseType,'definition','unknown defaults keep legacy fallback');
+  exercise('authored-b','b');
+  if(mode==='maintain')db.prepare("INSERT INTO content_mode_suitability VALUES('authored-b','maintain','curated',1)").run();
+  createVocabularySense({senseId:'b-sense',wordId:'b',description:'Secondary use'},actor);
+  establishVocabularySenseCatalog('b',getVocabularySenseCatalog('b').version,actor);
+  const now='2026-11-09T10:00:00.000Z';
+  assert.equal(selectVocabularyReviewSkills({now}).find(selection=>selection.wordId==='b')?.skillId,'production');
+  writeVocabularyDefaultUsefulSenses('b',0,[],actor);
+  db.prepare("INSERT INTO learner_owned_word_skill_state VALUES('alice','b','recognition',6,2.5,1,NULL,NULL)").run();
+  assert.equal(selectVocabularyReviewSkills({now}).find(selection=>selection.wordId==='b')?.skillId,'recognition');
+  const after=createVocabularySession({sessionId:'after-empty-defaults',words:[{wordId:'b',mode,selectedSkill:'recognition'}]});
+  assert.deepEqual(after.context.payload!.words.b.general[mode].map(content=>content.skill),['recognition']);
+  assert.equal(nextVocabularyExercise(before.sessionId,'next').currentEncounter?.snapshot.contentId,fallback?.contentId);
 }));
 
 test('recognition and contrast do not displace a Practice production fallback',()=>owner(()=>{
