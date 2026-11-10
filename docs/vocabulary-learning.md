@@ -475,6 +475,8 @@ This section describes ordinary learner-triggered demand. The
 [repertoire preparation guide](implementation/repertoire-preparation.md)
 explains the shared authoring machinery and operator-driven batch path, which
 can prepare general repertoire independently of teaching completion.
+Automatic first pools share the [Sol/Luna allocation](implementation/repertoire-preparation.md#automatic-authoring-model)
+with first repertoire generation in reflection.
 
 Successful session closure queues general practice for completed teaching in the
 same transaction as learning effects. Undo before closure and failed closure

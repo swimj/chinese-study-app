@@ -65,10 +65,9 @@ function response(value: unknown,canonical=false): Response {
 
 test('generous general generation retains service invocation, exact prompt/source, answers and independent use hints', async () => {
   let calls = 0;let sent: Record<string,unknown> = {};
-  const provider = createVocabularyPracticeProvider({ environment: { OPENAI_API_KEY: 'test-key' },fetchImplementation: (async (_url,init) => {
+  const preparation = createVocabularyPracticePreparation({ environment: { OPENAI_API_KEY: 'test-key' },fetchImplementation: (async (_url,init) => {
     calls++;sent=JSON.parse(String(init?.body));return response(output());
   }) as typeof fetch });
-  const preparation = createVocabularyPracticePreparation({ provider });
   const work = preparation.ensure('w1')!;assert.equal(work.status,'queued');assert.equal(preparation.listQueued().length,1);
   await preparation.prepare('w1');await preparation.prepare('w1');assert.equal(calls,1);
   assert.equal(sent.model, 'gpt-6-luna');assert.equal(sent.reasoning_effort, 'high');
@@ -326,14 +325,34 @@ test('worker polls delayed retries automatically and maintenance prevents dispat
   await worker.stop();
 });
 
-function seedSecondPreparationWord() {
+function seedSecondPreparationWord(wordId='w2') {
   const timestamp = new Date().toISOString();
   db.prepare(`INSERT INTO lexical_words(id,hanzi,traditional,pinyin,meaning,meanings_json,examples_json,priority,created_at)
-    VALUES ('w2','你好',NULL,'nǐ hǎo','hello','["hello"]','[]',1,?)`).run(timestamp);
-  assert.equal(claimSharedWordIntroductionStage('w2','bootstrap','second-bootstrap',timestamp,new Date(Date.now()+300_000).toISOString()),'claimed');
-  finishSharedWordIntroductionBootstrap('w2','second-bootstrap',{...content,id:'bootstrap2',word:{...content.word,wordId:'w2'}},'test-model');
-  writeVocabularyDefaultUsefulSenses('w2',0,getVocabularySenses('w2').map(sense=>sense.senseId),{kind:'service',id:'fixture'});
+    VALUES (?,'你好',NULL,'nǐ hǎo','hello','["hello"]','[]',1,?)`).run(wordId,timestamp);
+  assert.equal(claimSharedWordIntroductionStage(wordId,'bootstrap','second-bootstrap',timestamp,new Date(Date.now()+300_000).toISOString()),'claimed');
+  finishSharedWordIntroductionBootstrap(wordId,'second-bootstrap',{...content,id:'bootstrap2',word:{...content.word,wordId}},'test-model');
+  writeVocabularyDefaultUsefulSenses(wordId,0,getVocabularySenses(wordId).map(sense=>sense.senseId),{kind:'service',id:'fixture'});
 }
+
+test('automatic Sol preparation keeps the same word route after retry and attributes published content', async () => {
+  seedSecondPreparationWord('w3');
+  let now=Date.now();const calls:string[]=[];
+  const options={now:()=>new Date(now).toISOString(),environment:{OPENAI_API_KEY:'test'},fetchImplementation:(async(_url,init)=>{
+    const request=JSON.parse(String(init?.body));calls.push(request.model);
+    assert.equal(request.reasoning_effort,'high');
+    if(calls.length===1)return response({exercises:[{...output(1).exercises[0],sourceUseId:'invalid'}]});
+    return response(output(1));
+  }) as typeof fetch};
+  const preparation=createVocabularyPracticePreparation(options),work=preparation.ensure('w3')!;
+  await assert.rejects(()=>preparation.prepare('w3'),/invalid or incomplete/);
+  now+=30_000;
+  await createVocabularyPracticePreparation(options).prepare('w3');
+  assert.deepEqual(calls,['gpt-6-sol','gpt-6-sol']);
+  const saved=preparation.ensure('w3')!;
+  assert.equal(saved.workId,work.workId);assert.equal(saved.status,'ready');assert.equal(saved.totalAttemptCount,2);
+  assert.equal(db.prepare('SELECT model FROM model_invocations WHERE id=?').get(saved.invocationId)!.model,'gpt-6-sol');
+  assert.equal(db.prepare("SELECT json_extract(body_json,'$.source.model') AS model FROM content_items WHERE exercise_role='general'").get()!.model,'gpt-6-sol');
+});
 
 test('provider outage pauses other practice words for 60 seconds without spending their attempts or exposing errors', async () => {
   seedSecondPreparationWord();

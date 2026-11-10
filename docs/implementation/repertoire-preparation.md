@@ -97,6 +97,22 @@ reviewable proposals; this batch path applies an operator-attributed maintenance
 bundle. The [architecture contract](../../SPECS/vocabulary-architecture.md#generation-review-and-application-authority)
 explains preparation and proposal authority.
 
+### Automatic authoring model
+
+The first general practice pool after teaching and an unassigned first
+repertoire job in reflection share a word-level allocation: two buckets use
+GPT-6 Sol high and one uses GPT-6 Luna high. A word stays in its bucket across
+entry points and retries. The allocation applies to general exercise authoring;
+inventory, useful-sense selection, and other reflection steps keep their own
+routes. The exercise brief and validation are shared across model arms.
+
+Saved reflection choices take precedence, including operator-selected models
+and routes saved before this policy. Existing published pools are reused;
+queued post-teaching work binds the current authoring brief when claimed.
+Reconciliation replacements and operator bulk runs retain their separate model
+policies. The invocation ledger records the model that actually authored each
+result.
+
 ## Adapting the scenario policies
 
 Prefer reusing generation, verification, evidence retention and transactional
