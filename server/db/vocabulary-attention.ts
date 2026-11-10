@@ -6,6 +6,8 @@ import { config,getDb } from './connection.ts';
 import { getVocabularyDefaultSelectionFinding } from './vocabulary-sense-coverage.ts';
 import { getVocabularyCaseCard,vocabularyReviewQueueEligibilitySql } from './vocabulary-case-queue.ts';
 import { isVocabularyCaseSourceSuperseded } from './vocabulary-case-source.ts';
+import { actionableVocabularyFailureSql } from './vocabulary-case-failures.ts';
+import { pendingVocabularyReassessment } from './vocabulary-case-reviews.ts';
 
 type PreparationFailure = {workId:string;wordId:string;sourceContentId:string|null;reconciliationId?:string|null;attemptCount:number;invocationId:string|null;lastError:string|null;retryable:boolean};
 type Dependencies = {approvals:VocabularyApprovalRequest[];preparationFailure:(workId:string)=>PreparationFailure};
@@ -15,6 +17,8 @@ type ReconciliationGroup = {
   status:'unresolved'|'draft'|'resolved'|'applied';created_at:string;completed_at:string|null;mismatch:number;
 };
 type GroupedFailure = {word_id:string;work_id:string;source_content_id:string|null;reconciliation_id:string|null;created_at:string;last_error:string|null};
+const latestActionableFailureSql=`coalesce((SELECT ${actionableVocabularyFailureSql('latest')}
+  FROM vocabulary_reflection_jobs latest WHERE latest.review_case_id=c.case_id OR latest.case_id=c.case_id ORDER BY latest.case_sequence DESC,latest.created_at DESC,latest.job_id DESC LIMIT 1),0)`;
 
 /** Classify queue identities first, then batch reconciliation details for the displayed page. */
 export function listVocabularyAttention(actorId:string,input:VocabularyAttentionQuery,dependencies:Dependencies):VocabularyAttentionPage {
@@ -71,6 +75,10 @@ export function listVocabularyAttention(actorId:string,input:VocabularyAttention
         OR p.source_content_id IN (SELECT value FROM json_each(g.pending_plan_json,'$.retireSourceIds'))
         OR p.source_content_id=json_extract(g.snapshot_json,'$.dependencies.introductionPreparation[0].content_id')
         OR p.source_content_id=json_extract(g.snapshot_json,'$.dependencies.reconciliationTeachingEvidence.contentId')
+  ), case_failures AS MATERIALIZED (
+    SELECT c.case_id,${latestActionableFailureSql} AS actionable
+      FROM reflection_cases c LEFT JOIN vocabulary_case_reviews r ON r.case_id=c.case_id
+      WHERE (c.kind='learner_feedback' AND c.status='open') OR (c.kind!='learner_feedback' AND coalesce(r.state,c.status)='open')
   ), attention AS (
     SELECT 'reconciliation:'||g.word_id AS id,'reconciliation' AS kind,g.word_id AS sourceId,g.title,g.created_at AS createdAt,NULL AS caseId
       FROM reconciliation_groups g
@@ -96,16 +104,16 @@ export function listVocabularyAttention(actorId:string,input:VocabularyAttention
       FROM vocabulary_post_session_dispatches d WHERE d.status='failed'
     UNION ALL
     SELECT 'case:'||c.case_id,'case',c.case_id,coalesce(w.hanzi,CASE c.kind WHEN 'learner_feedback' THEN 'Learner feedback' ELSE 'Content review' END),c.created_at,c.case_id
-      FROM reflection_cases c LEFT JOIN vocabulary_case_reviews r ON r.case_id=c.case_id LEFT JOIN lexical_words w ON w.id=c.word_id
+      FROM reflection_cases c LEFT JOIN vocabulary_case_reviews r ON r.case_id=c.case_id LEFT JOIN lexical_words w ON w.id=c.word_id JOIN case_failures failure ON failure.case_id=c.case_id
       WHERE ((c.kind='learner_feedback' AND c.status='open') OR (c.kind!='learner_feedback' AND coalesce(r.state,c.status)='open'))
       AND NOT EXISTS (SELECT 1 FROM vocabulary_case_lineage child WHERE child.member_case_id=c.case_id AND child.case_id!=c.case_id)
-      AND NOT coalesce((${vocabularyReviewQueueEligibilitySql}),0)
-      AND coalesce(r.approval_state,'')!='pending'
-      AND r.deferred_at IS NULL
+      AND (NOT coalesce((${vocabularyReviewQueueEligibilitySql}),0) OR failure.actionable)
+      AND (coalesce(r.approval_state,'')!='pending' OR failure.actionable)
+      AND (r.deferred_at IS NULL OR failure.actionable)
       AND NOT EXISTS (SELECT 1 FROM vocabulary_reflection_jobs active WHERE (active.review_case_id=c.case_id OR active.case_id=c.case_id) AND active.status IN ('queued','running'))
-      AND NOT EXISTS (SELECT 1 FROM content_proposals cp JOIN json_each(?) a ON cp.proposal_id=json_extract(a.value,'$.proposalId')
+      AND (failure.actionable OR NOT EXISTS (SELECT 1 FROM content_proposals cp JOIN json_each(?) a ON cp.proposal_id=json_extract(a.value,'$.proposalId')
         LEFT JOIN vocabulary_case_lineage lineage ON lineage.member_case_id=cp.case_id
-        WHERE coalesce(lineage.case_id,cp.case_id)=c.case_id AND cp.version<=json_extract(a.value,'$.expectedVersion') AND cp.status NOT IN ('closed','applied'))
+        WHERE coalesce(lineage.case_id,cp.case_id)=c.case_id AND cp.version<=json_extract(a.value,'$.expectedVersion') AND cp.status NOT IN ('closed','applied')))
   )`;
   const args=[JSON.stringify(approvals),JSON.stringify(approvals),input.kind??null,input.kind??null];
   const filter='WHERE (? IS NULL OR kind=?)';
@@ -168,10 +176,15 @@ export function listVocabularyAttention(actorId:string,input:VocabularyAttention
       }
       case 'case': {
         const record=db.prepare('SELECT kind FROM reflection_cases WHERE case_id=?').get(row.sourceId) as {kind:VocabularyReflectionCase['kind']};
-        const job=db.prepare(`SELECT job_id AS jobId,status,last_error AS error FROM vocabulary_reflection_jobs WHERE review_case_id=? OR case_id=? ORDER BY case_sequence DESC,created_at DESC,job_id DESC LIMIT 1`).get(row.sourceId,row.sourceId) as {jobId:string;status:string;error:string|null}|undefined;
+        const job=db.prepare(`SELECT job_id AS jobId,status,last_error AS error,second_opinion_json IS NOT NULL AS advisory FROM vocabulary_reflection_jobs WHERE review_case_id=? OR case_id=? ORDER BY case_sequence DESC,created_at DESC,job_id DESC LIMIT 1`).get(row.sourceId,row.sourceId) as {jobId:string;status:string;error:string|null;advisory:number}|undefined;
         const sourceSuperseded=record.kind==='exercise_improvement'&&isVocabularyCaseSourceSuperseded(row.sourceId);
+        const pending=pendingVocabularyReassessment(row.sourceId);
+        const abandonable=!!pending&&pending.status==='failed'&&pending.jobId===job?.jobId;
+        const approval=db.prepare('SELECT approval_state AS state FROM vocabulary_case_reviews WHERE case_id=?').get(row.sourceId) as {state:string|null}|undefined;
         const outstanding=sourceSuperseded&&db.prepare("SELECT 1 FROM content_proposals p JOIN vocabulary_case_lineage l ON l.member_case_id=p.case_id WHERE l.case_id=? AND p.status NOT IN ('closed','applied') LIMIT 1").get(row.sourceId);
-        return {...base,kind:'case',caseId:row.sourceId,caseKind:record.kind,jobId:job?.status==='failed'?job.jobId:null,retryable:!sourceSuperseded&&job?.status==='failed'&&job.error!=='source_conflict',sourceSuperseded,dismissible:sourceSuperseded&&!outstanding,reason:sourceSuperseded?'The source has changed or been retired.':job?.status==='failed'?job.error==='source_conflict'?'Assessment encountered a conflict. Open the case to investigate.':job.error??'Processing failed.':'This case has no completed assessment or proposal.'};
+        const label=record.kind==='learner_feedback'?'Feedback':job?.advisory?'Second opinion':'Assessment';
+        const reason=sourceSuperseded?'The source has changed or been retired.':job?.status==='failed'?job.error==='source_conflict'?`${label} encountered a conflict. Open the case to investigate.`:job.error==='provider_outcome_unknown'?'The provider outcome is unknown. Retrying may make another call.':job.error==='validation_failed'?`${label} output failed validation.`:job.error==='invalid_output'?`${label} could not finish (invalid_output).`:job.error==='provider_failed'?`${label} could not finish.`:job.error??'Processing failed.':'This case has no completed assessment or proposal.';
+        return {...base,kind:'case',caseId:row.sourceId,caseKind:record.kind,jobId:job?.status==='failed'?job.jobId:null,retryable:!sourceSuperseded&&!approval?.state&&job?.status==='failed'&&job.error!=='source_conflict',sourceSuperseded,dismissible:sourceSuperseded&&!outstanding&&!abandonable,abandonable,reason:approval?.state?`${reason} Resolve the application before retrying.`:reason};
       }
     }
   });

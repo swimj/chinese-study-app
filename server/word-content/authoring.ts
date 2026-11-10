@@ -3,6 +3,7 @@ import { materializeExercise, materializeTeachingPackage, materializeTeachingPar
 import { assertUniqueIds, freezeContent, parseContentExercise, parseTeachingBeats, parseTeachingPackage, parseWordContent } from '../../src/domain/word-content/validation.ts';
 
 type RecordValue = Record<string, unknown>;
+export class PracticeValidationError extends Error {}
 
 function record(value: unknown, name: string): RecordValue {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
@@ -103,14 +104,14 @@ export function normalizePracticeRehearsals(value: unknown, content: WordContent
 
 /** Shared guards for generated rehearsal stimuli, independent of source-document readiness. */
 export function validatePracticeExercises(rehearsals:TeachingPackage['rehearsals'],word:WordContentDocument['word'],contents:readonly WordContentDocument[]=[]):TeachingPackage['rehearsals'] {
-  if (rehearsals.length === 0) throw new Error('Practice needs at least one exercise.');
+  if (rehearsals.length === 0) throw new PracticeValidationError('Practice needs at least one exercise.');
   assertUniqueIds(rehearsals.map((exercise) => exercise.id), 'Practice rehearsals');
   const forms = [word.hanzi, word.traditional].filter((form): form is string => form !== null);
   for (const exercise of rehearsals) {
     const snapshot = materializeExercise(exercise, contents);
     if (exercise.stimulus.kind === 'direct_text'
       && forms.some((form) => snapshot.instruction.includes(form) || snapshot.stimulus.text.includes(form))) {
-      throw new Error('Generated rehearsal exposes its target answer.');
+      throw new PracticeValidationError('Generated rehearsal exposes its target answer.');
     }
   }
   return freezeContent(rehearsals);

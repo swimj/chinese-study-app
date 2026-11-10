@@ -262,6 +262,20 @@ export function failVocabularyReflectionJob(jobId: string, token: string, failur
     }
   });
 }
+/** Three automatic retries per assessment and explicit retry cycle; a lease fences each transition. */
+export function failVocabularyAssessmentValidation(jobId:string,token:string,stage:string,at=timestamp()):void {
+  nonempty(stage);timestamp(at);
+  atomic(()=>{
+    const row=leased(jobId,token,at);
+    if(row.kind!=='exercise_improvement')throw new Error('Validation retry requires an assessment job');
+    const db=getDb();
+    const count=Number(db.prepare(`SELECT count(*) AS n FROM backend_events WHERE job_id=? AND name='vocabulary.reflection.validation_failed'
+      AND rowid>coalesce((SELECT max(rowid) FROM backend_events WHERE name='vocabulary.reflection.retry_requested' AND entity_id=?),0)`).get(jobId,jobId)!.n)+1;
+    emitBackendEvent({name:'vocabulary.reflection.validation_failed',entityKind:'reflection',entityId:row.case_id,jobId,actorKind:'service',actorId:'vocabulary-reflection',data:{stage,attempt:count},occurredAt:at});
+    db.prepare(`UPDATE vocabulary_reflection_jobs SET status=?,last_error=?,next_attempt_at=?,lease_token=NULL,lease_expires_at=NULL WHERE job_id=?`)
+      .run(count<=3?'queued':'failed',count<=3?'validation_retry':'validation_failed',at,jobId);
+  });
+}
 /** Persist backoff and provider transition under the same lease as the failed call. */
 export function failVocabularySenseMappingCall(jobId: string, token: string, at = timestamp()): void {
   timestamp(at);
@@ -842,6 +856,10 @@ function retryJob(jobId: string, learnerId: string | null, at: string): void {
   if (learnerId !== null && (row.kind !== 'learner_feedback' || evidence.learnerId !== learnerId)) throw new Error('Reflection job does not belong to current learner');
   if (row.status !== 'failed') throw new VocabularyReflectionConflict('Only failed reflection jobs can be retried');
   if(getDb().prepare("SELECT 1 FROM backend_events WHERE job_id=? AND name='vocabulary.reflection.reassessment_abandoned'").get(jobId))throw new VocabularyReflectionConflict('This reassessment was abandoned');
+  if(row.second_opinion_json){
+    const saved=(JSON.parse(row.second_opinion_json) as NonNullable<VocabularyReflectionJob['secondOpinion']>).proposal;
+    if(saved){const current=proposal(saved.proposalId);if(current.version!==saved.version||['closed','applied'].includes(current.status))throw new VocabularyReflectionConflict('The second opinion proposal is no longer reviewable');}
+  }
   if(row.review_case_id&&!row.second_opinion_json){
     const captured=row.repair_target_json?JSON.parse(row.repair_target_json):undefined;
     if(!isDeepStrictEqual(captured,captureVocabularyRepairTarget(row.review_case_id)))throw new VocabularyReflectionConflict('Repair target changed; request a fresh reassessment instead of retrying');

@@ -474,8 +474,8 @@ and an `operator-repertoire-selection-v1` capture in `vocabulary_improvement_sta
 The worker validates its word/catalog and active senses, then uses that scope rather
 than rereading defaults. Retries keep the capture. Publication checks the resulting
 admission against the capture before replacing the earlier proposal. Queue failure
-rolls back defaults; later generation failure keeps the saved policy and restores
-review of the retained proposal.
+rolls back defaults; later generation failure keeps the saved policy and the
+retained proposal remains locked until reassessment succeeds or is abandoned.
 
 `vocabulary_case_repair_targets` holds versioned pending and accepted single-sense
 intent. Reassessment captures that intent in the job's `repair_target_json`, skips

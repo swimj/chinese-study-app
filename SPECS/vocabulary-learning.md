@@ -483,9 +483,9 @@ does not present current or proposed content as the original. Evidence and
 manual editing are available on drill-in. Awaiting review includes teaching cases
 without an assessment and completed judgments that need an operator decision.
 Needs attention retains failed application, preparation and evidence-processing
-work, unknown word defaults requiring intervention, and cases without a reviewable
-assessment or proposal. A failure with an earlier reviewable assessment remains
-with that case. Moving between these surfaces preserves access to unresolved work;
+work, unknown word defaults requiring intervention, and failed assessment jobs.
+A failed reassessment appears in Needs attention while its earlier proposal or
+judgment remains visible but locked in review. Moving between these surfaces preserves access to unresolved work;
 queue reads neither resolve records nor authorize retries. Second opinions are retained,
 advisory reviews bound to an exact proposal version; they do not replace edits
 or authorize application. Operators can also request a fresh improvement
@@ -506,6 +506,11 @@ Only one case job may be queued or running; advisory second opinions do not
 replace the authoritative assessment. Neither assessment result applies content
 automatically. The original encounter group, responses, and reactions remain
 historical evidence, distinct from the current source and proposed content.
+An assessment automatically retries a model-output validation failure at most
+three times. Its successful stages and exact review inputs remain retained.
+After exhaustion, an operator can retry from Needs attention. Provider failures,
+unknown outcomes, source conflicts, and lost publication authority do not use
+this validation retry budget.
 
 Operators can inspect supporting evidence and edit proposals before approval.
 Dismissal and case closure accept an optional operator note, including teaching

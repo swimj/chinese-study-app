@@ -7,6 +7,7 @@ import { getDb } from '../db/connection.ts';
 import { validateJsonSchema } from '../llm/json-schema-validator.ts';
 import type { Word } from './pure-cue-promotion.ts';
 import { vocabularyResponseWordMatches } from './response-word-matching.ts';
+import { InvalidAssessmentOutput } from './assessment-output-validation.ts';
 
 const text:JsonSchema={type:'string'};
 const object=(properties:Record<string,JsonSchema>):JsonSchema=>({type:'object',properties,required:Object.keys(properties),additionalProperties:false});
@@ -72,16 +73,16 @@ export function projectVocabularyImprovementInput(job:VocabularyReflectionJob,or
 
 /** Translate editorial intent into the established persistence contract; identity is application-owned. */
 export function adaptVocabularyImprovementOutput(job:VocabularyReflectionJob,original:VocabularyContent,value:unknown) {
-  if(validateJsonSchema(value,vocabularySingleImprovementSchema).length)throw new Error('Improvement output failed its strict schema');
+  if(validateJsonSchema(value,vocabularySingleImprovementSchema).length)throw new InvalidAssessmentOutput('Improvement output failed its strict schema');
   const output=value as ExerciseImprovementOutput;
-  const nonempty=(text:string)=>{if(!text.trim())throw new Error('Improvement output contains empty text');};
+  const nonempty=(text:string)=>{if(!text.trim())throw new InvalidAssessmentOutput('Improvement output contains empty text');};
   nonempty(output.summary);
   if(output.source.decision==='revise'){
-    if(output.source.prompt===null)throw new Error('Revised source requires a prompt');nonempty(output.source.prompt);
-  }else if(output.source.prompt!==null)throw new Error('Keep and retire cannot carry a revised prompt');
+    if(output.source.prompt===null)throw new InvalidAssessmentOutput('Revised source requires a prompt');nonempty(output.source.prompt);
+  }else if(output.source.prompt!==null)throw new InvalidAssessmentOutput('Keep and retire cannot carry a revised prompt');
   if(original.kind!=='exercise')throw new Error('Improvement requires an exercise');
   const words=vocabularyImprovementWords(job);
-  const lookup=(ref:string)=>{const word=words.find(word=>word.ref===ref);if(!word)throw new Error('Unknown supplied word reference');return word;};
+  const lookup=(ref:string)=>{const word=words.find(word=>word.ref===ref);if(!word)throw new InvalidAssessmentOutput('Unknown supplied word reference');return word;};
   const acceptedAnswers=original.answers.flatMap(answer=>answer.acceptedForms);
   const operations:{sourceContentId:string;strategy:'update_existing'|'retire'|'create';rationale:string;prompt:string;acceptedAnswers:string[]}[]=[];
   const roles:('source_repair'|'refinement'|'enrichment')[]=[];
@@ -94,7 +95,7 @@ export function adaptVocabularyImprovementOutput(job:VocabularyReflectionJob,ori
   for(const exercise of output.additionalExercises){
     nonempty(exercise.prompt);nonempty(exercise.rationale);
     const word=lookup(exercise.answer);
-    if(!word.word)throw new Error('Individual exercise requires a supplied unambiguous word');
+    if(!word.word)throw new InvalidAssessmentOutput('Individual exercise requires a supplied unambiguous word');
     if(exercise.answer==='target'){
       operations.push({sourceContentId:original.contentId,strategy:'create',rationale:exercise.rationale,prompt:exercise.prompt,acceptedAnswers});roles.push(exercise.role);
     }else{
@@ -105,8 +106,8 @@ export function adaptVocabularyImprovementOutput(job:VocabularyReflectionJob,ori
   if(output.sharedExercise){
     const shared=output.sharedExercise;
     nonempty(shared.prompt);nonempty(shared.rationale);
-    if(!shared.answers.includes('target')||new Set(shared.answers).size!==shared.answers.length)throw new Error('Shared answers require target and distinct supplied responses');
-    if(shared.answers.some(ref=>!lookup(ref).word))throw new Error('Shared exercise requires supplied unambiguous words');
+    if(!shared.answers.includes('target')||new Set(shared.answers).size!==shared.answers.length)throw new InvalidAssessmentOutput('Shared answers require target and distinct supplied responses');
+    if(shared.answers.some(ref=>!lookup(ref).word))throw new InvalidAssessmentOutput('Shared exercise requires supplied unambiguous words');
     pureCueReferral={candidateWords:shared.answers.map(ref=>lookup(ref).form),sharedPurpose:shared.rationale,rationale:shared.rationale,draft:{prompt:shared.prompt}};
   }
   return {legacy:{diagnosis:output.summary,operations,responseExercises,pureCueReferral},roles:[...roles,...responseRoles]};

@@ -482,8 +482,8 @@ export function setVocabularyCaseDeferred(caseId:string,expectedVersion:number,a
     const review=getVocabularyCaseReview(id);
     if(!review)throw new Error('Unknown vocabulary review case');
     if(review.state!=='open')throw new VocabularyReflectionConflict('This case is resolved');
-    if(review.frozen)throw new VocabularyReflectionConflict('Finish or abandon the pending reassessment first');
     if(review.activeJob)throw new VocabularyReflectionConflict('A case job is queued or running');
+    if(review.frozen)throw new VocabularyReflectionConflict('Finish or abandon the pending reassessment first');
     if(review.approvalState)throw new VocabularyReflectionConflict('Resolve the case approval before changing attention');
     getDb().prepare('UPDATE vocabulary_case_reviews SET deferred_at=?,version=version+1 WHERE case_id=?').run(deferred?new Date().toISOString():null,id);
     return getVocabularyCaseCard(id,actorId);

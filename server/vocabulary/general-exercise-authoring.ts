@@ -2,9 +2,10 @@ import { vocabularySenseReferences } from './model-sense-references.ts';
 import { readFileSync } from 'node:fs';
 import type { WordContentDocument } from '../../src/domain/word-content/types.ts';
 import type { JsonSchema } from '../../src/domain/reflection-result-schema.ts';
-import { parseContentExercise } from '../../src/domain/word-content/validation.ts';
-import { validatePracticeExercises } from '../word-content/authoring.ts';
+import { parseContentExercise, WordContentValidationError } from '../../src/domain/word-content/validation.ts';
+import { validatePracticeExercises, PracticeValidationError } from '../word-content/authoring.ts';
 import { validateJsonSchema } from '../llm/json-schema-validator.ts';
+import { InvalidAssessmentOutput } from './assessment-output-validation.ts';
 
 /** Authoring needs lexical evidence, not a completed teaching/bootstrap document. */
 export type GeneralExerciseSource = Pick<WordContentDocument,'word'|'uses'|'examples'>;
@@ -31,20 +32,22 @@ export function generalExerciseInvocation(content:GeneralExerciseSource) {
   return {...GENERAL_EXERCISE_CONTRACT,userPrompt:JSON.stringify({role:'general_exercises',content:projected}),outputSchema:generalExerciseSchema(projected)};
 }
 export function validateGeneralExerciseOutput(content:GeneralExerciseSource,value:unknown):GeneralExerciseOutput {
-  if(validateJsonSchema(value,generalExerciseSchema(content)).length)throw new Error('Vocabulary practice output failed validation');
+  if(validateJsonSchema(value,generalExerciseSchema(content)).length)throw new InvalidAssessmentOutput('Vocabulary practice output failed validation');
   const output=value as GeneralExerciseOutput;
+  try {
   const exercises=output.exercises.map(item=>parseContentExercise({id:item.id,responseMode:'hanzi_entry',contract:{kind:'target_rehearsal',wordId:content.word.wordId},
     instruction:'',stimulus:item.stimulus,acceptedAnswers:[{wordId:content.word.wordId,hanzi:content.word.hanzi,traditional:content.word.traditional}]}));
   // Empty output records that no faithful exact-target exercise was authored;
   // it neither excludes the selected senses nor changes the teaching contract.
   if(exercises.length)validatePracticeExercises(exercises,content.word);
   return output;
+  } catch(error) { if(error instanceof WordContentValidationError||error instanceof PracticeValidationError)throw new InvalidAssessmentOutput(error.message,null,{cause:error});throw error; }
 }
 
 /** Decode the provider's local use IDs before ordinary canonical-source validation. */
 export function normalizeGeneralExerciseReferences(content:GeneralExerciseSource,value:unknown):unknown {
   const schema=generalExerciseInvocation(content).outputSchema;
-  if(validateJsonSchema(value,schema).length)throw new Error('Vocabulary practice output failed validation');
+  if(validateJsonSchema(value,schema).length)throw new InvalidAssessmentOutput('Vocabulary practice output failed validation');
   const refs=vocabularySenseReferences(content.uses.map(use=>use.id));
   const output=value as GeneralExerciseOutput;
   return {...output,exercises:output.exercises.map(exercise=>({...exercise,sourceUseId:refs.canonical(exercise.sourceUseId)}))};

@@ -1,4 +1,5 @@
 import { installCaseReviewSchema } from './helpers/case-review-schema.ts';
+import { InvalidAssessmentOutput } from '../server/vocabulary/assessment-output-validation.ts';
 import { ensureVocabularySenses } from '../server/vocabulary/sense-readiness.ts';
 import { recoverVocabularySenseDependencies } from '../server/db/vocabulary-reflection.ts';
 import assert from 'node:assert/strict';
@@ -10,7 +11,7 @@ import { runWithLearnerId } from '../server/db/learner-context.ts';
 import { createVocabularyContent,updateVocabularyContent,mapVocabularyContentSense,createVocabularySense,establishVocabularySenseCatalog,getVocabularySenseCatalog,getVocabularySenses,getVocabularyContent,getVocabularyContentForMaintenance } from '../server/db/vocabulary-content.ts';
 import { writeVocabularyDefaultUsefulSenses } from '../server/db/vocabulary-sense-coverage.ts';
 import { createVocabularySession,appendVocabularySessionActions,stageVocabularySessionCompletion,cancelVocabularySessionCompletion,closeVocabularySessionCompletion } from '../server/db/vocabulary-sessions.ts';
-import { VocabularyReflectionConflict,VocabularyReflectionSourceConflict,claimVocabularyReflectionJob,retryVocabularyReflectionJob,retryOwnVocabularyFeedback,retryVocabularyPostSessionDispatch,listOwnVocabularyMessages,recordVocabularyFeedbackJudgment } from '../server/db/vocabulary-reflection.ts';
+import { VocabularyReflectionConflict,VocabularyReflectionSourceConflict,claimVocabularyReflectionJob,failVocabularyAssessmentValidation,retryVocabularyReflectionJob,retryOwnVocabularyFeedback,retryVocabularyPostSessionDispatch,listOwnVocabularyMessages,recordVocabularyFeedbackJudgment } from '../server/db/vocabulary-reflection.ts';
 import { createVocabularyProcessingWorker } from '../server/vocabulary/processing-worker.ts';
 import { createVocabularyReflectionProvider,normalizeVocabularyReflectionOutput,normalizeVocabularySingleImprovementOutput } from '../server/vocabulary/reflection-provider.ts';
 import { projectVocabularyImprovementInput } from '../server/vocabulary/exercise-improvement-authoring.ts';
@@ -131,6 +132,51 @@ test('authoring rejects malformed source decisions, invented refs and answer lea
 function worker(provider:{isConfigured():boolean;run(job:VocabularyReflectionJob):Promise<VocabularyReflectionResult>},controls=()=>({maintenanceMode:false,providerWorkEnabled:true})) {
   return createVocabularyProcessingWorker({provider,now:()=>clock,controls,providerWork:permitted});
 }
+
+for(const sourceChange of [false,true])test(`assessment validation retries retain mapping and fence source changes=${sourceChange}`,async()=>{
+  pending();sql.prepare('INSERT INTO lexical_words VALUES (?,?,?,?,?)').run('b','wrong',null,'wrong','test response');
+  const sense=createVocabularySense({wordId:'a',description:{label:'written character'}},{kind:'operator',id:'editor'});
+  establishVocabularySenseCatalog('a',getVocabularySenseCatalog('a').version,{kind:'operator',id:'editor'});
+  const stages:string[]=[];let authors=0;
+  const adapter={id:'fake',defaultBaseUrl:'https://unused.invalid',apiKeyEnvironmentVariable:'KEY',structuredOutputMode:'json_schema' as const,async run(request:import('../server/llm/types.ts').ProviderRunRequest){
+    const stage=request.provenance!.stepName;stages.push(stage);
+    const output=stage==='feedback'?{diagnosis:'A useful distinction',lesson:'A private lesson',unfairEncounterIds:[]}:stage==='sense_mapping'?{outcome:'single_sense',rationale:'A character.',senseIds:['s1']}:{summary:'Practice the response.',source:{decision:'keep',prompt:null},sharedExercise:null,additionalExercises:[{answer:'response_1',role:'enrichment',prompt:++authors===1?'Use wrong here.':'A mistaken answer.',rationale:'Practise the response.'}]};
+    return {provider:'fake',model:'fake',responseId:null,structuredOutputMode:'json_schema' as const,rawText:JSON.stringify(output),finishReason:'stop',rawResponse:null,usage:{inputTokens:null,cachedInputTokens:null,cacheWriteInputTokens:null,outputTokens:null,reasoningTokens:null,totalTokens:null},invocationId:null};
+  }};
+  const provider=createVocabularyReflectionProvider({random:()=>0,environment:{OPENAI_API_KEY:'fake'},adapter,ensureSenses:async()=>({catalog:getVocabularySenseCatalog('a'),senses:getVocabularySenses('a'),source:'existing'})});
+  const processing=worker(provider);
+  try{
+    await processing.step();assert.equal(mappingJobRow().status,'queued',JSON.stringify({stages,authors}));assert.equal(mappingJobRow().last_error,'validation_retry');
+    if(sourceChange){const source=getVocabularyContentForMaintenance('one')!;updateVocabularyContent('one',source.version,{...source,body:{prompt:'Changed source'}},{kind:'operator',id:'editor'});}
+    await processing.step();assert.equal(mappingJobRow().status,sourceChange?'failed':'succeeded');
+    if(sourceChange)assert.equal(mappingJobRow().last_error,'source_conflict');
+    assert.deepEqual(stages.filter(stage=>stage!=='feedback'),sourceChange?['sense_mapping','single_improvement']:['sense_mapping','single_improvement','single_improvement']);
+    assert.equal(sql.prepare("SELECT count(*) n FROM backend_events WHERE name='vocabulary.reflection.validation_failed'").get()!.n,1);
+  }finally{await processing.stop();}
+});
+
+test('expired assessment leases cannot enqueue validation retries',async()=>{
+  pending();const ingest=worker({isConfigured:()=>false,run:async job=>result(job)});await ingest.step();await ingest.stop();
+  const job=claimVocabularyReflectionJob({kind:'exercise_improvement',now:new Date(clock).toISOString(),leaseMs:1})!;clock+=2;
+  assert.throws(()=>failVocabularyAssessmentValidation(job.jobId,job.leaseToken,'single_improvement',new Date(clock).toISOString()),/stale|expired/);
+  assert.equal(sql.prepare("SELECT count(*) n FROM backend_events WHERE name='vocabulary.reflection.validation_failed'").get()!.n,0);
+});
+
+test('validation retry budget survives worker recreation, spans stages and resets on explicit retry',async()=>{
+  pending();let calls=0;
+  const provider={isConfigured:()=>true,run:async(job:VocabularyReflectionJob)=>{if(job.kind==='learner_feedback')return result(job);calls++;throw new InvalidAssessmentOutput('invalid',calls===1?'sense_mapping':'single_improvement');}};
+  let processing=worker(provider);
+  try{
+    for(let i=0;i<4;i++){
+      await processing.step();assert.equal(mappingJobRow().status,i===3?'failed':'queued');
+      if(i===1){await processing.stop();processing=worker(provider);}
+    }
+    assert.equal(mappingJobRow().last_error,'validation_failed');assert.equal(calls,4);
+    await processing.step();assert.equal(calls,4);
+    retryVocabularyReflectionJob(String(mappingJobRow().job_id),'editor',new Date(clock).toISOString());
+    await processing.step();assert.equal(mappingJobRow().status,'queued');assert.equal(calls,5);
+  }finally{await processing.stop();}
+});
 
 test('idle dispatch polling uses active indexes with large retained evidence and preserves lease expiry',async()=>{
   const evidence=JSON.stringify({retained:'x'.repeat(512*1024)});
@@ -597,12 +643,14 @@ test('successful fallback mapping is reused when later authoring needs explicit 
 });
 
 for(const response of [{value:{outcome:'single_sense',rationale:'Unknown sense',senseIds:['invented']}},{rawText:'invalid JSON'},{status:400}]) {
-  test(`mapping response failure stays manual: ${JSON.stringify(response)}`,async()=>{
+  test(`mapping retries only validation failures: ${JSON.stringify(response)}`,async()=>{
     pending();installModelInvocationLedger();const trial=mappingTrial(()=>response);
     const processing=worker(trial.create());
     try {
-      await processing.step();assert.equal(mappingJobRow().status,'failed');assert.equal(mappingJobRow().failures,0);
-      clock+=120_000;await processing.step();assert.deepEqual(trial.models,['gpt-6-luna']);
+      const attempts=response.status?1:4;
+      for(let index=0;index<attempts;index++){await processing.step();assert.equal(mappingJobRow().status,index===attempts-1?'failed':'queued');}
+      assert.equal(mappingJobRow().failures,0);
+      clock+=120_000;await processing.step();assert.deepEqual(trial.models,Array(attempts).fill('gpt-6-luna'));
     } finally {await processing.stop();}
   });
 }
@@ -627,7 +675,7 @@ test('manual recovery from invalid mapping output resets partial availability fa
   const trial=mappingTrial(attempt=>attempt===1?{status:503}:{rawText:'invalid JSON'});
   const processing=worker(trial.create());
   try {
-    await processing.step();clock+=30_000;await processing.step();
+    await processing.step();clock+=30_000;for(let index=0;index<4;index++)await processing.step();
     assert.equal(mappingJobRow().status,'failed');assert.equal(mappingJobRow().failures,1);
     retryVocabularyReflectionJob(String(mappingJobRow().job_id),'editor',new Date(clock).toISOString());
     assert.equal(mappingJobRow().failures,0);
