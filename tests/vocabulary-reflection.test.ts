@@ -185,6 +185,24 @@ function dictionaryRepertoireProvider(accessScope:'shared'|'private',version:num
 
 test('historical private dictionary encounters generate shared repertoires after scope migration and remain applicable',async()=>{
   const {id,work}=historicalDictionaryBaselineJob();
+  const result=await dictionaryRepertoireProvider('shared',2).provider.run(work);
+  if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
+  assert.equal(result.result.admission?.outcome,'repertoire_bootstrap');
+  assert.equal(result.result.admission?.sourceContentVersion,2);
+  assert.deepEqual(result.result.proposal?.operations.map(operation=>operation.strategy),['replace','create']);
+  const {proposalId}=recordVocabularyImprovementResult(work.jobId,work.leaseToken,result.result,judgedAt);
+  const review=approveVocabularyProposal(proposalId!,1,'editor');
+  applyVocabularyProposal(proposalId!,1,review,'migrated-bootstrap','editor');
+  assert.equal(getVocabularyContentForMaintenance(id)!.availability,'retired');
+  const proposal=getVocabularyProposal(proposalId!,'editor');
+  for(const operation of proposal.operations)assert.equal(getVocabularyContentForMaintenance(operation.content.contentId!)!.accessScope,'shared');
+});
+
+test('historical dictionary fallback with existing practice can add shared repertoire through operator review',async()=>{
+  const {id,work}=historicalDictionaryBaselineJob();
+  const otherSense=createVocabularySense({wordId:'a',description:{label:'a style of handwriting'}},actor);
+  const existing=createVocabularyContent({...draft('other-practice'),
+    words:[{wordId:'a',relation:'target',senseId:otherSense.senseId,senseMappingEstablishedAt:at}]},actor);
   const evidenceBefore=JSON.stringify(getVocabularyReflectionCase(work.caseId).evidence);
   const projected=projectVocabularyReflectionInput(work) as {sourceContent:VocabularyContent};
   assert.equal(projected.sourceContent.version,2);assert.equal(projected.sourceContent.accessScope,'shared');
@@ -211,6 +229,7 @@ test('historical private dictionary encounters generate shared repertoires after
   const proposal=getVocabularyProposal(recorded.proposalId!,'editor');
   for(const operation of proposal.operations)assert.equal(getVocabularyContentForMaintenance(operation.content.contentId!)!.accessScope,'shared');
   assert.equal(getVocabularyContentForMaintenance(id)!.availability,'active');
+  assert.deepEqual(getVocabularyContentForMaintenance(existing.contentId),existing);
   assert.equal(JSON.stringify(getVocabularyReflectionCase(work.caseId).evidence),evidenceBefore);
   assert.equal(work.evidence.evidence[0]!.snapshot.contentVersion,1);
   assert.deepEqual(sql.prepare('PRAGMA foreign_key_check').all(),[]);

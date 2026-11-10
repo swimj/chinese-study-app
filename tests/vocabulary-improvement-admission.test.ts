@@ -42,12 +42,17 @@ beforeEach(context=>{
   db.exec(readFileSync(new URL('../server/db/migrations/0061_vocabulary_sense_mapping_retries.sql',import.meta.url),'utf8'));
   original=createVocabularyContent({contentId:'original',kind:'exercise',payloadVersion:1,body:{prompt:'请把这张照片____后再打印。',instruction:'Old instruction',reveal:{teachingNote:'Old unrelated teaching'},source:{kind:context.name.startsWith('[bootstrap]')?'dictionary_baseline':'old_source'}},accessScope:'shared',availability:'active',originKind:'human',
     exerciseType:'word',skill:'production',exerciseRole:'general',assessment:{match:'exact'},words:[{wordId:'word',relation:'target'}],answers:[{wordId:'word',acceptedForms:['放大']}]},actor);
+  if(!context.name.startsWith('[bootstrap] fresh inventory')) {
+    seedInventory();
+    writeVocabularyDefaultUsefulSenses('word',0,['size','effect'],actor);
+  }
+});
+afterEach(()=>db.close());
+function seedInventory(): void {
   createVocabularySense({senseId:'size',wordId:'word',description:{label:'make an image or object larger'}},actor);
   createVocabularySense({senseId:'effect',wordId:'word',description:{label:'amplify an effect or significance'}},actor);
   establishVocabularySenseCatalog('word',getVocabularySenseCatalog('word').version,actor);
-  writeVocabularyDefaultUsefulSenses('word',0,['size','effect'],actor);
-});
-afterEach(()=>db.close());
+}
 function job(kind:VocabularyReflectionJob['kind']='exercise_improvement'):VocabularyReflectionJob {
   db.prepare('UPDATE vocabulary_reflection_jobs SET kind=? WHERE job_id=?').run(kind,'job');
   return {jobId:'job',caseId:'case',learnerId:'learner',kind,attemptNumber:1,leaseToken:'lease',leaseExpiresAt:'2026-10-20T00:00:00.000Z',evidence:{caseId:'case',completionId:'completion',learnerId:'learner',kind,wordId:'word',contentId:'original',status:'open',createdAt:at,
@@ -112,9 +117,9 @@ const repertoire={exercises:[
   {id:'cloze',sourceUseId:'size',stimulus:{kind:'phrase_cloze',frame:'Enlarge the image.',text:'这张图太小了，请把它____一点。'},teachingNote:'Natural size request.'},
 ]};
 
-for (const hasExisting of [false,true]) bootstrapTest(`known defaults leave fallback for operator review (existing=${hasExisting})`,async()=>{
+bootstrapTest('existing practice outside useful defaults leaves fallback for operator review',async()=>{
   writeVocabularyDefaultUsefulSenses('word',1,['size'],actor);
-  if(hasExisting)createVocabularyContent({...original,contentId:'outside-defaults',body:{prompt:'Exaggerate the problem.'},
+  createVocabularyContent({...original,contentId:'outside-defaults',body:{prompt:'Exaggerate the problem.'},
     words:[{wordId:'word',relation:'target',senseId:'effect',senseMappingEstablishedAt:at}]},actor);
   const trial=provider(()=>assert.fail('Fallback review should make no provider calls'));
   const result=await trial.provider.run(job());
@@ -123,6 +128,22 @@ for (const hasExisting of [false,true]) bootstrapTest(`known defaults leave fall
   assert.deepEqual(result.result.admission?.generationScope?.senseIds,['size']);
   assert.equal(result.result.proposal,null);
   assert.equal(trial.requests.length,0);
+});
+
+bootstrapTest('fresh inventory carries newly saved defaults straight into first repertoire generation',async()=>{
+  const trial=provider(()=>({exercises:[repertoire.exercises[0]]}),{ensureSenses:async()=>{
+    assert.deepEqual(getVocabularySenses('word'),[]);
+    seedInventory();
+    writeVocabularyDefaultUsefulSenses('word',0,['size'],actor);
+    return {...await readiness('word',{workflowId:'job'}),source:'generated'};
+  }});
+  const result=await trial.provider.run(job());
+  if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
+  assert.deepEqual(trial.requests.map(request=>request.provenance!.stepName),['repertoire']);
+  assert.equal(JSON.parse(trial.requests[0]!.userPrompt).content.uses.length,1);
+  assert.equal(result.result.admission?.outcome,'repertoire_bootstrap');
+  assert.deepEqual(result.result.admission?.generationScope?.senseIds,['size']);
+  assert.deepEqual(result.result.proposal?.operations.map(op=>[op.strategy,op.content.words[0]!.senseId]),[['replace','size']]);
 });
 
 for (const empty of [false,true]) bootstrapTest(`operator generation adds selected practice without retiring fallback (empty=${empty})`,async()=>{
