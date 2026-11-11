@@ -16,7 +16,10 @@ In a fresh worktree, run `npm ci` when dependencies are missing. Each worktree
 needs its own setup. `./scripts/codex-setup.sh` wraps the same command for the
 Codex app's worktree environment setup. `node_modules/` and generated
 `.codex/environments/environment.toml` are ignored local files; do not add them
-to `.worktreeinclude`.
+to `.worktreeinclude`. That file lists gitignored files Claude Code copies into
+new worktrees; it includes `.env`, so Claude worktrees inherit local provider
+keys. Claude Code does not run a setup script, so run `npm ci` after a branch
+changes `package-lock.json`.
 
 | Command | Purpose |
 | --- | --- |
