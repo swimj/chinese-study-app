@@ -366,8 +366,11 @@ failures and preparation dependencies within their bounded automatic retry cycle
 Maintenance and disabled-learner checks protect dispatch and publication.
 
 Individual learner-feedback jobs select GPT-6 Luna or Sol with equal probability.
-Exercise-improvement jobs and second opinions select GPT-6 Luna, GLM, or Sol with
-equal probability, regardless of how many encounters their evidence contains.
+Unassigned first repertoire jobs share the
+[word-level Sol/Luna allocation](implementation/repertoire-preparation.md#automatic-authoring-model)
+with post-teaching preparation. Other exercise-improvement jobs and second opinions
+select GPT-6 Luna, GLM, or Sol with equal probability, regardless of how many
+encounters their evidence contains.
 The separate batched policy retains GLM/Luna at 70/30 for up to ten items and
 Sol/GLM/Luna at 60/20/20 for larger bundles; vocabulary jobs do not currently
 batch unrelated cases. Selection is
@@ -376,9 +379,9 @@ second opinions, except for sense mapping. Saved GLM learner-feedback routes use
 GPT-6 Luna for subsequent calls while retaining the saved route and original
 invocation evidence. Failed jobs still require explicit retry. Saved GPT-5.6 Luna
 routes and reflection retries resolve to GPT-6 Luna for new calls; original run
-metadata and pricing remain historical. Sense-inventory and general-practice
-authoring also use GPT-6 Luna with high reasoning. The admission step that maps an authored
-exercise to the existing sense inventory starts with OpenAI `gpt-6-luna` with high
+metadata and pricing remain historical. Sense-inventory authoring uses GPT-6 Luna
+with high reasoning. The admission step that maps an authored exercise to the
+existing sense inventory starts with OpenAI `gpt-6-luna` with high
 reasoning, including operator reassessments. Mapping availability failures receive
 three attempts, with 30- and 60-second backoff. After the third consecutive failure,
 the next queued attempt switches to ZAI `glm-5.3-flash` with high reasoning and a
