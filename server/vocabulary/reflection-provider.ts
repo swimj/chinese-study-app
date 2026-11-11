@@ -35,6 +35,7 @@ import { adaptVocabularyImprovementOutput, vocabularySingleImprovementSchema } f
 export { vocabularySingleImprovementSchema } from './exercise-improvement-authoring.ts';
 import { runVocabularyImprovementAdmission, type VocabularySenseEnsurer } from './improvement-admission.ts';
 import { InvalidAssessmentOutput } from './assessment-output-validation.ts';
+import { repertoireBootstrapModel } from './repertoire-bootstrap-routing.ts';
 
 const SENSE_MAPPING_CONFIG = LUNA_REFLECTION_MODEL_CONFIG;
 
@@ -197,13 +198,6 @@ export function createVocabularyReflectionProvider(options:{environment?:NodeJS.
         :{kind:'exercise_improvement',result:{diagnosis,proposal:null}};
     }
     if(context?.canPublish&&!context.canPublish())throw new Error('Reflection lost publication authority');
-    const choice=vocabularyReflectionModelChoice(job.jobId,()=>routeIndividualReflectionModel(options.random,job.kind));
-    if(!isOfferedReflectionModelChoice(choice))throw new Error(`Stored reflection model is no longer offered: ${choice}`);
-    const config=reflectionConfigForChoice(choice);
-    const adapter=adapterFor(choice);
-    const apiKey=environment[config.apiKeyEnvironmentVariable]?.trim();
-    const baseUrl=config.baseUrlEnvironmentVariable?environment[config.baseUrlEnvironmentVariable]?.trim()||null:null;
-    if(!apiKey)throw new Error(`Vocabulary reflection provider ${config.provider} is not configured`);
     if(job.evidence.kind==='teaching_review'||job.evidence.evidence.some(item=>item.snapshot.role!=='general'))throw new VocabularyReflectionOutputError('Teaching belongs to the manual inbox');
     const kind=job.kind==='learner_feedback'?'feedback':'improvement';
     const prompts=new Map<string,string>();
@@ -221,17 +215,25 @@ export function createVocabularyReflectionProvider(options:{environment?:NodeJS.
       :step==='feedback'||step==='improvement'?'vocabulary-reflection.v3'
       :step==='single_improvement'?'vocabulary-exercise-authoring.v3':step==='pure_cue_promotion'?'vocabulary-integration.v3':step==='sense_mapping'?'vocabulary-admission.v4'
       :step==='pure_cue_improvement'?'vocabulary-admission.v2':'vocabulary-admission.v1';
-    const routingFor=(step:string)=>{
-      if(step!=='sense_mapping')return {config,adapter,apiKey,baseUrl};
-      const failures=vocabularySenseMappingAvailabilityFailures(job.jobId);
-      if(failures>=6)throw new Error('Sense mapping retry budget is exhausted');
-      const fallback=failures>=3;
-      const mappingConfig:ReflectionProviderConfig=fallback?GLM_FLASH_HIGH_REFLECTION_MODEL_CONFIG:SENSE_MAPPING_CONFIG;
-      const mappingAdapter=adapterFor(fallback?'zai:glm-5.3-flash-high':LUNA_REFLECTION_MODEL_CHOICE,mappingConfig);
-      const mappingKey=environment[mappingConfig.apiKeyEnvironmentVariable]?.trim();
-      if(!mappingKey)throw new Error(`Vocabulary sense mapping provider ${mappingConfig.provider} is not configured`);
-      const mappingBaseUrl=mappingConfig.baseUrlEnvironmentVariable?environment[mappingConfig.baseUrlEnvironmentVariable]?.trim()||null:null;
-      return {config:mappingConfig,adapter:mappingAdapter,apiKey:mappingKey,baseUrl:mappingBaseUrl};
+    const routingFor=(step:string,input:unknown)=>{
+      let choice:ReflectionModelChoice,config:ReflectionProviderConfig;
+      if(step==='sense_mapping'){
+        const failures=vocabularySenseMappingAvailabilityFailures(job.jobId);
+        if(failures>=6)throw new Error('Sense mapping retry budget is exhausted');
+        const fallback=failures>=3;
+        choice=fallback?'zai:glm-5.3-flash-high':LUNA_REFLECTION_MODEL_CHOICE;
+        config=fallback?GLM_FLASH_HIGH_REFLECTION_MODEL_CONFIG:SENSE_MAPPING_CONFIG;
+      }else{
+        // Choose only when a stage uses the job route. Saved choices (including
+        // operator overrides and work begun before this split) keep precedence.
+        choice=vocabularyReflectionModelChoice(job.jobId,()=>step==='repertoire'
+          ? `openai:${repertoireBootstrapModel((input as GeneralExerciseSource).word.wordId)}-high`
+          : routeIndividualReflectionModel(options.random,job.kind));
+        if(!isOfferedReflectionModelChoice(choice))throw new Error(`Stored reflection model is no longer offered: ${choice}`);
+        config=reflectionConfigForChoice(choice);
+      }
+      const baseUrl=config.baseUrlEnvironmentVariable?environment[config.baseUrlEnvironmentVariable]?.trim()||null:null;
+      return {config,adapter:adapterFor(choice,config),baseUrl};
     };
     const editorialFor=(step:string)=>job.editorial&&['single_improvement','pure_cue_improvement','repertoire'].includes(step)?job.editorial:undefined;
     const editorialSystem=(step:string,prompt:string)=>editorialFor(step)?`${prompt}
@@ -253,7 +255,9 @@ The input's operatorEditorial contains optional operator instructions and an exp
     };
     const runCall=async (step:string,input:unknown,schema:JsonSchema,promptFile:string,promptVersion:string)=>{
       if(context?.canPublish&&!context.canPublish())throw new Error('Reflection lost publication authority');
-      const {config,adapter,apiKey,baseUrl}=routingFor(step);
+      const {config,adapter,baseUrl}=routingFor(step,input);
+      const apiKey=environment[config.apiKeyEnvironmentVariable]?.trim();
+      if(!apiKey)throw new Error(`Vocabulary ${step==='sense_mapping'?'sense mapping':'reflection'} provider ${config.provider} is not configured`);
       const {shared,projected,wireSchema,userPrompt}=projectCall(step,input,schema);
       const systemPrompt=editorialSystem(step,shared?.systemPrompt??await promptFor(promptFile));
       const callSchemaVersion=promptFile==='pure-cue-promotion'?'2':schemaVersion(step);
@@ -359,7 +363,7 @@ The input's operatorEditorial contains optional operator instructions and an exp
       return runVocabularyImprovementAdmission({job,original,projectedInput:projectVocabularyReflectionInput(job),
         ensureSenses:options.ensureSenses,ensureDefaults:options.ensureDefaults,canPublish:context?.canPublish,improvementSchema:vocabularySingleImprovementSchema,
         stageIdentity:async(stage,schema,input)=>{
-          const {config,adapter,baseUrl}=routingFor(stage);
+          const {config,adapter,baseUrl}=routingFor(stage,input);
           return {provider:adapter.id,baseUrl:baseUrl??adapter.defaultBaseUrl,
           model:config.providerModel,reasoningEffort:config.reasoningEffort,schema:projectCall(stage,input,schema).wireSchema,modelInput:projectCall(stage,input,schema).userPrompt,...(stage==='repertoire'?{...GENERAL_EXERCISE_CONTRACT,systemPrompt:editorialSystem(stage,GENERAL_EXERCISE_CONTRACT.systemPrompt),inputProjectionVersion:editorialProjection(stage,GENERAL_EXERCISE_CONTRACT.inputProjectionVersion)}:{systemPrompt:editorialSystem(stage,await promptFor(stagePrompt(stage))),
             outputSchemaName:`vocabulary_reflection_${stage}_v${schemaVersion(stage)}`,promptVersion:admissionPromptVersion(stage),schemaVersion:schemaVersion(stage),inputProjectionVersion:editorialProjection(stage,projectionVersion(stage))}),

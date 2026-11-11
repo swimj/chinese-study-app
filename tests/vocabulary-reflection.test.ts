@@ -168,9 +168,9 @@ function migrateDictionaryBaselines() {
 function dictionaryRepertoireProvider(accessScope:'shared'|'private',version:number) {
   const current=getVocabularyContentForMaintenance('vocabulary:baseline:v1:alice:production:general:a')!;
   assert.equal(current.accessScope,accessScope);assert.equal(current.version,version);
-  let calls=0;
+  const models:string[]=[];
   const adapter:ProviderAdapter={id:'fake',defaultBaseUrl:'https://unused.invalid',apiKeyEnvironmentVariable:'KEY',structuredOutputMode:'json_schema',async run(request){
-    calls++;
+    models.push(request.model);
     const input=JSON.parse(request.userPrompt) as {sourceContent:VocabularyContent;content:{uses:Array<{id:string;label:string}>}};
     assert.equal(request.provenance!.stepName,'repertoire');
     const value={exercises:[{id:'character',sourceUseId:input.content.uses.find(use=>use.label==='character')!.id,stimulus:{kind:'direct_text',text:'A single written unit in a text.'},teachingNote:'Written unit.'},
@@ -180,8 +180,20 @@ function dictionaryRepertoireProvider(accessScope:'shared'|'private',version:num
   }};
   const provider=createVocabularyReflectionProvider({random:()=>0,environment:{OPENAI_API_KEY:'fake'},adapter,
     ensureSenses:async()=>({catalog:getVocabularySenseCatalog('a'),senses:getVocabularySenses('a'),source:'existing'})});
-  return {provider,get calls(){return calls;}};
+  return {provider,models,get calls(){return models.length;}};
 }
+
+test('an unassigned first repertoire uses Sol without rolling the general reflection pool and reuses its retained stage',async()=>{
+  const {work}=historicalDictionaryBaselineJob();
+  sql.prepare('UPDATE vocabulary_reflection_jobs SET model_choice=NULL WHERE job_id=?').run(work.jobId);
+  const first=dictionaryRepertoireProvider('shared',2);
+  const result=await first.provider.run(work);
+  assert.deepEqual(first.models,['gpt-6-sol']);
+  assert.equal(sql.prepare('SELECT model_choice FROM vocabulary_reflection_jobs WHERE job_id=?').get(work.jobId)!.model_choice,'openai:gpt-6-sol-high');
+  const retry=dictionaryRepertoireProvider('shared',2);
+  assert.deepEqual(await retry.provider.run({...work,attemptNumber:work.attemptNumber+1}),result);
+  assert.equal(retry.calls,0);
+});
 
 test('historical private dictionary encounters generate shared repertoires after scope migration and remain applicable',async()=>{
   const {id,work}=historicalDictionaryBaselineJob();

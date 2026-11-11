@@ -152,10 +152,12 @@ for (const empty of [false,true]) bootstrapTest(`operator generation adds select
     words:[{wordId:'word',relation:'target',senseId:'effect',senseMappingEstablishedAt:at}]},actor);
   const scope={selectionEstablished:true,senseIds:['size'],source:{kind:'review_override' as const,caseId:'case',capturedVersion:1}};
   captureVocabularyRepertoireSelection('job',{wordId:'word',catalogVersion:getVocabularySenseCatalog('word').version,generationScope:scope});
+  db.prepare("UPDATE vocabulary_reflection_jobs SET model_choice='openai:gpt-6-sol-high' WHERE job_id='job'").run();
   const trial=provider(()=>({exercises:empty?[]:[repertoire.exercises[0]]}));
   const result=await trial.provider.run(job());
   if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
   assert.equal(trial.requests.length,1);
+  assert.equal(trial.requests[0]!.model,'gpt-6-sol');
   assert.deepEqual(JSON.parse(trial.requests[0].userPrompt).content.uses.map((use:{label:string})=>use.label),['make an image or object larger']);
   assert.equal(result.result.admission?.outcome,'selected_repertoire');
   assert.deepEqual(result.result.admission?.generationScope,scope);
@@ -589,8 +591,7 @@ for (const spend of [0.1, 100]) {
   });
 }
 
-bootstrapTest('reflection repertoire reaches the same general invocation as preparation while retaining its selected model',async()=>{
-  db.prepare("UPDATE vocabulary_reflection_jobs SET model_choice='openai:gpt-6-sol-high'").run();
+bootstrapTest('automatic Luna reflection uses the same general authoring brief as preparation',async()=>{
   for(const senseId of ['size','effect'])updateVocabularySense(senseId,1,{status:'active',description:{label:senseId,notes:[],examples:[{text:'把图片放大。',translation:'Enlarge the image.',pronunciation:null}]}},actor);
   retainBootstrapRoute();
   const trial=provider((_request,index)=>repertoire);
@@ -612,7 +613,8 @@ bootstrapTest('reflection repertoire reaches the same general invocation as prep
   assert.deepEqual({word:ordinary.content.word,uses:ordinary.content.uses,examples:ordinary.content.examples},reflection.content);
   assert.equal(sent.response_format.json_schema.name,reflected.outputSchemaName);
   assert.deepEqual(sent.response_format.json_schema.schema,reflected.outputSchema);
-  assert.equal(reflected.model,'gpt-6-sol');assert.equal(reflected.reasoningEffort,'high');
+  assert.equal(reflected.model,'gpt-6-luna');assert.equal(reflected.reasoningEffort,'high');
+  assert.equal(db.prepare('SELECT model_choice FROM vocabulary_reflection_jobs WHERE job_id=?').get('job')!.model_choice,'openai:gpt-6-luna-high');
   assert.equal(reflected.provenance!.promptName,'vocabulary-general-exercises');
   assert.equal(reflected.provenance!.promptVersion,'v5.1');
 });

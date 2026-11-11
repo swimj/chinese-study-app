@@ -20,9 +20,9 @@ import { getDb } from '../db/connection.ts';
 import { getSharedWordIntroductionContent } from '../db/word-introductions.ts';
 import { createVocabularyContent,getVocabularySenseCatalog,emitBackendEvent } from '../db/vocabulary-content.ts';
 import { linkVocabularyInvocationContent,linkVocabularyInvocationSense } from '../db/vocabulary-provenance.ts';
+import { LUNA_REPERTOIRE_MODEL, repertoireBootstrapModel, type RepertoireBootstrapModel } from './repertoire-bootstrap-routing.ts';
 
 export const VOCABULARY_PRACTICE_SERVICE = 'vocabulary-practice-authoring';
-export const VOCABULARY_PRACTICE_MODEL = 'gpt-6-luna';
 const TIMEOUT = 180_000;
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 export type VocabularyPracticeProvider = {
@@ -37,20 +37,21 @@ const projection = `work_id AS workId,word_id AS wordId,source_content_id AS sou
 const actor = { kind: 'service' as const,id: VOCABULARY_PRACTICE_SERVICE };
 
 /** The shared brief is a replaceable editorial candidate; structural validity does not certify learning quality. */
-export function createVocabularyPracticeProvider(options: { environment?: NodeJS.ProcessEnv; fetchImplementation?: FetchImplementation } = {}): VocabularyPracticeProvider {
+export function createVocabularyPracticeProvider(options: { environment?: NodeJS.ProcessEnv; fetchImplementation?: FetchImplementation; model?: RepertoireBootstrapModel } = {}): VocabularyPracticeProvider {
   const environment = options.environment ?? process.env;
+  const model = options.model ?? LUNA_REPERTOIRE_MODEL;
   const adapter = createOpenAiCompatibleAdapter({ id: 'openai',defaultBaseUrl: 'https://api.openai.com/v1',apiKeyEnvironmentVariable: 'OPENAI_API_KEY',
     structuredOutputMode: 'json_schema',maxTokensField: 'max_completion_tokens',
     fetchImplementation: options.fetchImplementation ?? fetchImplementationForProvider('openai',TIMEOUT) });
   return {
-    model: VOCABULARY_PRACTICE_MODEL,
+    model,
     isConfigured: () => Boolean(environment.OPENAI_API_KEY?.trim()),
     generationKey: (content) => { const invocation=generalExerciseInvocation(content); return hash({prompt:invocation.systemPrompt,promptVersion:invocation.promptVersion,schema:invocation.outputSchema,
-      model: VOCABULARY_PRACTICE_MODEL,reasoning:'high',maxOutputTokens:24_000,inputProjectionVersion:invocation.inputProjectionVersion}); },
+      model,reasoning:'high',maxOutputTokens:24_000,inputProjectionVersion:invocation.inputProjectionVersion}); },
     async generate(content,options) {
       if (!environment.OPENAI_API_KEY?.trim()) throw new Error('Vocabulary practice provider is not configured');
       const {promptName,promptVersion,schemaVersion,inputProjectionVersion,...invocation}=generalExerciseInvocation(content);
-      const result = await adapter.run({ ...invocation,model: VOCABULARY_PRACTICE_MODEL,reasoningEffort: 'high',
+      const result = await adapter.run({ ...invocation,model,reasoningEffort: 'high',
         maxOutputTokens: 24_000,temperature: null,timeoutMs: TIMEOUT,cachePrompt: true,
         invocationActor: { kind: 'service',serviceId: VOCABULARY_PRACTICE_SERVICE },
         provenance: { workflowId: options.workflowId,attemptNumber: options.attemptNumber,stepName: 'general_exercises',
@@ -79,8 +80,11 @@ function readWork(workId: string): VocabularyPracticeWork | null {
 
 /** Shared bounded authoring, invoked asynchronously by the backend worker. No session path awaits it.
  * A source/brief is prepared once. Failures retry after 30 and 60 seconds; exhausted cycles require an operator restart. */
-export function createVocabularyPracticePreparation(options: { provider?: VocabularyPracticeProvider; now?: () => string; canPublish?: () => boolean;ensureDefaults?:typeof ensureVocabularyDefaultUsefulSelection } = {}) {
-  const provider = options.provider ?? createVocabularyPracticeProvider();
+export function createVocabularyPracticePreparation(options: { provider?: VocabularyPracticeProvider; environment?: NodeJS.ProcessEnv; fetchImplementation?: FetchImplementation; now?: () => string; canPublish?: () => boolean;ensureDefaults?:typeof ensureVocabularyDefaultUsefulSelection } = {}) {
+  const luna = options.provider ?? createVocabularyPracticeProvider(options);
+  const sol = options.provider ?? createVocabularyPracticeProvider({...options,model:'gpt-6-sol'});
+  const providerFor = (wordId:string,reconciliationId:string|null) =>
+    !reconciliationId && repertoireBootstrapModel(wordId)==='gpt-6-sol' ? sol : luna;
   const now = options.now ?? (() => new Date().toISOString());
   const pending = new Map<string,Promise<void>>();
   function productionSource(content:WordContentDocument):WordContentDocument|null {
@@ -92,7 +96,6 @@ export function createVocabularyPracticePreparation(options: { provider?: Vocabu
       ||new Set(represented.map(mapping=>mapping!.sense_id)).size!==content.uses.length)return null;
     return content;
   }
-  function generationKey(content:GeneralExerciseSource):string { return provider.generationKey(content); }
   function resolveSource(work:Pick<VocabularyPracticeWork,'wordId'|'sourceContentId'|'reconciliationId'>):{source:GeneralExerciseSource;senses:Array<{source_use_id:string;sense_id:string;imported_sense_version:number}>}|null {
     if(work.reconciliationId){
       const canonical=reconciliationPracticeSource(work.wordId);
@@ -112,7 +115,7 @@ export function createVocabularyPracticePreparation(options: { provider?: Vocabu
       const existing=getDb().prepare(`SELECT ${projection} FROM vocabulary_practice_preparation WHERE reconciliation_id=?`).get(canonical.resolutionId) as VocabularyPracticeWork|undefined;
       if(existing)return existing;
       if(canonical.authority!==senseContentReconciliationAuthority(wordId))return null;
-      const key=generationKey(canonical.source),workId=`vocabulary-practice:reconciliation:${canonical.resolutionId}`;
+      const key=providerFor(wordId,canonical.resolutionId).generationKey(canonical.source),workId=`vocabulary-practice:reconciliation:${canonical.resolutionId}`;
       getDb().prepare(`INSERT OR IGNORE INTO vocabulary_practice_preparation(work_id,word_id,reconciliation_id,generation_key,status,created_at,updated_at,next_attempt_at) VALUES (?,?,?,?,'queued',?,?,?)`).run(workId,wordId,canonical.resolutionId,key,now(),now(),now());
       return readWork(workId);
     }
@@ -132,7 +135,7 @@ export function createVocabularyPracticePreparation(options: { provider?: Vocabu
       return existing;
     }
     if(authoredVocabularyRepertoire(wordId).length)return null;
-    const key=generationKey(bootstrap),workId=`vocabulary-practice:${hash([wordId,bootstrap.id,key])}`;
+    const key=providerFor(wordId,null).generationKey(bootstrap),workId=`vocabulary-practice:${hash([wordId,bootstrap.id,key])}`;
     const content=productionSource(bootstrap),coverage=resolveVocabularySenseCoverage(wordId);
     const mapped=getDb().prepare('SELECT sense_id FROM legacy_sense_imports WHERE source_content_id=?').all(bootstrap.id) as {sense_id:string}[];
     if(coverage.selectionEstablished&&!mapped.some(mapping=>coverage.includedSenseIds.includes(mapping.sense_id)))return null;
@@ -167,12 +170,12 @@ export function createVocabularyPracticePreparation(options: { provider?: Vocabu
     return true;
   }
   function claim(workId: string): string | null {
-    if (!provider.isConfigured()) return null;
+    if (!luna.isConfigured()) return null;
     const token = randomUUID(); const timestamp = now();
     return atomic(() => {
     const work=readWork(workId),source=work?resolveSource(work)?.source:null;
     if(!work||work.status!=='queued'||work.lastError==='default_selection_pending'||!source)return null;
-    const key=generationKey(source);
+    const key=providerFor(work.wordId,work.reconciliationId).generationKey(source);
     if(key!==work.generationKey){
       getDb().prepare("UPDATE vocabulary_practice_preparation SET generation_key=?,updated_at=? WHERE work_id=? AND status='queued'").run(key,now(),workId);
       emitBackendEvent({name:'vocabulary.practice_preparation.contract_updated',entityKind:'vocabulary_practice_preparation',entityId:workId,actorKind:'service',actorId:VOCABULARY_PRACTICE_SERVICE,data:{previousGenerationKey:work.generationKey,generationKey:key,attemptCount:work.attemptCount}});
@@ -188,6 +191,7 @@ export function createVocabularyPracticePreparation(options: { provider?: Vocabu
   async function run(workId: string,token: string): Promise<VocabularyContent[]> {
     const work = readWork(workId);
     if (!work || work.status !== 'running' || work.activeToken !== token || work.expiresAt! <= now()) throw new Error('Vocabulary preparation lease is not active');
+    const provider = providerFor(work.wordId,work.reconciliationId);
     const reconciliation = senseContentReconciliationGenerationToken(work.wordId);
     let invocationId: string | null | undefined;
     let source: GeneralExerciseSource | null = null;
@@ -198,7 +202,7 @@ export function createVocabularyPracticePreparation(options: { provider?: Vocabu
     try {
       assertSenseContentReconciliationGeneration(work.wordId, reconciliation);
       source=resolved?.source??null;
-      if(!source||generationKey(source)!==work.generationKey)throw new Error('Vocabulary preparation source changed');
+      if(!source||provider.generationKey(source)!==work.generationKey)throw new Error('Vocabulary preparation source changed');
       retryable=true;
       let output: unknown;
       try {
@@ -227,7 +231,7 @@ export function createVocabularyPracticePreparation(options: { provider?: Vocabu
         if (options.canPublish && !options.canPublish()) throw new Error('Vocabulary preparation publication is currently blocked');
         const current = readWork(workId);
         if (!current || current.status !== 'running' || current.activeToken !== token || current.expiresAt! <= now()) throw new Error('Vocabulary preparation lease changed');
-        if (!resolveSource(work) || getVocabularySenseCatalog(work.wordId).version !== catalogue.version || generationKey(source!)!==work.generationKey) {
+        if (!resolveSource(work) || getVocabularySenseCatalog(work.wordId).version !== catalogue.version || provider.generationKey(source!)!==work.generationKey) {
           throw new Error('Vocabulary preparation source changed');
         }
         // Another authoring path can publish while this provider request is in flight.
@@ -269,7 +273,7 @@ export function createVocabularyPracticePreparation(options: { provider?: Vocabu
     return {...row,retryable};
   }
   return {
-    isConfigured: () => provider.isConfigured(),ensure,preflight,claim,run,
+    isConfigured: () => luna.isConfigured(),ensure,preflight,claim,run,
     failed(workId:string) {
       const row=getDb().prepare(`SELECT work_id AS workId,word_id AS wordId,source_content_id AS sourceContentId,reconciliation_id AS reconciliationId,attempt_count AS attemptCount,invocation_id AS invocationId,last_error AS lastError FROM vocabulary_practice_preparation WHERE work_id=? AND status='failed'`).get(workId) as Pick<VocabularyPracticeWork,'workId'|'wordId'|'sourceContentId'|'reconciliationId'|'attemptCount'|'invocationId'|'lastError'>|undefined;
       if(!row)throw new Error('Expected failed practice preparation');
