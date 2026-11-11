@@ -85,6 +85,8 @@ may retain superseded plans; check the task context and owning docs before use.
 
 | Note | Type | Retire by |
 | --- | --- | --- |
+| [Timed session iterator — prototype design](active/2026-11-11-timed-session-iterator-prototype.md) | research | when superseded by an implementation spec, or declined |
+| [A little while in your Chinese](active/2026-11-10-daily-practice-orientation.md) | research | when revised by later ideation, or graduated into an owning product note |
 | [Vocabulary learning storage sketch](active/2026-10-16-vocabulary-storage-sketch.md) | research | when refined into implementation schemas |
 | [Vocabulary learning first deliverable plan](active/2026-10-16-vocabulary-first-deliverable-plan.md) | work-bundle | when the first delivery is completed or superseded |
 | [Vocabulary learning model early specification](active/2026-10-15-vocabulary-model-whiteboard.md) | research | when refined into the owning implementation contracts |
