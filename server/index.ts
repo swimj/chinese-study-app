@@ -3,13 +3,11 @@ import { startConfiguredBackupSource } from './backups/source.ts';
 import { registerVocabularyIntakeRoutes } from './vocabulary/intake-routes.ts';
 import { createVocabularyIntakeWorker } from './vocabulary/intake-worker.ts';
 import type { ChatProvider } from './llm/chat-types.ts';
-import { retryPreparationWithReadiness } from './word-content/retry-preparation.ts';
 import { registerVocabularyStatisticsRoutes } from './vocabulary/statistics-routes.ts';
 import { registerVocabularyProgressRoutes } from './vocabulary/progress-routes.ts';
 import { createVocabularyCutoverFence } from './vocabulary/cutover-routes.ts';
 import { addVocabularyStashByHanzi, updateVocabularyStashPriority } from './db/vocabulary-stash.ts';
 import { registerVocabularyStudyRoutes } from './vocabulary/study-routes.ts';
-import { getTeachingSetReport } from './db/teaching-set-report.ts';
 import { registerVocabularyReflectionRoutes } from './vocabulary/reflection-routes.ts';
 import { registerSenseContentReconciliationRoutes } from './vocabulary/reconciliation-routes.ts';
 import { listSenseContentReconciliationPracticeDemand } from './db/sense-content-reconciliation-state.ts';
@@ -19,18 +17,11 @@ import { createVocabularyPracticeWorker } from './vocabulary/preparation-worker.
 import { SessionWordOutcomeConflictError } from './db/session-word-outcomes.ts';
 import { createSessionCompletionWorker } from './session-completion/worker.ts';
 import { stageSessionCompletion, undoSessionCompletion, closeSessionCompletion, getSessionCompletion, getCurrentSessionCompletion, SessionCompletionInputError, SessionCompletionConflictError, SessionCompletionNotFoundError } from './db/session-completion.ts';
-import { isStudyIntroductionOrder, isStudyIntroductionSpacing } from '../src/domain/introduction-order.ts';
-import { getDailyStudyMinutes, setDailyStudyMinutes, vocabularyTimedSessionsEnabled, VocabularyTimedSessionInputError } from './db/vocabulary-timed-sessions.ts';
 import { registerContentImprovementRoutes } from './content-improvement-routes.ts';
-import { listWhatsNewPosts, saveWhatsNewPost, WhatsNewConflictError } from './db/whats-new.ts';
-import { WhatsNewInputError, parseWhatsNewWriteRequest } from '../src/domain/whats-new.ts';
-import { updateWhatsNewSeenThroughSequence } from './db/attention.ts';
-import { getWhatsNewAttention, updateWhatsNewAttention } from './db/whats-new-attention.ts';
 import { createFileReflectionFailureArtifactSink } from './reflection/failure-artifacts.ts';
 import { installModelInvocationLedger } from './llm/invocation-ledger.ts';
-import { listModelInvocations, ModelInvocationInputError } from './db/model-invocations.ts';
-import { getDebriefInterests, setDebriefInterests, getLatestSessionDebrief, getSessionDebrief, retrySessionDebrief, SessionDebriefNotFoundError, SessionDebriefRetryConflictError } from './db/session-debrief.ts';
-import { SessionDebriefInputError, validateDebriefInventory } from '../src/domain/session-debrief.ts';
+import { getSessionDebrief } from './db/session-debrief.ts';
+import { validateDebriefInventory } from '../src/domain/session-debrief.ts';
 import { startSessionDebriefRuntime } from './session-debrief/worker.ts';
 import { ContentReactionNotFoundError, getContentReactionSummary, getSavedCollection, listContentReactions, setContentReaction } from './db/content-reactions.ts';
 import { ContentReactionInputError, parseContentReactionInput } from '../src/domain/content-reactions.ts';
@@ -58,29 +49,14 @@ import {
   dismissWordFromStudy,
   dismissReflectionProposal,
   reopenReflectionProposal,
-  addUnstudiedUserPriorityByHanzi,
   listUnstudiedPriorityMatchesByTarget,
   dbConfig,
   DietManifestUnavailableError,
-  isDietDeckModeActive,
   nudgeDietProfile,
-  getLearningPolicy,
-  getCharacterPresentation,
-  getStudyNewWordsFirst,
-  getStudyIntroductionOrder,
-  getStudyIntroductionSpacing,
-  setStudyIntroductionOrder,
-  setStudyNewWordsFirst,
-  getSentenceCharacterPresentation,
-  setSentenceCharacterPresentation,
-  setCharacterPresentation,
-  setUnstudiedAdmissionSource,
-  getContentDiagnostics,
   getMyWords,
   getReflectionArtifactDetail,
   getReflectionQualityStats,
   getPrioritizedUnstudiedWords,
-  getReviewFailureRateDays,
   listReflectionArtifacts,
   listReflectionGenerationRuns,
   listReflectionHelpInbox,
@@ -88,16 +64,8 @@ import {
   requireLearnerId,
   runWithLearnerId,
   currentLearnerIdOrNull,
-  getAttentionBadges,
-  markReflectionInboxSeen,
-  markFailedReflectionRunsSeen,
-  ensureWhatsNewSeenThroughDate,
-  markWhatsNewSeenThroughDate,
-  getSessionActiveTimeMetrics,
   getSessionPayload,
-  setDailyNewWordLimit,
   getWordMeanings,
-  getWordStatusCounts,
   recordAcceptedContrastSelectionAttempt,
   recordAcceptedReviewAttemptBatch,
   recordPureCueAssessment,
@@ -107,21 +75,15 @@ import {
   getSharedContentPublicationForContent,
   getHostedServiceControls,
   readHostedServiceControl,
-  getActiveServiceBanner,
-  setServiceBanner,
-  clearServiceBanner,
-  toPublicServiceBanner,
   reportSharedContentPublication,
   searchWords,
   suppressProductionForWordOutsideSession,
   updateWordMeaningVisibility,
   updateWordPersonalNotes,
-  updateWordUserPriority,
   upsertReflectionQualityAnnotation,
   markReflectionHelpInboxDone,
   deferReflectionHelpInboxItem,
   withdrawReflectionInvocationAuthorization,
-  getUsagePulse,
   type ReviewAttemptCommitIntent,
 } from './db.ts';
 import { isMyWordsStatus, type MyWordsStatus } from '../src/domain/my-words.ts';
@@ -135,7 +97,6 @@ import {
   MAINTENANCE_MODE_CODE,
   runHostedProviderWork,
 } from './hosted-runtime-controls.ts';
-import type { ContentDiagnosticKind } from '../src/domain/content-diagnostics.ts';
 import type {
   ContrastSelectionCommitIntent,
   StudyAttemptEvent,
@@ -146,15 +107,10 @@ import type { PureCueAssessmentEvent } from '../src/domain/pure-cues.ts';
 import type {
   ClearReflectionQualityRequest,
   MarkReflectionHelpInboxDoneRequest,
-  MarkReflectionInboxSeenRequest,
   ReflectionOperation,
   ReviewProposalRequest,
   UpsertReflectionQualityRequest,
 } from '../src/domain/reflection.ts';
-import {
-  CLIENT_TRANSPORT_INCIDENT_MAX_BATCH_SIZE,
-  isClientTransportIncident,
-} from '../src/domain/client-incidents.ts';
 import {
   isReflectionQualityTag,
 } from '../src/domain/reflection.ts';
@@ -203,10 +159,15 @@ import {
   createIntroductionLabService,
   type IntroductionLabService,
 } from './word-content-lab/service.ts';
-
-import { listWordPreparationFailures, retryWordPreparation } from './db/preparation-work.ts';
 import { prepareSessionPayload } from './word-content/session-preparation.ts';
 import { startWordPreparationRuntime } from './word-content/preparation-runtime.ts';
+import { registerDiagnosticsRoutes } from './routes/diagnostics-routes.ts';
+import { registerOperatorRoutes } from './routes/operator-routes.ts';
+import { registerLearnerSettingsRoutes } from './routes/learner-settings-routes.ts';
+import { registerSessionDebriefRoutes } from './routes/session-debrief-routes.ts';
+import { registerWhatsNewRoutes } from './routes/whats-new-routes.ts';
+import { registerAttentionRoutes } from './routes/attention-routes.ts';
+import { defaultErrorLogger, isPlainObject, readPositiveIntegerFromQuery, readStudyDayKeyFromQuery, normalizeStudyDayKey, isReflectionNotFoundError, isReflectionQualityClientError } from './routes/request-helpers.ts';
 
 const port = dbConfig.port;
 const defaultJsonBodyLimit = '100kb';
@@ -356,54 +317,7 @@ export function createApp(options: CreateAppOptions = {}) {
     ));
   }
 
-  app.post('/api/client-incidents', (req, res) => {
-    const incidents = req.body?.incidents;
-    if (
-      !Array.isArray(incidents)
-      || incidents.length < 1
-      || incidents.length > CLIENT_TRANSPORT_INCIDENT_MAX_BATCH_SIZE
-      || incidents.some((incident) => !isClientTransportIncident(incident))
-    ) {
-      res.status(400).json({ error: 'Expected a valid client incident batch' });
-      return;
-    }
-
-    try {
-      const learnerId = requireLearnerId();
-      for (const incident of incidents) {
-        clientIncidentDiagnosticSink.record({ learnerId, incident });
-      }
-      res.status(204).send();
-    } catch (error) {
-      (options.logError ?? defaultErrorLogger)('Failed to record client incident diagnostics', {
-        errorName: error instanceof Error ? error.name : 'UnknownError',
-      });
-      res.status(500).json({ error: 'Failed to record client incident diagnostics' });
-    }
-  });
-
-  app.get('/api/content-diagnostics', (req, res) => {
-    const kind = req.query?.kind;
-    const query = req.query?.q;
-    const limit = readPositiveIntegerFromQuery(req.query?.limit, 50);
-    if (!isContentDiagnosticKind(kind)) {
-      res.status(400).json({ error: 'Expected kind to be word, contrast_cluster, or production_cue' });
-      return;
-    }
-    if (typeof query !== 'string' || query.trim().length === 0) {
-      res.status(400).json({ error: 'Expected non-empty string q query parameter' });
-      return;
-    }
-    if (limit === null) {
-      res.status(400).json({ error: 'Expected positive integer limit query parameter' });
-      return;
-    }
-    try {
-      res.json(getContentDiagnostics({ kind, query, limit }));
-    } catch {
-      res.status(500).json({ error: 'Failed to load content diagnostics' });
-    }
-  });
+  registerDiagnosticsRoutes(app, { clientIncidentDiagnosticSink, options });
 
   app.get('/api/my-words', (req, res) => {
     const view = req.query.view ?? 'recent';
@@ -489,18 +403,7 @@ export function createApp(options: CreateAppOptions = {}) {
   });
   mountRepertoireQualityRoutes(app, dbConfig.dbPath);
 
-  app.get(
-    '/api/operator/usage-pulse',
-    createOperatorAllowlistMiddleware(),
-    (_req, res) => {
-      try {
-        res.json(getUsagePulse({ dataDir: dbConfig.dataDir }));
-      } catch (error) {
-        console.error('Failed to load operator usage pulse', error);
-        res.status(500).json({ error: 'Failed to load operator usage pulse' });
-      }
-    },
-  );
+  registerOperatorRoutes(app, { options });
 
   app.get('/api/operator/content-sharing', createOperatorAllowlistMiddleware(), (req, res) => {
     try {
@@ -512,78 +415,6 @@ export function createApp(options: CreateAppOptions = {}) {
       }
       console.error('Failed to load content sharing digest', error);
       res.status(500).json({ error: 'Failed to load content sharing digest' });
-    }
-  });
-
-  app.get('/api/operator/model-invocations', createOperatorAllowlistMiddleware(), (req, res) => {
-    try {
-      res.json(listModelInvocations({ from: req.query.from, to: req.query.to }));
-    } catch (error) {
-      if (error instanceof ModelInvocationInputError) {
-        res.status(400).json({ error: error.message });
-        return;
-      }
-      console.error('Failed to load model invocations', error);
-      res.status(500).json({ error: 'Failed to load model invocations' });
-    }
-  });
-
-  app.get('/api/operator/word-preparation/failures', createOperatorAllowlistMiddleware(), (_req, res) => {
-    res.json({ failures: listWordPreparationFailures() });
-  });
-  app.get('/api/operator/teaching-sets', createOperatorAllowlistMiddleware(), (_req,res) => {
-    try { res.json(getTeachingSetReport()); }
-    catch (error) {
-      console.error('Teaching set report failed',error);
-      res.status(500).json({error:'Could not load teaching set costs.'});
-    }
-  });
-
-  app.get('/api/operator/service-banner', createOperatorAllowlistMiddleware(), (_req, res) => {
-    const banner = getActiveServiceBanner();
-    res.json({ serviceBanner: banner ? toPublicServiceBanner(banner) : null });
-  });
-  app.put('/api/operator/service-banner', createOperatorAllowlistMiddleware(), (req, res) => {
-    const { message, expiresAt, kickoffAt } = req.body ?? {};
-    const planned = typeof kickoffAt === 'string' && message === undefined && expiresAt === undefined;
-    const custom = kickoffAt === undefined && typeof message === 'string'
-      && (expiresAt === undefined || typeof expiresAt === 'string');
-    if (!planned && !custom) {
-      res.status(400).json({ error: 'Expected either an ISO kickoff timestamp, or a message with optional ISO expiry timestamp.' });
-      return;
-    }
-    try {
-      const request = planned ? { kickoffAt } : { message, expiresAt };
-      const banner = setServiceBanner({ ...request, actorId: res.locals.operatorSubject });
-      res.json({ serviceBanner: toPublicServiceBanner(banner) });
-    } catch (error) {
-      if (error instanceof Error && /service banner message|service banner expiry|service banner kickoff|expires at/i.test(error.message)) {
-        res.status(400).json({ error: error.message });
-        return;
-      }
-      console.error('Failed to update operator service banner', error);
-      res.status(500).json({ error: 'Failed to update service banner' });
-    }
-  });
-  app.delete('/api/operator/service-banner', createOperatorAllowlistMiddleware(), (_req, res) => {
-    res.json(clearServiceBanner({ actorId: res.locals.operatorSubject }));
-  });
-  app.post('/api/operator/word-preparation/:workId/retry', createOperatorAllowlistMiddleware(), (req, res) => {
-    if (!req.body || Array.isArray(req.body) || typeof req.body !== 'object' || Object.keys(req.body).length !== 0
-      || !req.params.workId || req.params.workId.length > 200) {
-      res.status(400).json({ error: 'Expected an empty retry request.' });
-      return;
-    }
-    try {
-      retryPreparationWithReadiness(req.params.workId, res.locals.operatorSubject);
-      options.wakeWordPreparation?.();
-      res.json({ queued: true });
-    } catch (error) {
-      if (error instanceof Error && error.message === 'Only paused preparation can be retried') {
-        res.status(409).json({ error: error.message });
-        return;
-      }
-      res.status(500).json({ error: 'Could not retry word preparation.' });
     }
   });
 
@@ -750,109 +581,9 @@ export function createApp(options: CreateAppOptions = {}) {
     }
   });
 
-  app.get('/api/status', (req, res) => {
-    const studyDayKey = readStudyDayKeyFromQuery(req.query?.studyDayKey);
-    if (!studyDayKey) {
-      res.status(400).json({ error: 'Expected YYYY-MM-DD studyDayKey query parameter' });
-      return;
-    }
+  registerLearnerSettingsRoutes(app);
 
-    const banner = getActiveServiceBanner();
-    res.json({
-      status: 'ok',
-      time: new Date().toISOString(),
-      mode: dbConfig.mode,
-      studyProfile: dbConfig.studyProfile,
-      dataDir: dbConfig.dataDir,
-      dbPath: dbConfig.dbPath,
-      wordStatusCounts: getWordStatusCounts(),
-      reviewFailureRateDays: getReviewFailureRateDays(),
-      sessionActiveTimeMetrics: getSessionActiveTimeMetrics(studyDayKey),
-      dietDecksActive: isDietDeckModeActive(),
-      serviceBanner: banner ? toPublicServiceBanner(banner) : null,
-      ...getLearningPolicy(studyDayKey),
-      characterPresentation: getCharacterPresentation(),
-      sentenceCharacterPresentation: getSentenceCharacterPresentation(),
-      studyNewWordsFirst: getStudyNewWordsFirst(),
-      studyIntroductionOrder: getStudyIntroductionOrder(),
-      studyIntroductionSpacing: getStudyIntroductionSpacing(),
-      dailyStudyMinutes: getDailyStudyMinutes().minutes,
-      timedSessions: vocabularyTimedSessionsEnabled(),
-      debriefInterests: getDebriefInterests(),
-    });
-  });
-
-  app.patch('/api/learner-settings/daily-study-minutes', (req, res) => {
-    try {
-      res.json(setDailyStudyMinutes(req.body?.dailyStudyMinutes));
-    } catch (error) {
-      if (error instanceof VocabularyTimedSessionInputError) {
-        res.status(400).json({ error: error.message });
-        return;
-      }
-      res.status(500).json({ error: 'Failed to update daily study time' });
-    }
-  });
-
-  app.patch('/api/learning-policy/daily-new-word-limit', (req, res) => {
-    const dailyNewWordLimit = req.body?.dailyNewWordLimit;
-
-    try {
-      res.json(setDailyNewWordLimit(dailyNewWordLimit));
-    } catch (error) {
-      if (error instanceof Error && error.message === 'Expected integer dailyNewWordLimit between 0 and 20') {
-        res.status(400).json({ error: error.message });
-        return;
-      }
-
-      res.status(500).json({ error: 'Failed to update daily new-word limit' });
-    }
-  });
-
-  app.patch('/api/learning-policy/unstudied-admission-source', (req, res) => {
-    const unstudiedAdmissionSource = req.body?.unstudiedAdmissionSource;
-
-    try {
-      res.json(setUnstudiedAdmissionSource(unstudiedAdmissionSource));
-    } catch (error) {
-      if (error instanceof Error && error.message === 'Expected unstudiedAdmissionSource to be "mixed" or "stash_only"') {
-        res.status(400).json({ error: error.message });
-        return;
-      }
-
-      res.status(500).json({ error: 'Failed to update unstudied admission source' });
-    }
-  });
-
-  app.patch('/api/learner-settings/debrief-interests', (req, res) => {
-    try { res.json(setDebriefInterests(req.body?.debriefInterests)); }
-    catch (error) {
-      res.status(error instanceof SessionDebriefInputError ? 400 : 500).json({ error: error instanceof SessionDebriefInputError ? error.message : 'Failed to update interests' });
-    }
-  });
-
-  app.get('/api/session-debriefs/latest', (_req, res) => {
-    res.json({ debrief: getLatestSessionDebrief() });
-  });
-
-  app.get('/api/session-debriefs/:sessionId', (req, res) => {
-    const debrief = getSessionDebrief(req.params.sessionId);
-    if (!debrief) { res.status(404).json({ error: 'Session debrief not found' }); return; }
-    res.json({ debrief });
-  });
-
-  app.post('/api/session-debriefs/:sessionId/retry', (req, res) => {
-    try {
-      const debrief = retrySessionDebrief(req.params.sessionId);
-      if (debrief.status === 'queued') {
-        try { options.wakeSessionDebriefs?.(); } catch { /* A durable retry survives a missed wake. */ }
-      }
-      res.json({ debrief });
-    } catch (error) {
-      res.status(error instanceof SessionDebriefNotFoundError ? 404 : error instanceof SessionDebriefRetryConflictError ? 409 : 500)
-        .json({ error: error instanceof SessionDebriefNotFoundError || error instanceof SessionDebriefRetryConflictError ? error.message : 'Failed to retry session debrief' });
-    }
-  });
+  registerSessionDebriefRoutes(app, { options });
 
   app.get('/api/content-reactions', (_req, res) => {
     res.json({ reactions: listContentReactions() });
@@ -870,68 +601,6 @@ export function createApp(options: CreateAppOptions = {}) {
 
   app.get('/api/saved-collection', (_req, res) => {
     res.json(getSavedCollection());
-  });
-
-  app.patch('/api/learner-settings/character-presentation', (req, res) => {
-    const characterPresentation = req.body?.characterPresentation;
-
-    try {
-      res.json(setCharacterPresentation(characterPresentation));
-    } catch (error) {
-      if (
-        error instanceof Error
-        && error.message === 'Expected characterPresentation to be "simplified", "traditional", or "both"'
-      ) {
-        res.status(400).json({ error: error.message });
-        return;
-      }
-
-      res.status(500).json({ error: 'Failed to update character presentation' });
-    }
-  });
-
-  app.patch('/api/learner-settings/study-introduction-order', (req, res) => {
-    const { studyIntroductionOrder, studyIntroductionSpacing } = req.body ?? {};
-    if (!isStudyIntroductionOrder(studyIntroductionOrder)) {
-      res.status(400).json({ error: 'Expected studyIntroductionOrder to be random, first or paced' });
-      return;
-    }
-    if (!isStudyIntroductionSpacing(studyIntroductionSpacing)) {
-      res.status(400).json({ error: 'Expected integer studyIntroductionSpacing between 1 and 10' });
-      return;
-    }
-    try {
-      res.json(setStudyIntroductionOrder(studyIntroductionOrder, studyIntroductionSpacing));
-    } catch {
-      res.status(500).json({ error: 'Failed to update introduction ordering' });
-    }
-  });
-
-  app.patch('/api/learner-settings/study-new-words-first', (req, res) => {
-    if (typeof req.body?.studyNewWordsFirst !== 'boolean') {
-      res.status(400).json({ error: 'Expected studyNewWordsFirst to be a boolean' });
-      return;
-    }
-    try {
-      res.json(setStudyNewWordsFirst(req.body.studyNewWordsFirst));
-    } catch {
-      res.status(500).json({ error: 'Failed to update new-word ordering' });
-    }
-  });
-
-  app.patch('/api/learner-settings/sentence-character-presentation', (req, res) => {
-    try {
-      res.json(setSentenceCharacterPresentation(req.body?.sentenceCharacterPresentation));
-    } catch (error) {
-      if (
-        error instanceof Error
-        && error.message === 'Expected sentenceCharacterPresentation to be "simplified" or "traditional"'
-      ) {
-        res.status(400).json({ error: error.message });
-        return;
-      }
-      res.status(500).json({ error: 'Failed to update sentence character presentation' });
-    }
   });
 
   app.post('/api/study-sessions/:sessionId/accepted-review-attempt-batch', (req, res) => {
@@ -1705,108 +1374,9 @@ export function createApp(options: CreateAppOptions = {}) {
     }
   });
 
-  app.get('/api/attention-badges', (_req, res) => {
-    try {
-      res.json(getAttentionBadges());
-    } catch {
-      res.status(500).json({ error: 'Failed to load attention badges' });
-    }
-  });
+  registerAttentionRoutes(app);
 
-  app.post('/api/reflection-inbox-seen', (req, res) => {
-    const request = readMarkReflectionInboxSeenRequest(req.body);
-    if (request === null) {
-      res.status(400).json({ error: 'Expected a valid reflection inbox seen request' });
-      return;
-    }
-    try {
-      res.json(markReflectionInboxSeen(request));
-    } catch (error) {
-      if (isReflectionNotFoundError(error, 'Reflection proposal not found.')) {
-        res.status(404).json({ error: 'Reflection proposal not found' });
-        return;
-      }
-      if (isReflectionQualityClientError(error) || isAttentionClientError(error)) {
-        res.status(400).json({ error: error instanceof Error ? error.message : 'Invalid request' });
-        return;
-      }
-      res.status(500).json({ error: 'Failed to mark reflection inbox item seen' });
-    }
-  });
-
-  app.get('/api/whats-new', (_req, res) => {
-    res.json({ posts: listWhatsNewPosts() });
-  });
-  app.get('/api/whats-new-attention', (_req, res) => {
-    res.json(getWhatsNewAttention());
-  });
-  app.post('/api/whats-new-attention', (req, res) => {
-    try {
-      res.json(updateWhatsNewAttention(req.body));
-    } catch (error) {
-      if (error instanceof WhatsNewInputError) { res.status(400).json({ error: error.message }); return; }
-      console.error('Failed to update blog attention', error);
-      res.status(500).json({ error: 'Failed to update blog attention' });
-    }
-  });
-  app.get('/api/operator/whats-new', createOperatorAllowlistMiddleware(), (_req, res) => {
-    res.json({ posts: listWhatsNewPosts({ includeDrafts: true }) });
-  });
-  app.put('/api/operator/whats-new', createOperatorAllowlistMiddleware(), (req, res) => {
-    try {
-      res.json(saveWhatsNewPost(parseWhatsNewWriteRequest(req.body), res.locals.operatorSubject as string));
-    } catch (error) {
-      if (error instanceof WhatsNewInputError) { res.status(400).json({ error: error.message }); return; }
-      if (error instanceof WhatsNewConflictError) { res.status(409).json({ error: error.message }); return; }
-      console.error('Failed to save blog post', error);
-      res.status(500).json({ error: 'Failed to save blog post' });
-    }
-  });
-  app.post('/api/whats-new-seen-sequence', (req, res) => {
-    try {
-      res.json({ whatsNewSeenThroughSequence: updateWhatsNewSeenThroughSequence(req.body?.throughSequence, req.body?.mode) });
-    } catch (error) {
-      if (error instanceof WhatsNewInputError) { res.status(400).json({ error: error.message }); return; }
-      res.status(500).json({ error: 'Failed to update blog seen sequence' });
-    }
-  });
-
-  app.post('/api/whats-new-seen', (req, res) => {
-    const request = readWhatsNewSeenRequest(req.body);
-    if (request === null) {
-      res.status(400).json({ error: 'Expected a valid whats-new seen request' });
-      return;
-    }
-    try {
-      const whatsNewSeenThroughDate = request.mode === 'ensure'
-        ? ensureWhatsNewSeenThroughDate(request.throughDate)
-        : markWhatsNewSeenThroughDate(request.throughDate);
-      res.json({ whatsNewSeenThroughDate });
-    } catch (error) {
-      if (isAttentionClientError(error)) {
-        res.status(400).json({ error: error instanceof Error ? error.message : 'Invalid request' });
-        return;
-      }
-      res.status(500).json({ error: 'Failed to update whats-new seen date' });
-    }
-  });
-
-  app.post('/api/failed-reflection-runs-seen', (req, res) => {
-    const request = readFailedReflectionRunsSeenRequest(req.body);
-    if (request === null) {
-      res.status(400).json({ error: 'Expected a valid failed-reflection-runs seen request' });
-      return;
-    }
-    try {
-      res.json(markFailedReflectionRunsSeen(request.seenThroughAt));
-    } catch (error) {
-      if (isAttentionClientError(error)) {
-        res.status(400).json({ error: error instanceof Error ? error.message : 'Invalid request' });
-        return;
-      }
-      res.status(500).json({ error: 'Failed to acknowledge failed reflection runs' });
-    }
-  });
+  registerWhatsNewRoutes(app);
 
   app.get('/api/reflection-help-inbox', (_req, res) => {
     try {
@@ -2315,49 +1885,12 @@ function readHttpErrorStatus(error: unknown): number {
   return status === 400 || status === 413 ? status : 500;
 }
 
-function defaultErrorLogger(message: string, metadata: Record<string, string>): void {
-  console.error(message, metadata);
-}
-
-function readStudyDayKeyFromQuery(value: unknown): string | null {
-  if (typeof value !== 'string') {
-    return null;
-  }
-
-  return normalizeStudyDayKey(value);
-}
-
 function readStudyDayKeyFromBody(value: unknown): string | null {
   if (typeof value !== 'string') {
     return null;
   }
 
   return normalizeStudyDayKey(value);
-}
-
-function readPositiveIntegerFromQuery(value: unknown, fallback: number): number | null {
-  if (value === undefined) {
-    return fallback;
-  }
-
-  if (typeof value !== 'string' || !/^\d+$/.test(value)) {
-    return null;
-  }
-
-  const parsed = Number(value);
-  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
-    return null;
-  }
-
-  return parsed;
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function isContentDiagnosticKind(value: unknown): value is ContentDiagnosticKind {
-  return value === 'word' || value === 'contrast_cluster' || value === 'production_cue';
 }
 
 function readReviewProposalRequest(value: unknown): ReviewProposalRequest | null {
@@ -2403,10 +1936,6 @@ function readReviewProposalRequest(value: unknown): ReviewProposalRequest | null
     default:
       return null;
   }
-}
-
-function isReflectionNotFoundError(error: unknown, message: string): error is Error {
-  return error instanceof Error && error.message === message;
 }
 
 function isReflectionReviewClientError(error: unknown): error is Error {
@@ -2481,86 +2010,6 @@ function readMarkReflectionHelpInboxDoneRequest(
   return readItemLocatorRequest(value);
 }
 
-function readMarkReflectionInboxSeenRequest(
-  value: unknown,
-): MarkReflectionInboxSeenRequest | null {
-  if (!isPlainObject(value) || typeof value.kind !== 'string') return null;
-  const keys = Object.keys(value).sort();
-  if (value.kind === 'proposal') {
-    if (
-      keys.length !== 2
-      || keys[0] !== 'kind'
-      || keys[1] !== 'proposalId'
-      || typeof value.proposalId !== 'string'
-      || value.proposalId.trim().length === 0
-    ) {
-      return null;
-    }
-    return { kind: 'proposal', proposalId: value.proposalId.trim() };
-  }
-  if (value.kind === 'explanation') {
-    if (
-      keys.length !== 3
-      || keys[0] !== 'artifactId'
-      || keys[1] !== 'itemId'
-      || keys[2] !== 'kind'
-      || typeof value.artifactId !== 'string'
-      || value.artifactId.trim().length === 0
-      || typeof value.itemId !== 'string'
-      || value.itemId.trim().length === 0
-    ) {
-      return null;
-    }
-    return {
-      kind: 'explanation',
-      artifactId: value.artifactId.trim(),
-      itemId: value.itemId.trim(),
-    };
-  }
-  return null;
-}
-
-function readWhatsNewSeenRequest(
-  value: unknown,
-): { throughDate: string; mode: 'ensure' | 'seen' } | null {
-  if (!isPlainObject(value)) return null;
-  const keys = Object.keys(value).sort();
-  if (
-    keys.length !== 2
-    || keys[0] !== 'mode'
-    || keys[1] !== 'throughDate'
-    || (value.mode !== 'ensure' && value.mode !== 'seen')
-    || typeof value.throughDate !== 'string'
-  ) {
-    return null;
-  }
-  return { throughDate: value.throughDate, mode: value.mode };
-}
-
-function readFailedReflectionRunsSeenRequest(
-  value: unknown,
-): { seenThroughAt?: string } | null {
-  if (!isPlainObject(value)) return null;
-  const keys = Object.keys(value);
-  if (keys.length === 0) return {};
-  if (
-    keys.length !== 1
-    || keys[0] !== 'seenThroughAt'
-    || typeof value.seenThroughAt !== 'string'
-  ) {
-    return null;
-  }
-  return { seenThroughAt: value.seenThroughAt };
-}
-
-function isAttentionClientError(error: unknown): error is Error {
-  return error instanceof Error && (
-    error.message === 'Expected a YYYY-MM-DD whats-new date.'
-    || error.message.startsWith('Expected non-empty ')
-    || error.message.startsWith('Expected ') && error.message.includes('ISO-8601')
-  );
-}
-
 function readItemLocatorRequest(value: unknown): { artifactId: string; itemId: string } | null {
   if (!isPlainObject(value)) return null;
   const keys = Object.keys(value).sort();
@@ -2588,33 +2037,10 @@ function isReflectionQualityNotFoundError(error: unknown): error is Error {
   );
 }
 
-function isReflectionQualityClientError(error: unknown): error is Error {
-  if (!(error instanceof Error)) return false;
-  return (
-    error.message === 'Expected a valid reflection quality tag.'
-    || error.message === 'Expected a non-empty quality tag set.'
-    || error.message === 'Expected quality tags to be an array.'
-    || error.message === 'other tag requires a non-empty note.'
-    || error.message === 'Expected quality annotation note to be a string or null.'
-    || error.message.startsWith('Expected non-empty ')
-    || error.message.startsWith('Expected ')
-      && error.message.includes('ISO-8601')
-  );
-}
-
 function handleHostedProviderWorkError(error: unknown, res: Response): boolean {
   if (!(error instanceof HostedProviderWorkUnavailableError)) return false;
   res.status(503).json({ error: error.message, code: error.code });
   return true;
-}
-
-function normalizeStudyDayKey(value: string): string | null {
-  const trimmed = value.trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
-    return null;
-  }
-
-  return trimmed;
 }
 
 export function recoverPendingReflectionApplicationsAtStartup() {

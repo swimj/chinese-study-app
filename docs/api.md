@@ -6,7 +6,12 @@ structural constraints. The [implementation guide](vocabulary-learning.md) expla
 the current runtime. Earlier-runtime entries below support retained records and
 compatibility; they do not reopen retired Mandarin write paths.
 
-Routes are defined in [server/index.ts](../server/index.ts). Frontend client: [src/services/api.ts](../src/services/api.ts).
+`createApp` in [server/index.ts](../server/index.ts) owns the middleware chain and
+registration order; route handlers live in `register<Area>Routes` modules under
+[server/routes/](../server/routes/), [server/vocabulary/](../server/vocabulary/), and
+other subsystem folders. Express matches in registration order, so a new route
+that overlaps an existing pattern must be registered on the intended side of it.
+Frontend client: [src/services/api.ts](../src/services/api.ts).
 
 Base URL: `http://localhost:5174` in development (override with
 `VITE_API_BASE`). Production builds default to the same origin as the served
