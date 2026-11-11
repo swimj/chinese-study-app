@@ -3,7 +3,10 @@
   "compilerOptions": {
     "noEmit": true,
     "module": "ESNext",
-    "moduleResolution": "Bundler"
+    "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": true,
+    "types": ["node"]
   },
-  "include": ["server/**/*.ts", "tests/**/*.ts", "scripts/**/*.ts"]
+  "include": ["server/**/*.ts", "tests/**/*.ts", "scripts/**/*.ts"],
+  "exclude": ["tests/fixtures/**"]
 }
