@@ -17,7 +17,7 @@ the same model scales into a Graphite stack. The branch count is an agent
 judgment, not a requirement for either one branch or several.
 
 Standalone research, planning, and documentation-only work is not presumed to
-need a pull request. It may return through its Codex task unless the prompt asks
+need a pull request. It may return through its task conversation unless the prompt asks
 for review publication. Documentation that accompanies an implementation
 belongs in that implementation's pull request.
 
@@ -79,13 +79,13 @@ workflow is sufficient. GitHub pull requests sync to Graphite and are reviewed
 there; the agent need not create Graphite metadata or otherwise make Graphite
 topology a concern.
 
-When attaching a deliberately detached task-worktree snapshot to the first
-branch of a stack, Codex worktrees are commonly created at a detached HEAD.
-Use `git switch -c codex/<task-slug>` once, at the unchanged checked-out commit,
-then immediately track that branch with `gt branch track --parent
-<verified-parent>`. This is setup for Graphite, not a replacement for its stack
-operations. Do not use direct Git commits, rebases, branch moves, or topology
-edits after this bootstrap.
+Agent harnesses supply task worktrees differently: some start at a detached
+HEAD, others on a harness-created task branch. Either way, the first branch of
+a stack is set up once with Git and then tracked with `gt branch track --parent
+<verified-parent>`, as described under
+[attach the task worktree](#attach-the-task-worktree). This is setup for
+Graphite, not a replacement for its stack operations. Do not use direct Git
+commits, rebases, branch moves, or topology edits after this bootstrap.
 
 Before using a topology-changing or publishing command whose behavior is not
 certain, inspect the installed version's `gt help` output. Ordinary read-only
@@ -102,11 +102,12 @@ Keep the full stack in one isolated task worktree with one writer at a time.
 Do not spread one stack across worktrees or create a second worktree during a
 review round.
 
-### Attach a detached task worktree
+### Attach the task worktree
 
-A detached HEAD in a newly supplied Codex worktree is expected; it is not a
-Graphite initialization failure or a stop condition. Before doing substantive
-work, establish the first review branch as follows:
+A newly supplied task worktree may start at a detached HEAD or on a task branch
+the harness created; neither is a Graphite initialization failure or a stop
+condition. Before doing substantive work, establish the first review branch as
+follows:
 
 1. Inspect `git status --short --branch`, `git rev-parse HEAD`, and
    `git branch --show-current`. Do not attach a worktree that already has
@@ -116,8 +117,11 @@ work, establish the first review branch as follows:
    the verified Graphite branch named by the task contract. Confirm the
    relationship before continuing.
 3. If `git branch --show-current` is empty, create the unique task branch at
-   that exact snapshot: `git switch -c codex/<task-slug>`. Do not use `-B`,
-   reuse an existing branch name, or move the branch after creating it.
+   that exact snapshot: `git switch -c <harness>/<task-slug>`, using the
+   harness's usual branch prefix (for example `codex/` or `claude/`). Do not
+   use `-B`, reuse an existing branch name, or move the branch after creating
+   it. If the worktree is already on a harness-created task branch with no
+   commits of its own, use that branch instead of creating another.
 4. Track that branch: `gt branch track --parent <verified-parent>`. If it
    cannot be placed under the verified parent without guessing, stop and
    report the topology rather than selecting a parent interactively.
@@ -125,9 +129,9 @@ work, establish the first review branch as follows:
    created with `gt modify`; subsequent review units are created above it with
    `gt create`.
 
-If the worktree already starts on a named pre-created task branch, do not
-create another branch. Instead, verify its parent relationship and Graphite
-tracking status as part of the normal preflight.
+When the worktree starts on a named task branch, whether pre-created for the
+task or created by the harness, do not create another branch. Verify its parent
+relationship and Graphite tracking status as part of the normal preflight.
 
 Before stack topology mutation:
 
@@ -233,7 +237,7 @@ If publication is blocked by authentication, permissions, or repository
 configuration, report the exact blocker rather than improvising a workaround.
 
 Standalone research, planning, and documentation-only tasks may hand off in
-Codex without publication unless the task asks for a pull request. This
+the task conversation without publication unless the task asks for a pull request. This
 exception does not apply to documentation changed as part of implementation.
 
 ### Publish a verified stack
@@ -289,7 +293,7 @@ A review comment also does not require a diff merely because it exists. When
 the review task authorizes replies, answer a direct question concisely in its
 pull-request thread. If a question exposes a broader design choice that would
 benefit from discussion, bring the evidence, tradeoffs, and plausible options
-to the task's Codex chat and pause that decision. Do not conduct an extended
+to the task conversation and pause that decision. Do not conduct an extended
 design negotiation through review comments.
 
 For every code-bearing feedback item:
@@ -345,7 +349,7 @@ with draft/ready state. For a stack, also report:
 2. each branch's purpose and why its boundary was chosen;
 3. boundaries that changed or remained judgment calls;
 4. every logical review item and whether it produced a stack change, a direct
-   reply, or a discussion in Codex;
+   reply, or a discussion in the task conversation;
 5. the branch ownership of code-bearing feedback and any restructuring;
 6. intentionally unresolved review threads; and
 7. the pull-request URL and draft/ready state for every branch in the published
