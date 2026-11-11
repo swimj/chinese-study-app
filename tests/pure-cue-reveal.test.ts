@@ -43,6 +43,7 @@ function props(): ComponentProps<typeof StudySessionPanel> {
     onNoClueProduction: noop, onProductionHanziInputChange: noop, onSelectContrastChoice: noop,
     onRevealAnswer: noop, onToggleLearnerRequestedReview: noop, onToggleFrozenProductionLearnerRequestedReview: noop,
     onRate: noop, onOpenShortcutGuide: noop, onCloseShortcutGuide: noop,
+    completedReinforcementStreak: null, onSkipReinforcement: noop,
   };
 }
 
@@ -213,7 +214,7 @@ for (const marker of ['____', '__', '_______', '（ ）']) {
     assert.match(revealed, /<details class="desk-reference"><summary>Word reference<\/summary>/);
     assert.match(revealed, /rattan pepper/);
     const recognition = render({ ...presentation, isProductionItem: false, answerRevealed: true,
-      activeItem: { ...item, actionKind: 'recognition', sampledSkillIds: ['recognition'], production: undefined }, activePrompt: word.hanzi, activeAnswerText: 'rattan pepper',
+      activeItem: { ...item, actionKind: 'recognition', sampledSkillIds: ['recognition'], production: null }, activePrompt: word.hanzi, activeAnswerText: 'rattan pepper',
     });
     assert.match(recognition, /<details class="desk-reference" open="">/);
   });

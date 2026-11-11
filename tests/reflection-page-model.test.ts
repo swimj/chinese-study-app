@@ -211,10 +211,12 @@ describe('reflection page model', () => {
 
   test('keeps learner-requested informational feedback visible without a proposal', () => {
     const detail = artifactDetail();
+    const originalBundle = detail.evidenceBundle;
+    assert.equal(originalBundle.schemaVersion, 'session_reflection_bundle.v1');
     detail.evidenceBundle = {
       schemaVersion: 'session_reflection_bundle.v3',
-      generatedAt: detail.evidenceBundle.generatedAt,
-      session: detail.evidenceBundle.session,
+      generatedAt: originalBundle.generatedAt,
+      session: originalBundle.session,
       items: [{ ...v2Evidence(), learnerRequestedReview: true }],
     };
     detail.result = {
@@ -428,7 +430,7 @@ describe('reflection page model', () => {
       patch: { cueType: 'cloze', text: 'new cue' },
     });
     assert.deepEqual(
-      cue.kind === 'repair_production_cue' ? cue.proposedCues[1] : null,
+      cue.kind === 'repair_production_cue' && cue.version === 1 ? cue.proposedCues[1] : null,
       { cueType: 'cloze', text: 'new cue' },
     );
 
@@ -486,13 +488,13 @@ describe('reflection page model', () => {
       applySupport: 'supported',
     });
 
-    const unsupported = {
+    const unsupported: ReflectionOperation = {
       kind: 'repair_production_cue',
       version: 1,
       wordId: 'target',
       repairIntent: 'add_distinguishing_anchor',
       proposedCues: [],
-    } as const;
+    };
     const state = getOperationDraftState(unsupported, unsupported);
     assert.equal(state.applySupport, 'unsupported');
     assert.match(state.validationErrors[0], /at least one replacement/);

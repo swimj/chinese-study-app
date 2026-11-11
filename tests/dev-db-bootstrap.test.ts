@@ -5,6 +5,7 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { describe, test } from 'node:test';
 import { pathToFileURL } from 'node:url';
+import { isPureCueSessionReviewItem, type SessionStudyItem } from '../src/domain/study-actions.ts';
 
 const mandarinDevContrastWordCount = 11;
 const mandarinDevContrastClusterCount = 4;
@@ -43,7 +44,7 @@ describe('dev database bootstrap', { concurrency: false }, () => {
       process.env.APP_SEED_DATA_PATH = sourceSeedPath;
 
       const moduleUrl = `${pathToFileURL(path.resolve('server/db.ts')).href}?test=${Date.now()}`;
-      const dbModule = await import(moduleUrl);
+      const dbModule: typeof import('../server/db.ts') = await import(moduleUrl);
 
       assert.equal(dbModule.getLearningPolicy('2026-10-07').dailyNewWordLimit, 5);
       assert.equal(dbModule.getLearningPolicy('2026-10-07').unstudiedAdmissionSource, 'stash_only');
@@ -60,7 +61,7 @@ describe('dev database bootstrap', { concurrency: false }, () => {
       const studyDayKey = new Date().toISOString().slice(0, 10);
       const contrastSelectionItems = dbModule
         .getSessionPayload(studyDayKey)
-        .buckets.review.filter((item) => item.actionKind === 'contrast_selection');
+        .buckets.review.filter((item): item is SessionStudyItem => !isPureCueSessionReviewItem(item) && item.actionKind === 'contrast_selection');
       assert.equal(contrastSelectionItems.length, mandarinDevBinaryContrastChoiceSetCount);
       assert.deepEqual(
         contrastSelectionItems.map((item) => item.targetWordId).sort(),
@@ -148,7 +149,7 @@ describe('dev database bootstrap', { concurrency: false }, () => {
       process.env.APP_SEED_DATA_PATH = sourceSeedPath;
 
       const moduleUrl = `${pathToFileURL(path.resolve('server/db.ts')).href}?test=${Date.now()}`;
-      const dbModule = await import(moduleUrl);
+      const dbModule: typeof import('../server/db.ts') = await import(moduleUrl);
 
       assert.equal(dbModule.getWords().length, seedData.words.length + mandarinDevContrastWordCount);
       assert.equal(dbModule.getWordStudyAdmissionStates().length, reviewWordCount + mandarinDevContrastWordCount);

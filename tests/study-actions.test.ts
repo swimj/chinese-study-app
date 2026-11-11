@@ -326,7 +326,7 @@ describe('review attempt event derivation', () => {
       assert.deepEqual(deriveReviewCommitFieldsFromAttemptEvents(partial, { reinforcementSkipped: true }),
         { failureCount: 1, terminalRating: null });
     }
-    const clean = [createAttemptEvent({ rating: 'good', outcome: 'correct' })];
+    const clean = [createAttemptEvent({ id: 'attempt-clean', rating: 'good', outcome: 'correct' })];
     assert.throws(() => deriveReviewCommitFieldsFromAttemptEvents(clean, { reinforcementSkipped: true }), /unfinished lapsed review/);
     const covered = [...events, ...[3, 4].map((sequence) => createAttemptEvent({
       id: `attempt-${sequence}`, actionAttemptSequence: sequence, rating: 'good', outcome: 'correct',

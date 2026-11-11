@@ -6,6 +6,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { after, before, test } from 'node:test';
 import { pathToFileURL } from 'node:url';
 import type { WordContentDocument } from '../src/domain/word-content/types.ts';
+import { isPureCueSessionReviewItem, type SessionStudyItem } from '../src/domain/study-actions.ts';
 
 let dataDir: string;
 let sqlite: DatabaseSync;
@@ -85,7 +86,7 @@ function bootstrap(wordId: string) {
 
 function serve(wordId: string) {
   const item = db.getSessionPayload(now.slice(0, 10), { random: () => 0 }).buckets.review
-    .find((candidate) => candidate.targetWordId === wordId);
+    .find((candidate): candidate is SessionStudyItem => !isPureCueSessionReviewItem(candidate) && candidate.targetWordId === wordId);
   assert.ok(item, `Expected due review item for ${wordId}`);
   return item;
 }

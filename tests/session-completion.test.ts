@@ -659,7 +659,7 @@ describe('session completion', { concurrency: false }, () => {
     assert.deepEqual(fetchAdmissionState('strict-anchor'), originalAdmission);
     assert.equal(sqlite.prepare(`
       SELECT COUNT(*) AS count FROM study_attempt_events WHERE target_word_id = 'strict-anchor'
-    `).get().count, 0);
+    `).get()?.count, 0);
   });
 
   for (const skipReinforcement of [false, true]) test(`a production lapse keeps ordinary projection with reinforcement skipped=${skipReinforcement}`, () => {
@@ -703,6 +703,7 @@ describe('session completion', { concurrency: false }, () => {
       WHERE task_id = 'production-task:production-lapse:default_production'
     `).get() as { count: number };
     assert.equal(evidenceCount.count, skipReinforcement ? 1 : 4);
+    assert.ok(state.nextDueAt && state.lastStudiedAt);
     assert.equal(Date.parse(state.nextDueAt) - Date.parse(state.lastStudiedAt), 6 * 60 * 60 * 1000);
   });
 
@@ -794,10 +795,10 @@ describe('session completion', { concurrency: false }, () => {
     assert.deepEqual(fetchAdmissionState('atomic-anchor'), originalAdmission);
     assert.equal(sqlite.prepare(`
       SELECT COUNT(*) AS count FROM study_attempt_events WHERE target_word_id = 'atomic-anchor'
-    `).get().count, 0);
+    `).get()?.count, 0);
     assert.equal(sqlite.prepare(`
       SELECT COUNT(*) AS count FROM production_cue_evidence_records WHERE task_id = ?
-    `).get('production-task:atomic-anchor:default_production').count, 0);
+    `).get('production-task:atomic-anchor:default_production')?.count, 0);
   });
 
   test('recording a clean easy review attempt batch uses the easy bonus and projects scheduler state', () => {
@@ -1155,7 +1156,7 @@ describe('session completion', { concurrency: false }, () => {
     });
 
     assert.equal(
-      sqlite.prepare('SELECT active_duration_ms FROM review_session_summaries WHERE session_id = ?').get('upsert-duration').active_duration_ms,
+      sqlite.prepare('SELECT active_duration_ms FROM review_session_summaries WHERE session_id = ?').get('upsert-duration')?.active_duration_ms,
       2_000,
     );
   });

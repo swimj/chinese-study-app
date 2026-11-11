@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import type { SessionStudyItem, SessionStudyItemBuckets } from '../src/domain/study-actions.ts';
+import { isPureCueSessionReviewItem } from '../src/domain/study-actions.ts';
+import type { SessionStudyItem } from '../src/domain/study-actions.ts';
+import type { ActiveBucketSchedulerUnit } from '../src/lib/session-scheduler.ts';
 import type { Word } from '../src/types.ts';
 
 describe('bucket session scheduler contract', () => {
@@ -33,6 +35,7 @@ describe('bucket session scheduler contract', () => {
 
     assert.equal(active.type, 'study');
     assert.equal(active.bucket, 'learning');
+    assert.ok(!isPureCueSessionReviewItem(active.item));
     assert.equal(active.item.targetWordId, learningWord.id);
   });
 
@@ -63,6 +66,7 @@ describe('bucket session scheduler contract', () => {
 
     assert.equal(active.type, 'study');
     assert.equal(active.bucket, 'learning');
+    assert.ok(!isPureCueSessionReviewItem(active.item));
     assert.equal(active.item.targetWordId, learningWord.id);
   });
 
@@ -84,7 +88,7 @@ describe('bucket session scheduler contract', () => {
       },
     });
 
-    assert.equal(getBucketSchedulerActiveUnit(scheduler).bucket, 'learning');
+    assert.equal(studyUnit(getBucketSchedulerActiveUnit(scheduler)).bucket, 'learning');
 
     const secondScheduler = syncBucketScheduler(scheduler);
     assert.equal(getBucketSchedulerActiveUnit(secondScheduler).type, 'unstudied_intro');
@@ -120,11 +124,11 @@ describe('bucket session scheduler contract', () => {
       seed: 1,
     });
 
-    assert.equal(getBucketSchedulerActiveUnit(scheduler).item.sessionActionId, firstReview.sessionActionId);
+    assert.equal(studyUnit(getBucketSchedulerActiveUnit(scheduler)).item.sessionActionId, firstReview.sessionActionId);
 
     const nextScheduler = completeActiveBucketSchedulerUnit(scheduler);
 
-    assert.equal(getBucketSchedulerActiveUnit(nextScheduler).item.sessionActionId, secondReview.sessionActionId);
+    assert.equal(studyUnit(getBucketSchedulerActiveUnit(nextScheduler)).item.sessionActionId, secondReview.sessionActionId);
   });
 
   test('tracks learning and unstudied as word pools rather than pre-expanded action pools', async () => {
@@ -198,38 +202,7 @@ describe('bucket session scheduler contract', () => {
   });
 });
 
-type BucketSchedulerApi = {
-  completeActiveBucketSchedulerUnit: (scheduler: unknown) => unknown;
-  createBucketSessionScheduler: (options: {
-    buckets: SessionStudyItemBuckets;
-    policy?: {
-      bucketWeights?: {
-        review: number;
-        learning: number;
-        unstudied: number;
-      };
-    };
-    progress?: unknown;
-    seed?: number;
-  }) => unknown;
-  getBucketSchedulerActiveUnit: (scheduler: unknown) => {
-    type: 'study' | 'unstudied_intro';
-    bucket?: 'review' | 'learning' | 'unstudied';
-    item: SessionStudyItem;
-    word?: Word;
-  };
-  getBucketSchedulerBucketCounts: (scheduler: unknown) => {
-    review: number;
-    learning: number;
-    unstudied: number;
-  };
-  getBucketSchedulerCandidateWordIds: (
-    scheduler: unknown,
-    bucket: 'learning' | 'unstudied',
-  ) => string[];
-  sessionIdToSchedulerSeed: (sessionId: string) => number;
-  syncBucketScheduler: (scheduler: unknown, progress?: unknown) => unknown;
-};
+type BucketSchedulerApi = typeof import('../src/lib/session-scheduler.ts');
 
 async function loadBucketSchedulerApi(): Promise<BucketSchedulerApi> {
   const api = await import('../src/lib/session-scheduler.ts') as Record<string, unknown>;
@@ -259,8 +232,17 @@ function createReviewStudyItem(wordId: string): SessionStudyItem {
     targetWordId: wordId,
     sampledSkillIds: ['recognition'],
     contentRef: null,
+    intervalHours: 24,
     word,
+    contrastSelection: null,
+    production: null,
   };
+}
+
+function studyUnit(unit: ActiveBucketSchedulerUnit) {
+  assert.equal(unit.type, 'study');
+  assert.ok(unit.type === 'study');
+  return unit;
 }
 
 function createWord(overrides: Partial<Word> & Pick<Word, 'id' | 'status'>): Word {

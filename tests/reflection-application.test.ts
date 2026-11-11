@@ -6,6 +6,8 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { after, before, beforeEach, describe, test } from 'node:test';
 import { pathToFileURL } from 'node:url';
+import { isPureCueSessionReviewItem } from '../src/domain/study-actions.ts';
+import type { SessionStudyItem } from '../src/domain/study-actions.ts';
 import type {
   ReflectionOperation,
   SessionReflectionBundleV6,
@@ -1431,7 +1433,7 @@ describe('reflection application adapters', { concurrency: false }, () => {
         sqlite.prepare(`INSERT INTO word_study_admission_state
           (word_id, study_phase, earliest_next_study_at) VALUES ('target', 'review', NULL)`).run();
         const targetSkills = () => dbModule.getSessionPayload(new Date().toISOString().slice(0, 10))
-          .buckets.review.filter((item) => item.itemType !== 'pure_cue_production' && item.word.id === 'target')
+          .buckets.review.filter((item): item is SessionStudyItem => !isPureCueSessionReviewItem(item) && item.word.id === 'target')
           .map((item) => item.actionKind);
         // Ordinary urgency still wins over a future due date before compensation.
         assert.deepEqual(targetSkills(), ['production']);
@@ -1521,8 +1523,10 @@ describe('reflection application adapters', { concurrency: false }, () => {
       '2026-07-29T08:00:00.000Z', '2026-08-03T00:00:00.000Z');
     assert.equal(dbModule.getProductionCompensationEligibilityDeadlines().get('target'),
       '2026-07-29T12:00:00.000Z');
-    assert.deepEqual(dbModule.getSessionPayload('2026-07-29').buckets.review.map((item) => item.actionKind),
-      ['production']);
+    assert.deepEqual(dbModule.getSessionPayload('2026-07-29').buckets.review.map((item) => {
+      assert.ok(!isPureCueSessionReviewItem(item));
+      return item.actionKind;
+    }), ['production']);
     insertSnapshot('tied-restore', 'test-learner', '2026-07-26T00:00:00.000Z',
       '2026-07-29T06:00:00.000Z', '2026-07-29T13:00:00.000Z');
     assert.equal(dbModule.getProductionCompensationEligibilityDeadlines().get('target'),
@@ -1818,7 +1822,7 @@ describe('reflection application adapters', { concurrency: false }, () => {
         SELECT COUNT(*) AS count
         FROM production_cue_evidence_records
         WHERE record_kind = 'judgment'
-      `).get().count,
+      `).get()?.count,
       0,
     );
   });
@@ -1877,7 +1881,7 @@ describe('reflection application adapters', { concurrency: false }, () => {
         SELECT projected_at
         FROM production_cue_evidence_records
         WHERE evidence_id = 'fallback-attempt-evidence'
-      `).get().projected_at,
+      `).get()?.projected_at,
       '2026-07-29T12:03:00.000Z',
     );
     assert.equal(countRows('production_cue_evidence_projection'), 0);

@@ -92,7 +92,7 @@ describe('reflection V6 provider result schema', () => {
     assert.deepEqual(validateSessionReflectionResultV6(normalized, bundle), []);
     const operation = normalized.itemResults[0]!.proposals[0]!.operation;
     assert.equal(operation.kind, 'repair_production_cue');
-    if (operation.kind === 'repair_production_cue') {
+    if (operation.kind === 'repair_production_cue' && operation.version === 2) {
       assert.equal(operation.taskId, 'production-task:word-1:default_production');
       assert.equal(operation.sourceAttemptJudgments[0]?.sourceAttemptId, 'attempt-1');
     }

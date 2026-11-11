@@ -21,6 +21,7 @@ function renderChrome(
 ) {
   return renderToStaticMarkup(createElement(AppChrome, {
     currentPage,
+    children,
     gettingStartedUnseen: extras.gettingStartedUnseen,
     guideToStash: extras.guideToStash,
     error: null,
@@ -37,7 +38,7 @@ function renderChrome(
     onOpenReflectionsPage: noop,
     onOpenContentPage: noop,
     onOpenAboutPage: noop,
-  }, children));
+  }));
 }
 
 describe('AppChrome primary navigation', () => {
@@ -90,6 +91,7 @@ describe('AppChrome primary navigation', () => {
   test('overlays a refresh control on Reflections only while that view is open', () => {
     const withHandler = renderToStaticMarkup(createElement(AppChrome, {
       currentPage: 'reflections',
+      children: null,
       error: null,
       serviceBanner: null,
       sessionActive: false,
@@ -112,6 +114,7 @@ describe('AppChrome primary navigation', () => {
     assert.doesNotMatch(
       renderToStaticMarkup(createElement(AppChrome, {
         currentPage: 'home',
+        children: null,
         error: null,
         serviceBanner: null,
         sessionActive: false,

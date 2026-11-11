@@ -123,7 +123,7 @@ test('fresh installation and populated upgrade retain identical schema definitio
 for(const edit of ['exerciseType','payloadVersion'] as const)test(`authored ${edit} edits exclude a fallback from automatic scope correction`,()=>{
   const db=previous(`edited-${edit}`);
   try{
-    const source=baseline();
+    const source=baseline();assert.ok(source.kind==='exercise');
     const edited=updateVocabularyContent(source.contentId,source.version,{...source,...(edit==='exerciseType'?{exerciseType:'word'}:{payloadVersion:2})},{kind:'operator',id:'editor'});
     migrateDatabase(db);
     const row=db.prepare('SELECT access_scope,version FROM content_items WHERE content_id=?').get(source.contentId)!;

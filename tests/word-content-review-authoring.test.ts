@@ -81,8 +81,8 @@ test('rejects invalid cloze references and answer forms in direct cues', () => {
 });
 
 test('cloze offsets use code points and can hide repeated target occurrences', () => {
-  const repeated = structuredClone(content);
-  repeated.examples[0]!.text = '🙂报备后，再报备。';
+  const repeated = { ...content, examples: content.examples.map((example, index) => (
+    index === 0 ? { ...example, text: '🙂报备后，再报备。' } : example)) };
   const output = normalizeReviewExercises({ exercises: [{ ...cloze(), stimulus: {
     kind: 'example_cloze', exampleId: 'property', occurrenceIndexes: [0, 1], frame: null,
   } }] }, repeated, idFor)[0]!;

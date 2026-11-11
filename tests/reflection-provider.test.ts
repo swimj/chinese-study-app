@@ -126,20 +126,25 @@ const validCanonicalResult: SessionReflectionResultV7 = {
   ...validWireResult,
   itemResults: validWireResult.itemResults.map((itemResult) => ({
     ...itemResult,
-    proposals: itemResult.proposals.map((proposal) => ({
-      ...proposal,
-      operation: proposal.operation.kind === 'repair_production_cue'
-        ? {
-              ...proposal.operation,
-              version: 2,
-              taskId: `production-task:${proposal.operation.wordId}:default_production`,
-              sourceAttemptJudgments: proposal.operation.sourceAttemptJudgments.map((judgment) => ({
-                ...judgment,
-                sourceAttemptId: 'attempt-1',
-              })),
-          }
-        : proposal.operation,
-    })),
+    proposals: itemResult.proposals.map((proposal) => {
+      const { operation } = proposal;
+      if (operation.kind === 'repair_production_cue') {
+        return {
+          ...proposal,
+          operation: {
+            ...operation,
+            version: 2 as const,
+            taskId: `production-task:${operation.wordId}:default_production`,
+            sourceAttemptJudgments: operation.sourceAttemptJudgments.map((judgment) => ({
+              ...judgment,
+              sourceAttemptId: 'attempt-1',
+            })),
+          },
+        };
+      }
+      assert.ok(operation.kind !== 'add_production_cue_supplement', 'fixture has no cue supplement');
+      return { ...proposal, operation };
+    }),
   })),
 };
 
@@ -535,6 +540,7 @@ describe('production Luna reflection provider', () => {
           capture,
         ),
       });
+      assert.ok(provider.generatePromotion);
       const generated = stage === 'diagnosis'
         ? await provider.generateDiagnosis(diagnosisBundle)
         : await provider.generatePromotion(promotionBundle);
@@ -657,6 +663,7 @@ describe('production Luna reflection provider', () => {
     const french = structuredClone(diagnosisBundle);
     french.session.studyProfile = 'french';
     await assert.rejects(provider.generateDiagnosis(french), /supports Mandarin only/);
+    assert.ok(provider.generatePromotion);
     await assert.rejects(provider.generatePromotion({ ...promotionBundle, studyProfile: 'french' }), /supports Mandarin only/);
     assert.equal(capture.length, 0);
   });
@@ -755,7 +762,7 @@ describe('production Luna reflection provider', () => {
     const generated = await provider.generate(bundle);
     const operation = generated.result.itemResults[0]!.proposals[0]!.operation;
     assert.equal(operation.kind, 'repair_production_cue');
-    if (operation.kind === 'repair_production_cue') {
+    if (operation.kind === 'repair_production_cue' && operation.version === 2) {
       assert.equal(operation.sourceAttemptJudgments[0]?.sourceAttemptId, 'attempt-1');
     }
   });

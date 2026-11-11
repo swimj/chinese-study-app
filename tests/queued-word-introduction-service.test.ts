@@ -13,7 +13,7 @@ const initialLibrary: WordIntroductionLibrary = {
 
 function queuedWork(status: WordPreparationWork['status']): WordPreparationWork {
   return {
-    workId: 'work-1', wordId, stage: 'teaching', sourceContentId: null, status,
+    workId: 'work-1', requestedByLearnerId: null, wordId, stage: 'teaching', sourceContentId: null, status,
     attemptCount: status === 'paused' ? 3 : 0, nextAttemptAt: '2026-09-25T00:00:00.000Z',
     activeToken: null, expiresAt: null, lastError: null,
   };

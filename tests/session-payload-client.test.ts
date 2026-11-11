@@ -4,7 +4,7 @@ import { fetchSessionPayload } from '../src/services/api.ts';
 
 test('session payload readiness is requested by POST with a study day key', async () => {
   const previousFetch = globalThis.fetch;
-  let request: { url: string; method: string | undefined; body: unknown } | null = null;
+  let request = null as { url: string; method: string | undefined; body: unknown } | null;
   globalThis.fetch = async (input, init) => {
     request = { url: String(input), method: init?.method, body: init?.body };
     return Response.json({

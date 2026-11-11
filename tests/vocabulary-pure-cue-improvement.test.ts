@@ -15,6 +15,8 @@ let individual: VocabularyContent;
 const actor = { kind: 'service' as const, id: 'fixture' };
 const at = '2026-10-23T12:00:00.000Z';
 const teachingNote = 'Use 放大, 增加 or 扩大 to describe increasing size or extent when the object permits it.';
+const originalBody = { prompt: 'Increase the size or extent.', instruction: 'Keep this instruction.', stimulus: { kind: 'direct_text', text: 'Increase the size or extent.' },
+  reveal: { axisNote: 'Size or extent', teachingNote: 'Increasing size or extent.', example: 'Keep this example.' } };
 beforeEach(() => {
   db = new DatabaseSync(':memory:'); setDb(db);
   db.exec(`PRAGMA foreign_keys=ON;
@@ -25,11 +27,11 @@ beforeEach(() => {
   db.exec(readFileSync(new URL('../server/db/migrations/0062_vocabulary_sense_coverage.sql', import.meta.url), 'utf8'));
   db.exec(readFileSync(new URL('../server/db/migrations/0064_vocabulary_default_useful_senses.sql', import.meta.url), 'utf8'));
   original = createVocabularyContent({ contentId: 'cue', kind: 'exercise', payloadVersion: 1,
-    body: { prompt: 'Increase the size or extent.', instruction: 'Keep this instruction.', stimulus: { kind: 'direct_text', text: 'Increase the size or extent.' },
-      reveal: { axisNote: 'Size or extent', teachingNote: 'Increasing size or extent.', example: 'Keep this example.' } },
+    body: originalBody,
     exerciseType: 'pure_cue', skill: 'production', exerciseRole: 'general', assessment: { match: 'exact' },
     answers: [{ wordId: 'target', acceptedForms: ['放大', '放大一点'] }, { wordId: 'retained', acceptedForms: ['增加'] }],
     words: [{ wordId: 'target', relation: 'target' }, { wordId: 'retained', relation: 'target' }], accessScope: 'shared', availability: 'active', originKind: 'human' }, actor);
+  assert.ok(original.kind === 'exercise');
   individual = createVocabularyContent({ ...original, contentId: 'individual', exerciseType: 'word', body: { prompt: 'Make the picture larger.' } }, actor);
 });
 afterEach(() => db.close());
@@ -43,7 +45,7 @@ function job(raw: string | null = '擴大'): VocabularyReflectionJob {
       kind: 'exercise_improvement', wordId: null, contentId: 'cue', status: 'open', createdAt: at,
       evidence: [{ encounterId: 'encounter', wordId: null, workNumber: 1, presentedActionId: 'presented', presentedAt: at,
         mode: 'practice', snapshot: { contentId: 'cue', contentVersion: 1, kind: 'production', role: 'general',
-          body: original.body, assessment: { acceptedAnswers: ['放大', '增加'] } },
+          body: originalBody, assessment: { acceptedAnswers: ['放大', '增加'] } },
         responses: [submitted], effectiveResponses: [submitted], feedback: [], effectiveFeedback: [], skipped: false, presentationUndone: false }] } };
 }
 function decision(overrides: Record<string, unknown> = {}) {

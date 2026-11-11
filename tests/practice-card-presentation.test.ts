@@ -4,7 +4,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { StudyStageBadge, studyStageCardClass } from '../src/features/session/StudyStageBadge';
 import { WordSourceExamples } from '../src/features/session/WordSourceExamples';
-import type { SessionStudyItem } from '../src/domain/study-actions';
+import type { WordContentDocument } from '../src/domain/word-content/types';
 
 test('recall stages distinguish new words and Practice without relabeling review', () => {
   for (const [status, label, icon] of [['unstudied', 'New word', true], ['learning', 'Practice', true], ['review', 'Review', false]] as const) {
@@ -19,11 +19,7 @@ test('recall stages distinguish new words and Practice without relabeling review
 });
 
 test('source reference pairs each use with its own translated example and honors character settings', () => {
-  const content = {
-    id: 'content-one',
-    uses: [{ id: 'a', label: 'First use', exampleIds: ['one'] }, { id: 'b', label: 'Second use', exampleIds: ['two'] }],
-    examples: [{ id: 'two', text: '学习中文。', translation: 'Study Chinese.' }, { id: 'one', text: '这个词。', translation: 'This word.' }],
-  } as NonNullable<SessionStudyItem['wordContent']>;
+  const content = pairedUseContent();
   const html = renderToStaticMarkup(createElement(WordSourceExamples, { content, sentenceCharacterPresentation: 'traditional' }));
   assert.ok(html.indexOf('This word.') < html.indexOf('Study Chinese.'));
   assert.ok(html.includes('學習中文。'));
@@ -32,11 +28,7 @@ test('source reference pairs each use with its own translated example and honors
 
 test('bootstrap reveal cycles one paired source use by UTC day, independent of local offset', async () => {
   const { selectBootstrapReveal } = await import('../src/domain/word-content/reveal');
-  const content = {
-    id: 'content-one',
-    uses: [{ id: 'a', label: 'First use', exampleIds: ['one'] }, { id: 'b', label: 'Second use', exampleIds: ['two'] }],
-    examples: [{ id: 'two', text: '学习中文。', translation: 'Study Chinese.' }, { id: 'one', text: '这个词。', translation: 'This word.' }],
-  } as NonNullable<SessionStudyItem['wordContent']>;
+  const content = pairedUseContent();
   const first = selectBootstrapReveal(content, new Date('2026-10-13T00:00:00Z'));
   assert.deepEqual(selectBootstrapReveal(content, new Date('2026-10-13T23:59:59Z')), first);
   assert.deepEqual(selectBootstrapReveal(content, new Date('2026-10-12T20:00:00-04:00')), first);
@@ -68,3 +60,19 @@ test('bootstrap reveal renders the frozen example without reselecting by the cli
   assert.ok(html.includes('學習中文。'));
   assert.ok(html.includes('Study Chinese.'));
 });
+
+function pairedUseContent(): WordContentDocument {
+  return {
+    schemaVersion: 1,
+    id: 'content-one',
+    word: { wordId: 'word-one', hanzi: '词', traditional: null, pinyin: 'cí' },
+    uses: [
+      { id: 'a', label: 'First use', notes: [], exampleIds: ['one'] },
+      { id: 'b', label: 'Second use', notes: [], exampleIds: ['two'] },
+    ],
+    examples: [
+      { id: 'two', text: '学习中文。', translation: 'Study Chinese.', pronunciation: null },
+      { id: 'one', text: '这个词。', translation: 'This word.', pronunciation: null },
+    ],
+  };
+}

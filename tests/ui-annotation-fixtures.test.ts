@@ -4,6 +4,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
+import type { SessionStudyItem } from '../src/domain/study-actions.ts';
+import { isPureCueSessionReviewItem } from '../src/domain/study-actions.ts';
 import { annotationWords, buildUiAnnotationSeed } from '../server/seeds/ui-annotation-data.ts';
 
 function prepare(dataDir: string, extraArgs: string[] = []) {
@@ -69,7 +71,9 @@ test('fresh annotation command creates ready real-session content and refuses re
         assert.ok(buckets.learningRehearsals?.[wordId]);
         assert.equal(db.getWordIntroductionLibrary(wordId)?.completed, true);
       }
-      const review = buckets.review.filter(item => item.targetWordId === annotationWords.review);
+      const review = buckets.review.filter(
+        (item): item is SessionStudyItem => !isPureCueSessionReviewItem(item) && item.targetWordId === annotationWords.review,
+      );
       const dueSkills = db.getWordSkillStates().filter(row => row.wordId === annotationWords.review);
       assert.deepEqual(dueSkills.map(row => row.skillId).sort(), ['production', 'recognition']);
       assert.ok(dueSkills.every(row => row.nextDueAt !== null && row.nextDueAt < manifest.preparedAt));

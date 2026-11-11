@@ -244,6 +244,7 @@ test('maintenance polls only service controls and defers expired recovery until 
   const startedAt = new Date(clock).toISOString();
   const expiresAt = new Date(clock + 1_000).toISOString();
   const work = enqueueWordPreparation('maintenance-recovery', 'bootstrap', startedAt);
+  assert.ok(work.stage !== 'review');
   assert.equal(claimSharedWordIntroductionStage(work.wordId, work.stage, 'expired-maintenance', startedAt, expiresAt), 'claimed');
   assert.ok(beginWordPreparationAttempt(work.workId, 'expired-maintenance', null, startedAt, expiresAt));
   const original = getWordPreparationWork(work.wordId, work.stage);
@@ -298,6 +299,7 @@ test('expired recovery still runs with an unconfigured provider outside maintena
   const startedAt = new Date(clock).toISOString();
   const expiresAt = new Date(clock + 1_000).toISOString();
   const work = enqueueWordPreparation('unconfigured-recovery', 'bootstrap', startedAt);
+  assert.ok(work.stage !== 'review');
   assert.equal(claimSharedWordIntroductionStage(work.wordId, work.stage, 'expired-unconfigured', startedAt, expiresAt), 'claimed');
   assert.ok(beginWordPreparationAttempt(work.workId, 'expired-unconfigured', null, startedAt, expiresAt));
   const worker = createWordPreparationWorker({ controls, providerWork,

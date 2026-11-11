@@ -238,6 +238,7 @@ test('real failed provider run retains exact evidence and retry materializes the
   let builds = 0;
   const provider: import('../server/reflection/luna-provider.ts').LunaReflectionProvider = {
     async generate() { throw new Error('Unexpected ordinary generation'); },
+    async generateDiagnosis() { throw new Error('Unexpected diagnosis generation'); },
     async generatePureCueReflection(input) {
       requests += 1;
       assert.deepEqual(input, bundle);

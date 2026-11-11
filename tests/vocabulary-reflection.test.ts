@@ -86,7 +86,7 @@ beforeEach(() => {
     teachingExercises: [{ exerciseId: 'teach',exerciseVersion: 1 }] },actor);
 });
 afterEach(() => { sql.close(); for (const [key,value] of Object.entries(oldEnv)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; } });
-function draft(id: string,wordId='a',role: 'teaching'|'general'='general',type='word'): VocabularyContentDraft {
+function draft(id: string,wordId='a',role: 'teaching'|'general'='general',type='word'): Extract<VocabularyContentDraft,{kind:'exercise'}> {
   return { contentId: id,kind: 'exercise',payloadVersion: 1,body: { prompt: `Prompt ${id}` },accessScope: 'shared',availability: 'active',
     originKind: 'human',exerciseType: type,skill: 'production',exerciseRole: role,assessment: { match: 'exact' },
     words: [{ wordId,relation: 'target' }],answers: [{ wordId,acceptedForms: ['字'] }] };
@@ -1064,7 +1064,7 @@ test('case workspace returns only its proposals in the same order and detail as 
 });
 
 test('ordered teaching exercise and introduction repair previews and applies atomically against pre-state bases',()=>{
-  const intro=getVocabularyContentForMaintenance('intro')!;
+  const intro=getVocabularyContentForMaintenance('intro')!;assert.ok(intro.kind==='introduction');
   const operations:VocabularyProposalOperation[]=[{operationKey:'exercise',scope:{kind:'shared'},strategy:'update_existing',sourceContentId:'teach',expectedVersion:1,rationale:'Repair this taught cue',
     content:{...draft('teach','new','teaching'),body:'Revised taught cue'}},
     {operationKey:'introduction',scope:{kind:'shared'},strategy:'update_existing',sourceContentId:'intro',expectedVersion:1,rationale:'Keep the introduction paired with its revised exercise',
@@ -1082,7 +1082,7 @@ test('ordered teaching exercise and introduction repair previews and applies ato
 });
 
 test('ordered teaching output references never waive stale pre-state or forward-order checks',()=>{
-  const intro=getVocabularyContentForMaintenance('intro')!;
+  const intro=getVocabularyContentForMaintenance('intro')!;assert.ok(intro.kind==='introduction');
   const exercise:VocabularyProposalOperation={operationKey:'exercise',scope:{kind:'shared'},strategy:'update_existing',sourceContentId:'teach',expectedVersion:1,rationale:'Revised cue',content:{...draft('teach','new','teaching'),body:'Proposed'}};
   const introduction:VocabularyProposalOperation={operationKey:'introduction',scope:{kind:'shared'},strategy:'update_existing',sourceContentId:'intro',expectedVersion:1,rationale:'Bind exact revised cue',content:{...intro,teachingExercises:[{exerciseId:'teach',exerciseVersion:2}]}};
   assert.throws(()=>createVocabularyProposal({operations:[introduction,exercise],rationale:'Invalid forward order'},'editor'),/base versions|FOREIGN KEY/);
@@ -1144,7 +1144,7 @@ test('second opinion snapshots a proposal version, retries explicitly, and canno
   const now=new Date(Date.now()+1000).toISOString();
   const review=claimVocabularyReflectionJob({kind:'exercise_improvement',now})!;
   assert.equal(review.jobId,request.jobId);
-  assert.equal(review.secondOpinion?.proposal.rationale,'Original proposal');
+  assert.equal(review.secondOpinion?.proposal?.rationale,'Original proposal');
   assert.equal(review.secondOpinion?.notes,'Check natural usage');
   failVocabularyReflectionJob(review.jobId,review.leaseToken,'provider_unavailable',now,now);
   assert.equal(claimVocabularyReflectionJob({kind:'exercise_improvement',now}),null);
@@ -1152,7 +1152,7 @@ test('second opinion snapshots a proposal version, retries explicitly, and canno
   const retry=claimVocabularyReflectionJob({kind:'exercise_improvement',now})!;
   assert.equal(retry.attemptNumber,2);
   const edited=saveVocabularyProposal(value.proposalId,value.version,{caseId,operations:[op()],rationale:'Operator revision'},'editor');
-  assert.equal(retry.secondOpinion?.proposal.version,1);
+  assert.equal(retry.secondOpinion?.proposal?.version,1);
   assert.throws(()=>recordVocabularyImprovementResult(retry.jobId,retry.leaseToken,{diagnosis:'Incorrect result shape',proposal:null},now),/advisory verdict/);
   const result={diagnosis:'The cue needs revision',proposal:null,secondOpinion:{verdict:'revise' as const,rationale:'The cue needs revision'}};
   recordVocabularyImprovementResult(retry.jobId,retry.leaseToken,result,now);
@@ -1800,7 +1800,8 @@ test('stale review remains stale after inspection and a separate current-source 
   updateVocabularyContent('one',1,{...draft('one'),body:{prompt:'Current wording'}},actor);
   const stale=listVocabularyProposalReviewBatch('editor',{startProposalId:result.proposalId!}).items[0]!;
   assert.equal(stale.coverageChanged,true);assert.equal(stale.previews[0]!.source!.version,2);assert.equal(stale.proposal.bases[0]!.expectedVersion,1);
-  const correction=createVocabularyProposal({caseId:work.caseId,operations:[{...op(),expectedVersion:2}],rationale:'Explicit correction'},'editor');
+  const correctionSource=op();assert.ok(correctionSource.strategy!=='create');
+  const correction=createVocabularyProposal({caseId:work.caseId,operations:[{...correctionSource,expectedVersion:2}],rationale:'Explicit correction'},'editor');
   assert.equal(correction.authorKind,'operator');assert.equal(correction.caseId,work.caseId);assert.equal(getVocabularyProposal(result.proposalId!,'editor').bases[0]!.expectedVersion,1);
   updateVocabularyContent('one',2,{...draft('one'),body:{prompt:'Concurrent wording'}},actor);
   assert.throws(()=>approveVocabularyProposal(correction.proposalId,1,'editor'),/base changed/);

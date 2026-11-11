@@ -6,6 +6,7 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { after, before, describe, test } from 'node:test';
 import { pathToFileURL } from 'node:url';
+import { isPureCueSessionReviewItem } from '../src/domain/study-actions.ts';
 import {
   derivePureCueAssessment,
   dueAtWithResetDelay,
@@ -103,8 +104,8 @@ describe('pure cue domain policy', () => {
     lastStudiedAt: '2026-09-10T00:00:00.000Z',
     nextDueAt: '2027-01-01T00:00:00.000Z',
   }));
-  function selectStrong(cues: readonly PureCue[], overrides: Partial<Parameters<typeof selectPureCuesForSession>[0]> = {}) {
-    return selectPureCuesForSession({
+  function selectStrong(cues: readonly PureCue[], overrides: Partial<Parameters<typeof selectPureCuesForSession<PureCue>>[0]> = {}) {
+    return selectPureCuesForSession<PureCue>({
       learnerId, cues, ordinaryReviewCount: strongPool.length * 10, now, random: () => 0, ...overrides,
     }).strong;
   }
@@ -116,7 +117,7 @@ describe('pure cue domain policy', () => {
       'new strong cues have roughly a 1-in-90 daily chance across 5,000 independent cues');
     const failed = strongPool.find(item => !passingIds.has(item.id))!;
     assert.equal(selectStrong([failed]).length, 0, 'a large ceiling creates no entitlement');
-    const selection = selectPureCuesForSession({
+    const selection = selectPureCuesForSession<PureCue>({
       learnerId,
       cues: [
         cue({ id: 'fragile-due' }),
@@ -472,8 +473,8 @@ describe('pure cue persistence', { concurrency: false }, () => {
 
   test('composes a standalone pure cue review item with a frozen server snapshot', () => {
     const payload = dbModule.getSessionPayload('2026-09-18');
-    const item = payload.buckets.review.find((candidate) => candidate.itemType === 'pure_cue_production');
-    assert.ok(item);
+    const item = payload.buckets.review.find((candidate) => isPureCueSessionReviewItem(candidate));
+    assert.ok(item && isPureCueSessionReviewItem(item));
     assert.equal(item.itemType, 'pure_cue_production');
     assert.equal(item.snapshot.pureCueId, 'pure-a');
     assert.equal(item.snapshot.stimulus, 'to tell an untruth');

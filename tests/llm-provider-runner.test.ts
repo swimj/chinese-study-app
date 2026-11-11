@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, test } from 'node:test';
 import { allProviderFixtures } from '../spikes/llm-provider/fixtures/index.js';
-import { getModelTarget, modelTargets } from '../spikes/llm-provider/runner/model-registry.js';
+import { getModelTarget, modelTargets, type ModelTarget } from '../spikes/llm-provider/runner/model-registry.js';
 import { estimateRunCost } from '../spikes/llm-provider/pricing.js';
 import { createAnthropicAdapter } from '../spikes/llm-provider/runner/providers/anthropic.js';
 import { createGeminiAdapter } from '../spikes/llm-provider/runner/providers/gemini.js';
@@ -399,7 +399,7 @@ describe('LLM provider model batch and viewer', () => {
         };
       },
     };
-    const targets = [
+    const targets: ModelTarget[] = [
       { id: 'first-model', provider: 'fake', model: 'first-snapshot', reasoningEffort: 'high' },
       { id: 'second-model', provider: 'fake', model: 'second-snapshot', reasoningEffort: 'max' },
     ];

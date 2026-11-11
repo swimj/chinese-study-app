@@ -40,11 +40,12 @@ afterEach(() => {
   if (previousMode === undefined) delete process.env.APP_MODE; else process.env.APP_MODE = previousMode;
   if (previousAuth === undefined) delete process.env.APP_AUTH_MODE; else process.env.APP_AUTH_MODE = previousAuth;
 });
-function draft(contentId = 'exercise', overrides: Partial<VocabularyContentDraft> = {}): VocabularyContentDraft {
+type ExerciseDraft = Extract<VocabularyContentDraft, { kind: 'exercise' }>;
+function draft(contentId = 'exercise', overrides: Partial<ExerciseDraft> = {}): ExerciseDraft {
   return { contentId, kind: 'exercise', payloadVersion: 1, body: { prompt: 'A greeting', reveal: '你好' },
     exerciseType: 'definition', skill: 'production', exerciseRole: 'general', assessment: { responseMode: 'hanzi_entry' },
     accessScope: 'shared', availability: 'active', originKind: 'human', authorKind: 'operator', authorId: 'editor',
-    words: [{ wordId: 'w1', relation: 'target' }], answers: [{ wordId: 'w1', acceptedForms: ['你好'] }], ...overrides } as VocabularyContentDraft;
+    words: [{ wordId: 'w1', relation: 'target' }], answers: [{ wordId: 'w1', acceptedForms: ['你好'] }], ...overrides } as ExerciseDraft;
 }
 function eventCount(): number { return (db.prepare('SELECT COUNT(*) AS n FROM backend_events').get() as { n: number }).n; }
 function asA<T>(fn: () => T): T { return runWithLearnerId('a',fn); }

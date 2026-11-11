@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { Word } from '../src/types.ts';
-import type { PureCueSessionReviewItem, SessionStudyItem } from '../src/domain/study-actions.ts';
+import { isPureCueSessionReviewItem, type PureCueSessionReviewItem, type SessionStudyItem } from '../src/domain/study-actions.ts';
 import { createBucketSessionState, markActiveSessionUnitStarted, getActiveSessionUnit, rateActiveSessionUnit,
   rateActiveContrastSelectionUnit, rateActivePureCueProductionUnit, completeActiveUnstudiedIntro, beginBucketDrainSession } from '../src/lib/session-state.ts';
 import { createSessionSummary, getCompletedExerciseCounts, updateSessionSummaryForRating, updateSessionSummaryForPureCueRating } from '../src/features/session/session-summary.ts';
@@ -49,7 +49,7 @@ test('covered learning and new word each add one row; unvisited drain queue adds
     let current = summary();
     for (let pass = 0; state.phase !== 'completed' && pass < 10; pass += 1) {
       const active = getActiveSessionUnit(state); assert.equal(active.type, 'study');
-      if (active.type !== 'study') throw new Error('Expected word item');
+      if (active.type !== 'study' || isPureCueSessionReviewItem(active.item)) throw new Error('Expected word item');
       state = markActiveSessionUnitStarted(state);
       const transition = rateActiveSessionUnit(state, 'good');
       current = updateSessionSummaryForRating({ summary: current, transition, rating: 'good', activeWord: w, activeItem: active.item, previousPhase: state.phase })!;
@@ -102,7 +102,7 @@ test('distinct covered directions retain repeated word rows and an empty session
   let state = createBucketSessionState({ sessionId: 'inventory', buckets: { review: [first, second], learning: [], unstudied: [] } });
   let current = summary();
   while (state.phase !== 'completed') {
-    const active = getActiveSessionUnit(state); if (active.type !== 'study') throw new Error('Expected study');
+    const active = getActiveSessionUnit(state); if (active.type !== 'study' || isPureCueSessionReviewItem(active.item)) throw new Error('Expected study');
     state = markActiveSessionUnitStarted(state); const transition = rateActiveSessionUnit(state, 'good', active.item.actionKind === 'production'
       ? { response: w.hanzi, productionResponse: { submittedText: w.hanzi, result: 'accepted_anchor' } } : {});
     current = updateSessionSummaryForRating({ summary: current, transition, rating: 'good', activeWord: w, activeItem: active.item, previousPhase: state.phase })!;
@@ -120,7 +120,7 @@ test('practice usage counts correct-day gains while preserving covered words and
     const initial = current;
     for (let pass = 0; state.phase !== 'completed' && pass < 20; pass += 1) {
       const active = getActiveSessionUnit(state);
-      if (active.type !== 'study') throw new Error('Expected practice word');
+      if (active.type !== 'study' || isPureCueSessionReviewItem(active.item)) throw new Error('Expected practice word');
       state = markActiveSessionUnitStarted(state);
       const rating = pass === 0 ? firstRating : 'good';
       const transition = rateActiveSessionUnit(state, rating);

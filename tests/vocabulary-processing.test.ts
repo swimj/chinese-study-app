@@ -19,6 +19,7 @@ import { createOpenAiCompatibleAdapter } from '../server/llm/openai-compatible.t
 import { installModelInvocationLedger } from '../server/llm/invocation-ledger.ts';
 import type { VocabularyReflectionJob,VocabularyReflectionResult } from '../src/domain/vocabulary-reflection.ts';
 import type { VocabularySessionAction } from '../src/domain/vocabulary-session.ts';
+import type { VocabularyJson } from '../src/domain/vocabulary-content.ts';
 let sql:DatabaseSync;
 const at='2026-10-17T10:00:00.000Z';
 let clock:number;
@@ -139,7 +140,7 @@ for(const sourceChange of [false,true])test(`assessment validation retries retai
   establishVocabularySenseCatalog('a',getVocabularySenseCatalog('a').version,{kind:'operator',id:'editor'});
   const stages:string[]=[];let authors=0;
   const adapter={id:'fake',defaultBaseUrl:'https://unused.invalid',apiKeyEnvironmentVariable:'KEY',structuredOutputMode:'json_schema' as const,async run(request:import('../server/llm/types.ts').ProviderRunRequest){
-    const stage=request.provenance!.stepName;stages.push(stage);
+    const stage=request.provenance!.stepName;assert.ok(stage);stages.push(stage);
     const output=stage==='feedback'?{diagnosis:'A useful distinction',lesson:'A private lesson',unfairEncounterIds:[]}:stage==='sense_mapping'?{outcome:'single_sense',rationale:'A character.',senseIds:['s1']}:{summary:'Practice the response.',source:{decision:'keep',prompt:null},sharedExercise:null,additionalExercises:[{answer:'response_1',role:'enrichment',prompt:++authors===1?'Use wrong here.':'A mistaken answer.',rationale:'Practise the response.'}]};
     return {provider:'fake',model:'fake',responseId:null,structuredOutputMode:'json_schema' as const,rawText:JSON.stringify(output),finishReason:'stop',rawResponse:null,usage:{inputTokens:null,cachedInputTokens:null,cacheWriteInputTokens:null,outputTokens:null,reasoningTokens:null,totalTokens:null},invocationId:null};
   }};
@@ -334,10 +335,11 @@ test('ingestion faults preserve closed sessions and expose an explicit safe disp
   assert.equal(Number(sql.prepare('SELECT count(*) n FROM reflection_cases').get()!.n),2);await processing.stop();
 });
 
-for(const source of [
+const fallbackSources: readonly (VocabularyJson&{kind:string})[]=[
   {kind:'dictionary_baseline',wordId:'a'},
   {kind:'production_cue_supplement',supplementId:'legacy-explanation',cueId:null,taskId:'production-task:a:default_production'},
-] as const)test(`single improvement authors targeted prompts from ${source.kind} for every proposal strategy`,async()=>{
+];
+for(const source of fallbackSources)test(`single improvement authors targeted prompts from ${source.kind} for every proposal strategy`,async()=>{
   createVocabularyContent({contentId:'fallback',kind:'exercise',payloadVersion:1,
     body:{prompt:'Prompt fallback',source,reveal:{explanation:'Retained teaching'}},exerciseType:'definition',skill:'production',exerciseRole:'general',
     assessment:{match:'exact'},accessScope:'private',ownerLearnerId:'alice',availability:'active',originKind:'human',
@@ -692,13 +694,13 @@ test('undo during the completion window keeps an accidental production response 
     const snapshot={contentId:'one',contentVersion:1,kind:'production' as const,role:'general' as const,
       body:{prompt:'Prompt one',material:getVocabularyContent('one')!.body},assessment:{acceptedAnswers:['字'],criteria:{match:'exact'}}};
     createVocabularySession({sessionId,words:[{wordId:'a',mode:'practice'}]},started);
-    const inputs=[
-      {kind:'presentation' as const,payload:{encounterId:'boundary-one',wordId:'a',snapshot}},
-      {kind:'finish_for_now' as const,payload:{}},
-      {kind:'response' as const,payload:{encounterId:'boundary-one',response:'accidental',outcome:'rejected' as const}},
-      {kind:'word_wrap' as const,payload:{wordId:'a',reason:'enough' as const}},
+    const base=(index:number)=>({protocolVersion:1 as const,actionId:`boundary-${index}`,clientActionId:`boundary-c-${index}`,sequence:index+1,occurredAt:started,transitionId:index>=2?'submit':undefined});
+    const actions:VocabularySessionAction[]=[
+      {...base(0),kind:'presentation',payload:{encounterId:'boundary-one',wordId:'a',snapshot}},
+      {...base(1),kind:'finish_for_now',payload:{}},
+      {...base(2),kind:'response',payload:{encounterId:'boundary-one',response:'accidental',outcome:'rejected'}},
+      {...base(3),kind:'word_wrap',payload:{wordId:'a',reason:'enough'}},
     ];
-    const actions=inputs.map((input,index)=>({...input,protocolVersion:1 as const,actionId:`boundary-${index}`,clientActionId:`boundary-c-${index}`,sequence:index+1,occurredAt:started,transitionId:index>=2?'submit':undefined}));
     appendVocabularySessionActions(sessionId,actions,started);
     return stageVocabularySessionCompletion(sessionId,actions.length,started);
   });

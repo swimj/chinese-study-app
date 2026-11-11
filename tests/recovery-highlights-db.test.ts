@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
+import { DatabaseSync, type SQLInputValue, type SQLOutputValue, type StatementSync } from 'node:sqlite';
 import { after, before, describe, test } from 'node:test';
 import type { StudyAttemptEvent } from '../src/domain/study-actions.ts';
 
@@ -271,10 +271,10 @@ describe('recovery highlights from durable learner evidence', { concurrency: fal
       const statement = originalPrepare.call(this, sql);
       if (sql.includes('json_each(?)')) {
         const originalAll = statement.all;
-        statement.all = function (...parameters: Parameters<typeof originalAll>) {
+        statement.all = function (this: StatementSync, ...parameters: SQLInputValue[]) {
           requestedPairs = JSON.parse(String(parameters[2]));
-          return originalAll.apply(this, parameters);
-        };
+          return (originalAll as (...anonymousParameters: SQLInputValue[]) => Record<string, SQLOutputValue>[]).apply(this, parameters);
+        } as typeof originalAll;
       }
       return statement;
     };

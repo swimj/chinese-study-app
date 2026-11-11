@@ -976,7 +976,8 @@ test('teaching uses both recall directions despite later review skill settings',
     exerciseType:'recognition',skill:'recognition',exerciseRole:'teaching',assessment:{responseMode:'self_assessment'},
     accessScope:'shared',availability:'active',originKind:'human',words:[{wordId:'new',relation:'target'}],
     answers:[{wordId:'new',acceptedForms:['新']}]},actor);
-  const intro=getVocabularyContent('intro-new')!;
+  const intro=getVocabularyContent('intro-new');
+  assert.ok(intro?.kind==='introduction');
   updateVocabularyContent(intro.contentId,intro.version,{...intro,
     teachingExercises:[{exerciseId:'authored-recognition',exerciseVersion:1},{exerciseId:'teach-new',exerciseVersion:1}]},actor);
   for(const skill of ['recognition','production'] as const)for(const restriction of ['disabled','suppressed'] as const) {
@@ -1228,7 +1229,8 @@ test('Preview, Start and live HTTP actions never wake background workers',async(
   const call=(route:string,id:string,body:unknown={})=>{
     let result:VocabularyStudy|undefined;let status=200;
     const response={json(value:VocabularyStudy){result=value;return this;},status(value:number){status=value;return this;}};
-    routes.get(route)!({params:{id},body} as Request,response as unknown as Response);
+    // Handlers read only params and body, so a partial request is a deliberate minimal stand-in.
+    routes.get(route)!({params:{id},body} as unknown as Request,response as unknown as Response);
     assert.equal(status,200);assert.ok(result);return result;
   };
   const started=call('POST /api/vocabulary/sessions','');

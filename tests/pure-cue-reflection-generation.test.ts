@@ -24,7 +24,7 @@ const bundle: PureCueReflectionBundleV1 = {
 const wire: PureCueReflectionResultV1Wire = {
   schemaVersion: 'pure_cue_reflection_result.v2', itemResults: [{ submittedWord: 'C', decision: 'extend', reason: null, repair: null, learnerExplanation: 'C fits this situation.', rationale: 'C is valid.', extension: { teachingNote: 'A, B or C', responseWordPlan: { deactivateCueIds: [], distinctiveCueDrafts: [] } } }],
 };
-const metadata = (promptVersion = PURE_CUE_REFLECTION_PROMPT_VERSION): LunaReflectionRunMetadata => ({
+const metadata = (promptVersion: string = PURE_CUE_REFLECTION_PROMPT_VERSION): LunaReflectionRunMetadata => ({
   provider: 'openai', modelConfig: 'gpt-6-luna-high', providerModel: 'gpt-6-luna', promptVersion, responseId: 'response', finishReason: 'stop',
   usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, cachedInputTokens: null, cacheWriteInputTokens: null, reasoningTokens: null },
 });
@@ -52,7 +52,8 @@ function harness(options: { ordinary?: boolean; pureFails?: boolean; ordinaryFai
     buildBundle: () => { if (!options.ordinary) throw new ReflectionEvidenceError('no_qualifying_evidence', 'No ordinary evidence'); return ordinary; },
     getPureCueRetrySource: (id) => { const run = runs.find((entry) => entry.runId === id); return run ? { bundle: run.evidenceBundle as PureCueReflectionBundleV1, model: 'gpt-6-luna-high' } : null; },
     startRun: (input) => { starts.push(input); }, recordRun: (input) => { runs.push(input); },
-    materializeArtifact: (input) => { artifacts.push(input); return { created: true, artifact: { artifactId: `artifact-${artifacts.length}`, proposals: [] } } as ReturnType<NonNullable<import('../server/reflection/generation.ts').InitialReflectionGenerationDependencies['materializeArtifact']>>; },
+    // The stub supplies only the artifact fields the service reads.
+    materializeArtifact: (input) => { artifacts.push(input); return { created: true, artifact: { artifactId: `artifact-${artifacts.length}`, proposals: [] } } as unknown as ReturnType<NonNullable<import('../server/reflection/generation.ts').InitialReflectionGenerationDependencies['materializeArtifact']>>; },
   });
   return { service, starts, runs, artifacts, suppliedBundles, recover: () => { pureFails = false; } };
 }
@@ -73,7 +74,9 @@ test('failed dedicated call persists frozen bundle and retry reuses it', async (
   assert.equal(h.runs[0].state, 'failed');
   assert.deepEqual(h.runs[0].evidenceBundle, bundle);
   h.recover();
-  const retried = await h.service.retry(h.runs[0].runId);
+  const failedRunId = h.runs[0].runId;
+  assert.ok(failedRunId);
+  const retried = await h.service.retry(failedRunId);
   assert.equal(retried.proposalCount, 1);
   assert.equal(h.suppliedBundles.length, 2);
   assert.deepEqual(h.suppliedBundles[1], h.suppliedBundles[0]);

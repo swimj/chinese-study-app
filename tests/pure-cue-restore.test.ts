@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { after, before, test } from 'node:test';
+import { isPureCueSessionReviewItem } from '../src/domain/study-actions.ts';
 import { selectPureCuesForSession, type PureCueAssessmentEvent } from '../src/domain/pure-cues.ts';
 
 const now = '2026-09-18T00:00:00.000Z';
@@ -141,7 +142,7 @@ for (const scenario of [
     const assertAdmission = (at: string, expected: boolean) => {
       t.mock.timers.setTime(new Date(at).getTime());
       const items = db.getSessionPayload(at.slice(0, 10), { random: () => 0 }).buckets.review;
-      const cueIds = items.flatMap(item => item.itemType === 'pure_cue_production' ? [item.snapshot.pureCueId] : []);
+      const cueIds = items.flatMap(item => isPureCueSessionReviewItem(item) ? [item.snapshot.pureCueId] : []);
       assert.ok(cueIds.includes(controlId), 'due control must be served');
       assert.equal(cueIds.includes(cueId), expected, `restored cue admission at ${at}`);
     };

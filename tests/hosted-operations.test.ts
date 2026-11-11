@@ -5,6 +5,7 @@ import path from 'node:path';
 import { after, before, describe, test } from 'node:test';
 import { pathToFileURL } from 'node:url';
 import { parseHostedBackupStatus } from '../server/hosted-backup-status.ts';
+import { isPureCueSessionReviewItem } from '../src/domain/study-actions.ts';
 
 type DbModule = typeof import('../server/db.ts');
 
@@ -205,7 +206,9 @@ describe('hosted operational controls', { concurrency: false }, () => {
       ]);
       const session = dbModule.getSessionPayload('2026-08-31', { random: () => 0 });
       assert.equal(session.buckets.review.length, 1);
-      assert.equal(session.buckets.review[0]?.actionKind, 'production');
+      const [reviewItem] = session.buckets.review;
+      assert.ok(reviewItem && !isPureCueSessionReviewItem(reviewItem));
+      assert.equal(reviewItem.actionKind, 'production');
     });
     assert.throws(() => dbModule.provisionHostedBetaReviewTest({
       learnerId: 'learner-review-test',

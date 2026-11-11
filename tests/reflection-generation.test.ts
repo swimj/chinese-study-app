@@ -2,6 +2,7 @@ import { STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION } from '../src/domain/reflec
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import type {
+  CuratedReflectionDiagnosisBundleV2,
   ReflectionOperation,
   SessionReflectionBundleV4,
   SessionReflectionResultV7,
@@ -22,6 +23,7 @@ import {
 import {
   LunaReflectionProviderError,
   type LunaReflectionProvider,
+  type LunaStagedDiagnosisSuccess,
 } from '../server/reflection/luna-provider.ts';
 import { createTestReflectionContinuationBoundaries } from './helpers/reflection-continuation.ts';
 
@@ -89,8 +91,8 @@ describe('initial reflection generation orchestration', () => {
   });
 
   test('enriches, calls the configured provider, and persists provider metadata once', async () => {
-    let persisted: MaterializeReflectionArtifactInput | null = null;
-    let recordedRun: RecordReflectionGenerationRunInput | null = null;
+    let persisted = null as MaterializeReflectionArtifactInput | null;
+    let recordedRun = null as RecordReflectionGenerationRunInput | null;
     const evidenceBundle = bundle();
     const service = createInitialReflectionGenerationService({
       now: () => generatedAt,
@@ -189,7 +191,7 @@ describe('initial reflection generation orchestration', () => {
 
   test('records the selected provider hand-off before making the provider call', async () => {
     const evidenceBundle = bundle();
-    let started: RecordReflectionGenerationRunInput | null = null;
+    let started = null as RecordReflectionGenerationRunInput | null;
     let providerRequestId: string | undefined;
     const service = createInitialReflectionGenerationService({
       now: () => generatedAt,
@@ -217,8 +219,8 @@ describe('initial reflection generation orchestration', () => {
 
   test('retries a current staged diagnosis run from its exact saved bundle', async () => {
     const evidenceBundle = bundle();
-    let providerBundle: SessionReflectionBundleV4 | null = null;
-    let recordedRun: RecordReflectionGenerationRunInput | null = null;
+    let providerBundle = null as SessionReflectionBundleV4 | CuratedReflectionDiagnosisBundleV2 | null;
+    let recordedRun = null as RecordReflectionGenerationRunInput | null;
     const service = createInitialReflectionGenerationService({
       now: () => generatedAt,
       findExistingArtifact: () => null,
@@ -358,10 +360,10 @@ describe('initial reflection generation orchestration', () => {
     const boundaries = createTestReflectionContinuationBoundaries();
     const stageTwoBundles: unknown[] = [];
     const runRecords: RecordReflectionGenerationRunInput[] = [];
-    let materialized: MaterializeReflectionArtifactInput | null = null;
+    let materialized = null as MaterializeReflectionArtifactInput | null;
     let diagnosisCalls = 0;
     let failedPromotionRunId = '';
-    const sharedDiagnosisSuccess = {
+    const sharedDiagnosisSuccess: LunaStagedDiagnosisSuccess = {
       ...diagnosisSuccess(),
       result: {
         schemaVersion: 'staged_reflection_diagnosis_result.v3' as const,
@@ -645,7 +647,7 @@ describe('initial reflection generation orchestration', () => {
   });
 
   test('retains the selected provider metadata when persistence fails after generation', async () => {
-    let recordedRun: RecordReflectionGenerationRunInput | null = null;
+    let recordedRun = null as RecordReflectionGenerationRunInput | null;
     const glmSuccess = {
       ...diagnosisSuccess(),
       metadata: {
@@ -995,6 +997,7 @@ function artifactDetail(artifactId: string, proposalCount: number): ReflectionAr
     promptVersion: 'reflection-v3',
     bundleSchemaVersion: 'session_reflection_bundle.v2',
     resultSchemaVersion: 'session_reflection_result.v7',
+    sourceRunId: null,
     evidenceBundle: bundle(),
     result: result(),
     proposals: Array.from({ length: proposalCount }, (_, index) => ({
@@ -1086,6 +1089,7 @@ function currentDiagnosisRetrySource(
       includedItemCount: overrides.includedItemCount ?? 1,
       diagnosisBundle,
       sourceProposalIds: null,
+      sourceHelpInboxIds: null,
       overlapOmittedItemCount: 0,
       diagnosisResult: null,
       finalEvidenceBundle: null,
@@ -1101,7 +1105,7 @@ function stagedDiagnosisResult(): StagedReflectionDiagnosisResultV3 {
     itemResults: [{
       kind: 'ordinary',
       itemId: 'item-1',
-      diagnosisTags: ['persistent_confusion'],
+      diagnosisTags: ['production_cue_overloaded'],
       learnerExplanation: 'This production goal is not useful as an isolated task.',
       proposals: [{
         proposalGroupKey: null,

@@ -12,7 +12,7 @@ function word(status: Word['status']): Word {
   return { id: 'word', hanzi: '字', traditional: null, pinyin: 'zi', meaning: 'character', meanings: ['character'], personalNotes: '', examples: [], status, priority: 1, createdAt: '2026-01-01T00:00:00.000Z', learningStreak: 0, lastLearningSuccessOn: null, lastLearningCoveredOn: null };
 }
 function review(): SessionStudyItem {
-  return { sessionActionId: 'recognition', actionKind: 'recognition', targetWordId: 'word', sampledSkillIds: ['recognition'], contentRef: null, intervalHours: 24, word: word('review'), contrastSelection: null };
+  return { sessionActionId: 'recognition', actionKind: 'recognition', targetWordId: 'word', sampledSkillIds: ['recognition'], contentRef: null, intervalHours: 24, word: word('review'), contrastSelection: null, production: null };
 }
 function stateFor(bucket: 'review' | 'learning' | 'unstudied') {
   return createBucketSessionState({

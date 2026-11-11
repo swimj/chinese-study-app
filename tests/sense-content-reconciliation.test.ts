@@ -313,7 +313,7 @@ test('canonical repertoire publishes before teaching exists and later teaching d
   await prepareTeaching();
   assert.equal(senseContentReconciliationProgress('word').status,'ready');
   assert.ok(db.prepare('SELECT completed_at FROM sense_content_reconciliations').get()!.completed_at);
-  assert.equal(listVocabularyAttention(actor.id,{}, {approvals:[],preparation:createVocabularyPracticePreparation({provider})}).total,0);
+  assert.equal(listVocabularyAttention(actor.id,{}, {approvals:[],preparationFailure:workId=>createVocabularyPracticePreparation({provider}).failed(workId)}).total,0);
   const restarted=createVocabularyPracticePreparation({provider});
   assert.equal(restarted.ensure('word')!.workId,work.work_id);
   await restarted.prepare('word');assert.equal(calls,1);
@@ -331,7 +331,7 @@ test('canonical failure groups with resolution and retries without a teaching po
   const work=preparation.ensure('word')!;
   await assert.rejects(()=>preparation.run(work.workId,preparation.claim(work.workId)!),/no exercises/);
   assert.equal(senseContentReconciliationProgress('word').practiceStatus,'failed');
-  const attention=listVocabularyAttention(actor.id,{}, {approvals:[],preparation});
+  const attention=listVocabularyAttention(actor.id,{}, {approvals:[],preparationFailure:workId=>preparation.failed(workId)});
   assert.equal(attention.total,1);
   const group=attention.items[0]!;assert.equal(group.kind,'reconciliation');
   if(group.kind!=='reconciliation')throw new Error('Missing reconciliation');

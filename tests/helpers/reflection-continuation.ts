@@ -36,6 +36,7 @@ export function createTestReflectionContinuationBoundaries(): Pick<
         includedItemCount: input.includedItemCount,
         diagnosisBundle: input.diagnosisBundle,
         sourceProposalIds: input.sourceProposalIds ?? null,
+        sourceHelpInboxIds: input.sourceHelpInboxIds ?? null,
         overlapOmittedItemCount: input.overlapOmittedItemCount ?? 0,
         diagnosisResult: null,
         finalEvidenceBundle: null,
