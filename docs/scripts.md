@@ -12,10 +12,14 @@ procedures needed to run them safely. Scripts live under `scripts/`; run with
 These commands run a contributor environment, separate from hosted learner use.
 Use the checked-out [package.json](../package.json) for command definitions.
 
-In a fresh worktree, run `./scripts/codex-setup.sh` when dependencies are missing;
-it installs the lockfile dependencies with `npm ci`. Each worktree needs its own
-setup. `node_modules/` and generated `.codex/environments/environment.toml` are
-ignored local files; do not add them to `.worktreeinclude`.
+In a fresh worktree, run `npm ci` when dependencies are missing. Each worktree
+needs its own setup. `./scripts/codex-setup.sh` wraps the same command for the
+Codex app's worktree environment setup. `node_modules/` and generated
+`.codex/environments/environment.toml` are ignored local files; do not add them
+to `.worktreeinclude`. That file lists gitignored files Claude Code copies into
+new worktrees; it includes `.env`, so Claude worktrees inherit local provider
+keys. Claude Code does not run a setup script, so run `npm ci` after a branch
+changes `package-lock.json`.
 
 | Command | Purpose |
 | --- | --- |
