@@ -14,6 +14,8 @@ tmp/deck-eyeball-report.md
 artifacts/*
 !artifacts/README.md
 .codex/
+.claude/worktrees/
+.claude/settings.local.json
 *.tsbuildinfo
 spikes/hosted-beta-platform/.generated/
 spikes/hosted-beta-platform/evidence/private/

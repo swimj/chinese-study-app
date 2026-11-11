@@ -13,7 +13,7 @@ the repository root when the skill loader does not resolve relative links.
 ## Access the hosted service
 
 Launch remote commands from the execution tool using the operator's authenticated
-Fly CLI. An attached Codex app terminal or an existing SSH session is not a
+Fly CLI. An attached app terminal or an existing SSH session is not a
 prerequisite; launching a command creates any execution session handle needed.
 The live database is `/data/app.db` on the hosted machine. Local `data/` files
 and backups do not establish current posts or the deployed source revision.

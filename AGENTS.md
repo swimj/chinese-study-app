@@ -6,6 +6,10 @@ hosted Mandarin study app; the [documentation index](docs/README.md) routes to
 application knowledge. Contributor development and tests are separate from
 learner use of the hosted service.
 
+Claude Code reads this file through the `@AGENTS.md` import in
+[CLAUDE.md](CLAUDE.md), and finds the skills in `.agents/skills/` through the
+`.claude/skills` symlink. Keep shared guidance here and skills in `.agents/skills/`.
+
 ## Task scope and judgment
 
 Justin's request and subsequent clarifications define the task. Solve the
@@ -183,7 +187,7 @@ Before substantial implementation, state whether the change is one cohesive PR
 or likely needs a stack. Use ordinary GitHub delivery for a single PR and the
 installed `gt` CLI for a useful multi-branch stack, following the PR delivery
 and Graphite workflow. Standalone research, planning, and documentation tasks may
-return in Codex without a PR unless publication is requested.
+return in the agent conversation without a PR unless publication is requested.
 
 At handoff, explain the outcome, verification and its limits, material open
 choices or documentation gaps, and any remote state changed. Check the final
