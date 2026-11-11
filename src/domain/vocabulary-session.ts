@@ -105,7 +105,7 @@ export type VocabularyEncounterSnapshot = {
   mappingSnapshot?: VocabularySessionJson;
 };
 
-type VocabularySessionActionPayload =
+export type VocabularySessionActionPayload =
   | { kind: 'presentation'; payload: { encounterId: string; wordId: string | null; snapshot: VocabularyEncounterSnapshot } }
   | { kind: 'response'; payload: { encounterId: string; response: string | null; outcome: 'accepted' | 'rejected'; selfAssessment?: 'accepted' | 'rejected'; selectedWordId?: string; helpUsed?: boolean } }
   /** Learner reaction. Protocol v1 retains its historical `feedback` wire spelling. */

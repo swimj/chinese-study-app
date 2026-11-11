@@ -753,6 +753,11 @@ describe('reflection durable store', { concurrency: false }, () => {
 
     assert.equal(materialized.created, true);
     assert.equal(materialized.artifact.sourceRunId, 'run-recorded-after-artifact');
+    assert.equal(
+      dbModule.listReflectionArtifacts('all')
+        .find((artifact) => artifact.artifactId === materialized.artifact.artifactId)?.sourceRunId,
+      'run-recorded-after-artifact',
+    );
   });
 
   test('keeps open proposal queue semantics separate from recent informational history', () => {
@@ -1367,10 +1372,15 @@ describe('reflection durable store', { concurrency: false }, () => {
   });
 });
 
+type CurrentMaterializationInput = Omit<
+  Extract<Parameters<DbModule['materializeReflectionArtifact']>[0], { evidenceBundle: SessionReflectionBundleV6 }>,
+  'result'
+> & { result: SessionReflectionResultV10 };
+
 function materializationInput(
   sessionId: string,
   operation: ReflectionOperation,
-): Parameters<DbModule['materializeReflectionArtifact']>[0] {
+): CurrentMaterializationInput {
   const legacy = legacyMaterializationInput(sessionId, operation);
   const v2 = bundleV2(sessionId);
   const evidenceBundle: SessionReflectionBundleV6 = {
@@ -1466,7 +1476,7 @@ function materializationInputV6(
 
 function materializationInputV10(
   sessionId: string,
-): Parameters<DbModule['materializeReflectionArtifact']>[0] {
+): CurrentMaterializationInput {
   sqlite.prepare(`
     INSERT OR IGNORE INTO study_sessions (
       id, started_at, ended_at, processing_state, processed_at
@@ -1576,7 +1586,9 @@ function materializationInputV10(
 }
 
 function bundleV2(sessionId: string): SessionReflectionBundleV2 {
-  const { cuesAsShown: _legacyCuesAsShown, ...baseItem } = productionItem('item');
+  const legacyItem = productionItem('item');
+  assert.ok(legacyItem.source === 'production_mistake');
+  const { cuesAsShown: _legacyCuesAsShown, ...baseItem } = legacyItem;
   return {
     schemaVersion: 'session_reflection_bundle.v2',
     generatedAt,

@@ -996,7 +996,7 @@ export function listVocabularyProposalReviewBatch(actorId: string, input: { limi
   return {items,nextProposalId:rows[limit]?.proposal_id ?? null};
 }
 export function getVocabularyCaseWorkspace(caseId: string, actorId: string): {assessment:VocabularyAssessmentReview;reassessmentUnavailableReason:string|null;senseLabels:VocabularySenseLabel[];defaultSelectionFinding:import('../../src/domain/vocabulary-sense-coverage.ts').VocabularyDefaultSelectionFinding|null; case: VocabularyReflectionCase;
-  jobs: { jobId: string;caseSequence:number;kind:string;status:string;attemptNumber:number;error:string|null;secondOpinion: boolean;result: VocabularySecondOpinion['result'] }[]; proposals: VocabularyContentProposal[];sources:VocabularyContent[];
+  jobs: { jobId: string;caseSequence:number;kind:string;status:string;attemptNumber:number;error:string|null;secondOpinion: boolean;abandoned: boolean;result: VocabularySecondOpinion['result'] }[]; proposals: VocabularyContentProposal[];sources:VocabularyContent[];
   reassessmentSource: ReassessmentSource | null;
   reassessment: {caseId:string;jobId:string;status:string;error:string|null} | null;
   pureCueIdentityOptions?:ReturnType<typeof pureCueIdentityOptions>; diagnosis?: VocabularyJson; admission?: VocabularyImprovementAdmission; pureCueReferral?: VocabularyPureCueReferral | null; pureCuePromotion?: VocabularyPureCuePromotion } {

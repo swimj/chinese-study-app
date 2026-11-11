@@ -1,6 +1,7 @@
 import * as db from '../db.ts';
 import { wordContentFixtures, authoredReviewFixture, authoredDefinitionFixture } from '../../src/features/introduction-lab/samples.ts';
 import { annotationWords } from './ui-annotation-data.ts';
+import { isPureCueSessionReviewItem } from '../../src/domain/study-actions.ts';
 
 /** Only used by the fresh-directory fixture command, never application startup. */
 export function prepareUiAnnotationFixtures(now: Date) {
@@ -37,7 +38,7 @@ export function prepareUiAnnotationFixtures(now: Date) {
         throw new Error(`Learning fixture not served: ${wordId}`);
       }
     }
-    if (!buckets.review.some(item => item.targetWordId === annotationWords.review)) {
+    if (!buckets.review.some(item => !isPureCueSessionReviewItem(item) && item.targetWordId === annotationWords.review)) {
       throw new Error('Due review fixture not served');
     }
     return { fixtureVersion: 1, preparedAt: timestamp, learnerId: 'dev-learner', words: annotationWords,

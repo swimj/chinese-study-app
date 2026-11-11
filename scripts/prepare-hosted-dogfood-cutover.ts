@@ -32,6 +32,9 @@ const clerkSubject = requireArgument(args, 'clerk-subject');
 const actorId = requireArgument(args, 'actor-id');
 const cutoverId = requireArgument(args, 'cutover-id');
 const preparedAt = args.get('prepared-at') ?? new Date().toISOString();
+// Typed view of the database module, which is imported fresh at runtime below.
+type DbModule = typeof import('../server/db.ts');
+
 const sourceDatabasePath = path.join(sourceDataDir, 'app.db');
 
 if (sourceDataDir === outputDataDir) {
@@ -63,7 +66,7 @@ try {
   delete process.env.APP_SEED_DATA_PATH;
   process.env.APP_STUDY_PROFILE = 'mandarin';
   const dbModuleUrl = `${pathToFileURL(path.resolve('server/db.ts')).href}?hosted-dogfood-cutover=${Date.now()}`;
-  const db = await import(dbModuleUrl);
+  const db: DbModule = await import(dbModuleUrl);
 
   let identityBindingStatus: 'bound' | 'already_bound';
   let sharedTrialBackfill: ReturnType<typeof db.inspectDogfoodSharedTrialBackfill>;
@@ -141,7 +144,7 @@ function assertNoPreparedSidecars(databasePath: string): void {
 function assertPreservedCounts(
   before: ReturnType<typeof readDogfoodCutoverCounts>,
   after: ReturnType<typeof readDogfoodCutoverCounts>,
-  backfill: ReturnType<typeof db.inspectDogfoodSharedTrialBackfill>,
+  backfill: ReturnType<DbModule['inspectDogfoodSharedTrialBackfill']>,
   bindingStatus: 'bound' | 'already_bound',
 ): void {
   const preservedKeys = [

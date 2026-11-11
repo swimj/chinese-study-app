@@ -5,8 +5,15 @@
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "allowImportingTsExtensions": true,
+    "lib": ["DOM", "DOM.Iterable", "ES2023"],
     "types": ["node"]
   },
-  "include": ["server/**/*.ts", "tests/**/*.ts", "scripts/**/*.ts"],
+  "include": [
+    "server/**/*.ts",
+    "tests/**/*.ts",
+    "scripts/**/*.ts",
+    "src/vite-env.d.ts",
+    "src/opencc-dictionaries.d.ts"
+  ],
   "exclude": ["tests/fixtures/**"]
 }

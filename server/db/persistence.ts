@@ -33,6 +33,7 @@ import type {
   LearningRehearsalSnapshot,
   ProductionExerciseSnapshot,
   ProductionAnswerWord,
+  ProductionAttemptResult,
   StudyAttemptEvent,
   StudyAttemptOutcome,
   StudyActionKind,
@@ -105,6 +106,46 @@ import {
   PRIORITY_TIER_REGULAR,
   PRIORITY_TIER_SUNK,
   REVIEW_PHASE_RECENCY_GUARD_HOURS,
+} from './types.ts';
+import type {
+  ContrastClusterContent,
+  ContrastClusterMemberRow,
+  ContrastClusterRow,
+  ContrastPromptRow,
+  DailyNewWordIntakeRow,
+  PriorityWord,
+  PriorityWordRow,
+  PriorityWordsPayload,
+  RecordStudyManagementActionInput,
+  ReviewAttemptCommitIntent,
+  ReviewFailureRateDay,
+  ReviewPassRating,
+  ReviewRating,
+  ReviewSessionItemCandidate,
+  ReviewSessionItemWithSkillRow,
+  ReviewSessionResultRow,
+  SeedData,
+  SessionPayload,
+  StudyAttemptEventRow,
+  StudyEventRow,
+  StudySchedulerStateInvariantViolation,
+  StudySessionProcessingState,
+  StudySessionRow,
+  StudySkillId,
+  UserWordPriorityPatch,
+  UserWordPriorityRow,
+  Word,
+  WordMeaning,
+  WordMeaningRow,
+  WordRow,
+  WordSkillRelevance,
+  WordSkillRelevanceRow,
+  WordSkillState,
+  WordSkillStateRow,
+  WordStatus,
+  WordStudyAdmissionState,
+  WordStudyAdmissionStateRow,
+  WordStudyPhase,
 } from './types.ts';
 import { queryManifestDeckWords, invalidateDeckWordIds, queryDeckWordStudyDates } from './deck-words.ts';
 import { applyIntervalHourFuzz } from './interval-schedule.ts';
@@ -1746,7 +1787,7 @@ function deriveProductionSubmittedWordId({
   event: StudyAttemptEvent;
   cueId: string | null;
   acceptedWordIds: string[];
-  result: ProductionCueAttemptResultV0;
+  result: ProductionAttemptResult;
   responseKind: 'typed' | 'no_clue';
   submittedText: unknown;
 }): string | null {
@@ -1867,7 +1908,7 @@ function isProductionAttemptResultCoherent(
   }
 }
 
-function isProductionCueAttemptResult(value: unknown): value is ProductionCueAttemptResultV0 {
+function isProductionCueAttemptResult(value: unknown): value is ProductionAttemptResult {
   return value === 'accepted_anchor'
     || value === 'rejected';
 }
@@ -4974,8 +5015,10 @@ function assertContentRef(contentRef: StudyContentRef | null) {
     return;
   }
 
+  // Stored refs are parsed JSON, so report the runtime value the union does not admit.
+  const contentRefType: unknown = contentRef.type;
   if (contentRef.type !== 'contrast_prompt' && contentRef.type !== 'example_sentence') {
-    throw new Error(`Invalid study content ref type "${String(contentRef.type)}"`);
+    throw new Error(`Invalid study content ref type "${String(contentRefType)}"`);
   }
 
   assertNonEmptyString(contentRef.id, 'Expected non-empty study content ref id');
@@ -6130,8 +6173,8 @@ function incrementDailyNewStudyCount(studyDayKey: string) {
   `).run(studyDayKey);
 }
 
-function assertDailyNewWordLimit(value: number) {
-  if (!Number.isSafeInteger(value) || value < 0 || value > 20) {
+function assertDailyNewWordLimit(value: unknown): asserts value is number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0 || value > 20) {
     throw new Error('Expected integer dailyNewWordLimit between 0 and 20');
   }
 }

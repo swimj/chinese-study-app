@@ -190,8 +190,6 @@ function markProposalInboxSeen(
   return {
     marked: existing.inbox_seen_at === null,
     reflectionUnseenCount: countUnseenReflectionHelpItems(),
-    reflectionGenerating: Boolean(getDb().prepare(`SELECT 1 FROM learner_session_reflection_dispatches
-      WHERE learner_id = ? AND status IN ('queued','running') LIMIT 1`).get(requireLearnerId())),
   };
 }
 
@@ -211,8 +209,6 @@ function markExplanationInboxSeen(
     return {
       marked: false,
       reflectionUnseenCount: countUnseenReflectionHelpItems(),
-    reflectionGenerating: Boolean(getDb().prepare(`SELECT 1 FROM learner_session_reflection_dispatches
-      WHERE learner_id = ? AND status IN ('queued','running') LIMIT 1`).get(requireLearnerId())),
     };
   }
   if (existing.inbox_seen_at === null) {
@@ -225,8 +221,6 @@ function markExplanationInboxSeen(
   return {
     marked: existing.inbox_seen_at === null,
     reflectionUnseenCount: countUnseenReflectionHelpItems(),
-    reflectionGenerating: Boolean(getDb().prepare(`SELECT 1 FROM learner_session_reflection_dispatches
-      WHERE learner_id = ? AND status IN ('queued','running') LIMIT 1`).get(requireLearnerId())),
   };
 }
 

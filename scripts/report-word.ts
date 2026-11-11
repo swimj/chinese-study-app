@@ -76,7 +76,7 @@ export function findWordReports(db: DatabaseSync, hanzi: string): WordReport[] {
     ...word,
     meanings: parseJsonArray(word.meaningsJson),
     admission: (admission.get(word.id) as WordReport['admission'] | undefined) ?? null,
-    skills: (skills.all(word.id) as Array<WordReport['skills'][number] & { enabled: number }>).map((skill) => ({
+    skills: (skills.all(word.id) as Array<Omit<WordReport['skills'][number], 'enabled'> & { enabled: number }>).map((skill) => ({
       ...skill,
       enabled: skill.enabled !== 0,
     })),
