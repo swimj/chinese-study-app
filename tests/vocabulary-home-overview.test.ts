@@ -71,7 +71,7 @@ test('active-time trends include zero days and disclose missing measurements wit
 
 test('timed Home starts the day without presenting the due ledger, still naming an empty start',()=>{
   const ready=render({preview:{status:'ready',preview:{previewSeed:'seed',itemCount:25,preparationPending:false,timed:true},error:null}});
-  assert.match(ready,/Start session/);assert.match(ready,/<span class="session-start-card-helper"><\/span>/);assert.doesNotMatch(ready,/study items ready/);
+  assert.match(ready,/Start session/);assert.doesNotMatch(ready,/session-start-card-helper/);assert.doesNotMatch(ready,/study items ready/);
   const empty=render({preview:{status:'ready',preview:{previewSeed:'seed',itemCount:0,preparationPending:true,timed:true},error:null}});
   assert.match(empty,/Check again/);assert.match(empty,/Nothing ready yet · preparing introductions/);assert.doesNotMatch(empty,/0 study items/);
 });

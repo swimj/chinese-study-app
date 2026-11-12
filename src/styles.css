@@ -4494,7 +4494,7 @@ input::placeholder, textarea::placeholder { color: var(--text-muted); opacity: 1
 .home-overview .failure-rate-list { gap: 0.4rem; }
 .home-overview .failure-rate-period { padding: 0.65rem 0.4rem; font-size: 0.72rem; }
 .home-overview .failure-rate-period strong { font-size: 1.1rem; font-weight: 550; }
-.session-start-card { padding-top: 1.2rem; padding-bottom: 1.2rem; box-shadow: 0 4px 10px rgba(50, 100, 83, 0.12); }
+.session-start-card { padding-top: .75rem; padding-bottom: .75rem; box-shadow: 0 4px 10px rgba(50, 100, 83, 0.12); }
 .session-start-card-helper, .session-settings-gear { color: rgba(255,255,255,0.86); }
 .session-settings-gear:hover, .session-settings-gear:focus-visible { color: white; }
 .session-start-shell:has(.session-settings-gear:hover) .session-settings-gear,
@@ -4544,7 +4544,9 @@ input::placeholder, textarea::placeholder { color: var(--text-muted); opacity: 1
 .home-page:not(.home-session-active) .home-grid { grid-template-columns: minmax(0,1fr); max-width: 760px; margin: clamp(0px,4vh,48px) auto; }
 .home-page:not(.home-session-active) .home-overview { display: grid; grid-template-columns: 1fr 1fr; column-gap: 2rem; padding: 0; border: 0; background: transparent; box-shadow: none; }
 .home-overview-intro, .home-overview .session-start-shell { grid-column: 1 / -1; }
-.home-overview .session-start-shell { max-width: 420px; width: 100%; }
+.home-overview .session-start-shell { max-width: 320px; width: 100%; }
+.home-overview .session-start-card { padding-right: 3rem; }
+.home-overview .session-start-card-label { font-size: 1rem; }
 @media (max-width: 520px) { .home-page:not(.home-session-active) .home-overview { grid-template-columns: 1fr; } }
 
 /* This week's study days: a quiet trace of showing up, without counts or streaks. */
