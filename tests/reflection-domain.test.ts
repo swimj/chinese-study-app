@@ -23,6 +23,7 @@ import type {
   SessionReflectionBundleV3,
   SessionReflectionResultV4,
   SessionReflectionResultV5Wire,
+  ReflectionItemResultV5Wire,
 } from '../src/domain/reflection.js';
 
 const visibleWordIds = new Set(['target', 'alternate']);
@@ -89,8 +90,16 @@ function result(operation: ReflectionOperation): SessionReflectionResultV4 {
   };
 }
 
+// Deliberately wraps operations outside the V5 wire union so the normalizer and
+// validator are exercised on them.
+function resultV5WireItems(operation: ReflectionOperation): ReflectionItemResultV5Wire[] {
+  return result(operation).itemResults as unknown as ReflectionItemResultV5Wire[];
+}
+
 function bundleV2(): SessionReflectionBundleV2 {
-  const { cuesAsShown: _legacyCuesAsShown, ...baseItem } = bundle().items[0]!;
+  const legacyItem = bundle().items[0];
+  assert.ok(legacyItem?.source === 'production_mistake');
+  const { cuesAsShown: _legacyCuesAsShown, ...baseItem } = legacyItem;
   return {
     schemaVersion: 'session_reflection_bundle.v2',
     generatedAt: '2026-07-29T00:00:00.000Z',
@@ -543,7 +552,7 @@ describe('reflection result validation', () => {
 
     const contrastResult = normalizeSessionReflectionResultV5({
       schemaVersion: 'session_reflection_result.v5',
-      itemResults: result(contrastOperation()).itemResults,
+      itemResults: resultV5WireItems(contrastOperation()),
     }, noClueBundle);
     assert.match(
       validateSessionReflectionResultV5(contrastResult, noClueBundle).join('\n'),
@@ -552,12 +561,12 @@ describe('reflection result validation', () => {
 
     const alternateResult = normalizeSessionReflectionResultV5({
       schemaVersion: 'session_reflection_result.v5',
-      itemResults: result({
+      itemResults: resultV5WireItems({
         kind: 'accept_production_alternate',
         version: 1,
         targetWordId: 'target',
         alternateWordId: 'alternate',
-      }).itemResults,
+      }),
     }, noClueBundle);
     assert.match(
       validateSessionReflectionResultV5(alternateResult, noClueBundle).join('\n'),

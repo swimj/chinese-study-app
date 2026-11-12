@@ -26,16 +26,17 @@ function providerResponse(result: string, finishReason = 'stop'): Response {
 
 describe('introduction lab provider teaching transport', () => {
   test('sends exact word content and accepts a beats-only teaching result', async () => {
-    let requestBody: Record<string, unknown> | null = null;
+    const requestBodies: Record<string, unknown>[] = [];
     const provider = createIntroductionLabProvider({
       environment: { OPENAI_API_KEY: 'test-key' },
       fetchImplementation: (async (_input, init) => {
-        requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        requestBodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
         return providerResponse(JSON.stringify(teachingResult()));
       }) as typeof globalThis.fetch,
     });
     assert.equal(provider.isConfigured(), true);
     assert.deepEqual(await provider.generateTeaching(content), teachingResult());
+    const requestBody = requestBodies[0];
     assert.equal(requestBody?.model, INTRO_LAB_MODEL);
     assert.equal(requestBody?.reasoning_effort, 'high');
     const messages = requestBody?.messages as Array<{ role: string; content: string }>;

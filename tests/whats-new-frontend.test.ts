@@ -100,7 +100,7 @@ test('visible post markers expose only the represented active unread posts once'
 });
 
 test('exposure requires an intersecting element in a visible focused tab and cleans up listeners', (t) => {
-  let visibilityState = 'hidden';
+  let visibilityState: DocumentVisibilityState = 'hidden';
   let focused = false;
   let intersection: (entries: Array<{ isIntersecting: boolean; intersectionRatio: number }>) => void = () => {};
   let disconnected = false;
@@ -113,11 +113,21 @@ test('exposure requires an intersecting element in a visible focused tab and cle
     Object.defineProperty(globalThis, name, { configurable: true, writable: true, value: undefined });
     t.after(() => { Reflect.deleteProperty(globalThis, name); });
   }
-  t.mock.property(globalThis, 'document', { ...target, get visibilityState() { return visibilityState; }, hasFocus: () => focused });
-  t.mock.property(globalThis, 'window', target);
-  t.mock.property(globalThis, 'IntersectionObserver', class {
-    constructor(callback: typeof intersection) { intersection = callback; }
+  // Only the members the observer reads exist on this stand-in for Document.
+  t.mock.property(globalThis, 'document', { ...target, get visibilityState() { return visibilityState; }, hasFocus: () => focused } as unknown as Document);
+  // A two-method event target stands in for the whole Window the observer subscribes to.
+  t.mock.property(globalThis, 'window', target as unknown as Window & typeof globalThis);
+  t.mock.property(globalThis, 'IntersectionObserver', class implements IntersectionObserver {
+    readonly root = null;
+    readonly rootMargin = '';
+    readonly scrollMargin = '';
+    readonly thresholds: readonly number[] = [];
+    constructor(callback: IntersectionObserverCallback) {
+      intersection = (entries) => callback(entries as IntersectionObserverEntry[], this);
+    }
     observe() {}
+    unobserve() {}
+    takeRecords() { return []; }
     disconnect() { disconnected = true; }
   });
   let count = 0;

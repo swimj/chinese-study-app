@@ -525,10 +525,9 @@ describe('reflection generation failure isolation', { concurrency: false }, () =
       artifact.result.itemResults.find((item) => item.itemId === 'promotion-item')?.learnerExplanation,
       'Practice a shared cue, then use owner-only cues for the distinction.',
     );
-    assert.equal(
-      artifact.result.itemResults.find((item) => item.itemId === 'promotion-item')?.promotionOutcome,
-      'reconciled',
-    );
+    const promotionItem = artifact.result.itemResults.find((item) => item.itemId === 'promotion-item');
+    assert.ok(promotionItem && 'promotionOutcome' in promotionItem);
+    assert.equal(promotionItem.promotionOutcome, 'reconciled');
     const savedContinuation = sqlite.prepare(`
       SELECT diagnosis_result_json, promotion_bundle_json
       FROM reflection_generation_continuations

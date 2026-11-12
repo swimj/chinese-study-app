@@ -149,6 +149,7 @@ describe('reflection run log presentation', () => {
   test('compatible old deferred evidence is selectable without enabling proposal execution', () => {
     const artifact = deferredProposalArtifact('old-deferred', '目标', 'Old proposal');
     const currentEvidence = explanationArtifact().evidenceBundle;
+    assert.equal(currentEvidence.schemaVersion, 'session_reflection_bundle.v6');
     artifact.evidenceBundle = { ...currentEvidence, items: currentEvidence.items.map((item) => ({ ...item, itemId: 'mistake' })) };
     artifact.bundleSchemaVersion = currentEvidence.schemaVersion;
     const markup = renderToStaticMarkup(createElement(ReflectionsPage, {
@@ -320,6 +321,7 @@ function unreadableArtifact(
   return {
     artifactId,
     sourceSessionId: 'session-1',
+    sourceRunId: null,
     reflectionFlowVersion: 'initial_post_session_reflection.v1',
     generatedAt: '2026-07-29T12:00:00.000Z',
     provider: 'openai',

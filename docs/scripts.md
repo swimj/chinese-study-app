@@ -28,7 +28,7 @@ changes `package-lock.json`.
 | `node --import tsx --test tests/<name>.test.ts` | Run a focused Node test file; use the [testing map](testing.md) to choose coverage |
 | `npm test` | Run the full Node test suite |
 | `npm run build` | Type-check the frontend (`src/`) and run the Vite build; CI runs it |
-| `npm run typecheck:server` | Type-check `server/`, `tests/`, and `scripts/`; not yet clean, so CI does not run it |
+| `npm run typecheck:server` | Type-check `server/`, `tests/`, and `scripts/`; CI requires it to pass |
 
 The development backend uses repo-local `data/app.db` by default. Check the
 effective data directory before starting or resetting it: existing files under

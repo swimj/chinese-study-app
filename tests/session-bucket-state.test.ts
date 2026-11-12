@@ -6,6 +6,7 @@ import type {
   SessionStudyItemBuckets,
   StudySkillId,
 } from '../src/domain/study-actions.ts';
+import { isPureCueSessionReviewItem } from '../src/domain/study-actions.ts';
 import type { ReviewRating, Word } from '../src/types.ts';
 import { hasPureCueReflectionEvidence } from '../src/features/session/session-finalization.ts';
 import { cloneBucketSessionState } from '../src/features/session/session-state-copy.ts';
@@ -39,8 +40,8 @@ describe('bucket session state covering contract', () => {
     let active = getActiveSessionUnit(state);
     assert.equal(active.type, 'study');
     assert.equal(active.bucket, 'learning');
-    assert.equal(active.item.targetWordId, learningWord.id);
-    const firstSkill = onlySampledSkill(active.item.sampledSkillIds);
+    assert.equal(studyItem(active).targetWordId, learningWord.id);
+    const firstSkill = onlySampledSkill(studyItem(active).sampledSkillIds);
 
     state = markActiveSessionUnitStarted(state);
     let result = rateActiveSessionUnit(state, 'good');
@@ -53,8 +54,8 @@ describe('bucket session state covering contract', () => {
     active = getActiveSessionUnit(state);
     assert.equal(active.type, 'study');
     assert.equal(active.bucket, 'learning');
-    assert.equal(active.item.targetWordId, learningWord.id);
-    const secondSkill = onlySampledSkill(active.item.sampledSkillIds);
+    assert.equal(studyItem(active).targetWordId, learningWord.id);
+    const secondSkill = onlySampledSkill(studyItem(active).sampledSkillIds);
     assert.notEqual(secondSkill, firstSkill);
 
     state = markActiveSessionUnitStarted(state);
@@ -104,11 +105,11 @@ describe('bucket session state covering contract', () => {
 
     let active = getActiveSessionUnit(learningRecognitionFirst);
     assert.equal(active.type, 'study');
-    assert.equal(onlySampledSkill(active.item.sampledSkillIds), 'recognition');
+    assert.equal(onlySampledSkill(studyItem(active).sampledSkillIds), 'recognition');
 
     active = getActiveSessionUnit(learningProductionFirst);
     assert.equal(active.type, 'study');
-    assert.equal(onlySampledSkill(active.item.sampledSkillIds), 'production');
+    assert.equal(onlySampledSkill(studyItem(active).sampledSkillIds), 'production');
 
     const unstudiedProductionFirst = completeActiveUnstudiedIntro(createBucketSessionState({
       buckets: {
@@ -137,11 +138,11 @@ describe('bucket session state covering contract', () => {
 
     active = getActiveSessionUnit(unstudiedProductionFirst);
     assert.equal(active.type, 'study');
-    assert.equal(onlySampledSkill(active.item.sampledSkillIds), 'production');
+    assert.equal(onlySampledSkill(studyItem(active).sampledSkillIds), 'production');
 
     active = getActiveSessionUnit(unstudiedRecognitionFirst);
     assert.equal(active.type, 'study');
-    assert.equal(onlySampledSkill(active.item.sampledSkillIds), 'recognition');
+    assert.equal(onlySampledSkill(studyItem(active).sampledSkillIds), 'recognition');
   });
 
   test('learning word success is false when any covered skill was not first-try good', async () => {
@@ -167,7 +168,7 @@ describe('bucket session state covering contract', () => {
 
     let active = getActiveSessionUnit(state);
     assert.equal(active.type, 'study');
-    const firstSkill = onlySampledSkill(active.item.sampledSkillIds);
+    const firstSkill = onlySampledSkill(studyItem(active).sampledSkillIds);
 
     state = markActiveSessionUnitStarted(state);
     let result = rateActiveSessionUnit(state, 'forgot');
@@ -177,7 +178,7 @@ describe('bucket session state covering contract', () => {
     for (let attempts = 0; result.commit.type === 'none' && attempts < 4; attempts += 1) {
       active = getActiveSessionUnit(state);
       assert.equal(active.type, 'study');
-      assert.equal(active.item.targetWordId, learningWord.id);
+      assert.equal(studyItem(active).targetWordId, learningWord.id);
 
       state = markActiveSessionUnitStarted(state);
       result = rateActiveSessionUnit(state, 'good');
@@ -231,7 +232,7 @@ describe('bucket session state covering contract', () => {
       active = getActiveSessionUnit(state);
       assert.equal(active.type, 'study');
       assert.equal(active.bucket, 'unstudied');
-      assert.equal(active.item.targetWordId, unstudiedWord.id);
+      assert.equal(studyItem(active).targetWordId, unstudiedWord.id);
 
       state = markActiveSessionUnitStarted(state);
       finalResult = rateActiveSessionUnit(state, 'good');
@@ -337,14 +338,14 @@ describe('bucket session state covering contract', () => {
 
     const activeBeforeLapse = getActiveSessionUnit(state);
     assert.equal(activeBeforeLapse.type, 'study');
-    assert.equal(activeBeforeLapse.type === 'study' ? activeBeforeLapse.item.targetWordId : null, 'lapsed-review');
+    assert.equal(studyItem(activeBeforeLapse).targetWordId, 'lapsed-review');
 
     state = markActiveSessionUnitStarted(state);
     const result = rateActiveSessionUnit(state, 'forgot');
     const activeAfterLapse = getActiveSessionUnit(result.state);
 
     assert.equal(activeAfterLapse.type, 'study');
-    assert.equal(activeAfterLapse.type === 'study' ? activeAfterLapse.item.targetWordId : null, 'later-review');
+    assert.equal(studyItem(activeAfterLapse).targetWordId, 'later-review');
   });
 
   test('dismissing a lapsed review action clears its reinforcement progress', async () => {
@@ -405,7 +406,7 @@ describe('bucket session state covering contract', () => {
     });
 
     state = markActiveSessionUnitStarted(state);
-    const lapsed = rateActiveSessionUnit(state, 'forgot').state as TestBucketSessionState;
+    const lapsed = rateActiveSessionUnit(state, 'forgot').state;
     assert.equal(lapsed.answeredCount, 1);
     assert.equal(lapsed.reviewProgress[lapsedReview.sessionActionId]?.failureCount, 1);
 
@@ -595,100 +596,9 @@ describe('bucket session state covering contract', () => {
   });
 });
 
-type BucketSessionActiveUnit =
-  | {
-      type: 'study';
-      bucket: 'review' | 'learning' | 'unstudied';
-      item: {
-        sessionActionId: string;
-        targetWordId: string;
-        sampledSkillIds: StudySkillId[];
-      };
-    }
-  | {
-      type: 'unstudied_intro';
-      word: Word;
-    };
-
-type BucketSessionTransitionResult = {
-  state: unknown;
-  commit:
-    | { type: 'none' }
-    | { type: 'commit-learning-word-session'; wordId: string; success: boolean }
-    | { type: 'commit-unstudied-word-session'; wordId: string }
-    | {
-        type: 'commit-contrast-selection-action-session';
-        rating: ReviewRating;
-        event: { outcome: 'correct' | 'incorrect'; response: string | null };
-        promptTargetWordId: string;
-      };
-};
-
-type BucketSessionStateApi = {
-  beginBucketDrainSession: (state: unknown) => unknown;
-  completeActiveUnstudiedIntro: (state: unknown) => BucketSessionTransitionResult;
-  createBucketSessionState: (options: {
-    buckets: SessionStudyItemBuckets;
-    schedulerPolicy?: {
-      bucketWeights: {
-        review: number;
-        learning: number;
-        unstudied: number;
-      };
-    };
-    seed?: number;
-    sessionId: string;
-  }) => unknown;
-  cancelRatedReviewSessionAction: (state: unknown, sessionActionId: string) => {
-    answeredCount: number;
-    reviewProgress: Record<string, { failureCount: number } | undefined>;
-    pureCueReviewProgress: Record<string, { failureCount: number } | undefined>;
-  };
-  dismissActiveBucketSessionUnit: (state: unknown) => { state: { reviewProgress: Record<string, unknown> } };
-  getActiveSessionUnit: (state: unknown) => BucketSessionActiveUnit;
-  getBucketSessionCandidateWordIds: (
-    state: unknown,
-    bucket: 'learning' | 'unstudied',
-  ) => string[];
-  getBucketSessionProgress: (state: unknown) => {
-    learning: Record<string, {
-      coveredSkills: Record<'recognition' | 'production', boolean>;
-    }>;
-    unstudied: Record<string, {
-      introComplete: boolean;
-      recognitionAttempts: number;
-      successStreaks: Record<'recognition' | 'production', number>;
-    }>;
-  };
-  getBucketSessionUnitCounts: (state: unknown) => {
-    review: number;
-    learning: number;
-    unstudied: number;
-  };
-  markActiveSessionUnitStarted: (state: unknown) => unknown;
-  rateActiveContrastSelectionUnit: (input: {
-    state: unknown;
-    selectedWordId: string;
-    rating: ReviewRating;
-    practiceMore: boolean;
-  }) => BucketSessionTransitionResult;
-  rateActiveSessionUnit: (state: unknown, rating: ReviewRating) => BucketSessionTransitionResult;
-  rateActivePureCueProductionUnit: (state: unknown, rating: ReviewRating, response: {
-    response: string | null;
-    outcome: 'accepted' | 'rejected';
-    submittedWordId: string | null;
-  }) => {
-    state: {
-      pureCueReviewProgress: Record<string, { failureCount: number } | undefined>;
-    };
-    commit: { type: string };
-  };
-};
-
-type TestBucketSessionState = {
-  answeredCount: number;
-  reviewProgress: Record<string, { failureCount: number } | undefined>;
-};
+type BucketSessionStateApi = typeof import('../src/lib/session-state.ts');
+type BucketSessionActiveUnit = ReturnType<BucketSessionStateApi['getActiveSessionUnit']>;
+type BucketSessionTransitionResult = ReturnType<BucketSessionStateApi['rateActiveSessionUnit']>;
 
 async function loadBucketSessionStateApi(): Promise<BucketSessionStateApi> {
   const api = await import('../src/lib/session-state.ts') as Record<string, unknown>;
@@ -722,12 +632,18 @@ function onlySampledSkill(sampledSkillIds: StudySkillId[]): Extract<StudySkillId
   return skillId;
 }
 
+function studyItem(unit: BucketSessionActiveUnit): SessionStudyItem {
+  assert.equal(unit.type, 'study');
+  assert.ok(unit.type === 'study' && !isPureCueSessionReviewItem(unit.item));
+  return unit.item;
+}
+
 function describeActiveSessionUnit(unit: BucketSessionActiveUnit): string {
   if (unit.type === 'unstudied_intro') {
     return `unstudied_intro:${unit.word.id}`;
   }
 
-  return `${unit.bucket}:${unit.item.targetWordId}:${unit.item.sampledSkillIds.join(',')}`;
+  return `${unit.bucket}:${studyItem(unit).targetWordId}:${studyItem(unit).sampledSkillIds.join(',')}`;
 }
 
 function createReviewStudyItem(wordId: string): SessionStudyItem {
@@ -742,6 +658,7 @@ function createReviewStudyItem(wordId: string): SessionStudyItem {
     intervalHours: 24,
     word,
     contrastSelection: null,
+    production: null,
   };
 }
 
@@ -775,6 +692,7 @@ function createContrastStudyItem(): SessionStudyItem {
     contentRef: { type: 'contrast_prompt', id: 'contrast-prompt' },
     intervalHours: 24,
     word: scheduledWord,
+    production: null,
     contrastSelection: {
       clusterId: 'contrast-cluster',
       clusterTitle: '靠近 / 临近',

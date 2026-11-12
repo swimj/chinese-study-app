@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { createVocabularyCommandQueue, assessVocabularyResponse, vocabularyCompletionDeadline } from '../src/features/vocabulary-study/useVocabularyStudy.ts';
 import { renderVocabularyTeaching, renderVocabularyReveal, vocabularyTeachingBeats } from '../src/features/vocabulary-study/render-material.tsx';
 import type { VocabularySessionCompletion } from '../src/domain/vocabulary-session-api.ts';
+import type { VocabularySessionJson } from '../src/domain/vocabulary-session.ts';
 
 function deferred<T>() { let resolve!: (value:T)=>void;let reject!:(reason:unknown)=>void;
   const promise=new Promise<T>((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject}; }
@@ -52,7 +53,7 @@ test('completion countdown uses the server interval rather than the browser wall
 });
 
 test('introduction rendering preserves ordered materialized authored text without serializing source JSON',()=>{
-  const material={beats:[{id:'first',parts:[{text:'An introduction',source:{kind:'text'}},{text:'我亲眼看见了。',source:{kind:'example',field:'sentence'}}]},
+  const material:VocabularySessionJson={beats:[{id:'first',parts:[{text:'An introduction',source:{kind:'text'}},{text:'我亲眼看见了。',source:{kind:'example',field:'sentence'}}]},
     {id:'second',parts:[{text:'Use this when you saw it yourself.',source:{kind:'use_note',useId:'private-id'}}]}],sourcePackageId:'hidden-provenance'};
   assert.equal(vocabularyTeachingBeats(material).length,2);
   const first=renderToStaticMarkup(createElement('div',{},renderVocabularyTeaching(material,0)));

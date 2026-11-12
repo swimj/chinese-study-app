@@ -6,6 +6,8 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { after, before, beforeEach, describe, test } from 'node:test';
 import { pathToFileURL } from 'node:url';
+import { isPureCueSessionReviewItem } from '../src/domain/study-actions.ts';
+import type { SessionReviewItem, SessionStudyItem } from '../src/domain/study-actions.ts';
 
 type WordStatus = 'unstudied' | 'learning' | 'review';
 type Direction = 'forward' | 'reverse';
@@ -228,7 +230,7 @@ describe('session composition', { concurrency: false }, () => {
 
     const payload = dbModule.getSessionPayload(studyDayKey);
 
-    assert.deepEqual(payload.buckets.review.map((item) => ({
+    assert.deepEqual(wordItems(payload.buckets.review).map((item) => ({
       sessionActionId: item.sessionActionId,
       actionKind: item.actionKind,
       targetWordId: item.targetWordId,
@@ -280,7 +282,7 @@ describe('session composition', { concurrency: false }, () => {
       active: false,
     });
 
-    const item = dbModule.getSessionPayload(studyDayKey).buckets.review[0];
+    const item = firstWordItem(dbModule.getSessionPayload(studyDayKey).buckets.review);
     assert.deepEqual(item?.contentRef, {
       type: 'production_cue',
       taskId: 'production-task:cue-word:default_production',
@@ -328,10 +330,10 @@ describe('session composition', { concurrency: false }, () => {
       text: 'second shared cue',
     });
 
-    const first = dbModule.getSessionPayload(studyDayKey, { random: () => 0 })
-      .buckets.review[0];
-    const second = dbModule.getSessionPayload(studyDayKey, { random: () => 0.999 })
-      .buckets.review[0];
+    const first = firstWordItem(dbModule.getSessionPayload(studyDayKey, { random: () => 0 })
+      .buckets.review);
+    const second = firstWordItem(dbModule.getSessionPayload(studyDayKey, { random: () => 0.999 })
+      .buckets.review);
 
     assert.equal(first?.production?.cueId, 'shared-cue-a');
     assert.equal(first?.production?.text, 'first shared cue');
@@ -392,7 +394,7 @@ describe('session composition', { concurrency: false }, () => {
       );
       assert.equal(applied.kind, 'applied');
 
-      const item = dbModule.getSessionPayload(studyDayKey).buckets.review.find(
+      const item = wordItems(dbModule.getSessionPayload(studyDayKey).buckets.review).find(
         (candidate) => candidate.targetWordId === 'supplemented-word',
       );
       assert.equal(item?.production?.text, 'to shield; to harbor');
@@ -405,7 +407,7 @@ describe('session composition', { concurrency: false }, () => {
       });
       insertWordSkillState({ wordId: 'supplemented-word', skillId: 'recognition',
         intervalHours: 12, lastStudiedAt: isoHoursAgo(48), nextDueAt: isoHoursAgo(36) });
-      const recognition = dbModule.getSessionPayload(studyDayKey).buckets.review.find(
+      const recognition = wordItems(dbModule.getSessionPayload(studyDayKey).buckets.review).find(
         (candidate) => candidate.targetWordId === 'supplemented-word',
       );
       assert.equal(recognition?.actionKind, 'recognition');
@@ -414,7 +416,7 @@ describe('session composition', { concurrency: false }, () => {
       assert.deepEqual(recognition?.recognitionSupplement, item?.production?.supplement);
       if (cueId) {
         sqlite.prepare('UPDATE production_cue_activation_state SET active = 0 WHERE cue_id = ?').run(cueId);
-        const afterRetirement = dbModule.getSessionPayload(studyDayKey).buckets.review.find(
+        const afterRetirement = wordItems(dbModule.getSessionPayload(studyDayKey).buckets.review).find(
           (candidate) => candidate.targetWordId === 'supplemented-word');
         assert.equal(afterRetirement?.recognitionSupplement, undefined);
         assert.ok(recognition?.recognitionSupplement, 'existing session retains its snapshot');
@@ -554,7 +556,7 @@ describe('session composition', { concurrency: false }, () => {
 
     const payload = dbModule.getSessionPayload(studyDayKey);
 
-    assert.deepEqual(payload.buckets.review.map((item) => ({
+    assert.deepEqual(wordItems(payload.buckets.review).map((item) => ({
       sessionActionId: item.sessionActionId,
       actionKind: item.actionKind,
       targetWordId: item.targetWordId,
@@ -620,7 +622,7 @@ describe('session composition', { concurrency: false }, () => {
     const sampleWithRandomValues = (values: number[]) => {
       let index = 0;
       Math.random = () => values[index++] ?? 0;
-      return dbModule.getSessionPayload(studyDayKey).buckets.review[0];
+      return firstWordItem(dbModule.getSessionPayload(studyDayKey).buckets.review);
     };
 
     try {
@@ -712,7 +714,7 @@ describe('session composition', { concurrency: false }, () => {
     const sampleWithRandomValues = (values: number[]) => {
       let index = 0;
       Math.random = () => values[index++] ?? 0;
-      return dbModule.getSessionPayload(studyDayKey).buckets.review[0];
+      return firstWordItem(dbModule.getSessionPayload(studyDayKey).buckets.review);
     };
 
     try {
@@ -788,7 +790,7 @@ describe('session composition', { concurrency: false }, () => {
       explanation: 'second target explanation',
     });
 
-    const contrastItems = dbModule.getSessionPayload(studyDayKey).buckets.review
+    const contrastItems = wordItems(dbModule.getSessionPayload(studyDayKey).buckets.review)
       .filter((item) => item.actionKind === 'contrast_selection');
 
     assert.deepEqual(contrastItems.map((item) => item.targetWordId), ['contrast-first-word']);
@@ -843,7 +845,7 @@ describe('session composition', { concurrency: false }, () => {
     const sampleWithRandomValues = (values: number[]) => {
       let index = 0;
       Math.random = () => values[index++] ?? 0;
-      return dbModule.getSessionPayload(studyDayKey).buckets.review[0];
+      return firstWordItem(dbModule.getSessionPayload(studyDayKey).buckets.review);
     };
 
     try {
@@ -2001,11 +2003,11 @@ describe('session composition', { concurrency: false }, () => {
     const before = snapshotCount();
     const excluded = dbModule.getSessionPayload(studyDayKey, { random: () => 0.999999 }).buckets;
     assert.equal(excluded.review.length, 1000);
-    assert.equal(excluded.review.some((item) => item.itemType === 'pure_cue_production'), false);
+    assert.equal(excluded.review.some(isPureCueSessionReviewItem), false);
     assert.equal(snapshotCount(), before);
     const included = dbModule.getSessionPayload(studyDayKey, { random: () => 0 }).buckets;
     assert.equal(included.review.length, 1000);
-    assert.equal(included.review[0].itemType, 'pure_cue_production');
+    assert.ok(isPureCueSessionReviewItem(included.review[0]));
     assert.equal(Number(snapshotCount()), Number(before) + 1);
     assert.equal(sqlite.prepare('SELECT last_studied_at FROM learner_pure_cue_state WHERE pure_cue_id = ?').get('cap-pure-cue')?.last_studied_at, null);
 
@@ -2021,7 +2023,7 @@ describe('session composition', { concurrency: false }, () => {
     for (const roll of [0, 0.5, 0.999999]) {
       const review = dbModule.getSessionPayload(studyDayKey, { random: () => roll }).buckets.review;
       assert.equal(review.length, 1000);
-      assert.equal(review.some((item) => item.itemType === 'pure_cue_production'), false);
+      assert.equal(review.some(isPureCueSessionReviewItem), false);
     }
     assert.equal(snapshotCount(), beforeStrongPreparation);
     assert.equal(sqlite.prepare('SELECT last_studied_at FROM learner_pure_cue_state WHERE pure_cue_id = ?')
@@ -2380,6 +2382,17 @@ function addDays(dateKey: string, days: number) {
   const date = new Date(`${dateKey}T00:00:00.000Z`);
   date.setUTCDate(date.getUTCDate() + days);
   return date.toISOString().slice(0, 10);
+}
+
+function wordItems(items: SessionReviewItem[]): SessionStudyItem[] {
+  return items.map((item) => {
+    assert.ok(!isPureCueSessionReviewItem(item), 'expected only word review items');
+    return item;
+  });
+}
+
+function firstWordItem(items: SessionReviewItem[]): SessionStudyItem | undefined {
+  return wordItems(items.slice(0, 1))[0];
 }
 
 function getSessionItemIds(db: DbModule): string[] {

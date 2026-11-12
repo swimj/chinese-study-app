@@ -173,7 +173,7 @@ describe('staged reflection diagnosis contract', () => {
     const syntheticItem = normalizeStagedReflectionDiagnosisResultV2(wire, synthetic).itemResults[0]!;
     if (syntheticItem.kind !== 'ordinary') throw new Error('Expected ordinary result.');
     const syntheticOperation = syntheticItem.proposals[0]!.operation;
-    if (syntheticOperation.kind !== 'repair_production_cue') throw new Error('Expected repair');
+    if (syntheticOperation.kind !== 'repair_production_cue' || syntheticOperation.version !== 2) throw new Error('Expected repair');
     assert.deepEqual(syntheticOperation.sourceAttemptJudgments, []);
 
     for (const extra of [{ cueId: 'forged' }, { acceptedWordIds: ['target', 'response'] }]) {

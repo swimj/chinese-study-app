@@ -545,6 +545,7 @@ describe('reflection quality item tags', { concurrency: false }, () => {
       () => dbModule.stagedContinuationQualityIdentity([{
         stage: 'promotion',
         model: 'gpt-5.6-luna-high',
+        promptVersion: 'reflection-staged-v5.0',
         createdAt: generatedAt,
       }]),
       /diagnosis stage before promotion/,

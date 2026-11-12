@@ -532,9 +532,9 @@ test('default-selection finding is read-only in workspace and review batch and r
 
 test('operator review and workspace preload readable sense labels without establishing usefulness',()=>{
   createVocabularySense({senseId:'display-sense',wordId:'a',description:{label:'written correspondence',notes:['Display metadata only']}},{kind:'operator',id:'editor'});
-  const eventsBefore=sql.prepare('SELECT count(*) n FROM backend_events').get()!.n;
+  const eventsBefore=Number(sql.prepare('SELECT count(*) n FROM backend_events').get()!.n);
   const created=call('post',`${base}/proposals`,{body:proposal()});assert.equal(created.status,200);
-  const id=String(created.body.proposalId),afterCreation=sql.prepare('SELECT count(*) n FROM backend_events').get()!.n;
+  const id=String(created.body.proposalId),afterCreation=Number(sql.prepare('SELECT count(*) n FROM backend_events').get()!.n);
   const batch=listVocabularyProposalReviewBatch('editor',{startProposalId:id});
   assert.deepEqual(batch.items[0]!.senseLabels,[{senseId:'display-sense',wordId:'a',label:'written correspondence'}]);
   const workspace=call('get',`${base}/cases/:id`,{params:{id:caseId}});assert.equal(workspace.status,200);assert.deepEqual(workspace.body.senseLabels,batch.items[0]!.senseLabels);
@@ -679,15 +679,16 @@ test('repertoire default selection route validates both versions and returns an 
   assert.equal(restored.status,200);assert.equal(restoredValue.proposal.operations.length,2);
   assert.deepEqual(restoredValue.coverage.includedSenseIds,['first','second']);
   const queueRoute=`${base}/proposals/:id/word-defaults-reassessment`;
-  const card=call('get',`${base}/case-queue/:id`,{params:{id:job.caseId}}).body;
+  const card=call('get',`${base}/case-queue/:id`,{params:{id:job.caseId}}).body as {version:number};
   const reassessInput={expectedVersion:3,expectedWordVersion:2,expectedCaseVersion:card.version,expectedContentVersion:1,includedSenseIds:['first'],modelChoice:'openai:gpt-6-sol-high'};
   for(const body of [{...reassessInput,modelChoice:'bad'},{...reassessInput,expectedWordVersion:-1},{...reassessInput,expectedCaseVersion:0},{...reassessInput,includedSenseIds:'first'},{...reassessInput,extra:true}])assert.equal(call('post',queueRoute,{params,body}).status,400);
   process.env.APP_OPERATOR_CLERK_USER_IDS='someone-else';
   assert.equal(call('post',queueRoute,{params,body:reassessInput}).status,403);process.env.APP_OPERATOR_CLERK_USER_IDS='editor';
   assert.equal(call('post',queueRoute,{params,body:{...reassessInput,expectedCaseVersion:card.version+1}}).status,409);
   const queued=call('post',queueRoute,{params,body:reassessInput});
-  assert.equal(queued.status,200);assert.equal(queued.body.item.frozen,true);assert.equal(queued.body.item.proposal.version,3);
-  assert.deepEqual(queued.body.coverage.includedSenseIds,['first']);assert.equal(queued.body.coverage.word.version,3);
+  const queuedBody=queued.body as {item:{frozen:boolean;proposal:{version:number}};coverage:{includedSenseIds:string[];word:{version:number}}};
+  assert.equal(queued.status,200);assert.equal(queuedBody.item.frozen,true);assert.equal(queuedBody.item.proposal.version,3);
+  assert.deepEqual(queuedBody.coverage.includedSenseIds,['first']);assert.equal(queuedBody.coverage.word.version,3);
 
 });
 

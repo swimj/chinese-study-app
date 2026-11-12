@@ -6,7 +6,7 @@ import { writeVocabularyDefaultUsefulSenses } from '../server/db/vocabulary-sens
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
-import { beforeEach,afterEach,test } from 'node:test';
+import { beforeEach,afterEach,test,type TestFn } from 'node:test';
 import { runWithLearnerId } from '../server/db/learner-context.ts';
 import { setDb } from '../server/db/connection.ts';
 import { createVocabularyContent,createVocabularySense,establishVocabularySenseCatalog,getVocabularyContentForMaintenance,getVocabularySenseCatalog,getVocabularySenses,mapVocabularyContentSense,updateVocabularyContent,updateVocabularySense } from '../server/db/vocabulary-content.ts';
@@ -21,7 +21,7 @@ import type { ProviderAdapter,ProviderRunRequest } from '../server/llm/types.ts'
 import { effectiveVocabularyReactions, type VocabularyReactionAction } from '../src/domain/vocabulary-session.ts';
 
 let db:DatabaseSync;
-let original:VocabularyContent;
+let original:Extract<VocabularyContent,{kind:'exercise'}>;
 const actor={kind:'service' as const,id:'fixture'};
 const at='2026-10-19T12:00:00.000Z';
 beforeEach(context=>{
@@ -40,8 +40,10 @@ beforeEach(context=>{
   for(const name of ['0062_vocabulary_sense_coverage','0064_vocabulary_default_useful_senses','0039_vocabulary_content','0045_vocabulary_provenance_links','0050_vocabulary_improvement_admission','0051_vocabulary_pure_cue_promotion'])
     db.exec(readFileSync(new URL(`../server/db/migrations/${name}.sql`,import.meta.url),'utf8'));
   db.exec(readFileSync(new URL('../server/db/migrations/0061_vocabulary_sense_mapping_retries.sql',import.meta.url),'utf8'));
-  original=createVocabularyContent({contentId:'original',kind:'exercise',payloadVersion:1,body:{prompt:'请把这张照片____后再打印。',instruction:'Old instruction',reveal:{teachingNote:'Old unrelated teaching'},source:{kind:context.name.startsWith('[bootstrap]')?'dictionary_baseline':'old_source'}},accessScope:'shared',availability:'active',originKind:'human',
+  const created=createVocabularyContent({contentId:'original',kind:'exercise',payloadVersion:1,body:{prompt:'请把这张照片____后再打印。',instruction:'Old instruction',reveal:{teachingNote:'Old unrelated teaching'},source:{kind:context.name.startsWith('[bootstrap]')?'dictionary_baseline':'old_source'}},accessScope:'shared',availability:'active',originKind:'human',
     exerciseType:'word',skill:'production',exerciseRole:'general',assessment:{match:'exact'},words:[{wordId:'word',relation:'target'}],answers:[{wordId:'word',acceptedForms:['放大']}]},actor);
+  if(created.kind!=='exercise')throw new Error('Expected an exercise fixture');
+  original=created;
   if(!context.name.startsWith('[bootstrap] fresh inventory')) {
     seedInventory();
     writeVocabularyDefaultUsefulSenses('word',0,['size','effect'],actor);
@@ -100,9 +102,9 @@ const single={outcome:'single_sense',rationale:'Photo enlargement is the intende
 const repair={summary:'Make the intended direction explicit.',source:{decision:'revise',prompt:'Make this image larger before printing it.'},sharedExercise:null,additionalExercises:[]};
 // Select fixture provenance before creating content; model stubs never mutate
 // a source or its retained revision to force a routing comparison.
-const bootstrapTest:typeof test=(name,fn)=>test(`[bootstrap] ${String(name)}`,fn);
+const bootstrapTest=(name:string,fn:TestFn):Promise<void>=>test(`[bootstrap] ${name}`,fn);
 // Jobs admitted before defaults were established can finish their retained route.
-function retainBootstrapRoute(source=original): void {
+function retainBootstrapRoute(source:VocabularyContent=original): void {
   const catalog=getVocabularySenseCatalog('word');
   const senses=getVocabularySenses('word').filter(sense=>sense.status==='active');
   const input=JSON.stringify({contract:'deterministic-repertoire-bootstrap-v1',sourceContent:source,catalog,senses});
@@ -605,7 +607,8 @@ bootstrapTest('automatic Luna reflection uses the same general authoring brief a
     return new Response(JSON.stringify({id:'response',choices:[{message:{content:JSON.stringify(output)},finish_reason:'stop'}]}),{status:200,headers:{'content-type':'application/json'}});
   })as typeof fetch});
   const source=JSON.parse(reflected.userPrompt).content as Pick<WordContentDocument,'word'|'uses'|'examples'>;
-  await preparation.generate({schemaVersion:1,id:'ordinary-bootstrap',...source},{workflowId:'parity',onInvocation:()=>{}});
+  const document:WordContentDocument={schemaVersion:1,id:'ordinary-bootstrap',...source};
+  await preparation.generate(document,{workflowId:'parity',onInvocation:()=>{}});
   assert.ok(sent);
   assert.equal(sent.messages[0]!.content,reflected.systemPrompt);
   const ordinary=JSON.parse(sent.messages[1]!.content),reflection=JSON.parse(reflected.userPrompt);
@@ -1026,7 +1029,7 @@ for(const scope of ['other_owner','shared','recognition','retired','teaching','f
   createVocabularyContent({...original,contentId:'private-source',accessScope:'private',ownerLearnerId:'learner'},actor);
   const input=job();input.evidence.contentId='private-source';input.evidence.evidence[0]!.snapshot.contentId='private-source';
   createVocabularyContent({...original,contentId:'other',accessScope:scope==='shared'?'shared':'private',ownerLearnerId:scope==='shared'?null:scope==='other_owner'?'another':'learner',
-    availability:scope==='retired'?'retired':'active',exerciseRole:scope==='teaching'?'teaching':'general',skill:scope==='recognition'?'recognition':'production',
+    availability:scope==='retired'?'retired':'active',exerciseRole:scope==='teaching'?'teaching' as const:'general' as const,skill:scope==='recognition'?'recognition':'production',
     body:{prompt:'Current other content.',source:{kind:scope==='fallback'?'dictionary_baseline':'authored_prompt'}}},actor);
   retainBootstrapRoute(getVocabularyContentForMaintenance('private-source')!);
   const trial=provider(()=>repertoire);const result=await trial.provider.run(input);if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');

@@ -7,7 +7,7 @@ import {
   type PureCueContent,
   type TargetedCueContent,
 } from '../src/domain/cues.ts';
-import { resolvePureCueResponse, type PureCue } from '../src/domain/pure-cues.ts';
+import { resolvePureCueResponse, type PureCue, type PureCueServedSnapshot } from '../src/domain/pure-cues.ts';
 import {
   resolveAcceptedProductionResponse,
   resolveSessionProductionResponse,
@@ -31,6 +31,7 @@ test('cue content distinguishes targeted ownership from a pure semantic axis', (
     id: 'cue-pure',
     stimulus: 'They ___ the subject in depth.',
     axisNote: 'Neutral or formal ways to study a subject.',
+    teachingNote: 'Both words describe studying a subject.',
     acceptedWordIds: ['target', 'alternate'],
     active: true,
   };
@@ -46,6 +47,7 @@ test('a pure cue composes shared content with learner study state', () => {
     id: 'cue-pure',
     stimulus: 'They ___ the subject in depth.',
     axisNote: 'Neutral or formal ways to study a subject.',
+    teachingNote: 'Both words describe studying a subject.',
     acceptedWordIds: ['target', 'alternate'],
     active: true,
     intervalHours: 24,
@@ -96,14 +98,16 @@ test('word-owned and pure response resolution share matching without sharing own
     submittedText: '學習',
     result: 'accepted_anchor',
   });
-  assert.deepEqual(resolvePureCueResponse({
+  const pureSnapshot: PureCueServedSnapshot = {
     snapshotId: 'snapshot-pure',
     pureCueId: 'pure-cue',
     servedAt: '2026-09-20T00:00:00.000Z',
     stimulus: 'They ___ the subject in depth.',
     axisNote: 'Neutral or formal ways to study a subject.',
+    teachingNote: 'Both words describe studying a subject.',
     acceptedAnswers: [targetAnswer, alternateAnswer],
-  }, '研習'), {
+  };
+  assert.deepEqual(resolvePureCueResponse(pureSnapshot, '研習'), {
     outcome: 'accepted',
     submittedWordId: 'alternate',
   });

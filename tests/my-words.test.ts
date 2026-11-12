@@ -292,7 +292,8 @@ describe('My words collections', { concurrency: false }, () => {
 
   test('Beyond HSK and mixes containing it are unavailable without scanning a remainder', () => {
     insert('unmapped'); insertDeckWord('explicit', '我', 'wǒ');
-    for (const weights of [{ 'beyond-hsk': 1 }, { 'hsk2-l1': 0.9, 'beyond-hsk': 0.1 }]) {
+    const mixes: Record<string, number>[] = [{ 'beyond-hsk': 1 }, { 'hsk2-l1': 0.9, 'beyond-hsk': 0.1 }];
+    for (const weights of mixes) {
       place(weights);
       assert.deepEqual(db.getMyWords({ view: 'deck' }), { words: [], hasMore: false, total: 0, currentDeck: null });
       assert.equal(db.getMyWords().currentDeck, null);

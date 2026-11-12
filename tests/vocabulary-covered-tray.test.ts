@@ -7,10 +7,10 @@ import type { VocabularySessionHistoryWord } from '../src/features/vocabulary-ui
 
 test('covered tray labels shuffle actions and queued work, excluding merely encountered words', () => {
   const words: VocabularySessionHistoryWord[] = [
-    { word: { id: 'a',hanzi: '鼓舞' },status: 'covered',active: false,canResume: true },
-    { word: { id: 'b',hanzi: '馋' },status: 'covered',active: false,queued: true,canResume: false },
-    { word: { id: 'c',hanzi: '藤椒' },status: 'open',active: true,canResume: true },
-    { word: { id: 'd',hanzi: '泡沫' },status: 'left',active: false,canResume: true },
+    { word: { id: 'a',hanzi: '鼓舞',pinyin: 'gǔ wǔ',meaning: 'to encourage' },status: 'covered',active: false,canResume: true },
+    { word: { id: 'b',hanzi: '馋',pinyin: 'chán',meaning: 'greedy' },status: 'covered',active: false,queued: true,canResume: false },
+    { word: { id: 'c',hanzi: '藤椒',pinyin: 'téng jiāo',meaning: 'rattan pepper' },status: 'open',active: true,canResume: true },
+    { word: { id: 'd',hanzi: '泡沫',pinyin: 'pào mò',meaning: 'foam' },status: 'left',active: false,canResume: true },
   ];
   const html = renderToStaticMarkup(createElement(WordHistoryTray,{ words,busy: false,onResume: () => {} }));
   assert.match(html,/Covered in this session/);

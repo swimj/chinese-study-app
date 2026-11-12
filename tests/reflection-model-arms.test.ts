@@ -100,7 +100,8 @@ describe('reflection comparison-arm registry', () => {
   test('does not pin OpenRouter arms to one upstream host', () => {
     for (const arm of REFLECTION_MODEL_ARMS) {
       if (!arm.choice.startsWith('openrouter:')) continue;
-      assert.equal(arm.config?.additionalRequestBody, undefined);
+      // Only some arm configs declare this field, so read it by key across the union.
+      assert.equal(arm.config ? Reflect.get(arm.config, 'additionalRequestBody') : undefined, undefined);
     }
   });
 });

@@ -52,6 +52,7 @@ function provider(overrides: Partial<IntroductionLabProvider> = {}): Introductio
     generateBootstrap: async () => bootstrapWire(),
     generateTeaching: async () => ({ beats: teachingWire().beats }),
     generatePractice: async () => ({ rehearsals: teachingWire().rehearsals }),
+    generationKey: async () => 'test-generation-key',
     generateReview: async () => { throw new Error('The introduction lab does not generate review cues.'); },
     ...overrides,
   };
