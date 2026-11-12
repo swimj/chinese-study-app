@@ -28,7 +28,10 @@ export function VocabularyHomeOverview(props: {
       settingsOpen={props.settings} settingsSaving={props.saving} guideToSettings={props.guideToSettings}
       onToggleSettings={props.onToggleSettings} helperTitle={preview.error??undefined}
       label={props.busy||pending?'Preparing session…':count===0?'Check again':'Start session'}
-      helper={<>{count===undefined?preview.status==='error'?'Ready count unavailable':'… study items ready':`${count} study items ready`}
+      helper={preview.preview?.timed
+        // The timed paradigm keeps the due ledger off Home; only an empty start needs saying.
+        ?count===0?<>Nothing ready yet{preview.preview.preparationPending?' · preparing introductions':''}</>:preview.status==='error'?'Could not check study material':null
+        :<>{count===undefined?preview.status==='error'?'Ready count unavailable':'… study items ready':`${count} study items ready`}
         {count===0&&preview.preview?.preparationPending?' · preparing introductions':''}</>} />
     {!props.compact&&today?<>
       <div className="vocabulary-home-stats" aria-label="Today’s study"><h2>Today</h2>

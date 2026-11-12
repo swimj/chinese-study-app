@@ -11,6 +11,8 @@ test('a new learner enters Home with session controls and no intake survey', () 
     time: '2026-09-26T00:00:00.000Z',
     mode: 'study',
     studyProfile: 'mandarin',
+    dailyStudyMinutes: 20,
+    timedSessions: false,
     dataDir: '',
     dbPath: '',
     wordStatusCounts: { unstudied: 0, learning: 0, review: 0 },

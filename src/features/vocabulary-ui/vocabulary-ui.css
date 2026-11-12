@@ -181,6 +181,11 @@
 .vocab-completion .vocab-outcome-word { min-width: 0; overflow-wrap: anywhere; }
 .vocab-completion .vocab-outcome-meaning { color: var(--text); }
 .vocab-completion .vocab-summary-facts { margin-top: .5rem; }
+.vocab-summary-note { display: grid; gap: .35rem; margin: .75rem 0 .25rem; max-width: 40rem; }
+.vocab-summary-note label { font-size: .9rem; color: var(--text-secondary); }
+.vocab-summary-note > div { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .65rem; }
+.vocab-summary-note input { flex: 1 1 16rem; min-width: 0; font: inherit; padding: .45rem .6rem; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); }
+.vocab-summary-note [role="status"] { font-size: .8rem; color: var(--text-muted); }
 .vocab-completion .vocab-expired-action { opacity: .35; pointer-events: none; }
 .vocab-completion-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 .vocab-personal-notes { margin-top: .75rem; padding-top: .5rem; border-top: 1px solid var(--border); }

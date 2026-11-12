@@ -298,6 +298,11 @@ fly ssh console --app <app-name> --command \
 
 ## Operator-only access
 
+Timed daily sessions are the default once migration `0071_timed_daily_sessions`
+is applied. To roll new sessions back to classic rules without a restart, run
+`hosted:control` with `--control=timed-sessions --enabled=false`; sessions already
+open keep the paradigm they started under, and skip counts stay stored but unread.
+
 Use operator-only access to run the application for diagnostics while blocking
 other learners. It preserves normal operator application behavior, subject to
 the independent maintenance and provider-work controls. The configured

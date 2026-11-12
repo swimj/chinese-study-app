@@ -68,3 +68,22 @@ and use the versioned migration procedure.
 Justin is new to this direction and welcomes challenge. Raise open points one
 at a time with a recommendation rather than as a long block. Prefer a rough
 policy that records its own discomfort over tuning in advance.
+
+## Settled with Justin, 2026-11-12
+
+- **Switch.** Global default, through the `timed_sessions` service control
+  (migration 0071, on). Turning it off is the rollback; open sessions keep the
+  paradigm they started under.
+- **Day size.** Set once in the session settings panel (about 10, 20 or 30
+  minutes); 20 when never set. The session record notes `chosen` or `default`.
+- **Wrap-up and keep going.** Wrap-up happens without a learner action when the
+  budget is reached. Only then does the summary offer "Study a little more",
+  which grants five more minutes of active time; the trainer still calls the
+  next end. A fresh Start into a spent day runs at least five minutes too.
+- **No manual finish** in timed sessions for now. A graceful early exit returns
+  once the base is solid. A learner-directed mode would be a separate paradigm.
+- **The line.** One text field under the summary actions, labelled "Anything
+  you'd want different?", the same every day; focusing it pauses the return to
+  Home.
+- **Enrollment of unstarted new words.** Admitted words that never start remain
+  hidden Unstudied records and stay eligible later, so admission was not reduced.

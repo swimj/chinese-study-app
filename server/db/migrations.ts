@@ -241,6 +241,9 @@ export const schemaMigrations: readonly SchemaMigration[] = [{
 }, {
   id: 'app_schema:0070_background_teaching_reserve',
   sql: fs.readFileSync(new URL('./migrations/0070_background_teaching_reserve.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0071_timed_daily_sessions',
+  sql: fs.readFileSync(new URL('./migrations/0071_timed_daily_sessions.sql', import.meta.url), 'utf8'),
 }];
 
 function checksum(value: string): string {

@@ -38,6 +38,8 @@ export const durableOwnershipManifest: readonly DurableOwnershipEntry[] = [
   privateEntry('learner_state_effects', 'learner-owned vocabulary evidence or state', 'retain exact new protocol evidence; legacy history remains separate'),
   privateEntry('teaching_completions', 'learner-owned vocabulary evidence or state', 'retain exact new protocol evidence; legacy history remains separate'),
   privateEntry('vocabulary_post_session_dispatches', 'learner-owned vocabulary evidence or state', 'retain exact new protocol evidence; legacy history remains separate'),
+  privateEntry('vocabulary_timed_session_records', 'learner-owned timed session record and optional note', 'create empty; one row per timed session'),
+  privateEntry('learner_timed_skip_counts', 'learner-owned timed selection state', 'create empty; read only by timed sessions'),
   privateEntry('learner_messages', 'learner-owned vocabulary evidence or state', 'retain exact new protocol evidence; legacy history remains separate'),
   operationalEntry('legacy_sense_imports', 'internal vocabulary processing and provenance; no shared access to private source evidence'),
   operationalEntry('vocabulary_reflection_session_evidence', 'internal vocabulary processing and provenance; no shared access to private source evidence'),

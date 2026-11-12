@@ -55,11 +55,12 @@ quota boundary. Older clients omitting it retain UTC calendar-day behavior.
 
 | Method/path | Result or effect |
 | --- | --- |
-| `GET /session-preview` | Prospective ready item count, preparation status, and opaque sampling seed; accepts the browser IANA `timeZone` query parameter and queues bounded missing teaching preparation |
+| `GET /session-preview` | Prospective ready item count, preparation status, `timed` paradigm flag, and opaque sampling seed; accepts the browser IANA `timeZone` query parameter and queues bounded missing teaching preparation |
 | `POST /sessions` | Compose ready work and return its first encounter; accepts the browser IANA `timeZone`; optional `previewSeed` reuses the preview's pure-cue sampling draw |
 | `GET /sessions/:id` | Current owned projection and exact material |
-| `POST /sessions/:id/next` | Select ready material; stable `clientActionId` retries |
-| `POST /sessions/:id/commands` | Response, exercise reaction (v1 command `feedback`), skip, coverage, more, mode, Undo, resume, finish |
+| `POST /sessions/:id/next` | Select ready material; stable `clientActionId` retries; optional `activeDurationMs` drives a timed session's recorded budget wrap-up |
+| `POST /sessions/:id/commands` | Response, exercise reaction (v1 command `feedback`), skip, coverage, more, mode, Undo, resume, finish, timed `studyMore` (409 unless the budget ended a completed session) |
+| `POST /sessions/:id/note` | Timed sessions only: save or clear (`""`) the optional completion line, at most 500 characters; 409 for classic sessions |
 | `POST /sessions/:id/completion` | Freeze `throughSequence` after flush, with optional reported active duration |
 | `GET /sessions/:id/completion` | Current completion and server deadline |
 | `POST /sessions/:id/completion/cancel` | Cancel exact `completionId` before closure |
@@ -360,6 +361,7 @@ Conversion preserves stored content and exact attempt evidence. See
 | --- | --- | --- |
 | PATCH | `/api/learner-settings/character-presentation` | Learner settings |
 | PATCH | `/api/learner-settings/sentence-character-presentation` | Learner settings |
+| PATCH | `/api/learner-settings/daily-study-minutes` | Accept/return `{dailyStudyMinutes:10\|20\|30}`; read by timed sessions; status returns it with `timedSessions`; invalid values return 400 |
 | PATCH | `/api/learner-settings/study-new-words-first` | Accept/return `{studyNewWordsFirst:boolean}`; legacy private learner setting, default false; selects Introductions first when true and Random when false, retaining the saved spacing; also returned in status; invalid values return 400 |
 | PATCH | `/api/learner-settings/study-introduction-order` | Accept/return `{studyIntroductionOrder:"random"\|"first"\|"paced",studyIntroductionSpacing:number}`; atomically saves private order and integer spacing 1–10 (default 3); status returns both fields; existing boolean preferences map to Random/Introductions first; invalid values return 400 |
 

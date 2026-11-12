@@ -41,6 +41,7 @@ describe('hosted operational controls', { concurrency: false }, () => {
       operatorOnly: false,
       providerWorkEnabled: true,
     });
+    assert.equal(dbModule.readHostedServiceControl('timed_sessions').enabled, true);
   });
 
   test('records attributable service-control changes', () => {

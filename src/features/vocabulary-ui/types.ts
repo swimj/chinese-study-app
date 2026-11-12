@@ -41,6 +41,10 @@ export type VocabularyCompletionView = {
   canCancel: boolean;
   canUndo: boolean;
   canReturnHome: boolean;
+  /** Timed sessions only: offered after the day's wrap-up. */
+  canStudyMore?: boolean;
+  /** Timed sessions only: the optional line, the same every day. */
+  note?: { value: string; status: 'idle' | 'saving' | 'saved' | 'failed' };
 };
 export type VocabularySessionViewProps = {
   phase: 'active' | 'finishing' | 'completed';
@@ -89,7 +93,10 @@ export type VocabularySessionViewProps = {
   /** Covered words in this session, most recently used first. Do not truncate older entries. */
   history?: VocabularySessionHistoryWord[];
   wordWork?: { extraPractice: boolean; enoughLabel?: string };
-  progress: { encountered: number; covered: number; remaining: number; elapsedLabel: string };
+  /** Remaining is null in timed sessions, which do not show the size of unserved work. */
+  progress: { encountered: number; covered: number; remaining: number | null; elapsedLabel: string };
+  /** Timed sessions wrap up without a learner action or a wrapping-up banner. */
+  quietWrapUp?: boolean;
   controls: Record<'skip' | 'another' | 'enough' | 'more' | 'undo' | 'finishForNow' | 'finishImmediately' | 'resumeAllDue' | 'changeMode', VocabularyControl>;
   reactionInput: {
     open?: boolean;
@@ -121,6 +128,9 @@ export type VocabularySessionViewProps = {
   onCommentChange: (comment: string) => void;
   onCommentSubmit: () => void;
   onKeepSummaryOpen?: () => void;
+  onStudyMore?: () => void;
+  onNoteChange?: (value: string) => void;
+  onNoteSubmit?: () => void;
   onCancelCompletion: () => void;
   onRetryCompletion: () => void;
   onReturnHome: () => void;

@@ -14,7 +14,9 @@ import { selectVocabularyReviewSkills, type VocabularyReviewSelection, type Voca
 
 export const VOCABULARY_COMPOSITION_POLICY = { maxSessionWords: MAX_SESSION_ITEMS } as const;
 export type VocabularyCompositionSettings = { introductionOrder: StudyIntroductionOrder; introductionSpacing: number };
-export type VocabularyComposition = { newWordIds: string[]; dueWordIds: string[]; reviewSelections: VocabularyReviewSelection[]; settings: VocabularyCompositionSettings; preparationPending: boolean; remainingNewWordQuota: number };
+export type VocabularyComposition = { newWordIds: string[]; dueWordIds: string[]; reviewSelections: VocabularyReviewSelection[]; settings: VocabularyCompositionSettings; preparationPending: boolean; remainingNewWordQuota: number;
+  /** Untruncated due work, before the shared item cap; timed admission reorders it before applying the cap itself. */
+  allLearningWordIds: string[]; allReviewSelections: VocabularyReviewSelection[] };
 function setting(name: string): unknown {
   const row = getDb().prepare('SELECT value_json FROM learner_settings WHERE learner_id=? AND setting_key=?').get(requireLearnerId(), name) as {value_json:string}|undefined;
   return row ? JSON.parse(row.value_json) as unknown : undefined;
@@ -130,5 +132,6 @@ export function composeVocabularyStudy(options:{
   const reviewSelections=reviewCandidates.slice(0,slots.review);
   const selectedDue=[...learningWordIds.slice(0,slots.learning),...reviewSelections.map((entry)=>entry.wordId)];
   const preparationPending=remaining>newIds.length&&(stale||hasPendingWordReserveCandidates());
-  return {newWordIds,dueWordIds:selectedDue,reviewSelections,settings,preparationPending,remainingNewWordQuota:remaining};
+  return {newWordIds,dueWordIds:selectedDue,reviewSelections,settings,preparationPending,remainingNewWordQuota:remaining,
+    allLearningWordIds:learningWordIds,allReviewSelections:reviewCandidates};
 }

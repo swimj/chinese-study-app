@@ -8,7 +8,7 @@ import { createActiveSessionClock, finishActiveSessionClock, getActiveSessionDur
 import { productionWrittenFormAccepted } from '../../domain/vocabulary-session';
 import { startVocabularySession, nextVocabularyStudy, commandVocabularyStudy, stageVocabularyCompletion,
   fetchVocabularyCompletion, cancelVocabularyCompletion, closeVocabularyCompletion, fetchCurrentVocabularyCompletion,
-  fetchVocabularyStudy, dismissVocabularyWord, fetchVocabularyWords, setVocabularyWordMode } from '../../services/api';
+  fetchVocabularyStudy, dismissVocabularyWord, fetchVocabularyWords, setVocabularyWordMode, saveVocabularySessionNote } from '../../services/api';
 
 /** Volatile ordered transport only. Failed work retains its original command identity for Retry. */
 export function createVocabularyCommandQueue(onChange: () => void = () => undefined) {
@@ -75,6 +75,9 @@ export function useVocabularyStudy(options: VocabularyStudyOptions = {}) {
   const [summaryModes, setSummaryModes] = useState<Record<string,VocabularyWordMode>>({});
   const [dismissedWordIds, setDismissedWordIds] = useState<string[]>([]);
   const [keepSummaryOpen, setKeepSummaryOpen] = useState(false);
+  const [note, setNote] = useState('');
+  const [noteStatus, setNoteStatus] = useState<'idle' | 'saving' | 'saved' | 'failed'>('idle');
+  const savedNote = useRef<string | null>(null);
   const keepSummaryOpenRef = useRef(false);
   function keepOpen() { keepSummaryOpenRef.current = true; setKeepSummaryOpen(true); }
   const mounted = useRef(true);
@@ -95,8 +98,13 @@ export function useVocabularyStudy(options: VocabularyStudyOptions = {}) {
     const visibility=typeof document==='undefined'||(document.visibilityState==='visible'&&document.hasFocus())?'visible':'hidden';
     if(studyRef.current?.session.sessionId!==value.session.sessionId) {
       activeClock.current=createActiveSessionClock({nowMs:clockNow,visibilityState:visibility,supportsVisibilityApi:typeof document!=='undefined'});
-      activeClock.current.accumulatedMs=value.session.completion?.metadata?.activeDurationMs??0;
+      // A timed session resumes from the last active time the server accepted.
+      // A cancelled revision's time predates any extension; take the larger live measure.
+      const completed=value.session.completion?.status==='cancelled'?0:value.session.completion?.metadata?.activeDurationMs??0;
+      activeClock.current.accumulatedMs=Math.max(completed,value.timed?.sessionActiveMs??0);
       stagedDuration.current=null;
+      savedNote.current=value.timed?.note??null;
+      if(mounted.current){setNote(value.timed?.note??'');setNoteStatus('idle');}
     }
     if(activeClock.current) {
       if(value.session.projection.phase==='completed')activeClock.current=finishActiveSessionClock(activeClock.current,clockNow);
@@ -111,6 +119,14 @@ export function useVocabularyStudy(options: VocabularyStudyOptions = {}) {
       setComment(''); setReaction(null); setReactionStatus('idle'); responseLock.current = null; recognitionDeparture.current = null;
     }
     receiveCompletion(value.session.completion?.status === 'cancelled' ? null : value.session.completion);
+  }
+  /** Captured before enqueueing so a retried command keeps its original input. */
+  function activeMs(): number | undefined {
+    return activeClock.current ? Math.floor(getActiveSessionDurationMs(activeClock.current, Date.now())) : undefined;
+  }
+  function nextInput(options: { wordId?: string; another?: boolean } = {}) {
+    const activeDurationMs = activeMs();
+    return activeDurationMs === undefined ? options : { ...options, activeDurationMs };
   }
   async function exclusive(work: () => Promise<void>) {
     if (operation.current) return;
@@ -180,8 +196,9 @@ export function useVocabularyStudy(options: VocabularyStudyOptions = {}) {
     setComment(''); setReaction(null); setReactionStatus('idle'); setDismissedWordIds([]);
     setSummaryModes({});
     keepSummaryOpenRef.current = false; setKeepSummaryOpen(false);
+    savedNote.current = null; setNote(''); setNoteStatus('idle');
   }
-  const start = (previewSeed?:string) => exclusive(async () => {
+  async function begin(previewSeed?: string) {
     await queue.current!.flush();
     const pending = await fetchCurrentVocabularyCompletion();
     if (pending?.session.completion) {
@@ -190,7 +207,8 @@ export function useVocabularyStudy(options: VocabularyStudyOptions = {}) {
       if (result.status !== 'closed') throw new Error('Finish saving your previous session first.');
     }
     receive(await startVocabularySession(previewSeed));
-  });
+  }
+  const start = (previewSeed?:string) => exclusive(() => begin(previewSeed));
   async function commitHeldProduction() {
     const pending = pendingCorrectRef.current;
     const encounter = studyRef.current?.currentEncounter;
@@ -206,9 +224,9 @@ export function useVocabularyStudy(options: VocabularyStudyOptions = {}) {
     await queue.current!.flush();
     await commitHeldProduction();
     const current = studyRef.current; if (!current) return;
-    const id = current.session.sessionId;
+    const id = current.session.sessionId; const input = nextInput(options);
     await queue.current!.enqueue(crypto.randomUUID(), async (clientId) => {
-      const result = await nextVocabularyStudy(id, clientId, options); receive(result); return result;
+      const result = await nextVocabularyStudy(id, clientId, input); receive(result); return result;
     });
   }
   const next = (options: { wordId?: string; another?: boolean } = {}) => exclusive(() => advance(options));
@@ -298,8 +316,9 @@ export function useVocabularyStudy(options: VocabularyStudyOptions = {}) {
       const word = studyRef.current?.session.projection.words[wordId];
       if (word?.workStatus === 'wrapped' || word?.workStatus === 'skipped') await enqueue({ type: 'more', wordId });
       const current = studyRef.current; if (current) {
+        const input = nextInput({ wordId });
         await queue.current!.enqueue(crypto.randomUUID(), async (clientId) => {
-          const result = await nextVocabularyStudy(current.session.sessionId, clientId, { wordId }); receive(result); return result;
+          const result = await nextVocabularyStudy(current.session.sessionId, clientId, input); receive(result); return result;
         });
       }
     }
@@ -325,10 +344,33 @@ export function useVocabularyStudy(options: VocabularyStudyOptions = {}) {
     // Wrapping the last open word while finishing completes the session.
     // A rejected next request would block the queue needed to save completion.
     if(current.session.projection.phase==='completed')return;
+    const input=nextInput();
     await queue.current!.enqueue(crypto.randomUUID(),async(clientId)=>{
-      const result=await nextVocabularyStudy(current.session.sessionId,clientId,{});receive(result);return result;
+      const result=await nextVocabularyStudy(current.session.sessionId,clientId,input);receive(result);return result;
     });
   });
+  /**
+   * After the day's wrap-up: extend this session while its completion can still be
+   * cancelled; once closed, a fresh entry into the spent day runs a little while too.
+   */
+  const studyMore = () => exclusive(async () => {
+    if (completionRef.current?.status === 'closed') { reset(); await begin(); return; }
+    await resumeBoundary(async () => {
+      await commitHeldProduction();
+      await enqueue({ type: 'studyMore', activeDurationMs: activeMs() ?? 0 });
+      await advance();
+    });
+  });
+  async function saveNote() {
+    const id = studyRef.current?.session.sessionId; const draft = note.trim();
+    if (!id || !studyRef.current?.timed || draft === (savedNote.current ?? '')) return;
+    setNoteStatus('saving');
+    try {
+      const result = await saveVocabularySessionNote(id, draft);
+      if (studyRef.current?.session.sessionId !== id || !mounted.current) return;
+      savedNote.current = result.note; setNoteStatus('saved');
+    } catch { if (mounted.current) setNoteStatus('failed'); }
+  }
   const changeSummaryMode = (wordId:string,mode:VocabularyWordMode) => exclusive(async()=>{
     if(completionRef.current?.status!=='closed')throw new Error('Mode can be changed after successful session closure.');
     keepOpen();
@@ -409,7 +451,8 @@ export function useVocabularyStudy(options: VocabularyStudyOptions = {}) {
       ? encounter?.snapshot.kind === 'production' && productionWrittenFormAccepted(encounter.snapshot.assessment?.acceptedAnswers ?? [], savedResponse.response)
       : local?.writtenFormAccepted ?? false,
     finishForNow: () => send({ type: 'finishForNow' }), finishImmediately: () => send({ type: 'finishImmediately' }),
-    resume, requeue, returnHome: () => exclusive(returnHome),
+    resume, requeue, returnHome: () => exclusive(returnHome), studyMore,
+    note, noteStatus, setNote: (value: string) => { setNote(value); setNoteStatus('idle'); }, saveNote: () => { void saveNote(); },
     react: (value: 'helpful' | 'not-helpful' | null) => { setReaction(value); if (value) submitReaction(value === 'helpful' ? 'positive' : 'negative'); else submitReaction('withdrawn'); },
     submitComment: () => { if (comment.trim()) submitReaction('comment', comment); },
     dismissWord: (wordId: string) => exclusive(async () => { keepOpen(); await queue.current!.flush(); if (completionRef.current && completionRef.current.status !== 'closed') await close(); await dismissVocabularyWord(wordId); setDismissedWordIds((ids) => [...ids, wordId]); }),

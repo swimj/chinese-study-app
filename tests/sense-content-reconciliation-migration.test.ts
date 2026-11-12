@@ -27,7 +27,7 @@ test('reconciliation migration preserves ordinary jobs, attempts, leases and sch
     }
     const jobs=db.prepare('SELECT * FROM vocabulary_practice_preparation ORDER BY work_id').all().map(row=>({...row}));
     const attempts=db.prepare('SELECT * FROM vocabulary_preparation_attempts ORDER BY attempt_id').all();
-    assert.throws(()=>migrateDatabase(db,[...schemaMigrations,{id:'app_schema:0070_test_failure',sql:'SELECT * FROM missing_table;'}]),/missing_table/);
+    assert.throws(()=>migrateDatabase(db,[...schemaMigrations,{id:'app_schema:9999_test_failure',sql:'SELECT * FROM missing_table;'}]),/missing_table/);
     assert.deepEqual(db.prepare('SELECT * FROM vocabulary_practice_preparation ORDER BY work_id').all().map(row=>({...row})),jobs);
     migrateDatabase(db);assertSchemaCurrent(db);
     assert.deepEqual(db.prepare('SELECT * FROM vocabulary_practice_preparation ORDER BY work_id').all().map(({reconciliation_id,...row})=>{assert.equal(reconciliation_id,null);return row;}),jobs);

@@ -296,6 +296,10 @@ type BackendStatus = {
   studyNewWordsFirst: boolean;
   studyIntroductionOrder: StudyIntroductionOrder;
   studyIntroductionSpacing: number;
+  /** The learner's rough sense of how much a day holds; read by timed sessions. */
+  dailyStudyMinutes: import('../domain/timed-session').DailyStudyMinutes;
+  /** New sessions use the timed daily paradigm. */
+  timedSessions: boolean;
   debriefInterests: string;
   learningCoverageDate: string;
   /** True when deck-based diet admission is active (Mandarin profile with a manifest). */
@@ -634,6 +638,16 @@ export async function updateCharacterPresentation(
     throw new Error(await readApiErrorMessage(response, 'Failed to update character presentation'));
   }
 
+  return response.json();
+}
+
+export async function updateDailyStudyMinutes(dailyStudyMinutes: import('../domain/timed-session').DailyStudyMinutes): Promise<{ dailyStudyMinutes: import('../domain/timed-session').DailyStudyMinutes }> {
+  const response = await apiFetch(`${API_BASE}/api/learner-settings/daily-study-minutes`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ dailyStudyMinutes }),
+  });
+  if (!response.ok) throw new Error(await readApiErrorMessage(response, 'Failed to update daily study time'));
   return response.json();
 }
 
@@ -1568,7 +1582,7 @@ async function vocabularyRequest<T>(path: string, body?: unknown): Promise<T> {
 export const fetchVocabularySessionPreview = () => vocabularyRequest<import('../domain/vocabulary-study-api').VocabularySessionPreview>(`/session-preview?timeZone=${encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC')}`);
 export const startVocabularySession = (previewSeed?:string) => vocabularyRequest<import('../domain/vocabulary-study-api').VocabularyStudy>('/sessions', {timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC', ...(previewSeed ? {previewSeed} : {})});
 export const fetchVocabularyStudy = (id: string) => vocabularyRequest<import('../domain/vocabulary-study-api').VocabularyStudy>(`/sessions/${encodeURIComponent(id)}`);
-export const nextVocabularyStudy = (id: string, clientActionId: string, options: {wordId?: string; another?: boolean} = {}) =>
+export const nextVocabularyStudy = (id: string, clientActionId: string, options: {wordId?: string; another?: boolean; activeDurationMs?: number} = {}) =>
   vocabularyRequest<import('../domain/vocabulary-study-api').VocabularyStudy>(`/sessions/${encodeURIComponent(id)}/next`, {clientActionId,...options});
 export const commandVocabularyStudy = (id: string, clientActionId: string, command: import('../domain/vocabulary-study-api').VocabularyStudyCommand) =>
   vocabularyRequest<import('../domain/vocabulary-study-api').VocabularyStudy>(`/sessions/${encodeURIComponent(id)}/commands`, {clientActionId,command});
@@ -1577,6 +1591,7 @@ export const fetchVocabularyCompletion = (id: string) => vocabularyRequest<impor
 export const cancelVocabularyCompletion = (id: string, completionId: string) => vocabularyRequest<import('../domain/vocabulary-session-api').VocabularySessionCompletion>(`/sessions/${encodeURIComponent(id)}/completion/cancel`, {completionId});
 export const closeVocabularyCompletion = (id: string, completionId: string) => vocabularyRequest<import('../domain/vocabulary-session-api').VocabularySessionCompletion>(`/sessions/${encodeURIComponent(id)}/completion/close`, {completionId});
 export const fetchCurrentVocabularyCompletion = () => vocabularyRequest<import('../domain/vocabulary-study-api').VocabularyStudy | null>('/completion/current');
+export const saveVocabularySessionNote = (id: string, note: string) => vocabularyRequest<{note: string | null}>(`/sessions/${encodeURIComponent(id)}/note`, {note});
 export const dismissVocabularyWord = (id: string) => vocabularyRequest<unknown>(`/words/${encodeURIComponent(id)}/dismiss`, {});
 export type VocabularyWordRow = import('../domain/vocabulary-study-api').VocabularyStudyWord & {mode: import('../domain/vocabulary-session').VocabularyWordMode; inStash: number; stateVersion: number; nextEligibleAt: string | null; refreshUntil: string | null};
 export const fetchVocabularyWords = () => vocabularyRequest<{words:VocabularyWordRow[]}>('/words');

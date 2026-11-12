@@ -13,6 +13,7 @@ import { SessionWordOutcomeConflictError } from './db/session-word-outcomes.ts';
 import { createSessionCompletionWorker } from './session-completion/worker.ts';
 import { stageSessionCompletion, undoSessionCompletion, closeSessionCompletion, getSessionCompletion, getCurrentSessionCompletion, SessionCompletionInputError, SessionCompletionConflictError, SessionCompletionNotFoundError } from './db/session-completion.ts';
 import { isStudyIntroductionOrder, isStudyIntroductionSpacing } from '../src/domain/introduction-order.ts';
+import { getDailyStudyMinutes, setDailyStudyMinutes, vocabularyTimedSessionsEnabled, VocabularyTimedSessionInputError } from './db/vocabulary-timed-sessions.ts';
 import { registerContentImprovementRoutes } from './content-improvement-routes.ts';
 import { listWhatsNewPosts, saveWhatsNewPost, WhatsNewConflictError } from './db/whats-new.ts';
 import { WhatsNewInputError, parseWhatsNewWriteRequest } from '../src/domain/whats-new.ts';
@@ -739,8 +740,22 @@ export function createApp(options: CreateAppOptions = {}) {
       studyNewWordsFirst: getStudyNewWordsFirst(),
       studyIntroductionOrder: getStudyIntroductionOrder(),
       studyIntroductionSpacing: getStudyIntroductionSpacing(),
+      dailyStudyMinutes: getDailyStudyMinutes().minutes,
+      timedSessions: vocabularyTimedSessionsEnabled(),
       debriefInterests: getDebriefInterests(),
     });
+  });
+
+  app.patch('/api/learner-settings/daily-study-minutes', (req, res) => {
+    try {
+      res.json(setDailyStudyMinutes(req.body?.dailyStudyMinutes));
+    } catch (error) {
+      if (error instanceof VocabularyTimedSessionInputError) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
+      res.status(500).json({ error: 'Failed to update daily study time' });
+    }
   });
 
   app.patch('/api/learning-policy/daily-new-word-limit', (req, res) => {

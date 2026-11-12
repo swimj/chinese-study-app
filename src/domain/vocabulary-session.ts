@@ -1,5 +1,6 @@
 import type { VocabularySessionPayload } from './vocabulary-session-payload';
 import type { BootstrapRevealSnapshot } from './word-content/reveal';
+import type { VocabularyTimedSessionContext } from './timed-session';
 import type { WordContentDocument } from './word-content/types';
 import { normalizeProductionAnswerForProfile } from '../study-profile';
 
@@ -69,6 +70,8 @@ export type VocabularySessionInitialContext = {
   /** Frozen review order interleaves independent cues with selected word objectives. */
   reviewOrder?: readonly { kind: 'word' | 'pure_cue'; id: string }[];
   composition?: { introductionOrder: 'random' | 'first' | 'paced'; introductionSpacing: number };
+  /** Present when Start chose the timed daily paradigm; absent sessions keep the classic rules. */
+  timed?: VocabularyTimedSessionContext;
 };
 
 /** Snapshots contain the served material, never a mutable content lookup. */
@@ -117,8 +120,10 @@ export type VocabularySessionActionPayload =
   | { kind: 'exercise_skip'; payload: { encounterId: string } }
   | { kind: 'exercise_exclude'; payload: { encounterId: string } }
   | { kind: 'mode_change'; payload: { wordId: string; mode: VocabularyWordMode } }
-  | { kind: 'resume'; payload: Record<string, never> }
-  | { kind: 'finish_for_now'; payload: Record<string, never> }
+  /** A timed extension records the day active time at which the session next wraps up. */
+  | { kind: 'resume'; payload: { untilDayActiveMs?: number } }
+  /** A timed budget wrap-up is recorded, never recomputed from client time during replay. */
+  | { kind: 'finish_for_now'; payload: { source?: 'budget' } }
   | { kind: 'finish_immediately'; payload: Record<string, never> }
   | { kind: 'undo'; payload: { undoesActionId: string } };
 export type VocabularySessionAction = VocabularySessionActionPayload & {
@@ -197,6 +202,16 @@ const UNDOABLE_KINDS = new Set<VocabularySessionAction['kind']>([
   'response', 'teaching_complete', 'word_wrap', 'word_more', 'word_skip', 'exercise_skip', 'exercise_exclude', 'mode_change',
   'finish_for_now', 'finish_immediately', 'resume',
 ]);
+/**
+ * Timed wrap-ups and extensions are the trainer's transitions, recorded like
+ * presentations: Undo passes over them to the learner's last action.
+ */
+function isUndoable(action: VocabularySessionAction): boolean {
+  if (!UNDOABLE_KINDS.has(action.kind)) return false;
+  if (action.kind === 'finish_for_now' && action.payload.source === 'budget') return false;
+  if (action.kind === 'resume' && action.payload.untilDayActiveMs !== undefined) return false;
+  return true;
+}
 function invariant(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(`Vocabulary session invariant violated: ${message}`);
 }
@@ -248,7 +263,7 @@ export function latestVocabularyUndoableActionId(actions: readonly VocabularySes
     if (action.kind === 'undo') {
       invariant(action.payload.undoesActionId === latest, 'Undo must reference the latest undoable transition');
       latest = null;
-    } else if (UNDOABLE_KINDS.has(action.kind)) latest = action.actionId;
+    } else if (isUndoable(action)) latest = action.actionId;
   }
   return latest;
 }
@@ -283,7 +298,7 @@ export function projectVocabularySession(
       invariant(latestUndoable !== null && action.payload.undoesActionId === latestUndoable, 'Undo must reference the latest undoable transition');
       for (const id of undoTargets(prefix.slice(0, index), latestUndoable)) undone.add(id);
       latestUndoable = null;
-    } else if (UNDOABLE_KINDS.has(action.kind)) latestUndoable = action.actionId;
+    } else if (isUndoable(action)) latestUndoable = action.actionId;
   }
 
   // Validate each action in the state in which it was originally accepted, then
@@ -397,7 +412,7 @@ export function advanceVocabularySession(
     } else if (action.kind === 'feedback') {
       evidence.get(action.payload.encounterId)!.feedback.push(action);
     }
-    if (UNDOABLE_KINDS.has(action.kind)) result.latestUndoableActionId = action.actionId;
+    if (isUndoable(action)) result.latestUndoableActionId = action.actionId;
     settleFinishedWork(result);
   }
   result.throughSequence = sequence;

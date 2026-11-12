@@ -29,7 +29,7 @@ function fixture(context: VocabularySessionInitialContext) {
     const currentEncounter = projection.encounters.filter((entry) => !entry.presentationUndone).at(-1) ?? null;
     return { session: { sessionId: context.sessionId, status: 'active', context, actions, projection, completion: null },
       words: [], currentEncounter, currentWordId: currentEncounter?.wordId ?? null, notice: null,
-      controls: { canNext: true, canSkip: true, canEnough: true, canMore: true, canUndo: true, canFinishForNow: true, canFinishImmediately: false, canChangeMode: true } };
+      controls: { canNext: true, canSkip: true, canEnough: true, canMore: true, canUndo: true, canFinishForNow: true, canFinishImmediately: false, canChangeMode: true }, timed: null };
   };
   return { append, present, respond, view };
 }

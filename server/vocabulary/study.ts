@@ -15,7 +15,10 @@ import { getPendingVocabularySkills, isVocabularyWordReadyToCover, isVocabularyT
 import type { VocabularyPersistedSession } from '../../src/domain/vocabulary-session-api.ts';
 import { getDb } from '../db/connection.ts';
 import { allocateSessionBucketSlots, DEFAULT_SESSION_BUCKET_WEIGHTS } from '../../src/domain/session-limits.ts';
-import { composeVocabularyStudy, type VocabularyComposition } from './composition.ts';
+import { composeVocabularyStudy, localNewWordDay, type VocabularyComposition } from './composition.ts';
+import { createTimedSessionRecord, getDailyStudyMinutes, markTimedGateHeld, readTimedSessionRecord, readTimedSkipDays, recordTimedActiveMs,
+  saveTimedSessionNote, timedBudgetWrapped, timedDayActiveMs, timedTargetFacts, timedWrapThreshold, vocabularyTimedSessionsEnabled } from '../db/vocabulary-timed-sessions.ts';
+import { PRESSING_SKIP_DAYS, TIMED_SESSION_EXTENSION_MS, timedTargetKey, type VocabularyTimedSessionContext } from '../../src/domain/timed-session.ts';
 import { planVocabularyPureCues } from './pure-cue-serving.ts';
 import { hasExplicitlyEmptyProductionDefaults, isVocabularyProductionProxied } from './production-coverage.ts';
 import { isVocabularyDefinitionFallback } from '../../src/domain/vocabulary-production-coverage.ts';
@@ -205,13 +208,19 @@ function current(session:VocabularyPersistedSession) {return session.projection.
 export function getVocabularyStudy(sessionId:string):VocabularyStudy {
   const session=getVocabularySession(sessionId);const encounter=current(session);const wordId=encounter?.wordId??null;
   const word=wordId?session.projection.words[wordId]:null;const active=session.status==='active'&&session.projection.phase!=='completed';
-  const {payload,...publicContext}=session.context;
+  // Timed facts stay server-side; the client receives only the learner-facing state below.
+  const {payload,timed:timedContext,...publicContext}=session.context;
+  const timedRecord=timedContext?readTimedSessionRecord(sessionId):null;
+  const budgetWrapped=timedContext?timedBudgetWrapped(session.actions,session.projection):false;
   const liveNotes=wordId?getDb().prepare('SELECT personal_notes FROM learner_word_state WHERE learner_id=? AND word_id=?').get(requireLearnerId(),wordId) as {personal_notes:string}|undefined:undefined;
   return {session:{...session,context:publicContext},words:payload?session.context.words.map(word=>({...payload.words[word.wordId].lexical,...(word.wordId===wordId?{personalNotes:liveNotes?.personal_notes??''}:{})})):session.context.words.map(word=>lexical(word.wordId)),currentEncounter:encounter,currentWordId:wordId,
     controls:{canNext:active,canSkip:active&&encounter!==null,canEnough:active&&word?.workStatus==='open'&&word.mode!=='unstudied',
       canMore:active&&word!==null&&!word.teachingDeferred&&(word.workStatus==='wrapped'||word.workStatus==='skipped'),canUndo:active&&session.projection.latestUndoableActionId!==null,
-      canFinishForNow:active&&session.projection.phase==='active',canFinishImmediately:active&&session.projection.phase==='finishing',canChangeMode:false},
-    notice:word?.teachingDeferred?'This word is now Unstudied. Fresh teaching will start in your next session.':session.projection.phase==='finishing'?'Finish the words already started, or finish immediately.':null};
+      // Timed days end at the trainer's natural break; a graceful early exit returns later.
+      canFinishForNow:active&&!timedContext&&session.projection.phase==='active',canFinishImmediately:active&&!timedContext&&session.projection.phase==='finishing',canChangeMode:false},
+    notice:word?.teachingDeferred?'This word is now Unstudied. Fresh teaching will start in your next session.':session.projection.phase==='finishing'&&!timedContext?'Finish the words already started, or finish immediately.':null,
+    timed:timedRecord?{budgetWrapped,canStudyMore:budgetWrapped&&session.projection.phase==='completed'&&session.status!=='closed',
+      sessionActiveMs:timedRecord.lastActiveMs,note:timedRecord.note}:null};
 }
 function composeCurrentStudy(resolved:Map<string,ResolvedVocabularyTeaching>, timeZone?:string):VocabularyComposition {
   const contentUsable = (wordId:string,skill:'recognition'|'production'|'contextual_selection'):boolean => {
@@ -260,18 +269,40 @@ export function previewVocabularyStudy(options:{previewSeed?:string;timeZone?:st
   const planned=planVocabularyStudy(composition,previewSeed,false);
 
   return {previewSeed,itemCount:planned.words.length+planned.reviewOrder.filter((entry)=>entry.kind==='pure_cue').length,
-    preparationPending:composition.preparationPending||hasPendingReconciliation()};
+    preparationPending:composition.preparationPending||hasPendingReconciliation(),timed:vocabularyTimedSessionsEnabled()};
 }
 function hasPendingReconciliation():boolean {
   return (getDb().prepare(`SELECT r.word_id FROM sense_content_reconciliations r
     JOIN learner_words w ON w.word_id=r.word_id WHERE r.status='applied' AND w.learner_id=? AND w.dismissed_at IS NULL`).all(requireLearnerId()) as {word_id:string}[]).some(row=>isSenseContentReconciliationPending(row.word_id));
 }
+/**
+ * Timed admission: pressing held items move ahead of ordinary due work before the
+ * shared cap applies, so the cap cannot hide them. Due rules themselves are unchanged.
+ */
+function timedComposition(composition:VocabularyComposition,skipDays:ReadonlyMap<string,number>):VocabularyComposition {
+  const pressing=(wordId:string)=>(skipDays.get(timedTargetKey('word',wordId))??0)>=PRESSING_SKIP_DAYS;
+  const review=[...composition.allReviewSelections.filter(entry=>pressing(entry.wordId)),...composition.allReviewSelections.filter(entry=>!pressing(entry.wordId))];
+  return {...composition,reviewSelections:review,dueWordIds:[...composition.allLearningWordIds,...review.map(entry=>entry.wordId)]};
+}
+function timedContext(planned:ReturnType<typeof planVocabularyStudy>,skipDays:ReadonlyMap<string,number>,now:string,timeZone?:string):VocabularyTimedSessionContext {
+  const dayKey=timeZone?localNewWordDay(now,timeZone):now.slice(0,10);
+  const {minutes,source}=getDailyStudyMinutes();const budgetMs=minutes*60_000;const dayActiveMsAtStart=timedDayActiveMs(dayKey);
+  const held=[...planned.words.filter(word=>word.mode==='practice'||word.mode==='maintain').map(word=>timedTargetKey('word',word.wordId)),
+    ...planned.reviewOrder.filter(entry=>entry.kind==='pure_cue').map(entry=>timedTargetKey('pure_cue',entry.id))];
+  return {version:1,dayKey,budgetMs,budgetSource:source,dayActiveMsAtStart,
+    // Every entry runs at least a little while, including a fresh entry into a spent day.
+    untilDayActiveMs:Math.max(budgetMs,dayActiveMsAtStart+TIMED_SESSION_EXTENSION_MS),
+    pressingKeys:held.filter(key=>(skipDays.get(key)??0)>=PRESSING_SKIP_DAYS),
+    facts:timedTargetFacts([...planned.words.map(word=>({kind:'word' as const,id:word.wordId,mode:word.mode,...(word.selectedSkill?{selectedSkill:word.selectedSkill}:{})})),
+      ...planned.reviewOrder.filter(entry=>entry.kind==='pure_cue').map(entry=>({kind:'pure_cue' as const,id:entry.id}))])};
+}
 export function startVocabularyStudy(options:{previewSeed?:string;timeZone?:string}={}):VocabularyStudy {
   const resolved=new Map<string,ResolvedVocabularyTeaching>();
   const composition=composeCurrentStudy(resolved, options.timeZone);
   return atomic(()=>{
-    const sessionId=randomUUID();
-    const planned=planVocabularyStudy(composition,options.previewSeed??sessionId,true);
+    const sessionId=randomUUID();const now=new Date().toISOString();
+    const timed=vocabularyTimedSessionsEnabled();const skipDays=timed?readTimedSkipDays():new Map<string,number>();
+    const planned=planVocabularyStudy(timed?timedComposition(composition,skipDays):composition,options.previewSeed??sessionId,true);
     if(planned.words.length===0&&planned.reviewOrder.length===0)throw new VocabularySessionInputError(hasPendingReconciliation()
       ?'Replacement study content is being prepared. Try again shortly; other ready work can be studied when available.'
       :composition.preparationPending
@@ -285,9 +316,11 @@ export function startVocabularyStudy(options:{previewSeed?:string;timeZone?:stri
       word.teachingRequirements=ready.requirements;
       retainedTeaching.set(word.wordId,ready);
     }
-    const context:VocabularySessionInitialContext={sessionId,words:planned.words,composition:composition.settings,reviewOrder:planned.reviewOrder};
+    const context:VocabularySessionInitialContext={sessionId,words:planned.words,composition:composition.settings,reviewOrder:planned.reviewOrder,
+      ...(timed?{timed:timedContext(planned,skipDays,now,options.timeZone)}:{})};
     context.payload=composeVocabularySessionPayload(context,retainedTeaching);
-    const created=createVocabularySession(context);
+    const created=createVocabularySession(context,now);
+    if(context.timed)createTimedSessionRecord(created.sessionId,context.timed,now);
     return nextVocabularyExercise(created.sessionId,randomUUID());
   });
 }
@@ -297,7 +330,7 @@ function sampleIndex(session:VocabularyPersistedSession,projection:VocabularySes
 }
 /** The old bucket mix applies to the new lifecycle names; the action log supplies queue state. */
 type StudyTarget={kind:'word'|'pure_cue';id:string};
-function selectNextWord(session:VocabularyPersistedSession,projection:VocabularySessionProjection,unavailable:ReadonlySet<string>):StudyTarget|undefined {
+function selectNextWord(session:VocabularyPersistedSession,projection:VocabularySessionProjection,unavailable:ReadonlySet<string>,onGateHeld:()=>void=()=>{}):StudyTarget|undefined {
   const encounters=projection.encounters.filter((entry)=>!entry.presentationUndone);
   const available=Object.values(projection.words).filter((word)=>!unavailable.has(word.wordId)&&!word.teachingDeferred
     &&(word.workStatus==='open'||(projection.phase==='active'&&!word.admitted)));
@@ -309,8 +342,20 @@ function selectNextWord(session:VocabularyPersistedSession,projection:Vocabulary
     return projection.phase==='active'||seen.length>0;
   });
   if(!available.length&&!cues.length)return undefined;
-  const introductions=available.filter((word)=>word.mode==='unstudied'&&!word.teachingIntroductionPresented);
-  const policy=session.context.composition??{introductionOrder:'random',introductionSpacing:3};
+  const timed=session.context.timed;
+  // Runway (Solidify, or teaching already begun) is pressing, as is a held item passed over on enough days.
+  const pressing=(target:StudyTarget)=>{
+    if(!timed)return false;
+    if(target.kind==='word'){const word=projection.words[target.id];if(word.mode==='solidify'||(word.mode==='unstudied'&&word.admitted))return true;}
+    return timed.pressingKeys.includes(timedTargetKey(target.kind,target.id));
+  };
+  // While pressing work is due, a not-yet-started new word does not begin.
+  const gated=timed!==undefined&&[...available.map((word)=>({kind:'word' as const,id:word.wordId})),...cues.map((cue)=>({kind:'pure_cue' as const,id:cue.contentId}))].some(pressing);
+  const shut=(word:VocabularySessionProjection['words'][string])=>gated&&word.mode==='unstudied'&&!word.admitted;
+  if(gated&&available.some(shut)){onGateHeld();}
+  const introductions=available.filter((word)=>word.mode==='unstudied'&&!word.teachingIntroductionPresented&&!shut(word));
+  // The system owns where new words go in the timed paradigm.
+  const policy=timed?{introductionOrder:'random' as const,introductionSpacing:3}:session.context.composition??{introductionOrder:'random',introductionSpacing:3};
   if(introductions.length&&policy.introductionOrder!=='random') {
     const lastIntro=encounters.findLastIndex((entry)=>entry.snapshot.kind==='introduction'&&entry.snapshot.role==='teaching');
     const spacing=encounters.slice(lastIntro+1).filter((entry)=>entry.snapshot.kind!=='introduction').length;
@@ -318,7 +363,8 @@ function selectNextWord(session:VocabularyPersistedSession,projection:Vocabulary
       return {kind:'word',id:introductions[sampleIndex(session,projection,introductions.length,'intro')].wordId};
   }
   const lastPosition=(target:StudyTarget)=>encounters.findLastIndex((entry)=>target.kind==='word'?entry.wordId===target.id:entry.snapshot.schedulingScope==='pure_cue'&&entry.snapshot.contentId===target.id);
-  const targets:StudyTarget[]=[...available.map((word)=>({kind:'word' as const,id:word.wordId})),...cues.map((cue)=>({kind:'pure_cue' as const,id:cue.contentId}))];
+  const targets:StudyTarget[]=[...available.filter((word)=>!shut(word)).map((word)=>({kind:'word' as const,id:word.wordId})),...cues.map((cue)=>({kind:'pure_cue' as const,id:cue.contentId}))];
+  if(!targets.length)throw new Error('Pressing work vanished while the new-word gate was shut');
   const rested=targets.filter((target)=>lastPosition(target)<0||encounters.length-1-lastPosition(target)>=VOCABULARY_SESSION_POLICY.interveningExercisesBeforeWordReturn);
   const pool=rested.length?rested:targets;
   const bucket=(target:StudyTarget)=>target.kind==='pure_cue'?'review':projection.words[target.id].mode==='unstudied'?'unstudied':projection.words[target.id].mode==='solidify'?'learning':'review';
@@ -329,7 +375,7 @@ function selectNextWord(session:VocabularyPersistedSession,projection:Vocabulary
   const chosen=candidates.find((entry)=>(draw-=DEFAULT_SESSION_BUCKET_WEIGHTS[entry.name])<0)!;
   if(chosen.name==='review') {
     const order=(target:StudyTarget)=>session.context.reviewOrder?.findIndex((entry)=>entry.kind===target.kind&&entry.id===target.id)??targets.indexOf(target);
-    return [...chosen.targets].sort((a,b)=>lastPosition(a)-lastPosition(b)||order(a)-order(b))[0];
+    return [...chosen.targets].sort((a,b)=>Number(pressing(b))-Number(pressing(a))||lastPosition(a)-lastPosition(b)||order(a)-order(b))[0];
   }
   return chosen.targets[sampleIndex(session,projection,chosen.targets.length,'word')];
 }
@@ -343,7 +389,7 @@ function unresolvedMisses(projection:VocabularySessionProjection,wordId:string):
   });
 }
 /** Serving always reads an authorized immutable content version, never a caller-authored snapshot. */
-export function nextVocabularyExercise(sessionId:string,clientActionId:string,options:{wordId?:string;another?:boolean}={}):VocabularyStudy {
+export function nextVocabularyExercise(sessionId:string,clientActionId:string,options:{wordId?:string;another?:boolean;activeDurationMs?:number}={}):VocabularyStudy {
   return atomic(()=>{
     const session=getVocabularySession(sessionId);const input=inputJson({type:'next',...options});
     if(commandRetry(session,clientActionId,input))return getVocabularyStudy(sessionId);
@@ -360,11 +406,21 @@ export function nextVocabularyExercise(sessionId:string,clientActionId:string,op
       return {...getVocabularyStudy(sessionId),notice};
     };
     let projection=builder.projection();
+    const timed=session.context.timed;
+    if(timed) {
+      const sessionActiveMs=options.activeDurationMs!==undefined?recordTimedActiveMs(sessionId,options.activeDurationMs):readTimedSessionRecord(sessionId).lastActiveMs;
+      // The wrap-up depends on client time, so it is recorded rather than recomputed during replay.
+      if(projection.phase==='active'&&timed.dayActiveMsAtStart+sessionActiveMs>=timedWrapThreshold(timed,[...session.actions,...builder.additions],projection)) {
+        builder.push({kind:'finish_for_now',payload:{source:'budget'}});projection=builder.projection();
+      }
+    }
+    let gateHeld=false;
     let requestedWordId=options.another?undefined:options.wordId;
     if(options.wordId&&!projection.words[options.wordId])throw new VocabularySessionInputError('Word is outside this session');
     const unavailableWords=new Set<string>();
     for (;;) {
-      const target:StudyTarget|undefined=requestedWordId?{kind:'word',id:requestedWordId}:selectNextWord(session,projection,unavailableWords);
+      const target:StudyTarget|undefined=requestedWordId?{kind:'word',id:requestedWordId}:selectNextWord(session,projection,unavailableWords,()=>{gateHeld=true;});
+      if(gateHeld)markTimedGateHeld(sessionId);
       const wordId=target?.kind==='word'?target.id:undefined;
       requestedWordId=undefined;
       if(wordId) {
@@ -480,9 +536,23 @@ export function commandVocabularyStudy(sessionId:string,clientActionId:string,co
         builder.push({kind:'undo',payload:{undoesActionId:latest}});break;
       }
       case 'resume':builder.push({kind:'resume',payload:{}});break;
+      case 'studyMore': {
+        const timed=session.context.timed;
+        if(!timed)throw new VocabularySessionInputError('Study a little more belongs to timed sessions');
+        if(session.projection.phase!=='completed'||!timedBudgetWrapped(session.actions,session.projection))throw new VocabularySessionConflictError('Study a little more follows the day\'s wrap-up');
+        const sessionActiveMs=recordTimedActiveMs(sessionId,command.activeDurationMs);
+        builder.push({kind:'resume',payload:{untilDayActiveMs:timed.dayActiveMsAtStart+sessionActiveMs+TIMED_SESSION_EXTENSION_MS}});break;
+      }
       case 'finishForNow':builder.push({kind:'finish_for_now',payload:{}});break;
       case 'finishImmediately':builder.push({kind:'finish_immediately',payload:{}});break;
     }
     appendVocabularySessionActions(sessionId,builder.additions);return getVocabularyStudy(sessionId);
   });
+}
+
+/** The optional completion line; stored beside the session record, never read by selection. */
+export function saveVocabularySessionNote(sessionId:string,note:unknown):{note:string|null} {
+  const session=getVocabularySession(sessionId);
+  if(!session.context.timed)throw new VocabularySessionConflictError('Only timed sessions keep a note');
+  return saveTimedSessionNote(sessionId,note);
 }

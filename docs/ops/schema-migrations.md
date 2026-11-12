@@ -643,3 +643,17 @@ owners only, and the migration runner's integrity/FK checks. The populated
 upgrade regression is in `tests/schema-migrations.test.ts`; runtime recovery and
 bounded top admission are covered by `tests/vocabulary-preparation-reserve.test.ts`.
 These local fixtures do not replace a separately authorized hosted rehearsal.
+
+## Timed daily sessions
+
+`0071_timed_daily_sessions` rebuilds the four-row `service_controls` table to allow
+`timed_sessions` and inserts it enabled, so new sessions use the timed paradigm
+after upgrade. It creates empty `learner_timed_skip_counts` and
+`vocabulary_timed_session_records` (with a learner/day index). It moves no due
+dates and touches no existing session, schedule or settings row.
+
+Use the stopped-writer schema release procedure, not an app-only upgrade. On a
+restored copy, record `service_controls`, apply the migration, and verify the prior
+controls are unchanged, `timed_sessions` is enabled with `system_default`, both new
+tables are empty, and the runner's integrity/FK checks pass. The only rebuild is the
+small control table. The populated regression is in `tests/schema-migrations.test.ts`.

@@ -2,6 +2,8 @@ import { applyIntervalHourFuzz } from './interval-schedule.ts';
 import { REVIEW_SKILL_URGENCY_TIE_EPSILON } from './types.ts';
 
 export type ReviewSchedule = { intervalHours: number; easeFactor: number };
+/** Any failed review drops to this interval. */
+export const LAPSE_INTERVAL_HOURS = 6;
 
 /** Ordinary good/lapse arithmetic, independent of lifecycle and persistence. */
 export function nextReviewSchedule(
@@ -11,7 +13,7 @@ export function nextReviewSchedule(
 ): ReviewSchedule {
   if (outcome.failureCount > 0) {
     return {
-      intervalHours: 6,
+      intervalHours: LAPSE_INTERVAL_HOURS,
       easeFactor: Math.max(1.8, Number((before.easeFactor - 0.15 * outcome.failureCount).toFixed(2))),
     };
   }

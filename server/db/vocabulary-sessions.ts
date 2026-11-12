@@ -20,6 +20,8 @@ import { emitBackendEvent, getVocabularyContentVersion } from './vocabulary-cont
 import { getVocabularyLearnerWord, getVocabularyWordSchedule, isActiveVocabularyRefreshRequest,
   type VocabularyPureCueSchedulerState, type VocabularySchedulerState } from './vocabulary-learners.ts';
 
+import { finalizeTimedSession } from './vocabulary-timed-sessions.ts';
+
 export class VocabularySessionInputError extends Error {}
 export class VocabularySessionConflictError extends Error {}
 export class VocabularySessionNotFoundError extends Error {}
@@ -464,9 +466,11 @@ export function closeVocabularySessionCompletion(sessionId: string, completionId
       if (!fresh) throw new VocabularySessionNotFoundError('Completion not found');
       if (fresh.status === 'closed') return completionDto(fresh, now);
       if (fresh.status === 'cancelled') throw new VocabularySessionConflictError('Completion was cancelled');
-      const input = JSON.parse(previous.input_json) as { context: StoredContext; actions: VocabularySessionAction[] };
+      const input = JSON.parse(previous.input_json) as { context: StoredContext; actions: VocabularySessionAction[]; activeDurationMs?: number | null };
       const projection = projectVocabularySession(input.context, input.actions, { throughSequence: previous.through_sequence });
       applyLearningEffects(previous.completion_id, input.context, projection, now);
+      finalizeTimedSession({ context: input.context, actions: input.actions, projection, activeDurationMs: input.activeDurationMs ?? null,
+        startedAt: sessionRow(sessionId).started_at, now });
       getDb().prepare(`INSERT INTO vocabulary_post_session_dispatches(dispatch_id,learner_id,session_id,completion_id,evidence_json,status,created_at)
         VALUES (?,?,?,?,?,'queued',?)`).run(randomUUID(), requireLearnerId(), sessionId, previous.completion_id,
           JSON.stringify({ context: input.context, actions: input.actions, projection }), now);

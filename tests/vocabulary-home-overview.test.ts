@@ -11,7 +11,7 @@ const statistics: VocabularyStatistics = { days: [{ dayKey: '2026-10-24', sessio
 function render(options: Partial<Parameters<typeof VocabularyHomeOverview>[0]> = {}) {
   return renderToStaticMarkup(createElement(VocabularyHomeOverview, { compact: false, busy: false, settings: false,
     saving: false, guideToSettings: false, statistics, onStart: () => {}, onToggleSettings: () => {},
-    preview: {status:'ready',preview:{previewSeed:'00000000-0000-4000-8000-000000000001',itemCount:25,preparationPending:false},error:null}, ...options }));
+    preview: {status:'ready',preview:{previewSeed:'00000000-0000-4000-8000-000000000001',itemCount:25,preparationPending:false,timed:false},error:null}, ...options }));
 }
 
 test('expanded or waiting Connections uses the established compact Start control without Home metrics', () => {
@@ -30,7 +30,7 @@ test('Home distinguishes count loading, empty ready work, and unavailable previe
     const loading=render({compact,preview:{status:'loading',preview:null,error:null}});
     assert.match(loading,/Preparing session/);
     assert.match(loading.match(/<button[^>]*class="session-start-card"[^>]*>/)?.[0]??'',/disabled/);
-    const empty=render({compact,preview:{status:'ready',preview:{previewSeed:'seed',itemCount:0,preparationPending:true},error:null}});
+    const empty=render({compact,preview:{status:'ready',preview:{previewSeed:'seed',itemCount:0,preparationPending:true,timed:false},error:null}});
     assert.match(empty,/Check again/);assert.match(empty,/0 study items ready/);assert.match(empty,/preparing introductions/);
     const failed=render({compact,preview:{status:'error',preview:null,error:'Offline'}});
     assert.match(failed,/Start session/);assert.match(failed,/Ready count unavailable/);
@@ -67,4 +67,11 @@ test('active-time trends include zero days and disclose missing measurements wit
   assert.match(html,/<span>3-day average<\/span><strong>1:20<\/strong>/);
   assert.match(html,/<span>7-day average<\/span><strong>0:34<\/strong>/);
   assert.match(html,/Time is unavailable for 1 session\(s\) in the last 7 days/);
+});
+
+test('timed Home starts the day without presenting the due ledger, still naming an empty start',()=>{
+  const ready=render({preview:{status:'ready',preview:{previewSeed:'seed',itemCount:25,preparationPending:false,timed:true},error:null}});
+  assert.match(ready,/Start session/);assert.match(ready,/<span class="session-start-card-helper"><\/span>/);assert.doesNotMatch(ready,/study items ready/);
+  const empty=render({preview:{status:'ready',preview:{previewSeed:'seed',itemCount:0,preparationPending:true,timed:true},error:null}});
+  assert.match(empty,/Check again/);assert.match(empty,/Nothing ready yet · preparing introductions/);assert.doesNotMatch(empty,/0 study items/);
 });
