@@ -203,11 +203,27 @@ test('historical private dictionary encounters generate shared repertoires after
   assert.equal(result.result.admission?.sourceContentVersion,2);
   assert.deepEqual(result.result.proposal?.operations.map(operation=>operation.strategy),['replace','create']);
   const {proposalId}=recordVocabularyImprovementResult(work.jobId,work.leaseToken,result.result,judgedAt);
-  const review=approveVocabularyProposal(proposalId!,1,'editor');
-  applyVocabularyProposal(proposalId!,1,review,'migrated-bootstrap','editor');
+  // Nothing moved since generation, so the first bootstrap applies without operator review.
+  assert.equal(getVocabularyProposal(proposalId!,'editor').status,'applied');
+  assert.deepEqual(sql.prepare('SELECT operator_id,notes_json FROM proposal_reviews WHERE proposal_id=?').all(proposalId!).map(row=>({...row})),
+    [{operator_id:'vocabulary-reflection',notes_json:JSON.stringify({automatic:'repertoire_bootstrap'})}]);
+  assert.equal(getVocabularyCaseCard(work.caseId,'editor').state,'resolved');
   assert.equal(getVocabularyContentForMaintenance(id)!.availability,'retired');
   const proposal=getVocabularyProposal(proposalId!,'editor');
   for(const operation of proposal.operations)assert.equal(getVocabularyContentForMaintenance(operation.content.contentId!)!.accessScope,'shared');
+});
+
+test('a first repertoire bootstrap waits for operator review when its inventory changed after generation',async()=>{
+  const {id,work}=historicalDictionaryBaselineJob();
+  const result=await dictionaryRepertoireProvider('shared',2).provider.run(work);
+  if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
+  assert.equal(result.result.admission?.outcome,'repertoire_bootstrap');
+  createVocabularySense({wordId:'a',description:{label:'a style of handwriting'}},actor);
+  const {proposalId}=recordVocabularyImprovementResult(work.jobId,work.leaseToken,result.result,judgedAt);
+  assert.equal(getVocabularyProposal(proposalId!,'editor').status,'awaiting_review');
+  assert.equal(sql.prepare('SELECT count(*) n FROM proposal_reviews').get()!.n,0);
+  assert.equal(sql.prepare('SELECT count(*) n FROM proposal_applications').get()!.n,0);
+  assert.equal(getVocabularyContentForMaintenance(id)!.availability,'active');
 });
 
 test('historical dictionary fallback with existing practice can add shared repertoire through operator review',async()=>{
@@ -249,8 +265,9 @@ test('historical dictionary fallback with existing practice can add shared reper
 
 test('scope migration rebases a retained private repertoire and requires approval of its new shared version',async()=>{
   const {id,work}=historicalDictionaryBaselineJob(false);
+  // Defaults saved after this capture leave the bootstrap for operator review.
   captureVocabularyRepertoireSelection(work.jobId,{wordId:'a',catalogVersion:getVocabularySenseCatalog('a').version,
-    generationScope:{selectionEstablished:true,senseIds:['character','script'],source:{kind:'word_defaults',wordId:'a',capturedVersion:1}}});
+    generationScope:{selectionEstablished:true,senseIds:['character','script'],source:{kind:'word_defaults',wordId:'a',capturedVersion:0}}});
   const trial=dictionaryRepertoireProvider('private',1);
   const result=await trial.provider.run(work);if(result.kind!=='exercise_improvement')assert.fail('Expected improvement');
   const recorded=recordVocabularyImprovementResult(work.jobId,work.leaseToken,result.result,judgedAt);
@@ -2215,10 +2232,11 @@ function repertoireSelectionFixture(omittedSelectedSense=false){
   const selected=[first.senseId,second.senseId,...(omittedSelectedSense?[third.senseId]:[])];
   writeVocabularyDefaultUsefulSenses('a',0,selected,actor);
   ingest([present('one'),response('one')]);const work=claimVocabularyReflectionJob({kind:'exercise_improvement',now:judgedAt})!;
+  // The defaults moved after generation captured them, so the bootstrap waits for operator review.
   const operations=[op('replace','one','first-item'),{...op('create','one','second-item'),operationKey:'second'}];
   operations.forEach((operation,index)=>{operation.content.words=[{wordId:'a',relation:'target',senseId:[first.senseId,second.senseId][index]!,senseMappingEstablishedAt:judgedAt}];});
   const result=recordVocabularyImprovementResult(work.jobId,work.leaseToken,{diagnosis:'Repertoire',proposal:{operations,rationale:'Useful repertoire'},admission:{outcome:'repertoire_bootstrap',rationale:'First repertoire',wordId:'a',sourceContentId:'one',sourceContentVersion:1,
-    catalogVersion:getVocabularySenseCatalog('a').version,senseIds:[],sourceMapping:{senseId:null,establishedAt:null},generationScope:{selectionEstablished:true,senseIds:selected,source:{kind:'word_defaults',wordId:'a',capturedVersion:1}}}},judgedAt);
+    catalogVersion:getVocabularySenseCatalog('a').version,senseIds:[],sourceMapping:{senseId:null,establishedAt:null},generationScope:{selectionEstablished:true,senseIds:selected,source:{kind:'word_defaults',wordId:'a',capturedVersion:0}}}},judgedAt);
   return {first,second,third,proposalId:result.proposalId!,operations};
 }
 test('repertoire selection saves defaults atomically and restores retained exercises without a model call',()=>{

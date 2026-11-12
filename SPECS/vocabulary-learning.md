@@ -393,6 +393,9 @@ defines this workflow and its bounded first implementation.
 A reported dictionary fallback with no authored general production practice in
 its publication scope and owner automatically seeds a first repertoire proposal
 from useful defaults, including defaults established during sense bootstrap.
+That proposal applies without operator approval unless the source, inventory,
+source mapping or word defaults changed after generation; a changed proposal
+waits for ordinary operator review.
 An explicitly empty selection makes no authoring request.
 When authored practice already exists, including shared pure cues accepting the
 word, saved useful defaults support an operator review of gaps in that practice.
@@ -403,8 +406,8 @@ An empty result leaves the case available for review. Authored exercises receive
 local assessment of their intended use.
 Prepared and reflection-proposed exercises use concise direct evocations and
 contextual clozes chosen for the target's own lexical contribution, with optional
-post-answer teaching. Reflection proposes content; application requires operator
-approval. Ordinary preparation publishes through its bounded preparation policy.
+post-answer teaching. Reflection proposes content; application otherwise requires
+operator approval. Ordinary preparation publishes through its bounded preparation policy.
 
 For an authored single-word production exercise with an admitted intended sense,
 one assessment owns a coherent exercise-local plan. It decides the original
