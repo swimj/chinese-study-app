@@ -85,6 +85,7 @@ may retain superseded plans; check the task context and owning docs before use.
 
 | Note | Type | Retire by |
 | --- | --- | --- |
+| [Timed session prototype — build handoff](active/2026-11-12-timed-session-build-handoff.md) | handoff | when the first prototype PR is open, or the design is declined |
 | [Timed session iterator — prototype design](active/2026-11-11-timed-session-iterator-prototype.md) | research | when superseded by an implementation spec, or declined |
 | [A little while in your Chinese](active/2026-11-10-daily-practice-orientation.md) | research | when revised by later ideation, or graduated into an owning product note |
 | [Vocabulary learning storage sketch](active/2026-10-16-vocabulary-storage-sketch.md) | research | when refined into implementation schemas |
