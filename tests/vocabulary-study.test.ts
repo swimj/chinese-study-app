@@ -1519,14 +1519,17 @@ test('timed selection keeps not-yet-started new words shut while runway work is 
   assert.equal(db.prepare('SELECT gate_held FROM vocabulary_timed_session_records WHERE session_id=?').get(id)!.gate_held,1);
 }));
 
-test('pressing held items are admitted and served ahead of ordinary due work',()=>owner(()=>{
+test('pressing held items are admitted ahead of ordinary due work and lead the tier',()=>owner(()=>{
   practiceAll('a','b','new');timedOn();
   const ordinary=startVocabularyStudy({});
   assert.equal(ordinary.currentWordId,'a');assert.deepEqual(ordinary.session.context.reviewOrder?.[0],{kind:'word',id:'a'});
   db.prepare("INSERT INTO learner_timed_skip_counts VALUES('alice','word','new',3,'2026-01-01','2026-01-01'),('alice','word','b',2,'2026-01-01','2026-01-01')").run();
   const view=startVocabularyStudy({});
-  assert.equal(view.currentWordId,'new');
+  // The pressing tier takes seven picks in ten; the ordinary draw starts with the most urgent item.
+  assert.ok(['new','a'].includes(view.currentWordId!),`first card ${view.currentWordId}`);
   assert.deepEqual(view.session.context.reviewOrder?.[0],{kind:'word',id:'new'});
+  const timed=(db.prepare('SELECT context_json FROM vocabulary_sessions WHERE session_id=?').get(view.session.sessionId) as {context_json:string});
+  assert.deepEqual((JSON.parse(timed.context_json) as VocabularySessionInitialContext).timed?.pressingKeys,['word:new']);
   assert.deepEqual(db.prepare('SELECT session_id FROM vocabulary_timed_session_records').all().length,2);
 }));
 
@@ -1652,4 +1655,28 @@ test('Undo passes over the recorded budget wrap-up and extension to the learner\
   assert.ok(view.session.projection.undoneActionIds.includes(answered.actionId));
   assert.equal(view.session.projection.phase,'active');
   assert.equal(view.timed?.budgetWrapped,false);
+}));
+
+test('a missed review is pressing: it returns after a short rest and keeps unstarted new words shut until covered',()=>owner(()=>{
+  changeVocabularyMode('a','practice',getVocabularyLearnerWord('a')!.stateVersion);exercise('general-b','b');addVocabularyWord('new');timedOn();
+  let view=startVocabularyStudy({});const id=view.session.sessionId;
+  let missed:string|null=null;let missAt=-1;let newAdmittedAtMiss=false;let returnedAfter=-1;
+  for(let step=0;step<60&&view.session.projection.phase!=='completed';step++) {
+    const encounter=view.currentEncounter;const wordId=view.currentWordId;
+    const presented=view.session.projection.encounters.filter(entry=>!entry.presentationUndone).length;
+    if(!missed&&wordId&&wordId!=='new'&&encounter?.snapshot.kind==='production'&&!encounter.effectiveResponses.length) {
+      missed=wordId;missAt=presented;newAdmittedAtMiss=view.session.projection.words.new.admitted;
+      view=commandVocabularyStudy(id,`miss`,{type:'response',response:'错'});
+    } else {
+      if(missed&&wordId===missed&&returnedAfter<0&&presented-1>missAt)returnedAfter=presented-1-missAt;
+      view=answerCurrent(id,`s${step}`,view);
+    }
+    if(missed&&!view.session.projection.words[missed].covered&&!newAdmittedAtMiss)
+      assert.equal(view.session.projection.words.new.admitted,false,'a fresh miss keeps new words shut');
+    view=nextVocabularyExercise(id,`n${step}`,{activeDurationMs:0});
+  }
+  assert.ok(missed,'a review word was missed');
+  assert.equal(view.session.projection.words[missed!].covered,true);
+  assert.ok(returnedAfter>=1,'the miss came back after other cards');
+  assert.equal(view.session.projection.words.new.admitted,true,'new words open once pressing work clears');
 }));

@@ -11,6 +11,11 @@ export const TIMED_SESSION_EXTENSION_MS = 5 * 60_000;
 /** Days a due held item can be passed over before it becomes pressing. A starting constant, not a tuned result. */
 export const PRESSING_SKIP_DAYS = 3;
 export const TIMED_SESSION_NOTE_MAX_LENGTH = 500;
+/** Each appearance rests an item for a random gap in this range, so returns do not form a pattern. */
+export const TIMED_REST_MIN_CARDS = 2;
+export const TIMED_REST_MAX_CARDS = 5;
+/** Share of picks (out of 100) that try rested pressing work before the ordinary weighted draw. */
+export const PRESSING_TIER_SHARE = 70;
 
 export function isDailyStudyMinutes(value: unknown): value is DailyStudyMinutes {
   return typeof value === 'number' && (DAILY_STUDY_MINUTE_CHOICES as readonly number[]).includes(value);

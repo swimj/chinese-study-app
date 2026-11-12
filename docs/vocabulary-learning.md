@@ -294,9 +294,13 @@ client receives only `timed` state (wrap-up, Study a little more, active time, n
 
 Due rules are unchanged; timed admission orders held items that were passed over on
 three separate days (`learner_timed_skip_counts`) ahead of ordinary due work before
-the shared cap applies. Selection treats Solidify words, teaching already begun and
-those pressing held items as pressing. While any is still available, a not-yet-started
-new word does not begin, and inside the review bucket pressing items come first.
+the shared cap applies. Selection treats Solidify words, any started item still owed
+work (teaching begun, a missed review or pure cue) and those passed-over held items as
+pressing. While any is still available, a not-yet-started new word does not begin.
+Each appearance rests an item for a seeded random 2–5 cards. Seven picks in ten choose
+at random among rested pressing items (`server/vocabulary/timed-selection.ts`); the
+rest, and any pick with no rested pressing item, use the 50/30/20 draw over rested
+non-pressing items. If nothing is rested, the item that has waited longest is served.
 Introduction order and spacing settings do not apply and the settings panel hides
 them. Admitted new words that never start remain enrolled, hidden Unstudied records
 and stay eligible for later admission.

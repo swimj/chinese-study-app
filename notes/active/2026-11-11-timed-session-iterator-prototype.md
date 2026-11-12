@@ -83,7 +83,7 @@ classifies them. It does not change those rules.
 | Class | Qualifies when | Pressing |
 | --- | --- | --- |
 | Runway | Teaching already in progress, or a Solidify word not yet covered today | Yes |
-| Held | A due Practice, Maintain, or pure-cue item | Only once passed over on 3 separate days |
+| Held | A due Practice, Maintain, or pure-cue item | Once started and still owed work (for example after a miss), or once passed over on 3 separate days |
 | New | A not-yet-started word, inside the existing daily new-word ceiling | No |
 
 There is no separate repair class. A failed review already drops to the short
@@ -103,20 +103,32 @@ stays the same gesture.
 
 Each request for a next item follows this order.
 
-1. If an in-progress item is still owed a retry or the rest of its current
-   exercise, return that.
-2. If the day's budget has been reached, move to `finishing`: in-progress work
+1. If the day's budget has been reached, move to `finishing`: in-progress work
    still completes, and nothing new begins. That overshoot is the fuzz in the
    budget. The learner's keep-going choice resumes ordinary selection.
-3. Otherwise draw one bucket with the existing weights from the buckets that
-   are open, and take one candidate from it.
+2. Only rested items are candidates. Each appearance gives an item a fresh
+   minimum rest of 2 to 5 cards, chosen at random, so returns do not fall into
+   a pattern and memory has a little time to fade. There is no maximum gap.
+3. Seven picks in ten try the pressing tier first: a rested pressing item,
+   chosen at random. When none is rested, or on the other three picks, draw one
+   bucket with the existing weights from the rested non-pressing items, and
+   take one candidate from it. If no non-pressing item is rested, take a rested
+   pressing item; if nothing is rested at all, take whatever has waited
+   longest, so a short drain never stalls.
+
+In-progress work is pressing, so a miss comes back through the tier rather than
+through a fixed gap. With few pressing items, ordinary work fills the rests
+between their appearances. With many, choosing among them spaces each one out.
+The non-pressing share keeps some ordinary work in every stretch of the day,
+including on days with a large Solidify pile.
 
 Review and learning stay open while time remains. Unstudied, the new-word
-bucket, is shut while any pressing candidate is due. It opens when no pressing
-candidate is left. New words then begin one at a time under the same weights.
+bucket, is shut while any pressing candidate is due, including a fresh miss. It
+opens when no pressing candidate is left. New words then begin one at a time
+under the same weights. A future minimum share of new words could make new
+words occasionally pressing; this version has none.
 
-Inside the review bucket, a pressing held item is taken ahead of an ordinary
-one. Past that, the current rotation and urgency order stand.
+Inside the review bucket, the current rotation and urgency order stand.
 
 The system owns where new words go. The learner's introduction-order and
 spacing settings do not apply in this mode, and the settings panel hides them.

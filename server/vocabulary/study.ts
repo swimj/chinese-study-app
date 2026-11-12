@@ -18,6 +18,7 @@ import { allocateSessionBucketSlots, DEFAULT_SESSION_BUCKET_WEIGHTS } from '../.
 import { composeVocabularyStudy, localNewWordDay, type VocabularyComposition } from './composition.ts';
 import { createTimedSessionRecord, getDailyStudyMinutes, markTimedGateHeld, readTimedSessionRecord, readTimedSkipDays, recordTimedActiveMs,
   saveTimedSessionNote, timedBudgetWrapped, timedDayActiveMs, timedTargetFacts, timedWrapThreshold, vocabularyTimedSessionsEnabled } from '../db/vocabulary-timed-sessions.ts';
+import { chooseTimedTarget } from './timed-selection.ts';
 import { PRESSING_SKIP_DAYS, TIMED_SESSION_EXTENSION_MS, timedTargetKey, type VocabularyTimedSessionContext } from '../../src/domain/timed-session.ts';
 import { planVocabularyPureCues } from './pure-cue-serving.ts';
 import { hasExplicitlyEmptyProductionDefaults, isVocabularyProductionProxied } from './production-coverage.ts';
@@ -343,10 +344,12 @@ function selectNextWord(session:VocabularyPersistedSession,projection:Vocabulary
   });
   if(!available.length&&!cues.length)return undefined;
   const timed=session.context.timed;
-  // Runway (Solidify, or teaching already begun) is pressing, as is a held item passed over on enough days.
+  // Pressing: runway (Solidify, teaching begun), any started item still owed work such as
+  // a miss, and a held item passed over on enough days.
   const pressing=(target:StudyTarget)=>{
     if(!timed)return false;
-    if(target.kind==='word'){const word=projection.words[target.id];if(word.mode==='solidify'||(word.mode==='unstudied'&&word.admitted))return true;}
+    if(target.kind==='word'){const word=projection.words[target.id];if(word.mode==='solidify'||(word.admitted&&word.workStatus==='open'))return true;}
+    else if(encounters.some((entry)=>entry.snapshot.schedulingScope==='pure_cue'&&entry.snapshot.contentId===target.id))return true;
     return timed.pressingKeys.includes(timedTargetKey(target.kind,target.id));
   };
   // While pressing work is due, a not-yet-started new word does not begin.
@@ -365,18 +368,20 @@ function selectNextWord(session:VocabularyPersistedSession,projection:Vocabulary
   const lastPosition=(target:StudyTarget)=>encounters.findLastIndex((entry)=>target.kind==='word'?entry.wordId===target.id:entry.snapshot.schedulingScope==='pure_cue'&&entry.snapshot.contentId===target.id);
   const targets:StudyTarget[]=[...available.filter((word)=>!shut(word)).map((word)=>({kind:'word' as const,id:word.wordId})),...cues.map((cue)=>({kind:'pure_cue' as const,id:cue.contentId}))];
   if(!targets.length)throw new Error('Pressing work vanished while the new-word gate was shut');
+  const bucket=(target:StudyTarget)=>target.kind==='pure_cue'?'review':projection.words[target.id].mode==='unstudied'?'unstudied':projection.words[target.id].mode==='solidify'?'learning':'review';
+  const order=(target:StudyTarget)=>session.context.reviewOrder?.findIndex((entry)=>entry.kind===target.kind&&entry.id===target.id)??targets.indexOf(target);
+  if(timed)return chooseTimedTarget({sessionId:session.sessionId,encounterCount:encounters.length,
+    sample:(length,salt)=>sampleIndex(session,projection,length,salt),
+    candidates:targets.map((target)=>{const position=lastPosition(target);
+      return {target,pressing:pressing(target),bucket:bucket(target),lastPosition:position,lastEncounterId:position<0?null:encounters[position].encounterId,order:order(target)};})});
   const rested=targets.filter((target)=>lastPosition(target)<0||encounters.length-1-lastPosition(target)>=VOCABULARY_SESSION_POLICY.interveningExercisesBeforeWordReturn);
   const pool=rested.length?rested:targets;
-  const bucket=(target:StudyTarget)=>target.kind==='pure_cue'?'review':projection.words[target.id].mode==='unstudied'?'unstudied':projection.words[target.id].mode==='solidify'?'learning':'review';
   const buckets=(['review','learning','unstudied'] as const).map((name)=>({name,targets:pool.filter((target)=>bucket(target)===name)}))
     .filter((entry)=>entry.targets.length&&(policy.introductionOrder!=='paced'||!introductions.length||entry.name!=='unstudied'));
   const candidates=buckets.length?buckets:[{name:'unstudied' as const,targets:pool}];
   let draw=sampleIndex(session,projection,candidates.reduce((sum,entry)=>sum+DEFAULT_SESSION_BUCKET_WEIGHTS[entry.name],0),'bucket');
   const chosen=candidates.find((entry)=>(draw-=DEFAULT_SESSION_BUCKET_WEIGHTS[entry.name])<0)!;
-  if(chosen.name==='review') {
-    const order=(target:StudyTarget)=>session.context.reviewOrder?.findIndex((entry)=>entry.kind===target.kind&&entry.id===target.id)??targets.indexOf(target);
-    return [...chosen.targets].sort((a,b)=>Number(pressing(b))-Number(pressing(a))||lastPosition(a)-lastPosition(b)||order(a)-order(b))[0];
-  }
+  if(chosen.name==='review')return [...chosen.targets].sort((a,b)=>lastPosition(a)-lastPosition(b)||order(a)-order(b))[0];
   return chosen.targets[sampleIndex(session,projection,chosen.targets.length,'word')];
 }
 
