@@ -314,6 +314,15 @@ with a new threshold five minutes of active time ahead. A fresh Start into a spe
 day also runs at least five minutes. Timed sessions offer no manual finish,
 wrapping-up banner, remaining count or Home item count.
 
+Home shows the current Monday-to-Sunday week as a row of dots, filled on local
+study days (the same 04:00 day key, from the browser's time zone) with a finished
+session. A session counts from staging, so it fills today's dot during its Undo
+window; a cancelled completion does not count. There is no count, streak or empty
+day marking. In the timed paradigm, once today has a finished session, Start reads
+Study a little more. The dots come from `studyDays` in `GET /api/vocabulary/statistics`,
+which includes only vocabulary completions, not legacy review summaries; its other
+daily totals stay on UTC days.
+
 Closure clears the skip count of every started item and adds at most one passed-over
 day to each due held item that went unstarted, including due words the cap kept out
 of the pool and admitted pure cues. It fills `vocabulary_timed_session_records`:

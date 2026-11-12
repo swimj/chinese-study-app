@@ -10,7 +10,8 @@ export function SessionStartCard(props: {
   return <div className={`session-start-shell${props.settingsOpen ? ' is-settings-open' : ''}`}>
     <button type="button" className="session-start-card" disabled={props.disabled} onClick={props.onStart}>
       <span className="session-start-card-label">{props.label}</span>
-      <span className="session-start-card-helper" title={props.helperTitle}>{props.helper}</span>
+      {props.helper === null || props.helper === undefined || props.helper === ''
+        ? null : <span className="session-start-card-helper" title={props.helperTitle}>{props.helper}</span>}
     </button>
     <button type="button" className={`session-settings-gear${props.guideToSettings && !props.settingsOpen ? ' getting-started-attention' : ''}`}
       title={props.settingsTitle ?? 'Session settings'} aria-label="Session settings" aria-expanded={props.settingsOpen}
