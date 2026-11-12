@@ -3,57 +3,101 @@
 status: active
 type: research
 created: 2026-11-11
+revised: 2026-11-12
 retire-when: superseded by an implementation spec, or declined
 related:
   - notes/active/2026-11-10-daily-practice-orientation.md
 
-Prototype design for a bounded daily session. It is not shipped behavior, and it
-does not set a delivery commitment. The orientation note describes the broader
-direction. This note specifies a first selector that can be built and lived
-with.
+Prototype design for a bounded daily practice. It is not shipped behavior, and
+it does not set a delivery commitment. The orientation note describes the
+broader direction. This note specifies a first selector that can be built and
+lived with.
 
-The session stays an iterator. Nothing is packed in advance. Each served item
-uses the current exercise and the current interval update. The new behavior is
-when a not-yet-started item is allowed to begin, and which facts that decision
-reads.
+The policy here is deliberately rough. Its job is to put budget pressure on
+what goes into a day, and to record enough that the places where it feels
+wrong become visible. That discomfort is the forcing function for the next
+revision. The session record is therefore part of the prototype, not a side
+feature.
 
-## Learner entry
+To the learner this is a new session paradigm, not an option inside the old
+one. The app is in free beta, and existing session settings carry no promise
+into it.
 
-The learner picks about 10, 20, or 30 minutes. That choice is the budget. The
-session does not display a remaining-time meter, a pace, or the size of the
-unserved due set.
+## A trainer's sense of how much
 
-Home does not present the full due ledger as the size of the session. The
-choice of duration is the entry.
+The learner says roughly how much they can do in a day: about 10, 20, or 30
+minutes. They say it once, early, and then forget it. The system reads it the
+way a trainer reads "I've got about half an hour": a fuzzy target, not a
+contract. A day can end a little early or a little late to land on a natural
+break, and the learner can always keep going.
+
+The learner does not see a remaining-time meter, a pace, or the size of the
+unserved due set. Home does not present the due ledger as the size of the
+session. Changing the amount is a rare, deliberate trip to settings.
+
+## The day and its entries
+
+The budget belongs to the local study day, using the same 04:00 boundary as
+the daily new-word ceiling. Sessions are entries into that day. Active time
+adds up across the day's sessions, so a session interrupted at seven minutes
+and resumed later simply continues the day.
+
+Start never refuses because the day's budget is spent, and it never says the
+day is done. Past the budget, a session serves more of the same walk. In this
+first version, selection rules are identical before and after the budget: the
+gate and the daily new-word ceiling apply the same way. What extra time should
+be made of is an open question below.
+
+## What the current runtime already provides
+
+Most of the iterator exists today. Start freezes an admitted pool of due work
+and ready teaching, up to the shared 1,000-item cap, in the session payload.
+Order is not frozen: `selectNextWord` in `server/vocabulary/study.ts` draws
+each next item live, using the 50/30/20 review / learning / unstudied weights
+and the rotation rule. The session's `finishing` phase stops admitting new
+work while open work completes, and `resume` returns to active study.
+
+The prototype adds four things to that machinery:
+
+1. A day budget that moves the session into `finishing` on its own.
+2. A gate that keeps the unstudied bucket shut while pressing work is due.
+3. A per-day skip count on held items.
+4. A session record that shows what this policy served against the old one.
 
 ## What the iterator keeps
 
-In-progress work is whatever the current scheduler already treats as unfinished:
+In-progress work is whatever the current runtime already treats as unfinished:
 an open retry, an unfinished teaching skill, an unfinished Solidify direction.
-The clock does not drop it.
+The budget does not drop it.
 
 Cross-session scheduling facts stay the current ones: interval, ease, due date,
 Solidify progress, teaching streaks, pure-cue schedules. They change only when
-an item is actually reviewed, by the current formulas. A separate skip count,
-stored beside those fields, records that a due item was eligible and not
-started. Serving the item clears the count. Switching back to the classic due
-rules ignores the skip count.
+an item is actually reviewed, by the current formulas. The skip count is stored
+beside them and only this policy reads it.
 
 ## Classes
 
-Candidates are whatever the current due rules would already allow. The iterator
+Candidates are whatever the current due rules already admit. The iterator
 classifies them. It does not change those rules.
 
 | Class | Qualifies when | Pressing |
 | --- | --- | --- |
-| Runway | Teaching already in progress, or Solidify not yet cleared | Yes |
-| Repair | Last outcome was a lapse and the item is still on the short interval, including pure cues | Yes |
-| Held | A successful Practice, Maintain, or pure cue that is due | Only after repeated skips |
+| Runway | Teaching already in progress, or a Solidify word not yet covered today | Yes |
+| Held | A due Practice, Maintain, or pure-cue item | Only once passed over on 3 separate days |
 | New | A not-yet-started word, inside the existing daily new-word ceiling | No |
 
-A held item becomes pressing when its skip count reaches 3. That threshold is a
-starting constant, not a tuned result. Ordinary held items that are merely due
-are not pressing.
+There is no separate repair class. A failed review already drops to the short
+interval, and review order ranks by urgency, so a lapsed item returns near the
+front of the review portion the next day without a special rule. Pure-cue
+rechecks keep their current place at the front of the review order. Under the
+view that recall serves language growth, a lapse is information, not an
+emergency. It should come back soon, and it has no automatic claim over a new
+word.
+
+The skip threshold of 3 is a starting constant, not a tuned result. It counts
+days on which the item was passed over, not time since it fell due, so an
+absence from study does not turn the whole backlog pressing on return. Rejoining
+stays the same gesture.
 
 ## Next item
 
@@ -61,80 +105,114 @@ Each request for a next item follows this order.
 
 1. If an in-progress item is still owed a retry or the rest of its current
    exercise, return that.
-2. If the budget has already elapsed, stop. Do not begin anything with no
-   progress. In-progress work still finishes, and that overshoot is the fuzz in
-   the budget.
-3. Otherwise draw one bucket with the existing review / learning / unstudied
-   weights, from the buckets that are open, and take one candidate from it.
+2. If the day's budget has been reached, move to `finishing`: in-progress work
+   still completes, and nothing new begins. That overshoot is the fuzz in the
+   budget. The learner's keep-going choice resumes ordinary selection.
+3. Otherwise draw one bucket with the existing weights from the buckets that
+   are open, and take one candidate from it.
 
-Review and learning stay open while the clock is running. Unstudied, the new-word
-bucket, is shut while any pressing candidate is due. It opens when a draw finds
-no pressing candidate and time remains. New words then begin one at a time under
-the same clock.
+Review and learning stay open while time remains. Unstudied, the new-word
+bucket, is shut while any pressing candidate is due. It opens when no pressing
+candidate is left. New words then begin one at a time under the same weights.
 
-Inside the review bucket, a pressing candidate is taken ahead of an ordinary
-held item. Past that, the current urgency order stands. One candidate per open
-bucket is enough for the weight draw. Those candidates are not a plan. The next
-draw sees the stats as they are then.
+Inside the review bucket, a pressing held item is taken ahead of an ordinary
+one. Past that, the current rotation and urgency order stand.
 
-There is no duration estimate on this path. The wall clock decides when to stop
-starting new work.
+The system owns where new words go. The learner's introduction-order and
+spacing settings do not apply in this mode, and the settings panel hides them.
+How best to introduce new words to someone who has never thought about it is
+part of what this prototype is for.
 
-A heavy day, with pressing work still due at the end, never reaches a new word.
-A day that exhausts pressing work early spends the remainder on ordinary held
-items and new words, interleaved by the same weights. The large ordinary-due
-tail does not by itself keep the new-word bucket shut. Items in that tail are
-still reached over time, because a held item that is skipped often enough
-becomes pressing.
+A day with pressing work still due at the end of the budget never reaches a new
+word. A day that clears pressing work early spends the remainder on ordinary
+held items and new words, interleaved by the weights.
+
+Runway pressure regulates intake. A large Solidify pile keeps new words shut,
+and with no new words arriving the pile can only shrink as words graduate. New
+words return once it fits in a day. If the pile far exceeds a day's budget,
+graduation slows and new words stay shut for a while. The session record shows
+when the gate held; a cap on how much Solidify counts as pressing waits for
+evidence that it is needed.
+
+## The clock
+
+The client already measures active study time across visibility and focus
+changes. It sends that measure with each Next request. The server adds the
+day's earlier sessions and decides whether the budget has been reached. A long
+pause with the tab still focused still counts; that is acceptable for this
+version. Trusting the client is appropriate because the budget is the learner's
+own soft target, not a grade or a schedule input.
+
+There is no duration estimate on this path.
 
 ## Within a session and across sessions
 
-Within a session, responsiveness is the in-progress rule and the clock. A miss
-keeps that item in the session under the current retry rule. It does not pull a
-different item in, and it does not extend the set of not-yet-started work.
+Within a session, responsiveness is the in-progress rule and the budget. A miss
+keeps that item in the session under the current retry rule: the failed
+exercise stays available for a later retry, and completion after a rejection
+needs three consecutive successes. A miss does not pull a different item in.
 
 Across sessions, responsiveness is the existing interval update plus the class
-rules. A lapse comes back as repair and is pressing. A success lengthens the
-interval by the current formula, including when the gap was longer than the old
-due date. Repeatedly missing the clock makes a held item pressing, so neglect
-raises its claim without rewriting its due date.
+rules. A lapse returns soon through urgency. A success lengthens the interval
+by the current formula, including when the gap was longer than the old due
+date. Being passed over repeatedly makes a held item pressing, so neglect raises
+its claim without rewriting its due date.
 
-## Post-session
+## After a session
 
 Started items update exactly as they do now. Items that were not started are not
 reviews. Their interval, ease, and due date stay put.
 
-At the end, query the items that were due and not started, and increment the
-skip count for the held and repair items among them. Runway items left unstarted
-stay eligible by their own rules and do not use this count.
+At closure, each held item that was due and not started has its skip count
+incremented, at most once per local study day. This includes due items left out
+of the frozen pool by the 1,000-item cap; otherwise the cap could hide items
+from the count indefinitely. Serving an item clears its count. Runway items left
+unstarted stay eligible by their own rules and do not use the count.
 
-Store a session record: the chosen budget, actual elapsed time, how many fresh
-items were started, how many of those failed, and the ids of pressing items that
-went unstarted. Per started item, store its class, its classic due date at
-serve time, and the outcome. That is enough to see the gap between when the old
-rule would have shown an item and when this one did, and whether the recall held
-across that gap.
+Store a session record: the day's budget, the session's active time, the day's
+accumulated active time, how many new words were started, whether the gate kept
+the new-word bucket shut, and the ids of pressing items that went unstarted. Per
+started item, store its class, its classic due date at serve time, whether its
+last outcome before this session was a lapse, and the outcome. That is enough to
+see when this policy served an item compared with the old rule, whether recall
+held across that gap, and how lapsed items fared without a repair class.
 
-When any due candidate went unstarted, completion may offer two optional
-responses. Neither blocks leaving, and neither changes a schedule.
+## Saying something
 
-- **I'm good.** Records that there was no further want.
-- **One line.** What they would have wanted to keep doing. No word list, no
-  exercise types, no interval, no rating.
+Completion always offers one quiet, optional line: anything about today you
+would want different. It appears the same way every day. It is not tied to
+unstarted work, it never blocks leaving, and it never changes a schedule. It is
+the tap on the glass from the orientation, placed where a learner who already
+has a thought can leave it with no friction.
 
-The line is stored on the session for later reading beside the unstarted ids.
-It is not an input to the iterator. On a day when every due candidate was
-started, the prompt stays absent.
+The line is stored on the session for later reading beside the record. It is
+not an input to the iterator.
 
-## Switchback and known limits
+## Switchback
 
-Selecting by the classic due rules again, and ignoring skip counts, restores the
-old session. Intervals reflect the reviews that actually happened. Skipped items
-reappear as overdue. Their due dates were never moved to hide that.
+Switchback is our rollback, not a learner toggle. Selecting by the classic due
+rules again, and ignoring skip counts, restores the old session. Intervals
+reflect the reviews that actually happened. Skipped items reappear as overdue.
+Their due dates were never moved to hide that.
 
-This prototype does not decide which known word would make a repeated review
-feel fresh. A shorter day made mostly of words the learner already has can feel
-flatter than a day padded with new words. That observation belongs to the next
-design, and the session record is there so it can be checked against what was
-actually served. Estimates of how much fits in twenty minutes can be derived
-from the same record later. They are not inputs here.
+## Open questions
+
+- **What extra time is made of.** Past the budget, should new words that the
+  gate held back during the budgeted time become available? This version
+  applies the same rules throughout. A lean toward held review after the budget
+  would absorb an energetic day as lighter future days rather than more intake.
+- **Whether a word should matter less.** One lapse cannot distinguish an
+  instinct that needs reseeding from a word that is not live in the learner's
+  Chinese. Budget pressure should make this question concrete. Lapses are
+  recorded per served item so the pattern can be read later.
+- **An independent signal of value.** The longer direction is a second view of
+  the learner's practical working vocabulary: which words came up in situations
+  the app can see. With it, the app could judge that a miss is not urgent to
+  strengthen because nothing in view would have called on that word. That is
+  the bigger-picture judgment a good teacher supplies.
+- **Fresh versus flat.** This prototype does not decide which known word would
+  make a repeated review feel fresh. A shorter day made mostly of words the
+  learner already has can feel flatter than a day padded with new words. The
+  session record is there so this can be checked against what was served.
+  Estimates of how much fits in twenty minutes can be derived from the same
+  record later. They are not inputs here.

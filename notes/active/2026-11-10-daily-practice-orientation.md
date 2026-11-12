@@ -35,9 +35,11 @@ in the language, the while has some character, and the while is not organized
 around clearing a metric. Over weeks the trace should feel like a life in the
 language: I have been around my Chinese. A single while is not graded.
 
-The user-facing frame is the while itself. A time budget, a due count, and the
-question of whether these minutes were well spent all pull the learner up into
-supervising the practice. Internally the system still cares that the while goes
+The user-facing frame is the while itself. A daily time decision, a due count,
+and the question of whether these minutes were well spent all pull the learner
+up into supervising the practice. A rough sense of how much a day can hold is
+said once and then forgotten, the way a trainer hears it, and the system reads
+it with intentional fuzz. Internally the system still cares that the while goes
 somewhere. That care stays off the surface.
 
 "My Chinese" is the aftertaste of fit. It shows up when practice feels useful
@@ -64,9 +66,14 @@ segment, it becomes a chore, and the outer loop starts.
 Usefulness, from inside, is absorption at your edge: not bored, not lost. A
 reason why this moment is high value is already a small ejection.
 
-Leaving is standing up. No duration question on the way in, and no verdict on
-the way out. The while ends because the learner leaves, and that ending is
-clean.
+Leaving is standing up. No daily duration question on the way in, and no
+verdict on the way out. The while ends because the learner leaves, or because
+a natural break arrives near the day's rough size, and keeping going is always
+open. That ending is clean.
+
+The outer loop is not forbidden inside the while. It is chosen. Most of the
+time the learner stays under; when they surface with a thought, a quiet place
+to leave it is already there.
 
 A standing risk: a walk that only follows what already feels pleasant circles
 the same block, and it feels like yours the whole time. The system's quiet care
