@@ -16,7 +16,7 @@ import { selectVocabularyReviewSkills } from '../server/vocabulary/review-select
 import { createVocabularyContent,replaceVocabularyContent,updateVocabularyContent,getVocabularyContent,createVocabularySense,establishVocabularySenseCatalog,getVocabularySenseCatalog,getVocabularySenses,updateVocabularySense } from '../server/db/vocabulary-content.ts';
 import { appendVocabularySessionActions,createVocabularySession as createStoredSession,stageVocabularySessionCompletion,cancelVocabularySessionCompletion,closeVocabularySessionCompletion } from '../server/db/vocabulary-sessions.ts';
 import { changeVocabularyMode,addVocabularyWord,dismissVocabularyWord,getVocabularyLearnerWord,getVocabularyWordSchedule,enrollVocabularyDietWord } from '../server/db/vocabulary-learners.ts';
-import { startVocabularyStudy as startRuntime,composeVocabularySessionPayload,previewVocabularyStudy as previewRuntime,getVocabularyStudy,nextVocabularyExercise,commandVocabularyStudy } from '../server/vocabulary/study.ts';
+import { startVocabularyStudy as startRuntime,composeVocabularySessionPayload,previewVocabularyStudy as previewRuntime,getVocabularyStudy,nextVocabularyExercise,commandVocabularyStudy,saveVocabularySessionNote } from '../server/vocabulary/study.ts';
 import type { VocabularyStudy } from '../src/domain/vocabulary-study-api.ts';
 import type { VocabularyContent } from '../src/domain/vocabulary-content.ts';
 // These player fixtures isolate composition from shared-provider reserve storage.
@@ -65,6 +65,11 @@ beforeEach(()=>{
   db.exec(fs.readFileSync(new URL('../server/db/migrations/0045_vocabulary_provenance_links.sql',import.meta.url),'utf8'));
   db.exec("ALTER TABLE vocabulary_practice_preparation ADD COLUMN next_attempt_at TEXT NOT NULL DEFAULT ''; ALTER TABLE vocabulary_practice_preparation ADD COLUMN total_attempt_count INTEGER NOT NULL DEFAULT 0;");
   db.exec(fs.readFileSync(new URL('../server/db/migrations/0069_sense_content_reconciliation.sql',import.meta.url),'utf8'));
+  // Classic sessions by default; timed tests switch the operator control on.
+  db.exec(`CREATE TABLE service_controls(control_key TEXT PRIMARY KEY,enabled INTEGER NOT NULL,updated_at TEXT NOT NULL,actor_id TEXT NOT NULL);
+    INSERT INTO service_controls VALUES('maintenance_mode',0,'1970-01-01','system_default'),('provider_work_enabled',1,'1970-01-01','system_default'),('operator_only',0,'1970-01-01','system_default');`);
+  db.exec(fs.readFileSync(new URL('../server/db/migrations/0071_timed_daily_sessions.sql',import.meta.url),'utf8'));
+  db.exec("UPDATE service_controls SET enabled=0 WHERE control_key='timed_sessions'");
   owner(()=>{
     exercise('general-1','a');exercise('general-2','a');exercise('teach-a','a','teaching');exercise('teach-new','new','teaching');
     // These teaching members have already passed background readiness before the request under test.
@@ -1454,4 +1459,197 @@ test('Solidify preserves current usable priming identity without retaining teach
   const payload=composeVocabularySessionPayload({sessionId:'priming-choice',words:[{wordId:'a',mode:'solidify'}]});
   assert.equal(payload.words.a.priming?.contentId,'intro-a');assert.equal(payload.words.a.teaching,null);
   assert.equal(payload.snapshots['teach-a/teaching'],undefined);
+}));
+
+// Timed daily practice prototype.
+const timedOn=()=>db.exec("UPDATE service_controls SET enabled=1 WHERE control_key='timed_sessions'");
+const answers:Record<string,string>={a:'甲',b:'乙',new:'新'};
+/** Answers whatever is current correctly; returns the next view. */
+function answerCurrent(id:string,key:string,view:VocabularyStudy):VocabularyStudy {
+  const encounter=view.currentEncounter;
+  if(!encounter||encounter.effectiveResponses.length||encounter.skipped||encounter.snapshot.kind==='introduction')return view;
+  if(encounter.snapshot.kind==='recognition')return commandVocabularyStudy(id,`${key}-answer`,{type:'response',response:null,selfAssessment:'accepted'});
+  return commandVocabularyStudy(id,`${key}-answer`,{type:'response',response:answers[encounter.wordId!]});
+}
+function practiceAll(...wordIds:string[]) {
+  for(const wordId of wordIds){
+    if(!getVocabularyLearnerWord(wordId))addVocabularyWord(wordId);
+    changeVocabularyMode(wordId,'practice',getVocabularyLearnerWord(wordId)!.stateVersion);
+  }
+  exercise('general-b','b');exercise('general-new','new');
+}
+// The wall-clock bound on client active time reads the record's start.
+const backdate=(id:string)=>db.prepare("UPDATE vocabulary_timed_session_records SET started_at='2000-01-01T00:00:00.000Z' WHERE session_id=?").run(id);
+const makeDue=(wordId:string)=>{
+  db.prepare('UPDATE learner_word_schedules SET next_eligible_at=NULL,last_practised_at=NULL WHERE word_id=?').run(wordId);
+  db.prepare('DELETE FROM learner_owned_word_study_admission_state WHERE word_id=?').run(wordId);
+};
+const today=()=>new Date().toISOString().slice(0,10);
+
+test('timed Start freezes the paradigm and records the day; classic sessions keep their controls',()=>owner(()=>{
+  const classic=startVocabularyStudy({});
+  assert.equal(classic.session.context.timed,undefined);assert.equal(classic.timed,null);assert.equal(classic.controls.canFinishForNow,true);
+  timedOn();
+  const view=startVocabularyStudy({});const id=view.session.sessionId;
+  assert.equal('timed' in view.session.context,false,'timed facts stay server-side');
+  assert.deepEqual(view.timed,{budgetWrapped:false,canStudyMore:false,sessionActiveMs:0,note:null});
+  assert.equal(view.controls.canFinishForNow,false);
+  const row=db.prepare('SELECT day_key,budget_ms,budget_source,day_active_ms_at_start FROM vocabulary_timed_session_records WHERE session_id=?').get(id);
+  assert.deepEqual({...row},{day_key:today(),budget_ms:20*60_000,budget_source:'default',day_active_ms_at_start:0});
+  assert.equal(previewVocabularyStudy({}).timed,true);
+}));
+
+test('timed selection keeps not-yet-started new words shut while runway work is due, then opens them',()=>owner(()=>{
+  addVocabularyWord('new');
+  // Classic introduction order "first" serves the new word immediately.
+  const classic=startVocabularyStudy({});
+  assert.equal(classic.currentWordId,'new');
+  timedOn();
+  let view=startVocabularyStudy({});const id=view.session.sessionId;
+  const firstSeen:string[]=[];let aCoveredAt=-1;
+  for(let step=0;step<40&&view.session.projection.phase!=='completed';step++) {
+    const wordId=view.currentWordId;if(wordId&&!firstSeen.includes(wordId))firstSeen.push(wordId);
+    view=answerCurrent(id,`s${step}`,view);
+    if(aCoveredAt<0&&view.session.projection.words.a.covered)aCoveredAt=firstSeen.length;
+    view=nextVocabularyExercise(id,`n${step}`,{activeDurationMs:0});
+  }
+  assert.ok(aCoveredAt>0,'runway word is covered');
+  assert.ok(firstSeen.indexOf('new')>=aCoveredAt,`new word began only after runway work cleared: ${firstSeen.join(',')}`);
+  assert.equal(view.session.projection.words.new.admitted,true,'the gate opens once pressing work is gone');
+  assert.equal(db.prepare('SELECT gate_held FROM vocabulary_timed_session_records WHERE session_id=?').get(id)!.gate_held,1);
+}));
+
+test('pressing held items are admitted and served ahead of ordinary due work',()=>owner(()=>{
+  practiceAll('a','b','new');timedOn();
+  const ordinary=startVocabularyStudy({});
+  assert.equal(ordinary.currentWordId,'a');assert.deepEqual(ordinary.session.context.reviewOrder?.[0],{kind:'word',id:'a'});
+  db.prepare("INSERT INTO learner_timed_skip_counts VALUES('alice','word','new',3,'2026-01-01','2026-01-01'),('alice','word','b',2,'2026-01-01','2026-01-01')").run();
+  const view=startVocabularyStudy({});
+  assert.equal(view.currentWordId,'new');
+  assert.deepEqual(view.session.context.reviewOrder?.[0],{kind:'word',id:'new'});
+  assert.deepEqual(db.prepare('SELECT session_id FROM vocabulary_timed_session_records').all().length,2);
+}));
+
+test('budget wrap-up is a recorded action, finishes open work, and Study a little more extends by five minutes',()=>owner(()=>{
+  practiceAll('a','b','new');timedOn();
+  db.prepare("INSERT INTO learner_settings VALUES('alice','daily_study_minutes','10','2026-01-01')").run();
+  let view=startVocabularyStudy({});const id=view.session.sessionId;backdate(id);
+  assert.equal(view.currentWordId,'a');
+  assert.throws(()=>commandVocabularyStudy(id,'early-more',{type:'studyMore',activeDurationMs:1000}),/follows the day's wrap-up/);
+  // Reaching the budget mid-word lets that word finish; nothing new begins.
+  view=nextVocabularyExercise(id,'over',{activeDurationMs:600_000});
+  assert.equal(view.session.projection.phase,'finishing');assert.equal(view.currentWordId,'a');
+  assert.deepEqual(view.session.actions.filter(action=>action.kind==='finish_for_now').map(action=>action.payload),[{source:'budget'}]);
+  assert.equal(view.notice,null);
+  view=answerCurrent(id,'a',view);
+  assert.equal(view.session.projection.phase,'completed');
+  assert.deepEqual(view.timed,{budgetWrapped:true,canStudyMore:true,sessionActiveMs:600_000,note:null});
+  assert.equal(view.session.projection.words.b.admitted,false);
+  assert.throws(()=>nextVocabularyExercise(id,'back',{activeDurationMs:1}),/not accepting new work/);
+  view=commandVocabularyStudy(id,'more',{type:'studyMore',activeDurationMs:601_000});
+  assert.equal(view.session.projection.phase,'active');
+  assert.deepEqual(view.session.actions.at(-1)?.payload,{untilDayActiveMs:901_000});
+  view=nextVocabularyExercise(id,'after-more',{activeDurationMs:602_000});
+  assert.equal(view.currentWordId,'b');
+  view=answerCurrent(id,'b',view);
+  view=nextVocabularyExercise(id,'second-wrap',{activeDurationMs:901_000});
+  assert.equal(view.session.projection.phase,'completed');assert.equal(view.timed?.budgetWrapped,true);
+  // The client clock never moves the recorded time backward.
+  assert.equal(view.timed?.sessionActiveMs,901_000);
+  // Completion time is bounded by the session's own start; the record keeps the larger accepted measure.
+  const staged=stageVocabularySessionCompletion(id,view.session.actions.length,undefined,{activeDurationMs:1_000});
+  closeVocabularySessionCompletion(id,staged.completionId);
+  const row=db.prepare('SELECT * FROM vocabulary_timed_session_records WHERE session_id=?').get(id)!;
+  assert.equal(row.session_active_ms,901_000);assert.equal(row.day_active_ms,901_000);assert.equal(row.extensions,1);assert.equal(row.budget_wrapped,1);
+  const served=JSON.parse(String(row.served_json)) as {key:string;class:string;outcome:string;priorLapse:boolean|null;classicDueAt:string|null}[];
+  assert.deepEqual(served.map(entry=>[entry.key,entry.class,entry.outcome,entry.priorLapse]),[['word:a','held','covered',false],['word:b','held','covered',false]]);
+  assert.throws(()=>nextVocabularyExercise(id,'bad-time',{activeDurationMs:-1}),/not accepting|bounded/);
+}));
+
+test('an implausible client clock is rejected',()=>owner(()=>{
+  timedOn();const view=startVocabularyStudy({});
+  assert.throws(()=>nextVocabularyExercise(view.session.sessionId,'future',{activeDurationMs:3_600_000}),/bounded integer activeDurationMs/);
+}));
+
+test('a fresh entry into a spent day still runs a little while, counting earlier sessions including abandoned ones',()=>owner(()=>{
+  practiceAll('a','b','new');timedOn();
+  const first=startVocabularyStudy({});backdate(first.session.sessionId);
+  nextVocabularyExercise(first.session.sessionId,'tick',{activeDurationMs:1_500_000});
+  // The first session is abandoned without closure; its accepted time still belongs to the day.
+  const second=startVocabularyStudy({});
+  const timed=db.prepare('SELECT context_json FROM vocabulary_sessions WHERE session_id=?').get(second.session.sessionId) as {context_json:string};
+  const context=JSON.parse(timed.context_json) as VocabularySessionInitialContext;
+  assert.equal(context.timed?.dayActiveMsAtStart,1_500_000);
+  assert.equal(context.timed?.untilDayActiveMs,1_800_000);
+  assert.equal(second.session.projection.phase,'active');
+}));
+
+test('closure counts one passed-over day for unstarted due held items and clears served ones',()=>owner(()=>{
+  practiceAll('a','b','new');timedOn();
+  db.prepare("INSERT INTO learner_timed_skip_counts VALUES('alice','word','a',2,'2026-01-01','2026-01-01')").run();
+  const close=(key:string)=>{
+    let view=startVocabularyStudy({});const id=view.session.sessionId;backdate(id);
+    assert.equal(view.currentWordId,'a');
+    view=answerCurrent(id,key,view);view=nextVocabularyExercise(id,`${key}-wrap`,{activeDurationMs:1_200_000});
+    assert.equal(view.session.projection.phase,'completed');
+    const staged=stageVocabularySessionCompletion(id,view.session.actions.length);closeVocabularySessionCompletion(id,staged.completionId);
+    return id;
+  };
+  const counts=()=>db.prepare('SELECT target_id,skip_days,last_skipped_day FROM learner_timed_skip_counts ORDER BY target_id').all().map(row=>({...row}));
+  const id=close('first');
+  assert.deepEqual(counts(),[{target_id:'b',skip_days:1,last_skipped_day:today()},{target_id:'new',skip_days:1,last_skipped_day:today()}]);
+  const row=db.prepare('SELECT new_words_started,unstarted_pressing_json,budget_wrapped FROM vocabulary_timed_session_records WHERE session_id=?').get(id)!;
+  assert.deepEqual({...row},{new_words_started:0,unstarted_pressing_json:'[]',budget_wrapped:1});
+  // The same local day never counts twice.
+  makeDue('a');close('same-day');
+  assert.deepEqual(counts().map(entry=>entry.skip_days),[1,1]);
+  db.prepare("UPDATE learner_timed_skip_counts SET last_skipped_day='2000-01-01'").run();
+  makeDue('a');close('next-day');
+  assert.deepEqual(counts().map(entry=>entry.skip_days),[2,2]);
+  // Schedules of passed-over items never move.
+  assert.equal(getVocabularyWordSchedule('b')?.nextEligibleAt,null);
+}));
+
+test('closure counts due held items that never entered the session pool',()=>owner(()=>{
+  practiceAll('a','b','new');
+  const id='capped-out';
+  createVocabularySession({sessionId:id,words:[{wordId:'a',mode:'practice',selectedSkill:'production'}],
+    timed:{version:1,dayKey:'2026-11-12',budgetMs:600_000,budgetSource:'default',dayActiveMsAtStart:0,untilDayActiveMs:600_000,pressingKeys:[],facts:{}}});
+  db.prepare("INSERT INTO vocabulary_timed_session_records(session_id,learner_id,day_key,budget_ms,budget_source,day_active_ms_at_start,started_at) VALUES(?,?,?,?,?,?,?)")
+    .run(id,'alice','2026-11-12',600_000,'default',0,'2000-01-01T00:00:00.000Z');
+  let view=nextVocabularyExercise(id,'first');view=answerCurrent(id,'a',view);
+  view=nextVocabularyExercise(id,'wrap',{activeDurationMs:600_000});
+  const staged=stageVocabularySessionCompletion(id,view.session.actions.length);closeVocabularySessionCompletion(id,staged.completionId);
+  assert.deepEqual(db.prepare('SELECT target_id FROM learner_timed_skip_counts ORDER BY target_id').all().map(row=>row.target_id),['b','new']);
+}));
+
+test('the optional completion line is stored on timed sessions only, trimmed, bounded and clearable',()=>owner(()=>{
+  const classic=startVocabularyStudy({});
+  assert.throws(()=>saveVocabularySessionNote(classic.session.sessionId,'hello'),/Only timed sessions/);
+  timedOn();const id=startVocabularyStudy({}).session.sessionId;
+  assert.deepEqual(saveVocabularySessionNote(id,'  More listening, please.  '),{note:'More listening, please.'});
+  assert.equal(getVocabularyStudy(id).timed?.note,'More listening, please.');
+  assert.throws(()=>saveVocabularySessionNote(id,'x'.repeat(501)),/under 500/);
+  assert.throws(()=>saveVocabularySessionNote(id,7),/Expected note text/);
+  assert.deepEqual(saveVocabularySessionNote(id,'  '),{note:null});
+  assert.deepEqual({...db.prepare('SELECT note,note_at FROM vocabulary_timed_session_records WHERE session_id=?').get(id)},{note:null,note_at:null});
+}));
+
+test('Undo passes over the recorded budget wrap-up and extension to the learner\'s last answer',()=>owner(()=>{
+  practiceAll('a','b','new');timedOn();
+  let view=startVocabularyStudy({});const id=view.session.sessionId;backdate(id);
+  view=answerCurrent(id,'a',view);
+  const answered=view.session.actions.at(-1)!;
+  view=nextVocabularyExercise(id,'wrap',{activeDurationMs:1_200_000});
+  assert.equal(view.session.projection.phase,'completed');
+  assert.notEqual(view.session.projection.latestUndoableActionId,view.session.actions.at(-1)!.actionId,'budget wrap-up is not undoable');
+  view=commandVocabularyStudy(id,'more',{type:'studyMore',activeDurationMs:1_200_100});
+  view=nextVocabularyExercise(id,'after-more',{activeDurationMs:1_200_200});
+  assert.equal(view.currentWordId,'b');
+  // Undo reaches the answer (and its automatic wrap) rather than the trainer's transitions.
+  view=commandVocabularyStudy(id,'undo',{type:'undo'});
+  assert.equal(view.session.projection.words.a.covered,false);
+  assert.ok(view.session.projection.undoneActionIds.includes(answered.actionId));
+  assert.equal(view.session.projection.phase,'active');
+  assert.equal(view.timed?.budgetWrapped,false);
 }));

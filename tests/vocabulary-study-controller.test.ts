@@ -103,7 +103,7 @@ test('covered history retains more than 24 words, excludes partial successes, an
   for(const word of words){present(word.wordId,word.wordId);append({kind:'response',payload:{encounterId:word.wordId,response:word.wordId,outcome:'accepted'}});append({kind:'word_wrap',payload:{wordId:word.wordId,reason:'policy'}});}
   const view=():Study=>{const projection=projectVocabularySession(context,actions);return {session:{sessionId:context.sessionId,status:'active',context,actions,projection,completion:null},
     words:context.words.map((word)=>({...word,hanzi:word.wordId,traditional:null,pinyin:'pinyin',meaning:'meaning'})),currentWordId:projection.encounters.at(-1)!.wordId,currentEncounter:projection.encounters.at(-1)!,notice:null,
-    controls:{canNext:true,canSkip:true,canEnough:true,canMore:true,canUndo:true,canFinishForNow:true,canFinishImmediately:false,canChangeMode:true}};};
+    controls:{canNext:true,canSkip:true,canEnough:true,canMore:true,canUndo:true,canFinishForNow:true,canFinishImmediately:false,canChangeMode:true},timed:null};};
   let history=vocabularySessionHistory(view(),true);
   assert.equal(history.length,28);assert.equal(history[0].wordId,'word-27');assert.equal(history.at(-1)?.wordId,'word-0');
   present('not-covered','partial-success');

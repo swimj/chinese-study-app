@@ -63,3 +63,17 @@ test('word groups reflect teaching, mode progression, and coverage without inven
   const html = render({ outcomes: [{ ...word, group: 'graduated', detail: 'Solidify → Practice.' }, { ...word, word: { ...word.word, id: 'b' }, group: 'unfinished', detail: 'Unfinished; remains due for another session.' }] });
   assert.match(html, /Words solidified/); assert.match(html, /Left for next time/); assert.match(html, /Solidify → Practice/);
 });
+
+test('timed summary offers Study a little more beside Home and the same quiet line every day', () => {
+  const html = render({ canCancel: false, canStudyMore: true, note: { value: '', status: 'idle' } }, { onStudyMore: noop, onNoteChange: noop, onNoteSubmit: noop });
+  assert.match(html, /Study a little more/);
+  assert.doesNotMatch(html, /Return to study/);
+  assert.ok(html.indexOf('Return to Home') < html.indexOf('Study a little more'));
+  assert.match(html, /<label[^>]*>Anything you’d want different\?<\/label>/);
+  assert.match(html, /maxLength="500"/);
+  const quiet = render({ canCancel: false, canStudyMore: false, note: { value: 'More listening', status: 'saved' } }, { onStudyMore: noop });
+  assert.doesNotMatch(quiet, /Study a little more/);
+  assert.match(quiet, /value="More listening"/); assert.match(quiet, />Saved</);
+  const classic = render();
+  assert.doesNotMatch(classic, /Anything you’d want different|Study a little more/);
+});

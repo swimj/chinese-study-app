@@ -366,6 +366,11 @@ transaction/failure behavior, and how to add future migrations. Existing
 contrast eligibility repair remains in fresh initialization and explicit dev
 seed application, rather than rewriting persisted eligibility at every restart.
 
+`daily_study_minutes` in `learner_settings` stores the timed paradigm's 10, 20 or
+30 minutes; an absent row means the default 20. `learner_timed_skip_counts` and
+`vocabulary_timed_session_records` belong to timed sessions only; see
+[timed daily practice](vocabulary-learning.md#timed-daily-practice-prototype).
+
 The `learner_settings` row keyed by `(learner_id, daily_new_word_limit)` stores
 the learner's configured limit as JSON. The row keyed by
 `(learner_id, unstudied_admission_source)` stores `"mixed"` or `"stash_only"`.

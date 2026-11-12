@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { DEFAULT_INTRODUCTION_SPACING, MAX_INTRODUCTION_SPACING, isStudyIntroductionOrder, type StudyIntroductionOrder } from '../domain/introduction-order';
 import type { BackendStatus, UnstudiedAdmissionSource } from '../services/api';
 import type { CharacterPresentation, SentenceCharacterPresentation } from '../domain/card-characters';
+import { DAILY_STUDY_MINUTE_CHOICES, DEFAULT_DAILY_STUDY_MINUTES, isDailyStudyMinutes, type DailyStudyMinutes } from '../domain/timed-session';
 import type { SessionPrefetchState } from '../features/session/session-prefetch';
 import type { SessionPhase } from '../lib/session-state';
 import { getReviewFailureRatePeriods } from '../lib/review-failure-rates';
@@ -174,6 +175,7 @@ export function SessionSettingsPanel({
     characterPresentation?: CharacterPresentation;
     sentenceCharacterPresentation?: SentenceCharacterPresentation;
     debriefInterests?: string;
+    dailyStudyMinutes?: DailyStudyMinutes;
   }) => Promise<void>;
   onSavingChange: (saving: boolean) => void;
   onClose: () => void;
@@ -201,6 +203,9 @@ export function SessionSettingsPanel({
     backendStatus?.sentenceCharacterPresentation ?? 'simplified',
   );
   const [interestsDraft, setInterestsDraft] = useState(backendStatus?.debriefInterests ?? '');
+  const timedSessions = backendStatus?.timedSessions === true;
+  const committedDailyMinutes = backendStatus?.dailyStudyMinutes ?? DEFAULT_DAILY_STUDY_MINUTES;
+  const [dailyMinutesDraft, setDailyMinutesDraft] = useState<DailyStudyMinutes>(committedDailyMinutes);
   const [limitSaving, setLimitSaving] = useState(false);
   const [limitError, setLimitError] = useState<string | null>(null);
 
@@ -219,7 +224,8 @@ export function SessionSettingsPanel({
     && sentencePresentationDraft !== committedSentencePresentation;
   const committedInterests = backendStatus?.debriefInterests ?? '';
   const interestsDirty = backendStatus?.studyProfile === 'mandarin' && interestsDraft !== committedInterests;
-  const settingsDirty = introductionOrderDirty || introductionSpacingDirty || limitDirty || sourceDirty || presentationDirty || sentencePresentationDirty || interestsDirty;
+  const dailyMinutesDirty = timedSessions && dailyMinutesDraft !== committedDailyMinutes;
+  const settingsDirty = dailyMinutesDirty || introductionOrderDirty || introductionSpacingDirty || limitDirty || sourceDirty || presentationDirty || sentencePresentationDirty || interestsDirty;
 
   function beginLimitEdit() {
     setLimitDraft(committedLimit === null ? '' : String(committedLimit));
@@ -235,6 +241,7 @@ export function SessionSettingsPanel({
     setPresentationDraft(committedPresentation);
     setSentencePresentationDraft(committedSentencePresentation);
     setInterestsDraft(committedInterests);
+    setDailyMinutesDraft(committedDailyMinutes);
     setLimitEditing(false);
     setLimitError(null);
     onClose();
@@ -262,7 +269,10 @@ export function SessionSettingsPanel({
       characterPresentation?: CharacterPresentation;
       sentenceCharacterPresentation?: SentenceCharacterPresentation;
       debriefInterests?: string;
+      dailyStudyMinutes?: DailyStudyMinutes;
     } = {};
+
+    if (dailyMinutesDirty) patch.dailyStudyMinutes = dailyMinutesDraft;
 
     if (limitDirty) {
       const dailyNewWordLimit = Number(limitDraft);
@@ -274,7 +284,7 @@ export function SessionSettingsPanel({
       patch.dailyNewWordLimit = dailyNewWordLimit;
     }
 
-    if (introductionOrderDirty || introductionSpacingDirty) {
+    if (!timedSessions && (introductionOrderDirty || introductionSpacingDirty)) {
       patch.studyIntroductionOrder = introductionOrderDraft;
       patch.studyIntroductionSpacing = introductionSpacingDraft;
     }
@@ -334,7 +344,7 @@ export function SessionSettingsPanel({
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [limitDraft, introductionOrderDraft, introductionSpacingDraft, committedIntroductionOrder, committedIntroductionSpacing, sourceDraft, presentationDraft, sentencePresentationDraft, interestsDraft, committedInterests, limitSaving, settingsDirty, committedLimit, committedSource, committedPresentation, committedSentencePresentation]);
+  }, [dailyMinutesDraft, committedDailyMinutes, timedSessions, limitDraft, introductionOrderDraft, introductionSpacingDraft, committedIntroductionOrder, committedIntroductionSpacing, sourceDraft, presentationDraft, sentencePresentationDraft, interestsDraft, committedInterests, limitSaving, settingsDirty, committedLimit, committedSource, committedPresentation, committedSentencePresentation]);
 
   useEffect(() => {
     if (limitEditing) {
@@ -367,6 +377,8 @@ export function SessionSettingsPanel({
 
   useEffect(() => { setInterestsDraft(committedInterests); }, [committedInterests]);
 
+  useEffect(() => { setDailyMinutesDraft(committedDailyMinutes); }, [committedDailyMinutes]);
+
   return (
     <div
       id="session-settings-panel"
@@ -376,6 +388,26 @@ export function SessionSettingsPanel({
     >
       <h2>Session Settings</h2>
       <div className="session-settings-body">
+        {timedSessions ? (
+          <div className="session-settings-row" style={{ flexWrap: 'wrap' }}>
+            <label className="session-settings-label" htmlFor="daily-study-minutes">Daily study:</label>
+            <select
+              id="daily-study-minutes"
+              className="session-settings-select"
+              value={dailyMinutesDraft}
+              disabled={limitSaving}
+              onChange={(event) => {
+                const next = Number(event.target.value);
+                if (isDailyStudyMinutes(next)) {
+                  setDailyMinutesDraft(next);
+                  setLimitError(null);
+                }
+              }}
+            >
+              {DAILY_STUDY_MINUTE_CHOICES.map((minutes) => <option key={minutes} value={minutes}>About {minutes} minutes</option>)}
+            </select>
+          </div>
+        ) : null}
         <div className="session-settings-row">
           <span className="session-settings-label">Daily New Word Limit:</span>
           {limitEditing ? (
@@ -421,6 +453,8 @@ export function SessionSettingsPanel({
             New words from stash only
           </label>
         </div>
+        {/* The timed paradigm owns where new words go. */}
+        {!timedSessions ? <>
         <div className="session-settings-row" style={{ flexWrap: 'wrap' }}>
           <label className="session-settings-label" htmlFor="study-introduction-order">Introductions:</label>
           <select
@@ -464,6 +498,7 @@ export function SessionSettingsPanel({
           <p>Random mixes introductions into the session. Introductions first shows every new word before other exercises.</p>
           <p>Paced starts with an introduction, then spaces introductions with the selected number of existing learning or review exercises, when available. New-word practice joins the mix after all introductions are done.</p>
         </details>
+        </> : null}
         {backendStatus?.studyProfile === 'mandarin' ? (
           <div className="session-settings-row">
             <label className="session-settings-label" htmlFor="card-character-presentation">

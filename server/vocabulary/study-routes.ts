@@ -1,6 +1,7 @@
 import { getVocabularyWordsCollection } from '../db/vocabulary-words.ts';
 import type { Express, Request, Response } from 'express';
-import { startVocabularyStudy, previewVocabularyStudy, getVocabularyStudy, nextVocabularyExercise, commandVocabularyStudy } from './study.ts';
+import { startVocabularyStudy, previewVocabularyStudy, getVocabularyStudy, nextVocabularyExercise, commandVocabularyStudy, saveVocabularySessionNote } from './study.ts';
+import { VocabularyTimedSessionInputError } from '../db/vocabulary-timed-sessions.ts';
 import { stageVocabularySessionCompletion, getVocabularySessionCompletion, cancelVocabularySessionCompletion,
   closeVocabularySessionCompletion, getCurrentVocabularyPendingCompletionSessionId, VocabularySessionInputError, VocabularySessionConflictError,
   VocabularySessionNotFoundError } from '../db/vocabulary-sessions.ts';
@@ -54,6 +55,7 @@ export function parseVocabularyStudyCommand(value: unknown): VocabularyStudyComm
     case 'mode': return {type,mode:mode(b.mode),...(b.wordId === undefined ? {} : {wordId:text(b.wordId)})};
     case 'more': return {type,...(b.wordId === undefined ? {} : {wordId:text(b.wordId)})};
     case 'requeue': return {type,wordId:text(b.wordId)};
+    case 'studyMore': return {type,activeDurationMs:integer(b.activeDurationMs)};
     case 'enough': case 'undo': case 'resume': case 'finishForNow': case 'finishImmediately': return {type};
     default: throw new VocabularySessionInputError('Unsupported vocabulary command');
   }
@@ -65,7 +67,7 @@ export function registerVocabularyStudyRoutes(app: Express, wake: () => void = (
       if(wakeAfter)setImmediate(()=>{try{wake();}catch{console.error('Vocabulary worker wake failed');}});
     }
     catch(error) {
-      const status=error instanceof VocabularySessionInputError || error instanceof VocabularyStateInputError ? 400
+      const status=error instanceof VocabularySessionInputError || error instanceof VocabularyStateInputError || error instanceof VocabularyTimedSessionInputError ? 400
         : error instanceof VocabularySessionConflictError || error instanceof VocabularyStateConflict ? 409
         : error instanceof VocabularySessionNotFoundError || error instanceof VocabularyStateNotFoundError ? 404 : 500;
       if (status===500) console.error('Vocabulary operation failed',error);
@@ -77,8 +79,10 @@ export function registerVocabularyStudyRoutes(app: Express, wake: () => void = (
   app.get('/api/vocabulary/sessions/:id',handle(req=>getVocabularyStudy(req.params.id)));
   app.post('/api/vocabulary/sessions/:id/next',handle(req=>{
     const b=record(req.body); if(b.another!==undefined&&typeof b.another!=='boolean') throw new VocabularySessionInputError('Invalid another flag');
-    return nextVocabularyExercise(req.params.id,text(b.clientActionId),{...(b.wordId===undefined?{}:{wordId:text(b.wordId)}),...(b.another===undefined?{}:{another:b.another as boolean})});
+    return nextVocabularyExercise(req.params.id,text(b.clientActionId),{...(b.wordId===undefined?{}:{wordId:text(b.wordId)}),...(b.another===undefined?{}:{another:b.another as boolean}),
+      ...(b.activeDurationMs===undefined?{}:{activeDurationMs:integer(b.activeDurationMs)})});
   }));
+  app.post('/api/vocabulary/sessions/:id/note',handle(req=>saveVocabularySessionNote(req.params.id,record(req.body).note)));
   app.post('/api/vocabulary/sessions/:id/commands',handle(req=>{
     const b=record(req.body);return commandVocabularyStudy(req.params.id,text(b.clientActionId),parseVocabularyStudyCommand(b.command));
   }));

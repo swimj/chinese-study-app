@@ -85,7 +85,7 @@ export function VocabularySessionContent(props: VocabularySessionViewProps) {
       <Action control={controls.finishForNow} onClick={props.onFinishForNow}>Finish for now</Action>
     </header>
 
-    {props.phase === 'finishing' && <div className="vocab-finishing" role="status">
+    {props.phase === 'finishing' && !props.quietWrapUp && <div className="vocab-finishing" role="status">
       <div><strong>Wrapping up</strong><span>No new words. Finish the work already open.</span></div>
       <Action control={controls.resumeAllDue} onClick={props.onResumeAllDue}>Complete everything due</Action>
       <Action control={controls.finishImmediately} onClick={() => setConfirmFinish(true)}>Finish immediately</Action>
@@ -186,7 +186,7 @@ export function VocabularySessionContent(props: VocabularySessionViewProps) {
       <Action control={controls.undo} onClick={props.onUndo}>Undo last action</Action>
       {props.onShowShortcuts && <button type="button" className="vocab-text-button" aria-keyshortcuts="?" onClick={props.onShowShortcuts}>Shortcuts<ShortcutHint shortcut="?" /></button>}
       <span className="vocab-session-status">
-        <span style={{ visibility: props.saving ? 'hidden' : 'visible' }} aria-hidden={props.saving || undefined}>{props.progress.remaining} remaining <span className="vocab-dot">·</span> {props.progress.covered} covered <span className="vocab-dot">·</span> {props.progress.elapsedLabel}</span>
+        <span style={{ visibility: props.saving ? 'hidden' : 'visible' }} aria-hidden={props.saving || undefined}>{props.progress.remaining !== null && <>{props.progress.remaining} remaining <span className="vocab-dot">·</span> </>}{props.progress.covered} covered <span className="vocab-dot">·</span> {props.progress.elapsedLabel}</span>
         <span role="status" style={{ visibility: props.saving ? 'visible' : 'hidden' }} aria-hidden={!props.saving}>Saving your response…</span>
       </span>
     </div>

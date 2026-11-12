@@ -3,7 +3,7 @@ import { useEffect, useId, useRef } from 'react';
 import { ShortcutHint } from '../../components/ShortcutHint';
 import type { VocabularyCompletionView, VocabularySessionViewProps, VocabularyWordOutcome } from './types';
 
-export type VocabularyCompletionPanelActions = Pick<VocabularySessionViewProps, 'busy' | 'error' | 'onWordModeChange' | 'onPractiseWord' | 'onDismissWord' | 'onReturnHome' | 'onUndo' | 'onKeepSummaryOpen' | 'onCancelCompletion' | 'onRetryCompletion'>;
+export type VocabularyCompletionPanelActions = Pick<VocabularySessionViewProps, 'busy' | 'error' | 'onWordModeChange' | 'onPractiseWord' | 'onDismissWord' | 'onReturnHome' | 'onUndo' | 'onKeepSummaryOpen' | 'onCancelCompletion' | 'onRetryCompletion' | 'onStudyMore' | 'onNoteChange' | 'onNoteSubmit'>;
 
 function OutcomeModeControl({ props, outcome }: { props: VocabularyCompletionPanelActions; outcome: VocabularyWordOutcome }) {
   if (!props.onWordModeChange || !outcome.modeChoices?.length) return null;
@@ -39,6 +39,7 @@ function CompletionWords({ title, outcomes, props }: {
 /** Retains the completion report layout while using vocabulary learning modes and outcomes. */
 export function VocabularyCompletionPanel({ props, completion }: { props: VocabularyCompletionPanelActions; completion: VocabularyCompletionView }) {
   const titleId = useId();
+  const noteId = useId();
   const homeButton = useRef<HTMLButtonElement>(null);
   const undoButton = useRef<HTMLButtonElement>(null);
   const hadUndo = useRef(completion.canUndo);
@@ -74,6 +75,7 @@ export function VocabularyCompletionPanel({ props, completion }: { props: Vocabu
         {props.error && <p className="vocab-error" role="alert">{props.error}</p>}
         <div className="vocab-summary-actions">
           <button ref={homeButton} type="button" className="vocab-primary" disabled={!completion.canReturnHome || props.busy} aria-keyshortcuts="Space" onClick={props.onReturnHome}>Return to Home<ShortcutHint shortcut="Space" /></button>
+          {completion.canStudyMore && props.onStudyMore && <button type="button" className="vocab-secondary" disabled={props.busy || completion.status === 'saving'} onClick={props.onStudyMore}>Study a little more</button>}
           {((pending && completion.canUndo) || (closed && hadUndo.current)) && <button ref={undoButton} type="button" className={`vocab-text-button${closed ? ' vocab-expired-action' : ''}`}
             disabled={closed || props.busy} aria-hidden={closed || undefined} tabIndex={closed ? -1 : undefined}
             aria-keyshortcuts={closed ? undefined : 'U'} onClick={props.onUndo}>Undo last action<ShortcutHint shortcut="U" /></button>}
@@ -81,6 +83,15 @@ export function VocabularyCompletionPanel({ props, completion }: { props: Vocabu
           {pending && completion.canCancel && <button type="button" className="vocab-text-button" disabled={props.busy} onClick={props.onCancelCompletion}>Return to study</button>}
           {failed && <button type="button" className="vocab-secondary" disabled={props.busy} onClick={props.onRetryCompletion}>Try saving again</button>}
         </div>
+        {completion.note && <form className="vocab-summary-note" onSubmit={(event) => { event.preventDefault(); props.onNoteSubmit?.(); }}>
+          <label htmlFor={noteId}>Anything you’d want different?</label>
+          <div>
+            <input id={noteId} type="text" maxLength={500} autoComplete="off" value={completion.note.value}
+              onFocus={props.onKeepSummaryOpen} onChange={(event) => props.onNoteChange?.(event.target.value)} onBlur={props.onNoteSubmit} />
+            <span className={completion.note.status === 'failed' ? 'vocab-error' : undefined} role="status">
+              {completion.note.status === 'saved' ? 'Saved' : completion.note.status === 'failed' ? 'Not saved. Press Enter to try again.' : ''}</span>
+          </div>
+        </form>}
         {pending && completion.keepOpen && <p className="vocab-summary-hint">The session will still close automatically. This summary will stay open.</p>}
         <div className="vocab-summary-report">
           {groups.map(({ title, group }) => <CompletionWords key={title} title={title} outcomes={completion.outcomes.filter((outcome) => outcome.group === group)} props={props} />)}

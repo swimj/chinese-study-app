@@ -281,6 +281,45 @@ Home's active-time section shows Today and 3-/7-day averages from consecutive UT
 daily totals, including zero-activity days. Unmeasured sessions are disclosed and
 never filled with estimated durations.
 
+### Timed daily practice (prototype)
+
+The `timed_sessions` service control, on by default, makes Start use the timed
+paradigm from the [iterator prototype note](../notes/active/2026-11-11-timed-session-iterator-prototype.md).
+A session keeps the paradigm it started under: Start freezes a `timed` context with
+the local study day (04:00 boundary), the learner's `daily_study_minutes` (10, 20 or
+30; default 20, recorded as `default` or `chosen`), the day's earlier active time,
+the day active time at which this session wraps up, pressing keys, and each admitted
+item's classic due date and prior-lapse flag. That context stays server-side; the
+client receives only `timed` state (wrap-up, Study a little more, active time, note).
+
+Due rules are unchanged; timed admission orders held items that were passed over on
+three separate days (`learner_timed_skip_counts`) ahead of ordinary due work before
+the shared cap applies. Selection treats Solidify words, teaching already begun and
+those pressing held items as pressing. While any is still available, a not-yet-started
+new word does not begin, and inside the review bucket pressing items come first.
+Introduction order and spacing settings do not apply and the settings panel hides
+them. Admitted new words that never start remain enrolled, hidden Unstudied records
+and stay eligible for later admission.
+
+Each Next carries the client's active time, accepted within wall-clock bounds and
+never moving backward. When the day's active time reaches the threshold, Next
+records `finish_for_now` with `source: "budget"`; open work finishes and nothing new
+begins. Replay reads that action and never recomputes the client clock. After a
+budget wrap-up, the summary offers Study a little more: `studyMore` records `resume`
+with a new threshold five minutes of active time ahead. A fresh Start into a spent
+day also runs at least five minutes. Timed sessions offer no manual finish,
+wrapping-up banner, remaining count or Home item count.
+
+Closure clears the skip count of every started item and adds at most one passed-over
+day to each due held item that went unstarted, including due words the cap kept out
+of the pool and admitted pure cues. It fills `vocabulary_timed_session_records`:
+session and day active time, extensions, whether the budget ended the session,
+whether the new-word gate held, new words started, unstarted pressing keys and, per
+served item, its class, classic due date, prior lapse and outcome. The summary's
+optional line is saved to that record through its own endpoint and is never read by
+selection. Abandoned sessions keep their last accepted active time in the day but
+never close, so they add no skip counts.
+
 ## Session actions and completion
 
 During active wrap-up, “Complete everything due” records `resume` to return the

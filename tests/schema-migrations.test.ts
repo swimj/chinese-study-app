@@ -384,7 +384,8 @@ test('operator-only migration preserves both existing controls and defaults acce
     db.exec("UPDATE service_controls SET enabled = CASE control_key WHEN 'maintenance_mode' THEN 1 ELSE 0 END, updated_at = '2026-10-27T00:00:00.000Z', actor_id = 'incident-operator'");
     const before = db.prepare('SELECT * FROM service_controls ORDER BY control_key').all();
     assert.deepEqual(migrateDatabase(db), schemaMigrations.slice(index).map(entry=>entry.id));
-    assert.deepEqual(db.prepare("SELECT * FROM service_controls WHERE control_key != 'operator_only' ORDER BY control_key").all(), before);
+    // Later control migrations add their own rows; the earlier controls stay exact.
+    assert.deepEqual(db.prepare("SELECT * FROM service_controls WHERE control_key NOT IN ('operator_only','timed_sessions') ORDER BY control_key").all(), before);
     assert.deepEqual({ ...db.prepare("SELECT * FROM service_controls WHERE control_key = 'operator_only'").get() }, {
       control_key: 'operator_only', enabled: 0, updated_at: '1970-01-01T00:00:00.000Z', actor_id: 'system_default',
     });
@@ -576,7 +577,7 @@ test('repair target migration preserves legacy scopes and assessments without in
 test('background reserve migration retains membership and work while conservatively scheduling existing owners',()=>{
   const {db,file}=copy('background-reserve-upgrade',true);
   try {
-    const before=schemaMigrations.filter(m=>m.id!=='app_schema:0070_background_teaching_reserve');
+    const before=schemaMigrations.slice(0,schemaMigrations.findIndex(m=>m.id==='app_schema:0070_background_teaching_reserve'));
     migrateDatabase(db,before);
     db.exec(`INSERT INTO learners(learner_id,display_name,created_at) VALUES('reserve-owner','Owner','2026-11-01'),('reserve-dormant','Dormant','2026-11-01');
       INSERT INTO lexical_words(id,hanzi,pinyin,meaning,examples_json,priority,created_at) VALUES('reserve-word','词','ci','word','[]',1,'2026-11-01');
@@ -596,4 +597,28 @@ test('background reserve migration retains membership and work while conservativ
     assert.equal(inspection.status,0,inspection.stderr);assert.deepEqual(JSON.parse(inspection.stdout),{findings:[]});
     assert.deepEqual(db.prepare('PRAGMA data_version').get(),version,'operator inspection does not write');
   }finally{db.close();}
+});
+
+test('timed session migration keeps existing controls, enables timed sessions, and starts empty learner state', () => {
+  const { db } = copy('timed-session-upgrade', true);
+  try {
+    const index = schemaMigrations.findIndex(entry => entry.id === 'app_schema:0071_timed_daily_sessions');
+    migrateDatabase(db, schemaMigrations.slice(0, index));
+    db.exec("UPDATE service_controls SET enabled = 1, updated_at = '2026-11-10T00:00:00.000Z', actor_id = 'incident-operator' WHERE control_key = 'operator_only'");
+    const before = db.prepare('SELECT * FROM service_controls ORDER BY control_key').all();
+    assert.deepEqual(migrateDatabase(db), schemaMigrations.slice(index).map(entry => entry.id));
+    assert.deepEqual(db.prepare("SELECT * FROM service_controls WHERE control_key != 'timed_sessions' ORDER BY control_key").all(), before);
+    assert.deepEqual({ ...db.prepare("SELECT * FROM service_controls WHERE control_key = 'timed_sessions'").get() }, {
+      control_key: 'timed_sessions', enabled: 1, updated_at: '1970-01-01T00:00:00.000Z', actor_id: 'system_default',
+    });
+    assert.deepEqual(db.prepare('SELECT * FROM learner_timed_skip_counts').all(), []);
+    assert.deepEqual(db.prepare('SELECT * FROM vocabulary_timed_session_records').all(), []);
+    db.exec("INSERT INTO learners(learner_id,display_name,created_at) VALUES('timed-owner','Owner','2026-11-12')");
+    assert.throws(() => db.exec("INSERT INTO learner_timed_skip_counts VALUES ('timed-owner','word','w',0,'2026-11-12','now')"), /CHECK constraint/);
+    assert.throws(() => db.exec("INSERT INTO learner_timed_skip_counts VALUES ('timed-owner','word','w',1,'12 Nov','now')"), /CHECK constraint/);
+    assert.throws(() => db.exec("INSERT INTO service_controls VALUES ('invalid', 1, 'now', 'operator')"), /CHECK constraint/);
+    assert.deepEqual(migrateDatabase(db), []);
+    assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), []);
+    assertSchemaCurrent(db);
+  } finally { db.close(); }
 });

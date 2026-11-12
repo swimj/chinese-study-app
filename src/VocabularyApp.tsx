@@ -8,7 +8,7 @@ import {
 } from './domain/card-characters';
 import type { BackendStatus } from './services/api';
 import { fetchStatus, fetchVocabularyAttention, updateDailyNewWordLimit, updateDebriefInterests, updateUnstudiedAdmissionSource,
- updateCharacterPresentation, updateSentenceCharacterPresentation, updateStudyIntroductionOrder, flushPendingClientTransportIncidents } from './services/api';
+ updateCharacterPresentation, updateSentenceCharacterPresentation, updateStudyIntroductionOrder, updateDailyStudyMinutes, flushPendingClientTransportIncidents } from './services/api';
 import { useVocabularyStudy } from './features/vocabulary-study/useVocabularyStudy';
 import { VocabularyStudy } from './features/vocabulary-study/VocabularyStudy';
 import { VocabularyHomePage } from './pages/VocabularyHomePage';
@@ -117,7 +117,10 @@ function App({ onSignOut, accountScope = 'trusted-local' }: { onSignOut?: () => 
     characterPresentation?: CharacterPresentation;
     sentenceCharacterPresentation?: SentenceCharacterPresentation;
     debriefInterests?: string;
+    dailyStudyMinutes?: BackendStatus['dailyStudyMinutes'];
   }) {
+    const dailyStudyMinutes = settings.dailyStudyMinutes === undefined ? undefined
+      : (await updateDailyStudyMinutes(settings.dailyStudyMinutes)).dailyStudyMinutes;
     let policy: {
       dailyNewWordLimit: number;
       unstudiedAdmissionSource: BackendStatus['unstudiedAdmissionSource'];
@@ -153,7 +156,7 @@ function App({ onSignOut, accountScope = 'trusted-local' }: { onSignOut?: () => 
       debriefInterests = (await updateDebriefInterests(debriefInterests)).debriefInterests;
     }
 
-    if (!introductionSettings && !policy && characterPresentation === undefined && sentenceCharacterPresentation === undefined && debriefInterests === undefined) {
+    if (!introductionSettings && !policy && characterPresentation === undefined && sentenceCharacterPresentation === undefined && debriefInterests === undefined && dailyStudyMinutes === undefined) {
       return;
     }
 
@@ -174,6 +177,7 @@ function App({ onSignOut, accountScope = 'trusted-local' }: { onSignOut?: () => 
           ...(nextPresentation !== undefined ? { characterPresentation: nextPresentation } : {}),
           ...(nextSentencePresentation !== undefined ? { sentenceCharacterPresentation: nextSentencePresentation } : {}),
           ...(nextInterests !== undefined ? { debriefInterests: nextInterests } : {}),
+          ...(dailyStudyMinutes !== undefined ? { dailyStudyMinutes } : {}),
         }
       : currentStatus);
 

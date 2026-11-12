@@ -4,7 +4,7 @@ import { createVocabularyHomePreviewLoader, type VocabularyHomePreviewState } fr
 import type { VocabularySessionPreview } from '../src/domain/vocabulary-study-api.ts';
 function deferred<T>() { let resolve!:(value:T)=>void;let reject!:(reason:unknown)=>void;
   const promise=new Promise<T>((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject}; }
-const preview=(itemCount:number):VocabularySessionPreview=>({itemCount,previewSeed:`seed-${itemCount}`,preparationPending:false});
+const preview=(itemCount:number):VocabularySessionPreview=>({itemCount,previewSeed:`seed-${itemCount}`,preparationPending:false,timed:false});
 test('settings refresh ignores a late previous count and carries only the current sampling seed',async()=>{
   const old=deferred<VocabularySessionPreview>(),fresh=deferred<VocabularySessionPreview>();
   const states:VocabularyHomePreviewState[]=[];let calls=0;

@@ -28,7 +28,7 @@ test('deferral migration preserves existing case state, survives reopen and matc
     }
     const before=db.prepare('SELECT * FROM vocabulary_case_reviews ORDER BY case_id').all().map(row=>({...row}));
     // A later failure rolls this additive migration back as part of the same batch.
-    assert.throws(()=>migrateDatabase(db,[...schemaMigrations,{id:'app_schema:0071_test_failure',sql:'SELECT * FROM missing_table;'}]),/missing_table/);
+    assert.throws(()=>migrateDatabase(db,[...schemaMigrations,{id:'app_schema:9999_test_failure',sql:'SELECT * FROM missing_table;'}]),/missing_table/);
     assert.deepEqual(db.prepare('SELECT * FROM vocabulary_case_reviews ORDER BY case_id').all().map(row=>({...row})),before);
     assert.deepEqual(migrateDatabase(db),schemaMigrations.slice(index).map(m=>m.id));assertSchemaCurrent(db);
     const after=db.prepare('SELECT * FROM vocabulary_case_reviews ORDER BY case_id').all();

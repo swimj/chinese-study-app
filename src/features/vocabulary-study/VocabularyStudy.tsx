@@ -75,6 +75,7 @@ export function VocabularyStudy({ controller, hideStartButton = false, character
   const mode = wordProgress?.mode ?? null;
   const elapsed = elapsedLabel('1970-01-01T00:00:00.000Z',c.activeDurationMs);
   const completed = projection.phase === 'completed' || c.completion !== null;
+  const timed = study.timed;
   const completionUndoOpen = Boolean(c.completion?.status === 'pending' && c.completion.canUndo && c.remainingSeconds !== null && c.remainingSeconds > 0);
   const canAct = !c.busy && !c.saving && !confirmingRating && !motion.motionBusy && c.error === null;
   const control = (visible: boolean, enabled = true, reason?: string): VocabularyControl => ({ visible, enabled: enabled && canAct, ...(reason ? { reason } : {}) });
@@ -187,14 +188,15 @@ export function VocabularyStudy({ controller, hideStartButton = false, character
         canResume:canAct&&!state.teachingDeferred&&(state.workStatus==='wrapped'||state.workStatus==='skipped')};
     }),
     wordWork: {extraPractice:c.extraPracticeWordId===study.currentWordId},
-    progress: { remaining: vocabularyRemainingItemCount(study.session.context, projection), encountered: Object.values(projection.words).filter((entry) => entry.admitted).length, covered: projection.coveredWordIds.length, elapsedLabel: elapsed },
+    quietWrapUp: timed !== null,
+    progress: { remaining: timed ? null : vocabularyRemainingItemCount(study.session.context, projection), encountered: Object.values(projection.words).filter((entry) => entry.admitted).length, covered: projection.coveredWordIds.length, elapsedLabel: elapsed },
     controls: {
       skip: control(!intro && encounter?.snapshot.role !== 'teaching' && assessment !== 'accepted' && study.controls.canSkip && !completed && !encounter?.skipped && wordProgress?.workStatus !== 'wrapped'),
       another: control(!c.revealed && !encounter?.skipped && wordProgress?.workStatus !== 'wrapped' && !intro && !recognition && encounter?.snapshot.role !== 'teaching' && study.controls.canNext && !completed),
       enough: control(study.controls.canEnough && !completed), more: control(study.controls.canMore && !completed),
       undo: control((study.controls.canUndo || c.pendingProductionOverride) && !completed),
       finishForNow: control(study.controls.canFinishForNow && !completed), finishImmediately: control(study.controls.canFinishImmediately && !completed),
-      resumeAllDue: control(projection.phase === 'finishing' && !completed),
+      resumeAllDue: control(projection.phase === 'finishing' && !completed && !timed),
       changeMode: control(false),
     },
     reactionInput: { open: reactionOpen, visible: encounter !== null && !completed, reaction: c.reaction, comment: c.comment, status: c.reactionStatus },
@@ -214,7 +216,9 @@ export function VocabularyStudy({ controller, hideStartButton = false, character
           canDismiss: !outcome.covered && !c.dismissedWordIds.includes(entry.wordId) && Boolean(c.completion),
         };
       }),
-      feedback: [], canCancel: completionUndoOpen,
+      feedback: [], canCancel: completionUndoOpen && !timed,
+      ...(timed ? { canStudyMore: timed.canStudyMore || (timed.budgetWrapped && c.completion?.status === 'closed'),
+        note: { value: c.note, status: c.noteStatus } } : {}),
       canUndo: Boolean(completionUndoOpen && projection.latestUndoableActionId), canReturnHome: !c.saving && c.completion !== null,
     } : null,
     busy: c.busy, saving: c.saving, error: c.error,
@@ -229,6 +233,7 @@ export function VocabularyStudy({ controller, hideStartButton = false, character
     onReaction: c.react, onCommentChange: c.setComment, onCommentSubmit: c.submitComment,
     onCancelCompletion: () => { void c.resume(); }, onRetryCompletion: () => { void c.retrySave(); }, onReturnHome: () => { void c.returnHome(); },
     onKeepSummaryOpen: c.keepSummaryOpenNow,
+    onStudyMore: () => { void c.studyMore(); }, onNoteChange: c.setNote, onNoteSubmit: c.saveNote,
     onPractiseWord: (wordId, source) => { if (!canAct) return; if(projection.words[wordId]?.covered)void motion.runPrimary(() => c.requeue(wordId), { source });else void c.resume(wordId); }, onDismissWord: (wordId) => { void c.dismissWord(wordId); },
   };
   if (contrast && c.revealed) props.response.primaryEnabled = canAct;
