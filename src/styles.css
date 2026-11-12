@@ -4547,6 +4547,14 @@ input::placeholder, textarea::placeholder { color: var(--text-muted); opacity: 1
 .home-overview .session-start-shell { max-width: 420px; width: 100%; }
 @media (max-width: 520px) { .home-page:not(.home-session-active) .home-overview { grid-template-columns: 1fr; } }
 
+/* This week's study days: a quiet trace of showing up, without counts or streaks. */
+.study-week { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: .85rem; margin: -.4rem 0 1.25rem .25rem; color: var(--text-muted); font-size: .75rem; line-height: 1; }
+.study-week-day { display: grid; justify-items: center; gap: .35rem; min-width: 1rem; }
+.study-week-dot { width: .7rem; height: .7rem; border-radius: 50%; border: 1px solid var(--text-muted); box-sizing: border-box; }
+.study-week-day.is-studied .study-week-dot { background: var(--accent); border-color: var(--accent); }
+.study-week-day.is-upcoming .study-week-dot { border-style: dashed; border-color: var(--border); }
+.study-week-day.is-today { color: var(--text); font-weight: 600; }
+
 /* Update previews share the resting home, and stack in narrow desktop panels. */
 .home-page:not(.home-session-active):not(.home-connections-expanded) { container-type: inline-size; }
 .home-updates { min-width: 0; border-top: 1px solid var(--border); padding-top: 1.5rem; }

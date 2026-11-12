@@ -3,11 +3,11 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { test } from 'node:test';
 import { VocabularyHomeOverview } from '../src/pages/VocabularyHomePage.tsx';
-import { vocabularyActiveTimeMetrics, type VocabularyStatistics } from '../src/domain/vocabulary-statistics.ts';
+import { vocabularyActiveTimeMetrics, vocabularyStudyWeek, type VocabularyStatistics } from '../src/domain/vocabulary-statistics.ts';
 
 const statistics: VocabularyStatistics = { days: [{ dayKey: '2026-10-24', sessions: 2, coveredWords: 3,
   unknownCoverageSessions: 0, acceptedResponses: 12, rejectedResponses: 2, activeDurationMs: 180000, unknownDurationSessions: 0 }],
-  modes: { unstudied: 2, solidify: 4, practice: 6, maintain: 0 } };
+  modes: { unstudied: 2, solidify: 4, practice: 6, maintain: 0 }, studyDays: { today: '2026-10-24', studied: [] } };
 function render(options: Partial<Parameters<typeof VocabularyHomeOverview>[0]> = {}) {
   return renderToStaticMarkup(createElement(VocabularyHomeOverview, { compact: false, busy: false, settings: false,
     saving: false, guideToSettings: false, statistics, onStart: () => {}, onToggleSettings: () => {},
@@ -74,4 +74,32 @@ test('timed Home starts the day without presenting the due ledger, still naming 
   assert.match(ready,/Start session/);assert.match(ready,/<span class="session-start-card-helper"><\/span>/);assert.doesNotMatch(ready,/study items ready/);
   const empty=render({preview:{status:'ready',preview:{previewSeed:'seed',itemCount:0,preparationPending:true,timed:true},error:null}});
   assert.match(empty,/Check again/);assert.match(empty,/Nothing ready yet · preparing introductions/);assert.doesNotMatch(empty,/0 study items/);
+});
+
+const timedReady={status:'ready' as const,preview:{previewSeed:'seed',itemCount:25,preparationPending:false,timed:true},error:null};
+test('a studied day turns timed Start into studying a little more, and only in the timed paradigm',()=>{
+  const studied={...statistics,studyDays:{today:'2026-10-24',studied:['2026-10-22','2026-10-24']}};
+  assert.match(render({preview:timedReady}),/Start session/);
+  assert.match(render({preview:timedReady,statistics:studied}),/Study a little more/);
+  assert.doesNotMatch(render({preview:timedReady,statistics:studied}),/Start session/);
+  assert.match(render({statistics:studied}),/Start session/);
+  const empty=render({statistics:studied,preview:{...timedReady,preview:{...timedReady.preview,itemCount:0}}});
+  assert.match(empty,/Check again/);
+  assert.match(render({statistics:studied,preview:{status:'loading',preview:null,error:null}}),/Preparing session/);
+});
+
+test('the week runs Monday to Sunday with studied, open, and upcoming days and no counts',()=>{
+  // 2026-10-24 is a Saturday.
+  const week=vocabularyStudyWeek({today:'2026-10-24',studied:['2026-10-17','2026-10-19','2026-10-21','2026-10-24']});
+  assert.deepEqual(week.map(day=>[day.dayKey,day.label,day.state]),[
+    ['2026-10-19','M','studied'],['2026-10-20','T','open'],['2026-10-21','W','studied'],['2026-10-22','T','open'],
+    ['2026-10-23','F','open'],['2026-10-24','S','studied'],['2026-10-25','S','upcoming']]);
+  assert.equal(vocabularyStudyWeek({today:'2026-10-19',studied:[]})[0]!.dayKey,'2026-10-19');
+  assert.equal(vocabularyStudyWeek({today:'2026-10-25',studied:[]}).at(-1)!.dayKey,'2026-10-25');
+  const html=render({statistics:{...statistics,studyDays:{today:'2026-10-24',studied:['2026-10-19','2026-10-24']}}});
+  assert.match(html,/role="img" aria-label="This week: studied Monday, Saturday"/);
+  assert.match(html,/class="study-week-day is-studied is-today"/);
+  assert.doesNotMatch(html,/streak/i);
+  assert.match(render({statistics:{...statistics,studyDays:{today:'2026-10-24',studied:[]}}}),/aria-label="This week: no study yet"/);
+  assert.doesNotMatch(render({compact:true}),/study-week/);
 });

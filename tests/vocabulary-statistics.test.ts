@@ -4,11 +4,11 @@ import {afterEach,beforeEach,test} from 'node:test';
 import {setDb} from '../server/db/connection.ts';
 import {runWithLearnerId} from '../server/db/learner-context.ts';
 import {computeUsagePulseDay} from '../server/db/usage-pulse.ts';
-import {getVocabularyCompletionUsage,getVocabularyStatistics} from '../server/db/vocabulary-statistics.ts';
+import {getVocabularyCompletionUsage,getVocabularyStatistics,getVocabularyStudyDays} from '../server/db/vocabulary-statistics.ts';
 let db:DatabaseSync;let auth:string|undefined;let mode:string|undefined;let dataDir:string|undefined;
 beforeEach(()=>{
  mode=process.env.APP_MODE;dataDir=process.env.APP_DATA_DIR;process.env.APP_MODE='study';process.env.APP_DATA_DIR='/tmp/vocabulary-statistics';auth=process.env.APP_AUTH_MODE;process.env.APP_AUTH_MODE='clerk';db=new DatabaseSync(':memory:');setDb(db);
- db.exec(`CREATE TABLE vocabulary_session_completions(completion_id TEXT,learner_id TEXT,session_id TEXT,status TEXT,closed_at TEXT,input_json TEXT,report_json TEXT);
+ db.exec(`CREATE TABLE vocabulary_session_completions(completion_id TEXT,learner_id TEXT,session_id TEXT,status TEXT,closed_at TEXT,input_json TEXT,report_json TEXT,staged_at TEXT);
  CREATE TABLE vocabulary_sessions(learner_id TEXT,session_id TEXT,started_at TEXT);
  CREATE TABLE teaching_completions(learner_id TEXT,completion_id TEXT,source_kind TEXT);
  CREATE TABLE learners(learner_id TEXT);INSERT INTO learners VALUES ('a'),('b');
@@ -29,7 +29,7 @@ function completion(id:string,learner='a',closed='2026-10-17T00:00:01.000Z',dura
  encounters:[{presentationUndone:false,responses:[accepted,rejected],effectiveResponses:[accepted]},
  {presentationUndone:false,responses:[rejected],effectiveResponses:[rejected]},
  {presentationUndone:true,responses:[accepted],effectiveResponses:[accepted]}]};
- db.prepare('INSERT INTO vocabulary_session_completions VALUES (?,?,?,?,?,?,?)').run(id,learner,id,status,closed,JSON.stringify({activeDurationMs:duration}),JSON.stringify(report));
+ db.prepare('INSERT INTO vocabulary_session_completions VALUES (?,?,?,?,?,?,?,?)').run(id,learner,id,status,closed,JSON.stringify({activeDurationMs:duration}),JSON.stringify(report),closed);
  db.prepare("INSERT INTO teaching_completions VALUES (?,?,'session')").run(learner,id);
 }
 test('closed effective reports count Undo once, teaching separately, and retain unknown active time',()=>{
@@ -48,6 +48,7 @@ test('learner statistics union historical summaries and new closures by UTC with
  assert.deepEqual(stats.days.at(-1),{dayKey:'2026-10-17',sessions:2,coveredWords:2,unknownCoverageSessions:1,acceptedResponses:3,rejectedResponses:2,activeDurationMs:3200,unknownDurationSessions:0});
  assert.equal(stats.days.at(-2)!.sessions,1);assert.equal(stats.days.at(-2)!.activeDurationMs,0);
  assert.deepEqual(stats.modes,{unstudied:1,solidify:0,practice:2,maintain:0});
+ assert.deepEqual(stats.studyDays,{today:'2026-10-17',studied:['2026-10-16']});
  assert.equal(getVocabularyCompletionUsage('2026-10-17').sessions,2);
  assert.throws(()=>getVocabularyStatistics(),/Learner context/);
 });
@@ -83,4 +84,17 @@ test('operator new-word totals use closed summaries, add vocabulary teaching and
  assert.equal(pulse.reviewCorrect,3);
  assert.equal(pulse.reviewWrong,2);
  assert.equal(pulse.sessionActiveMs,3200);
+});
+
+test('study days follow the local 04:00 day, count finished sessions during Undo, and skip cancelled ones',()=>{
+ const at=(id:string,staged:string,status:string,learner='a')=>db.prepare('INSERT INTO vocabulary_session_completions(completion_id,learner_id,session_id,status,staged_at) VALUES (?,?,?,?,?)').run(id,learner,id,status,staged);
+ // 2026-11-12 02:30 in New York is still the 11th's study day.
+ at('late','2026-11-12T07:30:00.000Z','closed');
+ at('undo-window','2026-11-12T20:00:00.000Z','pending');
+ at('cancelled','2026-11-10T20:00:00.000Z','cancelled');
+ at('other-learner','2026-11-09T20:00:00.000Z','closed','b');
+ at('old','2026-10-01T20:00:00.000Z','closed');
+ const now=new Date('2026-11-12T20:00:05.000Z');
+ assert.deepEqual(runWithLearnerId('a',()=>getVocabularyStudyDays(now,'America/New_York')),{today:'2026-11-12',studied:['2026-11-11','2026-11-12']});
+ assert.deepEqual(runWithLearnerId('a',()=>getVocabularyStudyDays(now)),{today:'2026-11-12',studied:['2026-11-12']});
 });

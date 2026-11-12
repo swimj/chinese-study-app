@@ -1,6 +1,6 @@
 import { SessionStartCard } from '../components/SessionStartCard';
 import { fetchVocabularyStatistics, fetchVocabularySessionPreview } from '../services/api';
-import { vocabularyActiveTimeMetrics, type VocabularyStatistics } from '../domain/vocabulary-statistics';
+import { studiedToday, vocabularyActiveTimeMetrics, vocabularyStudyWeek, type VocabularyStatistics, type VocabularyStudyDays } from '../domain/vocabulary-statistics';
 import { useEffect, useState, type ReactNode } from 'react';
 import type { BackendStatus } from '../services/api';
 import type { ComponentProps } from 'react';
@@ -23,16 +23,19 @@ export function VocabularyHomeOverview(props: {
   const preview=props.preview??INITIAL_VOCABULARY_HOME_PREVIEW;
   const pending=preview.status==='loading';
   const count=preview.preview?.itemCount;
+  // In the timed paradigm a fresh Start into a studied day runs a few more minutes.
+  const returning=preview.preview?.timed===true&&studiedToday(props.statistics?.studyDays);
   return <section className={`panel home-overview${props.compact?' is-compact':''}`}>
     <SessionStartCard disabled={props.busy||props.settings||pending} onStart={props.onStart}
       settingsOpen={props.settings} settingsSaving={props.saving} guideToSettings={props.guideToSettings}
       onToggleSettings={props.onToggleSettings} helperTitle={preview.error??undefined}
-      label={props.busy||pending?'Preparing session…':count===0?'Check again':'Start session'}
+      label={props.busy||pending?'Preparing session…':count===0?'Check again':returning?'Study a little more':'Start session'}
       helper={preview.preview?.timed
         // The timed paradigm keeps the due ledger off Home; only an empty start needs saying.
         ?count===0?<>Nothing ready yet{preview.preview.preparationPending?' · preparing introductions':''}</>:preview.status==='error'?'Could not check study material':null
         :<>{count===undefined?preview.status==='error'?'Ready count unavailable':'… study items ready':`${count} study items ready`}
         {count===0&&preview.preview?.preparationPending?' · preparing introductions':''}</>} />
+    {!props.compact&&props.statistics?<StudyWeek studyDays={props.statistics.studyDays} />:null}
     {!props.compact&&today?<>
       <div className="vocabulary-home-stats" aria-label="Today’s study"><h2>Today</h2>
         <dl><div><dt>Sessions</dt><dd>{today.sessions}</dd></div><div><dt>Responses</dt><dd>{today.acceptedResponses+today.rejectedResponses}</dd></div></dl>
@@ -43,6 +46,16 @@ export function VocabularyHomeOverview(props: {
       </section>
     </>:null}
   </section>;
+}
+
+function StudyWeek({studyDays}:{studyDays:VocabularyStudyDays}) {
+  const week=vocabularyStudyWeek(studyDays);
+  const studied=week.filter(day=>day.state==='studied').map(day=>day.name);
+  return <div className="study-week" role="img" aria-label={`This week: ${studied.length?`studied ${studied.join(', ')}`:'no study yet'}`}>
+    {week.map(day=><span key={day.dayKey} className={`study-week-day is-${day.state}${day.dayKey===studyDays.today?' is-today':''}`}>
+      <span className="study-week-dot" />{day.label}
+    </span>)}
+  </div>;
 }
 
 export function VocabularyHomePage(props: {
