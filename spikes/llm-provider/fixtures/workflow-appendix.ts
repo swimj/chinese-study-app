@@ -691,7 +691,7 @@ type CueRepairAndContrastSeed = {
   observation: string;
   explanation: string;
   replacement: string;
-  repairIntent: Extract<ReflectionHandleOperationV0, { kind: 'repair_production_cue' }>['repairIntent'];
+  repairIntent: Extract<ReflectionHandleOperationV0, { kind: 'repair_production_cue'; version: 1 }>['repairIntent'];
   title: string;
   clusterNote: string;
   targetNuance: string;

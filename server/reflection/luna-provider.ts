@@ -109,7 +109,8 @@ export class LunaReflectionProviderError extends Error {
   readonly issueCount: number;
   readonly clientRequestId: string | null;
   readonly metadata: LunaReflectionRunMetadata | null;
-  readonly diagnostic: ReflectionGenerationDiagnostic | null;
+  /** Defined as non-enumerable in the constructor. */
+  declare readonly diagnostic: ReflectionGenerationDiagnostic | null;
 
   constructor(
     code: LunaReflectionFailureCode,

@@ -1,6 +1,6 @@
 import { eligibleVocabularyReflectionJob } from './reflection-eligibility.ts';
 import type { JsonSchema } from '../../src/domain/reflection-result-schema.ts';
-import type { VocabularyContent, VocabularyJson, VocabularySense } from '../../src/domain/vocabulary-content.ts';
+import type { ReadonlyVocabularyJson, VocabularyContent, VocabularyJson, VocabularySense } from '../../src/domain/vocabulary-content.ts';
 import type { VocabularyReflectionJob, VocabularyPureCueReferral } from '../../src/domain/vocabulary-reflection.ts';
 import { getEffectiveVocabularyEncounterReactions } from '../../src/domain/vocabulary-session.ts';
 import { getDb } from '../db/connection.ts';
@@ -38,21 +38,28 @@ export function vocabularyImprovementWords(job:VocabularyReflectionJob):Supplied
   }
   return words;
 }
-function exerciseText(body:VocabularyJson):{prompt:string;instruction:string;postAnswer:VocabularyJson} {
-  if(!body||typeof body!=='object'||Array.isArray(body))throw new Error('Exercise has no authored body');
+function isJsonRecord(value:ReadonlyVocabularyJson|undefined):value is {readonly [key:string]:ReadonlyVocabularyJson} {
+  return typeof value==='object'&&value!==null&&!Array.isArray(value);
+}
+// Array.isArray does not narrow readonly arrays out of a union.
+function isJsonArray(value:ReadonlyVocabularyJson|undefined):value is readonly ReadonlyVocabularyJson[] {
+  return Array.isArray(value);
+}
+function exerciseText(body:ReadonlyVocabularyJson):{prompt:string;instruction:string;postAnswer:ReadonlyVocabularyJson} {
+  if(!isJsonRecord(body))throw new Error('Exercise has no authored body');
   const stimulus=body.stimulus;
-  const prompt=typeof body.prompt==='string'?body.prompt:stimulus&&typeof stimulus==='object'&&!Array.isArray(stimulus)&&typeof stimulus.text==='string'
+  const prompt=typeof body.prompt==='string'?body.prompt:isJsonRecord(stimulus)&&typeof stimulus.text==='string'
     ?[typeof stimulus.frame==='string'?stimulus.frame:'',stimulus.text].filter(Boolean).join('\n'):null;
   if(prompt===null)throw new Error('Exercise has no visible prompt');
-  const material=body.material&&typeof body.material==='object'&&!Array.isArray(body.material)?body.material:body;
-  const postAnswer:Record<string,VocabularyJson>={};
+  const material=isJsonRecord(body.material)?body.material:body;
+  const postAnswer:Record<string,ReadonlyVocabularyJson>={};
   if(material.reveal!==undefined)postAnswer.reveal=material.reveal;
   if(body.explanation!==undefined)postAnswer.explanation=body.explanation;
   if(body.answer!==undefined)postAnswer.answer=body.answer;
   if(body.bootstrapReveal!==undefined)postAnswer.bootstrapReveal=body.bootstrapReveal;
-  if(Array.isArray(body.revealWords))postAnswer.words=body.revealWords.map(word=>{
-    if(!word||typeof word!=='object'||Array.isArray(word))throw new Error('Invalid frozen lexical reveal');
-    const sense=word.sense&&typeof word.sense==='object'&&!Array.isArray(word.sense)?word.sense.description:null;
+  if(isJsonArray(body.revealWords))postAnswer.words=body.revealWords.map(word=>{
+    if(!isJsonRecord(word))throw new Error('Invalid frozen lexical reveal');
+    const sense=isJsonRecord(word.sense)?word.sense.description:null;
     return {hanzi:word.hanzi??null,traditional:word.traditional??null,pinyin:word.pinyin??null,meaning:word.meaning??null,sense:sense??null};
   });
   return {prompt,instruction:typeof material.instruction==='string'?material.instruction:'',postAnswer:Object.keys(postAnswer).length?postAnswer:null};

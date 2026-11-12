@@ -1,3 +1,4 @@
+import type { SQLInputValue } from 'node:sqlite';
 import { getWordIntroductionLibrary } from './word-introductions.ts';
 import type {
   ContentDiagnosticKind,
@@ -458,7 +459,7 @@ function selectWordsByIds(ids: string[]): Word[] {
   `).map(mapWordRow);
 }
 
-function selectForIds<Row>(ids: string[], _idColumn: string, sql: string, leadingParams: unknown[] = []): Row[] {
+function selectForIds<Row>(ids: string[], _idColumn: string, sql: string, leadingParams: SQLInputValue[] = []): Row[] {
   const uniqueIds = [...new Set(ids)];
   if (uniqueIds.length === 0) return [];
   const placeholders = uniqueIds.map(() => '?').join(', ');

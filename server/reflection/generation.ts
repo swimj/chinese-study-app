@@ -632,7 +632,7 @@ async function runDiagnosisStage(input: {
 }
 
 async function runPromotionStage(input: {
-  continuation: ReflectionGenerationContinuation;
+  continuation: PreparedReflectionGenerationContinuation;
   provider: LunaReflectionProvider;
   providerConfig: ReflectionProviderConfig;
   now: () => string;
@@ -643,7 +643,6 @@ async function runPromotionStage(input: {
   lifecycleLogger: ReflectionLifecycleLogger | undefined;
 }): Promise<StagedRunSuccess<PureCuePromotionResultV2Wire>> {
   const bundle = input.continuation.promotionBundle;
-  if (bundle === null) throw new Error('Reflection continuation promotion input is missing.');
   if (input.provider.generatePromotion === undefined) {
     throw new Error('The selected reflection provider does not implement the promotion-stage contract.');
   }

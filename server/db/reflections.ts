@@ -244,9 +244,17 @@ export type ReflectionGenerationRunRecord = {
 
 export type RecordReflectionGenerationRunInput = Omit<
   ReflectionGenerationRunRecord,
-  'runId' | 'retryable'
+  | 'runId'
+  | 'retryable'
+  | 'completedAt'
+  | 'clientRequestId'
+  | 'bundleSchemaVersion'
+  | 'resultSchemaVersion'
+  | 'diagnostic'
 > & {
   runId?: string;
+  /** Only concluded runs are recorded here, so completion time is required. */
+  completedAt: string;
   clientRequestId?: string | null;
   bundleSchemaVersion?: string | null;
   resultSchemaVersion?: string | null;
@@ -1365,6 +1373,7 @@ export function listReflectionArtifacts(
     const summary = {
       artifactId: row.artifact_id,
       sourceSessionId: row.source_session_id,
+      sourceRunId: row.source_run_id,
       reflectionFlowVersion: row.reflection_flow_version,
       generatedAt: row.generated_at,
       provider: row.provider,
@@ -3181,12 +3190,7 @@ function mapArtifactRow(row: ArtifactRow): ReflectionArtifactRecord {
     row.result_json,
     `reflection artifact ${row.artifact_id} result`,
   );
-  const errors = validateReflectionArtifactPair(result, evidenceBundle);
-  if (errors.length > 0) {
-    throw corruptionError(
-      `artifact ${row.artifact_id} contains an invalid result:\n${errors.join('\n')}`,
-    );
-  }
+  assertStoredReflectionResult(result, evidenceBundle, row.artifact_id);
   if (
     row.bundle_schema_version !== evidenceBundle.schemaVersion
     || row.result_schema_version !== result.schemaVersion
@@ -3213,6 +3217,19 @@ function mapArtifactRow(row: ArtifactRow): ReflectionArtifactRecord {
     evidenceBundle,
     result,
   };
+}
+
+function assertStoredReflectionResult(
+  result: unknown,
+  evidenceBundle: SessionReflectionBundle,
+  artifactId: string,
+): asserts result is SessionReflectionResult {
+  const errors = validateReflectionArtifactPair(result, evidenceBundle);
+  if (errors.length > 0) {
+    throw corruptionError(
+      `artifact ${artifactId} contains an invalid result:\n${errors.join('\n')}`,
+    );
+  }
 }
 
 function validateReflectionArtifactPair(

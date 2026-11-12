@@ -163,14 +163,15 @@ describe('reflection HTTP API', { concurrency: false }, () => {
       event: 'reflection.generation_requested',
       sessionId: 'session-1',
     });
-    assert.equal(lifecycleEvents[1]?.event, 'reflection.generation_succeeded');
-    assert.deepEqual(lifecycleEvents[1], {
+    const succeededEvent = lifecycleEvents[1];
+    assert.ok(succeededEvent?.event === 'reflection.generation_succeeded');
+    assert.deepEqual(succeededEvent, {
       event: 'reflection.generation_succeeded',
       sessionId: 'session-1',
       artifactId: 'generated-artifact',
       proposalCount: 1,
       status: 'created',
-      elapsedMs: lifecycleEvents[1]?.elapsedMs,
+      elapsedMs: succeededEvent.elapsedMs,
     });
 
     generationImplementation = async () => ({
@@ -259,14 +260,16 @@ describe('reflection HTTP API', { concurrency: false }, () => {
       'reflection.generation_requested',
       'reflection.generation_failed',
     ]);
-    assert.deepEqual(lifecycleEvents[1], {
+    const failedEvent = lifecycleEvents[1];
+    assert.ok(failedEvent?.event === 'reflection.generation_failed');
+    assert.deepEqual(failedEvent, {
       event: 'reflection.generation_failed',
       sessionId: null,
       failure: 'internal',
       code: 'internal_error',
       clientRequestId: null,
       diagnosticId: payload.diagnosticId,
-      elapsedMs: lifecycleEvents[1]?.elapsedMs,
+      elapsedMs: failedEvent.elapsedMs,
     });
   });
 
@@ -322,13 +325,15 @@ describe('reflection HTTP API', { concurrency: false }, () => {
       json: { error: 'Failed to generate reflection' },
     });
     assert.equal(JSON.stringify(internal).includes('private provider output'), false);
-    assert.deepEqual(lifecycleEvents.at(-1), {
+    const lastEvent = lifecycleEvents.at(-1);
+    assert.ok(lastEvent?.event === 'reflection.generation_failed');
+    assert.deepEqual(lastEvent, {
       event: 'reflection.generation_failed',
       sessionId: 'session-1',
       failure: 'internal',
       code: null,
       clientRequestId: null,
-      elapsedMs: lifecycleEvents.at(-1)?.elapsedMs,
+      elapsedMs: lastEvent.elapsedMs,
     });
   });
 
@@ -394,6 +399,7 @@ describe('reflection HTTP API', { concurrency: false }, () => {
       artifacts: [{
         artifactId: artifact.artifactId,
         sourceSessionId: 'unreadable-session',
+        sourceRunId: null,
         reflectionFlowVersion: 'initial_post_session_reflection.v6',
         generatedAt,
         provider: 'openai',
@@ -726,7 +732,7 @@ describe('reflection HTTP API', { concurrency: false }, () => {
     const detail = await request(`/api/reflection-artifacts/${artifact.artifactId}`);
     assert.equal((detail.json as { helpInbox: unknown[] }).helpInbox.length, 0);
     assert.equal((detail.json as { deferredHelpInbox: unknown[] }).deferredHelpInbox.length, 1);
-    assert.equal((await request('/api/reflection-help-inbox')).json.entries.length, 0);
+    assert.equal(((await request('/api/reflection-help-inbox')).json as { entries: unknown[] }).entries.length, 0);
     assert.equal((await request('/api/reflection-artifacts?review=open')).status, 200);
   });
 

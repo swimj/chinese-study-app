@@ -15,7 +15,8 @@ export type VocabularyStudyCommand =
   | { type: 'response'; response: string | null; selfAssessment?: 'accepted' | 'rejected'; selectedWordId?: string }
   /** Exercise reaction; preserve the v1 command spelling for retained command retries. */
   | { type: 'feedback'; feedback: VocabularyReactionKind; comment?: string }
-  | { type: 'skip'; scope?: 'exercise' | 'word' }
+  /** A word skip may name a word other than the current encounter's, e.g. while a pure cue is showing. */
+  | { type: 'skip'; scope?: 'exercise' | 'word'; wordId?: string }
   | { type: 'enough' }
   | { type: 'more'; wordId?: string }
   /** Reopen covered work for normal queue selection, preserving the current encounter. */

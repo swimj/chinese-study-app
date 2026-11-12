@@ -1,4 +1,5 @@
 import { getDb } from './connection.ts';
+import type { VocabularyContent } from '../../src/domain/vocabulary-content.ts';
 import { getVocabularyContentForMaintenance } from './vocabulary-content.ts';
 import { isVocabularyDefinitionFallback } from '../../src/domain/vocabulary-production-coverage.ts';
 
@@ -11,5 +12,5 @@ export function authoredVocabularyRepertoire(wordId:string,options:{accessScope?
     AND c.exercise_type!='contrast' AND COALESCE(json_extract(c.assessment_json,'$.responseMode'),'')!='word_choice'
     ORDER BY c.content_id`).all(wordId,options.excludeContentId??'',options.accessScope??'shared',options.ownerLearnerId??null) as {content_id:string}[];
   return rows.map(row => getVocabularyContentForMaintenance(row.content_id))
-    .filter(content => content !== null && !isVocabularyDefinitionFallback(content));
+    .filter((content): content is VocabularyContent => content !== null && !isVocabularyDefinitionFallback(content));
 }

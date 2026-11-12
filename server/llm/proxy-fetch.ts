@@ -5,11 +5,14 @@ export const OPENAI_PROXY_URL = 'http://127.0.0.1:7897';
 
 const DEFAULT_PROVIDER_TIMEOUT_MS = 300_000;
 
+// The npm undici package declares its own copy of the Fetch API types. Its
+// Response is the implementation behind Node's global fetch, so present it as
+// the global Response type callers expect.
 function fetchWithDispatcher(dispatcher: Dispatcher): typeof globalThis.fetch {
   return (input, init) => undiciFetch(input as Parameters<typeof undiciFetch>[0], {
     ...(init as Record<string, unknown>),
     dispatcher,
-  } as Parameters<typeof undiciFetch>[1]);
+  } as Parameters<typeof undiciFetch>[1]) as Promise<Response>;
 }
 
 function directDispatcher(timeoutMs: number): Dispatcher {

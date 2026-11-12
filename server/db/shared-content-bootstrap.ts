@@ -115,7 +115,10 @@ export function parseSharedMandarinBootstrapArtifact(value: unknown): SharedMand
     if (candidate.traditional !== null && typeof candidate.traditional !== 'string') {
       throw new Error(`${label} traditional must be a string or null`);
     }
-    if (!Number.isInteger(candidate.priority)) throw new Error(`${label} priority must be an integer`);
+    const priority = candidate.priority;
+    if (typeof priority !== 'number' || !Number.isInteger(priority)) {
+      throw new Error(`${label} priority must be an integer`);
+    }
     if (!Array.isArray(candidate.examples) || !candidate.examples.every((item) => typeof item === 'string')) {
       throw new Error(`${label} examples must be an array of strings`);
     }
@@ -147,7 +150,7 @@ export function parseSharedMandarinBootstrapArtifact(value: unknown): SharedMand
       meaning: primaryMeaning,
       meanings,
       examples: [...candidate.examples],
-      priority: candidate.priority,
+      priority,
       createdAt,
     };
   });

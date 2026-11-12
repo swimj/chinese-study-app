@@ -1,5 +1,7 @@
 /** Current authored vocabulary objects. Sense mapping and curation evolve independently. */
 export type VocabularyJson = null | boolean | number | string | VocabularyJson[] | { [key: string]: VocabularyJson };
+/** Read-only view of JSON, accepted where frozen snapshots and mutable content are both read. */
+export type ReadonlyVocabularyJson = null | boolean | number | string | readonly ReadonlyVocabularyJson[] | { readonly [key: string]: ReadonlyVocabularyJson };
 export type VocabularyMode = 'solidify' | 'practice' | 'maintain';
 export type VocabularyActor = { kind: 'operator' | 'service'; id: string; reason?: VocabularyJson };
 export type VocabularyWordRelationship = {
