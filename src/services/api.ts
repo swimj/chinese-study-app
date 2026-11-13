@@ -1661,3 +1661,24 @@ export const applySenseReconciliation = (wordId: string, input: {expectedVersion
   apiRequest<SenseContentReconciliationWorkspace>(`${reconciliationPath(wordId)}/apply`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(input)});
 export const retrySenseReconciliation = (wordId: string) =>
   apiRequest<SenseContentReconciliationWorkspace>(`${reconciliationPath(wordId)}/retry`, {method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+
+export async function fetchRepertoireQuality(input: {
+  view: import('../domain/repertoire-quality').RepertoireQualityView;
+  page: number;
+  model?: import('../domain/repertoire-quality').RepertoireModel;
+}, signal?: AbortSignal): Promise<import('../domain/repertoire-quality').RepertoireQualityPage> {
+  const query = new URLSearchParams({ view: input.view, page: String(input.page) });
+  if (input.model) query.set('model', input.model);
+  const response = await apiFetch(`${API_BASE}/api/operator/repertoire-quality?${query}`, { signal });
+  if (!response.ok) throw new Error('Could not load repertoire quality.');
+  return response.json();
+}
+
+export async function fetchRepertoireQualityDetail(
+  view: import('../domain/repertoire-quality').RepertoireQualityView, id: string, signal?: AbortSignal,
+): Promise<import('../domain/repertoire-quality').RepertoireQualityDetail> {
+  const query = new URLSearchParams({ view, id });
+  const response = await apiFetch(`${API_BASE}/api/operator/repertoire-quality/detail?${query}`, { signal });
+  if (!response.ok) throw new Error('Could not load cue history.');
+  return response.json();
+}

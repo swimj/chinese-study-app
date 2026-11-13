@@ -22,6 +22,7 @@ Leaving the page via Return to study does not retain that in-memory workspace.
 | --- | --- | --- |
 | Usage | Current cohort pulse and the last seven completed daily snapshots | [Hosted observability](ops/hosted-observability.md) |
 | Model invocations | Inspect attributed provider calls, filter and group rows, compare spend summaries, and refresh the ledger | [Operator API](api.md#operator-view) |
+| Repertoire quality | Compare Sol and Luna, inspect exact cue revisions, and track encounters after repair | [Repertoire quality metrics](#repertoire-quality-metrics) |
 | Content sharing | Weekly exact-content reuse counts, learner-originated cue reuse, and inspectable examples | [Sharing metrics](#content-sharing) |
 | Content quality | Review content-quality signals and filter the triage queue | [Content quality](content-quality.md) |
 | Content improvement | Review vocabulary judgments and proposals, reconcile sense conflicts in Needs attention, and apply approved corrections | [Content improvement workflow](#content-improvement-workflow) |
@@ -156,6 +157,38 @@ Counts submitted by older clients before this qualification change measured
 covered practice encounters; those saved counts are not reclassified. A day
 with no completed sessions has zero practice. Spend accounting is available in
 Model invocations; the existing sparse spend-without-accepts signal remains.
+
+## Repertoire quality metrics
+
+Open **Repertoire quality** at `/operator/repertoire-quality`. **Compare
+cohorts** groups shared general production cues by the exercise-authoring
+model family across practice preparation, reflection bootstrap, and bulk
+backfill. Coverage starts wherever exact publication provenance is available.
+The comparison uses observed encounters, so the groups can differ in exercise
+age, words, and learners served.
+
+- **Served encounters** counts presentations in closed sessions on the exact
+  revision initially published from the authoring call. The companion count
+  shows how many of those published exercises have been served at least once.
+- **First try accepted** uses the first effective response from each answered
+  encounter. First misses with a retained unfair judgment appear under
+  **Judged unfair**. The remaining first misses appear under **Unclassified**.
+- **Authoring per word** divides known spend on qualifying repertoire authoring
+  calls by distinct words published in the model family. The spend includes
+  priced attempts that produced no publication. Pricing coverage is shown when
+  some calls lack costs.
+
+**Cues** shows the authoring path and prompt version. Open a cue to compare its
+published revision with later revisions and replacements, with encounters
+counted separately for each. A retained model draft shows the cue text before
+publication when a proposal provides that evidence.
+
+**Repair quality** follows applied single-exercise edits, replacements, and
+retirements. Before counts the exact source revision's encounters before
+application. After counts encounters on the exact repaired revision from
+application onward. A newly applied repair can have no subsequent use, and
+retirements have no after measure. The panel also shows later content changes
+and first misses after repair, including retained unfair judgments.
 
 ## Content improvement workflow
 

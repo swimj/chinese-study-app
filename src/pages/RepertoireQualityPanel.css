@@ -1,0 +1,311 @@
+.repertoire-quality {
+  display: grid;
+  gap: 1rem;
+  padding-block: 1.25rem 2rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.repertoire-quality :is(h2, h3, h4, p, dl, blockquote) {
+  margin: 0;
+}
+
+.repertoire-quality > header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .45rem 1rem;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.repertoire-quality-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .3rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.repertoire-quality-nav button {
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  padding: .55rem 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.repertoire-quality-nav button[aria-pressed="true"] {
+  border-bottom-color: var(--accent);
+  color: var(--accent);
+}
+
+.repertoire-quality-section {
+  display: grid;
+  gap: .85rem;
+  min-width: 0;
+}
+
+.repertoire-quality [hidden] {
+  display: none;
+}
+
+.repertoire-quality-secondary {
+  color: var(--text-secondary);
+  font-size: .9em;
+}
+
+.repertoire-quality-table {
+  width: 100%;
+  table-layout: fixed;
+  border-spacing: 0;
+  border: 1px solid var(--border);
+  border-radius: .55rem;
+  background: var(--surface);
+  font-variant-numeric: tabular-nums;
+}
+
+.repertoire-quality-table :is(th, td) {
+  padding: .6rem .7rem;
+  text-align: start;
+  vertical-align: top;
+}
+
+.repertoire-quality-table thead th {
+  background: var(--surface-muted);
+  color: var(--text-secondary);
+  font-size: .9em;
+  vertical-align: bottom;
+}
+
+.repertoire-quality-table thead th:first-child {
+  border-top-left-radius: .55rem;
+}
+
+.repertoire-quality-table thead th:last-child {
+  border-top-right-radius: .55rem;
+}
+
+.repertoire-quality-table tbody :is(th, td) {
+  border-top: 1px solid var(--border);
+}
+
+.repertoire-quality-table tbody th,
+.repertoire-quality-value {
+  font-weight: 650;
+}
+
+.repertoire-quality-value,
+.repertoire-quality-table .repertoire-quality-secondary {
+  display: block;
+}
+
+.repertoire-quality-cell-label {
+  display: none;
+}
+
+.repertoire-quality-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  clip-path: inset(50%);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.repertoire-quality-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  text-align: start;
+  text-decoration: underline;
+  text-underline-offset: .15em;
+  font: inherit;
+}
+
+.repertoire-quality :is(button, summary, select, [tabindex="-1"]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.repertoire-quality :is(summary, button:not(:disabled)) {
+  cursor: pointer;
+}
+
+.repertoire-quality-summary > summary {
+  width: fit-content;
+  color: var(--accent);
+}
+
+.repertoire-quality-summary[open] > summary {
+  margin-bottom: .55rem;
+}
+
+.repertoire-quality-summary > dl:not(.repertoire-quality-metrics) {
+  display: grid;
+  gap: .45rem;
+}
+
+.repertoire-quality-summary > dl:not(.repertoire-quality-metrics) dt {
+  font-weight: 650;
+}
+
+.repertoire-quality-summary > dl:not(.repertoire-quality-metrics) dd {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.repertoire-quality-card {
+  min-width: 0;
+  padding: .8rem .9rem;
+  border: 1px solid var(--border);
+  border-radius: .55rem;
+  background: var(--surface);
+}
+
+.repertoire-quality-split {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  gap: .6rem 1.15rem;
+}
+
+.repertoire-quality-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .45rem 1rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.repertoire-quality-metrics dt {
+  color: var(--text-secondary);
+  font-size: .9em;
+}
+
+.repertoire-quality-metrics dd {
+  margin: 0;
+  font-weight: 650;
+}
+
+.repertoire-quality-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: .5rem 1rem;
+}
+
+.repertoire-quality-controls label {
+  display: grid;
+  gap: .25rem;
+  min-width: 0;
+}
+
+.repertoire-quality-controls select {
+  min-width: 0;
+  max-width: 100%;
+  font: inherit;
+}
+
+.repertoire-quality-pagination {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .5rem .75rem;
+}
+
+.repertoire-quality-detail-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: .5rem 1rem;
+  justify-content: space-between;
+}
+
+.repertoire-quality-history {
+  padding: 0;
+  margin: .8rem 0 0;
+  list-style: none;
+}
+
+.repertoire-quality-history li {
+  display: grid;
+  gap: .3rem;
+  padding: 0 0 .8rem .75rem;
+  border-left: 1px solid var(--border);
+}
+
+.repertoire-quality-history li:last-child {
+  padding-bottom: 0;
+}
+
+.repertoire-quality-history h4 .repertoire-quality-secondary {
+  font-weight: normal;
+}
+
+.repertoire-quality-history blockquote {
+  font-size: 1.05em;
+}
+
+@container (max-width: 43rem) {
+  .repertoire-quality-table,
+  .repertoire-quality-table tbody {
+    display: block;
+  }
+
+  .repertoire-quality-table colgroup {
+    display: none;
+  }
+
+  .repertoire-quality-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    clip-path: inset(50%);
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  .repertoire-quality-table tbody tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: .45rem .75rem;
+    padding: .55rem .65rem;
+  }
+
+  .repertoire-quality-table tbody tr + tr {
+    border-top: 1px solid var(--border);
+  }
+
+  .repertoire-quality-table tbody :is(th, td) {
+    padding: 0;
+    border: 0;
+  }
+
+  .repertoire-quality-table tbody th {
+    grid-column: 1 / -1;
+  }
+
+  .repertoire-quality-cell-label {
+    display: block;
+    color: var(--text-secondary);
+    font-size: .9em;
+  }
+}
+
+@container (max-width: 16rem) {
+  .repertoire-quality-table tbody tr {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 620px) {
+  .operator-main .repertoire-quality > header {
+    padding-left: 2.9rem;
+  }
+}
+
+@media (pointer: coarse) {
+  .repertoire-quality :is(button, select) {
+    min-height: 2.75rem;
+  }
+}

@@ -377,6 +377,8 @@ accepts a client-selected learner; writes use the authenticated learner context.
 | Method | Path | Handler domain |
 | --- | --- | --- |
 | GET | `/api/operator/usage-pulse` | Operational cohort pulse |
+| GET | `/api/operator/repertoire-quality?view=cues&page=1` | Repertoire authoring cohorts and paginated cues or repairs |
+| GET | `/api/operator/repertoire-quality/detail?view=cues&id=…` | Exact cue or repair revision history |
 | GET | `/api/operator/content-sharing?weekStart=YYYY-MM-DD` | Reconstructed UTC-week content reuse and bounded shared-content examples |
 | GET | `/api/operator/model-invocations?from=YYYY-MM-DD&to=YYYY-MM-DD` | User-attributed model calls in an inclusive UTC date range |
 | GET | `/api/operator/word-preparation/failures` | Shared preparation failures and attempt history |
@@ -407,6 +409,21 @@ active session time, and sparse scenario counts). The
 configured hosted smoke learner (`APP_SMOKE_CLERK_USER_ID`) is omitted from the
 inactive-7d count. See [usage metric definitions](operator-panel.md#usage-metrics)
 for units and historical availability.
+
+The repertoire quality routes accept `view=cues` or `view=repairs`. Lists
+require a one-based `page` and accept an optional `model=sol` or `model=luna`
+for cues. The response carries aggregate counts, the snapshot capture time,
+and up to 25 rows of the selected list. Details require the opaque `id` from a
+list row and return `404` when it is absent from the current snapshot. Invalid
+parameters return `400`. Both routes omit learner identifiers, responses, and
+feedback text.
+
+An operator request builds the initial snapshot in a worker with a read-only
+database connection. After ten minutes, the next request starts a single
+background refresh and serves the previous snapshot. Refresh failures retain
+the last usable snapshot and allow a retry after one minute. If no snapshot
+is available, the route returns `503`. See [repertoire quality metrics](operator-panel.md#repertoire-quality-metrics)
+for evidence and counting rules.
 
 `GET /api/operator/model-invocations` returns `{ rows }`: timestamp,
 provider/model identifier, invocation type, learner identity and display name,
