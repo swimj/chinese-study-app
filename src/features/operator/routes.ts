@@ -5,6 +5,7 @@ export const OPERATOR_TABS = [
   { id: 'quality', label: 'Content quality' },
   { id: 'improvement', label: 'Content improvement' },
   { id: 'failures', label: 'Preparation failures' },
+  { id: 'reactions', label: 'Learner reactions' },
   { id: 'whats-new', label: 'What’s new' },
   { id: 'banner', label: 'Service banner' },
 ] as const;

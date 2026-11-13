@@ -25,6 +25,8 @@ import { listModelInvocations, ModelInvocationInputError } from './db/model-invo
 import { getDebriefInterests, setDebriefInterests, getLatestSessionDebrief, getSessionDebrief, retrySessionDebrief, SessionDebriefNotFoundError, SessionDebriefRetryConflictError } from './db/session-debrief.ts';
 import { SessionDebriefInputError, validateDebriefInventory } from '../src/domain/session-debrief.ts';
 import { startSessionDebriefRuntime } from './session-debrief/worker.ts';
+import { ContentReactionNotFoundError, getContentReactionSummary, getSavedCollection, listContentReactions, setContentReaction } from './db/content-reactions.ts';
+import { ContentReactionInputError, parseContentReactionInput } from '../src/domain/content-reactions.ts';
 import { ContentQualityInputError, parseContentQualityTarget, recordContentQualityEncounter, setContentQualityRating, getContentQualityAnalytics, getContentQualityRatingLedger } from './db/content-quality.ts';
 import type { ContentQualityKind } from '../src/domain/content-quality.ts';
 import { ContentSharingInputError, getContentSharingDigest } from './db/content-sharing.ts';
@@ -460,6 +462,14 @@ export function createApp(options: CreateAppOptions = {}) {
     }
   });
 
+  app.get('/api/operator/content-reactions', createOperatorAllowlistMiddleware(), (_req, res) => {
+    try { res.json(getContentReactionSummary()); }
+    catch (error) {
+      console.error('Failed to load content reaction summary', error);
+      res.status(500).json({ error: 'Failed to load content reaction summary' });
+    }
+  });
+
   app.get(
     '/api/operator/usage-pulse',
     createOperatorAllowlistMiddleware(),
@@ -816,6 +826,24 @@ export function createApp(options: CreateAppOptions = {}) {
       res.status(error instanceof SessionDebriefNotFoundError ? 404 : error instanceof SessionDebriefRetryConflictError ? 409 : 500)
         .json({ error: error instanceof SessionDebriefNotFoundError || error instanceof SessionDebriefRetryConflictError ? error.message : 'Failed to retry session debrief' });
     }
+  });
+
+  app.get('/api/content-reactions', (_req, res) => {
+    res.json({ reactions: listContentReactions() });
+  });
+
+  app.put('/api/content-reactions', (req, res) => {
+    try { res.json({ reaction: setContentReaction(parseContentReactionInput(req.body)) }); }
+    catch (error) {
+      if (error instanceof ContentReactionInputError) { res.status(400).json({ error: error.message }); return; }
+      if (error instanceof ContentReactionNotFoundError) { res.status(404).json({ error: error.message }); return; }
+      console.error('Failed to save content reaction', error);
+      res.status(500).json({ error: 'Failed to save reaction' });
+    }
+  });
+
+  app.get('/api/saved-collection', (_req, res) => {
+    res.json(getSavedCollection());
   });
 
   app.patch('/api/learner-settings/character-presentation', (req, res) => {

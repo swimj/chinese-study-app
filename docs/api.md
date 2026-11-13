@@ -1230,6 +1230,20 @@ Dismissal excludes a message from unread attention without changing its body,
 seen time, scheduling or content-improvement state. GET retains dismissed
 messages for the learner’s history.
 
+### Learner content reactions
+
+| Method | Path | Response |
+| --- | --- | --- |
+| GET | `/api/content-reactions` | `{reactions}`: the learner's current Save / Not for me states |
+| PUT | `/api/content-reactions` | Replace one subject's state from `{subject, reaction, reasons, note, surface}`; `reaction: null` clears. Returns `{reaction}` (null when cleared); 400 for invalid input, 404 for a note or lesson the learner does not own |
+| GET | `/api/saved-collection` | `{connections, lessons}` for the Saved page |
+| GET | `/api/operator/content-reactions` | Operator-only totals, reasons, connection rates by prompt and model, and items marked Wrong |
+
+A subject is `{kind:'connection', sessionId, noteIndex}` or
+`{kind:'lesson', messageId}`. Reasons apply only to `not_for_me`; a note only to
+`saved`. Surfaces are `home`, `feedback` and `saved`. Contracts live in
+`src/domain/content-reactions.ts`.
+
 ### Case review queue and history
 
 `GET /api/operator/vocabulary/attention-queue` returns `{items,total,offset}`.

@@ -6,6 +6,7 @@ import type { WhatsNewPost, WhatsNewWriteRequest } from '../domain/whats-new';
 import type { WhatsNewAttention } from '../domain/whats-new-attention';
 import type { ModelInvocationRow } from '../domain/model-invocations';
 import type { SessionDebrief, SessionDebriefInventoryItem } from '../domain/session-debrief';
+import type { ContentReactionInput, ContentReactionState, ContentReactionSummary, SavedCollection } from '../domain/content-reactions';
 import type {
   PriorityWord,
   ReviewFailureRateDay,
@@ -1474,6 +1475,30 @@ export async function retrySessionDebrief(sessionId: string, signal?: AbortSigna
   const response = await apiFetch(`${API_BASE}/api/session-debriefs/${encodeURIComponent(sessionId)}/retry`, { method: 'POST', signal });
   if (!response.ok) throw new Error(await readApiErrorMessage(response, 'Could not retry session debrief'));
   return (await response.json() as { debrief: SessionDebrief }).debrief;
+}
+
+export async function fetchContentReactions(signal?: AbortSignal): Promise<ContentReactionState[]> {
+  const response = await apiFetch(`${API_BASE}/api/content-reactions`, { signal });
+  if (!response.ok) throw new Error(await readApiErrorMessage(response, 'Could not load saved items'));
+  return (await response.json() as { reactions: ContentReactionState[] }).reactions;
+}
+/** Replace one subject's reaction; `reaction: null` clears it. */
+export async function saveContentReaction(input: ContentReactionInput): Promise<ContentReactionState | null> {
+  const response = await apiFetch(`${API_BASE}/api/content-reactions`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
+  });
+  if (!response.ok) throw new Error(await readApiErrorMessage(response, 'Could not save'));
+  return (await response.json() as { reaction: ContentReactionState | null }).reaction;
+}
+export async function fetchSavedCollection(signal?: AbortSignal): Promise<SavedCollection> {
+  const response = await apiFetch(`${API_BASE}/api/saved-collection`, { signal });
+  if (!response.ok) throw new Error(await readApiErrorMessage(response, 'Could not load saved items'));
+  return response.json() as Promise<SavedCollection>;
+}
+export async function fetchOperatorContentReactions(): Promise<ContentReactionSummary> {
+  const response = await apiFetch(`${API_BASE}/api/operator/content-reactions`);
+  if (!response.ok) throw new Error(await readApiErrorMessage(response, 'Failed to load reactions'));
+  return response.json() as Promise<ContentReactionSummary>;
 }
 
 export async function fetchWhatsNew(): Promise<{ posts: WhatsNewPost[] }> {

@@ -117,3 +117,6 @@
   .home-connections-loop-dot { display: none; animation: none; }
 }
 @keyframes home-connection-loop-still { 0%, 90% { opacity: 1; } 100% { opacity: 0; } }
+
+.home-connections-reactions { margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent); }
+.home-connections-note.is-muted .home-connections-prose { color: var(--text-muted); }

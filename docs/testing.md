@@ -159,6 +159,10 @@ with multiple accepted members; the retained-answer check verifies its label and
 chosen member. Undo withdraws that response, allowing a fresh written-miss check.
 Add `&narrow=1` for a 420px panel with enlarged text. `?covered=1` checks the covered card's rightward
 departure; `?retry=1` fails the first save so Retry save must retain the departure.
+`/tests/browser/saved-items.html` renders the Saved page and the Home
+connections reader against in-memory reactions; `?scenario=empty` and
+`?scenario=home` select the other states, and **Fail next save** checks the
+restore-on-failure path. The Feedback fixture uses the same in-memory reactions.
 `/tests/browser/vocabulary-ui.html` provides presentation scenarios, including
 `?state=Cloze%20reveal` for an old snapshot containing an unrelated bootstrap
 example and `?state=Teaching` for target ruby and hover/focus pronunciation.
@@ -296,6 +300,8 @@ All HTTP is intercepted, so these fixtures do not modify learner data.
 | `session-debrief-inventory.test.ts` | Covered-only frozen inventory, actual contrast target, one-row purecue alternatives, pronunciation absence, Undo | `session-summary.ts` + session state machine |
 | `session-debrief-loader.test.ts` | Pending-only polling, request abort/fencing, retry races and lost response recovery | `session-debrief-loader.ts` |
 | `home-connections.test.ts` | Completed-session presentation preferences, deferred ready introduction, exact previews, bounded ring navigation, arrow-key guards, loop cue, waiting/failure/empty states | Home connections state/keyboard models + server-rendered component |
+| `content-reactions.test.ts` | Reaction input validation, one current reaction per subject, append-only history, ownership, Saved collection window and operator summary, HTTP routes | DB module + API against a disposable database |
+| `content-reactions-ui.test.ts` | Exclusive Save / Not for me toggles, reasons and notes, S/X guards, Home reaction rendering, Saved grouping, filtering and visit-stable membership | Reaction state, controls and Saved list helpers |
 | `session-debrief-ui.test.ts` | Exact stepped text, empty/loading/failure, safe keyboard navigation, blank optional interests and French exclusion | Debrief card and settings server render + keyboard model |
 | `session-finalization.test.ts` | Explicit summary-entry boundary, commit-before-summary ordering, reflection isolation/retry and stale-response guards | `session-finalization.ts` |
 | `reflection-page-model.test.ts` | Item/proposal grouping, help-queue cards from Help inbox membership, deep draft edits for four operations, support and validation presentation | `reflection-page-model.ts` |

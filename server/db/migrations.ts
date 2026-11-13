@@ -244,6 +244,9 @@ export const schemaMigrations: readonly SchemaMigration[] = [{
 }, {
   id: 'app_schema:0071_timed_daily_sessions',
   sql: fs.readFileSync(new URL('./migrations/0071_timed_daily_sessions.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0072_learner_content_reactions',
+  sql: fs.readFileSync(new URL('./migrations/0072_learner_content_reactions.sql', import.meta.url), 'utf8'),
 }];
 
 function checksum(value: string): string {

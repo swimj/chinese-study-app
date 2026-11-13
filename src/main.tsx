@@ -11,6 +11,7 @@ import './features/introduction-lab/styles.css';
 import './features/word-introduction/styles.css';
 import './features/session/session-desk.css';
 import './features/session/home-connections.css';
+import './features/reactions/reactions.css';
 
 if (import.meta.env.DEV && import.meta.env.VITE_NEW_LEARNER_PREVIEW === 'true'
   && import.meta.env.VITE_AUTH_MODE === 'trusted_local') {

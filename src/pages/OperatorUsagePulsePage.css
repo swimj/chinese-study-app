@@ -83,3 +83,6 @@
 .operator-service-banner details { margin-top: 0.75rem; }
 .operator-service-banner summary { cursor: pointer; }
 .operator-banner-action input, .operator-banner-action textarea { min-width: 0; box-sizing: border-box; }
+.operator-usage-pulse .operator-table { border-collapse: collapse; width: 100%; max-width: 48rem; margin: 0 0 1.25rem; }
+.operator-usage-pulse .operator-table caption { text-align: left; font-weight: 600; padding-bottom: .4rem; }
+.operator-usage-pulse .operator-table :is(th, td) { padding: .45rem .65rem; border-bottom: 1px solid var(--border); text-align: left; overflow-wrap: anywhere; }

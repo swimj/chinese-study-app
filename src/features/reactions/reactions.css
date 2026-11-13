@@ -1,0 +1,19 @@
+.reaction-controls { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem; }
+.reaction-controls-main { display: flex; flex-wrap: wrap; gap: .5rem; }
+.reaction-button {
+  position: relative; display: inline-flex; align-items: center; gap: .35rem; min-height: 2.5rem; padding: .45rem .85rem;
+  border: 1px solid var(--border); border-radius: 999px; background: color-mix(in srgb, var(--surface) 70%, transparent);
+  color: var(--text-secondary); font-size: .9rem; line-height: 1.2; box-shadow: none;
+}
+.reaction-button:hover { background: var(--surface-hover); color: var(--text); transform: none; }
+.reaction-button.is-save.is-on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.reaction-button.is-not-for-me.is-on { border-color: var(--text-muted); background: var(--surface-muted); color: var(--text); }
+.reaction-button:hover .session-shortcut-hints, .reaction-button:focus-visible .session-shortcut-hints { opacity: 1; }
+.reaction-reasons { display: flex; flex-wrap: wrap; gap: .4rem; }
+.reaction-reason {
+  min-height: 2.25rem; padding: .3rem .7rem; border: 1px dashed var(--border); border-radius: 999px;
+  background: transparent; color: var(--text-secondary); font-size: .85rem; box-shadow: none;
+}
+.reaction-reason:hover { background: var(--surface-hover); transform: none; }
+.reaction-reason.is-on { border-style: solid; border-color: var(--text-muted); background: var(--surface-muted); color: var(--text); }
+.reaction-error { color: var(--danger); font-size: .9rem; margin: .5rem 0 0; }

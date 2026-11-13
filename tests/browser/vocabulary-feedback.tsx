@@ -6,6 +6,8 @@ import type {VocabularyFeedbackInbox} from '../../src/services/api';
 import '../../src/styles.css';
 import '../../src/features/vocabulary-study/pages.css';
 import './vocabulary-feedback.css';
+import { createMemoryReactionsApi } from './memory-reactions';
+const reactions=createMemoryReactionsApi();
 const examples=[
   {label:'A useful correction',trigger:'A rejected production answer leads to a short language lesson.',lesson:'饿 describes being hungry; 馋 describes wanting something tasty. You can be 馋 even after a full meal.\n\n我不饿，就是闻到烤红薯的香味，有点馋了。\nI’m not hungry—the smell of roasted sweet potatoes just made me want some.'},
   {label:'An unfair rejection',trigger:'A plausible answer was rejected. The lesson can acknowledge that without becoming a repair report. Eligible scheduling compensation happens separately.',lesson:'Your answer 局势 was reasonable for the broad question you saw. 局面 often describes how a situation has developed and what can be done about it.\n\n打开局面 — make a breakthrough\n扭转局面 — turn the situation around\n\n新厂长上任后，很快就打开了工作局面。\nAfter taking over, the new factory manager quickly got things moving.'},
@@ -43,7 +45,7 @@ function Preview(){
     <AppChrome currentPage={opened?'reflections':'home'} error={null} serviceBanner={null} sessionActive={false} priorityPageLoading={false} reflectionPageLoading={false} contentPageLoading={false}
       reflectionUnseenCount={unread} reflectionGenerating={selected===4} hasUnseenReflectionFailure={selected===5&&!retried}
       onOpenHomePage={()=>setOpened(false)} onOpenReflectionsPage={()=>setOpened(true)} onOpenPriorityPage={()=>{}} onOpenContentPage={()=>{}} onOpenAboutPage={()=>{}}>
-      {opened?<VocabularyFeedbackPage key={selected} api={api}/>:<section className="panel feedback-example-arrival"><h1>{example.label}</h1><p>Open Feedback in the sidebar to see this example.</p><button onClick={()=>setOpened(true)}>Open feedback</button></section>}
+      {opened?<VocabularyFeedbackPage key={selected} api={api} reactionsApi={reactions.api}/>:<section className="panel feedback-example-arrival"><h1>{example.label}</h1><p>Open Feedback in the sidebar to see this example.</p><button onClick={()=>setOpened(true)}>Open feedback</button></section>}
     </AppChrome></>;
 }
 createRoot(document.getElementById('root')!).render(<Preview/>);
