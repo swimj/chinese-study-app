@@ -99,6 +99,7 @@ import {
   recordStudyManagementAction,
   getSharedContentPublicationForContent,
   getHostedServiceControls,
+  readHostedServiceControl,
   getActiveServiceBanner,
   setServiceBanner,
   clearServiceBanner,
@@ -2702,7 +2703,11 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     }), onError: () => console.error('Session completion worker failed') });
   if (dbConfig.studyProfile !== 'mandarin') sessionCompletions.wake();
   const vocabularyProcessing = createVocabularyProcessingWorker({onError: error => console.error(error)});
-  const vocabularyPreparation = createVocabularyPracticeWorker({demand:listSenseContentReconciliationPracticeDemand,onError: error => console.error(error)});
+  const vocabularyPreparation = createVocabularyPracticeWorker({
+    demand: listSenseContentReconciliationPracticeDemand,
+    proactiveEnabled: () => readHostedServiceControl('proactive_repertoire').enabled,
+    onError: error => console.error(error),
+  });
   const vocabularyApprovals = getVocabularyApprovalRequests();
   if (dbConfig.studyProfile === 'mandarin') vocabularyApprovals.wake();
   const wakeVocabulary = () => { vocabularyProcessing.wake(); vocabularyPreparation.wake(); sessionDebriefs.wake(); };

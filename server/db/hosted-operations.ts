@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { config, getDb } from './connection.ts';
 import { INITIAL_REVIEW_EASE_FACTOR } from './types.ts';
 
-export const HOSTED_SERVICE_CONTROL_KEYS = ['maintenance_mode', 'provider_work_enabled', 'operator_only', 'timed_sessions'] as const;
+export const HOSTED_SERVICE_CONTROL_KEYS = ['maintenance_mode', 'provider_work_enabled', 'operator_only', 'timed_sessions', 'proactive_repertoire'] as const;
 export type HostedServiceControlKey = (typeof HOSTED_SERVICE_CONTROL_KEYS)[number];
 
 export type HostedServiceControl = {

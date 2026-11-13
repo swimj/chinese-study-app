@@ -30,7 +30,10 @@ test('reconciliation migration preserves ordinary jobs, attempts, leases and sch
     assert.throws(()=>migrateDatabase(db,[...schemaMigrations,{id:'app_schema:9999_test_failure',sql:'SELECT * FROM missing_table;'}]),/missing_table/);
     assert.deepEqual(db.prepare('SELECT * FROM vocabulary_practice_preparation ORDER BY work_id').all().map(row=>({...row})),jobs);
     migrateDatabase(db);assertSchemaCurrent(db);
-    assert.deepEqual(db.prepare('SELECT * FROM vocabulary_practice_preparation ORDER BY work_id').all().map(({reconciliation_id,...row})=>{assert.equal(reconciliation_id,null);return row;}),jobs);
+    assert.deepEqual(db.prepare('SELECT * FROM vocabulary_practice_preparation ORDER BY work_id').all().map(({reconciliation_id,proactive_scope_key,...row})=>{
+      assert.equal(reconciliation_id,null);assert.equal(proactive_scope_key,null);return row;
+    }),jobs);
+    assert.equal(db.prepare("SELECT enabled FROM service_controls WHERE control_key='proactive_repertoire'").get()!.enabled,1);
     assert.deepEqual(db.prepare('SELECT * FROM vocabulary_preparation_attempts ORDER BY attempt_id').all(),attempts);
     assert.throws(()=>db.prepare("INSERT INTO vocabulary_practice_preparation(work_id,word_id,generation_key,status,created_at,updated_at) VALUES('invalid','word','key','queued',?,?)").run(at,at),/CHECK/);
     db.close();db=new DatabaseSync(file);db.function('current_learner_id',()=> 'learner');

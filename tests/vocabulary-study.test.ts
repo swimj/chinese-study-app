@@ -65,6 +65,7 @@ beforeEach(()=>{
   db.exec(fs.readFileSync(new URL('../server/db/migrations/0045_vocabulary_provenance_links.sql',import.meta.url),'utf8'));
   db.exec("ALTER TABLE vocabulary_practice_preparation ADD COLUMN next_attempt_at TEXT NOT NULL DEFAULT ''; ALTER TABLE vocabulary_practice_preparation ADD COLUMN total_attempt_count INTEGER NOT NULL DEFAULT 0;");
   db.exec(fs.readFileSync(new URL('../server/db/migrations/0069_sense_content_reconciliation.sql',import.meta.url),'utf8'));
+  db.exec(fs.readFileSync(new URL('../server/db/migrations/0073_proactive_repertoire.sql',import.meta.url),'utf8').split('-- The scan is independently switchable')[0]!);
   // Classic sessions by default; timed tests switch the operator control on.
   db.exec(`CREATE TABLE service_controls(control_key TEXT PRIMARY KEY,enabled INTEGER NOT NULL,updated_at TEXT NOT NULL,actor_id TEXT NOT NULL);
     INSERT INTO service_controls VALUES('maintenance_mode',0,'1970-01-01','system_default'),('provider_work_enabled',1,'1970-01-01','system_default'),('operator_only',0,'1970-01-01','system_default');`);

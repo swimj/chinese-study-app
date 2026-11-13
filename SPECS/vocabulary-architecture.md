@@ -91,6 +91,13 @@ and application validate source versions and effect scope. Application records
 an idempotent receipt; stale bases or changed drafts require renewed validation
 and approval. Advisory second opinions cannot authorize or apply changes.
 
+Proactive review preparation can establish ordinary sense readiness and add
+shared production exercises for missing selected senses ahead of anticipated
+study. It checks that the selection and source are still current, preserves
+pure-cue proxy decisions and conflicting editorial work, and does not retire
+content or alter retained sessions and learner progress. See
+[proactive review preparation](../docs/implementation/repertoire-preparation.md#proactive-review-preparation).
+
 An improvement review case owns an immutable encounter group and a continuing
 operator review lifecycle. Holistic reflection jobs are numbered within that
 case; model invocations and provider retries belong to a job. Only one job may

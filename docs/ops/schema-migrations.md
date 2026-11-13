@@ -657,3 +657,19 @@ restored copy, record `service_controls`, apply the migration, and verify the pr
 controls are unchanged, `timed_sessions` is enabled with `system_default`, both new
 tables are empty, and the runner's integrity/FK checks pass. The only rebuild is the
 small control table. The populated regression is in `tests/schema-migrations.test.ts`.
+
+## Proactive repertoire preparation
+
+`0073_proactive_repertoire` extends the practice queue to accept canonical
+repertoire jobs. It copies existing jobs with their original source, status,
+attempt count, lease, invocation and retry deadline. The attempt journal and
+learner state stay in place. It also preserves the existing service controls
+and adds `proactive_repertoire` enabled by default.
+
+Use the stopped-writer schema procedure. On the isolated restore, compare
+existing queue rows and controls before and after migration, verify there are
+no proactive jobs yet, and retain the runner's integrity and foreign-key
+results. Exercise a scan on a disposable copy without provider calls. Check
+that it admits at most 24 words, records the horizon, and does not enqueue a
+second batch within six hours. See [proactive review preparation](../implementation/repertoire-preparation.md#proactive-review-preparation)
+for runtime controls.

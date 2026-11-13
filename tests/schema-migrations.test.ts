@@ -385,7 +385,7 @@ test('operator-only migration preserves both existing controls and defaults acce
     const before = db.prepare('SELECT * FROM service_controls ORDER BY control_key').all();
     assert.deepEqual(migrateDatabase(db), schemaMigrations.slice(index).map(entry=>entry.id));
     // Later control migrations add their own rows; the earlier controls stay exact.
-    assert.deepEqual(db.prepare("SELECT * FROM service_controls WHERE control_key NOT IN ('operator_only','timed_sessions') ORDER BY control_key").all(), before);
+    assert.deepEqual(db.prepare("SELECT * FROM service_controls WHERE control_key NOT IN ('operator_only','timed_sessions','proactive_repertoire') ORDER BY control_key").all(), before);
     assert.deepEqual({ ...db.prepare("SELECT * FROM service_controls WHERE control_key = 'operator_only'").get() }, {
       control_key: 'operator_only', enabled: 0, updated_at: '1970-01-01T00:00:00.000Z', actor_id: 'system_default',
     });
@@ -625,7 +625,7 @@ test('timed session migration keeps existing controls, enables timed sessions, a
     db.exec("UPDATE service_controls SET enabled = 1, updated_at = '2026-11-10T00:00:00.000Z', actor_id = 'incident-operator' WHERE control_key = 'operator_only'");
     const before = db.prepare('SELECT * FROM service_controls ORDER BY control_key').all();
     assert.deepEqual(migrateDatabase(db), schemaMigrations.slice(index).map(entry => entry.id));
-    assert.deepEqual(db.prepare("SELECT * FROM service_controls WHERE control_key != 'timed_sessions' ORDER BY control_key").all(), before);
+    assert.deepEqual(db.prepare("SELECT * FROM service_controls WHERE control_key NOT IN ('timed_sessions','proactive_repertoire') ORDER BY control_key").all(), before);
     assert.deepEqual({ ...db.prepare("SELECT * FROM service_controls WHERE control_key = 'timed_sessions'").get() }, {
       control_key: 'timed_sessions', enabled: 1, updated_at: '1970-01-01T00:00:00.000Z', actor_id: 'system_default',
     });
