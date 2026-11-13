@@ -1,4 +1,9 @@
-import { generalExerciseInvocation } from '../server/vocabulary/general-exercise-authoring.ts';
+import { generalExerciseContent } from '../server/vocabulary/general-exercise-content.ts';
+import { scanProactiveRepertoire } from '../server/db/proactive-repertoire.ts';
+import { ensureVocabularySenses } from '../server/vocabulary/sense-readiness.ts';
+import { startVocabularyStudy } from '../server/vocabulary/study.ts';
+import { isVocabularyDefinitionFallback } from '../src/domain/vocabulary-production-coverage.ts';
+import { generalExerciseInvocation, type GeneralExerciseOutput } from '../server/vocabulary/general-exercise-authoring.ts';
 import { writeVocabularyDefaultUsefulSenses,getVocabularyWordSenseCoverage } from '../server/db/vocabulary-sense-coverage.ts';
 import { listVocabularyExercises,getVocabularySenses,createVocabularySense,updateVocabularySense } from '../server/db/vocabulary-content.ts';
 import assert from 'node:assert/strict';
@@ -21,8 +26,8 @@ import { createWordIntroductionProvider,type WordIntroductionProvider } from '..
 import { createVocabularyPracticeWorker } from '../server/vocabulary/preparation-worker.ts';
 import { getActiveProviderWorkCount } from '../server/hosted-runtime-controls.ts';
 import { addVocabularyWord,changeVocabularyMode } from '../server/db/vocabulary-learners.ts';
-import { createVocabularySession } from '../server/db/vocabulary-sessions.ts';
-import { createVocabularyPracticePreparation,createVocabularyPracticeProvider,VOCABULARY_PRACTICE_SERVICE } from '../server/vocabulary/preparation.ts';
+import { createVocabularySession, getVocabularySession } from '../server/db/vocabulary-sessions.ts';
+import { createVocabularyPracticePreparation,createVocabularyPracticeProvider,VOCABULARY_PRACTICE_SERVICE,type VocabularyPracticeProvider } from '../server/vocabulary/preparation.ts';
 import { installModelInvocationLedger } from '../server/llm/invocation-ledger.ts';
 import { startModelInvocation,startServiceModelInvocation,finishModelInvocation,finishServiceModelInvocation } from '../server/db/model-invocations.ts';
 import { linkVocabularyInvocationContent } from '../server/db/vocabulary-provenance.ts';
@@ -626,4 +631,152 @@ for(const state of ['queued','failed'] as const)test(`empty inventory stops ${st
     assert.equal(db.prepare('SELECT status FROM vocabulary_practice_preparation WHERE work_id=?').get(work.workId)!.status,'failed');
   }
   assert.equal(db.prepare('SELECT attempt_count FROM vocabulary_practice_preparation WHERE work_id=?').get(work.workId)!.attempt_count,0);
+});
+
+test('proactive scan deduplicates due words, prioritizes missing pools, and uses published cues in later sessions', async () => {
+  const clock = Date.now();
+  const now = new Date(clock).toISOString();
+  const actor = {kind:'operator' as const,id:'editor'};
+  const originalSense = getVocabularySenses('w1')[0]!;
+  const extraSense = createVocabularySense({wordId:'w1',description:{label:'greet a group'}},actor);
+  writeVocabularyDefaultUsefulSenses('w1',1,[originalSense.senseId,extraSense.senseId],actor);
+  createVocabularyContent(generalExerciseContent({
+    contentId:'older-cue',word:content.word,senseId:originalSense.senseId,now,serviceId:'fixture',
+    exercise:{...output(1).exercises[0]!,stimulus:{kind:'direct_text',text:'An everyday greeting.'}} as GeneralExerciseOutput['exercises'][number],
+    source:{kind:'fixture'},
+  }),actor);
+  for (const [wordId, hanzi] of [['cold','再见'],['far','明天'],['proxy','感谢']]) {
+    db.prepare(`INSERT INTO lexical_words(id,hanzi,pinyin,meaning,meanings_json,examples_json,priority,created_at)
+      VALUES (?,?,?,'fixture','["fixture"]','[]',1,?)`).run(wordId,hanzi,'fixture',now);
+  }
+  function track(learner:string, wordId:string, hours:number) {
+    db.prepare(`INSERT INTO learner_words(learner_id,word_id,in_stash,added_at,mode,mode_changed_at)
+      VALUES (?,?,1,?,'practice',?)`).run(learner,wordId,now,now);
+    db.prepare(`INSERT INTO learner_word_schedules(learner_id,word_id,next_eligible_at,policy_version,scheduler_state_json)
+      VALUES (?,?,?,'fixture','{"intervalHours":24,"enabled":1}')`)
+      .run(learner,wordId,new Date(clock+hours*3_600_000).toISOString());
+  }
+  track('a','w1',-1);track('a','cold',-1);track('b','cold',-1);track('a','far',13);track('a','proxy',-1);
+  createVocabularyContent({
+    contentId:'pure-cue',kind:'exercise',payloadVersion:1,body:{prompt:'Express appreciation.'},
+    exerciseType:'pure_cue',skill:'production',exerciseRole:'general',assessment:{responseMode:'hanzi_entry'},
+    accessScope:'shared',availability:'active',originKind:'human',
+    words:[{wordId:'proxy',relation:'target'}],answers:[{wordId:'proxy',acceptedForms:['感谢']}],
+  },actor);
+
+  let enabled = false;
+  const requested: Array<{wordId:string;ids:string[]}> = [];
+  const provider: VocabularyPracticeProvider = {
+    model:'fixture',isConfigured:()=>true,generationKey:()=> 'fixture',
+    async generate(source) {
+      requested.push({wordId:source.word.wordId,ids:source.uses.map(use=>use.id)});
+      return {exercises:source.uses.map(use=>({
+        id:use.id,sourceUseId:use.id,stimulus:{kind:'direct_text',text:'A natural way to say farewell.'},teachingNote:null,
+      }))};
+    },
+  };
+  const workerOptions = {
+    now:()=>clock,provider,proactiveEnabled:()=>enabled,
+    controls:()=>({maintenanceMode:false,providerWorkEnabled:true}),
+    providerWork:async <T>(work:()=>Promise<T>)=>work(),
+    onError:(error:unknown)=>{ throw error; },
+    ensureSenses: (wordId:string, options: Parameters<typeof ensureVocabularySenses>[1]) => ensureVocabularySenses(wordId,{
+      ...options,provider:{isConfigured:()=>true,generate:async()=>({senses:[{label:'say goodbye',notes:[],defaultUseful:true}]})},
+    }),
+  };
+  const startColdPool = (learner: string) => runWithLearnerId(learner,()=>{
+    const sessionId = startVocabularyStudy().session.sessionId;
+    return getVocabularySession(sessionId).context.payload?.words.cold?.general.practice;
+  });
+  const coldFallback = startColdPool('a');
+  assert.ok(coldFallback?.some(cue=>cue.kind==='exercise' && cue.skill==='production' && isVocabularyDefinitionFallback(cue)));
+  let worker=createVocabularyPracticeWorker(workerOptions);
+  try {
+    assert.equal(await worker.step(),false);
+    enabled=true;
+    await worker.drain();
+  } finally {await worker.stop();}
+  // The next poll checks again after a restart, but the scan journal keeps its cadence.
+  worker=createVocabularyPracticeWorker(workerOptions);
+  try { assert.equal(await worker.step(),false); } finally {await worker.stop();}
+  assert.deepEqual(requested,[{wordId:'cold',ids:[getVocabularySenses('cold')[0]!.senseId]},{wordId:'w1',ids:[extraSense.senseId]}]);
+  assert.equal(db.prepare("SELECT count(*) AS count FROM backend_events WHERE name='vocabulary.proactive_repertoire.scanned'").get()!.count,1);
+  assert.equal(db.prepare("SELECT count(*) AS count FROM vocabulary_practice_preparation WHERE proactive_scope_key IS NOT NULL AND status='ready'").get()!.count,2);
+  assert.equal(db.prepare("SELECT count(*) AS count FROM content_revision_history WHERE content_id='older-cue'").get()!.count,1);
+  const fresh = startColdPool('b');
+  assert.ok(fresh?.some(cue=>cue.originKind==='model'));
+  assert.equal(fresh?.some(cue=>cue.kind==='exercise' && cue.skill==='production' && isVocabularyDefinitionFallback(cue)),false);
+  assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
+});
+
+test('proactive publication drops stale output when defaults change', async () => {
+  const actor = {kind:'operator' as const,id:'editor'};
+  const now = new Date().toISOString();
+  const first = getVocabularySenses('w1')[0]!;
+  const second = createVocabularySense({wordId:'w1',description:{label:'open a conversation'}},actor);
+  writeVocabularyDefaultUsefulSenses('w1',1,[first.senseId,second.senseId],actor);
+  db.prepare(`INSERT INTO learner_words(learner_id,word_id,in_stash,added_at,mode,mode_changed_at)
+    VALUES ('a','w1',1,?,'practice',?)`).run(now,now);
+  db.prepare(`INSERT INTO learner_word_schedules(learner_id,word_id,policy_version,scheduler_state_json)
+    VALUES ('a','w1','fixture','{"intervalHours":24,"enabled":1}')`).run();
+
+  const preparation = createVocabularyPracticePreparation({now:()=>now,provider:{
+    model:'fixture',isConfigured:()=>true,generationKey:()=> 'fixture',
+    async generate(source) {
+      writeVocabularyDefaultUsefulSenses('w1',2,[second.senseId],actor);
+      return {exercises:source.uses.map(use=>({
+        id:use.id,sourceUseId:use.id,stimulus:{kind:'direct_text',text:'Begin an informal conversation.'},teachingNote:null,
+      }))};
+    },
+  }});
+  assert.equal(scanProactiveRepertoire(now,VOCABULARY_PRACTICE_SERVICE),1);
+  const work=preparation.listQueued()[0]!;
+  assert.equal(await preparation.preflight(work.workId),true);
+  assert.deepEqual(await preparation.run(work.workId,preparation.claim(work.workId)!),[]);
+  assert.equal(db.prepare("SELECT count(*) AS count FROM content_items WHERE exercise_role='general'").get()!.count,0);
+  assert.equal(db.prepare('SELECT diagnostic FROM vocabulary_preparation_attempts WHERE work_id=?').get(work.workId)!.diagnostic,'proactive_source_changed');
+  assert.deepEqual(getVocabularyWordSenseCoverage('w1').defaultUsefulSenseIds,[second.senseId]);
+});
+
+test('proactive scan limits outstanding work across later scans', () => {
+  const clock = Date.now();
+  const now = new Date(clock).toISOString();
+  for (let index = 0; index < 27; index++) {
+    const wordId = `fixture-${index}`;
+    db.prepare(`INSERT INTO lexical_words(id,hanzi,pinyin,meaning,meanings_json,examples_json,priority,created_at)
+      VALUES (?,'示例','shì lì','example','["example"]','[]',1,?)`).run(wordId,now);
+    db.prepare(`INSERT INTO learner_words(learner_id,word_id,in_stash,added_at,mode,mode_changed_at)
+      VALUES ('a',?,1,?,'solidify',?)`).run(wordId,now,now);
+    db.prepare(`INSERT INTO learner_word_schedules(learner_id,word_id,policy_version,scheduler_state_json)
+      VALUES ('a',?,'fixture','{"intervalHours":24}')`).run(wordId);
+  }
+  assert.equal(scanProactiveRepertoire(now,VOCABULARY_PRACTICE_SERVICE),24);
+  const later = new Date(clock+6*3_600_000).toISOString();
+  assert.equal(scanProactiveRepertoire(later,VOCABULARY_PRACTICE_SERVICE),0);
+  assert.equal(db.prepare("SELECT count(*) AS count FROM vocabulary_practice_preparation WHERE status='queued'").get()!.count,24);
+});
+
+test('malformed legacy sense evidence fails one proactive job without spending an authoring attempt', async () => {
+  const actor = {kind:'operator' as const,id:'editor'};
+  const now = new Date().toISOString();
+  const sense = getVocabularySenses('w1')[0]!;
+  updateVocabularySense(sense.senseId,sense.version,{status:'active',description:{legacy:'missing label'}},actor);
+  db.prepare(`INSERT INTO learner_words(learner_id,word_id,in_stash,added_at,mode,mode_changed_at)
+    VALUES ('a','w1',1,?,'solidify',?)`).run(now,now);
+  db.exec(`INSERT INTO learner_word_schedules(learner_id,word_id,policy_version,scheduler_state_json)
+    VALUES ('a','w1','fixture','{"intervalHours":24}')`);
+
+  const preparation = createVocabularyPracticePreparation({now:()=>now,provider:{
+    model:'fixture',isConfigured:()=>true,generationKey:()=> 'fixture',
+    async generate() { assert.fail('Invalid sense evidence must stop before dispatch'); },
+  }});
+  assert.equal(scanProactiveRepertoire(now,VOCABULARY_PRACTICE_SERVICE),1);
+  const work = preparation.listQueued()[0]!;
+  assert.equal(await preparation.preflight(work.workId),true);
+  assert.equal(preparation.claim(work.workId),null);
+  assert.equal(preparation.listQueued().length,0);
+  const failure = preparation.failed(work.workId);
+  assert.equal(failure.attemptCount,0);
+  assert.equal(failure.retryable,false);
+  assert.match(failure.lastError ?? '',/Canonical sense evidence/);
 });

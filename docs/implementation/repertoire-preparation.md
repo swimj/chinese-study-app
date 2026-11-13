@@ -97,10 +97,44 @@ reviewable proposals; this batch path applies an operator-attributed maintenance
 bundle. The [architecture contract](../../SPECS/vocabulary-architecture.md#generation-review-and-application-authority)
 explains preparation and proposal authority.
 
+### Proactive review preparation
+
+The practice worker scans every six hours for studied Solidify and Practice
+words with potential production demand through the next twelve hours. It uses
+the due, recency, and production eligibility rules before session selection and
+counts a word once across learners. Timed session budgets can reduce what is
+actually served. The scan still prepares for those eligible words, without
+predicting which timed session will reach them.
+
+Each pass admits at most 24 words, including any queued or running proactive
+work carried from previous passes. Words without usable shared targeted
+practice go first. The worker uses ordinary Luna inventory and useful-sense
+readiness where needed, then asks the shared exercise authoring contract for
+the missing useful senses. An older active shared exercise can satisfy a sense
+when it has the canonical binding. Unmapped practice can help avoid fallback
+without proving sense coverage. Words with explicit empty defaults, pure-cue
+proxies, and conflicting preparation or editorial work are set aside. Maintain
+curation is a separate operator decision.
+
+Publication adds shared exercises after rechecking demand, current sense scope,
+and competing work. If another path covers some senses in flight, only the
+remaining gaps can receive new content. An empty or incomplete generation
+appears in Needs attention without resetting its automatic attempt budget.
+An explicit retry can fill the remaining gaps. The scan does not recreate
+completed work for the same catalog and defaults if a cue later retires.
+
+Migration `0073_proactive_repertoire` adds the proactive job source and the
+enabled-by-default `proactive_repertoire` control. Disable it with
+`hosted:control --control=proactive-repertoire --enabled=false` and the usual
+operator and database arguments. This pauses proactive dispatch and publication.
+The `vocabulary.proactive_repertoire.scanned` backend event records the target
+horizon and counts for covered, deferred, and queued demand. The horizon is a
+planning target, not a guarantee that all candidates have content.
+
 ### Automatic authoring model
 
-The first general practice pool after teaching and an unassigned first
-repertoire job in reflection share a word-level allocation: two buckets use
+The first general practice pool after teaching, proactive review preparation,
+and an unassigned first repertoire job in reflection share a word-level allocation: two buckets use
 GPT-6 Sol high and one uses GPT-6 Luna high. A word stays in its bucket across
 entry points and retries. The allocation applies to general exercise authoring;
 inventory, useful-sense selection, and other reflection steps keep their own

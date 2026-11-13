@@ -1,13 +1,16 @@
 import { WordPreparationProviderError, PREPARATION_PROVIDER_BACKOFF_MS } from '../word-content/provider-failure.ts';
 import { getHostedServiceControls } from '../db/hosted-operations.ts';
 import { HostedProviderWorkUnavailableError,runHostedProviderWork } from '../hosted-runtime-controls.ts';
-import { createVocabularyPracticePreparation,type VocabularyPracticeProvider } from './preparation.ts';
+import { createVocabularyPracticePreparation, VOCABULARY_PRACTICE_SERVICE, type VocabularyPracticeProvider } from './preparation.ts';
+import { scanProactiveRepertoire } from '../db/proactive-repertoire.ts';
 
 /** Durable general-pool authoring. Only worker dispatch awaits providers; live sessions keep using ready content.
  * Provider calls are fenced by hosted controls; late returns cannot publish during maintenance or shutdown. */
 export function createVocabularyPracticeWorker(options: {
   provider?: VocabularyPracticeProvider;
   ensureDefaults?:NonNullable<Parameters<typeof createVocabularyPracticePreparation>[0]>['ensureDefaults'];
+  ensureSenses?:NonNullable<Parameters<typeof createVocabularyPracticePreparation>[0]>['ensureSenses'];
+  proactiveEnabled?: () => boolean;
   now?: () => number;
   concurrency?: number;
   pollMs?: number;
@@ -23,10 +26,13 @@ export function createVocabularyPracticeWorker(options: {
   if(!Number.isSafeInteger(pollMs)||pollMs<10)throw new Error('Invalid preparation poll interval');
   let stopped=false,timer:ReturnType<typeof setTimeout>|undefined,stepping:Promise<boolean>|null=null,draining:Promise<void>|null=null;
   let providerBackoffUntil = 0;
+  const proactiveEnabled = options.proactiveEnabled ?? (() => false);
   function allowed():boolean {const state=controls();return !stopped&&!state.maintenanceMode&&state.providerWorkEnabled;}
   // Pausing new dispatch must not reject an already-running sibling's valid publication.
   function canDispatch(): boolean { return allowed() && now() >= providerBackoffUntil; }
-  const preparation=createVocabularyPracticePreparation({provider:options.provider,ensureDefaults:options.ensureDefaults,now:()=>new Date(now()).toISOString(),canPublish:allowed});
+  const preparation=createVocabularyPracticePreparation({provider:options.provider,ensureDefaults:options.ensureDefaults,
+    ensureSenses:options.ensureSenses,proactiveEnabled,now:()=>new Date(now()).toISOString(),canPublish:allowed});
+  let nextScanCheck = 0;
   async function process(workId:string):Promise<boolean> {
     try {
       return await providerWork(async()=>{
@@ -47,6 +53,10 @@ export function createVocabularyPracticeWorker(options: {
     preparation.recoverExpired();
     for(const wordId of demand())preparation.ensure(wordId);
     if(!canDispatch()||!preparation.isConfigured())return false;
+    if (proactiveEnabled() && now() >= nextScanCheck) {
+      nextScanCheck = now() + 60_000;
+      scanProactiveRepertoire(new Date(now()).toISOString(), VOCABULARY_PRACTICE_SERVICE);
+    }
     const batch=preparation.listQueued(concurrency);
     const results=await Promise.allSettled(batch.map((work)=>process(work.workId)));
     let changed=false;

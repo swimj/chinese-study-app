@@ -19,8 +19,8 @@ const key = control === 'maintenance'
       ? 'operator_only'
       : control === 'timed-sessions'
         ? 'timed_sessions'
-        : null;
-if (key === null) throw new Error('--control must be maintenance, provider-work, operator-only, or timed-sessions.');
+        : control === 'proactive-repertoire' ? 'proactive_repertoire' : null;
+if (key === null) throw new Error('--control must be maintenance, provider-work, operator-only, timed-sessions, or proactive-repertoire.');
 
 const dbModule = await import(pathToFileURL(path.resolve('server/db.ts')).href);
 const updated = dbModule.setHostedServiceControl({

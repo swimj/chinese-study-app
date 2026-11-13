@@ -11,7 +11,13 @@ const tracked = `w.dismissed_at IS NULL AND (w.mode != 'unstudied' OR w.in_stash
 
 // Proposed output is not yet in content_items. Include its targets, source/bases,
 // and case identity, including case-less and non-current outstanding proposals.
-const blockerSql = `WITH outstanding AS (
+function editorialWorkSql(proactive = false): string {
+  // Feedback does not publish exercises. An unclaimable queued job for a
+  // disabled learner must not block shared preparation for another learner.
+  const activeJobs = proactive ? `j.kind='exercise_improvement' AND (j.status='running' OR
+    (j.status='queued' AND EXISTS(SELECT 1 FROM learners l WHERE l.learner_id=c.learner_id AND l.disabled_at IS NULL)))`
+    : `j.status IN ('queued','running')`;
+  return `WITH outstanding AS (
   SELECT * FROM content_proposals WHERE status IN ('draft','awaiting_review','approved')
 ), proposal_words AS (
   SELECT c.word_id FROM outstanding p JOIN reflection_cases c USING(case_id)
@@ -24,10 +30,25 @@ const blockerSql = `WITH outstanding AS (
   UNION SELECT cw.word_id FROM outstanding p,json_each(p.operations_json) op
     JOIN content_words cw ON cw.content_id=json_extract(op.value,'$.sourceContentId') AND cw.relation='target'
 ), active_job_words AS (
-  SELECT c.word_id FROM vocabulary_reflection_jobs j JOIN reflection_cases c USING(case_id) WHERE j.status IN ('queued','running')
+  SELECT c.word_id FROM vocabulary_reflection_jobs j JOIN reflection_cases c USING(case_id) WHERE ${activeJobs}
   UNION SELECT cw.word_id FROM vocabulary_reflection_jobs j JOIN reflection_cases c USING(case_id)
-    JOIN content_words cw ON cw.content_id=c.content_id AND cw.relation='target' WHERE j.status IN ('queued','running')
-), blockers AS (
+    JOIN content_words cw ON cw.content_id=c.content_id AND cw.relation='target' WHERE ${activeJobs}
+), editorial_work AS (
+  SELECT word_id,'outstanding_proposal' AS reason FROM proposal_words WHERE word_id IS NOT NULL
+  UNION SELECT word_id,'active_reflection_job' FROM active_job_words WHERE word_id IS NOT NULL
+  UNION SELECT word_id,'pending_reconciliation' FROM sense_content_reconciliations r
+    WHERE status IN ('draft','resolved') OR (status='applied' AND completed_at IS NULL
+      AND NOT EXISTS (SELECT 1 FROM sense_content_reconciliations newer WHERE newer.word_id=r.word_id AND newer.status='applied' AND newer.rowid>r.rowid))
+)`;
+}
+
+export function repertoireEditorialWork(db: DatabaseSync, wordId?: string): Set<string> {
+  const rows = db.prepare(`${editorialWorkSql(true)} SELECT DISTINCT word_id FROM editorial_work${wordId === undefined ? '' : ' WHERE word_id=?'}`)
+    .all(...(wordId === undefined ? [] : [wordId])) as { word_id: string }[];
+  return new Set(rows.map(row => row.word_id));
+}
+
+const blockerSql = `${editorialWorkSql()}, blockers AS (
   SELECT a.word_id,'authored_repertoire' AS reason FROM content_items c
     JOIN exercise_answer_words a ON a.exercise_id=c.content_id
     WHERE c.kind='exercise' AND c.exercise_role='general' AND c.skill='production'
@@ -35,11 +56,7 @@ const blockerSql = `WITH outstanding AS (
       AND COALESCE(json_extract(c.body_json,'$.source.kind'),'')!='dictionary_baseline'
       AND NOT (COALESCE(json_extract(c.body_json,'$.source.kind'),'')='production_cue_supplement'
         AND json_extract(c.body_json,'$.source.cueId') IS NULL)
-  UNION SELECT word_id,'outstanding_proposal' FROM proposal_words WHERE word_id IS NOT NULL
-  UNION SELECT word_id,'active_reflection_job' FROM active_job_words WHERE word_id IS NOT NULL
-  UNION SELECT word_id,'pending_reconciliation' FROM sense_content_reconciliations r
-    WHERE status IN ('draft','resolved') OR (status='applied' AND completed_at IS NULL
-      AND NOT EXISTS (SELECT 1 FROM sense_content_reconciliations newer WHERE newer.word_id=r.word_id AND newer.status='applied' AND newer.rowid>r.rowid))
+  UNION SELECT word_id,reason FROM editorial_work
   UNION SELECT word_id,'active_preparation' FROM vocabulary_sense_readiness WHERE status='running'
   UNION SELECT word_id,'active_preparation' FROM vocabulary_default_selection_readiness WHERE status='running'
   UNION SELECT word_id,'active_preparation' FROM vocabulary_practice_preparation WHERE status='running'
