@@ -119,6 +119,7 @@ import {
 import { isMyWordsStatus, type MyWordsStatus } from '../src/domain/my-words.ts';
 import { createServiceAccessMiddleware } from './service-access.ts';
 import { createOperatorAllowlistMiddleware } from './operator-access.ts';
+import { mountRepertoireQualityRoutes } from './operator/repertoire-quality-routes.ts';
 import { startUsagePulseScheduler } from './usage-pulse-scheduler.ts';
 import {
   getActiveProviderWorkCount,
@@ -469,6 +470,7 @@ export function createApp(options: CreateAppOptions = {}) {
       res.status(500).json({ error: 'Failed to load content reaction summary' });
     }
   });
+  mountRepertoireQualityRoutes(app, dbConfig.dbPath);
 
   app.get(
     '/api/operator/usage-pulse',

@@ -7,6 +7,7 @@ import './OperatorUsagePulsePage.css';
 import { PreparationFailuresPanel } from './PreparationFailuresPanel';
 import { ContentReactionsPanel } from './ContentReactionsPanel';
 import { ContentQualityPanel } from './ContentQualityPanel';
+import { RepertoireQualityPanel } from './RepertoireQualityPanel';
 import { VocabularyCaseReviewPage } from './VocabularyCaseReviewPage';
 import type { VocabularyOperatorApi } from '../features/vocabulary-operator/api';
 import {
@@ -24,6 +25,7 @@ export function OperatorPanel({ tab, improvementApi }: { tab: OperatorTab; impro
     {tab === 'invocations' && <ModelInvocationsPanel />}
     {tab === 'sharing' && <ContentSharingPanel />}
     {tab === 'quality' && <ContentQualityPanel />}
+    {tab === 'repertoire-quality' && <RepertoireQualityPanel />}
     {tab === 'improvement' && <VocabularyCaseReviewPage api={improvementApi} />}
     {tab === 'failures' && <PreparationFailuresPanel />}
     {tab === 'reactions' && <ContentReactionsPanel />}

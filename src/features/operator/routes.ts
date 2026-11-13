@@ -3,6 +3,7 @@ export const OPERATOR_TABS = [
   { id: 'invocations', label: 'Model invocations' },
   { id: 'sharing', label: 'Content sharing' },
   { id: 'quality', label: 'Content quality' },
+  { id: 'repertoire-quality', label: 'Repertoire quality' },
   { id: 'improvement', label: 'Content improvement' },
   { id: 'failures', label: 'Preparation failures' },
   { id: 'reactions', label: 'Learner reactions' },
