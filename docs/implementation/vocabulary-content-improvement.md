@@ -129,8 +129,11 @@ Authored single-sense assessment makes a mapping call and a local planning call,
 with one integration call when shared practice is proposed. Fallback bootstrap
 uses general-exercise authoring without a mapping or local planning call. Sense
 readiness can add a prerequisite inventory call. Completed stages are retained
-by exact input and contract. Failed provider work requires explicit retry,
-except bounded prerequisite preparation. Source and sense changes fence results.
+by exact input and contract. Sense-mapping availability failures, assessment-output
+validation failures, and prerequisite preparation follow the
+[bounded retry policies](../vocabulary-learning.md#dispatch-and-model-routing).
+Other failed calls and expired unknown outcomes require explicit retry. Source and
+sense changes fence results.
 
 Only general production encounters enter provider work. Recognition and contrast
 remain fully recorded in the session log but create no provider calls, including
