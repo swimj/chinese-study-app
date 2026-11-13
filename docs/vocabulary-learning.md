@@ -412,9 +412,10 @@ claims remain discoverable after an interruption.
 
 `processing-worker.ts` closes due completions and ingests evidence even when
 provider work is disabled. Learner-feedback and exercise-improvement jobs have
-separate claims and outcomes. Teaching issues stay manual. Failed calls and
-expired unknown outcomes require explicit retry, except for sense-mapping availability
-failures and preparation dependencies within their bounded automatic retry cycles; lease tokens fence late results.
+separate claims and outcomes. Teaching issues stay manual. Sense-mapping availability
+failures, assessment-output validation failures, and preparation dependencies have
+bounded automatic retry cycles. Other failed calls and expired unknown outcomes
+require explicit retry; lease tokens fence late results.
 Maintenance and disabled-learner checks protect dispatch and publication.
 
 Individual learner-feedback jobs select GPT-6 Luna or Sol with equal probability.
@@ -429,9 +430,8 @@ batch unrelated cases. Selection is
 retained across stages and retries for learner feedback, improvements, and AI
 second opinions, except for sense mapping. Saved GLM learner-feedback routes use
 GPT-6 Luna for subsequent calls while retaining the saved route and original
-invocation evidence. Failed jobs still require explicit retry. Saved GPT-5.6 Luna
-routes and reflection retries resolve to GPT-6 Luna for new calls; original run
-metadata and pricing remain historical. Sense-inventory authoring uses GPT-6 Luna
+invocation evidence. Saved GPT-5.6 Luna routes and reflection retries resolve to
+GPT-6 Luna for new calls; original run metadata and pricing remain historical. Sense-inventory authoring uses GPT-6 Luna
 with high reasoning. The admission step that maps an authored exercise to the
 existing sense inventory starts with OpenAI `gpt-6-luna` with high
 reasoning, including operator reassessments. Mapping availability failures receive
@@ -445,10 +445,12 @@ outcomes require manual retry rather than automatically making another call.
 
 Timeouts, recognized network failures, and HTTP 401/403/408/429/5xx responses qualify
 as availability failures. Missing credentials and other HTTP errors (including
-provider incompatibility) require manual retry. An assessment that returns invalid
-JSON, truncation, or an explicit schema/domain validation failure is retried at most
-three times, for four total attempts in that retry cycle. The durable budget spans
-stages, is separate from availability retries, and resets on explicit operator retry.
+provider incompatibility) require manual retry. For exercise-improvement jobs,
+including second opinions, invalid JSON, truncation, or an explicit schema/domain
+validation failure triggers at most three automatic retries, for four total attempts
+in that retry cycle. Learner-feedback jobs do not use this validation retry policy.
+The durable budget spans stages, is separate from availability retries, and resets
+on explicit operator retry.
 Successful stages are retained; validation retries keep the selected model and run
 under the usual source and lease fences. OpenAI requires
 `OPENAI_API_KEY` and honors `OPENAI_BASE_URL`; fallback requires `ZAI_API_KEY`.
