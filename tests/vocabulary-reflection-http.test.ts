@@ -9,6 +9,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { beforeEach,afterEach,test } from 'node:test';
 import type { Express,Request,Response,NextFunction,RequestHandler } from 'express';
 import { setDb } from '../server/db/connection.ts';
+import { writeVocabularyDefaultUsefulSenses } from '../server/db/vocabulary-sense-coverage.ts';
 import { runWithLearnerId } from '../server/db/learner-context.ts';
 import { mapVocabularyContentSense,createVocabularyContent,createVocabularySense,getVocabularyContentForMaintenance,getVocabularySenseCatalog } from '../server/db/vocabulary-content.ts';
 import { createVocabularySession,appendVocabularySessionActions,stageVocabularySessionCompletion,closeVocabularySessionCompletion } from '../server/db/vocabulary-sessions.ts';
@@ -659,28 +660,30 @@ test('repertoire default selection route validates both versions and returns an 
   const first=createVocabularySense({senseId:'first',wordId:'a',description:'Written character'},{kind:'operator',id:'editor'});
   const second=createVocabularySense({senseId:'second',wordId:'a',description:'Writing style'},{kind:'operator',id:'editor'});
   const job=claimVocabularyReflectionJob({kind:'exercise_improvement',now:later})!;
+  // The defaults moved after generation captured them, so the bootstrap waits for operator review.
+  writeVocabularyDefaultUsefulSenses('a',0,['first','second'],{kind:'operator',id:'editor'});
   const result=recordVocabularyImprovementResult(job.jobId,job.leaseToken,{diagnosis:'Repertoire',proposal:{rationale:'Selected uses',operations:[
     {operationKey:'first',strategy:'replace',sourceContentId:'one',expectedVersion:1,scope:{kind:'shared'},rationale:'First use',content:{...draft('first-item'),words:[{wordId:'a',relation:'target',senseId:first.senseId}]}},
     {operationKey:'second',strategy:'create',scope:{kind:'shared'},rationale:'Second use',content:{...draft('second-item'),words:[{wordId:'a',relation:'target',senseId:second.senseId}]}},
   ]},admission:{outcome:'repertoire_bootstrap',rationale:'Useful uses',wordId:'a',sourceContentId:'one',sourceContentVersion:1,catalogVersion:getVocabularySenseCatalog('a').version,senseIds:[],sourceMapping:{senseId:null,establishedAt:null},generationScope:{selectionEstablished:true,senseIds:['first','second'],source:{kind:'word_defaults',wordId:'a',capturedVersion:0}}}},later);
   const route=`${base}/proposals/:id/word-defaults-revision`,params={id:result.proposalId!};
-  for(const body of [{expectedVersion:1},{expectedVersion:1,expectedWordVersion:-1,includedSenseIds:['second']},{expectedVersion:1,expectedWordVersion:0,includedSenseIds:'second'},{expectedVersion:1,expectedWordVersion:0,includedSenseIds:['second'],extra:true}])assert.equal(call('post',route,{params,body}).status,400);
+  for(const body of [{expectedVersion:1},{expectedVersion:1,expectedWordVersion:-1,includedSenseIds:['second']},{expectedVersion:1,expectedWordVersion:1,includedSenseIds:'second'},{expectedVersion:1,expectedWordVersion:1,includedSenseIds:['second'],extra:true}])assert.equal(call('post',route,{params,body}).status,400);
   process.env.APP_OPERATOR_CLERK_USER_IDS='someone-else';
-  assert.equal(call('post',route,{params,body:{expectedVersion:1,expectedWordVersion:0,includedSenseIds:['second']}}).status,403);
+  assert.equal(call('post',route,{params,body:{expectedVersion:1,expectedWordVersion:1,includedSenseIds:['second']}}).status,403);
   process.env.APP_OPERATOR_CLERK_USER_IDS='editor';
-  const saved=call('post',route,{params,body:{expectedVersion:1,expectedWordVersion:0,includedSenseIds:['second']}});
+  const saved=call('post',route,{params,body:{expectedVersion:1,expectedWordVersion:1,includedSenseIds:['second']}});
   const savedValue=saved.body as ReturnType<typeof saveRepertoireWordDefaults>;
   assert.equal(saved.status,200);assert.equal(savedValue.proposal.version,2);assert.equal(savedValue.proposal.operations.length,1);
   assert.deepEqual(savedValue.coverage.includedSenseIds,['second']);
-  assert.equal(call('post',route,{params,body:{expectedVersion:1,expectedWordVersion:1,includedSenseIds:['first','second']}}).status,409);
-  assert.equal(call('post',route,{params,body:{expectedVersion:2,expectedWordVersion:0,includedSenseIds:['first','second']}}).status,409);
-  const restored=call('post',route,{params,body:{expectedVersion:2,expectedWordVersion:1,includedSenseIds:['first','second']}});
+  assert.equal(call('post',route,{params,body:{expectedVersion:1,expectedWordVersion:2,includedSenseIds:['first','second']}}).status,409);
+  assert.equal(call('post',route,{params,body:{expectedVersion:2,expectedWordVersion:1,includedSenseIds:['first','second']}}).status,409);
+  const restored=call('post',route,{params,body:{expectedVersion:2,expectedWordVersion:2,includedSenseIds:['first','second']}});
   const restoredValue=restored.body as ReturnType<typeof saveRepertoireWordDefaults>;
   assert.equal(restored.status,200);assert.equal(restoredValue.proposal.operations.length,2);
   assert.deepEqual(restoredValue.coverage.includedSenseIds,['first','second']);
   const queueRoute=`${base}/proposals/:id/word-defaults-reassessment`;
   const card=call('get',`${base}/case-queue/:id`,{params:{id:job.caseId}}).body as {version:number};
-  const reassessInput={expectedVersion:3,expectedWordVersion:2,expectedCaseVersion:card.version,expectedContentVersion:1,includedSenseIds:['first'],modelChoice:'openai:gpt-6-sol-high'};
+  const reassessInput={expectedVersion:3,expectedWordVersion:3,expectedCaseVersion:card.version,expectedContentVersion:1,includedSenseIds:['first'],modelChoice:'openai:gpt-6-sol-high'};
   for(const body of [{...reassessInput,modelChoice:'bad'},{...reassessInput,expectedWordVersion:-1},{...reassessInput,expectedCaseVersion:0},{...reassessInput,includedSenseIds:'first'},{...reassessInput,extra:true}])assert.equal(call('post',queueRoute,{params,body}).status,400);
   process.env.APP_OPERATOR_CLERK_USER_IDS='someone-else';
   assert.equal(call('post',queueRoute,{params,body:reassessInput}).status,403);process.env.APP_OPERATOR_CLERK_USER_IDS='editor';
@@ -688,7 +691,7 @@ test('repertoire default selection route validates both versions and returns an 
   const queued=call('post',queueRoute,{params,body:reassessInput});
   const queuedBody=queued.body as {item:{frozen:boolean;proposal:{version:number}};coverage:{includedSenseIds:string[];word:{version:number}}};
   assert.equal(queued.status,200);assert.equal(queuedBody.item.frozen,true);assert.equal(queuedBody.item.proposal.version,3);
-  assert.deepEqual(queuedBody.coverage.includedSenseIds,['first']);assert.equal(queuedBody.coverage.word.version,3);
+  assert.deepEqual(queuedBody.coverage.includedSenseIds,['first']);assert.equal(queuedBody.coverage.word.version,4);
 
 });
 

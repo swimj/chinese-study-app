@@ -59,8 +59,9 @@ belong there and in task instructions, not in this frontier.
   defaults alone define repertoire bootstrap selection. Historical case scopes
   remain evidence, with no runtime policy authority.
   Reassessment freezes case review mutations until termination and preserves
-  earlier assessments as provenance. Operators approve exact content revisions;
-  case resolution is distinct from job completion and queued approval. Backend
+  earlier assessments as provenance. Operators approve exact content revisions,
+  except a first repertoire bootstrap unchanged since generation, which applies
+  automatically; case resolution is distinct from job completion and queued approval. Backend
   judgment can compensate scheduling without learner approval or content publication.
 - **Hosted boundary:** Mandarin, invite-only desktop web, one-origin frontend
   and Express API, shared SQLite, Clerk identity, and Fly/Litestream are the

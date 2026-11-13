@@ -120,7 +120,8 @@ ends that replacement gate rather than permanently freezing future default edits
   axis, and note realizing the nominated shared purpose. It can refine the
   candidate's presentation but does not repeat the pedagogical decision. Unresolved
   identities withhold the complete plan for operator resolution.
-- **Application** requires operator review. Shared changes and local refinements
+- **Application** requires operator review, except an unchanged first
+  repertoire bootstrap (see [dictionary fallback](#dictionary-fallback-and-sense-mapping)). Shared changes and local refinements
   form one proposal; reuse is an assessment without a shared edit. Operators can
   trim or edit parts deliberately, including optional clarifiers.
 
@@ -204,6 +205,16 @@ content. Established senses supply uses and retained examples; missing examples
 are not invented. An empty selected scope makes no authoring call. Current
 same-scope, same-owner authored production practice prevents another bootstrap,
 including pure cues accepting the target.
+
+Recording a `repertoire_bootstrap` proposal approves and applies it in the same
+transaction, attributed to the `vocabulary-reflection` service with
+`{automatic: 'repertoire_bootstrap'}` review notes, and resolves the case. It
+first checks that the proposal bases, sense catalog, source mapping and the
+captured word-default version still match. If any moved during generation, the
+proposal stays `awaiting_review` and the repertoire review tools (narrowing the
+selection, editing, approval) apply as before. Selected-repertoire additions from
+**Generate for selected** and proposals recorded before this policy still require
+operator approval.
 
 Authored cues instead receive a separate mapping call. A defensible single sense
 admits coherent local planning. An uninterpretable source or inventory gap retains

@@ -79,6 +79,10 @@ correction changes it.
 Backend preparation can publish structurally validated shared material under its
 bounded authoring policy. Internal reflection instead proposes content changes;
 an operator reviews and authorizes application of an exact proposal version.
+A first repertoire bootstrap is the exception: its proposal applies automatically
+when recorded, under a service-attributed approval, if its bases, sense catalog,
+source mapping and captured word-default version are unchanged since generation.
+Any intervening version change leaves it for ordinary operator review.
 A persisted request can acknowledge that authorization before background
 validation and application complete. Preparation
 and reflection repertoire generation share the general-exercise authoring contract;

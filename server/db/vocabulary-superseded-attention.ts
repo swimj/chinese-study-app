@@ -1,8 +1,9 @@
+import type { VocabularyActor } from '../../src/domain/vocabulary-content.ts';
 import { getDb } from './connection.ts';
 import { emitBackendEvent } from './vocabulary-content.ts';
 
 /** Called inside the application transaction, after the source revisions are written. */
-export function resolveSupersededAttentionCases(sourceIds:string[], originatingCaseId:string|null, applicationId:string, actorId:string, at:string):void {
+export function resolveSupersededAttentionCases(sourceIds:string[], originatingCaseId:string|null, applicationId:string, actor:VocabularyActor, at:string):void {
   const db=getDb();
   if(!db.isTransaction)throw new Error('Superseded case resolution requires an application transaction');
   const ids=[...new Set(sourceIds)];
@@ -20,6 +21,6 @@ export function resolveSupersededAttentionCases(sourceIds:string[], originatingC
     db.prepare("UPDATE reflection_cases SET status='closed' WHERE case_id=?").run(item.case_id);
     db.prepare("UPDATE vocabulary_case_reviews SET state='resolved',resolved_at=?,version=version+1 WHERE case_id=?").run(at,item.case_id);
     emitBackendEvent({name:'vocabulary.reflection.case_source_superseded',entityKind:'reflection',entityId:item.case_id,
-      actorKind:'operator',actorId,occurredAt:at,data:{sourceContentId:item.content_id,applicationId,reason:'Source superseded by an applied proposal.'}});
+      actorKind:actor.kind,actorId:actor.id,occurredAt:at,data:{sourceContentId:item.content_id,applicationId,reason:'Source superseded by an applied proposal.'}});
   }
 }

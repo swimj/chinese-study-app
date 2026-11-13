@@ -6,7 +6,7 @@ import { isVocabularyCaseSourceSuperseded } from './vocabulary-case-source.ts';
 import { resolveSupersededAttentionCases } from './vocabulary-superseded-attention.ts';
 import { isDeepStrictEqual } from 'node:util';
 import { getPureCueResolution, pureCueIdentityOptions, vocabularyResponseCandidates, PURE_CUE_RESOLUTION_CONTRACT, type PureCueResolution } from '../vocabulary/pure-cue-promotion.ts';
-import { getVocabularyDefaultSelectionFinding } from './vocabulary-sense-coverage.ts';
+import { getVocabularyDefaultSelectionFinding, resolveVocabularySenseCoverage } from './vocabulary-sense-coverage.ts';
 import { failPreparationAttempt } from '../vocabulary/preparation-retry.ts';
 import { randomUUID } from 'node:crypto';
 import { isVocabularyDefinitionFallback,vocabularyAuthoredPromptBody,vocabularyPhraseClozeError } from '../../src/domain/vocabulary-production-coverage.ts';
@@ -548,6 +548,7 @@ export function recordVocabularyImprovementResult(jobId: string, token: string, 
       acceptVocabularyRepairTarget(row.review_case_id,captured,at);
     }
     finish(jobId,token,input,output,at);
+    if(created&&!row.second_opinion_json&&input.admission?.outcome==='repertoire_bootstrap')autoApplyVocabularyRepertoireBootstrap(created.proposalId,input.admission);
     if (!row.second_opinion_json&&(needsAttention || needsIdentity || input.pureCuePromotion?.outcome === 'needs_operator')) getDb().prepare("UPDATE reflection_cases SET status='open' WHERE case_id=?").run(row.case_id);
     return output;
   });
@@ -666,17 +667,16 @@ export function previewVocabularyProposal(proposalId: string, expectedVersion: n
     sourceIntroductionExercises: operation.strategy === 'create' ? 0 : count('introduction_exercises','introduction_id',operation.sourceContentId),transfersRelationships: false })) };
 }
 export function approveVocabularyProposal(proposalId: string, expectedVersion: number, actorId: string, notes: VocabularyJson = null): string {
-  return approveVocabularyProposalInternal(proposalId,expectedVersion,actorId,notes);
+  return approveVocabularyProposalInternal(proposalId,expectedVersion,operator(actorId),notes);
 }
-function approveVocabularyProposalInternal(proposalId: string, expectedVersion: number, actorId: string, notes: VocabularyJson, requestId?:string): string {
-  const actor = operator(actorId);
+function approveVocabularyProposalInternal(proposalId: string, expectedVersion: number, actor: VocabularyActor, notes: VocabularyJson, requestId?:string): string {
   return atomic(() => {
     const value = expectedProposal(proposalId,expectedVersion);
     assertVocabularyCaseEditable(value.caseId,requestId?{requestId,proposalId}:undefined);
     if (!['draft','awaiting_review','approved'].includes(value.status)) throw new VocabularyReflectionConflict('Proposal cannot be approved');
     currentBases(value);previewWrites(value,actor);
     const id = randomUUID();
-    getDb().prepare('INSERT INTO proposal_reviews VALUES (?,?,?,?,?,?,?)').run(id,proposalId,expectedVersion,actorId,'approved',encode(notes),timestamp());
+    getDb().prepare('INSERT INTO proposal_reviews VALUES (?,?,?,?,?,?,?)').run(id,proposalId,expectedVersion,actor.id,'approved',encode(notes),timestamp());
     getDb().prepare("UPDATE content_proposals SET status='approved' WHERE proposal_id=?").run(proposalId);
     event('vocabulary.reflection.proposal_approved',proposalId,{ version: expectedVersion, reviewId: id },actor); return id;
   });
@@ -695,10 +695,10 @@ export function closeVocabularyProposal(proposalId: string, expectedVersion: num
   });
 }
 export function applyVocabularyProposal(proposalId: string, expectedVersion: number, reviewId: string, idempotencyKey: string, actorId: string): VocabularyProposalApplication {
-  return applyVocabularyProposalInternal(proposalId,expectedVersion,reviewId,idempotencyKey,actorId);
+  return applyVocabularyProposalInternal(proposalId,expectedVersion,reviewId,idempotencyKey,operator(actorId));
 }
-function applyVocabularyProposalInternal(proposalId: string, expectedVersion: number, reviewId: string, idempotencyKey: string, actorId: string, requestId?:string): VocabularyProposalApplication {
-  const actor = operator(actorId); nonempty(idempotencyKey);
+function applyVocabularyProposalInternal(proposalId: string, expectedVersion: number, reviewId: string, idempotencyKey: string, actor: VocabularyActor, requestId?:string): VocabularyProposalApplication {
+  nonempty(idempotencyKey);
   return atomic(() => {
     const value = expectedProposal(proposalId,expectedVersion);
     type ApplicationRow = { idempotency_key: string; proposal_id: string; proposal_version: number; authorized_review_id: string; effects_json: string };
@@ -740,9 +740,25 @@ function applyVocabularyProposalInternal(proposalId: string, expectedVersion: nu
     getDb().prepare("UPDATE content_proposals SET status='applied' WHERE proposal_id=?").run(proposalId);
     event('vocabulary.reflection.proposal_applied',proposalId,{ applicationId,version: expectedVersion },actor,appliedAt);
     if(value.caseId)resolveVocabularyCaseProposal(value.caseId,appliedAt,value.proposalId);
-    resolveSupersededAttentionCases(changes.flatMap(change=>change.sourceContentId?[change.sourceContentId]:[]),value.caseId?canonicalVocabularyCaseId(value.caseId):null,applicationId,actorId,appliedAt);
+    resolveSupersededAttentionCases(changes.flatMap(change=>change.sourceContentId?[change.sourceContentId]:[]),value.caseId?canonicalVocabularyCaseId(value.caseId):null,applicationId,actor,appliedAt);
     return receipt;
   });
+}
+
+const REPERTOIRE_BOOTSTRAP_POLICY: VocabularyActor = { kind: 'service', id: 'vocabulary-reflection' };
+/**
+ * A first repertoire bootstrap publishes without operator approval when the
+ * proposal still matches what it was generated from: source content and other
+ * bases, sense catalog, source mapping and the captured word defaults. Any
+ * intervening version change leaves the proposal for ordinary operator review.
+ */
+function autoApplyVocabularyRepertoireBootstrap(proposalId: string, admission: VocabularyImprovementAdmission): VocabularyProposalApplication | null {
+  const value = proposal(proposalId);
+  if (vocabularyProposalCoverageChanged(value)) return null;
+  const source = admission.generationScope?.source;
+  if (source?.kind !== 'word_defaults' || resolveVocabularySenseCoverage(admission.wordId).word.version !== source.capturedVersion) return null;
+  const reviewId = approveVocabularyProposalInternal(proposalId,value.version,REPERTOIRE_BOOTSTRAP_POLICY,{ automatic: 'repertoire_bootstrap' });
+  return applyVocabularyProposalInternal(proposalId,value.version,reviewId,`repertoire-bootstrap:${proposalId}:${value.version}`,REPERTOIRE_BOOTSTRAP_POLICY);
 }
 
 /** Retain operator intent before journal admission; this does not authorize application. */
@@ -758,7 +774,7 @@ export function recordVocabularyApprovalIntent(input:{requestId:string;proposalI
 export function completeVocabularyApprovalRequest(input: {
   requestId: string; proposalId: string; expectedVersion: number; actorId: string; notes: VocabularyJson;
 }): VocabularyProposalApplication {
-  operator(input.actorId);
+  const actor = operator(input.actorId);
   return atomic(() => {
     const key = `approval-request:${input.requestId}`;
     const previous = getDb().prepare(`SELECT a.proposal_id,a.proposal_version,a.effects_json,r.operator_id,r.notes_json
@@ -774,8 +790,8 @@ export function completeVocabularyApprovalRequest(input: {
       return JSON.parse(previous.effects_json) as VocabularyProposalApplication;
     }
     // The review and application commit together; a crash cannot leave an orphan authorization.
-    const reviewId = approveVocabularyProposalInternal(input.proposalId,input.expectedVersion,input.actorId,input.notes,input.requestId);
-    return applyVocabularyProposalInternal(input.proposalId,input.expectedVersion,reviewId,key,input.actorId,input.requestId);
+    const reviewId = approveVocabularyProposalInternal(input.proposalId,input.expectedVersion,actor,input.notes,input.requestId);
+    return applyVocabularyProposalInternal(input.proposalId,input.expectedVersion,reviewId,key,actor,input.requestId);
   });
 }
 export function closeVocabularyTeachingCase(caseId: string, actorId: string, reason: string): void {
