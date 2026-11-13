@@ -599,6 +599,24 @@ test('background reserve migration retains membership and work while conservativ
   }finally{db.close();}
 });
 
+test('content reaction migration creates empty learner reaction tables with subject and append-only guards', () => {
+  const { db } = copy('content-reactions-upgrade', true);
+  try {
+    const index = schemaMigrations.findIndex(entry => entry.id === 'app_schema:0072_learner_content_reactions');
+    migrateDatabase(db, schemaMigrations.slice(0, index));
+    assert.deepEqual(migrateDatabase(db), schemaMigrations.slice(index).map(entry => entry.id));
+    assert.deepEqual(db.prepare('SELECT * FROM learner_content_reactions').all(), []);
+    assert.deepEqual(db.prepare('SELECT * FROM learner_content_reaction_events').all(), []);
+    db.exec("INSERT INTO learners(learner_id,display_name,created_at) VALUES('reaction-owner','Owner','2026-11-12')");
+    assert.throws(() => db.exec("INSERT INTO learner_content_reactions(learner_id,subject_kind,session_id,note_index,message_id,reaction,surface,created_at,updated_at) VALUES ('reaction-owner','connection',NULL,0,NULL,'saved','home','now','now')"), /CHECK constraint/);
+    assert.throws(() => db.exec("INSERT INTO learner_content_reactions(learner_id,subject_kind,session_id,note_index,message_id,reaction,reasons_json,surface,created_at,updated_at) VALUES ('reaction-owner','lesson',NULL,NULL,'m','saved','[\"wrong\"]','home','now','now')"), /CHECK constraint/);
+    assert.throws(() => db.exec("INSERT INTO learner_content_reaction_events(learner_id,subject_kind,session_id,note_index,message_id,reaction,surface,occurred_at) VALUES ('reaction-owner','lesson',NULL,NULL,'missing',NULL,'home','now')"), /FOREIGN KEY/);
+    assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE type='trigger' AND name='learner_content_reaction_events_append_only'").get());
+    assert.deepEqual(migrateDatabase(db), []);
+    assertSchemaCurrent(db);
+  } finally { db.close(); }
+});
+
 test('timed session migration keeps existing controls, enables timed sessions, and starts empty learner state', () => {
   const { db } = copy('timed-session-upgrade', true);
   try {

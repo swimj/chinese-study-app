@@ -1,0 +1,49 @@
+.saved-page { max-width: 1100px; margin: 0 auto; padding: 0 0 3rem; min-width: 0; }
+.saved-header { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem 1rem; margin-bottom: 1.25rem; }
+.saved-header h1 { margin: 0 auto 0 0; font-size: 1.6rem; }
+.saved-views { display: flex; flex-wrap: wrap; gap: .4rem; }
+.saved-button {
+  min-height: 2.5rem; padding: .45rem .9rem; border: 1px solid var(--border); border-radius: .65rem;
+  background: var(--surface); color: var(--text); font-size: .95rem; box-shadow: none;
+}
+.saved-button:hover { background: var(--surface-hover); transform: none; }
+.saved-button.is-on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.saved-button.is-primary { background: var(--accent); border-color: var(--accent); color: white; }
+.saved-button.is-primary:hover { background: var(--accent-hover); }
+.saved-button.is-text { border-color: transparent; background: transparent; color: var(--text-secondary); }
+.saved-button.is-text:hover { background: var(--surface-muted); color: var(--accent); }
+.saved-filter { margin: 0 0 1rem; }
+.saved-empty { color: var(--text-secondary); padding: 2rem 0; }
+.saved-group + .saved-group { margin-top: 2rem; }
+.saved-group h2 { font-size: .95rem; font-weight: 600; color: var(--text-secondary); margin: 0 0 .75rem; }
+.saved-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr)); gap: 1rem; align-items: start; }
+.saved-card {
+  min-width: 0; display: grid; gap: .85rem; padding: 1.25rem 1.35rem; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow-card);
+}
+.saved-card.is-muted { box-shadow: none; background: color-mix(in srgb, var(--surface) 60%, var(--canvas)); }
+.saved-card.is-muted :is(.saved-card-prose, .saved-card-lesson) { color: var(--text-muted); }
+.saved-card-kind { margin: 0; font-size: .8rem; letter-spacing: .02em; color: var(--text-muted); overflow-wrap: anywhere; }
+.saved-card-prose { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.8; font-size: 1.02rem; }
+.saved-card-lesson { overflow-wrap: anywhere; line-height: 1.7; }
+.saved-card-lesson h2 { font-size: 1.05rem; margin: 0 0 .5rem; }
+.saved-card-lesson p { margin: 0 0 .6rem; }
+.saved-card-words { display: flex; flex-wrap: wrap; gap: .4rem; list-style: none; margin: 0; padding: 0; }
+.saved-word {
+  display: inline-flex; align-items: baseline; gap: .35rem; min-height: 2.25rem; padding: .25rem .7rem;
+  border: 1px solid var(--border); border-radius: 999px; background: var(--surface-muted); color: var(--text); font-size: .95rem; box-shadow: none;
+}
+.saved-word small { color: var(--text-secondary); font-size: .8em; }
+.saved-word:hover { background: var(--surface-hover); transform: none; }
+.saved-word.is-on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.saved-card-note { margin: 0; padding: .6rem .85rem; border-left: 3px solid var(--accent); background: var(--accent-soft); border-radius: 0 .5rem .5rem 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.saved-note-editor { display: grid; gap: .5rem; }
+.saved-note-editor textarea { width: 100%; box-sizing: border-box; font: inherit; padding: .6rem .75rem; border: 1px solid var(--border); border-radius: .5rem; background: var(--surface); color: var(--text); resize: vertical; }
+.saved-note-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.saved-card-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; }
+.saved-focus { display: grid; gap: .75rem; max-width: 760px; margin: 0 auto; }
+.saved-focus-position { margin: 0; color: var(--text-secondary); font-size: .9rem; }
+.saved-card.is-large { padding: clamp(1.5rem, 3vw, 2.5rem); }
+.saved-card.is-large .saved-card-prose { font-size: clamp(1.1rem, 1.5vw, 1.3rem); line-height: 1.9; }
+.saved-focus-nav { display: flex; justify-content: center; gap: .75rem; }
+.saved-focus-nav .saved-button { min-width: 3rem; font-size: 1.1rem; }

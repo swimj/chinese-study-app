@@ -26,6 +26,7 @@ Leaving the page via Return to study does not retain that in-memory workspace.
 | Content quality | Review content-quality signals and filter the triage queue | [Content quality](content-quality.md) |
 | Content improvement | Review vocabulary judgments and proposals, reconcile sense conflicts in Needs attention, and apply approved corrections | [Content improvement workflow](#content-improvement-workflow) |
 | Preparation failures | Inspect paused shared preparation work and retry eligible stages | [Error diagnostics](ops/error-diagnostics.md#shared-word-preparation-failures) |
+| Learner reactions | Save / Not for me totals, reasons, connection rates by prompt and model, and text marked Wrong | [Reactions API](api.md#learner-content-reactions) |
 | What’s New | Edit and publish learner-facing update posts | [What’s New](whats-new.md#manual-operator-editor) |
 | Service banner | Set planned downtime, edit a custom message, or clear the active banner | [Banner API](api.md#operator-view) and [hosted upgrade runbook](ops/hosted-beta-deployment.md#post-a-pre-upgrade-banner) |
 

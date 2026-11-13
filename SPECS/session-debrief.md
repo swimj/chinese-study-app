@@ -164,3 +164,21 @@ The optional interests textarea participates in settings draft, Save,
 and Cancel behavior, starts empty, and accepts at most 1000 characters. Enter
 inside it inserts a newline. French uses the same completion deadline and deterministic report, and shows
 neither Mandarin Connections nor interests.
+
+## Saving and reactions
+
+Each ready note can be **Saved** or marked **Not for me**; the two are exclusive
+and a second press clears the choice. Not for me offers optional reasons (Wrong,
+Already knew, Not interesting, Too long, Confusing) and a muted note; it does not
+hide the note, change generation, or affect scheduling. A saved note can carry a
+private note of at most 1000 characters. Feedback lessons take the same
+reactions; Dismiss stays a separate inbox action. **S** and **X** toggle the
+reactions on the focused note or lesson under the reader's shortcut rules.
+
+Feedback → **Saved** lists saved notes and lessons by month and, under **All
+connections**, the ready notes of the 120 most recent sessions with notes plus
+any older saved note. Word chips filter by word, and **Shuffle one at a time**
+shows the current list as a carousel. An item un-saved during a visit stays
+listed until the next load so the choice can be reversed. Reactions are used for
+analysis only in this version; feeding them back into generation is undecided.
+

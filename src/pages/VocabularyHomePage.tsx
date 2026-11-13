@@ -1,14 +1,15 @@
 import { SessionStartCard } from '../components/SessionStartCard';
 import { fetchVocabularyStatistics, fetchVocabularySessionPreview } from '../services/api';
 import { studiedToday, vocabularyActiveTimeMetrics, vocabularyStudyWeek, type VocabularyStatistics, type VocabularyStudyDays } from '../domain/vocabulary-statistics';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { BackendStatus } from '../services/api';
 import type { ComponentProps } from 'react';
 import { HomeUpdates, HomeUpdatesCollapsedControl } from './HomeUpdates';
 import { SessionSettingsPanel, ActiveTimeMetric } from './HomeOverviewPanel';
 import type { WhatsNewCatalog } from '../features/attention/useWhatsNewCatalog';
 import { useSessionDebrief } from '../features/session/useSessionDebrief';
-import { HomeConnections } from '../features/session/HomeConnections';
+import { HomeConnections, type HomeConnectionReactions } from '../features/session/HomeConnections';
+import { useContentReactions } from '../features/reactions/useContentReactions';
 import { useHomeConnectionsView } from '../features/session/useHomeConnectionsView';
 import { ConnectionSignals } from '../features/session/ConnectionSignals';
 import { createVocabularyHomePreviewLoader, INITIAL_VOCABULARY_HOME_PREVIEW, type VocabularyHomePreviewState } from '../features/vocabulary-study/home-preview';
@@ -91,6 +92,13 @@ export function VocabularyHomePage(props: {
   useEffect(()=>{if(props.active)setSettings(false);},[props.active]);
   const recent=useSessionDebrief(undefined,!props.active);
   const connections=useHomeConnectionsView(recent.debrief,!props.active&&!settings);
+  const contentReactions=useContentReactions('home');
+  const debriefSessionId=recent.debrief?.sessionId??null;
+  const connectionReactions=useMemo<HomeConnectionReactions|undefined>(()=>debriefSessionId===null?undefined:{
+    stateFor:(noteIndex)=>contentReactions.stateFor({kind:'connection',sessionId:debriefSessionId,noteIndex}),
+    onChange:(noteIndex,choice)=>contentReactions.change({kind:'connection',sessionId:debriefSessionId,noteIndex},choice),
+    error:contentReactions.error,
+  },[debriefSessionId,contentReactions.stateFor,contentReactions.change,contentReactions.error]);
   const connectionsExpanded=!settings&&connections.expanded;
   if(props.active)return <div className="home-page home-session-active">{props.studySurface}</div>;
   return <div className={`home-page${connectionsExpanded?' home-connections-expanded':''}${props.updatesCollapsed?' home-updates-collapsed':''}`}>
@@ -102,7 +110,7 @@ export function VocabularyHomePage(props: {
         onStart={()=>{if(preview.preview?.itemCount===0)setPreviewRevision((value)=>value+1);else props.onStart(preview.preview?.previewSeed);}}
         onToggleSettings={()=>{if(!saving){setSettings(!settings);if(!settings)props.onSettingsOpened();}}} />
       {settings?<SessionSettingsPanel backendStatus={props.backendStatus} onSaveSessionSettings={async(settings)=>{await props.onSaveSessionSettings(settings);setPreviewRevision((value)=>value+1);}} onSavingChange={setSaving} onClose={()=>setSettings(false)}/>:null}
-      {!settings&&recent.debrief?<HomeConnections key={recent.debrief.sessionId} debrief={recent.debrief} expanded={connections.expanded} error={recent.error} retrying={recent.retrying} onToggle={connections.toggle} onRetry={recent.retry} onReload={recent.reload}/>:recent.error?
+      {!settings&&recent.debrief?<HomeConnections key={recent.debrief.sessionId} debrief={recent.debrief} expanded={connections.expanded} error={recent.error} retrying={recent.retrying} onToggle={connections.toggle} onRetry={recent.retry} onReload={recent.reload} reactions={connectionReactions}/>:recent.error?
         <p className="notes" role="status">Couldn’t load the recent session. <button type="button" className="secondary-button" onClick={recent.reload}>Try again</button></p>:null}
       {!connectionsExpanded&&!settings&&!props.updatesCollapsed?<HomeUpdates catalog={props.updatesCatalog} unseenPostIds={props.unseenPostIds} onUnseenBadgeVisible={props.onUnseenBadgeVisible} onOpenPost={props.onOpenUpdate} onViewAll={props.onViewAllUpdates} onCollapse={props.onToggleUpdatesCollapsed}/>:null}
     </div>

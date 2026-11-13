@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { ModelInvocationsPanel } from './ModelInvocationsPanel';
 import './OperatorUsagePulsePage.css';
 import { PreparationFailuresPanel } from './PreparationFailuresPanel';
+import { ContentReactionsPanel } from './ContentReactionsPanel';
 import { ContentQualityPanel } from './ContentQualityPanel';
 import { VocabularyCaseReviewPage } from './VocabularyCaseReviewPage';
 import type { VocabularyOperatorApi } from '../features/vocabulary-operator/api';
@@ -25,6 +26,7 @@ export function OperatorPanel({ tab, improvementApi }: { tab: OperatorTab; impro
     {tab === 'quality' && <ContentQualityPanel />}
     {tab === 'improvement' && <VocabularyCaseReviewPage api={improvementApi} />}
     {tab === 'failures' && <PreparationFailuresPanel />}
+    {tab === 'reactions' && <ContentReactionsPanel />}
     {tab === 'whats-new' && <WhatsNewEditor />}
     {tab === 'banner' && <ServiceBannerPanel />}
   </section>;

@@ -51,6 +51,7 @@ encounters and ratings and requires the offline schema-upgrade procedure.
 | [`session-completion.ts`](../server/db/session-completion.ts) | Fixed-deadline completion revisions, provisional final-action preview, atomic acceptance/summary/report/dispatch closure, cancellation and current-pending recovery |
 | [`session-word-outcomes.ts`](../server/db/session-word-outcomes.ts) | Immutable session-attributed introduction/Practice outcomes and deterministic distinct new/graduated word reports |
 | [`session-debrief.ts`](../server/db/session-debrief.ts) | Learner-private exact inventories and interests snapshots, debrief queue/results, attempt cost and latency records, fenced completion and explicit retry |
+| [`content-reactions.ts`](../server/db/content-reactions.ts) | Learner Save / Not for me reactions to connection notes and feedback lessons, append-only reaction history, the Saved collection read and the operator summary |
 | [`preparation-work.ts`](../server/db/preparation-work.ts) | Shared word/stage demand, three-attempt budget, restart recovery, failure diagnostics and audited operator retry; migration 0018 |
 | [`sense-content-reconciliation.ts`](../server/db/sense-content-reconciliation.ts) | Operator-authorized saved judgments, versioned dependency plans, atomic live application and replacement retry |
 | [`sense-content-reconciliation-state.ts`](../server/db/sense-content-reconciliation-state.ts) | Applied canonical authority, generation publication fences, replacement readiness and durable practice demand |
@@ -533,6 +534,21 @@ token fencing, provider controls and draining shutdown live in
 `server/session-debrief/worker.ts`; provider transport/validation and the
 approved byte-identical v7 prompt live beside it. This flow does not use
 reflection artifacts, evidence, runs, proposals, or model-selection policy.
+
+
+## Learner content reactions
+
+Migration `0072_learner_content_reactions` adds `learner_content_reactions`, one
+current row per learner subject, and the append-only
+`learner_content_reaction_events`. A subject is either a connection note
+(`session_id`, `note_index`, with a same-learner foreign key to its debrief job)
+or a lesson (`message_id` in `learner_messages`). Partial unique indexes enforce
+one reaction per subject; CHECK constraints keep reasons to `not_for_me` and
+personal notes to `saved`. Clearing deletes the current row; every change of
+reaction or reasons, including a clear, appends an event with its surface.
+Note-only edits are not events. Writes verify that the note index exists in the
+learner's own ready result or that the lesson is the learner's own. Both tables
+start empty; no backfill.
 
 
 ## Model invocation ledger

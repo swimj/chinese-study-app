@@ -3,10 +3,20 @@ import type { SessionDebrief } from '../../domain/session-debrief';
 import { connectionExcerpt, homeConnectionNeighbors } from './home-connections-state';
 import { isEditableKeyboardTarget } from './session-keyboard';
 import { isHomeConnectionLoop, resolveHomeConnectionKey } from './home-connections-keyboard';
+import type { ContentReactionState } from '../../domain/content-reactions';
+import { ReactionControls } from '../reactions/ReactionControls';
+import { choiceOf, reactionShortcut, toggleNotForMe, toggleSaved, type ReactionChoice } from '../reactions/reaction-state';
 
-export function HomeConnections({ debrief, expanded, error, retrying, onToggle, onRetry, onReload }: {
+/** Optional Save / Not for me controls for each note of this result. */
+export type HomeConnectionReactions = {
+  stateFor: (noteIndex: number) => ContentReactionState | null;
+  onChange: (noteIndex: number, choice: ReactionChoice) => void;
+  error: string | null;
+};
+
+export function HomeConnections({ debrief, expanded, error, retrying, onToggle, onRetry, onReload, reactions }: {
   debrief: SessionDebrief; expanded: boolean; error: string | null; retrying: boolean;
-  onToggle: () => void; onRetry: () => void; onReload: () => void;
+  onToggle: () => void; onRetry: () => void; onReload: () => void; reactions?: HomeConnectionReactions;
 }) {
   const [index, setIndex] = useState(0);
   const toggleRef = useRef<HTMLButtonElement>(null);
@@ -44,6 +54,22 @@ export function HomeConnections({ debrief, expanded, error, retrying, onToggle, 
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [expanded, activeIndex, notes.length]);
+  useEffect(() => {
+    if (!expanded || !notes.length || !reactions) return;
+    function onKey(event: KeyboardEvent) {
+      const target = event.target;
+      const blocked = isEditableKeyboardTarget(target)
+        || (target instanceof Element && !!target.closest('[role="dialog"], [role="slider"], [role="tablist"], audio, video'));
+      const action = reactionShortcut(event, blocked);
+      if (!action || !reactions) return;
+      event.preventDefault();
+      const current = choiceOf(reactions.stateFor(activeIndex));
+      reactions.onChange(activeIndex, action === 'save' ? toggleSaved(current) : toggleNotForMe(current));
+    }
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [expanded, activeIndex, notes.length, reactions]);
+  const activeReaction = reactions && notes.length ? reactions.stateFor(activeIndex) : null;
   function toggle() {
     setLoop(null);
     focusAfterToggle.current = true;
@@ -75,11 +101,18 @@ export function HomeConnections({ debrief, expanded, error, retrying, onToggle, 
             <span className="home-connections-turn" aria-hidden="true">{neighbor.side === 'previous' ? '←' : '→'}</span>
             <span className="home-connections-neighbor-text" aria-hidden="true">{connectionExcerpt(notes[neighbor.index].text, 220)}</span>
           </button>)}
-          <article className="home-connections-note" aria-live="polite" aria-atomic="true">
+          <article className={`home-connections-note${activeReaction?.reaction === 'not_for_me' ? ' is-muted' : ''}`}>
+            <div aria-live="polite" aria-atomic="true">
             <div className="home-connections-note-content" key={activeIndex}>
             <span className="home-connections-sr-only">Connection {activeIndex + 1} of {notes.length}.</span>
             <p className="home-connections-prose">{notes[activeIndex].text}</p>
             </div>
+            </div>
+            {reactions ? <div className="home-connections-reactions">
+              <ReactionControls label={`Connection ${activeIndex + 1} reaction`} shortcuts state={activeReaction}
+                onChange={(choice) => reactions.onChange(activeIndex, choice)} />
+              {reactions.error ? <p className="reaction-error" role="alert">{reactions.error}</p> : null}
+            </div> : null}
             {loop !== null ? <svg key={loop} className="home-connections-loop" aria-hidden="true">
               <rect className="home-connections-loop-border" width="100%" height="100%" rx="12" pathLength="100"
                 onAnimationEnd={() => setLoop(null)} />

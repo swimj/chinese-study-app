@@ -3,9 +3,13 @@ import { useEffect, useRef, useState } from 'react';
 import { fetchVocabularyFeedback, markVocabularyFeedbackSeen, retryVocabularyFeedback, dismissVocabularyFeedback, restoreVocabularyFeedback, type VocabularyFeedbackInbox } from '../services/api';
 import { ShortcutHint } from '../components/ShortcutHint';
 import '../features/vocabulary-ui/vocabulary-ui.css';
+import '../features/reactions/reactions.css';
 import { feedbackShortcut } from '../features/vocabulary-feedback/keyboard';
 import type { VocabularyJson } from '../domain/vocabulary-content';
-function FeedbackBody({value}:{value:VocabularyJson}) {
+import { useContentReactions, type ContentReactionsApi } from '../features/reactions/useContentReactions';
+import { ReactionControls } from '../features/reactions/ReactionControls';
+import { choiceOf, reactionShortcut, toggleNotForMe, toggleSaved } from '../features/reactions/reaction-state';
+export function FeedbackBody({value}:{value:VocabularyJson}) {
   if(value===null)return null;
   if(typeof value==='string')return <p style={{whiteSpace:'pre-wrap'}}>{value}</p>;
   if(Array.isArray(value))return <>{value.map((v,i)=><FeedbackBody key={i} value={v}/>)}</>;
@@ -13,7 +17,8 @@ function FeedbackBody({value}:{value:VocabularyJson}) {
   return null;
 }
 export const vocabularyFeedbackApi = {fetch:fetchVocabularyFeedback,markSeen:markVocabularyFeedbackSeen,retry:retryVocabularyFeedback,dismiss:dismissVocabularyFeedback,restore:restoreVocabularyFeedback};
-export function VocabularyFeedbackPage({onChanged,api=vocabularyFeedbackApi}:{onChanged?:()=>void;api?:typeof vocabularyFeedbackApi}) {
+export function VocabularyFeedbackPage({onChanged,api=vocabularyFeedbackApi,reactionsApi}:{onChanged?:()=>void;api?:typeof vocabularyFeedbackApi;reactionsApi?:ContentReactionsApi}) {
+  const reactions=useContentReactions('feedback',reactionsApi);
   const [inbox,setInbox]=useState<VocabularyFeedbackInbox|null>(null),[error,setError]=useState<string|null>(null),[busy,setBusy]=useState(false);
   const [view,setView]=useState<'inbox'|'dismissed'>('inbox');
   const [selectedCase,setSelectedCase]=useState<string|null>(null);
@@ -56,6 +61,14 @@ export function VocabularyFeedbackPage({onChanged,api=vocabularyFeedbackApi}:{on
       const target=event.target;
       const editing=target instanceof HTMLElement&&(target.isContentEditable||Boolean(target.closest('input,textarea,select,[role="combobox"],[role="listbox"],[role="slider"],[role="spinbutton"]')));
       const action=feedbackShortcut(event,editing);
+      const reaction=action?null:reactionShortcut(event,editing);
+      if(reaction&&selected){
+        event.preventDefault();
+        const subject={kind:'lesson' as const,messageId:selected.messageId};
+        const choice=choiceOf(reactions.stateFor(subject));
+        reactions.change(subject,reaction==='save'?toggleSaved(choice):toggleNotForMe(choice));
+        return;
+      }
       if(!action||busy||!current)return;
       if(action==='previous'&&index>0){event.preventDefault();setSelectedCase(entries[index-1].caseId);}
       if(action==='next'&&index<entries.length-1){event.preventDefault();setSelectedCase(entries[index+1].caseId);}
@@ -66,6 +79,7 @@ export function VocabularyFeedbackPage({onChanged,api=vocabularyFeedbackApi}:{on
   return <section className="vocabulary-feedback-inbox">
     <header className="vocabulary-word-actions"><h1>Feedback</h1><nav className="vocabulary-feedback-views" aria-label="Feedback view">{(['inbox','dismissed'] as const).map(value=><button type="button" className={view===value?'vocab-primary':'vocab-secondary'} key={value} disabled={busy} aria-pressed={view===value} onClick={()=>{setView(value);setSelectedCase(null);}}>{value==='inbox'?'Inbox':'Dismissed'}</button>)}</nav><button type="button" className="vocab-text-button" onClick={()=>void reload()} disabled={busy}>Refresh</button></header>
     {error&&<p role="alert">{error}</p>}
+    {reactions.error&&<p className="reaction-error" role="alert">{reactions.error}</p>}
     {!inbox&&!error&&<p>Loading…</p>}
     {inbox&&<CardInbox count={entries.length} index={index} itemLabel="feedback" busy={busy} sessionButtons
       className="vocabulary-feedback-shell" onSelect={next=>setSelectedCase(entries[next].caseId)}
@@ -75,7 +89,7 @@ export function VocabularyFeedbackPage({onChanged,api=vocabularyFeedbackApi}:{on
           {selected?<section className="reflection-analysis"><h3>Feedback</h3><FeedbackBody value={selected.body}/></section>
             :selectedJob?<section><p role="status">{selectedJob.status==='failed'?selectedJob.error||'Feedback could not finish. You can retry.':selectedJob.status==='running'?'Generating feedback…':'Feedback is queued.'}</p>{selectedJob.status==='failed'&&<button type="button" className="vocab-primary" disabled={busy} onClick={()=>void retry(selectedJob.jobId)}>Retry feedback</button>}</section>:null}
         </div>
-        {selected&&<footer className="reflection-help-footer"><div className="reflection-help-toolbar">{view==='inbox'?<button type="button" className="vocab-primary" disabled={busy} aria-keyshortcuts="d" onClick={()=>void changeDismissed(true)}>Dismiss<ShortcutHint shortcut="D"/></button>:<button type="button" className="vocab-secondary" disabled={busy} onClick={()=>void changeDismissed(false)}>Restore to inbox</button>}</div></footer>}
+        {selected&&<footer className="reflection-help-footer"><div className="reflection-help-toolbar vocabulary-feedback-toolbar"><ReactionControls label="Your reaction to this feedback" shortcuts state={reactions.stateFor({kind:'lesson',messageId:selected.messageId})} onChange={choice=>reactions.change({kind:'lesson',messageId:selected.messageId},choice)}/>{view==='inbox'?<button type="button" className="vocab-primary" disabled={busy} aria-keyshortcuts="d" onClick={()=>void changeDismissed(true)}>Dismiss<ShortcutHint shortcut="D"/></button>:<button type="button" className="vocab-secondary" disabled={busy} onClick={()=>void changeDismissed(false)}>Restore to inbox</button>}</div></footer>}
     </CardInbox>}
   </section>;
 }

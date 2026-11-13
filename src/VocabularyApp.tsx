@@ -14,6 +14,7 @@ import { VocabularyStudy } from './features/vocabulary-study/VocabularyStudy';
 import { VocabularyHomePage } from './pages/VocabularyHomePage';
 import { VocabularyWordsPage } from './pages/VocabularyWordsPage';
 import { VocabularyFeedbackPage } from './pages/VocabularyFeedbackPage';
+import { SavedPage } from './pages/SavedPage';
 import './features/vocabulary-study/pages.css';
 import { AppChrome, NestedNav, type AppPageKey } from './components/AppChrome';
 import { AboutPage, type AboutView } from './pages/AboutPage';
@@ -54,6 +55,7 @@ function App({ onSignOut, accountScope = 'trusted-local' }: { onSignOut?: () => 
     catch { /* Storage restrictions must not prevent toggling updates. */ }
   }, [homeUpdatesCollapsedKey, homeUpdatesCollapsed]);
   const [wordsView, setWordsView] = useState<'stash' | 'my-words'>('stash');
+  const [feedbackView, setFeedbackView] = useState<'lessons' | 'saved'>('lessons');
   const [backendStatus, setBackendStatus] = useState<BackendStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const attention = useAttentionBadges();
@@ -269,7 +271,21 @@ function App({ onSignOut, accountScope = 'trusted-local' }: { onSignOut?: () => 
           )}
         </>
       ) : currentPage === 'reflections' ? (
-        <VocabularyFeedbackPage onChanged={()=>void refreshFeedbackAttention().catch(()=>undefined)} />
+        <>
+          <NestedNav>
+            <nav className="reflection-view-rail" aria-label="Feedback views">
+              {([['lessons', 'Lessons'], ['saved', 'Saved']] as const).map(([key, label]) => (
+                <button type="button" key={key}
+                  className={`reflection-view-rail-tab${feedbackView === key ? ' active' : ''}`}
+                  aria-current={feedbackView === key ? 'page' : undefined}
+                  onClick={() => setFeedbackView(key)}>{label}</button>
+              ))}
+            </nav>
+          </NestedNav>
+          {feedbackView === 'saved' ? <SavedPage /> : (
+            <VocabularyFeedbackPage onChanged={()=>void refreshFeedbackAttention().catch(()=>undefined)} />
+          )}
+        </>
       ) : currentPage === 'about' ? (
         <AboutPage
           updatesCatalog={updatesCatalog}

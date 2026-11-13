@@ -284,3 +284,4 @@
 .vocab-action-label { display: inline-grid; }
 .vocab-action-label > span { grid-area: 1 / 1; }
 .vocab-action-width { visibility: hidden; pointer-events: none; }
+.vocabulary-feedback-toolbar { justify-content: space-between; gap: .75rem; }

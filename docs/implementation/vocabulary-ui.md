@@ -192,6 +192,18 @@ a restore action. Dismissal is learner-owned and does not affect scheduling or
 content repair. Left/Right navigate cards and D dismisses the displayed active
 lesson; typing, composition and modified keys retain their normal behavior.
 
+### Reactions and Saved
+
+`useContentReactions` loads the learner's reactions once per surface and applies
+Save / Not for me optimistically. Writes for one subject run in order, so the
+last choice wins; a failed write restores the confirmed state and shows an
+inline error. `ReactionControls` renders the shared toggles and reason chips on
+the Home connection in focus, the Feedback inbox footer and each Saved card.
+Home and the inbox bind **S** and **X** while their reader is active; the Saved
+list binds them only in the one-at-a-time view, where Left/Right move and Escape
+returns focus to the shuffle control. `SavedPage` takes its list grouping, word
+filter and visit-stable membership from `features/reactions/saved-collection.ts`.
+
 ## Verification surfaces
 
 The standalone `/tests/browser/vocabulary-ui.html` fixture provides simulated
