@@ -1,11 +1,13 @@
 import { SessionStartCard } from '../components/SessionStartCard';
-import { fetchVocabularyStatistics, fetchVocabularySessionPreview } from '../services/api';
-import { studiedToday, vocabularyActiveTimeMetrics, vocabularyStudyWeek, type VocabularyStatistics, type VocabularyStudyDays } from '../domain/vocabulary-statistics';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { fetchVocabularyProgress, fetchVocabularyStatistics, fetchVocabularySessionPreview } from '../services/api';
+import { studiedToday, vocabularyStudyWeek, type VocabularyStatistics, type VocabularyStudyDays } from '../domain/vocabulary-statistics';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { BackendStatus } from '../services/api';
 import type { ComponentProps } from 'react';
 import { HomeUpdates, HomeUpdatesCollapsedControl } from './HomeUpdates';
-import { SessionSettingsPanel, ActiveTimeMetric } from './HomeOverviewPanel';
+import { SessionSettingsPanel } from './HomeOverviewPanel';
+import { HomeProgress, WeekStudyTime } from './HomeProgress';
+import type { VocabularyProgress } from '../domain/vocabulary-progress';
 import type { WhatsNewCatalog } from '../features/attention/useWhatsNewCatalog';
 import { useSessionDebrief } from '../features/session/useSessionDebrief';
 import { HomeConnections, type HomeConnectionReactions } from '../features/session/HomeConnections';
@@ -18,9 +20,9 @@ export function VocabularyHomeOverview(props: {
   compact: boolean; busy: boolean; settings: boolean; saving: boolean; guideToSettings: boolean;
   statistics: VocabularyStatistics|null; onStart:()=>void; onToggleSettings:()=>void;
   preview?: VocabularyHomePreviewState;
+  /** Loaded separately after the Start card; absent while loading. */
+  progress?: VocabularyProgress|null;
 }) {
-  const today=props.statistics?.days.at(-1);
-  const activeTime=vocabularyActiveTimeMetrics(props.statistics?.days??[]);
   const preview=props.preview??INITIAL_VOCABULARY_HOME_PREVIEW;
   const pending=preview.status==='loading';
   const count=preview.preview?.itemCount;
@@ -36,26 +38,18 @@ export function VocabularyHomeOverview(props: {
         ?count===0?<>Nothing ready yet{preview.preview.preparationPending?' · preparing introductions':''}</>:preview.status==='error'?'Could not check study material':null
         :<>{count===undefined?preview.status==='error'?'Ready count unavailable':'… study items ready':`${count} study items ready`}
         {count===0&&preview.preview?.preparationPending?' · preparing introductions':''}</>} />
-    {!props.compact&&props.statistics?<StudyWeek studyDays={props.statistics.studyDays} />:null}
-    {!props.compact&&today?<>
-      <div className="vocabulary-home-stats" aria-label="Today’s study"><h2>Today</h2>
-        <dl><div><dt>Sessions</dt><dd>{today.sessions}</dd></div><div><dt>Responses</dt><dd>{today.acceptedResponses+today.rejectedResponses}</dd></div></dl>
-        <details><summary>Study details</summary><p>{today.acceptedResponses} accepted responses · {today.rejectedResponses} missed responses. A response is an exercise result, not a measure of mastery.</p>{activeTime.unknownDurationSessions?<p>Time is unavailable for {activeTime.unknownDurationSessions} session(s) in the last 7 days.</p>:null}<p>Today follows the UTC study day.</p></details>
-      </div>
-      <section className="failure-rate-section" aria-label="Active study time"><h3>Active study time</h3>
-        <div className="failure-rate-list"><ActiveTimeMetric label="Today" value={activeTime.today} /><ActiveTimeMetric label="3-day average" value={activeTime.average3} /><ActiveTimeMetric label="7-day average" value={activeTime.average7} /></div>
-      </section>
-    </>:null}
+    {!props.compact&&props.statistics?<StudyWeek studyDays={props.statistics.studyDays} progress={props.progress??null} />:null}
   </section>;
 }
 
-function StudyWeek({studyDays}:{studyDays:VocabularyStudyDays}) {
+function StudyWeek({studyDays,progress}:{studyDays:VocabularyStudyDays;progress:VocabularyProgress|null}) {
   const week=vocabularyStudyWeek(studyDays);
   const studied=week.filter(day=>day.state==='studied').map(day=>day.name);
   return <div className="study-week" role="img" aria-label={`This week: ${studied.length?`studied ${studied.join(', ')}`:'no study yet'}`}>
     {week.map(day=><span key={day.dayKey} className={`study-week-day is-${day.state}${day.dayKey===studyDays.today?' is-today':''}`}>
       <span className="study-week-dot" />{day.label}
     </span>)}
+    <WeekStudyTime progress={progress} />
   </div>;
 }
 
@@ -89,6 +83,22 @@ export function VocabularyHomePage(props: {
     return()=>{disposed=true;clearTimeout(timer);loader.dispose();window.removeEventListener('focus',refresh);};
   },[previewKey]);
   useEffect(()=>{if(!props.active)void fetchVocabularyStatistics().then(setStatistics).catch(()=>setStatistics(null));},[props.active]);
+  // Progress reads the whole study history, so it waits until the Start card has its preview.
+  const [progress,setProgress]=useState<HomeProgressState>({status:'idle',value:null});
+  const [progressRevision,setProgressRevision]=useState(0);
+  // Each Home visit requests once; a generation discards a response that outlived its visit.
+  const progressGeneration=useRef(0),progressRequested=useRef(false);
+  const previewSettled=preview.status!=='loading';
+  useEffect(()=>{if(props.active){progressGeneration.current++;progressRequested.current=false;setProgress({status:'idle',value:null});}},[props.active]);
+  useEffect(()=>()=>{progressGeneration.current++;progressRequested.current=false;},[]);
+  useEffect(()=>{
+    if(props.active||!previewSettled||progressRequested.current)return;
+    progressRequested.current=true;
+    const generation=++progressGeneration.current;
+    setProgress({status:'loading',value:null});
+    fetchVocabularyProgress().then(value=>{if(generation===progressGeneration.current)setProgress({status:'ready',value});},
+      ()=>{if(generation===progressGeneration.current)setProgress({status:'error',value:null});});
+  },[props.active,previewSettled,progressRevision]);
   useEffect(()=>{if(props.active)setSettings(false);},[props.active]);
   const recent=useSessionDebrief(undefined,!props.active);
   const connections=useHomeConnectionsView(recent.debrief,!props.active&&!settings);
@@ -106,13 +116,20 @@ export function VocabularyHomePage(props: {
     {!connectionsExpanded&&!settings&&props.updatesCollapsed?<HomeUpdatesCollapsedControl unseenPostIds={props.unseenPostIds} onVisible={props.onUnseenBadgeVisible} onExpand={props.onToggleUpdatesCollapsed}/>:null}
     <div className={`grid home-grid${!connectionsExpanded&&!settings&&!props.updatesCollapsed?' home-with-updates':''}`}>
       <VocabularyHomeOverview compact={connectionsExpanded} busy={props.busy} settings={settings} saving={saving}
-        guideToSettings={props.guideToSettings} statistics={statistics} preview={preview}
+        guideToSettings={props.guideToSettings} statistics={statistics} preview={preview} progress={progress.value}
         onStart={()=>{if(preview.preview?.itemCount===0)setPreviewRevision((value)=>value+1);else props.onStart(preview.preview?.previewSeed);}}
         onToggleSettings={()=>{if(!saving){setSettings(!settings);if(!settings)props.onSettingsOpened();}}} />
       {settings?<SessionSettingsPanel backendStatus={props.backendStatus} onSaveSessionSettings={async(settings)=>{await props.onSaveSessionSettings(settings);setPreviewRevision((value)=>value+1);}} onSavingChange={setSaving} onClose={()=>setSettings(false)}/>:null}
       {!settings&&recent.debrief?<HomeConnections key={recent.debrief.sessionId} debrief={recent.debrief} expanded={connections.expanded} error={recent.error} retrying={recent.retrying} onToggle={connections.toggle} onRetry={recent.retry} onReload={recent.reload} reactions={connectionReactions}/>:recent.error?
         <p className="notes" role="status">Couldn’t load the recent session. <button type="button" className="secondary-button" onClick={recent.reload}>Try again</button></p>:null}
       {!connectionsExpanded&&!settings&&!props.updatesCollapsed?<HomeUpdates catalog={props.updatesCatalog} unseenPostIds={props.unseenPostIds} onUnseenBadgeVisible={props.onUnseenBadgeVisible} onOpenPost={props.onOpenUpdate} onViewAll={props.onViewAllUpdates} onCollapse={props.onToggleUpdatesCollapsed}/>:null}
+      {!connectionsExpanded&&!settings?<HomeProgressArea state={progress} onRetry={()=>{progressRequested.current=false;setProgressRevision(value=>value+1);}} />:null}
     </div>
   </div>;
+}
+
+type HomeProgressState={status:'idle'|'loading'|'ready'|'error';value:VocabularyProgress|null};
+export function HomeProgressArea({state,onRetry}:{state:HomeProgressState;onRetry:()=>void}) {
+  if(state.status==='error')return <p className="notes" role="status">Couldn’t load progress. <button type="button" className="secondary-button" onClick={onRetry}>Try again</button></p>;
+  return state.value?<HomeProgress progress={state.value} />:null;
 }

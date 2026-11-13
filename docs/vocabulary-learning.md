@@ -360,6 +360,12 @@ The endpoint parses whole reports, including served snapshots, on each call. Its
 load and compute milliseconds; a per-completion summary written at closure is
 the planned remedy if that cost grows.
 
+Home shows these below Connections and What's New (`src/pages/HomeProgress.tsx`),
+and the week's measured active time beside the dots. Home requests progress only
+after the Start preview settles, since the computation runs on the server's
+request thread; until it arrives the sections are absent, and a failure shows one
+retry line. The compact layout (Connections expanded) hides them with the dots.
+
 Closure clears the skip count of every started item and adds at most one passed-over
 day to each due held item that went unstarted, including due words the cap kept out
 of the pool and admitted pure cues. It fills `vocabulary_timed_session_records`:

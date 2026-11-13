@@ -1642,6 +1642,7 @@ export const retryVocabularyFeedback = (id:string) => vocabularyRequest<unknown>
 
 export const fetchVocabularyAttention = () => vocabularyRequest<{unseenCount:number;hasFailure:boolean;generating:boolean}>('/feedback/attention');
 
+export const fetchVocabularyProgress = () => vocabularyRequest<import('../domain/vocabulary-progress').VocabularyProgress>(`/progress?timeZone=${encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC')}`);
 export const fetchVocabularyStatistics = () => vocabularyRequest<import('../domain/vocabulary-statistics').VocabularyStatistics>(`/statistics?timeZone=${encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC')}`);
 
 export async function fetchVocabularyWordCollection(view: MyWordsView, query: string, offset=0, signal?:AbortSignal,
