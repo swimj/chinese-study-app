@@ -4556,6 +4556,41 @@ input::placeholder, textarea::placeholder { color: var(--text-muted); opacity: 1
 .study-week-day.is-studied .study-week-dot { background: var(--accent); border-color: var(--accent); }
 .study-week-day.is-upcoming .study-week-dot { border-style: dashed; border-color: var(--border); }
 .study-week-day.is-today { color: var(--text); font-weight: 600; }
+.study-week-time { align-self: end; margin-left: .35rem; color: var(--text-secondary); font-size: .8rem; line-height: 1.2; }
+
+/* Progress: the week's items and a few experimental indicators, below Connections and updates. */
+.home-progress { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.5rem 2rem; min-width: 0; border-top: 1px solid var(--border); padding-top: 1.5rem; }
+.home-progress-column { display: grid; gap: 1.5rem; align-content: start; min-width: 0; }
+.home-progress section { min-width: 0; }
+.home-progress h3 { margin: 0 0 .6rem; font-size: .85rem; font-weight: 550; color: var(--text-muted); }
+.home-progress-bars { display: block; width: 100%; max-width: 22rem; height: auto; }
+.home-progress-axis { stroke: var(--border); }
+.home-progress-bar-words { fill: var(--accent); }
+.home-progress-bar-cues { fill: var(--warning); }
+.home-progress-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); max-width: 22rem; margin-top: .25rem; color: var(--text-muted); font-size: .7rem; text-align: center; }
+.home-progress-legend { display: flex; flex-wrap: wrap; gap: .4rem 1rem; list-style: none; margin: .4rem 0 0; padding: 0; color: var(--text-secondary); font-size: .8rem; }
+.home-progress-legend li { display: flex; align-items: center; gap: .35rem; }
+.home-progress-swatch { width: .7rem; height: .7rem; border-radius: 2px; }
+.home-progress-swatch.is-words { background: var(--accent); }
+.home-progress-swatch.is-cues { background: var(--warning); }
+.home-progress-total { display: flex; flex-wrap: wrap; align-items: baseline; gap: .3rem .6rem; margin: 0; }
+.home-progress-total strong { font-size: 1.6rem; font-weight: 550; }
+.home-progress-total span { color: var(--text-secondary); font-size: .9rem; }
+.home-progress-first ul { list-style: none; margin: 0; padding: 0; display: grid; gap: .3rem; }
+.home-progress-first li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: baseline; gap: .6rem; }
+.home-progress-hanzi { font-size: 1.05rem; }
+.home-progress-pinyin { color: var(--text-secondary); font-size: .9rem; overflow-wrap: anywhere; }
+.home-progress-first time { color: var(--text-muted); font-size: .8rem; }
+.home-progress-table-wrap { overflow-x: auto; }
+.home-progress-table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+.home-progress-table th, .home-progress-table td { padding: .4rem .5rem .4rem 0; text-align: left; vertical-align: top; border-bottom: 1px solid var(--border); }
+.home-progress-table thead th { color: var(--text-muted); font-size: .75rem; font-weight: 550; }
+.home-progress-table tbody th { font-weight: 500; }
+.home-progress-details { margin-top: .4rem; color: var(--text-secondary); font-size: .85rem; line-height: 1.5; }
+.home-progress-details summary { cursor: pointer; }
+.home-progress-details p { margin: .35rem 0 0; color: var(--text-secondary); font-size: .85rem; font-weight: 400; }
+@container (max-width: 35rem) { .home-progress { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 520px) { .home-progress { grid-template-columns: minmax(0, 1fr); } }
 
 /* Update previews share the resting home, and stack in narrow desktop panels. */
 .home-page:not(.home-session-active):not(.home-connections-expanded) { container-type: inline-size; }
