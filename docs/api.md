@@ -70,6 +70,7 @@ quota boundary. Older clients omitting it retain UTC calendar-day behavior.
 | `POST /words/:id`, `/mode`, `/refresh`, `/dismiss` | Explicit enrollment and word controls |
 | `GET /feedback`, `/feedback/attention` | Read-only own lessons and lightweight attention |
 | `GET /statistics` | UTC daily session/response/coverage totals, active-time availability, and current modes |
+| `GET /progress` | Learner progress indicators from closed vocabulary-runtime history; optional `timeZone` sets the 04:00 local study day (400 if invalid). Computed on request; each call logs a `vocabulary.progress.computed` cost line |
 | `POST /feedback/:id/seen`, `/feedback/jobs/:id/retry` | Acknowledge lesson or explicitly retry own failed feedback |
 
 `/api/operator/vocabulary` provides allowlisted cases, drafts, preview, approval,

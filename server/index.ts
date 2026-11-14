@@ -1,5 +1,6 @@
 import { retryPreparationWithReadiness } from './word-content/retry-preparation.ts';
 import { registerVocabularyStatisticsRoutes } from './vocabulary/statistics-routes.ts';
+import { registerVocabularyProgressRoutes } from './vocabulary/progress-routes.ts';
 import { createVocabularyCutoverFence } from './vocabulary/cutover-routes.ts';
 import { addVocabularyStashByHanzi, updateVocabularyStashPriority } from './db/vocabulary-stash.ts';
 import { registerVocabularyStudyRoutes } from './vocabulary/study-routes.ts';
@@ -439,6 +440,7 @@ export function createApp(options: CreateAppOptions = {}) {
   registerContentImprovementRoutes(app);
   registerVocabularyStudyRoutes(app, options.wakeVocabulary);
   registerVocabularyStatisticsRoutes(app);
+  registerVocabularyProgressRoutes(app);
   registerVocabularyReflectionRoutes(app, {wake: options.wakeVocabulary});
   registerSenseContentReconciliationRoutes(app, {wake: () => { options.wakeWordPreparation?.(); options.wakeVocabulary?.(); }});
   app.get('/api/operator/content-quality', createOperatorAllowlistMiddleware(), (req, res) => {

@@ -323,6 +323,43 @@ Study a little more. The dots come from `studyDays` in `GET /api/vocabulary/stat
 which includes only vocabulary completions, not legacy review summaries; its other
 daily totals stay on UTC days.
 
+### Progress indicators
+
+`GET /api/vocabulary/progress` (`server/db/vocabulary-progress.ts`) reads the
+learner's closed vocabulary completions in staging order, plus feedback
+judgments, and never writes learner state. Legacy review summaries do not count.
+Units are items: a word skill (`recognition`, `production`, or
+`contextual_selection` for contrast) or a pure cue. Only active vocabulary and
+first productions count words.
+
+- A countable encounter is general (not teaching or priming), presented, not
+  skipped and answered. An item's attempt is its first countable encounter in a
+  session, judged by the first effective response. Accepted without help is a
+  success; rejected, or accepted with help, is a failure.
+- A rejected production attempt that the latest succeeded feedback judgment lists
+  as unfair is void; one without a succeeded judgment is pending. Both are left out
+  of rates and reported as counts. A pronunciation rejection is always a failure.
+  Recognition and contrast keep the live result.
+- Rates need ten successes plus failures; below that the rate is null. Recognition,
+  stickiness and transfer use held attempts (Practice or Maintain words, and pure
+  cues). Recognition covers 30 days. Stickiness covers 90 days of attempts at least
+  21 days after the item's previous attempt. Transfer covers 90 days of attempts on
+  content the learner had never been shown, for a pure cue or an item already
+  attempted on other content.
+- Active vocabulary counts words with an accepted, unaided general production. A
+  pure-cue answer names a word only when exactly one reveal word matches it. First
+  productions list the 12 most recent, leaving out the learner's first 14 days.
+- Efficiency groups words by the month their teaching completed and counts the
+  sessions they appeared in as Unstudied or Solidify before first appearing as
+  Practice or Maintain. A month needs five settled words for a median.
+- Daily activity covers 14 local study days by staging time: distinct word items,
+  distinct pure cues, and reported active time.
+
+The endpoint parses whole reports, including served snapshots, on each call. Its
+`vocabulary.progress.computed` log line records completions read, report bytes,
+load and compute milliseconds; a per-completion summary written at closure is
+the planned remedy if that cost grows.
+
 Closure clears the skip count of every started item and adds at most one passed-over
 day to each due held item that went unstarted, including due words the cap kept out
 of the pool and admitted pure cues. It fills `vocabulary_timed_session_records`:
