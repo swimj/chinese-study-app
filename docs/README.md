@@ -59,6 +59,9 @@ linking to the intended guarantees they realize and any known gaps.
   execution, background preparation and compatibility.
 - [Vocabulary study UI](implementation/vocabulary-ui.md): controller/view integration,
   rendering, input behavior and verification surfaces.
+- [Home progress indicators](vocabulary-learning.md#progress-indicators): how study
+  history becomes activity counts and learning indicators, which attempts count,
+  and how the endpoint computes and Home loads the results.
 - [Architecture map](architecture.md): runtime layout and code navigation;
   currently identifies itself as navigation-only.
 - [Vocabulary content-improvement architecture](implementation/vocabulary-content-improvement.md):
