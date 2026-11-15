@@ -1,4 +1,5 @@
 import { DEFAULT_TEACHING_SET } from '../db/teaching-sense-sets.ts';
+import { getExactDefaultTeachingSource, resolveLearnerTeachingSetKey } from '../db/learner-teaching.ts';
 import { isVocabularySessionWordEligible } from '../db/vocabulary-sense-eligibility.ts';
 import { isSenseContentReconciliationPending } from '../db/sense-content-reconciliation-state.ts';
 import { isCompatibleVocabularyIntroduction } from '../db/preparation-compatibility.ts';
@@ -23,22 +24,29 @@ export function eligible(content:VocabularyContent):boolean {
     &&!getDb().prepare('SELECT 1 FROM learner_content_deactivations WHERE learner_id=? AND content_id=?').get(requireLearnerId(),content.contentId)
 ;
 }
-export function introductions(wordId:string,newest=false,teachingSetKey=DEFAULT_TEACHING_SET):VocabularyContent[] {
+export function introductions(wordId:string,newest=false,teachingSetKey=resolveLearnerTeachingSetKey(wordId)):VocabularyContent[] {
+  if (teachingSetKey === null) return [];
+  const exactDefault = getExactDefaultTeachingSource(wordId,teachingSetKey);
   return (getDb().prepare(`SELECT c.content_id FROM content_items c JOIN content_words w USING(content_id)
     WHERE w.word_id=? AND w.relation='target' AND c.kind='introduction' ORDER BY ${newest?'c.updated_at DESC,c.content_id DESC':'c.created_at,c.content_id'}`).all(wordId) as {content_id:string}[])
-    .map((row)=>getVocabularyContent(row.content_id)).filter((content):content is VocabularyContent=>content!==null&&eligible(content)&&introductionUsesTeachingSet(wordId,content.body,teachingSetKey));
+    .map((row)=>getVocabularyContent(row.content_id)).filter((content):content is VocabularyContent=>content!==null&&eligible(content)&&introductionUsesTeachingSet(wordId,content.body,teachingSetKey,exactDefault));
 }
-function introductionUsesTeachingSet(wordId:string,body:unknown,teachingSetKey:string):boolean {
+function introductionUsesTeachingSet(wordId:string,body:unknown,teachingSetKey:string,exactDefault:ReturnType<typeof getExactDefaultTeachingSource>):boolean {
   if (!body || typeof body !== 'object' || Array.isArray(body) || !('sourcePackageId' in body)) return teachingSetKey === DEFAULT_TEACHING_SET;
+  if (exactDefault?.packageId && body.sourcePackageId === exactDefault.packageId
+    && 'bootstrapContentId' in body && body.bootstrapContentId === exactDefault.contentId) return true;
   return Boolean(getDb().prepare(`SELECT 1 FROM word_teaching_packages p JOIN word_content_documents d ON d.content_id=p.content_id
     WHERE p.word_id=? AND p.package_id=? AND d.teaching_set_key=?`).get(wordId,String(body.sourcePackageId),teachingSetKey));
 }
-export function compatibleIntroductions(wordId:string,newest=false,teachingSetKey=DEFAULT_TEACHING_SET):VocabularyContent[] {
-  return introductions(wordId,newest,teachingSetKey).filter(content=>isCompatibleVocabularyIntroduction(wordId,content.body,teachingSetKey));
+export function compatibleIntroductions(wordId:string,newest=false,teachingSetKey=resolveLearnerTeachingSetKey(wordId)):VocabularyContent[] {
+  if (teachingSetKey === null) return [];
+  return introductions(wordId,newest,teachingSetKey).filter(content=>isCompatibleVocabularyIntroduction(wordId,content.body,teachingSetKey)
+    || (teachingSetKey !== DEFAULT_TEACHING_SET && isCompatibleVocabularyIntroduction(wordId,content.body)));
 }
 export type ResolvedVocabularyTeaching = {intro:VocabularyContent;exercises:VocabularyContent[]};
 /** Resolve current coherent material only; compatibility refresh and generation belong to maintenance. */
-export function resolveVocabularyTeaching(wordId:string,teachingSetKey=DEFAULT_TEACHING_SET):ResolvedVocabularyTeaching|null {
+export function resolveVocabularyTeaching(wordId:string,teachingSetKey=resolveLearnerTeachingSetKey(wordId)):ResolvedVocabularyTeaching|null {
+  if (teachingSetKey === null) return null;
   if(!isVocabularySessionWordEligible(wordId)||isSenseContentReconciliationPending(wordId))return null;
   try {if(!canEnsureVocabularySensesFromBootstrap(wordId))return null;}
   catch(error){if(error instanceof VocabularySenseReadinessError)return null;throw error;}
@@ -50,4 +58,4 @@ export function resolveVocabularyTeaching(wordId:string,teachingSetKey=DEFAULT_T
   }
   return null;
 }
-export function teachingReady(wordId:string,teachingSetKey=DEFAULT_TEACHING_SET):boolean {return resolveVocabularyTeaching(wordId,teachingSetKey)!==null;}
+export function teachingReady(wordId:string,teachingSetKey=resolveLearnerTeachingSetKey(wordId)):boolean {return resolveVocabularyTeaching(wordId,teachingSetKey)!==null;}

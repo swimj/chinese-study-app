@@ -4,6 +4,7 @@ import { registerVocabularyProgressRoutes } from './vocabulary/progress-routes.t
 import { createVocabularyCutoverFence } from './vocabulary/cutover-routes.ts';
 import { addVocabularyStashByHanzi, updateVocabularyStashPriority } from './db/vocabulary-stash.ts';
 import { registerVocabularyStudyRoutes } from './vocabulary/study-routes.ts';
+import { getTeachingSetReport } from './db/teaching-set-report.ts';
 import { registerVocabularyReflectionRoutes } from './vocabulary/reflection-routes.ts';
 import { registerSenseContentReconciliationRoutes } from './vocabulary/reconciliation-routes.ts';
 import { listSenseContentReconciliationPracticeDemand } from './db/sense-content-reconciliation-state.ts';
@@ -516,6 +517,13 @@ export function createApp(options: CreateAppOptions = {}) {
 
   app.get('/api/operator/word-preparation/failures', createOperatorAllowlistMiddleware(), (_req, res) => {
     res.json({ failures: listWordPreparationFailures() });
+  });
+  app.get('/api/operator/teaching-sets', createOperatorAllowlistMiddleware(), (_req,res) => {
+    try { res.json(getTeachingSetReport()); }
+    catch (error) {
+      console.error('Teaching set report failed',error);
+      res.status(500).json({error:'Could not load teaching set costs.'});
+    }
   });
 
   app.get('/api/operator/service-banner', createOperatorAllowlistMiddleware(), (_req, res) => {

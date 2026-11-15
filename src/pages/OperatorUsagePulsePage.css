@@ -30,6 +30,8 @@
 .operator-usage-table.operator-ledger-summary th, .operator-usage-table.operator-ledger-summary td { white-space: normal; }
 .operator-ledger-summary { min-width: 28rem; }
 .operator-ledger-summary caption { text-align: left; color: var(--text-muted); padding: 0.5rem; }
+.operator-teaching-sets-table th[scope="row"] { min-width: 8em; overflow-wrap: anywhere; }
+.operator-teaching-sets-table :is(th, td) { vertical-align: top; }
 .operator-ledger-table .operator-column-button { padding: 0.5rem 0.2rem; width: 100%; text-align: left; border-radius: 0.3rem; color: var(--text); background: transparent; font-weight: 650; }
 .operator-ledger-table .operator-column-button:hover { background: var(--surface-hover); }
 .operator-column-indicators { display: block; color: var(--accent); font-size: 0.75rem; font-weight: 500; margin-top: 0.25rem; }

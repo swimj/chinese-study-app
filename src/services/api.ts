@@ -564,6 +564,21 @@ export async function fetchStatus(): Promise<BackendStatus> {
   return response.json();
 }
 
+export type OperatorTeachingSetRow = {
+  wordId: string;
+  hanzi: string;
+  setKey: string;
+  senseCount: number | null;
+  packageCount: number;
+  invocationCount: number;
+  recordedCostUsd: number | null;
+  unpricedInvocationCount: number;
+};
+
+export async function fetchOperatorTeachingSets(signal: AbortSignal): Promise<{ sets: OperatorTeachingSetRow[] }> {
+  return apiRequest('/api/operator/teaching-sets', { signal });
+}
+
 export async function fetchModelInvocations(from?: string, to?: string): Promise<{ rows: ModelInvocationRow[] }> {
   const params = new URLSearchParams();
   if (from !== undefined) params.set('from', from);
