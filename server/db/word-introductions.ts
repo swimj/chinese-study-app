@@ -1,4 +1,5 @@
 import { DEFAULT_TEACHING_SET, assertTeachingSenseSet, teachingSenseIds, teachingSenseSetKey } from './teaching-sense-sets.ts';
+import { getExactDefaultTeachingSource, resolveLearnerTeachingSetKey } from './learner-teaching.ts';
 import { getVocabularySenseCatalog,getVocabularySenses } from './vocabulary-content.ts';
 import { VOCABULARY_PREPARATION_EPOCH } from './preparation-compatibility.ts';
 import { importLegacyVocabularyWord } from './vocabulary-import.ts';
@@ -427,7 +428,8 @@ export function releaseSharedWordIntroductionStage(wordId: string, token: string
   });
 }
 
-function eligiblePackageRows(wordId: string, retainedPin: string | null = null, teachingSetKey = DEFAULT_TEACHING_SET): PackageRow[] {
+function eligiblePackageRows(wordId: string, retainedPin: string | null = null, teachingSetKey: string | null = DEFAULT_TEACHING_SET,
+  exactDefaultPackageId: string | null = null, includeRetainedPin = false): PackageRow[] {
   return getDb().prepare(`
     SELECT package.package_id, package.package_json, package.created_at, package.model,
            package.word_id, package.content_id
@@ -437,7 +439,7 @@ function eligiblePackageRows(wordId: string, retainedPin: string | null = null, 
     JOIN word_content_documents AS content ON content.content_id = package.content_id
     JOIN shared_content_publications AS content_publication
       ON content_publication.publication_id = content.publication_id
-    WHERE package.word_id = ? AND content.teaching_set_key = ?
+    WHERE package.word_id = ? AND (content.teaching_set_key = ? OR package.package_id IN (?,?))
       AND package_publication.publication_status IN ('shared_trial', 'available')
       AND content_publication.publication_status IN ('shared_trial', 'available')
       AND (package.package_id = ? OR NOT EXISTS (
@@ -445,7 +447,7 @@ function eligiblePackageRows(wordId: string, retainedPin: string | null = null, 
         WHERE r.kind = 'teaching_package' AND r.source_id = package.package_id
       ))
     ORDER BY package.created_at, package.package_id
-  `).all(wordId, teachingSetKey, retainedPin) as PackageRow[];
+  `).all(wordId, teachingSetKey, exactDefaultPackageId, includeRetainedPin ? retainedPin : null, retainedPin) as PackageRow[];
 }
 
 /**
@@ -453,22 +455,28 @@ function eligiblePackageRows(wordId: string, retainedPin: string | null = null, 
  * content/package ID ascending. The last entry is the newest eligible artifact.
  * Array order is independent of the learner's selectedPackageId.
  */
-export function getWordIntroductionLibrary(wordId: string, teachingSetKey = DEFAULT_TEACHING_SET): WordIntroductionLibrary | null {
+export function getWordIntroductionLibrary(wordId: string, teachingSetKey?: string): WordIntroductionLibrary | null {
   const learnerId = requireLearnerId();
   if (!lexicalRow(wordId)) return null;
+  const latestOpen = getDb().prepare(`
+    SELECT e.package_id,p.content_id FROM learner_word_introduction_events e
+    JOIN word_teaching_packages p ON p.package_id=e.package_id
+    WHERE e.learner_id=? AND e.word_id=? AND e.event_kind='opened'
+    ORDER BY e.sequence DESC LIMIT 1
+  `).get(learnerId,wordId) as {package_id:string;content_id:string}|undefined;
+  // An opened lesson remains historical evidence, including after the learner changes their scope.
+  const selectedSet = teachingSetKey ?? resolveLearnerTeachingSetKey(wordId);
+  const includeRetainedPin = teachingSetKey === undefined;
+  const exactDefault = selectedSet === null ? null : getExactDefaultTeachingSource(wordId,selectedSet);
   const contentRows = getDb().prepare(`
     SELECT content.content_id, content.content_json, content.created_at, content.model, content.word_id
     FROM word_content_documents AS content
     JOIN shared_content_publications AS publication ON publication.publication_id = content.publication_id
-    WHERE content.word_id = ? AND content.teaching_set_key = ? AND publication.publication_status IN ('shared_trial', 'available')
+    WHERE content.word_id = ? AND (content.teaching_set_key = ? OR content.content_id IN (?,?))
+      AND publication.publication_status IN ('shared_trial', 'available')
     ORDER BY content.created_at, content.content_id
-  `).all(wordId, teachingSetKey) as ContentRow[];
-  const latestOpen = getDb().prepare(`
-    SELECT package_id FROM learner_word_introduction_events
-    WHERE learner_id = ? AND word_id = ? AND event_kind = 'opened'
-    ORDER BY sequence DESC LIMIT 1
-  `).get(learnerId, wordId) as { package_id: string } | undefined;
-  const packageRows = eligiblePackageRows(wordId, latestOpen?.package_id ?? null, teachingSetKey);
+  `).all(wordId, selectedSet, exactDefault?.contentId ?? null, includeRetainedPin ? latestOpen?.content_id ?? null : null) as ContentRow[];
+  const packageRows = eligiblePackageRows(wordId, latestOpen?.package_id ?? null, selectedSet, exactDefault?.packageId ?? null, includeRetainedPin);
   // A withdrawn private pin must not silently turn into a different lesson.
   // A learner who has never opened one may take the first eligible package.
   const selectedPackageId = latestOpen
@@ -489,7 +497,9 @@ function requireEligiblePackage(wordId: string, packageId: string): void {
   const latest = getDb().prepare(`SELECT package_id FROM learner_word_introduction_events
     WHERE learner_id=? AND word_id=? AND event_kind='opened' ORDER BY sequence DESC LIMIT 1`)
     .get(requireLearnerId(), wordId) as {package_id:string} | undefined;
-  if (!eligiblePackageRows(wordId, latest?.package_id ?? null).some((row) => row.package_id === packageId)) {
+  const requestedSet = resolveLearnerTeachingSetKey(wordId);
+  const exactDefault = requestedSet === null ? null : getExactDefaultTeachingSource(wordId,requestedSet);
+  if (!eligiblePackageRows(wordId,latest?.package_id ?? null,requestedSet,exactDefault?.packageId ?? null,true).some(row=>row.package_id===packageId)) {
     throw new WordIntroductionError('not_found', 'Eligible teaching package not found for word');
   }
 }
@@ -545,7 +555,12 @@ export function getIntroductionLexicalWord(wordId: string) {
 
 export function getWordIntroductionPreparation(wordId: string) {
   requireLearnerId();
-  return getSharedWordIntroductionPreparation(wordId);
+  const setKey = resolveLearnerTeachingSetKey(wordId);
+  if (setKey === null) return {contentId:null,packageId:null,activeStage:null};
+  const prepared = getSharedWordIntroductionPreparation(wordId,setKey);
+  const exactDefault = getExactDefaultTeachingSource(wordId,setKey);
+  return prepared?.contentId || !exactDefault ? prepared
+    : {...exactDefault,activeStage:preparationRow(wordId)?.active_stage ?? null};
 }
 
 export function claimWordIntroductionStage(wordId: string, stage: WordIntroductionStage, token: string, now: string, expiresAt: string) {

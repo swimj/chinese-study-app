@@ -34,17 +34,17 @@ export function finishWordReserveReconciliation(): void {
   getDb().prepare('DELETE FROM learner_word_reserve_requests WHERE learner_id = ?').run(requireLearnerId());
 }
 /** Failures are not a license to enqueue the entire corpus on repeated visits. */
-export function getBlockedPreparationWordIds(): Set<string> {
-  const rows = getDb().prepare(`SELECT word_id FROM word_preparation_work
-    WHERE teaching_set_key='default' AND stage IN ('bootstrap', 'teaching') AND status = 'paused'
-    UNION SELECT preparation.word_id FROM word_introduction_preparation AS preparation
+export function getBlockedPreparationWordIds(setKeyForWord: (wordId:string)=>string|null = ()=>'default'): Set<string> {
+  const rows = getDb().prepare(`SELECT word_id,teaching_set_key FROM word_preparation_work
+    WHERE stage IN ('bootstrap', 'teaching') AND status = 'paused'
+    UNION SELECT preparation.word_id,preparation.teaching_set_key FROM word_introduction_preparation AS preparation
     LEFT JOIN word_content_documents AS content ON content.content_id = preparation.content_id
     LEFT JOIN shared_content_publications AS source ON source.publication_id = content.publication_id
     LEFT JOIN word_teaching_packages AS package ON package.package_id = preparation.package_id
     LEFT JOIN shared_content_publications AS lesson ON lesson.publication_id = package.publication_id
-    WHERE preparation.teaching_set_key='default' AND ((preparation.content_id IS NOT NULL AND source.publication_status NOT IN ('shared_trial', 'available'))
-       OR (preparation.package_id IS NOT NULL AND lesson.publication_status NOT IN ('shared_trial', 'available')))
-    UNION SELECT event.word_id FROM learner_word_introduction_events AS event
+    WHERE (preparation.content_id IS NOT NULL AND source.publication_status NOT IN ('shared_trial', 'available'))
+       OR (preparation.package_id IS NOT NULL AND lesson.publication_status NOT IN ('shared_trial', 'available'))
+    UNION SELECT event.word_id,content.teaching_set_key FROM learner_word_introduction_events AS event
     JOIN word_teaching_packages AS package ON package.package_id = event.package_id
     JOIN word_content_documents AS content ON content.content_id = package.content_id
     JOIN shared_content_publications AS lesson ON lesson.publication_id = package.publication_id
@@ -54,8 +54,8 @@ export function getBlockedPreparationWordIds(): Set<string> {
         WHERE latest.learner_id = event.learner_id AND latest.word_id = event.word_id AND latest.event_kind = 'opened')
       AND (lesson.publication_status NOT IN ('shared_trial', 'available')
         OR source.publication_status NOT IN ('shared_trial', 'available'))`)
-    .all(requireLearnerId()) as Array<{ word_id: string }>;
-  return new Set(rows.map((row) => row.word_id));
+    .all(requireLearnerId()) as Array<{ word_id: string; teaching_set_key:string }>;
+  return new Set(rows.filter(row=>setKeyForWord(row.word_id)===row.teaching_set_key).map(row=>row.word_id));
 }
 
 /** Composition reads only bounded reserve membership; source planning belongs to maintenance. */
