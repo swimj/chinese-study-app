@@ -1,3 +1,4 @@
+import { DEFAULT_TEACHING_SET, teachingSenseIds, teachingSenseSetKey } from '../db/teaching-sense-sets.ts';
 import { ensureVocabularyDefaultUsefulSelection } from '../vocabulary/default-useful-selection.ts';
 import { senseContentReconciliationGenerationToken, assertSenseContentReconciliationGeneration, settleSenseContentReconciliation } from '../db/sense-content-reconciliation-state.ts';
 import { getVocabularySenseCatalog,getVocabularySenses } from '../db/vocabulary-content.ts';
@@ -34,11 +35,13 @@ function linkSourceSenses(invocationId: string | null | undefined,contentId: str
 /** No learner context or private writes: background generation publishes only shared content. */
 export function createSharedWordPreparation(provider: WordIntroductionProvider = createWordIntroductionProvider(),options:{ensureSenses?:typeof ensureVocabularySenses;canPublish?:()=>boolean}={}) {
   function assertPublication(){if(options.canPublish&&!options.canPublish())throw new Error('Shared authoring publication is currently blocked');}
-  async function prepareBootstrapSenses(wordId:string,workflowId:string){
+  async function prepareBootstrapSenses(wordId:string,workflowId:string,teachingSetKey=DEFAULT_TEACHING_SET){
     const ready=await (options.ensureSenses??ensureVocabularySenses)(wordId,{workflowId,canPublish:options.canPublish});
     if(!ready.senses.length)throw new VocabularyEmptySenseInventory();
-    await ensureVocabularyDefaultUsefulSelection(wordId,{workflowId,canPublish:options.canPublish});
-    const coverage=resolveVocabularySenseCoverage(wordId);
+    const requested = teachingSenseIds(teachingSetKey);
+    if (requested?.some(id=>!ready.senses.some(sense=>sense.senseId===id && sense.status==='active'))) throw new VocabularySenseSelectionRequired('A requested teaching sense is unavailable; operator disposition is required.');
+    if (requested === null) await ensureVocabularyDefaultUsefulSelection(wordId,{workflowId,canPublish:options.canPublish});
+    const coverage=requested === null ? resolveVocabularySenseCoverage(wordId) : {selectionEstablished:true,includedSenseIds:requested};
     if(!coverage.selectionEstablished)throw new VocabularySenseSelectionRequired('Default useful senses are unknown; operator selection or the explicit legacy cutover is required.');
     if(!coverage.includedSenseIds.length)throw new VocabularySenseSelectionRequired('No useful senses are selected; teaching preparation requires operator disposition.');
     const canonicalSenses=ready.senses.filter(sense=>coverage.includedSenseIds.includes(sense.senseId)).map(sense=>{
@@ -48,13 +51,14 @@ export function createSharedWordPreparation(provider: WordIntroductionProvider =
     });
     return {ready,coverage,canonicalSenses,senseVersions:ready.senses.filter(sense=>coverage.includedSenseIds.includes(sense.senseId)).map(sense=>({senseId:sense.senseId,version:sense.version}))};
   }
-  function validatePreparedSource(wordId:string){
-    const content=getSharedWordIntroductionContent(wordId);if(!content)throw new VocabularySenseSelectionRequired('Prepared source is unavailable; operator disposition required.');
+  function validatePreparedSource(wordId:string,teachingSetKey=DEFAULT_TEACHING_SET){
+    const content=getSharedWordIntroductionContent(wordId,teachingSetKey);if(!content)throw new VocabularySenseSelectionRequired('Prepared source is unavailable; operator disposition required.');
     const mappings=getDb().prepare('SELECT source_use_id,sense_id,imported_sense_version FROM legacy_sense_imports WHERE source_content_id=?').all(content.id) as {source_use_id:string;sense_id:string;imported_sense_version:number}[];
     const currentSenses=new Map(getVocabularySenses(wordId).map(sense=>[sense.senseId,sense]));
     if(content.uses.some(use=>{const mapping=mappings.find(mapping=>mapping.source_use_id===use.id);return !mapping||currentSenses.get(mapping.sense_id)?.version!==mapping.imported_sense_version;}))throw new VocabularySenseSelectionRequired('Prepared source sense versions changed; operator source reconciliation is required.');
     const represented=content.uses.map(use=>mappings.find(mapping=>mapping.source_use_id===use.id)!);
     if(!represented.length||represented.some(mapping=>currentSenses.get(mapping.sense_id)?.status!=='active')||new Set(represented.map(mapping=>mapping.sense_id)).size!==content.uses.length)throw new VocabularySenseSelectionRequired('Prepared source must map each active canonical sense exactly once.');
+    if (teachingSenseIds(teachingSetKey) !== null && teachingSenseSetKey(represented.map(mapping=>mapping.sense_id)) !== teachingSetKey) throw new VocabularySenseSelectionRequired('Prepared source differs from its requested teaching set');
     return {sourceContentId:content.id,senseVersions:represented.map(mapping=>({senseId:mapping.sense_id,version:mapping.imported_sense_version})),catalogVersion:getVocabularySenseCatalog(wordId).version};
   }
   return {
@@ -62,19 +66,19 @@ export function createSharedWordPreparation(provider: WordIntroductionProvider =
     isConfigured: () => provider.isConfigured(),
     source: getSharedWordIntroductionContent,
     ready: isSharedWordPreparationReady,
-    claim(wordId: string, stage: WordPreparationStage, token: string, now: string, expiresAt: string) {
+    claim(wordId: string, stage: WordPreparationStage, token: string, now: string, expiresAt: string,teachingSetKey=DEFAULT_TEACHING_SET) {
       if (stage === 'review') {
-        const content = getSharedWordIntroductionContent(wordId);
+        const content = getSharedWordIntroductionContent(wordId,teachingSetKey);
         if (!content) throw new Error('Eligible bootstrap required before review');
         return claimSharedWordReviewPreparation(wordId, content.id, token, now, expiresAt);
       }
-      return claimSharedWordIntroductionStage(wordId, stage, token, now, expiresAt);
+      return claimSharedWordIntroductionStage(wordId, stage, token, now, expiresAt,teachingSetKey);
     },
-    release(wordId: string, stage: WordPreparationStage, token: string) {
+    release(wordId: string, stage: WordPreparationStage, token: string,teachingSetKey=DEFAULT_TEACHING_SET) {
       if (stage === 'review') releaseSharedWordReviewPreparation(wordId, token);
-      else releaseSharedWordIntroductionStage(wordId, token);
+      else releaseSharedWordIntroductionStage(wordId, token,teachingSetKey);
     },
-    async generate(wordId: string, stage: WordPreparationStage, token: string): Promise<void> {
+    async generate(wordId: string, stage: WordPreparationStage, token: string,teachingSetKey=DEFAULT_TEACHING_SET): Promise<void> {
       const reconciliation = senseContentReconciliationGenerationToken(wordId);
       const assertReconciliation = () => assertSenseContentReconciliationGeneration(wordId, reconciliation);
       assertReconciliation();
@@ -83,7 +87,7 @@ export function createSharedWordPreparation(provider: WordIntroductionProvider =
       if (stage === 'bootstrap') {
         const lexical = getSharedIntroductionLexicalWord(wordId);
         if (!lexical) throw new Error('Lexical word missing');
-        const selected=await prepareBootstrapSenses(wordId,token);
+        const selected=await prepareBootstrapSenses(wordId,token,teachingSetKey);
         let output: unknown;
         try {
           output = await provider.generateBootstrap({ hanzi: lexical.hanzi, traditional: lexical.traditional,
@@ -102,18 +106,18 @@ export function createSharedWordPreparation(provider: WordIntroductionProvider =
           return normalizeWordContent({...output,uses}, { wordId, hanzi: lexical.hanzi, traditional: lexical.traditional, pinyin: lexical.pinyin }, `word-content:${randomUUID()}`);
         },SERVICE_ID);
         assertPublication();assertReconciliation();
-        finishSharedWordIntroductionBootstrap(wordId, token, content, provider.model,invocationId,{catalogVersion:selected.ready.catalog.version,senseVersions:selected.senseVersions,senseIds:selected.canonicalSenses.map(sense=>sense.senseId)}, () => { assertPublication(); assertReconciliation(); });
+        finishSharedWordIntroductionBootstrap(wordId, token, content, provider.model,invocationId,{catalogVersion:selected.ready.catalog.version,senseVersions:selected.senseVersions,senseIds:selected.canonicalSenses.map(sense=>sense.senseId)}, () => { assertPublication(); assertReconciliation(); },teachingSetKey);
         return;
       }
-      const content = getSharedWordIntroductionContent(wordId);
+      const content = getSharedWordIntroductionContent(wordId,teachingSetKey);
       if (!content) throw new Error('Eligible bootstrap content unavailable');
-      const sourceScope=validatePreparedSource(wordId);
-      const assertSource=()=>{if(getSharedWordIntroductionContent(wordId)?.id!==sourceScope.sourceContentId||getVocabularySenseCatalog(wordId).version!==sourceScope.catalogVersion)throw new Error('Canonical source or catalog changed during teaching preparation');};
+      const sourceScope=validatePreparedSource(wordId,teachingSetKey);
+      const assertSource=()=>{if(getSharedWordIntroductionContent(wordId,teachingSetKey)?.id!==sourceScope.sourceContentId||getVocabularySenseCatalog(wordId).version!==sourceScope.catalogVersion)throw new Error('Canonical source or catalog changed during teaching preparation');};
       if (stage === 'teaching') {
         const keys = { teaching: await provider.generationKey('teaching'),practice: '' };
         let delivered: TeachingCoherenceSource | undefined;
         async function component(part: 'teaching' | 'practice') {
-          const existing = getSharedWordIntroductionComponent(wordId, token, content!.id, part, keys[part]);
+          const existing = getSharedWordIntroductionComponent(wordId, token, content!.id, part, keys[part],teachingSetKey);
           if (existing) return existing.payload;
           let componentInvocation: string | null | undefined;
           const options = { workflowId: token,invocationActor: { kind: 'service' as const,serviceId: SERVICE_ID },teaching: part === 'practice' ? delivered : undefined,onInvocation: (id: string | null | undefined) => { componentInvocation = id; } };
@@ -127,23 +131,23 @@ export function createSharedWordPreparation(provider: WordIntroductionProvider =
             : { rehearsals: normalizePracticeRehearsals(output, content!) },SERVICE_ID);
           assertPublication();assertSource();assertReconciliation();
           saveSharedWordIntroductionComponent(wordId, token, { contentId: content!.id, stage: part,
-            generationKey: keys[part], payload, model: provider.model, invocationId: componentInvocation ?? null }, () => { assertPublication(); assertSource(); assertReconciliation(); });
+            generationKey: keys[part], payload, model: provider.model, invocationId: componentInvocation ?? null }, () => { assertPublication(); assertSource(); assertReconciliation(); },teachingSetKey);
           return payload;
         }
         // Preserve a successful introduction across exercise failure. Exercises consume exactly these beats.
         await component('teaching');
-        const lesson = getSharedWordIntroductionComponent(wordId, token, content.id, 'teaching', keys.teaching)!;
+        const lesson = getSharedWordIntroductionComponent(wordId, token, content.id, 'teaching', keys.teaching,teachingSetKey)!;
         delivered = { id: `introduction-component:${content.id}:${keys.teaching}`,wordContentId: content.id,
           beats: (lesson.payload as { beats: import('../../src/domain/word-content/types.ts').TeachingPackage['beats'] }).beats };
         keys.practice = await provider.generationKey('practice',delivered);
         await component('practice');
-        const practice = getSharedWordIntroductionComponent(wordId, token, content.id, 'practice', keys.practice)!;
+        const practice = getSharedWordIntroductionComponent(wordId, token, content.id, 'practice', keys.practice,teachingSetKey)!;
         // Components were normalized before storage; package parsing/materialization revalidates their assembly.
         const teaching = { schemaVersion: 1 as const, id: `word-teaching:${randomUUID()}`, wordContentId: content.id,
           beats: (lesson.payload as { beats: import('../../src/domain/word-content/types.ts').TeachingPackage['beats'] }).beats,
           rehearsals: (practice.payload as { rehearsals: import('../../src/domain/word-content/types.ts').TeachingPackage['rehearsals'] }).rehearsals };
         assertPublication();assertSource();assertReconciliation();
-        finishSharedWordIntroductionTeaching(wordId, token, teaching, provider.model, keys, () => { assertPublication(); assertSource(); assertReconciliation(); }, () => settleSenseContentReconciliation(wordId));
+        finishSharedWordIntroductionTeaching(wordId, token, teaching, provider.model, keys, () => { assertPublication(); assertSource(); assertReconciliation(); }, () => { if (teachingSetKey === DEFAULT_TEACHING_SET) settleSenseContentReconciliation(wordId); },teachingSetKey);
       } else {
         let output: unknown;
         try { output = await provider.generateReview(content, generationOptions); }

@@ -117,8 +117,8 @@ function initialize(sql: DatabaseSync): void {
     CREATE TABLE lexical_words(id TEXT PRIMARY KEY,hanzi TEXT,traditional TEXT,pinyin TEXT,meaning TEXT);
     CREATE TABLE word_preparation_work(id TEXT);
     CREATE TABLE lexical_word_meanings(id TEXT PRIMARY KEY,word_id TEXT,text TEXT,position INTEGER);
-    CREATE TABLE word_introduction_preparation(word_id TEXT PRIMARY KEY,content_id TEXT,package_id TEXT,active_stage TEXT,lease_token TEXT,lease_expires_at TEXT);
-    CREATE TABLE word_content_documents(content_id TEXT PRIMARY KEY,word_id TEXT,content_json TEXT,publication_id TEXT);
+    CREATE TABLE word_introduction_preparation(teaching_set_key TEXT NOT NULL DEFAULT 'default',word_id TEXT PRIMARY KEY,content_id TEXT,package_id TEXT,active_stage TEXT,lease_token TEXT,lease_expires_at TEXT);
+    CREATE TABLE word_content_documents(teaching_set_key TEXT NOT NULL DEFAULT 'default',content_id TEXT PRIMARY KEY,word_id TEXT,content_json TEXT,publication_id TEXT);
     CREATE TABLE shared_content_publications(publication_id TEXT PRIMARY KEY,publication_status TEXT);
     CREATE TABLE learner_settings(learner_id TEXT,setting_key TEXT,value_json TEXT,updated_at TEXT,PRIMARY KEY(learner_id,setting_key));
     CREATE TABLE learner_owned_review_session_summaries(learner_id TEXT,session_id TEXT,PRIMARY KEY(learner_id,session_id));

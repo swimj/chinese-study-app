@@ -579,6 +579,19 @@ its domain normalizers. A late same-learner validation update changes only
 persistence, lease, or publication failures do not mislabel a valid model response.
 This is an offline schema migration, with no provider calls or history reclassification.
 
+## Teaching set storage
+
+Migration `0074_teaching_sense_sets` keys preparation pointers by word and
+`teaching_set_key`, and shared work by word, key and stage. Source documents
+carry the key; composite foreign keys prevent work or preparation pointers from
+using another set's source. The `default` key preserves the existing default
+lesson policy. Concrete keys encode sorted distinct canonical sense IDs; their
+actual source-use mappings remain separate evidence. Existing artifacts,
+publications, learner events, leases and attempt/retry records are preserved.
+See [teaching set identity](vocabulary-learning.md#teaching-set-identity) for
+runtime use and the [migration rehearsal note](ops/schema-migrations.md#teaching-set-foundation-migration)
+for release checks.
+
 ## Independent introduction components
 
 `word_introduction_components` retains validated teaching and practice outputs across failed companion calls, keyed by exact bootstrap content, component stage, and generation key. Writes require the current teaching lease. `word_teaching_package_components` links the published immutable package to each component and its model/invocation provenance. Package readiness is still atomic; existing packages need no regeneration. Migration `0029_introduction_components` adds these tables and requires the offline schema-migration release procedure.

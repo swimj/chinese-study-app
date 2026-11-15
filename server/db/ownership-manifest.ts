@@ -155,10 +155,10 @@ export const durableOwnershipManifest: readonly DurableOwnershipEntry[] = [
   sharedEntry('word_teaching_packages', 'shared immutable teaching package', 'new pinned generated package'),
   operationalEntry('word_introduction_components', 'validated teaching and practice components retained across companion failures'),
   sharedEntry('word_teaching_package_components', 'immutable package generation provenance', 'atomic teaching package publication'),
-  operationalEntry('word_introduction_preparation', 'shared per-word generation stage and recoverable lease'),
+  operationalEntry('word_introduction_preparation', 'shared per-word and teaching-set generation stage and recoverable lease'),
   scopedContentEntry('scoped_review_content_records', 'immutable review source version', 'new structured authoring source'),
   operationalEntry('word_review_preparation', 'shared per-word first-review generation claim'),
-  operationalEntry('word_preparation_work', 'shared word and stage preparation demand and bounded retry state'),
+  operationalEntry('word_preparation_work', 'shared word, teaching-set and stage preparation demand and bounded retry state'),
   operationalEntry('word_preparation_attempts', 'shared preparation attempt history without learner evidence'),
   operationalEntry('word_preparation_retry_events', 'attributable operator preparation retry ledger'),
   privateEntry(

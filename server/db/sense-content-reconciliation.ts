@@ -61,7 +61,7 @@ function history(row: Stored, actorId: string): void {
     .run(row.resolution_id, row.version, JSON.stringify(row), actorId, row.updated_at);
 }
 function teaching(source: InventorySnapshot): SenseContentReconciliationWorkspace['teaching'] {
-  const current = rows(source, 'introductionPreparation')[0];
+  const current = rows(source, 'introductionPreparation').find(row => row.teaching_set_key === 'default' || row.teaching_set_key === undefined);
   const document = rows(source, 'sourceDocuments').find(row => row.content_id === current?.content_id);
   if (!document) return source.dependencies.reconciliationTeachingEvidence as SenseContentReconciliationWorkspace['teaching'] ?? null;
   const content = parseWordContent(JSON.parse(String(document.content_json)));
@@ -152,10 +152,16 @@ function makePlan(row: Stored, current: InventorySnapshot): SenseContentReconcil
   const retireSourceIds = material ? [material.contentId] : [], retirePackageIds = material?.packageId ? [material.packageId] : [];
   const invalid = new Set([...retireSourceIds, ...retirePackageIds]);
   const contents = rows(source, 'contents'), bindings = rows(source, 'introductionBindings'), retire = new Set<string>();
+  const concreteSourceIds = new Set(rows(source, 'sourceDocuments')
+    .filter(row => typeof row.teaching_set_key === 'string' && row.teaching_set_key !== 'default').map(row => row.content_id));
+  const concretePackageIds = new Set(rows(source, 'packages')
+    .filter(row => concreteSourceIds.has(row.content_id)).map(row => row.package_id));
+  const concreteIntroductionIds = new Set(rows(source, 'contentImports')
+    .filter(row => row.source_kind === 'teaching_package' && concretePackageIds.has(row.source_id)).map(row => row.content_id));
   for (const content of contents.filter(item => item.availability === 'active')) {
     const targetWord = rows(source, 'contentWords').find(word => word.content_id === content.content_id && word.word_id === row.word_id && word.relation === 'target');
     const sourceDependent = references(JSON.parse(String(content.body_json)), invalid);
-    if (targetWord && content.kind === 'introduction') retire.add(String(content.content_id));
+    if (targetWord && content.kind === 'introduction' && !concreteIntroductionIds.has(content.content_id)) retire.add(String(content.content_id));
     else if (sourceDependent) {
       // Repertoire provenance remains historical. The operator's use mapping can
       // establish current compatibility without replacing its authored content.
@@ -224,7 +230,7 @@ export function listSenseContentReconciliationWords(actorId: string): SenseConte
   const db = getDb();
   return atomic(() => {
     const words = db.prepare(`SELECT DISTINCT w.id AS wordId,w.hanzi,w.pinyin,p.content_id,r.status FROM lexical_words w
-      LEFT JOIN word_introduction_preparation p ON p.word_id=w.id LEFT JOIN sense_content_reconciliations r ON r.rowid=(SELECT MAX(latest.rowid) FROM sense_content_reconciliations latest WHERE latest.word_id=w.id)
+      LEFT JOIN word_introduction_preparation p ON p.word_id=w.id AND p.teaching_set_key='default' LEFT JOIN sense_content_reconciliations r ON r.rowid=(SELECT MAX(latest.rowid) FROM sense_content_reconciliations latest WHERE latest.word_id=w.id)
       WHERE r.word_id IS NOT NULL OR p.content_id IS NOT NULL ORDER BY w.hanzi,w.id`).all() as Array<{ wordId: string; hanzi: string; pinyin: string; content_id: string | null; status: string | null }>;
     return words.flatMap(word => {
       const saved = word.status ? [{ wordId: word.wordId, hanzi: word.hanzi, pinyin: word.pinyin, reason: word.status === 'applied' ? `Replacement ${senseContentReconciliationProgress(word.wordId).status}` : 'Saved resolution' }] : [];
@@ -278,13 +284,13 @@ function retirePublication(kind: string, id: string, actorId: string, reason: st
 function queueReplacement(wordId: string, learnerId: string, now: string): void {
   const db = getDb();
   db.prepare(`INSERT INTO word_introduction_preparation(word_id,preparation_epoch) VALUES (?,?)
-    ON CONFLICT(word_id) DO UPDATE SET content_id=NULL,package_id=NULL,active_stage=NULL,lease_token=NULL,lease_expires_at=NULL,
+    ON CONFLICT(word_id,teaching_set_key) DO UPDATE SET content_id=NULL,package_id=NULL,active_stage=NULL,lease_token=NULL,lease_expires_at=NULL,
     preparation_epoch=excluded.preparation_epoch`).run(wordId, VOCABULARY_PREPARATION_EPOCH);
   db.prepare("UPDATE vocabulary_practice_preparation SET status='ready',last_error='Source superseded by sense reconciliation',updated_at=? WHERE word_id=? AND status='queued'").run(now, wordId);
   db.prepare("UPDATE word_preparation_work SET status='paused',last_error='Source superseded by sense reconciliation',updated_at=? WHERE word_id=? AND stage='review' AND status='queued'").run(now, wordId);
   for (const stage of ['bootstrap', 'teaching']) db.prepare(`INSERT INTO word_preparation_work
     (work_id,word_id,stage,status,next_attempt_at,created_at,updated_at,requested_by_learner_id) VALUES (?,?,?,'queued',?,?,?,?)
-    ON CONFLICT(word_id,stage) DO UPDATE SET source_content_id=NULL,status='queued',attempt_count=0,next_attempt_at=excluded.next_attempt_at,
+    ON CONFLICT(word_id,teaching_set_key,stage) DO UPDATE SET source_content_id=NULL,status='queued',attempt_count=0,next_attempt_at=excluded.next_attempt_at,
     active_token=NULL,expires_at=NULL,last_error=NULL,updated_at=excluded.updated_at,requested_by_learner_id=excluded.requested_by_learner_id`)
     .run(randomUUID(), wordId, stage, now, now, now, learnerId);
 }
@@ -337,7 +343,7 @@ export function retrySenseContentReconciliation(wordId: string, actorId: string)
     if (senseContentReconciliationProgress(wordId).status !== 'failed') throw new SenseContentReconciliationError('Replacement preparation is not failed', 409);
     const now = new Date().toISOString(), db = getDb();
     db.prepare(`UPDATE word_preparation_work SET status='queued',attempt_count=0,last_error=NULL,next_attempt_at=?,updated_at=?
-      WHERE word_id=? AND stage IN ('bootstrap','teaching') AND status='paused'`).run(now, now, wordId);
+      WHERE word_id=? AND teaching_set_key='default' AND stage IN ('bootstrap','teaching') AND status='paused'`).run(now, now, wordId);
     db.prepare(`UPDATE vocabulary_practice_preparation SET status='queued',attempt_count=0,last_error=NULL,next_attempt_at=?,updated_at=?
       WHERE word_id=? AND status='failed' AND reconciliation_id=?`).run(now, now, wordId, row.resolution_id);
     return workspace(wordId);

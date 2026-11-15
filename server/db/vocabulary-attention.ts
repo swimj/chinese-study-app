@@ -54,9 +54,10 @@ export function listVocabularyAttention(actorId:string,input:VocabularyAttention
           SELECT value FROM json_each(coverage.default_useful_sense_ids_json))))) AS mismatch
       FROM word_introduction_preparation p JOIN word_content_documents d ON d.content_id=p.content_id
       LEFT JOIN vocabulary_word_sense_coverage coverage ON coverage.word_id=p.word_id
+      WHERE p.teaching_set_key='default'
   ), reconciliation_groups AS (
     SELECT w.id AS word_id,w.hanzi AS title,coalesce(r.created_at,t.created_at) AS created_at,
-      coalesce(t.content_id,json_extract(r.snapshot_json,'$.dependencies.introductionPreparation[0].content_id'),
+      coalesce(t.content_id,(SELECT json_extract(value,'$.content_id') FROM json_each(r.snapshot_json,'$.dependencies.introductionPreparation') WHERE coalesce(json_extract(value,'$.teaching_set_key'),'default')='default' LIMIT 1),
         json_extract(r.snapshot_json,'$.dependencies.reconciliationTeachingEvidence.contentId')) AS source_content_id,
       r.resolution_id,r.completed_at,coalesce(t.mismatch,0) AS mismatch,coalesce(r.status,'unresolved') AS status,r.applied_plan_json,r.snapshot_json,t.content_id AS current_source_id,pending.applied_plan_json AS pending_plan_json,pending.resolution_id AS pending_resolution_id
     FROM lexical_words w LEFT JOIN teaching_sources t ON t.word_id=w.id LEFT JOIN latest_reconciliations r ON r.word_id=w.id LEFT JOIN pending_applied_reconciliations pending ON pending.word_id=w.id
@@ -73,7 +74,7 @@ export function listVocabularyAttention(actorId:string,input:VocabularyAttention
       WHERE p.reconciliation_id=g.resolution_id OR p.reconciliation_id=g.pending_resolution_id OR p.source_content_id=g.source_content_id
         OR p.source_content_id IN (SELECT value FROM json_each(g.applied_plan_json,'$.retireSourceIds'))
         OR p.source_content_id IN (SELECT value FROM json_each(g.pending_plan_json,'$.retireSourceIds'))
-        OR p.source_content_id=json_extract(g.snapshot_json,'$.dependencies.introductionPreparation[0].content_id')
+        OR p.source_content_id=(SELECT json_extract(value,'$.content_id') FROM json_each(g.snapshot_json,'$.dependencies.introductionPreparation') WHERE coalesce(json_extract(value,'$.teaching_set_key'),'default')='default' LIMIT 1)
         OR p.source_content_id=json_extract(g.snapshot_json,'$.dependencies.reconciliationTeachingEvidence.contentId')
   ), case_failures AS MATERIALIZED (
     SELECT c.case_id,${latestActionableFailureSql} AS actionable

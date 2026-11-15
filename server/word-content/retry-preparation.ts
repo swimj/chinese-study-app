@@ -7,10 +7,10 @@ import { retryDefaultUsefulSelection } from '../vocabulary/default-useful-select
 export function retryPreparationWithReadiness(workId:string,actorId:string):void {
   const db=getDb();db.exec('SAVEPOINT retry_preparation_with_readiness');
   try{
-    const work=db.prepare("SELECT word_id,stage FROM word_preparation_work WHERE work_id=? AND status='paused'").get(workId) as {word_id:string;stage:string}|undefined;
+    const work=db.prepare("SELECT word_id,stage,teaching_set_key FROM word_preparation_work WHERE work_id=? AND status='paused'").get(workId) as {word_id:string;stage:string;teaching_set_key:string}|undefined;
     if(work?.stage==='bootstrap'){
       if(db.prepare("SELECT 1 FROM vocabulary_sense_readiness WHERE word_id=? AND status='failed'").get(work.word_id))retryVocabularySenseReadiness(work.word_id,actorId);
-      if(db.prepare("SELECT 1 FROM vocabulary_default_selection_readiness WHERE word_id=? AND status='failed'").get(work.word_id))retryDefaultUsefulSelection(work.word_id,actorId);
+      if(work.teaching_set_key==='default'&&db.prepare("SELECT 1 FROM vocabulary_default_selection_readiness WHERE word_id=? AND status='failed'").get(work.word_id))retryDefaultUsefulSelection(work.word_id,actorId);
     }
     retryWordPreparation(workId,actorId);db.exec('RELEASE retry_preparation_with_readiness');
   }catch(error){db.exec('ROLLBACK TO retry_preparation_with_readiness; RELEASE retry_preparation_with_readiness');throw error;}

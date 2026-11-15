@@ -82,7 +82,7 @@ function refreshPreparation(db: DatabaseSync, wordId: string, selected: boolean,
       WHERE w.word_id=? AND w.in_stash=1 AND w.dismissed_at IS NULL AND l.disabled_at IS NULL
       ORDER BY w.added_at,w.learner_id LIMIT 1`).get(wordId) as { learner_id: string } | undefined;
   db.prepare(`INSERT INTO word_introduction_preparation(word_id,preparation_epoch) VALUES (?,?)
-    ON CONFLICT(word_id) DO UPDATE SET content_id=NULL,package_id=NULL,active_stage=NULL,
+    ON CONFLICT(word_id,teaching_set_key) DO UPDATE SET content_id=NULL,package_id=NULL,active_stage=NULL,
       lease_token=NULL,lease_expires_at=NULL,preparation_epoch=excluded.preparation_epoch`).run(wordId, VOCABULARY_PREPARATION_EPOCH);
   const diagnostic = `Source superseded by inventory reconciliation ${operationId}`;
   // Old source jobs remain evidence. Their inputs are never rebound to the new document.
@@ -95,13 +95,13 @@ function refreshPreparation(db: DatabaseSync, wordId: string, selected: boolean,
       db.prepare(`INSERT INTO word_preparation_work
         (work_id,word_id,stage,source_content_id,status,attempt_count,next_attempt_at,created_at,updated_at,requested_by_learner_id)
         VALUES (?,?,?,NULL,'queued',0,?,?,?,?)
-        ON CONFLICT(word_id,stage) DO UPDATE SET source_content_id=NULL,status='queued',attempt_count=0,
+        ON CONFLICT(word_id,teaching_set_key,stage) DO UPDATE SET source_content_id=NULL,status='queued',attempt_count=0,
           next_attempt_at=excluded.next_attempt_at,active_token=NULL,expires_at=NULL,last_error=NULL,
           updated_at=excluded.updated_at,requested_by_learner_id=excluded.requested_by_learner_id`)
         .run(randomUUID(), wordId, stage, now, now, now, requester.learner_id);
     } else {
       db.prepare(`UPDATE word_preparation_work SET status='paused',last_error=?,updated_at=?,active_token=NULL,expires_at=NULL
-        WHERE word_id=? AND stage=?`).run(diagnostic, now, wordId, stage);
+        WHERE word_id=? AND teaching_set_key='default' AND stage=?`).run(diagnostic, now, wordId, stage);
     }
   }
   db.prepare(`INSERT INTO learner_word_reserve_requests(learner_id,requested_at)

@@ -48,7 +48,7 @@ try {
   const canonical=getVocabularySenses(wordId);
   if(canonical.length!==3)throw new Error('Expected three imported canonical senses');
   // Reproduce the historical compatibility refresh without mutating any retained source.
-  db.prepare('UPDATE word_introduction_preparation SET content_id=NULL,package_id=NULL WHERE word_id=?').run(wordId);
+  db.prepare("UPDATE word_introduction_preparation SET content_id=NULL,package_id=NULL WHERE word_id=? AND teaching_set_key='default'").run(wordId);
   const replacement:WordContentDocument={...original,id:'testbed:guagou:replacement',uses:[
     {...original.uses[0],id:'physical',label:'Physical hook or hanger'},
     {...original.uses[1],id:'connect',label:'Get connected with an organization'},
@@ -56,7 +56,7 @@ try {
     {id:'associate',label:'Make an everyday association',notes:['Connect two things in a judgment, sometimes when the connection is unfair or unwarranted.'],exampleIds:['e4']},
   ],examples:[...original.examples,{id:'e4',text:'别把一次迟到和他的工作态度挂钩。',translation:'Do not link being late once with his attitude toward work.',pronunciation:null}]};
   publish(replacement,'testbed:guagou:replacement-package');
-  db.prepare("UPDATE word_preparation_work SET status='ready',source_content_id=CASE WHEN stage='teaching' THEN ? ELSE NULL END WHERE word_id=? AND stage IN ('bootstrap','teaching')").run(replacement.id,wordId);
+  db.prepare("UPDATE word_preparation_work SET status='ready',source_content_id=CASE WHEN stage='teaching' THEN ? ELSE NULL END WHERE word_id=? AND teaching_set_key='default' AND stage IN ('bootstrap','teaching')").run(replacement.id,wordId);
   const practice=createVocabularyPracticePreparation().ensure(wordId);
   if(practice?.status!=='failed'||practice.lastError!=='source_mapping_requires_operator')throw new Error('Fixture must reproduce the unmapped-source practice failure');
   // Different failure labels on the same replaced source share one resolution.

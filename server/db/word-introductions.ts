@@ -1,3 +1,4 @@
+import { DEFAULT_TEACHING_SET, assertTeachingSenseSet, teachingSenseIds, teachingSenseSetKey } from './teaching-sense-sets.ts';
 import { getVocabularySenseCatalog,getVocabularySenses } from './vocabulary-content.ts';
 import { VOCABULARY_PREPARATION_EPOCH } from './preparation-compatibility.ts';
 import { importLegacyVocabularyWord } from './vocabulary-import.ts';
@@ -104,14 +105,14 @@ export function saveWordContentDocument(input: WordContentDocument, model: strin
   return transaction(() => insertContent(content, sourceModel));
 }
 
-function insertContent(content: WordContentDocument, sourceModel: string): SavedWordContent {
+function insertContent(content: WordContentDocument, sourceModel: string, teachingSetKey = DEFAULT_TEACHING_SET): SavedWordContent {
   const json = JSON.stringify(content);
   const existing = getDb().prepare(`
-      SELECT content_id, content_json, created_at, model, word_id
+      SELECT content_id, content_json, created_at, model, word_id, teaching_set_key
       FROM word_content_documents WHERE content_id = ?
-    `).get(content.id) as ContentRow | undefined;
+    `).get(content.id) as (ContentRow & {teaching_set_key:string}) | undefined;
   if (existing) {
-    if (existing.content_json !== json || existing.word_id !== content.word.wordId) {
+    if (existing.content_json !== json || existing.word_id !== content.word.wordId || existing.teaching_set_key !== teachingSetKey) {
       throw new WordIntroductionError('conflict', 'Word content identity already has a different payload');
     }
     return contentFromRow(existing);
@@ -120,9 +121,9 @@ function insertContent(content: WordContentDocument, sourceModel: string): Saved
   const publicationId = insertPublication('word_content', content.id, content.word.wordId, now);
   getDb().prepare(`
       INSERT INTO word_content_documents (
-        content_id, word_id, content_json, model, created_at, publication_id
-      ) VALUES (?, ?, ?, ?, ?, ?)
-    `).run(content.id, content.word.wordId, json, sourceModel, now, publicationId);
+        content_id, word_id, content_json, model, created_at, publication_id, teaching_set_key
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(content.id, content.word.wordId, json, sourceModel, now, publicationId, teachingSetKey);
   return { createdAt: now, content };
 }
 
@@ -181,18 +182,18 @@ type PreparationRow = {
 };
 export type WordIntroductionStage = 'bootstrap' | 'teaching';
 
-function preparationRow(wordId: string): PreparationRow | null {
+function preparationRow(wordId: string, teachingSetKey = DEFAULT_TEACHING_SET): PreparationRow | null {
   return getDb().prepare(`
     SELECT word_id, content_id, package_id, preparation_epoch, active_stage, lease_token, lease_expires_at
-    FROM word_introduction_preparation WHERE word_id = ?
-  `).get(wordId) as PreparationRow | undefined ?? null;
+    FROM word_introduction_preparation WHERE word_id = ? AND teaching_set_key = ?
+  `).get(wordId, teachingSetKey) as PreparationRow | undefined ?? null;
 }
 
-export function getSharedWordIntroductionPreparation(wordId: string): {
+export function getSharedWordIntroductionPreparation(wordId: string, teachingSetKey = DEFAULT_TEACHING_SET): {
   contentId: string | null; packageId: string | null; activeStage: WordIntroductionStage | null;
 } | null {
   if (!lexicalRow(wordId)) return null;
-  const row = preparationRow(wordId);
+  const row = preparationRow(wordId, teachingSetKey);
   return { contentId: row?.content_id ?? null, packageId: row?.package_id ?? null,
     activeStage: row?.active_stage ?? null };
 }
@@ -206,7 +207,7 @@ function canonicalTime(value: string, name: string): string {
 }
 
 export function claimSharedWordIntroductionStage(
-  wordId: string, stage: WordIntroductionStage, token: string, now: string, expiresAt: string,
+  wordId: string, stage: WordIntroductionStage, token: string, now: string, expiresAt: string, teachingSetKey = DEFAULT_TEACHING_SET,
 ): 'claimed' | 'busy' | 'ready' {
   if (stage !== 'bootstrap' && stage !== 'teaching') {
     throw new WordIntroductionError('invalid_source', 'Unknown introduction stage');
@@ -219,8 +220,9 @@ export function claimSharedWordIntroductionStage(
   if (expiresAt <= now) throw new WordIntroductionError('invalid_source', 'Lease must expire after claim time');
   return transaction(() => {
     if (!lexicalRow(wordId)) throw new WordIntroductionError('not_found', 'Word not found');
-    getDb().prepare(`INSERT OR IGNORE INTO word_introduction_preparation (word_id) VALUES (?)`).run(wordId);
-    const row = preparationRow(wordId)!;
+    assertTeachingSenseSet(wordId, teachingSetKey);
+    getDb().prepare(`INSERT OR IGNORE INTO word_introduction_preparation (word_id, teaching_set_key) VALUES (?, ?)`).run(wordId, teachingSetKey);
+    const row = preparationRow(wordId, teachingSetKey)!;
     if (stage === 'bootstrap' && row.content_id !== null) return 'ready';
     if (stage === 'teaching' && row.package_id !== null) return 'ready';
     if (stage === 'teaching' && row.content_id === null) {
@@ -231,14 +233,14 @@ export function claimSharedWordIntroductionStage(
     }
     getDb().prepare(`
       UPDATE word_introduction_preparation
-      SET active_stage = ?, lease_token = ?, lease_expires_at = ? WHERE word_id = ?
-    `).run(stage, token, expiresAt, wordId);
+      SET active_stage = ?, lease_token = ?, lease_expires_at = ? WHERE word_id = ? AND teaching_set_key = ?
+    `).run(stage, token, expiresAt, wordId, teachingSetKey);
     return 'claimed';
   });
 }
 
-function requireLiveClaim(wordId: string, stage: WordIntroductionStage, token: string): PreparationRow {
-  const row = preparationRow(wordId);
+function requireLiveClaim(wordId: string, stage: WordIntroductionStage, token: string, teachingSetKey = DEFAULT_TEACHING_SET): PreparationRow {
+  const row = preparationRow(wordId, teachingSetKey);
   if (!row || row.active_stage !== stage || row.lease_token !== token
     || row.lease_expires_at === null || row.lease_expires_at <= new Date().toISOString()) {
     throw new WordIntroductionError('conflict', 'Introduction preparation lease is not active');
@@ -257,10 +259,10 @@ export type SavedIntroductionComponent = {
   createdAt: string;
 };
 
-function requireComponentClaim(wordId: string, token: string, contentId: string): void {
-  const claim = requireLiveClaim(wordId, 'teaching', token);
+function requireComponentClaim(wordId: string, token: string, contentId: string, teachingSetKey: string): void {
+  const claim = requireLiveClaim(wordId, 'teaching', token, teachingSetKey);
   if (claim.content_id !== contentId || claim.package_id !== null
-    || getSharedWordIntroductionContent(wordId)?.id !== contentId) {
+    || getSharedWordIntroductionContent(wordId, teachingSetKey)?.id !== contentId) {
     throw new WordIntroductionError('conflict', 'Component does not use the active prepared content');
   }
 }
@@ -284,17 +286,17 @@ function readComponent(contentId: string, stage: IntroductionComponentStage, gen
 
 /** The caller validates normalized domain content before saving and after reading. */
 export function getSharedWordIntroductionComponent(
-  wordId: string, token: string, contentId: string, stage: IntroductionComponentStage, generationKey: string,
+  wordId: string, token: string, contentId: string, stage: IntroductionComponentStage, generationKey: string, teachingSetKey = DEFAULT_TEACHING_SET,
 ): SavedIntroductionComponent | null {
   componentKey(stage, generationKey);
   return transaction(() => {
-    requireComponentClaim(wordId, token, contentId);
+    requireComponentClaim(wordId, token, contentId, teachingSetKey);
     return readComponent(contentId, stage, generationKey);
   });
 }
 
 export function saveSharedWordIntroductionComponent(
-  wordId: string, token: string, input: Omit<SavedIntroductionComponent, 'createdAt'>, assertPublication?: () => void,
+  wordId: string, token: string, input: Omit<SavedIntroductionComponent, 'createdAt'>, assertPublication?: () => void, teachingSetKey = DEFAULT_TEACHING_SET,
 ): SavedIntroductionComponent {
   componentKey(input.stage, input.generationKey);
   const model = modelName(input.model);
@@ -307,7 +309,7 @@ export function saveSharedWordIntroductionComponent(
   }
   return transaction(() => {
     assertPublication?.();
-    requireComponentClaim(wordId, token, input.contentId);
+    requireComponentClaim(wordId, token, input.contentId, teachingSetKey);
     const existing = readComponent(input.contentId, input.stage, input.generationKey);
     if (existing) {
       if (JSON.stringify(existing.payload) !== json || existing.model !== model
@@ -328,7 +330,7 @@ export function saveSharedWordIntroductionComponent(
 
 export function finishSharedWordIntroductionBootstrap(
   wordId: string, token: string, input: WordContentDocument, model: string, invocationId?: string | null,
-  canonical?:{catalogVersion:number;senseVersions:{senseId:string;version:number}[];senseIds:string[]}, assertPublication?: () => void,
+  canonical?:{catalogVersion:number;senseVersions:{senseId:string;version:number}[];senseIds:string[]}, assertPublication?: () => void, teachingSetKey = DEFAULT_TEACHING_SET,
 ): SavedWordContent {
   const content = parseWordContent(input);
   const sourceModel = modelName(model);
@@ -338,11 +340,15 @@ export function finishSharedWordIntroductionBootstrap(
   assertWordIdentity(content);
   return transaction(() => {
     assertPublication?.();
-    const row = requireLiveClaim(wordId, 'bootstrap', token);
+    const row = requireLiveClaim(wordId, 'bootstrap', token, teachingSetKey);
+    assertTeachingSenseSet(wordId, teachingSetKey);
+    if (teachingSenseIds(teachingSetKey) !== null && (!canonical || teachingSenseSetKey(canonical.senseIds) !== teachingSetKey)) {
+      throw new WordIntroductionError('invalid_source', 'Bootstrap must use the requested teaching set');
+    }
     if (row.content_id !== null) throw new WordIntroductionError('conflict', 'Word bootstrap already prepared');
     if(canonical&&(getVocabularySenseCatalog(wordId).version!==canonical.catalogVersion||canonical.senseVersions.some(pin=>!getVocabularySenses(wordId).some(sense=>sense.senseId===pin.senseId&&sense.version===pin.version&&sense.status==='active'))))throw new WordIntroductionError('conflict','Canonical sense source or catalog changed before bootstrap publication');
     if(canonical&&(content.uses.length!==canonical.senseIds.length||content.uses.some(use=>!canonical.senseIds.includes(use.id))))throw new WordIntroductionError('invalid_source','Bootstrap must enrich exactly the selected canonical senses');
-    const saved = insertContent(content, sourceModel);
+    const saved = insertContent(content, sourceModel, teachingSetKey);
     if(canonical)for(const use of content.uses){
       const sense=getVocabularySenses(wordId).find(sense=>sense.senseId===use.id&&sense.status==='active');
       if(!sense)throw new WordIntroductionError('conflict','Canonical source sense is unavailable');
@@ -351,8 +357,8 @@ export function finishSharedWordIntroductionBootstrap(
     getDb().prepare(`
       UPDATE word_introduction_preparation
       SET content_id = ?, preparation_epoch = ?, active_stage = NULL, lease_token = NULL, lease_expires_at = NULL
-      WHERE word_id = ?
-    `).run(content.id, VOCABULARY_PREPARATION_EPOCH, wordId);
+      WHERE word_id = ? AND teaching_set_key = ?
+    `).run(content.id, VOCABULARY_PREPARATION_EPOCH, wordId, teachingSetKey);
     importLegacyVocabularyWord(getDb(),wordId,{ originKind: 'model' });
     linkVocabularyPublicationOutput(getDb(),invocationId,'bootstrap',content.id,'',{bootstrapSenseRole:canonical?'input':'output'});
     return saved;
@@ -361,13 +367,13 @@ export function finishSharedWordIntroductionBootstrap(
 
 export function finishSharedWordIntroductionTeaching(
   wordId: string, token: string, input: TeachingPackage, model: string,
-  componentKeys?: { teaching: string; practice: string }, assertPublication?: () => void, onPublished?: () => void,
+  componentKeys?: { teaching: string; practice: string }, assertPublication?: () => void, onPublished?: () => void, teachingSetKey = DEFAULT_TEACHING_SET,
 ): SavedTeachingPackage {
   const teaching = parseTeachingPackage(input);
   const sourceModel = modelName(model);
   return transaction(() => {
     assertPublication?.();
-    const row = requireLiveClaim(wordId, 'teaching', token);
+    const row = requireLiveClaim(wordId, 'teaching', token, teachingSetKey);
     if (row.package_id !== null) throw new WordIntroductionError('conflict', 'Word teaching already prepared');
     if (row.content_id === null || teaching.wordContentId !== row.content_id) {
       throw new WordIntroductionError('invalid_source', 'Teaching does not use the prepared word content');
@@ -391,8 +397,8 @@ export function finishSharedWordIntroductionTeaching(
     getDb().prepare(`
       UPDATE word_introduction_preparation
       SET package_id = ?, active_stage = NULL, lease_token = NULL, lease_expires_at = NULL
-      WHERE word_id = ?
-    `).run(teaching.id, wordId);
+      WHERE word_id = ? AND teaching_set_key = ?
+    `).run(teaching.id, wordId, teachingSetKey);
     importLegacyVocabularyWord(getDb(),wordId,{ originKind: 'model' });
     if (componentKeys) {
       const lesson = readComponent(row.content_id,'teaching',componentKeys.teaching)!;
@@ -410,18 +416,18 @@ export function finishSharedWordIntroductionTeaching(
   });
 }
 
-export function releaseSharedWordIntroductionStage(wordId: string, token: string): void {
+export function releaseSharedWordIntroductionStage(wordId: string, token: string, teachingSetKey = DEFAULT_TEACHING_SET): void {
   if (typeof token !== 'string' || !token.trim()) return;
   transaction(() => {
     getDb().prepare(`
       UPDATE word_introduction_preparation
       SET active_stage = NULL, lease_token = NULL, lease_expires_at = NULL
-      WHERE word_id = ? AND lease_token = ?
-    `).run(wordId, token);
+      WHERE word_id = ? AND lease_token = ? AND teaching_set_key = ?
+    `).run(wordId, token, teachingSetKey);
   });
 }
 
-function eligiblePackageRows(wordId: string, retainedPin: string | null = null): PackageRow[] {
+function eligiblePackageRows(wordId: string, retainedPin: string | null = null, teachingSetKey = DEFAULT_TEACHING_SET): PackageRow[] {
   return getDb().prepare(`
     SELECT package.package_id, package.package_json, package.created_at, package.model,
            package.word_id, package.content_id
@@ -431,7 +437,7 @@ function eligiblePackageRows(wordId: string, retainedPin: string | null = null):
     JOIN word_content_documents AS content ON content.content_id = package.content_id
     JOIN shared_content_publications AS content_publication
       ON content_publication.publication_id = content.publication_id
-    WHERE package.word_id = ?
+    WHERE package.word_id = ? AND content.teaching_set_key = ?
       AND package_publication.publication_status IN ('shared_trial', 'available')
       AND content_publication.publication_status IN ('shared_trial', 'available')
       AND (package.package_id = ? OR NOT EXISTS (
@@ -439,7 +445,7 @@ function eligiblePackageRows(wordId: string, retainedPin: string | null = null):
         WHERE r.kind = 'teaching_package' AND r.source_id = package.package_id
       ))
     ORDER BY package.created_at, package.package_id
-  `).all(wordId, retainedPin) as PackageRow[];
+  `).all(wordId, teachingSetKey, retainedPin) as PackageRow[];
 }
 
 /**
@@ -447,22 +453,22 @@ function eligiblePackageRows(wordId: string, retainedPin: string | null = null):
  * content/package ID ascending. The last entry is the newest eligible artifact.
  * Array order is independent of the learner's selectedPackageId.
  */
-export function getWordIntroductionLibrary(wordId: string): WordIntroductionLibrary | null {
+export function getWordIntroductionLibrary(wordId: string, teachingSetKey = DEFAULT_TEACHING_SET): WordIntroductionLibrary | null {
   const learnerId = requireLearnerId();
   if (!lexicalRow(wordId)) return null;
   const contentRows = getDb().prepare(`
     SELECT content.content_id, content.content_json, content.created_at, content.model, content.word_id
     FROM word_content_documents AS content
     JOIN shared_content_publications AS publication ON publication.publication_id = content.publication_id
-    WHERE content.word_id = ? AND publication.publication_status IN ('shared_trial', 'available')
+    WHERE content.word_id = ? AND content.teaching_set_key = ? AND publication.publication_status IN ('shared_trial', 'available')
     ORDER BY content.created_at, content.content_id
-  `).all(wordId) as ContentRow[];
+  `).all(wordId, teachingSetKey) as ContentRow[];
   const latestOpen = getDb().prepare(`
     SELECT package_id FROM learner_word_introduction_events
     WHERE learner_id = ? AND word_id = ? AND event_kind = 'opened'
     ORDER BY sequence DESC LIMIT 1
   `).get(learnerId, wordId) as { package_id: string } | undefined;
-  const packageRows = eligiblePackageRows(wordId, latestOpen?.package_id ?? null);
+  const packageRows = eligiblePackageRows(wordId, latestOpen?.package_id ?? null, teachingSetKey);
   // A withdrawn private pin must not silently turn into a different lesson.
   // A learner who has never opened one may take the first eligible package.
   const selectedPackageId = latestOpen
@@ -563,21 +569,21 @@ export function releaseWordIntroductionStage(wordId: string, token: string) {
 }
 
 /** Shared-only source read: never consults private pins, events, or learner views. */
-export function getSharedWordIntroductionContent(wordId: string): WordContentDocument | null {
-  const contentId = preparationRow(wordId)?.content_id;
+export function getSharedWordIntroductionContent(wordId: string, teachingSetKey = DEFAULT_TEACHING_SET): WordContentDocument | null {
+  const contentId = preparationRow(wordId, teachingSetKey)?.content_id;
   if (!contentId) return null;
   const row = getDb().prepare(`
     SELECT content.content_json FROM word_content_documents content
     JOIN shared_content_publications publication ON publication.publication_id = content.publication_id
-    WHERE content.word_id = ? AND content.content_id = ?
+    WHERE content.word_id = ? AND content.content_id = ? AND content.teaching_set_key = ?
       AND publication.publication_status IN ('shared_trial', 'available')
-  `).get(wordId, contentId) as { content_json: string } | undefined;
+  `).get(wordId, contentId, teachingSetKey) as { content_json: string } | undefined;
   return row ? parseWordContent(JSON.parse(row.content_json)) : null;
 }
-export function getSharedWordTeachingPackageId(wordId: string): string | null {
-  const current = preparationRow(wordId);
-  if (!current || current.preparation_epoch < VOCABULARY_PREPARATION_EPOCH) return eligiblePackageRows(wordId)[0]?.package_id ?? null;
-  return eligiblePackageRows(wordId).find(row => row.package_id === current?.package_id && row.content_id === current?.content_id)?.package_id ?? null;
+export function getSharedWordTeachingPackageId(wordId: string, teachingSetKey = DEFAULT_TEACHING_SET): string | null {
+  const current = preparationRow(wordId, teachingSetKey);
+  if (!current || current.preparation_epoch < VOCABULARY_PREPARATION_EPOCH) return eligiblePackageRows(wordId, null, teachingSetKey)[0]?.package_id ?? null;
+  return eligiblePackageRows(wordId, null, teachingSetKey).find(row => row.package_id === current?.package_id && row.content_id === current?.content_id)?.package_id ?? null;
 }
 
 /** Validate historical post-reveal material against its immutable source, even after withdrawal. */

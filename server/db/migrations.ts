@@ -250,6 +250,9 @@ export const schemaMigrations: readonly SchemaMigration[] = [{
 }, {
   id: 'app_schema:0073_proactive_repertoire',
   sql: fs.readFileSync(new URL('./migrations/0073_proactive_repertoire.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0074_teaching_sense_sets',
+  sql: fs.readFileSync(new URL('./migrations/0074_teaching_sense_sets.sql', import.meta.url), 'utf8'),
 }];
 
 function checksum(value: string): string {

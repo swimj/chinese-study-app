@@ -231,6 +231,27 @@ unchanged until proposal application. Use the stopped-writer schema release,
 not app-only upgrade. Inventory reconciliation follows this migration and needs
 fresh snapshots and reviewed plans against the migrated schema.
 
+## Teaching-set foundation migration
+
+Migration `0074_teaching_sense_sets` rebuilds `word_introduction_preparation` and
+`word_preparation_work` to include a teaching-set key and adds that key to
+`word_content_documents`. All existing rows enter the explicit `default`
+compatibility lane. No document JSON, package, learner event, sense mapping,
+publication, attempt journal, requester or live lease is rewritten. Current
+shared defaults are not used to infer a historical package's authored scope.
+
+Use the stopped-writer release route above. On the ephemeral restored database,
+compare the two preparation tables and source documents before and after,
+allowing only `teaching_set_key='default'`; check package/publication identities,
+learner introduction events, attempt/retry references and source-use mappings.
+Confirm that a prepared default word resolves to the same package, and a queued
+word retains its state, attempt count and lease. Run the runner's foreign-key
+and integrity checks. The rebuild copies both operational tables and requires
+temporary disk space proportional to them; no production timing or resource
+estimate has been measured. The populated upgrade and fresh-schema equivalence
+regressions live in `tests/schema-migrations.test.ts`; set-specific worker and
+repair regressions live in `tests/teaching-sense-sets.test.ts`.
+
 ## Writing the next migration
 
 Give the release agent a concise rehearsal note alongside the migration's tests

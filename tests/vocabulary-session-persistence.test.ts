@@ -23,8 +23,8 @@ type Input = VocabularySessionAction extends infer A ? A extends VocabularySessi
 beforeEach(() => {
   sql = new DatabaseSync(':memory:'); setDb(sql); sql.exec(`PRAGMA foreign_keys=ON;
     CREATE TABLE learners(learner_id TEXT PRIMARY KEY,disabled_at TEXT);
-    CREATE TABLE word_introduction_preparation(preparation_epoch INTEGER DEFAULT 0,word_id TEXT PRIMARY KEY, content_id TEXT, package_id TEXT, active_stage TEXT, lease_token TEXT, lease_expires_at TEXT);
-    CREATE TABLE word_content_documents(content_id TEXT PRIMARY KEY, word_id TEXT, publication_id TEXT, content_json TEXT);
+    CREATE TABLE word_introduction_preparation(teaching_set_key TEXT NOT NULL DEFAULT 'default',preparation_epoch INTEGER DEFAULT 0,word_id TEXT PRIMARY KEY, content_id TEXT, package_id TEXT, active_stage TEXT, lease_token TEXT, lease_expires_at TEXT);
+    CREATE TABLE word_content_documents(teaching_set_key TEXT NOT NULL DEFAULT 'default',content_id TEXT PRIMARY KEY, word_id TEXT, publication_id TEXT, content_json TEXT);
     CREATE TABLE shared_content_publications(publication_id TEXT PRIMARY KEY, publication_status TEXT);
     CREATE TABLE model_invocations(id TEXT PRIMARY KEY);
     CREATE TABLE learner_word_reserve_requests(learner_id TEXT PRIMARY KEY, requested_at TEXT NOT NULL);
@@ -229,7 +229,7 @@ test('teaching requires explicit completion and recognition self-assessment reta
     uses:[{id:'u1',label:'character',notes:[],exampleIds:['e1']}],examples:[{id:'e1',text:'字',translation:'Character',pronunciation:'zì'}]};
   sql.prepare("INSERT INTO word_introduction_preparation(word_id,content_id) VALUES ('new','bootstrap-new')").run();
   sql.prepare("INSERT INTO shared_content_publications VALUES ('published','available')").run();
-  sql.prepare("INSERT INTO word_content_documents VALUES ('bootstrap-new','new','published',?)").run(JSON.stringify(bootstrap));
+  sql.prepare("INSERT INTO word_content_documents(content_id,word_id,publication_id,content_json) VALUES ('bootstrap-new','new','published',?)").run(JSON.stringify(bootstrap));
   const sense=createVocabularySense({senseId:'new-character',wordId:'new',description:{label:'character',notes:[]}},{kind:'service',id:'session-fixture'});
   sql.prepare('INSERT INTO legacy_sense_imports VALUES (?,?,?,?)').run(bootstrap.id,'u1',sense.senseId,sense.version);
   writeVocabularyDefaultUsefulSenses('new',0,[sense.senseId],{kind:'service',id:'session-fixture'});

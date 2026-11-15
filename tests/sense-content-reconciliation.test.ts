@@ -11,7 +11,8 @@ import { migrateDatabase } from '../server/db/migrations.ts';
 import { setDb } from '../server/db/connection.ts';
 import { runWithLearnerId } from '../server/db/learner-context.ts';
 import { enqueueWordPreparation } from '../server/db/preparation-work.ts';
-import { claimSharedWordIntroductionStage, finishSharedWordIntroductionBootstrap, finishSharedWordIntroductionTeaching, getSharedWordIntroductionContent } from '../server/db/word-introductions.ts';
+import { claimSharedWordIntroductionStage, finishSharedWordIntroductionBootstrap, finishSharedWordIntroductionTeaching, getSharedWordIntroductionContent, getSharedWordTeachingPackageId } from '../server/db/word-introductions.ts';
+import { teachingSenseSetKey } from '../server/db/teaching-sense-sets.ts';
 import { normalizePracticeRehearsals } from '../server/word-content/authoring.ts';
 import { getVocabularySenses, updateVocabularySense, createVocabularyContent, getVocabularyContentForMaintenance } from '../server/db/vocabulary-content.ts';
 import { getVocabularyWordSenseCoverage, writeVocabularyDefaultUsefulSenses } from '../server/db/vocabulary-sense-coverage.ts';
@@ -188,6 +189,23 @@ test('apply replaces teaching atomically while preserving canonical identities a
   assert.equal(again.resolution!.version, result.resolution!.version);
   assert.equal(db.prepare('SELECT count(*) n FROM sense_content_reconciliation_history').get()!.n, 2);
   assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), []);
+});
+test('replacing the default lesson preserves an independent concrete introduction and its rehearsals', async () => {
+  const setKey = teachingSenseSetKey([getVocabularySenses('word')[0]!.senseId]);
+  runWithLearnerId('learner', () => enqueueWordPreparation('word','teaching',undefined,setKey));
+  await prepareTeaching();
+  const packageId = getSharedWordTeachingPackageId('word',setKey);
+  assert.ok(packageId);
+  const imported = db.prepare('SELECT content_id FROM legacy_content_imports WHERE source_id=? ORDER BY content_id')
+    .all(packageId) as {content_id:string}[];
+  assert.equal(imported.length,2);
+  const state = resolved();
+  for (const {content_id} of imported) assert.ok(state.plan!.retainedContentIds.includes(content_id));
+  apply(state);
+  await prepareTeaching();
+  assert.equal(senseContentReconciliationProgress('word').status,'ready');
+  assert.equal(getSharedWordTeachingPackageId('word',setKey),packageId);
+  for (const {content_id} of imported) assert.equal(getVocabularyContentForMaintenance(content_id)?.availability,'active');
 });
 test('injected apply failure rolls back content retirements and resolution effects', () => {
   const state = resolved(), before = db.prepare('SELECT * FROM content_items ORDER BY content_id').all();

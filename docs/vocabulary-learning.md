@@ -548,6 +548,31 @@ changes readiness nor retries work. Repeated distinct readiness epochs remain
 separately diagnosable. These diagnostics are not reflection cases and do not
 close or reset existing failure records.
 
+### Teaching set identity
+
+`teaching-sense-sets.ts` names the default compatibility lane `default` and
+encodes a concrete set as a JSON array of sorted, distinct canonical sense IDs.
+`word_introduction_preparation` is keyed by `(word_id, teaching_set_key)`;
+`word_preparation_work` is unique by word, set and stage. Source documents carry
+the same key. Their actual authored senses remain in the immutable document and
+its canonical source-use mappings, including when defaults later differ.
+
+The worker carries this identity through prerequisites, source reads, claims,
+component reuse, publication and crash recovery. Unknown-default demand can be
+queued in the default lane before inventory discovery. Concrete demand requires
+active senses of that word and authors only that set. Review-stage preparation
+remains word-wide in the default lane. Model invocation output links lead to
+source documents and packages, allowing costs to be grouped by their set without
+putting a learner identity in shared content.
+
+Learner reserve and composition use the default lane until custom scope selection
+is enabled. Operator reconciliation of default teaching reads and resets that
+lane; inventory reconciliation continues to fence affected shared content and
+preserve historical evidence across all sets. Package repair keeps the source's
+set key. Concrete repairs must preserve current canonical source-use mappings;
+the replacement copies those mappings and materializes its teaching for normal
+readiness resolution.
+
 ### Preparation compatibility
 
 Migration `0057_preparation_compatibility` records an explicit preparation epoch

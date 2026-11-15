@@ -762,7 +762,7 @@ test('an expired mapping lease cannot consume retry budget or revive unknown wor
 
 test('model-empty inventory attention does not revoke a live mapped single-sense repair',async()=>{
   sql.exec(`CREATE TABLE lexical_word_meanings(id TEXT PRIMARY KEY,word_id TEXT,text TEXT,position INTEGER);
-    CREATE TABLE word_introduction_preparation(word_id TEXT PRIMARY KEY,content_id TEXT,package_id TEXT,preparation_epoch INTEGER,active_stage TEXT,lease_token TEXT,lease_expires_at TEXT);`);
+    CREATE TABLE word_introduction_preparation(teaching_set_key TEXT NOT NULL DEFAULT 'default',word_id TEXT PRIMARY KEY,content_id TEXT,package_id TEXT,preparation_epoch INTEGER,active_stage TEXT,lease_token TEXT,lease_expires_at TEXT);`);
   pending();let release!:()=>void,entered!:(job:VocabularyReflectionJob)=>void;
   const held=new Promise<void>(resolve=>{release=resolve;});
   const started=new Promise<VocabularyReflectionJob>(resolve=>{entered=resolve;});
