@@ -49,6 +49,26 @@ code has been written.
    shared default. Composition is expected to move toward working from a
    snapshot of learner state, so finer-grained reasoning there is acceptable.
 
+Further answers from Justin on 2026-11-15:
+
+4. A confirmation stores only deviations from the defaults, plus the target
+   sense as taken up even when it is a default.
+5. When shared defaults are unknown, the app waits for the existing
+   default-selection call. The latency has to be made to work in the product;
+   see [the add flow](#add-flow-two-entry-points).
+6. A learner cannot exclude every sense. A learner who wants to has a sense in
+   mind that the inventory lacks, and the app should support that on a best
+   effort, rejecting a proposal that is off base. A chat-like exchange may be
+   the right surface. See [decision A](#decisions-for-justin).
+7. Nothing learner-visible ships before per-set teaching.
+8. A sense taken up on a word that has already been taught gets no re-teaching
+   and no sense-based exercise weighting. The only follow-through is
+   bootstrapping exercises for that sense when none exist.
+9. No migration for the scope model alone; timestamps and resolution records
+   can ride with the per-set teaching migration.
+10. Packages are authored for any distinct set, with count and cost reported
+    to the operator.
+
 Per-learner generated teaching, which could use what is known about the
 learner, was considered and set aside for now. It would be the first
 learner-private authored content, it cannot be improved by other learners'
@@ -145,14 +165,59 @@ Consequences of later shared changes:
 | A sense is replaced by reconciliation | The choice does not move to the replacement. The frontier requires that identity-bound relationships do not silently transfer (`STABILITY_FRONTIER.md:86-90`). |
 | The inventory becomes empty | The word is ineligible for sessions for everyone, as today (`SPECS/vocabulary-learning.md:20-25`). |
 
-How much of a confirmation is stored as explicit rows is
-[decision 1](#decisions-for-justin). Whether a learner may exclude every sense
-is [decision 3](#decisions-for-justin).
+A confirmation stores only deviations from the defaults, plus the target sense.
+A learner cannot exclude every sense.
 
-## Add-word confirmation flow
+## Add flow: two entry points
 
-The add itself is unchanged and immediate. The confirmation is a panel attached
-to the word just added.
+Justin is not yet satisfied with the add flow and expects to need a prototype
+before giving firm feedback. This section is a proposal to prototype, not a
+design to build.
+
+There are two mindsets, and one confirmation step does not serve both:
+
+| | Word-centric | Scenario-centric |
+| --- | --- | --- |
+| The learner | Wants the word, with all its usual senses | Met a use, or wants to say something, and the word and sense follow from that |
+| Starts from | Stash search | A sentence in the reader, or a free-form description |
+| Should feel like | One action, no customisation step | The app meets them in their situation and proposes the word and sense |
+| Customisation | Available on the word, never required | Shown alongside: the other senses included by default, adjustable |
+
+A custom sense is one of two kinds, and the flow branches on which:
+
+| What the learner wants | Where it is | Path |
+| --- | --- | --- |
+| A sense in the inventory but outside the defaults | Listed | Taken up; the set becomes defaults plus that sense |
+| A sense not in the inventory | Not listed | A proposal to add a sense; see [decision A](#decisions-for-justin) |
+| No listed sense at all | Not listed | The same proposal path, since excluding every sense is not allowed |
+
+The learner's intent can arrive as nothing (word-centric), as a context
+sentence with the word's span, or as a free-form description.
+
+### Proposed shape: the add never asks, the word reports back
+
+- Every add is one action and completes immediately, carrying the intent if
+  there is one.
+- The learner's set starts as the shared defaults, plus the target sense once
+  it is resolved. No confirmation is required.
+- Resolution runs in the background: establish the inventory if needed, wait
+  for defaults if unknown, map the intent to a sense. Per-set teaching is
+  prepared before admission in any case, so this adds no wait the learner
+  would otherwise not have.
+- The word's row shows the outcome when it is ready: which senses it will
+  teach, with the met sense marked. The learner can adjust there.
+- If the intent matches no listed sense, the row says so and opens the
+  exchange described under decision A.
+
+This removes the latency problem from the add itself: no screen waits on a
+model. It replaces "bootstrap briefly, show options, confirm", which Justin
+described earlier as the ideal feel, so it needs his judgment on a prototype.
+The panel states below describe the review surface on the word's row under
+either shape.
+
+## Sense panel
+
+The add itself is unchanged and immediate. The panel is attached to the word.
 
 ### States of the panel
 
@@ -174,8 +239,7 @@ flow therefore never waits for it:
 - While the panel is open the client polls. How long it shows the pending state
   before settling into "available later" should be set from measured latency.
 
-Whether every add triggers a bootstrap, or only adds that carry a context or an
-opened panel, is [decision 4](#decisions-for-justin).
+Which adds trigger a bootstrap is [decision D](#decisions-for-justin).
 
 ### Target sense from a caller
 
@@ -190,7 +254,7 @@ sentence, with three outcomes:
 | Outcome | Panel | Record |
 | --- | --- | --- |
 | Matches a sense | That sense is highlighted and selected, in addition to the defaults | Written as taken up on confirm |
-| Matches no listed sense | Defaults selected, nothing highlighted | See [decision 9](#decisions-for-justin) |
+| Matches no listed sense | Defaults selected, nothing highlighted | See [decision A](#decisions-for-justin) |
 | Unclear | Defaults selected, nothing highlighted | The sentence is kept |
 
 The prompt should descend from the existing sense-mapping prompt and follow
@@ -203,7 +267,7 @@ result is discarded.
 The same panel with no target. Defaults are selected and nothing is
 highlighted. When several lexical words match, the existing word choice comes
 first and the panel applies to each chosen word. Whether the panel opens by
-itself after a search add is [decision 5](#decisions-for-justin).
+itself is [decision E](#decisions-for-justin).
 
 ### Writing the scope
 
@@ -272,10 +336,12 @@ that a package needs at least one production and one recognition exercise.
 
 ### A sense changed after the word has been taught
 
-Per-set teaching answers the unstudied case. It does not by itself answer what
-happens when a learner takes up a sense on a word already in Solidify,
-Practice or Maintain, or excludes one. This is
-[decision 7](#decisions-for-justin).
+Settled: no re-teaching and no sense-based exercise weighting.
+
+- Taking up a sense makes its mapped exercises eligible and records authoring
+  demand when none exist. The word's mode, schedule and teaching history are
+  unchanged.
+- Excluding a sense stops its mapped production practice. Nothing is retired.
 
 ## Data and migration
 
@@ -303,8 +369,10 @@ schema-changing release with the quiesce, recovery-point and rehearsal
 procedure. It must preserve every existing package, its publication record and
 all teaching history.
 
-Whether the scope-model part should also take a migration for timestamps and a
-resolution record is [decision 8](#decisions-for-justin).
+Timestamps on `learner_senses` and a record of each intent resolution can be
+added in that same migration. The background resolution proposed under
+[the add flow](#add-flow-two-entry-points) needs somewhere to keep its pending,
+resolved or unmatched state, which `intended_use_text` alone cannot hold.
 
 Ownership: `learner_senses` is already registered as learner-private
 (`server/db/ownership-manifest.ts:85`). New reads and writes must go through the
@@ -312,25 +380,24 @@ learner context and be covered by an isolation test.
 
 ## Delivery
 
-A Graphite stack of five PRs. The first three are what the reading interface
-needs to offer the confirmation; the last two make a custom set fully real.
+Nothing learner-visible ships before per-set teaching, so the stack is ordered
+to land the migration first as a behaviour-neutral change.
 
 | PR | Contents | Learner-visible | Migration |
 | --- | --- | --- | --- |
-| 1. Scope model | Contract text; effective-scope resolver in `server/db/`; read and write commands with version checks; `GET` and `PUT` for a word's senses; general serving filter switched to effective scope | No | No |
-| 2. Sense panel | The panel on stash and My Words rows for established inventories; confirm, reset to default; pending and unavailable states | Yes | No |
-| 3. Add-time flow | Add accepts a context sentence; bootstrap requested on add; target-sense resolution and its prompt; highlighted target | Yes | No |
-| 4. Repertoire demand across sets | Missing-sense demand includes taken-up senses; no retirement from exclusion | No | No |
-| 5. Teaching per set | Set-keyed preparation, reserve readiness and composition; authoring for a requested set | Yes | Yes |
+| 1. Set-keyed teaching, default sets only | Preparation state, work, readiness and composition keyed by word and set; every existing package becomes its word's default set | No | Yes |
+| 2. Scope model | Contract text; effective-scope resolver; read and write commands with version checks; general serving filter switched to effective scope | No | No |
+| 3. Repertoire demand across sets | Missing-sense demand includes taken-up senses; no retirement from exclusion | No | No |
+| 4. Teaching for custom sets | Authoring for a requested set; a learner is taught from their set's package | Yes, once a set can be chosen | No |
+| 5. Sense panel and add flow | The review surface on the word; add with intent; background resolution and its prompt | Yes | No |
 
-Between PR 1 and PR 5, a learner with a non-default set on an unstudied word
-has no package for it. How that interim behaves is
-[decision 6](#decisions-for-justin).
+PRs 1 to 4 can merge without changing what any learner sees, because no
+learner can have a custom set until PR 5. PR 5's design waits on the prototype.
 
-Contract changes land with PR 1 and PR 5: a learner-scope section in
-`SPECS/vocabulary-learning.md`, a fourth record beside the three in
-`SPECS/vocabulary-architecture.md`, the per-set teaching rule, and the
-frontier's content assumption.
+Contract changes land with the PR that makes them true: the per-set teaching
+rule and frontier assumption with PR 1, the learner-scope section in
+`SPECS/vocabulary-learning.md` and a fourth record in
+`SPECS/vocabulary-architecture.md` with PR 2.
 
 ### Tests
 
@@ -371,18 +438,16 @@ frontier's content assumption.
 
 ## Decisions for Justin
 
+Settled answers are recorded [above](#settled-with-justin-2026-11-14). What
+remains open:
+
 | # | Decision | Options | Evidence | Recommendation |
 | --- | --- | --- | --- | --- |
-| 1 | What a confirmation stores | (a) Only deviations from the defaults shown. (b) A row for every sense shown, so the whole choice is sticky. (c) Deviations, plus the target sense as taken up even when it is a default. | Shared defaults keep changing through operator review and reconciliation. Sticky rows cut a learner off from those corrections; no rows at all lets the sense they came for be dropped later. | (c) |
-| 2 | Defaults unknown when the panel opens | (a) Wait for the default-selection call. (b) Show every sense unselected. (c) Treat every active sense as selected. | Serving already has a rule for unknown defaults: exclusion-based eligibility (`SPECS/vocabulary-architecture.md:236`). The panel has no equivalent. | (a), using the same pending state as bootstrap |
-| 3 | Excluding every sense | (a) Allowed; the word stops mapped production for this learner. (b) Not allowed; at least one sense stays. | Dismissal and production suppression already express "stop studying this" (`SPECS/vocabulary-learning.md:103-116`). A package cannot be authored for an empty set. | (b) |
-| 4 | When an add triggers bootstrap | (a) Every add. (b) Only adds with a context sentence, or when the learner opens the panel. (c) Never; wait for the reserve. | It is the same model call the reserve would make later, so (a) costs extra only for words that never reach teaching. Latency is unmeasured. | (b), after measuring latency from hosted invocation records |
-| 5 | Whether the panel opens by itself after a search add | (a) Opens. (b) Stays closed behind a control on the row. | Search adds have no target sense, and batch adds would open several panels. | (b) for search; open automatically only when a caller supplies a context |
-| 6 | An unstudied word with a custom set before per-set teaching ships | (a) Hold PRs 2 and 3 until PR 5 is ready. (b) Ship them; such words wait in the stash until PR 5. (c) Ship them; teach from the default package meanwhile. | (c) is the tack-on experience Justin rejected. (b) lets the scope model and panel be used and judged early, at the cost of some words not being admitted. | (b) |
-| 7 | A sense changed on a word already taught | (a) Taken-up sense: offer the set's introduction again, without the teaching exercises, then prefer that sense in practice. (b) Temporary refresh and a practice preference only. (c) A sense-level mode override, as the whiteboard sketches. Exclusion in every case just stops that sense's mapped practice. | A bare definition is the experience Justin rejected for unstudied words. Sense-level scheduling is an open whiteboard question. Refresh exists and leaves mode alone (`SPECS/vocabulary-learning.md:63`). | (a), with refresh; but this is a learning-policy choice with little evidence either way |
-| 8 | Schema for the scope model | (a) No migration; events carry history. (b) Add timestamps, source and a resolution table. | (a) keeps PRs 1 to 4 on the application-only route. PR 5 needs a migration regardless, so (b) could ride with it. | (a) now; fold (b) into PR 5's migration if events prove awkward |
-| 9 | The sentence matches no listed sense | (a) Record an operator finding and follow defaults. (b) Let the learner create a private sense. (c) Add a canonical sense automatically. | The inventory is shared and operator-governed; the selector cannot create senses (`SPECS/vocabulary-architecture.md:219`). The contract defines no private-content authoring. | (a), keeping the sentence |
-| 10 | Limits on authoring packages for custom sets | (a) Author for any distinct set. (b) Author only once a set has been requested by some number of learners. (c) Cap the sets per word. | Cost per package is unmeasured. With few learners, (b) would mean custom sets never get taught. | (a), with the count and cost of custom packages reported to the operator |
+| A | Who can add a learner-proposed sense to an established inventory | (a) A model judges the proposal; a valid one is added as a non-default canonical sense under service authority, with an operator finding for review afterwards. (b) The same judgment, but the sense waits for operator approval. (c) The sense stays private to the learner. | Inventories are first created by a service call without operator approval (`server/vocabulary/sense-readiness.ts:150-165`), but the default selector cannot create senses (`SPECS/vocabulary-architecture.md:219`), and the contract defines no private-content authoring. Waiting on an operator stalls the learner; a wrong shared sense affects everyone's inventory, though not their defaults. | (a), because the sense is added outside the defaults and so changes no other learner's study. This is an authority change and needs the contract updated. |
+| B | What the judgment can conclude | Matches an existing sense; a valid new use of this exact word; belongs to a larger compound or fixed expression, so suggest that word instead; a misunderstanding, explained to the learner. | The inventory rule already separates a word's own uses from meanings realised only in larger expressions (`SPECS/vocabulary-learning.md:13-18`). | All four, in a short exchange where the learner can clarify once or twice |
+| C | Shape of the add | (a) The add asks: bootstrap, show options, confirm. (b) The add never asks; the word reports back and can be adjusted. (c) Different shapes for the two entry points. | See [the add flow](#add-flow-two-entry-points). (a) waits on a call configured with a 180-second timeout. | (b), to be judged on a prototype |
+| D | When sense bootstrap runs for a newly added word | (a) On every add. (b) Only when the add carries an intent, or the learner opens the word's senses. (c) Only when the word reaches the reserve, as today. | It is the same call the reserve would make later. Its latency and cost are unmeasured. | (b) |
+| E | Whether the panel opens by itself | Justin: "sure-ish" to opening only when a caller supplies a context. Superseded if decision C lands on (b), where nothing opens by itself. | | Revisit after the prototype |
 
 ## Not verified
 
