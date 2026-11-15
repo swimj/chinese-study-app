@@ -77,6 +77,12 @@ with their existing default lesson even when shared defaults change. An explicit
 choice can reuse that lesson only when its authored scope matches the chosen set.
 Taking up a sense after teaching does not repeat the lesson or reset progress.
 
+Shared general-exercise authoring covers the shared defaults and the active
+senses taken up by any learner tracking the word. Saving a taken-up sense that
+lacks usable shared production practice queues authoring independently of the
+word's mode and review schedule. Shared prompts use canonical sense evidence
+only. The learner's context sentence stays private.
+
 Shared proxy coverage can still report targeted content when the learner has excluded
 its only mapped sense. In that case the targeted cue is filtered and word-level
 fallback can serve; the exclusion does not turn the word into a shared pure-cue proxy.

@@ -44,7 +44,7 @@ function exercise(id:string,wordId:string,role:'teaching'|'general'='general',pu
 }
 beforeEach(()=>{
   db=new DatabaseSync(':memory:');setDb(db);db.exec(`PRAGMA foreign_keys=ON;
-    CREATE TABLE learners(learner_id TEXT PRIMARY KEY);
+    CREATE TABLE learners(learner_id TEXT PRIMARY KEY,disabled_at TEXT);
     CREATE TABLE learner_word_preparation_reserve(learner_id TEXT,word_id TEXT,added_at TEXT,ready_at TEXT,checked_at TEXT,PRIMARY KEY(learner_id,word_id));
     CREATE TABLE learner_word_reserve_requests(learner_id TEXT PRIMARY KEY,requested_at TEXT);
     CREATE TABLE learner_owned_review_session_summaries(learner_id TEXT,session_id TEXT,PRIMARY KEY(learner_id,session_id));
@@ -57,7 +57,7 @@ beforeEach(()=>{
     CREATE TABLE learner_owned_word_skill_state(learner_id TEXT,word_id TEXT,skill_id TEXT,interval_hours REAL,ease_factor REAL,enabled INTEGER,next_due_at TEXT,last_studied_at TEXT,PRIMARY KEY(learner_id,word_id,skill_id));
     CREATE TABLE learner_owned_word_skill_relevance(learner_id TEXT,word_id TEXT,skill_id TEXT,relevance_state TEXT,PRIMARY KEY(learner_id,word_id,skill_id));
     CREATE TABLE learner_owned_word_study_admission_state(learner_id TEXT,word_id TEXT,study_phase TEXT,earliest_next_study_at TEXT,PRIMARY KEY(learner_id,word_id));
-    INSERT INTO learners VALUES('alice'),('bob');
+    INSERT INTO learners(learner_id) VALUES('alice'),('bob');
     INSERT INTO lexical_words(id,hanzi,traditional,pinyin,meaning,created_at) VALUES('a','甲',NULL,'jiǎ','first','2026-01-01'),('b','乙',NULL,'yǐ','second','2026-01-02'),('new','新',NULL,'xīn','new','2026-01-03');
     INSERT INTO learner_word_state VALUES('alice','a','learning',2,NULL),('alice','b','review',0,NULL),('alice','new','unstudied',0,NULL);
     ALTER TABLE learner_word_state ADD COLUMN personal_notes TEXT NOT NULL DEFAULT '';

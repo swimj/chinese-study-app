@@ -22,7 +22,10 @@ import { createVocabularyContent,getVocabularySenseCatalog,getVocabularySenses,e
 import { linkVocabularyInvocationContent,linkVocabularyInvocationSense } from '../db/vocabulary-provenance.ts';
 import { LUNA_REPERTOIRE_MODEL, repertoireBootstrapModel, type RepertoireBootstrapModel } from './repertoire-bootstrap-routing.ts';
 import { canonicalExerciseSource } from './canonical-exercise-source.ts';
-import { hasProactiveDemand, proactiveHorizon, repertoireCoverageGap, PROACTIVE_DEFERRED } from '../db/proactive-repertoire.ts';
+import {
+  hasProactiveDemand, LEARNER_REPERTOIRE_WORK_PREFIX, liveTakenUpSensesSql,
+  proactiveHorizon, PROACTIVE_DEFERRED, queueLearnerSenseRepertoire, repertoireCoverageGap,
+} from '../db/proactive-repertoire.ts';
 
 export const VOCABULARY_PRACTICE_SERVICE = 'vocabulary-practice-authoring';
 const TIMEOUT = 180_000;
@@ -39,6 +42,7 @@ const projection = `work_id AS workId,word_id AS wordId,source_content_id AS sou
   status,attempt_count AS attemptCount,active_token AS activeToken,expires_at AS expiresAt,invocation_id AS invocationId,last_error AS lastError,next_attempt_at AS nextAttemptAt,total_attempt_count AS totalAttemptCount`;
 const actor = { kind: 'service' as const,id: VOCABULARY_PRACTICE_SERVICE };
 class ProactiveSourceError extends Error {}
+type RepertoireGap = ReturnType<typeof repertoireCoverageGap>;
 
 /** The shared brief is a replaceable editorial candidate; structural validity does not certify learning quality. */
 export function createVocabularyPracticeProvider(options: { environment?: NodeJS.ProcessEnv; fetchImplementation?: FetchImplementation; model?: RepertoireBootstrapModel } = {}): VocabularyPracticeProvider {
@@ -93,34 +97,43 @@ export function createVocabularyPracticePreparation(options: { provider?: Vocabu
   const proactiveEnabled = options.proactiveEnabled ?? (() => true);
   const pending = new Map<string,Promise<void>>();
 
-  function proactiveDemand(wordId: string, workId: string): boolean {
-    return hasProactiveDemand(wordId, workId, proactiveHorizon(now()));
+  function scopeWorkEnabled(gap: RepertoireGap): boolean {
+    return gap.hasMissingTakeUp || proactiveEnabled();
+  }
+
+  function proactiveDemand(work: VocabularyPracticeWork, gap: RepertoireGap): boolean {
+    return hasProactiveDemand(work.wordId, work.workId, proactiveHorizon(now()), gap.hasMissingTakeUp);
   }
 
   async function proactivePreflight(work: VocabularyPracticeWork): Promise<boolean> {
-    if (!proactiveEnabled()) return false;
     const db = getDb();
     const postpone = (at: string) => db.prepare(`UPDATE vocabulary_practice_preparation SET next_attempt_at=?,updated_at=?
       WHERE work_id=? AND status='queued'`).run(at,now(),work.workId);
     const settle = (status: 'ready' | 'failed', reason: string) => db.prepare(`UPDATE vocabulary_practice_preparation
       SET status=?,last_error=?,updated_at=? WHERE work_id=? AND status='queued'`).run(status,reason,now(),work.workId);
-    const canPublish = () => proactiveEnabled() && options.canPublish?.() !== false;
-    const available = () => proactiveDemand(work.wordId,work.workId);
-    const waitForDemand = () => { settle('ready',PROACTIVE_DEFERRED); return false; };
+    const canPublish = () => scopeWorkEnabled(repertoireCoverageGap(work.wordId)) && options.canPublish?.() !== false;
+    const available = () => proactiveDemand(work,repertoireCoverageGap(work.wordId));
+    const postponeDemand = () => postpone(new Date(Date.parse(now()) + 60_000).toISOString());
+    const waitForDemand = (gap: RepertoireGap) => {
+      // A blocked scope save has no later lookahead scan to reopen it.
+      if (gap.hasMissingTakeUp) postponeDemand();
+      else settle('ready',PROACTIVE_DEFERRED);
+      return false;
+    };
     let gap = repertoireCoverageGap(work.wordId);
-    if (gap.proxied || (!gap.unknown && !gap.missing.length)) {
+    if (!gap.needsAuthoring) {
       settle('ready','No proactive practice demand');
       return false;
     }
-    if (!available()) return waitForDemand();
+    if (!scopeWorkEnabled(gap) || !available()) return waitForDemand(gap);
     const prerequisites = { workflowId: work.workId, now,
-      canPublish: () => canPublish() && available() && !repertoireCoverageGap(work.wordId).proxied };
+      canPublish: () => canPublish() && available() && repertoireCoverageGap(work.wordId).needsAuthoring };
     try {
       if (gap.unknown) {
         await (options.ensureSenses ?? ensureVocabularySenses)(work.wordId, prerequisites);
         if (!canPublish()) return false;
-        if (!available()) return waitForDemand();
-        if (!repertoireCoverageGap(work.wordId).proxied) {
+        if (!available()) return waitForDemand(repertoireCoverageGap(work.wordId));
+        if (repertoireCoverageGap(work.wordId).needsAuthoring) {
           await (options.ensureDefaults ?? ensureVocabularyDefaultUsefulSelection)(work.wordId, prerequisites);
         }
       }
@@ -133,7 +146,7 @@ export function createVocabularyPracticePreparation(options: { provider?: Vocabu
     }
     gap = repertoireCoverageGap(work.wordId);
     if (!canPublish()) return false;
-    if (gap.proxied || (!gap.unknown && !gap.missing.length)) {
+    if (!gap.needsAuthoring) {
       settle('ready','No proactive practice demand');
       return false;
     }
@@ -145,13 +158,14 @@ export function createVocabularyPracticePreparation(options: { provider?: Vocabu
     if (gap.scopeKey !== work.proactiveScopeKey) {
       if (work.generationKey !== 'pending' || db.prepare(`SELECT 1 FROM vocabulary_practice_preparation
         WHERE word_id=? AND proactive_scope_key=?`).get(work.wordId,gap.scopeKey)) {
-        settle('ready','Proactive repertoire scope changed');
+        settle('ready',work.generationKey === 'pending' ? PROACTIVE_DEFERRED : 'Proactive repertoire scope changed');
+        queueLearnerSenseRepertoire(work.wordId,now(),gap);
         return false;
       }
       db.prepare(`UPDATE vocabulary_practice_preparation SET proactive_scope_key=?,updated_at=?
         WHERE work_id=? AND status='queued'`).run(gap.scopeKey,now(),work.workId);
     }
-    if (!available()) return waitForDemand();
+    if (!available()) return waitForDemand(repertoireCoverageGap(work.wordId));
     db.prepare(`UPDATE vocabulary_practice_preparation SET last_error=NULL
       WHERE work_id=? AND status='queued' AND last_error='default_selection_pending'`).run(work.workId);
     return true;
@@ -168,7 +182,7 @@ export function createVocabularyPracticePreparation(options: { provider?: Vocabu
   function resolveSource(work:Pick<VocabularyPracticeWork,'wordId'|'sourceContentId'|'reconciliationId'|'proactiveScopeKey'>):{source:GeneralExerciseSource;senses:Array<{source_use_id:string;sense_id:string;imported_sense_version:number}>}|null {
     if (work.proactiveScopeKey !== null) {
       const gap = repertoireCoverageGap(work.wordId);
-      if (gap.unknown || gap.proxied || !gap.missing.length || gap.scopeKey !== work.proactiveScopeKey) return null;
+      if (gap.unknown || !gap.needsAuthoring || !gap.missing.length || gap.scopeKey !== work.proactiveScopeKey) return null;
       const word = getSharedIntroductionLexicalWord(work.wordId);
       if (!word) throw new Error('Proactive repertoire lost its lexical word');
       const senses = getVocabularySenses(work.wordId).filter(sense => gap.missing.includes(sense.senseId));
@@ -259,7 +273,10 @@ export function createVocabularyPracticePreparation(options: { provider?: Vocabu
     return atomic(() => {
     const work=readWork(workId);
     if(!work||work.status!=='queued'||work.lastError==='default_selection_pending'||work.nextAttemptAt > timestamp)return null;
-    if (work.proactiveScopeKey !== null && (!proactiveEnabled() || !proactiveDemand(work.wordId,work.workId))) return null;
+    if (work.proactiveScopeKey !== null) {
+      const gap = repertoireCoverageGap(work.wordId);
+      if (!scopeWorkEnabled(gap) || !proactiveDemand(work,gap)) return null;
+    }
     let source: GeneralExerciseSource | undefined;
     try { source = resolveSource(work)?.source; }
     catch (error) {
@@ -299,7 +316,7 @@ export function createVocabularyPracticePreparation(options: { provider?: Vocabu
       source=resolved?.source??null;
       if(!source||provider.generationKey(source)!==work.generationKey)throw new Error('Vocabulary preparation source changed');
       retryable=true;
-      if (proactive && (!proactiveEnabled() || options.canPublish?.() === false)) {
+      if (proactive && (!scopeWorkEnabled(repertoireCoverageGap(work.wordId)) || options.canPublish?.() === false)) {
         throw new Error('Vocabulary preparation publication is currently blocked');
       }
       let output: unknown;
@@ -326,22 +343,29 @@ export function createVocabularyPracticePreparation(options: { provider?: Vocabu
       }
       return atomic(() => {
         assertSenseContentReconciliationGeneration(work.wordId, reconciliation);
-        if (options.canPublish?.() === false || (proactive && !proactiveEnabled())) {
+        if (options.canPublish?.() === false) {
           retryable = proactive;
           throw new Error('Vocabulary preparation publication is currently blocked');
         }
         const current = readWork(workId);
         if (!current || current.status !== 'running' || current.activeToken !== token || current.expiresAt! <= now()) throw new Error('Vocabulary preparation lease changed');
         const currentSource = resolveSource(work);
-        if (proactive && (!currentSource || !proactiveDemand(work.wordId,workId))) {
+        if (proactive) {
           const gap = repertoireCoverageGap(work.wordId);
-          const stillNeeded = gap.scopeKey === work.proactiveScopeKey && !gap.proxied && gap.missing.length > 0;
-          failPreparationAttempt('practice',workId,token,now(),'proactive_source_changed',{retryable:false});
-          if (!stillNeeded || work.attemptCount < 3) {
-            getDb().prepare(`UPDATE vocabulary_practice_preparation SET status='ready',last_error=? WHERE work_id=?`)
-              .run(stillNeeded ? PROACTIVE_DEFERRED : 'Proactive repertoire scope changed',workId);
+          if (!currentSource || !proactiveDemand(work,gap)) {
+            const stillNeeded = gap.scopeKey === work.proactiveScopeKey && gap.needsAuthoring;
+            failPreparationAttempt('practice',workId,token,now(),'proactive_source_changed',{retryable:stillNeeded && gap.hasMissingTakeUp});
+            if (!stillNeeded || (!gap.hasMissingTakeUp && work.attemptCount < 3)) {
+              getDb().prepare(`UPDATE vocabulary_practice_preparation SET status='ready',last_error=? WHERE work_id=?`)
+                .run(stillNeeded ? PROACTIVE_DEFERRED : 'Proactive repertoire scope changed',workId);
+            }
+            if (gap.scopeKey !== work.proactiveScopeKey) queueLearnerSenseRepertoire(work.wordId,now(),gap);
+            return [];
           }
-          return [];
+          if (!scopeWorkEnabled(gap)) {
+            retryable = true;
+            throw new Error('Vocabulary preparation publication is currently blocked');
+          }
         }
         if (!currentSource || getVocabularySenseCatalog(work.wordId).version !== catalogue.version || provider.generationKey(source!)!==work.generationKey
           || (proactive && JSON.stringify(currentSource.source.word) !== JSON.stringify(source!.word))) {
@@ -370,7 +394,7 @@ export function createVocabularyPracticePreparation(options: { provider?: Vocabu
           if (invocationId != null) linkVocabularyInvocationContent({ invocationId,contentId: created.contentId,contentVersion: created.version,role: 'output' },actor);
           return created;
         });
-        if (proactive && repertoireCoverageGap(work.wordId).missing.length) {
+        if (proactive && repertoireCoverageGap(work.wordId).needsAuthoring) {
           failPreparationAttempt('practice',workId,token,now(),'incomplete_proactive_sense_coverage',{retryable:false});
         } else {
           getDb().prepare(`UPDATE vocabulary_practice_preparation SET status='ready',active_token=NULL,expires_at=NULL,updated_at=?,last_error=NULL
@@ -403,7 +427,7 @@ export function createVocabularyPracticePreparation(options: { provider?: Vocabu
       } else if (row.lastError?.startsWith('selection_requires_operator:') && gap.unknown) {
         canRetry = defaultUsefulSelectionRetryable(row.wordId);
       }
-      return {...row,retryable:canRetry && !gap.proxied && (gap.unknown || gap.missing.length > 0)};
+      return {...row,retryable:canRetry && gap.needsAuthoring};
     }
     const retryable=isVocabularySessionWordEligible(row.wordId)&&Boolean(resolveSource(row))
       &&!row.lastError?.startsWith('source_mapping_requires_operator')
@@ -419,10 +443,18 @@ export function createVocabularyPracticePreparation(options: { provider?: Vocabu
     },
     listQueued(limit = 20): VocabularyPracticeWork[] {
       if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new Error('Invalid preparation batch size');
-      return getDb().prepare(`SELECT ${projection} FROM vocabulary_practice_preparation WHERE status='queued' AND next_attempt_at<=? AND (? OR proactive_scope_key IS NULL)
-        ORDER BY proactive_scope_key IS NOT NULL,next_attempt_at,created_at,
-          CASE WHEN proactive_scope_key IS NOT NULL THEN rowid END,work_id LIMIT ?`)
-        .all(now(),Number(proactiveEnabled()),limit) as VocabularyPracticeWork[];
+      // Live choices also admit a matching lookahead row when the switch is off.
+      // The explicit work ID keeps withdrawn requests discoverable for cleanup.
+      return getDb().prepare(`WITH work_candidates AS (
+        SELECT work.*, work.rowid AS queue_order, proactive_scope_key IS NOT NULL AND (
+          work_id LIKE ? OR EXISTS (${liveTakenUpSensesSql('work.word_id')})
+        ) AS learner_scope_candidate
+        FROM vocabulary_practice_preparation work WHERE status='queued' AND next_attempt_at<=?
+      )
+      SELECT ${projection} FROM work_candidates WHERE ? OR proactive_scope_key IS NULL OR learner_scope_candidate
+      ORDER BY proactive_scope_key IS NOT NULL,learner_scope_candidate DESC,next_attempt_at,created_at,
+        CASE WHEN proactive_scope_key IS NOT NULL THEN queue_order END,work_id LIMIT ?`)
+        .all(`${LEARNER_REPERTOIRE_WORK_PREFIX}%`,now(),Number(proactiveEnabled()),limit) as VocabularyPracticeWork[];
     },
     /** Operator diagnostics omit lease tokens and retained source/provider bodies. */
     listFailed(limit = 50): Array<Pick<VocabularyPracticeWork,'workId'|'wordId'|'sourceContentId'|'reconciliationId'|'proactiveScopeKey'|'attemptCount'|'invocationId'|'lastError'> & {retryable:boolean}> {

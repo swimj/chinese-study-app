@@ -15,7 +15,8 @@ export function ensureCurrentVocabularyPreparation(wordId: string, now: string, 
   // Never invalidate provider leases or reset an unfinished/failed attempt budget.
   if ((row?.lease_expires_at && row.lease_expires_at > now) || db.prepare(`SELECT 1 FROM word_preparation_work
     WHERE word_id=? AND teaching_set_key=? AND (status IN ('running','paused') OR (stage='review' AND status='queued')) LIMIT 1`).get(wordId,teachingSetKey)
-    || db.prepare(`SELECT 1 FROM vocabulary_practice_preparation WHERE word_id=? AND status IN ('queued','running') LIMIT 1`).get(wordId)) return false;
+    || db.prepare(`SELECT 1 FROM vocabulary_practice_preparation WHERE word_id=? AND proactive_scope_key IS NULL
+      AND status IN ('queued','running') LIMIT 1`).get(wordId)) return false;
   db.prepare(`INSERT INTO word_introduction_preparation(word_id,preparation_epoch,teaching_set_key) VALUES (?,?,?)
     ON CONFLICT(word_id,teaching_set_key) DO UPDATE SET content_id=NULL,package_id=NULL,active_stage=NULL,
       lease_token=NULL,lease_expires_at=NULL,preparation_epoch=excluded.preparation_epoch`).run(wordId,VOCABULARY_PREPARATION_EPOCH,teachingSetKey);
