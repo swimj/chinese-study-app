@@ -195,7 +195,7 @@ Traditional forms remain lexical data but are not supplied to inventory or
 default-selection models. Glosses are optional, non-exhaustive hints; supported
 uses can be included and selected even when absent from those hints.
 
-Three separate records answer different questions:
+Four separate records answer different questions:
 
 - The **canonical inventory** describes distinct uses of the exact learning target,
   including peripheral, literary and technical uses. Grammatical constructions
@@ -208,6 +208,13 @@ Three separate records answer different questions:
   either saved by an operator or derived from an established empty inventory.
   Repertoire bootstrap captures this shared selection; there is no separate
   editable case-level repertoire selection.
+- The **learner sense scope** layers private `active` or `excluded` dispositions
+  on shared defaults. No row means following the default. The effective set contains
+  active canonical senses explicitly taken up or selected by default without a learner
+  exclusion. Retired rows remain identity-bound history. A confirmation saves only
+  deviations plus its target, checks learner-word, catalog and default-selection
+  versions atomically, advances learner-word state and records before/after scope and
+  originating surface. Shared content and retained sessions are not rewritten.
 - An **invocation scope** records the exact canonical targets that a content call
   will address. Later changes to defaults do not retarget that call or invalidate
   its result. Source, mapping and canonical-version changes still fence publication.
@@ -233,7 +240,7 @@ precedence over the nonempty-inventory selection rules below.
 
 | Consumer | Unknown defaults | Explicit none | Selected set |
 | --- | --- | --- | --- |
-| Mapped general production serving | Preserve exclusion-based eligibility | Filter all mapped production senses | Serve only active selected senses |
+| Mapped general production serving | Preserve exclusion-based eligibility with learner overrides | Serve active taken-up senses | Serve the learner’s effective set |
 | New automatic general practice demand | Record a durable prerequisite and initialize asynchronously | No new demand | Create demand when the immutable source intersects selection |
 | Teaching bootstrap | Initialize defaults before capturing enrichment targets | Operator disposition; no enrichment call | Enrich the captured canonical IDs |
 | Teaching/review components for a document | Use the document's canonical scope | Use the document's canonical scope | Use the document's canonical scope |

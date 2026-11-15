@@ -1,5 +1,6 @@
+import { resolveVocabularyLearnerSenseScope } from '../db/vocabulary-learner-senses.ts';
 import { vocabularyExerciseAnswersEligibleSql, isVocabularySessionWordEligible } from '../db/vocabulary-sense-eligibility.ts';
-import { getVocabularyWordSenseCoverage, resolveVocabularySenseCoverage } from '../db/vocabulary-sense-coverage.ts';
+import { resolveVocabularySenseCoverage } from '../db/vocabulary-sense-coverage.ts';
 import type { VocabularyJson } from '../../src/domain/vocabulary-content.ts';
 import { getDb } from '../db/connection.ts';
 import { requireLearnerId } from '../db/learner-context.ts';
@@ -34,13 +35,14 @@ export function isVocabularyProductionProxied(wordId: string): boolean {
   });
 }
 
-export function hasExplicitlyEmptyProductionDefaults(wordId: string): boolean {
-  return getVocabularyWordSenseCoverage(wordId).defaultUsefulSenseIds?.length === 0;
+export function hasExplicitlyEmptyProductionScope(wordId: string): boolean {
+  const scope = resolveVocabularyLearnerSenseScope(wordId);
+  return scope.selectionEstablished && scope.includedSenseIds.length === 0;
 }
 
 /** A proxied review objective can still use an owned targeted cue, never dictionary fallback. */
 export function canServeVocabularyReviewProduction(wordId: string, mode: 'practice' | 'maintain'): boolean {
-  if (hasExplicitlyEmptyProductionDefaults(wordId)) return false;
+  if (hasExplicitlyEmptyProductionScope(wordId)) return false;
   const proxied = isVocabularyProductionProxied(wordId);
   const hasUsableTargetedCue = proxied && listVocabularyExercises({ wordId, mode }).some((content) => content.kind === 'exercise'
     && content.answers.every(answer=>isVocabularySessionWordEligible(answer.wordId))

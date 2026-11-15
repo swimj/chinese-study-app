@@ -786,3 +786,23 @@ Start the backend with that directory, the printed learner, and seed; point Vite
 fixture is `/tests/browser/vocabulary-controller.html` (also `?mode=undo`).
 The prompt experiment harness retains offline inputs, outputs, variants, and
 review notes; see [its handoff](implementation/vocabulary-prompt-handoff.md).
+
+
+## Learner sense choices
+
+`server/db/vocabulary-learner-senses.ts` resolves a learner's active inventory,
+shared defaults, private overrides and effective set. The authenticated learner
+context owns every scope read and write. Confirmation checks the learner-word,
+catalog and selection versions in one transaction, preserves retired identity rows,
+stores only default deviations plus the target, and records its surface and before/
+after state in `vocabulary.learner_senses.changed`. It uses the existing
+`scope_established_at` and `intended_use_text` columns and requests reserve
+reconciliation without changing mode, schedule or teaching history.
+
+General production pools apply this scope when composed. Pure cues, recognition,
+contrast and unmapped cues retain their existing policy; retained session pools
+remain frozen. Review production's empty-scope gate considers learner choices,
+while shared pure-cue proxy classification still uses the shared default selection.
+`vocabulary-learner-senses.test.ts` covers private resolution, confirmation and
+serving, and `vocabulary-study.test.ts` covers retained pools and the fallback case
+when a learner excludes the only shared targeted sense.
