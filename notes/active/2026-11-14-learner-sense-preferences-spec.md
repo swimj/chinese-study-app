@@ -3,7 +3,7 @@
 status: active
 type: handoff
 created: 2026-11-14
-retire-when: the decisions below are settled and the first PR is open, or the design is declined
+retire-when: the first PR is open, or the design is declined
 related:
   - SPECS/vocabulary-learning.md
   - SPECS/vocabulary-architecture.md
@@ -17,9 +17,7 @@ word's usual senses, and be able to adjust the set. It is also useful alone, bec
 every learner studies the same shared selection.
 
 The direction is [settled](#settled-with-justin-2026-11-14), including that
-adding a word becomes a bounded chat. The [decisions](#decisions-for-justin)
-section lists what Justin still needs to choose; where a section depends on an
-open decision it says so. No application
+adding a word becomes a bounded chat, and no decisions are open. No application
 code has been written.
 
 ## Goal and stance
@@ -60,7 +58,7 @@ Further answers from Justin on 2026-11-15:
 6. A learner cannot exclude every sense. A learner who wants to has a sense in
    mind that the inventory lacks, and the app should support that on a best
    effort, rejecting a proposal that is off base. A chat-like exchange may be
-   the right surface. See [decision A](#decisions-for-justin).
+   the right surface. See point 17.
 7. Nothing learner-visible ships before per-set teaching.
 8. A sense taken up on a word that has already been taught gets no re-teaching
    and no sense-based exercise weighting. The only follow-through is
@@ -81,6 +79,19 @@ Further answers from Justin on 2026-11-15:
     judgments itself for now.
 16. The add flow is greenfield: no further cases are needed before building,
     and it will be corrected in use.
+17. A valid learner-proposed sense is added to the shared inventory as a
+    non-default sense when the learner presses Add, with an operator finding
+    afterwards. This is an authority change and needs the contract updated.
+18. Sense bootstrap is queued whenever the chat looks up a word with no
+    inventory. Delaying it when intent is uncertain is a possible later
+    refinement.
+19. The sense list on a card is directly interactive; agent presets are
+    shortcuts.
+20. Conversations are kept. The learner sees one long chat; each exchange is
+    normally independent for the model. Bringing earlier exchanges back into
+    context when relevant is wanted but may be left out of the first cut.
+21. Undo reverses the learner's effects only. Anything added to shared
+    content stays, under its usual quality guards.
 
 Per-learner generated teaching, which could use what is known about the
 learner, was considered and set aside for now. It would be the first
@@ -206,8 +217,10 @@ later mid-study aside; nothing else about that surface is designed here.
 - Turns are one-shot. The agent asks a question only when the learner's words
   fit two senses or two different words and the choice changes what is added.
   Otherwise it acts or proposes, and the learner follows up if they want.
-- A conversation is short and disposable for the learner: no history browsing
-  and no memory across conversations.
+- The learner sees one continuous chat they can scroll back through. For the
+  model, each exchange about a word normally starts fresh, without earlier
+  exchanges in context. Paging earlier context back in when it is relevant is
+  a later refinement and needs evaluation.
 
 ### Cards
 
@@ -227,7 +240,9 @@ is in. The agent's prose never implies a change the card does not show.
   in the bank shows the same state.
 - The sense list on a card is the bounded manual choice: the learner can tick
   or untick senses directly. The agent's preset buttons are shortcuts to the
-  same write. See [decision F](#decisions-for-justin).
+  same write.
+- Undo reverses the learner's effects: the word and its set return to what
+  they were. A sense or queued preparation that reached shared content stays.
 - The model emits a card as structured data: a word ID, sense IDs, and actions
   from a fixed list. The server validates every ID against the word before the
   card is shown, and again when a button is pressed. A button press is a normal
@@ -260,7 +275,7 @@ All but the last were exercised in the simulation.
 | Already studied | 宠溺 | State shown; a sense outside the learner's set can be included, with no re-teaching |
 | Phrase or components | 怡然自得 | A recommendation with reasons; one card |
 | Wrong character | 海眠 → 海绵 | The correction is proposed |
-| A valid use the inventory lacks | 蒸馏 for model distillation | A new sense is proposed on the card and created only when the learner adds; see [decision A](#decisions-for-justin) |
+| A valid use the inventory lacks | 蒸馏 for model distillation | A new sense is proposed on the card and created only when the learner adds, as a non-default shared sense with an operator finding |
 | A use that is off base | not simulated | Explained to the learner; nothing is proposed |
 
 ### Tools
@@ -275,7 +290,7 @@ free-form writes.
 | Learner state for a word | Read | Studied or stashed, mode, the learner's set |
 | List a word's senses | Read | With shared defaults; reports "no inventory yet" |
 | Teaching and exercise status for a word and set | Read | Drives Preparing and Ready |
-| Queue sense bootstrap | Request | The existing readiness queue; see [decision D](#decisions-for-justin) |
+| Queue sense bootstrap | Request | The existing readiness queue; runs on any lookup of a word with no inventory |
 | Present a card | Output | Structured and validated, as above |
 
 Commands a card button runs: add a word with a set and an optional context;
@@ -424,8 +439,8 @@ Timestamps on `learner_senses` can be added in that same migration.
 **The chat needs new learner-private storage**, and so a second migration:
 
 - Conversations and their turns, including tool calls and the cards shown.
-  They are kept for evaluation and repair even though the learner cannot
-  browse them; retention is [decision G](#decisions-for-justin).
+  They are kept, both as the learner's visible chat history and for
+  evaluation and repair.
 - A deferred sense match: a word added before its inventory exists keeps its
   context and a pending state until the match is made.
 - Later, an intake-time example attached to the learner's word.
@@ -478,7 +493,8 @@ rule and frontier assumption with PR 1, the learner-scope section in
   button cannot write a sense that is not an active sense of the word.
 - The agent has no write path except card commands run by the learner, and
   the immediate add under the stated rule.
-- Undo restores the learner's prior state for that word.
+- Undo restores the learner's prior state for that word and leaves a sense it
+  added to the shared inventory in place.
 - Demand: a taken-up sense with no exercise creates demand; an exclusion
   creates none and retires nothing.
 - Per-set teaching: two learners with the same set share one package; a
@@ -504,20 +520,12 @@ rule and frontier assumption with PR 1, the learner-scope section in
 
 ## Decisions for Justin
 
-Settled answers are recorded [above](#settled-with-justin-2026-11-14). What
-remains open:
+None are open. Every answer is recorded
+[above](#settled-with-justin-2026-11-14).
 
-| # | Decision | Options | Evidence | Recommendation |
-| --- | --- | --- | --- | --- |
-| A | Who can add a learner-proposed sense to an established inventory | (a) The chat agent judges the proposal; a valid one is added as a non-default canonical sense under service authority when the learner presses Add, with an operator finding for review afterwards. (b) The same, but the sense waits for operator approval. (c) The sense stays private to the learner. | Inventories are first created by a service call without operator approval (`server/vocabulary/sense-readiness.ts:150-165`), but the default selector cannot create senses (`SPECS/vocabulary-architecture.md:219`), and the contract defines no private-content authoring. The simulation used (a) for 蒸馏 and Justin raised no objection, but did not confirm it. | (a). It is an authority change and needs the contract updated. |
-| D | When sense bootstrap runs | (a) Whenever the chat looks up a word with no inventory. (b) Only when that word is added. (c) Only when the word reaches the reserve, as today. | It is the same call the reserve would make later. (a) spends a call on words the learner then does not add; Justin has said unneeded preparation is an acceptable worst case for an undone add. | (a) |
-| F | How a learner changes senses on a card | (a) The sense list is directly tickable, and agent presets are shortcuts. (b) Only composable preset buttons. | Justin: an added card should also allow extending the set; unsure between composable actions and a small bounded manual choice. | (a). One control covers extend, narrow and the no-defaults case. |
-| G | How long conversations are kept | (a) Kept for evaluation, not shown to the learner. (b) Deleted when the conversation ends. | Transcripts are the main evidence for tuning the agent. They are a new kind of learner-private data. | (a), with the disclosure stated |
-| H | What Undo does | (a) Removes the word as if never added. (b) Dismisses it under the existing rules. | Dismissal carries suppression rules (`SPECS/vocabulary-learning.md:103-116`). | (a), if the word had no state before this conversation |
-
-Closed since the last revision: what the judgment can conclude (all four
-outcomes were exercised), the shape of the add (the chat), and whether a panel
-opens by itself (there is no panel).
+Two points are deliberately left for after the first cut: delaying bootstrap
+when the learner's intent is uncertain, and paging earlier exchanges back into
+the model's context.
 
 ## Not verified
 
@@ -532,7 +540,8 @@ opens by itself (there is no panel).
   chat turn costs.
 - Whether a real fast model reproduces the simulated behaviour. The simulation
   was written by hand, with invented tool results.
-- Whether Undo can reuse dismissal.
+- How Undo is implemented. Dismissal has suppression rules that an undo
+  should not trigger.
 
 ## Out of scope
 
