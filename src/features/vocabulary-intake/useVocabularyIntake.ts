@@ -53,6 +53,7 @@ export function useVocabularyIntake(chatVisible: boolean, outstandingVisible: bo
   const lifetime = useRef<AbortController | null>(null);
   const activeTurn = useRef(false);
   const turnRequest = useRef<{ clientTurnId: string; text: string } | null>(null);
+  const turnDrafts = useRef<Record<string, VocabularyIntakeSelection>>({});
   const readingLatest = useRef(false);
   const readingEarlier = useRef(false);
   const readingAttention = useRef(false);
@@ -61,6 +62,8 @@ export function useVocabularyIntake(chatVisible: boolean, outstandingVisible: bo
   const readOrder = useRef(0);
   const recordsRef = useRef(records);
   recordsRef.current = records;
+  const draftsRef = useRef(drafts);
+  draftsRef.current = drafts;
 
   useLayoutEffect(() => {
     const controller = new AbortController();
@@ -205,6 +208,8 @@ export function useVocabularyIntake(chatVisible: boolean, outstandingVisible: bo
     if (!request) return;
     turnRequest.current = request;
     activeTurn.current = true;
+    if (!retry) turnDrafts.current = draftsRef.current;
+    const draftsAtSend = turnDrafts.current;
     const pending: ComposeTurn = {
       id: request.clientTurnId, userText: request.text, assistantText: '', cardIds: [], status: 'running', error: null,
     };
@@ -214,11 +219,13 @@ export function useVocabularyIntake(chatVisible: boolean, outstandingVisible: bo
     }
     setComposeTurn(pending);
     let turn = pending;
+    let failureMessage: string | null = null;
     try {
       await streamVocabularyIntakeTurn(request, event => {
         if (signal.aborted) return;
         if (event.type === 'error') {
           if (event.retryWithNewId === true) turnRequest.current = { ...request, clientTurnId: crypto.randomUUID() };
+          failureMessage = event.message;
           throw new Error(event.message);
         }
         if (event.type === 'progress') {
@@ -226,6 +233,14 @@ export function useVocabularyIntake(chatVisible: boolean, outstandingVisible: bo
           setComposeTurn(turn);
         } else if (event.type === 'completion') {
           mergeCards(event.cards, ++readOrder.current);
+          // Supersede older local drafts, preserving controls edited during this turn.
+          setDrafts(current => {
+            const next = { ...current };
+            for (const card of event.cards) {
+              if (current[card.id] && current[card.id] === draftsAtSend[card.id]) delete next[card.id];
+            }
+            return next;
+          });
           if (event.cards.some(card => card.state !== 'proposed' && card.state !== 'already-studying')) {
             setStashRevision(revision => revision + 1);
           }
@@ -242,7 +257,7 @@ export function useVocabularyIntake(chatVisible: boolean, outstandingVisible: bo
         }
       }, signal);
     } catch {
-      if (!signal.aborted) setComposeTurn({ ...turn, status: 'failed', error: 'The reply could not finish. Try again.' });
+      if (!signal.aborted) setComposeTurn({ ...turn, status: 'failed', error: failureMessage ?? 'The reply could not finish. Try again.' });
     } finally {
       if (!signal.aborted) {
         activeTurn.current = false;

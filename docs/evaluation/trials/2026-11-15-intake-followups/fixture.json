@@ -1,0 +1,372 @@
+{
+  "lexical": [
+    {
+      "id": "gang",
+      "hanzi": "帮派",
+      "traditional": "幫派",
+      "pinyin": "bāngpài",
+      "gloss": "gang; faction",
+      "priority": 95,
+      "senses": [
+        [
+          "gang-crime",
+          "A gang or organized criminal group",
+          [
+            "这些年轻人跟一个帮派有点关系."
+          ],
+          true
+        ],
+        [
+          "gang-faction",
+          "A faction or clique within a larger group",
+          [
+            "Can refer to factions within a party or an organization, as in 党内帮派."
+          ],
+          true
+        ]
+      ]
+    },
+    {
+      "id": "punk",
+      "hanzi": "混混",
+      "traditional": null,
+      "pinyin": "hùnhun",
+      "gloss": "punk; idler or petty troublemaker",
+      "priority": 35,
+      "senses": [
+        [
+          "punk-petty",
+          "An idler or petty troublemaker",
+          [
+            "Colloquial and disparaging."
+          ],
+          true
+        ]
+      ]
+    },
+    {
+      "id": "lingering",
+      "hanzi": "绵长",
+      "traditional": "綿長",
+      "pinyin": "miáncháng",
+      "gloss": "long and continuous; lingering",
+      "priority": 45
+    },
+    {
+      "id": "return",
+      "hanzi": "接发球",
+      "traditional": "接發球",
+      "pinyin": "jiēfāqiú",
+      "gloss": "return serve; return of a serve",
+      "priority": 24,
+      "senses": [
+        [
+          "return-serve",
+          "To return serve; the return of serve",
+          [
+            "A tennis, table tennis or badminton term. 他的接发球很稳."
+          ],
+          true
+        ]
+      ]
+    },
+    {
+      "id": "returner",
+      "hanzi": "接发球方",
+      "traditional": "接發球方",
+      "pinyin": "jiēfāqiúfāng",
+      "gloss": "the side receiving a serve",
+      "priority": 20,
+      "senses": [
+        [
+          "returner-side",
+          "The receiving side in a serve",
+          [
+            "The party that receives and returns the serve."
+          ],
+          true
+        ]
+      ]
+    },
+    {
+      "id": "torn",
+      "hanzi": "纠结",
+      "traditional": "糾結",
+      "pinyin": "jiūjié",
+      "gloss": "torn; conflicted; tangled; to band together",
+      "priority": 110,
+      "senses": [
+        [
+          "torn-conflicted",
+          "Torn or conflicted over a choice",
+          [
+            "Natural in 我很纠结要不要去."
+          ],
+          true
+        ],
+        [
+          "torn-tangled",
+          "Entangled or knotted together",
+          [
+            "Physical or figurative, as in 两股绳子纠结在一起."
+          ],
+          true
+        ],
+        [
+          "torn-band",
+          "To gather or band together",
+          [
+            "Dated; usually written 纠集 in this meaning today."
+          ],
+          false
+        ]
+      ]
+    },
+    {
+      "id": "dense",
+      "hanzi": "致密",
+      "traditional": null,
+      "pinyin": "zhìmì",
+      "gloss": "dense; compact; meticulous",
+      "priority": 26,
+      "senses": [
+        [
+          "dense-compact",
+          "Dense and compact in texture or structure",
+          [
+            "Used of rock, bone and other materials. 这种岩石的结构非常致密."
+          ],
+          false
+        ],
+        [
+          "dense-meticulous",
+          "Meticulous or tightly reasoned",
+          [
+            "Literary or formal, of a tightly organized argument or composition."
+          ],
+          false
+        ]
+      ]
+    },
+    {
+      "id": "doting",
+      "hanzi": "宠溺",
+      "traditional": "寵溺",
+      "pinyin": "chǒngnì",
+      "gloss": "to dote on; spoil; show indulgence",
+      "priority": 64,
+      "senses": [
+        [
+          "doting-spoil",
+          "To spoil, dote on or indulge someone",
+          [
+            "The verb can take a child or another person as its object."
+          ],
+          true
+        ],
+        [
+          "doting-look",
+          "Doting or indulgent in expression or manner",
+          [
+            "Familiar in fiction, as in 宠溺的眼神 or 宠溺地笑了."
+          ],
+          false
+        ]
+      ]
+    },
+    {
+      "id": "content",
+      "hanzi": "怡然自得",
+      "traditional": null,
+      "pinyin": "yírán zìdé",
+      "gloss": "contented and at ease; comfortable in one’s own enjoyment",
+      "priority": 28,
+      "senses": [
+        [
+          "content-idiom",
+          "Contented and at ease",
+          [
+            "A fixed four-character idiom describing someone absorbed in their enjoyment."
+          ],
+          true
+        ]
+      ]
+    },
+    {
+      "id": "ease",
+      "hanzi": "怡然",
+      "traditional": null,
+      "pinyin": "yírán",
+      "gloss": "cheerful and at ease",
+      "priority": 12,
+      "senses": [
+        [
+          "ease-literary",
+          "Cheerful and at ease",
+          [
+            "Literary; often encountered inside 怡然自得."
+          ],
+          false
+        ]
+      ]
+    },
+    {
+      "id": "pleased",
+      "hanzi": "自得",
+      "traditional": null,
+      "pinyin": "zìdé",
+      "gloss": "content in oneself; pleased with oneself",
+      "priority": 25,
+      "senses": [
+        [
+          "pleased-self",
+          "Pleased or content in oneself",
+          [
+            "Often in phrases, including 自得其乐 and 洋洋自得."
+          ],
+          true
+        ]
+      ]
+    },
+    {
+      "id": "sponge",
+      "hanzi": "海绵",
+      "traditional": "海綿",
+      "pinyin": "hǎimián",
+      "gloss": "sponge; foam material; marine sponge",
+      "priority": 75,
+      "senses": [
+        [
+          "sponge-cleaning",
+          "Sponge or resilient foam material",
+          [
+            "Used for wiping, cleaning, padding or cushioning."
+          ],
+          true
+        ],
+        [
+          "sponge-animal",
+          "A sea sponge",
+          [
+            "The aquatic animal."
+          ],
+          true
+        ]
+      ]
+    },
+    {
+      "id": "asleep",
+      "hanzi": "睡眠",
+      "traditional": null,
+      "pinyin": "shuìmián",
+      "gloss": "sleep",
+      "priority": 85,
+      "senses": [
+        [
+          "asleep-sleep",
+          "Sleep",
+          [
+            "The state or duration of sleeping."
+          ],
+          true
+        ]
+      ]
+    },
+    {
+      "id": "distil",
+      "hanzi": "蒸馏",
+      "traditional": "蒸餾",
+      "pinyin": "zhēngliú",
+      "gloss": "distill; distillation of liquids",
+      "priority": 57,
+      "senses": [
+        [
+          "distil-liquid",
+          "To distil a liquid; chemical distillation",
+          [
+            "Separate or purify using vaporization and condensation, as in 蒸馏酒."
+          ],
+          true
+        ]
+      ]
+    },
+    {
+      "id": "outdated",
+      "hanzi": "过时",
+      "traditional": "過時",
+      "pinyin": "guòshí",
+      "gloss": "outdated; out of fashion",
+      "priority": 79,
+      "senses": [
+        [
+          "outdated-fashion",
+          "Outdated or out of fashion",
+          [
+            "Information, methods, styles or ideas that are no longer current."
+          ],
+          true
+        ]
+      ]
+    },
+    {
+      "id": "deadline",
+      "hanzi": "过时不候",
+      "traditional": "過時不候",
+      "pinyin": "guòshí bù hòu",
+      "gloss": "late arrivals will not be waited for",
+      "priority": 22,
+      "senses": [
+        [
+          "deadline-warning",
+          "Late arrivals will not be waited for",
+          [
+            "A fixed warning that a deadline or departure time is firm."
+          ],
+          true
+        ]
+      ]
+    },
+    {
+      "id": "foam",
+      "hanzi": "泡沫",
+      "traditional": null,
+      "pinyin": "pàomò",
+      "gloss": "foam; bubbles; economic bubble; foam material",
+      "priority": 87,
+      "senses": [
+        [
+          "foam-bubbles",
+          "A mass of foam or bubbles",
+          [
+            "As in the lather on top of a soapy liquid."
+          ],
+          true
+        ],
+        [
+          "foam-market",
+          "An economic bubble",
+          [
+            "Inflated prices, as in 房地产泡沫."
+          ],
+          true
+        ],
+        [
+          "foam-material",
+          "Lightweight foam material",
+          [
+            "Packaging or padding, as in 用泡沫垫着."
+          ],
+          true
+        ],
+        [
+          "foam-illusory",
+          "Something illusory or insubstantial",
+          [
+            "A broader figurative use for something that lacks substance."
+          ],
+          false
+        ]
+      ]
+    }
+  ]
+}

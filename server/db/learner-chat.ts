@@ -164,9 +164,23 @@ export function listRecentChatTurns(conversationId: string, beforeId?: string, l
   return { turns: page, before: rows.length > limit ? page[0]!.id : null };
 }
 export function listChatTurnCards(turnId: string): ChatCard[] {
-  const rows = getDb().prepare('SELECT id FROM learner_chat_cards WHERE learner_id=? AND turn_id=? ORDER BY created_at,id')
-    .all(requireLearnerId(), turnId);
+  const rows = getDb().prepare(`SELECT c.id FROM learner_chat_cards c JOIN learner_chat_turns t
+    ON t.learner_id=c.learner_id AND t.conversation_id=c.conversation_id
+    WHERE t.learner_id=? AND t.id=? AND (c.turn_id=t.id OR EXISTS (
+      SELECT 1 FROM learner_chat_events e WHERE e.learner_id=t.learner_id AND e.turn_id=t.id
+        AND json_extract(e.event_json,'$.kind')='card_attached' AND json_extract(e.event_json,'$.cardId')=c.id))
+    ORDER BY c.created_at,c.id`).all(requireLearnerId(), turnId);
   return rows.map(row => getChatCard(String(row.id))!);
+}
+
+/** Call inside the same transaction as a follow-up command, before publishing its result. */
+export function attachChatCardToTurn(turnId: string, cardId: string): ChatCard {
+  const turn = getChatTurn(turnId), card = getChatCard(cardId);
+  if (turn?.status !== 'running' || !card || card.conversationId !== turn.conversationId) {
+    throw new ChatConflictError('Card does not belong to this running conversation');
+  }
+  appendChatEvent(turnId, { kind: 'card_attached', cardId, version: card.version });
+  return card;
 }
 
 /** Recover old attempts only after the maximum turn lifetime. New attempts need a terminal receipt; legacy cards retain their recovery behavior. */
@@ -174,7 +188,10 @@ export function recoverInterruptedChatTurns(surface: string, createdBefore: stri
   const hasEvent = (kind: string) => `EXISTS (SELECT 1 FROM learner_chat_events e WHERE e.learner_id=t.learner_id
     AND e.turn_id=t.id AND json_extract(e.event_json,'$.kind')='${kind}')`;
   const committed = `(${hasEvent('completion')} OR (NOT ${hasEvent('completion_required')} AND
-    EXISTS (SELECT 1 FROM learner_chat_cards c WHERE c.learner_id=t.learner_id AND c.turn_id=t.id)))`;
+    EXISTS (SELECT 1 FROM learner_chat_cards c
+    WHERE c.learner_id=t.learner_id AND c.conversation_id=t.conversation_id AND (c.turn_id=t.id OR EXISTS (
+      SELECT 1 FROM learner_chat_events e WHERE e.learner_id=t.learner_id AND e.turn_id=t.id
+        AND json_extract(e.event_json,'$.kind')='card_attached' AND json_extract(e.event_json,'$.cardId')=c.id)))))`;
   getDb().prepare(`UPDATE learner_chat_turns AS t SET finished_at=?,
     status=CASE WHEN ${committed}
       THEN 'completed' ELSE 'failed' END,

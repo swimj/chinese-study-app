@@ -69,6 +69,20 @@ senses. The learner can select a set on the card or use a suggested selection.
 An existing enrollment keeps its mode, schedule and sense choices until the
 learner changes the set.
 
+Open-ended follow-ups can explain a card, resolve a recent clarification, change
+its selected senses, or undo an eligible add. Clear instructions apply the same
+learner effects as the card controls immediately. Questions, hypotheticals and
+ambiguous references do not authorize changes; the chat explains or asks for
+clarification. Recent conversation and current card state supply context, with
+bounded recall rather than a promise to remember every earlier exchange.
+
+Changes to an unaccepted proposal remain private until its Add control is
+confirmed, including revisions to a well-attested proposed sense. A chat reply
+such as “yes, add it” does not replace that confirmation. A changed lexical target
+requires a new proposal. The chat does not change mastery, scheduling, shared
+defaults or existing shared sense descriptions. Unsupported requests receive an
+explanation without those effects.
+
 A direct, unambiguous requested word with useful defaults can be added
 immediately. A confident context match includes the matched sense alongside
 the defaults and retains the learner's context. An inventory that is still

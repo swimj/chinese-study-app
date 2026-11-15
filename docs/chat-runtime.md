@@ -71,9 +71,13 @@ latency, or rendered UI behavior.
 ## Vocabulary intake
 
 [`intake-chat.ts`](../server/vocabulary/intake-chat.ts) projects private chat
-into the authenticated [intake API](api.md#add-word-chat). It uses one fresh
-model context per message and captures the exact rendered messages, tool schemas
-and model settings through the invocation ledger. The selected chat model is
+into the authenticated [intake API](api.md#add-word-chat). Each message receives
+up to six recent non-running turns and four current card projections, with
+separate 16,000-character budgets for prose and cards. Assistant prose is capped
+at 2,000 characters per turn; historical provider reasoning and tool calls are
+excluded. Card descriptions are shortened for this context, while the backend
+retains full snapshots for validation. The invocation ledger captures the exact
+rendered messages, tool schemas and model settings. The selected chat model is
 `gpt-6-sol` with low reasoning; deferred one-sense matching uses `gpt-6-luna`
 with low reasoning. Lookup returns senses, defaults and current learner state
 together, so an ordinary exchange needs one read and one output call.
@@ -92,7 +96,7 @@ The simulated exchange
 cases define the fake-provider trace coverage. Examples reused by live trials
 provide regression evidence; the [disjoint-case comparison](evaluation/trials/2026-11-16-intake-organization.md)
 separately probes transfer to different lexical targets. The terminal
-complete_turn schema packages explanation with an answer or present_card action.
+complete_turn schema packages explanation with an answer, present_card or revise_card action.
 Plain assistant text cannot complete an exchange. Semantic choice still belongs
 to the model: an answer action can be structurally valid but inappropriate for
 an add request. Progress is public only while running; completion publishes the
@@ -101,6 +105,19 @@ saved explanation with current card projections. See the [chat prompt](../server
 [`vocabulary-intake.ts`](../server/db/vocabulary-intake.ts) validates IDs and
 versions, owns enrollment and scope effects, and projects each card from live
 study state. Card commands reuse chat receipts and the learner-scope writer.
+Natural-language revisions use the `revise_card` completion action, alongside `present_card` for new
+cards. The revision handler accepts only a card supplied in recent context and
+checks its card, learner, catalog and selection versions before reusing the
+ordinary command path. Proposal revisions update the private body; they cannot
+confirm Add. Recent learner wording can ground a lexical clarification, but
+automatic enrollment requires the current message itself to authorize the add.
+A revision and its `card_attached` event commit in one transaction. This lets
+history and reconnect associate the same live card identity with both exchanges,
+and legacy recovery recognizes an attached card as evidence of a committed
+output. New turns require the terminal receipt described above.
+The transcript renders the live card only at its latest attached turn, preserving
+earlier prose without repeating the controls.
+
 Undo stores its before/after enrollment evidence in the same transaction as
 Add. A later enrollment version, schedule, priority or retained session fences
 Undo.
@@ -119,3 +136,5 @@ deferred matching, replay, cross-learner isolation, admission and Undo. The
 fake traces exercise the application decisions with supplied judgments.
 The [implementation evaluation](evaluation/trials/2026-11-15-custom-senses.md)
 records bounded live-provider comparisons, teaching examples and rendered UI checks.
+The [follow-up evaluation](evaluation/trials/2026-11-15-intake-followups.md)
+records conversational revision, clarification and unsupported-request checks.

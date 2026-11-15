@@ -84,8 +84,9 @@ revision history; referencing it grants no access to another learner's records.
 
 Learner chat conversations, tool results, card state and command receipts are
 private, including retained provider request and response snapshots. Add-word
-chat sends the submitted message and selected lexical and learner-word tool
-results to the configured OpenAI model provider. Deferred matching sends the
+chat sends the submitted message, bounded recent learner/assistant prose, current
+card projections and selected lexical and learner-word tool results to the
+configured OpenAI model provider. Deferred matching sends the
 retained context and active canonical senses. The surface discloses provider
 use. Shared inventory, default selection and teaching preparation use lexical
 and canonical evidence. A learner-confirmed new canonical sense can be shared

@@ -228,9 +228,27 @@ function answerTurn(clientTurnId: string, text: string, signal?: AbortSignal | n
   }
   const previous = turns.get(clientTurnId);
   const input = text.includes('接发') ? '接发球' : Object.keys(examples).find(word => text.includes(word)) as ExampleWord | undefined;
-  const card = !previous && input ? newCard(input, `card-${clientTurnId}`) : null;
+  const latest = [...cards.values()].at(-1);
+  let card = !previous && input ? newCard(input, `card-${clientTurnId}`) : null;
+  let reply = input ? examples[input].text : 'Which word or expression would you like to study?';
+  if (!previous && latest && /^only the second/i.test(text) && latest.senses[1]) {
+    card = setCard(latest, { selection: { senseIds: [latest.senses[1].senseId], targetSenseId: null, includeProposedSense: false },
+      actions: latest.state === 'proposed' ? ['add'] : ['change_senses'] });
+    reply = 'I’ll keep only the second sense.';
+  } else if (!previous && latest && /^only the ai/i.test(text) && latest.proposedSense) {
+    card = setCard(latest, { selection: { senseIds: [], targetSenseId: null, includeProposedSense: true } });
+    reply = 'Only the AI meaning is selected. The proposal still awaits Add.';
+  } else if (!previous && latest && /^undo that add/i.test(text) && latest.actions.includes('undo')) {
+    card = updateCard(latest, { clientActionId: clientTurnId, expectedVersion: latest.version, versions: latest.versions, command: { type: 'undo' } });
+    reply = 'I’ll undo that add.';
+  } else if (!previous && latest && /^why/i.test(text)) {
+    card = null;
+    reply = 'The other meaning is an independent use of this word. You can choose which senses to study.';
+  } else if (!previous && /mastered/i.test(text)) {
+    card = null;
+    reply = 'This chat cannot change mastery or the study schedule.';
+  }
   if (card) cards.set(card.id, card);
-  const reply = input ? examples[input].text : 'Which word or expression would you like to study?';
   const turn = previous ?? {
     id: clientTurnId, userText: text, assistantText: reply, status: 'complete',
     cardIds: card ? [card.id] : [],

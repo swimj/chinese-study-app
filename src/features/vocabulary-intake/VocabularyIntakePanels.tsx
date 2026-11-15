@@ -16,9 +16,10 @@ function CardList({ ids, controller }: { ids: string[]; controller: VocabularyIn
 }
 
 function TranscriptTurn({
-  turn, controller, local = false, progress,
+  turn, cardIds, controller, local = false, progress,
 }: {
   turn: VocabularyIntakeTurn;
+  cardIds: string[];
   controller: VocabularyIntakeController;
   local?: boolean;
   progress?: VocabularyIntakeProgress;
@@ -27,7 +28,7 @@ function TranscriptTurn({
     <section className="intake-turn" aria-label="Conversation turn" data-intake-turn={turn.id}>
       <p className="intake-user-message">{turn.userText}</p>
       {turn.assistantText && <p className="intake-reply">{turn.assistantText}</p>}
-      {turn.cardIds.length > 0 && <CardList ids={turn.cardIds} controller={controller} />}
+      {cardIds.length > 0 && <CardList ids={cardIds} controller={controller} />}
       {turn.status === 'running' && !turn.assistantText && <p className="intake-muted" role="status">{({checking:'Checking your request…',looking_up:'Looking up words…',preparing_reply:'Preparing your reply…'})[progress ?? 'checking']}</p>}
       {turn.status === 'failed' && !local && <p className="intake-muted">This reply was interrupted.</p>}
     </section>
@@ -43,6 +44,12 @@ export function VocabularyIntakeChat({ controller, visible }: { controller: Voca
   const transcriptHeading = useId();
   const providerNotice = useId();
   const { turns, composeTurn, scroll, latestRevision } = controller;
+  // A revision brings the live card forward without repeating every earlier control set.
+  const latestCardTurn = new Map<string, string>();
+  for (const turn of composeTurn ? [...turns, composeTurn] : turns) {
+    for (const id of turn.cardIds) latestCardTurn.set(id, turn.id);
+  }
+  const visibleCards = (turn: VocabularyIntakeTurn) => turn.cardIds.filter(id => latestCardTurn.get(id) === turn.id);
 
   useLayoutEffect(() => {
     const transcript = transcriptRef.current;
@@ -101,8 +108,8 @@ export function VocabularyIntakeChat({ controller, visible }: { controller: Voca
               }}>{controller.loadingEarlier ? 'Loading earlier messages…' : 'Load earlier messages'}</button>
           )}
           {controller.historyError === 'earlier' && <p role="alert">Could not load earlier messages. Try again.</p>}
-          {turns.map(turn => <TranscriptTurn key={turn.id} turn={turn} controller={controller} />)}
-          {composeTurn && <TranscriptTurn key={composeTurn.id} turn={composeTurn} controller={controller} local progress={composeTurn.progress} />}
+          {turns.map(turn => <TranscriptTurn key={turn.id} turn={turn} cardIds={visibleCards(turn)} controller={controller} />)}
+          {composeTurn && <TranscriptTurn key={composeTurn.id} turn={composeTurn} cardIds={visibleCards(composeTurn)} controller={controller} local progress={composeTurn.progress} />}
           {composeTurn?.error && (
             <div className="intake-card-recovery">
               <p role="alert">{composeTurn.error}</p>

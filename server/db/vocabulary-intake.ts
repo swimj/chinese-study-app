@@ -1,7 +1,7 @@
 import { resolveLearnerTeachingSetKey } from './learner-teaching.ts';
 import { getDb } from './connection.ts';
 import { requireLearnerId } from './learner-context.ts';
-import { ChatConflictError, createChatCard, getChatCard, getOrCreateChatConversation, listChatCards,
+import { attachChatCardToTurn, ChatConflictError, createChatCard, getChatCard, getOrCreateChatConversation, listChatCards,
   runChatCardCommand, withChatTransaction, type ChatCard } from './learner-chat.ts';
 import { createVocabularySense, emitBackendEvent, getVocabularySenses } from './vocabulary-content.ts';
 import { getVocabularyLearnerWord, getVocabularyWordSchedule, VocabularyStateInputError, type VocabularyLearnerWord } from './vocabulary-learners.ts';
@@ -312,6 +312,63 @@ export function runVocabularyIntakeCommand(cardId: string, request: VocabularyIn
     } });
   // Use the latest durable card if another action followed the replayed receipt.
   return projectVocabularyIntakeCard(getVocabularyIntakeCard(stored.id));
+}
+
+export type IntakeCardRevision = {
+  cardId: string;
+  action: 'set_senses' | 'undo' | 'revise_proposal';
+  selection: VocabularyIntakeSelection | null;
+  proposedSense: SenseDraft | null;
+  context: string | null;
+};
+
+/** The model supplies intent; versions and authority come from the server's pre-generation snapshot. */
+export function reviseVocabularyIntakeCard(turnId: string, snapshot: VocabularyIntakeCard,
+  revision: IntakeCardRevision): ChatCard {
+  return withChatTransaction(() => {
+    if (revision.cardId !== snapshot.id) throw new VocabularyStateInputError('Unexpected card');
+    const card = getVocabularyIntakeCard(snapshot.id), body = intakeBody(card);
+    const scope = resolveVocabularyLearnerSenseScope(body.wordId), current = versions(scope);
+    if (card.version !== snapshot.version || current.learner !== snapshot.versions.learner
+      || current.catalog !== snapshot.versions.catalog || current.selection !== snapshot.versions.selection) {
+      throw new ChatConflictError('The card changed while this reply was being prepared. Review it and send a new message.');
+    }
+    if (revision.action !== 'revise_proposal' && (revision.proposedSense !== null || revision.context !== null)) {
+      throw new VocabularyStateInputError('This action cannot replace a proposal');
+    }
+    if (revision.action === 'undo') {
+      if (revision.selection !== null || !snapshot.actions.includes('undo')) throw new ChatConflictError('This add cannot be undone');
+      runVocabularyIntakeCommand(snapshot.id, { clientActionId: `${turnId}:revision`, expectedVersion: snapshot.version,
+        versions: snapshot.versions, command: { type: 'undo' } });
+    } else {
+      const selection = revision.selection;
+      if (!selection || (!selection.senseIds.length && !selection.includeProposedSense)) {
+        throw new VocabularyStateInputError('Choose at least one sense');
+      }
+      if (snapshot.state === 'proposed' && body.proposal && !isEnrolled(getVocabularyLearnerWord(body.wordId))) {
+        const proposedSense = revision.action === 'revise_proposal' ? revision.proposedSense : body.proposedSense;
+        assertSelection(selection, scope, proposedSense);
+        if (proposedSense) {
+          if (!scope.inventoryEstablished) throw new VocabularyStateInputError('Wait for the sense inventory');
+          checkNewSense(body.wordId, proposedSense);
+          const proposed = [proposedSense.label, ...proposedSense.notes].join(' ');
+          if ([body.context, revision.context].some(context => context && context.length > 16 && proposed.includes(context))) {
+            throw new VocabularyStateInputError('Shared sense notes require a general example');
+          }
+        }
+        runChatCardCommand({ cardId: card.id, clientActionId: `${turnId}:revision`, expectedVersion: snapshot.version,
+          request: revision as unknown as JsonValue, apply: () => intakeJson({ ...body, selection, proposedSense,
+            context: revision.context ?? body.context }) });
+      } else {
+        if (revision.action !== 'set_senses' || !snapshot.actions.includes('change_senses')) {
+          throw new VocabularyStateInputError('This card does not support that change');
+        }
+        runVocabularyIntakeCommand(snapshot.id, { clientActionId: `${turnId}:revision`, expectedVersion: snapshot.version,
+          versions: snapshot.versions, command: { type: 'set_senses', selection } });
+      }
+    }
+    return attachChatCardToTurn(turnId, snapshot.id);
+  });
 }
 
 export function completeIntakeContextMatch(card: ChatCard, targetSenseId: string | null, attention = notMatched): IntakeCardBody {

@@ -6,7 +6,9 @@ import { normalizeMandarinHanziLookup } from '../db/hanzi-lookup.ts';
 import { ChatConflictError, chatTurnAssistantText, findChatTurnByClientIdentity, listChatTurnCards, listRecentChatTurns, recoverInterruptedChatTurns, type ChatTurnStatus } from '../db/learner-chat.ts';
 import { getVocabularyLearnerWord, VocabularyStateInputError } from '../db/vocabulary-learners.ts';
 import { resolveVocabularyLearnerSenseScope } from '../db/vocabulary-learner-senses.ts';
-import { intakeConversationId, projectVocabularyIntakeCard, saveVocabularyIntakeCard, type IntakeCardDraft } from '../db/vocabulary-intake.ts';
+import { intakeConversationId, projectVocabularyIntakeCard, reviseVocabularyIntakeCard, saveVocabularyIntakeCard,
+  type IntakeCardDraft, type IntakeCardRevision } from '../db/vocabulary-intake.ts';
+import { vocabularyIntakeContext } from './intake-context.ts';
 import { VOCABULARY_INTAKE_SURFACE } from '../db/vocabulary-intake-pending.ts';
 import { queueVocabularyIntakeReadiness } from '../db/vocabulary-intake-readiness.ts';
 import { runHostedProviderWork } from '../hosted-runtime-controls.ts';
@@ -36,12 +38,20 @@ const cardParameters = object({
   selection: object({ senseIds, targetSenseId: nullableText, includeProposedSense: { type: 'boolean' } }),
   proposedSense: { anyOf: [{ type: 'null' }, object({ label: text, notes: { type: 'array', maxItems: 8, items: text } })] },
 });
+const revisionParameters = object({
+  cardId: text,
+  action: { type: 'string', enum: ['set_senses', 'undo', 'revise_proposal'] },
+  selection: { anyOf: [{ type: 'null' }, object({ senseIds, targetSenseId: nullableText, includeProposedSense: { type: 'boolean' } })] },
+  proposedSense: { anyOf: [{ type: 'null' }, object({ label: text, notes: { type: 'array', maxItems: 8, items: text } })] },
+  context: nullableText,
+});
 
-type IntakeCompletion = { explanation: string; action: { kind: 'answer' } | { kind: 'present_card'; card: IntakeCardDraft } };
+type IntakeCompletion = { explanation: string; action: { kind: 'answer' } | { kind: 'present_card'; card: IntakeCardDraft } | { kind: 'revise_card'; revision: IntakeCardRevision } };
 const completionParameters = object({
   explanation: { type: 'string', description: 'Nonempty learner-facing explanation, at most 2000 characters.' },
   action: { anyOf: [object({kind:{type:'string',enum:['answer']}}),
-    object({kind:{type:'string',enum:['present_card']},card:cardParameters})] },
+    object({kind:{type:'string',enum:['present_card']},card:cardParameters}),
+    object({kind:{type:'string',enum:['revise_card']},revision:revisionParameters})] },
 });
 
 type Lexical = { wordId: string; hanzi: string; traditional: string | null; pinyin: string; meaning: string; priority: number };
@@ -72,14 +82,15 @@ function find(value: string, kind: 'similar' | 'containing', gloss: string | nul
     .all(normalized, JSON.stringify(chars.map((_,i) => chars.filter((_,j) => j !== i).join(''))),
       JSON.stringify(signatures), glossHint, glossHint, glossHint, glossHint, normalized) as Lexical[];
 }
-function validatedDraft(value: JsonValue, userText: string, observed: Map<string, Lexical>): { draft: IntakeCardDraft; allowAutomatic: boolean } {
+function validatedDraft(value: JsonValue, userText: string, observed: Map<string, Lexical>, priorLearnerTexts: string[]): { draft: IntakeCardDraft; allowAutomatic: boolean } {
   const draft = value as unknown as IntakeCardDraft;
+  const sourceTexts = [...priorLearnerTexts, userText];
   const entry = observed.get(draft.wordId);
   if (!entry) throw new VocabularyStateInputError('The word must have been looked up in this turn');
-  if (draft.context !== null && (!draft.context.trim() || !userText.includes(draft.context))) {
+  if (draft.context !== null && (!draft.context.trim() || !sourceTexts.some(text => text.includes(draft.context!)))) {
     throw new VocabularyStateInputError('Context must be quoted from the learner request');
   }
-  if (draft.requestedLexeme !== null && (!hanzi(draft.requestedLexeme) || !userText.includes(draft.requestedLexeme))) {
+  if (draft.requestedLexeme !== null && (!hanzi(draft.requestedLexeme) || !sourceTexts.some(text => text.includes(draft.requestedLexeme!)))) {
     throw new VocabularyStateInputError('The requested spelling must be quoted from the learner request');
   }
   const matchedSpelling = draft.requestedLexeme === null ? [] : exact(draft.requestedLexeme);
@@ -150,6 +161,7 @@ export async function sendVocabularyIntakeTurn(input: {
   recoverVocabularyIntakeTurns();
   const previous = findChatTurnByClientIdentity(conversationId,input.clientTurnId,userRequest);
   if (previous) return replay(previous.id,previous.status);
+  const context = vocabularyIntakeContext(conversationId);
   const wake = () => {
     if (input.wake) setImmediate(() => {
       try { input.wake?.(); } catch { console.error('Vocabulary intake worker wake failed'); }
@@ -186,14 +198,29 @@ export async function sendVocabularyIntakeTurn(input: {
   const result = await runHostedProviderWork(() => runConversationTurn({
     conversationId, clientTurnId: input.clientTurnId, userRequest, provider, config, reads,
     request: { model: INTAKE_MODEL, maxOutputTokens: 2600, reasoningEffort: 'low', timeoutMs,
-      signal: AbortSignal.timeout(turnLifetimeMs), provenance: { promptName: 'vocabulary-intake-chat', promptVersion: '4.3', schemaVersion: '3' },
-      messages: [{ role: 'system', content: intakePrompt }, { role: 'user', content: input.text }] },
-    output: { name: 'complete_turn', description: 'Finish this turn with an explanation and either an answer or one actionable vocabulary card.',
+      signal: AbortSignal.timeout(turnLifetimeMs), provenance: { promptName: 'vocabulary-intake-chat', promptVersion: '5.4', schemaVersion: '4' },
+      messages: [{ role: 'system', content: intakePrompt }, ...context.messages, { role: 'user', content: input.text }] },
+    output: { name: 'complete_turn', description: 'Finish this turn with an explanation and an answer, a new vocabulary card, or a revision of one supplied current card.',
       parameters: completionParameters, complete: (value, turnId) => {
         const completion = value as unknown as IntakeCompletion;
         if (completion.action.kind === 'answer') return {explanation:completion.explanation,card:null};
-        const { draft, allowAutomatic } = validatedDraft(completion.action.card as unknown as JsonValue,input.text,observed);
-        return {explanation:completion.explanation,card:saveVocabularyIntakeCard(turnId,draft,allowAutomatic)};
+        if (completion.action.kind === 'present_card') {
+          const { draft, allowAutomatic } = validatedDraft(completion.action.card as unknown as JsonValue,input.text,observed,context.learnerTexts);
+          return {explanation:completion.explanation,card:saveVocabularyIntakeCard(turnId,draft,allowAutomatic)};
+        }
+        const revision = completion.action.revision;
+        const snapshot = context.cards.get(revision.cardId);
+        if (!snapshot) throw new VocabularyStateInputError('Choose a card from the supplied recent context');
+        if (revision.context !== null && (!revision.context.trim() || !input.text.includes(revision.context))) {
+          throw new VocabularyStateInputError('New context must be quoted from this learner message');
+        }
+        if (revision.proposedSense) {
+          const proposed = [revision.proposedSense.label, ...revision.proposedSense.notes].join(' ');
+          if (revision.context && revision.context.length > 16 && proposed.includes(revision.context)) {
+            throw new VocabularyStateInputError('Shared sense notes require a general example');
+          }
+        }
+        return {explanation:completion.explanation,card:reviseVocabularyIntakeCard(turnId,snapshot,revision)};
       } },
     publish: event => {
       if (event.kind === 'progress') input.publish({type:'progress',stage:event.stage});

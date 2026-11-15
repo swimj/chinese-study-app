@@ -26,6 +26,14 @@ before(async () => {
   const provider: ChatProvider = { async stream(request,_config,emit) {
     providerCalls++;
     if (request.messages.at(-1)?.content === 'Force terminal failure') throw new Error('Simulated provider failure');
+    if (request.messages.at(-1)?.content === 'Undo that add') {
+      const context = request.messages.find(message => message.role === 'user' && message.content.startsWith('{"contextOnly"'));
+      assert.ok(context);
+      const cardId = JSON.parse(context.content).cards[0].id;
+      await emit('I’ll undo that add.');
+      return { invocationId:null,responseId:null,usage:null,message:{role:'assistant',content:'I’ll undo that add.',
+        toolCalls:[{id:'revision',name:'complete_turn',arguments:JSON.stringify({explanation:'The add can be undone.',action:{kind:'revise_card',revision:{cardId,action:'undo',selection:null,proposedSense:null,context:null}}})}] } };
+    }
     const lookedUp = request.messages.some(message => message.role === 'tool');
     if (lookedUp) await emit('纠结 means feeling torn.');
     return { invocationId:null,responseId:null,usage:null,message:{role:'assistant',content:lookedUp ? '纠结 means feeling torn.' : '',
@@ -71,6 +79,21 @@ test('HTTP requires auth, streams public events, replays and isolates learners',
   const replay = await (await fetch(`${endpoint}/turns`,post)).text();
   assert.deepEqual(replay.split('\n\n').filter(Boolean).map(line=>JSON.parse(line.slice(6))),events.filter(event=>event.type!=='progress'));
   assert.equal(providerCalls,2);
+  const followup = { ...post, body:JSON.stringify({clientTurnId:'followup',text:'Undo that add'}) };
+  const followupPayload = await (await fetch(`${endpoint}/turns`,followup)).text();
+  const followupEvents = followupPayload.split('\n\n').filter(Boolean).map(line=>JSON.parse(line.slice(6)) as VocabularyIntakeStreamEvent);
+  assert.deepEqual(followupEvents.map(event=>event.type),['progress','completion','done']);
+  const revision = followupEvents[1];
+  if (revision.type !== 'completion') assert.fail('missing revised card');
+  const revised = revision.cards[0]; assert.ok(revised);
+  assert.equal(revised.id,card.id); assert.equal(revised.state,'proposed');
+  assert.equal(revised.version,card.version+1);
+  assert.deepEqual((await (await fetch(`${endpoint}/turns`,followup)).text()).split('\n\n').filter(Boolean).map(line=>JSON.parse(line.slice(6))),followupEvents.filter(event=>event.type!=='progress'));
+  assert.equal(providerCalls,3);
+  const history = await (await fetch(endpoint,{headers:alice})).json();
+  assert.equal(history.turns.length,2);
+  assert.ok(history.turns.every((turn: {cardIds:string[]})=>turn.cardIds[0]===card.id));
+  assert.deepEqual((await (await fetch(endpoint,{headers:bob})).json()).turns,[]);
   const operatorPath = endpoint.replace('/api/vocabulary/','/api/operator/vocabulary/')+'/findings';
   assert.equal((await fetch(operatorPath,{headers:alice})).status,403);
   process.env.APP_OPERATOR_CLERK_USER_IDS = 'user_alice';

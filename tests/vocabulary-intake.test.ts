@@ -8,9 +8,10 @@ import { createBaselineFixture } from './helpers/baseline-database.ts';
 import { setDb } from '../server/db/connection.ts';
 import { migrateDatabase } from '../server/db/migrations.ts';
 import { installLearnerContextSqlFunction, runWithLearnerId } from '../server/db/learner-context.ts';
-import { ChatConflictError, createChatCard, getChatTurn, startChatTurn } from '../server/db/learner-chat.ts';
+import { ChatConflictError, createChatCard, getChatTurn, getOrCreateChatConversation, startChatTurn } from '../server/db/learner-chat.ts';
 import { getVocabularyIntakeCard, intakeConversationId, listVocabularyIntakeCards, listVocabularyIntakeFindings,
-  projectVocabularyIntakeCard, runVocabularyIntakeCommand, type IntakeCardDraft } from '../server/db/vocabulary-intake.ts';
+  projectVocabularyIntakeCard, reviseVocabularyIntakeCard, runVocabularyIntakeCommand, type IntakeCardDraft, type IntakeCardRevision } from '../server/db/vocabulary-intake.ts';
+import { vocabularyIntakeContext } from '../server/vocabulary/intake-context.ts';
 import { hasPendingVocabularyIntakeMatch } from '../server/db/vocabulary-intake-pending.ts';
 import { createVocabularySense, establishVocabularySenseCatalog, getVocabularySenseCatalog, getVocabularySenses } from '../server/db/vocabulary-content.ts';
 import { getVocabularyWordSenseCoverage, writeVocabularyDefaultUsefulSenses } from '../server/db/vocabulary-sense-coverage.ts';
@@ -74,9 +75,9 @@ function trace(calls: Call[], onCall = () => {}): ChatProvider {
   return { async stream(_request,_config,onText) {
     onCall();
     const planned = calls[index++];
-    const call = !planned || planned.name === 'present_card'
+    const call = !planned || planned.name === 'present_card' || planned.name === 'revise_card'
       ? {name:'complete_turn',arguments:{explanation:'A short explanation.',action:planned
-        ? {kind:'present_card',card:planned.arguments} : {kind:'answer'}}} : planned;
+        ? planned.name === 'revise_card' ? {kind:'revise_card',revision:planned.arguments} : {kind:'present_card',card:planned.arguments} : {kind:'answer'}}} : planned;
     await onText('Uncommitted prose must stay hidden.');
     return { invocationId:null, responseId:null, usage:null, message: {
       role:'assistant',content:'Uncommitted prose must stay hidden.',
@@ -330,4 +331,147 @@ test('terminal explanation failure rolls back enrollment and cards and never exp
   assert.equal(getVocabularyLearnerWord('torn'),null);
   const history=getVocabularyIntakeHistory();assert.equal(history.cards.length,0);
   assert.equal(history.turns[0]?.assistantText,'');assert.equal(history.turns[0]?.status,'failed');
+}));
+
+function revision(card: VocabularyIntakeCard, action: IntakeCardRevision['action'],
+  selection: IntakeCardRevision['selection'] = null, extra: Partial<IntakeCardRevision> = {}): IntakeCardRevision {
+  return { cardId:card.id,action,selection,context:null,proposedSense:null,...extra };
+}
+const reviseCall = (value: IntakeCardRevision): Call => ({ name:'revise_card',arguments:value as unknown as JsonValue });
+
+test('follow-up uses recent prose and current card state, never another learner or old tool authority', async () => {
+  const first = await alice(()=>send('帮派',[lookup('帮派')],draft('gang','bare','帮派',select('gang-1','gang-2'))));
+  alice(()=>runVocabularyIntakeCommand(first.card!.id,request(first.card!,{type:'set_senses',selection:select('gang-2')},'manual')));
+  await bob(()=>send('私人说明',[lookup('具体')],draft('other','proposal',null,select('other-1'))));
+  await alice(async()=>{
+    let seen = false;
+    await sendVocabularyIntakeTurn({ clientTurnId:'why',text:'Why that meaning?',publish:()=>{},provider:{async stream(input) {
+      const serialized=JSON.stringify(input.messages);
+      assert.ok(serialized.includes('帮派'));assert.ok(serialized.includes('A short explanation.'));
+      assert.ok(!serialized.includes('私人说明'));assert.ok(!serialized.includes('providerOutput'));
+      const context=vocabularyIntakeContext(intakeConversationId());
+      assert.deepEqual(context.cards.get(first.card!.id)?.selection.senseIds,['gang-2']);
+      assert.equal(input.messages.at(-1)?.content,'Why that meaning?');seen=true;
+      return {invocationId:null,responseId:null,usage:null,message:{role:'assistant',content:'Ignored unfinished prose.',toolCalls:[{id:'answer',name:'complete_turn',arguments:JSON.stringify({explanation:'An explanation.',action:{kind:'answer'}})}]}};
+    }}});
+    assert.ok(seen);assert.deepEqual(getCard(first.card!.id).selection.senseIds,['gang-2']);
+    assert.equal(listVocabularyIntakeCards(false).length,1);
+  });
+});
+
+test('a conversational sense edit updates the same card in history and replays without another mutation', async()=>alice(async()=>{
+  const first=await send('帮派',[lookup('帮派')],draft('gang','bare','帮派',select('gang-1','gang-2')));
+  const next=await send('Only the second meaning',[reviseCall(revision(first.card!,'set_senses',select('gang-2')))]);
+  assert.equal(next.card?.id,first.card?.id);assert.deepEqual(next.card?.selection.senseIds,['gang-2']);
+  assert.equal(next.card?.version,first.card!.version+1);assert.equal(listVocabularyIntakeCards(false).length,1);
+  const history=getVocabularyIntakeHistory();
+  assert.equal(history.turns.filter(turn=>turn.cardIds.includes(first.card!.id)).length,2);
+  assert.ok(history.cards.every(card=>card.selection.senseIds.join(',')==='gang-2'));
+  const replay=await send('Only the second meaning',[]);
+  assert.equal(replay.card?.version,next.card?.version);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM learner_chat_commands').get()!.n,1);
+}));
+
+test('proposal selections and revised sense descriptions stay private until explicit Add', async()=>alice(async()=>{
+  const first=await send('蒸馏 in AI',[lookup('蒸馏')],draft('distil','proposal','蒸馏',select('distil-1'),{
+    proposedSense:{label:'Distil a model',notes:['Transfer capabilities into a smaller model.']}}));
+  const count=getVocabularySenses('distil').length;
+  const selected=await send('Only the AI meaning',[reviseCall(revision(first.card!,'set_senses',{
+    senseIds:[],targetSenseId:null,includeProposedSense:true}))]);
+  assert.equal(selected.card?.state,'proposed');assert.equal(getVocabularyLearnerWord('distil'),null);
+  const clarified=await send('I mean knowledge transfer in model training',[reviseCall(revision(selected.card!,'revise_proposal',{
+    senseIds:[],targetSenseId:null,includeProposedSense:true},{proposedSense:{label:'Transfer knowledge into a smaller model',notes:['技术上称为模型蒸馏。']}}))]);
+  assert.equal(clarified.card?.id,first.card?.id);assert.equal(clarified.card?.state,'proposed');
+  assert.equal(getVocabularySenses('distil').length,count);assert.equal(getVocabularyLearnerWord('distil'),null);
+  runVocabularyIntakeCommand(clarified.card!.id,request(clarified.card!,{type:'add',selection:clarified.card!.selection},'explicit-add'));
+  assert.equal(getVocabularySenses('distil').length,count+1);
+}));
+
+test('explicit conversational Undo has the same learner-only effects and invalidation as the button', async()=>alice(async()=>{
+  const first=await send('帮派',[lookup('帮派')],draft('gang','bare','帮派',select('gang-1','gang-2')));
+  const count=getVocabularySenses('gang').length;
+  const undone=await send('Undo that add',[reviseCall(revision(first.card!,'undo'))]);
+  assert.equal(undone.card?.id,first.card?.id);assert.equal(undone.card?.state,'proposed');
+  assert.equal(getVocabularyLearnerWord('gang'),null);assert.equal(getVocabularySenses('gang').length,count);
+  await assert.rejects(send('Undo it again',[reviseCall(revision(undone.card!,'undo'))]),/cannot be undone/);
+}));
+
+test('a card edited while the model responds cannot be overwritten by the conversational revision', async()=>alice(async()=>{
+  const first=await send('帮派',[lookup('帮派')],draft('gang','bare','帮派',select('gang-1','gang-2')));
+  const provider=trace([reviseCall(revision(first.card!,'set_senses',select('gang-2')))],()=>{
+    runVocabularyIntakeCommand(first.card!.id,request(first.card!,{type:'set_senses',selection:select('gang-1')},'concurrent'));
+  });
+  await assert.rejects(sendVocabularyIntakeTurn({clientTurnId:'stale-reply',text:'Only the second sense',provider,publish:()=>{}}),/changed while/);
+  assert.deepEqual(getCard(first.card!.id).selection.senseIds,['gang-1']);
+  assert.equal(getVocabularyIntakeHistory().turns.find(turn=>turn.userText==='Only the second sense')?.cardIds.length,0);
+}));
+
+test('follow-up card IDs and unsupported Add actions cannot bypass ownership or confirmation', async()=>{
+  const first=await alice(()=>send('帮派',[lookup('帮派')],draft('gang','bare','帮派',select('gang-1','gang-2'))));
+  await bob(async()=>{
+    await assert.rejects(send('Undo that add',[reviseCall(revision(first.card!,'undo'))]),/supplied recent context/);
+    assert.equal(listVocabularyIntakeCards(false).length,0);
+  });
+  await alice(async()=>{
+    const bad={...revision(first.card!,'undo'),action:'add'};
+    await assert.rejects(send('Yes add it',[{name:'revise_card',arguments:bad as unknown as JsonValue}]),/Invalid complete_turn/);
+    assert.ok(getVocabularyLearnerWord('gang'));
+    await assert.rejects(send('Use an invented sense',[reviseCall(revision(first.card!,'set_senses',select('other-1')))]),/active senses/);
+  });
+});
+
+test('revision and durable turn attachment roll back together if the turn is from another surface', async()=>alice(async()=>{
+  const first=await send('帮派',[lookup('帮派')],draft('gang','bare','帮派',select('gang-1','gang-2')));
+  const turn=startChatTurn(getOrCreateChatConversation('other-surface'),'wrong-surface',{}).turn;
+  assert.throws(()=>reviseVocabularyIntakeCard(turn.id,first.card!,revision(first.card!,'set_senses',select('gang-2'))),/running conversation/);
+  assert.deepEqual(getCard(first.card!.id).selection.senseIds,['gang-1','gang-2']);
+  assert.equal(getCard(first.card!.id).version,first.card!.version);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM learner_chat_commands').get()!.n,0);
+}));
+
+test('recovery recognizes a committed revision and reconnect returns its original card identity', async()=>alice(async()=>{
+  const first=await send('帮派',[lookup('帮派')],draft('gang','bare','帮派',select('gang-1','gang-2')));
+  const turn=startChatTurn(intakeConversationId(),'crashed-revision',{text:'Only the second meaning'}).turn;
+  reviseVocabularyIntakeCard(turn.id,first.card!,revision(first.card!,'set_senses',select('gang-2')));
+  db.prepare("UPDATE learner_chat_turns SET created_at='2026-01-01' WHERE id=?").run(turn.id);
+  recoverVocabularyIntakeTurns();assert.equal(getChatTurn(turn.id)?.status,'completed');
+  const replay=await send('Only the second meaning',[],undefined,'crashed-revision');
+  assert.equal(replay.card?.id,first.card?.id);assert.deepEqual(replay.card?.selection.senseIds,['gang-2']);
+}));
+
+test('retained follow-up context has bounded recent messages and live card count',async()=>alice(async()=>{
+  for(let i=0;i<9;i++){
+    const result=await send(`message-${i}`,[lookup('帮派')],draft('gang','proposal',null,select('gang-1')),`bounded-${i}`);
+    db.prepare('UPDATE learner_chat_turns SET created_at=? WHERE id=?').run(`2026-01-${String(i+1).padStart(2,'0')}`,result.turnId);
+  }
+  const context=vocabularyIntakeContext(intakeConversationId());
+  assert.equal(context.cards.size,4);
+  const text=JSON.stringify(context.messages);
+  assert.ok(!text.includes('message-0'));assert.ok(text.includes('message-8'));
+  assert.ok(text.length<34_000);
+}));
+
+
+test('clarifications can quote recent learner spelling and context without gaining automatic add authority', async()=>alice(async()=>{
+  await send('接发 — tennis',[]);
+  const clarified = await send('The return itself',[lookup('接发球')],
+    draft('return','larger_expression','接发',select('return-1'),{context:'tennis'}));
+  assert.equal(clarified.card?.state,'proposed'); assert.equal(getVocabularyLearnerWord('return'),null);
+  await send('纠结',[]);
+  const fragment = await send('Yes, that word',[lookup('纠结')],draft('torn','bare','纠结',select('torn-1')));
+  assert.equal(fragment.card?.state,'proposed'); assert.equal(getVocabularyLearnerWord('torn'),null);
+  await assert.rejects(send('Invented earlier spelling',[lookup('具体')],draft('other','proposal','具体',select('other-1'))),/quoted from the learner/);
+}));
+
+
+test('failed final persistence rolls back a conversational revision, its receipt and turn attachment', async()=>alice(async()=>{
+  const first=await send('帮派',[lookup('帮派')],draft('gang','bare','帮派',select('gang-1','gang-2')));
+  db.exec(`CREATE TRIGGER reject_revision_completion BEFORE INSERT ON learner_chat_events
+    WHEN json_extract(NEW.event_json,'$.kind')='completion' BEGIN SELECT RAISE(ABORT,'completion rejected'); END`);
+  await assert.rejects(send('Only the second meaning',[reviseCall(revision(first.card!,'set_senses',select('gang-2')))]),/completion rejected/);
+  assert.equal(getCard(first.card!.id).version,first.card!.version);
+  assert.deepEqual(getCard(first.card!.id).selection.senseIds,['gang-1','gang-2']);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM learner_chat_commands').get()!.n,0);
+  const failed=getVocabularyIntakeHistory().turns.find(turn=>turn.userText==='Only the second meaning')!;
+  assert.equal(failed.status,'failed'); assert.equal(failed.assistantText,''); assert.deepEqual(failed.cardIds,[]);
 }));
