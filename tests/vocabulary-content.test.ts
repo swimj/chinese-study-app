@@ -32,6 +32,11 @@ beforeEach(() => {
   db.exec(fs.readFileSync(new URL('../server/db/migrations/0039_vocabulary_content.sql', import.meta.url),'utf8'));
   db.exec(fs.readFileSync(new URL('../server/db/migrations/0062_vocabulary_sense_coverage.sql', import.meta.url),'utf8'));
   db.exec(fs.readFileSync(new URL('../server/db/migrations/0064_vocabulary_default_useful_senses.sql', import.meta.url),'utf8'));
+  // General serving now reads learner scope; no enrollment is needed to follow shared defaults.
+  db.exec(fs.readFileSync(new URL('../server/db/migrations/0041_vocabulary_learner_state.sql', import.meta.url),'utf8').split('-- Do not use the words view:')[0]!);
+  for (const file of ['0047_vocabulary_dismissal.sql','0052_vocabulary_automatic_promotion_pause.sql']) {
+    db.exec(fs.readFileSync(new URL(`../server/db/migrations/${file}`,import.meta.url),'utf8'));
+  }
   setDb(db);
 });
 afterEach(() => {

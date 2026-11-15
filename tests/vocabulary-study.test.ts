@@ -1,3 +1,5 @@
+import { resolveVocabularyLearnerSenseScope, writeVocabularyLearnerSenseScope } from '../server/db/vocabulary-learner-senses.ts';
+import { isVocabularyProductionProxied } from '../server/vocabulary/production-coverage.ts';
 import { createHash } from 'node:crypto';
 import type { Express, Request, Response } from 'express';
 import { registerVocabularyStudyRoutes } from '../server/vocabulary/study-routes.ts';
@@ -1680,4 +1682,30 @@ test('a missed review is pressing: it returns after a short rest and keeps unsta
   assert.equal(view.session.projection.words[missed!].covered,true);
   assert.ok(returnedAfter>=1,'the miss came back after other cards');
   assert.equal(view.session.projection.words.new.admitted,true,'new words open once pressing work clears');
+}));
+
+
+test('scope changes leave retained production pools intact and use fallback when shared targeted coverage is excluded',()=>owner(()=>{
+  for (const senseId of ['scope-default','scope-custom']) createVocabularySense({senseId,wordId:'b',description:{label:senseId}},actor);
+  establishVocabularySenseCatalog('b',getVocabularySenseCatalog('b').version,actor);
+  writeVocabularyDefaultUsefulSenses('b',0,['scope-default'],actor);
+  createVocabularyContent({contentId:'scope-targeted',kind:'exercise',payloadVersion:1,body:{prompt:'Retrieve second'},
+    accessScope:'shared',availability:'active',originKind:'human',words:[{wordId:'b',relation:'target',senseId:'scope-default',senseMappingEstablishedAt:new Date().toISOString()}],
+    exerciseType:'word',skill:'production',exerciseRole:'general',assessment:{match:'prepared'},answers:[{wordId:'b',acceptedForms:['乙']}]},actor);
+  exercise('scope-pure','b','general',true);
+  const retained=createVocabularySession({sessionId:'scope-before',words:[{wordId:'b',mode:'practice',selectedSkill:'production'}],reviewOrder:[]});
+  const frozen=JSON.stringify(retained.context.payload);
+  const scope=resolveVocabularyLearnerSenseScope('b');
+  writeVocabularyLearnerSenseScope('b',{senseIds:['scope-custom'],expectedStateVersion:scope.stateVersion!,expectedCatalogVersion:scope.catalogVersion,
+    expectedSelectionVersion:scope.selectionVersion,surface:'test'});
+  assert.equal(isVocabularyProductionProxied('b'),false,'shared targeted coverage stays independent of the learner exclusion');
+  setDb(db);
+  assert.equal(nextVocabularyExercise('scope-before','next').currentEncounter?.snapshot.contentId,'scope-targeted');
+  assert.equal(JSON.stringify(retained.context.payload),frozen);
+  const fresh=createVocabularySession({sessionId:'scope-after',words:[{wordId:'b',mode:'practice',selectedSkill:'production'}],reviewOrder:[]});
+  const pool=fresh.context.payload!.words.b.general.practice;
+  assert.ok(!pool.some(content=>content.contentId==='scope-targeted'));
+  const served=nextVocabularyExercise('scope-after','next').currentEncounter!;
+  assert.equal(served.snapshot.kind,'production');
+  assert.match(served.snapshot.contentId,/baseline/);
 }));

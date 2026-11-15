@@ -21,7 +21,7 @@ import { createTimedSessionRecord, getDailyStudyMinutes, markTimedGateHeld, read
 import { chooseTimedTarget } from './timed-selection.ts';
 import { PRESSING_SKIP_DAYS, TIMED_SESSION_EXTENSION_MS, timedTargetKey, type VocabularyTimedSessionContext } from '../../src/domain/timed-session.ts';
 import { planVocabularyPureCues } from './pure-cue-serving.ts';
-import { hasExplicitlyEmptyProductionDefaults, isVocabularyProductionProxied } from './production-coverage.ts';
+import { hasExplicitlyEmptyProductionScope, isVocabularyProductionProxied } from './production-coverage.ts';
 import { isVocabularyDefinitionFallback } from '../../src/domain/vocabulary-production-coverage.ts';
 import { ensureVocabularySensesFromBootstrap } from './sense-readiness.ts';
 import { requireLearnerId } from '../db/learner-context.ts';
@@ -88,7 +88,7 @@ function contrastEligible(content:VocabularyContent,wordId:string):boolean {
   });
 }
 function availableGeneral(wordId:string,mode:'solidify'|'practice'|'maintain'):VocabularyContent[] {
-  const allowProduction=mode==='solidify'||!hasExplicitlyEmptyProductionDefaults(wordId);
+  const allowProduction=mode==='solidify'||!hasExplicitlyEmptyProductionScope(wordId);
   const allowFallback=allowProduction&&(mode==='solidify'||!isVocabularyProductionProxied(wordId));
   let pool=listVocabularyExercises({wordId,mode}).filter((entry)=>eligible(entry)&&entry.kind==='exercise'&&entry.exerciseType!=='pure_cue'
     // Scope repair retains old baseline identities. Only serve this learner's

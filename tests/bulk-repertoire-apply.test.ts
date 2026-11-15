@@ -195,7 +195,7 @@ test('in-flight automatic authoring retains its real attempt but cannot duplicat
 
 test('legacy practice uses new repertoire while Maintain keeps its uncurated dictionary fallback',async()=>{
   establish(true);const baselineId='vocabulary:baseline:v1:shared:production:general:w1';fallback(baselineId);
-  db.exec("INSERT INTO learner_senses(learner_id,word_id,sense_id,disposition) VALUES ('alice','w1','greeting','excluded')");
+  db.exec("INSERT INTO learner_senses(learner_id,word_id,sense_id,disposition) VALUES ('bob','w1','greeting','excluded')");
   const historicalScopes=db.prepare('SELECT * FROM learner_senses').all();const {result}=await generate();const receipt=await applyBulkRepertoireWord(result,authority);
   runWithLearnerId('alice',()=>{
     const practice=composeVocabularySessionPayload({sessionId:'practice',words:[{wordId:'w1',mode:'practice',selectedSkill:'production'}]});

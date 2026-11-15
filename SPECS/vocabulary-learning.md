@@ -51,6 +51,29 @@ Learner encounters, reactions, personal notes and progress remain private. Share
 content carries no authority to expose that history. An exact encounter retains
 the material, answer space, criteria, and mapping context actually served.
 
+## Learner sense scope
+
+A learner follows the shared default sense selection unless they take up or
+exclude an active sense. Their effective set contains taken-up senses and default
+senses they have not excluded. Returning a sense to following the default removes
+that override. A confirmation stores only deviations from the defaults, plus the
+context's target sense as taken up even when it is a default. A learner cannot
+confirm an empty set; unknown inventory or defaults must resolve before a set can
+be confirmed.
+
+Choices are private and bound to sense identity. Retired senses leave the effective
+set while their learner rows remain history; reconciliation never transfers a choice
+to a replacement identity. Later default edits affect only senses the learner is
+following. Choosing senses changes future mapped general production exercises,
+without retiring shared content, rewriting retained sessions, changing word-level
+mode or schedules, or reteaching an already taught word. Unmapped and fallback
+exercises remain available under the usual admission rules. Recognition, contrast,
+pure-cue qualification and shared production proxy coverage retain their own policy.
+
+Shared proxy coverage can still report targeted content when the learner has excluded
+its only mapped sense. In that case the targeted cue is filtered and word-level
+fallback can serve; the exclusion does not turn the word into a shared pure-cue proxy.
+
 ## Learner mode and selection
 
 Production mode belongs to the learner–word relationship:
@@ -115,10 +138,11 @@ answer when another eligible member qualifies that cue. The initial vocabulary
 UI and reflection proposal contracts do not create or reverse suppression;
 existing suppression records remain effective under these semantics.
 
-An explicit empty shared default sense selection also makes individual-word
-production ineligible in Practice and Maintain for all learners, including
-dictionary fallback and authored exercises. Unknown defaults retain legacy
-eligibility. Recognition, contrast, and pure cues have their own eligibility.
+An established empty effective sense set makes individual-word production ineligible
+in Practice and Maintain, including dictionary fallback and authored exercises. A
+learner can take up a sense even when the shared defaults are explicitly empty.
+Unknown defaults retain legacy eligibility with explicit learner choices applied.
+Recognition, contrast, and pure cues have their own eligibility.
 
 New teaching and Solidify practise both recognition and production, regardless of
 review skill enablement or suppression. Review settings are preserved for later
