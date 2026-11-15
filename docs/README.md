@@ -44,6 +44,7 @@ particular components or algorithms.
   authority, retained evidence, atomic completion, content identity and application.
 - [Stability frontier](../STABILITY_FRONTIER.md): cross-cutting constraints and
   unsettled decisions; it summarizes boundaries rather than replacing their owners.
+- [Chat runtime](chat-runtime.md): private conversation storage, streaming tool calls, and card-command integration.
 - [Service boundary](private-beta-service-boundary.md): identity, ownership,
   persistence and operational trust. Its historical storage inventory is explicitly
   scoped; other mixed responsibilities remain in the gap inventory below.

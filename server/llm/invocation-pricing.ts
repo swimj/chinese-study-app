@@ -21,24 +21,28 @@ export function priceInvocationUsage(input: {
   provider: string; model: string; usage: unknown; reportedAt: string;
 }): InvocationSpend {
   const usage = object(input.usage);
-  const promptDetails = object(usage.prompt_tokens_details);
-  const completionDetails = object(usage.completion_tokens_details);
+  const inputCount = usage.prompt_tokens ?? usage.input_tokens;
+  const outputCount = usage.completion_tokens ?? usage.output_tokens;
+  const inputDetails = usage.prompt_tokens_details ?? usage.input_tokens_details;
+  const outputDetails = usage.completion_tokens_details ?? usage.output_tokens_details;
+  const promptDetails = object(inputDetails);
+  const completionDetails = object(outputDetails);
   const normalized: NormalizedTokenUsage = {
-    inputTokens: nonnegative(usage.prompt_tokens),
+    inputTokens: nonnegative(inputCount),
     cachedInputTokens: nonnegative(usage.prompt_cache_hit_tokens) ?? nonnegative(promptDetails.cached_tokens),
     cacheWriteInputTokens: input.provider === 'openai' ? nonnegative(promptDetails.cache_write_tokens) : null,
-    outputTokens: nonnegative(usage.completion_tokens),
+    outputTokens: nonnegative(outputCount),
     reasoningTokens: nonnegative(completionDetails.reasoning_tokens),
     totalTokens: nonnegative(usage.total_tokens),
   };
   const reportedCostUsd = input.provider === 'openrouter' ? nonnegative(usage.cost) : null;
   const writes = normalized.cacheWriteInputTokens ?? 0;
   const luna = input.provider === 'openai' && input.model === 'gpt-6-luna';
-  const validLunaDetails = !luna || [usage.prompt_tokens_details, usage.completion_tokens_details]
+  const validLunaDetails = !luna || [inputDetails, outputDetails]
     .every(value => value === undefined || value === null
       || (typeof value === 'object' && !Array.isArray(value)));
   // Do not turn malformed explicit token categories into a zero-charge category.
-  const validLunaCounts = !luna || [usage.prompt_tokens, usage.completion_tokens,
+  const validLunaCounts = !luna || [inputCount, outputCount,
     usage.prompt_cache_hit_tokens, promptDetails.cached_tokens, promptDetails.cache_write_tokens]
     .every(value => value === undefined || value === null || (Number.isSafeInteger(value) && Number(value) >= 0));
   const validUsage = validLunaDetails && validLunaCounts
