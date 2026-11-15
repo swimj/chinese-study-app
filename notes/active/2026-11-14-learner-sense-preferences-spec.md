@@ -16,9 +16,10 @@ word because of one sentence should be able to confirm the senses they want,
 with the sense they met highlighted. It is also useful alone, because today
 every learner studies the same shared selection.
 
-Nothing here is settled. The [decisions](#decisions-for-justin) section lists
-what Justin needs to choose; the rest describes the design that follows from
-the recommended options. No application code has been written.
+Three points of direction are [settled](#settled-with-justin-2026-11-14). The
+[decisions](#decisions-for-justin) section lists what Justin still needs to
+choose; where a section depends on an open decision it says so. No application
+code has been written.
 
 ## Goal and stance
 
@@ -31,6 +32,27 @@ the recommended options. No application code has been written.
   has already happened.
 - Scheduling and mode stay at word level in this deliverable.
 - Retained sessions and history are untouched.
+
+## Settled with Justin (2026-11-14)
+
+1. **Teaching is authored per sense set.** A teaching package covers a word and
+   a specific set of senses, and is shared by every learner with that set. The
+   default set keeps today's package. A learner-chosen sense is never tacked on
+   to another set's package as a bare definition, and an excluded default sense
+   is not taught, because it is not in the learner's set. One coherent package
+   per set keeps the bridging between senses that current teaching does well.
+2. **Repertoire bootstrap looks for missing senses across sets.** Demand for
+   general exercises covers senses that learners have taken up, not only the
+   shared defaults. A learner excluding a sense never deletes or retires an
+   exercise, because content is shared.
+3. **Session composition considers the learner's sense set** as well as the
+   shared default. Composition is expected to move toward working from a
+   snapshot of learner state, so finer-grained reasoning there is acceptable.
+
+Per-learner generated teaching, which could use what is known about the
+learner, was considered and set aside for now. It would be the first
+learner-private authored content, it cannot be improved by other learners'
+reactions or operator repair, and it would test two changes at once.
 
 ## Current state (verified in code on 2026-11-14)
 
@@ -59,6 +81,18 @@ the recommended options. No application code has been written.
 | The introduction renders its uses as a list, one block per use. | `src/features/word-introduction/WordIntroductionExperience.tsx:160` |
 | Each served encounter retains the sense its exercise was mapped to. | `server/vocabulary/study.ts:141` |
 | The answer reveal shows the mapped sense when there is one. This is the only place a learner sees a sense today. | `SPECS/vocabulary-learning.md:231-234`; `server/vocabulary/reveal-snapshot.ts:28-30` |
+
+### How teaching is keyed today
+
+| Fact | Evidence |
+| --- | --- |
+| A word has exactly one current bootstrap document and teaching package: `word_introduction_preparation` is keyed by `word_id` alone. | `server/db/migrations/0016_word_introduction_content.sql:96-110` |
+| Preparation work is unique per word and stage. | `server/db/migrations/0018_word_preparation_work.sql:2-15` |
+| Several documents and packages per word can be stored; only one is current. | `server/db/migrations/0016_word_introduction_content.sql:68-87`; `server/db/word-introductions.ts:577-581` |
+| The bootstrap document is authored against the shared selection captured at that moment. | `server/word-content/shared-preparation.ts:37-50` |
+| Teaching readiness is resolved from the word alone, for the reserve and for composition. | `server/vocabulary/teaching-readiness.ts:35-47`; `server/vocabulary/preparation-reserve.ts:28-31`; `server/vocabulary/study.ts:233` |
+| Repertoire demand computes missing senses from the shared selection only. | `server/db/proactive-repertoire.ts:59-90` |
+| Coverage changes never imply retiring an exercise. | `SPECS/vocabulary-architecture.md:280` |
 
 ### How an inventory comes to exist
 
@@ -156,7 +190,7 @@ sentence, with three outcomes:
 | Outcome | Panel | Record |
 | --- | --- | --- |
 | Matches a sense | That sense is highlighted and selected, in addition to the defaults | Written as taken up on confirm |
-| Matches no listed sense | Defaults selected, nothing highlighted | See [decision 6](#decisions-for-justin) |
+| Matches no listed sense | Defaults selected, nothing highlighted | See [decision 9](#decisions-for-justin) |
 | Unclear | Defaults selected, nothing highlighted | The sentence is kept |
 
 The prompt should descend from the existing sense-mapping prompt and follow
@@ -186,11 +220,12 @@ itself after a search add is [decision 5](#decisions-for-justin).
 | Consumer | Today | This deliverable | Why |
 | --- | --- | --- | --- |
 | Mapped general production serving | Shared selection | **Uses effective scope** | This is where a learner's choice is felt. |
+| Teaching package | One current package per word, over the shared selection | **One package per word and sense set; a learner is taught from their set's package** | Settled point 1. |
+| Teaching readiness, reserve and composition | Resolved from the word | **Resolved from the word and the learner's set** | Settled point 3. |
+| General exercise authoring demand | Missing senses within the shared selection | **Missing senses across the shared selection and every taken-up sense** | Settled point 2. |
+| Exercise retirement | Never implied by coverage changes | Unchanged; a learner exclusion never retires content | Settled point 2. |
 | Unmapped and fallback production exercises | Served regardless of sense | Unchanged | They carry no sense to filter on. |
 | Answer reveal | Shows mapped sense | Unchanged | It already shows the right thing. |
-| Teaching introduction | Shared document over the captured selection | **Hides excluded uses; adds taken-up senses as dictionary-style entries** | See [decision 7](#decisions-for-justin). |
-| Teaching exercises | Bound to the introduction | Skips exercises mapped to an excluded sense, if at least one recognition and one production exercise remain | Keeps the existing completeness rule (`server/vocabulary/teaching-readiness.ts:35-44`). |
-| General exercise authoring demand | Driven by the shared selection | **Also driven by senses a learner has taken up** | Otherwise a taken-up sense has nothing to practise. See [decision 9](#decisions-for-justin). |
 | Recognition | Word level | Deferred | It has no sense binding today. |
 | Contrast | Word level | Deferred | Same. |
 | Pure cues | Shared selection | Deferred | Accepted answers are shared content; per-learner qualification is a separate policy. |
@@ -200,51 +235,55 @@ itself after a search add is [decision 5](#decisions-for-justin).
 
 One known edge from deferring proxy coverage: if a learner excludes the only
 sense that has targeted cues, their cues are filtered while the word is still
-treated as covered by targeted content. The first PR needs a test that shows
-what the learner is then served.
+treated as covered by targeted content. The scope-model PR needs a test that
+shows what the learner is then served.
 
-### A new sense on a word already in Practice or Maintain
+### Teaching per sense set
 
-The whiteboard's answer is a sense-specific override that gives the new sense
-teaching while the word stays in its mode. That needs sense-level state this
-deliverable does not introduce. The smaller proposal:
+- A set is the learner's effective scope for the word at the time teaching is
+  prepared: a sorted list of active sense IDs.
+- The default set is the shared selection. Its package is today's package, and
+  learners who follow the defaults see no change.
+- A learner whose set differs is taught from a package authored for that set.
+  The first learner with a given set causes it to be authored; later learners
+  with the same set reuse it.
+- Each package is authored as a whole, with its own bootstrap document,
+  introduction and teaching exercises, so it can bridge its senses.
+- Packages are shared content. They carry no learner reference, and they stay
+  inside the existing publication, reaction and repair paths.
+- A word with a non-default set is not teaching-ready for that learner until
+  its package exists. It waits in the stash, as any unprepared word does.
+- Teaching completion stays all-or-nothing, and teaching history records which
+  package was used, as it does today.
 
-- The panel is the teaching moment: it shows the sense's label and notes, and
-  the learner's sentence when there is one.
-- Taking up a sense requests the existing temporary refresh, which changes
-  scheduling without changing mode (`SPECS/vocabulary-learning.md:63`).
-- While the refresh is active, selection prefers exercises mapped to the new
-  sense.
-- If no exercise for that sense exists yet, authoring demand is recorded and
-  the word continues as before until content arrives.
+What must change in the code to support this:
 
-This is [decision 8](#decisions-for-justin).
+- Preparation state and work are keyed by word today. They need a set
+  dimension, which is a schema change.
+- The bootstrap step captures the shared selection. It needs to accept a
+  requested set.
+- Teaching readiness, the reserve and composition take the learner's set.
+- Compatibility checks that ask "is this the word's current package" become
+  "is this the current package for this set".
 
-### What this needs from teaching, and what it leaves alone
+What stays as it is: the beat sequence, back-navigation and recap; the
+authoring prompts, apart from receiving a different set of senses; the rule
+that a package needs at least one production and one recognition exercise.
 
-Needed:
+### A sense changed after the word has been taught
 
-- The introduction can omit a use, and can show a sense that has no authored
-  use as a plain dictionary-style entry. The whiteboard already calls the
-  dictionary-style sense and example list the baseline teaching material
-  (`notes/active/2026-10-15-vocabulary-model-whiteboard.md:182`).
-
-Left alone:
-
-- The shared introduction document, its authoring, and its coherence with its
-  exercises.
-- The beat sequence, back-navigation and recap.
-- All-or-nothing teaching completion.
-- Composable beats assembled per sense. That is the better long-term answer to
-  a taken-up sense and is welcome, but it is a teaching redesign, not a
-  prerequisite here.
+Per-set teaching answers the unstudied case. It does not by itself answer what
+happens when a learner takes up a sense on a word already in Solidify,
+Practice or Maintain, or excludes one. This is
+[decision 7](#decisions-for-justin).
 
 ## Data and migration
 
-`learner_senses` is sufficient for the model above. It stores exactly the two
-dispositions the model needs, and "no row" carries the third.
+The work splits in two.
 
-What it lacks, and how each gap can be covered without a schema change:
+**Scope model, panel and add-time flow need no migration.** `learner_senses`
+stores exactly the two dispositions the model needs, and "no row" carries the
+third. Its gaps can be covered with what exists:
 
 | Gap | Cover |
 | --- | --- |
@@ -255,17 +294,17 @@ What it lacks, and how each gap can be covered without a schema change:
 | Bootstrap requested by an add | A queued row in the existing `vocabulary_sense_readiness` table |
 | The resolved target sense | Computed when the panel opens and written only on confirm |
 
-So the deliverable can ship with **no migration**, which keeps it on the
-application-only upgrade route (`docs/ops/hosted-beta-deployment.md:85`).
+That part can ship on the application-only upgrade route
+(`docs/ops/hosted-beta-deployment.md:85`).
 
-What a migration would add, if wanted:
+**Per-set teaching needs a migration.** Preparation state and work gain a set
+key, and existing rows become the default set for their word. This is a
+schema-changing release with the quiesce, recovery-point and rehearsal
+procedure. It must preserve every existing package, its publication record and
+all teaching history.
 
-- `created_at`, `updated_at` and `source` columns on `learner_senses`.
-- A table recording each target-sense resolution, so the result survives a
-  closed panel and can be audited against its model invocation.
-
-Either makes the release schema-changing, with the quiesce, recovery-point and
-rehearsal procedure. This is [decision 10](#decisions-for-justin).
+Whether the scope-model part should also take a migration for timestamps and a
+resolution record is [decision 8](#decisions-for-justin).
 
 Ownership: `learner_senses` is already registered as learner-private
 (`server/db/ownership-manifest.ts:85`). New reads and writes must go through the
@@ -273,19 +312,25 @@ learner context and be covered by an isolation test.
 
 ## Delivery
 
-A Graphite stack of four PRs. The first three are what the reading interface
-needs; the fourth is what makes a taken-up sense worth choosing.
+A Graphite stack of five PRs. The first three are what the reading interface
+needs to offer the confirmation; the last two make a custom set fully real.
 
-| PR | Contents | Learner-visible |
-| --- | --- | --- |
-| 1. Scope model | Contract text; effective-scope resolver in `server/db/`; read and write commands with version checks; `GET` and `PUT` for a word's senses; serving filter switched to effective scope | No |
-| 2. Sense panel | The panel on stash and My Words rows for established inventories; confirm, reset to default; pending and unavailable states | Yes |
-| 3. Add-time flow | Add accepts a context sentence; bootstrap requested on add; target-sense resolution and its prompt; highlighted target | Yes |
-| 4. Follow-through | Authoring demand from taken-up senses; introduction omits excluded uses and lists taken-up senses; refresh and preference on Practice and Maintain words | Yes |
+| PR | Contents | Learner-visible | Migration |
+| --- | --- | --- | --- |
+| 1. Scope model | Contract text; effective-scope resolver in `server/db/`; read and write commands with version checks; `GET` and `PUT` for a word's senses; general serving filter switched to effective scope | No | No |
+| 2. Sense panel | The panel on stash and My Words rows for established inventories; confirm, reset to default; pending and unavailable states | Yes | No |
+| 3. Add-time flow | Add accepts a context sentence; bootstrap requested on add; target-sense resolution and its prompt; highlighted target | Yes | No |
+| 4. Repertoire demand across sets | Missing-sense demand includes taken-up senses; no retirement from exclusion | No | No |
+| 5. Teaching per set | Set-keyed preparation, reserve readiness and composition; authoring for a requested set | Yes | Yes |
 
-Contract changes land with PR 1: a learner-scope section in
+Between PR 1 and PR 5, a learner with a non-default set on an unstudied word
+has no package for it. How that interim behaves is
+[decision 6](#decisions-for-justin).
+
+Contract changes land with PR 1 and PR 5: a learner-scope section in
 `SPECS/vocabulary-learning.md`, a fourth record beside the three in
-`SPECS/vocabulary-architecture.md`, and the frontier's content assumption.
+`SPECS/vocabulary-architecture.md`, the per-set teaching rule, and the
+frontier's content assumption.
 
 ### Tests
 
@@ -302,8 +347,13 @@ Contract changes land with PR 1: a learner-scope section in
 - Add with a context stores the sentence; a failed bootstrap leaves the word
   stashed and following defaults.
 - Target resolution rejects a sense that is not an active sense of the word.
-- Composition and completion coverage, per the testing map, for the teaching
-  changes in PR 4.
+- Demand: a taken-up sense with no exercise creates demand; an exclusion
+  creates none and retires nothing.
+- Per-set teaching: two learners with the same set share one package; a
+  learner on the default set is unaffected by another learner's set; a word
+  whose set package is missing is not admitted; the migration preserves
+  existing packages and history.
+- Composition and completion coverage, per the testing map, for PR 5.
 
 ### Evaluation
 
@@ -315,6 +365,9 @@ Contract changes land with PR 1: a learner-scope section in
   and keyboard-only use.
 - A prompt comparison for target resolution on real sentences, including
   sentences that match no listed sense.
+- A comparison of packages authored for a default set and for a custom set of
+  the same word, judged for whether the custom package still bridges its
+  senses.
 
 ## Decisions for Justin
 
@@ -322,32 +375,32 @@ Contract changes land with PR 1: a learner-scope section in
 | --- | --- | --- | --- | --- |
 | 1 | What a confirmation stores | (a) Only deviations from the defaults shown. (b) A row for every sense shown, so the whole choice is sticky. (c) Deviations, plus the target sense as taken up even when it is a default. | Shared defaults keep changing through operator review and reconciliation. Sticky rows cut a learner off from those corrections; no rows at all lets the sense they came for be dropped later. | (c) |
 | 2 | Defaults unknown when the panel opens | (a) Wait for the default-selection call. (b) Show every sense unselected. (c) Treat every active sense as selected. | Serving already has a rule for unknown defaults: exclusion-based eligibility (`SPECS/vocabulary-architecture.md:236`). The panel has no equivalent. | (a), using the same pending state as bootstrap |
-| 3 | Excluding every sense | (a) Allowed; the word stops mapped production for this learner. (b) Not allowed; at least one sense stays. | Dismissal and production suppression already express "stop studying this" (`SPECS/vocabulary-learning.md:103-116`). | (b) |
+| 3 | Excluding every sense | (a) Allowed; the word stops mapped production for this learner. (b) Not allowed; at least one sense stays. | Dismissal and production suppression already express "stop studying this" (`SPECS/vocabulary-learning.md:103-116`). A package cannot be authored for an empty set. | (b) |
 | 4 | When an add triggers bootstrap | (a) Every add. (b) Only adds with a context sentence, or when the learner opens the panel. (c) Never; wait for the reserve. | It is the same model call the reserve would make later, so (a) costs extra only for words that never reach teaching. Latency is unmeasured. | (b), after measuring latency from hosted invocation records |
 | 5 | Whether the panel opens by itself after a search add | (a) Opens. (b) Stays closed behind a control on the row. | Search adds have no target sense, and batch adds would open several panels. | (b) for search; open automatically only when a caller supplies a context |
-| 6 | The sentence matches no listed sense | (a) Record an operator finding and follow defaults. (b) Let the learner create a private sense. (c) Add a canonical sense automatically. | The inventory is shared and operator-governed; the selector cannot create senses (`SPECS/vocabulary-architecture.md:219`). The contract defines no private-content authoring. | (a), keeping the sentence |
-| 7 | Teaching a taken-up sense on an unstudied word | (a) Regenerate the introduction for the learner's set. (b) Show the shared introduction plus the sense as a dictionary-style entry. (c) Ignore it in teaching; it appears only in later practice. | The introduction is one shared document. A learner who added the word for that sense would otherwise not see it taught. | (b) |
-| 8 | A new sense on a Practice or Maintain word | (a) A sense-level mode override, as the whiteboard sketches. (b) Temporary refresh plus a selection preference. (c) No special handling. | Sense-level scheduling is an open whiteboard question. Refresh already exists and leaves mode alone. | (b) |
-| 9 | Shared authoring demand from a learner's taken-up sense | (a) Allowed; the content is shared and carries no learner reference. (b) Not allowed; only the shared selection drives authoring. | The implementation guide says general authoring trusts selected senses "including specialized learning needs" (`docs/vocabulary-learning.md:608`). Without it a taken-up sense has no exercises. | (a), through the existing preparation path and its operator review |
-| 10 | Schema | (a) No migration; events carry history. (b) Add timestamps, source and a resolution table. | (a) qualifies for the application-only route. (b) is easier to audit and query. | (a) first; revisit if the events prove awkward to read |
+| 6 | An unstudied word with a custom set before per-set teaching ships | (a) Hold PRs 2 and 3 until PR 5 is ready. (b) Ship them; such words wait in the stash until PR 5. (c) Ship them; teach from the default package meanwhile. | (c) is the tack-on experience Justin rejected. (b) lets the scope model and panel be used and judged early, at the cost of some words not being admitted. | (b) |
+| 7 | A sense changed on a word already taught | (a) Taken-up sense: offer the set's introduction again, without the teaching exercises, then prefer that sense in practice. (b) Temporary refresh and a practice preference only. (c) A sense-level mode override, as the whiteboard sketches. Exclusion in every case just stops that sense's mapped practice. | A bare definition is the experience Justin rejected for unstudied words. Sense-level scheduling is an open whiteboard question. Refresh exists and leaves mode alone (`SPECS/vocabulary-learning.md:63`). | (a), with refresh; but this is a learning-policy choice with little evidence either way |
+| 8 | Schema for the scope model | (a) No migration; events carry history. (b) Add timestamps, source and a resolution table. | (a) keeps PRs 1 to 4 on the application-only route. PR 5 needs a migration regardless, so (b) could ride with it. | (a) now; fold (b) into PR 5's migration if events prove awkward |
+| 9 | The sentence matches no listed sense | (a) Record an operator finding and follow defaults. (b) Let the learner create a private sense. (c) Add a canonical sense automatically. | The inventory is shared and operator-governed; the selector cannot create senses (`SPECS/vocabulary-architecture.md:219`). The contract defines no private-content authoring. | (a), keeping the sentence |
+| 10 | Limits on authoring packages for custom sets | (a) Author for any distinct set. (b) Author only once a set has been requested by some number of learners. (c) Cap the sets per word. | Cost per package is unmeasured. With few learners, (b) would mean custom sets never get taught. | (a), with the count and cost of custom packages reported to the operator |
 
 ## Not verified
 
-- The real latency and failure rate of sense bootstrap. The hosted invocation
-  records for the `sense_inventory` step would answer it.
+- The real latency and failure rate of sense bootstrap, and the cost of one
+  teaching package. The hosted invocation records would answer both.
 - How many stashed words in the hosted database lack an established inventory.
-- Whether teaching exercises are reliably mapped to senses. The exclusion rule
-  for teaching exercises depends on it.
-- The details of how proactive repertoire demand is recorded
-  (`server/db/proactive-repertoire.ts`), which PR 4 extends.
+- Whether teaching exercises are reliably mapped to senses.
+- How much of the preparation pipeline assumes one package per word beyond the
+  two tables and three call sites cited above. The size of PR 5 depends on it.
 - Whether the stash and My Words rows have room for the panel; the page
   components were not read in detail.
 
 ## Out of scope
 
+- Per-learner generated teaching.
 - Sense-level scheduling, modes or graduation.
 - Learner-authored senses or private content.
 - Per-learner pure-cue qualification and proxy coverage.
 - Recognition and contrast by sense.
-- Composable teaching beats.
+- Session composition from a learner-state snapshot.
 - The reading interface itself.
