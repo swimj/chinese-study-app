@@ -10,7 +10,7 @@ how to operate the existing missing-repertoire workflow.
 ## Capability and scenario
 
 A general repertoire is a collection of standalone production exercises for a
-word's selected senses. Different exercises can offer different ways to recall
+word's senses selected for authoring. Different exercises can offer different ways to recall
 the same use; a repertoire is not a lesson sequence or a promise to cover every
 sense with an exercise. The authoring contract can return no exercises when it
 cannot produce faithful practice. That result does not change the selected
@@ -110,31 +110,51 @@ Each pass admits at most 24 words, including any queued or running proactive
 work carried from previous passes. Words without usable shared targeted
 practice go first. The worker uses ordinary Luna inventory and useful-sense
 readiness where needed, then asks the shared exercise authoring contract for
-the missing useful senses. An older active shared exercise can satisfy a sense
-when it has the canonical binding. Unmapped practice can help avoid fallback
+gaps across the shared defaults and live learner take-up. An older active
+shared exercise can satisfy a sense when it has the canonical binding. Unmapped practice can help avoid fallback
 without proving sense coverage. Words with explicit empty defaults, pure-cue
 proxies, and conflicting preparation or editorial work are set aside. Maintain
-curation is a separate operator decision.
+curation is outside review lookahead. Explicit learner demand can still queue
+authoring for Maintain words and words covered by a pure-cue proxy.
 
 Publication adds shared exercises after rechecking demand, current sense scope,
 and competing work. If another path covers some senses in flight, only the
 remaining gaps can receive new content. An empty or incomplete generation
 appears in Needs attention without resetting its automatic attempt budget.
 An explicit retry can fill the remaining gaps. The scan does not recreate
-completed work for the same catalog and defaults if a cue later retires.
+completed work for the same catalog and demanded senses if a cue later retires.
 
 Migration `0073_proactive_repertoire` adds the proactive job source and the
 enabled-by-default `proactive_repertoire` control. Disable it with
 `hosted:control --control=proactive-repertoire --enabled=false` and the usual
-operator and database arguments. This pauses proactive dispatch and publication.
+operator and database arguments. This pauses lookahead dispatch and publication.
 The `vocabulary.proactive_repertoire.scanned` backend event records the target
 horizon and counts for covered, deferred, and queued demand. The horizon is a
 planning target, not a guarantee that all candidates have content.
 
+### Learner sense demand
+
+Saving a scope queues a canonical practice job in the same transaction when an
+explicitly taken-up active sense lacks usable shared production practice. The
+worker checks the union of the shared defaults and live learner take-up each
+time it resolves the source. Disabled learners, dismissed words, untracked
+words and retired senses contribute no explicit demand. An exclusion affects
+that learner's serving scope while the shared defaults and other learners can
+continue to demand and use the sense.
+
+The practice queue keys this work by the catalog, default selection and
+additional demanded sense IDs. A scope shared with lookahead uses the same
+work and attempt budget. The worker polls explicit demand under the ordinary
+provider and editorial controls independently of the lookahead switch and due
+horizon. It uses the shared lexical word and canonical sense evidence to
+author the gaps. Learner identities and context sentences stay outside the
+shared source. Published exercises enter future sessions through the existing
+serving rules, including the shared pure-cue proxy policy.
+
 ### Automatic authoring model
 
-The first general practice pool after teaching, proactive review preparation,
-and an unassigned first repertoire job in reflection share a word-level allocation: two buckets use
+The first general practice pool after teaching, review lookahead, learner sense
+demand and an unassigned first repertoire job in reflection share a word-level allocation: two buckets use
 GPT-6 Sol high and one uses GPT-6 Luna high. A word stays in its bucket across
 entry points and retries. The allocation applies to general exercise authoring;
 inventory, useful-sense selection, and other reflection steps keep their own

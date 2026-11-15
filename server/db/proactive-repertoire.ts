@@ -56,6 +56,17 @@ export function dueRepertoireWords(horizon: string, wordId?: string): string[] {
   return [...earliestDue].sort(([a, first], [b, second]) => first.localeCompare(second) || a.localeCompare(b)).map(([id]) => id);
 }
 
+/** Only live tracked words contribute choices, independently of mode and due dates. */
+export function liveTakenUpSensesSql(wordIdExpression: string): string {
+  return `SELECT DISTINCT choice.sense_id AS senseId
+    FROM learner_senses choice
+    JOIN learner_words w USING(learner_id,word_id)
+    JOIN learners l USING(learner_id)
+    JOIN senses s ON s.sense_id=choice.sense_id AND s.word_id=choice.word_id
+    WHERE choice.word_id=${wordIdExpression} AND choice.disposition='active' AND s.status='active'
+      AND l.disabled_at IS NULL AND w.dismissed_at IS NULL AND (w.mode!='unstudied' OR w.in_stash=1)`;
+}
+
 /** A usable older cue can cover a sense. Unmapped cues only count toward avoiding fallback. */
 export function repertoireCoverageGap(wordId: string) {
   const coverage = resolveVocabularySenseCoverage(wordId);
@@ -73,22 +84,34 @@ export function repertoireCoverageGap(wordId: string) {
       AND c.exercise_type!='contrast' AND COALESCE(json_extract(c.assessment_json,'$.responseMode'),'')!='word_choice'
       AND ${vocabularyExerciseAnswersEligibleSql('c.content_id')}
   `).all(wordId) as PoolRow[];
+  const takenUp = (getDb().prepare(liveTakenUpSensesSql('?')).all(wordId) as {senseId:string}[])
+    .map(row => row.senseId);
   const selected = new Set(coverage.includedSenseIds);
+  const demanded = [...new Set([...selected,...takenUp])].sort();
   const excluded = new Set(coverage.word.excludedSenseIds);
   const targeted = rows.filter(row => !row.pureCue && !row.fallback &&
     (row.senseId === null || (coverage.selectionEstablished
       ? selected.has(row.senseId) : !excluded.has(row.senseId))));
-  const covered = new Set(targeted.map(row => row.senseId));
-  const missing = coverage.includedSenseIds.filter(id => !covered.has(id));
+  const covered = new Set(rows.filter(row => !row.pureCue && !row.fallback).map(row => row.senseId));
+  const missing = demanded.filter(id => !covered.has(id));
+  const hasMissingTakeUp = takenUp.some(id => !covered.has(id));
+  const unknown = coverage.word.defaultUsefulSenseIds?.length !== 0 && (catalog.establishedAt === null || !coverage.selectionEstablished);
+  const proxied = targeted.length === 0 && rows.some(row => row.pureCue);
+  // Preserve the attempt identity of a default-only scope and share it if a learner explicitly takes up a default.
+  const added = demanded.filter(id => !selected.has(id));
+  const takeUpKey = added.length ? `/${createHash('sha256').update(JSON.stringify(added)).digest('hex')}` : '';
   return {
-    scopeKey: `${catalog.version}/${coverage.fingerprint}`,
-    unknown: coverage.word.defaultUsefulSenseIds?.length !== 0 && (catalog.establishedAt === null || !coverage.selectionEstablished),
+    scopeKey: `${catalog.version}/${coverage.fingerprint}${takeUpKey}`,
+    unknown,
     missing,
+    hasMissingTakeUp,
     hasTargeted: targeted.length > 0,
-    proxied: targeted.length === 0 && rows.some(row => row.pureCue),
+    proxied,
+    needsAuthoring: hasMissingTakeUp || (!proxied && (unknown || missing.length > 0)),
   };
 }
 
+export const LEARNER_REPERTOIRE_WORK_PREFIX = 'vocabulary-practice:learner-scope:';
 export const PROACTIVE_DEFERRED = 'Proactive practice demand deferred';
 
 export function proactiveHorizon(at: string): string {
@@ -105,6 +128,24 @@ function inWriteTransaction(operation: () => void): void {
     db.exec('ROLLBACK');
     throw error;
   }
+}
+
+function queueRepertoireWork(wordId: string, scopeKey: string, timestamp: string, prefix: string): number {
+  const key = createHash('sha256').update(JSON.stringify([wordId,scopeKey])).digest('hex');
+  const inserted = getDb().prepare(`INSERT INTO vocabulary_practice_preparation
+    (work_id,word_id,proactive_scope_key,generation_key,status,created_at,updated_at,next_attempt_at)
+    VALUES (?,?,?,'pending','queued',?,?,?)
+    ON CONFLICT(word_id,proactive_scope_key) DO UPDATE SET status='queued',last_error=NULL,
+      next_attempt_at=excluded.next_attempt_at,updated_at=excluded.updated_at
+    WHERE vocabulary_practice_preparation.status='ready' AND vocabulary_practice_preparation.last_error=?
+      AND vocabulary_practice_preparation.attempt_count<3`)
+    .run(prefix+key,wordId,scopeKey,timestamp,timestamp,timestamp,PROACTIVE_DEFERRED);
+  return Number(inserted.changes);
+}
+
+/** Save a durable request with the learner's choice; the worker applies editorial and provider gates. */
+export function queueLearnerSenseRepertoire(wordId: string, timestamp: string, gap = repertoireCoverageGap(wordId)): void {
+  if (gap.hasMissingTakeUp) queueRepertoireWork(wordId,gap.scopeKey,timestamp,LEARNER_REPERTOIRE_WORK_PREFIX);
 }
 
 /** Queue and journal the scan atomically so restarting never opens a second batch. */
@@ -130,8 +171,11 @@ export function scanProactiveRepertoire(timestamp: string, serviceId: string): n
       if (editorial.has(wordId) || active.has(wordId)) { counts.blocked++; continue; }
       if (!isVocabularySessionWordEligible(wordId)) { counts.ineligible++; continue; }
       const gap = repertoireCoverageGap(wordId);
-      if (gap.proxied) { counts.proxied++; continue; }
-      if (!gap.unknown && !gap.missing.length) { counts.covered++; continue; }
+      if (!gap.needsAuthoring) {
+        if (gap.proxied) counts.proxied++;
+        else counts.covered++;
+        continue;
+      }
       const previous = prior.get(wordId, gap.scopeKey);
       if (previous && previous.last_error !== PROACTIVE_DEFERRED) { counts.previouslyAttempted++; continue; }
       (gap.hasTargeted ? other : fallback).push({ wordId, scopeKey: gap.scopeKey });
@@ -139,16 +183,8 @@ export function scanProactiveRepertoire(timestamp: string, serviceId: string): n
     const activeProactive = Number(db.prepare(`SELECT count(*) AS count FROM vocabulary_practice_preparation
       WHERE proactive_scope_key IS NOT NULL AND status IN ('queued','running')`).get()!.count);
     const selected = [...fallback, ...other].slice(0, Math.max(0, REPERTOIRE_SCAN_LIMIT - activeProactive));
-    const insert = db.prepare(`INSERT INTO vocabulary_practice_preparation
-      (work_id,word_id,proactive_scope_key,generation_key,status,created_at,updated_at,next_attempt_at)
-      VALUES (?,?,?,'pending','queued',?,?,?)
-      ON CONFLICT(word_id,proactive_scope_key) DO UPDATE SET status='queued',last_error=NULL,
-        next_attempt_at=excluded.next_attempt_at,updated_at=excluded.updated_at
-      WHERE vocabulary_practice_preparation.status='ready' AND vocabulary_practice_preparation.last_error=?`);
     for (const {wordId, scopeKey} of selected) {
-      const key = createHash('sha256').update(JSON.stringify([wordId,scopeKey])).digest('hex');
-      queued += Number(insert.run(`vocabulary-practice:proactive:${key}`,wordId,scopeKey,
-        timestamp,timestamp,timestamp,PROACTIVE_DEFERRED).changes);
+      queued += queueRepertoireWork(wordId,scopeKey,timestamp,'vocabulary-practice:proactive:');
     }
     emitBackendEvent({name:REPERTOIRE_SCAN_EVENT, entityKind:'service', entityId:serviceId,
       actorKind:'service', actorId:serviceId, occurredAt:timestamp,
@@ -158,9 +194,10 @@ export function scanProactiveRepertoire(timestamp: string, serviceId: string): n
   return queued;
 }
 
-export function hasProactiveDemand(wordId: string, workId: string, horizon: string): boolean {
-  if (!isVocabularySessionWordEligible(wordId) || !dueRepertoireWords(horizon, wordId).length) return false;
+export function hasProactiveDemand(wordId: string, workId: string, horizon: string, explicit: boolean): boolean {
+  if (!isVocabularySessionWordEligible(wordId) || (!explicit && !dueRepertoireWords(horizon, wordId).length)) return false;
   if (repertoireEditorialWork(getDb(), wordId).has(wordId)) return false;
   return !getDb().prepare(`SELECT 1 FROM vocabulary_practice_preparation
-    WHERE word_id=? AND work_id!=? AND proactive_scope_key IS NULL AND status IN ('queued','running') LIMIT 1`).get(wordId,workId);
+    WHERE word_id=? AND work_id!=? AND (status='running' OR (proactive_scope_key IS NULL AND status='queued'))
+    LIMIT 1`).get(wordId,workId);
 }

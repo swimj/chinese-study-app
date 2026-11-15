@@ -620,6 +620,8 @@ Automatic first pools share the [Sol/Luna allocation](implementation/repertoire-
 with first repertoire generation in reflection.
 The same worker also [prepares missing review practice ahead of demand](implementation/repertoire-preparation.md#proactive-review-preparation),
 independently of teaching completion and without starting a learner session.
+It also handles [explicit sense demand](implementation/repertoire-preparation.md#learner-sense-demand)
+from a scope save, including for an already studied word in Maintain.
 
 Successful session closure queues general practice for completed teaching in the
 same transaction as learning effects. Undo before closure and failed closure

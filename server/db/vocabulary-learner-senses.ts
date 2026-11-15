@@ -5,6 +5,7 @@ import { requireLearnerId } from './learner-context.ts';
 import { emitBackendEvent, getVocabularySenseCatalog, getVocabularySenses } from './vocabulary-content.ts';
 import { getVocabularyLearnerWord, VocabularyStateConflict, VocabularyStateInputError } from './vocabulary-learners.ts';
 import { getVocabularyWordSenseCoverage } from './vocabulary-sense-coverage.ts';
+import { queueLearnerSenseRepertoire } from './proactive-repertoire.ts';
 import { requestWordReserveReconciliation } from './word-reserve.ts';
 
 export type VocabularyLearnerSenseDisposition = 'active' | 'excluded';
@@ -109,6 +110,7 @@ export function writeVocabularyLearnerSenseScope(wordId: string, input: WriteVoc
         before:{senseIds:before.includedSenseIds,choices:before.choices,stateVersion:before.stateVersion},
         after:{senseIds:after.includedSenseIds,choices:after.choices,stateVersion:after.stateVersion},
         catalogVersion:after.catalogVersion,selectionVersion:after.selectionVersion}});
+    queueLearnerSenseRepertoire(wordId,at);
     requestWordReserveReconciliation();
     db.exec(`RELEASE ${point}`);
     return after;
