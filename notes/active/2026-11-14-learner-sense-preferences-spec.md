@@ -12,13 +12,14 @@ related:
 
 Build spec for letting a learner choose which senses of a word they study. It
 is a setup deliverable ahead of the reading interface: a learner who adds a
-word because of one sentence should be able to confirm the senses they want,
-with the sense they met highlighted. It is also useful alone, because today
+word because of one sentence should get the sense they met, alongside the
+word's usual senses, and be able to adjust the set. It is also useful alone, because today
 every learner studies the same shared selection.
 
-Three points of direction are [settled](#settled-with-justin-2026-11-14). The
-[decisions](#decisions-for-justin) section lists what Justin still needs to
-choose; where a section depends on an open decision it says so. No application
+The direction is [settled](#settled-with-justin-2026-11-14), including that
+adding a word becomes a bounded chat. The [decisions](#decisions-for-justin)
+section lists what Justin still needs to choose; where a section depends on an
+open decision it says so. No application
 code has been written.
 
 ## Goal and stance
@@ -28,8 +29,8 @@ code has been written.
 - Shared content stays shared. The canonical inventory and the default useful
   selection keep their current operator authority. A learner choice is private
   state layered on the shared default.
-- Adding a word never waits on a model. The confirmation refines an add that
-  has already happened.
+- Adding a word never waits on a slow model call. Senses and teaching that are
+  not ready are reported on the word afterwards.
 - Scheduling and mode stay at word level in this deliverable.
 - Retained sessions and history are untouched.
 
@@ -55,7 +56,7 @@ Further answers from Justin on 2026-11-15:
    sense as taken up even when it is a default.
 5. When shared defaults are unknown, the app waits for the existing
    default-selection call. The latency has to be made to work in the product;
-   see [the add flow](#add-flow-two-entry-points).
+   see [the add flow](#add-flow-a-bounded-chat).
 6. A learner cannot exclude every sense. A learner who wants to has a sense in
    mind that the inventory lacks, and the app should support that on a best
    effort, rejecting a proposal that is off base. A chat-like exchange may be
@@ -68,6 +69,18 @@ Further answers from Justin on 2026-11-15:
    can ride with the per-set teaching migration.
 10. Packages are authored for any distinct set, with count and cost reported
     to the operator.
+
+11. Adding a word becomes a bounded agentic chat, with the stash search kept
+    as "just add words". See [the add flow](#add-flow-a-bounded-chat).
+12. Chat turns are mostly one-shot; the agent asks only when it is truly
+    unsure of the learner's intent.
+13. A request that is part of a larger word is redirected to that word, with
+    no learner override for now.
+14. For a word with no default senses, the agent recommends a set.
+15. The chat may teach a little, and the chat model may make linguistic
+    judgments itself for now.
+16. The add flow is greenfield: no further cases are needed before building,
+    and it will be corrected in use.
 
 Per-learner generated teaching, which could use what is known about the
 learner, was considered and set aside for now. It would be the first
@@ -165,119 +178,156 @@ Consequences of later shared changes:
 | A sense is replaced by reconciliation | The choice does not move to the replacement. The frontier requires that identity-bound relationships do not silently transfer (`STABILITY_FRONTIER.md:86-90`). |
 | The inventory becomes empty | The word is ineligible for sessions for everyone, as today (`SPECS/vocabulary-learning.md:20-25`). |
 
-A confirmation stores only deviations from the defaults, plus the target sense.
+A learner's set is stored only as deviations from the defaults, plus the
+target sense.
 A learner cannot exclude every sense.
 
-## Add flow: two entry points
+## Add flow: a bounded chat
 
-Justin is not yet satisfied with the add flow and expects to need a prototype
-before giving firm feedback. This section is a proposal to prototype, not a
-design to build.
-
-There are two mindsets, and one confirmation step does not serve both:
+Settled with Justin on 2026-11-15, after a simulated run of nine adds: adding a
+word becomes a short chat with an agent, and the existing stash search stays as
+"just add words" with no model involved. The chat merges the two mindsets that
+one confirmation step could not serve:
 
 | | Word-centric | Scenario-centric |
 | --- | --- | --- |
-| The learner | Wants the word, with all its usual senses | Met a use, or wants to say something, and the word and sense follow from that |
-| Starts from | Stash search | A sentence in the reader, or a free-form description |
-| Should feel like | One action, no customisation step | The app meets them in their situation and proposes the word and sense |
-| Customisation | Available on the word, never required | Shown alongside: the other senses included by default, adjustable |
+| The learner types | A word | A word with where they met it, a sentence, or what they want to say |
+| The agent | Shows the word and its senses, and adds it | Finds the word and the sense that fits, and shows the other senses alongside |
 
-A custom sense is one of two kinds, and the flow branches on which:
+It is also the first, deliberately narrow, use of agentic chat in the app. The
+tool loop, streaming and conversation storage are meant to be reusable for a
+later mid-study aside; nothing else about that surface is designed here.
 
-| What the learner wants | Where it is | Path |
+### Shape of a turn
+
+- The agent looks things up, applies one level of synthesis, and answers with a
+  short message and usually one card. It does not reason deeply and can run on
+  a fast model.
+- Turns are one-shot. The agent asks a question only when the learner's words
+  fit two senses or two different words and the choice changes what is added.
+  Otherwise it acts or proposes, and the learner follows up if they want.
+- A conversation is short and disposable for the learner: no history browsing
+  and no memory across conversations.
+
+### Cards
+
+A card is the only thing that changes state, and it always shows which state it
+is in. The agent's prose never implies a change the card does not show.
+
+| Card state | Meaning | Actions on the card |
 | --- | --- | --- |
-| A sense in the inventory but outside the defaults | Listed | Taken up; the set becomes defaults plus that sense |
-| A sense not in the inventory | Not listed | A proposal to add a sense; see [decision A](#decisions-for-justin) |
-| No listed sense at all | Not listed | The same proposal path, since excluding every sense is not allowed |
+| Proposed | Nothing has changed | Add; preset alternatives the agent offers, such as one sense only |
+| Added | The word is in the learner's bank with the shown set | Undo; change senses |
+| Preparing | Added, and its senses or lesson are being prepared | Undo; change senses once senses exist |
+| Ready | Added and teaching-ready | Change senses |
+| Already studying | The word was in the bank before this conversation | Change senses |
 
-The learner's intent can arrive as nothing (word-centric), as a context
-sentence with the word's span, or as a free-form description.
+- A card updates in place. When preparation finishes while the chat is open,
+  Preparing becomes Ready with no new message. Outside the chat, the word's row
+  in the bank shows the same state.
+- The sense list on a card is the bounded manual choice: the learner can tick
+  or untick senses directly. The agent's preset buttons are shortcuts to the
+  same write. See [decision F](#decisions-for-justin).
+- The model emits a card as structured data: a word ID, sense IDs, and actions
+  from a fixed list. The server validates every ID against the word before the
+  card is shown, and again when a button is pressed. A button press is a normal
+  authenticated command, not a model action.
 
-### Proposed shape: the add never asks, the word reports back
+When the agent adds without asking:
 
-- Every add is one action and completes immediately, carrying the intent if
-  there is one.
-- The learner's set starts as the shared defaults, plus the target sense once
-  it is resolved. No confirmation is required.
-- Resolution runs in the background: establish the inventory if needed, wait
-  for defaults if unknown, map the intent to a sense. Per-set teaching is
-  prepared before admission in any case, so this adds no wait the learner
-  would otherwise not have.
-- The word's row shows the outcome when it is ready: which senses it will
-  teach, with the met sense marked. The learner can adjust there.
-- If the intent matches no listed sense, the row says so and opens the
-  exchange described under decision A.
+| Situation | Behaviour |
+| --- | --- |
+| A bare word that resolves to one lexical word with established defaults | Added immediately, with Undo |
+| A word with a context that matches a listed sense | Added immediately with the defaults plus that sense, with Undo |
+| The agent changed what was asked for: a corrected character, a larger expression, a new sense | Proposed |
+| The word has no default senses | Proposed, with a set the agent recommends pre-selected |
+| The word is already studied | Nothing is added; the card shows its state |
 
-This removes the latency problem from the add itself: no screen waits on a
-model. It replaces "bootstrap briefly, show options, confirm", which Justin
-described earlier as the ideal feel, so it needs his judgment on a prototype.
-The panel states below describe the review surface on the word's row under
-either shape.
+This rule is a starting point. Adds are cheap to undo, so the agent may guess;
+the card states are what keep a guess legible.
 
-## Sense panel
+### Cases the agent handles
 
-The add itself is unchanged and immediate. The panel is attached to the word.
+All but the last were exercised in the simulation.
 
-### States of the panel
-
-| Word's shared state | What the learner sees | What happens |
+| Case | Example | Outcome |
 | --- | --- | --- |
-| Inventory and defaults established | The senses, with defaults selected and the target sense highlighted and selected | Confirm writes the scope. |
-| Inventory established, defaults unknown | A pending state | The existing default-selection call runs; the panel fills when it lands. |
-| No inventory | The dictionary gloss and a pending state | Sense bootstrap is requested for this word ahead of the reserve order. |
-| Inventory established and empty | The existing ineligible state | No panel. |
-| Bootstrap failed or needs operator review | The word stays stashed and follows defaults | Nothing blocks. The choice is offered once the inventory exists. |
+| Word with a context that fits a listed sense | 帮派, gang members in a film | That sense marked as the learner's context; defaults kept; a related word may be offered once |
+| No inventory yet | 绵长 | Bootstrap is queued; the word is added with the sentence kept, and the sense is matched when the inventory lands |
+| The request is part of a larger word | 接发 → 接发球 | The larger word is proposed. There is no learner override for now; the refused request is logged as an operator finding |
+| Bare word | 纠结 | Senses shown, defaults marked |
+| No default senses | 致密 | The agent recommends a set relative to the word's own scope |
+| Already studied | 宠溺 | State shown; a sense outside the learner's set can be included, with no re-teaching |
+| Phrase or components | 怡然自得 | A recommendation with reasons; one card |
+| Wrong character | 海眠 → 海绵 | The correction is proposed |
+| A valid use the inventory lacks | 蒸馏 for model distillation | A new sense is proposed on the card and created only when the learner adds; see [decision A](#decisions-for-justin) |
+| A use that is off base | not simulated | Explained to the learner; nothing is proposed |
 
-"Briefly bootstrap" depends on a call configured for high reasoning effort with
-a 180-second timeout. Its real latency has not been measured for this spec. The
-flow therefore never waits for it:
+### Tools
 
-- The learner can leave at any point. The word is already stashed.
-- The same panel is reachable later from the word's row in the stash and in My
-  Words, so a choice missed at add time is not lost.
-- While the panel is open the client polls. How long it shows the pending state
-  before settling into "available later" should be set from measured latency.
+The agent has a small fixed set of reads and one way to show a card. It has no
+free-form writes.
 
-Which adds trigger a bootstrap is [decision D](#decisions-for-justin).
-
-### Target sense from a caller
-
-A caller such as the reader supplies the sentence and the span of the word in
-it. The add stores the sentence in `intended_use_text`, the column that already
-exists for this.
-
-Resolving the sentence to a canonical sense needs the inventory, so it runs
-after bootstrap. It is one small model call over the word's senses and the
-sentence, with three outcomes:
-
-| Outcome | Panel | Record |
+| Tool | Kind | Notes |
 | --- | --- | --- |
-| Matches a sense | That sense is highlighted and selected, in addition to the defaults | Written as taken up on confirm |
-| Matches no listed sense | Defaults selected, nothing highlighted | See [decision A](#decisions-for-justin) |
-| Unclear | Defaults selected, nothing highlighted | The sentence is kept |
+| Look up a word by hanzi | Read | The lexicon, with frequency |
+| Find similar words; find expressions containing a string | Read | For wrong characters and larger expressions |
+| Learner state for a word | Read | Studied or stashed, mode, the learner's set |
+| List a word's senses | Read | With shared defaults; reports "no inventory yet" |
+| Teaching and exercise status for a word and set | Read | Drives Preparing and Ready |
+| Queue sense bootstrap | Request | The existing readiness queue; see [decision D](#decisions-for-justin) |
+| Present a card | Output | Structured and validated, as above |
 
-The prompt should descend from the existing sense-mapping prompt and follow
-[prompt development](../../docs/prompt-development.md). Model output is
-untrusted: the returned sense must be an active sense of that word or the
-result is discarded.
+Commands a card button runs: add a word with a set and an optional context;
+change a word's set; undo an add; add a word together with a proposed sense.
 
-### From stash search
+Judgments the chat model makes itself, for now: matching a context to a sense,
+judging whether a proposed use is valid, spotting a wrong character or a larger
+expression, and suggesting a related word. Any word or sense it names must pass
+a lookup before it appears on a card. If these prove unreliable they can move to
+stored data or a dedicated backend call.
 
-The same panel with no target. Defaults are selected and nothing is
-highlighted. When several lexical words match, the existing word choice comes
-first and the panel applies to each chosen word. Whether the panel opens by
-itself is [decision E](#decisions-for-justin).
+### What the chat may say
+
+The chat teaches a little: a gloss in the learner's context, a short contrast
+with a near word, an example sentence. This is unreviewed model output shown to
+a learner, outside the published lesson, and is accepted for this surface.
+
+Where it is cheap, the intake is coupled to later study: the learner's own
+sentence, and the example they saw, are kept with the word so that an
+"intake-time example" can later be offered among its exercises. This is best
+effort and is not required for the first version. A learner's sentence is
+private and must not be fed into a shared package's authoring.
+
+### Views
+
+The chat with its cards is a new surface. The bank stays as the read-only view
+of the learner's words. Moving between them is left for later.
 
 ### Writing the scope
 
-- Confirm sends the chosen sense IDs with the learner word's `state_version`
-  and the catalog and selection versions the panel showed.
-- A stale version is rejected and the panel reloads.
+- A card button sends the chosen sense IDs with the learner word's
+  `state_version` and the catalog and selection versions the card showed.
+- A stale version is rejected and the card reloads.
 - The write sets `scope_established_at` and emits a backend event carrying the
   before and after scope and the surface it came from.
-- Every sense ID must be an active sense of that word. A violation is a client
+- Every sense ID must be an active sense of that word. A violation is a
   contract error and fails loudly.
+- A context is stored in `intended_use_text`, the column that already exists
+  for this.
+
+### What does not exist yet
+
+- No streaming and no tool calling anywhere in `server/` or `src/`; the request
+  types in `server/llm/types.ts` have neither. Every model call today is a
+  background job through the invocation ledger.
+- Sense bootstrap is configured with a 180-second timeout
+  (`server/vocabulary/sense-readiness.ts:22`), so a chat turn never waits for
+  it. That is why Preparing is a card state and not a spinner.
+- The only existing way to remove a word is dismissal
+  (`server/db/vocabulary-learners.ts:149`), which has its own suppression
+  rules (`SPECS/vocabulary-learning.md:103-116`). Whether Undo can reuse it is
+  not verified.
 
 ## Downstream effects
 
@@ -347,7 +397,7 @@ Settled: no re-teaching and no sense-based exercise weighting.
 
 The work splits in two.
 
-**Scope model, panel and add-time flow need no migration.** `learner_senses`
+**The scope model needs no migration.** `learner_senses`
 stores exactly the two dispositions the model needs, and "no row" carries the
 third. Its gaps can be covered with what exists:
 
@@ -358,7 +408,7 @@ third. Its gaps can be covered with what exists:
 | Whether the learner has reviewed the word at all | `learner_words.scope_established_at`, already present |
 | The context sentence | `learner_words.intended_use_text`, already present |
 | Bootstrap requested by an add | A queued row in the existing `vocabulary_sense_readiness` table |
-| The resolved target sense | Computed when the panel opens and written only on confirm |
+| The resolved target sense | Chosen in the chat and written by the card's command |
 
 That part can ship on the application-only upgrade route
 (`docs/ops/hosted-beta-deployment.md:85`).
@@ -369,10 +419,19 @@ schema-changing release with the quiesce, recovery-point and rehearsal
 procedure. It must preserve every existing package, its publication record and
 all teaching history.
 
-Timestamps on `learner_senses` and a record of each intent resolution can be
-added in that same migration. The background resolution proposed under
-[the add flow](#add-flow-two-entry-points) needs somewhere to keep its pending,
-resolved or unmatched state, which `intended_use_text` alone cannot hold.
+Timestamps on `learner_senses` can be added in that same migration.
+
+**The chat needs new learner-private storage**, and so a second migration:
+
+- Conversations and their turns, including tool calls and the cards shown.
+  They are kept for evaluation and repair even though the learner cannot
+  browse them; retention is [decision G](#decisions-for-justin).
+- A deferred sense match: a word added before its inventory exists keeps its
+  context and a pending state until the match is made.
+- Later, an intake-time example attached to the learner's word.
+
+Learner text typed into the chat is sent to the model provider. That is a new
+disclosure and belongs in the contract with the chat PR.
 
 Ownership: `learner_senses` is already registered as learner-private
 (`server/db/ownership-manifest.ts:85`). New reads and writes must go through the
@@ -389,10 +448,12 @@ to land the migration first as a behaviour-neutral change.
 | 2. Scope model | Contract text; effective-scope resolver; read and write commands with version checks; general serving filter switched to effective scope | No | No |
 | 3. Repertoire demand across sets | Missing-sense demand includes taken-up senses; no retirement from exclusion | No | No |
 | 4. Teaching for custom sets | Authoring for a requested set; a learner is taught from their set's package | Yes, once a set can be chosen | No |
-| 5. Sense panel and add flow | The review surface on the word; add with intent; background resolution and its prompt | Yes | No |
+| 5. Chat core | A fast-model tool loop with streaming, validated structured output, conversation storage and ledger records; no learner surface | No | Yes |
+| 6. Add-word chat | The tools, cards and commands in [the add flow](#add-flow-a-bounded-chat); the agent prompt; deferred sense matching | Yes | No |
 
-PRs 1 to 4 can merge without changing what any learner sees, because no
-learner can have a custom set until PR 5. PR 5's design waits on the prototype.
+PRs 1 to 5 can merge without changing what any learner sees, because no
+learner can have a custom set until PR 6. PRs 5 and 6 do not depend on PRs 1
+to 4 to be developed, only to be released.
 
 Contract changes land with the PR that makes them true: the per-set teaching
 rule and frontier assumption with PR 1, the learner-scope section in
@@ -409,29 +470,34 @@ rule and frontier assumption with PR 1, the learner-scope section in
 - A retained session composed before a scope change is unchanged.
 - Isolation: one learner's scope is invisible to another and does not change
   what the other is served.
-- Version conflicts on confirm.
+- Version conflicts on a card command.
 - Reconciliation still preserves learner sense rows.
 - Add with a context stores the sentence; a failed bootstrap leaves the word
   stashed and following defaults.
-- Target resolution rejects a sense that is not an active sense of the word.
+- A card naming a word or sense that fails validation is never shown, and a
+  button cannot write a sense that is not an active sense of the word.
+- The agent has no write path except card commands run by the learner, and
+  the immediate add under the stated rule.
+- Undo restores the learner's prior state for that word.
 - Demand: a taken-up sense with no exercise creates demand; an exclusion
   creates none and retires nothing.
 - Per-set teaching: two learners with the same set share one package; a
   learner on the default set is unaffected by another learner's set; a word
   whose set package is missing is not admitted; the migration preserves
   existing packages and history.
-- Composition and completion coverage, per the testing map, for PR 5.
+- Composition and completion coverage, per the testing map, for PR 6.
 
 ### Evaluation
 
-- A preview-testbed scenario with words in each panel state.
-- Independent UI evaluation of the two flows: add from search, and add with a
-  target sense.
+- A transcript set for the agent, seeded with the ten cases in
+  [the add flow](#add-flow-a-bounded-chat), each with an expected outcome:
+  the word, the set, the card state, and whether it asked.
+- A preview-testbed scenario with words in each card state.
+- Independent UI evaluation of the chat: a bare word, a word with a context,
+  and a redirected request.
 - Rendered checks: a one-sense word, a 16-sense word, labels and notes at their
-  length limits, the pending and failed states, a narrow panel, enlarged text,
-  and keyboard-only use.
-- A prompt comparison for target resolution on real sentences, including
-  sentences that match no listed sense.
+  length limits, Preparing turning to Ready in place, a narrow panel, enlarged
+  text, and keyboard-only use.
 - A comparison of packages authored for a default set and for a custom set of
   the same word, judged for whether the custom package still bridges its
   senses.
@@ -443,11 +509,15 @@ remains open:
 
 | # | Decision | Options | Evidence | Recommendation |
 | --- | --- | --- | --- | --- |
-| A | Who can add a learner-proposed sense to an established inventory | (a) A model judges the proposal; a valid one is added as a non-default canonical sense under service authority, with an operator finding for review afterwards. (b) The same judgment, but the sense waits for operator approval. (c) The sense stays private to the learner. | Inventories are first created by a service call without operator approval (`server/vocabulary/sense-readiness.ts:150-165`), but the default selector cannot create senses (`SPECS/vocabulary-architecture.md:219`), and the contract defines no private-content authoring. Waiting on an operator stalls the learner; a wrong shared sense affects everyone's inventory, though not their defaults. | (a), because the sense is added outside the defaults and so changes no other learner's study. This is an authority change and needs the contract updated. |
-| B | What the judgment can conclude | Matches an existing sense; a valid new use of this exact word; belongs to a larger compound or fixed expression, so suggest that word instead; a misunderstanding, explained to the learner. | The inventory rule already separates a word's own uses from meanings realised only in larger expressions (`SPECS/vocabulary-learning.md:13-18`). | All four, in a short exchange where the learner can clarify once or twice |
-| C | Shape of the add | (a) The add asks: bootstrap, show options, confirm. (b) The add never asks; the word reports back and can be adjusted. (c) Different shapes for the two entry points. | See [the add flow](#add-flow-two-entry-points). (a) waits on a call configured with a 180-second timeout. | (b), to be judged on a prototype |
-| D | When sense bootstrap runs for a newly added word | (a) On every add. (b) Only when the add carries an intent, or the learner opens the word's senses. (c) Only when the word reaches the reserve, as today. | It is the same call the reserve would make later. Its latency and cost are unmeasured. | (b) |
-| E | Whether the panel opens by itself | Justin: "sure-ish" to opening only when a caller supplies a context. Superseded if decision C lands on (b), where nothing opens by itself. | | Revisit after the prototype |
+| A | Who can add a learner-proposed sense to an established inventory | (a) The chat agent judges the proposal; a valid one is added as a non-default canonical sense under service authority when the learner presses Add, with an operator finding for review afterwards. (b) The same, but the sense waits for operator approval. (c) The sense stays private to the learner. | Inventories are first created by a service call without operator approval (`server/vocabulary/sense-readiness.ts:150-165`), but the default selector cannot create senses (`SPECS/vocabulary-architecture.md:219`), and the contract defines no private-content authoring. The simulation used (a) for 蒸馏 and Justin raised no objection, but did not confirm it. | (a). It is an authority change and needs the contract updated. |
+| D | When sense bootstrap runs | (a) Whenever the chat looks up a word with no inventory. (b) Only when that word is added. (c) Only when the word reaches the reserve, as today. | It is the same call the reserve would make later. (a) spends a call on words the learner then does not add; Justin has said unneeded preparation is an acceptable worst case for an undone add. | (a) |
+| F | How a learner changes senses on a card | (a) The sense list is directly tickable, and agent presets are shortcuts. (b) Only composable preset buttons. | Justin: an added card should also allow extending the set; unsure between composable actions and a small bounded manual choice. | (a). One control covers extend, narrow and the no-defaults case. |
+| G | How long conversations are kept | (a) Kept for evaluation, not shown to the learner. (b) Deleted when the conversation ends. | Transcripts are the main evidence for tuning the agent. They are a new kind of learner-private data. | (a), with the disclosure stated |
+| H | What Undo does | (a) Removes the word as if never added. (b) Dismisses it under the existing rules. | Dismissal carries suppression rules (`SPECS/vocabulary-learning.md:103-116`). | (a), if the word had no state before this conversation |
+
+Closed since the last revision: what the judgment can conclude (all four
+outcomes were exercised), the shape of the add (the chat), and whether a panel
+opens by itself (there is no panel).
 
 ## Not verified
 
@@ -456,15 +526,21 @@ remains open:
 - How many stashed words in the hosted database lack an established inventory.
 - Whether teaching exercises are reliably mapped to senses.
 - How much of the preparation pipeline assumes one package per word beyond the
-  two tables and three call sites cited above. The size of PR 5 depends on it.
-- Whether the stash and My Words rows have room for the panel; the page
-  components were not read in detail.
+  two tables and three call sites cited above. The size of PR 1 depends on it.
+- Which fast model the chat uses, whether the existing provider client
+  (`server/llm/openai-compatible.ts`) can stream and call tools, and what a
+  chat turn costs.
+- Whether a real fast model reproduces the simulated behaviour. The simulation
+  was written by hand, with invented tool results.
+- Whether Undo can reuse dismissal.
 
 ## Out of scope
 
 - Per-learner generated teaching.
 - Sense-level scheduling, modes or graduation.
-- Learner-authored senses or private content.
+- Learner-private senses or private authored content.
+- Agentic chat anywhere other than adding a word.
+- A learner override when a request is redirected to a larger word.
 - Per-learner pure-cue qualification and proxy coverage.
 - Recognition and contrast by sense.
 - Session composition from a learner-state snapshot.
