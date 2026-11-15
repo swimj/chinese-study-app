@@ -9,6 +9,7 @@ related:
   - SPECS/vocabulary-architecture.md
   - STABILITY_FRONTIER.md
   - notes/active/2026-10-15-vocabulary-model-whiteboard.md
+  - notes/active/2026-11-15-add-word-chat-simulation.md
 
 Build spec for letting a learner choose which senses of a word they study. It
 is a setup deliverable ahead of the reading interface: a learner who adds a
@@ -263,7 +264,8 @@ the card states are what keep a guess legible.
 
 ### Cases the agent handles
 
-All but the last were exercised in the simulation.
+All but the last were exercised in the simulation, whose full exchanges are
+kept in the [simulated transcript](2026-11-15-add-word-chat-simulation.md).
 
 | Case | Example | Outcome |
 | --- | --- | --- |
