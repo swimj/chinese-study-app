@@ -51,6 +51,45 @@ Learner encounters, reactions, personal notes and progress remain private. Share
 content carries no authority to expose that history. An exact encounter retains
 the material, answer space, criteria, and mapping context actually served.
 
+## Add-word chat
+
+While a turn runs, Chat shows temporary progress rather than partial answer text.
+A turn completes with one validated answer or an explanation paired with its
+card action. The final reply replaces progress. Explanation, learner effects
+and completion are saved together; reconnect replays the saved explanation and
+current card without repeating the action. Earlier explanations remain on their
+original turns when a card changes. Interrupted or invalid attempts show an
+error rather than treating unfinished prose as success.
+
+A learner switches between Stash search and Chat within the same Words surface.
+The toggle preserves the draft, stash controls and transcript scroll position.
+The chat is continuous and private. The chat can briefly explain a usage, suggest an exact
+lexical target and present one card with the current study state and active
+senses. The learner can select a set on the card or use a suggested selection.
+An existing enrollment keeps its mode, schedule and sense choices until the
+learner changes the set.
+
+A direct, unambiguous requested word with useful defaults can be added
+immediately. A confident context match includes the matched sense alongside
+the defaults and retains the learner's context. An inventory that is still
+preparing can be matched later. While the match is pending, the word waits for
+new-word teaching. An ambiguous, invalid or failed match keeps the word and
+its context, follows shared defaults when available and brings the card to the
+learner's attention.
+
+A correction, larger lexical unit, new sense or recommendation for a word
+without useful defaults requires Add confirmation. The larger unit is the
+available target when the requested fragment has its meaning there. Unknown
+defaults initialize in the background before a learner saves a set. A valid
+new sense enters the shared inventory as non-default on explicit Add.
+
+The same card appears in the transcript and outstanding cards. Preparation and
+attention can change in place, and My Words shows current preparation for
+stashed, unstudied words. Undo reverses the enrollment, priority, context and
+sense choices made by that add while its effects are still current. Shared
+preparation and canonical senses stay available. Later study and manual
+changes take precedence over Undo.
+
 ## Learner sense scope
 
 A learner follows the shared default sense selection unless they take up or
@@ -76,6 +115,7 @@ unprepared set waits in the stash. Learners without overrides retain compatibili
 with their existing default lesson even when shared defaults change. An explicit
 choice can reuse that lesson only when its authored scope matches the chosen set.
 Taking up a sense after teaching does not repeat the lesson or reset progress.
+Solidify retains the familiar completed lesson for its warmup.
 
 Shared general-exercise authoring covers the shared defaults and the active
 senses taken up by any learner tracking the word. Saving a taken-up sense that

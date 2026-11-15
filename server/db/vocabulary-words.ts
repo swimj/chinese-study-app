@@ -1,3 +1,4 @@
+import { getVocabularyIntakePreparationStatus } from './vocabulary-intake.ts';
 import { getDb } from './connection.ts';
 import { requireLearnerId } from './learner-context.ts';
 import { loadDeckManifest } from '../decks/manifest.ts';
@@ -9,7 +10,7 @@ import type { VocabularyWordMode } from '../../src/domain/vocabulary-session.ts'
 import { VocabularyStateInputError } from './vocabulary-learners.ts';
 
 type Row = {id:string; hanzi:string; traditional:string|null; pinyin:string; meaning:string; meanings_json:string;
-  personal_notes:string|null; mode:VocabularyWordMode; state_version:number|null; next_eligible_at:string|null;
+  personal_notes:string|null; in_stash:number|null; mode:VocabularyWordMode; state_version:number|null; next_eligible_at:string|null;
   refresh_until:string|null; last_practised_at:string|null; personal_updated_at:string|null};
 
 /** Collection membership is retained; current lifecycle is always read from vocabulary state. */
@@ -29,7 +30,7 @@ export function getVocabularyWordsCollection({view='recent', query='', modes=[],
   const deckIds = manifest ? getResolvedDeckWordIds(manifest) : new Map<string,readonly string[]>();
   const ids = [...new Set(decks.flatMap(deck=>deckIds.get(deck.id)??[]))];
   const rows = db.prepare(`SELECT w.id,w.hanzi,w.traditional,w.pinyin,w.meaning,w.meanings_json,
-    personal.personal_notes,COALESCE(l.mode,'unstudied') AS mode,l.state_version,
+    personal.personal_notes,l.in_stash,COALESCE(l.mode,'unstudied') AS mode,l.state_version,
     s.next_eligible_at,s.refresh_until,s.last_practised_at,
     CASE WHEN p.priority_tier>=0 THEN p.updated_at ELSE NULL END AS personal_updated_at
     FROM lexical_words w LEFT JOIN learner_words l ON l.word_id=w.id AND l.learner_id=?
@@ -97,6 +98,11 @@ export function getVocabularyWordsCollection({view='recent', query='', modes=[],
     .filter(({word})=>[word.hanzi,word.traditional??'',word.pinyin,word.meaning,...word.meanings].some(value=>value.toLowerCase().includes(search)));
   const rank:Record<VocabularyWordMode,number>={solidify:0,unstudied:1,practice:2,maintain:3};
   entries.sort((a,b)=>compareWordBrowserEntries(a,b,rank));
-  return {words:entries.slice(offset,offset+limit),total:entries.length,hasMore:entries.length>offset+limit,currentDeck};
+  const inStash = new Set(rows.filter(row => row.in_stash === 1).map(row => row.id));
+  const page = entries.slice(offset,offset+limit);
+  for (const entry of page) if (entry.word.status === 'unstudied' && inStash.has(entry.word.id)) {
+    entry.preparationStatus = getVocabularyIntakePreparationStatus(entry.word.id);
+  }
+  return {words:page,total:entries.length,hasMore:entries.length>offset+limit,currentDeck};
 }
 function latest(a:string|null|undefined,b:string):string {const day=b.slice(0,10);return !a||a<day?day:a;}

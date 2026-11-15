@@ -1,6 +1,11 @@
 # Learner sense preferences — build spec
 
-status: active
+> Historical design input, archived with implementation delivery on 2026-11-15.
+> Current behavior is owned by the vocabulary contracts and [chat runtime](../../docs/chat-runtime.md);
+> see the [implementation evaluation](../../docs/evaluation/trials/2026-11-15-custom-senses.md).
+> The pre-implementation descriptions and simulated behavior below are retained as history.
+
+status: archived
 type: handoff
 created: 2026-11-14
 retire-when: the first PR is open, or the design is declined
@@ -9,7 +14,7 @@ related:
   - SPECS/vocabulary-architecture.md
   - STABILITY_FRONTIER.md
   - notes/active/2026-10-15-vocabulary-model-whiteboard.md
-  - notes/active/2026-11-15-add-word-chat-simulation.md
+  - notes/archive/2026-11-15-add-word-chat-simulation.md
 
 Build spec for letting a learner choose which senses of a word they study. It
 is a setup deliverable ahead of the reading interface: a learner who adds a

@@ -1,0 +1,3237 @@
+[
+  {
+    "variant": "followup-luna-medium",
+    "model": "gpt-6-luna",
+    "reasoning": "medium",
+    "promptHash": "6b58ea8085db9d55fd7f0b571c1cd4cd511faf4225a6b8677fa2ab3b47a13de6",
+    "cases": 6,
+    "calls": 14,
+    "medianTurnMs": 5491,
+    "maximumTurnMs": 12070,
+    "automaticChecksPassed": 3,
+    "results": [
+      {
+        "case": "01-listed-context",
+        "state": "preparing",
+        "latency": {
+          "firstTextMs": 3948.690125,
+          "cardMs": 5227.089208,
+          "turnMs": 5227.3002910000005
+        },
+        "usage": {
+          "inputTokens": 9302,
+          "cachedInputTokens": 4499,
+          "outputTokens": 195,
+          "reasoningTokens": 40,
+          "totalTokens": 9497,
+          "invocationsWithUsage": 2,
+          "providerLatencyMs": 5203.908625,
+          "spendUsdKnown": 0.0007427149999999999,
+          "invocationsWithKnownSpend": 2
+        },
+        "calls": 2,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "target": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "03-larger-expression",
+        "state": "proposed",
+        "latency": {
+          "firstTextMs": 11043.628832999999,
+          "cardMs": 12070.004708,
+          "turnMs": 12070.208665999999
+        },
+        "usage": {
+          "inputTokens": 18904,
+          "cachedInputTokens": 18294,
+          "outputTokens": 641,
+          "reasoningTokens": 460,
+          "totalTokens": 19545,
+          "invocationsWithUsage": 4,
+          "providerLatencyMs": 12051.910709000003,
+          "spendUsdKnown": 0.0005793899999999999,
+          "invocationsWithKnownSpend": 4
+        },
+        "calls": 4,
+        "checks": {
+          "wordId": false,
+          "state": true,
+          "enrolled": true
+        },
+        "structuralPass": false
+      },
+      {
+        "case": "05-no-defaults",
+        "state": "proposed",
+        "latency": {
+          "firstTextMs": 3370.822082999999,
+          "cardMs": 4557.957582999999,
+          "turnMs": 4558.108583000001
+        },
+        "usage": {
+          "inputTokens": 9243,
+          "cachedInputTokens": 8950,
+          "outputTokens": 217,
+          "reasoningTokens": 84,
+          "totalTokens": 9460,
+          "invocationsWithUsage": 2,
+          "providerLatencyMs": 4544.837499000001,
+          "spendUsdKnown": 0.00023447499999999997,
+          "invocationsWithKnownSpend": 2
+        },
+        "calls": 2,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "selected": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "07-phrase-components",
+        "state": "no card",
+        "latency": {
+          "firstTextMs": 6387.495292,
+          "cardMs": null,
+          "turnMs": 6970.226624999999
+        },
+        "usage": {
+          "inputTokens": 9239,
+          "cachedInputTokens": 8971,
+          "outputTokens": 358,
+          "reasoningTokens": 282,
+          "totalTokens": 9597,
+          "invocationsWithUsage": 2,
+          "providerLatencyMs": 6964.735290999997,
+          "spendUsdKnown": 0.00030206,
+          "invocationsWithKnownSpend": 2
+        },
+        "calls": 2,
+        "checks": {
+          "wordId": false,
+          "state": false,
+          "enrolled": true
+        },
+        "structuralPass": false
+      },
+      {
+        "case": "10-unsupported-context",
+        "state": "no card",
+        "latency": {
+          "firstTextMs": 4164.766083000002,
+          "cardMs": null,
+          "turnMs": 5051.102832999997
+        },
+        "usage": {
+          "inputTokens": 9391,
+          "cachedInputTokens": 8966,
+          "outputTokens": 170,
+          "reasoningTokens": 115,
+          "totalTokens": 9561,
+          "invocationsWithUsage": 2,
+          "providerLatencyMs": 5043.6652920000015,
+          "spendUsdKnown": 0.000227635,
+          "invocationsWithKnownSpend": 2
+        },
+        "calls": 2,
+        "checks": {
+          "card": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "11-fixed-expression-holdout",
+        "state": "no card",
+        "latency": {
+          "firstTextMs": 5106.541083000004,
+          "cardMs": null,
+          "turnMs": 5754.386375000002
+        },
+        "usage": {
+          "inputTokens": 9209,
+          "cachedInputTokens": 8973,
+          "outputTokens": 349,
+          "reasoningTokens": 268,
+          "totalTokens": 9558,
+          "invocationsWithUsage": 2,
+          "providerLatencyMs": 5746.674415999994,
+          "spendUsdKnown": 0.00029358,
+          "invocationsWithKnownSpend": 2
+        },
+        "calls": 2,
+        "checks": {
+          "wordId": false,
+          "state": false,
+          "enrolled": true
+        },
+        "structuralPass": false
+      }
+    ]
+  },
+  {
+    "variant": "followup-sol-low",
+    "model": "gpt-6-sol",
+    "reasoning": "low",
+    "promptHash": "6b58ea8085db9d55fd7f0b571c1cd4cd511faf4225a6b8677fa2ab3b47a13de6",
+    "cases": 6,
+    "calls": 15,
+    "medianTurnMs": 2960,
+    "maximumTurnMs": 4462,
+    "automaticChecksPassed": 5,
+    "results": [
+      {
+        "case": "01-listed-context",
+        "state": "preparing",
+        "latency": {
+          "firstTextMs": 2185.239084,
+          "cardMs": 2956.752125,
+          "turnMs": 2956.926792
+        },
+        "usage": {
+          "inputTokens": 9302,
+          "cachedInputTokens": 4499,
+          "outputTokens": 144,
+          "reasoningTokens": 9,
+          "totalTokens": 9446,
+          "invocationsWithUsage": 2,
+          "providerLatencyMs": 2937.0191259999997,
+          "spendUsdKnown": 0.0143443,
+          "invocationsWithKnownSpend": 2
+        },
+        "calls": 2,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "target": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "03-larger-expression",
+        "state": "proposed",
+        "latency": {
+          "firstTextMs": 3779.8636250000004,
+          "cardMs": 4461.715417000001,
+          "turnMs": 4461.898125
+        },
+        "usage": {
+          "inputTokens": 18722,
+          "cachedInputTokens": 18223,
+          "outputTokens": 189,
+          "reasoningTokens": 15,
+          "totalTokens": 18911,
+          "invocationsWithUsage": 4,
+          "providerLatencyMs": 4444.815042,
+          "spendUsdKnown": 0.0067761,
+          "invocationsWithKnownSpend": 4
+        },
+        "calls": 4,
+        "checks": {
+          "wordId": false,
+          "state": true,
+          "enrolled": true
+        },
+        "structuralPass": false
+      },
+      {
+        "case": "05-no-defaults",
+        "state": "proposed",
+        "latency": {
+          "firstTextMs": 1854.990749999999,
+          "cardMs": 2666.122874999999,
+          "turnMs": 2666.3059589999993
+        },
+        "usage": {
+          "inputTokens": 9243,
+          "cachedInputTokens": 8950,
+          "outputTokens": 148,
+          "reasoningTokens": 11,
+          "totalTokens": 9391,
+          "invocationsWithUsage": 2,
+          "providerLatencyMs": 2655.8158750000002,
+          "spendUsdKnown": 0.0039995000000000005,
+          "invocationsWithKnownSpend": 2
+        },
+        "calls": 2,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "selected": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "07-phrase-components",
+        "state": "proposed",
+        "latency": {
+          "firstTextMs": 1966.680875,
+          "cardMs": 2963.2214999999997,
+          "turnMs": 2963.423499999999
+        },
+        "usage": {
+          "inputTokens": 9216,
+          "cachedInputTokens": 8971,
+          "outputTokens": 169,
+          "reasoningTokens": 16,
+          "totalTokens": 9385,
+          "invocationsWithUsage": 2,
+          "providerLatencyMs": 2950.7845420000012,
+          "spendUsdKnown": 0.0040937000000000005,
+          "invocationsWithKnownSpend": 2
+        },
+        "calls": 2,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "10-unsupported-context",
+        "state": "no card",
+        "latency": {
+          "firstTextMs": 1716.4826670000002,
+          "cardMs": null,
+          "turnMs": 2121.0945420000007
+        },
+        "usage": {
+          "inputTokens": 9391,
+          "cachedInputTokens": 8966,
+          "outputTokens": 68,
+          "reasoningTokens": 0,
+          "totalTokens": 9459,
+          "invocationsWithUsage": 2,
+          "providerLatencyMs": 2113.3716249999998,
+          "spendUsdKnown": 0.0035327,
+          "invocationsWithKnownSpend": 2
+        },
+        "calls": 2,
+        "checks": {
+          "card": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "11-fixed-expression-holdout",
+        "state": "proposed",
+        "latency": {
+          "firstTextMs": 3073.6072079999994,
+          "cardMs": 3834.7834999999995,
+          "turnMs": 3834.9704580000016
+        },
+        "usage": {
+          "inputTokens": 14134,
+          "cachedInputTokens": 13675,
+          "outputTokens": 201,
+          "reasoningTokens": 34,
+          "totalTokens": 14335,
+          "invocationsWithUsage": 3,
+          "providerLatencyMs": 3819.964957999997,
+          "spendUsdKnown": 0.005888,
+          "invocationsWithKnownSpend": 3
+        },
+        "calls": 3,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      }
+    ]
+  },
+  {
+    "variant": "full-luna-low",
+    "model": "gpt-6-luna",
+    "reasoning": "low",
+    "promptHash": "6b58ea8085db9d55fd7f0b571c1cd4cd511faf4225a6b8677fa2ab3b47a13de6",
+    "cases": 12,
+    "calls": 28,
+    "medianTurnMs": 3709,
+    "maximumTurnMs": 8296,
+    "automaticChecksPassed": 9,
+    "results": [
+      {
+        "case": "01-listed-context",
+        "state": "preparing",
+        "latency": {
+          "firstTextMs": 2652.549709,
+          "cardMs": 3515.127125,
+          "turnMs": 3515.338167
+        },
+        "usage": {
+          "inputTokens": 9302,
+          "cachedInputTokens": 4499,
+          "outputTokens": 163,
+          "reasoningTokens": 24,
+          "totalTokens": 9465,
+          "invocationsWithUsage": 2,
+          "providerLatencyMs": 3493.568292,
+          "spendUsdKnown": 0.000726715,
+          "invocationsWithKnownSpend": 2
+        },
+        "calls": 2,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "target": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "02-missing-inventory",
+        "state": "preparing",
+        "latency": {
+          "firstTextMs": 2058.2005,
+          "cardMs": 2924.560166,
+          "turnMs": 2924.7221249999993
+        },
+        "usage": {
+          "inputTokens": 9106,
+          "cachedInputTokens": 8968,
+          "outputTokens": 151,
+          "reasoningTokens": 27,
+          "totalTokens": 9257,
+          "invocationsWithUsage": 2,
+          "providerLatencyMs": 2909.700084000001,
+          "spendUsdKnown": 0.00018228,
+          "invocationsWithKnownSpend": 2
+        },
+        "calls": 2,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "pending": true,
+          "context": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "03-larger-expression",
+        "state": "proposed",
+        "latency": {
+          "firstTextMs": 7110.983333000001,
+          "cardMs": 8295.40725,
+          "turnMs": 8295.59175
+        },
+        "usage": {
+          "inputTokens": 23541,
+          "cachedInputTokens": 22903,
+          "outputTokens": 365,
+          "reasoningTokens": 130,
+          "totalTokens": 23906,
+          "invocationsWithUsage": 5,
+          "providerLatencyMs": 8274.569999,
+          "spendUsdKnown": 0.000490905,
+          "invocationsWithKnownSpend": 5
+        },
+        "calls": 5,
+        "checks": {
+          "wordId": false,
+          "state": true,
+          "enrolled": true
+        },
+        "structuralPass": false
+      },
+      {
+        "case": "04-bare",
+        "state": "preparing",
+        "latency": {
+          "firstTextMs": 2198.0604999999996,
+          "cardMs": 3205.3640000000014,
+          "turnMs": 3205.50475
+        },
+        "usage": {
+          "inputTokens": 9359,
+          "cachedInputTokens": 8950,
+          "outputTokens": 138,
+          "reasoningTokens": 13,
+          "totalTokens": 9497,
+          "invocationsWithUsage": 2,
+          "providerLatencyMs": 3188.84475,
+          "spendUsdKnown": 0.00020947499999999998,
+          "invocationsWithKnownSpend": 2
+        },
+        "calls": 2,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "selected": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "05-no-defaults",
+        "state": "proposed",
+        "latency": {
+          "firstTextMs": 2846.241291999999,
+          "cardMs": 4026.518250000001,
+          "turnMs": 4026.7396249999983
+        },
+        "usage": {
+          "inputTokens": 9243,
+          "cachedInputTokens": 8950,
+          "outputTokens": 225,
+          "reasoningTokens": 84,
+          "totalTokens": 9468,
+          "invocationsWithUsage": 2,
+          "providerLatencyMs": 4016.414958000001,
+          "spendUsdKnown": 0.00023847499999999998,
+          "invocationsWithKnownSpend": 2
+        },
+        "calls": 2,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "selected": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "06-already-studied",
+        "state": "already-studying",
+        "latency": {
+          "firstTextMs": 2698.243792000001,
+          "cardMs": 3716.1347920000007,
+          "turnMs": 3716.3261249999996
+        },
+        "usage": {
+          "inputTokens": 9281,
+          "cachedInputTokens": 8951,
+          "outputTokens": 188,
+          "reasoningTokens": 45,
+          "totalTokens": 9469,
+          "invocationsWithUsage": 2,
+          "providerLatencyMs": 3705.9758340000008,
+          "spendUsdKnown": 0.00022461,
+          "invocationsWithKnownSpend": 2
+        },
+        "calls": 2,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "selected": true,
+          "scheduleUnchanged": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "07-phrase-components",
+        "state": "no card",
+        "latency": {
+          "firstTextMs": 2775.531332999999,
+          "cardMs": null,
+          "turnMs": 3575.5842919999996
+        },
+        "usage": {
+          "inputTokens": 9216,
+          "cachedInputTokens": 8971,
+          "outputTokens": 198,
+          "reasoningTokens": 102,
+          "totalTokens": 9414,
+          "invocationsWithUsage": 2,
+          "providerLatencyMs": 3568.9094579999983,
+          "spendUsdKnown": 0.000219185,
+          "invocationsWithKnownSpend": 2
+        },
+        "calls": 2,
+        "checks": {
+          "wordId": false,
+          "state": false,
+          "enrolled": true
+        },
+        "structuralPass": false
+      },
+      {
+        "case": "08-character-correction",
+        "state": "proposed",
+        "latency": {
+          "firstTextMs": 4134.821499999998,
+          "cardMs": 5188.465208000001,
+          "turnMs": 5188.674665999999
+        },
+        "usage": {
+          "inputTokens": 13966,
+          "cachedInputTokens": 13464,
+          "outputTokens": 215,
+          "reasoningTokens": 49,
+          "totalTokens": 14181,
+          "invocationsWithUsage": 3,
+          "providerLatencyMs": 5173.219250999999,
+          "spendUsdKnown": 0.00030466499999999997,
+          "invocationsWithKnownSpend": 3
+        },
+        "calls": 3,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "09-new-sense",
+        "state": "proposed",
+        "latency": {
+          "firstTextMs": 2260.4838750000054,
+          "cardMs": 3991.1384590000016,
+          "turnMs": 3991.3486670000057
+        },
+        "usage": {
+          "inputTokens": 9203,
+          "cachedInputTokens": 8962,
+          "outputTokens": 228,
+          "reasoningTokens": 23,
+          "totalTokens": 9431,
+          "invocationsWithUsage": 2,
+          "providerLatencyMs": 3980.1067079999993,
+          "spendUsdKnown": 0.000233595,
+          "invocationsWithKnownSpend": 2
+        },
+        "calls": 2,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "proposedSense": true,
+          "sharedSenseCreated": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "10-unsupported-context",
+        "state": "no card",
+        "latency": {
+          "firstTextMs": 3072.2727090000044,
+          "cardMs": null,
+          "turnMs": 3450.9450420000067
+        },
+        "usage": {
+          "inputTokens": 9391,
+          "cachedInputTokens": 8966,
+          "outputTokens": 124,
+          "reasoningTokens": 65,
+          "totalTokens": 9515,
+          "invocationsWithUsage": 2,
+          "providerLatencyMs": 3443.37933399999,
+          "spendUsdKnown": 0.000204635,
+          "invocationsWithKnownSpend": 2
+        },
+        "calls": 2,
+        "checks": {
+          "card": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "11-fixed-expression-holdout",
+        "state": "no card",
+        "latency": {
+          "firstTextMs": 3276.390207999997,
+          "cardMs": null,
+          "turnMs": 4012.8290409999972
+        },
+        "usage": {
+          "inputTokens": 9209,
+          "cachedInputTokens": 8973,
+          "outputTokens": 220,
+          "reasoningTokens": 140,
+          "totalTokens": 9429,
+          "invocationsWithUsage": 2,
+          "providerLatencyMs": 4005.1820420000004,
+          "spendUsdKnown": 0.00022908,
+          "invocationsWithKnownSpend": 2
+        },
+        "calls": 2,
+        "checks": {
+          "wordId": false,
+          "state": false,
+          "enrolled": true
+        },
+        "structuralPass": false
+      },
+      {
+        "case": "12-material-holdout",
+        "state": "preparing",
+        "latency": {
+          "firstTextMs": 2676.132458,
+          "cardMs": 3701.6691250000003,
+          "turnMs": 3701.8444170000002
+        },
+        "usage": {
+          "inputTokens": 9455,
+          "cachedInputTokens": 8963,
+          "outputTokens": 148,
+          "reasoningTokens": 16,
+          "totalTokens": 9603,
+          "invocationsWithUsage": 2,
+          "providerLatencyMs": 3684.254332999997,
+          "spendUsdKnown": 0.00022498,
+          "invocationsWithKnownSpend": 2
+        },
+        "calls": 2,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "target": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      }
+    ]
+  },
+  {
+    "variant": "full-luna-none",
+    "model": "gpt-6-luna",
+    "reasoning": "none",
+    "promptHash": "6b58ea8085db9d55fd7f0b571c1cd4cd511faf4225a6b8677fa2ab3b47a13de6",
+    "cases": 12,
+    "calls": 26,
+    "medianTurnMs": 2792,
+    "maximumTurnMs": 4724,
+    "automaticChecksPassed": 8,
+    "results": [
+      {
+        "case": "01-listed-context",
+        "state": "preparing",
+        "latency": {
+          "firstTextMs": 1840.5465840000002,
+          "cardMs": 2844.509709,
+          "turnMs": 2844.67175
+        },
+        "usage": {
+          "inputTokens": 9302,
+          "cachedInputTokens": 4499,
+          "outputTokens": 147,
+          "reasoningTokens": 0,
+          "totalTokens": 9449,
+          "invocationsWithUsage": 2,
+          "providerLatencyMs": 2822.648417,
+          "spendUsdKnown": 0.000718715,
+          "invocationsWithKnownSpend": 2
+        },
+        "calls": 2,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "target": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "02-missing-inventory",
+        "state": "preparing",
+        "latency": {
+          "firstTextMs": 1521.0766670000003,
+          "cardMs": 2359.2465839999995,
+          "turnMs": 2359.404584
+        },
+        "usage": {
+          "inputTokens": 9106,
+          "cachedInputTokens": 8968,
+          "outputTokens": 134,
+          "reasoningTokens": 0,
+          "totalTokens": 9240,
+          "invocationsWithUsage": 2,
+          "providerLatencyMs": 2345.0222489999996,
+          "spendUsdKnown": 0.00017377999999999998,
+          "invocationsWithKnownSpend": 2
+        },
+        "calls": 2,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "pending": true,
+          "context": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "03-larger-expression",
+        "state": "proposed",
+        "latency": {
+          "firstTextMs": 3451.1589590000003,
+          "cardMs": 4723.694167,
+          "turnMs": 4723.89875
+        },
+        "usage": {
+          "inputTokens": 13760,
+          "cachedInputTokens": 13488,
+          "outputTokens": 185,
+          "reasoningTokens": 0,
+          "totalTokens": 13945,
+          "invocationsWithUsage": 3,
+          "providerLatencyMs": 4707.518292000001,
+          "spendUsdKnown": 0.000261155,
+          "invocationsWithKnownSpend": 3
+        },
+        "calls": 3,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "04-bare",
+        "state": "preparing",
+        "latency": {
+          "firstTextMs": 2076.9379580000004,
+          "cardMs": 2969.4602909999994,
+          "turnMs": 2969.5921660000004
+        },
+        "usage": {
+          "inputTokens": 9359,
+          "cachedInputTokens": 8950,
+          "outputTokens": 125,
+          "reasoningTokens": 0,
+          "totalTokens": 9484,
+          "invocationsWithUsage": 2,
+          "providerLatencyMs": 2952.6192489999994,
+          "spendUsdKnown": 0.000202975,
+          "invocationsWithKnownSpend": 2
+        },
+        "calls": 2,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "selected": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "05-no-defaults",
+        "state": "proposed",
+        "latency": {
+          "firstTextMs": 1665.139874999999,
+          "cardMs": 2739.908292,
+          "turnMs": 2740.116167
+        },
+        "usage": {
+          "inputTokens": 9243,
+          "cachedInputTokens": 8950,
+          "outputTokens": 141,
+          "reasoningTokens": 0,
+          "totalTokens": 9384,
+          "invocationsWithUsage": 2,
+          "providerLatencyMs": 2730.257584000001,
+          "spendUsdKnown": 0.00019647499999999996,
+          "invocationsWithKnownSpend": 2
+        },
+        "calls": 2,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "selected": false,
+          "enrolled": true
+        },
+        "structuralPass": false
+      },
+      {
+        "case": "06-already-studied",
+        "state": "no card",
+        "latency": {
+          "firstTextMs": 1501.6436250000006,
+          "cardMs": null,
+          "turnMs": 2156.5032500000016
+        },
+        "usage": {
+          "inputTokens": 9281,
+          "cachedInputTokens": 8951,
+          "outputTokens": 78,
+          "reasoningTokens": 0,
+          "totalTokens": 9359,
+          "invocationsWithUsage": 2,
+          "providerLatencyMs": 2149.533040999999,
+          "spendUsdKnown": 0.00016961,
+          "invocationsWithKnownSpend": 2
+        },
+        "calls": 2,
+        "checks": {
+          "wordId": false,
+          "state": false,
+          "selected": false,
+          "scheduleUnchanged": true,
+          "enrolled": true
+        },
+        "structuralPass": false
+      },
+      {
+        "case": "07-phrase-components",
+        "state": "no card",
+        "latency": {
+          "firstTextMs": 1562.9012909999983,
+          "cardMs": null,
+          "turnMs": 2199.974833
+        },
+        "usage": {
+          "inputTokens": 9216,
+          "cachedInputTokens": 8971,
+          "outputTokens": 86,
+          "reasoningTokens": 0,
+          "totalTokens": 9302,
+          "invocationsWithUsage": 2,
+          "providerLatencyMs": 2193.199542000002,
+          "spendUsdKnown": 0.000163185,
+          "invocationsWithKnownSpend": 2
+        },
+        "calls": 2,
+        "checks": {
+          "wordId": false,
+          "state": false,
+          "enrolled": true
+        },
+        "structuralPass": false
+      },
+      {
+        "case": "08-character-correction",
+        "state": "proposed",
+        "latency": {
+          "firstTextMs": 2329.0398749999986,
+          "cardMs": 3461.698666999997,
+          "turnMs": 3461.8805829999983
+        },
+        "usage": {
+          "inputTokens": 13966,
+          "cachedInputTokens": 13464,
+          "outputTokens": 170,
+          "reasoningTokens": 0,
+          "totalTokens": 14136,
+          "invocationsWithUsage": 3,
+          "providerLatencyMs": 3447.3895830000038,
+          "spendUsdKnown": 0.000282165,
+          "invocationsWithKnownSpend": 3
+        },
+        "calls": 3,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "09-new-sense",
+        "state": "proposed",
+        "latency": {
+          "firstTextMs": 1684.7020840000005,
+          "cardMs": 3193.8262090000026,
+          "turnMs": 3194.025625000002
+        },
+        "usage": {
+          "inputTokens": 9203,
+          "cachedInputTokens": 8962,
+          "outputTokens": 211,
+          "reasoningTokens": 0,
+          "totalTokens": 9414,
+          "invocationsWithUsage": 2,
+          "providerLatencyMs": 3183.199375,
+          "spendUsdKnown": 0.00022509499999999997,
+          "invocationsWithKnownSpend": 2
+        },
+        "calls": 2,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "proposedSense": true,
+          "sharedSenseCreated": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "10-unsupported-context",
+        "state": "no card",
+        "latency": {
+          "firstTextMs": 1784.8588329999984,
+          "cardMs": null,
+          "turnMs": 2345.824708
+        },
+        "usage": {
+          "inputTokens": 9391,
+          "cachedInputTokens": 8966,
+          "outputTokens": 72,
+          "reasoningTokens": 0,
+          "totalTokens": 9463,
+          "invocationsWithUsage": 2,
+          "providerLatencyMs": 2338.7241250000006,
+          "spendUsdKnown": 0.00017863499999999999,
+          "invocationsWithKnownSpend": 2
+        },
+        "calls": 2,
+        "checks": {
+          "card": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "11-fixed-expression-holdout",
+        "state": "no card",
+        "latency": {
+          "firstTextMs": 1575.3062080000018,
+          "cardMs": null,
+          "turnMs": 2274.716833000002
+        },
+        "usage": {
+          "inputTokens": 9209,
+          "cachedInputTokens": 8973,
+          "outputTokens": 89,
+          "reasoningTokens": 0,
+          "totalTokens": 9298,
+          "invocationsWithUsage": 2,
+          "providerLatencyMs": 2266.588458000002,
+          "spendUsdKnown": 0.00016358,
+          "invocationsWithKnownSpend": 2
+        },
+        "calls": 2,
+        "checks": {
+          "wordId": false,
+          "state": false,
+          "enrolled": true
+        },
+        "structuralPass": false
+      },
+      {
+        "case": "12-material-holdout",
+        "state": "preparing",
+        "latency": {
+          "firstTextMs": 3332.9289580000004,
+          "cardMs": 4180.795374999998,
+          "turnMs": 4180.942915999996
+        },
+        "usage": {
+          "inputTokens": 9455,
+          "cachedInputTokens": 8963,
+          "outputTokens": 131,
+          "reasoningTokens": 0,
+          "totalTokens": 9586,
+          "invocationsWithUsage": 2,
+          "providerLatencyMs": 4159.388667000003,
+          "spendUsdKnown": 0.00021648000000000001,
+          "invocationsWithKnownSpend": 2
+        },
+        "calls": 2,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "target": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      }
+    ]
+  },
+  {
+    "variant": "full-sol-low",
+    "model": "gpt-6-sol",
+    "reasoning": "low",
+    "promptHash": "6b58ea8085db9d55fd7f0b571c1cd4cd511faf4225a6b8677fa2ab3b47a13de6",
+    "cases": 12,
+    "calls": 29,
+    "medianTurnMs": 2748,
+    "maximumTurnMs": 4923,
+    "automaticChecksPassed": 11,
+    "results": [
+      {
+        "case": "01-listed-context",
+        "state": "preparing",
+        "latency": {
+          "firstTextMs": 1800.3235839999998,
+          "cardMs": 2700.6699169999997,
+          "turnMs": 2700.8553749999996
+        },
+        "usage": {
+          "inputTokens": 9302,
+          "cachedInputTokens": 8998,
+          "outputTokens": 132,
+          "reasoningTokens": 0,
+          "totalTokens": 9434,
+          "invocationsWithUsage": 2,
+          "providerLatencyMs": 2677.301293,
+          "spendUsdKnown": 0.0038766000000000004,
+          "invocationsWithKnownSpend": 2
+        },
+        "calls": 2,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "target": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "02-missing-inventory",
+        "state": "preparing",
+        "latency": {
+          "firstTextMs": 1890.382583,
+          "cardMs": 2547.104,
+          "turnMs": 2547.2517080000002
+        },
+        "usage": {
+          "inputTokens": 9106,
+          "cachedInputTokens": 8968,
+          "outputTokens": 146,
+          "reasoningTokens": 14,
+          "totalTokens": 9252,
+          "invocationsWithUsage": 2,
+          "providerLatencyMs": 2536.1604159999993,
+          "spendUsdKnown": 0.0035956,
+          "invocationsWithKnownSpend": 2
+        },
+        "calls": 2,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "pending": true,
+          "context": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "03-larger-expression",
+        "state": "proposed",
+        "latency": {
+          "firstTextMs": 4024.0985419999997,
+          "cardMs": 4922.662958999999,
+          "turnMs": 4922.898792
+        },
+        "usage": {
+          "inputTokens": 18722,
+          "cachedInputTokens": 18275,
+          "outputTokens": 207,
+          "reasoningTokens": 31,
+          "totalTokens": 18929,
+          "invocationsWithUsage": 4,
+          "providerLatencyMs": 4903.776375,
+          "spendUsdKnown": 0.0068365,
+          "invocationsWithKnownSpend": 4
+        },
+        "calls": 4,
+        "checks": {
+          "wordId": false,
+          "state": true,
+          "enrolled": true
+        },
+        "structuralPass": false
+      },
+      {
+        "case": "04-bare",
+        "state": "preparing",
+        "latency": {
+          "firstTextMs": 2105.654834000001,
+          "cardMs": 2795.451792,
+          "turnMs": 2795.588375000001
+        },
+        "usage": {
+          "inputTokens": 9359,
+          "cachedInputTokens": 8950,
+          "outputTokens": 121,
+          "reasoningTokens": 0,
+          "totalTokens": 9480,
+          "invocationsWithUsage": 2,
+          "providerLatencyMs": 2785.9545830000006,
+          "spendUsdKnown": 0.0040195,
+          "invocationsWithKnownSpend": 2
+        },
+        "calls": 2,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "selected": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "05-no-defaults",
+        "state": "proposed",
+        "latency": {
+          "firstTextMs": 1722.9475420000017,
+          "cardMs": 2464.960583,
+          "turnMs": 2465.142417000001
+        },
+        "usage": {
+          "inputTokens": 9243,
+          "cachedInputTokens": 8956,
+          "outputTokens": 148,
+          "reasoningTokens": 11,
+          "totalTokens": 9391,
+          "invocationsWithUsage": 2,
+          "providerLatencyMs": 2455.428584000001,
+          "spendUsdKnown": 0.0039857,
+          "invocationsWithKnownSpend": 2
+        },
+        "calls": 2,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "selected": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "06-already-studied",
+        "state": "already-studying",
+        "latency": {
+          "firstTextMs": 1704.710791999998,
+          "cardMs": 2348.4461249999986,
+          "turnMs": 2348.6482499999984
+        },
+        "usage": {
+          "inputTokens": 9281,
+          "cachedInputTokens": 8951,
+          "outputTokens": 136,
+          "reasoningTokens": 0,
+          "totalTokens": 9417,
+          "invocationsWithUsage": 2,
+          "providerLatencyMs": 2338.6382509999967,
+          "spendUsdKnown": 0.0039722,
+          "invocationsWithKnownSpend": 2
+        },
+        "calls": 2,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "selected": true,
+          "scheduleUnchanged": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "07-phrase-components",
+        "state": "proposed",
+        "latency": {
+          "firstTextMs": 2218.8274579999998,
+          "cardMs": 2911.459999999999,
+          "turnMs": 2911.6453330000004
+        },
+        "usage": {
+          "inputTokens": 9216,
+          "cachedInputTokens": 8998,
+          "outputTokens": 165,
+          "reasoningTokens": 15,
+          "totalTokens": 9381,
+          "invocationsWithUsage": 2,
+          "providerLatencyMs": 2901.4637509999957,
+          "spendUsdKnown": 0.0039916000000000005,
+          "invocationsWithKnownSpend": 2
+        },
+        "calls": 2,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "08-character-correction",
+        "state": "proposed",
+        "latency": {
+          "firstTextMs": 4157.083000000002,
+          "cardMs": 4818.620083000002,
+          "turnMs": 4818.803208000001
+        },
+        "usage": {
+          "inputTokens": 19226,
+          "cachedInputTokens": 18429,
+          "outputTokens": 181,
+          "reasoningTokens": 0,
+          "totalTokens": 19407,
+          "invocationsWithUsage": 4,
+          "providerLatencyMs": 4802.4261259999985,
+          "spendUsdKnown": 0.007482300000000001,
+          "invocationsWithKnownSpend": 4
+        },
+        "calls": 4,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "09-new-sense",
+        "state": "proposed",
+        "latency": {
+          "firstTextMs": 1787.911,
+          "cardMs": 3166.1560830000017,
+          "turnMs": 3166.351458000001
+        },
+        "usage": {
+          "inputTokens": 9203,
+          "cachedInputTokens": 8962,
+          "outputTokens": 232,
+          "reasoningTokens": 9,
+          "totalTokens": 9435,
+          "invocationsWithUsage": 2,
+          "providerLatencyMs": 3155.2785000000003,
+          "spendUsdKnown": 0.0047119,
+          "invocationsWithKnownSpend": 2
+        },
+        "calls": 2,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "proposedSense": true,
+          "sharedSenseCreated": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "10-unsupported-context",
+        "state": "no card",
+        "latency": {
+          "firstTextMs": 1816.5717920000025,
+          "cardMs": null,
+          "turnMs": 2342.680625000001
+        },
+        "usage": {
+          "inputTokens": 9391,
+          "cachedInputTokens": 8988,
+          "outputTokens": 65,
+          "reasoningTokens": 0,
+          "totalTokens": 9456,
+          "invocationsWithUsage": 2,
+          "providerLatencyMs": 2335.453834,
+          "spendUsdKnown": 0.0034521000000000005,
+          "invocationsWithKnownSpend": 2
+        },
+        "calls": 2,
+        "checks": {
+          "card": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "11-fixed-expression-holdout",
+        "state": "proposed",
+        "latency": {
+          "firstTextMs": 2632.0237500000003,
+          "cardMs": 3452.243542000004,
+          "turnMs": 3452.4350419999973
+        },
+        "usage": {
+          "inputTokens": 14134,
+          "cachedInputTokens": 13704,
+          "outputTokens": 176,
+          "reasoningTokens": 10,
+          "totalTokens": 14310,
+          "invocationsWithUsage": 3,
+          "providerLatencyMs": 3437.8563329999997,
+          "spendUsdKnown": 0.0055712999999999995,
+          "invocationsWithKnownSpend": 3
+        },
+        "calls": 3,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "12-material-holdout",
+        "state": "preparing",
+        "latency": {
+          "firstTextMs": 1814.443459000002,
+          "cardMs": 2396.3566250000003,
+          "turnMs": 2396.4890000000014
+        },
+        "usage": {
+          "inputTokens": 9455,
+          "cachedInputTokens": 8963,
+          "outputTokens": 134,
+          "reasoningTokens": 0,
+          "totalTokens": 9589,
+          "invocationsWithUsage": 2,
+          "providerLatencyMs": 2376.6401659999974,
+          "spendUsdKnown": 0.0043596,
+          "invocationsWithKnownSpend": 2
+        },
+        "calls": 2,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "target": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      }
+    ]
+  },
+  {
+    "variant": "responses-54mini-low",
+    "model": "gpt-5.4-mini",
+    "reasoning": "low",
+    "promptHash": "73a4c9188d86fee486e87f01da697846545fd3b6e7bbc22a26f2f1b0fe85cd2b",
+    "cases": 4,
+    "calls": 18,
+    "medianTurnMs": 5147,
+    "maximumTurnMs": 9273,
+    "automaticChecksPassed": 3,
+    "results": [
+      {
+        "case": "01-listed-context",
+        "state": "no card",
+        "latency": {
+          "firstTextMs": 5346.510458000001,
+          "cardMs": null,
+          "turnMs": 5718.68475
+        },
+        "usage": {
+          "inputTokens": null,
+          "cachedInputTokens": null,
+          "outputTokens": null,
+          "reasoningTokens": null,
+          "totalTokens": 18696,
+          "invocationsWithUsage": 4,
+          "providerLatencyMs": 5701.864875,
+          "spendUsdKnown": null,
+          "invocationsWithKnownSpend": 0
+        },
+        "calls": 4,
+        "checks": {
+          "wordId": false,
+          "state": false,
+          "target": false,
+          "enrolled": false
+        },
+        "structuralPass": false
+      },
+      {
+        "case": "03-larger-expression",
+        "state": "proposed",
+        "latency": {
+          "firstTextMs": null,
+          "cardMs": 9272.831791999999,
+          "turnMs": 9272.99175
+        },
+        "usage": {
+          "inputTokens": null,
+          "cachedInputTokens": null,
+          "outputTokens": null,
+          "reasoningTokens": null,
+          "totalTokens": 28524,
+          "invocationsWithUsage": 6,
+          "providerLatencyMs": 9248.773083999997,
+          "spendUsdKnown": null,
+          "invocationsWithKnownSpend": 0
+        },
+        "calls": 6,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "09-new-sense",
+        "state": "proposed",
+        "latency": {
+          "firstTextMs": 3443.561208000001,
+          "cardMs": 4575.6849999999995,
+          "turnMs": 4575.803875
+        },
+        "usage": {
+          "inputTokens": null,
+          "cachedInputTokens": null,
+          "outputTokens": null,
+          "reasoningTokens": null,
+          "totalTokens": 18440,
+          "invocationsWithUsage": 4,
+          "providerLatencyMs": 4561.706458999999,
+          "spendUsdKnown": null,
+          "invocationsWithKnownSpend": 0
+        },
+        "calls": 4,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "proposedSense": true,
+          "sharedSenseCreated": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "10-unsupported-context",
+        "state": "no card",
+        "latency": {
+          "firstTextMs": 4209.564791000001,
+          "cardMs": null,
+          "turnMs": 4476.534041000003
+        },
+        "usage": {
+          "inputTokens": null,
+          "cachedInputTokens": null,
+          "outputTokens": null,
+          "reasoningTokens": null,
+          "totalTokens": 18885,
+          "invocationsWithUsage": 4,
+          "providerLatencyMs": 4461.457957000002,
+          "spendUsdKnown": null,
+          "invocationsWithKnownSpend": 0
+        },
+        "calls": 4,
+        "checks": {
+          "card": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      }
+    ]
+  },
+  {
+    "variant": "responses-54mini-none",
+    "model": "gpt-5.4-mini",
+    "reasoning": "none",
+    "promptHash": "73a4c9188d86fee486e87f01da697846545fd3b6e7bbc22a26f2f1b0fe85cd2b",
+    "cases": 4,
+    "calls": 17,
+    "medianTurnMs": 4142,
+    "maximumTurnMs": 5813,
+    "automaticChecksPassed": 3,
+    "results": [
+      {
+        "case": "01-listed-context",
+        "state": "preparing",
+        "latency": {
+          "firstTextMs": 5153.066917,
+          "cardMs": 5813.242749999999,
+          "turnMs": 5813.41525
+        },
+        "usage": {
+          "inputTokens": null,
+          "cachedInputTokens": null,
+          "outputTokens": null,
+          "reasoningTokens": null,
+          "totalTokens": 23417,
+          "invocationsWithUsage": 5,
+          "providerLatencyMs": 5775.539666,
+          "spendUsdKnown": null,
+          "invocationsWithKnownSpend": 0
+        },
+        "calls": 5,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "target": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "03-larger-expression",
+        "state": "proposed",
+        "latency": {
+          "firstTextMs": null,
+          "cardMs": 3841.9942499999997,
+          "turnMs": 3842.1996249999993
+        },
+        "usage": {
+          "inputTokens": null,
+          "cachedInputTokens": null,
+          "outputTokens": null,
+          "reasoningTokens": null,
+          "totalTokens": 23005,
+          "invocationsWithUsage": 5,
+          "providerLatencyMs": 3820.289416999999,
+          "spendUsdKnown": null,
+          "invocationsWithKnownSpend": 0
+        },
+        "calls": 5,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "09-new-sense",
+        "state": "proposed",
+        "latency": {
+          "firstTextMs": 3667.8198329999996,
+          "cardMs": 4442.325083,
+          "turnMs": 4442.519582999999
+        },
+        "usage": {
+          "inputTokens": null,
+          "cachedInputTokens": null,
+          "outputTokens": null,
+          "reasoningTokens": null,
+          "totalTokens": 18333,
+          "invocationsWithUsage": 4,
+          "providerLatencyMs": 4424.619583000003,
+          "spendUsdKnown": null,
+          "invocationsWithKnownSpend": 0
+        },
+        "calls": 4,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "proposedSense": true,
+          "sharedSenseCreated": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "10-unsupported-context",
+        "state": "proposed",
+        "latency": {
+          "firstTextMs": 2003.7259160000012,
+          "cardMs": 2636.7388330000013,
+          "turnMs": 2636.8852910000005
+        },
+        "usage": {
+          "inputTokens": null,
+          "cachedInputTokens": null,
+          "outputTokens": null,
+          "reasoningTokens": null,
+          "totalTokens": 13818,
+          "invocationsWithUsage": 3,
+          "providerLatencyMs": 2624.672875,
+          "spendUsdKnown": null,
+          "invocationsWithKnownSpend": 0
+        },
+        "calls": 3,
+        "checks": {
+          "card": false,
+          "enrolled": true
+        },
+        "structuralPass": false
+      }
+    ]
+  },
+  {
+    "variant": "responses-54nano-low",
+    "model": "gpt-5.4-nano",
+    "reasoning": "low",
+    "promptHash": "73a4c9188d86fee486e87f01da697846545fd3b6e7bbc22a26f2f1b0fe85cd2b",
+    "cases": 4,
+    "calls": 18,
+    "medianTurnMs": 5311,
+    "maximumTurnMs": 6737,
+    "automaticChecksPassed": 4,
+    "results": [
+      {
+        "case": "01-listed-context",
+        "state": "preparing",
+        "latency": {
+          "firstTextMs": 4625.879375,
+          "cardMs": 5334.603292,
+          "turnMs": 5334.765208000001
+        },
+        "usage": {
+          "inputTokens": null,
+          "cachedInputTokens": null,
+          "outputTokens": null,
+          "reasoningTokens": null,
+          "totalTokens": 18658,
+          "invocationsWithUsage": 4,
+          "providerLatencyMs": 5302.707332000001,
+          "spendUsdKnown": null,
+          "invocationsWithKnownSpend": 0
+        },
+        "calls": 4,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "target": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "03-larger-expression",
+        "state": "proposed",
+        "latency": {
+          "firstTextMs": 4932.5707919999995,
+          "cardMs": 6736.83725,
+          "turnMs": 6736.972584
+        },
+        "usage": {
+          "inputTokens": null,
+          "cachedInputTokens": null,
+          "outputTokens": null,
+          "reasoningTokens": null,
+          "totalTokens": 27582,
+          "invocationsWithUsage": 6,
+          "providerLatencyMs": 6714.336375,
+          "spendUsdKnown": null,
+          "invocationsWithKnownSpend": 0
+        },
+        "calls": 6,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "09-new-sense",
+        "state": "proposed",
+        "latency": {
+          "firstTextMs": 3422.2960839999996,
+          "cardMs": 4564.785417000001,
+          "turnMs": 4564.881292
+        },
+        "usage": {
+          "inputTokens": null,
+          "cachedInputTokens": null,
+          "outputTokens": null,
+          "reasoningTokens": null,
+          "totalTokens": 18700,
+          "invocationsWithUsage": 4,
+          "providerLatencyMs": 4550.048416999996,
+          "spendUsdKnown": null,
+          "invocationsWithKnownSpend": 0
+        },
+        "calls": 4,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "proposedSense": true,
+          "sharedSenseCreated": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "10-unsupported-context",
+        "state": "no card",
+        "latency": {
+          "firstTextMs": 4737.272916000002,
+          "cardMs": null,
+          "turnMs": 5287.036458000002
+        },
+        "usage": {
+          "inputTokens": null,
+          "cachedInputTokens": null,
+          "outputTokens": null,
+          "reasoningTokens": null,
+          "totalTokens": 18886,
+          "invocationsWithUsage": 4,
+          "providerLatencyMs": 5275.957290999999,
+          "spendUsdKnown": null,
+          "invocationsWithKnownSpend": 0
+        },
+        "calls": 4,
+        "checks": {
+          "card": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      }
+    ]
+  },
+  {
+    "variant": "responses-6luna-low",
+    "model": "gpt-6-luna",
+    "reasoning": "low",
+    "promptHash": "73a4c9188d86fee486e87f01da697846545fd3b6e7bbc22a26f2f1b0fe85cd2b",
+    "cases": 4,
+    "calls": 17,
+    "medianTurnMs": 7224,
+    "maximumTurnMs": 8728,
+    "automaticChecksPassed": 3,
+    "results": [
+      {
+        "case": "01-listed-context",
+        "state": "preparing",
+        "latency": {
+          "firstTextMs": 6098.103292,
+          "cardMs": 7179.98925,
+          "turnMs": 7180.148875
+        },
+        "usage": {
+          "inputTokens": null,
+          "cachedInputTokens": null,
+          "outputTokens": null,
+          "reasoningTokens": null,
+          "totalTokens": 18557,
+          "invocationsWithUsage": 4,
+          "providerLatencyMs": 7151.623916000001,
+          "spendUsdKnown": 0.0008353,
+          "invocationsWithKnownSpend": 4
+        },
+        "calls": 4,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "target": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "03-larger-expression",
+        "state": "failed",
+        "latency": {
+          "firstTextMs": null,
+          "cardMs": null,
+          "turnMs": 8728.450624999998
+        },
+        "usage": {
+          "inputTokens": null,
+          "cachedInputTokens": null,
+          "outputTokens": null,
+          "reasoningTokens": null,
+          "totalTokens": 27463,
+          "invocationsWithUsage": 6,
+          "providerLatencyMs": 8708.472539999999,
+          "spendUsdKnown": 0.000423885,
+          "invocationsWithKnownSpend": 6
+        },
+        "calls": 6,
+        "checks": {
+          "wordId": false,
+          "state": false,
+          "enrolled": true
+        },
+        "structuralPass": false
+      },
+      {
+        "case": "09-new-sense",
+        "state": "proposed",
+        "latency": {
+          "firstTextMs": 5478.393500000002,
+          "cardMs": 7266.665667000001,
+          "turnMs": 7266.863667000001
+        },
+        "usage": {
+          "inputTokens": null,
+          "cachedInputTokens": null,
+          "outputTokens": null,
+          "reasoningTokens": null,
+          "totalTokens": 18490,
+          "invocationsWithUsage": 4,
+          "providerLatencyMs": 7248.647624000001,
+          "spendUsdKnown": 0.00037250999999999994,
+          "invocationsWithKnownSpend": 4
+        },
+        "calls": 4,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "proposedSense": true,
+          "sharedSenseCreated": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "10-unsupported-context",
+        "state": "no card",
+        "latency": {
+          "firstTextMs": 5782.015667,
+          "cardMs": null,
+          "turnMs": 6405.92625
+        },
+        "usage": {
+          "inputTokens": null,
+          "cachedInputTokens": null,
+          "outputTokens": null,
+          "reasoningTokens": null,
+          "totalTokens": 13943,
+          "invocationsWithUsage": 3,
+          "providerLatencyMs": 6395.920459000001,
+          "spendUsdKnown": 0.00032892500000000004,
+          "invocationsWithKnownSpend": 3
+        },
+        "calls": 3,
+        "checks": {
+          "card": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      }
+    ]
+  },
+  {
+    "variant": "screen-41mini",
+    "model": "gpt-4.1-mini",
+    "reasoning": "none",
+    "promptHash": "e9bbd3cfd51d61490bbce40e52c5ee07d4cb53ee177b2ca72bc782c9789fdc1a",
+    "cases": 4,
+    "calls": 9,
+    "medianTurnMs": 1874,
+    "maximumTurnMs": 4109,
+    "automaticChecksPassed": 1,
+    "results": [
+      {
+        "case": "01-listed-context",
+        "state": "proposed",
+        "latency": {
+          "firstTextMs": null,
+          "cardMs": 4109.030417,
+          "turnMs": 4109.149667
+        },
+        "usage": {
+          "inputTokens": 12471,
+          "cachedInputTokens": 7808,
+          "outputTokens": 92,
+          "reasoningTokens": 0,
+          "totalTokens": 12563,
+          "invocationsWithUsage": 3,
+          "providerLatencyMs": 4097.358167,
+          "spendUsdKnown": null,
+          "invocationsWithKnownSpend": 0
+        },
+        "calls": 3,
+        "checks": {
+          "wordId": true,
+          "state": false,
+          "target": true,
+          "enrolled": false
+        },
+        "structuralPass": false
+      },
+      {
+        "case": "03-larger-expression",
+        "state": "no card",
+        "latency": {
+          "firstTextMs": 959.8205829999997,
+          "cardMs": null,
+          "turnMs": 1640.5616249999994
+        },
+        "usage": {
+          "inputTokens": 8065,
+          "cachedInputTokens": 6784,
+          "outputTokens": 128,
+          "reasoningTokens": 0,
+          "totalTokens": 8193,
+          "invocationsWithUsage": 2,
+          "providerLatencyMs": 1634.3249160000005,
+          "spendUsdKnown": null,
+          "invocationsWithKnownSpend": 0
+        },
+        "calls": 2,
+        "checks": {
+          "wordId": false,
+          "state": false,
+          "enrolled": true
+        },
+        "structuralPass": false
+      },
+      {
+        "case": "09-new-sense",
+        "state": "no card",
+        "latency": {
+          "firstTextMs": 1308.2402920000004,
+          "cardMs": null,
+          "turnMs": 2107.7540420000005
+        },
+        "usage": {
+          "inputTokens": 8109,
+          "cachedInputTokens": 7680,
+          "outputTokens": 143,
+          "reasoningTokens": 0,
+          "totalTokens": 8252,
+          "invocationsWithUsage": 2,
+          "providerLatencyMs": 2101.1343750000005,
+          "spendUsdKnown": null,
+          "invocationsWithKnownSpend": 0
+        },
+        "calls": 2,
+        "checks": {
+          "wordId": false,
+          "state": false,
+          "proposedSense": false,
+          "sharedSenseCreated": true,
+          "enrolled": true
+        },
+        "structuralPass": false
+      },
+      {
+        "case": "10-unsupported-context",
+        "state": "no card",
+        "latency": {
+          "firstTextMs": 964.9838749999999,
+          "cardMs": null,
+          "turnMs": 1352.2082090000004
+        },
+        "usage": {
+          "inputTokens": 8115,
+          "cachedInputTokens": 6784,
+          "outputTokens": 79,
+          "reasoningTokens": 0,
+          "totalTokens": 8194,
+          "invocationsWithUsage": 2,
+          "providerLatencyMs": 1346.2632910000011,
+          "spendUsdKnown": null,
+          "invocationsWithKnownSpend": 0
+        },
+        "calls": 2,
+        "checks": {
+          "card": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      }
+    ]
+  },
+  {
+    "variant": "screen-54mini",
+    "model": "gpt-5.4-mini",
+    "reasoning": "low",
+    "promptHash": "e9bbd3cfd51d61490bbce40e52c5ee07d4cb53ee177b2ca72bc782c9789fdc1a",
+    "cases": 1,
+    "calls": 1,
+    "medianTurnMs": 1322,
+    "maximumTurnMs": 1322,
+    "automaticChecksPassed": 0,
+    "results": [
+      {
+        "case": "01-listed-context",
+        "state": "failed",
+        "latency": {
+          "firstTextMs": null,
+          "cardMs": null,
+          "turnMs": 1321.6399170000002
+        },
+        "usage": {
+          "inputTokens": null,
+          "cachedInputTokens": null,
+          "outputTokens": null,
+          "reasoningTokens": null,
+          "totalTokens": null,
+          "invocationsWithUsage": 0,
+          "providerLatencyMs": 1319.7561659999997,
+          "spendUsdKnown": null,
+          "invocationsWithKnownSpend": 0
+        },
+        "calls": 1,
+        "checks": {
+          "wordId": false,
+          "state": false,
+          "target": false,
+          "enrolled": false
+        },
+        "structuralPass": false
+      }
+    ]
+  },
+  {
+    "variant": "screen-54mini-none",
+    "model": "gpt-5.4-mini",
+    "reasoning": "none",
+    "promptHash": "e9bbd3cfd51d61490bbce40e52c5ee07d4cb53ee177b2ca72bc782c9789fdc1a",
+    "cases": 4,
+    "calls": 14,
+    "medianTurnMs": 2812,
+    "maximumTurnMs": 2994,
+    "automaticChecksPassed": 3,
+    "results": [
+      {
+        "case": "01-listed-context",
+        "state": "proposed",
+        "latency": {
+          "firstTextMs": 2317.2339580000003,
+          "cardMs": 2993.5681250000002,
+          "turnMs": 2993.791708
+        },
+        "usage": {
+          "inputTokens": 12741,
+          "cachedInputTokens": 7936,
+          "outputTokens": 172,
+          "reasoningTokens": 0,
+          "totalTokens": 12913,
+          "invocationsWithUsage": 3,
+          "providerLatencyMs": 2970.1996240000003,
+          "spendUsdKnown": null,
+          "invocationsWithKnownSpend": 0
+        },
+        "calls": 3,
+        "checks": {
+          "wordId": true,
+          "state": false,
+          "target": true,
+          "enrolled": false
+        },
+        "structuralPass": false
+      },
+      {
+        "case": "03-larger-expression",
+        "state": "proposed",
+        "latency": {
+          "firstTextMs": null,
+          "cardMs": 2688.7995830000004,
+          "turnMs": 2688.9794159999997
+        },
+        "usage": {
+          "inputTokens": 16951,
+          "cachedInputTokens": 16000,
+          "outputTokens": 126,
+          "reasoningTokens": 0,
+          "totalTokens": 17077,
+          "invocationsWithUsage": 4,
+          "providerLatencyMs": 2670.892916999999,
+          "spendUsdKnown": null,
+          "invocationsWithKnownSpend": 0
+        },
+        "calls": 4,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "09-new-sense",
+        "state": "proposed",
+        "latency": {
+          "firstTextMs": null,
+          "cardMs": 2934.8526249999995,
+          "turnMs": 2934.962958
+        },
+        "usage": {
+          "inputTokens": 17068,
+          "cachedInputTokens": 7936,
+          "outputTokens": 230,
+          "reasoningTokens": 0,
+          "totalTokens": 17298,
+          "invocationsWithUsage": 4,
+          "providerLatencyMs": 2917.7454580000012,
+          "spendUsdKnown": null,
+          "invocationsWithKnownSpend": 0
+        },
+        "calls": 4,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "proposedSense": true,
+          "sharedSenseCreated": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "10-unsupported-context",
+        "state": "no card",
+        "latency": {
+          "firstTextMs": 1668.3769580000007,
+          "cardMs": null,
+          "turnMs": 1887.9965410000004
+        },
+        "usage": {
+          "inputTokens": 12840,
+          "cachedInputTokens": 10624,
+          "outputTokens": 94,
+          "reasoningTokens": 0,
+          "totalTokens": 12934,
+          "invocationsWithUsage": 3,
+          "providerLatencyMs": 1876.0812499999993,
+          "spendUsdKnown": null,
+          "invocationsWithKnownSpend": 0
+        },
+        "calls": 3,
+        "checks": {
+          "card": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      }
+    ]
+  },
+  {
+    "variant": "screen-54nano",
+    "model": "gpt-5.4-nano",
+    "reasoning": "low",
+    "promptHash": "e9bbd3cfd51d61490bbce40e52c5ee07d4cb53ee177b2ca72bc782c9789fdc1a",
+    "cases": 1,
+    "calls": 1,
+    "medianTurnMs": 1198,
+    "maximumTurnMs": 1198,
+    "automaticChecksPassed": 0,
+    "results": [
+      {
+        "case": "01-listed-context",
+        "state": "failed",
+        "latency": {
+          "firstTextMs": null,
+          "cardMs": null,
+          "turnMs": 1198.4297499999998
+        },
+        "usage": {
+          "inputTokens": null,
+          "cachedInputTokens": null,
+          "outputTokens": null,
+          "reasoningTokens": null,
+          "totalTokens": null,
+          "invocationsWithUsage": 0,
+          "providerLatencyMs": 1196.667,
+          "spendUsdKnown": null,
+          "invocationsWithKnownSpend": 0
+        },
+        "calls": 1,
+        "checks": {
+          "wordId": false,
+          "state": false,
+          "target": false,
+          "enrolled": false
+        },
+        "structuralPass": false
+      }
+    ]
+  },
+  {
+    "variant": "screen-54nano-none",
+    "model": "gpt-5.4-nano",
+    "reasoning": "none",
+    "promptHash": "e9bbd3cfd51d61490bbce40e52c5ee07d4cb53ee177b2ca72bc782c9789fdc1a",
+    "cases": 4,
+    "calls": 18,
+    "medianTurnMs": 3145,
+    "maximumTurnMs": 3831,
+    "automaticChecksPassed": 3,
+    "results": [
+      {
+        "case": "01-listed-context",
+        "state": "proposed",
+        "latency": {
+          "firstTextMs": null,
+          "cardMs": 3258.110958,
+          "turnMs": 3258.224
+        },
+        "usage": {
+          "inputTokens": 17249,
+          "cachedInputTokens": 11520,
+          "outputTokens": 120,
+          "reasoningTokens": 0,
+          "totalTokens": 17369,
+          "invocationsWithUsage": 4,
+          "providerLatencyMs": 3246.689249,
+          "spendUsdKnown": null,
+          "invocationsWithKnownSpend": 0
+        },
+        "calls": 4,
+        "checks": {
+          "wordId": true,
+          "state": false,
+          "target": false,
+          "enrolled": false
+        },
+        "structuralPass": false
+      },
+      {
+        "case": "03-larger-expression",
+        "state": "proposed",
+        "latency": {
+          "firstTextMs": null,
+          "cardMs": 3831.0219580000003,
+          "turnMs": 3831.246583
+        },
+        "usage": {
+          "inputTokens": 25617,
+          "cachedInputTokens": 23040,
+          "outputTokens": 176,
+          "reasoningTokens": 0,
+          "totalTokens": 25793,
+          "invocationsWithUsage": 6,
+          "providerLatencyMs": 3812.424126,
+          "spendUsdKnown": null,
+          "invocationsWithKnownSpend": 0
+        },
+        "calls": 6,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "09-new-sense",
+        "state": "proposed",
+        "latency": {
+          "firstTextMs": null,
+          "cardMs": 3032.1672500000004,
+          "turnMs": 3032.3656250000004
+        },
+        "usage": {
+          "inputTokens": 17084,
+          "cachedInputTokens": 15360,
+          "outputTokens": 195,
+          "reasoningTokens": 0,
+          "totalTokens": 17279,
+          "invocationsWithUsage": 4,
+          "providerLatencyMs": 3013.915915999998,
+          "spendUsdKnown": null,
+          "invocationsWithKnownSpend": 0
+        },
+        "calls": 4,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "proposedSense": true,
+          "sharedSenseCreated": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "10-unsupported-context",
+        "state": "no card",
+        "latency": {
+          "firstTextMs": 2064.588084000001,
+          "cardMs": null,
+          "turnMs": 2731.8702090000006
+        },
+        "usage": {
+          "inputTokens": 17452,
+          "cachedInputTokens": 15360,
+          "outputTokens": 183,
+          "reasoningTokens": 0,
+          "totalTokens": 17635,
+          "invocationsWithUsage": 4,
+          "providerLatencyMs": 2718.5875829999986,
+          "spendUsdKnown": null,
+          "invocationsWithKnownSpend": 0
+        },
+        "calls": 4,
+        "checks": {
+          "card": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      }
+    ]
+  },
+  {
+    "variant": "screen-6luna",
+    "model": "gpt-6-luna",
+    "reasoning": "low",
+    "promptHash": "e9bbd3cfd51d61490bbce40e52c5ee07d4cb53ee177b2ca72bc782c9789fdc1a",
+    "cases": 1,
+    "calls": 1,
+    "medianTurnMs": 1036,
+    "maximumTurnMs": 1036,
+    "automaticChecksPassed": 0,
+    "results": [
+      {
+        "case": "01-listed-context",
+        "state": "failed",
+        "latency": {
+          "firstTextMs": null,
+          "cardMs": null,
+          "turnMs": 1035.6154999999999
+        },
+        "usage": {
+          "inputTokens": null,
+          "cachedInputTokens": null,
+          "outputTokens": null,
+          "reasoningTokens": null,
+          "totalTokens": null,
+          "invocationsWithUsage": 0,
+          "providerLatencyMs": 1033.8379169999998,
+          "spendUsdKnown": null,
+          "invocationsWithKnownSpend": 0
+        },
+        "calls": 1,
+        "checks": {
+          "wordId": false,
+          "state": false,
+          "target": false,
+          "enrolled": false
+        },
+        "structuralPass": false
+      }
+    ]
+  },
+  {
+    "variant": "screen-6luna-none",
+    "model": "gpt-6-luna",
+    "reasoning": "none",
+    "promptHash": "e9bbd3cfd51d61490bbce40e52c5ee07d4cb53ee177b2ca72bc782c9789fdc1a",
+    "cases": 4,
+    "calls": 18,
+    "medianTurnMs": 5670,
+    "maximumTurnMs": 6872,
+    "automaticChecksPassed": 4,
+    "results": [
+      {
+        "case": "01-listed-context",
+        "state": "preparing",
+        "latency": {
+          "firstTextMs": null,
+          "cardMs": 4877.80025,
+          "turnMs": 4877.89175
+        },
+        "usage": {
+          "inputTokens": 17249,
+          "cachedInputTokens": 12732,
+          "outputTokens": 137,
+          "reasoningTokens": 0,
+          "totalTokens": 17386,
+          "invocationsWithUsage": 4,
+          "providerLatencyMs": 4848.169290999999,
+          "spendUsdKnown": 0.0007601449999999999,
+          "invocationsWithKnownSpend": 4
+        },
+        "calls": 4,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "target": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "03-larger-expression",
+        "state": "proposed",
+        "latency": {
+          "firstTextMs": null,
+          "cardMs": 6872.1465,
+          "turnMs": 6872.292
+        },
+        "usage": {
+          "inputTokens": 25605,
+          "cachedInputTokens": 25177,
+          "outputTokens": 173,
+          "reasoningTokens": 0,
+          "totalTokens": 25778,
+          "invocationsWithUsage": 6,
+          "providerLatencyMs": 6850.955542000001,
+          "spendUsdKnown": 0.00039132,
+          "invocationsWithKnownSpend": 6
+        },
+        "calls": 6,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "09-new-sense",
+        "state": "proposed",
+        "latency": {
+          "firstTextMs": null,
+          "cardMs": 4529.904165999998,
+          "turnMs": 4530.050165999999
+        },
+        "usage": {
+          "inputTokens": 17084,
+          "cachedInputTokens": 16728,
+          "outputTokens": 194,
+          "reasoningTokens": 0,
+          "totalTokens": 17278,
+          "invocationsWithUsage": 4,
+          "providerLatencyMs": 4510.039917,
+          "spendUsdKnown": 0.00030848,
+          "invocationsWithKnownSpend": 4
+        },
+        "calls": 4,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "proposedSense": true,
+          "sharedSenseCreated": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "10-unsupported-context",
+        "state": "no card",
+        "latency": {
+          "firstTextMs": 5875.501959000001,
+          "cardMs": null,
+          "turnMs": 6461.6836250000015
+        },
+        "usage": {
+          "inputTokens": 17452,
+          "cachedInputTokens": 16912,
+          "outputTokens": 116,
+          "reasoningTokens": 0,
+          "totalTokens": 17568,
+          "invocationsWithUsage": 4,
+          "providerLatencyMs": 6444.906001000003,
+          "spendUsdKnown": 0.00029432,
+          "invocationsWithKnownSpend": 4
+        },
+        "calls": 4,
+        "checks": {
+          "card": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      }
+    ]
+  },
+  {
+    "variant": "screen2-54mini",
+    "model": "gpt-5.4-mini",
+    "reasoning": "none",
+    "promptHash": "73a4c9188d86fee486e87f01da697846545fd3b6e7bbc22a26f2f1b0fe85cd2b",
+    "cases": 4,
+    "calls": 13,
+    "medianTurnMs": 2738,
+    "maximumTurnMs": 7652,
+    "automaticChecksPassed": 3,
+    "results": [
+      {
+        "case": "01-listed-context",
+        "state": "preparing",
+        "latency": {
+          "firstTextMs": 7051.927833,
+          "cardMs": 7651.8838749999995,
+          "turnMs": 7652.072333
+        },
+        "usage": {
+          "inputTokens": 13575,
+          "cachedInputTokens": 11264,
+          "outputTokens": 167,
+          "reasoningTokens": 0,
+          "totalTokens": 13742,
+          "invocationsWithUsage": 3,
+          "providerLatencyMs": 7619.027249999999,
+          "spendUsdKnown": null,
+          "invocationsWithKnownSpend": 0
+        },
+        "calls": 3,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "target": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "03-larger-expression",
+        "state": "proposed",
+        "latency": {
+          "firstTextMs": 2579.7355000000007,
+          "cardMs": 2618.971292,
+          "turnMs": 2619.1525840000013
+        },
+        "usage": {
+          "inputTokens": 18063,
+          "cachedInputTokens": 15360,
+          "outputTokens": 170,
+          "reasoningTokens": 0,
+          "totalTokens": 18233,
+          "invocationsWithUsage": 4,
+          "providerLatencyMs": 2600.3585840000014,
+          "spendUsdKnown": null,
+          "invocationsWithKnownSpend": 0
+        },
+        "calls": 4,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "09-new-sense",
+        "state": "proposed",
+        "latency": {
+          "firstTextMs": 1477.126959000001,
+          "cardMs": 2105.633834,
+          "turnMs": 2105.8583340000005
+        },
+        "usage": {
+          "inputTokens": 13490,
+          "cachedInputTokens": 11136,
+          "outputTokens": 233,
+          "reasoningTokens": 0,
+          "totalTokens": 13723,
+          "invocationsWithUsage": 3,
+          "providerLatencyMs": 2092.6676669999997,
+          "spendUsdKnown": null,
+          "invocationsWithKnownSpend": 0
+        },
+        "calls": 3,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "proposedSense": true,
+          "sharedSenseCreated": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "10-unsupported-context",
+        "state": "proposed",
+        "latency": {
+          "firstTextMs": 2339.029457999999,
+          "cardMs": 2856.983457999999,
+          "turnMs": 2857.170415999999
+        },
+        "usage": {
+          "inputTokens": 13674,
+          "cachedInputTokens": 11264,
+          "outputTokens": 154,
+          "reasoningTokens": 0,
+          "totalTokens": 13828,
+          "invocationsWithUsage": 3,
+          "providerLatencyMs": 2841.7192099999975,
+          "spendUsdKnown": null,
+          "invocationsWithKnownSpend": 0
+        },
+        "calls": 3,
+        "checks": {
+          "card": false,
+          "enrolled": true
+        },
+        "structuralPass": false
+      }
+    ]
+  },
+  {
+    "variant": "screen2-54nano",
+    "model": "gpt-5.4-nano",
+    "reasoning": "none",
+    "promptHash": "73a4c9188d86fee486e87f01da697846545fd3b6e7bbc22a26f2f1b0fe85cd2b",
+    "cases": 4,
+    "calls": 19,
+    "medianTurnMs": 3632,
+    "maximumTurnMs": 8781,
+    "automaticChecksPassed": 1,
+    "results": [
+      {
+        "case": "01-listed-context",
+        "state": "proposed",
+        "latency": {
+          "firstTextMs": 8137.89025,
+          "cardMs": 8781.083,
+          "turnMs": 8781.283708
+        },
+        "usage": {
+          "inputTokens": 18361,
+          "cachedInputTokens": 14336,
+          "outputTokens": 172,
+          "reasoningTokens": 0,
+          "totalTokens": 18533,
+          "invocationsWithUsage": 4,
+          "providerLatencyMs": 8745.655332999999,
+          "spendUsdKnown": null,
+          "invocationsWithKnownSpend": 0
+        },
+        "calls": 4,
+        "checks": {
+          "wordId": true,
+          "state": false,
+          "target": false,
+          "enrolled": false
+        },
+        "structuralPass": false
+      },
+      {
+        "case": "03-larger-expression",
+        "state": "failed",
+        "latency": {
+          "firstTextMs": 3525.259833,
+          "cardMs": null,
+          "turnMs": 4127.384042
+        },
+        "usage": {
+          "inputTokens": 27289,
+          "cachedInputTokens": 23040,
+          "outputTokens": 217,
+          "reasoningTokens": 0,
+          "totalTokens": 27506,
+          "invocationsWithUsage": 6,
+          "providerLatencyMs": 4099.207332000002,
+          "spendUsdKnown": null,
+          "invocationsWithKnownSpend": 0
+        },
+        "calls": 6,
+        "checks": {
+          "wordId": false,
+          "state": false,
+          "enrolled": true
+        },
+        "structuralPass": false
+      },
+      {
+        "case": "09-new-sense",
+        "state": "failed",
+        "latency": {
+          "firstTextMs": 2009.9066669999993,
+          "cardMs": null,
+          "turnMs": 2743.364749999999
+        },
+        "usage": {
+          "inputTokens": 18196,
+          "cachedInputTokens": 15360,
+          "outputTokens": 189,
+          "reasoningTokens": 0,
+          "totalTokens": 18385,
+          "invocationsWithUsage": 4,
+          "providerLatencyMs": 2726.1799169999977,
+          "spendUsdKnown": null,
+          "invocationsWithKnownSpend": 0
+        },
+        "calls": 4,
+        "checks": {
+          "wordId": false,
+          "state": false,
+          "proposedSense": false,
+          "sharedSenseCreated": true,
+          "enrolled": true
+        },
+        "structuralPass": false
+      },
+      {
+        "case": "10-unsupported-context",
+        "state": "no card",
+        "latency": {
+          "firstTextMs": 2740.099875,
+          "cardMs": null,
+          "turnMs": 3136.7765419999996
+        },
+        "usage": {
+          "inputTokens": 23467,
+          "cachedInputTokens": 19200,
+          "outputTokens": 157,
+          "reasoningTokens": 0,
+          "totalTokens": 23624,
+          "invocationsWithUsage": 5,
+          "providerLatencyMs": 3116.8672089999964,
+          "spendUsdKnown": null,
+          "invocationsWithKnownSpend": 0
+        },
+        "calls": 5,
+        "checks": {
+          "card": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      }
+    ]
+  },
+  {
+    "variant": "screen2-6luna",
+    "model": "gpt-6-luna",
+    "reasoning": "none",
+    "promptHash": "73a4c9188d86fee486e87f01da697846545fd3b6e7bbc22a26f2f1b0fe85cd2b",
+    "cases": 4,
+    "calls": 16,
+    "medianTurnMs": 4258,
+    "maximumTurnMs": 8632,
+    "automaticChecksPassed": 2,
+    "results": [
+      {
+        "case": "01-listed-context",
+        "state": "preparing",
+        "latency": {
+          "firstTextMs": 7761.819334000001,
+          "cardMs": 8632.240042,
+          "turnMs": 8632.399334
+        },
+        "usage": {
+          "inputTokens": 18361,
+          "cachedInputTokens": 13566,
+          "outputTokens": 168,
+          "reasoningTokens": 0,
+          "totalTokens": 18529,
+          "invocationsWithUsage": 4,
+          "providerLatencyMs": 8590.459292,
+          "spendUsdKnown": 0.000818735,
+          "invocationsWithKnownSpend": 4
+        },
+        "calls": 4,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "target": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "03-larger-expression",
+        "state": "no card",
+        "latency": {
+          "firstTextMs": 2861.906166999999,
+          "cardMs": null,
+          "turnMs": 3435.9228330000005
+        },
+        "usage": {
+          "inputTokens": 17788,
+          "cachedInputTokens": 17601,
+          "outputTokens": 133,
+          "reasoningTokens": 0,
+          "totalTokens": 17921,
+          "invocationsWithUsage": 4,
+          "providerLatencyMs": 3419.888084,
+          "spendUsdKnown": 0.000265585,
+          "invocationsWithKnownSpend": 4
+        },
+        "calls": 4,
+        "checks": {
+          "wordId": false,
+          "state": false,
+          "enrolled": true
+        },
+        "structuralPass": false
+      },
+      {
+        "case": "09-new-sense",
+        "state": "proposed",
+        "latency": {
+          "firstTextMs": 3508.451041999999,
+          "cardMs": 4973.228542000001,
+          "turnMs": 4973.4206669999985
+        },
+        "usage": {
+          "inputTokens": 18059,
+          "cachedInputTokens": 17703,
+          "outputTokens": 252,
+          "reasoningTokens": 0,
+          "totalTokens": 18311,
+          "invocationsWithUsage": 4,
+          "providerLatencyMs": 4948.815248000003,
+          "spendUsdKnown": 0.00034723,
+          "invocationsWithKnownSpend": 4
+        },
+        "calls": 4,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "proposedSense": true,
+          "sharedSenseCreated": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "10-unsupported-context",
+        "state": "proposed",
+        "latency": {
+          "firstTextMs": 2734.3166249999995,
+          "cardMs": 3543.168249999999,
+          "turnMs": 3543.343832999999
+        },
+        "usage": {
+          "inputTokens": 18564,
+          "cachedInputTokens": 18024,
+          "outputTokens": 172,
+          "reasoningTokens": 0,
+          "totalTokens": 18736,
+          "invocationsWithUsage": 4,
+          "providerLatencyMs": 3522.4353740000006,
+          "spendUsdKnown": 0.00033344,
+          "invocationsWithKnownSpend": 4
+        },
+        "calls": 4,
+        "checks": {
+          "card": false,
+          "enrolled": true
+        },
+        "structuralPass": false
+      }
+    ]
+  },
+  {
+    "variant": "screen3-54mini",
+    "model": "gpt-5.4-mini",
+    "reasoning": "low",
+    "promptHash": "45417d19ab9cc40acfda1e4cc31191ec565ab87803e7f1007ab2ce78bd599cce",
+    "cases": 4,
+    "calls": 9,
+    "medianTurnMs": 2869,
+    "maximumTurnMs": 5344,
+    "automaticChecksPassed": 2,
+    "results": [
+      {
+        "case": "01-listed-context",
+        "state": "no card",
+        "latency": {
+          "firstTextMs": 1833.9927080000002,
+          "cardMs": null,
+          "turnMs": 2115.0815000000002
+        },
+        "usage": {
+          "inputTokens": 9237,
+          "cachedInputTokens": 4352,
+          "outputTokens": 100,
+          "reasoningTokens": 39,
+          "totalTokens": 9337,
+          "invocationsWithUsage": 2,
+          "providerLatencyMs": 2107.185792,
+          "spendUsdKnown": null,
+          "invocationsWithKnownSpend": 0
+        },
+        "calls": 2,
+        "checks": {
+          "wordId": false,
+          "state": false,
+          "target": false,
+          "enrolled": false
+        },
+        "structuralPass": false
+      },
+      {
+        "case": "03-larger-expression",
+        "state": "no card",
+        "latency": {
+          "firstTextMs": 4958.432709000001,
+          "cardMs": null,
+          "turnMs": 5343.642542
+        },
+        "usage": {
+          "inputTokens": 13901,
+          "cachedInputTokens": 11008,
+          "outputTokens": 558,
+          "reasoningTokens": 459,
+          "totalTokens": 14459,
+          "invocationsWithUsage": 3,
+          "providerLatencyMs": 5332.604958,
+          "spendUsdKnown": null,
+          "invocationsWithKnownSpend": 0
+        },
+        "calls": 3,
+        "checks": {
+          "wordId": false,
+          "state": false,
+          "enrolled": true
+        },
+        "structuralPass": false
+      },
+      {
+        "case": "09-new-sense",
+        "state": "proposed",
+        "latency": {
+          "firstTextMs": 1910.4847090000003,
+          "cardMs": 2802.124834,
+          "turnMs": 2802.3159590000014
+        },
+        "usage": {
+          "inputTokens": 9140,
+          "cachedInputTokens": 6656,
+          "outputTokens": 295,
+          "reasoningTokens": 87,
+          "totalTokens": 9435,
+          "invocationsWithUsage": 2,
+          "providerLatencyMs": 2789.155082000001,
+          "spendUsdKnown": null,
+          "invocationsWithKnownSpend": 0
+        },
+        "calls": 2,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "proposedSense": true,
+          "sharedSenseCreated": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "10-unsupported-context",
+        "state": "no card",
+        "latency": {
+          "firstTextMs": 2486.494292000001,
+          "cardMs": null,
+          "turnMs": 2934.7972090000003
+        },
+        "usage": {
+          "inputTokens": 9355,
+          "cachedInputTokens": 6656,
+          "outputTokens": 271,
+          "reasoningTokens": 179,
+          "totalTokens": 9626,
+          "invocationsWithUsage": 2,
+          "providerLatencyMs": 2927.482250000001,
+          "spendUsdKnown": null,
+          "invocationsWithKnownSpend": 0
+        },
+        "calls": 2,
+        "checks": {
+          "card": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      }
+    ]
+  },
+  {
+    "variant": "screen3-54nano",
+    "model": "gpt-5.4-nano",
+    "reasoning": "low",
+    "promptHash": "45417d19ab9cc40acfda1e4cc31191ec565ab87803e7f1007ab2ce78bd599cce",
+    "cases": 4,
+    "calls": 9,
+    "medianTurnMs": 3486,
+    "maximumTurnMs": 4325,
+    "automaticChecksPassed": 3,
+    "results": [
+      {
+        "case": "01-listed-context",
+        "state": "preparing",
+        "latency": {
+          "firstTextMs": 1886.6777500000003,
+          "cardMs": 2751.045458,
+          "turnMs": 2751.210583
+        },
+        "usage": {
+          "inputTokens": 9238,
+          "cachedInputTokens": 3840,
+          "outputTokens": 194,
+          "reasoningTokens": 41,
+          "totalTokens": 9432,
+          "invocationsWithUsage": 2,
+          "providerLatencyMs": 2729.823209,
+          "spendUsdKnown": null,
+          "invocationsWithKnownSpend": 0
+        },
+        "calls": 2,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "target": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "03-larger-expression",
+        "state": "failed",
+        "latency": {
+          "firstTextMs": 3097.4780419999997,
+          "cardMs": null,
+          "turnMs": 4221.184417
+        },
+        "usage": {
+          "inputTokens": 13710,
+          "cachedInputTokens": 11520,
+          "outputTokens": 429,
+          "reasoningTokens": 204,
+          "totalTokens": 14139,
+          "invocationsWithUsage": 3,
+          "providerLatencyMs": 4212.399416,
+          "spendUsdKnown": null,
+          "invocationsWithKnownSpend": 0
+        },
+        "calls": 3,
+        "checks": {
+          "wordId": false,
+          "state": false,
+          "enrolled": true
+        },
+        "structuralPass": false
+      },
+      {
+        "case": "09-new-sense",
+        "state": "proposed",
+        "latency": {
+          "firstTextMs": null,
+          "cardMs": 4324.322958,
+          "turnMs": 4324.5242499999995
+        },
+        "usage": {
+          "inputTokens": 9150,
+          "cachedInputTokens": 7680,
+          "outputTokens": 394,
+          "reasoningTokens": 211,
+          "totalTokens": 9544,
+          "invocationsWithUsage": 2,
+          "providerLatencyMs": 4313.7196250000015,
+          "spendUsdKnown": null,
+          "invocationsWithKnownSpend": 0
+        },
+        "calls": 2,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "proposedSense": true,
+          "sharedSenseCreated": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "10-unsupported-context",
+        "state": "no card",
+        "latency": {
+          "firstTextMs": 1711.2670409999992,
+          "cardMs": null,
+          "turnMs": 2321.7759159999987
+        },
+        "usage": {
+          "inputTokens": 9357,
+          "cachedInputTokens": 7680,
+          "outputTokens": 221,
+          "reasoningTokens": 92,
+          "totalTokens": 9578,
+          "invocationsWithUsage": 2,
+          "providerLatencyMs": 2315.093249999998,
+          "spendUsdKnown": null,
+          "invocationsWithKnownSpend": 0
+        },
+        "calls": 2,
+        "checks": {
+          "card": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      }
+    ]
+  },
+  {
+    "variant": "screen3-6luna",
+    "model": "gpt-6-luna",
+    "reasoning": "low",
+    "promptHash": "45417d19ab9cc40acfda1e4cc31191ec565ab87803e7f1007ab2ce78bd599cce",
+    "cases": 4,
+    "calls": 10,
+    "medianTurnMs": 4691,
+    "maximumTurnMs": 6915,
+    "automaticChecksPassed": 3,
+    "results": [
+      {
+        "case": "01-listed-context",
+        "state": "preparing",
+        "latency": {
+          "firstTextMs": 2025.9836249999998,
+          "cardMs": 3234.9812500000003,
+          "turnMs": 3235.1548749999997
+        },
+        "usage": {
+          "inputTokens": 9224,
+          "cachedInputTokens": 4460,
+          "outputTokens": 165,
+          "reasoningTokens": 18,
+          "totalTokens": 9389,
+          "invocationsWithUsage": 2,
+          "providerLatencyMs": 3213.1344590000003,
+          "spendUsdKnown": 0.0007224499999999999,
+          "invocationsWithKnownSpend": 2
+        },
+        "calls": 2,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "target": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "03-larger-expression",
+        "state": "proposed",
+        "latency": {
+          "firstTextMs": 5742.779041,
+          "cardMs": 6915.158458,
+          "turnMs": 6915.347458
+        },
+        "usage": {
+          "inputTokens": 18294,
+          "cachedInputTokens": 17932,
+          "outputTokens": 287,
+          "reasoningTokens": 80,
+          "totalTokens": 18581,
+          "invocationsWithUsage": 4,
+          "providerLatencyMs": 6897.015375000001,
+          "spendUsdKnown": 0.00036777,
+          "invocationsWithKnownSpend": 4
+        },
+        "calls": 4,
+        "checks": {
+          "wordId": false,
+          "state": true,
+          "enrolled": true
+        },
+        "structuralPass": false
+      },
+      {
+        "case": "09-new-sense",
+        "state": "proposed",
+        "latency": {
+          "firstTextMs": 3086.993999999999,
+          "cardMs": 4932.099708,
+          "turnMs": 4932.278415999999
+        },
+        "usage": {
+          "inputTokens": 9125,
+          "cachedInputTokens": 8884,
+          "outputTokens": 305,
+          "reasoningTokens": 95,
+          "totalTokens": 9430,
+          "invocationsWithUsage": 2,
+          "providerLatencyMs": 4921.180333999999,
+          "spendUsdKnown": 0.000271315,
+          "invocationsWithKnownSpend": 2
+        },
+        "calls": 2,
+        "checks": {
+          "wordId": true,
+          "state": true,
+          "proposedSense": true,
+          "sharedSenseCreated": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      },
+      {
+        "case": "10-unsupported-context",
+        "state": "no card",
+        "latency": {
+          "firstTextMs": 3985.6449589999993,
+          "cardMs": null,
+          "turnMs": 4450.542584000001
+        },
+        "usage": {
+          "inputTokens": 9313,
+          "cachedInputTokens": 8888,
+          "outputTokens": 143,
+          "reasoningTokens": 78,
+          "totalTokens": 9456,
+          "invocationsWithUsage": 2,
+          "providerLatencyMs": 4443.154084000002,
+          "spendUsdKnown": 0.00021335499999999998,
+          "invocationsWithKnownSpend": 2
+        },
+        "calls": 2,
+        "checks": {
+          "card": true,
+          "enrolled": true
+        },
+        "structuralPass": true
+      }
+    ]
+  }
+]

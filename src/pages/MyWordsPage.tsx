@@ -12,6 +12,7 @@ import {
 export type MyWordsPageProps<Stage extends string = MyWordsStatus, Entry extends WordBrowserEntry<Stage> = WordBrowserEntry<Stage>> = {
   stages?: ReadonlyArray<{status: Stage; label: string}>;
   renderWordActions?: (entry: Entry) => ReactNode;
+  renderWordStatus?: (entry: Entry) => ReactNode;
   view: MyWordsView;
   query: string;
   statuses: readonly Stage[];
@@ -120,6 +121,7 @@ export function WordBrowserPage<Stage extends string = MyWordsStatus, Entry exte
               </span>
               <span className="my-word-summary">
                 <span>{label(entry.word.status)}</span>
+                {props.renderWordStatus?.(entry)}
                 {props.view === 'recent' && <span className="my-word-date">{entry.lastStudiedAt
                   ? `Studied ${formatStudyDate(entry.lastStudiedAt)}` : 'Study date not recorded'}</span>}
               </span>
