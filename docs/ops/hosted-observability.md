@@ -422,3 +422,22 @@ from the dashboard itself and evaluates CPU normalization, file rates, daemon
 startup, and missing telemetry/allocation/status against controlled samples.
 It skips when `PROMTOOL_PATH` is absent. This checks query behavior, not rendered
 Grafana layout or Fly's live series availability.
+
+### Replication timing
+
+Production and RC use `monitor-interval: 25s` and replica `sync-interval: 1s`.
+The longer monitor interval groups changes into fewer local incremental files;
+the uploader still runs promptly. In v0.5.16, delaying uploads alone does not
+combine already-created files. The operating target is roughly 30 seconds of
+replication staleness under healthy, light load, accepting loss of recent
+unreplicated progress if the volume is lost. Network failures, backlog, or CPU
+contention can exceed that target; successful-check age does not measure this
+loss window directly.
+
+The checkpoint interval remains one minute, snapshots hourly, retention seven
+days, and shutdown sync unchanged. Litestream checks whether SQLite checkpoints
+are due from the monitor loop, so the timing of those checks can shift even
+though checkpoint settings remain unchanged. Compare the separate telemetry
+release's one-second baseline with this timing using the one-hour procedure
+above. Reverting only `monitor-interval` to `1s` restores the previous cadence;
+no schema or data migration is involved.
