@@ -54,7 +54,7 @@ test('real immutable published package and exact rehearsal reuse appear without 
     INSERT INTO shared_content_publications VALUES ('pt','teaching_package','t','w','available','2020-01-01','2020-01-01');`);
   const content = {schemaVersion:1,id:'c',word:{wordId:'w',hanzi:'滞后',traditional:null,pinyin:'zhì hòu'},uses:[{id:'u',label:'lag behind',notes:['Delay'],exampleIds:['e']}],examples:[{id:'e',text:'项目滞后了。',translation:'The project fell behind.',pronunciation:null}]};
   const teaching = {schemaVersion:1,id:'t',wordContentId:'c',beats:[{id:'b',parts:[{kind:'text',text:'Lagging behind'}]}],rehearsals:[{id:'r',responseMode:'hanzi_entry',contract:{kind:'target_rehearsal',wordId:'w'},instruction:'',stimulus:{kind:'direct_text',text:'Lag behind'},acceptedAnswers:[{wordId:'w',hanzi:'滞后',traditional:null}]}]};
-  db.prepare('INSERT INTO word_content_documents VALUES (?,?,?,?,?,?)').run('c','w',JSON.stringify(content),'fixture-model',first,'pc');
+  db.prepare('INSERT INTO word_content_documents(content_id,word_id,content_json,model,created_at,publication_id) VALUES (?,?,?,?,?,?)').run('c','w',JSON.stringify(content),'fixture-model',first,'pc');
   db.prepare('INSERT INTO word_teaching_packages VALUES (?,?,?,?,?,?,?)').run('t','w','c',JSON.stringify(teaching),'fixture-model',first,'pt');
   for (const [learner,time] of [['private-identity',first],['second-identity',second]]) {
     runWithLearnerId(learner,() => {

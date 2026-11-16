@@ -22,7 +22,7 @@ before(async () => {
     INSERT INTO shared_content_publications VALUES ('pt','teaching_package','t','w','available','now','now');`);
   const content = { schemaVersion: 1, id: 'c', word: { wordId: 'w', hanzi: '你好', traditional: null, pinyin: 'nǐ hǎo' }, uses: [{id:'u',label:'hello',notes:['Greeting'],exampleIds:['e']}], examples: [{id:'e',text:'你好！',translation:'Hello!',pronunciation:null}] };
   const teaching = {schemaVersion:1,id:'t',wordContentId:'c',beats:[{id:'b',parts:[{kind:'text',text:'Greeting'}]}],rehearsals:[{id:'r',responseMode:'hanzi_entry',contract:{kind:'target_rehearsal',wordId:'w'},instruction:'',stimulus:{kind:'direct_text',text:'Hello'},acceptedAnswers:[{wordId:'w',hanzi:'你好',traditional:null}]}]};
-  db.prepare('INSERT INTO word_content_documents VALUES (?,?,?,?,?,?)').run('c','w',JSON.stringify(content),'fixture-model','now','pc');
+  db.prepare('INSERT INTO word_content_documents(content_id,word_id,content_json,model,created_at,publication_id) VALUES (?,?,?,?,?,?)').run('c','w',JSON.stringify(content),'fixture-model','now','pc');
   db.prepare('INSERT INTO word_teaching_packages VALUES (?,?,?,?,?,?,?)').run('t','w','c',JSON.stringify(teaching),'fixture-model','now','pt');
   server = createApp({ frontendDistPath: null }).listen(0, '127.0.0.1');
   await new Promise<void>((resolve, reject) => { server.once('listening', resolve); server.once('error', reject); });

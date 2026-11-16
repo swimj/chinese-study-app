@@ -85,6 +85,8 @@ may retain superseded plans; check the task context and owning docs before use.
 
 | Note | Type | Retire by |
 | --- | --- | --- |
+| [Learner sense preferences — build spec](active/2026-11-14-learner-sense-preferences-spec.md) | handoff | when the first PR is open, or the design is declined |
+| [Add-word chat — simulated transcript](active/2026-11-15-add-word-chat-simulation.md) | handoff | when the add-word agent prompt and its transcript evaluation set exist, or the design is declined |
 | [Themed open passages: a hand-run experiment](active/2026-11-14-themed-open-passage-experiment.md) | research | when revised by later experiments, or graduated into an owning product note |
 | [Timed session prototype — build handoff](active/2026-11-12-timed-session-build-handoff.md) | handoff | when the first prototype PR is open, or the design is declined |
 | [Timed session iterator — prototype design](active/2026-11-11-timed-session-iterator-prototype.md) | research | when superseded by an implementation spec, or declined |

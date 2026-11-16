@@ -53,7 +53,7 @@ export function createWordPreparationWorker(options: {
         pauseEmptyInventoryPreparation(work.wordId,new VocabularyEmptySenseInventory().message,isoNow());
         return true;
       }
-      if (preparation.ready(work.wordId, work.stage)) {
+      if (preparation.ready(work.wordId, work.stage,work.teachingSetKey)) {
         markWordPreparationReady(work.workId, isoNow());
         return true;
       }
@@ -61,14 +61,14 @@ export function createWordPreparationWorker(options: {
         pauseUnavailableWordPreparation(work.workId, 'Preparation needs a requesting learner.', isoNow());
         return true;
       }
-      const source = preparation.source(work.wordId);
+      const source = preparation.source(work.wordId,work.teachingSetKey);
       if (work.stage !== 'bootstrap' && source === null) {
         pauseUnavailableWordPreparation(work.workId, 'Prepared bootstrap source is unavailable or withdrawn; operator disposition required.', isoNow());
         return true;
       }
       return await providerWork(async () => {
         if (!enabled()) return false;
-        try{if(work.stage==='bootstrap')await preparation.prepareBootstrapSenses(work.wordId,work.workId);else preparation.validatePreparedSource(work.wordId);}
+        try{if(work.stage==='bootstrap')await preparation.prepareBootstrapSenses(work.wordId,work.workId,work.teachingSetKey);else preparation.validatePreparedSource(work.wordId,work.teachingSetKey);}
         catch(error){
           if(error instanceof VocabularyEmptySenseInventory)pauseEmptyInventoryPreparation(work.wordId,error.message,isoNow());
           else if(error instanceof VocabularySenseReadinessPending)deferWordPreparationForSenses(work.workId,error.retryAt,isoNow());
@@ -80,7 +80,7 @@ export function createWordPreparationWorker(options: {
         const token = randomUUID();
         const startedAt = isoNow();
         const expiresAt = new Date(now() + 5 * 60_000).toISOString();
-        const claim = preparation.claim(work.wordId, work.stage, token, startedAt, expiresAt);
+        const claim = preparation.claim(work.wordId, work.stage, token, startedAt, expiresAt,work.teachingSetKey);
         if (claim === 'busy') return false;
         if (claim === 'ready') {
           pauseUnavailableWordPreparation(work.workId,
@@ -90,7 +90,7 @@ export function createWordPreparationWorker(options: {
         try {
           if (!beginWordPreparationAttempt(work.workId, token, work.stage === 'bootstrap' ? null : source?.id ?? null, startedAt, expiresAt)) return false;
           try {
-            await runWithLearnerId(work.requestedByLearnerId!, () => preparation.generate(work.wordId, work.stage, token));
+            await runWithLearnerId(work.requestedByLearnerId!, () => preparation.generate(work.wordId, work.stage, token,work.teachingSetKey));
             markWordPreparationReady(work.workId, isoNow(), token);
           } catch (error) {
             failWordPreparationAttempt(work.workId, token,
@@ -98,7 +98,7 @@ export function createWordPreparationWorker(options: {
             if (error instanceof WordPreparationProviderError && error.providerWide) providerBackoffUntil = now() + PREPARATION_PROVIDER_BACKOFF_MS;
           }
           return true;
-        } finally { preparation.release(work.wordId, work.stage, token); }
+        } finally { preparation.release(work.wordId, work.stage, token,work.teachingSetKey); }
       });
     } catch (error) {
       if (error instanceof HostedProviderWorkUnavailableError) return false;

@@ -261,6 +261,21 @@ existing proposal.
 General preparation retains its immutable source document's mapped canonical
 scope across policy edits; teaching packages preserve document/component coherence.
 
+Teaching preparation has a word and sense-set identity. A concrete set is a
+nonempty sorted set of canonical sense IDs, shared across learners. Each set
+owns a coherent source document, teaching package, leases and bounded retry
+state. One set's source or failure cannot satisfy or block another set's work.
+Documents retain their authored scope and publication provenance.
+
+Default-following study uses an explicit compatibility lane. Its existing lesson
+remains usable when shared defaults change, including later default edits; the
+lane is not a claim that its source covers today's selection. A newly prepared
+default source captures the selection at preparation. Migration does not infer
+historical authored scope from current defaults. Concrete-set repair preserves
+its canonical mappings, and a changed canonical scope requires reconciliation.
+Learner selection of concrete sets is a separate application capability; the
+preparation foundation alone leaves learner-visible default behavior unchanged.
+
 Single-exercise assessment records its observed source binding and proposed target
 separately. Assessment never changes source content or its sense binding. Only
 operator application publishes the reviewed content and binding together. An

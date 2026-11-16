@@ -1,0 +1,137 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { after, before, test } from 'node:test';
+import { DatabaseSync } from 'node:sqlite';
+import { createBaselineFixture } from './helpers/baseline-database.ts';
+import { migrateDatabase } from '../server/db/migrations.ts';
+import { setDb } from '../server/db/connection.ts';
+import { runWithLearnerId } from '../server/db/learner-context.ts';
+import { createVocabularySense, establishVocabularySenseCatalog, getVocabularySenseCatalog } from '../server/db/vocabulary-content.ts';
+import { writeVocabularyDefaultUsefulSenses } from '../server/db/vocabulary-sense-coverage.ts';
+import { teachingSenseSetKey, teachingSenseIds } from '../server/db/teaching-sense-sets.ts';
+import { enqueueWordPreparation, getWordPreparationWork, listDueWordPreparation, beginWordPreparationAttempt, recoverExpiredWordPreparation } from '../server/db/preparation-work.ts';
+import { getSharedWordIntroductionContent, getSharedWordTeachingPackageId, claimSharedWordIntroductionStage, releaseSharedWordIntroductionStage, getWordIntroductionLibrary } from '../server/db/word-introductions.ts';
+import { createWordPreparationWorker } from '../server/word-content/preparation-worker.ts';
+import { getBlockedPreparationWordIds } from '../server/db/word-reserve.ts';
+import { resolveVocabularyTeaching } from '../server/vocabulary/teaching-readiness.ts';
+import type { WordIntroductionProvider } from '../server/word-content/provider.ts';
+
+let root:string, sql:DatabaseSync;
+const owner=<T>(work:()=>T)=>runWithLearnerId('learner',work);
+const actor={kind:'service' as const,id:'fixture'};
+before(()=>{
+  root=fs.mkdtempSync(path.join(os.tmpdir(),'teaching-sets-'));
+  createBaselineFixture(root);sql=new DatabaseSync(path.join(root,'app.db'));
+  sql.function('current_learner_id',()=> 'learner');sql.exec('PRAGMA foreign_keys=ON');migrateDatabase(sql);setDb(sql);
+  sql.exec(`INSERT INTO learners(learner_id,display_name,created_at) VALUES('learner','Learner','2026-11-15'),('other','Other','2026-11-15');
+    INSERT INTO lexical_words(id,hanzi,pinyin,meaning,meanings_json,examples_json,priority,created_at)
+    VALUES('word','挂钩','guà gōu','hook','["hook"]','[]',1,'2026-11-15');`);
+  for(const id of ['a','b','c'])createVocabularySense({senseId:id,wordId:'word',description:{label:`Sense ${id}`,notes:[]}},actor);
+  establishVocabularySenseCatalog('word',getVocabularySenseCatalog('word').version,actor);
+  writeVocabularyDefaultUsefulSenses('word',0,['a','b'],actor);
+});
+after(()=>{setDb(null);sql.close();fs.rmSync(root,{recursive:true,force:true});});
+const seen:string[][]=[];
+const provider:WordIntroductionProvider={
+  model:'fixture',isConfigured:()=>true,generationKey:async stage=>`fixture-${stage}`,
+  generateBootstrap:async input=>{
+    const senses=input.canonicalSenses!;seen.push(senses.map(s=>s.senseId));
+    return {uses:senses.map((sense,i)=>({id:sense.senseId,label:sense.label,notes:sense.notes,exampleIds:[`e${i}`]})),
+      examples:senses.map((_,i)=>({id:`e${i}`,text:'奖金与业绩挂钩。',translation:'The bonus is tied to performance.',pronunciation:null}))};
+  },
+  generateTeaching:async()=>({beats:[{id:'beat',parts:[{kind:'text',text:'These uses connect things.'}]}]}),
+  generatePractice:async()=>({rehearsals:[{id:'practice',stimulus:{kind:'direct_text',text:'Tie the bonus to performance.'}}]}),
+  generateReview:async()=>{throw new Error('Custom teaching must not generate word-wide review');},
+};
+
+test('canonical sets reject malformed identities and invalid sense ownership',()=>{
+  assert.equal(teachingSenseSetKey(['b','a','b']),'["a","b"]');
+  assert.throws(()=>teachingSenseSetKey([]),/nonempty/);
+  assert.throws(()=>teachingSenseIds('["b","a"]'),/canonical/);
+  assert.throws(()=>owner(()=>enqueueWordPreparation('word','teaching',undefined,'["missing"]')),/another word/);
+});
+
+test('worker prepares coherent sets independently and preserves the default package after defaults change',async()=>{
+  const custom=teachingSenseSetKey(['c','b']);
+  const defaults=owner(()=>enqueueWordPreparation('word','teaching'));
+  const customWork=owner(()=>enqueueWordPreparation('word','teaching',undefined,custom));
+  assert.notEqual(defaults.workId,customWork.workId);
+  assert.equal(runWithLearnerId('other',()=>enqueueWordPreparation('word','teaching',undefined,custom)).workId,customWork.workId,'learners requesting the same set share its work');
+  assert.equal(owner(()=>enqueueWordPreparation('word','teaching',undefined,teachingSenseSetKey(['b','c']))).workId,customWork.workId);
+  assert.deepEqual(listDueWordPreparation().map(work=>work.stage),['bootstrap','bootstrap']);
+  const worker=createWordPreparationWorker({provider,providerWork:async work=>work(),controls:()=>({maintenanceMode:false,providerWorkEnabled:true})});
+  try{await worker.drain();}finally{await worker.stop();}
+  assert.deepEqual(seen.sort(),[['a','b'],['b','c']]);
+  const source=getSharedWordIntroductionContent('word')!;
+  const customSource=getSharedWordIntroductionContent('word',custom)!;
+  assert.notEqual(source.id,customSource.id);
+  assert.throws(()=>sql.prepare("UPDATE word_introduction_preparation SET content_id=? WHERE word_id='word' AND teaching_set_key='default'").run(customSource.id),/FOREIGN KEY/,'the database rejects cross-set source pointers');
+  assert.deepEqual(source.uses.map(use=>use.id),['a','b']);
+  assert.deepEqual(customSource.uses.map(use=>use.id),['b','c']);
+  const defaultPackage=getSharedWordTeachingPackageId('word');
+  const customPackage=getSharedWordTeachingPackageId('word',custom);
+  assert(defaultPackage);assert(customPackage);assert.notEqual(defaultPackage,customPackage);
+  assert.equal(getWordPreparationWork('word','teaching')?.status,'ready');
+  assert.equal(getWordPreparationWork('word','teaching',custom)?.status,'ready');
+  owner(()=>{
+    assert.equal(resolveVocabularyTeaching('word')?.intro.body && (resolveVocabularyTeaching('word')!.intro.body as {sourcePackageId:string}).sourcePackageId,defaultPackage);
+    assert.equal((resolveVocabularyTeaching('word',custom)!.intro.body as {sourcePackageId:string}).sourcePackageId,customPackage);
+    assert.deepEqual(getWordIntroductionLibrary('word')!.packages.map(p=>p.teaching.id),[defaultPackage]);
+    assert.deepEqual(getWordIntroductionLibrary('word',custom)!.packages.map(p=>p.teaching.id),[customPackage]);
+  });
+  writeVocabularyDefaultUsefulSenses('word',1,['c'],actor);
+  assert.equal(getSharedWordTeachingPackageId('word'),defaultPackage);
+  assert.deepEqual(getSharedWordIntroductionContent('word')!.uses.map(use=>use.id),['a','b']);
+  assert.deepEqual(sql.prepare('PRAGMA foreign_key_check').all(),[]);
+});
+
+test('leases, dependency readiness, recovery and paused failures cannot cross sets',()=>{
+  const custom=teachingSenseSetKey(['a','c']);
+  const started=new Date().toISOString(),expiry=new Date(Date.now()+60_000).toISOString();
+  const work=owner(()=>enqueueWordPreparation('word','teaching',started,custom));
+  assert.equal(listDueWordPreparation().some(row=>row.workId===work.workId),false,'another set source does not satisfy this teaching dependency');
+  assert.equal(claimSharedWordIntroductionStage('word','bootstrap','same-token',started,expiry,custom),'claimed');
+  releaseSharedWordIntroductionStage('word','same-token');
+  assert.equal(claimSharedWordIntroductionStage('word','bootstrap','other-token',started,expiry,custom),'busy','default release does not clear custom lease');
+  const bootstrap=getWordPreparationWork('word','bootstrap',custom)!;
+  assert(beginWordPreparationAttempt(bootstrap.workId,'same-token',null,started,expiry));
+  recoverExpiredWordPreparation(new Date(Date.parse(expiry)+1).toISOString());
+  assert.equal(getWordPreparationWork('word','bootstrap',custom)?.status,'queued','ready default source cannot mark unfinished custom work ready');
+  sql.prepare("UPDATE word_preparation_work SET status='paused' WHERE work_id=?").run(bootstrap.workId);
+  assert.equal(owner(()=>getBlockedPreparationWordIds()).has('word'),false,'custom failure does not block default admission');
+  assert.equal(getWordPreparationWork('word','teaching')?.status,'ready');
+});
+
+test('repair preserves a concrete set and its mappings while another set is preparing',async()=>{
+  const {readPackageImprovementSource,validatePackageImprovement,applyPackageImprovement}=await import('../server/db/content-improvement-packages.ts');
+  const {createSharedWordPreparation}=await import('../server/word-content/shared-preparation.ts');
+  const custom=teachingSenseSetKey(['b','c']);
+  const original=getSharedWordIntroductionContent('word',custom)!;
+  const packageId=getSharedWordTeachingPackageId('word',custom)!;
+  const defaultPackage=getSharedWordTeachingPackageId('word');
+  sql.prepare("UPDATE word_introduction_preparation SET active_stage='teaching',lease_token='default-repair',lease_expires_at='2099-01-01T00:00:00.000Z' WHERE word_id='word' AND teaching_set_key='default'").run();
+  const source=readPackageImprovementSource('teaching_package',packageId);
+  const content={...original,examples:original.examples.map(e=>({...e,text:'工资与业绩挂钩。'}))};
+  const proposed={content,package:source.editable.package};
+  assert.deepEqual(validatePackageImprovement(source,proposed).errors,[]);
+  assert.match(validatePackageImprovement(source,{...proposed,content:{...content,uses:content.uses.map((use,i)=>({...use,id:i===0?'different-sense':use.id}))}}).errors.join(' '),/teaching set/);
+  sql.prepare("INSERT INTO content_improvement_cases VALUES('repair',1,'draft','teaching_package',?,'{}','2026-11-15')").run(packageId);
+  sql.exec('BEGIN IMMEDIATE');
+  let replacement:string;
+  try{
+    replacement=applyPackageImprovement(source,proposed,{actorId:'operator',caseId:'repair',now:new Date().toISOString()}).replacementSourceId!;
+    sql.exec('COMMIT');
+  }catch(error){sql.exec('ROLLBACK');throw error;}
+  assert.notEqual(replacement,packageId);
+  assert.equal(getSharedWordTeachingPackageId('word',custom),replacement);
+  assert.equal(getSharedWordTeachingPackageId('word'),defaultPackage);
+  const next=getSharedWordIntroductionContent('word',custom)!;
+  assert.notEqual(next.id,original.id);
+  assert.deepEqual(sql.prepare('SELECT source_use_id,sense_id,imported_sense_version FROM legacy_sense_imports WHERE source_content_id=? ORDER BY source_use_id').all(next.id),
+    sql.prepare('SELECT source_use_id,sense_id,imported_sense_version FROM legacy_sense_imports WHERE source_content_id=? ORDER BY source_use_id').all(original.id));
+  assert.equal(createSharedWordPreparation(provider).validatePreparedSource('word',custom).sourceContentId,next.id);
+  owner(()=>assert.equal((resolveVocabularyTeaching('word',custom)!.intro.body as {sourcePackageId:string}).sourcePackageId,replacement));
+  releaseSharedWordIntroductionStage('word','default-repair');
+});

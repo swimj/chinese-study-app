@@ -1,3 +1,5 @@
+import { DEFAULT_TEACHING_SET, teachingSenseSetKey } from './teaching-sense-sets.ts';
+import { importLegacyVocabularyWord } from './vocabulary-import.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import {
   ImprovementConflictError, ImprovementInputError, type ImprovementContent, type ImprovementOutcome,
@@ -11,11 +13,11 @@ import { getDb } from './connection.ts';
 type PackageKind = 'teaching_package' | 'rehearsal';
 type PackageRow = {
   package_id: string; word_id: string; content_id: string; package_json: string; content_json: string;
-  model: string; package_status: string; content_status: string;
+  teaching_set_key: string; model: string; package_status: string; content_status: string;
 };
 function rowFor(kind: PackageKind, sourceId: string): PackageRow {
   const packageId = kind === 'rehearsal' ? sourceId.slice(0, sourceId.lastIndexOf('/')) : sourceId;
-  const row = getDb().prepare(`SELECT p.package_id,p.word_id,p.content_id,p.package_json,c.content_json,p.model,
+  const row = getDb().prepare(`SELECT p.package_id,p.word_id,p.content_id,p.package_json,c.content_json,c.teaching_set_key,p.model,
     pp.publication_status package_status,cp.publication_status content_status
     FROM word_teaching_packages p JOIN word_content_documents c ON c.content_id=p.content_id
     JOIN shared_content_publications pp ON pp.publication_id=p.publication_id
@@ -30,8 +32,8 @@ function rowFor(kind: PackageKind, sourceId: string): PackageRow {
 function replacement(packageId: string): unknown {
   return getDb().prepare("SELECT replacement_source_id FROM content_improvement_replacements WHERE kind='teaching_package' AND source_id=?").get(packageId) ?? null;
 }
-function preparation(wordId: string): unknown {
-  return getDb().prepare('SELECT * FROM word_introduction_preparation WHERE word_id=?').get(wordId) ?? null;
+function preparation(wordId: string, teachingSetKey: string): unknown {
+  return getDb().prepare('SELECT * FROM word_introduction_preparation WHERE word_id=? AND teaching_set_key=?').get(wordId,teachingSetKey) ?? null;
 }
 function parseProposal(source: ImprovementSource, proposed: ImprovementContent, original: WordContentDocument, originalPackage: TeachingPackage) {
   if (Object.keys(proposed).length !== 2 || !Object.hasOwn(proposed, 'content') || !Object.hasOwn(proposed, 'package')) {
@@ -58,7 +60,7 @@ export function readPackageImprovementSource(kind: PackageKind, sourceId: string
   const lexical = getDb().prepare('SELECT hanzi,traditional,pinyin FROM lexical_words WHERE id=?').get(row.word_id);
   return {
     kind, sourceId, title: `${kind === 'rehearsal' ? 'Rehearsal' : 'Introduction'}: ${content.word.hanzi}`,
-    scope: 'shared', fingerprint: createHash('sha256').update(JSON.stringify({row, lexical, preparation:preparation(row.word_id), replacement:replacement(row.package_id)})).digest('hex'),
+    scope: 'shared', fingerprint: createHash('sha256').update(JSON.stringify({row, lexical, preparation:preparation(row.word_id,row.teaching_set_key), replacement:replacement(row.package_id)})).digest('hex'),
     editable: { content, package: pkg }, preview: { content, snapshot: materializeTeachingPackage(pkg, [content]) },
     provenance: row.model === 'operator-improvement'
       ? { source: 'operator-approved content improvement', model: null }
@@ -78,7 +80,7 @@ export function validatePackageImprovement(source: ImprovementSource, proposed: 
     return rejected('Withdrawn package or source content cannot be corrected through this workspace.');
   }
   if (replacement(row.package_id)) return rejected('This package already has a replacement. Open its replacement to continue.');
-  const busy = getDb().prepare('SELECT active_stage FROM word_introduction_preparation WHERE word_id=?').get(row.word_id) as {active_stage:string|null} | undefined;
+  const busy = getDb().prepare('SELECT active_stage FROM word_introduction_preparation WHERE word_id=? AND teaching_set_key=?').get(row.word_id,row.teaching_set_key) as {active_stage:string|null} | undefined;
   if (busy?.active_stage) return rejected('Introduction preparation is in progress. Wait for it to finish before applying a correction.');
   const lexical = getDb().prepare('SELECT hanzi,traditional,pinyin FROM lexical_words WHERE id=?').get(row.word_id) as {hanzi:string; traditional:string|null; pinyin:string} | undefined;
   if (!lexical || lexical.hanzi !== originalContent.word.hanzi || lexical.traditional !== originalContent.word.traditional || lexical.pinyin !== originalContent.word.pinyin) {
@@ -90,6 +92,16 @@ export function validatePackageImprovement(source: ImprovementSource, proposed: 
   } catch (error) {
     if (!(error instanceof Error)) throw error;
     return rejected(error.message);
+  }
+  if (row.teaching_set_key !== DEFAULT_TEACHING_SET) {
+    const mappings = getDb().prepare(`SELECT m.source_use_id,m.sense_id,m.imported_sense_version,s.version,s.status
+      FROM legacy_sense_imports m JOIN senses s USING(sense_id) WHERE m.source_content_id=? AND s.word_id=?`)
+      .all(row.content_id,row.word_id) as Array<{source_use_id:string;sense_id:string;imported_sense_version:number;version:number;status:string}>;
+    const represented = parsed.content.uses.map(use=>mappings.find(mapping=>mapping.source_use_id===use.id));
+    if (represented.some(mapping=>!mapping || mapping.status!=='active' || mapping.version!==mapping.imported_sense_version)
+      || represented.length!==mappings.length || teachingSenseSetKey(represented.map(mapping=>mapping!.sense_id))!==row.teaching_set_key) {
+      return rejected('A correction must preserve this teaching set and its current canonical sense mappings. Reconcile changed senses before repairing teaching.');
+    }
   }
   const {content,pkg,snapshot} = parsed;
   const answers = (p: typeof pkg) => p.rehearsals.map(r => ({ id:r.id, contract:r.contract, acceptedAnswers:r.acceptedAnswers }));
@@ -103,6 +115,7 @@ export function applyPackageImprovement(source: ImprovementSource, proposed: Imp
   const validation = validatePackageImprovement(source, proposed);
   if (validation.errors.length) throw new ImprovementInputError(validation.errors.join(' '));
   const { content: originalContent, pkg: originalPackage } = parseProposal(source, proposed, parseWordContent(source.editable.content), parseTeachingPackage(source.editable.package));
+  const teachingSetKey = rowFor(source.kind as PackageKind,source.sourceId).teaching_set_key;
   const contentId = randomUUID();
   const packageId = randomUUID();
   const content = { ...originalContent, id: contentId };
@@ -121,14 +134,20 @@ export function applyPackageImprovement(source: ImprovementSource, proposed: Imp
       VALUES (?,?,NULL,'shared_trial','operator',?,?,?)`).run(randomUUID(),publicationId,context.actorId,`Approved content improvement ${context.caseId}`,context.now);
     return publicationId;
   };
-  db.prepare(`INSERT INTO word_content_documents (content_id,word_id,content_json,model,created_at,publication_id)
-    VALUES (?,?,?,?,?,?)`).run(contentId,content.word.wordId,JSON.stringify(content),'operator-improvement',context.now,publish('word_content',contentId));
+  db.prepare(`INSERT INTO word_content_documents (content_id,word_id,content_json,model,created_at,publication_id,teaching_set_key)
+    VALUES (?,?,?,?,?,?,?)`).run(contentId,content.word.wordId,JSON.stringify(content),'operator-improvement',context.now,publish('word_content',contentId),teachingSetKey);
   db.prepare(`INSERT INTO word_teaching_packages (package_id,word_id,content_id,package_json,model,created_at,publication_id)
     VALUES (?,?,?,?,?,?,?)`).run(packageId,content.word.wordId,contentId,JSON.stringify(pkg),'operator-improvement',context.now,publish('teaching_package',packageId));
   db.prepare(`INSERT INTO content_improvement_replacements (kind,source_id,replacement_source_id,case_id,created_at)
     VALUES ('teaching_package',?,?,?,?)`).run(originalPackage.id,packageId,context.caseId,context.now);
-  db.prepare(`UPDATE word_introduction_preparation SET content_id=?,package_id=? WHERE word_id=? AND package_id=?`)
-    .run(contentId,packageId,content.word.wordId,originalPackage.id);
+  db.prepare(`UPDATE word_introduction_preparation SET content_id=?,package_id=? WHERE word_id=? AND package_id=? AND teaching_set_key=?`)
+    .run(contentId,packageId,content.word.wordId,originalPackage.id,teachingSetKey);
+  if (teachingSetKey !== DEFAULT_TEACHING_SET) {
+    db.prepare(`INSERT INTO legacy_sense_imports(source_content_id,source_use_id,sense_id,imported_sense_version)
+      SELECT ?,source_use_id,sense_id,imported_sense_version FROM legacy_sense_imports WHERE source_content_id=?`)
+      .run(contentId,originalContent.id);
+    importLegacyVocabularyWord(db,content.word.wordId);
+  }
   const replacementSourceId = source.kind === 'rehearsal'
     ? `${packageId}/${source.sourceId.slice(source.sourceId.lastIndexOf('/')+1)}` : packageId;
   return { replacementSourceId, summary: 'Published a coherent introduction revision for future unpinned learners; existing pins and historical content are preserved.' };

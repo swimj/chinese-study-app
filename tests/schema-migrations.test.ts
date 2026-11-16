@@ -406,7 +406,7 @@ test('preparation compatibility migration retains old preparation and makes no e
     const before=db.prepare('SELECT * FROM word_introduction_preparation').all();
     const queues=db.prepare('SELECT * FROM word_preparation_work').all();
     assert.deepEqual(migrateDatabase(db),schemaMigrations.slice(index).map(entry=>entry.id));
-    assert.deepEqual(db.prepare('SELECT * FROM word_introduction_preparation').all().map(row=>({...row})),before.map(row=>({...row,preparation_epoch:0})));
+    assert.deepEqual(db.prepare('SELECT * FROM word_introduction_preparation').all().map(row=>({...row})),before.map(row=>({...row,preparation_epoch:0,teaching_set_key:'default'})));
     assert.deepEqual(db.prepare('SELECT * FROM word_preparation_work').all(),queues);
     assert.throws(()=>db.exec('UPDATE word_introduction_preparation SET preparation_epoch=-1'),/CHECK/);
     assertSchemaCurrent(db);
@@ -588,7 +588,7 @@ test('background reserve migration retains membership and work while conservativ
     migrateDatabase(db);
     assert.deepEqual({...db.prepare("SELECT * FROM learner_word_preparation_reserve WHERE learner_id='reserve-owner'").get()},
       {learner_id:'reserve-owner',word_id:'reserve-word',added_at:'2026-11-01',ready_at:null,checked_at:null});
-    assert.deepEqual(db.prepare('SELECT * FROM word_preparation_work').all(),work);
+    assert.deepEqual(db.prepare('SELECT * FROM word_preparation_work').all().map(row=>({...row})),work.map(row=>({...row,teaching_set_key:'default'})));
     assert.deepEqual(db.prepare('SELECT learner_id FROM learner_word_reserve_requests').all().map(row=>row.learner_id),['reserve-owner']);
     assert.deepEqual(migrateDatabase(db),[]);
     assertSchemaCurrent(db);
@@ -639,4 +639,42 @@ test('timed session migration keeps existing controls, enables timed sessions, a
     assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), []);
     assertSchemaCurrent(db);
   } finally { db.close(); }
+});
+
+test('teaching set migration preserves default artifacts, leases, attempts and learner history without inferring scope',()=>{
+  const {db}=copy('teaching-set-upgrade',true);
+  try{
+    const index=schemaMigrations.findIndex(m=>m.id==='app_schema:0074_teaching_sense_sets');
+    migrateDatabase(db,schemaMigrations.slice(0,index));
+    db.exec(`INSERT INTO learners(learner_id,display_name,created_at) VALUES('test','Learner','2026-11-15');
+      INSERT INTO lexical_words(id,hanzi,pinyin,meaning,examples_json,priority,created_at) VALUES('set-word','词','cí','word','[]',1,'2026-11-15');
+      INSERT INTO shared_content_publications(publication_id,content_kind,content_id,learning_purpose_key,publication_status,published_at,status_updated_at)
+        VALUES('source-publication','word_content','set-source','set-word','available','2026-11-15','2026-11-15'),
+        ('package-publication','teaching_package','set-package','set-word','shared_trial','2026-11-15','2026-11-15');
+      INSERT INTO word_content_documents(content_id,word_id,content_json,model,created_at,publication_id)
+        VALUES('set-source','set-word','{"uses":[{"id":"historical-use"}]}','fixture','2026-11-15','source-publication');
+      INSERT INTO word_teaching_packages(package_id,word_id,content_id,package_json,model,created_at,publication_id)
+        VALUES('set-package','set-word','set-source','{}','fixture','2026-11-15','package-publication');
+      INSERT INTO learner_word_introduction_events(event_id,learner_id,word_id,package_id,event_kind,occurred_at)
+        VALUES('set-open','test','set-word','set-package','opened','2026-11-15');
+      INSERT INTO word_introduction_preparation(word_id,content_id,package_id,preparation_epoch,active_stage,lease_token,lease_expires_at)
+        VALUES('set-word','set-source','set-package',1,'teaching','held','2026-11-16T00:00:00.000Z');
+      INSERT INTO word_preparation_work(work_id,word_id,stage,source_content_id,status,attempt_count,next_attempt_at,active_token,expires_at,last_error,created_at,updated_at,requested_by_learner_id)
+        VALUES('set-work','set-word','teaching','set-source','running',2,'2026-11-15','held','2026-11-16T00:00:00.000Z','preserve','2026-11-15','2026-11-15','test');
+      INSERT INTO word_preparation_attempts(attempt_id,work_id,started_at) VALUES('held','set-work','2026-11-15');
+      INSERT INTO word_preparation_retry_events(event_id,work_id,actor_id,occurred_at) VALUES('retry','set-work','test','2026-11-15');
+      INSERT INTO vocabulary_word_sense_coverage(word_id,version,excluded_sense_ids_json,default_useful_sense_ids_json,updated_at) VALUES('set-word',1,'[]','[]','2026-11-15');`);
+    const tables=['word_introduction_preparation','word_preparation_work','word_content_documents','word_teaching_packages','shared_content_publications','learner_word_introduction_events','word_preparation_attempts','word_preparation_retry_events','vocabulary_word_sense_coverage'];
+    const before=new Map(tables.map(table=>[table,db.prepare(`SELECT * FROM ${table}`).all().map(row=>({...row}))]));
+    assert.deepEqual(migrateDatabase(db),schemaMigrations.slice(index).map(m=>m.id));
+    for(const table of tables){
+      const addsKey=['word_introduction_preparation','word_preparation_work','word_content_documents'].includes(table);
+      assert.deepEqual(db.prepare(`SELECT * FROM ${table}`).all().map(row=>({...row})),before.get(table)!.map(row=>addsKey?{...row,teaching_set_key:'default'}:row),table);
+    }
+    assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
+    assert.deepEqual(migrateDatabase(db),[]);
+    assertSchemaCurrent(db);
+    const latest=new DatabaseSync(source);
+    try{assert.deepEqual(snapshot(db),snapshot(latest));}finally{latest.close();}
+  }finally{db.close();}
 });

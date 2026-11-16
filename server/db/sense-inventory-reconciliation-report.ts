@@ -105,7 +105,7 @@ export function snapshotInventoryForReconciliation(
       contents, contentWords, answers, introductionBindings,
       suitability: all('SELECT * FROM content_mode_suitability WHERE content_id IN (SELECT value FROM json_each(?)) ORDER BY content_id,mode', selectedContent),
       sourceDocuments, packages, imports, contentImports, publications,
-      introductionPreparation: all('SELECT * FROM word_introduction_preparation WHERE word_id=?', wordId),
+      introductionPreparation: all('SELECT * FROM word_introduction_preparation WHERE word_id=? ORDER BY teaching_set_key', wordId),
       wordPreparation: all('SELECT * FROM word_preparation_work WHERE word_id=? ORDER BY work_id', wordId),
       practicePreparation: all('SELECT * FROM vocabulary_practice_preparation WHERE word_id=? ORDER BY work_id', wordId),
       reviewPreparation: all('SELECT * FROM word_review_preparation WHERE word_id=?', wordId),
@@ -148,7 +148,7 @@ export function reportInventoryRetirements(snapshot: InventorySnapshot, retireSe
   if (new Set(retireSenseIds).size !== retireSenseIds.length || retireSenseIds.some(id => !active.has(id))) throw new Error('Retirement IDs must name distinct active senses in the snapshot');
   const retiring = new Set(retireSenseIds), contents = rows(snapshot, 'contents'), words = rows(snapshot, 'contentWords');
   const answers = rows(snapshot, 'answers');
-  const currentSource = rows(snapshot, 'introductionPreparation')[0]?.content_id;
+  const currentSource = rows(snapshot, 'introductionPreparation').find(row => row.teaching_set_key === 'default' || row.teaching_set_key === undefined)?.content_id;
   const sourceDocuments = rows(snapshot, 'sourceDocuments'), packages = rows(snapshot, 'packages'), imports = rows(snapshot, 'imports');
   const object = (value: unknown): Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
   const contaminatedSources = new Set(imports.filter(row => retiring.has(String(row.sense_id))).map(row => String(row.source_content_id)));

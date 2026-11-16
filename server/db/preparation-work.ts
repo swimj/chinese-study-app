@@ -1,3 +1,4 @@
+import { DEFAULT_TEACHING_SET, assertTeachingSenseSet } from './teaching-sense-sets.ts';
 import { randomUUID } from 'node:crypto';
 import { getDb } from './connection.ts';
 import { requireLearnerId } from './learner-context.ts';
@@ -7,11 +8,11 @@ import { getSharedWordReviewPreparation } from './review-content.ts';
 
 export type WordPreparationStage = 'bootstrap' | 'teaching' | 'review';
 export type WordPreparationWork = {
-  workId: string; requestedByLearnerId: string | null; wordId: string; stage: WordPreparationStage; sourceContentId: string | null;
+  workId: string; teachingSetKey: string; requestedByLearnerId: string | null; wordId: string; stage: WordPreparationStage; sourceContentId: string | null;
   status: 'queued' | 'running' | 'ready' | 'paused'; attemptCount: number;
   nextAttemptAt: string; activeToken: string | null; expiresAt: string | null; lastError: string | null;
 };
-const projection = `work_id AS workId, requested_by_learner_id AS requestedByLearnerId, word_id AS wordId, stage, source_content_id AS sourceContentId,
+const projection = `work_id AS workId, teaching_set_key AS teachingSetKey, requested_by_learner_id AS requestedByLearnerId, word_id AS wordId, stage, source_content_id AS sourceContentId,
   status, attempt_count AS attemptCount, next_attempt_at AS nextAttemptAt,
   active_token AS activeToken, expires_at AS expiresAt, last_error AS lastError`;
 function transaction<T>(work: () => T): T {
@@ -30,29 +31,31 @@ function time(value: string): string {
   if (!Number.isFinite(Date.parse(value)) || new Date(value).toISOString() !== value) throw new Error('Expected canonical UTC time');
   return value;
 }
-export function getWordPreparationWork(wordId: string, stage: WordPreparationStage): WordPreparationWork | null {
-  return getDb().prepare(`SELECT ${projection} FROM word_preparation_work WHERE word_id = ? AND stage = ?`)
-    .get(wordId, stage) as WordPreparationWork | undefined ?? null;
+export function getWordPreparationWork(wordId: string, stage: WordPreparationStage, teachingSetKey = DEFAULT_TEACHING_SET): WordPreparationWork | null {
+  return getDb().prepare(`SELECT ${projection} FROM word_preparation_work WHERE word_id = ? AND stage = ? AND teaching_set_key = ?`)
+    .get(wordId, stage, teachingSetKey) as WordPreparationWork | undefined ?? null;
 }
 /** Demand is shared and idempotent. Enqueue never resets a failed budget. */
-export function enqueueWordPreparation(wordId: string, stage: WordPreparationStage, now = new Date().toISOString()): WordPreparationWork {
+export function enqueueWordPreparation(wordId: string, stage: WordPreparationStage, now = new Date().toISOString(), teachingSetKey = DEFAULT_TEACHING_SET): WordPreparationWork {
   time(now);
   const learnerId = requireLearnerId();
   if (!['bootstrap', 'teaching', 'review'].includes(stage)) throw new Error('Unknown preparation stage');
   if (!getSharedIntroductionLexicalWord(wordId)) throw new Error('Word not found');
-  if (stage !== 'bootstrap') enqueueWordPreparation(wordId, 'bootstrap', now);
-  const source = stage === 'bootstrap' ? null : getSharedWordIntroductionPreparation(wordId)?.contentId ?? null;
+  assertTeachingSenseSet(wordId, teachingSetKey);
+  if (stage === 'review' && teachingSetKey !== DEFAULT_TEACHING_SET) throw new Error('General review preparation uses the default lane');
+  if (stage !== 'bootstrap') enqueueWordPreparation(wordId, 'bootstrap', now, teachingSetKey);
+  const source = stage === 'bootstrap' ? null : getSharedWordIntroductionPreparation(wordId, teachingSetKey)?.contentId ?? null;
   getDb().prepare(`INSERT OR IGNORE INTO word_preparation_work
-    (work_id, word_id, stage, source_content_id, status, next_attempt_at, created_at, updated_at, requested_by_learner_id)
-    VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?)`)
-    .run(randomUUID(), wordId, stage, source, now, now, now, learnerId);
+    (work_id, word_id, stage, source_content_id, status, next_attempt_at, created_at, updated_at, requested_by_learner_id, teaching_set_key)
+    VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?)`)
+    .run(randomUUID(), wordId, stage, source, now, now, now, learnerId, teachingSetKey);
   // Historical demand had no requester. Attribute only when fresh demand arrives.
   getDb().prepare(`UPDATE word_preparation_work SET requested_by_learner_id = ?,
     status = CASE WHEN last_error = 'Preparation needs a requesting learner.' THEN 'queued' ELSE status END,
     last_error = CASE WHEN last_error = 'Preparation needs a requesting learner.' THEN NULL ELSE last_error END
-    WHERE word_id = ? AND stage = ? AND requested_by_learner_id IS NULL`)
-    .run(learnerId, wordId, stage);
-  return getWordPreparationWork(wordId, stage)!;
+    WHERE word_id = ? AND stage = ? AND teaching_set_key = ? AND requested_by_learner_id IS NULL`)
+    .run(learnerId, wordId, stage, teachingSetKey);
+  return getWordPreparationWork(wordId, stage, teachingSetKey)!;
 }
 export function listDueWordPreparation(now = new Date().toISOString(), limit = 100): WordPreparationWork[] {
   time(now);
@@ -60,7 +63,7 @@ export function listDueWordPreparation(now = new Date().toISOString(), limit = 1
     WHERE status = 'queued' AND next_attempt_at <= ?
       AND (stage = 'bootstrap' OR EXISTS (
         SELECT 1 FROM word_introduction_preparation prepared
-        WHERE prepared.word_id = word_preparation_work.word_id AND prepared.content_id IS NOT NULL
+        WHERE prepared.word_id = word_preparation_work.word_id AND prepared.teaching_set_key = word_preparation_work.teaching_set_key AND prepared.content_id IS NOT NULL
       ))
     ORDER BY CASE WHEN stage = 'bootstrap' THEN 1 ELSE 0 END, next_attempt_at, created_at, work_id LIMIT ?`)
     .all(now, limit) as WordPreparationWork[];
@@ -96,10 +99,10 @@ function ready(workId: string, now: string, token: string | null): void {
     getDb().prepare(`UPDATE word_preparation_work SET status = 'ready', active_token = NULL,
       expires_at = NULL, last_error = NULL, updated_at = ? WHERE work_id = ?`).run(now, workId);
 }
-export function isSharedWordPreparationReady(wordId: string, stage: WordPreparationStage): boolean {
-  const source = getSharedWordIntroductionContent(wordId);
+export function isSharedWordPreparationReady(wordId: string, stage: WordPreparationStage, teachingSetKey = DEFAULT_TEACHING_SET): boolean {
+  const source = getSharedWordIntroductionContent(wordId, teachingSetKey);
   if (stage === 'bootstrap') return source !== null;
-  if (stage === 'teaching') return getSharedWordTeachingPackageId(wordId) !== null;
+  if (stage === 'teaching') return getSharedWordTeachingPackageId(wordId, teachingSetKey) !== null;
   const review = getSharedWordReviewPreparation(wordId);
   return source !== null && review?.sourceContentId === source.id && review.ready;
 }
@@ -136,7 +139,7 @@ export function recoverExpiredWordPreparation(now = new Date().toISOString()): v
       WHERE status = 'running' AND expires_at <= ?`).all(now) as WordPreparationWork[];
     for (const row of rows) {
       // Publication commits before the operational journal update. Recover that success even on attempt three.
-      if (isSharedWordPreparationReady(row.wordId, row.stage)) ready(row.workId, now, row.activeToken);
+      if (isSharedWordPreparationReady(row.wordId, row.stage, row.teachingSetKey)) ready(row.workId, now, row.activeToken);
       else failed(row.workId, row.activeToken!, 'Preparation interrupted before completion; lease expired.', now, true);
     }
   });

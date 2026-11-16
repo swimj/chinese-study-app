@@ -48,8 +48,8 @@ beforeEach(()=>{
     INSERT INTO learner_word_schedules(learner_id,word_id,next_eligible_at,policy_version,scheduler_state_json) VALUES
     ('alice','a','2026-10-20T10:00:00.000Z','test','{"intervalHours":24,"easeFactor":2.5,"enabled":1,"cleanCoveredSessions":0}');`);
   sql.exec(`CREATE TABLE vocabulary_practice_preparation(work_id TEXT PRIMARY KEY,word_id TEXT,source_content_id TEXT,generation_key TEXT NOT NULL DEFAULT 'fixture',attempt_count INTEGER NOT NULL DEFAULT 0,total_attempt_count INTEGER NOT NULL DEFAULT 0,invocation_id TEXT,last_error TEXT,status TEXT,active_token TEXT,expires_at TEXT,created_at TEXT NOT NULL DEFAULT '',updated_at TEXT,next_attempt_at TEXT NOT NULL DEFAULT '');
-    CREATE TABLE word_introduction_preparation(word_id TEXT PRIMARY KEY,content_id TEXT,package_id TEXT,preparation_epoch INTEGER DEFAULT 1,active_stage TEXT,lease_token TEXT,lease_expires_at TEXT);
-    CREATE TABLE word_content_documents(content_id TEXT PRIMARY KEY,word_id TEXT,publication_id TEXT,content_json TEXT);
+    CREATE TABLE word_introduction_preparation(teaching_set_key TEXT NOT NULL DEFAULT 'default',word_id TEXT PRIMARY KEY,content_id TEXT,package_id TEXT,preparation_epoch INTEGER DEFAULT 1,active_stage TEXT,lease_token TEXT,lease_expires_at TEXT);
+    CREATE TABLE word_content_documents(teaching_set_key TEXT NOT NULL DEFAULT 'default',content_id TEXT PRIMARY KEY,word_id TEXT,publication_id TEXT,content_json TEXT);
     CREATE TABLE shared_content_publications(publication_id TEXT PRIMARY KEY,publication_status TEXT);`);
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0043_vocabulary_import.sql',import.meta.url),'utf8').split('CREATE TRIGGER')[0]!);
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0069_sense_content_reconciliation.sql',import.meta.url),'utf8'));
@@ -219,7 +219,7 @@ test('feedback attention counts only own unread messages and independent feedbac
 test('practice preparation diagnostics and explicit retry require allowlisted authority and audit the actor',()=>{
   const sense=createVocabularySense({wordId:'a',description:'A written character'},{kind:'operator',id:'editor'});
   const source={schemaVersion:1,id:'source',word:{wordId:'a',hanzi:'字',traditional:null,pinyin:'zì'},uses:[{id:'u1',label:'A written character',notes:[],exampleIds:['e1']}],examples:[{id:'e1',text:'字',translation:'Character',pronunciation:null}]};
-  sql.prepare("INSERT INTO word_content_documents VALUES ('source','a','publication',?)").run(JSON.stringify(source));
+  sql.prepare("INSERT INTO word_content_documents(content_id,word_id,publication_id,content_json) VALUES ('source','a','publication',?)").run(JSON.stringify(source));
   sql.exec("INSERT INTO shared_content_publications VALUES ('publication','available');INSERT INTO word_introduction_preparation(word_id,content_id) VALUES ('a','source')");
   sql.prepare('INSERT INTO legacy_sense_imports VALUES (?,?,?,?)').run('source','u1',sense.senseId,sense.version);
   sql.exec("INSERT INTO model_invocations(id) VALUES ('invocation'); INSERT INTO vocabulary_practice_preparation(work_id,word_id,source_content_id,generation_key,created_at,attempt_count,invocation_id,last_error,status,updated_at,next_attempt_at) VALUES ('work','a','source','fixture','2026-10-17',3,'invocation','interrupted_unknown_outcome','failed','2026-10-17','2026-10-17')");

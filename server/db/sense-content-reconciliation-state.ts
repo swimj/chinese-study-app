@@ -45,7 +45,7 @@ export function senseContentReconciliationProgress(wordId: string): SenseContent
   const current = db.prepare(`SELECT p.content_id,p.package_id,d.content_json FROM word_introduction_preparation p
     JOIN word_content_documents d ON d.content_id=p.content_id
     JOIN shared_content_publications publication ON publication.publication_id=d.publication_id
-    WHERE p.word_id=? AND publication.publication_status IN ('available','shared_trial')`).get(wordId);
+    WHERE p.word_id=? AND p.teaching_set_key='default' AND publication.publication_status IN ('available','shared_trial')`).get(wordId);
   const errors: string[] = [];
   let teachingStatus: SenseContentReconciliationProgress['teachingStatus'] = plan.replacementTeachingRequired ? 'pending' : 'not_required';
   if (plan.replacementTeachingRequired) {
@@ -66,7 +66,7 @@ export function senseContentReconciliationProgress(wordId: string): SenseContent
         WHERE p.package_id=? AND p.content_id=? AND s.publication_status IN ('available','shared_trial')`).get(current.package_id, current.content_id);
     if (packageReady) teachingStatus = 'ready';
     else {
-      const failed = db.prepare("SELECT stage,last_error FROM word_preparation_work WHERE word_id=? AND stage IN ('bootstrap','teaching') AND status='paused'").all(wordId) as Array<{stage:string;last_error:string|null}>;
+      const failed = db.prepare("SELECT stage,last_error FROM word_preparation_work WHERE word_id=? AND teaching_set_key='default' AND stage IN ('bootstrap','teaching') AND status='paused'").all(wordId) as Array<{stage:string;last_error:string|null}>;
       if (failed.length) { teachingStatus = 'failed'; errors.push(...failed.map(work => `${work.stage}: ${work.last_error ?? 'Preparation paused'}`)); }
     }
   }
