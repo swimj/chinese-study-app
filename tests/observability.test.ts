@@ -101,6 +101,7 @@ describe('hosted observability', () => {
     assert.match(rendered, /chinese_study_wal_bytes 678/);
     assert.match(rendered, /chinese_study_backup_replication_age_seconds 9/);
     assert.match(rendered, /chinese_study_active_provider_work 2/);
+    assert.match(rendered, /chinese_study_litestream_metrics_available 0/);
     assert.equal(loggedErrors.length, 0);
 
     const missing = await fetch(`${baseUrl}/not-metrics`);
@@ -171,6 +172,25 @@ describe('hosted observability', () => {
     assert.doesNotMatch(rendered, /private-item-id/);
   });
 
+  test('exports daemon counters separately and leaves unavailable or uninitialized samples absent', () => {
+    const metrics = createTestMetrics();
+    const rendered = metrics.render({ ...operationalMetrics, litestream: {
+      cpuSeconds: 12.5, startTimeSeconds: 1700000000, localFileSequence: 42, uploadedFiles: 7,
+    } });
+    assert.match(rendered, /chinese_study_litestream_cpu_seconds_total 12.5/);
+    assert.match(rendered, /chinese_study_litestream_local_file_sequence 42/);
+    assert.match(rendered, /chinese_study_litestream_uploaded_files_total 7/);
+    assert.match(rendered, /chinese_study_litestream_metrics_available 1/);
+    const unavailable = metrics.render(operationalMetrics);
+    assert.match(unavailable, /chinese_study_litestream_metrics_available 0/);
+    assert.doesNotMatch(unavailable, /chinese_study_litestream_cpu_seconds_total/);
+    const initial = metrics.render({ ...operationalMetrics, litestream: {
+      cpuSeconds: 0, startTimeSeconds: 1700000000, localFileSequence: 0, uploadedFiles: null,
+    } });
+    assert.doesNotMatch(initial, /chinese_study_litestream_local_file_sequence/);
+    assert.doesNotMatch(initial, /chinese_study_litestream_uploaded_files_total/);
+  });
+
   test('validates the optional private metrics port', () => {
     assert.equal(readMetricsPort(undefined), null);
     assert.equal(readMetricsPort(''), null);
@@ -184,7 +204,10 @@ describe('hosted observability', () => {
     const flyConfig = fs.readFileSync('deploy/fly/fly.template.toml', 'utf8');
     assert.match(flyConfig, /\[metrics\]\s+port = 9091\s+path = "\/metrics"/);
     assert.match(flyConfig, /APP_METRICS_PORT = "9091"/);
-    assert.doesNotMatch(flyConfig, /internal_port = 9091/);
+    assert.doesNotMatch(flyConfig, /internal_port = 909[01]/);
+    for (const file of ['litestream.yml', 'litestream.rc.yml']) {
+      assert.match(fs.readFileSync(`deploy/fly/${file}`, 'utf8'), /^addr: \"127\.0\.0\.1:9090\"$/m);
+    }
   });
 
   function createTestMetrics(

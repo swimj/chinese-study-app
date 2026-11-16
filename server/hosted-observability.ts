@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { readLitestreamMetrics } from './litestream-metrics.ts';
 import path from 'node:path';
 import { getHostedServiceControls } from './db.ts';
 import { readHostedBackupStatus } from './hosted-backup-status.ts';
@@ -17,11 +18,12 @@ export async function readServiceOperationalMetrics(options: {
   } catch {
     // Process and request metrics must remain available during a database incident.
   }
-  const backup = await readHostedBackupStatus({
-    databasePath,
-    socketPath: options.litestreamSocketPath,
-  });
+  const [backup, litestream] = await Promise.all([
+    readHostedBackupStatus({ databasePath, socketPath: options.litestreamSocketPath }),
+    readLitestreamMetrics({ databasePath }),
+  ]);
   return {
+    litestream,
     databaseBytes: readFileSize(databasePath),
     walBytes: readFileSize(`${databasePath}-wal`),
     backupReplicationAgeSeconds: backup?.ageSeconds ?? null,

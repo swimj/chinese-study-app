@@ -1,3 +1,6 @@
+# Local-only telemetry; the app exports an allowlist on its private metrics listener.
+addr: "127.0.0.1:9090"
+
 logging:
   level: info
   type: json

@@ -21,6 +21,211 @@
   "liveNow": false,
   "panels": [
     {
+      "id": 22,
+      "type": "row",
+      "title": "Litestream overhead",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "unit": "percent",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 24,
+        "h": 8
+      },
+      "id": 23,
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * sum by (app, instance) (rate(chinese_study_process_cpu_seconds_total{app=\"$app\"}[5m])) / on (app, instance) (max by (app, instance) (fly_instance_cpu_baseline{app=\"$app\"}) > 0)",
+          "legendFormat": "Node app · {{instance}}"
+        },
+        {
+          "refId": "B",
+          "expr": "(100 * sum by (app, instance) (rate(chinese_study_litestream_cpu_seconds_total{app=\"$app\"}[5m])) / on (app, instance) (max by (app, instance) (fly_instance_cpu_baseline{app=\"$app\"}) > 0)) and on (app, instance) (chinese_study_litestream_metrics_available{app=\"$app\"} == 1)",
+          "legendFormat": "Litestream · {{instance}}"
+        }
+      ],
+      "title": "CPU used from sustained allocation",
+      "type": "timeseries",
+      "description": "Each line is a process, divided by the same Machine’s Fly CPU baseline. 100% uses the whole sustained allocation; bursts can exceed it. Five-minute averages. Missing baseline or daemon telemetry leaves gaps, never invented zero usage. Litestream excludes short-lived CLI health-check processes. Use Fly Instance CPU Quota Balance and Throttling to assess contention."
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "unit": "suffix: files/min",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 9,
+        "w": 12,
+        "h": 8
+      },
+      "id": 24,
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "((clamp_min(delta(chinese_study_litestream_local_file_sequence{app=\"$app\"}[5m]), 0) / 5) and (time() - chinese_study_litestream_start_time_seconds{app=\"$app\"} > 300) and (min_over_time(chinese_study_litestream_local_file_sequence{app=\"$app\"}[5m]) > 0)) and (chinese_study_litestream_metrics_available{app=\"$app\"} == 1)",
+          "legendFormat": "Prepared locally (estimate) · {{instance}}"
+        },
+        {
+          "refId": "B",
+          "expr": "(60 * rate(chinese_study_litestream_uploaded_files_total{app=\"$app\"}[5m])) and (chinese_study_litestream_metrics_available{app=\"$app\"} == 1) and (chinese_study_litestream_uploaded_files_total{app=\"$app\"} >= 0)",
+          "legendFormat": "Uploaded (all types) · {{instance}}"
+        }
+      ],
+      "title": "Backup files per minute",
+      "type": "timeseries",
+      "description": "Five-minute averages. Prepared estimates new local L0 files from sequence advancement, not SQLite transactions. Uploads counts all successful S3 file uploads, including compaction and snapshots; the lines need not match. Prepared is hidden for five minutes after daemon startup; exclude restore/reset windows from comparisons."
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": false,
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "unit": "s",
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 30
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 9,
+        "w": 12,
+        "h": 8
+      },
+      "id": 25,
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "chinese_study_backup_replication_age_seconds{app=\"$app\"} >= 0",
+          "legendFormat": "Since successful check · {{instance}}"
+        }
+      ],
+      "title": "Time since successful backup check",
+      "type": "timeseries",
+      "description": "Refreshed by successful Litestream sync checks, including idle checks and progress through upload batches. This is a liveness signal, not oldest-unuploaded-write age or proof the replica is caught up. 30 seconds is a comparison reference, not a durability guarantee. Missing status leaves a gap; see Operational metric availability."
+    },
+    {
+      "id": 26,
+      "type": "row",
+      "title": "Application performance",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 17,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -35,7 +240,7 @@
         "h": 5,
         "w": 6,
         "x": 0,
-        "y": 0
+        "y": 18
       },
       "id": 1,
       "description": "Pathless Fly platform baseline across all traffic, including health checks.",
@@ -76,7 +281,7 @@
         "h": 5,
         "w": 6,
         "x": 6,
-        "y": 0
+        "y": 18
       },
       "id": 2,
       "description": "Pathless Fly platform baseline across all traffic, including health checks.",
@@ -117,7 +322,7 @@
         "h": 5,
         "w": 6,
         "x": 12,
-        "y": 0
+        "y": 18
       },
       "id": 3,
       "options": {
@@ -153,9 +358,18 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "orange", "value": 1 },
-              { "color": "red", "value": 5 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
             ]
           },
           "unit": "percent"
@@ -166,7 +380,7 @@
         "h": 5,
         "w": 6,
         "x": 18,
-        "y": 0
+        "y": 18
       },
       "id": 4,
       "options": {
@@ -212,12 +426,15 @@
         "h": 9,
         "w": 16,
         "x": 0,
-        "y": 5
+        "y": 23
       },
       "id": 5,
       "options": {
         "legend": {
-          "calcs": ["lastNotNull", "max"],
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
           "displayMode": "table",
           "placement": "right",
           "showLegend": true
@@ -258,7 +475,7 @@
         "h": 9,
         "w": 8,
         "x": 16,
-        "y": 5
+        "y": 23
       },
       "id": 6,
       "options": {
@@ -304,12 +521,15 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 14
+        "y": 32
       },
       "id": 7,
       "options": {
         "legend": {
-          "calcs": ["lastNotNull", "max"],
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
           "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
@@ -350,12 +570,15 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 14
+        "y": 32
       },
       "id": 8,
       "options": {
         "legend": {
-          "calcs": ["lastNotNull", "max"],
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
           "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
@@ -401,12 +624,15 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 14
+        "y": 32
       },
       "id": 9,
       "options": {
         "legend": {
-          "calcs": ["lastNotNull", "max"],
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
           "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
@@ -452,12 +678,15 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 22
+        "y": 40
       },
       "id": 10,
       "options": {
         "legend": {
-          "calcs": ["lastNotNull", "max"],
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
           "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
@@ -497,8 +726,14 @@
           "mappings": [
             {
               "options": {
-                "0": { "color": "red", "text": "unavailable" },
-                "1": { "color": "green", "text": "available" }
+                "0": {
+                  "color": "red",
+                  "text": "unavailable"
+                },
+                "1": {
+                  "color": "green",
+                  "text": "available"
+                }
               },
               "type": "value"
             }
@@ -506,8 +741,14 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "red", "value": null },
-              { "color": "green", "value": 1 }
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
             ]
           }
         },
@@ -517,7 +758,7 @@
         "h": 8,
         "w": 4,
         "x": 12,
-        "y": 22
+        "y": 40
       },
       "id": 14,
       "options": {
@@ -547,6 +788,11 @@
           "expr": "chinese_study_service_controls_available{app=\"$app\"}",
           "legendFormat": "controls",
           "refId": "C"
+        },
+        {
+          "expr": "chinese_study_litestream_metrics_available{app=\"$app\"}",
+          "legendFormat": "Litestream telemetry",
+          "refId": "D"
         }
       ],
       "title": "Operational metric availability",
@@ -562,9 +808,18 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "orange", "value": 1800 },
-              { "color": "red", "value": 3600 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1800
+              },
+              {
+                "color": "red",
+                "value": 3600
+              }
             ]
           },
           "unit": "s"
@@ -575,7 +830,7 @@
         "h": 8,
         "w": 4,
         "x": 16,
-        "y": 22
+        "y": 40
       },
       "id": 11,
       "options": {
@@ -593,12 +848,13 @@
       "targets": [
         {
           "expr": "chinese_study_backup_replication_age_seconds{app=\"$app\"} >= 0",
-          "legendFormat": "backup age",
+          "legendFormat": "since successful check",
           "refId": "A"
         }
       ],
-      "title": "Litestream backup age",
-      "type": "stat"
+      "title": "Time since backup check",
+      "type": "stat",
+      "description": "Refreshed by successful Litestream sync checks, including idle checks and progress through upload batches. This is a liveness signal, not oldest-unuploaded-write age or proof the replica is caught up. 30 seconds is a comparison reference, not a durability guarantee. Missing status leaves a gap; see Operational metric availability."
     },
     {
       "datasource": {
@@ -610,9 +866,18 @@
           "mappings": [
             {
               "options": {
-                "-1": { "color": "red", "text": "unavailable" },
-                "0": { "color": "green", "text": "normal" },
-                "1": { "color": "orange", "text": "maintenance" }
+                "-1": {
+                  "color": "red",
+                  "text": "unavailable"
+                },
+                "0": {
+                  "color": "green",
+                  "text": "normal"
+                },
+                "1": {
+                  "color": "orange",
+                  "text": "maintenance"
+                }
               },
               "type": "value"
             }
@@ -620,8 +885,14 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "orange", "value": 1 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
             ]
           }
         },
@@ -631,7 +902,7 @@
         "h": 8,
         "w": 4,
         "x": 20,
-        "y": 22
+        "y": 40
       },
       "id": 12,
       "options": {
@@ -677,12 +948,15 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 30
+        "y": 48
       },
       "id": 13,
       "options": {
         "legend": {
-          "calcs": ["lastNotNull", "max"],
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
           "displayMode": "table",
           "placement": "right",
           "showLegend": true
@@ -715,7 +989,7 @@
         "h": 5,
         "w": 24,
         "x": 0,
-        "y": 38
+        "y": 56
       },
       "id": 15,
       "options": {
@@ -761,7 +1035,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 43
+        "y": 61
       },
       "id": 16,
       "options": {
@@ -811,7 +1085,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 43
+        "y": 61
       },
       "id": 17,
       "options": {
@@ -861,7 +1135,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 43
+        "y": 61
       },
       "id": 18,
       "options": {
@@ -911,7 +1185,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 51
+        "y": 69
       },
       "id": 19,
       "options": {
@@ -961,7 +1235,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 51
+        "y": 69
       },
       "id": 20,
       "options": {
@@ -1016,7 +1290,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 51
+        "y": 69
       },
       "id": 21,
       "options": {
