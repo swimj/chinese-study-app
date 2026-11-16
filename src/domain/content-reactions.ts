@@ -2,10 +2,11 @@
 export const CONTENT_REACTIONS = ['saved', 'not_for_me'] as const;
 export type ContentReaction = typeof CONTENT_REACTIONS[number];
 
-export const NOT_FOR_ME_REASONS = ['wrong', 'already_knew', 'not_interesting', 'too_long', 'confusing'] as const;
+export const NOT_FOR_ME_REASONS = ['wrong', 'tenuous_connection', 'already_knew', 'not_interesting', 'too_long', 'confusing'] as const;
 export type NotForMeReason = typeof NOT_FOR_ME_REASONS[number];
 export const NOT_FOR_ME_REASON_LABELS: Record<NotForMeReason, string> = {
   wrong: 'Wrong',
+  tenuous_connection: 'Tenuous connection',
   already_knew: 'Already knew',
   not_interesting: 'Not interesting',
   too_long: 'Too long',
@@ -83,6 +84,7 @@ export function parseContentReactionInput(value: unknown): ContentReactionInput 
     || new Set(rawReasons).size !== rawReasons.length) fail('Expected distinct known reasons');
   const reasons = NOT_FOR_ME_REASONS.filter((reason) => rawReasons.includes(reason));
   if (reasons.length && reaction !== 'not_for_me') fail('Reasons apply only to not_for_me');
+  if (subject.kind !== 'connection' && reasons.includes('tenuous_connection')) fail('Tenuous connection applies only to connections');
   const rawNote = value.note ?? null;
   if (rawNote !== null && (typeof rawNote !== 'string' || rawNote.length > MAX_REACTION_NOTE_LENGTH)) fail('Expected note text of at most 1000 characters');
   const note = typeof rawNote === 'string' && rawNote.trim() ? rawNote : null;

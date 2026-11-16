@@ -25,7 +25,7 @@ export function ReactionControls({ state, onChange, shortcuts = false, label }: 
       </button>
     </div>
     {notForMe ? <div className="reaction-reasons" role="group" aria-label="Reasons">
-      {NOT_FOR_ME_REASONS.map((reason) => {
+      {NOT_FOR_ME_REASONS.filter((reason) => reason !== 'tenuous_connection' || state?.subject.kind === 'connection').map((reason) => {
         const on = choice.reasons.includes(reason);
         return <button type="button" key={reason} className={`reaction-reason${on ? ' is-on' : ''}`} aria-pressed={on}
           onClick={() => onChange(toggleReason(choice, reason))}>{NOT_FOR_ME_REASON_LABELS[reason]}</button>;

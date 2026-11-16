@@ -45,6 +45,10 @@ test('controls expose pressed state and show reasons only for Not for me', () =>
   assert.match(rejected, /aria-pressed="true"[^>]*>Not for me/);
   assert.match(rejected, /aria-pressed="true"[^>]*>Wrong</);
   assert.match(rejected, /aria-pressed="false"[^>]*>Already knew</);
+  assert.doesNotMatch(rejected, /Tenuous connection/);
+  const connection = renderToStaticMarkup(createElement(ReactionControls, { label: 'Reaction', onChange: () => undefined,
+    state: { subject: { kind: 'connection', sessionId: 's', noteIndex: 0 }, reaction: 'not_for_me', reasons: ['tenuous_connection'], note: null, updatedAt: '' } }));
+  assert.match(connection, /aria-pressed="true"[^>]*>Tenuous connection</);
   assert.match(rejected, /aria-keyshortcuts="x"/);
 });
 

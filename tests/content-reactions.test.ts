@@ -71,12 +71,14 @@ test('input parsing keeps reasons to not_for_me and notes to saved items', () =>
   assert.deepEqual(parseContentReactionInput({ subject, reaction: 'not_for_me', reasons: ['too_long', 'wrong'], surface: 'home' }),
     { subject, reaction: 'not_for_me', reasons: ['wrong', 'too_long'], note: null, surface: 'home' });
   assert.equal(parseContentReactionInput({ subject, reaction: 'saved', note: '   ', surface: 'saved' }).note, null);
+  assert.deepEqual(parseContentReactionInput({ subject, reaction: 'not_for_me', reasons: ['tenuous_connection'], surface: 'home' }).reasons, ['tenuous_connection']);
   for (const body of [
     { subject, reaction: 'saved', reasons: ['wrong'], surface: 'home' },
     { subject, reaction: 'not_for_me', note: 'hm', surface: 'home' },
     { subject, reaction: 'liked', surface: 'home' },
     { subject, reaction: 'saved', surface: 'elsewhere' },
     { subject, reaction: 'not_for_me', reasons: ['wrong', 'wrong'], surface: 'home' },
+    { subject: { kind: 'lesson', messageId: 'x' }, reaction: 'not_for_me', reasons: ['tenuous_connection'], surface: 'feedback' },
     { subject: { ...subject, noteIndex: -1 }, reaction: 'saved', surface: 'home' },
     { subject: { kind: 'lesson', messageId: 'x', sessionId: 'y' }, reaction: 'saved', surface: 'home' },
     { subject, reaction: 'saved', surface: 'home', learnerId: 'forged' },
@@ -119,12 +121,12 @@ test('saved collection lists recent connections with words, saved older notes, a
 });
 
 test('operator summary counts reactions by prompt and returns only Wrong-flagged text', () => {
-  asA(() => setContentReaction(input({ subject: connection('newer', 0), reaction: 'not_for_me', reasons: ['wrong', 'too_long'] }), '2026-10-08T00:00:00.000Z'));
+  asA(() => setContentReaction(input({ subject: connection('newer', 0), reaction: 'not_for_me', reasons: ['wrong', 'tenuous_connection', 'too_long'] }), '2026-10-08T00:00:00.000Z'));
   const summary = getContentReactionSummary();
   assert.deepEqual(summary.totals, [
     { kind: 'connection', reaction: 'not_for_me', count: 1 }, { kind: 'connection', reaction: 'saved', count: 2 },
     { kind: 'lesson', reaction: 'saved', count: 1 }]);
-  assert.deepEqual(summary.reasons, [{ kind: 'connection', reason: 'wrong', count: 1 }, { kind: 'connection', reason: 'too_long', count: 1 }]);
+  assert.deepEqual(summary.reasons, [{ kind: 'connection', reason: 'wrong', count: 1 }, { kind: 'connection', reason: 'tenuous_connection', count: 1 }, { kind: 'connection', reason: 'too_long', count: 1 }]);
   assert.deepEqual(summary.connectionsByPrompt,
     [{ promptVersion: 'session-debrief-v7', model: 'gpt-6.1-sol', notes: 4, saved: 2, notForMe: 1 }]);
   assert.deepEqual(summary.flaggedWrong.map((row) => [row.kind, row.learnerId, row.text]), [['connection', 'http-learner', 'First newer note']]);
