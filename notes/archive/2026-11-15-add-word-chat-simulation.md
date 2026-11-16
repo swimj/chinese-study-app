@@ -1,11 +1,16 @@
 # Add-word chat — simulated transcript
 
-status: active
+> Historical design input, archived with implementation delivery on 2026-11-15.
+> Current behavior is owned by the vocabulary contracts and [chat runtime](../../docs/chat-runtime.md);
+> see the [implementation evaluation](../../docs/evaluation/trials/2026-11-15-custom-senses.md).
+> The pre-implementation descriptions and simulated behavior below are retained as history.
+
+status: archived
 type: handoff
 created: 2026-11-15
 retire-when: the add-word agent prompt and its transcript evaluation set exist, or the design is declined
 related:
-  - notes/active/2026-11-14-learner-sense-preferences-spec.md
+  - notes/archive/2026-11-14-learner-sense-preferences-spec.md
 
 A hand-written simulation of the add-word chat specified in the
 [sense preferences spec](2026-11-14-learner-sense-preferences-spec.md#add-flow-a-bounded-chat).

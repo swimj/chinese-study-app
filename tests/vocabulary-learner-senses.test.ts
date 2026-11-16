@@ -11,7 +11,7 @@ import { runWithLearnerId } from '../server/db/learner-context.ts';
 import { addVocabularyWord, getVocabularyLearnerWord, getVocabularyWordSchedule, VocabularyStateConflict } from '../server/db/vocabulary-learners.ts';
 import { createVocabularyContent, createVocabularySense, establishVocabularySenseCatalog, getVocabularySenseCatalog, listVocabularyExercises, updateVocabularySense } from '../server/db/vocabulary-content.ts';
 import { getVocabularyWordSenseCoverage, writeVocabularyDefaultUsefulSenses } from '../server/db/vocabulary-sense-coverage.ts';
-import { resolveVocabularyLearnerSenseScope, vocabularyLearnerSenseIsEligible, writeVocabularyLearnerSenseScope } from '../server/db/vocabulary-learner-senses.ts';
+import { resolveVocabularyLearnerSenseScope, vocabularyLearnerSenseIsEligible, takeUpVocabularyLearnerSense, writeVocabularyLearnerSenseScope } from '../server/db/vocabulary-learner-senses.ts';
 import { canServeVocabularyReviewProduction, isVocabularyProductionProxied } from '../server/vocabulary/production-coverage.ts';
 
 let root: string; let baseline: string; let db: DatabaseSync;
@@ -109,4 +109,17 @@ test('a taken-up sense restores production admission under explicit-none default
   assert.equal(runWithLearnerId('b',()=>canServeVocabularyReviewProduction('w','practice')),false);
   exercise('pure',null,'production',true);assert.equal(isVocabularyProductionProxied('w'),true);
   assert.equal(canServeVocabularyReviewProduction('w','practice'),true);
+}));
+
+
+test('additive take-up preserves default take-ups, exclusions, and schedule while validating identity and versions',()=>owner(()=>{
+  defaults(['s1','s2']);choose(['s1'],'s1');
+  const before=resolveVocabularyLearnerSenseScope('w'),schedule=getVocabularyWordSchedule('w');
+  const expected={expectedStateVersion:before.stateVersion!,expectedCatalogVersion:before.catalogVersion,
+    expectedSelectionVersion:before.selectionVersion,surface:'test-additive'};
+  assert.throws(()=>takeUpVocabularyLearnerSense('w','foreign',expected),/active senses/);
+  const next=takeUpVocabularyLearnerSense('w','s3',expected);
+  assert.deepEqual(next.choices,[{senseId:'s1',disposition:'active'},{senseId:'s2',disposition:'excluded'},{senseId:'s3',disposition:'active'}]);
+  assert.deepEqual(getVocabularyWordSchedule('w'),schedule);
+  assert.throws(()=>takeUpVocabularyLearnerSense('w','s2',expected),VocabularyStateConflict);
 }));

@@ -219,6 +219,22 @@ Four separate records answer different questions:
   will address. Later changes to defaults do not retarget that call or invalidate
   its result. Source, mapping and canonical-version changes still fence publication.
 
+The add-word chat can contribute a new active, non-default canonical sense only
+when a learner confirms a validated proposal on Add. The command checks the
+catalog and selection versions, applies the existing inventory quality limits,
+and records an operator finding. This authority covers creation for an established
+inventory under the exact lexical target. Default selection, editing and
+retirement follow their existing authority. Learner contexts and choices remain
+private. A shared sense description uses general linguistic evidence.
+
+Chat reads can request existing inventory and default-selection work.
+A structured card is evaluated against the learner's actual enrollment and
+current active canonical identities. Add, sense changes and Undo have durable
+idempotent receipts and validate current word, catalog and selection versions.
+A retained teaching session uses its original material and facts. Interrupted
+turns and context matches settle without reapplying enrollment or shared
+changes.
+
 Unknown defaults initialize asynchronously when needed. Every established nonempty
 inventory receives a selector decision over existing sense IDs, including senses
 imported from teaching. Teaching provenance does not establish default usefulness,

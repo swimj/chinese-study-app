@@ -6,6 +6,7 @@ export const VOCABULARY_WORD_STAGES: ReadonlyArray<{status: VocabularyWordMode; 
 ];
 export const VOCABULARY_WORD_MODES = VOCABULARY_WORD_STAGES.map(({status}) => status);
 export type VocabularyCollectionWord = WordBrowserEntry<VocabularyWordMode> & {
+  preparationStatus?: 'preparing' | 'ready' | 'needs-attention';
   stateVersion: number | null; nextEligibleAt: string | null; refreshUntil: string | null;
 };
 export type VocabularyWordsCollection = {
