@@ -139,6 +139,28 @@ test('word defaults outlive their case and clear only with an established select
   sql.prepare(`INSERT INTO vocabulary_word_sense_coverage(word_id,version,excluded_sense_ids_json,default_useful_sense_ids_json,updated_at) VALUES ('word',1,'[]','[]',?)`).run(at);
   assert.equal(listVocabularyAttention('editor',{},dependencies).total,0);
 });
+test('preparation blocked by the same defaults decision appears under that word once',()=>{
+  seedReconciliationSource('document',false);
+  seedPreparation('teaching-blocker','document','selection_requires_operator: Defaults required');
+  seedPreparation('generation-error','document','generation_failed');
+  sql.prepare(`INSERT INTO vocabulary_practice_preparation
+    (work_id,word_id,proactive_scope_key,generation_key,status,created_at,updated_at,last_error)
+    VALUES ('proactive-blocker','word','scope','pending','failed',?,?,'selection_requires_operator: Defaults required')`).run(at,at);
+  sql.prepare(`INSERT INTO vocabulary_default_selection_readiness
+    (word_id,status,expected_catalog_version,workflow_id,last_error,created_at,updated_at)
+    VALUES ('word','failed',0,'selection','No useful senses selected',?,?)`).run(at,at);
+
+  const page=listVocabularyAttention('editor',{},preparationDependencies);
+  assert.deepEqual(page.items.map(item=>item.id),['defaults:word','preparation:generation-error']);
+  const item=page.items[0];
+  assert.ok(item.kind==='defaults');
+  assert.deepEqual(item.blockedPreparations,[
+    {workId:'proactive-blocker',createdAt:at},
+    {workId:'teaching-blocker',createdAt:at},
+  ]);
+  assert.equal(listVocabularyAttention('editor',{kind:'preparation'},preparationDependencies).total,1);
+  assert.equal(sql.prepare("SELECT count(*) AS count FROM vocabulary_practice_preparation WHERE status='failed'").get()!.count,3);
+});
 test('failed approval retains a standalone proposal and disappears after a superseding revision',()=>{
   const proposal=createVocabularyProposal({rationale:'Standalone repair',operations:[{operationKey:'repair',scope:{kind:'shared'},strategy:'retire',sourceContentId:'source',expectedVersion:1,rationale:'Retire',content:getVocabularyContentForMaintenance('source')!}]},'editor');
   const request:VocabularyApprovalRequest={requestId:'request',proposalId:proposal.proposalId,expectedVersion:1,actorId:'editor',notes:null,status:'attention',attempts:1,createdAt:at,updatedAt:at,error:'temporary failure',application:null};

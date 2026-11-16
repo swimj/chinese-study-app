@@ -362,9 +362,14 @@ queue while the failure is actionable here. Retry or abandon reassessment to
 continue. Teaching cases without an
 assessment appear in Awaiting review.
 
-Selected senses appear directly as toggle chips. Saving an explicit selection,
-including none, resolves the word finding without revising an existing proposal.
+Selected senses appear directly as toggle chips. **Blocked practice preparation**
+lists the work waiting on that decision. The word counts once in Needs attention.
+Saving an explicit selection, including none, resolves the word finding and
+releases the blocked work to recheck demand.
 Established empty inventories and ordinary queued/running work require no attention.
+Teaching that maps cleanly to all selected senses plus other valid canonical
+senses is superseded automatically. The teaching reserve prepares a replacement
+when a learner needs it.
 Sense reconciliation keeps its grouped attention item during required replacement
 preparation, including pending and failed stages. Its matcher and source records
 remain inspectable there.

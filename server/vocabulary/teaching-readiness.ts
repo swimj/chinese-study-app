@@ -9,6 +9,7 @@ import { requireLearnerId } from '../db/learner-context.ts';
 import { getVocabularyContent, getVocabularyTeachingExercises } from '../db/vocabulary-content.ts';
 import { canEnsureVocabularySensesFromBootstrap, VocabularySenseReadinessError } from './sense-readiness.ts';
 import { getDictionaryBaseline } from './dictionary-baseline.ts';
+import { teachingScopeSupersededPublicationSql } from '../db/teaching-supersession.ts';
 
 export function skillEnabled(wordId:string,skill:'recognition'|'production'|'contextual_selection'):boolean {
   const disabled=getDb().prepare('SELECT enabled FROM learner_owned_word_skill_state WHERE learner_id=? AND word_id=? AND skill_id=?')
@@ -25,23 +26,31 @@ export function eligible(content:VocabularyContent):boolean {
 ;
 }
 export function introductions(wordId:string,newest=false,teachingSetKey=resolveLearnerTeachingSetKey(wordId)):VocabularyContent[] {
+  return selectIntroductions(wordId,newest,teachingSetKey,false);
+}
+export function compatibleIntroductions(wordId:string,newest=false,teachingSetKey=resolveLearnerTeachingSetKey(wordId)):VocabularyContent[] {
+  return selectIntroductions(wordId,newest,teachingSetKey,true);
+}
+function selectIntroductions(wordId:string,newest:boolean,teachingSetKey:string|null,requireCurrent:boolean):VocabularyContent[] {
   if (teachingSetKey === null) return [];
   const exactDefault = getExactDefaultTeachingSource(wordId,teachingSetKey);
   return (getDb().prepare(`SELECT c.content_id FROM content_items c JOIN content_words w USING(content_id)
     WHERE w.word_id=? AND w.relation='target' AND c.kind='introduction' ORDER BY ${newest?'c.updated_at DESC,c.content_id DESC':'c.created_at,c.content_id'}`).all(wordId) as {content_id:string}[])
-    .map((row)=>getVocabularyContent(row.content_id)).filter((content):content is VocabularyContent=>content!==null&&eligible(content)&&introductionUsesTeachingSet(wordId,content.body,teachingSetKey,exactDefault));
+    .map((row)=>getVocabularyContent(row.content_id)).filter((content):content is VocabularyContent=> {
+      if (!content || !eligible(content)) return false;
+      const body = content.body;
+      if (exactDefault?.packageId && body && typeof body === 'object' && !Array.isArray(body)
+        && body.sourcePackageId === exactDefault.packageId && body.bootstrapContentId === exactDefault.contentId) return true;
+      return introductionUsesTeachingSet(wordId,body,teachingSetKey)
+        && (!requireCurrent || isCompatibleVocabularyIntroduction(wordId,body,teachingSetKey));
+    });
 }
-function introductionUsesTeachingSet(wordId:string,body:unknown,teachingSetKey:string,exactDefault:ReturnType<typeof getExactDefaultTeachingSource>):boolean {
+function introductionUsesTeachingSet(wordId:string,body:unknown,teachingSetKey:string):boolean {
   if (!body || typeof body !== 'object' || Array.isArray(body) || !('sourcePackageId' in body)) return teachingSetKey === DEFAULT_TEACHING_SET;
-  if (exactDefault?.packageId && body.sourcePackageId === exactDefault.packageId
-    && 'bootstrapContentId' in body && body.bootstrapContentId === exactDefault.contentId) return true;
   return Boolean(getDb().prepare(`SELECT 1 FROM word_teaching_packages p JOIN word_content_documents d ON d.content_id=p.content_id
-    WHERE p.word_id=? AND p.package_id=? AND d.teaching_set_key=?`).get(wordId,String(body.sourcePackageId),teachingSetKey));
-}
-export function compatibleIntroductions(wordId:string,newest=false,teachingSetKey=resolveLearnerTeachingSetKey(wordId)):VocabularyContent[] {
-  if (teachingSetKey === null) return [];
-  return introductions(wordId,newest,teachingSetKey).filter(content=>isCompatibleVocabularyIntroduction(wordId,content.body,teachingSetKey)
-    || (teachingSetKey !== DEFAULT_TEACHING_SET && isCompatibleVocabularyIntroduction(wordId,content.body)));
+    JOIN shared_content_publications publication ON publication.publication_id=d.publication_id
+    WHERE p.word_id=? AND p.package_id=? AND d.teaching_set_key=? AND NOT ${teachingScopeSupersededPublicationSql('publication')}`)
+    .get(wordId,String(body.sourcePackageId),teachingSetKey));
 }
 export type ResolvedVocabularyTeaching = {intro:VocabularyContent;exercises:VocabularyContent[]};
 /** Resolve current coherent material only; compatibility refresh and generation belong to maintenance. */

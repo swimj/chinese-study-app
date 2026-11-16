@@ -11,6 +11,7 @@ import { snapshotInventoryForReconciliation } from './sense-inventory-reconcilia
 import { getVocabularyContentForMaintenance, updateVocabularyContent, getVocabularySenses, mapVocabularyContentSense } from './vocabulary-content.ts';
 import { getVocabularyWordSenseCoverage, writeVocabularyDefaultUsefulSenses } from './vocabulary-sense-coverage.ts';
 import { VOCABULARY_PREPARATION_EPOCH } from './preparation-compatibility.ts';
+import { teachingScopeCtes } from './teaching-supersession.ts';
 import { senseContentReconciliationAuthority, senseContentReconciliationProgress } from './sense-content-reconciliation-state.ts';
 
 export class SenseContentReconciliationError extends Error {
@@ -229,22 +230,21 @@ export function listSenseContentReconciliationWords(actorId: string): SenseConte
   authorize(actorId);
   const db = getDb();
   return atomic(() => {
-    const words = db.prepare(`SELECT DISTINCT w.id AS wordId,w.hanzi,w.pinyin,p.content_id,r.status FROM lexical_words w
-      LEFT JOIN word_introduction_preparation p ON p.word_id=w.id AND p.teaching_set_key='default' LEFT JOIN sense_content_reconciliations r ON r.rowid=(SELECT MAX(latest.rowid) FROM sense_content_reconciliations latest WHERE latest.word_id=w.id)
-      WHERE r.word_id IS NOT NULL OR p.content_id IS NOT NULL ORDER BY w.hanzi,w.id`).all() as Array<{ wordId: string; hanzi: string; pinyin: string; content_id: string | null; status: string | null }>;
-    return words.flatMap(word => {
-      const saved = word.status ? [{ wordId: word.wordId, hanzi: word.hanzi, pinyin: word.pinyin, reason: word.status === 'applied' ? `Replacement ${senseContentReconciliationProgress(word.wordId).status}` : 'Saved resolution' }] : [];
-      const document = db.prepare('SELECT content_json FROM word_content_documents WHERE content_id=?').get(word.content_id);
-      if (!document) return saved;
-      const source = parseWordContent(JSON.parse(String(document.content_json)));
-      const mappings = db.prepare(`SELECT m.source_use_id,m.sense_id,m.imported_sense_version,s.version,s.status FROM legacy_sense_imports m
-        JOIN senses s USING(sense_id) WHERE m.source_content_id=? AND s.word_id=?`).all(word.content_id, word.wordId) as Row[];
-      const represented = source.uses.map(use => mappings.find(mapping => mapping.source_use_id === use.id));
-      const defaults = getVocabularyWordSenseCoverage(word.wordId).defaultUsefulSenseIds;
-      if (represented.some(mapping => !mapping || mapping.status !== 'active' || mapping.version !== mapping.imported_sense_version)
-        || new Set(represented.map(mapping => mapping?.sense_id)).size !== source.uses.length) return [{ wordId: word.wordId, hanzi: word.hanzi, pinyin: word.pinyin, reason: 'Teaching and canonical senses differ' }];
-      if (defaults !== null && JSON.stringify(sorted(defaults)) !== JSON.stringify(sorted(mappings.map(mapping => String(mapping.sense_id))))) return [{ wordId: word.wordId, hanzi: word.hanzi, pinyin: word.pinyin, reason: 'Teaching and selected default scope differ' }];
-      return saved;
+    const words = db.prepare(`WITH ${teachingScopeCtes}
+      SELECT w.id AS wordId,w.hanzi,w.pinyin,t.mapping_mismatch,t.mismatch,t.scope_only,r.status
+      FROM lexical_words w LEFT JOIN teaching_sources t ON t.word_id=w.id
+      LEFT JOIN sense_content_reconciliations r ON r.rowid=(SELECT max(latest.rowid) FROM sense_content_reconciliations latest WHERE latest.word_id=w.id)
+      WHERE r.status IS NOT NULL OR (t.mismatch=1 AND NOT coalesce(t.scope_only,0))
+      ORDER BY w.hanzi,w.id`).all() as Array<{
+        wordId: string; hanzi: string; pinyin: string; mapping_mismatch: number | null;
+        mismatch: number | null; scope_only: number | null; status: string | null;
+      }>;
+    return words.map(({wordId,hanzi,pinyin,mapping_mismatch,mismatch,scope_only,status}) => {
+      let reason = 'Saved resolution';
+      if (mapping_mismatch) reason = 'Teaching and canonical senses differ';
+      else if (mismatch && !scope_only) reason = 'Teaching and selected default scope differ';
+      else if (status === 'applied') reason = `Replacement ${senseContentReconciliationProgress(wordId).status}`;
+      return {wordId,hanzi,pinyin,reason};
     });
   }, 'read');
 }

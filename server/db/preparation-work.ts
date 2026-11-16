@@ -6,6 +6,7 @@ import { getExactDefaultTeachingSource } from './learner-teaching.ts';
 import { getSharedIntroductionLexicalWord, getSharedWordIntroductionPreparation,
   getSharedWordIntroductionContent, getSharedWordTeachingPackageId } from './word-introductions.ts';
 import { getSharedWordReviewPreparation } from './review-content.ts';
+import { TEACHING_SCOPE_SUPERSEDED } from './teaching-supersession.ts';
 
 export type WordPreparationStage = 'bootstrap' | 'teaching' | 'review';
 export type WordPreparationWork = {
@@ -58,6 +59,11 @@ export function enqueueWordPreparation(wordId: string, stage: WordPreparationSta
     (work_id, word_id, stage, source_content_id, status, next_attempt_at, created_at, updated_at, requested_by_learner_id, teaching_set_key)
     VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?)`)
     .run(randomUUID(), wordId, stage, source, now, now, now, learnerId, teachingSetKey);
+  // A fresh reserve request starts a new cycle after teaching scope supersession.
+  getDb().prepare(`UPDATE word_preparation_work SET source_content_id=?,status='queued',attempt_count=0,
+    next_attempt_at=?,last_error=NULL,updated_at=?,requested_by_learner_id=?
+    WHERE word_id=? AND stage=? AND teaching_set_key=? AND stage IN ('bootstrap','teaching') AND status='ready' AND last_error=?`)
+    .run(source, now, now, learnerId, wordId, stage, teachingSetKey, TEACHING_SCOPE_SUPERSEDED);
   // Historical demand had no requester. Attribute only when fresh demand arrives.
   getDb().prepare(`UPDATE word_preparation_work SET requested_by_learner_id = ?,
     status = CASE WHEN last_error = 'Preparation needs a requesting learner.' THEN 'queued' ELSE status END,
@@ -156,8 +162,8 @@ export function recoverExpiredWordPreparation(now = new Date().toISOString()): v
 export function listWordPreparationFailures() {
   const rows = getDb().prepare(`SELECT ${projection},
     (SELECT hanzi FROM lexical_words WHERE id = word_id) AS hanzi
-    FROM word_preparation_work WHERE last_error IS NOT NULL ORDER BY updated_at DESC`)
-    .all() as Array<WordPreparationWork & { hanzi: string }>;
+    FROM word_preparation_work WHERE last_error IS NOT NULL AND NOT (status='ready' AND last_error=?) ORDER BY updated_at DESC`)
+    .all(TEACHING_SCOPE_SUPERSEDED) as Array<WordPreparationWork & { hanzi: string }>;
   return rows.map((row) => ({ ...row, attempts: getDb().prepare(`SELECT attempt_id AS attemptId,
     started_at AS startedAt, finished_at AS finishedAt, outcome, diagnostic
     FROM word_preparation_attempts WHERE work_id = ? ORDER BY started_at, attempt_id`).all(row.workId) as Array<{

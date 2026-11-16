@@ -12,6 +12,7 @@ import type { TeachingPackage, WordContentDocument } from '../../src/domain/word
 import { parseTeachingPackage, parseWordContent } from '../../src/domain/word-content/validation.ts';
 import { getDb } from './connection.ts';
 import { requireLearnerId } from './learner-context.ts';
+import { teachingScopeSupersededPublicationSql } from './teaching-supersession.ts';
 
 export class WordIntroductionError extends Error {
   constructor(readonly code: 'not_found' | 'invalid_source' | 'conflict', message: string) {
@@ -430,6 +431,7 @@ export function releaseSharedWordIntroductionStage(wordId: string, token: string
 
 function eligiblePackageRows(wordId: string, retainedPin: string | null = null, teachingSetKey: string | null = DEFAULT_TEACHING_SET,
   exactDefaultPackageId: string | null = null, includeRetainedPin = false): PackageRow[] {
+  const historicalPackageId = includeRetainedPin ? retainedPin : null;
   return getDb().prepare(`
     SELECT package.package_id, package.package_json, package.created_at, package.model,
            package.word_id, package.content_id
@@ -440,14 +442,17 @@ function eligiblePackageRows(wordId: string, retainedPin: string | null = null, 
     JOIN shared_content_publications AS content_publication
       ON content_publication.publication_id = content.publication_id
     WHERE package.word_id = ? AND (content.teaching_set_key = ? OR package.package_id IN (?,?))
-      AND package_publication.publication_status IN ('shared_trial', 'available')
-      AND content_publication.publication_status IN ('shared_trial', 'available')
+      AND (package_publication.publication_status IN ('shared_trial', 'available')
+        OR (package.package_id IN (?,?) AND ${teachingScopeSupersededPublicationSql('package_publication')}))
+      AND (content_publication.publication_status IN ('shared_trial', 'available')
+        OR (package.package_id IN (?,?) AND ${teachingScopeSupersededPublicationSql('content_publication')}))
       AND (package.package_id = ? OR NOT EXISTS (
         SELECT 1 FROM content_improvement_replacements r
         WHERE r.kind = 'teaching_package' AND r.source_id = package.package_id
       ))
     ORDER BY package.created_at, package.package_id
-  `).all(wordId, teachingSetKey, exactDefaultPackageId, includeRetainedPin ? retainedPin : null, retainedPin) as PackageRow[];
+  `).all(wordId, teachingSetKey, exactDefaultPackageId, historicalPackageId, exactDefaultPackageId, historicalPackageId,
+    exactDefaultPackageId, historicalPackageId, retainedPin) as PackageRow[];
 }
 
 /**
@@ -468,15 +473,18 @@ export function getWordIntroductionLibrary(wordId: string, teachingSetKey?: stri
   const selectedSet = teachingSetKey ?? resolveLearnerTeachingSetKey(wordId);
   const includeRetainedPin = teachingSetKey === undefined;
   const exactDefault = selectedSet === null ? null : getExactDefaultTeachingSource(wordId,selectedSet);
+  const packageRows = eligiblePackageRows(wordId, latestOpen?.package_id ?? null, selectedSet, exactDefault?.packageId ?? null, includeRetainedPin);
+  const retainedSourceId = includeRetainedPin ? packageRows.find(row=>row.package_id===latestOpen?.package_id)?.content_id ?? null : null;
   const contentRows = getDb().prepare(`
     SELECT content.content_id, content.content_json, content.created_at, content.model, content.word_id
     FROM word_content_documents AS content
     JOIN shared_content_publications AS publication ON publication.publication_id = content.publication_id
     WHERE content.word_id = ? AND (content.teaching_set_key = ? OR content.content_id IN (?,?))
-      AND publication.publication_status IN ('shared_trial', 'available')
+      AND (publication.publication_status IN ('shared_trial', 'available')
+        OR (content.content_id IN (?,?) AND ${teachingScopeSupersededPublicationSql('publication')}))
     ORDER BY content.created_at, content.content_id
-  `).all(wordId, selectedSet, exactDefault?.contentId ?? null, includeRetainedPin ? latestOpen?.content_id ?? null : null) as ContentRow[];
-  const packageRows = eligiblePackageRows(wordId, latestOpen?.package_id ?? null, selectedSet, exactDefault?.packageId ?? null, includeRetainedPin);
+  `).all(wordId, selectedSet, exactDefault?.contentId ?? null, includeRetainedPin ? latestOpen?.content_id ?? null : null,
+    exactDefault?.contentId ?? null, retainedSourceId) as ContentRow[];
   // A withdrawn private pin must not silently turn into a different lesson.
   // A learner who has never opened one may take the first eligible package.
   const selectedPackageId = latestOpen

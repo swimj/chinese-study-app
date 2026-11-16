@@ -76,7 +76,7 @@ different outcomes within a word. Model suggestions are reviewable evidence.
 | Observed difference | Linguistic or policy decision | Application consequence |
 | --- | --- | --- |
 | Selected canonical sense absent from teaching | Confirm the sense and its usefulness, or correct the selection | Prepare missing content or change defaults; do not infer invalidity from omission |
-| Teaching use is canonical but not selected | Keep peripheral or include in defaults | Reconcile serving and authoring scope without inventing a new sense |
+| Teaching covers every selected sense and includes extra uses with current one-to-one canonical mappings | Use the established nonempty defaults as the teaching scope | Supersede the teaching unit and let the reserve request a replacement on demand |
 | Teaching use differs only in wording or granularity | Establish equivalence to an existing identity | Record the reviewed relationship and preserve or replace content as compatibility permits |
 | Teaching contains a genuinely missing sense | Add it to the resulting inventory; decide default usefulness separately | Create the sense and arrange compatible teaching and practice |
 | Either side contains an invalid use | Remove it from the resulting active inventory or reject the teaching use | Retire or replace affected content while retaining evidence |
@@ -85,6 +85,14 @@ different outcomes within a word. Model suggestions are reviewable evidence.
 Retirement replaces destructive deletion. Excluding a valid sense from defaults
 is different from retiring its identity. Neither newer teaching nor an existing
 canonical label automatically settles linguistic correctness.
+
+Background preparation maintenance owns the supersession of teaching whose
+only discrepancy is extra, valid uses. An open reconciliation takes precedence.
+Supersession archives the source document and package for default teaching.
+Learners with explicit choices can reuse an archived package when the authored
+scope exactly matches their request. Supersession preserves canonical senses,
+defaults, compatible general practice and retained sessions. The next default
+reserve request prepares teaching from the stored defaults.
 
 For existing learners, a newly included sense does not force whole-word reteaching
 or reset progress. Future eligible practice can introduce it, provided suitable

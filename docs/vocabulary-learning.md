@@ -570,8 +570,9 @@ putting a learner identity in shared content.
 Learner reserve and composition resolve the learner's teaching set. With no active
 overrides they use the default compatibility lane. Explicit choices, including a
 context's target pin, keep the effective set as their request identity. The current
-default package can meet that request when its source's canonical mappings prove
-the same set. The reserve can wait for default work already preparing teaching
+or automatically superseded default package can meet that request when it crosses
+the compatibility boundary and its canonical mappings prove the same set.
+The reserve can wait for default work already preparing teaching
 from a matching source. A ready concrete package remains usable during that work
 or if it fails. Learners choosing the same set share preparation and teaching.
 Existing opened library pins remain completable after a scope change. Teaching
@@ -602,11 +603,22 @@ does not reset the current cycle's failure budget. Imported teaching admission
 requires the current source/package at a compatible epoch. Native vocabulary
 introductions already use the current content contract.
 
+The preparation runtime also audits the scope of published teaching. A source
+with current one-to-one canonical mappings and a strict superset of the saved,
+nonempty defaults is eligible for automatic supersession. Maintenance defers
+while related generation or an editorial decision is active. Supersession
+retires the source and package from default teaching, clears the default
+preparation pointers and invalidates default reserve hints. The next default
+reserve request opens a bounded bootstrap and teaching cycle against the current
+defaults. Exact-scope requests can reuse the archived package. Historical
+artifacts, attempts, compatible general practice and frozen sessions remain
+available through their retained identities.
+
 Runtime publication preserves established or partial sense inventories and their
 identities. Refreshed source uses have unresolved mappings until explicitly
 mapped; no text-based identity merge is inferred. Cold words can establish their
-initial inventory. Historical reviewed words are not scanned or regenerated;
-existing material remains usable and shared improvements can enter later sessions.
+initial inventory. Existing general practice remains usable and shared
+improvements can enter later sessions.
 Applying migration `0057_preparation_compatibility` requires the stopped-writer
 procedure. Later code-only changes are classified separately by the release runbook.
 

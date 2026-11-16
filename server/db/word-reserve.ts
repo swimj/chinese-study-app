@@ -2,6 +2,7 @@ import { getDb } from './connection.ts';
 import { requireLearnerId } from './learner-context.ts';
 import { vocabularySessionWordEligibleSql } from './vocabulary-sense-eligibility.ts';
 import { emitBackendEvent } from './vocabulary-content.ts';
+import { teachingScopeSupersededPublicationSql } from './teaching-supersession.ts';
 
 /** Candidate membership is private; preparation jobs and generated content are shared. */
 export function getWordReserveCandidates(): string[] {
@@ -52,8 +53,8 @@ export function getBlockedPreparationWordIds(setKeyForWord: (wordId:string)=>str
     WHERE event.learner_id = ? AND event.event_kind = 'opened'
       AND event.sequence = (SELECT MAX(latest.sequence) FROM learner_word_introduction_events AS latest
         WHERE latest.learner_id = event.learner_id AND latest.word_id = event.word_id AND latest.event_kind = 'opened')
-      AND (lesson.publication_status NOT IN ('shared_trial', 'available')
-        OR source.publication_status NOT IN ('shared_trial', 'available'))`)
+      AND ((lesson.publication_status NOT IN ('shared_trial', 'available') AND NOT ${teachingScopeSupersededPublicationSql('lesson')})
+        OR (source.publication_status NOT IN ('shared_trial', 'available') AND NOT ${teachingScopeSupersededPublicationSql('source')}))`)
     .all(requireLearnerId()) as Array<{ word_id: string; teaching_set_key:string }>;
   return new Set(rows.filter(row=>setKeyForWord(row.word_id)===row.teaching_set_key).map(row=>row.word_id));
 }

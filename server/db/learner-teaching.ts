@@ -3,8 +3,9 @@ import { requireLearnerId } from './learner-context.ts';
 import { resolveVocabularyLearnerSenseScope } from './vocabulary-learner-senses.ts';
 import { assertTeachingSenseSet, DEFAULT_TEACHING_SET, teachingSenseSetKey } from './teaching-sense-sets.ts';
 import { VOCABULARY_PREPARATION_EPOCH } from './preparation-compatibility.ts';
+import { teachingScopeSupersededPublicationSql } from './teaching-supersession.ts';
 
-/** Unchosen defaults retain their historical lesson. An explicit choice must be taught exactly. */
+/** Default-following learners use the default lane. An explicit choice must be taught exactly. */
 export function resolveLearnerTeachingSetKey(wordId: string): string | null {
   const db = getDb();
   const hasChoice = db.prepare(`SELECT 1 FROM learner_senses choice JOIN senses s USING(sense_id,word_id)
@@ -22,15 +23,15 @@ export function resolveExactTeachingSetKey(wordId:string,senseIds:readonly strin
   return key;
 }
 
-/** The current default source may fulfill a concrete request if its authored scope matches. */
+/** A current or automatically superseded default source may fulfill its exact authored scope. */
 export function getExactDefaultTeachingSource(wordId:string,key:string):{contentId:string;packageId:string|null}|null {
   if (key === DEFAULT_TEACHING_SET) return null;
   const db=getDb();
   // Reuse the ordinary lesson only when its actual immutable source proves the requested set.
   // Today's default selection alone cannot establish what an older lesson teaches.
-  const source = db.prepare(`SELECT p.content_id,d.content_json,
+  const sources = db.prepare(`SELECT p.content_id,d.content_json,
       CASE WHEN lesson.publication_status IN ('shared_trial','available') AND replacement.source_id IS NULL
-        THEN package.package_id ELSE NULL END AS package_id
+        THEN package.package_id ELSE NULL END AS package_id, 0 AS archived, d.created_at AS source_created_at
     FROM word_introduction_preparation p
     JOIN word_content_documents d ON d.content_id=p.content_id
     JOIN shared_content_publications publication ON publication.publication_id=d.publication_id
@@ -38,16 +39,34 @@ export function getExactDefaultTeachingSource(wordId:string,key:string):{content
     LEFT JOIN shared_content_publications lesson ON lesson.publication_id=package.publication_id
     LEFT JOIN content_improvement_replacements replacement ON replacement.kind='teaching_package' AND replacement.source_id=package.package_id
     WHERE p.word_id=? AND p.teaching_set_key=? AND p.preparation_epoch>=?
-      AND publication.publication_status IN ('shared_trial','available')`)
-    .get(wordId,DEFAULT_TEACHING_SET,VOCABULARY_PREPARATION_EPOCH) as {content_id:string;content_json:string;package_id:string|null}|undefined;
-  if (!source) return null;
-  const mappings = db.prepare(`SELECT m.source_use_id,m.sense_id FROM legacy_sense_imports m
+      AND publication.publication_status IN ('shared_trial','available')
+    UNION ALL
+    SELECT d.content_id,d.content_json,package.package_id,1 AS archived,d.created_at
+    FROM word_content_documents d JOIN shared_content_publications publication USING(publication_id)
+    JOIN word_teaching_packages package ON package.content_id=d.content_id
+    JOIN shared_content_publications lesson ON lesson.publication_id=package.publication_id
+    JOIN legacy_content_imports imported ON imported.source_kind='teaching_package' AND imported.source_id=package.package_id AND imported.source_sub_id=''
+    JOIN content_items intro ON intro.content_id=imported.content_id AND intro.availability='active'
+    WHERE d.word_id=? AND d.teaching_set_key=?
+      AND ${teachingScopeSupersededPublicationSql('publication',true)}
+      AND ${teachingScopeSupersededPublicationSql('lesson',true)}
+      AND NOT EXISTS(SELECT 1 FROM content_improvement_replacements replacement
+        WHERE replacement.kind='teaching_package' AND replacement.source_id=package.package_id)
+    ORDER BY archived,source_created_at DESC,package_id`)
+    .all(wordId,DEFAULT_TEACHING_SET,VOCABULARY_PREPARATION_EPOCH,wordId,DEFAULT_TEACHING_SET) as {content_id:string;content_json:string;package_id:string|null}[];
+  if (!sources.length) return null;
+  const sourceMappings = db.prepare(`SELECT m.source_use_id,m.sense_id FROM legacy_sense_imports m
     JOIN senses s ON s.sense_id=m.sense_id
-    WHERE m.source_content_id=? AND s.word_id=? AND s.status='active' AND s.version=m.imported_sense_version`)
-    .all(source.content_id,wordId) as Array<{source_use_id:string;sense_id:string}>;
-  const document = JSON.parse(source.content_json) as {uses:Array<{id:string}>};
-  if (mappings.length !== document.uses.length || new Set(mappings.map(row=>row.sense_id)).size !== mappings.length
-    || !document.uses.every(use=>mappings.some(row=>row.source_use_id===use.id))
-    || !mappings.length || teachingSenseSetKey(mappings.map(row=>row.sense_id)) !== key) return null;
-  return {contentId:source.content_id,packageId:source.package_id};
+    WHERE m.source_content_id=? AND s.word_id=? AND s.status='active' AND s.version=m.imported_sense_version`);
+  let pending: {contentId:string;packageId:null}|null = null;
+  for (const source of sources) {
+    const mappings = sourceMappings.all(source.content_id,wordId) as Array<{source_use_id:string;sense_id:string}>;
+    const document = JSON.parse(source.content_json) as {uses:Array<{id:string}>};
+    if (mappings.length !== document.uses.length || new Set(mappings.map(row=>row.sense_id)).size !== mappings.length
+      || !document.uses.every(use=>mappings.some(row=>row.source_use_id===use.id))
+      || !mappings.length || teachingSenseSetKey(mappings.map(row=>row.sense_id)) !== key) continue;
+    if (source.package_id) return {contentId:source.content_id,packageId:source.package_id};
+    pending = {contentId:source.content_id,packageId:null};
+  }
+  return pending;
 }
