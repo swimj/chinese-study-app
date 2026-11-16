@@ -2,7 +2,7 @@ import { useTimestampDisplay } from './useTimestampDisplay';
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import { createTimestampFormatter, defaultTimestampDisplay, timestampDisplayLabel, type TimestampDisplay } from './operator-timestamps';
 import type { ModelInvocationRow } from '../domain/model-invocations';
-import { fetchModelInvocations } from '../services/api';
+import { fetchModelInvocations, fetchOperatorTeachingSets, type OperatorTeachingSetRow } from '../services/api';
 import { InvocationColumnDialog, INVOCATION_COLUMNS, columnHasFilter } from './InvocationColumnDialog';
 import {
   invocationInitiator, defaultInvocationFilters, filterInvocations, formatInvocationLatency, invocationStatusLabels,
@@ -87,6 +87,7 @@ export function ModelInvocationsPanel() {
       Today and Last 7 days use UTC calendar days including today, regardless of column filters. Current selection includes every filtered call, including calls not yet shown.
       Latency measures the provider request through response receipt; timed-out calls show the configured timeout. Historical calls have no recorded latency.
     </p></details>
+    <TeachingSenseSets refresh={refresh} />
     {loading && <p role="status">{rows ? 'Refreshing model invocations…' : 'Loading model invocations…'}</p>}
     {error && <p role="alert">{error} Use Refresh ledger to retry.{rows && ' Showing previously loaded data.'}</p>}
     {rows && <>
@@ -116,6 +117,59 @@ export function ModelInvocationsPanel() {
         timestampDisplay={timestampDisplay} onTimestampDisplay={setTimestampDisplay} onFilters={changeFilters} onSort={changeSort} onGroup={changeGroup} onClose={() => setActiveColumn(null)} />}
     </>}
   </section>;
+}
+
+function TeachingSenseSets({ refresh }: { refresh: number }) {
+  const [open, setOpen] = useState(false);
+  const [rows, setRows] = useState<OperatorTeachingSetRow[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [retry, setRetry] = useState(0);
+
+  useEffect(() => {
+    if (!open) return;
+    const request = new AbortController();
+    const { signal } = request;
+    setLoading(true);
+    setFailed(false);
+    void fetchOperatorTeachingSets(signal).then(({ sets }) => {
+      if (!signal.aborted) setRows(sets);
+    }).catch(() => {
+      if (!signal.aborted) setFailed(true);
+    }).finally(() => {
+      if (!signal.aborted) setLoading(false);
+    });
+    return () => request.abort();
+  }, [open, refresh, retry]);
+
+  return <details className="operator-spend-notes" onToggle={event => setOpen(event.currentTarget.open)}>
+    <summary>Teaching sense sets</summary>
+    {loading && <p role="status">Loading teaching sense sets…</p>}
+    {failed && <p role="alert">Could not load teaching sense sets.{' '}
+      <button className="secondary-button" type="button" onClick={() => setRetry(value => value + 1)}>Retry</button>
+    </p>}
+    {rows?.length === 0 && <p>No teaching sense sets recorded.</p>}
+    {Boolean(rows?.length) && <div className="operator-usage-table-wrap" tabIndex={0} role="region"
+      aria-label="Teaching sense sets" style={{ maxBlockSize: '21rem' }}>
+      <table className="operator-usage-table operator-ledger-summary operator-teaching-sets-table">
+        <caption>{rows?.length} teaching sense {rows?.length === 1 ? 'set' : 'sets'}</caption>
+        <thead><tr><th scope="col">Word</th><th scope="col">Set</th><th scope="col">Packages</th>
+          <th scope="col">Invocations</th><th scope="col">Recorded cost (USD)</th><th scope="col">Unpriced calls</th></tr></thead>
+        <tbody>{rows?.map(row => (
+          <tr key={`${row.wordId}:${row.setKey}`}>
+            <th scope="row" lang="zh-Hans">{row.hanzi}</th>
+            <td>{row.setKey === 'default' ? 'Default'
+              : row.senseCount === null ? 'Unknown'
+                : `${row.senseCount} ${row.senseCount === 1 ? 'sense' : 'senses'}`}</td>
+            <td>{row.packageCount}</td>
+            <td>{row.invocationCount}</td>
+            <td>{formatInvocationSpend(row.recordedCostUsd)}{row.recordedCostUsd !== null && row.unpricedInvocationCount > 0 ? ' (partial)' : ''}</td>
+            <td>{row.unpricedInvocationCount}</td>
+          </tr>
+        ))}</tbody>
+      </table>
+    </div>}
+  </details>;
 }
 
 export function ModelInvocationTable({ rows, headers, groupBy = '', allSelectedRows = rows, shadeFailures = false, timestampDisplay = defaultTimestampDisplay }: {

@@ -383,6 +383,7 @@ accepts a client-selected learner; writes use the authenticated learner context.
 | GET | `/api/operator/content-sharing?weekStart=YYYY-MM-DD` | Reconstructed UTC-week content reuse and bounded shared-content examples |
 | GET | `/api/operator/model-invocations?from=YYYY-MM-DD&to=YYYY-MM-DD` | User-attributed model calls in an inclusive UTC date range |
 | GET | `/api/operator/word-preparation/failures` | Shared preparation failures and attempt history |
+| GET | `/api/operator/teaching-sets` | Shared teaching sets, retained package counts, and recorded preparation costs; unknown costs remain explicit |
 | POST | `/api/operator/word-preparation/:workId/retry` | Retry paused work; empty `{}` body and operator actor audit |
 | GET | `/api/operator/service-banner` | Current active banner |
 | PUT | `/api/operator/service-banner` | Set a custom banner with `{ message, expiresAt? }` or a planned update with `{ kickoffAt }` |

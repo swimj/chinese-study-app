@@ -192,7 +192,9 @@ New teaching and Solidify use fixed recognition and production directions, regar
 of review skill enablement or relevance. Solidify freezes both in `solidifySkills`
 at session start; daily coverage and automatic graduation require both directions.
 Content validity, reconciliation, and availability checks still apply. Familiar
-priming uses retained introduction material in a
+priming uses the last completed introduction when the learner has a source on
+record and it is still eligible. Older records without a source use default
+introduction material. Priming uses a
 [separate reveal sequence](implementation/vocabulary-ui.md#introduction-and-warmup).
 Previously retained sessions keep their recorded skill subset and coverage rules;
 see the [retained payload](#retained-session-payload-and-hot-path-work).
@@ -565,13 +567,27 @@ remains word-wide in the default lane. Model invocation output links lead to
 source documents and packages, allowing costs to be grouped by their set without
 putting a learner identity in shared content.
 
-Learner reserve and composition use the default lane until custom scope selection
-is enabled. Operator reconciliation of default teaching reads and resets that
-lane; inventory reconciliation continues to fence affected shared content and
+Learner reserve and composition resolve the learner's teaching set. With no active
+overrides they use the default compatibility lane. Explicit choices, including a
+context's target pin, keep the effective set as their request identity. The current
+default package can meet that request when its source's canonical mappings prove
+the same set. The reserve can wait for default work already preparing teaching
+from a matching source. A ready concrete package remains usable during that work
+or if it fails. Learners choosing the same set share preparation and teaching.
+Existing opened library pins remain completable after a scope change. Teaching
+recognition snapshots use the source selected for that session's introduction.
+
+Operator reconciliation of default teaching reads and resets that lane;
+inventory reconciliation continues to fence affected shared content and
 preserve historical evidence across all sets. Package repair keeps the source's
 set key. Concrete repairs must preserve current canonical source-use mappings;
 the replacement copies those mappings and materializes its teaching for normal
 readiness resolution.
+
+The operator teaching-set report at `/api/operator/teaching-sets` counts retained
+packages and joins preparation attempts to the invocation ledger. Recorded cost
+includes failed attempts as well as successful preparation. Null cost and unpriced
+invocation counts remain visible; a missing historical ledger is not a zero cost.
 
 ### Preparation compatibility
 

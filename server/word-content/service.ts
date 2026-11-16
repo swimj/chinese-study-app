@@ -4,7 +4,8 @@ import {
   pinWordTeachingPackage, completeWordTeachingPackage,
 } from '../db/word-introductions.ts';
 import { requireLearnerId } from '../db/learner-context.ts';
-import { getWordPreparationWork } from '../db/preparation-work.ts';
+import { getPendingExactDefaultTeachingWork, getWordPreparationWork } from '../db/preparation-work.ts';
+import { resolveLearnerTeachingSetKey } from '../db/learner-teaching.ts';
 import { createWordIntroductionProvider, type WordIntroductionProvider } from './provider.ts';
 
 export class WordIntroductionServiceError extends Error {
@@ -38,7 +39,12 @@ export function createWordIntroductionService(options: {
     pin: pinWordTeachingPackage,
     complete: completeWordTeachingPackage,
   };
-  const queue = options.queue ?? { get: getWordPreparationWork };
+  const queue = options.queue ?? { get: (wordId,stage) => {
+    const setKey = resolveLearnerTeachingSetKey(wordId);
+    if (setKey === null) return null;
+    const shared = stage==='review' ? null : getPendingExactDefaultTeachingWork(wordId,setKey);
+    return shared ? (stage==='teaching' ? shared : null) : getWordPreparationWork(wordId,stage,setKey);
+  } } satisfies {get: typeof getWordPreparationWork};
   const requireLearner = options.requireLearner ?? requireLearnerId;
 
   function get(wordId: string): WordIntroductionResponse {

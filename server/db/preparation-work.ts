@@ -2,6 +2,7 @@ import { DEFAULT_TEACHING_SET, assertTeachingSenseSet } from './teaching-sense-s
 import { randomUUID } from 'node:crypto';
 import { getDb } from './connection.ts';
 import { requireLearnerId } from './learner-context.ts';
+import { getExactDefaultTeachingSource } from './learner-teaching.ts';
 import { getSharedIntroductionLexicalWord, getSharedWordIntroductionPreparation,
   getSharedWordIntroductionContent, getSharedWordTeachingPackageId } from './word-introductions.ts';
 import { getSharedWordReviewPreparation } from './review-content.ts';
@@ -34,6 +35,14 @@ function time(value: string): string {
 export function getWordPreparationWork(wordId: string, stage: WordPreparationStage, teachingSetKey = DEFAULT_TEACHING_SET): WordPreparationWork | null {
   return getDb().prepare(`SELECT ${projection} FROM word_preparation_work WHERE word_id = ? AND stage = ? AND teaching_set_key = ?`)
     .get(wordId, stage, teachingSetKey) as WordPreparationWork | undefined ?? null;
+}
+/** Wait for existing default work only if it can publish teaching for this exact source. */
+export function getPendingExactDefaultTeachingWork(wordId:string, teachingSetKey:string):WordPreparationWork|null {
+  const source = getExactDefaultTeachingSource(wordId,teachingSetKey);
+  if (!source || source.packageId !== null) return null;
+  const work = getWordPreparationWork(wordId,'teaching');
+  return work && (work.status==='queued' || work.status==='running')
+    && (work.sourceContentId===null || work.sourceContentId===source.contentId) ? work : null;
 }
 /** Demand is shared and idempotent. Enqueue never resets a failed budget. */
 export function enqueueWordPreparation(wordId: string, stage: WordPreparationStage, now = new Date().toISOString(), teachingSetKey = DEFAULT_TEACHING_SET): WordPreparationWork {

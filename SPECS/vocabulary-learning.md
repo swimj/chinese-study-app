@@ -70,6 +70,13 @@ mode or schedules, or reteaching an already taught word. Unmapped and fallback
 exercises remain available under the usual admission rules. Recognition, contrast,
 pure-cue qualification and shared production proxy coverage retain their own policy.
 
+Before first teaching, an explicit sense choice receives one coherent shared lesson
+for its effective set. Two learners requesting that set reuse its package; an
+unprepared set waits in the stash. Learners without overrides retain compatibility
+with their existing default lesson even when shared defaults change. An explicit
+choice can reuse that lesson only when its authored scope matches the chosen set.
+Taking up a sense after teaching does not repeat the lesson or reset progress.
+
 Shared proxy coverage can still report targeted content when the learner has excluded
 its only mapped sense. In that case the targeted cue is filtered and word-level
 fallback can serve; the exclusion does not turn the word into a shared pure-cue proxy.
