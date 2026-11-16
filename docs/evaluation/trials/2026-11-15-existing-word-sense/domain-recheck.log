@@ -1,0 +1,41 @@
+(node:29066) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+✔ the ten intake traces preserve fixed add and proposal boundaries (323.430792ms)
+✔ card commands bind active owned IDs, learner/catalog versions, and action receipts; undo keeps shared content (284.176125ms)
+✔ malformed model IDs, cards and quoted contexts fail before publication (275.055083ms)
+✔ retries replay latest card state after disconnect or provider stand-down (271.116834ms)
+✔ Undo protects a later manual change and a retained session that already admitted the word (271.087125ms)
+✔ Undo restores a prior dismissed row and schedule instead of deleting its private history (270.835416ms)
+✔ a deferred successful match releases admission and preserves Undo after the worker scope write (271.848541ms)
+✔ deferred ambiguous keeps the enrollment and falls back to defaults with attention (268.379125ms)
+✔ deferred provider error keeps the enrollment and falls back to defaults with attention (268.883292ms)
+✔ deferred bad reference keeps the enrollment and falls back to defaults with attention (275.32175ms)
+✔ deferred inventory failure keeps the enrollment and falls back to defaults with attention (278.351417ms)
+✔ a completed deferred provider result cannot restore an enrollment the learner already undid (267.853042ms)
+✔ lookup of an established unknown-default word queues selection but holds edited choices until ready (266.764542ms)
+✔ recovery settles expired interrupted turns without replaying an already committed card (266.147666ms)
+✔ follow-up uses recent prose and current card state, never another learner or old tool authority (283.400125ms)
+✔ a conversational sense edit updates the same card in history and replays without another mutation (272.325958ms)
+✔ proposal selections and revised sense descriptions stay private until explicit Add (269.721916ms)
+✔ explicit conversational Undo has the same learner-only effects and invalidation as the button (270.849541ms)
+✔ a card edited while the model responds cannot be overwritten by the conversational revision (271.058333ms)
+✔ follow-up card IDs and unsupported Add actions cannot bypass ownership or confirmation (269.605917ms)
+✔ revision and durable turn attachment roll back together if the turn is from another surface (268.690125ms)
+✔ recovery recognizes a committed revision and reconnect returns its original card identity (268.663917ms)
+✔ retained follow-up context has bounded recent messages and live card count (282.341208ms)
+✔ clarifications can quote recent learner spelling and context without gaining automatic add authority (271.095459ms)
+✔ an existing-word proposal creates nothing until Add sense, then preserves progress and all prior choices (282.073167ms)
+✔ Add sense rejects stale choices and applies only the addition after a current reload (277.163167ms)
+✔ new-sense confirmation cannot reenroll a dismissed word or cross proposal kinds (266.823375ms)
+✔ duplicate shared senses and failed learner writes leave no partial sense publication (266.768458ms)
+✔ sense-proposal clarification remains private and chat cannot confirm or silently select it (269.26725ms)
+✔ a stashed unstudied word waits for teaching covering the newly confirmed sense set (277.692625ms)
+✔ a new-sense confirmation waits for an earlier deferred context match instead of invalidating it (312.114375ms)
+ℹ tests 31
+ℹ suites 0
+ℹ pass 31
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 9131.269625

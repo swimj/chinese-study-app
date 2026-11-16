@@ -1,0 +1,368 @@
+[
+  {
+    "variant": "sol-low-v5",
+    "calls": 17,
+    "cases": 14,
+    "medianMs": 1686.3899170000004,
+    "maxMs": 4173.314584,
+    "spendUsd": 0.058257100000000006,
+    "outcomes": [
+      {
+        "id": "explain",
+        "expectation": "Explain literal use; no card mutation",
+        "elapsedMs": 2404.689,
+        "calls": 1,
+        "error": null,
+        "text": "纠结 can describe things physically tangled together, as in 两股绳子纠结在一起 (“two ropes tangled together”). That’s a separate use from feeling torn over a decision, so both are included."
+      },
+      {
+        "id": "second",
+        "expectation": "Same card, only torn-tangled selected",
+        "elapsedMs": 1552.6500410000003,
+        "calls": 1,
+        "error": null,
+        "text": "I’ll keep only the second displayed sense: “torn or conflicted over a choice.”"
+      },
+      {
+        "id": "undo",
+        "expectation": "Same card, enrollment removed, shared senses retained",
+        "elapsedMs": 1644.2677089999997,
+        "calls": 1,
+        "error": null,
+        "text": "I’ll undo the recent 帮派 add."
+      },
+      {
+        "id": "hypothetical",
+        "expectation": "Explain Undo; no mutation",
+        "elapsedMs": 1138.2895420000004,
+        "calls": 1,
+        "error": null,
+        "text": "Undo would reverse the add of 帮派 to your study plan, as long as that undo option remains available. It wouldn’t change the dictionary meanings or shared defaults. I haven’t undone it."
+      },
+      {
+        "id": "unsupported",
+        "expectation": "Explain unsupported scheduling/mastery; no mutation",
+        "elapsedMs": 1294.139666000001,
+        "calls": 1,
+        "error": null,
+        "text": "I can’t mark 帮派 as mastered or change its review date from this chat."
+      },
+      {
+        "id": "only-proposed",
+        "expectation": "Same proposal, only proposed sense; no enrollment/shared writes",
+        "elapsedMs": 2017.4195419999996,
+        "calls": 1,
+        "error": null,
+        "text": "I’ll keep only the proposed AI sense on this card. It will still need confirmation through Add."
+      },
+      {
+        "id": "confirm-add",
+        "expectation": "Point to Add control; no mutation",
+        "elapsedMs": 1031.5912499999995,
+        "calls": 1,
+        "error": null,
+        "text": "Use the Add control on the 蒸馏 card to confirm the proposed AI meaning. I can’t confirm it from this chat."
+      },
+      {
+        "id": "revise-proposal",
+        "expectation": "Revise same private proposal meaning/selection; no canonical write",
+        "elapsedMs": 2556.443707999999,
+        "calls": 1,
+        "error": null,
+        "text": "I’ll clarify the proposed AI sense as transferring a larger model’s knowledge to a smaller one, and leave only that sense selected."
+      },
+      {
+        "id": "ambiguous",
+        "expectation": "Ask which word; no mutation",
+        "elapsedMs": 1197.5795419999995,
+        "calls": 1,
+        "error": null,
+        "text": "Do you mean 海绵 or 蒸馏?"
+      },
+      {
+        "id": "new-word",
+        "expectation": "New foam card, defaults; prior torn unchanged",
+        "elapsedMs": 2992.803791999999,
+        "calls": 2,
+        "error": null,
+        "text": "泡沫 can mean bubbles or lather, foam used as packing material, or an economic bubble. Those three uses are a practical starting set."
+      },
+      {
+        "id": "named-earlier",
+        "expectation": "Revise torn, leave gang unchanged",
+        "elapsedMs": 1728.512125000001,
+        "calls": 1,
+        "error": null,
+        "text": "I’ll keep only the literal “entangled or knotted together” sense for 纠结."
+      },
+      {
+        "id": "clarification",
+        "expectation": "Propose receiving player/side, explain distinction; no auto-enrollment",
+        "elapsedMs": 4173.314584,
+        "calls": 3,
+        "error": "The proposed expression must contain the requested component",
+        "text": "For the player or side receiving the serve, 接发球方 is the better term. 接发 refers to the return, not the player."
+      },
+      {
+        "id": "historical-instruction",
+        "expectation": "Explain; old instruction does not authorize a new edit",
+        "elapsedMs": 2003.1902090000003,
+        "calls": 1,
+        "error": null,
+        "text": "If you mean the tangled sense, 纠结 can describe things physically entwined, as in 两股绳子纠结在一起 (“two ropes are tangled together”). That’s a use of the word itself, not just its “feeling conflicted” meaning."
+      },
+      {
+        "id": "bad-new-meaning",
+        "expectation": "Reject unsupported sense; no mutation",
+        "elapsedMs": 1015.1511249999967,
+        "calls": 1,
+        "error": null,
+        "text": "蒸馏 doesn’t mean “a red color” in Mandarin, so I can’t change the proposed sense to that. The proposal for its AI meaning remains unchanged."
+      }
+    ]
+  },
+  {
+    "variant": "sol-low-v5b",
+    "calls": 17,
+    "cases": 14,
+    "medianMs": 1532.6661455000005,
+    "maxMs": 3639.772624999998,
+    "spendUsd": 0.05703989999999999,
+    "outcomes": [
+      {
+        "id": "explain",
+        "expectation": "Explain literal use; no card mutation",
+        "elapsedMs": 1687.3542089999999,
+        "calls": 1,
+        "error": null,
+        "text": "纠结 can also describe things physically tangled together, as in 两股绳子纠结在一起 (“two ropes tangled together”). That’s a meaning of the word itself, not just part of another expression, so it’s included alongside the common “feeling conflicted” meaning."
+      },
+      {
+        "id": "second",
+        "expectation": "Same card, only torn-conflicted selected (second displayed sense)",
+        "elapsedMs": 1541.4461660000002,
+        "calls": 1,
+        "error": null,
+        "text": "I’ll keep only “torn or conflicted over a choice” on your 纠结 card."
+      },
+      {
+        "id": "undo",
+        "expectation": "Same card, enrollment removed, shared senses retained",
+        "elapsedMs": 1646.2287500000002,
+        "calls": 1,
+        "error": null,
+        "text": "I’ll undo the recent 帮派 add."
+      },
+      {
+        "id": "hypothetical",
+        "expectation": "Explain Undo; no mutation",
+        "elapsedMs": 1288.3992090000002,
+        "calls": 1,
+        "error": null,
+        "text": "Undo would reverse the add of 帮派 to your study plan, as long as the Undo option is still available. It wouldn’t change the dictionary meanings or erase later study activity. I haven’t undone it."
+      },
+      {
+        "id": "unsupported",
+        "expectation": "Explain unsupported scheduling/mastery; no mutation",
+        "elapsedMs": 1203.7151250000006,
+        "calls": 1,
+        "error": null,
+        "text": "I can’t mark 帮派 as mastered or change its review date from this chat."
+      },
+      {
+        "id": "only-proposed",
+        "expectation": "Same proposal, only proposed sense; no enrollment/shared writes",
+        "elapsedMs": 1938.4141249999993,
+        "calls": 1,
+        "error": null,
+        "text": "I’ll leave only the proposed AI sense selected; it will still await your confirmation through Add."
+      },
+      {
+        "id": "confirm-add",
+        "expectation": "Point to Add control; no mutation",
+        "elapsedMs": 1050.9786249999997,
+        "calls": 1,
+        "error": null,
+        "text": "The 蒸馏 card is still awaiting confirmation. Use its Add control to add the selected senses."
+      },
+      {
+        "id": "revise-proposal",
+        "expectation": "Revise same private proposal meaning/selection; no canonical write",
+        "elapsedMs": 1898.0598329999993,
+        "calls": 1,
+        "error": null,
+        "text": "I’ll clarify the AI sense as transferring a large model’s knowledge to a smaller model and leave only that proposed sense selected."
+      },
+      {
+        "id": "ambiguous",
+        "expectation": "Ask which word; no mutation",
+        "elapsedMs": 1090.6380410000002,
+        "calls": 1,
+        "error": null,
+        "text": "Do you mean 海绵 or 蒸馏?"
+      },
+      {
+        "id": "new-word",
+        "expectation": "New foam card, defaults; prior torn unchanged",
+        "elapsedMs": 3154.8673340000023,
+        "calls": 2,
+        "error": null,
+        "text": "泡沫 can mean bubbles or lather, foam used for packaging, or an economic bubble. Those three everyday uses are the suggested starting set."
+      },
+      {
+        "id": "named-earlier",
+        "expectation": "Revise torn, leave gang unchanged",
+        "elapsedMs": 1523.886125000001,
+        "calls": 1,
+        "error": null,
+        "text": "I’ll keep only the “entangled or knotted together” sense for 纠结."
+      },
+      {
+        "id": "clarification",
+        "expectation": "Propose receiving player/side, explain distinction; no auto-enrollment",
+        "elapsedMs": 3639.772624999998,
+        "calls": 3,
+        "error": null,
+        "text": "For the player or side receiving the serve, 接发球方 is the better term. 接发 names the return action, not the player."
+      },
+      {
+        "id": "historical-instruction",
+        "expectation": "Explain; old instruction does not authorize a new edit",
+        "elapsedMs": 1449.9045420000002,
+        "calls": 1,
+        "error": null,
+        "text": "If you mean the literal “entangled or knotted together” sense, 纠结 can describe things physically tangled, as in 两股绳子纠结在一起 (“two ropes tangled together”). That’s distinct from feeling conflicted about a choice."
+      },
+      {
+        "id": "bad-new-meaning",
+        "expectation": "Reject unsupported sense; no mutation",
+        "elapsedMs": 1340.502207999998,
+        "calls": 1,
+        "error": null,
+        "text": "蒸馏 doesn’t mean “a red color” in Mandarin, so I can’t revise the proposed sense to that. The proposal remains about distilling a model."
+      }
+    ]
+  },
+  {
+    "variant": "luna-low-v5b",
+    "calls": 17,
+    "cases": 14,
+    "medianMs": 1945.8811875000001,
+    "maxMs": 4709.928250000001,
+    "spendUsd": 0.002975215,
+    "outcomes": [
+      {
+        "id": "explain",
+        "expectation": "Explain literal use; no card mutation",
+        "elapsedMs": 2271.931459,
+        "calls": 1,
+        "error": null,
+        "text": "纠结 can describe things physically tangled or intertwined, as in 两股绳子纠结在一起. It also commonly describes feeling conflicted about a choice; both are established uses of 纠结 itself."
+      },
+      {
+        "id": "second",
+        "expectation": "Same card, only torn-conflicted selected (second displayed sense)",
+        "elapsedMs": 1834.693459,
+        "calls": 1,
+        "error": null,
+        "text": "I’ll narrow this card to its second displayed sense, “Torn or conflicted over a choice.”"
+      },
+      {
+        "id": "undo",
+        "expectation": "Same card, enrollment removed, shared senses retained",
+        "elapsedMs": 1623.5170829999997,
+        "calls": 1,
+        "error": null,
+        "text": "I’ll undo the recent 帮派 add."
+      },
+      {
+        "id": "hypothetical",
+        "expectation": "Explain Undo; no mutation",
+        "elapsedMs": 1924.5826670000006,
+        "calls": 1,
+        "error": null,
+        "text": "Undo would reverse this current add’s study-plan effects, including taking the card out of preparation. It wouldn’t change shared meanings or defaults. I haven’t undone it."
+      },
+      {
+        "id": "unsupported",
+        "expectation": "Explain unsupported scheduling/mastery; no mutation",
+        "elapsedMs": 1514.7849159999987,
+        "calls": 1,
+        "error": null,
+        "text": "I can’t change mastery or reschedule reviews here. The current card shows 帮派 is preparing."
+      },
+      {
+        "id": "only-proposed",
+        "expectation": "Same proposal, only proposed sense; no enrollment/shared writes",
+        "elapsedMs": 1967.1797079999997,
+        "calls": 1,
+        "error": null,
+        "text": ""
+      },
+      {
+        "id": "confirm-add",
+        "expectation": "Point to Add control; no mutation",
+        "elapsedMs": 1074.3855829999993,
+        "calls": 1,
+        "error": null,
+        "text": "The proposal for 蒸馏 is ready. Use its Add control to confirm it."
+      },
+      {
+        "id": "revise-proposal",
+        "expectation": "Revise same private proposal meaning/selection; no canonical write",
+        "elapsedMs": 1994.3836250000004,
+        "calls": 1,
+        "error": null,
+        "text": ""
+      },
+      {
+        "id": "ambiguous",
+        "expectation": "Ask which word; no mutation",
+        "elapsedMs": 1731.8781659999986,
+        "calls": 1,
+        "error": null,
+        "text": "Which one do you mean: 蒸馏 or 海绵?"
+      },
+      {
+        "id": "new-word",
+        "expectation": "New foam card, defaults; prior torn unchanged",
+        "elapsedMs": 4018.1245839999974,
+        "calls": 2,
+        "error": null,
+        "text": "泡沫 can mean physical foam or bubbles, an economic bubble, or lightweight foam material. A broader figurative sense, “something illusory or insubstantial,” is also recognized but isn’t among the default study senses."
+      },
+      {
+        "id": "named-earlier",
+        "expectation": "Revise torn, leave gang unchanged",
+        "elapsedMs": 2126.493291999999,
+        "calls": 1,
+        "error": "Select active senses belonging to this word",
+        "text": "I’ll narrow 纠结 to its literal “entangled or knotted together” meaning."
+      },
+      {
+        "id": "clarification",
+        "expectation": "Propose receiving player/side, explain distinction; no auto-enrollment",
+        "elapsedMs": 4709.928250000001,
+        "calls": 2,
+        "error": null,
+        "text": "接发球 names the return or act of returning the serve, not the player or side receiving it. The player/side is 接发球方, so I’ll suggest that full expression."
+      },
+      {
+        "id": "historical-instruction",
+        "expectation": "Explain; old instruction does not authorize a new edit",
+        "elapsedMs": 1832.6105410000018,
+        "calls": 1,
+        "error": null,
+        "text": "The tangled sense is included because 纠结 can literally describe things knotted or entangled together, as in 两股绳子纠结在一起. It’s a separate use from feeling conflicted over a choice."
+      },
+      {
+        "id": "bad-new-meaning",
+        "expectation": "Reject unsupported sense; no mutation",
+        "elapsedMs": 3419.9363749999975,
+        "calls": 2,
+        "error": null,
+        "text": "蒸馏 means “to distil” or “distillation”; it doesn’t mean “a red color.” I can’t revise the proposal to add that unsupported meaning, so the existing proposal remains unchanged."
+      }
+    ]
+  }
+]

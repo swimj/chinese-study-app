@@ -10,6 +10,13 @@ export type ChatLoopEvent =
   | { kind: 'tool_result'; toolCallId: string; name: string; result: JsonValue }
   | { kind: 'completion'; result: JsonValue };
 
+/**
+ * A tool rejects arguments the model can correct, such as an unquoted context or an unknown ID.
+ * The loop returns the message as that call's result instead of failing the learner's turn.
+ */
+export class ChatToolInputRejected extends Error {}
+const maxRejections = 2;
+
 /** The output handler validates domain IDs and commits permitted effects before returning an actual card. */
 export async function runChatToolLoop(input: {
   provider: ChatProvider; config: ProviderRunConfig;
@@ -26,7 +33,7 @@ export async function runChatToolLoop(input: {
   const tools = [...input.reads, input.output];
   if (new Set(tools.map(tool => tool.name)).size !== tools.length) throw new Error('Duplicate chat tool names');
   const messages = [...input.request.messages];
-  let calls = 0;
+  let calls = 0, rejections = 0;
   const seenIds = new Set<string>();
   for (let iteration = 1; iteration <= maxIterations; iteration++) {
     input.request.signal?.throwIfAborted();
@@ -59,8 +66,20 @@ export async function runChatToolLoop(input: {
       }
       for (const { call, tool, value } of validated) {
         input.request.signal?.throwIfAborted();
+        const reject = (error: unknown): boolean => {
+          if (!(error instanceof ChatToolInputRejected) || ++rejections > maxRejections) return false;
+          messages.push({ role: 'tool', toolCallId: call.id, content: JSON.stringify({ rejected: error.message }) });
+          return true;
+        };
         if (tool.name === input.output.name) {
-          const card = await input.output.present(value);
+          let card: JsonValue;
+          try { card = await input.output.present(value); }
+          catch (error) {
+            // The handler's transaction rolled back, so nothing was committed; the model may correct its completion.
+            if (!reject(error)) throw error;
+            invalidateInvocation(completion.invocationId);
+            continue;
+          }
           // Retain a complete tool exchange so a follow-up can reuse this context.
           messages.push({ role: 'tool', toolCallId: call.id, content: JSON.stringify(card) });
           // Do not abort between committed output and publishing its durable result.
@@ -68,7 +87,9 @@ export async function runChatToolLoop(input: {
           return messages;
         }
         await input.onEvent({ kind: 'progress', stage: 'looking_up' });
-        const result = await (tool as ChatReadTool).execute(value);
+        let result: JsonValue;
+        try { result = await (tool as ChatReadTool).execute(value); }
+        catch (error) { if (!reject(error)) throw error; continue; }
         messages.push({ role: 'tool', toolCallId: call.id, content: JSON.stringify(result) });
         await input.onEvent({ kind: 'tool_result', toolCallId: call.id, name: tool.name, result });
       }

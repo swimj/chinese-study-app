@@ -1,0 +1,22 @@
+
+> chinese-study-app@2.3.0 build
+> tsc && vite build
+
+vite v5.4.21 building for production...
+transforming...
+✓ 271 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                               0.40 kB │ gzip:   0.28 kB
+dist/assets/VocabularyApp-BWkcUrba.css       37.22 kB │ gzip:   7.34 kB
+dist/assets/index-Diya-dsF.css              179.29 kB │ gzip:  30.74 kB
+dist/assets/VocabularyApp-CkucO5ZS.js       131.31 kB │ gzip:  38.95 kB
+dist/assets/useAttentionBadges-BIj_Cbi2.js  131.49 kB │ gzip:  40.14 kB
+dist/assets/LegacyApp-BSWROL1H.js           289.32 kB │ gzip:  69.36 kB
+dist/assets/index-BGWW7dK1.js               877.11 kB │ gzip: 589.94 kB
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 594ms

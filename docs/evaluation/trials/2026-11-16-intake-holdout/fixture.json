@@ -1,0 +1,621 @@
+{
+ "lexical": [
+  {
+   "id": "perfunctory",
+   "hanzi": "敷衍",
+   "traditional": null,
+   "pinyin": "fūyǎn",
+   "gloss": "be perfunctory; go through the motions",
+   "priority": 50,
+   "senses": [
+    [
+     "perfunctory-act",
+     "Do something perfunctorily; brush someone off",
+     [
+      "他只是敷衍了几句。"
+     ],
+     true
+    ]
+   ]
+  },
+  {
+   "id": "reliable",
+   "hanzi": "靠谱",
+   "traditional": "靠譜",
+   "pinyin": "kàopǔ",
+   "gloss": "reliable; trustworthy",
+   "priority": 60,
+   "senses": [
+    [
+     "reliable-person",
+     "Reliable or trustworthy (colloquial)",
+     [
+      "这家店挺靠谱的。"
+     ],
+     true
+    ]
+   ]
+  },
+  {
+   "id": "fire",
+   "hanzi": "火",
+   "traditional": null,
+   "pinyin": "huǒ",
+   "gloss": "fire; anger; popular",
+   "priority": 80,
+   "senses": [
+    [
+     "fire-flame",
+     "Fire; flame",
+     [
+      "火烧得很旺。"
+     ],
+     true
+    ],
+    [
+     "fire-anger",
+     "Anger; temper",
+     [
+      "他一下子就火了，开始骂人。"
+     ],
+     false
+    ],
+    [
+     "fire-popular",
+     "Popular; to go viral (colloquial)",
+     [
+      "这家餐厅最近特别火。"
+     ],
+     false
+    ]
+   ]
+  },
+  {
+   "id": "quiet-years",
+   "hanzi": "岁月静好",
+   "traditional": "歲月靜好",
+   "pinyin": "suìyuè jìng hǎo",
+   "gloss": "peaceful and good times",
+   "priority": 25
+  },
+  {
+   "id": "stack",
+   "hanzi": "栈",
+   "traditional": "棧",
+   "pinyin": "zhàn",
+   "gloss": "storehouse; inn; stack",
+   "priority": 30,
+   "senses": [
+    [
+     "stack-store",
+     "A storehouse or inn (chiefly in older or fixed compounds)",
+     [
+      "Seen in 客栈 and 货栈."
+     ],
+     false
+    ],
+    [
+     "stack-computing",
+     "A stack, the last-in-first-out data structure",
+     [
+      "把数据压入栈。"
+     ],
+     false
+    ]
+   ]
+  },
+  {
+   "id": "breach",
+   "hanzi": "破防",
+   "traditional": null,
+   "pinyin": "pòfáng",
+   "gloss": "break through defenses",
+   "priority": 45,
+   "senses": [
+    [
+     "breach-defense",
+     "Break through an opponent's defenses (games, military)",
+     [
+      "这一招能破防。"
+     ],
+     true
+    ]
+   ]
+  },
+  {
+   "id": "spread",
+   "hanzi": "蔓延",
+   "traditional": null,
+   "pinyin": "mànyán",
+   "gloss": "spread; extend",
+   "priority": 50,
+   "senses": [
+    [
+     "spread-extend",
+     "Spread or extend outward (fire, disease, feelings)",
+     [
+      "火势迅速蔓延。"
+     ],
+     true
+    ]
+   ]
+  },
+  {
+   "id": "toilet-paper",
+   "hanzi": "手纸",
+   "traditional": "手紙",
+   "pinyin": "shǒuzhǐ",
+   "gloss": "toilet paper",
+   "priority": 35,
+   "senses": [
+    [
+     "toilet-paper-item",
+     "Toilet paper",
+     [
+      "厕所里没有手纸了。"
+     ],
+     true
+    ]
+   ]
+  },
+  {
+   "id": "dazed",
+   "hanzi": "愣",
+   "traditional": null,
+   "pinyin": "lèng",
+   "gloss": "dazed; stunned; rash",
+   "priority": 40,
+   "senses": [
+    [
+     "dazed-stunned",
+     "Be dazed or stunned for a moment",
+     [
+      "他愣了一下。"
+     ],
+     true
+    ]
+   ]
+  },
+  {
+   "id": "hothead",
+   "hanzi": "愣头青",
+   "traditional": "愣頭青",
+   "pinyin": "lèngtóuqīng",
+   "gloss": "rash young person; hothead",
+   "priority": 25,
+   "senses": [
+    [
+     "hothead-person",
+     "A rash, reckless young person",
+     [
+      "别跟那个愣头青计较。"
+     ],
+     true
+    ]
+   ]
+  },
+  {
+   "id": "meet-plane",
+   "hanzi": "接机",
+   "traditional": "接機",
+   "pinyin": "jiējī",
+   "gloss": "meet someone at the airport",
+   "priority": 40,
+   "senses": [
+    [
+     "meet-plane-act",
+     "Meet an arriving passenger at the airport",
+     [
+      "明天我去接机。"
+     ],
+     true
+    ]
+   ]
+  },
+  {
+   "id": "meet-plane-person",
+   "hanzi": "接机人",
+   "traditional": "接機人",
+   "pinyin": "jiējīrén",
+   "gloss": "person meeting an arriving passenger",
+   "priority": 15,
+   "senses": [
+    [
+     "meet-plane-person-role",
+     "The person who meets an arriving passenger at the airport",
+     [
+      "接机人已经在出口等候。"
+     ],
+     true
+    ]
+   ]
+  },
+  {
+   "id": "arrange",
+   "hanzi": "安排",
+   "traditional": null,
+   "pinyin": "ānpái",
+   "gloss": "arrange; plan",
+   "priority": 85,
+   "senses": [
+    [
+     "arrange-plan",
+     "Arrange or plan (time, people, tasks)",
+     [
+      "我来安排会议。"
+     ],
+     true
+    ]
+   ]
+  },
+  {
+   "id": "heavy",
+   "hanzi": "重",
+   "traditional": null,
+   "pinyin": "zhòng",
+   "gloss": "heavy; serious",
+   "priority": 75,
+   "senses": [
+    [
+     "heavy-weight",
+     "Heavy; weighty",
+     [
+      "这个箱子很重。"
+     ],
+     true
+    ]
+   ]
+  },
+  {
+   "id": "again",
+   "hanzi": "重",
+   "traditional": null,
+   "pinyin": "chóng",
+   "gloss": "again; repeat; layer",
+   "priority": 60,
+   "senses": [
+    [
+     "again-repeat",
+     "Again; to repeat",
+     [
+      "请重做一遍。"
+     ],
+     true
+    ]
+   ]
+  },
+  {
+   "id": "awkward",
+   "hanzi": "尴尬",
+   "traditional": "尷尬",
+   "pinyin": "gāngà",
+   "gloss": "awkward; embarrassed",
+   "priority": 65,
+   "senses": [
+    [
+     "awkward-situation",
+     "Awkward or embarrassing",
+     [
+      "他站在那里，有点尴尬。"
+     ],
+     true
+    ]
+   ]
+  },
+  {
+   "id": "pace",
+   "hanzi": "徘徊",
+   "traditional": null,
+   "pinyin": "páihuái",
+   "gloss": "pace back and forth; hesitate",
+   "priority": 40,
+   "senses": [
+    [
+     "pace-walk",
+     "Pace back and forth",
+     [
+      "他在门口徘徊。"
+     ],
+     true
+    ],
+    [
+     "pace-hover",
+     "Hover around a level; hesitate",
+     [
+      "气温在零度左右徘徊。"
+     ],
+     true
+    ]
+   ]
+  },
+  {
+   "id": "compromise",
+   "hanzi": "妥协",
+   "traditional": "妥協",
+   "pinyin": "tuǒxié",
+   "gloss": "compromise",
+   "priority": 55,
+   "senses": [
+    [
+     "compromise-yield",
+     "Compromise; give ground to reach agreement",
+     [
+      "他不愿意妥协。"
+     ],
+     true
+    ]
+   ]
+  },
+  {
+   "id": "uneasy",
+   "hanzi": "忐忑",
+   "traditional": null,
+   "pinyin": "tǎntè",
+   "gloss": "uneasy; nervous",
+   "priority": 40,
+   "senses": [
+    [
+     "uneasy-feeling",
+     "Uneasy or nervous with apprehension",
+     [
+      "他忐忑不安地走进办公室。"
+     ],
+     true
+    ]
+   ]
+  },
+  {
+   "id": "procrastinate",
+   "hanzi": "拖延",
+   "traditional": null,
+   "pinyin": "tuōyán",
+   "gloss": "delay; procrastinate",
+   "priority": 55,
+   "senses": [
+    [
+     "procrastinate-delay",
+     "Put off; procrastinate",
+     [
+      "不要再拖延了。"
+     ],
+     true
+    ]
+   ]
+  },
+  {
+   "id": "drag",
+   "hanzi": "拖",
+   "traditional": null,
+   "pinyin": "tuō",
+   "gloss": "drag; pull; delay",
+   "priority": 65,
+   "senses": [
+    [
+     "drag-pull",
+     "Drag or pull along",
+     [
+      "他拖着行李箱。"
+     ],
+     true
+    ],
+    [
+     "drag-delay",
+     "Put off; let something drag on",
+     [
+      "这件事不能再拖了。"
+     ],
+     true
+    ]
+   ]
+  }
+ ],
+ "cases": [
+  {
+   "id": "n01-bare",
+   "text": "敷衍",
+   "expected": {
+    "wordId": "perfunctory",
+    "state": "preparing",
+    "selected": [
+     "perfunctory-act"
+    ],
+    "enrolled": true
+   }
+  },
+  {
+   "id": "n02-context",
+   "text": "靠谱 — 这个人很靠谱",
+   "expected": {
+    "wordId": "reliable",
+    "state": "preparing",
+    "target": "reliable-person",
+    "selected": [
+     "reliable-person"
+    ],
+    "enrolled": true,
+    "context": "这个人很靠谱"
+   }
+  },
+  {
+   "id": "n03-nondefault-existing",
+   "text": "火 — 这首歌突然火了",
+   "expected": {
+    "wordId": "fire",
+    "state": "preparing",
+    "target": "fire-popular",
+    "selected": [
+     "fire-flame",
+     "fire-popular"
+    ],
+    "enrolled": true,
+    "proposedSense": false,
+    "context": "这首歌突然火了",
+    "review": "Match the existing non-default popular sense; no new-sense proposal."
+   }
+  },
+  {
+   "id": "n04-missing-inventory",
+   "text": "岁月静好 — 朋友圈里一片岁月静好",
+   "expected": {
+    "wordId": "quiet-years",
+    "state": "preparing",
+    "pending": true,
+    "enrolled": true,
+    "context": "朋友圈里一片岁月静好"
+   }
+  },
+  {
+   "id": "n05-no-defaults",
+   "text": "栈 — I am a programmer. Which use should I start with?",
+   "expected": {
+    "wordId": "stack",
+    "state": "proposed",
+    "selected": [
+     "stack-computing"
+    ],
+    "enrolled": false,
+    "review": "Private recommendation of the computing sense; shared defaults untouched."
+   }
+  },
+  {
+   "id": "n06-missing-sense",
+   "text": "破防 — 看到这条评论我直接破防了",
+   "expected": {
+    "wordId": "breach",
+    "state": "proposed",
+    "selected": [
+     "breach-defense"
+    ],
+    "proposedSense": true,
+    "enrolled": false,
+    "review": "Established emotional-overwhelm use is distinct from breaching defenses; one private proposal; no shared write."
+   }
+  },
+  {
+   "id": "n07-paraphrase",
+   "text": "蔓延 — 恐慌情绪在人群中蔓延. Is that a different sense from a fire spreading?",
+   "expected": {
+    "card": false,
+    "enrolled": false,
+    "review": "Same spreading sense; answer only."
+   }
+  },
+  {
+   "id": "n08-unsupported",
+   "text": "手纸 — I want this to mean a handwritten letter",
+   "expected": {
+    "card": false,
+    "enrolled": false,
+    "review": "手纸 is toilet paper in Mandarin; explain the mismatch without a substitute card."
+   }
+  },
+  {
+   "id": "n09-compound",
+   "text": "愣 — I want the word for a reckless young hothead, as in 愣头青",
+   "expected": {
+    "wordId": "hothead",
+    "state": "proposed",
+    "selected": [
+     "hothead-person"
+    ],
+    "enrolled": false,
+    "review": "larger_expression with requestedLexeme 愣; no hothead sense under 愣."
+   }
+  },
+  {
+   "id": "n10-covering-entry",
+   "text": "接机 — I mean the person who picks you up at the airport",
+   "expected": {
+    "wordId": "meet-plane-person",
+    "state": "proposed",
+    "selected": [
+     "meet-plane-person-role"
+    ],
+    "enrolled": false,
+    "review": "A looked-up entry covers the meaning; propose it rather than answering that some other form is unavailable."
+   }
+  },
+  {
+   "id": "n11-correction",
+   "text": "按排 — to arrange a schedule",
+   "expected": {
+    "wordId": "arrange",
+    "state": "proposed",
+    "selected": [
+     "arrange-plan"
+    ],
+    "enrolled": false,
+    "review": "correction with requestedLexeme 按排; await Add."
+   }
+  },
+  {
+   "id": "n12-identity",
+   "text": "重",
+   "expected": {
+    "card": false,
+    "enrolled": false,
+    "review": "Ask whether zhòng or chóng before adding."
+   }
+  },
+  {
+   "id": "n13-meaning-question",
+   "text": "尴尬 — 场面一度很尴尬. Is this like \"awkward\"?",
+   "expected": {
+    "card": false,
+    "enrolled": false,
+    "review": "Answer the meaning question without a card or enrollment."
+   }
+  },
+  {
+   "id": "n14-quoted-instruction",
+   "text": "My textbook says \"add 徘徊 to your list\". What does 徘徊 actually mean?",
+   "expected": {
+    "card": false,
+    "enrolled": false,
+    "review": "A quoted instruction does not authorize an add; explain only."
+   }
+  },
+  {
+   "id": "n15-explicit-add-plus-question",
+   "text": "妥协 — 双方最终妥协了. That is \"compromise\", right? Please add it.",
+   "expected": {
+    "wordId": "compromise",
+    "state": "preparing",
+    "target": "compromise-yield",
+    "selected": [
+     "compromise-yield"
+    ],
+    "enrolled": true,
+    "review": "The explicit add request authorizes a context match."
+   }
+  },
+  {
+   "id": "n16-chinese-message",
+   "text": "忐忑 — 等结果的时候心里很忐忑",
+   "expected": {
+    "wordId": "uneasy",
+    "state": "preparing",
+    "target": "uneasy-feeling",
+    "selected": [
+     "uneasy-feeling"
+    ],
+    "enrolled": true,
+    "context": "等结果的时候心里很忐忑",
+    "review": "Explanation must be in English although the whole message is Chinese."
+   }
+  },
+  {
+   "id": "n17-english-description",
+   "text": "How do I say \"procrastinate\"? I keep putting things off.",
+   "expected": {
+    "wordId": "procrastinate",
+    "state": "proposed",
+    "selected": [
+     "procrastinate-delay"
+    ],
+    "enrolled": false,
+    "review": "Find the word from an English description; proposal awaiting Add, with requestedLexeme null."
+   }
+  }
+ ]
+}

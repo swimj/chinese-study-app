@@ -2,10 +2,10 @@
 
 This guide explains the backend primitives used to implement bounded learner
 chat exchanges. The runtime has no HTTP route, learner surface, vocabulary tool
-or model prompt of its own. Those integrations supply their own product policy.
+or model prompt of its own. The vocabulary intake adapter supplies those pieces.
 The [service boundary](private-beta-service-boundary.md#data-ownership) owns
-privacy and provider disclosure; the [sense-preferences build spec](../notes/active/2026-11-14-learner-sense-preferences-spec.md)
-defines the first intended consumer.
+privacy and provider disclosure. The [vocabulary contract](../SPECS/vocabulary-learning.md#add-word-chat)
+defines learner behavior.
 
 `server/llm/chat-types.ts` defines messages, function tools and the streaming
 provider interface. `chat-openai-responses.ts` uses the official OpenAI SDK for the Responses API
@@ -25,6 +25,10 @@ schema. It validates every call in a batch before dispatch, bounds iterations
 and calls, and requires completion to be the only call in its batch. A response
 without a tool call fails rather than silently completing. Domain ID validation
 belongs in the output handler. No partial arguments become visible results.
+A handler or read tool can reject arguments the model is able to correct by
+throwing `ChatToolInputRejected`; the loop returns the message as that call's
+result, at most twice per turn, and a third rejection fails the turn. A rejected
+completion has rolled back, so nothing is committed before the corrected one.
 Backend progress events describe checking, lookup and reply preparation; they
 are transient and are never saved as conversational prose.
 
@@ -67,3 +71,99 @@ Focused fake-provider and isolated-database checks are in `tests/chat-core.test.
 `tests/chat-migration.test.ts`. They establish transport, ownership, transaction
 and replay behavior. They do not establish linguistic quality, live-provider
 latency, or rendered UI behavior.
+
+## Vocabulary intake
+
+[`intake-chat.ts`](../server/vocabulary/intake-chat.ts) projects private chat
+into the authenticated [intake API](api.md#add-word-chat). Each message receives
+up to six recent non-running turns and four current card projections, with
+separate 16,000-character budgets for prose and cards. Assistant prose is capped
+at 2,000 characters per turn; historical provider reasoning and tool calls are
+excluded. Card descriptions are shortened for this context, while the backend
+retains full snapshots for validation. The invocation ledger captures the exact
+rendered messages, tool schemas and model settings. The selected chat model is
+`gpt-6-sol` with low reasoning; deferred one-sense matching uses `gpt-6-luna`
+with low reasoning. Lookup returns senses, defaults and current learner state
+together, so an ordinary exchange needs one read and one output call. The
+result states derived facts outright: `defaultsState` is `unknown`, `empty` or
+`set`, and `learner.enrolled` says whether the word is already studied, with
+`learner.includedSenseIds` empty until it is. Intake raises
+`VocabularyStateInputError` on model-supplied arguments as a correctable
+rejection.
+The read tools are exact lookup, similar-word search and containing-expression
+search; all three return the same evidence projection. An exact lookup can
+refresh state. Readiness is rendered by the card rather than a separate model
+status lookup. The chat
+prompt adapts the
+lexical and editorial guidance of `sense-inventory.md` and
+`default-useful-selection.md` at `ec4d6d00`. Its worked examples preserve the
+linguistic reasoning while separating learner requests, returned inventory
+evidence, judgment, tool actions and brief assistant text. Existing sense IDs
+select backend-rendered descriptions; only a missing-sense proposal authors new
+label/notes. The chat does not enumerate inventories or set shared defaults.
+The simulated exchange
+cases define the fake-provider trace coverage. Examples reused by live trials
+provide regression evidence; the [disjoint-case comparison](evaluation/trials/2026-11-16-intake-organization.md)
+separately probes transfer to different lexical targets. The terminal
+complete_turn schema packages explanation with an answer, present_card or revise_card action.
+Plain assistant text cannot complete an exchange. Semantic choice still belongs
+to the model: an answer action can be structurally valid but inappropriate for
+an add request. Progress is public only while running; completion publishes the
+saved explanation with current card projections. See the [chat prompt](../server/vocabulary/reflection-prompts/intake-chat.md).
+
+[`vocabulary-intake.ts`](../server/db/vocabulary-intake.ts) validates IDs and
+versions, owns enrollment and scope effects, and projects each card from live
+study state. Card commands reuse chat receipts and the learner-scope writer.
+Natural-language revisions use the `revise_card` completion action, alongside `present_card` for new
+cards. The revision handler accepts only a card supplied in recent context and
+checks its card, learner, catalog and selection versions before reusing the
+ordinary command path. Proposal revisions update the private body; they cannot
+confirm Add. Recent learner wording can ground a lexical clarification, but
+automatic enrollment requires the current message itself to authorize the add.
+A revision and its `card_attached` event commit in one transaction. This lets
+history and reconnect associate the same live card identity with both exchanges,
+and legacy recovery recognizes an attached card as evidence of a committed
+output. New turns require the terminal receipt described above.
+The transcript renders the live card only at its latest attached turn, preserving
+earlier prose without repeating the controls.
+
+An enrolled word's missing meaning uses a private `proposalKind: 'sense'` body
+and a `sense-proposed` public card. Its displayed current senses come from live
+learner scope. `revise_card` can clarify the draft but cannot confirm it. The
+explicit `add_sense` command creates the shared non-default sense and calls
+`takeUpVocabularyLearnerSense` within the card receipt transaction. That writer
+adds only the new take-up, preserving every existing override and the word's
+context and schedule; practice preparation uses the existing queue. A failed
+scope write rolls back shared creation too. Legacy cards without the discriminator
+retain their enrollment behavior. No schema migration is needed.
+
+Sense confirmation checks current enrollment, inventory/default readiness,
+earlier pending context matches, duplicate labels and the inventory limit.
+Unavailable confirmation projects actionable attention. Stale versions require
+reload and renewed confirmation; receipt replay avoids repeating the mutation
+and returns the latest durable card projection.
+After confirmation, `addedSenseId` identifies the result for the UI and ordinary
+sense editing resumes. Sense additions do not create an enrollment Undo snapshot.
+
+Undo stores its before/after enrollment evidence in the same transaction as
+Add. A later enrollment version, schedule, priority or retained session fences
+Undo.
+
+[`intake-worker.ts`](../server/vocabulary/intake-worker.ts) dispatches retained
+lookup requests through existing inventory and default-selection readiness.
+Deferred matches use a private lease in the same card record. A background
+match can update scope only when the expected learner, inventory and selection
+are still current. An expired lease settles to attention. Turn recovery after
+the request deadline requires a terminal receipt for new attempts and preserves legacy card-based
+recovery. Other interrupted attempts fail. A reconnect uses the retained result without a
+provider call.
+
+`tests/vocabulary-intake.test.ts` covers fake tool traces, durable readiness,
+deferred matching, replay, cross-learner isolation, admission and Undo. The
+fake traces exercise the application decisions with supplied judgments.
+The [implementation evaluation](evaluation/trials/2026-11-15-custom-senses.md)
+records bounded live-provider comparisons, teaching examples and rendered UI checks.
+The [follow-up evaluation](evaluation/trials/2026-11-15-intake-followups.md)
+records conversational revision, clarification and unsupported-request checks.
+The [existing-word sense evaluation](evaluation/trials/2026-11-15-existing-word-sense.md)
+records additive confirmation, preserved learner state and proposal recovery.
