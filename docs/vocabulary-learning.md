@@ -267,17 +267,15 @@ still contain finalization timestamps. Due dates and the shared recency guard
 use finalization time, so delayed finalization and retries cannot increase the
 elapsed retention credit.
 
-### Preview and admission
+### Start and admission
 
-Home previews the same final admission plan as Start, counting each selected word
-objective and independent pure cue once, rather than counting repeated exercises
-or dictionary entries. The ready count remains visible in the compact Connections
-view. Initial loading and settings changes refresh the preview; background
-preparation polling retains the last usable count. Zero ready items offer Check
-again. Preview and Start consume reserve readiness hints and existing cue schedules without reconciling or waking preparation. Preview does not create sessions,
-enrolling words, establishing senses, or adopting/updating cue schedules. Start
-reuses the preview's sampling seed while creating its own fresh session identity;
-intervening readiness, schedule, or settings changes can still change admission.
+Home does not compose a session before Start, so it shows no prospective ready
+count; Start is available as soon as Home renders. Start composes and admits in
+one request, consuming reserve readiness hints and existing cue schedules
+without reconciling or waking preparation, and seeds its pure-cue draw from the
+new session identity. When nothing is ready, Start creates no session and
+returns a reason: replacement content or new-word introductions still being
+prepared, or no ready material. Pressing Start again is the retry.
 
 Home's active-time section shows Today and 3-/7-day averages from consecutive UTC
 daily totals, including zero-activity days. Unmeasured sessions are disclosed and
@@ -640,8 +638,8 @@ same transaction as learning effects. Undo before closure and failed closure
 create no practice demand. Queueing does not require configured credentials;
 provider dispatch retains its configuration and hosted-control gates. The
 vocabulary preparation worker consumes the durable practice queue without
-scanning active session JSON. Live Next, command and read routes never wake
-workers. Preview, Start, refresh and closure can schedule a wake after returning
+scanning active session JSON. Start and live Next, command and read routes
+never wake workers. Refresh and closure can schedule a wake after returning
 the response. Publication supplies future session composition.
 The shared teaching pipeline generates the introduction first, then exercises
 conditioned on that delivered material. A failed companion call preserves the
@@ -806,8 +804,8 @@ Provider work stays disabled; closure and persistence still run normally. A fres
 directory restores the starting scenarios without overwriting an earlier run.
 For interactive UI review, default to a fresh fixture when bringing it back for
 a new review round; reopening the previous run can leave only a few due items.
-Preserve an in-progress run only when requested. Verify the Home preview shows
-all 12 study items before handing the fixture back.
+Preserve an in-progress run only when requested. Verify that Start admits all
+12 study items before handing the fixture back.
 
 Start the backend with that directory, the printed learner, and seed; point Vite's
 `VITE_API_BASE` at that API. The presentation fixture is

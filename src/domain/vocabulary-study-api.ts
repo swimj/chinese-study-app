@@ -3,7 +3,6 @@ import type { VocabularyEncounterEvidence, VocabularyWordMode, VocabularyReactio
 import type { VocabularyTimedStudyState } from './timed-session';
 export type VocabularyStudyWord = { wordId: string; hanzi: string; traditional: string | null; pinyin: string; meaning: string; personalNotes?: string };
 /** Home presents no item count in the timed paradigm; the count still detects an empty start. */
-export type VocabularySessionPreview = { previewSeed: string; itemCount: number; preparationPending: boolean; timed: boolean };
 export type VocabularyStudy = {
   session: VocabularyPersistedSession;
   words: VocabularyStudyWord[];

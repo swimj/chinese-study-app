@@ -10,7 +10,7 @@ import { vocabularyRevealSnapshot } from './reveal-snapshot.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import type { VocabularyContent, VocabularyJson } from '../../src/domain/vocabulary-content.ts';
-import type { VocabularyStudy, VocabularyStudyCommand, VocabularyStudyWord, VocabularySessionPreview } from '../../src/domain/vocabulary-study-api.ts';
+import type { VocabularyStudy, VocabularyStudyCommand, VocabularyStudyWord } from '../../src/domain/vocabulary-study-api.ts';
 import { getPendingVocabularySkills, isVocabularyWordReadyToCover, isVocabularyTeachingComplete, productionWrittenFormAccepted, projectVocabularySession, advanceVocabularySession, VOCABULARY_SESSION_POLICY, type VocabularyEncounterSnapshot, type VocabularySessionAction, type VocabularySessionInitialContext,
   type VocabularySessionJson, type VocabularySessionProjection, type VocabularyTeachingRequirements } from '../../src/domain/vocabulary-session.ts';
 import type { VocabularyPersistedSession } from '../../src/domain/vocabulary-session-api.ts';
@@ -249,7 +249,7 @@ function composeCurrentStudy(resolved:Map<string,ResolvedVocabularyTeaching>, ti
     isReviewContentUsable:contentUsable});
 }
 /** Shared final admission, including the independent pure-cue cap and interleaving. */
-function planVocabularyStudy(composition:VocabularyComposition, samplingSeed:string, adoptPureCues:boolean) {
+function planVocabularyStudy(composition:VocabularyComposition, samplingSeed:string) {
     const words:VocabularySessionInitialContext['words'][number][]=[];
     for(const wordId of composition.newWordIds) {
       words.push({wordId,mode:'unstudied'});
@@ -263,7 +263,7 @@ function planVocabularyStudy(composition:VocabularyComposition, samplingSeed:str
       }
     }
     const reviewWords=words.filter((word)=>word.mode==='practice'||word.mode==='maintain');
-    const pure=planVocabularyPureCues({ordinaryReviewCount:reviewWords.length,sessionSeed:samplingSeed,adopt:adoptPureCues});
+    const pure=planVocabularyPureCues({ordinaryReviewCount:reviewWords.length,sessionSeed:samplingSeed,adopt:true});
     type ReviewEntry={kind:'word'|'pure_cue';id:string};
     const reviewOrder:ReviewEntry[]=reviewWords.map(word=>({kind:'word',id:word.wordId}));
     for(const cue of pure.routine) {
@@ -277,14 +277,6 @@ function planVocabularyStudy(composition:VocabularyComposition, samplingSeed:str
       ...words.filter((word)=>word.mode==='solidify').slice(0,slots.learning),
       ...admittedReview.filter((entry)=>entry.kind==='word').map((entry)=>reviewWords.find((word)=>word.wordId===entry.id)!)];
     return {words:admittedWords,reviewOrder:admittedReview};
-}
-export function previewVocabularyStudy(options:{previewSeed?:string;timeZone?:string}={}):VocabularySessionPreview {
-  const previewSeed=options.previewSeed??randomUUID();
-  const composition=composeCurrentStudy(new Map(), options.timeZone);
-  const planned=planVocabularyStudy(composition,previewSeed,false);
-
-  return {previewSeed,itemCount:planned.words.length+planned.reviewOrder.filter((entry)=>entry.kind==='pure_cue').length,
-    preparationPending:composition.preparationPending||hasPendingReconciliation(),timed:vocabularyTimedSessionsEnabled()};
 }
 function hasPendingReconciliation():boolean {
   return (getDb().prepare(`SELECT r.word_id FROM sense_content_reconciliations r
@@ -311,13 +303,13 @@ function timedContext(planned:ReturnType<typeof planVocabularyStudy>,skipDays:Re
     facts:timedTargetFacts([...planned.words.map(word=>({kind:'word' as const,id:word.wordId,mode:word.mode,...(word.selectedSkill?{selectedSkill:word.selectedSkill}:{})})),
       ...planned.reviewOrder.filter(entry=>entry.kind==='pure_cue').map(entry=>({kind:'pure_cue' as const,id:entry.id}))])};
 }
-export function startVocabularyStudy(options:{previewSeed?:string;timeZone?:string}={}):VocabularyStudy {
+export function startVocabularyStudy(options:{timeZone?:string}={}):VocabularyStudy {
   const resolved=new Map<string,ResolvedVocabularyTeaching>();
   const composition=composeCurrentStudy(resolved, options.timeZone);
   return atomic(()=>{
     const sessionId=randomUUID();const now=new Date().toISOString();
     const timed=vocabularyTimedSessionsEnabled();const skipDays=timed?readTimedSkipDays():new Map<string,number>();
-    const planned=planVocabularyStudy(timed?timedComposition(composition,skipDays):composition,options.previewSeed??sessionId,true);
+    const planned=planVocabularyStudy(timed?timedComposition(composition,skipDays):composition,sessionId);
     if(planned.words.length===0&&planned.reviewOrder.length===0)throw new VocabularySessionInputError(hasPendingReconciliation()
       ?'Replacement study content is being prepared. Try again shortly; other ready work can be studied when available.'
       :composition.preparationPending
