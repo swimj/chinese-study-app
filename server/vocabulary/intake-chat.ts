@@ -198,7 +198,7 @@ export async function sendVocabularyIntakeTurn(input: {
   const result = await runHostedProviderWork(() => runConversationTurn({
     conversationId, clientTurnId: input.clientTurnId, userRequest, provider, config, reads,
     request: { model: INTAKE_MODEL, maxOutputTokens: 2600, reasoningEffort: 'low', timeoutMs,
-      signal: AbortSignal.timeout(turnLifetimeMs), provenance: { promptName: 'vocabulary-intake-chat', promptVersion: '5.4', schemaVersion: '4' },
+      signal: AbortSignal.timeout(turnLifetimeMs), provenance: { promptName: 'vocabulary-intake-chat', promptVersion: '9.1', schemaVersion: '4' },
       messages: [{ role: 'system', content: intakePrompt }, ...context.messages, { role: 'user', content: input.text }] },
     output: { name: 'complete_turn', description: 'Finish this turn with an explanation and an answer, a new vocabulary card, or a revision of one supplied current card.',
       parameters: completionParameters, complete: (value, turnId) => {

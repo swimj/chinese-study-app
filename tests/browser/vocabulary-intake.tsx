@@ -86,6 +86,7 @@ const turns = new Map<string, VocabularyIntakeTurn>();
 const sharedSenses = new Map<string, Sense[]>();
 const commandResults = new Map<string, Card>();
 const stash = new Set<string>(['sample-stash']);
+const studyingDistil = params.has('existingSense');
 let nextSave: 'failed' | 'stale' | 'lost-ack' | null = null;
 let loseTurnReply = false;
 let failNextTurn = false;
@@ -95,23 +96,24 @@ let commandWrites = 0;
 function newCard(word: ExampleWord, id: string): Card {
   const entry: (typeof examples)[ExampleWord] & { target?: string; proposedSense?: Card['proposedSense'] } = examples[word];
   const senses = sharedSenses.get(word) ?? entry.senses;
-  const state = entry.state !== 'already-studying' && stash.has(word) ? 'added' : entry.state;
+  const state = word === '蒸馏' && studyingDistil && !senses.some(s => s.senseId === 'model') ? 'sense-proposed'
+    : word === '蒸馏' && studyingDistil ? 'already-studying' : entry.state !== 'already-studying' && stash.has(word) ? 'added' : entry.state;
   const proposedSense = senses.some(item => item.senseId === 'model') ? null : entry.proposedSense ?? null;
   const selection = {
     senseIds: senses.filter(item => item.isDefault || entry.target === item.senseId).map(item => item.senseId),
     includeProposedSense: Boolean(proposedSense),
     targetSenseId: entry.target ?? null,
   };
-  const actions: Card['actions'] = state === 'proposed' ? ['add']
+  const actions: Card['actions'] = state === 'sense-proposed' ? ['add_sense'] : state === 'proposed' ? ['add']
     : state === 'already-studying' ? ['change_senses']
       : senses.length ? ['undo', 'change_senses'] : ['undo'];
-  if (state !== 'proposed' && state !== 'already-studying') stash.add(word);
+  if (state !== 'proposed' && state !== 'sense-proposed' && state !== 'already-studying') stash.add(word);
   return {
     id, version: 1, wordId: word, hanzi: word, pinyin: entry.pinyin, state, senses, selection,
     defaultsEstablished: senses.length > 0, proposedSense,
     versions: { learner: state === 'proposed' ? null : 1, catalog: 1, selection: 1 },
     actions,
-    presets: word === '帮派' ? [{
+    presets: state === 'sense-proposed' ? [] : word === '帮派' ? [{
       label: 'Only the gang sense', selection: { ...selection, senseIds: ['gang'] },
     }] : word === '蒸馏' && proposedSense ? [{
       label: 'Only the AI sense', selection: { ...selection, senseIds: [] },
@@ -149,6 +151,14 @@ function updateCard(card: Card, request: VocabularyIntakeCommandRequest): Card {
     return setCard(card, {
       state: 'proposed', actions: ['add'], attention: null, versions: { ...card.versions, learner: null },
     });
+  }
+  if (command.type === 'add_sense') {
+    if (!card.proposedSense) throw Error('Missing proposed sense');
+    const senses = [...card.senses, sense('model',card.proposedSense.label,false,card.proposedSense.notes)];
+    sharedSenses.set(card.wordId,senses);
+    return setCard(card,{senses,proposedSense:null,addedSenseId:'model',state:'already-studying',actions:['change_senses'],presets:[],
+      selection:{senseIds:[...card.selection.senseIds,'model'],targetSenseId:null,includeProposedSense:false},
+      versions:{...card.versions,learner:(card.versions.learner??0)+1,catalog:card.versions.catalog+1}});
   }
   if (command.type === 'add') stash.add(card.wordId);
   const createSense = command.selection.includeProposedSense && card.proposedSense;
@@ -278,7 +288,7 @@ function answerTurn(clientTurnId: string, text: string, signal?: AbortSignal | n
 }
 
 function outstanding() {
-  return [...cards.values()].filter(card => card.state === 'proposed' || card.attention);
+  return [...cards.values()].filter(card => card.state === 'proposed' || card.state === 'sense-proposed' || card.attention);
 }
 
 window.fetch = async (input, init) => {

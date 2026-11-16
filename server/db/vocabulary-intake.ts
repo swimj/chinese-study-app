@@ -5,7 +5,7 @@ import { attachChatCardToTurn, ChatConflictError, createChatCard, getChatCard, g
   runChatCardCommand, withChatTransaction, type ChatCard } from './learner-chat.ts';
 import { createVocabularySense, emitBackendEvent, getVocabularySenses } from './vocabulary-content.ts';
 import { getVocabularyLearnerWord, getVocabularyWordSchedule, VocabularyStateInputError, type VocabularyLearnerWord } from './vocabulary-learners.ts';
-import { resolveVocabularyLearnerSenseScope, writeVocabularyLearnerSenseScope, type VocabularyLearnerSenseScope } from './vocabulary-learner-senses.ts';
+import { resolveVocabularyLearnerSenseScope, takeUpVocabularyLearnerSense, writeVocabularyLearnerSenseScope, type VocabularyLearnerSenseScope } from './vocabulary-learner-senses.ts';
 import { addVocabularyStashByHanzi } from './vocabulary-stash.ts';
 import { getSharedIntroductionLexicalWord } from './word-introductions.ts';
 import { requestWordReserveReconciliation } from './word-reserve.ts';
@@ -27,6 +27,8 @@ type Pending = { expectedLearnerVersion: number; lease: { token: string; expires
 export type IntakeCardBody = {
   wordId: string;
   proposal: boolean;
+  proposalKind?: 'sense';
+  addedSenseId?: string;
   enrollmentAddedAt: string | null;
   selection: VocabularyIntakeSelection;
   proposedSense: SenseDraft | null;
@@ -68,13 +70,19 @@ function assertSelection(selection: VocabularyIntakeSelection, scope: Vocabulary
     throw new VocabularyStateInputError('Select active senses belonging to this word');
   }
 }
+function newSenseConflict(wordId: string, draft: SenseDraft): string | null {
+  const existing = getVocabularySenses(wordId).filter(sense => sense.status === 'active');
+  if (existing.some(sense => senseLabel(sense.description).trim().toLowerCase() === draft.label.trim().toLowerCase())) {
+    return 'This sense is already in the inventory. Ask chat to show the word and choose the existing sense.';
+  }
+  return existing.length >= 16 ? 'The inventory already has 16 senses. This proposal cannot be added.' : null;
+}
+
 function checkNewSense(wordId: string, draft: SenseDraft): void {
   try { validateVocabularySenseInventory({ senses: [{ ...draft, defaultUseful: false }] }); }
   catch { throw new VocabularyStateInputError('The proposed sense is incomplete'); }
-  const existing = getVocabularySenses(wordId).filter(sense => sense.status === 'active');
-  if (existing.length >= 16 || existing.some(sense => senseLabel(sense.description).trim().toLowerCase() === draft.label.trim().toLowerCase())) {
-    throw new VocabularyStateInputError('A new sense needs a distinct description and room in the inventory');
-  }
+  const conflict = newSenseConflict(wordId, draft);
+  if (conflict) throw new VocabularyStateInputError(conflict);
 }
 function senseLabel(description: JsonValue): string {
   if (typeof description === 'string') return description;
@@ -86,13 +94,13 @@ function senseNotes(description: JsonValue): string[] {
   if (typeof description.notes === 'string') return [description.notes];
   return Array.isArray(description.notes) ? description.notes.filter((note): note is string => typeof note === 'string') : [];
 }
-function prerequisiteAttention(wordId: string, scope: VocabularyLearnerSenseScope): string | null {
+function prerequisiteAttention(wordId: string, scope: VocabularyLearnerSenseScope, allowEmptyInventory = false): string | null {
   const db = getDb();
   const failed = db.prepare("SELECT 1 FROM vocabulary_sense_readiness WHERE word_id=? AND status='failed'").get(wordId);
   if (failed && !scope.inventoryEstablished) return 'The sense inventory needs review.';
   const defaults = db.prepare("SELECT 1 FROM vocabulary_default_selection_readiness WHERE word_id=? AND status='failed'").get(wordId);
   if (defaults && !scope.selectionEstablished) return 'The shared default senses need review before this selection can be saved.';
-  if (scope.inventoryEstablished && scope.senses.length === 0) return 'The inventory has no study senses.';
+  if (!allowEmptyInventory && scope.inventoryEstablished && scope.senses.length === 0) return 'The inventory has no study senses.';
   return null;
 }
 function teachingAttention(wordId: string): string | null {
@@ -148,6 +156,16 @@ function writeSelection(wordId: string, selection: VocabularyIntakeSelection, sc
     surface: VOCABULARY_INTAKE_SURFACE,
   });
 }
+function createIntakeSense(wordId: string, draft: SenseDraft): string {
+  checkNewSense(wordId, draft);
+  const sense = createVocabularySense({ wordId, description: {
+    label: draft.label.trim(), notes: draft.notes.map(note => note.trim()), source: { kind: 'learner_intake' },
+  } }, { kind: 'service', id: VOCABULARY_INTAKE_SURFACE });
+  emitBackendEvent({ name: 'vocabulary.intake.finding', entityKind: 'word', entityId: wordId,
+    data: { kind: 'new_sense', senseId: sense.senseId } });
+  return sense.senseId;
+}
+
 function enroll(body: IntakeCardBody, initialScope: VocabularyLearnerSenseScope): IntakeCardBody {
   let scope = initialScope;
   const wordId = body.wordId;
@@ -167,14 +185,9 @@ function enroll(body: IntakeCardBody, initialScope: VocabularyLearnerSenseScope)
   if (selection.includeProposedSense && body.proposedSense) {
     const draft = body.proposedSense;
     if (!scope.inventoryEstablished) throw new VocabularyStateInputError('Wait for the sense inventory');
-    checkNewSense(wordId, draft);
-    const sense = createVocabularySense({ wordId, description: {
-      label: draft.label.trim(), notes: draft.notes.map(note => note.trim()), source: { kind: 'learner_intake' },
-    } }, { kind: 'service', id: VOCABULARY_INTAKE_SURFACE });
-    emitBackendEvent({ name: 'vocabulary.intake.finding', entityKind: 'word', entityId: wordId,
-      data: { kind: 'new_sense', senseId: sense.senseId } });
-    selection.senseIds = [...selection.senseIds, sense.senseId];
-    selection.targetSenseId = sense.senseId;
+    const senseId = createIntakeSense(wordId, draft);
+    selection.senseIds = [...selection.senseIds, senseId];
+    selection.targetSenseId = senseId;
     selection.includeProposedSense = false;
   }
   addVocabularyStashByHanzi(lexical.hanzi, false, [wordId], body.context);
@@ -206,9 +219,12 @@ export function saveVocabularyIntakeCard(turnId: string, draft: IntakeCardDraft,
     }
     let body: IntakeCardBody = { wordId: draft.wordId, proposal: true, enrollmentAddedAt: null, selection: draft.selection,
       proposedSense: draft.proposedSense, context: draft.context, pending: null, undo: null, attention: null };
-    if (isEnrolled(getVocabularyLearnerWord(draft.wordId))) body = { ...body, proposal: false, proposedSense: null,
-      selection: { senseIds: scope.includedSenseIds, targetSenseId: null, includeProposedSense: false } };
-    else if (allowAutomatic && !draft.proposedSense) {
+    if (isEnrolled(getVocabularyLearnerWord(draft.wordId))) {
+      if (draft.proposedSense && !draft.selection.includeProposedSense) throw new VocabularyStateInputError('Select the proposed new sense');
+      body = { ...body, proposal: !!draft.proposedSense,
+        ...(draft.proposedSense ? { proposalKind: 'sense' as const } : {}),
+        selection: { senseIds: scope.includedSenseIds, targetSenseId: null, includeProposedSense: !!draft.proposedSense } };
+    } else if (allowAutomatic && !draft.proposedSense) {
       const selected = [...scope.defaultSenseIds ?? []];
       if (draft.selection.targetSenseId && !selected.includes(draft.selection.targetSenseId)) selected.push(draft.selection.targetSenseId);
       const choice = { ...draft.selection, senseIds: selected, includeProposedSense: false };
@@ -234,35 +250,43 @@ export function projectVocabularyIntakeCard(card: ChatCard): VocabularyIntakeCar
   const pending = enrolled && body.pending !== null && body.pending.expectedLearnerVersion === word?.stateVersion;
   const active = new Set(scope.senses.map(sense => sense.senseId));
   const target = body.selection.targetSenseId;
-  const proposed = !enrolled && body.proposal;
-  const addedByCard = enrolled && body.enrollmentAddedAt === word?.addedAt;
+  const senseProposed = body.proposal && body.proposalKind === 'sense' && body.proposedSense !== null;
+  const proposed = !senseProposed && !enrolled && body.proposal;
+  const addedByCard = enrolled && (body.enrollmentAddedAt === word?.addedAt || body.proposalKind === 'sense');
   const ownEnrollment = enrolled && body.undo && body.undo.after.learnerVersion === word?.stateVersion;
   const attention = (ownEnrollment ? body.attention : null) ?? prerequisiteAttention(body.wordId,scope) ??
     (enrolled && word?.mode === 'unstudied' ? teachingAttention(body.wordId) : null);
+  const senseAttention = senseProposed ? !enrolled ? 'This word is no longer in your vocabulary.'
+    : prerequisiteAttention(body.wordId, scope, true)
+      ?? (!scope.selectionEstablished ? 'Default senses are being prepared.'
+        : hasPendingVocabularyIntakeMatch(body.wordId) ? 'Wait for the earlier context match to finish.'
+        : newSenseConflict(body.wordId, body.proposedSense!)) : null;
   const selected = proposed ? body.selection.senseIds.filter(id => active.has(id)) : scope.includedSenseIds;
-  const state: VocabularyIntakeCard['state'] = !enrolled ? 'proposed'
+  const state: VocabularyIntakeCard['state'] = senseProposed ? 'sense-proposed' : !enrolled ? 'proposed'
     : !addedByCard ? 'already-studying'
     : word?.mode !== 'unstudied' ? 'already-studying'
     : pending ? 'preparing' : teachingReady(body.wordId) ? 'ready'
     : attention ? 'added' : 'preparing';
-  const selection = { senseIds: selected, includeProposedSense: proposed && body.selection.includeProposedSense,
+  const selection = { senseIds: selected, includeProposedSense: senseProposed || (proposed && body.selection.includeProposedSense),
     targetSenseId: target && selected.includes(target) ? target : null };
   const actions: VocabularyIntakeCard['actions'] = [];
   if (proposed && ((!scope.inventoryEstablished && active.size === 0) ||
     (scope.selectionEstablished && (selected.length > 0 || body.proposedSense !== null || active.size > 0)))) actions.push('add');
-  if (enrolled && body.undo && undoAvailable(body.wordId, body.undo)) actions.push('undo');
-  if (enrolled && scope.inventoryEstablished && scope.selectionEstablished && scope.senses.length > 0 && !pending) actions.push('change_senses');
+  if (senseProposed && enrolled && scope.inventoryEstablished && scope.selectionEstablished && !senseAttention) actions.push('add_sense');
+  if (!senseProposed && enrolled && body.undo && undoAvailable(body.wordId, body.undo)) actions.push('undo');
+  if (!senseProposed && enrolled && scope.inventoryEstablished && scope.selectionEstablished && scope.senses.length > 0 && !pending) actions.push('change_senses');
   const presets: VocabularyIntakeCard['presets'] = [];
-  if (selection.targetSenseId && selected.length > 1) presets.push({ label: 'Only the context sense',
+  if (!senseProposed && selection.targetSenseId && selected.length > 1) presets.push({ label: 'Only the context sense',
     selection: { senseIds: [selection.targetSenseId], includeProposedSense: false, targetSenseId: selection.targetSenseId } });
-  if (selection.includeProposedSense && selected.length > 0) presets.push({ label: 'Only the proposed sense',
+  if (!senseProposed && selection.includeProposedSense && selected.length > 0) presets.push({ label: 'Only the proposed sense',
     selection: { senseIds: [], includeProposedSense: true, targetSenseId: null } });
   return { id: card.id, version: card.version, wordId: body.wordId, hanzi: lexical.hanzi, pinyin: lexical.pinyin, state,
     senses: scope.senses.map(sense => ({ senseId: sense.senseId, label: senseLabel(sense.description), notes: senseNotes(sense.description),
       isDefault: scope.defaultSenseIds?.includes(sense.senseId) ?? false,
       disposition: scope.choices.find(choice => choice.senseId === sense.senseId)?.disposition ?? 'default' })),
-    selection, defaultsEstablished: scope.selectionEstablished, proposedSense: proposed ? body.proposedSense : null,
-    versions: versions(scope), actions, presets, attention: proposed || (enrolled && !pending && word?.mode === 'unstudied') ? attention : null };
+    selection, defaultsEstablished: scope.selectionEstablished, proposedSense: proposed || senseProposed ? body.proposedSense : null,
+    ...(body.addedSenseId && active.has(body.addedSenseId) ? { addedSenseId: body.addedSenseId } : {}),
+    versions: versions(scope), actions, presets, attention: senseProposed ? senseAttention : proposed || (enrolled && !pending && word?.mode === 'unstudied') ? attention : null };
 }
 
 export function getVocabularyIntakeCard(id: string): ChatCard {
@@ -276,7 +300,7 @@ export function listVocabularyIntakeCards(outstanding: boolean): VocabularyIntak
   for (let page = listChatCards(VOCABULARY_INTAKE_SURFACE, undefined, 100); page.length;) {
     for (const card of page) {
       const projected = projectVocabularyIntakeCard(card);
-      if (!outstanding || (projected.state === 'proposed' && intakeBody(card).proposal) ||
+      if (!outstanding || ((projected.state === 'proposed' || projected.state === 'sense-proposed') && intakeBody(card).proposal) ||
         projected.state === 'preparing' || projected.attention !== null) results.push(projected);
     }
     page = page.length === 100 ? listChatCards(VOCABULARY_INTAKE_SURFACE, page.at(-1), 100) : [];
@@ -300,10 +324,26 @@ export function runVocabularyIntakeCommand(cardId: string, request: VocabularyIn
         rollbackEnrollment(wordId, body.undo);
         return intakeJson({ ...body, proposal: true, enrollmentAddedAt: null, undo: null, pending: null, attention: null });
       }
+      if (command.type === 'add_sense') {
+        if (!body.proposal || body.proposalKind !== 'sense' || !body.proposedSense || !isEnrolled(word)) {
+          throw new ChatConflictError('This sense proposal is no longer available');
+        }
+        if (!scope.inventoryEstablished || !scope.selectionEstablished) throw new VocabularyStateInputError('Wait for the sense inventory and defaults');
+        if (hasPendingVocabularyIntakeMatch(wordId)) throw new ChatConflictError('Wait for the earlier context match to finish.');
+        const senseId = createIntakeSense(wordId, body.proposedSense);
+        const next = resolveVocabularyLearnerSenseScope(wordId);
+        const updated = takeUpVocabularyLearnerSense(wordId, senseId, {
+          expectedStateVersion: next.stateVersion!, expectedCatalogVersion: next.catalogVersion,
+          expectedSelectionVersion: next.selectionVersion, surface: VOCABULARY_INTAKE_SURFACE,
+        });
+        return intakeJson({ ...body, proposal: false, proposedSense: null, addedSenseId: senseId, undo: null, pending: null, attention: null,
+          selection: { senseIds: updated.includedSenseIds, targetSenseId: null, includeProposedSense: false } });
+      }
       if (command.type === 'add') {
-        if (!body.proposal || isEnrolled(word)) throw new ChatConflictError('This proposal is no longer available');
+        if (!body.proposal || body.proposalKind === 'sense' || isEnrolled(word)) throw new ChatConflictError('This proposal is no longer available');
         return intakeJson(enroll({ ...body, selection: command.selection }, scope));
       }
+      if (body.proposal && body.proposalKind === 'sense') throw new ChatConflictError('Confirm Add sense before changing its selection');
       if (!isEnrolled(word)) throw new ChatConflictError('The word is no longer in your vocabulary');
       if (body.pending?.expectedLearnerVersion === word?.stateVersion) throw new ChatConflictError('Wait for the context match');
       assertSelection(command.selection, scope, null);
@@ -345,7 +385,18 @@ export function reviseVocabularyIntakeCard(turnId: string, snapshot: VocabularyI
       if (!selection || (!selection.senseIds.length && !selection.includeProposedSense)) {
         throw new VocabularyStateInputError('Choose at least one sense');
       }
-      if (snapshot.state === 'proposed' && body.proposal && !isEnrolled(getVocabularyLearnerWord(body.wordId))) {
+      if (snapshot.state === 'sense-proposed') {
+        if (revision.action !== 'revise_proposal' || !revision.proposedSense || !selection.includeProposedSense
+          || !isEnrolled(getVocabularyLearnerWord(body.wordId))) throw new VocabularyStateInputError('Confirm Add sense before selecting it; this proposal only revises the new meaning');
+        checkNewSense(body.wordId, revision.proposedSense);
+        const proposed = [revision.proposedSense.label, ...revision.proposedSense.notes].join(' ');
+        if ([body.context, revision.context].some(context => context && context.length > 16 && proposed.includes(context))) {
+          throw new VocabularyStateInputError('Shared sense notes require a general example');
+        }
+        runChatCardCommand({ cardId: card.id, clientActionId: `${turnId}:revision`, expectedVersion: snapshot.version,
+          request: revision as unknown as JsonValue, apply: () => intakeJson({ ...body, proposedSense: revision.proposedSense,
+            context: revision.context ?? body.context }) });
+      } else if (snapshot.state === 'proposed' && body.proposal && !isEnrolled(getVocabularyLearnerWord(body.wordId))) {
         const proposedSense = revision.action === 'revise_proposal' ? revision.proposedSense : body.proposedSense;
         assertSelection(selection, scope, proposedSense);
         if (proposedSense) {

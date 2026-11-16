@@ -105,6 +105,16 @@ available target when the requested fragment has its meaning there. Unknown
 defaults initialize in the background before a learner saves a set. A valid
 new sense enters the shared inventory as non-default on explicit Add.
 
+For an already enrolled word, a missing, well-attested meaning appears as a
+New sense proposed card. Add sense confirms that shared meaning and takes it up
+alongside the learner's current senses. Existing exclusions, explicit take-ups,
+intended-use context, enrollment, progress and schedule are preserved. The
+proposal can be clarified in chat and found in Outstanding before confirmation.
+The learner can adjust the resulting set afterward. This addition does not
+offer enrollment Undo; deselecting the sense removes it from the learner's set
+while the shared meaning remains. An unstudied word waits for teaching covering
+its new set; an already taught word continues without reteaching.
+
 The same card appears in the transcript and outstanding cards. Preparation and
 attention can change in place, and My Words shows current preparation for
 stashed, unstudied words. Undo reverses the enrollment, priority, context and

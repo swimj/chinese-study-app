@@ -1,0 +1,51 @@
+[
+  {
+    "suite": "original",
+    "cases": 15,
+    "calls": 35,
+    "spendUsd": 0.103971,
+    "medianMs": 2680,
+    "maxMs": 4751
+  },
+  {
+    "suite": "disjoint",
+    "cases": 15,
+    "calls": 31,
+    "spendUsd": 0.074099,
+    "medianMs": 2698,
+    "maxMs": 3671
+  },
+  {
+    "suite": "followups",
+    "cases": 14,
+    "calls": 18,
+    "spendUsd": 0.056642,
+    "medianMs": 1482,
+    "maxMs": 5400
+  },
+  {
+    "suite": "existing",
+    "cases": 9,
+    "calls": 15,
+    "spendUsd": 0.041971,
+    "medianMs": 2160,
+    "maxMs": 2869
+  },
+  {
+    "suite": "advice",
+    "cases": 2,
+    "calls": 4,
+    "spendUsd": 0.010959,
+    "medianMs": 3440,
+    "maxMs": 3598
+  },
+  {
+    "suite": "total",
+    "cases": 55,
+    "calls": 103,
+    "spendUsd": 0.287643,
+    "medianMs": 2467,
+    "p95Ms": 4255,
+    "maxMs": 5400
+  }
+]

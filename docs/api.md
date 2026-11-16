@@ -84,10 +84,10 @@ Responses omit private command snapshots and raw tool results.
 | --- | --- |
 | `GET /` | Recent turns in chronological order with current cards. Use the returned `before` turn cursor to fetch the preceding page. |
 | `POST /turns` | Accepts `clientTurnId` and text up to 4,000 JavaScript characters. Sends JSON `progress`, `completion`, `done` or `error` events as server-sent events. `progress` carries a transient stage; `completion` carries `assistantText` and `cards` together after commit. The same ID and text replay an accepted turn. An error with `retryWithNewId: true` confirms a failed attempt and permits a fresh retry identity; uncertain transport loss retains the original ID. |
-| `GET /cards?outstanding=true` | Lists live proposed, preparing or attention cards. |
+| `GET /cards?outstanding=true` | Lists live word or sense proposals, preparing cards and attention cards. |
 | `GET /cards/:id` | Reads the current owned card. |
 | `GET /attention` | Counts proposals and cards with attention. |
-| `POST /cards/:id/commands` | Runs `add`, `set_senses` or `undo` with a stable `clientActionId`, expected card version and current learner/catalog/selection versions. A stale action returns 409. |
+| `POST /cards/:id/commands` | Runs `add`, `add_sense`, `set_senses` or `undo` with a stable `clientActionId`, expected card version and current learner/catalog/selection versions. `add_sense` confirms an existing-word sense proposal without a selection payload. A stale action returns 409. |
 
 The allowlisted `GET /api/operator/vocabulary/intake/findings` lists the latest
 100 redirected components and learner-confirmed shared sense additions.

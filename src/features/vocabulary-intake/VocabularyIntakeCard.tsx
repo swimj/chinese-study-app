@@ -5,6 +5,7 @@ import type { VocabularyIntakeController } from './useVocabularyIntake';
 
 const stateLabels = {
   proposed: 'Proposed',
+  'sense-proposed': 'New sense proposed',
   added: 'Added',
   preparing: 'Preparing',
   ready: 'Ready',
@@ -17,8 +18,10 @@ export function VocabularyIntakeCard({ card, controller }: { card: Card; control
   const lastFocused = useRef<Element | null>(null);
   const edit = controller.edits[card.id];
   const draft = controller.drafts[card.id];
-  const intended = edit?.request.command.type === 'undo' ? null : edit?.request.command.selection;
+  const intended = edit && 'selection' in edit.request.command ? edit.request.command.selection : null;
   const proposed = card.state === 'proposed';
+  const senseProposed = card.state === 'sense-proposed';
+  const canAddSense = card.actions.includes('add_sense');
   const canAdd = card.actions.includes('add');
   const canSetSenses = card.actions.includes('change_senses');
   const canUndo = card.actions.includes('undo');
@@ -123,14 +126,27 @@ export function VocabularyIntakeCard({ card, controller }: { card: Card; control
     >
       <header className="intake-card-header">
         <h3 id={headingId}><span lang="zh-Hans">{card.hanzi}</span> <span className="intake-pinyin">{card.pinyin}</span></h3>
-        <span className="intake-card-state" data-state={card.state} role="status">{stateLabels[card.state]}</span>
+        <span className="intake-card-state" data-state={card.state} role="status">{card.addedSenseId && card.state === 'already-studying' ? 'Sense added' : stateLabels[card.state]}</span>
       </header>
       {card.attention && <p className="intake-card-attention">{card.attention}</p>}
       {!card.attention && !card.senses.length && !card.proposedSense && !card.defaultsEstablished
         && <p className="intake-muted">Senses are being prepared.</p>}
       {!card.attention && proposed && !canAdd && card.senses.length > 0 && !card.defaultsEstablished
         && <p className="intake-muted">Default senses are being prepared.</p>}
-      {(card.senses.length > 0 || card.proposedSense) && (
+      {senseProposed && card.proposedSense && (
+        <div className="intake-sense-proposal">
+          <p>{card.proposedSense.label}</p>
+          {card.proposedSense.notes.length > 0 && <details><summary>Notes</summary>
+            {card.proposedSense.notes.map((note, index) => <p key={index}>{note}</p>)}
+          </details>}
+          <p className="intake-muted">Adds a shared meaning alongside your current study senses.</p>
+          <details><summary>Current senses ({card.selection.senseIds.length})</summary>
+            <ul>{card.senses.filter(sense => card.selection.senseIds.includes(sense.senseId))
+              .map(sense => <li key={sense.senseId}>{sense.label}</li>)}</ul>
+          </details>
+        </div>
+      )}
+      {!senseProposed && (card.senses.length > 0 || card.proposedSense) && (
         <fieldset className="intake-senses">
           <legend>Senses to study</legend>
           <ul>
@@ -139,8 +155,10 @@ export function VocabularyIntakeCard({ card, controller }: { card: Card; control
           </ul>
         </fieldset>
       )}
-      {(canAdd || canSetSenses || canUndo) && (
+      {(canAdd || canAddSense || canSetSenses || canUndo) && (
         <div className="intake-card-actions">
+          {canAddSense && <button type="button" aria-disabled={Boolean(edit) || undefined}
+            onClick={() => { if (!edit) void controller.command(card, { type: 'add_sense' }); }}>Add sense</button>}
           {proposed && readyToAdd && <button type="button" aria-disabled={Boolean(edit) || undefined}
             onClick={() => { if (!edit) void controller.command(card, { type: 'add', selection }); }}>
             Add <span lang="zh-Hans">{card.hanzi}</span>
@@ -177,6 +195,9 @@ export function VocabularyIntakeCard({ card, controller }: { card: Card; control
             {!edit.refreshed
               ? <button type="button" onClick={() => void controller.reloadCard(card.id, edit, true)}>Reload card</button>
               : <>
+                  {edit.request.command.type === 'add_sense' && canAddSense && (
+                    <button type="button" onClick={() => void controller.command(card, { type: 'add_sense' })}>Add sense</button>
+                  )}
                   {compatibleChoice && (
                     <button type="button" onClick={() => void controller.command(card, {
                       type: proposed ? 'add' : 'set_senses', selection: intended,

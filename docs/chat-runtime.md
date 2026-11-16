@@ -118,6 +118,24 @@ output. New turns require the terminal receipt described above.
 The transcript renders the live card only at its latest attached turn, preserving
 earlier prose without repeating the controls.
 
+An enrolled word's missing meaning uses a private `proposalKind: 'sense'` body
+and a `sense-proposed` public card. Its displayed current senses come from live
+learner scope. `revise_card` can clarify the draft but cannot confirm it. The
+explicit `add_sense` command creates the shared non-default sense and calls
+`takeUpVocabularyLearnerSense` within the card receipt transaction. That writer
+adds only the new take-up, preserving every existing override and the word's
+context and schedule; practice preparation uses the existing queue. A failed
+scope write rolls back shared creation too. Legacy cards without the discriminator
+retain their enrollment behavior. No schema migration is needed.
+
+Sense confirmation checks current enrollment, inventory/default readiness,
+earlier pending context matches, duplicate labels and the inventory limit.
+Unavailable confirmation projects actionable attention. Stale versions require
+reload and renewed confirmation; receipt replay avoids repeating the mutation
+and returns the latest durable card projection.
+After confirmation, `addedSenseId` identifies the result for the UI and ordinary
+sense editing resumes. Sense additions do not create an enrollment Undo snapshot.
+
 Undo stores its before/after enrollment evidence in the same transaction as
 Add. A later enrollment version, schedule, priority or retained session fences
 Undo.
@@ -138,3 +156,5 @@ The [implementation evaluation](evaluation/trials/2026-11-15-custom-senses.md)
 records bounded live-provider comparisons, teaching examples and rendered UI checks.
 The [follow-up evaluation](evaluation/trials/2026-11-15-intake-followups.md)
 records conversational revision, clarification and unsupported-request checks.
+The [existing-word sense evaluation](evaluation/trials/2026-11-15-existing-word-sense.md)
+records additive confirmation, preserved learner state and proposal recovery.

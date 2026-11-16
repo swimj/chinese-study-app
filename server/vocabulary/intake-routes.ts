@@ -36,7 +36,8 @@ function commandRequest(value: unknown): VocabularyIntakeCommandRequest {
   const input = record(value), action = record(input.command), versions = record(input.versions);
   let command: VocabularyIntakeCommand;
   switch (action.type) {
-    case 'undo': command = { type: 'undo' }; break;
+    case 'undo':
+    case 'add_sense': command = { type: action.type }; break;
     case 'add':
     case 'set_senses': command = { type: action.type, selection: selection(action.selection) }; break;
     default: throw new VocabularyStateInputError('Unsupported card command');
@@ -76,7 +77,7 @@ export function registerVocabularyIntakeRoutes(app: Express, options: { wake?: (
   }));
   app.get(`${intake}/cards/:id`, handler(req => projectVocabularyIntakeCard(getVocabularyIntakeCard(identifier(req.params.id)))));
   app.get(`${intake}/attention`, handler(() => ({
-    count: listVocabularyIntakeCards(true).filter(card => card.attention !== null || card.state === 'proposed').length,
+    count: listVocabularyIntakeCards(true).filter(card => card.attention !== null || card.state === 'proposed' || card.state === 'sense-proposed').length,
   })));
   app.post(`${intake}/cards/:id/commands`, handler(req => {
     const card = runVocabularyIntakeCommand(identifier(req.params.id), commandRequest(req.body));

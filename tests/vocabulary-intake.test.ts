@@ -8,15 +8,15 @@ import { createBaselineFixture } from './helpers/baseline-database.ts';
 import { setDb } from '../server/db/connection.ts';
 import { migrateDatabase } from '../server/db/migrations.ts';
 import { installLearnerContextSqlFunction, runWithLearnerId } from '../server/db/learner-context.ts';
-import { ChatConflictError, createChatCard, getChatTurn, getOrCreateChatConversation, startChatTurn } from '../server/db/learner-chat.ts';
+import { ChatConflictError, createChatCard, getChatTurn, getOrCreateChatConversation, startChatTurn, updateChatCard } from '../server/db/learner-chat.ts';
 import { getVocabularyIntakeCard, intakeConversationId, listVocabularyIntakeCards, listVocabularyIntakeFindings,
-  projectVocabularyIntakeCard, reviseVocabularyIntakeCard, runVocabularyIntakeCommand, type IntakeCardDraft, type IntakeCardRevision } from '../server/db/vocabulary-intake.ts';
+  completeIntakeContextMatch, projectVocabularyIntakeCard, reviseVocabularyIntakeCard, runVocabularyIntakeCommand, type IntakeCardDraft, type IntakeCardRevision } from '../server/db/vocabulary-intake.ts';
 import { vocabularyIntakeContext } from '../server/vocabulary/intake-context.ts';
 import { hasPendingVocabularyIntakeMatch } from '../server/db/vocabulary-intake-pending.ts';
-import { createVocabularySense, establishVocabularySenseCatalog, getVocabularySenseCatalog, getVocabularySenses } from '../server/db/vocabulary-content.ts';
+import { createVocabularySense, establishVocabularySenseCatalog, getVocabularySenseCatalog, getVocabularySenses, updateVocabularySense } from '../server/db/vocabulary-content.ts';
 import { getVocabularyWordSenseCoverage, writeVocabularyDefaultUsefulSenses } from '../server/db/vocabulary-sense-coverage.ts';
 import { getVocabularyLearnerWord, getVocabularyWordSchedule, changeVocabularyMode, addVocabularyWord, dismissVocabularyWord } from '../server/db/vocabulary-learners.ts';
-import { resolveVocabularyLearnerSenseScope } from '../server/db/vocabulary-learner-senses.ts';
+import { resolveVocabularyLearnerSenseScope, writeVocabularyLearnerSenseScope } from '../server/db/vocabulary-learner-senses.ts';
 import { getVocabularyIntakeHistory, recoverVocabularyIntakeTurns, sendVocabularyIntakeTurn } from '../server/vocabulary/intake-chat.ts';
 import { createVocabularyIntakeWorker } from '../server/vocabulary/intake-worker.ts';
 import { composeVocabularyStudy } from '../server/vocabulary/composition.ts';
@@ -474,4 +474,135 @@ test('failed final persistence rolls back a conversational revision, its receipt
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM learner_chat_commands').get()!.n,0);
   const failed=getVocabularyIntakeHistory().turns.find(turn=>turn.userText==='Only the second meaning')!;
   assert.equal(failed.status,'failed'); assert.equal(failed.assistantText,''); assert.deepEqual(failed.cardIds,[]);
+}));
+
+async function existingSenseProposal(clientTurnId = 'existing-sense') {
+  return send('蒸馏 in AI model distillation',[lookup('蒸馏')],draft('distil','proposal','蒸馏',
+    {...select('distil-1'),includeProposedSense:true},
+    {proposedSense:{label:'Distil a model',notes:['Transfer a larger model’s knowledge to a smaller model, as in 把大模型蒸馏成小模型。']}}),clientTurnId);
+}
+function practiceDistil() {
+  const word=addVocabularyWord('distil');
+  changeVocabularyMode('distil','practice',word.stateVersion);
+}
+
+test('a new sense can repair an enrolled word with an established empty active inventory',async()=>alice(async()=>{
+  practiceDistil();
+  for(const sense of getVocabularySenses('distil'))updateVocabularySense(sense.senseId,sense.version,
+    {description:sense.description,status:'retired'},operator);
+  const scope=resolveVocabularyLearnerSenseScope('distil');
+  writeVocabularyDefaultUsefulSenses('distil',scope.selectionVersion,[],operator);
+  const {card}=await send('蒸馏 in AI model distillation',[lookup('蒸馏')],draft('distil','proposal','蒸馏',
+    {...select(),includeProposedSense:true},{proposedSense:{label:'Distil a model',notes:['Transfer a larger model’s knowledge to a smaller model.']}}));
+  assert.ok(card);assert.equal(card.attention,null);assert.ok(card.actions.includes('add_sense'));
+  const added=runVocabularyIntakeCommand(card.id,request(card,{type:'add_sense'},'repair-empty'));
+  assert.equal(added.selection.senseIds.length,1);assert.equal(added.state,'already-studying');
+}));
+
+test('an existing-word proposal creates nothing until Add sense, then preserves progress and all prior choices',async()=>alice(async()=>{
+  practiceDistil();
+  db.prepare("INSERT INTO learner_senses VALUES ('alice','distil','distil-1','active'),('alice','distil','distil-2','excluded')").run();
+  const beforeWord=getVocabularyLearnerWord('distil')!, beforeSchedule=getVocabularyWordSchedule('distil');
+  const beforeDefaults=getVocabularyWordSenseCoverage('distil'), beforeCount=getVocabularySenses('distil').length;
+  const {card}=await existingSenseProposal(); assert.ok(card);
+  assert.equal(card.state,'sense-proposed'); assert.deepEqual(card.actions,['add_sense']);
+  assert.ok(listVocabularyIntakeCards(true).some(entry=>entry.id===card.id));
+  assert.deepEqual(getVocabularyLearnerWord('distil'),beforeWord); assert.equal(getVocabularySenses('distil').length,beforeCount);
+  const confirmation=request(card,{type:'add_sense'},'confirm-sense');
+  const added=runVocabularyIntakeCommand(card.id,confirmation);
+  assert.equal(added.state,'already-studying'); assert.equal(added.proposedSense,null);
+  assert.equal(added.selection.targetSenseId,null);assert.ok(added.addedSenseId);
+  assert.deepEqual(added.actions,['change_senses']);
+  const addedSense=getVocabularySenses('distil').find(s=>s.description && typeof s.description==='object' && !Array.isArray(s.description) && s.description.label==='Distil a model')!;
+  assert.ok(addedSense); assert.equal(getVocabularySenses('distil').length,beforeCount+1);
+  const afterScope=resolveVocabularyLearnerSenseScope('distil');
+  assert.deepEqual(afterScope.choices,[{senseId:'distil-1',disposition:'active'},{senseId:'distil-2',disposition:'excluded'},
+    {senseId:addedSense.senseId,disposition:'active'}].sort((a,b)=>a.senseId.localeCompare(b.senseId)));
+  const {stateVersion:beforeVersion,scopeEstablishedAt:_beforeAt,...beforeRest}=beforeWord;
+  const {stateVersion:afterVersion,scopeEstablishedAt:_afterAt,...afterRest}=getVocabularyLearnerWord('distil')!;
+  assert.deepEqual(afterRest,beforeRest); assert.equal(afterVersion,beforeVersion+1);
+  assert.deepEqual(getVocabularyWordSchedule('distil'),beforeSchedule);
+  assert.deepEqual(getVocabularyWordSenseCoverage('distil'),beforeDefaults);
+  assert.ok(db.prepare("SELECT 1 FROM vocabulary_practice_preparation WHERE word_id='distil'").get());
+  assert.deepEqual(runVocabularyIntakeCommand(card.id,confirmation),added);
+  assert.equal(getVocabularySenses('distil').length,beforeCount+1);
+  assert.equal(runWithLearnerId('bob',()=>resolveVocabularyLearnerSenseScope('distil').includedSenseIds.includes(addedSense.senseId)),false);
+  assert.throws(()=>runVocabularyIntakeCommand(card.id,request(added,{type:'undo'},'no-enrollment-undo')),/cannot be undone/);
+}));
+
+test('Add sense rejects stale choices and applies only the addition after a current reload',async()=>alice(async()=>{
+  practiceDistil();const {card}=await existingSenseProposal();assert.ok(card);
+  const scope=resolveVocabularyLearnerSenseScope('distil');
+  writeVocabularyLearnerSenseScope('distil',{senseIds:['distil-2'],expectedStateVersion:scope.stateVersion!,
+    expectedCatalogVersion:scope.catalogVersion,expectedSelectionVersion:scope.selectionVersion,surface:'other-control'});
+  assert.throws(()=>runVocabularyIntakeCommand(card.id,request(card,{type:'add_sense'},'stale-sense')),/changed/);
+  assert.equal(getVocabularySenses('distil').length,2);
+  const current=getCard(card.id);assert.deepEqual(current.selection.senseIds,['distil-2']);
+  const added=runVocabularyIntakeCommand(card.id,request(current,{type:'add_sense'},'fresh-sense'));
+  assert.ok(!added.selection.senseIds.includes('distil-1'));assert.ok(added.selection.senseIds.includes('distil-2'));
+  assert.equal(added.selection.senseIds.length,2);
+}));
+
+test('new-sense confirmation cannot reenroll a dismissed word or cross proposal kinds',async()=>alice(async()=>{
+  practiceDistil();const {card}=await existingSenseProposal();assert.ok(card);
+  assert.throws(()=>runVocabularyIntakeCommand(card.id,request(card,{type:'add',selection:card.selection},'wrong-add')),/no longer available/);
+  const word=getVocabularyLearnerWord('distil')!;dismissVocabularyWord('distil',word.stateVersion);
+  const dismissed=getCard(card.id);assert.ok(!dismissed.actions.includes('add_sense'));assert.match(dismissed.attention!,/no longer/);
+  assert.throws(()=>runVocabularyIntakeCommand(card.id,request(dismissed,{type:'add_sense'},'dismissed-sense')),/no longer available/);
+  assert.equal(getVocabularySenses('distil').length,2);
+  assert.ok(getVocabularyLearnerWord('distil')?.dismissedAt);
+}));
+
+test('duplicate shared senses and failed learner writes leave no partial sense publication',async()=>alice(async()=>{
+  practiceDistil();const {card}=await existingSenseProposal();assert.ok(card);
+  const beforeCatalog=getVocabularySenseCatalog('distil');
+  db.exec(`CREATE TEMP TRIGGER fail_new_take_up BEFORE INSERT ON learner_senses
+    WHEN NEW.sense_id NOT IN ('distil-1','distil-2') BEGIN SELECT RAISE(ABORT,'fixture failure'); END;`);
+  assert.throws(()=>runVocabularyIntakeCommand(card.id,request(card,{type:'add_sense'},'failed-write')),/fixture failure/);
+  assert.equal(getVocabularySenses('distil').length,2);assert.deepEqual(getVocabularySenseCatalog('distil'),beforeCatalog);
+  assert.equal(getCard(card.id).version,card.version);
+  db.exec('DROP TRIGGER fail_new_take_up');
+  createVocabularySense({wordId:'distil',description:{label:'Distil a model',notes:['Existing elsewhere.']}},operator);
+  const duplicate=getCard(card.id);assert.ok(!duplicate.actions.includes('add_sense'));assert.match(duplicate.attention!,/already in the inventory/);
+  assert.throws(()=>runVocabularyIntakeCommand(card.id,request(duplicate,{type:'add_sense'},'duplicate')),/already in the inventory/);
+  assert.equal(getVocabularySenses('distil').length,3);
+}));
+
+test('sense-proposal clarification remains private and chat cannot confirm or silently select it',async()=>alice(async()=>{
+  practiceDistil();const {card}=await existingSenseProposal();assert.ok(card);
+  const clarified=await send('Clarify knowledge transfer',[reviseCall(revision(card,'revise_proposal',card.selection,
+    {proposedSense:{label:'Transfer knowledge into a smaller model',notes:['把大模型蒸馏成小模型。']}}))]);
+  assert.equal(clarified.card?.id,card.id);assert.equal(clarified.card?.state,'sense-proposed');
+  assert.equal(getVocabularySenses('distil').length,2);
+  await assert.rejects(send('Only the new sense',[reviseCall(revision(clarified.card!,'set_senses',{
+    senseIds:[],targetSenseId:null,includeProposedSense:true}))]),/Confirm Add sense/);
+  await assert.rejects(send('Yes add sense',[{name:'revise_card',arguments:{...revision(clarified.card!,'undo'),action:'add_sense'} as unknown as JsonValue}]),/Invalid complete_turn/);
+  const added=runVocabularyIntakeCommand(card.id,request(clarified.card!,{type:'add_sense'},'confirmed-clarification'));
+  assert.equal(added.proposedSense,null);assert.equal(getVocabularySenses('distil').length,3);
+}));
+
+test('a stashed unstudied word waits for teaching covering the newly confirmed sense set',async()=>alice(async()=>{
+  await send('蒸馏',[lookup('蒸馏')],draft('distil','bare','蒸馏',select('distil-1')));
+  const {card}=await existingSenseProposal();assert.ok(card);
+  const added=runVocabularyIntakeCommand(card.id,request(card,{type:'add_sense'},'unstudied-confirm'));
+  assert.equal(added.state,'preparing');assert.equal(getVocabularyLearnerWord('distil')?.mode,'unstudied');
+  assert.ok(!added.actions.includes('undo'));
+}));
+
+
+test('a new-sense confirmation waits for an earlier deferred context match instead of invalidating it',async()=>alice(async()=>{
+  await send('蒸馏',[lookup('蒸馏')],draft('distil','bare','蒸馏',select('distil-1')));
+  const scope=resolveVocabularyLearnerSenseScope('distil');
+  const turn=startChatTurn(intakeConversationId(),'deferred-fixture',{text:'蒸馏 - a saved context'}).turn;
+  const pending=createChatCard(turn.id,{wordId:'distil',proposal:false,enrollmentAddedAt:getVocabularyLearnerWord('distil')!.addedAt,
+    selection:select('distil-1'),proposedSense:null,context:'a saved context',pending:{expectedLearnerVersion:scope.stateVersion,lease:null},undo:null,attention:null});
+  const {card}=await existingSenseProposal();assert.ok(card);
+  assert.ok(!card.actions.includes('add_sense'));assert.match(card.attention!,/earlier context match/);
+  assert.throws(()=>runVocabularyIntakeCommand(card.id,request(card,{type:'add_sense'},'while-pending')),/earlier context match/);
+  assert.equal(getVocabularySenses('distil').length,2);assert.equal(hasPendingVocabularyIntakeMatch('distil'),true);
+  const finished=completeIntakeContextMatch(pending,'distil-2');
+  updateChatCard(pending.id,pending.version,finished as unknown as JsonValue);
+  const ready=getCard(card.id);assert.ok(ready.actions.includes('add_sense'));assert.equal(ready.attention,null);
+  const result=runVocabularyIntakeCommand(card.id,request(ready,{type:'add_sense'},'after-match'));
+  assert.ok(result.selection.senseIds.includes('distil-2'));assert.equal(result.selection.senseIds.length,3);
 }));

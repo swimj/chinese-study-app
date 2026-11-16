@@ -1,5 +1,5 @@
 /** Learner-facing add-word cards. Private command snapshots never cross this boundary. */
-export type VocabularyIntakeCardState = 'proposed' | 'added' | 'preparing' | 'ready' | 'already-studying';
+export type VocabularyIntakeCardState = 'proposed' | 'sense-proposed' | 'added' | 'preparing' | 'ready' | 'already-studying';
 export type VocabularyIntakeSense = {
   senseId: string; label: string; notes: string[]; isDefault: boolean;
   disposition: 'default' | 'active' | 'excluded';
@@ -11,9 +11,10 @@ export type VocabularyIntakeCard = {
   id: string; version: number; wordId: string; hanzi: string; pinyin: string;
   state: VocabularyIntakeCardState; senses: VocabularyIntakeSense[];
   selection: VocabularyIntakeSelection; defaultsEstablished: boolean;
+  addedSenseId?: string;
   proposedSense: {label: string; notes: string[]} | null;
   versions: {learner: number | null; catalog: number; selection: number};
-  actions: Array<'add' | 'undo' | 'change_senses'>;
+  actions: Array<'add' | 'add_sense' | 'undo' | 'change_senses'>;
   presets: Array<{label: string; selection: VocabularyIntakeSelection}>;
   attention: string | null;
 };
@@ -33,7 +34,8 @@ export type VocabularyIntakeStreamEvent =
   | {type: 'error'; message: string; retryWithNewId?: boolean};
 export type VocabularyIntakeCommand =
   | {type: 'add' | 'set_senses'; selection: VocabularyIntakeSelection}
-  | {type: 'undo'};
+  | {type: 'undo'}
+  | {type: 'add_sense'};
 export type VocabularyIntakeCommandRequest = {
   clientActionId: string; expectedVersion: number;
   versions: VocabularyIntakeCard['versions']; command: VocabularyIntakeCommand;

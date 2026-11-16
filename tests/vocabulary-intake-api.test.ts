@@ -34,12 +34,13 @@ before(async () => {
       return { invocationId:null,responseId:null,usage:null,message:{role:'assistant',content:'I’ll undo that add.',
         toolCalls:[{id:'revision',name:'complete_turn',arguments:JSON.stringify({explanation:'The add can be undone.',action:{kind:'revise_card',revision:{cardId,action:'undo',selection:null,proposedSense:null,context:null}}})}] } };
     }
+    const propose = request.messages.filter(message=>message.role==='user').at(-1)?.content === '纠结 tangled';
     const lookedUp = request.messages.some(message => message.role === 'tool');
     if (lookedUp) await emit('纠结 means feeling torn.');
     return { invocationId:null,responseId:null,usage:null,message:{role:'assistant',content:lookedUp ? '纠结 means feeling torn.' : '',
       toolCalls:[lookedUp
-        ? { id:'card',name:'complete_turn',arguments:JSON.stringify({explanation:'纠结 means feeling torn.',action:{kind:'present_card',card:{ wordId:'torn',decision:'bare',requestedLexeme:'纠结',
-          selection:{senseIds:['torn-1'],targetSenseId:null,includeProposedSense:false},context:null,proposedSense:null }}}) }
+        ? { id:'card',name:'complete_turn',arguments:JSON.stringify({explanation:'纠结 means feeling torn.',action:{kind:'present_card',card:{ wordId:'torn',decision:propose?'proposal':'bare',requestedLexeme:'纠结',
+          selection:{senseIds:['torn-1'],targetSenseId:null,includeProposedSense:propose},context:null,proposedSense:propose?{label:'Entangled or knotted together',notes:['两股绳子纠结在一起。']}:null }}}) }
         : { id:'lookup',name:'lookup_word',arguments:JSON.stringify({hanzi:'纠结'}) }],
     } };
   } };
@@ -114,4 +115,25 @@ test('a confirmed terminal failure allows a fresh retry while a lost completion 
   assert.equal(providerCalls,count+1,'failed identity must not rerun provider');
   assert.match(await send('new-failure-id'), /"retryWithNewId":true/);
   assert.equal(providerCalls,count+2,'new attempt can execute provider');
+});
+
+test('HTTP exposes and confirms an existing-word sense proposal with replay and ownership checks',async()=>{
+  const headers={'Content-Type':'application/json','X-Test-Subject':'user_sense_owner'};
+  async function turn(clientTurnId:string,text:string) {
+    const payload=await (await fetch(`${endpoint}/turns`,{method:'POST',headers,body:JSON.stringify({clientTurnId,text})})).text();
+    const events=payload.split('\n\n').filter(Boolean).map(line=>JSON.parse(line.slice(6)) as VocabularyIntakeStreamEvent);
+    const completion=events.find(event=>event.type==='completion');assert.ok(completion?.type==='completion' && completion.cards[0]);return completion.cards[0];
+  }
+  await turn('add-original','纠结');
+  const proposed=await turn('propose-sense','纠结 tangled');
+  assert.equal(proposed.state,'sense-proposed');assert.deepEqual(proposed.actions,['add_sense']);
+  assert.equal((await (await fetch(`${endpoint}/attention`,{headers})).json()).count>=1,true);
+  const command={clientActionId:'add-sense',expectedVersion:proposed.version,versions:proposed.versions,command:{type:'add_sense'}};
+  const post={method:'POST',headers,body:JSON.stringify(command)};
+  const path=`${endpoint}/cards/${proposed.id}/commands`;
+  assert.equal((await fetch(path,{...post,headers:{...headers,'X-Test-Subject':'user_bob'}})).status,404);
+  assert.equal((await fetch(path,{...post,body:JSON.stringify({...command,command:{type:'invented'}})})).status,400);
+  const response=await fetch(path,post);assert.equal(response.status,200);const added=await response.json();
+  assert.equal(added.proposedSense,null);assert.equal(added.selection.senseIds.length,2);
+  assert.deepEqual(await (await fetch(path,post)).json(),added);
 });

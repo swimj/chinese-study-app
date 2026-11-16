@@ -166,7 +166,7 @@
   color: var(--success);
 }
 
-.intake-card-state[data-state="proposed"], .intake-card-state[data-state="preparing"] {
+.intake-card-state[data-state="sense-proposed"], .intake-card-state[data-state="proposed"], .intake-card-state[data-state="preparing"] {
   color: var(--warning);
 }
 
@@ -404,4 +404,14 @@
 
 .intake-keyboard-help p {
   margin-block-start: 0.35rem;
+}
+
+.intake-sense-proposal {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.intake-sense-proposal summary {
+  width: fit-content;
+  cursor: pointer;
 }
