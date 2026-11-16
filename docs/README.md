@@ -31,6 +31,9 @@ owns modes, selection, session behavior and content-review promises. The
 [product routes](../SPECS/README.md) distinguish current contracts from earlier
 runtime designs retained for interpretation and rationale.
 
+[Add-word chat](../SPECS/vocabulary-learning.md#add-word-chat) defines when
+intake adds a word, asks for confirmation, or changes a learner’s selected senses.
+
 [What’s New](whats-new.md#content-and-publication) defines the blog’s publication
 and unread-update contract; its persistence and operator sections explain how
 the application realizes those promises.
@@ -44,7 +47,6 @@ particular components or algorithms.
   authority, retained evidence, atomic completion, content identity and application.
 - [Stability frontier](../STABILITY_FRONTIER.md): cross-cutting constraints and
   unsettled decisions; it summarizes boundaries rather than replacing their owners.
-- [Chat runtime](chat-runtime.md): private conversation storage, streaming tool calls, and card-command integration.
 - [Service boundary](private-beta-service-boundary.md): identity, ownership,
   persistence and operational trust. Its historical storage inventory is explicitly
   scoped; other mixed responsibilities remain in the gap inventory below.
@@ -56,6 +58,9 @@ linking to the intended guarantees they realize and any known gaps.
 
 **Existing starting points:**
 
+- [Learner chat runtime](chat-runtime.md): durable conversations, tool execution and
+  card commands; its [vocabulary intake adapter](chat-runtime.md#vocabulary-intake)
+  connects those primitives to word lookup, enrollment and sense selection.
 - [Vocabulary runtime](vocabulary-learning.md): persistence, selection, session
   execution, background preparation and compatibility.
 - [Vocabulary study UI](implementation/vocabulary-ui.md): controller/view integration,
