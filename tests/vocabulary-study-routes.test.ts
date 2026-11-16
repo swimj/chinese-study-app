@@ -1,12 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { parseVocabularyStudyCommand,parseVocabularyPreviewSeed } from '../server/vocabulary/study-routes.ts';
-
-test('preview sampling seed is optional and bounded to a UUID, never a session identifier override',()=>{
-  assert.equal(parseVocabularyPreviewSeed(undefined),undefined);
-  const seed='00000000-0000-4000-8000-000000000001';assert.equal(parseVocabularyPreviewSeed(seed),seed);
-  for(const value of [null,12,'','x'.repeat(500),`${seed}extra`])assert.throws(()=>parseVocabularyPreviewSeed(value),/preview seed/);
-});
+import { parseVocabularyStudyCommand } from '../server/vocabulary/study-routes.ts';
 
 test('response parser retains explicit contrast choice identity and recognition assessment',()=>{
   assert.deepEqual(parseVocabularyStudyCommand({type:'response',response:'a',selectedWordId:'word-a'}),

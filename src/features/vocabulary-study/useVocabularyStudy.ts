@@ -198,7 +198,7 @@ export function useVocabularyStudy(options: VocabularyStudyOptions = {}) {
     keepSummaryOpenRef.current = false; setKeepSummaryOpen(false);
     savedNote.current = null; setNote(''); setNoteStatus('idle');
   }
-  async function begin(previewSeed?: string) {
+  async function begin() {
     await queue.current!.flush();
     const pending = await fetchCurrentVocabularyCompletion();
     if (pending?.session.completion) {
@@ -206,9 +206,9 @@ export function useVocabularyStudy(options: VocabularyStudyOptions = {}) {
       const result = await closeVocabularyCompletion(pending.session.sessionId, pending.session.completion.completionId);
       if (result.status !== 'closed') throw new Error('Finish saving your previous session first.');
     }
-    receive(await startVocabularySession(previewSeed));
+    receive(await startVocabularySession());
   }
-  const start = (previewSeed?:string) => exclusive(() => begin(previewSeed));
+  const start = () => exclusive(begin);
   async function commitHeldProduction() {
     const pending = pendingCorrectRef.current;
     const encounter = studyRef.current?.currentEncounter;

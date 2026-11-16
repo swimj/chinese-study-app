@@ -50,13 +50,12 @@ background jobs or override either control.
 
 Mandarin study uses the authenticated `/api/vocabulary` family. Commands are
 validated in `server/vocabulary/study-routes.ts`; the server derives the learner.
-Preview and Start use the supplied time zone for the 4 a.m. local new-word
+Start uses the supplied time zone for the 4 a.m. local new-word
 quota boundary. Older clients omitting it retain UTC calendar-day behavior.
 
 | Method/path | Result or effect |
 | --- | --- |
-| `GET /session-preview` | Prospective ready item count, preparation status, `timed` paradigm flag, and opaque sampling seed; accepts the browser IANA `timeZone` query parameter and queues bounded missing teaching preparation |
-| `POST /sessions` | Compose ready work and return its first encounter; accepts the browser IANA `timeZone`; optional `previewSeed` reuses the preview's pure-cue sampling draw |
+| `POST /sessions` | Compose ready work and return its first encounter; accepts the browser IANA `timeZone`; `400` names why nothing is ready (introductions or replacement content still preparing, or no ready material) |
 | `GET /sessions/:id` | Current owned projection and exact material |
 | `POST /sessions/:id/next` | Select ready material; stable `clientActionId` retries; optional `activeDurationMs` drives a timed session's recorded budget wrap-up |
 | `POST /sessions/:id/commands` | Response, exercise reaction (v1 command `feedback`), skip, coverage, more, mode, Undo, resume, finish, timed `studyMore` (409 unless the budget ended a completed session) |

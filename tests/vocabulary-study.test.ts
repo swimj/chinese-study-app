@@ -18,12 +18,12 @@ import { selectVocabularyReviewSkills } from '../server/vocabulary/review-select
 import { createVocabularyContent,replaceVocabularyContent,updateVocabularyContent,getVocabularyContent,createVocabularySense,establishVocabularySenseCatalog,getVocabularySenseCatalog,getVocabularySenses,updateVocabularySense } from '../server/db/vocabulary-content.ts';
 import { appendVocabularySessionActions,createVocabularySession as createStoredSession,stageVocabularySessionCompletion,cancelVocabularySessionCompletion,closeVocabularySessionCompletion } from '../server/db/vocabulary-sessions.ts';
 import { changeVocabularyMode,addVocabularyWord,dismissVocabularyWord,getVocabularyLearnerWord,getVocabularyWordSchedule,enrollVocabularyDietWord } from '../server/db/vocabulary-learners.ts';
-import { startVocabularyStudy as startRuntime,composeVocabularySessionPayload,previewVocabularyStudy as previewRuntime,getVocabularyStudy,nextVocabularyExercise,commandVocabularyStudy,saveVocabularySessionNote } from '../server/vocabulary/study.ts';
+import { startVocabularyStudy as startRuntime,composeVocabularySessionPayload,getVocabularyStudy,nextVocabularyExercise,commandVocabularyStudy,saveVocabularySessionNote } from '../server/vocabulary/study.ts';
+import { composeVocabularyStudy } from '../server/vocabulary/composition.ts';
 import type { VocabularyStudy } from '../src/domain/vocabulary-study-api.ts';
 import type { VocabularyContent } from '../src/domain/vocabulary-content.ts';
 // These player fixtures isolate composition from shared-provider reserve storage.
 const startVocabularyStudy=(options:Parameters<typeof startRuntime>[0]={})=>startRuntime({...options});
-const previewVocabularyStudy=(options:Parameters<typeof previewRuntime>[0]={})=>previewRuntime({...options});
 let db:DatabaseSync;
 const owner=<T>(fn:()=>T)=>runWithLearnerId('alice',fn);
 const actor={kind:'operator' as const,id:'test'};
@@ -90,36 +90,17 @@ beforeEach(()=>{
 });
 afterEach(()=>db.close());
 
-test('Home preview counts the same final admission as Start without session, enrollment, baseline or schedule writes',()=>owner(()=>{
-  addVocabularyWord('new');
-  exercise('preview-unadopted','b','general',true);
-  const snapshot=()=>JSON.stringify((db.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all() as {name:string}[])
-    .map(({name})=>({name,rows:db.prepare(`SELECT * FROM "${name.replaceAll('"','""')}"`).all()})));
-  const before=snapshot();const changes=db.prepare('SELECT total_changes() AS n').get()!.n;
-  const preview=previewVocabularyStudy({});
-  assert.equal(snapshot(),before);assert.equal(db.prepare('SELECT total_changes() AS n').get()!.n,changes);
-  const started=startVocabularyStudy({previewSeed:preview.previewSeed});
-  const count=started.session.context.words.length+(started.session.context.reviewOrder??[]).filter((entry)=>entry.kind==='pure_cue').length;
-  assert.equal(preview.itemCount,count);assert.ok(count>0);
-  assert.notEqual(started.session.sessionId,preview.previewSeed);
-}));
-
-test('Home preview refreshes zero readiness and current settings, retaining bounded preparation demand',()=>owner(()=>{
+test('an empty Start names pending introductions only while the daily quota still wants them',()=>owner(()=>{
   addVocabularyWord('new');
   db.prepare("UPDATE learner_word_schedules SET next_eligible_at='2999-01-01T00:00:00.000Z' WHERE word_id!='new'").run();
   db.prepare("UPDATE content_items SET availability='retired' WHERE content_id='intro-new'").run();
-  const requested:string[]=[];
-  const empty=previewVocabularyStudy({});
-  assert.equal(empty.itemCount,0);assert.equal(empty.preparationPending,true);assert.deepEqual(requested,[]);
-  const beforeFailure=db.prepare('SELECT total_changes() AS n').get()!.n;
-  assert.doesNotThrow(()=>previewVocabularyStudy({}));
-  assert.equal(db.prepare('SELECT total_changes() AS n').get()!.n,beforeFailure);
+  assert.throws(()=>startVocabularyStudy(),/introductions are being prepared/);
   db.prepare("INSERT OR REPLACE INTO learner_settings VALUES('alice','daily_new_word_limit','0','2026-10-24')").run();
-  const limited=previewVocabularyStudy({});
-  assert.equal(limited.itemCount,0);assert.equal(limited.preparationPending,false);
+  assert.throws(()=>startVocabularyStudy(),/No ready study material is available/);
+  assert.equal(db.prepare('SELECT count(*) AS n FROM vocabulary_sessions').get()!.n,0);
 }));
 
-test('preview does not count teaching whose generated recognition baseline is deactivated',()=>owner(()=>{
+test('Start does not admit teaching whose generated recognition baseline is deactivated',()=>owner(()=>{
   addVocabularyWord('new');
   db.prepare("UPDATE learner_word_schedules SET next_eligible_at='2999-01-01T00:00:00.000Z' WHERE word_id!='new'").run();
   const id='vocabulary:baseline:v1:shared:recognition:teaching:new';
@@ -127,39 +108,7 @@ test('preview does not count teaching whose generated recognition baseline is de
     accessScope:'shared',availability:'active',originKind:'human',assessment:{responseMode:'self_assessment'},
     words:[{wordId:'new',relation:'target'}],answers:[{wordId:'new',acceptedForms:['新']}]},actor);
   db.prepare("INSERT INTO learner_content_deactivations VALUES('alice',?,'2026-10-24T00:00:00.000Z')").run(id);
-  const preview=previewVocabularyStudy({});
-  assert.equal(preview.itemCount,0);
-  assert.throws(()=>startVocabularyStudy({previewSeed:preview.previewSeed}),/introductions are being prepared/);
-}));
-
-test('preview and Start reuse the same fractional pure-cue draw without adopting or updating schedules during preview',()=>owner(()=>{
-  // Main's daily maintenance gate is stable across session seeds. Choose an
-  // actually qualifying identity before exercising only the fractional ceiling.
-  let strongId='';const day=new Date().toISOString();
-  for(let index=0;index<10000;index++) {
-    const id=`preview-strong-${index}`;
-    if(selectPureCuesForSession({learnerId:'alice',ordinaryReviewCount:10,now:day,random:()=>0,cues:[{
-      id,kind:'pure',stimulus:'',axisNote:'',teachingNote:'',acceptedWordIds:['b'],active:true,intervalHours:24,easeFactor:2.5,
-      lastStudiedAt:'2020-01-01T00:00:00.000Z',nextDueAt:'2020-01-01T00:00:00.000Z',strongSince:'2020-01-01T00:00:00.000Z',strongSuccesses:1,
-    }]}).strong.length) {strongId=id;break;}
-  }
-  assert.ok(strongId,'fixture requires a qualifying maintenance candidate');
-  exercise('preview-fragile','b','general',true);exercise(strongId,'b','general',true);
-  adoptVocabularyPureCues();
-  db.prepare("UPDATE learner_pure_cue_schedules SET next_eligible_at='2020-01-01T00:00:00.000Z',last_practised_at='2020-01-01T00:00:00.000Z'").run();
-  db.prepare("UPDATE learner_pure_cue_schedules SET scheduler_state_json=json_set(scheduler_state_json,'$.strongSince','2020-01-01T00:00:00.000Z','$.strongSuccesses',1) WHERE content_id=?").run(strongId);
-  const before=JSON.stringify(db.prepare('SELECT * FROM learner_pure_cue_schedules ORDER BY content_id').all());
-  const counts=new Set<number>();let chosen:ReturnType<typeof previewVocabularyStudy>|undefined;
-  for(let index=0;index<50;index++) {
-    const seed=`00000000-0000-4000-8000-${String(index).padStart(12,'0')}`;
-    const preview=previewVocabularyStudy({previewSeed:seed});counts.add(preview.itemCount);
-    if(chosen===undefined||preview.itemCount>chosen.itemCount)chosen=preview;
-  }
-  assert.equal(counts.size,2);assert.ok(chosen);
-  assert.equal(JSON.stringify(db.prepare('SELECT * FROM learner_pure_cue_schedules ORDER BY content_id').all()),before);
-  const started=startVocabularyStudy({previewSeed:chosen.previewSeed});
-  assert.equal(chosen.itemCount,started.session.context.words.length+(started.session.context.reviewOrder??[]).filter((entry)=>entry.kind==='pure_cue').length);
-  assert.ok(started.session.context.reviewOrder?.some((entry)=>entry.id===strongId));
+  assert.throws(()=>startVocabularyStudy(),/introductions are being prepared/);
 }));
 
 test('Start prioritizes a due strong-cue recheck while a word still needs to be due for review',()=>owner(()=>{
@@ -174,13 +123,10 @@ test('Start prioritizes a due strong-cue recheck while a word still needs to be 
     UPDATE learner_pure_cue_schedules SET scheduler_state_json=json_set(scheduler_state_json,
       '$.strongSince','2020-01-01T00:00:00.000Z','$.strongSuccesses',3,'$.postCompensationRecheckAt','2020-01-02T00:00:00.000Z'),
       last_practised_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE content_id='recheck-strong';`);
-  const preview=previewVocabularyStudy({previewSeed:'required-rechecks'});
-  const started=startVocabularyStudy({previewSeed:preview.previewSeed});
+  const started=startVocabularyStudy();
   assert.deepEqual(started.session.context.reviewOrder?.[0],{kind:'pure_cue',id:'recheck-strong'});
   assert.ok(started.session.context.reviewOrder?.some(entry=>entry.id==='routine-fragile'));
   assert.equal(started.session.context.words.some(word=>word.wordId==='a'),false);
-  assert.equal(preview.itemCount,started.session.context.words.length+
-    (started.session.context.reviewOrder??[]).filter(entry=>entry.kind==='pure_cue').length);
 }));
 
 function focusedA(mode:'solidify'|'practice'='practice'):VocabularyStudy {
@@ -1099,7 +1045,7 @@ test('recognition and contrast do not displace a Practice production fallback',(
   assert.equal(nextVocabularyExercise(session.sessionId,'next').currentEncounter?.snapshot.contentId,'vocabulary:baseline:v1:shared:production:general:a');
 }));
 
-test('pure coverage excludes dictionary production from preview and Start even while the cue is not due',()=>owner(()=>{
+test('pure coverage excludes dictionary production from Start even while the cue is not due',()=>owner(()=>{
   db.prepare("UPDATE learner_words SET dismissed_at='2026-10-01' WHERE word_id!='b'").run();
   // First materialize the fallback, then add coverage: existing baseline content
   // must not become an apparent authored targeted cue.
@@ -1109,7 +1055,6 @@ test('pure coverage excludes dictionary production from preview and Start even w
   adoptVocabularyPureCues();
   db.prepare("UPDATE learner_pure_cue_schedules SET next_eligible_at='2999-01-01T00:00:00.000Z'").run();
   const schedules=db.prepare('SELECT * FROM learner_word_schedules ORDER BY learner_id,word_id').all();
-  assert.equal(previewVocabularyStudy().itemCount,0);
   assert.throws(()=>startVocabularyStudy(),/No ready study material is available/);
   // The earlier session retains its admitted fallback; proxy coverage applies at the next Start.
   const continued=nextVocabularyExercise(initial.session.sessionId,'retry-after-proxy',{wordId:'b'});
@@ -1135,7 +1080,7 @@ test('pure coverage preserves independently due recognition and usable private p
   assert.equal(view.currentEncounter?.snapshot.contentId,'private-targeted-b');
   assert.equal(view.session.context.words[0].selectedSkill,'production');
   db.prepare("INSERT INTO learner_content_deactivations VALUES('alice','private-targeted-b','2026-10-27T00:00:00.000Z')").run();
-  assert.equal(previewVocabularyStudy().itemCount,0);
+  assert.throws(()=>startVocabularyStudy(),/No ready study material is available/);
 }));
 
 
@@ -1147,7 +1092,7 @@ for(const strategy of ['update','replace'] as const)test(`explicit ${strategy} o
   assert.equal(baseline.kind,'exercise');
   exercise('proxy-pure','b','general',true);
   const enriched=updateVocabularyContent(id,baseline.version,{...baseline,body:{...(baseline.body as object),explanation:'Additional usage note'}},actor);
-  assert.equal(previewVocabularyStudy().itemCount,0,'explanation alone does not create a targeted prompt');
+  assert.throws(()=>startVocabularyStudy(),/No ready study material is available/,'explanation alone does not create a targeted prompt');
   const draft={...enriched,body:{...(enriched.body as object),prompt:'Name the second heavenly stem.'}};
   const authored=strategy==='update'?updateVocabularyContent(id,enriched.version,draft,actor)
     :replaceVocabularyContent(id,enriched.version,{...draft,contentId:'authored-replacement'},actor).replacement;
@@ -1220,12 +1165,11 @@ test('measure retained-session hot-path scaling', {skip:process.env.RUN_SESSION_
 }));
 
 
-test('session preview and start reject invalid time zones', () => owner(() => {
+test('Start rejects an invalid time zone', () => owner(() => {
   const routes = new Map<string, (req: Request, res: Response) => void>();
   const register = (method: string) => (path: string, handler: (req: Request, res: Response) => void) => routes.set(`${method} ${path}`, handler);
   registerVocabularyStudyRoutes({get: register('GET'), post: register('POST')} as unknown as Express);
   for (const [route, req] of [
-    ['GET /api/vocabulary/session-preview', {query:{timeZone:'Invalid/Zone'}, body:{}}],
     ['POST /api/vocabulary/sessions', {query:{}, body:{timeZone:'Invalid/Zone'}}],
   ] as const) {
     let code = 200;
@@ -1235,7 +1179,7 @@ test('session preview and start reject invalid time zones', () => owner(() => {
   }
 }));
 
-test('Preview, Start and live HTTP actions never wake background workers',async()=>owner(async()=>{
+test('Start and live HTTP actions never wake background workers',async()=>owner(async()=>{
   db.prepare("INSERT OR REPLACE INTO learner_settings VALUES('alice','daily_new_word_limit','0','2026-10-27')").run();
   const routes=new Map<string,(req:Request,res:Response)=>void>();
   const register=(method:string)=>(path:string,handler:(req:Request,res:Response)=>void)=>{routes.set(`${method} ${path}`,handler);};
@@ -1270,9 +1214,6 @@ test('empty inventories block fresh admission while stashes and retained word se
   const retained=startVocabularyStudy();
   const stashed=getVocabularyLearnerWord('new');
   for(const wordId of ['a','b','new'])makeInventoryEmpty(wordId);
-  const requested:string[]=[];
-  const preview=previewVocabularyStudy({});
-  assert.equal(preview.itemCount,0);assert.equal(preview.preparationPending,false);assert.deepEqual(requested,[]);
   assert.throws(()=>startVocabularyStudy(),/No ready study material/);
   assert.deepEqual(getVocabularyLearnerWord('new'),stashed);
   assert.deepEqual(getVocabularyStudy(retained.session.sessionId).session.context.words,retained.session.context.words);
@@ -1333,9 +1274,6 @@ test('failed reconciliation blocks fresh study while retained sessions and learn
   const retained=startVocabularyStudy();
   const learner=db.prepare('SELECT * FROM learner_words ORDER BY word_id').all();
   for(const wordId of ['a','b','new'])blockReconciledWord(wordId);
-  const preview=previewVocabularyStudy();
-  assert.equal(preview.itemCount,0);
-  assert.equal(preview.preparationPending,true);
   assert.throws(()=>startVocabularyStudy(),/Replacement study content/);
   assert.deepEqual(getVocabularyStudy(retained.session.sessionId).session.context.words,retained.session.context.words);
   assert.ok(nextVocabularyExercise(retained.session.sessionId,'retained-during-reconciliation').currentEncounter);
@@ -1360,13 +1298,12 @@ test('ordinary review trusts SQL flags and Solidify ignores review skill flags',
   const prepare=db.prepare.bind(db);const reads:string[]=[];
   db.prepare=((sql:string)=>{if(/^SELECT (enabled|relevance_state) FROM learner_owned_word_skill_/.test(sql))reads.push(sql);return prepare(sql);}) as typeof db.prepare;
   try {
-    const preview=previewVocabularyStudy();
-    assert.equal(preview.itemCount,1);
+    assert.equal(composeVocabularyStudy({teachingReady:()=>false}).dueWordIds.length,1);
     assert.equal(reads.length,0); // Baseline: two prepared/executed lookups per review objective.
     db.prepare("UPDATE learner_words SET mode='solidify' WHERE word_id='b'").run();
     db.prepare("INSERT INTO learner_owned_word_skill_state VALUES('alice','b','recognition',24,2.5,0,NULL,NULL),('alice','b','production',24,2.5,0,NULL,NULL)").run();
     reads.length=0;
-    assert.equal(previewVocabularyStudy().itemCount,1);
+    assert.equal(composeVocabularyStudy({teachingReady:()=>false}).dueWordIds.length,1);
     assert.equal(reads.length,0);
   } finally {db.prepare=prepare;}
 }));
@@ -1436,7 +1373,7 @@ test('reserve admission resolves newest usable introduction and freezes its cohe
 test('a stale ready hint with an unresolved partial sense inventory is skipped and diagnosed',()=>owner(()=>{
   addVocabularyWord('new');
   db.prepare("UPDATE vocabulary_word_catalogs SET senses_established_at=NULL WHERE word_id='new'").run();
-  assert.doesNotThrow(()=>previewVocabularyStudy());
+  assert.doesNotThrow(()=>startVocabularyStudy());
   const findings=db.prepare("SELECT entity_id FROM backend_events WHERE name='vocabulary.reserve.stale_hint'").all();
   assert.ok(findings.some(row=>row.entity_id==='new'));
 }));
@@ -1505,7 +1442,6 @@ test('timed Start freezes the paradigm and records the day; classic sessions kee
   assert.equal(view.controls.canFinishForNow,false);
   const row=db.prepare('SELECT day_key,budget_ms,budget_source,day_active_ms_at_start FROM vocabulary_timed_session_records WHERE session_id=?').get(id);
   assert.deepEqual({...row},{day_key:today(),budget_ms:20*60_000,budget_source:'default',day_active_ms_at_start:0});
-  assert.equal(previewVocabularyStudy({}).timed,true);
 }));
 
 test('timed selection keeps not-yet-started new words shut while runway work is due, then opens them',()=>owner(()=>{

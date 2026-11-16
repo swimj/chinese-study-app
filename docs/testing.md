@@ -96,7 +96,7 @@ point the earlier server at a current or valued database.
 Capture matching viewport screenshots for normal Home, expanded Connections,
 collapsed Connections, and Session Settings, plus each changed study interaction.
 Match updates visibility and fixture content before comparing layout. Check the
-Start card's ready count in both normal and compact states, loading/empty states,
+Start card in both normal and compact states, an empty Start's error,
 settings controls, keyboard order, and scrolling at narrow/enlarged sizes.
 Compare the screenshots directly: a test/build pass or a newly written snapshot
 is not evidence that an omitted control was intentional. Record intended model

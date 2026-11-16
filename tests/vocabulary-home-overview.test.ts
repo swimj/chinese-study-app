@@ -13,7 +13,7 @@ const statistics: VocabularyStatistics = { days: [{ dayKey: '2026-10-24', sessio
 function render(options: Partial<Parameters<typeof VocabularyHomeOverview>[0]> = {}) {
   return renderToStaticMarkup(createElement(VocabularyHomeOverview, { compact: false, busy: false, settings: false,
     saving: false, guideToSettings: false, statistics, onStart: () => {}, onToggleSettings: () => {},
-    preview: {status:'ready',preview:{previewSeed:'00000000-0000-4000-8000-000000000001',itemCount:25,preparationPending:false,timed:false},error:null}, ...options }));
+    timed: false, ...options }));
 }
 
 test('expanded or waiting Connections uses the established compact Start control without Home metrics', () => {
@@ -22,21 +22,17 @@ test('expanded or waiting Connections uses the established compact Start control
   assert.match(html, /class="session-start-card"/);
   assert.match(html, /Start session/);
   assert.match(html, /aria-label="Session settings"/);
-  assert.match(html, /25 study items ready/);
+  assert.doesNotMatch(html, /session-start-card-helper|study items ready/);
   assert.doesNotMatch(html, /Today|Study details|Work on your words/);
   assert.doesNotMatch(html.match(/<button[^>]*class="session-start-card"[^>]*>/)?.[0] ?? '', /disabled/);
 });
 
-test('Home distinguishes count loading, empty ready work, and unavailable preview in either layout',()=>{
+test('Start is available immediately without a readiness check, and only busy or open settings hold it',()=>{
   for(const compact of [false,true]) {
-    const loading=render({compact,preview:{status:'loading',preview:null,error:null}});
-    assert.match(loading,/Preparing session/);
-    assert.match(loading.match(/<button[^>]*class="session-start-card"[^>]*>/)?.[0]??'',/disabled/);
-    const empty=render({compact,preview:{status:'ready',preview:{previewSeed:'seed',itemCount:0,preparationPending:true,timed:false},error:null}});
-    assert.match(empty,/Check again/);assert.match(empty,/0 study items ready/);assert.match(empty,/preparing introductions/);
-    const failed=render({compact,preview:{status:'error',preview:null,error:'Offline'}});
-    assert.match(failed,/Start session/);assert.match(failed,/Ready count unavailable/);
-    assert.doesNotMatch(failed.match(/<button[^>]*class="session-start-card"[^>]*>/)?.[0]??'',/disabled/);
+    const html=render({compact});
+    assert.match(html,/Start session/);
+    assert.doesNotMatch(html.match(/<button[^>]*class="session-start-card"[^>]*>/)?.[0]??'',/disabled/);
+    assert.doesNotMatch(html,/Check again|Nothing ready|study items ready/);
   }
 });
 
@@ -61,23 +57,13 @@ test('compact Start retains preparation and settings guards', () => {
   assert.match(settingsButton, /aria-expanded="true"/);
 });
 
-test('timed Home starts the day without presenting the due ledger, still naming an empty start',()=>{
-  const ready=render({preview:{status:'ready',preview:{previewSeed:'seed',itemCount:25,preparationPending:false,timed:true},error:null}});
-  assert.match(ready,/Start session/);assert.doesNotMatch(ready,/session-start-card-helper/);assert.doesNotMatch(ready,/study items ready/);
-  const empty=render({preview:{status:'ready',preview:{previewSeed:'seed',itemCount:0,preparationPending:true,timed:true},error:null}});
-  assert.match(empty,/Check again/);assert.match(empty,/Nothing ready yet · preparing introductions/);assert.doesNotMatch(empty,/0 study items/);
-});
-
-const timedReady={status:'ready' as const,preview:{previewSeed:'seed',itemCount:25,preparationPending:false,timed:true},error:null};
 test('a studied day turns timed Start into studying a little more, and only in the timed paradigm',()=>{
   const studied={...statistics,studyDays:{today:'2026-10-24',studied:['2026-10-22','2026-10-24']}};
-  assert.match(render({preview:timedReady}),/Start session/);
-  assert.match(render({preview:timedReady,statistics:studied}),/Study a little more/);
-  assert.doesNotMatch(render({preview:timedReady,statistics:studied}),/Start session/);
+  assert.match(render({timed:true}),/Start session/);
+  assert.match(render({timed:true,statistics:studied}),/Study a little more/);
+  assert.doesNotMatch(render({timed:true,statistics:studied}),/Start session/);
   assert.match(render({statistics:studied}),/Start session/);
-  const empty=render({statistics:studied,preview:{...timedReady,preview:{...timedReady.preview,itemCount:0}}});
-  assert.match(empty,/Check again/);
-  assert.match(render({statistics:studied,preview:{status:'loading',preview:null,error:null}}),/Preparing session/);
+  assert.match(render({timed:true,statistics:studied,busy:true}),/Preparing session/);
 });
 
 test('the week runs Monday to Sunday with studied, open, and upcoming days and no counts',()=>{

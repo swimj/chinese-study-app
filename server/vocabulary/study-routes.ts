@@ -1,6 +1,6 @@
 import { getVocabularyWordsCollection } from '../db/vocabulary-words.ts';
 import type { Express, Request, Response } from 'express';
-import { startVocabularyStudy, previewVocabularyStudy, getVocabularyStudy, nextVocabularyExercise, commandVocabularyStudy, saveVocabularySessionNote } from './study.ts';
+import { startVocabularyStudy, getVocabularyStudy, nextVocabularyExercise, commandVocabularyStudy, saveVocabularySessionNote } from './study.ts';
 import { VocabularyTimedSessionInputError } from '../db/vocabulary-timed-sessions.ts';
 import { stageVocabularySessionCompletion, getVocabularySessionCompletion, cancelVocabularySessionCompletion,
   closeVocabularySessionCompletion, getCurrentVocabularyPendingCompletionSessionId, VocabularySessionInputError, VocabularySessionConflictError,
@@ -30,13 +30,6 @@ export function parseVocabularyTimeZone(value: unknown): string | undefined {
   if (typeof value !== 'string' || !value || value.length > 100) throw new VocabularySessionInputError('Invalid time zone');
   try { new Intl.DateTimeFormat('en-US', {timeZone: value}); }
   catch { throw new VocabularySessionInputError('Invalid time zone'); }
-  return value;
-}
-export function parseVocabularyPreviewSeed(value:unknown):string|undefined {
-  if(value===undefined)return undefined;
-  if(typeof value!=='string'||value.length!==36||!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) {
-    throw new VocabularySessionInputError('Invalid session preview seed');
-  }
   return value;
 }
 export function parseVocabularyStudyCommand(value: unknown): VocabularyStudyCommand {
@@ -74,8 +67,7 @@ export function registerVocabularyStudyRoutes(app: Express, wake: () => void = (
       res.status(status).json({error:status===500?'This study action could not be saved. Please retry.':(error as Error).message});
     }
   };
-  app.get('/api/vocabulary/session-preview',handle(req=>previewVocabularyStudy({timeZone:parseVocabularyTimeZone(req.query.timeZone)})));
-  app.post('/api/vocabulary/sessions',handle(req=>startVocabularyStudy({previewSeed:parseVocabularyPreviewSeed(record(req.body??{}).previewSeed),timeZone:parseVocabularyTimeZone(record(req.body??{}).timeZone)})));
+  app.post('/api/vocabulary/sessions',handle(req=>startVocabularyStudy({timeZone:parseVocabularyTimeZone(record(req.body??{}).timeZone)})));
   app.get('/api/vocabulary/sessions/:id',handle(req=>getVocabularyStudy(req.params.id)));
   app.post('/api/vocabulary/sessions/:id/next',handle(req=>{
     const b=record(req.body); if(b.another!==undefined&&typeof b.another!=='boolean') throw new VocabularySessionInputError('Invalid another flag');
