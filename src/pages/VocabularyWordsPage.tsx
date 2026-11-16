@@ -5,11 +5,14 @@ import { fetchVocabularyWordCollection, setVocabularyWordMode, refreshVocabulary
 import type { VocabularyWordMode } from '../domain/vocabulary-session';
 import { VOCABULARY_WORD_MODES, VOCABULARY_WORD_STAGES, type VocabularyCollectionWord } from '../domain/vocabulary-words';
 
+const preparationLabels = { preparing: 'Preparing', ready: 'Ready', 'needs-attention': 'Needs attention' } as const;
+
 export function VocabularyWordsPage() {
   const controller=useWordBrowserController<VocabularyWordMode,VocabularyCollectionWord>(true,fetchVocabularyWordCollection,VOCABULARY_WORD_MODES);
   const [error,setError]=useState<string|null>(null),[busy,setBusy]=useState(false);
   async function act(work:()=>Promise<unknown>){setBusy(true);setError(null);try{await work();controller.reload();}catch(e){setError(e instanceof Error?e.message:'Could not update this word.');}finally{setBusy(false);}}
   return <WordBrowserPage {...controller} error={error??controller.error} stages={VOCABULARY_WORD_STAGES}
+    renderWordStatus={entry => entry.preparationStatus ? <span>{preparationLabels[entry.preparationStatus]}</span> : null}
     renderWordActions={entry=>entry.stateVersion===null
       ? <button type="button" disabled={busy} onClick={()=>void act(()=>enrollVocabularyWord(entry.word.id))}>Add to study</button>
       : <div className="vocabulary-word-actions">

@@ -1,3 +1,10 @@
+import type {
+  VocabularyIntakeCard,
+  VocabularyIntakeCommandRequest,
+  VocabularyIntakeHistory,
+  VocabularyIntakeStreamEvent,
+} from '../domain/vocabulary-intake';
+import { readVocabularyIntakeStream } from './vocabulary-intake-stream';
 import type { ServiceBannerRequest } from '../domain/service-banner';
 import type { SenseContentReconciliationWorkspace, SenseContentReconciliationSave, SenseContentReconciliationWord } from '../domain/sense-content-reconciliation';
 import type { SessionCompletion, StageSessionCompletionRequest } from '../domain/session-completion';
@@ -1285,8 +1292,8 @@ export async function updateWordPersonalNotes(wordId: string, personalNotes: str
   return response.json();
 }
 
-export async function fetchUnstudiedPriorityWords(): Promise<PriorityWordsResponse> {
-  const response = await apiFetch(`${API_BASE}/api/priority/unstudied`);
+export async function fetchUnstudiedPriorityWords(signal?: AbortSignal): Promise<PriorityWordsResponse> {
+  const response = await apiFetch(`${API_BASE}/api/priority/unstudied`, { signal });
   if (!response.ok) {
     throw new Error('Failed to load unstudied priority words');
   }
@@ -1646,6 +1653,50 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T
   if (!response.ok) throw new ApiRequestError(await readApiErrorMessage(response, 'The request could not be completed.'),response.status);
   return response.json() as Promise<T>;
 }
+const vocabularyIntakePath = '/api/vocabulary/intake';
+const vocabularyIntakeCardPath = (id: string) => `${vocabularyIntakePath}/cards/${encodeURIComponent(id)}`;
+
+export function fetchVocabularyIntakeHistory(before: string | null, signal: AbortSignal) {
+  const query = before ? `?before=${encodeURIComponent(before)}` : '';
+  return apiRequest<VocabularyIntakeHistory>(`${vocabularyIntakePath}${query}`, { signal });
+}
+
+export function fetchVocabularyIntakeCard(id: string, signal: AbortSignal) {
+  return apiRequest<VocabularyIntakeCard>(vocabularyIntakeCardPath(id), { signal });
+}
+
+export function fetchOutstandingVocabularyIntakeCards(signal: AbortSignal) {
+  return apiRequest<{ cards: VocabularyIntakeCard[] }>(`${vocabularyIntakePath}/cards?outstanding=true`, { signal });
+}
+
+export function fetchVocabularyIntakeAttention(signal: AbortSignal) {
+  return apiRequest<{ count: number }>(`${vocabularyIntakePath}/attention`, { signal });
+}
+
+export function commandVocabularyIntakeCard(id: string, request: VocabularyIntakeCommandRequest, signal: AbortSignal) {
+  return apiRequest<VocabularyIntakeCard>(`${vocabularyIntakeCardPath(id)}/commands`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request), signal,
+  });
+}
+
+export async function streamVocabularyIntakeTurn(
+  request: { clientTurnId: string; text: string },
+  onEvent: (event: VocabularyIntakeStreamEvent) => void,
+  signal: AbortSignal,
+): Promise<void> {
+  const response = await apiFetch(`${API_BASE}${vocabularyIntakePath}/turns`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+    body: JSON.stringify(request),
+    signal,
+  });
+  if (!response.ok) {
+    throw new ApiRequestError(await readApiErrorMessage(response, 'Could not send the message.'), response.status);
+  }
+  if (!response.body) throw new Error('The reply was interrupted. Try again.');
+  await readVocabularyIntakeStream(response.body, onEvent);
+}
+
 export type VocabularyFeedbackMessage = {messageId:string; caseId:string; subjectLabel?:string; body: import('../domain/vocabulary-content').VocabularyJson; createdAt:string; seenAt:string|null; dismissedAt:string|null};
 export type VocabularyFeedbackJob = {jobId:string; caseId:string; subjectLabel:string; status:'queued'|'running'|'failed'; createdAt:string; error:string|null};
 export type VocabularyFeedbackInbox = {messages:VocabularyFeedbackMessage[]; failures:{jobId:string; error:string}[]; jobs?:VocabularyFeedbackJob[]};

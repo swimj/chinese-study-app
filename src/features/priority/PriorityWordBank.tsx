@@ -11,6 +11,7 @@ import {
 const PRIORITY_CHIP_DRAG_MIME = 'application/x-priority-word-ids';
 
 export function PriorityWordBank({
+  visible = true,
   rows,
   selectedWordIds,
   highlightedWordIds,
@@ -21,6 +22,7 @@ export function PriorityWordBank({
   onRemove,
   onHighlightsHandled,
 }: {
+  visible?: boolean;
   rows: PriorityWord[];
   selectedWordIds: string[];
   highlightedWordIds: string[];
@@ -61,6 +63,7 @@ export function PriorityWordBank({
   }, [highlightedWordIds]);
 
   useEffect(() => {
+    if (!visible) return;
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape') {
         onSelectedWordIdsChange([]);
@@ -77,7 +80,7 @@ export function PriorityWordBank({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onSelectedWordIdsChange, rows]);
+  }, [onSelectedWordIdsChange, rows, visible]);
 
   useEffect(() => {
     return () => {

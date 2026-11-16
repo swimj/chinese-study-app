@@ -37,6 +37,7 @@ export function AppChrome({
   serviceBanner,
   sessionActive,
   priorityPageLoading,
+  wordsOutstandingCount = 0,
   reflectionPageLoading,
   contentPageLoading,
   reflectionUnseenCount = 0,
@@ -59,6 +60,7 @@ export function AppChrome({
   serviceBanner: { message: string; kickoffAt?: string } | null;
   sessionActive: boolean;
   priorityPageLoading: boolean;
+  wordsOutstandingCount?: number;
   reflectionPageLoading: boolean;
   contentPageLoading: boolean;
   reflectionUnseenCount?: number;
@@ -125,6 +127,7 @@ export function AppChrome({
                     isGenerating: reflectionGenerating,
                   })
                 : { kind: 'none' as const };
+              const hasOutstandingWords = page.key === 'priority' && wordsOutstandingCount > 0;
               const label = loadingLabels[page.key] ?? page.label;
               const tabButton = (
                 <button
@@ -132,7 +135,9 @@ export function AppChrome({
                   className={`nav-tab ${active ? 'active' : ''}${page.key === 'priority' && guideToStash ? ' getting-started-attention' : ''}`}
                   aria-current={active ? 'page' : undefined}
                   aria-label={
-                    badge.kind === 'failure'
+                    hasOutstandingWords
+                      ? `Words, ${wordsOutstandingCount} outstanding`
+                      : badge.kind === 'failure'
                       ? `${page.label}, generation failed`
                       : badge.kind === 'generating'
                         ? `${page.label}, generating`
@@ -145,6 +150,9 @@ export function AppChrome({
                 >
                   <span>{label}</span>
                   {page.key === 'priority' && guideToStash ? <span className="getting-started-new">Add to your stash</span> : null}
+                  {hasOutstandingWords && (
+                    <span className="nav-tab-count" aria-hidden="true">{wordsOutstandingCount}</span>
+                  )}
                   {badge.kind === 'count' ? (
                     <span className={`nav-tab-count nav-tab-count-${page.key}`}>{badge.count}</span>
                   ) : null}

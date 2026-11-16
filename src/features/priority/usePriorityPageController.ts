@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import type { AppPageKey } from '../../components/AppChrome';
 import {
   addUnstudiedPriorityByHanzi,
@@ -37,6 +37,7 @@ export type PriorityPageController = {
   toggleMatchSelection: (wordId: string) => void;
   cancelMatchSelection: () => void;
   openPage: () => Promise<void>;
+  refreshRows: (signal: AbortSignal) => Promise<void>;
   submitSearch: () => Promise<void>;
   confirmMatchSelection: () => Promise<void>;
   moveToTop: (wordId: string) => Promise<void>;
@@ -94,6 +95,14 @@ export function usePriorityPageController({
       setIsLoading(false);
     }
   }
+
+  const refreshRows = useCallback(async (signal: AbortSignal) => {
+    if (searchSubmittingRef.current || batchSubmittingRef.current) return;
+    const snapshot = rowsRef.current;
+    const result = await fetchUnstudiedPriorityWords(signal);
+    if (signal.aborted || searchSubmittingRef.current || batchSubmittingRef.current) return;
+    setRows(current => current === snapshot ? sortStashManageWords(result.words) : current);
+  }, []);
 
   async function updateWordPriority(
     wordId: string,
@@ -301,6 +310,7 @@ export function usePriorityPageController({
       setSearchNotice(null);
     },
     openPage,
+    refreshRows,
     submitSearch,
     confirmMatchSelection,
     moveToTop: (wordId: string) => updateWordPriority(wordId, { forceTop: true }),
