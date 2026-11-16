@@ -1,3 +1,4 @@
+import type { LitestreamMetrics } from './litestream-metrics.ts';
 import type { Request, RequestHandler } from 'express';
 import { createServer, type Server } from 'node:http';
 import { monitorEventLoopDelay, performance } from 'node:perf_hooks';
@@ -48,6 +49,7 @@ type EventLoopHistogram = {
 };
 
 export type ServiceOperationalMetrics = {
+  litestream?: LitestreamMetrics | null;
   databaseBytes: number | null;
   walBytes: number | null;
   backupReplicationAgeSeconds: number | null;
@@ -289,6 +291,25 @@ export function createServiceMetrics(options: {
       lines.push(metricLine('chinese_study_sqlite_transaction_hold_seconds_count', transactionHold.count));
 
       appendGauge(lines, 'chinese_study_http_requests_in_flight', 'HTTP requests currently in flight.', requestsInFlight);
+      appendGauge(lines, 'chinese_study_litestream_metrics_available',
+        'Whether the local Litestream CPU and file position metrics could be read.', operational.litestream ? 1 : 0);
+      if (operational.litestream) {
+        appendCounter(lines, 'chinese_study_litestream_cpu_seconds_total',
+          'CPU seconds consumed by the Litestream daemon only.', operational.litestream.cpuSeconds);
+        appendGauge(lines, 'chinese_study_litestream_start_time_seconds',
+          'Unix time when the Litestream daemon started.', operational.litestream.startTimeSeconds);
+        // Zero means not initialized, not a reset of the durable file sequence.
+        if (operational.litestream.localFileSequence > 0) {
+          appendGauge(lines, 'chinese_study_litestream_local_file_sequence',
+            'Latest local L0 file sequence (TXID); advances per file, not per SQLite transaction.',
+            operational.litestream.localFileSequence);
+        }
+        if (operational.litestream.uploadedFiles !== null) {
+          appendCounter(lines, 'chinese_study_litestream_uploaded_files_total',
+            'Successful S3 file uploads, including incremental files, compactions and snapshots.',
+            operational.litestream.uploadedFiles);
+        }
+      }
       const cpuUsage = process.cpuUsage();
       appendCounter(
         lines,
@@ -369,7 +390,7 @@ export function createServiceMetrics(options: {
       appendGauge(
         lines,
         'chinese_study_backup_replication_age_seconds',
-        'Age of the latest successful Litestream replication, or -1 when unavailable.',
+        'Seconds since the last successful Litestream sync check (also refreshed when idle), or -1 when unavailable.',
         operational.backupReplicationAgeSeconds ?? -1,
       );
       appendGauge(
