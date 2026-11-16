@@ -23,6 +23,8 @@ import { PriorityPage } from './pages/PriorityPage';
 import { useContentDiagnosticsController } from './features/content/useContentDiagnosticsController';
 import { ContentDiagnosticsPage } from './pages/ContentDiagnosticsPage';
 import { useAttentionBadges } from './features/attention/useAttentionBadges';
+import { useVocabularyIntake } from './features/vocabulary-intake/useVocabularyIntake';
+import { VocabularyIntakeChat, VocabularyIntakeOutstanding } from './features/vocabulary-intake/VocabularyIntakePanels';
 
 function App({ onSignOut, accountScope = 'trusted-local' }: { onSignOut?: () => Promise<void>; accountScope?: string }) {
   const gettingStartedKey = `getting-started-seen:v1:${accountScope}`;
@@ -55,6 +57,11 @@ function App({ onSignOut, accountScope = 'trusted-local' }: { onSignOut?: () => 
     catch { /* Storage restrictions must not prevent toggling updates. */ }
   }, [homeUpdatesCollapsedKey, homeUpdatesCollapsed]);
   const [wordsView, setWordsView] = useState<'stash' | 'my-words'>('stash');
+  const [stashMode, setStashMode] = useState<'search' | 'chat'>('search');
+  const [outstandingOpen, setOutstandingOpen] = useState(false);
+  const stashActive = currentPage === 'priority' && wordsView === 'stash';
+  const chatVisible = stashActive && stashMode === 'chat';
+  const intake = useVocabularyIntake(chatVisible, currentPage === 'priority' && outstandingOpen);
   const [feedbackView, setFeedbackView] = useState<'lessons' | 'saved'>('lessons');
   const [backendStatus, setBackendStatus] = useState<BackendStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -70,6 +77,13 @@ function App({ onSignOut, accountScope = 'trusted-local' }: { onSignOut?: () => 
     setError,
   });
   const contentPage = useContentDiagnosticsController({ currentPage, setCurrentPage, setError });
+  const { refreshRows } = priorityPage;
+  useEffect(() => {
+    if (!stashActive || chatVisible || intake.stashRevision === 0) return;
+    const request = new AbortController();
+    void refreshRows(request.signal).catch(() => undefined);
+    return () => request.abort();
+  }, [stashActive, chatVisible, intake.stashRevision, refreshRows]);
 
   useEffect(() => {
     async function loadData() {
@@ -200,6 +214,7 @@ function App({ onSignOut, accountScope = 'trusted-local' }: { onSignOut?: () => 
       serviceBanner={backendStatus?.serviceBanner ?? null}
       sessionActive={sessionActive}
       priorityPageLoading={priorityPage.isLoading}
+      wordsOutstandingCount={intake.attentionCount}
       reflectionPageLoading={false}
       contentPageLoading={contentPage.isLoading}
       reflectionUnseenCount={feedbackAttention.unseenCount}
@@ -207,7 +222,10 @@ function App({ onSignOut, accountScope = 'trusted-local' }: { onSignOut?: () => 
       reflectionGenerating={feedbackAttention.generating}
       onOpenHomePage={() => void leaveCompletedSessionThen(() => setCurrentPage('home'))}
       onOpenPriorityPage={() => void leaveCompletedSessionThen(() => {
-        if (guideToStash) setWordsView('stash');
+        if (guideToStash) {
+          setWordsView('stash');
+          setStashMode('search');
+        }
         return priorityPage.openPage();
       })}
       onOpenReflectionsPage={() => void leaveCompletedSessionThen(() => setCurrentPage('reflections'))}
@@ -248,27 +266,46 @@ function App({ onSignOut, accountScope = 'trusted-local' }: { onSignOut?: () => 
               ))}
             </nav>
           </NestedNav>
-          {wordsView === 'my-words' ? <VocabularyWordsPage /> : (
-            <PriorityPage
-              rows={priorityPage.rows}
-              searchHanzi={priorityPage.searchHanzi}
-              searchNotice={priorityPage.searchNotice}
-              searchSubmitting={priorityPage.searchSubmitting}
-              matchChoices={priorityPage.matchChoices}
-              selectedMatchIds={priorityPage.selectedMatchIds}
-              highlightedWordIds={priorityPage.highlightedWordIds}
-              onSearchHanziChange={priorityPage.setSearchHanzi}
-              onSearchSubmit={() => void priorityPage.submitSearch()}
-              onToggleMatchSelection={priorityPage.toggleMatchSelection}
-              onConfirmMatchSelection={() => void priorityPage.confirmMatchSelection()}
-              onCancelMatchSelection={priorityPage.cancelMatchSelection}
-              onHighlightsHandled={priorityPage.clearHighlights}
-              priorityBatchSubmitting={priorityPage.priorityBatchSubmitting}
-              onMoveSelectedToTop={priorityPage.moveSelectedToTop}
-              onMoveSelectedToStash={priorityPage.moveSelectedToStash}
-              onRemoveSelected={priorityPage.removeSelected}
-            />
-          )}
+          <div className="intake-words-surface">
+            <div className="intake-words-bar" onMouseDown={event => event.stopPropagation()}>
+              {wordsView === 'stash' && (
+                <div className="intake-words-mode" role="group" aria-label="Stash view">
+                  <button type="button" aria-pressed={stashMode === 'search'} onClick={() => setStashMode('search')}>Stash search</button>
+                  <button type="button" aria-pressed={stashMode === 'chat'} onClick={() => setStashMode('chat')}>Chat</button>
+                </div>
+              )}
+              <button type="button" className="intake-quiet" aria-haspopup="dialog" onClick={() => setOutstandingOpen(true)}>
+                Outstanding{intake.attentionCount > 0 ? ` (${intake.attentionCount})` : ''}
+              </button>
+            </div>
+            <div className="intake-words-panel" hidden={!stashActive || chatVisible}>
+              <PriorityPage
+                visible={stashActive && !chatVisible && !outstandingOpen}
+                rows={priorityPage.rows}
+                searchHanzi={priorityPage.searchHanzi}
+                searchNotice={priorityPage.searchNotice}
+                searchSubmitting={priorityPage.searchSubmitting}
+                matchChoices={priorityPage.matchChoices}
+                selectedMatchIds={priorityPage.selectedMatchIds}
+                highlightedWordIds={priorityPage.highlightedWordIds}
+                onSearchHanziChange={priorityPage.setSearchHanzi}
+                onSearchSubmit={() => void priorityPage.submitSearch()}
+                onToggleMatchSelection={priorityPage.toggleMatchSelection}
+                onConfirmMatchSelection={() => void priorityPage.confirmMatchSelection()}
+                onCancelMatchSelection={priorityPage.cancelMatchSelection}
+                onHighlightsHandled={priorityPage.clearHighlights}
+                priorityBatchSubmitting={priorityPage.priorityBatchSubmitting}
+                onMoveSelectedToTop={priorityPage.moveSelectedToTop}
+                onMoveSelectedToStash={priorityPage.moveSelectedToStash}
+                onRemoveSelected={priorityPage.removeSelected}
+              />
+            </div>
+            <div className="intake-words-panel" hidden={!chatVisible}>
+              <VocabularyIntakeChat controller={intake} visible={chatVisible} />
+            </div>
+            {wordsView === 'my-words' && <VocabularyWordsPage />}
+            {outstandingOpen && <VocabularyIntakeOutstanding controller={intake} onClose={() => setOutstandingOpen(false)} />}
+          </div>
         </>
       ) : currentPage === 'reflections' ? (
         <>

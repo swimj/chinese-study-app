@@ -1,0 +1,40 @@
+.intake-preview {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-block-size: 100dvh;
+}
+
+.intake-preview-narrow {
+  max-inline-size: calc(13.25rem + 480px);
+  margin-inline: auto;
+  border-inline: 1px solid var(--border);
+}
+
+.intake-preview:has(.intake-preview-controls) {
+  block-size: 100dvh;
+}
+
+.intake-preview .container.app-shell {
+  grid-row: 2;
+  min-block-size: 0;
+}
+
+.intake-preview .container.app-shell.app-priority-page {
+  block-size: 100%;
+}
+
+.intake-preview-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.4rem;
+  background: var(--surface-muted);
+  border-block-end: 1px solid var(--border);
+}
+
+.intake-preview-controls button {
+  padding: 0.25em 0.5em;
+  border-radius: 0.35em;
+  font-size: 0.85em;
+}

@@ -10,6 +10,7 @@ import type { PriorityMatchChoiceState } from '../features/priority/usePriorityP
 import { studyProfile } from '../study-profile';
 
 export type PriorityPageProps = {
+  visible?: boolean;
   rows: PriorityWord[];
   searchHanzi: string;
   searchNotice: string | null;
@@ -30,6 +31,7 @@ export type PriorityPageProps = {
 };
 
 export function PriorityPage({
+  visible = true,
   rows,
   searchHanzi,
   searchNotice,
@@ -68,7 +70,7 @@ export function PriorityPage({
   }, [searchSubmitting]);
 
   useEffect(() => {
-    if (!matchChoices) {
+    if (!visible || !matchChoices) {
       return;
     }
 
@@ -89,7 +91,7 @@ export function PriorityPage({
 
     document.addEventListener('mousedown', handlePointerDown);
     return () => document.removeEventListener('mousedown', handlePointerDown);
-  }, [matchChoices, onCancelMatchSelection]);
+  }, [visible, matchChoices, onCancelMatchSelection]);
 
   function submitAndKeepFocus() {
     onSearchSubmit();
@@ -117,6 +119,7 @@ export function PriorityPage({
     <section className="priority-page">
       <div className="priority-page-main">
         <PriorityWordBank
+          visible={visible}
           rows={rows}
           selectedWordIds={selectedManageWordIds}
           highlightedWordIds={highlightedWordIds}
