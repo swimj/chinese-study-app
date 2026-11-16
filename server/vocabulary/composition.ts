@@ -1,3 +1,4 @@
+import { hasPendingVocabularyIntakeMatch } from '../db/vocabulary-intake-pending.ts';
 import { vocabularySessionWordEligibleSql } from '../db/vocabulary-sense-eligibility.ts';
 import { getReadyWordReserveCandidates, reportStaleWordReserveHint, hasPendingWordReserveCandidates } from '../db/word-reserve.ts';
 import { getDb } from '../db/connection.ts';
@@ -116,6 +117,7 @@ export function composeVocabularyStudy(options:{
   const settings=vocabularyCompositionSettings();const remaining=remainingVocabularyNewWordQuota(now, options.timeZone);
   const newIds:string[]=[];let stale=false;
   if(remaining>0)for(const hint of getReadyWordReserveCandidates(now)) {
+    if(hasPendingVocabularyIntakeMatch(hint.wordId)){stale=true;continue;}
     if(options.teachingReady(hint.wordId))newIds.push(hint.wordId);
     else {stale=true;reportStaleWordReserveHint(hint,now);}
     if(newIds.length>=remaining)break;

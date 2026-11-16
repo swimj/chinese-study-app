@@ -28,7 +28,7 @@ beforeEach(()=>{
     CREATE TABLE teaching_completions(learner_id TEXT,source_kind TEXT,completed_at TEXT);
     INSERT INTO learners VALUES('alice'),('bob');
   `);
-  for(const file of ['0062_vocabulary_sense_coverage.sql','0064_vocabulary_default_useful_senses.sql','0039_vocabulary_content.sql','0041_vocabulary_learner_state.sql','0047_vocabulary_dismissal.sql','0052_vocabulary_automatic_promotion_pause.sql'])db.exec(fs.readFileSync(new URL(`../server/db/migrations/${file}`,import.meta.url),'utf8'));
+  for(const file of ['0062_vocabulary_sense_coverage.sql','0064_vocabulary_default_useful_senses.sql','0039_vocabulary_content.sql','0041_vocabulary_learner_state.sql','0047_vocabulary_dismissal.sql','0052_vocabulary_automatic_promotion_pause.sql','0075_learner_chat.sql'])db.exec(fs.readFileSync(new URL(`../server/db/migrations/${file}`,import.meta.url),'utf8'));
   ready=new Set();requested=[];
 });
 afterEach(()=>db.close());

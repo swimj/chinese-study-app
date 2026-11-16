@@ -10,11 +10,11 @@ function atomic<T>(work:()=>T):T {
   catch(error){getDb().exec(`ROLLBACK TO ${name}`);getDb().exec(`RELEASE ${name}`);throw error;}
 }
 /** Existing intake priority and new membership commit together, preserving mode/history. */
-export function addVocabularyStashByHanzi(hanzi:string,requiredForNextSession=false,wordIds?:string[]):PriorityWord[] {
+export function addVocabularyStashByHanzi(hanzi:string,requiredForNextSession=false,wordIds?:string[],intendedUseText:string|null=null):PriorityWord[] {
   if(config.studyProfile!=='mandarin')return addUnstudiedUserPriorityByHanzi(hanzi,requiredForNextSession,wordIds);
   return atomic(()=>{
     const words=addUnstudiedUserPriorityByHanzi(hanzi,requiredForNextSession,wordIds);
-    for(const word of words)addVocabularyWord(word.word.id);
+    for(const word of words)addVocabularyWord(word.word.id,intendedUseText);
     return words;
   });
 }

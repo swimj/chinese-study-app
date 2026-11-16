@@ -68,6 +68,16 @@ export type WriteVocabularyLearnerSenseScope = {
 
 /** Confirmation stores deviations plus the target, never a frozen copy of shared defaults. */
 export function writeVocabularyLearnerSenseScope(wordId: string, input: WriteVocabularyLearnerSenseScope): VocabularyLearnerSenseScope {
+  return writeSenseScope(wordId, input, false);
+}
+
+/** Add one take-up without normalizing away any of the learner's existing overrides. */
+export function takeUpVocabularyLearnerSense(wordId: string, senseId: string,
+  input: Omit<WriteVocabularyLearnerSenseScope, 'senseIds' | 'targetSenseId' | 'intendedUseText'>): VocabularyLearnerSenseScope {
+  return writeSenseScope(wordId, { ...input, senseIds: [senseId], targetSenseId: senseId }, true);
+}
+
+function writeSenseScope(wordId: string, input: WriteVocabularyLearnerSenseScope, additive: boolean): VocabularyLearnerSenseScope {
   const learnerId = requireLearnerId();
   if (!input.surface?.trim()) throw new VocabularyStateInputError('A sense choice requires its originating surface');
   if (input.intendedUseText !== undefined && input.intendedUseText !== null && typeof input.intendedUseText !== 'string') {
@@ -91,14 +101,20 @@ export function writeVocabularyLearnerSenseScope(wordId: string, input: WriteVoc
     if (!input.senseIds.length) throw new VocabularyStateInputError('Choose at least one sense');
     const selected = new Set(input.senseIds);
     if (input.targetSenseId != null && !selected.has(input.targetSenseId)) throw new VocabularyStateInputError('The target must be one of the selected senses');
-    // Old retired identities are historical evidence and must not silently transfer to replacements.
-    db.prepare(`DELETE FROM learner_senses WHERE learner_id=? AND word_id=?
-      AND sense_id IN (SELECT sense_id FROM senses WHERE word_id=? AND status='active')`).run(learnerId,wordId,wordId);
-    const insert = db.prepare('INSERT INTO learner_senses(learner_id,word_id,sense_id,disposition) VALUES (?,?,?,?)');
-    const defaults = new Set(before.defaultSenseIds!);
-    for (const senseId of active) {
-      if (selected.has(senseId) && (!defaults.has(senseId) || senseId === input.targetSenseId)) insert.run(learnerId,wordId,senseId,'active');
-      else if (!selected.has(senseId) && defaults.has(senseId)) insert.run(learnerId,wordId,senseId,'excluded');
+    if (additive) {
+      db.prepare(`INSERT INTO learner_senses(learner_id,word_id,sense_id,disposition) VALUES (?,?,?,'active')
+        ON CONFLICT(learner_id,sense_id) DO UPDATE SET disposition='active'`)
+        .run(learnerId,wordId,input.targetSenseId!);
+    } else {
+      // Old retired identities are historical evidence and must not silently transfer to replacements.
+      db.prepare(`DELETE FROM learner_senses WHERE learner_id=? AND word_id=?
+        AND sense_id IN (SELECT sense_id FROM senses WHERE word_id=? AND status='active')`).run(learnerId,wordId,wordId);
+      const insert = db.prepare('INSERT INTO learner_senses(learner_id,word_id,sense_id,disposition) VALUES (?,?,?,?)');
+      const defaults = new Set(before.defaultSenseIds!);
+      for (const senseId of active) {
+        if (selected.has(senseId) && (!defaults.has(senseId) || senseId === input.targetSenseId)) insert.run(learnerId,wordId,senseId,'active');
+        else if (!selected.has(senseId) && defaults.has(senseId)) insert.run(learnerId,wordId,senseId,'excluded');
+      }
     }
     const at = new Date().toISOString();
     db.prepare(`UPDATE learner_words SET scope_established_at=?,state_version=state_version+1,
