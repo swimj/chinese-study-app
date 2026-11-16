@@ -1,0 +1,14 @@
+(node:21984) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+✔ toggling the target preserves checked senses and clearing all is rejected (0.432125ms)
+✔ unknown inventory permits pending Add, and a removed proposed sense cannot be resaved (0.04525ms)
+✔ intake streams decode split Unicode, SSE comments, multiline data and mixed boundaries (2.36625ms)
+✔ an interrupted stream does not acknowledge a turn (0.250792ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 4
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 137.356917

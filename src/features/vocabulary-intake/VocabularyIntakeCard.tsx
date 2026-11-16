@@ -38,6 +38,17 @@ export function VocabularyIntakeCard({ card, controller }: { card: Card; control
     }
   });
 
+  useLayoutEffect(() => {
+    const root = article.current;
+    return () => {
+      // A conversational revision moves this card to a newer turn. Do not strand
+      // keyboard focus on the body when its old rendered instance disappears.
+      if (root?.contains(document.activeElement)) {
+        root.closest('.intake-chat')?.querySelector<HTMLTextAreaElement>('textarea')?.focus({ preventScroll: true });
+      }
+    };
+  }, []);
+
   function applyChoice(next: VocabularyIntakeSelection) {
     if (!edit) controller.select(card, next);
   }
@@ -84,6 +95,27 @@ export function VocabularyIntakeCard({ card, controller }: { card: Card; control
       className="intake-card"
       aria-labelledby={headingId}
       tabIndex={-1}
+      onKeyDown={event => {
+        if (event.nativeEvent.isComposing || event.keyCode === 229 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+        const target = event.target;
+        if (!(target instanceof HTMLButtonElement) || !target.closest('.intake-card-actions')) return;
+        const buttons = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('.intake-card-actions button'));
+        const actions = buttons.filter(button => !button.disabled && button.getAttribute('aria-disabled') !== 'true');
+        if (!actions.length) return;
+        const index = buttons.indexOf(target);
+        let next: number;
+        if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+          next = actions.findIndex(button => buttons.indexOf(button) > index);
+          if (next < 0) next = 0;
+        } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+          next = actions.filter(button => buttons.indexOf(button) < index).length - 1;
+          if (next < 0) next = actions.length - 1;
+        } else if (event.key === 'Home') next = 0;
+        else if (event.key === 'End') next = actions.length - 1;
+        else return;
+        event.preventDefault();
+        actions[next]?.focus();
+      }}
       onFocusCapture={event => { lastFocused.current = event.target; }}
       onBlurCapture={event => {
         if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) lastFocused.current = null;

@@ -37,6 +37,7 @@ function TranscriptTurn({
 
 export function VocabularyIntakeChat({ controller, visible }: { controller: VocabularyIntakeController; visible: boolean }) {
   const transcriptRef = useRef<HTMLDivElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
   const previousRevision = useRef(controller.latestRevision);
   const currentAnchor = useRef<{ turnId: string; top: number } | null>(null);
   const wasVisible = useRef(false);
@@ -50,6 +51,10 @@ export function VocabularyIntakeChat({ controller, visible }: { controller: Voca
     for (const id of turn.cardIds) latestCardTurn.set(id, turn.id);
   }
   const visibleCards = (turn: VocabularyIntakeTurn) => turn.cardIds.filter(id => latestCardTurn.get(id) === turn.id);
+
+  useLayoutEffect(() => {
+    if (visible) composerRef.current?.focus({ preventScroll: true });
+  }, [visible]);
 
   useLayoutEffect(() => {
     const transcript = transcriptRef.current;
@@ -78,11 +83,21 @@ export function VocabularyIntakeChat({ controller, visible }: { controller: Voca
   const canSend = controller.initialized && !composeTurn && Boolean(controller.draft.trim());
 
   function send() {
-    if (canSend) void controller.send();
+    if (canSend) {
+      composerRef.current?.focus({ preventScroll: true });
+      void controller.send();
+    }
   }
 
   return (
-    <section className="intake-chat" aria-labelledby={transcriptHeading}>
+    <section className="intake-chat" aria-labelledby={transcriptHeading}
+      onKeyDown={event => {
+        if (event.key === 'Escape' && !event.nativeEvent.isComposing && event.keyCode !== 229
+          && !event.altKey && !event.ctrlKey && !event.metaKey && event.target !== composerRef.current) {
+          event.preventDefault();
+          composerRef.current?.focus();
+        }
+      }}>
       <h1 className="intake-sr-only" id={transcriptHeading}>Add words chat</h1>
       <div className="intake-transcript" tabIndex={0} ref={transcriptRef} role="region" aria-label="Chat history"
         onScroll={event => {
@@ -125,6 +140,7 @@ export function VocabularyIntakeChat({ controller, visible }: { controller: Voca
         <label className="intake-sr-only" htmlFor={composerId}>Word or sentence</label>
         <textarea
           id={composerId}
+          ref={composerRef}
           aria-describedby={providerNotice}
           placeholder="A word or a sentence where you met it"
           rows={2}
@@ -132,12 +148,32 @@ export function VocabularyIntakeChat({ controller, visible }: { controller: Voca
           value={controller.draft}
           onChange={event => controller.setDraft(event.target.value)}
           onKeyDown={event => {
-            if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing || event.keyCode === 229) return;
-            event.preventDefault();
-            send();
+            if (event.nativeEvent.isComposing || event.keyCode === 229 || event.altKey) return;
+            if (event.key === 'Enter' && !event.shiftKey) {
+              event.preventDefault();
+              send();
+              return;
+            }
+            if (event.ctrlKey || event.metaKey) return;
+            if (event.key === 'ArrowUp' && !event.shiftKey && event.currentTarget.value === '') {
+              const card = transcriptRef.current?.querySelectorAll<HTMLElement>('.intake-card');
+              const latest = card?.[card.length - 1];
+              if (latest) {
+                event.preventDefault();
+                const action = latest.querySelector<HTMLButtonElement>('.intake-card-actions button:not(:disabled):not([aria-disabled="true"])');
+                (action ?? latest).focus();
+              }
+              return;
+            }
           }}
         />
         <button type="submit" disabled={!canSend}>{sending ? 'Sending…' : 'Send'}</button>
+        <details className="intake-keyboard-help">
+          <summary>Keyboard shortcuts</summary>
+          <p>Enter or Ctrl/⌘+Enter sends · Shift+Enter starts a new line.</p>
+          <p>Up from an empty message focuses the latest card. Arrow keys move between its actions; Enter or Space selects. Escape returns to the message.</p>
+          <p>Tab and Shift+Tab move through all controls.</p>
+        </details>
         <p id={providerNotice} className="intake-composer-notice">Messages are sent to an AI provider.</p>
       </form>
     </section>

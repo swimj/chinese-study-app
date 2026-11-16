@@ -63,6 +63,14 @@ error rather than treating unfinished prose as success.
 
 A learner switches between Stash search and Chat within the same Words surface.
 The toggle preserves the draft, stash controls and transcript scroll position.
+Opening Chat focuses its composer. Enter or Ctrl/Command+Enter sends;
+Shift+Enter inserts a line. Composition keystrokes do not send. From an empty
+composer, Up focuses the latest card's first available action. Arrow keys move
+among that card's available actions; Enter/Space activates, and Escape returns
+to the composer. Native Tab navigation remains available, including individual
+sense checkboxes. Outstanding cards use a modal that closes with Escape and
+restores focus to its opener.
+
 The chat is continuous and private. The chat can briefly explain a usage, suggest an exact
 lexical target and present one card with the current study state and active
 senses. The learner can select a set on the card or use a suggested selection.

@@ -390,3 +390,18 @@
     max-block-size: 65vh;
   }
 }
+
+.intake-keyboard-help {
+  grid-column: 1 / -1;
+  color: var(--text-secondary);
+  font-size: 0.85em;
+}
+
+.intake-keyboard-help summary {
+  width: fit-content;
+  cursor: pointer;
+}
+
+.intake-keyboard-help p {
+  margin-block-start: 0.35rem;
+}
