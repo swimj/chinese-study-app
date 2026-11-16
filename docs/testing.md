@@ -612,8 +612,9 @@ learner-feedback jobs, and nonretryable preparation. `?narrow&largeText` renders
 480px viewport with enlarged text; `?empty`, `?slow`, and `?saveFailure` cover
 alternate states. No provider calls or persistent application data are used.
 
-Verify defaults failure retains checked senses and blocks navigation; successful
-save removes the finding; retry advances only on acknowledgement; failed retry
+Verify that the defaults card discloses its blocked practice records and counts
+once. A defaults failure retains checked senses and blocks navigation. A successful
+save removes the finding. Retry advances only on acknowledgement; failed retry
 retains the item; type filtering, full-count wrap and remembered selection work;
 and Open proposal reaches a standalone editor without a workspace request. Open
 the feedback case, retry, then use Finish feedback to observe job completion while

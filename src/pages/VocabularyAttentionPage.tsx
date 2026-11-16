@@ -135,7 +135,15 @@ export function VocabularyAttentionPage({ api, onActivity, position }: { api: Vo
               </details>
               <SenseReconciliationPage key={item.id} wordId={item.wordId} onActivity={setEditorActivity}/>
             </>}
-            {item.kind === 'defaults' && <ScopeCoverageEditor api={api} wordId={item.wordId} disabled={busy || loading} expanded onActivity={setScopeEditing} onSaved={defaultsSaved} actionsContainer={actionsContainer}/>}
+            {item.kind === 'defaults' && <>
+              <ScopeCoverageEditor api={api} wordId={item.wordId} disabled={busy || loading} expanded onActivity={setScopeEditing} onSaved={defaultsSaved} actionsContainer={actionsContainer}/>
+              {item.blockedPreparations.length > 0 && <details className="reconciliation-related">
+                <summary>Blocked practice preparation ({item.blockedPreparations.length})</summary>
+                <dl>{item.blockedPreparations.map(({workId,createdAt}) => <div key={workId}>
+                  <dt>{new Date(createdAt).toLocaleString()}</dt><dd><code>{workId}</code></dd>
+                </div>)}</dl>
+              </details>}
+            </>}
             {item.kind === 'approval' && <p>Approved revision {item.expectedVersion} · application not completed</p>}
             {details && <section className="vocabulary-case-provenance" aria-label="Attention details">
               <p>Opened {new Date(item.createdAt).toLocaleString()}</p>

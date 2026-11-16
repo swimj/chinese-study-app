@@ -64,11 +64,12 @@ beforeEach(()=>{
   `);
   for(const file of ['0062_vocabulary_sense_coverage.sql','0064_vocabulary_default_useful_senses.sql','0039_vocabulary_content.sql','0041_vocabulary_learner_state.sql','0042_vocabulary_sessions.sql','0047_vocabulary_dismissal.sql','0052_vocabulary_automatic_promotion_pause.sql','0023_session_debrief.sql','0048_vocabulary_connections.sql','0075_learner_chat.sql'])db.exec(fs.readFileSync(new URL(`../server/db/migrations/${file}`,import.meta.url),'utf8'));
   db.exec(`CREATE TABLE model_invocations(id TEXT PRIMARY KEY,status TEXT,actor_kind TEXT,learner_id TEXT);
-    CREATE TABLE word_content_documents(content_id TEXT PRIMARY KEY,content_json TEXT,publication_id TEXT);
+    CREATE TABLE word_content_documents(content_id TEXT PRIMARY KEY,word_id TEXT,content_json TEXT,publication_id TEXT,teaching_set_key TEXT,created_at TEXT);
     CREATE TABLE word_introduction_preparation(word_id TEXT,teaching_set_key TEXT,content_id TEXT,package_id TEXT,preparation_epoch INTEGER);
     CREATE TABLE word_teaching_packages(package_id TEXT PRIMARY KEY,content_id TEXT,publication_id TEXT);
     CREATE TABLE content_improvement_replacements(kind TEXT,source_id TEXT);
-    CREATE TABLE shared_content_publications(publication_id TEXT PRIMARY KEY,publication_status TEXT);`);
+    CREATE TABLE shared_content_publications(publication_id TEXT PRIMARY KEY,publication_status TEXT,status_updated_at TEXT);
+    CREATE TABLE shared_content_publication_events(publication_id TEXT,to_status TEXT,actor_kind TEXT,actor_id TEXT,reason TEXT,occurred_at TEXT);`);
   db.exec(fs.readFileSync(new URL('../server/db/migrations/0045_vocabulary_provenance_links.sql',import.meta.url),'utf8'));
   db.exec("ALTER TABLE vocabulary_practice_preparation ADD COLUMN next_attempt_at TEXT NOT NULL DEFAULT ''; ALTER TABLE vocabulary_practice_preparation ADD COLUMN total_attempt_count INTEGER NOT NULL DEFAULT 0;");
   db.exec(fs.readFileSync(new URL('../server/db/migrations/0069_sense_content_reconciliation.sql',import.meta.url),'utf8'));

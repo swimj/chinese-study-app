@@ -6,6 +6,7 @@ import { reconcileVocabularyPreparationReserve } from '../vocabulary/preparation
 import { listPendingWordReserveLearners, listWordReserveAuditLearners, requestWordReserveReconciliation, deferWordReserveAudit } from '../db/word-reserve.ts';
 import { createWordIntroductionProvider } from './provider.ts';
 import { createWordPreparationWorker } from './preparation-worker.ts';
+import { supersedeOutdatedTeaching } from '../db/teaching-supersession.ts';
 
 export const RESERVE_AUDIT_INTERVAL_MS = 5 * 60_000;
 const BATCH_SIZE = 5;
@@ -15,6 +16,7 @@ export function startWordPreparationRuntime(options:{reconcile?:typeof reconcile
   const worker = createWordPreparationWorker({ provider, onError: () => console.error('Word preparation worker failed') });
   let stopped = false;
   let maintenance:Promise<void>|null=null;
+  let nextTeachingScopeAudit = 0;
   const canPrepare = () => {
     const controls = getHostedServiceControls();
     return !stopped && config.studyProfile === 'mandarin' && provider.isConfigured()
@@ -25,6 +27,10 @@ export function startWordPreparationRuntime(options:{reconcile?:typeof reconcile
     await yieldToRequests();
     if(stopped||getHostedServiceControls().maintenanceMode)return;
     const now=new Date().toISOString();
+    if (Date.parse(now) >= nextTeachingScopeAudit) {
+      supersedeOutdatedTeaching(now);
+      nextTeachingScopeAudit = Date.parse(now) + RESERVE_AUDIT_INTERVAL_MS;
+    }
     const learners=[...new Set([...listPendingWordReserveLearners(BATCH_SIZE),
       ...listWordReserveAuditLearners(new Date(Date.parse(now)-RESERVE_AUDIT_INTERVAL_MS).toISOString(),BATCH_SIZE)])];
     for(const learnerId of learners) {

@@ -17,7 +17,10 @@ const copy = <T,>(value: T): T => structuredClone(value);
 const finding = {status:'needs_operator' as const,reason:'No useful senses were selected from the nonempty inventory.',invocationId:'selector-invocation',recommendedSenseIds:[]};
 const base = {createdAt:at,caseId:null};
 let items: VocabularyAttentionItem[] = params.has('empty') ? [] : [
-  {...base,id:'defaults:函',kind:'defaults',title:'函',reason:finding.reason,wordId:'word-han',finding},
+  {...base,id:'defaults:函',kind:'defaults',title:'函',reason:finding.reason,wordId:'word-han',finding,blockedPreparations:[
+    {workId:'vocabulary-practice:proactive:73ab2e561c85bfa01a91867e3019b09def21ecc97f660d17303f1b968f2dc8ce',createdAt:at},
+    {workId:'vocabulary-practice:proactive:1dccb42112ab7298f81f7b12a806523d33f962390a11af33248a1e8257aef089',createdAt:at},
+  ]},
   {...base,id:'approval:standalone',kind:'approval',title:'报备',reason:'Application stopped after a temporary database failure.',requestId:'standalone-request',proposalId:'standalone-proposal',expectedVersion:1,attempts:1,retryable:true},
   {...base,id:'preparation:failed',kind:'preparation',title:'密集',reason:'Practice preparation could not finish after its bounded retries.',workId:'failed-preparation',wordId:'word-miji',sourceContentId:'source-practice',attemptCount:3,invocationId:'preparation-call',retryable:true},
   {...base,id:'dispatch:failed',kind:'dispatch',title:'Study session',reason:'Encounter evidence processing failed before review cases could be created.',dispatchId:'failed-dispatch',sessionId:'session-with-retained-evidence',learnerId:'fixture-learner'},

@@ -143,9 +143,10 @@ pure-cue qualification and shared production proxy coverage retain their own pol
 
 Before first teaching, an explicit sense choice receives one coherent shared lesson
 for its effective set. Two learners requesting that set reuse its package; an
-unprepared set waits in the stash. Learners without overrides retain compatibility
-with their existing default lesson even when shared defaults change. An explicit
-choice can reuse that lesson only when its authored scope matches the chosen set.
+unprepared set waits in the stash. Learners without overrides use the default
+lesson. The reserve replaces a superseded default lesson on demand. An explicit
+choice can reuse a compatible current or automatically superseded default lesson when its
+authored scope exactly matches the chosen set.
 Taking up a sense after teaching does not repeat the lesson or reset progress.
 Solidify retains the familiar completed lesson for its warmup.
 

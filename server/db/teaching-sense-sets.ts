@@ -1,6 +1,6 @@
 import { getDb } from './connection.ts';
 
-/** Compatibility lane: its existing source is retained when shared defaults change. */
+/** Shared default lane. Its source records the selection used for authoring. */
 export const DEFAULT_TEACHING_SET = 'default';
 
 /** Identity is the sorted set itself, independent of learner, ordering and defaults. */

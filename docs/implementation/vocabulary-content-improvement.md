@@ -47,11 +47,15 @@ dependencies are retained. Opening a workspace uses a read transaction, and savi
 a judgment reuses its checked dependency snapshot when returning the workspace.
 
 [`vocabulary-attention.ts`](../../server/db/vocabulary-attention.ts) projects a stable
-`reconciliation:<wordId>` item for a current source mismatch, a saved decision, or
-an incomplete applied replacement. It groups preparation failures whose source is
-covered by that current/reviewed resolution, regardless of error label. Failures
-on sources outside the resolution and unrelated reflection cases remain separate. Source identity and individual failure records
-are disclosed as children. Grouping affects the queue projection, preserving the
+`reconciliation:<wordId>` item for a current source mismatch requiring judgment,
+a saved decision, or an incomplete applied replacement.
+[Background teaching maintenance](../vocabulary-learning.md#preparation-compatibility)
+handles a clean teaching superset of the defaults. A Word defaults item groups
+preparation records blocked by that same selection. A reconciliation groups the
+remaining preparation failures whose source its resolution covers.
+Failures on other sources and unrelated reflection cases remain separate.
+The card discloses the source and individual failure records. Grouping affects
+the queue projection, preserving the
 underlying records and history. Completed replacements remove covered failures
 from active attention; a new mismatch or decision can keep the word actionable.
 Queue counting and pagination operate on grouped identities before displayed

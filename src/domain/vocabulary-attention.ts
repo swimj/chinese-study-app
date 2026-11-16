@@ -6,7 +6,7 @@ export type VocabularyReconciliationAttentionChild = {id:string;kind:'source'|'p
 type AttentionBase = {id:string;title:string;reason:string;createdAt:string;caseId:string|null};
 export type VocabularyAttentionItem = AttentionBase & (
   | {kind:'reconciliation';wordId:string;sourceContentId:string|null;resolutionId:string|null;status:'unresolved'|'draft'|'resolved'|'applied';progress:SenseContentReconciliationProgress;children:VocabularyReconciliationAttentionChild[]}
-  | {kind:'defaults';wordId:string;finding:VocabularyDefaultSelectionFinding}
+  | {kind:'defaults';wordId:string;finding:VocabularyDefaultSelectionFinding;blockedPreparations:{workId:string;createdAt:string}[]}
   | {kind:'approval';requestId:string;proposalId:string;expectedVersion:number;attempts:number;retryable:boolean}
   | {kind:'preparation';workId:string;wordId:string;sourceContentId:string|null;reconciliationId?:string|null;attemptCount:number;invocationId:string|null;retryable:boolean}
   | {kind:'dispatch';dispatchId:string;sessionId:string;learnerId:string}

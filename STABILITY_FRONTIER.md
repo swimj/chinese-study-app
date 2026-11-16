@@ -41,10 +41,11 @@ belong there and in task instructions, not in this frontier.
   composition resolves current teaching without reserve maintenance or preparation
   nudges. The implementation guide describes reserve sizing and preparation compatibility; historical learner state and
   established sense identities survive source refresh.
-  Teaching preparation is keyed by word and sense set. An explicit default
-  compatibility lane preserves existing lessons across shared-default edits;
-  concrete sets retain separate sources, packages and preparation failures.
-  Learner selection of custom sets is not enabled by this storage foundation.
+  Teaching preparation is keyed by word and sense set. The default lane
+  supersedes teaching that covers the saved defaults plus extra valid uses.
+  The reserve replaces that lesson on demand. Concrete sets retain separate
+  sources, packages and failures, and can reuse a default package whose authored
+  scope matches the learner's explicit request.
   Canonical sense inventory and default-useful selection are distinct. Inventory
   tracks uses of the exact target, excluding meanings realized only in larger
   compounds or fixed expressions while allowing grammatical constructions.

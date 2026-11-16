@@ -45,10 +45,12 @@ and bounded retries rather than unbounded speculative generation.
 The teaching reserve owns new-word preparation demand. Durable membership stores
 readiness hints, not preparation versions. Background maintenance handles source
 planning, compatibility, blocked work and readiness independently of session
-visits. Mutation requests and bounded periodic audits recover after restart or
-publication. Session composition only resolves current usable material for ready
-reserve candidates; discrepancies produce bounded diagnostics, not foreground
-repair. The resolved teaching is carried into the frozen session payload.
+visits. It supersedes teaching that covers the established nonempty defaults
+and contains additional valid one-to-one canonical mappings. Reserve demand
+triggers replacement teaching from the defaults. Mutation requests and bounded
+periodic audits recover after restart or publication. Session composition only
+resolves current usable material for ready reserve candidates. Discrepancies
+produce bounded diagnostics. The resolved teaching enters the frozen session payload.
 The payload covers modes reachable through deterministic session transitions.
 Discretionary mode commands affect future sessions; successfully closed summaries
 can issue them without rewriting completed evidence. Historical session mode
@@ -290,14 +292,12 @@ owns a coherent source document, teaching package, leases and bounded retry
 state. One set's source or failure cannot satisfy or block another set's work.
 Documents retain their authored scope and publication provenance.
 
-Default-following study uses an explicit compatibility lane. Its existing lesson
-remains usable when shared defaults change, including later default edits; the
-lane is not a claim that its source covers today's selection. A newly prepared
-default source captures the selection at preparation. Migration does not infer
-historical authored scope from current defaults. Concrete-set repair preserves
-its canonical mappings, and a changed canonical scope requires reconciliation.
-Learner selection of concrete sets is a separate application capability; the
-preparation foundation alone leaves learner-visible default behavior unchanged.
+Default-following study uses an explicit compatibility lane. Its source records
+the selection at preparation. Background maintenance supersedes a default
+lesson whose current mappings cover every saved default sense plus additional
+senses. A compatible superseded lesson remains usable for an explicit request
+that matches its exact authored scope. Concrete-set repair preserves its canonical mappings,
+and a changed canonical scope requires reconciliation.
 
 Single-exercise assessment records its observed source binding and proposed target
 separately. Assessment never changes source content or its sense binding. Only
@@ -315,8 +315,9 @@ For words without an established empty inventory, unmapped fallback exercises an
 recognition retain their serving rules. Historical encounters retain their exact
 served material. Missing or stale document-to-sense mappings raise an operator finding
 before new generation; runtime does not invent reconciliation or remap old sources.
-Coverage changes never imply retirement. A proposal may separately retire a general
-production exercise, subject to exact source, mapping and catalog checks. Operators
+General production exercises retain their availability when the useful
+selection changes. A proposal may retire a general production exercise, subject
+to exact source, mapping and catalog checks. Operators
 edit sense policy directly with scope-version checks; content proposals never change it.
 
 Exercise improvement trusts the mapped sense's necessity, including specialized

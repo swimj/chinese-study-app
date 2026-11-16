@@ -10,8 +10,9 @@ import { createBaselineFixture } from './helpers/baseline-database.ts';
 import { migrateDatabase } from '../server/db/migrations.ts';
 import { setDb } from '../server/db/connection.ts';
 import { runWithLearnerId } from '../server/db/learner-context.ts';
-import { enqueueWordPreparation } from '../server/db/preparation-work.ts';
-import { claimSharedWordIntroductionStage, finishSharedWordIntroductionBootstrap, finishSharedWordIntroductionTeaching, getSharedWordIntroductionContent, getSharedWordTeachingPackageId } from '../server/db/word-introductions.ts';
+import { enqueueWordPreparation, getWordPreparationWork } from '../server/db/preparation-work.ts';
+import { claimSharedWordIntroductionStage, finishSharedWordIntroductionBootstrap, finishSharedWordIntroductionTeaching,
+  getSharedWordIntroductionContent, getSharedWordTeachingPackageId, getSharedWordIntroductionPreparation, getWordIntroductionLibrary, pinWordTeachingPackage } from '../server/db/word-introductions.ts';
 import { teachingSenseSetKey } from '../server/db/teaching-sense-sets.ts';
 import { normalizePracticeRehearsals } from '../server/word-content/authoring.ts';
 import { getVocabularySenses, updateVocabularySense, createVocabularyContent, getVocabularyContentForMaintenance } from '../server/db/vocabulary-content.ts';
@@ -26,6 +27,14 @@ import type { WordContentDocument } from '../src/domain/word-content/types.ts';
 import type { WordIntroductionProvider } from '../server/word-content/provider.ts';
 import type { SenseContentReconciliationDraft, SenseContentReconciliationWorkspace } from '../src/domain/sense-content-reconciliation.ts';
 import { snapshotInventoryForReconciliation } from '../server/db/sense-inventory-reconciliation-report.ts';
+import { supersedeOutdatedTeaching } from '../server/db/teaching-supersession.ts';
+import { getExactDefaultTeachingSource } from '../server/db/learner-teaching.ts';
+import { reconcileVocabularyPreparationReserve } from '../server/vocabulary/preparation-reserve.ts';
+import { getBlockedPreparationWordIds, replaceWordReserveCandidates, setWordReserveReadiness } from '../server/db/word-reserve.ts';
+import { introductions, resolveVocabularyTeaching, teachingReady } from '../server/vocabulary/teaching-readiness.ts';
+import { addVocabularyWord } from '../server/db/vocabulary-learners.ts';
+import { resolveVocabularyLearnerSenseScope, writeVocabularyLearnerSenseScope } from '../server/db/vocabulary-learner-senses.ts';
+import { getVocabularyStudy, startVocabularyStudy } from '../server/vocabulary/study.ts';
 
 let root: string, baseline: string, db: DatabaseSync;
 let previousAllowlist: string | undefined;
@@ -135,6 +144,122 @@ async function prepareTeaching(): Promise<void> {
   const worker = createWordPreparationWorker({ provider: provider(), controls: () => ({ maintenanceMode: false, providerWorkEnabled: true }), providerWork: work => work() });
   await worker.drain(); await worker.stop();
 }
+function narrowAlignedTeaching(): string {
+  db.exec("UPDATE word_introduction_preparation SET content_id='source-A',package_id='package-A' WHERE word_id='word'");
+  db.exec("UPDATE word_preparation_work SET source_content_id='source-A',attempt_count=1 WHERE word_id='word' AND stage='teaching'");
+  const [selected] = getVocabularySenses('word');
+  writeVocabularyDefaultUsefulSenses('word', getVocabularyWordSenseCoverage('word').version, [selected.senseId], actor);
+  return selected.senseId;
+}
+test('valid extra teaching uses are superseded and the next reserve demand regenerates only selected senses', async () => {
+  const at = new Date().toISOString(), practice = createVocabularyPracticePreparation();
+  const attention = () => listVocabularyAttention(actor.id, {kind:'reconciliation'}, {approvals:[],preparationFailure:practice.failed});
+  assert.equal(supersedeOutdatedTeaching(at), 0, 'unmapped teaching still requires a decision');
+  assert.equal(attention().total, 1);
+  const selected = narrowAlignedTeaching();
+  const authoredSenseIds = getVocabularySenses('word').map(sense=>sense.senseId);
+  const concreteKey = teachingSenseSetKey([authoredSenseIds.find(id=>id!==selected)!]);
+  runWithLearnerId('learner',()=>enqueueWordPreparation('word','teaching',undefined,concreteKey));
+  await prepareTeaching();
+  const concretePackage = getSharedWordTeachingPackageId('word',concreteKey);
+  assert.ok(concretePackage);
+  const concreteWork = getWordPreparationWork('word','teaching',concreteKey);
+  db.exec("INSERT INTO learners(learner_id,display_name,created_at) VALUES ('exact','Exact learner','2026-11-06')");
+  runWithLearnerId('exact',()=>{
+    addVocabularyWord('word');
+    const scope = resolveVocabularyLearnerSenseScope('word');
+    writeVocabularyLearnerSenseScope('word',{senseIds:authoredSenseIds,expectedStateVersion:scope.stateVersion!,
+      expectedCatalogVersion:scope.catalogVersion,expectedSelectionVersion:scope.selectionVersion,surface:'test'});
+    replaceWordReserveCandidates(['word'],at);
+    setWordReserveReadiness('word',true,at);
+  });
+  const oldRepertoire = createVocabularyContent({contentId:'existing-general',kind:'exercise',payloadVersion:1,
+    body:{prompt:'Connect the bonus to performance',source:{bootstrapContentId:'source-A'}},exerciseType:'definition',skill:'production',
+    exerciseRole:'general',assessment:{match:'exact'},accessScope:'shared',availability:'active',originKind:'human',
+    words:[{wordId:'word',relation:'target',senseId:selected,senseMappingEstablishedAt:at}],answers:[{wordId:'word',acceptedForms:['挂钩']}]},actor);
+  const teachingWork = getWordPreparationWork('word','teaching')!;
+  db.prepare(`INSERT INTO word_preparation_attempts(attempt_id,work_id,started_at,finished_at,outcome)
+    VALUES ('prior-attempt',?,?,?,'ready')`).run(teachingWork.workId,at,at);
+  db.prepare(`INSERT INTO vocabulary_practice_preparation(work_id,word_id,source_content_id,generation_key,status,created_at,updated_at)
+    VALUES ('old-practice','word','source-A','old-practice','queued',?,?)`).run(at,at);
+  const retained = runWithLearnerId('learner', () => {
+    addVocabularyWord('word');
+    replaceWordReserveCandidates(['word'],at);
+    setWordReserveReadiness('word',true,at);
+    pinWordTeachingPackage('word','package-A');
+    const study = startVocabularyStudy();
+    assert.equal(study.session.context.words.some(word=>word.wordId==='word'),true);
+    replaceWordReserveCandidates([],at);
+    return study;
+  });
+  assert.equal(attention().total, 0, 'maintenance-owned scope drift has no reconciliation card');
+  assert.deepEqual(listSenseContentReconciliationWords(actor.id), []);
+  assert.equal(getSharedWordIntroductionContent('word')?.id, 'source-A', 'reading the queue makes no changes');
+  db.prepare(`UPDATE vocabulary_practice_preparation SET status='running',active_token='live',expires_at=?
+    WHERE work_id='old-practice'`).run(new Date(Date.parse(at)+60_000).toISOString());
+  assert.equal(supersedeOutdatedTeaching(at),0,'source-bound work keeps its live preparation');
+  db.exec("UPDATE vocabulary_practice_preparation SET status='queued',active_token=NULL,expires_at=NULL WHERE work_id='old-practice'");
+  db.prepare(`INSERT INTO content_improvement_cases(id,revision,status,source_kind,source_id,case_json,updated_at)
+    VALUES ('legacy-draft',1,'draft','teaching_package','package-A','{}',?)`).run(at);
+  assert.equal(supersedeOutdatedTeaching(at), 1);
+  assert.equal(supersedeOutdatedTeaching(at), 0);
+  assert.deepEqual(getSharedWordIntroductionPreparation('word'),{contentId:null,packageId:null,activeStage:null});
+  assert.equal(getWordPreparationWork('word','teaching')?.status,'ready','scope change creates no demand');
+  assert.equal(db.prepare("SELECT status FROM vocabulary_practice_preparation WHERE work_id='old-practice'").get()!.status,'ready');
+  assert.deepEqual(getVocabularyContentForMaintenance(oldRepertoire.contentId),oldRepertoire);
+  assert.equal(db.prepare("SELECT status FROM content_improvement_cases WHERE id='legacy-draft'").get()!.status,'draft');
+  assert.equal(db.prepare("SELECT publication_status FROM shared_content_publications WHERE content_id='package-A'").get()!.publication_status,'retired');
+  assert.equal(getSharedWordTeachingPackageId('word',concreteKey),concretePackage);
+  assert.deepEqual(getWordPreparationWork('word','teaching',concreteKey),concreteWork);
+  assert.equal(db.prepare("SELECT ready_at FROM learner_word_preparation_reserve WHERE learner_id='exact' AND word_id='word'").get()!.ready_at,at);
+  runWithLearnerId('exact',()=>{
+    const lesson=resolveVocabularyTeaching('word');
+    assert.ok(lesson?.intro.body && typeof lesson.intro.body==='object' && 'sourcePackageId' in lesson.intro.body);
+    assert.equal(lesson.intro.body.sourcePackageId,'package-A');
+    assert.equal(getWordIntroductionLibrary('word')!.selectedPackageId,'package-A');
+    reconcileVocabularyPreparationReserve();
+    assert.equal(getWordPreparationWork('word','teaching',teachingSenseSetKey(authoredSenseIds)),null);
+  });
+  assert.equal(runWithLearnerId('learner',()=>teachingReady('word')),false);
+  assert.deepEqual(runWithLearnerId('learner',()=>getVocabularyStudy(retained.session.sessionId)).session.context,retained.session.context);
+  assert.equal(runWithLearnerId('learner',()=>getWordIntroductionLibrary('word')!.selectedPackageId),'package-A');
+  assert.equal(runWithLearnerId('learner',()=>getBlockedPreparationWordIds().has('word')),false);
+  db.exec("INSERT INTO learners(learner_id,display_name,created_at) VALUES ('next-learner','Next learner','2026-11-06')");
+  runWithLearnerId('next-learner',()=>{
+    assert.equal(getWordIntroductionLibrary('word')!.packages.some(({teaching})=>teaching.id==='package-A'),false);
+    assert.equal(introductions('word').some(({body})=>body && typeof body==='object' && 'sourcePackageId' in body && body.sourcePackageId==='package-A'),false);
+    addVocabularyWord('word');
+    reconcileVocabularyPreparationReserve();
+  });
+  assert.equal(getWordPreparationWork('word','bootstrap')?.status,'queued');
+  assert.equal(getWordPreparationWork('word','teaching')?.requestedByLearnerId,'next-learner');
+  assert.equal(getWordPreparationWork('word','teaching')?.attemptCount,0);
+  assert.ok(db.prepare("SELECT 1 FROM word_preparation_attempts WHERE attempt_id='prior-attempt' AND outcome='ready'").get());
+  await prepareTeaching();
+  assert.deepEqual(getSharedWordIntroductionContent('word')?.uses.map(use=>use.id),[selected]);
+  assert.equal(runWithLearnerId('next-learner',()=>teachingReady('word')),true);
+  assert.equal(supersedeOutdatedTeaching(new Date().toISOString()),0);
+});
+
+test('a saved operator resolution takes precedence over automatic teaching supersession', () => {
+  narrowAlignedTeaching();
+  const saved = saveSenseContentReconciliation('word', {expectedVersion:null,status:'draft',draft:draft()},actor.id);
+  const items = listVocabularyAttention(actor.id,{kind:'reconciliation'},{
+    approvals:[],preparationFailure:createVocabularyPracticePreparation().failed,
+  }).items;
+  assert.equal(items[0]?.kind,'reconciliation');
+  assert.equal(supersedeOutdatedTeaching(new Date().toISOString()),0);
+  assert.equal(getSharedWordIntroductionContent('word')?.id,'source-A');
+  assert.equal(getSenseContentReconciliationWorkspace('word',actor.id).resolution?.resolutionId,saved.resolution?.resolutionId);
+});
+test('supersession does not make a legacy compatibility-epoch package eligible for exact teaching', () => {
+  narrowAlignedTeaching();
+  const key = teachingSenseSetKey(getVocabularySenses('word').map(sense=>sense.senseId));
+  db.exec("UPDATE word_introduction_preparation SET preparation_epoch=0 WHERE word_id='word' AND teaching_set_key='default'");
+  assert.equal(getExactDefaultTeachingSource('word',key),null);
+  assert.equal(supersedeOutdatedTeaching(new Date().toISOString()),1);
+  assert.equal(getExactDefaultTeachingSource('word',key),null);
+});
 test('discover unmapped B and save a blocked linguistic resolution without mutating live content', () => {
   assert.equal(listSenseContentReconciliationWords(actor.id)[0]?.wordId, 'word');
   const senses = getVocabularySenses('word'), content = db.prepare('SELECT * FROM content_items ORDER BY content_id').all();
