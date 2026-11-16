@@ -1,5 +1,7 @@
 import { generalExerciseContent } from '../server/vocabulary/general-exercise-content.ts';
-import { scanProactiveRepertoire } from '../server/db/proactive-repertoire.ts';
+import { repertoireCoverageGap, scanProactiveRepertoire } from '../server/db/proactive-repertoire.ts';
+import { resolveVocabularyLearnerSenseScope, writeVocabularyLearnerSenseScope } from '../server/db/vocabulary-learner-senses.ts';
+import { canServeVocabularyReviewProduction, isVocabularyProductionProxied } from '../server/vocabulary/production-coverage.ts';
 import { ensureVocabularySenses } from '../server/vocabulary/sense-readiness.ts';
 import { startVocabularyStudy } from '../server/vocabulary/study.ts';
 import { isVocabularyDefinitionFallback } from '../src/domain/vocabulary-production-coverage.ts';
@@ -779,4 +781,180 @@ test('malformed legacy sense evidence fails one proactive job without spending a
   assert.equal(failure.attemptCount,0);
   assert.equal(failure.retryable,false);
   assert.match(failure.lastError ?? '',/Canonical sense evidence/);
+});
+
+function choosePracticeSenses(learnerId: string, senseIds: string[], intendedUseText?: string, targetSenseId?: string) {
+  return runWithLearnerId(learnerId, () => {
+    const scope = resolveVocabularyLearnerSenseScope('w1');
+    return writeVocabularyLearnerSenseScope('w1', {
+      senseIds, targetSenseId, intendedUseText, surface:'test',
+      expectedStateVersion:scope.stateVersion!, expectedCatalogVersion:scope.catalogVersion,
+      expectedSelectionVersion:scope.selectionVersion,
+    });
+  });
+}
+
+function trackForSensePractice(learnerId: string, at: string) {
+  db.prepare(`INSERT INTO learner_words(learner_id,word_id,in_stash,added_at,mode,mode_changed_at)
+    VALUES (?,'w1',1,?,'maintain',?)`).run(learnerId,at,at);
+  db.prepare(`INSERT INTO learner_word_schedules(learner_id,word_id,next_eligible_at,policy_version,scheduler_state_json)
+    VALUES (?,'w1','2999-01-01T00:00:00.000Z','fixture','{"enabled":1,"intervalHours":24}')`).run(learnerId);
+}
+
+test('scope saves coalesce shared defaults and live choices into one canonical provider request', async () => {
+  const actor = {kind:'operator' as const,id:'editor'};
+  const at = new Date().toISOString();
+  const defaultSense = getVocabularySenses('w1')[0]!.senseId;
+  const first = createVocabularySense({wordId:'w1',description:{label:'greet one person'}},actor).senseId;
+  const second = createVocabularySense({wordId:'w1',description:{label:'greet informally'}},actor).senseId;
+  for (const learnerId of ['a','b']) trackForSensePractice(learnerId,at);
+  const schedules = db.prepare('SELECT * FROM learner_word_schedules ORDER BY learner_id').all();
+  const modes = db.prepare('SELECT learner_id,mode,mode_changed_at FROM learner_words ORDER BY learner_id').all();
+
+  choosePracticeSenses('a',[first],'Private sentence from the learner');
+  choosePracticeSenses('b',[defaultSense,second]);
+  assert.deepEqual(repertoireCoverageGap('w1').missing,[defaultSense,first,second].sort());
+
+  const requests: string[][] = [];
+  let providerWorkEnabled = false;
+  const worker = createVocabularyPracticeWorker({
+    proactiveEnabled:()=>false,
+    controls:()=>({maintenanceMode:false,providerWorkEnabled}),providerWork:async work=>work(),
+    onError: (error) => {throw error;},
+    provider: {
+      model:'fixture',isConfigured:()=>true,generationKey:()=> 'fixture',
+      async generate(source) {
+        assert.equal(db.isTransaction,false);
+        assert.doesNotMatch(generalExerciseInvocation(source).userPrompt,/Private sentence from the learner/);
+        requests.push(source.uses.map(use=>use.id).sort());
+        return {exercises:source.uses.map((use,index)=>({
+          id:use.id,sourceUseId:use.id,stimulus:{kind:'direct_text',text:`Greeting cue number ${index+1}.`},teachingNote:null,
+        }))};
+      },
+    },
+  });
+  try {
+    assert.equal(await worker.step(),false);
+    providerWorkEnabled = true;
+    await worker.drain();
+    assert.deepEqual(requests,[[defaultSense,first,second].sort()]);
+    const contentRows = () => db.prepare(`SELECT w.sense_id,c.availability FROM content_words w
+      JOIN content_items c USING (content_id) WHERE c.exercise_role='general' ORDER BY w.sense_id`).all();
+    const published = contentRows();
+    assert.deepEqual(published.map(row=>row.sense_id),[defaultSense,first,second].sort());
+    assert.ok(published.every(row=>row.availability==='active'));
+
+    choosePracticeSenses('a',[defaultSense]);
+    assert.deepEqual(contentRows(),published);
+    assert.deepEqual(runWithLearnerId('a',()=>listVocabularyExercises({wordId:'w1',mode:'practice'}).map(item=>item.words[0]!.senseId)),[defaultSense]);
+    assert.deepEqual(runWithLearnerId('b',()=>listVocabularyExercises({wordId:'w1',mode:'practice'}).map(item=>item.words[0]!.senseId)).sort(),[defaultSense,second].sort());
+    assert.equal(await worker.step(),false);
+    assert.deepEqual(getVocabularyWordSenseCoverage('w1').defaultUsefulSenseIds,[defaultSense]);
+    assert.deepEqual(db.prepare('SELECT * FROM learner_word_schedules ORDER BY learner_id').all(),schedules);
+    assert.deepEqual(db.prepare('SELECT learner_id,mode,mode_changed_at FROM learner_words ORDER BY learner_id').all(),modes);
+    assert.equal(db.prepare("SELECT count(*) AS count FROM backend_events WHERE name='vocabulary.proactive_repertoire.scanned'").get()!.count,0);
+  } finally {await worker.stop();}
+});
+
+test('withdrawn and inactive choices leave shared defaults and other live take-up in demand', () => {
+  const actor = {kind:'operator' as const,id:'editor'};
+  const at = new Date().toISOString();
+  const original = getVocabularySenses('w1')[0]!.senseId;
+  const added = createVocabularySense({wordId:'w1',description:'offer an informal greeting'},actor);
+  for (const learnerId of ['a','b']) {
+    trackForSensePractice(learnerId,at);
+    choosePracticeSenses(learnerId,[added.senseId]);
+  }
+  const shared = repertoireCoverageGap('w1');
+  choosePracticeSenses('a',[original]);
+  assert.equal(repertoireCoverageGap('w1').scopeKey,shared.scopeKey);
+  assert.deepEqual(repertoireCoverageGap('w1').missing,[original,added.senseId].sort());
+  assert.equal(db.prepare('SELECT count(*) AS n FROM vocabulary_practice_preparation').get()!.n,1);
+
+  const assertInactive = () => {
+    const gap = repertoireCoverageGap('w1');
+    assert.deepEqual(gap.missing,[original]);
+    assert.equal(gap.hasMissingTakeUp,false);
+  };
+  db.prepare("UPDATE learners SET disabled_at=? WHERE learner_id='b'").run(at);
+  assertInactive();
+  db.exec("UPDATE learners SET disabled_at=NULL WHERE learner_id='b'");
+  db.prepare("UPDATE learner_words SET dismissed_at=? WHERE learner_id='b' AND word_id='w1'").run(at);
+  assertInactive();
+  db.exec("UPDATE learner_words SET dismissed_at=NULL,mode='unstudied',in_stash=0 WHERE learner_id='b' AND word_id='w1'");
+  assertInactive();
+  db.exec("UPDATE learner_words SET in_stash=1 WHERE learner_id='b' AND word_id='w1'");
+  assert.equal(repertoireCoverageGap('w1').scopeKey,shared.scopeKey);
+  updateVocabularySense(added.senseId,added.version,{description:added.description,status:'retired'},actor);
+  assertInactive();
+});
+
+test('an explicit sense can receive authoring while the shared defaults retain pure-cue proxy coverage', async () => {
+  const actor = {kind:'operator' as const,id:'editor'};
+  const at = new Date().toISOString();
+  const originalSense = getVocabularySenses('w1')[0]!.senseId;
+  const added = createVocabularySense({wordId:'w1',description:'offer an informal greeting'},actor).senseId;
+  createVocabularyContent({
+    contentId:'shared-pure',kind:'exercise',payloadVersion:1,body:{prompt:'Start an exchange.'},
+    exerciseType:'pure_cue',skill:'production',exerciseRole:'general',assessment:{responseMode:'hanzi_entry'},
+    accessScope:'shared',availability:'active',originKind:'human',
+    words:[{wordId:'w1',relation:'target'}],answers:[{wordId:'w1',acceptedForms:['你好']}],
+  },actor);
+  for (const learnerId of ['a','b']) trackForSensePractice(learnerId,at);
+  choosePracticeSenses('a',[added]);
+  assert.equal(isVocabularyProductionProxied('w1'),true);
+  assert.equal(runWithLearnerId('a',()=>canServeVocabularyReviewProduction('w1','practice')),false);
+  const worker = createVocabularyPracticeWorker({
+    proactiveEnabled:()=>false,controls:()=>({maintenanceMode:false,providerWorkEnabled:true}),providerWork:async action=>action(),
+    onError:(error)=>{throw error;},
+    provider:{model:'fixture',isConfigured:()=>true,generationKey:()=> 'fixture',async generate(source) {
+      assert.deepEqual(source.uses.map(use=>use.id).sort(),[originalSense,added].sort());
+      return {exercises:[{id:'informal',sourceUseId:added,
+        stimulus:{kind:'direct_text',text:'Offer a casual greeting.'},teachingNote:null}]};
+    }},
+  });
+  try {assert.equal(await worker.step(),true);} finally {await worker.stop();}
+  assert.equal(db.prepare('SELECT status FROM vocabulary_practice_preparation').get()!.status,'ready');
+  assert.equal(isVocabularyProductionProxied('w1'),true);
+  assert.equal(runWithLearnerId('a',()=>canServeVocabularyReviewProduction('w1','practice')),true);
+  assert.equal(runWithLearnerId('b',()=>canServeVocabularyReviewProduction('w1','practice')),false);
+});
+
+for (const outcome of ['empty','exhausted'] as const) test(`an explicit scope preserves its terminal ${outcome} attempt budget`, async () => {
+  const at = new Date().toISOString();
+  trackForSensePractice('a',at);
+  // An already queued lookahead request becomes explicit without resetting its identity.
+  db.exec("UPDATE learner_words SET mode='solidify' WHERE learner_id='a'");
+  db.prepare("UPDATE learner_word_schedules SET next_eligible_at=? WHERE learner_id='a'").run(at);
+  assert.equal(scanProactiveRepertoire(at,VOCABULARY_PRACTICE_SERVICE),1);
+  db.exec("UPDATE learner_words SET mode='maintain' WHERE learner_id='a'");
+  const sense = getVocabularySenses('w1')[0]!.senseId;
+  let clock = Date.parse(at) + 10_000;
+  let calls = 0;
+  const worker = createVocabularyPracticeWorker({
+    now:()=>clock,proactiveEnabled:()=>false,controls:()=>({maintenanceMode:false,providerWorkEnabled:true}),
+    providerWork:async action=>action(),
+    provider:{model:'fixture',isConfigured:()=>true,generationKey:()=> 'fixture',async generate() {
+      calls++;
+      if(outcome==='exhausted') throw new Error('Vocabulary practice output is invalid or incomplete');
+      return {exercises:[]};
+    }},
+  });
+  try {
+    choosePracticeSenses('a',[sense],undefined,sense);
+    assert.equal(await worker.step(),true);
+    if(outcome==='exhausted') {
+      for(const delay of [30_000,60_000]) {clock+=delay;assert.equal(await worker.step(),true);}
+    }
+    const expectedCalls = outcome==='empty' ? 1 : 3;
+    const status = () => db.prepare('SELECT status,total_attempt_count FROM vocabulary_practice_preparation').all()
+      .map(row=>[row.status,row.total_attempt_count]);
+    assert.deepEqual(status(),[['failed',expectedCalls]]);
+    choosePracticeSenses('a',[sense]);
+    choosePracticeSenses('a',[sense],undefined,sense);
+    clock+=12*3_600_000;
+    assert.equal(await worker.step(),false);
+    assert.equal(calls,expectedCalls);
+    assert.deepEqual(status(),[['failed',expectedCalls]]);
+  } finally {await worker.stop();}
 });
