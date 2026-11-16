@@ -9,6 +9,9 @@ describe how to preserve implementation and regression evidence during a change.
 
 Run full suite: `npm test` (Node test runner, `tests/*.test.ts`).
 
+For live vocabulary-chat prompt regression, use the [intake evaluation set](evaluation/vocabulary-intake.md):
+55 named cases, exact fixture/runner links, execution commands and scoring caveats.
+
 ## Verify coverage through the current application path
 
 Select tests by the behavior and execution path they exercise, as well as by

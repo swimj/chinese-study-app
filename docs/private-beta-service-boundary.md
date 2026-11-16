@@ -83,13 +83,15 @@ underlying evidence shared. Shared authored content has its own identity and
 revision history; referencing it grants no access to another learner's records.
 
 Learner chat conversations, tool results, card state and command receipts are
-private, including their retained provider request and response snapshots. A
-chat surface sends the learner’s submitted text and the selected exchange
-context to its configured model provider. It must disclose that use when the
-surface is enabled. Chat text does not become input to shared teaching
-authoring merely because a card references shared words or senses. The
-[chat runtime](chat-runtime.md) provides storage and transport; enabling a
-learner surface and its vocabulary commands is a separate integration.
+private, including retained provider request and response snapshots. Add-word
+chat sends the submitted message, bounded recent learner/assistant prose, current
+card projections and selected lexical and learner-word tool results to the
+configured OpenAI model provider. Deferred matching sends the
+retained context and active canonical senses. The surface discloses provider
+use. Shared inventory, default selection and teaching preparation use lexical
+and canonical evidence. A learner-confirmed new canonical sense can be shared
+as a general gloss and usage notes, with the originating message kept private.
+See the [chat runtime](chat-runtime.md#vocabulary-intake).
 
 Service-owned jobs, generation provenance, imports and release ledgers carry
 operational authority. They retain source attribution where needed without

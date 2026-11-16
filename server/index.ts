@@ -1,3 +1,6 @@
+import { registerVocabularyIntakeRoutes } from './vocabulary/intake-routes.ts';
+import { createVocabularyIntakeWorker } from './vocabulary/intake-worker.ts';
+import type { ChatProvider } from './llm/chat-types.ts';
 import { retryPreparationWithReadiness } from './word-content/retry-preparation.ts';
 import { registerVocabularyStatisticsRoutes } from './vocabulary/statistics-routes.ts';
 import { registerVocabularyProgressRoutes } from './vocabulary/progress-routes.ts';
@@ -229,6 +232,8 @@ export type CreateAppOptions = {
   wakeSessionDebriefs?: () => void;
   wakeSessionCompletions?: () => void;
   wakeVocabulary?: () => void;
+  wakeVocabularyIntake?: () => void;
+  vocabularyIntakeProvider?: ChatProvider;
 };
 
 function parseMyWordsStatusQuery(value: unknown): MyWordsStatus[] | undefined | 'invalid' {
@@ -440,6 +445,8 @@ export function createApp(options: CreateAppOptions = {}) {
   });
   registerContentImprovementRoutes(app);
   registerVocabularyStudyRoutes(app, options.wakeVocabulary);
+  registerVocabularyIntakeRoutes(app, { wake: options.wakeVocabularyIntake, provider: options.vocabularyIntakeProvider,
+    resolveClerkProviderSubject: options.resolveClerkProviderSubject });
   registerVocabularyStatisticsRoutes(app);
   registerVocabularyProgressRoutes(app);
   registerVocabularyReflectionRoutes(app, {wake: options.wakeVocabulary});
@@ -2723,10 +2730,13 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const vocabularyApprovals = getVocabularyApprovalRequests();
   if (dbConfig.studyProfile === 'mandarin') vocabularyApprovals.wake();
   const wakeVocabulary = () => { vocabularyProcessing.wake(); vocabularyPreparation.wake(); sessionDebriefs.wake(); };
-  if (dbConfig.studyProfile === 'mandarin') wakeVocabulary();
+  const vocabularyIntake = createVocabularyIntakeWorker({ onError: () => console.error('Vocabulary intake worker failed'),
+    onChange: () => { wordPreparation.wake(); wakeVocabulary(); } });
+  const wakeVocabularyIntake = () => { vocabularyIntake.wake(); wordPreparation.wake(); wakeVocabulary(); };
+  if (dbConfig.studyProfile === 'mandarin') wakeVocabularyIntake();
   startServer({
-    app: createApp({ serviceMetrics, requestTiming: { flightRecorder: flightRecorder ?? undefined }, wakeWordPreparation: wordPreparation.wake, canPrepareWords: wordPreparation.canPrepare, wakeSessionDebriefs: sessionDebriefs.wake, wakeSessionCompletions: sessionCompletions.wake, wakeVocabulary }),
-    stopBackgroundWork: async () => { vocabularyApprovals.stop(); await Promise.all([wordPreparation.stop(), sessionDebriefs.stop(), sessionCompletions.stop(), vocabularyProcessing.stop(), vocabularyPreparation.stop()]); },
+    app: createApp({ serviceMetrics, requestTiming: { flightRecorder: flightRecorder ?? undefined }, wakeWordPreparation: wordPreparation.wake, canPrepareWords: wordPreparation.canPrepare, wakeSessionDebriefs: sessionDebriefs.wake, wakeSessionCompletions: sessionCompletions.wake, wakeVocabulary, wakeVocabularyIntake }),
+    stopBackgroundWork: async () => { vocabularyApprovals.stop(); await Promise.all([wordPreparation.stop(), sessionDebriefs.stop(), sessionCompletions.stop(), vocabularyProcessing.stop(), vocabularyPreparation.stop(), vocabularyIntake.stop()]); },
     additionalServers: metricsServer ? [metricsServer] : [],
     closeDatabase: () => {
       usagePulseScheduler.stop();

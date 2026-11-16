@@ -1,0 +1,2 @@
+PASS: native Space confirms Add sense; focus stays in the chat and Escape returns to composer.
+PASS: additive proposal, keyboard confirmation, stale reload/reconfirmation, both senses tracked, no enrollment Undo, composer focus, narrow layout.
