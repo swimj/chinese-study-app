@@ -694,3 +694,18 @@ results. Exercise a scan on a disposable copy without provider calls. Check
 that it admits at most 24 words, records the horizon, and does not enqueue a
 second batch within six hours. See [proactive review preparation](../implementation/repertoire-preparation.md#proactive-review-preparation)
 for runtime controls.
+
+## Learner chat storage (`0075`)
+
+`0075_learner_chat` creates empty learner-private conversation, turn, event,
+card and command-receipt tables. It does not scan or rewrite existing learner
+state, shared content, packages, history or invocation records. Its cost is
+limited to creating the new schema objects.
+
+Rehearse with the stopped-writer schema procedure: compare existing learner and
+content records before and after, confirm all five chat tables start empty, and
+run foreign-key and integrity checks. Exercise cross-learner rejection, command
+replay and atomic rollback against the migrated copy. Populated upgrade, failed
+batch rollback, repeat and fresh-schema checks live in
+`tests/chat-migration.test.ts`; domain isolation and command checks live in
+`tests/learner-chat.test.ts`. This is not an app-only upgrade.
