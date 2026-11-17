@@ -22,6 +22,7 @@ import { usePriorityPageController } from './features/priority/usePriorityPageCo
 import { PriorityPage } from './pages/PriorityPage';
 import { useContentDiagnosticsController } from './features/content/useContentDiagnosticsController';
 import { ContentDiagnosticsPage } from './pages/ContentDiagnosticsPage';
+import { useContentReactions } from './features/reactions/useContentReactions';
 import { useAttentionBadges } from './features/attention/useAttentionBadges';
 import { useVocabularyIntake } from './features/vocabulary-intake/useVocabularyIntake';
 import { VocabularyIntakeChat, VocabularyIntakeOutstanding } from './features/vocabulary-intake/VocabularyIntakePanels';
@@ -66,6 +67,7 @@ function App({ onSignOut, accountScope = 'trusted-local' }: { onSignOut?: () => 
   const [backendStatus, setBackendStatus] = useState<BackendStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const attention = useAttentionBadges();
+  const reactions = useContentReactions();
   const updatesCatalog = useWhatsNewCatalog();
   const [feedbackAttention,setFeedbackAttention]=useState({unseenCount:0,hasFailure:false,generating:false});
   async function refreshFeedbackAttention(){setFeedbackAttention(await fetchVocabularyAttention());}
@@ -233,28 +235,29 @@ function App({ onSignOut, accountScope = 'trusted-local' }: { onSignOut?: () => 
       onOpenAboutPage={() => void leaveCompletedSessionThen(() => setCurrentPage('about'))}
       onSignOut={onSignOut}
     >
-      {currentPage === 'home' ? (
-        <VocabularyHomePage
-          guideToSettings={guideToSettings}
-          onSettingsOpened={() => {
-            if (!guideToSettings) return;
-            setSettingsUnseen(false);
-            try { window.localStorage.setItem(settingsVisitedKey, 'true'); }
-            catch { /* Optional browser storage must not block settings. */ }
-          }}
-          updatesCatalog={updatesCatalog}
-          unseenPostIds={attention.whatsNewUnseenPostIds}
-          onUnseenBadgeVisible={attention.acknowledgeWhatsNewBadge}
-          updatesCollapsed={homeUpdatesCollapsed}
-          onToggleUpdatesCollapsed={() => setHomeUpdatesCollapsed(collapsed => !collapsed)}
-          onOpenUpdate={(id) => { setSelectedUpdateId(id); setAboutView('whats-new'); setCurrentPage('about'); }}
-          onViewAllUpdates={() => { setSelectedUpdateId(null); setAboutView('whats-new'); setCurrentPage('about'); }}
-          backendStatus={backendStatus}
-          onSaveSessionSettings={saveSessionSettings}
-          active={studySession.active} busy={studySession.busy} onStart={() => void studySession.start()}
-          studySurface={<VocabularyStudy controller={studySession} hideStartButton characterPresentation={backendStatus?.characterPresentation ?? DEFAULT_CHARACTER_PRESENTATION} sentenceCharacterPresentation={backendStatus?.sentenceCharacterPresentation ?? 'simplified'}/> }
-        />
-      ) : currentPage === 'priority' ? (
+      <VocabularyHomePage
+        visible={currentPage === 'home'}
+        contentReactions={reactions}
+        guideToSettings={guideToSettings}
+        onSettingsOpened={() => {
+          if (!guideToSettings) return;
+          setSettingsUnseen(false);
+          try { window.localStorage.setItem(settingsVisitedKey, 'true'); }
+          catch { /* Optional browser storage must not block settings. */ }
+        }}
+        updatesCatalog={updatesCatalog}
+        unseenPostIds={attention.whatsNewUnseenPostIds}
+        onUnseenBadgeVisible={attention.acknowledgeWhatsNewBadge}
+        updatesCollapsed={homeUpdatesCollapsed}
+        onToggleUpdatesCollapsed={() => setHomeUpdatesCollapsed(collapsed => !collapsed)}
+        onOpenUpdate={(id) => { setSelectedUpdateId(id); setAboutView('whats-new'); setCurrentPage('about'); }}
+        onViewAllUpdates={() => { setSelectedUpdateId(null); setAboutView('whats-new'); setCurrentPage('about'); }}
+        backendStatus={backendStatus}
+        onSaveSessionSettings={saveSessionSettings}
+        active={studySession.active} busy={studySession.busy} onStart={() => void studySession.start()}
+        studySurface={<VocabularyStudy controller={studySession} hideStartButton characterPresentation={backendStatus?.characterPresentation ?? DEFAULT_CHARACTER_PRESENTATION} sentenceCharacterPresentation={backendStatus?.sentenceCharacterPresentation ?? 'simplified'}/> }
+      />
+      {currentPage === 'priority' ? (
         <>
           <NestedNav>
             <nav className="reflection-view-rail" aria-label="Words views">
@@ -319,8 +322,8 @@ function App({ onSignOut, accountScope = 'trusted-local' }: { onSignOut?: () => 
               ))}
             </nav>
           </NestedNav>
-          {feedbackView === 'saved' ? <SavedPage /> : (
-            <VocabularyFeedbackPage onChanged={()=>void refreshFeedbackAttention().catch(()=>undefined)} />
+          {feedbackView === 'saved' ? <SavedPage reactions={reactions} /> : (
+            <VocabularyFeedbackPage reactions={reactions} onChanged={()=>void refreshFeedbackAttention().catch(()=>undefined)} />
           )}
         </>
       ) : currentPage === 'about' ? (

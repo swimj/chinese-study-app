@@ -11,7 +11,7 @@ import type { VocabularyProgress } from '../domain/vocabulary-progress';
 import type { WhatsNewCatalog } from '../features/attention/useWhatsNewCatalog';
 import { useSessionDebrief } from '../features/session/useSessionDebrief';
 import { HomeConnections, type HomeConnectionReactions } from '../features/session/HomeConnections';
-import { useContentReactions } from '../features/reactions/useContentReactions';
+import type { ContentReactions } from '../features/reactions/useContentReactions';
 import { useHomeConnectionsView } from '../features/session/useHomeConnectionsView';
 import { ConnectionSignals } from '../features/session/ConnectionSignals';
 
@@ -47,6 +47,7 @@ function StudyWeek({studyDays,progress}:{studyDays:VocabularyStudyDays;progress:
 }
 
 export function VocabularyHomePage(props: {
+  visible: boolean; contentReactions: ContentReactions;
   backendStatus: BackendStatus|null; active:boolean; busy:boolean; studySurface:ReactNode; onStart:()=>void;
   guideToSettings:boolean; onSettingsOpened:()=>void;
   onSaveSessionSettings:ComponentProps<typeof SessionSettingsPanel>['onSaveSessionSettings'];
@@ -59,7 +60,7 @@ export function VocabularyHomePage(props: {
   useEffect(()=>{if(!props.active)void fetchVocabularyStatistics().then(setStatistics).catch(()=>setStatistics(null));},[props.active]);
   const [progress,setProgress]=useState<HomeProgressState>({status:'idle',value:null});
   const [progressRevision,setProgressRevision]=useState(0);
-  // Each Home visit requests once; a generation discards a response that outlived its visit.
+  // Refresh after study; ignore responses invalidated by the next session.
   const progressGeneration=useRef(0),progressRequested=useRef(false);
   useEffect(()=>{if(props.active){progressGeneration.current++;progressRequested.current=false;setProgress({status:'idle',value:null});}},[props.active]);
   useEffect(()=>()=>{progressGeneration.current++;progressRequested.current=false;},[]);
@@ -73,17 +74,18 @@ export function VocabularyHomePage(props: {
   },[props.active,progressRevision]);
   useEffect(()=>{if(props.active)setSettings(false);},[props.active]);
   const recent=useSessionDebrief(undefined,!props.active);
-  const connections=useHomeConnectionsView(recent.debrief,!props.active&&!settings);
-  const contentReactions=useContentReactions('home');
+  const connections=useHomeConnectionsView(recent.debrief,props.visible&&!props.active&&!settings);
+  const { stateFor, change, errors } = props.contentReactions;
+  const reactionError = errors.home;
   const debriefSessionId=recent.debrief?.sessionId??null;
   const connectionReactions=useMemo<HomeConnectionReactions|undefined>(()=>debriefSessionId===null?undefined:{
-    stateFor:(noteIndex)=>contentReactions.stateFor({kind:'connection',sessionId:debriefSessionId,noteIndex}),
-    onChange:(noteIndex,choice)=>contentReactions.change({kind:'connection',sessionId:debriefSessionId,noteIndex},choice),
-    error:contentReactions.error,
-  },[debriefSessionId,contentReactions.stateFor,contentReactions.change,contentReactions.error]);
+    stateFor:(noteIndex)=>stateFor({kind:'connection',sessionId:debriefSessionId,noteIndex}),
+    onChange:(noteIndex,choice)=>change('home',{kind:'connection',sessionId:debriefSessionId,noteIndex},choice),
+    error:reactionError,
+  },[debriefSessionId,stateFor,change,reactionError]);
   const connectionsExpanded=!settings&&connections.expanded;
-  if(props.active)return <div className="home-page home-session-active">{props.studySurface}</div>;
-  return <div className={`home-page${connectionsExpanded?' home-connections-expanded':''}${props.updatesCollapsed?' home-updates-collapsed':''}`}>
+  if(props.active)return props.visible?<div className="home-page home-session-active">{props.studySurface}</div>:null;
+  return <div hidden={!props.visible} className={`home-page${connectionsExpanded?' home-connections-expanded':''}${props.updatesCollapsed?' home-updates-collapsed':''}`}>
     {connectionsExpanded?<ConnectionSignals />:null}
     {!connectionsExpanded&&!settings&&props.updatesCollapsed?<HomeUpdatesCollapsedControl unseenPostIds={props.unseenPostIds} onVisible={props.onUnseenBadgeVisible} onExpand={props.onToggleUpdatesCollapsed}/>:null}
     <div className={`grid home-grid${!connectionsExpanded&&!settings&&!props.updatesCollapsed?' home-with-updates':''}`}>
@@ -91,8 +93,8 @@ export function VocabularyHomePage(props: {
         guideToSettings={props.guideToSettings} statistics={statistics} timed={props.backendStatus?.timedSessions===true} progress={progress.value}
         onStart={props.onStart}
         onToggleSettings={()=>{if(!saving){setSettings(!settings);if(!settings)props.onSettingsOpened();}}} />
-      {settings?<SessionSettingsPanel backendStatus={props.backendStatus} onSaveSessionSettings={props.onSaveSessionSettings} onSavingChange={setSaving} onClose={()=>setSettings(false)}/>:null}
-      {!settings&&recent.debrief?<HomeConnections key={recent.debrief.sessionId} debrief={recent.debrief} expanded={connections.expanded} error={recent.error} retrying={recent.retrying} onToggle={connections.toggle} onRetry={recent.retry} onReload={recent.reload} reactions={connectionReactions}/>:recent.error?
+      {settings?<SessionSettingsPanel visible={props.visible} backendStatus={props.backendStatus} onSaveSessionSettings={props.onSaveSessionSettings} onSavingChange={setSaving} onClose={()=>setSettings(false)}/>:null}
+      {!settings&&recent.debrief?<HomeConnections visible={props.visible} key={recent.debrief.sessionId} debrief={recent.debrief} expanded={connections.expanded} error={recent.error} retrying={recent.retrying} onToggle={connections.toggle} onRetry={recent.retry} onReload={recent.reload} reactions={connectionReactions}/>:recent.error?
         <p className="notes" role="status">Couldn’t load the recent session. <button type="button" className="secondary-button" onClick={recent.reload}>Try again</button></p>:null}
       {!connectionsExpanded&&!settings&&!props.updatesCollapsed?<HomeUpdates catalog={props.updatesCatalog} unseenPostIds={props.unseenPostIds} onUnseenBadgeVisible={props.onUnseenBadgeVisible} onOpenPost={props.onOpenUpdate} onViewAll={props.onViewAllUpdates} onCollapse={props.onToggleUpdatesCollapsed}/>:null}
       {!connectionsExpanded&&!settings?<HomeProgressArea state={progress} onRetry={()=>{progressRequested.current=false;setProgressRevision(value=>value+1);}} />:null}

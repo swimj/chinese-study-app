@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { AppChrome, NestedNav } from '../../src/components/AppChrome';
 import { SavedPage, type SavedPageApi } from '../../src/pages/SavedPage';
 import { HomeConnections, type HomeConnectionReactions } from '../../src/features/session/HomeConnections';
-import { useContentReactions } from '../../src/features/reactions/useContentReactions';
+import { useContentReactions, type ContentReactions } from '../../src/features/reactions/useContentReactions';
 import type { SavedCollection } from '../../src/domain/content-reactions';
 import type { SessionDebrief } from '../../src/domain/session-debrief';
 import { createMemoryReactionsApi } from './memory-reactions';
@@ -46,14 +46,13 @@ function collection(empty: boolean): SavedCollection {
   };
 }
 
-function HomeScenario() {
-  const contentReactions = useContentReactions('home', reactions.api);
+function HomeScenario({ contentReactions }: { contentReactions: ContentReactions }) {
   const [expanded, setExpanded] = useState(true);
   const value = useMemo<HomeConnectionReactions>(() => ({
     stateFor: (noteIndex) => contentReactions.stateFor({ kind: 'connection', sessionId: debrief.sessionId, noteIndex }),
-    onChange: (noteIndex, choice) => contentReactions.change({ kind: 'connection', sessionId: debrief.sessionId, noteIndex }, choice),
-    error: contentReactions.error,
-  }), [contentReactions.stateFor, contentReactions.change, contentReactions.error]);
+    onChange: (noteIndex, choice) => contentReactions.change('home', { kind: 'connection', sessionId: debrief.sessionId, noteIndex }, choice),
+    error: contentReactions.errors.home,
+  }), [contentReactions.stateFor, contentReactions.change, contentReactions.errors.home]);
   return <div className={`home-page${expanded ? ' home-connections-expanded' : ''}`}><div className="grid home-grid">
     <HomeConnections debrief={debrief} expanded={expanded} error={null} retrying={false} onToggle={() => setExpanded(!expanded)}
       onRetry={() => undefined} onReload={() => undefined} reactions={value} />
@@ -63,7 +62,8 @@ function HomeScenario() {
 function Preview() {
   const params = new URLSearchParams(window.location.search);
   const [scenario, setScenario] = useState(params.get('scenario') ?? 'saved');
-  const api = useMemo<SavedPageApi>(() => ({ fetchCollection: async () => collection(scenario === 'empty'), reactions: reactions.api }), [scenario]);
+  const contentReactions = useContentReactions(reactions.api);
+  const api = useMemo<SavedPageApi>(() => ({ fetchCollection: async () => collection(scenario === 'empty') }), [scenario]);
   return <>
     <aside className="feedback-example-controls">
       <strong>Saved items preview · illustrative copy</strong>
@@ -76,12 +76,12 @@ function Preview() {
       priorityPageLoading={false} reflectionPageLoading={false} contentPageLoading={false}
       onOpenHomePage={() => setScenario('home')} onOpenReflectionsPage={() => setScenario('saved')}
       onOpenPriorityPage={() => undefined} onOpenContentPage={() => undefined} onOpenAboutPage={() => undefined}>
-      {scenario === 'home' ? <HomeScenario /> : <>
+      {scenario === 'home' ? <HomeScenario contentReactions={contentReactions} /> : <>
         <NestedNav><nav className="reflection-view-rail" aria-label="Feedback views">
           <button type="button" className="reflection-view-rail-tab">Lessons</button>
           <button type="button" className="reflection-view-rail-tab active" aria-current="page">Saved</button>
         </nav></NestedNav>
-        <SavedPage key={scenario} api={api} />
+        <SavedPage key={scenario} api={api} reactions={contentReactions} />
       </>}
     </AppChrome>
   </>;

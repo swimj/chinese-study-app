@@ -6,6 +6,7 @@ import type {VocabularyFeedbackInbox} from '../../src/services/api';
 import '../../src/styles.css';
 import '../../src/features/vocabulary-study/pages.css';
 import './vocabulary-feedback.css';
+import { useContentReactions } from '../../src/features/reactions/useContentReactions';
 import { createMemoryReactionsApi } from './memory-reactions';
 const reactions=createMemoryReactionsApi();
 const examples=[
@@ -19,6 +20,7 @@ const examples=[
 ] as const;
 function message(body:string,id='example',subjectLabel='馋',createdAt='2026-10-26T14:10:00.000Z'):VocabularyFeedbackInbox['messages'][number]{return {messageId:id,caseId:id,subjectLabel,body,createdAt,seenAt:null,dismissedAt:null};}
 function Preview(){
+  const contentReactions=useContentReactions(reactions.api);
   const [selected,setSelected]=useState(0),[opened,setOpened]=useState(false),[unread,setUnread]=useState(3),[retried,setRetried]=useState(false);
   const example=examples[selected];
   const api=useMemo<typeof vocabularyFeedbackApi>(()=>{
@@ -45,7 +47,7 @@ function Preview(){
     <AppChrome currentPage={opened?'reflections':'home'} error={null} serviceBanner={null} sessionActive={false} priorityPageLoading={false} reflectionPageLoading={false} contentPageLoading={false}
       reflectionUnseenCount={unread} reflectionGenerating={selected===4} hasUnseenReflectionFailure={selected===5&&!retried}
       onOpenHomePage={()=>setOpened(false)} onOpenReflectionsPage={()=>setOpened(true)} onOpenPriorityPage={()=>{}} onOpenContentPage={()=>{}} onOpenAboutPage={()=>{}}>
-      {opened?<VocabularyFeedbackPage key={selected} api={api} reactionsApi={reactions.api}/>:<section className="panel feedback-example-arrival"><h1>{example.label}</h1><p>Open Feedback in the sidebar to see this example.</p><button onClick={()=>setOpened(true)}>Open feedback</button></section>}
+      {opened?<VocabularyFeedbackPage key={selected} api={api} reactions={contentReactions}/>:<section className="panel feedback-example-arrival"><h1>{example.label}</h1><p>Open Feedback in the sidebar to see this example.</p><button onClick={()=>setOpened(true)}>Open feedback</button></section>}
     </AppChrome></>;
 }
 createRoot(document.getElementById('root')!).render(<Preview/>);

@@ -38,6 +38,7 @@ import { HomeOverviewPanel, SessionSettingsPanel } from './HomeOverviewPanel';
 import { HomeUpdates, HomeUpdatesCollapsedControl } from './HomeUpdates';
 
 export function HomePage({
+  visible = true,
   updatesCatalog,
   unseenPostIds = [],
   onUnseenBadgeVisible = async () => {},
@@ -138,6 +139,7 @@ export function HomePage({
   onCloseShortcutGuide,
   onNudgeDiet,
 }: {
+  visible?: boolean;
   updatesCatalog?: WhatsNewCatalog;
   unseenPostIds?: readonly string[];
   onUnseenBadgeVisible?: (postIds: string[]) => Promise<void>;
@@ -250,7 +252,7 @@ export function HomePage({
   const [sessionSettingsOpen, setSessionSettingsOpen] = useState(false);
   const [sessionSettingsSaving, setSessionSettingsSaving] = useState(false);
   const connectionsVisible = !sessionStarted && !sessionSettingsOpen;
-  const connections = useHomeConnectionsView(recent.debrief, connectionsVisible);
+  const connections = useHomeConnectionsView(recent.debrief, visible && connectionsVisible);
   const connectionsExpanded = connectionsVisible && connections.expanded;
   useEffect(() => {
     if (sessionStarted) {
@@ -259,7 +261,7 @@ export function HomePage({
   }, [sessionStarted]);
 
   return (
-    <div className={sessionStarted ? 'home-page home-session-active' : `home-page${connectionsExpanded ? ' home-connections-expanded' : ''}${updatesCollapsed ? ' home-updates-collapsed' : ''}`}>
+    <div hidden={!visible} className={sessionStarted ? 'home-page home-session-active' : `home-page${connectionsExpanded ? ' home-connections-expanded' : ''}${updatesCollapsed ? ' home-updates-collapsed' : ''}`}>
       {connectionsExpanded ? <ConnectionSignals /> : null}
       {!sessionStarted && !connectionsExpanded && !sessionSettingsOpen && updatesCollapsed && updatesCatalog
         ? <HomeUpdatesCollapsedControl unseenPostIds={unseenPostIds} onVisible={onUnseenBadgeVisible} onExpand={onToggleUpdatesCollapsed} /> : null}
@@ -288,7 +290,7 @@ export function HomePage({
         />
 
         {!sessionStarted && !sessionSettingsOpen && recent.debrief ? (
-          <HomeConnections key={recent.debrief.sessionId} debrief={recent.debrief} expanded={connections.expanded}
+          <HomeConnections visible={visible} key={recent.debrief.sessionId} debrief={recent.debrief} expanded={connections.expanded}
             error={recent.error} retrying={recent.retrying} onToggle={connections.toggle}
             onRetry={recent.retry} onReload={recent.reload} />
         ) : !sessionStarted && recent.error && backendStatus?.studyProfile === 'mandarin' ? (
@@ -301,17 +303,18 @@ export function HomePage({
 
         {sessionSettingsOpen && !sessionStarted ? (
           <SessionSettingsPanel
+            visible={visible}
             backendStatus={backendStatus}
             onSaveSessionSettings={onSaveSessionSettings}
             onSavingChange={setSessionSettingsSaving}
             onClose={() => setSessionSettingsOpen(false)}
           />
-        ) : introductionGate ? (
+        ) : visible && introductionGate ? (
           <SessionIntroductionGatePanel gate={introductionGate}
             characterPresentation={backendStatus?.characterPresentation ?? DEFAULT_CHARACTER_PRESENTATION}
             sentenceCharacterPresentation={backendStatus?.sentenceCharacterPresentation ?? 'simplified'}
             onUndo={hasUndo && submittingRating === null ? onUndoLastRating : undefined} />
-        ) : sessionStarted ? (
+        ) : visible && sessionStarted ? (
           <StudySessionPanel
             sessionDeskRef={sessionDeskRef}
             deskAgainCount={deskAgainCount}
