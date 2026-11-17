@@ -301,9 +301,12 @@ terms and shares no capacity between them. New words take ready reserve hints up
 the day's remaining quota; learning takes every due Solidify word. Review words and
 due fragile pure cues share one bound of five items per minute of the session's
 allowance (`untilDayActiveMs - dayActiveMsAtStart`: 100 for a fresh 20-minute day,
-25 for a five-minute entry into a spent day). Their order is held items passed over
-on three separate days (`learner_timed_skip_counts`) first, then review words by
-their most urgent due objective with fragile cues spliced in at seeded positions.
+25 for a five-minute entry into a spent day). They share one urgency order: a
+review word at its most urgent due objective (time since study over its interval),
+a fragile cue by how far past its due date it is in intervals, plus one; equal
+urgency keeps the review ranking's own tie order, words ahead of cues. An item at
+urgency 2 or more (`PRESSING_OVERDUE_URGENCY`, overdue by a full interval) that has
+study history is pressing; the admitted ones are frozen as `pressingKeys`.
 The walk checks content for each candidate as it reaches it and stops once the bound
 is filled, so a failing candidate is replaced by the next in rank and the rest are
 never checked. Every due recheck is admitted ahead of the bound; strong-cue
@@ -311,12 +314,14 @@ maintenance draws today's rolled cues with slots scaled to the admitted review i
 Untimed Start keeps the 1,000-item cap and 50/30/20 allocation.
 
 Selection treats Solidify words, any started item still owed work (teaching begun, a
-missed review or pure cue) and those passed-over held items as pressing. While any is
+missed review or pure cue) and those overdue held items as pressing. While any is
 still available, a not-yet-started new word does not begin. Each appearance rests an
 item for a seeded random 2–5 cards. Seven picks in ten choose at random among rested
 pressing items (`server/vocabulary/timed-selection.ts`); the rest, and any pick with
-no rested pressing item, choose uniformly at random among rested non-pressing items,
-whatever their kind. If nothing is rested, the item that has waited longest is served.
+no rested pressing item, choose uniformly at random among all rested items, pressing
+included, whatever their kind. So a pressing item never has worse odds than an
+ordinary one, even when pressing items outnumber the rest. If nothing is rested, the
+item that has waited longest is served.
 There is no top-up: when admitted work runs out before the allowance, the session
 records `finish_for_now` without a source and completes. A new word admitted but
 never reached stays an enrolled Unstudied record, uses none of the day's quota, and
@@ -386,15 +391,15 @@ after the Start preview settles, since the computation runs on the server's
 request thread; until it arrives the sections are absent, and a failure shows one
 retry line. The compact layout (Connections expanded) hides them with the dots.
 
-Closure clears the skip count of every started item and adds at most one passed-over
-day to each due held item that went unstarted, including due words the review bound
-kept out of the pool and admitted pure cues. It fills `vocabulary_timed_session_records`:
+Closure reads no schedules and changes no learner state; an item left unstarted
+is simply more overdue at the next Start. It fills `vocabulary_timed_session_records`:
 session and day active time, extensions, whether the budget ended the session,
 whether the new-word gate held, new words started, unstarted pressing keys and, per
-served item, its class, classic due date, prior lapse and outcome. The summary's
-optional line is saved to that record through its own endpoint and is never read by
-selection. Abandoned sessions keep their last accepted active time in the day but
-never close, so they add no skip counts.
+served item, its class, classic due date, prior lapse and outcome. Unstarted pressing
+keys are the admitted overdue items left unstarted, kept for reading how well the
+threshold fits the day's time; selection never reads them. The summary's optional
+line is saved to that record through its own endpoint and is never read by
+selection. Abandoned sessions keep their last accepted active time in the day.
 
 ## Session actions and completion
 
@@ -743,8 +748,16 @@ created it and it is still the current refresh.
 The scheduler records the end of the pause 24 hours after judgment, subject to
 a later reset gate. For regular words, `postCompensationEarliestCheckAt` only gates production.
 Ordinary due dates, interval eligibility, and skill ranking apply once it ends.
-For independent pure cues, `postCompensationRecheckAt` schedules a recheck that
-takes priority within the review bucket and bypasses routine strong-cue sampling.
+For independent pure cues, `postCompensationRecheckAt` (column `recheck_at`)
+schedules a recheck that takes priority within the review bucket and bypasses
+routine strong-cue sampling. The recheck exists for strong cues, whose routine
+maintenance is a random daily roll that would otherwise leave the compensated cue
+unchecked indefinitely. Fragile cues share the field because both kinds live in one
+schedule table. For a fragile cue, it acts as the cue's earliest check time:
+answers before it do not count, and the cue has no fragile due time until it
+passes, as with `postCompensationEarliestCheckAt` for words. It differs from words
+in one respect: once the time passes, the cue is admitted ahead of the timed review
+bound instead of competing in the urgency ranking.
 A refresh preserves the pause, and
 completion clears its timestamp only when covered production was assessed after
 the break. Earlier responses still enter the session history. The judgment,

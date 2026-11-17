@@ -550,9 +550,11 @@ equivalence, and the acceptance time index.
 
 `vocabulary-timed-admission.test.ts` covers timed admission: the per-minute review
 bound, top-of-ranking admission with lazy content checks, replacement of a failing
-candidate, pressing-first order with interleaved fragile cues, rechecks outside the
-bound and strong slots scaled to admitted review. Session-level timed behavior,
-including the random ordinary draw, exhaustion and unreached new words, is in
+candidate, one urgency ranking of review words and fragile cues with the overdue
+threshold for pressing, rechecks outside the bound, strong slots scaled to admitted
+review, and closure that reads no schedules. Session-level timed behavior,
+including the ordinary draw over every rested item (so pressing items never have
+worse odds), exhaustion and unreached new words, is in
 `vocabulary-study.test.ts` and `vocabulary-timed-selection.test.ts`.
 
 `vocabulary-composition-reads.test.ts` compares the indexed review and pure-cue

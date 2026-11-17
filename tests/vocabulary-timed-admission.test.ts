@@ -13,6 +13,9 @@ import { admitTimedVocabularyStudy } from '../server/vocabulary/timed-admission.
 import { readVocabularyDueReviewObjectives, type VocabularyReviewSkill } from '../server/vocabulary/review-selection.ts';
 import { readVocabularyPureCueStreams } from '../server/vocabulary/pure-cue-serving.ts';
 import { timedReviewBound } from '../src/domain/timed-session.ts';
+import { createTimedSessionRecord, finalizeTimedSession } from '../server/db/vocabulary-timed-sessions.ts';
+import { createVocabularySession } from '../server/db/vocabulary-sessions.ts';
+import { projectVocabularySession } from '../src/domain/vocabulary-session.ts';
 
 const base = Date.parse('2026-11-10T12:00:00.000Z');
 const at = (hours: number) => new Date(base + hours * 3_600_000).toISOString();
@@ -43,17 +46,17 @@ function words(count: number, solidify = 0): string[] {
   }
   return ids.slice(0, count);
 }
-function cue(id: string, wordId: string, schedule: { next?: string | null; strongSince?: string | null; recheckAt?: string | null; successes?: number }): void {
+function cue(id: string, wordId: string, schedule: { next?: string | null; last?: string | null; strongSince?: string | null; recheckAt?: string | null; successes?: number }): void {
   createVocabularyContent({ contentId: id, kind: 'exercise', payloadVersion: 1, body: { prompt: id }, accessScope: 'shared', availability: 'active',
     originKind: 'human', words: [{ wordId, relation: 'target' }], exerciseType: 'pure_cue', skill: 'production', exerciseRole: 'general',
     assessment: { match: 'prepared' }, answers: [{ wordId, acceptedForms: [wordId] }] }, actor);
   db.prepare(`INSERT INTO learner_pure_cue_schedules(learner_id,content_id,next_eligible_at,last_practised_at,policy_version,scheduler_state_json,
     interval_hours,strong_since,strong_successes,recheck_at) VALUES ('alice',?,?,?,'test','{"easeFactor":2.5}',?,?,?,?)`)
-    .run(id, schedule.next ?? null, at(-2000), schedule.strongSince ? 720 : 24, schedule.strongSince ?? null, schedule.successes ?? 0, schedule.recheckAt ?? null);
+    .run(id, schedule.next ?? null, schedule.last === undefined ? at(-2000) : schedule.last, schedule.strongSince ? 720 : 24, schedule.strongSince ?? null, schedule.successes ?? 0, schedule.recheckAt ?? null);
 }
-function admit(options: { bound: number; skipDays?: Map<string, number>; usable?: (wordId: string, skill: VocabularyReviewSkill) => boolean; seed?: string }) {
+function admit(options: { bound: number; usable?: (wordId: string, skill: VocabularyReviewSkill) => boolean; seed?: string }) {
   const checked: string[] = [];
-  const admission = admitTimedVocabularyStudy({ now, sessionSeed: options.seed ?? 'seed', reviewBound: options.bound, skipDays: options.skipDays ?? new Map(),
+  const admission = admitTimedVocabularyStudy({ now, sessionSeed: options.seed ?? 'seed', reviewBound: options.bound,
     teachingReady: () => false, isLearningContentUsable: () => true,
     isReviewContentUsable: (wordId, skill) => { checked.push(wordId); return options.usable ? options.usable(wordId, skill) : true; } });
   return { admission, checked };
@@ -85,19 +88,31 @@ test('a candidate that fails a content check is passed over and the next in rank
   assert.equal(checked.length, 7);
 }));
 
-test('pressing items are admitted first, then ranked review with fragile cues interleaved, then the cut', () => alice(() => {
-  const ids = words(36);
-  for (let index = 0; index < 6; index++) cue(`fragile-${index}`, ids[30 + index]!, { next: at(-5 + index) });
-  const skipDays = new Map([['word:w0029', 3], ['pure_cue:fragile-5', 4], ['word:w0028', 2]]);
-  const { admission } = admit({ bound: 12, skipDays });
-  const order = admission.reviewOrder.map((entry) => `${entry.kind}:${entry.id}`);
-  assert.equal(admission.reviewOrder.length, 12, 'review words and fragile cues share one bound');
-  assert.deepEqual(order.slice(0, 2).sort(), ['pure_cue:fragile-5', 'word:w0029']);
-  // Behind the pressing items, words follow urgency and cues keep their due order.
-  const words12 = order.filter((key) => key.startsWith('word:')).slice(1);
-  assert.deepEqual(words12, [...words12].sort());
-  const cues12 = order.filter((key) => key.startsWith('pure_cue:fragile-') && key !== 'pure_cue:fragile-5');
-  assert.ok(cues12.length > 0 && words12.length > 0, `both kinds below the cut: ${order.join(',')}`);
+test('review words and fragile cues share one urgency ranking; items overdue by a full interval are pressing', () => alice(() => {
+  const ids = words(8);
+  // w4..w7 only anchor the cues: not due, so no cue answers a ranked word.
+  db.prepare(`UPDATE learner_word_schedules SET next_eligible_at=? WHERE learner_id='alice' AND word_id IN ('w0004','w0005','w0006','w0007')`).run(at(1000));
+  // Urgency is time since study over the 24-hour interval.
+  const studied = (id: string, hours: number) => db.prepare(`UPDATE learner_word_schedules SET last_practised_at=? WHERE word_id=?`).run(at(-hours), id);
+  studied('w0000', 52); studied('w0001', 48); studied('w0003', 40);
+  // An objective with no study history ranks first but is not overdue; w0002's studied objective is 1.25.
+  db.prepare(`UPDATE learner_word_schedules SET last_practised_at=NULL WHERE word_id='w0002'`).run();
+  db.prepare(`INSERT INTO learner_owned_word_skill_state(learner_id,word_id,skill_id,enabled,interval_hours,last_studied_at,next_due_at,ease_factor)
+    VALUES ('alice','w0002','recognition',1,24,?,NULL,2.5)`).run(at(-30));
+  // A cue's urgency is how far past its due date it is, in intervals, plus one.
+  cue('c-hot', ids[4]!, { next: at(-30) });
+  cue('c-warm', ids[5]!, { next: at(-12) });
+  cue('c-unstudied', ids[6]!, { next: at(-40), last: null });
+  const { admission } = admit({ bound: 6 });
+  assert.deepEqual(admission.reviewOrder.map((entry) => `${entry.kind}:${entry.id}`), [
+    'word:w0002', // unstudied production objective (infinite urgency)
+    'pure_cue:c-unstudied', // 2.67, never studied
+    'pure_cue:c-hot', // 2.25
+    'word:w0000', // 2.17
+    'word:w0001', // exactly 2
+    'word:w0003', // 1.67; the cut falls before c-warm (1.5)
+  ]);
+  assert.deepEqual(admission.pressingKeys, ['pure_cue:c-hot', 'word:w0000', 'word:w0001']);
 }));
 
 test('every due recheck is admitted ahead of the bound; strong slots scale with the admitted review count', () => alice(() => {
@@ -125,4 +140,20 @@ test('the admitted set equals the reference ranking per stream on a large due se
   const ranked: string[] = [];
   for (const objective of readVocabularyDueReviewObjectives(now)) if (!ranked.includes(objective.wordId)) ranked.push(objective.wordId);
   assert.deepEqual(admission.reviewWords.map((word) => word.wordId), ranked.slice(0, 100));
+}));
+
+test('closure reads no schedules and records admitted pressing items left unstarted', () => alice(() => {
+  words(300);
+  const timed = { version: 1 as const, dayKey: now.slice(0, 10), budgetMs: 1_200_000, budgetSource: 'default' as const, dayActiveMsAtStart: 0,
+    untilDayActiveMs: 1_200_000, pressingKeys: ['word:w0000', 'pure_cue:c-1'], facts: {} };
+  const context = { sessionId: 'closing', words: [], reviewOrder: [], timed };
+  createVocabularySession(context, now); createTimedSessionRecord('closing', timed, now);
+  const prepared: string[] = []; const prepare = db.prepare.bind(db);
+  db.prepare = ((sql: string) => { prepared.push(sql); return prepare(sql); }) as typeof db.prepare;
+  try { finalizeTimedSession({ context, actions: [], projection: projectVocabularySession(context, []), activeDurationMs: 0, now }); }
+  finally { db.prepare = prepare; }
+  assert.ok(!prepared.some((sql) => /schedules|skill_state|content_items/.test(sql)), `closure reads only its record: ${prepared.join(' | ')}`);
+  const row = db.prepare(`SELECT unstarted_pressing_json FROM vocabulary_timed_session_records WHERE session_id='closing'`).get() as { unstarted_pressing_json: string };
+  assert.deepEqual(JSON.parse(row.unstarted_pressing_json), ['word:w0000', 'pure_cue:c-1']);
+  assert.equal(db.prepare(`SELECT count(*) AS n FROM sqlite_schema WHERE name='learner_timed_skip_counts'`).get()!.n, 0);
 }));

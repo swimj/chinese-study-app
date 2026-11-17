@@ -479,8 +479,7 @@ export function closeVocabularySessionCompletion(sessionId: string, completionId
       const input = JSON.parse(previous.input_json) as { context: StoredContext; actions: VocabularySessionAction[]; activeDurationMs?: number | null };
       const projection = projectVocabularySession(input.context, input.actions, { throughSequence: previous.through_sequence });
       applyLearningEffects(previous.completion_id, input.context, projection, now);
-      finalizeTimedSession({ context: input.context, actions: input.actions, projection, activeDurationMs: input.activeDurationMs ?? null,
-        startedAt: sessionRow(sessionId).started_at, now });
+      finalizeTimedSession({ context: input.context, actions: input.actions, projection, activeDurationMs: input.activeDurationMs ?? null, now });
       getDb().prepare(`INSERT INTO vocabulary_post_session_dispatches(dispatch_id,learner_id,session_id,completion_id,evidence_json,status,created_at)
         VALUES (?,?,?,?,?,'queued',?)`).run(randomUUID(), requireLearnerId(), sessionId, previous.completion_id,
           JSON.stringify({ context: input.context, actions: input.actions, projection }), now);

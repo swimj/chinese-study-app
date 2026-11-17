@@ -1426,10 +1426,6 @@ function practiceAll(...wordIds:string[]) {
 }
 // The wall-clock bound on client active time reads the record's start.
 const backdate=(id:string)=>db.prepare("UPDATE vocabulary_timed_session_records SET started_at='2000-01-01T00:00:00.000Z' WHERE session_id=?").run(id);
-const makeDue=(wordId:string)=>{
-  db.prepare('UPDATE learner_word_schedules SET next_eligible_at=NULL,last_practised_at=NULL WHERE word_id=?').run(wordId);
-  db.prepare('DELETE FROM learner_owned_word_study_admission_state WHERE word_id=?').run(wordId);
-};
 const today=()=>new Date().toISOString().slice(0,10);
 
 test('timed Start freezes the paradigm and records the day; classic sessions keep their controls',()=>owner(()=>{
@@ -1502,17 +1498,19 @@ test('timed selection keeps not-yet-started new words shut while runway work is 
   assert.equal(db.prepare('SELECT gate_held FROM vocabulary_timed_session_records WHERE session_id=?').get(id)!.gate_held,1);
 }));
 
-test('pressing held items are admitted ahead of ordinary due work and lead the tier',()=>owner(()=>{
+/** Study each word `hours` ago with a one-day interval: urgency is hours / 24. */
+const studiedHoursAgo=(entries:Record<string,number>)=>{for(const [wordId,hours] of Object.entries(entries))
+  db.prepare('UPDATE learner_word_schedules SET last_practised_at=?,next_eligible_at=NULL,interval_hours=24 WHERE word_id=?')
+    .run(new Date(Date.now()-hours*3_600_000).toISOString(),wordId);};
+
+test('held items overdue by a full interval lead admission and are pressing',()=>owner(()=>{
   practiceAll('a','b','new');timedOn();
-  const ordinary=startVocabularyStudy({});
-  assert.deepEqual(ordinary.session.context.reviewOrder,['a','b','new'].map(id=>({kind:'word',id})),'urgency order');
-  db.prepare("INSERT INTO learner_timed_skip_counts VALUES('alice','word','new',3,'2026-01-01','2026-01-01'),('alice','word','b',2,'2026-01-01','2026-01-01')").run();
+  studiedHoursAgo({a:30,b:36,new:72});
   const view=startVocabularyStudy({});
-  // Pressing items are admitted first; the tier itself is covered by the timed-selection tests.
-  assert.deepEqual(view.session.context.reviewOrder,['new','a','b'].map(id=>({kind:'word',id})));
+  // One urgency order: new (3), b (1.5), a (1.25). The tier itself is covered by the timed-selection tests.
+  assert.deepEqual(view.session.context.reviewOrder,['new','b','a'].map(id=>({kind:'word',id})));
   const timed=(db.prepare('SELECT context_json FROM vocabulary_sessions WHERE session_id=?').get(view.session.sessionId) as {context_json:string});
   assert.deepEqual((JSON.parse(timed.context_json) as VocabularySessionInitialContext).timed?.pressingKeys,['word:new']);
-  assert.deepEqual(db.prepare('SELECT session_id FROM vocabulary_timed_session_records').all().length,2);
 }));
 
 test('budget wrap-up is a recorded action, finishes open work, and Study a little more extends by five minutes',()=>owner(()=>{
@@ -1571,51 +1569,21 @@ test('a fresh entry into a spent day still runs a little while, counting earlier
   assert.equal(second.session.projection.phase,'active');
 }));
 
-test('closure counts one passed-over day for unstarted due held items and clears served ones',()=>owner(()=>{
+test('closure records admitted pressing items left unstarted and moves no schedule',()=>owner(()=>{
   practiceAll('a','b','new');timedOn();
-  db.prepare("INSERT INTO learner_timed_skip_counts VALUES('alice','word','a',2,'2026-01-01','2026-01-01')").run();
-  type Count={target_id:string;skip_days:number;last_skipped_day:string};
-  const counts=()=>db.prepare('SELECT target_id,skip_days,last_skipped_day FROM learner_timed_skip_counts ORDER BY target_id').all().map(row=>({...row}) as Count);
-  /** One session that serves whichever word comes first, then wraps up and closes. */
-  const close=(key:string)=>{
-    let view=startVocabularyStudy({});const id=view.session.sessionId;backdate(id);
-    const served=view.currentWordId!;
-    view=answerCurrent(id,key,view);view=nextVocabularyExercise(id,`${key}-wrap`,{activeDurationMs:1_200_000});
-    assert.equal(view.session.projection.phase,'completed');
-    const staged=stageVocabularySessionCompletion(id,view.session.actions.length);closeVocabularySessionCompletion(id,staged.completionId);
-    return {id,served};
-  };
-  /** Served items clear; each unstarted due item gains at most one day per local day. */
-  const expected=(before:Count[],served:string)=>['a','b','new'].filter(word=>word!==served).map(word=>{
-    const prior=before.find(entry=>entry.target_id===word);
-    return prior?.last_skipped_day===today()?prior:{target_id:word,skip_days:(prior?.skip_days??0)+1,last_skipped_day:today()};
-  });
-  let before=counts();const first=close('first');
-  assert.deepEqual(counts(),expected(before,first.served));
-  const row=db.prepare('SELECT new_words_started,unstarted_pressing_json,budget_wrapped FROM vocabulary_timed_session_records WHERE session_id=?').get(first.id)!;
-  assert.deepEqual({...row},{new_words_started:0,unstarted_pressing_json:'[]',budget_wrapped:1});
-  // The same local day never counts twice.
-  makeDue(first.served);before=counts();const sameDay=close('same-day');
-  assert.deepEqual(counts(),expected(before,sameDay.served));
-  db.prepare("UPDATE learner_timed_skip_counts SET last_skipped_day='2000-01-01'").run();
-  makeDue(sameDay.served);before=counts();const nextDay=close('next-day');
-  assert.deepEqual(counts(),expected(before,nextDay.served));
-  // Schedules of passed-over items never move.
-  for(const word of ['a','b','new'].filter(word=>![first.served,sameDay.served,nextDay.served].includes(word)))
-    assert.equal(getVocabularyWordSchedule(word)?.nextEligibleAt,null);
-}));
-
-test('closure counts due held items that never entered the session pool',()=>owner(()=>{
-  practiceAll('a','b','new');
-  const id='capped-out';
-  createVocabularySession({sessionId:id,words:[{wordId:'a',mode:'practice',selectedSkill:'production'}],
-    timed:{version:1,dayKey:'2026-11-12',budgetMs:600_000,budgetSource:'default',dayActiveMsAtStart:0,untilDayActiveMs:600_000,pressingKeys:[],facts:{}}});
-  db.prepare("INSERT INTO vocabulary_timed_session_records(session_id,learner_id,day_key,budget_ms,budget_source,day_active_ms_at_start,started_at) VALUES(?,?,?,?,?,?,?)")
-    .run(id,'alice','2026-11-12',600_000,'default',0,'2000-01-01T00:00:00.000Z');
-  let view=nextVocabularyExercise(id,'first');view=answerCurrent(id,'a',view);
-  view=nextVocabularyExercise(id,'wrap',{activeDurationMs:600_000});
+  studiedHoursAgo({a:30,b:36,new:72});
+  const schedules=()=>db.prepare('SELECT word_id,last_practised_at,next_eligible_at FROM learner_word_schedules ORDER BY word_id').all().map(row=>({...row}));
+  let view=startVocabularyStudy({});const id=view.session.sessionId;backdate(id);
+  // Serve whichever word comes first, then wrap up and close.
+  const served=view.currentWordId!;
+  view=answerCurrent(id,'first',view);view=nextVocabularyExercise(id,'wrap',{activeDurationMs:1_200_000});
+  assert.equal(view.session.projection.phase,'completed');
+  const before=schedules().filter(row=>row.word_id!==served);
   const staged=stageVocabularySessionCompletion(id,view.session.actions.length);closeVocabularySessionCompletion(id,staged.completionId);
-  assert.deepEqual(db.prepare('SELECT target_id FROM learner_timed_skip_counts ORDER BY target_id').all().map(row=>row.target_id),['b','new']);
+  const row=db.prepare('SELECT new_words_started,unstarted_pressing_json,budget_wrapped FROM vocabulary_timed_session_records WHERE session_id=?').get(id)!;
+  assert.deepEqual({...row},{new_words_started:0,unstarted_pressing_json:JSON.stringify(served==='new'?[]:['word:new']),budget_wrapped:1});
+  // Unserved items keep their schedules; next Start reads how overdue they are from their due times.
+  assert.deepEqual(schedules().filter(row=>row.word_id!==served),before);
 }));
 
 test('the optional completion line is stored on timed sessions only, trimmed, bounded and clearable',()=>owner(()=>{

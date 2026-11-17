@@ -300,16 +300,16 @@ Timed sessions (the default paradigm) cap each kind of work on its own terms,
 with no capacity shared between them: new words up to the day's new-word limit;
 every due Solidify word; at most five Practice/Maintain words and due fragile
 pure cues together per minute of the session's time allowance, taken from the top
-of the ranking (items passed over on three separate days first, then the most
-urgent, with fragile cues interleaved); strong-cue maintenance scaled to the review
-admitted; and every due recheck. Only due items are admitted, and an item that
-fails a content check is passed over for the next in rank. Within the session,
-pressing work (Solidify, work already started and still owed, and passed-over
-items) takes most picks; other items, new words included, are drawn at random
-with no weighting by kind, so a large review load leaves fewer new words. A
-session whose admitted work runs out before its allowance ends; starting again
-composes a fresh session. A new word admitted but never reached uses none of the
-day's limit.
+of one urgency ranking (how far past due each is relative to its interval);
+strong-cue maintenance scaled to the review admitted; and every due recheck. Only
+due items are admitted, and an item that fails a content check is passed over for
+the next in rank. Within the session, pressing work (Solidify, work already started
+and still owed, and admitted items overdue by at least a full interval) takes most
+picks; the remaining picks draw at random from everything rested, pressing work and
+new words included, with no weighting by kind, so pressing work is never less likely
+than other work and a large review load leaves fewer new words. A session whose admitted work
+runs out before its allowance ends; starting again composes a fresh session. A new
+word admitted but never reached uses none of the day's limit.
 
 Classic (untimed) sessions keep a shared 1,000-item limit and a 50/30/20 mix of
 Practice/Maintain, Solidify, and Unstudied work, redistributing unused capacity.

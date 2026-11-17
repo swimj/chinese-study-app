@@ -624,7 +624,8 @@ test('timed session migration keeps existing controls, enables timed sessions, a
     migrateDatabase(db, schemaMigrations.slice(0, index));
     db.exec("UPDATE service_controls SET enabled = 1, updated_at = '2026-11-10T00:00:00.000Z', actor_id = 'incident-operator' WHERE control_key = 'operator_only'");
     const before = db.prepare('SELECT * FROM service_controls ORDER BY control_key').all();
-    assert.deepEqual(migrateDatabase(db), schemaMigrations.slice(index).map(entry => entry.id));
+    const through = schemaMigrations.findIndex(entry => entry.id === 'app_schema:0071_timed_daily_sessions') + 1;
+    migrateDatabase(db, schemaMigrations.slice(0, through));
     assert.deepEqual(db.prepare("SELECT * FROM service_controls WHERE control_key NOT IN ('timed_sessions','proactive_repertoire') ORDER BY control_key").all(), before);
     assert.deepEqual({ ...db.prepare("SELECT * FROM service_controls WHERE control_key = 'timed_sessions'").get() }, {
       control_key: 'timed_sessions', enabled: 1, updated_at: '1970-01-01T00:00:00.000Z', actor_id: 'system_default',
@@ -635,6 +636,9 @@ test('timed session migration keeps existing controls, enables timed sessions, a
     assert.throws(() => db.exec("INSERT INTO learner_timed_skip_counts VALUES ('timed-owner','word','w',0,'2026-11-12','now')"), /CHECK constraint/);
     assert.throws(() => db.exec("INSERT INTO learner_timed_skip_counts VALUES ('timed-owner','word','w',1,'12 Nov','now')"), /CHECK constraint/);
     assert.throws(() => db.exec("INSERT INTO service_controls VALUES ('invalid', 1, 'now', 'operator')"), /CHECK constraint/);
+    // 0078 later retires the skip counts in favour of due-time urgency.
+    assert.deepEqual(migrateDatabase(db), schemaMigrations.slice(through).map(entry => entry.id));
+    assert.equal(db.prepare("SELECT count(*) AS n FROM sqlite_schema WHERE name = 'learner_timed_skip_counts'").get()!.n, 0);
     assert.deepEqual(migrateDatabase(db), []);
     assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), []);
     assertSchemaCurrent(db);

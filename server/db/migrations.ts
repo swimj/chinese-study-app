@@ -267,6 +267,9 @@ export const schemaMigrations: readonly SchemaMigration[] = [{
   id: 'app_schema:0077_vocabulary_due_columns',
   sql: fs.readFileSync(new URL('./migrations/0077_vocabulary_due_columns.sql', import.meta.url), 'utf8'),
   after: assertVocabularyDueColumns,
+}, {
+  id: 'app_schema:0078_drop_timed_skip_counts',
+  sql: fs.readFileSync(new URL('./migrations/0078_drop_timed_skip_counts.sql', import.meta.url), 'utf8'),
 }];
 
 function checksum(value: string): string {

@@ -704,7 +704,7 @@ These local fixtures do not replace a separately authorized hosted rehearsal.
 
 `0071_timed_daily_sessions` rebuilds the four-row `service_controls` table to allow
 `timed_sessions` and inserts it enabled, so new sessions use the timed paradigm
-after upgrade. It creates empty `learner_timed_skip_counts` and
+after upgrade. It creates empty `learner_timed_skip_counts` (retired by `0078`) and
 `vocabulary_timed_session_records` (with a learner/day index). It moves no due
 dates and touches no existing session, schedule or settings row.
 
@@ -820,3 +820,13 @@ merged schedule state before and after, and compare review selection before and
 after with the alignment script in the session-composition stack. Populated
 upgrade, merged-state preservation, triggers, guards, covering reads and rollback
 are in `tests/vocabulary-due-columns-migration.test.ts`.
+
+## Timed skip counts retired (`0078`)
+
+`0078_drop_timed_skip_counts` drops `learner_timed_skip_counts`. Timed sessions
+now decide whether a held item is pressing from its urgency at Start (overdue by
+a full interval), so the per-day passed-over counts are neither read nor written.
+The table held only derived selection state; nothing else referenced it. Ship it
+in the same stopped-writer release as `0077`; on the restored copy, record the
+table's row count before migration and confirm it is gone afterwards. The upgrade
+path is in `tests/schema-migrations.test.ts`.

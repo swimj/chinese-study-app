@@ -8,8 +8,16 @@ export type DailyStudyMinutes = typeof DAILY_STUDY_MINUTE_CHOICES[number];
 export const DEFAULT_DAILY_STUDY_MINUTES: DailyStudyMinutes = 20;
 /** One "Study a little more", and the least a fresh entry into a spent day runs. */
 export const TIMED_SESSION_EXTENSION_MS = 5 * 60_000;
-/** Days a due held item can be passed over before it becomes pressing. A starting constant, not a tuned result. */
-export const PRESSING_SKIP_DAYS = 3;
+/**
+ * Urgency (time since last study over the interval) at which a studied held item
+ * becomes pressing: overdue by one full interval, so a one-day item after two days
+ * and a thirty-day item after sixty. A starting constant, not a tuned result.
+ */
+export const PRESSING_OVERDUE_URGENCY = 2;
+/** Whether a held item's urgency makes it pressing. Unstudied objectives (infinite urgency) never are. */
+export function isOverduePressing(urgency: number): boolean {
+  return urgency >= PRESSING_OVERDUE_URGENCY && urgency < Number.MAX_VALUE;
+}
 export const TIMED_SESSION_NOTE_MAX_LENGTH = 500;
 /** Each appearance rests an item for a random gap in this range, so returns do not form a pattern. */
 export const TIMED_REST_MIN_CARDS = 2;
@@ -43,7 +51,7 @@ export type VocabularyTimedSessionContext = {
   dayActiveMsAtStart: number;
   /** Day active time at which this session wraps up, before any extension. */
   untilDayActiveMs: number;
-  /** Held items passed over on enough separate days to outrank new words. */
+  /** Admitted held items overdue by at least a full interval at Start. */
   pressingKeys: readonly string[];
   /** When the classic rule would have shown each admitted target, and whether its last outcome was a lapse. */
   facts: Readonly<Record<string, { classicDueAt: string | null; priorLapse: boolean | null }>>;
