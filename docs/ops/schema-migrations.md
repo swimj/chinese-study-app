@@ -131,7 +131,9 @@ launch a second wrapper.
 Do not run the generic writable `db:migrate` directly on the production file
 while Litestream is stopped. Its connection can checkpoint and remove the WAL
 when it closes. Use explicitly read-only connections for optional stopped-process
-checks, and preserve all SQLite and Litestream sidecars. Large table rewrites
+checks, and follow the [ad hoc connection precautions](hosted-beta-deployment.md#idle-the-machine-for-offline-work)
+for `PERSIST_WAL`, journal limits, and client support. Preserve all SQLite and
+Litestream sidecars. Large table rewrites
 can still require a large WAL and replicated delta; continuity does not make
 the migration's actual changed pages smaller.
 

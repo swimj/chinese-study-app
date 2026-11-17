@@ -61,3 +61,17 @@ production restart, or deletion of old backups is part of this source change.
 Retire the patch when a released upstream version includes equivalent lifecycle
 and startup-verification protections and passes the same tests. Updating the
 version string alone does not establish that the defects are fixed.
+
+## Upstream follow-up (checked November 16, 2026)
+
+The latest official release is [0.5.18](https://github.com/benbjohnson/litestream/releases/tag/v0.5.18).
+It and the current `main` still lack the pooled persistence/startup fix.
+[PR 1616](https://github.com/benbjohnson/litestream/pull/1616), including
+[commit 9b3e5bc](https://github.com/benbjohnson/litestream/commit/9b3e5bc21750538c310101a0916c8d2c887dd29a),
+proposes combining PRs 1560, 1601, and 1561; all four PRs remain open and unmerged.
+The combined proposal also addresses correctness after unproven WAL resets,
+incremental fully backfilled checkpoints, and physical retained-WAL reclamation.
+Those broader changes are not in this local 1561 backport. Its reported stale-WAL
+restore regressions warrant evaluation before choosing the production binary;
+our clean-shutdown tests do not establish correctness for those other scenarios.
+No maintainer release date was found in the public PR discussions inspected.

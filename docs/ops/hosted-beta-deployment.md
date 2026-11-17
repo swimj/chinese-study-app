@@ -272,6 +272,23 @@ Litestream socket is absent. Preserve `app.db-wal`, `app.db-shm`, and
 `.app.db-litestream` with the database: retained sidecars are expected and allow
 incremental replication to resume. Never delete them to satisfy a stop check.
 
+For ad hoc connections to the live `app.db`, enable SQLite
+`SQLITE_FCNTL_PERSIST_WAL` on every connection where the client supports it,
+especially while Litestream is stopped. It is a connection-level file control,
+not a SQL pragma or a persistent database setting. Before closing a writable
+maintenance connection, leave `PRAGMA journal_size_limit = -1`: a nonnegative
+limit can truncate even a persistent WAL to zero on last close. Do not issue
+manual WAL reset/truncate checkpoints during the handoff. These are operator
+precautions, not enforcement against arbitrary clients.
+
+Use genuinely read-only connections for inspection. If a tool cannot set
+`PERSIST_WAL` (including Node 22's built-in SQLite API), do not open a writable
+connection while Litestream is down; use the supervised migration procedure
+for migrations and keep other authorized writers within Litestream's lifetime.
+A connection that only executes SELECTs is not necessarily opened read-only.
+`PERSIST_WAL` preserves files on close; it does not prevent writes/checkpoints
+from replacing history while replication is stopped.
+
 ```bash
 fly machine status --app <app-name> --display-config <machine-id>
 fly volumes snapshots create <volume-id>
