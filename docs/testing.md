@@ -551,7 +551,8 @@ equivalence, and the acceptance time index.
 `vocabulary-timed-admission.test.ts` covers timed admission: the per-minute review
 bound, top-of-ranking admission with lazy content checks, replacement of a failing
 candidate, one urgency ranking of review words and fragile cues with the overdue
-threshold for pressing, rechecks outside the bound, strong slots scaled to admitted
+threshold for pressing, strong-cue rechecks outside the bound with fragile rechecks
+ranked, strong slots scaled to admitted
 review, and closure that reads no schedules. Session-level timed behavior,
 including the ordinary draw over every rested item (so pressing items never have
 worse odds), exhaustion and unreached new words, is in

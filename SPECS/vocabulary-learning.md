@@ -301,7 +301,8 @@ with no capacity shared between them: new words up to the day's new-word limit;
 every due Solidify word; at most five Practice/Maintain words and due fragile
 pure cues together per minute of the session's time allowance, taken from the top
 of one urgency ranking (how far past due each is relative to its interval);
-strong-cue maintenance scaled to the review admitted; and every due recheck. Only
+strong-cue maintenance scaled to the review admitted; and every due strong-cue
+recheck. Only
 due items are admitted, and an item that fails a content check is passed over for
 the next in rank. Within the session, pressing work (Solidify, work already started
 and still owed, and admitted items overdue by at least a full interval) takes most
@@ -492,8 +493,11 @@ Coverage must have produced a scheduling effect in the originating session.
 The correction restores the pre-lapse interval, ease, and scheduling clock.
 A previously strong pure cue also regains its strong status and progress.
 Production pauses for 24 hours from the judgment. A regular word then follows
-its ordinary eligibility and review ranking. A pure cue gets a required
-recheck that takes priority over routine review, including strong-cue sampling.
+its ordinary eligibility and review ranking. A previously strong pure cue gets a
+required recheck that takes priority over routine review, including strong-cue
+sampling; in timed sessions a fragile pure cue instead follows its ordinary review
+ranking once the pause ends. Work already in an open session is not served while
+its pause lasts.
 An independent reset constraint can extend the pause. The next completed
 assessment uses the restored interval and ordinary recall rules. Another unfair lapse starts a fresh
 break. The correction can replace scheduling changes from intervening study while

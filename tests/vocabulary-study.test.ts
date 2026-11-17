@@ -130,6 +130,30 @@ test('Start prioritizes a due strong-cue recheck while a word still needs to be 
   assert.equal(started.session.context.words.some(word=>word.wordId==='a'),false);
 }));
 
+test('a compensation hold that begins after Start keeps selection from serving the held production or cue',()=>owner(()=>{
+  db.exec("UPDATE learner_words SET mode='practice' WHERE word_id IN ('a','b')");
+  exercise('general-b','b');
+  const cue=exercise('held-cue','b','general',true);
+  adoptVocabularyPureCues(new Date(Date.now()-7*3_600_000).toISOString());
+  const context:VocabularySessionInitialContext={sessionId:'held',words:[{wordId:'a',mode:'practice',selectedSkill:'production'},
+    {wordId:'b',mode:'practice',selectedSkill:'production'}],reviewOrder:[{kind:'pure_cue',id:cue.contentId}]};
+  createStoredSession({...context,payload:composeVocabularySessionPayload(context)});
+  // Feedback judged while the session is open: holds on b's production and the cue.
+  const until=new Date(Date.now()+24*3_600_000).toISOString();
+  db.prepare("UPDATE learner_word_schedules SET post_compensation_check_at=? WHERE word_id='b'").run(until);
+  db.prepare('UPDATE learner_pure_cue_schedules SET recheck_at=? WHERE content_id=?').run(until,cue.contentId);
+  let view=nextVocabularyExercise('held','first');
+  const presented=()=>view.session.actions.flatMap(action=>action.kind==='presentation'?[action.payload.wordId??action.payload.snapshot.contentId]:[]);
+  // a is resting after its first card, yet the held items stay out: a comes back instead.
+  view=nextVocabularyExercise('held','second');
+  assert.deepEqual(presented(),['a','a']);
+  // Once the holds end, the same session serves them.
+  db.prepare("UPDATE learner_word_schedules SET post_compensation_check_at=NULL WHERE word_id='b'").run();
+  db.prepare('UPDATE learner_pure_cue_schedules SET recheck_at=NULL WHERE content_id=?').run(cue.contentId);
+  view=nextVocabularyExercise('held','after-hold');
+  assert.ok(['b',cue.contentId].includes(presented().at(-1)!),`held work returns: ${presented().join(',')}`);
+}));
+
 function focusedA(mode:'solidify'|'practice'='practice'):VocabularyStudy {
   db.prepare("UPDATE learner_words SET mode=? WHERE word_id='a'").run(mode);
   createVocabularySession({sessionId:'focused-a',words:[{wordId:'a',mode,selectedSkill:'production'}]});

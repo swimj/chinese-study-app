@@ -11,7 +11,7 @@ export type TimedReviewEntry = { kind: 'word' | 'pure_cue'; id: string };
 export type TimedAdmission = {
   newWordIds: string[]; learningWordIds: string[];
   reviewWords: { wordId: string; mode: 'practice' | 'maintain'; selectedSkill: VocabularyReviewSkill }[];
-  /** Due rechecks first, then admitted review words and cues in session order. */
+  /** Due strong-cue rechecks first, then admitted review words and cues in session order. */
   /** Session payload assembly loads each admitted cue's content once. */
   reviewOrder: TimedReviewEntry[];
   /** Admitted review words and fragile cues overdue by a full interval (timed-session keys). */
@@ -30,7 +30,8 @@ const splice = (seed: string, id: string, length: number) =>
  *   order (a word at its most urgent due objective, a cue by how far past its due
  *   date it is relative to its interval), so items overdue by a full interval lead;
  * - strong cues: today's roll, with slots scaled to the admitted review count;
- * - rechecks: every due recheck, ahead of the rest.
+ * - strong-cue rechecks: every due one, ahead of the rest. A due fragile-cue
+ *   recheck is ranked with the fragile cues instead.
  * Review and cue candidates come from narrow reads; content checks run while a
  * stream is walked and stop once its cap is filled, so a candidate that fails a
  * check is passed over and the next in rank takes its place.
@@ -54,7 +55,11 @@ export function admitTimedVocabularyStudy(input: {
   type Ranked = TimedReviewEntry & { urgency: number; pressing: boolean };
   const words: Ranked[] = [...objectives].map(([id, list]) => ({ kind: 'word', id, urgency: list[0]!.urgency,
     pressing: list.some((objective) => isOverduePressing(objective.urgency)) }));
-  const cues: Ranked[] = streams.fragile.map((cue): Ranked => {
+  // A strong cue's recheck keeps its slot ahead of the bound (its routine maintenance is a random
+  // roll); a fragile cue's recheck only marks its earliest check, so once due it competes like any fragile cue.
+  const strongRechecks = streams.rechecks.filter((cue) => cue.strongSince !== null);
+  const fragile = [...streams.fragile, ...streams.rechecks.filter((cue) => cue.strongSince === null)];
+  const cues: Ranked[] = fragile.map((cue): Ranked => {
     const urgency = pureCueUrgency(cue, now);
     return { kind: 'pure_cue', id: cue.id, urgency, pressing: cue.lastStudiedAt !== null && isOverduePressing(urgency) };
   }).sort((a, b) => b.urgency - a.urgency || a.id.localeCompare(b.id));
@@ -76,7 +81,7 @@ export function admitTimedVocabularyStudy(input: {
     admitted.push({ kind: entry.kind, id: entry.id });
     if (entry.pressing) pressingKeys.push(timedTargetKey(entry.kind, entry.id));
   }
-  const rechecks = streams.rechecks.filter((cue) => cueUsable(cue.id)).map((cue) => cue.id);
+  const rechecks = strongRechecks.filter((cue) => cueUsable(cue.id)).map((cue) => cue.id);
   const strong = selectPureCuesForSession({ learnerId: requireLearnerId(), cues: streams.strong.filter((cue) => cueUsable(cue.id)),
     ordinaryReviewCount: admitted.length, now, random: vocabularyPureCueRandom(sessionSeed) }).selected.map((cue) => cue.id);
   const sequence = [...admitted];
