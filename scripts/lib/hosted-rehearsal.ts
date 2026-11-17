@@ -14,6 +14,7 @@ export type RehearsalManifest = {
 };
 export type PrepareRehearsalInput = {
   app: string; sourceApp: string; image: string; schema: 'unchanged' | 'migrate';
+  backupProvider?: 'sqlite' | 'litestream'; sourceRevision?: string;
   sourceBackupEnvFile: string; runDir: string; region?: string; vmSize?: string; volumeSizeGb?: number;
 };
 const manifestPath = (dir: string) => path.join(dir, 'manifest.json');
@@ -86,7 +87,7 @@ function pending(output: string): string[] {
   if (!isRecord(value) || !Array.isArray(value.pending) || !value.pending.every(x => typeof x === 'string')) throw new Error('Invalid migration status.');
   return value.pending as string[];
 }
-function credentials(file: string): string {
+function credentials(file: string, provider: 'sqlite' | 'litestream'): string {
   if (!path.isAbsolute(file)) throw new Error('--source-backup-env-file must be absolute.');
   const values = new Map<string, string>();
   for (const line of fs.readFileSync(file, 'utf8').split(/\r?\n/)) {
@@ -97,6 +98,12 @@ function credentials(file: string): string {
     if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) value = value.slice(1, -1);
     if (/[\r\n\0]/.test(value)) throw new Error('Invalid backup credential value.');
     values.set(match[1]!, value);
+  }
+  if (provider === 'sqlite') {
+    return ['APP_BACKUP_RECEIVER_URL', 'APP_BACKUP_RECEIVER_TOKEN'].map(key => {
+      if (!values.get(key)) throw new Error(`Backup source requires ${key}.`);
+      return `export ${key}=${shellSingleQuote(values.get(key)!)}`;
+    }).join('\n') + '\n';
   }
   for (const key of ['LITESTREAM_ACCESS_KEY_ID', 'LITESTREAM_SECRET_ACCESS_KEY', 'LITESTREAM_BUCKET', 'LITESTREAM_REGION']) {
     if (!values.get(key)) throw new Error(`Backup source requires ${key}.`);
@@ -116,7 +123,10 @@ export async function prepareRehearsal(input: PrepareRehearsalInput, deps: Deps)
   if (!path.isAbsolute(input.runDir) || fs.existsSync(input.runDir)) throw new Error('--run-dir must be a new absolute directory.');
   const volumeSize = input.volumeSizeGb ?? 3;
   if (!Number.isInteger(volumeSize) || volumeSize < 1) throw new Error('--volume-size-gb must be a positive integer.');
-  const sourceEnv = credentials(input.sourceBackupEnvFile);
+  const provider = input.backupProvider ?? 'sqlite';
+  if (!['sqlite', 'litestream'].includes(provider)) throw new Error('Invalid backup provider.');
+  if (provider === 'sqlite' && !/^[a-f0-9]{40}$/.test(input.sourceRevision ?? '')) throw new Error('--source-revision must identify the source app revision with a full Git SHA.');
+  const sourceEnv = credentials(input.sourceBackupEnvFile, provider);
   fs.mkdirSync(input.runDir, { recursive: true, mode: 0o700 });
   const unlock = lock(input.runDir);
   redactions.set(input.runDir, sourceEnv.split('\n').map(line => line.slice(line.indexOf('=') + 2, -1)));
@@ -129,7 +139,6 @@ export async function prepareRehearsal(input: PrepareRehearsalInput, deps: Deps)
     await stage(input.runDir, 'preflight', deps, async () => {
       if ((await rows(deps, m.app, 'machines')).length || (await rows(deps, m.app, 'volumes')).length || (await rows(deps, m.app, 'secrets')).length) throw new Error('Rehearsal app must have no Machines, volumes, or secrets.');
     });
-    await stage(input.runDir, 'source-sync', deps, () => fly(deps, ['ssh', 'console', '--app', m.sourceApp, '--command', 'litestream sync -wait -timeout 60 -socket /data/litestream.sock -json /data/app.db'], 90_000));
     await stage(input.runDir, 'create-volume', deps, async () => {
       await fly(deps, ['volumes', 'create', m.volumeName, '--app', m.app, '--region', m.region, '--size', String(volumeSize), '--vm-size', m.vmSize, '--scheduled-snapshots=false', '--yes', '--json']);
       await reconcile(input.runDir, m, deps);
@@ -151,7 +160,18 @@ export async function prepareRehearsal(input: PrepareRehearsalInput, deps: Deps)
       fs.writeFileSync(local, sourceEnv, { mode: 0o600 });
       try {
         await fly(deps, ['ssh', 'sftp', 'put', '--app', m.app, '--machine', m.machineId!, '--user', 'root', '--mode', '0600', local, '/tmp/rehearsal-source.env']);
-        const restored = await remote(m, deps, `set -eu; trap 'rm -f /tmp/rehearsal-source.env' EXIT; . /tmp/rehearsal-source.env; test ! -e /data/app.db; litestream restore -json -integrity-check full -o /data/app.db "s3://\${LITESTREAM_BUCKET}/\${LITESTREAM_REPLICA_PATH}"`);
+        let restoreAction = 'litestream restore -json -integrity-check full -o /data/app.db "s3://${LITESTREAM_BUCKET}/${LITESTREAM_REPLICA_PATH}"';
+        if (provider === 'sqlite') {
+          const id = `rehearsal-${randomUUID()}`;
+          const receipt = await stage(input.runDir, 'source-backup', deps, async () => {
+            const output = await remote(m, deps, `set -eu; . /tmp/rehearsal-source.env; node --import tsx scripts/manage-hosted-backup.ts --action=create --kind=hourly --id=${id} --source-revision=${input.sourceRevision} --source-app=${m.sourceApp}`);
+            const value = parseHostedCommandJson(output);
+            if (!isRecord(value) || value.id !== id || value.sourceRevision !== input.sourceRevision || value.sourceApp !== m.sourceApp) throw new Error('Source backup receipt does not match the requested capture.');
+            return value;
+          });
+          restoreAction = `node --import tsx scripts/manage-hosted-backup.ts --action=restore --id=${shellSingleQuote(String(receipt.id))} --output=/data/app.db`;
+        }
+        const restored = await remote(m, deps, `set -eu; trap 'rm -f /tmp/rehearsal-source.env' EXIT; . /tmp/rehearsal-source.env; test ! -e /data/app.db; ${restoreAction}`);
         const restoreSummary = parseHostedCommandJson(restored);
         if (!isRecord(restoreSummary) || restoreSummary.integrity_check !== 'full') throw new Error('Restore did not confirm full integrity checking.');
         fs.writeFileSync(path.join(input.runDir, 'restore.json'), sanitizeHostedOutput(JSON.stringify(restoreSummary, null, 2)), { mode: 0o600 });

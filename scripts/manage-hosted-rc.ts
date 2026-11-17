@@ -15,6 +15,7 @@ import {
 } from './lib/hosted-runtime.ts';
 
 const args = readStrictArguments([
+  'backup-provider',
   'action',
   'app',
   'actor-id',
@@ -39,7 +40,10 @@ if (action === 'deploy' || action === 'restore') {
   }
   const restoreAgeRaw = args.get('restore-age-hours');
   const restoreAgeHours = restoreAgeRaw === undefined ? undefined : Number(restoreAgeRaw);
+  const backupProvider = args.get('backup-provider') ?? 'sqlite';
+  if (backupProvider !== 'sqlite' && backupProvider !== 'litestream') throw new Error('Invalid --backup-provider.');
   const result = await runHostedRcDeploy({
+    backupProvider,
     repoRoot,
     app,
     actorId: requireArgument(args, 'actor-id'),
@@ -63,7 +67,7 @@ if (action === 'deploy' || action === 'restore') {
       actorId: requireArgument(args, 'actor-id'),
       sourceRevision: requireArgument(args, 'confirm-source-revision'),
       image: requireArgument(args, 'image'),
-      replicaPath: requireArgument(args, 'replica-path'),
+      replicaPath: args.get('replica-path'),
       flyConfigPath: configPath,
     }, deps),
   }, null, 2));

@@ -42,6 +42,7 @@ export type HostedRcDeployInput = {
   confirmSourceRevision: string;
   confirmDisposableRcData: boolean;
   schemaMode: HostedRcSchemaMode;
+  backupProvider?: 'sqlite' | 'litestream';
   sourceBackupEnvFile: string;
   restoreAgeHours?: number;
   activateAfterPrepare?: boolean;
@@ -73,7 +74,8 @@ type RcFlyConfig = ReturnType<typeof readPreparedFlyConfig> & {
   allowedUsers: string;
 };
 
-type SourceBackupCredentials = {
+type SourceBackupCredentials = { provider: 'sqlite'; url: string; token: string } | {
+  provider: 'litestream';
   accessKeyId: string;
   secretAccessKey: string;
   sessionToken: string | null;
@@ -147,19 +149,19 @@ export async function runHostedRcDeploy(
       throw new Error(`Checkout has uncommitted image-source changes: ${dirty.join(', ')}.`);
     }
     const flyConfig = readRcFlyConfig(configPath, input.app, deps);
-    const source = readSourceBackupCredentials(input.sourceBackupEnvFile, deps);
-    if (source.bucket === flyConfig.targetBucket) {
+    const source = readSourceBackupCredentials(input.sourceBackupEnvFile, deps, input.backupProvider ?? 'sqlite');
+    if (source.provider === 'litestream' && source.bucket === flyConfig.targetBucket) {
       throw new Error('Production restore source and RC runtime Litestream buckets must differ.');
     }
-    const restoreAgeHours = input.restoreAgeHours ?? DEFAULT_RESTORE_AGE_HOURS;
-    restoreRequestedAt = calculateRestoreTimestamp(deps.now(), restoreAgeHours);
+    const restoreAgeHours = input.restoreAgeHours ?? (source.provider === 'sqlite' ? 0 : DEFAULT_RESTORE_AGE_HOURS);
+    restoreRequestedAt = restoreAgeHours === 0 ? deps.now().toISOString() : calculateRestoreTimestamp(deps.now(), restoreAgeHours);
     const packageVersion = readPackageVersion(input.repoRoot, deps);
     const imageLabel = `rc-${sourceRevision}`;
     candidateImage = input.image === undefined
       ? `registry.fly.io/${flyConfig.app}:${imageLabel}`
       : requireDigestQualifiedFlyImage(input.image);
     const generationId = `${restoreRequestedAt.replace(/[^0-9]/g, '').slice(0, 14)}-${sourceRevision.slice(0, 12)}`;
-    rcReplicaPath = `${RC_REPLICA_ROOT}/${generationId}`;
+    rcReplicaPath = null;
     record('declare', 'ok', {
       plannedRelease: { appVersion: packageVersion, sourceRevision },
       restoreRequestedAt,
@@ -192,12 +194,6 @@ export async function runHostedRcDeploy(
           ? health
           : null
       ), 'RC provider-work drain');
-      await ssh(
-        input.app,
-        'litestream sync -wait -timeout 60 -socket /data/litestream.sock -json /data/app.db',
-        deps,
-        90_000,
-      );
     }
     record('quiesce', 'ok', { alreadyIdle: inventory.idle });
 
@@ -244,14 +240,19 @@ export async function runHostedRcDeploy(
       `set -a; . ${remoteRestoreCredentialPath}; set +a`,
       `mkdir -p ${stagingDir}`,
       `test ! -e ${stagingDatabase}`,
-      `litestream restore -dry-run -json -timestamp ${restoreRequestedAt} -o ${stagingDatabase} \"s3://\${LITESTREAM_BUCKET}/\${LITESTREAM_REPLICA_PATH}\" >/tmp/hosted-rc-restore-plan.json`,
-      `litestream restore -json -integrity-check full -timestamp ${restoreRequestedAt} -o ${stagingDatabase} \"s3://\${LITESTREAM_BUCKET}/\${LITESTREAM_REPLICA_PATH}\"`,
-      'rm -f /tmp/hosted-rc-restore-plan.json',
+      ...(source.provider === 'sqlite' ? [
+        `cd /app`,
+        `node --import tsx scripts/manage-hosted-backup.ts --action=restore --at=${restoreRequestedAt} --output=${stagingDatabase}`,
+      ] : [
+        `litestream restore -dry-run -json -timestamp ${restoreRequestedAt} -o ${stagingDatabase} \"s3://\${LITESTREAM_BUCKET}/\${LITESTREAM_REPLICA_PATH}\" >/tmp/hosted-rc-restore-plan.json`,
+        `litestream restore -json -integrity-check full -timestamp ${restoreRequestedAt} -o ${stagingDatabase} \"s3://\${LITESTREAM_BUCKET}/\${LITESTREAM_REPLICA_PATH}\"`,
+        'rm -f /tmp/hosted-rc-restore-plan.json',
+      ]),
     ].join('; ');
     const restored = await runRcSsh(input.app, idled.machineId, restoreCommand, deps, 600_000);
     const restoreSummary = parseHostedCommandJson(restored);
     if (!isRecord(restoreSummary) || restoreSummary.integrity_check !== 'full') {
-      throw new Error('Litestream restore did not report a full integrity check.');
+      throw new Error('Backup restore did not report a full integrity check.');
     }
     const sourceValidation = parseHostedCommandJson(await runRcSsh(
       input.app,
@@ -265,6 +266,10 @@ export async function runHostedRcDeploy(
     }
     record('restore', 'ok', {
       restoreRequestedAt,
+      backupProvider: source.provider,
+      backupReceiptId: restoreSummary.id ?? null,
+      backupStartedAt: restoreSummary.startedAt ?? null,
+      backupSha256: restoreSummary.sha256 ?? null,
       restoredTxid: typeof restoreSummary.txid === 'string' ? restoreSummary.txid : null,
       learnerCount: sourceValidation.learnerCount ?? null,
       sentinelCount: sourceValidation.sentinelCount ?? null,
@@ -357,7 +362,6 @@ export async function runHostedRcDeploy(
       '--app', input.app,
       '--config', flyConfig.configPath,
       '--image', candidateImage,
-      '--env', `LITESTREAM_REPLICA_PATH=${rcReplicaPath}`,
       '--ha=false',
       '--strategy', 'immediate',
       '--wait-timeout', '5m',
@@ -418,7 +422,7 @@ export async function activateHostedRc(input: {
   actorId: string;
   sourceRevision: string;
   image: string;
-  replicaPath: string;
+  replicaPath?: string;
   flyConfigPath: string;
 }, deps: HostedUpgradeDeps): Promise<{ machine: FlyDeploymentIdentity; immutableImage: string | null }> {
   const config = readRcFlyConfig(input.flyConfigPath, input.app, deps);
@@ -426,14 +430,11 @@ export async function activateHostedRc(input: {
   if (!/^registry\.fly\.io\/[A-Za-z0-9._/@:-]+$/.test(input.image)) {
     throw new Error('--image must be a registry.fly.io image reference.');
   }
-  if (!input.replicaPath.startsWith(`${RC_REPLICA_ROOT}/`) || input.replicaPath.includes('..')) {
-    throw new Error(`--replica-path must be a unique child of ${RC_REPLICA_ROOT}.`);
-  }
   const inventory = await readRcMachine(input.app, deps);
   if (!inventory.idle) throw new Error('RC Machine must be idle before activation.');
   await deps.run('fly', [
     'deploy', '--app', input.app, '--config', config.configPath, '--image', input.image,
-    '--env', `LITESTREAM_REPLICA_PATH=${input.replicaPath}`, '--ha=false', '--strategy', 'immediate',
+    '--ha=false', '--strategy', 'immediate',
     '--wait-timeout', '5m', '--yes',
   ], { cwd: input.repoRoot, timeoutMs: 600_000, env: flyCommandEnv() });
   await pollHealthz(config.publicOrigin, deps, 180_000, (health) => health.status === 'ok' ? health : null, 'RC health');
@@ -480,7 +481,6 @@ export async function quiesceHostedRc(
   await pollHealthz(config.publicOrigin, deps, 960_000, (health) => (
     health.maintenanceMode && !health.providerWorkEnabled && health.activeProviderWorkCount === 0 ? health : null
   ), 'RC provider-work drain');
-  await ssh(app, 'litestream sync -wait -timeout 60 -socket /data/litestream.sock -json /data/app.db', deps, 90_000);
 }
 
 export async function idleHostedRc(
@@ -515,14 +515,12 @@ export function readRcFlyConfig(
   const base = readPreparedFlyConfig(configPath, deps);
   if (base.app !== expectedApp) throw new Error(`--app ${expectedApp} does not match RC Fly config app ${base.app}.`);
   const text = deps.readFile(configPath);
+  if (/^\s*app\s*=\s*["']litestream\s/m.test(text)) throw new Error('RC process must start the app directly; regenerate the RC config without Litestream.');
   const deploymentTier = matchTomlAssignment(text, 'APP_DEPLOYMENT_TIER') ?? '';
   const targetBucket = matchTomlAssignment(text, 'LITESTREAM_BUCKET') ?? '';
   const allowedUsers = matchTomlAssignment(text, 'APP_ALLOWED_CLERK_USER_IDS') ?? '';
   if (deploymentTier !== RC_DEPLOYMENT_TIER) {
     throw new Error(`RC Fly config must set APP_DEPLOYMENT_TIER=${RC_DEPLOYMENT_TIER}.`);
-  }
-  if (!targetBucket || targetBucket.includes('REPLACE_WITH')) {
-    throw new Error('RC Fly config must set a non-placeholder LITESTREAM_BUCKET.');
   }
   if (!allowedUsers || allowedUsers.includes('REPLACE_WITH')) {
     throw new Error('RC Fly config must set APP_ALLOWED_CLERK_USER_IDS.');
@@ -546,6 +544,7 @@ export function toDigestQualifiedImage(imageRef: string | null, digest: string |
 function readSourceBackupCredentials(
   filePath: string,
   deps: Pick<HostedUpgradeDeps, 'fileExists' | 'readFile'>,
+  provider: 'sqlite' | 'litestream',
 ): SourceBackupCredentials {
   if (!path.isAbsolute(filePath)) throw new Error('--source-backup-env-file must be an absolute path.');
   if (!deps.fileExists(filePath)) throw new Error('Production backup source environment file is missing.');
@@ -555,11 +554,14 @@ function readSourceBackupCredentials(
     if (!value) throw new Error(`Production backup source environment is missing ${name}.`);
     return value;
   };
+  if (provider === 'sqlite') return { provider, url: required('APP_BACKUP_RECEIVER_URL'), token: required('APP_BACKUP_RECEIVER_TOKEN') };
+  if (provider !== 'litestream') throw new Error('Invalid backup provider.');
   const replicaPath = values.get('LITESTREAM_REPLICA_PATH')?.trim() || 'chinese-study-app/hosted-beta';
   if (!/^[A-Za-z0-9._/-]+$/.test(replicaPath) || replicaPath.includes('..') || replicaPath.startsWith('/')) {
     throw new Error('Production LITESTREAM_REPLICA_PATH is invalid.');
   }
   return {
+    provider,
     accessKeyId: required('LITESTREAM_ACCESS_KEY_ID'),
     secretAccessKey: required('LITESTREAM_SECRET_ACCESS_KEY'),
     sessionToken: values.get('AWS_SESSION_TOKEN')?.trim() || null,
@@ -591,7 +593,9 @@ function parseEnvFile(text: string): Map<string, string> {
 function writeRestoreCredentialFile(source: SourceBackupCredentials): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hosted-rc-restore-'));
   const filePath = path.join(dir, 'source.env');
-  const entries: Array<[string, string]> = [
+  const entries: Array<[string, string]> = source.provider === 'sqlite' ? [
+    ['APP_BACKUP_RECEIVER_URL', source.url], ['APP_BACKUP_RECEIVER_TOKEN', source.token],
+  ] : [
     ['AWS_ACCESS_KEY_ID', source.accessKeyId],
     ['AWS_SECRET_ACCESS_KEY', source.secretAccessKey],
     ['LITESTREAM_ACCESS_KEY_ID', source.accessKeyId],
@@ -600,7 +604,7 @@ function writeRestoreCredentialFile(source: SourceBackupCredentials): string {
     ['LITESTREAM_REGION', source.region],
     ['LITESTREAM_REPLICA_PATH', source.replicaPath],
   ];
-  if (source.sessionToken) entries.push(['AWS_SESSION_TOKEN', source.sessionToken]);
+  if (source.provider === 'litestream' && source.sessionToken) entries.push(['AWS_SESSION_TOKEN', source.sessionToken]);
   fs.writeFileSync(filePath, entries.map(([key, value]) => `export ${key}=${quoteShellSecret(value)}`).join('\n') + '\n', {
     mode: 0o600,
   });
