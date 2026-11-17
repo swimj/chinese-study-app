@@ -30,9 +30,23 @@ export function parseBackupReceipt(value: unknown): BackupReceipt {
 }
 export async function requestHostedBackup(input: BackupRequest): Promise<BackupReceipt> {
   const { url, token } = backupClientConfig();
-  const response = await fetch(`${url}/backups`, { method: 'POST',
-    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-    body: JSON.stringify(input), signal: AbortSignal.timeout(15 * 60_000) });
+  const signal = AbortSignal.timeout(15 * 60_000);
+  let response: Response;
+  for (;;) {
+    response = await fetch(`${url}/backups`, { method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify(input), signal, redirect: 'error' });
+    if (response.status !== 409) break;
+    await response.body?.cancel();
+    // A busy refusal has not started this request. Keep the same id and wait
+    // within one overall deadline; never retry an ambiguous timeout or failure.
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => { signal.removeEventListener('abort', abort); resolve(); }, 1000);
+      const abort = () => { clearTimeout(timer); reject(signal.reason); };
+      signal.addEventListener('abort', abort, { once: true });
+      if (signal.aborted) abort();
+    });
+  }
   if (!response.ok) throw new Error(`Backup receiver refused request (${response.status})`);
   const receipt = parseBackupReceipt(await response.json());
   if (receipt.id !== input.id || receipt.kind !== input.kind || receipt.releaseId !== input.releaseId

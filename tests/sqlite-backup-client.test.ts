@@ -9,7 +9,7 @@ import { once } from 'node:events';
 import { DatabaseSync } from 'node:sqlite';
 import { createHash } from 'node:crypto';
 import { pipeline } from 'node:stream/promises';
-import { downloadHostedBackup, parseBackupReceipt } from '../server/backups/client.ts';
+import { downloadHostedBackup, parseBackupReceipt, requestHostedBackup } from '../server/backups/client.ts';
 
 test('restore verifies bytes and never overwrites a database or an existing partial file', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'backup-client-'));
@@ -19,13 +19,23 @@ test('restore verifies bytes and never overwrites a database or an existing part
   const receipt = parseBackupReceipt({ version:1, id:'test', kind:'hourly', sourceApp:'test', sourceRevision:'a'.repeat(40),
     startedAt:new Date().toISOString(), completedAt:new Date().toISOString(), receivedAt:new Date().toISOString(),
     bytes:contents.length, sha256:createHash('sha256').update(contents).digest('hex'), fileName:'test.sqlite' });
-  const server = createServer((_req, res) => { void pipeline(createReadStream(file), res).catch(() => {}); });
+  let captureAttempts = 0;
+  const server = createServer((req, res) => {
+    if (req.method === 'POST') {
+      captureAttempts++;
+      if (captureAttempts === 1) { res.writeHead(409); res.end(); return; }
+      res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(receipt)); return;
+    }
+    void pipeline(createReadStream(file), res).catch(() => {});
+  });
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const address = server.address(); assert.ok(address && typeof address !== 'string');
   const previousUrl = process.env.APP_BACKUP_RECEIVER_URL; const previousToken = process.env.APP_BACKUP_RECEIVER_TOKEN;
   process.env.APP_BACKUP_RECEIVER_URL = `http://127.0.0.1:${address.port}`;
   process.env.APP_BACKUP_RECEIVER_TOKEN = 'synthetic'.repeat(8);
   try {
+    const captured = await requestHostedBackup({id:'test',kind:'hourly',expectedSourceApp:'test'});
+    assert.equal(captured.id, 'test'); assert.equal(captureAttempts, 2);
     const target = path.join(dir, 'restore.db');
     await downloadHostedBackup(receipt, target);
     assert.deepEqual(await readFile(target), contents);
