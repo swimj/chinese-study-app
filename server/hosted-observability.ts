@@ -20,7 +20,7 @@ export async function readServiceOperationalMetrics(options: {
   }
   const [backup, litestream] = await Promise.all([
     readHostedBackupStatus({ databasePath, socketPath: options.litestreamSocketPath }),
-    readLitestreamMetrics({ databasePath }),
+    process.env.APP_BACKUP_RECEIVER_URL ? Promise.resolve(null) : readLitestreamMetrics({ databasePath }),
   ]);
   return {
     litestream,

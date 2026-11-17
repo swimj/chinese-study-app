@@ -55,6 +55,8 @@ describe('hosted release candidate workflow', () => {
       readFile: (filePath: string) => fs.readFileSync(filePath, 'utf8'),
     };
     assert.equal(readRcFlyConfig(configPath, APP, deps).targetBucket, 'rc-backups');
+    fs.writeFileSync(configPath, CONFIG + '\n[processes]\napp = \"litestream replicate -config old.yml\"\n');
+    assert.throws(() => readRcFlyConfig(configPath, APP, deps), /without Litestream/);
     fs.writeFileSync(configPath, CONFIG.replace('release_candidate', 'beta'));
     assert.throws(() => readRcFlyConfig(configPath, APP, deps), /APP_DEPLOYMENT_TIER=release_candidate/);
     fs.rmSync(root, { recursive: true, force: true });
@@ -154,7 +156,7 @@ describe('hosted release candidate workflow', () => {
   });
 });
 
-function createHarness(schemaMode: 'unchanged' | 'migrate', forcePending = false) {
+function createHarness(schemaMode: 'unchanged' | 'migrate', forcePending = false, provider: 'sqlite' | 'litestream' = 'litestream') {
   const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'hosted-rc-repo-'));
   fs.writeFileSync(path.join(repoRoot, 'package.json'), JSON.stringify({ version: '2.3.0' }));
   const configPath = path.join(repoRoot, 'deploy/fly/.generated/rc.fly.toml');
@@ -162,6 +164,8 @@ function createHarness(schemaMode: 'unchanged' | 'migrate', forcePending = false
   fs.writeFileSync(configPath, CONFIG);
   const sourceEnv = path.join(repoRoot, 'source.env');
   fs.writeFileSync(sourceEnv, [
+    'APP_BACKUP_RECEIVER_URL=http://backup.internal:9092',
+    'APP_BACKUP_RECEIVER_TOKEN=private-token',
     'LITESTREAM_ACCESS_KEY_ID=prod-reader',
     'LITESTREAM_SECRET_ACCESS_KEY=prod-secret',
     'LITESTREAM_BUCKET=prod-backups',
@@ -238,7 +242,7 @@ function createHarness(schemaMode: 'unchanged' | 'migrate', forcePending = false
       return json({ status: 'updated' });
     }
     if (command.includes('litestream sync')) return json({ status: 'ok' });
-    if (command.includes('litestream restore')) {
+    if (command.includes('litestream restore') || command.includes('manage-hosted-backup.ts --action=restore')) {
       events.push('restore');
       return json({ db_path: '/data/staged/app.db', replica: 's3', txid: '0001', integrity_check: 'full' });
     }
@@ -294,7 +298,7 @@ function createHarness(schemaMode: 'unchanged' | 'migrate', forcePending = false
     events,
     commands,
     emitted,
-    input: {
+    input: { backupProvider: provider,
       repoRoot,
       app: APP,
       actorId: 'operator-test',
@@ -323,3 +327,34 @@ function jsonResponse(status: number, value: unknown): Response {
     headers: { 'content-type': 'application/json' },
   });
 }
+
+
+test('SQLite RC defaults to latest retained copy, preserves an explicit cutoff, and never starts Litestream', async () => {
+  for (const age of [undefined, 2]) {
+    const h = createHarness('unchanged', false, 'sqlite');
+    try {
+      const result = await runHostedRcDeploy({ ...h.input, backupProvider: undefined, restoreAgeHours: age }, h.deps);
+      assert.equal(result.status, 'ok', result.failure ?? '');
+      assert.equal(result.restoreRequestedAt, age === undefined ? '2026-09-20T12:30:00.000Z' : '2026-09-20T10:30:00.000Z');
+      assert.equal(result.rcReplicaPath, null);
+      assert.ok(h.commands.some(command => command.includes(`--at=${result.restoreRequestedAt}`)));
+      assert.ok(!h.commands.some(command => /litestream (sync|restore|replicate)/.test(command)));
+    } finally { h.cleanup(); }
+  }
+});
+
+test('SQLite RC restore failure retains idle boundary and never promotes data or activates', async () => {
+  const h = createHarness('unchanged', false, 'sqlite');
+  const original = h.deps.run;
+  h.deps.run = async (file, args, options) => {
+    if (args.some(arg => arg.includes('manage-hosted-backup.ts --action=restore'))) throw new Error('No retained backup satisfies restore selection');
+    return original(file, args, options);
+  };
+  try {
+    const result = await runHostedRcDeploy(h.input, h.deps);
+    assert.equal(result.status, 'failed');
+    assert.equal(result.failedStage, 'restore');
+    assert.ok(!h.events.includes('database:promote'));
+    assert.ok(!h.events.includes('deploy:activate'));
+  } finally { h.cleanup(); }
+});

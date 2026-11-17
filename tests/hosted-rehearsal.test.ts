@@ -5,17 +5,19 @@ import os from 'node:os';
 import path from 'node:path';
 import { prepareRehearsal, operateRehearsal, type PrepareRehearsalInput } from '../scripts/lib/hosted-rehearsal.ts';
 
-function fixture() {
+function fixture(provider: 'sqlite' | 'litestream' = 'litestream') {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rehearsal-test-'));
   const env = path.join(root, 'backup.env');
-  fs.writeFileSync(env, 'LITESTREAM_ACCESS_KEY_ID=source-id\nLITESTREAM_SECRET_ACCESS_KEY=private-secret\nLITESTREAM_BUCKET=backup\nLITESTREAM_REGION=us-east-1\nCLERK_SECRET_KEY=must-not-transfer\n');
-  const input: PrepareRehearsalInput = { app: 'app-rehearsal', sourceApp: 'app-beta', image: `registry.fly.io/app-beta@sha256:${'a'.repeat(64)}`, schema: 'migrate', runDir: path.join(root, 'run'), sourceBackupEnvFile: env };
+  fs.writeFileSync(env, 'APP_BACKUP_RECEIVER_URL=http://backup.internal:9092\nAPP_BACKUP_RECEIVER_TOKEN=private-secret\nLITESTREAM_ACCESS_KEY_ID=source-id\nLITESTREAM_SECRET_ACCESS_KEY=private-secret\nLITESTREAM_BUCKET=backup\nLITESTREAM_REGION=us-east-1\nCLERK_SECRET_KEY=must-not-transfer\n');
+  const input: PrepareRehearsalInput = { backupProvider: provider, sourceRevision: 'a'.repeat(40), app: 'app-rehearsal', sourceApp: 'app-beta', image: `registry.fly.io/app-beta@sha256:${'a'.repeat(64)}`, schema: 'migrate', runDir: path.join(root, 'run'), sourceBackupEnvFile: env };
   let machines: Record<string, unknown>[] = [];
   let volumes: Record<string, unknown>[] = [];
   let pending = ['0061-test'];
   let failMachine = false;
   let secrets = false;
   let failMigration = false;
+  let wrongReceipt = false;
+  let invalidRestore = false;
   const commands: string[][] = [];
   const deps = { now: () => new Date('2026-10-29T00:00:00Z'), emit: (_event: unknown) => {},
     run: async (_file: string, args: readonly string[]) => {
@@ -36,7 +38,10 @@ function fixture() {
         assert.ok(!content.includes('must-not-transfer'));
       }
       const command = args.at(-1) ?? '';
-      if (command.includes('litestream restore')) out = { integrity_check: 'full', txid: 'test-txid' };
+      if (command.includes('litestream restore') || command.includes('manage-hosted-backup.ts --action=restore')) out = { integrity_check: invalidRestore ? 'checksum' : 'full', txid: 'test-txid' };
+      if (command.includes('manage-hosted-backup.ts --action=create')) out = {
+        id: wrongReceipt ? 'other-capture' : /--id=([a-z0-9-]+)/.exec(command)?.[1], sourceRevision: 'a'.repeat(40), sourceApp: 'app-beta',
+      };
       if (command.includes('db:migrate')) {
         if (command.includes('confirm-app-stopped') && failMigration) throw new Error('migration lost transport; verify remote process');
         if (command.includes('confirm-app-stopped')) pending = [];
@@ -44,7 +49,7 @@ function fixture() {
       }
       return { stdout: JSON.stringify(out), stderr: '' };
     } };
-  return { root, input, deps, commands, clean: () => fs.rmSync(root, { recursive: true }), failMigration: () => { failMigration = true; }, failMachine: () => { failMachine = true; }, secrets: () => { secrets = true; }, unchanged: () => { pending = []; input.schema = 'unchanged'; } };
+  return { root, input, deps, commands, wrongReceipt: () => { wrongReceipt = true; }, invalidRestore: () => { invalidRestore = true; }, clean: () => fs.rmSync(root, { recursive: true }), failMigration: () => { failMigration = true; }, failMachine: () => { failMachine = true; }, secrets: () => { secrets = true; }, unchanged: () => { pending = []; input.schema = 'unchanged'; } };
 }
 
 test('rehearsal restores isolated digest Machine, accepts pre/post checks, migrates, and destroys both resources', async () => {
@@ -136,4 +141,39 @@ test('operation lock rejects overlap; uncertain migrations cannot be retried and
     assert.ok(!fs.existsSync(path.join(f.input.runDir, 'manifest.json.tmp')));
     await operateRehearsal('destroy', f.input.runDir, f.deps);
   } finally { f.clean(); }
+});
+
+
+test('SQLite rehearsal captures a fresh identified backup and restores that receipt without Litestream', async () => {
+  const f = fixture('sqlite');
+  try {
+    delete f.input.backupProvider; // default is the receiver
+    await prepareRehearsal(f.input, f.deps);
+    const commands = f.commands.map(args => args.at(-1) ?? '');
+    const create = commands.find(command => command.includes('--action=create'))!;
+    const restore = commands.find(command => command.includes('--action=restore'))!;
+    const id = /--id=([a-z0-9-]+)/.exec(create)![1]!;
+    assert.ok(restore.includes(id));
+    assert.ok(create.includes('--source-app=app-beta'));
+    assert.ok(!commands.some(command => command.includes('litestream')));
+    const evidence = fs.readFileSync(path.join(f.input.runDir, 'events.jsonl'), 'utf8');
+    assert.ok(evidence.includes(id));
+    assert.ok(!evidence.includes('private-secret'));
+  } finally { f.clean(); }
+});
+
+test('SQLite rehearsal fails closed on mismatched capture receipt or missing full restore integrity check', async () => {
+  const f = fixture('sqlite');
+  try {
+    f.wrongReceipt();
+    await assert.rejects(prepareRehearsal(f.input, f.deps), /receipt does not match/);
+    assert.ok(!f.commands.some(args => args.at(-1)?.includes('--action=restore')));
+    assert.ok(f.commands.some(args => args.at(-1)?.includes('rm -f /tmp/rehearsal-source.env')));
+  } finally { f.clean(); }
+  const g = fixture('sqlite');
+  try {
+    g.invalidRestore();
+    await assert.rejects(prepareRehearsal(g.input, g.deps), /full integrity/);
+    assert.ok(!g.commands.some(args => args.at(-1)?.includes('db:migrate')));
+  } finally { g.clean(); }
 });

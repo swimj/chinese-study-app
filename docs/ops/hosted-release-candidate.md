@@ -10,14 +10,14 @@ actual stopped-writer migration.
 ## Ephemeral rehearsal
 
 `hosted:rehearse` creates a performance-1x Machine and its own temporary volume
-in a dedicated, secret-free Fly app. It synchronizes the production backup and
-restores the latest coherent recovery point. Production keeps serving throughout;
+in a dedicated, secret-free Fly app. It requests a verified hourly production backup and
+restores that exact receipt. Production keeps serving throughout;
 a few minutes of subsequent activity are acceptable. Headless rehearsal needs
 no Clerk or provider credentials, does not start the application, and does not
-replicate the disposable database back to S3.
+run a backup scheduler for the disposable database.
 
 ```text
-sync source → create Machine/volume → restore → prechecks → migrate → postchecks
+capture source → create Machine/volume → restore → prechecks → migrate → postchecks
                                                                   ↓
                                               save evidence → destroy both resources
 ```
@@ -43,14 +43,20 @@ fly secrets list --app <rehearsal-app>
 
 Confirm the secrets list is empty before preparation.
 
-Use an IAM identity with the read-only source policy in
-[`iam-policy.rc-source-readonly.template.json`](../../deploy/fly/iam-policy.rc-source-readonly.template.json).
-Store its `LITESTREAM_ACCESS_KEY_ID`, `LITESTREAM_SECRET_ACCESS_KEY`,
-`LITESTREAM_BUCKET`, `LITESTREAM_REGION`, and `LITESTREAM_REPLICA_PATH` in an
-absolute, mode-600 file outside tracked source or in ignored `.generated/`
-storage. The identity must have no write or delete permission on the source.
-Credentials are supplied temporarily for restore; never put key values on the
-command line or in release evidence.
+Store `APP_BACKUP_RECEIVER_URL` and `APP_BACKUP_RECEIVER_TOKEN` in an absolute,
+mode-600 file outside tracked source or in ignored `.generated/` storage. The
+receiver is reachable over Fly's private network. Preparation temporarily supplies
+this file to the isolated Machine and removes it after restore. The token can
+request captures as well as download them; it is privileged, not a read-only IAM
+identity. Never put token values on command lines or in release evidence.
+
+The default `--backup-provider=sqlite` also requires `--source-revision` matching
+the running production image. The candidate requests a fresh capture bound to
+that source app/revision and restores the returned id. Explicit
+`--backup-provider=litestream` selects the legacy S3 path, using the retained
+binary and a read-only source IAM environment file (`LITESTREAM_ACCESS_KEY_ID`,
+`LITESTREAM_SECRET_ACCESS_KEY`, `LITESTREAM_BUCKET`, `LITESTREAM_REGION`, and
+`LITESTREAM_REPLICA_PATH`). Legacy restore does not establish receiver readiness.
 
 Build and push the candidate image with its exact `APP_REVISION`, or use an
 already-built digest-qualified candidate. The image used for rehearsal is the
@@ -92,9 +98,11 @@ npm run hosted:rehearse -- \
   --action=prepare \
   --app=<rehearsal-app> \
   --source-app=<beta-app> \
+  --source-revision=<running-production-full-sha> \
+  --backup-provider=sqlite \
   --image=registry.fly.io/<image-app>:<release-tag>@sha256:<candidate-digest> \
   --schema=migrate \
-  --source-backup-env-file=<absolute-read-only-source-env> \
+  --source-backup-env-file=<absolute-private-backup-env> \
   --run-dir=<absolute-ignored-run-directory>
 ```
 
@@ -172,17 +180,25 @@ a second pass solely to obtain identical data.
 
 The following sections operate a stable browser deployment separate from beta
 and headless rehearsal. An RC refresh builds the intended commit once, restores a
-roughly 24-hour-old beta backup, validates and optionally migrates it while the
+latest retained beta backup by default, validates and optionally migrates it while the
 app is stopped, and then activates it for smoke and subjective testing.
 
 RC data is sensitive because it is derived from beta, but it is disposable.
 Never treat activity performed on RC as durable learner activity.
 
+For browser RC `deploy` and `restore`, `--backup-provider=sqlite` selects the
+latest retained copy at operation declaration (`--restore-age-hours=0` by default).
+An explicit positive age selects at or before that cutoff and fails if retention
+cannot supply it; four hourly copies do not promise a 24-hour point. Explicit
+`--backup-provider=litestream` uses legacy S3 history and defaults to 24 hours.
+Regenerate old RC configurations that start `litestream`: the runner rejects
+that process command. The direct app template does not need a replica prefix.
+
 ## Safety boundary
 
 The RC environment deliberately has a narrower boundary than beta:
 
-- one distinct Fly app, Machine, `app_data_rc` Volume, backup bucket, and
+- one distinct Fly app, Machine, `app_data_rc` Volume, and
   generated `deploy/fly/.generated/rc.fly.toml`;
 - `APP_DEPLOYMENT_TIER=release_candidate`, which is required by the destructive
   RC database scripts;
@@ -191,9 +207,8 @@ The RC environment deliberately has a narrower boundary than beta:
 - `APP_ALLOWED_CLERK_USER_IDS` containing only the operator/manual-test account
   and the smoke account. A valid but unlisted Clerk user receives 403 before a
   learner can be bootstrapped;
-- temporary, read-only beta-backup credentials used only during restore; and
-- a fresh RC Litestream prefix for every restore, so a newly restored database
-  never shares a replica history with an older RC generation.
+- temporary receiver credentials used only during restore; and
+- direct app startup without a backup scheduler or Litestream replication of RC data.
 
 Do not invite users to RC. The same Clerk account intentionally sees different
 persisted state on beta and RC; the RC banner makes that distinction visible.
@@ -210,37 +225,14 @@ persisted state on beta and RC; the RC banner makes that distinction visible.
    ignored `deploy/fly/.generated/rc.fly.toml` and replace every placeholder.
    Keep the beta Clerk instance, add the RC origin to Clerk's allowed origins,
    and set `CLERK_AUTHORIZED_PARTY` to the RC origin.
-3. Create a separate RC backup bucket or credentials constrained to the RC
-   prefix. [`iam-policy.rc.template.json`](../../deploy/fly/iam-policy.rc.template.json)
-   is the minimum runtime shape. Stage the RC runtime secrets without putting
-   values on the command line:
-
-   ```bash
-   chmod 600 deploy/fly/.generated/rc-secrets.env
-   fly secrets import --stage --app <rc-app> \
-     < deploy/fly/.generated/rc-secrets.env
-   ```
-
-   The file needs the Clerk secret, provider keys used for manual testing, and
-   the RC bucket's `LITESTREAM_ACCESS_KEY_ID` and
-   `LITESTREAM_SECRET_ACCESS_KEY`.
-4. Create a different IAM identity with the read-only source policy in
-   [`iam-policy.rc-source-readonly.template.json`](../../deploy/fly/iam-policy.rc-source-readonly.template.json).
-   Put these values in an absolute, mode-600 file outside the repository or in
-   ignored `.generated/` storage:
-
-   ```text
-   LITESTREAM_ACCESS_KEY_ID=...
-   LITESTREAM_SECRET_ACCESS_KEY=...
-   LITESTREAM_BUCKET=<beta-backup-bucket>
-   LITESTREAM_REGION=ap-southeast-1
-   LITESTREAM_REPLICA_PATH=chinese-study-app/hosted-beta
-   ```
-
-   `AWS_SESSION_TOKEN` may also be supplied. The command uploads a temporary
-   credential file directly to the idle Machine as mode 600, removes its local
-   copy, and installs a remote cleanup trap. These credentials must have no
-   `PutObject` or `DeleteObject` permission.
+3. Stage the Clerk secret and provider keys needed for manual testing through
+   a mode-600 file with `fly secrets import --stage --app <rc-app>`. RC has no
+   backup bucket or Litestream runtime credentials. Do not set production's
+   backup source token on RC.
+4. Prepare a separate mode-600 file with `APP_BACKUP_RECEIVER_URL` and
+   `APP_BACKUP_RECEIVER_TOKEN` for temporary restore access. The runner transfers
+   it privately and removes it after use. For an explicit legacy restore, supply
+   the read-only S3 environment described in the headless rehearsal section.
 5. Bootstrap the single Machine once if the app has no Machine yet. Build the
    current image with its exact revision, then start it idled so it cannot open
    an empty database before the first restore:
@@ -277,7 +269,7 @@ active -> quiesced -> idle -> restored -> schema-checked/migrated
 ```
 
 The runner builds before touching the live RC. It then disables provider work,
-enters maintenance, drains provider calls, forces a backup sync, and changes
+enters maintenance, drains provider calls, records quiescence, and changes
 the Machine command to `sleep infinity`. Restore and migration operate on a
 staging database; only a fully validated database is atomically promoted to
 `/data/app.db`. Any failed stage leaves the service closed or idle and never
@@ -306,7 +298,7 @@ npm run hosted:rc -- \
   --confirm-source-revision=<full-40-character-sha> \
   --confirm-disposable-rc-data=true \
   --schema=unchanged \
-  --source-backup-env-file=<absolute-path-to-read-only-source-env>
+  --source-backup-env-file=<absolute-path-to-private-backup-env>
 ```
 
 This fails closed if the restored backup has a pending migration. It does not
@@ -328,22 +320,21 @@ npm run hosted:rc -- \
   --confirm-source-revision=<full-40-character-sha> \
   --confirm-disposable-rc-data=true \
   --schema=migrate \
-  --source-backup-env-file=<absolute-path-to-read-only-source-env>
+  --source-backup-env-file=<absolute-path-to-private-backup-env>
 ```
 
 The runner requires at least one pending migration, applies it to the staged
-database while the normal app and Litestream processes are stopped, verifies
+database while the normal app and workers are stopped, verifies
 that none remain, validates the current schema, and only then promotes it.
 
-For a non-default point, add `--restore-age-hours=<positive-number>`. Keeping
-the default near one day makes behavior comparable with beta without making RC
-look perfectly synchronized with current usage.
+For an older retained point, add `--restore-age-hours=<positive-number>`; the
+runner refuses when no retained backup satisfies that cutoff.
 
 ## Prepare now, activate later
 
 `restore` performs build, quiesce, restore, schema work, and database promotion,
 then intentionally leaves the Machine idle. Its final JSON reports the
-candidate image and unique RC replica path.
+candidate image and restored recovery point.
 
 ```bash
 npm run hosted:rc -- \
@@ -353,18 +344,17 @@ npm run hosted:rc -- \
   --confirm-source-revision=<full-40-character-sha> \
   --confirm-disposable-rc-data=true \
   --schema=unchanged \
-  --source-backup-env-file=<absolute-path-to-read-only-source-env>
+  --source-backup-env-file=<absolute-path-to-private-backup-env>
 
 npm run hosted:rc -- \
   --action=activate \
   --app=<rc-app> \
   --actor-id=<operator> \
   --confirm-source-revision=<full-40-character-sha> \
-  --image=registry.fly.io/<rc-app>:rc-<full-40-character-sha> \
-  --replica-path=chinese-study-app/hosted-rc/<generation-from-restore-result>
+  --image=registry.fly.io/<rc-app>:rc-<full-40-character-sha>
 ```
 
-Activation starts Litestream on that generation's unique RC prefix, confirms
+Activation starts the app directly, confirms
 release identity and closed controls, checks the served frontend, runs the
 authenticated read-only smoke, posts the RC banner, and reopens learner writes
 while provider work stays paused. Record the returned digest-qualified `immutableImage` for
@@ -391,7 +381,7 @@ does not look like the RC boundary.
 # Machine state, command, origin, and service inspection when active
 npm run hosted:rc -- --action=status --app=<rc-app>
 
-# Close new writes/provider work, drain, and force an RC backup sync
+# Close new writes/provider work and drain
 npm run hosted:rc -- \
   --action=quiesce --app=<rc-app> --actor-id=<operator>
 
@@ -417,8 +407,8 @@ After activation, use the allowlisted manual account at the RC origin and
 record the commit, restore timestamp, immutable image, tester, and result.
 
 - Confirm the release-candidate banner and `/healthz` release identity.
-- Compare a few recent beta actions with RC; roughly the final day should be
-  absent, while older state should match.
+- Compare representative beta state with the recorded capture time; actions
+  after that recovery point should be absent.
 - Exercise navigation, keyboard behavior, undo, empty/error states, and the
   UI details whose quality needs subjective judgment.
 - Complete a study session, including the corner cases relevant to the release.
@@ -429,8 +419,8 @@ record the commit, restore timestamp, immutable image, tester, and result.
   confirm a valid but unlisted Clerk account receives 403 and creates no
   learner row.
 
-RC writes replicate only to the current unique RC prefix. The next refresh
-discards the database and uses a new prefix.
+RC writes persist only in its disposable volume. The next refresh replaces
+that database; RC does not replicate into the production backup history.
 
 ## Promote the tested image to beta
 
@@ -453,15 +443,13 @@ not authorization to migrate beta online: follow the beta
 
 ## Failure boundaries
 
-- Never use beta's application credentials on RC. Source credentials are
-  restore-only and read-only; normal RC replication uses its own credentials.
+- Supply receiver credentials only for the temporary restore operation. Keep
+  production backup source credentials off RC; the receiver token is privileged.
 - Never restore over the live database directly. A staging restore, full
-  Litestream integrity check, raw pre-migration validation, current-schema
+  backup integrity check, raw pre-migration validation, current-schema
   validation, and atomic promotion are mandatory.
 - If restore, migration, identity, frontend, or smoke validation fails, leave
   RC closed/idle and fix forward or repeat the disposable refresh.
-- Do not activate against an old replica prefix. The path returned by the
-  successful restore is part of that generation's identity.
 - Do not log source credentials, replica URLs, Clerk secrets, tokens, learner
   notes, or provider payloads. The runner sanitizes emitted failures, but shell
   history and copied terminal output are still operator responsibilities.

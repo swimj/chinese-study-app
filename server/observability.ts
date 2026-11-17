@@ -384,13 +384,13 @@ export function createServiceMetrics(options: {
       appendGauge(
         lines,
         'chinese_study_backup_replication_available',
-        'Whether Litestream reported a successful replication timestamp.',
+        'Whether the configured backup service reported a verified recovery point.',
         operational.backupReplicationAgeSeconds === null ? 0 : 1,
       );
       appendGauge(
         lines,
         'chinese_study_backup_replication_age_seconds',
-        'Seconds since the last successful Litestream sync check (also refreshed when idle), or -1 when unavailable.',
+        'Age of the latest verified backup capture, or legacy sync heartbeat before cutover; -1 when unavailable.',
         operational.backupReplicationAgeSeconds ?? -1,
       );
       appendGauge(

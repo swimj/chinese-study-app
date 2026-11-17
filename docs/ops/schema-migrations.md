@@ -45,18 +45,18 @@ Use this procedure for first baseline adoption and every migration applied to
 an existing database, including data-only migrations. All require a
 stopped-writer maintenance window; `npm run hosted:upgrade` is app-only and
 cannot perform these changes. The generic migration runner does not deploy or
-back up a database automatically. Hosted production uses the replication wrapper
-below to preserve WAL continuity and acknowledge the migrated backup.
+back up a database automatically. Hosted production uses the wrapper below to validate the pre-switchover
+recovery point and obtain a verified post-migration backup.
 
 1. Rehearse every schema or data migration with the target image on an
    [ephemeral release Machine](hosted-release-candidate.md), restoring the latest
-   coherent backup after a source sync. Production keeps serving throughout
+   coherent verified backup. Production keeps serving throughout
    rehearsal; a few minutes of subsequent activity are acceptable. Record the
    source recovery point, target revision and image digest, migration output,
    and the results of the release-specific checks. Perform expensive comparisons
    and behavioral rehearsals there before entering production maintenance.
 2. Disable provider work, enable maintenance, and wait for active requests and
-   provider work to drain. Sync Litestream and record a verified recovery point.
+   provider work to drain. Request a verified pre-switchover release backup.
    Retain the pre-release backup and its matching application image for recovery.
 3. Stop the normal app and provider workers. Maintenance mode alone is not a
    stopped writer. Keep them stopped until the migration finishes. Preserve the
@@ -77,7 +77,7 @@ below to preserve WAL continuity and acknowledge the migrated backup.
    immediate write lock, but this cannot stop an application from resuming later.
 5. Start the target release while maintenance remains enabled. Run inspection
    and smoke checks for both learner identities. On hosted production, complete
-   another `litestream sync -wait` after startup. Reopen writes, then provider
+   a verified hourly backup after startup. Reopen writes, then provider
    work, only when these checks pass.
 
 The CLI does not import backend initialization and needs no Clerk credentials,
@@ -105,7 +105,7 @@ failure evidence, then clean up or retain it under the same explicit decision.
 
 Use the [idle-Machine procedure](hosted-beta-deployment.md#idle-the-machine-for-offline-work):
 save the full Machine configuration and immutable source image; retain the
-mounted `/data` volume while replacing the normal app/Litestream command with
+mounted `/data` volume while replacing the normal app command with
 `sleep infinity` and skipping health checks. Confirm normal processes stopped.
 Build/push the target image with its exact `APP_REVISION` **without deploying the
 normal application**, then update that same idle Machine to the target image
@@ -113,29 +113,34 @@ while retaining the idle command and volume. Apply the migration via SSH:
 
 ```bash
 fly ssh console --app <app-name> --command \
-  'sh /app/deploy/fly/migrate-with-litestream.sh --confirm-app-stopped=true'
+  'sh /app/deploy/fly/migrate-with-litestream.sh --confirm-app-stopped=true --pre-release-backup-id=<id> --release-id=<release-id> --previous-revision=<running-full-sha>'
 ```
 
-This wrapper requires an existing database and absent Litestream socket. It
-starts a dedicated Litestream process using the production replica configuration,
-waits for successful initial WAL verification and replica sync, runs the ordinary
-atomic migration, then verifies another sync before returning a receipt. The
-application and provider workers remain stopped. Litestream's bookkeeping and
-replication are the only additional database participant. Keep the foreground SSH
-command attached until completion and retain its migration and replication receipt.
-On migration or sync failure, keep the app stopped. A failed post-migration sync
-does not undo a committed migration; inspect status and repair replication before
-reopening. A lost terminal result is unknown execution state, not permission to
-launch a second wrapper.
+The wrapper retains its historical filename but does not run Litestream. It
+requires `APP_REVISION` for the target image, `FLY_APP_NAME`, and the private
+source/receiver configuration from the [backup runbook](hosted-backups.md).
+It checks the receiver for the supplied pre-release receipt: release kind,
+release id, previous source revision, source app, and capture age no more than
+one hour must match. Capture that release backup after quiescing and before
+stopping the source application.
 
-Do not run the generic writable `db:migrate` directly on the production file
-while Litestream is stopped. Its connection can checkpoint and remove the WAL
-when it closes. Use explicitly read-only connections for optional stopped-process
-checks, and follow the [ad hoc connection precautions](hosted-beta-deployment.md#idle-the-machine-for-offline-work)
-for `PERSIST_WAL`, journal limits, and client support. Preserve all SQLite and
-Litestream sidecars. Large table rewrites
-can still require a large WAL and replicated delta; continuity does not make
-the migration's actual changed pages smaller.
+The wrapper runs the atomic migration with the source listener stopped. On
+success it starts a temporary source listener and requests a unique verified
+hourly backup of the migrated database before closing the listener. This copy
+counts among the four hourly backups; the pre-switchover copy retains its release
+slot (at most three copies, seven days). The wrapper never reopens service controls.
+Keep the foreground SSH attached and preserve the migration and backup receipts.
+A failed post-migration backup does not undo a committed migration. Keep the app
+offline, inspect status, and repair backup access before reopening. A lost result
+is unknown execution state; inspect before launching another wrapper.
+
+For a production service that has not completed the backup transition, use the
+legacy image's supervised Litestream migration procedure and preserve WAL and
+Litestream sidecars. Do not invoke this replacement wrapper before replacement
+backup and isolated restore proof. Generic writable connections while the legacy
+daemon is stopped can break WAL continuity; use read-only diagnostics and retain
+the original recovery point. Large migrations also require space for their actual
+SQLite WAL and temporary work, independently of the backup mechanism.
 
 Finally restore the normal command using
 the recorded target image and saved configuration. Do not start the normal

@@ -1,3 +1,4 @@
+import { readBackupReceiverStatus } from './backups/client.ts';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
@@ -15,6 +16,15 @@ export async function readHostedBackupStatus(
     now?: Date;
   } = {},
 ): Promise<HostedBackupStatus | null> {
+  if (process.env.APP_BACKUP_RECEIVER_URL) {
+    try {
+      const status = await readBackupReceiverStatus();
+      const receipt = status.lastSuccessfulBackup;
+      if (!receipt || (process.env.FLY_APP_NAME && receipt.sourceApp !== process.env.FLY_APP_NAME)) return null;
+      const now = options.now ?? new Date();
+      return { lastSyncAt: receipt.startedAt, ageSeconds: Math.max(0, Math.floor((now.getTime() - Date.parse(receipt.startedAt)) / 1000)) };
+    } catch { return null; }
+  }
   const socketPath = options.socketPath ?? process.env.LITESTREAM_SOCKET_PATH ?? '/data/litestream.sock';
   const databasePath = options.databasePath
     ?? (process.env.APP_DATA_DIR ? `${process.env.APP_DATA_DIR}/app.db` : '/data/app.db');

@@ -66,7 +66,7 @@ the architectural boundary for implementation.
   automatically; case resolution is distinct from job completion and queued approval. Backend
   judgment can compensate scheduling without learner approval or content publication.
 - **Hosted boundary:** Mandarin, invite-only desktop web, one-origin frontend
-  and Express API, shared SQLite, Clerk identity, and Fly/Litestream are the
+  and Express API, shared SQLite, Clerk identity, and Fly hosting are the
   current beta baseline. Hosted dogfood history is valued data; the preserved
   local source is a recovery artifact, not another writer. The
   [service contract](docs/private-beta-service-boundary.md) and
@@ -157,3 +157,15 @@ new settled contract. Do not independently relax invariants or turn a proposal
 into accepted direction. Readiness claims require the relevant observed proof,
 not implementation alone. This branch-local document neither dispatches work nor
 tracks live task state.
+
+### Hosted backup boundary
+
+The stopgap backup policy retains four successful hourly standalone SQLite copies
+and at most three pre-switchover release copies, each expiring after seven days,
+on an independent same-region Fly receiver with a 15 GB volume. New copies must
+be verified and durably published before retention can evict good history. The
+source uses SQLite online backup with scratch outside the live data volume.
+Expected failure-time loss is one hour plus backup completion time; missed jobs
+extend it. This is not continuous replication. Production cutover requires a
+verified backup and isolated restore; preserve legacy S3 recovery points. See the
+[backup runbook](docs/ops/hosted-backups.md) for transition and monitoring limits.

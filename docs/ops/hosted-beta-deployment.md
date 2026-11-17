@@ -15,8 +15,10 @@ while production serves, before entering its maintenance window. For an
 application-only beta release, promote the exact tested image by digest.
 
 The service is one 1 GB Fly Machine in `sin`, one encrypted Fly Volume at
-`/data`, Clerk authentication, and Litestream replication to a private,
-versioned S3 bucket. The application container serves both the API and the
+`/data` and Clerk authentication. The [backup service](hosted-backups.md) keeps
+hourly standalone SQLite copies on an independent Fly Machine and volume.
+Its transition procedure retains Litestream until backup and isolated restore
+proof succeeds; repository implementation is not evidence of production cutover. The application container serves both the API and the
 built frontend. Initial bring-up, disposable fixture learners, and the dogfood
 cutover are complete; those recipes remain in git history if they must be
 re-read.
@@ -36,8 +38,8 @@ CLERK_SECRET_KEY
 OPENAI_API_KEY
 ZAI_API_KEY
 OPENROUTER_API_KEY
-LITESTREAM_ACCESS_KEY_ID
-LITESTREAM_SECRET_ACCESS_KEY
+APP_BACKUP_SOURCE_TOKEN
+APP_BACKUP_RECEIVER_TOKEN
 ```
 
 The two OpenAI arms use `OPENAI_API_KEY`, both GLM-5.3 Flash arms use
@@ -99,12 +101,10 @@ If any condition is false, stop. Do not stretch this pipeline with an ad-hoc
 exception.
 
 The command is operator-launched from a clean checkout of the intended commit.
-It validates arguments before any live mutation, then drives quiesce, backup
-sync, `fly deploy --remote-only`, identity confirmation, read-only smoke,
-post-deploy backup sync, and reopen without operator pauses between stages.
-Both sync stages retain the acknowledged database and replica positions. A
-post-deploy sync timeout or invalid acknowledgement fails before either control
-reopens. Its terminal JSON is live, ephemeral
+It validates arguments before any live mutation, then drives quiesce, verified pre-switchover release backup, `fly deploy --remote-only`, identity confirmation, read-only smoke,
+verified post-deploy hourly backup, and reopen without operator pauses between stages.
+Both backup stages retain verified receipts. A post-deploy timeout or invalid
+receipt fails before either control reopens. Its terminal JSON is live, ephemeral
 caller output rather than a retained evidence ledger.
 
 ### Smoke account
@@ -243,7 +243,8 @@ RC workflow when manual authenticated application use is wanted.
 After the isolated rehearsal passes, begin the schema-changing release's
 production maintenance window: stop new provider work, then stop writes. The
 health response exposes only control state and the active provider-work count;
-wait for that count to reach zero before forcing a backup sync.
+wait for that count to reach zero before requesting a pre-switchover release backup.
+Use the running source revision and retain the verified receipt:
 
 ```bash
 fly ssh console --app <app-name> --command \
@@ -252,7 +253,7 @@ fly ssh console --app <app-name> --command \
   'npm run hosted:control -- --data-dir=/data --control=maintenance --enabled=true --actor-id=<operator>'
 curl --fail https://<app-name>.fly.dev/healthz
 fly ssh console --app <app-name> --command \
-  'litestream sync -wait -timeout 60 -socket /data/litestream.sock -json /data/app.db'
+  'npm run --silent hosted:backup -- --action=create --kind=release --id=<unique-backup-id> --release-id=<release-id> --source-app=<app-name> --source-revision=<running-full-sha>'
 ```
 
 For schema-changing releases, including migration baseline adoption, follow the
@@ -262,32 +263,17 @@ For schema-changing releases, including migration baseline adoption, follow the
 ### Idle the Machine for offline work
 
 Use this when a schema-changing release or other volume-local work cannot run
-inside the normal Litestream-plus-app process. Disable provider work, enter
-maintenance, wait for active provider work to reach zero, and force a
-Litestream sync first (see the commands above). Then save the full Machine
-configuration, create an on-demand Fly Volume snapshot, and replace the normal
-command with an idle process while skipping health checks. The Volume stays
-mounted. Confirm the normal app and Litestream processes have stopped and the
-Litestream socket is absent. Preserve `app.db-wal`, `app.db-shm`, and
-`.app.db-litestream` with the database: retained sidecars are expected and allow
-incremental replication to resume. Never delete them to satisfy a stop check.
+inside the normal app process. Disable provider work, enter maintenance, drain
+active work, and obtain the verified pre-switchover backup above. Save the full
+Machine configuration, create an on-demand Fly Volume snapshot, and replace the
+normal command with an idle process while skipping health checks. The volume
+stays mounted. Confirm the application and workers have stopped. Preserve the
+database and any SQLite sidecars; never delete WAL files to bypass a refusal.
 
-For ad hoc connections to the live `app.db`, enable SQLite
-`SQLITE_FCNTL_PERSIST_WAL` on every connection where the client supports it,
-especially while Litestream is stopped. It is a connection-level file control,
-not a SQL pragma or a persistent database setting. Before closing a writable
-maintenance connection, leave `PRAGMA journal_size_limit = -1`: a nonnegative
-limit can truncate even a persistent WAL to zero on last close. Do not issue
-manual WAL reset/truncate checkpoints during the handoff. These are operator
-precautions, not enforcement against arbitrary clients.
-
-Use genuinely read-only connections for inspection. If a tool cannot set
-`PERSIST_WAL` (including Node 22's built-in SQLite API), do not open a writable
-connection while Litestream is down; use the supervised migration procedure
-for migrations and keep other authorized writers within Litestream's lifetime.
-A connection that only executes SELECTs is not necessarily opened read-only.
-`PERSIST_WAL` preserves files on close; it does not prevent writes/checkpoints
-from replacing history while replication is stopped.
+During the Litestream transition, also stop its process and preserve its socket
+and sidecars for investigation if shutdown was unclean. The legacy supervised
+migration wrapper is for a service that has not cut over; follow the
+[migration guide](schema-migrations.md#hosted-target-code-and-stopped-process).
 
 ```bash
 fly machine status --app <app-name> --display-config <machine-id>
@@ -302,8 +288,8 @@ unbaselined or pending schema; see the
 [offline migration procedure](schema-migrations.md).
 
 Create an attributable marker before an important release, record its id in
-the release evidence, deploy, inspect, smoke-test, and complete a post-start
-`litestream sync -wait` before reopening. Reopen writes first and
+the release evidence, deploy, inspect, smoke-test, and obtain a verified
+post-start hourly backup before reopening (see the backup runbook). Reopen writes first and
 provider work last. Clear any pre-upgrade banner after reopen; `--clear=true`
 no-ops when none exists:
 
@@ -312,7 +298,7 @@ fly ssh console --app <app-name> --command \
   'npm run hosted:sentinel -- --data-dir=/data --sentinel-id=<release-id> --actor-id=<operator>'
 fly deploy --config deploy/fly/.generated/fly.toml --remote-only --ha=false
 fly ssh console --app <app-name> --command \
-  'litestream sync -wait -timeout 60 -socket /data/litestream.sock -json /data/app.db'
+  'npm run --silent hosted:backup -- --action=create --kind=hourly --id=<unique-post-start-id> --source-app=<app-name> --source-revision=<target-full-sha>'
 fly ssh console --app <app-name> --command \
   'npm run hosted:control -- --data-dir=/data --control=maintenance --enabled=false --actor-id=<operator>'
 fly ssh console --app <app-name> --command \
@@ -401,7 +387,7 @@ npm run --silent hosted:maintain-pure-cues -- \
 ```
 
 For production, follow the maintenance procedure to disable provider work, enter
-maintenance, wait for active provider work to drain, and sync replication. Take
+maintenance, wait for active provider work to drain, and obtain a verified release backup. Take
 a fresh recoverable snapshot. Preview on the live file and compare the operations
 with the approved editorial batch. Pass its exact digest to the same command.
 
@@ -474,7 +460,7 @@ before target startup. Recovery may run in that window or a later maintenance
 window:
 
 1. Disable provider work, enable maintenance, and wait for `/healthz` to report
-   zero active provider work. Sync Litestream and take a fresh volume snapshot
+   zero active provider work. Obtain a verified release backup and take a fresh volume snapshot
    before recovery, using the commands above.
 2. Preview the plan from the deployed image:
 
@@ -553,49 +539,19 @@ logs, or the repository.
 
 ## Backup and isolated restore proof
 
-The image builds Litestream `0.5.16-study-wal1` from a pinned source revision
-with a [WAL lifecycle backport](../../deploy/fly/litestream/README.md). It
-preserves the journal on every Litestream connection and attaches its read lock
-before starting the app. Checkpoints remain enabled; a genuinely missing or
-unverifiable journal still requires a full baseline. The first deployment from
-an unpatched process can still require that baseline because the old process
-may discard its WAL at shutdown. Rehearse the transition and confirm available
-space before production rollout; the patch cannot recover discarded history.
-
-`npm run hosted:inspect` reports the baked app version and source revision,
-SQLite mode, bounded row counts and database sizes, control state, and
-Litestream sync age without printing credentials or replica coordinates.
-Investigate immediately if sync age approaches one hour. A recent sync age is
-only a replica-monitor heartbeat: it can remain recent while the next local
-backup file is still staging or failing. Release gates use `sync -wait`, which
-must complete local capture and remote acknowledgement, rather than age alone.
-
-After backup or migration changes, restore into an isolated path that is not
-the mounted live volume. Use the exact deployed image and an ephemeral Machine
-(or the same image locally), supply only the S3 restore credentials, and run:
-
-```bash
-mkdir -p /tmp/hosted-restore
-litestream restore -integrity-check full \
-  -o /tmp/hosted-restore/app.db \
-  "s3://${LITESTREAM_BUCKET}/chinese-study-app/hosted-beta"
-npm run hosted:verify-restore -- \
-  --data-dir=/tmp/hosted-restore \
-  --sentinel-id=<release-id> \
-  --minimum-learners=2
-```
-
-The validator fails unless SQLite integrity passes, shared content exists, the
-expected sentinel exists, and the required learner count is present. Delete
-only the isolated restore Machine/path after recording the image revision,
-replica recovery point, sentinel, result, operator, and timestamp. Never test a
-restore by overwriting `/data/app.db` on the live Machine.
+The [backup runbook](hosted-backups.md) owns retention, private configuration,
+pre-switchover receipts, isolated restore, and the Litestream transition gates.
+`hosted:inspect` reports the age of the latest successful capture from the live
+receiver. An unavailable receiver is unknown freshness, not a cached success.
+Use `hosted:backup --action=restore` into an isolated path and
+`hosted:verify-restore` with the expected sentinel and learner count after backup
+or migration changes. Preserve the receipt, image identity, and validation result.
 
 ## Failure boundaries
 
 - If `/healthz` fails, inspect `fly logs` and do not reopen maintenance.
-- If backup freshness is unknown or older than one hour, stop writes and repair
-  replication before continuing.
+- If backup freshness is unknown or exceeds 75 minutes, stop writes and repair
+  backups before continuing. The expected capture cadence is hourly.
 - If a migration or smoke test fails before writes reopen, restore the recorded
   pre-release recovery point with the matching old image.
 - After writes reopen, do not roll back blindly: a restore can discard accepted
@@ -630,7 +586,7 @@ historical; queue processing happens when workers resume.
 1. Identify the session through read-only diagnostics and verify the failure
    signature and absence of intervening activity. Follow this runbook's
    maintenance procedure: disable provider work, enable maintenance, drain
-   providers, sync replication, and take a fresh recoverable snapshot. Keep
+   providers, obtain a verified release backup, and take a fresh recoverable snapshot. Keep
    learner writes and workers quiescent through preview and apply.
 2. Rehearse on a consistent disposable database copy. Preview:
 

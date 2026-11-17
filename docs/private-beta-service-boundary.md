@@ -20,7 +20,7 @@ browser -> managed authentication -> Express service -> shared SQLite file
                                       |                    |
                                       |                    +-> Fly Volume
                                       +-> model API
-                                      +-> Litestream -> independent object storage
+                                      +-> SQLite online backup -> independent Fly backup volume
 ```
 
 This is a bounded single-instance, single-writer design for roughly three to
@@ -141,7 +141,7 @@ failure blast radius, pervasive learner scoping, single-writer contention, and
 no natural file-level restore for one learner.
 
 Observe lock wait time, busy errors, transaction latency, database/WAL size,
-backup replication age, and restore health. Reconsider Postgres when sustained
+successful backup capture age, and restore health. Reconsider Postgres when sustained
 contention affects learners, multiple app instances become necessary,
 backup/restore tooling proves inadequate, cohort or data volume exceeds this
 bounded beta, or a managed database creates enough reliability value to justify
@@ -171,20 +171,26 @@ identity, content, and history contracts above.
 ## Release, Backup, And Recovery
 
 The beta accepts planned downtime and targets a recovery point of at most
-approximately one hour of acknowledged activity. Losing that activity remains
+approximately one hour of acknowledged activity plus backup completion time;
+missed captures extend this window. Losing that activity remains
 a serious incident; the target calibrates current investment rather than
 normalizing loss.
 
-- Continuously replicate SQLite WAL changes to independently owned object
-  storage, alert when replication age exceeds the target, retain identifiable
-  recovery points, and treat host snapshots only as a secondary layer.
+- Capture coherent standalone SQLite backups hourly on an independent Fly
+  Machine and volume. Retain four successful hourly copies and at most three
+  pre-switchover release copies, expiring release copies after seven days.
+  Verify and durably publish each new copy before pruning good history.
+  Independently detect stale or unavailable backup status; host snapshots are
+  a secondary layer. The [backup runbook](ops/hosted-backups.md) records the
+  monitoring delivery gap and the proof required before Litestream cutover.
 - Exercise an isolated restore before learners are invited and after material
   backup or migration changes. A backup is not operationally valid until its
   restore has been proven.
 - For each schema-changing release: enter maintenance, quiesce writes and
   in-flight provider work, create an identified pre-release backup, apply the
   rehearsed versioned migration, start the matching app, smoke-test two learner
-  identities plus shared content and the core path, record the result, then
+  identities plus shared content and the core path, obtain a verified
+  post-migration hourly backup, record the result, then
   reopen writes.
 - Before writes reopen, an incompatible failure restores the pre-release
   backup. After reopening, recovery may discard new writes, so rollback limits
@@ -250,9 +256,10 @@ Nondeterministic model judgment never runs inside a deterministic migration.
 The platform spike, real-app deployment, and hosted dogfood cutover established
 this package as the current beta wave decision:
 
-- one Fly.io Machine in Singapore or Tokyo, with one encrypted Fly Volume;
-- SQLite in WAL mode and Litestream replication to independent, encrypted,
-  versioned S3-compatible storage;
+- one application Fly.io Machine in Singapore or Tokyo, with one encrypted
+  Fly Volume, plus an independent same-region backup Machine and 15 GB volume;
+- SQLite in WAL mode with hourly standalone backups; legacy S3 recovery points
+  are preserved during and after the guarded Litestream transition;
 - Clerk restricted-mode invitations and authenticated sessions, mapped to
   stable local learner identities; and
 - the current OpenAI reflection integration under the trust controls above.
@@ -260,11 +267,11 @@ this package as the current beta wave decision:
 Fly Volume storage is local and unreplicated; generic Fly release commands
 cannot mount it. Therefore migrations use a controlled maintenance/startup or
 attached-Machine path, and autoscaling/autostop remain off unless proven
-compatible with the single-writer and continuous-backup contract.
+compatible with the single-writer and hourly-backup contract.
 
 The disposable spike and real-app work exercised invite restriction, sign-in,
 sign-out and revocation, local disablement, volume persistence,
-WAL/Litestream behavior, independent restore, controlled migration, and bounded
+legacy WAL/Litestream behavior, independent restore, controlled migration, and bounded
 metrics. Fly and Clerk remain wave choices rather than permanent invariants. If
 operational evidence invalidates Fly, use Railway while preserving independent
 backup; if it invalidates Clerk, use WorkOS AuthKit. Switching either does not
