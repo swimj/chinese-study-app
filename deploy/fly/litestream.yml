@@ -21,7 +21,8 @@ snapshot:
 dbs:
   - path: /data/app.db
     restore-if-db-not-exists: true
-    monitor-interval: 1s
+    # Batch local replication files within the roughly 30-second healthy-operation target.
+    monitor-interval: 25s
     checkpoint-interval: 1m
     busy-timeout: 5s
     replica:
