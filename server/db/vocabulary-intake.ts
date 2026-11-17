@@ -252,7 +252,6 @@ export function projectVocabularyIntakeCard(card: ChatCard): VocabularyIntakeCar
   const target = body.selection.targetSenseId;
   const senseProposed = body.proposal && body.proposalKind === 'sense' && body.proposedSense !== null;
   const proposed = !senseProposed && !enrolled && body.proposal;
-  const addedByCard = enrolled && (body.enrollmentAddedAt === word?.addedAt || body.proposalKind === 'sense');
   const ownEnrollment = enrolled && body.undo && body.undo.after.learnerVersion === word?.stateVersion;
   const attention = (ownEnrollment ? body.attention : null) ?? prerequisiteAttention(body.wordId,scope) ??
     (enrolled && word?.mode === 'unstudied' ? teachingAttention(body.wordId) : null);
@@ -263,10 +262,7 @@ export function projectVocabularyIntakeCard(card: ChatCard): VocabularyIntakeCar
         : newSenseConflict(body.wordId, body.proposedSense!)) : null;
   const selected = proposed ? body.selection.senseIds.filter(id => active.has(id)) : scope.includedSenseIds;
   const state: VocabularyIntakeCard['state'] = senseProposed ? 'sense-proposed' : !enrolled ? 'proposed'
-    : !addedByCard ? 'already-studying'
-    : word?.mode !== 'unstudied' ? 'already-studying'
-    : pending ? 'preparing' : teachingReady(body.wordId) ? 'ready'
-    : attention ? 'added' : 'preparing';
+    : word?.mode !== 'unstudied' ? 'already-studying' : 'added';
   const selection = { senseIds: selected, includeProposedSense: senseProposed || (proposed && body.selection.includeProposedSense),
     targetSenseId: target && selected.includes(target) ? target : null };
   const actions: VocabularyIntakeCard['actions'] = [];
@@ -300,8 +296,10 @@ export function listVocabularyIntakeCards(outstanding: boolean): VocabularyIntak
   for (let page = listChatCards(VOCABULARY_INTAKE_SURFACE, undefined, 100); page.length;) {
     for (const card of page) {
       const projected = projectVocabularyIntakeCard(card);
+      const awaitingPreparation = projected.state === 'added'
+        && (hasPendingVocabularyIntakeMatch(projected.wordId) || !teachingReady(projected.wordId));
       if (!outstanding || ((projected.state === 'proposed' || projected.state === 'sense-proposed') && intakeBody(card).proposal) ||
-        projected.state === 'preparing' || projected.attention !== null) results.push(projected);
+        awaitingPreparation || projected.attention !== null) results.push(projected);
     }
     page = page.length === 100 ? listChatCards(VOCABULARY_INTAKE_SURFACE, page.at(-1), 100) : [];
   }

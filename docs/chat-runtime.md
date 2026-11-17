@@ -113,7 +113,12 @@ saved explanation with current card projections. See the [chat prompt](../server
 
 [`vocabulary-intake.ts`](../server/db/vocabulary-intake.ts) validates IDs and
 versions, owns enrollment and scope effects, and projects each card from live
-study state. Card commands reuse chat receipts and the learner-scope writer.
+study state. Enrolled unstudied words project `added` throughout preparation;
+other study modes project `already-studying`, independently of which card
+created the enrollment. Outstanding membership still includes pending preparation
+and attention. The client refreshes older loaded Added cards alongside the latest
+history page so senses and deferred matches can settle in place.
+Card commands reuse chat receipts and the learner-scope writer.
 Natural-language revisions use the `revise_card` completion action, alongside `present_card` for new
 cards. The revision handler accepts only a card supplied in recent context and
 checks its card, learner, catalog and selection versions before reusing the

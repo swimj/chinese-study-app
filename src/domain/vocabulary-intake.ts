@@ -1,5 +1,5 @@
 /** Learner-facing add-word cards. Private command snapshots never cross this boundary. */
-export type VocabularyIntakeCardState = 'proposed' | 'sense-proposed' | 'added' | 'preparing' | 'ready' | 'already-studying';
+export type VocabularyIntakeCardState = 'proposed' | 'sense-proposed' | 'added' | 'already-studying';
 export type VocabularyIntakeSense = {
   senseId: string; label: string; notes: string[]; isDefault: boolean;
   disposition: 'default' | 'active' | 'excluded';

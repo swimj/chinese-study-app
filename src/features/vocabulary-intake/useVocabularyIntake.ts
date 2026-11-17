@@ -148,9 +148,10 @@ export function useVocabularyIntake(chatVisible: boolean, outstandingVisible: bo
         setHistoryError(null);
       }
       const latestIds = new Set(page.cards.map(card => card.id));
-      const earlierPreparing = Object.values(recordsRef.current)
-        .filter(({ card }) => card.state === 'preparing' && !latestIds.has(card.id));
-      await Promise.allSettled(earlierPreparing.map(({ card }) => refreshCard(card.id, signal)));
+      // Added cards can still gain senses, context matches and attention in place.
+      const earlierAdded = Object.values(recordsRef.current)
+        .filter(({ card }) => card.state === 'added' && !latestIds.has(card.id));
+      await Promise.allSettled(earlierAdded.map(({ card }) => refreshCard(card.id, signal)));
     } catch {
       if (!signal.aborted && initial) setHistoryError('initial');
     } finally {

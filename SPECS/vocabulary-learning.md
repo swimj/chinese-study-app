@@ -115,9 +115,12 @@ offer enrollment Undo; deselecting the sense removes it from the learner's set
 while the shared meaning remains. An unstudied word waits for teaching covering
 its new set; an already taught word continues without reteaching.
 
-The same card appears in the transcript and outstanding cards. Preparation and
-attention can change in place, and My Words shows current preparation for
-stashed, unstudied words. Undo reverses the enrollment, priority, context and
+The same card appears in the transcript and outstanding cards. Enrolled,
+unstudied words show Added regardless of preparation progress; words in a study
+mode show Already studying. Repeated lookups use the same current enrollment
+state. Senses and attention can change in place. Outstanding includes pending
+preparation and attention; My Words shows current preparation for stashed,
+unstudied words. Undo reverses the enrollment, priority, context and
 sense choices made by that add while its effects are still current. Shared
 preparation and canonical senses stay available. Later study and manual
 changes take precedence over Undo.
