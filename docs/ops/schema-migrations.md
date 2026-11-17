@@ -44,8 +44,9 @@ automatically rebuilds an incompatible development database.
 Use this procedure for first baseline adoption and every migration applied to
 an existing database, including data-only migrations. All require a
 stopped-writer maintenance window; `npm run hosted:upgrade` is app-only and
-cannot perform these changes. The migration runner does not deploy or back up a
-database automatically.
+cannot perform these changes. The generic migration runner does not deploy or
+back up a database automatically. Hosted production uses the replication wrapper
+below to preserve WAL continuity and acknowledge the migrated backup.
 
 1. Rehearse every schema or data migration with the target image on an
    [ephemeral release Machine](hosted-release-candidate.md), restoring the latest
@@ -61,8 +62,9 @@ database automatically.
    stopped writer. Keep them stopped until the migration finishes. Preserve the
    database together with any SQLite sidecars; never copy a live main file alone
    as a backup or delete WAL files to bypass a problem.
-4. Run the following from the **target release**, using the explicit existing
-   database file:
+4. From the **target release**, use the [hosted procedure](#hosted-target-code-and-stopped-process)
+   for production. For local databases and isolated restore rehearsals, use the
+   explicit existing database file:
 
    ```bash
    npm run db:migrate -- --database=/absolute/path/app.db --status=true
@@ -74,8 +76,9 @@ database automatically.
    operator assertion, not process detection. The runner also takes SQLite's
    immediate write lock, but this cannot stop an application from resuming later.
 5. Start the target release while maintenance remains enabled. Run inspection
-   and smoke checks for both learner identities. Reopen writes, then provider
-   work, only when these pass.
+   and smoke checks for both learner identities. On hosted production, complete
+   another `litestream sync -wait` after startup. Reopen writes, then provider
+   work, only when these checks pass.
 
 The CLI does not import backend initialization and needs no Clerk credentials,
 learner id, seed configuration, or running server. Normal startup rejects a
@@ -106,8 +109,35 @@ mounted `/data` volume while replacing the normal app/Litestream command with
 `sleep infinity` and skipping health checks. Confirm normal processes stopped.
 Build/push the target image with its exact `APP_REVISION` **without deploying the
 normal application**, then update that same idle Machine to the target image
-while retaining the idle command and volume. Run `db:migrate` via SSH in that
-target image against `/data/app.db`. Finally restore the normal command using
+while retaining the idle command and volume. Apply the migration via SSH:
+
+```bash
+fly ssh console --app <app-name> --command \
+  'sh /app/deploy/fly/migrate-with-litestream.sh --confirm-app-stopped=true'
+```
+
+This wrapper requires an existing database and absent Litestream socket. It
+starts a dedicated Litestream process using the production replica configuration,
+waits for successful initial WAL verification and replica sync, runs the ordinary
+atomic migration, then verifies another sync before returning a receipt. The
+application and provider workers remain stopped. Litestream's bookkeeping and
+replication are the only additional database participant. Keep the foreground SSH
+command attached until completion and retain its migration and replication receipt.
+On migration or sync failure, keep the app stopped. A failed post-migration sync
+does not undo a committed migration; inspect status and repair replication before
+reopening. A lost terminal result is unknown execution state, not permission to
+launch a second wrapper.
+
+Do not run the generic writable `db:migrate` directly on the production file
+while Litestream is stopped. Its connection can checkpoint and remove the WAL
+when it closes. Use explicitly read-only connections for optional stopped-process
+checks, and follow the [ad hoc connection precautions](hosted-beta-deployment.md#idle-the-machine-for-offline-work)
+for `PERSIST_WAL`, journal limits, and client support. Preserve all SQLite and
+Litestream sidecars. Large table rewrites
+can still require a large WAL and replicated delta; continuity does not make
+the migration's actual changed pages smaller.
+
+Finally restore the normal command using
 the recorded target image and saved configuration. Do not start the normal
 target application before running the migration; its compatibility check will
 refuse an unbaselined or pending database.

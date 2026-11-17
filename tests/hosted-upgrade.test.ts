@@ -100,6 +100,7 @@ describe('hosted upgrade pipeline', () => {
       'build-deploy:ok',
       'confirm:ok',
       'smoke:ok',
+      'post-deploy-sync:ok',
       'reopen:ok',
     ]);
     assert.deepEqual(harness.mutations, [
@@ -114,7 +115,21 @@ describe('hosted upgrade pipeline', () => {
     assert.deepEqual(deploy?.args.slice(-2), ['--build-arg', `APP_REVISION=${SOURCE_REVISION}`]);
     assert.equal(JSON.stringify(result).includes('smoke-token'), false);
     assert.equal(JSON.stringify(harness.events).includes('sk_test'), false);
+    assert.deepEqual(result.stages.find(stage => stage.stage === 'post-deploy-sync')?.detail,
+      { databasePath: '/data/app.db', txid: 42, replicaTxid: 42 });
+    assert.equal(JSON.stringify(result).includes('secret-bucket'), false);
   });
+
+  for (const postDeploySync of ['timeout', 'behind', 'malformed'] as const) {
+    test(`keeps both controls closed when post-deploy replication is ${postDeploySync}`, async () => {
+      const harness = createHarness({ postDeploySync });
+      const result = await runHostedUpgrade(harness.input, harness.deps);
+      assert.equal(result.status, 'failed');
+      assert.equal(result.failedStage, 'post-deploy-sync');
+      assert.equal(result.reopened, false);
+      assert.deepEqual(harness.mutations, ['provider-work:false', 'maintenance:true', 'deploy']);
+    });
+  }
 
   test('promotes a digest-qualified RC image without rebuilding and confirms its digest', async () => {
     const digest = `sha256:${'a'.repeat(64)}`;
@@ -202,6 +217,7 @@ function createHarness(options: {
   smokeStatus?: 'ok' | 'failed';
   postDeployRevision?: string;
   imageDigest?: string;
+  postDeploySync?: 'timeout' | 'behind' | 'malformed';
 } = {}) {
   const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'hosted-upgrade-repo-'));
   fs.writeFileSync(path.join(repoRoot, 'package.json'), JSON.stringify({ version: '2.3.0' }));
@@ -312,7 +328,13 @@ function createHarness(options: {
       return { stdout: JSON.stringify({ status: 'noop' }), stderr: '' };
     }
     if (command.includes('litestream sync')) {
-      return { stdout: JSON.stringify({ replica: 's3://secret-bucket/secret-prefix', ok: true }), stderr: '' };
+      if (deployed && options.postDeploySync === 'timeout') throw new Error('sync timed out');
+      const result = deployed && options.postDeploySync === 'malformed' ? { ok: true } : {
+        db_path: '/data/app.db', txid: 42,
+        replica_txid: deployed && options.postDeploySync === 'behind' ? 41 : 42,
+        replica: 's3://secret-bucket/secret-prefix',
+      };
+      return { stdout: JSON.stringify(result), stderr: '' };
     }
     if (command.includes('hosted:smoke')) {
       const status = options.smokeStatus ?? 'ok';

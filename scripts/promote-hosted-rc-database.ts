@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import {
   readBooleanArgument,
   readStrictArguments,
@@ -27,8 +28,6 @@ if (!fs.statSync(incomingDb).isFile()) throw new Error('--incoming-db must name 
 
 for (const filePath of [
   path.join(dataDir, 'litestream.sock'),
-  `${targetDb}-wal`,
-  `${targetDb}-shm`,
   `${targetDb}-journal`,
   `${incomingDb}-wal`,
   `${incomingDb}-shm`,
@@ -36,6 +35,21 @@ for (const filePath of [
 ]) {
   if (fs.existsSync(filePath)) {
     throw new Error(`RC database promotion requires stopped processes and no SQLite sidecars: ${filePath}`);
+  }
+}
+
+// This stopped, explicitly disposable RC database is about to be retired.
+// Normalize its retained WAL through SQLite so the previous copy remains
+// coherent. Never discard a WAL by unlinking it or move the main file alone.
+if (fs.existsSync(`${targetDb}-wal`) || fs.existsSync(`${targetDb}-shm`)) {
+  if (!fs.existsSync(targetDb)) throw new Error('RC sidecars exist without their database.');
+  const retiring = new DatabaseSync(targetDb);
+  try {
+    const result = retiring.prepare('PRAGMA wal_checkpoint(TRUNCATE)').get();
+    if (result?.busy !== 0) throw new Error('RC database is still busy; keep processes stopped before promotion.');
+  } finally { retiring.close(); }
+  if (fs.existsSync(`${targetDb}-wal`) || fs.existsSync(`${targetDb}-shm`)) {
+    throw new Error('RC SQLite sidecars remain after close; investigate active connections before promotion.');
   }
 }
 

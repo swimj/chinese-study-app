@@ -100,8 +100,11 @@ exception.
 
 The command is operator-launched from a clean checkout of the intended commit.
 It validates arguments before any live mutation, then drives quiesce, backup
-sync, `fly deploy --remote-only`, identity confirmation, read-only smoke, and
-reopen without waiting between stages. Its terminal JSON is live, ephemeral
+sync, `fly deploy --remote-only`, identity confirmation, read-only smoke,
+post-deploy backup sync, and reopen without operator pauses between stages.
+Both sync stages retain the acknowledged database and replica positions. A
+post-deploy sync timeout or invalid acknowledgement fails before either control
+reopens. Its terminal JSON is live, ephemeral
 caller output rather than a retained evidence ledger.
 
 ### Smoke account
@@ -264,8 +267,27 @@ maintenance, wait for active provider work to reach zero, and force a
 Litestream sync first (see the commands above). Then save the full Machine
 configuration, create an on-demand Fly Volume snapshot, and replace the normal
 command with an idle process while skipping health checks. The Volume stays
-mounted. Confirm the Litestream socket and SQLite sidecars are absent. Do not
-delete them merely to bypass a refusal—investigate an unclean stop.
+mounted. Confirm the normal app and Litestream processes have stopped and the
+Litestream socket is absent. Preserve `app.db-wal`, `app.db-shm`, and
+`.app.db-litestream` with the database: retained sidecars are expected and allow
+incremental replication to resume. Never delete them to satisfy a stop check.
+
+For ad hoc connections to the live `app.db`, enable SQLite
+`SQLITE_FCNTL_PERSIST_WAL` on every connection where the client supports it,
+especially while Litestream is stopped. It is a connection-level file control,
+not a SQL pragma or a persistent database setting. Before closing a writable
+maintenance connection, leave `PRAGMA journal_size_limit = -1`: a nonnegative
+limit can truncate even a persistent WAL to zero on last close. Do not issue
+manual WAL reset/truncate checkpoints during the handoff. These are operator
+precautions, not enforcement against arbitrary clients.
+
+Use genuinely read-only connections for inspection. If a tool cannot set
+`PERSIST_WAL` (including Node 22's built-in SQLite API), do not open a writable
+connection while Litestream is down; use the supervised migration procedure
+for migrations and keep other authorized writers within Litestream's lifetime.
+A connection that only executes SELECTs is not necessarily opened read-only.
+`PERSIST_WAL` preserves files on close; it does not prevent writes/checkpoints
+from replacing history while replication is stopped.
 
 ```bash
 fly machine status --app <app-name> --display-config <machine-id>
@@ -280,7 +302,8 @@ unbaselined or pending schema; see the
 [offline migration procedure](schema-migrations.md).
 
 Create an attributable marker before an important release, record its id in
-the release evidence, deploy, inspect, and smoke-test. Reopen writes first and
+the release evidence, deploy, inspect, smoke-test, and complete a post-start
+`litestream sync -wait` before reopening. Reopen writes first and
 provider work last. Clear any pre-upgrade banner after reopen; `--clear=true`
 no-ops when none exists:
 
@@ -288,6 +311,8 @@ no-ops when none exists:
 fly ssh console --app <app-name> --command \
   'npm run hosted:sentinel -- --data-dir=/data --sentinel-id=<release-id> --actor-id=<operator>'
 fly deploy --config deploy/fly/.generated/fly.toml --remote-only --ha=false
+fly ssh console --app <app-name> --command \
+  'litestream sync -wait -timeout 60 -socket /data/litestream.sock -json /data/app.db'
 fly ssh console --app <app-name> --command \
   'npm run hosted:control -- --data-dir=/data --control=maintenance --enabled=false --actor-id=<operator>'
 fly ssh console --app <app-name> --command \
@@ -528,10 +553,22 @@ logs, or the repository.
 
 ## Backup and isolated restore proof
 
+The image builds Litestream `0.5.16-study-wal1` from a pinned source revision
+with a [WAL lifecycle backport](../../deploy/fly/litestream/README.md). It
+preserves the journal on every Litestream connection and attaches its read lock
+before starting the app. Checkpoints remain enabled; a genuinely missing or
+unverifiable journal still requires a full baseline. The first deployment from
+an unpatched process can still require that baseline because the old process
+may discard its WAL at shutdown. Rehearse the transition and confirm available
+space before production rollout; the patch cannot recover discarded history.
+
 `npm run hosted:inspect` reports the baked app version and source revision,
 SQLite mode, bounded row counts and database sizes, control state, and
 Litestream sync age without printing credentials or replica coordinates.
-Investigate immediately if sync age approaches one hour.
+Investigate immediately if sync age approaches one hour. A recent sync age is
+only a replica-monitor heartbeat: it can remain recent while the next local
+backup file is still staging or failing. Release gates use `sync -wait`, which
+must complete local capture and remote acknowledgement, rather than age alone.
 
 After backup or migration changes, restore into an isolated path that is not
 the mounted live volume. Use the exact deployed image and an ephemeral Machine

@@ -1,0 +1,35 @@
+name: Litestream continuity
+
+on:
+  pull_request:
+    paths:
+      - 'deploy/fly/**'
+      - 'scripts/**'
+      - 'server/db/**'
+      - 'tests/integration/litestream-continuity.test.ts'
+      - 'tests/helpers/baseline-database.ts'
+      - 'package*.json'
+      - '.github/workflows/litestream-continuity.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  hosted-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the actual hosted image without production credentials
+        run: >-
+          docker build -f deploy/fly/Dockerfile -t study-continuity-test
+          --build-arg APP_REVISION="${GITHUB_SHA}"
+          --build-arg VITE_CLERK_PUBLISHABLE_KEY=build-only .
+      - name: Exercise restart, migration, fallback, and restore inside Linux image
+        run: >-
+          docker run --rm
+          --mount type=bind,source="${PWD}/tests",target=/app/tests,readonly
+          --env LITESTREAM_BINARY=/usr/local/bin/litestream
+          --entrypoint node study-continuity-test
+          --import tsx --test tests/integration/litestream-continuity.test.ts
