@@ -102,6 +102,23 @@ recovery point. Missing history is a refusal, not permission to silently choose 
 newer point. Litestream remains in the image for explicitly selected legacy S3
 restores; preserve those credentials and recovery points separately.
 
+## Restoring into an app volume
+
+Before activating a restored app, stop its processes and establish the restored
+file's runtime ownership. Downloads are mode 600 and owned by the account running
+the restore; an SSH restore as root therefore produces a file the `node` app user
+cannot open. Restarting the Machine or remounting the volume does not fix this.
+
+Preserve the existing `app.db` owner/group, or use the data directory's owner/group
+when there is no previous database. On the standard image this is `node:node`:
+run `chown node:node /data/<staged-restore>/app.db` as root after verifying the
+runtime identity. Keep mode 600, verify the runtime user can read and write the
+file and data directory, and then promote the validated file using the stopped-app
+recovery procedure. Do not change ownership recursively or overwrite an active
+database. RC promotion performs this ownership adjustment automatically before
+moving either database. Root-only rehearsal validation does not prove that the
+runtime user can open the restored database.
+
 ## Transition and release gates
 
 1. Reconcile live image, controls, database/volume sizes, backup freshness, and
