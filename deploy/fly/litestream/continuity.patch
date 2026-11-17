@@ -1,0 +1,622 @@
+diff --git a/db.go b/db.go
+index a4b636d..f384eed 100644
+--- a/db.go
++++ b/db.go
+@@ -79,6 +79,9 @@ type DB struct {
+ 	syncState syncState
+ 	syncDiag  diagState
+ 
++	replicaInitialized bool
++	startupVerified    bool
++
+ 	// last file info for each level
+ 	maxLTXFileInfos struct {
+ 		sync.Mutex
+@@ -664,6 +667,15 @@ func (db *DB) PageSize() int {
+ 	return db.pageSize
+ }
+ 
++func (db *DB) checkStartupReady() error {
++	db.mu.RLock()
++	defer db.mu.RUnlock()
++	if !db.startupVerified {
++		return &DBNotReadyError{Reason: "startup WAL verification pending"}
++	}
++	return nil
++}
++
+ // RecordSuccessfulSync marks the current time as a successful sync.
+ // Used by heartbeat monitoring to determine if a ping should be sent.
+ func (db *DB) RecordSuccessfulSync() {
+@@ -798,6 +810,18 @@ func (db *DB) Open() (err error) {
+ 	db.compactor.RetentionEnabled = db.RetentionEnabled
+ 	db.compactor.client = db.Replica.Client
+ 
++	// Take the long-running read lock before returning, so an application
++	// started after Open (as by `replicate -exec`) cannot restart the WAL
++	// before Litestream is attached. If the last connection checkpointed the
++	// WAL on close, the application's first write restarts it, overwriting the
++	// frame verify() checks against and forcing a full snapshot. Not fatal:
++	// the next sync retries init.
++	db.mu.Lock()
++	if err := db.initLocal(db.ctx); err != nil {
++		db.Logger.Warn("init on open failed, will retry on sync", "error", err)
++	}
++	db.mu.Unlock()
++
+ 	// Start monitoring SQLite database in a separate goroutine.
+ 	if db.MonitorInterval > 0 {
+ 		db.wg.Add(1)
+@@ -859,6 +883,9 @@ func (db *DB) Close(ctx context.Context) (err error) {
+ 	db.db = nil
+ 	db.f = nil
+ 	db.opened = false
++	db.replicaInitialized = false
++	db.startupVerified = false
++	db.syncState = syncState{}
+ 	db.rtx = nil
+ 	db.mu.Unlock()
+ 
+@@ -996,33 +1023,67 @@ func (db *DB) syncReplicaWithRetry(ctx context.Context) error {
+ 	}
+ }
+ 
+-// setPersistWAL sets the PERSIST_WAL file control on the database connection.
+-// This prevents SQLite from removing the WAL file when connections close.
+-func (db *DB) setPersistWAL(ctx context.Context) error {
+-	conn, err := db.db.Conn(ctx)
+-	if err != nil {
+-		return fmt.Errorf("get connection: %w", err)
+-	}
+-	defer conn.Close()
+-
+-	return conn.Raw(func(driverConn interface{}) error {
+-		fc, ok := driverConn.(sqlite.FileControl)
++// persistWALDriverName is a private registration of the SQLite driver that
++// sets PERSIST_WAL on every connection it opens.
++//
++// SQLite checkpoints and deletes the WAL (and -shm) when the last connection
++// to a database closes, unless that connection has PERSIST_WAL set. Which of
++// Litestream's pooled connections closes last depends on pool order: the
++// long-running read transaction can move to any of them across a checkpoint.
++// Setting the flag on one connection is therefore not enough; a deleted WAL
++// makes the next start see "wal truncated by another process" and take a
++// full snapshot.
++const persistWALDriverName = "litestream-sqlite"
++
++func init() {
++	drv := &sqlite.Driver{}
++	drv.RegisterConnectionHook(func(conn sqlite.ExecQuerierContext, _ string) error {
++		fc, ok := conn.(sqlite.FileControl)
+ 		if !ok {
+ 			return fmt.Errorf("driver does not implement FileControl")
+ 		}
+-
+-		_, err := fc.FileControlPersistWAL("main", 1)
+-		if err != nil {
++		if _, err := fc.FileControlPersistWAL("main", 1); err != nil {
+ 			return fmt.Errorf("FileControlPersistWAL: %w", err)
+ 		}
+-
+ 		return nil
+ 	})
++	sql.Register(persistWALDriverName, drv)
+ }
+ 
+ // init initializes the connection to the database.
+ // Skipped if already initialized or if the database file does not exist.
+-func (db *DB) init(ctx context.Context) (err error) {
++func (db *DB) init(ctx context.Context) error {
++	if err := db.initLocal(ctx); err != nil {
++		return err
++	} else if db.db == nil || db.replicaInitialized {
++		return nil
++	}
++
++	// Check if database is behind replica (issue #781).
++	// This must happen before replica.Start() to detect restore scenarios.
++	if db.Replica != nil {
++		if err := db.checkDatabaseBehindReplica(ctx); err != nil {
++			return fmt.Errorf("check database behind replica: %w", err)
++		}
++	}
++
++	// If we have an existing replication files, ensure the headers match.
++	// if err := db.verifyHeadersMatch(); err != nil {
++	// 	return fmt.Errorf("cannot determine last wal position: %w", err)
++	// }
++
++	// TODO(gen): Generate diff of current LTX snapshot and save as next LTX file.
++
++	// Start replication.
++	if db.Replica != nil {
++		db.Replica.Start(db.ctx)
++	}
++
++	db.replicaInitialized = true
++	return nil
++}
++
++func (db *DB) initLocal(ctx context.Context) (err error) {
+ 	// Exit if already initialized.
+ 	if db.db != nil {
+ 		return nil
+@@ -1046,15 +1107,10 @@ func (db *DB) init(ctx context.Context) (err error) {
+ 	dsn := fmt.Sprintf("file:%s?_pragma=busy_timeout(%d)&_pragma=wal_autocheckpoint(0)",
+ 		db.path, db.BusyTimeout.Milliseconds())
+ 
+-	if db.db, err = sql.Open("sqlite", dsn); err != nil {
++	if db.db, err = sql.Open(persistWALDriverName, dsn); err != nil {
+ 		return err
+ 	}
+ 
+-	// Set PERSIST_WAL to prevent WAL file removal when database connections close.
+-	if err := db.setPersistWAL(ctx); err != nil {
+-		return fmt.Errorf("set PERSIST_WAL: %w", err)
+-	}
+-
+ 	// Open long-running database file descriptor. Required for non-OFD locks.
+ 	if db.f, err = os.Open(db.path); err != nil {
+ 		return fmt.Errorf("open db file descriptor: %w", err)
+@@ -1094,7 +1150,7 @@ func (db *DB) init(ctx context.Context) (err error) {
+ 
+ 	// Start a long-running read transaction to prevent other transactions
+ 	// from checkpointing.
+-	if err := db.acquireReadLock(ctx); err != nil {
++	if err := db.acquireReadLock(db.ctx); err != nil {
+ 		return fmt.Errorf("acquire read lock: %w", err)
+ 	}
+ 
+@@ -1115,26 +1171,6 @@ func (db *DB) init(ctx context.Context) (err error) {
+ 		return fmt.Errorf("ensure wal exists: %w", err)
+ 	}
+ 
+-	// Check if database is behind replica (issue #781).
+-	// This must happen before replica.Start() to detect restore scenarios.
+-	if db.Replica != nil {
+-		if err := db.checkDatabaseBehindReplica(ctx); err != nil {
+-			return fmt.Errorf("check database behind replica: %w", err)
+-		}
+-	}
+-
+-	// If we have an existing replication files, ensure the headers match.
+-	// if err := db.verifyHeadersMatch(); err != nil {
+-	// 	return fmt.Errorf("cannot determine last wal position: %w", err)
+-	// }
+-
+-	// TODO(gen): Generate diff of current LTX snapshot and save as next LTX file.
+-
+-	// Start replication.
+-	if db.Replica != nil {
+-		db.Replica.Start(db.ctx)
+-	}
+-
+ 	return nil
+ }
+ 
+@@ -1283,7 +1319,14 @@ func (db *DB) syncLocked(ctx context.Context, maxSyncWALBytes int64) (result syn
+ 		db.Logger.Debug("sync: no database found")
+ 		return result, nil
+ 	}
+-	defer db.applySyncExecutor(exec, true)
++	defer func() {
++		db.applySyncExecutor(exec, true)
++		if err == nil {
++			db.mu.Lock()
++			db.startupVerified = true
++			db.mu.Unlock()
++		}
++	}()
+ 
+ 	// Ensure WAL has at least one frame in it.
+ 	db.setSyncDiagPhase(diagPhaseEnsureWAL, func(s *diagState) {
+@@ -2725,6 +2768,10 @@ func (db *DB) snapshotPosition(ctx context.Context) (*snapshotReadPosition, erro
+ 	}
+ 	defer db.execSem.Release(1)
+ 
++	if err := db.checkStartupReady(); err != nil {
++		return nil, err
++	}
++
+ 	pageSize := db.PageSize()
+ 	pos, err := db.Pos()
+ 
+@@ -2908,6 +2955,10 @@ func snapshotHeaderWALRange(maxOffset, frameSize int64) (offset, size int64) {
+ // Returns metadata for the newly written compaction file. Returns ErrNoCompaction
+ // if no new files are available to be compacted.
+ func (db *DB) Compact(ctx context.Context, dstLevel int) (*ltx.FileInfo, error) {
++	if err := db.checkStartupReady(); err != nil {
++		return nil, err
++	}
++
+ 	info, err := db.compactor.Compact(ctx, dstLevel)
+ 	if err != nil {
+ 		return nil, err
+diff --git a/db_internal_test.go b/db_internal_test.go
+index d7f1b4a..0def9e0 100644
+--- a/db_internal_test.go
++++ b/db_internal_test.go
+@@ -21,7 +21,7 @@ import (
+ 	"github.com/prometheus/client_golang/prometheus/testutil"
+ 	"github.com/superfly/ltx"
+ 	"golang.org/x/sync/semaphore"
+-	_ "modernc.org/sqlite"
++	"modernc.org/sqlite"
+ 
+ 	"github.com/benbjohnson/litestream/internal"
+ )
+@@ -2249,6 +2249,168 @@ func testCheckpointSnapshot(t *testing.T, mode string) {
+ 	}
+ }
+ 
++// TestDB_PersistWALOnEveryConnection checks that every connection in
++// Litestream's pool has PERSIST_WAL set, not just the first one. Any of them
++// can be the last to close.
++func TestDB_PersistWALOnEveryConnection(t *testing.T) {
++	ctx := context.Background()
++	dbPath := filepath.Join(t.TempDir(), "db")
++
++	sqldb, err := sql.Open("sqlite", dbPath)
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer sqldb.Close()
++	if _, err := sqldb.Exec(`PRAGMA journal_mode = wal;`); err != nil {
++		t.Fatal(err)
++	}
++
++	db := NewDB(dbPath)
++	db.MonitorInterval = 0
++	db.Replica = NewReplicaWithClient(db, &testReplicaClient{dir: t.TempDir()})
++	db.Replica.MonitorEnabled = false
++	if err := db.Open(); err != nil {
++		t.Fatal(err)
++	}
++	defer func() { _ = db.Close(ctx) }()
++	if err := db.Sync(ctx); err != nil {
++		t.Fatal(err)
++	}
++
++	// Hold several connections at once so the pool has to open new ones.
++	var conns []*sql.Conn
++	defer func() {
++		for _, conn := range conns {
++			_ = conn.Close()
++		}
++	}()
++	for i := 0; i < 3; i++ {
++		conn, err := db.db.Conn(ctx)
++		if err != nil {
++			t.Fatal(err)
++		}
++		conns = append(conns, conn)
++
++		var persist int
++		if err := conn.Raw(func(driverConn any) error {
++			fc, ok := driverConn.(sqlite.FileControl)
++			if !ok {
++				return fmt.Errorf("driver does not implement FileControl")
++			}
++			persist, err = fc.FileControlPersistWAL("main", -1)
++			return err
++		}); err != nil {
++			t.Fatal(err)
++		}
++		if persist != 1 {
++			t.Errorf("connection %d: PERSIST_WAL=%d, want 1", i, persist)
++		}
++	}
++}
++
++// TestDB_CloseKeepsWALAfterMonitorCheckpoint reproduces the shutdown sequence
++// that deleted the WAL on Close and forced a full snapshot on the next start.
++//
++// The monitor checkpoints under db.ctx, so the long-running read transaction
++// it re-acquires is bound to db.ctx. Close cancels db.ctx first, which rolls
++// that transaction back and returns its connection to the pool. Close's final
++// sync then runs a PASSIVE checkpoint because the WAL is over
++// MinCheckpointPageN: the barrier transaction takes the newly freed
++// connection, so the read lock is re-acquired on the other one. That
++// connection is released last and closes last. Without PERSIST_WAL on it,
++// SQLite checkpoints and deletes the -wal and -shm files.
++func TestDB_CloseKeepsWALAfterMonitorCheckpoint(t *testing.T) {
++	ctx := context.Background()
++	dbPath := filepath.Join(t.TempDir(), "db")
++	client := &testReplicaClient{dir: t.TempDir()}
++
++	sqldb, err := sql.Open("sqlite", dbPath)
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer sqldb.Close()
++	for _, q := range []string{
++		`PRAGMA journal_mode = wal;`,
++		`CREATE TABLE t (id INTEGER PRIMARY KEY, data BLOB);`,
++		`INSERT INTO t (data) VALUES (randomblob(4096));`,
++	} {
++		if _, err := sqldb.Exec(q); err != nil {
++			t.Fatal(err)
++		}
++	}
++
++	db := NewDB(dbPath)
++	db.MonitorInterval = 0
++	db.CheckpointInterval = 0
++	db.MinCheckpointPageN = 10
++	db.ShutdownSyncTimeout = 0
++	db.Replica = NewReplicaWithClient(db, client)
++	db.Replica.MonitorEnabled = false
++	if err := db.Open(); err != nil {
++		t.Fatal(err)
++	}
++	if err := db.Sync(ctx); err != nil {
++		t.Fatal(err)
++	}
++
++	// A checkpoint as the monitor issues it, under db.ctx.
++	if _, err := sqldb.Exec(`INSERT INTO t (data) VALUES (randomblob(4096));`); err != nil {
++		t.Fatal(err)
++	}
++	if err := db.Checkpoint(db.ctx, CheckpointModePassive); err != nil {
++		t.Fatal(err)
++	}
++
++	// Grow the WAL past MinCheckpointPageN so Close's final sync checkpoints.
++	for i := 0; i < 20; i++ {
++		if _, err := sqldb.Exec(`INSERT INTO t (data) VALUES (randomblob(4096));`); err != nil {
++			t.Fatal(err)
++		}
++	}
++
++	// The application exits before Litestream, as under `replicate -exec`.
++	if err := sqldb.Close(); err != nil {
++		t.Fatal(err)
++	}
++	if err := db.Close(ctx); err != nil {
++		t.Fatal(err)
++	}
++	if _, err := os.Stat(db.WALPath()); err != nil {
++		t.Fatalf("WAL removed on close: %v", err)
++	}
++
++	// Restart: a fresh Litestream process must continue from its last LTX
++	// file instead of taking a full snapshot, even when the application writes
++	// before the first sync. The close above checkpointed the WAL, so that
++	// write would restart the WAL unless Open already holds the read lock.
++	db2 := NewDB(dbPath)
++	db2.MonitorInterval = 0
++	db2.CheckpointInterval = 0
++	db2.Replica = NewReplicaWithClient(db2, client)
++	db2.Replica.MonitorEnabled = false
++	if err := db2.Open(); err != nil {
++		t.Fatal(err)
++	}
++	defer func() { _ = db2.Close(ctx) }()
++
++	sqldb2, err := sql.Open("sqlite", dbPath)
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer sqldb2.Close()
++	if _, err := sqldb2.Exec(`INSERT INTO t (data) VALUES (randomblob(4096));`); err != nil {
++		t.Fatal(err)
++	}
++
++	info, err := db2.verify(ctx, &db2.syncState)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if info.snapshotting {
++		t.Fatalf("restart requires a full snapshot: reason=%q", info.reason)
++	}
++}
++
+ // TestDB_MultipleCheckpointsWithWrites tests that multiple checkpoint cycles
+ // don't trigger excessive snapshots. This simulates the scenario from issue #927
+ // where users reported 5GB snapshots every 3-4 minutes.
+diff --git a/store.go b/store.go
+index 46f742f..bca4b70 100644
+--- a/store.go
++++ b/store.go
+@@ -767,6 +767,10 @@ func (s *Store) allDatabasesHealthy(since time.Time) bool {
+ // CompactDB performs a compaction or snapshot for a given database on a single destination level.
+ // This function will only proceed if a compaction has not occurred before the last compaction time.
+ func (s *Store) CompactDB(ctx context.Context, db *DB, lvl *CompactionLevel) (*ltx.FileInfo, error) {
++	if err := db.checkStartupReady(); err != nil {
++		return nil, err
++	}
++
+ 	// Skip if database is not yet initialized (page size unknown).
+ 	if db.PageSize() == 0 {
+ 		return nil, &DBNotReadyError{Reason: "page size not initialized"}
+@@ -789,6 +793,11 @@ func (s *Store) CompactDB(ctx context.Context, db *DB, lvl *CompactionLevel) (*l
+ 		if err != nil {
+ 			return nil, fmt.Errorf("fetch db position: %w", err)
+ 		}
++		// Open initializes an existing database before its first sync, so a
++		// new replica can have a page size but no transaction to snapshot yet.
++		if pos.TXID == 0 {
++			return nil, &DBNotReadyError{Reason: "no transaction synced yet"}
++		}
+ 		if dstInfo.MaxTXID != 0 && dstInfo.MaxTXID >= pos.TXID {
+ 			return nil, ErrNoCompaction
+ 		}
+diff --git a/store_test.go b/store_test.go
+index 5d88488..1929f88 100644
+--- a/store_test.go
++++ b/store_test.go
+@@ -10,6 +10,7 @@ import (
+ 	"time"
+ 
+ 	"github.com/stretchr/testify/require"
++	"github.com/superfly/ltx"
+ 
+ 	"github.com/benbjohnson/litestream"
+ 	"github.com/benbjohnson/litestream/file"
+@@ -76,6 +77,123 @@ func TestStore_Open_InitErrorDoesNotOpenDBs(t *testing.T) {
+ 	}
+ }
+ 
++func TestStore_OpenDefersReplicaRecovery(t *testing.T) {
++	path := filepath.Join(t.TempDir(), "db")
++	sqldb := testingutil.MustOpenSQLDB(t, path)
++	defer testingutil.MustCloseSQLDB(t, sqldb)
++	_, err := sqldb.Exec(`CREATE TABLE t (v TEXT)`)
++	require.NoError(t, err)
++
++	client := file.NewReplicaClient(t.TempDir())
++	db := litestream.NewDB(path)
++	db.MonitorInterval = 0
++	db.ShutdownSyncTimeout = 0
++	db.Replica = litestream.NewReplicaWithClient(db, client)
++	db.Replica.MonitorEnabled = false
++	s := litestream.NewStore([]*litestream.DB{db}, litestream.CompactionLevels{{Level: 0}})
++	s.CompactionMonitorEnabled = false
++	s.L0RetentionCheckInterval = 0
++	defer func() {
++		db.Replica.Client = client
++		require.NoError(t, s.Close(context.Background()))
++	}()
++
++	listCalls := 0
++	syncCtx, cancel := context.WithCancel(t.Context())
++	defer cancel()
++	db.Replica.Client = &mock.ReplicaClient{
++		LTXFilesFunc: func(ctx context.Context, _ int, _ ltx.TXID, _ bool) (ltx.FileIterator, error) {
++			listCalls++
++			cancel()
++			select {
++			case <-ctx.Done():
++				return nil, ctx.Err()
++			default:
++				return nil, errors.New("recovery did not receive the sync context")
++			}
++		},
++	}
++	require.NoError(t, s.Open(t.Context()))
++	require.Zero(t, listCalls, "Open must not list remote LTX files")
++	require.Positive(t, db.PageSize(), "Open must attach to the local WAL")
++
++	require.ErrorIs(t, db.Sync(syncCtx), context.Canceled)
++	require.Equal(t, 1, listCalls)
++	_, err = s.CompactDB(t.Context(), db, s.SnapshotLevel())
++	require.ErrorIs(t, err, litestream.ErrDBNotReady)
++
++	db.Replica.Client = client
++	require.NoError(t, db.Sync(t.Context()))
++	_, err = s.CompactDB(t.Context(), db, s.SnapshotLevel())
++	require.NoError(t, err)
++}
++
++func TestStore_CompactDBWaitsForStartupSync(t *testing.T) {
++	for _, reuse := range []bool{false, true} {
++		t.Run(fmt.Sprintf("ReuseDB=%v", reuse), func(t *testing.T) {
++			path := filepath.Join(t.TempDir(), "db")
++			sqldb := testingutil.MustOpenSQLDB(t, path)
++			_, err := sqldb.Exec(`CREATE TABLE t (v TEXT); INSERT INTO t VALUES ('original')`)
++			require.NoError(t, err)
++			client := file.NewReplicaClient(t.TempDir())
++			newDB := func() *litestream.DB {
++				db := litestream.NewDB(path)
++				db.MonitorInterval = 0
++				db.CheckpointInterval = 0
++				db.ShutdownSyncTimeout = 0
++				db.Replica = litestream.NewReplicaWithClient(db, client)
++				db.Replica.MonitorEnabled = false
++				return db
++			}
++			db := newDB()
++			require.NoError(t, db.Open())
++			require.NoError(t, db.Sync(t.Context()))
++			testingutil.MustCloseSQLDB(t, sqldb)
++			require.NoError(t, db.Close(t.Context()))
++
++			sqldb = testingutil.MustOpenSQLDB(t, path)
++			_, err = sqldb.Exec(`UPDATE t SET v = 'changed while stopped'`)
++			require.NoError(t, err)
++			testingutil.MustCloseSQLDB(t, sqldb)
++			if !reuse {
++				db = newDB()
++			}
++			s := litestream.NewStore([]*litestream.DB{db}, litestream.CompactionLevels{
++				{Level: 0}, {Level: 1, Interval: time.Second},
++			})
++			s.CompactionMonitorEnabled = false
++			s.L0RetentionCheckInterval = 0
++			require.NoError(t, s.Open(t.Context()))
++			defer func() { require.NoError(t, s.Close(context.Background())) }()
++			pos, err := db.Pos()
++			require.NoError(t, err)
++			require.NotZero(t, pos.TXID)
++
++			for _, level := range []*litestream.CompactionLevel{s.SnapshotLevel(), {Level: 1, Interval: time.Second}} {
++				_, err := s.CompactDB(t.Context(), db, level)
++				require.ErrorIs(t, err, litestream.ErrDBNotReady, "level %d", level.Level)
++			}
++			_, reader, err := db.SnapshotReader(t.Context())
++			if reader != nil {
++				require.NoError(t, reader.Close())
++			}
++			require.ErrorIs(t, err, litestream.ErrDBNotReady)
++			_, err = db.Compact(t.Context(), 1)
++			require.ErrorIs(t, err, litestream.ErrDBNotReady)
++
++			require.NoError(t, db.Sync(t.Context()))
++			verifiedPos, err := db.Pos()
++			require.NoError(t, err)
++			require.Greater(t, verifiedPos.TXID, pos.TXID)
++			require.NoError(t, db.Replica.Sync(t.Context()))
++			for _, level := range []*litestream.CompactionLevel{s.SnapshotLevel(), {Level: 1, Interval: time.Second}} {
++				_, err := s.CompactDB(t.Context(), db, level)
++				require.NoError(t, err, "level %d", level.Level)
++			}
++		})
++	}
++}
++
+ func TestStore_CompactDB(t *testing.T) {
+ 	t.Run("L1", func(t *testing.T) {
+ 		db0, sqldb0 := testingutil.MustOpenDBs(t)
+@@ -224,6 +342,42 @@ func TestStore_CompactDB(t *testing.T) {
+ 			t.Fatalf("expected ErrDBNotReady, got: %v", err)
+ 		}
+ 	})
++
++	// Open initializes an existing database, so the page size is known before
++	// the first sync. A snapshot attempted in that window must wait for a
++	// transaction instead of failing to encode a snapshot with TXID 0.
++	t.Run("DBNotReadyBeforeFirstSync", func(t *testing.T) {
++		path := filepath.Join(t.TempDir(), "db")
++		sqldb := testingutil.MustOpenSQLDB(t, path)
++		defer testingutil.MustCloseSQLDB(t, sqldb)
++		if _, err := sqldb.Exec(`CREATE TABLE t (x)`); err != nil {
++			t.Fatal(err)
++		}
++
++		db0 := testingutil.MustOpenDBAt(t, path)
++		defer testingutil.MustCloseDB(t, db0)
++		if db0.PageSize() == 0 {
++			t.Fatal("expected Open to initialize an existing database")
++		}
++
++		s := litestream.NewStore([]*litestream.DB{db0}, litestream.CompactionLevels{{Level: 0}})
++		s.CompactionMonitorEnabled = false
++		if err := s.Open(t.Context()); err != nil {
++			t.Fatal(err)
++		}
++		defer s.Close(t.Context())
++
++		if _, err := s.CompactDB(t.Context(), db0, s.SnapshotLevel()); !errors.Is(err, litestream.ErrDBNotReady) {
++			t.Fatalf("expected ErrDBNotReady, got: %v", err)
++		}
++
++		if err := db0.Sync(t.Context()); err != nil {
++			t.Fatal(err)
++		}
++		if _, err := s.CompactDB(t.Context(), db0, s.SnapshotLevel()); err != nil {
++			t.Fatalf("snapshot after first sync: %v", err)
++		}
++	})
+ }
+ 
+ func TestStore_Integration(t *testing.T) {

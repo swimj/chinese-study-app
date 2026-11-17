@@ -4,6 +4,7 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { HOSTED_SMOKE_ENDPOINT } from './hosted-smoke.ts';
 import { isRecord, parseJsonValue, sanitizeHostedOutput } from './hosted-json.ts';
+import { readLitestreamSyncReceipt } from './litestream-sync.ts';
 
 const execFileAsync = promisify(execFile);
 
@@ -14,6 +15,7 @@ export const HOSTED_UPGRADE_STAGES = [
   'build-deploy',
   'confirm',
   'smoke',
+  'post-deploy-sync',
   'reopen',
 ] as const;
 
@@ -32,6 +34,8 @@ export const HOSTED_IMAGE_SOURCE_PATHS = [
   'deploy/fly/Dockerfile',
   'deploy/fly/litestream.yml',
   'deploy/fly/litestream.rc.yml',
+  'deploy/fly/litestream',
+  'deploy/fly/migrate-with-litestream.sh',
 ] as const;
 
 export const DEFAULT_FLY_CONFIG_PATH = 'deploy/fly/.generated/fly.toml';
@@ -227,8 +231,7 @@ export async function runHostedUpgrade(
     });
 
     currentStage = 'backup-sync';
-    await ssh(app, 'litestream sync -wait -timeout 60 -socket /data/litestream.sock -json /data/app.db', deps, 90_000);
-    recordStage('backup-sync', 'ok');
+    recordStage('backup-sync', 'ok', await syncHostedBackup(app, deps));
 
     currentStage = 'build-deploy';
     const deployArgs = [
@@ -301,6 +304,9 @@ export async function runHostedUpgrade(
       sessionRevoked: smoke.sessionRevoked === true,
     });
 
+    currentStage = 'post-deploy-sync';
+    recordStage('post-deploy-sync', 'ok', await syncHostedBackup(app, deps));
+
     currentStage = 'reopen';
     await setHostedControl(app, actorId, 'maintenance', false, deps);
     await setHostedControl(app, actorId, 'provider-work', true, deps);
@@ -317,6 +323,13 @@ export async function runHostedUpgrade(
     recordStage(currentStage, 'failed', { failure });
     return finish('failed', failure, currentStage);
   }
+}
+
+async function syncHostedBackup(app: string, deps: HostedUpgradeDeps) {
+  const result = parseHostedCommandJson(await ssh(app,
+    'litestream sync -wait -timeout 60 -socket /data/litestream.sock -json /data/app.db', deps, 90_000));
+  // Retain only the acknowledgement, never replica coordinates or arbitrary command output.
+  return readLitestreamSyncReceipt(result, '/data/app.db');
 }
 
 export function readPreparedFlyConfig(configPath: string, deps: Pick<HostedUpgradeDeps, 'fileExists' | 'readFile'>): PreparedFlyConfig {

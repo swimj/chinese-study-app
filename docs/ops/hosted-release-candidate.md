@@ -283,6 +283,10 @@ staging database; only a fully validated database is atomically promoted to
 `/data/app.db`. Any failed stage leaves the service closed or idle and never
 reopens it automatically.
 
+Before replacing the stopped, disposable RC database, promotion asks SQLite to
+checkpoint any retained WAL and close its sidecars. It refuses a busy checkpoint
+and preserves the previous database; it never deletes a WAL to bypass this check.
+
 The command is a foreground process. Retain and poll the same terminal session
 until it exits. Partial output is not completion. If that terminal session is
 lost, treat RC as unknown state, run `--action=status`, and reconcile before
