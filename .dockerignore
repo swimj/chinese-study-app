@@ -20,3 +20,6 @@ friend-bundles
 *.backup*
 *.tsbuildinfo
 .DS_Store
+
+# Generated release evidence and operator credentials never belong in build context.
+deploy/fly/.generated

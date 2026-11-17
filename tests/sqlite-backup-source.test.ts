@@ -22,7 +22,7 @@ test('backup source authenticates and returns a coherent standalone SQLite file 
   const writer = setInterval(() => { n++; db.exec(`BEGIN; UPDATE entries SET value=${n}; COMMIT`); }, 20);
   try {
     assert.equal((await fetch(url, { method: 'POST' })).status, 401);
-    const response = await fetch(url, { method: 'POST', headers: { authorization: `Bearer ${token}` }, body: JSON.stringify({id:'test_capture'}) });
+    const response: Response = await fetch(url, { method: 'POST', headers: { authorization: `Bearer ${token}` }, body: JSON.stringify({id:'test_capture'}) });
     assert.equal(response.status, 200);
     assert.ok(n > 0, 'writer ran while capture request was in progress');
     const bytes = Buffer.from(await response.arrayBuffer());
@@ -51,7 +51,7 @@ test('failed source workers clean scratch and release the busy guard', async () 
   const address = server.address(); assert.ok(address && typeof address !== 'string');
   try {
     for (let attempt = 0; attempt < 2; attempt++) {
-      const response = await fetch(`http://127.0.0.1:${address.port}/backup`, {method:'POST', headers:{authorization:`Bearer ${token}`},body:JSON.stringify({id:`timeout-${attempt}`})});
+      const response: Response = await fetch(`http://127.0.0.1:${address.port}/backup`, {method:'POST', headers:{authorization:`Bearer ${token}`},body:JSON.stringify({id:`timeout-${attempt}`})});
       assert.equal(response.status, 503); await response.text();
       // Response precedes finally cleanup; wait for owned scratch removal.
       for (let n=0; n<100 && fs.readdirSync(dir).some(name => name.startsWith('sqlite-backup-')); n++) await new Promise(resolve => setTimeout(resolve, 5));
