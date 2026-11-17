@@ -9,7 +9,6 @@ import { DatabaseSync } from 'node:sqlite';
 import { test } from 'node:test';
 import { promisify } from 'node:util';
 import { setTimeout as delay } from 'node:timers/promises';
-import { runReplicatedMigration } from '../../scripts/lib/hosted-migration.ts';
 import { createBaselineFixture } from '../helpers/baseline-database.ts';
 import { assertSchemaCurrent } from '../../server/db/migrations.ts';
 
@@ -98,19 +97,19 @@ test('clean shutdown after a final checkpoint preserves WAL and two restarts sta
   } finally { cleanup(f, processes); }
 });
 
-test('protected atomic migration stays incremental, restores DDL/data, and genuine discontinuity still snapshots', { timeout: 90_000 }, async () => {
+test('legacy binary captures atomic DDL/data changes incrementally and snapshots genuine discontinuity', { timeout: 90_000 }, async () => {
   const f = fixture(), processes: ChildProcess[] = [];
   try {
     let r = start(f); processes.push(r.proc);
     await waitFor(() => fs.existsSync(f.socket), 'socket'); await sync(f); await stop(r);
     r = start(f); processes.push(r.proc);
     await waitFor(() => fs.existsSync(f.socket), 'migration socket');
-    await runReplicatedMigration({ databasePath: f.database, socketPath: f.socket, confirmAppStopped: true }, async (file, args) => {
-      if (file === 'litestream') return exec(binary!, [...args]);
-      // Exercise the migration lifecycle with a small atomic schema/data change.
-      const sql = `const {DatabaseSync}=require('node:sqlite'); const d=new DatabaseSync(process.argv[1]); d.exec('BEGIN IMMEDIATE; ALTER TABLE sample ADD COLUMN migrated INTEGER DEFAULT 1; UPDATE sample SET payload=randomblob(8192) WHERE id=1; COMMIT');d.close();console.log(JSON.stringify({appliedThisRun:['fixture'],pending:[]}));`;
-      return exec(process.execPath, ['-e', sql, f.database]);
-    });
+    // Legacy binary evidence only: the hosted migration path now uses SQLite
+    // backup receipts, not this Litestream lifecycle.
+    await sync(f);
+    const sql = `const {DatabaseSync}=require('node:sqlite'); const d=new DatabaseSync(process.argv[1]); d.exec('BEGIN IMMEDIATE; ALTER TABLE sample ADD COLUMN migrated INTEGER DEFAULT 1; UPDATE sample SET payload=randomblob(8192) WHERE id=1; COMMIT');d.close();`;
+    await exec(process.execPath, ['-e', sql, f.database]);
+    await sync(f);
     await stop(r); assert.deepEqual(snapshots(r.log()), [], r.log());
     r = start(f); processes.push(r.proc);
     await waitFor(() => fs.existsSync(f.socket), 'restart socket'); await sync(f); await stop(r);
@@ -128,7 +127,7 @@ test('protected atomic migration stays incremental, restores DDL/data, and genui
   } finally { cleanup(f, processes); }
 });
 
-test('shipped shell, worker, and real migration CLI preserve the replicated schema', { timeout: 120_000 }, async () => {
+test('legacy binary restores the real migration CLI schema and retained learner data', { timeout: 120_000 }, async () => {
   const f = fixture(), processes: ChildProcess[] = [];
   try {
     fs.unlinkSync(f.database); // Only the unopened synthetic fixture is replaced.
@@ -137,14 +136,12 @@ test('shipped shell, worker, and real migration CLI preserve the replicated sche
     before.exec("INSERT INTO learners VALUES ('continuity-test', 'Keep me', '2026-01-01', NULL)"); before.close();
     const r = start(f); processes.push(r.proc);
     await waitFor(() => fs.existsSync(f.socket), 'initial socket'); await sync(f);
-    const binDir = path.join(f.dir, 'bin'); fs.mkdirSync(binDir);
-    fs.symlinkSync(binary!, path.join(binDir, 'litestream'));
-    const env = { ...process.env, APP_DATA_DIR: f.dir, PATH: `${binDir}:${path.dirname(process.execPath)}:${process.env.PATH}` };
-    const args = [path.join(repo, 'deploy/fly/migrate-with-litestream.sh'), '--confirm-app-stopped=true', `--litestream-config=${f.config}`];
-    await assert.rejects(exec('sh', args, { env }), /socket already exists/);
-    await stop(r);
-    const output = await exec('sh', args, { env, timeout: 60_000, maxBuffer: 1024 * 1024 });
-    assert.deepEqual(snapshots(output.stdout + output.stderr), [], output.stdout + output.stderr);
+    // Exercise the general schema CLI while the legacy binary is running.
+    // Do not invoke the replacement hosted migration supervisor here: its
+    // independent receiver pre/post backup gates have separate coverage.
+    await exec(process.execPath, ['--import', 'tsx', 'scripts/migrate-database.ts',
+      `--database=${f.database}`, '--confirm-app-stopped=true'], { cwd: repo, timeout: 60_000, maxBuffer: 1024 * 1024 });
+    await sync(f); await stop(r);
     assert.ok(fs.existsSync(`${f.database}-wal`));
     const restored = path.join(f.dir, 'real-migration-restore.db');
     await exec(binary!, ['restore', '-integrity-check', 'full', '-o', restored, `file://${f.dir}/replica`]);
