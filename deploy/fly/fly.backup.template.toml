@@ -1,0 +1,23 @@
+app = "REPLACE_WITH_BACKUP_APP_NAME"
+primary_region = "sin"
+kill_signal = "SIGTERM"
+kill_timeout = "300s"
+
+# Deploy the same digest-tested app image. No public service or IP is required.
+[env]
+  APP_BACKUP_SOURCE_APP = "REPLACE_WITH_SOURCE_APP_NAME"
+  APP_BACKUP_SOURCE_URL = "http://REPLACE_WITH_SOURCE_APP_NAME.internal:9092"
+  APP_BACKUP_DIR = "/data/backups"
+  PORT = "9093"
+  # APP_BACKUP_SOURCE_TOKEN and APP_BACKUP_RECEIVER_TOKEN are Fly secrets.
+
+[processes]
+  backup = "node --import tsx scripts/run-backup-service.ts"
+
+[mounts]
+  source = "backup_data"
+  destination = "/data"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

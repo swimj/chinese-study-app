@@ -115,8 +115,9 @@ describe('hosted upgrade pipeline', () => {
     assert.deepEqual(deploy?.args.slice(-2), ['--build-arg', `APP_REVISION=${SOURCE_REVISION}`]);
     assert.equal(JSON.stringify(result).includes('smoke-token'), false);
     assert.equal(JSON.stringify(harness.events).includes('sk_test'), false);
-    assert.deepEqual(result.stages.find(stage => stage.stage === 'post-deploy-sync')?.detail,
-      { databasePath: '/data/app.db', txid: 42, replicaTxid: 42 });
+    const receipt = result.stages.find(stage => stage.stage === 'post-deploy-sync')?.detail as Record<string, unknown>;
+    assert.equal(receipt.sourceRevision, SOURCE_REVISION);
+    assert.equal(receipt.kind, 'hourly');
     assert.equal(JSON.stringify(result).includes('secret-bucket'), false);
   });
 
@@ -327,12 +328,15 @@ function createHarness(options: {
       mutations.push('banner:clear');
       return { stdout: JSON.stringify({ status: 'noop' }), stderr: '' };
     }
-    if (command.includes('litestream sync')) {
+    if (command.includes('scripts/manage-hosted-backup.ts')) {
       if (deployed && options.postDeploySync === 'timeout') throw new Error('sync timed out');
+      const option = (name: string) => command.match(new RegExp(`--${name}=([^ ]+)`))?.[1]?.replaceAll("'", '');
+      const id = option('id');
       const result = deployed && options.postDeploySync === 'malformed' ? { ok: true } : {
-        db_path: '/data/app.db', txid: 42,
-        replica_txid: deployed && options.postDeploySync === 'behind' ? 41 : 42,
-        replica: 's3://secret-bucket/secret-prefix',
+        version: 1, id, kind: option('kind'), releaseId: option('release-id'),
+        sourceRevision: deployed && options.postDeploySync === 'behind' ? 'b'.repeat(40) : option('source-revision'),
+        sourceApp: APP, startedAt: new Date(nowMs).toISOString(), completedAt: new Date(nowMs).toISOString(),
+        receivedAt: new Date(nowMs).toISOString(), bytes: 4096, sha256: 'a'.repeat(64), fileName: `${id}.sqlite`,
       };
       return { stdout: JSON.stringify(result), stderr: '' };
     }

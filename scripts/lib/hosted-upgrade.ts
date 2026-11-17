@@ -4,7 +4,8 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { HOSTED_SMOKE_ENDPOINT } from './hosted-smoke.ts';
 import { isRecord, parseJsonValue, sanitizeHostedOutput } from './hosted-json.ts';
-import { readLitestreamSyncReceipt } from './litestream-sync.ts';
+import { randomUUID } from 'node:crypto';
+import { parseBackupReceipt } from '../../server/backups/client.ts';
 
 const execFileAsync = promisify(execFile);
 
@@ -231,7 +232,10 @@ export async function runHostedUpgrade(
     });
 
     currentStage = 'backup-sync';
-    recordStage('backup-sync', 'ok', await syncHostedBackup(app, deps));
+    const oldIdentity = isRecord(inspectBefore.releaseIdentity) ? inspectBefore.releaseIdentity : inspectBefore;
+    const outgoingRevision = requireFullGitSha(String(oldIdentity.sourceRevision));
+    const releaseId = `release-${sourceRevision.slice(0, 12)}-${randomUUID()}`;
+    recordStage('backup-sync', 'ok', await captureHostedBackup(app, deps, 'release', outgoingRevision, releaseId));
 
     currentStage = 'build-deploy';
     const deployArgs = [
@@ -305,7 +309,7 @@ export async function runHostedUpgrade(
     });
 
     currentStage = 'post-deploy-sync';
-    recordStage('post-deploy-sync', 'ok', await syncHostedBackup(app, deps));
+    recordStage('post-deploy-sync', 'ok', await captureHostedBackup(app, deps, 'hourly', sourceRevision));
 
     currentStage = 'reopen';
     await setHostedControl(app, actorId, 'maintenance', false, deps);
@@ -325,11 +329,15 @@ export async function runHostedUpgrade(
   }
 }
 
-async function syncHostedBackup(app: string, deps: HostedUpgradeDeps) {
-  const result = parseHostedCommandJson(await ssh(app,
-    'litestream sync -wait -timeout 60 -socket /data/litestream.sock -json /data/app.db', deps, 90_000));
-  // Retain only the acknowledgement, never replica coordinates or arbitrary command output.
-  return readLitestreamSyncReceipt(result, '/data/app.db');
+async function captureHostedBackup(app: string, deps: HostedUpgradeDeps, kind: 'hourly' | 'release', revision: string, releaseId?: string) {
+  const id = `${kind}-${randomUUID()}`;
+  const requestedAt = deps.now().getTime();
+  const command = `node --import tsx scripts/manage-hosted-backup.ts --action=create --id=${id} --kind=${kind} --source-app=${app} --source-revision=${revision}${releaseId ? ` --release-id=${releaseId}` : ''}`;
+  const receipt = parseBackupReceipt(parseHostedCommandJson(await ssh(app, command, deps, 16 * 60_000)));
+  if (receipt.id !== id || receipt.kind !== kind || receipt.releaseId !== releaseId
+    || receipt.sourceRevision !== revision || receipt.sourceApp !== app
+    || Date.parse(receipt.startedAt) < requestedAt - 5000) throw new Error('Backup acknowledgement is stale or belongs to another release');
+  return receipt;
 }
 
 export function readPreparedFlyConfig(configPath: string, deps: Pick<HostedUpgradeDeps, 'fileExists' | 'readFile'>): PreparedFlyConfig {

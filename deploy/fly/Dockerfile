@@ -50,5 +50,5 @@ COPY --from=frontend-build /app/dist ./dist
 RUN mkdir -p /data && chown -R node:node /app /data
 USER node
 
-EXPOSE 5174 9091
-CMD ["litestream", "replicate", "-config", "/app/deploy/fly/litestream.yml", "-exec", "npm run start:hosted"]
+EXPOSE 5174 9091 9092
+CMD ["node", "--import", "tsx", "server/index.ts", "--mode=study", "--auth-mode=clerk"]

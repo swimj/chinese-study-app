@@ -1,3 +1,5 @@
+import { readHostedBackupStatus } from './hosted-backup-status.ts';
+import { startConfiguredBackupSource } from './backups/source.ts';
 import { registerVocabularyIntakeRoutes } from './vocabulary/intake-routes.ts';
 import { createVocabularyIntakeWorker } from './vocabulary/intake-worker.ts';
 import type { ChatProvider } from './llm/chat-types.ts';
@@ -313,6 +315,11 @@ export function createApp(options: CreateAppOptions = {}) {
       providerWorkEnabled: controls.providerWorkEnabled,
       activeProviderWorkCount: getActiveProviderWorkCount(),
     });
+  });
+  app.get('/backup-healthz', async (_req, res) => {
+    const backup = process.env.APP_BACKUP_RECEIVER_URL ? await readHostedBackupStatus() : null;
+    const healthy = backup !== null && backup.ageSeconds <= 75 * 60;
+    res.status(healthy ? 200 : 503).json({ status: healthy ? 'ok' : 'unhealthy', ageSeconds: backup?.ageSeconds ?? null });
   });
   if (frontendDistPath) {
     app.use(express.static(frontendDistPath, { index: false }));
@@ -2699,6 +2706,7 @@ function closeServers(servers: Server[], done: (error?: Error) => void): void {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   if (dbConfig.studyProfile !== 'mandarin') recoverPendingReflectionApplicationsAtStartup();
+  const backupSource = startConfiguredBackupSource();
   const serviceMetrics = createServiceMetrics();
   const metricsPort = readMetricsPort(process.env.APP_METRICS_PORT);
   const flightRecorder = metricsPort === null ? null : createRequestFlightRecorder();
@@ -2737,7 +2745,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   startServer({
     app: createApp({ serviceMetrics, requestTiming: { flightRecorder: flightRecorder ?? undefined }, wakeWordPreparation: wordPreparation.wake, canPrepareWords: wordPreparation.canPrepare, wakeSessionDebriefs: sessionDebriefs.wake, wakeSessionCompletions: sessionCompletions.wake, wakeVocabulary, wakeVocabularyIntake }),
     stopBackgroundWork: async () => { vocabularyApprovals.stop(); await Promise.all([wordPreparation.stop(), sessionDebriefs.stop(), sessionCompletions.stop(), vocabularyProcessing.stop(), vocabularyPreparation.stop(), vocabularyIntake.stop()]); },
-    additionalServers: metricsServer ? [metricsServer] : [],
+    additionalServers: [...(metricsServer ? [metricsServer] : []), ...(backupSource ? [backupSource] : [])],
     closeDatabase: () => {
       usagePulseScheduler.stop();
       serviceMetrics.dispose();

@@ -1,0 +1,25 @@
+import { backup, DatabaseSync } from 'node:sqlite';
+import { createReadStream } from 'node:fs';
+import { stat } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { readStrictArguments, requireArgument } from './lib/hosted-runtime.ts';
+
+const args = readStrictArguments(['database', 'output', 'max-bytes']);
+const database = requireArgument(args, 'database');
+const output = requireArgument(args, 'output');
+const maxBytes = Number(requireArgument(args, 'max-bytes'));
+if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) throw new Error('Invalid backup byte limit');
+const source = new DatabaseSync(database, { readOnly: true });
+const startedAt = new Date().toISOString();
+try {
+  const pageSize = Number(source.prepare('PRAGMA page_size').get()?.page_size);
+  await backup(source, output, { rate: 256, progress: ({ totalPages }) => {
+    if (totalPages * pageSize > maxBytes) throw new Error('Backup exceeds byte limit');
+  } });
+} finally { source.close(); }
+const completedAt = new Date().toISOString();
+const bytes = (await stat(output)).size;
+if (bytes > maxBytes) throw new Error('Backup exceeds byte limit');
+const hash = createHash('sha256');
+for await (const chunk of createReadStream(output)) hash.update(chunk);
+console.log(JSON.stringify({ startedAt, completedAt, bytes, sha256: hash.digest('hex') }));

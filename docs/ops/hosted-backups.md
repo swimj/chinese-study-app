@@ -75,7 +75,9 @@ release is not evidence of a fresh pre-switchover backup.
 
 Use the exact candidate image on an ephemeral Machine with enough isolated
 storage. Supply receiver access temporarily. The output must be an absolute,
-nonexistent file; restore refuses to overwrite a valued database.
+nonexistent file in an isolated directory; restore refuses an existing database
+or any SQLite WAL, shared-memory, or rollback-journal sidecar. Never restore next
+to sidecars from another database.
 
 ```bash
 mkdir -p /tmp/hosted-restore
@@ -131,7 +133,26 @@ exceeds 75 minutes or becomes unknown, stop writes and investigate source errors
 receiver reachability, scratch and persistent free space, and the last receipt.
 A failed attempt does not refresh age or evict good history.
 
+The GitHub `production backup health` workflow polls every 30 minutes once merged
+to the default branch. Scheduled Actions can be delayed; this is a best-effort
+watchdog, not guaranteed paging. Configure failure notifications for the operator
+and exercise a failure before treating it as delivered monitoring.
+
 An independent observer must poll this endpoint and notify the operator, including
-when the receiver is stopped. A scheduled GitHub check is planned but not delivered;
-the endpoint alone is not activated monitoring. Record the observer and an exercised
+when the receiver is stopped. The workflow must be active on the default branch; the endpoint alone is not
+activated monitoring. Record the observer and an exercised
 failure notification before declaring the operational monitoring gate complete.
+
+
+## Scratch and volume operations
+
+Initialize a new receiver volume's `/data/backups` directory with ownership for
+its runtime user (`node` in the app image) and mode 700 before starting the service.
+The backup volume disables automatic Fly snapshots to avoid an extra unbounded
+copy policy; the four-hourly/three-release files are the retained recovery set.
+Keep production's existing volume snapshot settings unchanged.
+
+A forced source-process kill can leave `/tmp/sqlite-backup-*` scratch directories.
+Before deleting one, confirm no backup source worker is using it. Normal failures
+and graceful shutdown clean their own scratch; never delete SQLite files in the
+production data directory as scratch cleanup.

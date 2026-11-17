@@ -1,0 +1,13 @@
+name: production backup health
+on:
+  schedule:
+    - cron: '17,47 * * * *'
+  workflow_dispatch:
+permissions: {}
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require a verified backup less than 75 minutes old
+        run: curl --fail --silent --show-error --max-time 20 --retry 2 --retry-delay 10 https://chinese-study-beta-swimj.fly.dev/backup-healthz
