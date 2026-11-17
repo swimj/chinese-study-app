@@ -13,7 +13,7 @@ test('chat migration preserves populated prior state, rolls back failed batches,
     createBaselineFixture(path.join(directory, 'previous')); createBaselineFixture(path.join(directory, 'fresh'));
     previous = new DatabaseSync(path.join(directory, 'previous', 'app.db')); fresh = new DatabaseSync(path.join(directory, 'fresh', 'app.db'));
     previous.function('current_learner_id', () => 'learner'); fresh.function('current_learner_id', () => 'learner');
-    const priorMigrations = schemaMigrations.filter(migration => !migration.id.endsWith('0075_learner_chat'));
+    const priorMigrations = schemaMigrations.filter(migration => !/0075_learner_chat|0076_/.test(migration.id));
     migrateDatabase(previous, priorMigrations);
     previous.prepare('INSERT INTO learners(learner_id,display_name,created_at) VALUES (?,?,?)').run('learner', 'Preserved', '2026-11-15');
     const before = previous.prepare('SELECT * FROM learners').all();

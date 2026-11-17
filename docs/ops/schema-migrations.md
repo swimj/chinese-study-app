@@ -739,3 +739,40 @@ replay and atomic rollback against the migrated copy. Populated upgrade, failed
 batch rollback, repeat and fresh-schema checks live in
 `tests/chat-migration.test.ts`; domain isolation and command checks live in
 `tests/learner-chat.test.ts`. This is not an app-only upgrade.
+
+## Trivial unstudied word pruning (`0076`)
+
+`0076_prune_trivial_unstudied_words` is a data-only migration (no schema objects).
+An early bulk import associated nearly the whole dictionary with one learner as
+`mode='unstudied'` rows, which every learner-scoped query then scans. By rule, for
+every learner, it deletes a `learner_words` row only when all hold: `unstudied`, not in
+the stash, not dismissed, no intended-use text, `state_version=1`, no
+`scope_established_at`, automatic promotion not paused; its `learner_word_schedules`
+row exists and is untouched (no `next_eligible_at`, `last_practised_at` or refresh,
+`state_version=1`, policy `vocabulary-v1` or `legacy-import-v1`, scheduler state
+exactly the defaults); its legacy `learner_word_state` row is absent or the untouched
+default (`unstudied`, no notes, no streak or coverage); and no other learner-scoped
+row names the word. The attachment tables (the manifest in
+`server/db/trivial-unstudied-words-migration.ts`, including study events, encounters,
+priority, skills, reserve, feedback and cases) and every `vocabulary_sessions`
+context that froze the word, open or closed, keep it. The matching schedule and
+default legacy rows are deleted with it. `lexical_words` and `lexical_word_meanings`
+are untouched. A test fails when a table with `learner_id` and `word_id` is added
+without being classified.
+
+The `before` and `after` hooks fail the whole batch (rollback, no ledger row) if the
+dictionary tables changed, any studied, stash or dismissed row disappeared, any
+candidate row or attachment survives or references a deleted pair, or counts do not
+reconcile. On success they append one `vocabulary.learner_words.trivial_unstudied_pruned`
+backend event per affected learner with the deleted word, schedule and legacy-state counts
+and the learner's remaining word count. Deleted rows are not exported; the pre-migration
+backup is the recovery source, and a word is re-enrolled by the normal flows on demand.
+
+Rehearse on a populated restore: record per-learner counts of `learner_words` by mode,
+stash, dismissal and schedule state before and after; verify only the expected
+rows disappeared, the studied counts and the dictionary tables are identical, and the
+events match. A synthetic 122,000-row learner migrates in about half a second. The
+Words list, new-word selection and reserve treat a missing row like a trivial one; the
+visible change is the Statistics unstudied mode count for an affected learner. Use the
+stopped-writer schema release, not app-only upgrade. Tests:
+`tests/trivial-unstudied-words-migration.test.ts`.
