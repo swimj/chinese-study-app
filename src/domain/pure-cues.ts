@@ -145,6 +145,20 @@ export function schedulePureCueAssessment(
   };
 }
 
+/**
+ * Whether a cue can take part in today's routine selection: a due fragile cue, or
+ * a strong cue outside its recency window that won today's maintenance roll.
+ * Cues outside both roles neither appear nor change the strong-slot count, so a
+ * reader may run content checks for these cues only.
+ */
+export function pureCueSelectionRole(learnerId: string, cue: PureCueSelectionCandidate, now: string): 'fragile' | 'strong' | null {
+  if (!cue.active) return null;
+  if (cue.strongSince === null) return cue.nextDueAt <= now ? 'fragile' : null;
+  return isOutsideStrongRecency(cue, now)
+    && strongCueDailyRoll(learnerId, cue.maintenanceIdentity ?? cue.id, now) < PURE_CUE_STRONG_DAILY_CHANCE / (1 + cue.strongSuccesses)
+    ? 'strong' : null;
+}
+
 export function selectPureCuesForSession<T extends PureCueSelectionCandidate>({
   learnerId,
   cues,
@@ -163,11 +177,10 @@ export function selectPureCuesForSession<T extends PureCueSelectionCandidate>({
   assertCanonicalIsoTimestamp(now, 'Pure cue selection clock');
 
   const fragile = cues
-    .filter((cue) => cue.active && cue.strongSince === null && cue.nextDueAt <= now)
+    .filter((cue) => pureCueSelectionRole(learnerId, cue, now) === 'fragile')
     .sort(comparePureCues);
   const strongCandidates = cues
-    .filter((cue) => cue.active && cue.strongSince !== null && isOutsideStrongRecency(cue, now)
-      && strongCueDailyRoll(learnerId, cue.maintenanceIdentity ?? cue.id, now) < PURE_CUE_STRONG_DAILY_CHANCE / (1 + cue.strongSuccesses))
+    .filter((cue) => pureCueSelectionRole(learnerId, cue, now) === 'strong')
     .sort((a, b) => a.id.localeCompare(b.id));
   const rawStrongSlots = (ordinaryReviewCount + fragile.length) / 10;
   let strongSlots = Math.floor(rawStrongSlots);
