@@ -13,10 +13,16 @@ const source = new DatabaseSync(database, { readOnly: true });
 const startedAt = new Date().toISOString();
 try {
   const pageSize = Number(source.prepare('PRAGMA page_size').get()?.page_size);
+  // Pin one WAL read snapshot so ongoing writes cannot repeatedly restart the
+  // incremental copy. The worker deadline bounds how long checkpointing waits.
+  source.exec('BEGIN');
+  source.prepare('SELECT count(*) FROM sqlite_schema').get();
   await backup(source, output, { rate: 256, progress: ({ totalPages }) => {
     if (totalPages * pageSize > maxBytes) throw new Error('Backup exceeds byte limit');
   } });
-} finally { source.close(); }
+} finally {
+  try { source.exec('ROLLBACK'); } finally { source.close(); }
+}
 const completedAt = new Date().toISOString();
 const bytes = (await stat(output)).size;
 if (bytes > maxBytes) throw new Error('Backup exceeds byte limit');

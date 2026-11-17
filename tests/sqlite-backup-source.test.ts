@@ -14,17 +14,18 @@ test('backup source authenticates and returns a coherent standalone SQLite file 
   const database = path.join(dir, 'app.db');
   const db = new DatabaseSync(database);
   db.exec('PRAGMA journal_mode=WAL; CREATE TABLE entries(id INTEGER PRIMARY KEY, value INTEGER); INSERT INTO entries VALUES(1,0),(2,0)');
+  db.exec('CREATE TABLE padding(value BLOB); WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<4000) INSERT INTO padding SELECT zeroblob(4096) FROM n');
   const server = createBackupSourceServer({ databasePath: database, token, sourceApp: 'fixture', sourceRevision: 'a'.repeat(40), scratchDirectory: dir });
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const address = server.address(); assert.ok(address && typeof address !== 'string');
   const url = `http://127.0.0.1:${address.port}/backup`;
-  let n = 0;
-  const writer = setInterval(() => { n++; db.exec(`BEGIN; UPDATE entries SET value=${n}; COMMIT`); }, 20);
+  let n = 0; const writeTimes: number[] = [];
+  const writer = setInterval(() => { n++; db.exec(`BEGIN; UPDATE entries SET value=${n}; COMMIT`); writeTimes.push(Date.now()); }, 1);
   try {
     assert.equal((await fetch(url, { method: 'POST' })).status, 401);
     const response: Response = await fetch(url, { method: 'POST', headers: { authorization: `Bearer ${token}` }, body: JSON.stringify({id:'test_capture'}) });
     assert.equal(response.status, 200);
-    assert.ok(n > 0, 'writer ran while capture request was in progress');
+    assert.ok(writeTimes.some(time => time >= Date.parse(response.headers.get('x-backup-started-at')!) && time <= Date.parse(response.headers.get('x-backup-completed-at')!)), 'writes completed during the actual SQLite capture');
     const bytes = Buffer.from(await response.arrayBuffer());
     assert.equal(createHash('sha256').update(bytes).digest('hex'), response.headers.get('x-backup-sha256'));
     assert.equal(response.headers.get('x-backup-source-revision'), 'a'.repeat(40));
