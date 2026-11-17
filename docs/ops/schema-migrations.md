@@ -51,7 +51,8 @@ recovery point and obtain a verified post-migration backup.
 1. Rehearse every schema or data migration with the target image on an
    [ephemeral release Machine](hosted-release-candidate.md), restoring the latest
    coherent verified backup. Production keeps serving throughout
-   rehearsal; a few minutes of subsequent activity are acceptable. Record the
+   rehearsal; the latest retained hourly copy is sufficient unless the validation
+   explicitly requires a fresh snapshot. Record the
    source recovery point, target revision and image digest, migration output,
    and the results of the release-specific checks. Perform expensive comparisons
    and behavioral rehearsals there before entering production maintenance.

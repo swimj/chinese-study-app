@@ -18,6 +18,11 @@ function fixture(provider: 'sqlite' | 'litestream' = 'litestream') {
   let failMigration = false;
   let wrongReceipt = false;
   let invalidRestore = false;
+  let retained: Record<string, unknown>[] = [
+    { id: 'old', sourceApp: 'app-beta', sourceRevision: 'b'.repeat(40), completedAt: '2026-10-28T22:00:00Z' },
+    { id: 'latest', sourceApp: 'app-beta', sourceRevision: 'b'.repeat(40), completedAt: '2026-10-28T23:00:00Z' },
+    { id: 'other-app', sourceApp: 'other', completedAt: '2026-10-29T00:00:00Z' },
+  ];
   const commands: string[][] = [];
   const deps = { now: () => new Date('2026-10-29T00:00:00Z'), emit: (_event: unknown) => {},
     run: async (_file: string, args: readonly string[]) => {
@@ -39,6 +44,7 @@ function fixture(provider: 'sqlite' | 'litestream' = 'litestream') {
       }
       const command = args.at(-1) ?? '';
       if (command.includes('litestream restore') || command.includes('manage-hosted-backup.ts --action=restore')) out = { integrity_check: invalidRestore ? 'checksum' : 'full', txid: 'test-txid' };
+      if (command.includes('manage-hosted-backup.ts --action=status')) out = { backups: retained };
       if (command.includes('manage-hosted-backup.ts --action=create')) out = {
         id: wrongReceipt ? 'other-capture' : /--id=([a-z0-9-]+)/.exec(command)?.[1], sourceRevision: 'a'.repeat(40), sourceApp: 'app-beta',
       };
@@ -49,7 +55,7 @@ function fixture(provider: 'sqlite' | 'litestream' = 'litestream') {
       }
       return { stdout: JSON.stringify(out), stderr: '' };
     } };
-  return { root, input, deps, commands, wrongReceipt: () => { wrongReceipt = true; }, invalidRestore: () => { invalidRestore = true; }, clean: () => fs.rmSync(root, { recursive: true }), failMigration: () => { failMigration = true; }, failMachine: () => { failMachine = true; }, secrets: () => { secrets = true; }, unchanged: () => { pending = []; input.schema = 'unchanged'; } };
+  return { root, input, deps, commands, noBackups: () => { retained = []; }, wrongReceipt: () => { wrongReceipt = true; }, invalidRestore: () => { invalidRestore = true; }, clean: () => fs.rmSync(root, { recursive: true }), failMigration: () => { failMigration = true; }, failMachine: () => { failMachine = true; }, secrets: () => { secrets = true; }, unchanged: () => { pending = []; input.schema = 'unchanged'; } };
 }
 
 test('rehearsal restores isolated digest Machine, accepts pre/post checks, migrates, and destroys both resources', async () => {
@@ -147,7 +153,7 @@ test('operation lock rejects overlap; uncertain migrations cannot be retried and
 test('SQLite rehearsal captures a fresh identified backup and restores that receipt without Litestream', async () => {
   const f = fixture('sqlite');
   try {
-    delete f.input.backupProvider; // default is the receiver
+    f.input.backupCapture = 'fresh';
     await prepareRehearsal(f.input, f.deps);
     const commands = f.commands.map(args => args.at(-1) ?? '');
     const create = commands.find(command => command.includes('--action=create'))!;
@@ -165,6 +171,7 @@ test('SQLite rehearsal captures a fresh identified backup and restores that rece
 test('SQLite rehearsal fails closed on mismatched capture receipt or missing full restore integrity check', async () => {
   const f = fixture('sqlite');
   try {
+    f.input.backupCapture = 'fresh';
     f.wrongReceipt();
     await assert.rejects(prepareRehearsal(f.input, f.deps), /receipt does not match/);
     assert.ok(!f.commands.some(args => args.at(-1)?.includes('--action=restore')));
@@ -176,4 +183,43 @@ test('SQLite rehearsal fails closed on mismatched capture receipt or missing ful
     await assert.rejects(prepareRehearsal(g.input, g.deps), /full integrity/);
     assert.ok(!g.commands.some(args => args.at(-1)?.includes('db:migrate')));
   } finally { g.clean(); }
+});
+
+
+test('default SQLite rehearsal restores latest retained source backup without requesting production work', async () => {
+  const f = fixture('sqlite');
+  try {
+    delete f.input.backupProvider;
+    delete f.input.sourceRevision;
+    await prepareRehearsal(f.input, f.deps);
+    const commands = f.commands.map(args => args.at(-1) ?? '');
+    assert.ok(commands.some(command => command.includes('--action=status')));
+    const restore = commands.find(command => command.includes('--action=restore'))!;
+    assert.ok(restore.includes('latest'));
+    assert.ok(!restore.includes('other-app'));
+    assert.ok(!commands.some(command => command.includes('--action=create')));
+    const evidence = fs.readFileSync(path.join(f.input.runDir, 'events.jsonl'), 'utf8');
+    assert.ok(evidence.includes('2026-10-28T23:00:00Z'));
+    assert.ok(evidence.includes('b'.repeat(40)));
+  } finally { f.clean(); }
+});
+
+test('missing retained backup fails without silently requesting a fresh capture', async () => {
+  const f = fixture('sqlite');
+  try {
+    f.noBackups();
+    await assert.rejects(prepareRehearsal(f.input, f.deps), /No retained backup/);
+    assert.ok(!f.commands.some(args => /--action=(create|restore)/.test(args.at(-1) ?? '')));
+    assert.ok(f.commands.some(args => args.at(-1)?.includes('rm -f /tmp/rehearsal-source.env')));
+  } finally { f.clean(); }
+});
+
+test('explicit fresh capture requires source revision before provisioning', async () => {
+  const f = fixture('sqlite');
+  try {
+    delete f.input.sourceRevision;
+    f.input.backupCapture = 'fresh';
+    await assert.rejects(prepareRehearsal(f.input, f.deps), /source-revision/);
+    assert.equal(f.commands.length, 0);
+  } finally { f.clean(); }
 });

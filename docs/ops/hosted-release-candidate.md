@@ -17,7 +17,7 @@ no Clerk or provider credentials, does not start the application, and does not
 run a backup scheduler for the disposable database.
 
 ```text
-capture source → create Machine/volume → restore → prechecks → migrate → postchecks
+create Machine/volume → select source backup → restore → prechecks → migrate → postchecks
                                                                   ↓
                                               save evidence → destroy both resources
 ```
@@ -50,10 +50,20 @@ this file to the isolated Machine and removes it after restore. The token can
 request captures as well as download them; it is privileged, not a read-only IAM
 identity. Never put token values on command lines or in release evidence.
 
-The default `--backup-provider=sqlite` also requires `--source-revision` matching
-the running production image. The candidate requests a fresh capture bound to
-that source app/revision and restores the returned id. Explicit
-`--backup-provider=litestream` selects the legacy S3 path, using the retained
+The default `--backup-provider=sqlite --backup-capture=retained` selects the latest
+verified retained backup for the source app and restores that exact id. Its receipt
+records the capture time and source revision. Slightly stale data is appropriate
+for ordinary app and migration rehearsals; preparation does not request work on
+production. If no retained backup exists, preparation fails without starting one.
+
+Only when validation explicitly needs a fresh snapshot, use
+`--backup-capture=fresh --source-revision=<running-production-full-sha>`.
+This requests an online capture and waits for verification; production stays
+available, but copying adds CPU and I/O load. A fresh capture does not freeze
+production writes. Production cutover still requires its separate fresh recovery
+point after quiescing writes.
+
+Explicit `--backup-provider=litestream` selects the legacy S3 path, using the retained
 binary and a read-only source IAM environment file (`LITESTREAM_ACCESS_KEY_ID`,
 `LITESTREAM_SECRET_ACCESS_KEY`, `LITESTREAM_BUCKET`, `LITESTREAM_REGION`, and
 `LITESTREAM_REPLICA_PATH`). Legacy restore does not establish receiver readiness.
@@ -98,7 +108,6 @@ npm run hosted:rehearse -- \
   --action=prepare \
   --app=<rehearsal-app> \
   --source-app=<beta-app> \
-  --source-revision=<running-production-full-sha> \
   --backup-provider=sqlite \
   --image=registry.fly.io/<image-app>:<release-tag>@sha256:<candidate-digest> \
   --schema=migrate \
@@ -189,8 +198,7 @@ Never treat activity performed on RC as durable learner activity.
 For browser RC `deploy` and `restore`, `--backup-provider=sqlite` selects the
 latest retained copy at operation declaration (`--restore-age-hours=0` by default).
 An explicit positive age selects at or before that cutoff and fails if retention
-cannot supply it; four hourly copies do not promise a 24-hour point. Explicit
-`--backup-provider=litestream` uses legacy S3 history and defaults to 24 hours.
+cannot supply it; four hourly copies do not promise a 24-hour point. Explicit `--backup-provider=litestream` uses legacy S3 history and defaults to 24 hours.
 Regenerate old RC configurations that start `litestream`: the runner rejects
 that process command. The direct app template does not need a replica prefix.
 

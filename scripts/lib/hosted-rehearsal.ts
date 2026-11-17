@@ -14,7 +14,7 @@ export type RehearsalManifest = {
 };
 export type PrepareRehearsalInput = {
   app: string; sourceApp: string; image: string; schema: 'unchanged' | 'migrate';
-  backupProvider?: 'sqlite' | 'litestream'; sourceRevision?: string;
+  backupProvider?: 'sqlite' | 'litestream'; sourceRevision?: string; backupCapture?: 'retained' | 'fresh';
   sourceBackupEnvFile: string; runDir: string; region?: string; vmSize?: string; volumeSizeGb?: number;
 };
 const manifestPath = (dir: string) => path.join(dir, 'manifest.json');
@@ -125,7 +125,10 @@ export async function prepareRehearsal(input: PrepareRehearsalInput, deps: Deps)
   if (!Number.isInteger(volumeSize) || volumeSize < 1) throw new Error('--volume-size-gb must be a positive integer.');
   const provider = input.backupProvider ?? 'sqlite';
   if (!['sqlite', 'litestream'].includes(provider)) throw new Error('Invalid backup provider.');
-  if (provider === 'sqlite' && !/^[a-f0-9]{40}$/.test(input.sourceRevision ?? '')) throw new Error('--source-revision must identify the source app revision with a full Git SHA.');
+  const capture = input.backupCapture ?? 'retained';
+  if (!['retained', 'fresh'].includes(capture)) throw new Error('Invalid backup capture policy.');
+  if (provider !== 'sqlite' && capture === 'fresh') throw new Error('Fresh capture requires the SQLite backup provider.');
+  if (provider === 'sqlite' && capture === 'fresh' && !/^[a-f0-9]{40}$/.test(input.sourceRevision ?? '')) throw new Error('--source-revision must identify the source app revision with a full Git SHA.');
   const sourceEnv = credentials(input.sourceBackupEnvFile, provider);
   fs.mkdirSync(input.runDir, { recursive: true, mode: 0o700 });
   const unlock = lock(input.runDir);
@@ -162,12 +165,23 @@ export async function prepareRehearsal(input: PrepareRehearsalInput, deps: Deps)
         await fly(deps, ['ssh', 'sftp', 'put', '--app', m.app, '--machine', m.machineId!, '--user', 'root', '--mode', '0600', local, '/tmp/rehearsal-source.env']);
         let restoreAction = 'litestream restore -json -integrity-check full -o /data/app.db "s3://${LITESTREAM_BUCKET}/${LITESTREAM_REPLICA_PATH}"';
         if (provider === 'sqlite') {
-          const id = `rehearsal-${randomUUID()}`;
           const receipt = await stage(input.runDir, 'source-backup', deps, async () => {
-            const output = await remote(m, deps, `set -eu; . /tmp/rehearsal-source.env; node --import tsx scripts/manage-hosted-backup.ts --action=create --kind=hourly --id=${id} --source-revision=${input.sourceRevision} --source-app=${m.sourceApp}`);
-            const value = parseHostedCommandJson(output);
-            if (!isRecord(value) || value.id !== id || value.sourceRevision !== input.sourceRevision || value.sourceApp !== m.sourceApp) throw new Error('Source backup receipt does not match the requested capture.');
-            return value;
+            if (capture === 'fresh') {
+              const id = `rehearsal-${randomUUID()}`;
+              const output = await remote(m, deps, `set -eu; . /tmp/rehearsal-source.env; node --import tsx scripts/manage-hosted-backup.ts --action=create --kind=hourly --id=${id} --source-revision=${input.sourceRevision} --source-app=${m.sourceApp}`);
+              const value = parseHostedCommandJson(output);
+              if (!isRecord(value) || value.id !== id || value.sourceRevision !== input.sourceRevision || value.sourceApp !== m.sourceApp) throw new Error('Source backup receipt does not match the requested capture.');
+              return value;
+            }
+            const output = await remote(m, deps, 'set -eu; . /tmp/rehearsal-source.env; node --import tsx scripts/manage-hosted-backup.ts --action=status');
+            const status = parseHostedCommandJson(output);
+            if (!isRecord(status) || !Array.isArray(status.backups)) throw new Error('Invalid backup receiver status.');
+            const receipt = status.backups.filter(isRecord)
+              .filter(r => r.sourceApp === m.sourceApp && typeof r.id === 'string'
+                && typeof r.completedAt === 'string' && Number.isFinite(Date.parse(r.completedAt)))
+              .sort((a, b) => Date.parse(String(b.completedAt)) - Date.parse(String(a.completedAt)))[0];
+            if (!receipt) throw new Error('No retained backup for the source app; request a fresh capture explicitly if needed.');
+            return receipt;
           });
           restoreAction = `node --import tsx scripts/manage-hosted-backup.ts --action=restore --id=${shellSingleQuote(String(receipt.id))} --output=/data/app.db`;
         }
