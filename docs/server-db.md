@@ -579,6 +579,8 @@ its domain normalizers. A late same-learner validation update changes only
 persistence, lease, or publication failures do not mislabel a valid model response.
 This is an offline schema migration, with no provider calls or history reclassification.
 
+Migration `0076_prune_trivial_unstudied_words` deletes never-touched, non-stash unstudied `learner_words` rows (with their default schedule and legacy state rows) that nothing else references; see its [rule and rehearsal note](ops/schema-migrations.md#trivial-unstudied-word-pruning-0076). It requires the offline schema migration procedure.
+
 ## Teaching set storage
 
 Migration `0074_teaching_sense_sets` keys preparation pointers by word and
