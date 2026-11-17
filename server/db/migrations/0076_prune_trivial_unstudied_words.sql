@@ -54,10 +54,11 @@ WHERE w.mode = 'unstudied' AND w.in_stash = 0 AND w.dismissed_at IS NULL AND w.i
   AND json_type(s.scheduler_state_json) = 'object'
   AND NOT EXISTS (SELECT 1 FROM json_each(s.scheduler_state_json) k
     WHERE k.key NOT IN ('intervalHours', 'easeFactor', 'enabled', 'cleanCoveredSessions', 'legacyAdmissionAt'))
-  AND COALESCE(json_extract(s.scheduler_state_json, '$.intervalHours'), 24) = 24
-  AND COALESCE(json_extract(s.scheduler_state_json, '$.easeFactor'), 2.5) = 2.5
-  AND COALESCE(json_extract(s.scheduler_state_json, '$.enabled'), 1) = 1
-  AND COALESCE(json_extract(s.scheduler_state_json, '$.cleanCoveredSessions'), 0) = 0
+  -- Enrolment and the 0041 import both write these four keys; a missing key keeps the word.
+  AND json_extract(s.scheduler_state_json, '$.intervalHours') = 24
+  AND json_extract(s.scheduler_state_json, '$.easeFactor') = 2.5
+  AND json_extract(s.scheduler_state_json, '$.enabled') = 1
+  AND json_extract(s.scheduler_state_json, '$.cleanCoveredSessions') = 0
   AND json_extract(s.scheduler_state_json, '$.legacyAdmissionAt') IS NULL
   -- Legacy word state: absent or the untouched default. Notes, status, streaks or coverage keep the word.
   AND (old.word_id IS NULL OR (old.status = 'unstudied' AND old.personal_notes = '' AND old.learning_streak = 0

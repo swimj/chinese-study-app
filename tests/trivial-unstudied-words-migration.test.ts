@@ -12,16 +12,20 @@ const MIGRATION = 'app_schema:0076_prune_trivial_unstudied_words';
 const DEFAULT_STATE = JSON.stringify({ intervalHours: 24, easeFactor: 2.5, enabled: 1, cleanCoveredSessions: 0 });
 const IMPORT_STATE = JSON.stringify({ intervalHours: 24, easeFactor: 2.5, enabled: 1, cleanCoveredSessions: 0, legacyAdmissionAt: null });
 const AT = '2026-04-11T00:00:00.000Z';
+const INDEX = schemaMigrations.findIndex(migration => migration.id === MIGRATION);
+/** The schema 0076 runs against. Later migrations never meet this one-time prune, so the tests stop here. */
+const PRIOR = schemaMigrations.slice(0, INDEX);
+const THROUGH = schemaMigrations.slice(0, INDEX + 1);
 
 function open(directory: string, name: string): DatabaseSync {
   createBaselineFixture(path.join(directory, name));
   const db = new DatabaseSync(path.join(directory, name, 'app.db'));
   db.function('current_learner_id', () => 'a');
-  migrateDatabase(db, schemaMigrations.filter(migration => migration.id !== MIGRATION));
+  migrateDatabase(db, PRIOR);
   return db;
 }
 type Options = { learner?: string; stash?: number; mode?: string; dismissed?: string | null; use?: string | null; version?: number;
-  scope?: string | null; paused?: number; schedule?: 'default' | 'import' | 'practised' | 'due' | 'refresh' | 'disabled' | 'extra' | 'none';
+  scope?: string | null; paused?: number; schedule?: 'default' | 'import' | 'practised' | 'due' | 'refresh' | 'disabled' | 'extra' | 'partial' | 'none';
   legacy?: 'default' | 'notes' | 'learning' | 'none' };
 function seed(db: DatabaseSync, word: string, options: Options = {}): string {
   const learner = options.learner ?? 'a';
@@ -32,7 +36,8 @@ function seed(db: DatabaseSync, word: string, options: Options = {}): string {
   const kind = options.schedule ?? 'default';
   if (kind !== 'none') {
     const state = kind === 'import' ? IMPORT_STATE : kind === 'disabled' ? JSON.stringify({ ...JSON.parse(DEFAULT_STATE), enabled: 0 })
-      : kind === 'extra' ? JSON.stringify({ ...JSON.parse(DEFAULT_STATE), note: 1 }) : DEFAULT_STATE;
+      : kind === 'extra' ? JSON.stringify({ ...JSON.parse(DEFAULT_STATE), note: 1 })
+      : kind === 'partial' ? JSON.stringify({ easeFactor: 2.5, enabled: 1, cleanCoveredSessions: 0 }) : DEFAULT_STATE;
     db.prepare(`INSERT INTO learner_word_schedules(learner_id,word_id,next_eligible_at,last_practised_at,policy_version,scheduler_state_json,refresh_requested_at,refresh_until)
       VALUES (?,?,?,?,?,?,?,?)`).run(learner, word, kind === 'due' ? '2026-05-01T00:00:00.000Z' : null, kind === 'practised' ? AT : null,
       kind === 'import' ? 'legacy-import-v1' : 'vocabulary-v1', state, kind === 'refresh' ? AT : null, kind === 'refresh' ? '2026-05-01T00:00:00.000Z' : null);
@@ -63,21 +68,24 @@ test('prunes only trivial unstudied associations, keeps everything else, and rec
       attach('k-reserve', 'INSERT INTO learner_word_preparation_reserve(learner_id,word_id,added_at) VALUES (?,?,?)', 'a', 'k-reserve', AT),
       attach('k-skill', 'INSERT INTO learner_owned_word_skill_state(learner_id,word_id,skill_id,enabled,interval_hours,last_studied_at,next_due_at,ease_factor) VALUES (?,?,?,1,24,?,?,2.5)', 'a', 'k-skill', 'recognition', AT, AT),
       attach('k-admission', 'INSERT INTO learner_owned_word_study_admission_state(learner_id,word_id,study_phase,earliest_next_study_at) VALUES (?,?,?,?)', 'a', 'k-admission', 'review', AT),
-      attach('k-session', "INSERT INTO vocabulary_sessions(session_id,learner_id,protocol_version,context_json,started_at,status) VALUES ('s1','a',1,?,?,'active')",
-        JSON.stringify({ sessionId: 's1', words: [{ wordId: 'k-session' }], reviewOrder: [{ kind: 'word', id: 'k-session' }] }), AT),
+      attach('k-session-words', "INSERT INTO vocabulary_sessions(session_id,learner_id,protocol_version,context_json,started_at,status) VALUES ('s1','a',1,?,?,'active')",
+        JSON.stringify({ sessionId: 's1', words: [{ wordId: 'k-session-words' }], reviewOrder: [{ kind: 'pure_cue', id: 'gone-default' }] }), AT),
+      attach('k-session-review', "INSERT INTO vocabulary_sessions(session_id,learner_id,protocol_version,context_json,started_at,closed_at,status) VALUES ('s2','a',1,?,?,?,'closed')",
+        JSON.stringify({ sessionId: 's2', words: [], reviewOrder: [{ kind: 'word', id: 'k-session-review' }] }), AT, AT),
       seed(conn, 'k-stash', { stash: 1 }), seed(conn, 'k-dismissed', { dismissed: AT }), seed(conn, 'k-use', { use: 'travel' }),
       seed(conn, 'k-practice', { mode: 'practice' }), seed(conn, 'k-solidify', { mode: 'solidify' }), seed(conn, 'k-version', { version: 2 }), seed(conn, 'k-scope', { scope: AT }),
       seed(conn, 'k-paused', { paused: 1 }), seed(conn, 'k-practised', { schedule: 'practised' }), seed(conn, 'k-due', { schedule: 'due' }),
       seed(conn, 'k-refresh', { schedule: 'refresh' }), seed(conn, 'k-disabled', { schedule: 'disabled' }), seed(conn, 'k-extra', { schedule: 'extra' }),
-      seed(conn, 'k-noschedule', { schedule: 'none' }), seed(conn, 'k-notes', { legacy: 'notes' }), seed(conn, 'k-learning', { legacy: 'learning' }),
+      seed(conn, 'k-partial', { schedule: 'partial' }), seed(conn, 'k-noschedule', { schedule: 'none' }), seed(conn, 'k-notes', { legacy: 'notes' }), seed(conn, 'k-learning', { legacy: 'learning' }),
     ];
     seed(conn, 'shared-word', { learner: 'a' }); seed(conn, 'shared-word', { learner: 'b', stash: 1 });
     const dictionary = [snapshot(conn, 'lexical_words'), snapshot(conn, 'lexical_word_meanings')];
     const eventsBefore = conn.prepare('SELECT COUNT(*) AS n FROM backend_events').get()!.n as number;
 
-    assert.deepEqual(migrateDatabase(conn), [MIGRATION]);
-    for (const word of gone) for (const table of ['learner_words', 'learner_word_schedules', 'learner_word_state']) assert.equal(has(conn, table, word), false, `${table} ${word}`);
-    for (const table of ['learner_words', 'learner_word_schedules', 'learner_word_state']) assert.equal(has(conn, table, 'gone-b', 'b'), false);
+    assert.deepEqual(migrateDatabase(conn, THROUGH), [MIGRATION]);
+    const deletedFrom = ['learner_words', ...TRIVIAL_UNSTUDIED_OWNED_TABLES];
+    for (const word of gone) for (const table of deletedFrom) assert.equal(has(conn, table, word), false, `${table} ${word}`);
+    for (const table of deletedFrom) assert.equal(has(conn, table, 'gone-b', 'b'), false);
     assert.equal(has(conn, 'learner_words', 'shared-word', 'a'), false);
     assert.equal(has(conn, 'learner_words', 'shared-word', 'b'), true, 'another learner keeps their stash row');
     for (const word of kept) assert.equal(has(conn, 'learner_words', word), true, `kept ${word}`);
@@ -93,26 +101,90 @@ test('prunes only trivial unstudied associations, keeps everything else, and rec
     assert.equal(conn.prepare('SELECT COUNT(*) AS n FROM backend_events').get()!.n, eventsBefore + 2);
     assert.deepEqual(events.map(e => [e.learner_id, JSON.parse(e.data_json).learnerWords, JSON.parse(e.data_json).learnerWordState]), [['a', 4, 3], ['b', 1, 1]]);
 
-    assert.deepEqual(migrateDatabase(conn), []); assertSchemaCurrent(conn);
+    assert.deepEqual(migrateDatabase(conn, THROUGH), []); assertSchemaCurrent(conn, THROUGH);
     assert.deepEqual(conn.prepare('PRAGMA foreign_key_check').all(), []);
   } finally { db?.close(); fs.rmSync(directory, { recursive: true, force: true }); }
 });
 
-test('every learner/word table is either an attachment that keeps the word or deleted by the migration', () => {
+/**
+ * Every table in 0076's schema that pairs a learner column with a word or meaning column, classified once.
+ * The scan reads the schema as 0076 found it (PRIOR), so tables added by later migrations never reach it and
+ * the migration SQL never needs to change after it ships. Exempt tables name the pair without deciding
+ * whether the learner still uses the word.
+ */
+const EXEMPT: Record<string, string> = {
+  word_preparation_work: 'operational preparation queue; requested_by_learner_id records who asked, not learner use',
+  learner_word_meaning_preferences: 'keyed by meaning, not by learner_words; the preference survives and does not need the row',
+};
+const LEARNER_COLUMN = /learner_id$/;
+const WORD_COLUMN = /(^|_)(word|meaning)_id$/;
+const columnsOf = (db: DatabaseSync, table: string) => db.prepare(`PRAGMA table_info(${table})`).all() as
+  { name: string; type: string; notnull: number; dflt_value: string | null; pk: number }[];
+
+test("0076's learner/word tables are each classified as an attachment, deleted by the migration, or exempt", () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'trivial-unstudied-schema-'));
   let db: DatabaseSync | undefined;
   try {
     db = open(directory, 'db');
-    const sql = fs.readFileSync(new URL('../server/db/migrations/0076_prune_trivial_unstudied_words.sql', import.meta.url), 'utf8');
-    const known = new Set<string>([...Object.keys(TRIVIAL_UNSTUDIED_ATTACHMENTS), ...TRIVIAL_UNSTUDIED_OWNED_TABLES, 'learner_words']);
-    for (const { name } of db.prepare("SELECT name FROM sqlite_schema WHERE type='table'").all() as { name: string }[]) {
-      const columns = (db.prepare(`PRAGMA table_info(${name})`).all() as { name: string }[]).map(column => column.name);
-      if (columns.includes('learner_id') && columns.includes('word_id')) assert.ok(known.has(name), `${name} references learner words; decide whether it keeps the word`);
-    }
+    const groups = [Object.keys(TRIVIAL_UNSTUDIED_ATTACHMENTS), ['learner_words', ...TRIVIAL_UNSTUDIED_OWNED_TABLES], Object.keys(EXEMPT)];
+    const classified = groups.flat();
+    assert.equal(new Set(classified).size, classified.length, 'a table is classified more than once');
+    const shaped = (db.prepare("SELECT name FROM sqlite_schema WHERE type='table' ORDER BY name").all() as { name: string }[])
+      .map(({ name }) => name).filter(name => {
+        const columns = columnsOf(db!, name).map(column => column.name);
+        return columns.some(column => LEARNER_COLUMN.test(column)) && columns.some(column => WORD_COLUMN.test(column));
+      });
+    assert.deepEqual(shaped, [...classified].sort(), 'the classification must match the learner/word tables in the schema 0076 runs against');
     for (const [table, column] of Object.entries(TRIVIAL_UNSTUDIED_ATTACHMENTS)) {
-      assert.ok(sql.includes(`FROM ${table}`), `${table} missing from migration SQL`);
-      assert.ok((db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).some(c => c.name === column), `${table}.${column}`);
+      assert.ok(columnsOf(db, table).some(c => c.name === column), `${table}.${column}`);
     }
+  } finally { db?.close(); fs.rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('a row in each attachment table keeps that learner\'s word and only that learner\'s word', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'trivial-unstudied-attachments-'));
+  let db: DatabaseSync | undefined;
+  try {
+    db = open(directory, 'db');
+    const conn = db;
+    for (const learner of ['a', 'b']) conn.prepare('INSERT INTO learners(learner_id,display_name,created_at) VALUES (?,?,?)').run(learner, learner, AT);
+    const tables = Object.entries(TRIVIAL_UNSTUDIED_ATTACHMENTS);
+    for (const [table] of tables) { seed(conn, `kept:${table}`); seed(conn, `other:${table}`); }
+    // Each row is read only by the migration's attachment SELECT, so it needs the learner and word columns,
+    // not a real parent chain. Inside a transaction that is rolled back, foreign keys, CHECK constraints and
+    // the insert ownership guards are relaxed, the rows are inserted, and the migration body runs.
+    const names = tables.map(([table]) => table);
+    const guards = (conn.prepare(`SELECT name FROM sqlite_schema WHERE type='trigger' AND sql LIKE '%BEFORE INSERT ON%'
+      AND tbl_name IN (${names.map(() => '?').join(',')})`).all(...names) as { name: string }[]).map(row => row.name);
+    conn.exec('PRAGMA foreign_keys=OFF; BEGIN; PRAGMA ignore_check_constraints=ON');
+    for (const guard of guards) conn.exec(`DROP TRIGGER ${guard}`);
+    let serial = 0;
+    const insert = (table: string, wordColumn: string, learner: string, word: string) => {
+      const values = new Map<string, unknown>();
+      for (const column of columnsOf(conn, table)) {
+        serial += 1;
+        if (column.name === wordColumn) values.set(column.name, word);
+        else if (LEARNER_COLUMN.test(column.name)) values.set(column.name, learner);
+        else if (column.notnull && column.dflt_value === null && !(column.pk && /INT/i.test(column.type))) {
+          values.set(column.name, /INT|REAL/i.test(column.type) ? serial : `${table}:${column.name}:${serial}`);
+        }
+      }
+      conn.prepare(`INSERT INTO ${table}(${[...values.keys()].join(',')}) VALUES (${[...values.keys()].map(() => '?').join(',')})`)
+        .run(...[...values.values()] as never[]);
+    };
+    for (const [table, column] of tables) {
+      insert(table, column, 'a', `kept:${table}`);
+      insert(table, column, 'b', `other:${table}`);
+    }
+    conn.exec('PRAGMA ignore_check_constraints=OFF');
+    const migration = schemaMigrations[INDEX]!;
+    try {
+      migration.before!(conn); conn.exec(migration.sql); migration.after!(conn);
+      for (const [table] of tables) {
+        assert.equal(has(conn, 'learner_words', `kept:${table}`), true, `${table} keeps the word`);
+        assert.equal(has(conn, 'learner_words', `other:${table}`), false, `${table} row for another learner does not keep the word`);
+      }
+    } finally { conn.exec('ROLLBACK; PRAGMA foreign_keys=ON'); }
   } finally { db?.close(); fs.rmSync(directory, { recursive: true, force: true }); }
 });
 
@@ -125,11 +197,11 @@ test('a violated postcondition fails the whole batch instead of partially applyi
     seed(db, 'gone');
     const tampered = schemaMigrations.map(migration => migration.id === MIGRATION
       ? { ...migration, sql: `${migration.sql}\nINSERT INTO lexical_words(id,hanzi,pinyin,meaning,examples_json,priority,created_at) VALUES ('extra','x','p','m','[]',1,'${AT}');` } : migration);
-    assert.throws(() => migrateDatabase(db!, tampered), /lexical_words changed/);
+    assert.throws(() => migrateDatabase(db!, tampered.slice(0, INDEX + 1)), /lexical_words changed/);
     assert.equal(has(db, 'learner_words', 'gone'), true);
     assert.equal(db.prepare('SELECT COUNT(*) AS n FROM lexical_words').get()!.n, 1);
     assert.equal(db.prepare('SELECT COUNT(*) AS n FROM schema_migrations WHERE migration_id=?').get(MIGRATION)!.n, 0);
-    assert.deepEqual(migrateDatabase(db), [MIGRATION]);
+    assert.deepEqual(migrateDatabase(db, THROUGH), [MIGRATION]);
     assert.equal(has(db, 'learner_words', 'gone'), false);
   } finally { db?.close(); fs.rmSync(directory, { recursive: true, force: true }); }
 });

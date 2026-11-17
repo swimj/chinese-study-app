@@ -5,9 +5,9 @@ export const TRIVIAL_UNSTUDIED_WORDS_MIGRATION = 'app_schema:0076_prune_trivial_
 export const TRIVIAL_UNSTUDIED_WORDS_EVENT = 'vocabulary.learner_words.trivial_unstudied_pruned';
 
 /**
- * Learner-scoped tables whose rows mark a (learner, word) pair as in use. Each has a column naming the word;
- * the migration SQL selects from every one of them, and a test requires every learner/word table in the
- * schema to appear here or in the owned set below, so a new table forces a decision.
+ * Learner-scoped tables whose rows mark a (learner, word) pair as in use, with the column naming the word.
+ * The migration SQL selects from every one of them and the after hook re-checks them. This classifies the
+ * schema as it stood when 0076 ran; tests/trivial-unstudied-words-migration.test.ts freezes that inventory.
  */
 export const TRIVIAL_UNSTUDIED_ATTACHMENTS = {
   encounter_words: 'word_id', learner_feedback: 'word_id', learner_owned_intake_triage_assessments: 'word_id',
@@ -19,7 +19,7 @@ export const TRIVIAL_UNSTUDIED_ATTACHMENTS = {
   learner_owned_study_attempt_events: 'target_word_id', learner_owned_production_cue_evidence_records: 'submitted_word_id',
   pure_cue_scheduler_compensation_snapshots: 'target_word_id', exercise_encounters: 'selected_through_word_id',
 } as const;
-/** Tables the migration deletes from, besides learner_words itself. */
+/** Tables the migration deletes candidate rows from, besides learner_words itself. The after hook checks each. */
 export const TRIVIAL_UNSTUDIED_OWNED_TABLES = ['learner_word_schedules', 'learner_word_state'] as const;
 
 const SHARED_DICTIONARY_TABLES = ['lexical_words', 'lexical_word_meanings'] as const;
@@ -54,7 +54,7 @@ export function verifyAndRecordTrivialUnstudiedPrune(db: DatabaseSync): void {
   }
   if (count(db, 'SELECT COUNT(*) AS n FROM learner_words') !== recorded.get('learner_words')! - total) fail('learner_words count does not match the deleted candidates');
   if (count(db, PROTECTED) !== recorded.get('protected')) fail('a studied, stash or dismissed word was deleted');
-  for (const table of ['learner_words', 'learner_word_schedules', 'learner_word_state']) {
+  for (const table of ['learner_words', ...TRIVIAL_UNSTUDIED_OWNED_TABLES]) {
     const left = count(db, `SELECT COUNT(*) AS n FROM ${table} t JOIN trivial_unstudied_candidates c ON c.learner_id = t.learner_id AND c.word_id = t.word_id`);
     if (left) fail(`${left} ${table} rows survived`);
   }

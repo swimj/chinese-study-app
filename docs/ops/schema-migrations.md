@@ -750,15 +750,19 @@ the stash, not dismissed, no intended-use text, `state_version=1`, no
 `scope_established_at`, automatic promotion not paused; its `learner_word_schedules`
 row exists and is untouched (no `next_eligible_at`, `last_practised_at` or refresh,
 `state_version=1`, policy `vocabulary-v1` or `legacy-import-v1`, scheduler state
-exactly the defaults); its legacy `learner_word_state` row is absent or the untouched
+exactly the defaults, with all four default keys present); its legacy `learner_word_state` row is absent or the untouched
 default (`unstudied`, no notes, no streak or coverage); and no other learner-scoped
 row names the word. The attachment tables (the manifest in
 `server/db/trivial-unstudied-words-migration.ts`, including study events, encounters,
 priority, skills, reserve, feedback and cases) and every `vocabulary_sessions`
 context that froze the word, open or closed, keep it. The matching schedule and
 default legacy rows are deleted with it. `lexical_words` and `lexical_word_meanings`
-are untouched. A test fails when a table with `learner_id` and `word_id` is added
-without being classified.
+are untouched. Learner-scoped meaning preferences are keyed by meaning and survive.
+The test freezes the classification of the schema 0076 runs against: every table
+pairing a `*learner_id` column with a `*word_id` or `*meaning_id` column is an
+attachment, deleted by the migration, or exempt (the operational
+`word_preparation_work` queue and meaning preferences). Tables added by later
+migrations never meet this one-time prune and need no entry.
 
 The `before` and `after` hooks fail the whole batch (rollback, no ledger row) if the
 dictionary tables changed, any studied, stash or dismissed row disappeared, any
