@@ -14,7 +14,7 @@ export type RehearsalManifest = {
 };
 export type PrepareRehearsalInput = {
   app: string; sourceApp: string; image: string; schema: 'unchanged' | 'migrate';
-  backupProvider?: 'sqlite' | 'litestream'; sourceRevision?: string; backupCapture?: 'retained' | 'fresh';
+  backupProvider?: 'sqlite' | 'litestream'; sourceRevision?: string; backupCapture?: 'retained' | 'fresh'; backupId?: string;
   sourceBackupEnvFile: string; runDir: string; region?: string; vmSize?: string; volumeSizeGb?: number;
 };
 const manifestPath = (dir: string) => path.join(dir, 'manifest.json');
@@ -127,6 +127,10 @@ export async function prepareRehearsal(input: PrepareRehearsalInput, deps: Deps)
   if (!['sqlite', 'litestream'].includes(provider)) throw new Error('Invalid backup provider.');
   const capture = input.backupCapture ?? 'retained';
   if (!['retained', 'fresh'].includes(capture)) throw new Error('Invalid backup capture policy.');
+  if (input.backupId !== undefined) {
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,95}$/.test(input.backupId)) throw new Error('Invalid --backup-id.');
+    if (provider !== 'sqlite' || capture !== 'retained') throw new Error('--backup-id requires retained SQLite backups.');
+  }
   if (provider !== 'sqlite' && capture === 'fresh') throw new Error('Fresh capture requires the SQLite backup provider.');
   if (provider === 'sqlite' && capture === 'fresh' && !/^[a-f0-9]{40}$/.test(input.sourceRevision ?? '')) throw new Error('--source-revision must identify the source app revision with a full Git SHA.');
   const sourceEnv = credentials(input.sourceBackupEnvFile, provider);
@@ -178,9 +182,12 @@ export async function prepareRehearsal(input: PrepareRehearsalInput, deps: Deps)
             if (!isRecord(status) || !Array.isArray(status.backups)) throw new Error('Invalid backup receiver status.');
             const receipt = status.backups.filter(isRecord)
               .filter(r => r.sourceApp === m.sourceApp && typeof r.id === 'string'
-                && typeof r.completedAt === 'string' && Number.isFinite(Date.parse(r.completedAt)))
+                && (input.backupId === undefined || r.id === input.backupId))
+              .filter(r => typeof r.completedAt === 'string' && Number.isFinite(Date.parse(r.completedAt)))
               .sort((a, b) => Date.parse(String(b.completedAt)) - Date.parse(String(a.completedAt)))[0];
-            if (!receipt) throw new Error('No retained backup for the source app; request a fresh capture explicitly if needed.');
+            if (!receipt) throw new Error(input.backupId === undefined
+              ? 'No retained backup for the source app; request a fresh capture explicitly if needed.'
+              : 'Requested backup id is not retained for the source app.');
             return receipt;
           });
           restoreAction = `node --import tsx scripts/manage-hosted-backup.ts --action=restore --id=${shellSingleQuote(String(receipt.id))} --output=/data/app.db`;

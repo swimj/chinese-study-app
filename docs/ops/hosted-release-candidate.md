@@ -56,6 +56,14 @@ records the capture time and source revision. Slightly stale data is appropriate
 for ordinary app and migration rehearsals; preparation does not request work on
 production. If no retained backup exists, preparation fails without starting one.
 
+To choose a particular retained snapshot, add `--backup-id=<id>` to preparation.
+List available IDs with `npm run --silent hosted:backup -- --action=status` from
+a configured Machine or private-network connection; the `backups` array includes
+each receipt's ID, capture timestamps, source app, and source revision. An explicit
+ID must belong to the source app and still be retained; it never falls back to
+another backup or starts a capture. It cannot be combined with fresh capture.
+Selecting an ID does not exempt that backup from normal retention.
+
 Only when validation explicitly needs a fresh snapshot, use
 `--backup-capture=fresh --source-revision=<running-production-full-sha>`.
 This requests an online capture and waits for verification; production stays

@@ -223,3 +223,42 @@ test('explicit fresh capture requires source revision before provisioning', asyn
     assert.equal(f.commands.length, 0);
   } finally { f.clean(); }
 });
+
+
+test('explicit backup id restores an older retained snapshot rather than latest', async () => {
+  const f = fixture('sqlite');
+  try {
+    f.input.backupId = 'old';
+    await prepareRehearsal(f.input, f.deps);
+    const commands = f.commands.map(args => args.at(-1) ?? '');
+    const restore = commands.find(command => command.includes('--action=restore'))!;
+    assert.ok(restore.includes('old'));
+    assert.ok(!restore.includes('latest'));
+    assert.ok(!commands.some(command => command.includes('--action=create')));
+  } finally { f.clean(); }
+});
+
+test('explicit backup id rejects missing or other-source backups without fallback', async () => {
+  for (const id of ['missing', 'other-app']) {
+    const f = fixture('sqlite');
+    try {
+      f.input.backupId = id;
+      await assert.rejects(prepareRehearsal(f.input, f.deps), /not retained for the source app/);
+      assert.ok(!f.commands.some(args => /--action=(create|restore)/.test(args.at(-1) ?? '')));
+    } finally { f.clean(); }
+  }
+});
+
+test('backup id rejects invalid syntax and incompatible capture options before provisioning', async () => {
+  for (const options of [
+    { backupId: '../invalid' },
+    { backupId: 'old', backupCapture: 'fresh' as const },
+    { backupId: 'old', backupProvider: 'litestream' as const },
+  ]) {
+    const f = fixture('sqlite');
+    try {
+      await assert.rejects(prepareRehearsal({ ...f.input, ...options }, f.deps), /backup-id/);
+      assert.equal(f.commands.length, 0);
+    } finally { f.clean(); }
+  }
+});
