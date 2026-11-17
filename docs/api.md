@@ -1280,8 +1280,10 @@ messages for the learner’s history.
 
 A subject is `{kind:'connection', sessionId, noteIndex}` or
 `{kind:'lesson', messageId}`. Reasons apply only to `not_for_me`; a note only to
-`saved`. Surfaces are `home`, `feedback` and `saved`. Contracts live in
-`src/domain/content-reactions.ts`.
+`saved`. The `tenuous_connection` reason is valid only for connection subjects;
+a lesson request containing it returns 400. Surfaces are `home`, `feedback` and
+`saved`. Input types and validation live in
+[`src/domain/content-reactions.ts`](../src/domain/content-reactions.ts).
 
 ### Case review queue and history
 
