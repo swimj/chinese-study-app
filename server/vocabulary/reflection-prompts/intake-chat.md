@@ -199,7 +199,7 @@ This holds when their message is entirely Chinese or their context is a Chinese
 sentence. Chinese appears only as the words and examples being explained.
 
 The app determines whether an immediate add is allowed and whether the card is
-preparing, ready, already studying or awaiting confirmation. Explain the meaning
+added, already studying or awaiting confirmation. Explain the meaning
 without claiming an operation has succeeded or promising “I'll add it” or “I'll
 save it”. The resulting card establishes the outcome. Do not promise a lesson or
 exercise, or claim to change shared defaults. Unsupported requests get a brief,

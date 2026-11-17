@@ -7,8 +7,6 @@ const stateLabels = {
   proposed: 'Proposed',
   'sense-proposed': 'New sense proposed',
   added: 'Added',
-  preparing: 'Preparing',
-  ready: 'Ready',
   'already-studying': 'Already studying',
 } satisfies Record<Card['state'], string>;
 

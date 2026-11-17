@@ -25,7 +25,7 @@ const stashChoices = new Map([
 
 const examples = {
   纠结: {
-    pinyin: 'jiūjié', state: 'ready', text: '纠结 describes being torn about a choice. It can also mean tangled or knotted.',
+    pinyin: 'jiūjié', state: 'added', text: '纠结 describes being torn about a choice. It can also mean tangled or knotted.',
     senses: [sense('torn', 'torn or conflicted about a choice'), sense('tangled', 'tangled, knotted'), sense('band', 'to band together (dated)', false)],
   },
   帮派: {
@@ -39,7 +39,7 @@ const examples = {
     senses: [sense('return', 'to return a serve in a racket sport')],
   },
   绵长: {
-    pinyin: 'miáncháng', state: 'preparing', text: 'In your sentence, 绵长 describes a lingering tenderness. I kept the sentence while the senses are prepared.',
+    pinyin: 'miáncháng', state: 'added', text: 'In your sentence, 绵长 describes a lingering tenderness. I kept the sentence while the senses are prepared.',
     senses: [],
   },
   宠溺: {
@@ -68,7 +68,7 @@ const examples = {
     index < 3, ['Compare the object in each example before choosing a meaning. '.repeat(24)])),
   },
   扮演: {
-    pinyin: 'bànyǎn', state: 'preparing', text: '扮演 means to play a character or take on a role.',
+    pinyin: 'bànyǎn', state: 'added', text: '扮演 means to play a character or take on a role.',
     senses: [sense('play', 'to play a character or fulfill a role')],
   },
 } satisfies Record<string, {
@@ -82,6 +82,7 @@ const examples = {
 type ExampleWord = keyof typeof examples;
 const params = new URLSearchParams(location.search);
 const cards = new Map<string, Card>();
+const preparedWords = new Set<string>(['纠结']);
 const turns = new Map<string, VocabularyIntakeTurn>();
 const sharedSenses = new Map<string, Sense[]>();
 const commandResults = new Map<string, Card>();
@@ -173,7 +174,7 @@ function updateCard(card: Card, request: VocabularyIntakeCommandRequest): Card {
   } : command.selection;
   return setCard(card, {
     senses, selection, proposedSense: createSense ? null : card.proposedSense,
-    state: card.state === 'already-studying' ? card.state : command.type === 'add' ? 'preparing' : 'ready',
+    state: card.state === 'already-studying' ? card.state : 'added',
     actions: card.state === 'already-studying' ? ['change_senses'] : ['undo', 'change_senses'],
     attention: null,
     versions: { ...card.versions, learner: (card.versions.learner ?? 0) + 1 },
@@ -183,7 +184,8 @@ function updateCard(card: Card, request: VocabularyIntakeCommandRequest): Card {
 
 function finishPreparation() {
   for (const card of cards.values()) {
-    if (card.state !== 'preparing') continue;
+    if (card.state !== 'added') continue;
+    preparedWords.add(card.wordId);
     if (card.wordId === '绵长' && !card.senses.length) {
       const senses = [
         sense('lasting', 'lasting for a long time', true),
@@ -195,7 +197,7 @@ function finishPreparation() {
         attention: 'Two senses fit the saved sentence. Choose the sense you want to study.',
       });
     } else if (!card.attention) {
-      setCard(card, { state: 'ready' });
+      setCard(card, { state: 'added' });
     }
   }
   document.dispatchEvent(new Event('visibilitychange'));
@@ -221,7 +223,7 @@ function wordCollection(view: string | null): VocabularyCollectionWord[] {
   return ids.map(id => {
     const card = [...cards.values()].reverse().find(item => item.wordId === id);
     const preparationStatus = card?.attention ? 'needs-attention'
-      : card?.state === 'ready' ? 'ready' : card?.state === 'preparing' ? 'preparing' : undefined;
+      : card?.state === 'added' ? preparedWords.has(id) ? 'ready' : 'preparing' : undefined;
     return {
       word: { ...wordOf(id), status: id === '宠溺' ? 'practice' : 'unstudied' },
       lastStudiedAt: id === '宠溺' ? '2026-11-13T15:00:00.000Z' : null,

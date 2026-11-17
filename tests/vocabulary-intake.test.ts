@@ -155,15 +155,29 @@ test('a rejected completion is returned to the model, which can correct it witho
   assert.equal(getVocabularyLearnerWord('gang')?.intendedUseText,'gang members in a film');
   assert.equal(getVocabularyIntakeHistory().turns.at(-1)?.status,'complete');
 }));
+test('repeat lookups show Added for unstudied words and Already studying after study begins', async () => alice(async () => {
+  const first = await send('帮派',[lookup('帮派')],draft('gang','bare','帮派',select('gang-1','gang-2')));
+  const again = await send('帮派',[lookup('帮派')],draft('gang','existing','帮派',select('gang-1','gang-2')),'repeat-gang');
+  assert.ok(first.card && again.card);
+  assert.equal(getCard(first.card.id).state,'added');
+  assert.equal(getCard(first.card.id).defaultsEstablished,true);
+  assert.ok(listVocabularyIntakeCards(true).some(card => card.id === first.card!.id));
+  assert.equal(again.card.state,getCard(first.card.id).state);
+  const word = getVocabularyLearnerWord('gang')!;
+  changeVocabularyMode('gang','practice',word.stateVersion);
+  assert.equal(getCard(first.card.id).state,'already-studying');
+  assert.equal(getCard(again.card.id).state,'already-studying');
+}));
+
 test('the ten intake traces preserve fixed add and proposal boundaries', async () => alice(async () => {
   const gang = await send('帮派 - gang members in a film',[lookup('帮派')],
     draft('gang','context_match','帮派',{...select('gang-1','gang-2'),targetSenseId:'gang-1'},{context:'gang members in a film'}));
-  assert.equal(gang.card?.state,'preparing'); assert.deepEqual(gang.card?.selection.senseIds,['gang-1','gang-2']);
+  assert.equal(gang.card?.state,'added'); assert.deepEqual(gang.card?.selection.senseIds,['gang-1','gang-2']);
   assert.equal(resolveVocabularyLearnerSenseScope('gang').choices[0]?.senseId,'gang-1');
   assert.equal(getVocabularyLearnerWord('gang')?.intendedUseText,'gang members in a film');
   const pending = await send('绵长 - 用绵长、安静、不紧张的温柔',[lookup('绵长')],
     draft('lingering','inventory_pending','绵长',select(),{context:'用绵长、安静、不紧张的温柔'}));
-  assert.equal(pending.card?.state,'preparing'); assert.equal(hasPendingVocabularyIntakeMatch('lingering'),true);
+  assert.equal(pending.card?.state,'added'); assert.equal(hasPendingVocabularyIntakeMatch('lingering'),true);
   const redirect = await send('接发 - return serve',[lookup('接发'),{name:'find_expressions_containing',arguments:{hanzi:'接发'}}],
     draft('return','larger_expression','接发',select('return-1')));
   assert.equal(redirect.card?.state,'proposed'); assert.equal(getVocabularyLearnerWord('return'),null);
@@ -282,6 +296,7 @@ test('a deferred successful match releases admission and preserves Undo after th
     return 'lingering-2';
   } }).stepMatch();
   const updated = getCard(card.id);
+  assert.equal(updated.state,'added');
   assert.equal(updated.attention,null);
   assert.deepEqual(updated.selection,{senseIds:['lingering-1','lingering-2'],targetSenseId:'lingering-2',includeProposedSense:false});
   assert.equal(hasPendingVocabularyIntakeMatch('lingering'),false);
@@ -613,7 +628,7 @@ test('a stashed unstudied word waits for teaching covering the newly confirmed s
   await send('蒸馏',[lookup('蒸馏')],draft('distil','bare','蒸馏',select('distil-1')));
   const {card}=await existingSenseProposal();assert.ok(card);
   const added=runVocabularyIntakeCommand(card.id,request(card,{type:'add_sense'},'unstudied-confirm'));
-  assert.equal(added.state,'preparing');assert.equal(getVocabularyLearnerWord('distil')?.mode,'unstudied');
+  assert.equal(added.state,'added');assert.equal(getVocabularyLearnerWord('distil')?.mode,'unstudied');
   assert.ok(!added.actions.includes('undo'));
 }));
 

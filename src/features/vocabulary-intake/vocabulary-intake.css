@@ -162,11 +162,11 @@
   font-weight: 600;
 }
 
-.intake-card-state[data-state="added"], .intake-card-state[data-state="ready"] {
+.intake-card-state[data-state="added"] {
   color: var(--success);
 }
 
-.intake-card-state[data-state="sense-proposed"], .intake-card-state[data-state="proposed"], .intake-card-state[data-state="preparing"] {
+.intake-card-state[data-state="sense-proposed"], .intake-card-state[data-state="proposed"] {
   color: var(--warning);
 }
 
