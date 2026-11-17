@@ -4,7 +4,7 @@ import { chooseTimedTarget, timedRestCards, type TimedCandidate } from '../serve
 import { PRESSING_TIER_SHARE, TIMED_REST_MAX_CARDS, TIMED_REST_MIN_CARDS } from '../src/domain/timed-session.ts';
 
 const candidate = (id: string, patch: Partial<TimedCandidate> = {}): TimedCandidate => ({
-  target: { kind: 'word', id }, pressing: false, bucket: 'review', lastPosition: -1, lastEncounterId: null, order: 0, ...patch,
+  target: { kind: 'word', id }, pressing: false, lastPosition: -1, lastEncounterId: null, order: 0, ...patch,
 });
 /** Fixed draws: `tier` below the share tries pressing; `index` picks the first candidate. */
 const sampler = (tier: number, index = 0) => (length: number, salt: string) => salt === 'tier' ? tier % length : index % length;
@@ -53,18 +53,17 @@ test('with nothing rested, whatever has waited longest comes next so a drain nev
   assert.equal(choose([recent, older], 7), 'older');
 });
 
-test('ordinary work keeps the bucket weights and review rotation', () => {
-  const review = [candidate('urgent', { order: 0 }), candidate('later', { order: 1 }), candidate('seen', { order: 2, lastPosition: 0, lastEncounterId: 'e0' })];
-  // Review takes the least recently seen item, then the frozen urgency order.
-  assert.equal(choose(review, 10, sampler(99)), 'urgent');
-  const mixed = [candidate('review'), candidate('learning', { bucket: 'learning' }), candidate('new', { bucket: 'unstudied' })];
+test('ordinary work is one uniform draw over rested non-pressing items of every kind', () => {
+  const ordinary = [candidate('review'), candidate('cue', { target: { kind: 'pure_cue', id: 'cue' } }), candidate('new'),
+    candidate('resting', { lastPosition: 9, lastEncounterId: 'e9' })];
   const picks = new Map<string, number>();
-  for (let draw = 0; draw < 100; draw++) {
-    const id = chooseTimedTarget({ sessionId: 's', candidates: mixed, encounterCount: 0,
-      sample: (length, salt) => salt === 'tier' ? 99 : salt === 'bucket' ? draw % length : 0 }).id;
+  for (let draw = 0; draw < 300; draw++) {
+    const id = chooseTimedTarget({ sessionId: 's', candidates: ordinary, encounterCount: 10,
+      sample: (length, salt) => salt === 'tier' ? 99 : salt === 'ordinary' ? draw % length : 0 }).id;
     picks.set(id, (picks.get(id) ?? 0) + 1);
   }
-  assert.deepEqual(Object.fromEntries(picks), { review: 50, learning: 30, new: 20 });
+  // No weighting by kind, no urgency order among rested items, and resting items wait.
+  assert.deepEqual(Object.fromEntries(picks), { review: 100, cue: 100, new: 100 });
 });
 
 test('random choice within the pressing tier spreads across rested items', () => {

@@ -240,7 +240,7 @@ fragile cue, or a strong cue that won today's roll), checks content eligibility 
 reconciliation for those cues only, selects, then hydrates the chosen cues during
 composition. The session freezes their content before play begins.
 
-Composition retains the shared 1,000-item cap and 50/30/20 review/learning/new
+Untimed composition retains the shared 1,000-item cap and 50/30/20 review/learning/new
 bucket weights, mapped to Practice/Maintain, Solidify, and Unstudied. Unused bucket
 capacity is redistributed. Review selects the most urgent eligible skill for each
 word and updates only the exercised skill at closure. Its first read is one range
@@ -296,15 +296,31 @@ the day active time at which this session wraps up, pressing keys, and each admi
 item's classic due date and prior-lapse flag. That context stays server-side; the
 client receives only `timed` state (wrap-up, Study a little more, active time, note).
 
-Due rules are unchanged; timed admission orders held items that were passed over on
-three separate days (`learner_timed_skip_counts`) ahead of ordinary due work before
-the shared cap applies. Selection treats Solidify words, any started item still owed
-work (teaching begun, a missed review or pure cue) and those passed-over held items as
-pressing. While any is still available, a not-yet-started new word does not begin.
-Each appearance rests an item for a seeded random 2–5 cards. Seven picks in ten choose
-at random among rested pressing items (`server/vocabulary/timed-selection.ts`); the
-rest, and any pick with no rested pressing item, use the 50/30/20 draw over rested
-non-pressing items. If nothing is rested, the item that has waited longest is served.
+Timed admission (`server/vocabulary/timed-admission.ts`) caps each stream on its own
+terms and shares no capacity between them. New words take ready reserve hints up to
+the day's remaining quota; learning takes every due Solidify word. Review words and
+due fragile pure cues share one bound of five items per minute of the session's
+allowance (`untilDayActiveMs - dayActiveMsAtStart`: 100 for a fresh 20-minute day,
+25 for a five-minute entry into a spent day). Their order is held items passed over
+on three separate days (`learner_timed_skip_counts`) first, then review words by
+their most urgent due objective with fragile cues spliced in at seeded positions.
+The walk checks content for each candidate as it reaches it and stops once the bound
+is filled, so a failing candidate is replaced by the next in rank and the rest are
+never checked. Every due recheck is admitted ahead of the bound; strong-cue
+maintenance draws today's rolled cues with slots scaled to the admitted review items.
+Untimed Start keeps the 1,000-item cap and 50/30/20 allocation.
+
+Selection treats Solidify words, any started item still owed work (teaching begun, a
+missed review or pure cue) and those passed-over held items as pressing. While any is
+still available, a not-yet-started new word does not begin. Each appearance rests an
+item for a seeded random 2–5 cards. Seven picks in ten choose at random among rested
+pressing items (`server/vocabulary/timed-selection.ts`); the rest, and any pick with
+no rested pressing item, choose uniformly at random among rested non-pressing items,
+whatever their kind. If nothing is rested, the item that has waited longest is served.
+There is no top-up: when admitted work runs out before the allowance, the session
+records `finish_for_now` without a source and completes. A new word admitted but
+never reached stays an enrolled Unstudied record, uses none of the day's quota, and
+can be admitted again.
 Introduction order and spacing settings do not apply and the settings panel hides
 them. Admitted new words that never start remain enrolled, hidden Unstudied records
 and stay eligible for later admission.
@@ -371,8 +387,8 @@ request thread; until it arrives the sections are absent, and a failure shows on
 retry line. The compact layout (Connections expanded) hides them with the dots.
 
 Closure clears the skip count of every started item and adds at most one passed-over
-day to each due held item that went unstarted, including due words the cap kept out
-of the pool and admitted pure cues. It fills `vocabulary_timed_session_records`:
+day to each due held item that went unstarted, including due words the review bound
+kept out of the pool and admitted pure cues. It fills `vocabulary_timed_session_records`:
 session and day active time, extensions, whether the budget ended the session,
 whether the new-word gate held, new words started, unstarted pressing keys and, per
 served item, its class, classic due date, prior lapse and outcome. The summary's

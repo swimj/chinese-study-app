@@ -28,34 +28,52 @@ export function selectVocabularyPureCueCandidates(input:PureCueSelectionInput):V
   const {rechecks,routine}=planVocabularyPureCues(input);
   return [...rechecks,...routine];
 }
-export function planVocabularyPureCues(input:PureCueSelectionInput):{rechecks:VocabularyContent[];routine:VocabularyContent[]} {
-  const now=input.now??new Date().toISOString();if(input.adopt!==false)adoptVocabularyPureCues(now);
+/** A due recheck or a cue with a routine role; content checks have not run yet. */
+export type VocabularyPureCueCandidate = PureCueSelectionCandidate & { recheckAt: string | null };
+/**
+ * The learner's pure-cue streams before content checks: due rechecks in recheck
+ * order, due fragile cues in due order, and strong cues that won today's roll.
+ * Its first read is one covering index range over scheduling columns.
+ */
+export function readVocabularyPureCueStreams(now:string):{rechecks:VocabularyPureCueCandidate[];fragile:VocabularyPureCueCandidate[];strong:VocabularyPureCueCandidate[]} {
   const learner=requireLearnerId();
-  // First read: scheduling facts only, one covering index range over the learner's enabled cues.
   const rows=getDb().prepare(`SELECT content_id,next_eligible_at,last_practised_at,strong_since,strong_successes,maintenance_identity,reset_until,recheck_at
     FROM learner_pure_cue_schedules WHERE learner_id=? AND enabled=1`).all(learner) as {content_id:string;next_eligible_at:string|null;last_practised_at:string|null;
       strong_since:string|null;strong_successes:number;maintenance_identity:string|null;reset_until:string|null;recheck_at:string|null}[];
-  const contending=rows.map((row):PureCueSelectionCandidate & {recheckAt:string|null}=>({id:row.content_id,maintenanceIdentity:row.maintenance_identity??undefined,
+  const cues=rows.map((row):VocabularyPureCueCandidate=>({id:row.content_id,maintenanceIdentity:row.maintenance_identity??undefined,
     active:row.reset_until===null||row.reset_until<=now,lastStudiedAt:row.last_practised_at,nextDueAt:row.next_eligible_at??now,
-    strongSince:row.strong_since,strongSuccesses:Number(row.strong_successes),recheckAt:row.recheck_at}))
-    // Only a due recheck or a cue with a routine role can be chosen; others need no probes.
-    .filter(cue=>cue.recheckAt!==null?cue.active&&cue.recheckAt<=now:pureCueSelectionRole(learner,cue,now)!==null);
+    strongSince:row.strong_since,strongSuccesses:Number(row.strong_successes),recheckAt:row.recheck_at}));
+  const role=(cue:VocabularyPureCueCandidate)=>cue.recheckAt===null?pureCueSelectionRole(learner,cue,now):null;
+  return {rechecks:cues.filter(cue=>cue.active&&cue.recheckAt!==null&&cue.recheckAt<=now)
+      .sort((a,b)=>a.recheckAt!.localeCompare(b.recheckAt!)||a.id.localeCompare(b.id)),
+    fragile:cues.filter(cue=>role(cue)==='fragile').sort((a,b)=>a.nextDueAt.localeCompare(b.nextDueAt)||a.id.localeCompare(b.id)),
+    strong:cues.filter(cue=>role(cue)==='strong').sort((a,b)=>a.id.localeCompare(b.id))};
+}
+/** Per-cue content checks, run only for cues a stream reaches. */
+export function vocabularyPureCueUsability():(contentId:string)=>boolean {
+  const learner=requireLearnerId();
   const eligible=getDb().prepare(`SELECT 1 FROM content_items c WHERE c.content_id=:id AND ${eligibleContent}`);
   // Reconciliation gates need identities only; body, assessment and accepted forms
   // are loaded after scheduling chooses this cue.
   const related=getDb().prepare(`SELECT word_id FROM content_words WHERE content_id=? UNION SELECT word_id FROM exercise_answer_words WHERE exercise_id=?`);
-  const cues=contending.filter(cue=>eligible.get({id:cue.id,learner})!==undefined
-    &&(related.all(cue.id,cue.id) as {word_id:string}[]).every(word=>!isSenseContentReconciliationPending(word.word_id)));
-  let draw=0;const random=()=>parseInt(createHash('sha256').update(`${input.sessionSeed}/${draw++}`).digest('hex').slice(0,8),16)/0x100000000;
-  const rechecks=cues.flatMap(cue=>cue.active&&cue.recheckAt!==null&&cue.recheckAt<=now
-    ? [{id:cue.id,recheckAt:cue.recheckAt}] : []);
-  const routine=selectPureCuesForSession({learnerId:requireLearnerId(),cues:cues.filter(cue=>cue.recheckAt===null),
-    ordinaryReviewCount:input.ordinaryReviewCount,now,random}).selected;
-  const hydrate=(id:string)=>{
-    const content=getVocabularyContent(id);
-    if(!content||content.kind!=='exercise')throw new Error('Selected pure cue disappeared');
-    return content;
-  };
-  return {rechecks:rechecks.sort((a,b)=>a.recheckAt.localeCompare(b.recheckAt)||a.id.localeCompare(b.id))
-    .map(cue=>hydrate(cue.id)),routine:routine.map(cue=>hydrate(cue.id))};
+  return contentId=>eligible.get({id:contentId,learner})!==undefined
+    &&(related.all(contentId,contentId) as {word_id:string}[]).every(word=>!isSenseContentReconciliationPending(word.word_id));
+}
+/** Seeded draw shared by every pure-cue sampling step of one session. */
+export function vocabularyPureCueRandom(sessionSeed:string):()=>number {
+  let draw=0;return ()=>parseInt(createHash('sha256').update(`${sessionSeed}/${draw++}`).digest('hex').slice(0,8),16)/0x100000000;
+}
+export function hydrateVocabularyPureCue(id:string):VocabularyContent {
+  const content=getVocabularyContent(id);
+  if(!content||content.kind!=='exercise')throw new Error('Selected pure cue disappeared');
+  return content;
+}
+/** Untimed planning: every due fragile cue, strong slots scaled to all due review. */
+export function planVocabularyPureCues(input:PureCueSelectionInput):{rechecks:VocabularyContent[];routine:VocabularyContent[]} {
+  const now=input.now??new Date().toISOString();if(input.adopt!==false)adoptVocabularyPureCues(now);
+  const streams=readVocabularyPureCueStreams(now);const usable=vocabularyPureCueUsability();
+  const routine=selectPureCuesForSession({learnerId:requireLearnerId(),cues:[...streams.fragile,...streams.strong].filter(cue=>usable(cue.id)),
+    ordinaryReviewCount:input.ordinaryReviewCount,now,random:vocabularyPureCueRandom(input.sessionSeed)}).selected;
+  return {rechecks:streams.rechecks.filter(cue=>usable(cue.id)).map(cue=>hydrateVocabularyPureCue(cue.id)),
+    routine:routine.map(cue=>hydrateVocabularyPureCue(cue.id))};
 }

@@ -14,8 +14,15 @@ export const TIMED_SESSION_NOTE_MAX_LENGTH = 500;
 /** Each appearance rests an item for a random gap in this range, so returns do not form a pattern. */
 export const TIMED_REST_MIN_CARDS = 2;
 export const TIMED_REST_MAX_CARDS = 5;
-/** Share of picks (out of 100) that try rested pressing work before the ordinary weighted draw. */
+/** Share of picks (out of 100) that try rested pressing work before the ordinary random draw. */
 export const PRESSING_TIER_SHARE = 70;
+/** Review words and fragile pure cues admitted per minute of a session's time allowance. */
+export const TIMED_REVIEW_ITEMS_PER_MINUTE = 5;
+/** The review bound for an allowance: a 20-minute day admits at most 100, a 5-minute extension 25. */
+export function timedReviewBound(allowanceMs: number): number {
+  if (!Number.isFinite(allowanceMs) || allowanceMs <= 0) throw new Error('A timed session requires a positive allowance');
+  return Math.ceil(allowanceMs / 60_000 * TIMED_REVIEW_ITEMS_PER_MINUTE);
+}
 
 export function isDailyStudyMinutes(value: unknown): value is DailyStudyMinutes {
   return typeof value === 'number' && (DAILY_STUDY_MINUTE_CHOICES as readonly number[]).includes(value);

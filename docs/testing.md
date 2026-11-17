@@ -548,6 +548,13 @@ request ID.
 unknown historical values, learner-scoped writes, repeat migration, fresh schema
 equivalence, and the acceptance time index.
 
+`vocabulary-timed-admission.test.ts` covers timed admission: the per-minute review
+bound, top-of-ranking admission with lazy content checks, replacement of a failing
+candidate, pressing-first order with interleaved fragile cues, rechecks outside the
+bound and strong slots scaled to admitted review. Session-level timed behavior,
+including the random ordinary draw, exhaustion and unreached new words, is in
+`vocabulary-study.test.ts` and `vocabulary-timed-selection.test.ts`.
+
 `vocabulary-composition-reads.test.ts` compares the indexed review and pure-cue
 reads with the full-scan reference in `scripts/lib/session-composition-reference.ts`
 over randomized learner states, clocks and cue seeds, and checks the review read's
