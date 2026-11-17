@@ -21,7 +21,9 @@ continuous replication or a long-term archive. Preserve existing S3 history;
 receiver retention does not remove it or eliminate its storage charges.
 
 The source uses SQLite's online backup API to produce a coherent standalone file
-while the app runs. It stages in `/tmp`, outside the live `/data` volume, then
+while the app runs. It pins one WAL read transaction for the copy so other
+connections cannot repeatedly restart it; the worker deadline bounds checkpoint
+delay and WAL growth. It stages in `/tmp`, outside the live `/data` volume, then
 streams the completed file over Fly's private network. Do not copy an active
 `app.db` alone. Capture concurrency is one; scratch admission accounts for main
 file, WAL, and margin. The default transfer bound is 4 GiB. Verify actual scratch
