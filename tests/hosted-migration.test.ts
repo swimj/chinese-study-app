@@ -1,36 +1,50 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { runReplicatedMigration } from '../scripts/lib/hosted-migration.ts';
+import { runBackedUpMigration } from '../scripts/lib/hosted-migration.ts';
 import type { CommandRunner } from '../scripts/lib/hosted-upgrade.ts';
 
-const input = { databasePath: '/data/app.db', socketPath: '/data/litestream.sock', confirmAppStopped: true };
-function harness(failure?: 'before' | 'migration' | 'after') {
+const input = { databasePath: '/data/app.db', confirmAppStopped: true, preReleaseBackupId: 'pre', releaseId: 'release-1',
+  previousRevision: 'a'.repeat(40), sourceRevision: 'b'.repeat(40), sourceApp: 'production' };
+const now = Date.parse('2026-11-17T00:00:00Z');
+function harness(failure?: 'before' | 'migration' | 'after' | 'start', receiptChange = {}) {
   const calls: string[] = [];
-  const run: CommandRunner = async (file) => {
-    const stage = file === 'litestream' ? calls.length === 0 ? 'before' : 'after' : 'migration';
+  const before = {version: 1, id: 'pre', kind: 'release', releaseId: 'release-1', sourceRevision: input.previousRevision,
+    sourceApp: input.sourceApp, startedAt: new Date(now - 1000).toISOString(), receivedAt: new Date(now).toISOString(), ...receiptChange};
+  const run: CommandRunner = async (_file, argv) => {
+    const stage = argv.includes('--action=status') ? 'before' : argv.includes('--action=create') ? 'after' : 'migration';
     calls.push(stage);
     if (stage === failure) throw new Error('simulated failure');
-    return { stdout: JSON.stringify(stage === 'migration' ? { appliedThisRun: ['migration'], pending: [] }
-      : { db_path: '/data/app.db', txid: stage === 'before' ? 10 : 11, replica_txid: stage === 'before' ? 10 : 11 }), stderr: '' };
+    return { stdout: JSON.stringify(stage === 'before' ? { backups: [before] } : stage === 'migration' ? { appliedThisRun: ['migration'], pending: [] }
+      : { id: argv.find(a => a.startsWith('--id='))!.slice(5), kind: 'hourly', sourceRevision: input.sourceRevision,
+        sourceApp: input.sourceApp, startedAt: new Date(now).toISOString() }), stderr: '' };
   };
-  return { run, calls };
+  const source = { async start() { calls.push('start'); if (failure === 'start') throw new Error('simulated failure'); return async () => { calls.push('stop'); }; } };
+  return { run, calls, source };
 }
-test('migration waits for WAL attachment and then verifies the committed backup', async () => {
+test('migration verifies recovery point, migrates offline, captures hourly and closes source', async () => {
   const h = harness();
-  const result = await runReplicatedMigration(input, h.run);
-  assert.deepEqual(h.calls, ['before', 'migration', 'after']);
-  assert.equal(result.replication.after.txid, 11);
+  const result = await runBackedUpMigration(input, h.run, h.source, () => now);
+  assert.deepEqual(h.calls, ['before', 'migration', 'start', 'after', 'stop']);
+  assert.equal(result.backup.after.kind, 'hourly');
 });
-test('migration refuses without the stopped-app confirmation', async () => {
+test('migration refuses without stopped-app confirmation', async () => {
   const h = harness();
-  await assert.rejects(runReplicatedMigration({ ...input, confirmAppStopped: false }, h.run), /Stop the app/);
+  await assert.rejects(runBackedUpMigration({ ...input, confirmAppStopped: false }, h.run, h.source, () => now), /Stop the app/);
   assert.deepEqual(h.calls, []);
 });
-for (const failure of ['before', 'migration', 'after'] as const) {
+for (const change of [{ startedAt: new Date(now - 3600001).toISOString() }, { sourceApp: 'rehearsal' },
+  { sourceRevision: input.sourceRevision }, {releaseId: 'wrong'}, {kind: 'hourly'}, {id: 'other'}, {startedAt: 'invalid'}]) {
+  test(`migration refuses wrong or stale recovery point ${JSON.stringify(change)}`, async () => {
+    const h = harness(undefined, change);
+    await assert.rejects(runBackedUpMigration(input, h.run, h.source, () => now), /retained verified pre-release/);
+    assert.deepEqual(h.calls, ['before']);
+  });
+}
+for (const failure of ['before', 'migration', 'start', 'after'] as const) {
   test(`migration fails closed at ${failure}`, async () => {
     const h = harness(failure);
-    await assert.rejects(runReplicatedMigration(input, h.run), failure === 'after' ? /may have committed/ : /simulated failure/);
-    assert.deepEqual(h.calls, failure === 'before' ? ['before'] : failure === 'migration' ? ['before', 'migration'] : ['before', 'migration', 'after']);
+    await assert.rejects(runBackedUpMigration(input, h.run, h.source, () => now), ['after', 'start'].includes(failure) ? /may have committed/ : /simulated failure/);
+    assert.deepEqual(h.calls, failure === 'before' ? ['before'] : failure === 'migration' ? ['before', 'migration'] : failure === 'start' ? ['before', 'migration', 'start'] : ['before', 'migration', 'start', 'after', 'stop']);
   });
 }
 
