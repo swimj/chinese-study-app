@@ -161,11 +161,13 @@ export function HomeOverviewPanel({
 }
 
 export function SessionSettingsPanel({
+  visible = true,
   backendStatus,
   onSaveSessionSettings,
   onSavingChange,
   onClose,
 }: {
+  visible?: boolean;
   backendStatus: BackendStatus | null;
   onSaveSessionSettings: (settings: {
     dailyNewWordLimit?: number;
@@ -322,6 +324,7 @@ export function SessionSettingsPanel({
   }
 
   useEffect(() => {
+    if (!visible) return;
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape') {
         if (limitSaving) {
@@ -344,7 +347,7 @@ export function SessionSettingsPanel({
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [dailyMinutesDraft, committedDailyMinutes, timedSessions, limitDraft, introductionOrderDraft, introductionSpacingDraft, committedIntroductionOrder, committedIntroductionSpacing, sourceDraft, presentationDraft, sentencePresentationDraft, interestsDraft, committedInterests, limitSaving, settingsDirty, committedLimit, committedSource, committedPresentation, committedSentencePresentation]);
+  }, [visible, dailyMinutesDraft, committedDailyMinutes, timedSessions, limitDraft, introductionOrderDraft, introductionSpacingDraft, committedIntroductionOrder, committedIntroductionSpacing, sourceDraft, presentationDraft, sentencePresentationDraft, interestsDraft, committedInterests, limitSaving, settingsDirty, committedLimit, committedSource, committedPresentation, committedSentencePresentation]);
 
   useEffect(() => {
     if (limitEditing) {

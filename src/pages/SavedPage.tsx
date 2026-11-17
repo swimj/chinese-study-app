@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { fetchSavedCollection } from '../services/api';
 import { MAX_REACTION_NOTE_LENGTH, type ContentReactionState, type SavedCollection } from '../domain/content-reactions';
 import type { VocabularyJson } from '../domain/vocabulary-content';
-import { useContentReactions, type ContentReactionsApi } from '../features/reactions/useContentReactions';
+import type { ContentReactions } from '../features/reactions/useContentReactions';
 import { ReactionControls } from '../features/reactions/ReactionControls';
 import { choiceOf, reactionShortcut, toggleNotForMe, toggleSaved, withNote, type ReactionChoice } from '../features/reactions/reaction-state';
 import { groupItems, initiallySaved, savedItems, shuffled, visibleItems, type SavedItem, type SavedView } from '../features/reactions/saved-collection';
@@ -11,7 +11,7 @@ import { FeedbackBody } from './VocabularyFeedbackPage';
 import './SavedPage.css';
 import '../features/reactions/reactions.css';
 
-export type SavedPageApi = { fetchCollection: typeof fetchSavedCollection; reactions?: ContentReactionsApi };
+export type SavedPageApi = { fetchCollection: typeof fetchSavedCollection };
 const defaultApi: SavedPageApi = { fetchCollection: fetchSavedCollection };
 
 function shortDate(at: string): string {
@@ -71,8 +71,7 @@ function SavedCard({ item, state, onChange, onWord, activeWord, large = false }:
 }
 
 /** The learner's saved connections and lessons, plus recent connections to browse and save. */
-export function SavedPage({ api = defaultApi }: { api?: SavedPageApi }) {
-  const reactions = useContentReactions('saved', api.reactions);
+export function SavedPage({ reactions, api = defaultApi }: { reactions: ContentReactions; api?: SavedPageApi }) {
   const [collection, setCollection] = useState<SavedCollection | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<SavedView>('saved');
@@ -101,7 +100,7 @@ export function SavedPage({ api = defaultApi }: { api?: SavedPageApi }) {
 
   function change(item: SavedItem, choice: ReactionChoice) {
     if (choice.reaction === 'saved') setListed((current) => current.has(item.key) ? current : new Set([...current, item.key]));
-    reactions.change(item.subject, choice);
+    reactions.change('saved', item.subject, choice);
   }
   function chooseWord(next: string) {
     setWord((current) => current === next ? null : next);
@@ -149,7 +148,7 @@ export function SavedPage({ api = defaultApi }: { api?: SavedPageApi }) {
       </button>
     </p> : null}
     {error ? <p role="alert" className="reaction-error">{error} <button type="button" className="saved-button" onClick={() => void load()}>Try again</button></p> : null}
-    {reactions.error ? <p role="alert" className="reaction-error">{reactions.error}</p> : null}
+    {reactions.errors.saved ? <p role="alert" className="reaction-error">{reactions.errors.saved}</p> : null}
     {!collection && !error ? <p className="notes" role="status">Loading…</p> : null}
     {collection && !visible.length ? <p className="saved-empty">
       {word ? 'Nothing here with that word.' : view === 'saved' ? 'Nothing saved yet.' : 'No connections yet.'}</p> : null}

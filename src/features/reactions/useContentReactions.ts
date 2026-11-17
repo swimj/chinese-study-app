@@ -6,14 +6,17 @@ import type { ReactionChoice } from './reaction-state';
 export type ContentReactionsApi = { fetch: typeof fetchContentReactions; save: typeof saveContentReaction };
 const defaultApi: ContentReactionsApi = { fetch: fetchContentReactions, save: saveContentReaction };
 
+export type ContentReactions = ReturnType<typeof useContentReactions>;
+
 /**
  * The learner's reactions with optimistic updates. Writes for one subject run in
  * order, so the last choice wins; a failed write restores the server's state.
  */
-export function useContentReactions(surface: ReactionSurface, api: ContentReactionsApi = defaultApi) {
+export function useContentReactions(api: ContentReactionsApi = defaultApi) {
   const [states, setStates] = useState<ReadonlyMap<string, ContentReactionState>>(new Map());
   const [loaded, setLoaded] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [writeErrors, setWriteErrors] = useState<Partial<Record<ReactionSurface, string | null>>>({});
   const confirmed = useRef(new Map<string, ContentReactionState | null>());
   const chains = useRef(new Map<string, Promise<void>>());
   const mounted = useRef(true);
@@ -28,12 +31,12 @@ export function useContentReactions(surface: ReactionSurface, api: ContentReacti
       setStates((current) => new Map([...map, ...current]));
       setLoaded(true);
     }).catch((cause: unknown) => {
-      if (mounted.current && !controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'Could not load saved items.');
+      if (mounted.current && !controller.signal.aborted) setLoadError(cause instanceof Error ? cause.message : 'Could not load saved items.');
     });
     return () => { mounted.current = false; controller.abort(); };
   }, [api]);
 
-  const change = useCallback((subject: ReactionSubject, choice: ReactionChoice) => {
+  const change = useCallback((surface: ReactionSurface, subject: ReactionSubject, choice: ReactionChoice) => {
     const key = reactionSubjectKey(subject);
     const optimistic: ContentReactionState | null = choice.reaction === null ? null
       : { subject, reaction: choice.reaction, reasons: choice.reasons, note: choice.note, updatedAt: new Date().toISOString() };
@@ -43,7 +46,7 @@ export function useContentReactions(surface: ReactionSurface, api: ContentReacti
       return next;
     });
     put(optimistic);
-    setError(null);
+    setWriteErrors((current) => ({ ...current, [surface]: null }));
     const previous = chains.current.get(key) ?? Promise.resolve();
     const run = previous.then(async () => {
       try {
@@ -52,13 +55,18 @@ export function useContentReactions(surface: ReactionSurface, api: ContentReacti
         if (mounted.current && chains.current.get(key) === run) put(saved);
       } catch (cause) {
         if (!mounted.current) return;
-        setError(cause instanceof Error ? cause.message : 'Could not save.');
+        setWriteErrors((current) => ({ ...current, [surface]: cause instanceof Error ? cause.message : 'Could not save.' }));
         if (chains.current.get(key) === run) put(confirmed.current.get(key) ?? null);
       }
     });
     chains.current.set(key, run);
-  }, [api, surface]);
+  }, [api]);
 
   const stateFor = useCallback((subject: ReactionSubject) => states.get(reactionSubjectKey(subject)) ?? null, [states]);
-  return { states, stateFor, change, loaded, error };
+  const errors = {
+    home: writeErrors.home === undefined ? loadError : writeErrors.home,
+    saved: writeErrors.saved === undefined ? loadError : writeErrors.saved,
+    feedback: writeErrors.feedback === undefined ? loadError : writeErrors.feedback,
+  };
+  return { states, stateFor, change, loaded, errors };
 }

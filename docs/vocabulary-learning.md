@@ -387,10 +387,12 @@ load and compute milliseconds; a per-completion summary written at closure is
 the planned remedy if that cost grows.
 
 Home shows these below Connections and What's New (`src/pages/HomeProgress.tsx`),
-and the week's measured active time beside the dots. Home requests progress only
-after the Start preview settles, since the computation runs on the server's
-request thread; until it arrives the sections are absent, and a failure shows one
-retry line. The compact layout (Connections expanded) hides them with the dots.
+and the week's measured active time beside the dots. Progress loads separately
+from the Start card. Home stays mounted when the learner switches panes, so its
+loaded data and open controls are there on return. Reloading the document starts
+a new load. Returning from a study session refreshes progress, statistics, and
+Connections. A failed progress request offers an explicit retry. The compact
+layout (Connections expanded) hides progress and the study-week dots.
 
 Closure reads no schedules and changes no learner state; an item left unstarted
 is simply more overdue at the next Start. It fills `vocabulary_timed_session_records`:

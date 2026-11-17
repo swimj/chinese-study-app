@@ -14,7 +14,8 @@ export type HomeConnectionReactions = {
   error: string | null;
 };
 
-export function HomeConnections({ debrief, expanded, error, retrying, onToggle, onRetry, onReload, reactions }: {
+export function HomeConnections({ debrief, expanded, error, retrying, onToggle, onRetry, onReload, reactions, visible = true }: {
+  visible?: boolean;
   debrief: SessionDebrief; expanded: boolean; error: string | null; retrying: boolean;
   onToggle: () => void; onRetry: () => void; onReload: () => void; reactions?: HomeConnectionReactions;
 }) {
@@ -34,7 +35,7 @@ export function HomeConnections({ debrief, expanded, error, retrying, onToggle, 
     setIndex((activeIndex + direction + notes.length) % notes.length);
   }
   useEffect(() => {
-    if (!expanded || notes.length < 2) return;
+    if (!visible || !expanded || notes.length < 2) return;
     function onKey(event: KeyboardEvent) {
       const target = event.target;
       const blocked = isEditableKeyboardTarget(target)
@@ -53,9 +54,9 @@ export function HomeConnections({ debrief, expanded, error, retrying, onToggle, 
     }
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [expanded, activeIndex, notes.length]);
+  }, [visible, expanded, activeIndex, notes.length]);
   useEffect(() => {
-    if (!expanded || !notes.length || !reactions) return;
+    if (!visible || !expanded || !notes.length || !reactions) return;
     function onKey(event: KeyboardEvent) {
       const target = event.target;
       const blocked = isEditableKeyboardTarget(target)
@@ -68,7 +69,7 @@ export function HomeConnections({ debrief, expanded, error, retrying, onToggle, 
     }
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [expanded, activeIndex, notes.length, reactions]);
+  }, [visible, expanded, activeIndex, notes.length, reactions]);
   const activeReaction = reactions && notes.length ? reactions.stateFor(activeIndex) : null;
   function toggle() {
     setLoop(null);
@@ -76,10 +77,10 @@ export function HomeConnections({ debrief, expanded, error, retrying, onToggle, 
     onToggle();
   }
   useEffect(() => {
-    if (!focusAfterToggle.current) return;
+    if (!visible || !focusAfterToggle.current) return;
     focusAfterToggle.current = false;
     (expanded ? toggleRef : previewRef).current?.focus();
-  }, [expanded]);
+  }, [visible, expanded]);
   if (debrief.status === 'ready' && notes.length === 0) return null;
   return <section className={`home-connections${expanded ? ' is-expanded' : ' is-compact'}`} aria-label="Last session connections">
     <header className="home-connections-heading">

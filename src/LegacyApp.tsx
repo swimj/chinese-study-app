@@ -320,28 +320,28 @@ function App({ onSignOut, accountScope = 'trusted-local' }: { onSignOut?: () => 
           }
         : undefined}
     >
-      {currentPage === 'home' ? (
-        <HomePage
-          guideToSettings={guideToSettings}
-          onSettingsOpened={() => {
-            if (!guideToSettings) return;
-            setSettingsUnseen(false);
-            try { window.localStorage.setItem(settingsVisitedKey, 'true'); }
-            catch { /* Optional browser storage must not block settings. */ }
-          }}
-          updatesCatalog={updatesCatalog}
-          unseenPostIds={attention.whatsNewUnseenPostIds}
-          onUnseenBadgeVisible={attention.acknowledgeWhatsNewBadge}
-          updatesCollapsed={homeUpdatesCollapsed}
-          onToggleUpdatesCollapsed={() => setHomeUpdatesCollapsed(collapsed => !collapsed)}
-          onOpenUpdate={(id) => { setSelectedUpdateId(id); setAboutView('whats-new'); setCurrentPage('about'); }}
-          onViewAllUpdates={() => { setSelectedUpdateId(null); setAboutView('whats-new'); setCurrentPage('about'); }}
-          backendStatus={backendStatus}
-          onSaveSessionSettings={saveSessionSettings}
-          onNudgeDiet={nudgeDietAndRefresh}
-          {...studySession.homePageProps}
-        />
-      ) : currentPage === 'priority' ? (
+      <HomePage
+        visible={currentPage === 'home'}
+        guideToSettings={guideToSettings}
+        onSettingsOpened={() => {
+          if (!guideToSettings) return;
+          setSettingsUnseen(false);
+          try { window.localStorage.setItem(settingsVisitedKey, 'true'); }
+          catch { /* Optional browser storage must not block settings. */ }
+        }}
+        updatesCatalog={updatesCatalog}
+        unseenPostIds={attention.whatsNewUnseenPostIds}
+        onUnseenBadgeVisible={attention.acknowledgeWhatsNewBadge}
+        updatesCollapsed={homeUpdatesCollapsed}
+        onToggleUpdatesCollapsed={() => setHomeUpdatesCollapsed(collapsed => !collapsed)}
+        onOpenUpdate={(id) => { setSelectedUpdateId(id); setAboutView('whats-new'); setCurrentPage('about'); }}
+        onViewAllUpdates={() => { setSelectedUpdateId(null); setAboutView('whats-new'); setCurrentPage('about'); }}
+        backendStatus={backendStatus}
+        onSaveSessionSettings={saveSessionSettings}
+        onNudgeDiet={nudgeDietAndRefresh}
+        {...studySession.homePageProps}
+      />
+      {currentPage === 'priority' ? (
         <>
           <NestedNav>
             <nav className="reflection-view-rail" aria-label="Words views">
