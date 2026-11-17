@@ -548,6 +548,13 @@ request ID.
 unknown historical values, learner-scoped writes, repeat migration, fresh schema
 equivalence, and the acceptance time index.
 
+`vocabulary-due-columns-migration.test.ts` covers moving scheduling facts from
+JSON into columns with merged state preserved, due times against hand-computed
+dates, trigger maintenance after later writes, guards against keys written back
+into JSON, covering index reads, and a rolled-back batch for an underivable
+schedule. Hand-built vocabulary fixtures apply 0077 through
+`tests/helpers/vocabulary-due-columns.ts`.
+
 `usage-new-word-totals-migration.test.ts` covers populated new-word backfill,
 learner-scoped summary counts, unknown legacy history, completed-session UTC
 attribution, saved snapshot correction, admission preservation, repeated

@@ -3,6 +3,7 @@ import { requireLearnerId } from './learner-context.ts';
 import { requestWordReserveReconciliation } from './word-reserve.ts';
 import { emitBackendEvent } from './vocabulary-content.ts';
 import type { VocabularyWordMode } from '../../src/domain/vocabulary-session.ts';
+import { mergeWordSchedulerState, WORD_SCHEDULE_COLUMNS_SQL } from './vocabulary-schedule-columns.ts';
 
 export type VocabularyLearnerWord = {
   learnerId: string; wordId: string; inStash: boolean; addedAt: string;
@@ -31,6 +32,8 @@ export type VocabularyWordSchedule = {
   policyVersion: string; schedulerState: VocabularySchedulerState; stateVersion: number;
   refreshRequestedAt: string | null; refreshUntil: string | null;
 };
+/** Enrolment defaults that stay in JSON; interval 24 hours and enabled live in columns. */
+const DEFAULT_SCHEDULER_JSON = { easeFactor: 2.5, cleanCoveredSessions: 0 };
 export class VocabularyStateConflict extends Error {}
 export class VocabularyStateInputError extends Error {}
 export class VocabularyStateNotFoundError extends Error {}
@@ -61,13 +64,14 @@ export function getVocabularyLearnerWord(wordId: string): VocabularyLearnerWord 
   return row ? { ...row, inStash: row.inStash === 1, automaticPromotionPaused: row.automaticPromotionPaused === 1 } : null;
 }
 export function getVocabularyWordSchedule(wordId: string): VocabularyWordSchedule | null {
-  const row = getDb().prepare(`SELECT word_id AS wordId, next_eligible_at AS nextEligibleAt,
-    last_practised_at AS lastPractisedAt, policy_version AS policyVersion, scheduler_state_json AS schedulerStateJson,
-    state_version AS stateVersion, refresh_requested_at AS refreshRequestedAt, refresh_until AS refreshUntil
-    FROM learner_word_schedules WHERE learner_id = ? AND word_id = ?`).get(requireLearnerId(), wordId) as (Omit<VocabularyWordSchedule, 'schedulerState'> & { schedulerStateJson: string }) | undefined;
+  const row = getDb().prepare(`SELECT s.word_id AS wordId, s.next_eligible_at AS nextEligibleAt,
+    s.last_practised_at AS lastPractisedAt, s.policy_version AS policyVersion, s.scheduler_state_json,${WORD_SCHEDULE_COLUMNS_SQL('s')},
+    s.state_version AS stateVersion, s.refresh_requested_at AS refreshRequestedAt, s.refresh_until AS refreshUntil
+    FROM learner_word_schedules s WHERE s.learner_id = ? AND s.word_id = ?`).get(requireLearnerId(), wordId) as Record<string, unknown> | undefined;
   if (!row) return null;
-  const { schedulerStateJson, ...fields } = row;
-  return { ...fields, schedulerState: JSON.parse(schedulerStateJson) as VocabularySchedulerState };
+  return { wordId: row.wordId as string, nextEligibleAt: row.nextEligibleAt as string | null, lastPractisedAt: row.lastPractisedAt as string | null,
+    policyVersion: row.policyVersion as string, schedulerState: mergeWordSchedulerState(row), stateVersion: row.stateVersion as number,
+    refreshRequestedAt: row.refreshRequestedAt as string | null, refreshUntil: row.refreshUntil as string | null };
 }
 /** Enrollment is explicit. Merely looking up a lexical word creates no learner state. */
 export function addVocabularyWord(wordId: string, intendedUseText: string | null = null): VocabularyLearnerWord {
@@ -85,8 +89,8 @@ export function addVocabularyWord(wordId: string, intendedUseText: string | null
       ON CONFLICT(learner_id, word_id) DO UPDATE SET in_stash = 1, state_version = state_version + 1`)
       .run(learnerId, wordId, now, intendedUseText, now);
     getDb().prepare(`INSERT OR IGNORE INTO learner_word_schedules
-      (learner_id, word_id, policy_version, scheduler_state_json) VALUES (?, ?, 'vocabulary-v1', ?)`)
-      .run(learnerId, wordId, JSON.stringify({ intervalHours: 24, easeFactor: 2.5, enabled: 1, cleanCoveredSessions: 0 }));
+      (learner_id, word_id, policy_version, scheduler_state_json, interval_hours, enabled) VALUES (?, ?, 'vocabulary-v1', ?, 24, 1)`)
+      .run(learnerId, wordId, JSON.stringify(DEFAULT_SCHEDULER_JSON));
     emitBackendEvent({ name: 'vocabulary.word.added', learnerId, entityKind: 'word', entityId: wordId,
       actorKind: 'learner', actorId: learnerId, data: { intendedUseText } });
     requestWordReserveReconciliation();
@@ -102,8 +106,8 @@ export function enrollVocabularyDietWord(wordId: string): VocabularyLearnerWord 
     const learnerId=requireLearnerId(),now=new Date().toISOString();
     getDb().prepare(`INSERT INTO learner_words(learner_id,word_id,in_stash,added_at,mode,mode_changed_at)
       VALUES (?,?,0,?,'unstudied',?)`).run(learnerId,wordId,now,now);
-    getDb().prepare(`INSERT INTO learner_word_schedules(learner_id,word_id,policy_version,scheduler_state_json)
-      VALUES (?,?,'vocabulary-v1',?)`).run(learnerId,wordId,JSON.stringify({intervalHours:24,easeFactor:2.5,enabled:1,cleanCoveredSessions:0}));
+    getDb().prepare(`INSERT INTO learner_word_schedules(learner_id,word_id,policy_version,scheduler_state_json,interval_hours,enabled)
+      VALUES (?,?,'vocabulary-v1',?,24,1)`).run(learnerId,wordId,JSON.stringify(DEFAULT_SCHEDULER_JSON));
     emitBackendEvent({name:'vocabulary.word.enrolled',learnerId,actorKind:'learner',actorId:learnerId,entityKind:'word',entityId:wordId,
       data:{source:'selected_diet_word',inStash:false}});
     return requireWord(wordId);
@@ -186,8 +190,7 @@ export function requestVocabularyRefresh(wordId: string, now = new Date().toISOS
     if (word.mode !== 'maintain') throw new VocabularyStateInputError('Temporary refresh is for Maintain words');
     const until = new Date(Date.parse(now) + 3 * 86_400_000).toISOString();
     const updated = getDb().prepare(`UPDATE learner_word_schedules SET refresh_requested_at = ?, refresh_until = ?,
-      next_eligible_at = MAX(?, COALESCE(json_extract(scheduler_state_json, '$.resetUntil'), ''),
-        COALESCE(json_extract(scheduler_state_json, '$.postCompensationEarliestCheckAt'), '')),
+      next_eligible_at = MAX(?, COALESCE(reset_until, ''), COALESCE(post_compensation_check_at, '')),
       state_version = state_version + 1 WHERE learner_id = ? AND word_id = ?`)
       .run(now, until, now, word.learnerId, wordId);
     if (updated.changes !== 1) throw new Error('Enrolled word has no production schedule');
@@ -218,7 +221,7 @@ export function listVocabularyCandidates(limit = 30, now = new Date().toISOStrin
     JOIN learner_word_schedules s USING (learner_id, word_id)
     WHERE w.learner_id = ? AND w.dismissed_at IS NULL AND (w.mode != 'unstudied' OR w.in_stash = 1)
       AND (s.next_eligible_at IS NULL OR s.next_eligible_at <= ?)
-      AND COALESCE(json_extract(s.scheduler_state_json, '$.enabled'), 1) = 1
+      AND s.enabled = 1
       ${modeClause} ${stashClause}
     ORDER BY CASE WHEN s.refresh_until > ? THEN 0 ELSE 1 END,
       CASE w.mode WHEN 'solidify' THEN 0 WHEN 'practice' THEN 1 WHEN 'maintain' THEN 2 ELSE 3 END,

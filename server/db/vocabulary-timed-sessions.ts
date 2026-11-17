@@ -51,7 +51,7 @@ type CueTarget = { kind: 'pure_cue'; id: string };
 /** When the classic rule would have shown each target, and whether its production schedule sits on the lapse interval. */
 export function timedTargetFacts(targets: readonly (WordTarget | CueTarget)[]): VocabularyTimedSessionContext['facts'] {
   const learnerId = requireLearnerId(); const facts: Record<string, { classicDueAt: string | null; priorLapse: boolean | null }> = {};
-  const schedule = getDb().prepare('SELECT next_eligible_at,scheduler_state_json FROM learner_word_schedules WHERE learner_id=? AND word_id=?');
+  const schedule = getDb().prepare('SELECT next_eligible_at,interval_hours FROM learner_word_schedules WHERE learner_id=? AND word_id=?');
   const skill = getDb().prepare('SELECT next_due_at FROM learner_owned_word_skill_state WHERE learner_id=? AND word_id=? AND skill_id=?');
   const cue = getDb().prepare('SELECT next_eligible_at FROM learner_pure_cue_schedules WHERE learner_id=? AND content_id=?');
   for (const target of targets) {
@@ -66,8 +66,8 @@ export function timedTargetFacts(targets: readonly (WordTarget | CueTarget)[]): 
       facts[timedTargetKey('word', target.id)] = { classicDueAt: row?.next_due_at ?? null, priorLapse: null };
       continue;
     }
-    const row = schedule.get(learnerId, target.id) as { next_eligible_at: string | null; scheduler_state_json: string } | undefined;
-    const interval = row ? (JSON.parse(row.scheduler_state_json) as { intervalHours?: number }).intervalHours : undefined;
+    const row = schedule.get(learnerId, target.id) as { next_eligible_at: string | null; interval_hours: number } | undefined;
+    const interval = row?.interval_hours;
     facts[timedTargetKey('word', target.id)] = { classicDueAt: row?.next_eligible_at ?? null,
       priorLapse: review ? interval === LAPSE_INTERVAL_HOURS : null };
   }

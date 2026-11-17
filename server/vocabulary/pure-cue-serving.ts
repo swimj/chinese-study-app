@@ -4,7 +4,7 @@ import {createHash} from 'node:crypto';
 import {getDb} from '../db/connection.ts';
 import {requireLearnerId} from '../db/learner-context.ts';
 import {getVocabularyContent} from '../db/vocabulary-content.ts';
-import type {VocabularyPureCueSchedulerState} from '../db/vocabulary-learners.ts';
+import {mergePureCueSchedulerState} from '../db/vocabulary-schedule-columns.ts';
 import {dueAtWithResetDelay,selectPureCuesForSession,type PureCueSelectionCandidate} from '../../src/domain/pure-cues.ts';
 import type {VocabularyContent} from '../../src/domain/vocabulary-content.ts';
 
@@ -19,10 +19,10 @@ const eligibleContent=`c.kind='exercise' AND c.exercise_type='pure_cue' AND c.ex
       AND COALESCE(s.enabled,1)=1 AND COALESCE(r.relevance_state,'normal')!='suppressed')`;
 /** Adoption is per content identity. Replacement never copies a predecessor's state or activation. */
 export function adoptVocabularyPureCues(now=new Date().toISOString()):void {
-  getDb().prepare(`INSERT INTO learner_pure_cue_schedules(learner_id,content_id,next_eligible_at,policy_version,scheduler_state_json)
-    SELECT :learner,c.content_id,:due,'vocabulary-pure-adoption-v1',:state FROM content_items c WHERE ${eligibleContent}
+  getDb().prepare(`INSERT INTO learner_pure_cue_schedules(learner_id,content_id,next_eligible_at,policy_version,scheduler_state_json,interval_hours,enabled)
+    SELECT :learner,c.content_id,:due,'vocabulary-pure-adoption-v1',:state,24,1 FROM content_items c WHERE ${eligibleContent}
     ON CONFLICT(learner_id,content_id) DO NOTHING`).run({learner:requireLearnerId(),due:dueAtWithResetDelay(now),
-      state:JSON.stringify({intervalHours:24,easeFactor:2.5,enabled:1,cleanCoveredSessions:0,strongSince:null,strongSuccesses:0,adoptedAt:now})});
+      state:JSON.stringify({easeFactor:2.5,cleanCoveredSessions:0,adoptedAt:now})});
 }
 type PureCueSelectionInput={ordinaryReviewCount:number;sessionSeed:string;now?:string;adopt?:boolean};
 export function selectVocabularyPureCueCandidates(input:PureCueSelectionInput):VocabularyContent[] {
@@ -31,9 +31,9 @@ export function selectVocabularyPureCueCandidates(input:PureCueSelectionInput):V
 }
 export function planVocabularyPureCues(input:PureCueSelectionInput):{rechecks:VocabularyContent[];routine:VocabularyContent[]} {
   const now=input.now??new Date().toISOString();if(input.adopt!==false)adoptVocabularyPureCues(now);
-  const rows=getDb().prepare(`SELECT c.content_id,s.scheduler_state_json,s.last_practised_at,s.next_eligible_at
+  const rows=getDb().prepare(`SELECT c.content_id,s.*
     FROM learner_pure_cue_schedules s JOIN content_items c USING(content_id)
-    WHERE s.learner_id=:learner AND COALESCE(json_extract(s.scheduler_state_json,'$.enabled'),1)=1 AND ${eligibleContent}
+    WHERE s.learner_id=:learner AND s.enabled=1 AND ${eligibleContent}
     ORDER BY c.created_at,c.content_id`).all({learner:requireLearnerId()}) as {content_id:string;scheduler_state_json:string;last_practised_at:string|null;next_eligible_at:string|null}[];
   const cues=rows.filter(row=>{
     // Reconciliation gates need identities only; body, assessment and accepted forms
@@ -43,7 +43,7 @@ export function planVocabularyPureCues(input:PureCueSelectionInput):{rechecks:Vo
       .all(row.content_id,row.content_id) as {word_id:string}[];
     return words.every(word=>!isSenseContentReconciliationPending(word.word_id));
   }).map((row):PureCueSelectionCandidate & {recheckAt:string|null}=>{
-    const state=JSON.parse(row.scheduler_state_json) as VocabularyPureCueSchedulerState;
+    const state=mergePureCueSchedulerState(row);
     const active=state.resetUntil==null||state.resetUntil<=now;
     return {id:row.content_id,maintenanceIdentity:state.maintenanceIdentity,active,
       lastStudiedAt:row.last_practised_at,nextDueAt:row.next_eligible_at??now,

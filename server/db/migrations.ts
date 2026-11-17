@@ -7,6 +7,7 @@ import { importLegacyVocabulary } from './vocabulary-import.ts';
 import { migrateSharedDictionaryBaselines } from './dictionary-baseline-sharing.ts';
 import { fillMissingNormalizedHanzi } from './hanzi-lookup.ts';
 import { recordTrivialUnstudiedPreconditions, verifyAndRecordTrivialUnstudiedPrune } from './trivial-unstudied-words-migration.ts';
+import { assertVocabularyDueColumns } from './vocabulary-due-columns-migration.ts';
 
 const PREFIX = 'app_schema:';
 const BASELINE_ID = `${PREFIX}0000_baseline`;
@@ -262,6 +263,10 @@ export const schemaMigrations: readonly SchemaMigration[] = [{
   sql: fs.readFileSync(new URL('./migrations/0076_prune_trivial_unstudied_words.sql', import.meta.url), 'utf8'),
   before: recordTrivialUnstudiedPreconditions,
   after: verifyAndRecordTrivialUnstudiedPrune,
+}, {
+  id: 'app_schema:0077_vocabulary_due_columns',
+  sql: fs.readFileSync(new URL('./migrations/0077_vocabulary_due_columns.sql', import.meta.url), 'utf8'),
+  after: assertVocabularyDueColumns,
 }];
 
 function checksum(value: string): string {

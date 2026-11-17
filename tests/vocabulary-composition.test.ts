@@ -1,3 +1,4 @@
+import { applyVocabularyDueColumns } from './helpers/vocabulary-due-columns.ts';
 import { writeVocabularyWordSenseCoverage } from '../server/db/vocabulary-sense-coverage.ts';
 import { isVocabularyProductionProxied } from '../server/vocabulary/production-coverage.ts';
 import assert from 'node:assert/strict';
@@ -29,6 +30,7 @@ beforeEach(()=>{
     INSERT INTO learners VALUES('alice'),('bob');
   `);
   for(const file of ['0062_vocabulary_sense_coverage.sql','0064_vocabulary_default_useful_senses.sql','0039_vocabulary_content.sql','0041_vocabulary_learner_state.sql','0047_vocabulary_dismissal.sql','0052_vocabulary_automatic_promotion_pause.sql','0075_learner_chat.sql'])db.exec(fs.readFileSync(new URL(`../server/db/migrations/${file}`,import.meta.url),'utf8'));
+  applyVocabularyDueColumns(db);
   ready=new Set();requested=[];
 });
 afterEach(()=>db.close());
@@ -101,7 +103,7 @@ test('unready teaching does not queue demand or enroll words and dismissed words
 test('unstudied non-stash diet enrollment remains selectable until explicitly dismissed',()=>owner(()=>{
   settings('stash_diet_split',0);lexical('diet');prepared('diet');
   db.prepare("INSERT INTO learner_words(learner_id,word_id,in_stash,added_at,mode,mode_changed_at) VALUES('alice','diet',0,?,'unstudied',?)").run(now,now);
-  db.prepare("INSERT INTO learner_word_schedules(learner_id,word_id,policy_version,scheduler_state_json) VALUES('alice','diet','test','{\"enabled\":1}')").run();
+  db.prepare("INSERT INTO learner_word_schedules(learner_id,word_id,policy_version,scheduler_state_json,interval_hours,enabled) VALUES('alice','diet','test','{}',24,1)").run();
   assert.deepEqual(compose().newWordIds,['diet']);dismissVocabularyWord('diet');assert.deepEqual(compose().newWordIds,[]);
 }));
 
@@ -109,13 +111,13 @@ function reviewWord(id:string,elapsedHours:number,intervalHours=24) {
   lexical(id);addVocabularyWord(id);changeVocabularyMode(id,'practice',1);
   const last=new Date(Date.parse(now)-elapsedHours*3_600_000).toISOString();
   const due=new Date(Date.parse(last)+intervalHours*3_600_000).toISOString();
-  db.prepare("UPDATE learner_word_schedules SET last_practised_at=?,next_eligible_at=?,scheduler_state_json=? WHERE learner_id='alice' AND word_id=?")
-    .run(last,due,JSON.stringify({intervalHours,easeFactor:2.5,enabled:1,cleanCoveredSessions:0}),id);
+  db.prepare("UPDATE learner_word_schedules SET last_practised_at=?,next_eligible_at=?,interval_hours=?,enabled=1,scheduler_state_json=? WHERE learner_id='alice' AND word_id=?")
+    .run(last,due,intervalHours,JSON.stringify({easeFactor:2.5,cleanCoveredSessions:0}),id);
 }
 function skill(id:string,kind:'recognition'|'production'|'contextual_selection',elapsedHours:number,intervalHours=24) {
   const last=new Date(Date.parse(now)-elapsedHours*3_600_000).toISOString();
   const due=new Date(Date.parse(last)+intervalHours*3_600_000).toISOString();
-  db.prepare("INSERT INTO learner_owned_word_skill_state VALUES('alice',?,?,?,2.5,1,?,?)").run(id,kind,intervalHours,due,last);
+  db.prepare("INSERT INTO learner_owned_word_skill_state(learner_id,word_id,skill_id,interval_hours,ease_factor,enabled,next_due_at,last_studied_at) VALUES('alice',?,?,?,2.5,1,?,?)").run(id,kind,intervalHours,due,last);
 }
 
 test('review selects one most urgent objective per word and orders words by that urgency',()=>owner(()=>{
@@ -139,9 +141,9 @@ test('the post-compensation gate delays production and preserves ordinary admiss
   reviewWord('interval-not-elapsed',12);
   reviewWord('future-due',96);
   reviewWord('gate-still-active',240);
-  db.exec(`UPDATE learner_word_schedules SET scheduler_state_json=json_set(scheduler_state_json,'$.postCompensationEarliestCheckAt','2026-10-17T09:00:00.000Z')
+  db.exec(`UPDATE learner_word_schedules SET post_compensation_check_at='2026-10-17T09:00:00.000Z'
     WHERE word_id IN ('compensated','interval-not-elapsed','future-due');
-    UPDATE learner_word_schedules SET scheduler_state_json=json_set(scheduler_state_json,'$.postCompensationEarliestCheckAt','2026-10-17T11:00:00.000Z')
+    UPDATE learner_word_schedules SET post_compensation_check_at='2026-10-17T11:00:00.000Z'
     WHERE word_id='gate-still-active';
     UPDATE learner_word_schedules SET next_eligible_at='2026-10-18T00:00:00.000Z' WHERE word_id='future-due';`);
   assert.deepEqual(compose().reviewSelections,[
@@ -188,7 +190,7 @@ test('Solidify ignores review enablement but retains word content admission chec
   for(const id of ['recognition-only','production-only','neither']) {
     lexical(id);addVocabularyWord(id);changeVocabularyMode(id,'solidify',1);
   }
-  db.prepare("UPDATE learner_word_schedules SET scheduler_state_json=json_set(scheduler_state_json,'$.enabled',0) WHERE word_id='recognition-only'").run();
+  db.prepare("UPDATE learner_word_schedules SET enabled=0 WHERE word_id='recognition-only'").run();
   const plan=composeVocabularyStudy({now,teachingReady:()=>false,
     isLearningContentUsable:id=>id!=='neither'});
   assert.deepEqual(new Set(plan.dueWordIds),new Set(['recognition-only','production-only']));

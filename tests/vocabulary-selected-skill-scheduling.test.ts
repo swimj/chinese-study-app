@@ -1,3 +1,4 @@
+import { applyVocabularyDueColumns } from './helpers/vocabulary-due-columns.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
@@ -34,6 +35,7 @@ beforeEach(() => {
   for (const name of ['0062_vocabulary_sense_coverage.sql','0064_vocabulary_default_useful_senses.sql','0039_vocabulary_content.sql','0041_vocabulary_learner_state.sql','0042_vocabulary_sessions.sql','0047_vocabulary_dismissal.sql','0052_vocabulary_automatic_promotion_pause.sql','0023_session_debrief.sql','0048_vocabulary_connections.sql']) {
     sql.exec(fs.readFileSync(new URL(`../server/db/migrations/${name}`,import.meta.url),'utf8'));
   }
+  applyVocabularyDueColumns(sql);
   contents = {};
   alice(() => {
     contents.one = createVocabularyContent({contentId:'one',kind:'exercise',payloadVersion:1,body:{prompt:'Recall'},
@@ -142,9 +144,9 @@ test('Enough without an answer covers Solidify for the day and resets clean prog
 for (const skill of ['recognition','contextual_selection','production'] as const) {
   for (const [ease, expected] of [[2.5, 2.2], [1.9, 1.8]]) test(`${skill} closure retains lapse penalty and floor from ease ${ease}`, () => alice(() => {
     if (skill === 'production') {
-      sql.prepare("UPDATE learner_word_schedules SET scheduler_state_json=json_set(scheduler_state_json,'$.intervalHours',72,'$.easeFactor',?) WHERE learner_id='alice' AND word_id='a'").run(ease);
+      sql.prepare("UPDATE learner_word_schedules SET interval_hours=72,scheduler_state_json=json_set(scheduler_state_json,'$.easeFactor',?) WHERE learner_id='alice' AND word_id='a'").run(ease);
     } else {
-      sql.prepare('INSERT INTO learner_owned_word_skill_state VALUES (?,?,?,?,?,?,?,?)')
+      sql.prepare('INSERT INTO learner_owned_word_skill_state(learner_id,word_id,skill_id,interval_hours,ease_factor,enabled,next_due_at,last_studied_at) VALUES (?,?,?,?,?,?,?,?)')
         .run('alice','a',skill,72,ease,1,now,'2026-10-01T00:00:00.000Z');
     }
     closeSelected(skill,[false,false,true,true,true]);
@@ -157,9 +159,9 @@ for (const skill of ['recognition','contextual_selection','production'] as const
   }));
   test(`${skill} on-time closure grows the existing interval with the retained good-review policy`, () => alice(() => {
     if (skill === 'production') {
-      sql.prepare("UPDATE learner_word_schedules SET scheduler_state_json=json_set(scheduler_state_json,'$.intervalHours',72,'$.easeFactor',2.2) WHERE learner_id='alice' AND word_id='a'").run();
+      sql.prepare("UPDATE learner_word_schedules SET interval_hours=72,scheduler_state_json=json_set(scheduler_state_json,'$.easeFactor',2.2) WHERE learner_id='alice' AND word_id='a'").run();
     } else {
-      sql.prepare('INSERT INTO learner_owned_word_skill_state VALUES (?,?,?,?,?,?,?,?)')
+      sql.prepare('INSERT INTO learner_owned_word_skill_state(learner_id,word_id,skill_id,interval_hours,ease_factor,enabled,next_due_at,last_studied_at) VALUES (?,?,?,?,?,?,?,?)')
         .run('alice','a',skill,72,2.2,1,now,'2026-10-14T10:00:00.000Z');
     }
     closeSelected(skill,[true]);
@@ -172,9 +174,9 @@ for (const skill of ['recognition','contextual_selection','production'] as const
 function seedOverdue(skill: 'production' | 'recognition' | 'contextual_selection') {
   const last = '2026-10-05T10:00:00.000Z'; // 12 days ago, with a 4-day interval.
   if (skill === 'production') {
-    sql.prepare("UPDATE learner_word_schedules SET last_practised_at=?,scheduler_state_json=json_set(scheduler_state_json,'$.intervalHours',96,'$.easeFactor',2.5) WHERE learner_id='alice' AND word_id='a'").run(last);
+    sql.prepare("UPDATE learner_word_schedules SET last_practised_at=?,interval_hours=96,scheduler_state_json=json_set(scheduler_state_json,'$.easeFactor',2.5) WHERE learner_id='alice' AND word_id='a'").run(last);
   } else {
-    sql.prepare('INSERT INTO learner_owned_word_skill_state VALUES (?,?,?,?,?,?,?,?)').run('alice','a',skill,96,2.5,1,now,last);
+    sql.prepare('INSERT INTO learner_owned_word_skill_state(learner_id,word_id,skill_id,interval_hours,ease_factor,enabled,next_due_at,last_studied_at) VALUES (?,?,?,?,?,?,?,?)').run('alice','a',skill,96,2.5,1,now,last);
   }
 }
 function readSchedule(skill: 'production' | 'recognition' | 'contextual_selection') {

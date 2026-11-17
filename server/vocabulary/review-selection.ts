@@ -22,11 +22,9 @@ export function selectVocabularyReviewSkills(options: {
   if (!Number.isFinite(nowTime)) throw new Error('Review selection requires a valid timestamp');
   const rows = getDb().prepare(`
     WITH schedules AS (
-      SELECT s.word_id, 'production' AS skill_id,
-        json_extract(s.scheduler_state_json, '$.intervalHours') AS interval_hours,
-        s.last_practised_at AS last_studied_at, s.next_eligible_at AS next_due_at,
-        COALESCE(json_extract(s.scheduler_state_json, '$.enabled'), 1) AS enabled,
-        json_extract(s.scheduler_state_json, '$.postCompensationEarliestCheckAt') AS post_compensation_earliest_check_at
+      SELECT s.word_id, 'production' AS skill_id, s.interval_hours,
+        s.last_practised_at AS last_studied_at, s.next_eligible_at AS next_due_at, s.enabled,
+        s.post_compensation_check_at AS post_compensation_earliest_check_at
       FROM learner_word_schedules s WHERE s.learner_id = ?
       UNION ALL
       SELECT word_id, skill_id, interval_hours, last_studied_at, next_due_at, enabled, NULL

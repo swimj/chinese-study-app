@@ -1,3 +1,6 @@
+import type { VocabularyPureCueSchedulerState, VocabularySchedulerState } from '../server/db/vocabulary-learners.ts';
+import { mergePureCueSchedulerState, mergeWordSchedulerState, splitPureCueSchedulerState } from '../server/db/vocabulary-schedule-columns.ts';
+import { applyVocabularyDueColumns, insertPureCueSchedule } from './helpers/vocabulary-due-columns.ts';
 import { getVocabularyOriginalModelProposal } from '../server/db/vocabulary-reflection.ts';
 import { abandonVocabularyReassessment, getVocabularyCaseCard, getVocabularyFallbackRepertoire, generateVocabularyFallbackRepertoire, reassessVocabularyCaseReview } from '../server/db/vocabulary-case-queue.ts';
 import { captureVocabularyRepertoireSelection, getVocabularyRepertoireSelection } from '../server/db/vocabulary-repertoire-selection.ts';
@@ -77,6 +80,7 @@ beforeEach(() => {
     INSERT INTO learner_word_schedules(learner_id,word_id,next_eligible_at,policy_version,scheduler_state_json)
     SELECT learner_id,word_id,'2026-10-20T10:00:00.000Z','test','{"intervalHours":24,"easeFactor":2.5,"enabled":1,"cleanCoveredSessions":0}' FROM learner_words;`);
   for(const name of ['0023_session_debrief.sql','0048_vocabulary_connections.sql','0049_vocabulary_sense_readiness.sql','0050_vocabulary_improvement_admission.sql','0051_vocabulary_pure_cue_promotion.sql','0053_vocabulary_second_opinions.sql'])sql.exec(fs.readFileSync(new URL(`../server/db/migrations/${name}`,import.meta.url),'utf8'));
+  applyVocabularyDueColumns(sql);
   installCaseReviewSchema(sql);
   contents = {};
   for (const id of ['one','two','cue','teach']) contents[id] = createVocabularyContent(draft(id,
@@ -347,7 +351,7 @@ test('a matching written answer marked wrong lapses scheduling without opening f
   assert.equal(completion.report.words.a!.hasRejectedResponse, true);
   assert.equal(completion.report.words.a!.successfulRecall, false);
   assert.equal(completion.report.encounters[0]?.effectiveResponses[0]?.payload.response, '字');
-  const schedule = JSON.parse(String(sql.prepare("SELECT scheduler_state_json FROM learner_word_schedules WHERE word_id='a'").get()!.scheduler_state_json)) as { intervalHours: number; easeFactor: number };
+  const schedule = mergeWordSchedulerState(sql.prepare("SELECT * FROM learner_word_schedules WHERE word_id='a'").get()!) as { intervalHours: number; easeFactor: number };
   assert.equal(schedule.intervalHours, 6);
   assert.equal(schedule.easeFactor, 2.35);
   assert.throws(() => close([present('one','a','bad'), { kind: 'response', payload: { encounterId: 'bad', response: '别', outcome: 'rejected', selfAssessment: 'rejected' } }], 'bad-mark'), /accepted written answer/);
@@ -401,7 +405,7 @@ test('undoing a pronunciation report before close leaves an ordinary success', (
   assert.deepEqual(ids, []);
   assert.equal(completion.report.words.a!.hasRejectedResponse, false);
   assert.equal(completion.report.words.a!.successfulRecall, true);
-  const schedule = JSON.parse(String(sql.prepare("SELECT scheduler_state_json FROM learner_word_schedules WHERE word_id='a'").get()!.scheduler_state_json)) as { easeFactor: number };
+  const schedule = mergeWordSchedulerState(sql.prepare("SELECT * FROM learner_word_schedules WHERE word_id='a'").get()!) as { easeFactor: number };
   assert.equal(schedule.easeFactor, 2.5);
 });
 
@@ -417,7 +421,7 @@ test('an undone production submission does not create a lesson or improvement ca
   assert.deepEqual(encounter.effectiveResponses.map(action => action.payload.response), ['字']);
   assert.equal(completion.report.words.a!.hasRejectedResponse, false);
   assert.equal(completion.report.words.a!.covered, true);
-  const schedule = JSON.parse(String(sql.prepare("SELECT scheduler_state_json FROM learner_word_schedules WHERE word_id='a'").get()!.scheduler_state_json)) as { intervalHours: number; easeFactor: number };
+  const schedule = mergeWordSchedulerState(sql.prepare("SELECT * FROM learner_word_schedules WHERE word_id='a'").get()!) as { intervalHours: number; easeFactor: number };
   assert.equal(schedule.easeFactor, 2.5);
   assert.notEqual(schedule.intervalHours, 6);
   assert.equal(alice(listOwnVocabularyMessages).length, 0);
@@ -470,7 +474,7 @@ test('a retained production rejection reaches feedback and improvement while the
   const projected = JSON.stringify(projectVocabularyReflectionInput(feedback));
   assert.equal(projected.includes('accidental'), false);
   assert.equal(projected.includes('kept-miss') || projected.includes('pure-miss'), true);
-  const schedule = JSON.parse(String(sql.prepare("SELECT scheduler_state_json FROM learner_word_schedules WHERE word_id='a'").get()!.scheduler_state_json)) as { easeFactor: number };
+  const schedule = mergeWordSchedulerState(sql.prepare("SELECT * FROM learner_word_schedules WHERE word_id='a'").get()!) as { easeFactor: number };
   assert.equal(schedule.easeFactor, 2.2);
 });
 
@@ -590,13 +594,17 @@ for (const coveredLater of [false,true]) test(`uncovered word retains feedback a
 const cueSchedule = () => sql.prepare("SELECT * FROM learner_pure_cue_schedules WHERE learner_id='alice' AND content_id='cue'").get()!;
 const wordSchedule = (wordId = 'a', learnerId = 'alice') =>
   sql.prepare("SELECT * FROM learner_word_schedules WHERE learner_id=? AND word_id=?").get(learnerId,wordId)!;
-const scheduler = (row: ReturnType<typeof wordSchedule>) => JSON.parse(String(row.scheduler_state_json));
+/** A state object as it reads back after storage, which omits absent optional facts. */
+const stored = (state: Record<string, unknown>) => { const split = splitPureCueSchedulerState(state); return mergePureCueSchedulerState({ ...split.columns, scheduler_state_json: split.json }); };
+// One reader for both schedule kinds; each assertion reads the fields its kind stores.
+const scheduler = (row: ReturnType<typeof wordSchedule>): VocabularySchedulerState & VocabularyPureCueSchedulerState =>
+  'content_id' in row ? mergePureCueSchedulerState(row) : mergeWordSchedulerState(row);
 const coveredCueLapse = () => [false,true,true,true].flatMap((accepted,index) =>
   [present('cue',null,`cue-${index}`),response(`cue-${index}`,accepted ? 'accepted' : 'rejected')]);
 
 test('unfinished pure-cue feedback leaves the schedule alone because closure wrote no lapse', () => {
-  sql.prepare(`INSERT INTO learner_pure_cue_schedules(learner_id,content_id,next_eligible_at,policy_version,scheduler_state_json)
-    VALUES ('alice','cue','2026-10-20T10:00:00.000Z','test','{"intervalHours":24,"easeFactor":2.5}')`).run();
+  sql.prepare(`INSERT INTO learner_pure_cue_schedules(learner_id,content_id,next_eligible_at,policy_version,scheduler_state_json,interval_hours)
+    VALUES ('alice','cue','2026-10-20T10:00:00.000Z','test','{"easeFactor":2.5}',24)`).run();
   const before = cueSchedule();
   const { cases, completion } = ingest([present('cue',null),response('cue')]);
   const feedbackCase = cases.find(item => item.kind === 'learner_feedback')!;
@@ -614,9 +622,9 @@ for (const strong of [false,true]) test(`a covered pure-cue lapse restores ${str
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0069_sense_content_reconciliation.sql',import.meta.url),'utf8').split('-- Preserve existing teaching-source jobs')[0]!);
   const state = { intervalHours: 1234,easeFactor: 2.65,enabled: 1,cleanCoveredSessions: 6,
     strongSince: strong ? '2026-09-01T00:00:00.000Z' : null,strongSuccesses: strong ? 4 : 0,maintenanceIdentity: 'old-cue-872' };
-  sql.prepare(`INSERT INTO learner_pure_cue_schedules(learner_id,content_id,next_eligible_at,last_practised_at,policy_version,scheduler_state_json)
-    VALUES ('alice','cue',?,'2026-10-01T00:00:00.000Z','test',?),('bob','cue',NULL,NULL,'test',?)`)
-    .run(strong ? '2027-01-01T00:00:00.000Z' : '2026-10-01T00:00:00.000Z',JSON.stringify(state),JSON.stringify(state));
+  insertPureCueSchedule(sql,{learnerId:'alice',contentId:'cue',nextEligibleAt:strong ? '2027-01-01T00:00:00.000Z' : '2026-10-01T00:00:00.000Z',
+    lastPractisedAt:'2026-10-01T00:00:00.000Z',policyVersion:'test',state});
+  insertPureCueSchedule(sql,{learnerId:'bob',contentId:'cue',nextEligibleAt:null,lastPractisedAt:null,policyVersion:'test',state});
   const bobSchedule = () => sql.prepare("SELECT * FROM learner_pure_cue_schedules WHERE learner_id='bob'").get();
   const bobBefore = bobSchedule();
   const wordBefore = wordSchedule('b');
@@ -624,16 +632,16 @@ for (const strong of [false,true]) test(`a covered pure-cue lapse restores ${str
   assert.equal(completion.report.pureCueOutcomes[0]?.covered,true);
   const lapsed = cueSchedule();
   assert.equal(scheduler(lapsed).intervalHours,6);
-  assert.equal(scheduler(lapsed).strongSince,null);
+  assert.equal(scheduler(lapsed).strongSince??null,null);
   const delayed = '2026-11-01T00:00:00.000Z', breakUntil = '2026-11-02T00:00:00.000Z';
   const laterReset = '2026-11-03T00:00:00.000Z';
-  if (!strong) sql.prepare("UPDATE learner_pure_cue_schedules SET scheduler_state_json=json_set(scheduler_state_json,'$.resetUntil',?) WHERE learner_id='alice'").run(laterReset);
+  if (!strong) sql.prepare("UPDATE learner_pure_cue_schedules SET reset_until=? WHERE learner_id='alice'").run(laterReset);
   const feedback = claimVocabularyReflectionJob({ kind: 'learner_feedback',now: delayed })!;
   const input = { diagnosis: 'An accepted member can fit',message: null,unfairEncounterIds: ['cue-0'] };
   const result = recordVocabularyFeedbackJudgment(feedback.jobId,feedback.leaseToken,input,delayed);
   const restored = cueSchedule();
   const dueAt = strong ? breakUntil : laterReset;
-  assert.deepEqual(scheduler(restored),{ ...state,resetUntil: dueAt,postCompensationRecheckAt: dueAt });
+  assert.deepEqual(scheduler(restored),stored({ ...state,resetUntil: dueAt,postCompensationRecheckAt: dueAt }));
   assert.equal(restored.next_eligible_at,dueAt);
   assert.equal(restored.last_practised_at,'2026-10-01T00:00:00.000Z');
   const selection = (now: string) => alice(() => selectVocabularyPureCueCandidates({ordinaryReviewCount:0,sessionSeed:'compensation',now,adopt:false}));
@@ -680,7 +688,7 @@ for (const evidence of ['missing receipt','null pre-lapse schedule'] as const) {
 for (const recall of ['correct','fair miss','unfair again'] as const) test(
   `production resumes normal scheduling after the compensation break (${recall})`, () => {
   sql.exec(`CREATE TABLE learner_owned_word_skill_relevance(learner_id TEXT,word_id TEXT,skill_id TEXT,relevance_state TEXT);
-    UPDATE learner_word_schedules SET scheduler_state_json=json_set(scheduler_state_json,'$.intervalHours',720,'$.easeFactor',2.8),
+    UPDATE learner_word_schedules SET interval_hours=720,scheduler_state_json=json_set(scheduler_state_json,'$.easeFactor',2.8),
     last_practised_at='2026-09-17T09:00:00.000Z',next_eligible_at='2026-10-17T09:00:00.000Z' WHERE word_id='a';`);
   const due = (now: string) => alice(() => selectVocabularyReviewSkills({now,canUseSkill:word => word === 'a'}));
   assert.deepEqual(due(at),[{wordId:'a',skillId:'production'}]);
@@ -737,9 +745,9 @@ for (const recall of ['correct','fair miss','unfair again'] as const) test(
 test('compensation preserves the later due date captured when overlapping sessions close out of order', () => {
   sql.exec(`INSERT INTO learner_words(learner_id,word_id,in_stash,added_at,mode,mode_changed_at)
     VALUES ('bob','a',0,'2026-01-01','practice','2026-01-01');
-    INSERT INTO learner_word_schedules(learner_id,word_id,policy_version,scheduler_state_json)
-    VALUES ('bob','a','test','{"intervalHours":48,"easeFactor":2.2}');
-    UPDATE learner_word_schedules SET scheduler_state_json=json_set(scheduler_state_json,'$.intervalHours',96),
+    INSERT INTO learner_word_schedules(learner_id,word_id,policy_version,scheduler_state_json,interval_hours)
+    VALUES ('bob','a','test','{"easeFactor":2.2}',48);
+    UPDATE learner_word_schedules SET interval_hours=96,
       last_practised_at='2026-10-13T09:00:00.000Z',next_eligible_at='2026-10-17T09:00:00.000Z'
       WHERE learner_id='alice' AND word_id='a';`);
   const otherLearner = wordSchedule('a','bob'), otherWord = wordSchedule('b');
@@ -789,7 +797,7 @@ test('completed historical feedback replay leaves the current schedule alone', (
   sql.exec('DROP TRIGGER vocabulary_effect_immutable');
   sql.prepare("UPDATE learner_state_effects SET effect_key=replace(effect_key,'feedback.v2','feedback.v1') WHERE judgment_id=?").run(result.judgmentId);
   sql.exec(`UPDATE learner_word_schedules SET next_eligible_at='2026-10-18T16:00:16.000Z',last_practised_at='2026-10-17T10:00:00.000Z',
-    scheduler_state_json='{"intervalHours":6,"easeFactor":2.35,"enabled":1,"cleanCoveredSessions":0}' WHERE word_id='a';`);
+    interval_hours=6,enabled=1,scheduler_state_json='{"easeFactor":2.35,"cleanCoveredSessions":0}' WHERE word_id='a';`);
   const before = wordSchedule();
   ingestVocabularySessionEvidence('alice',completion.completionId,completion.report,judgedAt);
   assert.equal(claimVocabularyReflectionJob({kind:'learner_feedback',now:judgedAt}),null);
@@ -2393,8 +2401,8 @@ test('maintenance applies a reviewed cue edit and complete split atomically, wit
     answers: [{ wordId: 'a', acceptedForms: ['甲'] }, { wordId: 'b', acceptedForms: ['乙'] }] }, actor);
   const edit = createVocabularyContent({ ...base, contentId: 'maintenance-edit', body }, actor);
   const sense = createVocabularySense({ wordId: 'b', description: { label: 'Sense B' } }, actor);
-  sql.prepare(`INSERT INTO learner_pure_cue_schedules(learner_id,content_id,next_eligible_at,policy_version,scheduler_state_json)
-    VALUES ('alice',?,?,'test','{}')`).run(shared.contentId, at);
+  sql.prepare(`INSERT INTO learner_pure_cue_schedules(learner_id,content_id,next_eligible_at,policy_version,scheduler_state_json,interval_hours)
+    VALUES ('alice',?,?,'test','{}',24)`).run(shared.contentId, at);
   const schedule = sql.prepare('SELECT * FROM learner_pure_cue_schedules WHERE content_id=?').get(shared.contentId);
   const manifest = { rationale: 'Reviewed cue maintenance', changes: [
     { contentId: edit.contentId, expectedVersion: 1, rationale: 'Tighten axis', edit: { axis: 'New axis' } },

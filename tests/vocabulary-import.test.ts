@@ -1,3 +1,4 @@
+import { mergePureCueSchedulerState } from '../server/db/vocabulary-schedule-columns.ts';
 import { allowsProductionUnderProxyPolicy } from '../src/domain/production-proxy.ts';
 import { productionProxyCases } from './helpers/production-proxy-cases.ts';
 import { selectPureCuesForSession, type PureCue } from '../src/domain/pure-cues.ts';
@@ -180,7 +181,7 @@ for (const scenario of productionProxyCases) {
     }
 
     const legacyState = () => ({
-      skills: db.prepare('SELECT * FROM learner_owned_word_skill_state ORDER BY learner_id,word_id,skill_id').all(),
+      skills: db.prepare('SELECT learner_id,word_id,skill_id,enabled,interval_hours,last_studied_at,next_due_at,ease_factor FROM learner_owned_word_skill_state ORDER BY learner_id,word_id,skill_id').all(),
       relevance: db.prepare('SELECT * FROM learner_owned_word_skill_relevance ORDER BY learner_id,word_id,skill_id').all(),
       pure: db.prepare('SELECT * FROM learner_pure_cue_state ORDER BY learner_id,pure_cue_id').all(),
     });
@@ -349,7 +350,7 @@ test('import retains strong maintenance identity and the separate restoration qu
   convert();migrateDatabase(db);
   const imported=lookup('pure_cue',legacyId);
   const row=db.prepare("SELECT * FROM learner_pure_cue_schedules WHERE learner_id='a'").get()!;
-  const state=JSON.parse(String(row.scheduler_state_json));
+  const state=mergePureCueSchedulerState(row);
   assert.equal(state.maintenanceIdentity,legacyId);
   assert.equal(state.resetUntil,'2026-10-15T06:00:00.000Z');
   assert.equal(row.next_eligible_at,cueBase.nextDueAt,'strong due date stays dormant, not replaced by the guard');
@@ -359,7 +360,7 @@ test('import retains strong maintenance identity and the separate restoration qu
   assert.deepEqual(select('2026-10-15T06:00:00.000Z','another session'),[imported.contentId]);
   db.prepare("UPDATE learner_pure_cue_schedules SET last_practised_at='2026-10-08T06:00:00.001Z' WHERE content_id=?").run(imported.contentId);
   assert.deepEqual(select('2026-10-15T06:00:00.000Z'),[],'seven-day quiet period still applies after restoration guard expires');
-  db.prepare("UPDATE learner_pure_cue_schedules SET last_practised_at='2026-10-08T06:00:00.000Z',next_eligible_at='2040-01-01T00:00:00.000Z',scheduler_state_json=json_set(scheduler_state_json,'$.intervalHours',720000,'$.easeFactor',9) WHERE content_id=?").run(imported.contentId);
+  db.prepare("UPDATE learner_pure_cue_schedules SET last_practised_at='2026-10-08T06:00:00.000Z',next_eligible_at='2040-01-01T00:00:00.000Z',interval_hours=720000,scheduler_state_json=json_set(scheduler_state_json,'$.easeFactor',9) WHERE content_id=?").run(imported.contentId);
   assert.deepEqual(select('2026-10-15T06:00:00.000Z'),[imported.contentId],'quiet-period boundary is inclusive and dormant SRS fields do not affect maintenance');
   // A copied source field on replacement content must not inherit the old daily draw.
   runWithLearnerId('a',()=>{
@@ -368,7 +369,7 @@ test('import retains strong maintenance identity and the separate restoration qu
     createVocabularyContent({...draft,contentId:'replacement',originKind:'human'},{kind:'operator',id:'test'});
     adoptVocabularyPureCues(timestamp);
   });
-  const replacement=JSON.parse(String(db.prepare("SELECT scheduler_state_json FROM learner_pure_cue_schedules WHERE content_id='replacement'").get()!.scheduler_state_json));
-  assert.equal(replacement.maintenanceIdentity,undefined);
-  assert.equal(replacement.strongSince,null);
+  const replacement=db.prepare("SELECT maintenance_identity,strong_since FROM learner_pure_cue_schedules WHERE content_id='replacement'").get()!;
+  assert.equal(replacement.maintenance_identity,null);
+  assert.equal(replacement.strong_since,null);
 });

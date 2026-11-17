@@ -154,8 +154,8 @@ function seedCase(sql: DatabaseSync, item: TrialCase, at: string): number {
     }
   }
   sql.prepare(`INSERT INTO learner_words(learner_id,word_id,in_stash,added_at,mode,mode_changed_at) VALUES (?,?,1,?,?,?)`).run(learnerId, item.word.id, at, item.mode ?? 'practice', at);
-  sql.prepare(`INSERT INTO learner_word_schedules(learner_id,word_id,next_eligible_at,policy_version,scheduler_state_json) VALUES (?,?,?,'trial',?)`)
-    .run(learnerId, item.word.id, at, JSON.stringify({ intervalHours: 24, easeFactor: 2.5, enabled: 1, cleanCoveredSessions: 0 }));
+  sql.prepare(`INSERT INTO learner_word_schedules(learner_id,word_id,next_eligible_at,policy_version,scheduler_state_json,interval_hours,enabled) VALUES (?,?,?,'trial',?,24,1)`)
+    .run(learnerId, item.word.id, at, JSON.stringify({ easeFactor: 2.5, cleanCoveredSessions: 0 }));
   const snapshots = new Map<string, VocabularyEncounterSnapshot>();
   for (const exercise of item.exercises) {
     const pure = item.scope === 'pure_cue' || exercise.schedulingScope === 'pure_cue' || exercise.exerciseType === 'pure_cue';
@@ -168,8 +168,8 @@ function seedCase(sql: DatabaseSync, item: TrialCase, at: string): number {
     snapshots.set(exercise.contentId, { contentId: exercise.contentId, contentVersion: 1, kind: exercise.kind ?? 'production', role: exercise.role ?? 'general',
       body: { prompt: exercise.prompt, material: body }, assessment: { acceptedAnswers: answers.flatMap(answer => answer.acceptedForms), criteria: assessment },
       ...(pure ? { schedulingScope: 'pure_cue' as const } : {}) });
-    if (pure) sql.prepare(`INSERT INTO learner_pure_cue_schedules(learner_id,content_id,next_eligible_at,policy_version,scheduler_state_json) VALUES (?,?,?,'trial',?)`)
-      .run(learnerId, exercise.contentId, at, JSON.stringify({ intervalHours: 24, easeFactor: 2.5, enabled: 1 }));
+    if (pure) sql.prepare(`INSERT INTO learner_pure_cue_schedules(learner_id,content_id,next_eligible_at,policy_version,scheduler_state_json,interval_hours,enabled) VALUES (?,?,?,'trial',?,24,1)`)
+      .run(learnerId, exercise.contentId, at, JSON.stringify({ easeFactor: 2.5 }));
   }
   return runWithLearnerId(learnerId, () => {
     createVocabularySession({ sessionId, words: item.scope === 'pure_cue' ? [] : [{ wordId: item.word.id, mode: item.mode ?? 'practice' }] }, at);

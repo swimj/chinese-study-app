@@ -70,7 +70,7 @@ export function getReadyWordReserveCandidates(now: string): Array<{wordId:string
       AND (w.word_id IS NULL OR (w.mode='unstudied' AND w.dismissed_at IS NULL))
       AND ${vocabularySessionWordEligibleSql('r.word_id')}
       AND (s.next_eligible_at IS NULL OR s.next_eligible_at<=?)
-      AND COALESCE(json_extract(s.scheduler_state_json,'$.enabled'),1)!=0
+      AND COALESCE(s.enabled,1)!=0
     ORDER BY CASE WHEN p.priority_tier=1 THEN 0 ELSE 1 END,
       CASE WHEN p.priority_tier=1 THEN p.updated_at END DESC,r.added_at,r.word_id LIMIT 40`)
     .all(requireLearnerId(),now) as Array<{wordId:string;readyAt:string;addedAt:string}>;

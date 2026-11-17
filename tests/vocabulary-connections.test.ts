@@ -23,8 +23,8 @@ before(async()=>{
   for(const[id,hanzi]of [['connections-word','报备'],['connections-alternate','报告']])getDb().prepare(`INSERT INTO lexical_words(id,hanzi,pinyin,meaning,meanings_json,examples_json,priority,created_at)
     VALUES (?,?,'bào bèi','report in advance','[]','[]',10,?)`).run(id,hanzi,at);
   getDb().prepare(`INSERT INTO learner_words(learner_id,word_id,in_stash,added_at,mode,mode_changed_at) VALUES ('connections-owner','connections-word',1,?,'practice',?)`).run(at,at);
-  getDb().prepare(`INSERT INTO learner_word_schedules(learner_id,word_id,next_eligible_at,policy_version,scheduler_state_json)
-    VALUES ('connections-owner','connections-word',?,'fixture','{"intervalHours":24,"easeFactor":2.5,"enabled":1,"cleanCoveredSessions":0}')`).run(at);
+  getDb().prepare(`INSERT INTO learner_word_schedules(learner_id,word_id,next_eligible_at,policy_version,scheduler_state_json,interval_hours,enabled)
+    VALUES ('connections-owner','connections-word',?,'fixture','{"easeFactor":2.5,"cleanCoveredSessions":0}',24,1)`).run(at);
   createVocabularyContent({contentId:'connections-cue',kind:'exercise',payloadVersion:1,body:{prompt:'Report a plan in advance'},exerciseType:'definition',skill:'production',exerciseRole:'general',assessment:{match:'exact'},
     accessScope:'shared',availability:'active',originKind:'human',words:[{wordId:'connections-word',relation:'target'}],answers:[{wordId:'connections-word',acceptedForms:['报备']}]},{kind:'operator',id:'test'});
   createVocabularyContent({contentId:'connections-pure',kind:'exercise',payloadVersion:1,body:{prompt:'Report a plan'},exerciseType:'pure_cue',skill:'production',exerciseRole:'general',assessment:{match:'exact'},

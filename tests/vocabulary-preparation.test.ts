@@ -654,8 +654,8 @@ test('proactive scan deduplicates due words, prioritizes missing pools, and uses
   function track(learner:string, wordId:string, hours:number) {
     db.prepare(`INSERT INTO learner_words(learner_id,word_id,in_stash,added_at,mode,mode_changed_at)
       VALUES (?,?,1,?,'practice',?)`).run(learner,wordId,now,now);
-    db.prepare(`INSERT INTO learner_word_schedules(learner_id,word_id,next_eligible_at,policy_version,scheduler_state_json)
-      VALUES (?,?,?,'fixture','{"intervalHours":24,"enabled":1}')`)
+    db.prepare(`INSERT INTO learner_word_schedules(learner_id,word_id,next_eligible_at,policy_version,scheduler_state_json,interval_hours,enabled)
+      VALUES (?,?,?,'fixture','{}',24,1)`)
       .run(learner,wordId,new Date(clock+hours*3_600_000).toISOString());
   }
   track('a','w1',-1);track('a','cold',-1);track('b','cold',-1);track('a','far',13);track('a','proxy',-1);
@@ -719,8 +719,8 @@ test('proactive publication drops stale output when defaults change', async () =
   writeVocabularyDefaultUsefulSenses('w1',1,[first.senseId,second.senseId],actor);
   db.prepare(`INSERT INTO learner_words(learner_id,word_id,in_stash,added_at,mode,mode_changed_at)
     VALUES ('a','w1',1,?,'practice',?)`).run(now,now);
-  db.prepare(`INSERT INTO learner_word_schedules(learner_id,word_id,policy_version,scheduler_state_json)
-    VALUES ('a','w1','fixture','{"intervalHours":24,"enabled":1}')`).run();
+  db.prepare(`INSERT INTO learner_word_schedules(learner_id,word_id,policy_version,scheduler_state_json,interval_hours,enabled)
+    VALUES ('a','w1','fixture','{}',24,1)`).run();
 
   const preparation = createVocabularyPracticePreparation({now:()=>now,provider:{
     model:'fixture',isConfigured:()=>true,generationKey:()=> 'fixture',
@@ -749,8 +749,8 @@ test('proactive scan limits outstanding work across later scans', () => {
       VALUES (?,'示例','shì lì','example','["example"]','[]',1,?)`).run(wordId,now);
     db.prepare(`INSERT INTO learner_words(learner_id,word_id,in_stash,added_at,mode,mode_changed_at)
       VALUES ('a',?,1,?,'solidify',?)`).run(wordId,now,now);
-    db.prepare(`INSERT INTO learner_word_schedules(learner_id,word_id,policy_version,scheduler_state_json)
-      VALUES ('a',?,'fixture','{"intervalHours":24}')`).run(wordId);
+    db.prepare(`INSERT INTO learner_word_schedules(learner_id,word_id,policy_version,scheduler_state_json,interval_hours,enabled)
+      VALUES ('a',?,'fixture','{}',24,1)`).run(wordId);
   }
   assert.equal(scanProactiveRepertoire(now,VOCABULARY_PRACTICE_SERVICE),24);
   const later = new Date(clock+6*3_600_000).toISOString();
@@ -765,8 +765,8 @@ test('malformed legacy sense evidence fails one proactive job without spending a
   updateVocabularySense(sense.senseId,sense.version,{status:'active',description:{legacy:'missing label'}},actor);
   db.prepare(`INSERT INTO learner_words(learner_id,word_id,in_stash,added_at,mode,mode_changed_at)
     VALUES ('a','w1',1,?,'solidify',?)`).run(now,now);
-  db.exec(`INSERT INTO learner_word_schedules(learner_id,word_id,policy_version,scheduler_state_json)
-    VALUES ('a','w1','fixture','{"intervalHours":24}')`);
+  db.exec(`INSERT INTO learner_word_schedules(learner_id,word_id,policy_version,scheduler_state_json,interval_hours,enabled)
+    VALUES ('a','w1','fixture','{}',24,1)`);
 
   const preparation = createVocabularyPracticePreparation({now:()=>now,provider:{
     model:'fixture',isConfigured:()=>true,generationKey:()=> 'fixture',
@@ -797,8 +797,8 @@ function choosePracticeSenses(learnerId: string, senseIds: string[], intendedUse
 function trackForSensePractice(learnerId: string, at: string) {
   db.prepare(`INSERT INTO learner_words(learner_id,word_id,in_stash,added_at,mode,mode_changed_at)
     VALUES (?,'w1',1,?,'maintain',?)`).run(learnerId,at,at);
-  db.prepare(`INSERT INTO learner_word_schedules(learner_id,word_id,next_eligible_at,policy_version,scheduler_state_json)
-    VALUES (?,'w1','2999-01-01T00:00:00.000Z','fixture','{"enabled":1,"intervalHours":24}')`).run(learnerId);
+  db.prepare(`INSERT INTO learner_word_schedules(learner_id,word_id,next_eligible_at,policy_version,scheduler_state_json,interval_hours,enabled)
+    VALUES (?,'w1','2999-01-01T00:00:00.000Z','fixture','{}',24,1)`).run(learnerId);
 }
 
 test('scope saves coalesce shared defaults and live choices into one canonical provider request', async () => {

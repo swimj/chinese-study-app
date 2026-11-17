@@ -785,3 +785,38 @@ Words list, new-word selection and reserve treat a missing row like a trivial on
 visible change is the Statistics unstudied mode count for an affected learner. Use the
 stopped-writer schema release, not app-only upgrade. Tests:
 `tests/trivial-unstudied-words-migration.test.ts`.
+
+## Vocabulary due columns (`0077`)
+
+`0077_vocabulary_due_columns` moves the scheduling facts that review reads filter
+or order on out of `scheduler_state_json` into real columns, so each has one home.
+Production schedules gain `interval_hours`, `enabled`, `reset_until` and
+`post_compensation_check_at`; pure-cue schedules gain `interval_hours`, `enabled`,
+`reset_until`, `strong_since`, `strong_successes`, `maintenance_identity` and
+`recheck_at`. The migration backfills each column from JSON and removes the key.
+Ease, clean-session counts and other state stay in JSON.
+
+It also adds due times: `review_due_at` on production schedules and on
+recognition/contextual-selection states (the latest of the stored due date, last
+study plus interval, and any post-compensation check). A schedule without study
+history is due once its stored dates pass. Triggers recompute due times from each
+row's own columns on insert and on the relevant updates, so writers never compute
+them. Guard triggers reject a schedule write that puts a moved key back in JSON or
+omits a positive interval. Covering `(learner_id, review_due_at, …)` indexes make
+each review queue's first read one index range; pure cues keep no due time and are
+read whole through one covering `(learner_id, enabled, …)` index. These are triggers rather than generated
+columns because SQLite does not treat an index as covering on a table with
+generated columns.
+
+The `after` hook fails the batch if a schedule lacks a positive interval, has a
+non-canonical study timestamp, or has no computed due time. It must run after
+`0076`, which it follows in the migration list; the runner rejects out-of-order ids.
+
+Use the stopped-writer schema procedure. The migration rewrites every schedule row
+(about 122,000 production schedules for the dogfood learner before `0076`, far fewer
+after) and builds three indexes; record its duration. On the restored copy, record
+the hook's outcome, confirm no moved key remains in JSON, compare each learner's
+merged schedule state before and after, and compare review selection before and
+after with the alignment script in the session-composition stack. Populated
+upgrade, merged-state preservation, triggers, guards, covering reads and rollback
+are in `tests/vocabulary-due-columns-migration.test.ts`.
