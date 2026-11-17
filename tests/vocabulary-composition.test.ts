@@ -364,7 +364,8 @@ test('sparse due review skips content checks for the future population',async(t)
     isReviewContentUsable:(id,kind)=>{checked.push(`${id}/${kind}`);return true;}});
   t.diagnostic(`Sparse review: ${checked.length} content checks for 2000 scheduled objectives; ${ (performance.now()-started).toFixed(2)} ms composition`);
   assert.deepEqual(plan.reviewSelections.map(row=>row.wordId),['sparse-0000','sparse-0001','sparse-0002']);
-  assert.equal(checked.length,6); // Baseline: 2000 callbacks over the same fixture.
+  // Baseline: 2000 callbacks over the same fixture; then 6, one per due objective. Each word now stops at its first usable objective.
+  assert.equal(checked.length,3);
 }));
 
 test('due filtering preserves null dates, no-recall urgency, boundaries and content rejection',()=>owner(()=>{

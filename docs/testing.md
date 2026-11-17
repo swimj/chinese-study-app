@@ -548,6 +548,11 @@ request ID.
 unknown historical values, learner-scoped writes, repeat migration, fresh schema
 equivalence, and the acceptance time index.
 
+`vocabulary-composition-reads.test.ts` compares the indexed review and pure-cue
+reads with the full-scan reference in `scripts/lib/session-composition-reference.ts`
+over randomized learner states, clocks and cue seeds, and checks the review read's
+query plan.
+
 `vocabulary-due-columns-migration.test.ts` covers moving scheduling facts from
 JSON into columns with merged state preserved, due times against hand-computed
 dates, trigger maintenance after later writes, guards against keys written back

@@ -234,16 +234,20 @@ only selects already admitted work. The effective presentation log determines
 rotation. The frozen context records each review word's `selectedSkill` and a
 `reviewOrder` containing word and independent pure-cue entries. Pure cues interleave
 with word exercises and use the same first-success / three-after-rejection rule;
-their coverage never becomes word credit. Pure-cue admission selects from schedule
-metadata and current relationship eligibility, then hydrates the chosen cues during
+their coverage never becomes word credit. Pure-cue admission reads the learner's
+scheduling columns, keeps only due rechecks and cues with a routine role (a due
+fragile cue, or a strong cue that won today's roll), checks content eligibility and
+reconciliation for those cues only, selects, then hydrates the chosen cues during
 composition. The session freezes their content before play begins.
 
 Composition retains the shared 1,000-item cap and 50/30/20 review/learning/new
 bucket weights, mapped to Practice/Maintain, Solidify, and Unstudied. Unused bucket
 capacity is redistributed. Review selects the most urgent eligible skill for each
-word and updates only the exercised skill at closure. Its schedule query establishes
-skill enablement and relevance, and due filtering precedes content-dependent
-eligibility checks. Solidify checks its recall directions independently.
+word and updates only the exercised skill at closure. Its first read is one range
+of the learner's due-time indexes (`review_due_at`, see the
+[database map](server-db.md#review-scheduling-columns-and-due-times)); the rows read
+then pass mode, enablement, relevance, recency-guard and sense-eligibility checks,
+and ranking happens in memory before content-dependent eligibility checks. Solidify checks its recall directions independently.
 Completed review assessment
 also applies the shared six-hour word recency guard, preventing another due skill
 from immediately bringing that word back. Production lapses shorten its interval

@@ -4,8 +4,7 @@ import {createHash} from 'node:crypto';
 import {getDb} from '../db/connection.ts';
 import {requireLearnerId} from '../db/learner-context.ts';
 import {getVocabularyContent} from '../db/vocabulary-content.ts';
-import {mergePureCueSchedulerState} from '../db/vocabulary-schedule-columns.ts';
-import {dueAtWithResetDelay,selectPureCuesForSession,type PureCueSelectionCandidate} from '../../src/domain/pure-cues.ts';
+import {dueAtWithResetDelay,pureCueSelectionRole,selectPureCuesForSession,type PureCueSelectionCandidate} from '../../src/domain/pure-cues.ts';
 import type {VocabularyContent} from '../../src/domain/vocabulary-content.ts';
 
 const eligibleContent=`c.kind='exercise' AND c.exercise_type='pure_cue' AND c.exercise_role='general' AND c.availability='active'
@@ -31,24 +30,22 @@ export function selectVocabularyPureCueCandidates(input:PureCueSelectionInput):V
 }
 export function planVocabularyPureCues(input:PureCueSelectionInput):{rechecks:VocabularyContent[];routine:VocabularyContent[]} {
   const now=input.now??new Date().toISOString();if(input.adopt!==false)adoptVocabularyPureCues(now);
-  const rows=getDb().prepare(`SELECT c.content_id,s.*
-    FROM learner_pure_cue_schedules s JOIN content_items c USING(content_id)
-    WHERE s.learner_id=:learner AND s.enabled=1 AND ${eligibleContent}
-    ORDER BY c.created_at,c.content_id`).all({learner:requireLearnerId()}) as {content_id:string;scheduler_state_json:string;last_practised_at:string|null;next_eligible_at:string|null}[];
-  const cues=rows.filter(row=>{
-    // Reconciliation gates need identities only; body, assessment and accepted forms
-    // are loaded after scheduling chooses this cue.
-    const words=getDb().prepare(`SELECT word_id FROM content_words WHERE content_id=?
-      UNION SELECT word_id FROM exercise_answer_words WHERE exercise_id=?`)
-      .all(row.content_id,row.content_id) as {word_id:string}[];
-    return words.every(word=>!isSenseContentReconciliationPending(word.word_id));
-  }).map((row):PureCueSelectionCandidate & {recheckAt:string|null}=>{
-    const state=mergePureCueSchedulerState(row);
-    const active=state.resetUntil==null||state.resetUntil<=now;
-    return {id:row.content_id,maintenanceIdentity:state.maintenanceIdentity,active,
-      lastStudiedAt:row.last_practised_at,nextDueAt:row.next_eligible_at??now,
-      strongSince:state.strongSince??null,strongSuccesses:state.strongSuccesses??0,recheckAt:state.postCompensationRecheckAt??null};
-  });
+  const learner=requireLearnerId();
+  // First read: scheduling facts only, one covering index range over the learner's enabled cues.
+  const rows=getDb().prepare(`SELECT content_id,next_eligible_at,last_practised_at,strong_since,strong_successes,maintenance_identity,reset_until,recheck_at
+    FROM learner_pure_cue_schedules WHERE learner_id=? AND enabled=1`).all(learner) as {content_id:string;next_eligible_at:string|null;last_practised_at:string|null;
+      strong_since:string|null;strong_successes:number;maintenance_identity:string|null;reset_until:string|null;recheck_at:string|null}[];
+  const contending=rows.map((row):PureCueSelectionCandidate & {recheckAt:string|null}=>({id:row.content_id,maintenanceIdentity:row.maintenance_identity??undefined,
+    active:row.reset_until===null||row.reset_until<=now,lastStudiedAt:row.last_practised_at,nextDueAt:row.next_eligible_at??now,
+    strongSince:row.strong_since,strongSuccesses:Number(row.strong_successes),recheckAt:row.recheck_at}))
+    // Only a due recheck or a cue with a routine role can be chosen; others need no probes.
+    .filter(cue=>cue.recheckAt!==null?cue.active&&cue.recheckAt<=now:pureCueSelectionRole(learner,cue,now)!==null);
+  const eligible=getDb().prepare(`SELECT 1 FROM content_items c WHERE c.content_id=:id AND ${eligibleContent}`);
+  // Reconciliation gates need identities only; body, assessment and accepted forms
+  // are loaded after scheduling chooses this cue.
+  const related=getDb().prepare(`SELECT word_id FROM content_words WHERE content_id=? UNION SELECT word_id FROM exercise_answer_words WHERE exercise_id=?`);
+  const cues=contending.filter(cue=>eligible.get({id:cue.id,learner})!==undefined
+    &&(related.all(cue.id,cue.id) as {word_id:string}[]).every(word=>!isSenseContentReconciliationPending(word.word_id)));
   let draw=0;const random=()=>parseInt(createHash('sha256').update(`${input.sessionSeed}/${draw++}`).digest('hex').slice(0,8),16)/0x100000000;
   const rechecks=cues.flatMap(cue=>cue.active&&cue.recheckAt!==null&&cue.recheckAt<=now
     ? [{id:cue.id,recheckAt:cue.recheckAt}] : []);
