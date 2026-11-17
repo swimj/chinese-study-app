@@ -24,7 +24,7 @@ if (!path.isAbsolute(requireArgument(args, 'incoming-db'))) throw new Error('--i
 if (!incomingDb.startsWith(`${dataDir}${path.sep}`) || incomingDb === targetDb || incomingDb === previousDb) {
   throw new Error('--incoming-db must be a staging file inside --data-dir.');
 }
-if (!fs.statSync(incomingDb).isFile()) throw new Error('--incoming-db must name an existing file.');
+if (!fs.lstatSync(incomingDb).isFile()) throw new Error('--incoming-db must name an existing file.');
 
 for (const filePath of [
   path.join(dataDir, 'litestream.sock'),
@@ -36,6 +36,15 @@ for (const filePath of [
   if (fs.existsSync(filePath)) {
     throw new Error(`RC database promotion requires stopped processes and no SQLite sidecars: ${filePath}`);
   }
+}
+
+// Downloads belong to the operator that restored them (often root), while
+// the app runs as node. Establish runtime ownership before touching the old
+// database or its rollback copy; a failed chown must leave both in place.
+const runtimeOwner = fs.statSync(fs.existsSync(targetDb) ? targetDb : dataDir);
+const incomingOwner = fs.statSync(incomingDb);
+if (incomingOwner.uid !== runtimeOwner.uid || incomingOwner.gid !== runtimeOwner.gid) {
+  fs.chownSync(incomingDb, runtimeOwner.uid, runtimeOwner.gid);
 }
 
 // This stopped, explicitly disposable RC database is about to be retired.
