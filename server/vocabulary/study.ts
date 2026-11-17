@@ -18,10 +18,10 @@ import { getDb } from '../db/connection.ts';
 import { allocateSessionBucketSlots, DEFAULT_SESSION_BUCKET_WEIGHTS } from '../../src/domain/session-limits.ts';
 import { composeVocabularyStudy, localNewWordDay, vocabularyCompositionSettings, type VocabularyComposition } from './composition.ts';
 import { admitTimedVocabularyStudy, type TimedAdmission } from './timed-admission.ts';
-import { createTimedSessionRecord, getDailyStudyMinutes, markTimedGateHeld, readTimedSessionRecord, readTimedSkipDays, recordTimedActiveMs,
+import { createTimedSessionRecord, getDailyStudyMinutes, markTimedGateHeld, readTimedSessionRecord, recordTimedActiveMs,
   saveTimedSessionNote, timedBudgetWrapped, timedDayActiveMs, timedTargetFacts, timedWrapThreshold, vocabularyTimedSessionsEnabled } from '../db/vocabulary-timed-sessions.ts';
 import { chooseTimedTarget } from './timed-selection.ts';
-import { PRESSING_SKIP_DAYS, TIMED_SESSION_EXTENSION_MS, timedReviewBound, timedTargetKey, type VocabularyTimedSessionContext } from '../../src/domain/timed-session.ts';
+import { TIMED_SESSION_EXTENSION_MS, timedReviewBound, timedTargetKey, type VocabularyTimedSessionContext } from '../../src/domain/timed-session.ts';
 import { adoptVocabularyPureCues, planVocabularyPureCues } from './pure-cue-serving.ts';
 import { hasExplicitlyEmptyProductionScope, isVocabularyProductionProxied } from './production-coverage.ts';
 import { isVocabularyDefinitionFallback } from '../../src/domain/vocabulary-production-coverage.ts';
@@ -301,11 +301,8 @@ function timedWindow(now:string,timeZone?:string) {
   const {minutes,source}=getDailyStudyMinutes();const budgetMs=minutes*60_000;const dayActiveMsAtStart=timedDayActiveMs(dayKey);
   return {dayKey,budgetMs,budgetSource:source,dayActiveMsAtStart,untilDayActiveMs:Math.max(budgetMs,dayActiveMsAtStart+TIMED_SESSION_EXTENSION_MS)};
 }
-function timedContext(planned:PlannedStudy,skipDays:ReadonlyMap<string,number>,window:ReturnType<typeof timedWindow>):VocabularyTimedSessionContext {
-  const held=[...planned.words.filter(word=>word.mode==='practice'||word.mode==='maintain').map(word=>timedTargetKey('word',word.wordId)),
-    ...planned.reviewOrder.filter(entry=>entry.kind==='pure_cue').map(entry=>timedTargetKey('pure_cue',entry.id))];
-  return {version:1,...window,
-    pressingKeys:held.filter(key=>(skipDays.get(key)??0)>=PRESSING_SKIP_DAYS),
+function timedContext(planned:PlannedStudy,pressingKeys:readonly string[],window:ReturnType<typeof timedWindow>):VocabularyTimedSessionContext {
+  return {version:1,...window,pressingKeys:[...pressingKeys],
     facts:timedTargetFacts([...planned.words.map(word=>({kind:'word' as const,id:word.wordId,mode:word.mode,...(word.selectedSkill?{selectedSkill:word.selectedSkill}:{})})),
       ...planned.reviewOrder.filter(entry=>entry.kind==='pure_cue').map(entry=>({kind:'pure_cue' as const,id:entry.id}))])};
 }
@@ -320,11 +317,11 @@ export function startVocabularyStudy(options:{timeZone?:string}={}):VocabularySt
     if(composition){planned=planVocabularyStudy(composition,sessionId);preparationPending=composition.preparationPending;}
     else {
       adoptVocabularyPureCues(now);
-      const skipDays=readTimedSkipDays();const window=timedWindow(now,options.timeZone);
-      const admission=admitTimedVocabularyStudy({now,timeZone:options.timeZone,sessionSeed:sessionId,skipDays,
+      const window=timedWindow(now,options.timeZone);
+      const admission=admitTimedVocabularyStudy({now,timeZone:options.timeZone,sessionSeed:sessionId,
         reviewBound:timedReviewBound(window.untilDayActiveMs-window.dayActiveMsAtStart),...studyGates(resolved)});
       planned=planTimedStudy(admission);preparationPending=admission.preparationPending;
-      timedFrame=timedContext(planned,skipDays,window);
+      timedFrame=timedContext(planned,admission.pressingKeys,window);
     }
     if(planned.words.length===0&&planned.reviewOrder.length===0)throw new VocabularySessionInputError(hasPendingReconciliation()
       ?'Replacement study content is being prepared. Try again shortly; other ready work can be studied when available.'
@@ -367,7 +364,7 @@ function selectNextWord(session:VocabularyPersistedSession,projection:Vocabulary
   if(!available.length&&!cues.length)return undefined;
   const timed=session.context.timed;
   // Pressing: runway (Solidify, teaching begun), any started item still owed work such as
-  // a miss, and a held item passed over on enough days.
+  // a miss, and a held item overdue by a full interval at Start.
   const pressing=(target:StudyTarget)=>{
     if(!timed)return false;
     if(target.kind==='word'){const word=projection.words[target.id];if(word.mode==='solidify'||(word.admitted&&word.workStatus==='open'))return true;}

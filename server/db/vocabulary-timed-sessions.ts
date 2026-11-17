@@ -2,9 +2,8 @@ import { getDb } from './connection.ts';
 import { requireLearnerId } from './learner-context.ts';
 import { readHostedServiceControl } from './hosted-operations.ts';
 import { LAPSE_INTERVAL_HOURS } from './review-policy.ts';
-import { selectVocabularyReviewSkills } from '../vocabulary/review-selection.ts';
 import { DEFAULT_DAILY_STUDY_MINUTES, isDailyStudyMinutes, timedItemClass, timedTargetKey, TIMED_SESSION_NOTE_MAX_LENGTH,
-  type DailyStudyMinutes, type TimedTargetKind, type VocabularyTimedSessionContext } from '../../src/domain/timed-session.ts';
+  type DailyStudyMinutes, type VocabularyTimedSessionContext } from '../../src/domain/timed-session.ts';
 import type { VocabularySessionAction, VocabularySessionInitialContext, VocabularySessionProjection, VocabularySkill,
   VocabularyWordMode } from '../../src/domain/vocabulary-session.ts';
 
@@ -40,11 +39,6 @@ export function timedDayActiveMs(dayKey: string): number {
   return Number(row.total);
 }
 
-export function readTimedSkipDays(): Map<string, number> {
-  const rows = getDb().prepare('SELECT target_kind,target_id,skip_days FROM learner_timed_skip_counts WHERE learner_id=?')
-    .all(requireLearnerId()) as { target_kind: TimedTargetKind; target_id: string; skip_days: number }[];
-  return new Map(rows.map((row) => [timedTargetKey(row.target_kind, row.target_id), Number(row.skip_days)]));
-}
 
 type WordTarget = { kind: 'word'; id: string; mode: VocabularyWordMode; selectedSkill?: VocabularySkill };
 type CueTarget = { kind: 'pure_cue'; id: string };
@@ -132,28 +126,19 @@ export function timedBudgetWrapped(actions: readonly VocabularySessionAction[], 
 }
 
 /**
- * Closure: clear counts for served items, count one passed-over day for each due
- * held item left unstarted (including items the 1,000-item cap kept out of the
- * pool), and fill the session record. Intervals and due dates are untouched.
+ * Closure fills the session record from the frozen context and the projection.
+ * It reads no schedules and changes no learner state: how overdue an item is
+ * comes from its due time at the next Start.
  */
 export function finalizeTimedSession(input: { context: VocabularySessionInitialContext; actions: readonly VocabularySessionAction[];
-  projection: VocabularySessionProjection; activeDurationMs: number | null; startedAt: string; now: string }): void {
+  projection: VocabularySessionProjection; activeDurationMs: number | null; now: string }): void {
   const timed = input.context.timed; if (!timed) return;
-  const { context, projection } = input; const learnerId = requireLearnerId(); const sessionId = context.sessionId;
+  const { context, projection } = input; const sessionId = context.sessionId;
   const row = record(sessionId);
   const started = new Set<string>();
   for (const word of Object.values(projection.words)) if (word.admitted) started.add(timedTargetKey('word', word.wordId));
   for (const encounter of projection.encounters) if (encounter.wordId === null && !encounter.presentationUndone)
     started.add(timedTargetKey('pure_cue', encounter.snapshot.contentId));
-  const clear = getDb().prepare('DELETE FROM learner_timed_skip_counts WHERE learner_id=? AND target_kind=? AND target_id=?');
-  for (const key of started) { const [kind, id] = split(key); clear.run(learnerId, kind, id); }
-  const passedOver = new Set<string>();
-  for (const selection of selectVocabularyReviewSkills({ now: input.startedAt })) passedOver.add(timedTargetKey('word', selection.wordId));
-  for (const entry of context.reviewOrder ?? []) if (entry.kind === 'pure_cue') passedOver.add(timedTargetKey('pure_cue', entry.id));
-  const skip = getDb().prepare(`INSERT INTO learner_timed_skip_counts(learner_id,target_kind,target_id,skip_days,last_skipped_day,updated_at)
-    VALUES (?,?,?,1,?,?) ON CONFLICT(learner_id,target_kind,target_id) DO UPDATE SET skip_days=skip_days+1,
-    last_skipped_day=excluded.last_skipped_day,updated_at=excluded.updated_at WHERE last_skipped_day<>excluded.last_skipped_day`);
-  for (const key of passedOver) if (!started.has(key)) { const [kind, id] = split(key); skip.run(learnerId, kind, id, timed.dayKey, input.now); }
 
   const served: { key: string; class: string; classicDueAt: string | null; priorLapse: boolean | null; outcome: 'covered' | 'uncovered'; accepted: number; rejected: number }[] = [];
   for (const word of Object.values(projection.words)) {
@@ -177,9 +162,4 @@ export function finalizeTimedSession(input: { context: VocabularySessionInitialC
     live.filter((action) => action.kind === 'resume' && action.payload.untilDayActiveMs !== undefined).length,
     Object.values(projection.words).filter((word) => word.admitted && word.initialMode === 'unstudied').length,
     JSON.stringify(timed.pressingKeys.filter((key) => !started.has(key))), JSON.stringify(served), sessionId);
-}
-function split(key: string): [TimedTargetKind, string] {
-  const index = key.indexOf(':'); const kind = key.slice(0, index);
-  if (kind !== 'word' && kind !== 'pure_cue') throw new Error(`Invalid timed target key ${key}`);
-  return [kind, key.slice(index + 1)];
 }

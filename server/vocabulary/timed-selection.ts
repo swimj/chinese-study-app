@@ -20,9 +20,10 @@ export function timedRestCards(sessionId: string, key: string, encounterId: stri
 
 /**
  * Timed selection over already-gated candidates. Rested pressing work wins seven
- * picks in ten; otherwise a rested non-pressing item is drawn at random, with no
- * weighting by kind. New words are ordinary items, so a large admitted review pool
- * leaves fewer picks for them.
+ * picks in ten; otherwise one uniform draw covers every rested item, pressing
+ * included, with no weighting by kind. A pressing item therefore never has worse
+ * odds than an ordinary one, however many items are pressing. New words are
+ * ordinary items, so a large admitted review pool leaves fewer picks for them.
  */
 export function chooseTimedTarget(input: { sessionId: string; candidates: readonly TimedCandidate[]; encounterCount: number;
   sample: (length: number, salt: string) => number }): TimedTarget {
@@ -31,9 +32,8 @@ export function chooseTimedTarget(input: { sessionId: string; candidates: readon
   const rested = candidates.filter((entry) => entry.lastPosition < 0 || entry.lastEncounterId === null
     || encounterCount - 1 - entry.lastPosition >= timedRestCards(input.sessionId, timedTargetKey(entry.target.kind, entry.target.id), entry.lastEncounterId));
   const pressing = rested.filter((entry) => entry.pressing);
-  const ordinary = rested.filter((entry) => !entry.pressing);
-  if (pressing.length && (sample(100, 'tier') < PRESSING_TIER_SHARE || !ordinary.length)) return pressing[sample(pressing.length, 'pressing')].target;
-  if (ordinary.length) return ordinary[sample(ordinary.length, 'ordinary')].target;
+  if (pressing.length && sample(100, 'tier') < PRESSING_TIER_SHARE) return pressing[sample(pressing.length, 'pressing')].target;
+  if (rested.length) return rested[sample(rested.length, 'ordinary')].target;
   // Nothing has finished resting: the item that has waited longest keeps a drain moving.
   return [...candidates].sort((a, b) => a.lastPosition - b.lastPosition || a.order - b.order)[0].target;
 }

@@ -29,7 +29,7 @@ export function selectVocabularyPureCueCandidates(input:PureCueSelectionInput):V
   return [...rechecks,...routine];
 }
 /** A due recheck or a cue with a routine role; content checks have not run yet. */
-export type VocabularyPureCueCandidate = PureCueSelectionCandidate & { recheckAt: string | null };
+export type VocabularyPureCueCandidate = PureCueSelectionCandidate & { recheckAt: string | null; intervalHours: number };
 /**
  * The learner's pure-cue streams before content checks: due rechecks in recheck
  * order, due fragile cues in due order, and strong cues that won today's roll.
@@ -37,12 +37,12 @@ export type VocabularyPureCueCandidate = PureCueSelectionCandidate & { recheckAt
  */
 export function readVocabularyPureCueStreams(now:string):{rechecks:VocabularyPureCueCandidate[];fragile:VocabularyPureCueCandidate[];strong:VocabularyPureCueCandidate[]} {
   const learner=requireLearnerId();
-  const rows=getDb().prepare(`SELECT content_id,next_eligible_at,last_practised_at,strong_since,strong_successes,maintenance_identity,reset_until,recheck_at
+  const rows=getDb().prepare(`SELECT content_id,next_eligible_at,last_practised_at,strong_since,strong_successes,maintenance_identity,reset_until,recheck_at,interval_hours
     FROM learner_pure_cue_schedules WHERE learner_id=? AND enabled=1`).all(learner) as {content_id:string;next_eligible_at:string|null;last_practised_at:string|null;
-      strong_since:string|null;strong_successes:number;maintenance_identity:string|null;reset_until:string|null;recheck_at:string|null}[];
+      strong_since:string|null;strong_successes:number;maintenance_identity:string|null;reset_until:string|null;recheck_at:string|null;interval_hours:number}[];
   const cues=rows.map((row):VocabularyPureCueCandidate=>({id:row.content_id,maintenanceIdentity:row.maintenance_identity??undefined,
     active:row.reset_until===null||row.reset_until<=now,lastStudiedAt:row.last_practised_at,nextDueAt:row.next_eligible_at??now,
-    strongSince:row.strong_since,strongSuccesses:Number(row.strong_successes),recheckAt:row.recheck_at}));
+    strongSince:row.strong_since,strongSuccesses:Number(row.strong_successes),recheckAt:row.recheck_at,intervalHours:Number(row.interval_hours)}));
   const role=(cue:VocabularyPureCueCandidate)=>cue.recheckAt===null?pureCueSelectionRole(learner,cue,now):null;
   return {rechecks:cues.filter(cue=>cue.active&&cue.recheckAt!==null&&cue.recheckAt<=now)
       .sort((a,b)=>a.recheckAt!.localeCompare(b.recheckAt!)||a.id.localeCompare(b.id)),

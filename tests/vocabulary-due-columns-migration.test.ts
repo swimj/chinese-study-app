@@ -62,7 +62,7 @@ test('migration moves scheduling facts into columns, strips them from JSON, and 
     strong: mergePureCueSchedulerState(row('learner_pure_cue_schedules', 'content_id', 'cue-strong')),
   };
 
-  assert.deepEqual(migrateDatabase(db), [MIGRATION]);
+  assert.deepEqual(migrateDatabase(db, schemaMigrations.filter((migration) => migration.id <= MIGRATION)), [MIGRATION]);
   const w1 = row('learner_word_schedules', 'word_id', 'w1');
   assert.deepEqual({ interval: w1.interval_hours, enabled: w1.enabled, json: JSON.parse(String(w1.scheduler_state_json)), due: w1.review_due_at },
     { interval: 30, enabled: 1, json: { easeFactor: 2.5, cleanCoveredSessions: 2 }, due: '2026-11-02T16:00:00.250Z' });

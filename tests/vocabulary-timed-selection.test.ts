@@ -32,9 +32,26 @@ test('an item never returns before its rest while anything else is rested', () =
   assert.equal(choose([miss, candidate('other')], seenAt + 1 + rest), 'miss', 'rested pressing work wins the pressing tier');
 });
 
-test('the tier sends seven picks in ten to rested pressing work and the rest to ordinary work', () => {
+test('the tier sends seven picks in ten to rested pressing work and the rest to a draw over every rested item', () => {
   const both = [candidate('ordinary'), candidate('pressing', { pressing: true })];
-  for (let tier = 0; tier < 100; tier++) assert.equal(choose(both, 0, sampler(tier)), tier < PRESSING_TIER_SHARE ? 'pressing' : 'ordinary');
+  for (let tier = 0; tier < 100; tier++) {
+    assert.equal(choose(both, 0, sampler(tier, 1)), 'pressing');
+    assert.equal(choose(both, 0, sampler(tier, 0)), tier < PRESSING_TIER_SHARE ? 'pressing' : 'ordinary');
+  }
+});
+
+test('a pressing item never has worse odds than an ordinary one, even when pressing items far outnumber ordinary ones', () => {
+  const candidates = [...Array.from({ length: 40 }, (_, index) => candidate(`p${index}`, { pressing: true })),
+    ...Array.from({ length: 5 }, (_, index) => candidate(`o${index}`))];
+  // Every tier draw against every index draw (360 is a multiple of both pool sizes).
+  const picks = new Map<string, number>();
+  for (let tier = 0; tier < 100; tier++) for (let index = 0; index < 360; index++) {
+    const id = choose(candidates, 0, sampler(tier, index)); picks.set(id, (picks.get(id) ?? 0) + 1);
+  }
+  const total = 100 * 360; const share = (id: string) => (picks.get(id) ?? 0) / total;
+  // 0.7 / 40 + 0.3 / 45 for each pressing item; 0.3 / 45 for each ordinary item.
+  assert.ok(Math.abs(share('p0') - (0.7 / 40 + 0.3 / 45)) < 1e-9);
+  assert.ok(Math.abs(share('o0') - 0.3 / 45) < 1e-9);
 });
 
 test('the pressing branch falls back to ordinary work when no pressing item is rested', () => {
@@ -53,17 +70,17 @@ test('with nothing rested, whatever has waited longest comes next so a drain nev
   assert.equal(choose([recent, older], 7), 'older');
 });
 
-test('ordinary work is one uniform draw over rested non-pressing items of every kind', () => {
+test('the ordinary draw is uniform over rested items of every kind, pressing included', () => {
   const ordinary = [candidate('review'), candidate('cue', { target: { kind: 'pure_cue', id: 'cue' } }), candidate('new'),
-    candidate('resting', { lastPosition: 9, lastEncounterId: 'e9' })];
+    candidate('overdue', { pressing: true }), candidate('resting', { lastPosition: 9, lastEncounterId: 'e9' })];
   const picks = new Map<string, number>();
-  for (let draw = 0; draw < 300; draw++) {
+  for (let draw = 0; draw < 400; draw++) {
     const id = chooseTimedTarget({ sessionId: 's', candidates: ordinary, encounterCount: 10,
       sample: (length, salt) => salt === 'tier' ? 99 : salt === 'ordinary' ? draw % length : 0 }).id;
     picks.set(id, (picks.get(id) ?? 0) + 1);
   }
   // No weighting by kind, no urgency order among rested items, and resting items wait.
-  assert.deepEqual(Object.fromEntries(picks), { review: 100, cue: 100, new: 100 });
+  assert.deepEqual(Object.fromEntries(picks), { review: 100, cue: 100, new: 100, overdue: 100 });
 });
 
 test('random choice within the pressing tier spreads across rested items', () => {
