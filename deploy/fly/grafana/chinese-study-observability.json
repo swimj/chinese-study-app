@@ -23,7 +23,7 @@
     {
       "id": 22,
       "type": "row",
-      "title": "Litestream overhead",
+      "title": "Legacy Litestream overhead (before cutover)",
       "collapsed": false,
       "panels": [],
       "gridPos": {
@@ -172,8 +172,8 @@
                 "value": null
               },
               {
-                "color": "orange",
-                "value": 30
+                "color": "red",
+                "value": 4500
               }
             ]
           }
@@ -205,12 +205,12 @@
         {
           "refId": "A",
           "expr": "chinese_study_backup_replication_age_seconds{app=\"$app\"} >= 0",
-          "legendFormat": "Since successful check · {{instance}}"
+          "legendFormat": "Verified capture age · {{instance}}"
         }
       ],
-      "title": "Time since successful backup check",
+      "title": "Verified backup age",
       "type": "timeseries",
-      "description": "Refreshed by successful Litestream sync checks, including idle checks and progress through upload batches. This is a liveness signal, not oldest-unuploaded-write age or proof the replica is caught up. 30 seconds is a comparison reference, not a durability guarantee. Missing status leaves a gap; see Operational metric availability."
+      "description": "After SQLite-backup cutover, age of the latest verified capture, measured from snapshot start. Hourly scheduling plus completion time is expected; investigate unknown status or age above 75 minutes. Before cutover this legacy metric reports Litestream sync heartbeat age."
     },
     {
       "id": 26,
@@ -848,13 +848,13 @@
       "targets": [
         {
           "expr": "chinese_study_backup_replication_age_seconds{app=\"$app\"} >= 0",
-          "legendFormat": "since successful check",
+          "legendFormat": "verified capture age",
           "refId": "A"
         }
       ],
-      "title": "Time since backup check",
+      "title": "Verified backup age",
       "type": "stat",
-      "description": "Refreshed by successful Litestream sync checks, including idle checks and progress through upload batches. This is a liveness signal, not oldest-unuploaded-write age or proof the replica is caught up. 30 seconds is a comparison reference, not a durability guarantee. Missing status leaves a gap; see Operational metric availability."
+      "description": "After SQLite-backup cutover, age of the latest verified capture, measured from snapshot start. Hourly scheduling plus completion time is expected; investigate unknown status or age above 75 minutes. Before cutover this legacy metric reports Litestream sync heartbeat age."
     },
     {
       "datasource": {
