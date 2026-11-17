@@ -1,3 +1,5 @@
+import { request as httpRequest } from 'node:http';
+import { request as httpsRequest } from 'node:https';
 import { open, link, rm, lstat } from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
@@ -28,16 +30,35 @@ export function parseBackupReceipt(value: unknown): BackupReceipt {
     || (r.kind === 'release' && !backupId(r.releaseId))) throw new Error('Invalid backup receipt');
   return r as BackupReceipt;
 }
+// Native HTTP honors our overall deadline without fetch's independent five-minute
+// response-header timeout. Full SQLite verification can legitimately take longer.
+function postBackup(url: string, token: string, input: BackupRequest, signal: AbortSignal): Promise<{status: number; body: string}> {
+  return new Promise((resolve, reject) => {
+    const endpoint = new URL(`${url}/backups`);
+    const body = JSON.stringify(input);
+    const request = (endpoint.protocol === 'https:' ? httpsRequest : httpRequest)(endpoint, {
+      method: 'POST', signal,
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) },
+    }, response => {
+      const chunks: Buffer[] = []; let bytes = 0;
+      response.on('data', (chunk: Buffer) => {
+        bytes += chunk.length;
+        if (bytes > 64 * 1024) { response.destroy(new Error('Backup receipt too large')); return; }
+        chunks.push(chunk);
+      });
+      response.on('error', reject);
+      response.on('end', () => resolve({ status: response.statusCode ?? 0, body: Buffer.concat(chunks).toString('utf8') }));
+    });
+    request.on('error', reject); request.end(body);
+  });
+}
 export async function requestHostedBackup(input: BackupRequest): Promise<BackupReceipt> {
   const { url, token } = backupClientConfig();
   const signal = AbortSignal.timeout(15 * 60_000);
-  let response: Response;
+  let response: {status: number; body: string};
   for (;;) {
-    response = await fetch(`${url}/backups`, { method: 'POST',
-      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      body: JSON.stringify(input), signal, redirect: 'error' });
+    response = await postBackup(url, token, input, signal);
     if (response.status !== 409) break;
-    await response.body?.cancel();
     // A busy refusal has not started this request. Keep the same id and wait
     // within one overall deadline; never retry an ambiguous timeout or failure.
     await new Promise<void>((resolve, reject) => {
@@ -47,8 +68,8 @@ export async function requestHostedBackup(input: BackupRequest): Promise<BackupR
       if (signal.aborted) abort();
     });
   }
-  if (!response.ok) throw new Error(`Backup receiver refused request (${response.status})`);
-  const receipt = parseBackupReceipt(await response.json());
+  if (response.status !== 200) throw new Error(`Backup receiver refused request (${response.status})`);
+  const receipt = parseBackupReceipt(JSON.parse(response.body));
   if (receipt.id !== input.id || receipt.kind !== input.kind || receipt.releaseId !== input.releaseId
     || (input.expectedSourceRevision && receipt.sourceRevision !== input.expectedSourceRevision)
     || (input.expectedSourceApp && receipt.sourceApp !== input.expectedSourceApp)) throw new Error('Backup receipt does not match requested source and operation');
