@@ -21,7 +21,7 @@ import { createVocabularyContent,replaceVocabularyContent,updateVocabularyConten
 import { appendVocabularySessionActions,createVocabularySession as createStoredSession,stageVocabularySessionCompletion,cancelVocabularySessionCompletion,closeVocabularySessionCompletion } from '../server/db/vocabulary-sessions.ts';
 import { changeVocabularyMode,addVocabularyWord,dismissVocabularyWord,getVocabularyLearnerWord,getVocabularyWordSchedule,enrollVocabularyDietWord } from '../server/db/vocabulary-learners.ts';
 import { startVocabularyStudy as startRuntime,composeVocabularySessionPayload,getVocabularyStudy,nextVocabularyExercise,commandVocabularyStudy,saveVocabularySessionNote } from '../server/vocabulary/study.ts';
-import { composeVocabularyStudy } from '../server/vocabulary/composition.ts';
+import { composeVocabularyStudy, remainingVocabularyNewWordQuota } from '../server/vocabulary/composition.ts';
 import type { VocabularyStudy } from '../src/domain/vocabulary-study-api.ts';
 import type { VocabularyContent } from '../src/domain/vocabulary-content.ts';
 // These player fixtures isolate composition from shared-provider reserve storage.
@@ -1444,6 +1444,44 @@ test('timed Start freezes the paradigm and records the day; classic sessions kee
   assert.deepEqual({...row},{day_key:today(),budget_ms:20*60_000,budget_source:'default',day_active_ms_at_start:0});
 }));
 
+test('a new word admitted at timed Start but never reached keeps the day\'s quota and is admitted again later',()=>owner(()=>{
+  addVocabularyWord('new');timedOn();
+  const quota=remainingVocabularyNewWordQuota();
+  // Solidify runway is pressing, so the new word stays shut until the day wraps up.
+  let view=startVocabularyStudy({});const id=view.session.sessionId;backdate(id);
+  assert.ok(view.session.context.words.some(word=>word.wordId==='new'&&word.mode==='unstudied'),'admitted');
+  assert.notEqual(view.currentWordId,'new');
+  view=nextVocabularyExercise(id,'wrap',{activeDurationMs:1_200_000});
+  for(let step=0;step<12&&view.session.projection.phase!=='completed';step++){
+    view=answerCurrent(id,`a${step}`,view);
+    if(view.session.projection.phase!=='completed')view=nextVocabularyExercise(id,`n${step}`,{activeDurationMs:1_200_000});
+  }
+  assert.equal(view.session.projection.phase,'completed');
+  assert.equal(view.session.projection.words.new.admitted,false);
+  // Nothing about the word was started: no quota use, no teaching record, still Unstudied.
+  assert.equal(remainingVocabularyNewWordQuota(),quota);
+  assert.equal(getVocabularyLearnerWord('new')?.mode,'unstudied');
+  assert.equal(db.prepare("SELECT count(*) AS n FROM teaching_completions WHERE word_id='new'").get()!.n,0);
+  const later=startVocabularyStudy({});
+  assert.ok(later.session.context.words.some(word=>word.wordId==='new'&&word.mode==='unstudied'),'admitted again');
+}));
+
+test('a timed session whose pool runs out before the allowance ends cleanly; a later Start is a fresh bounded session',()=>owner(()=>{
+  practiceAll('a','b');timedOn();
+  let view=startVocabularyStudy({});const id=view.session.sessionId;backdate(id);
+  for(let step=0;step<30&&view.session.projection.phase!=='completed';step++){view=answerCurrent(id,`s${step}`,view);view=nextVocabularyExercise(id,`n${step}`,{activeDurationMs:60_000});}
+  assert.equal(view.session.projection.phase,'completed');
+  assert.deepEqual(view.session.actions.filter(action=>action.kind==='finish_for_now').map(action=>action.payload),[{}],'ended by exhaustion, not the budget');
+  assert.deepEqual(view.timed,{budgetWrapped:false,canStudyMore:false,sessionActiveMs:60_000,note:null});
+  // Closure would move the schedules; this fixture leaves them due, so a new Start sees the same work in a fresh session.
+  const next=startVocabularyStudy({});
+  assert.notEqual(next.session.sessionId,id);
+  const context=JSON.parse(String(db.prepare('SELECT context_json FROM vocabulary_sessions WHERE session_id=?').get(next.session.sessionId)!.context_json)) as VocabularySessionInitialContext;
+  assert.equal(context.timed?.dayActiveMsAtStart,60_000);
+  assert.deepEqual(context.reviewOrder?.map(entry=>entry.id).sort(),['a','b']);
+  assert.equal(next.session.projection.phase,'active');
+}));
+
 test('timed selection keeps not-yet-started new words shut while runway work is due, then opens them',()=>owner(()=>{
   addVocabularyWord('new');
   // Classic introduction order "first" serves the new word immediately.
@@ -1467,12 +1505,11 @@ test('timed selection keeps not-yet-started new words shut while runway work is 
 test('pressing held items are admitted ahead of ordinary due work and lead the tier',()=>owner(()=>{
   practiceAll('a','b','new');timedOn();
   const ordinary=startVocabularyStudy({});
-  assert.equal(ordinary.currentWordId,'a');assert.deepEqual(ordinary.session.context.reviewOrder?.[0],{kind:'word',id:'a'});
+  assert.deepEqual(ordinary.session.context.reviewOrder,['a','b','new'].map(id=>({kind:'word',id})),'urgency order');
   db.prepare("INSERT INTO learner_timed_skip_counts VALUES('alice','word','new',3,'2026-01-01','2026-01-01'),('alice','word','b',2,'2026-01-01','2026-01-01')").run();
   const view=startVocabularyStudy({});
-  // The pressing tier takes seven picks in ten; the ordinary draw starts with the most urgent item.
-  assert.ok(['new','a'].includes(view.currentWordId!),`first card ${view.currentWordId}`);
-  assert.deepEqual(view.session.context.reviewOrder?.[0],{kind:'word',id:'new'});
+  // Pressing items are admitted first; the tier itself is covered by the timed-selection tests.
+  assert.deepEqual(view.session.context.reviewOrder,['new','a','b'].map(id=>({kind:'word',id})));
   const timed=(db.prepare('SELECT context_json FROM vocabulary_sessions WHERE session_id=?').get(view.session.sessionId) as {context_json:string});
   assert.deepEqual((JSON.parse(timed.context_json) as VocabularySessionInitialContext).timed?.pressingKeys,['word:new']);
   assert.deepEqual(db.prepare('SELECT session_id FROM vocabulary_timed_session_records').all().length,2);
@@ -1482,24 +1519,25 @@ test('budget wrap-up is a recorded action, finishes open work, and Study a littl
   practiceAll('a','b','new');timedOn();
   db.prepare("INSERT INTO learner_settings VALUES('alice','daily_study_minutes','10','2026-01-01')").run();
   let view=startVocabularyStudy({});const id=view.session.sessionId;backdate(id);
-  assert.equal(view.currentWordId,'a');
+  // Ordinary picks are a random draw, so follow whichever word comes first.
+  const first=view.currentWordId!;assert.ok(['a','b','new'].includes(first));
   assert.throws(()=>commandVocabularyStudy(id,'early-more',{type:'studyMore',activeDurationMs:1000}),/follows the day's wrap-up/);
   // Reaching the budget mid-word lets that word finish; nothing new begins.
   view=nextVocabularyExercise(id,'over',{activeDurationMs:600_000});
-  assert.equal(view.session.projection.phase,'finishing');assert.equal(view.currentWordId,'a');
+  assert.equal(view.session.projection.phase,'finishing');assert.equal(view.currentWordId,first);
   assert.deepEqual(view.session.actions.filter(action=>action.kind==='finish_for_now').map(action=>action.payload),[{source:'budget'}]);
   assert.equal(view.notice,null);
-  view=answerCurrent(id,'a',view);
+  view=answerCurrent(id,'first',view);
   assert.equal(view.session.projection.phase,'completed');
   assert.deepEqual(view.timed,{budgetWrapped:true,canStudyMore:true,sessionActiveMs:600_000,note:null});
-  assert.equal(view.session.projection.words.b.admitted,false);
+  assert.deepEqual(Object.values(view.session.projection.words).filter(word=>word.admitted).map(word=>word.wordId),[first]);
   assert.throws(()=>nextVocabularyExercise(id,'back',{activeDurationMs:1}),/not accepting new work/);
   view=commandVocabularyStudy(id,'more',{type:'studyMore',activeDurationMs:601_000});
   assert.equal(view.session.projection.phase,'active');
   assert.deepEqual(view.session.actions.at(-1)?.payload,{untilDayActiveMs:901_000});
   view=nextVocabularyExercise(id,'after-more',{activeDurationMs:602_000});
-  assert.equal(view.currentWordId,'b');
-  view=answerCurrent(id,'b',view);
+  const second=view.currentWordId!;assert.ok(['a','b','new'].includes(second)&&second!==first);
+  view=answerCurrent(id,'second',view);
   view=nextVocabularyExercise(id,'second-wrap',{activeDurationMs:901_000});
   assert.equal(view.session.projection.phase,'completed');assert.equal(view.timed?.budgetWrapped,true);
   // The client clock never moves the recorded time backward.
@@ -1510,7 +1548,8 @@ test('budget wrap-up is a recorded action, finishes open work, and Study a littl
   const row=db.prepare('SELECT * FROM vocabulary_timed_session_records WHERE session_id=?').get(id)!;
   assert.equal(row.session_active_ms,901_000);assert.equal(row.day_active_ms,901_000);assert.equal(row.extensions,1);assert.equal(row.budget_wrapped,1);
   const served=JSON.parse(String(row.served_json)) as {key:string;class:string;outcome:string;priorLapse:boolean|null;classicDueAt:string|null}[];
-  assert.deepEqual(served.map(entry=>[entry.key,entry.class,entry.outcome,entry.priorLapse]),[['word:a','held','covered',false],['word:b','held','covered',false]]);
+  assert.deepEqual(served.map(entry=>[entry.key,entry.class,entry.outcome,entry.priorLapse]),
+    ['a','b','new'].filter(word=>word===first||word===second).map(word=>[`word:${word}`,'held','covered',false]));
   assert.throws(()=>nextVocabularyExercise(id,'bad-time',{activeDurationMs:-1}),/not accepting|bounded/);
 }));
 
@@ -1535,27 +1574,35 @@ test('a fresh entry into a spent day still runs a little while, counting earlier
 test('closure counts one passed-over day for unstarted due held items and clears served ones',()=>owner(()=>{
   practiceAll('a','b','new');timedOn();
   db.prepare("INSERT INTO learner_timed_skip_counts VALUES('alice','word','a',2,'2026-01-01','2026-01-01')").run();
+  type Count={target_id:string;skip_days:number;last_skipped_day:string};
+  const counts=()=>db.prepare('SELECT target_id,skip_days,last_skipped_day FROM learner_timed_skip_counts ORDER BY target_id').all().map(row=>({...row}) as Count);
+  /** One session that serves whichever word comes first, then wraps up and closes. */
   const close=(key:string)=>{
     let view=startVocabularyStudy({});const id=view.session.sessionId;backdate(id);
-    assert.equal(view.currentWordId,'a');
+    const served=view.currentWordId!;
     view=answerCurrent(id,key,view);view=nextVocabularyExercise(id,`${key}-wrap`,{activeDurationMs:1_200_000});
     assert.equal(view.session.projection.phase,'completed');
     const staged=stageVocabularySessionCompletion(id,view.session.actions.length);closeVocabularySessionCompletion(id,staged.completionId);
-    return id;
+    return {id,served};
   };
-  const counts=()=>db.prepare('SELECT target_id,skip_days,last_skipped_day FROM learner_timed_skip_counts ORDER BY target_id').all().map(row=>({...row}));
-  const id=close('first');
-  assert.deepEqual(counts(),[{target_id:'b',skip_days:1,last_skipped_day:today()},{target_id:'new',skip_days:1,last_skipped_day:today()}]);
-  const row=db.prepare('SELECT new_words_started,unstarted_pressing_json,budget_wrapped FROM vocabulary_timed_session_records WHERE session_id=?').get(id)!;
+  /** Served items clear; each unstarted due item gains at most one day per local day. */
+  const expected=(before:Count[],served:string)=>['a','b','new'].filter(word=>word!==served).map(word=>{
+    const prior=before.find(entry=>entry.target_id===word);
+    return prior?.last_skipped_day===today()?prior:{target_id:word,skip_days:(prior?.skip_days??0)+1,last_skipped_day:today()};
+  });
+  let before=counts();const first=close('first');
+  assert.deepEqual(counts(),expected(before,first.served));
+  const row=db.prepare('SELECT new_words_started,unstarted_pressing_json,budget_wrapped FROM vocabulary_timed_session_records WHERE session_id=?').get(first.id)!;
   assert.deepEqual({...row},{new_words_started:0,unstarted_pressing_json:'[]',budget_wrapped:1});
   // The same local day never counts twice.
-  makeDue('a');close('same-day');
-  assert.deepEqual(counts().map(entry=>entry.skip_days),[1,1]);
+  makeDue(first.served);before=counts();const sameDay=close('same-day');
+  assert.deepEqual(counts(),expected(before,sameDay.served));
   db.prepare("UPDATE learner_timed_skip_counts SET last_skipped_day='2000-01-01'").run();
-  makeDue('a');close('next-day');
-  assert.deepEqual(counts().map(entry=>entry.skip_days),[2,2]);
+  makeDue(sameDay.served);before=counts();const nextDay=close('next-day');
+  assert.deepEqual(counts(),expected(before,nextDay.served));
   // Schedules of passed-over items never move.
-  assert.equal(getVocabularyWordSchedule('b')?.nextEligibleAt,null);
+  for(const word of ['a','b','new'].filter(word=>![first.served,sameDay.served,nextDay.served].includes(word)))
+    assert.equal(getVocabularyWordSchedule(word)?.nextEligibleAt,null);
 }));
 
 test('closure counts due held items that never entered the session pool',()=>owner(()=>{
@@ -1586,6 +1633,7 @@ test('the optional completion line is stored on timed sessions only, trimmed, bo
 test('Undo passes over the recorded budget wrap-up and extension to the learner\'s last answer',()=>owner(()=>{
   practiceAll('a','b','new');timedOn();
   let view=startVocabularyStudy({});const id=view.session.sessionId;backdate(id);
+  const first=view.currentWordId!;
   view=answerCurrent(id,'a',view);
   const answered=view.session.actions.at(-1)!;
   view=nextVocabularyExercise(id,'wrap',{activeDurationMs:1_200_000});
@@ -1593,10 +1641,10 @@ test('Undo passes over the recorded budget wrap-up and extension to the learner\
   assert.notEqual(view.session.projection.latestUndoableActionId,view.session.actions.at(-1)!.actionId,'budget wrap-up is not undoable');
   view=commandVocabularyStudy(id,'more',{type:'studyMore',activeDurationMs:1_200_100});
   view=nextVocabularyExercise(id,'after-more',{activeDurationMs:1_200_200});
-  assert.equal(view.currentWordId,'b');
+  assert.notEqual(view.currentWordId,first);
   // Undo reaches the answer (and its automatic wrap) rather than the trainer's transitions.
   view=commandVocabularyStudy(id,'undo',{type:'undo'});
-  assert.equal(view.session.projection.words.a.covered,false);
+  assert.equal(view.session.projection.words[first].covered,false);
   assert.ok(view.session.projection.undoneActionIds.includes(answered.actionId));
   assert.equal(view.session.projection.phase,'active');
   assert.equal(view.timed?.budgetWrapped,false);

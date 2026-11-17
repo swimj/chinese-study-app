@@ -16,12 +16,13 @@ import { getPendingVocabularySkills, isVocabularyWordReadyToCover, isVocabularyT
 import type { VocabularyPersistedSession } from '../../src/domain/vocabulary-session-api.ts';
 import { getDb } from '../db/connection.ts';
 import { allocateSessionBucketSlots, DEFAULT_SESSION_BUCKET_WEIGHTS } from '../../src/domain/session-limits.ts';
-import { composeVocabularyStudy, localNewWordDay, type VocabularyComposition } from './composition.ts';
+import { composeVocabularyStudy, localNewWordDay, vocabularyCompositionSettings, type VocabularyComposition } from './composition.ts';
+import { admitTimedVocabularyStudy, type TimedAdmission } from './timed-admission.ts';
 import { createTimedSessionRecord, getDailyStudyMinutes, markTimedGateHeld, readTimedSessionRecord, readTimedSkipDays, recordTimedActiveMs,
   saveTimedSessionNote, timedBudgetWrapped, timedDayActiveMs, timedTargetFacts, timedWrapThreshold, vocabularyTimedSessionsEnabled } from '../db/vocabulary-timed-sessions.ts';
 import { chooseTimedTarget } from './timed-selection.ts';
-import { PRESSING_SKIP_DAYS, TIMED_SESSION_EXTENSION_MS, timedTargetKey, type VocabularyTimedSessionContext } from '../../src/domain/timed-session.ts';
-import { planVocabularyPureCues } from './pure-cue-serving.ts';
+import { PRESSING_SKIP_DAYS, TIMED_SESSION_EXTENSION_MS, timedReviewBound, timedTargetKey, type VocabularyTimedSessionContext } from '../../src/domain/timed-session.ts';
+import { adoptVocabularyPureCues, planVocabularyPureCues } from './pure-cue-serving.ts';
 import { hasExplicitlyEmptyProductionScope, isVocabularyProductionProxied } from './production-coverage.ts';
 import { isVocabularyDefinitionFallback } from '../../src/domain/vocabulary-production-coverage.ts';
 import { ensureVocabularySensesFromBootstrap } from './sense-readiness.ts';
@@ -237,18 +238,23 @@ export function getVocabularyStudy(sessionId:string):VocabularyStudy {
     timed:timedRecord?{budgetWrapped,canStudyMore:budgetWrapped&&session.projection.phase==='completed'&&session.status!=='closed',
       sessionActiveMs:timedRecord.lastActiveMs,note:timedRecord.note}:null};
 }
-function composeCurrentStudy(resolved:Map<string,ResolvedVocabularyTeaching>, timeZone?:string):VocabularyComposition {
+/** Content checks shared by both admission paths; teaching readiness retains what it resolves. */
+function studyGates(resolved:Map<string,ResolvedVocabularyTeaching>) {
   const contentUsable = (wordId:string,skill:'recognition'|'production'|'contextual_selection'):boolean => {
     if(isSenseContentReconciliationPending(wordId))return false;
     if(skill!=='contextual_selection')return true;
     const mode=getVocabularyLearnerWord(wordId)?.mode;
     return mode!==undefined&&mode!=='unstudied'&&listVocabularyExercises({wordId,mode}).some((entry)=>eligible(entry)&&contrastEligible(entry,wordId));
   };
-  return composeVocabularyStudy({teachingReady:wordId=>{const material=resolveVocabularyTeaching(wordId);if(material)resolved.set(wordId,material);return material!==null;},timeZone,
-    isLearningContentUsable:wordId=>!isSenseContentReconciliationPending(wordId),
-    isReviewContentUsable:contentUsable});
+  return {teachingReady:(wordId:string)=>{const material=resolveVocabularyTeaching(wordId);if(material)resolved.set(wordId,material);return material!==null;},
+    isLearningContentUsable:(wordId:string)=>!isSenseContentReconciliationPending(wordId),
+    isReviewContentUsable:contentUsable};
 }
-/** Shared final admission, including the independent pure-cue cap and interleaving. */
+function composeCurrentStudy(resolved:Map<string,ResolvedVocabularyTeaching>, timeZone?:string):VocabularyComposition {
+  return composeVocabularyStudy({...studyGates(resolved),timeZone});
+}
+type PlannedStudy={words:VocabularySessionInitialContext['words'][number][];reviewOrder:{kind:'word'|'pure_cue';id:string}[]};
+/** Untimed final admission: the shared 1,000-item cap and bucket weights, with pure cues interleaved. */
 function planVocabularyStudy(composition:VocabularyComposition, samplingSeed:string) {
     const words:VocabularySessionInitialContext['words'][number][]=[];
     for(const wordId of composition.newWordIds) {
@@ -276,43 +282,53 @@ function planVocabularyStudy(composition:VocabularyComposition, samplingSeed:str
     const admittedWords=[...words.filter((word)=>word.mode==='unstudied').slice(0,slots.unstudied),
       ...words.filter((word)=>word.mode==='solidify').slice(0,slots.learning),
       ...admittedReview.filter((entry)=>entry.kind==='word').map((entry)=>reviewWords.find((word)=>word.wordId===entry.id)!)];
-    return {words:admittedWords,reviewOrder:admittedReview};
+    return {words:admittedWords,reviewOrder:admittedReview} satisfies PlannedStudy;
+}
+const solidifySkills:Array<'recognition'|'production'>=['recognition','production'];
+function planTimedStudy(admission:TimedAdmission):PlannedStudy {
+  return {words:[...admission.newWordIds.map(wordId=>({wordId,mode:'unstudied' as const})),
+    ...admission.learningWordIds.map(wordId=>({wordId,mode:'solidify' as const,solidifySkills:[...solidifySkills]})),
+    ...admission.reviewWords.map(word=>({wordId:word.wordId,mode:word.mode,selectedSkill:word.selectedSkill}))],
+    reviewOrder:admission.reviewOrder};
 }
 function hasPendingReconciliation():boolean {
   return (getDb().prepare(`SELECT r.word_id FROM sense_content_reconciliations r
     JOIN learner_words w ON w.word_id=r.word_id WHERE r.status='applied' AND w.learner_id=? AND w.dismissed_at IS NULL`).all(requireLearnerId()) as {word_id:string}[]).some(row=>isSenseContentReconciliationPending(row.word_id));
 }
-/**
- * Timed admission: pressing held items move ahead of ordinary due work before the
- * shared cap applies, so the cap cannot hide them. Due rules themselves are unchanged.
- */
-function timedComposition(composition:VocabularyComposition,skipDays:ReadonlyMap<string,number>):VocabularyComposition {
-  const pressing=(wordId:string)=>(skipDays.get(timedTargetKey('word',wordId))??0)>=PRESSING_SKIP_DAYS;
-  const review=[...composition.allReviewSelections.filter(entry=>pressing(entry.wordId)),...composition.allReviewSelections.filter(entry=>!pressing(entry.wordId))];
-  return {...composition,reviewSelections:review,dueWordIds:[...composition.allLearningWordIds,...review.map(entry=>entry.wordId)]};
-}
-function timedContext(planned:ReturnType<typeof planVocabularyStudy>,skipDays:ReadonlyMap<string,number>,now:string,timeZone?:string):VocabularyTimedSessionContext {
+/** The day's allowance at Start: every entry runs at least a little while, including a fresh entry into a spent day. */
+function timedWindow(now:string,timeZone?:string) {
   const dayKey=timeZone?localNewWordDay(now,timeZone):now.slice(0,10);
   const {minutes,source}=getDailyStudyMinutes();const budgetMs=minutes*60_000;const dayActiveMsAtStart=timedDayActiveMs(dayKey);
+  return {dayKey,budgetMs,budgetSource:source,dayActiveMsAtStart,untilDayActiveMs:Math.max(budgetMs,dayActiveMsAtStart+TIMED_SESSION_EXTENSION_MS)};
+}
+function timedContext(planned:PlannedStudy,skipDays:ReadonlyMap<string,number>,window:ReturnType<typeof timedWindow>):VocabularyTimedSessionContext {
   const held=[...planned.words.filter(word=>word.mode==='practice'||word.mode==='maintain').map(word=>timedTargetKey('word',word.wordId)),
     ...planned.reviewOrder.filter(entry=>entry.kind==='pure_cue').map(entry=>timedTargetKey('pure_cue',entry.id))];
-  return {version:1,dayKey,budgetMs,budgetSource:source,dayActiveMsAtStart,
-    // Every entry runs at least a little while, including a fresh entry into a spent day.
-    untilDayActiveMs:Math.max(budgetMs,dayActiveMsAtStart+TIMED_SESSION_EXTENSION_MS),
+  return {version:1,...window,
     pressingKeys:held.filter(key=>(skipDays.get(key)??0)>=PRESSING_SKIP_DAYS),
     facts:timedTargetFacts([...planned.words.map(word=>({kind:'word' as const,id:word.wordId,mode:word.mode,...(word.selectedSkill?{selectedSkill:word.selectedSkill}:{})})),
       ...planned.reviewOrder.filter(entry=>entry.kind==='pure_cue').map(entry=>({kind:'pure_cue' as const,id:entry.id}))])};
 }
 export function startVocabularyStudy(options:{timeZone?:string}={}):VocabularyStudy {
   const resolved=new Map<string,ResolvedVocabularyTeaching>();
-  const composition=composeCurrentStudy(resolved, options.timeZone);
+  // Read at Start only; a session keeps the paradigm it began under.
+  const timed=vocabularyTimedSessionsEnabled();
+  const composition=timed?null:composeCurrentStudy(resolved, options.timeZone);
   return atomic(()=>{
     const sessionId=randomUUID();const now=new Date().toISOString();
-    const timed=vocabularyTimedSessionsEnabled();const skipDays=timed?readTimedSkipDays():new Map<string,number>();
-    const planned=planVocabularyStudy(timed?timedComposition(composition,skipDays):composition,sessionId);
+    let planned:PlannedStudy;let preparationPending:boolean;let timedFrame:VocabularyTimedSessionContext|undefined;
+    if(composition){planned=planVocabularyStudy(composition,sessionId);preparationPending=composition.preparationPending;}
+    else {
+      adoptVocabularyPureCues(now);
+      const skipDays=readTimedSkipDays();const window=timedWindow(now,options.timeZone);
+      const admission=admitTimedVocabularyStudy({now,timeZone:options.timeZone,sessionSeed:sessionId,skipDays,
+        reviewBound:timedReviewBound(window.untilDayActiveMs-window.dayActiveMsAtStart),...studyGates(resolved)});
+      planned=planTimedStudy(admission);preparationPending=admission.preparationPending;
+      timedFrame=timedContext(planned,skipDays,window);
+    }
     if(planned.words.length===0&&planned.reviewOrder.length===0)throw new VocabularySessionInputError(hasPendingReconciliation()
       ?'Replacement study content is being prepared. Try again shortly; other ready work can be studied when available.'
-      :composition.preparationPending
+      :preparationPending
       ?'Your new-word introductions are being prepared. Try starting again shortly; other ready work can be studied when available.'
       :'No ready study material is available.');
     const retainedTeaching=new Map<string,NonNullable<ReturnType<typeof teaching>>>();
@@ -323,8 +339,8 @@ export function startVocabularyStudy(options:{timeZone?:string}={}):VocabularySt
       word.teachingRequirements=ready.requirements;
       retainedTeaching.set(word.wordId,ready);
     }
-    const context:VocabularySessionInitialContext={sessionId,words:planned.words,composition:composition.settings,reviewOrder:planned.reviewOrder,
-      ...(timed?{timed:timedContext(planned,skipDays,now,options.timeZone)}:{})};
+    const context:VocabularySessionInitialContext={sessionId,words:planned.words,composition:composition?.settings??vocabularyCompositionSettings(),
+      reviewOrder:planned.reviewOrder,...(timedFrame?{timed:timedFrame}:{})};
     context.payload=composeVocabularySessionPayload(context,retainedTeaching);
     const created=createVocabularySession(context,now);
     if(context.timed)createTimedSessionRecord(created.sessionId,context.timed,now);
@@ -379,7 +395,7 @@ function selectNextWord(session:VocabularyPersistedSession,projection:Vocabulary
   if(timed)return chooseTimedTarget({sessionId:session.sessionId,encounterCount:encounters.length,
     sample:(length,salt)=>sampleIndex(session,projection,length,salt),
     candidates:targets.map((target)=>{const position=lastPosition(target);
-      return {target,pressing:pressing(target),bucket:bucket(target),lastPosition:position,lastEncounterId:position<0?null:encounters[position].encounterId,order:order(target)};})});
+      return {target,pressing:pressing(target),lastPosition:position,lastEncounterId:position<0?null:encounters[position].encounterId,order:order(target)};})});
   const rested=targets.filter((target)=>lastPosition(target)<0||encounters.length-1-lastPosition(target)>=VOCABULARY_SESSION_POLICY.interveningExercisesBeforeWordReturn);
   const pool=rested.length?rested:targets;
   const buckets=(['review','learning','unstudied'] as const).map((name)=>({name,targets:pool.filter((target)=>bucket(target)===name)}))

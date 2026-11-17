@@ -15,9 +15,7 @@ import { selectVocabularyReviewSkills, type VocabularyReviewSelection, type Voca
 
 export const VOCABULARY_COMPOSITION_POLICY = { maxSessionWords: MAX_SESSION_ITEMS } as const;
 export type VocabularyCompositionSettings = { introductionOrder: StudyIntroductionOrder; introductionSpacing: number };
-export type VocabularyComposition = { newWordIds: string[]; dueWordIds: string[]; reviewSelections: VocabularyReviewSelection[]; settings: VocabularyCompositionSettings; preparationPending: boolean; remainingNewWordQuota: number;
-  /** Untruncated due work, before the shared item cap; timed admission reorders it before applying the cap itself. */
-  allLearningWordIds: string[]; allReviewSelections: VocabularyReviewSelection[] };
+export type VocabularyComposition = { newWordIds: string[]; dueWordIds: string[]; reviewSelections: VocabularyReviewSelection[]; settings: VocabularyCompositionSettings; preparationPending: boolean; remainingNewWordQuota: number };
 function setting(name: string): unknown {
   const row = getDb().prepare('SELECT value_json FROM learner_settings WHERE learner_id=? AND setting_key=?').get(requireLearnerId(), name) as {value_json:string}|undefined;
   return row ? JSON.parse(row.value_json) as unknown : undefined;
@@ -106,34 +104,44 @@ export function planVocabularyNewWords(options:{limit:number;seed:string;now:str
   return {newWordIds:newIds};
 }
 
-/** New-model state is the only lifecycle predicate; source material and lexical deck identities can be shared. */
+/** New words for one Start: ready reserve hints, checked in order until the day's quota is met. */
+export function composeVocabularyNewWords(options:{now:string;timeZone?:string;teachingReady:(wordId:string)=>boolean}):
+  {newWordIds:string[];remainingNewWordQuota:number;preparationPending:boolean} {
+  const remaining=remainingVocabularyNewWordQuota(options.now,options.timeZone);
+  const newIds:string[]=[];let stale=false;
+  if(remaining>0)for(const hint of getReadyWordReserveCandidates(options.now)) {
+    if(hasPendingVocabularyIntakeMatch(hint.wordId)){stale=true;continue;}
+    if(options.teachingReady(hint.wordId))newIds.push(hint.wordId);
+    else {stale=true;reportStaleWordReserveHint(hint,options.now);}
+    if(newIds.length>=remaining)break;
+  }
+  return {newWordIds:newIds,remainingNewWordQuota:remaining,preparationPending:remaining>newIds.length&&(stale||hasPendingWordReserveCandidates())};
+}
+/** The whole due Solidify set, oldest first, after its content check. */
+export function readVocabularyLearningWordIds(now:string,isUsable?:(wordId:string)=>boolean):string[] {
+  return (getDb().prepare(`SELECT w.word_id FROM learner_words w JOIN learner_word_schedules s USING(learner_id,word_id)
+    WHERE w.learner_id=? AND w.mode='solidify' AND w.dismissed_at IS NULL
+      AND ${vocabularySessionWordEligibleSql('w.word_id')}
+      AND (s.next_eligible_at IS NULL OR s.next_eligible_at<=?)
+    ORDER BY w.added_at,w.word_id`).all(requireLearnerId(),now) as {word_id:string}[]).map((row)=>row.word_id)
+    .filter((wordId)=>!isUsable||isUsable(wordId));
+}
+
+/** Untimed composition. New-model state is the only lifecycle predicate; source material and lexical deck identities can be shared. */
 export function composeVocabularyStudy(options:{
   teachingReady:(wordId:string)=>boolean; now?:string;
   isLearningContentUsable?: (wordId: string) => boolean;
   /** Review SQL has already established enablement and relevance; only content checks remain. */
   isReviewContentUsable?: (wordId: string, skillId: VocabularyReviewSkill) => boolean; timeZone?: string;
 }):VocabularyComposition {
-  const now=options.now??new Date().toISOString(),learner=requireLearnerId();
-  const settings=vocabularyCompositionSettings();const remaining=remainingVocabularyNewWordQuota(now, options.timeZone);
-  const newIds:string[]=[];let stale=false;
-  if(remaining>0)for(const hint of getReadyWordReserveCandidates(now)) {
-    if(hasPendingVocabularyIntakeMatch(hint.wordId)){stale=true;continue;}
-    if(options.teachingReady(hint.wordId))newIds.push(hint.wordId);
-    else {stale=true;reportStaleWordReserveHint(hint,now);}
-    if(newIds.length>=remaining)break;
-  }
-  const learningWordIds=(getDb().prepare(`SELECT w.word_id FROM learner_words w JOIN learner_word_schedules s USING(learner_id,word_id)
-    WHERE w.learner_id=? AND w.mode='solidify' AND w.dismissed_at IS NULL
-      AND ${vocabularySessionWordEligibleSql('w.word_id')}
-      AND (s.next_eligible_at IS NULL OR s.next_eligible_at<=?)
-    ORDER BY w.added_at,w.word_id`).all(learner,now) as {word_id:string}[]).map((row)=>row.word_id)
-    .filter((wordId)=>!options.isLearningContentUsable||options.isLearningContentUsable(wordId));
+  const now=options.now??new Date().toISOString();
+  const settings=vocabularyCompositionSettings();
+  const fresh=composeVocabularyNewWords({now,timeZone:options.timeZone,teachingReady:options.teachingReady});const newIds=fresh.newWordIds;
+  const learningWordIds=readVocabularyLearningWordIds(now,options.isLearningContentUsable);
   const reviewCandidates=selectVocabularyReviewSkills({now,canUseSkill:options.isReviewContentUsable});
   const slots=allocateSessionBucketSlots({review:reviewCandidates.length,learning:learningWordIds.length,unstudied:newIds.length});
   const newWordIds=newIds.slice(0,slots.unstudied);
   const reviewSelections=reviewCandidates.slice(0,slots.review);
   const selectedDue=[...learningWordIds.slice(0,slots.learning),...reviewSelections.map((entry)=>entry.wordId)];
-  const preparationPending=remaining>newIds.length&&(stale||hasPendingWordReserveCandidates());
-  return {newWordIds,dueWordIds:selectedDue,reviewSelections,settings,preparationPending,remainingNewWordQuota:remaining,
-    allLearningWordIds:learningWordIds,allReviewSelections:reviewCandidates};
+  return {newWordIds,dueWordIds:selectedDue,reviewSelections,settings,preparationPending:fresh.preparationPending,remainingNewWordQuota:fresh.remainingNewWordQuota};
 }

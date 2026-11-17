@@ -296,11 +296,27 @@ records doing enough for the day, not mastery. A wrong answer remains evidence
 even when a later exercise succeeds. Pure cues complete independently using the
 same first-success or post-mistake reinforcement rule as Practice.
 
-Composition uses a shared 1,000-item limit and a 50/30/20 mix of Practice/Maintain,
-Solidify, and Unstudied work, redistributing unused capacity. Practice/Maintain
-select the most urgent eligible skill for each word; completing that work applies
-a six-hour shared recency guard. Independent pure cues share the review portion
-of the mix and interleave with ordinary word exercises.
+Timed sessions (the default paradigm) cap each kind of work on its own terms,
+with no capacity shared between them: new words up to the day's new-word limit;
+every due Solidify word; at most five Practice/Maintain words and due fragile
+pure cues together per minute of the session's time allowance, taken from the top
+of the ranking (items passed over on three separate days first, then the most
+urgent, with fragile cues interleaved); strong-cue maintenance scaled to the review
+admitted; and every due recheck. Only due items are admitted, and an item that
+fails a content check is passed over for the next in rank. Within the session,
+pressing work (Solidify, work already started and still owed, and passed-over
+items) takes most picks; other items, new words included, are drawn at random
+with no weighting by kind, so a large review load leaves fewer new words. A
+session whose admitted work runs out before its allowance ends; starting again
+composes a fresh session. A new word admitted but never reached uses none of the
+day's limit.
+
+Classic (untimed) sessions keep a shared 1,000-item limit and a 50/30/20 mix of
+Practice/Maintain, Solidify, and Unstudied work, redistributing unused capacity.
+
+Practice/Maintain select the most urgent eligible skill for each word; completing
+that work applies a six-hour shared recency guard. Independent pure cues share the
+review portion of admission and interleave with ordinary word exercises.
 
 Clean, unassisted Practice/Maintain recall earns spacing credit for retention
 beyond the previous scheduled interval. The next interval multiplies the previous
