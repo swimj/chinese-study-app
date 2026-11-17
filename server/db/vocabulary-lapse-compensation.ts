@@ -4,6 +4,7 @@ import { isLearnerPronunciationRejection, type VocabularySessionProjection } fro
 import { getDb } from './connection.ts';
 import { emitBackendEvent } from './vocabulary-content.ts';
 import { isActiveVocabularyRefreshRequest, type VocabularyPureCueSchedulerState } from './vocabulary-learners.ts';
+import { mergePureCueSchedulerState, mergeWordSchedulerState, splitPureCueSchedulerState, splitWordSchedulerState } from './vocabulary-schedule-columns.ts';
 
 type SchedulerState = Omit<VocabularyPureCueSchedulerState, 'postCompensationRecheckAt'>;
 type ScheduleRow = {
@@ -35,7 +36,8 @@ function readSnapshot(json: string, pure: boolean): Snapshot | null {
   const raw = parseSnapshotObject(json);
   if (!raw) return null;
   const scheduler = pure
-    ? typeof raw.scheduler_state_json === 'string' ? parseSnapshotObject(raw.scheduler_state_json) as SchedulerState | null : null
+    // Receipts captured before 0077 hold every fact in JSON; later rows carry columns.
+    ? typeof raw.scheduler_state_json === 'string' && parseSnapshotObject(raw.scheduler_state_json) ? mergePureCueSchedulerState(raw) as SchedulerState : null
     : raw.schedulerState as SchedulerState | null | undefined;
   const lastPractisedAt = pure ? raw.last_practised_at : raw.lastPractisedAt;
   const nextEligibleAt = pure ? raw.next_eligible_at : raw.nextEligibleAt;
@@ -107,17 +109,20 @@ export function compensateUnfairVocabularyLapse(
   else if (!prior || !lapsed) reason = 'missing_or_invalid_schedule_snapshot';
 
   if (current && prior && lapsed && reason === null) {
-    const state = JSON.parse(current.scheduler_state_json) as SchedulerState;
+    const state: SchedulerState = pure ? mergePureCueSchedulerState(current) : mergeWordSchedulerState(current);
     const breakUntil = new Date(Date.parse(at) + VOCABULARY_COMPENSATION_POLICY.breakMs).toISOString();
     const strongSince = prior.scheduler.strongSince ?? null;
     const dueAt = [breakUntil, state.resetUntil ?? '', prior.scheduler.resetUntil ?? ''].sort().at(-1)!;
     const adjusted = { ...state, intervalHours: prior.scheduler.intervalHours, easeFactor: prior.scheduler.easeFactor,
       cleanCoveredSessions: prior.scheduler.cleanCoveredSessions ?? 0, resetUntil: dueAt };
     if (pure) {
-      db.prepare(`UPDATE learner_pure_cue_schedules SET next_eligible_at=?,last_practised_at=?,scheduler_state_json=?,state_version=state_version+1
-        WHERE learner_id=? AND content_id=?`).run(dueAt, prior.lastPractisedAt,
-          JSON.stringify({ ...adjusted, strongSince, strongSuccesses: prior.scheduler.strongSuccesses ?? 0,
-            postCompensationRecheckAt: dueAt }), learnerId, subject);
+      const stored = splitPureCueSchedulerState({ ...adjusted, strongSince, strongSuccesses: prior.scheduler.strongSuccesses ?? 0,
+        postCompensationRecheckAt: dueAt });
+      db.prepare(`UPDATE learner_pure_cue_schedules SET next_eligible_at=?,last_practised_at=?,scheduler_state_json=?,interval_hours=?,enabled=?,
+        reset_until=?,strong_since=?,strong_successes=?,maintenance_identity=?,recheck_at=?,state_version=state_version+1
+        WHERE learner_id=? AND content_id=?`).run(dueAt, prior.lastPractisedAt, stored.json, stored.columns.interval_hours, stored.columns.enabled,
+          stored.columns.reset_until, stored.columns.strong_since, stored.columns.strong_successes, stored.columns.maintenance_identity,
+          stored.columns.recheck_at, learnerId, subject);
     } else {
       const nextEligibleAt = [dueAt, current.next_eligible_at ?? '', prior.nextEligibleAt ?? ''].sort().at(-1)!;
       // Roll back a refresh created by this lapse only while it is still the current
@@ -125,9 +130,11 @@ export function compensateUnfairVocabularyLapse(
       const restoreRefresh = prior.refreshUntil !== lapsed.refreshUntil
         && current.refresh_until === lapsed.refreshUntil && current.refresh_requested_at === lapsed.refreshRequestedAt
         && !isActiveVocabularyRefreshRequest(learnerId, subject, current.refresh_until ?? null, at);
-      db.prepare(`UPDATE learner_word_schedules SET next_eligible_at=?,last_practised_at=?,scheduler_state_json=?,refresh_requested_at=?,refresh_until=?,
+      const stored = splitWordSchedulerState({ ...adjusted, postCompensationEarliestCheckAt: dueAt });
+      db.prepare(`UPDATE learner_word_schedules SET next_eligible_at=?,last_practised_at=?,scheduler_state_json=?,interval_hours=?,enabled=?,
+        reset_until=?,post_compensation_check_at=?,refresh_requested_at=?,refresh_until=?,
         state_version=state_version+1 WHERE learner_id=? AND word_id=?`).run(nextEligibleAt, prior.lastPractisedAt,
-          JSON.stringify({ ...adjusted, postCompensationEarliestCheckAt: dueAt }),
+          stored.json, stored.columns.interval_hours, stored.columns.enabled, stored.columns.reset_until, stored.columns.post_compensation_check_at,
           restoreRefresh ? prior.refreshRequestedAt : current.refresh_requested_at ?? null,
           restoreRefresh ? prior.refreshUntil : current.refresh_until ?? null, learnerId, subject);
     }

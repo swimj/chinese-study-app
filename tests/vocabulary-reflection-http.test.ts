@@ -1,3 +1,4 @@
+import { applyVocabularyDueColumns } from './helpers/vocabulary-due-columns.ts';
 import type { saveRepertoireWordDefaults } from '../server/db/vocabulary-repertoire-revision.ts';
 import { installCaseReviewSchema } from './helpers/case-review-schema.ts';
 import assert from 'node:assert/strict';
@@ -54,6 +55,7 @@ beforeEach(()=>{
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0043_vocabulary_import.sql',import.meta.url),'utf8').split('CREATE TRIGGER')[0]!);
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0069_sense_content_reconciliation.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0073_proactive_repertoire.sql',import.meta.url),'utf8').split('-- The scan is independently switchable')[0]!);
+  applyVocabularyDueColumns(sql);
   installCaseReviewSchema(sql);
   createVocabularyContent(draft(),{kind:'operator',id:'editor'});
   const completion=alice(()=>{

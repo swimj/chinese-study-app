@@ -1,3 +1,5 @@
+import { mergePureCueSchedulerState } from '../server/db/vocabulary-schedule-columns.ts';
+import { applyVocabularyDueColumns, insertPureCueSchedule } from './helpers/vocabulary-due-columns.ts';
 import { resolveVocabularyLearnerSenseScope, writeVocabularyLearnerSenseScope } from '../server/db/vocabulary-learner-senses.ts';
 import { isVocabularyProductionProxied } from '../server/vocabulary/production-coverage.ts';
 import { createHash } from 'node:crypto';
@@ -79,6 +81,7 @@ beforeEach(()=>{
     INSERT INTO service_controls VALUES('maintenance_mode',0,'1970-01-01','system_default'),('provider_work_enabled',1,'1970-01-01','system_default'),('operator_only',0,'1970-01-01','system_default');`);
   db.exec(fs.readFileSync(new URL('../server/db/migrations/0071_timed_daily_sessions.sql',import.meta.url),'utf8'));
   db.exec("UPDATE service_controls SET enabled=0 WHERE control_key='timed_sessions'");
+  applyVocabularyDueColumns(db);
   owner(()=>{
     exercise('general-1','a');exercise('general-2','a');exercise('teach-a','a','teaching');exercise('teach-new','new','teaching');
     // These teaching members have already passed background readiness before the request under test.
@@ -113,15 +116,13 @@ test('Start does not admit teaching whose generated recognition baseline is deac
 
 test('Start prioritizes a due strong-cue recheck while a word still needs to be due for review',()=>owner(()=>{
   db.exec(`UPDATE learner_words SET mode='practice' WHERE word_id='a';
-    UPDATE learner_word_schedules SET scheduler_state_json=json_set(scheduler_state_json,
-      '$.intervalHours',720,'$.postCompensationEarliestCheckAt','2020-01-01T00:00:00.000Z'),
+    UPDATE learner_word_schedules SET interval_hours=720,post_compensation_check_at='2020-01-01T00:00:00.000Z',
       last_practised_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE word_id='a';`);
   exercise('recheck-strong','b','general',true);
   exercise('routine-fragile','b','general',true);
   adoptVocabularyPureCues();
   db.exec(`UPDATE learner_pure_cue_schedules SET next_eligible_at='2020-01-01T00:00:00.000Z';
-    UPDATE learner_pure_cue_schedules SET scheduler_state_json=json_set(scheduler_state_json,
-      '$.strongSince','2020-01-01T00:00:00.000Z','$.strongSuccesses',3,'$.postCompensationRecheckAt','2020-01-02T00:00:00.000Z'),
+    UPDATE learner_pure_cue_schedules SET strong_since='2020-01-01T00:00:00.000Z',strong_successes=3,recheck_at='2020-01-02T00:00:00.000Z',
       last_practised_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE content_id='recheck-strong';`);
   const started=startVocabularyStudy();
   assert.deepEqual(started.session.context.reviewOrder?.[0],{kind:'pure_cue',id:'recheck-strong'});
@@ -242,7 +243,7 @@ test('dictionary baselines are shared across learners without duplicating the re
   }
   assert.equal(db.prepare("SELECT count(*) AS n FROM content_items WHERE json_extract(body_json,'$.source.kind')='dictionary_baseline'").get()?.n,2);
   db.prepare("INSERT INTO learner_content_deactivations VALUES('alice',?,'2026-10-28T00:00:00.000Z')").run(productionId);
-  db.prepare("INSERT INTO learner_owned_word_skill_state VALUES('alice','b','recognition',24,2.5,0,NULL,NULL)").run();
+  db.prepare("INSERT INTO learner_owned_word_skill_state(learner_id,word_id,skill_id,interval_hours,ease_factor,enabled,next_due_at,last_studied_at) VALUES('alice','b','recognition',24,2.5,0,NULL,NULL)").run();
   const aliceAfter=owner(()=>composeVocabularySessionPayload(context('alice-disabled')));
   const bobAfter=runWithLearnerId('bob',()=>composeVocabularySessionPayload(context('bob-unchanged')));
   assert.deepEqual(aliceAfter.words.b.general.practice,[]);
@@ -297,8 +298,8 @@ test('Unstudied teaching requires delivered introduction, self-assessed recognit
 
 test('independent pure cues expose no selected word and never credit their accepted answer word',()=>owner(()=>{
   const cue=exercise('pure','b','general',true);
-  db.prepare(`INSERT INTO learner_pure_cue_schedules(learner_id,content_id,policy_version,scheduler_state_json) VALUES('alice',?,'test',?)`)
-    .run(cue.contentId,JSON.stringify({intervalHours:24,easeFactor:2.5,enabled:1,cleanCoveredSessions:0}));
+  db.prepare(`INSERT INTO learner_pure_cue_schedules(learner_id,content_id,policy_version,scheduler_state_json,interval_hours,enabled) VALUES('alice',?,'test',?,24,1)`)
+    .run(cue.contentId,JSON.stringify({easeFactor:2.5,cleanCoveredSessions:0}));
   createVocabularySession({sessionId:'pure-session',words:[]});
   let view=nextVocabularyExercise('pure-session','next');assert.equal(view.currentWordId,null);assert.deepEqual(view.words,[]);
   assert.equal(view.currentEncounter?.snapshot.schedulingScope,'pure_cue');
@@ -310,7 +311,7 @@ test('session ownership stays live while content deactivation and skill suppress
   const view=owner(()=>{db.prepare("UPDATE learner_words SET mode='practice' WHERE word_id='a'").run();createVocabularySession({sessionId:'access-freeze',words:[{wordId:'a',mode:'practice'},{wordId:'b',mode:'practice'}]});return getVocabularyStudy('access-freeze');});
   runWithLearnerId('bob',()=>assert.throws(()=>getVocabularyStudy(view.session.sessionId),/not found/));
   owner(()=>{
-    db.prepare("INSERT INTO learner_owned_word_skill_state VALUES('alice','b','production',24,2.5,0,NULL,NULL)").run();
+    db.prepare("INSERT INTO learner_owned_word_skill_state(learner_id,word_id,skill_id,interval_hours,ease_factor,enabled,next_due_at,last_studied_at) VALUES('alice','b','production',24,2.5,0,NULL,NULL)").run();
     db.prepare("INSERT INTO learner_content_deactivations VALUES('alice','general-1','2026-10-17T00:00:00.000Z')").run();
     const next=nextVocabularyExercise(view.session.sessionId,'next',{wordId:'a'});
     assert.equal(next.currentEncounter?.snapshot.contentId,'general-1');
@@ -323,8 +324,8 @@ test('session ownership stays live while content deactivation and skill suppress
 });
 
 test('recognition can be due while production is suppressed and produces no production credit',()=>owner(()=>{
-  db.prepare("INSERT INTO learner_owned_word_skill_state VALUES('alice','b','production',48,2.5,0,NULL,NULL),('alice','b','recognition',96,2.5,1,NULL,NULL)").run();
-  db.prepare("UPDATE learner_word_schedules SET scheduler_state_json=json_set(scheduler_state_json,'$.enabled',0) WHERE word_id='b'").run();
+  db.prepare("INSERT INTO learner_owned_word_skill_state(learner_id,word_id,skill_id,interval_hours,ease_factor,enabled,next_due_at,last_studied_at) VALUES('alice','b','production',48,2.5,0,NULL,NULL),('alice','b','recognition',96,2.5,1,NULL,NULL)").run();
+  db.prepare("UPDATE learner_word_schedules SET enabled=0 WHERE word_id='b'").run();
   let view=startVocabularyStudy();const id=view.session.sessionId;
   assert.equal(view.session.context.words.find((word)=>word.wordId==='b')?.selectedSkill,'recognition');
   const before=getVocabularyWordSchedule('b');
@@ -399,7 +400,7 @@ test('Undo of another restores prior exercise while preserving feedback on the u
 
 
 test('dismissed unstudied words cannot re-enter through recognition-only admission',()=>owner(()=>{
-  db.prepare("INSERT INTO learner_owned_word_skill_state VALUES('alice','b','recognition',24,2.5,1,NULL,NULL)").run();
+  db.prepare("INSERT INTO learner_owned_word_skill_state(learner_id,word_id,skill_id,interval_hours,ease_factor,enabled,next_due_at,last_studied_at) VALUES('alice','b','recognition',24,2.5,1,NULL,NULL)").run();
   const before=getVocabularyWordSchedule('b');dismissVocabularyWord('b');
   const view=startVocabularyStudy();
   assert.equal(view.session.context.words.some((word)=>word.wordId==='b'),false);
@@ -501,7 +502,7 @@ function contrastContent(){return createVocabularyContent({contentId:'contrast',
   accessScope:'shared',availability:'active',originKind:'import',words:[{wordId:'a',relation:'target'},{wordId:'b',relation:'context'}],answers:[{wordId:'a',acceptedForms:['甲']}]},actor);}
 
 test('imported contrast uses selected identity and independent contextual schedule without production credit',()=>owner(()=>{
-  contrastContent();db.prepare("INSERT INTO learner_owned_word_skill_state VALUES('alice','a','contextual_selection',6,2.5,1,NULL,NULL)").run();
+  contrastContent();db.prepare("INSERT INTO learner_owned_word_skill_state(learner_id,word_id,skill_id,interval_hours,ease_factor,enabled,next_due_at,last_studied_at) VALUES('alice','a','contextual_selection',6,2.5,1,NULL,NULL)").run();
   db.prepare("UPDATE learner_words SET mode='practice' WHERE word_id='a'").run();
   createVocabularySession({sessionId:'contrast-session',words:[{wordId:'a',mode:'practice',selectedSkill:'contextual_selection'}]});
   const before=getVocabularyWordSchedule('a');let view=nextVocabularyExercise('contrast-session','next');
@@ -531,7 +532,7 @@ test('imported contrast uses selected identity and independent contextual schedu
 test('contrast choices require learned eligible cluster members and a due contextual objective',()=>owner(()=>{
   contrastContent();db.prepare("UPDATE learner_words SET mode='practice' WHERE word_id='a'").run();
   let view=startVocabularyStudy();assert.notEqual(view.session.context.words.find((word)=>word.wordId==='a')?.selectedSkill,'contextual_selection');
-  db.prepare("INSERT INTO learner_owned_word_skill_state VALUES('alice','a','contextual_selection',6,2.5,1,NULL,NULL)").run();
+  db.prepare("INSERT INTO learner_owned_word_skill_state(learner_id,word_id,skill_id,interval_hours,ease_factor,enabled,next_due_at,last_studied_at) VALUES('alice','a','contextual_selection',6,2.5,1,NULL,NULL)").run();
   db.prepare("UPDATE learner_words SET mode='unstudied' WHERE word_id='b'").run();
   view=startVocabularyStudy();assert.notEqual(view.session.context.words.find((word)=>word.wordId==='a')?.selectedSkill,'contextual_selection');
 }));
@@ -555,10 +556,10 @@ test('fresh diet enrollment admits only selected ready words, honors quota and r
 test('new and replacement pure cues adopt independently after an eligible accepted member, without copying state or deactivation',()=>owner(()=>{
   const old=exercise('old-pure','b','general',true);
   const adoptedAt=new Date(Date.now()-7*3_600_000).toISOString();adoptVocabularyPureCues(adoptedAt);
-  db.prepare("UPDATE learner_pure_cue_schedules SET scheduler_state_json='{\"intervalHours\":999,\"easeFactor\":1.9,\"enabled\":1,\"cleanCoveredSessions\":8}' WHERE content_id='old-pure'").run();
+  db.prepare("UPDATE learner_pure_cue_schedules SET interval_hours=999,enabled=1,scheduler_state_json='{\"easeFactor\":1.9,\"cleanCoveredSessions\":8}' WHERE content_id='old-pure'").run();
   db.prepare("INSERT INTO learner_content_deactivations VALUES('alice','old-pure',?)").run(new Date().toISOString());
   replaceVocabularyContent('old-pure',1,{...old,contentId:'replacement-pure'},actor);adoptVocabularyPureCues(adoptedAt);
-  const state=JSON.parse(String(db.prepare("SELECT scheduler_state_json FROM learner_pure_cue_schedules WHERE content_id='replacement-pure'").get()?.scheduler_state_json));
+  const state=mergePureCueSchedulerState(db.prepare("SELECT * FROM learner_pure_cue_schedules WHERE content_id='replacement-pure'").get()!);
   assert.equal(state.intervalHours,24);assert.equal(state.easeFactor,2.5);assert.equal(state.cleanCoveredSessions,0);
   assert.equal(db.prepare("SELECT count(*) AS n FROM learner_content_deactivations WHERE content_id='replacement-pure'").get()?.n,0);
   createVocabularySession({sessionId:'replacement-session',words:[]});const view=nextVocabularyExercise('replacement-session','next');
@@ -725,7 +726,7 @@ test('pending and failed completion reject mode edits; closed future edits prese
 }));
 
 test('dismissed learned words cannot enter the independently due recognition lane',()=>owner(()=>{
-  db.prepare("INSERT INTO learner_owned_word_skill_state VALUES('alice','b','recognition',24,2.5,1,NULL,NULL)").run();
+  db.prepare("INSERT INTO learner_owned_word_skill_state(learner_id,word_id,skill_id,interval_hours,ease_factor,enabled,next_due_at,last_studied_at) VALUES('alice','b','recognition',24,2.5,1,NULL,NULL)").run();
   db.prepare("UPDATE learner_words SET dismissed_at='2026-10-17T00:00:00.000Z',mode='practice' WHERE word_id='b'").run();
   assert.equal(startVocabularyStudy().session.context.words.some((word)=>word.wordId==='b'),false);
 }));
@@ -810,8 +811,8 @@ test('an excluded pure cue never returns, and a one-word queue can continue with
   assert.equal(alternative.currentWordId,'a');assert.equal(alternative.currentEncounter?.snapshot.contentId,'general-2');
   for(const id of ['pure-a','pure-b']) {
     exercise(id,'b','general',true);
-    db.prepare("INSERT INTO learner_pure_cue_schedules(learner_id,content_id,policy_version,scheduler_state_json) VALUES('alice',?,'test',?)")
-      .run(id,JSON.stringify({intervalHours:24,easeFactor:2.5,enabled:1,cleanCoveredSessions:0}));
+    db.prepare("INSERT INTO learner_pure_cue_schedules(learner_id,content_id,policy_version,scheduler_state_json,interval_hours,enabled) VALUES('alice',?,'test',?,24,1)")
+      .run(id,JSON.stringify({easeFactor:2.5,cleanCoveredSessions:0}));
   }
   createVocabularySession({sessionId:'pure-exclusion',words:[]});
   const first=nextVocabularyExercise('pure-exclusion','first').currentEncounter!.snapshot.contentId;
@@ -827,9 +828,9 @@ test('both-due review freezes one selected skill across command retries and canc
   db.prepare("UPDATE learner_words SET dismissed_at='2026-10-17T00:00:00.000Z' WHERE word_id IN ('a','new')").run();
   const now=Date.now();
   const hoursAgo=(hours:number)=>new Date(now-hours*3_600_000).toISOString();
-  db.prepare("UPDATE learner_word_schedules SET last_practised_at=?,next_eligible_at=?,scheduler_state_json=? WHERE learner_id='alice' AND word_id='b'")
-    .run(hoursAgo(48),hoursAgo(24),JSON.stringify({intervalHours:24,easeFactor:2.5,enabled:1,cleanCoveredSessions:0}));
-  db.prepare("INSERT INTO learner_owned_word_skill_state VALUES('alice','b','recognition',24,2.5,1,?,?)").run(hoursAgo(72),hoursAgo(96));
+  db.prepare("UPDATE learner_word_schedules SET last_practised_at=?,next_eligible_at=?,interval_hours=24,enabled=1,scheduler_state_json=? WHERE learner_id='alice' AND word_id='b'")
+    .run(hoursAgo(48),hoursAgo(24),JSON.stringify({easeFactor:2.5,cleanCoveredSessions:0}));
+  db.prepare("INSERT INTO learner_owned_word_skill_state(learner_id,word_id,skill_id,interval_hours,ease_factor,enabled,next_due_at,last_studied_at) VALUES('alice','b','recognition',24,2.5,1,?,?)").run(hoursAgo(72),hoursAgo(96));
   const productionBefore=getVocabularyWordSchedule('b');
   let view=startVocabularyStudy();const id=view.session.sessionId;
   assert.deepEqual(view.session.context.words.map(({wordId,selectedSkill})=>({wordId,selectedSkill})),[{wordId:'b',selectedSkill:'recognition'}]);
@@ -888,8 +889,8 @@ test('independent pure cue shares the review queue and completes lapse reinforce
   db.prepare("UPDATE learner_words SET dismissed_at='2026-10-17T00:00:00.000Z' WHERE word_id IN ('a','new')").run();
   exercise('queue-pure','b','general',true);
   exercise('queue-targeted','b'); // Both queues require a real word-specific cue, not proxied fallback.
-  db.prepare("INSERT INTO learner_pure_cue_schedules(learner_id,content_id,policy_version,scheduler_state_json) VALUES('alice','queue-pure','test',?)")
-    .run(JSON.stringify({intervalHours:24,easeFactor:2.5,enabled:1,cleanCoveredSessions:0}));
+  db.prepare("INSERT INTO learner_pure_cue_schedules(learner_id,content_id,policy_version,scheduler_state_json,interval_hours,enabled) VALUES('alice','queue-pure','test',?,24,1)")
+    .run(JSON.stringify({easeFactor:2.5,cleanCoveredSessions:0}));
   const before=getVocabularyWordSchedule('b');
   let view=startVocabularyStudy();const id=view.session.sessionId;
   assert.deepEqual(new Set(view.session.context.reviewOrder?.map((entry)=>`${entry.kind}/${entry.id}`)),new Set(['word/b','pure_cue/queue-pure']));
@@ -948,7 +949,7 @@ test('teaching uses both recall directions despite later review skill settings',
       requiredExerciseContentIds:['authored-recognition','teach-new'],minimumRecognitionResponses:3,minimumProductionResponses:3}}]});
     const introduced=nextVocabularyExercise(id,'intro');
     assert.equal(introduced.currentEncounter?.snapshot.kind,'introduction');
-    if(restriction==='disabled')db.prepare("INSERT INTO learner_owned_word_skill_state VALUES('alice','new',?,24,2.5,0,NULL,NULL)").run(skill);
+    if(restriction==='disabled')db.prepare("INSERT INTO learner_owned_word_skill_state(learner_id,word_id,skill_id,interval_hours,ease_factor,enabled,next_due_at,last_studied_at) VALUES('alice','new',?,24,2.5,0,NULL,NULL)").run(skill);
     else db.prepare("INSERT INTO learner_owned_word_skill_relevance VALUES('alice','new',?,'suppressed')").run(skill);
     const stopped=nextVocabularyExercise(id,'next');
     assert.equal(stopped.notice,null);
@@ -965,10 +966,10 @@ test('teaching uses both recall directions despite later review skill settings',
 for(const restriction of ['disabled','suppressed'] as const)for(const authored of [true,false])
 test(`Solidify retains both directions with ${restriction} review skills and ${authored?'authored':'fallback'} production`,()=>owner(()=>{
   db.prepare("UPDATE learner_words SET dismissed_at='2026-10-17T00:00:00.000Z' WHERE word_id IN ('b','new')").run();
-  if(restriction==='disabled')db.prepare("INSERT INTO learner_owned_word_skill_state VALUES('alice','a','recognition',24,2.5,0,NULL,NULL),('alice','a','production',24,2.5,0,NULL,NULL)").run();
+  if(restriction==='disabled')db.prepare("INSERT INTO learner_owned_word_skill_state(learner_id,word_id,skill_id,interval_hours,ease_factor,enabled,next_due_at,last_studied_at) VALUES('alice','a','recognition',24,2.5,0,NULL,NULL),('alice','a','production',24,2.5,0,NULL,NULL)").run();
   else db.prepare("INSERT INTO learner_owned_word_skill_relevance VALUES('alice','a','recognition','suppressed'),('alice','a','production','suppressed')").run();
   if(!authored)db.prepare("UPDATE content_items SET availability='retired' WHERE content_id IN ('general-1','general-2')").run();
-  db.prepare("UPDATE learner_word_schedules SET scheduler_state_json=json_set(scheduler_state_json,'$.enabled',0) WHERE word_id='a'").run();
+  db.prepare("UPDATE learner_word_schedules SET enabled=0 WHERE word_id='a'").run();
   let view=startVocabularyStudy();const id=view.session.sessionId;
   assert.deepEqual(view.session.context.words.find(word=>word.wordId==='a')?.solidifySkills,['recognition','production']);
   if(view.currentEncounter?.snapshot.kind==='introduction')view=nextVocabularyExercise(id,'recall');
@@ -1026,7 +1027,7 @@ for (const mode of ['practice', 'maintain'] as const) test(`${mode} with explici
   const now='2026-11-09T10:00:00.000Z';
   assert.equal(selectVocabularyReviewSkills({now}).find(selection=>selection.wordId==='b')?.skillId,'production');
   writeVocabularyDefaultUsefulSenses('b',0,[],actor);
-  db.prepare("INSERT INTO learner_owned_word_skill_state VALUES('alice','b','recognition',6,2.5,1,NULL,NULL)").run();
+  db.prepare("INSERT INTO learner_owned_word_skill_state(learner_id,word_id,skill_id,interval_hours,ease_factor,enabled,next_due_at,last_studied_at) VALUES('alice','b','recognition',6,2.5,1,NULL,NULL)").run();
   assert.equal(selectVocabularyReviewSkills({now}).find(selection=>selection.wordId==='b')?.skillId,'recognition');
   const after=createVocabularySession({sessionId:'after-empty-defaults',words:[{wordId:'b',mode,selectedSkill:'recognition'}]});
   assert.deepEqual(after.context.payload!.words.b.general[mode].map(content=>content.skill),['recognition']);
@@ -1037,7 +1038,7 @@ test('recognition and contrast do not displace a Practice production fallback',(
   db.prepare("UPDATE learner_words SET mode='practice' WHERE word_id='a'").run();
   contrastContent();
   for(const id of ['general-1','general-2'])db.prepare("INSERT INTO learner_content_deactivations VALUES('alice',?,'2026-10-28T00:00:00.000Z')").run(id);
-  db.prepare("INSERT INTO learner_owned_word_skill_state VALUES('alice','a','contextual_selection',6,2.5,1,NULL,NULL)").run();
+  db.prepare("INSERT INTO learner_owned_word_skill_state(learner_id,word_id,skill_id,interval_hours,ease_factor,enabled,next_due_at,last_studied_at) VALUES('alice','a','contextual_selection',6,2.5,1,NULL,NULL)").run();
   const session=createVocabularySession({sessionId:'independent-objectives',words:[{wordId:'a',mode:'practice',selectedSkill:'production'}]});
   const pool=session.context.payload!.words.a.general.practice;
   assert.ok(pool.some(content=>content.contentId==='contrast'));
@@ -1068,7 +1069,7 @@ test('pure coverage excludes dictionary production from Start even while the cue
 test('pure coverage preserves independently due recognition and usable private production',()=>owner(()=>{
   db.prepare("UPDATE learner_words SET dismissed_at='2026-10-01' WHERE word_id!='b'").run();
   exercise('proxy-pure','b','general',true);
-  db.prepare("INSERT INTO learner_owned_word_skill_state VALUES('alice','b','recognition',24,2.5,1,'2026-01-02T00:00:00.000Z','2026-01-01T00:00:00.000Z')").run();
+  db.prepare("INSERT INTO learner_owned_word_skill_state(learner_id,word_id,skill_id,interval_hours,ease_factor,enabled,next_due_at,last_studied_at) VALUES('alice','b','recognition',24,2.5,1,'2026-01-02T00:00:00.000Z','2026-01-01T00:00:00.000Z')").run();
   let view=startVocabularyStudy();
   assert.equal(view.session.context.words[0].selectedSkill,'recognition');
   assert.equal(view.currentEncounter?.snapshot.kind,'recognition');
@@ -1224,8 +1225,8 @@ test('pure cues with an empty-inventory answer stop fresh admission without chan
   const cue=createVocabularyContent({contentId:'mixed-pure',kind:'exercise',payloadVersion:1,body:{prompt:'Retrieve either'},
     accessScope:'shared',availability:'active',originKind:'human',words:[{wordId:'a',relation:'target'},{wordId:'b',relation:'target'}],exerciseType:'pure_cue',
     skill:'production',exerciseRole:'general',assessment:{match:'prepared'},answers:[{wordId:'a',acceptedForms:['甲']},{wordId:'b',acceptedForms:['乙']}]},actor);
-  db.prepare(`INSERT INTO learner_pure_cue_schedules(learner_id,content_id,policy_version,scheduler_state_json) VALUES('alice',?,'test',?)`)
-    .run(cue.contentId,JSON.stringify({intervalHours:24,easeFactor:2.5,enabled:1,cleanCoveredSessions:0}));
+  db.prepare(`INSERT INTO learner_pure_cue_schedules(learner_id,content_id,policy_version,scheduler_state_json,interval_hours,enabled) VALUES('alice',?,'test',?,24,1)`)
+    .run(cue.contentId,JSON.stringify({easeFactor:2.5,cleanCoveredSessions:0}));
   createVocabularySession({sessionId:'retained-pure',words:[]});
   const schedules=db.prepare('SELECT * FROM learner_pure_cue_schedules').all();
   makeInventoryEmpty('a');
@@ -1238,7 +1239,7 @@ test('pure cues with an empty-inventory answer stop fresh admission without chan
 
 test('contrast choices with empty inventories cannot enter a fresh session but retained contrasts remain usable',()=>owner(()=>{
   contrastContent();
-  db.prepare("INSERT INTO learner_owned_word_skill_state VALUES('alice','a','contextual_selection',6,2.5,1,NULL,NULL)").run();
+  db.prepare("INSERT INTO learner_owned_word_skill_state(learner_id,word_id,skill_id,interval_hours,ease_factor,enabled,next_due_at,last_studied_at) VALUES('alice','a','contextual_selection',6,2.5,1,NULL,NULL)").run();
   db.prepare("UPDATE learner_words SET mode='practice' WHERE word_id='a'").run();
   createVocabularySession({sessionId:'retained-contrast',words:[{wordId:'a',mode:'practice',selectedSkill:'contextual_selection'}]});
   makeInventoryEmpty('b');
@@ -1301,7 +1302,7 @@ test('ordinary review trusts SQL flags and Solidify ignores review skill flags',
     assert.equal(composeVocabularyStudy({teachingReady:()=>false}).dueWordIds.length,1);
     assert.equal(reads.length,0); // Baseline: two prepared/executed lookups per review objective.
     db.prepare("UPDATE learner_words SET mode='solidify' WHERE word_id='b'").run();
-    db.prepare("INSERT INTO learner_owned_word_skill_state VALUES('alice','b','recognition',24,2.5,0,NULL,NULL),('alice','b','production',24,2.5,0,NULL,NULL)").run();
+    db.prepare("INSERT INTO learner_owned_word_skill_state(learner_id,word_id,skill_id,interval_hours,ease_factor,enabled,next_due_at,last_studied_at) VALUES('alice','b','recognition',24,2.5,0,NULL,NULL),('alice','b','production',24,2.5,0,NULL,NULL)").run();
     reads.length=0;
     assert.equal(composeVocabularyStudy({teachingReady:()=>false}).dueWordIds.length,1);
     assert.equal(reads.length,0);
@@ -1316,8 +1317,7 @@ test('pure cue selection hydrates only scheduled winners while preserving order 
     const id=`hydration-${String(index).padStart(3,'0')}`;exercise(id,'b','general',true);
     const strong=index>=9;const reset=index>=6&&index<9;const due=index<3||strong;
     const state={intervalHours:24,easeFactor:2.5,strongSince:strong?past:null,strongSuccesses:0,resetUntil:reset?future:null};
-    db.prepare("INSERT INTO learner_pure_cue_schedules(learner_id,content_id,last_practised_at,next_eligible_at,policy_version,scheduler_state_json) VALUES('alice',?,?,?,'test',?)")
-      .run(id,past,due?past:future,JSON.stringify(state));
+    insertPureCueSchedule(db,{learnerId:'alice',contentId:id,lastPractisedAt:past,nextEligibleAt:due?past:future,policyVersion:'test',state});
     cues.push({id,kind:'pure',stimulus:'',axisNote:'',teachingNote:'',acceptedWordIds:['b'],active:!reset,
       ...state,lastStudiedAt:past,nextDueAt:due?past:future});
   }

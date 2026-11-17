@@ -1,3 +1,4 @@
+import { applyVocabularyDueColumns } from './helpers/vocabulary-due-columns.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
@@ -37,6 +38,7 @@ beforeEach(() => {
   for (const file of ['0047_vocabulary_dismissal.sql','0052_vocabulary_automatic_promotion_pause.sql']) {
     db.exec(fs.readFileSync(new URL(`../server/db/migrations/${file}`,import.meta.url),'utf8'));
   }
+  applyVocabularyDueColumns(db);
   setDb(db);
 });
 afterEach(() => {

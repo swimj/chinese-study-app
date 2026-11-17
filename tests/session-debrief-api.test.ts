@@ -23,8 +23,8 @@ before(async () => {
     VALUES ('http-vocabulary-word','报备','bào bèi','report in advance','[]','[]',10,'2026-01-01')`).run();
   getDb().prepare(`INSERT INTO learner_words(learner_id,word_id,in_stash,added_at,mode,mode_changed_at)
     VALUES ('http-learner','http-vocabulary-word',1,'2026-01-01','practice','2026-01-01')`).run();
-  getDb().prepare(`INSERT INTO learner_word_schedules(learner_id,word_id,next_eligible_at,policy_version,scheduler_state_json)
-    VALUES ('http-learner','http-vocabulary-word',NULL,'fixture','{"intervalHours":24,"easeFactor":2.5,"enabled":1,"cleanCoveredSessions":0}')`).run();
+  getDb().prepare(`INSERT INTO learner_word_schedules(learner_id,word_id,next_eligible_at,policy_version,scheduler_state_json,interval_hours,enabled)
+    VALUES ('http-learner','http-vocabulary-word',NULL,'fixture','{"easeFactor":2.5,"cleanCoveredSessions":0}',24,1)`).run();
   createVocabularyContent({contentId:'http-vocabulary-cue',kind:'exercise',payloadVersion:1,body:{prompt:'Report a plan in advance'},exerciseType:'definition',skill:'production',exerciseRole:'general',assessment:{match:'exact'},
     accessScope:'shared',availability:'active',originKind:'human',words:[{wordId:'http-vocabulary-word',relation:'target'}],answers:[{wordId:'http-vocabulary-word',acceptedForms:['报备']}]},{kind:'operator',id:'fixture'});
 

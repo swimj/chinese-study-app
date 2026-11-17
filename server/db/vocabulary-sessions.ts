@@ -21,6 +21,7 @@ import { getVocabularyLearnerWord, getVocabularyWordSchedule, isActiveVocabulary
   type VocabularyPureCueSchedulerState, type VocabularySchedulerState } from './vocabulary-learners.ts';
 
 import { finalizeTimedSession } from './vocabulary-timed-sessions.ts';
+import { mergePureCueSchedulerState, splitPureCueSchedulerState, splitWordSchedulerState } from './vocabulary-schedule-columns.ts';
 
 export class VocabularySessionInputError extends Error {}
 export class VocabularySessionConflictError extends Error {}
@@ -394,11 +395,14 @@ function applyLearningEffects(completionId: string, context: StoredContext, proj
       const next = mode === 'solidify' || word.teachingCompleted ? nextUtcDay(now)
         : refresh ? now : clean || lapse ? hoursAfter(now, scheduler.intervalHours) : schedule.nextEligibleAt;
       const automaticRefresh = refresh && !isActiveVocabularyRefreshRequest(learnerId, word.wordId, schedule.refreshUntil, now);
+      const stored = splitWordSchedulerState(scheduler);
       getDb().prepare(`UPDATE learner_word_schedules SET next_eligible_at = ?,last_practised_at = ?,policy_version = ?,scheduler_state_json = ?,
+        interval_hours = ?,enabled = ?,reset_until = ?,post_compensation_check_at = ?,
         state_version = state_version + 1,refresh_requested_at = ?,refresh_until = ? WHERE learner_id = ? AND word_id = ?`)
         .run(scheduler.resetUntil && scheduler.resetUntil > (next ?? now) ? scheduler.resetUntil : next,
           latestReviewTimestamp(schedule.lastPractisedAt, productionTiming?.lastReviewedAt ?? now), VOCABULARY_SESSION_POLICY.version,
-          JSON.stringify(scheduler), automaticRefresh ? now : schedule.refreshRequestedAt,
+          stored.json, stored.columns.interval_hours, stored.columns.enabled, stored.columns.reset_until, stored.columns.post_compensation_check_at,
+          automaticRefresh ? now : schedule.refreshRequestedAt,
           automaticRefresh ? hoursAfter(now, 72) : schedule.refreshUntil, learnerId, word.wordId);
       effect(completionId, context.sessionId, `production/${word.wordId}`, 'production_schedule_applied', schedule, getVocabularyWordSchedule(word.wordId), now, word.wordId);
     }
@@ -433,7 +437,7 @@ function applyLearningEffects(completionId: string, context: StoredContext, proj
   for (const cue of projection.pureCueOutcomes) {
     if (!cue.covered) continue;
     const before = getDb().prepare('SELECT * FROM learner_pure_cue_schedules WHERE learner_id = ? AND content_id = ?').get(learnerId, cue.contentId) as { scheduler_state_json: string; last_practised_at: string | null; next_eligible_at: string | null } | undefined;
-    const scheduler: VocabularyPureCueSchedulerState = before ? JSON.parse(before.scheduler_state_json) as VocabularyPureCueSchedulerState
+    const scheduler: VocabularyPureCueSchedulerState = before ? mergePureCueSchedulerState(before)
       : { intervalHours: 24, easeFactor: 2.5, enabled: 1, cleanCoveredSessions: 0 };
     const recheckAt = scheduler.postCompensationRecheckAt;
     if (recheckAt != null) {
@@ -447,10 +451,16 @@ function applyLearningEffects(completionId: string, context: StoredContext, proj
     const next = {...scheduler,intervalHours:scheduled.intervalHours,easeFactor:scheduled.easeFactor,
       strongSince:scheduled.strongSince,strongSuccesses:scheduled.strongSuccesses,cleanCoveredSessions:cue.rejectedResponses>0?0:(scheduler.cleanCoveredSessions??0)+1};
     delete next.postCompensationRecheckAt;
-    getDb().prepare(`INSERT INTO learner_pure_cue_schedules(learner_id,content_id,next_eligible_at,last_practised_at,policy_version,scheduler_state_json)
-      VALUES (?,?,?,?,?,?) ON CONFLICT(learner_id,content_id) DO UPDATE SET next_eligible_at = excluded.next_eligible_at,last_practised_at = excluded.last_practised_at,
-      policy_version = excluded.policy_version,scheduler_state_json = excluded.scheduler_state_json,state_version = state_version + 1`)
-      .run(learnerId, cue.contentId, scheduled.nextDueAt, now, VOCABULARY_SESSION_POLICY.version, JSON.stringify(next));
+    const stored = splitPureCueSchedulerState(next);
+    getDb().prepare(`INSERT INTO learner_pure_cue_schedules(learner_id,content_id,next_eligible_at,last_practised_at,policy_version,scheduler_state_json,
+      interval_hours,enabled,reset_until,strong_since,strong_successes,maintenance_identity,recheck_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(learner_id,content_id) DO UPDATE SET next_eligible_at = excluded.next_eligible_at,last_practised_at = excluded.last_practised_at,
+      policy_version = excluded.policy_version,scheduler_state_json = excluded.scheduler_state_json,interval_hours = excluded.interval_hours,enabled = excluded.enabled,
+      reset_until = excluded.reset_until,strong_since = excluded.strong_since,strong_successes = excluded.strong_successes,
+      maintenance_identity = excluded.maintenance_identity,recheck_at = excluded.recheck_at,state_version = state_version + 1`)
+      .run(learnerId, cue.contentId, scheduled.nextDueAt, now, VOCABULARY_SESSION_POLICY.version, stored.json, stored.columns.interval_hours,
+        stored.columns.enabled, stored.columns.reset_until, stored.columns.strong_since, stored.columns.strong_successes,
+        stored.columns.maintenance_identity, stored.columns.recheck_at);
     const after = getDb().prepare('SELECT * FROM learner_pure_cue_schedules WHERE learner_id = ? AND content_id = ?').get(learnerId, cue.contentId);
     effect(completionId, context.sessionId, `pure_cue/${cue.contentId}`, 'pure_cue_schedule_applied', before ?? null, after, now, null, cue.contentId);
   }

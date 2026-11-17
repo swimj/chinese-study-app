@@ -68,7 +68,7 @@ export function planVocabularyNewWords(options:{limit:number;seed:string;now:str
     WHERE w.learner_id=? AND w.mode='unstudied' AND w.in_stash=1 AND w.dismissed_at IS NULL
       AND ${vocabularySessionWordEligibleSql('w.word_id')}
       AND (s.next_eligible_at IS NULL OR s.next_eligible_at<=?)
-      AND COALESCE(json_extract(s.scheduler_state_json,'$.enabled'),1)=1 ORDER BY w.word_id`).all(PRIORITY_TIER_TOP,learner,now) as {id:string;overlayUpdatedAt:string;isTop:number}[])
+      AND s.enabled=1 ORDER BY w.word_id`).all(PRIORITY_TIER_TOP,learner,now) as {id:string;overlayUpdatedAt:string;isTop:number}[])
     .map((entry):UnstudiedStashCandidate=>({...entry,isTop:entry.isTop===1,isRequired:false})).filter(entry=>!options.excludedIds?.has(entry.id));
   const seed=options.seed;
   const stashPlan=planUnstudiedStashAdmission({stash,remainingQuota:remaining,seedSource:seed,stashRatio,source,preferredIds:options.preferredIds});
@@ -80,7 +80,7 @@ export function planVocabularyNewWords(options:{limit:number;seed:string;now:str
       AND ${vocabularySessionWordEligibleSql('l.id')}
       AND (p.word_id IS NULL OR p.priority_tier>=0)
       AND (s.next_eligible_at IS NULL OR s.next_eligible_at<=?)
-      AND COALESCE(json_extract(s.scheduler_state_json,'$.enabled'),1)=1
+      AND COALESCE(s.enabled,1)=1
     ORDER BY l.priority DESC,l.created_at,l.id`).all(learner,learner,learner,now) as {id:string}[]:[];
   const candidateIds=candidateRows.map((entry)=>entry.id).filter(id=>!options.excludedIds?.has(id));
   if(options.preferredIds)candidateIds.sort((a,b)=>Number(options.preferredIds!.has(b))-Number(options.preferredIds!.has(a)));const candidateSet=new Set(candidateIds);

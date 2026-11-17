@@ -23,6 +23,7 @@ try {
   const {createVocabularySession,appendVocabularySessionActions,stageVocabularySessionCompletion,closeVocabularySessionCompletion}=await import('../server/db/vocabulary-sessions.ts');
   const {selectVocabularyReviewSkills}=await import('../server/vocabulary/review-selection.ts');
   const {importLegacyVocabulary}=await import('../server/db/vocabulary-import.ts');
+  const {splitWordSchedulerState}=await import('../server/db/vocabulary-schedule-columns.ts');
   const {setHostedServiceControl}=await import('../server/db/hosted-operations.ts');
   setHostedServiceControl({key:'provider_work_enabled',enabled:false,actorId:'vocabulary-fixture'});
   const db=getDb();db.exec('BEGIN IMMEDIATE');
@@ -43,7 +44,7 @@ try {
           .run(mode,'dev-learner',wordId);
         const schedule=getVocabularyWordSchedule(wordId)!;
         db.prepare('UPDATE learner_word_schedules SET next_eligible_at=NULL,scheduler_state_json=? WHERE learner_id=? AND word_id=?')
-          .run(JSON.stringify({...schedule.schedulerState,cleanCoveredSessions:index<0?0:Math.min(index,2)}),'dev-learner',wordId);
+          .run(splitWordSchedulerState({...schedule.schedulerState,cleanCoveredSessions:index<0?0:Math.min(index,2)}).json,'dev-learner',wordId);
       }
       // Give all six review words stable, overdue histories on both independent skills.
       // Alternating urgency creates three recognition and three production objectives.
@@ -53,9 +54,9 @@ try {
         const recognitionLast=new Date(now.getTime()-(recognitionFirst?8:2)*86_400_000).toISOString();
         const due=new Date(now.getTime()-86_400_000).toISOString();
         const schedule=getVocabularyWordSchedule(wordId)!;
-        db.prepare(`UPDATE learner_word_schedules SET last_practised_at=?,next_eligible_at=?,scheduler_state_json=?
+        db.prepare(`UPDATE learner_word_schedules SET last_practised_at=?,next_eligible_at=?,scheduler_state_json=?,enabled=1,interval_hours=48
           WHERE learner_id=? AND word_id=?`).run(productionLast,due,
-          JSON.stringify({...schedule.schedulerState,enabled:1,intervalHours:48,easeFactor:2.5,cleanCoveredSessions:0}),'dev-learner',wordId);
+          splitWordSchedulerState({...schedule.schedulerState,enabled:1,intervalHours:48,easeFactor:2.5,cleanCoveredSessions:0}).json,'dev-learner',wordId);
         for(const [skill,last,interval] of [['recognition',recognitionLast,24],['production',productionLast,48]] as const) {
           db.prepare(`INSERT INTO learner_owned_word_skill_state(learner_id,word_id,skill_id,enabled,interval_hours,last_studied_at,next_due_at,ease_factor)
             VALUES (?,?,?,1,?,?,?,2.5) ON CONFLICT(learner_id,word_id,skill_id) DO UPDATE SET

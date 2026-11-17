@@ -1,4 +1,5 @@
 import { dueAtWithResetDelay } from '../../src/domain/pure-cues.ts';
+import { hasScheduleColumns, splitPureCueSchedulerState } from './vocabulary-schedule-columns.ts';
 import { createHash } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import type { VocabularyContent, VocabularyContentDraft, VocabularyJson, VocabularyWordRelationship } from '../../src/domain/vocabulary-content.ts';
@@ -36,6 +37,7 @@ export function importLegacyVocabulary(db: DatabaseSync, options: { wordId?: str
     importedDeactivations: 0,importedTeachingCompletions: 0,mappedRelationships: 0,unresolvedRelationships: 0,
     excludedTeachingComponents: 0,excludedUnsupportedContent: [],bootstrapInventory: [] };
   const filterArgs = options.wordId === undefined ? [] : [options.wordId];
+  const scheduleColumns = hasScheduleColumns(db,'learner_pure_cue_schedules');
   const words = new Map<string,Lexical>();
   const documents = db.prepare(`SELECT * FROM word_content_documents ${options.wordId === undefined ? '' : 'WHERE word_id=?'} ORDER BY created_at,content_id`).all(...filterArgs) as BootstrapRow[];
   const parsedDocuments = new Map(documents.map((row) => [row.content_id,parseWordContent(JSON.parse(row.content_json))]));
@@ -261,11 +263,21 @@ export function importLegacyVocabulary(db: DatabaseSync, options: { wordId?: str
       const restored = db.prepare(`SELECT MAX(compensated_at) AS at FROM pure_cue_assessment_scheduler_snapshots
         WHERE learner_id=? AND pure_cue_id=? AND compensated_at IS NOT NULL`).get(state.learner_id,pure.id) as { at: string | null };
       const resetUntil = state.strong_since !== null && restored.at !== null ? dueAtWithResetDelay(restored.at) : null;
-      report.importedPureSchedules += Number(db.prepare(`INSERT OR IGNORE INTO learner_pure_cue_schedules
+      const scheduler = { intervalHours: state.interval_hours,easeFactor: state.ease_factor,
+        strongSince: state.strong_since,strongSuccesses: state.strong_successes,adoptedAt: state.adopted_at,maintenanceIdentity:pure.id,
+        ...(resetUntil ? {resetUntil} : {}) };
+      // Migration 0043 runs this before 0077 moves scheduling facts into columns.
+      if (scheduleColumns) {
+        const stored = splitPureCueSchedulerState(scheduler);
+        report.importedPureSchedules += Number(db.prepare(`INSERT OR IGNORE INTO learner_pure_cue_schedules
+          (learner_id,content_id,next_eligible_at,last_practised_at,policy_version,scheduler_state_json,interval_hours,enabled,reset_until,
+            strong_since,strong_successes,maintenance_identity,recheck_at) VALUES (?,?,?,?,'legacy-import-v1',?,?,?,?,?,?,?,?)`)
+          .run(state.learner_id,contentId,state.next_due_at,state.last_studied_at,stored.json,stored.columns.interval_hours,stored.columns.enabled,
+            stored.columns.reset_until,stored.columns.strong_since,stored.columns.strong_successes,stored.columns.maintenance_identity,
+            stored.columns.recheck_at).changes);
+      } else report.importedPureSchedules += Number(db.prepare(`INSERT OR IGNORE INTO learner_pure_cue_schedules
         (learner_id,content_id,next_eligible_at,last_practised_at,policy_version,scheduler_state_json) VALUES (?,?,?,?,'legacy-import-v1',?)`)
-        .run(state.learner_id,contentId,state.next_due_at,state.last_studied_at,JSON.stringify({ intervalHours: state.interval_hours,easeFactor: state.ease_factor,
-          strongSince: state.strong_since,strongSuccesses: state.strong_successes,adoptedAt: state.adopted_at,maintenanceIdentity:pure.id,
-          ...(resetUntil ? {resetUntil} : {}) })).changes);
+        .run(state.learner_id,contentId,state.next_due_at,state.last_studied_at,JSON.stringify(scheduler)).changes);
     }
   }
   const contrast = db.prepare(`SELECT p.*,c.content_scope,c.owner_learner_id,c.title,c.note FROM scoped_contrast_prompts p

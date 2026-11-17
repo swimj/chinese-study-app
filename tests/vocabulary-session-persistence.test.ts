@@ -1,3 +1,5 @@
+import { mergePureCueSchedulerState, mergeWordSchedulerState, splitWordSchedulerState } from '../server/db/vocabulary-schedule-columns.ts';
+import { applyVocabularyDueColumns, insertPureCueSchedule } from './helpers/vocabulary-due-columns.ts';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -48,6 +50,7 @@ beforeEach(() => {
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0043_vocabulary_import.sql',import.meta.url),'utf8').split('CREATE TRIGGER')[0]!);
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0069_sense_content_reconciliation.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0073_proactive_repertoire.sql',import.meta.url),'utf8').split('-- The scan is independently switchable')[0]!);
+  applyVocabularyDueColumns(sql);
   contents = {};
   alice(() => {
     for (const [id, word, skill, role, type] of [
@@ -271,7 +274,7 @@ test('worker due list is cross-learner metadata only, exact deadline, pending on
 }));
 
 test('recognition scheduling applies at close once, preserving production and other learners',()=>alice(()=>{
-  sql.prepare("INSERT INTO learner_owned_word_skill_state VALUES('bob','new','recognition',72,2.5,1,NULL,NULL),('alice','new','production',48,2.5,1,NULL,NULL)").run();
+  sql.prepare("INSERT INTO learner_owned_word_skill_state(learner_id,word_id,skill_id,interval_hours,ease_factor,enabled,next_due_at,last_studied_at) VALUES('bob','new','recognition',72,2.5,1,NULL,NULL),('alice','new','production',48,2.5,1,NULL,NULL)").run();
   const others=sql.prepare("SELECT * FROM learner_owned_word_skill_state ORDER BY learner_id,skill_id").all();
   createVocabularySession(context(),now);
   const log=actions(present('intro','new'),present('recognize','new'),{kind:'response',payload:{encounterId:'recognize',response:null,selfAssessment:'accepted',outcome:'accepted'}},
@@ -319,7 +322,7 @@ const cleanWork = (): Input[] => [present('recognize-a'),recognitionResponse('re
 test('three clean Solidify sessions graduate automatically while each earlier coverage is next UTC day',()=>alice(()=>{
   const schedule=getVocabularyWordSchedule('a')!;
   sql.prepare("UPDATE learner_word_schedules SET scheduler_state_json=? WHERE learner_id='alice' AND word_id='a'")
-    .run(JSON.stringify({...schedule.schedulerState,cleanCoveredSessions:0}));
+    .run(splitWordSchedulerState({...schedule.schedulerState,cleanCoveredSessions:0}).json);
   for(let index=0;index<3;index++) {
     const session=closeLog(`clean-${index}`,[...cleanWork(),finish],`2026-10-${17+index}T10:00:00.000Z`,`2026-10-${17+index}T10:00:16.000Z`);
     assert.equal(session.projection.words.a.recommendedMode,index===2?'practice':null);
@@ -405,7 +408,7 @@ test('a late external Practice choice clears a hold and fences a frozen session 
 test('Practice successes do not accumulate a Solidify graduation count when the learner returns manually',()=>alice(()=>{
   const schedule=getVocabularyWordSchedule('b')!;
   sql.prepare("UPDATE learner_word_schedules SET scheduler_state_json=? WHERE learner_id='alice' AND word_id='b'")
-    .run(JSON.stringify({...schedule.schedulerState,cleanCoveredSessions:99}));
+    .run(splitWordSchedulerState({...schedule.schedulerState,cleanCoveredSessions:99}).json);
   closeLog('practice-work',[present('b','b'),response('b'),{kind:'word_wrap',payload:{wordId:'b',reason:'policy'}},finish]);
   assert.equal(getVocabularyWordSchedule('b')!.schedulerState.cleanCoveredSessions,0);
   const returned=changeVocabularyMode('b','solidify',getVocabularyLearnerWord('b')!.stateVersion);
@@ -428,7 +431,7 @@ test('covered Solidify with a rejection or without successful recall resets its 
 }));
 
 test('selected recognition completion advances only recognition and applies shared word recency once',()=>alice(()=>{
-  sql.prepare("INSERT INTO learner_owned_word_skill_state VALUES('alice','b','recognition',24,2.5,1,'2026-10-16T10:00:00.000Z','2026-10-15T10:00:00.000Z')").run();
+  sql.prepare("INSERT INTO learner_owned_word_skill_state(learner_id,word_id,skill_id,interval_hours,ease_factor,enabled,next_due_at,last_studied_at) VALUES('alice','b','recognition',24,2.5,1,'2026-10-16T10:00:00.000Z','2026-10-15T10:00:00.000Z')").run();
   const productionBefore=getVocabularyWordSchedule('b');
   const recognitionBefore=sql.prepare("SELECT * FROM learner_owned_word_skill_state WHERE learner_id='alice' AND word_id='b' AND skill_id='recognition'").get();
   createVocabularySession({sessionId:'selected-recognition',words:[{wordId:'b',mode:'practice',selectedSkill:'recognition'}]},now);
@@ -481,8 +484,7 @@ test('pending and closed completion survive database reopen without moving the d
 for(const lapse of [false,true]) test(`strong pure-cue closure ${lapse?'returns to fragile SRS':'preserves dormant SRS fields'} exactly once`,()=>alice(()=>{
   const state={intervalHours:1234,easeFactor:2.65,strongSince:'2026-09-01T00:00:00.000Z',strongSuccesses:7,maintenanceIdentity:'legacy-cue'};
   const due='2030-01-01T00:00:00.000Z';
-  sql.prepare(`INSERT INTO learner_pure_cue_schedules(learner_id,content_id,next_eligible_at,last_practised_at,policy_version,scheduler_state_json)
-    VALUES('alice','cue',?,'2026-10-01T00:00:00.000Z','test',?)`).run(due,JSON.stringify(state));
+  insertPureCueSchedule(sql,{learnerId:'alice',contentId:'cue',nextEligibleAt:due,lastPractisedAt:'2026-10-01T00:00:00.000Z',policyVersion:'test',state});
   createVocabularySession({sessionId:'strong-session',words:[]},now);
   const inputs:Input[]=(lapse?[false,true,true,true]:[true]).flatMap((accepted,index)=>[
     {kind:'presentation',payload:{encounterId:`cue-${index}`,wordId:null,snapshot:snapshot('cue')}},
@@ -493,10 +495,10 @@ for(const lapse of [false,true]) test(`strong pure-cue closure ${lapse?'returns 
   const staged=stageVocabularySessionCompletion('strong-session',log.length,now);
   closeVocabularySessionCompletion('strong-session',staged.completionId,later);
   const row=sql.prepare("SELECT * FROM learner_pure_cue_schedules WHERE learner_id='alice' AND content_id='cue'").get()!;
-  const next=JSON.parse(String(row.scheduler_state_json));
+  const next=mergePureCueSchedulerState(row);
   assert.equal(next.intervalHours,lapse?6:1234);
   assert.equal(next.easeFactor,lapse?2.5:2.65);
-  assert.equal(next.strongSince,lapse?null:state.strongSince);
+  assert.equal(next.strongSince??null,lapse?null:state.strongSince);
   assert.equal(next.strongSuccesses,lapse?0:8);
   assert.equal(next.maintenanceIdentity,'legacy-cue');
   assert.equal(row.next_eligible_at,lapse?'2026-10-17T16:00:16.000Z':due);

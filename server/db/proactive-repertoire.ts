@@ -22,7 +22,7 @@ type PoolRow = { senseId: string | null; fallback: number; pureCue: number };
 
 const demandSql = `
   SELECT w.word_id AS wordId,w.mode,s.next_eligible_at AS dueAt,s.last_practised_at AS lastPractisedAt,
-    json_extract(s.scheduler_state_json,'$.intervalHours') AS intervalHours
+    s.interval_hours AS intervalHours
   FROM learners l JOIN learner_words w USING(learner_id)
   JOIN learner_word_schedules s USING(learner_id,word_id)
   LEFT JOIN learner_owned_word_skill_state legacy
@@ -34,11 +34,10 @@ const demandSql = `
   WHERE l.disabled_at IS NULL AND w.dismissed_at IS NULL AND w.mode IN ('solidify','practice')
     AND (s.next_eligible_at IS NULL OR s.next_eligible_at<=?)
     AND (w.mode='solidify' OR (
-      COALESCE(json_extract(s.scheduler_state_json,'$.enabled'),1)!=0 AND COALESCE(legacy.enabled,1)!=0
+      s.enabled!=0 AND COALESCE(legacy.enabled,1)!=0
       AND COALESCE(relevance.relevance_state,'active')!='suppressed'
       AND (admission.earliest_next_study_at IS NULL OR admission.earliest_next_study_at<=?)
-      AND (json_extract(s.scheduler_state_json,'$.postCompensationEarliestCheckAt') IS NULL
-           OR json_extract(s.scheduler_state_json,'$.postCompensationEarliestCheckAt')<=?)
+      AND (s.post_compensation_check_at IS NULL OR s.post_compensation_check_at<=?)
     ))
 `;
 

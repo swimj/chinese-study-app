@@ -1,3 +1,4 @@
+import { applyVocabularyDueColumns } from './helpers/vocabulary-due-columns.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
@@ -23,7 +24,7 @@ beforeEach(() => {
     INSERT INTO lexical_words VALUES ('learning','2026-01-01T00:00:00.000Z'),('review','2026-01-01T00:00:00.000Z'),('stash','2026-01-01T00:00:00.000Z'),('untouched','2026-01-01T00:00:00.000Z');
     INSERT INTO learner_word_state VALUES ('alice','learning','learning',2,'2026-10-16'),('alice','review','review',0,NULL);
     INSERT INTO learner_owned_user_word_priority VALUES ('alice','stash',0,'2026-10-01T00:00:00.000Z');
-    INSERT INTO learner_owned_word_skill_state VALUES ('alice','review','production',48,2.7,1,'2026-10-19T00:00:00.000Z','2026-10-17T00:00:00.000Z'),('alice','review','recognition',96,2.6,1,'2026-10-21T00:00:00.000Z','2026-10-17T00:00:00.000Z');
+    INSERT INTO learner_owned_word_skill_state(learner_id,word_id,skill_id,interval_hours,ease_factor,enabled,next_due_at,last_studied_at) VALUES ('alice','review','production',48,2.7,1,'2026-10-19T00:00:00.000Z','2026-10-17T00:00:00.000Z'),('alice','review','recognition',96,2.6,1,'2026-10-21T00:00:00.000Z','2026-10-17T00:00:00.000Z');
   `);
   sql.exec(`ALTER TABLE lexical_words ADD COLUMN hanzi TEXT NOT NULL DEFAULT '字';
     ALTER TABLE lexical_words ADD COLUMN traditional TEXT;
@@ -36,6 +37,7 @@ beforeEach(() => {
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0046_vocabulary_pure_cue_guards.sql', import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0047_vocabulary_dismissal.sql', import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0052_vocabulary_automatic_promotion_pause.sql',import.meta.url),'utf8'));
+  applyVocabularyDueColumns(sql);
 });
 afterEach(() => sql.close());
 test('conversion enrolls only explicit learner state/stash and preserves recognition', () => alice(() => {
@@ -131,12 +133,12 @@ test('pure schedule guards protect updates and subsequent authored type edits', 
   createVocabularyContent({...common,contentId:'private-pure',exerciseType:'pure_cue',accessScope:'private',ownerLearnerId:'alice'},actor);
   createVocabularyContent({...common,contentId:'ordinary',exerciseType:'definition',accessScope:'shared'},actor);
   createVocabularyContent({...common,contentId:'teaching-pure',exerciseType:'pure_cue',exerciseRole:'teaching',accessScope:'shared'},actor);
-  sql.prepare("INSERT INTO learner_pure_cue_schedules(learner_id,content_id,policy_version,scheduler_state_json) VALUES ('alice','pure','test','{}')").run();
+  sql.prepare("INSERT INTO learner_pure_cue_schedules(learner_id,content_id,policy_version,scheduler_state_json,interval_hours) VALUES ('alice','pure','test','{}',24)").run();
   assert.throws(()=>sql.prepare("UPDATE learner_pure_cue_schedules SET content_id='ordinary'").run(),/accessible general pure cue/);
   assert.throws(()=>sql.prepare("UPDATE learner_pure_cue_schedules SET content_id='teaching-pure'").run(),/accessible general pure cue/);
   sql.prepare("UPDATE learner_pure_cue_schedules SET content_id='private-pure'").run();
   assert.throws(()=>sql.prepare("UPDATE learner_pure_cue_schedules SET learner_id='bob'").run(),/accessible general pure cue/);
-  assert.throws(()=>sql.prepare("INSERT INTO learner_pure_cue_schedules(learner_id,content_id,policy_version,scheduler_state_json) VALUES ('bob','teaching-pure','test','{}')").run(),/accessible general pure cue/);
+  assert.throws(()=>sql.prepare("INSERT INTO learner_pure_cue_schedules(learner_id,content_id,policy_version,scheduler_state_json,interval_hours) VALUES ('bob','teaching-pure','test','{}',24)").run(),/accessible general pure cue/);
   sql.prepare("UPDATE learner_pure_cue_schedules SET content_id='pure'").run();
   assert.ok(pure.kind==='exercise');
   assert.throws(()=>updateVocabularyContent('pure',1,{...pure,exerciseType:'definition'},actor),/scheduled pure cue identity/);

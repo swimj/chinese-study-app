@@ -1,3 +1,5 @@
+import { mergeWordSchedulerState } from '../server/db/vocabulary-schedule-columns.ts';
+import { applyVocabularyDueColumns } from './helpers/vocabulary-due-columns.ts';
 import { installCaseReviewSchema } from './helpers/case-review-schema.ts';
 import { InvalidAssessmentOutput } from '../server/vocabulary/assessment-output-validation.ts';
 import { ensureVocabularySenses } from '../server/vocabulary/sense-readiness.ts';
@@ -50,6 +52,7 @@ beforeEach(()=>{
   sql.exec(`INSERT INTO learner_words(learner_id,word_id,in_stash,added_at,mode,mode_changed_at) VALUES ('alice','a',1,'2026-01-01','practice','2026-01-01');
     INSERT INTO learner_word_schedules(learner_id,word_id,next_eligible_at,policy_version,scheduler_state_json)
       VALUES ('alice','a','2026-10-20T10:00:00.000Z','test','{"intervalHours":24,"easeFactor":2.5,"enabled":1,"cleanCoveredSessions":0}');`);
+  applyVocabularyDueColumns(sql);
   installCaseReviewSchema(sql);
   for(const id of ['one','two'])createVocabularyContent({contentId:id,kind:'exercise',payloadVersion:1,body:{prompt:`Prompt ${id}`},exerciseType:'definition',skill:'production',exerciseRole:'general',assessment:{match:'exact'},
     accessScope:'shared',availability:'active',originKind:'human',words:[{wordId:'a',relation:'target'}],answers:[{wordId:'a',acceptedForms:['字']}]},{kind:'operator',id:'editor'});
@@ -743,7 +746,7 @@ test('undo during the completion window keeps an accidental production response 
   assert.throws(()=>retryVocabularyPostSessionDispatch(String(dispatch.dispatch_id),'editor',new Date(clock).toISOString()),/failed evidence/);
   await processing.step();
   assert.equal(Number(sql.prepare('SELECT count(*) n FROM reflection_cases').get()!.n),before);
-  const schedule=JSON.parse(String(sql.prepare("SELECT scheduler_state_json FROM learner_word_schedules WHERE word_id='a'").get()!.scheduler_state_json)) as {easeFactor:number;intervalHours:number};
+  const schedule=mergeWordSchedulerState(sql.prepare("SELECT * FROM learner_word_schedules WHERE word_id='a'").get()!);
   assert.equal(schedule.easeFactor,2.35);
   assert.equal(schedule.intervalHours,6);
   await processing.stop();

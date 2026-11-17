@@ -356,7 +356,7 @@ describe('My words collections', { concurrency: false }, () => {
     assert.match(details, /SEARCH learner_owned_study_attempt_events USING INDEX .*\(learner_id=\?\)/);
     assert.equal(datePlan.filter((row) => row.detail.includes('SEARCH learner_owned_study_attempt_events')).length, 1);
     assert.doesNotMatch(details, /idx_study_attempts_word_date/);
-    assert.match(details, /SEARCH learner_owned_word_skill_state USING INDEX/);
+    assert.match(details, /SEARCH learner_owned_word_skill_state USING (COVERING )?INDEX/);
     assert.doesNotMatch(details, /SCAN learner_owned_/);
   });
 

@@ -594,6 +594,21 @@ See [teaching set identity](vocabulary-learning.md#teaching-set-identity) for
 runtime use and the [migration rehearsal note](ops/schema-migrations.md#teaching-set-foundation-migration)
 for release checks.
 
+## Review scheduling columns and due times
+
+Migration `0077_vocabulary_due_columns` keeps the scheduling facts that review
+reads filter or order on in real columns of `learner_word_schedules` and
+`learner_pure_cue_schedules`, not in `scheduler_state_json`. Domain code still
+works with one merged state object; `server/db/vocabulary-schedule-columns.ts` is
+the only place that splits it for a write or merges a row on read. Guard triggers
+reject a write that puts a moved key back into JSON or omits a positive interval.
+
+`review_due_at` (production schedules and recognition/contextual-selection states)
+is maintained by triggers from each row's own columns, and covering indexes lead
+with the learner and due time. Pure cues store no due time: a learner's cue set is
+small, so one covering index serves the whole read and roles are decided in code. See the
+[rehearsal note](ops/schema-migrations.md#vocabulary-due-columns-0077).
+
 ## Independent introduction components
 
 `word_introduction_components` retains validated teaching and practice outputs across failed companion calls, keyed by exact bootstrap content, component stage, and generation key. Writes require the current teaching lease. `word_teaching_package_components` links the published immutable package to each component and its model/invocation provenance. Package readiness is still atomic; existing packages need no regeneration. Migration `0029_introduction_components` adds these tables and requires the offline schema-migration release procedure.
