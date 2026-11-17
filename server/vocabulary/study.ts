@@ -350,12 +350,12 @@ function sampleIndex(session:VocabularyPersistedSession,projection:VocabularySes
 }
 /** The old bucket mix applies to the new lifecycle names; the action log supplies queue state. */
 type StudyTarget={kind:'word'|'pure_cue';id:string};
-function selectNextWord(session:VocabularyPersistedSession,projection:VocabularySessionProjection,unavailable:ReadonlySet<string>,onGateHeld:()=>void=()=>{}):StudyTarget|undefined {
+function selectNextWord(session:VocabularyPersistedSession,projection:VocabularySessionProjection,unavailable:ReadonlySet<string>,onGateHeld:()=>void=()=>{},heldCues:ReadonlySet<string>=new Set()):StudyTarget|undefined {
   const encounters=projection.encounters.filter((entry)=>!entry.presentationUndone);
   const available=Object.values(projection.words).filter((word)=>!unavailable.has(word.wordId)&&!word.teachingDeferred
     &&(word.workStatus==='open'||(projection.phase==='active'&&!word.admitted)));
   const cues=pureCandidates(session).filter((entry)=>{
-    if(projection.excludedContentIds.includes(entry.contentId))return false;
+    if(projection.excludedContentIds.includes(entry.contentId)||heldCues.has(entry.contentId))return false;
     const seen=encounters.filter((encounter)=>encounter.snapshot.schedulingScope==='pure_cue'&&encounter.snapshot.contentId===entry.contentId);
     if(seen.some((encounter)=>encounter.skipped))return false;
     if(projection.pureCueOutcomes.some((outcome)=>outcome.contentId===entry.contentId&&outcome.covered))return false;
@@ -404,6 +404,19 @@ function selectNextWord(session:VocabularyPersistedSession,projection:Vocabulary
   return chosen.targets[sampleIndex(session,projection,chosen.targets.length,'word')];
 }
 
+/**
+ * Best-effort serve-time check of compensation holds. A session's pool is frozen at
+ * Start, so a hold written after Start (feedback judged while the session is open)
+ * is not reflected in it. One primary-key lookup for the chosen item; completion
+ * still ignores answers given before a hold ends.
+ */
+function compensationHolds(now:string):{word:(wordId:string)=>boolean;cue:(contentId:string)=>boolean} {
+  const learnerId=requireLearnerId();
+  const word=getDb().prepare('SELECT post_compensation_check_at AS hold FROM learner_word_schedules WHERE learner_id=? AND word_id=?');
+  const cue=getDb().prepare('SELECT recheck_at AS hold FROM learner_pure_cue_schedules WHERE learner_id=? AND content_id=?');
+  const active=(row:unknown)=>{const hold=(row as {hold:string|null}|undefined)?.hold??null;return hold!==null&&hold>now;};
+  return {word:(wordId)=>active(word.get(learnerId,wordId)),cue:(contentId)=>active(cue.get(learnerId,contentId))};
+}
 function unresolvedMisses(projection:VocabularySessionProjection,wordId:string):string[] {
   const encounters=projection.encounters.filter((entry)=>entry.wordId===wordId&&entry.snapshot.role==='general'&&entry.snapshot.kind==='production'&&!entry.skipped);
   const ids=[...new Set(encounters.filter((entry)=>entry.effectiveResponses.some((response)=>response.payload.outcome==='rejected')).map((entry)=>entry.snapshot.contentId))];
@@ -441,9 +454,11 @@ export function nextVocabularyExercise(sessionId:string,clientActionId:string,op
     let gateHeld=false;
     let requestedWordId=options.another?undefined:options.wordId;
     if(options.wordId&&!projection.words[options.wordId])throw new VocabularySessionInputError('Word is outside this session');
-    const unavailableWords=new Set<string>();
+    const unavailableWords=new Set<string>();const heldCues=new Set<string>();
+    const held=compensationHolds(new Date().toISOString());
     for (;;) {
-      const target:StudyTarget|undefined=requestedWordId?{kind:'word',id:requestedWordId}:selectNextWord(session,projection,unavailableWords,()=>{gateHeld=true;});
+      const selected=!requestedWordId;
+      const target:StudyTarget|undefined=requestedWordId?{kind:'word',id:requestedWordId}:selectNextWord(session,projection,unavailableWords,()=>{gateHeld=true;},heldCues);
       if(gateHeld)markTimedGateHeld(sessionId);
       const wordId=target?.kind==='word'?target.id:undefined;
       requestedWordId=undefined;
@@ -498,10 +513,14 @@ export function nextVocabularyExercise(sessionId:string,clientActionId:string,op
           unavailableWords.add(wordId);projection=builder.projection();
           continue;
         }
+        // A compensation hold that began after Start keeps selection from serving the held production.
+        if(selected&&role==='general'&&(word.mode==='practice'||word.mode==='maintain')&&chosen.kind==='exercise'&&chosen.skill==='production'
+          &&!isContrast(chosen)&&held.word(wordId)) {unavailableWords.add(wordId);continue;}
         builder.push({kind:'presentation',payload:{encounterId:randomUUID(),wordId,snapshot:retainedSnapshot(session,chosen,role,projection)}});
       }else if(target?.kind==='pure_cue') {
         const pure=payload.pureCues.find(content=>content.contentId===target.id);
         if(!pure)throw new Error('Selected pure cue disappeared');
+        if(held.cue(target.id)){heldCues.add(target.id);continue;}
         builder.push({kind:'presentation',payload:{encounterId:randomUUID(),wordId:null,snapshot:retainedSnapshot(session,pure,'general',projection)}});
       }else {
         if(projection.phase==='active')builder.push({kind:'finish_for_now',payload:{}});

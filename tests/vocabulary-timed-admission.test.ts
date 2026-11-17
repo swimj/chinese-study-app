@@ -115,11 +115,14 @@ test('review words and fragile cues share one urgency ranking; items overdue by 
   assert.deepEqual(admission.pressingKeys, ['pure_cue:c-hot', 'word:w0000', 'word:w0001']);
 }));
 
-test('every due recheck is admitted ahead of the bound; strong slots scale with the admitted review count', () => alice(() => {
+test('strong-cue rechecks are admitted ahead of the bound; fragile rechecks compete; strong slots scale with admitted review', () => alice(() => {
   // Cue answers proxy their words' production review, so cues answer the least urgent words.
   const ids = words(50).slice(40);
-  for (let index = 0; index < 3; index++) cue(`recheck-${index}`, ids[index]!, { recheckAt: at(-1 - index) });
-  cue('recheck-future', ids[4]!, { recheckAt: at(5) });
+  for (let index = 0; index < 3; index++) cue(`recheck-${index}`, ids[index]!, { recheckAt: at(-1 - index), strongSince: at(-3000), successes: 1 });
+  cue('recheck-future', ids[4]!, { recheckAt: at(5), strongSince: at(-3000) });
+  // Compensation leaves a fragile cue due at the end of its hold; once due it is ranked like any fragile cue.
+  cue('fragile-recheck-overdue', ids[5]!, { next: at(-120), recheckAt: at(-120) });
+  cue('fragile-recheck-fresh', ids[6]!, { next: at(-1), recheckAt: at(-1) });
   // About one strong cue in ninety wins a given day's roll.
   for (let index = 0; index < 600; index++) cue(`strong-${index}`, ids[index % 10]!, { strongSince: at(-3000), successes: 0 });
   const rolled = readVocabularyPureCueStreams(now).strong.length;
@@ -128,10 +131,15 @@ test('every due recheck is admitted ahead of the bound; strong slots scale with 
   const order = admission.reviewOrder.map((entry) => entry.id);
   assert.deepEqual(order.slice(0, 3), ['recheck-2', 'recheck-1', 'recheck-0']);
   assert.ok(!order.includes('recheck-future'));
+  // Urgency 6 outranks every word (at most about 4.1); urgency just over 1 falls below the cut.
+  const ranked = order.filter((id) => !id.startsWith('strong-')).slice(3);
+  assert.equal(ranked[0], 'fragile-recheck-overdue');
+  assert.ok(!order.includes('fragile-recheck-fresh'));
+  assert.ok(admission.pressingKeys.includes('pure_cue:fragile-recheck-overdue'));
   const strong = order.filter((id) => id.startsWith('strong-'));
   // (10 admitted review items) / 10 = one strong slot when enough cues rolled.
   assert.equal(strong.length, Math.min(1, rolled));
-  assert.equal(order.filter((id) => id.startsWith('w')).length, 10);
+  assert.equal(order.filter((id) => id.startsWith('w')).length, 9);
 }));
 
 test('the admitted set equals the reference ranking per stream on a large due set', () => alice(() => {

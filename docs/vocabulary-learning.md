@@ -309,7 +309,8 @@ urgency 2 or more (`PRESSING_OVERDUE_URGENCY`, overdue by a full interval) that 
 study history is pressing; the admitted ones are frozen as `pressingKeys`.
 The walk checks content for each candidate as it reaches it and stops once the bound
 is filled, so a failing candidate is replaced by the next in rank and the rest are
-never checked. Every due recheck is admitted ahead of the bound; strong-cue
+never checked. Every due strong-cue recheck is admitted ahead of the bound (a due
+fragile-cue recheck is ranked with the fragile cues); strong-cue
 maintenance draws today's rolled cues with slots scaled to the admitted review items.
 Untimed Start keeps the 1,000-item cap and 50/30/20 allocation.
 
@@ -753,11 +754,18 @@ schedules a recheck that takes priority within the review bucket and bypasses
 routine strong-cue sampling. The recheck exists for strong cues, whose routine
 maintenance is a random daily roll that would otherwise leave the compensated cue
 unchecked indefinitely. Fragile cues share the field because both kinds live in one
-schedule table. For a fragile cue, it acts as the cue's earliest check time:
-answers before it do not count, and the cue has no fragile due time until it
-passes, as with `postCompensationEarliestCheckAt` for words. It differs from words
-in one respect: once the time passes, the cue is admitted ahead of the timed review
-bound instead of competing in the urgency ranking.
+schedule table. For a fragile cue in a timed session, it acts only as the cue's
+earliest check time, as `postCompensationEarliestCheckAt` does for words: the cue
+is not selected before it and answers before it do not count; once it passes, the
+cue is ranked by urgency with the other fragile cues. Strong-cue rechecks are still
+admitted ahead of the review bound. (Classic sessions keep the recheck priority for
+both.)
+
+A session's pool is frozen at Start, so a hold written while a session is open
+(feedback judged mid-session) is not reflected in it. Before serving, selection
+looks up the chosen item's hold (word production or pure cue) and passes over a
+held item for that pick; the item can be served again in the same session once the
+hold ends. This is best effort; completion's rule above remains authoritative.
 A refresh preserves the pause, and
 completion clears its timestamp only when covered production was assessed after
 the break. Earlier responses still enter the session history. The judgment,
