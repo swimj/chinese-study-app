@@ -19,12 +19,9 @@ and content repair have
 separate authority. Simple initial policies can evolve without replacing those
 boundaries. This snapshot does not certify deployment or operational readiness.
 
-The persistent steward at `/Users/jw/dev/chinese-study-steward` holds the product
-north star in `vision.md`, weekly priorities in `outlook.md`, and unresolved
-thinking in `chewing.md`. Its `AGENTS.md` governs the steward, not implementation
-workers. Those files provide alignment when available; this repository retains
-the contracts needed to implement tasks without that workspace. Weekly priorities
-belong there and in task instructions, not in this frontier.
+The [Steward workspace](AGENTS.md#11-project-context-and-task-scope) and direct
+task instructions carry current product priorities. This frontier describes
+the architectural boundary for implementation.
 
 ## Safe implementation assumptions
 

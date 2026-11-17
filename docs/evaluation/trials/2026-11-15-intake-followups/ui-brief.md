@@ -8,7 +8,7 @@ URL: http://127.0.0.1:4219/tests/browser/vocabulary-intake.html
 Starting situation: Words → Chat, 纠结 recently submitted; 760 × 900 at 125% text.
 Reset: reload the page, enter Words, then Chat. Source: parent 793486560 plus the
 uncommitted follow-up implementation retained in this review unit. Frontend files
-are frozen during the pass. Evidence: /private/tmp/custom-senses-share.
+are frozen during the pass. Use the evidence directory supplied by the coordinator.
 
 1. Ask why a sense is included, then request only the second sense. Check the
    selection in the transcript and Outstanding where applicable.

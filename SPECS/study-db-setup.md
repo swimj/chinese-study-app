@@ -1,17 +1,22 @@
 # Study DB Setup
 
-This repo supports two backend modes:
+This guide covers local study-mode setup and restore with a supplied SQLite
+baseline. See the [hosted operations guide](../docs/ops/hosted-beta-deployment.md)
+for the hosted service and the [contributor setup](../docs/scripts.md#contributor-setup-and-local-checks)
+for seeded development.
 
-- `dev`: uses repo-local sample/dev data
-- `study`: uses a real SQLite database stored in an explicit data directory
+## Prerequisites
 
-For real study use, the safest database artifact is:
+Provide a baseline database compatible with the checked-out app. The original
+`canonical-study-pristine.db` was a local artifact from the Hack Chinese import.
+If you need that exact baseline, obtain a copy from the artifact owner before
+starting. The Git checkout does not supply it.
 
-- [data/canonical-study-pristine.db](/Users/jw/dev/chinese-study-app/data/canonical-study-pristine.db)
+Set `study_baseline` to the absolute path of the copied baseline and
+`study_learner_id` to the [stable trusted-local learner ID](../README.md#study-mode)
+for this database. Run the npm commands from the repository root.
 
-That file was regenerated from the import pipeline after the Hack Chinese review patch and curated unmatched-word import, so it is the clean baseline to use going forward.
-
-## Recommended Setup In A Proper Study Repo
+## Set up a local study database
 
 1. Create a dedicated study data directory outside the repo.
 
@@ -21,16 +26,18 @@ That file was regenerated from the import pipeline after the Hack Chinese review
    mkdir -p "$HOME/chinese-study-data"
    ```
 
-2. Copy the pristine DB into that directory as `app.db`.
+2. Copy the baseline into that directory as `app.db`. Use a fresh directory
+   for this setup.
 
    ```bash
-   cp /Users/jw/dev/chinese-study-app/data/canonical-study-pristine.db "$HOME/chinese-study-data/app.db"
+   cp "${study_baseline:?Set study_baseline to the baseline database path}" "$HOME/chinese-study-data/app.db"
    ```
 
 3. Start the backend in `study` mode and point it at that directory.
 
    ```bash
-   npm run study:backend -- --data-dir="$HOME/chinese-study-data"
+   npm run study:backend -- --data-dir="$HOME/chinese-study-data" \
+     --learner-id="${study_learner_id:?Set study_learner_id for this database}"
    ```
 
 4. Start the frontend in a second terminal.
@@ -65,13 +72,7 @@ If your study DB gets into a bad state during testing:
 3. Restore from the pristine baseline.
 
    ```bash
-   cp /Users/jw/dev/chinese-study-app/data/canonical-study-pristine.db "$HOME/chinese-study-data/app.db"
+   cp "${study_baseline:?Set study_baseline to the baseline database path}" "$HOME/chinese-study-data/app.db"
    ```
 
 4. Restart the backend in study mode.
-
-## Notes
-
-- `study` mode always expects the database file to be named `app.db` inside the chosen `--data-dir`.
-- You do not need the large source artifacts in the proper study repo if you are copying in a finished DB.
-- If you want a transparent export format too, this repo also has [data/canonical-study.sql](/Users/jw/dev/chinese-study-app/data/canonical-study.sql), but the simplest path is copying the SQLite file directly.

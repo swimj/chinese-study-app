@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { createHash } from 'node:crypto';
@@ -10,7 +11,7 @@ import type { VocabularyIntakeStreamEvent } from '../../../../src/domain/vocabul
 const option=(name:string)=>process.argv.find(arg=>arg.startsWith(`--${name}=`))?.slice(name.length+3);
 const variant=option('variant'),model=option('model')??'gpt-6-sol';
 if(!process.argv.includes('--execute')||!process.env.OPENAI_API_KEY||!variant||!/^[a-z0-9-]+$/.test(variant))throw Error('Require --execute, --variant and private provider configuration');
-const root=`/private/tmp/existing-word-sense-${variant}`,source=process.cwd();
+const root=path.join(os.tmpdir(), `existing-word-sense-${variant}`),source=process.cwd();
 fs.mkdirSync(root,{mode:0o700});
 const write=(name:string,value:unknown)=>fs.writeFileSync(path.join(root,name),JSON.stringify(value,null,2));
 const imp=(name:string)=>import(pathToFileURL(path.join(source,name)).href);

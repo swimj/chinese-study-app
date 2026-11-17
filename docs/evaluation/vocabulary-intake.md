@@ -144,7 +144,9 @@ node --import tsx docs/evaluation/trials/2026-11-16-intake-organization/runner.m
 
 For a live run, load a private environment file containing provider configuration,
 choose a unique variant name and retain the output directory reported by the
-runner. For example, on prompt version 9.1:
+runner. Runners write to the system temporary directory. Set `TMPDIR` on macOS
+or Linux to choose an existing directory for the run. This command tests prompt
+version 9.1.
 
 ```sh
 node --env-file=/path/to/project.env --import tsx docs/evaluation/trials/2026-11-16-intake-organization/runner.mts --execute --variant=review-v91-a --cases=full --max-calls=40 --prompt-version=9.1

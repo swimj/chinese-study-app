@@ -23,6 +23,5 @@ Tasks:
 - Explore narrow layout, enlarged text, focus and readable progress/error text.
 
 Report attempted tasks, concrete observations, failures/uncertainties and limits.
-Capture screenshots to /private/tmp/intake-completion-ui/. First-pass findings
-must be independent; ask the coordinator to fix infrastructure rather than
-reading implementation to infer intended UI behavior.
+Save screenshots in the evidence directory supplied by the coordinator. First-pass
+findings must be independent. Ask the coordinator to fix infrastructure if needed.

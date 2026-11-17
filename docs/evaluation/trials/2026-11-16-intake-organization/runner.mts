@@ -15,7 +15,7 @@ if (live === dryRun) throw new Error('Select exactly one of --execute or --dry-r
 if (live && !process.env.OPENAI_API_KEY?.trim()) throw new Error('Load the local environment file before starting the live trial');
 const variant = option('variant') ?? (dryRun ? 'dry-run' : null);
 if (!variant || !/^[a-z0-9-]{1,64}$/.test(variant)) throw new Error('Supply a unique lowercase --variant=... name');
-const artifactPath = `/private/tmp/chinese-study-intake-live-2026-11-15-${variant}`;
+const artifactPath = path.join(os.tmpdir(), `chinese-study-intake-live-2026-11-15-${variant}`);
 const fixtureDate = '2026-11-15T00:00:00.000Z';
 const copyFrom = (file: string) => import(pathToFileURL(path.join(source,file)).href);
 const { createBaselineFixture } = await copyFrom('tests/helpers/baseline-database.ts');

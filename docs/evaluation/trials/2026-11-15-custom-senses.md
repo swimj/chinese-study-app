@@ -155,12 +155,15 @@ The retained [chat runner](2026-11-15-custom-senses/intake-runner.mts) and
 databases. Run from the repository root with `node --env-file=<private-env-path>
 --import tsx <runner>`. Chat requires `--execute --variant=<new-unique-name>
 --cases=full --model=gpt-6-sol --reasoning=low`; `--dry-run` seeds without calls.
-Teaching requires `--execute` and reserves its fixed artifact directory once.
-The [matching runner](2026-11-15-custom-senses/matching-runner.mts) requires
-`--execute` and the synthetic database from the `full-sol-low` chat variant.
-None of these runners overwrites a prior run. Their manifests retain the original
-base revision, working-file status and prompt hash; exact requests establish the
-actual call contract even when the base revision preceded final integration.
+Teaching requires `--execute`. For the
+[matching runner](2026-11-15-custom-senses/matching-runner.mts), pass `--execute`
+and `--input-db="/path/to/chat-run/database/app.db"` with the synthetic database
+from a completed `full-sol-low` chat trial. Matching works on a copy. Each runner
+reserves a new output directory under the system temporary directory. On macOS
+or Linux, set `TMPDIR` to an existing directory to choose where it writes.
+Chat and teaching manifests record the base revision and prompt hashes. The chat
+manifest also records working-file status. Exact requests establish the call
+contract even when the base revision preceded final integration.
 
 No hosted migration rehearsal, production restore exercise, Clerk browser
 session, real learner data or real-provider browser end-to-end test ran. The

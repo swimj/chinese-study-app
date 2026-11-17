@@ -198,12 +198,12 @@ link and review state; distinguish implemented, merged, deployed, and observed.
 
 ## Project context
 
-The persistent Steward workspace at `/Users/jw/dev/chinese-study-steward`
-maintains the north star in `vision.md`, weekly priorities in `outlook.md`, and
-unresolved thinking in `chewing.md`. Consult it for alignment when relevant and
-available. Its AGENTS.md governs the Steward role; this repository retains the
-contracts needed to carry out a well-scoped application task without that
-workspace.
+The separate [Steward repository](https://github.com/swimj/steward) maintains
+the north star in `vision.md`, weekly priorities in `outlook.md`, and unresolved
+thinking in `chewing.md`. For work that needs this context, consult an
+available Steward checkout or read the files on GitHub. Ask Justin for any
+unpublished updates the task needs. Steward's `AGENTS.md` governs its role.
+This repository contains the contracts needed for well-scoped application work.
 
 Task conversations establish execution context. Git and GitHub supply review
 and integration evidence. Linear supports issue intake and retrieval, but its
