@@ -83,8 +83,8 @@ The metrics contain only bounded operational dimensions:
 - process CPU, memory, uptime, and event-loop delay;
 - bounded application version and Fly deployment identifier labels;
 - SQLite database and WAL file sizes;
-- Litestream daemon CPU, start time, local file sequence, upload count, and
-  backup check availability and age; and
+- successful backup capture availability and age; legacy Litestream daemon CPU,
+  start time, local sequence, and upload count only while that daemon runs; and
 - maintenance/provider-work control state and provider work in flight.
 
 Raw URLs, query strings, route parameter values, learner identifiers, answers,
@@ -178,7 +178,7 @@ fly ssh console --app <app-name> --command \
 ```
 
 The file is failure-only and survives an application restart, but it is not part
-of the SQLite/Litestream backup stream. Treat it as private operational evidence
+of the database backup. Treat it as private operational evidence
 and inspect or preserve it before replacing the Machine or volume. On the first
 failed write of each UTC day, the application removes valid records older than
 30 days. Malformed lines are preserved for manual diagnosis rather than silently
@@ -278,7 +278,7 @@ comparison.
    work (workers, schedulers, and metrics reads) is occupying the single
    SQLite connection and event loop while requests wait.
 7. Check database/WAL size, volume use, and backup age for operational context.
-   Backup age approaching 3,600 seconds is already a stop-writes condition in
+   Backup age exceeding 4,500 seconds is a stop-writes condition in
    the hosted deployment runbook. Treat any red availability indicator as an
    operational fault rather than a fresh backup.
 
@@ -368,76 +368,27 @@ If longer retention or alerting becomes necessary, federate the Fly Prometheus
 endpoint into an operator-owned monitoring stack. Do not send learner content
 to that stack.
 
-## Compare Litestream overhead
+## Backup freshness and legacy replication metrics
 
-The **Litestream overhead** section answers three questions:
+`hosted:inspect` and the backup-age metric query the live backup receiver when
+`APP_BACKUP_RECEIVER_URL` is configured. Age uses the successful backup's capture
+start time, so transfer and validation time count against freshness. A failed
+capture never refreshes it. Receiver unavailability produces unknown freshness.
 
-| Chart | Read it as |
-| --- | --- |
-| CPU used from sustained allocation | Node and Litestream CPU as percentages of the selected Machine's Fly baseline. On shared-cpu-1x, 1.5% of a core is 24% of the sustained allocation. Bursting can take a line above 100%. |
-| Backup files per minute | Estimated local incremental files prepared, alongside all successful S3 file uploads. Uploads also include compaction and snapshot files, so the lines need not match. These are five-minute averages, not transaction counts. |
-| Time since successful backup check | Seconds since a successful sync check. Idle checks and progress through upload batches refresh it. The 30-second line is a reference, not a guarantee about unuploaded writes. |
+Public `GET /backup-healthz` returns 200 only when the live receiver answers with
+a successful capture no older than 75 minutes; absent configuration, missing
+receipts, an unavailable receiver, or stale capture returns 503. It exposes only
+status and age, not credentials, backup identities, or learner information.
+Keep the normal `/healthz` app-availability check separate from this dependency
+check. See [backup operations](hosted-backups.md) for failure response and restore.
 
-Litestream v0.5.16 exposes its own metrics on loopback `127.0.0.1:9090`.
-The app reads that listener during its existing private metrics scrape and
-exports only daemon CPU, daemon start time, the configured database's local
-file sequence, and successful S3 upload count. It strips upstream labels;
-paths, replica coordinates, and arbitrary Go metrics are not forwarded. Fly
-continues scraping port 9091; port 9090 is not a Fly HTTP service. The
-collector has a 1.5-second deadline and 256 KiB response limit. If it fails,
-app metrics remain available and the daemon series are omitted rather than
-reported as zero. **Operational metric availability** includes the daemon
-telemetry signal. CPU does not include the short-lived `litestream list`
-processes used by the existing backup-status check.
+A GitHub-scheduled external check is planned but is not delivered. The receiver's
+own timer and an endpoint nobody polls do not detect a stopped backup Machine.
+Record a working independent observer and failure notification in operational
+cutover evidence; do not describe monitoring as activated before testing it.
 
-Prepared-file estimates use the local file sequence as a gauge. The first
-five minutes after daemon startup are hidden to avoid interpreting restoration
-of the sequence as newly created files. Exclude database restore/reset windows
-from comparisons. Upload counters are absent until the daemon first records a
-successful upload; absence is not evidence of zero work. Snapshot timing is not
-available as a dedicated metric in this version, so there is no snapshot marker.
-
-To compare settings manually:
-
-1. Release telemetry with the existing replication timing, then re-import the
-   versioned dashboard JSON into Fly Grafana. A code release does not update a
-   saved Grafana dashboard. Select the production app and a one-hour window.
-2. Record mean/peak CPU, file rates, and successful-check age. Include an hourly
-   snapshot cycle and note whether the hour was quiet or included study work.
-3. After a separately scheduled tuning release, repeat for a comparable hour,
-   excluding startup and the five-minute averaging window around deployment.
-4. A useful result reduces CPU without growing check age or errors. Consult
-   Fly Instance's CPU Quota Balance and Throttling panels to establish whether
-   CPU pressure accompanies learner-visible latency. These charts alone do not
-   establish a maximum data-loss window or restoration correctness.
-
-The live comparison belongs to release verification. Unit tests establish
-collection, labels, missing-data behavior, and dashboard configuration; they do
-not establish CPU savings or observed production replication lag.
-
-For deterministic dashboard query checks, run
-`PROMTOOL_PATH=/absolute/path/to/promtool node --import tsx --test tests/litestream-dashboard.test.ts`
-with Prometheus's `promtool` (validated with 3.0.1). The test reads expressions
-from the dashboard itself and evaluates CPU normalization, file rates, daemon
-startup, and missing telemetry/allocation/status against controlled samples.
-It skips when `PROMTOOL_PATH` is absent. This checks query behavior, not rendered
-Grafana layout or Fly's live series availability.
-
-### Replication timing
-
-Production and RC use `monitor-interval: 25s` and replica `sync-interval: 1s`.
-The longer monitor interval groups changes into fewer local incremental files;
-the uploader still runs promptly. In v0.5.16, delaying uploads alone does not
-combine already-created files. The operating target is roughly 30 seconds of
-replication staleness under healthy, light load, accepting loss of recent
-unreplicated progress if the volume is lost. Network failures, backlog, or CPU
-contention can exceed that target; successful-check age does not measure this
-loss window directly.
-
-The checkpoint interval remains one minute, snapshots hourly, retention seven
-days, and shutdown sync unchanged. Litestream checks whether SQLite checkpoints
-are due from the monitor loop, so the timing of those checks can shift even
-though checkpoint settings remain unchanged. Compare the separate telemetry
-release's one-second baseline with this timing using the one-hour procedure
-above. Reverting only `monitor-interval` to `1s` restores the previous cadence;
-no schema or data migration is involved.
+The dashboard's Litestream CPU, local sequence, upload, and sync-check panels
+apply only while the legacy daemon runs. They are unavailable after cutover and
+must not be interpreted as zero backup work. The retained binary supports old
+S3 recovery points; its presence does not imply runtime replication. Historical
+Litestream tuning and dashboard checks are available in Git history.

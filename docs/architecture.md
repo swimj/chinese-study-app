@@ -78,7 +78,13 @@ For more frontend code navigation, see the
 | `APP_METRICS_PORT` | Backend | Optional private Prometheus listener; hosted Fly config uses `9091` |
 | `APP_ALLOWED_CLERK_USER_IDS` | Backend | Optional nonempty Clerk user-id allowlist; browser RC restricts access to the restored copy before learner bootstrap |
 | `APP_DEPLOYMENT_TIER` | Backend | `release_candidate` enables guarded RC-only database maintenance; never set this on beta |
-| `LITESTREAM_REPLICA_PATH` | Hosted | Browser RC uses a separate bucket and a fresh prefix per restored generation; headless rehearsal does not replicate |
+| `APP_BACKUP_SOURCE_TOKEN` | Hosted source and receiver | Shared secret for the private source endpoint; at least 32 characters |
+| `APP_BACKUP_SOURCE_PORT`, `APP_BACKUP_BIND` | Hosted source | Private listener, defaults `9092` and `::`; never publish through a Fly HTTP service |
+| `APP_BACKUP_SCRATCH_DIR` | Hosted source | Online-backup scratch, defaults to system temporary directory (`/tmp` in the image); keep off `/data` |
+| `APP_BACKUP_RECEIVER_URL`, `APP_BACKUP_RECEIVER_TOKEN` | App and backup CLI | Private receiver URL and authentication secret; live status and release requests |
+| `APP_BACKUP_SOURCE_URL`, `APP_BACKUP_SOURCE_APP` | Backup receiver | Private source URL and expected Fly app identity |
+| `APP_BACKUP_DIR` | Backup receiver | Persistent backup directory, default `/data/backups` |
+| `LITESTREAM_*` | Legacy restore/transition | Retained S3 history and services awaiting verified backup cutover; see [backup operations](ops/hosted-backups.md) |
 | `APP_SLOW_REQUEST_MS` | Backend | Local-time threshold (excluding provider waits) for `request.slow` log events; default `500` |
 | `VITE_STUDY_PROFILE` | Frontend | Client study profile |
 
