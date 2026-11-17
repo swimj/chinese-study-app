@@ -169,9 +169,11 @@ neither Mandarin Connections nor interests.
 
 Each ready note can be **Saved** or marked **Not for me**; the two are exclusive
 and a second press clears the choice. Not for me offers optional reasons (Wrong,
-Already knew, Not interesting, Too long, Confusing) and a muted note; it does not
-hide the note, change generation, or affect scheduling. A saved note can carry a
-private note of at most 1000 characters. Feedback lessons take the same
+Already knew, Not interesting, Too long, Confusing). Connection notes also offer
+Tenuous connection when the link to the studied words feels stretched; feedback
+lessons do not offer this reason. Not for me mutes the note without hiding it,
+changing generation, or affecting scheduling. A saved note can carry a private
+note of at most 1000 characters. Feedback lessons take the same Save / Not for me
 reactions; Dismiss stays a separate inbox action. **S** and **X** toggle the
 reactions on the focused note or lesson under the reader's shortcut rules.
 
