@@ -121,6 +121,15 @@ describe('hosted upgrade pipeline', () => {
     assert.equal(JSON.stringify(result).includes('secret-bucket'), false);
   });
 
+  test('a failed pre-release capture prevents deployment and leaves controls closed', async () => {
+    const harness = createHarness({ preBackupFailure: true });
+    const result = await runHostedUpgrade(harness.input, harness.deps);
+    assert.equal(result.status, 'failed');
+    assert.equal(result.failedStage, 'backup-sync');
+    assert.equal(result.reopened, false);
+    assert.deepEqual(harness.mutations, ['provider-work:false', 'maintenance:true']);
+  });
+
   for (const postDeploySync of ['timeout', 'behind', 'malformed'] as const) {
     test(`keeps both controls closed when post-deploy replication is ${postDeploySync}`, async () => {
       const harness = createHarness({ postDeploySync });
@@ -218,6 +227,7 @@ function createHarness(options: {
   smokeStatus?: 'ok' | 'failed';
   postDeployRevision?: string;
   imageDigest?: string;
+  preBackupFailure?: boolean;
   postDeploySync?: 'timeout' | 'behind' | 'malformed';
 } = {}) {
   const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'hosted-upgrade-repo-'));
@@ -329,6 +339,7 @@ function createHarness(options: {
       return { stdout: JSON.stringify({ status: 'noop' }), stderr: '' };
     }
     if (command.includes('scripts/manage-hosted-backup.ts')) {
+      if (!deployed && options.preBackupFailure) throw new Error('capture failed');
       if (deployed && options.postDeploySync === 'timeout') throw new Error('sync timed out');
       const option = (name: string) => command.match(new RegExp(`--${name}=([^ ]+)`))?.[1]?.replaceAll("'", '');
       const id = option('id');
