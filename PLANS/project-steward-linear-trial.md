@@ -1,10 +1,9 @@
 # Project Steward + Linear Trial
 
 Status: historical trial and graduation record (2026-08-02), superseded as
-current agent guidance on 2026-10-03. The persistent steward now lives at
-`/Users/jw/dev/chinese-study-steward`; its `AGENTS.md` owns that role. Application
-workers follow [AGENTS.md](../AGENTS.md). Linear remains useful for intake and
-retrieval, but its bookkeeping is incomplete.
+current agent guidance on 2026-10-03. See the [application contributor
+guidance](../AGENTS.md#11-project-context-and-task-scope) for the current
+Steward workspace and Linear's role.
 
 The authority claims, WIP limits, dispatch procedures, trial prompts, and
 `TASKS.md` references below preserve the old operating model, not current
@@ -635,7 +634,7 @@ secondary signals justify challenging the current path.
 
 Operating sources
 
-- Repository root: /Users/jw/dev/chinese-study-app
+- Repository root: your checkout of `swimj/chinese-study-app`.
 - Read AGENTS.md, STABILITY_FRONTIER.md, docs/README.md,
   docs/vision/agentic_adaptive_language_learning_vision.md,
   docs/vision/initial_agentic_srs_product_focus.md, and

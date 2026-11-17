@@ -96,19 +96,19 @@ Rework intake around word-first triage and reusable cluster editing. Intake rows
   - Single PR migration is acceptable for this local deployment model.
 
 ## Key Code References
-- [server/db.ts](/Users/jw/dev/chinese-study-app/server/db.ts:1488): current pair-shaped intake grouping and coverage summary.
-- [server/db.ts](/Users/jw/dev/chinese-study-app/server/db.ts:1564): intake cluster creation currently requires candidate + prompt.
-- [server/db.ts](/Users/jw/dev/chinese-study-app/server/db.ts:1667): current `accept` / `dismiss` intake terminal status flow.
-- [server/db.ts](/Users/jw/dev/chinese-study-app/server/db.ts:1898): session study-management projection for suppress skill and bad prompt.
-- [server/db.ts](/Users/jw/dev/chinese-study-app/server/db.ts:6117): scheduler relevance gates for suppressed skills and bad production prompts.
-- [server/db.ts](/Users/jw/dev/chinese-study-app/server/db.ts:6184): contrast scheduler content eligibility; partial clusters remain inert without usable prompts.
-- [server/index.ts](/Users/jw/dev/chinese-study-app/server/index.ts:90): current contrast intake HTTP routes.
-- [server/index.ts](/Users/jw/dev/chinese-study-app/server/index.ts:198): current contrast cluster and prompt routes.
-- [src/services/api.ts](/Users/jw/dev/chinese-study-app/src/services/api.ts:60): frontend contrast content and intake API types.
-- [src/pages/IntakePage.tsx](/Users/jw/dev/chinese-study-app/src/pages/IntakePage.tsx:19): current intake UI, still group/pair-first and prompt-required.
-- [src/pages/ClusterManagementPage.tsx](/Users/jw/dev/chinese-study-app/src/pages/ClusterManagementPage.tsx:21): current cluster UI, mostly prompt editing only.
-- [tests/contextual-selection-intake.test.ts](/Users/jw/dev/chinese-study-app/tests/contextual-selection-intake.test.ts:63): existing intake grouping/content tests to replace or extend.
-- [tests/study-management.test.ts](/Users/jw/dev/chinese-study-app/tests/study-management.test.ts:120): existing suppression and bad-prompt projection tests to reuse for non-session actions.
+- [server/db.ts](https://github.com/swimj/chinese-study-app/blob/095c0578b9c652b85f380f7b32a1e95e38242106/server/db.ts#L1488): current pair-shaped intake grouping and coverage summary.
+- [server/db.ts](https://github.com/swimj/chinese-study-app/blob/095c0578b9c652b85f380f7b32a1e95e38242106/server/db.ts#L1564): intake cluster creation currently requires candidate + prompt.
+- [server/db.ts](https://github.com/swimj/chinese-study-app/blob/095c0578b9c652b85f380f7b32a1e95e38242106/server/db.ts#L1667): current `accept` / `dismiss` intake terminal status flow.
+- [server/db.ts](https://github.com/swimj/chinese-study-app/blob/095c0578b9c652b85f380f7b32a1e95e38242106/server/db.ts#L1898): session study-management projection for suppress skill and bad prompt.
+- [server/db.ts](https://github.com/swimj/chinese-study-app/blob/095c0578b9c652b85f380f7b32a1e95e38242106/server/db.ts#L6117): scheduler relevance gates for suppressed skills and bad production prompts.
+- [server/db.ts](https://github.com/swimj/chinese-study-app/blob/095c0578b9c652b85f380f7b32a1e95e38242106/server/db.ts#L6184): contrast scheduler content eligibility; partial clusters remain inert without usable prompts.
+- [server/index.ts](https://github.com/swimj/chinese-study-app/blob/095c0578b9c652b85f380f7b32a1e95e38242106/server/index.ts#L90): current contrast intake HTTP routes.
+- [server/index.ts](https://github.com/swimj/chinese-study-app/blob/095c0578b9c652b85f380f7b32a1e95e38242106/server/index.ts#L198): current contrast cluster and prompt routes.
+- [src/services/api.ts](https://github.com/swimj/chinese-study-app/blob/095c0578b9c652b85f380f7b32a1e95e38242106/src/services/api.ts#L60): frontend contrast content and intake API types.
+- [src/pages/IntakePage.tsx](https://github.com/swimj/chinese-study-app/blob/095c0578b9c652b85f380f7b32a1e95e38242106/src/pages/IntakePage.tsx#L19): current intake UI, still group/pair-first and prompt-required.
+- [src/pages/ClusterManagementPage.tsx](https://github.com/swimj/chinese-study-app/blob/095c0578b9c652b85f380f7b32a1e95e38242106/src/pages/ClusterManagementPage.tsx#L21): current cluster UI, mostly prompt editing only.
+- [tests/contextual-selection-intake.test.ts](https://github.com/swimj/chinese-study-app/blob/095c0578b9c652b85f380f7b32a1e95e38242106/tests/contextual-selection-intake.test.ts#L63): existing intake grouping/content tests to replace or extend.
+- [tests/study-management.test.ts](https://github.com/swimj/chinese-study-app/blob/095c0578b9c652b85f380f7b32a1e95e38242106/tests/study-management.test.ts#L120): existing suppression and bad-prompt projection tests to reuse for non-session actions.
 
 ## Implementation Slices
 1. Backend intake terminology and word-first model

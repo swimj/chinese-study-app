@@ -1,10 +1,12 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {DatabaseSync} from 'node:sqlite';
 import {createHash} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
-const source=process.cwd(),root='/private/tmp/custom-senses-live-teaching-2026-11-15';
+const source=process.cwd();
+const root=path.join(os.tmpdir(), 'custom-senses-live-teaching-2026-11-15');
 if(!process.argv.includes('--execute')||!process.env.OPENAI_API_KEY)throw new Error('Explicit live execution and provider configuration required');
 fs.mkdirSync(root,{mode:0o700});
 process.env.APP_MODE='study';process.env.APP_AUTH_MODE='clerk';process.env.APP_DATA_DIR=path.join(root,'database');

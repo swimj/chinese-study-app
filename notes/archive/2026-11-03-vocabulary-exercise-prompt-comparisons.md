@@ -70,9 +70,10 @@ and full proposal application are covered by database-backed injected-provider
 tests, not by these live single-stage calls.
 
 Exact requests, wire schemas, responses, settings, hashes, and editorial reviews
-are retained locally under `/private/tmp/exercise-comparison-20261102`, including
-`comparison-final-review.json` and `comparison-final-manifest.json`. The final
-live candidate used `a5ff5b00`; subsequent editorial tightening labels the 中断
+were saved to `exercise-comparison-20261102` in the original run's temporary
+directory, including `comparison-final-review.json` and
+`comparison-final-manifest.json`. The final live candidate used `a5ff5b00`.
+Subsequent editorial tightening labels the 中断
 excursion optional and makes retirement of redundant single-answer sources
 explicit in the 提醒 example. Those two edits were reviewed but not rerun live.
 The fixture IDs begin `comparison-`; pass up to eight with the trial script's
@@ -106,9 +107,10 @@ and behavioral evidence, not held-out reliability. Shared-cue integration and
 proposal application were not part of these provider calls.
 
 Exact requests, wire schemas, responses, settings, hashes, and editorial findings
-are retained under `/private/tmp/exercise-authoring-20261103`, including
-`comparison-review.json` and `comparison-manifest.json`. The `baseline` directory
-contains transport failures; `baseline-network` and `candidate` contain the
+were saved to `exercise-authoring-20261103` in the original run's temporary
+directory, including `comparison-review.json` and `comparison-manifest.json`.
+The `baseline` directory contains transport failures. `baseline-network` and
+`candidate` contain the
 successful paired calls. No proposals were applied or hosted content changed.
 
 ## Mapping simplification review (2026-11-03)
@@ -119,8 +121,9 @@ and matched the expected outcomes and references: compact 适用 and underspecif
 photo enlargement mapped to their supplied senses, 花's absent spending use was
 an inventory gap, and a bare 花 placeholder was unmappable. Revised rationales
 were shorter in each pair. Exact requests, schemas, settings, outputs, and review
-are retained under `/private/tmp/sense-mapping-review-20261103`. This is one run
-per synthetic case, without downstream application or hosted verification.
+were saved to `sense-mapping-review-20261103` in the original run's temporary
+directory. This is one run per synthetic case, without downstream application
+or hosted verification.
 
 The accompanying single-improvement v7 reaction/identity clarifications and
 integration v3 removal of a historical-draft aside were reviewed without new

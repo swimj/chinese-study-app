@@ -19,7 +19,7 @@ Set a Clerk development publishable key and secret key without putting them in
 the repository, then use a temporary data directory:
 
 ```bash
-spike_data_dir=$(mktemp -d /private/tmp/swi46-platform.XXXXXX)
+spike_data_dir=$(mktemp -d "${TMPDIR:-/tmp}/swi46-platform.XXXXXX")
 APP_DATA_DIR="$spike_data_dir" \
   CLERK_AUTHORIZED_PARTY="http://127.0.0.1:5174" \
   CLERK_PUBLISHABLE_KEY="..." \

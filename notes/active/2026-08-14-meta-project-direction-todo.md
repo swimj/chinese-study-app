@@ -34,7 +34,7 @@ That makes UI, tenancy, deployment, and release enabling workstreams—not compe
   A short product/design focus covering cohort size, supported study profile, onboarding, supported devices, data promises, core product surface, feedback/support expectations, and launch success criteria.
   This prevents “beta-ready” from becoming an indefinitely expanding polish standard.
 1. Resolve the hosted-service architecture as one coupled decision
-  Tenancy, authentication, storage, deployment topology, and upgrade mechanics should be considered together. In particular, the existing [beta web-service plan](/Users/jw/dev/chinese-study-app/PLANS/beta-web-service-plan.md) assumes Postgres relatively early, but the current synchronous SQLite persistence layer makes that a substantial rewrite—not an automatic prerequisite.
+  Tenancy, authentication, storage, deployment topology, and upgrade mechanics should be considered together. In particular, the existing [beta web-service plan](../../PLANS/beta-web-service-plan.md) assumes Postgres relatively early, but the current synchronous SQLite persistence layer makes that a substantial rewrite—not an automatic prerequisite.
   The architecture pass should explicitly compare:
   isolated service/database per learner;
   multiple learner databases behind one service;
@@ -74,15 +74,15 @@ Your list is directionally complete. The additions I would carry into the beta c
 Cold start is especially important: the product vision already identifies it as a structural weakness because agent value improves with accumulated learner evidence.
 ## What the documentation cleanup should do next
 Once the beta outcome is aligned, I recommend a fairly decisive cleanup:
-- Replace the obsolete cue frontier in [STABILITY_FRONTIER.md](/Users/jw/dev/chinese-study-app/STABILITY_FRONTIER.md) with the hosted-beta outcome, current gap, beta invariants, and a new advancement test.
-- Graduate the completed production-task/cue decisions out of [SWI-24’s design plan](/Users/jw/dev/chinese-study-app/PLANS/swi-24-production-task-cue-contract.md) and eliminate stale gates. The canonical reflection spec still says the exact V2 schema is awaiting human orientation even though it is implemented.
+- Replace the obsolete cue frontier in [STABILITY_FRONTIER.md](../../STABILITY_FRONTIER.md) with the hosted-beta outcome, current gap, beta invariants, and a new advancement test.
+- Graduate the completed production-task/cue decisions out of [SWI-24’s design plan](../../PLANS/swi-24-production-task-cue-contract.md) and eliminate stale gates. The canonical reflection spec still says the exact V2 schema is awaiting human orientation even though it is implemented.
 - Reduce [study-action-model.md](../../SPECS/archive/study-action-model.md) to its durable action/scheduling/evidence contract. Its completed implementation roadmap and old open questions should become history.
 - Consider extracting the production-task/cue contract into its own canonical spec.
 - Split [reflection-proposals-and-handles.md](../../SPECS/archive/reflection-proposals-and-handles.md) along its two real organizing principles:
   - generic proposal/authorization/application governance;
   - the versioned operation registry.
 - Tighten [learning-review-model.md](../../SPECS/archive/learning-review-model.md) around word lifecycle semantics and remove transitional scheduling/storage language now owned elsewhere.
-- Refresh the [hosted-beta tenancy map](/Users/jw/dev/chinese-study-app/PLANS/hosted-beta-tenancy-table-map.md). It inventories 18 tables; the steady schema now has roughly 30, including the complete reflection and production-cue subsystems.
+- Refresh the [hosted-beta tenancy map](../../PLANS/hosted-beta-tenancy-table-map.md). It inventories 18 tables; the steady schema now has roughly 30, including the complete reflection and production-cue subsystems.
 - Create durable hosted-account/content-ownership behavior and hosted-service/release architecture documents only after those decisions are accepted.
 
 The new frontier’s advancement test should involve real operation, not merely merged infrastructure: an invited non-developer can onboard and study repeatedly, two accounts are demonstrably isolated, learner data survives a release, restore has been tested, and support does not depend on improvised database edits.

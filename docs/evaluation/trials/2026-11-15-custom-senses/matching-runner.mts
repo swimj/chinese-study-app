@@ -1,7 +1,17 @@
-import fs from 'node:fs';import path from 'node:path';import {DatabaseSync} from 'node:sqlite';import {pathToFileURL} from 'node:url';
-const root='/private/tmp/custom-senses-live-matching-2026-11-15';
-if(!process.argv.includes('--execute')||!process.env.OPENAI_API_KEY)throw new Error('Explicit live execution required');
-fs.mkdirSync(root,{mode:0o700});fs.copyFileSync('/private/tmp/chinese-study-intake-live-2026-11-15-full-sol-low/database/app.db',path.join(root,'app.db'));
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
+import { pathToFileURL } from 'node:url';
+
+if (!process.argv.includes('--execute') || !process.env.OPENAI_API_KEY) {
+  throw new Error('Explicit live execution required');
+}
+const inputDatabase = process.argv.find(arg => arg.startsWith('--input-db='))?.slice('--input-db='.length);
+if (!inputDatabase) throw new Error('Pass --input-db=<path to the completed chat trial database/app.db>');
+const root = path.join(os.tmpdir(), 'custom-senses-live-matching-2026-11-15');
+fs.mkdirSync(root, { mode: 0o700 });
+fs.copyFileSync(inputDatabase, path.join(root, 'app.db'));
 process.env.APP_MODE='study';process.env.APP_AUTH_MODE='clerk';process.env.APP_DATA_DIR=root;
 const imp=(p:string)=>import(pathToFileURL(path.join(process.cwd(),p)).href);
 const db=new DatabaseSync(path.join(root,'app.db'));const {setDb}=await imp('server/db/connection.ts');setDb(db);
@@ -25,5 +35,5 @@ for(const [id,context] of cases){
 }
 fs.writeFileSync(path.join(root,'outcomes.json'),JSON.stringify(results,null,2));
 const invocations=db.prepare("SELECT * FROM model_invocations WHERE prompt_name='vocabulary-intake-context-match'").all();fs.writeFileSync(path.join(root,'invocations.json'),JSON.stringify(invocations,null,2));
-console.log(JSON.stringify({calls:invocations.length,results:results.map(r=>({id:r.id,target:r.card.selection.targetSenseId,attention:r.card.attention}))}));
+console.log(JSON.stringify({artifact:root,calls:invocations.length,results:results.map(r=>({id:r.id,target:r.card.selection.targetSenseId,attention:r.card.attention}))}));
 setDb(null);db.close();
