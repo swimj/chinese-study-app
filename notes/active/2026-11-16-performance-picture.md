@@ -8,6 +8,7 @@ related:
   - docs/ops/hosted-observability.md
   - docs/evaluation/trials/2026-11-07-session-composition.md
   - docs/private-beta-service-boundary.md
+  - notes/active/2026-11-17-session-composition-streams-plan.md
 
 Working memory for a holistic look at performance. Part 1 records what one
 read-only look at hosted production showed on 2026-11-16. Parts 2 and 3 record
@@ -153,6 +154,10 @@ every eligibility check are read fresh at true session start for the items
 actually pulled, in ordered chunks sized to what the learner's time allows, with
 more pulled in as the pool nears exhaustion. Once a session binds an item's
 content it keeps it for that session, as undo and replay require.
+
+The first round of this work is planned in
+`notes/active/2026-11-17-session-composition-streams-plan.md`: indexed due
+reads, streams, and a bounded admission with no in-session top-up.
 
 How timed selection (pressing items, bucket weights, rests, passed-over
 counting) should work over such a structure is to be re-derived from first
