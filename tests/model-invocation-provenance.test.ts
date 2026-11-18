@@ -124,6 +124,36 @@ test('new invocation attempts keep reconstructable Unicode prompts and distingui
   assert.deepEqual(readInvocationPromptEvidence(getDb(), String(unknown.id)), { promptTemplate: null, requestJson: null });
 });
 
+test('hosted invocations reject unregistered authored instructions before inserting a ledger row', () => {
+  const oldTier = process.env.APP_DEPLOYMENT_TIER;
+  process.env.APP_DEPLOYMENT_TIER = 'release_candidate';
+  const count = () => getDb().prepare('SELECT count(*) n FROM model_invocations').get()!.n;
+  try {
+    const before = count();
+    const request = { input: [{ role: 'developer', content: 'unregistered private test prompt' }] };
+    assert.throws(() => learner(() => startModelInvocation({ ...input, provenance: { requestSnapshot: request } })), /unregistered/i);
+    assert.equal(count(), before);
+  } finally {
+    if (oldTier === undefined) delete process.env.APP_DEPLOYMENT_TIER;
+    else process.env.APP_DEPLOYMENT_TIER = oldTier;
+  }
+});
+
+test('another connection can recover local standalone prompt bytes and detects damaged archives', () => {
+  const text = 'standalone retention test 🀄';
+  const id = learner(() => startModelInvocation({ ...input, provenance: { promptTemplate: text } }));
+  const reopened = new DatabaseSync(path.join(directory, 'app.db'), { readOnly: true });
+  try {
+    assert.deepEqual(readInvocationPromptEvidence(reopened, id), { promptTemplate: text, requestJson: null });
+    const row = reopened.prepare('SELECT prompt_blob_hash FROM model_invocations WHERE id=?').get(id)!;
+    const file = path.join(directory, 'invocation-prompt-blobs', String(row.prompt_blob_hash) + '.txt');
+    assert.equal(fs.readFileSync(file, 'utf8'), text);
+    fs.writeFileSync(file, 'corrupted test bytes');
+    assert.throws(() => readInvocationPromptEvidence(reopened, id), /corrupt/i);
+    assert.throws(() => learner(() => startModelInvocation({ ...input, provenance: { promptTemplate: text } })), /conflict|corrupt/i);
+  } finally { reopened.close(); }
+});
+
 test('learner and service mutations reject missing or different ownership and preserve valid accounting', () => {
   const id = learner(() => startModelInvocation(input));
   const service = startServiceModelInvocation({ ...input, serviceId: 'worker' });
