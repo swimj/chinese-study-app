@@ -24,6 +24,7 @@ kill_timeout = "60s"
   CLERK_PUBLISHABLE_KEY = "REPLACE_WITH_CLERK_PUBLISHABLE_KEY"
   CLERK_AUTHORIZED_PARTY = "https://REPLACE_WITH_APP_NAME.fly.dev"
   APP_BACKUP_RECEIVER_URL = "http://REPLACE_WITH_BACKUP_APP_NAME.internal:9093"
+  # Set APP_BACKUP_S3_REQUIRED = "true" when activating offsite uploads.
   # APP_BACKUP_SOURCE_TOKEN and APP_BACKUP_RECEIVER_TOKEN are Fly secrets.
   PORT = "5174"
   # Hosted app-only upgrade smoke identity. Prefer the Clerk user_ id; the

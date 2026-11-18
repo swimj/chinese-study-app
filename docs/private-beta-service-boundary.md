@@ -170,19 +170,18 @@ identity, content, and history contracts above.
 
 ## Release, Backup, And Recovery
 
-The beta accepts planned downtime and targets a recovery point of at most
-approximately one hour of acknowledged activity plus backup completion time;
-missed captures extend this window. Losing that activity remains
-a serious incident; the target calibrates current investment rather than
-normalizing loss.
+The beta accepts planned downtime. Prefer maintenance and forward repair;
+for severe corruption, an operator may accept losing roughly a day of activity.
+Missed captures or uploads can extend the available recovery window.
 
-- Capture coherent standalone SQLite backups hourly on an independent Fly
-  Machine and volume. Retain four successful hourly copies and at most three
-  pre-switchover release copies, expiring release copies after seven days.
-  Verify and durably publish each new copy before pruning good history.
-  Independently detect stale or unavailable backup status; host snapshots are
-  a secondary layer. The [backup runbook](ops/hosted-backups.md) records the
-  monitoring delivery gap and the proof required before Litestream cutover.
+- Capture coherent standalone SQLite backups on an independent Fly receiver
+  every six hours and retain five scheduled recovery points. Keep pre-switchover
+  and operator captures separately. Publish a verified copy before pruning.
+- Copy a recent verified database from the receiver to S3 every twelve hours
+  under a dedicated prefix. Each compressed file is independently restorable.
+  Retain two days of current objects plus a one-day noncurrent undo window.
+  Independently observe the freshness of each tier. See the
+  [backup runbook](ops/hosted-backups.md) for retention, rollout and restore proof.
 - Exercise an isolated restore before learners are invited and after material
   backup or migration changes. A backup is not operationally valid until its
   restore has been proven.

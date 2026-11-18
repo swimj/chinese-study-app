@@ -537,8 +537,8 @@ logs, or the repository.
 ## Backup and isolated restore proof
 
 The [backup runbook](hosted-backups.md) owns retention, private configuration,
-pre-switchover receipts, isolated restore, and the Litestream transition gates.
-`hosted:inspect` reports the age of the latest successful capture from the live
+pre-switchover receipts, isolated restore, and independent S3 recovery.
+`hosted:inspect` reports the age of the latest scheduled capture from the live
 receiver. An unavailable receiver is unknown freshness, not a cached success.
 Use `hosted:backup --action=restore` into an isolated path and
 `hosted:verify-restore` with the expected sentinel and learner count after backup
@@ -547,8 +547,9 @@ or migration changes. Preserve the receipt, image identity, and validation resul
 ## Failure boundaries
 
 - If `/healthz` fails, inspect `fly logs` and do not reopen maintenance.
-- If backup freshness is unknown or exceeds 75 minutes, stop writes and repair
-  backups before continuing. The expected capture cadence is hourly.
+- If scheduled Fly backup freshness is unknown or exceeds 6h15m, stop writes and
+  repair local backups. An S3 freshness failure needs separate investigation on
+  the receiver. The [backup runbook](hosted-backups.md) describes both checks.
 - If a migration or smoke test fails before writes reopen, restore the recorded
   pre-release recovery point with the matching old image.
 - After writes reopen, do not roll back blindly: a restore can discard accepted

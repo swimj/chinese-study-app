@@ -206,7 +206,9 @@ Never treat activity performed on RC as durable learner activity.
 For browser RC `deploy` and `restore`, `--backup-provider=sqlite` selects the
 latest retained copy at operation declaration (`--restore-age-hours=0` by default).
 An explicit positive age selects at or before that cutoff and fails if retention
-cannot supply it; four hourly copies do not promise a 24-hour point. Explicit `--backup-provider=litestream` uses legacy S3 history and defaults to 24 hours.
+cannot supply it. Five regularly spaced captures cover about a day after the
+six-hour schedule has filled. Explicit `--backup-provider=litestream` requires
+retained legacy S3 history and defaults to 24 hours.
 Regenerate old RC configurations that start `litestream`: the runner rejects
 that process command. The direct app template does not need a replica prefix.
 

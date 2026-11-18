@@ -84,7 +84,11 @@ For more frontend code navigation, see the
 | `APP_BACKUP_RECEIVER_URL`, `APP_BACKUP_RECEIVER_TOKEN` | App and backup CLI | Private receiver URL and authentication secret; live status and release requests |
 | `APP_BACKUP_SOURCE_URL`, `APP_BACKUP_SOURCE_APP` | Backup receiver | Private source URL and expected Fly app identity |
 | `APP_BACKUP_DIR` | Backup receiver | Persistent backup directory, default `/data/backups` |
-| `LITESTREAM_*` | Legacy restore/transition | Retained S3 history and services awaiting verified backup cutover; see [backup operations](ops/hosted-backups.md) |
+| `APP_BACKUP_S3_BUCKET`, `APP_BACKUP_S3_REGION` | Backup receiver | Enable offsite copies to the designated bucket and Region after [S3 setup](ops/sqlite-backup-s3.md) |
+| `APP_BACKUP_S3_ACCESS_KEY_ID`, `APP_BACKUP_S3_SECRET_ACCESS_KEY` | Backup receiver secrets | Dedicated writer for the standalone SQLite prefix |
+| `APP_BACKUP_S3_SCRATCH_DIR` | Backup receiver | Compression staging directory, defaults to system temporary storage |
+| `APP_BACKUP_S3_REQUIRED` | Hosted app | Set to `true` when activating S3 to require independent offsite freshness |
+| `LITESTREAM_*` | Legacy restore/transition | Applies to legacy replicas where recovery points still exist |
 | `APP_SLOW_REQUEST_MS` | Backend | Local-time threshold (excluding provider waits) for `request.slow` log events; default `500` |
 | `VITE_STUDY_PROFILE` | Frontend | Client study profile |
 

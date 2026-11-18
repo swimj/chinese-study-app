@@ -112,6 +112,7 @@ hosted operations, and contributor development clearly separated.
 - Hosted operation: [release and maintenance](ops/hosted-beta-deployment.md),
   [release candidates and ephemeral rehearsal](ops/hosted-release-candidate.md),
   [backup service and isolated restore](ops/hosted-backups.md),
+  [S3 backup access and retention](ops/sqlite-backup-s3.md),
   [observability](ops/hosted-observability.md),
   [diagnostics](ops/error-diagnostics.md), and
   [schema migrations](ops/schema-migrations.md).

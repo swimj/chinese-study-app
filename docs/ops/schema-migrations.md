@@ -51,7 +51,7 @@ recovery point and obtain a verified post-migration backup.
 1. Rehearse every schema or data migration with the target image on an
    [ephemeral release Machine](hosted-release-candidate.md), restoring the latest
    coherent verified backup. Production keeps serving throughout
-   rehearsal; the latest retained hourly copy is sufficient unless the validation
+   rehearsal; the latest retained receiver copy is sufficient unless the validation
    explicitly requires a fresh snapshot. Record the
    source recovery point, target revision and image digest, migration output,
    and the results of the release-specific checks. Perform expensive comparisons
@@ -127,9 +127,9 @@ stopping the source application.
 
 The wrapper runs the atomic migration with the source listener stopped. On
 success it starts a temporary source listener and requests a unique verified
-hourly backup of the migrated database before closing the listener. This copy
-counts among the four hourly backups; the pre-switchover copy retains its release
-slot (at most three copies, seven days). The wrapper never reopens service controls.
+manual backup of the migrated database before closing the listener. This uses
+the historical `hourly` kind and occupies the manual slot. The pre-switchover
+copy retains its release slot (at most three copies, seven days). The wrapper never reopens service controls.
 Keep the foreground SSH attached and preserve the migration and backup receipts.
 A failed post-migration backup does not undo a committed migration. Keep the app
 offline, inspect status, and repair backup access before reopening. A lost result
