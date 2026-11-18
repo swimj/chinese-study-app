@@ -14,6 +14,7 @@ function fixture() {
   const db = new DatabaseSync(':memory:'); databases.push(db);
   db.exec("CREATE TABLE learners(learner_id TEXT PRIMARY KEY); CREATE TABLE lexical_words(id TEXT PRIMARY KEY); INSERT INTO learners VALUES ('alice'),('bob');");
   db.exec(fs.readFileSync(new URL('../server/db/migrations/0042_vocabulary_sessions.sql', import.meta.url), 'utf8'));
+  db.exec(fs.readFileSync(new URL('../server/db/migrations/0082_session_history_guards.sql', import.meta.url), 'utf8'));
   const statements: string[] = [];
   const prepare = db.prepare.bind(db);
   db.prepare = (sql: string) => { statements.push(sql); return prepare(sql); };
@@ -129,9 +130,12 @@ test('cached completion refreshes status/error/deadline and closure report, incl
   assert.equal(getVocabularySession('session', now).completion?.error, 'second failure');
   assert.equal(statements.some(hasCompletionPayloadRead), false);
   db.exec('BEGIN');
-  const replacement = { ...original.report, policyVersion: 'closure report' };
+  const replacement = { ...original.report, policyVersion: 'vocabulary-session.v5' };
   db.prepare("UPDATE vocabulary_session_completions SET status='closed',closed_at=?,last_error=NULL,report_json=?").run(now, JSON.stringify(replacement));
-  const closed = getVocabularySession('session', now).completion!;
+  db.prepare("UPDATE vocabulary_sessions SET status='closed',closed_at=?,context_json=json_set(context_json,'$.closedHistory',json_object('version',1))").run(now);
+  const history = getVocabularySession('session', now);
+  assert.deepEqual(history.projection, replacement);
+  const closed = history.completion!;
   assert.equal(closed.status, 'closed'); assert.equal(closed.closedAt, now); assert.equal(closed.error, null);
   assert.deepEqual(closed.report, replacement);
   db.exec('ROLLBACK');

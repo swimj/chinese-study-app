@@ -187,7 +187,8 @@ export type VocabularySessionWordProjection = {
 export type VocabularySessionProjection = {
   sessionId: string;
   protocolVersion: typeof VOCABULARY_SESSION_PROTOCOL_VERSION;
-  policyVersion: typeof VOCABULARY_SESSION_POLICY.version;
+  /** Closed reports retain the policy that applied their learning effects. */
+  policyVersion: 'vocabulary-session.v5' | typeof VOCABULARY_SESSION_POLICY.version;
   throughSequence: number;
   phase: 'active' | 'finishing' | 'completed';
   finishReason: 'finish_immediately' | 'wrapped_up' | null;

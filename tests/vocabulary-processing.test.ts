@@ -46,7 +46,7 @@ beforeEach(()=>{
   sql.exec(`CREATE TABLE learner_settings(learner_id TEXT,setting_key TEXT,value_json TEXT,updated_at TEXT,PRIMARY KEY(learner_id,setting_key));
     CREATE TABLE learner_owned_review_session_summaries(learner_id TEXT,session_id TEXT,PRIMARY KEY(learner_id,session_id));`);
 
-  for(const name of ['0042_vocabulary_sessions.sql','0079_share_session_context.sql','0081_reference_dispatch_completion.sql','0044_vocabulary_reflection.sql','0059_vocabulary_reassessment.sql','0060_vocabulary_reassessment_source.sql','0055_vocabulary_feedback_dismissal.sql','0045_vocabulary_provenance_links.sql'])sql.exec(fs.readFileSync(new URL(`../server/db/migrations/${name}`,import.meta.url),'utf8'));
+  for(const name of ['0042_vocabulary_sessions.sql','0079_share_session_context.sql','0081_reference_dispatch_completion.sql','0082_session_history_guards.sql','0044_vocabulary_reflection.sql','0059_vocabulary_reassessment.sql','0060_vocabulary_reassessment_source.sql','0055_vocabulary_feedback_dismissal.sql','0045_vocabulary_provenance_links.sql'])sql.exec(fs.readFileSync(new URL(`../server/db/migrations/${name}`,import.meta.url),'utf8'));
   for(const name of ['0023_session_debrief.sql','0048_vocabulary_connections.sql','0049_vocabulary_sense_readiness.sql','0050_vocabulary_improvement_admission.sql','0051_vocabulary_pure_cue_promotion.sql'])sql.exec(fs.readFileSync(new URL(`../server/db/migrations/${name}`,import.meta.url),'utf8'));
   const promptMigration = schemaMigrations.find(m => m.id === 'app_schema:0080_retain_invocation_prompts')!;
   promptMigration.before!(sql);
@@ -200,7 +200,7 @@ test('validation retry budget survives worker recreation, spans stages and reset
 test('idle dispatch polling uses active indexes with large retained evidence and preserves lease expiry',async()=>{
   const evidence=JSON.stringify({retained:'x'.repeat(512*1024)});
   const seed=(id:string,status:string,expiresAt:string|null=null)=>{
-    sql.prepare(`INSERT INTO vocabulary_sessions VALUES(?,'alice',1,'{}',?,?,'closed')`).run(id,at,at);
+    sql.prepare(`INSERT INTO vocabulary_sessions VALUES(?,'alice',1,json_object('closedHistory',json_object('version',1)),?,?,'closed')`).run(id,at,at);
     sql.prepare(`INSERT INTO vocabulary_session_completions VALUES(?,'alice',?,1,0,?,?,'closed','{}',?,'fixture',?,NULL)`).run(id,id,at,at,evidence,at);
     sql.prepare(`INSERT INTO vocabulary_post_session_dispatches(dispatch_id,learner_id,session_id,completion_id,status,created_at,active_token,expires_at)
       VALUES(?,'alice',?,?,?,?,?,?)`).run(id,id,id,status,at,status==='running'?`token-${id}`:null,expiresAt);
