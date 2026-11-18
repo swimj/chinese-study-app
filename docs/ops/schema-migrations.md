@@ -923,3 +923,19 @@ reconciliation evidence. Exercise staging, cancellation, closure and retry.
 The migration reads a journal prefix per revision and rewrites the completion
 inputs in one transaction. Measure occupied pages and the freelist before and
 after, then verify SQLite integrity and foreign keys.
+
+## Reflection ingestion receipts (0084)
+
+Each receipt identifies a closed vocabulary completion and records when its
+report was processed. The migration checks the learner, session, completion,
+closed status and exact report bytes for every receipt before dropping
+`projection_json`. The receipt retains its primary key, timestamps, case links
+and immutability guards. Future inserts require the same closed source.
+Allow space for SQLite to rewrite the receipt table in the migration transaction.
+
+On a restored backup, compare the original receipt projections with the linked
+reports after migration. Compare receipt identities and timestamps, case and
+encounter evidence, and downstream job records. Retry ingestion for sessions
+with and without cases and verify their original case IDs and counts. Verify
+integrity and foreign keys. Measure reusable pages and compacted database size
+against a copy already at 0083 to isolate the savings from this change.

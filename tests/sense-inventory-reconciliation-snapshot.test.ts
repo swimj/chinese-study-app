@@ -87,8 +87,8 @@ test('online snapshot omits preserved history while retaining identical active d
     VALUES ('session','learner',1,?,?, 'closed')`).run(JSON.stringify({ words: [{ wordId: 'target' }], closedHistory: { version: 1 } }), at);
   db.prepare(`INSERT INTO vocabulary_session_completions(completion_id,learner_id,session_id,revision_number,through_sequence,staged_at,close_at,status,input_json,report_json,policy_version,closed_at)
     VALUES ('completion','learner','session',1,0,?,?,'closed','{}','{}','fixture',?)`).run(at, at, at);
-  db.prepare(`INSERT INTO vocabulary_reflection_session_evidence(completion_id,learner_id,session_id,projection_json,created_at)
-    VALUES ('completion','learner','session','{}',?)`).run(at);
+  db.prepare(`INSERT INTO vocabulary_reflection_session_evidence(completion_id,learner_id,session_id,created_at)
+    VALUES ('completion','learner','session',?)`).run(at);
   db.prepare(`INSERT INTO reflection_cases(case_id,completion_id,learner_id,kind,subject_key,word_id,status,evidence_snapshot_json,created_at)
     VALUES ('case','completion','learner','exercise_improvement','case','other','open',?,?)`).run(JSON.stringify({ nested: ['json-only'] }), at);
   db.prepare(`INSERT INTO vocabulary_reflection_jobs(job_id,case_id,kind,dedupe_key,status,next_attempt_at,created_at)

@@ -29,7 +29,7 @@ beforeEach(()=>{
   createVocabularyContent({contentId:'source',kind:'exercise',payloadVersion:1,body:{prompt:'Original cue'},exerciseType:'definition',skill:'production',exerciseRole:'general',assessment:{match:'exact'},accessScope:'shared',availability:'active',originKind:'human',words:[{wordId:'word',relation:'target'}],answers:[{wordId:'word',acceptedForms:['字']}]},{kind:'operator',id:'editor'});
   sql.prepare("INSERT INTO vocabulary_sessions VALUES ('session','editor',1,json_object('closedHistory',json_object('version',1)),?,?,'closed')").run(at,at);
   sql.prepare(`INSERT INTO vocabulary_session_completions(completion_id,learner_id,session_id,revision_number,through_sequence,staged_at,close_at,status,input_json,report_json,policy_version,closed_at) VALUES ('completion','editor','session',1,0,?,?,'closed','{}','{}','fixture',?)`).run(at,at,at);
-  sql.prepare("INSERT INTO vocabulary_reflection_session_evidence VALUES ('completion','editor','session','{}',?)").run(at);
+  sql.prepare("INSERT INTO vocabulary_reflection_session_evidence VALUES ('completion','editor','session',?)").run(at);
 });
 afterEach(()=>{sql.close();setDb(null);fs.rmSync(directory,{recursive:true,force:true});for(const [k,v]of Object.entries(environment)){if(v===undefined)delete process.env[k];else process.env[k]=v;}});
 function seed(id:string,kind:'exercise_improvement'|'learner_feedback'|'teaching_review',status:'failed'|'queued'|'succeeded'|null='failed') {

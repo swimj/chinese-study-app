@@ -100,8 +100,8 @@ function addRelatedReflectionJob(status: 'failed' | 'queued' | 'running', review
     VALUES ('session','learner',1,'{"closedHistory":{"version":1}}',?,'closed')`).run(at);
   db.prepare(`INSERT INTO vocabulary_session_completions(completion_id,learner_id,session_id,revision_number,through_sequence,staged_at,close_at,status,input_json,report_json,policy_version,closed_at)
     VALUES ('completion','learner','session',1,0,?,?,'closed','{}','{}','fixture',?)`).run(at,at,at);
-  db.prepare(`INSERT INTO vocabulary_reflection_session_evidence(completion_id,learner_id,session_id,projection_json,created_at)
-    VALUES ('completion','learner','session','{}',?)`).run(at);
+  db.prepare(`INSERT INTO vocabulary_reflection_session_evidence(completion_id,learner_id,session_id,created_at)
+    VALUES ('completion','learner','session',?)`).run(at);
   for (const id of ['root-case','child-case']) db.prepare(`INSERT INTO reflection_cases
     (case_id,completion_id,learner_id,kind,subject_key,word_id,status,evidence_snapshot_json,created_at)
     VALUES (?,'completion','learner','exercise_improvement',?,'word','open','{}',?)`).run(id,id,at);
