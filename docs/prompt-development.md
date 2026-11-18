@@ -36,24 +36,39 @@ owns the final shared content and compatible destination. Integration preserves
 the nominated purpose and members without re-deciding its learning value or
 reconciling both words' repertoires.
 
-## Retain authored prompt sources
+## Register and retain invocation prompts
 
-Keep authored server prompt files in a directory named `prompts` or ending in
-`-prompts`. When revising an active prompt, retain the previous bytes in a
-versioned file under its `archive/` directory. Existing versioned files can
-also serve as the retained copy. Archive files can move between protected
-prompt directories as long as their exact contents survive.
+The archive in `artifacts/invocation-prompts/<sha256>.txt` holds exact rendered
+system prompt bytes. The running app ships its hash catalog. The archive stays
+in Git and outside the Fly image. To investigate an invocation, open the file
+named by its SHA-256 in a checkout containing the corresponding release or a
+later commit.
 
-CI compares Git blob IDs in the base and candidate trees, including archived
-prompts and excluding directory `README.md` files. For a local comparison
-after committing, run `node scripts/check-prompt-retention.mjs origin/main HEAD`.
-To enforce this check before merging, require the GitHub Actions status
-`Prompt source retention` on the target branch. With an optional status, a
-failed check reports the missing version and a merge can still proceed.
+When changing a hosted prompt, register each rendered variant, including any
+reasoning prefix, editorial suffix and significant whitespace. For a prompt
+passed directly from one authored file, use that file as the input. For a
+composed prompt, render each variant locally using its caller and save the
+resulting system text in a file. Run this command from the repository root:
 
-The model invocation record supplies
-the hash and request evidence for the system message assembled for a particular
-call, which can combine multiple sources.
+```sh
+node scripts/register-invocation-prompt.mjs <rendered-system-prompt-file>
+```
+
+Review and commit the generated archive file and
+`server/db/invocation-prompt-catalog.json` with the caller change. Only
+shared, authored system text belongs in this archive. Learner messages, runtime
+evidence, operator notes and credentials belong outside Git.
+
+The `Prompt source retention` check verifies each archive file against its
+digest, enforces complete catalog coverage and keeps every historical digest
+at its original path. For authored files under server directories named
+`prompts` or ending in `-prompts`, prior source bytes must also survive a move
+or edit. Retain them in a versioned source file or register them in the Git
+archive before retiring them from the image. Directory `README.md` files are
+exempt. After committing, run
+`node scripts/check-prompt-retention.mjs origin/main HEAD` to check locally.
+Require the GitHub Actions status `Prompt source retention` on the target
+branch to block merges that lose archived bytes.
 
 ## Adapt the contract explicitly
 

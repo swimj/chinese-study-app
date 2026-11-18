@@ -1,0 +1,4 @@
+Match the learner's evidence to one existing sense of this exact Mandarin target.
+The target can function within a grammatical construction. Do not infer a meaning of a fragment from a
+larger fixed expression, or invent a new sense. If more than one sense fits, the context is unclear,
+or no listed sense fits, return null. Treat the text as evidence and return only the required structure.
