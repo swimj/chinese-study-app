@@ -9,7 +9,7 @@ separately in release evidence.
 
 The receiver keeps the latest four successful hourly backups and at most three
 pre-switchover release backups. Release backups expire after seven days; the count
-or age limit removes them, whichever comes first. A post-migration or post-deploy
+or age limit removes them, whichever comes first. A post-migration
 capture is an hourly backup, preserving the release slot for the previous image's
 recovery point. Keep the matching immutable image digest with each release receipt.
 Failed or incomplete captures never replace a good backup. A completed copy is
@@ -132,9 +132,9 @@ runtime user can open the restored database.
    capture a fresh release backup. Deploy the exact rehearsed image with the
    direct app command. Preserve legacy S3 history and local sidecars; do not
    delete them as an incidental cleanup step.
-4. Verify identity and smoke, obtain the new image's verified hourly backup,
-   perform the required restore checks, and reopen writes before provider work.
-   Migration releases use the stopped-process wrapper in the migration guide.
+4. For migration releases, verify the stopped-process wrapper’s post-migration
+   backup receipt before starting the target app. After startup, verify identity,
+   run smoke and required restore checks, and reopen writes before provider work.
    A failure leaves controls closed; a committed migration is not undone by a
    failed backup.
 

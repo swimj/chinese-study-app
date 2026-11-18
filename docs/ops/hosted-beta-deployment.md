@@ -101,11 +101,11 @@ If any condition is false, stop. Do not stretch this pipeline with an ad-hoc
 exception.
 
 The command is operator-launched from a clean checkout of the intended commit.
-It validates arguments before any live mutation, then drives quiesce, verified pre-switchover release backup, `fly deploy --remote-only`, identity confirmation, read-only smoke,
-verified post-deploy hourly backup, and reopen without operator pauses between stages.
-Both backup stages retain verified receipts. A post-deploy timeout or invalid
-receipt fails before either control reopens. Its terminal JSON is live, ephemeral
-caller output rather than a retained evidence ledger.
+It validates the release arguments, quiesces the service, and obtains a verified
+pre-switchover release backup of the outgoing revision before deploying. Writes
+stay closed through identity confirmation and read-only smoke. Once both checks
+pass, the command reopens writes, then provider work. Its terminal JSON includes
+the backup receipt and stage results.
 
 ### Smoke account
 
@@ -288,17 +288,14 @@ unbaselined or pending schema; see the
 [offline migration procedure](schema-migrations.md).
 
 Create an attributable marker before an important release, record its id in
-the release evidence, deploy, inspect, smoke-test, and obtain a verified
-post-start hourly backup before reopening (see the backup runbook). Reopen writes first and
-provider work last. Clear any pre-upgrade banner after reopen; `--clear=true`
+the release evidence, and deploy. After inspection and smoke checks pass,
+reopen writes first and provider work last. Clear any pre-upgrade banner after reopen; `--clear=true`
 no-ops when none exists:
 
 ```bash
 fly ssh console --app <app-name> --command \
   'npm run hosted:sentinel -- --data-dir=/data --sentinel-id=<release-id> --actor-id=<operator>'
 fly deploy --config deploy/fly/.generated/fly.toml --remote-only --ha=false
-fly ssh console --app <app-name> --command \
-  'npm run --silent hosted:backup -- --action=create --kind=hourly --id=<unique-post-start-id> --source-app=<app-name> --source-revision=<target-full-sha>'
 fly ssh console --app <app-name> --command \
   'npm run hosted:control -- --data-dir=/data --control=maintenance --enabled=false --actor-id=<operator>'
 fly ssh console --app <app-name> --command \
