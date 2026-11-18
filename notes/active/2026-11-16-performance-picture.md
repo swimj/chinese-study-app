@@ -77,15 +77,11 @@ same timestamps would settle it.
 
 ## Storage footprint
 
-A separate database-footprint workstream gates any return to Litestream (see the
-backup cost plan). Known contributors:
+The [production database footprint](../../docs/ops/database-footprint.md) records
+the current allocation, remaining opportunities and measured session and prompt
+storage reductions. See the [backup cost plan](../../docs/ops/backup-cost-and-observability-plan.md)
+for the separate decision about returning to Litestream.
 
-- The session payload is stored three times: `vocabulary_sessions.context_json`,
-  `vocabulary_session_completions.input_json` and
-  `vocabulary_post_session_dispatches.evidence_json`, about 460 MB across ~70
-  sessions on 2026-11-16. Bounded timed sessions shrink new copies; the triple
-  storage and the existing history remain.
-- `model_invocations`: 154 MB in 9,616 rows.
 - Database settings (memory above database size, `cache_size`, `mmap`,
   `synchronous=NORMAL`, `ANALYZE`) are independent of schema and unlikely to
   clash with any rearchitecture. Deferred until the prioritized picture, but
