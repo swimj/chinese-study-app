@@ -939,3 +939,59 @@ test('0083 verifies each completion against its own journal prefix before trimmi
     assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
   } finally { db.close(); }
 });
+
+test('0084 retains receipt identity and case links and enforces the closed report reference', () => {
+  const id = 'app_schema:0084_reference_reflection_report';
+  const { db } = copy('reflection-receipt', true);
+  const at = '2026-11-18T20:00:00.000Z';
+  const report = '{"encounters":[],"detail":"保留"}';
+  try {
+    migrateDatabase(db, schemaMigrations.filter(m => m.id < id));
+    db.prepare("INSERT INTO learners VALUES ('a','Learner',?,NULL)").run(at);
+    db.prepare("INSERT INTO vocabulary_sessions VALUES ('s','a',1,'{}',?,NULL,'finalizing')").run(at);
+    const completion = db.prepare(`INSERT INTO vocabulary_session_completions VALUES
+      (?,'a','s',?,0,?,?,?,'{}',?,'fixture',?,NULL)`);
+    completion.run('closed',1,at,at,'closed',report,at);
+    completion.run('pending',2,at,at,'pending',report,null);
+    db.prepare("INSERT INTO vocabulary_reflection_session_evidence VALUES ('closed','a','s',?,?)").run(report,at);
+    db.prepare(`INSERT INTO reflection_cases(case_id,completion_id,learner_id,kind,subject_key,status,evidence_snapshot_json,created_at)
+      VALUES ('case','closed','a','teaching_review','example','open','[]',?)`).run(at);
+    const cases = db.prepare('SELECT * FROM reflection_cases').all();
+    const through = schemaMigrations.filter(m => m.id <= id);
+    assert.deepEqual(migrateDatabase(db,through),[id]);
+    assert.deepEqual(migrateDatabase(db,through),[]);
+    const receipt = db.prepare('SELECT * FROM vocabulary_reflection_session_evidence').get();
+    assert.deepEqual({...receipt},{completion_id:'closed',learner_id:'a',session_id:'s',created_at:at});
+    assert.equal(db.prepare(`SELECT c.report_json FROM vocabulary_reflection_session_evidence e
+      JOIN vocabulary_session_completions c USING (learner_id,session_id,completion_id)`).get()?.report_json,report);
+    assert.deepEqual(db.prepare('SELECT * FROM reflection_cases').all(),cases);
+    const insert = db.prepare('INSERT INTO vocabulary_reflection_session_evidence VALUES (?,?,?,?)');
+    assert.throws(() => insert.run('pending','a','s',at), /requires its closed completion/);
+    assert.throws(() => insert.run('closed','a','other',at), /requires its closed completion/);
+    assert.throws(() => insert.run('closed','other','s',at), /requires its closed completion/);
+    assert.throws(() => db.exec('UPDATE vocabulary_reflection_session_evidence SET created_at=created_at'), /immutable/);
+    assert.throws(() => db.exec('DELETE FROM vocabulary_reflection_session_evidence'), /retained/);
+    assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
+  } finally { db.close(); }
+});
+
+for (const [issue,session,status,report] of [
+  ['session','other','closed','{}'], ['status','s','failed','{}'], ['bytes','s','closed','{ }'],
+] as const) {
+  test(`0084 rolls back when a retained receipt differs in ${issue}`, () => {
+    const id = 'app_schema:0084_reference_reflection_report';
+    const { db } = copy('reflection-receipt-' + issue, true);
+    const at = '2026-11-18T20:00:00.000Z';
+    try {
+      migrateDatabase(db,schemaMigrations.filter(m => m.id < id));
+      db.prepare("INSERT INTO learners VALUES ('a','Learner',?,NULL)").run(at);
+      db.prepare("INSERT INTO vocabulary_sessions VALUES ('s','a',1,'{}',?,NULL,'finalizing')").run(at);
+      db.prepare(`INSERT INTO vocabulary_session_completions VALUES
+        ('c','a','s',1,0,?,?,?,'{}','{}','fixture',?,NULL)`).run(at,at,status,status==='closed'?at:null);
+      db.prepare("INSERT INTO vocabulary_reflection_session_evidence VALUES ('c','a',?,?,?)").run(session,report,at);
+      assert.throws(() => migrateDatabase(db,schemaMigrations.filter(m => m.id <= id)), /reflection_report_must_match_closed_completion/);
+      assert.equal(db.prepare('SELECT projection_json FROM vocabulary_reflection_session_evidence').get()?.projection_json,report);
+      assert.equal(db.prepare('SELECT 1 FROM schema_migrations WHERE migration_id=?').get(id),undefined);
+    } finally { db.close(); }
+  });
+}

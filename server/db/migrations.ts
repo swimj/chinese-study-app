@@ -294,6 +294,9 @@ export const schemaMigrations: readonly SchemaMigration[] = [{
 }, {
   id: 'app_schema:0083_reference_completion_actions',
   sql: fs.readFileSync(new URL('./migrations/0083_reference_completion_actions.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0084_reference_reflection_report',
+  sql: fs.readFileSync(new URL('./migrations/0084_reference_reflection_report.sql', import.meta.url), 'utf8'),
 }];
 
 function checksum(value: string): string {

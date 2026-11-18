@@ -120,17 +120,16 @@ export function ingestVocabularySessionEvidence(learnerId: string, completionId:
       WHERE completion_id=? AND learner_id=?`).get(completionId,learnerId) as { session_id: string; through_sequence: number; status: string; report_json: string } | undefined;
     if (!completion || completion.status !== 'closed'
       || (suppliedProjection && completion.report_json !== encode(suppliedProjection))) throw new Error('Reflection requires the exact closed completion boundary');
-    const encoded = completion.report_json;
-    const projection: VocabularySessionProjection = suppliedProjection ?? JSON.parse(encoded);
+    const projection: VocabularySessionProjection = suppliedProjection ?? JSON.parse(completion.report_json);
     if (completion.session_id !== projection.sessionId || completion.through_sequence !== projection.throughSequence) throw new Error('Reflection requires the exact closed completion boundary');
-    const previous = db.prepare('SELECT projection_json FROM vocabulary_reflection_session_evidence WHERE completion_id=?')
-      .get(completionId) as { projection_json: string } | undefined;
-    if (previous) {
-      if (previous.projection_json !== encoded) throw new VocabularyReflectionConflict('Completion evidence is immutable');
+    const receipt = db.prepare(`SELECT 1 FROM vocabulary_reflection_session_evidence
+      WHERE learner_id=? AND session_id=? AND completion_id=?`).get(learnerId, completion.session_id, completionId);
+    if (receipt) {
       return (db.prepare('SELECT case_id FROM reflection_cases WHERE completion_id=? ORDER BY case_id').all(completionId) as { case_id: string }[]).map(row => row.case_id);
     }
     const at = timestamp(recordedAt);
-    db.prepare('INSERT INTO vocabulary_reflection_session_evidence VALUES (?,?,?,?,?)').run(completionId,learnerId,projection.sessionId,encoded,at);
+    db.prepare(`INSERT INTO vocabulary_reflection_session_evidence(completion_id,learner_id,session_id,created_at)
+      VALUES (?,?,?,?)`).run(completionId,learnerId,completion.session_id,at);
     const contentRejection = (item: VocabularyEncounterEvidence, responses: VocabularyEncounterEvidence['responses']) => responses.some(response =>
       response.payload.outcome === 'rejected' && !isLearnerPronunciationRejection(item.snapshot.kind, response.payload, item.snapshot.assessment?.acceptedAnswers ?? []));
     // A pronunciation report is a real production miss for scheduling, but it is not a written-answer defect.

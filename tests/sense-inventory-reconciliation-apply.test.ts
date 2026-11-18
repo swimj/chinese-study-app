@@ -86,8 +86,8 @@ function caseCoverage(id = 'case'): void {
     VALUES (?, 'learner', 1, ?, ?, 'closed')`).run(`session:${id}`, JSON.stringify({ words: [{ wordId: 'word' }], retained: 'exact source', closedHistory: {version: 1} }), at);
   db.prepare(`INSERT INTO vocabulary_session_completions(completion_id,learner_id,session_id,revision_number,through_sequence,staged_at,close_at,status,input_json,report_json,policy_version,closed_at)
     VALUES (?, 'learner', ?, 1, 0, ?, ?, 'closed', '{}', '{}', 'fixture', ?)`).run(`completion:${id}`, `session:${id}`, at, at, at);
-  db.prepare(`INSERT INTO vocabulary_reflection_session_evidence(completion_id,learner_id,session_id,projection_json,created_at)
-    VALUES (?, 'learner', ?, '{}', ?)`).run(`completion:${id}`, `session:${id}`, at);
+  db.prepare(`INSERT INTO vocabulary_reflection_session_evidence(completion_id,learner_id,session_id,created_at)
+    VALUES (?, 'learner', ?, ?)`).run(`completion:${id}`, `session:${id}`, at);
   db.prepare(`INSERT INTO reflection_cases(case_id,completion_id,learner_id,kind,subject_key,word_id,status,evidence_snapshot_json,created_at)
     VALUES (?, ?, 'learner', 'exercise_improvement', ?, 'word', 'closed', '{}', ?)`).run(id, `completion:${id}`, id, at);
   db.prepare('INSERT INTO vocabulary_case_reviews(case_id,created_at) VALUES (?,?)').run(id, at);

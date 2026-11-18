@@ -504,7 +504,12 @@ membership follows status, not session age, so old queued work and expired
 claims remain discoverable after an interruption.
 
 `processing-worker.ts` closes due completions and ingests evidence even when
-provider work is disabled. Learner-feedback and exercise-improvement jobs have
+provider work is disabled. Ingestion records one receipt per closed vocabulary
+session and opens cases for the flagged encounters. The receipt identifies the
+completion that owns the final report. Reprocessing returns the existing cases,
+including an empty list for a session that raised none.
+
+Learner-feedback and exercise-improvement jobs have
 separate claims and outcomes. Teaching issues stay manual. Sense-mapping availability
 failures, assessment-output validation failures, and preparation dependencies have
 bounded automatic retry cycles. Other failed calls and expired unknown outcomes

@@ -74,6 +74,7 @@ beforeEach(() => {
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0082_session_history_guards.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0083_reference_completion_actions.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0044_vocabulary_reflection.sql',import.meta.url),'utf8'));
+  sql.exec(fs.readFileSync(new URL('../server/db/migrations/0084_reference_reflection_report.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0061_vocabulary_sense_mapping_retries.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0063_vocabulary_proposal_drop_actions.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0059_vocabulary_reassessment.sql',import.meta.url),'utf8'));
@@ -1014,7 +1015,7 @@ for (const skill of ['recognition','contextual_selection'] as const) {
     assert.equal(cases.length,0);
     assert.equal(claimVocabularyReflectionJob({kind:'learner_feedback',now:judgedAt}),null);
     assert.equal(claimVocabularyReflectionJob({kind:'exercise_improvement',now:judgedAt}),null);
-    const retained=JSON.parse(String(sql.prepare('SELECT projection_json FROM vocabulary_reflection_session_evidence WHERE completion_id=?').get(completion.completionId)!.projection_json));
+    const retained=JSON.parse(String(sql.prepare('SELECT c.report_json FROM vocabulary_reflection_session_evidence e JOIN vocabulary_session_completions c USING(learner_id,session_id,completion_id) WHERE e.completion_id=?').get(completion.completionId)!.report_json));
     assert.equal(retained.encounters[0].encounterId,skill);
     assert.equal(retained.encounters[0].responses[0].payload.outcome,'rejected');
     assert.deepEqual(sql.prepare("SELECT * FROM learner_word_schedules WHERE learner_id='alice' AND word_id='a'").get(),productionBefore);
@@ -1073,7 +1074,8 @@ test('withdrawn negative reactions retain raw audit evidence without creating re
   const {cases,completion}=ingest([present('one'),{kind:'feedback',payload:{encounterId:'one',feedback:'negative'}},
     {kind:'feedback',payload:{encounterId:'one',feedback:'withdrawn'}}]);
   assert.equal(cases.length,0);
-  const retained=JSON.parse(String(sql.prepare('SELECT projection_json FROM vocabulary_reflection_session_evidence WHERE completion_id=?').get(completion.completionId)!.projection_json));
+  assert.deepEqual(ingestVocabularySessionEvidence('alice',completion.completionId),[]);
+  const retained=JSON.parse(String(sql.prepare('SELECT c.report_json FROM vocabulary_reflection_session_evidence e JOIN vocabulary_session_completions c USING(learner_id,session_id,completion_id) WHERE e.completion_id=?').get(completion.completionId)!.report_json));
   assert.equal(retained.encounters[0].feedback.length,2);assert.equal(retained.encounters[0].effectiveFeedback.length,0);
 });
 
