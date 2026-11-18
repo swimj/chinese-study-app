@@ -100,12 +100,12 @@ describe('hosted upgrade pipeline', () => {
       'build-deploy:ok',
       'confirm:ok',
       'smoke:ok',
-      'post-deploy-sync:ok',
       'reopen:ok',
     ]);
     assert.deepEqual(harness.mutations, [
       'provider-work:false',
       'maintenance:true',
+      'backup',
       'deploy',
       'maintenance:false',
       'provider-work:true',
@@ -115,29 +115,20 @@ describe('hosted upgrade pipeline', () => {
     assert.deepEqual(deploy?.args.slice(-2), ['--build-arg', `APP_REVISION=${SOURCE_REVISION}`]);
     assert.equal(JSON.stringify(result).includes('smoke-token'), false);
     assert.equal(JSON.stringify(harness.events).includes('sk_test'), false);
-    const receipt = result.stages.find(stage => stage.stage === 'post-deploy-sync')?.detail as Record<string, unknown>;
-    assert.equal(receipt.sourceRevision, SOURCE_REVISION);
-    assert.equal(receipt.kind, 'hourly');
+    const receipt = result.stages.find(stage => stage.stage === 'backup-sync')?.detail as Record<string, unknown>;
+    assert.equal(receipt.sourceRevision, 'a'.repeat(40));
+    assert.equal(receipt.kind, 'release');
     assert.equal(JSON.stringify(result).includes('secret-bucket'), false);
   });
 
-  test('a failed pre-release capture prevents deployment and leaves controls closed', async () => {
-    const harness = createHarness({ preBackupFailure: true });
-    const result = await runHostedUpgrade(harness.input, harness.deps);
-    assert.equal(result.status, 'failed');
-    assert.equal(result.failedStage, 'backup-sync');
-    assert.equal(result.reopened, false);
-    assert.deepEqual(harness.mutations, ['provider-work:false', 'maintenance:true']);
-  });
-
-  for (const postDeploySync of ['timeout', 'behind', 'malformed'] as const) {
-    test(`keeps both controls closed when post-deploy replication is ${postDeploySync}`, async () => {
-      const harness = createHarness({ postDeploySync });
+  for (const backupFailure of ['timeout', 'wrong-revision', 'malformed'] as const) {
+    test(`a ${backupFailure} pre-release capture prevents deployment and leaves controls closed`, async () => {
+      const harness = createHarness({ backupFailure });
       const result = await runHostedUpgrade(harness.input, harness.deps);
       assert.equal(result.status, 'failed');
-      assert.equal(result.failedStage, 'post-deploy-sync');
+      assert.equal(result.failedStage, 'backup-sync');
       assert.equal(result.reopened, false);
-      assert.deepEqual(harness.mutations, ['provider-work:false', 'maintenance:true', 'deploy']);
+      assert.deepEqual(harness.mutations, ['provider-work:false', 'maintenance:true', 'backup']);
     });
   }
 
@@ -175,6 +166,7 @@ describe('hosted upgrade pipeline', () => {
     assert.deepEqual(harness.mutations, [
       'provider-work:false',
       'maintenance:true',
+      'backup',
       'deploy',
     ]);
     assert.equal(harness.mutations.includes('maintenance:false'), false);
@@ -227,8 +219,7 @@ function createHarness(options: {
   smokeStatus?: 'ok' | 'failed';
   postDeployRevision?: string;
   imageDigest?: string;
-  preBackupFailure?: boolean;
-  postDeploySync?: 'timeout' | 'behind' | 'malformed';
+  backupFailure?: 'timeout' | 'wrong-revision' | 'malformed';
 } = {}) {
   const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'hosted-upgrade-repo-'));
   fs.writeFileSync(path.join(repoRoot, 'package.json'), JSON.stringify({ version: '2.3.0' }));
@@ -339,13 +330,13 @@ function createHarness(options: {
       return { stdout: JSON.stringify({ status: 'noop' }), stderr: '' };
     }
     if (command.includes('scripts/manage-hosted-backup.ts')) {
-      if (!deployed && options.preBackupFailure) throw new Error('capture failed');
-      if (deployed && options.postDeploySync === 'timeout') throw new Error('sync timed out');
+      mutations.push('backup');
+      if (options.backupFailure === 'timeout') throw new Error('capture timed out');
       const option = (name: string) => command.match(new RegExp(`--${name}=([^ ]+)`))?.[1]?.replaceAll("'", '');
       const id = option('id');
-      const result = deployed && options.postDeploySync === 'malformed' ? { ok: true } : {
+      const result = options.backupFailure === 'malformed' ? { ok: true } : {
         version: 1, id, kind: option('kind'), releaseId: option('release-id'),
-        sourceRevision: deployed && options.postDeploySync === 'behind' ? 'b'.repeat(40) : option('source-revision'),
+        sourceRevision: options.backupFailure === 'wrong-revision' ? 'b'.repeat(40) : option('source-revision'),
         sourceApp: APP, startedAt: new Date(nowMs).toISOString(), completedAt: new Date(nowMs).toISOString(),
         receivedAt: new Date(nowMs).toISOString(), bytes: 4096, sha256: 'a'.repeat(64), fileName: `${id}.sqlite`,
       };

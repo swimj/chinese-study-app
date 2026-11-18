@@ -16,7 +16,6 @@ export const HOSTED_UPGRADE_STAGES = [
   'build-deploy',
   'confirm',
   'smoke',
-  'post-deploy-sync',
   'reopen',
 ] as const;
 
@@ -235,7 +234,7 @@ export async function runHostedUpgrade(
     const oldIdentity = isRecord(inspectBefore.releaseIdentity) ? inspectBefore.releaseIdentity : inspectBefore;
     const outgoingRevision = requireFullGitSha(String(oldIdentity.sourceRevision));
     const releaseId = `release-${sourceRevision.slice(0, 12)}-${randomUUID()}`;
-    recordStage('backup-sync', 'ok', await captureHostedBackup(app, deps, 'release', outgoingRevision, releaseId));
+    recordStage('backup-sync', 'ok', await captureReleaseBackup(app, deps, outgoingRevision, releaseId));
 
     currentStage = 'build-deploy';
     const deployArgs = [
@@ -308,9 +307,6 @@ export async function runHostedUpgrade(
       sessionRevoked: smoke.sessionRevoked === true,
     });
 
-    currentStage = 'post-deploy-sync';
-    recordStage('post-deploy-sync', 'ok', await captureHostedBackup(app, deps, 'hourly', sourceRevision));
-
     currentStage = 'reopen';
     await setHostedControl(app, actorId, 'maintenance', false, deps);
     await setHostedControl(app, actorId, 'provider-work', true, deps);
@@ -329,12 +325,12 @@ export async function runHostedUpgrade(
   }
 }
 
-async function captureHostedBackup(app: string, deps: HostedUpgradeDeps, kind: 'hourly' | 'release', revision: string, releaseId?: string) {
-  const id = `${kind}-${randomUUID()}`;
+async function captureReleaseBackup(app: string, deps: HostedUpgradeDeps, revision: string, releaseId: string) {
+  const id = `release-${randomUUID()}`;
   const requestedAt = deps.now().getTime();
-  const command = `node --import tsx scripts/manage-hosted-backup.ts --action=create --id=${id} --kind=${kind} --source-app=${app} --source-revision=${revision}${releaseId ? ` --release-id=${releaseId}` : ''}`;
+  const command = `node --import tsx scripts/manage-hosted-backup.ts --action=create --id=${id} --kind=release --source-app=${app} --source-revision=${revision} --release-id=${releaseId}`;
   const receipt = parseBackupReceipt(parseHostedCommandJson(await ssh(app, command, deps, 16 * 60_000)));
-  if (receipt.id !== id || receipt.kind !== kind || receipt.releaseId !== releaseId
+  if (receipt.id !== id || receipt.kind !== 'release' || receipt.releaseId !== releaseId
     || receipt.sourceRevision !== revision || receipt.sourceApp !== app
     || Date.parse(receipt.startedAt) < requestedAt - 5000) throw new Error('Backup acknowledgement is stale or belongs to another release');
   return receipt;

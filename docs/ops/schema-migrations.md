@@ -76,10 +76,10 @@ recovery point and obtain a verified post-migration backup.
    is validated against the baseline only when applying. The confirmation is an
    operator assertion, not process detection. The runner also takes SQLite's
    immediate write lock, but this cannot stop an application from resuming later.
-5. Start the target release while maintenance remains enabled. Run inspection
-   and smoke checks for both learner identities. On hosted production, complete
-   a verified hourly backup after startup. Reopen writes, then provider
-   work, only when these checks pass.
+5. On hosted production, confirm the wrapper returned a verified post-migration
+   backup receipt before starting the target release. Start the target with
+   maintenance enabled. After inspection and smoke checks pass for both learner
+   identities, reopen writes, then provider work.
 
 The CLI does not import backend initialization and needs no Clerk credentials,
 learner id, seed configuration, or running server. Normal startup rejects a
