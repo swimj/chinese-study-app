@@ -490,12 +490,12 @@ test('dispatch polling indexes preserve populated evidence and lifecycle fields 
     }
     const tables=['learners','vocabulary_sessions','vocabulary_session_completions','vocabulary_post_session_dispatches'];
     const before=tables.map(table=>db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all());
-    assert.deepEqual(migrateDatabase(db),schemaMigrations.slice(index).map(item=>item.id));
-    assert.deepEqual(migrateDatabase(db),[]);
+    const throughPolling = schemaMigrations.slice(0,index+1);
+    assert.deepEqual(migrateDatabase(db,throughPolling),[schemaMigrations[index]!.id]);
+    assert.deepEqual(migrateDatabase(db,throughPolling),[]);
     tables.forEach((table,i)=>assert.deepEqual(db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all(),before[i]));
     assert.throws(()=>db.exec("UPDATE vocabulary_post_session_dispatches SET evidence_json='{}' WHERE dispatch_id='succeeded'"),/immutable/);
     assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
-    assertSchemaCurrent(db);
   } finally {db.close();}
 });
 

@@ -296,7 +296,7 @@ export function stageVocabularySessionCompletion(sessionId: string, throughSeque
     const closeAt = new Date(Date.parse(now) + SESSION_COMPLETION_UNDO_MS).toISOString();
     getDb().prepare(`INSERT INTO vocabulary_session_completions(completion_id,learner_id,session_id,revision_number,through_sequence,staged_at,close_at,status,input_json,report_json,policy_version)
       VALUES (?,?,?,?,?,?,?,'pending',?,?,?)`).run(completionId, row.learner_id, sessionId, revision, throughSequence, now, closeAt,
-        JSON.stringify({ context, actions, activeDurationMs }), JSON.stringify(report), VOCABULARY_SESSION_POLICY.version);
+        JSON.stringify({ actions, activeDurationMs }), JSON.stringify(report), VOCABULARY_SESSION_POLICY.version);
     getDb().prepare("UPDATE vocabulary_sessions SET status = 'finalizing' WHERE session_id = ?").run(sessionId);
     return completionDto(completionRow(sessionId, completionId)!, now);
   });
@@ -466,7 +466,7 @@ function applyLearningEffects(completionId: string, context: StoredContext, proj
   }
 }
 export function closeVocabularySessionCompletion(sessionId: string, completionId?: string, now = new Date().toISOString()): VocabularySessionCompletion {
-  timestamp(now); sessionRow(sessionId); const previous = completionRow(sessionId, completionId);
+  timestamp(now); const session = sessionRow(sessionId); const previous = completionRow(sessionId, completionId);
   if (!previous) throw new VocabularySessionNotFoundError('Completion not found');
   if (previous.status === 'closed') return completionDto(previous, now);
   if (previous.status === 'cancelled') throw new VocabularySessionConflictError('Completion was cancelled');
@@ -476,13 +476,14 @@ export function closeVocabularySessionCompletion(sessionId: string, completionId
       if (!fresh) throw new VocabularySessionNotFoundError('Completion not found');
       if (fresh.status === 'closed') return completionDto(fresh, now);
       if (fresh.status === 'cancelled') throw new VocabularySessionConflictError('Completion was cancelled');
-      const input = JSON.parse(previous.input_json) as { context: StoredContext; actions: VocabularySessionAction[]; activeDurationMs?: number | null };
-      const projection = projectVocabularySession(input.context, input.actions, { throughSequence: previous.through_sequence });
-      applyLearningEffects(previous.completion_id, input.context, projection, now);
-      finalizeTimedSession({ context: input.context, actions: input.actions, projection, activeDurationMs: input.activeDurationMs ?? null, now });
+      const context = JSON.parse(session.context_json) as StoredContext;
+      const input = JSON.parse(fresh.input_json) as { actions: VocabularySessionAction[]; activeDurationMs?: number | null };
+      const projection = projectVocabularySession(context, input.actions, { throughSequence: previous.through_sequence });
+      applyLearningEffects(previous.completion_id, context, projection, now);
+      finalizeTimedSession({ context, actions: input.actions, projection, activeDurationMs: input.activeDurationMs ?? null, now });
       getDb().prepare(`INSERT INTO vocabulary_post_session_dispatches(dispatch_id,learner_id,session_id,completion_id,evidence_json,status,created_at)
         VALUES (?,?,?,?,?,'queued',?)`).run(randomUUID(), requireLearnerId(), sessionId, previous.completion_id,
-          JSON.stringify({ context: input.context, actions: input.actions, projection }), now);
+          JSON.stringify({ actions: input.actions, projection }), now);
       getDb().prepare("UPDATE vocabulary_sessions SET status = 'closed',closed_at = ? WHERE session_id = ?").run(now, sessionId);
       getDb().prepare("UPDATE vocabulary_session_completions SET status = 'closed',closed_at = ?,report_json = ?,last_error = NULL WHERE completion_id = ?")
         .run(now, JSON.stringify(projection), previous.completion_id);

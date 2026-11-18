@@ -831,3 +831,21 @@ The table held only derived selection state; nothing else referenced it. Ship it
 in the same stopped-writer release as `0077`; on the restored copy, record the
 table's row count before migration and confirm it is gone afterwards. The upgrade
 path is in `tests/schema-migrations.test.ts`.
+
+## Shared session context rehearsal (0079)
+
+On the isolated restored copy, capture row counts by status and compare each
+embedded completion and dispatch context with the immutable context of its
+same-owner session. Migration 0079 aborts on a differing copy. It scans and
+rewrites large JSON bodies in one transaction, so measure scratch/volume free
+space, WAL growth and elapsed time. Record page size, page count and freelist
+before and after. Freed pages are reusable; file compaction is a separate operation.
+
+Before migration, hash each completion input and dispatch evidence body with its
+top-level context removed, keyed by record ID. Compare these hashes with the
+migrated bodies, and compare the original session contexts, completion reports,
+statuses and dispatch receipts across the migration. Verify that no child body
+contains a top-level context, run integrity and foreign-key checks, then exercise
+stage, cancel/restage, close, dispatch ingestion and reconciliation's pending
+dispatch dependency lookup on disposable data. Rollback requires the pre-upgrade
+backup and its matching application image.

@@ -80,7 +80,13 @@ test('online snapshot omits preserved history while retaining identical active d
     VALUES ('case','completion','learner','exercise_improvement','case','other','open',?,?)`).run(JSON.stringify({ nested: ['json-only'] }), at);
   db.prepare(`INSERT INTO vocabulary_reflection_jobs(job_id,case_id,kind,dedupe_key,status,next_attempt_at,created_at)
     VALUES ('job','case','exercise_improvement','job','queued',?,?)`).run(at, at);
+  // Only the session context refers to the target word.
+  db.prepare(`INSERT INTO vocabulary_post_session_dispatches(dispatch_id,learner_id,session_id,completion_id,evidence_json,status,created_at)
+    VALUES ('dispatch','learner','session','completion','{"actions":[],"projection":{}}','queued',?)`).run(at);
   const offline = snapshot(), online = snapshot('online');
+  const dispatch = db.prepare("SELECT * FROM vocabulary_post_session_dispatches WHERE dispatch_id='dispatch'").get();
+  assert.ok(dispatch);
+  assert.deepEqual(online.dependencies.pendingDispatches, [{ ...dispatch }]);
   assert.equal(dependencyIds(offline.dependencies.retainedSessions, 'session_id').length, 1);
   assert.deepEqual(dependencyIds(online.dependencies.pendingReflectionJobs, 'job_id'), ['job']);
   for (const key of ['learnerSenses', 'wordSchedules', 'pureCueSchedules', 'retainedSessions', 'pendingCompletions', 'stashed', 'reserve']) {

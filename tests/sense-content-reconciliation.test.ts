@@ -296,7 +296,13 @@ test('saving reads dependencies once and preserves compatibility with an offline
   t.mock.method(db,'prepare',(query:string)=>{statements.push(query);return prepare(query);});
   const saved=saveSenseContentReconciliation('word',{expectedVersion:null,status:'resolved',draft:input},actor.id);
   assert.equal(statements.filter(query=>query.startsWith('SELECT id,hanzi,traditional,pinyin,meaning FROM lexical_words')).length,1);
-  assert.ok(!statements.some(query=>/\b(vocabulary_sessions|vocabulary_session_completions|learner_pure_cue_schedules)\b/.test(query)), 'Online save must not scan retained learner history');
+  for (const query of statements.filter(query => /\b(vocabulary_sessions|vocabulary_session_completions|learner_pure_cue_schedules)\b/.test(query))) {
+    // Pending dispatches may look up their immutable parent by key.
+    assert.match(query, /FROM vocabulary_post_session_dispatches d/);
+    const plan = prepare('EXPLAIN QUERY PLAN ' + query).all().map(row => String(row.detail));
+    assert.ok(plan.some(step => /SEARCH s USING INDEX .*session_id/.test(step)), plan.join('\n'));
+    assert.ok(!plan.some(step => /SCAN s\b/.test(step)), 'Online save must not scan session history');
+  }
   db.prepare('UPDATE sense_content_reconciliations SET snapshot_json=? WHERE resolution_id=?').run(JSON.stringify(legacySnapshot),saved.resolution!.resolutionId);
   const reopened=getSenseContentReconciliationWorkspace('word',actor.id);
   assert.deepEqual(reopened.plan,saved.plan);
