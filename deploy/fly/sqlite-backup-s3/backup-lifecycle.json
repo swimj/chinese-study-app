@@ -1,0 +1,27 @@
+{
+  "Rules": [
+    {
+      "ID": "ExpireSQLiteBackupCopies",
+      "Status": "Enabled",
+      "Filter": {
+        "Prefix": "sqlite-backups/"
+      },
+      "Expiration": {
+        "Days": 2
+      },
+      "NoncurrentVersionExpiration": {
+        "NoncurrentDays": 1
+      }
+    },
+    {
+      "ID": "RemoveSQLiteBackupExpiredMarkers",
+      "Status": "Enabled",
+      "Filter": {
+        "Prefix": "sqlite-backups/"
+      },
+      "Expiration": {
+        "ExpiredObjectDeleteMarker": true
+      }
+    }
+  ]
+}

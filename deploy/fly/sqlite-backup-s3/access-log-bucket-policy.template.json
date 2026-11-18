@@ -1,0 +1,22 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DeliverBackupBucketAccessLogs",
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "logging.s3.amazonaws.com"
+      },
+      "Action": "s3:PutObject",
+      "Resource": "arn:aws:s3:::REPLACE_WITH_LOG_BUCKET/backup-access/*",
+      "Condition": {
+        "ArnEquals": {
+          "aws:SourceArn": "arn:aws:s3:::REPLACE_WITH_BACKUP_BUCKET"
+        },
+        "StringEquals": {
+          "aws:SourceAccount": "REPLACE_WITH_SOURCE_ACCOUNT_ID"
+        }
+      }
+    }
+  ]
+}
