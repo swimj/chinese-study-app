@@ -1,3 +1,5 @@
+import { schemaMigrations } from '../server/db/migrations.ts';
+import { readInvocationPromptEvidence } from '../server/db/invocation-prompt-archive.ts';
 import { mergeWordSchedulerState } from '../server/db/vocabulary-schedule-columns.ts';
 import { applyVocabularyDueColumns } from './helpers/vocabulary-due-columns.ts';
 import { installCaseReviewSchema } from './helpers/case-review-schema.ts';
@@ -37,7 +39,10 @@ beforeEach(()=>{
     CREATE TABLE lexical_words(id TEXT PRIMARY KEY,hanzi TEXT,traditional TEXT,pinyin TEXT,meaning TEXT);
     CREATE TABLE word_preparation_work(id TEXT);INSERT INTO learners VALUES ('alice',NULL,'Alice'),('bob',NULL,'Bob');
     INSERT INTO lexical_words VALUES ('a','字',NULL,'zì','character');`);
-  for(const name of ['0062_vocabulary_sense_coverage.sql','0064_vocabulary_default_useful_senses.sql','0039_vocabulary_content.sql','0025_model_invocations.sql','0026_model_invocation_outcomes.sql','0040_model_provenance.sql','0080_retain_invocation_prompts.sql'])sql.exec(fs.readFileSync(new URL(`../server/db/migrations/${name}`,import.meta.url),'utf8'));
+  for(const name of ['0062_vocabulary_sense_coverage.sql','0064_vocabulary_default_useful_senses.sql','0039_vocabulary_content.sql','0025_model_invocations.sql','0026_model_invocation_outcomes.sql','0040_model_provenance.sql'])sql.exec(fs.readFileSync(new URL(`../server/db/migrations/${name}`,import.meta.url),'utf8'));
+  const promptMigration = schemaMigrations.find(m => m.id === 'app_schema:0080_retain_invocation_prompts')!;
+  promptMigration.before!(sql);
+  sql.exec(promptMigration.sql);
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0041_vocabulary_learner_state.sql',import.meta.url),'utf8').split('-- Do not use the words view')[0]!);
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0047_vocabulary_dismissal.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0052_vocabulary_automatic_promotion_pause.sql',import.meta.url),'utf8'));
@@ -59,11 +64,14 @@ beforeEach(()=>{
 });
 afterEach(()=>{sql.close();for(const [key,value]of Object.entries(env)){if(value===undefined)delete process.env[key];else process.env[key]=value;}});
 function assertCapturedPrompt(invocation: Record<string, unknown>, expected: string) {
-  const system = JSON.parse(String(invocation.request_snapshot_json)).messages[0];
+  assert.equal(invocation.prompt_blob_hash, invocation.prompt_hash);
+  assert.ok(invocation.request_prompt_refs_json);
+  assert.equal(JSON.parse(String(invocation.request_snapshot_json)).messages[0].content, '');
+  const evidence = readInvocationPromptEvidence(sql, String(invocation.id));
+  assert.equal(evidence.promptTemplate, expected);
+  const system = JSON.parse(evidence.requestJson!).messages[0];
   assert.equal(system.role, 'system');
-  assert.equal(invocation.standalone_prompt_template, null);
-  assert.equal(invocation.prompt_template_bytes, Buffer.byteLength(expected));
-  assert.deepEqual(Buffer.from(system.content).subarray(0, Number(invocation.prompt_template_bytes)), Buffer.from(expected));
+  assert.equal(system.content, expected);
 }
 function pending(sessionId='session',two=false,contentId='one') {
   return alice(()=>{

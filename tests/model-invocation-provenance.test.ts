@@ -1,3 +1,4 @@
+import { readInvocationPromptEvidence } from '../server/db/invocation-prompt-archive.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -70,7 +71,11 @@ test('service invocation retains exact snapshots and real attribution without le
   const row = getDb().prepare('SELECT * FROM model_invocations WHERE id=?').get(id)!;
   assert.equal(row.learner_id, null); assert.equal(row.actor_kind, 'service'); assert.equal(row.actor_id, invocation.serviceId);
   assert.equal(row.requesting_learner_id, 'provenance-a'); assert.equal(row.attempt_number, 2);
-  assert.equal(row.standalone_prompt_template, 'Exact template'); assert.equal(row.prompt_template_bytes, null); assert.match(String(row.prompt_hash), /^[a-f0-9]{64}$/);
+  assert.equal(row.prompt_blob_hash, row.prompt_hash); assert.match(String(row.prompt_hash), /^[a-f0-9]{64}$/);
+  assert.ok(!JSON.stringify(row).includes('Exact template'));
+  assert.deepEqual(readInvocationPromptEvidence(getDb(), id), {
+    promptTemplate: 'Exact template', requestJson: JSON.stringify(invocation.provenance.requestSnapshot),
+  });
   assert.deepEqual(JSON.parse(String(row.request_snapshot_json)), invocation.provenance.requestSnapshot);
   assert.deepEqual(JSON.parse(String(row.response_snapshot_json)), response);
   assert.deepEqual(JSON.parse(String(row.usage_json)), response.usage);
@@ -95,23 +100,28 @@ test('new invocation attempts keep reconstructable Unicode prompts and distingui
   assert.notEqual(first.id, retry.id);
   assert.equal(first.prompt_hash, retry.prompt_hash);
   for (const row of [first, retry]) {
-    assert.equal(row.prompt_template_bytes, Buffer.byteLength(template));
-    assert.equal(row.standalone_prompt_template, null);
-    assert.deepEqual(JSON.parse(String(row.request_snapshot_json)), snapshot);
-    assert.equal(getDb().prepare('SELECT prompt_template FROM model_invocation_prompts WHERE id=?').get(row.id)!.prompt_template, template);
+    assert.equal(row.prompt_blob_hash, row.prompt_hash);
+    assert.ok(!JSON.stringify(row).includes(template));
+    assert.ok(row.request_prompt_refs_json);
+    assert.equal(JSON.parse(String(row.request_snapshot_json)).messages[0].content, '');
+    assert.deepEqual(readInvocationPromptEvidence(getDb(), String(row.id)), {
+      promptTemplate: template, requestJson: JSON.stringify(snapshot),
+    });
   }
-  const empty = start({ promptTemplate: '', requestSnapshot: { messages: [{ role: 'system', content: '' }] } });
-  assert.equal(getDb().prepare('SELECT prompt_template FROM model_invocation_prompts WHERE id=?').get(empty.id)!.prompt_template, '');
-  assert.equal(empty.prompt_template_bytes, 0);
-  assert.equal(empty.standalone_prompt_template, null);
+  const emptyRequest = { messages: [{ role: 'system', content: '' }] };
+  const empty = start({ promptTemplate: '', requestSnapshot: emptyRequest });
+  assert.deepEqual(readInvocationPromptEvidence(getDb(), String(empty.id)), {
+    promptTemplate: '', requestJson: JSON.stringify(emptyRequest),
+  });
+  assert.match(String(empty.prompt_blob_hash), /^[0-9a-f]{64}$/);
   const hashOnly = start({ promptHash: String(first.prompt_hash), requestSnapshot: snapshot });
   assert.equal(hashOnly.prompt_hash, first.prompt_hash);
+  assert.equal(hashOnly.prompt_blob_hash, null);
+  assert.deepEqual(readInvocationPromptEvidence(getDb(), String(hashOnly.id)), { promptTemplate: null, requestJson: JSON.stringify(snapshot) });
   const unknown = start({});
   assert.equal(unknown.prompt_hash, null);
-  for (const row of [hashOnly, unknown]) {
-    assert.equal(row.prompt_template_bytes, null);
-    assert.equal(row.standalone_prompt_template, null);
-  }
+  assert.equal(unknown.prompt_blob_hash, null);
+  assert.deepEqual(readInvocationPromptEvidence(getDb(), String(unknown.id)), { promptTemplate: null, requestJson: null });
 });
 
 test('learner and service mutations reject missing or different ownership and preserve valid accounting', () => {
@@ -159,9 +169,11 @@ test('common transport automatically retains reconstructable inputs without cred
     provenance: { promptName: 'test', promptVersion: '2', workflowId: 'transport-job', stepName: 'generate' },
   }, { apiKey: 'credential-never-retained', baseUrl: null }));
   const row = getDb().prepare('SELECT * FROM model_invocations WHERE id=?').get(result.invocationId!)!;
-  assert.equal(row.standalone_prompt_template, null); assert.equal(row.prompt_template_bytes, Buffer.byteLength('Exact system prompt')); assert.equal(row.prompt_name, 'test');
+  assert.ok(!JSON.stringify(row).includes('Exact system prompt')); assert.equal(row.prompt_blob_hash, row.prompt_hash); assert.equal(row.prompt_name, 'test');
   assert.equal(row.prompt_version, '2'); assert.equal(row.workflow_id, 'transport-job');
-  const request = JSON.parse(String(row.request_snapshot_json));
+  const evidence = readInvocationPromptEvidence(getDb(), String(row.id));
+  assert.equal(evidence.promptTemplate, 'Exact system prompt');
+  const request = JSON.parse(evidence.requestJson!);
   assert.equal(request.messages[0].content, 'Exact system prompt');
   assert.equal(request.messages[1].content, '{"password":"authored lesson"}');
   assert.equal(JSON.parse(String(row.schema_json)).properties.password.type, 'string');
