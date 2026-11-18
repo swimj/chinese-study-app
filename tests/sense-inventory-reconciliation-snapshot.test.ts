@@ -84,7 +84,9 @@ test('online snapshot omits preserved history while retaining identical active d
   db.prepare(`INSERT INTO vocabulary_post_session_dispatches(dispatch_id,learner_id,session_id,completion_id,evidence_json,status,created_at)
     VALUES ('dispatch','learner','session','completion','{"actions":[],"projection":{}}','queued',?)`).run(at);
   const offline = snapshot(), online = snapshot('online');
-  assert.deepEqual(dependencyIds(online.dependencies.pendingDispatches, 'dispatch_id'), ['dispatch']);
+  const dispatch = db.prepare("SELECT * FROM vocabulary_post_session_dispatches WHERE dispatch_id='dispatch'").get();
+  assert.ok(dispatch);
+  assert.deepEqual(online.dependencies.pendingDispatches, [{ ...dispatch }]);
   assert.equal(dependencyIds(offline.dependencies.retainedSessions, 'session_id').length, 1);
   assert.deepEqual(dependencyIds(online.dependencies.pendingReflectionJobs, 'job_id'), ['job']);
   for (const key of ['learnerSenses', 'wordSchedules', 'pureCueSchedules', 'retainedSessions', 'pendingCompletions', 'stashed', 'reserve']) {
