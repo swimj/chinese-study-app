@@ -37,7 +37,7 @@ beforeEach(()=>{
     CREATE TABLE lexical_words(id TEXT PRIMARY KEY,hanzi TEXT,traditional TEXT,pinyin TEXT,meaning TEXT);
     CREATE TABLE word_preparation_work(id TEXT);INSERT INTO learners VALUES ('alice',NULL,'Alice'),('bob',NULL,'Bob');
     INSERT INTO lexical_words VALUES ('a','字',NULL,'zì','character');`);
-  for(const name of ['0062_vocabulary_sense_coverage.sql','0064_vocabulary_default_useful_senses.sql','0039_vocabulary_content.sql','0025_model_invocations.sql','0026_model_invocation_outcomes.sql','0040_model_provenance.sql'])sql.exec(fs.readFileSync(new URL(`../server/db/migrations/${name}`,import.meta.url),'utf8'));
+  for(const name of ['0062_vocabulary_sense_coverage.sql','0064_vocabulary_default_useful_senses.sql','0039_vocabulary_content.sql','0025_model_invocations.sql','0026_model_invocation_outcomes.sql','0040_model_provenance.sql','0080_retain_invocation_prompts.sql'])sql.exec(fs.readFileSync(new URL(`../server/db/migrations/${name}`,import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0041_vocabulary_learner_state.sql',import.meta.url),'utf8').split('-- Do not use the words view')[0]!);
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0047_vocabulary_dismissal.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0052_vocabulary_automatic_promotion_pause.sql',import.meta.url),'utf8'));
@@ -58,6 +58,13 @@ beforeEach(()=>{
     accessScope:'shared',availability:'active',originKind:'human',words:[{wordId:'a',relation:'target'}],answers:[{wordId:'a',acceptedForms:['字']}]},{kind:'operator',id:'editor'});
 });
 afterEach(()=>{sql.close();for(const [key,value]of Object.entries(env)){if(value===undefined)delete process.env[key];else process.env[key]=value;}});
+function assertCapturedPrompt(invocation: Record<string, unknown>, expected: string) {
+  const system = JSON.parse(String(invocation.request_snapshot_json)).messages[0];
+  assert.equal(system.role, 'system');
+  assert.equal(invocation.standalone_prompt_template, null);
+  assert.equal(invocation.prompt_template_bytes, Buffer.byteLength(expected));
+  assert.deepEqual(Buffer.from(system.content).subarray(0, Number(invocation.prompt_template_bytes)), Buffer.from(expected));
+}
 function pending(sessionId='session',two=false,contentId='one') {
   return alice(()=>{
     const started=new Date(clock-16_000).toISOString();
@@ -286,7 +293,7 @@ test('strict real injected provider retains service provenance and rejects forge
   const invocation=sql.prepare('SELECT * FROM model_invocations').get()!;assert.equal(invocation.actor_kind,'service');assert.equal(invocation.learner_id,null);
   assert.equal(invocation.prompt_name,'vocabulary-reflection-feedback');assert.equal(invocation.workflow_id,job.jobId);assert.ok(!JSON.stringify(invocation).includes('never-save-token'));
   assert.equal(invocation.prompt_version,'4');assert.equal(invocation.schema_version,'1');assert.equal(invocation.input_projection_version,'vocabulary-reflection.v3');
-  assert.equal(invocation.prompt_template,fs.readFileSync(new URL('../server/vocabulary/reflection-prompts/feedback.md',import.meta.url),'utf8'));
+  assertCapturedPrompt(invocation,fs.readFileSync(new URL('../server/vocabulary/reflection-prompts/feedback.md',import.meta.url),'utf8'));
   payload={diagnosis:'Claim',lesson:'Lesson',unfairEncounterIds:['invented']};await assert.rejects(()=>provider.run(job),/supplied rejected/);
   assert.equal(sql.prepare("SELECT count(*) n FROM model_invocations WHERE status='invalid_response'").get()!.n,1);
   const improve=claimVocabularyReflectionJob({kind:'exercise_improvement',now:new Date(clock).toISOString()})!;
@@ -297,7 +304,7 @@ test('strict real injected provider retains service provenance and rejects forge
   assert.ok(improvementInvocation,'Selected sense assessment must reach the active single-improvement call');
   assert.equal(improvementInvocation.actor_kind,'service');assert.equal(improvementInvocation.learner_id,null);assert.equal(improvementInvocation.workflow_id,improve.jobId);
   assert.equal(improvementInvocation.prompt_version,'7');assert.equal(improvementInvocation.schema_version,'5');assert.equal(improvementInvocation.input_projection_version,'vocabulary-exercise-authoring.v3');
-  assert.equal(improvementInvocation.prompt_template,`\n\n${fs.readFileSync(new URL('../server/vocabulary/reflection-prompts/single-improvement.md',import.meta.url),'utf8')}`);
+  assertCapturedPrompt(improvementInvocation,`\n\n${fs.readFileSync(new URL('../server/vocabulary/reflection-prompts/single-improvement.md',import.meta.url),'utf8')}`);
   assert.throws(()=>normalizeVocabularyReflectionOutput(improve,{...valid,operations:[{...valid.operations[0],acceptedAnswers:['invented']}]}),/answer criteria/);
   assert.throws(()=>normalizeVocabularyReflectionOutput(improve,{...valid,operations:[{...valid.operations[0],sourceContentId:'two'}]}),/source identities/);
   assert.throws(()=>normalizeVocabularyReflectionOutput(improve,{...valid,operations:[{...valid.operations[0],accessScope:'shared'}]}),/strict schema/);
@@ -315,7 +322,7 @@ test('strict real injected provider retains service provenance and rejects forge
   }
   const opinionInvocation=sql.prepare("SELECT * FROM model_invocations WHERE prompt_name='vocabulary-reflection-second-opinion'").get()!;
   assert.equal(opinionInvocation.workflow_id,improve.jobId);assert.equal(opinionInvocation.prompt_version,'3');
-  assert.equal(opinionInvocation.prompt_template,`${fs.readFileSync(new URL('../server/vocabulary/reflection-prompts/reasoning.md',import.meta.url),'utf8')}\n\n${fs.readFileSync(new URL('../server/vocabulary/reflection-prompts/second-opinion.md',import.meta.url),'utf8')}`);
+  assertCapturedPrompt(opinionInvocation,`${fs.readFileSync(new URL('../server/vocabulary/reflection-prompts/reasoning.md',import.meta.url),'utf8')}\n\n${fs.readFileSync(new URL('../server/vocabulary/reflection-prompts/second-opinion.md',import.meta.url),'utf8')}`);
   const noChangeJob:VocabularyReflectionJob={...improve,secondOpinion:{requestId:'no-change',proposal:null,notes:'Check the answer',diagnosis:'No correction needed'}};
   await provider.run(noChangeJob);
   const input=JSON.parse(lastRequest!.messages.find(item=>item.role==='user')!.content);
