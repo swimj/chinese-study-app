@@ -22,7 +22,12 @@ captures. Manual and release requests have separate retention from scheduled
 recovery points. Only a successfully verified new database can displace an old
 one. The S3 uploader reuses a receiver file, so it needs no additional capture on
 production. The database capture timestamp identifies the recoverable state;
-S3 uses upload time for lifecycle expiration.
+S3 uses upload time for lifecycle expiration. Uploads become due relative to
+the previous scheduled capture used for the upload. When due, the receiver
+waits for a verified scheduled capture less than an hour old, then picks the
+newest verified copy available. A newer manual copy can supply the bytes
+without moving the schedule. On first activation just after that one-hour
+window, the initial upload waits for the next six-hour capture.
 
 The source uses SQLite's online backup API to produce a coherent standalone file
 while the app runs. It pins one WAL read transaction for the copy so other
@@ -163,7 +168,7 @@ gzip -dc "$restore_dir/backup.sqlite.gz" > "$restore_dir/app.db.incoming"
 expected_bytes=$(jq -er '.Metadata["sqlite-bytes"]' "$restore_dir/object.json")
 test "$(wc -c < "$restore_dir/app.db.incoming")" -eq "$expected_bytes"
 expected_sha=$(jq -er '.Metadata["sqlite-sha256"]' "$restore_dir/object.json")
-printf '%s  %s\n' "$expected_sha" "$restore_dir/app.db.incoming" | sha256sum --check
+printf '%s  %s\n' "$expected_sha" "$restore_dir/app.db.incoming" | sha256sum -c
 mv "$restore_dir/app.db.incoming" "$restore_dir/app.db"
 jq '.Metadata | {revision: .["source-revision"], capturedAt: .["capture-started-at"]}' "$restore_dir/object.json"
 ```
