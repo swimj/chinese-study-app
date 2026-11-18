@@ -270,6 +270,9 @@ export const schemaMigrations: readonly SchemaMigration[] = [{
 }, {
   id: 'app_schema:0078_drop_timed_skip_counts',
   sql: fs.readFileSync(new URL('./migrations/0078_drop_timed_skip_counts.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0079_share_session_context',
+  sql: fs.readFileSync(new URL('./migrations/0079_share_session_context.sql', import.meta.url), 'utf8'),
 }];
 
 function checksum(value: string): string {

@@ -81,8 +81,10 @@ export function snapshotInventoryForReconciliation(
     || contentIds.has(String(row.content_id)) || intersects(jsonStrings(row.evidence_snapshot_json), refs));
   const caseIds = new Set(cases.map(row => String(row.case_id)));
   const pendingReflectionJobs = all("SELECT * FROM vocabulary_reflection_jobs WHERE status!='succeeded' AND case_id IN (SELECT value FROM json_each(?)) ORDER BY job_id", idsJson(caseIds));
-  const pendingDispatches = all("SELECT * FROM vocabulary_post_session_dispatches WHERE status!='succeeded' ORDER BY dispatch_id")
-    .filter(row => intersects(jsonStrings(row.evidence_json), refs));
+  const pendingDispatches = all(`SELECT d.*, s.context_json FROM vocabulary_post_session_dispatches d
+    JOIN vocabulary_sessions s USING (learner_id, session_id)
+    WHERE d.status!='succeeded' ORDER BY d.dispatch_id`)
+    .filter(row => intersects(jsonStrings(row.evidence_json), refs) || intersects(jsonStrings(row.context_json), refs));
   const basedProposals = new Set(all('SELECT proposal_id FROM proposal_content_bases WHERE content_id IN (SELECT value FROM json_each(?))', selectedContent).map(row => String(row.proposal_id)));
   const pendingProposals = all("SELECT * FROM content_proposals WHERE status NOT IN ('applied','closed') ORDER BY proposal_id")
     .filter(row => caseIds.has(String(row.case_id)) || basedProposals.has(String(row.proposal_id)) || intersects(jsonStrings(row.operations_json), refs));
