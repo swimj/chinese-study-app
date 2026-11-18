@@ -1,3 +1,4 @@
+import { retainInvocationPrompts } from './invocation-prompt-archive.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import type { ModelInvocationRow, ModelInvocationProvenance } from '../../src/domain/model-invocations.ts';
 import { getDb } from './connection.ts';
@@ -39,19 +40,21 @@ function start(input: ModelInvocationStart, owner: Owner, requester: string | nu
   if (p.promptTemplate !== undefined && p.promptHash !== undefined && p.promptHash !== promptHash) {
     throw new ModelInvocationInputError('Prompt hash does not match the retained template');
   }
+  const requestSnapshot = snapshot(p.requestSnapshot, true);
+  const retained = retainInvocationPrompts(getDb(), p.promptTemplate ?? null, requestSnapshot);
   const id = randomUUID();
   getDb().prepare(`INSERT INTO model_invocations
     (id, timestamp, provider, model, invocation_type, learner_id, spend_source, status,
      actor_kind, actor_id, requesting_learner_id, workflow_id, step_name, attempt_number,
-     prompt_name, prompt_version, prompt_hash, prompt_template, schema_name, schema_version,
+     prompt_name, prompt_version, prompt_hash, prompt_blob_hash, request_prompt_refs_json, schema_name, schema_version,
      schema_json, input_projection_version, settings_json, request_snapshot_json, resolved_model, provider_request_id)
-    VALUES (?, ?, ?, ?, ?, ?, 'unknown', 'running', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    VALUES (?, ?, ?, ?, ?, ?, 'unknown', 'running', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     .run(id, new Date().toISOString(), input.provider, input.model, input.invocationType,
       owner.kind === 'learner' ? owner.id : null, owner.kind, owner.id, requester,
       p.workflowId ?? null, p.stepName ?? null, p.attemptNumber ?? null,
-      p.promptName ?? null, p.promptVersion ?? null, promptHash, p.promptTemplate ?? null,
+      p.promptName ?? null, p.promptVersion ?? null, promptHash, retained.templateHash, retained.referencesJson,
       p.schemaName ?? null, p.schemaVersion ?? null, snapshot(p.schema), p.inputProjectionVersion ?? null,
-      snapshot(p.settings, true), snapshot(p.requestSnapshot, true), p.resolvedModel ?? null, p.providerRequestId ?? null);
+      snapshot(p.settings, true), retained.requestJson, p.resolvedModel ?? null, p.providerRequestId ?? null);
   return id;
 }
 export function startModelInvocation(input: ModelInvocationStart): string {

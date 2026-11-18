@@ -13,6 +13,9 @@ data/sources/subtlex/
 tmp/deck-eyeball-report.md
 artifacts/*
 !artifacts/README.md
+!artifacts/invocation-prompts/
+artifacts/invocation-prompts/*
+!artifacts/invocation-prompts/*.txt
 .codex/
 .claude/worktrees/
 .claude/settings.local.json

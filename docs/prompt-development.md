@@ -36,6 +36,40 @@ owns the final shared content and compatible destination. Integration preserves
 the nominated purpose and members without re-deciding its learning value or
 reconciling both words' repertoires.
 
+## Register and retain invocation prompts
+
+The archive in `artifacts/invocation-prompts/<sha256>.txt` holds exact rendered
+system prompt bytes. The running app ships its hash catalog. The archive stays
+in Git and outside the Fly image. To investigate an invocation, open the file
+named by its SHA-256 in a checkout containing the corresponding release or a
+later commit.
+
+When changing a hosted prompt, register each rendered variant, including any
+reasoning prefix, editorial suffix and significant whitespace. For a prompt
+passed directly from one authored file, use that file as the input. For a
+composed prompt, render each variant locally using its caller and save the
+resulting system text in a file. Run this command from the repository root:
+
+```sh
+node scripts/register-invocation-prompt.mjs <rendered-system-prompt-file>
+```
+
+Review and commit the generated archive file and
+`server/db/invocation-prompt-catalog.json` with the caller change. Only
+shared, authored system text belongs in this archive. Learner messages, runtime
+evidence, operator notes and credentials belong outside Git.
+
+The `Prompt source retention` check verifies each archive file against its
+digest, enforces complete catalog coverage and keeps every historical digest
+at its original path. For authored files under server directories named
+`prompts` or ending in `-prompts`, prior source bytes must also survive a move
+or edit. Retain them in a versioned source file or register them in the Git
+archive before retiring them from the image. Directory `README.md` files are
+exempt. After committing, run
+`node scripts/check-prompt-retention.mjs origin/main HEAD` to check locally.
+Require the GitHub Actions status `Prompt source retention` on the target
+branch to block merges that lose archived bytes.
+
 ## Adapt the contract explicitly
 
 Map the old inputs, outputs, responsibilities, and examples to the new call.

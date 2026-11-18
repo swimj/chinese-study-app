@@ -1,4 +1,6 @@
+import { readInvocationPromptEvidence } from '../server/db/invocation-prompt-archive.ts';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -681,4 +683,76 @@ test('teaching set migration preserves default artifacts, leases, attempts and l
     const latest=new DatabaseSync(source);
     try{assert.deepEqual(snapshot(db),snapshot(latest));}finally{latest.close();}
   }finally{db.close();}
+});
+
+const promptMigrationId = 'app_schema:0080_retain_invocation_prompts';
+function prepareOldLedger(db: DatabaseSync) {
+  migrateDatabase(db, schemaMigrations.filter(m => m.id < promptMigrationId));
+  return db.prepare(`INSERT INTO model_invocations
+    (id,timestamp,provider,model,invocation_type,spend_source,status,actor_kind,actor_id,
+     prompt_hash,prompt_template,request_snapshot_json,response_snapshot_json)
+    VALUES (?,'2026-11-18','provider','model','call','unknown','completed','service','worker',?,?,?,'{"receipt":true}')`);
+}
+
+test('0080 preserves exact historical prompt bytes, including standalone, empty, unknown and hash-only prompts', () => {
+  const { db } = copy('prompt-retention', true);
+  try {
+    const insert = prepareOldLedger(db);
+    const text = '词 🀄\n\t\0end';
+    const hash = createHash('sha256').update(text).digest('hex');
+    const request = (role: string, content: string) => JSON.stringify({ messages: [{ role, content }] });
+    const emptyHash = createHash('sha256').update('').digest('hex');
+    insert.run('exact', hash, text, request('system', text));
+    insert.run('suffixed', hash, text, request('system', text + '\nresponse format follows'));
+    insert.run('wrong-role', hash, text, request('user', text));
+    insert.run('different', hash, text, request('system', 'another prompt'));
+    insert.run('custom', hash, text, null);
+    insert.run('without-hash', null, text, request('system', text));
+    insert.run('hash-only', hash, null, request('system', text));
+    insert.run('empty', emptyHash, '', request('system', ''));
+    insert.run('unknown', null, null, null);
+    const before = db.prepare('SELECT * FROM model_invocations ORDER BY id').all();
+    const prompts = db.prepare('SELECT id,prompt_hash,CAST(prompt_template AS BLOB) AS bytes FROM model_invocations ORDER BY id').all();
+    const through = schemaMigrations.filter(m => m.id <= promptMigrationId);
+    assert.deepEqual(migrateDatabase(db, through), [promptMigrationId]);
+    assert.deepEqual(migrateDatabase(db, through), []);
+    const after = db.prepare('SELECT * FROM model_invocations ORDER BY id').all();
+    assert.equal(after.length, before.length);
+    for (const [index, original] of before.entries()) {
+      const { prompt_template: _template, request_snapshot_json: request, ...oldFields } = original;
+      const { prompt_blob_hash: blobHash, request_prompt_refs_json: refs, request_snapshot_json: storedRequest, ...newFields } = after[index]!;
+      assert.deepEqual(newFields, oldFields);
+      const oldBytes = prompts[index]!.bytes;
+      const expected = oldBytes === null ? null : Buffer.from(oldBytes as Uint8Array).toString('utf8');
+      assert.deepEqual(readInvocationPromptEvidence(db, String(original.id)), { promptTemplate: expected, requestJson: request });
+      assert.equal(blobHash, expected === null ? null : createHash('sha256').update(expected).digest('hex'));
+      if (request !== null && JSON.parse(String(request)).messages[0].role === 'system') {
+        assert.ok(refs);
+        assert.equal(JSON.parse(String(storedRequest)).messages[0].content, '');
+      } else {
+        assert.equal(refs, null);
+        assert.equal(storedRequest, request);
+      }
+    }
+    for (const [column, value] of [
+      ['prompt_hash', "'changed'"], ['request_prompt_refs_json', 'NULL'],
+      ['request_snapshot_json', "'{}'"], ['prompt_blob_hash', 'NULL'],
+    ]) {
+      assert.throws(() => db.exec(`UPDATE model_invocations SET ${column}=${value} WHERE id='exact'`));
+    }
+  } finally { db.close(); }
+});
+
+test('0080 rolls back without discarding prompt evidence when a captured template has the wrong hash', () => {
+  const { db } = copy('prompt-hash-mismatch', true);
+  try {
+    const insert = prepareOldLedger(db);
+    insert.run('bad', 'incorrect', 'original', '{"messages":[{"role":"system","content":"original"}]}');
+    const schema = snapshot(db);
+    const original = db.prepare('SELECT * FROM model_invocations').all();
+    assert.throws(() => migrateDatabase(db, schemaMigrations.filter(m => m.id <= promptMigrationId)), /hash/i);
+    assert.deepEqual(snapshot(db), schema);
+    assert.deepEqual(db.prepare('SELECT * FROM model_invocations').all(), original);
+    assert.equal(db.prepare('SELECT 1 FROM schema_migrations WHERE migration_id=?').get(promptMigrationId), undefined);
+  } finally { db.close(); }
 });

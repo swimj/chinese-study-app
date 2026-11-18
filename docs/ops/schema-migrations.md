@@ -849,3 +849,24 @@ contains a top-level context, run integrity and foreign-key checks, then exercis
 stage, cancel/restage, close, dispatch ingestion and reconciliation's pending
 dispatch dependency lookup on disposable data. Rollback requires the pre-upgrade
 backup and its matching application image.
+
+## Invocation prompt retention rehearsal (0080)
+
+Use the stopped-writer release route and an existing verified backup. The
+migration verifies historical template hashes and replaces authored instructions
+in captured requests with references to the Git archive. This includes Responses
+chat calls that saved the system message without a separate template. Hosted
+migration fails on unknown instructions. Resolve the missing reviewed archive
+entry before retrying. Allow scratch space for staged per-call inputs and the WAL.
+
+Before migration, retain per-ID digests for the nullable template, the complete
+request and every other invocation field. Also capture each improvement stage’s
+full input, cache key, result and invocation link. After migration, supply an independent
+checkout of the Git prompt archive to the offline reader and compare all three.
+Verify that user input survives and reusable instructions have disappeared from
+the invocation and stage records. Verify every checkpoint reconstructs its
+original input and retains its cache key. Exercise new provider requests, including the adapter
+that appends a schema, a Responses chat request, a rejected uncatalogued prompt,
+and normal spend and completion updates. Measure occupied pages, compacted file
+size, elapsed time, and run SQLite integrity and foreign-key checks. Rollback
+uses the pre-upgrade backup and matching application image.

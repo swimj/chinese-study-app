@@ -579,6 +579,35 @@ its domain normalizers. A late same-learner validation update changes only
 persistence, lease, or publication failures do not mislabel a valid model response.
 This is an offline schema migration, with no provider calls or history reclassification.
 
+Schema 0080 stores SHA-256 references for authored system and developer instructions.
+The provider receives the original full request. The ledger keeps per-call inputs,
+output schemas, settings and responses in SQLite. It stores the ordered prompt
+references alongside the request and records where the adapter appended schema
+instructions. A captured template has its own reference. Older invocations with
+only a provenance hash still have no captured template.
+
+For an investigation, open the database read-only in a repository checkout and call
+`readInvocationPromptEvidence(db, invocationId)` from
+[`invocation-prompt-archive.ts`](../server/db/invocation-prompt-archive.ts).
+It returns the exact captured template and serialized provider request, verifying
+each Git blob against its digest. The optional third argument selects an archive
+directory. Hosted machines carry the digest catalog and the active prompt sources.
+The historical archive lives in Git under `artifacts/invocation-prompts/`.
+Hosted writes reject an unregistered authored prompt before the provider call.
+The [prompt authoring procedure](prompt-development.md#retain-authored-prompt-sources)
+covers registration and retention.
+
+Improvement-job checkpoints use the same archive for the system prompt in their
+saved input contract. The checkpoint key remains the hash of the original full
+input, so a retry can find a stage completed before the migration. The checkpoint
+retains the exercise input, schema, result, and invocation link. The offline
+reader `restoreImprovementStageInput` resolves the prompt reference and checks
+the reconstructed input against the checkpoint key.
+
+Local experiments can also use unpublished prompts. For an on-disk development
+database, preserve the adjacent `invocation-prompt-blobs/` directory when moving
+or backing up the database. Hosted captures use only reviewed Git blobs.
+
 Migration `0076_prune_trivial_unstudied_words` deletes never-touched, non-stash unstudied `learner_words` rows (with their default schedule and legacy state rows) that nothing else references; see its [rule and rehearsal note](ops/schema-migrations.md#trivial-unstudied-word-pruning-0076). It requires the offline schema migration procedure.
 
 ## Teaching set storage

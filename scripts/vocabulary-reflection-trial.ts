@@ -1,4 +1,6 @@
 /** Isolated experiment. Never initializes the application database or imports hosted data. */
+import { stageImprovementPromptReferences } from '../server/db/improvement-stage-prompt-archive.ts';
+import { stageInvocationPromptReferences } from '../server/db/invocation-prompt-archive.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -110,7 +112,8 @@ const migrations = ['0039_vocabulary_content.sql', '0025_model_invocations.sql',
   '0040_model_provenance.sql', '0041_vocabulary_learner_state.sql', '0047_vocabulary_dismissal.sql','0052_vocabulary_automatic_promotion_pause.sql',
   '0042_vocabulary_sessions.sql', '0043_vocabulary_import.sql', '0044_vocabulary_reflection.sql', '0045_vocabulary_provenance_links.sql',
   '0046_vocabulary_pure_cue_guards.sql', '0023_session_debrief.sql', '0048_vocabulary_connections.sql',
-  '0049_vocabulary_sense_readiness.sql', '0050_vocabulary_improvement_admission.sql', '0051_vocabulary_pure_cue_promotion.sql', '0053_vocabulary_second_opinions.sql', '0054_vocabulary_provider_retry_routing.sql'];
+  '0049_vocabulary_sense_readiness.sql', '0050_vocabulary_improvement_admission.sql', '0051_vocabulary_pure_cue_promotion.sql', '0053_vocabulary_second_opinions.sql', '0054_vocabulary_provider_retry_routing.sql',
+  '0080_retain_invocation_prompts.sql'];
 function initialize(sql: DatabaseSync): void {
   sql.exec(`PRAGMA foreign_keys=ON;
     CREATE TABLE learners(learner_id TEXT PRIMARY KEY,disabled_at TEXT,display_name TEXT);
@@ -124,6 +127,10 @@ function initialize(sql: DatabaseSync): void {
     CREATE TABLE learner_owned_review_session_summaries(learner_id TEXT,session_id TEXT,PRIMARY KEY(learner_id,session_id));
     CREATE TABLE reflection_generation_runs(completed_at TEXT,estimated_cost_usd REAL);`);
   for (const name of migrations) {
+    if (name === '0080_retain_invocation_prompts.sql') {
+      stageInvocationPromptReferences(sql);
+      stageImprovementPromptReferences(sql);
+    }
     const source = read(path.join(root, 'server/db/migrations', name));
     sql.exec(name === '0041_vocabulary_learner_state.sql' ? source.split('-- Do not use the words view')[0]! : source);
   }

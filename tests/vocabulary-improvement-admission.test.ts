@@ -1,3 +1,5 @@
+import { migrateStagePrompts } from './helpers/improvement-stage-prompt-schema.ts';
+import { restoreImprovementStageInput } from '../server/db/improvement-stage-prompt-archive.ts';
 import { captureVocabularyRepertoireSelection } from '../server/db/vocabulary-repertoire-selection.ts';
 import { createHash } from 'node:crypto';
 import { VocabularySenseReadinessPending } from '../server/vocabulary/sense-readiness.ts';
@@ -39,6 +41,7 @@ beforeEach(context=>{
     INSERT INTO vocabulary_reflection_jobs(job_id,kind,model_choice) VALUES ('job','exercise_improvement',NULL);`);
   for(const name of ['0062_vocabulary_sense_coverage','0064_vocabulary_default_useful_senses','0039_vocabulary_content','0045_vocabulary_provenance_links','0050_vocabulary_improvement_admission','0051_vocabulary_pure_cue_promotion'])
     db.exec(readFileSync(new URL(`../server/db/migrations/${name}.sql`,import.meta.url),'utf8'));
+  if (!context.name.startsWith('0080 ')) migrateStagePrompts(db);
   db.exec(readFileSync(new URL('../server/db/migrations/0061_vocabulary_sense_mapping_retries.sql',import.meta.url),'utf8'));
   const created=createVocabularyContent({contentId:'original',kind:'exercise',payloadVersion:1,body:{prompt:'请把这张照片____后再打印。',instruction:'Old instruction',reveal:{teachingNote:'Old unrelated teaching'},source:{kind:context.name.startsWith('[bootstrap]')?'dictionary_baseline':'old_source'}},accessScope:'shared',availability:'active',originKind:'human',
     exerciseType:'word',skill:'production',exerciseRole:'general',assessment:{match:'exact'},words:[{wordId:'word',relation:'target'}],answers:[{wordId:'word',acceptedForms:['放大']}]},actor);
@@ -50,6 +53,12 @@ beforeEach(context=>{
   }
 });
 afterEach(()=>db.close());
+function archivedStageInput(stage: string) {
+  const row = db.prepare(`SELECT input_json,input_hash,system_prompt_blob_hash FROM vocabulary_improvement_stages
+    WHERE stage=? AND system_prompt_blob_hash IS NOT NULL`).get(stage)!;
+  assert.equal(JSON.parse(String(row.input_json)).contract.systemPrompt, null);
+  return JSON.parse(restoreImprovementStageInput(db, String(row.input_json), String(row.input_hash), String(row.system_prompt_blob_hash)));
+}
 function seedInventory(): void {
   createVocabularySense({senseId:'size',wordId:'word',description:{label:'make an image or object larger'}},actor);
   createVocabularySense({senseId:'effect',wordId:'word',description:{label:'amplify an effect or significance'}},actor);
@@ -111,7 +120,7 @@ function retainBootstrapRoute(source:VocabularyContent=original): void {
   const hash=createHash('sha256').update(input).digest('hex');
   const mapping={outcome:'repertoire_bootstrap',rationale:'Continue the retained fallback bootstrap.',senseIds:[],
     generationScope:null,observedMapping:{senseId:null,establishedAt:null},mappingTimestamp:at};
-  db.prepare('INSERT INTO vocabulary_improvement_stages VALUES (?,?,?,?,?,NULL,?)').run('job','sense_mapping',hash,input,JSON.stringify(mapping),at);
+  db.prepare('INSERT INTO vocabulary_improvement_stages(job_id,stage,input_hash,input_json,result_json,invocation_id,recorded_at) VALUES (?,?,?,?,?,NULL,?)').run('job','sense_mapping',hash,input,JSON.stringify(mapping),at);
 }
 const repertoire={exercises:[
   {id:'anchor',sourceUseId:'size',stimulus:{kind:'direct_text',text:'Make the image larger.'},teachingNote:'Image size.'},
@@ -405,7 +414,7 @@ test('unknown production improvement contracts reject before provider and sense 
 test('cache identity retains actual prompts and schema and separates provider configurations',async()=>{
   const first=provider((_request,index)=>index===1?single:repair);
   await first.provider.run(job());
-  const stored=JSON.parse(String(db.prepare("SELECT input_json FROM vocabulary_improvement_stages WHERE stage='sense_mapping'").get()!.input_json));
+  const stored=archivedStageInput('sense_mapping');
   assert.equal(stored.contract.systemPrompt,first.requests[0]!.systemPrompt);
   assert.deepEqual(stored.contract.schema,first.requests[0]!.outputSchema);
   assert.equal(stored.contract.model,first.requests[0]!.model);
@@ -536,7 +545,7 @@ test('a newly ambiguous second response re-presents all ambiguous identities',as
 
 test('candidate and integration stages retain prior-contract evidence without consuming it on retry',async()=>{
   secondWord();
-  for(const stage of ['single_improvement','pure_cue_promotion'])db.prepare('INSERT INTO vocabulary_improvement_stages VALUES (?,?,?,?,?,?,?)')
+  for(const stage of ['single_improvement','pure_cue_promotion'])db.prepare('INSERT INTO vocabulary_improvement_stages(job_id,stage,input_hash,input_json,result_json,invocation_id,recorded_at) VALUES (?,?,?,?,?,?,?)')
     .run('job',stage,'old-contract',JSON.stringify({contract:{promptVersion:stage==='single_improvement'?'5':'1'}}),JSON.stringify({obsolete:true}),null,at);
   const trial=provider(request=>request.provenance!.stepName==='sense_mapping'?single:request.provenance!.stepName==='single_improvement'?{...repair,sharedExercise}:createPromotion);
   const input=submittedJob(),result=await trial.provider.run(input);
@@ -662,13 +671,27 @@ for(const change of ['source','catalog','authority'] as const)bootstrapTest(`rep
 
 bootstrapTest('repertoire retries reuse exact new-contract output and retain old-contract evidence without consuming it',async()=>{
   retainBootstrapRoute();
-  db.prepare('INSERT INTO vocabulary_improvement_stages VALUES (?,?,?,?,?,?,?)').run('job','repertoire','old-contract',JSON.stringify({contract:{promptName:'vocabulary-reflection-repertoire',promptVersion:'2'}}),JSON.stringify({obsolete:true}),null,at);
+  db.prepare('INSERT INTO vocabulary_improvement_stages(job_id,stage,input_hash,input_json,result_json,invocation_id,recorded_at) VALUES (?,?,?,?,?,?,?)').run('job','repertoire','old-contract',JSON.stringify({contract:{promptName:'vocabulary-reflection-repertoire',promptVersion:'2'}}),JSON.stringify({obsolete:true}),null,at);
   const trial=provider((_request,index)=>repertoire,{ledger:true});
   const result=await trial.provider.run(job());
+  // Build the historical evidence in the actual pre-0080 table, including the exact provider input.
+  const stages = db.prepare('SELECT * FROM vocabulary_improvement_stages').all();
+  db.exec('DROP TABLE vocabulary_improvement_stages');
+  for (const name of ['0050_vocabulary_improvement_admission','0051_vocabulary_pure_cue_promotion']) {
+    db.exec(readFileSync(new URL(`../server/db/migrations/${name}.sql`, import.meta.url),'utf8'));
+  }
+  const insert = db.prepare('INSERT INTO vocabulary_improvement_stages VALUES (?,?,?,?,?,?,?)');
+  for (const row of stages) {
+    const input = restoreImprovementStageInput(db, String(row.input_json), String(row.input_hash), row.system_prompt_blob_hash as string|null);
+    insert.run(row.job_id,row.stage,row.input_hash,input,row.result_json,row.invocation_id,row.recorded_at);
+  }
+  assert.equal(db.prepare("SELECT json_extract(input_json,'$.contract.systemPrompt') prompt FROM vocabulary_improvement_stages WHERE stage='repertoire' AND input_hash!='old-contract'").get()!.prompt,
+    trial.requests[0]!.systemPrompt);
+  migrateStagePrompts(db);
   const replay=await trial.provider.run({...job(),attemptNumber:2});
-  assert.deepEqual(replay,result);assert.equal(trial.requests.length,1);
+  assert.deepEqual(replay,result);assert.equal(trial.requests.length,1, 'retry of a migrated stage must not issue another provider call');
   assert.equal(db.prepare("SELECT count(*) n FROM vocabulary_improvement_stages WHERE stage='repertoire'").get()!.n,2);
-  const retained=JSON.parse(String(db.prepare("SELECT input_json FROM vocabulary_improvement_stages WHERE stage='repertoire' AND input_hash!='old-contract'").get()!.input_json));
+  const retained=archivedStageInput('repertoire');
   assert.equal(retained.contract.systemPrompt,trial.requests[0]!.systemPrompt);
   assert.deepEqual(retained.contract.schema,trial.requests[0]!.outputSchema);
   assert.equal(db.prepare("SELECT count(*) n FROM invocation_content_links WHERE invocation_id='invocation-1'").get()!.n,1);
@@ -947,7 +970,7 @@ function resolvedPromotionJob(authored=false):VocabularyReflectionJob {
   const resolution={actorId:'editor',recordedAt:at,sourceJobId:'parent',original,
     admission:{outcome:'single_sense',rationale:'Size',wordId:'word',sourceContentId:'original',sourceContentVersion:original.version,catalogVersion:getVocabularySenseCatalog('word').version,senseIds:['size'],sourceMapping:{senseId:null,establishedAt:null}},
     diagnosis:'Retained local diagnosis',referral,...(authored?{responseCandidateSnapshots:[],localPlan:{rationale:'Retained local source plan',bases:[{contentId:'original',expectedVersion:1}],operations:[{operationKey:'local-retirement',strategy:'retire',sourceContentId:'original',expectedVersion:1,scope:{kind:'shared'},rationale:'Shared practice replaces the source.',content:original}]}}:{}),selections:{'放大':'word','扩大':'other'},candidates:db.prepare("SELECT id AS wordId,hanzi,traditional,pinyin,meaning FROM lexical_words WHERE id IN ('word','other') ORDER BY CASE id WHEN 'word' THEN 0 ELSE 1 END").all()};
-  db.prepare("INSERT INTO vocabulary_improvement_stages VALUES (?,'pure_cue_promotion',?,?,?,NULL,?)").run('job','operator-pure-cue-resolution-v1','{}',JSON.stringify(resolution),at);
+  db.prepare("INSERT INTO vocabulary_improvement_stages(job_id,stage,input_hash,input_json,result_json,invocation_id,recorded_at) VALUES (?,'pure_cue_promotion',?,?,?,NULL,?)").run('job','operator-pure-cue-resolution-v1','{}',JSON.stringify(resolution),at);
   return {...job(),reassessmentSourceJobId:'parent',reassessmentSource:original};
 }
 const promotionReply={decision:'create',rationale:'Shared task fits',existingContentId:null,prompt:'Increase the size or extent.',semanticAxis:'Size increase',teachingNote:'Both express making something larger.',memberWordIds:['word','other']};
@@ -1288,4 +1311,44 @@ bootstrapTest('editorial context composes with the shared repertoire call withou
   assert.match(request.systemPrompt,/Operator editorial context/);
   assert.match(request.provenance!.inputProjectionVersion!,/editorial.v1/);
   assert.deepEqual(Object.keys(request.outputSchema.properties!),['exercises']);
+});
+
+test('0080 preserves historical cache keys, results and references while removing the system prompt from stage inputs', () => {
+  const prompt = '指令🀄\nOnly authored instructions.';
+  const originalInput = JSON.stringify({ contract: { schema: { type: 'object' }, systemPrompt: prompt, model: 'fixture' },
+    input: { role: 'learner', nested: { systemPrompt: 'learner content' } } });
+  const originalHash = createHash('sha256').update(originalInput).digest('hex');
+  db.exec("INSERT INTO model_invocations(id) VALUES('archived-call')");
+  const insert = db.prepare(`INSERT INTO vocabulary_improvement_stages(job_id,stage,input_hash,input_json,result_json,invocation_id,recorded_at)
+    VALUES ('job','sense_mapping',?,?,'{"priorResult":true}','archived-call',?)`);
+  insert.run(originalHash, originalInput, at);
+  const customInput = '{"contract":{"systemPrompt":{"hash":"a literal custom field"}}}';
+  insert.run('operator-scope', customInput, at);
+  migrateStagePrompts(db);
+
+  const cache = db.prepare('SELECT * FROM vocabulary_improvement_stages WHERE job_id=? AND stage=? AND input_hash=?');
+  const hit = cache.get('job', 'sense_mapping', originalHash)!;
+  assert.deepEqual([hit.result_json, hit.invocation_id, hit.recorded_at], ['{"priorResult":true}', 'archived-call', at]);
+  const storedInput = String(hit.input_json), hash = String(hit.system_prompt_blob_hash);
+  assert.equal(hash, createHash('sha256').update(prompt).digest('hex'));
+  assert.equal(storedInput.includes('Only authored instructions.'), false);
+  assert.equal(JSON.parse(storedInput).input.nested.systemPrompt, 'learner content');
+  assert.equal(restoreImprovementStageInput(db, storedInput, originalHash, hash), originalInput);
+  assert.throws(() => restoreImprovementStageInput(db, storedInput, 'different-cache-key', hash), /hash/);
+  const custom = cache.get('job', 'sense_mapping', 'operator-scope')!;
+  assert.equal(custom.system_prompt_blob_hash, null);
+  assert.equal(custom.input_json, customInput);
+  assert.throws(() => insert.run('attempt-to-embed', originalInput, at), /prompt/);
+  assert.throws(() => db.exec('UPDATE vocabulary_improvement_stages SET recorded_at=recorded_at'), /immutable/);
+  assert.throws(() => db.exec('DELETE FROM vocabulary_improvement_stages'), /retained/);
+});
+
+test('0080 refuses to archive improvement stage inputs that do not match the recorded cache key', () => {
+  const inputJson = JSON.stringify({ contract: { systemPrompt: 'preserve me' }, input: {} });
+  db.prepare(`INSERT INTO vocabulary_improvement_stages(job_id,stage,input_hash,input_json,result_json,recorded_at)
+    VALUES ('job','repertoire','wrong-hash',?,'{}',?)`).run(inputJson, at);
+  db.exec('BEGIN');
+  assert.throws(() => migrateStagePrompts(db), /input hash/);
+  db.exec('ROLLBACK');
+  assert.equal(db.prepare("SELECT input_json FROM vocabulary_improvement_stages WHERE input_hash='wrong-hash'").get()!.input_json, inputJson);
 });

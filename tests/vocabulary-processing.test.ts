@@ -1,3 +1,5 @@
+import { schemaMigrations } from '../server/db/migrations.ts';
+import { readInvocationPromptEvidence } from '../server/db/invocation-prompt-archive.ts';
 import { mergeWordSchedulerState } from '../server/db/vocabulary-schedule-columns.ts';
 import { applyVocabularyDueColumns } from './helpers/vocabulary-due-columns.ts';
 import { installCaseReviewSchema } from './helpers/case-review-schema.ts';
@@ -46,6 +48,9 @@ beforeEach(()=>{
 
   for(const name of ['0042_vocabulary_sessions.sql','0044_vocabulary_reflection.sql','0059_vocabulary_reassessment.sql','0060_vocabulary_reassessment_source.sql','0055_vocabulary_feedback_dismissal.sql','0045_vocabulary_provenance_links.sql'])sql.exec(fs.readFileSync(new URL(`../server/db/migrations/${name}`,import.meta.url),'utf8'));
   for(const name of ['0023_session_debrief.sql','0048_vocabulary_connections.sql','0049_vocabulary_sense_readiness.sql','0050_vocabulary_improvement_admission.sql','0051_vocabulary_pure_cue_promotion.sql'])sql.exec(fs.readFileSync(new URL(`../server/db/migrations/${name}`,import.meta.url),'utf8'));
+  const promptMigration = schemaMigrations.find(m => m.id === 'app_schema:0080_retain_invocation_prompts')!;
+  promptMigration.before!(sql);
+  sql.exec(promptMigration.sql);
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0054_vocabulary_provider_retry_routing.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0061_vocabulary_sense_mapping_retries.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0065_vocabulary_dispatch_polling_indexes.sql',import.meta.url),'utf8'));
@@ -58,6 +63,16 @@ beforeEach(()=>{
     accessScope:'shared',availability:'active',originKind:'human',words:[{wordId:'a',relation:'target'}],answers:[{wordId:'a',acceptedForms:['字']}]},{kind:'operator',id:'editor'});
 });
 afterEach(()=>{sql.close();for(const [key,value]of Object.entries(env)){if(value===undefined)delete process.env[key];else process.env[key]=value;}});
+function assertCapturedPrompt(invocation: Record<string, unknown>, expected: string) {
+  assert.equal(invocation.prompt_blob_hash, invocation.prompt_hash);
+  assert.ok(invocation.request_prompt_refs_json);
+  assert.equal(JSON.parse(String(invocation.request_snapshot_json)).messages[0].content, '');
+  const evidence = readInvocationPromptEvidence(sql, String(invocation.id));
+  assert.equal(evidence.promptTemplate, expected);
+  const system = JSON.parse(evidence.requestJson!).messages[0];
+  assert.equal(system.role, 'system');
+  assert.equal(system.content, expected);
+}
 function pending(sessionId='session',two=false,contentId='one') {
   return alice(()=>{
     const started=new Date(clock-16_000).toISOString();
@@ -286,7 +301,7 @@ test('strict real injected provider retains service provenance and rejects forge
   const invocation=sql.prepare('SELECT * FROM model_invocations').get()!;assert.equal(invocation.actor_kind,'service');assert.equal(invocation.learner_id,null);
   assert.equal(invocation.prompt_name,'vocabulary-reflection-feedback');assert.equal(invocation.workflow_id,job.jobId);assert.ok(!JSON.stringify(invocation).includes('never-save-token'));
   assert.equal(invocation.prompt_version,'4');assert.equal(invocation.schema_version,'1');assert.equal(invocation.input_projection_version,'vocabulary-reflection.v3');
-  assert.equal(invocation.prompt_template,fs.readFileSync(new URL('../server/vocabulary/reflection-prompts/feedback.md',import.meta.url),'utf8'));
+  assertCapturedPrompt(invocation,fs.readFileSync(new URL('../server/vocabulary/reflection-prompts/feedback.md',import.meta.url),'utf8'));
   payload={diagnosis:'Claim',lesson:'Lesson',unfairEncounterIds:['invented']};await assert.rejects(()=>provider.run(job),/supplied rejected/);
   assert.equal(sql.prepare("SELECT count(*) n FROM model_invocations WHERE status='invalid_response'").get()!.n,1);
   const improve=claimVocabularyReflectionJob({kind:'exercise_improvement',now:new Date(clock).toISOString()})!;
@@ -297,7 +312,7 @@ test('strict real injected provider retains service provenance and rejects forge
   assert.ok(improvementInvocation,'Selected sense assessment must reach the active single-improvement call');
   assert.equal(improvementInvocation.actor_kind,'service');assert.equal(improvementInvocation.learner_id,null);assert.equal(improvementInvocation.workflow_id,improve.jobId);
   assert.equal(improvementInvocation.prompt_version,'7');assert.equal(improvementInvocation.schema_version,'5');assert.equal(improvementInvocation.input_projection_version,'vocabulary-exercise-authoring.v3');
-  assert.equal(improvementInvocation.prompt_template,`\n\n${fs.readFileSync(new URL('../server/vocabulary/reflection-prompts/single-improvement.md',import.meta.url),'utf8')}`);
+  assertCapturedPrompt(improvementInvocation,`\n\n${fs.readFileSync(new URL('../server/vocabulary/reflection-prompts/single-improvement.md',import.meta.url),'utf8')}`);
   assert.throws(()=>normalizeVocabularyReflectionOutput(improve,{...valid,operations:[{...valid.operations[0],acceptedAnswers:['invented']}]}),/answer criteria/);
   assert.throws(()=>normalizeVocabularyReflectionOutput(improve,{...valid,operations:[{...valid.operations[0],sourceContentId:'two'}]}),/source identities/);
   assert.throws(()=>normalizeVocabularyReflectionOutput(improve,{...valid,operations:[{...valid.operations[0],accessScope:'shared'}]}),/strict schema/);
@@ -315,7 +330,7 @@ test('strict real injected provider retains service provenance and rejects forge
   }
   const opinionInvocation=sql.prepare("SELECT * FROM model_invocations WHERE prompt_name='vocabulary-reflection-second-opinion'").get()!;
   assert.equal(opinionInvocation.workflow_id,improve.jobId);assert.equal(opinionInvocation.prompt_version,'3');
-  assert.equal(opinionInvocation.prompt_template,`${fs.readFileSync(new URL('../server/vocabulary/reflection-prompts/reasoning.md',import.meta.url),'utf8')}\n\n${fs.readFileSync(new URL('../server/vocabulary/reflection-prompts/second-opinion.md',import.meta.url),'utf8')}`);
+  assertCapturedPrompt(opinionInvocation,`${fs.readFileSync(new URL('../server/vocabulary/reflection-prompts/reasoning.md',import.meta.url),'utf8')}\n\n${fs.readFileSync(new URL('../server/vocabulary/reflection-prompts/second-opinion.md',import.meta.url),'utf8')}`);
   const noChangeJob:VocabularyReflectionJob={...improve,secondOpinion:{requestId:'no-change',proposal:null,notes:'Check the answer',diagnosis:'No correction needed'}};
   await provider.run(noChangeJob);
   const input=JSON.parse(lastRequest!.messages.find(item=>item.role==='user')!.content);

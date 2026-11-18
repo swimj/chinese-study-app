@@ -1,3 +1,4 @@
+import { readInvocationPromptEvidence } from '../server/db/invocation-prompt-archive.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -70,7 +71,11 @@ test('service invocation retains exact snapshots and real attribution without le
   const row = getDb().prepare('SELECT * FROM model_invocations WHERE id=?').get(id)!;
   assert.equal(row.learner_id, null); assert.equal(row.actor_kind, 'service'); assert.equal(row.actor_id, invocation.serviceId);
   assert.equal(row.requesting_learner_id, 'provenance-a'); assert.equal(row.attempt_number, 2);
-  assert.equal(row.prompt_template, 'Exact template'); assert.match(String(row.prompt_hash), /^[a-f0-9]{64}$/);
+  assert.equal(row.prompt_blob_hash, row.prompt_hash); assert.match(String(row.prompt_hash), /^[a-f0-9]{64}$/);
+  assert.ok(!JSON.stringify(row).includes('Exact template'));
+  assert.deepEqual(readInvocationPromptEvidence(getDb(), id), {
+    promptTemplate: 'Exact template', requestJson: JSON.stringify(invocation.provenance.requestSnapshot),
+  });
   assert.deepEqual(JSON.parse(String(row.request_snapshot_json)), invocation.provenance.requestSnapshot);
   assert.deepEqual(JSON.parse(String(row.response_snapshot_json)), response);
   assert.deepEqual(JSON.parse(String(row.usage_json)), response.usage);
@@ -81,6 +86,72 @@ test('service invocation retains exact snapshots and real attribution without le
   assert.ok(!JSON.stringify(listed).includes('Exact template'));
   assert.throws(() => recordServiceModelInvocationResponseSnapshot(id, invocation.serviceId, {}), /immutable/);
   invalidateServiceModelInvocation(id, invocation.serviceId); invalidateServiceModelInvocation(id, invocation.serviceId);
+});
+
+test('new invocation attempts keep reconstructable Unicode prompts and distinguish empty, hash-only and uncaptured inputs', () => {
+  const template = '词🀄';
+  const snapshot = { messages: [{ role: 'system', content: template + '\nwire appendix' }] };
+  const start = (provenance: Parameters<typeof startModelInvocation>[0]['provenance']) => {
+    const id = learner(() => startModelInvocation({ ...input, provenance }));
+    return getDb().prepare('SELECT * FROM model_invocations WHERE id=?').get(id)!;
+  };
+  const first = start({ promptTemplate: template, requestSnapshot: snapshot });
+  const retry = start({ promptTemplate: template, requestSnapshot: snapshot });
+  assert.notEqual(first.id, retry.id);
+  assert.equal(first.prompt_hash, retry.prompt_hash);
+  for (const row of [first, retry]) {
+    assert.equal(row.prompt_blob_hash, row.prompt_hash);
+    assert.ok(!JSON.stringify(row).includes(template));
+    assert.ok(row.request_prompt_refs_json);
+    assert.equal(JSON.parse(String(row.request_snapshot_json)).messages[0].content, '');
+    assert.deepEqual(readInvocationPromptEvidence(getDb(), String(row.id)), {
+      promptTemplate: template, requestJson: JSON.stringify(snapshot),
+    });
+  }
+  const emptyRequest = { messages: [{ role: 'system', content: '' }] };
+  const empty = start({ promptTemplate: '', requestSnapshot: emptyRequest });
+  assert.deepEqual(readInvocationPromptEvidence(getDb(), String(empty.id)), {
+    promptTemplate: '', requestJson: JSON.stringify(emptyRequest),
+  });
+  assert.match(String(empty.prompt_blob_hash), /^[0-9a-f]{64}$/);
+  const hashOnly = start({ promptHash: String(first.prompt_hash), requestSnapshot: snapshot });
+  assert.equal(hashOnly.prompt_hash, first.prompt_hash);
+  assert.equal(hashOnly.prompt_blob_hash, null);
+  assert.deepEqual(readInvocationPromptEvidence(getDb(), String(hashOnly.id)), { promptTemplate: null, requestJson: JSON.stringify(snapshot) });
+  const unknown = start({});
+  assert.equal(unknown.prompt_hash, null);
+  assert.equal(unknown.prompt_blob_hash, null);
+  assert.deepEqual(readInvocationPromptEvidence(getDb(), String(unknown.id)), { promptTemplate: null, requestJson: null });
+});
+
+test('hosted invocations reject unregistered authored instructions before inserting a ledger row', () => {
+  const oldTier = process.env.APP_DEPLOYMENT_TIER;
+  process.env.APP_DEPLOYMENT_TIER = 'release_candidate';
+  const count = () => getDb().prepare('SELECT count(*) n FROM model_invocations').get()!.n;
+  try {
+    const before = count();
+    const request = { input: [{ role: 'developer', content: 'unregistered private test prompt' }] };
+    assert.throws(() => learner(() => startModelInvocation({ ...input, provenance: { requestSnapshot: request } })), /unregistered/i);
+    assert.equal(count(), before);
+  } finally {
+    if (oldTier === undefined) delete process.env.APP_DEPLOYMENT_TIER;
+    else process.env.APP_DEPLOYMENT_TIER = oldTier;
+  }
+});
+
+test('another connection can recover local standalone prompt bytes and detects damaged archives', () => {
+  const text = 'standalone retention test 🀄';
+  const id = learner(() => startModelInvocation({ ...input, provenance: { promptTemplate: text } }));
+  const reopened = new DatabaseSync(path.join(directory, 'app.db'), { readOnly: true });
+  try {
+    assert.deepEqual(readInvocationPromptEvidence(reopened, id), { promptTemplate: text, requestJson: null });
+    const row = reopened.prepare('SELECT prompt_blob_hash FROM model_invocations WHERE id=?').get(id)!;
+    const file = path.join(directory, 'invocation-prompt-blobs', String(row.prompt_blob_hash) + '.txt');
+    assert.equal(fs.readFileSync(file, 'utf8'), text);
+    fs.writeFileSync(file, 'corrupted test bytes');
+    assert.throws(() => readInvocationPromptEvidence(reopened, id), /corrupt/i);
+    assert.throws(() => learner(() => startModelInvocation({ ...input, provenance: { promptTemplate: text } })), /conflict|corrupt/i);
+  } finally { reopened.close(); }
 });
 
 test('learner and service mutations reject missing or different ownership and preserve valid accounting', () => {
@@ -128,9 +199,11 @@ test('common transport automatically retains reconstructable inputs without cred
     provenance: { promptName: 'test', promptVersion: '2', workflowId: 'transport-job', stepName: 'generate' },
   }, { apiKey: 'credential-never-retained', baseUrl: null }));
   const row = getDb().prepare('SELECT * FROM model_invocations WHERE id=?').get(result.invocationId!)!;
-  assert.equal(row.prompt_template, 'Exact system prompt'); assert.equal(row.prompt_name, 'test');
+  assert.ok(!JSON.stringify(row).includes('Exact system prompt')); assert.equal(row.prompt_blob_hash, row.prompt_hash); assert.equal(row.prompt_name, 'test');
   assert.equal(row.prompt_version, '2'); assert.equal(row.workflow_id, 'transport-job');
-  const request = JSON.parse(String(row.request_snapshot_json));
+  const evidence = readInvocationPromptEvidence(getDb(), String(row.id));
+  assert.equal(evidence.promptTemplate, 'Exact system prompt');
+  const request = JSON.parse(evidence.requestJson!);
   assert.equal(request.messages[0].content, 'Exact system prompt');
   assert.equal(request.messages[1].content, '{"password":"authored lesson"}');
   assert.equal(JSON.parse(String(row.schema_json)).properties.password.type, 'string');

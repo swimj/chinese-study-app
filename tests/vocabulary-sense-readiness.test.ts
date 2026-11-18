@@ -1,3 +1,4 @@
+import { readInvocationPromptEvidence } from '../server/db/invocation-prompt-archive.ts';
 import { getVocabularyWordSenseCoverage,resolveVocabularySenseCoverage } from '../server/db/vocabulary-sense-coverage.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -99,7 +100,10 @@ test('lexical-only generation records exact invocation provenance and sense outp
   assert.deepEqual(JSON.parse(String(selectionHistory.snapshot_json)).reason,reason);
   assert.deepEqual(JSON.parse(String(selectionEvent.data_json)).reason,reason);
   assert.throws(()=>db.exec("UPDATE vocabulary_sense_coverage_history SET snapshot_json='{}'"),/immutable/);
-  assert.ok(invocation.prompt_template);assert.ok(invocation.request_snapshot_json);assert.ok(invocation.response_snapshot_json);
+  assert.ok(invocation.prompt_blob_hash);assert.ok(invocation.request_prompt_refs_json);
+  assert.equal(JSON.parse(String(invocation.request_snapshot_json)).messages[0].content,'');
+  assert.deepEqual(JSON.parse(readInvocationPromptEvidence(db,String(invocation.id)).requestJson!),sent);
+  assert.ok(invocation.request_snapshot_json);assert.ok(invocation.response_snapshot_json);
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM invocation_sense_links WHERE role='output'").get()!.n,2);
   assert.equal(sent.reasoning_effort,'high');
   const messages=sent.messages as Array<{content:string}>;assert.deepEqual(Object.keys(JSON.parse(messages[1]!.content)),['word']);
