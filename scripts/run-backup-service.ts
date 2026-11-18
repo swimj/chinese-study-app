@@ -2,7 +2,7 @@ import { createServer } from 'node:http';
 import { createReadStream } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 import path from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { configuredOffsite } from '../server/backups/offsite.ts';
 import { BackupReceiver } from '../server/backups/receiver.ts';
 import { authorized, backupId, jsonResponse, readBackupJson, requireBackupToken } from '../server/backups/http.ts';
 import type { BackupRequest } from '../server/backups/types.ts';
@@ -15,11 +15,14 @@ if (!sourceUrl || !sourceApp) throw new Error('Backup source URL and app are req
 const dataDir = process.env.APP_BACKUP_DIR ?? '/data/backups';
 const receiver = new BackupReceiver({ dataDir, sourceUrl, sourceToken });
 await receiver.initialize();
+const offsite = configuredOffsite(dataDir, sourceApp);
 let stopping = false;
 const server = createServer(async (request, response) => {
   if (!authorized(request, token)) { jsonResponse(response, 401, { error: 'unauthorized' }); return; }
   try {
-    if (request.method === 'GET' && request.url === '/status') { jsonResponse(response, 200, receiver.status()); return; }
+    if (request.method === 'GET' && request.url === '/status') {
+      jsonResponse(response, 200, { ...receiver.status(), ...(offsite && { offsite: offsite.status() }) }); return;
+    }
     if (request.method === 'POST' && request.url === '/backups') {
       if (stopping) { jsonResponse(response, 503, { error: 'stopping' }); return; }
       const value = await readBackupJson(request);
@@ -54,24 +57,30 @@ server.requestTimeout = 16 * 60_000;
 server.headersTimeout = 15_000;
 server.listen(Number(process.env.PORT ?? '9093'), '::');
 
-// Poll eligibility instead of an in-memory one-hour sleep: restarts catch up and
-// a failure retries in a minute; successful manual captures also satisfy freshness.
-const tick = async () => {
-  const status = receiver.status();
-  const latest = status.lastSuccessfulBackup;
-  if (stopping || status.busy || (latest && Date.now() - Date.parse(latest.startedAt) < 60 * 60_000)) return;
+// Poll independently so a slow or unavailable S3 destination cannot hold up a local capture.
+const localTick = async () => {
+  if (stopping || receiver.status().busy || !receiver.scheduledBackupDue()) return;
   try {
-    const receipt = await receiver.create({ id: `hourly-${randomUUID()}`, kind: 'hourly', expectedSourceApp: sourceApp });
+    const receipt = await receiver.createScheduled(sourceApp);
     console.log(JSON.stringify({ event: 'backup_completed', id: receipt.id, bytes: receipt.bytes, capturedAt: receipt.startedAt }));
   } catch { console.error(JSON.stringify({ event: 'backup_failed', at: new Date().toISOString() })); }
 };
-const timer = setInterval(() => void tick(), 60_000);
-void tick();
+const tick = () => {
+  void localTick();
+  if (offsite && !stopping) {
+    const status = receiver.status();
+    void offsite.poll(status.lastScheduledBackup ?? null, status.lastSuccessfulBackup);
+  }
+};
+const timer = setInterval(tick, 60_000);
+tick();
 const stop = async () => {
   if (stopping) return;
   stopping = true; clearInterval(timer);
+  const offsiteClosed = offsite?.close();
   await new Promise<void>(resolve => server.close(() => resolve()));
   while (receiver.status().busy) await new Promise(resolve => setTimeout(resolve, 100));
+  await offsiteClosed;
   await receiver.close();
 };
 process.on('SIGTERM', () => void stop());
