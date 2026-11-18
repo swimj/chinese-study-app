@@ -36,6 +36,21 @@ owns the final shared content and compatible destination. Integration preserves
 the nominated purpose and members without re-deciding its learning value or
 reconciling both words' repertoires.
 
+## Retain authored prompt sources
+
+Keep authored server prompt files in a directory named `prompts` or ending in
+`-prompts`. When revising an active prompt, retain the previous bytes in a
+versioned file under its `archive/` directory. Existing versioned files can
+also serve as the retained copy. Archive files can move between protected
+prompt directories as long as their exact contents survive.
+
+CI compares Git blob IDs in the base and candidate trees, including archived
+prompts and excluding directory `README.md` files. For a local comparison
+after committing, run `node scripts/check-prompt-retention.mjs origin/main HEAD`.
+This check protects authored source files. The model invocation record supplies
+the hash and request evidence for the system message assembled for a particular
+call, which can combine multiple sources.
+
 ## Adapt the contract explicitly
 
 Map the old inputs, outputs, responsibilities, and examples to the new call.
