@@ -47,7 +47,11 @@ prompt directories as long as their exact contents survive.
 CI compares Git blob IDs in the base and candidate trees, including archived
 prompts and excluding directory `README.md` files. For a local comparison
 after committing, run `node scripts/check-prompt-retention.mjs origin/main HEAD`.
-This check protects authored source files. The model invocation record supplies
+To enforce this check before merging, require the GitHub Actions status
+`Prompt source retention` on the target branch. With an optional status, a
+failed check reports the missing version and a merge can still proceed.
+
+The model invocation record supplies
 the hash and request evidence for the system message assembled for a particular
 call, which can combine multiple sources.
 

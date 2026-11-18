@@ -5,7 +5,8 @@ on:
   pull_request:
 
 jobs:
-  test:
+  prompt-retention:
+    name: Prompt source retention
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,6 +23,11 @@ jobs:
             git fetch --no-tags origin "$BASE"
           fi
           node scripts/check-prompt-retention.mjs "$BASE" HEAD
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
