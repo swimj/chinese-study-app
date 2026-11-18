@@ -63,7 +63,7 @@ test('recent lapses and dates use closed effective responses, excluding undone m
       {protocolVersion:1,actionId:id+'-r',clientActionId:'r',sequence:2,occurredAt:today,kind:'response',payload:{encounterId:id,response:null,outcome:'rejected'}}];
     if(undo)actions.push({protocolVersion:1,actionId:id+'-u',clientActionId:'u',sequence:3,occurredAt:today,kind:'undo',payload:{undoesActionId:id+'-r'}});
     const report=projectVocabularySession(context,actions);
-    getDb().prepare(`INSERT INTO vocabulary_sessions(session_id,learner_id,protocol_version,context_json,started_at,closed_at,status) VALUES (?,'test-learner',1,?, ?,?,'closed')`).run(id,JSON.stringify(context),today,today);
+    getDb().prepare(`INSERT INTO vocabulary_sessions(session_id,learner_id,protocol_version,context_json,started_at,closed_at,status) VALUES (?,'test-learner',1,?, ?,?,'closed')`).run(id,JSON.stringify({...context, closedHistory: {version: 1}}),today,today);
     getDb().prepare(`INSERT INTO vocabulary_session_completions(completion_id,learner_id,session_id,revision_number,through_sequence,staged_at,close_at,status,input_json,report_json,policy_version,closed_at)
       VALUES (?,'test-learner',?,1,?,?,?,'closed','{}',?,'test',?)`).run(id,id,actions.length,today,today,JSON.stringify(report),today);
   }
@@ -89,7 +89,7 @@ test('legacy learning lapses expire and newer clean vocabulary coverage supersed
   const actions:VocabularySessionAction[]=[{protocolVersion:1,actionId:'clean-p',clientActionId:'p',sequence:1,occurredAt:today,kind:'presentation',payload:{encounterId:'clean',wordId:'new-clean',snapshot:{contentId:'clean',contentVersion:1,kind:'production',role:'general',body:{prompt:'x'},assessment:{acceptedAnswers:['x']}}}},
     {protocolVersion:1,actionId:'clean-r',clientActionId:'r',sequence:2,occurredAt:today,kind:'response',payload:{encounterId:'clean',response:'x',outcome:'accepted'}}];
   const report=projectVocabularySession(context,actions);
-  getDb().prepare(`INSERT INTO vocabulary_sessions(session_id,learner_id,protocol_version,context_json,started_at,closed_at,status) VALUES ('new-clean','test-learner',1,?, ?,?,'closed')`).run(JSON.stringify(context),today,today);
+  getDb().prepare(`INSERT INTO vocabulary_sessions(session_id,learner_id,protocol_version,context_json,started_at,closed_at,status) VALUES ('new-clean','test-learner',1,?, ?,?,'closed')`).run(JSON.stringify({...context, closedHistory: {version: 1}}),today,today);
   getDb().prepare(`INSERT INTO vocabulary_session_completions(completion_id,learner_id,session_id,revision_number,through_sequence,staged_at,close_at,status,input_json,report_json,policy_version,closed_at)
     VALUES ('new-clean','test-learner','new-clean',1,2,?,?,'closed','{}',?,'test',?)`).run(today,today,JSON.stringify(report),today);
   assert.equal(getVocabularyWordsCollection({query:'new-clean',recentLapses:true}).total,0);

@@ -97,7 +97,7 @@ function apply(state = resolved()): SenseContentReconciliationWorkspace {
 function addRelatedReflectionJob(status: 'failed' | 'queued' | 'running', reviewState: 'open' | 'resolved'): void {
   const at = '2026-11-07T00:00:00.000Z';
   db.prepare(`INSERT INTO vocabulary_sessions(session_id,learner_id,protocol_version,context_json,started_at,status)
-    VALUES ('session','learner',1,'{}',?,'closed')`).run(at);
+    VALUES ('session','learner',1,'{"closedHistory":{"version":1}}',?,'closed')`).run(at);
   db.prepare(`INSERT INTO vocabulary_session_completions(completion_id,learner_id,session_id,revision_number,through_sequence,staged_at,close_at,status,input_json,report_json,policy_version,closed_at)
     VALUES ('completion','learner','session',1,0,?,?,'closed','{}','{}','fixture',?)`).run(at,at,at);
   db.prepare(`INSERT INTO vocabulary_reflection_session_evidence(completion_id,learner_id,session_id,projection_json,created_at)
