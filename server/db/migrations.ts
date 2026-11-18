@@ -1,3 +1,4 @@
+import { stageInvocationPromptReferences } from './invocation-prompt-archive.ts';
 import { backfillVocabularyCaseReviews } from './vocabulary-case-review-migration.ts';
 import { assertVocabularyCutoverReady } from './vocabulary-cutover.ts';
 import { createHash } from 'node:crypto';
@@ -276,14 +277,7 @@ export const schemaMigrations: readonly SchemaMigration[] = [{
 }, {
   id: 'app_schema:0080_retain_invocation_prompts',
   sql: fs.readFileSync(new URL('./migrations/0080_retain_invocation_prompts.sql', import.meta.url), 'utf8'),
-  before(db) {
-    for (const row of db.prepare(`SELECT DISTINCT prompt_hash,CAST(prompt_template AS BLOB) AS template_bytes FROM model_invocations
-      WHERE prompt_hash IS NOT NULL AND prompt_template IS NOT NULL`).iterate()) {
-      if (!(row.template_bytes instanceof Uint8Array) || createHash('sha256').update(row.template_bytes).digest('hex') !== row.prompt_hash) {
-        throw new Error('Stored invocation prompt hash does not match its template');
-      }
-    }
-  },
+  before: stageInvocationPromptReferences,
 }];
 
 function checksum(value: string): string {

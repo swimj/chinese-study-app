@@ -852,17 +852,19 @@ backup and its matching application image.
 
 ## Invocation prompt retention rehearsal (0080)
 
-Use a stopped-writer release and an existing verified backup. The migration
-checks recorded hashes against historical templates, scans invocation requests,
-and updates rows whose first system message contains the exact template prefix.
-Allow space for the WAL. The ordinary SQLite backup contains the full evidence
-needed to recover each invocation's captured prompt.
+Use the stopped-writer release route and an existing verified backup. The
+migration verifies historical template hashes and replaces authored instructions
+in captured requests with references to the Git archive. This includes Responses
+chat calls that saved the system message without a separate template. Hosted
+migration fails on unknown instructions. Resolve the missing reviewed archive
+entry before retrying. Allow scratch space for staged per-call inputs and the WAL.
 
-Before migration, hash the nullable prompt and all other columns keyed by
-invocation ID. After migration, compare each original with the reconstructed
-value from `model_invocation_prompts`, including empty, uncaptured, and
-standalone templates. Compare the complete remaining records, run integrity
-and foreign-key checks, and measure occupied pages and independently compacted
-before/after copies. Exercise a new call with a schema suffix and a custom
-request, then verify that spending and completion updates preserve the captured
-prompt. Rollback uses the pre-upgrade backup and matching application image.
+Before migration, retain per-ID digests for the nullable template, the complete
+request and every other invocation field. After migration, supply an independent
+checkout of the Git prompt archive to the offline reader and compare all three.
+Verify that user input survives and reusable instructions have disappeared from
+the invocation records. Exercise new provider requests, including the adapter
+that appends a schema, a Responses chat request, a rejected uncatalogued prompt,
+and normal spend and completion updates. Measure occupied pages, compacted file
+size, elapsed time, and run SQLite integrity and foreign-key checks. Rollback
+uses the pre-upgrade backup and matching application image.
