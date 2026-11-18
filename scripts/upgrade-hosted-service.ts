@@ -5,7 +5,7 @@ import {
   runHostedUpgrade,
 } from './lib/hosted-upgrade.ts';
 
-const args = readStrictArguments(['app', 'actor-id', 'confirm-source-revision', 'confirm-eligible-release', 'image']);
+const args = readStrictArguments(['app', 'actor-id', 'confirm-source-revision', 'confirm-eligible-release', 'use-scheduled-backup', 'image']);
 const repoRoot = process.cwd();
 const result = await runHostedUpgrade({
   repoRoot,
@@ -13,6 +13,7 @@ const result = await runHostedUpgrade({
   actorId: requireArgument(args, 'actor-id'),
   confirmSourceRevision: requireArgument(args, 'confirm-source-revision'),
   confirmEligibleRelease: readBooleanArgument(args, 'confirm-eligible-release'),
+  useScheduledBackup: args.has('use-scheduled-backup') && readBooleanArgument(args, 'use-scheduled-backup'),
   image: args.get('image'),
   flyConfigPath: path.join('deploy/fly/.generated/fly.toml'),
 }, createDefaultHostedUpgradeDeps(repoRoot));

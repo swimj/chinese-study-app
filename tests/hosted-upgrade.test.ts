@@ -121,6 +121,31 @@ describe('hosted upgrade pipeline', () => {
     assert.equal(JSON.stringify(result).includes('secret-bucket'), false);
   });
 
+  test('uses the scheduled receipt and rechecks it before reopening without requesting a capture', async () => {
+    const harness = createHarness();
+    const result = await runHostedUpgrade({ ...harness.input, useScheduledBackup: true }, harness.deps);
+    assert.equal(result.status, 'ok', result.failure ?? '');
+    assert.deepEqual(harness.mutations, [
+      'provider-work:false', 'maintenance:true', 'deploy', 'maintenance:false', 'provider-work:true', 'banner:clear',
+    ]);
+    const receipt = result.stages.find(stage => stage.stage === 'backup-sync')?.detail as Record<string, unknown>;
+    assert.equal(receipt.id, 'scheduled-test');
+    assert.equal(harness.commands.filter(command => command.args.some(arg => arg.includes('--action=status'))).length, 2);
+  });
+
+  for (const scheduledFailure of ['missing', 'wrong-app', 'stale', 'stale-at-reopen'] as const) {
+    test(`a ${scheduledFailure} scheduled backup keeps writes closed`, async () => {
+      const harness = createHarness({ scheduledFailure });
+      const result = await runHostedUpgrade({ ...harness.input, useScheduledBackup: true }, harness.deps);
+      const reachedDeploy = scheduledFailure === 'stale-at-reopen';
+      assert.equal(result.failedStage, reachedDeploy ? 'reopen' : 'backup-sync');
+      assert.equal(result.reopened, false);
+      assert.deepEqual(harness.mutations, [
+        'provider-work:false', 'maintenance:true', ...(reachedDeploy ? ['deploy'] : []),
+      ]);
+    });
+  }
+
   for (const backupFailure of ['timeout', 'wrong-revision', 'malformed'] as const) {
     test(`a ${backupFailure} pre-release capture prevents deployment and leaves controls closed`, async () => {
       const harness = createHarness({ backupFailure });
@@ -219,6 +244,7 @@ function createHarness(options: {
   smokeStatus?: 'ok' | 'failed';
   postDeployRevision?: string;
   imageDigest?: string;
+  scheduledFailure?: 'missing' | 'wrong-app' | 'stale' | 'stale-at-reopen';
   backupFailure?: 'timeout' | 'wrong-revision' | 'malformed';
 } = {}) {
   const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'hosted-upgrade-repo-'));
@@ -330,6 +356,17 @@ function createHarness(options: {
       return { stdout: JSON.stringify({ status: 'noop' }), stderr: '' };
     }
     if (command.includes('scripts/manage-hosted-backup.ts')) {
+      if (command.includes('--action=status')) {
+        const stale = options.scheduledFailure === 'stale' || (deployed && options.scheduledFailure === 'stale-at-reopen');
+        const captured = new Date(nowMs - (stale ? 7 : 5) * 3_600_000).toISOString();
+        const lastScheduledBackup = options.scheduledFailure === 'missing' ? null : {
+          version: 1, id: 'scheduled-test', kind: 'hourly', captureOrigin: 'scheduled',
+          sourceRevision: 'c'.repeat(40), sourceApp: options.scheduledFailure === 'wrong-app' ? 'another-app' : APP,
+          startedAt: captured, completedAt: captured, receivedAt: captured,
+          bytes: 4096, sha256: 'a'.repeat(64), fileName: 'scheduled-test.sqlite',
+        };
+        return { stdout: JSON.stringify({ lastScheduledBackup }), stderr: '' };
+      }
       mutations.push('backup');
       if (options.backupFailure === 'timeout') throw new Error('capture timed out');
       const option = (name: string) => command.match(new RegExp(`--${name}=([^ ]+)`))?.[1]?.replaceAll("'", '');

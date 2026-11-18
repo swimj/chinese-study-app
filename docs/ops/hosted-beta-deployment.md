@@ -16,9 +16,8 @@ application-only beta release, promote the exact tested image by digest.
 
 The service is one 1 GB Fly Machine in `sin`, one encrypted Fly Volume at
 `/data` and Clerk authentication. The [backup service](hosted-backups.md) keeps
-hourly standalone SQLite copies on an independent Fly Machine and volume.
-Its transition procedure retains Litestream until backup and isolated restore
-proof succeeds; repository implementation is not evidence of production cutover. The application container serves both the API and the
+scheduled six-hour SQLite copies on a separate Fly Machine and volume, with
+an independent S3 archive. The application container serves both the API and the
 built frontend. Initial bring-up, disposable fixture learners, and the dogfood
 cutover are complete; those recipes remain in git history if they must be
 re-read.
@@ -100,12 +99,18 @@ Use this path only when the target release has **all** of these properties:
 If any condition is false, stop. Do not stretch this pipeline with an ad-hoc
 exception.
 
-The command is operator-launched from a clean checkout of the intended commit.
-It validates the release arguments, quiesces the service, and obtains a verified
-pre-switchover release backup of the outgoing revision before deploying. Writes
-stay closed through identity confirmation and read-only smoke. Once both checks
-pass, the command reopens writes, then provider work. Its terminal JSON includes
-the backup receipt and stage results.
+Prefer a shorter interruption for low-risk releases. Add
+`--use-scheduled-backup=true` to rely on the latest verified six-hour Fly
+capture. Weigh how the changes could affect stored learner data and how much
+activity a restore from that capture would lose. When a recovery point taken
+after writes stop would give useful confidence, allow the extra time for the
+default pre-switchover backup. Ask Justin if the tradeoff is unclear.
+
+Run the command from a clean checkout of the intended commit. It quiesces the
+service, obtains the chosen backup receipt, deploys, confirms the running
+identity, and runs read-only smoke before reopening writes and provider work.
+With the scheduled option, it checks Fly backup freshness before deploying and
+again before reopening. The terminal JSON includes the receipt and stage results.
 
 ### Smoke account
 
@@ -550,8 +555,11 @@ or migration changes. Preserve the receipt, image identity, and validation resul
 - If scheduled Fly backup freshness is unknown or exceeds 6h15m, stop writes and
   repair local backups. An S3 freshness failure needs separate investigation on
   the receiver. The [backup runbook](hosted-backups.md) describes both checks.
-- If a migration or smoke test fails before writes reopen, restore the recorded
-  pre-release recovery point with the matching old image.
+- If an app-only release fails smoke, keep writes closed while assessing forward
+  repair or restarting the previous compatible image on the existing volume.
+  Restoring a scheduled copy can discard learner activity from before the upgrade.
+- If a migration fails, follow the [offline recovery procedure](schema-migrations.md)
+  using the recorded pre-release recovery point and matching old image.
 - After writes reopen, do not roll back blindly: a restore can discard accepted
   learner activity. Keep maintenance on and choose explicit forward repair or
   an acknowledged recovery point.

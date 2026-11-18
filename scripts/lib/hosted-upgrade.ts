@@ -6,6 +6,7 @@ import { HOSTED_SMOKE_ENDPOINT } from './hosted-smoke.ts';
 import { isRecord, parseJsonValue, sanitizeHostedOutput } from './hosted-json.ts';
 import { randomUUID } from 'node:crypto';
 import { parseBackupReceipt } from '../../server/backups/client.ts';
+import { SCHEDULE_MAX_AGE_SECONDS } from '../../server/backups/schedule.ts';
 
 const execFileAsync = promisify(execFile);
 
@@ -119,6 +120,7 @@ export type HostedUpgradeInput = {
   actorId: string;
   confirmSourceRevision: string;
   confirmEligibleRelease: boolean;
+  useScheduledBackup?: boolean;
   image?: string;
   flyConfigPath?: string;
 };
@@ -233,8 +235,12 @@ export async function runHostedUpgrade(
     currentStage = 'backup-sync';
     const oldIdentity = isRecord(inspectBefore.releaseIdentity) ? inspectBefore.releaseIdentity : inspectBefore;
     const outgoingRevision = requireFullGitSha(String(oldIdentity.sourceRevision));
-    const releaseId = `release-${sourceRevision.slice(0, 12)}-${randomUUID()}`;
-    recordStage('backup-sync', 'ok', await captureReleaseBackup(app, deps, outgoingRevision, releaseId));
+    if (input.useScheduledBackup) {
+      recordStage('backup-sync', 'ok', await readScheduledBackup(app, deps));
+    } else {
+      const releaseId = `release-${sourceRevision.slice(0, 12)}-${randomUUID()}`;
+      recordStage('backup-sync', 'ok', await captureReleaseBackup(app, deps, outgoingRevision, releaseId));
+    }
 
     currentStage = 'build-deploy';
     const deployArgs = [
@@ -308,6 +314,7 @@ export async function runHostedUpgrade(
     });
 
     currentStage = 'reopen';
+    if (input.useScheduledBackup) await readScheduledBackup(app, deps);
     await setHostedControl(app, actorId, 'maintenance', false, deps);
     await setHostedControl(app, actorId, 'provider-work', true, deps);
     const bannerClear = await clearHostedBanner(app, actorId, deps);
@@ -323,6 +330,18 @@ export async function runHostedUpgrade(
     recordStage(currentStage, 'failed', { failure });
     return finish('failed', failure, currentStage);
   }
+}
+
+async function readScheduledBackup(app: string, deps: HostedUpgradeDeps) {
+  const status = parseHostedCommandJson(await ssh(app, 'node --import tsx scripts/manage-hosted-backup.ts --action=status', deps, 60_000));
+  if (!isRecord(status) || !status.lastScheduledBackup) throw new Error('No verified scheduled Fly backup is available.');
+  const receipt = parseBackupReceipt(status.lastScheduledBackup);
+  const ageMs = deps.now().getTime() - Date.parse(receipt.startedAt);
+  if (receipt.kind !== 'hourly' || receipt.captureOrigin === 'manual' || receipt.sourceApp !== app
+    || ageMs < 0 || ageMs > SCHEDULE_MAX_AGE_SECONDS * 1000) {
+    throw new Error('Scheduled Fly backup must be fresh and belong to the target app.');
+  }
+  return receipt;
 }
 
 async function captureReleaseBackup(app: string, deps: HostedUpgradeDeps, revision: string, releaseId: string) {
