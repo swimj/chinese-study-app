@@ -21,10 +21,10 @@ create Machine/volume → select source backup → restore → prechecks → mig
                                               save evidence → destroy both resources
 ```
 
-Every schema or data migration uses this path. An app-only release uses it when
-changed behavior warrants realistic-data validation. The release agent can add
-checks in conversation with Justin as understanding develops; there is no fixed
-exhaustive rehearsal suite. Run CPU-heavy checks here before entering production
+Every schema or data migration uses this path. For other releases, choose it
+when a bounded check on restored data can answer a release question. The
+[upgrade guidance](hosted-beta-deployment.md#planning-an-upgrade) gives examples
+of database-state and performance checks. Run CPU-heavy checks here before entering production
 maintenance, and reserve production for its real migration, built-in integrity
 checks, and essential live assertions and smoke.
 

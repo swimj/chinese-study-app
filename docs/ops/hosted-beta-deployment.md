@@ -89,15 +89,27 @@ or writing its completion with the existing schema. For changes outside
 persistence, a verified scheduled Fly copy can shorten downtime if the learner
 activity since that capture is an acceptable loss in a restore.
 
-**Choose validation that can expose the failure.** Do this before production
-maintenance, while learners can still use the service.
+**Decide what rehearsal can establish.** Rehearse every schema or data migration
+on a restored copy. For other changes, use rehearsal when a bounded check on
+realistic data or a hosted candidate can inform the decision to deploy. Pick
+an observable outcome and what would count as a pass.
 
-| What could go wrong? | How to check it |
-| --- | --- |
-| A migration drops history or takes longer than the maintenance window. | Rehearse every schema or data migration on a restored copy. For a large rewrite, time it and check the affected records afterward, for example that historical sessions still reopen with their original answers. |
-| A change to database logic fails only after a particular sequence of actions. | Exercise that sequence in a focused behavior test. Add a headless rehearsal check when real data supplies something the test lacks, such as historical records in an older shape. Starting the candidate or passing smoke alone would miss the sequence. |
-| A significant UI change makes a learner flow hard to use. | Open the candidate in the authenticated browser RC. Try the affected flow with representative data and inspect the layout, controls, and interactions where they changed. |
-| A small copy or styling edit could display incorrectly. | Inspect the affected screen in a local preview when that answers the question. |
+- **Database state.** If a migration rewrites session history, compare the
+  saved answers and their session associations before and after the migration.
+  Every answer should still belong to the same learner and session.
+- **Performance.** For a large rewrite, measure whether it finishes within
+  the planned maintenance window. For a query change where data volume is the
+  concern, timing a representative large session load can answer a similar
+  question if the release has a meaningful latency budget.
+- **UI.** For a significant layout change, open the affected screen in the
+  authenticated browser RC and check that a learner can see and use the
+  primary controls at the intended screen size. A local preview can answer
+  the same question for a small styling edit.
+
+Investigate sequence-dependent bugs during development. Replaying one known
+sequence during an upgrade says little about neighboring cases, and exploring
+many sequences delays deployment for little additional confidence. A database logic change can
+therefore warrant a fresh backup even when rehearsal adds little confidence.
 
 The [headless rehearsal](hosted-release-candidate.md#ephemeral-rehearsal) runs
 scripts on a disposable Fly Machine with a restored database. The
