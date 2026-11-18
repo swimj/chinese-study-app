@@ -307,7 +307,7 @@ export function stageVocabularySessionCompletion(sessionId: string, throughSeque
     const closeAt = new Date(Date.parse(now) + SESSION_COMPLETION_UNDO_MS).toISOString();
     getDb().prepare(`INSERT INTO vocabulary_session_completions(completion_id,learner_id,session_id,revision_number,through_sequence,staged_at,close_at,status,input_json,report_json,policy_version)
       VALUES (?,?,?,?,?,?,?,'pending',?,?,?)`).run(completionId, row.learner_id, sessionId, revision, throughSequence, now, closeAt,
-        JSON.stringify({ actions, activeDurationMs }), JSON.stringify(report), VOCABULARY_SESSION_POLICY.version);
+        JSON.stringify({ activeDurationMs }), JSON.stringify(report), VOCABULARY_SESSION_POLICY.version);
     getDb().prepare("UPDATE vocabulary_sessions SET status = 'finalizing' WHERE session_id = ?").run(sessionId);
     return completionDto(completionRow(sessionId, completionId)!, now);
   });
@@ -488,10 +488,14 @@ export function closeVocabularySessionCompletion(sessionId: string, completionId
       if (fresh.status === 'closed') return completionDto(fresh, now);
       if (fresh.status === 'cancelled') throw new VocabularySessionConflictError('Completion was cancelled');
       const context = JSON.parse(session.context_json) as StoredContext;
-      const input = JSON.parse(fresh.input_json) as { actions: VocabularySessionAction[]; activeDurationMs?: number | null };
-      const projection = projectVocabularySession(context, input.actions, { throughSequence: previous.through_sequence });
+      const journal = getDb().prepare(`SELECT actions_json FROM vocabulary_completion_action_lists
+        WHERE completion_id=? AND learner_id=? AND session_id=?`).get(fresh.completion_id, fresh.learner_id, sessionId);
+      if (!journal) throw new Error('Missing action list for vocabulary completion');
+      const actions = JSON.parse(String(journal.actions_json)) as VocabularySessionAction[];
+      const input = JSON.parse(fresh.input_json) as { activeDurationMs?: number | null };
+      const projection = projectVocabularySession(context, actions, { throughSequence: fresh.through_sequence });
       applyLearningEffects(previous.completion_id, context, projection, now);
-      finalizeTimedSession({ context, actions: input.actions, projection, activeDurationMs: input.activeDurationMs ?? null, now });
+      finalizeTimedSession({ context, actions, projection, activeDurationMs: input.activeDurationMs ?? null, now });
       getDb().prepare("UPDATE vocabulary_session_completions SET status = 'closed',closed_at = ?,report_json = ?,last_error = NULL WHERE completion_id = ?")
         .run(now, JSON.stringify(projection), previous.completion_id);
       getDb().prepare("UPDATE vocabulary_sessions SET status = 'closed',closed_at = ?,context_json = ? WHERE session_id = ? AND learner_id = ?")

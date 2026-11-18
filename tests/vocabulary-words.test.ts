@@ -54,6 +54,12 @@ test('deck uses existing lexical membership and includes unenrolled words withou
   assert.equal(getDb().prepare("SELECT count(*) AS n FROM learner_words WHERE word_id='deck-only'").get()?.n,0);
 });
 
+function saveSessionActions(sessionId: string, actions: VocabularySessionAction[]) {
+  const insert = getDb().prepare(`INSERT INTO session_actions(action_id,learner_id,session_id,sequence_number,client_action_id,kind,action_json,occurred_at,recorded_at)
+    VALUES (?,'test-learner',?,?,?,?,?,?,?)`);
+  for (const action of actions) insert.run(action.actionId,sessionId,action.sequence,action.clientActionId,action.kind,JSON.stringify(action),action.occurredAt,action.occurredAt);
+}
+
 test('recent lapses and dates use closed effective responses, excluding undone misses and independent cues',()=>{
   const today=new Date().toISOString();
   for(const id of ['lapse','undone','independent'])insert(id,'practice');
@@ -64,6 +70,7 @@ test('recent lapses and dates use closed effective responses, excluding undone m
     if(undo)actions.push({protocolVersion:1,actionId:id+'-u',clientActionId:'u',sequence:3,occurredAt:today,kind:'undo',payload:{undoesActionId:id+'-r'}});
     const report=projectVocabularySession(context,actions);
     getDb().prepare(`INSERT INTO vocabulary_sessions(session_id,learner_id,protocol_version,context_json,started_at,closed_at,status) VALUES (?,'test-learner',1,?, ?,?,'closed')`).run(id,JSON.stringify({...context, closedHistory: {version: 1}}),today,today);
+    saveSessionActions(id,actions);
     getDb().prepare(`INSERT INTO vocabulary_session_completions(completion_id,learner_id,session_id,revision_number,through_sequence,staged_at,close_at,status,input_json,report_json,policy_version,closed_at)
       VALUES (?,'test-learner',?,1,?,?,?,'closed','{}',?,'test',?)`).run(id,id,actions.length,today,today,JSON.stringify(report),today);
   }
@@ -90,6 +97,7 @@ test('legacy learning lapses expire and newer clean vocabulary coverage supersed
     {protocolVersion:1,actionId:'clean-r',clientActionId:'r',sequence:2,occurredAt:today,kind:'response',payload:{encounterId:'clean',response:'x',outcome:'accepted'}}];
   const report=projectVocabularySession(context,actions);
   getDb().prepare(`INSERT INTO vocabulary_sessions(session_id,learner_id,protocol_version,context_json,started_at,closed_at,status) VALUES ('new-clean','test-learner',1,?, ?,?,'closed')`).run(JSON.stringify({...context, closedHistory: {version: 1}}),today,today);
+  saveSessionActions('new-clean',actions);
   getDb().prepare(`INSERT INTO vocabulary_session_completions(completion_id,learner_id,session_id,revision_number,through_sequence,staged_at,close_at,status,input_json,report_json,policy_version,closed_at)
     VALUES ('new-clean','test-learner','new-clean',1,2,?,?,'closed','{}',?,'test',?)`).run(today,today,JSON.stringify(report),today);
   assert.equal(getVocabularyWordsCollection({query:'new-clean',recentLapses:true}).total,0);
