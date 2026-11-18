@@ -99,12 +99,19 @@ Use this path only when the target release has **all** of these properties:
 If any condition is false, stop. Do not stretch this pipeline with an ad-hoc
 exception.
 
-Prefer a shorter interruption for low-risk releases. Add
-`--use-scheduled-backup=true` to rely on the latest verified six-hour Fly
-capture. Weigh how the changes could affect stored learner data and how much
-activity a restore from that capture would lose. When a recovery point taken
-after writes stop would give useful confidence, allow the extra time for the
-default pre-switchover backup. Ask Justin if the tradeoff is unclear.
+For eligible app-only releases, choose rehearsal and backup independently.
+Rehearsal tests the candidate on realistic data while production serves.
+The backup choice determines how much learner activity a database restore could discard.
+
+| | Use the latest verified scheduled Fly backup (`--use-scheduled-backup=true`) | Take a fresh backup after writes stop (default) |
+| --- | --- | --- |
+| **Skip rehearsal** | A straightforward change, such as a copy edit, warrants a short interruption. | Behavior is well understood, but recent learner activity is worth protecting. |
+| **Rehearse** | Realistic data will help verify the change, and the scheduled recovery point is acceptable. | Realistic testing and a recovery point immediately before deployment are both worthwhile. |
+
+Favor faster upgrades when risk is low. Spend the extra time when it buys
+confidence, or ask Justin if the tradeoff is unclear. Schema and data migrations
+require both rehearsal and a fresh pre-release backup under the
+[offline migration procedure](schema-migrations.md).
 
 Run the command from a clean checkout of the intended commit. It quiesces the
 service, obtains the chosen backup receipt, deploys, confirms the running
