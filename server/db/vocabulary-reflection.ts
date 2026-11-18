@@ -113,14 +113,17 @@ function createCase(learnerId: string, completionId: string, kind: VocabularyRef
   return id;
 }
 /** Trusted service ingestion after closure. It never relies on current learner context. */
-export function ingestVocabularySessionEvidence(learnerId: string, completionId: string, projection: VocabularySessionProjection, recordedAt = timestamp()): string[] {
+export function ingestVocabularySessionEvidence(learnerId: string, completionId: string, suppliedProjection?: VocabularySessionProjection, recordedAt = timestamp()): string[] {
   return atomic(() => {
     const db = getDb();
     const completion = db.prepare(`SELECT session_id,through_sequence,status,report_json FROM vocabulary_session_completions
       WHERE completion_id=? AND learner_id=?`).get(completionId,learnerId) as { session_id: string; through_sequence: number; status: string; report_json: string } | undefined;
-    if (!completion || completion.status !== 'closed' || completion.session_id !== projection.sessionId
-      || completion.through_sequence !== projection.throughSequence || completion.report_json !== encode(projection)) throw new Error('Reflection requires the exact closed completion boundary');
-    const encoded = encode(projection), previous = db.prepare('SELECT projection_json FROM vocabulary_reflection_session_evidence WHERE completion_id=?')
+    if (!completion || completion.status !== 'closed'
+      || (suppliedProjection && completion.report_json !== encode(suppliedProjection))) throw new Error('Reflection requires the exact closed completion boundary');
+    const encoded = completion.report_json;
+    const projection: VocabularySessionProjection = suppliedProjection ?? JSON.parse(encoded);
+    if (completion.session_id !== projection.sessionId || completion.through_sequence !== projection.throughSequence) throw new Error('Reflection requires the exact closed completion boundary');
+    const previous = db.prepare('SELECT projection_json FROM vocabulary_reflection_session_evidence WHERE completion_id=?')
       .get(completionId) as { projection_json: string } | undefined;
     if (previous) {
       if (previous.projection_json !== encoded) throw new VocabularyReflectionConflict('Completion evidence is immutable');

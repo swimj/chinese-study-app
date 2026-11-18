@@ -481,12 +481,11 @@ export function closeVocabularySessionCompletion(sessionId: string, completionId
       const projection = projectVocabularySession(context, input.actions, { throughSequence: previous.through_sequence });
       applyLearningEffects(previous.completion_id, context, projection, now);
       finalizeTimedSession({ context, actions: input.actions, projection, activeDurationMs: input.activeDurationMs ?? null, now });
-      getDb().prepare(`INSERT INTO vocabulary_post_session_dispatches(dispatch_id,learner_id,session_id,completion_id,evidence_json,status,created_at)
-        VALUES (?,?,?,?,?,'queued',?)`).run(randomUUID(), requireLearnerId(), sessionId, previous.completion_id,
-          JSON.stringify({ actions: input.actions, projection }), now);
       getDb().prepare("UPDATE vocabulary_sessions SET status = 'closed',closed_at = ? WHERE session_id = ?").run(now, sessionId);
       getDb().prepare("UPDATE vocabulary_session_completions SET status = 'closed',closed_at = ?,report_json = ?,last_error = NULL WHERE completion_id = ?")
         .run(now, JSON.stringify(projection), previous.completion_id);
+      getDb().prepare(`INSERT INTO vocabulary_post_session_dispatches(dispatch_id,learner_id,session_id,completion_id,status,created_at)
+        VALUES (?,?,?,?,'queued',?)`).run(randomUUID(), requireLearnerId(), sessionId, previous.completion_id, now);
       enqueueVocabularyConnections(sessionId, previous.completion_id, projection, now);
       requestWordReserveReconciliation(now);
       // General practice is future-session work. Admission or an in-flight teaching

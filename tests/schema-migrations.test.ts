@@ -756,3 +756,57 @@ test('0080 rolls back without discarding prompt evidence when a captured templat
     assert.equal(db.prepare('SELECT 1 FROM schema_migrations WHERE migration_id=?').get(promptMigrationId), undefined);
   } finally { db.close(); }
 });
+
+test('0081 verifies each dispatch against its closed revision before removing the envelope', () => {
+  const { db } = copy('dispatch-reference', true);
+  const id = 'app_schema:0081_reference_dispatch_completion';
+  const through = schemaMigrations.filter(m => m.id <= id);
+  const at = '2026-11-18T03:00:00.000Z';
+  const actions = [{ payload: { text: '字', punctuation: '"\n' } }];
+  const projection = { throughSequence: 1, preserved: '回' };
+  const evidence = JSON.stringify({ actions, projection });
+  try {
+    migrateDatabase(db, through.filter(m => m.id !== id));
+    db.prepare("INSERT INTO learners VALUES ('dispatch-learner','Learner',?,NULL)").run(at);
+    const session = db.prepare("INSERT INTO vocabulary_sessions VALUES (?,'dispatch-learner',1,'{}',?,?,'closed')");
+    const completion = db.prepare(`INSERT INTO vocabulary_session_completions VALUES
+      (?,'dispatch-learner',?,1,1,?,?,?, ?,?,'fixture',?,NULL)`);
+    const dispatch = db.prepare(`INSERT INTO vocabulary_post_session_dispatches
+      (dispatch_id,learner_id,session_id,completion_id,evidence_json,status,created_at,active_token,expires_at,last_error,result_json)
+      VALUES (?,'dispatch-learner',?,?,?,?,?,?,?,?,?)`);
+    const fields = 'dispatch_id,learner_id,session_id,completion_id,status,created_at,active_token,expires_at,last_error,result_json';
+    for (const status of ['queued','running','succeeded','failed','pending','unused']) {
+      session.run(status,at,at);
+      completion.run(status,status,at,at,status === 'pending' ? 'pending' : 'closed',JSON.stringify({ actions }),JSON.stringify(projection),at);
+      if (status === 'pending' || status === 'unused') continue;
+      dispatch.run(status,status,status,evidence,status,at,status === 'running' ? 'token' : null,
+        status === 'running' ? at : null,status === 'failed' ? 'error' : null,status === 'succeeded' ? '{"caseIds":[]}' : null);
+    }
+    const before = db.prepare('SELECT ' + fields + ' FROM vocabulary_post_session_dispatches ORDER BY dispatch_id').all();
+    const originalCompletions = db.prepare('SELECT * FROM vocabulary_session_completions ORDER BY completion_id').all();
+    for (const [sessionId, completionId, body] of [
+      ['unused','unused',JSON.stringify({ actions: [], projection })],
+      ['unused','unused',JSON.stringify({ actions, projection: {} })],
+      ['unused','unused',JSON.stringify({ actions, projection, extra: true })],
+      ['unused','pending',evidence], ['pending','pending',evidence],
+    ] as const) {
+      dispatch.run('invalid',sessionId,completionId,body,'queued',at,null,null,null,null);
+      assert.throws(() => migrateDatabase(db, through), /dispatch_must_match_closed_completion/);
+      assert.equal(db.prepare("SELECT evidence_json FROM vocabulary_post_session_dispatches WHERE dispatch_id='invalid'").get()?.evidence_json,body);
+      assert.equal(db.prepare('SELECT 1 FROM schema_migrations WHERE migration_id=?').get(id),undefined);
+      db.exec("DELETE FROM vocabulary_post_session_dispatches WHERE dispatch_id='invalid'");
+    }
+
+    assert.deepEqual(migrateDatabase(db, through), [id]);
+    assert.deepEqual(migrateDatabase(db, through), []);
+    assert.deepEqual(db.prepare('SELECT * FROM vocabulary_post_session_dispatches ORDER BY dispatch_id').all(), before);
+    assert.deepEqual(db.prepare('SELECT * FROM vocabulary_session_completions ORDER BY completion_id').all(), originalCompletions);
+    assert.throws(() => db.exec("UPDATE vocabulary_post_session_dispatches SET completion_id='unused' WHERE status='queued'"),/immutable/);
+    const insert = db.prepare(`INSERT INTO vocabulary_post_session_dispatches
+      (dispatch_id,learner_id,session_id,completion_id,status,created_at) VALUES ('test','dispatch-learner',?,?,'queued',?)`);
+    assert.throws(() => insert.run('pending','pending',at),/closed completion/);
+    assert.throws(() => insert.run('pending','unused',at),/closed completion/);
+    insert.run('unused','unused',at);
+    assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), []);
+  } finally { db.close(); }
+});

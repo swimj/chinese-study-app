@@ -46,7 +46,7 @@ beforeEach(()=>{
   sql.exec(`CREATE TABLE learner_settings(learner_id TEXT,setting_key TEXT,value_json TEXT,updated_at TEXT,PRIMARY KEY(learner_id,setting_key));
     CREATE TABLE learner_owned_review_session_summaries(learner_id TEXT,session_id TEXT,PRIMARY KEY(learner_id,session_id));`);
 
-  for(const name of ['0042_vocabulary_sessions.sql','0044_vocabulary_reflection.sql','0059_vocabulary_reassessment.sql','0060_vocabulary_reassessment_source.sql','0055_vocabulary_feedback_dismissal.sql','0045_vocabulary_provenance_links.sql'])sql.exec(fs.readFileSync(new URL(`../server/db/migrations/${name}`,import.meta.url),'utf8'));
+  for(const name of ['0042_vocabulary_sessions.sql','0079_share_session_context.sql','0081_reference_dispatch_completion.sql','0044_vocabulary_reflection.sql','0059_vocabulary_reassessment.sql','0060_vocabulary_reassessment_source.sql','0055_vocabulary_feedback_dismissal.sql','0045_vocabulary_provenance_links.sql'])sql.exec(fs.readFileSync(new URL(`../server/db/migrations/${name}`,import.meta.url),'utf8'));
   for(const name of ['0023_session_debrief.sql','0048_vocabulary_connections.sql','0049_vocabulary_sense_readiness.sql','0050_vocabulary_improvement_admission.sql','0051_vocabulary_pure_cue_promotion.sql'])sql.exec(fs.readFileSync(new URL(`../server/db/migrations/${name}`,import.meta.url),'utf8'));
   const promptMigration = schemaMigrations.find(m => m.id === 'app_schema:0080_retain_invocation_prompts')!;
   promptMigration.before!(sql);
@@ -201,9 +201,9 @@ test('idle dispatch polling uses active indexes with large retained evidence and
   const evidence=JSON.stringify({retained:'x'.repeat(512*1024)});
   const seed=(id:string,status:string,expiresAt:string|null=null)=>{
     sql.prepare(`INSERT INTO vocabulary_sessions VALUES(?,'alice',1,'{}',?,?,'closed')`).run(id,at,at);
-    sql.prepare(`INSERT INTO vocabulary_session_completions VALUES(?,'alice',?,1,0,?,?,'closed','{}','{}','fixture',?,NULL)`).run(id,id,at,at,at);
-    sql.prepare(`INSERT INTO vocabulary_post_session_dispatches(dispatch_id,learner_id,session_id,completion_id,evidence_json,status,created_at,active_token,expires_at)
-      VALUES(?,'alice',?,?,?,?,?,?,?)`).run(id,id,id,evidence,status,at,status==='running'?`token-${id}`:null,expiresAt);
+    sql.prepare(`INSERT INTO vocabulary_session_completions VALUES(?,'alice',?,1,0,?,?,'closed','{}',?,'fixture',?,NULL)`).run(id,id,at,at,evidence,at);
+    sql.prepare(`INSERT INTO vocabulary_post_session_dispatches(dispatch_id,learner_id,session_id,completion_id,status,created_at,active_token,expires_at)
+      VALUES(?,'alice',?,?,?,?,?,?)`).run(id,id,id,status,at,status==='running'?`token-${id}`:null,expiresAt);
   };
   for(let i=0;i<16;i++)seed(`history-${i}`,i%2?'succeeded':'failed');
   seed('expired','running',new Date(clock).toISOString());
@@ -743,12 +743,12 @@ test('undo during the completion window keeps an accidental production response 
   sql.exec("CREATE TRIGGER fail_boundary_case BEFORE INSERT ON reflection_cases BEGIN SELECT RAISE(ABORT,'test ingestion fault'); END;");
   const processing=worker({isConfigured:()=>false,run:async job=>result(job)});
   await processing.step();
-  const dispatch=sql.prepare('SELECT dispatch_id,status,evidence_json,completion_id FROM vocabulary_post_session_dispatches').get()!;
+  const dispatch=sql.prepare('SELECT d.dispatch_id,d.status,c.report_json,d.completion_id FROM vocabulary_post_session_dispatches d JOIN vocabulary_session_completions c USING(learner_id,session_id,completion_id)').get()!;
   assert.equal(dispatch.status,'failed');
   assert.notEqual(dispatch.completion_id,first.completionId);
-  const stored=JSON.parse(String(dispatch.evidence_json)) as {projection:{undoneActionIds:string[];encounters:{responses:{actionId:string;payload:{response:string}}[]}[]}};
-  assert.ok(stored.projection.undoneActionIds.includes('boundary-2'));
-  assert.equal(stored.projection.encounters[0]?.responses.some(action=>action.payload.response==='accidental'),true);
+  const stored=JSON.parse(String(dispatch.report_json)) as {undoneActionIds:string[];encounters:{responses:{actionId:string;payload:{response:string}}[]}[]};
+  assert.ok(stored.undoneActionIds.includes('boundary-2'));
+  assert.equal(stored.encounters[0]?.responses.some(action=>action.payload.response==='accidental'),true);
   assert.equal(Number(sql.prepare('SELECT count(*) n FROM reflection_cases').get()!.n),0);
   sql.exec('DROP TRIGGER fail_boundary_case');
   retryVocabularyPostSessionDispatch(String(dispatch.dispatch_id),'editor',new Date(clock).toISOString());

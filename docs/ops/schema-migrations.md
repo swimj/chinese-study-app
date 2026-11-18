@@ -870,3 +870,18 @@ that appends a schema, a Responses chat request, a rejected uncatalogued prompt,
 and normal spend and completion updates. Measure occupied pages, compacted file
 size, elapsed time, and run SQLite integrity and foreign-key checks. Rollback
 uses the pre-upgrade backup and matching application image.
+
+## Dispatch completion references (0081)
+
+On the restored backup, record each dispatch’s envelope digest and its identifiers,
+status, timestamps, lease, error, and receipt. The migration compares every envelope
+byte-for-byte against its same-learner, same-session closed revision’s actions and
+report. Any mismatch aborts the transaction. SQLite then rewrites the dispatch table
+to drop the envelope column. Allow space for the WAL. Reclaimed database pages
+are available for reuse.
+
+After migration, reconstruct the envelope from those completion fields and compare
+digests and dispatch metadata. Verify the queue and running-lease polling indexes
+remain available. Exercise closure and ingestion on disposable data, including
+failure and retry. Use the pre-upgrade backup and matching application image for
+rollback.

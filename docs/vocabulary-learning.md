@@ -83,8 +83,9 @@ comparison preserves the frozen snapshot and its display order.
 The session owns the single frozen context used by completion and dispatch.
 Each completion revision retains its action input, duration and report. Closure
 reads the context through the revision's learner and session identifiers.
-Dispatch evidence contains the actions and projection; reconciliation checks
-both the evidence and its parent session when looking for affected content.
+Each dispatch references its same-learner, same-session closed revision. Reflection
+reads the revision’s report after claiming the dispatch. Reconciliation checks
+the revision’s actions and report and the session’s context for affected content.
 
 A connection-scoped cache holds at most 64 session runtimes, keyed by learner
 and session. SQLite remains authoritative. Every access probes session ownership,

@@ -42,7 +42,7 @@ beforeEach(() => {
     INSERT INTO lexical_words(id,created_at) VALUES ('a','2026-01-01T00:00:00.000Z'),('b','2026-01-01T00:00:00.000Z'),('new','2026-01-01T00:00:00.000Z');
     INSERT INTO learner_word_state VALUES ('alice','a','learning',2,NULL),('alice','b','review',0,NULL),('alice','new','unstudied',0,NULL);
   `);
-  for (const name of ['0062_vocabulary_sense_coverage.sql','0064_vocabulary_default_useful_senses.sql','0039_vocabulary_content.sql','0041_vocabulary_learner_state.sql','0042_vocabulary_sessions.sql','0047_vocabulary_dismissal.sql','0052_vocabulary_automatic_promotion_pause.sql','0023_session_debrief.sql','0048_vocabulary_connections.sql']) {
+  for (const name of ['0062_vocabulary_sense_coverage.sql','0064_vocabulary_default_useful_senses.sql','0039_vocabulary_content.sql','0041_vocabulary_learner_state.sql','0042_vocabulary_sessions.sql','0079_share_session_context.sql','0081_reference_dispatch_completion.sql','0047_vocabulary_dismissal.sql','0052_vocabulary_automatic_promotion_pause.sql','0023_session_debrief.sql','0048_vocabulary_connections.sql']) {
     sql.exec(fs.readFileSync(new URL(`../server/db/migrations/${name}`,import.meta.url),'utf8'));
   }
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0045_vocabulary_provenance_links.sql',import.meta.url),'utf8').split('CREATE TABLE vocabulary_practice_preparation')[1]!.replace(/^/, 'CREATE TABLE vocabulary_practice_preparation'));
@@ -165,9 +165,9 @@ test('uncovered response and feedback persist into dispatch without fabricated s
   appendVocabularySessionActions('session',log,now);const staged=stageVocabularySessionCompletion('session',log.length,now);
   closeVocabularySessionCompletion('session',staged.completionId,later);
   assert.deepEqual(getVocabularyWordSchedule('a'),before);assert.equal(count('learner_feedback'),1);
-  const evidence=JSON.parse(String(sql.prepare('SELECT evidence_json FROM vocabulary_post_session_dispatches').get()?.evidence_json));
-  assert.deepEqual(evidence.projection.uncoveredWordIds,['a']);assert.equal(evidence.projection.encounters[0].responses.length,1);
-  assert.equal(evidence.projection.encounters[0].feedback.length,1);
+  const report=JSON.parse(String(sql.prepare('SELECT c.report_json FROM vocabulary_post_session_dispatches d JOIN vocabulary_session_completions c USING(learner_id,session_id,completion_id)').get()?.report_json));
+  assert.deepEqual(report.uncoveredWordIds,['a']);assert.equal(report.encounters[0].responses.length,1);
+  assert.equal(report.encounters[0].feedback.length,1);
 }));
 
 test('explicit Maintain mode wins and a lapse requests bounded refresh without demotion',()=>alice(()=>{

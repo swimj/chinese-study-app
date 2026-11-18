@@ -81,8 +81,13 @@ export function snapshotInventoryForReconciliation(
     || contentIds.has(String(row.content_id)) || intersects(jsonStrings(row.evidence_snapshot_json), refs));
   const caseIds = new Set(cases.map(row => String(row.case_id)));
   const pendingReflectionJobs = all("SELECT * FROM vocabulary_reflection_jobs WHERE status!='succeeded' AND case_id IN (SELECT value FROM json_each(?)) ORDER BY job_id", idsJson(caseIds));
-  const pendingDispatches = all(`SELECT d.*, s.context_json FROM vocabulary_post_session_dispatches d
+  // Keep dependency snapshots comparable with saved plans from before the dispatch normalization.
+  const pendingDispatches = all(`SELECT d.dispatch_id,d.learner_id,d.session_id,d.completion_id,
+      json_object('actions',json_extract(c.input_json,'$.actions'),'projection',json(c.report_json)) AS evidence_json,
+      d.status,d.created_at,d.active_token,d.expires_at,d.last_error,d.result_json,s.context_json
+    FROM vocabulary_post_session_dispatches d
     JOIN vocabulary_sessions s USING (learner_id, session_id)
+    JOIN vocabulary_session_completions c USING (learner_id, session_id, completion_id)
     WHERE d.status!='succeeded' ORDER BY d.dispatch_id`)
     .filter(row => intersects(jsonStrings(row.evidence_json), refs) || intersects(jsonStrings(row.context_json), refs))
     .map(({ context_json: _context, ...dispatch }) => dispatch);

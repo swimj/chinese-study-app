@@ -73,7 +73,7 @@ test('online snapshot omits preserved history while retaining identical active d
   db.prepare(`INSERT INTO vocabulary_sessions(session_id,learner_id,protocol_version,context_json,started_at,status)
     VALUES ('session','learner',1,?,?, 'closed')`).run(JSON.stringify({ words: [{ wordId: 'target' }] }), at);
   db.prepare(`INSERT INTO vocabulary_session_completions(completion_id,learner_id,session_id,revision_number,through_sequence,staged_at,close_at,status,input_json,report_json,policy_version,closed_at)
-    VALUES ('completion','learner','session',1,0,?,?,'closed','{}','{}','fixture',?)`).run(at, at, at);
+    VALUES ('completion','learner','session',1,0,?,?,'closed','{"actions":[]}','{}','fixture',?)`).run(at, at, at);
   db.prepare(`INSERT INTO vocabulary_reflection_session_evidence(completion_id,learner_id,session_id,projection_json,created_at)
     VALUES ('completion','learner','session','{}',?)`).run(at);
   db.prepare(`INSERT INTO reflection_cases(case_id,completion_id,learner_id,kind,subject_key,word_id,status,evidence_snapshot_json,created_at)
@@ -81,12 +81,15 @@ test('online snapshot omits preserved history while retaining identical active d
   db.prepare(`INSERT INTO vocabulary_reflection_jobs(job_id,case_id,kind,dedupe_key,status,next_attempt_at,created_at)
     VALUES ('job','case','exercise_improvement','job','queued',?,?)`).run(at, at);
   // Only the session context refers to the target word.
-  db.prepare(`INSERT INTO vocabulary_post_session_dispatches(dispatch_id,learner_id,session_id,completion_id,evidence_json,status,created_at)
-    VALUES ('dispatch','learner','session','completion','{"actions":[],"projection":{}}','queued',?)`).run(at);
+  db.prepare(`INSERT INTO vocabulary_post_session_dispatches(dispatch_id,learner_id,session_id,completion_id,status,created_at)
+    VALUES ('dispatch','learner','session','completion','queued',?)`).run(at);
   const offline = snapshot(), online = snapshot('online');
   const dispatch = db.prepare("SELECT * FROM vocabulary_post_session_dispatches WHERE dispatch_id='dispatch'").get();
   assert.ok(dispatch);
-  assert.deepEqual(online.dependencies.pendingDispatches, [{ ...dispatch }]);
+  const { dispatch_id, learner_id, session_id, completion_id, ...receipt } = dispatch;
+  const oldRow = { dispatch_id, learner_id, session_id, completion_id, evidence_json: '{"actions":[],"projection":{}}', ...receipt };
+  // Saved plan fingerprints hash the serialized snapshot including field order.
+  assert.equal(JSON.stringify(online.dependencies.pendingDispatches), JSON.stringify([oldRow]));
   assert.equal(dependencyIds(offline.dependencies.retainedSessions, 'session_id').length, 1);
   assert.deepEqual(dependencyIds(online.dependencies.pendingReflectionJobs, 'job_id'), ['job']);
   for (const key of ['learnerSenses', 'wordSchedules', 'pureCueSchedules', 'retainedSessions', 'pendingCompletions', 'stashed', 'reserve']) {

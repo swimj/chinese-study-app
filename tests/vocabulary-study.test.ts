@@ -64,7 +64,7 @@ beforeEach(()=>{
     INSERT INTO learner_word_state VALUES('alice','a','learning',2,NULL),('alice','b','review',0,NULL),('alice','new','unstudied',0,NULL);
     ALTER TABLE learner_word_state ADD COLUMN personal_notes TEXT NOT NULL DEFAULT '';
   `);
-  for(const file of ['0062_vocabulary_sense_coverage.sql','0064_vocabulary_default_useful_senses.sql','0039_vocabulary_content.sql','0041_vocabulary_learner_state.sql','0042_vocabulary_sessions.sql','0047_vocabulary_dismissal.sql','0052_vocabulary_automatic_promotion_pause.sql','0023_session_debrief.sql','0048_vocabulary_connections.sql','0075_learner_chat.sql'])db.exec(fs.readFileSync(new URL(`../server/db/migrations/${file}`,import.meta.url),'utf8'));
+  for(const file of ['0062_vocabulary_sense_coverage.sql','0064_vocabulary_default_useful_senses.sql','0039_vocabulary_content.sql','0041_vocabulary_learner_state.sql','0042_vocabulary_sessions.sql','0079_share_session_context.sql','0081_reference_dispatch_completion.sql','0047_vocabulary_dismissal.sql','0052_vocabulary_automatic_promotion_pause.sql','0023_session_debrief.sql','0048_vocabulary_connections.sql','0075_learner_chat.sql'])db.exec(fs.readFileSync(new URL(`../server/db/migrations/${file}`,import.meta.url),'utf8'));
   db.exec(`CREATE TABLE model_invocations(id TEXT PRIMARY KEY,status TEXT,actor_kind TEXT,learner_id TEXT);
     CREATE TABLE word_content_documents(content_id TEXT PRIMARY KEY,word_id TEXT,content_json TEXT,publication_id TEXT,teaching_set_key TEXT,created_at TEXT);
     CREATE TABLE word_introduction_preparation(word_id TEXT,teaching_set_key TEXT,content_id TEXT,package_id TEXT,preparation_epoch INTEGER);
