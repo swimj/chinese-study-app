@@ -1,18 +1,8 @@
 # Hosted beta release and maintenance
 
-Operator guide for the running invite-only Mandarin service. Complementary
-procedures cover a human at an interactive terminal and an agent or automation
-driving one. They use the same release command and release gates; the latter
-additionally defines how to observe a long-running local terminal process
-safely.
-
-Every schema or data migration first runs on a separate, ephemeral Fly Machine
-restored from a recent coherent backup. Application-only releases use that same
-environment when behavior changes warrant realistic-data checks or subjective
-testing. The [release rehearsal and RC runbook](hosted-release-candidate.md)
-owns preparation, additional checks, optional browser use, and cleanup. Rehearse
-while production serves, before entering its maintenance window. For an
-application-only beta release, promote the exact tested image by digest.
+For a release of the hosted Mandarin service, start with [Planning an upgrade](#planning-an-upgrade)
+to choose a recovery point, validation, and production procedure. The remaining
+sections cover service configuration, learner access, and operator recovery.
 
 The service is one 1 GB Fly Machine in `sin`, one encrypted Fly Volume at
 `/data` and Clerk authentication. The [backup service](hosted-backups.md) keeps
@@ -83,41 +73,99 @@ for a first-time invitee on a development instance: `$DEVHOST` is detected per
 browser, and a recipient who never loaded the app stays on Clerk's default
 page.
 
-## Application-only upgrade
+<a id="application-only-upgrade"></a>
 
-Use this path only when the target release has **all** of these properties:
+## Planning an upgrade
 
-- no SQLite schema migration, data migration, content import, or intentionally
-  changed persistent-data interpretation;
-- backward-compatible backend and frontend/API behavior for a browser tab that
-  still has the previously served frontend loaded;
-- no compatibility-affecting runtime configuration change beyond settings
-  already understood to be safe for the current service; and
-- one Fly Machine and one mounted `/data` volume, accepting a short stop/start
-  interruption.
+Review the changes from the **running revision to the target**. Use that scope
+to decide what recovery point production needs, what could go wrong, and which
+check would expose it. Favor a short interruption when risk is low. Take the
+extra time when it buys confidence, and ask Justin if the tradeoff is unclear.
 
-If any condition is false, stop. Do not stretch this pipeline with an ad-hoc
-exception.
+**Choose the recovery point.** Take a fresh backup after writes stop whenever
+the release changes how the app reads or writes persisted data. This includes
+schema and data migrations, but also changes such as selecting a saved session
+or writing its completion with the existing schema. For changes outside
+persistence, a verified scheduled Fly copy can shorten downtime if the learner
+activity since that capture is an acceptable loss in a restore.
 
-For eligible app-only releases, choose rehearsal and backup independently.
-Rehearsal tests the candidate on realistic data while production serves.
-The backup choice determines how much learner activity a database restore could discard.
+**Choose validation that can expose the failure.** Do this before production
+maintenance, while learners can still use the service.
 
-| | Use the latest verified scheduled Fly backup (`--use-scheduled-backup=true`) | Take a fresh backup after writes stop (default) |
-| --- | --- | --- |
-| **Skip rehearsal** | A straightforward change, such as a copy edit, warrants a short interruption. | Behavior is well understood, but recent learner activity is worth protecting. |
-| **Rehearse** | Realistic data will help verify the change, and the scheduled recovery point is acceptable. | Realistic testing and a recovery point immediately before deployment are both worthwhile. |
+| What could go wrong? | How to check it |
+| --- | --- |
+| A migration drops history or takes longer than the maintenance window. | Rehearse every schema or data migration on a restored copy. For a large rewrite, time it and check the affected records afterward, for example that historical sessions still reopen with their original answers. |
+| A change to database logic fails only after a particular sequence of actions. | Exercise that sequence in a focused behavior test. Add a headless rehearsal check when real data supplies something the test lacks, such as historical records in an older shape. Starting the candidate or passing smoke alone would miss the sequence. |
+| A significant UI change makes a learner flow hard to use. | Open the candidate in the authenticated browser RC. Try the affected flow with representative data and inspect the layout, controls, and interactions where they changed. |
+| A small copy or styling edit could display incorrectly. | Inspect the affected screen in a local preview when that answers the question. |
 
-Favor faster upgrades when risk is low. Spend the extra time when it buys
-confidence, or ask Justin if the tradeoff is unclear. Schema and data migrations
-require both rehearsal and a fresh pre-release backup under the
-[offline migration procedure](schema-migrations.md).
+The [headless rehearsal](hosted-release-candidate.md#ephemeral-rehearsal) runs
+scripts on a disposable Fly Machine with a restored database. The
+[browser release candidate](hosted-release-candidate.md#browser-rc-overview)
+runs the app on its own restored volume. Choose the environment that can
+exercise the risk. Keep the tested image digest and results. After a headless
+rehearsal, destroy its Machine and volume unless Justin asks to retain them.
+The [observability guide](hosted-observability.md#release-instance-observability)
+covers stage timings and resource usage.
 
-Run the command from a clean checkout of the intended commit. It quiesces the
-service, obtains the chosen backup receipt, deploys, confirms the running
-identity, and runs read-only smoke before reopening writes and provider work.
-With the scheduled option, it checks Fly backup freshness before deploying and
-again before reopening. The terminal JSON includes the receipt and stage results.
+**Choose the production procedure.** For a schema or data migration, follow the
+[offline migration procedure](schema-migrations.md). For a compatible image
+change on the existing database, use the upgrade command below. A change to
+database queries can qualify for this command and still require a fresh backup.
+
+<a id="human-operator-procedure"></a>
+
+### Deploy a compatible image
+
+Use `hosted:upgrade` on the single Fly Machine with its mounted `/data` volume
+when a short stop/start is acceptable. The target must preserve the schema and meaning of stored data,
+and its API must support browser tabs still
+running the previous frontend. Content imports, changes to the meaning of
+stored data, and incompatible runtime configuration or topology changes need a
+release procedure that covers those operations.
+
+From a clean checkout of the intended commit, use the prepared Fly config and
+authenticated CLI. For a planned window, [post a service banner](#post-a-pre-upgrade-banner)
+in advance. The command uses the configured [smoke account](#smoke-account).
+
+```bash
+git rev-parse HEAD
+npm run hosted:upgrade -- \
+  --app=<app-name> \
+  --actor-id=<operator> \
+  --confirm-source-revision=<full-40-character-sha> \
+  --confirm-eligible-release=true \
+  --image=registry.fly.io/<rc-app>:<release-tag>@sha256:<tested-digest>
+```
+
+`--confirm-source-revision` must match `HEAD`. Supply `--image` with the exact
+tested digest when available. Omit it to build remotely from the clean checkout
+with `APP_REVISION`. A manual Fly build without that argument fails.
+
+The default captures a fresh backup of the outgoing revision after writes and
+provider work have stopped. If you chose the scheduled recovery point, add
+`--use-scheduled-backup=true`. The runner checks its freshness before deployment
+and again before reopening. It confirms the running release identity, checks the
+served frontend, and performs an authenticated read-only smoke test before
+reopening writes and then provider work. Its terminal result includes the
+backup receipt and stage results. If a stage fails, inspect the failed stage,
+running identity, and control state before deciding how to recover.
+See [Failure boundaries](#failure-boundaries).
+
+### Agent or automated terminal-driver procedure
+
+1. Start one foreground `hosted:upgrade` process with the options chosen above.
+   Use the authenticated Fly CLI state. If the sandbox blocks `~/.fly`, request
+   elevated execution permission on the first launch. A
+   `failed ensuring config directory perms` error occurs locally before any Fly stage.
+2. Keep the terminal session handle and poll that same session through exit.
+   A quiet build or partial output can mean the process is still running.
+   Starting another upgrade risks concurrent operations.
+3. Read the exit status and final `upgrade-result` for the outcome, including
+   whether controls reopened. The result is per-invocation terminal output.
+   If the session is lost, treat the outcome as unknown. Reconcile Fly status,
+   public `/healthz`, and `hosted:inspect` for the running revision and control
+   state before an operator chooses a recovery action.
 
 ### Smoke account
 
@@ -165,90 +213,6 @@ The notice is visible to signed-in learners on the next Home load (including
 returning from a session). CLI notices expire 24 hours after posting. Successful
 `hosted:upgrade` reopen also clears it and no-ops when none exists. Clear
 manually with `--clear=true` instead of `--message`.
-
-This first banner capability is itself a schema-changing release
-(`app_schema:0005_service_banner`). Use the offline migration procedure for
-that landing; later app-only upgrades can post and clear banners without a
-schema change.
-
-### Human operator procedure
-
-From the intended commit, with a prepared generated Fly config and an
-authenticated Fly CLI:
-
-```bash
-git rev-parse HEAD
-npm run hosted:upgrade -- \
-  --app=<app-name> \
-  --actor-id=<operator> \
-  --confirm-source-revision=<full-40-character-sha> \
-  --confirm-eligible-release=true \
-  --image=registry.fly.io/<rc-app>:<release-tag>@sha256:<tested-digest>
-```
-
-`--confirm-source-revision` must match `HEAD`. Image-source paths must be
-clean. When `--image` is present it must be an immutable, digest-qualified Fly
-image and the runner confirms that exact digest is serving. Omit `--image` to
-retain the prior behavior: the command supplies `APP_REVISION` as a Docker
-build arg and builds remotely. A manual `fly deploy` without that build arg
-will fail closed.
-
-`hosted:inspect` reports the baked app version and source revision. Public
-`/healthz` stays a small health endpoint.
-
-If any stage from quiescence onward fails, the command exits non-zero, emits
-the failed stage and best-known running identity, and **does not reopen**.
-Investigate, fix forward, or restore service manually. This slice has no
-automatic rollback.
-
-### Agent or automated terminal-driver procedure
-
-An agent drives the same command, but must distinguish a terminal update from
-the command's completion. The upgrade runner is a foreground local process; it
-does not become a fire-and-forget Fly job after it starts.
-
-1. Apply the same eligibility and clean-checkout checks as the human procedure.
-   Read migration guidance and Justin's requested release checks. For migrations,
-   follow the [offline migration procedure](schema-migrations.md), including
-   ephemeral rehearsal before stopping production. For eligible app-only releases,
-   use rehearsal when the changed behavior calls for realistic data; then start
-   **one** `hosted:upgrade` process with the tested digest when available.
-2. Start the process with access to the authenticated Fly CLI state. In a
-   managed sandbox that blocks the operator's `~/.fly` directory, request the
-   required elevated execution permission on the first launch; do not make an
-   unprivileged trial first. A `failed ensuring config directory perms` error
-   is only a local sandbox preflight failure, reaches no Fly stage, and says
-   nothing about the service or release eligibility.
-3. Preserve the terminal session handle returned by the execution environment.
-   A response that has partial output or a session handle but no exit status
-   means the runner is still active. It is not a failure and it is not evidence
-   that Fly has finished deploying.
-4. Poll or stream that exact session until it returns a terminal exit status.
-   Only its final `upgrade-result` says whether the runner completed, failed,
-   and reopened controls.
-5. Do not start a second upgrade merely because output is quiet, an outer tool
-   invocation has yielded, or a remote build is taking longer than expected.
-   Deploy, health, and smoke stages can legitimately take minutes.
-6. If the terminal session itself is genuinely lost before an exit status,
-   treat the release as **unknown execution state**, not failed. First perform
-   read-only reconciliation of Fly status, public `/healthz`, and hosted
-   release identity. Do not assume controls were reopened or retry the upgrade
-   until that reconciliation establishes the state and an operator chooses the
-   next recovery action.
-
-This procedure deliberately does not claim durable release history or resumable
-execution. The final terminal result is still per-invocation evidence; a lost
-local runner remains an operational recovery case.
-
-Keep release-specific judgment explicit: additional checks agreed in conversation
-are welcome, and do not need a new permanent framework. Run expensive scripts on
-the rehearsal Machine, save their results with its run evidence, and distinguish
-them from essential production checks. Collect stage timings and resource usage
-as described in [release-instance observability](hosted-observability.md#release-instance-observability).
-Unless Justin asks to keep the environment, finish the rehearsal lifecycle by
-destroying its Machine and volume after preserving evidence. Keeping it for
-further checks is a conversational operator decision. Use the separate browser
-RC workflow when manual authenticated application use is wanted.
 
 ## Schema-changing releases and service controls
 

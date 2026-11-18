@@ -185,9 +185,10 @@ Missed captures or uploads can extend the available recovery window.
 - Exercise an isolated restore before learners are invited and after material
   backup or migration changes. A backup is not operationally valid until its
   restore has been proven.
-- For an eligible app-only release, the operator can use a fresh scheduled Fly
-  capture when a shorter interruption warrants the recovery tradeoff. The
-  [release runbook](ops/hosted-beta-deployment.md#application-only-upgrade) describes the choice.
+- Take a fresh pre-release backup when a change affects how the app reads or
+  writes persisted data, including changes on the existing schema. Other eligible
+  releases may use a verified scheduled Fly capture. The
+  [release runbook](ops/hosted-beta-deployment.md#planning-an-upgrade) guides the choice.
 - For each schema-changing release: enter maintenance, quiesce writes and
   in-flight provider work, create an identified pre-release backup, apply the
   rehearsed versioned migration, start the matching app, smoke-test two learner

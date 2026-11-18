@@ -10,9 +10,8 @@ actual stopped-writer migration.
 ## Ephemeral rehearsal
 
 `hosted:rehearse` creates a performance-1x Machine and its own temporary volume
-in a dedicated, secret-free Fly app. It requests a verified hourly production backup and
-restores that exact receipt. Production keeps serving throughout;
-a few minutes of subsequent activity are acceptable. Headless rehearsal needs
+in a dedicated, secret-free Fly app. By default it restores the latest verified
+retained backup for the source app. Production keeps serving throughout. Headless rehearsal needs
 no Clerk or provider credentials, does not start the application, and does not
 run a backup scheduler for the disposable database.
 
@@ -188,8 +187,8 @@ the manifest back to a ready state to bypass uncertain completion. If only a
 stale lock remains after those checks, remove that exact lock file to permit
 cleanup. No command automatically breaks a lock or retries an uncertain write.
 
-Successful rehearsal does not replace production's fresh recovery point, actual
-migration, or final smoke. A new source schema change since rehearsal requires
+For a migration, production still requires a fresh recovery point, the actual
+migration, and final smoke. A new source schema change since rehearsal requires
 reconciliation, but ordinary learner activity during rehearsal does not require
 a second pass solely to obtain identical data.
 
