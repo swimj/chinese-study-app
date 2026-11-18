@@ -857,6 +857,12 @@ test('0082 drops only the explicitly abandoned session, compacts closed history 
     session.run('unrecognized', context, start, end, 'closed');
     assertRollback(); // A different reportless closed session still halts the migration.
     db.exec("DELETE FROM vocabulary_sessions WHERE session_id='unrecognized'");
+    // The historical reader uses the highest revision, so one older closed
+    // report is insufficient when a later revision contradicts the session.
+    db.prepare(`INSERT INTO vocabulary_session_completions VALUES
+      ('later-cancelled','history-learner','closed',2,0,?,?,'cancelled','{}','{}','fixture',NULL,NULL)`).run(end, end);
+    assertRollback();
+    db.exec("DELETE FROM vocabulary_session_completions WHERE completion_id='later-cancelled'");
     assert.deepEqual(migrateDatabase(db, through), [id]);
     assert.deepEqual(migrateDatabase(db, through), []);
     assert.equal(retained.get(wedged), undefined);

@@ -18,6 +18,9 @@ SELECT 0 FROM vocabulary_sessions s WHERE s.status='closed'
   AND s.session_id NOT IN (SELECT session_id FROM abandoned_session_to_remove)
   AND ((SELECT COUNT(*) FROM vocabulary_session_completions c
         WHERE c.session_id=s.session_id AND c.learner_id=s.learner_id AND c.status='closed') != 1
+       OR (SELECT c.status FROM vocabulary_session_completions c
+           WHERE c.session_id=s.session_id AND c.learner_id=s.learner_id
+           ORDER BY c.revision_number DESC LIMIT 1) IS NOT 'closed'
        OR s.session_id NOT IN (SELECT session_id FROM closed_session_histories))
 LIMIT 1;
 DROP TABLE closed_history_check;
