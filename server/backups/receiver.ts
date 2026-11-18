@@ -8,6 +8,7 @@ import { promisify } from 'node:util';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { BackupReceipt, BackupRequest, BackupStatus } from './types.ts';
+import { SCHEDULE_INTERVAL_MS } from './schedule.ts';
 
 const exec = promisify(execFile);
 const ID = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,95}$/;
@@ -16,6 +17,13 @@ const SHA = /^[0-9a-f]{64}$/;
 const REVISION = /^[0-9a-f]{40}$/;
 const DAY = 86_400_000;
 const DEFAULT_MAX_BYTES = 4 * 1024 ** 3;
+
+// The original receiver recorded its timer's randomUUID in the id only.
+const LEGACY_SCHEDULED_ID = /^hourly-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+function isScheduled(receipt: BackupReceipt): boolean {
+  return receipt.kind === 'hourly' && (receipt.captureOrigin === 'scheduled'
+    || (receipt.captureOrigin === undefined && LEGACY_SCHEDULED_ID.test(receipt.id)));
+}
 
 export class BackupReceiverError extends Error {
   constructor(readonly code: string) { super(code); this.name = 'BackupReceiverError'; }
@@ -35,9 +43,11 @@ function validateRequest(request: BackupRequest) {
     || (request.releaseId !== undefined && !ID.test(request.releaseId))
     || (request.kind === 'release' && request.releaseId === undefined)) fail('invalid_request');
 }
-function parseReceipt(value: unknown): BackupReceipt {
+export function parseReceipt(value: unknown): BackupReceipt {
   if (!record(value) || value.version !== 1 || typeof value.id !== 'string' || !ID.test(value.id)
     || !['hourly', 'release'].includes(String(value.kind))
+    || (value.captureOrigin !== undefined && value.captureOrigin !== 'scheduled' && value.captureOrigin !== 'manual')
+    || (value.kind === 'release' && value.captureOrigin === 'scheduled')
     || (value.releaseId !== undefined && (typeof value.releaseId !== 'string' || !ID.test(value.releaseId)))
     || (value.kind === 'release' && value.releaseId === undefined)
     || typeof value.sourceApp !== 'string' || !APP.test(value.sourceApp)
@@ -49,7 +59,7 @@ function parseReceipt(value: unknown): BackupReceipt {
     || value.fileName !== `${value.id}.sqlite`) fail('invalid_stored_receipt');
   return value as unknown as BackupReceipt;
 }
-async function syncFile(file: string) {
+export async function syncFile(file: string) {
   const handle = await fs.open(file, 'r');
   try { await handle.sync(); } finally { await handle.close(); }
 }
@@ -124,11 +134,30 @@ export class BackupReceiver {
 
   status(): BackupStatus {
     const backups = this.receipts.toSorted((a, b) => b.startedAt.localeCompare(a.startedAt) || b.id.localeCompare(a.id));
-    return { busy: this.busy, lastSuccessfulBackup: backups[0] ? { ...backups[0] } : null,
-      backups: backups.map(r => ({ ...r })), lastError: this.lastError ? { ...this.lastError } : null };
+    const lastScheduled = backups.find(isScheduled);
+    return {
+      busy: this.busy,
+      lastScheduledBackup: lastScheduled ? { ...lastScheduled } : null,
+      lastSuccessfulBackup: backups[0] ? { ...backups[0] } : null,
+      backups: backups.map(r => ({ ...r })),
+      lastError: this.lastError ? { ...this.lastError } : null,
+    };
   }
 
-  async create(request: BackupRequest): Promise<BackupReceipt> {
+  scheduledBackupDue(): boolean {
+    const latest = this.status().lastScheduledBackup;
+    return !latest || this.now().getTime() - Date.parse(latest.startedAt) >= SCHEDULE_INTERVAL_MS;
+  }
+
+  createScheduled(sourceApp: string): Promise<BackupReceipt> {
+    return this.capture({ id: `hourly-${randomUUID()}`, kind: 'hourly', expectedSourceApp: sourceApp }, 'scheduled');
+  }
+
+  create(request: BackupRequest): Promise<BackupReceipt> {
+    return this.capture(request, 'manual');
+  }
+
+  private async capture(request: BackupRequest, captureOrigin: 'scheduled' | 'manual'): Promise<BackupReceipt> {
     validateRequest(request);
     if (!this.initialized) fail('not_initialized');
     if (this.busy) fail('backup_busy');
@@ -194,7 +223,7 @@ export class BackupReceiver {
       if (received !== bytes || hash.digest('hex') !== expectedHash) fail('backup_checksum_mismatch');
       await verifyDatabase(partial, this.timeoutMs);
       await syncFile(partial);
-      const receipt: BackupReceipt = { version: 1, id: request.id, kind: request.kind,
+      const receipt: BackupReceipt = { version: 1, id: request.id, kind: request.kind, captureOrigin,
         ...(request.releaseId ? { releaseId: request.releaseId } : {}), sourceRevision, sourceApp,
         startedAt, completedAt, receivedAt: this.now().toISOString(), bytes, sha256: expectedHash, fileName };
       await fs.writeFile(receiptPartial, `${JSON.stringify(receipt)}\n`, { flag: 'wx', mode: 0o600 });
@@ -230,7 +259,9 @@ export class BackupReceiver {
 
   private async prune() {
     const newest = [...this.receipts].sort((a, b) => b.startedAt.localeCompare(a.startedAt) || b.id.localeCompare(a.id));
-    const keep = new Set(newest.filter(r => r.kind === 'hourly').slice(0, 4).map(r => r.id));
+    const keep = new Set(newest.filter(isScheduled).slice(0, 5).map(r => r.id));
+    const latestManual = newest.find(r => r.kind === 'hourly' && !isScheduled(r));
+    if (latestManual) keep.add(latestManual.id);
     for (const r of newest.filter(r => r.kind === 'release' && Date.parse(r.startedAt) > this.now().getTime() - 7 * DAY).slice(0, 3)) keep.add(r.id);
     for (const receipt of newest) if (!keep.has(receipt.id)) {
       // Delete the receipt first: a crash can leave an unreferenced old file,

@@ -173,7 +173,7 @@
               },
               {
                 "color": "red",
-                "value": 4500
+                "value": 22500
               }
             ]
           }
@@ -210,7 +210,7 @@
       ],
       "title": "Verified backup age",
       "type": "timeseries",
-      "description": "After SQLite-backup cutover, age of the latest verified capture, measured from snapshot start. Hourly scheduling plus completion time is expected; investigate unknown status or age above 75 minutes. Before cutover this legacy metric reports Litestream sync heartbeat age."
+      "description": "Age of the latest verified scheduled SQLite capture measured from snapshot start. Investigate unknown status or age above six hours and 15 minutes. Before cutover this legacy metric reports Litestream sync heartbeat age."
     },
     {
       "id": 26,
@@ -814,11 +814,11 @@
               },
               {
                 "color": "orange",
-                "value": 1800
+                "value": 21600
               },
               {
                 "color": "red",
-                "value": 3600
+                "value": 22500
               }
             ]
           },
@@ -854,7 +854,7 @@
       ],
       "title": "Verified backup age",
       "type": "stat",
-      "description": "After SQLite-backup cutover, age of the latest verified capture, measured from snapshot start. Hourly scheduling plus completion time is expected; investigate unknown status or age above 75 minutes. Before cutover this legacy metric reports Litestream sync heartbeat age."
+      "description": "Age of the latest verified scheduled SQLite capture measured from snapshot start. Investigate unknown status or age above six hours and 15 minutes. Before cutover this legacy metric reports Litestream sync heartbeat age."
     },
     {
       "datasource": {

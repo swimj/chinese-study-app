@@ -9,9 +9,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
-      - name: Require a verified backup less than 75 minutes old
+      - name: Check local and configured offsite recovery points
         shell: bash
         run: |
           response=$(curl --fail --silent --show-error --max-time 20 --retry 2 --retry-delay 10 https://chinese-study-beta-swimj.fly.dev/backup-healthz)
-          printf '%s' "$response" | python3 -c 'import json,sys; v=json.load(sys.stdin); age=v.get("ageSeconds"); assert v.get("status")=="ok" and isinstance(age,(int,float)) and 0 <= age <= 4500, "Backup is unknown or stale"'
-
+          BACKUP_HEALTH="$response" python3 - <<'PY'
+          import json, os
+          health = json.loads(os.environ['BACKUP_HEALTH'])
+          def require_fresh(field, max_age):
+              age = health.get(field)
+              if type(age) not in (int, float) or not 0 <= age <= max_age:
+                  raise SystemExit(f"Unknown or stale {field}")
+          if health.get('status') != 'ok':
+              raise SystemExit('Backup health is degraded')
+          require_fresh('ageSeconds', 22500)
+          if 'offsiteAgeSeconds' in health:
+              require_fresh('offsiteAgeSeconds', 48600)
+          PY

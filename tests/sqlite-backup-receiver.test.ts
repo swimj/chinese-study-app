@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import http from 'node:http';
 import os from 'node:os';
@@ -62,22 +62,64 @@ test('receives a verified durable standalone SQLite file, checks source identity
   } finally { await f.close(); }
 });
 
-test('keeps four successful hourly backups and failures never evict them', async () => {
+test('six-hour timer and five scheduled recovery points survive manual captures, releases and failed transfers', async () => {
   const f = await fixture();
   try {
-    for (let n = 0; n < 5; n++) {
-      f.state.now = new Date(Date.UTC(2026, 10, 17, n));
-      await f.receiver.create({ id: `hour-${n}`, kind: 'hourly' });
+    const scheduled: string[] = [];
+    for (let n = 0; n < 6; n++) {
+      f.state.now = new Date(Date.UTC(2026, 10, 17, 6 * n));
+      assert.equal(f.receiver.scheduledBackupDue(), true);
+      const receipt = await f.receiver.createScheduled('production-app');
+      scheduled.push(receipt.id);
+      assert.equal(f.receiver.scheduledBackupDue(), false);
+      for (let m = 0; m < 2; m++) {
+        f.state.now = new Date(Date.UTC(2026, 10, 17, 6 * n + 5, 58 + m));
+        await f.receiver.create({ id: `post-deploy-${n}-${m}`, kind: 'hourly' });
+      }
+      await f.receiver.create({ id: `pre-release-${n}`, kind: 'release', releaseId: `release-${n}` });
+      assert.equal(f.receiver.scheduledBackupDue(), false);
     }
-    assert.deepEqual(f.receiver.status().backups.map(r => r.id), ['hour-4', 'hour-3', 'hour-2', 'hour-1']);
-    assert.equal((await fs.readdir(f.dataDir)).includes('hour-0.sqlite'), false);
+
+    const ids = f.receiver.status().backups.map(r => r.id);
+    assert.deepEqual(ids.sort(), [...scheduled.slice(1), 'post-deploy-5-1', 'pre-release-5', 'pre-release-4', 'pre-release-3'].sort());
+    assert.equal((await fs.readdir(f.dataDir)).includes(`${scheduled[0]}.sqlite`), false);
+    f.state.now = new Date(Date.UTC(2026, 10, 17, 36));
     for (const mode of ['bad-hash', 'truncated', 'unauthorized', 'not-sqlite']) {
       f.state.mode = mode;
-      await assert.rejects(f.receiver.create({ id: `failed-${mode}`, kind: 'hourly' }));
-      assert.equal(f.receiver.status().backups.length, 4);
+      await assert.rejects(f.receiver.createScheduled('production-app'));
+      assert.equal(f.receiver.scheduledBackupDue(), true);
+      assert.deepEqual(f.receiver.status().backups.map(r => r.id).sort(), ids);
       assert.equal(JSON.stringify(f.receiver.status()).includes('secret-content'), false);
       assert.equal((await fs.readdir(f.dataDir)).some(n => n.endsWith('.part')), false);
     }
+
+    await f.receiver.close();
+    const restarted = new BackupReceiver(f.options);
+    await restarted.initialize();
+    try {
+      assert.equal(restarted.status().lastScheduledBackup?.id, scheduled.at(-1));
+      assert.equal(restarted.scheduledBackupDue(), true);
+    } finally { await restarted.close(); }
+  } finally { await f.close(); }
+});
+
+test('reads legacy timer receipts and keeps new operator-chosen ids in the manual retention slot', async () => {
+  const f = await fixture();
+  try {
+    const legacy = await f.receiver.create({ id: `hourly-${randomUUID()}`, kind: 'hourly' });
+    delete legacy.captureOrigin;
+    await f.receiver.close();
+    await fs.writeFile(path.join(f.dataDir, `${legacy.id}.json`), JSON.stringify(legacy));
+    const restarted = new BackupReceiver(f.options);
+    await restarted.initialize();
+    try {
+      assert.equal(restarted.status().lastScheduledBackup?.id, legacy.id);
+      f.state.now = new Date(Date.UTC(2026, 10, 17, 6));
+      await restarted.create({ id: `hourly-${randomUUID()}`, kind: 'hourly' });
+      assert.equal(restarted.scheduledBackupDue(), true);
+      assert.equal(restarted.status().lastScheduledBackup?.id, legacy.id);
+      assert.equal(restarted.status().backups.length, 2);
+    } finally { await restarted.close(); }
   } finally { await f.close(); }
 });
 

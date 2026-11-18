@@ -1,0 +1,3 @@
+export const SCHEDULE_INTERVAL_MS = 6 * 60 * 60_000;
+export const SCHEDULE_MAX_AGE_SECONDS = SCHEDULE_INTERVAL_MS / 1000 + 15 * 60;
+export const OFFSITE_MAX_AGE_SECONDS = (13 * 60 + 30) * 60;
