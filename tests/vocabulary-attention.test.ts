@@ -188,7 +188,7 @@ test('preparation pagination passes the former fifty-item cap and hydrates only 
   assert.equal(page.total,65);assert.deepEqual(hydrated,['work-60','work-61','work-62']);assert.equal(page.items[0].kind,'preparation');
 });
 test('failed dispatch remains visible until its durable state changes',()=>{
-  sql.prepare(`INSERT INTO vocabulary_post_session_dispatches(dispatch_id,learner_id,session_id,completion_id,evidence_json,status,created_at,last_error) VALUES ('dispatch','editor','session','completion','{}','failed',?,'ingestion failed')`).run(at);
+  sql.prepare(`INSERT INTO vocabulary_post_session_dispatches(dispatch_id,learner_id,session_id,completion_id,status,created_at,last_error) VALUES ('dispatch','editor','session','completion','failed',?,'ingestion failed')`).run(at);
   const item=listVocabularyAttention('editor',{},dependencies).items[0];assert.equal(item.kind,'dispatch');assert.equal(item.reason,'ingestion failed');
   sql.exec("UPDATE vocabulary_post_session_dispatches SET status='queued' WHERE dispatch_id='dispatch'");
   assert.equal(listVocabularyAttention('editor',{},dependencies).total,0);

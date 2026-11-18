@@ -8,7 +8,6 @@ import { ingestVocabularySessionEvidence, claimVocabularyReflectionJob, recoverV
   finishVocabularyReflectionJob, failVocabularyReflectionJob, failVocabularyAssessmentValidation, failVocabularySenseMappingCall, deferVocabularyReflectionForSense, recoverVocabularySenseDependencies, VocabularyReflectionConflict, VocabularyReflectionSourceConflict } from '../db/vocabulary-reflection.ts';
 import { getHostedServiceControls } from '../db/hosted-operations.ts';
 import { runHostedProviderWork, HostedProviderWorkUnavailableError } from '../hosted-runtime-controls.ts';
-import type { VocabularySessionProjection } from '../../src/domain/vocabulary-session.ts';
 import { createVocabularyReflectionProvider, VocabularyReflectionOutputError, type VocabularyReflectionProvider } from './reflection-provider.ts';
 import { InvalidAssessmentOutput } from './assessment-output-validation.ts';
 
@@ -35,17 +34,16 @@ export function createVocabularyProcessingWorker(options:{provider?:VocabularyRe
     changed||=expired.changes>0;
     const senseRecovered=recoverVocabularySenseDependencies(iso());changed=senseRecovered>0||changed;
     const recovered=recoverVocabularyReflectionJobs(iso());changed=recovered>0||changed;
-    const dispatches=getDb().prepare(`SELECT d.* FROM vocabulary_post_session_dispatches d JOIN learners l ON l.learner_id=d.learner_id
+    const dispatches=getDb().prepare(`SELECT d.dispatch_id,d.learner_id,d.completion_id FROM vocabulary_post_session_dispatches d JOIN learners l ON l.learner_id=d.learner_id
       WHERE d.status='queued' AND l.disabled_at IS NULL ORDER BY d.created_at,d.dispatch_id`).all() as {
-        dispatch_id:string;learner_id:string;completion_id:string;evidence_json:string}[];
+        dispatch_id:string;learner_id:string;completion_id:string}[];
     for(const dispatch of dispatches) {
       const token=randomUUID();
       const claimed=getDb().prepare(`UPDATE vocabulary_post_session_dispatches SET status='running',active_token=?,expires_at=?
         WHERE dispatch_id=? AND status='queued'`).run(token,new Date(now()+60_000).toISOString(),dispatch.dispatch_id);
       if(claimed.changes!==1)continue;
       try {
-        const evidence=JSON.parse(dispatch.evidence_json) as {projection:VocabularySessionProjection};
-        const cases=ingestVocabularySessionEvidence(dispatch.learner_id,dispatch.completion_id,evidence.projection,iso());
+        const cases=ingestVocabularySessionEvidence(dispatch.learner_id,dispatch.completion_id,undefined,iso());
         getDb().prepare(`UPDATE vocabulary_post_session_dispatches SET status='succeeded',active_token=NULL,expires_at=NULL,
           last_error=NULL,result_json=? WHERE dispatch_id=? AND active_token=?`).run(JSON.stringify({caseIds:cases}),dispatch.dispatch_id,token);
       }catch{getDb().prepare(`UPDATE vocabulary_post_session_dispatches SET status='failed',active_token=NULL,expires_at=NULL,

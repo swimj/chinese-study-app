@@ -282,6 +282,9 @@ export const schemaMigrations: readonly SchemaMigration[] = [{
     stageInvocationPromptReferences(db);
     stageImprovementPromptReferences(db);
   },
+}, {
+  id: 'app_schema:0081_reference_dispatch_completion',
+  sql: fs.readFileSync(new URL('./migrations/0081_reference_dispatch_completion.sql', import.meta.url), 'utf8'),
 }];
 
 function checksum(value: string): string {

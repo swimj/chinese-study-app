@@ -69,6 +69,8 @@ beforeEach(() => {
   sql.exec("ALTER TABLE lexical_words ADD COLUMN hanzi TEXT NOT NULL DEFAULT '字';ALTER TABLE lexical_words ADD COLUMN pinyin TEXT NOT NULL DEFAULT 'zì';ALTER TABLE lexical_words ADD COLUMN traditional TEXT;ALTER TABLE lexical_words ADD COLUMN meaning TEXT NOT NULL DEFAULT 'character';");
 
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0042_vocabulary_sessions.sql',import.meta.url),'utf8'));
+  sql.exec(fs.readFileSync(new URL('../server/db/migrations/0079_share_session_context.sql',import.meta.url),'utf8'));
+  sql.exec(fs.readFileSync(new URL('../server/db/migrations/0081_reference_dispatch_completion.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0044_vocabulary_reflection.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0061_vocabulary_sense_mapping_retries.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0063_vocabulary_proposal_drop_actions.sql',import.meta.url),'utf8'));
