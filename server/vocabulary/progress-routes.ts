@@ -1,11 +1,11 @@
 import type { Express } from 'express';
 import { performance } from 'node:perf_hooks';
-import { computeVocabularyProgress, loadVocabularyProgressInput } from '../db/vocabulary-progress.ts';
+import { computeVocabularyProgress, loadVocabularyProgressInput, type VocabularyProgressLoadStats } from '../db/vocabulary-progress.ts';
 import { requireLearnerId } from '../db/learner-context.ts';
 import { parseVocabularyTimeZone } from './study-routes.ts';
 import { VocabularySessionInputError } from '../db/vocabulary-sessions.ts';
 
-export type VocabularyProgressCost = { event: 'vocabulary.progress.computed'; completions: number; reportBytes: number; loadMs: number; computeMs: number };
+export type VocabularyProgressCost = VocabularyProgressLoadStats & { event: 'vocabulary.progress.computed'; loadMs: number; computeMs: number };
 /** Computed on request from the learner's whole closed history; the cost line keeps that visible in hosted logs. */
 export function registerVocabularyProgressRoutes(app: Express, logCost: (cost: VocabularyProgressCost) => void = cost => console.log(JSON.stringify(cost))): void {
   app.get('/api/vocabulary/progress', (req, res) => {

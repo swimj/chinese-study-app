@@ -2,7 +2,7 @@ import { getDb } from './connection.ts';
 import { requireLearnerId } from './learner-context.ts';
 import type { VocabularySessionProjection } from '../../src/domain/vocabulary-session.ts';
 import type { VocabularyStatisticsDay,VocabularyStatistics,VocabularyStudyDays } from '../../src/domain/vocabulary-statistics.ts';
-import { localNewWordDay } from '../vocabulary/composition.ts';
+import { vocabularyStudyDayFormatter } from '../vocabulary/composition.ts';
 export type { VocabularyStatisticsDay,VocabularyStatistics } from '../../src/domain/vocabulary-statistics.ts';
 export type VocabularyUsageDay = VocabularyStatisticsDay & {learnerIds:string[];newWords:number;practiceCompleted:number};
 function empty(dayKey:string):VocabularyUsageDay{return {dayKey,sessions:0,coveredWords:0,unknownCoverageSessions:0,acceptedResponses:0,rejectedResponses:0,activeDurationMs:0,unknownDurationSessions:0,learnerIds:[],newWords:0,practiceCompleted:0};}
@@ -34,15 +34,15 @@ export function getVocabularyCompletionUsage(dayKey:string,learnerId?:string):Vo
   }
   return {...result,learnerIds:[...learners]};
 }
-const studyDay=(instant:string,timeZone?:string)=>timeZone?localNewWordDay(instant,timeZone):instant.slice(0,10);
 /** Study days on the timed session's day key. A finished session counts from staging, so its Undo
  * window still shows today; a cancelled completion reopened the session and does not count. */
 export function getVocabularyStudyDays(now:Date,timeZone?:string):VocabularyStudyDays {
-  const today=studyDay(now.toISOString(),timeZone);
+  const studyDay=vocabularyStudyDayFormatter(timeZone);
+  const today=studyDay(now.toISOString());
   const since=new Date(now.getTime()-15*24*60*60*1000).toISOString();
   const rows=getDb().prepare(`SELECT staged_at FROM vocabulary_session_completions
     WHERE learner_id=? AND status<>'cancelled' AND staged_at>=? AND staged_at<=?`).all(requireLearnerId(),since,now.toISOString()) as {staged_at:string}[];
-  return {today,studied:[...new Set(rows.map(row=>studyDay(row.staged_at,timeZone)))].filter(day=>day<=today).sort()};
+  return {today,studied:[...new Set(rows.map(row=>studyDay(row.staged_at)))].filter(day=>day<=today).sort()};
 }
 /** Learner-specific union. A legacy summary sharing a new closed session identity is counted once. */
 export function getVocabularyStatistics(now=new Date(),timeZone?:string):VocabularyStatistics {

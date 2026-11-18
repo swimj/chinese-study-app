@@ -1,6 +1,6 @@
 import { getDb } from './connection.ts';
 import { requireLearnerId } from './learner-context.ts';
-import { localNewWordDay } from '../vocabulary/composition.ts';
+import { vocabularyStudyDayFormatter } from '../vocabulary/composition.ts';
 import { isLearnerPronunciationRejection, type VocabularyEncounterEvidence, type VocabularySessionProjection } from '../../src/domain/vocabulary-session.ts';
 import { normalizeProductionAnswerForProfile } from '../../src/study-profile.ts';
 import {
@@ -12,7 +12,16 @@ export type { VocabularyProgress } from '../../src/domain/vocabulary-progress.ts
 const DAY_MS = 24 * 60 * 60 * 1000;
 const BASELINE_DAYS = 14, RECENT_DAYS = 30, LONG_DAYS = 90, ACTIVITY_DAYS = 14, FIRST_PRODUCTION_LIMIT = 12;
 
-export type VocabularyProgressCompletion = { stagedAt: string; activeDurationMs: number | null; report: VocabularySessionProjection };
+type WordLabel = { hanzi: string; pinyin: string };
+type Production = { wordId: string; at: number; label?: WordLabel };
+type CompletionAttempt = Pick<Attempt, 'key' | 'cue' | 'skill' | 'held' | 'contentId' | 'at'> & {
+  firstPresentation: boolean; encounterId: string; outcome: 'success' | 'failure' | 'pending';
+};
+type CompletionFacts = {
+  seenContent: string[]; attempts: CompletionAttempt[]; productions: Production[];
+  words: { wordId: string; initialMode: string; teachingCompleted: boolean }[];
+};
+type VocabularyProgressCompletion = { stagedAt: string; activeDurationMs: number | null; facts: CompletionFacts };
 export type VocabularyProgressInput = {
   /** One learner's closed completions, ordered by staging time. */
   completions: readonly VocabularyProgressCompletion[];
@@ -21,7 +30,7 @@ export type VocabularyProgressInput = {
   /** Judged encounters listed as unfair. */
   unfairEncounterIds: ReadonlySet<string>;
   /** Written forms for words whose producing snapshot did not carry them. */
-  wordLabels?: ReadonlyMap<string, { hanzi: string; pinyin: string }>;
+  wordLabel?: (wordId: string) => WordLabel | undefined;
 };
 
 type AttemptResult = 'success' | 'failure' | 'void' | 'pending';
@@ -61,13 +70,12 @@ function itemKey(encounter: VocabularyEncounterEvidence): { key: string; skill: 
   if (!skill) fail(`unknown exercise kind ${String(kind)}`);
   return { key: `word:${encounter.wordId}:${skill}`, skill };
 }
-function attemptResult(encounter: VocabularyEncounterEvidence, input: VocabularyProgressInput): AttemptResult {
+function firstOutcome(encounter: VocabularyEncounterEvidence): CompletionAttempt['outcome'] {
   const payload = encounter.effectiveResponses[0]!.payload;
   if (payload.outcome === 'accepted') return payload.helpUsed === true ? 'failure' : 'success';
   if (encounter.snapshot.kind !== 'production') return 'failure';
   if (isLearnerPronunciationRejection(encounter.snapshot.kind, payload, encounter.snapshot.assessment?.acceptedAnswers ?? [])) return 'failure';
-  if (input.unfairEncounterIds.has(encounter.encounterId)) return 'void';
-  return input.judgedEncounterIds.has(encounter.encounterId) ? 'failure' : 'pending';
+  return 'pending';
 }
 /** The produced word: the encounter's word, or the single reveal word a pure-cue answer names. */
 function producedWord(encounter: VocabularyEncounterEvidence, response: string | null): string | null {
@@ -90,14 +98,50 @@ function median(values: readonly number[]): number {
 }
 const shiftDay = (dayKey: string, days: number) => new Date(Date.parse(`${dayKey}T00:00:00.000Z`) + days * DAY_MS).toISOString().slice(0, 10);
 
-/** Pure: one chronological pass over a learner's closed completions. Never writes learner state. */
+/** Everything in these facts comes from immutable closed evidence. Judgments, labels,
+ * time windows and relationships to earlier sessions are resolved when reading. */
+export function progressCompletionFacts(report: VocabularySessionProjection): CompletionFacts {
+  assertReport(report);
+  const seenContent = new Set<string>(), items = new Set<string>();
+  const attempts: CompletionAttempt[] = [], productions = new Map<string, Production>();
+  for (const encounter of report.encounters) {
+    if (encounter.presentationUndone) continue;
+    const contentId = encounter.snapshot.contentId;
+    const firstPresentation = !seenContent.has(contentId);
+    seenContent.add(contentId);
+    if (!isCountableProgressEncounter(encounter)) continue;
+    const item = itemKey(encounter);
+    if (!item) continue;
+    if (encounter.snapshot.kind === 'production') {
+      for (const response of encounter.effectiveResponses) {
+        if (response.payload.outcome !== 'accepted' || response.payload.helpUsed === true) continue;
+        const wordId = producedWord(encounter, response.payload.response);
+        if (wordId === null || productions.has(wordId)) continue;
+        const reveal = encounter.snapshot.body.revealWords?.find(word => word.wordId === wordId);
+        productions.set(wordId, { wordId, at: instant(response.occurredAt, 'response time'),
+          label: reveal && { hanzi: reveal.hanzi, pinyin: reveal.pinyin } });
+      }
+    }
+    if (items.has(item.key)) continue;
+    items.add(item.key);
+    const cue = item.skill === 'cue';
+    attempts.push({ ...item, cue, contentId, firstPresentation, encounterId: encounter.encounterId,
+      held: cue || encounter.mode === 'practice' || encounter.mode === 'maintain',
+      at: instant(encounter.effectiveResponses[0]!.occurredAt, 'response time'), outcome: firstOutcome(encounter) });
+  }
+  const words = Object.entries(report.words).filter(([, word]) => word.admitted)
+    .map(([wordId, word]) => ({ wordId, initialMode: word.initialMode, teachingCompleted: word.teachingCompleted }));
+  return { seenContent: [...seenContent], attempts, productions: [...productions.values()], words };
+}
+
+/** Fold immutable completion facts in staging order using the current judgments and clock. */
 export function computeVocabularyProgress(input: VocabularyProgressInput, now: Date, timeZone?: string): VocabularyProgress {
-  const dayOf = (at: string) => timeZone ? localNewWordDay(at, timeZone) : at.slice(0, 10);
+  const dayOf = vocabularyStudyDayFormatter(timeZone);
   const nowMs = now.getTime(), today = dayOf(now.toISOString());
   const attempts: Attempt[] = [];
   const lastAttemptAt = new Map<string, number>(), contentsByItem = new Map<string, Set<string>>(), seenContent = new Set<string>();
   const activity = new Map<string, { words: Set<string>; cues: Set<string>; activeDurationMs: number }>();
-  const produced = new Map<string, { at: number; encounter: VocabularyEncounterEvidence }>();
+  const produced = new Map<string, Production>();
   const efficiency = new Map<string, { month: string | null; sessions: number; settled: boolean }>();
   let firstStagedAt: number | null = null, previousStagedAt = -Infinity;
 
@@ -105,50 +149,36 @@ export function computeVocabularyProgress(input: VocabularyProgressInput, now: D
     const stagedAt = instant(completion.stagedAt, 'staged time');
     if (stagedAt < previousStagedAt) throw new Error('Vocabulary progress completions must be ordered by staging time');
     previousStagedAt = stagedAt; firstStagedAt ??= stagedAt;
-    const report = completion.report;
-    assertReport(report);
+    const facts = completion.facts;
     const day = dayOf(completion.stagedAt);
     const bucket = activity.get(day) ?? { words: new Set<string>(), cues: new Set<string>(), activeDurationMs: 0 };
     activity.set(day, bucket);
     const duration = completion.activeDurationMs;
     if (typeof duration === 'number' && Number.isSafeInteger(duration) && duration >= 0) bucket.activeDurationMs += duration;
 
-    const sessionItems = new Set<string>(), sessionAttempts: Attempt[] = [];
-    for (const encounter of report.encounters) {
-      if (encounter.presentationUndone) continue;
-      const novelContent = !seenContent.has(encounter.snapshot.contentId);
-      seenContent.add(encounter.snapshot.contentId);
-      if (!isCountableProgressEncounter(encounter)) continue;
-      const item = itemKey(encounter);
-      if (item === null) continue;
-      if (encounter.snapshot.kind === 'production') {
-        for (const response of encounter.effectiveResponses) {
-          if (response.payload.outcome !== 'accepted' || response.payload.helpUsed === true) continue;
-          const wordId = producedWord(encounter, response.payload.response);
-          if (wordId !== null && !produced.has(wordId)) produced.set(wordId, { at: instant(response.occurredAt, 'response time'), encounter });
-        }
+    for (const production of facts.productions) {
+      if (!produced.has(production.wordId)) produced.set(production.wordId, production);
+    }
+    for (const attempt of facts.attempts) {
+      (attempt.cue ? bucket.cues : bucket.words).add(attempt.key);
+      const previous = lastAttemptAt.get(attempt.key), contents = contentsByItem.get(attempt.key);
+      let result: AttemptResult = attempt.outcome;
+      if (result === 'pending') {
+        if (input.unfairEncounterIds.has(attempt.encounterId)) result = 'void';
+        else if (input.judgedEncounterIds.has(attempt.encounterId)) result = 'failure';
       }
-      if (sessionItems.has(item.key)) continue;
-      sessionItems.add(item.key);
-      const cue = item.skill === 'cue';
-      (cue ? bucket.cues : bucket.words).add(item.key);
-      const at = instant(encounter.effectiveResponses[0]!.occurredAt, 'response time');
-      const previous = lastAttemptAt.get(item.key), contents = contentsByItem.get(item.key);
-      sessionAttempts.push({ key: item.key, cue, skill: item.skill, contentId: encounter.snapshot.contentId, at,
-        held: cue || encounter.mode === 'practice' || encounter.mode === 'maintain',
-        result: attemptResult(encounter, input), gapMs: previous === undefined ? null : at - previous, novelContent,
-        transferEligible: cue || (contents !== undefined && [...contents].some(id => id !== encounter.snapshot.contentId)) });
-    }
-    // Earlier sessions only: an item's gap and prior content never come from its own session.
-    for (const attempt of sessionAttempts) {
+      attempts.push({ ...attempt, result, gapMs: previous === undefined ? null : attempt.at - previous,
+        novelContent: attempt.firstPresentation && !seenContent.has(attempt.contentId),
+        transferEligible: attempt.cue || (contents !== undefined && (contents.size > 1 || !contents.has(attempt.contentId))) });
+      // Each fact represents a distinct item within this session.
       lastAttemptAt.set(attempt.key, attempt.at);
-      const contents = contentsByItem.get(attempt.key) ?? new Set<string>();
-      contents.add(attempt.contentId); contentsByItem.set(attempt.key, contents);
+      const updated = contents ?? new Set<string>();
+      updated.add(attempt.contentId); contentsByItem.set(attempt.key, updated);
     }
-    attempts.push(...sessionAttempts);
+    for (const contentId of facts.seenContent) seenContent.add(contentId);
 
-    for (const [wordId, word] of Object.entries(report.words)) {
-      if (!word.admitted) continue;
+    for (const word of facts.words) {
+      const wordId = word.wordId;
       const state = efficiency.get(wordId) ?? { month: null, sessions: 0, settled: false };
       efficiency.set(wordId, state);
       if (state.settled) continue;
@@ -174,8 +204,7 @@ export function computeVocabularyProgress(input: VocabularyProgressInput, now: D
     .filter(([, production]) => production.at >= baselineEnd && production.at <= nowMs)
     .sort((a, b) => b[1].at - a[1].at).slice(0, FIRST_PRODUCTION_LIMIT)
     .map(([wordId, production]) => {
-      const reveal = production.encounter.snapshot.body.revealWords?.find(word => word.wordId === wordId);
-      const label = reveal ?? input.wordLabels?.get(wordId);
+      const label = production.label ?? input.wordLabel?.(wordId);
       if (!label) throw new Error(`No written form for produced word ${wordId}`);
       return { wordId, hanzi: label.hanzi, pinyin: label.pinyin, dayKey: dayOf(new Date(production.at).toISOString()) };
     });
@@ -203,33 +232,81 @@ export function computeVocabularyProgress(input: VocabularyProgressInput, now: D
   };
 }
 
-export type VocabularyProgressLoadStats = { completions: number; reportBytes: number };
-/** Loads the current learner's closed runtime history. Legacy review summaries are deliberately ignored. */
+export type VocabularyProgressLoadStats = { completions: number; reportsRead: number; reportBytes: number };
+
+// Cache serialized facts so the retained payload has an exact byte budget. The database
+// enforces immutability once closed. A replaced connection starts with an empty cache.
+const FACT_BUDGET = 4 * 1024 * 1024;
+const factCaches = new WeakMap<ReturnType<typeof getDb>, { entries: Map<string, Buffer>; bytes: number }>();
+
+function loadClosedCompletions(learnerId: string) {
+  const db = getDb();
+  const committedCache = db.isTransaction ? undefined : factCaches.get(db);
+  const cache = committedCache ?? { entries: new Map<string, Buffer>(), bytes: 0 };
+  if (!db.isTransaction && !committedCache) factCaches.set(db, cache);
+  // Check membership on every request. Never read report or action payloads on a hit.
+  const rows = db.prepare(`SELECT completion_id FROM vocabulary_session_completions
+    WHERE learner_id=? AND status='closed' ORDER BY staged_at,completion_id`).all(learnerId) as { completion_id: string }[];
+  const byId = new Map<string, VocabularyProgressCompletion>(), missing: string[] = [];
+  for (const { completion_id: id } of rows) {
+    const hit = cache.entries.get(id);
+    if (!hit) { missing.push(id); continue; }
+    byId.set(id, JSON.parse(hit.toString()) as VocabularyProgressCompletion);
+    cache.entries.delete(id);
+    cache.entries.set(id, hit);
+  }
+  let reportBytes = 0;
+  if (missing.length) {
+    const reports = db.prepare(`SELECT completion_id, staged_at, json_extract(input_json,'$.activeDurationMs') AS active_ms, report_json
+      FROM vocabulary_session_completions WHERE learner_id=? AND status='closed' AND completion_id IN (SELECT value FROM json_each(?))`);
+    for (const row of reports.iterate(learnerId, JSON.stringify(missing))) {
+      const report = String(row.report_json), id = String(row.completion_id);
+      reportBytes += Buffer.byteLength(report);
+      const completion = { stagedAt: String(row.staged_at), activeDurationMs: typeof row.active_ms === 'number' ? row.active_ms : null,
+        facts: progressCompletionFacts(JSON.parse(report) as VocabularySessionProjection) };
+      byId.set(id, completion);
+      const encoded = Buffer.from(JSON.stringify(completion));
+      if (encoded.length > FACT_BUDGET) continue;
+      while (cache.bytes + encoded.length > FACT_BUDGET) {
+        const oldest = cache.entries.keys().next().value!;
+        cache.bytes -= cache.entries.get(oldest)!.length;
+        cache.entries.delete(oldest);
+      }
+      cache.entries.set(id, encoded);
+      cache.bytes += encoded.length;
+    }
+  }
+  const completions = rows.map(({ completion_id }) => {
+    const completion = byId.get(completion_id);
+    if (!completion) throw new Error('Closed vocabulary completion disappeared during progress load');
+    return completion;
+  });
+  return { completions, stats: { completions: rows.length, reportsRead: missing.length, reportBytes } };
+}
+
 export function loadVocabularyProgressInput(learnerId: string): { input: VocabularyProgressInput; stats: VocabularyProgressLoadStats } {
   const db = getDb();
-  const rows = db.prepare(`SELECT staged_at,json_extract(input_json,'$.activeDurationMs') AS active_ms,report_json FROM vocabulary_session_completions
-    WHERE learner_id=? AND status='closed' ORDER BY staged_at,completion_id`).all(learnerId) as { staged_at: string; active_ms: unknown; report_json: string }[];
-  let reportBytes = 0;
-  const completions = rows.map(row => {
-    reportBytes += row.report_json.length;
-    return { stagedAt: row.staged_at, activeDurationMs: typeof row.active_ms === 'number' ? row.active_ms : null, report: JSON.parse(row.report_json) as VocabularySessionProjection };
-  });
+  const { completions, stats } = loadClosedCompletions(learnerId);
+  const pending = completions.flatMap(completion => completion.facts.attempts
+    .filter(attempt => attempt.outcome === 'pending').map(attempt => attempt.encounterId));
   // A feedback case may be reassessed; its latest succeeded judgment decides.
-  const judgments = db.prepare(`SELECT e.encounter_id,json_extract(j.result_json,'$.input.unfairEncounterIds') AS unfair FROM reflection_cases c
+  const judgments = pending.length === 0 ? [] : db.prepare(`SELECT e.encounter_id,json_extract(j.result_json,'$.input.unfairEncounterIds') AS unfair FROM reflection_cases c
     JOIN reflection_case_evidence e ON e.case_id=c.case_id
     JOIN vocabulary_reflection_jobs j ON j.case_id=c.case_id AND j.status='succeeded'
-    WHERE c.learner_id=? AND c.kind='learner_feedback' ORDER BY j.created_at,j.job_id`).all(learnerId) as { encounter_id: string; unfair: string | null }[];
+    WHERE c.learner_id=? AND c.kind='learner_feedback' AND e.encounter_id IN (SELECT value FROM json_each(?))
+    ORDER BY j.created_at,j.job_id`).all(learnerId, JSON.stringify(pending)) as { encounter_id: string; unfair: string | null }[];
   const verdict = new Map<string, boolean>();
   for (const row of judgments) {
     const unfair = row.unfair === null ? [] : JSON.parse(row.unfair) as unknown;
     if (!Array.isArray(unfair)) throw new Error('Feedback judgment has malformed unfair encounters');
     verdict.set(row.encounter_id, unfair.includes(row.encounter_id));
   }
-  const wordLabels = new Map((db.prepare(`SELECT l.id,l.hanzi,l.pinyin FROM learner_words w JOIN lexical_words l ON l.id=w.word_id WHERE w.learner_id=?`)
-    .all(learnerId) as { id: string; hanzi: string; pinyin: string }[]).map(row => [row.id, { hanzi: row.hanzi, pinyin: row.pinyin }]));
+  const labelQuery = db.prepare(`SELECT l.hanzi,l.pinyin FROM learner_words w JOIN lexical_words l ON l.id=w.word_id
+    WHERE w.learner_id=? AND w.word_id=?`);
+  const wordLabel = (wordId: string) => labelQuery.get(learnerId, wordId) as WordLabel | undefined;
   return {
-    input: { completions, judgedEncounterIds: new Set(verdict.keys()), unfairEncounterIds: new Set([...verdict].filter(([, unfair]) => unfair).map(([id]) => id)), wordLabels },
-    stats: { completions: rows.length, reportBytes },
+    input: { completions, judgedEncounterIds: new Set(verdict.keys()), unfairEncounterIds: new Set([...verdict].filter(([, unfair]) => unfair).map(([id]) => id)), wordLabel },
+    stats,
   };
 }
 export function getVocabularyProgress(now = new Date(), timeZone?: string): VocabularyProgress {

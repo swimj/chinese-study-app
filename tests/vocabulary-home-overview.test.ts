@@ -5,14 +5,12 @@ import { test } from 'node:test';
 import { HomeProgressArea, VocabularyHomeOverview } from '../src/pages/VocabularyHomePage.tsx';
 import { formatStudyTime, HomeProgress, weekStudyTimeMs } from '../src/pages/HomeProgress.tsx';
 import type { VocabularyProgress } from '../src/domain/vocabulary-progress.ts';
-import { vocabularyStudyWeek, type VocabularyStatistics } from '../src/domain/vocabulary-statistics.ts';
+import { vocabularyStudyWeek, type VocabularyStudyDays } from '../src/domain/vocabulary-statistics.ts';
 
-const statistics: VocabularyStatistics = { days: [{ dayKey: '2026-10-24', sessions: 2, coveredWords: 3,
-  unknownCoverageSessions: 0, acceptedResponses: 12, rejectedResponses: 2, activeDurationMs: 180000, unknownDurationSessions: 0 }],
-  modes: { unstudied: 2, solidify: 4, practice: 6, maintain: 0 }, studyDays: { today: '2026-10-24', studied: [] } };
+const studyDays: VocabularyStudyDays = { today: '2026-10-24', studied: [] };
 function render(options: Partial<Parameters<typeof VocabularyHomeOverview>[0]> = {}) {
   return renderToStaticMarkup(createElement(VocabularyHomeOverview, { compact: false, busy: false, settings: false,
-    saving: false, guideToSettings: false, statistics, onStart: () => {}, onToggleSettings: () => {},
+    saving: false, guideToSettings: false, studyDays, onStart: () => {}, onToggleSettings: () => {},
     timed: false, ...options }));
 }
 
@@ -58,12 +56,12 @@ test('compact Start retains preparation and settings guards', () => {
 });
 
 test('a studied day turns timed Start into studying a little more, and only in the timed paradigm',()=>{
-  const studied={...statistics,studyDays:{today:'2026-10-24',studied:['2026-10-22','2026-10-24']}};
+  const studied={today:'2026-10-24',studied:['2026-10-22','2026-10-24']};
   assert.match(render({timed:true}),/Start session/);
-  assert.match(render({timed:true,statistics:studied}),/Study a little more/);
-  assert.doesNotMatch(render({timed:true,statistics:studied}),/Start session/);
-  assert.match(render({statistics:studied}),/Start session/);
-  assert.match(render({timed:true,statistics:studied,busy:true}),/Preparing session/);
+  assert.match(render({timed:true,studyDays:studied}),/Study a little more/);
+  assert.doesNotMatch(render({timed:true,studyDays:studied}),/Start session/);
+  assert.match(render({studyDays:studied}),/Start session/);
+  assert.match(render({timed:true,studyDays:studied,busy:true}),/Preparing session/);
 });
 
 test('the week runs Monday to Sunday with studied, open, and upcoming days and no counts',()=>{
@@ -74,11 +72,11 @@ test('the week runs Monday to Sunday with studied, open, and upcoming days and n
     ['2026-10-23','F','open'],['2026-10-24','S','studied'],['2026-10-25','S','upcoming']]);
   assert.equal(vocabularyStudyWeek({today:'2026-10-19',studied:[]})[0]!.dayKey,'2026-10-19');
   assert.equal(vocabularyStudyWeek({today:'2026-10-25',studied:[]}).at(-1)!.dayKey,'2026-10-25');
-  const html=render({statistics:{...statistics,studyDays:{today:'2026-10-24',studied:['2026-10-19','2026-10-24']}}});
+  const html=render({studyDays:{today:'2026-10-24',studied:['2026-10-19','2026-10-24']}});
   assert.match(html,/role="img" aria-label="This week: studied Monday, Saturday"/);
   assert.match(html,/class="study-week-day is-studied is-today"/);
   assert.doesNotMatch(html,/streak/i);
-  assert.match(render({statistics:{...statistics,studyDays:{today:'2026-10-24',studied:[]}}}),/aria-label="This week: no study yet"/);
+  assert.match(render({studyDays:{today:'2026-10-24',studied:[]}}),/aria-label="This week: no study yet"/);
   assert.doesNotMatch(render({compact:true}),/study-week/);
 });
 
@@ -93,15 +91,15 @@ const progress:VocabularyProgress={today:'2026-10-24',
   efficiency:[{month:'2026-09',medianSessions:3,settled:6,settling:2},{month:'2026-10',medianSessions:null,settled:1,settling:9}]};
 const empty:VocabularyProgress={...progress,days:progress.days.map(day=>({...day,wordItems:0,cueItems:0,activeDurationMs:0})),
   activeVocabulary:{total:0,addedLast30Days:0},firstProductions:[],recognition:rate(0,0),stickiness:{...rate(0,0),wordAttempts:0,cueAttempts:0},transfer:rate(0,0),efficiency:[]};
-const studied={...statistics,studyDays:{today:'2026-10-24',studied:['2026-10-21','2026-10-24']}};
+const studied={today:'2026-10-24',studied:['2026-10-21','2026-10-24']};
 
 test('the week shows its cumulative measured time beside the dots, and omits it without measured time or in the compact layout',()=>{
   assert.equal(weekStudyTimeMs(progress),6_000_000);
   assert.deepEqual([formatStudyTime(6_000_000),formatStudyTime(25*60_000),formatStudyTime(10_000),formatStudyTime(3_600_000)],['1h 40m','25m','1m','1h']);
-  assert.match(render({statistics:studied,progress}),/class="study-week"[^>]*>.*<span class="study-week-time">1h 40m this week<\/span><\/div>/);
-  assert.doesNotMatch(render({statistics:studied,progress:empty}),/this week</);
-  assert.doesNotMatch(render({statistics:studied,progress:null}),/this week</);
-  assert.doesNotMatch(render({statistics:studied,progress,compact:true}),/this week|study-week/);
+  assert.match(render({studyDays:studied,progress}),/class="study-week"[^>]*>.*<span class="study-week-time">1h 40m this week<\/span><\/div>/);
+  assert.doesNotMatch(render({studyDays:studied,progress:empty}),/this week</);
+  assert.doesNotMatch(render({studyDays:studied,progress:null}),/this week</);
+  assert.doesNotMatch(render({studyDays:studied,progress,compact:true}),/this week|study-week/);
 });
 
 test('progress shows the 7-day stacked bars, indicators, null rates, and one disclosure per indicator',()=>{

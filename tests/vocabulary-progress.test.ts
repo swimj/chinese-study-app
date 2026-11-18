@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import express from 'express';
 import { setDb } from '../server/db/connection.ts';
 import { runWithLearnerId } from '../server/db/learner-context.ts';
-import { computeVocabularyProgress, getVocabularyProgress, loadVocabularyProgressInput, type VocabularyProgressInput } from '../server/db/vocabulary-progress.ts';
+import { progressCompletionFacts, computeVocabularyProgress, getVocabularyProgress, loadVocabularyProgressInput, type VocabularyProgressInput } from '../server/db/vocabulary-progress.ts';
 import { registerVocabularyProgressRoutes, type VocabularyProgressCost } from '../server/vocabulary/progress-routes.ts';
 import type { VocabularyEncounterEvidence, VocabularySessionProjection, VocabularyWordMode } from '../src/domain/vocabulary-session.ts';
 
@@ -40,10 +40,10 @@ function report(encounters: VocabularyEncounterEvidence[], words: Record<string,
   return { encounters, words: Object.fromEntries(Object.entries(words).map(([id, word]) => [id, { wordId: id, mode: word.initialMode, admitted: true, teachingCompleted: false, ...word }])) } as unknown as VocabularySessionProjection;
 }
 const completion = (stagedAt: string, encounters: VocabularyEncounterEvidence[], words?: Record<string, WordState>, activeDurationMs: number | null = 60_000) =>
-  ({ stagedAt, activeDurationMs, report: report(encounters, words) });
+  ({ stagedAt, activeDurationMs, facts: progressCompletionFacts(report(encounters, words)) });
 function compute(completions: VocabularyProgressInput['completions'], options: Partial<VocabularyProgressInput> = {}, timeZone?: string) {
   return computeVocabularyProgress({ completions, judgedEncounterIds: new Set(), unfairEncounterIds: new Set(),
-    wordLabels: new Map([['w1', { hanzi: '一', pinyin: 'yī' }], ['w2', { hanzi: '二', pinyin: 'èr' }]]), ...options }, NOW, timeZone);
+    wordLabel: id => new Map([['w1', { hanzi: '一', pinyin: 'yī' }], ['w2', { hanzi: '二', pinyin: 'èr' }]]).get(id), ...options }, NOW, timeZone);
 }
 const repeat = <T>(count: number, make: (index: number) => T) => Array.from({ length: count }, (_, index) => make(index));
 
@@ -128,7 +128,7 @@ test('the baseline hides early first productions but keeps them in the total; th
     completion(ago(60), [encounter({ word: 'early', kind: 'production', at: ago(60) })]),
     completion(ago(47), [encounter({ word: 'early', kind: 'production', at: ago(47) })]),
     ...words.map((id, index) => completion(ago(40 - index * 2), [encounter({ word: id, kind: 'production', at: ago(40 - index * 2) })])),
-  ], { wordLabels: labels });
+  ], { wordLabel: id => labels.get(id) });
   assert.equal(result.activeVocabulary.total, 16);
   assert.equal(result.activeVocabulary.addedLast30Days, 9);
   assert.equal(result.firstProductions.length, 12);
@@ -163,7 +163,7 @@ test('day bucketing follows the local 04:00 boundary and sums active time', () =
 });
 
 test('malformed reports and unordered completions fail loudly', () => {
-  assert.throws(() => compute([{ stagedAt: ago(1), activeDurationMs: null, report: { words: {} } as unknown as VocabularySessionProjection }]), /Malformed vocabulary progress report/);
+  assert.throws(() => progressCompletionFacts({ words: {} } as unknown as VocabularySessionProjection), /Malformed vocabulary progress report/);
   assert.throws(() => compute([completion(ago(1), []), completion(ago(2), [])]), /ordered/);
 });
 
@@ -223,4 +223,55 @@ test('the endpoint validates the time zone, returns progress and logs its cost',
     assert.equal(costs[0]!.completions, 1);
     assert.ok(costs[0]!.reportBytes > 0);
   } finally { server.close(); }
+});
+
+test('repeat progress reads reuse closed evidence and see new sessions and current judgments', () => {
+  const db = database();
+  setDb(db);
+  const first = loadVocabularyProgressInput('a');
+  assert.equal(first.stats.reportsRead, 1);
+  const repeat = loadVocabularyProgressInput('a');
+  assert.deepEqual(repeat.stats, { completions: 1, reportsRead: 0, reportBytes: 0 });
+  assert.deepEqual(computeVocabularyProgress(repeat.input, NOW), computeVocabularyProgress(first.input, NOW));
+
+  db.exec(`UPDATE vocabulary_reflection_jobs SET status='succeeded',result_json='{"input":{"unfairEncounterIds":["running"]}}'
+    WHERE job_id='j3';
+    UPDATE vocabulary_session_completions SET status='closed' WHERE completion_id='pending'`);
+  const afterStudy = loadVocabularyProgressInput('a');
+  assert.equal(afterStudy.stats.completions, 2);
+  assert.equal(afterStudy.stats.reportsRead, 1);
+  assert.ok(afterStudy.input.unfairEncounterIds.has('running'));
+  assert.equal(loadVocabularyProgressInput('b').stats.reportsRead, 1);
+  setDb(database());
+  assert.equal(loadVocabularyProgressInput('a').stats.reportsRead, 1);
+});
+
+test('rolled-back evidence cannot populate the committed progress cache', () => {
+  const db = database();
+  setDb(db);
+  db.exec("BEGIN; UPDATE vocabulary_session_completions SET status='closed' WHERE completion_id='pending'");
+  assert.equal(loadVocabularyProgressInput('a').stats.reportsRead, 2);
+  db.exec('ROLLBACK');
+  assert.deepEqual(loadVocabularyProgressInput('a').stats.completions, 1);
+  db.exec("UPDATE vocabulary_session_completions SET status='closed' WHERE completion_id='pending'");
+  assert.equal(loadVocabularyProgressInput('a').stats.reportsRead, 1);
+});
+
+test('eviction preserves progress and rereads only missing reports when history exceeds the cache budget', () => {
+  const db = database();
+  setDb(db);
+  // Each compact fact set is just over 2 MiB, so either one fits but both cannot.
+  const insert = db.prepare('INSERT INTO vocabulary_session_completions VALUES (?,?,?,?,?,?)');
+  for (const [index, id] of ['large-a', 'large-b'].entries()) {
+    const evidence = encounter({ content: id + 'x'.repeat(1024 * 1024), word: id });
+    insert.run(id, 'large', 'closed', ago(2 - index), '{}', JSON.stringify(report([evidence])));
+  }
+  const cold = loadVocabularyProgressInput('large');
+  assert.equal(cold.stats.reportsRead, 2);
+  const expected = computeVocabularyProgress(cold.input, NOW);
+  for (let i = 0; i < 2; i++) {
+    const warm = loadVocabularyProgressInput('large');
+    assert.equal(warm.stats.reportsRead, 1);
+    assert.deepEqual(computeVocabularyProgress(warm.input, NOW), expected);
+  }
 });
