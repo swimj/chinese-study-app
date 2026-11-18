@@ -597,6 +597,13 @@ Hosted writes reject an unregistered authored prompt before the provider call.
 The [prompt authoring procedure](prompt-development.md#retain-authored-prompt-sources)
 covers registration and retention.
 
+Improvement-job checkpoints use the same archive for the system prompt in their
+saved input contract. The checkpoint key remains the hash of the original full
+input, so a retry can find a stage completed before the migration. The checkpoint
+retains the exercise input, schema, result, and invocation link. The offline
+reader `restoreImprovementStageInput` resolves the prompt reference and checks
+the reconstructed input against the checkpoint key.
+
 Local experiments can also use unpublished prompts. For an on-disk development
 database, preserve the adjacent `invocation-prompt-blobs/` directory when moving
 or backing up the database. Hosted captures use only reviewed Git blobs.
