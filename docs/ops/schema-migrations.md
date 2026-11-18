@@ -885,3 +885,24 @@ digests and dispatch metadata. Verify the queue and running-lease polling indexe
 remain available. Exercise closure and ingestion on disposable data, including
 failure and retry. Use the pre-upgrade backup and matching application image for
 rollback.
+
+### 0082 compact closed session history
+
+The offline migration keeps the initial session facts, frozen lexical display
+data, served encounter snapshots, acknowledged actions and closed reports.
+It discards the unused exercise pools from already closed sessions. Active and
+finalizing sessions keep their entire original context. Future sessions make
+the same transition in the successful closure transaction.
+
+One previously abandoned session (started November 1, closed manually on
+November 7) has no completion. Only its pinned ID, timestamps, operator
+abandonment event and absence of any completion authorize removal of its
+session row, actions, encounters and encounter-word links. The audit events
+survive. An unexpected reportless session or an unresolved foreign key aborts
+the migration.
+
+On a retained backup compare before/after served cards (including skipped and
+undone work), actions, report bytes, durations, and reads of closed sessions.
+Test finalizing, cancelling, retrying and closing a new session. Check the
+abandonment audit, absence of its parent and children, and measure the actual
+context bytes and reusable SQLite pages.
