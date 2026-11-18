@@ -26,6 +26,17 @@ function snapshot(value: unknown, transportEnvelope = false): string | null {
   if (encoded === undefined) throw new ModelInvocationInputError('Expected JSON snapshot');
   return encoded;
 }
+// SQLite JSON extraction preserves the exact UTF-8 bytes used by the audit view.
+// Use the same byte comparison as the migration, including for escaped Unicode.
+function capturedPromptBytes(template: string | undefined, request: string | null): number | null {
+  if (template === undefined || request === null) return null;
+  const row = getDb().prepare(`SELECT length(CAST($template AS BLOB)) AS bytes
+    WHERE json_extract($request,'$.messages[0].role') = 'system'
+      AND json_type($request,'$.messages[0].content') = 'text'
+      AND ($template = '' OR substr(CAST(json_extract($request,'$.messages[0].content') AS BLOB),
+        1, length(CAST($template AS BLOB))) = CAST($template AS BLOB))`).get({ $template: template, $request: request });
+  return row ? Number(row.bytes) : null;
+}
 function start(input: ModelInvocationStart, owner: Owner, requester: string | null): string {
   if (!owner.id.trim() || !input.provider.trim() || !input.model.trim() || !input.invocationType.trim()) {
     throw new ModelInvocationInputError('Expected invocation identity and attribution');
@@ -39,19 +50,21 @@ function start(input: ModelInvocationStart, owner: Owner, requester: string | nu
   if (p.promptTemplate !== undefined && p.promptHash !== undefined && p.promptHash !== promptHash) {
     throw new ModelInvocationInputError('Prompt hash does not match the retained template');
   }
+  const requestSnapshot = snapshot(p.requestSnapshot, true);
+  const promptBytes = capturedPromptBytes(p.promptTemplate, requestSnapshot);
   const id = randomUUID();
   getDb().prepare(`INSERT INTO model_invocations
     (id, timestamp, provider, model, invocation_type, learner_id, spend_source, status,
      actor_kind, actor_id, requesting_learner_id, workflow_id, step_name, attempt_number,
-     prompt_name, prompt_version, prompt_hash, prompt_template, schema_name, schema_version,
+     prompt_name, prompt_version, prompt_hash, standalone_prompt_template, prompt_template_bytes, schema_name, schema_version,
      schema_json, input_projection_version, settings_json, request_snapshot_json, resolved_model, provider_request_id)
-    VALUES (?, ?, ?, ?, ?, ?, 'unknown', 'running', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    VALUES (?, ?, ?, ?, ?, ?, 'unknown', 'running', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     .run(id, new Date().toISOString(), input.provider, input.model, input.invocationType,
       owner.kind === 'learner' ? owner.id : null, owner.kind, owner.id, requester,
       p.workflowId ?? null, p.stepName ?? null, p.attemptNumber ?? null,
-      p.promptName ?? null, p.promptVersion ?? null, promptHash, p.promptTemplate ?? null,
+      p.promptName ?? null, p.promptVersion ?? null, promptHash, promptBytes === null ? p.promptTemplate ?? null : null, promptBytes,
       p.schemaName ?? null, p.schemaVersion ?? null, snapshot(p.schema), p.inputProjectionVersion ?? null,
-      snapshot(p.settings, true), snapshot(p.requestSnapshot, true), p.resolvedModel ?? null, p.providerRequestId ?? null);
+      snapshot(p.settings, true), requestSnapshot, p.resolvedModel ?? null, p.providerRequestId ?? null);
   return id;
 }
 export function startModelInvocation(input: ModelInvocationStart): string {

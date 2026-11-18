@@ -273,6 +273,17 @@ export const schemaMigrations: readonly SchemaMigration[] = [{
 }, {
   id: 'app_schema:0079_share_session_context',
   sql: fs.readFileSync(new URL('./migrations/0079_share_session_context.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0080_retain_invocation_prompts',
+  sql: fs.readFileSync(new URL('./migrations/0080_retain_invocation_prompts.sql', import.meta.url), 'utf8'),
+  before(db) {
+    for (const row of db.prepare(`SELECT DISTINCT prompt_hash,prompt_template FROM model_invocations
+      WHERE prompt_hash IS NOT NULL AND prompt_template IS NOT NULL`).iterate()) {
+      if (checksum(String(row.prompt_template)) !== row.prompt_hash) {
+        throw new Error('Stored invocation prompt hash does not match its template');
+      }
+    }
+  },
 }];
 
 function checksum(value: string): string {

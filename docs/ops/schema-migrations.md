@@ -849,3 +849,20 @@ contains a top-level context, run integrity and foreign-key checks, then exercis
 stage, cancel/restage, close, dispatch ingestion and reconciliation's pending
 dispatch dependency lookup on disposable data. Rollback requires the pre-upgrade
 backup and its matching application image.
+
+## Invocation prompt retention rehearsal (0080)
+
+Use a stopped-writer release and an existing verified backup. The migration
+checks recorded hashes against historical templates, scans invocation requests,
+and updates rows whose first system message contains the exact template prefix.
+Allow space for the WAL. The ordinary SQLite backup contains the full evidence
+needed to recover each invocation's captured prompt.
+
+Before migration, hash the nullable prompt and all other columns keyed by
+invocation ID. After migration, compare each original with the reconstructed
+value from `model_invocation_prompts`, including empty, uncaptured, and
+standalone templates. Compare the complete remaining records, run integrity
+and foreign-key checks, and measure occupied pages and independently compacted
+before/after copies. Exercise a new call with a schema suffix and a custom
+request, then verify that spending and completion updates preserve the captured
+prompt. Rollback uses the pre-upgrade backup and matching application image.

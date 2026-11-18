@@ -579,6 +579,17 @@ its domain normalizers. A late same-learner validation update changes only
 persistence, lease, or publication failures do not mislabel a valid model response.
 This is an offline schema migration, with no provider calls or history reclassification.
 
+Since schema 0080, an investigator can retrieve the captured system prompt for
+one invocation with `SELECT prompt_hash, prompt_template FROM model_invocation_prompts WHERE id = ?`.
+The ledger stores the exact provider request and the UTF-8 byte length of the
+template at the start of its first system message. The length excludes any
+schema instructions appended by the adapter. Custom calls keep standalone text
+when the request cannot supply it. An uncaptured template returns SQL NULL,
+including for a historical hash-only invocation. A captured empty template
+returns an empty string. The request and prompt evidence are immutable across
+subsequent spend and outcome updates. Prompt source versions also follow the
+[Git retention check](prompt-development.md).
+
 Migration `0076_prune_trivial_unstudied_words` deletes never-touched, non-stash unstudied `learner_words` rows (with their default schedule and legacy state rows) that nothing else references; see its [rule and rehearsal note](ops/schema-migrations.md#trivial-unstudied-word-pruning-0076). It requires the offline schema migration procedure.
 
 ## Teaching set storage
