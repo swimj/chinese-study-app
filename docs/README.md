@@ -114,8 +114,9 @@ hosted operations, and contributor development clearly separated.
   [backup service and isolated restore](ops/hosted-backups.md),
   [S3 backup access and retention](ops/sqlite-backup-s3.md),
   [observability](ops/hosted-observability.md),
-  [diagnostics](ops/error-diagnostics.md), and
-  [schema migrations](ops/schema-migrations.md).
+  [diagnostics](ops/error-diagnostics.md),
+  [schema migrations](ops/schema-migrations.md), and the
+  [production database footprint and remaining opportunities](ops/database-footprint.md).
 - Operator interface: [operator panel guide](operator-panel.md), with the
   [API reference](api.md#operator-view) describing its HTTP contracts.
 - Content correction: [Content improvement workflow](operator-panel.md#content-improvement-workflow)
