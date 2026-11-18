@@ -711,9 +711,11 @@ test('0080 preserves exact historical prompt bytes, including standalone, empty,
     insert.run('empty', emptyHash, '', request('system', ''));
     insert.run('unknown', null, null, null);
     const before = db.prepare('SELECT * FROM model_invocations ORDER BY id').all();
+    const prompts = db.prepare('SELECT id,prompt_hash,prompt_template FROM model_invocations ORDER BY id').all();
     const through = schemaMigrations.filter(m => m.id <= promptMigrationId);
     assert.deepEqual(migrateDatabase(db, through), [promptMigrationId]);
     assert.deepEqual(migrateDatabase(db, through), []);
+    assert.deepEqual(db.prepare('SELECT id,prompt_hash,prompt_template FROM model_invocation_prompts ORDER BY id').all(), prompts);
     const after = db.prepare('SELECT * FROM model_invocations ORDER BY id').all();
     assert.equal(after.length, before.length);
     for (const [index, original] of before.entries()) {

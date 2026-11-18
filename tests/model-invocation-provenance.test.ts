@@ -98,8 +98,10 @@ test('new invocation attempts keep reconstructable Unicode prompts and distingui
     assert.equal(row.prompt_template_bytes, Buffer.byteLength(template));
     assert.equal(row.standalone_prompt_template, null);
     assert.deepEqual(JSON.parse(String(row.request_snapshot_json)), snapshot);
+    assert.equal(getDb().prepare('SELECT prompt_template FROM model_invocation_prompts WHERE id=?').get(row.id)!.prompt_template, template);
   }
   const empty = start({ promptTemplate: '', requestSnapshot: { messages: [{ role: 'system', content: '' }] } });
+  assert.equal(getDb().prepare('SELECT prompt_template FROM model_invocation_prompts WHERE id=?').get(empty.id)!.prompt_template, '');
   assert.equal(empty.prompt_template_bytes, 0);
   assert.equal(empty.standalone_prompt_template, null);
   const hashOnly = start({ promptHash: String(first.prompt_hash), requestSnapshot: snapshot });
