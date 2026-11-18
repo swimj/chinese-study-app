@@ -11,7 +11,19 @@ This is a decision and action record, not a production cutover procedure. The
 [release runbook](hosted-beta-deployment.md) governs releases. The original
 [replacement plan](backup-replacement-plan.md) records the stopgap's design.
 
-## Current position
+## November 18 interim decision
+
+Use the [standalone SQLite backup policy](hosted-backups.md) for the interim:
+six-hour Fly captures, twelve-hour compressed copies to a dedicated S3 prefix,
+and access-log verification before enabling uploads. The bucket inventory found
+112.93 GB of current and 221.07 GB of noncurrent object data, all under the old
+production Litestream prefix. Justin authorized retiring that history with a
+one-day undo window. Before relying on the new S3 tier, verify its identity,
+logging, upload and independent restore using the
+[S3 setup procedure](sqlite-backup-s3.md). These decisions supersede the original
+recommendations below about retaining legacy history and the stopgap cadence.
+
+## November 17 observations
 
 Production uses full SQLite online backups sent to a separate Fly Machine. Keep
 the latest four successful hourly copies and at most three pre-release copies,

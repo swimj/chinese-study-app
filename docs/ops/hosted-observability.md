@@ -375,17 +375,12 @@ to that stack.
 start time, so transfer and validation time count against freshness. A failed
 capture never refreshes it. Receiver unavailability produces unknown freshness.
 
-Public `GET /backup-healthz` returns 200 only when the live receiver answers with
-a successful capture no older than 75 minutes; absent configuration, missing
-receipts, an unavailable receiver, or stale capture returns 503. It exposes only
-status and age, not credentials, backup identities, or learner information.
-Keep the normal `/healthz` app-availability check separate from this dependency
-check. See [backup operations](hosted-backups.md) for failure response and restore.
-
-A GitHub-scheduled external check is planned but is not delivered. The receiver's
-own timer and an endpoint nobody polls do not detect a stopped backup Machine.
-Record a working independent observer and failure notification in operational
-cutover evidence; do not describe monitoring as activated before testing it.
+Public `GET /backup-healthz` queries the live receiver for scheduled backup
+freshness (6h15m limit). When the S3 tier is active, it also checks the capture
+time of the last confirmed upload (13h30m limit). Missing and stale recovery
+points return 503. The normal `/healthz` endpoint reports app availability
+separately. See [backup operations](hosted-backups.md) for failure response,
+rollout compatibility and the observed limits of the GitHub-scheduled check.
 
 The dashboard's Litestream CPU, local sequence, upload, and sync-check panels
 apply only while the legacy daemon runs. They are unavailable after cutover and

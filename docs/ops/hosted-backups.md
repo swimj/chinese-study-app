@@ -1,24 +1,33 @@
 # Hosted SQLite backup operations
 
-This runbook explains the temporary hourly backup service, release recovery
-points, isolated restore, and the guarded transition from Litestream. It describes
-the implementation; deployment and successful production cutover must be recorded
-separately in release evidence.
+Use this runbook to operate the private SQLite backup receiver, recover from a
+Fly or S3 copy, and check each tier independently. Record deployment and restore
+evidence for the actual image and configuration used.
 
 ## Recovery policy and storage
 
-The receiver keeps the latest four successful hourly backups and at most three
-pre-switchover release backups. Release backups expire after seven days; the count
-or age limit removes them, whichever comes first. A post-migration
-capture is an hourly backup, preserving the release slot for the previous image's
-recovery point. Keep the matching immutable image digest with each release receipt.
-Failed or incomplete captures never replace a good backup. A completed copy is
-verified and durably published before retention prunes older copies.
+For a production incident, put the app in maintenance and prefer forward repair.
+When the database is seriously damaged, losing up to roughly one day of activity
+is acceptable. Record the chosen capture time and the writes a restore would
+discard before reopening. Missed captures or uploads extend the recovery window.
 
-The intended data-loss window is approximately one hour plus capture, transfer,
-and verification time. Missed jobs extend it. This is a deliberate stopgap, not
-continuous replication or a long-term archive. Preserve existing S3 history;
-receiver retention does not remove it or eliminate its storage charges.
+| Recovery point | Cadence and retention |
+| --- | --- |
+| Scheduled Fly copy | Capture every six hours. The latest five successful scheduled copies span roughly a day once the schedule has filled. |
+| Operator and release copies | Keep the latest manual/post-migration copy and up to three pre-switchover release copies. Release copies expire after seven days. Keep the immutable image digest with the release receipt. |
+| Independent S3 copy | Every twelve hours the receiver selects a recent verified Fly capture and uploads one standalone gzip file. Under the dedicated prefix, S3 expires current objects after two days and noncurrent versions after one more day. UTC rounding and asynchronous deletion can extend physical retention. |
+
+The private API retains the historical `hourly` kind for scheduled and manual
+captures. Manual and release requests have separate retention from scheduled
+recovery points. Only a successfully verified new database can displace an old
+one. The S3 uploader reuses a receiver file, so it needs no additional capture on
+production. The database capture timestamp identifies the recoverable state;
+S3 uses upload time for lifecycle expiration. Uploads become due relative to
+the previous scheduled capture used for the upload. When due, the receiver
+waits for a verified scheduled capture less than an hour old, then picks the
+newest verified copy available. A newer manual copy can supply the bytes
+without moving the schedule. On first activation just after that one-hour
+window, the initial upload waits for the next six-hour capture.
 
 The source uses SQLite's online backup API to produce a coherent standalone file
 while the app runs. It pins one WAL read transaction for the copy so other
@@ -29,12 +38,13 @@ streams the completed file over Fly's private network. Do not copy an active
 file, WAL, and margin. The default transfer bound is 4 GiB. Verify actual scratch
 capacity, CPU impact, and capture duration with realistic data before cutover.
 
-The receiver owns the hourly timer, retries, verification, receipts, and retention
-on a separate Fly Machine in the same region with a 15 GB persistent volume.
-Verify a different physical host from production. Budget for seven retained full
-copies, an incoming copy, and operational margin; growth requires capacity review.
-A receiver restart reconciles disk state and resumes scheduling. Successful manual
-captures also satisfy the hourly freshness interval.
+The receiver owns capture scheduling, retries, verification, receipts, and retention
+on a separate same-region Fly Machine. Check available space for ten full files
+(five scheduled, one manual, three release, and an incoming copy), filesystem
+overhead, and growth. At 1.344 GB per copy the ten files alone need 13.44 GB.
+Also check scratch space for an incompressible upload and headroom during a
+concurrent capture. Review capacity before enabling the new policy on the 15 GB
+volume or after a significant increase in database size.
 
 ## Private configuration
 
@@ -97,10 +107,9 @@ remove only the disposable restore resources after preserving evidence.
 
 `--at=<UTC-timestamp>` selects the newest retained capture completed at or before
 that time; it is not point-in-time WAL replay. Without id or timestamp, restore
-selects the latest retained capture. Four hourly copies do not promise a 24-hour
-recovery point. Missing history is a refusal, not permission to silently choose a
-newer point. Litestream remains in the image for explicitly selected legacy S3
-restores; preserve those credentials and recovery points separately.
+selects the latest retained capture. A restore before the oldest retained capture
+fails. During rollout it takes four complete six-hour intervals to populate a
+full day of regularly spaced restore points.
 
 ## Restoring into an app volume
 
@@ -119,56 +128,84 @@ database. RC promotion performs this ownership adjustment automatically before
 moving either database. Root-only rehearsal validation does not prove that the
 runtime user can open the restored database.
 
-## Transition and release gates
+## Enabling the S3 tier
 
-1. Reconcile live image, controls, database/volume sizes, backup freshness, and
-   the receiver's independent placement. Provision the authorized 15 GB receiver
-   and private credentials without removing existing replication.
-2. Keep Litestream running during replacement proof. Configure and test the
-   source and receiver, obtain a verified capture, and restore it in isolation.
-   Exercise interrupted capture, receiver restart, hourly scheduling, retention,
-   and unavailable/stale status. Retain the evidence.
-3. Only after backup and isolated restore proof, quiesce the production app and
-   capture a fresh release backup. Deploy the exact rehearsed image with the
-   direct app command. Preserve legacy S3 history and local sidecars; do not
-   delete them as an incidental cleanup step.
-4. For migration releases, verify the stopped-process wrapper’s post-migration
-   backup receipt before starting the target app. After startup, verify identity,
-   run smoke and required restore checks, and reopen writes before provider work.
-   A failure leaves controls closed; a committed migration is not undone by a
-   failed backup.
+Deploy the compatible health reader and observer before switching the receiver
+to six-hour captures. Preserve the Fly receiver path during initial S3 setup.
+[Configure the bucket, access-log delivery, lifecycle rules and separate
+writer/reader permissions](sqlite-backup-s3.md). Verify a known request in the
+delivered access logs before enabling runtime uploads. Grant writer credentials
+only to the receiver. Set `APP_BACKUP_S3_REQUIRED=true` on the hosted app when
+activating the tier so a receiver missing its configuration is observable.
 
-The runtime command after cutover starts the app directly, without a Litestream
-replication daemon. Merely merging code or retaining the binary is not cutover
-proof. A service awaiting cutover uses its existing Litestream command/config and
-legacy recovery procedure until the replacement gates succeed.
+Verify one successful upload, an isolated restore, the checksum and capture
+timestamp, and the two independent freshness signals. Observe a second scheduled
+upload and check the corresponding request logs and bytes. Record failures,
+retries and elapsed time. An S3 failure should leave local capture and restore
+available. Preserve release-specific backup and stopped-migration gates in the
+[release runbook](hosted-beta-deployment.md).
+
+### Isolated S3 restore
+
+Use the restore reader from the S3 setup guide. Select the newest capture at or
+before the desired recovery time using the UTC capture timestamp in the object
+key. Keep the bucket, key and image revision in the restore evidence. On an
+isolated Linux restore host with enough room for both the gzip and the raw
+database, set `BUCKET`, `KEY`, and `SOURCE_APP` to the selected backup. Run in Bash
+with AWS CLI v2, jq, gzip and sha256sum:
+
+```bash
+set -euo pipefail
+umask 077
+restore_dir=$(mktemp -d)
+aws s3api get-object --bucket "$BUCKET" --key "$KEY" --checksum-mode ENABLED \
+  "$restore_dir/backup.sqlite.gz" > "$restore_dir/object.json"
+jq -e --arg app "$SOURCE_APP" \
+  '.ChecksumSHA256 and .Metadata["source-app"] == $app and
+   (.Metadata["sqlite-sha256"] | test("^[a-f0-9]{64}$"))' \
+  "$restore_dir/object.json" >/dev/null
+gzip -dc "$restore_dir/backup.sqlite.gz" > "$restore_dir/app.db.incoming"
+expected_bytes=$(jq -er '.Metadata["sqlite-bytes"]' "$restore_dir/object.json")
+test "$(wc -c < "$restore_dir/app.db.incoming")" -eq "$expected_bytes"
+expected_sha=$(jq -er '.Metadata["sqlite-sha256"]' "$restore_dir/object.json")
+printf '%s  %s\n' "$expected_sha" "$restore_dir/app.db.incoming" | sha256sum -c
+mv "$restore_dir/app.db.incoming" "$restore_dir/app.db"
+jq '.Metadata | {revision: .["source-revision"], capturedAt: .["capture-started-at"]}' "$restore_dir/object.json"
+```
+
+Use the matching app image against the isolated directory. Run
+`npm run hosted:verify-restore -- --data-dir="$restore_dir" --minimum-learners=2`,
+including the expected sentinel ID when known. This validates SQLite integrity
+and application contents. Run a read-only `PRAGMA foreign_key_check` on the
+restored database and require an empty result. Follow the ownership procedure above for a later app-volume restore.
 
 ## Freshness and independent observation
 
-`GET /backup-healthz` queries the live receiver and returns 200 only for a verified
-capture no older than 75 minutes, measured from capture start. Unknown, unreachable,
-or stale state returns 503. `hosted:inspect` reports the same capture age. If age
-exceeds 75 minutes or becomes unknown, stop writes and investigate source errors,
-receiver reachability, scratch and persistent free space, and the last receipt.
-A failed attempt does not refresh age or evict good history.
+The independent GitHub Actions workflow requests two checks per hour against
+the public `/backup-healthz` endpoint. The deployed app queries the receiver. Local freshness
+is measured from the last scheduled capture start (6h15m limit), and off-Fly
+freshness from the capture represented by the last confirmed S3 upload (13h30m
+limit). A missing required tier, stale capture or unreachable receiver fails
+the check. During rollout the app recognizes the old hourly receiver and uses
+its 75-minute limit. Normal app availability remains on `/healthz`.
 
-The GitHub `production backup health` workflow polls every 30 minutes once merged
-to the default branch. Scheduled Actions can be delayed; this is a best-effort
-watchdog, not guaranteed paging. Configure failure notifications for the operator
-and exercise a failure before treating it as delivered monitoring.
+For local failure, stop writes and inspect receiver reachability, scratch and
+volume headroom, capture errors, and the last verified receipt. For an S3-only
+failure, inspect writer configuration, denied requests, retries, scratch space,
+and the latest confirmed capture. Continue local captures and restore the
+offsite path before lifecycle expiry removes the remaining copies.
 
-An independent observer must poll this endpoint and notify the operator, including
-when the receiver is stopped. The workflow must be active on the default branch; the endpoint alone is not
-activated monitoring. Record the observer and an exercised
-failure notification before declaring the operational monitoring gate complete.
-
+A failed manual workflow reached the operator by email on November 17, 2026.
+Four scheduled successes were visible through November 18 at 13:27 UTC, with
+gaps of five to nine hours despite the half-hour schedule. Check actual run history and subsequent recovery
+when evaluating monitoring; an enabled schedule alone gives no delivery bound.
 
 ## Scratch and volume operations
 
 Initialize a new receiver volume's `/data/backups` directory with ownership for
 its runtime user (`node` in the app image) and mode 700 before starting the service.
 The backup volume disables automatic Fly snapshots to avoid an extra unbounded
-copy policy; the four-hourly/three-release files are the retained recovery set.
+copy policy. The receiver enforces its scheduled, manual and release limits.
 Keep production's existing volume snapshot settings unchanged.
 
 A forced source-process kill can leave `/tmp/sqlite-backup-*` scratch directories.

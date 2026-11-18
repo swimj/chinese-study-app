@@ -8,6 +8,7 @@ export type BackupRequest = {
 
 export type BackupReceipt = {
   version: 1;
+  captureOrigin?: 'scheduled' | 'manual';
   id: string;
   kind: 'hourly' | 'release';
   releaseId?: string;
@@ -24,6 +25,11 @@ export type BackupReceipt = {
 export type BackupStatus = {
   busy: boolean;
   lastSuccessfulBackup: BackupReceipt | null;
+  // Absent on receivers that still use the hourly schedule.
+  lastScheduledBackup?: BackupReceipt | null;
+  offsite?: {
+    lastConfirmed: { id: string; key: string; startedAt: string; confirmedAt: string } | null;
+  };
   backups: BackupReceipt[];
   lastError: { at: string; code: string } | null;
 };

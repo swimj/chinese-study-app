@@ -9,6 +9,8 @@ kill_timeout = "300s"
   APP_BACKUP_SOURCE_URL = "http://REPLACE_WITH_SOURCE_APP_NAME.internal:9092"
   APP_BACKUP_DIR = "/data/backups"
   PORT = "9093"
+  # After access-log verification, set APP_BACKUP_S3_BUCKET and APP_BACKUP_S3_REGION
+  # and supply the dedicated writer key and secret via Fly secrets.
   # APP_BACKUP_SOURCE_TOKEN and APP_BACKUP_RECEIVER_TOKEN are Fly secrets.
 
 [processes]

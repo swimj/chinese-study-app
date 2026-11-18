@@ -161,12 +161,11 @@ tracks live task state.
 
 ### Hosted backup boundary
 
-The stopgap backup policy retains four successful hourly standalone SQLite copies
-and at most three pre-switchover release copies, each expiring after seven days,
-on an independent same-region Fly receiver with a 15 GB volume. New copies must
-be verified and durably published before retention can evict good history. The
-source uses SQLite online backup with scratch outside the live data volume.
-Expected failure-time loss is one hour plus backup completion time; missed jobs
-extend it. This is not continuous replication. Production cutover requires a
-verified backup and isolated restore; preserve legacy S3 recovery points. See the
-[backup runbook](docs/ops/hosted-backups.md) for transition and monitoring limits.
+The interim policy stores five scheduled SQLite copies at six-hour intervals
+on a separate Fly receiver, plus bounded operator and release recovery points.
+The receiver can upload a standalone compressed copy to S3 every twelve hours;
+its dedicated prefix has two-day current and one-day noncurrent expiration.
+Prefer forward repair, with approximately one day of tolerable loss in a severe
+incident. A verified capture and independent restore are required before a tier
+is operational. Missed jobs extend exposure. See the
+[backup runbook](docs/ops/hosted-backups.md) for evidence and alert boundaries.

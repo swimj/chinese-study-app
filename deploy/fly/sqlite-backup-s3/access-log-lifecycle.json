@@ -1,0 +1,14 @@
+{
+  "Rules": [
+    {
+      "ID": "ExpireBackupAccessLogs",
+      "Status": "Enabled",
+      "Filter": {
+        "Prefix": "backup-access/"
+      },
+      "Expiration": {
+        "Days": 14
+      }
+    }
+  ]
+}

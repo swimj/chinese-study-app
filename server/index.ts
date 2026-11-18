@@ -1,4 +1,4 @@
-import { readHostedBackupStatus } from './hosted-backup-status.ts';
+import { readPublicBackupHealth } from './hosted-backup-status.ts';
 import { startConfiguredBackupSource } from './backups/source.ts';
 import { registerVocabularyIntakeRoutes } from './vocabulary/intake-routes.ts';
 import { createVocabularyIntakeWorker } from './vocabulary/intake-worker.ts';
@@ -317,9 +317,8 @@ export function createApp(options: CreateAppOptions = {}) {
     });
   });
   app.get('/backup-healthz', async (_req, res) => {
-    const backup = process.env.APP_BACKUP_RECEIVER_URL ? await readHostedBackupStatus() : null;
-    const healthy = backup !== null && backup.ageSeconds <= 75 * 60;
-    res.status(healthy ? 200 : 503).json({ status: healthy ? 'ok' : 'unhealthy', ageSeconds: backup?.ageSeconds ?? null });
+    const health = await readPublicBackupHealth();
+    res.set('Cache-Control', 'no-store').status(health.status === 'ok' ? 200 : 503).json(health);
   });
   if (frontendDistPath) {
     app.use(express.static(frontendDistPath, { index: false }));
