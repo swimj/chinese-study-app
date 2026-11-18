@@ -36,12 +36,20 @@ export function vocabularyDailyNewWordLimit():number {
 // The browser supplies its IANA zone. Compare wall-clock dates directly so that
 // the 04:00 boundary remains correct on daylight-saving transition days.
 export function localNewWordDay(instant: string, timeZone: string): string {
-  const parts = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(instant));
-  const get = (type: string) => parts.find(part => part.type === type)?.value;
-  const year = get('year'), month = get('month'), day = get('day'), hour = get('hour');
-  if (!year || !month || !day || !hour) throw new Error('Could not determine local study day');
-  const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day) - (Number(hour) < 4 ? 1 : 0)));
-  return date.toISOString().slice(0, 10);
+  return vocabularyStudyDayFormatter(timeZone)(instant);
+}
+
+export function vocabularyStudyDayFormatter(timeZone?: string): (instant: string) => string {
+  if (!timeZone) return instant => instant.slice(0, 10);
+  const formatter = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', hourCycle: 'h23' });
+  return instant => {
+    const parts = formatter.formatToParts(new Date(instant));
+    const get = (type: string) => parts.find(part => part.type === type)?.value;
+    const year = get('year'), month = get('month'), day = get('day'), hour = get('hour');
+    if (!year || !month || !day || !hour) throw new Error('Could not determine local study day');
+    const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day) - (Number(hour) < 4 ? 1 : 0)));
+    return date.toISOString().slice(0, 10);
+  };
 }
 export function remainingVocabularyNewWordQuota(now = new Date().toISOString(), timeZone?: string): number {
   const configured = vocabularyDailyNewWordLimit();

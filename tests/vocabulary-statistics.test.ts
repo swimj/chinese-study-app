@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import express from 'express';
+import {registerVocabularyStatisticsRoutes} from '../server/vocabulary/statistics-routes.ts';
 import {DatabaseSync} from 'node:sqlite';
 import {afterEach,beforeEach,test} from 'node:test';
 import {setDb} from '../server/db/connection.ts';
@@ -97,4 +99,25 @@ test('study days follow the local 04:00 day, count finished sessions during Undo
  const now=new Date('2026-11-12T20:00:05.000Z');
  assert.deepEqual(runWithLearnerId('a',()=>getVocabularyStudyDays(now,'America/New_York')),{today:'2026-11-12',studied:['2026-11-11','2026-11-12']});
  assert.deepEqual(runWithLearnerId('a',()=>getVocabularyStudyDays(now)),{today:'2026-11-12',studied:['2026-11-12']});
+});
+
+test('Home study-days endpoint reads only completion dates and validates the time zone', async () => {
+  db.exec('DROP TABLE vocabulary_session_completions');
+  db.exec('CREATE TABLE vocabulary_session_completions(learner_id TEXT,status TEXT,staged_at TEXT)');
+  const now = new Date();
+  db.prepare("INSERT INTO vocabulary_session_completions VALUES ('a','pending',?)").run(now.toISOString());
+  const app = express();
+  app.use((_req, _res, next) => runWithLearnerId('a', next));
+  registerVocabularyStatisticsRoutes(app);
+  const server = app.listen(0);
+  try {
+    const port = (server.address() as { port: number }).port;
+    const url = `http://127.0.0.1:${port}/api/vocabulary/study-days`;
+    assert.equal((await fetch(`${url}?timeZone=invalid`)).status, 400);
+    const result = await fetch(url);
+    assert.equal(result.status, 200);
+    const body = await result.json();
+    assert.deepEqual(body.studied, [now.toISOString().slice(0, 10)]);
+    assert.deepEqual(Object.keys(body).sort(), ['studied', 'today']);
+  } finally { server.close(); }
 });

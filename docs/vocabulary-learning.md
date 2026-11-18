@@ -352,9 +352,9 @@ study days (the same 04:00 day key, from the browser's time zone) with a finishe
 session. A session counts from staging, so it fills today's dot during its Undo
 window; a cancelled completion does not count. There is no count, streak or empty
 day marking. In the timed paradigm, once today has a finished session, Start reads
-Study a little more. The dots come from `studyDays` in `GET /api/vocabulary/statistics`,
-which includes only vocabulary completions, not legacy review summaries; its other
-daily totals stay on UTC days.
+Study a little more. Home requests only completion dates for the dots and Start label
+through `GET /api/vocabulary/study-days`. The separate statistics endpoint also
+includes UTC daily totals and legacy review summaries.
 
 ### Progress indicators
 
@@ -388,16 +388,19 @@ first productions count words.
 - Daily activity covers 14 local study days by staging time: distinct word items,
   distinct pure cues, and reported active time.
 
-The endpoint parses whole reports, including served snapshots, on each call. Its
-`vocabulary.progress.computed` log line records completions read, report bytes,
-load and compute milliseconds; a per-completion summary written at closure is
-the planned remedy if that cost grows.
+Progress derives compact facts from each immutable closed report on first use.
+Each server process keeps up to 4 MiB of serialized facts per open database and
+evicts the least recently used entries to stay within that budget. A restart
+or eviction means the next request reconstructs the missing facts. Each request
+checks current closed completions, applies current feedback judgments and time
+windows, and looks up missing word labels only for displayed first productions.
+The `vocabulary.progress.computed` log records total completions, full reports
+read, UTF-8 report bytes read, and load and compute milliseconds.
 
 Home shows these below Connections and What's New (`src/pages/HomeProgress.tsx`),
 and the week's measured active time beside the dots. Progress loads separately
 from the Start card. Home stays mounted when the learner switches panes, so its
-loaded data and open controls are there on return. Reloading the document starts
-a new load. Returning from a study session refreshes progress, statistics, and
+loaded data and open controls are there on return. A fresh mount loads these metrics when Home first becomes visible. Returning from a study session refreshes progress, statistics, and
 Connections. A failed progress request offers an explicit retry. The compact
 layout (Connections expanded) hides progress and the study-week dots.
 

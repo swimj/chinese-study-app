@@ -68,6 +68,7 @@ quota boundary. Older clients omitting it retain UTC calendar-day behavior.
 | `GET /words` | Owned words and current modes/schedule hints |
 | `POST /words/:id`, `/mode`, `/refresh`, `/dismiss` | Explicit enrollment and word controls |
 | `GET /feedback`, `/feedback/attention` | Read-only own lessons and lightweight attention |
+| `GET /study-days` | Recent finished vocabulary study dates and today for the Home week and Start label. Optional `timeZone` uses the local 04:00 study day |
 | `GET /statistics` | UTC daily session/response/coverage totals, active-time availability, and current modes |
 | `GET /progress` | Learner progress indicators from closed vocabulary-runtime history; optional `timeZone` sets the 04:00 local study day (400 if invalid). Computed on request; each call logs a `vocabulary.progress.computed` cost line |
 | `POST /feedback/:id/seen`, `/feedback/jobs/:id/retry` | Acknowledge lesson or explicitly retry own failed feedback |
