@@ -1,3 +1,4 @@
+import { stageImprovementPromptReferences } from './improvement-stage-prompt-archive.ts';
 import { stageInvocationPromptReferences } from './invocation-prompt-archive.ts';
 import { backfillVocabularyCaseReviews } from './vocabulary-case-review-migration.ts';
 import { assertVocabularyCutoverReady } from './vocabulary-cutover.ts';
@@ -277,7 +278,10 @@ export const schemaMigrations: readonly SchemaMigration[] = [{
 }, {
   id: 'app_schema:0080_retain_invocation_prompts',
   sql: fs.readFileSync(new URL('./migrations/0080_retain_invocation_prompts.sql', import.meta.url), 'utf8'),
-  before: stageInvocationPromptReferences,
+  before(db) {
+    stageInvocationPromptReferences(db);
+    stageImprovementPromptReferences(db);
+  },
 }];
 
 function checksum(value: string): string {

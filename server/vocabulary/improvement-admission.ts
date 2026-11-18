@@ -1,3 +1,4 @@
+import { retainImprovementStageInput } from '../db/improvement-stage-prompt-archive.ts';
 import { authoredVocabularyRepertoire } from '../db/vocabulary-authored-repertoire.ts';
 import { canonicalExerciseSource } from './canonical-exercise-source.ts';
 import { vocabularyPhraseClozePrompt } from '../../src/domain/vocabulary-production-coverage.ts';
@@ -114,8 +115,10 @@ export async function runVocabularyImprovementAdmission(options: {
         for(const content of extra?.contents??[])if(content.accessScope==='shared')linkVocabularyInvocationContent({invocationId:response.invocationId,contentId:content.contentId,contentVersion:content.version,role:'input'},{kind:'service',id:serviceId});
         for(const sense of extra?.senses??inventory) linkVocabularyInvocationSense({invocationId:response.invocationId,senseId:sense.senseId,senseVersion:sense.version,role:'input'},{kind:'service',id:serviceId});
       }
-      db.prepare('INSERT INTO vocabulary_improvement_stages(job_id,stage,input_hash,input_json,result_json,invocation_id,recorded_at) VALUES (?,?,?,?,?,?,?)')
-        .run(job.jobId,name,hash,inputJson,JSON.stringify(value),response.invocationId??null,new Date().toISOString());
+      const archived = retainImprovementStageInput(db, inputJson, hash);
+      db.prepare(`INSERT INTO vocabulary_improvement_stages(job_id,stage,input_hash,input_json,system_prompt_blob_hash,result_json,invocation_id,recorded_at)
+        VALUES (?,?,?,?,?,?,?,?)`).run(job.jobId,name,hash,archived.inputJson,archived.systemPromptBlobHash,JSON.stringify(value),
+          response.invocationId??null,new Date().toISOString());
       db.exec('RELEASE vocabulary_improvement_stage');
     } catch(error) { db.exec('ROLLBACK TO vocabulary_improvement_stage; RELEASE vocabulary_improvement_stage'); throw error; }
     return {value,...(response.invocationId?{invocationId:response.invocationId}:{})};

@@ -1,4 +1,5 @@
 /** Isolated experiment. Never initializes the application database or imports hosted data. */
+import { stageImprovementPromptReferences } from '../server/db/improvement-stage-prompt-archive.ts';
 import { stageInvocationPromptReferences } from '../server/db/invocation-prompt-archive.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -126,7 +127,10 @@ function initialize(sql: DatabaseSync): void {
     CREATE TABLE learner_owned_review_session_summaries(learner_id TEXT,session_id TEXT,PRIMARY KEY(learner_id,session_id));
     CREATE TABLE reflection_generation_runs(completed_at TEXT,estimated_cost_usd REAL);`);
   for (const name of migrations) {
-    if (name === '0080_retain_invocation_prompts.sql') stageInvocationPromptReferences(sql);
+    if (name === '0080_retain_invocation_prompts.sql') {
+      stageInvocationPromptReferences(sql);
+      stageImprovementPromptReferences(sql);
+    }
     const source = read(path.join(root, 'server/db/migrations', name));
     sql.exec(name === '0041_vocabulary_learner_state.sql' ? source.split('-- Do not use the words view')[0]! : source);
   }

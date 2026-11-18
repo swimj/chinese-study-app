@@ -53,6 +53,15 @@ export function retainInvocationPrompts(db: DatabaseSync, template: string | nul
   return encoded;
 }
 
+function loadBlob(db: DatabaseSync, hash: string, archiveDir: string): string {
+  const directory = catalog.has(hash) ? archiveDir : localArchive(db);
+  return fs.readFileSync(path.join(directory, hash + '.txt'), 'utf8');
+}
+
+export function readArchivedPrompt(db: DatabaseSync, hash: string, archiveDir = gitArchive): string {
+  return decodeInvocationPrompts(hash, null, null, key => loadBlob(db, key, archiveDir)).promptTemplate!;
+}
+
 /** Offline investigation. Hosted images carry the hash catalog, while investigators supply the Git archive. */
 export function readInvocationPromptEvidence(db: DatabaseSync, id: string, archiveDir = gitArchive) {
   const row = db.prepare(`SELECT prompt_blob_hash,request_snapshot_json,request_prompt_refs_json
@@ -60,10 +69,7 @@ export function readInvocationPromptEvidence(db: DatabaseSync, id: string, archi
       prompt_blob_hash: string | null; request_snapshot_json: string | null; request_prompt_refs_json: string | null;
     } | undefined;
   if (!row) throw new Error('Unknown model invocation');
-  return decodeInvocationPrompts(row.prompt_blob_hash, row.request_snapshot_json, row.request_prompt_refs_json, hash => {
-    const directory = catalog.has(hash) ? archiveDir : localArchive(db);
-    return fs.readFileSync(path.join(directory, hash + '.txt'), 'utf8');
-  });
+  return decodeInvocationPrompts(row.prompt_blob_hash, row.request_snapshot_json, row.request_prompt_refs_json, hash => loadBlob(db, hash, archiveDir));
 }
 
 /** Stage only affected rows. The existing ledger is still intact if archival or validation fails. */
