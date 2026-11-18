@@ -256,3 +256,22 @@ test('rolled-back evidence cannot populate the committed progress cache', () => 
   db.exec("UPDATE vocabulary_session_completions SET status='closed' WHERE completion_id='pending'");
   assert.equal(loadVocabularyProgressInput('a').stats.reportsRead, 1);
 });
+
+test('eviction preserves progress and rereads only missing reports when history exceeds the cache budget', () => {
+  const db = database();
+  setDb(db);
+  // Each compact fact set is just over 2 MiB, so either one fits but both cannot.
+  const insert = db.prepare('INSERT INTO vocabulary_session_completions VALUES (?,?,?,?,?,?)');
+  for (const [index, id] of ['large-a', 'large-b'].entries()) {
+    const evidence = encounter({ content: id + 'x'.repeat(1024 * 1024), word: id });
+    insert.run(id, 'large', 'closed', ago(2 - index), '{}', JSON.stringify(report([evidence])));
+  }
+  const cold = loadVocabularyProgressInput('large');
+  assert.equal(cold.stats.reportsRead, 2);
+  const expected = computeVocabularyProgress(cold.input, NOW);
+  for (let i = 0; i < 2; i++) {
+    const warm = loadVocabularyProgressInput('large');
+    assert.equal(warm.stats.reportsRead, 1);
+    assert.deepEqual(computeVocabularyProgress(warm.input, NOW), expected);
+  }
+});
