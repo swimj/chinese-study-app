@@ -876,6 +876,11 @@ test('0082 drops only the explicitly abandoned session, compacts closed history 
     const finish = db.prepare("UPDATE vocabulary_sessions SET status='closed',closed_at=?,context_json=? WHERE session_id=?");
     assert.throws(() => finish.run(end, JSON.stringify(compact), 'retrying'), /closed completion/);
     report('retrying');
+    db.exec('SAVEPOINT later_revision');
+    db.prepare(`INSERT INTO vocabulary_session_completions VALUES
+      ('retrying-cancelled','history-learner','retrying',2,0,?,?,'cancelled','{}','{}','fixture',NULL,NULL)`).run(end, end);
+    assert.throws(() => finish.run(end, JSON.stringify(compact), 'retrying'), /closed completion/);
+    db.exec('ROLLBACK TO later_revision; RELEASE later_revision');
     assert.throws(() => finish.run(end, context, 'retrying'), /compact history/);
     finish.run(end, JSON.stringify(compact), 'retrying');
     assert.throws(() => db.exec("UPDATE vocabulary_sessions SET status='active' WHERE session_id='retrying'"), /closing session/);

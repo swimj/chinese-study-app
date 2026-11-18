@@ -18,6 +18,7 @@ WHEN (OLD.status='closed' AND NEW.status!='closed')
   OR (NEW.status='closed' AND (OLD.status!='finalizing'
       OR json_extract(NEW.context_json,'$.closedHistory.version') IS NOT 1
       OR json_type(NEW.context_json,'$.payload') IS NOT NULL
-      OR NOT EXISTS (SELECT 1 FROM vocabulary_session_completions c WHERE c.session_id=NEW.session_id
-                     AND c.learner_id=NEW.learner_id AND c.status='closed')))
+      OR (SELECT c.status FROM vocabulary_session_completions c
+          WHERE c.session_id=NEW.session_id AND c.learner_id=NEW.learner_id
+          ORDER BY c.revision_number DESC LIMIT 1) IS NOT 'closed'))
 BEGIN SELECT RAISE(ABORT,'closing session requires compact history and its closed completion'); END;
