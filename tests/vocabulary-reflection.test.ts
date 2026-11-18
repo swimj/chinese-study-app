@@ -1,3 +1,4 @@
+import { migrateStagePrompts } from './helpers/improvement-stage-prompt-schema.ts';
 import type { VocabularyPureCueSchedulerState, VocabularySchedulerState } from '../server/db/vocabulary-learners.ts';
 import { mergePureCueSchedulerState, mergeWordSchedulerState, splitPureCueSchedulerState } from '../server/db/vocabulary-schedule-columns.ts';
 import { applyVocabularyDueColumns, insertPureCueSchedule } from './helpers/vocabulary-due-columns.ts';
@@ -80,6 +81,7 @@ beforeEach(() => {
     INSERT INTO learner_word_schedules(learner_id,word_id,next_eligible_at,policy_version,scheduler_state_json)
     SELECT learner_id,word_id,'2026-10-20T10:00:00.000Z','test','{"intervalHours":24,"easeFactor":2.5,"enabled":1,"cleanCoveredSessions":0}' FROM learner_words;`);
   for(const name of ['0023_session_debrief.sql','0048_vocabulary_connections.sql','0049_vocabulary_sense_readiness.sql','0050_vocabulary_improvement_admission.sql','0051_vocabulary_pure_cue_promotion.sql','0053_vocabulary_second_opinions.sql'])sql.exec(fs.readFileSync(new URL(`../server/db/migrations/${name}`,import.meta.url),'utf8'));
+  migrateStagePrompts(sql);
   applyVocabularyDueColumns(sql);
   installCaseReviewSchema(sql);
   contents = {};

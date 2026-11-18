@@ -1,4 +1,5 @@
-import { restoreImprovementStageInput, stageImprovementPromptReferences } from '../server/db/improvement-stage-prompt-archive.ts';
+import { migrateStagePrompts } from './helpers/improvement-stage-prompt-schema.ts';
+import { restoreImprovementStageInput } from '../server/db/improvement-stage-prompt-archive.ts';
 import { captureVocabularyRepertoireSelection } from '../server/db/vocabulary-repertoire-selection.ts';
 import { createHash } from 'node:crypto';
 import { VocabularySenseReadinessPending } from '../server/vocabulary/sense-readiness.ts';
@@ -40,7 +41,7 @@ beforeEach(context=>{
     INSERT INTO vocabulary_reflection_jobs(job_id,kind,model_choice) VALUES ('job','exercise_improvement',NULL);`);
   for(const name of ['0062_vocabulary_sense_coverage','0064_vocabulary_default_useful_senses','0039_vocabulary_content','0045_vocabulary_provenance_links','0050_vocabulary_improvement_admission','0051_vocabulary_pure_cue_promotion'])
     db.exec(readFileSync(new URL(`../server/db/migrations/${name}.sql`,import.meta.url),'utf8'));
-  if (!context.name.startsWith('0080 ')) migrateStagePrompts();
+  if (!context.name.startsWith('0080 ')) migrateStagePrompts(db);
   db.exec(readFileSync(new URL('../server/db/migrations/0061_vocabulary_sense_mapping_retries.sql',import.meta.url),'utf8'));
   const created=createVocabularyContent({contentId:'original',kind:'exercise',payloadVersion:1,body:{prompt:'请把这张照片____后再打印。',instruction:'Old instruction',reveal:{teachingNote:'Old unrelated teaching'},source:{kind:context.name.startsWith('[bootstrap]')?'dictionary_baseline':'old_source'}},accessScope:'shared',availability:'active',originKind:'human',
     exerciseType:'word',skill:'production',exerciseRole:'general',assessment:{match:'exact'},words:[{wordId:'word',relation:'target'}],answers:[{wordId:'word',acceptedForms:['放大']}]},actor);
@@ -52,11 +53,6 @@ beforeEach(context=>{
   }
 });
 afterEach(()=>db.close());
-function migrateStagePrompts() {
-  const sql = readFileSync(new URL('../server/db/migrations/0080_retain_invocation_prompts.sql', import.meta.url),'utf8');
-  stageImprovementPromptReferences(db);
-  db.exec(sql.split('-- Improvement stage prompt retention')[1]!);
-}
 function archivedStageInput(stage: string) {
   const row = db.prepare(`SELECT input_json,input_hash,system_prompt_blob_hash FROM vocabulary_improvement_stages
     WHERE stage=? AND system_prompt_blob_hash IS NOT NULL`).get(stage)!;
@@ -691,7 +687,7 @@ bootstrapTest('repertoire retries reuse exact new-contract output and retain old
   }
   assert.equal(db.prepare("SELECT json_extract(input_json,'$.contract.systemPrompt') prompt FROM vocabulary_improvement_stages WHERE stage='repertoire' AND input_hash!='old-contract'").get()!.prompt,
     trial.requests[0]!.systemPrompt);
-  migrateStagePrompts();
+  migrateStagePrompts(db);
   const replay=await trial.provider.run({...job(),attemptNumber:2});
   assert.deepEqual(replay,result);assert.equal(trial.requests.length,1, 'retry of a migrated stage must not issue another provider call');
   assert.equal(db.prepare("SELECT count(*) n FROM vocabulary_improvement_stages WHERE stage='repertoire'").get()!.n,2);
@@ -1328,7 +1324,7 @@ test('0080 preserves historical cache keys, results and references while removin
   insert.run(originalHash, originalInput, at);
   const customInput = '{"contract":{"systemPrompt":{"hash":"a literal custom field"}}}';
   insert.run('operator-scope', customInput, at);
-  migrateStagePrompts();
+  migrateStagePrompts(db);
 
   const cache = db.prepare('SELECT * FROM vocabulary_improvement_stages WHERE job_id=? AND stage=? AND input_hash=?');
   const hit = cache.get('job', 'sense_mapping', originalHash)!;
@@ -1352,7 +1348,7 @@ test('0080 refuses to archive improvement stage inputs that do not match the rec
   db.prepare(`INSERT INTO vocabulary_improvement_stages(job_id,stage,input_hash,input_json,result_json,recorded_at)
     VALUES ('job','repertoire','wrong-hash',?,'{}',?)`).run(inputJson, at);
   db.exec('BEGIN');
-  assert.throws(() => migrateStagePrompts(), /input hash/);
+  assert.throws(() => migrateStagePrompts(db), /input hash/);
   db.exec('ROLLBACK');
   assert.equal(db.prepare("SELECT input_json FROM vocabulary_improvement_stages WHERE input_hash='wrong-hash'").get()!.input_json, inputJson);
 });
