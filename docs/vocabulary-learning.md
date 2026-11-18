@@ -61,7 +61,7 @@ single frontend transition so an automatic staging effect cannot race them.
 
 ## Retained session payload and hot-path work
 
-The immutable `vocabulary_sessions.context_json` includes the versioned payload:
+While a session is open or finalizing, its `vocabulary_sessions.context_json` freezes the versioned payload at Start, including
 lexical facts, reachable exercise pools for admitted words, selected pure cues,
 and complete encounter templates with answer and reveal facts. Unstudied words
 retain teaching plus Solidify general material for More after teaching completion.
@@ -80,17 +80,27 @@ version as sets of exact strings: order and duplicate entries do not change
 membership. Grading criteria and source material must still match exactly. This
 comparison preserves the frozen snapshot and its display order.
 
-The session owns the single frozen context used by completion and dispatch.
+The session owns the single frozen context used during study and finalization.
 Each completion revision retains its action input, duration and report. Closure
 reads the context through the revision's learner and session identifiers.
 Each dispatch references its same-learner, same-session closed revision. Reflection
 reads the revision’s report after claiming the dispatch. Reconciliation checks
-the revision’s actions and report and the session’s context for affected content.
+the revision’s actions and report and the retained session context for affected content.
+
+Successful closure discards the exercise pools and unused encounter templates in
+the same transaction that saves the final report and applies learning effects.
+Pending, failed, and cancelled completion attempts leave the full repertoire
+available to resume or retry. Closed history retains the action log, including
+skips and Undo, exact served encounter snapshots, frozen word labels when
+available, and session settings. Historical reads return the saved completion
+report. The set of alternative exercises available to the selector at Start is
+discarded on closure.
 
 A connection-scoped cache holds at most 64 session runtimes, keyed by learner
 and session. SQLite remains authoritative. Every access probes session ownership,
 status and the latest indexed action sequence/identity. A mismatch, eviction or
-new connection hydrates the immutable context and log once. Including action
+new connection reloads the context and log. Crossing the closure boundary also
+invalidates the cached active repertoire, including after a transaction rollback. Including action
 identity detects rolled-back writes replaced at the same sequence. Cached values
 are frozen so callers cannot mutate durable authority through shared references.
 
@@ -103,7 +113,7 @@ determined by payload presence; an older active session without one cannot resum
 
 This focused implementation still copies and scans in-memory session evidence
 and returns full action/encounter history. Undo and completion replay the log;
-a cold cache also replays once. These costs grow with session length. It removes
+a cold cache replays once for a session that can still change. These costs grow with session length. It removes
 live content discovery and repeated database history reads, without claiming
 constant total work for an indefinitely long session.
 

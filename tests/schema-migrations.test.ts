@@ -810,3 +810,85 @@ test('0081 verifies each dispatch against its closed revision before removing th
     assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), []);
   } finally { db.close(); }
 });
+
+test('0082 drops only the explicitly abandoned session, compacts closed history and protects future closure', () => {
+  const { db } = copy('compact-closed-history', true);
+  const id = 'app_schema:0082_compact_closed_session_history';
+  const through = schemaMigrations.filter(m => m.id <= id);
+  const wedged = 'b9aa613b-7c80-47be-91f6-45d0af5b45d5';
+  const start = '2026-11-01T00:58:05.231Z';
+  const end = '2026-11-07T15:43:39.300Z';
+  const initial = { words: [{ wordId: 'w' }], wordStateVersions: { w: 1 } };
+  const lexical = { wordId: 'w', hanzi: '冬' };
+  const context = JSON.stringify({ ...initial, payload: { version: 1,
+    words: { w: { lexical, general: ['unserved-exercise'] } }, snapshots: { unserved: { text: '左' } } } });
+  const compact = { ...initial, closedHistory: { version: 1, lexicalWords: { w: lexical } } };
+  try {
+    migrateDatabase(db, through.filter(m => m.id < id));
+    db.prepare("INSERT INTO learners VALUES ('history-learner','Learner',?,NULL)").run(start);
+    const session = db.prepare("INSERT INTO vocabulary_sessions VALUES (?,'history-learner',1,?,?,?,?)");
+    function report(sessionId: string) {
+      db.prepare(`INSERT INTO vocabulary_session_completions VALUES
+        (?,'history-learner',?,1,0,?,?,'closed','{"actions":[],"activeDurationMs":91}',
+         '{"phase":"completed","encounters":[]}','fixture',?,NULL)`).run(sessionId, sessionId, end, end, end);
+    }
+    session.run('closed', context, start, end, 'closed');
+    report('closed');
+    session.run('legacy', JSON.stringify(initial), start, end, 'closed');
+    report('legacy');
+    session.run('active', context, start, null, 'active');
+    session.run('retrying', context, start, null, 'finalizing');
+    session.run(wedged, context, start, end, 'closed');
+    const action = db.prepare(`INSERT INTO session_actions(action_id,learner_id,session_id,sequence_number,client_action_id,
+      kind,action_json,occurred_at,recorded_at) VALUES (?,'history-learner',?,1,'client','presentation','{"saved":"冬"}',?,?)`);
+    action.run('wedged-action', wedged, start, start);
+    const retained = db.prepare('SELECT context_json FROM vocabulary_sessions WHERE session_id=?');
+    const reports = db.prepare('SELECT * FROM vocabulary_session_completions ORDER BY completion_id').all();
+    const assertRollback = () => {
+      assert.throws(() => migrateDatabase(db, through), /closed_session_requires_one_closed_completion/);
+      assert.equal(retained.get('closed')!.context_json, context);
+      assert.equal(retained.get(wedged)!.context_json, context);
+      assert.equal(db.prepare("SELECT COUNT(*) n FROM session_actions WHERE action_id='wedged-action'").get()!.n, 1);
+      assert.equal(db.prepare('SELECT 1 FROM schema_migrations WHERE migration_id=?').get(id), undefined);
+    };
+    assertRollback(); // The pinned ID alone cannot authorize the deletion.
+    db.prepare(`INSERT INTO backend_events(event_id,occurred_at,recorded_at,name,payload_version,data_json,actor_kind,session_id)
+      VALUES ('abandon',?,?,'vocabulary.session.abandoned',1,'{}','operator',?)`).run(end, end, wedged);
+    session.run('unrecognized', context, start, end, 'closed');
+    assertRollback(); // A different reportless closed session still halts the migration.
+    db.exec("DELETE FROM vocabulary_sessions WHERE session_id='unrecognized'");
+    // The historical reader uses the highest revision, so one older closed
+    // report is insufficient when a later revision contradicts the session.
+    db.prepare(`INSERT INTO vocabulary_session_completions VALUES
+      ('later-cancelled','history-learner','closed',2,0,?,?,'cancelled','{}','{}','fixture',NULL,NULL)`).run(end, end);
+    assertRollback();
+    db.exec("DELETE FROM vocabulary_session_completions WHERE completion_id='later-cancelled'");
+    assert.deepEqual(migrateDatabase(db, through), [id]);
+    assert.deepEqual(migrateDatabase(db, through), []);
+    assert.equal(retained.get(wedged), undefined);
+    assert.equal(db.prepare("SELECT 1 FROM session_actions WHERE action_id='wedged-action'").get(), undefined);
+    assert.equal(db.prepare("SELECT session_id FROM backend_events WHERE event_id='abandon'").get()!.session_id, wedged);
+    assert.deepEqual(JSON.parse(String(retained.get('closed')!.context_json)), compact);
+    assert.deepEqual(JSON.parse(String(retained.get('legacy')!.context_json)), { ...initial, closedHistory: { version: 1 } });
+    assert.equal(retained.get('active')!.context_json, context);
+    assert.equal(retained.get('retrying')!.context_json, context);
+    assert.deepEqual(db.prepare('SELECT * FROM vocabulary_session_completions ORDER BY completion_id').all(), reports);
+    const finish = db.prepare("UPDATE vocabulary_sessions SET status='closed',closed_at=?,context_json=? WHERE session_id=?");
+    assert.throws(() => finish.run(end, JSON.stringify(compact), 'retrying'), /closed completion/);
+    report('retrying');
+    db.exec('SAVEPOINT later_revision');
+    db.prepare(`INSERT INTO vocabulary_session_completions VALUES
+      ('retrying-cancelled','history-learner','retrying',2,0,?,?,'cancelled','{}','{}','fixture',NULL,NULL)`).run(end, end);
+    assert.throws(() => finish.run(end, JSON.stringify(compact), 'retrying'), /closed completion/);
+    db.exec('ROLLBACK TO later_revision; RELEASE later_revision');
+    assert.throws(() => finish.run(end, context, 'retrying'), /compact history/);
+    finish.run(end, JSON.stringify(compact), 'retrying');
+    assert.throws(() => db.exec("UPDATE vocabulary_sessions SET status='active' WHERE session_id='retrying'"), /closing session/);
+    assert.throws(() => db.exec("UPDATE vocabulary_sessions SET context_json='{}' WHERE session_id='active'"), /immutable/);
+    assert.throws(() => db.exec("UPDATE vocabulary_sessions SET context_json='{}' WHERE session_id='closed'"), /immutable/);
+    assert.throws(() => db.exec("UPDATE vocabulary_sessions SET learner_id=learner_id WHERE session_id='closed'"), /immutable/);
+    assert.throws(() => session.run('fresh', JSON.stringify(compact), start, null, 'active'), /status/);
+    assert.throws(() => session.run('fresh', context, start, end, 'closed'), /status/);
+    assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), []);
+  } finally { db.close(); }
+});

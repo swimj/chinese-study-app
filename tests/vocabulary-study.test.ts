@@ -18,7 +18,7 @@ import { adoptVocabularyPureCues } from '../server/vocabulary/pure-cue-serving.t
 import { writeVocabularyDefaultUsefulSenses } from '../server/db/vocabulary-sense-coverage.ts';
 import { selectVocabularyReviewSkills } from '../server/vocabulary/review-selection.ts';
 import { createVocabularyContent,replaceVocabularyContent,updateVocabularyContent,getVocabularyContent,createVocabularySense,establishVocabularySenseCatalog,getVocabularySenseCatalog,getVocabularySenses,updateVocabularySense } from '../server/db/vocabulary-content.ts';
-import { appendVocabularySessionActions,createVocabularySession as createStoredSession,stageVocabularySessionCompletion,cancelVocabularySessionCompletion,closeVocabularySessionCompletion } from '../server/db/vocabulary-sessions.ts';
+import { appendVocabularySessionActions,createVocabularySession as createStoredSession,getVocabularySession,stageVocabularySessionCompletion,cancelVocabularySessionCompletion,closeVocabularySessionCompletion } from '../server/db/vocabulary-sessions.ts';
 import { changeVocabularyMode,addVocabularyWord,dismissVocabularyWord,getVocabularyLearnerWord,getVocabularyWordSchedule,enrollVocabularyDietWord } from '../server/db/vocabulary-learners.ts';
 import { startVocabularyStudy as startRuntime,composeVocabularySessionPayload,getVocabularyStudy,nextVocabularyExercise,commandVocabularyStudy,saveVocabularySessionNote } from '../server/vocabulary/study.ts';
 import { composeVocabularyStudy, remainingVocabularyNewWordQuota } from '../server/vocabulary/composition.ts';
@@ -64,7 +64,7 @@ beforeEach(()=>{
     INSERT INTO learner_word_state VALUES('alice','a','learning',2,NULL),('alice','b','review',0,NULL),('alice','new','unstudied',0,NULL);
     ALTER TABLE learner_word_state ADD COLUMN personal_notes TEXT NOT NULL DEFAULT '';
   `);
-  for(const file of ['0062_vocabulary_sense_coverage.sql','0064_vocabulary_default_useful_senses.sql','0039_vocabulary_content.sql','0041_vocabulary_learner_state.sql','0042_vocabulary_sessions.sql','0079_share_session_context.sql','0081_reference_dispatch_completion.sql','0047_vocabulary_dismissal.sql','0052_vocabulary_automatic_promotion_pause.sql','0023_session_debrief.sql','0048_vocabulary_connections.sql','0075_learner_chat.sql'])db.exec(fs.readFileSync(new URL(`../server/db/migrations/${file}`,import.meta.url),'utf8'));
+  for(const file of ['0062_vocabulary_sense_coverage.sql','0064_vocabulary_default_useful_senses.sql','0039_vocabulary_content.sql','0041_vocabulary_learner_state.sql','0042_vocabulary_sessions.sql','0079_share_session_context.sql','0081_reference_dispatch_completion.sql','0082_session_history_guards.sql','0047_vocabulary_dismissal.sql','0052_vocabulary_automatic_promotion_pause.sql','0023_session_debrief.sql','0048_vocabulary_connections.sql','0075_learner_chat.sql'])db.exec(fs.readFileSync(new URL(`../server/db/migrations/${file}`,import.meta.url),'utf8'));
   db.exec(`CREATE TABLE model_invocations(id TEXT PRIMARY KEY,status TEXT,actor_kind TEXT,learner_id TEXT);
     CREATE TABLE word_content_documents(content_id TEXT PRIMARY KEY,word_id TEXT,content_json TEXT,publication_id TEXT,teaching_set_key TEXT,created_at TEXT);
     CREATE TABLE word_introduction_preparation(word_id TEXT,teaching_set_key TEXT,content_id TEXT,package_id TEXT,preparation_epoch INTEGER);
@@ -444,6 +444,45 @@ test('cancel then resume preserves acknowledged answers without opening a replac
   assert.equal(view.session.projection.phase,'active');assert.equal(view.session.status,'active');
   assert.deepEqual(view.session.actions.filter((action)=>action.kind==='response'),before);
   assert.equal(db.prepare("SELECT count(*) AS n FROM vocabulary_session_completions WHERE status='pending'").get()?.n,0);
+}));
+
+test('a successful closure keeps the served study view and drops the frozen exercise pool', () => owner(() => {
+  const first = focusedA();
+  const id = first.session.sessionId;
+  const stored = () => String(db.prepare('SELECT context_json FROM vocabulary_sessions WHERE session_id=?').get(id)!.context_json);
+  const full = stored();
+  assert.ok(JSON.parse(full).payload.snapshots['general-2/general']);
+  let finished = commandVocabularyStudy(id, 'wrap', { type: 'finishForNow' });
+  if (finished.session.projection.phase === 'finishing') finished = commandVocabularyStudy(id, 'finish', { type: 'finishImmediately' });
+  const stage = () => stageVocabularySessionCompletion(id, finished.session.actions.length);
+  const cancelled = stage();
+  assert.equal(stored(), full);
+  cancelVocabularySessionCompletion(id, cancelled.completionId);
+  assert.equal(stored(), full);
+  const pending = stage();
+  db.exec('BEGIN');
+  closeVocabularySessionCompletion(id, pending.completionId);
+  assert.equal(getVocabularySession(id).context.closedHistory?.version, 1);
+  db.exec('ROLLBACK');
+  assert.equal(getVocabularySession(id).context.closedHistory, undefined);
+  assert.equal(stored(), full);
+
+  db.exec("CREATE TRIGGER fail_close BEFORE INSERT ON backend_events WHEN NEW.name='vocabulary.session.closed' BEGIN SELECT RAISE(ABORT,'fail close'); END");
+  assert.throws(() => closeVocabularySessionCompletion(id, pending.completionId), /fail close/);
+  assert.equal(stored(), full);
+  db.exec('DROP TRIGGER fail_close');
+  const closed = closeVocabularySessionCompletion(id, pending.completionId);
+  assert.equal(getVocabularySession(id).context.payload, undefined);
+  assert.equal(stored().includes('general-2/general'), false);
+  db.exec("UPDATE lexical_words SET meaning='after the session' WHERE id='a'");
+  const reopened = getVocabularyStudy(id);
+  assert.deepEqual(reopened.words, finished.words);
+  assert.deepEqual(reopened.currentEncounter, finished.currentEncounter);
+  assert.deepEqual(reopened.session.actions, finished.session.actions);
+  assert.deepEqual(reopened.session.projection, closed.report);
+  assert.deepEqual(reopened.session.context, finished.session.context);
+  assert.deepEqual(commandVocabularyStudy(id, 'wrap', { type: 'finishForNow' }).session.actions, reopened.session.actions);
+  assert.deepEqual(nextVocabularyExercise(id, 'initial').currentEncounter, reopened.currentEncounter);
 }));
 
 test('active wrap-up can return to its unstarted due work without changing modes or repeating effects',()=>owner(()=>{

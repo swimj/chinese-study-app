@@ -95,8 +95,19 @@ export function snapshotInventoryForReconciliation(
   const pendingProposals = all("SELECT * FROM content_proposals WHERE status NOT IN ('applied','closed') ORDER BY proposal_id")
     .filter(row => caseIds.has(String(row.case_id)) || basedProposals.has(String(row.proposal_id)) || intersects(jsonStrings(row.operations_json), refs));
   const proposalIds = new Set(pendingProposals.map(row => String(row.proposal_id)));
+  // Closed contexts no longer contain exercise templates. A served card may
+  // mention the target only in its frozen answer, reveal, or sense mapping.
+  const servedSessionIds = new Set<string>();
+  if (includePreservedHistory) {
+    const encounters = database.prepare(`SELECT e.session_id, e.served_snapshot_json FROM exercise_encounters e
+      JOIN vocabulary_sessions s USING (learner_id, session_id) WHERE s.status='closed'`);
+    for (const row of encounters.iterate()) {
+      const id = String(row.session_id);
+      if (!servedSessionIds.has(id) && intersects(jsonStrings(String(row.served_snapshot_json)), refs)) servedSessionIds.add(id);
+    }
+  }
   const retainedSessions = includePreservedHistory ? all('SELECT session_id,learner_id,status,context_json FROM vocabulary_sessions ORDER BY session_id')
-    .filter(row => intersects(jsonStrings(row.context_json), refs)) : [];
+    .filter(row => servedSessionIds.has(String(row.session_id)) || intersects(jsonStrings(row.context_json), refs)) : [];
   const sessionIds = new Set(retainedSessions.map(row => String(row.session_id)));
   const pendingCompletions = includePreservedHistory ? all("SELECT completion_id,session_id,learner_id,status,input_json FROM vocabulary_session_completions WHERE status IN ('pending','failed') ORDER BY completion_id")
     .filter(row => sessionIds.has(String(row.session_id)) || intersects(jsonStrings(row.input_json), refs)) : [];

@@ -225,11 +225,19 @@ export function getVocabularyStudy(sessionId:string):VocabularyStudy {
   const session=getVocabularySession(sessionId);const encounter=current(session);const wordId=encounter?.wordId??null;
   const word=wordId?session.projection.words[wordId]:null;const active=session.status==='active'&&session.projection.phase!=='completed';
   // Timed facts stay server-side; the client receives only the learner-facing state below.
-  const {payload,timed:timedContext,...publicContext}=session.context;
+  const {payload,closedHistory,timed:timedContext,...publicContext}=session.context;
   const timedRecord=timedContext?readTimedSessionRecord(sessionId):null;
   const budgetWrapped=timedContext?timedBudgetWrapped(session.actions,session.projection):false;
   const liveNotes=wordId?getDb().prepare('SELECT personal_notes FROM learner_word_state WHERE learner_id=? AND word_id=?').get(requireLearnerId(),wordId) as {personal_notes:string}|undefined:undefined;
-  return {session:{...session,context:publicContext},words:payload?session.context.words.map(word=>({...payload.words[word.wordId].lexical,...(word.wordId===wordId?{personalNotes:liveNotes?.personal_notes??''}:{})})):session.context.words.map(word=>lexical(word.wordId)),currentEncounter:encounter,currentWordId:wordId,
+  const words = publicContext.words.map(word => {
+    const frozen = payload?.words[word.wordId]?.lexical ?? closedHistory?.lexicalWords?.[word.wordId];
+    if (!frozen) {
+      if (payload || closedHistory?.lexicalWords) throw new Error('Missing frozen lexical facts for session word');
+      return lexical(word.wordId);
+    }
+    return word.wordId === wordId ? { ...frozen, personalNotes: liveNotes?.personal_notes ?? '' } : { ...frozen };
+  });
+  return {session:{...session,context:publicContext},words,currentEncounter:encounter,currentWordId:wordId,
     controls:{canNext:active,canSkip:active&&encounter!==null,canEnough:active&&word?.workStatus==='open'&&word.mode!=='unstudied',
       canMore:active&&word!==null&&!word.teachingDeferred&&(word.workStatus==='wrapped'||word.workStatus==='skipped'),canUndo:active&&session.projection.latestUndoableActionId!==null,
       // Timed days end at the trainer's natural break; a graceful early exit returns later.
@@ -533,9 +541,10 @@ export function nextVocabularyExercise(sessionId:string,clientActionId:string,op
 }
 export function commandVocabularyStudy(sessionId:string,clientActionId:string,command:VocabularyStudyCommand):VocabularyStudy {
   return atomic(()=>{
-    const session=getVocabularySession(sessionId);sessionPayload(session);const input=inputJson(command);
+    const session=getVocabularySession(sessionId);const input=inputJson(command);
     if(commandRetry(session,clientActionId,input))return getVocabularyStudy(sessionId);
     if(session.status!=='active')throw new VocabularySessionConflictError('Cancel the completion revision before resuming study');
+    sessionPayload(session);
     const builder=actionBuilder(session,clientActionId,input);const encounter=current(session);const wordId=('wordId'in command?command.wordId:undefined)??encounter?.wordId;
     const needEncounter=()=>{if(!encounter)throw new VocabularySessionInputError('No current exercise');return encounter;};
     const needWord=()=>{if(!wordId||!session.projection.words[wordId])throw new VocabularySessionInputError('No current word');return wordId;};

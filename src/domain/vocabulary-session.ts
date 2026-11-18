@@ -1,4 +1,5 @@
 import type { VocabularySessionPayload } from './vocabulary-session-payload';
+import type { VocabularyStudyWord } from './vocabulary-study-api';
 import type { BootstrapRevealSnapshot } from './word-content/reveal';
 import type { VocabularyTimedSessionContext } from './timed-session';
 import type { WordContentDocument } from './word-content/types';
@@ -66,6 +67,8 @@ export type VocabularySessionInitialContext = {
   sessionId: string;
   /** Immutable repertoire prepared at session Start. */
   payload?: VocabularySessionPayload;
+  /** Closed sessions keep frozen word labels. Presentation actions retain the actual served cards. */
+  closedHistory?: { version: 1; lexicalWords?: Record<string, VocabularyStudyWord> };
   words: readonly VocabularySessionWordContext[];
   /** Frozen review order interleaves independent cues with selected word objectives. */
   reviewOrder?: readonly { kind: 'word' | 'pure_cue'; id: string }[];
@@ -184,7 +187,8 @@ export type VocabularySessionWordProjection = {
 export type VocabularySessionProjection = {
   sessionId: string;
   protocolVersion: typeof VOCABULARY_SESSION_PROTOCOL_VERSION;
-  policyVersion: typeof VOCABULARY_SESSION_POLICY.version;
+  /** Closed reports retain the policy that applied their learning effects. */
+  policyVersion: 'vocabulary-session.v5' | typeof VOCABULARY_SESSION_POLICY.version;
   throughSequence: number;
   phase: 'active' | 'finishing' | 'completed';
   finishReason: 'finish_immediately' | 'wrapped_up' | null;

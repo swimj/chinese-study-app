@@ -83,7 +83,7 @@ function historicalState() {
 }
 function caseCoverage(id = 'case'): void {
   db.prepare(`INSERT INTO vocabulary_sessions(session_id,learner_id,protocol_version,context_json,started_at,status)
-    VALUES (?, 'learner', 1, ?, ?, 'closed')`).run(`session:${id}`, JSON.stringify({ words: [{ wordId: 'word' }], retained: 'exact source' }), at);
+    VALUES (?, 'learner', 1, ?, ?, 'closed')`).run(`session:${id}`, JSON.stringify({ words: [{ wordId: 'word' }], retained: 'exact source', closedHistory: {version: 1} }), at);
   db.prepare(`INSERT INTO vocabulary_session_completions(completion_id,learner_id,session_id,revision_number,through_sequence,staged_at,close_at,status,input_json,report_json,policy_version,closed_at)
     VALUES (?, 'learner', ?, 1, 0, ?, ?, 'closed', '{}', '{}', 'fixture', ?)`).run(`completion:${id}`, `session:${id}`, at, at, at);
   db.prepare(`INSERT INTO vocabulary_reflection_session_evidence(completion_id,learner_id,session_id,projection_json,created_at)
@@ -279,7 +279,7 @@ test('learner progress acquired after review is preserved without making the con
   db.prepare(`UPDATE learner_word_schedules SET next_eligible_at='2026-12-01T00:00:00.000Z',
     scheduler_state_json='{"completed":3}',state_version=state_version+1 WHERE learner_id='learner' AND word_id='word'`).run();
   db.prepare(`INSERT INTO vocabulary_sessions(session_id,learner_id,protocol_version,context_json,started_at,status)
-    VALUES ('later-session','learner',1,'{"words":[{"wordId":"word"}]}',?,'closed')`).run(at);
+    VALUES ('later-session','learner',1,'{"words":[{"wordId":"word"}],"closedHistory":{"version":1}}',?,'closed')`).run(at);
   const history = historicalState();
   apply([reviewed]);
   assert.deepEqual(historicalState(), history);

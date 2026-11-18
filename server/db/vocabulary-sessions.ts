@@ -8,6 +8,7 @@ import { advanceVocabularySession, projectVocabularySession, isCleanSolidifySess
 import type { VocabularyPersistedSession, VocabularySessionCompletion } from '../../src/domain/vocabulary-session-api.ts';
 export type { VocabularyPersistedSession, VocabularySessionCompletion } from '../../src/domain/vocabulary-session-api.ts';
 import { getDb } from './connection.ts';
+import { compactClosedSessionContext } from './closed-session-context.ts';
 import { nextReviewSchedule, reviewElapsedHours, latestReviewTimestamp, type ReviewTiming } from './review-policy.ts';
 import { REVIEW_PHASE_RECENCY_GUARD_HOURS } from './types.ts';
 import { requestWordReserveReconciliation } from './word-reserve.ts';
@@ -88,14 +89,24 @@ function sessionHead(sessionId: string): SessionHead {
   if (!head) { runtimeCache().delete(runtimeKey(sessionId)); throw new VocabularySessionNotFoundError('Vocabulary session not found'); }
   return head;
 }
-function sessionRuntime(sessionId: string): SessionRuntime {
+function sessionRuntime(sessionId: string, now: string): SessionRuntime {
   const head = sessionHead(sessionId); const cached = runtimeCache().get(runtimeKey(sessionId));
-  if (cached && cached.head.started_at === head.started_at && cached.head.sequence_number === head.sequence_number && cached.head.action_id === head.action_id) {
+  if (cached && (cached.head.status === 'closed') === (head.status === 'closed') && cached.head.started_at === head.started_at
+    && cached.head.sequence_number === head.sequence_number && cached.head.action_id === head.action_id) {
     const runtime = { ...cached, head }; rememberRuntime(sessionId, runtime); return runtime;
   }
   const context = JSON.parse(sessionRow(sessionId).context_json) as StoredContext;
   const actions = readActions(sessionId);
-  const runtime = { context, actions, projection: projectVocabularySession(context, actions), head };
+  // Historical sessions use the report produced by the policy that actually closed them.
+  // Entering or rolling back closure invalidates the cache even at the same action boundary.
+  let completion: VocabularySessionCompletion | undefined;
+  if (head.status === 'closed') {
+    const row = completionRow(sessionId);
+    if (row?.status !== 'closed') throw new Error('Closed vocabulary session has no final report');
+    completion = completionDto(row, now);
+    freezeRuntimeValue(completion.metadata);
+  }
+  const runtime = { context, actions, projection: completion?.report ?? projectVocabularySession(context, actions), head, completion };
   rememberRuntime(sessionId, runtime); return runtime;
 }
 function cachedSessionCompletion(sessionId: string, runtime: SessionRuntime, now: string): VocabularySessionCompletion | null {
@@ -135,7 +146,7 @@ export function getVocabularySessionCompletion(sessionId: string, now = new Date
   sessionHead(sessionId); const row = completionRow(sessionId); return row ? completionDto(row, now) : null;
 }
 export function getVocabularySession(sessionId: string, now = new Date().toISOString()): VocabularyPersistedSession {
-  return sessionDto(sessionId, sessionRuntime(sessionId), now);
+  return sessionDto(sessionId, sessionRuntime(sessionId, now), now);
 }
 
 /** Internal trusted creation: callers supply ready teaching requirements, never learner modes. */
@@ -201,7 +212,7 @@ function validatePresentation(action: Extract<VocabularySessionAction, { kind: '
 export function appendVocabularySessionActions(sessionId: string, incoming: readonly VocabularySessionAction[], now = new Date().toISOString()): VocabularyPersistedSession {
   timestamp(now);
   return atomic(() => {
-    const runtime = sessionRuntime(sessionId); const row = runtime.head; const existing = runtime.actions; const all = [...existing];
+    const runtime = sessionRuntime(sessionId, now); const row = runtime.head; const existing = runtime.actions; const all = [...existing];
     const fresh: VocabularySessionAction[] = [];
     for (const action of incoming) {
       const retry = all.find((entry) => entry.clientActionId === action.clientActionId);
@@ -481,9 +492,10 @@ export function closeVocabularySessionCompletion(sessionId: string, completionId
       const projection = projectVocabularySession(context, input.actions, { throughSequence: previous.through_sequence });
       applyLearningEffects(previous.completion_id, context, projection, now);
       finalizeTimedSession({ context, actions: input.actions, projection, activeDurationMs: input.activeDurationMs ?? null, now });
-      getDb().prepare("UPDATE vocabulary_sessions SET status = 'closed',closed_at = ? WHERE session_id = ?").run(now, sessionId);
       getDb().prepare("UPDATE vocabulary_session_completions SET status = 'closed',closed_at = ?,report_json = ?,last_error = NULL WHERE completion_id = ?")
         .run(now, JSON.stringify(projection), previous.completion_id);
+      getDb().prepare("UPDATE vocabulary_sessions SET status = 'closed',closed_at = ?,context_json = ? WHERE session_id = ? AND learner_id = ?")
+        .run(now, JSON.stringify(compactClosedSessionContext(context)), sessionId, session.learner_id);
       getDb().prepare(`INSERT INTO vocabulary_post_session_dispatches(dispatch_id,learner_id,session_id,completion_id,status,created_at)
         VALUES (?,?,?,?,'queued',?)`).run(randomUUID(), requireLearnerId(), sessionId, previous.completion_id, now);
       enqueueVocabularyConnections(sessionId, previous.completion_id, projection, now);

@@ -31,7 +31,8 @@ the architectural boundary for implementation.
 - **Content:** complete current objects and full version history support shared
   repair. Teaching has an exclusive repertoire bound to its introduction; ordinary
   practice draws from the current pool at session composition. Each session retains
-  its repertoire while controls choose dynamically within it. Unresolved sense
+  its repertoire until closure commits. Closed history retains the served cards
+  and final report, and discards unused exercise alternatives. Unresolved sense
   associations allow word fallback. Teaching preparation runs ahead of admission;
   general practice queues when
   teaching completion commits at closure. Background reserve membership supplies best-effort readiness hints; session

@@ -1,3 +1,4 @@
+import { stageClosedSessionHistories } from './closed-session-history-migration.ts';
 import { stageImprovementPromptReferences } from './improvement-stage-prompt-archive.ts';
 import { stageInvocationPromptReferences } from './invocation-prompt-archive.ts';
 import { backfillVocabularyCaseReviews } from './vocabulary-case-review-migration.ts';
@@ -285,6 +286,11 @@ export const schemaMigrations: readonly SchemaMigration[] = [{
 }, {
   id: 'app_schema:0081_reference_dispatch_completion',
   sql: fs.readFileSync(new URL('./migrations/0081_reference_dispatch_completion.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0082_compact_closed_session_history',
+  before: stageClosedSessionHistories,
+  sql: fs.readFileSync(new URL('./migrations/0082_compact_closed_session_history.sql', import.meta.url), 'utf8')
+    + fs.readFileSync(new URL('./migrations/0082_session_history_guards.sql', import.meta.url), 'utf8'),
 }];
 
 function checksum(value: string): string {

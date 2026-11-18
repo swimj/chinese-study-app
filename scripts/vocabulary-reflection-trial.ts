@@ -113,7 +113,7 @@ const migrations = ['0039_vocabulary_content.sql', '0025_model_invocations.sql',
   '0042_vocabulary_sessions.sql', '0043_vocabulary_import.sql', '0044_vocabulary_reflection.sql', '0045_vocabulary_provenance_links.sql',
   '0046_vocabulary_pure_cue_guards.sql', '0023_session_debrief.sql', '0048_vocabulary_connections.sql',
   '0049_vocabulary_sense_readiness.sql', '0050_vocabulary_improvement_admission.sql', '0051_vocabulary_pure_cue_promotion.sql', '0053_vocabulary_second_opinions.sql', '0054_vocabulary_provider_retry_routing.sql',
-  '0080_retain_invocation_prompts.sql'];
+  '0079_share_session_context.sql', '0080_retain_invocation_prompts.sql', '0081_reference_dispatch_completion.sql', '0082_session_history_guards.sql'];
 function initialize(sql: DatabaseSync): void {
   sql.exec(`PRAGMA foreign_keys=ON;
     CREATE TABLE learners(learner_id TEXT PRIMARY KEY,disabled_at TEXT,display_name TEXT);

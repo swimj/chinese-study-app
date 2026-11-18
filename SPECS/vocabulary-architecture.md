@@ -54,7 +54,14 @@ produce bounded diagnostics. The resolved teaching enters the frozen session pay
 The payload covers modes reachable through deterministic session transitions.
 Discretionary mode commands affect future sessions; successfully closed summaries
 can issue them without rewriting completed evidence. Historical session mode
-actions remain replayable.
+actions remain in the session history.
+
+The full exercise repertoire is frozen until closure commits. Cancelling Finish
+or retrying a failed close uses that same repertoire. Once closed, a session
+retains the exact cards presented, including skipped and undone presentations,
+the acknowledged actions, admitted word facts, and the committed report. An
+exercise that was eligible but never presented has no historical snapshot in
+that session. Historical reads use the committed evidence directly.
 
 ## Content identity, ownership, and revision
 

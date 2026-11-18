@@ -68,10 +68,23 @@ test('snapshot retains arbitrary JSON references and the complete shared binding
   assert.deepEqual(snapshot(), result);
 });
 
+test('offline history finds a reference in a served card after the session pool is gone', () => {
+  exercise('other-exercise', 'other');
+  db.prepare(`INSERT INTO vocabulary_sessions(session_id,learner_id,protocol_version,context_json,started_at,status)
+    VALUES ('historical','learner',1,'{"words":[{"wordId":"other"}],"closedHistory":{"version":1}}',?,'closed')`).run(at);
+  db.prepare(`INSERT INTO session_actions(action_id,learner_id,session_id,sequence_number,client_action_id,kind,action_json,occurred_at,recorded_at)
+    VALUES ('present','learner','historical',1,'client','presentation','{}',?,?)`).run(at, at);
+  db.prepare(`INSERT INTO exercise_encounters(encounter_id,learner_id,session_id,presented_action_id,content_id,content_version,context_json,served_snapshot_json,presented_at)
+    VALUES ('encounter','learner','historical','present','other-exercise',1,'{}',?,?)`)
+    .run(JSON.stringify({ body: { revealWords: [{ wordId: 'target' }] } }), at);
+  assert.deepEqual(dependencyIds(snapshot().dependencies.retainedSessions, 'session_id'), ['historical']);
+  assert.deepEqual(snapshot('online').dependencies.retainedSessions, []);
+});
+
 test('online snapshot omits preserved history while retaining identical active dependencies and embedded-reference blockers', () => {
   exercise('json-only', 'other', false, 'target');
   db.prepare(`INSERT INTO vocabulary_sessions(session_id,learner_id,protocol_version,context_json,started_at,status)
-    VALUES ('session','learner',1,?,?, 'closed')`).run(JSON.stringify({ words: [{ wordId: 'target' }] }), at);
+    VALUES ('session','learner',1,?,?, 'closed')`).run(JSON.stringify({ words: [{ wordId: 'target' }], closedHistory: { version: 1 } }), at);
   db.prepare(`INSERT INTO vocabulary_session_completions(completion_id,learner_id,session_id,revision_number,through_sequence,staged_at,close_at,status,input_json,report_json,policy_version,closed_at)
     VALUES ('completion','learner','session',1,0,?,?,'closed','{"actions":[]}','{}','fixture',?)`).run(at, at, at);
   db.prepare(`INSERT INTO vocabulary_reflection_session_evidence(completion_id,learner_id,session_id,projection_json,created_at)
