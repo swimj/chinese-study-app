@@ -21,7 +21,7 @@ test('compatible requests share one exact template blob across schema variants',
     const body = request(appendix);
     const encoded = roundTrip(template, JSON.stringify(body));
     assert.deepEqual([...encoded.blobs], [[sha(template), template]]);
-    assert.deepEqual(JSON.parse(encoded.requestJson!), { ...body, messages: [{ role: 'system', content: appendix }, body.messages[1]] });
+    assert.deepEqual(JSON.parse(encoded.requestJson!), { ...body, messages: [{ role: 'system', content: appendix ? JSON.stringify(schema) : '' }, body.messages[1]] });
   }
 });
 
@@ -70,4 +70,12 @@ test('invalid or lossy persisted formats fail before returning a different liter
   assert.throws(() => decodeInvocationPrompts(null, '{}', encoded.referencesJson, read), /Unused/);
   assert.throws(() => decodeInvocationPrompts(null, encoded.requestJson, '{"version":2,"hashes":[]}', read), /references/);
   assert.throws(() => decodeInvocationPrompts(null, '{"messages":[{"role":"system","content":""},{"role":"developer","content":""}]}', encoded.referencesJson, read), /Missing/);
+});
+
+test('invalid schema suffix indices are rejected', () => {
+  const request = '{"messages":[{"role":"system","content":""}]}';
+  for (const indices of [[-1], [1], [0, 0], ['0']]) {
+    assert.throws(() => decodeInvocationPrompts(null, request,
+      JSON.stringify({ version: 1, hashes: [sha('x')], schemaSuffixAt: indices }), () => 'x'), /schema suffix/);
+  }
 });

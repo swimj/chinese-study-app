@@ -45,14 +45,16 @@ export function encodeInvocationPrompts(promptTemplate: string | null, requestJs
   }
   const templateHash = promptTemplate === null ? null : retain(promptTemplate);
   const hashes: string[] = [];
+  const schemaSuffixAt: number[] = [];
   if (requestJson !== null) {
     const request: JsonValue = JSON.parse(requestJson);
     const canonical = JSON.stringify(request);
     replaceInstructionText(request, text => {
       // json_object adapters append the per-call output schema to the supplied system prompt.
-      if (templateHash !== null && promptTemplate !== null && (text === promptTemplate || text.startsWith(promptTemplate + schemaSuffix))) {
+      if (templateHash !== null && promptTemplate !== null && text.startsWith(promptTemplate + schemaSuffix)) {
+        schemaSuffixAt.push(hashes.length);
         hashes.push(templateHash);
-        return text.slice(promptTemplate.length);
+        return text.slice(promptTemplate.length + schemaSuffix.length);
       }
       hashes.push(retain(text));
       return '';
@@ -63,7 +65,7 @@ export function encodeInvocationPrompts(promptTemplate: string | null, requestJs
     }
   }
   // Separate metadata allows the provider to use arbitrary strings and objects, including reference lookalikes.
-  const referencesJson = hashes.length > 0 ? JSON.stringify({ version: 1, hashes }) : null;
+  const referencesJson = hashes.length > 0 ? JSON.stringify({ version: 1, hashes, ...(schemaSuffixAt.length ? { schemaSuffixAt } : {}) }) : null;
   return { templateHash, requestJson, referencesJson, blobs };
 }
 
@@ -82,12 +84,19 @@ export function decodeInvocationPrompts(templateHash: string | null, requestJson
       throw new Error('Invalid invocation request prompt references');
     }
     const hashes = references.hashes;
+    const suffixIndices = references.schemaSuffixAt ?? [];
+    if (!Array.isArray(suffixIndices) || suffixIndices.some((i, n) =>
+      typeof i !== 'number' || !Number.isSafeInteger(i) || i < 0 || i >= hashes.length || (n > 0 && i <= Number(suffixIndices[n - 1])))) {
+      throw new Error('Invalid invocation prompt schema suffix references');
+    }
+    const schemaSuffixAt = new Set(suffixIndices);
     let index = 0;
     const request: JsonValue = JSON.parse(requestJson);
     replaceInstructionText(request, suffix => {
+      const adapterInstruction = schemaSuffixAt.has(index) ? schemaSuffix : '';
       const hash = hashes[index++];
       if (typeof hash !== 'string') throw new Error('Missing invocation request prompt reference');
-      return read(hash) + suffix;
+      return read(hash) + adapterInstruction + suffix;
     });
     if (index !== hashes.length) throw new Error('Unused invocation request prompt reference');
     requestJson = JSON.stringify(request);
