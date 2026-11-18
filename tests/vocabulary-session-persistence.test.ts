@@ -42,7 +42,7 @@ beforeEach(() => {
     INSERT INTO lexical_words(id,created_at) VALUES ('a','2026-01-01T00:00:00.000Z'),('b','2026-01-01T00:00:00.000Z'),('new','2026-01-01T00:00:00.000Z');
     INSERT INTO learner_word_state VALUES ('alice','a','learning',2,NULL),('alice','b','review',0,NULL),('alice','new','unstudied',0,NULL);
   `);
-  for (const name of ['0062_vocabulary_sense_coverage.sql','0064_vocabulary_default_useful_senses.sql','0039_vocabulary_content.sql','0041_vocabulary_learner_state.sql','0042_vocabulary_sessions.sql','0079_share_session_context.sql','0081_reference_dispatch_completion.sql','0082_session_history_guards.sql','0047_vocabulary_dismissal.sql','0052_vocabulary_automatic_promotion_pause.sql','0023_session_debrief.sql','0048_vocabulary_connections.sql']) {
+  for (const name of ['0062_vocabulary_sense_coverage.sql','0064_vocabulary_default_useful_senses.sql','0039_vocabulary_content.sql','0041_vocabulary_learner_state.sql','0042_vocabulary_sessions.sql','0079_share_session_context.sql','0081_reference_dispatch_completion.sql','0082_session_history_guards.sql','0083_reference_completion_actions.sql','0047_vocabulary_dismissal.sql','0052_vocabulary_automatic_promotion_pause.sql','0023_session_debrief.sql','0048_vocabulary_connections.sql']) {
     sql.exec(fs.readFileSync(new URL(`../server/db/migrations/${name}`,import.meta.url),'utf8'));
   }
   sql.exec(fs.readFileSync(new URL('../server/db/migrations/0045_vocabulary_provenance_links.sql',import.meta.url),'utf8').split('CREATE TABLE vocabulary_practice_preparation')[1]!.replace(/^/, 'CREATE TABLE vocabulary_practice_preparation'));
@@ -301,7 +301,7 @@ test('bounded client active duration is frozen with completion input and does no
   assert.throws(()=>stageVocabularySessionCompletion('session',6,'2026-10-17T10:00:20.000Z',{activeDurationMs:16000}),/different active duration/);
   const closed=closeVocabularySessionCompletion('session',staged.completionId,'2026-10-17T11:00:00.000Z');
   assert.equal(closed.metadata.activeDurationMs,12000);
-  const input=JSON.parse(String(sql.prepare('SELECT input_json FROM vocabulary_session_completions').get()?.input_json));assert.equal(input.activeDurationMs,12000);
+  const input=JSON.parse(String(sql.prepare('SELECT input_json FROM vocabulary_session_completions').get()?.input_json));assert.deepEqual(input,{activeDurationMs:12000});
 }));
 
 function closeLog(sessionId: string, inputs: Input[], at = now, closedAt = later) {

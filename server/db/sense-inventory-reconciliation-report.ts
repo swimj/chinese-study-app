@@ -83,11 +83,12 @@ export function snapshotInventoryForReconciliation(
   const pendingReflectionJobs = all("SELECT * FROM vocabulary_reflection_jobs WHERE status!='succeeded' AND case_id IN (SELECT value FROM json_each(?)) ORDER BY job_id", idsJson(caseIds));
   // Keep dependency snapshots comparable with saved plans from before the dispatch normalization.
   const pendingDispatches = all(`SELECT d.dispatch_id,d.learner_id,d.session_id,d.completion_id,
-      json_object('actions',json_extract(c.input_json,'$.actions'),'projection',json(c.report_json)) AS evidence_json,
+      json_object('actions',json(j.actions_json),'projection',json(c.report_json)) AS evidence_json,
       d.status,d.created_at,d.active_token,d.expires_at,d.last_error,d.result_json,s.context_json
     FROM vocabulary_post_session_dispatches d
     JOIN vocabulary_sessions s USING (learner_id, session_id)
     JOIN vocabulary_session_completions c USING (learner_id, session_id, completion_id)
+    JOIN vocabulary_completion_action_lists j USING (learner_id, session_id, completion_id)
     WHERE d.status!='succeeded' ORDER BY d.dispatch_id`)
     .filter(row => intersects(jsonStrings(row.evidence_json), refs) || intersects(jsonStrings(row.context_json), refs))
     .map(({ context_json: _context, ...dispatch }) => dispatch);
@@ -109,7 +110,13 @@ export function snapshotInventoryForReconciliation(
   const retainedSessions = includePreservedHistory ? all('SELECT session_id,learner_id,status,context_json FROM vocabulary_sessions ORDER BY session_id')
     .filter(row => servedSessionIds.has(String(row.session_id)) || intersects(jsonStrings(row.context_json), refs)) : [];
   const sessionIds = new Set(retainedSessions.map(row => String(row.session_id)));
-  const pendingCompletions = includePreservedHistory ? all("SELECT completion_id,session_id,learner_id,status,input_json FROM vocabulary_session_completions WHERE status IN ('pending','failed') ORDER BY completion_id")
+  const pendingCompletions = includePreservedHistory ? all(`SELECT c.completion_id,c.session_id,c.learner_id,c.status,c.input_json,j.actions_json
+    FROM vocabulary_session_completions c JOIN vocabulary_completion_action_lists j USING (learner_id,session_id,completion_id)
+    WHERE c.status IN ('pending','failed') ORDER BY c.completion_id`)
+    // Historical offline plans hashed the serialized input with actions first.
+    .map(({ actions_json, ...row }): Row => ({ ...row, input_json: JSON.stringify({
+      actions: JSON.parse(String(actions_json)), ...JSON.parse(String(row.input_json)),
+    }) }))
     .filter(row => sessionIds.has(String(row.session_id)) || intersects(jsonStrings(row.input_json), refs)) : [];
   const publicationIds = new Set([...sourceDocuments, ...packages].map(row => String(row.publication_id)));
   const publications = all('SELECT * FROM shared_content_publications WHERE publication_id IN (SELECT value FROM json_each(?)) ORDER BY publication_id', idsJson(publicationIds));

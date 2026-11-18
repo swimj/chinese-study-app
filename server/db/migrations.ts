@@ -291,6 +291,9 @@ export const schemaMigrations: readonly SchemaMigration[] = [{
   before: stageClosedSessionHistories,
   sql: fs.readFileSync(new URL('./migrations/0082_compact_closed_session_history.sql', import.meta.url), 'utf8')
     + fs.readFileSync(new URL('./migrations/0082_session_history_guards.sql', import.meta.url), 'utf8'),
+}, {
+  id: 'app_schema:0083_reference_completion_actions',
+  sql: fs.readFileSync(new URL('./migrations/0083_reference_completion_actions.sql', import.meta.url), 'utf8'),
 }];
 
 function checksum(value: string): string {

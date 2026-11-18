@@ -906,3 +906,20 @@ undone work), actions, report bytes, durations, and reads of closed sessions.
 Test finalizing, cancelling, retrying and closing a new session. Check the
 abandonment audit, absence of its parent and children, and measure the actual
 context bytes and reusable SQLite pages.
+
+## Completion action boundaries (0083)
+
+Each vocabulary completion names the last acknowledged action in its learner's
+session. The migration compares the saved array with the ordered journal rows
+up to that number and verifies its length. A missing array, gap, or differing
+action aborts the transaction. It removes only the top-level action array from
+each input. Reports, durations and journal rows keep their original contents.
+New revisions require a complete journal prefix and store their boundary once.
+
+On a restored backup, compare the reconstructed action list for every revision
+with its original array, including cancelled revisions with later actions.
+Compare the other input fields, report bytes, journal rows, and both forms of
+reconciliation evidence. Exercise staging, cancellation, closure and retry.
+The migration reads a journal prefix per revision and rewrites the completion
+inputs in one transaction. Measure occupied pages and the freelist before and
+after, then verify SQLite integrity and foreign keys.

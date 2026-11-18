@@ -19,7 +19,7 @@ test('deferral migration preserves existing case state, survives reopen and matc
     migrateDatabase(db,schemaMigrations.slice(0,index));
     db.exec(`INSERT INTO learners VALUES('learner','Learner','${at}',NULL);
       INSERT INTO vocabulary_sessions VALUES('session','learner',1,'{}','${at}','${at}','closed');
-      INSERT INTO vocabulary_session_completions VALUES('completion','learner','session',1,0,'${at}','${at}','closed','{}','{}','fixture','${at}',NULL);
+      INSERT INTO vocabulary_session_completions VALUES('completion','learner','session',1,0,'${at}','${at}','closed','{"actions":[]}','{}','fixture','${at}',NULL);
       INSERT INTO vocabulary_reflection_session_evidence VALUES('completion','learner','session','{}','${at}');`);
     for(const state of ['open','resolved']){
       db.prepare("INSERT INTO reflection_cases VALUES(?,'completion','learner','exercise_improvement',?,NULL,NULL,'completed','{}',?)").run(state,state,at);

@@ -86,7 +86,7 @@ test('online snapshot omits preserved history while retaining identical active d
   db.prepare(`INSERT INTO vocabulary_sessions(session_id,learner_id,protocol_version,context_json,started_at,status)
     VALUES ('session','learner',1,?,?, 'closed')`).run(JSON.stringify({ words: [{ wordId: 'target' }], closedHistory: { version: 1 } }), at);
   db.prepare(`INSERT INTO vocabulary_session_completions(completion_id,learner_id,session_id,revision_number,through_sequence,staged_at,close_at,status,input_json,report_json,policy_version,closed_at)
-    VALUES ('completion','learner','session',1,0,?,?,'closed','{"actions":[]}','{}','fixture',?)`).run(at, at, at);
+    VALUES ('completion','learner','session',1,0,?,?,'closed','{}','{}','fixture',?)`).run(at, at, at);
   db.prepare(`INSERT INTO vocabulary_reflection_session_evidence(completion_id,learner_id,session_id,projection_json,created_at)
     VALUES ('completion','learner','session','{}',?)`).run(at);
   db.prepare(`INSERT INTO reflection_cases(case_id,completion_id,learner_id,kind,subject_key,word_id,status,evidence_snapshot_json,created_at)
@@ -110,4 +110,18 @@ test('online snapshot omits preserved history while retaining identical active d
   }
   assert.deepEqual(online.dependencies.preservedCounts, {}); offline.dependencies.preservedCounts = {};
   assert.deepEqual(online, offline);
+});
+
+test('offline pending evidence retains the original action-only reference and serialized input', () => {
+  db.prepare(`INSERT INTO vocabulary_sessions VALUES ('pending-session','learner',1,'{}',?,NULL,'finalizing')`).run(at);
+  const action = JSON.stringify({ sequence: 1, payload: { note: 'target' } });
+  db.prepare(`INSERT INTO session_actions(action_id,learner_id,session_id,sequence_number,client_action_id,kind,action_json,occurred_at,recorded_at)
+    VALUES ('a','learner','pending-session',1,'a','fixture',?,?,?)`).run(action,at,at);
+  db.prepare(`INSERT INTO vocabulary_session_completions VALUES
+    ('pending','learner','pending-session',1,1,?,?,'failed','{"activeDurationMs":null}','{}','fixture',NULL,'retry')`).run(at,at);
+  assert.deepEqual(snapshot().dependencies.pendingCompletions, [{
+    completion_id: 'pending', session_id: 'pending-session', learner_id: 'learner', status: 'failed',
+    input_json: `{"actions":[${action}],"activeDurationMs":null}`,
+  }]);
+  assert.deepEqual(snapshot('online').dependencies.pendingCompletions, []);
 });

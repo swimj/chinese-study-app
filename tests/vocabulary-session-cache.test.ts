@@ -15,6 +15,7 @@ function fixture() {
   db.exec("CREATE TABLE learners(learner_id TEXT PRIMARY KEY); CREATE TABLE lexical_words(id TEXT PRIMARY KEY); INSERT INTO learners VALUES ('alice'),('bob');");
   db.exec(fs.readFileSync(new URL('../server/db/migrations/0042_vocabulary_sessions.sql', import.meta.url), 'utf8'));
   db.exec(fs.readFileSync(new URL('../server/db/migrations/0082_session_history_guards.sql', import.meta.url), 'utf8'));
+  db.exec(fs.readFileSync(new URL('../server/db/migrations/0083_reference_completion_actions.sql', import.meta.url), 'utf8'));
   const statements: string[] = [];
   const prepare = db.prepare.bind(db);
   db.prepare = (sql: string) => { statements.push(sql); return prepare(sql); };

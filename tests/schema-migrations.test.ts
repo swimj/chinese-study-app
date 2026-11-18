@@ -506,7 +506,7 @@ function seedCaseReviewLineage(db:DatabaseSync,active=false){
   db.exec('BEGIN');
   db.prepare("INSERT INTO learners VALUES ('case-learner','Fixture',?,NULL)").run(at);
   db.prepare("INSERT INTO vocabulary_sessions VALUES ('case-session','case-learner',1,'{}',?,?,'closed')").run(at,at);
-  db.prepare("INSERT INTO vocabulary_session_completions VALUES ('case-completion','case-learner','case-session',1,0,?,?,'closed','{}','{}','fixture',?,NULL)").run(at,at,at);
+  db.prepare("INSERT INTO vocabulary_session_completions VALUES ('case-completion','case-learner','case-session',1,0,?,?,'closed','{\"actions\":[]}','{}','fixture',?,NULL)").run(at,at,at);
   db.prepare("INSERT INTO vocabulary_reflection_session_evidence VALUES ('case-completion','case-learner','case-session','{}',?)").run(at);
   for(const [id,status] of [['root','closed'],['successor','completed'],['opinion','completed']])db.prepare("INSERT INTO reflection_cases(case_id,completion_id,learner_id,kind,subject_key,status,evidence_snapshot_json,created_at) VALUES (?,'case-completion','case-learner','exercise_improvement',?,?,'[]',?)").run(id,id,status,at);
   db.prepare("INSERT INTO content_proposals VALUES ('old-proposal','root',1,'closed','[]','Retained','service','fixture',NULL,?,?)").run(at,at);
@@ -890,5 +890,52 @@ test('0082 drops only the explicitly abandoned session, compacts closed history 
     assert.throws(() => session.run('fresh', JSON.stringify(compact), start, null, 'active'), /status/);
     assert.throws(() => session.run('fresh', context, start, end, 'closed'), /status/);
     assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), []);
+  } finally { db.close(); }
+});
+
+test('0083 verifies each completion against its own journal prefix before trimming its input', () => {
+  const { db } = copy('completion-action-boundaries', true);
+  const id = 'app_schema:0083_reference_completion_actions';
+  const through = schemaMigrations.filter(m => m.id <= id);
+  const at = '2026-11-18T00:00:00.000Z';
+  const first = { sequence: 1, payload: { text: '保留', actions: ['nested'] } };
+  const second = { sequence: 2, payload: { undoesActionId: 'first' } };
+  try {
+    migrateDatabase(db, through.filter(m => m.id !== id));
+    db.prepare("INSERT INTO learners VALUES ('journal-learner','Learner',?,NULL)").run(at);
+    db.prepare("INSERT INTO vocabulary_sessions VALUES ('s','journal-learner',1,'{}',?,NULL,'active')").run(at);
+    const action = db.prepare(`INSERT INTO session_actions(action_id,learner_id,session_id,sequence_number,client_action_id,kind,action_json,occurred_at,recorded_at)
+      VALUES (?,'journal-learner','s',?,?,'fixture',?,?,?)`);
+    // Insert out of order so the check relies on acknowledged sequence.
+    action.run('second',2,'second',JSON.stringify(second),at,at);
+    action.run('first',1,'first',JSON.stringify(first),at,at);
+    const completion = db.prepare(`INSERT INTO vocabulary_session_completions VALUES
+      (?,'journal-learner','s',?,?,?,?,?,?,'{"saved":true}','fixture',NULL,NULL)`);
+    const cancelled = { actions: [first], activeDurationMs: null };
+    completion.run('cancelled',1,1,at,at,'cancelled',JSON.stringify(cancelled));
+    for (const [boundary,input] of [
+      [0,{}], [1,{actions:[]}], [1,{actions:[second]}], [2,{actions:[second,first]}], [3,{actions:[first,second]}],
+    ] as const) {
+      completion.run('invalid',2,boundary,at,at,'failed',JSON.stringify(input));
+      assert.throws(() => migrateDatabase(db,through), /completion_actions_must_match_journal/);
+      assert.equal(db.prepare("SELECT input_json FROM vocabulary_session_completions WHERE completion_id='cancelled'").get()?.input_json,JSON.stringify(cancelled));
+      assert.equal(db.prepare('SELECT 1 FROM schema_migrations WHERE migration_id=?').get(id),undefined);
+      db.exec("DELETE FROM vocabulary_session_completions WHERE completion_id='invalid'");
+    }
+    completion.run('closed',2,2,at,at,'closed',JSON.stringify({actions:[first,second],activeDurationMs:800}));
+    assert.deepEqual(migrateDatabase(db,through),[id]);
+    assert.deepEqual(migrateDatabase(db,through),[]);
+    const rows = db.prepare(`SELECT c.input_json,j.actions_json,c.report_json FROM vocabulary_session_completions c
+      JOIN vocabulary_completion_action_lists j USING (learner_id,session_id,completion_id) ORDER BY c.revision_number`).all();
+    assert.deepEqual(rows.map(r => [r.input_json,r.actions_json,r.report_json]),[
+      ['{"activeDurationMs":null}',JSON.stringify([first]),'{"saved":true}'],
+      ['{"activeDurationMs":800}',JSON.stringify([first,second]),'{"saved":true}'],
+    ]);
+    assert.throws(() => completion.run('bad',3,2,at,at,'pending','{"actions":null}'), /action boundary/);
+    assert.throws(() => completion.run('bad',3,3,at,at,'pending','{}'), /action boundary/);
+    completion.run('empty',3,0,at,at,'pending','{}');
+    assert.equal(db.prepare("SELECT actions_json FROM vocabulary_completion_action_lists WHERE completion_id='empty'").get()?.actions_json,'[]');
+    assert.throws(() => db.exec("UPDATE vocabulary_session_completions SET through_sequence=1 WHERE completion_id='empty'"), /immutable/);
+    assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
   } finally { db.close(); }
 });

@@ -81,8 +81,10 @@ membership. Grading criteria and source material must still match exactly. This
 comparison preserves the frozen snapshot and its display order.
 
 The session owns the single frozen context used during study and finalization.
-Each completion revision retains its action input, duration and report. Closure
-reads the context through the revision's learner and session identifiers.
+Each completion revision records the last acknowledged action number, active
+duration and report. Closure reads the session context and replays its immutable
+action log in order through that number. If the learner cancels, resumes and
+finishes again, each revision still identifies the actions it saw.
 Each dispatch references its same-learner, same-session closed revision. Reflection
 reads the revision’s report after claiming the dispatch. Reconciliation checks
 the revision’s actions and report and the retained session context for affected content.

@@ -98,7 +98,7 @@ test('exact bootstrap revisions pool by model and retain independent repair outc
     }
     function completion(sessionId:string,time:string,encounters:ReturnType<typeof encounter>[]) {
       db.prepare(`INSERT INTO vocabulary_session_completions(completion_id,learner_id,session_id,revision_number,through_sequence,
-        staged_at,close_at,status,input_json,report_json,policy_version,closed_at) VALUES (?,'secret-learner',?,1,1,?,?,'closed','{}',?,'fixture',?)`)
+        staged_at,close_at,status,input_json,report_json,policy_version,closed_at) VALUES (?,'secret-learner',?,1,0,?,?,'closed','{}',?,'fixture',?)`)
         .run(sessionId,sessionId,time,time,JSON.stringify({encounters}),time);
       for (const e of encounters) db.prepare(`INSERT OR IGNORE INTO exercise_encounters(encounter_id,learner_id,session_id,presented_action_id,
         content_id,content_version,context_json,served_snapshot_json,presented_at)
