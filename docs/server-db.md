@@ -499,7 +499,8 @@ an attempt token. Expired provider work preserves explicit failed-run retry;
 it does not replay unknown outcomes automatically. The worker also drives
 `attention.ts`'s `reflectionGenerating` read through queued/running dispatch
 storage. No historical completion or outcomes are backfilled. Existing databases
-require the [offline schema upgrade](ops/schema-migrations.md#durable-session-completion-0036).
+require the [offline schema upgrade](ops/schema-migrations.md#operator-procedure); see its
+[migration note](ops/migration-notes.md#durable-session-completion-0036).
 
 ## Session debrief persistence
 
@@ -566,7 +567,7 @@ worker restores that identity for provider calls. Shared content stays shared. O
 unattributed pending work pauses until fresh learner demand or an operator retry
 provides a real requester; retries are attributed to the requesting operator's
 learner identity. This release requires the ordinary offline schema-migration
-procedure and is not eligible for an application-only upgrade.
+procedure and is not eligible for a code-only release.
 
 
 Migration `0026_model_invocation_outcomes` preserves existing invocation rows and
@@ -594,7 +595,7 @@ each Git blob against its digest. The optional third argument selects an archive
 directory. Hosted machines carry the digest catalog and the active prompt sources.
 The historical archive lives in Git under `artifacts/invocation-prompts/`.
 Hosted writes reject an unregistered authored prompt before the provider call.
-The [prompt authoring procedure](prompt-development.md#retain-authored-prompt-sources)
+The [prompt authoring procedure](prompt-development.md#register-and-retain-invocation-prompts)
 covers registration and retention.
 
 Improvement-job checkpoints use the same archive for the system prompt in their
@@ -608,7 +609,7 @@ Local experiments can also use unpublished prompts. For an on-disk development
 database, preserve the adjacent `invocation-prompt-blobs/` directory when moving
 or backing up the database. Hosted captures use only reviewed Git blobs.
 
-Migration `0076_prune_trivial_unstudied_words` deletes never-touched, non-stash unstudied `learner_words` rows (with their default schedule and legacy state rows) that nothing else references; see its [rule and rehearsal note](ops/schema-migrations.md#trivial-unstudied-word-pruning-0076). It requires the offline schema migration procedure.
+Migration `0076_prune_trivial_unstudied_words` deletes never-touched, non-stash unstudied `learner_words` rows (with their default schedule and legacy state rows) that nothing else references; see its [rule and rehearsal note](ops/migration-notes.md#trivial-unstudied-word-pruning-0076). It requires the offline schema migration procedure.
 
 ## Teaching set storage
 
@@ -620,7 +621,7 @@ lesson policy. Concrete keys encode sorted distinct canonical sense IDs; their
 actual source-use mappings remain separate evidence. Existing artifacts,
 publications, learner events, leases and attempt/retry records are preserved.
 See [teaching set identity](vocabulary-learning.md#teaching-set-identity) for
-runtime use and the [migration rehearsal note](ops/schema-migrations.md#teaching-set-foundation-migration)
+runtime use and the [migration rehearsal note](ops/migration-notes.md#teaching-set-foundation-migration)
 for release checks.
 
 ## Review scheduling columns and due times
@@ -636,7 +637,7 @@ reject a write that puts a moved key back into JSON or omits a positive interval
 is maintained by triggers from each row's own columns, and covering indexes lead
 with the learner and due time. Pure cues store no due time: a learner's cue set is
 small, so one covering index serves the whole read and roles are decided in code. See the
-[rehearsal note](ops/schema-migrations.md#vocabulary-due-columns-0077).
+[rehearsal note](ops/migration-notes.md#vocabulary-due-columns-0077).
 
 ## Independent introduction components
 

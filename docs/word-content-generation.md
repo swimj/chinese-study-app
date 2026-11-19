@@ -192,5 +192,5 @@ exercises, publication, and their reflection lifecycle.
 
 These tests establish structural and state-transition behavior under fixtures.
 They do not measure generated teaching or cue quality. The
-[schema-migration guide](ops/schema-migrations.md#introduction-component-retention-0029)
+[migration note](ops/migration-notes.md#introduction-component-retention-0029)
 contains the upgrade requirements for component retention and provenance.

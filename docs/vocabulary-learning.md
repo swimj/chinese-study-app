@@ -10,8 +10,8 @@ For presentation and input behavior, use [Vocabulary study UI](implementation/vo
 For model-call stages and publication fences, use the
 [content-improvement pipeline](implementation/vocabulary-content-improvement.md).
 The [operator workflow](operator-panel.md#content-improvement-workflow) explains
-review and application; the [migration guide](ops/schema-migrations.md#adaptive-vocabulary-cutover)
-owns cutover procedures. The [first delivery plan](../notes/active/2026-10-16-vocabulary-first-deliverable-plan.md)
+review and application; the [migration notes](ops/migration-notes.md#adaptive-vocabulary-cutover)
+record the cutover. The [first delivery plan](../notes/active/2026-10-16-vocabulary-first-deliverable-plan.md)
 retains design rationale and original conversion scope.
 
 **Reactions** are learner input about exercises: helpfulness ratings, dissatisfaction,
@@ -839,8 +839,10 @@ original tables with an exclusion record. Sense associations can be enriched
 incrementally. Import identity and source mappings make repeats safe without
 overwriting subsequent authored improvements.
 
-Applying the vocabulary cutover migrations requires the
-[offline migration procedure](ops/schema-migrations.md#adaptive-vocabulary-cutover).
+Applying the vocabulary cutover migrations required the
+[offline migration procedure](ops/schema-migrations.md#operator-procedure); its
+[cutover note](ops/migration-notes.md#adaptive-vocabulary-cutover) records
+the rehearsal.
 Subsequent releases are classified against their own pending schema and data
 changes; the cutover does not make every later release schema-changing.
 Migration and deployment status require operation-specific evidence.

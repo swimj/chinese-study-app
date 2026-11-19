@@ -331,7 +331,7 @@ All HTTP is intercepted, so these fixtures do not modify learner data.
 | `hosted-operations.test.ts` | Hosted service controls, service banner, sentinels, learner disablement, and restore-validation helpers | `server/db/hosted-operations.ts` |
 | `hosted-upgrade.test.ts` | Code-only release command: identity confirmation, dirty-tree and schema-change refusal, online backup before quiesce, deploy build-arg, smoke-failure stays closed with the previous image recorded, reopen banner clear | `scripts/lib/hosted-upgrade.ts` |
 | `hosted-migration-release.test.ts` | Migration release: rehearsal gate refusals, stage order, idle-Machine migration, `databaseState` after failures, deferred reopen, post-release backup | `scripts/lib/hosted-migration-release.ts` |
-| `hosted-rc.test.ts` | RC config boundary, T-minus restore selection, app-only/schema workflows, migration ordering, exact-image identity, and fail-closed behavior | `scripts/lib/hosted-rc.ts` |
+| `hosted-rc.test.ts` | RC config boundary, T-minus restore selection, code-only/schema workflows, migration ordering, exact-image identity, and fail-closed behavior | `scripts/lib/hosted-rc.ts` |
 | `hosted-smoke.test.ts` | Read-only Clerk smoke: existing-learner gate, token mint/revoke, no token leakage | `scripts/lib/hosted-smoke.ts` |
 | `observability.test.ts`, `litestream-metrics.test.ts` | Bounded route labels, private Prometheus listener, daemon telemetry allowlist, missing-data behavior, HTTP deadlines/size limits, and metrics-port validation | `server/observability.ts`, `server/litestream-metrics.ts` |
 | `request-flight-recorder.test.ts` | Ring retention and filters, per-route aggregation, process samples, query validation, and loopback-only endpoint | `server/request-flight-recorder.ts` |

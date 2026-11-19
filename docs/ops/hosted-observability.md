@@ -278,8 +278,9 @@ comparison.
    work (workers, schedulers, and metrics reads) is occupying the single
    SQLite connection and event loop while requests wait.
 7. Check database/WAL size, volume use, and backup age for operational context.
-   Backup age exceeding 4,500 seconds is a stop-writes condition in
-   the hosted deployment runbook. Treat any red availability indicator as an
+   Scheduled Fly backup age exceeding six hours and fifteen minutes (22,500
+   seconds) is a stop-writes condition in the
+   [hosted deployment runbook](hosted-beta-deployment.md#failure-boundaries). Treat any red availability indicator as an
    operational fault rather than a fresh backup.
 
 Metrics stop at the fixed phase labels. Individual statements appear only in
