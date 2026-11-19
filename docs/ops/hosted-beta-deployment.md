@@ -1,27 +1,16 @@
 # Hosted beta release and maintenance
 
-Operator guide for the running invite-only Mandarin service. Complementary
-procedures cover a human at an interactive terminal and an agent or automation
-driving one. They use the same release command and release gates; the latter
-additionally defines how to observe a long-running local terminal process
-safely.
-
-Every schema or data migration first runs on a separate, ephemeral Fly Machine
-restored from a recent coherent backup. Application-only releases use that same
-environment when behavior changes warrant realistic-data checks or subjective
-testing. The [release rehearsal and RC runbook](hosted-release-candidate.md)
-owns preparation, additional checks, optional browser use, and cleanup. Rehearse
-while production serves, before entering its maintenance window. For an
-application-only beta release, promote the exact tested image by digest.
+Operator guide for the running invite-only Mandarin service. Start with
+[Releasing](#releasing) for the rules every release follows and the decisions
+left to the release agent. The remaining sections cover configuration, learner
+access, and operator recovery.
 
 The service is one 1 GB Fly Machine in `sin`, one encrypted Fly Volume at
-`/data` and Clerk authentication. The [backup service](hosted-backups.md) keeps
-hourly standalone SQLite copies on an independent Fly Machine and volume.
-Its transition procedure retains Litestream until backup and isolated restore
-proof succeeds; repository implementation is not evidence of production cutover. The application container serves both the API and the
-built frontend. Initial bring-up, disposable fixture learners, and the dogfood
-cutover are complete; those recipes remain in git history if they must be
-re-read.
+`/data` and Clerk authentication. The application container serves both the API
+and the built frontend. The [backup service](hosted-backups.md) captures
+standalone SQLite copies every six hours on a separate Fly Machine and archives
+recent copies to S3. Initial bring-up, disposable fixture learners, and the
+dogfood cutover are complete; those recipes remain in git history.
 
 ## Runtime configuration
 
@@ -84,28 +73,155 @@ for a first-time invitee on a development instance: `$DEVHOST` is detected per
 browser, and a recipient who never loaded the app stays on Clerk's default
 page.
 
-## Application-only upgrade
+## Releasing
 
-Use this path only when the target release has **all** of these properties:
+An agent drives every release. Tooling enforces the mechanical rules below and
+stops without reopening when one fails. Within those rules the agent
+chooses what the specific change needs. When a situation falls outside them, or
+a tool refuses for a reason the agent believes is wrong, the agent stops,
+explains what is unusual, proposes concrete steps, and waits for Justin's
+approval before acting. Report any such step in the handoff.
 
-- no SQLite schema migration, data migration, content import, or intentionally
-  changed persistent-data interpretation;
-- backward-compatible backend and frontend/API behavior for a browser tab that
-  still has the previously served frontend loaded;
-- no compatibility-affecting runtime configuration change beyond settings
-  already understood to be safe for the current service; and
-- one Fly Machine and one mounted `/data` volume, accepting a short stop/start
-  interruption.
+### Rules
 
-If any condition is false, stop. Do not stretch this pipeline with an ad-hoc
-exception.
+- **The schema decides the release kind.** A target whose migrations the
+  database has not applied is a migration release and follows the
+  [offline migration procedure](schema-migrations.md). `hosted:upgrade` compares
+  the production ledger with the checkout and refuses a pending or unknown
+  migration before touching the service. Content imports and operator data
+  repairs use their own procedures.
+- **Rehearse every migration** on a restored copy before production
+  maintenance, using the [rehearsal runbook](hosted-release-candidate.md#ephemeral-rehearsal).
+  The production migration requires a verified pre-release backup captured
+  after writes stopped and less than an hour old; the migration wrapper
+  enforces this.
+- **Deploy behind maintenance.** A restart ends any learner's session in
+  progress, so production deploys run with writes closed and provider work
+  drained.
+- **Deploy an identified build.** The checkout is clean at the confirmed
+  revision, the image carries that `APP_REVISION`, and a promoted image is
+  digest-qualified and verified as the one serving.
+- **Reopen only after identity and smoke pass.** A failed stage leaves controls
+  as they were and never reopens.
+- **Run one release process at a time.** A lost terminal session is unknown
+  state; reconcile before acting (see the [terminal procedure](#agent-or-automated-terminal-driver-procedure)).
+- **Recovery before reopening:** for a code-only release, redeploy the image
+  recorded as `previousDeployment`; the database is untouched. For a migration,
+  restore the pre-release backup with the matching old image. **After
+  reopening**, prefer forward repair. Restoring a backup discards accepted
+  learner activity and is a last resort that Justin decides.
 
-The command is operator-launched from a clean checkout of the intended commit.
-It validates the release arguments, quiesces the service, and obtains a verified
-pre-switchover release backup of the outgoing revision before deploying. Writes
-stay closed through identity confirmation and read-only smoke. Once both checks
-pass, the command reopens writes, then provider work. Its terminal JSON includes
-the backup receipt and stage results.
+### Judgment
+
+- **Rehearsal for a code-only release.** Use it when a bounded check on
+  restored data can answer a release question, such as the latency of a query
+  at production data volume. Use the [browser RC](hosted-release-candidate.md#browser-rc-overview)
+  when a substantially changed screen needs judging on real data. Bugs that
+  depend on a sequence of learner actions belong to development testing.
+- **Compatibility the tooling cannot check.** A browser tab that loaded the
+  previous frontend must keep working against the new API, and runtime
+  configuration or topology changes must be safe for the running service. If
+  either is in doubt, raise it before deploying.
+- **Timing and notice.** Choose when to run the window and whether to post a
+  [banner](#post-a-pre-upgrade-banner) first.
+- **Extra checks.** Add checks the change calls for, during the release or after
+  reopening, and record what ran.
+- **Handoff.** Report the outcome, the backup receipt, `previousDeployment`, and
+  any instructions or manual steps the release relied on that this runbook does
+  not cover, so they can become tooling or guidance.
+
+### Backups during a release
+
+[Scheduled backups](hosted-backups.md) every six hours are the standing
+recovery points. `hosted:upgrade` also captures a verified release backup of
+the outgoing revision **before** entering maintenance. The capture runs online,
+so it adds no learner downtime, and it limits what a last-resort restore would
+discard to activity during roughly the last few minutes before the release. It
+is not the rollback mechanism for a code-only release. A migration release
+captures its own pre-release backup after writes stop, because restoring that
+backup is the migration's rollback.
+
+### Code-only release
+
+`hosted:upgrade` runs these stages from a clean checkout of the intended commit,
+on the single Fly Machine with its mounted `/data` volume:
+
+1. **declare**: validate the checkout, Fly config, and optional image; read the
+   production migration ledger and refuse a schema change; record the serving
+   image as `previousDeployment`.
+2. **backup**: capture the online release backup described above.
+3. **quiesce**: disable provider work, enable maintenance, and wait for active
+   provider work to drain.
+4. **build-deploy**: deploy the digest-qualified image, or build remotely with
+   `APP_REVISION`.
+5. **confirm**: wait for health, then verify the running revision, version, Machine,
+   image, and unchanged migration ledger while still closed.
+6. **smoke**: check the served frontend and an authenticated read-only request
+   as the [smoke account](#smoke-account).
+7. **reopen**: reopen writes, then provider work, and clear any banner.
+
+### Run the command
+
+With a prepared generated Fly config and an authenticated Fly CLI:
+
+```bash
+git rev-parse HEAD
+npm run hosted:upgrade -- \
+  --app=<app-name> \
+  --actor-id=<operator> \
+  --confirm-source-revision=<full-40-character-sha> \
+  --image=registry.fly.io/<rc-app>:<release-tag>@sha256:<tested-digest>
+```
+
+`--confirm-source-revision` must match `HEAD`. Supply `--image` with the exact
+tested digest when a rehearsal or RC produced one. Omit it to build remotely
+from the clean checkout with `APP_REVISION`; a manual `fly deploy` without that
+build argument fails. `hosted:inspect` reports the baked app version and source
+revision.
+
+The command exits non-zero on any failure and emits the failed stage, the
+best-known running identity, and `previousDeployment`. A failure before
+**quiesce** leaves the service open and unchanged. A later failure leaves it
+closed; inspect the failed stage, then fix forward or roll back before
+reopening. To roll back, check out the previous revision and rerun this command
+with `--image` set to the `previousDeployment` image reference and digest.
+
+### Agent or automated terminal-driver procedure
+
+An agent drives the same command, but must distinguish a terminal update from
+the command's completion. The upgrade runner is a foreground local process; it
+does not become a fire-and-forget Fly job after it starts.
+
+1. Make the [judgment calls](#judgment) for the change, including any
+   rehearsal, then start **one** `hosted:upgrade` process with the tested digest
+   when available. A migration release follows the
+   [offline migration procedure](schema-migrations.md) instead.
+2. Start the process with access to the authenticated Fly CLI state. In a
+   managed sandbox that blocks the operator's `~/.fly` directory, request the
+   required elevated execution permission on the first launch; do not make an
+   unprivileged trial first. A `failed ensuring config directory perms` error
+   is only a local sandbox preflight failure, reaches no Fly stage, and says
+   nothing about the service or release eligibility.
+3. Preserve the terminal session handle returned by the execution environment.
+   A response that has partial output or a session handle but no exit status
+   means the runner is still active. It is not a failure and it is not evidence
+   that Fly has finished deploying.
+4. Poll or stream that exact session until it returns a terminal exit status.
+   Only its final `upgrade-result` says whether the runner completed, failed,
+   and reopened controls.
+5. Do not start a second upgrade merely because output is quiet, an outer tool
+   invocation has yielded, or a remote build is taking longer than expected.
+   Deploy, health, and smoke stages can legitimately take minutes.
+6. If the terminal session itself is genuinely lost before an exit status,
+   treat the release as **unknown execution state**, not failed. First perform
+   read-only reconciliation of Fly status, public `/healthz`, and hosted
+   release identity. Do not assume controls were reopened or retry the upgrade
+   until that reconciliation establishes the state and an operator chooses the
+   next recovery action.
+
+This procedure deliberately does not claim durable release history or resumable
+execution. The final terminal result is still per-invocation evidence; a lost
+local runner remains an operational recovery case.
 
 ### Smoke account
 
@@ -153,90 +269,6 @@ The notice is visible to signed-in learners on the next Home load (including
 returning from a session). CLI notices expire 24 hours after posting. Successful
 `hosted:upgrade` reopen also clears it and no-ops when none exists. Clear
 manually with `--clear=true` instead of `--message`.
-
-This first banner capability is itself a schema-changing release
-(`app_schema:0005_service_banner`). Use the offline migration procedure for
-that landing; later app-only upgrades can post and clear banners without a
-schema change.
-
-### Human operator procedure
-
-From the intended commit, with a prepared generated Fly config and an
-authenticated Fly CLI:
-
-```bash
-git rev-parse HEAD
-npm run hosted:upgrade -- \
-  --app=<app-name> \
-  --actor-id=<operator> \
-  --confirm-source-revision=<full-40-character-sha> \
-  --confirm-eligible-release=true \
-  --image=registry.fly.io/<rc-app>:<release-tag>@sha256:<tested-digest>
-```
-
-`--confirm-source-revision` must match `HEAD`. Image-source paths must be
-clean. When `--image` is present it must be an immutable, digest-qualified Fly
-image and the runner confirms that exact digest is serving. Omit `--image` to
-retain the prior behavior: the command supplies `APP_REVISION` as a Docker
-build arg and builds remotely. A manual `fly deploy` without that build arg
-will fail closed.
-
-`hosted:inspect` reports the baked app version and source revision. Public
-`/healthz` stays a small health endpoint.
-
-If any stage from quiescence onward fails, the command exits non-zero, emits
-the failed stage and best-known running identity, and **does not reopen**.
-Investigate, fix forward, or restore service manually. This slice has no
-automatic rollback.
-
-### Agent or automated terminal-driver procedure
-
-An agent drives the same command, but must distinguish a terminal update from
-the command's completion. The upgrade runner is a foreground local process; it
-does not become a fire-and-forget Fly job after it starts.
-
-1. Apply the same eligibility and clean-checkout checks as the human procedure.
-   Read migration guidance and Justin's requested release checks. For migrations,
-   follow the [offline migration procedure](schema-migrations.md), including
-   ephemeral rehearsal before stopping production. For eligible app-only releases,
-   use rehearsal when the changed behavior calls for realistic data; then start
-   **one** `hosted:upgrade` process with the tested digest when available.
-2. Start the process with access to the authenticated Fly CLI state. In a
-   managed sandbox that blocks the operator's `~/.fly` directory, request the
-   required elevated execution permission on the first launch; do not make an
-   unprivileged trial first. A `failed ensuring config directory perms` error
-   is only a local sandbox preflight failure, reaches no Fly stage, and says
-   nothing about the service or release eligibility.
-3. Preserve the terminal session handle returned by the execution environment.
-   A response that has partial output or a session handle but no exit status
-   means the runner is still active. It is not a failure and it is not evidence
-   that Fly has finished deploying.
-4. Poll or stream that exact session until it returns a terminal exit status.
-   Only its final `upgrade-result` says whether the runner completed, failed,
-   and reopened controls.
-5. Do not start a second upgrade merely because output is quiet, an outer tool
-   invocation has yielded, or a remote build is taking longer than expected.
-   Deploy, health, and smoke stages can legitimately take minutes.
-6. If the terminal session itself is genuinely lost before an exit status,
-   treat the release as **unknown execution state**, not failed. First perform
-   read-only reconciliation of Fly status, public `/healthz`, and hosted
-   release identity. Do not assume controls were reopened or retry the upgrade
-   until that reconciliation establishes the state and an operator chooses the
-   next recovery action.
-
-This procedure deliberately does not claim durable release history or resumable
-execution. The final terminal result is still per-invocation evidence; a lost
-local runner remains an operational recovery case.
-
-Keep release-specific judgment explicit: additional checks agreed in conversation
-are welcome, and do not need a new permanent framework. Run expensive scripts on
-the rehearsal Machine, save their results with its run evidence, and distinguish
-them from essential production checks. Collect stage timings and resource usage
-as described in [release-instance observability](hosted-observability.md#release-instance-observability).
-Unless Justin asks to keep the environment, finish the rehearsal lifecycle by
-destroying its Machine and volume after preserving evidence. Keeping it for
-further checks is a conversational operator decision. Use the separate browser
-RC workflow when manual authenticated application use is wanted.
 
 ## Schema-changing releases and service controls
 
@@ -550,8 +582,12 @@ or migration changes. Preserve the receipt, image identity, and validation resul
 - If scheduled Fly backup freshness is unknown or exceeds 6h15m, stop writes and
   repair local backups. An S3 freshness failure needs separate investigation on
   the receiver. The [backup runbook](hosted-backups.md) describes both checks.
-- If a migration or smoke test fails before writes reopen, restore the recorded
-  pre-release recovery point with the matching old image.
+- If a code-only release fails before writes reopen, keep them closed and fix
+  forward or redeploy the recorded `previousDeployment` image. The database is
+  unchanged, so no restore is needed.
+- If a migration release fails before writes reopen, follow the
+  [migration rollback](schema-migrations.md#failure-and-rollback): restore the
+  pre-release backup with the matching old image.
 - After writes reopen, do not roll back blindly: a restore can discard accepted
   learner activity. Keep maintenance on and choose explicit forward repair or
   an acknowledged recovery point.

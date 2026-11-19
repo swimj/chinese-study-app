@@ -329,7 +329,7 @@ All HTTP is intercepted, so these fixtures do not modify learner data.
 | `subtlex.test.ts` | SUBTLEX parsing | `scripts/lib/subtlex.ts` |
 | `hosted-dogfood-cutover.test.ts` | Coherent offline dogfood preparation, strict Clerk binding, manifest validation, source preservation, stopped-process promotion, and retained fixture rollback | Hosted dogfood cutover scripts and library |
 | `hosted-operations.test.ts` | Hosted service controls, service banner, sentinels, learner disablement, and restore-validation helpers | `server/db/hosted-operations.ts` |
-| `hosted-upgrade.test.ts` | App-only upgrade command: identity confirmation, dirty-tree refusal, deploy build-arg, smoke-failure stays closed, reopen banner clear | `scripts/lib/hosted-upgrade.ts` |
+| `hosted-upgrade.test.ts` | Code-only release command: identity confirmation, dirty-tree and schema-change refusal, online backup before quiesce, deploy build-arg, smoke-failure stays closed with the previous image recorded, reopen banner clear | `scripts/lib/hosted-upgrade.ts` |
 | `hosted-rc.test.ts` | RC config boundary, T-minus restore selection, app-only/schema workflows, migration ordering, exact-image identity, and fail-closed behavior | `scripts/lib/hosted-rc.ts` |
 | `hosted-smoke.test.ts` | Read-only Clerk smoke: existing-learner gate, token mint/revoke, no token leakage | `scripts/lib/hosted-smoke.ts` |
 | `observability.test.ts`, `litestream-metrics.test.ts` | Bounded route labels, private Prometheus listener, daemon telemetry allowlist, missing-data behavior, HTTP deadlines/size limits, and metrics-port validation | `server/observability.ts`, `server/litestream-metrics.ts` |

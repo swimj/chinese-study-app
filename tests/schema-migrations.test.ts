@@ -7,7 +7,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 import { after, before, test } from 'node:test';
-import { assertSchemaCurrent, migrateDatabase, getSchemaMigrationStatus, schemaMigrations } from '../server/db/migrations.ts';
+import { assertSchemaCurrent, migrateDatabase, getSchemaMigrationStatus, schemaMigrationIds, schemaMigrations } from '../server/db/migrations.ts';
 
 import { createBaselineFixture } from './helpers/baseline-database.ts';
 
@@ -995,3 +995,13 @@ for (const [issue,session,status,report] of [
     } finally { db.close(); }
   });
 }
+
+test('a current database reports exactly the checkout migration ids the code-only upgrade compares', () => {
+  const { db } = copy('current-ledger-ids');
+  try {
+    assert.deepEqual(getSchemaMigrationStatus(db), { applied: schemaMigrationIds(), pending: [] });
+    assert.equal(schemaMigrationIds()[0], 'app_schema:0000_baseline');
+  } finally {
+    db.close();
+  }
+});

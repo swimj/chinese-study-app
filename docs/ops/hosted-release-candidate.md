@@ -450,7 +450,6 @@ npm run hosted:upgrade -- \
   --app=<beta-app> \
   --actor-id=<operator> \
   --confirm-source-revision=<full-40-character-sha> \
-  --confirm-eligible-release=true \
   --image=registry.fly.io/<rc-app>:<release-tag>@sha256:<tested-digest>
 ```
 

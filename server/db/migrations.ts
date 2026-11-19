@@ -367,6 +367,11 @@ export function assertSchemaCurrent(db: DatabaseSync, migrations = schemaMigrati
   }
 }
 
+/** Ordered ledger ids a database must have applied to run this checkout, baseline first. */
+export function schemaMigrationIds(migrations = schemaMigrations): string[] {
+  return definitions(migrations).map((item) => item.id);
+}
+
 export function getSchemaMigrationStatus(db: DatabaseSync, migrations = schemaMigrations) {
   const state = readState(db, migrations);
   return { applied: state.all.slice(0, state.applied).map((item) => item.id), pending: state.all.slice(state.applied).map((item) => item.id) };
