@@ -117,14 +117,16 @@ inventory/default-selection call. It creates senses, not teaching or exercises.
 The inventory tracks uses of the exact target, including grammatical constructions
 and uncommon uses, but excludes meanings realized only through larger compounds
 or fixed expressions. The call first establishes lexical ownership, then marks
-default usefulness among those eligible uses.
+default usefulness among those eligible uses. A nonempty inventory marks at least
+one use, even when all are specialized; the selector follows the same rule.
 
 Partial unestablished inventories require operator attention. An established
 inventory with no active senses is a valid result: improvement returns
 `no_senses_requested` without mapping or authoring. Unknown defaults resolve to
 `[]`, and the word is ineligible for new sessions while its stash membership and
-history are retained. A nonempty inventory with all `defaultUseful:false` instead
-retains the empty-selection recommendation for operator review.
+history are retained. A nonempty inventory with all `defaultUseful:false` violates
+the prompt's rule and suggests a suspect inventory; it retains the empty-selection
+recommendation for operator review.
 
 The backend identifies dictionary fallback sources before requesting mapping.
 With no current authored general production practice accepting the word in the

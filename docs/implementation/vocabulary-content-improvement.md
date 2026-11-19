@@ -560,8 +560,9 @@ and proposal actions until saved or discarded.
 
 `ensureVocabularySenses` owns the canonical inventory. Fresh lexical words receive
 one inventory/default recommendation call using `sense-inventory.md`. Inventory and
-nonempty initial useful selection publish atomically. The model's zero-usefulness
-finding retains the inventory, stores its recommendation/invocation and leaves
+nonempty initial useful selection publish atomically. Both prompts select at least
+one eligible use, including a specialized word's only use, so a zero-usefulness
+finding indicates a suspect inventory. It retains the inventory, stores its recommendation/invocation and leaves
 usefulness unknown for operator review. Mapping can still improve a single use.
 
 `ensureVocabularyDefaultUsefulSelection` conditionally initializes unknown defaults.

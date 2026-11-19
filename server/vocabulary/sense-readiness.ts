@@ -55,7 +55,7 @@ export function createVocabularySenseProvider(options: { environment?: NodeJS.Pr
         maxOutputTokens: 8000, temperature: null, timeoutMs, cachePrompt: true,
         invocationActor: { kind: 'service', serviceId: VOCABULARY_SENSE_SERVICE },
         provenance: { workflowId: context.workflowId, attemptNumber: context.attemptNumber, stepName: 'sense_inventory',
-          promptName: 'vocabulary-sense-inventory', promptVersion: '7', schemaVersion: '3', inputProjectionVersion: 'simplified-lexical-evidence-v3' } },
+          promptName: 'vocabulary-sense-inventory', promptVersion: '8', schemaVersion: '3', inputProjectionVersion: 'simplified-lexical-evidence-v3' } },
       { apiKey: environment.OPENAI_API_KEY.trim(), baseUrl: environment.OPENAI_BASE_URL?.trim() || null });
       context.onInvocation(result.invocationId);
       try {
