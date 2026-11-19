@@ -2,7 +2,11 @@ Select the DEFAULT USEFUL subset of the supplied canonical Mandarin sense invent
 
 Evaluate the supplied senses under the simplified target rather than restricting them to a particular traditional spelling. Gloss hints may be incomplete or absent; a supplied sense need not appear in those hints to deserve selection. Select only from the supplied sense IDs. Examine their meanings and uses, including register and target-unit boundaries. Peripheral, literary and technical uses of the exact target can belong to the inventory without deserving default teaching. Meanings realized only through larger compounds or fixed expressions fall outside the intended inventory scope. If such an entry appears in the supplied inventory, leave it unselected; this call cannot repair or retire the entry. Do not invent speculative meanings or select near-paraphrases merely to make the result more complete. A sense existing in the language does not make it worth teaching by default.
 
-Make an explicit default-useful editorial decision for every supplied sense. Select one or a few useful everyday uses, rather than dictionary completeness. Include a familiar colloquial extension when it changes what the learner will hear. Evaluate the exact lexical target: a larger compound or fixed expression should carry its own teaching. Do not select a component meaning supported only through that larger item, even as a peripheral recognition use. The target need not stand alone: grammatical constructions can demonstrate useful uses of the target itself. An attested specialized or container sense is not default useful merely because an example can be invented; select a literary use of the target when it offers recognizable communicative value. A selected construction can be valuable even if uncommon: relevance is not a frequency-only test. Report zero selected senses when none supports useful teaching for this target; the backend retains the inventory and asks the operator to review that recommendation.
+Make an explicit default-useful editorial decision for every supplied sense. First decide which supplied senses are eligible uses of the exact lexical target, then prioritize among the eligible uses. Evaluate the exact lexical target: a larger compound or fixed expression should carry its own teaching. Do not select a component meaning supported only through that larger item, even as a peripheral recognition use. The target need not stand alone: grammatical constructions can demonstrate useful uses of the target itself.
+
+Default usefulness ranks eligible uses against one another. Select one or a few useful everyday uses, rather than dictionary completeness. Include a familiar colloquial extension when it changes what the learner will hear. An attested specialized or container sense is not default useful merely because an example can be invented; select a literary use of the target when it offers recognizable communicative value. A selected construction can be valuable even if uncommon: relevance is not a frequency-only test.
+
+Whenever at least one supplied sense is an eligible use of the target, select at least one. A target whose eligible uses are all specialized, technical or narrow still has a central use, and teaching this target means teaching that use: select it rather than leaving the target without defaults. The caution against specialized senses applies when they compete with more central uses of the same target. Report zero selected senses only when no supplied sense is an eligible use of this target, such as when every entry depends on a larger compound. An empty recommendation signals that the inventory itself needs review; the backend retains the inventory and asks the operator to review it.
 
 Use the supplied labels and notes to understand meaning, construction, tone and practical use. Chinese words and short quoted phrases in those descriptions are linguistic evidence.
 
@@ -85,6 +89,16 @@ Input: 蜘 (zhī); supplied senses:
 Output — selected IDs: `[]`.
 
 Editorial explanation: No supplied sense is eligible for teaching under this target: “spider” is supported only through 蜘蛛. Return no IDs; the backend asks for operator review and retains the inventory. Selection does not delete the entry.
+
+### 双误
+
+Input: 双误 (shuāng wù); supplied senses:
+
+- `s1` — Double fault. In tennis, missing both serve attempts and losing the point, as in 他这局出现了两次双误.
+
+Output — selected IDs: `["s1"]`.
+
+Editorial explanation: This is a specialized sports term, but it is a genuine use of the exact target and its only one. Unlike 蜘, nothing here depends on a larger lexical item. With no more central use to prefer, the sports sense is the default.
 
 ### 报备
 

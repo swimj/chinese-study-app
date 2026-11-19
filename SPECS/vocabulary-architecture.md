@@ -213,7 +213,10 @@ Four separate records answer different questions:
   identity and version. An established inventory with zero active senses is a
   valid, settled result, distinct from an inventory that has not been established.
 - The **default useful selection** chooses which senses normally deserve teaching
-  and mapped production practice. Null means unknown; `[]` means explicitly none,
+  and mapped production practice. Usefulness ranks a target's eligible uses
+  against one another, so an inventory with an eligible use selects at least one,
+  even when every use is specialized. It is independent of which skills a learner
+  practices. Null means unknown; `[]` means explicitly none,
   either saved by an operator or derived from an established empty inventory.
   Repertoire bootstrap captures this shared selection; there is no separate
   editable case-level repertoire selection.
@@ -251,7 +254,7 @@ and missing or stale teaching links do not block selection over canonical senses
 The selector cannot create or rewrite senses. Existing default selections are
 preserved. An established empty inventory resolves unknown defaults to `[]`
 without a selector call. A nonempty inventory whose model recommendation selects
-no useful senses preserves the inventory and leaves defaults unknown with an
+no useful senses signals a suspect inventory: it preserves the inventory and leaves defaults unknown with an
 operator finding. That recommendation does not become an operator's explicit none
 decision. A concurrent operator decision takes precedence.
 

@@ -93,7 +93,7 @@ test('lexical-only generation records exact invocation provenance and sense outp
   await ensureVocabularySenses('w1',{ workflowId:'next',provider:instance });assert.equal(calls,1);
   const invocation = db.prepare('SELECT * FROM model_invocations WHERE actor_id=?').get(VOCABULARY_SENSE_SERVICE)!;
   assert.equal(invocation.model,'gpt-6-luna');assert.equal(invocation.workflow_id,'workflow');assert.equal(invocation.attempt_number,1);
-  assert.equal(invocation.prompt_name,'vocabulary-sense-inventory');assert.equal(invocation.prompt_version,'7');
+  assert.equal(invocation.prompt_name,'vocabulary-sense-inventory');assert.equal(invocation.prompt_version,'8');
   const selectionHistory=db.prepare("SELECT snapshot_json FROM vocabulary_sense_coverage_history WHERE scope='word' AND subject_id='w1'").get()!;
   const selectionEvent=db.prepare("SELECT data_json FROM backend_events WHERE name='vocabulary.sense_coverage.updated' AND entity_id='w1'").get()!;
   const reason={invocationId:invocation.id,workflowId:'workflow',attemptNumber:1,senseIds:resolveVocabularySenseCoverage('w1').includedSenseIds};

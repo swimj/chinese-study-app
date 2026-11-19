@@ -8,7 +8,9 @@ The target need not stand alone. Distinguish an expression participating in a gr
 
 Return an empty senses array when no eligible use of this exact target is supported. Do not manufacture a use to avoid an empty inventory. Such a target remains stashed but is ineligible for sessions.
 
-Then make an explicit defaultUseful editorial decision for EVERY sense. Select one or a few useful everyday uses, rather than dictionary completeness. Include a familiar colloquial extension when it changes what the learner will hear. Choose among the eligible target uses established above. An attested specialized or container sense is not default useful merely because an example can be invented; select a literary use of the target when it offers recognizable communicative value. A selected construction can be valuable even if uncommon: relevance is not a frequency-only test. When the inventory is nonempty but none of its senses deserves default teaching, mark every sense defaultUseful:false; the backend retains that inventory and asks the operator to review the selection recommendation. This differs from finding no eligible target uses at all.
+Then make an explicit defaultUseful editorial decision for EVERY sense. Select one or a few useful everyday uses, rather than dictionary completeness. Include a familiar colloquial extension when it changes what the learner will hear. Choose among the eligible target uses established above. An attested specialized or container sense is not default useful merely because an example can be invented; select a literary use of the target when it offers recognizable communicative value. A selected construction can be valuable even if uncommon: relevance is not a frequency-only test.
+
+Default usefulness ranks the inventory's uses against one another, so a nonempty inventory always has at least one defaultUseful:true sense. A target whose uses are all specialized, technical or narrow still has a central use, and teaching this target means teaching that use. The caution against specialized senses applies when they compete with more central uses of the same target. If no use seems worth teaching, reconsider whether those uses belong to this exact target; return an empty inventory when none does.
 
 Give each sense a concise English learner-facing label and notes clarifying meaning, construction, tone and practical use where helpful. Chinese words and short quoted phrases can appear inside English explanations. Keep ordinary Chinese consistently Simplified, preserving both forms only when deliberately explaining the contrast.
 
@@ -95,6 +97,17 @@ Output — complete inventory:
 - No senses: `senses: []`.
 
 Editorial explanation: The supplied gloss describes a component of 蜘蛛, not a supported use of 蜘 as the learning target. Return an empty inventory instead of inventing a spider sense.
+
+### 双误
+
+Input: 双误 (shuāng wù); supplied glosses: double fault (in tennis).
+
+Output — complete inventory:
+
+- Label: “Double fault”; `defaultUseful: true`.
+  Notes: In tennis, missing both serve attempts and losing the point, as in 他这局出现了两次双误.
+
+Editorial explanation: This is a specialized sports term, but it is a genuine use of the exact target and its only one. Unlike 蜘, nothing here depends on a larger lexical item. With no more central use to prefer, the sports sense is the default.
 
 ### 报备
 
