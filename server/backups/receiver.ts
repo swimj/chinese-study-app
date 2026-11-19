@@ -183,7 +183,9 @@ export class BackupReceiver {
       try {
         response = await fetch(new URL('/backup', this.options.sourceUrl), {
           method: 'POST', headers: { authorization: `Bearer ${this.options.sourceToken}`, 'content-type': 'application/json' },
-          body: JSON.stringify({ id: request.id }), signal, redirect: 'error',
+          // Scheduled captures yield CPU to learner requests; release and manual captures run at full speed.
+          body: JSON.stringify({ id: request.id, ...(captureOrigin === 'scheduled' ? { priority: 'background' } : {}) }),
+          signal, redirect: 'error',
         });
       } catch { fail('source_request_failed'); }
       if (!response.ok) { await response.body?.cancel(); fail(`source_http_${response.status}`); }

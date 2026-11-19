@@ -46,8 +46,10 @@ export function createBackupSourceServer(options: BackupSourceOptions): Server {
       }
       directory = await mkdtemp(path.join(scratch, 'sqlite-backup-'));
       const output = path.join(directory, 'snapshot.db');
+      const background = 'priority' in body && body.priority === 'background';
       const { stdout } = await exec(process.execPath, ['--import', 'tsx', worker,
-        `--database=${options.databasePath}`, `--output=${output}`, `--max-bytes=${maxBytes}`], {
+        `--database=${options.databasePath}`, `--output=${output}`, `--max-bytes=${maxBytes}`,
+        ...(background ? ['--priority=background'] : [])], {
         timeout: options.timeoutMs ?? 10 * 60_000, signal: abort.signal, maxBuffer: 16 * 1024,
       });
       const receipt: unknown = JSON.parse(stdout);

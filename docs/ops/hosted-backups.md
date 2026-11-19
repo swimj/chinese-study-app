@@ -34,7 +34,10 @@ while the app runs. It pins one WAL read transaction for the copy so other
 connections cannot repeatedly restart it; the worker deadline bounds checkpoint
 delay and WAL growth. It stages in `/tmp`, outside the live `/data` volume, then
 streams the completed file over Fly's private network. Do not copy an active
-`app.db` alone. Capture concurrency is one; scratch admission accounts for main
+`app.db` alone. The copy and its checksum use a full CPU on the 1 GB Machine for
+several minutes. Scheduled captures ask the source to run them at the lowest CPU
+priority, so they yield to learner requests and slow only when the app is busy.
+Release and manual captures run at normal priority so releases are not delayed. Capture concurrency is one; scratch admission accounts for main
 file, WAL, and margin. The default transfer bound is 4 GiB. Verify actual scratch
 capacity, CPU impact, and capture duration with realistic data before cutover.
 
