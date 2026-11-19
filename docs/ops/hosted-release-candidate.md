@@ -10,24 +10,24 @@ actual stopped-writer migration.
 ## Ephemeral rehearsal
 
 `hosted:rehearse` creates a performance-1x Machine and its own temporary volume
-in a dedicated, secret-free Fly app. It requests a verified hourly production backup and
-restores that exact receipt. Production keeps serving throughout;
-a few minutes of subsequent activity are acceptable. Headless rehearsal needs
+in a dedicated, secret-free Fly app. By default it restores the latest verified
+retained production backup. Production keeps serving throughout. Headless rehearsal needs
 no Clerk or provider credentials, does not start the application, and does not
 run a backup scheduler for the disposable database.
 
 ```text
-create Machine/volume → select source backup → restore → prechecks → migrate → postchecks
+create Machine/volume → select source backup → restore → checks → migrate → checks
                                                                   ↓
                                               save evidence → destroy both resources
 ```
 
-Every schema or data migration uses this path. An app-only release uses it when
-changed behavior warrants realistic-data validation. The release agent can add
-checks in conversation with Justin as understanding develops; there is no fixed
-exhaustive rehearsal suite. Run CPU-heavy checks here before entering production
-maintenance, and reserve production for its real migration, built-in integrity
-checks, and essential live assertions and smoke.
+Every schema or data migration uses this path, and the production migration
+release requires a passed run of the same image. A code-only release uses it
+when a bounded check on restored data can answer a release question. There is
+no fixed rehearsal suite: a migration may ship author checks, and the release
+agent adds whatever else the change calls for. Run CPU-heavy checks here before
+entering production maintenance, and reserve production for its real migration,
+built-in integrity checks, and essential live assertions and smoke.
 
 ### Prepare the app and source access
 
@@ -124,9 +124,8 @@ npm run hosted:rehearse -- \
 ```
 
 Preparation leaves the application stopped so checks can run against the
-restored source before migration. Use `--schema=unchanged` for app-only work;
-pending migrations are then a refusal. For `--schema=migrate`, inspect and run
-the migration author's preservation checks before applying the pending batch.
+restored source before migration. Use `--schema=unchanged` for code-only work;
+pending migrations are then a refusal.
 
 ```bash
 npm run hosted:rehearse -- --action=check \
@@ -137,11 +136,20 @@ npm run hosted:rehearse -- --action=check \
 npm run hosted:rehearse -- --action=status --run-dir=<absolute-run-directory>
 ```
 
-Checks are shell scripts uploaded to the rehearsal Machine and run with
+`migrate` first runs any [author checks](schema-migrations.md#writing-the-next-migration)
+shipped with the pending migrations (`server/db/migrations/<NNNN_name>.rehearsal.sh`)
+with `REHEARSAL_PHASE=before`, applies the batch, then runs them again with
+`REHEARSAL_PHASE=after`. A failed author precondition stops before migrating and
+leaves the restored copy in place.
+
+Operator checks are shell scripts uploaded to the rehearsal Machine and run with
 `sh -eu`, working directory `/app`, `APP_DATA_DIR=/data`, and
 `APP_DEPLOYMENT_TIER=release_candidate`. They can invoke the candidate's Node
-tools against `/data/app.db`. Make assertion failures exit nonzero, and record
-what each check establishes. Prefer checks of affected
+tools against `/data/app.db`. Every check, author or operator, also gets
+`REHEARSAL_WORK_DIR=/data/rehearsal-work`, which persists across checks on the
+same run, so a check before migrating can save a representation of affected
+records for a check afterwards to compare. Make assertion failures exit nonzero,
+and record what each check establishes. Prefer checks of affected
 records and behavior; full-table hashing or broad scans need a concrete purpose,
 not repetition because a previous release used them. Scripts may evolve during
 the release. If a check mutates the disposable database, say so and distinguish
@@ -151,13 +159,21 @@ separate working copy for behavioral scenarios when preserving that state matter
 Retain and poll the same foreground terminal session until it exits. Quiet output
 or a tool yielding does not establish completion. If the session is lost, inspect
 the existing run's status and Fly resource state before creating another run.
-A failed check or migration prevents treating the rehearsal as passed.
+
+A failed check leaves the copy available for further checks but disqualifies the
+run, including a failure caused by a faulty check script. Prepare a fresh run
+after fixing the script, or raise it with Justin. A failed migration also
+disqualifies the run.
 
 ### Evidence, retention, and cleanup
 
 The new absolute run directory has mode 0700. Keep its mode-600 `manifest.json`,
-`restore.json`, and `events.jsonl`, including stage durations, migration output, and custom-check
-results. Retain status resource snapshots and relevant Fly metrics. Record the
+`restore.json`, and `events.jsonl`, including stage durations, migration output, and check
+results. `manifest.json` records each check's origin, phase, status, and SHA-256,
+and the migrated ids. It survives `destroy` and is what the production migration
+release reads. Each operator script is copied into `checks/` so a comparison
+written during the release can be reviewed, and promoted into a later
+migration's author check. Retain status resource snapshots and relevant Fly metrics. Record the
 image digest and source recovery point alongside the selected checks and their
 outcomes. Inspect custom output before sharing it: scripts can print learner
 data even when runner events are content-free. See

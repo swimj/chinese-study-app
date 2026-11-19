@@ -124,7 +124,45 @@ export type HostedUpgradeInput = {
   targetSchemaMigrationIds: readonly string[];
   image?: string;
   flyConfigPath?: string;
+  /** false stops after smoke with the service closed, for checks before the agent reopens it. */
+  reopen?: boolean;
 };
+
+export type ReleaseDeclaration = {
+  actorId: string;
+  app: string;
+  flyConfig: PreparedFlyConfig;
+  plannedRelease: PlannedReleaseIdentity;
+  promotedImage: string | null;
+};
+
+/** Validates the operator checkout and Fly config before any remote call. */
+export function declareRelease(
+  input: Pick<HostedUpgradeInput, 'repoRoot' | 'app' | 'actorId' | 'confirmSourceRevision' | 'image' | 'flyConfigPath'>,
+  deps: HostedUpgradeDeps,
+): ReleaseDeclaration {
+  const actorId = requireNonEmpty(input.actorId, 'actor-id');
+  const app = requireNonEmpty(input.app, 'app');
+  const flyConfigPath = path.resolve(input.repoRoot, input.flyConfigPath ?? DEFAULT_FLY_CONFIG_PATH);
+  const flyConfig = readPreparedFlyConfig(flyConfigPath, deps);
+  if (flyConfig.app !== app) {
+    throw new Error(`--app ${app} does not match prepared Fly config app ${flyConfig.app}.`);
+  }
+  const sourceRevision = requireFullGitSha(input.confirmSourceRevision);
+  const headRevision = requireFullGitSha(deps.gitHead());
+  if (headRevision !== sourceRevision) {
+    throw new Error(`Checkout HEAD ${headRevision} does not match --confirm-source-revision.`);
+  }
+  const dirtyPaths = imageSourcePathsFromGitStatus(deps.gitStatusPorcelain());
+  if (dirtyPaths.length > 0) {
+    throw new Error(
+      `Checkout has uncommitted image-source changes; refusing to bake APP_REVISION ${sourceRevision}: ${dirtyPaths.join(', ')}.`,
+    );
+  }
+  const appVersion = readPackageVersion(input.repoRoot, deps);
+  const promotedImage = input.image === undefined ? null : requireDigestQualifiedFlyImage(input.image);
+  return { actorId, app, flyConfig, plannedRelease: { appVersion, sourceRevision }, promotedImage };
+}
 
 /**
  * Code-only release pipeline: verify the target needs no migration, capture an
@@ -144,7 +182,6 @@ export async function runHostedUpgrade(
   let actualDeployment: FlyDeploymentIdentity | null = null;
   let runningIdentity: unknown | null = null;
   let reopened = false;
-  const flyConfigPath = path.resolve(input.repoRoot, input.flyConfigPath ?? DEFAULT_FLY_CONFIG_PATH);
 
   const finish = (
     status: 'ok' | 'failed',
@@ -186,26 +223,10 @@ export async function runHostedUpgrade(
 
   try {
     currentStage = 'declare';
-    const actorId = requireNonEmpty(input.actorId, 'actor-id');
-    const app = requireNonEmpty(input.app, 'app');
-    const flyConfig = readPreparedFlyConfig(flyConfigPath, deps);
-    if (flyConfig.app !== app) {
-      throw new Error(`--app ${app} does not match prepared Fly config app ${flyConfig.app}.`);
-    }
-    const sourceRevision = requireFullGitSha(input.confirmSourceRevision);
-    const headRevision = requireFullGitSha(deps.gitHead());
-    if (headRevision !== sourceRevision) {
-      throw new Error(`Checkout HEAD ${headRevision} does not match --confirm-source-revision.`);
-    }
-    const dirtyPaths = imageSourcePathsFromGitStatus(deps.gitStatusPorcelain());
-    if (dirtyPaths.length > 0) {
-      throw new Error(
-        `Checkout has uncommitted image-source changes; refusing to bake APP_REVISION ${sourceRevision}: ${dirtyPaths.join(', ')}.`,
-      );
-    }
-    const appVersion = readPackageVersion(input.repoRoot, deps);
-    const promotedImage = input.image === undefined ? null : requireDigestQualifiedFlyImage(input.image);
-    plannedRelease = { appVersion, sourceRevision };
+    const declared = declareRelease(input, deps);
+    const { actorId, app, flyConfig, promotedImage } = declared;
+    const { sourceRevision } = declared.plannedRelease;
+    plannedRelease = declared.plannedRelease;
     const publicOrigin = flyConfig.publicOrigin;
     const inspectBefore = await inspectHostedService(app, deps);
     runningIdentity = inspectBefore.releaseIdentity ?? inspectBefore;
@@ -272,6 +293,8 @@ export async function runHostedUpgrade(
 
     currentStage = 'smoke';
     recordStage('smoke', 'ok', await smokeHostedService(app, publicOrigin, deps));
+
+    if (input.reopen === false) return finish('ok', null, null);
 
     currentStage = 'reopen';
     const reopenedState = await reopenHostedService(app, actorId, deps);
@@ -386,7 +409,7 @@ export async function reopenHostedService(app: string, actorId: string, deps: Ho
   };
 }
 
-async function captureReleaseBackup(app: string, deps: HostedUpgradeDeps, revision: string, releaseId: string) {
+export async function captureReleaseBackup(app: string, deps: HostedUpgradeDeps, revision: string, releaseId: string) {
   const id = `release-${randomUUID()}`;
   const requestedAt = deps.now().getTime();
   const command = `node --import tsx scripts/manage-hosted-backup.ts --action=create --id=${id} --kind=release --source-app=${app} --source-revision=${revision} --release-id=${releaseId}`;

@@ -185,12 +185,12 @@ Missed captures or uploads can extend the available recovery window.
 - Exercise an isolated restore before learners are invited and after material
   backup or migration changes. A backup is not operationally valid until its
   restore has been proven.
-- For each schema-changing release: enter maintenance, quiesce writes and
-  in-flight provider work, create an identified pre-release backup, apply the
-  rehearsed versioned migration, start the matching app, smoke-test two learner
-  identities plus shared content and the core path, obtain a verified
-  post-migration hourly backup, record the result, then
-  reopen writes.
+- For each schema-changing release: rehearse the versioned migration with the
+  release image, enter maintenance, quiesce writes and in-flight provider work,
+  create an identified pre-release backup, apply the migration, start the
+  matching app, smoke-test two learner identities plus shared content and the
+  core path, reopen writes, then capture a verified online post-release backup
+  and record the result.
 - Before writes reopen, an incompatible failure restores the pre-release
   backup. After reopening, recovery may discard new writes, so rollback limits
   and forward repair must be explicit. Zero-downtime dual-schema releases are

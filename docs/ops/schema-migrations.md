@@ -41,45 +41,30 @@ automatically rebuilds an incompatible development database.
 
 ## Operator procedure
 
-Use this procedure for first baseline adoption and every migration applied to
-an existing database, including data-only migrations. All require a
-stopped-writer maintenance window; `npm run hosted:upgrade` is app-only and
-cannot perform these changes. The generic migration runner does not deploy or
-back up a database automatically. Hosted production uses the wrapper below to validate the pre-switchover
-recovery point and obtain a verified post-migration backup.
+Every migration applied to an existing database, including data-only migrations
+and first baseline adoption, needs a stopped-writer window.
 
-1. Rehearse every schema or data migration with the target image on an
-   [ephemeral release Machine](hosted-release-candidate.md), restoring the latest
-   coherent verified backup. Production keeps serving throughout
-   rehearsal; the latest retained receiver copy is sufficient unless the validation
-   explicitly requires a fresh snapshot. Record the
-   source recovery point, target revision and image digest, migration output,
-   and the results of the release-specific checks. Perform expensive comparisons
-   and behavioral rehearsals there before entering production maintenance.
-2. Disable provider work, enable maintenance, and wait for active requests and
-   provider work to drain. Request a verified pre-switchover release backup.
-   Retain the pre-release backup and its matching application image for recovery.
-3. Stop the normal app and provider workers. Maintenance mode alone is not a
-   stopped writer. Keep them stopped until the migration finishes. Preserve the
-   database together with any SQLite sidecars; never copy a live main file alone
-   as a backup or delete WAL files to bypass a problem.
-4. From the **target release**, use the [hosted procedure](#hosted-target-code-and-stopped-process)
-   for production. For local databases and isolated restore rehearsals, use the
-   explicit existing database file:
+**Hosted production** uses the migration release pipeline described in the
+[release runbook](hosted-beta-deployment.md#migration-release). It requires a
+passed [rehearsal](hosted-release-candidate.md#ephemeral-rehearsal) of the same
+image, captures the pre-release backup after writes stop, migrates on the idle
+Machine, and starts the target only after the migration commits.
 
-   ```bash
-   npm run db:migrate -- --database=/absolute/path/app.db --status=true
-   npm run db:migrate -- --database=/absolute/path/app.db --confirm-app-stopped=true
-   ```
+**Local databases and isolated restored copies** use the generic runner from the
+**target release**, with the app and workers stopped:
 
-   Status is read-only and reports applied/pending ids; an unversioned database
-   is validated against the baseline only when applying. The confirmation is an
-   operator assertion, not process detection. The runner also takes SQLite's
-   immediate write lock, but this cannot stop an application from resuming later.
-5. On hosted production, confirm the wrapper returned a verified post-migration
-   backup receipt before starting the target release. Start the target with
-   maintenance enabled. After inspection and smoke checks pass for both learner
-   identities, reopen writes, then provider work.
+```bash
+npm run db:migrate -- --database=/absolute/path/app.db --status=true
+npm run db:migrate -- --database=/absolute/path/app.db --confirm-app-stopped=true
+```
+
+Status is read-only and reports applied/pending ids; an unversioned database is
+validated against the baseline only when applying. The confirmation is an
+operator assertion, not process detection. The runner also takes SQLite's
+immediate write lock, but this cannot stop an application from resuming later.
+Maintenance mode alone is not a stopped writer. Preserve the database together
+with any SQLite sidecars; never copy a live main file alone as a backup or
+delete WAL files to bypass a problem.
 
 The CLI does not import backend initialization and needs no Clerk credentials,
 learner id, seed configuration, or running server. Normal startup rejects a
@@ -88,29 +73,17 @@ schema drift. Fresh databases initialize with the frozen baseline and apply the
 same shipped migrations before serving; existing databases never migrate on
 startup.
 
-Rehearsal does not replace the fresh production recovery point in step 2 or the
-actual migration and integrity checks in steps 4–5. The migration runner checks
-foreign keys and SQLite integrity itself. Choose additional live assertions for
-the migration's affected data; exhaustive table hashing, repeated full scans,
-and compression are not default production-release gates. The release agent
-may add or refine checks with Justin during the release, recording what ran and
-why. Keep that flexibility on the isolated copy whenever the check does not
-require live production state.
+Rehearsal does not replace the production recovery point, actual migration, or
+integrity checks. The migration runner checks foreign keys and SQLite integrity
+itself. Exhaustive table hashing, repeated full scans, and compression are not
+default production-release gates; keep expensive comparisons on the isolated
+copy whenever they do not require live production state.
 
-Destroy the rehearsal Machine and its volume after collecting evidence unless
-Justin asks to keep it for further checks or manual use. A failed rehearsal is
-not permission to enter production maintenance. Inspect and preserve the needed
-failure evidence, then clean up or retain it under the same explicit decision.
+### Hosted migration wrapper
 
-### Hosted target code and stopped process
-
-Use the [idle-Machine procedure](hosted-beta-deployment.md#idle-the-machine-for-offline-work):
-save the full Machine configuration and immutable source image; retain the
-mounted `/data` volume while replacing the normal app command with
-`sleep infinity` and skipping health checks. Confirm normal processes stopped.
-Build/push the target image with its exact `APP_REVISION` **without deploying the
-normal application**, then update that same idle Machine to the target image
-while retaining the idle command and volume. Apply the migration via SSH:
+The pipeline runs this wrapper over SSH on the idle Machine, which already runs
+the target image. Run it by hand only through the release runbook's
+[escape hatch](hosted-beta-deployment.md#releasing):
 
 ```bash
 fly ssh console --app <app-name> --command \
@@ -119,40 +92,19 @@ fly ssh console --app <app-name> --command \
 
 The wrapper retains its historical filename but does not run Litestream. It
 requires `APP_REVISION` for the target image, `FLY_APP_NAME`, and the private
-source/receiver configuration from the [backup runbook](hosted-backups.md).
-It checks the receiver for the supplied pre-release receipt: release kind,
-release id, previous source revision, source app, and capture age no more than
-one hour must match. Capture that release backup after quiescing and before
-stopping the source application.
+receiver configuration from the [backup runbook](hosted-backups.md). It checks
+the receiver for the supplied pre-release receipt: release kind, release id,
+previous source revision, source app, and capture age no more than one hour must
+match. It then runs the atomic migration and prints the migration result with
+that receipt. It never reopens service controls or captures a post-migration
+backup; the pipeline captures that online after the target starts. A lost
+result is unknown execution state; read `db:migrate --status=true` before acting.
 
-The wrapper runs the atomic migration with the source listener stopped. On
-success it starts a temporary source listener and requests a unique verified
-manual backup of the migrated database before closing the listener. This uses
-the historical `hourly` kind and occupies the manual slot. The pre-switchover
-copy retains its release slot (at most three copies, seven days). The wrapper never reopens service controls.
-Keep the foreground SSH attached and preserve the migration and backup receipts.
-A failed post-migration backup does not undo a committed migration. Keep the app
-offline, inspect status, and repair backup access before reopening. A lost result
-is unknown execution state; inspect before launching another wrapper.
-
-For a production service that has not completed the backup transition, use the
-legacy image's supervised Litestream migration procedure and preserve WAL and
-Litestream sidecars. Do not invoke this replacement wrapper before replacement
-backup and isolated restore proof. Generic writable connections while the legacy
-daemon is stopped can break WAL continuity; use read-only diagnostics and retain
-the original recovery point. Large migrations also require space for their actual
-SQLite WAL and temporary work, independently of the backup mechanism.
-
-Finally restore the normal command using
-the recorded target image and saved configuration. Do not start the normal
-target application before running the migration; its compatibility check will
-refuse an unbaselined or pending database.
-
-If the actual migration requires sustained CPU beyond the production Machine's
-steady-state allocation, the operator can temporarily resize that Machine during
-the stopped-writer window, retaining its attached volume, then restore its saved
-size before reopening. Rehearsal timing and resource evidence inform this choice;
-offloading rehearsal does not eliminate the cost of applying the real migration.
+Large migrations need space for their actual SQLite WAL and temporary work. If
+the migration needs sustained CPU beyond the production Machine's steady-state
+allocation, resize that Machine during the stopped-writer window, retaining its
+attached volume, then restore its saved size before reopening. Rehearsal timing
+and resource evidence inform this choice.
 
 The existing `hosted:control`, `hosted:inspect`, and restore helpers initialize
 the backend and therefore also refuse incompatible schemas. Use source-release
@@ -293,18 +245,24 @@ repair regressions live in `tests/teaching-sense-sets.test.ts`.
 Give the release agent a concise rehearsal note alongside the migration's tests
 and review description. Describe the affected records, intended changes,
 preservation invariants, and how to verify them on a populated restored database.
-Include optional before/after check scripts when they make those assertions
-repeatable, and name any table rebuild, broad scan, large temporary copy, or
-other operation likely to need extra CPU, memory, disk, or time. State useful
-resource estimates when measured rather than inventing a universal threshold.
+Name any table rebuild, broad scan, large temporary copy, or other operation
+likely to need extra CPU, memory, disk, or time. State useful resource estimates
+when measured rather than inventing a universal threshold.
 
-Every migration uses ephemeral rehearsal, so an expense hint adjusts resource
-sizing and the release plan rather than deciding whether rehearsal happens.
-Checks can evolve in conversation with Justin; a migration note is a starting
-point, not a closed checklist. Prefer assertions about affected data and durable
-behavior. Do not turn a one-off exhaustive comparison into a standing requirement
-for unrelated releases. See the [rehearsal runbook](hosted-release-candidate.md)
-for uploading checks and retaining their evidence.
+When a preservation invariant can be asserted mechanically, ship it as an
+optional author check beside the SQL: `server/db/migrations/<NNNN_name>.rehearsal.sh`.
+Rehearsal runs it automatically with `REHEARSAL_PHASE=before` before migrating and
+`REHEARSAL_PHASE=after` afterwards, as `sh -eu` from `/app` with `APP_DATA_DIR=/data`.
+A before run can save state under `$REHEARSAL_WORK_DIR` for the after run to
+compare. Exit nonzero on a violated invariant. The script runs only on restored
+copies, never production, and is reviewed with the migration.
+
+Author checks are a starting point, not a closed checklist. The release agent
+may find them insufficient and add its own checks, including comparisons written
+during the release. Prefer assertions about affected data and durable behavior.
+Do not turn a one-off exhaustive comparison into a standing requirement for
+unrelated releases. See the [rehearsal runbook](hosted-release-candidate.md#prepare-check-and-migrate)
+for running checks and retaining their evidence.
 
 Add a SQL file under `server/db/migrations/` and append its definition to
 `schemaMigrations` in `server/db/migrations.ts`, loading the file relative to
