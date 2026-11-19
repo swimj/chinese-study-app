@@ -145,6 +145,9 @@ approval before acting. Report any such step in the handoff.
   change makes a last-resort restore more likely or the hours since the last
   scheduled backup more costly to lose, such as new write behavior on valued
   records.
+- **Backup service.** When a release changes backup code, also
+  [upgrade the backup service](hosted-backups.md#upgrade-the-backup-service)
+  with the same image.
 - **Extra checks.** Add checks the change calls for and record what ran. Pass
   `--reopen=false` to stop after smoke with the service closed, run them, then
   reopen with the [service controls](#service-controls-and-offline-work).
