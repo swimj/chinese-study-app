@@ -29,7 +29,7 @@ export type TrackerState = {
 const CODE_STAGES: Array<[string, string]> = [
   ['declare', 'declare: checkout, origin/main, config env, ledger'],
   ['build', 'build: image built before the window (skipped with --image)'],
-  ['backup', 'backup: online release backup'],
+  ['backup', 'backup: recent scheduled backup, or a fresh online one'],
   ['quiesce', 'quiesce: provider work off, maintenance on, drain'],
   ['deploy', 'deploy: digest-qualified image'],
   ['confirm', 'confirm: identity, closed controls, ledger unchanged'],

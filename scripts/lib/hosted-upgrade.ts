@@ -6,6 +6,7 @@ import { HOSTED_SMOKE_ENDPOINT } from './hosted-smoke.ts';
 import { isRecord, parseJsonValue, sanitizeHostedOutput } from './hosted-json.ts';
 import { randomUUID } from 'node:crypto';
 import { parseBackupReceipt } from '../../server/backups/client.ts';
+import { SCHEDULE_MAX_AGE_SECONDS } from '../../server/backups/schedule.ts';
 import { buildHostedImage } from './hosted-build.ts';
 
 const execFileAsync = promisify(execFile);
@@ -131,6 +132,8 @@ export type HostedUpgradeInput = {
   image?: string;
   /** Registry app for a build when no --image is given; defaults to the released app. */
   imageApp?: string;
+  /** Capture a new online release backup instead of relying on the latest scheduled one. */
+  freshBackup?: boolean;
   flyConfigPath?: string;
   /** false stops after smoke with the service closed, for checks before the agent reopens it. */
   reopen?: boolean;
@@ -279,10 +282,16 @@ export async function runHostedUpgrade(
     currentStage = 'backup';
     const oldIdentity = isRecord(inspectBefore.releaseIdentity) ? inspectBefore.releaseIdentity : inspectBefore;
     const outgoingRevision = requireFullGitSha(String(oldIdentity.sourceRevision));
-    const releaseId = `release-${sourceRevision.slice(0, 12)}-${randomUUID()}`;
-    // Online capture while learners study: a last-resort recovery point that
-    // costs no maintenance time. Code-only rollback redeploys previousDeployment.
-    recordStage('backup', 'ok', await captureReleaseBackup(app, deps, outgoingRevision, releaseId));
+    // Code-only rollback redeploys previousDeployment; a backup is only a last-resort
+    // recovery point. A verified recent scheduled backup serves by default, sparing a
+    // multi-minute full-CPU capture; --fresh-backup captures one online when the
+    // change warrants it.
+    if (input.freshBackup) {
+      const releaseId = `release-${sourceRevision.slice(0, 12)}-${randomUUID()}`;
+      recordStage('backup', 'ok', { source: 'fresh', receipt: await captureReleaseBackup(app, deps, outgoingRevision, releaseId) });
+    } else {
+      recordStage('backup', 'ok', { source: 'scheduled', ...(await readRecentScheduledBackup(app, deps)) });
+    }
 
     currentStage = 'quiesce';
     recordStage('quiesce', 'ok', await quiesceHostedService(app, actorId, publicOrigin, deps));
@@ -431,6 +440,23 @@ export async function reopenHostedService(app: string, actorId: string, deps: Ho
     banner,
     runningIdentity: reopenedInspect.releaseIdentity ?? reopenedInspect,
   };
+}
+
+/** The latest scheduled capture for this app, refused when it is older than the schedule allows. */
+export async function readRecentScheduledBackup(app: string, deps: HostedUpgradeDeps) {
+  const status = parseHostedCommandJson(await ssh(app, 'node --import tsx scripts/manage-hosted-backup.ts --action=status', deps, 60_000));
+  if (!isRecord(status) || !status.lastScheduledBackup) {
+    throw new Error('No scheduled backup is recorded. Investigate the backup service, or rerun with --fresh-backup=true.');
+  }
+  const receipt = parseBackupReceipt(status.lastScheduledBackup);
+  const ageSeconds = Math.round((deps.now().getTime() - Date.parse(receipt.startedAt)) / 1000);
+  if (receipt.kind !== 'hourly' || receipt.captureOrigin === 'manual' || receipt.sourceApp !== app) {
+    throw new Error('Latest scheduled backup does not belong to this app\'s schedule.');
+  }
+  if (ageSeconds < 0 || ageSeconds > SCHEDULE_MAX_AGE_SECONDS) {
+    throw new Error(`Latest scheduled backup is ${ageSeconds}s old, beyond the ${SCHEDULE_MAX_AGE_SECONDS}s limit. Investigate the backup service, or rerun with --fresh-backup=true.`);
+  }
+  return { receipt, ageSeconds };
 }
 
 export async function captureReleaseBackup(app: string, deps: HostedUpgradeDeps, revision: string, releaseId: string) {
