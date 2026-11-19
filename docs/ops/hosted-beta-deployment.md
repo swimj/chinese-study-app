@@ -109,6 +109,12 @@ approval before acting. Report any such step in the handoff.
 - **Deploy an identified build.** The checkout is clean at the confirmed
   revision, the image carries that `APP_REVISION`, and production deploys a
   digest-qualified image verified as the one serving.
+- **Keep the runtime configuration.** A deploy replaces the Machine's
+  environment with the generated config's `[env]` table, and that config is a
+  local, untracked file that can fall behind. Both modes refuse a deploy that
+  would remove an environment setting the running Machine has, apart from names
+  Fly manages. Update the generated config, or confirm an intended removal with
+  `--allow-dropped-env=<NAME>[,<NAME>]`.
 - **Reopen only after identity and smoke pass.** A failed stage leaves controls
   as they were and never reopens.
 - **Run one release process at a time.** A lost terminal session is unknown
