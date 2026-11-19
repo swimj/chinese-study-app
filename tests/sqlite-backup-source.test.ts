@@ -63,3 +63,17 @@ test('failed source workers clean scratch and release the busy guard', async () 
     fs.rmSync(dir, {recursive:true, force:true});
   }
 });
+
+test('the capture worker lowers its own CPU priority only for background captures', async () => {
+  const { execFileSync } = await import('node:child_process');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'backup-priority-test-'));
+  const database = path.join(dir, 'app.db');
+  const db = new DatabaseSync(database); db.exec('CREATE TABLE t(id INTEGER); INSERT INTO t VALUES (1)'); db.close();
+  const run = (name: string, extra: string[]) => JSON.parse(execFileSync(process.execPath, ['--import', 'tsx', 'scripts/create-sqlite-backup.ts',
+    `--database=${database}`, `--output=${path.join(dir, name)}`, '--max-bytes=1048576', ...extra], { encoding: 'utf8' })) as { niceness: number };
+  try {
+    assert.equal(run('background.db', ['--priority=background']).niceness, os.constants.priority.PRIORITY_LOW);
+    assert.equal(run('normal.db', []).niceness, os.getPriority());
+    assert.throws(() => run('bad.db', ['--priority=urgent']));
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});

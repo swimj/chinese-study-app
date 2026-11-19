@@ -16,7 +16,7 @@ async function fixture() {
   db.exec("CREATE TABLE important(id INTEGER PRIMARY KEY, value TEXT); INSERT INTO important VALUES(1,'preserved')");
   db.close();
   const payload = await fs.readFile(file);
-  const state = { now: new Date('2026-11-17T00:00:00Z'), mode: 'ok', requests: 0, release: () => {} };
+  const state = { now: new Date('2026-11-17T00:00:00Z'), mode: 'ok', requests: 0, release: () => {}, bodies: [] as Array<Record<string, unknown>> };
   const server = http.createServer(async (req, res) => {
     state.requests++;
     let raw = ''; for await (const chunk of req) raw += chunk;
@@ -24,6 +24,7 @@ async function fixture() {
       res.writeHead(401);res.end('secret-content-must-not-leak');return;
     }
     const { id } = JSON.parse(raw) as { id: string };
+    state.bodies.push(JSON.parse(raw) as Record<string, unknown>);
     if (state.mode === 'unauthorized') { res.writeHead(403);res.end('secret-content');return; }
     const body = state.mode === 'not-sqlite' ? Buffer.alloc(payload.length, 42) : payload;
     res.writeHead(200, { 'content-type': 'application/octet-stream', 'content-length': body.length,
@@ -183,5 +184,15 @@ test('reclaims a confirmed exited owner after a crash without losing committed r
     assert.deepEqual(restarted.status().lastSuccessfulBackup, receipt);
     assert.ok((await fs.readdir(f.dataDir)).some(n => n.startsWith('.receiver-stale-')));
     await restarted.close();
+  } finally { await f.close(); }
+});
+
+test('scheduled captures ask the source to run in the background; manual and release captures do not', async () => {
+  const f = await fixture();
+  try {
+    await f.receiver.createScheduled('production-app');
+    await f.receiver.create({ id: 'manual-1', kind: 'hourly' });
+    await f.receiver.create({ id: 'pre-release-1', kind: 'release', releaseId: 'release-1' });
+    assert.deepEqual(f.state.bodies.map(body => body.priority ?? 'normal'), ['background', 'normal', 'normal']);
   } finally { await f.close(); }
 });
