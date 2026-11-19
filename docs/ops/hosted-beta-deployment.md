@@ -275,6 +275,31 @@ This procedure deliberately does not claim durable release history or resumable
 execution. The final terminal result is still per-invocation evidence; a lost
 local runner remains an operational recovery case.
 
+### Release tracker
+
+`hosted:track` keeps a history of releases on the operator machine and serves
+a page showing each release's stages, durations, key facts, and observations.
+Each release is one JSON file under `~/.chinese-study-app/releases`, outside any
+checkout; set `--root` or `RELEASE_TRACKER_ROOT` to use another directory.
+The history covers releases tracked on that machine only.
+
+```bash
+npm run hosted:track -- --action=serve              # http://127.0.0.1:8765/
+npm run hosted:track -- --action=init --mode=migrate --commit=<sha> --title='<title>'
+npm run hosted:track -- --action=stage --stage=build --status=running
+npm run hosted:track -- --action=note --text='<observation>'
+npm run hosted:track -- --action=watch --file=<hosted:upgrade output file>
+```
+
+The page listens on `127.0.0.1:8765`; from another computer, forward it with
+`ssh -L 8765:127.0.0.1:8765 <operator-host>`. `watch` follows the JSON output
+that `hosted:upgrade` writes to a file and mirrors its production stages until
+the final result. Commands without `--release` update the most recent release.
+Agents record preparation, build, and rehearsal stages, facts, and observations
+themselves, and set `--action=outcome` when the result needs judgment, such as a
+failure after reopening. Notes stay short and contain no learner data,
+credentials, or backup locations.
+
 ### Migration release
 
 A migration release starts from one [built image](#build-the-image): rehearse
