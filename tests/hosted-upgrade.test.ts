@@ -52,6 +52,12 @@ const MACHINE_LIST = JSON.stringify([{
   config: { image: `registry.fly.io/${APP}:deployment-01HNEW` },
 }]);
 
+const APPLIED_SCHEMA = [
+  'app_schema:0000_baseline',
+  'app_schema:0001_first_change',
+  'app_schema:0002_second_change',
+];
+
 const RELEASE_LIST = JSON.stringify([{
   Version: 12,
   Status: 'complete',
@@ -59,16 +65,8 @@ const RELEASE_LIST = JSON.stringify([{
 }]);
 
 describe('hosted upgrade pipeline', () => {
-  test('refuses a mismatched SHA, dirty image sources, or missing confirmation before mutation', async () => {
+  test('refuses a mismatched SHA or dirty image sources before mutation', async () => {
     const harness = createHarness();
-    const missingConfirm = await runHostedUpgrade({
-      ...harness.input,
-      confirmEligibleRelease: false,
-    }, harness.deps);
-    assert.equal(missingConfirm.status, 'failed');
-    assert.equal(missingConfirm.failedStage, 'declare');
-    assert.equal(harness.mutations.length, 0);
-
     const mismatched = await runHostedUpgrade({
       ...harness.input,
       confirmSourceRevision: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
@@ -82,7 +80,30 @@ describe('hosted upgrade pipeline', () => {
     assert.equal(harness.mutations.length, 0);
   });
 
-  test('drives quiesce, deploy with APP_REVISION, confirm, smoke, and reopen', async () => {
+  test('refuses a target with pending migrations before any capture or control change', async () => {
+    const harness = createHarness();
+    const result = await runHostedUpgrade({
+      ...harness.input,
+      targetSchemaMigrationIds: [...APPLIED_SCHEMA, 'app_schema:0003_next_change'],
+    }, harness.deps);
+    assert.equal(result.status, 'failed');
+    assert.equal(result.failedStage, 'declare');
+    assert.match(result.failure ?? '', /pending schema migrations \(app_schema:0003_next_change\).*offline migration procedure/);
+    assert.deepEqual(harness.mutations, []);
+  });
+
+  test('refuses a target older than the running schema', async () => {
+    const harness = createHarness();
+    const result = await runHostedUpgrade({
+      ...harness.input,
+      targetSchemaMigrationIds: APPLIED_SCHEMA.slice(0, 2),
+    }, harness.deps);
+    assert.equal(result.failedStage, 'declare');
+    assert.match(result.failure ?? '', /target is older than the running schema/);
+    assert.deepEqual(harness.mutations, []);
+  });
+
+  test('backs up online, then quiesces, deploys with APP_REVISION, confirms, smokes, and reopens', async () => {
     const harness = createHarness();
     const result = await runHostedUpgrade(harness.input, harness.deps);
     assert.equal(result.status, 'ok', result.failure ?? '');
@@ -95,17 +116,17 @@ describe('hosted upgrade pipeline', () => {
     assert.equal(result.actualDeployment?.machineId, 'd8d123abc');
     assert.deepEqual(result.stages.map((stage) => `${stage.stage}:${stage.status}`), [
       'declare:ok',
+      'backup:ok',
       'quiesce:ok',
-      'backup-sync:ok',
       'build-deploy:ok',
       'confirm:ok',
       'smoke:ok',
       'reopen:ok',
     ]);
     assert.deepEqual(harness.mutations, [
+      'backup',
       'provider-work:false',
       'maintenance:true',
-      'backup',
       'deploy',
       'maintenance:false',
       'provider-work:true',
@@ -115,10 +136,11 @@ describe('hosted upgrade pipeline', () => {
     assert.deepEqual(deploy?.args.slice(-2), ['--build-arg', `APP_REVISION=${SOURCE_REVISION}`]);
     assert.equal(JSON.stringify(result).includes('smoke-token'), false);
     assert.equal(JSON.stringify(harness.events).includes('sk_test'), false);
-    const receipt = result.stages.find(stage => stage.stage === 'backup-sync')?.detail as Record<string, unknown>;
+    const receipt = result.stages.find(stage => stage.stage === 'backup')?.detail as Record<string, unknown>;
     assert.equal(receipt.sourceRevision, 'a'.repeat(40));
     assert.equal(receipt.kind, 'release');
     assert.equal(JSON.stringify(result).includes('secret-bucket'), false);
+    assert.equal(result.previousDeployment?.machineId, 'd8d123abc');
   });
 
   for (const backupFailure of ['timeout', 'wrong-revision', 'malformed'] as const) {
@@ -126,9 +148,9 @@ describe('hosted upgrade pipeline', () => {
       const harness = createHarness({ backupFailure });
       const result = await runHostedUpgrade(harness.input, harness.deps);
       assert.equal(result.status, 'failed');
-      assert.equal(result.failedStage, 'backup-sync');
+      assert.equal(result.failedStage, 'backup');
       assert.equal(result.reopened, false);
-      assert.deepEqual(harness.mutations, ['provider-work:false', 'maintenance:true', 'backup']);
+      assert.deepEqual(harness.mutations, ['backup'], 'a failed capture leaves the service open and untouched');
     });
   }
 
@@ -164,11 +186,12 @@ describe('hosted upgrade pipeline', () => {
     assert.equal(result.failedStage, 'smoke');
     assert.equal(result.reopened, false);
     assert.deepEqual(harness.mutations, [
+      'backup',
       'provider-work:false',
       'maintenance:true',
-      'backup',
       'deploy',
     ]);
+    assert.ok(result.previousDeployment, 'the result names the image to redeploy for rollback');
     assert.equal(harness.mutations.includes('maintenance:false'), false);
     assert.equal(harness.mutations.includes('provider-work:true'), false);
   });
@@ -245,7 +268,7 @@ function createHarness(options: {
       app: APP,
       actorId: 'operator-test',
       confirmSourceRevision: SOURCE_REVISION,
-      confirmEligibleRelease: true,
+      targetSchemaMigrationIds: APPLIED_SCHEMA,
       flyConfigPath: 'deploy/fly/.generated/fly.toml',
     },
     deps: null as unknown as HostedUpgradeDeps,
@@ -312,6 +335,9 @@ function createHarness(options: {
     }
     if (args[0] === 'releases') return { stdout: RELEASE_LIST, stderr: '' };
     const command = args[args.indexOf('--command') + 1] ?? '';
+    if (command.includes('db:migrate') && command.includes('--status=true')) {
+      return { stdout: JSON.stringify({ database: '/data/app.db', appliedThisRun: [], applied: APPLIED_SCHEMA, pending: [] }), stderr: '' };
+    }
     if (command.includes('hosted:inspect')) {
       return { stdout: JSON.stringify(inspect(), null, 2), stderr: '' };
     }

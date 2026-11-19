@@ -11,8 +11,8 @@ const execFileAsync = promisify(execFile);
 
 export const HOSTED_UPGRADE_STAGES = [
   'declare',
+  'backup',
   'quiesce',
-  'backup-sync',
   'build-deploy',
   'confirm',
   'smoke',
@@ -104,6 +104,8 @@ export type HostedUpgradeResult = {
   startedAt: string;
   finishedAt: string;
   plannedRelease: PlannedReleaseIdentity | null;
+  /** The image serving before this run; redeploying it is the code-only rollback. */
+  previousDeployment: FlyDeploymentIdentity | null;
   actualBuild: { imageRef: string | null; imageDigest: string | null } | null;
   actualDeployment: FlyDeploymentIdentity | null;
   stages: HostedUpgradeStageEvent[];
@@ -118,11 +120,17 @@ export type HostedUpgradeInput = {
   app: string;
   actorId: string;
   confirmSourceRevision: string;
-  confirmEligibleRelease: boolean;
+  /** Ordered ledger ids the target checkout requires, baseline first. */
+  targetSchemaMigrationIds: readonly string[];
   image?: string;
   flyConfigPath?: string;
 };
 
+/**
+ * Code-only release pipeline: verify the target needs no migration, capture an
+ * online recovery point, close the service, deploy, verify, smoke, reopen.
+ * Any failure stops with controls as they were at that stage and never reopens.
+ */
 export async function runHostedUpgrade(
   input: HostedUpgradeInput,
   deps: HostedUpgradeDeps,
@@ -131,11 +139,10 @@ export async function runHostedUpgrade(
   const stages: HostedUpgradeStageEvent[] = [];
   let currentStage: HostedUpgradeStage = 'declare';
   let plannedRelease: PlannedReleaseIdentity | null = null;
+  let previousDeployment: FlyDeploymentIdentity | null = null;
   let actualBuild: { imageRef: string | null; imageDigest: string | null } | null = null;
   let actualDeployment: FlyDeploymentIdentity | null = null;
   let runningIdentity: unknown | null = null;
-  let preDeploySchemaMigrationCount: number | null = null;
-  let mutated = false;
   let reopened = false;
   const flyConfigPath = path.resolve(input.repoRoot, input.flyConfigPath ?? DEFAULT_FLY_CONFIG_PATH);
 
@@ -152,6 +159,7 @@ export async function runHostedUpgrade(
       startedAt,
       finishedAt: deps.now().toISOString(),
       plannedRelease,
+      previousDeployment,
       actualBuild,
       actualDeployment,
       stages,
@@ -178,9 +186,6 @@ export async function runHostedUpgrade(
 
   try {
     currentStage = 'declare';
-    if (input.confirmEligibleRelease !== true) {
-      throw new Error('App-only upgrade requires --confirm-eligible-release=true.');
-    }
     const actorId = requireNonEmpty(input.actorId, 'actor-id');
     const app = requireNonEmpty(input.app, 'app');
     const flyConfig = readPreparedFlyConfig(flyConfigPath, deps);
@@ -204,37 +209,26 @@ export async function runHostedUpgrade(
     const publicOrigin = flyConfig.publicOrigin;
     const inspectBefore = await inspectHostedService(app, deps);
     runningIdentity = inspectBefore.releaseIdentity ?? inspectBefore;
-    preDeploySchemaMigrationCount = readSchemaMigrationCount(inspectBefore);
+    const appliedSchema = await readAppliedSchemaMigrations(app, deps);
+    assertNoSchemaChange(appliedSchema, input.targetSchemaMigrationIds);
+    previousDeployment = await readFlyDeploymentIdentity(app, deps);
     recordStage('declare', 'ok', {
       plannedRelease,
       currentReleaseIdentity: inspectBefore.releaseIdentity ?? null,
-      schemaMigrationCount: preDeploySchemaMigrationCount,
+      previousDeployment,
+      appliedSchemaMigrationCount: appliedSchema.length,
     });
 
-    currentStage = 'quiesce';
-    mutated = true;
-    await setHostedControl(app, actorId, 'provider-work', false, deps);
-    await setHostedControl(app, actorId, 'maintenance', true, deps);
-    const controls = await inspectHostedService(app, deps);
-    assertPersistedControls(controls, { maintenanceMode: true, providerWorkEnabled: false });
-    const drained = await pollHealthz(publicOrigin, deps, PROVIDER_DRAIN_TIMEOUT_MS, (health) => (
-      health.maintenanceMode === true
-      && health.providerWorkEnabled === false
-      && health.activeProviderWorkCount === 0
-        ? health
-        : null
-    ), 'Provider-work drain');
-    recordStage('quiesce', 'ok', {
-      maintenanceMode: true,
-      providerWorkEnabled: false,
-      activeProviderWorkCount: drained.activeProviderWorkCount,
-    });
-
-    currentStage = 'backup-sync';
+    currentStage = 'backup';
     const oldIdentity = isRecord(inspectBefore.releaseIdentity) ? inspectBefore.releaseIdentity : inspectBefore;
     const outgoingRevision = requireFullGitSha(String(oldIdentity.sourceRevision));
     const releaseId = `release-${sourceRevision.slice(0, 12)}-${randomUUID()}`;
-    recordStage('backup-sync', 'ok', await captureReleaseBackup(app, deps, outgoingRevision, releaseId));
+    // Online capture while learners study: a last-resort recovery point that
+    // costs no maintenance time. Code-only rollback redeploys previousDeployment.
+    recordStage('backup', 'ok', await captureReleaseBackup(app, deps, outgoingRevision, releaseId));
+
+    currentStage = 'quiesce';
+    recordStage('quiesce', 'ok', await quiesceHostedService(app, actorId, publicOrigin, deps));
 
     currentStage = 'build-deploy';
     const deployArgs = [
@@ -268,54 +262,22 @@ export async function runHostedUpgrade(
     recordStage('build-deploy', 'ok', { actualBuild, actualDeployment });
 
     currentStage = 'confirm';
-    await pollHealthz(publicOrigin, deps, POST_DEPLOY_HEALTH_TIMEOUT_MS, (health) => (
-      health.status === 'ok' ? health : null
-    ), 'Post-deploy /healthz');
-    const postDeployHealth = await readHealthz(publicOrigin, deps);
-    if (postDeployHealth.maintenanceMode !== true || postDeployHealth.providerWorkEnabled !== false) {
-      throw new Error('Post-deploy health check is not still in maintenance with provider work disabled.');
+    const confirmed = await confirmDeployedRelease(app, publicOrigin, plannedRelease, actualDeployment, deps);
+    runningIdentity = confirmed.releaseIdentity;
+    const appliedAfter = await readAppliedSchemaMigrations(app, deps);
+    if (appliedAfter.join('\n') !== appliedSchema.join('\n')) {
+      throw new Error('Applied schema migrations changed during a code-only release.');
     }
-    const inspectAfter = await inspectHostedService(app, deps);
-    runningIdentity = inspectAfter.releaseIdentity ?? inspectAfter;
-    assertReleaseIdentityMatch(inspectAfter, plannedRelease);
-    const confirmedDeployment = await readFlyDeploymentIdentity(app, deps);
-    assertDeploymentIdentityMatch(actualDeployment, confirmedDeployment);
-    const postDeploySchemaMigrationCount = readSchemaMigrationCount(inspectAfter);
-    if (
-      preDeploySchemaMigrationCount !== null
-      && postDeploySchemaMigrationCount !== preDeploySchemaMigrationCount
-    ) {
-      throw new Error('Schema migration count changed; this pipeline is not authorized for a schema-changing release.');
-    }
-    recordStage('confirm', 'ok', {
-      releaseIdentity: inspectAfter.releaseIdentity ?? null,
-      actualDeployment: confirmedDeployment,
-      schemaMigrationCount: postDeploySchemaMigrationCount,
-    });
+    recordStage('confirm', 'ok', confirmed);
 
     currentStage = 'smoke';
-    await assertServedFrontend(publicOrigin, deps);
-    const smoke = parseHostedCommandJson(
-      await ssh(app, 'npm run --silent hosted:smoke -- --data-dir=/data', deps, 60_000),
-    );
-    if (!isRecord(smoke) || smoke.status !== 'ok') {
-      throw new Error(readFailureDetail(smoke) ?? 'Hosted smoke failed.');
-    }
-    recordStage('smoke', 'ok', {
-      endpoint: smoke.endpoint ?? HOSTED_SMOKE_ENDPOINT,
-      httpStatus: smoke.httpStatus ?? null,
-      sessionRevoked: smoke.sessionRevoked === true,
-    });
+    recordStage('smoke', 'ok', await smokeHostedService(app, publicOrigin, deps));
 
     currentStage = 'reopen';
-    await setHostedControl(app, actorId, 'maintenance', false, deps);
-    await setHostedControl(app, actorId, 'provider-work', true, deps);
-    const bannerClear = await clearHostedBanner(app, actorId, deps);
-    const reopenedInspect = await inspectHostedService(app, deps);
-    assertPersistedControls(reopenedInspect, { maintenanceMode: false, providerWorkEnabled: true });
-    runningIdentity = reopenedInspect.releaseIdentity ?? reopenedInspect;
+    const reopenedState = await reopenHostedService(app, actorId, deps);
+    runningIdentity = reopenedState.runningIdentity;
     reopened = true;
-    recordStage('reopen', 'ok', { controls: readControls(reopenedInspect), banner: bannerClear });
+    recordStage('reopen', 'ok', { controls: reopenedState.controls, banner: reopenedState.banner });
 
     return finish('ok', null, null);
   } catch (error) {
@@ -323,6 +285,105 @@ export async function runHostedUpgrade(
     recordStage(currentStage, 'failed', { failure });
     return finish('failed', failure, currentStage);
   }
+}
+
+/** Refuses unless the database already has exactly the target's migrations. */
+export function assertNoSchemaChange(applied: readonly string[], target: readonly string[]): void {
+  const pending = target.filter((id) => !applied.includes(id));
+  if (pending.length > 0) {
+    throw new Error(`Target has pending schema migrations (${pending.join(', ')}); use the offline migration procedure.`);
+  }
+  const unknown = applied.filter((id) => !target.includes(id));
+  if (unknown.length > 0) {
+    throw new Error(`Database has migrations the target does not know (${unknown.join(', ')}); the target is older than the running schema.`);
+  }
+}
+
+/** Read-only ledger read through the running image's migration status command. */
+export async function readAppliedSchemaMigrations(app: string, deps: HostedUpgradeDeps): Promise<string[]> {
+  const value = parseHostedCommandJson(await ssh(
+    app,
+    'npm run --silent db:migrate -- --database=/data/app.db --status=true',
+    deps,
+    60_000,
+  ));
+  if (!isRecord(value) || !Array.isArray(value.applied) || !value.applied.every((id) => typeof id === 'string')) {
+    throw new Error('db:migrate --status=true did not report applied migration ids.');
+  }
+  return value.applied as string[];
+}
+
+/** Stop new provider work, close writes, and wait for in-flight provider work to drain. */
+export async function quiesceHostedService(
+  app: string,
+  actorId: string,
+  publicOrigin: string,
+  deps: HostedUpgradeDeps,
+): Promise<{ maintenanceMode: true; providerWorkEnabled: false; activeProviderWorkCount: number }> {
+  await setHostedControl(app, actorId, 'provider-work', false, deps);
+  await setHostedControl(app, actorId, 'maintenance', true, deps);
+  const controls = await inspectHostedService(app, deps);
+  assertPersistedControls(controls, { maintenanceMode: true, providerWorkEnabled: false });
+  const drained = await pollHealthz(publicOrigin, deps, PROVIDER_DRAIN_TIMEOUT_MS, (health) => (
+    health.maintenanceMode === true
+    && health.providerWorkEnabled === false
+    && health.activeProviderWorkCount === 0
+      ? health
+      : null
+  ), 'Provider-work drain');
+  return { maintenanceMode: true, providerWorkEnabled: false, activeProviderWorkCount: drained.activeProviderWorkCount };
+}
+
+/** Confirm the deployed Machine is healthy, still closed, and serving the planned release. */
+export async function confirmDeployedRelease(
+  app: string,
+  publicOrigin: string,
+  planned: PlannedReleaseIdentity,
+  deployment: FlyDeploymentIdentity,
+  deps: HostedUpgradeDeps,
+): Promise<{ releaseIdentity: unknown; actualDeployment: FlyDeploymentIdentity }> {
+  await pollHealthz(publicOrigin, deps, POST_DEPLOY_HEALTH_TIMEOUT_MS, (health) => (
+    health.status === 'ok' ? health : null
+  ), 'Post-deploy /healthz');
+  const postDeployHealth = await readHealthz(publicOrigin, deps);
+  if (postDeployHealth.maintenanceMode !== true || postDeployHealth.providerWorkEnabled !== false) {
+    throw new Error('Post-deploy health check is not still in maintenance with provider work disabled.');
+  }
+  const inspectAfter = await inspectHostedService(app, deps);
+  assertReleaseIdentityMatch(inspectAfter, planned);
+  const confirmedDeployment = await readFlyDeploymentIdentity(app, deps);
+  assertDeploymentIdentityMatch(deployment, confirmedDeployment);
+  return { releaseIdentity: inspectAfter.releaseIdentity ?? null, actualDeployment: confirmedDeployment };
+}
+
+/** Served frontend shell plus an authenticated read-only API request as the smoke account. */
+export async function smokeHostedService(app: string, publicOrigin: string, deps: HostedUpgradeDeps) {
+  await assertServedFrontend(publicOrigin, deps);
+  const smoke = parseHostedCommandJson(
+    await ssh(app, 'npm run --silent hosted:smoke -- --data-dir=/data', deps, 60_000),
+  );
+  if (!isRecord(smoke) || smoke.status !== 'ok') {
+    throw new Error(readFailureDetail(smoke) ?? 'Hosted smoke failed.');
+  }
+  return {
+    endpoint: smoke.endpoint ?? HOSTED_SMOKE_ENDPOINT,
+    httpStatus: smoke.httpStatus ?? null,
+    sessionRevoked: smoke.sessionRevoked === true,
+  };
+}
+
+/** Reopen writes first, then provider work, and clear any pre-upgrade banner. */
+export async function reopenHostedService(app: string, actorId: string, deps: HostedUpgradeDeps) {
+  await setHostedControl(app, actorId, 'maintenance', false, deps);
+  await setHostedControl(app, actorId, 'provider-work', true, deps);
+  const banner = await clearHostedBanner(app, actorId, deps);
+  const reopenedInspect = await inspectHostedService(app, deps);
+  assertPersistedControls(reopenedInspect, { maintenanceMode: false, providerWorkEnabled: true });
+  return {
+    controls: readControls(reopenedInspect),
+    banner,
+    runningIdentity: reopenedInspect.releaseIdentity ?? reopenedInspect,
+  };
 }
 
 async function captureReleaseBackup(app: string, deps: HostedUpgradeDeps, revision: string, releaseId: string) {
@@ -652,11 +713,6 @@ export function readControls(inspect: Record<string, unknown>): { maintenanceMod
     maintenanceMode: controls.maintenanceMode,
     providerWorkEnabled: controls.providerWorkEnabled,
   };
-}
-
-function readSchemaMigrationCount(inspect: Record<string, unknown>): number | null {
-  const diagnostics = isRecord(inspect.diagnostics) ? inspect.diagnostics : inspect;
-  return typeof diagnostics.schemaMigrationCount === 'number' ? diagnostics.schemaMigrationCount : null;
 }
 
 export function parseHostedCommandJson(stdout: string): unknown {

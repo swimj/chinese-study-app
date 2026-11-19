@@ -105,7 +105,8 @@ the architectural boundary for implementation.
 - Migrations preserve history and provenance or fail loudly before destructive
   partial application. Releases are intentional and identifiable, with explicit
   compatibility, deploy ordering, rollback limits, and recovery steps.
-  Application-only upgrades must satisfy the runbook's narrow eligibility rules.
+  Code-only releases run through `hosted:upgrade`, which refuses a target with
+  pending migrations.
 - Schema-changing releases quiesce writes and provider work, take an identified
   recovery point, rehearse migration, smoke both identities, and reopen only
   after checks pass. Backup requires exercised isolated restore of representative
