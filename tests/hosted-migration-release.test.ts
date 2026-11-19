@@ -20,7 +20,7 @@ const FLY_TOML = `app = "${APP}"\nprimary_region = "sin"\n[env]\n  CLERK_AUTHORI
 
 type Failure = 'migrate' | 'migrate-lost' | 'smoke' | 'post-backup';
 
-function createHarness(options: { failure?: Failure; manifest?: Partial<RehearsalManifest> } = {}) {
+function createHarness(options: { failure?: Failure; manifest?: Partial<RehearsalManifest>; onMainline?: boolean } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'migration-release-'));
   fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ version: '3.0.0' }));
   fs.mkdirSync(path.join(root, 'deploy/fly/.generated'), { recursive: true });
@@ -115,6 +115,7 @@ function createHarness(options: { failure?: Failure; manifest?: Partial<Rehearsa
     fileExists: (file) => fs.existsSync(file),
     gitHead: () => TARGET,
     gitStatusPorcelain: () => '',
+    gitRevisionOnMainline: () => options.onMainline ?? true,
     run: async (_file, args) => handle(args),
     fetch: async (url) => String(url).endsWith('/healthz')
       ? new Response(JSON.stringify({ status: 'ok', maintenanceMode: maintenance, providerWorkEnabled: providerWork, activeProviderWorkCount: 0 }))
@@ -223,5 +224,17 @@ describe('hosted migration release', () => {
     assert.deepEqual(pendingTargetMigrations(APPLIED, TARGET_IDS), PENDING);
     assert.throws(() => pendingTargetMigrations(TARGET_IDS, TARGET_IDS), /code-only release/);
     assert.throws(() => pendingTargetMigrations(['app_schema:0000_baseline', 'app_schema:0001_other'], TARGET_IDS), /not a prefix/);
+  });
+
+  test('refuses a revision that is not on origin/main before touching production', async () => {
+    const h = createHarness({ onMainline: false });
+    try {
+      const result = await runHostedMigrationRelease(h.input, h.deps);
+      assert.equal(result.failedStage, 'declare');
+      assert.match(result.failure ?? '', /not on origin\/main/);
+      assert.deepEqual(h.steps, []);
+      const allowed = await runHostedMigrationRelease({ ...h.input, allowUnmergedRevision: true }, h.deps);
+      assert.equal(allowed.status, 'ok', allowed.failure ?? '');
+    } finally { h.clean(); }
   });
 });

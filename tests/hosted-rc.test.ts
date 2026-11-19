@@ -189,6 +189,7 @@ function createHarness(schemaMode: 'unchanged' | 'migrate', forcePending = false
     fileExists: fs.existsSync,
     gitHead: () => SOURCE_REVISION,
     gitStatusPorcelain: () => '',
+    gitRevisionOnMainline: () => true,
     run: async (_file, args) => handle(args),
     fetch: async (input) => {
       const url = String(input);

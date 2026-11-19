@@ -101,9 +101,14 @@ approval before acting. Report any such step in the handoff.
 - **Deploy behind maintenance.** A restart ends any learner's session in
   progress, so production deploys run with writes closed and provider work
   drained.
+- **Release merged code.** Both modes refuse a revision that is not on
+  `origin/main`. `hosted:build` and rehearsal accept any revision, so a branch
+  can be tested before merging. Releasing an unmerged revision goes through the
+  escape hatch: with Justin's approval, pass `--allow-unmerged-revision=true`,
+  which the result records.
 - **Deploy an identified build.** The checkout is clean at the confirmed
-  revision, the image carries that `APP_REVISION`, and a promoted image is
-  digest-qualified and verified as the one serving.
+  revision, the image carries that `APP_REVISION`, and production deploys a
+  digest-qualified image verified as the one serving.
 - **Reopen only after identity and smoke pass.** A failed stage leaves controls
   as they were and never reopens.
 - **Run one release process at a time.** A lost terminal session is unknown
@@ -151,24 +156,62 @@ restoring that backup is its rollback. After the target starts and the service
 reopens, it captures an online post-release backup of the migrated database so a
 later restore need not replay the migration.
 
+### Start from the release commit
+
+By default, release the current tip of `main`. Resync the release checkout
+before building or rehearsing:
+
+```bash
+git fetch origin main
+git switch --detach origin/main
+git rev-parse HEAD
+```
+
+Choose another commit deliberately and state it in the handoff. Examples are an
+older `main` commit for a rollback, or an unmerged revision approved through the
+escape hatch. The commands build and verify whatever commit is checked out.
+
+### Build the image
+
+`hosted:build` builds the checkout's `HEAD` remotely with its `APP_REVISION`,
+pushes it to an image app's registry without deploying anything, and prints the
+digest-qualified reference that rehearsal, the browser RC, and `hosted:upgrade`
+accept:
+
+```bash
+git rev-parse HEAD
+npm run --silent hosted:build -- \
+  --image-app=<image-app> \
+  --confirm-source-revision=<full-40-character-sha>
+```
+
+The checkout must be clean at the confirmed revision; the invoker chooses the
+commit. The generated production Fly config supplies the frontend build
+arguments, so image identity cannot correct a wrong build configuration. The
+result's `image` is `registry.fly.io/<image-app>:release-<sha>@sha256:<digest>`.
+Each run builds afresh; use the reference a run printed, not its tag. A migration
+release and its rehearsal use the same built image. A code-only release can
+build for itself.
+
 ### Code-only release
 
 `hosted:upgrade` runs these stages from a clean checkout of the intended commit,
 on the single Fly Machine with its mounted `/data` volume:
 
-1. **declare**: validate the checkout, Fly config, and optional image; read the
-   production migration ledger and refuse a schema change; record the serving
-   image as `previousDeployment`.
-2. **backup**: capture the online release backup described above.
-3. **quiesce**: disable provider work, enable maintenance, and wait for active
+1. **declare**: validate the checkout, its place on `origin/main`, the Fly
+   config, and any supplied image; read the production migration ledger and
+   refuse a schema change; record the serving image as `previousDeployment`.
+2. **build**: without `--image`, build as `hosted:build` does, before the
+   service closes, so compiling adds no learner downtime.
+3. **backup**: capture the online release backup described above.
+4. **quiesce**: disable provider work, enable maintenance, and wait for active
    provider work to drain.
-4. **build-deploy**: deploy the digest-qualified image, or build remotely with
-   `APP_REVISION`.
-5. **confirm**: wait for health, then verify the running revision, version, Machine,
+5. **deploy**: deploy the digest-qualified image.
+6. **confirm**: wait for health, then verify the running revision, version, Machine,
    image, and unchanged migration ledger while still closed.
-6. **smoke**: check the served frontend and an authenticated read-only request
+7. **smoke**: check the served frontend and an authenticated read-only request
    as the [smoke account](#smoke-account).
-7. **reopen**: reopen writes, then provider work, and clear any banner.
+8. **reopen**: reopen writes, then provider work, and clear any banner.
 
 ### Run the command
 
@@ -184,14 +227,14 @@ npm run hosted:upgrade -- \
 ```
 
 `--confirm-source-revision` must match `HEAD`. Supply `--image` with the exact
-tested digest when a rehearsal or RC produced one. Omit it to build remotely
-from the clean checkout with `APP_REVISION`; a manual `fly deploy` without that
-build argument fails. `hosted:inspect` reports the baked app version and source
-revision.
+tested digest when a rehearsal or RC produced one. Omit it to build in the
+**build** stage, into the released app's registry unless `--image-app` names
+another. A manual `fly deploy` without the `APP_REVISION` build argument fails.
+`hosted:inspect` reports the baked app version and source revision.
 
 The command exits non-zero on any failure and emits the failed stage, the
 best-known running identity, and `previousDeployment`. A failure before
-**quiesce** leaves the service open and unchanged. A later failure leaves it
+**quiesce**, including a failed build, leaves the service open and unchanged. A later failure leaves it
 closed; inspect the failed stage, then fix forward or roll back before
 reopening. To roll back, check out the previous revision and rerun this command
 with `--image` set to the `previousDeployment` image reference and digest.
@@ -234,9 +277,17 @@ local runner remains an operational recovery case.
 
 ### Migration release
 
-`hosted:upgrade --mode=migrate` runs these stages:
+A migration release starts from one [built image](#build-the-image): rehearse
+it, then release that same reference.
 
-1. **declare**: validate the checkout, Fly config, and image; compute the
+```text
+hosted:build → hosted:rehearse prepare/check/migrate/check (same image) → hosted:upgrade --mode=migrate (same image)
+```
+
+`hosted:upgrade --mode=migrate` never builds. It runs these stages:
+
+1. **declare**: validate the checkout, its place on `origin/main`, the Fly
+   config, and the image; compute the
    pending migrations from the production ledger; check the rehearsal record;
    record the serving image as `previousDeployment`.
 2. **quiesce**: disable provider work, enable maintenance, and drain.

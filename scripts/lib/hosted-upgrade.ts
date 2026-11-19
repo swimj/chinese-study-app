@@ -6,14 +6,16 @@ import { HOSTED_SMOKE_ENDPOINT } from './hosted-smoke.ts';
 import { isRecord, parseJsonValue, sanitizeHostedOutput } from './hosted-json.ts';
 import { randomUUID } from 'node:crypto';
 import { parseBackupReceipt } from '../../server/backups/client.ts';
+import { buildHostedImage } from './hosted-build.ts';
 
 const execFileAsync = promisify(execFile);
 
 export const HOSTED_UPGRADE_STAGES = [
   'declare',
+  'build',
   'backup',
   'quiesce',
-  'build-deploy',
+  'deploy',
   'confirm',
   'smoke',
   'reopen',
@@ -62,6 +64,8 @@ export type HostedUpgradeDeps = {
   fileExists: (filePath: string) => boolean;
   gitHead: () => string;
   gitStatusPorcelain: () => string;
+  /** Fetches origin/main and reports whether the revision is reachable from it. */
+  gitRevisionOnMainline: (revision: string) => boolean;
   run: CommandRunner;
   fetch: typeof fetch;
   emit: (event: unknown) => void;
@@ -123,9 +127,13 @@ export type HostedUpgradeInput = {
   /** Ordered ledger ids the target checkout requires, baseline first. */
   targetSchemaMigrationIds: readonly string[];
   image?: string;
+  /** Registry app for a build when no --image is given; defaults to the released app. */
+  imageApp?: string;
   flyConfigPath?: string;
   /** false stops after smoke with the service closed, for checks before the agent reopens it. */
   reopen?: boolean;
+  /** Escape hatch, used only with Justin's approval: release a revision not on origin/main. */
+  allowUnmergedRevision?: boolean;
 };
 
 export type ReleaseDeclaration = {
@@ -136,18 +144,11 @@ export type ReleaseDeclaration = {
   promotedImage: string | null;
 };
 
-/** Validates the operator checkout and Fly config before any remote call. */
-export function declareRelease(
-  input: Pick<HostedUpgradeInput, 'repoRoot' | 'app' | 'actorId' | 'confirmSourceRevision' | 'image' | 'flyConfigPath'>,
-  deps: HostedUpgradeDeps,
-): ReleaseDeclaration {
-  const actorId = requireNonEmpty(input.actorId, 'actor-id');
-  const app = requireNonEmpty(input.app, 'app');
-  const flyConfigPath = path.resolve(input.repoRoot, input.flyConfigPath ?? DEFAULT_FLY_CONFIG_PATH);
-  const flyConfig = readPreparedFlyConfig(flyConfigPath, deps);
-  if (flyConfig.app !== app) {
-    throw new Error(`--app ${app} does not match prepared Fly config app ${flyConfig.app}.`);
-  }
+/** The checkout is clean at the confirmed revision; used by builds and releases alike. */
+export function validateReleaseCheckout(
+  input: Pick<HostedUpgradeInput, 'repoRoot' | 'confirmSourceRevision'>,
+  deps: Pick<HostedUpgradeDeps, 'gitHead' | 'gitStatusPorcelain' | 'readFile'>,
+): PlannedReleaseIdentity {
   const sourceRevision = requireFullGitSha(input.confirmSourceRevision);
   const headRevision = requireFullGitSha(deps.gitHead());
   if (headRevision !== sourceRevision) {
@@ -159,9 +160,27 @@ export function declareRelease(
       `Checkout has uncommitted image-source changes; refusing to bake APP_REVISION ${sourceRevision}: ${dirtyPaths.join(', ')}.`,
     );
   }
-  const appVersion = readPackageVersion(input.repoRoot, deps);
+  return { appVersion: readPackageVersion(input.repoRoot, deps), sourceRevision };
+}
+
+/** Validates the checkout, its place on origin/main, and the Fly config before any remote call. */
+export function declareRelease(
+  input: Pick<HostedUpgradeInput, 'repoRoot' | 'app' | 'actorId' | 'confirmSourceRevision' | 'image' | 'flyConfigPath' | 'allowUnmergedRevision'>,
+  deps: HostedUpgradeDeps,
+): ReleaseDeclaration {
+  const actorId = requireNonEmpty(input.actorId, 'actor-id');
+  const app = requireNonEmpty(input.app, 'app');
+  const flyConfigPath = path.resolve(input.repoRoot, input.flyConfigPath ?? DEFAULT_FLY_CONFIG_PATH);
+  const flyConfig = readPreparedFlyConfig(flyConfigPath, deps);
+  if (flyConfig.app !== app) {
+    throw new Error(`--app ${app} does not match prepared Fly config app ${flyConfig.app}.`);
+  }
+  const plannedRelease = validateReleaseCheckout(input, deps);
+  if (input.allowUnmergedRevision !== true && !deps.gitRevisionOnMainline(plannedRelease.sourceRevision)) {
+    throw new Error(`Revision ${plannedRelease.sourceRevision} is not on origin/main. Merge it first, or get Justin's approval for --allow-unmerged-revision=true.`);
+  }
   const promotedImage = input.image === undefined ? null : requireDigestQualifiedFlyImage(input.image);
-  return { actorId, app, flyConfig, plannedRelease: { appVersion, sourceRevision }, promotedImage };
+  return { actorId, app, flyConfig, plannedRelease, promotedImage };
 }
 
 /**
@@ -224,7 +243,7 @@ export async function runHostedUpgrade(
   try {
     currentStage = 'declare';
     const declared = declareRelease(input, deps);
-    const { actorId, app, flyConfig, promotedImage } = declared;
+    const { actorId, app, flyConfig } = declared;
     const { sourceRevision } = declared.plannedRelease;
     plannedRelease = declared.plannedRelease;
     const publicOrigin = flyConfig.publicOrigin;
@@ -238,7 +257,19 @@ export async function runHostedUpgrade(
       currentReleaseIdentity: inspectBefore.releaseIdentity ?? null,
       previousDeployment,
       appliedSchemaMigrationCount: appliedSchema.length,
+      unmergedRevisionAllowed: input.allowUnmergedRevision === true,
     });
+
+    currentStage = 'build';
+    // Building before closing the service keeps compile time out of learner downtime.
+    let image = declared.promotedImage;
+    if (image) {
+      recordStage('build', 'ok', { promotedImage: image });
+    } else {
+      const built = await buildHostedImage({ ...input, imageApp: input.imageApp ?? app }, deps);
+      image = built.image;
+      recordStage('build', 'ok', built);
+    }
 
     currentStage = 'backup';
     const oldIdentity = isRecord(inspectBefore.releaseIdentity) ? inspectBefore.releaseIdentity : inspectBefore;
@@ -251,17 +282,8 @@ export async function runHostedUpgrade(
     currentStage = 'quiesce';
     recordStage('quiesce', 'ok', await quiesceHostedService(app, actorId, publicOrigin, deps));
 
-    currentStage = 'build-deploy';
-    const deployArgs = [
-      'deploy',
-      '--app', app,
-      '--config', flyConfig.configPath,
-      '--ha=false',
-      ...(promotedImage
-        ? ['--image', promotedImage]
-        : ['--remote-only', '--build-arg', `APP_REVISION=${sourceRevision}`]),
-    ];
-    await deps.run('fly', deployArgs, {
+    currentStage = 'deploy';
+    await deps.run('fly', ['deploy', '--app', app, '--config', flyConfig.configPath, '--ha=false', '--image', image], {
       cwd: input.repoRoot,
       timeoutMs: DEPLOY_TIMEOUT_MS,
       env: flyCommandEnv(),
@@ -274,13 +296,10 @@ export async function runHostedUpgrade(
     if (!actualBuild.imageDigest && !actualBuild.imageRef) {
       throw new Error('Fly did not report an image reference or digest after deploy.');
     }
-    if (promotedImage) {
-      const expectedDigest = promotedImage.slice(promotedImage.indexOf('@') + 1);
-      if (actualBuild.imageDigest !== expectedDigest) {
-        throw new Error('Fly deployed image digest does not match the promoted RC image.');
-      }
+    if (actualBuild.imageDigest !== image.slice(image.indexOf('@') + 1)) {
+      throw new Error('Fly deployed image digest does not match the release image.');
     }
-    recordStage('build-deploy', 'ok', { actualBuild, actualDeployment });
+    recordStage('deploy', 'ok', { actualBuild, actualDeployment });
 
     currentStage = 'confirm';
     const confirmed = await confirmDeployedRelease(app, publicOrigin, plannedRelease, actualDeployment, deps);
@@ -512,6 +531,15 @@ export function createDefaultHostedUpgradeDeps(repoRoot: string): HostedUpgradeD
     fileExists: (filePath) => fs.existsSync(filePath),
     gitHead: () => execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoRoot, encoding: 'utf8' }).trim(),
     gitStatusPorcelain: () => execFileSync('git', ['status', '--porcelain'], { cwd: repoRoot, encoding: 'utf8' }),
+    gitRevisionOnMainline: (revision) => {
+      execFileSync('git', ['fetch', '--quiet', 'origin', 'main'], { cwd: repoRoot, stdio: 'ignore' });
+      try {
+        execFileSync('git', ['merge-base', '--is-ancestor', revision, 'FETCH_HEAD'], { cwd: repoRoot, stdio: 'ignore' });
+        return true;
+      } catch {
+        return false;
+      }
+    },
     run: async (file, args, options) => {
       try {
         const { stdout, stderr } = await execFileAsync(file, [...args], {

@@ -329,7 +329,8 @@ All HTTP is intercepted, so these fixtures do not modify learner data.
 | `subtlex.test.ts` | SUBTLEX parsing | `scripts/lib/subtlex.ts` |
 | `hosted-dogfood-cutover.test.ts` | Coherent offline dogfood preparation, strict Clerk binding, manifest validation, source preservation, stopped-process promotion, and retained fixture rollback | Hosted dogfood cutover scripts and library |
 | `hosted-operations.test.ts` | Hosted service controls, service banner, sentinels, learner disablement, and restore-validation helpers | `server/db/hosted-operations.ts` |
-| `hosted-upgrade.test.ts` | Code-only release command: identity confirmation, dirty-tree and schema-change refusal, online backup before quiesce, deploy build-arg, smoke-failure stays closed with the previous image recorded, reopen banner clear | `scripts/lib/hosted-upgrade.ts` |
+| `hosted-upgrade.test.ts` | Code-only release command: identity confirmation, dirty-tree, unmerged-revision, and schema-change refusal, build before the window, online backup before quiesce, digest-only deploy, smoke-failure stays closed with the previous image recorded, reopen banner clear | `scripts/lib/hosted-upgrade.ts` |
+| `hosted-build.test.ts` | Image build: clean-checkout refusal, build-only push with `APP_REVISION`, registry digest resolution, token kept off command lines and output | `scripts/lib/hosted-build.ts` |
 | `hosted-migration-release.test.ts` | Migration release: rehearsal gate refusals, stage order, idle-Machine migration, `databaseState` after failures, deferred reopen, post-release backup | `scripts/lib/hosted-migration-release.ts` |
 | `hosted-rc.test.ts` | RC config boundary, T-minus restore selection, code-only/schema workflows, migration ordering, exact-image identity, and fail-closed behavior | `scripts/lib/hosted-rc.ts` |
 | `hosted-smoke.test.ts` | Read-only Clerk smoke: existing-learner gate, token mint/revoke, no token leakage | `scripts/lib/hosted-smoke.ts` |
@@ -488,7 +489,7 @@ multiword rollback, idempotence, preparation refresh, and preserved learner hist
 | Reflection HTTP / review UI model | `reflection-api.test.ts`, `reflection-page-model.test.ts`, `reflection-operation-editor.test.ts`, `reflections-page-run-log.test.ts` |
 | Schema or bootstrap | `dev-db-bootstrap.test.ts` + any db-touching tests above |
 | Hosted metrics / Grafana export | `observability.test.ts`, `request-timing.test.ts`, `hosted-runtime.test.ts` |
-| Hosted code-only upgrade pipeline | `hosted-upgrade.test.ts`, `hosted-smoke.test.ts` |
+| Hosted code-only upgrade pipeline | `hosted-upgrade.test.ts`, `hosted-build.test.ts`, `hosted-smoke.test.ts` |
 | Hosted RC restore and deployment pipeline | `hosted-rc.test.ts`, `hosted-upgrade.test.ts`, `hosted-operations.test.ts`, `clerk-authentication.test.ts` |
 | Ephemeral migration rehearsal lifecycle, isolation, checks, and the production gate | `hosted-rehearsal.test.ts` |
 | Hosted migration release pipeline | `hosted-migration-release.test.ts`, `hosted-migration.test.ts` |
