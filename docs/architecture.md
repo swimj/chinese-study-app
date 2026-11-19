@@ -27,7 +27,7 @@ Private metrics listener (server/observability.ts, :9091 hosted only)
 | Durable words, scheduler, contrast content, study events | Backend `server/db/` |
 | Session evidence and covering projection | Shared `domain/vocabulary-session.ts`, backend `vocabulary-sessions.ts`, frontend `useVocabularyStudy` |
 | Session composition | Backend `server/vocabulary/composition.ts` and `study.ts` |
-| API contract | `server/vocabulary/*-routes.ts`, registered in `server/index.ts`, plus `src/services/api.ts` |
+| API contract | `server/routes/*-routes.ts` and `server/vocabulary/*-routes.ts`, registered in `server/index.ts`, plus `src/services/api.ts` |
 
 For how authenticated identity reaches private SQLite reads and writes, see
 [learner context, query scoping, and relationship checks](server-db.md#learner-and-content-scope).
