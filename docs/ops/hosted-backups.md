@@ -67,6 +67,49 @@ the app starts its source listener only when the source token is configured.
 The receiver API token also permits capture requests; treat restore credentials
 as privileged even when the operator intends only a download.
 
+## Upgrade the backup service
+
+The backup service runs the application image with its own command, environment,
+and volume. Upgrade it when a release changes backup code, using the image the
+app release uses. Change only its image: a `fly deploy` from
+[`fly.backup.template.toml`](../../deploy/fly/fly.backup.template.toml) replaces
+the Machine's environment with the template's, which can drop settings.
+
+1. Confirm the service is idle. Check its logs for the last `backup_completed`
+   event and choose a time well before the next scheduled capture, six hours after
+   the last one. A restart waits for a capture in progress, up to the five-minute
+   kill timeout, and a capture cut short is retried at the next tick. The
+   schedule is derived from retained receipts, so a restart does not reset it.
+2. Record the current Machine id, image reference, and digest as the rollback
+   image, along with its environment names, command, and mounted volume:
+
+   ```bash
+   fly machines list --app <backup-app> --json
+   ```
+
+3. Update the image only, keeping everything else:
+
+   ```bash
+   fly machine update <machine-id> --app <backup-app> \
+     --image registry.fly.io/<image-app>:<tag>@sha256:<digest> --wait-timeout 300 --yes
+   ```
+
+4. Verify that the Machine is started on the new digest with the same command,
+   environment names, and volume. Check that its logs show the service starting,
+   and that the app can still read its status:
+
+   ```bash
+   fly ssh console --app <app-name> --command \
+     'node --import tsx scripts/manage-hosted-backup.ts --action=status'
+   ```
+
+5. Confirm the next scheduled capture completes, and its S3 upload where enabled.
+   To roll back, update the image to the recorded rollback digest.
+
+The app and the backup service upgrade independently, so learners are not
+affected. Changes to the protocol between them must work with either side
+upgraded first.
+
 ## Capture and inspect
 
 Run inside a configured Machine on the private network, or through a private
@@ -129,7 +172,7 @@ not resolve prompt references or prove that historical requests and improvement
 checkpoint inputs can be reconstructed. For that investigation, use the
 [offline evidence readers](../server-db.md#model-invocation-ledger) with the
 restored database opened read-only and the Git archive supplied separately.
-The [0080 rehearsal](schema-migrations.md#invocation-prompt-retention-rehearsal-0080)
+The [0080 rehearsal](migration-notes.md#invocation-prompt-retention-rehearsal-0080)
 describes the exact reconstruction comparisons. Record archive revision and
 reconstruction results separately from the database validator's result, without
 copying learner inputs or full requests into operational logs.
