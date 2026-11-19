@@ -90,10 +90,6 @@ export const studyProfiles: Record<StudyProfileId, StudyProfile> = {
 
 export const studyProfile = resolveStudyProfile(getConfiguredStudyProfileId());
 
-export function normalizeProductionAnswer(value: string, options: ProductionMatchOptions): string {
-  return normalizeProductionAnswerWithProfile(value, options, studyProfile.id);
-}
-
 export function normalizeProductionAnswerForProfile(
   value: string,
   profileId: StudyProfileId,

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { resolveSessionProductionResponse } from '../src/domain/production-response.ts';
+import { resolveAcceptedProductionResponse } from '../src/domain/production-response.ts';
 import type { ProductionExerciseSnapshot } from '../src/domain/study-actions.ts';
 import {
   adaptLegacyProductionSnapshot,
@@ -132,15 +132,15 @@ describe('review content compatibility', () => {
     assert.equal(served.cueType, 'minimal_context');
     assert.notEqual(served.text, content.examples[0]?.text);
     assert.ok(!served.text.includes('报备'));
-    assert.deepEqual(resolveSessionProductionResponse({
+    assert.deepEqual(resolveAcceptedProductionResponse({
       submittedText: '報備',
       anchorWordId: target.wordId,
-      production: served,
+      acceptedAnswers: served.acceptedAnswers,
     }), { submittedText: '報備', result: 'accepted_anchor' });
-    assert.deepEqual(resolveSessionProductionResponse({
+    assert.deepEqual(resolveAcceptedProductionResponse({
       submittedText: '报告',
       anchorWordId: target.wordId,
-      production: served,
+      acceptedAnswers: served.acceptedAnswers,
     }), { submittedText: '报告', result: 'rejected' });
   });
 

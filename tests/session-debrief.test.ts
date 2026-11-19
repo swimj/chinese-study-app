@@ -147,17 +147,6 @@ test('stop waits for active generation and repeated steps share one call', async
   assert.equal(calls, 1); assert.equal(owner(() => getSessionDebrief('shutdown'))?.status, 'ready');
 });
 
-test('French completion never enqueues the Mandarin provider flow', () => {
-  const result = spawnSync(process.execPath, ['--import', 'tsx', '--input-type=module', '-e', `
-    const db = await import('./server/db.ts');
-    db.recordReviewSessionSummary({ sessionId:'french', completedAt:'2026-10-06T00:00:00.000Z', completedReviewActionCount:0,
-      failedReviewActionCount:0, activeDurationMs:0, debriefInventory:[{word:'bonjour',pinyin:''}] });
-    if (db.getSessionDebrief('french') !== null) throw new Error('French debrief was enqueued');
-  `], { encoding: 'utf8', env: { ...process.env, APP_AUTH_MODE: 'trusted_local', APP_STUDY_PROFILE: 'french',
-    APP_LEARNER_ID: 'french-test', APP_DATA_DIR: path.join(dir, 'french') } });
-  assert.equal(result.status, 0, result.stderr);
-});
-
 test('legacy small queued and failed jobs settle without new attempts, while ready results are preserved', () => {
   function legacy(id: string, status: 'queued' | 'failed' | 'ready') {
     summary(id);

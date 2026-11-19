@@ -8,9 +8,7 @@ import { pathToFileURL } from 'node:url';
 import { normalizeReviewExercises } from '../server/word-content/review-authoring.ts';
 import { wordContentFixtures } from './fixtures/word-content.ts';
 import { isPureCueSessionReviewItem, type SessionStudyItem } from '../src/domain/study-actions.ts';
-import { createBucketSessionState, getActiveSessionUnit, markActiveSessionUnitStarted, rateActiveSessionUnit } from '../src/lib/session-state.ts';
-import { resolveSessionProductionResponse } from '../src/domain/production-response.ts';
-import { createSessionReflectionEvidenceAccumulator, recordProductionMistakeEvidence } from '../src/features/session/session-reflection-evidence.ts';
+import { resolveAcceptedProductionResponse } from '../src/domain/production-response.ts';
 import { assertSchemaCurrent, migrateDatabase, schemaMigrations } from '../server/db/migrations.ts';
 import { createBaselineFixture } from './helpers/baseline-database.ts';
 import { CURRENT_INITIAL_REFLECTION_FLOW_VERSION, STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION } from '../src/domain/reflection-contracts.ts';
@@ -125,7 +123,7 @@ function recognitionFor(wordId: string): SessionStudyItem {
   }
 }
 
-test('published bootstrap exercise serves as ordinary shared production with exact source and reflection evidence', () => {
+test('published bootstrap exercise serves as ordinary shared production with exact source', () => {
   const source = prepare('serve', true);
   const item = production(source.wordId);
   assert.equal(item.production?.cueId, source.cueId);
@@ -145,17 +143,6 @@ test('published bootstrap exercise serves as ordinary shared production with exa
   assert.deepEqual(canonical.contents, [source.content]);
   const published = db.getSharedContentPublicationForContent('production_cue', source.cueId);
   assert.equal(published?.publicationStatus, 'shared_trial');
-
-  const state = markActiveSessionUnitStarted(createBucketSessionState({ sessionId: 'review-evidence', buckets: { review: [item], learning: [], unstudied: [] } }));
-  assert.equal(getActiveSessionUnit(state).type, 'study');
-  const result = rateActiveSessionUnit(state, 'forgot', { response: '通知', productionResponse: resolveSessionProductionResponse({
-    submittedText: '通知', anchorWordId: source.wordId, production: item.production, profileId: 'mandarin',
-  }) });
-  const attempt = result.state.reviewProgress[item.sessionActionId]!.attempts[0]!;
-  const evidence = recordProductionMistakeEvidence(createSessionReflectionEvidenceAccumulator(), { item, incorrectAttempt: attempt, promptDisplayedMeanings: [] });
-  assert.equal(evidence.items.length, 1);
-  assert.equal(evidence.items[0]!.cuesAsShown[0]!.cueId, source.cueId);
-  assert.equal(evidence.items[0]!.cuesAsShown[0]!.text, item.production!.text);
 });
 
 test('quarantining bootstrap source excludes future serving but preserves historical review identity', () => {
@@ -287,7 +274,7 @@ test('0016 to 0017 preserves lexical teaching documents and legacy cue projectio
   }
 });
 
-test('canonical review keeps original answer forms after lexical edits and commits the original response', () => {
+test('canonical review keeps original answer forms after lexical edits', () => {
   const source = prepare('lexical-edit');
   const originalForms = [{
     wordId: source.wordId,
@@ -301,35 +288,11 @@ test('canonical review keeps original answer forms after lexical edits and commi
   assert.equal(item.production?.cueId, source.cueId);
   assert.deepEqual(item.production!.acceptedAnswers, originalForms);
   const submittedText = source.content.word.traditional!;
-  const resolution = resolveSessionProductionResponse({
-    submittedText, anchorWordId: source.wordId, production: item.production, profileId: 'mandarin',
+  const resolution = resolveAcceptedProductionResponse({
+    submittedText, anchorWordId: source.wordId, acceptedAnswers: item.production!.acceptedAnswers, profileId: 'mandarin',
   });
   assert.equal(resolution.result, 'accepted_anchor');
-  assert.equal(resolveSessionProductionResponse({
-    submittedText: '登记', anchorWordId: source.wordId, production: item.production, profileId: 'mandarin',
+  assert.equal(resolveAcceptedProductionResponse({
+    submittedText: '登记', anchorWordId: source.wordId, acceptedAnswers: item.production!.acceptedAnswers, profileId: 'mandarin',
   }).result, 'rejected');
-  const sessionId = 'canonical-original-forms';
-  const state = markActiveSessionUnitStarted(createBucketSessionState({
-    sessionId, buckets: { review: [item], learning: [], unstudied: [] },
-  }));
-  const result = rateActiveSessionUnit(state, 'good', { response: submittedText, productionResponse: resolution });
-  assert.equal(result.commit.type, 'commit-review-action-session');
-  if (result.commit.type !== 'commit-review-action-session') throw new Error('Expected ordinary review commit');
-  const { events, sessionId: committedSession, ...commitIntent } = result.commit;
-  call(() => db.recordAcceptedReviewAttemptBatch({ sessionId: committedSession, events, commitIntent }));
-  const saved = sqlite.prepare(`SELECT response, outcome, content_ref_json, metadata_json FROM learner_owned_study_attempt_events
-    WHERE learner_id=? AND session_id=?`).get(learner, sessionId) as {
-    response: string; outcome: string; content_ref_json: string; metadata_json: string;
-  };
-  assert.equal(saved.response, submittedText);
-  assert.equal(saved.outcome, 'correct');
-  assert.equal(JSON.parse(saved.content_ref_json).cueId, source.cueId);
-  assert.equal(JSON.parse(saved.metadata_json).production.submittedWordId, source.wordId);
-  const evidence = sqlite.prepare(`SELECT cue_id, attempt_result, submitted_word_id
-    FROM learner_owned_production_cue_evidence_records WHERE learner_id=? AND source_attempt_id=?`).get(learner, events[0]!.id) as {
-    cue_id: string; attempt_result: string; submitted_word_id: string;
-  };
-  assert.equal(evidence.cue_id, source.cueId);
-  assert.equal(evidence.attempt_result, 'accepted_anchor');
-  assert.equal(evidence.submitted_word_id, source.wordId);
 });

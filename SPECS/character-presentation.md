@@ -113,7 +113,7 @@ sentences and explanations also needs phrase context.
   variants without regional vocabulary substitution.
 - [Cloze rendering](../src/features/session/ClozePrompt.tsx) finds blanks in the
   source text before conversion. The
-  [study panel](../src/features/session/StudySessionPanel.tsx) supplies the same
+  [vocabulary study view](../src/features/vocabulary-study/VocabularyStudy.tsx) supplies the same
   canonical form as private conversion context while the answer is hidden and
   as the answer on reveal. The converter temporarily fills blanks with that
   form to obtain phrase context, then separates the converted surrounding text

@@ -1,6 +1,5 @@
 import type { BootstrapRevealSnapshot } from './word-content/reveal';
 import { validateReconcilePureCueResponseOperation, validateRepairPureCueStimulusOperation, type ReconcilePureCueResponseOperationV1, type RepairPureCueStimulusOperationV1, type PureCueReflectionBundleV1, type PureCueReflectionResultV1, type PureCueReflectionItemV1 } from './pure-cue-reflection';
-import { promptMajorVersion, STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION } from './reflection-contracts';
 
 export type StudyProfileV0 = 'mandarin' | 'french';
 
@@ -475,7 +474,6 @@ export type PromotePureElicitationOperationV1Wire = Omit<
   'kind' | 'version' | 'sourceAttemptId' | 'targetWordId' | 'responseWordId'
 >;
 
-
 export type PureCuePromotionPureCueSnapshotV2 = PureCuePromotionPureCueSnapshotV1 & {
   teachingNote: string;
   acceptedMembers: Array<{ wordId: string; hanzi: string }>;
@@ -633,8 +631,6 @@ export type ReflectionItemResultV2 = {
   proposals: ReflectionProposalV1[];
   questions: ReflectionClarifyingQuestionV1[];
 };
-
-export type ReflectionItemResult = ReflectionItemResultV1 | ReflectionItemResultV2;
 
 export type SessionReflectionResultV4 = {
   schemaVersion: 'session_reflection_result.v4';
@@ -875,12 +871,6 @@ export type ReflectionQualityTag =
   | 'inconsistent'
   | 'other';
 
-/**
- * Quality-comparison identity for the current staged flow.
- * Diagnosis and promotion calls share this version instead of splitting by stage prompt.
- */
-export const CURRENT_REFLECTION_PROMPT_VERSION = promptMajorVersion(STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION);
-
 export const REFLECTION_QUALITY_TAGS = [
   'praise',
   'wrong_diagnosis',
@@ -942,12 +932,6 @@ export type MarkReflectionHelpInboxDoneRequest = {
 export type MarkReflectionInboxSeenRequest =
   | { kind: 'proposal'; proposalId: string }
   | { kind: 'explanation'; artifactId: string; itemId: string };
-
-export type AuthorizeManualReflectionOperationRequest = {
-  artifactId: string;
-  itemId: string;
-  operation: ReflectionOperation;
-};
 
 export type ReviewProposalRequest =
   | { action: 'defer' }

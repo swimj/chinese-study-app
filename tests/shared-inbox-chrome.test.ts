@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { CardInbox } from '../src/components/CardInbox.tsx';
-import { completionDeadline } from '../src/features/session/useSessionCompletionFlow.ts';
+import { completionDeadline } from '../src/features/session/completion-deadline.ts';
 import { vocabularyCompletionDeadline } from '../src/features/vocabulary-study/useVocabularyStudy.ts';
 
 test('both card inbox styles preserve pager boundaries, busy state, content and empty state', () => {

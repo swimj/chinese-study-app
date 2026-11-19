@@ -7,8 +7,8 @@ ownership, controller wiring, and session interaction handling. The
 
 ## Entry and navigation
 
-`main.tsx` mounts the authenticated app. `App.tsx` selects `VocabularyApp` for
-Mandarin and lazy-loads the retained `LegacyApp` for the French experiment.
+`main.tsx` mounts the authenticated app. `App.tsx` renders `OperatorApp` on
+operator paths and lazy-loads `VocabularyApp` otherwise.
 `VocabularyApp` owns cross-page navigation, account-scoped welcome/update state,
 backend settings, and the mounted study controller. `AppChrome` supplies Home,
 Words, Feedback, Content Bin, and About. Study hides the ordinary navigation.
@@ -65,7 +65,7 @@ versioned drafts, validated previews, explicit approval, and application receipt
 `features/vocabulary-operator/api.ts` uses the common authenticated transport in
 `services/api.ts`; the server enforces operator access independently of navigation.
 
-Connections continues through `SessionDebriefPanel` and its loader. New vocabulary
+Connections continues through `useSessionDebrief` and its loader. New vocabulary
 completion identities are supported by the existing background Connections queue.
 The Home page uses current vocabulary statistics and existing session settings,
 Connections, and What's New components.

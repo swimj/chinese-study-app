@@ -1,65 +1,42 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import {
-  normalizeProductionAnswer,
-  studyProfiles,
-  type ProductionMatchOptions,
-} from '../src/study-profile.ts';
+import { normalizeProductionAnswerForProfile } from '../src/study-profile.ts';
 import {
   buildProductionAnswerLookup,
   deriveAcceptedSubmittedWordId,
   resolveAcceptedProductionResponse,
-  resolveSessionProductionResponse,
   resolveUniqueOutOfSetWordId,
 } from '../src/domain/production-response.ts';
 
 describe('study profile production matching', () => {
   test('mandarin defaults ignore whitespace, commas, and other symbols', () => {
-    const options = studyProfiles.mandarin.defaultProductionMatchOptions;
-
-    assert.equal(normalizeProductionAnswer(' 学 习 ', options), '学习');
+    assert.equal(normalizeProductionAnswerForProfile(' 学 习 ', 'mandarin'), '学习');
     assert.equal(
-      normalizeProductionAnswer('吃一堑长一智', options),
-      normalizeProductionAnswer('吃一堑,长一智', options),
+      normalizeProductionAnswerForProfile('吃一堑长一智', 'mandarin'),
+      normalizeProductionAnswerForProfile('吃一堑,长一智', 'mandarin'),
     );
     assert.equal(
-      normalizeProductionAnswer('吃一堑长一智', options),
-      normalizeProductionAnswer('吃一堑，长一智。', options),
+      normalizeProductionAnswerForProfile('吃一堑长一智', 'mandarin'),
+      normalizeProductionAnswerForProfile('吃一堑，长一智。', 'mandarin'),
     );
-    assert.equal(normalizeProductionAnswer('“学习”', options), '学习');
-    assert.notEqual(normalizeProductionAnswer('學習', options), normalizeProductionAnswer('学习', options));
+    assert.equal(normalizeProductionAnswerForProfile('“学习”', 'mandarin'), '学习');
+    assert.notEqual(normalizeProductionAnswerForProfile('學習', 'mandarin'), normalizeProductionAnswerForProfile('学习', 'mandarin'));
   });
 
   test('french defaults ignore case and accents', () => {
-    const options = studyProfiles.french.defaultProductionMatchOptions;
-
-    assert.equal(normalizeProductionAnswer('École', options), normalizeProductionAnswer('ecole', options));
+    assert.equal(normalizeProductionAnswerForProfile('École', 'french'), normalizeProductionAnswerForProfile('ecole', 'french'));
   });
 
   test('french defaults normalize apostrophe variants', () => {
-    const options = studyProfiles.french.defaultProductionMatchOptions;
-
-    assert.equal(normalizeProductionAnswer("l’homme", options), normalizeProductionAnswer("l'homme", options));
+    assert.equal(normalizeProductionAnswerForProfile("l’homme", 'french'), normalizeProductionAnswerForProfile("l'homme", 'french'));
   });
 
   test('french defaults preserve articles', () => {
-    const options = studyProfiles.french.defaultProductionMatchOptions;
-
-    assert.notEqual(normalizeProductionAnswer('la maison', options), normalizeProductionAnswer('maison', options));
+    assert.notEqual(normalizeProductionAnswerForProfile('la maison', 'french'), normalizeProductionAnswerForProfile('maison', 'french'));
   });
 
-  test('french defaults preserve hyphen-vs-space unless enabled', () => {
-    const options = studyProfiles.french.defaultProductionMatchOptions;
-    const hyphenInsensitiveOptions: ProductionMatchOptions = {
-      ...options,
-      ignoreHyphenSpacing: true,
-    };
-
-    assert.notEqual(normalizeProductionAnswer('peut-être', options), normalizeProductionAnswer('peut être', options));
-    assert.equal(
-      normalizeProductionAnswer('peut-être', hyphenInsensitiveOptions),
-      normalizeProductionAnswer('peut être', hyphenInsensitiveOptions),
-    );
+  test('french defaults preserve hyphen-vs-space', () => {
+    assert.notEqual(normalizeProductionAnswerForProfile('peut-être', 'french'), normalizeProductionAnswerForProfile('peut être', 'french'));
   });
 });
 
@@ -197,16 +174,5 @@ describe('production response resolution', () => {
       anchorWordId: 'saying',
       acceptedAnswers: sayingAnswers,
     }).result, 'accepted_anchor');
-  });
-
-  test('requires a frozen snapshot for review production resolution', () => {
-    assert.throws(
-      () => resolveSessionProductionResponse({
-        submittedText: '行',
-        anchorWordId: 'homograph-a',
-        production: null,
-      }),
-      /requires a frozen production snapshot/,
-    );
   });
 });

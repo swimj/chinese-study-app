@@ -2,10 +2,8 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
   buildReviewSessionStudyItem,
-  buildWordLifecycleSessionStudyItems,
   deriveReviewCommitFieldsFromAttemptEvents,
   mapStudySkillToDefaultActionKind,
-  studyManagementActionRemovesCurrentReviewAction,
   type StudyAttemptEvent,
   type WordSkillState,
 } from '../src/domain/study-actions.ts';
@@ -16,10 +14,6 @@ describe('study action domain adapters', () => {
     assert.equal(mapStudySkillToDefaultActionKind('recognition'), 'recognition');
     assert.equal(mapStudySkillToDefaultActionKind('production'), 'production');
     assert.equal(mapStudySkillToDefaultActionKind('contextual_selection'), 'contrast_selection');
-  });
-
-  test('removes the current review action when production is suppressed', () => {
-    assert.equal(studyManagementActionRemovesCurrentReviewAction('suppress_skill'), true);
   });
 });
 
@@ -78,65 +72,6 @@ describe('session study item domain adapters', () => {
     );
   });
 
-  test('builds synthetic learning recognition and production session study items', () => {
-    const word = createWord({ id: 'learning-word', status: 'learning' });
-
-    assert.deepEqual(buildWordLifecycleSessionStudyItems({ source: 'learning', word }), [
-      {
-        sessionActionId: 'learning/learning-word/recognition',
-        actionKind: 'recognition',
-        targetWordId: word.id,
-        sampledSkillIds: ['recognition'],
-        contentRef: null,
-        intervalHours: 0,
-        word,
-        contrastSelection: null,
-        production: null,
-      },
-      {
-        sessionActionId: 'learning/learning-word/production',
-        actionKind: 'production',
-        targetWordId: word.id,
-        sampledSkillIds: ['production'],
-        contentRef: null,
-        intervalHours: 0,
-        word,
-        contrastSelection: null,
-        production: null,
-      },
-    ]);
-  });
-
-  test('builds synthetic unstudied recognition and production session study items', () => {
-    const word = createWord({ id: 'unstudied-word', status: 'unstudied' });
-
-    assert.deepEqual(
-      buildWordLifecycleSessionStudyItems({
-        source: 'unstudied',
-        word,
-      }).map((item) => ({
-        sessionActionId: item.sessionActionId,
-        actionKind: item.actionKind,
-        sampledSkillIds: item.sampledSkillIds,
-        word: item.word,
-      })),
-      [
-        {
-          sessionActionId: 'unstudied/unstudied-word/recognition',
-          actionKind: 'recognition',
-          sampledSkillIds: ['recognition'],
-          word,
-        },
-        {
-          sessionActionId: 'unstudied/unstudied-word/production',
-          actionKind: 'production',
-          sampledSkillIds: ['production'],
-          word,
-        },
-      ],
-    );
-  });
-
   test('rejects review session study item word-skill mismatches', () => {
     assert.throws(
       () =>
@@ -162,15 +97,6 @@ describe('session study item domain adapters', () => {
           word: createWord({ id: 'learning-word', status: 'learning' }),
         }),
       /review session item word "learning-word" must have review status/,
-    );
-
-    assert.throws(
-      () =>
-        buildWordLifecycleSessionStudyItems({
-          source: 'learning',
-          word: createWord({ id: 'review-word', status: 'review' }),
-        }),
-      /learning session item word "review-word" must have learning status/,
     );
   });
 });

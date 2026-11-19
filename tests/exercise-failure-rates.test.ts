@@ -5,8 +5,6 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { after, before, describe, test } from 'node:test';
 import { pathToFileURL } from 'node:url';
-import { getReviewFailureRatePeriods } from '../src/lib/review-failure-rates.ts';
-import { createSessionSummary, getCompletedExerciseCounts } from '../src/features/session/session-summary.ts';
 
 describe('exercise failure analytics', { concurrency: false }, () => {
   let dataDir = '';
@@ -34,13 +32,9 @@ describe('exercise failure analytics', { concurrency: false }, () => {
   test('reads saved exercise totals and daily compensation without inspecting attempt history', () => {
     function finish(sessionId: string, day: string, words: number, wordFailures: number,
       pureCues: number, pureFailures: number) {
-      const summary = createSessionSummary({ sessionId, startedAt: `${day}T00:00:00.000Z`, initialQueueLength: 0 });
-      summary.completedReviewActions = words;
-      summary.lapsedReviewActionIds = Array.from({ length: wordFailures }, (_, i) => `word-${i}`);
-      summary.completedPureCueActions = pureCues;
-      summary.lapsedPureCueActions = pureFailures;
       dbModule.recordReviewSessionSummary({ sessionId, completedAt: `${day}T12:00:00.000Z`,
-        ...getCompletedExerciseCounts(summary), activeDurationMs: 0 });
+        completedReviewActionCount: words + pureCues, failedReviewActionCount: wordFailures + pureFailures,
+        activeDurationMs: 0 });
     }
     finish('pure-only', '2026-09-18', 0, 0, 2, 1);
     finish('mixed', '2026-09-19', 3, 1, 2, 1);
@@ -59,13 +53,6 @@ describe('exercise failure analytics', { concurrency: false }, () => {
       ['2026-09-20', 0, 0, 0], ['2026-09-21', 0, 0, 2],
     ]);
     assert.equal(dbModule.getReviewFailureRateDays(1)[0]?.dayKey, '2026-09-21');
-    const periods = getReviewFailureRatePeriods(days, '2026-09-21');
-    assert.equal(periods[0]?.adjustedFailureRate, null);
-    assert.equal(periods[0]?.compensatedCount, 2);
-    assert.equal(periods[1]?.adjustedFailureRate, 1 / 7);
-    assert.equal(periods[1]?.compensationRate, 2 / 7);
-    assert.equal(periods[2]?.adjustedFailureRate, 2 / 9);
-    assert.equal(periods[2]?.failureRate, 4 / 9);
     const other = dbModule.runWithLearnerId('other', () => dbModule.getReviewFailureRateDays());
     assert.equal(other.find(day => day.dayKey === '2026-09-21')?.compensatedReviewActionSessions, 99);
   });

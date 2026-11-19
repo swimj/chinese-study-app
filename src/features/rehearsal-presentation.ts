@@ -7,7 +7,3 @@ const legacyRehearsalInstruction = 'Recall the expression you just met. Enter on
 export function getRehearsalInstruction(exercise: ContentExerciseSnapshot): string {
   return exercise.instruction === legacyRehearsalInstruction ? '' : exercise.instruction;
 }
-
-export function formatRehearsalPrompt(exercise: ContentExerciseSnapshot): string {
-  return [getRehearsalInstruction(exercise), exercise.stimulus.text].filter(Boolean).join('\n');
-}

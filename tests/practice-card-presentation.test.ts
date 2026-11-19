@@ -2,21 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { StudyStageBadge, studyStageCardClass } from '../src/features/session/StudyStageBadge';
 import { WordSourceExamples } from '../src/features/session/WordSourceExamples';
 import type { WordContentDocument } from '../src/domain/word-content/types';
-
-test('recall stages distinguish new words and Practice without relabeling review', () => {
-  for (const [status, label, icon] of [['unstudied', 'New word', true], ['learning', 'Practice', true], ['review', 'Review', false]] as const) {
-    const html = renderToStaticMarkup(createElement(StudyStageBadge, { status }));
-    assert.ok(html.includes(label));
-    assert.equal(html.includes('<svg'), icon);
-    if (icon) assert.ok(html.includes('aria-hidden="true"'));
-  }
-  assert.equal(studyStageCardClass('review'), '');
-  assert.equal(studyStageCardClass('learning'), 'is-practice-card');
-  assert.equal(studyStageCardClass('unstudied'), 'is-new-word-card');
-});
 
 test('source reference pairs each use with its own translated example and honors character settings', () => {
   const content = pairedUseContent();

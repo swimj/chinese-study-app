@@ -1,17 +1,5 @@
 import type { Word } from '../../types';
 
-export function studyStageCardClass(status: Word['status']): string {
-  return status === 'learning' ? 'is-practice-card' : status === 'unstudied' ? 'is-new-word-card' : '';
-}
-
-/** Only recall cards use this badge; introduction has its own presentation. */
-export function StudyStageBadge({ status, reinforcement = false }: { status: Word['status']; reinforcement?: boolean }) {
-  return <span className="study-stage-badge">
-    <StudyStageIcon status={status} />
-    {status === 'learning' ? 'Practice' : status === 'unstudied' ? 'New word' : reinforcement ? 'Review reinforcement' : 'Review'}
-  </span>;
-}
-
 /** Shared visual language for old stages and new vocabulary modes. */
 export function StudyStageIcon({ status }: { status: Word['status'] }) {
   return status === 'review' ? null : <svg className="study-stage-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

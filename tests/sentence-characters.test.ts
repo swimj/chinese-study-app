@@ -5,7 +5,6 @@ import { assertSentenceCharacterPresentation } from '../src/domain/card-characte
 import {
   convertClozeParts,
   convertSentenceCharacters,
-  effectiveSentenceCharacterPresentation,
   formatSentenceAnswer,
   sentenceCharacterLanguage,
 } from '../src/domain/sentence-characters.ts';
@@ -27,11 +26,7 @@ describe('sentence character presentation', () => {
       assert.equal(convertSentenceCharacters(sample, 'traditional'), traditional);
     }
   });
-  test('the main preference wins unless it requests both', () => {
-    assert.equal(effectiveSentenceCharacterPresentation('simplified', 'traditional'), 'simplified');
-    assert.equal(effectiveSentenceCharacterPresentation('traditional', 'simplified'), 'traditional');
-    assert.equal(effectiveSentenceCharacterPresentation('both'), 'simplified');
-    assert.equal(effectiveSentenceCharacterPresentation('both', 'traditional'), 'traditional');
+  test('sentence presentation excludes both and maps each script to its language tag', () => {
     assert.throws(() => assertSentenceCharacterPresentation('both'));
     assert.equal(sentenceCharacterLanguage('simplified'), 'zh-Hans');
     assert.equal(sentenceCharacterLanguage('traditional'), 'zh-Hant');
