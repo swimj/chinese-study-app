@@ -318,7 +318,7 @@ until it exits. Partial output is not completion. If that terminal session is
 lost, treat RC as unknown state, run `--action=status`, and reconcile before
 starting another refresh.
 
-## App-only RC refresh
+## Code-only RC refresh
 
 Use a clean checkout at the intended full commit. The default recovery point is
 exactly 24 hours before command start; override it only when there is a reason.
@@ -336,7 +336,7 @@ npm run hosted:rc -- \
 ```
 
 This fails closed if the restored backup has a pending migration. It does not
-silently turn an app-only release into a schema-changing release.
+silently turn a code-only release into a schema-changing release.
 
 Add `--image=registry.fly.io/<image-app>:<release-tag>@sha256:<tested-digest>` to `deploy` or
 `restore` to use the immutable candidate already tested in headless rehearsal.
@@ -458,7 +458,7 @@ that database; RC does not replicate into the production backup history.
 
 ## Promote the tested image to beta
 
-For an application-only beta release, pass the exact digest-qualified image
+For a code-only beta release, pass the exact digest-qualified image
 reported by RC to the ordinary beta release command:
 
 ```bash

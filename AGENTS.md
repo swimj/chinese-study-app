@@ -131,8 +131,8 @@ documents names without real credentials.
 
 Persistence changes belong in the owning module with relevant tests. New schema
 changes follow the versioned migration procedure, not edits to startup
-constructors or previously applied migrations. The hosted app-only upgrade
-route permits no schema or data migration. Follow the runbook for the requested
+constructors or previously applied migrations. A hosted code-only release
+permits no schema or data migration. Follow the runbook for the requested
 operation and retain its required evidence; successful implementation alone
 does not establish release or recovery readiness.
 

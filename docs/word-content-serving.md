@@ -171,7 +171,7 @@ session-time wording, so changing that framing does not require rewriting
 packages. Generated rehearsals store an empty instruction, and the default adds
 no preamble. Content-specific instructions remain visible. The formatter also
 suppresses the exact former generic instruction in already-open snapshots and
-lab drafts; the [migration guide](ops/schema-migrations.md#rehearsal-presentation-cleanup)
+lab drafts; the [migration note](ops/migration-notes.md#rehearsal-presentation-cleanup)
 explains its stored-content cleanup.
 
 ## Evidence and limits

@@ -401,8 +401,8 @@ blocks everyone. Confirm your Clerk user is already in that configuration
 before enabling the control.
 
 This control requires migration `0056_operator_only_access`. Its initial release
-uses the [offline migration procedure](schema-migrations.md); it is not an
-application-only upgrade. Later control changes do not require restarting the
+uses the [offline migration procedure](schema-migrations.md); it is not a
+code-only release. Later control changes do not require restarting the
 service:
 
 ```bash
@@ -501,7 +501,7 @@ Standard/default 30-minute cache pricing basis, and input beyond 272K tokens are
 reported as skipped. The command makes no provider calls.
 
 Run this as a separate accounting repair after deploying the command, rather
-than as part of the application-only upgrade pipeline. Preview opens the existing
+than as part of the code-only release pipeline. Preview opens the existing
 database read-only without application startup or schema migration:
 
 ```bash

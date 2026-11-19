@@ -1,0 +1,747 @@
+# Migration notes
+
+**Scope:** what each schema and data migration changes, how to rehearse it, and
+release-specific decisions. Notes for migrations already applied to the hosted
+database are a historical record. For the current procedure, see [offline schema migrations](schema-migrations.md) and the
+[release runbook](hosted-beta-deployment.md#releasing). Older notes refer to
+the code-only release as the "app-only upgrade" route; both name the same path.
+
+## Baseline adoption
+
+Only the current schema is supported. The frozen
+`server/db/migrations/baseline-schema.json` records SHA-256 hashes of all 312
+application tables, indexes, views, and triggers in the fresh baseline derived
+from revision `3ad618b94762fa3fc5a8f10fbccf8ab5bb0b72e4`, with the additional
+physical artifact trigger omitted as described below.
+
+A read-only schema inspection of Fly at that revision on 2026-09-07 found
+nine definitions that differ only in identifier quoting.
+`baseline-deployed-variant.json` records the exact fingerprint overrides for
+this complete variant; it is not a general relaxation of schema matching.
+Both accepted variants are adopted by adding a ledger record, without changing
+schema objects, application rows, or historical migration markers.
+
+Fresh setup matches Fly by omitting the additional physical-table
+`reflection_artifacts_immutable` trigger. The learner-facing view continues to
+reject artifact updates. Adding a physical-table guard is deferred to a future
+explicit migration; baseline adoption performs no repair.
+
+SQLite internal objects and the two Litestream-managed tables
+`_litestream_lock` and `_litestream_seq` are excluded. Their lifecycle is
+independent of application schema releases; unexpected objects are still
+rejected. Hashes otherwise use the exact SQL recorded by SQLite, including
+whitespace. A differently constructed equivalent schema, or any unrecognized
+combination of the known differences, can fail this check. Failure names the
+differing objects and leaves the database unchanged. Investigate and review
+any difference; do not edit hashes or insert a ledger row merely to make a
+valued database pass. When this note was written, production had been inspected read-only and
+adoption had been rehearsed only locally, using schema-only fixtures.
+
+Earlier schemas have no upgrade path. Disposable old development databases can
+be explicitly reset with `npm run reset:dev-data`. Startup no longer
+automatically rebuilds an incompatible development database.
+
+## Early migrations (`0001`–`0058`)
+
+The first application migration,
+`0001_deferred_second_opinion.sql`, adds nullable `source_proposal_ids_json`
+columns to both physical reflection generation tables and updates their
+learner-scoped views and insert triggers. Existing history retains NULL
+provenance; immutable-update and learner-filtered-delete behavior is preserved.
+`0002_requested_second_opinion_disposition.sql` rebuilds
+`learner_owned_reflection_proposal_reviews` so second-opinion retirement is a
+distinct review disposition rather than a dismissed sentinel reason, and maps
+any existing sentinel rows. The current-learner view is dropped and recreated
+with the physical table.
+`0004_usage_daily_snapshots.sql` adds the operational daily cohort pulse table.
+`0005_service_banner.sql` adds the singleton current operator-posted service
+banner. `0006_inbox_seen_at.sql` adds Help-queue `inbox_seen_at` columns.
+`0007_learner_params.sql` adds the per-learner non-settings key-value store
+and copies any existing `whats_new_seen_through_date` rows out of
+`learner_settings`.
+`0008_normalized_hanzi.sql` adds `lexical_words.normalized_hanzi` and indexes
+nonempty keys. Its `after` hook backfills the Mandarin production
+punctuation/whitespace strip. Display `hanzi` is unchanged.
+`0013_deferred_explanation_items.sql` gives explanation-only Help rows a
+learner-scoped deferred/retired disposition and stores selected explanation
+inbox ids on staged generation continuations. Existing inbox rows remain open.
+`tests/deferred-second-opinion-migration.test.ts` and
+`tests/requested-second-opinion-disposition-migration.test.ts` verify history
+preservation, ownership, immutability, repeat execution, and fresh/upgrade
+equivalence.
+
+Migration `0035_definition_fallback_quality` expands the content quality snapshot
+kind constraint to include definition fallback exercises. It rebuilds only the
+snapshot table, preserving its keys, existing learner encounters and ratings,
+and immutable-update trigger. The populated upgrade regression lives in
+`tests/schema-migrations.test.ts`. Use the offline upgrade procedure for this
+change; the app-only upgrade path is insufficient.
+
+Migration `0037_service_banner_kickoff` adds a nullable kickoff instant to the
+current service banner. Existing messages and lifecycle timestamps are preserved;
+no kickoff is inferred from authored text, posting time, or expiry. This change
+requires the offline migration procedure; the app-only upgrade route cannot
+apply it. Populated upgrade coverage is in `tests/schema-migrations.test.ts`.
+
+Migration `0057_preparation_compatibility` adds the shared preparation epoch,
+defaulting existing rows to zero. It changes no artifacts, learner state, queues
+or provider leases. Runtime reserve admission lazily refreshes incompatible
+preparation; no historical backfill runs during migration. Use the [stopped-writer procedure](schema-migrations.md#operator-procedure). Coverage includes a populated prior-version preparation row and
+lease preservation in `tests/schema-migrations.test.ts`.
+
+Migration `0058_shared_dictionary_baselines` corrects stock corpus-derived
+fallbacks from learner-private to shared through new content revisions, preserving
+identity, original snapshots and learner state. It revises matching unresolved
+service-generated repertoire proposals as shared, updates their source bases and
+requires fresh approval. Original revisions, reviews, opinions and generation
+evidence remain intact. Operator-edited proposal revisions, edited or unrelated private records and resolved
+proposals are outside this repair. No provider work or content application runs.
+This data migration requires the [stopped-writer procedure](schema-migrations.md#operator-procedure); the app-only
+upgrade route is insufficient. Populated preservation, rollback, repeat and
+fresh-schema coverage live in `tests/shared-dictionary-baselines-migration.test.ts`.
+
+## Dispatch polling indexes (`0065`)
+
+`0065_vocabulary_dispatch_polling_indexes` adds partial indexes on queued
+dispatch creation order and running dispatch expiry. It changes no dispatch
+rows, evidence, completion records, statuses, leases, or retry policy. Index
+construction reads the existing dispatch table, including large retained
+evidence; allow for this one-time scan during rehearsal and stopped-writer
+migration. It does not rebuild the table or move evidence to another store.
+
+On a populated restored database, compare dispatch IDs, statuses, lease fields,
+errors, result JSON and evidence bytes before/after, and confirm session and
+completion records are unchanged. Verify the worker's queued SELECT uses
+`idx_vocabulary_dispatch_queued` and its expiry UPDATE uses
+`idx_vocabulary_dispatch_running_expiry` with `EXPLAIN QUERY PLAN`. Include
+an empty active queue with large terminal history, an old queued item, a live
+lease and an expired lease; preserve disabled-learner and explicit retry behavior.
+The local migration and processing tests cover preservation and indexed worker
+queries; after release, compare idle background SQLite load and CPU throttling.
+Use the [stopped-writer procedure](schema-migrations.md#operator-procedure), not the app-only upgrade route.
+
+## Case review ownership (`0066`)
+
+`0066_vocabulary_case_reviews` rebuilds the reflection-job table to allow
+numbered jobs within a canonical case and adds explicit review ownership,
+legacy lineage, proposal assessment provenance, and queue/history indexes.
+Historical case, job, proposal, invocation, and application IDs remain retained.
+Legacy sibling proposals remain unresolved alternatives; a newer no-change
+assessment is not resolved merely because an earlier proposal was closed.
+
+Run `node --import tsx scripts/inspect-vocabulary-case-review-migration.ts /absolute/path/app.db`
+for the read-only preflight. It reports lineage and active-work conflicts without
+content payloads.
+Multiple active jobs in one legacy chain make migration fail atomically; finish
+or explicitly resolve that work before the stopped-writer migration. Existing
+approval journal records remain required for replay of pending authorizations.
+
+The migration scans retained job/results and proposals and rebuilds the job
+table, requiring temporary disk and memory proportional to that history. On an
+isolated restored database, run the populated migration tests and compare IDs,
+raw evidence/results, proposal/application receipts, learner state, and queued
+work. Check integrity/FKs, canonical lineage, sequence ordering, current pointers,
+no-change visibility, and journal replay. Confirm failed/timed-out reassessment
+unfreezes the prior review and successful application resolves only the intended
+case. Use the schema-release rehearsal and stopped-writer procedure; this is not
+an app-only upgrade. The queue/API/UI stack is released together.
+
+## Pending repair targets (`0067`)
+
+`0067_vocabulary_repair_targets` adds a per-case repair-intent table, immutable repertoire-revision
+selection records, and a nullable captured-target field on reflection jobs. Existing jobs receive no inferred
+operator target. Historical case coverage and coverage history remain unchanged;
+the application no longer uses those rows as editable generation policy. Content,
+sense bindings, proposals, application receipts and learner history are preserved.
+The migration creates empty tables and adds a nullable column; it does not scan
+or rewrite authored content.
+
+Rehearse on a populated restore: compare existing content/bindings, case scope
+rows and proposal receipts before/after; verify the new intent and repertoire-revision tables are empty and
+existing jobs have null captured targets, then run integrity and foreign-key
+checks. Exercise set/reset, failed and successful reassessment, no-proposal
+results, and the approval worker against pending intent. Source content must stay
+unchanged until proposal application. Use the stopped-writer schema release,
+not app-only upgrade. Inventory reconciliation follows this migration and needs
+fresh snapshots and reviewed plans against the migrated schema.
+
+## Teaching-set foundation migration
+
+Migration `0074_teaching_sense_sets` rebuilds `word_introduction_preparation` and
+`word_preparation_work` to include a teaching-set key and adds that key to
+`word_content_documents`. All existing rows enter the explicit `default`
+compatibility lane. No document JSON, package, learner event, sense mapping,
+publication, attempt journal, requester or live lease is rewritten. Current
+shared defaults are not used to infer a historical package's authored scope.
+
+Use the [stopped-writer procedure](schema-migrations.md#operator-procedure). On the ephemeral restored database,
+compare the two preparation tables and source documents before and after,
+allowing only `teaching_set_key='default'`; check package/publication identities,
+learner introduction events, attempt/retry references and source-use mappings.
+Confirm that a prepared default word resolves to the same package, and a queued
+word retains its state, attempt count and lease. Run the runner's foreign-key
+and integrity checks. The rebuild copies both operational tables and requires
+temporary disk space proportional to them; no production timing or resource
+estimate has been measured. The populated upgrade and fresh-schema equivalence
+regressions live in `tests/schema-migrations.test.ts`; set-specific worker and
+repair regressions live in `tests/teaching-sense-sets.test.ts`.
+
+## Pure-cue release
+
+`0009_pure_cues.sql` adds shared pure-cue content and accepted membership,
+private `learner_pure_cue_state`, immutable private served snapshots and attempts,
+and restore-once production scheduler compensation snapshots with source-attempt
+links. It rebuilds the publication-kind constraint to include `pure_cue`, retaining
+existing publications, their events, private provenance, and integrity guards.
+Attempt history is not rewritten. The unmerged pure-cue schema is introduced
+directly in its shared-content form; there is no migration from an earlier
+draft of the feature.
+
+`0010_strict_word_cues.sql` resets every word-owned cue's accepted membership to
+its task's target, including inactive and shared cues, then enforces owner-only
+membership inserts. It drops the retired production recheck view/table and all
+outstanding 48-hour demands. No semantic promotion or proxy assignment occurs.
+Open sessions must be restarted; old multi-answer/recheck commits fail closed.
+This intentionally discards obsolete membership and recheck state, so retain the
+pre-upgrade backup if historical inspection of that state is needed.
+
+`0011_reflection_generation_continuations.sql` adds exact staged-reflection
+continuations and per-provider-call links. Legacy generation runs and artifacts
+are preserved without synthetic continuation links.
+
+`0012_pure_cue_teaching_notes.sql` separates holistic reveal teaching from the
+semantic axis on pure cues and served snapshots. Existing rows receive empty
+teaching notes; axis text and historical answers are not interpreted or moved.
+Separate operator cleanup of old mixed axis notes is outside this migration.
+Authorized extension rewrites retain immutable private teaching revisions and
+leave already-served snapshots unchanged. Reflection execution cuts over to the
+new diagnosis/cleanup contracts; historical results remain readable.
+
+## Rehearsal presentation cleanup
+
+`0020_rehearsal_presentation.sql` clears only an exact match for the former
+hard-coded recall preamble in `word_teaching_packages.package_json` rehearsal
+instructions. It retains the instruction field as an empty string. All packages
+are eligible, including quarantined and retired publications; their publication
+status, identity, provenance, stimuli, answer contracts, and other content stay
+unchanged. Custom or extended instructions are preserved, as are persisted
+session snapshots and learner history. Nonmatching package JSON is not rewritten.
+
+This data migration temporarily removes and restores the package immutability
+trigger within the runner's transaction. Existing browser sessions retain their
+original snapshots; session presentation suppresses this exact preamble without
+rewriting those snapshots.
+
+## Content quality overlay
+
+`0021_content_quality.sql` adds immutable authored-content snapshots, private
+idempotent encounter records, and one optional standing rating per learner and
+content revision. Existing content, study history, and reflection annotations
+are untouched. No previous encounters or votes are inferred. See
+[content quality](../content-quality.md) for the encounter and rating model.
+
+## Exercise compensation counters (0022)
+
+`0022_exercise_compensation_days` creates an empty learner-private daily counter
+table. It performs no backfill or rewrite of summaries, attempts, or restoration
+history. New session completions include pure-cue totals in the existing summary
+fields; only newly applied compensations increment the daily counter.
+
+Windows crossing rollout intentionally mix earlier word-only summaries with
+new combined exercise totals.
+
+## Session debrief (0023)
+
+`0023_session_debrief` creates empty learner-private debrief jobs and attempts,
+with composite ownership references to completed summaries. Existing summaries,
+study history and reflection records are unchanged. There is no historical
+inventory inference or provider backfill. Queued jobs resume after restart;
+expired running attempts become failed and require an explicit learner retry to
+avoid replaying an unknown upstream outcome.
+
+## What’s New blog rollout
+
+`0028_whats_new_blog.sql` creates the shared current-post table and immutable
+revision history, and copies the former bundled notes into published rows with
+publication sequences. Historical notes retain their text; source commit
+provenance remains null because a publication date cannot prove a deployed
+revision. The blog uses a separate learner publication-sequence cursor while
+retaining the legacy date cursor for compatibility.
+
+Subsequent [blog edits](../whats-new.md) use normal live transactions and need no
+maintenance window or migration.
+
+## Introduction component retention (0029)
+
+`0029_introduction_components.sql` adds empty tables for retained teaching and
+practice components and their published-package provenance links. The migration
+does not rewrite existing content or packages, backfill component records, or
+invoke providers. Existing packages and learner pins remain compatible without
+component links; historical packages therefore have no component-level
+provenance reconstructed by this upgrade.
+
+The [word content generation guide](../word-content-generation.md) explains how
+new preparation retains and publishes components.
+
+## Home updates and per-post notifications
+
+`0030_whats_new_previews.sql` adds the required summary field and backfills
+previews from the twelve imported blog posts. Authored summaries apply only
+when a post still matches its original title and body; edited/custom content
+gets neutral title-based text. Each post receives an attributed new revision,
+while its old immutable revisions, publication sequence, status, body, and
+provenance remain intact. Concurrent operators must reload after migration
+because the current revision advances.
+
+`0031_whats_new_attention.sql` adds empty per-learner/post exposure and read
+state. Existing legacy read boundaries remain effective. No historical
+first-exposure time is invented; unseen posts start their 12-hour window only
+after their navigation badge becomes visible in the new client.
+
+## Usage exercise totals (0034)
+
+`0034_usage_exercise_totals` adds nullable completed-learning counts to session
+summaries and the corresponding learner-scoped view. Legacy submissions leave
+unknown counts NULL; retries that omit the count retain an already-known value.
+It adds daily snapshot fields for practice, completed review outcomes, acceptance
+events, mean stash, and total active session time, plus a partial creation-time
+index for proposal-acceptance invocations. Existing snapshots gain review, time,
+and acceptance totals from durable records. Historical practice and mean stash
+remain NULL; no attempts, word state, or debrief inventories are interpreted to
+reconstruct them. Legacy spend and median columns remain stored but are retired
+from the usage API. This release requires the offline schema upgrade procedure.
+
+## Durable session completion (0036)
+
+`0036_session_completion` adds learner-private pending completion revisions,
+word-outcome snapshots, and reflection dispatch storage. Existing databases
+require the [stopped-writer procedure](schema-migrations.md#operator-procedure) before this release starts;
+the app-only hosted upgrade cannot apply it. The migration creates empty tables
+and does not invent historical session completion, introduction or graduation
+outcomes, final Undo deadlines, or generation work.
+
+New introduction and Practice outcomes freeze the word presentation and its
+before/after status under their learner, session, word, and action kind. The
+completion report uses these snapshots; later word edits do not rewrite an old
+report. Completion revisions freeze the final action, timestamps, summary,
+debrief inventory, reflection supplement, and fixed 15-second server deadline.
+Cancellation is terminal. Successful closure accepts the final action and saves
+the completed summary, confirmed report, and reflection dispatch atomically.
+
+The completion worker closes overdue pending revisions after restart, including
+when provider work is disabled. Maintenance suspends closure and generation;
+overdues settle after maintenance ends. A closure failure preserves the exact
+intent for explicit retry. Queued reflection dispatch resumes when provider work
+is allowed and the learner is enabled. Expired running dispatches conclude any
+started generation runs as interrupted failures with retained evidence for
+explicit retry; an unknown provider outcome is not automatically replayed. A
+dispatch that never started a generation run can safely return to the queue.
+Recovery uses a token to prevent an older dispatch completion from replacing a
+later state. Provider failure does not reopen a closed study session.
+
+Rehearsal should cover a pending completion across database reopen, overdue
+closure with provider work disabled, cancel-before-expiry, failed closure and
+retry, and interrupted generation recovery. Preserve the source backup and its
+matching image: these records are not a replacement for release recovery
+artifacts or proof that the hosted upgrade has been performed.
+
+## Usage new-word totals (0038)
+
+`0038_usage_new_word_totals` adds nullable `new_word_count` to completed-session
+summaries and the learner-scoped view. It backfills accepted new-word counts
+from confirmed completion reports or recorded word outcomes, using the summary's
+UTC completion day for the entire session. Sessions without either source retain
+NULL; admission rows cannot establish completed-session counts. Usage treats
+missing counts as zero and documents this historical lower bound.
+
+The migration rewrites only `new_words` in existing cohort daily snapshots from
+the persisted summary totals. It preserves other snapshot values, timestamps,
+word state, and the daily admission counters. Subsequent summary writes persist
+their new-word count and refresh affected snapshots atomically, including late
+completion after midnight. Panel reads do not reconstruct word events.
+
+This is a schema and data migration requiring the [stopped-writer procedure](schema-migrations.md#operator-procedure);
+the hosted app-only upgrade route cannot apply it. Retain the pre-migration
+backup and matching application image for rollback. Implementation verification
+is not evidence that this migration has been applied to production.
+
+## Adaptive vocabulary cutover
+
+The vocabulary delivery is one schema-changing release. Before taking the final
+quiesced backup, settle pending/failed legacy session completions and pending
+authorized reflection applications under the old runtime. Migration 0041 refuses
+learner-state conversion if either remains; the migration transaction rolls back.
+Queued proposals that were never authorized are retained historical records, not
+new-runtime application authority.
+
+Run the normal stopped-writer migration procedure through the entire delivery's
+migration sequence (0039–0055, following released migrations 0037/0038).
+Earlier local vocabulary fixtures used colliding unreleased migration numbers.
+Preserve those databases as development evidence and create fresh fixtures from
+the rebased code; do not rewrite their migration ledger to make them appear current.
+Conversion makes no model calls. Inspect `legacy_content_imports` and `legacy_sense_imports`
+and `vocabulary.content.import_excluded` backend events for imported identities
+and unsupported legacy answer spaces. Rehearse with a disposable copy before
+operating the hosted database. Do not use the app-only upgrade route.
+
+The new runtime fences legacy Mandarin session/proposal writes and does not run
+legacy application recovery. New completion closure is local durable work even
+with provider work disabled; lessons, repair proposals, Connections, and exercise
+authoring resume through their separate controlled workers. Rollback after new
+writes requires the identified pre-cutover backup and the previous application,
+not a downgrade of the converted live database.
+
+### Vocabulary scheduling rehearsal acceptance
+
+Run this rehearsal on isolated copies of a coherent current production backup,
+never on the hosted learner's live state. Retain an untouched source copy and a
+separate migrated copy, source/target revisions, migration output, and a fixed
+UTC comparison time. Keep provider work disabled and prevent either copy from
+contacting production services. Record results per learner and stable word or
+legacy cue identity; totals alone can hide lost or misassigned state.
+
+The following bounded checks establish scheduling continuity. They are acceptance
+criteria for the release rehearsal, not a claim that it has already run:
+
+| Invariant | Comparison |
+| --- | --- |
+| Learner ownership and enrollment | Every explicit legacy learner-word row and active stash entry maps to the same learner and word. Untouched lexical entries are not enrolled merely by conversion. |
+| Lifecycle continuity | Legacy learning maps to Solidify, review to Practice, and remaining enrolled states to Unstudied. Stash membership is preserved. Existing learning streak becomes the clean-covered-session counter. |
+| Production scheduling continuity | For existing production skill rows, interval, ease, enablement and nonempty last-study timestamp match the new schedule. Next eligibility matches the old due date, falling back to the admission date when absent. The documented exception is Solidify with prior daily coverage: next eligibility is midnight UTC after the last covered day. Missing skill rows receive the migration's explicit defaults, reported separately rather than counted as preserved values. |
+| Other skill state unchanged | Recognition and contextual-selection schedules, skill relevance/suppression, and word admission guards are unchanged by conversion. |
+| Independent cue continuity | Each supported imported pure cue retains learner ownership, due date, last-study timestamp, interval, ease, strong-since timestamp, strong-success count and adoption timestamp through its legacy-to-new content mapping. Imported originals retain their daily-maintenance identity and any active six-hour restoration guard. Excluded content is listed with a reason; it must not disappear silently from the comparison. |
+| Eligibility boundaries | At the fixed comparison time, sample overdue and future-due review objectives, a word blocked by recency, a disabled/suppressed objective, a Solidify word already covered that day, and ordinary/strong pure cues where present. No blocked objective becomes ready merely from migration. Ordinary review remains due-gated; strong pure cues use the same learner/cue/UTC-day maintenance draw and seven-day quiet period on both sides, independently of dormant interval/due fields. Explain any candidate difference caused by content readiness or availability. |
+
+Include derived pure-cue proxy admission in the eligibility comparison: a due
+production objective with active shared pure coverage and no shared targeted cue
+must remain excluded from dictionary fallback, even when the pure cue is not due.
+Where present, include an independently due recognition objective, a usable private
+targeted cue, and shared targeted content that restores ordinary admission. Proxy
+status is not persisted, so equal schedule rows do not establish this invariant.
+Record missing source cases and exercise them separately in synthetic fixtures.
+
+Report full-row mismatches for the persisted-state comparisons. For composition,
+compare eligible objectives before random sampling and capacity limits first.
+Then inspect a bounded first-session plan, recording its time, settings and random
+seed where supported. Exact sampled order is not an invariant. Account for every
+observed inclusion/exclusion difference in that sample; unresolved differences
+block treating the transition as seamless.
+
+After retaining these comparison results, use another working copy of the
+migrated database to complete a session as an existing copied learner. Local
+trusted authentication may select that identity without using production login.
+Exercise a clean review outcome, a rejection followed by completion, and a
+Solidify completion when the copied inventory permits. Verify that closure:
+
+- updates only the exercised review skill plus the intended word recency guard;
+- carries the prior interval/ease into the outcome calculation instead of
+  initializing a fresh schedule;
+- applies next-UTC-day eligibility for covered Solidify work;
+- leaves unexercised words and independent cue schedules unchanged;
+- retains the result after restart and does not apply it twice on repeated closure.
+
+Keep model work disabled for this scheduling check; provider-generated feedback
+is a separate test. Record missing cases rather than modifying the source
+snapshot to conceal gaps. Optional synthetic cases belong in a separate fixture.
+
+The existing hosted smoke account is useful for authenticated deployment checks,
+but `hosted:smoke` only reads vocabulary statistics. It does not exercise session
+completion. The legacy `hosted:provision-review-test` helper writes old learner
+state and must not be used to provision a new-runtime rehearsal session after
+cutover. A scripted end-to-end migrated-copy session rehearsal is not yet supplied;
+the checks above currently require a dedicated harness or a recorded manual run.
+
+Migration `0054_vocabulary_provider_retry_routing` retains preparation retry
+deadlines, lifetime attempt counts and attempt history, and pins reflection jobs
+to their selected model. Jobs with existing vocabulary reflection invocations
+retain their original Luna routing. Existing failed preparation stays available
+for operator retry. This requires the [stopped-writer procedure](schema-migrations.md#operator-procedure);
+it is not eligible for an app-only upgrade.
+
+Migration `0055_vocabulary_feedback_dismissal` adds nullable learner-message
+dismissal timestamps. Existing messages remain active. Apply with the same
+stopped-writer procedure before restarting the updated backend.
+
+### Sense-mapping availability retries
+
+`0061_vocabulary_sense_mapping_retries` adds the reflection job's independent
+availability-failure counter, initialized to zero for existing jobs. It preserves
+job status, selected reflection model, evidence, results, and invocation history.
+The [runtime routing policy](../vocabulary-learning.md#dispatch-and-model-routing)
+uses this counter for bounded Luna retries and ZAI fallback. This schema change
+requires the offline migration route; the app-only upgrade route does not apply.
+
+## Case deferral rehearsal
+
+`0068_vocabulary_case_deferral` adds nullable `deferred_at` to
+`vocabulary_case_reviews` and an index for the Deferred view. Existing rows start
+with NULL; case state, revision, proposals, jobs, learner evidence and content
+are preserved. There is no table rebuild or content backfill. Index creation
+scans the case-review table; resource use has not been measured on a restored
+hosted database.
+
+On the isolated restored database, retain the pre-migration case count and a
+representative open/resolved case with its proposal and evidence. Verify those
+values are unchanged and all existing `deferred_at` values are NULL after the
+migration. Defer an open case, restart/reload and verify it appears only in
+Deferred; return it to review and verify its proposal and content are unchanged.
+Check a stale case version is rejected. Run the migration runner's normal
+integrity/FK checks. Deferral is an operator attention classification, not case
+resolution or content publication; deployment still requires the schema-upgrade
+route and separately authorized cutover.
+
+## Background teaching reserve
+
+`0070_background_teaching_reserve` adds nullable `ready_at` and `checked_at` hints
+and a check-time index to existing reserve membership. Existing hints start NULL;
+only existing reserve owners receive reconciliation requests. Priority triggers
+admit eligible top words immediately and enforce the 40-member cap. The migration
+performs no table rebuild and deletes no content, preparation jobs, attempts or
+session history. Later membership eviction likewise preserves those records.
+
+Use the [stopped-writer procedure](schema-migrations.md#operator-procedure), not an app-only upgrade.
+On a restored copy, retain membership and preparation-work snapshots, apply the
+migration and verify unchanged membership/work, NULL hints, requests for existing
+owners only, and the migration runner's integrity/FK checks. The populated
+upgrade regression is in `tests/schema-migrations.test.ts`; runtime recovery and
+bounded top admission are covered by `tests/vocabulary-preparation-reserve.test.ts`.
+These local fixtures do not replace a separately authorized hosted rehearsal.
+
+## Timed daily sessions
+
+`0071_timed_daily_sessions` rebuilds the four-row `service_controls` table to allow
+`timed_sessions` and inserts it enabled, so new sessions use the timed paradigm
+after upgrade. It creates empty `learner_timed_skip_counts` (retired by `0078`) and
+`vocabulary_timed_session_records` (with a learner/day index). It moves no due
+dates and touches no existing session, schedule or settings row.
+
+Use the stopped-writer schema release procedure, not an app-only upgrade. On a
+restored copy, record `service_controls`, apply the migration, and verify the prior
+controls are unchanged, `timed_sessions` is enabled with `system_default`, both new
+tables are empty, and the runner's integrity/FK checks pass. The only rebuild is the
+small control table. The populated regression is in `tests/schema-migrations.test.ts`.
+
+## Proactive repertoire preparation
+
+`0073_proactive_repertoire` extends the practice queue to accept canonical
+repertoire jobs. It copies existing jobs with their original source, status,
+attempt count, lease, invocation and retry deadline. The attempt journal and
+learner state stay in place. It also preserves the existing service controls
+and adds `proactive_repertoire` enabled by default.
+
+Use the stopped-writer schema procedure. On the isolated restore, compare
+existing queue rows and controls before and after migration, verify there are
+no proactive jobs yet, and retain the runner's integrity and foreign-key
+results. Exercise a scan on a disposable copy without provider calls. Check
+that it admits at most 24 words, records the horizon, and does not enqueue a
+second batch within six hours. See [proactive review preparation](../implementation/repertoire-preparation.md#proactive-review-preparation)
+for runtime controls.
+
+## Learner chat storage (`0075`)
+
+`0075_learner_chat` creates empty learner-private conversation, turn, event,
+card and command-receipt tables. It does not scan or rewrite existing learner
+state, shared content, packages, history or invocation records. Its cost is
+limited to creating the new schema objects.
+
+Rehearse with the stopped-writer schema procedure: compare existing learner and
+content records before and after, confirm all five chat tables start empty, and
+run foreign-key and integrity checks. Exercise cross-learner rejection, command
+replay and atomic rollback against the migrated copy. Populated upgrade, failed
+batch rollback, repeat and fresh-schema checks live in
+`tests/chat-migration.test.ts`; domain isolation and command checks live in
+`tests/learner-chat.test.ts`. This is not an app-only upgrade.
+
+## Trivial unstudied word pruning (`0076`)
+
+`0076_prune_trivial_unstudied_words` is a data-only migration (no schema objects).
+An early bulk import associated nearly the whole dictionary with one learner as
+`mode='unstudied'` rows, which every learner-scoped query then scans. By rule, for
+every learner, it deletes a `learner_words` row only when all hold: `unstudied`, not in
+the stash, not dismissed, no intended-use text, `state_version=1`, no
+`scope_established_at`, automatic promotion not paused; its `learner_word_schedules`
+row exists and is untouched (no `next_eligible_at`, `last_practised_at` or refresh,
+`state_version=1`, policy `vocabulary-v1` or `legacy-import-v1`, scheduler state
+exactly the defaults, with all four default keys present); its legacy `learner_word_state` row is absent or the untouched
+default (`unstudied`, no notes, no streak or coverage); and no other learner-scoped
+row names the word. The attachment tables (the manifest in
+`server/db/trivial-unstudied-words-migration.ts`, including study events, encounters,
+priority, skills, reserve, feedback and cases) and every `vocabulary_sessions`
+context that froze the word, open or closed, keep it. The matching schedule and
+default legacy rows are deleted with it. `lexical_words` and `lexical_word_meanings`
+are untouched. Learner-scoped meaning preferences are keyed by meaning and survive.
+The test freezes the classification of the schema 0076 runs against: every table
+pairing a `*learner_id` column with a `*word_id` or `*meaning_id` column is an
+attachment, deleted by the migration, or exempt (the operational
+`word_preparation_work` queue and meaning preferences). Tables added by later
+migrations never meet this one-time prune and need no entry.
+
+The `before` and `after` hooks fail the whole batch (rollback, no ledger row) if the
+dictionary tables changed, any studied, stash or dismissed row disappeared, any
+candidate row or attachment survives or references a deleted pair, or counts do not
+reconcile. On success they append one `vocabulary.learner_words.trivial_unstudied_pruned`
+backend event per affected learner with the deleted word, schedule and legacy-state counts
+and the learner's remaining word count. Deleted rows are not exported; the pre-migration
+backup is the recovery source, and a word is re-enrolled by the normal flows on demand.
+
+Rehearse on a populated restore: record per-learner counts of `learner_words` by mode,
+stash, dismissal and schedule state before and after; verify only the expected
+rows disappeared, the studied counts and the dictionary tables are identical, and the
+events match. A synthetic 122,000-row learner migrates in about half a second. The
+Words list, new-word selection and reserve treat a missing row like a trivial one; the
+visible change is the Statistics unstudied mode count for an affected learner. Use the
+stopped-writer schema release, not app-only upgrade. Tests:
+`tests/trivial-unstudied-words-migration.test.ts`.
+
+## Vocabulary due columns (`0077`)
+
+`0077_vocabulary_due_columns` moves the scheduling facts that review reads filter
+or order on out of `scheduler_state_json` into real columns, so each has one home.
+Production schedules gain `interval_hours`, `enabled`, `reset_until` and
+`post_compensation_check_at`; pure-cue schedules gain `interval_hours`, `enabled`,
+`reset_until`, `strong_since`, `strong_successes`, `maintenance_identity` and
+`recheck_at`. The migration backfills each column from JSON and removes the key.
+Ease, clean-session counts and other state stay in JSON.
+
+It also adds due times: `review_due_at` on production schedules and on
+recognition/contextual-selection states (the latest of the stored due date, last
+study plus interval, and any post-compensation check). A schedule without study
+history is due once its stored dates pass. Triggers recompute due times from each
+row's own columns on insert and on the relevant updates, so writers never compute
+them. Guard triggers reject a schedule write that puts a moved key back in JSON or
+omits a positive interval. Covering `(learner_id, review_due_at, …)` indexes make
+each review queue's first read one index range; pure cues keep no due time and are
+read whole through one covering `(learner_id, enabled, …)` index. These are triggers rather than generated
+columns because SQLite does not treat an index as covering on a table with
+generated columns.
+
+The `after` hook fails the batch if a schedule lacks a positive interval, has a
+non-canonical study timestamp, or has no computed due time. It must run after
+`0076`, which it follows in the migration list; the runner rejects out-of-order ids.
+
+Use the stopped-writer schema procedure. The migration rewrites every schedule row
+(about 122,000 production schedules for the dogfood learner before `0076`, far fewer
+after) and builds three indexes; record its duration. On the restored copy, record
+the hook's outcome, confirm no moved key remains in JSON, compare each learner's
+merged schedule state before and after, and compare review selection before and
+after with the alignment script in the session-composition stack. Populated
+upgrade, merged-state preservation, triggers, guards, covering reads and rollback
+are in `tests/vocabulary-due-columns-migration.test.ts`.
+
+## Timed skip counts retired (`0078`)
+
+`0078_drop_timed_skip_counts` drops `learner_timed_skip_counts`. Timed sessions
+now decide whether a held item is pressing from its urgency at Start (overdue by
+a full interval), so the per-day passed-over counts are neither read nor written.
+The table held only derived selection state; nothing else referenced it. Ship it
+in the same stopped-writer release as `0077`; on the restored copy, record the
+table's row count before migration and confirm it is gone afterwards. The upgrade
+path is in `tests/schema-migrations.test.ts`.
+
+## Shared session context rehearsal (0079)
+
+On the isolated restored copy, capture row counts by status and compare each
+embedded completion and dispatch context with the immutable context of its
+same-owner session. Migration 0079 aborts on a differing copy. It scans and
+rewrites large JSON bodies in one transaction, so measure scratch/volume free
+space, WAL growth and elapsed time. Record page size, page count and freelist
+before and after. Freed pages are reusable; file compaction is a separate operation.
+
+Before migration, hash each completion input and dispatch evidence body with its
+top-level context removed, keyed by record ID. Compare these hashes with the
+migrated bodies, and compare the original session contexts, completion reports,
+statuses and dispatch receipts across the migration. Verify that no child body
+contains a top-level context, run integrity and foreign-key checks, then exercise
+stage, cancel/restage, close, dispatch ingestion and reconciliation's pending
+dispatch dependency lookup on disposable data. Rollback requires the pre-upgrade
+backup and its matching application image.
+
+## Invocation prompt retention rehearsal (0080)
+
+Use the stopped-writer release route and an existing verified backup. The
+migration verifies historical template hashes and replaces authored instructions
+in captured requests with references to the Git archive. This includes Responses
+chat calls that saved the system message without a separate template. Hosted
+migration fails on unknown instructions. Resolve the missing reviewed archive
+entry before retrying. Allow scratch space for staged per-call inputs and the WAL.
+
+Before migration, retain per-ID digests for the nullable template, the complete
+request and every other invocation field. Also capture each improvement stage’s
+full input, cache key, result and invocation link. After migration, supply an independent
+checkout of the Git prompt archive to the offline reader and compare all three.
+Verify that user input survives and reusable instructions have disappeared from
+the invocation and stage records. Verify every checkpoint reconstructs its
+original input and retains its cache key. Exercise new provider requests, including the adapter
+that appends a schema, a Responses chat request, a rejected uncatalogued prompt,
+and normal spend and completion updates. Measure occupied pages, compacted file
+size, elapsed time, and run SQLite integrity and foreign-key checks. Rollback
+uses the pre-upgrade backup and matching application image.
+
+## Dispatch completion references (0081)
+
+On the restored backup, record each dispatch’s envelope digest and its identifiers,
+status, timestamps, lease, error, and receipt. The migration compares every envelope
+byte-for-byte against its same-learner, same-session closed revision’s actions and
+report. Any mismatch aborts the transaction. SQLite then rewrites the dispatch table
+to drop the envelope column. Allow space for the WAL. Reclaimed database pages
+are available for reuse.
+
+After migration, reconstruct the envelope from those completion fields and compare
+digests and dispatch metadata. Verify the queue and running-lease polling indexes
+remain available. Exercise closure and ingestion on disposable data, including
+failure and retry. Use the pre-upgrade backup and matching application image for
+rollback.
+
+### 0082 compact closed session history
+
+The offline migration keeps the initial session facts, frozen lexical display
+data, served encounter snapshots, acknowledged actions and closed reports.
+It discards the unused exercise pools from already closed sessions. Active and
+finalizing sessions keep their entire original context. Future sessions make
+the same transition in the successful closure transaction.
+
+One previously abandoned session (started November 1, closed manually on
+November 7) has no completion. Only its pinned ID, timestamps, operator
+abandonment event and absence of any completion authorize removal of its
+session row, actions, encounters and encounter-word links. The audit events
+survive. An unexpected reportless session or an unresolved foreign key aborts
+the migration.
+
+On a retained backup compare before/after served cards (including skipped and
+undone work), actions, report bytes, durations, and reads of closed sessions.
+Test finalizing, cancelling, retrying and closing a new session. Check the
+abandonment audit, absence of its parent and children, and measure the actual
+context bytes and reusable SQLite pages.
+
+## Completion action boundaries (0083)
+
+Each vocabulary completion names the last acknowledged action in its learner's
+session. The migration compares the saved array with the ordered journal rows
+up to that number and verifies its length. A missing array, gap, or differing
+action aborts the transaction. It removes only the top-level action array from
+each input. Reports, durations and journal rows keep their original contents.
+New revisions require a complete journal prefix and store their boundary once.
+
+On a restored backup, compare the reconstructed action list for every revision
+with its original array, including cancelled revisions with later actions.
+Compare the other input fields, report bytes, journal rows, and both forms of
+reconciliation evidence. Exercise staging, cancellation, closure and retry.
+The migration reads a journal prefix per revision and rewrites the completion
+inputs in one transaction. Measure occupied pages and the freelist before and
+after, then verify SQLite integrity and foreign keys.
+
+## Reflection ingestion receipts (0084)
+
+Each receipt identifies a closed vocabulary completion and records when its
+report was processed. The migration checks the learner, session, completion,
+closed status and exact report bytes for every receipt before dropping
+`projection_json`. The receipt retains its primary key, timestamps, case links
+and immutability guards. Future inserts require the same closed source.
+Allow space for SQLite to rewrite the receipt table in the migration transaction.
+
+On a restored backup, compare the original receipt projections with the linked
+reports after migration. Compare receipt identities and timestamps, case and
+encounter evidence, and downstream job records. Retry ingestion for sessions
+with and without cases and verify their original case IDs and counts. Verify
+integrity and foreign keys. Measure reusable pages and compacted database size
+against a copy already at 0083 to isolate the savings from this change.

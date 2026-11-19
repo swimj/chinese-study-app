@@ -110,8 +110,9 @@ the architectural boundary for implementation.
 - Schema-changing releases quiesce writes and provider work, take an identified
   recovery point, rehearse migration, smoke both identities, and reopen only
   after checks pass. Backup requires exercised isolated restore of representative
-  data; unknown freshness or age over one hour requires stopping writes, with
-  investigation as freshness approaches that limit. Never restore blindly over
+  data; unknown freshness or a scheduled Fly copy older than six hours and
+  fifteen minutes requires stopping writes, with investigation as freshness
+  approaches that limit. Never restore blindly over
   reopened writes: identify lost activity and choose restore or fix-forward
   deliberately. Routine support must not depend on improvised database edits.
 - Visual and interaction work preserves study, Undo, completion, reflection,
