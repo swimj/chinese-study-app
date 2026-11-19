@@ -1,21 +1,33 @@
 import path from 'node:path';
-import { readStrictArguments, requireArgument } from './lib/hosted-runtime.ts';
-import {
-  createDefaultHostedUpgradeDeps,
-  runHostedUpgrade,
-} from './lib/hosted-upgrade.ts';
+import { readBooleanArgument, readStrictArguments, requireArgument } from './lib/hosted-runtime.ts';
+import { createDefaultHostedUpgradeDeps, runHostedUpgrade } from './lib/hosted-upgrade.ts';
+import { runHostedMigrationRelease } from './lib/hosted-migration-release.ts';
 import { schemaMigrationIds } from '../server/db/migrations.ts';
 
-const args = readStrictArguments(['app', 'actor-id', 'confirm-source-revision', 'image']);
+const args = readStrictArguments(['mode', 'app', 'actor-id', 'confirm-source-revision', 'image', 'rehearsal-run-dir', 'reopen']);
 const repoRoot = process.cwd();
-const result = await runHostedUpgrade({
+const mode = args.get('mode') ?? 'code';
+const common = {
   repoRoot,
   app: requireArgument(args, 'app'),
   actorId: requireArgument(args, 'actor-id'),
   confirmSourceRevision: requireArgument(args, 'confirm-source-revision'),
   targetSchemaMigrationIds: schemaMigrationIds(),
-  image: args.get('image'),
   flyConfigPath: path.join('deploy/fly/.generated/fly.toml'),
-}, createDefaultHostedUpgradeDeps(repoRoot));
-
-if (result.status !== 'ok') process.exitCode = 1;
+  reopen: args.has('reopen') ? readBooleanArgument(args, 'reopen') : true,
+};
+const deps = createDefaultHostedUpgradeDeps(repoRoot);
+let status: 'ok' | 'failed';
+if (mode === 'code') {
+  if (args.has('rehearsal-run-dir')) throw new Error('--rehearsal-run-dir applies only to --mode=migrate.');
+  status = (await runHostedUpgrade({ ...common, image: args.get('image') }, deps)).status;
+} else if (mode === 'migrate') {
+  status = (await runHostedMigrationRelease({
+    ...common,
+    image: requireArgument(args, 'image'),
+    rehearsalRunDir: requireArgument(args, 'rehearsal-run-dir'),
+  }, deps)).status;
+} else {
+  throw new Error('--mode must be code or migrate.');
+}
+if (status !== 'ok') process.exitCode = 1;

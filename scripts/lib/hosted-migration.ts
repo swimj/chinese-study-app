@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import type { BackupReceipt } from '../../server/backups/types.ts';
 import { parseHostedCommandJson, type CommandRunner } from './hosted-upgrade.ts';
 
@@ -12,12 +11,11 @@ export async function runBackedUpMigration(input: {
   preReleaseBackupId: string;
   releaseId: string;
   previousRevision: string;
-  sourceRevision: string;
   sourceApp: string;
-}, run: CommandRunner, source: { start(): Promise<() => Promise<void>> }, now = () => Date.now()) {
+}, run: CommandRunner, now = () => Date.now()) {
   if (!input.confirmAppStopped) throw new Error('Stop the app and workers before running the backed-up migration.');
   if (!ID.test(input.preReleaseBackupId) || !ID.test(input.releaseId)
-    || !SHA.test(input.previousRevision) || !SHA.test(input.sourceRevision)
+    || !SHA.test(input.previousRevision)
     || !/^[a-z0-9][a-z0-9-]*$/.test(input.sourceApp)) throw new Error('Invalid migration backup identity.');
   const command = ['--import', 'tsx', 'scripts/manage-hosted-backup.ts'];
   const status = parseHostedCommandJson((await run(process.execPath, [...command, '--action=status'])).stdout);
@@ -32,23 +30,7 @@ export async function runBackedUpMigration(input: {
   }
   const migration = parseHostedCommandJson((await run(process.execPath, ['--import', 'tsx', 'scripts/migrate-database.ts',
     `--database=${input.databasePath}`, '--confirm-app-stopped=true'])).stdout);
-  // No source listener exists during schema mutation. A fresh UUID prevents an
-  // earlier successful capture from satisfying this post-migration gate.
-  const id = randomUUID();
-  const afterStarted = now();
-  let stop: (() => Promise<void>) | undefined;
-  try {
-    stop = await source.start();
-    const after = parseHostedCommandJson((await run(process.execPath, [...command,
-      '--action=create', '--kind=hourly', `--id=${id}`, `--source-revision=${input.sourceRevision}`,
-      `--source-app=${input.sourceApp}`], { timeoutMs: 16 * 60_000 })).stdout) as BackupReceipt;
-    if (after.id !== id || after.kind !== 'hourly' || after.sourceRevision !== input.sourceRevision
-      || after.sourceApp !== input.sourceApp || !Number.isFinite(Date.parse(after.startedAt))
-      || Date.parse(after.startedAt) < afterStarted - 5000) throw new Error('Post-migration receipt does not match the fresh backup request.');
-    return { migration, backup: { before, after } };
-  } catch (error) {
-    throw new Error('Migration may have committed, but its verified backup failed. Keep the app stopped; inspect migration status and repair backup access before reopening.', { cause: error });
-  } finally {
-    await stop?.();
-  }
+  // The post-migration recovery point is an online capture after the target
+  // starts; restoring the pre-release backup is this migration's rollback.
+  return { migration, backup: { before } };
 }

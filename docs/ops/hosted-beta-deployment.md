@@ -84,17 +84,20 @@ approval before acting. Report any such step in the handoff.
 
 ### Rules
 
-- **The schema decides the release kind.** A target whose migrations the
-  database has not applied is a migration release and follows the
-  [offline migration procedure](schema-migrations.md). `hosted:upgrade` compares
-  the production ledger with the checkout and refuses a pending or unknown
-  migration before touching the service. Content imports and operator data
-  repairs use their own procedures.
-- **Rehearse every migration** on a restored copy before production
-  maintenance, using the [rehearsal runbook](hosted-release-candidate.md#ephemeral-rehearsal).
-  The production migration requires a verified pre-release backup captured
-  after writes stopped and less than an hour old; the migration wrapper
-  enforces this.
+- **The schema decides the release kind.** `hosted:upgrade` compares the
+  production migration ledger with the checkout before touching the service.
+  The default code-only mode refuses pending or unknown migrations;
+  `--mode=migrate` refuses a target without pending migrations or one that does
+  not extend the production ledger. Content imports and operator data repairs
+  use their own procedures.
+- **Rehearse every migration first.** `--mode=migrate` requires a passed
+  [rehearsal](hosted-release-candidate.md#ephemeral-rehearsal) of the same image
+  digest, against this app, that applied exactly the migrations production has
+  pending, with every check run against the copy passing. It does not prescribe
+  which checks ran.
+- **Back up after writes stop before migrating.** Restoring that backup is the
+  migration's rollback; the migration wrapper refuses a pre-release backup
+  older than an hour.
 - **Deploy behind maintenance.** A restart ends any learner's session in
   progress, so production deploys run with writes closed and provider work
   drained.
@@ -113,6 +116,9 @@ approval before acting. Report any such step in the handoff.
 
 ### Judgment
 
+- **Rehearsal checks.** Rehearsal runs a migration's author checks
+  automatically. Add whatever else the change calls for, including comparison
+  scripts written during the release.
 - **Rehearsal for a code-only release.** Use it when a bounded check on
   restored data can answer a release question, such as the latency of a query
   at production data volume. Use the [browser RC](hosted-release-candidate.md#browser-rc-overview)
@@ -124,8 +130,9 @@ approval before acting. Report any such step in the handoff.
   either is in doubt, raise it before deploying.
 - **Timing and notice.** Choose when to run the window and whether to post a
   [banner](#post-a-pre-upgrade-banner) first.
-- **Extra checks.** Add checks the change calls for, during the release or after
-  reopening, and record what ran.
+- **Extra checks.** Add checks the change calls for and record what ran. Pass
+  `--reopen=false` to stop after smoke with the service closed, run them, then
+  reopen with the [service controls](#service-controls-and-offline-work).
 - **Handoff.** Report the outcome, the backup receipt, `previousDeployment`, and
   any instructions or manual steps the release relied on that this runbook does
   not cover, so they can become tooling or guidance.
@@ -133,13 +140,16 @@ approval before acting. Report any such step in the handoff.
 ### Backups during a release
 
 [Scheduled backups](hosted-backups.md) every six hours are the standing
-recovery points. `hosted:upgrade` also captures a verified release backup of
+recovery points. A code-only release also captures a verified release backup of
 the outgoing revision **before** entering maintenance. The capture runs online,
 so it adds no learner downtime, and it limits what a last-resort restore would
 discard to activity during roughly the last few minutes before the release. It
-is not the rollback mechanism for a code-only release. A migration release
-captures its own pre-release backup after writes stop, because restoring that
-backup is the migration's rollback.
+is not the rollback mechanism for a code-only release.
+
+A migration release captures its pre-release backup after writes stop, because
+restoring that backup is its rollback. After the target starts and the service
+reopens, it captures an online post-release backup of the migrated database so a
+later restore need not replay the migration.
 
 ### Code-only release
 
@@ -193,9 +203,8 @@ the command's completion. The upgrade runner is a foreground local process; it
 does not become a fire-and-forget Fly job after it starts.
 
 1. Make the [judgment calls](#judgment) for the change, including any
-   rehearsal, then start **one** `hosted:upgrade` process with the tested digest
-   when available. A migration release follows the
-   [offline migration procedure](schema-migrations.md) instead.
+   rehearsal, then start **one** `hosted:upgrade` process in the right mode,
+   with the tested digest when available.
 2. Start the process with access to the authenticated Fly CLI state. In a
    managed sandbox that blocks the operator's `~/.fly` directory, request the
    required elevated execution permission on the first launch; do not make an
@@ -207,8 +216,8 @@ does not become a fire-and-forget Fly job after it starts.
    means the runner is still active. It is not a failure and it is not evidence
    that Fly has finished deploying.
 4. Poll or stream that exact session until it returns a terminal exit status.
-   Only its final `upgrade-result` says whether the runner completed, failed,
-   and reopened controls.
+   Only its final `upgrade-result` or `migration-release-result` says whether
+   the runner completed, failed, and reopened controls.
 5. Do not start a second upgrade merely because output is quiet, an outer tool
    invocation has yielded, or a remote build is taking longer than expected.
    Deploy, health, and smoke stages can legitimately take minutes.
@@ -222,6 +231,47 @@ does not become a fire-and-forget Fly job after it starts.
 This procedure deliberately does not claim durable release history or resumable
 execution. The final terminal result is still per-invocation evidence; a lost
 local runner remains an operational recovery case.
+
+### Migration release
+
+`hosted:upgrade --mode=migrate` runs these stages:
+
+1. **declare**: validate the checkout, Fly config, and image; compute the
+   pending migrations from the production ledger; check the rehearsal record;
+   record the serving image as `previousDeployment`.
+2. **quiesce**: disable provider work, enable maintenance, and drain.
+3. **backup**: capture the pre-release backup of the outgoing revision.
+4. **idle**: update the Machine to the target image with an idle command and
+   skipped health checks, keeping the volume. The application stops.
+5. **migrate**: run the [migration wrapper](schema-migrations.md#hosted-migration-wrapper)
+   over SSH against the pre-release receipt.
+6. **start**: deploy the same image from the Fly config, restoring the normal
+   process.
+7. **confirm**: verify health, identity, closed controls, and that the ledger
+   now has exactly the target migrations.
+8. **smoke** and **reopen**, as for a code-only release.
+9. **post-backup**: capture the online post-release backup.
+
+```bash
+npm run hosted:upgrade -- \
+  --mode=migrate \
+  --app=<app-name> \
+  --actor-id=<operator> \
+  --confirm-source-revision=<full-40-character-sha> \
+  --image=registry.fly.io/<image-app>:<release-tag>@sha256:<rehearsed-digest> \
+  --rehearsal-run-dir=<absolute-rehearsal-run-directory>
+```
+
+The result reports `databaseState`, which decides recovery after a failure:
+
+| `databaseState` | Meaning | Recovery before reopening |
+| --- | --- | --- |
+| `unchanged` | Failure before the migration ran | Redeploy `previousDeployment`, or fix and rerun |
+| `unknown` | The migration did not report success, or its session was lost | Read `db:migrate --status=true` on the idle Machine before choosing |
+| `migrated` | The migration committed; the previous image refuses this schema | Fix forward on the target, or restore `preReleaseBackup` with `previousDeployment` |
+
+A failed **post-backup** happens after reopening. The service is serving; repair
+backup access and capture a manual backup.
 
 ### Smoke account
 
@@ -270,13 +320,12 @@ returning from a session). CLI notices expire 24 hours after posting. Successful
 `hosted:upgrade` reopen also clears it and no-ops when none exists. Clear
 manually with `--clear=true` instead of `--message`.
 
-## Schema-changing releases and service controls
+## Service controls and offline work
 
-After the isolated rehearsal passes, begin the schema-changing release's
-production maintenance window: stop new provider work, then stop writes. The
-health response exposes only control state and the active provider-work count;
-wait for that count to reach zero before requesting a pre-switchover release backup.
-Use the running source revision and retain the verified receipt:
+Operator recovery procedures and manual release steps use these controls
+directly. Close provider work first, then writes, and wait for `/healthz` to
+report zero active provider work. Capture a release backup with the running
+source revision:
 
 ```bash
 fly ssh console --app <app-name> --command \
@@ -288,52 +337,53 @@ fly ssh console --app <app-name> --command \
   'npm run --silent hosted:backup -- --action=create --kind=release --id=<unique-backup-id> --release-id=<release-id> --source-app=<app-name> --source-revision=<running-full-sha>'
 ```
 
-For schema-changing releases, including migration baseline adoption, follow the
-[offline migration procedure](schema-migrations.md). The app-only
-`hosted:upgrade` command cannot perform these releases.
-
-### Idle the Machine for offline work
-
-Use this when a schema-changing release or other volume-local work cannot run
-inside the normal app process. Disable provider work, enter maintenance, drain
-active work, and obtain the verified pre-switchover backup above. Save the full
-Machine configuration, create an on-demand Fly Volume snapshot, and replace the
-normal command with an idle process while skipping health checks. The volume
-stays mounted. Confirm the application and workers have stopped. Preserve the
-database and any SQLite sidecars; never delete WAL files to bypass a refusal.
-
-During the Litestream transition, also stop its process and preserve its socket
-and sidecars for investigation if shutdown was unclean. The legacy supervised
-migration wrapper is for a service that has not cut over; follow the
-[migration guide](schema-migrations.md#hosted-target-code-and-stopped-process).
+Reopen writes first and provider work last, then clear any pre-upgrade banner;
+`--clear=true` no-ops when none exists:
 
 ```bash
-fly machine status --app <app-name> --display-config <machine-id>
-fly volumes snapshots create <volume-id>
-fly machine update --app <app-name> --command 'sleep infinity' \
-  --skip-health-checks <machine-id>
-```
-
-After the offline work, restore the saved normal Machine configuration with the
-recorded target image. Do not start the normal application against an
-unbaselined or pending schema; see the
-[offline migration procedure](schema-migrations.md).
-
-Create an attributable marker before an important release, record its id in
-the release evidence, and deploy. After inspection and smoke checks pass,
-reopen writes first and provider work last. Clear any pre-upgrade banner after reopen; `--clear=true`
-no-ops when none exists:
-
-```bash
-fly ssh console --app <app-name> --command \
-  'npm run hosted:sentinel -- --data-dir=/data --sentinel-id=<release-id> --actor-id=<operator>'
-fly deploy --config deploy/fly/.generated/fly.toml --remote-only --ha=false
 fly ssh console --app <app-name> --command \
   'npm run hosted:control -- --data-dir=/data --control=maintenance --enabled=false --actor-id=<operator>'
 fly ssh console --app <app-name> --command \
   'npm run hosted:control -- --data-dir=/data --control=provider-work --enabled=true --actor-id=<operator>'
 fly ssh console --app <app-name> --command \
   'npm run hosted:banner -- --data-dir=/data --clear=true --actor-id=<operator>'
+```
+
+### Idle the Machine for offline work
+
+Use this when volume-local work cannot run inside the normal app process. After
+closing the service and capturing a backup as above, replace the normal command
+with an idle process while skipping health checks. The volume stays mounted.
+Confirm the application and workers have stopped. Preserve the database and any
+SQLite sidecars; never delete WAL files to bypass a refusal.
+
+```bash
+fly machine update --app <app-name> --command 'sleep infinity' \
+  --skip-health-checks <machine-id>
+```
+
+Recovery procedures that also call for a volume snapshot take one before the
+operation:
+
+```bash
+fly volumes snapshots create <volume-id>
+```
+
+To return to service, deploy the intended image from the generated Fly config,
+which restores the normal process, then verify and reopen as above:
+
+```bash
+fly deploy --app <app-name> --config deploy/fly/.generated/fly.toml \
+  --image <digest-qualified-image> --ha=false --strategy immediate
+```
+
+Do not start the normal application against an unbaselined or pending schema;
+startup refuses it. Create an attributable marker before an important manual
+operation and record its id in the evidence:
+
+```bash
+fly ssh console --app <app-name> --command \
+  'npm run hosted:sentinel -- --data-dir=/data --sentinel-id=<release-id> --actor-id=<operator>'
 ```
 
 ## Operator-only access

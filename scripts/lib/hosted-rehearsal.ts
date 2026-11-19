@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { flyCommandEnv, parseHostedCommandJson, type HostedUpgradeDeps } from './hosted-upgrade.ts';
 import { isRecord, sanitizeHostedOutput } from './hosted-json.ts';
 
@@ -11,7 +11,31 @@ export type RehearsalManifest = {
   name: string; volumeName: string; machineId: string | null; volumeId: string | null;
   region: string; vmSize: string; createdAt: string;
   state: 'creating' | 'restored' | 'checking' | 'migrating' | 'migrated' | 'failed' | 'destroyed';
+  /** Every check run against this copy, in order. Survives destroy as release evidence. */
+  checks?: RehearsalCheckRecord[];
+  /** Set once the migration succeeds; the production migration pipeline requires it. */
+  migration?: { appliedIds: string[]; completedAt: string };
 };
+export type RehearsalCheckRecord = {
+  sequence: number;
+  /** author: shipped with the migration; operator: supplied by the release agent. */
+  origin: 'author' | 'operator';
+  name: string;
+  phase: 'before-migration' | 'after-migration';
+  status: 'running' | 'passed' | 'failed';
+  sha256: string;
+  /** Local evidence copy for operator scripts; image path for author scripts. */
+  source: string;
+  at: string;
+};
+/** Shared by every check on one rehearsal, so a before check can save state an after check compares. */
+export const REHEARSAL_WORK_DIR = '/data/rehearsal-work';
+/** Optional author check shipped beside a migration's SQL: server/db/migrations/<NNNN_name>.rehearsal.sh. */
+export function authorCheckPath(migrationId: string): string {
+  const match = /^app_schema:(\d{4}_[a-z0-9_]+)$/.exec(migrationId);
+  if (!match) throw new Error(`Invalid migration id: ${migrationId}`);
+  return `server/db/migrations/${match[1]}.rehearsal.sh`;
+}
 export type PrepareRehearsalInput = {
   app: string; sourceApp: string; image: string; schema: 'unchanged' | 'migrate';
   backupProvider?: 'sqlite' | 'litestream'; sourceRevision?: string; backupCapture?: 'retained' | 'fresh'; backupId?: string;
@@ -80,7 +104,36 @@ async function reconcile(dir: string, m: RehearsalManifest, deps: Deps): Promise
 async function remote(m: RehearsalManifest, deps: Deps, command: string): Promise<string> {
   if (!m.machineId) throw new Error('Rehearsal Machine is missing.');
   return fly(deps, ['ssh', 'console', '--app', m.app, '--machine', m.machineId, '--user', 'root', '--quiet', '--command',
-    `sh -lc ${shellSingleQuote(`cd /app; export APP_DATA_DIR=/data APP_DEPLOYMENT_TIER=release_candidate; ${command}`)}`], 1_200_000);
+    `sh -lc ${shellSingleQuote(`cd /app; export APP_DATA_DIR=/data APP_DEPLOYMENT_TIER=release_candidate REHEARSAL_WORK_DIR=${REHEARSAL_WORK_DIR}; mkdir -p ${REHEARSAL_WORK_DIR}; ${command}`)}`], 1_200_000);
+}
+function beginCheck(dir: string, m: RehearsalManifest, check: Omit<RehearsalCheckRecord, 'sequence' | 'status' | 'phase' | 'at'>, deps: Deps): RehearsalCheckRecord {
+  const record: RehearsalCheckRecord = { ...check, sequence: (m.checks?.length ?? 0) + 1, status: 'running',
+    phase: m.migration ? 'after-migration' : 'before-migration', at: deps.now().toISOString() };
+  m.checks = [...(m.checks ?? []), record]; save(dir, m);
+  return record;
+}
+function finishCheck(dir: string, m: RehearsalManifest, record: RehearsalCheckRecord, status: 'passed' | 'failed'): void {
+  record.status = status; save(dir, m);
+}
+async function runAuthorChecks(dir: string, m: RehearsalManifest, ids: readonly string[], deps: Deps): Promise<unknown[]> {
+  const paths = ids.map(authorCheckPath);
+  const listing = await remote(m, deps, `for f in ${paths.join(' ')}; do if [ -f "$f" ]; then sha256sum "$f"; fi; done`);
+  const results: unknown[] = [];
+  for (const line of listing.split('\n').map(x => x.trim()).filter(Boolean)) {
+    const [sha256, file] = line.split(/\s+/);
+    if (!sha256 || !file || !paths.includes(file)) throw new Error('Unexpected author check listing.');
+    const record = beginCheck(dir, m, { origin: 'author', name: path.basename(file), sha256, source: `image:/app/${file}` }, deps);
+    const phase = record.phase === 'after-migration' ? 'after' : 'before';
+    try {
+      const output = sanitizeHostedOutput(await remote(m, deps, `REHEARSAL_PHASE=${phase} sh -eu ${file}`));
+      finishCheck(dir, m, record, 'passed');
+      results.push({ check: record.name, phase, output });
+    } catch (error) {
+      finishCheck(dir, m, record, 'failed');
+      throw error;
+    }
+  }
+  return results;
 }
 function pending(output: string): string[] {
   const value = parseHostedCommandJson(output);
@@ -253,21 +306,67 @@ async function operateLocked(action: 'check' | 'migrate' | 'destroy', dir: strin
     if (!m.machineId || !m.volumeId || !['restored', 'migrated'].includes(m.state)) throw new Error('Rehearsal is not ready.');
     if (action === 'migrate') {
       if (m.schema !== 'migrate' || m.state !== 'restored') throw new Error('Migration requires a restored schema=migrate rehearsal.');
+      const ids = pending(await remote(m, deps, 'npm run --silent db:migrate -- --database=/data/app.db --status=true'));
+      if (!ids.length) throw new Error('No pending migrations to rehearse.');
+      // Author checks are optional; the release agent can add any of its own with --action=check.
+      const before = await runAuthorChecks(dir, m, ids, deps);
       m.state = 'migrating'; save(dir, m);
       const result = parseHostedCommandJson(await remote(m, deps, 'npm run --silent db:migrate -- --database=/data/app.db --confirm-app-stopped=true'));
       if (pending(await remote(m, deps, 'npm run --silent db:migrate -- --database=/data/app.db --status=true')).length) throw new Error('Pending migrations remain.');
-      m.state = 'migrated'; save(dir, m); return result;
+      m.migration = { appliedIds: ids, completedAt: deps.now().toISOString() };
+      m.state = 'migrated'; save(dir, m);
+      const after = await runAuthorChecks(dir, m, ids, deps);
+      return { result, authorChecks: { before, after } };
     }
     if (!script || !path.isAbsolute(script) || !fs.statSync(script).isFile()) throw new Error('--script must be an absolute shell script file.');
     const priorState = m.state;
+    const content = fs.readFileSync(script);
+    fs.mkdirSync(path.join(dir, 'checks'), { recursive: true, mode: 0o700 });
+    const evidence = path.join(dir, 'checks', `${String((m.checks?.length ?? 0) + 1).padStart(3, '0')}-${path.basename(script)}`);
+    fs.writeFileSync(evidence, content, { mode: 0o600 });
+    const record = beginCheck(dir, m, { origin: 'operator', name: path.basename(script),
+      sha256: createHash('sha256').update(content).digest('hex'), source: evidence }, deps);
     m.state = 'checking'; save(dir, m);
     await fly(deps, ['ssh', 'sftp', 'put', '--app', m.app, '--machine', m.machineId, '--user', 'root', '--mode', '0600', script, '/tmp/rehearsal-check.sh']);
     try {
       const output = sanitizeHostedOutput(await remote(m, deps, 'sh -eu /tmp/rehearsal-check.sh'));
+      finishCheck(dir, m, record, 'passed');
+      return { check: record.name, phase: record.phase, output };
+    } catch (error) {
+      // A failed check disqualifies the rehearsal but leaves the copy available for investigation.
+      finishCheck(dir, m, record, 'failed');
+      throw error;
+    } finally {
       m.state = priorState; save(dir, m);
-      return { output };
+      await remote(m, deps, 'rm -f /tmp/rehearsal-check.sh');
     }
-    finally { await remote(m, deps, 'rm -f /tmp/rehearsal-check.sh'); }
   });
   return m;
+}
+
+/** Reads a rehearsal run record, including one whose resources were destroyed. */
+export function readRehearsalRecord(dir: string): RehearsalManifest {
+  return load(dir);
+}
+
+/**
+ * The production migration gate: the same image digest, rehearsed against this
+ * source app, applied exactly the migrations production has pending, and no
+ * check run against the copy failed. It does not prescribe which checks ran.
+ */
+export function assertRehearsalPassed(m: RehearsalManifest, expected: { image: string; sourceApp: string; pendingIds: readonly string[] }) {
+  const digest = (image: string) => image.slice(image.indexOf('@') + 1);
+  if (m.schema !== 'migrate') throw new Error('Rehearsal was not a migration rehearsal.');
+  if (!expected.image.includes('@sha256:') || digest(m.image) !== digest(expected.image)) {
+    throw new Error('Rehearsal image digest does not match the release image.');
+  }
+  if (m.sourceApp !== expected.sourceApp) throw new Error(`Rehearsal restored ${m.sourceApp}, not ${expected.sourceApp}.`);
+  if (!m.migration) throw new Error('Rehearsal has no successful migration.');
+  if (m.migration.appliedIds.join('\n') !== expected.pendingIds.join('\n')) {
+    throw new Error(`Rehearsal applied ${m.migration.appliedIds.join(', ')}; production has pending ${expected.pendingIds.join(', ')}.`);
+  }
+  const unresolved = (m.checks ?? []).filter(check => check.status !== 'passed');
+  if (unresolved.length) throw new Error(`Rehearsal checks did not pass: ${unresolved.map(check => `${check.sequence}:${check.name}:${check.status}`).join(', ')}.`);
+  return { migratedAt: m.migration.completedAt, appliedIds: m.migration.appliedIds,
+    checks: (m.checks ?? []).map(({ sequence, origin, name, phase, sha256 }) => ({ sequence, origin, name, phase, sha256 })) };
 }
