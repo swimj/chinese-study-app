@@ -4,7 +4,7 @@ import { createDefaultHostedUpgradeDeps, runHostedUpgrade } from './lib/hosted-u
 import { runHostedMigrationRelease } from './lib/hosted-migration-release.ts';
 import { schemaMigrationIds } from '../server/db/migrations.ts';
 
-const args = readStrictArguments(['mode', 'app', 'actor-id', 'confirm-source-revision', 'image', 'image-app', 'rehearsal-run-dir', 'reopen', 'allow-unmerged-revision']);
+const args = readStrictArguments(['mode', 'app', 'actor-id', 'confirm-source-revision', 'image', 'image-app', 'rehearsal-run-dir', 'reopen', 'allow-unmerged-revision', 'allow-dropped-env']);
 const repoRoot = process.cwd();
 const mode = args.get('mode') ?? 'code';
 const common = {
@@ -16,6 +16,7 @@ const common = {
   flyConfigPath: path.join('deploy/fly/.generated/fly.toml'),
   reopen: args.has('reopen') ? readBooleanArgument(args, 'reopen') : true,
   allowUnmergedRevision: args.has('allow-unmerged-revision') ? readBooleanArgument(args, 'allow-unmerged-revision') : false,
+  allowDroppedEnv: (args.get('allow-dropped-env') ?? '').split(',').map((name) => name.trim()).filter(Boolean),
 };
 const deps = createDefaultHostedUpgradeDeps(repoRoot);
 let status: 'ok' | 'failed';

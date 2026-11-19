@@ -11,6 +11,8 @@ import {
   parseHostedCommandJson,
   quiesceHostedService,
   readAppliedSchemaMigrations,
+  readMachineEnvNames,
+  assertConfigKeepsMachineEnv,
   readFlyDeploymentIdentity,
   reopenHostedService,
   requireFullGitSha,
@@ -53,6 +55,8 @@ export type HostedMigrationReleaseInput = {
   reopen?: boolean;
   /** Escape hatch, used only with Justin's approval: release a revision not on origin/main. */
   allowUnmergedRevision?: boolean;
+  /** Env names the deploy may intentionally remove from the running Machine. */
+  allowDroppedEnv?: readonly string[];
 };
 
 export type HostedMigrationReleaseResult = {
@@ -130,6 +134,8 @@ export async function runHostedMigrationRelease(
       image, sourceApp: app, pendingIds: pendingMigrations,
     });
     previousDeployment = await readFlyDeploymentIdentity(app, deps);
+    // The start stage deploys from the config, replacing the Machine's env.
+    assertConfigKeepsMachineEnv(flyConfig.envNames, await readMachineEnvNames(app, deps), input.allowDroppedEnv);
     record('declare', 'ok', { plannedRelease, outgoingRevision, pendingMigrations, previousDeployment, rehearsal });
 
     currentStage = 'quiesce';

@@ -4,10 +4,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, test } from 'node:test';
 import {
+  assertConfigKeepsMachineEnv,
   imageSourcePathsFromGitStatus,
   parseFlyMachinesList,
   parseFlyReleases,
   readPreparedFlyConfig,
+  readTomlTableKeys,
   runHostedUpgrade,
   type CommandResult,
   type HostedUpgradeDeps,
@@ -116,6 +118,22 @@ describe('hosted upgrade pipeline', () => {
     assert.equal(allowed.status, 'ok', allowed.failure ?? '');
     const declare = allowed.stages.find((stage) => stage.stage === 'declare')?.detail as Record<string, unknown>;
     assert.equal(declare.unmergedRevisionAllowed, true);
+  });
+
+  test('refuses a config that would drop env the running Machine has, unless each drop is allowed', async () => {
+    const harness = createHarness({ machineEnv: ['CLERK_AUTHORIZED_PARTY', 'PORT', 'APP_BACKUP_RECEIVER_URL', 'FLY_PROCESS_GROUP', 'PRIMARY_REGION'] });
+    const refused = await runHostedUpgrade(harness.input, harness.deps);
+    assert.equal(refused.failedStage, 'declare');
+    assert.match(refused.failure ?? '', /would remove env settings the running Machine has: APP_BACKUP_RECEIVER_URL\./);
+    assert.deepEqual(harness.mutations, []);
+    const allowed = await runHostedUpgrade({ ...harness.input, allowDroppedEnv: ['APP_BACKUP_RECEIVER_URL'] }, harness.deps);
+    assert.equal(allowed.status, 'ok', allowed.failure ?? '');
+  });
+
+  test('reads [env] keys and ignores Fly-managed names', () => {
+    assert.deepEqual(readTomlTableKeys(FLY_TOML, 'env'), ['CLERK_AUTHORIZED_PARTY', 'PORT']);
+    assert.doesNotThrow(() => assertConfigKeepsMachineEnv(['PORT'], ['PORT', 'FLY_PROCESS_GROUP', 'PRIMARY_REGION']));
+    assert.throws(() => assertConfigKeepsMachineEnv(['PORT'], ['PORT', 'B', 'A']), /: A, B\./);
   });
 
   test('a failed build leaves the service open and untouched', async () => {
@@ -273,6 +291,7 @@ function createHarness(options: {
   imageDigest?: string;
   backupFailure?: 'timeout' | 'wrong-revision' | 'malformed';
   buildFailure?: boolean;
+  machineEnv?: string[];
 } = {}) {
   const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'hosted-upgrade-repo-'));
   fs.writeFileSync(path.join(repoRoot, 'package.json'), JSON.stringify({ version: '2.3.0' }));
@@ -370,7 +389,9 @@ function createHarness(options: {
     }
     if (args[0] === 'machines') {
       return {
-        stdout: MACHINE_LIST.replace('sha256:abc123def456', options.imageDigest ?? BUILT_DIGEST),
+        stdout: JSON.stringify(JSON.parse(MACHINE_LIST.replace('sha256:abc123def456', options.imageDigest ?? BUILT_DIGEST)).map(
+          (machine: { config: Record<string, unknown> }) => ({ ...machine, config: { ...machine.config, env: Object.fromEntries((options.machineEnv ?? []).map((name) => [name, 'x'])) } }),
+        )),
         stderr: '',
       };
     }

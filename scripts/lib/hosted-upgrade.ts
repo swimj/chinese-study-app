@@ -76,6 +76,8 @@ export type PreparedFlyConfig = {
   primaryRegion: string;
   configPath: string;
   publicOrigin: string;
+  /** Names set in the config's [env] table; a deploy replaces the Machine's env with these. */
+  envNames: string[];
 };
 
 export type FlyDeploymentIdentity = {
@@ -134,6 +136,8 @@ export type HostedUpgradeInput = {
   reopen?: boolean;
   /** Escape hatch, used only with Justin's approval: release a revision not on origin/main. */
   allowUnmergedRevision?: boolean;
+  /** Env names the deploy may intentionally remove from the running Machine. */
+  allowDroppedEnv?: readonly string[];
 };
 
 export type ReleaseDeclaration = {
@@ -252,6 +256,7 @@ export async function runHostedUpgrade(
     const appliedSchema = await readAppliedSchemaMigrations(app, deps);
     assertNoSchemaChange(appliedSchema, input.targetSchemaMigrationIds);
     previousDeployment = await readFlyDeploymentIdentity(app, deps);
+    assertConfigKeepsMachineEnv(flyConfig.envNames, await readMachineEnvNames(app, deps), input.allowDroppedEnv);
     recordStage('declare', 'ok', {
       plannedRelease,
       currentReleaseIdentity: inspectBefore.releaseIdentity ?? null,
@@ -462,7 +467,48 @@ export function readPreparedFlyConfig(configPath: string, deps: Pick<HostedUpgra
     primaryRegion,
     configPath,
     publicOrigin: authorizedParty ?? `https://${app}.fly.dev`,
+    envNames: readTomlTableKeys(text, 'env'),
   };
+}
+
+/** Keys assigned directly in one TOML table, e.g. [env]; enough for the generated Fly config. */
+export function readTomlTableKeys(text: string, table: string): string[] {
+  const keys: string[] = [];
+  let inside = false;
+  for (const raw of text.split('\n')) {
+    const line = raw.trim();
+    if (line.startsWith('[')) { inside = line === `[${table}]`; continue; }
+    const match = inside ? /^([A-Za-z_][A-Za-z0-9_]*)\s*=/.exec(line) : null;
+    if (match) keys.push(match[1]!);
+  }
+  return keys;
+}
+
+/** Fly sets these on every Machine; a config never lists them. */
+const FLY_MANAGED_ENV = /^(FLY_[A-Z0-9_]*|PRIMARY_REGION)$/;
+
+/**
+ * A deploy replaces the Machine's env with the config's [env] table, so a stale
+ * config silently drops settings. Refuse unless each dropped name is allowed.
+ */
+export function assertConfigKeepsMachineEnv(
+  configEnv: readonly string[],
+  machineEnv: readonly string[],
+  allowedDrops: readonly string[] = [],
+): void {
+  const dropped = machineEnv.filter((name) => !configEnv.includes(name) && !FLY_MANAGED_ENV.test(name) && !allowedDrops.includes(name));
+  if (dropped.length > 0) {
+    throw new Error(`Deploying the prepared Fly config would remove env settings the running Machine has: ${dropped.sort().join(', ')}. Update the generated config, or confirm each removal with --allow-dropped-env.`);
+  }
+}
+
+export async function readMachineEnvNames(app: string, deps: HostedUpgradeDeps): Promise<string[]> {
+  const result = await deps.run('fly', ['machines', 'list', '--app', app, '--json'], { timeoutMs: 30_000, env: flyCommandEnv() });
+  const value = parseJsonValue(result.stdout);
+  const rows = Array.isArray(value) ? value.filter(isRecord).filter((row) => readMachineState(row) !== 'destroyed') : [];
+  if (rows.length !== 1) throw new Error(`Expected exactly one Fly Machine; found ${rows.length}.`);
+  const config = isRecord(rows[0]!.config) ? rows[0]!.config : null;
+  return config && isRecord(config.env) ? Object.keys(config.env) : [];
 }
 
 export function imageSourcePathsFromGitStatus(porcelain: string): string[] {

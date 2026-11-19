@@ -20,7 +20,7 @@ const FLY_TOML = `app = "${APP}"\nprimary_region = "sin"\n[env]\n  CLERK_AUTHORI
 
 type Failure = 'migrate' | 'migrate-lost' | 'smoke' | 'post-backup';
 
-function createHarness(options: { failure?: Failure; manifest?: Partial<RehearsalManifest>; onMainline?: boolean } = {}) {
+function createHarness(options: { failure?: Failure; manifest?: Partial<RehearsalManifest>; onMainline?: boolean; machineEnv?: string[] } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'migration-release-'));
   fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ version: '3.0.0' }));
   fs.mkdirSync(path.join(root, 'deploy/fly/.generated'), { recursive: true });
@@ -50,7 +50,8 @@ function createHarness(options: { failure?: Failure; manifest?: Partial<Rehearsa
   const machines = () => JSON.stringify([{
     id: 'machine1', state: 'started', version: 3,
     image_ref: { registry: 'registry.fly.io', repository: 'chinese-study-rehearsal', tag: `rehearsal-${TARGET}`, digest },
-    config: { image: 'registry.fly.io/chinese-study-rehearsal', ...(idle ? { init: { cmd: ['sleep', 'infinity'] } } : {}) },
+    config: { image: 'registry.fly.io/chinese-study-rehearsal', env: Object.fromEntries((options.machineEnv ?? ['CLERK_AUTHORIZED_PARTY']).map((name) => [name, 'x'])),
+      ...(idle ? { init: { cmd: ['sleep', 'infinity'] } } : {}) },
   }]);
 
   const handle = (args: readonly string[]): CommandResult => {
@@ -235,6 +236,16 @@ describe('hosted migration release', () => {
       assert.deepEqual(h.steps, []);
       const allowed = await runHostedMigrationRelease({ ...h.input, allowUnmergedRevision: true }, h.deps);
       assert.equal(allowed.status, 'ok', allowed.failure ?? '');
+    } finally { h.clean(); }
+  });
+
+  test('refuses before touching production when the config would drop Machine env', async () => {
+    const h = createHarness({ machineEnv: ['CLERK_AUTHORIZED_PARTY', 'APP_BACKUP_RECEIVER_URL'] });
+    try {
+      const result = await runHostedMigrationRelease(h.input, h.deps);
+      assert.equal(result.failedStage, 'declare');
+      assert.match(result.failure ?? '', /APP_BACKUP_RECEIVER_URL/);
+      assert.deepEqual(h.steps, []);
     } finally { h.clean(); }
   });
 });
