@@ -111,6 +111,26 @@ selects the latest retained capture. A restore before the oldest retained captur
 fails. During rollout it takes four complete six-hour intervals to populate a
 full day of regularly spaced restore points.
 
+### Historical model evidence
+
+Recovering the database and reconstructing a historical model request need
+different artifacts. For schema 0080 and later, SQLite retains per-call inputs,
+settings and responses, while authored system and developer instructions are
+referenced by digest in the Git prompt archive. Hosted images contain the catalog
+and active sources, not that historical archive. Keep an identified repository
+revision containing the referenced blobs and a compatible offline reader available
+alongside the database backup and its matching image.
+
+`hosted:verify-restore` checks database content and operational sentinels; it does
+not resolve prompt references or prove that historical requests and improvement
+checkpoint inputs can be reconstructed. For that investigation, use the
+[offline evidence readers](../server-db.md#model-invocation-ledger) with the
+restored database opened read-only and the Git archive supplied separately.
+The [0080 rehearsal](schema-migrations.md#invocation-prompt-retention-rehearsal-0080)
+describes the exact reconstruction comparisons. Record archive revision and
+reconstruction results separately from the database validator's result, without
+copying learner inputs or full requests into operational logs.
+
 ## Restoring into an app volume
 
 Before activating a restored app, stop its processes and establish the restored
