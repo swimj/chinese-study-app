@@ -166,7 +166,6 @@ describe('hosted upgrade pipeline', () => {
     ]);
     assert.deepEqual(harness.mutations, [
       'build',
-      'backup',
       'provider-work:false',
       'maintenance:true',
       'deploy',
@@ -182,17 +181,44 @@ describe('hosted upgrade pipeline', () => {
     assert.equal(JSON.stringify(harness.events).includes('fly-token'), false);
     assert.equal(JSON.stringify(result).includes('smoke-token'), false);
     assert.equal(JSON.stringify(harness.events).includes('sk_test'), false);
-    const receipt = result.stages.find(stage => stage.stage === 'backup')?.detail as Record<string, unknown>;
-    assert.equal(receipt.sourceRevision, 'a'.repeat(40));
-    assert.equal(receipt.kind, 'release');
+    const backup = result.stages.find(stage => stage.stage === 'backup')?.detail as { source: string; ageSeconds: number; receipt: Record<string, unknown> };
+    assert.equal(backup.source, 'scheduled');
+    assert.equal(backup.ageSeconds, 3600);
+    assert.equal(backup.receipt.kind, 'hourly');
     assert.equal(JSON.stringify(result).includes('secret-bucket'), false);
     assert.equal(result.previousDeployment?.machineId, 'd8d123abc');
   });
 
+  test('--fresh-backup captures an online release backup of the outgoing revision', async () => {
+    const harness = createHarness();
+    const result = await runHostedUpgrade({ ...harness.input, freshBackup: true }, harness.deps);
+    assert.equal(result.status, 'ok', result.failure ?? '');
+    assert.deepEqual(harness.mutations.slice(0, 3), ['build', 'backup', 'provider-work:false']);
+    const backup = result.stages.find(stage => stage.stage === 'backup')?.detail as { source: string; receipt: Record<string, unknown> };
+    assert.equal(backup.source, 'fresh');
+    assert.equal(backup.receipt.kind, 'release');
+    assert.equal(backup.receipt.sourceRevision, 'a'.repeat(40));
+  });
+
+  for (const [label, scheduled, pattern] of [
+    ['missing', null, /No scheduled backup is recorded/],
+    ['stale', { ageSeconds: 6 * 3600 + 16 * 60 }, /beyond the 22500s limit/],
+    ['manual', { captureOrigin: 'manual' }, /does not belong/],
+    ['another app', { sourceApp: 'other-app' }, /does not belong/],
+  ] as const) {
+    test(`a ${label} scheduled backup stops the release before touching the service`, async () => {
+      const harness = createHarness({ scheduled });
+      const result = await runHostedUpgrade(harness.input, harness.deps);
+      assert.equal(result.failedStage, 'backup');
+      assert.match(result.failure ?? '', pattern);
+      assert.deepEqual(harness.mutations, ['build']);
+    });
+  }
+
   for (const backupFailure of ['timeout', 'wrong-revision', 'malformed'] as const) {
     test(`a ${backupFailure} pre-release capture prevents deployment and leaves controls closed`, async () => {
       const harness = createHarness({ backupFailure });
-      const result = await runHostedUpgrade(harness.input, harness.deps);
+      const result = await runHostedUpgrade({ ...harness.input, freshBackup: true }, harness.deps);
       assert.equal(result.status, 'failed');
       assert.equal(result.failedStage, 'backup');
       assert.equal(result.reopened, false);
@@ -233,7 +259,6 @@ describe('hosted upgrade pipeline', () => {
     assert.equal(result.reopened, false);
     assert.deepEqual(harness.mutations, [
       'build',
-      'backup',
       'provider-work:false',
       'maintenance:true',
       'deploy',
@@ -290,6 +315,7 @@ function createHarness(options: {
   postDeployRevision?: string;
   imageDigest?: string;
   backupFailure?: 'timeout' | 'wrong-revision' | 'malformed';
+  scheduled?: { ageSeconds?: number; captureOrigin?: string; sourceApp?: string } | null;
   buildFailure?: boolean;
   machineEnv?: string[];
 } = {}) {
@@ -416,6 +442,15 @@ function createHarness(options: {
     if (command.includes('hosted:banner') && command.includes('--clear=true')) {
       mutations.push('banner:clear');
       return { stdout: JSON.stringify({ status: 'noop' }), stderr: '' };
+    }
+    if (command.includes('scripts/manage-hosted-backup.ts') && command.includes('--action=status')) {
+      const scheduled = options.scheduled === undefined ? {} : options.scheduled;
+      const startedAt = new Date(nowMs - (scheduled?.ageSeconds ?? 3600) * 1000).toISOString();
+      return { stdout: JSON.stringify({ lastScheduledBackup: scheduled === null ? null : {
+        version: 1, id: 'hourly-scheduled', kind: 'hourly', captureOrigin: scheduled.captureOrigin ?? 'scheduled',
+        sourceRevision: 'a'.repeat(40), sourceApp: scheduled.sourceApp ?? APP, startedAt, completedAt: startedAt, receivedAt: startedAt,
+        bytes: 4096, sha256: 'c'.repeat(64), fileName: 'hourly-scheduled.sqlite',
+      } }), stderr: '' };
     }
     if (command.includes('scripts/manage-hosted-backup.ts')) {
       mutations.push('backup');

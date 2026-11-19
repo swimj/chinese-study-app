@@ -141,6 +141,10 @@ approval before acting. Report any such step in the handoff.
   either is in doubt, raise it before deploying.
 - **Timing and notice.** Choose when to run the window and whether to post a
   [banner](#post-a-pre-upgrade-banner) first.
+- **Fresh backup for a code-only release.** Pass `--fresh-backup=true` when the
+  change makes a last-resort restore more likely or the hours since the last
+  scheduled backup more costly to lose, such as new write behavior on valued
+  records.
 - **Extra checks.** Add checks the change calls for and record what ran. Pass
   `--reopen=false` to stop after smoke with the service closed, run them, then
   reopen with the [service controls](#service-controls-and-offline-work).
@@ -151,11 +155,14 @@ approval before acting. Report any such step in the handoff.
 ### Backups during a release
 
 [Scheduled backups](hosted-backups.md) every six hours are the standing
-recovery points. A code-only release also captures a verified release backup of
-the outgoing revision **before** entering maintenance. The capture runs online,
-so it adds no learner downtime, and it limits what a last-resort restore would
-discard to activity during roughly the last few minutes before the release. It
-is not the rollback mechanism for a code-only release.
+recovery points. A code-only release relies on them: its **backup** stage
+confirms that the latest scheduled backup belongs to this app and is within the
+six-hour-fifteen-minute freshness limit, and otherwise stops before closing the
+service. A backup is not the rollback for a code-only release, so a last-resort
+restore discarding up to the hours since that backup is accepted. A capture also
+holds the 1 GB Machine at full CPU for several minutes, which a release need
+not add. With `--fresh-backup=true`, the release instead captures a verified
+online backup of the outgoing revision before entering maintenance.
 
 A migration release captures its pre-release backup after writes stop, because
 restoring that backup is its rollback. After the target starts and the service
@@ -209,7 +216,8 @@ on the single Fly Machine with its mounted `/data` volume:
    refuse a schema change; record the serving image as `previousDeployment`.
 2. **build**: without `--image`, build as `hosted:build` does, before the
    service closes, so compiling adds no learner downtime.
-3. **backup**: capture the online release backup described above.
+3. **backup**: confirm a recent scheduled backup, or with `--fresh-backup=true`
+   capture an online one, as described above.
 4. **quiesce**: disable provider work, enable maintenance, and wait for active
    provider work to drain.
 5. **deploy**: deploy the digest-qualified image.
