@@ -10,16 +10,17 @@ const REVISION = 'c'.repeat(40);
 const DIGEST = `sha256:${'e'.repeat(64)}`;
 const FLY_TOML = 'app = "chinese-study-beta-swimj"\nprimary_region = "sin"\n[mounts]\n  destination = "/data"\n[[http_service.checks]]\n  path = "/healthz"\n[[vm]]\n  size = "shared-cpu-1x"\n';
 
-function harness(options: { registryStatus?: number; digest?: string; dirty?: string } = {}) {
+function harness(options: { registryStatus?: number; digest?: string; dirty?: string; notFoundFirst?: number } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hosted-build-'));
   fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ version: '4.0.0' }));
   fs.mkdirSync(path.join(root, 'deploy/fly/.generated'), { recursive: true });
   fs.writeFileSync(path.join(root, 'deploy/fly/.generated/fly.toml'), FLY_TOML);
   const commands: string[][] = [];
   const requests: Array<{ url: string; init?: RequestInit }> = [];
+  let sleeps = 0;
   const deps: HostedUpgradeDeps = {
     now: () => new Date('2026-11-18T02:00:00Z'),
-    sleep: async () => {},
+    sleep: async () => { sleeps++; },
     readFile: (file) => fs.readFileSync(file, 'utf8'),
     fileExists: (file) => fs.existsSync(file),
     gitHead: () => REVISION,
@@ -31,12 +32,13 @@ function harness(options: { registryStatus?: number; digest?: string; dirty?: st
     },
     fetch: async (input, init) => {
       requests.push({ url: String(input), init });
+      if (requests.length <= (options.notFoundFirst ?? 0)) return new Response(null, { status: 404 });
       return new Response(null, { status: options.registryStatus ?? 200, headers: { 'docker-content-digest': options.digest ?? DIGEST } });
     },
     emit: () => {},
   };
   const input = { repoRoot: root, imageApp: 'chinese-study-rehearsal-swimj', confirmSourceRevision: REVISION };
-  return { input, deps, commands, requests, clean: () => fs.rmSync(root, { recursive: true, force: true }) };
+  return { input, deps, commands, requests, sleeps: () => sleeps, clean: () => fs.rmSync(root, { recursive: true, force: true }) };
 }
 
 test('builds and pushes without deploying, then resolves the tag to a digest-qualified image', async () => {
@@ -71,4 +73,22 @@ test('fails when the registry cannot confirm a sha256 digest', async () => {
       await assert.rejects(buildHostedImage(h.input, h.deps), /Registry/);
     } finally { h.clean(); }
   }
+});
+
+test('retries a just-pushed tag that the registry briefly reports as missing', async () => {
+  const h = harness({ notFoundFirst: 2 });
+  try {
+    const result = await buildHostedImage(h.input, h.deps);
+    assert.equal(result.digest, DIGEST);
+    assert.equal(h.requests.length, 3);
+    assert.equal(h.sleeps(), 2);
+  } finally { h.clean(); }
+});
+
+test('gives up after a bounded number of missing-tag lookups', async () => {
+  const h = harness({ registryStatus: 404 });
+  try {
+    await assert.rejects(buildHostedImage(h.input, h.deps), /HTTP 404/);
+    assert.equal(h.requests.length, 12);
+  } finally { h.clean(); }
 });

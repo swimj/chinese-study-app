@@ -10,6 +10,9 @@ import {
 } from './hosted-upgrade.ts';
 
 export const BUILD_TIMEOUT_MS = 1_200_000;
+/** A just-pushed tag can briefly 404 before the registry serves it. */
+export const REGISTRY_LOOKUP_ATTEMPTS = 12;
+export const REGISTRY_RETRY_DELAY_MS = 5_000;
 const FLY_REGISTRY = 'registry.fly.io';
 const MANIFEST_ACCEPT = [
   'application/vnd.oci.image.index.v1+json',
@@ -70,13 +73,18 @@ export async function buildHostedImage(input: HostedBuildInput, deps: HostedUpgr
 export async function resolveRegistryDigest(repository: string, tag: string, deps: HostedUpgradeDeps): Promise<string> {
   const token = (await deps.run('fly', ['auth', 'token'], { timeoutMs: 30_000, env: flyCommandEnv() })).stdout.trim();
   if (!token || /\s/.test(token)) throw new Error('fly auth token did not return a token.');
-  const response = await deps.fetch(`https://${FLY_REGISTRY}/v2/${repository}/manifests/${encodeURIComponent(tag)}`, {
+  const lookup = () => deps.fetch(`https://${FLY_REGISTRY}/v2/${repository}/manifests/${encodeURIComponent(tag)}`, {
     method: 'HEAD',
     headers: {
       authorization: `Basic ${Buffer.from(`x:${token}`).toString('base64')}`,
       accept: MANIFEST_ACCEPT,
     },
   });
+  let response = await lookup();
+  for (let attempt = 1; response.status === 404 && attempt < REGISTRY_LOOKUP_ATTEMPTS; attempt++) {
+    await deps.sleep(REGISTRY_RETRY_DELAY_MS);
+    response = await lookup();
+  }
   if (!response.ok) throw new Error(sanitizeHostedOutput(`Registry manifest lookup for ${repository}:${tag} returned HTTP ${response.status}.`));
   const digest = response.headers.get('docker-content-digest') ?? '';
   if (!/^sha256:[a-f0-9]{64}$/.test(digest)) throw new Error('Registry did not report a sha256 manifest digest.');
