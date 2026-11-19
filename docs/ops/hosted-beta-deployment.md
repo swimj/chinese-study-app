@@ -275,6 +275,43 @@ This procedure deliberately does not claim durable release history or resumable
 execution. The final terminal result is still per-invocation evidence; a lost
 local runner remains an operational recovery case.
 
+### Release tracker
+
+`hosted:track` keeps a history of releases on the operator machine and serves
+a page showing each release's stages, durations, key facts, and observations.
+Each release is one JSON file under `~/.chinese-study-app/releases`, outside any
+checkout; set `--root` or `RELEASE_TRACKER_ROOT` to use another directory.
+The history covers releases tracked on that machine only.
+
+```bash
+npm run hosted:track -- --action=serve              # http://127.0.0.1:8765/
+npm run hosted:track -- --action=init --mode=migrate --commit=<sha> --title='<title>'
+npm run hosted:track -- --action=stage --stage=build --status=running
+npm run hosted:track -- --action=note --text='<observation>'
+npm run hosted:track -- --action=watch --file=<hosted:upgrade output file>
+```
+
+The server and the watcher have different lifetimes:
+
+- **The server** is a long-lived, read-only viewer of the whole history. It
+  listens on `127.0.0.1:8765`; from another computer, forward it with
+  `ssh -L 8765:127.0.0.1:8765 <operator-host>`. It runs on the operator machine,
+  so production deploys do not affect it. Start it from any checkout that
+  contains the tool; it loads its code and page at startup and reads the history
+  on each request, so it needs no dedicated worktree, and later branch changes
+  do not affect it. Stopping it loses nothing. A server started by an agent
+  session ends with that session; for an always-on viewer, run it outside agent
+  sessions, for example in a `tmux` window.
+- **The watcher** serves one release. Redirect the `hosted:upgrade` JSON output
+  to a file, then run `watch` on that file; it mirrors the production stages
+  into that release's record and exits at the final result.
+
+Commands without `--release` update the most recent release.
+Agents record preparation, build, and rehearsal stages, facts, and observations
+themselves, and set `--action=outcome` when the result needs judgment, such as a
+failure after reopening. Notes stay short and contain no learner data,
+credentials, or backup locations.
+
 ### Migration release
 
 A migration release starts from one [built image](#build-the-image): rehearse

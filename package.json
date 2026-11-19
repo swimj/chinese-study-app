@@ -37,6 +37,7 @@
     "hosted:rc:promote-db": "node --import tsx scripts/promote-hosted-rc-database.ts",
     "hosted:rc:verify-source": "node --import tsx scripts/verify-hosted-rc-source.ts",
     "hosted:upgrade": "node --import tsx scripts/upgrade-hosted-service.ts",
+    "hosted:track": "node --import tsx scripts/release-tracker.ts",
     "hosted:build": "node --import tsx scripts/build-hosted-image.ts",
     "hosted:verify-restore": "node --import tsx scripts/verify-hosted-restore.ts",
     "prepare:ui-fixtures": "node --import tsx scripts/prepare-ui-fixtures.ts",
