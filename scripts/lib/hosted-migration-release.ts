@@ -51,6 +51,8 @@ export type HostedMigrationReleaseInput = {
   flyConfigPath?: string;
   /** false stops after smoke with the service closed, for checks before the agent reopens it. */
   reopen?: boolean;
+  /** Escape hatch, used only with Justin's approval: release a revision not on origin/main. */
+  allowUnmergedRevision?: boolean;
 };
 
 export type HostedMigrationReleaseResult = {

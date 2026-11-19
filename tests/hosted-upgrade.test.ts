@@ -38,6 +38,8 @@ primary_region = "sin"
   size = "shared-cpu-1x"
 `;
 
+const BUILT_DIGEST = `sha256:${'b'.repeat(64)}`;
+
 const MACHINE_LIST = JSON.stringify([{
   id: 'd8d123abc',
   state: 'started',
@@ -103,7 +105,27 @@ describe('hosted upgrade pipeline', () => {
     assert.deepEqual(harness.mutations, []);
   });
 
-  test('backs up online, then quiesces, deploys with APP_REVISION, confirms, smokes, and reopens', async () => {
+  test('refuses a revision that is not on origin/main unless the escape hatch is set', async () => {
+    const harness = createHarness();
+    harness.onMainline = false;
+    const refused = await runHostedUpgrade(harness.input, harness.deps);
+    assert.equal(refused.failedStage, 'declare');
+    assert.match(refused.failure ?? '', /not on origin\/main/);
+    assert.deepEqual(harness.mutations, []);
+    const allowed = await runHostedUpgrade({ ...harness.input, allowUnmergedRevision: true }, harness.deps);
+    assert.equal(allowed.status, 'ok', allowed.failure ?? '');
+    const declare = allowed.stages.find((stage) => stage.stage === 'declare')?.detail as Record<string, unknown>;
+    assert.equal(declare.unmergedRevisionAllowed, true);
+  });
+
+  test('a failed build leaves the service open and untouched', async () => {
+    const harness = createHarness({ buildFailure: true });
+    const result = await runHostedUpgrade(harness.input, harness.deps);
+    assert.equal(result.failedStage, 'build');
+    assert.deepEqual(harness.mutations, ['build']);
+  });
+
+  test('builds before the window, backs up online, then quiesces, deploys the built digest, confirms, smokes, and reopens', async () => {
     const harness = createHarness();
     const result = await runHostedUpgrade(harness.input, harness.deps);
     assert.equal(result.status, 'ok', result.failure ?? '');
@@ -112,18 +134,20 @@ describe('hosted upgrade pipeline', () => {
       appVersion: '2.3.0',
       sourceRevision: SOURCE_REVISION,
     });
-    assert.equal(result.actualBuild?.imageDigest, 'sha256:abc123def456');
+    assert.equal(result.actualBuild?.imageDigest, BUILT_DIGEST);
     assert.equal(result.actualDeployment?.machineId, 'd8d123abc');
     assert.deepEqual(result.stages.map((stage) => `${stage.stage}:${stage.status}`), [
       'declare:ok',
+      'build:ok',
       'backup:ok',
       'quiesce:ok',
-      'build-deploy:ok',
+      'deploy:ok',
       'confirm:ok',
       'smoke:ok',
       'reopen:ok',
     ]);
     assert.deepEqual(harness.mutations, [
+      'build',
       'backup',
       'provider-work:false',
       'maintenance:true',
@@ -132,8 +156,12 @@ describe('hosted upgrade pipeline', () => {
       'provider-work:true',
       'banner:clear',
     ]);
-    const deploy = harness.commands.find((command) => command.args[0] === 'deploy');
-    assert.deepEqual(deploy?.args.slice(-2), ['--build-arg', `APP_REVISION=${SOURCE_REVISION}`]);
+    const build = harness.commands.find((command) => command.args[0] === 'deploy' && command.args.includes('--build-only'));
+    assert.deepEqual(build?.args.slice(-2), ['--build-arg', `APP_REVISION=${SOURCE_REVISION}`]);
+    assert.ok(build?.args.includes(`release-${SOURCE_REVISION}`));
+    const deploy = harness.commands.find((command) => command.args[0] === 'deploy' && !command.args.includes('--build-only'));
+    assert.deepEqual(deploy?.args.slice(-2), ['--image', `registry.fly.io/${APP}:release-${SOURCE_REVISION}@${BUILT_DIGEST}`]);
+    assert.equal(JSON.stringify(harness.events).includes('fly-token'), false);
     assert.equal(JSON.stringify(result).includes('smoke-token'), false);
     assert.equal(JSON.stringify(harness.events).includes('sk_test'), false);
     const receipt = result.stages.find(stage => stage.stage === 'backup')?.detail as Record<string, unknown>;
@@ -150,7 +178,7 @@ describe('hosted upgrade pipeline', () => {
       assert.equal(result.status, 'failed');
       assert.equal(result.failedStage, 'backup');
       assert.equal(result.reopened, false);
-      assert.deepEqual(harness.mutations, ['backup'], 'a failed capture leaves the service open and untouched');
+      assert.deepEqual(harness.mutations, ['build', 'backup'], 'a failed capture leaves the service open and untouched');
     });
   }
 
@@ -164,7 +192,7 @@ describe('hosted upgrade pipeline', () => {
     assert.ok(deploy?.args.includes('--image'));
     assert.ok(deploy?.args.includes(image));
     assert.equal(deploy?.args.includes('--build-arg'), false);
-    assert.equal(deploy?.args.includes('--remote-only'), false);
+    assert.equal(harness.mutations.includes('build'), false);
   });
 
   test('rejects a mutable promotion image before touching Fly', async () => {
@@ -186,6 +214,7 @@ describe('hosted upgrade pipeline', () => {
     assert.equal(result.failedStage, 'smoke');
     assert.equal(result.reopened, false);
     assert.deepEqual(harness.mutations, [
+      'build',
       'backup',
       'provider-work:false',
       'maintenance:true',
@@ -243,6 +272,7 @@ function createHarness(options: {
   postDeployRevision?: string;
   imageDigest?: string;
   backupFailure?: 'timeout' | 'wrong-revision' | 'malformed';
+  buildFailure?: boolean;
 } = {}) {
   const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'hosted-upgrade-repo-'));
   fs.writeFileSync(path.join(repoRoot, 'package.json'), JSON.stringify({ version: '2.3.0' }));
@@ -260,6 +290,7 @@ function createHarness(options: {
   const harness = {
     repoRoot,
     gitStatus: '',
+    onMainline: true,
     mutations,
     commands,
     events,
@@ -292,12 +323,18 @@ function createHarness(options: {
     fileExists: (filePath) => fs.existsSync(filePath),
     gitHead: () => SOURCE_REVISION,
     gitStatusPorcelain: () => harness.gitStatus,
+    gitRevisionOnMainline: () => harness.onMainline,
     run: async (file, args) => {
       commands.push({ file, args });
       return handleCommand(args);
     },
-    fetch: async (input) => {
+    fetch: async (input, init) => {
       const url = String(input);
+      if (url.startsWith('https://registry.fly.io/v2/')) {
+        assert.equal(init?.method, 'HEAD');
+        assert.equal(new Headers(init?.headers).get('authorization'), `Basic ${Buffer.from('x:fly-token').toString('base64')}`);
+        return new Response(null, { status: 200, headers: { 'docker-content-digest': BUILT_DIGEST } });
+      }
       if (url.endsWith('/healthz')) {
         return jsonResponse(200, {
           status: 'ok',
@@ -320,6 +357,12 @@ function createHarness(options: {
   };
 
   function handleCommand(args: readonly string[]): CommandResult {
+    if (args[0] === 'auth' && args[1] === 'token') return { stdout: 'fly-token\n', stderr: '' };
+    if (args[0] === 'deploy' && args.includes('--build-only')) {
+      mutations.push('build');
+      if (options.buildFailure) throw new Error('remote builder failed');
+      return { stdout: '', stderr: '' };
+    }
     if (args[0] === 'deploy') {
       deployed = true;
       mutations.push('deploy');
@@ -327,9 +370,7 @@ function createHarness(options: {
     }
     if (args[0] === 'machines') {
       return {
-        stdout: options.imageDigest
-          ? MACHINE_LIST.replace('sha256:abc123def456', options.imageDigest)
-          : MACHINE_LIST,
+        stdout: MACHINE_LIST.replace('sha256:abc123def456', options.imageDigest ?? BUILT_DIGEST),
         stderr: '',
       };
     }

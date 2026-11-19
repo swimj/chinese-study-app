@@ -4,7 +4,7 @@ import { createDefaultHostedUpgradeDeps, runHostedUpgrade } from './lib/hosted-u
 import { runHostedMigrationRelease } from './lib/hosted-migration-release.ts';
 import { schemaMigrationIds } from '../server/db/migrations.ts';
 
-const args = readStrictArguments(['mode', 'app', 'actor-id', 'confirm-source-revision', 'image', 'rehearsal-run-dir', 'reopen']);
+const args = readStrictArguments(['mode', 'app', 'actor-id', 'confirm-source-revision', 'image', 'image-app', 'rehearsal-run-dir', 'reopen', 'allow-unmerged-revision']);
 const repoRoot = process.cwd();
 const mode = args.get('mode') ?? 'code';
 const common = {
@@ -15,13 +15,16 @@ const common = {
   targetSchemaMigrationIds: schemaMigrationIds(),
   flyConfigPath: path.join('deploy/fly/.generated/fly.toml'),
   reopen: args.has('reopen') ? readBooleanArgument(args, 'reopen') : true,
+  allowUnmergedRevision: args.has('allow-unmerged-revision') ? readBooleanArgument(args, 'allow-unmerged-revision') : false,
 };
 const deps = createDefaultHostedUpgradeDeps(repoRoot);
 let status: 'ok' | 'failed';
 if (mode === 'code') {
   if (args.has('rehearsal-run-dir')) throw new Error('--rehearsal-run-dir applies only to --mode=migrate.');
-  status = (await runHostedUpgrade({ ...common, image: args.get('image') }, deps)).status;
+  if (args.has('image') && args.has('image-app')) throw new Error('--image-app applies only when building, without --image.');
+  status = (await runHostedUpgrade({ ...common, image: args.get('image'), imageApp: args.get('image-app') }, deps)).status;
 } else if (mode === 'migrate') {
+  if (args.has('image-app')) throw new Error('--mode=migrate deploys the rehearsed --image and never builds.');
   status = (await runHostedMigrationRelease({
     ...common,
     image: requireArgument(args, 'image'),

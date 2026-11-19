@@ -76,38 +76,13 @@ binary and a read-only source IAM environment file (`LITESTREAM_ACCESS_KEY_ID`,
 `LITESTREAM_SECRET_ACCESS_KEY`, `LITESTREAM_BUCKET`, `LITESTREAM_REGION`, and
 `LITESTREAM_REPLICA_PATH`). Legacy restore does not establish receiver readiness.
 
-Build and push the candidate image with its exact `APP_REVISION`, or use an
-already-built digest-qualified candidate. The image used for rehearsal is the
-image used for the release. Choose enough temporary volume space for the
+Build the candidate with [`hosted:build`](hosted-beta-deployment.md#build-the-image)
+and pass its printed `image` reference to `--image`. The image used for rehearsal
+is the image used for the release. Choose enough temporary volume space for the
 database, SQLite temporary work, and any comparison copies the selected checks
 need. Preparation accepts `--region=sin`, `--vm-size=performance-1x`, and
 `--volume-size-gb=3`; these are also its defaults. Migration resource hints can
 justify larger allocations.
-
-For a new candidate, use the generated production configuration for its build
-arguments, overriding the destination app. `--build-only` pushes an image without
-deploying the application or changing production's Machine:
-
-```bash
-git rev-parse HEAD
-fly deploy --app <rehearsal-app> \
-  --config deploy/fly/.generated/fly.toml \
-  --remote-only --build-only --push \
-  --image-label rehearsal-<full-40-character-sha> \
-  --build-arg APP_REVISION=<full-40-character-sha>
-fly auth docker
-docker buildx imagetools inspect \
-  registry.fly.io/<rehearsal-app>:rehearsal-<full-40-character-sha>
-```
-
-Record the `Digest` from the registry inspection and construct
-`registry.fly.io/<rehearsal-app>:rehearsal-<full-40-character-sha>@sha256:<digest>`.
-Preserve the release tag alongside the digest: Fly's Machine image resolver can
-reject a digest-only reference even when it locates the image. The digest pins
-the content; retaining the tag does not make it a mutable-tag deployment.
-Use that immutable reference
-below, not the tag. The build configuration must include the intended frontend
-build arguments; image identity alone cannot correct a wrong build configuration.
 
 ### Prepare, check, and migrate
 
