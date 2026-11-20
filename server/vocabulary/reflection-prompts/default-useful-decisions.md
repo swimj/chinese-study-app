@@ -62,13 +62,13 @@ Editorial explanation: The older and specialist noun uses remain in the inventor
 
 ### 蜘
 
-Input: 蜘 (zhī); supplied senses:
+Fresh inventory generation for 蜘 (zhī) yields no senses. Defaults are empty and selection is skipped. This example applies only if an existing canonical inventory already supplies the following entry:
 
 - `s1` — Spider. A bound component occurring in 蜘蛛.
 
 Output — selected IDs: `[]`.
 
-Editorial explanation: No supplied sense is eligible for teaching under this target: “spider” is supported only through 蜘蛛. Return no IDs; the backend asks for operator review and retains the inventory. Selection does not delete the entry.
+Editorial explanation: 蜘蛛 supplies the meaning “spider.” Leave the existing ID unselected. An all-negative selection on a nonempty inventory leaves its entries in place for operator review.
 
 ### 双误
 

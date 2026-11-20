@@ -20,7 +20,7 @@ export const VOCABULARY_SENSE_SERVICE = 'vocabulary-sense-readiness';
 export const VOCABULARY_SENSE_MODEL = 'gpt-6-luna';
 const actor = { kind: 'service' as const, id: VOCABULARY_SENSE_SERVICE };
 const timeoutMs = 180_000;
-const prompt = readFileSync(new URL('./reflection-prompts/sense-inventory.md',import.meta.url),'utf8');
+const livePrompt = { version: '9', text: readFileSync(new URL('./reflection-prompts/sense-inventory.md',import.meta.url),'utf8') };
 export type VocabularySenseLexicalWord = NonNullable<ReturnType<typeof getSharedIntroductionLexicalWord>>;
 export type VocabularySenseProvider = {
   isConfigured(): boolean;
@@ -41,7 +41,7 @@ export class VocabularySenseReadinessPending extends VocabularySenseReadinessErr
   constructor(readonly retryAt:string) { super('Sense readiness is running or waiting for automatic retry'); }
 }
 
-export function createVocabularySenseProvider(options: { environment?: NodeJS.ProcessEnv; adapter?: ProviderAdapter } = {}): VocabularySenseProvider {
+export function createVocabularySenseProvider(options: { environment?: NodeJS.ProcessEnv; adapter?: ProviderAdapter } = {}, prompt = livePrompt): VocabularySenseProvider {
   const environment = options.environment ?? process.env;
   const adapter = options.adapter ?? createOpenAiCompatibleAdapter({ id: 'openai', defaultBaseUrl: 'https://api.openai.com/v1',
     apiKeyEnvironmentVariable: 'OPENAI_API_KEY', structuredOutputMode: 'json_schema', maxTokensField: 'max_completion_tokens',
@@ -50,12 +50,12 @@ export function createVocabularySenseProvider(options: { environment?: NodeJS.Pr
     isConfigured: () => Boolean(environment.OPENAI_API_KEY?.trim()),
     async generate(word, context) {
       if (!environment.OPENAI_API_KEY?.trim()) throw new VocabularySenseReadinessError('Sense provider is not configured');
-      const result = await adapter.run({ model: VOCABULARY_SENSE_MODEL, reasoningEffort: 'high', systemPrompt: prompt,
+      const result = await adapter.run({ model: VOCABULARY_SENSE_MODEL, reasoningEffort: 'high', systemPrompt: prompt.text,
         userPrompt: JSON.stringify({ word: modelLexicalWord(word) }), outputSchemaName: vocabularySenseInventorySchemaName, outputSchema: schema,
         maxOutputTokens: 8000, temperature: null, timeoutMs, cachePrompt: true,
         invocationActor: { kind: 'service', serviceId: VOCABULARY_SENSE_SERVICE },
         provenance: { workflowId: context.workflowId, attemptNumber: context.attemptNumber, stepName: 'sense_inventory',
-          promptName: 'vocabulary-sense-inventory', promptVersion: '9', schemaVersion: '4', inputProjectionVersion: 'simplified-lexical-evidence-v3' } },
+          promptName: 'vocabulary-sense-inventory', promptVersion: prompt.version, schemaVersion: '4', inputProjectionVersion: 'simplified-lexical-evidence-v3' } },
       { apiKey: environment.OPENAI_API_KEY.trim(), baseUrl: environment.OPENAI_BASE_URL?.trim() || null });
       context.onInvocation(result.invocationId);
       try {

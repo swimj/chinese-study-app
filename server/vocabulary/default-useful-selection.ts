@@ -18,7 +18,7 @@ import type { JsonSchema } from '../../src/domain/reflection-result-schema.ts';
 import { VocabularySenseReadinessPending,VocabularySenseSelectionRequired,VOCABULARY_SENSE_SERVICE } from './sense-readiness.ts';
 import { recordPreparationAttempt,linkPreparationInvocation,completePreparationAttempt,failPreparationAttempt } from './preparation-retry.ts';
 const actor={kind:'service' as const,id:VOCABULARY_SENSE_SERVICE};
-const prompt=readFileSync(new URL('./reflection-prompts/default-useful-decisions.md',import.meta.url),'utf8');
+const livePrompt = { version: '2', text: readFileSync(new URL('./reflection-prompts/default-useful-decisions.md',import.meta.url),'utf8') };
 const timeoutMs=180_000;
 type SelectionInput = { word: NonNullable<ReturnType<typeof getSharedIntroductionLexicalWord>>; senses: VocabularySense[] };
 export type UsefulSelectionProvider={isConfigured():boolean;select(input:SelectionInput,context:{workflowId:string;attemptNumber:number;onInvocation:(id:string|null|undefined)=>void}):Promise<unknown>};
@@ -31,7 +31,7 @@ export function defaultUsefulSelectorInput(input: SelectionInput) {
   return { references, wire };
 }
 
-export function createUsefulSelectionProvider(options:{environment?:NodeJS.ProcessEnv;adapter?:ProviderAdapter}={}):UsefulSelectionProvider {
+export function createUsefulSelectionProvider(options:{environment?:NodeJS.ProcessEnv;adapter?:ProviderAdapter}={}, prompt = livePrompt):UsefulSelectionProvider {
   const environment=options.environment??process.env;
   const adapter=options.adapter??createOpenAiCompatibleAdapter({id:'openai',defaultBaseUrl:'https://api.openai.com/v1',apiKeyEnvironmentVariable:'OPENAI_API_KEY',structuredOutputMode:'json_schema',maxTokensField:'max_completion_tokens',fetchImplementation:fetchImplementationForProvider('openai',timeoutMs)});
   return {isConfigured:()=>Boolean(environment.OPENAI_API_KEY?.trim()),async select(input,context){
@@ -44,14 +44,14 @@ export function createUsefulSelectionProvider(options:{environment?:NodeJS.Proce
     }));
     let startedId: string | null | undefined;
     const result = await adapter.run({
-      model: 'gpt-6-luna', systemPrompt: prompt, userPrompt: JSON.stringify(wire),
+      model: 'gpt-6-luna', systemPrompt: prompt.text, userPrompt: JSON.stringify(wire),
       decisions: { questions, threshold: 0.8 },
       outputSchemaName: 'vocabulary_default_useful_selection_v2', outputSchema: schema,
       reasoningEffort: null, maxOutputTokens: 0, temperature: null, timeoutMs, cachePrompt: true,
       invocationActor: { kind: 'service', serviceId: VOCABULARY_SENSE_SERVICE },
       provenance: { workflowId: context.workflowId, attemptNumber: context.attemptNumber,
         stepName: 'default_useful_selection', promptName: 'vocabulary-default-useful-decisions',
-        promptVersion: '1', schemaVersion: '2', inputProjectionVersion: 'canonical-inventory-local-senses-v3' },
+        promptVersion: prompt.version, schemaVersion: '2', inputProjectionVersion: 'canonical-inventory-local-senses-v3' },
     }, {
       apiKey: environment.OPENAI_API_KEY?.trim() ?? '', baseUrl: environment.OPENAI_BASE_URL?.trim() || null,
       onInvocationStarted(id) { startedId = id; context.onInvocation(id); },
