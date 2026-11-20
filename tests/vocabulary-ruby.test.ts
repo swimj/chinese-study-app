@@ -14,6 +14,13 @@ test('tone-marked concatenated and separated pinyin align to exact characters', 
   assert.equal(alignVocabularyPinyin('chang an', 1), null);
   assert.equal(alignVocabularyPinyin('ABC 123', 2), null);
 });
+test('authored double quotation marks delimit pinyin tokens', () => {
+  for (const pinyin of ['Wǒ shuō “nǐ hǎo.”', 'Wǒ shuō "nǐ hǎo."']) {
+    assert.deepEqual(alignVocabularyPinyin(pinyin, 4), ['Wǒ', 'shuō', 'nǐ', 'hǎo']);
+  }
+  assert.equal(alignVocabularyPinyin('Wǒ shuō “nǐ hǎo! 😊”', 4), null);
+});
+
 test('ruby centers each authored syllable for simplified and traditional word characters', () => {
   const render = (text: string) => renderToStaticMarkup(createElement(VocabularyCharacterRuby, { text, pinyin: 'téngjiāo' }));
   assert.match(render('藤椒'), /藤<rp>\(<\/rp><rt lang="zh-Latn">téng<\/rt>/);
@@ -55,4 +62,21 @@ test('warmup supplies full ruby only after reveal and otherwise keeps the author
   assert.match(aligned, /学：Study/);
   assert.doesNotMatch(aligned, /<summary>Pinyin/);
   assert.match(render(true, 'Uncertain authored pronunciation'), /<summary>Pinyin/);
+});
+
+test('warmup aligns quoted authored pinyin and preserves disclosure when its syllable boundaries are ambiguous', () => {
+  const render = (pronunciation: string) => renderToStaticMarkup(createElement(VocabularyWarmupContent, {
+    word: { wordId: 'call', hanzi: '口号', traditional: '口號', pinyin: 'kǒu hào', meaning: 'slogan' },
+    example: { sentence: '他的口号是“不可能失败”。', pronunciation, translation: null },
+    stage: 1, busy: false, onPrimary: () => {}, characterPresentation: 'simplified', sentenceCharacterPresentation: 'traditional',
+  }));
+  const aligned = render('Tā de kǒuhào shì “bù kě néng shībài.”');
+  assert.match(aligned, /號<rp>\(<\/rp><rt lang="zh-Latn">hào/);
+  assert.match(aligned, /能<rp>\(<\/rp><rt lang="zh-Latn">néng/);
+  assert.doesNotMatch(aligned, /<summary>Pinyin/);
+
+  const ambiguous = render('Tā de kǒuhào shì “bù kěnéng shībài.”');
+  assert.match(ambiguous, /<summary>Pinyin<\/summary>/);
+  assert.match(ambiguous, /“bù kěnéng shībài\.”/);
+  assert.doesNotMatch(ambiguous, /vocab-ruby-on-demand/);
 });
